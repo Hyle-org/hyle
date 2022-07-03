@@ -1,0 +1,32 @@
+name: Build Mini
+on: ["push"]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        arch: [amd64]
+        targetos: [darwin, linux]
+        include:
+          - targetos: darwin
+            arch: arm64
+    name: osmosis ${{ matrix.arch }} for ${{ matrix.targetos }}
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-go@v3.2.0
+        with:
+          go-version: "^1.18"
+        env:
+          GOOS: ${{ matrix.targetos }}
+          GOARCH: ${{ matrix.arch }}
+
+      - name: Compile osmosis
+        run: |
+          go mod download
+          cd cmd/minid
+          go build .
+
+      - uses: actions/upload-artifact@v3
+        with:
+          name: minid ${{ matrix.targetos }} ${{ matrix.arch }}
+          path: cmd/minid/minid
