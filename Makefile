@@ -31,4 +31,6 @@ install:
 	@go install $(BUILD_FLAGS) -v -mod=readonly ./cmd/minid
 
 init:
-	sh ./scripts/init.sh
+	@go install github.com/tomwright/dasel/cmd/dasel@master
+	MINID_BIN=$(which minid)
+	./scripts/init.sh

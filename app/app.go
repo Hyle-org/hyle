@@ -22,7 +22,7 @@ import (
 	"github.com/cosmos/cosmos-sdk/server/api"
 	"github.com/cosmos/cosmos-sdk/server/config"
 	servertypes "github.com/cosmos/cosmos-sdk/server/types"
-	sdksimapp "github.com/cosmos/cosmos-sdk/simapp"
+	"github.com/cosmos/cosmos-sdk/simapp"
 	"github.com/cosmos/cosmos-sdk/store/streaming"
 	storetypes "github.com/cosmos/cosmos-sdk/store/types"
 	"github.com/cosmos/cosmos-sdk/testutil/testdata"
@@ -89,7 +89,7 @@ var (
 )
 
 var (
-	_ sdksimapp.App           = (*MiniApp)(nil)
+	_ simapp.App              = (*MiniApp)(nil)
 	_ servertypes.Application = (*MiniApp)(nil)
 )
 
