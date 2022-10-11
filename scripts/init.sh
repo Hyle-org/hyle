@@ -1,6 +1,7 @@
 #!/bin/bash
 
-rm -r ~/.minid
+rm -r ~/.minid || true
+MINID_BIN=$(which minid)
 # configure minid
 $MINID_BIN config chain-id demo
 $MINID_BIN config keyring-backend test
