@@ -12,10 +12,11 @@ import (
 	tmproto "github.com/tendermint/tendermint/proto/tendermint/types"
 )
 
-// ExportAppStateAndValidators exports the state of the application for a genesis
-// file.
+// ExportAppStateAndValidators exports the state of the application for a genesis file.
 func (app *MiniApp) ExportAppStateAndValidators(
-	forZeroHeight bool, jailAllowedAddrs []string,
+	forZeroHeight bool,
+	jailAllowedAddrs []string,
+	modulesToExport []string,
 ) (servertypes.ExportedApp, error) {
 	// as if they could withdraw from the start of the next block
 	ctx := app.NewContext(true, tmproto.Header{Height: app.LastBlockHeight()})
@@ -28,7 +29,7 @@ func (app *MiniApp) ExportAppStateAndValidators(
 		app.prepForZeroHeightGenesis(ctx, jailAllowedAddrs)
 	}
 
-	genState := app.mm.ExportGenesis(ctx, app.appCodec)
+	genState := app.ModuleManager.ExportGenesis(ctx, app.appCodec)
 	appState, err := json.MarshalIndent(genState, "", "  ")
 	if err != nil {
 		return servertypes.ExportedApp{}, err
@@ -44,8 +45,7 @@ func (app *MiniApp) ExportAppStateAndValidators(
 }
 
 // prepare for fresh start at zero height
-// NOTE zero height genesis is a temporary feature which will be deprecated
-//      in favour of export at a block height
+// NOTE zero height genesis is a temporary feature, which will be deprecated in favour of export at a block height
 func (app *MiniApp) prepForZeroHeightGenesis(ctx sdk.Context, jailAllowedAddrs []string) {
 	applyAllowedAddrs := false
 

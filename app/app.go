@@ -1,65 +1,47 @@
 package app
 
 import (
-	"encoding/json"
 	"io"
-	"net/http"
 	"os"
 	"path/filepath"
 
-	"github.com/gorilla/mux"
-	"github.com/rakyll/statik/fs"
-	abci "github.com/tendermint/tendermint/abci/types"
+	"cosmossdk.io/depinject"
 	"github.com/tendermint/tendermint/libs/log"
-	tmos "github.com/tendermint/tendermint/libs/os"
 	dbm "github.com/tendermint/tm-db"
 
 	"github.com/cosmos/cosmos-sdk/baseapp"
 	"github.com/cosmos/cosmos-sdk/client"
-	"github.com/cosmos/cosmos-sdk/client/grpc/tmservice"
 	"github.com/cosmos/cosmos-sdk/codec"
-	"github.com/cosmos/cosmos-sdk/codec/types"
+	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
+	"github.com/cosmos/cosmos-sdk/runtime"
+	"github.com/cosmos/cosmos-sdk/server"
 	"github.com/cosmos/cosmos-sdk/server/api"
 	"github.com/cosmos/cosmos-sdk/server/config"
 	servertypes "github.com/cosmos/cosmos-sdk/server/types"
-	"github.com/cosmos/cosmos-sdk/simapp"
 	"github.com/cosmos/cosmos-sdk/store/streaming"
 	storetypes "github.com/cosmos/cosmos-sdk/store/types"
 	"github.com/cosmos/cosmos-sdk/testutil/testdata"
-	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/module"
-	"github.com/cosmos/cosmos-sdk/version"
 	"github.com/cosmos/cosmos-sdk/x/auth"
-	"github.com/cosmos/cosmos-sdk/x/auth/ante"
 	authkeeper "github.com/cosmos/cosmos-sdk/x/auth/keeper"
 	authsims "github.com/cosmos/cosmos-sdk/x/auth/simulation"
-	authtx "github.com/cosmos/cosmos-sdk/x/auth/tx"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	"github.com/cosmos/cosmos-sdk/x/bank"
 	bankkeeper "github.com/cosmos/cosmos-sdk/x/bank/keeper"
-	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
+	"github.com/cosmos/cosmos-sdk/x/consensus"
+	consensuskeeper "github.com/cosmos/cosmos-sdk/x/consensus/keeper"
 	distr "github.com/cosmos/cosmos-sdk/x/distribution"
 	distrkeeper "github.com/cosmos/cosmos-sdk/x/distribution/keeper"
-	distrtypes "github.com/cosmos/cosmos-sdk/x/distribution/types"
 	"github.com/cosmos/cosmos-sdk/x/genutil"
 	genutiltypes "github.com/cosmos/cosmos-sdk/x/genutil/types"
 	"github.com/cosmos/cosmos-sdk/x/mint"
 	mintkeeper "github.com/cosmos/cosmos-sdk/x/mint/keeper"
-	minttypes "github.com/cosmos/cosmos-sdk/x/mint/types"
 	"github.com/cosmos/cosmos-sdk/x/params"
 	paramskeeper "github.com/cosmos/cosmos-sdk/x/params/keeper"
 	paramstypes "github.com/cosmos/cosmos-sdk/x/params/types"
 	"github.com/cosmos/cosmos-sdk/x/staking"
 	stakingkeeper "github.com/cosmos/cosmos-sdk/x/staking/keeper"
-	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
-
-	appparams "github.com/julienrbrt/chain-minimal/app/params"
-
-	// unnamed import of statik for swagger UI support
-	_ "github.com/cosmos/cosmos-sdk/client/docs/statik"
 )
-
-const appName = "MiniApp"
 
 var (
 	// DefaultNodeHome default home directories for the application daemon
@@ -70,26 +52,18 @@ var (
 	// and genesis verification.
 	ModuleBasics = module.NewBasicManager(
 		auth.AppModuleBasic{},
-		genutil.AppModuleBasic{},
+		genutil.NewAppModuleBasic(genutiltypes.DefaultMessageValidator),
 		bank.AppModuleBasic{},
 		staking.AppModuleBasic{},
 		mint.AppModuleBasic{},
 		distr.AppModuleBasic{},
 		params.AppModuleBasic{},
+		consensus.AppModuleBasic{},
 	)
-
-	// module account permissions
-	maccPerms = map[string][]string{
-		authtypes.FeeCollectorName:     nil,
-		distrtypes.ModuleName:          nil,
-		minttypes.ModuleName:           {authtypes.Minter},
-		stakingtypes.BondedPoolName:    {authtypes.Burner, authtypes.Staking},
-		stakingtypes.NotBondedPoolName: {authtypes.Burner, authtypes.Staking},
-	}
 )
 
 var (
-	_ simapp.App              = (*MiniApp)(nil)
+	_ runtime.AppI            = (*MiniApp)(nil)
 	_ servertypes.Application = (*MiniApp)(nil)
 )
 
@@ -97,31 +71,23 @@ var (
 // They are exported for convenience in creating helper functions, as object
 // capabilities aren't needed for testing.
 type MiniApp struct {
-	*baseapp.BaseApp
+	*runtime.App
 	legacyAmino       *codec.LegacyAmino
 	appCodec          codec.Codec
-	interfaceRegistry types.InterfaceRegistry
-
-	// keys to access the substores
-	keys  map[string]*storetypes.KVStoreKey
-	tkeys map[string]*storetypes.TransientStoreKey
+	txConfig          client.TxConfig
+	interfaceRegistry codectypes.InterfaceRegistry
 
 	// keepers
-	AccountKeeper authkeeper.AccountKeeper
-	BankKeeper    bankkeeper.Keeper
-	StakingKeeper stakingkeeper.Keeper
-	MintKeeper    mintkeeper.Keeper
-	DistrKeeper   distrkeeper.Keeper
-	ParamsKeeper  paramskeeper.Keeper
-
-	// the module manager
-	mm *module.Manager
+	AccountKeeper         authkeeper.AccountKeeper
+	BankKeeper            bankkeeper.Keeper
+	StakingKeeper         *stakingkeeper.Keeper
+	MintKeeper            mintkeeper.Keeper
+	DistrKeeper           distrkeeper.Keeper
+	ParamsKeeper          paramskeeper.Keeper
+	ConsensusParamsKeeper consensuskeeper.Keeper
 
 	// simulation manager
 	sm *module.SimulationManager
-
-	// module configurator
-	configurator module.Configurator
 }
 
 func init() {
@@ -139,120 +105,41 @@ func NewMiniApp(
 	db dbm.DB,
 	traceStore io.Writer,
 	loadLatest bool,
-	encodingConfig appparams.EncodingConfig,
 	appOpts servertypes.AppOptions,
 	baseAppOptions ...func(*baseapp.BaseApp),
 ) *MiniApp {
-	appCodec := encodingConfig.Codec
-	legacyAmino := encodingConfig.Amino
-	interfaceRegistry := encodingConfig.InterfaceRegistry
-
-	bApp := baseapp.NewBaseApp(appName, logger, db, encodingConfig.TxConfig.TxDecoder(), baseAppOptions...)
-	bApp.SetCommitMultiStoreTracer(traceStore)
-	bApp.SetVersion(version.Version)
-	bApp.SetInterfaceRegistry(interfaceRegistry)
-
-	keys := sdk.NewKVStoreKeys(
-		authtypes.StoreKey, banktypes.StoreKey, stakingtypes.StoreKey,
-		minttypes.StoreKey, distrtypes.StoreKey, paramstypes.StoreKey,
+	var (
+		app        = &MiniApp{}
+		appBuilder *runtime.AppBuilder
+		appConfig  = depinject.Configs(AppConfig, depinject.Supply(appOpts))
 	)
-	tkeys := sdk.NewTransientStoreKeys(paramstypes.TStoreKey)
 
-	// configure state listening capabilities using AppOptions
-	// we are doing nothing with the returned streamingServices and waitGroup in this case
-	if _, _, err := streaming.LoadStreamingServices(bApp, appOpts, appCodec, keys); err != nil {
-		tmos.Exit(err.Error())
+	if err := depinject.Inject(appConfig,
+		&appBuilder,
+		&app.appCodec,
+		&app.legacyAmino,
+		&app.txConfig,
+		&app.interfaceRegistry,
+		&app.AccountKeeper,
+		&app.BankKeeper,
+		&app.StakingKeeper,
+		&app.MintKeeper,
+		&app.DistrKeeper,
+		&app.ParamsKeeper,
+		&app.ConsensusParamsKeeper,
+	); err != nil {
+		panic(err)
 	}
 
-	app := &MiniApp{
-		BaseApp:           bApp,
-		legacyAmino:       legacyAmino,
-		appCodec:          appCodec,
-		interfaceRegistry: interfaceRegistry,
-		keys:              keys,
-		tkeys:             tkeys,
+	app.App = appBuilder.Build(logger, db, traceStore, baseAppOptions...)
+
+	// load state streaming if enabled
+	if _, _, err := streaming.LoadStreamingServices(app.App.BaseApp, appOpts, app.appCodec, logger, app.kvStoreKeys()); err != nil {
+		logger.Error("failed to load state streaming", "error", err)
+		os.Exit(1)
 	}
-
-	app.ParamsKeeper = initParamsKeeper(appCodec, legacyAmino, keys[paramstypes.StoreKey], tkeys[paramstypes.TStoreKey])
-
-	// set the BaseApp's parameter store
-	bApp.SetParamStore(app.ParamsKeeper.Subspace(baseapp.Paramspace).WithKeyTable(paramstypes.ConsensusParamsKeyTable()))
-
-	// add keepers
-	app.AccountKeeper = authkeeper.NewAccountKeeper(
-		appCodec, keys[authtypes.StoreKey], app.GetSubspace(authtypes.ModuleName), authtypes.ProtoBaseAccount, maccPerms, sdk.Bech32MainPrefix,
-	)
-
-	app.BankKeeper = bankkeeper.NewBaseKeeper(
-		appCodec, keys[banktypes.StoreKey], app.AccountKeeper, app.GetSubspace(banktypes.ModuleName), app.ModuleAccountAddrs(),
-	)
-
-	stakingKeeper := stakingkeeper.NewKeeper(
-		appCodec, keys[stakingtypes.StoreKey], app.AccountKeeper, app.BankKeeper, app.GetSubspace(stakingtypes.ModuleName),
-	)
-
-	app.MintKeeper = mintkeeper.NewKeeper(
-		appCodec, keys[minttypes.StoreKey], app.GetSubspace(minttypes.ModuleName), &stakingKeeper,
-		app.AccountKeeper, app.BankKeeper, authtypes.FeeCollectorName,
-	)
-
-	app.DistrKeeper = distrkeeper.NewKeeper(
-		appCodec, keys[distrtypes.StoreKey], app.GetSubspace(distrtypes.ModuleName), app.AccountKeeper, app.BankKeeper,
-		&stakingKeeper, authtypes.FeeCollectorName,
-	)
-
-	// register the staking hooks
-	// NOTE: stakingKeeper above is passed by reference, so that it will contain these hooks
-	app.StakingKeeper = *stakingKeeper.SetHooks(
-		stakingtypes.NewMultiStakingHooks(app.DistrKeeper.Hooks()),
-	)
 
 	/****  Module Options ****/
-
-	// NOTE: Any module instantiated in the module manager that is later modified
-	// must be passed by reference here.
-	app.mm = module.NewManager(
-		genutil.NewAppModule(
-			app.AccountKeeper, app.StakingKeeper, app.BaseApp.DeliverTx,
-			encodingConfig.TxConfig,
-		),
-		auth.NewAppModule(appCodec, app.AccountKeeper, authsims.RandomGenesisAccounts),
-		bank.NewAppModule(appCodec, app.BankKeeper, app.AccountKeeper),
-		mint.NewAppModule(appCodec, app.MintKeeper, app.AccountKeeper, nil),
-		distr.NewAppModule(appCodec, app.DistrKeeper, app.AccountKeeper, app.BankKeeper, app.StakingKeeper),
-		staking.NewAppModule(appCodec, app.StakingKeeper, app.AccountKeeper, app.BankKeeper),
-		params.NewAppModule(app.ParamsKeeper),
-	)
-
-	// During begin block slashing happens after distr.BeginBlocker so that
-	// there is nothing left over in the validator fee pool, so as to keep the
-	// CanWithdrawInvariant invariant.
-	// NOTE: staking module is required if HistoricalEntries param > 0
-	app.mm.SetOrderBeginBlockers(
-		minttypes.ModuleName, distrtypes.ModuleName, stakingtypes.ModuleName, authtypes.ModuleName,
-		banktypes.ModuleName, genutiltypes.ModuleName, paramstypes.ModuleName,
-	)
-	app.mm.SetOrderEndBlockers(
-		stakingtypes.ModuleName, authtypes.ModuleName, banktypes.ModuleName, distrtypes.ModuleName,
-		minttypes.ModuleName, genutiltypes.ModuleName, paramstypes.ModuleName,
-	)
-
-	// NOTE: The genutils module must occur after staking so that pools are
-	// properly initialized with tokens from genesis accounts.
-	// NOTE: The genutils module must also occur after auth so that it can access the params from auth.
-	// NOTE: Capability module must occur first so that it can initialize any capabilities
-	// so that other modules that want to create or claim capabilities afterwards in InitChain
-	// can do so safely.
-	app.mm.SetOrderInitGenesis(
-		authtypes.ModuleName, banktypes.ModuleName, distrtypes.ModuleName, stakingtypes.ModuleName,
-		minttypes.ModuleName, genutiltypes.ModuleName, paramstypes.ModuleName,
-	)
-
-	// Uncomment if you want to set a custom migration order here.
-	// app.mm.SetOrderMigrations(custom order)
-	app.mm.RegisterRoutes(app.Router(), app.QueryRouter(), encodingConfig.Amino)
-	app.configurator = module.NewConfigurator(app.appCodec, app.MsgServiceRouter(), app.GRPCQueryRouter())
-	app.mm.RegisterServices(app.configurator)
 
 	// add test gRPC service for testing gRPC queries in isolation
 	testdata.RegisterQueryServer(app.GRPCQueryRouter(), testdata.QueryImpl{})
@@ -261,127 +148,64 @@ func NewMiniApp(
 	//
 	// NOTE: this is not required apps that don't use the simulator for fuzz testing
 	// transactions
-	app.sm = module.NewSimulationManager(
-		auth.NewAppModule(appCodec, app.AccountKeeper, authsims.RandomGenesisAccounts),
-		bank.NewAppModule(appCodec, app.BankKeeper, app.AccountKeeper),
-		mint.NewAppModule(appCodec, app.MintKeeper, app.AccountKeeper, nil),
-		staking.NewAppModule(appCodec, app.StakingKeeper, app.AccountKeeper, app.BankKeeper),
-		distr.NewAppModule(appCodec, app.DistrKeeper, app.AccountKeeper, app.BankKeeper, app.StakingKeeper),
-		params.NewAppModule(app.ParamsKeeper),
-	)
+	overrideModules := map[string]module.AppModuleSimulation{
+		authtypes.ModuleName: auth.NewAppModule(app.appCodec, app.AccountKeeper, authsims.RandomGenesisAccounts, app.GetSubspace(authtypes.ModuleName))}
+	app.sm = module.NewSimulationManagerFromAppModules(app.ModuleManager.Modules, overrideModules)
+
 	app.sm.RegisterStoreDecoders()
 
-	// initialize stores
-	app.MountKVStores(keys)
-	app.MountTransientStores(tkeys)
-
-	// initialize BaseApp
-	app.SetInitChainer(app.InitChainer)
-	app.SetBeginBlocker(app.BeginBlocker)
-	app.SetEndBlocker(app.EndBlocker)
-	app.setAnteHandler(encodingConfig.TxConfig)
-
-	if loadLatest {
-		if err := app.LoadLatestVersion(); err != nil {
-			tmos.Exit(err.Error())
-		}
+	if err := app.Load(loadLatest); err != nil {
+		panic(err)
 	}
 
 	return app
 }
 
-func (app *MiniApp) setAnteHandler(txConfig client.TxConfig) {
-	anteHandler, err := ante.NewAnteHandler(
-		ante.HandlerOptions{
-			AccountKeeper:   app.AccountKeeper,
-			BankKeeper:      app.BankKeeper,
-			SignModeHandler: txConfig.SignModeHandler(),
-			SigGasConsumer:  ante.DefaultSigVerificationGasConsumer,
-		},
-	)
-
-	if err != nil {
-		panic(err)
-	}
-
-	app.SetAnteHandler(anteHandler)
-}
-
 // Name returns the name of the App
 func (app *MiniApp) Name() string { return app.BaseApp.Name() }
 
-// BeginBlocker application updates every begin block
-func (app *MiniApp) BeginBlocker(ctx sdk.Context, req abci.RequestBeginBlock) abci.ResponseBeginBlock {
-	return app.mm.BeginBlock(ctx, req)
-}
-
-// EndBlocker application updates every end block
-func (app *MiniApp) EndBlocker(ctx sdk.Context, req abci.RequestEndBlock) abci.ResponseEndBlock {
-	return app.mm.EndBlock(ctx, req)
-}
-
-// InitChainer application update at chain initialization
-func (app *MiniApp) InitChainer(ctx sdk.Context, req abci.RequestInitChain) abci.ResponseInitChain {
-	var genesisState GenesisState
-	if err := json.Unmarshal(req.AppStateBytes, &genesisState); err != nil {
-		panic(err)
-	}
-	return app.mm.InitGenesis(ctx, app.appCodec, genesisState)
-}
-
-// LoadHeight loads a particular height
-func (app *MiniApp) LoadHeight(height int64) error {
-	return app.LoadVersion(height)
-}
-
-// ModuleAccountAddrs returns all the app's module account addresses.
-func (app *MiniApp) ModuleAccountAddrs() map[string]bool {
-	modAccAddrs := make(map[string]bool)
-	for acc := range maccPerms {
-		modAccAddrs[authtypes.NewModuleAddress(acc).String()] = true
-	}
-
-	return modAccAddrs
-}
-
 // LegacyAmino returns MiniApp's amino codec.
-//
-// NOTE: This is solely to be used for testing purposes as it may be desirable
-// for modules to register their own custom testing types.
 func (app *MiniApp) LegacyAmino() *codec.LegacyAmino {
 	return app.legacyAmino
 }
 
 // AppCodec returns MiniApp's app codec.
-//
-// NOTE: This is solely to be used for testing purposes as it may be desirable
-// for modules to register their own custom testing types.
 func (app *MiniApp) AppCodec() codec.Codec {
 	return app.appCodec
 }
 
+// TxConfig returns MiniApp's TxConfig
+func (app *MiniApp) TxConfig() client.TxConfig {
+	return app.txConfig
+}
+
 // InterfaceRegistry returns MiniApp's InterfaceRegistry
-func (app *MiniApp) InterfaceRegistry() types.InterfaceRegistry {
+func (app *MiniApp) InterfaceRegistry() codectypes.InterfaceRegistry {
 	return app.interfaceRegistry
 }
 
 // GetKey returns the KVStoreKey for the provided store key.
-//
-// NOTE: This is solely to be used for testing purposes.
 func (app *MiniApp) GetKey(storeKey string) *storetypes.KVStoreKey {
-	return app.keys[storeKey]
+	sk := app.UnsafeFindStoreKey(storeKey)
+	kvStoreKey, ok := sk.(*storetypes.KVStoreKey)
+	if !ok {
+		return nil
+	}
+	return kvStoreKey
 }
 
-// GetTKey returns the TransientStoreKey for the provided store key.
-//
-// NOTE: This is solely to be used for testing purposes.
-func (app *MiniApp) GetTKey(storeKey string) *storetypes.TransientStoreKey {
-	return app.tkeys[storeKey]
+func (app *MiniApp) kvStoreKeys() map[string]*storetypes.KVStoreKey {
+	keys := make(map[string]*storetypes.KVStoreKey)
+	for _, k := range app.GetStoreKeys() {
+		if kv, ok := k.(*storetypes.KVStoreKey); ok {
+			keys[kv.Name()] = kv
+		}
+	}
+
+	return keys
 }
 
 // GetSubspace returns a param subspace for a given module name.
-//
-// NOTE: This is solely to be used for testing purposes.
 func (app *MiniApp) GetSubspace(moduleName string) paramstypes.Subspace {
 	subspace, _ := app.ParamsKeeper.GetSubspace(moduleName)
 	return subspace
@@ -395,65 +219,9 @@ func (app *MiniApp) SimulationManager() *module.SimulationManager {
 // RegisterAPIRoutes registers all application module routes with the provided
 // API server.
 func (app *MiniApp) RegisterAPIRoutes(apiSvr *api.Server, apiConfig config.APIConfig) {
-	clientCtx := apiSvr.ClientCtx
-	// Register new tx routes from grpc-gateway.
-	authtx.RegisterGRPCGatewayRoutes(clientCtx, apiSvr.GRPCGatewayRouter)
-	// Register new tendermint queries routes from grpc-gateway.
-	tmservice.RegisterGRPCGatewayRoutes(clientCtx, apiSvr.GRPCGatewayRouter)
-
-	// Register grpc-gateway routes for all modules.
-	ModuleBasics.RegisterGRPCGatewayRoutes(clientCtx, apiSvr.GRPCGatewayRouter)
-
-	// register swagger API from root so that other applications can override easily
-	if apiConfig.Swagger {
-		RegisterSwaggerAPI(clientCtx, apiSvr.Router)
-	}
-}
-
-// RegisterTxService implements the Application.RegisterTxService method.
-func (app *MiniApp) RegisterTxService(clientCtx client.Context) {
-	authtx.RegisterTxService(app.BaseApp.GRPCQueryRouter(), clientCtx, app.BaseApp.Simulate, app.interfaceRegistry)
-}
-
-// RegisterTendermintService implements the Application.RegisterTendermintService method.
-func (app *MiniApp) RegisterTendermintService(clientCtx client.Context) {
-	tmservice.RegisterTendermintService(
-		clientCtx,
-		app.BaseApp.GRPCQueryRouter(),
-		app.interfaceRegistry,
-		app.Query,
-	)
-}
-
-// RegisterSwaggerAPI registers swagger route with API Server
-func RegisterSwaggerAPI(_ client.Context, rtr *mux.Router) {
-	statikFS, err := fs.New()
-	if err != nil {
+	app.App.RegisterAPIRoutes(apiSvr, apiConfig)
+	// register swagger API in app.go so that other applications can override easily
+	if err := server.RegisterSwaggerAPI(apiSvr.ClientCtx, apiSvr.Router, apiConfig.Swagger); err != nil {
 		panic(err)
 	}
-
-	staticServer := http.FileServer(statikFS)
-	rtr.PathPrefix("/swagger/").Handler(http.StripPrefix("/swagger/", staticServer))
-}
-
-// GetMaccPerms returns a copy of the module account permissions
-func GetMaccPerms() map[string][]string {
-	dupMaccPerms := make(map[string][]string)
-	for k, v := range maccPerms {
-		dupMaccPerms[k] = v
-	}
-	return dupMaccPerms
-}
-
-// initParamsKeeper init params keeper and its subspaces
-func initParamsKeeper(appCodec codec.BinaryCodec, legacyAmino *codec.LegacyAmino, key, tkey storetypes.StoreKey) paramskeeper.Keeper {
-	paramsKeeper := paramskeeper.NewKeeper(appCodec, legacyAmino, key, tkey)
-
-	paramsKeeper.Subspace(authtypes.ModuleName)
-	paramsKeeper.Subspace(banktypes.ModuleName)
-	paramsKeeper.Subspace(stakingtypes.ModuleName)
-	paramsKeeper.Subspace(minttypes.ModuleName)
-	paramsKeeper.Subspace(distrtypes.ModuleName)
-
-	return paramsKeeper
 }
