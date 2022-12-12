@@ -135,7 +135,7 @@ func NewMiniApp(
 
 	// load state streaming if enabled
 	if _, _, err := streaming.LoadStreamingServices(app.App.BaseApp, appOpts, app.appCodec, logger, app.kvStoreKeys()); err != nil {
-		logger.Error("failed to load state streaming", "error", err)
+		logger.Error("failed to load state streaming", "err", err)
 		os.Exit(1)
 	}
 
