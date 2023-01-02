@@ -26,15 +26,6 @@ import (
 )
 
 var (
-
-	// NOTE: The genutils module must occur after staking so that pools are
-	// properly initialized with tokens from genesis accounts.
-	// NOTE: The genutils module must also occur after auth so that it can access the params from auth.
-	genesisModuleOrder = []string{
-		authtypes.ModuleName, banktypes.ModuleName, distrtypes.ModuleName, stakingtypes.ModuleName,
-		minttypes.ModuleName, genutiltypes.ModuleName, paramstypes.ModuleName, consensustypes.ModuleName,
-	}
-
 	// module account permissions
 	moduleAccPerms = []*authmodulev1.ModuleAccountPermission{
 		{Account: authtypes.FeeCollectorName},
@@ -67,13 +58,23 @@ var (
 					// CanWithdrawInvariant invariant.
 					// NOTE: staking module is required if HistoricalEntries param > 0
 					BeginBlockers: []string{
-						minttypes.ModuleName, distrtypes.ModuleName, stakingtypes.ModuleName, authtypes.ModuleName,
-						banktypes.ModuleName, genutiltypes.ModuleName, paramstypes.ModuleName,
+						minttypes.ModuleName,
+						distrtypes.ModuleName,
+						stakingtypes.ModuleName,
+						authtypes.ModuleName,
+						banktypes.ModuleName,
+						genutiltypes.ModuleName,
+						paramstypes.ModuleName,
 						consensustypes.ModuleName,
 					},
 					EndBlockers: []string{
-						stakingtypes.ModuleName, authtypes.ModuleName, banktypes.ModuleName, distrtypes.ModuleName,
-						minttypes.ModuleName, genutiltypes.ModuleName, paramstypes.ModuleName,
+						stakingtypes.ModuleName,
+						authtypes.ModuleName,
+						banktypes.ModuleName,
+						distrtypes.ModuleName,
+						minttypes.ModuleName,
+						genutiltypes.ModuleName,
+						paramstypes.ModuleName,
 						consensustypes.ModuleName,
 					},
 					OverrideStoreKeys: []*runtimev1alpha1.StoreKeyConfig{
@@ -82,7 +83,19 @@ var (
 							KvStoreKey: "acc",
 						},
 					},
-					InitGenesis: genesisModuleOrder,
+					InitGenesis: []string{
+						// NOTE: The genutils module must occur after staking so that pools are
+						// properly initialized with tokens from genesis accounts.
+						// NOTE: The genutils module must also occur after auth so that it can access the params from auth.
+						authtypes.ModuleName,
+						banktypes.ModuleName,
+						distrtypes.ModuleName,
+						stakingtypes.ModuleName,
+						minttypes.ModuleName,
+						genutiltypes.ModuleName,
+						paramstypes.ModuleName,
+						consensustypes.ModuleName,
+					},
 				}),
 			},
 			{
