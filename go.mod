@@ -8,7 +8,7 @@ replace github.com/gin-gonic/gin => github.com/gin-gonic/gin v1.7.0
 
 require (
 	cosmossdk.io/api v0.2.6
-	cosmossdk.io/core v0.3.4
+	cosmossdk.io/core v0.4.1
 	cosmossdk.io/depinject v1.0.0-alpha.3
 	cosmossdk.io/tools/rosetta v0.2.0
 	github.com/cosmos/cosmos-sdk v0.47.0-rc1
