@@ -5,11 +5,11 @@ import (
 	"io"
 	"os"
 
+	dbm "github.com/cometbft/cometbft-db"
+	cmtcfg "github.com/cometbft/cometbft/config"
+	"github.com/cometbft/cometbft/libs/log"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
-	tmcfg "github.com/tendermint/tendermint/config"
-	"github.com/tendermint/tendermint/libs/log"
-	dbm "github.com/tendermint/tm-db"
 
 	rosettaCmd "cosmossdk.io/tools/rosetta/cmd"
 	"github.com/cosmos/cosmos-sdk/client"
@@ -80,7 +80,7 @@ func NewRootCmd() (*cobra.Command, params.EncodingConfig) {
 			srvCfg := serverconfig.DefaultConfig()
 			srvCfg.MinGasPrices = "0mini"
 
-			return server.InterceptConfigsPreRunHandler(cmd, serverconfig.DefaultConfigTemplate, srvCfg, tmcfg.DefaultConfig())
+			return server.InterceptConfigsPreRunHandler(cmd, serverconfig.DefaultConfigTemplate, srvCfg, cmtcfg.DefaultConfig())
 		},
 	}
 
