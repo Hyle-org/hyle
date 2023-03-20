@@ -8,7 +8,6 @@ import (
 	consensusmodulev1 "cosmossdk.io/api/cosmos/consensus/module/v1"
 	distrmodulev1 "cosmossdk.io/api/cosmos/distribution/module/v1"
 	genutilmodulev1 "cosmossdk.io/api/cosmos/genutil/module/v1"
-	mintmodulev1 "cosmossdk.io/api/cosmos/mint/module/v1"
 	paramsmodulev1 "cosmossdk.io/api/cosmos/params/module/v1"
 	stakingmodulev1 "cosmossdk.io/api/cosmos/staking/module/v1"
 	txconfigv1 "cosmossdk.io/api/cosmos/tx/config/v1"
@@ -20,7 +19,6 @@ import (
 	consensustypes "github.com/cosmos/cosmos-sdk/x/consensus/types"
 	distrtypes "github.com/cosmos/cosmos-sdk/x/distribution/types"
 	genutiltypes "github.com/cosmos/cosmos-sdk/x/genutil/types"
-	minttypes "github.com/cosmos/cosmos-sdk/x/mint/types"
 	paramstypes "github.com/cosmos/cosmos-sdk/x/params/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 )
@@ -30,7 +28,6 @@ var (
 	moduleAccPerms = []*authmodulev1.ModuleAccountPermission{
 		{Account: authtypes.FeeCollectorName},
 		{Account: distrtypes.ModuleName},
-		{Account: minttypes.ModuleName, Permissions: []string{authtypes.Minter}},
 		{Account: stakingtypes.BondedPoolName, Permissions: []string{authtypes.Burner, stakingtypes.ModuleName}},
 		{Account: stakingtypes.NotBondedPoolName, Permissions: []string{authtypes.Burner, stakingtypes.ModuleName}},
 	}
@@ -39,7 +36,6 @@ var (
 	blockAccAddrs = []string{
 		authtypes.FeeCollectorName,
 		distrtypes.ModuleName,
-		minttypes.ModuleName,
 		stakingtypes.BondedPoolName,
 		stakingtypes.NotBondedPoolName,
 		// We allow the following module accounts to receive funds:
@@ -58,7 +54,6 @@ var (
 					// CanWithdrawInvariant invariant.
 					// NOTE: staking module is required if HistoricalEntries param > 0
 					BeginBlockers: []string{
-						minttypes.ModuleName,
 						distrtypes.ModuleName,
 						stakingtypes.ModuleName,
 						authtypes.ModuleName,
@@ -72,7 +67,6 @@ var (
 						authtypes.ModuleName,
 						banktypes.ModuleName,
 						distrtypes.ModuleName,
-						minttypes.ModuleName,
 						genutiltypes.ModuleName,
 						paramstypes.ModuleName,
 						consensustypes.ModuleName,
@@ -91,7 +85,6 @@ var (
 						banktypes.ModuleName,
 						distrtypes.ModuleName,
 						stakingtypes.ModuleName,
-						minttypes.ModuleName,
 						genutiltypes.ModuleName,
 						paramstypes.ModuleName,
 						consensustypes.ModuleName,
@@ -130,10 +123,6 @@ var (
 			{
 				Name:   distrtypes.ModuleName,
 				Config: appconfig.WrapAny(&distrmodulev1.Module{}),
-			},
-			{
-				Name:   minttypes.ModuleName,
-				Config: appconfig.WrapAny(&mintmodulev1.Module{}),
 			},
 			{
 				Name:   consensustypes.ModuleName,

@@ -35,7 +35,6 @@ import (
 	"github.com/cosmos/cosmos-sdk/x/genutil"
 	genutiltypes "github.com/cosmos/cosmos-sdk/x/genutil/types"
 	"github.com/cosmos/cosmos-sdk/x/mint"
-	mintkeeper "github.com/cosmos/cosmos-sdk/x/mint/keeper"
 	"github.com/cosmos/cosmos-sdk/x/params"
 	paramskeeper "github.com/cosmos/cosmos-sdk/x/params/keeper"
 	paramstypes "github.com/cosmos/cosmos-sdk/x/params/types"
@@ -81,7 +80,6 @@ type MiniApp struct {
 	AccountKeeper         authkeeper.AccountKeeper
 	BankKeeper            bankkeeper.Keeper
 	StakingKeeper         *stakingkeeper.Keeper
-	MintKeeper            mintkeeper.Keeper
 	DistrKeeper           distrkeeper.Keeper
 	ParamsKeeper          paramskeeper.Keeper
 	ConsensusParamsKeeper consensuskeeper.Keeper
@@ -123,7 +121,6 @@ func NewMiniApp(
 		&app.AccountKeeper,
 		&app.BankKeeper,
 		&app.StakingKeeper,
-		&app.MintKeeper,
 		&app.DistrKeeper,
 		&app.ParamsKeeper,
 		&app.ConsensusParamsKeeper,
