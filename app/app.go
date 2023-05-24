@@ -155,21 +155,6 @@ func (app *MiniApp) LegacyAmino() *codec.LegacyAmino {
 	return app.legacyAmino
 }
 
-// AppCodec returns MiniApp's app codec.
-func (app *MiniApp) AppCodec() codec.Codec {
-	return app.appCodec
-}
-
-// TxConfig returns MiniApp's TxConfig
-func (app *MiniApp) TxConfig() client.TxConfig {
-	return app.txConfig
-}
-
-// InterfaceRegistry returns MiniApp's InterfaceRegistry
-func (app *MiniApp) InterfaceRegistry() codectypes.InterfaceRegistry {
-	return app.interfaceRegistry
-}
-
 // GetKey returns the KVStoreKey for the provided store key.
 func (app *MiniApp) GetKey(storeKey string) *storetypes.KVStoreKey {
 	sk := app.UnsafeFindStoreKey(storeKey)

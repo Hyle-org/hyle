@@ -28,7 +28,7 @@ install:
 	@echo "--> ensure dependencies have not been modified"
 	@go mod verify
 	@echo "--> installing minid"
-	@go install $(BUILD_FLAGS) -v -mod=readonly ./cmd/minid
+	@go install $(BUILD_FLAGS) -mod=readonly ./cmd/minid
 
 init:
 	./scripts/init.sh
