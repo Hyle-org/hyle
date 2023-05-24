@@ -14,7 +14,7 @@ Every folder contains a `README.md` file with a short description of the folder.
 
 ## How to use
 
-In addition to learn how to build a chain thanks to `Mini`, you can as well directly run `Minid`.
+In addition to learn how to build a chain thanks to `mini`, you can as well directly run `minid`.
 
 ### Installation
 
@@ -24,8 +24,6 @@ cd chain-minimal
 make install # install the minid binary
 make init # initialize the chain
 ```
-
-### Usage
 
 ## Useful links
 

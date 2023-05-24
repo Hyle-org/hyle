@@ -8,7 +8,6 @@ import (
 	consensusmodulev1 "cosmossdk.io/api/cosmos/consensus/module/v1"
 	distrmodulev1 "cosmossdk.io/api/cosmos/distribution/module/v1"
 	genutilmodulev1 "cosmossdk.io/api/cosmos/genutil/module/v1"
-	paramsmodulev1 "cosmossdk.io/api/cosmos/params/module/v1"
 	stakingmodulev1 "cosmossdk.io/api/cosmos/staking/module/v1"
 	txconfigv1 "cosmossdk.io/api/cosmos/tx/config/v1"
 	"cosmossdk.io/core/appconfig"
@@ -19,7 +18,6 @@ import (
 	consensustypes "github.com/cosmos/cosmos-sdk/x/consensus/types"
 	distrtypes "github.com/cosmos/cosmos-sdk/x/distribution/types"
 	genutiltypes "github.com/cosmos/cosmos-sdk/x/genutil/types"
-	paramstypes "github.com/cosmos/cosmos-sdk/x/params/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 )
 
@@ -59,7 +57,6 @@ var (
 						authtypes.ModuleName,
 						banktypes.ModuleName,
 						genutiltypes.ModuleName,
-						paramstypes.ModuleName,
 						consensustypes.ModuleName,
 					},
 					EndBlockers: []string{
@@ -68,7 +65,6 @@ var (
 						banktypes.ModuleName,
 						distrtypes.ModuleName,
 						genutiltypes.ModuleName,
-						paramstypes.ModuleName,
 						consensustypes.ModuleName,
 					},
 					OverrideStoreKeys: []*runtimev1alpha1.StoreKeyConfig{
@@ -86,7 +82,6 @@ var (
 						distrtypes.ModuleName,
 						stakingtypes.ModuleName,
 						genutiltypes.ModuleName,
-						paramstypes.ModuleName,
 						consensustypes.ModuleName,
 					},
 				}),
@@ -107,10 +102,6 @@ var (
 			{
 				Name:   stakingtypes.ModuleName,
 				Config: appconfig.WrapAny(&stakingmodulev1.Module{}),
-			},
-			{
-				Name:   paramstypes.ModuleName,
-				Config: appconfig.WrapAny(&paramsmodulev1.Module{}),
 			},
 			{
 				Name:   "tx",
