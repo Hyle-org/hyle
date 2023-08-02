@@ -5,9 +5,11 @@ import (
 	"os"
 	"path/filepath"
 
+	dbm "github.com/cosmos/cosmos-db"
+
 	"cosmossdk.io/depinject"
-	dbm "github.com/cometbft/cometbft-db"
-	"github.com/cometbft/cometbft/libs/log"
+	"cosmossdk.io/log"
+	storetypes "cosmossdk.io/store/types"
 
 	"github.com/cosmos/cosmos-sdk/baseapp"
 	"github.com/cosmos/cosmos-sdk/client"
@@ -18,42 +20,16 @@ import (
 	"github.com/cosmos/cosmos-sdk/server/api"
 	"github.com/cosmos/cosmos-sdk/server/config"
 	servertypes "github.com/cosmos/cosmos-sdk/server/types"
-	"github.com/cosmos/cosmos-sdk/store/streaming"
-	storetypes "github.com/cosmos/cosmos-sdk/store/types"
-	"github.com/cosmos/cosmos-sdk/testutil/testdata"
 	"github.com/cosmos/cosmos-sdk/types/module"
-	"github.com/cosmos/cosmos-sdk/x/auth"
 	authkeeper "github.com/cosmos/cosmos-sdk/x/auth/keeper"
-	"github.com/cosmos/cosmos-sdk/x/bank"
 	bankkeeper "github.com/cosmos/cosmos-sdk/x/bank/keeper"
-	"github.com/cosmos/cosmos-sdk/x/consensus"
 	consensuskeeper "github.com/cosmos/cosmos-sdk/x/consensus/keeper"
-	distr "github.com/cosmos/cosmos-sdk/x/distribution"
 	distrkeeper "github.com/cosmos/cosmos-sdk/x/distribution/keeper"
-	"github.com/cosmos/cosmos-sdk/x/genutil"
-	genutiltypes "github.com/cosmos/cosmos-sdk/x/genutil/types"
-	"github.com/cosmos/cosmos-sdk/x/mint"
-	"github.com/cosmos/cosmos-sdk/x/staking"
 	stakingkeeper "github.com/cosmos/cosmos-sdk/x/staking/keeper"
 )
 
-var (
-	// DefaultNodeHome default home directories for the application daemon
-	DefaultNodeHome string
-
-	// ModuleBasics defines the module BasicManager is in charge of setting up basic,
-	// non-dependant module elements, such as codec registration
-	// and genesis verification.
-	ModuleBasics = module.NewBasicManager(
-		auth.AppModuleBasic{},
-		genutil.NewAppModuleBasic(genutiltypes.DefaultMessageValidator),
-		bank.AppModuleBasic{},
-		staking.AppModuleBasic{},
-		mint.AppModuleBasic{},
-		distr.AppModuleBasic{},
-		consensus.AppModuleBasic{},
-	)
-)
+// DefaultNodeHome default home directories for the application daemon
+var DefaultNodeHome string
 
 var (
 	_ runtime.AppI            = (*MiniApp)(nil)
@@ -98,14 +74,14 @@ func NewMiniApp(
 	loadLatest bool,
 	appOpts servertypes.AppOptions,
 	baseAppOptions ...func(*baseapp.BaseApp),
-) *MiniApp {
+) (*MiniApp, error) {
 	var (
 		app        = &MiniApp{}
 		appBuilder *runtime.AppBuilder
-		appConfig  = depinject.Configs(AppConfig, depinject.Supply(appOpts))
 	)
 
-	if err := depinject.Inject(appConfig,
+	if err := depinject.Inject(
+		depinject.Configs(AppConfig, depinject.Supply(logger, appOpts)),
 		&appBuilder,
 		&app.appCodec,
 		&app.legacyAmino,
@@ -117,38 +93,29 @@ func NewMiniApp(
 		&app.DistrKeeper,
 		&app.ConsensusParamsKeeper,
 	); err != nil {
-		panic(err)
+		return nil, err
 	}
 
-	app.App = appBuilder.Build(logger, db, traceStore, baseAppOptions...)
+	app.App = appBuilder.Build(db, traceStore, baseAppOptions...)
 
-	// load state streaming if enabled
-	if _, _, err := streaming.LoadStreamingServices(app.App.BaseApp, appOpts, app.appCodec, logger, app.kvStoreKeys()); err != nil {
-		logger.Error("failed to load state streaming", "err", err)
-		os.Exit(1)
+	// register streaming services
+	if err := app.RegisterStreamingServices(appOpts, app.kvStoreKeys()); err != nil {
+		return nil, err
 	}
 
 	/****  Module Options ****/
 
-	// add test gRPC service for testing gRPC queries in isolation
-	testdata.RegisterQueryServer(app.GRPCQueryRouter(), testdata.QueryImpl{})
-
 	// create the simulation manager and define the order of the modules for deterministic simulations
-	//
-	// NOTE: this is not required apps that don't use the simulator for fuzz testing
-	// transactions
+	// NOTE: this is not required apps that don't use the simulator for fuzz testing transactions
 	app.sm = module.NewSimulationManagerFromAppModules(app.ModuleManager.Modules, make(map[string]module.AppModuleSimulation, 0))
 	app.sm.RegisterStoreDecoders()
 
 	if err := app.Load(loadLatest); err != nil {
-		panic(err)
+		return nil, err
 	}
 
-	return app
+	return app, nil
 }
-
-// Name returns the name of the App
-func (app *MiniApp) Name() string { return app.BaseApp.Name() }
 
 // LegacyAmino returns MiniApp's amino codec.
 func (app *MiniApp) LegacyAmino() *codec.LegacyAmino {
