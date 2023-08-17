@@ -14,7 +14,6 @@ modules:
       override_store_keys:
         - module_name: auth
           kv_store_key: acc
-
   - name: auth
     config:
       "@type": cosmos.auth.module.v1.Module
@@ -26,29 +25,23 @@ modules:
           permissions: [burner, staking]
         - account: not_bonded_tokens_pool
           permissions: [burner, staking]
-
   - name: bank
     config:
       "@type": cosmos.bank.module.v1.Module
       blocked_module_accounts_override:
         [auth, distribution, bonded_tokens_pool, not_bonded_tokens_pool]
-
   - name: staking
     config:
       "@type": cosmos.staking.module.v1.Module
-
   - name: distribution
     config:
       "@type": cosmos.distribution.module.v1.Module
-
   - name: consensus
     config:
       "@type": cosmos.consensus.module.v1.Module
-
   - name: genutil
     config:
       "@type": cosmos.genutil.module.v1.Module
-
   - name: tx
     config:
       "@type": cosmos.tx.config.v1.Config
