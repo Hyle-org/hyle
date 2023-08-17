@@ -4,6 +4,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"time"
 
 	cmtcfg "github.com/cometbft/cometbft/config"
 	dbm "github.com/cosmos/cosmos-db"
@@ -53,7 +54,7 @@ func NewRootCmd() *cobra.Command {
 		moduleBasicManager module.BasicManager
 	)
 
-	if err := depinject.Inject(depinject.Configs(app.AppConfig, depinject.Supply(log.NewNopLogger())),
+	if err := depinject.Inject(depinject.Configs(app.AppConfig(), depinject.Supply(log.NewNopLogger())),
 		&interfaceRegistry,
 		&appCodec,
 		&txConfig,
@@ -119,7 +120,11 @@ func NewRootCmd() *cobra.Command {
 			srvCfg := serverconfig.DefaultConfig()
 			srvCfg.MinGasPrices = "0mini"
 
-			return server.InterceptConfigsPreRunHandler(cmd, serverconfig.DefaultConfigTemplate, srvCfg, cmtcfg.DefaultConfig())
+			// overwrite the block timeout
+			cmtCfg := cmtcfg.DefaultConfig()
+			cmtCfg.Consensus.TimeoutCommit = 3 * time.Second
+
+			return server.InterceptConfigsPreRunHandler(cmd, serverconfig.DefaultConfigTemplate, srvCfg, cmtCfg)
 		},
 	}
 

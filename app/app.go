@@ -1,12 +1,14 @@
 package app
 
 import (
+	_ "embed"
 	"io"
 	"os"
 	"path/filepath"
 
 	dbm "github.com/cosmos/cosmos-db"
 
+	"cosmossdk.io/core/appconfig"
 	"cosmossdk.io/depinject"
 	"cosmossdk.io/log"
 	storetypes "cosmossdk.io/store/types"
@@ -25,11 +27,25 @@ import (
 	bankkeeper "github.com/cosmos/cosmos-sdk/x/bank/keeper"
 	consensuskeeper "github.com/cosmos/cosmos-sdk/x/consensus/keeper"
 	distrkeeper "github.com/cosmos/cosmos-sdk/x/distribution/keeper"
+	"github.com/cosmos/cosmos-sdk/x/genutil"
+	genutiltypes "github.com/cosmos/cosmos-sdk/x/genutil/types"
 	stakingkeeper "github.com/cosmos/cosmos-sdk/x/staking/keeper"
+
+	_ "cosmossdk.io/api/cosmos/tx/config/v1"          // import for side-effects
+	_ "github.com/cosmos/cosmos-sdk/x/auth"           // import for side-effects
+	_ "github.com/cosmos/cosmos-sdk/x/auth/tx/config" // import for side-effects
+	_ "github.com/cosmos/cosmos-sdk/x/bank"           // import for side-effects
+	_ "github.com/cosmos/cosmos-sdk/x/consensus"      // import for side-effects
+	_ "github.com/cosmos/cosmos-sdk/x/distribution"   // import for side-effects
+	_ "github.com/cosmos/cosmos-sdk/x/mint"           // import for side-effects
+	_ "github.com/cosmos/cosmos-sdk/x/staking"        // import for side-effects
 )
 
 // DefaultNodeHome default home directories for the application daemon
 var DefaultNodeHome string
+
+//go:embed app.yaml
+var AppConfigYAML []byte
 
 var (
 	_ runtime.AppI            = (*MiniApp)(nil)
@@ -66,6 +82,19 @@ func init() {
 	DefaultNodeHome = filepath.Join(userHomeDir, ".minid")
 }
 
+// AppConfig returns the default app config.
+func AppConfig() depinject.Config {
+	return depinject.Configs(
+		appconfig.LoadYAML(AppConfigYAML),
+		depinject.Supply(
+			// supply custom module basics
+			map[string]module.AppModuleBasic{
+				genutiltypes.ModuleName: genutil.NewAppModuleBasic(genutiltypes.DefaultMessageValidator),
+			},
+		),
+	)
+}
+
 // NewMiniApp returns a reference to an initialized MiniApp.
 func NewMiniApp(
 	logger log.Logger,
@@ -81,7 +110,13 @@ func NewMiniApp(
 	)
 
 	if err := depinject.Inject(
-		depinject.Configs(AppConfig, depinject.Supply(logger, appOpts)),
+		depinject.Configs(
+			AppConfig(),
+			depinject.Supply(
+				logger,
+				appOpts,
+			),
+		),
 		&appBuilder,
 		&app.appCodec,
 		&app.legacyAmino,
