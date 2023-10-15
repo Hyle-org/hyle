@@ -1,4 +1,4 @@
-module github.com/julienrbrt/chain-minimal
+module github.com/cosmosregistry/chain-minimal
 
 go 1.21
 
