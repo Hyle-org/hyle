@@ -6,9 +6,9 @@ import (
 
 	svrcmd "github.com/cosmos/cosmos-sdk/server/cmd"
 
-	"github.com/julienrbrt/chain-minimal/app"
-	"github.com/julienrbrt/chain-minimal/app/params"
-	"github.com/julienrbrt/chain-minimal/cmd/minid/cmd"
+	"github.com/cosmosregistry/chain-minimal/app"
+	"github.com/cosmosregistry/chain-minimal/app/params"
+	"github.com/cosmosregistry/chain-minimal/cmd/minid/cmd"
 )
 
 func main() {

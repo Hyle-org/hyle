@@ -42,7 +42,7 @@ import (
 	"github.com/cosmos/cosmos-sdk/x/crisis"
 	genutilcli "github.com/cosmos/cosmos-sdk/x/genutil/client/cli"
 
-	"github.com/julienrbrt/chain-minimal/app"
+	"github.com/cosmosregistry/chain-minimal/app"
 )
 
 // NewRootCmd creates a new root command for minid. It is called once in the
