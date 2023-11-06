@@ -25,7 +25,7 @@ require (
 	github.com/cometbft/cometbft v0.38.0
 	github.com/cosmos/cosmos-db v1.0.0
 	github.com/cosmos/cosmos-sdk v0.50.0-rc.1.0.20231005140444-10bd5a2cacdc
-	github.com/spf13/cobra v1.7.0
+	github.com/spf13/cobra v1.8.0
 	github.com/spf13/viper v1.17.0
 )
 
