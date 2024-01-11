@@ -10,7 +10,7 @@ modules:
       end_blockers: [staking]
       # NOTE: The genutils module must occur after staking so that pools are properly initialized with tokens from genesis accounts.
       # NOTE: The genutils module must also occur after auth so that it can access the params from auth.
-      init_genesis: [auth, bank, distribution, staking, genutil]
+      init_genesis: [auth, bank, distribution, staking, zktx, genutil]
       override_store_keys:
         - module_name: auth
           kv_store_key: acc
@@ -45,3 +45,7 @@ modules:
   - name: tx
     config:
       "@type": cosmos.tx.config.v1.Config
+      skip_ante_handler: true
+  - name: zktx
+    config:
+      "@type": hyle.hyle.zktx.module.v1.Module

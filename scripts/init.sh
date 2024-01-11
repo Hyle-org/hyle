@@ -1,10 +1,12 @@
 #!/bin/bash
 
-rm -r ~/.minid || true
-MINID_BIN=$(which minid)
+# rm -r ~/.minid || true
+#MINID_BIN=$(which minid)
+MINID_BIN=./minid
 # configure minid
 $MINID_BIN config set client chain-id demo
 $MINID_BIN config set client keyring-backend test
+$MINID_BIN config set app minimum-gas-prices 0.1mini
 $MINID_BIN keys add alice
 $MINID_BIN keys add bob
 $MINID_BIN init test --chain-id demo --default-denom mini

@@ -22,7 +22,13 @@ BUILD_FLAGS := -ldflags '$(ldflags)'
 # Install #
 ###########
 
-all: install
+all: build
+
+build:
+	@echo "--> ensure dependencies have not been modified"
+	@go mod verify
+	@echo "--> building minid"
+	@go build $(BUILD_FLAGS) -mod=readonly ./cmd/minid
 
 install:
 	@echo "--> ensure dependencies have not been modified"
