@@ -24,3 +24,12 @@ minid start # start the chain
 ## Useful links
 
 * [Cosmos-SDK Documentation](https://docs.cosmos.network/)
+
+## ZKTX module
+
+Sending initial transactions
+./minid tx zktx execute mini1s35tpv67eafejyvpxxdtn4e7dgm8whmm07a2x6 b AA== AQ==  
+./minid tx zktx execute mini1s35tpv67eafejyvpxxdtn4e7dgm8whmm07a2x6 b AQ== Aq==  
+
+Querying state
+./minid query zktx contract mini1s35tpv67eafejyvpxxdtn4e7dgm8whmm07a2x6

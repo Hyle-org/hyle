@@ -19,15 +19,18 @@ import (
 const _ = grpc.SupportPackageIsVersion7
 
 const (
-	Query_Counter_FullMethodName  = "/hyle.hyle.zktx.v1.Query/Counter"
-	Query_Counters_FullMethodName = "/hyle.hyle.zktx.v1.Query/Counters"
-	Query_Params_FullMethodName   = "/hyle.hyle.zktx.v1.Query/Params"
+	Query_ContractState_FullMethodName = "/hyle.hyle.zktx.v1.Query/ContractState"
+	Query_Counter_FullMethodName       = "/hyle.hyle.zktx.v1.Query/Counter"
+	Query_Counters_FullMethodName      = "/hyle.hyle.zktx.v1.Query/Counters"
+	Query_Params_FullMethodName        = "/hyle.hyle.zktx.v1.Query/Params"
 )
 
 // QueryClient is the client API for Query service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type QueryClient interface {
+	// ContractState returns the current state of the contract.
+	ContractState(ctx context.Context, in *ContractStateRequest, opts ...grpc.CallOption) (*ContractStateResponse, error)
 	// Counter returns the current counter value.
 	Counter(ctx context.Context, in *QueryCounterRequest, opts ...grpc.CallOption) (*QueryCounterResponse, error)
 	// Counters returns all the counter values.
@@ -42,6 +45,15 @@ type queryClient struct {
 
 func NewQueryClient(cc grpc.ClientConnInterface) QueryClient {
 	return &queryClient{cc}
+}
+
+func (c *queryClient) ContractState(ctx context.Context, in *ContractStateRequest, opts ...grpc.CallOption) (*ContractStateResponse, error) {
+	out := new(ContractStateResponse)
+	err := c.cc.Invoke(ctx, Query_ContractState_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (c *queryClient) Counter(ctx context.Context, in *QueryCounterRequest, opts ...grpc.CallOption) (*QueryCounterResponse, error) {
@@ -75,6 +87,8 @@ func (c *queryClient) Params(ctx context.Context, in *QueryParamsRequest, opts .
 // All implementations must embed UnimplementedQueryServer
 // for forward compatibility
 type QueryServer interface {
+	// ContractState returns the current state of the contract.
+	ContractState(context.Context, *ContractStateRequest) (*ContractStateResponse, error)
 	// Counter returns the current counter value.
 	Counter(context.Context, *QueryCounterRequest) (*QueryCounterResponse, error)
 	// Counters returns all the counter values.
@@ -88,6 +102,9 @@ type QueryServer interface {
 type UnimplementedQueryServer struct {
 }
 
+func (UnimplementedQueryServer) ContractState(context.Context, *ContractStateRequest) (*ContractStateResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ContractState not implemented")
+}
 func (UnimplementedQueryServer) Counter(context.Context, *QueryCounterRequest) (*QueryCounterResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Counter not implemented")
 }
@@ -108,6 +125,24 @@ type UnsafeQueryServer interface {
 
 func RegisterQueryServer(s grpc.ServiceRegistrar, srv QueryServer) {
 	s.RegisterService(&Query_ServiceDesc, srv)
+}
+
+func _Query_ContractState_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ContractStateRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(QueryServer).ContractState(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Query_ContractState_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(QueryServer).ContractState(ctx, req.(*ContractStateRequest))
+	}
+	return interceptor(ctx, in, info, handler)
 }
 
 func _Query_Counter_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -171,6 +206,10 @@ var Query_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "hyle.hyle.zktx.v1.Query",
 	HandlerType: (*QueryServer)(nil),
 	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "ContractState",
+			Handler:    _Query_ContractState_Handler,
+		},
 		{
 			MethodName: "Counter",
 			Handler:    _Query_Counter_Handler,

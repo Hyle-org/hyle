@@ -24,6 +24,20 @@ type queryServer struct {
 	k Keeper
 }
 
+// Handler for the contract state query method
+func (qs queryServer) ContractState(ctx context.Context, req *zktx.ContractStateRequest) (*zktx.ContractStateResponse, error) {
+	state, err := qs.k.ContractStates.Get(ctx, req.ContractAddress)
+	if err != nil {
+		if errors.Is(err, collections.ErrNotFound) {
+			return &zktx.ContractStateResponse{State: zktx.ContractState{}}, nil
+		}
+
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	return &zktx.ContractStateResponse{State: state}, nil
+}
+
 // Counter defines the handler for the Query/Counter RPC method.
 func (qs queryServer) Counter(ctx context.Context, req *zktx.QueryCounterRequest) (*zktx.QueryCounterResponse, error) {
 	if _, err := qs.k.addressCodec.StringToBytes(req.Address); err != nil {

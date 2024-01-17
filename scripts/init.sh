@@ -1,6 +1,7 @@
 #!/bin/bash
 
 # rm -r ~/.minid || true
+rm -r ./minid-data || true
 #MINID_BIN=$(which minid)
 MINID_BIN=./minid
 # configure minid

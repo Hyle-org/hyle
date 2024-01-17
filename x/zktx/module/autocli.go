@@ -12,6 +12,14 @@ func (am AppModule) AutoCLIOptions() *autocliv1.ModuleOptions {
 			Service: hylev1.Query_ServiceDesc.ServiceName,
 			RpcCommandOptions: []*autocliv1.RpcCommandOptions{
 				{
+					RpcMethod: "ContractState",
+					Use:       "contract [contract_address]",
+					Short:     "Get the current state of a contract",
+					PositionalArgs: []*autocliv1.PositionalArgDescriptor{
+						{ProtoField: "contract_address"},
+					},
+				},
+				{
 					RpcMethod: "Counter",
 					Use:       "counter [address]",
 					Short:     "Get the current value of the counter for an address",
@@ -29,6 +37,17 @@ func (am AppModule) AutoCLIOptions() *autocliv1.ModuleOptions {
 		Tx: &autocliv1.ServiceCommandDescriptor{
 			Service: hylev1.Msg_ServiceDesc.ServiceName,
 			RpcCommandOptions: []*autocliv1.RpcCommandOptions{
+				{
+					RpcMethod: "ExecuteStateChange",
+					Use:       "execute [contract_address] [proof] [initial_state] [final_state]",
+					Short:     "TODO",
+					PositionalArgs: []*autocliv1.PositionalArgDescriptor{
+						{ProtoField: "contract_address"},
+						{ProtoField: "proof"},
+						{ProtoField: "initial_state"},
+						{ProtoField: "final_state"},
+					},
+				},
 				{
 					RpcMethod: "IncrementCounter",
 					Use:       "counter [sender]",

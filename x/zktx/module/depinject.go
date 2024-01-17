@@ -24,7 +24,9 @@ func (am AppModule) IsAppModule() {}
 func init() {
 	appmodule.Register(
 		&modulev1.Module{},
-		appmodule.Provide(ProvideModule),
+		appmodule.Provide(
+			ProvideModule,
+		),
 	)
 }
 
@@ -38,26 +40,11 @@ type ModuleInputs struct {
 	Config *modulev1.Module
 }
 
-type (
-	// ValidatorAddressCodec is an alias for address.Codec for validator addresses.
-	ValidatorAddressCodec address.Codec
-
-	// ConsensusAddressCodec is an alias for address.Codec for validator consensus addresses.
-	ConsensusAddressCodec address.Codec
-)
-
 type ModuleOutputs struct {
 	depinject.Out
 
 	Module appmodule.AppModule
 	Keeper keeper.Keeper
-
-	FakeAccountKeeper FakeAccountKeeper
-	FakeStakingKeeper FakeStakingKeeper
-
-	//AddressCodecFactory func() address.Codec
-	//ValidatorAddressCodecFactory func() ValidatorAddressCodec
-	//ConsensusAddressCodecFactory func() ConsensusAddressCodec
 }
 
 func ProvideModule(in ModuleInputs) ModuleOutputs {
@@ -72,10 +59,5 @@ func ProvideModule(in ModuleInputs) ModuleOutputs {
 
 	return ModuleOutputs{
 		Module: m, Keeper: k,
-		FakeAccountKeeper: FakeAccountKeeper{},
-		FakeStakingKeeper: FakeStakingKeeper{},
-		//AddressCodecFactory: func() address.Codec { return addresscodec.NewBech32Codec("toto") },
-		//ValidatorAddressCodecFactory: func() ValidatorAddressCodec { return addresscodec.NewBech32Codec("toto") },
-		//ConsensusAddressCodecFactory: func() ConsensusAddressCodec { return addresscodec.NewBech32Codec("toto") },
 	}
 }

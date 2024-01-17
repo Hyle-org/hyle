@@ -19,14 +19,17 @@ import (
 const _ = grpc.SupportPackageIsVersion7
 
 const (
-	Msg_IncrementCounter_FullMethodName = "/hyle.hyle.zktx.v1.Msg/IncrementCounter"
-	Msg_UpdateParams_FullMethodName     = "/hyle.hyle.zktx.v1.Msg/UpdateParams"
+	Msg_ExecuteStateChange_FullMethodName = "/hyle.hyle.zktx.v1.Msg/ExecuteStateChange"
+	Msg_IncrementCounter_FullMethodName   = "/hyle.hyle.zktx.v1.Msg/IncrementCounter"
+	Msg_UpdateParams_FullMethodName       = "/hyle.hyle.zktx.v1.Msg/UpdateParams"
 )
 
 // MsgClient is the client API for Msg service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type MsgClient interface {
+	// execute a zk-proven state change
+	ExecuteStateChange(ctx context.Context, in *MsgExecuteStateChange, opts ...grpc.CallOption) (*MsgExecuteStateChangeResponse, error)
 	// IncrementCounter increments the counter.
 	IncrementCounter(ctx context.Context, in *MsgIncrementCounter, opts ...grpc.CallOption) (*MsgIncrementCounterResponse, error)
 	// UpdateParams updates the module parameters.
@@ -39,6 +42,15 @@ type msgClient struct {
 
 func NewMsgClient(cc grpc.ClientConnInterface) MsgClient {
 	return &msgClient{cc}
+}
+
+func (c *msgClient) ExecuteStateChange(ctx context.Context, in *MsgExecuteStateChange, opts ...grpc.CallOption) (*MsgExecuteStateChangeResponse, error) {
+	out := new(MsgExecuteStateChangeResponse)
+	err := c.cc.Invoke(ctx, Msg_ExecuteStateChange_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (c *msgClient) IncrementCounter(ctx context.Context, in *MsgIncrementCounter, opts ...grpc.CallOption) (*MsgIncrementCounterResponse, error) {
@@ -63,6 +75,8 @@ func (c *msgClient) UpdateParams(ctx context.Context, in *MsgUpdateParams, opts 
 // All implementations must embed UnimplementedMsgServer
 // for forward compatibility
 type MsgServer interface {
+	// execute a zk-proven state change
+	ExecuteStateChange(context.Context, *MsgExecuteStateChange) (*MsgExecuteStateChangeResponse, error)
 	// IncrementCounter increments the counter.
 	IncrementCounter(context.Context, *MsgIncrementCounter) (*MsgIncrementCounterResponse, error)
 	// UpdateParams updates the module parameters.
@@ -74,6 +88,9 @@ type MsgServer interface {
 type UnimplementedMsgServer struct {
 }
 
+func (UnimplementedMsgServer) ExecuteStateChange(context.Context, *MsgExecuteStateChange) (*MsgExecuteStateChangeResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ExecuteStateChange not implemented")
+}
 func (UnimplementedMsgServer) IncrementCounter(context.Context, *MsgIncrementCounter) (*MsgIncrementCounterResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method IncrementCounter not implemented")
 }
@@ -91,6 +108,24 @@ type UnsafeMsgServer interface {
 
 func RegisterMsgServer(s grpc.ServiceRegistrar, srv MsgServer) {
 	s.RegisterService(&Msg_ServiceDesc, srv)
+}
+
+func _Msg_ExecuteStateChange_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MsgExecuteStateChange)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MsgServer).ExecuteStateChange(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Msg_ExecuteStateChange_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MsgServer).ExecuteStateChange(ctx, req.(*MsgExecuteStateChange))
+	}
+	return interceptor(ctx, in, info, handler)
 }
 
 func _Msg_IncrementCounter_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -136,6 +171,10 @@ var Msg_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "hyle.hyle.zktx.v1.Msg",
 	HandlerType: (*MsgServer)(nil),
 	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "ExecuteStateChange",
+			Handler:    _Msg_ExecuteStateChange_Handler,
+		},
 		{
 			MethodName: "IncrementCounter",
 			Handler:    _Msg_IncrementCounter_Handler,
