@@ -1,24 +1,30 @@
-# Mini - A minimal Cosmos SDK chain
+# Hylé - verification layer for all zero knowledge proofs
 
-This repository contains an example of a tiny, but working Cosmos SDK chain.
-It uses the least modules possible and is intended to be used as a starting point for building your own chain, without all the boilerplate that other tools generate. It is a simpler version of Cosmos SDK's [simapp](https://github.com/cosmos/cosmos-sdk/tree/main/simapp).
+Repository for the [Hylé](https://hyle.eu) proof of concept chain.
+Forked from [mini](https://github.com/cosmosregistry/chain-minimal) - the minimal Cosmos SDK chain.
 
-`Minid` uses the **latest** version of the [Cosmos-SDK](https://github.com/cosmos/cosmos-sdk).
+Current status: extreme POC
 
-## How to use
+Proving systems supported:
+ - [x] Risc Zero
+ - [ ] Cairo
+   - [ ] Starknet
+ - [ ] SP1
+ - [ ] Groth16
+ - [ ] PlonK
 
-In addition to learn how to build a chain thanks to `minid`, you can as well directly run `minid`.
+(We plan to support all major proving schemes)
 
 ### Installation
 
-Install and run `minid`:
+Install and run:
 
 ```sh
-git clone git@github.com:hyle/hyle.git
-cd chain-minimal
-make install # install the minid binary
+git clone git@github.com:hyle-org/hyle.git
+cd hyle
+make build # Build, currently builds `minid`
 make init # initialize the chain
-minid start # start the chain
+./minid start # start the chain
 ```
 
 ## Useful links
