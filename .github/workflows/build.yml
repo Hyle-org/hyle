@@ -27,7 +27,7 @@ jobs:
           cd cmd/minid
           go build .
 
-      - uses: actions/upload-artifact@v3
+      - uses: actions/upload-artifact@v4
         with:
           name: minid ${{ matrix.targetos }} ${{ matrix.arch }}
           path: cmd/minid/minid
