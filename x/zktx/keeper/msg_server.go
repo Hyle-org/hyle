@@ -85,6 +85,10 @@ func (ms msgServer) ExecuteStateChange(ctx context.Context, msg *zktx.MsgExecute
 	return &zktx.MsgExecuteStateChangeResponse{}, nil
 }
 
+func (ms msgServer) RegisterContract(ctx context.Context, msg *zktx.MsgRegisterContract) (*zktx.MsgRegisterContractResponse, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+
 ///// Default stuff
 
 // IncrementCounter defines the handler for the MsgIncrementCounter message.

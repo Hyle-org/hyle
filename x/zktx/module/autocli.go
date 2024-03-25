@@ -49,6 +49,17 @@ func (am AppModule) AutoCLIOptions() *autocliv1.ModuleOptions {
 					},
 				},
 				{
+					RpcMethod: "RegisterContract",
+					Use:       "register [owner] [verifier] [program_id] [state_digest]",
+					Short:     "TODO",
+					PositionalArgs: []*autocliv1.PositionalArgDescriptor{
+						{ProtoField: "owner"},
+						{ProtoField: "verifier"},
+						{ProtoField: "program_id"},
+						{ProtoField: "state_digest"},
+					},
+				},
+				{
 					RpcMethod: "IncrementCounter",
 					Use:       "counter [sender]",
 					Short:     "Increments the counter by 1 for the sender",
