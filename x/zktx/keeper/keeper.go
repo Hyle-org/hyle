@@ -22,7 +22,6 @@ type Keeper struct {
 	// state management
 	Schema         collections.Schema
 	Params         collections.Item[zktx.Params]
-	Counter        collections.Map[string, uint64]
 	ContractStates collections.Map[string, zktx.ContractState]
 }
 
@@ -38,7 +37,6 @@ func NewKeeper(cdc codec.BinaryCodec, addressCodec address.Codec, storeService s
 		addressCodec:   addressCodec,
 		authority:      authority,
 		Params:         collections.NewItem(sb, zktx.ParamsKey, "params", codec.CollValue[zktx.Params](cdc)),
-		Counter:        collections.NewMap(sb, zktx.CounterKey, "counter", collections.StringKey, collections.Uint64Value),
 		ContractStates: collections.NewMap(sb, zktx.ContractStatesKey, "contract_states", collections.StringKey, codec.CollValue[zktx.ContractState](cdc)),
 	}
 

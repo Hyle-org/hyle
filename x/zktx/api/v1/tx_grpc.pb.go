@@ -21,7 +21,6 @@ const _ = grpc.SupportPackageIsVersion7
 const (
 	Msg_ExecuteStateChange_FullMethodName = "/hyle.hyle.zktx.v1.Msg/ExecuteStateChange"
 	Msg_RegisterContract_FullMethodName   = "/hyle.hyle.zktx.v1.Msg/RegisterContract"
-	Msg_IncrementCounter_FullMethodName   = "/hyle.hyle.zktx.v1.Msg/IncrementCounter"
 	Msg_UpdateParams_FullMethodName       = "/hyle.hyle.zktx.v1.Msg/UpdateParams"
 )
 
@@ -33,8 +32,6 @@ type MsgClient interface {
 	ExecuteStateChange(ctx context.Context, in *MsgExecuteStateChange, opts ...grpc.CallOption) (*MsgExecuteStateChangeResponse, error)
 	// RegisterContract registers a contract
 	RegisterContract(ctx context.Context, in *MsgRegisterContract, opts ...grpc.CallOption) (*MsgRegisterContractResponse, error)
-	// IncrementCounter increments the counter.
-	IncrementCounter(ctx context.Context, in *MsgIncrementCounter, opts ...grpc.CallOption) (*MsgIncrementCounterResponse, error)
 	// UpdateParams updates the module parameters.
 	UpdateParams(ctx context.Context, in *MsgUpdateParams, opts ...grpc.CallOption) (*MsgUpdateParamsResponse, error)
 }
@@ -65,15 +62,6 @@ func (c *msgClient) RegisterContract(ctx context.Context, in *MsgRegisterContrac
 	return out, nil
 }
 
-func (c *msgClient) IncrementCounter(ctx context.Context, in *MsgIncrementCounter, opts ...grpc.CallOption) (*MsgIncrementCounterResponse, error) {
-	out := new(MsgIncrementCounterResponse)
-	err := c.cc.Invoke(ctx, Msg_IncrementCounter_FullMethodName, in, out, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
 func (c *msgClient) UpdateParams(ctx context.Context, in *MsgUpdateParams, opts ...grpc.CallOption) (*MsgUpdateParamsResponse, error) {
 	out := new(MsgUpdateParamsResponse)
 	err := c.cc.Invoke(ctx, Msg_UpdateParams_FullMethodName, in, out, opts...)
@@ -91,8 +79,6 @@ type MsgServer interface {
 	ExecuteStateChange(context.Context, *MsgExecuteStateChange) (*MsgExecuteStateChangeResponse, error)
 	// RegisterContract registers a contract
 	RegisterContract(context.Context, *MsgRegisterContract) (*MsgRegisterContractResponse, error)
-	// IncrementCounter increments the counter.
-	IncrementCounter(context.Context, *MsgIncrementCounter) (*MsgIncrementCounterResponse, error)
 	// UpdateParams updates the module parameters.
 	UpdateParams(context.Context, *MsgUpdateParams) (*MsgUpdateParamsResponse, error)
 	mustEmbedUnimplementedMsgServer()
@@ -107,9 +93,6 @@ func (UnimplementedMsgServer) ExecuteStateChange(context.Context, *MsgExecuteSta
 }
 func (UnimplementedMsgServer) RegisterContract(context.Context, *MsgRegisterContract) (*MsgRegisterContractResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method RegisterContract not implemented")
-}
-func (UnimplementedMsgServer) IncrementCounter(context.Context, *MsgIncrementCounter) (*MsgIncrementCounterResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method IncrementCounter not implemented")
 }
 func (UnimplementedMsgServer) UpdateParams(context.Context, *MsgUpdateParams) (*MsgUpdateParamsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method UpdateParams not implemented")
@@ -163,24 +146,6 @@ func _Msg_RegisterContract_Handler(srv interface{}, ctx context.Context, dec fun
 	return interceptor(ctx, in, info, handler)
 }
 
-func _Msg_IncrementCounter_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(MsgIncrementCounter)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(MsgServer).IncrementCounter(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: Msg_IncrementCounter_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(MsgServer).IncrementCounter(ctx, req.(*MsgIncrementCounter))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 func _Msg_UpdateParams_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(MsgUpdateParams)
 	if err := dec(in); err != nil {
@@ -213,10 +178,6 @@ var Msg_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "RegisterContract",
 			Handler:    _Msg_RegisterContract_Handler,
-		},
-		{
-			MethodName: "IncrementCounter",
-			Handler:    _Msg_IncrementCounter_Handler,
 		},
 		{
 			MethodName: "UpdateParams",

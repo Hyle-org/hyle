@@ -20,14 +20,6 @@ func (am AppModule) AutoCLIOptions() *autocliv1.ModuleOptions {
 					},
 				},
 				{
-					RpcMethod: "Counter",
-					Use:       "counter [address]",
-					Short:     "Get the current value of the counter for an address",
-					PositionalArgs: []*autocliv1.PositionalArgDescriptor{
-						{ProtoField: "address"},
-					},
-				},
-				{
 					RpcMethod: "Params",
 					Use:       "params",
 					Short:     "Get the current module parameters",
@@ -57,14 +49,6 @@ func (am AppModule) AutoCLIOptions() *autocliv1.ModuleOptions {
 						{ProtoField: "verifier"},
 						{ProtoField: "program_id"},
 						{ProtoField: "state_digest"},
-					},
-				},
-				{
-					RpcMethod: "IncrementCounter",
-					Use:       "counter [sender]",
-					Short:     "Increments the counter by 1 for the sender",
-					PositionalArgs: []*autocliv1.PositionalArgDescriptor{
-						{ProtoField: "sender"},
 					},
 				},
 				{

@@ -12,11 +12,11 @@ func (k *Keeper) InitGenesis(ctx context.Context, data *zktx.GenesisState) error
 		return err
 	}
 
-	for _, counter := range data.Counters {
-		if err := k.Counter.Set(ctx, counter.Address, counter.Count); err != nil {
-			return err
-		}
-	}
+	// for _, counter := range data.Counters {
+	// 	if err := k.Counter.Set(ctx, counter.Address, counter.Count); err != nil {
+	// 		return err
+	// 	}
+	// }
 
 	return nil
 }
@@ -28,20 +28,19 @@ func (k *Keeper) ExportGenesis(ctx context.Context) (*zktx.GenesisState, error) 
 		return nil, err
 	}
 
-	var counters []zktx.Counter
-	if err := k.Counter.Walk(ctx, nil, func(address string, count uint64) (bool, error) {
-		counters = append(counters, zktx.Counter{
-			Address: address,
-			Count:   count,
-		})
+	// var counters []zktx.Counter
+	// if err := k.Counter.Walk(ctx, nil, func(address string, count uint64) (bool, error) {
+	// 	counters = append(counters, zktx.Counter{
+	// 		Address: address,
+	// 		Count:   count,
+	// 	})
 
-		return false, nil
-	}); err != nil {
-		return nil, err
-	}
+	// 	return false, nil
+	// }); err != nil {
+	// 	return nil, err
+	// }
 
 	return &zktx.GenesisState{
-		Params:   params,
-		Counters: counters,
+		Params: params,
 	}, nil
 }
