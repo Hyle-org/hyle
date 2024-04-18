@@ -184,13 +184,13 @@ func TestExecuteStateChangeGroth16(t *testing.T) {
 	require := require.New(t)
 
 	// Register the contract (TODO)
-	contractState := zktx.ContractState{
+	contract := zktx.Contract{
 		Verifier:    "groth16-twistededwards-BN254",
 		StateDigest: []byte("initial_state"),
 	}
 
 	// set the contract state
-	err := f.k.ContractStates.Set(f.ctx, f.addrs[0].String(), contractState)
+	err := f.k.Contracts.Set(f.ctx, f.addrs[0].String(), contract)
 	require.NoError(err)
 
 	// create an array of bytes
@@ -199,16 +199,16 @@ func TestExecuteStateChangeGroth16(t *testing.T) {
 
 	// create a message
 	msg := &zktx.MsgExecuteStateChange{
-		ContractAddress: f.addrs[0].String(),
-		Proof:           jsonproof,
-		InitialState:    []byte("initial_state"),
-		FinalState:      []byte("final_state"),
+		ContractName: f.addrs[0].String(),
+		Proof:        jsonproof,
+		InitialState: []byte("initial_state"),
+		FinalState:   []byte("final_state"),
 	}
 
 	// execute the message
 	_, err = f.msgServer.ExecuteStateChange(f.ctx, msg)
 	require.NoError(err)
 
-	st, _ := f.k.ContractStates.Get(f.ctx, f.addrs[0].String())
+	st, _ := f.k.Contracts.Get(f.ctx, f.addrs[0].String())
 	require.Equal(st.StateDigest, []byte("final_state"))
 }

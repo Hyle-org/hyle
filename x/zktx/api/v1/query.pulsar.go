@@ -18,25 +18,25 @@ import (
 )
 
 var (
-	md_ContractStateRequest                  protoreflect.MessageDescriptor
-	fd_ContractStateRequest_contract_address protoreflect.FieldDescriptor
+	md_ContractRequest               protoreflect.MessageDescriptor
+	fd_ContractRequest_contract_name protoreflect.FieldDescriptor
 )
 
 func init() {
 	file_hyle_hyle_zktx_v1_query_proto_init()
-	md_ContractStateRequest = File_hyle_hyle_zktx_v1_query_proto.Messages().ByName("ContractStateRequest")
-	fd_ContractStateRequest_contract_address = md_ContractStateRequest.Fields().ByName("contract_address")
+	md_ContractRequest = File_hyle_hyle_zktx_v1_query_proto.Messages().ByName("ContractRequest")
+	fd_ContractRequest_contract_name = md_ContractRequest.Fields().ByName("contract_name")
 }
 
-var _ protoreflect.Message = (*fastReflection_ContractStateRequest)(nil)
+var _ protoreflect.Message = (*fastReflection_ContractRequest)(nil)
 
-type fastReflection_ContractStateRequest ContractStateRequest
+type fastReflection_ContractRequest ContractRequest
 
-func (x *ContractStateRequest) ProtoReflect() protoreflect.Message {
-	return (*fastReflection_ContractStateRequest)(x)
+func (x *ContractRequest) ProtoReflect() protoreflect.Message {
+	return (*fastReflection_ContractRequest)(x)
 }
 
-func (x *ContractStateRequest) slowProtoReflect() protoreflect.Message {
+func (x *ContractRequest) slowProtoReflect() protoreflect.Message {
 	mi := &file_hyle_hyle_zktx_v1_query_proto_msgTypes[0]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -48,43 +48,43 @@ func (x *ContractStateRequest) slowProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-var _fastReflection_ContractStateRequest_messageType fastReflection_ContractStateRequest_messageType
-var _ protoreflect.MessageType = fastReflection_ContractStateRequest_messageType{}
+var _fastReflection_ContractRequest_messageType fastReflection_ContractRequest_messageType
+var _ protoreflect.MessageType = fastReflection_ContractRequest_messageType{}
 
-type fastReflection_ContractStateRequest_messageType struct{}
+type fastReflection_ContractRequest_messageType struct{}
 
-func (x fastReflection_ContractStateRequest_messageType) Zero() protoreflect.Message {
-	return (*fastReflection_ContractStateRequest)(nil)
+func (x fastReflection_ContractRequest_messageType) Zero() protoreflect.Message {
+	return (*fastReflection_ContractRequest)(nil)
 }
-func (x fastReflection_ContractStateRequest_messageType) New() protoreflect.Message {
-	return new(fastReflection_ContractStateRequest)
+func (x fastReflection_ContractRequest_messageType) New() protoreflect.Message {
+	return new(fastReflection_ContractRequest)
 }
-func (x fastReflection_ContractStateRequest_messageType) Descriptor() protoreflect.MessageDescriptor {
-	return md_ContractStateRequest
+func (x fastReflection_ContractRequest_messageType) Descriptor() protoreflect.MessageDescriptor {
+	return md_ContractRequest
 }
 
 // Descriptor returns message descriptor, which contains only the protobuf
 // type information for the message.
-func (x *fastReflection_ContractStateRequest) Descriptor() protoreflect.MessageDescriptor {
-	return md_ContractStateRequest
+func (x *fastReflection_ContractRequest) Descriptor() protoreflect.MessageDescriptor {
+	return md_ContractRequest
 }
 
 // Type returns the message type, which encapsulates both Go and protobuf
 // type information. If the Go type information is not needed,
 // it is recommended that the message descriptor be used instead.
-func (x *fastReflection_ContractStateRequest) Type() protoreflect.MessageType {
-	return _fastReflection_ContractStateRequest_messageType
+func (x *fastReflection_ContractRequest) Type() protoreflect.MessageType {
+	return _fastReflection_ContractRequest_messageType
 }
 
 // New returns a newly allocated and mutable empty message.
-func (x *fastReflection_ContractStateRequest) New() protoreflect.Message {
-	return new(fastReflection_ContractStateRequest)
+func (x *fastReflection_ContractRequest) New() protoreflect.Message {
+	return new(fastReflection_ContractRequest)
 }
 
 // Interface unwraps the message reflection interface and
 // returns the underlying ProtoMessage interface.
-func (x *fastReflection_ContractStateRequest) Interface() protoreflect.ProtoMessage {
-	return (*ContractStateRequest)(x)
+func (x *fastReflection_ContractRequest) Interface() protoreflect.ProtoMessage {
+	return (*ContractRequest)(x)
 }
 
 // Range iterates over every populated field in an undefined order,
@@ -92,10 +92,10 @@ func (x *fastReflection_ContractStateRequest) Interface() protoreflect.ProtoMess
 // Range returns immediately if f returns false.
 // While iterating, mutating operations may only be performed
 // on the current field descriptor.
-func (x *fastReflection_ContractStateRequest) Range(f func(protoreflect.FieldDescriptor, protoreflect.Value) bool) {
-	if x.ContractAddress != "" {
-		value := protoreflect.ValueOfString(x.ContractAddress)
-		if !f(fd_ContractStateRequest_contract_address, value) {
+func (x *fastReflection_ContractRequest) Range(f func(protoreflect.FieldDescriptor, protoreflect.Value) bool) {
+	if x.ContractName != "" {
+		value := protoreflect.ValueOfString(x.ContractName)
+		if !f(fd_ContractRequest_contract_name, value) {
 			return
 		}
 	}
@@ -112,15 +112,15 @@ func (x *fastReflection_ContractStateRequest) Range(f func(protoreflect.FieldDes
 // In other cases (aside from the nullable cases above),
 // a proto3 scalar field is populated if it contains a non-zero value, and
 // a repeated field is populated if it is non-empty.
-func (x *fastReflection_ContractStateRequest) Has(fd protoreflect.FieldDescriptor) bool {
+func (x *fastReflection_ContractRequest) Has(fd protoreflect.FieldDescriptor) bool {
 	switch fd.FullName() {
-	case "hyle.hyle.zktx.v1.ContractStateRequest.contract_address":
-		return x.ContractAddress != ""
+	case "hyle.hyle.zktx.v1.ContractRequest.contract_name":
+		return x.ContractName != ""
 	default:
 		if fd.IsExtension() {
-			panic(fmt.Errorf("proto3 declared messages do not support extensions: hyle.hyle.zktx.v1.ContractStateRequest"))
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: hyle.hyle.zktx.v1.ContractRequest"))
 		}
-		panic(fmt.Errorf("message hyle.hyle.zktx.v1.ContractStateRequest does not contain field %s", fd.FullName()))
+		panic(fmt.Errorf("message hyle.hyle.zktx.v1.ContractRequest does not contain field %s", fd.FullName()))
 	}
 }
 
@@ -130,15 +130,15 @@ func (x *fastReflection_ContractStateRequest) Has(fd protoreflect.FieldDescripto
 // associated with the given field number.
 //
 // Clear is a mutating operation and unsafe for concurrent use.
-func (x *fastReflection_ContractStateRequest) Clear(fd protoreflect.FieldDescriptor) {
+func (x *fastReflection_ContractRequest) Clear(fd protoreflect.FieldDescriptor) {
 	switch fd.FullName() {
-	case "hyle.hyle.zktx.v1.ContractStateRequest.contract_address":
-		x.ContractAddress = ""
+	case "hyle.hyle.zktx.v1.ContractRequest.contract_name":
+		x.ContractName = ""
 	default:
 		if fd.IsExtension() {
-			panic(fmt.Errorf("proto3 declared messages do not support extensions: hyle.hyle.zktx.v1.ContractStateRequest"))
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: hyle.hyle.zktx.v1.ContractRequest"))
 		}
-		panic(fmt.Errorf("message hyle.hyle.zktx.v1.ContractStateRequest does not contain field %s", fd.FullName()))
+		panic(fmt.Errorf("message hyle.hyle.zktx.v1.ContractRequest does not contain field %s", fd.FullName()))
 	}
 }
 
@@ -148,16 +148,16 @@ func (x *fastReflection_ContractStateRequest) Clear(fd protoreflect.FieldDescrip
 // the default value of a bytes scalar is guaranteed to be a copy.
 // For unpopulated composite types, it returns an empty, read-only view
 // of the value; to obtain a mutable reference, use Mutable.
-func (x *fastReflection_ContractStateRequest) Get(descriptor protoreflect.FieldDescriptor) protoreflect.Value {
+func (x *fastReflection_ContractRequest) Get(descriptor protoreflect.FieldDescriptor) protoreflect.Value {
 	switch descriptor.FullName() {
-	case "hyle.hyle.zktx.v1.ContractStateRequest.contract_address":
-		value := x.ContractAddress
+	case "hyle.hyle.zktx.v1.ContractRequest.contract_name":
+		value := x.ContractName
 		return protoreflect.ValueOfString(value)
 	default:
 		if descriptor.IsExtension() {
-			panic(fmt.Errorf("proto3 declared messages do not support extensions: hyle.hyle.zktx.v1.ContractStateRequest"))
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: hyle.hyle.zktx.v1.ContractRequest"))
 		}
-		panic(fmt.Errorf("message hyle.hyle.zktx.v1.ContractStateRequest does not contain field %s", descriptor.FullName()))
+		panic(fmt.Errorf("message hyle.hyle.zktx.v1.ContractRequest does not contain field %s", descriptor.FullName()))
 	}
 }
 
@@ -171,15 +171,15 @@ func (x *fastReflection_ContractStateRequest) Get(descriptor protoreflect.FieldD
 // empty, read-only value, then it panics.
 //
 // Set is a mutating operation and unsafe for concurrent use.
-func (x *fastReflection_ContractStateRequest) Set(fd protoreflect.FieldDescriptor, value protoreflect.Value) {
+func (x *fastReflection_ContractRequest) Set(fd protoreflect.FieldDescriptor, value protoreflect.Value) {
 	switch fd.FullName() {
-	case "hyle.hyle.zktx.v1.ContractStateRequest.contract_address":
-		x.ContractAddress = value.Interface().(string)
+	case "hyle.hyle.zktx.v1.ContractRequest.contract_name":
+		x.ContractName = value.Interface().(string)
 	default:
 		if fd.IsExtension() {
-			panic(fmt.Errorf("proto3 declared messages do not support extensions: hyle.hyle.zktx.v1.ContractStateRequest"))
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: hyle.hyle.zktx.v1.ContractRequest"))
 		}
-		panic(fmt.Errorf("message hyle.hyle.zktx.v1.ContractStateRequest does not contain field %s", fd.FullName()))
+		panic(fmt.Errorf("message hyle.hyle.zktx.v1.ContractRequest does not contain field %s", fd.FullName()))
 	}
 }
 
@@ -193,40 +193,40 @@ func (x *fastReflection_ContractStateRequest) Set(fd protoreflect.FieldDescripto
 // It panics if the field does not contain a composite type.
 //
 // Mutable is a mutating operation and unsafe for concurrent use.
-func (x *fastReflection_ContractStateRequest) Mutable(fd protoreflect.FieldDescriptor) protoreflect.Value {
+func (x *fastReflection_ContractRequest) Mutable(fd protoreflect.FieldDescriptor) protoreflect.Value {
 	switch fd.FullName() {
-	case "hyle.hyle.zktx.v1.ContractStateRequest.contract_address":
-		panic(fmt.Errorf("field contract_address of message hyle.hyle.zktx.v1.ContractStateRequest is not mutable"))
+	case "hyle.hyle.zktx.v1.ContractRequest.contract_name":
+		panic(fmt.Errorf("field contract_name of message hyle.hyle.zktx.v1.ContractRequest is not mutable"))
 	default:
 		if fd.IsExtension() {
-			panic(fmt.Errorf("proto3 declared messages do not support extensions: hyle.hyle.zktx.v1.ContractStateRequest"))
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: hyle.hyle.zktx.v1.ContractRequest"))
 		}
-		panic(fmt.Errorf("message hyle.hyle.zktx.v1.ContractStateRequest does not contain field %s", fd.FullName()))
+		panic(fmt.Errorf("message hyle.hyle.zktx.v1.ContractRequest does not contain field %s", fd.FullName()))
 	}
 }
 
 // NewField returns a new value that is assignable to the field
 // for the given descriptor. For scalars, this returns the default value.
 // For lists, maps, and messages, this returns a new, empty, mutable value.
-func (x *fastReflection_ContractStateRequest) NewField(fd protoreflect.FieldDescriptor) protoreflect.Value {
+func (x *fastReflection_ContractRequest) NewField(fd protoreflect.FieldDescriptor) protoreflect.Value {
 	switch fd.FullName() {
-	case "hyle.hyle.zktx.v1.ContractStateRequest.contract_address":
+	case "hyle.hyle.zktx.v1.ContractRequest.contract_name":
 		return protoreflect.ValueOfString("")
 	default:
 		if fd.IsExtension() {
-			panic(fmt.Errorf("proto3 declared messages do not support extensions: hyle.hyle.zktx.v1.ContractStateRequest"))
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: hyle.hyle.zktx.v1.ContractRequest"))
 		}
-		panic(fmt.Errorf("message hyle.hyle.zktx.v1.ContractStateRequest does not contain field %s", fd.FullName()))
+		panic(fmt.Errorf("message hyle.hyle.zktx.v1.ContractRequest does not contain field %s", fd.FullName()))
 	}
 }
 
 // WhichOneof reports which field within the oneof is populated,
 // returning nil if none are populated.
 // It panics if the oneof descriptor does not belong to this message.
-func (x *fastReflection_ContractStateRequest) WhichOneof(d protoreflect.OneofDescriptor) protoreflect.FieldDescriptor {
+func (x *fastReflection_ContractRequest) WhichOneof(d protoreflect.OneofDescriptor) protoreflect.FieldDescriptor {
 	switch d.FullName() {
 	default:
-		panic(fmt.Errorf("%s is not a oneof field in hyle.hyle.zktx.v1.ContractStateRequest", d.FullName()))
+		panic(fmt.Errorf("%s is not a oneof field in hyle.hyle.zktx.v1.ContractRequest", d.FullName()))
 	}
 	panic("unreachable")
 }
@@ -234,7 +234,7 @@ func (x *fastReflection_ContractStateRequest) WhichOneof(d protoreflect.OneofDes
 // GetUnknown retrieves the entire list of unknown fields.
 // The caller may only mutate the contents of the RawFields
 // if the mutated bytes are stored back into the message with SetUnknown.
-func (x *fastReflection_ContractStateRequest) GetUnknown() protoreflect.RawFields {
+func (x *fastReflection_ContractRequest) GetUnknown() protoreflect.RawFields {
 	return x.unknownFields
 }
 
@@ -245,7 +245,7 @@ func (x *fastReflection_ContractStateRequest) GetUnknown() protoreflect.RawField
 // An empty RawFields may be passed to clear the fields.
 //
 // SetUnknown is a mutating operation and unsafe for concurrent use.
-func (x *fastReflection_ContractStateRequest) SetUnknown(fields protoreflect.RawFields) {
+func (x *fastReflection_ContractRequest) SetUnknown(fields protoreflect.RawFields) {
 	x.unknownFields = fields
 }
 
@@ -257,7 +257,7 @@ func (x *fastReflection_ContractStateRequest) SetUnknown(fields protoreflect.Raw
 // message type, but the details are implementation dependent.
 // Validity is not part of the protobuf data model, and may not
 // be preserved in marshaling or other operations.
-func (x *fastReflection_ContractStateRequest) IsValid() bool {
+func (x *fastReflection_ContractRequest) IsValid() bool {
 	return x != nil
 }
 
@@ -267,9 +267,9 @@ func (x *fastReflection_ContractStateRequest) IsValid() bool {
 // The returned methods type is identical to
 // "google.golang.org/protobuf/runtime/protoiface".Methods.
 // Consult the protoiface package documentation for details.
-func (x *fastReflection_ContractStateRequest) ProtoMethods() *protoiface.Methods {
+func (x *fastReflection_ContractRequest) ProtoMethods() *protoiface.Methods {
 	size := func(input protoiface.SizeInput) protoiface.SizeOutput {
-		x := input.Message.Interface().(*ContractStateRequest)
+		x := input.Message.Interface().(*ContractRequest)
 		if x == nil {
 			return protoiface.SizeOutput{
 				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
@@ -281,7 +281,7 @@ func (x *fastReflection_ContractStateRequest) ProtoMethods() *protoiface.Methods
 		var n int
 		var l int
 		_ = l
-		l = len(x.ContractAddress)
+		l = len(x.ContractName)
 		if l > 0 {
 			n += 1 + l + runtime.Sov(uint64(l))
 		}
@@ -295,7 +295,7 @@ func (x *fastReflection_ContractStateRequest) ProtoMethods() *protoiface.Methods
 	}
 
 	marshal := func(input protoiface.MarshalInput) (protoiface.MarshalOutput, error) {
-		x := input.Message.Interface().(*ContractStateRequest)
+		x := input.Message.Interface().(*ContractRequest)
 		if x == nil {
 			return protoiface.MarshalOutput{
 				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
@@ -314,10 +314,10 @@ func (x *fastReflection_ContractStateRequest) ProtoMethods() *protoiface.Methods
 			i -= len(x.unknownFields)
 			copy(dAtA[i:], x.unknownFields)
 		}
-		if len(x.ContractAddress) > 0 {
-			i -= len(x.ContractAddress)
-			copy(dAtA[i:], x.ContractAddress)
-			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.ContractAddress)))
+		if len(x.ContractName) > 0 {
+			i -= len(x.ContractName)
+			copy(dAtA[i:], x.ContractName)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.ContractName)))
 			i--
 			dAtA[i] = 0xa
 		}
@@ -332,7 +332,7 @@ func (x *fastReflection_ContractStateRequest) ProtoMethods() *protoiface.Methods
 		}, nil
 	}
 	unmarshal := func(input protoiface.UnmarshalInput) (protoiface.UnmarshalOutput, error) {
-		x := input.Message.Interface().(*ContractStateRequest)
+		x := input.Message.Interface().(*ContractRequest)
 		if x == nil {
 			return protoiface.UnmarshalOutput{
 				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
@@ -364,15 +364,15 @@ func (x *fastReflection_ContractStateRequest) ProtoMethods() *protoiface.Methods
 			fieldNum := int32(wire >> 3)
 			wireType := int(wire & 0x7)
 			if wireType == 4 {
-				return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: ContractStateRequest: wiretype end group for non-group")
+				return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: ContractRequest: wiretype end group for non-group")
 			}
 			if fieldNum <= 0 {
-				return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: ContractStateRequest: illegal tag %d (wire type %d)", fieldNum, wire)
+				return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: ContractRequest: illegal tag %d (wire type %d)", fieldNum, wire)
 			}
 			switch fieldNum {
 			case 1:
 				if wireType != 2 {
-					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field ContractAddress", wireType)
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field ContractName", wireType)
 				}
 				var stringLen uint64
 				for shift := uint(0); ; shift += 7 {
@@ -400,7 +400,7 @@ func (x *fastReflection_ContractStateRequest) ProtoMethods() *protoiface.Methods
 				if postIndex > l {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
 				}
-				x.ContractAddress = string(dAtA[iNdEx:postIndex])
+				x.ContractName = string(dAtA[iNdEx:postIndex])
 				iNdEx = postIndex
 			default:
 				iNdEx = preIndex
@@ -438,25 +438,25 @@ func (x *fastReflection_ContractStateRequest) ProtoMethods() *protoiface.Methods
 }
 
 var (
-	md_ContractStateResponse       protoreflect.MessageDescriptor
-	fd_ContractStateResponse_state protoreflect.FieldDescriptor
+	md_ContractResponse          protoreflect.MessageDescriptor
+	fd_ContractResponse_contract protoreflect.FieldDescriptor
 )
 
 func init() {
 	file_hyle_hyle_zktx_v1_query_proto_init()
-	md_ContractStateResponse = File_hyle_hyle_zktx_v1_query_proto.Messages().ByName("ContractStateResponse")
-	fd_ContractStateResponse_state = md_ContractStateResponse.Fields().ByName("state")
+	md_ContractResponse = File_hyle_hyle_zktx_v1_query_proto.Messages().ByName("ContractResponse")
+	fd_ContractResponse_contract = md_ContractResponse.Fields().ByName("contract")
 }
 
-var _ protoreflect.Message = (*fastReflection_ContractStateResponse)(nil)
+var _ protoreflect.Message = (*fastReflection_ContractResponse)(nil)
 
-type fastReflection_ContractStateResponse ContractStateResponse
+type fastReflection_ContractResponse ContractResponse
 
-func (x *ContractStateResponse) ProtoReflect() protoreflect.Message {
-	return (*fastReflection_ContractStateResponse)(x)
+func (x *ContractResponse) ProtoReflect() protoreflect.Message {
+	return (*fastReflection_ContractResponse)(x)
 }
 
-func (x *ContractStateResponse) slowProtoReflect() protoreflect.Message {
+func (x *ContractResponse) slowProtoReflect() protoreflect.Message {
 	mi := &file_hyle_hyle_zktx_v1_query_proto_msgTypes[1]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -468,43 +468,43 @@ func (x *ContractStateResponse) slowProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-var _fastReflection_ContractStateResponse_messageType fastReflection_ContractStateResponse_messageType
-var _ protoreflect.MessageType = fastReflection_ContractStateResponse_messageType{}
+var _fastReflection_ContractResponse_messageType fastReflection_ContractResponse_messageType
+var _ protoreflect.MessageType = fastReflection_ContractResponse_messageType{}
 
-type fastReflection_ContractStateResponse_messageType struct{}
+type fastReflection_ContractResponse_messageType struct{}
 
-func (x fastReflection_ContractStateResponse_messageType) Zero() protoreflect.Message {
-	return (*fastReflection_ContractStateResponse)(nil)
+func (x fastReflection_ContractResponse_messageType) Zero() protoreflect.Message {
+	return (*fastReflection_ContractResponse)(nil)
 }
-func (x fastReflection_ContractStateResponse_messageType) New() protoreflect.Message {
-	return new(fastReflection_ContractStateResponse)
+func (x fastReflection_ContractResponse_messageType) New() protoreflect.Message {
+	return new(fastReflection_ContractResponse)
 }
-func (x fastReflection_ContractStateResponse_messageType) Descriptor() protoreflect.MessageDescriptor {
-	return md_ContractStateResponse
+func (x fastReflection_ContractResponse_messageType) Descriptor() protoreflect.MessageDescriptor {
+	return md_ContractResponse
 }
 
 // Descriptor returns message descriptor, which contains only the protobuf
 // type information for the message.
-func (x *fastReflection_ContractStateResponse) Descriptor() protoreflect.MessageDescriptor {
-	return md_ContractStateResponse
+func (x *fastReflection_ContractResponse) Descriptor() protoreflect.MessageDescriptor {
+	return md_ContractResponse
 }
 
 // Type returns the message type, which encapsulates both Go and protobuf
 // type information. If the Go type information is not needed,
 // it is recommended that the message descriptor be used instead.
-func (x *fastReflection_ContractStateResponse) Type() protoreflect.MessageType {
-	return _fastReflection_ContractStateResponse_messageType
+func (x *fastReflection_ContractResponse) Type() protoreflect.MessageType {
+	return _fastReflection_ContractResponse_messageType
 }
 
 // New returns a newly allocated and mutable empty message.
-func (x *fastReflection_ContractStateResponse) New() protoreflect.Message {
-	return new(fastReflection_ContractStateResponse)
+func (x *fastReflection_ContractResponse) New() protoreflect.Message {
+	return new(fastReflection_ContractResponse)
 }
 
 // Interface unwraps the message reflection interface and
 // returns the underlying ProtoMessage interface.
-func (x *fastReflection_ContractStateResponse) Interface() protoreflect.ProtoMessage {
-	return (*ContractStateResponse)(x)
+func (x *fastReflection_ContractResponse) Interface() protoreflect.ProtoMessage {
+	return (*ContractResponse)(x)
 }
 
 // Range iterates over every populated field in an undefined order,
@@ -512,10 +512,10 @@ func (x *fastReflection_ContractStateResponse) Interface() protoreflect.ProtoMes
 // Range returns immediately if f returns false.
 // While iterating, mutating operations may only be performed
 // on the current field descriptor.
-func (x *fastReflection_ContractStateResponse) Range(f func(protoreflect.FieldDescriptor, protoreflect.Value) bool) {
-	if x.State != nil {
-		value := protoreflect.ValueOfMessage(x.State.ProtoReflect())
-		if !f(fd_ContractStateResponse_state, value) {
+func (x *fastReflection_ContractResponse) Range(f func(protoreflect.FieldDescriptor, protoreflect.Value) bool) {
+	if x.Contract != nil {
+		value := protoreflect.ValueOfMessage(x.Contract.ProtoReflect())
+		if !f(fd_ContractResponse_contract, value) {
 			return
 		}
 	}
@@ -532,15 +532,15 @@ func (x *fastReflection_ContractStateResponse) Range(f func(protoreflect.FieldDe
 // In other cases (aside from the nullable cases above),
 // a proto3 scalar field is populated if it contains a non-zero value, and
 // a repeated field is populated if it is non-empty.
-func (x *fastReflection_ContractStateResponse) Has(fd protoreflect.FieldDescriptor) bool {
+func (x *fastReflection_ContractResponse) Has(fd protoreflect.FieldDescriptor) bool {
 	switch fd.FullName() {
-	case "hyle.hyle.zktx.v1.ContractStateResponse.state":
-		return x.State != nil
+	case "hyle.hyle.zktx.v1.ContractResponse.contract":
+		return x.Contract != nil
 	default:
 		if fd.IsExtension() {
-			panic(fmt.Errorf("proto3 declared messages do not support extensions: hyle.hyle.zktx.v1.ContractStateResponse"))
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: hyle.hyle.zktx.v1.ContractResponse"))
 		}
-		panic(fmt.Errorf("message hyle.hyle.zktx.v1.ContractStateResponse does not contain field %s", fd.FullName()))
+		panic(fmt.Errorf("message hyle.hyle.zktx.v1.ContractResponse does not contain field %s", fd.FullName()))
 	}
 }
 
@@ -550,15 +550,15 @@ func (x *fastReflection_ContractStateResponse) Has(fd protoreflect.FieldDescript
 // associated with the given field number.
 //
 // Clear is a mutating operation and unsafe for concurrent use.
-func (x *fastReflection_ContractStateResponse) Clear(fd protoreflect.FieldDescriptor) {
+func (x *fastReflection_ContractResponse) Clear(fd protoreflect.FieldDescriptor) {
 	switch fd.FullName() {
-	case "hyle.hyle.zktx.v1.ContractStateResponse.state":
-		x.State = nil
+	case "hyle.hyle.zktx.v1.ContractResponse.contract":
+		x.Contract = nil
 	default:
 		if fd.IsExtension() {
-			panic(fmt.Errorf("proto3 declared messages do not support extensions: hyle.hyle.zktx.v1.ContractStateResponse"))
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: hyle.hyle.zktx.v1.ContractResponse"))
 		}
-		panic(fmt.Errorf("message hyle.hyle.zktx.v1.ContractStateResponse does not contain field %s", fd.FullName()))
+		panic(fmt.Errorf("message hyle.hyle.zktx.v1.ContractResponse does not contain field %s", fd.FullName()))
 	}
 }
 
@@ -568,16 +568,16 @@ func (x *fastReflection_ContractStateResponse) Clear(fd protoreflect.FieldDescri
 // the default value of a bytes scalar is guaranteed to be a copy.
 // For unpopulated composite types, it returns an empty, read-only view
 // of the value; to obtain a mutable reference, use Mutable.
-func (x *fastReflection_ContractStateResponse) Get(descriptor protoreflect.FieldDescriptor) protoreflect.Value {
+func (x *fastReflection_ContractResponse) Get(descriptor protoreflect.FieldDescriptor) protoreflect.Value {
 	switch descriptor.FullName() {
-	case "hyle.hyle.zktx.v1.ContractStateResponse.state":
-		value := x.State
+	case "hyle.hyle.zktx.v1.ContractResponse.contract":
+		value := x.Contract
 		return protoreflect.ValueOfMessage(value.ProtoReflect())
 	default:
 		if descriptor.IsExtension() {
-			panic(fmt.Errorf("proto3 declared messages do not support extensions: hyle.hyle.zktx.v1.ContractStateResponse"))
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: hyle.hyle.zktx.v1.ContractResponse"))
 		}
-		panic(fmt.Errorf("message hyle.hyle.zktx.v1.ContractStateResponse does not contain field %s", descriptor.FullName()))
+		panic(fmt.Errorf("message hyle.hyle.zktx.v1.ContractResponse does not contain field %s", descriptor.FullName()))
 	}
 }
 
@@ -591,15 +591,15 @@ func (x *fastReflection_ContractStateResponse) Get(descriptor protoreflect.Field
 // empty, read-only value, then it panics.
 //
 // Set is a mutating operation and unsafe for concurrent use.
-func (x *fastReflection_ContractStateResponse) Set(fd protoreflect.FieldDescriptor, value protoreflect.Value) {
+func (x *fastReflection_ContractResponse) Set(fd protoreflect.FieldDescriptor, value protoreflect.Value) {
 	switch fd.FullName() {
-	case "hyle.hyle.zktx.v1.ContractStateResponse.state":
-		x.State = value.Message().Interface().(*ContractState)
+	case "hyle.hyle.zktx.v1.ContractResponse.contract":
+		x.Contract = value.Message().Interface().(*Contract)
 	default:
 		if fd.IsExtension() {
-			panic(fmt.Errorf("proto3 declared messages do not support extensions: hyle.hyle.zktx.v1.ContractStateResponse"))
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: hyle.hyle.zktx.v1.ContractResponse"))
 		}
-		panic(fmt.Errorf("message hyle.hyle.zktx.v1.ContractStateResponse does not contain field %s", fd.FullName()))
+		panic(fmt.Errorf("message hyle.hyle.zktx.v1.ContractResponse does not contain field %s", fd.FullName()))
 	}
 }
 
@@ -613,44 +613,44 @@ func (x *fastReflection_ContractStateResponse) Set(fd protoreflect.FieldDescript
 // It panics if the field does not contain a composite type.
 //
 // Mutable is a mutating operation and unsafe for concurrent use.
-func (x *fastReflection_ContractStateResponse) Mutable(fd protoreflect.FieldDescriptor) protoreflect.Value {
+func (x *fastReflection_ContractResponse) Mutable(fd protoreflect.FieldDescriptor) protoreflect.Value {
 	switch fd.FullName() {
-	case "hyle.hyle.zktx.v1.ContractStateResponse.state":
-		if x.State == nil {
-			x.State = new(ContractState)
+	case "hyle.hyle.zktx.v1.ContractResponse.contract":
+		if x.Contract == nil {
+			x.Contract = new(Contract)
 		}
-		return protoreflect.ValueOfMessage(x.State.ProtoReflect())
+		return protoreflect.ValueOfMessage(x.Contract.ProtoReflect())
 	default:
 		if fd.IsExtension() {
-			panic(fmt.Errorf("proto3 declared messages do not support extensions: hyle.hyle.zktx.v1.ContractStateResponse"))
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: hyle.hyle.zktx.v1.ContractResponse"))
 		}
-		panic(fmt.Errorf("message hyle.hyle.zktx.v1.ContractStateResponse does not contain field %s", fd.FullName()))
+		panic(fmt.Errorf("message hyle.hyle.zktx.v1.ContractResponse does not contain field %s", fd.FullName()))
 	}
 }
 
 // NewField returns a new value that is assignable to the field
 // for the given descriptor. For scalars, this returns the default value.
 // For lists, maps, and messages, this returns a new, empty, mutable value.
-func (x *fastReflection_ContractStateResponse) NewField(fd protoreflect.FieldDescriptor) protoreflect.Value {
+func (x *fastReflection_ContractResponse) NewField(fd protoreflect.FieldDescriptor) protoreflect.Value {
 	switch fd.FullName() {
-	case "hyle.hyle.zktx.v1.ContractStateResponse.state":
-		m := new(ContractState)
+	case "hyle.hyle.zktx.v1.ContractResponse.contract":
+		m := new(Contract)
 		return protoreflect.ValueOfMessage(m.ProtoReflect())
 	default:
 		if fd.IsExtension() {
-			panic(fmt.Errorf("proto3 declared messages do not support extensions: hyle.hyle.zktx.v1.ContractStateResponse"))
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: hyle.hyle.zktx.v1.ContractResponse"))
 		}
-		panic(fmt.Errorf("message hyle.hyle.zktx.v1.ContractStateResponse does not contain field %s", fd.FullName()))
+		panic(fmt.Errorf("message hyle.hyle.zktx.v1.ContractResponse does not contain field %s", fd.FullName()))
 	}
 }
 
 // WhichOneof reports which field within the oneof is populated,
 // returning nil if none are populated.
 // It panics if the oneof descriptor does not belong to this message.
-func (x *fastReflection_ContractStateResponse) WhichOneof(d protoreflect.OneofDescriptor) protoreflect.FieldDescriptor {
+func (x *fastReflection_ContractResponse) WhichOneof(d protoreflect.OneofDescriptor) protoreflect.FieldDescriptor {
 	switch d.FullName() {
 	default:
-		panic(fmt.Errorf("%s is not a oneof field in hyle.hyle.zktx.v1.ContractStateResponse", d.FullName()))
+		panic(fmt.Errorf("%s is not a oneof field in hyle.hyle.zktx.v1.ContractResponse", d.FullName()))
 	}
 	panic("unreachable")
 }
@@ -658,7 +658,7 @@ func (x *fastReflection_ContractStateResponse) WhichOneof(d protoreflect.OneofDe
 // GetUnknown retrieves the entire list of unknown fields.
 // The caller may only mutate the contents of the RawFields
 // if the mutated bytes are stored back into the message with SetUnknown.
-func (x *fastReflection_ContractStateResponse) GetUnknown() protoreflect.RawFields {
+func (x *fastReflection_ContractResponse) GetUnknown() protoreflect.RawFields {
 	return x.unknownFields
 }
 
@@ -669,7 +669,7 @@ func (x *fastReflection_ContractStateResponse) GetUnknown() protoreflect.RawFiel
 // An empty RawFields may be passed to clear the fields.
 //
 // SetUnknown is a mutating operation and unsafe for concurrent use.
-func (x *fastReflection_ContractStateResponse) SetUnknown(fields protoreflect.RawFields) {
+func (x *fastReflection_ContractResponse) SetUnknown(fields protoreflect.RawFields) {
 	x.unknownFields = fields
 }
 
@@ -681,7 +681,7 @@ func (x *fastReflection_ContractStateResponse) SetUnknown(fields protoreflect.Ra
 // message type, but the details are implementation dependent.
 // Validity is not part of the protobuf data model, and may not
 // be preserved in marshaling or other operations.
-func (x *fastReflection_ContractStateResponse) IsValid() bool {
+func (x *fastReflection_ContractResponse) IsValid() bool {
 	return x != nil
 }
 
@@ -691,9 +691,9 @@ func (x *fastReflection_ContractStateResponse) IsValid() bool {
 // The returned methods type is identical to
 // "google.golang.org/protobuf/runtime/protoiface".Methods.
 // Consult the protoiface package documentation for details.
-func (x *fastReflection_ContractStateResponse) ProtoMethods() *protoiface.Methods {
+func (x *fastReflection_ContractResponse) ProtoMethods() *protoiface.Methods {
 	size := func(input protoiface.SizeInput) protoiface.SizeOutput {
-		x := input.Message.Interface().(*ContractStateResponse)
+		x := input.Message.Interface().(*ContractResponse)
 		if x == nil {
 			return protoiface.SizeOutput{
 				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
@@ -705,8 +705,8 @@ func (x *fastReflection_ContractStateResponse) ProtoMethods() *protoiface.Method
 		var n int
 		var l int
 		_ = l
-		if x.State != nil {
-			l = options.Size(x.State)
+		if x.Contract != nil {
+			l = options.Size(x.Contract)
 			n += 1 + l + runtime.Sov(uint64(l))
 		}
 		if x.unknownFields != nil {
@@ -719,7 +719,7 @@ func (x *fastReflection_ContractStateResponse) ProtoMethods() *protoiface.Method
 	}
 
 	marshal := func(input protoiface.MarshalInput) (protoiface.MarshalOutput, error) {
-		x := input.Message.Interface().(*ContractStateResponse)
+		x := input.Message.Interface().(*ContractResponse)
 		if x == nil {
 			return protoiface.MarshalOutput{
 				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
@@ -738,8 +738,8 @@ func (x *fastReflection_ContractStateResponse) ProtoMethods() *protoiface.Method
 			i -= len(x.unknownFields)
 			copy(dAtA[i:], x.unknownFields)
 		}
-		if x.State != nil {
-			encoded, err := options.Marshal(x.State)
+		if x.Contract != nil {
+			encoded, err := options.Marshal(x.Contract)
 			if err != nil {
 				return protoiface.MarshalOutput{
 					NoUnkeyedLiterals: input.NoUnkeyedLiterals,
@@ -763,7 +763,7 @@ func (x *fastReflection_ContractStateResponse) ProtoMethods() *protoiface.Method
 		}, nil
 	}
 	unmarshal := func(input protoiface.UnmarshalInput) (protoiface.UnmarshalOutput, error) {
-		x := input.Message.Interface().(*ContractStateResponse)
+		x := input.Message.Interface().(*ContractResponse)
 		if x == nil {
 			return protoiface.UnmarshalOutput{
 				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
@@ -795,15 +795,15 @@ func (x *fastReflection_ContractStateResponse) ProtoMethods() *protoiface.Method
 			fieldNum := int32(wire >> 3)
 			wireType := int(wire & 0x7)
 			if wireType == 4 {
-				return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: ContractStateResponse: wiretype end group for non-group")
+				return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: ContractResponse: wiretype end group for non-group")
 			}
 			if fieldNum <= 0 {
-				return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: ContractStateResponse: illegal tag %d (wire type %d)", fieldNum, wire)
+				return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: ContractResponse: illegal tag %d (wire type %d)", fieldNum, wire)
 			}
 			switch fieldNum {
 			case 1:
 				if wireType != 2 {
-					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field State", wireType)
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field Contract", wireType)
 				}
 				var msglen int
 				for shift := uint(0); ; shift += 7 {
@@ -830,10 +830,10 @@ func (x *fastReflection_ContractStateResponse) ProtoMethods() *protoiface.Method
 				if postIndex > l {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
 				}
-				if x.State == nil {
-					x.State = &ContractState{}
+				if x.Contract == nil {
+					x.Contract = &Contract{}
 				}
-				if err := options.Unmarshal(dAtA[iNdEx:postIndex], x.State); err != nil {
+				if err := options.Unmarshal(dAtA[iNdEx:postIndex], x.Contract); err != nil {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, err
 				}
 				iNdEx = postIndex
@@ -1676,18 +1676,18 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-// ContractStateRequest is the request type for the Query/ContractState RPC
-type ContractStateRequest struct {
+// ContractRequest is the request type for the Query/Contract RPC
+type ContractRequest struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	// contract_address defines the address to query for the contract state.
-	ContractAddress string `protobuf:"bytes,1,opt,name=contract_address,json=contractAddress,proto3" json:"contract_address,omitempty"`
+	// contract_name defines the name to query for the contract.
+	ContractName string `protobuf:"bytes,1,opt,name=contract_name,json=contractName,proto3" json:"contract_name,omitempty"`
 }
 
-func (x *ContractStateRequest) Reset() {
-	*x = ContractStateRequest{}
+func (x *ContractRequest) Reset() {
+	*x = ContractRequest{}
 	if protoimpl.UnsafeEnabled {
 		mi := &file_hyle_hyle_zktx_v1_query_proto_msgTypes[0]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -1695,36 +1695,36 @@ func (x *ContractStateRequest) Reset() {
 	}
 }
 
-func (x *ContractStateRequest) String() string {
+func (x *ContractRequest) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*ContractStateRequest) ProtoMessage() {}
+func (*ContractRequest) ProtoMessage() {}
 
-// Deprecated: Use ContractStateRequest.ProtoReflect.Descriptor instead.
-func (*ContractStateRequest) Descriptor() ([]byte, []int) {
+// Deprecated: Use ContractRequest.ProtoReflect.Descriptor instead.
+func (*ContractRequest) Descriptor() ([]byte, []int) {
 	return file_hyle_hyle_zktx_v1_query_proto_rawDescGZIP(), []int{0}
 }
 
-func (x *ContractStateRequest) GetContractAddress() string {
+func (x *ContractRequest) GetContractName() string {
 	if x != nil {
-		return x.ContractAddress
+		return x.ContractName
 	}
 	return ""
 }
 
-// ContractStateResponse is the response type for the Query/ContractState RPC
-type ContractStateResponse struct {
+// ContractResponse is the response type for the Query/Contract RPC
+type ContractResponse struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	// state defines the current state of the contract.
-	State *ContractState `protobuf:"bytes,1,opt,name=state,proto3" json:"state,omitempty"`
+	// contract defines the current state of the contract.
+	Contract *Contract `protobuf:"bytes,1,opt,name=contract,proto3" json:"contract,omitempty"`
 }
 
-func (x *ContractStateResponse) Reset() {
-	*x = ContractStateResponse{}
+func (x *ContractResponse) Reset() {
+	*x = ContractResponse{}
 	if protoimpl.UnsafeEnabled {
 		mi := &file_hyle_hyle_zktx_v1_query_proto_msgTypes[1]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -1732,20 +1732,20 @@ func (x *ContractStateResponse) Reset() {
 	}
 }
 
-func (x *ContractStateResponse) String() string {
+func (x *ContractResponse) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*ContractStateResponse) ProtoMessage() {}
+func (*ContractResponse) ProtoMessage() {}
 
-// Deprecated: Use ContractStateResponse.ProtoReflect.Descriptor instead.
-func (*ContractStateResponse) Descriptor() ([]byte, []int) {
+// Deprecated: Use ContractResponse.ProtoReflect.Descriptor instead.
+func (*ContractResponse) Descriptor() ([]byte, []int) {
 	return file_hyle_hyle_zktx_v1_query_proto_rawDescGZIP(), []int{1}
 }
 
-func (x *ContractStateResponse) GetState() *ContractState {
+func (x *ContractResponse) GetContract() *Contract {
 	if x != nil {
-		return x.State
+		return x.Contract
 	}
 	return nil
 }
@@ -1830,56 +1830,52 @@ var file_hyle_hyle_zktx_v1_query_proto_rawDesc = []byte{
 	0x14, 0x67, 0x6f, 0x67, 0x6f, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2f, 0x67, 0x6f, 0x67, 0x6f, 0x2e,
 	0x70, 0x72, 0x6f, 0x74, 0x6f, 0x1a, 0x19, 0x63, 0x6f, 0x73, 0x6d, 0x6f, 0x73, 0x5f, 0x70, 0x72,
 	0x6f, 0x74, 0x6f, 0x2f, 0x63, 0x6f, 0x73, 0x6d, 0x6f, 0x73, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f,
-	0x22, 0x5b, 0x0a, 0x14, 0x43, 0x6f, 0x6e, 0x74, 0x72, 0x61, 0x63, 0x74, 0x53, 0x74, 0x61, 0x74,
-	0x65, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x12, 0x43, 0x0a, 0x10, 0x63, 0x6f, 0x6e, 0x74,
-	0x72, 0x61, 0x63, 0x74, 0x5f, 0x61, 0x64, 0x64, 0x72, 0x65, 0x73, 0x73, 0x18, 0x01, 0x20, 0x01,
-	0x28, 0x09, 0x42, 0x18, 0xd2, 0xb4, 0x2d, 0x14, 0x63, 0x6f, 0x73, 0x6d, 0x6f, 0x73, 0x2e, 0x41,
-	0x64, 0x64, 0x72, 0x65, 0x73, 0x73, 0x53, 0x74, 0x72, 0x69, 0x6e, 0x67, 0x52, 0x0f, 0x63, 0x6f,
-	0x6e, 0x74, 0x72, 0x61, 0x63, 0x74, 0x41, 0x64, 0x64, 0x72, 0x65, 0x73, 0x73, 0x22, 0x55, 0x0a,
-	0x15, 0x43, 0x6f, 0x6e, 0x74, 0x72, 0x61, 0x63, 0x74, 0x53, 0x74, 0x61, 0x74, 0x65, 0x52, 0x65,
-	0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x12, 0x3c, 0x0a, 0x05, 0x73, 0x74, 0x61, 0x74, 0x65, 0x18,
-	0x01, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x20, 0x2e, 0x68, 0x79, 0x6c, 0x65, 0x2e, 0x68, 0x79, 0x6c,
-	0x65, 0x2e, 0x7a, 0x6b, 0x74, 0x78, 0x2e, 0x76, 0x31, 0x2e, 0x43, 0x6f, 0x6e, 0x74, 0x72, 0x61,
-	0x63, 0x74, 0x53, 0x74, 0x61, 0x74, 0x65, 0x42, 0x04, 0xc8, 0xde, 0x1f, 0x00, 0x52, 0x05, 0x73,
-	0x74, 0x61, 0x74, 0x65, 0x22, 0x14, 0x0a, 0x12, 0x51, 0x75, 0x65, 0x72, 0x79, 0x50, 0x61, 0x72,
-	0x61, 0x6d, 0x73, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x22, 0x53, 0x0a, 0x13, 0x51, 0x75,
-	0x65, 0x72, 0x79, 0x50, 0x61, 0x72, 0x61, 0x6d, 0x73, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73,
-	0x65, 0x12, 0x3c, 0x0a, 0x06, 0x70, 0x61, 0x72, 0x61, 0x6d, 0x73, 0x18, 0x01, 0x20, 0x01, 0x28,
-	0x0b, 0x32, 0x19, 0x2e, 0x68, 0x79, 0x6c, 0x65, 0x2e, 0x68, 0x79, 0x6c, 0x65, 0x2e, 0x7a, 0x6b,
-	0x74, 0x78, 0x2e, 0x76, 0x31, 0x2e, 0x50, 0x61, 0x72, 0x61, 0x6d, 0x73, 0x42, 0x09, 0xc8, 0xde,
-	0x1f, 0x00, 0xa8, 0xe7, 0xb0, 0x2a, 0x01, 0x52, 0x06, 0x70, 0x61, 0x72, 0x61, 0x6d, 0x73, 0x32,
-	0xab, 0x02, 0x0a, 0x05, 0x51, 0x75, 0x65, 0x72, 0x79, 0x12, 0xa5, 0x01, 0x0a, 0x0d, 0x43, 0x6f,
-	0x6e, 0x74, 0x72, 0x61, 0x63, 0x74, 0x53, 0x74, 0x61, 0x74, 0x65, 0x12, 0x27, 0x2e, 0x68, 0x79,
-	0x6c, 0x65, 0x2e, 0x68, 0x79, 0x6c, 0x65, 0x2e, 0x7a, 0x6b, 0x74, 0x78, 0x2e, 0x76, 0x31, 0x2e,
-	0x43, 0x6f, 0x6e, 0x74, 0x72, 0x61, 0x63, 0x74, 0x53, 0x74, 0x61, 0x74, 0x65, 0x52, 0x65, 0x71,
-	0x75, 0x65, 0x73, 0x74, 0x1a, 0x28, 0x2e, 0x68, 0x79, 0x6c, 0x65, 0x2e, 0x68, 0x79, 0x6c, 0x65,
-	0x2e, 0x7a, 0x6b, 0x74, 0x78, 0x2e, 0x76, 0x31, 0x2e, 0x43, 0x6f, 0x6e, 0x74, 0x72, 0x61, 0x63,
-	0x74, 0x53, 0x74, 0x61, 0x74, 0x65, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x41,
-	0x88, 0xe7, 0xb0, 0x2a, 0x01, 0x82, 0xd3, 0xe4, 0x93, 0x02, 0x36, 0x12, 0x34, 0x2f, 0x68, 0x79,
-	0x6c, 0x65, 0x2f, 0x68, 0x79, 0x6c, 0x65, 0x2f, 0x7a, 0x6b, 0x74, 0x78, 0x2f, 0x76, 0x31, 0x2f,
-	0x63, 0x6f, 0x6e, 0x74, 0x72, 0x61, 0x63, 0x74, 0x5f, 0x73, 0x74, 0x61, 0x74, 0x65, 0x2f, 0x7b,
-	0x63, 0x6f, 0x6e, 0x74, 0x72, 0x61, 0x63, 0x74, 0x5f, 0x61, 0x64, 0x64, 0x72, 0x65, 0x73, 0x73,
-	0x7d, 0x12, 0x7a, 0x0a, 0x06, 0x50, 0x61, 0x72, 0x61, 0x6d, 0x73, 0x12, 0x25, 0x2e, 0x68, 0x79,
-	0x6c, 0x65, 0x2e, 0x68, 0x79, 0x6c, 0x65, 0x2e, 0x7a, 0x6b, 0x74, 0x78, 0x2e, 0x76, 0x31, 0x2e,
-	0x51, 0x75, 0x65, 0x72, 0x79, 0x50, 0x61, 0x72, 0x61, 0x6d, 0x73, 0x52, 0x65, 0x71, 0x75, 0x65,
-	0x73, 0x74, 0x1a, 0x26, 0x2e, 0x68, 0x79, 0x6c, 0x65, 0x2e, 0x68, 0x79, 0x6c, 0x65, 0x2e, 0x7a,
-	0x6b, 0x74, 0x78, 0x2e, 0x76, 0x31, 0x2e, 0x51, 0x75, 0x65, 0x72, 0x79, 0x50, 0x61, 0x72, 0x61,
-	0x6d, 0x73, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x21, 0x82, 0xd3, 0xe4, 0x93,
-	0x02, 0x1b, 0x12, 0x19, 0x2f, 0x68, 0x79, 0x6c, 0x65, 0x2f, 0x68, 0x79, 0x6c, 0x65, 0x2f, 0x7a,
-	0x6b, 0x74, 0x78, 0x2f, 0x76, 0x31, 0x2f, 0x70, 0x61, 0x72, 0x61, 0x6d, 0x73, 0x42, 0xc2, 0x01,
-	0x0a, 0x15, 0x63, 0x6f, 0x6d, 0x2e, 0x68, 0x79, 0x6c, 0x65, 0x2e, 0x68, 0x79, 0x6c, 0x65, 0x2e,
-	0x7a, 0x6b, 0x74, 0x78, 0x2e, 0x76, 0x31, 0x42, 0x0a, 0x51, 0x75, 0x65, 0x72, 0x79, 0x50, 0x72,
-	0x6f, 0x74, 0x6f, 0x50, 0x01, 0x5a, 0x36, 0x67, 0x69, 0x74, 0x68, 0x75, 0x62, 0x2e, 0x63, 0x6f,
-	0x6d, 0x2f, 0x68, 0x79, 0x6c, 0x65, 0x2f, 0x68, 0x79, 0x6c, 0x65, 0x2f, 0x7a, 0x6b, 0x74, 0x78,
-	0x2f, 0x61, 0x70, 0x69, 0x2f, 0x68, 0x79, 0x6c, 0x65, 0x2f, 0x68, 0x79, 0x6c, 0x65, 0x2f, 0x7a,
-	0x6b, 0x74, 0x78, 0x2f, 0x76, 0x31, 0x3b, 0x7a, 0x6b, 0x74, 0x78, 0x76, 0x31, 0xa2, 0x02, 0x03,
-	0x48, 0x48, 0x5a, 0xaa, 0x02, 0x11, 0x48, 0x79, 0x6c, 0x65, 0x2e, 0x48, 0x79, 0x6c, 0x65, 0x2e,
-	0x5a, 0x6b, 0x74, 0x78, 0x2e, 0x56, 0x31, 0xca, 0x02, 0x11, 0x48, 0x79, 0x6c, 0x65, 0x5c, 0x48,
-	0x79, 0x6c, 0x65, 0x5c, 0x5a, 0x6b, 0x74, 0x78, 0x5c, 0x56, 0x31, 0xe2, 0x02, 0x1d, 0x48, 0x79,
-	0x6c, 0x65, 0x5c, 0x48, 0x79, 0x6c, 0x65, 0x5c, 0x5a, 0x6b, 0x74, 0x78, 0x5c, 0x56, 0x31, 0x5c,
-	0x47, 0x50, 0x42, 0x4d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0xea, 0x02, 0x14, 0x48, 0x79,
-	0x6c, 0x65, 0x3a, 0x3a, 0x48, 0x79, 0x6c, 0x65, 0x3a, 0x3a, 0x5a, 0x6b, 0x74, 0x78, 0x3a, 0x3a,
-	0x56, 0x31, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
+	0x22, 0x36, 0x0a, 0x0f, 0x43, 0x6f, 0x6e, 0x74, 0x72, 0x61, 0x63, 0x74, 0x52, 0x65, 0x71, 0x75,
+	0x65, 0x73, 0x74, 0x12, 0x23, 0x0a, 0x0d, 0x63, 0x6f, 0x6e, 0x74, 0x72, 0x61, 0x63, 0x74, 0x5f,
+	0x6e, 0x61, 0x6d, 0x65, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x0c, 0x63, 0x6f, 0x6e, 0x74,
+	0x72, 0x61, 0x63, 0x74, 0x4e, 0x61, 0x6d, 0x65, 0x22, 0x51, 0x0a, 0x10, 0x43, 0x6f, 0x6e, 0x74,
+	0x72, 0x61, 0x63, 0x74, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x12, 0x3d, 0x0a, 0x08,
+	0x63, 0x6f, 0x6e, 0x74, 0x72, 0x61, 0x63, 0x74, 0x18, 0x01, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x1b,
+	0x2e, 0x68, 0x79, 0x6c, 0x65, 0x2e, 0x68, 0x79, 0x6c, 0x65, 0x2e, 0x7a, 0x6b, 0x74, 0x78, 0x2e,
+	0x76, 0x31, 0x2e, 0x43, 0x6f, 0x6e, 0x74, 0x72, 0x61, 0x63, 0x74, 0x42, 0x04, 0xc8, 0xde, 0x1f,
+	0x00, 0x52, 0x08, 0x63, 0x6f, 0x6e, 0x74, 0x72, 0x61, 0x63, 0x74, 0x22, 0x14, 0x0a, 0x12, 0x51,
+	0x75, 0x65, 0x72, 0x79, 0x50, 0x61, 0x72, 0x61, 0x6d, 0x73, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73,
+	0x74, 0x22, 0x53, 0x0a, 0x13, 0x51, 0x75, 0x65, 0x72, 0x79, 0x50, 0x61, 0x72, 0x61, 0x6d, 0x73,
+	0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x12, 0x3c, 0x0a, 0x06, 0x70, 0x61, 0x72, 0x61,
+	0x6d, 0x73, 0x18, 0x01, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x19, 0x2e, 0x68, 0x79, 0x6c, 0x65, 0x2e,
+	0x68, 0x79, 0x6c, 0x65, 0x2e, 0x7a, 0x6b, 0x74, 0x78, 0x2e, 0x76, 0x31, 0x2e, 0x50, 0x61, 0x72,
+	0x61, 0x6d, 0x73, 0x42, 0x09, 0xc8, 0xde, 0x1f, 0x00, 0xa8, 0xe7, 0xb0, 0x2a, 0x01, 0x52, 0x06,
+	0x70, 0x61, 0x72, 0x61, 0x6d, 0x73, 0x32, 0x93, 0x02, 0x0a, 0x05, 0x51, 0x75, 0x65, 0x72, 0x79,
+	0x12, 0x8d, 0x01, 0x0a, 0x08, 0x43, 0x6f, 0x6e, 0x74, 0x72, 0x61, 0x63, 0x74, 0x12, 0x22, 0x2e,
+	0x68, 0x79, 0x6c, 0x65, 0x2e, 0x68, 0x79, 0x6c, 0x65, 0x2e, 0x7a, 0x6b, 0x74, 0x78, 0x2e, 0x76,
+	0x31, 0x2e, 0x43, 0x6f, 0x6e, 0x74, 0x72, 0x61, 0x63, 0x74, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73,
+	0x74, 0x1a, 0x23, 0x2e, 0x68, 0x79, 0x6c, 0x65, 0x2e, 0x68, 0x79, 0x6c, 0x65, 0x2e, 0x7a, 0x6b,
+	0x74, 0x78, 0x2e, 0x76, 0x31, 0x2e, 0x43, 0x6f, 0x6e, 0x74, 0x72, 0x61, 0x63, 0x74, 0x52, 0x65,
+	0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x38, 0x88, 0xe7, 0xb0, 0x2a, 0x01, 0x82, 0xd3, 0xe4,
+	0x93, 0x02, 0x2d, 0x12, 0x2b, 0x2f, 0x68, 0x79, 0x6c, 0x65, 0x2f, 0x68, 0x79, 0x6c, 0x65, 0x2f,
+	0x7a, 0x6b, 0x74, 0x78, 0x2f, 0x76, 0x31, 0x2f, 0x63, 0x6f, 0x6e, 0x74, 0x72, 0x61, 0x63, 0x74,
+	0x2f, 0x7b, 0x63, 0x6f, 0x6e, 0x74, 0x72, 0x61, 0x63, 0x74, 0x5f, 0x6e, 0x61, 0x6d, 0x65, 0x7d,
+	0x12, 0x7a, 0x0a, 0x06, 0x50, 0x61, 0x72, 0x61, 0x6d, 0x73, 0x12, 0x25, 0x2e, 0x68, 0x79, 0x6c,
+	0x65, 0x2e, 0x68, 0x79, 0x6c, 0x65, 0x2e, 0x7a, 0x6b, 0x74, 0x78, 0x2e, 0x76, 0x31, 0x2e, 0x51,
+	0x75, 0x65, 0x72, 0x79, 0x50, 0x61, 0x72, 0x61, 0x6d, 0x73, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73,
+	0x74, 0x1a, 0x26, 0x2e, 0x68, 0x79, 0x6c, 0x65, 0x2e, 0x68, 0x79, 0x6c, 0x65, 0x2e, 0x7a, 0x6b,
+	0x74, 0x78, 0x2e, 0x76, 0x31, 0x2e, 0x51, 0x75, 0x65, 0x72, 0x79, 0x50, 0x61, 0x72, 0x61, 0x6d,
+	0x73, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x21, 0x82, 0xd3, 0xe4, 0x93, 0x02,
+	0x1b, 0x12, 0x19, 0x2f, 0x68, 0x79, 0x6c, 0x65, 0x2f, 0x68, 0x79, 0x6c, 0x65, 0x2f, 0x7a, 0x6b,
+	0x74, 0x78, 0x2f, 0x76, 0x31, 0x2f, 0x70, 0x61, 0x72, 0x61, 0x6d, 0x73, 0x42, 0xc2, 0x01, 0x0a,
+	0x15, 0x63, 0x6f, 0x6d, 0x2e, 0x68, 0x79, 0x6c, 0x65, 0x2e, 0x68, 0x79, 0x6c, 0x65, 0x2e, 0x7a,
+	0x6b, 0x74, 0x78, 0x2e, 0x76, 0x31, 0x42, 0x0a, 0x51, 0x75, 0x65, 0x72, 0x79, 0x50, 0x72, 0x6f,
+	0x74, 0x6f, 0x50, 0x01, 0x5a, 0x36, 0x67, 0x69, 0x74, 0x68, 0x75, 0x62, 0x2e, 0x63, 0x6f, 0x6d,
+	0x2f, 0x68, 0x79, 0x6c, 0x65, 0x2f, 0x68, 0x79, 0x6c, 0x65, 0x2f, 0x7a, 0x6b, 0x74, 0x78, 0x2f,
+	0x61, 0x70, 0x69, 0x2f, 0x68, 0x79, 0x6c, 0x65, 0x2f, 0x68, 0x79, 0x6c, 0x65, 0x2f, 0x7a, 0x6b,
+	0x74, 0x78, 0x2f, 0x76, 0x31, 0x3b, 0x7a, 0x6b, 0x74, 0x78, 0x76, 0x31, 0xa2, 0x02, 0x03, 0x48,
+	0x48, 0x5a, 0xaa, 0x02, 0x11, 0x48, 0x79, 0x6c, 0x65, 0x2e, 0x48, 0x79, 0x6c, 0x65, 0x2e, 0x5a,
+	0x6b, 0x74, 0x78, 0x2e, 0x56, 0x31, 0xca, 0x02, 0x11, 0x48, 0x79, 0x6c, 0x65, 0x5c, 0x48, 0x79,
+	0x6c, 0x65, 0x5c, 0x5a, 0x6b, 0x74, 0x78, 0x5c, 0x56, 0x31, 0xe2, 0x02, 0x1d, 0x48, 0x79, 0x6c,
+	0x65, 0x5c, 0x48, 0x79, 0x6c, 0x65, 0x5c, 0x5a, 0x6b, 0x74, 0x78, 0x5c, 0x56, 0x31, 0x5c, 0x47,
+	0x50, 0x42, 0x4d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0xea, 0x02, 0x14, 0x48, 0x79, 0x6c,
+	0x65, 0x3a, 0x3a, 0x48, 0x79, 0x6c, 0x65, 0x3a, 0x3a, 0x5a, 0x6b, 0x74, 0x78, 0x3a, 0x3a, 0x56,
+	0x31, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
 }
 
 var (
@@ -1896,19 +1892,19 @@ func file_hyle_hyle_zktx_v1_query_proto_rawDescGZIP() []byte {
 
 var file_hyle_hyle_zktx_v1_query_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
 var file_hyle_hyle_zktx_v1_query_proto_goTypes = []interface{}{
-	(*ContractStateRequest)(nil),  // 0: hyle.hyle.zktx.v1.ContractStateRequest
-	(*ContractStateResponse)(nil), // 1: hyle.hyle.zktx.v1.ContractStateResponse
-	(*QueryParamsRequest)(nil),    // 2: hyle.hyle.zktx.v1.QueryParamsRequest
-	(*QueryParamsResponse)(nil),   // 3: hyle.hyle.zktx.v1.QueryParamsResponse
-	(*ContractState)(nil),         // 4: hyle.hyle.zktx.v1.ContractState
-	(*Params)(nil),                // 5: hyle.hyle.zktx.v1.Params
+	(*ContractRequest)(nil),     // 0: hyle.hyle.zktx.v1.ContractRequest
+	(*ContractResponse)(nil),    // 1: hyle.hyle.zktx.v1.ContractResponse
+	(*QueryParamsRequest)(nil),  // 2: hyle.hyle.zktx.v1.QueryParamsRequest
+	(*QueryParamsResponse)(nil), // 3: hyle.hyle.zktx.v1.QueryParamsResponse
+	(*Contract)(nil),            // 4: hyle.hyle.zktx.v1.Contract
+	(*Params)(nil),              // 5: hyle.hyle.zktx.v1.Params
 }
 var file_hyle_hyle_zktx_v1_query_proto_depIdxs = []int32{
-	4, // 0: hyle.hyle.zktx.v1.ContractStateResponse.state:type_name -> hyle.hyle.zktx.v1.ContractState
+	4, // 0: hyle.hyle.zktx.v1.ContractResponse.contract:type_name -> hyle.hyle.zktx.v1.Contract
 	5, // 1: hyle.hyle.zktx.v1.QueryParamsResponse.params:type_name -> hyle.hyle.zktx.v1.Params
-	0, // 2: hyle.hyle.zktx.v1.Query.ContractState:input_type -> hyle.hyle.zktx.v1.ContractStateRequest
+	0, // 2: hyle.hyle.zktx.v1.Query.Contract:input_type -> hyle.hyle.zktx.v1.ContractRequest
 	2, // 3: hyle.hyle.zktx.v1.Query.Params:input_type -> hyle.hyle.zktx.v1.QueryParamsRequest
-	1, // 4: hyle.hyle.zktx.v1.Query.ContractState:output_type -> hyle.hyle.zktx.v1.ContractStateResponse
+	1, // 4: hyle.hyle.zktx.v1.Query.Contract:output_type -> hyle.hyle.zktx.v1.ContractResponse
 	3, // 5: hyle.hyle.zktx.v1.Query.Params:output_type -> hyle.hyle.zktx.v1.QueryParamsResponse
 	4, // [4:6] is the sub-list for method output_type
 	2, // [2:4] is the sub-list for method input_type
@@ -1925,7 +1921,7 @@ func file_hyle_hyle_zktx_v1_query_proto_init() {
 	file_hyle_hyle_zktx_v1_types_proto_init()
 	if !protoimpl.UnsafeEnabled {
 		file_hyle_hyle_zktx_v1_query_proto_msgTypes[0].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*ContractStateRequest); i {
+			switch v := v.(*ContractRequest); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -1937,7 +1933,7 @@ func file_hyle_hyle_zktx_v1_query_proto_init() {
 			}
 		}
 		file_hyle_hyle_zktx_v1_query_proto_msgTypes[1].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*ContractStateResponse); i {
+			switch v := v.(*ContractResponse); i {
 			case 0:
 				return &v.state
 			case 1:

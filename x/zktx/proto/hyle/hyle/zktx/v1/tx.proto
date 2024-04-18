@@ -27,17 +27,18 @@ service Msg {
 
 // execute a zk-proven state change - request type
 message MsgExecuteStateChange {
-  option (cosmos.msg.v1.signer) = "contract_address"; // TODO remove this ?
+  option (cosmos.msg.v1.signer) = "creator"; // TODO remove this ?
 
   // handle this differently ?
-  string contract_address = 1
-      [ (cosmos_proto.scalar) = "cosmos.AddressString" ];
+  string creator = 1;
+  
+  string contract_name = 2;
   // Proof of the transaction
-  bytes proof = 2;
+  bytes proof = 3;
   // State to check against
-  bytes initial_state = 3;
+  bytes initial_state = 4;
   // Check after the proof has been applied
-  bytes final_state = 4;
+  bytes final_state = 5;
 }
 
 // No response
@@ -57,7 +58,10 @@ message MsgRegisterContract {
   string program_id = 3;
 
   // Initial state digest
-  string state_digest = 4;
+  bytes state_digest = 4;
+  
+  // Identifier of the contract name
+  string contract_name = 5;
 }
 
 // Register a contract - response type

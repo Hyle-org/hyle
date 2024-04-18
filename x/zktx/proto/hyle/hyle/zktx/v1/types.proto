@@ -12,12 +12,13 @@ message Params { option (amino.name) = "hyle/hyle/zktx/Params"; }
 // GenesisState is the state that must be provided at genesis.
 message GenesisState {
   // params defines all the parameters of the module.
-  Params params = 1
-      [ (gogoproto.nullable) = false, (amino.dont_omitempty) = true ];
+  Params params = 1 [ (gogoproto.nullable) = false, (amino.dont_omitempty) = true ];
+
+  map<string, Contract> contracts = 2;
 }
 
-// ContractState is the state of a contract
-message ContractState {
+// Contract is the state of a contract
+message Contract {
   // The identifier of the verifier to run for this contract
   string verifier = 1;
   // An identifier for the program (may depend on verifier)

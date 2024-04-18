@@ -19,16 +19,16 @@ import (
 const _ = grpc.SupportPackageIsVersion7
 
 const (
-	Query_ContractState_FullMethodName = "/hyle.hyle.zktx.v1.Query/ContractState"
-	Query_Params_FullMethodName        = "/hyle.hyle.zktx.v1.Query/Params"
+	Query_Contract_FullMethodName = "/hyle.hyle.zktx.v1.Query/Contract"
+	Query_Params_FullMethodName   = "/hyle.hyle.zktx.v1.Query/Params"
 )
 
 // QueryClient is the client API for Query service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type QueryClient interface {
-	// ContractState returns the current state of the contract.
-	ContractState(ctx context.Context, in *ContractStateRequest, opts ...grpc.CallOption) (*ContractStateResponse, error)
+	// Contract returns the current state of the contract.
+	Contract(ctx context.Context, in *ContractRequest, opts ...grpc.CallOption) (*ContractResponse, error)
 	// Params returns the module parameters.
 	Params(ctx context.Context, in *QueryParamsRequest, opts ...grpc.CallOption) (*QueryParamsResponse, error)
 }
@@ -41,9 +41,9 @@ func NewQueryClient(cc grpc.ClientConnInterface) QueryClient {
 	return &queryClient{cc}
 }
 
-func (c *queryClient) ContractState(ctx context.Context, in *ContractStateRequest, opts ...grpc.CallOption) (*ContractStateResponse, error) {
-	out := new(ContractStateResponse)
-	err := c.cc.Invoke(ctx, Query_ContractState_FullMethodName, in, out, opts...)
+func (c *queryClient) Contract(ctx context.Context, in *ContractRequest, opts ...grpc.CallOption) (*ContractResponse, error) {
+	out := new(ContractResponse)
+	err := c.cc.Invoke(ctx, Query_Contract_FullMethodName, in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -63,8 +63,8 @@ func (c *queryClient) Params(ctx context.Context, in *QueryParamsRequest, opts .
 // All implementations must embed UnimplementedQueryServer
 // for forward compatibility
 type QueryServer interface {
-	// ContractState returns the current state of the contract.
-	ContractState(context.Context, *ContractStateRequest) (*ContractStateResponse, error)
+	// Contract returns the current state of the contract.
+	Contract(context.Context, *ContractRequest) (*ContractResponse, error)
 	// Params returns the module parameters.
 	Params(context.Context, *QueryParamsRequest) (*QueryParamsResponse, error)
 	mustEmbedUnimplementedQueryServer()
@@ -74,8 +74,8 @@ type QueryServer interface {
 type UnimplementedQueryServer struct {
 }
 
-func (UnimplementedQueryServer) ContractState(context.Context, *ContractStateRequest) (*ContractStateResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method ContractState not implemented")
+func (UnimplementedQueryServer) Contract(context.Context, *ContractRequest) (*ContractResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Contract not implemented")
 }
 func (UnimplementedQueryServer) Params(context.Context, *QueryParamsRequest) (*QueryParamsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Params not implemented")
@@ -93,20 +93,20 @@ func RegisterQueryServer(s grpc.ServiceRegistrar, srv QueryServer) {
 	s.RegisterService(&Query_ServiceDesc, srv)
 }
 
-func _Query_ContractState_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(ContractStateRequest)
+func _Query_Contract_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ContractRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(QueryServer).ContractState(ctx, in)
+		return srv.(QueryServer).Contract(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: Query_ContractState_FullMethodName,
+		FullMethod: Query_Contract_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(QueryServer).ContractState(ctx, req.(*ContractStateRequest))
+		return srv.(QueryServer).Contract(ctx, req.(*ContractRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -137,8 +137,8 @@ var Query_ServiceDesc = grpc.ServiceDesc{
 	HandlerType: (*QueryServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
-			MethodName: "ContractState",
-			Handler:    _Query_ContractState_Handler,
+			MethodName: "Contract",
+			Handler:    _Query_Contract_Handler,
 		},
 		{
 			MethodName: "Params",

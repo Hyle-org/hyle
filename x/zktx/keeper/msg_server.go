@@ -3,7 +3,6 @@ package keeper
 import (
 	"bytes"
 	"context"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -40,26 +39,25 @@ type Groth16Proof struct {
 }
 
 func (ms msgServer) ExecuteStateChange(ctx context.Context, msg *zktx.MsgExecuteStateChange) (*zktx.MsgExecuteStateChangeResponse, error) {
-	state, err := ms.k.ContractStates.Get(ctx, msg.ContractAddress)
+	contract, err := ms.k.Contracts.Get(ctx, msg.ContractName)
 
 	if err != nil {
 		if errors.Is(err, collections.ErrNotFound) {
-			// Generate a default state
-			state = zktx.ContractState{
+			// Generate a default contract
+			contract = zktx.Contract{
 				Verifier:    "risczero",
-				ProgramId:   "5489d205ec0d546ed93b75d890d4278477ae7d2f3fb180b3a853fcece6719814",
+				ProgramId:   "390d14c0c0a3f5eaede8e9b43db2a3b911780cebe46b70ca8fd745d3ca60691d",
 				StateDigest: []byte{0},
 			}
 		} else {
 			return nil, err
 		}
 	}
-
-	if !bytes.Equal(state.StateDigest, msg.InitialState) {
-		return nil, fmt.Errorf("invalid initial state, expected %x, got %x", state.StateDigest, msg.InitialState)
+	if !bytes.Equal(contract.StateDigest, msg.InitialState) {
+		return nil, fmt.Errorf("invalid initial contract, expected %x, got %x", contract.StateDigest, msg.InitialState)
 	}
 
-	if state.Verifier == "risczero" {
+	if contract.Verifier == "risczero" {
 		// Save proof to a local file
 		err = os.WriteFile("proof.json", msg.Proof, 0644)
 
@@ -68,7 +66,8 @@ func (ms msgServer) ExecuteStateChange(ctx context.Context, msg *zktx.MsgExecute
 		}
 
 		// TODO don't harcode this
-		verifierCmd := exec.Command("/Volumes/Samsung_T5/Programming/hylé/risczero/target/debug/host", "verify", "5489d205ec0d546ed93b75d890d4278477ae7d2f3fb180b3a853fcece6719814", "proof.json", hex.EncodeToString(msg.InitialState), hex.EncodeToString(msg.FinalState))
+		// TODO: don't know why, but last byte is a \n
+		verifierCmd := exec.Command("/home/maximilien/risczerotuto-helloworld/hello-world/target/debug/host", "verify", contract.ProgramId, "proof.json", string(msg.InitialState[0]), string(msg.FinalState[0]))
 		grepOut, _ := verifierCmd.StderrPipe()
 		verifierCmd.Start()
 		err = verifierCmd.Wait()
@@ -78,7 +77,8 @@ func (ms msgServer) ExecuteStateChange(ctx context.Context, msg *zktx.MsgExecute
 			fmt.Println(string(grepBytes))
 			return nil, fmt.Errorf("verifier failed. Exit code: %s", err)
 		}
-	} else if state.Verifier == "groth16-twistededwards-BN254" {
+
+	} else if contract.Verifier == "groth16-twistededwards-BN254" {
 		var proof Groth16Proof
 		err = json.Unmarshal(msg.Proof, &proof)
 		if err != nil {
@@ -118,16 +118,15 @@ func (ms msgServer) ExecuteStateChange(ctx context.Context, msg *zktx.MsgExecute
 		err = groth16.Verify(g16p, vk, publicWitness)
 
 		if err != nil {
-			return nil, fmt.Errorf("Verifier failed: %s", err)
+			return nil, fmt.Errorf("verifier failed: %s", err)
 		}
 	} else {
-		return nil, fmt.Errorf("unknown verifier %s", state.Verifier)
+		return nil, fmt.Errorf("unknown verifier %s", contract.Verifier)
 	}
 
-	// Update state
-	state.StateDigest = msg.FinalState
-
-	if err := ms.k.ContractStates.Set(ctx, msg.ContractAddress, state); err != nil {
+	// Update contract
+	contract.StateDigest = msg.FinalState
+	if err := ms.k.Contracts.Set(ctx, msg.ContractName, contract); err != nil {
 		return nil, err
 	}
 
@@ -135,7 +134,19 @@ func (ms msgServer) ExecuteStateChange(ctx context.Context, msg *zktx.MsgExecute
 }
 
 func (ms msgServer) RegisterContract(ctx context.Context, msg *zktx.MsgRegisterContract) (*zktx.MsgRegisterContractResponse, error) {
-	return nil, fmt.Errorf("not implemented")
+	if _, err := ms.k.Contracts.Get(ctx, msg.ContractName); err == nil || errors.Is(err, collections.ErrEncoding) {
+		return nil, fmt.Errorf("Contract with name {%s} already exists", msg.ContractName)
+	}
+
+	newContract := zktx.Contract{
+		Verifier:    msg.Verifier,
+		ProgramId:   msg.ProgramId,
+		StateDigest: []byte(msg.StateDigest),
+	}
+	if err := ms.k.Contracts.Set(ctx, msg.ContractName, newContract); err != nil {
+		return nil, err
+	}
+	return &zktx.MsgRegisterContractResponse{}, nil
 }
 
 ///// Stuff from the default go project in the cosmos sdk minichain
