@@ -89,7 +89,7 @@ func init() {
 	if err != nil {
 		panic(err)
 	}
-	DefaultNodeHome = filepath.Join(pwd, "hyle-data")
+	DefaultNodeHome = filepath.Join(pwd, "hyled-data")
 }
 
 // AppConfig returns the default app config.
