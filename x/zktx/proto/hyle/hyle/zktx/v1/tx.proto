@@ -27,18 +27,17 @@ service Msg {
 
 // execute a zk-proven state change - request type
 message MsgExecuteStateChange {
-  option (cosmos.msg.v1.signer) = "creator"; // TODO remove this ?
+  option (cosmos.msg.v1.signer) = "sender"; // TODO remove this ?
 
-  // handle this differently ?
-  string creator = 1;
-  
-  string contract_name = 2;
+  string contract_name = 1;
   // Proof of the transaction
-  bytes proof = 3;
+  bytes proof = 2;
   // State to check against
-  bytes initial_state = 4;
+  bytes initial_state = 3;
   // Check after the proof has been applied
-  bytes final_state = 5;
+  bytes final_state = 4;
+  // handle this differently ?
+  string sender = 5;
 }
 
 // No response

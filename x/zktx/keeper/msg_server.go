@@ -4,14 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"strings"
 
-	"cosmossdk.io/collections"
 	"github.com/hyle/hyle/zktx"
 
 	"github.com/consensys/gnark-crypto/ecc"
@@ -41,18 +39,6 @@ type Groth16Proof struct {
 func (ms msgServer) ExecuteStateChange(ctx context.Context, msg *zktx.MsgExecuteStateChange) (*zktx.MsgExecuteStateChangeResponse, error) {
 	contract, err := ms.k.Contracts.Get(ctx, msg.ContractName)
 
-	if err != nil {
-		if errors.Is(err, collections.ErrNotFound) {
-			// Generate a default contract
-			contract = zktx.Contract{
-				Verifier:    "risczero",
-				ProgramId:   "390d14c0c0a3f5eaede8e9b43db2a3b911780cebe46b70ca8fd745d3ca60691d",
-				StateDigest: []byte{0},
-			}
-		} else {
-			return nil, err
-		}
-	}
 	if !bytes.Equal(contract.StateDigest, msg.InitialState) {
 		return nil, fmt.Errorf("invalid initial contract, expected %x, got %x", contract.StateDigest, msg.InitialState)
 	}
@@ -67,7 +53,7 @@ func (ms msgServer) ExecuteStateChange(ctx context.Context, msg *zktx.MsgExecute
 
 		// TODO don't harcode this
 		// TODO: don't know why, but last byte is a \n
-		verifierCmd := exec.Command("/home/maximilien/risczerotuto-helloworld/hello-world/target/debug/host", "verify", contract.ProgramId, "proof.json", string(msg.InitialState[0]), string(msg.FinalState[0]))
+		verifierCmd := exec.Command("/home/maximilien/risczerotuto-helloworld/hello-world/target/debug/host", "verify", contract.ProgramId, "proof.json", string(msg.InitialState), string(msg.FinalState))
 		grepOut, _ := verifierCmd.StderrPipe()
 		verifierCmd.Start()
 		err = verifierCmd.Wait()
@@ -134,7 +120,8 @@ func (ms msgServer) ExecuteStateChange(ctx context.Context, msg *zktx.MsgExecute
 }
 
 func (ms msgServer) RegisterContract(ctx context.Context, msg *zktx.MsgRegisterContract) (*zktx.MsgRegisterContractResponse, error) {
-	if _, err := ms.k.Contracts.Get(ctx, msg.ContractName); err == nil || errors.Is(err, collections.ErrEncoding) {
+
+	if exists, err := ms.k.Contracts.Has(ctx, msg.ContractName); err != nil || exists {
 		return nil, fmt.Errorf("Contract with name {%s} already exists", msg.ContractName)
 	}
 
