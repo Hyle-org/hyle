@@ -10,7 +10,7 @@ Proving systems supported:
  - [ ] Cairo
    - [ ] Starknet
  - [ ] SP1
- - [ ] Groth16
+ - [x] Groth16
  - [ ] PlonK
 
 (We plan to support all major proving schemes)
