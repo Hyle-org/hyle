@@ -2,7 +2,7 @@ modules:
   - name: runtime
     config:
       "@type": cosmos.app.runtime.v1alpha1.Module
-      app_name: MiniApp
+      app_name: HyleApp
       # During begin block slashing happens after distr.BeginBlocker so that
       # there is nothing left over in the validator fee pool, so as to keep the CanWithdrawInvariant invariant.
       # NOTE: staking module is required if HistoricalEntries param > 0
@@ -17,7 +17,7 @@ modules:
   - name: auth
     config:
       "@type": cosmos.auth.module.v1.Module
-      bech32_prefix: mini
+      bech32_prefix: hyle
       module_account_permissions:
         - account: fee_collector
         - account: distribution

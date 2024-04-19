@@ -8,7 +8,7 @@ import (
 
 	"github.com/hyle/hyle/app"
 	"github.com/hyle/hyle/app/params"
-	"github.com/hyle/hyle/cmd/minid/cmd"
+	"github.com/hyle/hyle/cmd/hyled/cmd"
 )
 
 func main() {

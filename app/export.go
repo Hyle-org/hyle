@@ -10,7 +10,7 @@ import (
 )
 
 // ExportAppStateAndValidators exports the state of the application for a genesis file.
-func (app *MiniApp) ExportAppStateAndValidators(
+func (app *HyleApp) ExportAppStateAndValidators(
 	forZeroHeight bool,
 	jailAllowedAddrs []string,
 	modulesToExport []string,
@@ -48,7 +48,7 @@ func (app *MiniApp) ExportAppStateAndValidators(
 
 // prepare for fresh start at zero height
 // NOTE zero height genesis is a temporary feature, which will be deprecated in favour of export at a block height
-// func (app *MiniApp) prepForZeroHeightGenesis(ctx sdk.Context, jailAllowedAddrs []string) {
+// func (app *HyleApp) prepForZeroHeightGenesis(ctx sdk.Context, jailAllowedAddrs []string) {
 // 	applyAllowedAddrs := false
 
 // 	// check if there is a allowed address list

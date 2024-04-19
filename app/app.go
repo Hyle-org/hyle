@@ -51,14 +51,14 @@ var DefaultNodeHome string
 var AppConfigYAML []byte
 
 var (
-	_ runtime.AppI            = (*MiniApp)(nil)
-	_ servertypes.Application = (*MiniApp)(nil)
+	_ runtime.AppI            = (*HyleApp)(nil)
+	_ servertypes.Application = (*HyleApp)(nil)
 )
 
-// MiniApp extends an ABCI application, but with most of its parameters exported.
+// HyleApp extends an ABCI application, but with most of its parameters exported.
 // They are exported for convenience in creating helper functions, as object
 // capabilities aren't needed for testing.
-type MiniApp struct {
+type HyleApp struct {
 	*runtime.App
 	legacyAmino       *codec.LegacyAmino
 	appCodec          codec.Codec
@@ -84,12 +84,12 @@ func init() {
 	// 	panic(err)
 	// }
 
-	// DefaultNodeHome = filepath.Join(userHomeDir, ".minid")
+	// DefaultNodeHome = filepath.Join(userHomeDir, ".hyle")
 	pwd, err := os.Getwd()
 	if err != nil {
 		panic(err)
 	}
-	DefaultNodeHome = filepath.Join(pwd, "minid-data")
+	DefaultNodeHome = filepath.Join(pwd, "hyle-data")
 }
 
 // AppConfig returns the default app config.
@@ -105,17 +105,17 @@ func AppConfig() depinject.Config {
 	)
 }
 
-// NewMiniApp returns a reference to an initialized MiniApp.
-func NewMiniApp(
+// NewHyleApp returns a reference to an initialized HyleApp.
+func NewHyleApp(
 	logger log.Logger,
 	db dbm.DB,
 	traceStore io.Writer,
 	loadLatest bool,
 	appOpts servertypes.AppOptions,
 	baseAppOptions ...func(*baseapp.BaseApp),
-) (*MiniApp, error) {
+) (*HyleApp, error) {
 	var (
-		app        = &MiniApp{}
+		app        = &HyleApp{}
 		appBuilder *runtime.AppBuilder
 	)
 
@@ -163,13 +163,13 @@ func NewMiniApp(
 	return app, nil
 }
 
-// LegacyAmino returns MiniApp's amino codec.
-func (app *MiniApp) LegacyAmino() *codec.LegacyAmino {
+// LegacyAmino returns HyleApp's amino codec.
+func (app *HyleApp) LegacyAmino() *codec.LegacyAmino {
 	return app.legacyAmino
 }
 
 // GetKey returns the KVStoreKey for the provided store key.
-func (app *MiniApp) GetKey(storeKey string) *storetypes.KVStoreKey {
+func (app *HyleApp) GetKey(storeKey string) *storetypes.KVStoreKey {
 	sk := app.UnsafeFindStoreKey(storeKey)
 	kvStoreKey, ok := sk.(*storetypes.KVStoreKey)
 	if !ok {
@@ -178,7 +178,7 @@ func (app *MiniApp) GetKey(storeKey string) *storetypes.KVStoreKey {
 	return kvStoreKey
 }
 
-func (app *MiniApp) kvStoreKeys() map[string]*storetypes.KVStoreKey {
+func (app *HyleApp) kvStoreKeys() map[string]*storetypes.KVStoreKey {
 	keys := make(map[string]*storetypes.KVStoreKey)
 	for _, k := range app.GetStoreKeys() {
 		if kv, ok := k.(*storetypes.KVStoreKey); ok {
@@ -190,13 +190,13 @@ func (app *MiniApp) kvStoreKeys() map[string]*storetypes.KVStoreKey {
 }
 
 // SimulationManager implements the SimulationApp interface
-func (app *MiniApp) SimulationManager() *module.SimulationManager {
+func (app *HyleApp) SimulationManager() *module.SimulationManager {
 	return app.sm
 }
 
 // RegisterAPIRoutes registers all application module routes with the provided
 // API server.
-func (app *MiniApp) RegisterAPIRoutes(apiSvr *api.Server, apiConfig config.APIConfig) {
+func (app *HyleApp) RegisterAPIRoutes(apiSvr *api.Server, apiConfig config.APIConfig) {
 	app.App.RegisterAPIRoutes(apiSvr, apiConfig)
 	// register swagger API in app.go so that other applications can override easily
 	if err := server.RegisterSwaggerAPI(apiSvr.ClientCtx, apiSvr.Router, apiConfig.Swagger); err != nil {
