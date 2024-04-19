@@ -22,18 +22,18 @@ type queryServer struct {
 	k Keeper
 }
 
-// Handler for the contract state query method
-func (qs queryServer) ContractState(ctx context.Context, req *zktx.ContractStateRequest) (*zktx.ContractStateResponse, error) {
-	state, err := qs.k.ContractStates.Get(ctx, req.ContractAddress)
+// Handler for the contract contract query method
+func (qs queryServer) Contract(ctx context.Context, req *zktx.ContractRequest) (*zktx.ContractResponse, error) {
+	contract, err := qs.k.Contracts.Get(ctx, req.ContractName)
 	if err != nil {
 		if errors.Is(err, collections.ErrNotFound) {
-			return &zktx.ContractStateResponse{State: zktx.ContractState{}}, nil
+			return &zktx.ContractResponse{Contract: zktx.Contract{}}, nil
 		}
 
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
-	return &zktx.ContractStateResponse{State: state}, nil
+	return &zktx.ContractResponse{Contract: contract}, nil
 }
 
 // Params defines the handler for the Query/Params RPC method.

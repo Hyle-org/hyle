@@ -12,11 +12,11 @@ func (am AppModule) AutoCLIOptions() *autocliv1.ModuleOptions {
 			Service: hylev1.Query_ServiceDesc.ServiceName,
 			RpcCommandOptions: []*autocliv1.RpcCommandOptions{
 				{
-					RpcMethod: "ContractState",
-					Use:       "contract [contract_address]",
+					RpcMethod: "Contract",
+					Use:       "contract [contract_name]",
 					Short:     "Get the current state of a contract",
 					PositionalArgs: []*autocliv1.PositionalArgDescriptor{
-						{ProtoField: "contract_address"},
+						{ProtoField: "contract_name"},
 					},
 				},
 				{
@@ -31,10 +31,10 @@ func (am AppModule) AutoCLIOptions() *autocliv1.ModuleOptions {
 			RpcCommandOptions: []*autocliv1.RpcCommandOptions{
 				{
 					RpcMethod: "ExecuteStateChange",
-					Use:       "execute [contract_address] [proof] [initial_state] [final_state]",
+					Use:       "execute [contract_name] [proof] [initial_state] [final_state]",
 					Short:     "TODO",
 					PositionalArgs: []*autocliv1.PositionalArgDescriptor{
-						{ProtoField: "contract_address"},
+						{ProtoField: "contract_name"},
 						{ProtoField: "proof"},
 						{ProtoField: "initial_state"},
 						{ProtoField: "final_state"},
@@ -42,10 +42,11 @@ func (am AppModule) AutoCLIOptions() *autocliv1.ModuleOptions {
 				},
 				{
 					RpcMethod: "RegisterContract",
-					Use:       "register [owner] [verifier] [program_id] [state_digest]",
+					Use:       "register [owner] [contract_name] [verifier] [program_id] [state_digest]",
 					Short:     "TODO",
 					PositionalArgs: []*autocliv1.PositionalArgDescriptor{
 						{ProtoField: "owner"},
+						{ProtoField: "contract_name"},
 						{ProtoField: "verifier"},
 						{ProtoField: "program_id"},
 						{ProtoField: "state_digest"},

@@ -11,6 +11,7 @@ import (
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	io "io"
 	reflect "reflect"
+	sort "sort"
 	sync "sync"
 )
 
@@ -370,15 +371,107 @@ func (x *fastReflection_Params) ProtoMethods() *protoiface.Methods {
 	}
 }
 
+var _ protoreflect.Map = (*_GenesisState_2_map)(nil)
+
+type _GenesisState_2_map struct {
+	m *map[string]*Contract
+}
+
+func (x *_GenesisState_2_map) Len() int {
+	if x.m == nil {
+		return 0
+	}
+	return len(*x.m)
+}
+
+func (x *_GenesisState_2_map) Range(f func(protoreflect.MapKey, protoreflect.Value) bool) {
+	if x.m == nil {
+		return
+	}
+	for k, v := range *x.m {
+		mapKey := (protoreflect.MapKey)(protoreflect.ValueOfString(k))
+		mapValue := protoreflect.ValueOfMessage(v.ProtoReflect())
+		if !f(mapKey, mapValue) {
+			break
+		}
+	}
+}
+
+func (x *_GenesisState_2_map) Has(key protoreflect.MapKey) bool {
+	if x.m == nil {
+		return false
+	}
+	keyUnwrapped := key.String()
+	concreteValue := keyUnwrapped
+	_, ok := (*x.m)[concreteValue]
+	return ok
+}
+
+func (x *_GenesisState_2_map) Clear(key protoreflect.MapKey) {
+	if x.m == nil {
+		return
+	}
+	keyUnwrapped := key.String()
+	concreteKey := keyUnwrapped
+	delete(*x.m, concreteKey)
+}
+
+func (x *_GenesisState_2_map) Get(key protoreflect.MapKey) protoreflect.Value {
+	if x.m == nil {
+		return protoreflect.Value{}
+	}
+	keyUnwrapped := key.String()
+	concreteKey := keyUnwrapped
+	v, ok := (*x.m)[concreteKey]
+	if !ok {
+		return protoreflect.Value{}
+	}
+	return protoreflect.ValueOfMessage(v.ProtoReflect())
+}
+
+func (x *_GenesisState_2_map) Set(key protoreflect.MapKey, value protoreflect.Value) {
+	if !key.IsValid() || !value.IsValid() {
+		panic("invalid key or value provided")
+	}
+	keyUnwrapped := key.String()
+	concreteKey := keyUnwrapped
+	valueUnwrapped := value.Message()
+	concreteValue := valueUnwrapped.Interface().(*Contract)
+	(*x.m)[concreteKey] = concreteValue
+}
+
+func (x *_GenesisState_2_map) Mutable(key protoreflect.MapKey) protoreflect.Value {
+	keyUnwrapped := key.String()
+	concreteKey := keyUnwrapped
+	v, ok := (*x.m)[concreteKey]
+	if ok {
+		return protoreflect.ValueOfMessage(v.ProtoReflect())
+	}
+	newValue := new(Contract)
+	(*x.m)[concreteKey] = newValue
+	return protoreflect.ValueOfMessage(newValue.ProtoReflect())
+}
+
+func (x *_GenesisState_2_map) NewValue() protoreflect.Value {
+	v := new(Contract)
+	return protoreflect.ValueOfMessage(v.ProtoReflect())
+}
+
+func (x *_GenesisState_2_map) IsValid() bool {
+	return x.m != nil
+}
+
 var (
-	md_GenesisState        protoreflect.MessageDescriptor
-	fd_GenesisState_params protoreflect.FieldDescriptor
+	md_GenesisState           protoreflect.MessageDescriptor
+	fd_GenesisState_params    protoreflect.FieldDescriptor
+	fd_GenesisState_contracts protoreflect.FieldDescriptor
 )
 
 func init() {
 	file_hyle_hyle_zktx_v1_types_proto_init()
 	md_GenesisState = File_hyle_hyle_zktx_v1_types_proto.Messages().ByName("GenesisState")
 	fd_GenesisState_params = md_GenesisState.Fields().ByName("params")
+	fd_GenesisState_contracts = md_GenesisState.Fields().ByName("contracts")
 }
 
 var _ protoreflect.Message = (*fastReflection_GenesisState)(nil)
@@ -452,6 +545,12 @@ func (x *fastReflection_GenesisState) Range(f func(protoreflect.FieldDescriptor,
 			return
 		}
 	}
+	if len(x.Contracts) != 0 {
+		value := protoreflect.ValueOfMap(&_GenesisState_2_map{m: &x.Contracts})
+		if !f(fd_GenesisState_contracts, value) {
+			return
+		}
+	}
 }
 
 // Has reports whether a field is populated.
@@ -469,6 +568,8 @@ func (x *fastReflection_GenesisState) Has(fd protoreflect.FieldDescriptor) bool 
 	switch fd.FullName() {
 	case "hyle.hyle.zktx.v1.GenesisState.params":
 		return x.Params != nil
+	case "hyle.hyle.zktx.v1.GenesisState.contracts":
+		return len(x.Contracts) != 0
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: hyle.hyle.zktx.v1.GenesisState"))
@@ -487,6 +588,8 @@ func (x *fastReflection_GenesisState) Clear(fd protoreflect.FieldDescriptor) {
 	switch fd.FullName() {
 	case "hyle.hyle.zktx.v1.GenesisState.params":
 		x.Params = nil
+	case "hyle.hyle.zktx.v1.GenesisState.contracts":
+		x.Contracts = nil
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: hyle.hyle.zktx.v1.GenesisState"))
@@ -506,6 +609,12 @@ func (x *fastReflection_GenesisState) Get(descriptor protoreflect.FieldDescripto
 	case "hyle.hyle.zktx.v1.GenesisState.params":
 		value := x.Params
 		return protoreflect.ValueOfMessage(value.ProtoReflect())
+	case "hyle.hyle.zktx.v1.GenesisState.contracts":
+		if len(x.Contracts) == 0 {
+			return protoreflect.ValueOfMap(&_GenesisState_2_map{})
+		}
+		mapValue := &_GenesisState_2_map{m: &x.Contracts}
+		return protoreflect.ValueOfMap(mapValue)
 	default:
 		if descriptor.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: hyle.hyle.zktx.v1.GenesisState"))
@@ -528,6 +637,10 @@ func (x *fastReflection_GenesisState) Set(fd protoreflect.FieldDescriptor, value
 	switch fd.FullName() {
 	case "hyle.hyle.zktx.v1.GenesisState.params":
 		x.Params = value.Message().Interface().(*Params)
+	case "hyle.hyle.zktx.v1.GenesisState.contracts":
+		mv := value.Map()
+		cmv := mv.(*_GenesisState_2_map)
+		x.Contracts = *cmv.m
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: hyle.hyle.zktx.v1.GenesisState"))
@@ -553,6 +666,12 @@ func (x *fastReflection_GenesisState) Mutable(fd protoreflect.FieldDescriptor) p
 			x.Params = new(Params)
 		}
 		return protoreflect.ValueOfMessage(x.Params.ProtoReflect())
+	case "hyle.hyle.zktx.v1.GenesisState.contracts":
+		if x.Contracts == nil {
+			x.Contracts = make(map[string]*Contract)
+		}
+		value := &_GenesisState_2_map{m: &x.Contracts}
+		return protoreflect.ValueOfMap(value)
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: hyle.hyle.zktx.v1.GenesisState"))
@@ -569,6 +688,9 @@ func (x *fastReflection_GenesisState) NewField(fd protoreflect.FieldDescriptor) 
 	case "hyle.hyle.zktx.v1.GenesisState.params":
 		m := new(Params)
 		return protoreflect.ValueOfMessage(m.ProtoReflect())
+	case "hyle.hyle.zktx.v1.GenesisState.contracts":
+		m := make(map[string]*Contract)
+		return protoreflect.ValueOfMap(&_GenesisState_2_map{m: &m})
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: hyle.hyle.zktx.v1.GenesisState"))
@@ -642,6 +764,32 @@ func (x *fastReflection_GenesisState) ProtoMethods() *protoiface.Methods {
 			l = options.Size(x.Params)
 			n += 1 + l + runtime.Sov(uint64(l))
 		}
+		if len(x.Contracts) > 0 {
+			SiZeMaP := func(k string, v *Contract) {
+				l := 0
+				if v != nil {
+					l = options.Size(v)
+				}
+				l += 1 + runtime.Sov(uint64(l))
+				mapEntrySize := 1 + len(k) + runtime.Sov(uint64(len(k))) + l
+				n += mapEntrySize + 1 + runtime.Sov(uint64(mapEntrySize))
+			}
+			if options.Deterministic {
+				sortme := make([]string, 0, len(x.Contracts))
+				for k := range x.Contracts {
+					sortme = append(sortme, k)
+				}
+				sort.Strings(sortme)
+				for _, k := range sortme {
+					v := x.Contracts[k]
+					SiZeMaP(k, v)
+				}
+			} else {
+				for k, v := range x.Contracts {
+					SiZeMaP(k, v)
+				}
+			}
+		}
 		if x.unknownFields != nil {
 			n += len(x.unknownFields)
 		}
@@ -670,6 +818,56 @@ func (x *fastReflection_GenesisState) ProtoMethods() *protoiface.Methods {
 		if x.unknownFields != nil {
 			i -= len(x.unknownFields)
 			copy(dAtA[i:], x.unknownFields)
+		}
+		if len(x.Contracts) > 0 {
+			MaRsHaLmAp := func(k string, v *Contract) (protoiface.MarshalOutput, error) {
+				baseI := i
+				encoded, err := options.Marshal(v)
+				if err != nil {
+					return protoiface.MarshalOutput{
+						NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+						Buf:               input.Buf,
+					}, err
+				}
+				i -= len(encoded)
+				copy(dAtA[i:], encoded)
+				i = runtime.EncodeVarint(dAtA, i, uint64(len(encoded)))
+				i--
+				dAtA[i] = 0x12
+				i -= len(k)
+				copy(dAtA[i:], k)
+				i = runtime.EncodeVarint(dAtA, i, uint64(len(k)))
+				i--
+				dAtA[i] = 0xa
+				i = runtime.EncodeVarint(dAtA, i, uint64(baseI-i))
+				i--
+				dAtA[i] = 0x12
+				return protoiface.MarshalOutput{}, nil
+			}
+			if options.Deterministic {
+				keysForContracts := make([]string, 0, len(x.Contracts))
+				for k := range x.Contracts {
+					keysForContracts = append(keysForContracts, string(k))
+				}
+				sort.Slice(keysForContracts, func(i, j int) bool {
+					return keysForContracts[i] < keysForContracts[j]
+				})
+				for iNdEx := len(keysForContracts) - 1; iNdEx >= 0; iNdEx-- {
+					v := x.Contracts[string(keysForContracts[iNdEx])]
+					out, err := MaRsHaLmAp(keysForContracts[iNdEx], v)
+					if err != nil {
+						return out, err
+					}
+				}
+			} else {
+				for k := range x.Contracts {
+					v := x.Contracts[k]
+					out, err := MaRsHaLmAp(k, v)
+					if err != nil {
+						return out, err
+					}
+				}
+			}
 		}
 		if x.Params != nil {
 			encoded, err := options.Marshal(x.Params)
@@ -770,6 +968,135 @@ func (x *fastReflection_GenesisState) ProtoMethods() *protoiface.Methods {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, err
 				}
 				iNdEx = postIndex
+			case 2:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field Contracts", wireType)
+				}
+				var msglen int
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					msglen |= int(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				if msglen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + msglen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				if x.Contracts == nil {
+					x.Contracts = make(map[string]*Contract)
+				}
+				var mapkey string
+				var mapvalue *Contract
+				for iNdEx < postIndex {
+					entryPreIndex := iNdEx
+					var wire uint64
+					for shift := uint(0); ; shift += 7 {
+						if shift >= 64 {
+							return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+						}
+						if iNdEx >= l {
+							return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+						}
+						b := dAtA[iNdEx]
+						iNdEx++
+						wire |= uint64(b&0x7F) << shift
+						if b < 0x80 {
+							break
+						}
+					}
+					fieldNum := int32(wire >> 3)
+					if fieldNum == 1 {
+						var stringLenmapkey uint64
+						for shift := uint(0); ; shift += 7 {
+							if shift >= 64 {
+								return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+							}
+							if iNdEx >= l {
+								return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+							}
+							b := dAtA[iNdEx]
+							iNdEx++
+							stringLenmapkey |= uint64(b&0x7F) << shift
+							if b < 0x80 {
+								break
+							}
+						}
+						intStringLenmapkey := int(stringLenmapkey)
+						if intStringLenmapkey < 0 {
+							return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+						}
+						postStringIndexmapkey := iNdEx + intStringLenmapkey
+						if postStringIndexmapkey < 0 {
+							return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+						}
+						if postStringIndexmapkey > l {
+							return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+						}
+						mapkey = string(dAtA[iNdEx:postStringIndexmapkey])
+						iNdEx = postStringIndexmapkey
+					} else if fieldNum == 2 {
+						var mapmsglen int
+						for shift := uint(0); ; shift += 7 {
+							if shift >= 64 {
+								return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+							}
+							if iNdEx >= l {
+								return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+							}
+							b := dAtA[iNdEx]
+							iNdEx++
+							mapmsglen |= int(b&0x7F) << shift
+							if b < 0x80 {
+								break
+							}
+						}
+						if mapmsglen < 0 {
+							return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+						}
+						postmsgIndex := iNdEx + mapmsglen
+						if postmsgIndex < 0 {
+							return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+						}
+						if postmsgIndex > l {
+							return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+						}
+						mapvalue = &Contract{}
+						if err := options.Unmarshal(dAtA[iNdEx:postmsgIndex], mapvalue); err != nil {
+							return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, err
+						}
+						iNdEx = postmsgIndex
+					} else {
+						iNdEx = entryPreIndex
+						skippy, err := runtime.Skip(dAtA[iNdEx:])
+						if err != nil {
+							return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, err
+						}
+						if (skippy < 0) || (iNdEx+skippy) < 0 {
+							return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+						}
+						if (iNdEx + skippy) > postIndex {
+							return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+						}
+						iNdEx += skippy
+					}
+				}
+				x.Contracts[mapkey] = mapvalue
+				iNdEx = postIndex
 			default:
 				iNdEx = preIndex
 				skippy, err := runtime.Skip(dAtA[iNdEx:])
@@ -806,29 +1133,29 @@ func (x *fastReflection_GenesisState) ProtoMethods() *protoiface.Methods {
 }
 
 var (
-	md_ContractState              protoreflect.MessageDescriptor
-	fd_ContractState_verifier     protoreflect.FieldDescriptor
-	fd_ContractState_program_id   protoreflect.FieldDescriptor
-	fd_ContractState_state_digest protoreflect.FieldDescriptor
+	md_Contract              protoreflect.MessageDescriptor
+	fd_Contract_verifier     protoreflect.FieldDescriptor
+	fd_Contract_program_id   protoreflect.FieldDescriptor
+	fd_Contract_state_digest protoreflect.FieldDescriptor
 )
 
 func init() {
 	file_hyle_hyle_zktx_v1_types_proto_init()
-	md_ContractState = File_hyle_hyle_zktx_v1_types_proto.Messages().ByName("ContractState")
-	fd_ContractState_verifier = md_ContractState.Fields().ByName("verifier")
-	fd_ContractState_program_id = md_ContractState.Fields().ByName("program_id")
-	fd_ContractState_state_digest = md_ContractState.Fields().ByName("state_digest")
+	md_Contract = File_hyle_hyle_zktx_v1_types_proto.Messages().ByName("Contract")
+	fd_Contract_verifier = md_Contract.Fields().ByName("verifier")
+	fd_Contract_program_id = md_Contract.Fields().ByName("program_id")
+	fd_Contract_state_digest = md_Contract.Fields().ByName("state_digest")
 }
 
-var _ protoreflect.Message = (*fastReflection_ContractState)(nil)
+var _ protoreflect.Message = (*fastReflection_Contract)(nil)
 
-type fastReflection_ContractState ContractState
+type fastReflection_Contract Contract
 
-func (x *ContractState) ProtoReflect() protoreflect.Message {
-	return (*fastReflection_ContractState)(x)
+func (x *Contract) ProtoReflect() protoreflect.Message {
+	return (*fastReflection_Contract)(x)
 }
 
-func (x *ContractState) slowProtoReflect() protoreflect.Message {
+func (x *Contract) slowProtoReflect() protoreflect.Message {
 	mi := &file_hyle_hyle_zktx_v1_types_proto_msgTypes[2]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -840,43 +1167,43 @@ func (x *ContractState) slowProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-var _fastReflection_ContractState_messageType fastReflection_ContractState_messageType
-var _ protoreflect.MessageType = fastReflection_ContractState_messageType{}
+var _fastReflection_Contract_messageType fastReflection_Contract_messageType
+var _ protoreflect.MessageType = fastReflection_Contract_messageType{}
 
-type fastReflection_ContractState_messageType struct{}
+type fastReflection_Contract_messageType struct{}
 
-func (x fastReflection_ContractState_messageType) Zero() protoreflect.Message {
-	return (*fastReflection_ContractState)(nil)
+func (x fastReflection_Contract_messageType) Zero() protoreflect.Message {
+	return (*fastReflection_Contract)(nil)
 }
-func (x fastReflection_ContractState_messageType) New() protoreflect.Message {
-	return new(fastReflection_ContractState)
+func (x fastReflection_Contract_messageType) New() protoreflect.Message {
+	return new(fastReflection_Contract)
 }
-func (x fastReflection_ContractState_messageType) Descriptor() protoreflect.MessageDescriptor {
-	return md_ContractState
+func (x fastReflection_Contract_messageType) Descriptor() protoreflect.MessageDescriptor {
+	return md_Contract
 }
 
 // Descriptor returns message descriptor, which contains only the protobuf
 // type information for the message.
-func (x *fastReflection_ContractState) Descriptor() protoreflect.MessageDescriptor {
-	return md_ContractState
+func (x *fastReflection_Contract) Descriptor() protoreflect.MessageDescriptor {
+	return md_Contract
 }
 
 // Type returns the message type, which encapsulates both Go and protobuf
 // type information. If the Go type information is not needed,
 // it is recommended that the message descriptor be used instead.
-func (x *fastReflection_ContractState) Type() protoreflect.MessageType {
-	return _fastReflection_ContractState_messageType
+func (x *fastReflection_Contract) Type() protoreflect.MessageType {
+	return _fastReflection_Contract_messageType
 }
 
 // New returns a newly allocated and mutable empty message.
-func (x *fastReflection_ContractState) New() protoreflect.Message {
-	return new(fastReflection_ContractState)
+func (x *fastReflection_Contract) New() protoreflect.Message {
+	return new(fastReflection_Contract)
 }
 
 // Interface unwraps the message reflection interface and
 // returns the underlying ProtoMessage interface.
-func (x *fastReflection_ContractState) Interface() protoreflect.ProtoMessage {
-	return (*ContractState)(x)
+func (x *fastReflection_Contract) Interface() protoreflect.ProtoMessage {
+	return (*Contract)(x)
 }
 
 // Range iterates over every populated field in an undefined order,
@@ -884,22 +1211,22 @@ func (x *fastReflection_ContractState) Interface() protoreflect.ProtoMessage {
 // Range returns immediately if f returns false.
 // While iterating, mutating operations may only be performed
 // on the current field descriptor.
-func (x *fastReflection_ContractState) Range(f func(protoreflect.FieldDescriptor, protoreflect.Value) bool) {
+func (x *fastReflection_Contract) Range(f func(protoreflect.FieldDescriptor, protoreflect.Value) bool) {
 	if x.Verifier != "" {
 		value := protoreflect.ValueOfString(x.Verifier)
-		if !f(fd_ContractState_verifier, value) {
+		if !f(fd_Contract_verifier, value) {
 			return
 		}
 	}
 	if x.ProgramId != "" {
 		value := protoreflect.ValueOfString(x.ProgramId)
-		if !f(fd_ContractState_program_id, value) {
+		if !f(fd_Contract_program_id, value) {
 			return
 		}
 	}
 	if len(x.StateDigest) != 0 {
 		value := protoreflect.ValueOfBytes(x.StateDigest)
-		if !f(fd_ContractState_state_digest, value) {
+		if !f(fd_Contract_state_digest, value) {
 			return
 		}
 	}
@@ -916,19 +1243,19 @@ func (x *fastReflection_ContractState) Range(f func(protoreflect.FieldDescriptor
 // In other cases (aside from the nullable cases above),
 // a proto3 scalar field is populated if it contains a non-zero value, and
 // a repeated field is populated if it is non-empty.
-func (x *fastReflection_ContractState) Has(fd protoreflect.FieldDescriptor) bool {
+func (x *fastReflection_Contract) Has(fd protoreflect.FieldDescriptor) bool {
 	switch fd.FullName() {
-	case "hyle.hyle.zktx.v1.ContractState.verifier":
+	case "hyle.hyle.zktx.v1.Contract.verifier":
 		return x.Verifier != ""
-	case "hyle.hyle.zktx.v1.ContractState.program_id":
+	case "hyle.hyle.zktx.v1.Contract.program_id":
 		return x.ProgramId != ""
-	case "hyle.hyle.zktx.v1.ContractState.state_digest":
+	case "hyle.hyle.zktx.v1.Contract.state_digest":
 		return len(x.StateDigest) != 0
 	default:
 		if fd.IsExtension() {
-			panic(fmt.Errorf("proto3 declared messages do not support extensions: hyle.hyle.zktx.v1.ContractState"))
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: hyle.hyle.zktx.v1.Contract"))
 		}
-		panic(fmt.Errorf("message hyle.hyle.zktx.v1.ContractState does not contain field %s", fd.FullName()))
+		panic(fmt.Errorf("message hyle.hyle.zktx.v1.Contract does not contain field %s", fd.FullName()))
 	}
 }
 
@@ -938,19 +1265,19 @@ func (x *fastReflection_ContractState) Has(fd protoreflect.FieldDescriptor) bool
 // associated with the given field number.
 //
 // Clear is a mutating operation and unsafe for concurrent use.
-func (x *fastReflection_ContractState) Clear(fd protoreflect.FieldDescriptor) {
+func (x *fastReflection_Contract) Clear(fd protoreflect.FieldDescriptor) {
 	switch fd.FullName() {
-	case "hyle.hyle.zktx.v1.ContractState.verifier":
+	case "hyle.hyle.zktx.v1.Contract.verifier":
 		x.Verifier = ""
-	case "hyle.hyle.zktx.v1.ContractState.program_id":
+	case "hyle.hyle.zktx.v1.Contract.program_id":
 		x.ProgramId = ""
-	case "hyle.hyle.zktx.v1.ContractState.state_digest":
+	case "hyle.hyle.zktx.v1.Contract.state_digest":
 		x.StateDigest = nil
 	default:
 		if fd.IsExtension() {
-			panic(fmt.Errorf("proto3 declared messages do not support extensions: hyle.hyle.zktx.v1.ContractState"))
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: hyle.hyle.zktx.v1.Contract"))
 		}
-		panic(fmt.Errorf("message hyle.hyle.zktx.v1.ContractState does not contain field %s", fd.FullName()))
+		panic(fmt.Errorf("message hyle.hyle.zktx.v1.Contract does not contain field %s", fd.FullName()))
 	}
 }
 
@@ -960,22 +1287,22 @@ func (x *fastReflection_ContractState) Clear(fd protoreflect.FieldDescriptor) {
 // the default value of a bytes scalar is guaranteed to be a copy.
 // For unpopulated composite types, it returns an empty, read-only view
 // of the value; to obtain a mutable reference, use Mutable.
-func (x *fastReflection_ContractState) Get(descriptor protoreflect.FieldDescriptor) protoreflect.Value {
+func (x *fastReflection_Contract) Get(descriptor protoreflect.FieldDescriptor) protoreflect.Value {
 	switch descriptor.FullName() {
-	case "hyle.hyle.zktx.v1.ContractState.verifier":
+	case "hyle.hyle.zktx.v1.Contract.verifier":
 		value := x.Verifier
 		return protoreflect.ValueOfString(value)
-	case "hyle.hyle.zktx.v1.ContractState.program_id":
+	case "hyle.hyle.zktx.v1.Contract.program_id":
 		value := x.ProgramId
 		return protoreflect.ValueOfString(value)
-	case "hyle.hyle.zktx.v1.ContractState.state_digest":
+	case "hyle.hyle.zktx.v1.Contract.state_digest":
 		value := x.StateDigest
 		return protoreflect.ValueOfBytes(value)
 	default:
 		if descriptor.IsExtension() {
-			panic(fmt.Errorf("proto3 declared messages do not support extensions: hyle.hyle.zktx.v1.ContractState"))
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: hyle.hyle.zktx.v1.Contract"))
 		}
-		panic(fmt.Errorf("message hyle.hyle.zktx.v1.ContractState does not contain field %s", descriptor.FullName()))
+		panic(fmt.Errorf("message hyle.hyle.zktx.v1.Contract does not contain field %s", descriptor.FullName()))
 	}
 }
 
@@ -989,19 +1316,19 @@ func (x *fastReflection_ContractState) Get(descriptor protoreflect.FieldDescript
 // empty, read-only value, then it panics.
 //
 // Set is a mutating operation and unsafe for concurrent use.
-func (x *fastReflection_ContractState) Set(fd protoreflect.FieldDescriptor, value protoreflect.Value) {
+func (x *fastReflection_Contract) Set(fd protoreflect.FieldDescriptor, value protoreflect.Value) {
 	switch fd.FullName() {
-	case "hyle.hyle.zktx.v1.ContractState.verifier":
+	case "hyle.hyle.zktx.v1.Contract.verifier":
 		x.Verifier = value.Interface().(string)
-	case "hyle.hyle.zktx.v1.ContractState.program_id":
+	case "hyle.hyle.zktx.v1.Contract.program_id":
 		x.ProgramId = value.Interface().(string)
-	case "hyle.hyle.zktx.v1.ContractState.state_digest":
+	case "hyle.hyle.zktx.v1.Contract.state_digest":
 		x.StateDigest = value.Bytes()
 	default:
 		if fd.IsExtension() {
-			panic(fmt.Errorf("proto3 declared messages do not support extensions: hyle.hyle.zktx.v1.ContractState"))
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: hyle.hyle.zktx.v1.Contract"))
 		}
-		panic(fmt.Errorf("message hyle.hyle.zktx.v1.ContractState does not contain field %s", fd.FullName()))
+		panic(fmt.Errorf("message hyle.hyle.zktx.v1.Contract does not contain field %s", fd.FullName()))
 	}
 }
 
@@ -1015,48 +1342,48 @@ func (x *fastReflection_ContractState) Set(fd protoreflect.FieldDescriptor, valu
 // It panics if the field does not contain a composite type.
 //
 // Mutable is a mutating operation and unsafe for concurrent use.
-func (x *fastReflection_ContractState) Mutable(fd protoreflect.FieldDescriptor) protoreflect.Value {
+func (x *fastReflection_Contract) Mutable(fd protoreflect.FieldDescriptor) protoreflect.Value {
 	switch fd.FullName() {
-	case "hyle.hyle.zktx.v1.ContractState.verifier":
-		panic(fmt.Errorf("field verifier of message hyle.hyle.zktx.v1.ContractState is not mutable"))
-	case "hyle.hyle.zktx.v1.ContractState.program_id":
-		panic(fmt.Errorf("field program_id of message hyle.hyle.zktx.v1.ContractState is not mutable"))
-	case "hyle.hyle.zktx.v1.ContractState.state_digest":
-		panic(fmt.Errorf("field state_digest of message hyle.hyle.zktx.v1.ContractState is not mutable"))
+	case "hyle.hyle.zktx.v1.Contract.verifier":
+		panic(fmt.Errorf("field verifier of message hyle.hyle.zktx.v1.Contract is not mutable"))
+	case "hyle.hyle.zktx.v1.Contract.program_id":
+		panic(fmt.Errorf("field program_id of message hyle.hyle.zktx.v1.Contract is not mutable"))
+	case "hyle.hyle.zktx.v1.Contract.state_digest":
+		panic(fmt.Errorf("field state_digest of message hyle.hyle.zktx.v1.Contract is not mutable"))
 	default:
 		if fd.IsExtension() {
-			panic(fmt.Errorf("proto3 declared messages do not support extensions: hyle.hyle.zktx.v1.ContractState"))
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: hyle.hyle.zktx.v1.Contract"))
 		}
-		panic(fmt.Errorf("message hyle.hyle.zktx.v1.ContractState does not contain field %s", fd.FullName()))
+		panic(fmt.Errorf("message hyle.hyle.zktx.v1.Contract does not contain field %s", fd.FullName()))
 	}
 }
 
 // NewField returns a new value that is assignable to the field
 // for the given descriptor. For scalars, this returns the default value.
 // For lists, maps, and messages, this returns a new, empty, mutable value.
-func (x *fastReflection_ContractState) NewField(fd protoreflect.FieldDescriptor) protoreflect.Value {
+func (x *fastReflection_Contract) NewField(fd protoreflect.FieldDescriptor) protoreflect.Value {
 	switch fd.FullName() {
-	case "hyle.hyle.zktx.v1.ContractState.verifier":
+	case "hyle.hyle.zktx.v1.Contract.verifier":
 		return protoreflect.ValueOfString("")
-	case "hyle.hyle.zktx.v1.ContractState.program_id":
+	case "hyle.hyle.zktx.v1.Contract.program_id":
 		return protoreflect.ValueOfString("")
-	case "hyle.hyle.zktx.v1.ContractState.state_digest":
+	case "hyle.hyle.zktx.v1.Contract.state_digest":
 		return protoreflect.ValueOfBytes(nil)
 	default:
 		if fd.IsExtension() {
-			panic(fmt.Errorf("proto3 declared messages do not support extensions: hyle.hyle.zktx.v1.ContractState"))
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: hyle.hyle.zktx.v1.Contract"))
 		}
-		panic(fmt.Errorf("message hyle.hyle.zktx.v1.ContractState does not contain field %s", fd.FullName()))
+		panic(fmt.Errorf("message hyle.hyle.zktx.v1.Contract does not contain field %s", fd.FullName()))
 	}
 }
 
 // WhichOneof reports which field within the oneof is populated,
 // returning nil if none are populated.
 // It panics if the oneof descriptor does not belong to this message.
-func (x *fastReflection_ContractState) WhichOneof(d protoreflect.OneofDescriptor) protoreflect.FieldDescriptor {
+func (x *fastReflection_Contract) WhichOneof(d protoreflect.OneofDescriptor) protoreflect.FieldDescriptor {
 	switch d.FullName() {
 	default:
-		panic(fmt.Errorf("%s is not a oneof field in hyle.hyle.zktx.v1.ContractState", d.FullName()))
+		panic(fmt.Errorf("%s is not a oneof field in hyle.hyle.zktx.v1.Contract", d.FullName()))
 	}
 	panic("unreachable")
 }
@@ -1064,7 +1391,7 @@ func (x *fastReflection_ContractState) WhichOneof(d protoreflect.OneofDescriptor
 // GetUnknown retrieves the entire list of unknown fields.
 // The caller may only mutate the contents of the RawFields
 // if the mutated bytes are stored back into the message with SetUnknown.
-func (x *fastReflection_ContractState) GetUnknown() protoreflect.RawFields {
+func (x *fastReflection_Contract) GetUnknown() protoreflect.RawFields {
 	return x.unknownFields
 }
 
@@ -1075,7 +1402,7 @@ func (x *fastReflection_ContractState) GetUnknown() protoreflect.RawFields {
 // An empty RawFields may be passed to clear the fields.
 //
 // SetUnknown is a mutating operation and unsafe for concurrent use.
-func (x *fastReflection_ContractState) SetUnknown(fields protoreflect.RawFields) {
+func (x *fastReflection_Contract) SetUnknown(fields protoreflect.RawFields) {
 	x.unknownFields = fields
 }
 
@@ -1087,7 +1414,7 @@ func (x *fastReflection_ContractState) SetUnknown(fields protoreflect.RawFields)
 // message type, but the details are implementation dependent.
 // Validity is not part of the protobuf data model, and may not
 // be preserved in marshaling or other operations.
-func (x *fastReflection_ContractState) IsValid() bool {
+func (x *fastReflection_Contract) IsValid() bool {
 	return x != nil
 }
 
@@ -1097,9 +1424,9 @@ func (x *fastReflection_ContractState) IsValid() bool {
 // The returned methods type is identical to
 // "google.golang.org/protobuf/runtime/protoiface".Methods.
 // Consult the protoiface package documentation for details.
-func (x *fastReflection_ContractState) ProtoMethods() *protoiface.Methods {
+func (x *fastReflection_Contract) ProtoMethods() *protoiface.Methods {
 	size := func(input protoiface.SizeInput) protoiface.SizeOutput {
-		x := input.Message.Interface().(*ContractState)
+		x := input.Message.Interface().(*Contract)
 		if x == nil {
 			return protoiface.SizeOutput{
 				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
@@ -1133,7 +1460,7 @@ func (x *fastReflection_ContractState) ProtoMethods() *protoiface.Methods {
 	}
 
 	marshal := func(input protoiface.MarshalInput) (protoiface.MarshalOutput, error) {
-		x := input.Message.Interface().(*ContractState)
+		x := input.Message.Interface().(*Contract)
 		if x == nil {
 			return protoiface.MarshalOutput{
 				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
@@ -1184,7 +1511,7 @@ func (x *fastReflection_ContractState) ProtoMethods() *protoiface.Methods {
 		}, nil
 	}
 	unmarshal := func(input protoiface.UnmarshalInput) (protoiface.UnmarshalOutput, error) {
-		x := input.Message.Interface().(*ContractState)
+		x := input.Message.Interface().(*Contract)
 		if x == nil {
 			return protoiface.UnmarshalOutput{
 				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
@@ -1216,10 +1543,10 @@ func (x *fastReflection_ContractState) ProtoMethods() *protoiface.Methods {
 			fieldNum := int32(wire >> 3)
 			wireType := int(wire & 0x7)
 			if wireType == 4 {
-				return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: ContractState: wiretype end group for non-group")
+				return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: Contract: wiretype end group for non-group")
 			}
 			if fieldNum <= 0 {
-				return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: ContractState: illegal tag %d (wire type %d)", fieldNum, wire)
+				return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: Contract: illegal tag %d (wire type %d)", fieldNum, wire)
 			}
 			switch fieldNum {
 			case 1:
@@ -1402,7 +1729,8 @@ type GenesisState struct {
 	unknownFields protoimpl.UnknownFields
 
 	// params defines all the parameters of the module.
-	Params *Params `protobuf:"bytes,1,opt,name=params,proto3" json:"params,omitempty"`
+	Params    *Params              `protobuf:"bytes,1,opt,name=params,proto3" json:"params,omitempty"`
+	Contracts map[string]*Contract `protobuf:"bytes,2,rep,name=contracts,proto3" json:"contracts,omitempty" protobuf_key:"bytes,1,opt,name=key,proto3" protobuf_val:"bytes,2,opt,name=value,proto3"`
 }
 
 func (x *GenesisState) Reset() {
@@ -1432,8 +1760,15 @@ func (x *GenesisState) GetParams() *Params {
 	return nil
 }
 
-// ContractState is the state of a contract
-type ContractState struct {
+func (x *GenesisState) GetContracts() map[string]*Contract {
+	if x != nil {
+		return x.Contracts
+	}
+	return nil
+}
+
+// Contract is the state of a contract
+type Contract struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
@@ -1446,8 +1781,8 @@ type ContractState struct {
 	StateDigest []byte `protobuf:"bytes,3,opt,name=state_digest,json=stateDigest,proto3" json:"state_digest,omitempty"`
 }
 
-func (x *ContractState) Reset() {
-	*x = ContractState{}
+func (x *Contract) Reset() {
+	*x = Contract{}
 	if protoimpl.UnsafeEnabled {
 		mi := &file_hyle_hyle_zktx_v1_types_proto_msgTypes[2]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -1455,32 +1790,32 @@ func (x *ContractState) Reset() {
 	}
 }
 
-func (x *ContractState) String() string {
+func (x *Contract) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*ContractState) ProtoMessage() {}
+func (*Contract) ProtoMessage() {}
 
-// Deprecated: Use ContractState.ProtoReflect.Descriptor instead.
-func (*ContractState) Descriptor() ([]byte, []int) {
+// Deprecated: Use Contract.ProtoReflect.Descriptor instead.
+func (*Contract) Descriptor() ([]byte, []int) {
 	return file_hyle_hyle_zktx_v1_types_proto_rawDescGZIP(), []int{2}
 }
 
-func (x *ContractState) GetVerifier() string {
+func (x *Contract) GetVerifier() string {
 	if x != nil {
 		return x.Verifier
 	}
 	return ""
 }
 
-func (x *ContractState) GetProgramId() string {
+func (x *Contract) GetProgramId() string {
 	if x != nil {
 		return x.ProgramId
 	}
 	return ""
 }
 
-func (x *ContractState) GetStateDigest() []byte {
+func (x *Contract) GetStateDigest() []byte {
 	if x != nil {
 		return x.StateDigest
 	}
@@ -1498,31 +1833,41 @@ var file_hyle_hyle_zktx_v1_types_proto_rawDesc = []byte{
 	0x61, 0x6d, 0x69, 0x6e, 0x6f, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x22, 0x24, 0x0a, 0x06, 0x50,
 	0x61, 0x72, 0x61, 0x6d, 0x73, 0x3a, 0x1a, 0x8a, 0xe7, 0xb0, 0x2a, 0x15, 0x68, 0x79, 0x6c, 0x65,
 	0x2f, 0x68, 0x79, 0x6c, 0x65, 0x2f, 0x7a, 0x6b, 0x74, 0x78, 0x2f, 0x50, 0x61, 0x72, 0x61, 0x6d,
-	0x73, 0x22, 0x4c, 0x0a, 0x0c, 0x47, 0x65, 0x6e, 0x65, 0x73, 0x69, 0x73, 0x53, 0x74, 0x61, 0x74,
-	0x65, 0x12, 0x3c, 0x0a, 0x06, 0x70, 0x61, 0x72, 0x61, 0x6d, 0x73, 0x18, 0x01, 0x20, 0x01, 0x28,
-	0x0b, 0x32, 0x19, 0x2e, 0x68, 0x79, 0x6c, 0x65, 0x2e, 0x68, 0x79, 0x6c, 0x65, 0x2e, 0x7a, 0x6b,
-	0x74, 0x78, 0x2e, 0x76, 0x31, 0x2e, 0x50, 0x61, 0x72, 0x61, 0x6d, 0x73, 0x42, 0x09, 0xc8, 0xde,
-	0x1f, 0x00, 0xa8, 0xe7, 0xb0, 0x2a, 0x01, 0x52, 0x06, 0x70, 0x61, 0x72, 0x61, 0x6d, 0x73, 0x22,
-	0x6d, 0x0a, 0x0d, 0x43, 0x6f, 0x6e, 0x74, 0x72, 0x61, 0x63, 0x74, 0x53, 0x74, 0x61, 0x74, 0x65,
-	0x12, 0x1a, 0x0a, 0x08, 0x76, 0x65, 0x72, 0x69, 0x66, 0x69, 0x65, 0x72, 0x18, 0x01, 0x20, 0x01,
-	0x28, 0x09, 0x52, 0x08, 0x76, 0x65, 0x72, 0x69, 0x66, 0x69, 0x65, 0x72, 0x12, 0x1d, 0x0a, 0x0a,
-	0x70, 0x72, 0x6f, 0x67, 0x72, 0x61, 0x6d, 0x5f, 0x69, 0x64, 0x18, 0x02, 0x20, 0x01, 0x28, 0x09,
-	0x52, 0x09, 0x70, 0x72, 0x6f, 0x67, 0x72, 0x61, 0x6d, 0x49, 0x64, 0x12, 0x21, 0x0a, 0x0c, 0x73,
-	0x74, 0x61, 0x74, 0x65, 0x5f, 0x64, 0x69, 0x67, 0x65, 0x73, 0x74, 0x18, 0x03, 0x20, 0x01, 0x28,
-	0x0c, 0x52, 0x0b, 0x73, 0x74, 0x61, 0x74, 0x65, 0x44, 0x69, 0x67, 0x65, 0x73, 0x74, 0x42, 0xc2,
-	0x01, 0x0a, 0x15, 0x63, 0x6f, 0x6d, 0x2e, 0x68, 0x79, 0x6c, 0x65, 0x2e, 0x68, 0x79, 0x6c, 0x65,
-	0x2e, 0x7a, 0x6b, 0x74, 0x78, 0x2e, 0x76, 0x31, 0x42, 0x0a, 0x54, 0x79, 0x70, 0x65, 0x73, 0x50,
-	0x72, 0x6f, 0x74, 0x6f, 0x50, 0x01, 0x5a, 0x36, 0x67, 0x69, 0x74, 0x68, 0x75, 0x62, 0x2e, 0x63,
-	0x6f, 0x6d, 0x2f, 0x68, 0x79, 0x6c, 0x65, 0x2f, 0x68, 0x79, 0x6c, 0x65, 0x2f, 0x7a, 0x6b, 0x74,
-	0x78, 0x2f, 0x61, 0x70, 0x69, 0x2f, 0x68, 0x79, 0x6c, 0x65, 0x2f, 0x68, 0x79, 0x6c, 0x65, 0x2f,
-	0x7a, 0x6b, 0x74, 0x78, 0x2f, 0x76, 0x31, 0x3b, 0x7a, 0x6b, 0x74, 0x78, 0x76, 0x31, 0xa2, 0x02,
-	0x03, 0x48, 0x48, 0x5a, 0xaa, 0x02, 0x11, 0x48, 0x79, 0x6c, 0x65, 0x2e, 0x48, 0x79, 0x6c, 0x65,
-	0x2e, 0x5a, 0x6b, 0x74, 0x78, 0x2e, 0x56, 0x31, 0xca, 0x02, 0x11, 0x48, 0x79, 0x6c, 0x65, 0x5c,
-	0x48, 0x79, 0x6c, 0x65, 0x5c, 0x5a, 0x6b, 0x74, 0x78, 0x5c, 0x56, 0x31, 0xe2, 0x02, 0x1d, 0x48,
-	0x79, 0x6c, 0x65, 0x5c, 0x48, 0x79, 0x6c, 0x65, 0x5c, 0x5a, 0x6b, 0x74, 0x78, 0x5c, 0x56, 0x31,
-	0x5c, 0x47, 0x50, 0x42, 0x4d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0xea, 0x02, 0x14, 0x48,
-	0x79, 0x6c, 0x65, 0x3a, 0x3a, 0x48, 0x79, 0x6c, 0x65, 0x3a, 0x3a, 0x5a, 0x6b, 0x74, 0x78, 0x3a,
-	0x3a, 0x56, 0x31, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
+	0x73, 0x22, 0xf5, 0x01, 0x0a, 0x0c, 0x47, 0x65, 0x6e, 0x65, 0x73, 0x69, 0x73, 0x53, 0x74, 0x61,
+	0x74, 0x65, 0x12, 0x3c, 0x0a, 0x06, 0x70, 0x61, 0x72, 0x61, 0x6d, 0x73, 0x18, 0x01, 0x20, 0x01,
+	0x28, 0x0b, 0x32, 0x19, 0x2e, 0x68, 0x79, 0x6c, 0x65, 0x2e, 0x68, 0x79, 0x6c, 0x65, 0x2e, 0x7a,
+	0x6b, 0x74, 0x78, 0x2e, 0x76, 0x31, 0x2e, 0x50, 0x61, 0x72, 0x61, 0x6d, 0x73, 0x42, 0x09, 0xc8,
+	0xde, 0x1f, 0x00, 0xa8, 0xe7, 0xb0, 0x2a, 0x01, 0x52, 0x06, 0x70, 0x61, 0x72, 0x61, 0x6d, 0x73,
+	0x12, 0x4c, 0x0a, 0x09, 0x63, 0x6f, 0x6e, 0x74, 0x72, 0x61, 0x63, 0x74, 0x73, 0x18, 0x02, 0x20,
+	0x03, 0x28, 0x0b, 0x32, 0x2e, 0x2e, 0x68, 0x79, 0x6c, 0x65, 0x2e, 0x68, 0x79, 0x6c, 0x65, 0x2e,
+	0x7a, 0x6b, 0x74, 0x78, 0x2e, 0x76, 0x31, 0x2e, 0x47, 0x65, 0x6e, 0x65, 0x73, 0x69, 0x73, 0x53,
+	0x74, 0x61, 0x74, 0x65, 0x2e, 0x43, 0x6f, 0x6e, 0x74, 0x72, 0x61, 0x63, 0x74, 0x73, 0x45, 0x6e,
+	0x74, 0x72, 0x79, 0x52, 0x09, 0x63, 0x6f, 0x6e, 0x74, 0x72, 0x61, 0x63, 0x74, 0x73, 0x1a, 0x59,
+	0x0a, 0x0e, 0x43, 0x6f, 0x6e, 0x74, 0x72, 0x61, 0x63, 0x74, 0x73, 0x45, 0x6e, 0x74, 0x72, 0x79,
+	0x12, 0x10, 0x0a, 0x03, 0x6b, 0x65, 0x79, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x03, 0x6b,
+	0x65, 0x79, 0x12, 0x31, 0x0a, 0x05, 0x76, 0x61, 0x6c, 0x75, 0x65, 0x18, 0x02, 0x20, 0x01, 0x28,
+	0x0b, 0x32, 0x1b, 0x2e, 0x68, 0x79, 0x6c, 0x65, 0x2e, 0x68, 0x79, 0x6c, 0x65, 0x2e, 0x7a, 0x6b,
+	0x74, 0x78, 0x2e, 0x76, 0x31, 0x2e, 0x43, 0x6f, 0x6e, 0x74, 0x72, 0x61, 0x63, 0x74, 0x52, 0x05,
+	0x76, 0x61, 0x6c, 0x75, 0x65, 0x3a, 0x02, 0x38, 0x01, 0x22, 0x68, 0x0a, 0x08, 0x43, 0x6f, 0x6e,
+	0x74, 0x72, 0x61, 0x63, 0x74, 0x12, 0x1a, 0x0a, 0x08, 0x76, 0x65, 0x72, 0x69, 0x66, 0x69, 0x65,
+	0x72, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x08, 0x76, 0x65, 0x72, 0x69, 0x66, 0x69, 0x65,
+	0x72, 0x12, 0x1d, 0x0a, 0x0a, 0x70, 0x72, 0x6f, 0x67, 0x72, 0x61, 0x6d, 0x5f, 0x69, 0x64, 0x18,
+	0x02, 0x20, 0x01, 0x28, 0x09, 0x52, 0x09, 0x70, 0x72, 0x6f, 0x67, 0x72, 0x61, 0x6d, 0x49, 0x64,
+	0x12, 0x21, 0x0a, 0x0c, 0x73, 0x74, 0x61, 0x74, 0x65, 0x5f, 0x64, 0x69, 0x67, 0x65, 0x73, 0x74,
+	0x18, 0x03, 0x20, 0x01, 0x28, 0x0c, 0x52, 0x0b, 0x73, 0x74, 0x61, 0x74, 0x65, 0x44, 0x69, 0x67,
+	0x65, 0x73, 0x74, 0x42, 0xc2, 0x01, 0x0a, 0x15, 0x63, 0x6f, 0x6d, 0x2e, 0x68, 0x79, 0x6c, 0x65,
+	0x2e, 0x68, 0x79, 0x6c, 0x65, 0x2e, 0x7a, 0x6b, 0x74, 0x78, 0x2e, 0x76, 0x31, 0x42, 0x0a, 0x54,
+	0x79, 0x70, 0x65, 0x73, 0x50, 0x72, 0x6f, 0x74, 0x6f, 0x50, 0x01, 0x5a, 0x36, 0x67, 0x69, 0x74,
+	0x68, 0x75, 0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x68, 0x79, 0x6c, 0x65, 0x2f, 0x68, 0x79, 0x6c,
+	0x65, 0x2f, 0x7a, 0x6b, 0x74, 0x78, 0x2f, 0x61, 0x70, 0x69, 0x2f, 0x68, 0x79, 0x6c, 0x65, 0x2f,
+	0x68, 0x79, 0x6c, 0x65, 0x2f, 0x7a, 0x6b, 0x74, 0x78, 0x2f, 0x76, 0x31, 0x3b, 0x7a, 0x6b, 0x74,
+	0x78, 0x76, 0x31, 0xa2, 0x02, 0x03, 0x48, 0x48, 0x5a, 0xaa, 0x02, 0x11, 0x48, 0x79, 0x6c, 0x65,
+	0x2e, 0x48, 0x79, 0x6c, 0x65, 0x2e, 0x5a, 0x6b, 0x74, 0x78, 0x2e, 0x56, 0x31, 0xca, 0x02, 0x11,
+	0x48, 0x79, 0x6c, 0x65, 0x5c, 0x48, 0x79, 0x6c, 0x65, 0x5c, 0x5a, 0x6b, 0x74, 0x78, 0x5c, 0x56,
+	0x31, 0xe2, 0x02, 0x1d, 0x48, 0x79, 0x6c, 0x65, 0x5c, 0x48, 0x79, 0x6c, 0x65, 0x5c, 0x5a, 0x6b,
+	0x74, 0x78, 0x5c, 0x56, 0x31, 0x5c, 0x47, 0x50, 0x42, 0x4d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74,
+	0x61, 0xea, 0x02, 0x14, 0x48, 0x79, 0x6c, 0x65, 0x3a, 0x3a, 0x48, 0x79, 0x6c, 0x65, 0x3a, 0x3a,
+	0x5a, 0x6b, 0x74, 0x78, 0x3a, 0x3a, 0x56, 0x31, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
 }
 
 var (
@@ -1537,19 +1882,22 @@ func file_hyle_hyle_zktx_v1_types_proto_rawDescGZIP() []byte {
 	return file_hyle_hyle_zktx_v1_types_proto_rawDescData
 }
 
-var file_hyle_hyle_zktx_v1_types_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
+var file_hyle_hyle_zktx_v1_types_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
 var file_hyle_hyle_zktx_v1_types_proto_goTypes = []interface{}{
-	(*Params)(nil),        // 0: hyle.hyle.zktx.v1.Params
-	(*GenesisState)(nil),  // 1: hyle.hyle.zktx.v1.GenesisState
-	(*ContractState)(nil), // 2: hyle.hyle.zktx.v1.ContractState
+	(*Params)(nil),       // 0: hyle.hyle.zktx.v1.Params
+	(*GenesisState)(nil), // 1: hyle.hyle.zktx.v1.GenesisState
+	(*Contract)(nil),     // 2: hyle.hyle.zktx.v1.Contract
+	nil,                  // 3: hyle.hyle.zktx.v1.GenesisState.ContractsEntry
 }
 var file_hyle_hyle_zktx_v1_types_proto_depIdxs = []int32{
 	0, // 0: hyle.hyle.zktx.v1.GenesisState.params:type_name -> hyle.hyle.zktx.v1.Params
-	1, // [1:1] is the sub-list for method output_type
-	1, // [1:1] is the sub-list for method input_type
-	1, // [1:1] is the sub-list for extension type_name
-	1, // [1:1] is the sub-list for extension extendee
-	0, // [0:1] is the sub-list for field type_name
+	3, // 1: hyle.hyle.zktx.v1.GenesisState.contracts:type_name -> hyle.hyle.zktx.v1.GenesisState.ContractsEntry
+	2, // 2: hyle.hyle.zktx.v1.GenesisState.ContractsEntry.value:type_name -> hyle.hyle.zktx.v1.Contract
+	3, // [3:3] is the sub-list for method output_type
+	3, // [3:3] is the sub-list for method input_type
+	3, // [3:3] is the sub-list for extension type_name
+	3, // [3:3] is the sub-list for extension extendee
+	0, // [0:3] is the sub-list for field type_name
 }
 
 func init() { file_hyle_hyle_zktx_v1_types_proto_init() }
@@ -1583,7 +1931,7 @@ func file_hyle_hyle_zktx_v1_types_proto_init() {
 			}
 		}
 		file_hyle_hyle_zktx_v1_types_proto_msgTypes[2].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*ContractState); i {
+			switch v := v.(*Contract); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -1601,7 +1949,7 @@ func file_hyle_hyle_zktx_v1_types_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: file_hyle_hyle_zktx_v1_types_proto_rawDesc,
 			NumEnums:      0,
-			NumMessages:   3,
+			NumMessages:   4,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

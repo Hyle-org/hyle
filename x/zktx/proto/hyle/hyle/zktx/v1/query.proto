@@ -13,11 +13,11 @@ import "cosmos_proto/cosmos.proto";
 
 // Msg defines the module Msg service.
 service Query {
-  // ContractState returns the current state of the contract.
-  rpc ContractState(ContractStateRequest) returns (ContractStateResponse) {
+  // Contract returns the current state of the contract.
+  rpc Contract(ContractRequest) returns (ContractResponse) {
     option (cosmos.query.v1.module_query_safe) = true;
     option (google.api.http).get =
-        "/hyle/hyle/zktx/v1/contract_state/{contract_address}";
+        "/hyle/hyle/zktx/v1/contract/{contract_name}";
   }
 
   // // Counter returns the current counter value.
@@ -38,17 +38,16 @@ service Query {
   }
 }
 
-// ContractStateRequest is the request type for the Query/ContractState RPC
-message ContractStateRequest {
-  // contract_address defines the address to query for the contract state.
-  string contract_address = 1
-      [ (cosmos_proto.scalar) = "cosmos.AddressString" ];
+// ContractRequest is the request type for the Query/Contract RPC
+message ContractRequest {
+  // contract_name defines the name to query for the contract.
+  string contract_name = 1;
 }
 
-// ContractStateResponse is the response type for the Query/ContractState RPC
-message ContractStateResponse {
-  // state defines the current state of the contract.
-  hyle.zktx.v1.ContractState state = 1 [ (gogoproto.nullable) = false ];
+// ContractResponse is the response type for the Query/Contract RPC
+message ContractResponse {
+  // contract defines the current state of the contract.
+  hyle.zktx.v1.Contract contract = 1 [ (gogoproto.nullable) = false ];
 }
 
 // // QueryCounterRequest is the request type for the Query/Counter RPC

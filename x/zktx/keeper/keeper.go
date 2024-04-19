@@ -20,9 +20,9 @@ type Keeper struct {
 	authority string
 
 	// state management
-	Schema         collections.Schema
-	Params         collections.Item[zktx.Params]
-	ContractStates collections.Map[string, zktx.ContractState]
+	Schema    collections.Schema
+	Params    collections.Item[zktx.Params]
+	Contracts collections.Map[string, zktx.Contract]
 }
 
 // NewKeeper creates a new Keeper instance
@@ -33,11 +33,11 @@ func NewKeeper(cdc codec.BinaryCodec, addressCodec address.Codec, storeService s
 
 	sb := collections.NewSchemaBuilder(storeService)
 	k := Keeper{
-		cdc:            cdc,
-		addressCodec:   addressCodec,
-		authority:      authority,
-		Params:         collections.NewItem(sb, zktx.ParamsKey, "params", codec.CollValue[zktx.Params](cdc)),
-		ContractStates: collections.NewMap(sb, zktx.ContractStatesKey, "contract_states", collections.StringKey, codec.CollValue[zktx.ContractState](cdc)),
+		cdc:          cdc,
+		addressCodec: addressCodec,
+		authority:    authority,
+		Params:       collections.NewItem(sb, zktx.ParamsKey, "params", codec.CollValue[zktx.Params](cdc)),
+		Contracts:    collections.NewMap(sb, zktx.ContractNameKey, "contracts", collections.StringKey, codec.CollValue[zktx.Contract](cdc)),
 	}
 
 	schema, err := sb.Build()
