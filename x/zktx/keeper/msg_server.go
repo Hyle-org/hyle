@@ -101,6 +101,7 @@ func (ms msgServer) ExecuteStateChange(ctx context.Context, msg *zktx.MsgExecute
 			return nil, fmt.Errorf("failed to parse groth16 proof: %s", err)
 		}
 
+		// TODO: this actually accepts any proof, should check against stored program_id
 		err = groth16.Verify(g16p, vk, publicWitness)
 
 		if err != nil {
