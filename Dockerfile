@@ -35,7 +35,7 @@ WORKDIR /hyle
 
 # TODO: Embed everything together in a better way
 COPY --from=builder /hyle/hyled /hyle
-COPY --from=builder /hyle/hyle-data /hyle/hyle-data
+COPY --from=builder /hyle/hyled-data /hyle/hyled-data
 
 EXPOSE 26656 26657 1317 9090
 
