@@ -8,7 +8,7 @@ ARG RUNNER_IMAGE="alpine:3"
 FROM golang:${GO_VERSION}-alpine3.18 as builder
 
 # Install minimum necessary dependencies
-ENV PACKAGES curl make bash jq sed
+ENV PACKAGES curl make bash jq sed zsh
 RUN apk add --no-cache $PACKAGES
 
 WORKDIR /hyle
