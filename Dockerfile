@@ -37,6 +37,6 @@ WORKDIR /hyle
 COPY --from=builder /hyle/hyled /hyle
 COPY --from=builder /hyle/hyled-data /hyle/hyled-data
 
-EXPOSE 26656 26657 1317 9090
+EXPOSE 26657 1317 9090
 
 CMD ["/hyle/hyled", "start"]
