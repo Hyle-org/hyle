@@ -12,7 +12,8 @@ message Params { option (amino.name) = "hyle/hyle/zktx/Params"; }
 // GenesisState is the state that must be provided at genesis.
 message GenesisState {
   // params defines all the parameters of the module.
-  Params params = 1 [ (gogoproto.nullable) = false, (amino.dont_omitempty) = true ];
+  Params params = 1
+      [ (gogoproto.nullable) = false, (amino.dont_omitempty) = true ];
 
   map<string, Contract> contracts = 2;
 }

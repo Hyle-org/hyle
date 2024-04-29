@@ -159,6 +159,74 @@ func (ms msgServer) ExecuteStateChange(ctx context.Context, msg *zktx.MsgExecute
 	return &zktx.MsgExecuteStateChangeResponse{}, nil
 }
 
+func (ms msgServer) VerifyProof(ctx context.Context, msg *zktx.MsgVerifyProof) (*zktx.MsgVerifyProofResponse, error) {
+	contract, err := ms.k.Contracts.Get(ctx, msg.ContractName)
+	if err != nil {
+		return nil, fmt.Errorf("invalid contract - no state is registered")
+	}
+
+	if contract.Verifier == "risczero" {
+		// Save proof to a local file
+		err = os.WriteFile("proof.json", msg.Proof, 0644)
+
+		if err != nil {
+			return nil, fmt.Errorf("failed to write proof to file: %s", err)
+		}
+
+		verifierCmd := exec.Command(risczeroVerifierPath, contract.ProgramId, "proof.json")
+		grepOut, _ := verifierCmd.StderrPipe()
+		verifierCmd.Start()
+		err = verifierCmd.Wait()
+
+		if err != nil {
+			grepBytes, _ := io.ReadAll(grepOut)
+			fmt.Println(string(grepBytes))
+			return nil, fmt.Errorf("verifier failed. Exit code: %s", err)
+		}
+
+	} else if contract.Verifier == "gnark-groth16-te-BN254" {
+		var proof Groth16Proof
+		if err := json.Unmarshal(msg.Proof, &proof); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal proof: %s", err)
+		}
+
+		if !bytes.Equal(proof.VerifyingKey, []byte(contract.ProgramId)) {
+			return nil, fmt.Errorf("verifying key does not match the known VK")
+		}
+
+		proofReader := bytes.NewReader(proof.Proof)
+		g16p := groth16.NewProof(ecc.BN254)
+		if _, err = g16p.ReadFrom(proofReader); err != nil {
+			return nil, fmt.Errorf("failed to parse groth16 proof: %s", err)
+		}
+
+		proofReader = bytes.NewReader(proof.VerifyingKey)
+		vk := groth16.NewVerifyingKey(ecc.BN254)
+		if _, err := vk.ReadFrom(proofReader); err != nil {
+			return nil, fmt.Errorf("failed to parse groth16 vk: %w", err)
+		}
+
+		proofReader = bytes.NewReader(proof.PublicWitness)
+		fid, _ := twistededwards.GetSnarkField(tedwards.BN254) // Note: handle the error if required
+		witness, err := witness.New(fid)
+		if err != nil {
+			return nil, fmt.Errorf("failed to initialize groth16 witness: %w", err)
+		}
+
+		if _, err := witness.ReadFrom(proofReader); err != nil {
+			return nil, fmt.Errorf("failed to parse groth16 witness: %w", err)
+		}
+
+		if err := groth16.Verify(g16p, vk, witness); err != nil {
+			return nil, fmt.Errorf("groth16 verification failed: %w", err)
+		}
+	} else {
+		return nil, fmt.Errorf("unknown verifier %s", contract.Verifier)
+	}
+
+	return &zktx.MsgVerifyProofResponse{}, nil
+}
+
 func (ms msgServer) RegisterContract(ctx context.Context, msg *zktx.MsgRegisterContract) (*zktx.MsgRegisterContractResponse, error) {
 
 	if exists, err := ms.k.Contracts.Has(ctx, msg.ContractName); err != nil || exists {

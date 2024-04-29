@@ -32,7 +32,7 @@ func (am AppModule) AutoCLIOptions() *autocliv1.ModuleOptions {
 				{
 					RpcMethod: "ExecuteStateChange",
 					Use:       "execute [contract_name] [proof] [initial_state] [final_state]",
-					Short:     "TODO",
+					Short:     "Permissionless state transition for a contract.",
 					PositionalArgs: []*autocliv1.PositionalArgDescriptor{
 						{ProtoField: "contract_name"},
 						{ProtoField: "proof"},
@@ -41,9 +41,18 @@ func (am AppModule) AutoCLIOptions() *autocliv1.ModuleOptions {
 					},
 				},
 				{
+					RpcMethod: "VerifyProof",
+					Use:       "verify [contract_name] [proof]",
+					Short:     "Verify a zero knowledge proof in a stateless manner.",
+					PositionalArgs: []*autocliv1.PositionalArgDescriptor{
+						{ProtoField: "contract_name"},
+						{ProtoField: "proof"},
+					},
+				},
+				{
 					RpcMethod: "RegisterContract",
 					Use:       "register [owner] [contract_name] [verifier] [program_id] [state_digest]",
-					Short:     "TODO",
+					Short:     "Register a new smart contract.",
 					PositionalArgs: []*autocliv1.PositionalArgDescriptor{
 						{ProtoField: "owner"},
 						{ProtoField: "contract_name"},
