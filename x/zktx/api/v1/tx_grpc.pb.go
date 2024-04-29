@@ -20,6 +20,7 @@ const _ = grpc.SupportPackageIsVersion7
 
 const (
 	Msg_ExecuteStateChange_FullMethodName = "/hyle.hyle.zktx.v1.Msg/ExecuteStateChange"
+	Msg_VerifyProof_FullMethodName        = "/hyle.hyle.zktx.v1.Msg/VerifyProof"
 	Msg_RegisterContract_FullMethodName   = "/hyle.hyle.zktx.v1.Msg/RegisterContract"
 	Msg_UpdateParams_FullMethodName       = "/hyle.hyle.zktx.v1.Msg/UpdateParams"
 )
@@ -30,6 +31,8 @@ const (
 type MsgClient interface {
 	// execute a zk-proven state change
 	ExecuteStateChange(ctx context.Context, in *MsgExecuteStateChange, opts ...grpc.CallOption) (*MsgExecuteStateChangeResponse, error)
+	// Only verify a ZK proof
+	VerifyProof(ctx context.Context, in *MsgVerifyProof, opts ...grpc.CallOption) (*MsgVerifyProofResponse, error)
 	// RegisterContract registers a contract
 	RegisterContract(ctx context.Context, in *MsgRegisterContract, opts ...grpc.CallOption) (*MsgRegisterContractResponse, error)
 	// UpdateParams updates the module parameters.
@@ -47,6 +50,15 @@ func NewMsgClient(cc grpc.ClientConnInterface) MsgClient {
 func (c *msgClient) ExecuteStateChange(ctx context.Context, in *MsgExecuteStateChange, opts ...grpc.CallOption) (*MsgExecuteStateChangeResponse, error) {
 	out := new(MsgExecuteStateChangeResponse)
 	err := c.cc.Invoke(ctx, Msg_ExecuteStateChange_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *msgClient) VerifyProof(ctx context.Context, in *MsgVerifyProof, opts ...grpc.CallOption) (*MsgVerifyProofResponse, error) {
+	out := new(MsgVerifyProofResponse)
+	err := c.cc.Invoke(ctx, Msg_VerifyProof_FullMethodName, in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -77,6 +89,8 @@ func (c *msgClient) UpdateParams(ctx context.Context, in *MsgUpdateParams, opts 
 type MsgServer interface {
 	// execute a zk-proven state change
 	ExecuteStateChange(context.Context, *MsgExecuteStateChange) (*MsgExecuteStateChangeResponse, error)
+	// Only verify a ZK proof
+	VerifyProof(context.Context, *MsgVerifyProof) (*MsgVerifyProofResponse, error)
 	// RegisterContract registers a contract
 	RegisterContract(context.Context, *MsgRegisterContract) (*MsgRegisterContractResponse, error)
 	// UpdateParams updates the module parameters.
@@ -90,6 +104,9 @@ type UnimplementedMsgServer struct {
 
 func (UnimplementedMsgServer) ExecuteStateChange(context.Context, *MsgExecuteStateChange) (*MsgExecuteStateChangeResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ExecuteStateChange not implemented")
+}
+func (UnimplementedMsgServer) VerifyProof(context.Context, *MsgVerifyProof) (*MsgVerifyProofResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method VerifyProof not implemented")
 }
 func (UnimplementedMsgServer) RegisterContract(context.Context, *MsgRegisterContract) (*MsgRegisterContractResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method RegisterContract not implemented")
@@ -124,6 +141,24 @@ func _Msg_ExecuteStateChange_Handler(srv interface{}, ctx context.Context, dec f
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(MsgServer).ExecuteStateChange(ctx, req.(*MsgExecuteStateChange))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Msg_VerifyProof_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MsgVerifyProof)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MsgServer).VerifyProof(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Msg_VerifyProof_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MsgServer).VerifyProof(ctx, req.(*MsgVerifyProof))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -174,6 +209,10 @@ var Msg_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ExecuteStateChange",
 			Handler:    _Msg_ExecuteStateChange_Handler,
+		},
+		{
+			MethodName: "VerifyProof",
+			Handler:    _Msg_VerifyProof_Handler,
 		},
 		{
 			MethodName: "RegisterContract",
