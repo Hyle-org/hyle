@@ -36,6 +36,17 @@ func (qs queryServer) Contract(ctx context.Context, req *zktx.ContractRequest) (
 	return &zktx.ContractResponse{Contract: contract}, nil
 }
 
+// Handler for the contract contract query method
+func (qs queryServer) ContractList(ctx context.Context, req *zktx.ContractListRequest) (*zktx.ContractListResponse, error) {
+	contractList := make([]string, 0)
+	qs.k.Contracts.Walk(ctx, nil, func(key string, contract zktx.Contract) (stop bool, err error) {
+		contractList = append(contractList, key)
+		return false, nil
+	})
+
+	return &zktx.ContractListResponse{Contracts: contractList}, nil
+}
+
 // Params defines the handler for the Query/Params RPC method.
 func (qs queryServer) Params(ctx context.Context, req *zktx.QueryParamsRequest) (*zktx.QueryParamsResponse, error) {
 	params, err := qs.k.Params.Get(ctx)
