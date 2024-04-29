@@ -8,6 +8,7 @@ import "google/api/annotations.proto";
 import "cosmos/query/v1/query.proto";
 import "amino/amino.proto";
 import "gogoproto/gogo.proto";
+import "cosmos/base/query/v1beta1/pagination.proto";
 
 // Msg defines the module Msg service.
 service Query {
@@ -16,6 +17,13 @@ service Query {
     option (cosmos.query.v1.module_query_safe) = true;
     option (google.api.http).get =
         "/hyle/hyle/zktx/v1/contract/{contract_name}";
+  }
+
+  // ContractList returns the list of all contracts with a given verifier and
+  // program_id
+  rpc ContractList(ContractListRequest) returns (ContractListResponse) {
+    option (cosmos.query.v1.module_query_safe) = true;
+    option (google.api.http).get = "/hyle/hyle/zktx/v1/contracts";
   }
 
   // Params returns the module parameters.
@@ -34,6 +42,20 @@ message ContractRequest {
 message ContractResponse {
   // contract defines the current state of the contract.
   hyle.zktx.v1.Contract contract = 1 [ (gogoproto.nullable) = false ];
+}
+
+// ContractRequest is the request type for the Query/Contract RPC
+message ContractListRequest {
+  // pagination defines an optional pagination for the request.
+  cosmos.base.query.v1beta1.PageRequest pagination = 1;
+}
+
+// ContractResponse is the response type for the Query/Contract RPC
+message ContractListResponse {
+  // contract defines the current state of the contract.
+  repeated string contracts = 1;
+  // pagination defines the pagination in the response.
+  cosmos.base.query.v1beta1.PageResponse pagination = 2;
 }
 
 // QueryParamsRequest is the request type for the Query/Params RPC method.

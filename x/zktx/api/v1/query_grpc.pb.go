@@ -19,8 +19,9 @@ import (
 const _ = grpc.SupportPackageIsVersion7
 
 const (
-	Query_Contract_FullMethodName = "/hyle.hyle.zktx.v1.Query/Contract"
-	Query_Params_FullMethodName   = "/hyle.hyle.zktx.v1.Query/Params"
+	Query_Contract_FullMethodName     = "/hyle.hyle.zktx.v1.Query/Contract"
+	Query_ContractList_FullMethodName = "/hyle.hyle.zktx.v1.Query/ContractList"
+	Query_Params_FullMethodName       = "/hyle.hyle.zktx.v1.Query/Params"
 )
 
 // QueryClient is the client API for Query service.
@@ -29,6 +30,9 @@ const (
 type QueryClient interface {
 	// Contract returns the current state of the contract.
 	Contract(ctx context.Context, in *ContractRequest, opts ...grpc.CallOption) (*ContractResponse, error)
+	// ContractList returns the list of all contracts with a given verifier and
+	// program_id
+	ContractList(ctx context.Context, in *ContractListRequest, opts ...grpc.CallOption) (*ContractListResponse, error)
 	// Params returns the module parameters.
 	Params(ctx context.Context, in *QueryParamsRequest, opts ...grpc.CallOption) (*QueryParamsResponse, error)
 }
@@ -50,6 +54,15 @@ func (c *queryClient) Contract(ctx context.Context, in *ContractRequest, opts ..
 	return out, nil
 }
 
+func (c *queryClient) ContractList(ctx context.Context, in *ContractListRequest, opts ...grpc.CallOption) (*ContractListResponse, error) {
+	out := new(ContractListResponse)
+	err := c.cc.Invoke(ctx, Query_ContractList_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *queryClient) Params(ctx context.Context, in *QueryParamsRequest, opts ...grpc.CallOption) (*QueryParamsResponse, error) {
 	out := new(QueryParamsResponse)
 	err := c.cc.Invoke(ctx, Query_Params_FullMethodName, in, out, opts...)
@@ -65,6 +78,9 @@ func (c *queryClient) Params(ctx context.Context, in *QueryParamsRequest, opts .
 type QueryServer interface {
 	// Contract returns the current state of the contract.
 	Contract(context.Context, *ContractRequest) (*ContractResponse, error)
+	// ContractList returns the list of all contracts with a given verifier and
+	// program_id
+	ContractList(context.Context, *ContractListRequest) (*ContractListResponse, error)
 	// Params returns the module parameters.
 	Params(context.Context, *QueryParamsRequest) (*QueryParamsResponse, error)
 	mustEmbedUnimplementedQueryServer()
@@ -76,6 +92,9 @@ type UnimplementedQueryServer struct {
 
 func (UnimplementedQueryServer) Contract(context.Context, *ContractRequest) (*ContractResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Contract not implemented")
+}
+func (UnimplementedQueryServer) ContractList(context.Context, *ContractListRequest) (*ContractListResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ContractList not implemented")
 }
 func (UnimplementedQueryServer) Params(context.Context, *QueryParamsRequest) (*QueryParamsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Params not implemented")
@@ -111,6 +130,24 @@ func _Query_Contract_Handler(srv interface{}, ctx context.Context, dec func(inte
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Query_ContractList_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ContractListRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(QueryServer).ContractList(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Query_ContractList_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(QueryServer).ContractList(ctx, req.(*ContractListRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _Query_Params_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(QueryParamsRequest)
 	if err := dec(in); err != nil {
@@ -139,6 +176,10 @@ var Query_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Contract",
 			Handler:    _Query_Contract_Handler,
+		},
+		{
+			MethodName: "ContractList",
+			Handler:    _Query_ContractList_Handler,
 		},
 		{
 			MethodName: "Params",
