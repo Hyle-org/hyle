@@ -30,8 +30,14 @@ type msgServer struct {
 
 var _ zktx.MsgServer = msgServer{}
 
+var risczeroVerifierPath = os.Getenv("RISCZERO_VERIFIER_PATH")
+
 // NewMsgServerImpl returns an implementation of the module MsgServer interface.
 func NewMsgServerImpl(keeper Keeper) zktx.MsgServer {
+	if risczeroVerifierPath == "" {
+		risczeroVerifierPath = "/hyle/risc-zero/verifier"
+	}
+
 	return &msgServer{k: keeper}
 }
 
@@ -76,8 +82,7 @@ func (ms msgServer) ExecuteStateChange(ctx context.Context, msg *zktx.MsgExecute
 			return nil, fmt.Errorf("failed to write proof to file: %s", err)
 		}
 
-		// TODO don't harcode this
-		verifierCmd := exec.Command("/hyle/risc-zero/verifier", contract.ProgramId, "proof.json", string(msg.InitialState), string(msg.FinalState))
+		verifierCmd := exec.Command(risczeroVerifierPath, contract.ProgramId, "proof.json", string(msg.InitialState), string(msg.FinalState))
 		grepOut, _ := verifierCmd.StderrPipe()
 		verifierCmd.Start()
 		err = verifierCmd.Wait()
