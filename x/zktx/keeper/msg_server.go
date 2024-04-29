@@ -52,8 +52,7 @@ func (ms msgServer) ExecuteStateChange(ctx context.Context, msg *zktx.MsgExecute
 		}
 
 		// TODO don't harcode this
-		// TODO: don't know why, but last byte is a \n
-		verifierCmd := exec.Command("/home/maximilien/risczerotuto-helloworld/hello-world/target/debug/host", "verify", contract.ProgramId, "proof.json", string(msg.InitialState), string(msg.FinalState))
+		verifierCmd := exec.Command("/hyle/risc-zero/verifier", contract.ProgramId, "proof.json", string(msg.InitialState), string(msg.FinalState))
 		grepOut, _ := verifierCmd.StderrPipe()
 		verifierCmd.Start()
 		err = verifierCmd.Wait()
