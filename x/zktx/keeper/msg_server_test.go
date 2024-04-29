@@ -2,11 +2,9 @@ package keeper_test
 
 import (
 	"bytes"
-	"crypto/rand"
-	"crypto/sha256"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
-	"math/big"
 	"testing"
 
 	"github.com/hyle/hyle/zktx"
@@ -18,11 +16,6 @@ import (
 	"github.com/consensys/gnark/frontend/cs/r1cs"
 
 	"github.com/consensys/gnark-crypto/ecc"
-	"github.com/consensys/gnark-crypto/ecc/secp256k1/ecdsa"
-	"github.com/consensys/gnark/std/algebra/emulated/sw_emulated"
-	"github.com/consensys/gnark/std/math/emulated"
-
-	circuitecdsa "github.com/consensys/gnark/std/signature/ecdsa"
 )
 
 func TestUpdateParams(t *testing.T) {
@@ -73,93 +66,57 @@ func TestUpdateParams(t *testing.T) {
 }
 
 // GNARK circuit for ECDSA verification, this is implemented in emulated arithmetic so it's inefficient.
-type EcdsaCircuit[T, S emulated.FieldParams] struct {
-	Sig circuitecdsa.Signature[S]
-	Msg emulated.Element[S]
-	Pub circuitecdsa.PublicKey[T, S]
+type randomCircuit struct {
+	OtherData     frontend.Variable
+	Input         frontend.Variable `gnark:",public"`
+	Output        frontend.Variable `gnark:",public"`
+	StillMoreData frontend.Variable
 }
 
-func (c *EcdsaCircuit[T, S]) Define(api frontend.API) error {
-	c.Pub.Verify(api, sw_emulated.GetCurveParams[T](), &c.Msg, &c.Sig)
+func (c *randomCircuit) Define(api frontend.API) error {
+	c.StillMoreData = api.Add(c.Input, c.OtherData)
+	api.AssertIsEqual(c.Output, c.StillMoreData)
 	return nil
 }
 
-func main() (keeper.Groth16Proof, error) {
-	// generate parameters
-	privKey, _ := ecdsa.GenerateKey(rand.Reader)
-	publicKey := privKey.PublicKey
+func generate_proof(a int, b int) (keeper.Groth16Proof, error) {
+	circuit := randomCircuit{}
 
-	// sign
-	msg := []byte("testing ECDSA (sha256)")
-	md := sha256.New()
-	sigBin, _ := privKey.Sign(msg, md)
-
-	// check that the signature is correct
-	flag, _ := publicKey.Verify(sigBin, msg, md)
-	if !flag {
-		return keeper.Groth16Proof{}, fmt.Errorf("invalid signature")
-	}
-
-	// unmarshal signature
-	var sig ecdsa.Signature
-	sig.SetBytes(sigBin)
-	r, s := new(big.Int), new(big.Int)
-	r.SetBytes(sig.R[:32])
-	s.SetBytes(sig.S[:32])
-
-	// compute the hash of the message as an integer
-	dataToHash := make([]byte, len(msg))
-	copy(dataToHash[:], msg[:])
-	md.Reset()
-	md.Write(dataToHash[:])
-	hramBin := md.Sum(nil)
-	hash := ecdsa.HashToInt(hramBin)
-
-	circuit := EcdsaCircuit[emulated.Secp256k1Fp, emulated.Secp256k1Fr]{}
-	witness_circuit := EcdsaCircuit[emulated.Secp256k1Fp, emulated.Secp256k1Fr]{
-		Sig: circuitecdsa.Signature[emulated.Secp256k1Fr]{
-			R: emulated.ValueOf[emulated.Secp256k1Fr](r),
-			S: emulated.ValueOf[emulated.Secp256k1Fr](s),
-		},
-		Msg: emulated.ValueOf[emulated.Secp256k1Fr](hash),
-		Pub: circuitecdsa.PublicKey[emulated.Secp256k1Fp, emulated.Secp256k1Fr]{
-			X: emulated.ValueOf[emulated.Secp256k1Fp](privKey.PublicKey.A.X),
-			Y: emulated.ValueOf[emulated.Secp256k1Fp](privKey.PublicKey.A.Y),
-		},
-	}
-
+	// This bit would be done beforehand in a real circuit
 	r1cs, err := frontend.Compile(ecc.BN254.ScalarField(), r1cs.NewBuilder, &circuit)
 	if err != nil {
 		return keeper.Groth16Proof{}, err
 	}
-
-	// generating pk, vk
 	pk, vk, err := groth16.Setup(r1cs)
 	if err != nil {
 		return keeper.Groth16Proof{}, err
 	}
-
-	witness, err := frontend.NewWitness(&witness_circuit, ecc.BN254.ScalarField())
+	c := a + b
+	circuit = randomCircuit{
+		OtherData:     a,
+		Input:         b,
+		Output:        c,
+		StillMoreData: 0,
+	}
+	witness, err := frontend.NewWitness(&circuit, ecc.BN254.ScalarField())
 	if err != nil {
 		return keeper.Groth16Proof{}, err
 	}
-	publicWitness, err := witness.Public()
-	if err != nil {
-		return keeper.Groth16Proof{}, err
-	}
-
-	// generate the proof
 	proof, err := groth16.Prove(r1cs, pk, witness)
 	if err != nil {
 		return keeper.Groth16Proof{}, err
 	}
 
-	// verify the proof
-	err = groth16.Verify(proof, vk, publicWitness)
+	// For testing convenience, verify the proof here
+	publicWitness, err := witness.Public()
 	if err != nil {
 		return keeper.Groth16Proof{}, err
 	}
+	if err = groth16.Verify(proof, vk, publicWitness); err != nil {
+		return keeper.Groth16Proof{}, err
+	}
 
+	// Simulates what the sender would have to do
 	var proofBuf bytes.Buffer
 	proof.WriteTo(&proofBuf)
 	var vkBuf bytes.Buffer
@@ -177,32 +134,56 @@ func TestExecuteStateChangeGroth16(t *testing.T) {
 	f := initFixture(t)
 	require := require.New(t)
 
-	// Register the contract (TODO)
-	contract := zktx.Contract{
-		Verifier:    "groth16-twistededwards-BN254",
-		StateDigest: []byte("initial_state"),
+	initial_buf := new(bytes.Buffer)
+	var num uint16 = 1
+	if err := binary.Write(initial_buf, binary.BigEndian, num); err != nil {
+		t.Fatal(err)
+	}
+	output_buf := new(bytes.Buffer)
+	num = 4
+	if err := binary.Write(output_buf, binary.BigEndian, num); err != nil {
+		t.Fatal(err)
 	}
 
-	// set the contract state
+	// Register the contract (TODO)
+	contract := zktx.Contract{
+		Verifier:    "gnark-groth16-te-BN254",
+		StateDigest: initial_buf.Bytes(),
+		ProgramId:   "program_id",
+	}
+
+	// Set the initial state
 	err := f.k.Contracts.Set(f.ctx, f.addrs[0].String(), contract)
 	require.NoError(err)
 
-	// create an array of bytes
-	proof, _ := main()
+	// Generate the proof and marshal it
+	proof, err := generate_proof(3, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
 	jsonproof, _ := json.Marshal(proof)
 
-	// create a message
+	// Create the massage, passing the jsoned proof
 	msg := &zktx.MsgExecuteStateChange{
 		ContractName: f.addrs[0].String(),
 		Proof:        jsonproof,
-		InitialState: []byte("initial_state"),
-		FinalState:   []byte("final_state"),
+		InitialState: initial_buf.Bytes(),
+		FinalState:   output_buf.Bytes(),
 	}
 
-	// execute the message
+	// execute the message, this fails because VK is bad
+	_, err = f.msgServer.ExecuteStateChange(f.ctx, msg)
+	require.Error(err)
+
+	// Fix VK
+	contract.ProgramId = string(proof.VerifyingKey)
+	err = f.k.Contracts.Set(f.ctx, f.addrs[0].String(), contract)
+	require.NoError(err)
+
+	// execute the message, this time succeeding
 	_, err = f.msgServer.ExecuteStateChange(f.ctx, msg)
 	require.NoError(err)
 
 	st, _ := f.k.Contracts.Get(f.ctx, f.addrs[0].String())
-	require.Equal(st.StateDigest, []byte("final_state"))
+	require.Equal(st.StateDigest, output_buf.Bytes())
 }

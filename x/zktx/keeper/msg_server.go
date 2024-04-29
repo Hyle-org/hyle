@@ -17,6 +17,11 @@ import (
 	"github.com/consensys/gnark/backend/groth16"
 	"github.com/consensys/gnark/backend/witness"
 	"github.com/consensys/gnark/std/algebra/native/twistededwards"
+
+	"github.com/consensys/gnark/frontend"
+
+	"github.com/consensys/gnark/std/math/emulated"
+	circuitecdsa "github.com/consensys/gnark/std/signature/ecdsa"
 )
 
 type msgServer struct {
@@ -36,8 +41,28 @@ type Groth16Proof struct {
 	PublicWitness []byte `json:"public_witness",string`
 }
 
+type verifiableCircuitAPI struct {
+	Input  frontend.Variable `gnark:",public"`
+	Output frontend.Variable `gnark:",public"`
+}
+
+func (c *verifiableCircuitAPI) Define(api frontend.API) error {
+	return nil
+}
+
+type verifiableEcdsaAPI[T, S emulated.FieldParams] struct {
+	PublicKey circuitecdsa.PublicKey[T, S] `gnark:",public"`
+}
+
+func (c *verifiableEcdsaAPI[T, S]) Define(api frontend.API) error {
+	return nil
+}
+
 func (ms msgServer) ExecuteStateChange(ctx context.Context, msg *zktx.MsgExecuteStateChange) (*zktx.MsgExecuteStateChangeResponse, error) {
 	contract, err := ms.k.Contracts.Get(ctx, msg.ContractName)
+	if err != nil {
+		return nil, fmt.Errorf("invalid contract - no state is registered")
+	}
 
 	if !bytes.Equal(contract.StateDigest, msg.InitialState) {
 		return nil, fmt.Errorf("invalid initial contract, expected %x, got %x", contract.StateDigest, msg.InitialState)
@@ -63,48 +88,58 @@ func (ms msgServer) ExecuteStateChange(ctx context.Context, msg *zktx.MsgExecute
 			return nil, fmt.Errorf("verifier failed. Exit code: %s", err)
 		}
 
-	} else if contract.Verifier == "groth16-twistededwards-BN254" {
+	} else if contract.Verifier == "gnark-groth16-te-BN254" {
 		var proof Groth16Proof
-		err = json.Unmarshal(msg.Proof, &proof)
-		if err != nil {
-			return nil, fmt.Errorf("failed to unmarshal groth16 proof: %s", err)
+		if err := json.Unmarshal(msg.Proof, &proof); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal proof: %s", err)
 		}
 
-		// make an io reader from bytes
+		if !bytes.Equal(proof.VerifyingKey, []byte(contract.ProgramId)) {
+			return nil, fmt.Errorf("verifying key does not match the known VK")
+		}
+
 		proofReader := bytes.NewReader(proof.Proof)
 		g16p := groth16.NewProof(ecc.BN254)
-		_, err = g16p.ReadFrom(proofReader)
-		if err != nil {
+		if _, err = g16p.ReadFrom(proofReader); err != nil {
 			return nil, fmt.Errorf("failed to parse groth16 proof: %s", err)
 		}
 
 		proofReader = bytes.NewReader(proof.VerifyingKey)
 		vk := groth16.NewVerifyingKey(ecc.BN254)
-		_, err := vk.ReadFrom(proofReader)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse groth16 vk: %s", err)
+		if _, err := vk.ReadFrom(proofReader); err != nil {
+			return nil, fmt.Errorf("failed to parse groth16 vk: %w", err)
 		}
 
 		proofReader = bytes.NewReader(proof.PublicWitness)
-		fid, _ := twistededwards.GetSnarkField(tedwards.BN254)
+		fid, _ := twistededwards.GetSnarkField(tedwards.BN254) // Note: handle the error if required
 		witness, err := witness.New(fid)
 		if err != nil {
-			return nil, fmt.Errorf("failed to parse groth16 witness: %s", err)
-		}
-		_, err = witness.ReadFrom(proofReader)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse groth16 proof: %s", err)
-		}
-		publicWitness, err := witness.Public()
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse groth16 proof: %s", err)
+			return nil, fmt.Errorf("failed to initialize groth16 witness: %w", err)
 		}
 
-		// TODO: this actually accepts any proof, should check against stored program_id
-		err = groth16.Verify(g16p, vk, publicWitness)
+		if _, err := witness.ReadFrom(proofReader); err != nil {
+			return nil, fmt.Errorf("failed to parse groth16 witness: %w", err)
+		}
 
+		// For now the fastest way I found to verify is to serialize my own input and make sure it matches in binary rep (horrible)
+		witness_circuit := verifiableCircuitAPI{
+			Input:  msg.InitialState,
+			Output: msg.FinalState,
+		}
+		payload_witness, err := frontend.NewWitness(&witness_circuit, ecc.BN254.ScalarField())
 		if err != nil {
-			return nil, fmt.Errorf("verifier failed: %s", err)
+			return nil, fmt.Errorf("failed to generate payload_witness: %w", err)
+		}
+
+		var payloadWitness bytes.Buffer
+		payload_witness.WriteTo(&payloadWitness)
+		if !bytes.Equal(proof.PublicWitness, payloadWitness.Bytes()) {
+			return nil, fmt.Errorf("publicWitness and payload_witness do not match")
+		}
+
+		// Final step: actually check the proof here
+		if err := groth16.Verify(g16p, vk, witness); err != nil {
+			return nil, fmt.Errorf("groth16 verification failed: %w", err)
 		}
 	} else {
 		return nil, fmt.Errorf("unknown verifier %s", contract.Verifier)
