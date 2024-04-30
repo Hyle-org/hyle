@@ -43,7 +43,6 @@ func (qs queryServer) ContractList(ctx context.Context, req *zktx.ContractListRe
 		contractList = append(contractList, key)
 		return false, nil
 	})
-
 	return &zktx.ContractListResponse{Contracts: contractList}, nil
 }
 
