@@ -22,7 +22,7 @@ func (am AppModule) AutoCLIOptions() *autocliv1.ModuleOptions {
 				{
 					RpcMethod: "ContractList",
 					Use:       "contract-list",
-					Short:     "Get the list of contracts registered for those parameters",
+					Short:     "Get the list of contracts registered",
 				},
 				{
 					RpcMethod: "Params",
@@ -36,7 +36,7 @@ func (am AppModule) AutoCLIOptions() *autocliv1.ModuleOptions {
 			RpcCommandOptions: []*autocliv1.RpcCommandOptions{
 				{
 					RpcMethod: "ExecuteStateChange",
-					Use:       "execute [contract_name] [proof] [initial_state] [final_state]  [sender]",
+					Use:       "execute [contract_name] [proof] [initial_state] [final_state] [sender]",
 					Short:     "Permissionless state transition for a contract.",
 					PositionalArgs: []*autocliv1.PositionalArgDescriptor{
 						{ProtoField: "contract_name"},
