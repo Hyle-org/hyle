@@ -3,7 +3,7 @@
 Repository for the [Hylé](https://hyle.eu) proof of concept chain.
 Forked from [mini](https://github.com/cosmosregistry/chain-minimal) - the minimal Cosmos SDK chain.
 
-Current status: extreme POC
+Current status: POC
 
 Proving systems supported:
  - [x] Risc Zero
@@ -22,12 +22,12 @@ Install and run:
 ```sh
 git clone git@github.com:hyle-org/hyle.git
 cd hyle
-make build # Build, currently builds `hyled`
+make build # builds the `hyled` binary
 make init # initialize the chain
 ./hyled start # start the chain
 ```
 
 ## Useful links
 
+* [Hylé documentation](https://docs.hyle.eu)
 * [Cosmos-SDK Documentation](https://docs.cosmos.network/)
-
