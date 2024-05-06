@@ -21,6 +21,7 @@ $HYLED_BIN config set app api.enabled-unsafe-cors true
 $HYLED_BIN init hyle-validator --chain-id hyle-devnet --default-denom hyle
 
 # create default validator
+$HYLED_BIN keys add alice
 $HYLED_BIN genesis add-genesis-account alice 10000000hyle --keyring-backend test
 $HYLED_BIN genesis gentx alice 1000000hyle --chain-id hyle
 
