@@ -6,13 +6,7 @@ Forked from [mini](https://github.com/cosmosregistry/chain-minimal) - the minima
 
 **Current status**: proof of concept.
 
-We plan to support all major proving schemes. Proving systems currently supported:
- - [x] Risc Zero
- - [x] Groth16
- - [ ] Cairo
-   - [ ] Starknet
- - [ ] SP1
- - [ ] PlonK
+We plan to support all major proving schemes. Check [our list of currently supported proving systems](https://docs.hyle.eu/about/supported-proving-schemes/).
 
 ### Installation
 
