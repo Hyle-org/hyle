@@ -3,6 +3,7 @@ package keeper
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -82,7 +83,7 @@ func (ms msgServer) ExecuteStateChange(ctx context.Context, msg *zktx.MsgExecute
 			return nil, fmt.Errorf("failed to write proof to file: %s", err)
 		}
 
-		verifierCmd := exec.Command(risczeroVerifierPath, contract.ProgramId, "proof.json", string(msg.InitialState), string(msg.FinalState))
+		verifierCmd := exec.Command(risczeroVerifierPath, contract.ProgramId, "proof.json", base64.StdEncoding.EncodeToString(msg.InitialState), base64.StdEncoding.EncodeToString(msg.FinalState))
 		grepOut, _ := verifierCmd.StderrPipe()
 		verifierCmd.Start()
 		err = verifierCmd.Wait()
