@@ -37,7 +37,10 @@ var sp1VerifierPath = os.Getenv("SP1_VERIFIER_PATH")
 // NewMsgServerImpl returns an implementation of the module MsgServer interface.
 func NewMsgServerImpl(keeper Keeper) zktx.MsgServer {
 	if risczeroVerifierPath == "" {
-		risczeroVerifierPath = "/hyle/risc-zero/verifier"
+		risczeroVerifierPath = "/hyle/risc0-verifier"
+	}
+	if sp1VerifierPath == "" {
+		sp1VerifierPath = "/hyle/sp1-verifier"
 	}
 
 	return &msgServer{k: keeper}
