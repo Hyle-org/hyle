@@ -32,6 +32,7 @@ type msgServer struct {
 var _ zktx.MsgServer = msgServer{}
 
 var risczeroVerifierPath = os.Getenv("RISCZERO_VERIFIER_PATH")
+var sp1VerifierPath = os.Getenv("SP1_VERIFIER_PATH")
 
 // NewMsgServerImpl returns an implementation of the module MsgServer interface.
 func NewMsgServerImpl(keeper Keeper) zktx.MsgServer {
@@ -77,13 +78,13 @@ func (ms msgServer) ExecuteStateChange(ctx context.Context, msg *zktx.MsgExecute
 
 	if contract.Verifier == "risczero" {
 		// Save proof to a local file
-		err = os.WriteFile("proof.json", msg.Proof, 0644)
+		err = os.WriteFile("risc0-proof.json", msg.Proof, 0644)
 
 		if err != nil {
 			return nil, fmt.Errorf("failed to write proof to file: %s", err)
 		}
 
-		verifierCmd := exec.Command(risczeroVerifierPath, contract.ProgramId, "proof.json", base64.StdEncoding.EncodeToString(msg.InitialState), base64.StdEncoding.EncodeToString(msg.FinalState))
+		verifierCmd := exec.Command(risczeroVerifierPath, contract.ProgramId, "risc0-proof.json", base64.StdEncoding.EncodeToString(msg.InitialState), base64.StdEncoding.EncodeToString(msg.FinalState))
 		grepOut, _ := verifierCmd.StderrPipe()
 		verifierCmd.Start()
 		err = verifierCmd.Wait()
@@ -94,6 +95,31 @@ func (ms msgServer) ExecuteStateChange(ctx context.Context, msg *zktx.MsgExecute
 			return nil, fmt.Errorf("verifier failed. Exit code: %s", err)
 		}
 
+	} else if contract.Verifier == "sp1" {
+		// Save proof to a local file
+		err = os.WriteFile("sp1-proof.json", msg.Proof, 0644)
+
+		if err != nil {
+			return nil, fmt.Errorf("failed to write proof to file: %s", err)
+		}
+
+		// Save elf to a local file
+		err = os.WriteFile("sp1-elf.bin", []byte(contract.ProgramId), 0644)
+
+		if err != nil {
+			return nil, fmt.Errorf("failed to write ELF to file: %s", err)
+		}
+
+		verifierCmd := exec.Command(sp1VerifierPath, "sp1-elf.bin", "sp1-proof.json", base64.StdEncoding.EncodeToString(msg.InitialState), base64.StdEncoding.EncodeToString(msg.FinalState))
+		grepOut, _ := verifierCmd.StderrPipe()
+		verifierCmd.Start()
+		err = verifierCmd.Wait()
+
+		if err != nil {
+			grepBytes, _ := io.ReadAll(grepOut)
+			fmt.Println(string(grepBytes))
+			return nil, fmt.Errorf("verifier failed. Exit code: %s", err)
+		}
 	} else if contract.Verifier == "gnark-groth16-te-BN254" {
 		var proof Groth16Proof
 		if err := json.Unmarshal(msg.Proof, &proof); err != nil {
@@ -168,13 +194,38 @@ func (ms msgServer) VerifyProof(ctx context.Context, msg *zktx.MsgVerifyProof) (
 
 	if contract.Verifier == "risczero" {
 		// Save proof to a local file
-		err = os.WriteFile("proof.json", msg.Proof, 0644)
+		err = os.WriteFile("risc0-proof.json", msg.Proof, 0644)
 
 		if err != nil {
 			return nil, fmt.Errorf("failed to write proof to file: %s", err)
 		}
 
-		verifierCmd := exec.Command(risczeroVerifierPath, contract.ProgramId, "proof.json")
+		verifierCmd := exec.Command(risczeroVerifierPath, contract.ProgramId, "risc0-proof.json")
+		grepOut, _ := verifierCmd.StderrPipe()
+		verifierCmd.Start()
+		err = verifierCmd.Wait()
+
+		if err != nil {
+			grepBytes, _ := io.ReadAll(grepOut)
+			fmt.Println(string(grepBytes))
+			return nil, fmt.Errorf("verifier failed. Exit code: %s", err)
+		}
+	} else if contract.Verifier == "sp1" {
+		// Save proof to a local file
+		err = os.WriteFile("sp1-proof.json", msg.Proof, 0644)
+
+		if err != nil {
+			return nil, fmt.Errorf("failed to write proof to file: %s", err)
+		}
+
+		// Save elf to a local file
+		err = os.WriteFile("sp1-elf.bin", []byte(contract.ProgramId), 0644)
+
+		if err != nil {
+			return nil, fmt.Errorf("failed to write ELF to file: %s", err)
+		}
+
+		verifierCmd := exec.Command(sp1VerifierPath, "sp1-elf.bin", "sp1-proof.json")
 		grepOut, _ := verifierCmd.StderrPipe()
 		verifierCmd.Start()
 		err = verifierCmd.Wait()
