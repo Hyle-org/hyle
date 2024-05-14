@@ -19,11 +19,6 @@ import (
 	"github.com/consensys/gnark/backend/groth16"
 	"github.com/consensys/gnark/backend/witness"
 	"github.com/consensys/gnark/std/algebra/native/twistededwards"
-
-	"github.com/consensys/gnark/frontend"
-
-	"github.com/consensys/gnark/std/math/emulated"
-	circuitecdsa "github.com/consensys/gnark/std/signature/ecdsa"
 )
 
 type msgServer struct {
@@ -74,24 +69,6 @@ func (proof *Groth16Proof) ParseProof() (groth16.Proof, groth16.VerifyingKey, wi
 	}
 
 	return g16p, vk, witness, nil
-}
-
-type verifiableCircuitAPI struct {
-	Version frontend.Variable   `gnark:",public"`
-	Input   []frontend.Variable `gnark:",public"`
-	Output  []frontend.Variable `gnark:",public"`
-}
-
-func (c *verifiableCircuitAPI) Define(api frontend.API) error {
-	return nil
-}
-
-type verifiableEcdsaAPI[T, S emulated.FieldParams] struct {
-	PublicKey circuitecdsa.PublicKey[T, S] `gnark:",public"`
-}
-
-func (c *verifiableEcdsaAPI[T, S]) Define(api frontend.API) error {
-	return nil
 }
 
 func (ms msgServer) ExecuteStateChange(ctx context.Context, msg *zktx.MsgExecuteStateChange) (*zktx.MsgExecuteStateChangeResponse, error) {
@@ -149,7 +126,7 @@ func (ms msgServer) ExecuteStateChange(ctx context.Context, msg *zktx.MsgExecute
 		// Extracting witness data is quite annoying and serialization formats vary.
 		// The approach in version one is straight binary serialization comparison.
 		// This is brittle, but it works for now.
-		// Expected format of the witness:
+		// Expected format of the witness, serialized big-endian:
 		// u32(nb public inputs) | u32(nb private inputs (must be 0 as this is the public witness))
 		// u32(nb vector items) | 32 bytes per field element...
 
@@ -158,11 +135,12 @@ func (ms msgServer) ExecuteStateChange(ctx context.Context, msg *zktx.MsgExecute
 			return nil, fmt.Errorf("invalid witness length, expected at least %d bytes, got %d", 12+32+len(msg.InitialState)+len(msg.FinalState), len(proof.PublicWitness))
 		}
 
-		// First compare the initial state
+		// First compare the initial state, skipping over the lengths and version identifier
 		witnessInitialState := proof.PublicWitness[12+32 : 12+32+len(msg.InitialState)]
 		if !bytes.Equal(witnessInitialState, msg.InitialState) {
 			return nil, fmt.Errorf("incorrect initial state, expected %x, got %x", msg.InitialState, witnessInitialState)
 		}
+		// Then the final state
 		witnessFinalState := proof.PublicWitness[12+32+len(msg.InitialState) : 12+32+len(msg.InitialState)+len(msg.FinalState)]
 		if !bytes.Equal(witnessFinalState, msg.FinalState) {
 			return nil, fmt.Errorf("incorrect final state, expected %x, got %x", msg.FinalState, witnessFinalState)
@@ -220,27 +198,9 @@ func (ms msgServer) VerifyProof(ctx context.Context, msg *zktx.MsgVerifyProof) (
 			return nil, fmt.Errorf("verifying key does not match the known VK")
 		}
 
-		proofReader := bytes.NewReader(proof.Proof)
-		g16p := groth16.NewProof(ecc.BN254)
-		if _, err = g16p.ReadFrom(proofReader); err != nil {
-			return nil, fmt.Errorf("failed to parse groth16 proof: %s", err)
-		}
-
-		proofReader = bytes.NewReader(proof.VerifyingKey)
-		vk := groth16.NewVerifyingKey(ecc.BN254)
-		if _, err := vk.ReadFrom(proofReader); err != nil {
-			return nil, fmt.Errorf("failed to parse groth16 vk: %w", err)
-		}
-
-		proofReader = bytes.NewReader(proof.PublicWitness)
-		fid, _ := twistededwards.GetSnarkField(tedwards.BN254) // Note: handle the error if required
-		witness, err := witness.New(fid)
+		g16p, vk, witness, err := proof.ParseProof()
 		if err != nil {
-			return nil, fmt.Errorf("failed to initialize groth16 witness: %w", err)
-		}
-
-		if _, err := witness.ReadFrom(proofReader); err != nil {
-			return nil, fmt.Errorf("failed to parse groth16 witness: %w", err)
+			return nil, err
 		}
 
 		if err := groth16.Verify(g16p, vk, witness); err != nil {
