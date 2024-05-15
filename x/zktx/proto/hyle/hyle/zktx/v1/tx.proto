@@ -42,12 +42,21 @@ message StateChange {
 
 // execute a zk-proven state change - request type
 message MsgExecuteStateChange {
-  option (cosmos.msg.v1.signer) = "sender"; // TODO remove this ?
+  option (cosmos.msg.v1.signer) = "sender"; // TODO remove this
 
-  // handle this differently ?
+  // Fake sender for Cosmos SDK - temporary
   string sender = 1;
+  // Actual sender we'll use
+  string hyle_sender = 2;
+  // Block NB
+  uint64 block_nb = 3;
+  // Block time
+  uint64 block_time = 4;
+  // Tx hash
+  bytes tx_hash = 5;
+
   // list of state changes to execute
-  repeated StateChange state_changes = 2;
+  repeated StateChange state_changes = 6;
 }
 
 // No response

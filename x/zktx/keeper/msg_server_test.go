@@ -6,29 +6,26 @@ import (
 	"testing"
 
 	"github.com/hyle/hyle/zktx"
-	"github.com/hyle/hyle/zktx/keeper"
+	"github.com/hyle/hyle/zktx/keeper/gnark"
 	"github.com/stretchr/testify/require"
 
 	"github.com/consensys/gnark/backend/groth16"
 	"github.com/consensys/gnark/frontend"
 	"github.com/consensys/gnark/frontend/cs/r1cs"
+	"github.com/consensys/gnark/std/math/uints"
 
 	"github.com/consensys/gnark-crypto/ecc"
 )
 
 // Sample GNARK circuit for stateful transactions, with redundant private variables
 type statefulCircuit struct {
+	gnark.HyleCircuit
 	OtherData     frontend.Variable
-	Version       frontend.Variable   `gnark:",public"`
-	Input         []frontend.Variable `gnark:",public"`
-	Output        []frontend.Variable `gnark:",public"`
 	StillMoreData frontend.Variable
 }
 
 type longStatefulCircuit struct {
-	Version frontend.Variable   `gnark:",public"`
-	Input   []frontend.Variable `gnark:",public"`
-	Output  []frontend.Variable `gnark:",public"`
+	gnark.HyleCircuit
 }
 
 func (c *statefulCircuit) Define(api frontend.API) error {
@@ -43,35 +40,35 @@ func (c *longStatefulCircuit) Define(api frontend.API) error {
 	return nil
 }
 
-func generate_proof[C frontend.Circuit](circuit C) (keeper.Groth16Proof, error) {
+func generate_proof[C frontend.Circuit](circuit C) (gnark.Groth16Proof, error) {
 	// Prep the witness first as compilation modifies the circuit.
 	witness, err := frontend.NewWitness(circuit, ecc.BN254.ScalarField())
 	if err != nil {
-		return keeper.Groth16Proof{}, err
+		return gnark.Groth16Proof{}, err
 	}
 
 	// This bit would be done beforehand in a real circuit
 	r1cs, err := frontend.Compile(ecc.BN254.ScalarField(), r1cs.NewBuilder, circuit)
 	if err != nil {
-		return keeper.Groth16Proof{}, err
+		return gnark.Groth16Proof{}, err
 	}
 	pk, vk, err := groth16.Setup(r1cs)
 	if err != nil {
-		return keeper.Groth16Proof{}, err
+		return gnark.Groth16Proof{}, err
 	}
 
 	proof, err := groth16.Prove(r1cs, pk, witness)
 	if err != nil {
-		return keeper.Groth16Proof{}, err
+		return gnark.Groth16Proof{}, err
 	}
 
 	// For testing convenience, verify the proof here
 	publicWitness, err := witness.Public()
 	if err != nil {
-		return keeper.Groth16Proof{}, err
+		return gnark.Groth16Proof{}, err
 	}
 	if err = groth16.Verify(proof, vk, publicWitness); err != nil {
-		return keeper.Groth16Proof{}, err
+		return gnark.Groth16Proof{}, err
 	}
 
 	// Simulates what the sender would have to do
@@ -81,7 +78,7 @@ func generate_proof[C frontend.Circuit](circuit C) (keeper.Groth16Proof, error) 
 	vk.WriteTo(&vkBuf)
 	var publicWitnessBuf bytes.Buffer
 	publicWitness.WriteTo(&publicWitnessBuf)
-	return keeper.Groth16Proof{
+	return gnark.Groth16Proof{
 		Proof:         proofBuf.Bytes(),
 		VerifyingKey:  vkBuf.Bytes(),
 		PublicWitness: publicWitnessBuf.Bytes(),
@@ -96,13 +93,21 @@ func TestExecuteStateChangeGroth16(t *testing.T) {
 	var initial_state = 1
 	var end_state = 4
 	contract_name := "test-contract"
+	sender := "toto.test-contract"
 
 	// Generate the proof and marshal it
 	circuit := statefulCircuit{
-		OtherData:     3,
-		Version:       1,
-		Input:         []frontend.Variable{initial_state},
-		Output:        []frontend.Variable{end_state},
+		OtherData: 3,
+		HyleCircuit: gnark.HyleCircuit{
+			Version:   1,
+			Input:     []frontend.Variable{initial_state},
+			Output:    []frontend.Variable{end_state},
+			Sender:    uints.NewU8Array([]byte(sender)),
+			Caller:    uints.NewU8Array([]byte("")),
+			BlockTime: 0,
+			BlockNb:   0,
+			TxHash:    uints.NewU8Array([]byte("TODO")),
+		},
 		StillMoreData: 0,
 	}
 
@@ -128,6 +133,10 @@ func TestExecuteStateChangeGroth16(t *testing.T) {
 
 	// Create a broken message.
 	msg := &zktx.MsgExecuteStateChange{
+		HyleSender: sender,
+		BlockTime:  0,
+		BlockNb:    0,
+		TxHash:     []byte("TODO"),
 		StateChanges: []*zktx.StateChange{
 			{
 				ContractName: "bad_contract",
@@ -182,13 +191,21 @@ func TestExecuteLongStateChangeGroth16(t *testing.T) {
 	var initial_state = []int{1, 3}
 	var end_state = []int{234, 4}
 	contract_name := "test-contract"
+	sender := "toto.test-contract"
 
 	inp := [4]frontend.Variable{initial_state[0], initial_state[1], end_state[0], end_state[1]}
 	// Generate the proof and marshal it
 	circuit := longStatefulCircuit{
-		Version: 1,
-		Input:   inp[0:2],
-		Output:  inp[2:4],
+		HyleCircuit: gnark.HyleCircuit{
+			Version:   1,
+			Input:     inp[0:2],
+			Output:    inp[2:4],
+			Sender:    uints.NewU8Array([]byte(sender)),
+			Caller:    uints.NewU8Array([]byte("")),
+			BlockTime: 0,
+			BlockNb:   0,
+			TxHash:    uints.NewU8Array([]byte("TODO")),
+		},
 	}
 
 	proof, err := generate_proof(&circuit)
@@ -216,6 +233,10 @@ func TestExecuteLongStateChangeGroth16(t *testing.T) {
 
 	// Create the message
 	msg := &zktx.MsgExecuteStateChange{
+		HyleSender: sender,
+		BlockTime:  0,
+		BlockNb:    0,
+		TxHash:     []byte("TODO"),
 		StateChanges: []*zktx.StateChange{
 			{
 				ContractName: contract_name,
@@ -240,12 +261,20 @@ func TestExecuteSampleAttackPayload(t *testing.T) {
 	require := require.New(t)
 
 	contract_name := "test-contract"
+	sender := "toto.test-contract"
 
 	// Generate the proof and marshal it
 	circuit := statefulCircuit{
-		Version:       1,
-		Input:         []frontend.Variable{1},
-		Output:        []frontend.Variable{4},
+		HyleCircuit: gnark.HyleCircuit{
+			Version:   1,
+			Input:     []frontend.Variable{1},
+			Output:    []frontend.Variable{4},
+			Sender:    uints.NewU8Array([]byte(sender)),
+			Caller:    uints.NewU8Array([]byte("")),
+			BlockTime: 0,
+			BlockNb:   0,
+			TxHash:    uints.NewU8Array([]byte("TODO")),
+		},
 		OtherData:     3,
 		StillMoreData: 0,
 	}
@@ -259,9 +288,16 @@ func TestExecuteSampleAttackPayload(t *testing.T) {
 
 	// Attack: we actually generate a proof from a different initial state
 	circuit = statefulCircuit{
-		Version:       1,
-		Input:         []frontend.Variable{4},
-		Output:        []frontend.Variable{4},
+		HyleCircuit: gnark.HyleCircuit{
+			Version:   1,
+			Input:     []frontend.Variable{4},
+			Output:    []frontend.Variable{4},
+			Sender:    uints.NewU8Array([]byte(sender)),
+			Caller:    uints.NewU8Array([]byte("")),
+			BlockTime: 0,
+			BlockNb:   0,
+			TxHash:    uints.NewU8Array([]byte("TODO")),
+		},
 		OtherData:     0,
 		StillMoreData: 0,
 	}
@@ -283,6 +319,10 @@ func TestExecuteSampleAttackPayload(t *testing.T) {
 
 	// Create the message
 	msg := &zktx.MsgExecuteStateChange{
+		HyleSender: sender,
+		BlockTime:  0,
+		BlockNb:    0,
+		TxHash:     []byte("TODO"),
 		StateChanges: []*zktx.StateChange{
 			{
 				ContractName: contract_name,

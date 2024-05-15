@@ -12,13 +12,9 @@ import (
 	"strings"
 
 	"github.com/hyle/hyle/zktx"
+	"github.com/hyle/hyle/zktx/keeper/gnark"
 
-	"github.com/consensys/gnark-crypto/ecc"
-	"github.com/consensys/gnark-crypto/ecc/bn254/fr"
-	tedwards "github.com/consensys/gnark-crypto/ecc/twistededwards"
 	"github.com/consensys/gnark/backend/groth16"
-	"github.com/consensys/gnark/backend/witness"
-	"github.com/consensys/gnark/std/algebra/native/twistededwards"
 )
 
 type msgServer struct {
@@ -42,49 +38,24 @@ func NewMsgServerImpl(keeper Keeper) zktx.MsgServer {
 	return &msgServer{k: keeper}
 }
 
-type Groth16Proof struct {
-	Proof         []byte `json:"proof"`
-	VerifyingKey  []byte `json:"verifying_key"`
-	PublicWitness []byte `json:"public_witness"`
-}
-
-func (proof *Groth16Proof) ParseProof() (groth16.Proof, groth16.VerifyingKey, witness.Witness, error) {
-	proofReader := bytes.NewReader(proof.Proof)
-	g16p := groth16.NewProof(ecc.BN254)
-	if _, err := g16p.ReadFrom(proofReader); err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to parse groth16 proof: %s", err)
-	}
-
-	proofReader = bytes.NewReader(proof.VerifyingKey)
-	vk := groth16.NewVerifyingKey(ecc.BN254)
-	if _, err := vk.ReadFrom(proofReader); err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to parse groth16 vk: %w", err)
-	}
-
-	proofReader = bytes.NewReader(proof.PublicWitness)
-	fid, _ := twistededwards.GetSnarkField(tedwards.BN254) // Note: handle the error if required
-	witness, err := witness.New(fid)
-	if err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to initialize groth16 witness: %w", err)
-	}
-
-	if _, err := witness.ReadFrom(proofReader); err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to parse groth16 witness: %w", err)
-	}
-
-	return g16p, vk, witness, nil
-}
-
 func (ms msgServer) ExecuteStateChange(ctx context.Context, msg *zktx.MsgExecuteStateChange) (*zktx.MsgExecuteStateChangeResponse, error) {
+	hyleContext := zktx.HyleContext{
+		Sender:    msg.HyleSender,
+		Caller:    "",
+		BlockTime: msg.BlockTime,
+		BlockNb:   msg.BlockNb,
+		TxHash:    []byte("TODO"),
+	}
+
 	for _, stateChange := range msg.StateChanges {
-		if err := ms.actuallyExecuteStateChange(ctx, stateChange); err != nil {
+		if err := ms.actuallyExecuteStateChange(ctx, &hyleContext, stateChange); err != nil {
 			return nil, err
 		}
 	}
 	return &zktx.MsgExecuteStateChangeResponse{}, nil
 }
 
-func (ms msgServer) actuallyExecuteStateChange(ctx context.Context, msg *zktx.StateChange) error {
+func (ms msgServer) actuallyExecuteStateChange(ctx context.Context, hyleContext *zktx.HyleContext, msg *zktx.StateChange) error {
 	contract, err := ms.k.Contracts.Get(ctx, msg.ContractName)
 	if err != nil {
 		return fmt.Errorf("invalid contract - no state is registered")
@@ -139,7 +110,7 @@ func (ms msgServer) actuallyExecuteStateChange(ctx context.Context, msg *zktx.St
 			return nil, fmt.Errorf("verifier failed. Exit code: %s", err)
 		}
 	} else if contract.Verifier == "gnark-groth16-te-BN254" {
-		var proof Groth16Proof
+		var proof gnark.Groth16Proof
 		if err := json.Unmarshal(msg.Proof, &proof); err != nil {
 			return fmt.Errorf("failed to unmarshal proof: %s", err)
 		}
@@ -153,35 +124,10 @@ func (ms msgServer) actuallyExecuteStateChange(ctx context.Context, msg *zktx.St
 			return err
 		}
 
-		// Check payload version identifier
-		pubWitVector, ok := witness.Vector().(fr.Vector)
-		if !ok {
-			return fmt.Errorf("failed to cast witness vector to fr.Vector")
-		} else if pubWitVector[0] != fr.NewElement(1) {
-			return fmt.Errorf("invalid version identifier %s, expected 1", pubWitVector[0].Text(10))
-		}
-
-		// Extracting witness data is quite annoying and serialization formats vary.
-		// The approach in version one is straight binary serialization comparison.
-		// This is brittle, but it works for now.
-		// Expected format of the witness, serialized big-endian:
-		// u32(nb public inputs) | u32(nb private inputs (must be 0 as this is the public witness))
-		// u32(nb vector items) | 32 bytes per field element...
-
-		// First let's check lengths to avoid panics
-		if len(proof.PublicWitness) < 12+32+len(msg.InitialState)+len(msg.FinalState) {
-			return fmt.Errorf("invalid witness length, expected at least %d bytes, got %d", 12+32+len(msg.InitialState)+len(msg.FinalState), len(proof.PublicWitness))
-		}
-
-		// First compare the initial state, skipping over the lengths and version identifier
-		witnessInitialState := proof.PublicWitness[12+32 : 12+32+len(msg.InitialState)]
-		if !bytes.Equal(witnessInitialState, msg.InitialState) {
-			return fmt.Errorf("incorrect initial state, expected %x, got %x", msg.InitialState, witnessInitialState)
-		}
-		// Then the final state
-		witnessFinalState := proof.PublicWitness[12+32+len(msg.InitialState) : 12+32+len(msg.InitialState)+len(msg.FinalState)]
-		if !bytes.Equal(witnessFinalState, msg.FinalState) {
-			return fmt.Errorf("incorrect final state, expected %x, got %x", msg.FinalState, witnessFinalState)
+		// Ensure all compulsory witness data is present.
+		err = proof.ValidateWitnessData(hyleContext, msg, witness)
+		if err != nil {
+			return err
 		}
 
 		// Final step: actually check the proof here
@@ -191,6 +137,17 @@ func (ms msgServer) actuallyExecuteStateChange(ctx context.Context, msg *zktx.St
 	} else {
 		return fmt.Errorf("unknown verifier %s", contract.Verifier)
 	}
+
+	// The first time, we must check that the proof is what we see.
+	if hyleContext.Caller == "" {
+		// Extract contract name from the last item in the sender
+		paths := strings.Split(hyleContext.Sender, ".")
+		if len(paths) < 2 || paths[len(paths)-1] != msg.ContractName {
+			return fmt.Errorf("invalid sender contract, expected %s, got %s", msg.ContractName, paths[len(paths)-1])
+		}
+	}
+
+	// TODO: check block time / number / TX Hash
 
 	// Update contract
 	contract.StateDigest = msg.FinalState
@@ -252,7 +209,7 @@ func (ms msgServer) VerifyProof(ctx context.Context, msg *zktx.MsgVerifyProof) (
 		}
 
 	} else if contract.Verifier == "gnark-groth16-te-BN254" {
-		var proof Groth16Proof
+		var proof gnark.Groth16Proof
 		if err := json.Unmarshal(msg.Proof, &proof); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal proof: %s", err)
 		}

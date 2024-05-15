@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	"github.com/hyle/hyle/zktx"
-	"github.com/hyle/hyle/zktx/keeper"
+	"github.com/hyle/hyle/zktx/keeper/gnark"
 	"github.com/stretchr/testify/require"
 
 	"github.com/consensys/gnark/backend/groth16"
@@ -90,7 +90,7 @@ func limbsToBytes(u64api *uints.BinaryField[uints.U64], limbs []frontend.Variabl
 	return result
 }
 
-func generate_ecdsa_proof(privKey *ecdsa.PrivateKey) (keeper.Groth16Proof, error) {
+func generate_ecdsa_proof(privKey *ecdsa.PrivateKey) (gnark.Groth16Proof, error) {
 	publicKey := privKey.PublicKey
 	pubkeyBytes := publicKey.A.RawBytes()
 	ethAddress := nativesha3.Keccak256(pubkeyBytes[:])[12:]
@@ -103,7 +103,7 @@ func generate_ecdsa_proof(privKey *ecdsa.PrivateKey) (keeper.Groth16Proof, error
 	// check that the signature is correct
 	flag, _ := publicKey.Verify(sigBin, msg, md)
 	if !flag {
-		return keeper.Groth16Proof{}, fmt.Errorf("invalid signature")
+		return gnark.Groth16Proof{}, fmt.Errorf("invalid signature")
 	}
 
 	// unmarshal signature
@@ -139,41 +139,41 @@ func generate_ecdsa_proof(privKey *ecdsa.PrivateKey) (keeper.Groth16Proof, error
 
 	err := test.IsSolved(&circuit, &circuit, ecc.BN254.ScalarField())
 	if err != nil {
-		return keeper.Groth16Proof{}, err
+		return gnark.Groth16Proof{}, err
 	}
 
 	// Witness first then compile as that modifies the circuit
 	witness, err := frontend.NewWitness(&circuit, ecc.BN254.ScalarField())
 	if err != nil {
-		return keeper.Groth16Proof{}, err
+		return gnark.Groth16Proof{}, err
 	}
 
 	r1cs, err := frontend.Compile(ecc.BN254.ScalarField(), r1cs.NewBuilder, &circuit)
 	if err != nil {
-		return keeper.Groth16Proof{}, err
+		return gnark.Groth16Proof{}, err
 	}
 
 	// generating pk, vk
 	pk, vk, err := groth16.Setup(r1cs)
 	if err != nil {
-		return keeper.Groth16Proof{}, err
+		return gnark.Groth16Proof{}, err
 	}
 
 	publicWitness, err := witness.Public()
 	if err != nil {
-		return keeper.Groth16Proof{}, err
+		return gnark.Groth16Proof{}, err
 	}
 
 	// generate the proof
 	proof, err := groth16.Prove(r1cs, pk, witness)
 	if err != nil {
-		return keeper.Groth16Proof{}, err
+		return gnark.Groth16Proof{}, err
 	}
 
 	// verify the proof
 	err = groth16.Verify(proof, vk, publicWitness)
 	if err != nil {
-		return keeper.Groth16Proof{}, err
+		return gnark.Groth16Proof{}, err
 	}
 
 	var proofBuf bytes.Buffer
@@ -182,7 +182,7 @@ func generate_ecdsa_proof(privKey *ecdsa.PrivateKey) (keeper.Groth16Proof, error
 	vk.WriteTo(&vkBuf)
 	var publicWitnessBuf bytes.Buffer
 	publicWitness.WriteTo(&publicWitnessBuf)
-	return keeper.Groth16Proof{
+	return gnark.Groth16Proof{
 		Proof:         proofBuf.Bytes(),
 		VerifyingKey:  vkBuf.Bytes(),
 		PublicWitness: publicWitnessBuf.Bytes(),
