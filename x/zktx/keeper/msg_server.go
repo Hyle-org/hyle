@@ -14,15 +14,11 @@ import (
 	"github.com/hyle/hyle/zktx"
 
 	"github.com/consensys/gnark-crypto/ecc"
+	"github.com/consensys/gnark-crypto/ecc/bn254/fr"
 	tedwards "github.com/consensys/gnark-crypto/ecc/twistededwards"
 	"github.com/consensys/gnark/backend/groth16"
 	"github.com/consensys/gnark/backend/witness"
 	"github.com/consensys/gnark/std/algebra/native/twistededwards"
-
-	"github.com/consensys/gnark/frontend"
-
-	"github.com/consensys/gnark/std/math/emulated"
-	circuitecdsa "github.com/consensys/gnark/std/signature/ecdsa"
 )
 
 type msgServer struct {
@@ -43,26 +39,36 @@ func NewMsgServerImpl(keeper Keeper) zktx.MsgServer {
 }
 
 type Groth16Proof struct {
-	Proof         []byte `json:"proof",string`
-	VerifyingKey  []byte `json:"verifying_key",string`
-	PublicWitness []byte `json:"public_witness",string`
+	Proof         []byte `json:"proof"`
+	VerifyingKey  []byte `json:"verifying_key"`
+	PublicWitness []byte `json:"public_witness"`
 }
 
-type verifiableCircuitAPI struct {
-	Input  frontend.Variable `gnark:",public"`
-	Output frontend.Variable `gnark:",public"`
-}
+func (proof *Groth16Proof) ParseProof() (groth16.Proof, groth16.VerifyingKey, witness.Witness, error) {
+	proofReader := bytes.NewReader(proof.Proof)
+	g16p := groth16.NewProof(ecc.BN254)
+	if _, err := g16p.ReadFrom(proofReader); err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to parse groth16 proof: %s", err)
+	}
 
-func (c *verifiableCircuitAPI) Define(api frontend.API) error {
-	return nil
-}
+	proofReader = bytes.NewReader(proof.VerifyingKey)
+	vk := groth16.NewVerifyingKey(ecc.BN254)
+	if _, err := vk.ReadFrom(proofReader); err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to parse groth16 vk: %w", err)
+	}
 
-type verifiableEcdsaAPI[T, S emulated.FieldParams] struct {
-	PublicKey circuitecdsa.PublicKey[T, S] `gnark:",public"`
-}
+	proofReader = bytes.NewReader(proof.PublicWitness)
+	fid, _ := twistededwards.GetSnarkField(tedwards.BN254) // Note: handle the error if required
+	witness, err := witness.New(fid)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to initialize groth16 witness: %w", err)
+	}
 
-func (c *verifiableEcdsaAPI[T, S]) Define(api frontend.API) error {
-	return nil
+	if _, err := witness.ReadFrom(proofReader); err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to parse groth16 witness: %w", err)
+	}
+
+	return g16p, vk, witness, nil
 }
 
 func (ms msgServer) ExecuteStateChange(ctx context.Context, msg *zktx.MsgExecuteStateChange) (*zktx.MsgExecuteStateChangeResponse, error) {
@@ -72,7 +78,7 @@ func (ms msgServer) ExecuteStateChange(ctx context.Context, msg *zktx.MsgExecute
 	}
 
 	if !bytes.Equal(contract.StateDigest, msg.InitialState) {
-		return nil, fmt.Errorf("invalid initial contract, expected %x, got %x", contract.StateDigest, msg.InitialState)
+		return nil, fmt.Errorf("invalid initial state, expected %x, got %x", contract.StateDigest, msg.InitialState)
 	}
 
 	if contract.Verifier == "risczero" {
@@ -104,43 +110,40 @@ func (ms msgServer) ExecuteStateChange(ctx context.Context, msg *zktx.MsgExecute
 			return nil, fmt.Errorf("verifying key does not match the known VK")
 		}
 
-		proofReader := bytes.NewReader(proof.Proof)
-		g16p := groth16.NewProof(ecc.BN254)
-		if _, err = g16p.ReadFrom(proofReader); err != nil {
-			return nil, fmt.Errorf("failed to parse groth16 proof: %s", err)
-		}
-
-		proofReader = bytes.NewReader(proof.VerifyingKey)
-		vk := groth16.NewVerifyingKey(ecc.BN254)
-		if _, err := vk.ReadFrom(proofReader); err != nil {
-			return nil, fmt.Errorf("failed to parse groth16 vk: %w", err)
-		}
-
-		proofReader = bytes.NewReader(proof.PublicWitness)
-		fid, _ := twistededwards.GetSnarkField(tedwards.BN254) // Note: handle the error if required
-		witness, err := witness.New(fid)
+		g16p, vk, witness, err := proof.ParseProof()
 		if err != nil {
-			return nil, fmt.Errorf("failed to initialize groth16 witness: %w", err)
+			return nil, err
 		}
 
-		if _, err := witness.ReadFrom(proofReader); err != nil {
-			return nil, fmt.Errorf("failed to parse groth16 witness: %w", err)
+		// Check payload version identifier
+		pubWitVector, ok := witness.Vector().(fr.Vector)
+		if !ok {
+			return nil, fmt.Errorf("failed to cast witness vector to fr.Vector")
+		} else if pubWitVector[0] != fr.NewElement(1) {
+			return nil, fmt.Errorf("invalid version identifier %s, expected 1", pubWitVector[0].Text(10))
 		}
 
-		// For now the fastest way I found to verify is to serialize my own input and make sure it matches in binary rep (horrible)
-		witness_circuit := verifiableCircuitAPI{
-			Input:  msg.InitialState,
-			Output: msg.FinalState,
-		}
-		payload_witness, err := frontend.NewWitness(&witness_circuit, ecc.BN254.ScalarField())
-		if err != nil {
-			return nil, fmt.Errorf("failed to generate payload_witness: %w", err)
+		// Extracting witness data is quite annoying and serialization formats vary.
+		// The approach in version one is straight binary serialization comparison.
+		// This is brittle, but it works for now.
+		// Expected format of the witness, serialized big-endian:
+		// u32(nb public inputs) | u32(nb private inputs (must be 0 as this is the public witness))
+		// u32(nb vector items) | 32 bytes per field element...
+
+		// First let's check lengths to avoid panics
+		if len(proof.PublicWitness) < 12+32+len(msg.InitialState)+len(msg.FinalState) {
+			return nil, fmt.Errorf("invalid witness length, expected at least %d bytes, got %d", 12+32+len(msg.InitialState)+len(msg.FinalState), len(proof.PublicWitness))
 		}
 
-		var payloadWitness bytes.Buffer
-		payload_witness.WriteTo(&payloadWitness)
-		if !bytes.Equal(proof.PublicWitness, payloadWitness.Bytes()) {
-			return nil, fmt.Errorf("publicWitness and payload_witness do not match")
+		// First compare the initial state, skipping over the lengths and version identifier
+		witnessInitialState := proof.PublicWitness[12+32 : 12+32+len(msg.InitialState)]
+		if !bytes.Equal(witnessInitialState, msg.InitialState) {
+			return nil, fmt.Errorf("incorrect initial state, expected %x, got %x", msg.InitialState, witnessInitialState)
+		}
+		// Then the final state
+		witnessFinalState := proof.PublicWitness[12+32+len(msg.InitialState) : 12+32+len(msg.InitialState)+len(msg.FinalState)]
+		if !bytes.Equal(witnessFinalState, msg.FinalState) {
+			return nil, fmt.Errorf("incorrect final state, expected %x, got %x", msg.FinalState, witnessFinalState)
 		}
 
 		// Final step: actually check the proof here
@@ -195,27 +198,9 @@ func (ms msgServer) VerifyProof(ctx context.Context, msg *zktx.MsgVerifyProof) (
 			return nil, fmt.Errorf("verifying key does not match the known VK")
 		}
 
-		proofReader := bytes.NewReader(proof.Proof)
-		g16p := groth16.NewProof(ecc.BN254)
-		if _, err = g16p.ReadFrom(proofReader); err != nil {
-			return nil, fmt.Errorf("failed to parse groth16 proof: %s", err)
-		}
-
-		proofReader = bytes.NewReader(proof.VerifyingKey)
-		vk := groth16.NewVerifyingKey(ecc.BN254)
-		if _, err := vk.ReadFrom(proofReader); err != nil {
-			return nil, fmt.Errorf("failed to parse groth16 vk: %w", err)
-		}
-
-		proofReader = bytes.NewReader(proof.PublicWitness)
-		fid, _ := twistededwards.GetSnarkField(tedwards.BN254) // Note: handle the error if required
-		witness, err := witness.New(fid)
+		g16p, vk, witness, err := proof.ParseProof()
 		if err != nil {
-			return nil, fmt.Errorf("failed to initialize groth16 witness: %w", err)
-		}
-
-		if _, err := witness.ReadFrom(proofReader); err != nil {
-			return nil, fmt.Errorf("failed to parse groth16 witness: %w", err)
+			return nil, err
 		}
 
 		if err := groth16.Verify(g16p, vk, witness); err != nil {

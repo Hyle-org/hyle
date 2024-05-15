@@ -2,9 +2,7 @@ package keeper_test
 
 import (
 	"bytes"
-	"encoding/binary"
 	"encoding/json"
-	"fmt"
 	"testing"
 
 	"github.com/hyle/hyle/zktx"
@@ -18,72 +16,42 @@ import (
 	"github.com/consensys/gnark-crypto/ecc"
 )
 
-func TestUpdateParams(t *testing.T) {
-	f := initFixture(t)
-	require := require.New(t)
-
-	testCases := []struct {
-		name         string
-		request      *zktx.MsgUpdateParams
-		expectErrMsg string
-	}{
-		{
-			name: "set invalid authority (not an address)",
-			request: &zktx.MsgUpdateParams{
-				Authority: "foo",
-			},
-			expectErrMsg: "invalid authority address",
-		},
-		{
-			name: "set invalid authority (not defined authority)",
-			request: &zktx.MsgUpdateParams{
-				Authority: f.addrs[1].String(),
-			},
-			expectErrMsg: fmt.Sprintf("unauthorized, authority does not match the module's authority: got %s, want %s", f.addrs[1].String(), f.k.GetAuthority()),
-		},
-		{
-			name: "set valid params",
-			request: &zktx.MsgUpdateParams{
-				Authority: f.k.GetAuthority(),
-				Params:    zktx.Params{},
-			},
-			expectErrMsg: "",
-		},
-	}
-
-	for _, tc := range testCases {
-		tc := tc
-		t.Run(tc.name, func(t *testing.T) {
-			_, err := f.msgServer.UpdateParams(f.ctx, tc.request)
-			if tc.expectErrMsg != "" {
-				require.Error(err)
-				require.ErrorContains(err, tc.expectErrMsg)
-			} else {
-				require.NoError(err)
-			}
-		})
-	}
-}
-
-// GNARK circuit for ECDSA verification, this is implemented in emulated arithmetic so it's inefficient.
-type randomCircuit struct {
+// Sample GNARK circuit for stateful transactions, with redundant private variables
+type statefulCircuit struct {
 	OtherData     frontend.Variable
-	Input         frontend.Variable `gnark:",public"`
-	Output        frontend.Variable `gnark:",public"`
+	Version       frontend.Variable   `gnark:",public"`
+	Input         []frontend.Variable `gnark:",public"`
+	Output        []frontend.Variable `gnark:",public"`
 	StillMoreData frontend.Variable
 }
 
-func (c *randomCircuit) Define(api frontend.API) error {
-	c.StillMoreData = api.Add(c.Input, c.OtherData)
-	api.AssertIsEqual(c.Output, c.StillMoreData)
+type longStatefulCircuit struct {
+	Version frontend.Variable   `gnark:",public"`
+	Input   []frontend.Variable `gnark:",public"`
+	Output  []frontend.Variable `gnark:",public"`
+}
+
+func (c *statefulCircuit) Define(api frontend.API) error {
+	c.StillMoreData = api.Add(c.Input[0], c.OtherData)
+	api.AssertIsEqual(c.Output[0], c.StillMoreData)
 	return nil
 }
 
-func generate_proof(a int, b int) (keeper.Groth16Proof, error) {
-	circuit := randomCircuit{}
+func (c *longStatefulCircuit) Define(api frontend.API) error {
+	temp := api.Add(c.Input[0], c.Input[1])
+	api.AssertIsEqual(temp, c.Output[1])
+	return nil
+}
+
+func generate_proof[C frontend.Circuit](circuit C) (keeper.Groth16Proof, error) {
+	// Prep the witness first as compilation modifies the circuit.
+	witness, err := frontend.NewWitness(circuit, ecc.BN254.ScalarField())
+	if err != nil {
+		return keeper.Groth16Proof{}, err
+	}
 
 	// This bit would be done beforehand in a real circuit
-	r1cs, err := frontend.Compile(ecc.BN254.ScalarField(), r1cs.NewBuilder, &circuit)
+	r1cs, err := frontend.Compile(ecc.BN254.ScalarField(), r1cs.NewBuilder, circuit)
 	if err != nil {
 		return keeper.Groth16Proof{}, err
 	}
@@ -91,17 +59,7 @@ func generate_proof(a int, b int) (keeper.Groth16Proof, error) {
 	if err != nil {
 		return keeper.Groth16Proof{}, err
 	}
-	c := a + b
-	circuit = randomCircuit{
-		OtherData:     a,
-		Input:         b,
-		Output:        c,
-		StillMoreData: 0,
-	}
-	witness, err := frontend.NewWitness(&circuit, ecc.BN254.ScalarField())
-	if err != nil {
-		return keeper.Groth16Proof{}, err
-	}
+
 	proof, err := groth16.Prove(r1cs, pk, witness)
 	if err != nil {
 		return keeper.Groth16Proof{}, err
@@ -134,56 +92,196 @@ func TestExecuteStateChangeGroth16(t *testing.T) {
 	f := initFixture(t)
 	require := require.New(t)
 
-	initial_buf := new(bytes.Buffer)
-	var num uint16 = 1
-	if err := binary.Write(initial_buf, binary.BigEndian, num); err != nil {
-		t.Fatal(err)
-	}
-	output_buf := new(bytes.Buffer)
-	num = 4
-	if err := binary.Write(output_buf, binary.BigEndian, num); err != nil {
-		t.Fatal(err)
-	}
-
-	// Register the contract (TODO)
-	contract := zktx.Contract{
-		Verifier:    "gnark-groth16-te-BN254",
-		StateDigest: initial_buf.Bytes(),
-		ProgramId:   "program_id",
-	}
-
-	// Set the initial state
-	err := f.k.Contracts.Set(f.ctx, f.addrs[0].String(), contract)
-	require.NoError(err)
+	// Parameters:
+	var initial_state = 1
+	var end_state = 4
+	contract_name := "test-contract"
 
 	// Generate the proof and marshal it
-	proof, err := generate_proof(3, 1)
+	circuit := statefulCircuit{
+		OtherData:     3,
+		Version:       1,
+		Input:         []frontend.Variable{initial_state},
+		Output:        []frontend.Variable{end_state},
+		StillMoreData: 0,
+	}
+
+	proof, err := generate_proof(&circuit)
 	if err != nil {
 		t.Fatal(err)
 	}
 	jsonproof, _ := json.Marshal(proof)
 
-	// Create the massage, passing the jsoned proof
+	// See below for details
+	initial_state_witness := proof.PublicWitness[12+32 : 12+32+32*1]
+	final_state_witness := proof.PublicWitness[12+32+32*1 : 12+32+32*1+1*32]
+
+	// Setup contract
+	_, err = f.msgServer.RegisterContract(f.ctx, &zktx.MsgRegisterContract{
+		Owner:        f.addrs[0].String(),
+		Verifier:     "gnark-groth16-te-BN254",
+		ProgramId:    "bad_program_id",
+		StateDigest:  initial_state_witness,
+		ContractName: contract_name,
+	})
+	require.NoError(err)
+
+	// Create a broken message.
 	msg := &zktx.MsgExecuteStateChange{
-		ContractName: f.addrs[0].String(),
-		Proof:        jsonproof,
-		InitialState: initial_buf.Bytes(),
-		FinalState:   output_buf.Bytes(),
+		ContractName: "bad_contract",
+		Proof:        []byte("bad_proof"),
+		InitialState: []byte("bad_initial_state"),
+		FinalState:   []byte("bad_final_state"),
 	}
 
-	// execute the message, this fails because VK is bad
 	_, err = f.msgServer.ExecuteStateChange(f.ctx, msg)
-	require.Error(err)
+	require.ErrorContains(err, "no state is registered")
 
-	// Fix VK
-	contract.ProgramId = string(proof.VerifyingKey)
-	err = f.k.Contracts.Set(f.ctx, f.addrs[0].String(), contract)
+	msg.ContractName = contract_name
+	_, err = f.msgServer.ExecuteStateChange(f.ctx, msg)
+	require.ErrorContains(err, "invalid initial state")
+
+	msg.InitialState = initial_state_witness
+	_, err = f.msgServer.ExecuteStateChange(f.ctx, msg)
+	require.ErrorContains(err, "failed to unmarshal proof")
+
+	msg.Proof = jsonproof
+	_, err = f.msgServer.ExecuteStateChange(f.ctx, msg)
+	require.ErrorContains(err, "verifying key does not match the known VK")
+
+	// Fix VK (TODO: do this via a message)
+	contract, err := f.k.Contracts.Get(f.ctx, contract_name)
 	require.NoError(err)
+	contract.ProgramId = string(proof.VerifyingKey)
+	err = f.k.Contracts.Set(f.ctx, contract_name, contract)
+	require.NoError(err)
+
+	_, err = f.msgServer.ExecuteStateChange(f.ctx, msg)
+	require.ErrorContains(err, "incorrect final state")
+
+	msg.FinalState = final_state_witness
 
 	// execute the message, this time succeeding
 	_, err = f.msgServer.ExecuteStateChange(f.ctx, msg)
 	require.NoError(err)
 
-	st, _ := f.k.Contracts.Get(f.ctx, f.addrs[0].String())
-	require.Equal(st.StateDigest, output_buf.Bytes())
+	// Check output state is correct
+	st, _ := f.k.Contracts.Get(f.ctx, contract_name)
+	require.Equal(st.StateDigest, final_state_witness)
+}
+
+func TestExecuteLongStateChangeGroth16(t *testing.T) {
+	f := initFixture(t)
+	require := require.New(t)
+
+	// Parameters:
+	var initial_state = []int{1, 3}
+	var end_state = []int{234, 4}
+	contract_name := "test-contract"
+
+	inp := [4]frontend.Variable{initial_state[0], initial_state[1], end_state[0], end_state[1]}
+	// Generate the proof and marshal it
+	circuit := longStatefulCircuit{
+		Version: 1,
+		Input:   inp[0:2],
+		Output:  inp[2:4],
+	}
+
+	proof, err := generate_proof(&circuit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	jsonproof, _ := json.Marshal(proof)
+
+	// We pass serialized data and reconstruct it out-of-band as that happens to be the easiest solution ATM.
+	// This is overall not great.
+	// We need to skip 3 u32: the # of public items, the # of private items, and then the number of public items again (vector serialization in go)
+	// Then we skip the version felt, and then we're good to go.
+	// For this curve it's 32 bytes per felt.
+	initial_state_witness := proof.PublicWitness[12+32 : 12+32+32*2]
+	final_state_witness := proof.PublicWitness[12+32+32*2 : 12+32+32*2+2*32]
+
+	_, err = f.msgServer.RegisterContract(f.ctx, &zktx.MsgRegisterContract{
+		Owner:        f.addrs[0].String(),
+		Verifier:     "gnark-groth16-te-BN254",
+		ProgramId:    string(proof.VerifyingKey),
+		StateDigest:  initial_state_witness,
+		ContractName: contract_name,
+	})
+	require.NoError(err)
+
+	// Create the message
+	msg := &zktx.MsgExecuteStateChange{
+		ContractName: contract_name,
+		Proof:        jsonproof,
+		InitialState: initial_state_witness,
+		FinalState:   final_state_witness,
+	}
+
+	// execute the message, this time succeeding
+	_, err = f.msgServer.ExecuteStateChange(f.ctx, msg)
+	require.NoError(err)
+
+	// Check output state is correct
+	st, _ := f.k.Contracts.Get(f.ctx, contract_name)
+	require.Equal(st.StateDigest, final_state_witness)
+}
+
+func TestExecuteSampleAttackPayload(t *testing.T) {
+	f := initFixture(t)
+	require := require.New(t)
+
+	contract_name := "test-contract"
+
+	// Generate the proof and marshal it
+	circuit := statefulCircuit{
+		Version:       1,
+		Input:         []frontend.Variable{1},
+		Output:        []frontend.Variable{4},
+		OtherData:     3,
+		StillMoreData: 0,
+	}
+
+	proof, err := generate_proof(&circuit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	valid_initial_state_witness := proof.PublicWitness[12+32 : 12+32+32]
+	final_state_witness := proof.PublicWitness[12+32+32 : 12+32+32+32]
+
+	// Attack: we actually generate a proof from a different initial state
+	circuit = statefulCircuit{
+		Version:       1,
+		Input:         []frontend.Variable{4},
+		Output:        []frontend.Variable{4},
+		OtherData:     0,
+		StillMoreData: 0,
+	}
+
+	proof, err = generate_proof(&circuit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	jsonproof, _ := json.Marshal(proof)
+
+	_, err = f.msgServer.RegisterContract(f.ctx, &zktx.MsgRegisterContract{
+		Owner:        f.addrs[0].String(),
+		Verifier:     "gnark-groth16-te-BN254",
+		ProgramId:    string(proof.VerifyingKey),
+		StateDigest:  valid_initial_state_witness,
+		ContractName: contract_name,
+	})
+	require.NoError(err)
+
+	// Create the message
+	msg := &zktx.MsgExecuteStateChange{
+		ContractName: contract_name,
+		Proof:        jsonproof,
+		InitialState: valid_initial_state_witness, // attack: we pretend the initial state is the valid one but our proof is for the attacked one
+		FinalState:   final_state_witness,
+	}
+
+	// Execute the message and we detect the attack
+	_, err = f.msgServer.ExecuteStateChange(f.ctx, msg)
+	require.ErrorContains(err, "incorrect initial state")
 }
