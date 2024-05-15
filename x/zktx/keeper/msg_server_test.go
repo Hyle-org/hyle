@@ -284,4 +284,12 @@ func TestExecuteSampleAttackPayload(t *testing.T) {
 	// Execute the message and we detect the attack
 	_, err = f.msgServer.ExecuteStateChange(f.ctx, msg)
 	require.ErrorContains(err, "incorrect initial state")
+
+	// This would however totally fly as a pure verification message
+	verifyMsg := &zktx.MsgVerifyProof{
+		ContractName: contract_name,
+		Proof:        jsonproof,
+	}
+	_, err = f.msgServer.VerifyProof(f.ctx, verifyMsg)
+	require.NoError(err)
 }
