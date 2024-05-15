@@ -102,7 +102,7 @@ func TestExecuteStateChangeGroth16(t *testing.T) {
 			Version:   1,
 			Input:     []frontend.Variable{initial_state},
 			Output:    []frontend.Variable{end_state},
-			Sender:    uints.NewU8Array([]byte(sender)),
+			Sender:    uints.NewU8Array([]byte("toto")), // We expect only the sender as this is the "auth contract"
 			Caller:    uints.NewU8Array([]byte("")),
 			BlockTime: 0,
 			BlockNb:   0,
@@ -142,7 +142,7 @@ func TestExecuteStateChangeGroth16(t *testing.T) {
 				ContractName: "bad_contract",
 				Proof:        []byte("bad_proof"),
 				InitialState: []byte("bad_initial_state"),
-				FinalState:   []byte("bad_final_state"),
+				FinalState:   []byte("bad_final_state bad_final_states"), // This is padded so we get the error we want
 			},
 		},
 	}
@@ -200,7 +200,7 @@ func TestExecuteLongStateChangeGroth16(t *testing.T) {
 			Version:   1,
 			Input:     inp[0:2],
 			Output:    inp[2:4],
-			Sender:    uints.NewU8Array([]byte(sender)),
+			Sender:    uints.NewU8Array([]byte("toto")), // We expect only the sender as this is the "auth contract""
 			Caller:    uints.NewU8Array([]byte("")),
 			BlockTime: 0,
 			BlockNb:   0,
@@ -269,7 +269,7 @@ func TestExecuteSampleAttackPayload(t *testing.T) {
 			Version:   1,
 			Input:     []frontend.Variable{1},
 			Output:    []frontend.Variable{4},
-			Sender:    uints.NewU8Array([]byte(sender)),
+			Sender:    uints.NewU8Array([]byte("toto")), // We expect only the sender as this is the "auth contract""
 			Caller:    uints.NewU8Array([]byte("")),
 			BlockTime: 0,
 			BlockNb:   0,
@@ -292,7 +292,7 @@ func TestExecuteSampleAttackPayload(t *testing.T) {
 			Version:   1,
 			Input:     []frontend.Variable{4},
 			Output:    []frontend.Variable{4},
-			Sender:    uints.NewU8Array([]byte(sender)),
+			Sender:    uints.NewU8Array([]byte("toto")), // We expect only the sender as this is the "auth contract""
 			Caller:    uints.NewU8Array([]byte("")),
 			BlockTime: 0,
 			BlockNb:   0,

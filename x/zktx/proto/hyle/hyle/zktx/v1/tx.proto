@@ -45,7 +45,7 @@ message MsgExecuteStateChange {
   option (cosmos.msg.v1.signer) = "sender"; // TODO remove this
 
   // Fake sender for Cosmos SDK - temporary
-  string sender = 1;
+  string sender = 1 [ (cosmos_proto.scalar) = "cosmos.AddressString" ];
   // Actual sender we'll use
   string hyle_sender = 2;
   // Block NB

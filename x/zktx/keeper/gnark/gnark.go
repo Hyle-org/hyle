@@ -2,7 +2,9 @@ package gnark
 
 import (
 	"bytes"
+	"encoding/binary"
 	"fmt"
+	"strings"
 
 	"github.com/consensys/gnark-crypto/ecc"
 	"github.com/consensys/gnark-crypto/ecc/bn254/fr"
@@ -72,6 +74,33 @@ func (proof *Groth16Proof) ValidateWitnessData(hyleContext *zktx.HyleContext, ms
 		return fmt.Errorf("invalid version identifier %s, expected 1", pubWitVector[0].Text(10))
 	}
 
+	payloadSender := hyleContext.Sender
+	// If we are the first state change, we need to extract the sender from the sender field
+	if hyleContext.Caller == "" {
+		// First, we expect to only get the part without the contract name
+		index := strings.LastIndex(hyleContext.Sender, ".")
+		if index == -1 {
+			return fmt.Errorf("invalid sender format")
+		}
+		payloadSender = hyleContext.Sender[0:index]
+
+		startOffset := 44 + len(msg.InitialState) + len(msg.FinalState)
+		// Check lengths preventing panics
+		if startOffset+32*len(payloadSender) > len(proof.PublicWitness) {
+			return fmt.Errorf("witness data is too short for sender")
+		}
+		senderUints := proof.PublicWitness[startOffset : startOffset+32*len(payloadSender)]
+
+		// Parse into string
+		senderBytes := make([]byte, len(payloadSender))
+		for i := 0; i < len(payloadSender); i++ {
+			senderBytes[i] = byte(binary.BigEndian.Uint16(senderUints[i*32+30 : i*32+32]))
+		}
+		if string(senderBytes) != payloadSender {
+			return fmt.Errorf("sender does not match, expected %s, got %s", payloadSender, string(senderBytes))
+		}
+	}
+
 	// Extracting witness data is quite annoying and serialization formats vary.
 	// The approach here is to serialize our own witness, and then ensure that this matches.
 	// The actual witness can contain other data, so we skip the number of arguments.
@@ -79,7 +108,7 @@ func (proof *Groth16Proof) ValidateWitnessData(hyleContext *zktx.HyleContext, ms
 		Version:   1,
 		Input:     []frontend.Variable{0}, // Initialised to garbage to avoid warnings inside gnark
 		Output:    []frontend.Variable{0}, // Initialised to garbage to avoid warnings inside gnark
-		Sender:    uints.NewU8Array([]byte(hyleContext.Sender)),
+		Sender:    uints.NewU8Array([]byte(payloadSender)),
 		Caller:    uints.NewU8Array([]byte(hyleContext.Caller)),
 		BlockTime: hyleContext.BlockTime,
 		BlockNb:   hyleContext.BlockNb,

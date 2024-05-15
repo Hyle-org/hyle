@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/rand"
 	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"math/big"
@@ -22,8 +23,10 @@ import (
 	"github.com/consensys/gnark-crypto/ecc/secp256k1/ecdsa"
 	"github.com/consensys/gnark/std/algebra/emulated/sw_emulated"
 	"github.com/consensys/gnark/std/hash/sha3"
+	"github.com/consensys/gnark/std/math/bitslice"
 	"github.com/consensys/gnark/std/math/emulated"
 	"github.com/consensys/gnark/std/math/uints"
+	"github.com/consensys/gnark/std/selector"
 
 	nativesha3 "github.com/ethereum/go-ethereum/crypto"
 
@@ -32,13 +35,10 @@ import (
 
 // GNARK circuit for ECDSA verification, this is implemented in emulated arithmetic so it's inefficient.
 type ecdsaCircuit[T, S emulated.FieldParams] struct {
-	Version frontend.Variable   `gnark:",public"`
-	Input   []frontend.Variable `gnark:",public"`
-	Output  []frontend.Variable `gnark:",public"`
-	Sender  []uints.U8          `gnark:",public"`
-	Sig     circuitecdsa.Signature[S]
-	Msg     emulated.Element[S] `gnark:",public"`
-	Pub     circuitecdsa.PublicKey[T, S]
+	gnark.HyleCircuit
+	Sig circuitecdsa.Signature[S]
+	Msg emulated.Element[S] `gnark:",public"`
+	Pub circuitecdsa.PublicKey[T, S]
 }
 
 func (c *ecdsaCircuit[T, S]) Define(api frontend.API) error {
@@ -59,8 +59,32 @@ func (c *ecdsaCircuit[T, S]) Define(api frontend.API) error {
 	newHasher.Write(pubKeyBytes)
 	res := newHasher.Sum()
 
+	hexChars := []frontend.Variable{
+		[]byte("0")[0],
+		[]byte("1")[0],
+		[]byte("2")[0],
+		[]byte("3")[0],
+		[]byte("4")[0],
+		[]byte("5")[0],
+		[]byte("6")[0],
+		[]byte("7")[0],
+		[]byte("8")[0],
+		[]byte("9")[0],
+		[]byte("a")[0],
+		[]byte("b")[0],
+		[]byte("c")[0],
+		[]byte("d")[0],
+		[]byte("e")[0],
+		[]byte("f")[0],
+	}
+
 	for i := 0; i < 20; i++ {
-		uapi.ByteAssertEq(c.Sender[i], res[i+12])
+		// Not sure if there's a more efficient way to do this but it works - we need to compare the ASCII values.
+		lower, upper := bitslice.Partition(api, res[i+12].Val, 4)
+		lower = selector.Mux(api, lower, hexChars[:]...)
+		upper = selector.Mux(api, upper, hexChars[:]...)
+		uapi.ByteAssertEq(uapi.ByteValueOf(upper), c.Sender[i*2])
+		uapi.ByteAssertEq(uapi.ByteValueOf(lower), c.Sender[i*2+1])
 	}
 
 	c.Pub.Verify(api, sw_emulated.GetCurveParams[T](), &c.Msg, &c.Sig)
@@ -90,10 +114,8 @@ func limbsToBytes(u64api *uints.BinaryField[uints.U64], limbs []frontend.Variabl
 	return result
 }
 
-func generate_ecdsa_proof(privKey *ecdsa.PrivateKey) (gnark.Groth16Proof, error) {
+func generate_ecdsa_proof(privKey *ecdsa.PrivateKey, ethAddress string) (gnark.Groth16Proof, error) {
 	publicKey := privKey.PublicKey
-	pubkeyBytes := publicKey.A.RawBytes()
-	ethAddress := nativesha3.Keccak256(pubkeyBytes[:])[12:]
 
 	// sign
 	msg := []byte("testing ECDSA (sha256)")
@@ -122,9 +144,16 @@ func generate_ecdsa_proof(privKey *ecdsa.PrivateKey) (gnark.Groth16Proof, error)
 	hash := ecdsa.HashToInt(hramBin)
 
 	circuit := ecdsaCircuit[emulated.Secp256k1Fp, emulated.Secp256k1Fr]{
-		Version: 1,
-		Input:   []frontend.Variable{0},
-		Output:  []frontend.Variable{0},
+		HyleCircuit: gnark.HyleCircuit{
+			Version:   1,
+			Input:     []frontend.Variable{0},
+			Output:    []frontend.Variable{0},
+			Sender:    uints.NewU8Array([]byte(ethAddress)), // We expect only the sender as this is the "auth contract"
+			Caller:    uints.NewU8Array([]byte("")),
+			BlockTime: 0,
+			BlockNb:   0,
+			TxHash:    uints.NewU8Array([]byte("TODO")),
+		},
 		Sig: circuitecdsa.Signature[emulated.Secp256k1Fr]{
 			R: emulated.ValueOf[emulated.Secp256k1Fr](r),
 			S: emulated.ValueOf[emulated.Secp256k1Fr](s),
@@ -134,7 +163,6 @@ func generate_ecdsa_proof(privKey *ecdsa.PrivateKey) (gnark.Groth16Proof, error)
 			X: emulated.ValueOf[emulated.Secp256k1Fp](privKey.PublicKey.A.X),
 			Y: emulated.ValueOf[emulated.Secp256k1Fp](privKey.PublicKey.A.Y),
 		},
-		Sender: uints.NewU8Array(ethAddress),
 	}
 
 	err := test.IsSolved(&circuit, &circuit, ecc.BN254.ScalarField())
@@ -198,14 +226,17 @@ func TestExecuteStateChangeGroth16ECDSA(t *testing.T) {
 	require := require.New(t)
 
 	privKey, _ := ecdsa.GenerateKey(rand.Reader)
-	proof, err := generate_ecdsa_proof(privKey)
+	pubkeyBytes := privKey.PublicKey.A.RawBytes()
+	ethAddress := hex.EncodeToString(nativesha3.Keccak256(pubkeyBytes[:])[12:])
+
+	proof, err := generate_ecdsa_proof(privKey, ethAddress)
 	require.NoError(err)
 	jsonproof, _ := json.Marshal(proof)
 
 	// Register the contract
 	contract := zktx.Contract{
 		Verifier:    "gnark-groth16-te-BN254",
-		StateDigest: []byte{0},
+		StateDigest: []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
 		ProgramId:   string(proof.VerifyingKey),
 	}
 
@@ -214,12 +245,16 @@ func TestExecuteStateChangeGroth16ECDSA(t *testing.T) {
 	require.NoError(err)
 
 	msg := &zktx.MsgExecuteStateChange{
+		HyleSender: ethAddress + ".ecdsa",
+		BlockTime:  0,
+		BlockNb:    0,
+		TxHash:     []byte("TODO"),
 		StateChanges: []*zktx.StateChange{
 			{
 				ContractName: "ecdsa",
 				Proof:        jsonproof,
-				InitialState: []byte{0},
-				FinalState:   []byte{0},
+				InitialState: []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+				FinalState:   []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
 			},
 		},
 	}
@@ -227,5 +262,5 @@ func TestExecuteStateChangeGroth16ECDSA(t *testing.T) {
 	require.NoError(err)
 
 	st, _ := f.k.Contracts.Get(f.ctx, "ecdsa")
-	require.Equal(st.StateDigest, []byte{0})
+	require.Equal(st.StateDigest, []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0})
 }
