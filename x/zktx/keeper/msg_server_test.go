@@ -128,24 +128,28 @@ func TestExecuteStateChangeGroth16(t *testing.T) {
 
 	// Create a broken message.
 	msg := &zktx.MsgExecuteStateChange{
-		ContractName: "bad_contract",
-		Proof:        []byte("bad_proof"),
-		InitialState: []byte("bad_initial_state"),
-		FinalState:   []byte("bad_final_state"),
+		StateChanges: []*zktx.StateChange{
+			{
+				ContractName: "bad_contract",
+				Proof:        []byte("bad_proof"),
+				InitialState: []byte("bad_initial_state"),
+				FinalState:   []byte("bad_final_state"),
+			},
+		},
 	}
 
 	_, err = f.msgServer.ExecuteStateChange(f.ctx, msg)
 	require.ErrorContains(err, "no state is registered")
 
-	msg.ContractName = contract_name
+	msg.StateChanges[0].ContractName = contract_name
 	_, err = f.msgServer.ExecuteStateChange(f.ctx, msg)
 	require.ErrorContains(err, "invalid initial state")
 
-	msg.InitialState = initial_state_witness
+	msg.StateChanges[0].InitialState = initial_state_witness
 	_, err = f.msgServer.ExecuteStateChange(f.ctx, msg)
 	require.ErrorContains(err, "failed to unmarshal proof")
 
-	msg.Proof = jsonproof
+	msg.StateChanges[0].Proof = jsonproof
 	_, err = f.msgServer.ExecuteStateChange(f.ctx, msg)
 	require.ErrorContains(err, "verifying key does not match the known VK")
 
@@ -159,7 +163,7 @@ func TestExecuteStateChangeGroth16(t *testing.T) {
 	_, err = f.msgServer.ExecuteStateChange(f.ctx, msg)
 	require.ErrorContains(err, "incorrect final state")
 
-	msg.FinalState = final_state_witness
+	msg.StateChanges[0].FinalState = final_state_witness
 
 	// execute the message, this time succeeding
 	_, err = f.msgServer.ExecuteStateChange(f.ctx, msg)
@@ -212,10 +216,14 @@ func TestExecuteLongStateChangeGroth16(t *testing.T) {
 
 	// Create the message
 	msg := &zktx.MsgExecuteStateChange{
-		ContractName: contract_name,
-		Proof:        jsonproof,
-		InitialState: initial_state_witness,
-		FinalState:   final_state_witness,
+		StateChanges: []*zktx.StateChange{
+			{
+				ContractName: contract_name,
+				Proof:        jsonproof,
+				InitialState: initial_state_witness,
+				FinalState:   final_state_witness,
+			},
+		},
 	}
 
 	// execute the message, this time succeeding
@@ -275,10 +283,14 @@ func TestExecuteSampleAttackPayload(t *testing.T) {
 
 	// Create the message
 	msg := &zktx.MsgExecuteStateChange{
-		ContractName: contract_name,
-		Proof:        jsonproof,
-		InitialState: valid_initial_state_witness, // attack: we pretend the initial state is the valid one but our proof is for the attacked one
-		FinalState:   final_state_witness,
+		StateChanges: []*zktx.StateChange{
+			{
+				ContractName: contract_name,
+				Proof:        jsonproof,
+				InitialState: valid_initial_state_witness, // attack: we pretend the initial state is the valid one but our proof is for the attacked one
+				FinalState:   final_state_witness,
+			},
+		},
 	}
 
 	// Execute the message and we detect the attack

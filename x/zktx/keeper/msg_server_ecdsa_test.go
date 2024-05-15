@@ -215,7 +215,7 @@ func TestExecuteStateChangeGroth16ECDSA(t *testing.T) {
 
 	msg := &zktx.MsgExecuteStateChange{
 		StateChanges: []*zktx.StateChange{
-			&zktx.StateChange{
+			{
 				ContractName: "ecdsa",
 				Proof:        jsonproof,
 				InitialState: []byte{0},
