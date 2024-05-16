@@ -39,7 +39,8 @@ WORKDIR /hyle
 # TODO: Embed everything together in a better way
 COPY --from=builder /hyle/hyled /hyle
 COPY --from=builder /hyle/hyled-data /hyle/hyled-data
-COPY --from=verifier /verifier /hyle/risc-zero/verifier
+COPY --from=verifier /risc0-verifier /hyle/risc0-verifier
+COPY --from=verifier /sp1-verifier /hyle/sp1-verifier
 
 EXPOSE 26657 1317 9090
 
