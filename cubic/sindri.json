@@ -1,0 +1,10 @@
+{
+  "$schema": "https://sindri.app/api/v1/sindri-manifest-schema.json",
+  "name": "cubic",
+  "circuitStructName": "Circuit",
+  "circuitType": "gnark",
+  "curve": "bn254",
+  "gnarkVersion": "v0.9.0",
+  "packageName": "cubic",
+  "provingScheme": "groth16"
+}

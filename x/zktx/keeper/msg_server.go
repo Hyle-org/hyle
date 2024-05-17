@@ -249,6 +249,10 @@ func (ms msgServer) VerifyProof(ctx context.Context, msg *zktx.MsgVerifyProof) (
 			return nil, fmt.Errorf("failed to unmarshal proof: %s", err)
 		}
 
+		fmt.Println(proof.VerifyingKey)
+		fmt.Println(hex.EncodeToString(proof.VerifyingKey))
+		fmt.Println(contract.ProgramId)
+		fmt.Println([]byte(contract.ProgramId))
 		if hex.EncodeToString(proof.VerifyingKey) != contract.ProgramId {
 			return nil, fmt.Errorf("verifying key does not match the known VK")
 		}
