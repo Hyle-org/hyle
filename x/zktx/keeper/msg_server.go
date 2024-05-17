@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -135,7 +136,7 @@ func (ms msgServer) ExecuteStateChange(ctx context.Context, msg *zktx.MsgExecute
 			return nil, fmt.Errorf("failed to unmarshal proof: %s", err)
 		}
 
-		if !bytes.Equal(proof.VerifyingKey, []byte(contract.ProgramId)) {
+		if hex.EncodeToString(proof.VerifyingKey) != contract.ProgramId {
 			return nil, fmt.Errorf("verifying key does not match the known VK")
 		}
 
@@ -248,7 +249,7 @@ func (ms msgServer) VerifyProof(ctx context.Context, msg *zktx.MsgVerifyProof) (
 			return nil, fmt.Errorf("failed to unmarshal proof: %s", err)
 		}
 
-		if !bytes.Equal(proof.VerifyingKey, []byte(contract.ProgramId)) {
+		if hex.EncodeToString(proof.VerifyingKey) != contract.ProgramId {
 			return nil, fmt.Errorf("verifying key does not match the known VK")
 		}
 
