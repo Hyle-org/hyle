@@ -10,6 +10,10 @@ test:
 	@echo "--> Running tests (short)"
 	go test -v ./... --short
 
+test-long:
+	@echo "--> Running tests (all)"
+	go test -v ./...
+
 test-integration:
 	@echo "--> Running integration tests"
 	cd integration; go test -v ./...

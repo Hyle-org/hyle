@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/cosmos/cosmos-sdk/client"
+	"github.com/cosmos/cosmos-sdk/client/flags"
 	"github.com/cosmos/cosmos-sdk/client/tx"
 	"github.com/hyle/hyle/zktx"
 	"github.com/spf13/cobra"
@@ -20,8 +21,10 @@ func (am AppModule) GetTxCmd() *cobra.Command {
 		RunE: client.ValidateCmd,
 	}
 
+	txCmd.PersistentFlags().String(flags.FlagFrom, "", "Name or address of private key with which to sign")
+
 	txCmd.AddCommand(&cobra.Command{
-		Use:   "execute [sender] [[contract_name] [proof] [initial_state] [final_state]]...",
+		Use:   "execute [hyle_sender] [[contract_name] [proof] [initial_state] [final_state]]... --from [cosmos address]",
 		Short: "Execute a state change",
 		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -35,7 +38,7 @@ func (am AppModule) GetTxCmd() *cobra.Command {
 			}
 
 			stateChanges := make([]*zktx.StateChange, 0, len(args[1:])/4)
-			for i := 0; i < len(args[1:]); i += 4 {
+			for i := 1; i < len(args); i += 4 {
 				proof, err := os.ReadFile(args[i+1])
 				if err != nil {
 					return err
@@ -58,6 +61,10 @@ func (am AppModule) GetTxCmd() *cobra.Command {
 
 			msg := &zktx.MsgExecuteStateChange{
 				Sender:       clientCtx.GetFromAddress().String(),
+				HyleSender:   args[0],
+				BlockTime:    0,
+				BlockNb:      0,
+				TxHash:       []byte("TODO"),
 				StateChanges: stateChanges,
 			}
 

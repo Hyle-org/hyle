@@ -47,6 +47,16 @@ func (ms msgServer) ExecuteStateChange(ctx context.Context, msg *zktx.MsgExecute
 		TxHash:    []byte("TODO"),
 	}
 
+	// Check that the sender contract matches the contract name in the first message
+	// Extract contract name from the last item in the sender
+	// TODO (temp): ignore sender if we get passed nothing.
+	if hyleContext.Sender != "" && len(msg.StateChanges) > 0 {
+		paths := strings.Split(hyleContext.Sender, ".")
+		if len(paths) < 2 || paths[len(paths)-1] != msg.StateChanges[0].ContractName {
+			return nil, fmt.Errorf("invalid sender contract, expected %s, got %s", msg.StateChanges[0].ContractName, paths[len(paths)-1])
+		}
+	}
+
 	for _, stateChange := range msg.StateChanges {
 		if err := ms.actuallyExecuteStateChange(ctx, &hyleContext, stateChange); err != nil {
 			return nil, err
@@ -138,14 +148,8 @@ func (ms msgServer) actuallyExecuteStateChange(ctx context.Context, hyleContext 
 		return fmt.Errorf("unknown verifier %s", contract.Verifier)
 	}
 
-	// The first time, we must check that the proof is what we see.
-	if hyleContext.Caller == "" {
-		// Extract contract name from the last item in the sender
-		paths := strings.Split(hyleContext.Sender, ".")
-		if len(paths) < 2 || paths[len(paths)-1] != msg.ContractName {
-			return fmt.Errorf("invalid sender contract, expected %s, got %s", msg.ContractName, paths[len(paths)-1])
-		}
-	}
+	// Update the caller for future state changes
+	hyleContext.Caller = msg.ContractName
 
 	// TODO: check block time / number / TX Hash
 

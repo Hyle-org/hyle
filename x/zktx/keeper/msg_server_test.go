@@ -133,7 +133,7 @@ func TestExecuteStateChangeGroth16(t *testing.T) {
 
 	// Create a broken message.
 	msg := &zktx.MsgExecuteStateChange{
-		HyleSender: sender,
+		HyleSender: "noone.bad_contract",
 		BlockTime:  0,
 		BlockNb:    0,
 		TxHash:     []byte("TODO"),
@@ -149,6 +149,10 @@ func TestExecuteStateChangeGroth16(t *testing.T) {
 
 	_, err = f.msgServer.ExecuteStateChange(f.ctx, msg)
 	require.ErrorContains(err, "no state is registered")
+
+	msg.HyleSender = sender
+	_, err = f.msgServer.ExecuteStateChange(f.ctx, msg)
+	require.ErrorContains(err, "invalid sender contract")
 
 	msg.StateChanges[0].ContractName = contract_name
 	_, err = f.msgServer.ExecuteStateChange(f.ctx, msg)
