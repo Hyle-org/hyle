@@ -3,10 +3,8 @@ package keeper
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"strings"
@@ -16,6 +14,21 @@ import (
 
 	"github.com/consensys/gnark/backend/groth16"
 )
+
+// TODO check block number, block time and tx hash
+func ValidateProofData(proofData zktx.HyleOutput, initialState []byte, hyleContext *zktx.HyleContext) error {
+	if !bytes.Equal(proofData.InitialState, initialState) {
+		return fmt.Errorf("verifier output does not match the expected initial state")
+	}
+	// Assume that if the proof has an empty sender/caller, it's "free for all"
+	if proofData.Sender != "" && proofData.Sender != hyleContext.Sender {
+		return fmt.Errorf("verifier output does not match the expected sender")
+	}
+	if proofData.Caller != "" && proofData.Caller != hyleContext.Caller {
+		return fmt.Errorf("verifier output does not match the expected caller")
+	}
+	return nil
+}
 
 type msgServer struct {
 	k Keeper
@@ -53,7 +66,7 @@ func (ms msgServer) ExecuteStateChange(ctx context.Context, msg *zktx.MsgExecute
 	if hyleContext.Sender != "" && len(msg.StateChanges) > 0 {
 		paths := strings.Split(hyleContext.Sender, ".")
 		if len(paths) < 2 || paths[len(paths)-1] != msg.StateChanges[0].ContractName {
-			return nil, fmt.Errorf("invalid sender contract, expected %s, got %s", msg.StateChanges[0].ContractName, paths[len(paths)-1])
+			return nil, fmt.Errorf("invalid sender contract, expected '%s', got '%s'", msg.StateChanges[0].ContractName, paths[len(paths)-1])
 		}
 	}
 
@@ -71,9 +84,7 @@ func (ms msgServer) actuallyExecuteStateChange(ctx context.Context, hyleContext 
 		return fmt.Errorf("invalid contract - no state is registered")
 	}
 
-	if !bytes.Equal(contract.StateDigest, msg.InitialState) {
-		return fmt.Errorf("invalid initial state, expected %x, got %x", contract.StateDigest, msg.InitialState)
-	}
+	var finalStateDigest []byte
 
 	if contract.Verifier == "risczero" {
 		// Save proof to a local file
@@ -83,43 +94,24 @@ func (ms msgServer) actuallyExecuteStateChange(ctx context.Context, hyleContext 
 			return fmt.Errorf("failed to write proof to file: %s", err)
 		}
 
-		verifierCmd := exec.Command(risczeroVerifierPath, contract.ProgramId, "risc0-proof.json", base64.StdEncoding.EncodeToString(msg.InitialState), base64.StdEncoding.EncodeToString(msg.FinalState))
-		grepOut, _ := verifierCmd.StderrPipe()
-		verifierCmd.Start()
-		err = verifierCmd.Wait()
-
+		outBytes, err := exec.Command(risczeroVerifierPath, contract.ProgramId, "risc0-proof.json").Output()
 		if err != nil {
-			grepBytes, _ := io.ReadAll(grepOut)
-			fmt.Println(string(grepBytes))
 			return fmt.Errorf("verifier failed. Exit code: %s", err)
 		}
-
-	} else if contract.Verifier == "sp1" {
-		// Save proof to a local file
-		err = os.WriteFile("sp1-proof.json", msg.Proof, 0644)
-
+		// Then parse data from the verified proof.
+		var objmap zktx.HyleOutput
+		err = json.Unmarshal(outBytes, &objmap)
 		if err != nil {
-			return nil, fmt.Errorf("failed to write proof to file: %s", err)
+			return fmt.Errorf("failed to unmarshal verifier output: %s", err)
 		}
 
-		// Save elf to a local file
-		err = os.WriteFile("sp1-elf.bin", []byte(contract.ProgramId), 0644)
-
-		if err != nil {
-			return nil, fmt.Errorf("failed to write ELF to file: %s", err)
+		if err = ValidateProofData(objmap, contract.StateDigest, hyleContext); err != nil {
+			return err
 		}
 
-		verifierCmd := exec.Command(sp1VerifierPath, "sp1-elf.bin", "sp1-proof.json", base64.StdEncoding.EncodeToString(msg.InitialState), base64.StdEncoding.EncodeToString(msg.FinalState))
-		grepOut, _ := verifierCmd.StderrPipe()
-		verifierCmd.Start()
-		err = verifierCmd.Wait()
-
-		if err != nil {
-			grepBytes, _ := io.ReadAll(grepOut)
-			fmt.Println(string(grepBytes))
-			return nil, fmt.Errorf("verifier failed. Exit code: %s", err)
-		}
+		finalStateDigest = objmap.NextState
 	} else if contract.Verifier == "gnark-groth16-te-BN254" {
+		// Order: first parse the proof, verify data, and then verify proof (assuming fastest failure in that order)
 		var proof gnark.Groth16Proof
 		if err := json.Unmarshal(msg.Proof, &proof); err != nil {
 			return fmt.Errorf("failed to unmarshal proof: %s", err)
@@ -134,11 +126,16 @@ func (ms msgServer) actuallyExecuteStateChange(ctx context.Context, hyleContext 
 			return err
 		}
 
-		// Ensure all compulsory witness data is present.
-		err = proof.ValidateWitnessData(hyleContext, msg, witness)
+		data, err := proof.ExtractData(witness)
 		if err != nil {
 			return err
 		}
+
+		if err = ValidateProofData(*data, contract.StateDigest, hyleContext); err != nil {
+			return err
+		}
+
+		finalStateDigest = data.NextState
 
 		// Final step: actually check the proof here
 		if err := groth16.Verify(g16p, vk, witness); err != nil {
@@ -154,7 +151,7 @@ func (ms msgServer) actuallyExecuteStateChange(ctx context.Context, hyleContext 
 	// TODO: check block time / number / TX Hash
 
 	// Update contract
-	contract.StateDigest = msg.FinalState
+	contract.StateDigest = finalStateDigest
 	if err := ms.k.Contracts.Set(ctx, msg.ContractName, contract); err != nil {
 		return err
 	}
@@ -176,39 +173,8 @@ func (ms msgServer) VerifyProof(ctx context.Context, msg *zktx.MsgVerifyProof) (
 			return nil, fmt.Errorf("failed to write proof to file: %s", err)
 		}
 
-		verifierCmd := exec.Command(risczeroVerifierPath, contract.ProgramId, "risc0-proof.json")
-		grepOut, _ := verifierCmd.StderrPipe()
-		verifierCmd.Start()
-		err = verifierCmd.Wait()
-
+		_, err := exec.Command(risczeroVerifierPath, contract.ProgramId, "risc0-proof.json").Output()
 		if err != nil {
-			grepBytes, _ := io.ReadAll(grepOut)
-			fmt.Println(string(grepBytes))
-			return nil, fmt.Errorf("verifier failed. Exit code: %s", err)
-		}
-	} else if contract.Verifier == "sp1" {
-		// Save proof to a local file
-		err = os.WriteFile("sp1-proof.json", msg.Proof, 0644)
-
-		if err != nil {
-			return nil, fmt.Errorf("failed to write proof to file: %s", err)
-		}
-
-		// Save elf to a local file
-		err = os.WriteFile("sp1-elf.bin", []byte(contract.ProgramId), 0644)
-
-		if err != nil {
-			return nil, fmt.Errorf("failed to write ELF to file: %s", err)
-		}
-
-		verifierCmd := exec.Command(sp1VerifierPath, "sp1-elf.bin", "sp1-proof.json")
-		grepOut, _ := verifierCmd.StderrPipe()
-		verifierCmd.Start()
-		err = verifierCmd.Wait()
-
-		if err != nil {
-			grepBytes, _ := io.ReadAll(grepOut)
-			fmt.Println(string(grepBytes))
 			return nil, fmt.Errorf("verifier failed. Exit code: %s", err)
 		}
 

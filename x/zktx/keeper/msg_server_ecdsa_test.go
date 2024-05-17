@@ -86,6 +86,8 @@ func (c *ecdsaCircuit[T, S]) Define(api frontend.API) error {
 		uapi.ByteAssertEq(uapi.ByteValueOf(upper), c.Sender[i*2])
 		uapi.ByteAssertEq(uapi.ByteValueOf(lower), c.Sender[i*2+1])
 	}
+	// Check that the next one is a dot, aka a name separator
+	uapi.ByteAssertEq(c.Sender[40], uints.NewU8(46))
 
 	c.Pub.Verify(api, sw_emulated.GetCurveParams[T](), &c.Msg, &c.Sig)
 	return nil
@@ -146,12 +148,17 @@ func generate_ecdsa_proof(privKey *ecdsa.PrivateKey, ethAddress string) (gnark.G
 	circuit := ecdsaCircuit[emulated.Secp256k1Fp, emulated.Secp256k1Fr]{
 		HyleCircuit: gnark.HyleCircuit{
 			Version:   1,
+			InputLen:  1,
 			Input:     []frontend.Variable{0},
+			OutputLen: 1,
 			Output:    []frontend.Variable{0},
+			SenderLen: len(ethAddress),
 			Sender:    uints.NewU8Array([]byte(ethAddress)), // We expect only the sender as this is the "auth contract"
+			CallerLen: 0,
 			Caller:    uints.NewU8Array([]byte("")),
 			BlockTime: 0,
 			BlockNb:   0,
+			TxHashLen: len("TODO"),
 			TxHash:    uints.NewU8Array([]byte("TODO")),
 		},
 		Sig: circuitecdsa.Signature[emulated.Secp256k1Fr]{
@@ -227,7 +234,7 @@ func TestExecuteStateChangeGroth16ECDSA(t *testing.T) {
 
 	privKey, _ := ecdsa.GenerateKey(rand.Reader)
 	pubkeyBytes := privKey.PublicKey.A.RawBytes()
-	ethAddress := hex.EncodeToString(nativesha3.Keccak256(pubkeyBytes[:])[12:])
+	ethAddress := hex.EncodeToString(nativesha3.Keccak256(pubkeyBytes[:])[12:]) + ".ecdsa"
 
 	proof, err := generate_ecdsa_proof(privKey, ethAddress)
 	require.NoError(err)
@@ -236,7 +243,7 @@ func TestExecuteStateChangeGroth16ECDSA(t *testing.T) {
 	// Register the contract
 	contract := zktx.Contract{
 		Verifier:    "gnark-groth16-te-BN254",
-		StateDigest: []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+		StateDigest: []byte{0},
 		ProgramId:   string(proof.VerifyingKey),
 	}
 
@@ -245,7 +252,7 @@ func TestExecuteStateChangeGroth16ECDSA(t *testing.T) {
 	require.NoError(err)
 
 	msg := &zktx.MsgExecuteStateChange{
-		HyleSender: ethAddress + ".ecdsa",
+		HyleSender: ethAddress,
 		BlockTime:  0,
 		BlockNb:    0,
 		TxHash:     []byte("TODO"),
@@ -253,8 +260,6 @@ func TestExecuteStateChangeGroth16ECDSA(t *testing.T) {
 			{
 				ContractName: "ecdsa",
 				Proof:        jsonproof,
-				InitialState: []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
-				FinalState:   []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
 			},
 		},
 	}
@@ -262,5 +267,5 @@ func TestExecuteStateChangeGroth16ECDSA(t *testing.T) {
 	require.NoError(err)
 
 	st, _ := f.k.Contracts.Get(f.ctx, "ecdsa")
-	require.Equal(st.StateDigest, []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0})
+	require.Equal(st.StateDigest, []byte{0})
 }

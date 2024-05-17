@@ -1,7 +1,6 @@
 package module
 
 import (
-	"encoding/base64"
 	"fmt"
 	"os"
 
@@ -24,7 +23,7 @@ func (am AppModule) GetTxCmd() *cobra.Command {
 	txCmd.PersistentFlags().String(flags.FlagFrom, "", "Name or address of private key with which to sign")
 
 	txCmd.AddCommand(&cobra.Command{
-		Use:   "execute [hyle_sender] [[contract_name] [proof] [initial_state] [final_state]]... --from [cosmos address]",
+		Use:   "execute [hyle_sender] [[contract_name] [proof]]... --from [cosmos address]",
 		Short: "Execute a state change",
 		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -33,29 +32,19 @@ func (am AppModule) GetTxCmd() *cobra.Command {
 				return err
 			}
 
-			if len(args[1:])%4 != 0 {
+			if len(args[1:])%2 != 0 {
 				return fmt.Errorf("invalid state changes")
 			}
 
-			stateChanges := make([]*zktx.StateChange, 0, len(args[1:])/4)
-			for i := 1; i < len(args); i += 4 {
+			stateChanges := make([]*zktx.StateChange, 0, len(args[1:])/2)
+			for i := 1; i < len(args); i += 2 {
 				proof, err := os.ReadFile(args[i+1])
-				if err != nil {
-					return err
-				}
-				initialState, err := base64.StdEncoding.DecodeString(args[i+2])
-				if err != nil {
-					return err
-				}
-				finalState, err := base64.StdEncoding.DecodeString(args[i+3])
 				if err != nil {
 					return err
 				}
 				stateChanges = append(stateChanges, &zktx.StateChange{
 					ContractName: args[i],
 					Proof:        proof,
-					InitialState: initialState,
-					FinalState:   finalState,
 				})
 			}
 

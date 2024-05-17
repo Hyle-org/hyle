@@ -100,12 +100,17 @@ func TestExecuteStateChangeGroth16(t *testing.T) {
 		OtherData: 3,
 		HyleCircuit: gnark.HyleCircuit{
 			Version:   1,
+			InputLen:  1,
 			Input:     []frontend.Variable{initial_state},
+			OutputLen: 1,
 			Output:    []frontend.Variable{end_state},
-			Sender:    uints.NewU8Array([]byte("toto")), // We expect only the sender as this is the "auth contract"
+			SenderLen: len("toto." + contract_name),
+			Sender:    uints.NewU8Array([]byte("toto." + contract_name)),
+			CallerLen: 0,
 			Caller:    uints.NewU8Array([]byte("")),
 			BlockTime: 0,
 			BlockNb:   0,
+			TxHashLen: len("TODO"),
 			TxHash:    uints.NewU8Array([]byte("TODO")),
 		},
 		StillMoreData: 0,
@@ -117,9 +122,8 @@ func TestExecuteStateChangeGroth16(t *testing.T) {
 	}
 	jsonproof, _ := json.Marshal(proof)
 
-	// See below for details
-	initial_state_witness := proof.PublicWitness[12+32 : 12+32+32*1]
-	final_state_witness := proof.PublicWitness[12+32+32*1 : 12+32+32*1+1*32]
+	initial_state_witness := []byte{byte(initial_state)}
+	final_state_witness := []byte{byte(end_state)}
 
 	// Setup contract
 	_, err = f.msgServer.RegisterContract(f.ctx, &zktx.MsgRegisterContract{
@@ -141,8 +145,6 @@ func TestExecuteStateChangeGroth16(t *testing.T) {
 			{
 				ContractName: "bad_contract",
 				Proof:        []byte("bad_proof"),
-				InitialState: []byte("bad_initial_state"),
-				FinalState:   []byte("bad_final_state bad_final_states"), // This is padded so we get the error we want
 			},
 		},
 	}
@@ -156,10 +158,6 @@ func TestExecuteStateChangeGroth16(t *testing.T) {
 
 	msg.StateChanges[0].ContractName = contract_name
 	_, err = f.msgServer.ExecuteStateChange(f.ctx, msg)
-	require.ErrorContains(err, "invalid initial state")
-
-	msg.StateChanges[0].InitialState = initial_state_witness
-	_, err = f.msgServer.ExecuteStateChange(f.ctx, msg)
 	require.ErrorContains(err, "failed to unmarshal proof")
 
 	msg.StateChanges[0].Proof = jsonproof
@@ -172,11 +170,6 @@ func TestExecuteStateChangeGroth16(t *testing.T) {
 	contract.ProgramId = string(proof.VerifyingKey)
 	err = f.k.Contracts.Set(f.ctx, contract_name, contract)
 	require.NoError(err)
-
-	_, err = f.msgServer.ExecuteStateChange(f.ctx, msg)
-	require.ErrorContains(err, "incorrect final state")
-
-	msg.StateChanges[0].FinalState = final_state_witness
 
 	// execute the message, this time succeeding
 	_, err = f.msgServer.ExecuteStateChange(f.ctx, msg)
@@ -202,12 +195,17 @@ func TestExecuteLongStateChangeGroth16(t *testing.T) {
 	circuit := longStatefulCircuit{
 		HyleCircuit: gnark.HyleCircuit{
 			Version:   1,
+			InputLen:  2,
 			Input:     inp[0:2],
+			OutputLen: 2,
 			Output:    inp[2:4],
-			Sender:    uints.NewU8Array([]byte("toto")), // We expect only the sender as this is the "auth contract""
+			SenderLen: len("toto." + contract_name),
+			Sender:    uints.NewU8Array([]byte("toto." + contract_name)),
+			CallerLen: 0,
 			Caller:    uints.NewU8Array([]byte("")),
 			BlockTime: 0,
 			BlockNb:   0,
+			TxHashLen: len("TODO"),
 			TxHash:    uints.NewU8Array([]byte("TODO")),
 		},
 	}
@@ -218,13 +216,21 @@ func TestExecuteLongStateChangeGroth16(t *testing.T) {
 	}
 	jsonproof, _ := json.Marshal(proof)
 
-	// We pass serialized data and reconstruct it out-of-band as that happens to be the easiest solution ATM.
-	// This is overall not great.
-	// We need to skip 3 u32: the # of public items, the # of private items, and then the number of public items again (vector serialization in go)
-	// Then we skip the version felt, and then we're good to go.
-	// For this curve it's 32 bytes per felt.
-	initial_state_witness := proof.PublicWitness[12+32 : 12+32+32*2]
-	final_state_witness := proof.PublicWitness[12+32+32*2 : 12+32+32*2+2*32]
+	_, _, witness, err := proof.ParseProof()
+	require.NoError(err)
+	data, err := proof.ExtractData(witness)
+	require.NoError(err)
+
+	initial_state_witness := data.InitialState
+	final_state_witness := data.NextState
+	require.Equal(initial_state_witness, []byte{byte(initial_state[0]), byte(initial_state[1])})
+	require.Equal(final_state_witness, []byte{byte(end_state[0]), byte(end_state[1])})
+
+	require.Equal(data.Sender, "toto."+contract_name)
+	require.Equal(data.Caller, "")
+	require.Equal(data.BlockTime, uint64(0))
+	require.Equal(data.BlockNumber, uint64(0))
+	require.Equal(data.TxHash, []byte("TODO"))
 
 	_, err = f.msgServer.RegisterContract(f.ctx, &zktx.MsgRegisterContract{
 		Owner:        f.addrs[0].String(),
@@ -245,8 +251,6 @@ func TestExecuteLongStateChangeGroth16(t *testing.T) {
 			{
 				ContractName: contract_name,
 				Proof:        jsonproof,
-				InitialState: initial_state_witness,
-				FinalState:   final_state_witness,
 			},
 		},
 	}
@@ -260,92 +264,10 @@ func TestExecuteLongStateChangeGroth16(t *testing.T) {
 	require.Equal(st.StateDigest, final_state_witness)
 }
 
-func TestExecuteSampleAttackPayload(t *testing.T) {
-	f := initFixture(t)
+func TestUnmarshallHyleOutput(t *testing.T) {
 	require := require.New(t)
-
-	contract_name := "test-contract"
-	sender := "toto.test-contract"
-
-	// Generate the proof and marshal it
-	circuit := statefulCircuit{
-		HyleCircuit: gnark.HyleCircuit{
-			Version:   1,
-			Input:     []frontend.Variable{1},
-			Output:    []frontend.Variable{4},
-			Sender:    uints.NewU8Array([]byte("toto")), // We expect only the sender as this is the "auth contract""
-			Caller:    uints.NewU8Array([]byte("")),
-			BlockTime: 0,
-			BlockNb:   0,
-			TxHash:    uints.NewU8Array([]byte("TODO")),
-		},
-		OtherData:     3,
-		StillMoreData: 0,
-	}
-
-	proof, err := generate_proof(&circuit)
-	if err != nil {
-		t.Fatal(err)
-	}
-	valid_initial_state_witness := proof.PublicWitness[12+32 : 12+32+32]
-	final_state_witness := proof.PublicWitness[12+32+32 : 12+32+32+32]
-
-	// Attack: we actually generate a proof from a different initial state
-	circuit = statefulCircuit{
-		HyleCircuit: gnark.HyleCircuit{
-			Version:   1,
-			Input:     []frontend.Variable{4},
-			Output:    []frontend.Variable{4},
-			Sender:    uints.NewU8Array([]byte("toto")), // We expect only the sender as this is the "auth contract""
-			Caller:    uints.NewU8Array([]byte("")),
-			BlockTime: 0,
-			BlockNb:   0,
-			TxHash:    uints.NewU8Array([]byte("TODO")),
-		},
-		OtherData:     0,
-		StillMoreData: 0,
-	}
-
-	proof, err = generate_proof(&circuit)
-	if err != nil {
-		t.Fatal(err)
-	}
-	jsonproof, _ := json.Marshal(proof)
-
-	_, err = f.msgServer.RegisterContract(f.ctx, &zktx.MsgRegisterContract{
-		Owner:        f.addrs[0].String(),
-		Verifier:     "gnark-groth16-te-BN254",
-		ProgramId:    string(proof.VerifyingKey),
-		StateDigest:  valid_initial_state_witness,
-		ContractName: contract_name,
-	})
-	require.NoError(err)
-
-	// Create the message
-	msg := &zktx.MsgExecuteStateChange{
-		HyleSender: sender,
-		BlockTime:  0,
-		BlockNb:    0,
-		TxHash:     []byte("TODO"),
-		StateChanges: []*zktx.StateChange{
-			{
-				ContractName: contract_name,
-				Proof:        jsonproof,
-				InitialState: valid_initial_state_witness, // attack: we pretend the initial state is the valid one but our proof is for the attacked one
-				FinalState:   final_state_witness,
-			},
-		},
-	}
-
-	// Execute the message and we detect the attack
-	_, err = f.msgServer.ExecuteStateChange(f.ctx, msg)
-	require.ErrorContains(err, "incorrect initial state")
-
-	// This would however totally fly as a pure verification message
-	verifyMsg := &zktx.MsgVerifyProof{
-		ContractName: contract_name,
-		Proof:        jsonproof,
-	}
-	_, err = f.msgServer.VerifyProof(f.ctx, verifyMsg)
+	raw_json := "{\"version\":1,\"initial_state\":[0,0,0,1],\"next_state\":[0,0,0,15],\"sender\":\"\",\"caller\":\"\",\"block_number\":0,\"block_time\":0,\"tx_hash\":[1],\"program_outputs\":null}"
+	var output zktx.HyleOutput
+	err := json.Unmarshal([]byte(raw_json), &output)
 	require.NoError(err)
 }
