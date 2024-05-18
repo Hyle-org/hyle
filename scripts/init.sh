@@ -1,4 +1,4 @@
-#!/bin/zsh
+#!/bin/sh
 
 rm -r ./hyled-data || true
 HYLED_BIN=./hyled
