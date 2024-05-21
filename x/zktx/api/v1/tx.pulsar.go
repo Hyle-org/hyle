@@ -2644,8 +2644,8 @@ func (x *fastReflection_MsgRegisterContract) Range(f func(protoreflect.FieldDesc
 			return
 		}
 	}
-	if x.ProgramId != "" {
-		value := protoreflect.ValueOfString(x.ProgramId)
+	if len(x.ProgramId) != 0 {
+		value := protoreflect.ValueOfBytes(x.ProgramId)
 		if !f(fd_MsgRegisterContract_program_id, value) {
 			return
 		}
@@ -2682,7 +2682,7 @@ func (x *fastReflection_MsgRegisterContract) Has(fd protoreflect.FieldDescriptor
 	case "hyle.hyle.zktx.v1.MsgRegisterContract.verifier":
 		return x.Verifier != ""
 	case "hyle.hyle.zktx.v1.MsgRegisterContract.program_id":
-		return x.ProgramId != ""
+		return len(x.ProgramId) != 0
 	case "hyle.hyle.zktx.v1.MsgRegisterContract.state_digest":
 		return len(x.StateDigest) != 0
 	case "hyle.hyle.zktx.v1.MsgRegisterContract.contract_name":
@@ -2708,7 +2708,7 @@ func (x *fastReflection_MsgRegisterContract) Clear(fd protoreflect.FieldDescript
 	case "hyle.hyle.zktx.v1.MsgRegisterContract.verifier":
 		x.Verifier = ""
 	case "hyle.hyle.zktx.v1.MsgRegisterContract.program_id":
-		x.ProgramId = ""
+		x.ProgramId = nil
 	case "hyle.hyle.zktx.v1.MsgRegisterContract.state_digest":
 		x.StateDigest = nil
 	case "hyle.hyle.zktx.v1.MsgRegisterContract.contract_name":
@@ -2737,7 +2737,7 @@ func (x *fastReflection_MsgRegisterContract) Get(descriptor protoreflect.FieldDe
 		return protoreflect.ValueOfString(value)
 	case "hyle.hyle.zktx.v1.MsgRegisterContract.program_id":
 		value := x.ProgramId
-		return protoreflect.ValueOfString(value)
+		return protoreflect.ValueOfBytes(value)
 	case "hyle.hyle.zktx.v1.MsgRegisterContract.state_digest":
 		value := x.StateDigest
 		return protoreflect.ValueOfBytes(value)
@@ -2769,7 +2769,7 @@ func (x *fastReflection_MsgRegisterContract) Set(fd protoreflect.FieldDescriptor
 	case "hyle.hyle.zktx.v1.MsgRegisterContract.verifier":
 		x.Verifier = value.Interface().(string)
 	case "hyle.hyle.zktx.v1.MsgRegisterContract.program_id":
-		x.ProgramId = value.Interface().(string)
+		x.ProgramId = value.Bytes()
 	case "hyle.hyle.zktx.v1.MsgRegisterContract.state_digest":
 		x.StateDigest = value.Bytes()
 	case "hyle.hyle.zktx.v1.MsgRegisterContract.contract_name":
@@ -2822,7 +2822,7 @@ func (x *fastReflection_MsgRegisterContract) NewField(fd protoreflect.FieldDescr
 	case "hyle.hyle.zktx.v1.MsgRegisterContract.verifier":
 		return protoreflect.ValueOfString("")
 	case "hyle.hyle.zktx.v1.MsgRegisterContract.program_id":
-		return protoreflect.ValueOfString("")
+		return protoreflect.ValueOfBytes(nil)
 	case "hyle.hyle.zktx.v1.MsgRegisterContract.state_digest":
 		return protoreflect.ValueOfBytes(nil)
 	case "hyle.hyle.zktx.v1.MsgRegisterContract.contract_name":
@@ -3097,7 +3097,7 @@ func (x *fastReflection_MsgRegisterContract) ProtoMethods() *protoiface.Methods 
 				if wireType != 2 {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field ProgramId", wireType)
 				}
-				var stringLen uint64
+				var byteLen int
 				for shift := uint(0); ; shift += 7 {
 					if shift >= 64 {
 						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
@@ -3107,23 +3107,25 @@ func (x *fastReflection_MsgRegisterContract) ProtoMethods() *protoiface.Methods 
 					}
 					b := dAtA[iNdEx]
 					iNdEx++
-					stringLen |= uint64(b&0x7F) << shift
+					byteLen |= int(b&0x7F) << shift
 					if b < 0x80 {
 						break
 					}
 				}
-				intStringLen := int(stringLen)
-				if intStringLen < 0 {
+				if byteLen < 0 {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
 				}
-				postIndex := iNdEx + intStringLen
+				postIndex := iNdEx + byteLen
 				if postIndex < 0 {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
 				}
 				if postIndex > l {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
 				}
-				x.ProgramId = string(dAtA[iNdEx:postIndex])
+				x.ProgramId = append(x.ProgramId[:0], dAtA[iNdEx:postIndex]...)
+				if x.ProgramId == nil {
+					x.ProgramId = []byte{}
+				}
 				iNdEx = postIndex
 			case 4:
 				if wireType != 2 {
@@ -4697,7 +4699,7 @@ type MsgRegisterContract struct {
 	// Identifier of the verifier
 	Verifier string `protobuf:"bytes,2,opt,name=verifier,proto3" json:"verifier,omitempty"`
 	// Identifier of the smart contract
-	ProgramId string `protobuf:"bytes,3,opt,name=program_id,json=programId,proto3" json:"program_id,omitempty"`
+	ProgramId []byte `protobuf:"bytes,3,opt,name=program_id,json=programId,proto3" json:"program_id,omitempty"`
 	// Initial state digest
 	StateDigest []byte `protobuf:"bytes,4,opt,name=state_digest,json=stateDigest,proto3" json:"state_digest,omitempty"`
 	// Identifier of the contract name
@@ -4738,11 +4740,11 @@ func (x *MsgRegisterContract) GetVerifier() string {
 	return ""
 }
 
-func (x *MsgRegisterContract) GetProgramId() string {
+func (x *MsgRegisterContract) GetProgramId() []byte {
 	if x != nil {
 		return x.ProgramId
 	}
-	return ""
+	return nil
 }
 
 func (x *MsgRegisterContract) GetStateDigest() []byte {
@@ -4915,7 +4917,7 @@ var file_hyle_hyle_zktx_v1_tx_proto_rawDesc = []byte{
 	0x74, 0x72, 0x69, 0x6e, 0x67, 0x52, 0x05, 0x6f, 0x77, 0x6e, 0x65, 0x72, 0x12, 0x1a, 0x0a, 0x08,
 	0x76, 0x65, 0x72, 0x69, 0x66, 0x69, 0x65, 0x72, 0x18, 0x02, 0x20, 0x01, 0x28, 0x09, 0x52, 0x08,
 	0x76, 0x65, 0x72, 0x69, 0x66, 0x69, 0x65, 0x72, 0x12, 0x1d, 0x0a, 0x0a, 0x70, 0x72, 0x6f, 0x67,
-	0x72, 0x61, 0x6d, 0x5f, 0x69, 0x64, 0x18, 0x03, 0x20, 0x01, 0x28, 0x09, 0x52, 0x09, 0x70, 0x72,
+	0x72, 0x61, 0x6d, 0x5f, 0x69, 0x64, 0x18, 0x03, 0x20, 0x01, 0x28, 0x0c, 0x52, 0x09, 0x70, 0x72,
 	0x6f, 0x67, 0x72, 0x61, 0x6d, 0x49, 0x64, 0x12, 0x21, 0x0a, 0x0c, 0x73, 0x74, 0x61, 0x74, 0x65,
 	0x5f, 0x64, 0x69, 0x67, 0x65, 0x73, 0x74, 0x18, 0x04, 0x20, 0x01, 0x28, 0x0c, 0x52, 0x0b, 0x73,
 	0x74, 0x61, 0x74, 0x65, 0x44, 0x69, 0x67, 0x65, 0x73, 0x74, 0x12, 0x23, 0x0a, 0x0d, 0x63, 0x6f,

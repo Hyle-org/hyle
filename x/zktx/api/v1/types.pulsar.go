@@ -1218,8 +1218,8 @@ func (x *fastReflection_Contract) Range(f func(protoreflect.FieldDescriptor, pro
 			return
 		}
 	}
-	if x.ProgramId != "" {
-		value := protoreflect.ValueOfString(x.ProgramId)
+	if len(x.ProgramId) != 0 {
+		value := protoreflect.ValueOfBytes(x.ProgramId)
 		if !f(fd_Contract_program_id, value) {
 			return
 		}
@@ -1248,7 +1248,7 @@ func (x *fastReflection_Contract) Has(fd protoreflect.FieldDescriptor) bool {
 	case "hyle.hyle.zktx.v1.Contract.verifier":
 		return x.Verifier != ""
 	case "hyle.hyle.zktx.v1.Contract.program_id":
-		return x.ProgramId != ""
+		return len(x.ProgramId) != 0
 	case "hyle.hyle.zktx.v1.Contract.state_digest":
 		return len(x.StateDigest) != 0
 	default:
@@ -1270,7 +1270,7 @@ func (x *fastReflection_Contract) Clear(fd protoreflect.FieldDescriptor) {
 	case "hyle.hyle.zktx.v1.Contract.verifier":
 		x.Verifier = ""
 	case "hyle.hyle.zktx.v1.Contract.program_id":
-		x.ProgramId = ""
+		x.ProgramId = nil
 	case "hyle.hyle.zktx.v1.Contract.state_digest":
 		x.StateDigest = nil
 	default:
@@ -1294,7 +1294,7 @@ func (x *fastReflection_Contract) Get(descriptor protoreflect.FieldDescriptor) p
 		return protoreflect.ValueOfString(value)
 	case "hyle.hyle.zktx.v1.Contract.program_id":
 		value := x.ProgramId
-		return protoreflect.ValueOfString(value)
+		return protoreflect.ValueOfBytes(value)
 	case "hyle.hyle.zktx.v1.Contract.state_digest":
 		value := x.StateDigest
 		return protoreflect.ValueOfBytes(value)
@@ -1321,7 +1321,7 @@ func (x *fastReflection_Contract) Set(fd protoreflect.FieldDescriptor, value pro
 	case "hyle.hyle.zktx.v1.Contract.verifier":
 		x.Verifier = value.Interface().(string)
 	case "hyle.hyle.zktx.v1.Contract.program_id":
-		x.ProgramId = value.Interface().(string)
+		x.ProgramId = value.Bytes()
 	case "hyle.hyle.zktx.v1.Contract.state_digest":
 		x.StateDigest = value.Bytes()
 	default:
@@ -1366,7 +1366,7 @@ func (x *fastReflection_Contract) NewField(fd protoreflect.FieldDescriptor) prot
 	case "hyle.hyle.zktx.v1.Contract.verifier":
 		return protoreflect.ValueOfString("")
 	case "hyle.hyle.zktx.v1.Contract.program_id":
-		return protoreflect.ValueOfString("")
+		return protoreflect.ValueOfBytes(nil)
 	case "hyle.hyle.zktx.v1.Contract.state_digest":
 		return protoreflect.ValueOfBytes(nil)
 	default:
@@ -1585,7 +1585,7 @@ func (x *fastReflection_Contract) ProtoMethods() *protoiface.Methods {
 				if wireType != 2 {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field ProgramId", wireType)
 				}
-				var stringLen uint64
+				var byteLen int
 				for shift := uint(0); ; shift += 7 {
 					if shift >= 64 {
 						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
@@ -1595,23 +1595,25 @@ func (x *fastReflection_Contract) ProtoMethods() *protoiface.Methods {
 					}
 					b := dAtA[iNdEx]
 					iNdEx++
-					stringLen |= uint64(b&0x7F) << shift
+					byteLen |= int(b&0x7F) << shift
 					if b < 0x80 {
 						break
 					}
 				}
-				intStringLen := int(stringLen)
-				if intStringLen < 0 {
+				if byteLen < 0 {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
 				}
-				postIndex := iNdEx + intStringLen
+				postIndex := iNdEx + byteLen
 				if postIndex < 0 {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
 				}
 				if postIndex > l {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
 				}
-				x.ProgramId = string(dAtA[iNdEx:postIndex])
+				x.ProgramId = append(x.ProgramId[:0], dAtA[iNdEx:postIndex]...)
+				if x.ProgramId == nil {
+					x.ProgramId = []byte{}
+				}
 				iNdEx = postIndex
 			case 3:
 				if wireType != 2 {
@@ -1776,7 +1778,7 @@ type Contract struct {
 	// The identifier of the verifier to run for this contract
 	Verifier string `protobuf:"bytes,1,opt,name=verifier,proto3" json:"verifier,omitempty"`
 	// An identifier for the program (may depend on verifier)
-	ProgramId string `protobuf:"bytes,2,opt,name=program_id,json=programId,proto3" json:"program_id,omitempty"`
+	ProgramId []byte `protobuf:"bytes,2,opt,name=program_id,json=programId,proto3" json:"program_id,omitempty"`
 	// Recap of the current contract state
 	StateDigest []byte `protobuf:"bytes,3,opt,name=state_digest,json=stateDigest,proto3" json:"state_digest,omitempty"`
 }
@@ -1808,11 +1810,11 @@ func (x *Contract) GetVerifier() string {
 	return ""
 }
 
-func (x *Contract) GetProgramId() string {
+func (x *Contract) GetProgramId() []byte {
 	if x != nil {
 		return x.ProgramId
 	}
-	return ""
+	return nil
 }
 
 func (x *Contract) GetStateDigest() []byte {
@@ -1852,7 +1854,7 @@ var file_hyle_hyle_zktx_v1_types_proto_rawDesc = []byte{
 	0x74, 0x72, 0x61, 0x63, 0x74, 0x12, 0x1a, 0x0a, 0x08, 0x76, 0x65, 0x72, 0x69, 0x66, 0x69, 0x65,
 	0x72, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x08, 0x76, 0x65, 0x72, 0x69, 0x66, 0x69, 0x65,
 	0x72, 0x12, 0x1d, 0x0a, 0x0a, 0x70, 0x72, 0x6f, 0x67, 0x72, 0x61, 0x6d, 0x5f, 0x69, 0x64, 0x18,
-	0x02, 0x20, 0x01, 0x28, 0x09, 0x52, 0x09, 0x70, 0x72, 0x6f, 0x67, 0x72, 0x61, 0x6d, 0x49, 0x64,
+	0x02, 0x20, 0x01, 0x28, 0x0c, 0x52, 0x09, 0x70, 0x72, 0x6f, 0x67, 0x72, 0x61, 0x6d, 0x49, 0x64,
 	0x12, 0x21, 0x0a, 0x0c, 0x73, 0x74, 0x61, 0x74, 0x65, 0x5f, 0x64, 0x69, 0x67, 0x65, 0x73, 0x74,
 	0x18, 0x03, 0x20, 0x01, 0x28, 0x0c, 0x52, 0x0b, 0x73, 0x74, 0x61, 0x74, 0x65, 0x44, 0x69, 0x67,
 	0x65, 0x73, 0x74, 0x42, 0xc2, 0x01, 0x0a, 0x15, 0x63, 0x6f, 0x6d, 0x2e, 0x68, 0x79, 0x6c, 0x65,

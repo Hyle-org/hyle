@@ -3,6 +3,7 @@ package keeper
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -94,7 +95,8 @@ func (ms msgServer) actuallyExecuteStateChange(ctx context.Context, hyleContext 
 			return fmt.Errorf("failed to write proof to file: %s", err)
 		}
 
-		outBytes, err := exec.Command(risczeroVerifierPath, contract.ProgramId, "risc0-proof.json").Output()
+		b64ProgramId := base64.StdEncoding.EncodeToString(contract.ProgramId)
+		outBytes, err := exec.Command(risczeroVerifierPath, b64ProgramId, "risc0-proof.json").Output()
 		if err != nil {
 			return fmt.Errorf("verifier failed. Exit code: %s", err)
 		}
@@ -173,7 +175,8 @@ func (ms msgServer) VerifyProof(ctx context.Context, msg *zktx.MsgVerifyProof) (
 			return nil, fmt.Errorf("failed to write proof to file: %s", err)
 		}
 
-		_, err := exec.Command(risczeroVerifierPath, contract.ProgramId, "risc0-proof.json").Output()
+		b64ProgramId := base64.StdEncoding.EncodeToString(contract.ProgramId)
+		_, err := exec.Command(risczeroVerifierPath, b64ProgramId, "risc0-proof.json").Output()
 		if err != nil {
 			return nil, fmt.Errorf("verifier failed. Exit code: %s", err)
 		}
@@ -184,7 +187,7 @@ func (ms msgServer) VerifyProof(ctx context.Context, msg *zktx.MsgVerifyProof) (
 			return nil, fmt.Errorf("failed to unmarshal proof: %s", err)
 		}
 
-		if !bytes.Equal(proof.VerifyingKey, []byte(contract.ProgramId)) {
+		if !bytes.Equal(proof.VerifyingKey, contract.ProgramId) {
 			return nil, fmt.Errorf("verifying key does not match the known VK")
 		}
 

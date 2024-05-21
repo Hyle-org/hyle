@@ -83,7 +83,7 @@ message MsgRegisterContract {
   string verifier = 2;
 
   // Identifier of the smart contract
-  string program_id = 3;
+  bytes program_id = 3;
 
   // Initial state digest
   bytes state_digest = 4;
