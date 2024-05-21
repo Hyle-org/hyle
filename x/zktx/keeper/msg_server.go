@@ -3,6 +3,7 @@ package keeper
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -112,6 +113,30 @@ func (ms msgServer) actuallyExecuteStateChange(ctx context.Context, hyleContext 
 		}
 
 		finalStateDigest = objmap.NextState
+	} else if contract.Verifier == "sp1" {
+		// Save proof to a local file
+		err = os.WriteFile("sp1-proof.json", msg.Proof, 0644)
+
+		if err != nil {
+			return fmt.Errorf("failed to write proof to file: %s", err)
+		}
+		b64ProgramId := base64.StdEncoding.EncodeToString(contract.ProgramId)
+		outBytes, err := exec.Command(sp1VerifierPath, b64ProgramId, "sp1-proof.json").Output()
+		if err != nil {
+			return fmt.Errorf("verifier failed. Exit code: %s", err)
+		}
+		// Then parse data from the verified proof.
+		var objmap zktx.HyleOutput
+		err = json.Unmarshal(outBytes, &objmap)
+		if err != nil {
+			return fmt.Errorf("failed to unmarshal verifier output: %s", err)
+		}
+
+		if err = ValidateProofData(objmap, contract.StateDigest, hyleContext); err != nil {
+			return err
+		}
+
+		finalStateDigest = objmap.NextState
 	} else if contract.Verifier == "gnark-groth16-te-BN254" {
 		// Order: first parse the proof, verify data, and then verify proof (assuming fastest failure in that order)
 		var proof gnark.Groth16Proof
@@ -177,6 +202,18 @@ func (ms msgServer) VerifyProof(ctx context.Context, msg *zktx.MsgVerifyProof) (
 
 		b16ProgramId := hex.EncodeToString(contract.ProgramId)
 		_, err := exec.Command(risczeroVerifierPath, b16ProgramId, "risc0-proof.json").Output()
+		if err != nil {
+			return nil, fmt.Errorf("verifier failed. Exit code: %s", err)
+		}
+	} else if contract.Verifier == "sp1" {
+		// Save proof to a local file
+		err = os.WriteFile("sp1-proof.json", msg.Proof, 0644)
+
+		if err != nil {
+			return nil, fmt.Errorf("failed to write proof to file: %s", err)
+		}
+		b64ProgramId := base64.StdEncoding.EncodeToString(contract.ProgramId)
+		_, err := exec.Command(sp1VerifierPath, b64ProgramId, "sp1-proof.json").Output()
 		if err != nil {
 			return nil, fmt.Errorf("verifier failed. Exit code: %s", err)
 		}
