@@ -32,20 +32,9 @@ func (am AppModule) AutoCLIOptions() *autocliv1.ModuleOptions {
 			},
 		},
 		Tx: &autocliv1.ServiceCommandDescriptor{
-			Service: hylev1.Msg_ServiceDesc.ServiceName,
+			Service:              hylev1.Msg_ServiceDesc.ServiceName,
+			EnhanceCustomCommand: true,
 			RpcCommandOptions: []*autocliv1.RpcCommandOptions{
-				{
-					RpcMethod: "ExecuteStateChange",
-					Use:       "execute [contract_name] [proof] [initial_state] [final_state] [sender]",
-					Short:     "Permissionless state transition for a contract.",
-					PositionalArgs: []*autocliv1.PositionalArgDescriptor{
-						{ProtoField: "contract_name"},
-						{ProtoField: "proof"},
-						{ProtoField: "initial_state"},
-						{ProtoField: "final_state"},
-						{ProtoField: "sender"},
-					},
-				},
 				{
 					RpcMethod: "VerifyProof",
 					Use:       "verify [contract_name] [proof] [sender]",

@@ -7,7 +7,11 @@ DOCKER := $(shell which docker)
 #################
 
 test:
-	@echo "--> Running tests"
+	@echo "--> Running tests (short)"
+	go test -v ./... --short
+
+test-long:
+	@echo "--> Running tests (all)"
 	go test -v ./...
 
 test-integration:

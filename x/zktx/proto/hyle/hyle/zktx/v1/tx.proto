@@ -28,19 +28,31 @@ service Msg {
   rpc UpdateParams(MsgUpdateParams) returns (MsgUpdateParamsResponse);
 }
 
-// execute a zk-proven state change - request type
-message MsgExecuteStateChange {
-  option (cosmos.msg.v1.signer) = "sender"; // TODO remove this ?
-
+// StateChange is a zk-proven state change to be executed
+message StateChange {
+  // Name of target contract
   string contract_name = 1;
   // Proof of the transaction
   bytes proof = 2;
-  // State to check against
-  bytes initial_state = 3;
-  // Check after the proof has been applied
-  bytes final_state = 4;
-  // handle this differently ?
-  string sender = 5;
+}
+
+// execute a zk-proven state change - request type
+message MsgExecuteStateChange {
+  option (cosmos.msg.v1.signer) = "sender"; // TODO remove this
+
+  // Fake sender for Cosmos SDK - temporary
+  string sender = 1 [ (cosmos_proto.scalar) = "cosmos.AddressString" ];
+  // Actual sender we'll use
+  string hyle_sender = 2;
+  // Block NB
+  uint64 block_nb = 3;
+  // Block time
+  uint64 block_time = 4;
+  // Tx hash
+  bytes tx_hash = 5;
+
+  // list of state changes to execute
+  repeated StateChange state_changes = 6;
 }
 
 // No response
