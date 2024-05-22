@@ -23,7 +23,7 @@ message Contract {
   // The identifier of the verifier to run for this contract
   string verifier = 1;
   // An identifier for the program (may depend on verifier)
-  string program_id = 2;
+  bytes program_id = 2;
   // Recap of the current contract state
   bytes state_digest = 3;
 }
