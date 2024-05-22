@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -95,8 +96,8 @@ func (ms msgServer) actuallyExecuteStateChange(ctx context.Context, hyleContext 
 			return fmt.Errorf("failed to write proof to file: %s", err)
 		}
 
-		b64ProgramId := base64.StdEncoding.EncodeToString(contract.ProgramId)
-		outBytes, err := exec.Command(risczeroVerifierPath, b64ProgramId, "risc0-proof.json").Output()
+		b16ProgramId := hex.EncodeToString(contract.ProgramId)
+		outBytes, err := exec.Command(risczeroVerifierPath, b16ProgramId, "risc0-proof.json").Output()
 		if err != nil {
 			return fmt.Errorf("verifier failed. Exit code: %s", err)
 		}
