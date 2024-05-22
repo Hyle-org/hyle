@@ -3,7 +3,6 @@ package keeper
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -176,8 +175,8 @@ func (ms msgServer) VerifyProof(ctx context.Context, msg *zktx.MsgVerifyProof) (
 			return nil, fmt.Errorf("failed to write proof to file: %s", err)
 		}
 
-		b64ProgramId := base64.StdEncoding.EncodeToString(contract.ProgramId)
-		_, err := exec.Command(risczeroVerifierPath, b64ProgramId, "risc0-proof.json").Output()
+		b16ProgramId := hex.EncodeToString(contract.ProgramId)
+		_, err := exec.Command(risczeroVerifierPath, b16ProgramId, "risc0-proof.json").Output()
 		if err != nil {
 			return nil, fmt.Errorf("verifier failed. Exit code: %s", err)
 		}
