@@ -1,13 +1,13 @@
 syntax = "proto3";
-package hyle.hyle.zktx.v1;
+package hyle.zktx.v1;
 
-option go_package = "github.com/hyle-org/hyle/zktx";
+option go_package = "github.com/hyle-org/hyle/x/zktx";
 
 import "gogoproto/gogo.proto";
 import "amino/amino.proto";
 
 // Params defines the parameters of the module.
-message Params { option (amino.name) = "hyle/hyle/zktx/Params"; }
+message Params { option (amino.name) = "hyle/zktx/Params"; }
 
 // GenesisState is the state that must be provided at genesis.
 message GenesisState {

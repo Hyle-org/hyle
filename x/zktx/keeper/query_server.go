@@ -8,7 +8,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"github.com/hyle-org/hyle/zktx"
+	"github.com/hyle-org/hyle/x/zktx"
 )
 
 var _ zktx.QueryServer = queryServer{}

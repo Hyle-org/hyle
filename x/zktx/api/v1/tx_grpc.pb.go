@@ -2,7 +2,7 @@
 // versions:
 // - protoc-gen-go-grpc v1.3.0
 // - protoc             (unknown)
-// source: hyle/hyle/zktx/v1/tx.proto
+// source: hyle/zktx/v1/tx.proto
 
 package zktxv1
 
@@ -19,10 +19,10 @@ import (
 const _ = grpc.SupportPackageIsVersion7
 
 const (
-	Msg_ExecuteStateChange_FullMethodName = "/hyle.hyle.zktx.v1.Msg/ExecuteStateChange"
-	Msg_VerifyProof_FullMethodName        = "/hyle.hyle.zktx.v1.Msg/VerifyProof"
-	Msg_RegisterContract_FullMethodName   = "/hyle.hyle.zktx.v1.Msg/RegisterContract"
-	Msg_UpdateParams_FullMethodName       = "/hyle.hyle.zktx.v1.Msg/UpdateParams"
+	Msg_ExecuteStateChange_FullMethodName = "/hyle.zktx.v1.Msg/ExecuteStateChange"
+	Msg_VerifyProof_FullMethodName        = "/hyle.zktx.v1.Msg/VerifyProof"
+	Msg_RegisterContract_FullMethodName   = "/hyle.zktx.v1.Msg/RegisterContract"
+	Msg_UpdateParams_FullMethodName       = "/hyle.zktx.v1.Msg/UpdateParams"
 )
 
 // MsgClient is the client API for Msg service.
@@ -203,7 +203,7 @@ func _Msg_UpdateParams_Handler(srv interface{}, ctx context.Context, dec func(in
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
 var Msg_ServiceDesc = grpc.ServiceDesc{
-	ServiceName: "hyle.hyle.zktx.v1.Msg",
+	ServiceName: "hyle.zktx.v1.Msg",
 	HandlerType: (*MsgServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
@@ -224,5 +224,5 @@ var Msg_ServiceDesc = grpc.ServiceDesc{
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "hyle/hyle/zktx/v1/tx.proto",
+	Metadata: "hyle/zktx/v1/tx.proto",
 }

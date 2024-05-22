@@ -2,7 +2,7 @@ package module
 
 import (
 	autocliv1 "cosmossdk.io/api/cosmos/autocli/v1"
-	hylev1 "github.com/hyle-org/hyle/zktx/api/v1"
+	hylev1 "github.com/hyle-org/hyle/x/zktx/api/v1"
 )
 
 // AutoCLIOptions implements the autocli.HasAutoCLIConfig interface.

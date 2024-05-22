@@ -2,7 +2,7 @@
 // versions:
 // - protoc-gen-go-grpc v1.3.0
 // - protoc             (unknown)
-// source: hyle/hyle/zktx/v1/query.proto
+// source: hyle/zktx/v1/query.proto
 
 package zktxv1
 
@@ -19,9 +19,9 @@ import (
 const _ = grpc.SupportPackageIsVersion7
 
 const (
-	Query_Contract_FullMethodName     = "/hyle.hyle.zktx.v1.Query/Contract"
-	Query_ContractList_FullMethodName = "/hyle.hyle.zktx.v1.Query/ContractList"
-	Query_Params_FullMethodName       = "/hyle.hyle.zktx.v1.Query/Params"
+	Query_Contract_FullMethodName     = "/hyle.zktx.v1.Query/Contract"
+	Query_ContractList_FullMethodName = "/hyle.zktx.v1.Query/ContractList"
+	Query_Params_FullMethodName       = "/hyle.zktx.v1.Query/Params"
 )
 
 // QueryClient is the client API for Query service.
@@ -170,7 +170,7 @@ func _Query_Params_Handler(srv interface{}, ctx context.Context, dec func(interf
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
 var Query_ServiceDesc = grpc.ServiceDesc{
-	ServiceName: "hyle.hyle.zktx.v1.Query",
+	ServiceName: "hyle.zktx.v1.Query",
 	HandlerType: (*QueryServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
@@ -187,5 +187,5 @@ var Query_ServiceDesc = grpc.ServiceDesc{
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "hyle/hyle/zktx/v1/query.proto",
+	Metadata: "hyle/zktx/v1/query.proto",
 }

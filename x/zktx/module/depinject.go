@@ -9,8 +9,8 @@ import (
 	"github.com/cosmos/cosmos-sdk/codec"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 
-	modulev1 "github.com/hyle-org/hyle/zktx/api/module/v1"
-	"github.com/hyle-org/hyle/zktx/keeper"
+	modulev1 "github.com/hyle-org/hyle/x/zktx/api/module/v1"
+	"github.com/hyle-org/hyle/x/zktx/keeper"
 )
 
 var _ appmodule.AppModule = AppModule{}

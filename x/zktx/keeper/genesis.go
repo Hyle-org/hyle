@@ -3,7 +3,7 @@ package keeper
 import (
 	"context"
 
-	"github.com/hyle-org/hyle/zktx"
+	"github.com/hyle-org/hyle/x/zktx"
 )
 
 // InitGenesis initializes the module state from a genesis state.

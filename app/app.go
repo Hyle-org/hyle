@@ -31,7 +31,7 @@ import (
 	genutiltypes "github.com/cosmos/cosmos-sdk/x/genutil/types"
 	stakingkeeper "github.com/cosmos/cosmos-sdk/x/staking/keeper"
 
-	zktxKeeper "github.com/hyle-org/hyle/zktx/keeper"
+	zktxKeeper "github.com/hyle-org/hyle/x/zktx/keeper"
 
 	_ "cosmossdk.io/api/cosmos/tx/config/v1"          // import for side-effects
 	_ "github.com/cosmos/cosmos-sdk/x/auth"           // import for side-effects
@@ -41,7 +41,7 @@ import (
 	_ "github.com/cosmos/cosmos-sdk/x/distribution"   // import for side-effects
 	_ "github.com/cosmos/cosmos-sdk/x/mint"           // import for side-effects
 	_ "github.com/cosmos/cosmos-sdk/x/staking"        // import for side-effects
-	_ "github.com/hyle-org/hyle/zktx/module"          // import for side-effects
+	_ "github.com/hyle-org/hyle/x/zktx/module"          // import for side-effects
 )
 
 // DefaultNodeHome default home directories for the application daemon

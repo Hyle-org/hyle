@@ -8,7 +8,7 @@ import (
 	storetypes "cosmossdk.io/core/store"
 	"github.com/cosmos/cosmos-sdk/codec"
 
-	"github.com/hyle-org/hyle/zktx"
+	"github.com/hyle-org/hyle/x/zktx"
 )
 
 type Keeper struct {

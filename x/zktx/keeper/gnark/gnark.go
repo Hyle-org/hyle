@@ -13,7 +13,7 @@ import (
 	"github.com/consensys/gnark/std/algebra/native/twistededwards"
 	"github.com/consensys/gnark/std/math/uints"
 
-	"github.com/hyle-org/hyle/zktx"
+	"github.com/hyle-org/hyle/x/zktx"
 )
 
 // This is the public interface that a verifiable circuit must implement

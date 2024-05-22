@@ -16,8 +16,8 @@ import (
 
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 
-	"github.com/hyle-org/hyle/zktx"
-	"github.com/hyle-org/hyle/zktx/keeper"
+	"github.com/hyle-org/hyle/x/zktx"
+	"github.com/hyle-org/hyle/x/zktx/keeper"
 )
 
 var (

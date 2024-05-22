@@ -1,9 +1,9 @@
 syntax = "proto3";
-package hyle.hyle.zktx.v1;
+package hyle.zktx.v1;
 
-option go_package = "github.com/hyle-org/hyle/zktx";
+option go_package = "github.com/hyle-org/hyle/x/zktx";
 
-import "hyle/hyle/zktx/v1/types.proto";
+import "hyle/zktx/v1/types.proto";
 import "google/api/annotations.proto";
 import "cosmos/query/v1/query.proto";
 import "amino/amino.proto";
@@ -15,20 +15,19 @@ service Query {
   // Contract returns the current state of the contract.
   rpc Contract(ContractRequest) returns (ContractResponse) {
     option (cosmos.query.v1.module_query_safe) = true;
-    option (google.api.http).get =
-        "/hyle/hyle/zktx/v1/contract/{contract_name}";
+    option (google.api.http).get = "/hyle/zktx/v1/contract/{contract_name}";
   }
 
   // ContractList returns the list of all contracts with a given verifier and
   // program_id
   rpc ContractList(ContractListRequest) returns (ContractListResponse) {
     option (cosmos.query.v1.module_query_safe) = true;
-    option (google.api.http).get = "/hyle/hyle/zktx/v1/contracts";
+    option (google.api.http).get = "/hyle/zktx/v1/contracts";
   }
 
   // Params returns the module parameters.
   rpc Params(QueryParamsRequest) returns (QueryParamsResponse) {
-    option (google.api.http).get = "/hyle/hyle/zktx/v1/params";
+    option (google.api.http).get = "/hyle/zktx/v1/params";
   }
 }
 

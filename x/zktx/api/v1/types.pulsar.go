@@ -20,8 +20,8 @@ var (
 )
 
 func init() {
-	file_hyle_hyle_zktx_v1_types_proto_init()
-	md_Params = File_hyle_hyle_zktx_v1_types_proto.Messages().ByName("Params")
+	file_hyle_zktx_v1_types_proto_init()
+	md_Params = File_hyle_zktx_v1_types_proto.Messages().ByName("Params")
 }
 
 var _ protoreflect.Message = (*fastReflection_Params)(nil)
@@ -33,7 +33,7 @@ func (x *Params) ProtoReflect() protoreflect.Message {
 }
 
 func (x *Params) slowProtoReflect() protoreflect.Message {
-	mi := &file_hyle_hyle_zktx_v1_types_proto_msgTypes[0]
+	mi := &file_hyle_zktx_v1_types_proto_msgTypes[0]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -106,9 +106,9 @@ func (x *fastReflection_Params) Has(fd protoreflect.FieldDescriptor) bool {
 	switch fd.FullName() {
 	default:
 		if fd.IsExtension() {
-			panic(fmt.Errorf("proto3 declared messages do not support extensions: hyle.hyle.zktx.v1.Params"))
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: hyle.zktx.v1.Params"))
 		}
-		panic(fmt.Errorf("message hyle.hyle.zktx.v1.Params does not contain field %s", fd.FullName()))
+		panic(fmt.Errorf("message hyle.zktx.v1.Params does not contain field %s", fd.FullName()))
 	}
 }
 
@@ -122,9 +122,9 @@ func (x *fastReflection_Params) Clear(fd protoreflect.FieldDescriptor) {
 	switch fd.FullName() {
 	default:
 		if fd.IsExtension() {
-			panic(fmt.Errorf("proto3 declared messages do not support extensions: hyle.hyle.zktx.v1.Params"))
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: hyle.zktx.v1.Params"))
 		}
-		panic(fmt.Errorf("message hyle.hyle.zktx.v1.Params does not contain field %s", fd.FullName()))
+		panic(fmt.Errorf("message hyle.zktx.v1.Params does not contain field %s", fd.FullName()))
 	}
 }
 
@@ -138,9 +138,9 @@ func (x *fastReflection_Params) Get(descriptor protoreflect.FieldDescriptor) pro
 	switch descriptor.FullName() {
 	default:
 		if descriptor.IsExtension() {
-			panic(fmt.Errorf("proto3 declared messages do not support extensions: hyle.hyle.zktx.v1.Params"))
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: hyle.zktx.v1.Params"))
 		}
-		panic(fmt.Errorf("message hyle.hyle.zktx.v1.Params does not contain field %s", descriptor.FullName()))
+		panic(fmt.Errorf("message hyle.zktx.v1.Params does not contain field %s", descriptor.FullName()))
 	}
 }
 
@@ -158,9 +158,9 @@ func (x *fastReflection_Params) Set(fd protoreflect.FieldDescriptor, value proto
 	switch fd.FullName() {
 	default:
 		if fd.IsExtension() {
-			panic(fmt.Errorf("proto3 declared messages do not support extensions: hyle.hyle.zktx.v1.Params"))
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: hyle.zktx.v1.Params"))
 		}
-		panic(fmt.Errorf("message hyle.hyle.zktx.v1.Params does not contain field %s", fd.FullName()))
+		panic(fmt.Errorf("message hyle.zktx.v1.Params does not contain field %s", fd.FullName()))
 	}
 }
 
@@ -178,9 +178,9 @@ func (x *fastReflection_Params) Mutable(fd protoreflect.FieldDescriptor) protore
 	switch fd.FullName() {
 	default:
 		if fd.IsExtension() {
-			panic(fmt.Errorf("proto3 declared messages do not support extensions: hyle.hyle.zktx.v1.Params"))
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: hyle.zktx.v1.Params"))
 		}
-		panic(fmt.Errorf("message hyle.hyle.zktx.v1.Params does not contain field %s", fd.FullName()))
+		panic(fmt.Errorf("message hyle.zktx.v1.Params does not contain field %s", fd.FullName()))
 	}
 }
 
@@ -191,9 +191,9 @@ func (x *fastReflection_Params) NewField(fd protoreflect.FieldDescriptor) protor
 	switch fd.FullName() {
 	default:
 		if fd.IsExtension() {
-			panic(fmt.Errorf("proto3 declared messages do not support extensions: hyle.hyle.zktx.v1.Params"))
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: hyle.zktx.v1.Params"))
 		}
-		panic(fmt.Errorf("message hyle.hyle.zktx.v1.Params does not contain field %s", fd.FullName()))
+		panic(fmt.Errorf("message hyle.zktx.v1.Params does not contain field %s", fd.FullName()))
 	}
 }
 
@@ -203,7 +203,7 @@ func (x *fastReflection_Params) NewField(fd protoreflect.FieldDescriptor) protor
 func (x *fastReflection_Params) WhichOneof(d protoreflect.OneofDescriptor) protoreflect.FieldDescriptor {
 	switch d.FullName() {
 	default:
-		panic(fmt.Errorf("%s is not a oneof field in hyle.hyle.zktx.v1.Params", d.FullName()))
+		panic(fmt.Errorf("%s is not a oneof field in hyle.zktx.v1.Params", d.FullName()))
 	}
 	panic("unreachable")
 }
@@ -468,8 +468,8 @@ var (
 )
 
 func init() {
-	file_hyle_hyle_zktx_v1_types_proto_init()
-	md_GenesisState = File_hyle_hyle_zktx_v1_types_proto.Messages().ByName("GenesisState")
+	file_hyle_zktx_v1_types_proto_init()
+	md_GenesisState = File_hyle_zktx_v1_types_proto.Messages().ByName("GenesisState")
 	fd_GenesisState_params = md_GenesisState.Fields().ByName("params")
 	fd_GenesisState_contracts = md_GenesisState.Fields().ByName("contracts")
 }
@@ -483,7 +483,7 @@ func (x *GenesisState) ProtoReflect() protoreflect.Message {
 }
 
 func (x *GenesisState) slowProtoReflect() protoreflect.Message {
-	mi := &file_hyle_hyle_zktx_v1_types_proto_msgTypes[1]
+	mi := &file_hyle_zktx_v1_types_proto_msgTypes[1]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -566,15 +566,15 @@ func (x *fastReflection_GenesisState) Range(f func(protoreflect.FieldDescriptor,
 // a repeated field is populated if it is non-empty.
 func (x *fastReflection_GenesisState) Has(fd protoreflect.FieldDescriptor) bool {
 	switch fd.FullName() {
-	case "hyle.hyle.zktx.v1.GenesisState.params":
+	case "hyle.zktx.v1.GenesisState.params":
 		return x.Params != nil
-	case "hyle.hyle.zktx.v1.GenesisState.contracts":
+	case "hyle.zktx.v1.GenesisState.contracts":
 		return len(x.Contracts) != 0
 	default:
 		if fd.IsExtension() {
-			panic(fmt.Errorf("proto3 declared messages do not support extensions: hyle.hyle.zktx.v1.GenesisState"))
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: hyle.zktx.v1.GenesisState"))
 		}
-		panic(fmt.Errorf("message hyle.hyle.zktx.v1.GenesisState does not contain field %s", fd.FullName()))
+		panic(fmt.Errorf("message hyle.zktx.v1.GenesisState does not contain field %s", fd.FullName()))
 	}
 }
 
@@ -586,15 +586,15 @@ func (x *fastReflection_GenesisState) Has(fd protoreflect.FieldDescriptor) bool 
 // Clear is a mutating operation and unsafe for concurrent use.
 func (x *fastReflection_GenesisState) Clear(fd protoreflect.FieldDescriptor) {
 	switch fd.FullName() {
-	case "hyle.hyle.zktx.v1.GenesisState.params":
+	case "hyle.zktx.v1.GenesisState.params":
 		x.Params = nil
-	case "hyle.hyle.zktx.v1.GenesisState.contracts":
+	case "hyle.zktx.v1.GenesisState.contracts":
 		x.Contracts = nil
 	default:
 		if fd.IsExtension() {
-			panic(fmt.Errorf("proto3 declared messages do not support extensions: hyle.hyle.zktx.v1.GenesisState"))
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: hyle.zktx.v1.GenesisState"))
 		}
-		panic(fmt.Errorf("message hyle.hyle.zktx.v1.GenesisState does not contain field %s", fd.FullName()))
+		panic(fmt.Errorf("message hyle.zktx.v1.GenesisState does not contain field %s", fd.FullName()))
 	}
 }
 
@@ -606,10 +606,10 @@ func (x *fastReflection_GenesisState) Clear(fd protoreflect.FieldDescriptor) {
 // of the value; to obtain a mutable reference, use Mutable.
 func (x *fastReflection_GenesisState) Get(descriptor protoreflect.FieldDescriptor) protoreflect.Value {
 	switch descriptor.FullName() {
-	case "hyle.hyle.zktx.v1.GenesisState.params":
+	case "hyle.zktx.v1.GenesisState.params":
 		value := x.Params
 		return protoreflect.ValueOfMessage(value.ProtoReflect())
-	case "hyle.hyle.zktx.v1.GenesisState.contracts":
+	case "hyle.zktx.v1.GenesisState.contracts":
 		if len(x.Contracts) == 0 {
 			return protoreflect.ValueOfMap(&_GenesisState_2_map{})
 		}
@@ -617,9 +617,9 @@ func (x *fastReflection_GenesisState) Get(descriptor protoreflect.FieldDescripto
 		return protoreflect.ValueOfMap(mapValue)
 	default:
 		if descriptor.IsExtension() {
-			panic(fmt.Errorf("proto3 declared messages do not support extensions: hyle.hyle.zktx.v1.GenesisState"))
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: hyle.zktx.v1.GenesisState"))
 		}
-		panic(fmt.Errorf("message hyle.hyle.zktx.v1.GenesisState does not contain field %s", descriptor.FullName()))
+		panic(fmt.Errorf("message hyle.zktx.v1.GenesisState does not contain field %s", descriptor.FullName()))
 	}
 }
 
@@ -635,17 +635,17 @@ func (x *fastReflection_GenesisState) Get(descriptor protoreflect.FieldDescripto
 // Set is a mutating operation and unsafe for concurrent use.
 func (x *fastReflection_GenesisState) Set(fd protoreflect.FieldDescriptor, value protoreflect.Value) {
 	switch fd.FullName() {
-	case "hyle.hyle.zktx.v1.GenesisState.params":
+	case "hyle.zktx.v1.GenesisState.params":
 		x.Params = value.Message().Interface().(*Params)
-	case "hyle.hyle.zktx.v1.GenesisState.contracts":
+	case "hyle.zktx.v1.GenesisState.contracts":
 		mv := value.Map()
 		cmv := mv.(*_GenesisState_2_map)
 		x.Contracts = *cmv.m
 	default:
 		if fd.IsExtension() {
-			panic(fmt.Errorf("proto3 declared messages do not support extensions: hyle.hyle.zktx.v1.GenesisState"))
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: hyle.zktx.v1.GenesisState"))
 		}
-		panic(fmt.Errorf("message hyle.hyle.zktx.v1.GenesisState does not contain field %s", fd.FullName()))
+		panic(fmt.Errorf("message hyle.zktx.v1.GenesisState does not contain field %s", fd.FullName()))
 	}
 }
 
@@ -661,12 +661,12 @@ func (x *fastReflection_GenesisState) Set(fd protoreflect.FieldDescriptor, value
 // Mutable is a mutating operation and unsafe for concurrent use.
 func (x *fastReflection_GenesisState) Mutable(fd protoreflect.FieldDescriptor) protoreflect.Value {
 	switch fd.FullName() {
-	case "hyle.hyle.zktx.v1.GenesisState.params":
+	case "hyle.zktx.v1.GenesisState.params":
 		if x.Params == nil {
 			x.Params = new(Params)
 		}
 		return protoreflect.ValueOfMessage(x.Params.ProtoReflect())
-	case "hyle.hyle.zktx.v1.GenesisState.contracts":
+	case "hyle.zktx.v1.GenesisState.contracts":
 		if x.Contracts == nil {
 			x.Contracts = make(map[string]*Contract)
 		}
@@ -674,9 +674,9 @@ func (x *fastReflection_GenesisState) Mutable(fd protoreflect.FieldDescriptor) p
 		return protoreflect.ValueOfMap(value)
 	default:
 		if fd.IsExtension() {
-			panic(fmt.Errorf("proto3 declared messages do not support extensions: hyle.hyle.zktx.v1.GenesisState"))
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: hyle.zktx.v1.GenesisState"))
 		}
-		panic(fmt.Errorf("message hyle.hyle.zktx.v1.GenesisState does not contain field %s", fd.FullName()))
+		panic(fmt.Errorf("message hyle.zktx.v1.GenesisState does not contain field %s", fd.FullName()))
 	}
 }
 
@@ -685,17 +685,17 @@ func (x *fastReflection_GenesisState) Mutable(fd protoreflect.FieldDescriptor) p
 // For lists, maps, and messages, this returns a new, empty, mutable value.
 func (x *fastReflection_GenesisState) NewField(fd protoreflect.FieldDescriptor) protoreflect.Value {
 	switch fd.FullName() {
-	case "hyle.hyle.zktx.v1.GenesisState.params":
+	case "hyle.zktx.v1.GenesisState.params":
 		m := new(Params)
 		return protoreflect.ValueOfMessage(m.ProtoReflect())
-	case "hyle.hyle.zktx.v1.GenesisState.contracts":
+	case "hyle.zktx.v1.GenesisState.contracts":
 		m := make(map[string]*Contract)
 		return protoreflect.ValueOfMap(&_GenesisState_2_map{m: &m})
 	default:
 		if fd.IsExtension() {
-			panic(fmt.Errorf("proto3 declared messages do not support extensions: hyle.hyle.zktx.v1.GenesisState"))
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: hyle.zktx.v1.GenesisState"))
 		}
-		panic(fmt.Errorf("message hyle.hyle.zktx.v1.GenesisState does not contain field %s", fd.FullName()))
+		panic(fmt.Errorf("message hyle.zktx.v1.GenesisState does not contain field %s", fd.FullName()))
 	}
 }
 
@@ -705,7 +705,7 @@ func (x *fastReflection_GenesisState) NewField(fd protoreflect.FieldDescriptor) 
 func (x *fastReflection_GenesisState) WhichOneof(d protoreflect.OneofDescriptor) protoreflect.FieldDescriptor {
 	switch d.FullName() {
 	default:
-		panic(fmt.Errorf("%s is not a oneof field in hyle.hyle.zktx.v1.GenesisState", d.FullName()))
+		panic(fmt.Errorf("%s is not a oneof field in hyle.zktx.v1.GenesisState", d.FullName()))
 	}
 	panic("unreachable")
 }
@@ -1140,8 +1140,8 @@ var (
 )
 
 func init() {
-	file_hyle_hyle_zktx_v1_types_proto_init()
-	md_Contract = File_hyle_hyle_zktx_v1_types_proto.Messages().ByName("Contract")
+	file_hyle_zktx_v1_types_proto_init()
+	md_Contract = File_hyle_zktx_v1_types_proto.Messages().ByName("Contract")
 	fd_Contract_verifier = md_Contract.Fields().ByName("verifier")
 	fd_Contract_program_id = md_Contract.Fields().ByName("program_id")
 	fd_Contract_state_digest = md_Contract.Fields().ByName("state_digest")
@@ -1156,7 +1156,7 @@ func (x *Contract) ProtoReflect() protoreflect.Message {
 }
 
 func (x *Contract) slowProtoReflect() protoreflect.Message {
-	mi := &file_hyle_hyle_zktx_v1_types_proto_msgTypes[2]
+	mi := &file_hyle_zktx_v1_types_proto_msgTypes[2]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1245,17 +1245,17 @@ func (x *fastReflection_Contract) Range(f func(protoreflect.FieldDescriptor, pro
 // a repeated field is populated if it is non-empty.
 func (x *fastReflection_Contract) Has(fd protoreflect.FieldDescriptor) bool {
 	switch fd.FullName() {
-	case "hyle.hyle.zktx.v1.Contract.verifier":
+	case "hyle.zktx.v1.Contract.verifier":
 		return x.Verifier != ""
-	case "hyle.hyle.zktx.v1.Contract.program_id":
+	case "hyle.zktx.v1.Contract.program_id":
 		return len(x.ProgramId) != 0
-	case "hyle.hyle.zktx.v1.Contract.state_digest":
+	case "hyle.zktx.v1.Contract.state_digest":
 		return len(x.StateDigest) != 0
 	default:
 		if fd.IsExtension() {
-			panic(fmt.Errorf("proto3 declared messages do not support extensions: hyle.hyle.zktx.v1.Contract"))
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: hyle.zktx.v1.Contract"))
 		}
-		panic(fmt.Errorf("message hyle.hyle.zktx.v1.Contract does not contain field %s", fd.FullName()))
+		panic(fmt.Errorf("message hyle.zktx.v1.Contract does not contain field %s", fd.FullName()))
 	}
 }
 
@@ -1267,17 +1267,17 @@ func (x *fastReflection_Contract) Has(fd protoreflect.FieldDescriptor) bool {
 // Clear is a mutating operation and unsafe for concurrent use.
 func (x *fastReflection_Contract) Clear(fd protoreflect.FieldDescriptor) {
 	switch fd.FullName() {
-	case "hyle.hyle.zktx.v1.Contract.verifier":
+	case "hyle.zktx.v1.Contract.verifier":
 		x.Verifier = ""
-	case "hyle.hyle.zktx.v1.Contract.program_id":
+	case "hyle.zktx.v1.Contract.program_id":
 		x.ProgramId = nil
-	case "hyle.hyle.zktx.v1.Contract.state_digest":
+	case "hyle.zktx.v1.Contract.state_digest":
 		x.StateDigest = nil
 	default:
 		if fd.IsExtension() {
-			panic(fmt.Errorf("proto3 declared messages do not support extensions: hyle.hyle.zktx.v1.Contract"))
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: hyle.zktx.v1.Contract"))
 		}
-		panic(fmt.Errorf("message hyle.hyle.zktx.v1.Contract does not contain field %s", fd.FullName()))
+		panic(fmt.Errorf("message hyle.zktx.v1.Contract does not contain field %s", fd.FullName()))
 	}
 }
 
@@ -1289,20 +1289,20 @@ func (x *fastReflection_Contract) Clear(fd protoreflect.FieldDescriptor) {
 // of the value; to obtain a mutable reference, use Mutable.
 func (x *fastReflection_Contract) Get(descriptor protoreflect.FieldDescriptor) protoreflect.Value {
 	switch descriptor.FullName() {
-	case "hyle.hyle.zktx.v1.Contract.verifier":
+	case "hyle.zktx.v1.Contract.verifier":
 		value := x.Verifier
 		return protoreflect.ValueOfString(value)
-	case "hyle.hyle.zktx.v1.Contract.program_id":
+	case "hyle.zktx.v1.Contract.program_id":
 		value := x.ProgramId
 		return protoreflect.ValueOfBytes(value)
-	case "hyle.hyle.zktx.v1.Contract.state_digest":
+	case "hyle.zktx.v1.Contract.state_digest":
 		value := x.StateDigest
 		return protoreflect.ValueOfBytes(value)
 	default:
 		if descriptor.IsExtension() {
-			panic(fmt.Errorf("proto3 declared messages do not support extensions: hyle.hyle.zktx.v1.Contract"))
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: hyle.zktx.v1.Contract"))
 		}
-		panic(fmt.Errorf("message hyle.hyle.zktx.v1.Contract does not contain field %s", descriptor.FullName()))
+		panic(fmt.Errorf("message hyle.zktx.v1.Contract does not contain field %s", descriptor.FullName()))
 	}
 }
 
@@ -1318,17 +1318,17 @@ func (x *fastReflection_Contract) Get(descriptor protoreflect.FieldDescriptor) p
 // Set is a mutating operation and unsafe for concurrent use.
 func (x *fastReflection_Contract) Set(fd protoreflect.FieldDescriptor, value protoreflect.Value) {
 	switch fd.FullName() {
-	case "hyle.hyle.zktx.v1.Contract.verifier":
+	case "hyle.zktx.v1.Contract.verifier":
 		x.Verifier = value.Interface().(string)
-	case "hyle.hyle.zktx.v1.Contract.program_id":
+	case "hyle.zktx.v1.Contract.program_id":
 		x.ProgramId = value.Bytes()
-	case "hyle.hyle.zktx.v1.Contract.state_digest":
+	case "hyle.zktx.v1.Contract.state_digest":
 		x.StateDigest = value.Bytes()
 	default:
 		if fd.IsExtension() {
-			panic(fmt.Errorf("proto3 declared messages do not support extensions: hyle.hyle.zktx.v1.Contract"))
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: hyle.zktx.v1.Contract"))
 		}
-		panic(fmt.Errorf("message hyle.hyle.zktx.v1.Contract does not contain field %s", fd.FullName()))
+		panic(fmt.Errorf("message hyle.zktx.v1.Contract does not contain field %s", fd.FullName()))
 	}
 }
 
@@ -1344,17 +1344,17 @@ func (x *fastReflection_Contract) Set(fd protoreflect.FieldDescriptor, value pro
 // Mutable is a mutating operation and unsafe for concurrent use.
 func (x *fastReflection_Contract) Mutable(fd protoreflect.FieldDescriptor) protoreflect.Value {
 	switch fd.FullName() {
-	case "hyle.hyle.zktx.v1.Contract.verifier":
-		panic(fmt.Errorf("field verifier of message hyle.hyle.zktx.v1.Contract is not mutable"))
-	case "hyle.hyle.zktx.v1.Contract.program_id":
-		panic(fmt.Errorf("field program_id of message hyle.hyle.zktx.v1.Contract is not mutable"))
-	case "hyle.hyle.zktx.v1.Contract.state_digest":
-		panic(fmt.Errorf("field state_digest of message hyle.hyle.zktx.v1.Contract is not mutable"))
+	case "hyle.zktx.v1.Contract.verifier":
+		panic(fmt.Errorf("field verifier of message hyle.zktx.v1.Contract is not mutable"))
+	case "hyle.zktx.v1.Contract.program_id":
+		panic(fmt.Errorf("field program_id of message hyle.zktx.v1.Contract is not mutable"))
+	case "hyle.zktx.v1.Contract.state_digest":
+		panic(fmt.Errorf("field state_digest of message hyle.zktx.v1.Contract is not mutable"))
 	default:
 		if fd.IsExtension() {
-			panic(fmt.Errorf("proto3 declared messages do not support extensions: hyle.hyle.zktx.v1.Contract"))
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: hyle.zktx.v1.Contract"))
 		}
-		panic(fmt.Errorf("message hyle.hyle.zktx.v1.Contract does not contain field %s", fd.FullName()))
+		panic(fmt.Errorf("message hyle.zktx.v1.Contract does not contain field %s", fd.FullName()))
 	}
 }
 
@@ -1363,17 +1363,17 @@ func (x *fastReflection_Contract) Mutable(fd protoreflect.FieldDescriptor) proto
 // For lists, maps, and messages, this returns a new, empty, mutable value.
 func (x *fastReflection_Contract) NewField(fd protoreflect.FieldDescriptor) protoreflect.Value {
 	switch fd.FullName() {
-	case "hyle.hyle.zktx.v1.Contract.verifier":
+	case "hyle.zktx.v1.Contract.verifier":
 		return protoreflect.ValueOfString("")
-	case "hyle.hyle.zktx.v1.Contract.program_id":
+	case "hyle.zktx.v1.Contract.program_id":
 		return protoreflect.ValueOfBytes(nil)
-	case "hyle.hyle.zktx.v1.Contract.state_digest":
+	case "hyle.zktx.v1.Contract.state_digest":
 		return protoreflect.ValueOfBytes(nil)
 	default:
 		if fd.IsExtension() {
-			panic(fmt.Errorf("proto3 declared messages do not support extensions: hyle.hyle.zktx.v1.Contract"))
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: hyle.zktx.v1.Contract"))
 		}
-		panic(fmt.Errorf("message hyle.hyle.zktx.v1.Contract does not contain field %s", fd.FullName()))
+		panic(fmt.Errorf("message hyle.zktx.v1.Contract does not contain field %s", fd.FullName()))
 	}
 }
 
@@ -1383,7 +1383,7 @@ func (x *fastReflection_Contract) NewField(fd protoreflect.FieldDescriptor) prot
 func (x *fastReflection_Contract) WhichOneof(d protoreflect.OneofDescriptor) protoreflect.FieldDescriptor {
 	switch d.FullName() {
 	default:
-		panic(fmt.Errorf("%s is not a oneof field in hyle.hyle.zktx.v1.Contract", d.FullName()))
+		panic(fmt.Errorf("%s is not a oneof field in hyle.zktx.v1.Contract", d.FullName()))
 	}
 	panic("unreachable")
 }
@@ -1688,7 +1688,7 @@ func (x *fastReflection_Contract) ProtoMethods() *protoiface.Methods {
 // versions:
 // 	protoc-gen-go v1.27.0
 // 	protoc        (unknown)
-// source: hyle/hyle/zktx/v1/types.proto
+// source: hyle/zktx/v1/types.proto
 
 const (
 	// Verify that this generated code is sufficiently up-to-date.
@@ -1707,7 +1707,7 @@ type Params struct {
 func (x *Params) Reset() {
 	*x = Params{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_hyle_hyle_zktx_v1_types_proto_msgTypes[0]
+		mi := &file_hyle_zktx_v1_types_proto_msgTypes[0]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -1721,7 +1721,7 @@ func (*Params) ProtoMessage() {}
 
 // Deprecated: Use Params.ProtoReflect.Descriptor instead.
 func (*Params) Descriptor() ([]byte, []int) {
-	return file_hyle_hyle_zktx_v1_types_proto_rawDescGZIP(), []int{0}
+	return file_hyle_zktx_v1_types_proto_rawDescGZIP(), []int{0}
 }
 
 // GenesisState is the state that must be provided at genesis.
@@ -1738,7 +1738,7 @@ type GenesisState struct {
 func (x *GenesisState) Reset() {
 	*x = GenesisState{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_hyle_hyle_zktx_v1_types_proto_msgTypes[1]
+		mi := &file_hyle_zktx_v1_types_proto_msgTypes[1]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -1752,7 +1752,7 @@ func (*GenesisState) ProtoMessage() {}
 
 // Deprecated: Use GenesisState.ProtoReflect.Descriptor instead.
 func (*GenesisState) Descriptor() ([]byte, []int) {
-	return file_hyle_hyle_zktx_v1_types_proto_rawDescGZIP(), []int{1}
+	return file_hyle_zktx_v1_types_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *GenesisState) GetParams() *Params {
@@ -1786,7 +1786,7 @@ type Contract struct {
 func (x *Contract) Reset() {
 	*x = Contract{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_hyle_hyle_zktx_v1_types_proto_msgTypes[2]
+		mi := &file_hyle_zktx_v1_types_proto_msgTypes[2]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -1800,7 +1800,7 @@ func (*Contract) ProtoMessage() {}
 
 // Deprecated: Use Contract.ProtoReflect.Descriptor instead.
 func (*Contract) Descriptor() ([]byte, []int) {
-	return file_hyle_hyle_zktx_v1_types_proto_rawDescGZIP(), []int{2}
+	return file_hyle_zktx_v1_types_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *Contract) GetVerifier() string {
@@ -1824,78 +1824,74 @@ func (x *Contract) GetStateDigest() []byte {
 	return nil
 }
 
-var File_hyle_hyle_zktx_v1_types_proto protoreflect.FileDescriptor
+var File_hyle_zktx_v1_types_proto protoreflect.FileDescriptor
 
-var file_hyle_hyle_zktx_v1_types_proto_rawDesc = []byte{
-	0x0a, 0x1d, 0x68, 0x79, 0x6c, 0x65, 0x2f, 0x68, 0x79, 0x6c, 0x65, 0x2f, 0x7a, 0x6b, 0x74, 0x78,
-	0x2f, 0x76, 0x31, 0x2f, 0x74, 0x79, 0x70, 0x65, 0x73, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x12,
-	0x11, 0x68, 0x79, 0x6c, 0x65, 0x2e, 0x68, 0x79, 0x6c, 0x65, 0x2e, 0x7a, 0x6b, 0x74, 0x78, 0x2e,
-	0x76, 0x31, 0x1a, 0x14, 0x67, 0x6f, 0x67, 0x6f, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2f, 0x67, 0x6f,
-	0x67, 0x6f, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x1a, 0x11, 0x61, 0x6d, 0x69, 0x6e, 0x6f, 0x2f,
-	0x61, 0x6d, 0x69, 0x6e, 0x6f, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x22, 0x24, 0x0a, 0x06, 0x50,
-	0x61, 0x72, 0x61, 0x6d, 0x73, 0x3a, 0x1a, 0x8a, 0xe7, 0xb0, 0x2a, 0x15, 0x68, 0x79, 0x6c, 0x65,
-	0x2f, 0x68, 0x79, 0x6c, 0x65, 0x2f, 0x7a, 0x6b, 0x74, 0x78, 0x2f, 0x50, 0x61, 0x72, 0x61, 0x6d,
-	0x73, 0x22, 0xf5, 0x01, 0x0a, 0x0c, 0x47, 0x65, 0x6e, 0x65, 0x73, 0x69, 0x73, 0x53, 0x74, 0x61,
-	0x74, 0x65, 0x12, 0x3c, 0x0a, 0x06, 0x70, 0x61, 0x72, 0x61, 0x6d, 0x73, 0x18, 0x01, 0x20, 0x01,
-	0x28, 0x0b, 0x32, 0x19, 0x2e, 0x68, 0x79, 0x6c, 0x65, 0x2e, 0x68, 0x79, 0x6c, 0x65, 0x2e, 0x7a,
-	0x6b, 0x74, 0x78, 0x2e, 0x76, 0x31, 0x2e, 0x50, 0x61, 0x72, 0x61, 0x6d, 0x73, 0x42, 0x09, 0xc8,
-	0xde, 0x1f, 0x00, 0xa8, 0xe7, 0xb0, 0x2a, 0x01, 0x52, 0x06, 0x70, 0x61, 0x72, 0x61, 0x6d, 0x73,
-	0x12, 0x4c, 0x0a, 0x09, 0x63, 0x6f, 0x6e, 0x74, 0x72, 0x61, 0x63, 0x74, 0x73, 0x18, 0x02, 0x20,
-	0x03, 0x28, 0x0b, 0x32, 0x2e, 0x2e, 0x68, 0x79, 0x6c, 0x65, 0x2e, 0x68, 0x79, 0x6c, 0x65, 0x2e,
-	0x7a, 0x6b, 0x74, 0x78, 0x2e, 0x76, 0x31, 0x2e, 0x47, 0x65, 0x6e, 0x65, 0x73, 0x69, 0x73, 0x53,
-	0x74, 0x61, 0x74, 0x65, 0x2e, 0x43, 0x6f, 0x6e, 0x74, 0x72, 0x61, 0x63, 0x74, 0x73, 0x45, 0x6e,
-	0x74, 0x72, 0x79, 0x52, 0x09, 0x63, 0x6f, 0x6e, 0x74, 0x72, 0x61, 0x63, 0x74, 0x73, 0x1a, 0x59,
-	0x0a, 0x0e, 0x43, 0x6f, 0x6e, 0x74, 0x72, 0x61, 0x63, 0x74, 0x73, 0x45, 0x6e, 0x74, 0x72, 0x79,
-	0x12, 0x10, 0x0a, 0x03, 0x6b, 0x65, 0x79, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x03, 0x6b,
-	0x65, 0x79, 0x12, 0x31, 0x0a, 0x05, 0x76, 0x61, 0x6c, 0x75, 0x65, 0x18, 0x02, 0x20, 0x01, 0x28,
-	0x0b, 0x32, 0x1b, 0x2e, 0x68, 0x79, 0x6c, 0x65, 0x2e, 0x68, 0x79, 0x6c, 0x65, 0x2e, 0x7a, 0x6b,
-	0x74, 0x78, 0x2e, 0x76, 0x31, 0x2e, 0x43, 0x6f, 0x6e, 0x74, 0x72, 0x61, 0x63, 0x74, 0x52, 0x05,
-	0x76, 0x61, 0x6c, 0x75, 0x65, 0x3a, 0x02, 0x38, 0x01, 0x22, 0x68, 0x0a, 0x08, 0x43, 0x6f, 0x6e,
-	0x74, 0x72, 0x61, 0x63, 0x74, 0x12, 0x1a, 0x0a, 0x08, 0x76, 0x65, 0x72, 0x69, 0x66, 0x69, 0x65,
-	0x72, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x08, 0x76, 0x65, 0x72, 0x69, 0x66, 0x69, 0x65,
-	0x72, 0x12, 0x1d, 0x0a, 0x0a, 0x70, 0x72, 0x6f, 0x67, 0x72, 0x61, 0x6d, 0x5f, 0x69, 0x64, 0x18,
-	0x02, 0x20, 0x01, 0x28, 0x0c, 0x52, 0x09, 0x70, 0x72, 0x6f, 0x67, 0x72, 0x61, 0x6d, 0x49, 0x64,
-	0x12, 0x21, 0x0a, 0x0c, 0x73, 0x74, 0x61, 0x74, 0x65, 0x5f, 0x64, 0x69, 0x67, 0x65, 0x73, 0x74,
-	0x18, 0x03, 0x20, 0x01, 0x28, 0x0c, 0x52, 0x0b, 0x73, 0x74, 0x61, 0x74, 0x65, 0x44, 0x69, 0x67,
-	0x65, 0x73, 0x74, 0x42, 0xc6, 0x01, 0x0a, 0x15, 0x63, 0x6f, 0x6d, 0x2e, 0x68, 0x79, 0x6c, 0x65,
-	0x2e, 0x68, 0x79, 0x6c, 0x65, 0x2e, 0x7a, 0x6b, 0x74, 0x78, 0x2e, 0x76, 0x31, 0x42, 0x0a, 0x54,
-	0x79, 0x70, 0x65, 0x73, 0x50, 0x72, 0x6f, 0x74, 0x6f, 0x50, 0x01, 0x5a, 0x3a, 0x67, 0x69, 0x74,
-	0x68, 0x75, 0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x68, 0x79, 0x6c, 0x65, 0x2d, 0x6f, 0x72, 0x67,
-	0x2f, 0x68, 0x79, 0x6c, 0x65, 0x2f, 0x7a, 0x6b, 0x74, 0x78, 0x2f, 0x61, 0x70, 0x69, 0x2f, 0x68,
-	0x79, 0x6c, 0x65, 0x2f, 0x68, 0x79, 0x6c, 0x65, 0x2f, 0x7a, 0x6b, 0x74, 0x78, 0x2f, 0x76, 0x31,
-	0x3b, 0x7a, 0x6b, 0x74, 0x78, 0x76, 0x31, 0xa2, 0x02, 0x03, 0x48, 0x48, 0x5a, 0xaa, 0x02, 0x11,
-	0x48, 0x79, 0x6c, 0x65, 0x2e, 0x48, 0x79, 0x6c, 0x65, 0x2e, 0x5a, 0x6b, 0x74, 0x78, 0x2e, 0x56,
-	0x31, 0xca, 0x02, 0x11, 0x48, 0x79, 0x6c, 0x65, 0x5c, 0x48, 0x79, 0x6c, 0x65, 0x5c, 0x5a, 0x6b,
-	0x74, 0x78, 0x5c, 0x56, 0x31, 0xe2, 0x02, 0x1d, 0x48, 0x79, 0x6c, 0x65, 0x5c, 0x48, 0x79, 0x6c,
-	0x65, 0x5c, 0x5a, 0x6b, 0x74, 0x78, 0x5c, 0x56, 0x31, 0x5c, 0x47, 0x50, 0x42, 0x4d, 0x65, 0x74,
-	0x61, 0x64, 0x61, 0x74, 0x61, 0xea, 0x02, 0x14, 0x48, 0x79, 0x6c, 0x65, 0x3a, 0x3a, 0x48, 0x79,
-	0x6c, 0x65, 0x3a, 0x3a, 0x5a, 0x6b, 0x74, 0x78, 0x3a, 0x3a, 0x56, 0x31, 0x62, 0x06, 0x70, 0x72,
-	0x6f, 0x74, 0x6f, 0x33,
+var file_hyle_zktx_v1_types_proto_rawDesc = []byte{
+	0x0a, 0x18, 0x68, 0x79, 0x6c, 0x65, 0x2f, 0x7a, 0x6b, 0x74, 0x78, 0x2f, 0x76, 0x31, 0x2f, 0x74,
+	0x79, 0x70, 0x65, 0x73, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x12, 0x0c, 0x68, 0x79, 0x6c, 0x65,
+	0x2e, 0x7a, 0x6b, 0x74, 0x78, 0x2e, 0x76, 0x31, 0x1a, 0x14, 0x67, 0x6f, 0x67, 0x6f, 0x70, 0x72,
+	0x6f, 0x74, 0x6f, 0x2f, 0x67, 0x6f, 0x67, 0x6f, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x1a, 0x11,
+	0x61, 0x6d, 0x69, 0x6e, 0x6f, 0x2f, 0x61, 0x6d, 0x69, 0x6e, 0x6f, 0x2e, 0x70, 0x72, 0x6f, 0x74,
+	0x6f, 0x22, 0x1f, 0x0a, 0x06, 0x50, 0x61, 0x72, 0x61, 0x6d, 0x73, 0x3a, 0x15, 0x8a, 0xe7, 0xb0,
+	0x2a, 0x10, 0x68, 0x79, 0x6c, 0x65, 0x2f, 0x7a, 0x6b, 0x74, 0x78, 0x2f, 0x50, 0x61, 0x72, 0x61,
+	0x6d, 0x73, 0x22, 0xe6, 0x01, 0x0a, 0x0c, 0x47, 0x65, 0x6e, 0x65, 0x73, 0x69, 0x73, 0x53, 0x74,
+	0x61, 0x74, 0x65, 0x12, 0x37, 0x0a, 0x06, 0x70, 0x61, 0x72, 0x61, 0x6d, 0x73, 0x18, 0x01, 0x20,
+	0x01, 0x28, 0x0b, 0x32, 0x14, 0x2e, 0x68, 0x79, 0x6c, 0x65, 0x2e, 0x7a, 0x6b, 0x74, 0x78, 0x2e,
+	0x76, 0x31, 0x2e, 0x50, 0x61, 0x72, 0x61, 0x6d, 0x73, 0x42, 0x09, 0xc8, 0xde, 0x1f, 0x00, 0xa8,
+	0xe7, 0xb0, 0x2a, 0x01, 0x52, 0x06, 0x70, 0x61, 0x72, 0x61, 0x6d, 0x73, 0x12, 0x47, 0x0a, 0x09,
+	0x63, 0x6f, 0x6e, 0x74, 0x72, 0x61, 0x63, 0x74, 0x73, 0x18, 0x02, 0x20, 0x03, 0x28, 0x0b, 0x32,
+	0x29, 0x2e, 0x68, 0x79, 0x6c, 0x65, 0x2e, 0x7a, 0x6b, 0x74, 0x78, 0x2e, 0x76, 0x31, 0x2e, 0x47,
+	0x65, 0x6e, 0x65, 0x73, 0x69, 0x73, 0x53, 0x74, 0x61, 0x74, 0x65, 0x2e, 0x43, 0x6f, 0x6e, 0x74,
+	0x72, 0x61, 0x63, 0x74, 0x73, 0x45, 0x6e, 0x74, 0x72, 0x79, 0x52, 0x09, 0x63, 0x6f, 0x6e, 0x74,
+	0x72, 0x61, 0x63, 0x74, 0x73, 0x1a, 0x54, 0x0a, 0x0e, 0x43, 0x6f, 0x6e, 0x74, 0x72, 0x61, 0x63,
+	0x74, 0x73, 0x45, 0x6e, 0x74, 0x72, 0x79, 0x12, 0x10, 0x0a, 0x03, 0x6b, 0x65, 0x79, 0x18, 0x01,
+	0x20, 0x01, 0x28, 0x09, 0x52, 0x03, 0x6b, 0x65, 0x79, 0x12, 0x2c, 0x0a, 0x05, 0x76, 0x61, 0x6c,
+	0x75, 0x65, 0x18, 0x02, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x16, 0x2e, 0x68, 0x79, 0x6c, 0x65, 0x2e,
+	0x7a, 0x6b, 0x74, 0x78, 0x2e, 0x76, 0x31, 0x2e, 0x43, 0x6f, 0x6e, 0x74, 0x72, 0x61, 0x63, 0x74,
+	0x52, 0x05, 0x76, 0x61, 0x6c, 0x75, 0x65, 0x3a, 0x02, 0x38, 0x01, 0x22, 0x68, 0x0a, 0x08, 0x43,
+	0x6f, 0x6e, 0x74, 0x72, 0x61, 0x63, 0x74, 0x12, 0x1a, 0x0a, 0x08, 0x76, 0x65, 0x72, 0x69, 0x66,
+	0x69, 0x65, 0x72, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x08, 0x76, 0x65, 0x72, 0x69, 0x66,
+	0x69, 0x65, 0x72, 0x12, 0x1d, 0x0a, 0x0a, 0x70, 0x72, 0x6f, 0x67, 0x72, 0x61, 0x6d, 0x5f, 0x69,
+	0x64, 0x18, 0x02, 0x20, 0x01, 0x28, 0x0c, 0x52, 0x09, 0x70, 0x72, 0x6f, 0x67, 0x72, 0x61, 0x6d,
+	0x49, 0x64, 0x12, 0x21, 0x0a, 0x0c, 0x73, 0x74, 0x61, 0x74, 0x65, 0x5f, 0x64, 0x69, 0x67, 0x65,
+	0x73, 0x74, 0x18, 0x03, 0x20, 0x01, 0x28, 0x0c, 0x52, 0x0b, 0x73, 0x74, 0x61, 0x74, 0x65, 0x44,
+	0x69, 0x67, 0x65, 0x73, 0x74, 0x42, 0xa9, 0x01, 0x0a, 0x10, 0x63, 0x6f, 0x6d, 0x2e, 0x68, 0x79,
+	0x6c, 0x65, 0x2e, 0x7a, 0x6b, 0x74, 0x78, 0x2e, 0x76, 0x31, 0x42, 0x0a, 0x54, 0x79, 0x70, 0x65,
+	0x73, 0x50, 0x72, 0x6f, 0x74, 0x6f, 0x50, 0x01, 0x5a, 0x37, 0x67, 0x69, 0x74, 0x68, 0x75, 0x62,
+	0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x68, 0x79, 0x6c, 0x65, 0x2d, 0x6f, 0x72, 0x67, 0x2f, 0x68, 0x79,
+	0x6c, 0x65, 0x2f, 0x78, 0x2f, 0x7a, 0x6b, 0x74, 0x78, 0x2f, 0x61, 0x70, 0x69, 0x2f, 0x68, 0x79,
+	0x6c, 0x65, 0x2f, 0x7a, 0x6b, 0x74, 0x78, 0x2f, 0x76, 0x31, 0x3b, 0x7a, 0x6b, 0x74, 0x78, 0x76,
+	0x31, 0xa2, 0x02, 0x03, 0x48, 0x5a, 0x58, 0xaa, 0x02, 0x0c, 0x48, 0x79, 0x6c, 0x65, 0x2e, 0x5a,
+	0x6b, 0x74, 0x78, 0x2e, 0x56, 0x31, 0xca, 0x02, 0x0c, 0x48, 0x79, 0x6c, 0x65, 0x5c, 0x5a, 0x6b,
+	0x74, 0x78, 0x5c, 0x56, 0x31, 0xe2, 0x02, 0x18, 0x48, 0x79, 0x6c, 0x65, 0x5c, 0x5a, 0x6b, 0x74,
+	0x78, 0x5c, 0x56, 0x31, 0x5c, 0x47, 0x50, 0x42, 0x4d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74, 0x61,
+	0xea, 0x02, 0x0e, 0x48, 0x79, 0x6c, 0x65, 0x3a, 0x3a, 0x5a, 0x6b, 0x74, 0x78, 0x3a, 0x3a, 0x56,
+	0x31, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
 }
 
 var (
-	file_hyle_hyle_zktx_v1_types_proto_rawDescOnce sync.Once
-	file_hyle_hyle_zktx_v1_types_proto_rawDescData = file_hyle_hyle_zktx_v1_types_proto_rawDesc
+	file_hyle_zktx_v1_types_proto_rawDescOnce sync.Once
+	file_hyle_zktx_v1_types_proto_rawDescData = file_hyle_zktx_v1_types_proto_rawDesc
 )
 
-func file_hyle_hyle_zktx_v1_types_proto_rawDescGZIP() []byte {
-	file_hyle_hyle_zktx_v1_types_proto_rawDescOnce.Do(func() {
-		file_hyle_hyle_zktx_v1_types_proto_rawDescData = protoimpl.X.CompressGZIP(file_hyle_hyle_zktx_v1_types_proto_rawDescData)
+func file_hyle_zktx_v1_types_proto_rawDescGZIP() []byte {
+	file_hyle_zktx_v1_types_proto_rawDescOnce.Do(func() {
+		file_hyle_zktx_v1_types_proto_rawDescData = protoimpl.X.CompressGZIP(file_hyle_zktx_v1_types_proto_rawDescData)
 	})
-	return file_hyle_hyle_zktx_v1_types_proto_rawDescData
+	return file_hyle_zktx_v1_types_proto_rawDescData
 }
 
-var file_hyle_hyle_zktx_v1_types_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
-var file_hyle_hyle_zktx_v1_types_proto_goTypes = []interface{}{
-	(*Params)(nil),       // 0: hyle.hyle.zktx.v1.Params
-	(*GenesisState)(nil), // 1: hyle.hyle.zktx.v1.GenesisState
-	(*Contract)(nil),     // 2: hyle.hyle.zktx.v1.Contract
-	nil,                  // 3: hyle.hyle.zktx.v1.GenesisState.ContractsEntry
+var file_hyle_zktx_v1_types_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
+var file_hyle_zktx_v1_types_proto_goTypes = []interface{}{
+	(*Params)(nil),       // 0: hyle.zktx.v1.Params
+	(*GenesisState)(nil), // 1: hyle.zktx.v1.GenesisState
+	(*Contract)(nil),     // 2: hyle.zktx.v1.Contract
+	nil,                  // 3: hyle.zktx.v1.GenesisState.ContractsEntry
 }
-var file_hyle_hyle_zktx_v1_types_proto_depIdxs = []int32{
-	0, // 0: hyle.hyle.zktx.v1.GenesisState.params:type_name -> hyle.hyle.zktx.v1.Params
-	3, // 1: hyle.hyle.zktx.v1.GenesisState.contracts:type_name -> hyle.hyle.zktx.v1.GenesisState.ContractsEntry
-	2, // 2: hyle.hyle.zktx.v1.GenesisState.ContractsEntry.value:type_name -> hyle.hyle.zktx.v1.Contract
+var file_hyle_zktx_v1_types_proto_depIdxs = []int32{
+	0, // 0: hyle.zktx.v1.GenesisState.params:type_name -> hyle.zktx.v1.Params
+	3, // 1: hyle.zktx.v1.GenesisState.contracts:type_name -> hyle.zktx.v1.GenesisState.ContractsEntry
+	2, // 2: hyle.zktx.v1.GenesisState.ContractsEntry.value:type_name -> hyle.zktx.v1.Contract
 	3, // [3:3] is the sub-list for method output_type
 	3, // [3:3] is the sub-list for method input_type
 	3, // [3:3] is the sub-list for extension type_name
@@ -1903,13 +1899,13 @@ var file_hyle_hyle_zktx_v1_types_proto_depIdxs = []int32{
 	0, // [0:3] is the sub-list for field type_name
 }
 
-func init() { file_hyle_hyle_zktx_v1_types_proto_init() }
-func file_hyle_hyle_zktx_v1_types_proto_init() {
-	if File_hyle_hyle_zktx_v1_types_proto != nil {
+func init() { file_hyle_zktx_v1_types_proto_init() }
+func file_hyle_zktx_v1_types_proto_init() {
+	if File_hyle_zktx_v1_types_proto != nil {
 		return
 	}
 	if !protoimpl.UnsafeEnabled {
-		file_hyle_hyle_zktx_v1_types_proto_msgTypes[0].Exporter = func(v interface{}, i int) interface{} {
+		file_hyle_zktx_v1_types_proto_msgTypes[0].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*Params); i {
 			case 0:
 				return &v.state
@@ -1921,7 +1917,7 @@ func file_hyle_hyle_zktx_v1_types_proto_init() {
 				return nil
 			}
 		}
-		file_hyle_hyle_zktx_v1_types_proto_msgTypes[1].Exporter = func(v interface{}, i int) interface{} {
+		file_hyle_zktx_v1_types_proto_msgTypes[1].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*GenesisState); i {
 			case 0:
 				return &v.state
@@ -1933,7 +1929,7 @@ func file_hyle_hyle_zktx_v1_types_proto_init() {
 				return nil
 			}
 		}
-		file_hyle_hyle_zktx_v1_types_proto_msgTypes[2].Exporter = func(v interface{}, i int) interface{} {
+		file_hyle_zktx_v1_types_proto_msgTypes[2].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*Contract); i {
 			case 0:
 				return &v.state
@@ -1950,18 +1946,18 @@ func file_hyle_hyle_zktx_v1_types_proto_init() {
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
-			RawDescriptor: file_hyle_hyle_zktx_v1_types_proto_rawDesc,
+			RawDescriptor: file_hyle_zktx_v1_types_proto_rawDesc,
 			NumEnums:      0,
 			NumMessages:   4,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
-		GoTypes:           file_hyle_hyle_zktx_v1_types_proto_goTypes,
-		DependencyIndexes: file_hyle_hyle_zktx_v1_types_proto_depIdxs,
-		MessageInfos:      file_hyle_hyle_zktx_v1_types_proto_msgTypes,
+		GoTypes:           file_hyle_zktx_v1_types_proto_goTypes,
+		DependencyIndexes: file_hyle_zktx_v1_types_proto_depIdxs,
+		MessageInfos:      file_hyle_zktx_v1_types_proto_msgTypes,
 	}.Build()
-	File_hyle_hyle_zktx_v1_types_proto = out.File
-	file_hyle_hyle_zktx_v1_types_proto_rawDesc = nil
-	file_hyle_hyle_zktx_v1_types_proto_goTypes = nil
-	file_hyle_hyle_zktx_v1_types_proto_depIdxs = nil
+	File_hyle_zktx_v1_types_proto = out.File
+	file_hyle_zktx_v1_types_proto_rawDesc = nil
+	file_hyle_zktx_v1_types_proto_goTypes = nil
+	file_hyle_zktx_v1_types_proto_depIdxs = nil
 }
