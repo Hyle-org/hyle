@@ -26,7 +26,7 @@ import (
 	txmodule "github.com/cosmos/cosmos-sdk/x/auth/tx/config"
 	"github.com/cosmos/cosmos-sdk/x/auth/types"
 
-	"github.com/hyle/hyle/app"
+	"github.com/hyle-org/hyle/app"
 )
 
 // NewRootCmd creates a new root command for hyled. It is called once in the

@@ -1,4 +1,4 @@
-module github.com/hyle/hyle/zktx
+module github.com/hyle-org/hyle/zktx
 
 go 1.21
 

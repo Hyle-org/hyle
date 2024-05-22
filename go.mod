@@ -1,4 +1,4 @@
-module github.com/hyle/hyle
+module github.com/hyle-org/hyle
 
 go 1.21
 
@@ -8,7 +8,7 @@ replace (
 	// Fix upstream GHSA-h395-qcrw-5vmq vulnerability.
 	// TODO Remove it: https://github.com/cosmos/cosmos-sdk/issues/10409
 	github.com/gin-gonic/gin => github.com/gin-gonic/gin v1.7.0
-	github.com/hyle/hyle/zktx v0.0.0 => ./x/zktx
+	github.com/hyle-org/hyle/zktx v0.0.0 => ./x/zktx
 	// Downgraded to avoid bugs in following commits which caused simulations to fail.
 	github.com/syndtr/goleveldb => github.com/syndtr/goleveldb v1.0.1-0.20210819022825-2ae1ddf74ef7
 )
@@ -26,7 +26,7 @@ require (
 	github.com/cometbft/cometbft v0.38.2
 	github.com/cosmos/cosmos-db v1.0.0
 	github.com/cosmos/cosmos-sdk v0.50.2
-	github.com/hyle/hyle/zktx v0.0.0
+	github.com/hyle-org/hyle/zktx v0.0.0
 	github.com/spf13/cobra v1.8.0
 	github.com/spf13/viper v1.18.2
 )

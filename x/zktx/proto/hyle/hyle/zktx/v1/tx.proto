@@ -1,7 +1,7 @@
 syntax = "proto3";
 package hyle.hyle.zktx.v1;
 
-option go_package = "github.com/hyle/hyle/zktx";
+option go_package = "github.com/hyle-org/hyle/zktx";
 
 import "cosmos/msg/v1/msg.proto";
 import "gogoproto/gogo.proto";

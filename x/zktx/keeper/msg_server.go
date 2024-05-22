@@ -10,8 +10,8 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/hyle/hyle/zktx"
-	"github.com/hyle/hyle/zktx/keeper/gnark"
+	"github.com/hyle-org/hyle/zktx"
+	"github.com/hyle-org/hyle/zktx/keeper/gnark"
 
 	"github.com/consensys/gnark/backend/groth16"
 )

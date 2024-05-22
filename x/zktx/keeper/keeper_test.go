@@ -11,8 +11,8 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	moduletestutil "github.com/cosmos/cosmos-sdk/types/module/testutil"
 
-	"github.com/hyle/hyle/zktx"
-	"github.com/hyle/hyle/zktx/keeper"
+	"github.com/hyle-org/hyle/zktx"
+	"github.com/hyle-org/hyle/zktx/keeper"
 )
 
 type testFixture struct {

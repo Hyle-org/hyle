@@ -6,9 +6,9 @@ import (
 
 	svrcmd "github.com/cosmos/cosmos-sdk/server/cmd"
 
-	"github.com/hyle/hyle/app"
-	"github.com/hyle/hyle/app/params"
-	"github.com/hyle/hyle/cmd/hyled/cmd"
+	"github.com/hyle-org/hyle/app"
+	"github.com/hyle-org/hyle/app/params"
+	"github.com/hyle-org/hyle/cmd/hyled/cmd"
 )
 
 func main() {

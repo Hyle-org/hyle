@@ -13,7 +13,7 @@ import (
 	_ "github.com/cosmos/cosmos-sdk/x/genutil"
 	_ "github.com/cosmos/cosmos-sdk/x/mint"
 	_ "github.com/cosmos/cosmos-sdk/x/staking"
-	_ "github.com/hyle/hyle/zktx/module"
+	_ "github.com/hyle-org/hyle/zktx/module"
 
 	appv1alpha1 "cosmossdk.io/api/cosmos/app/v1alpha1"
 	"cosmossdk.io/core/appconfig"
@@ -22,9 +22,8 @@ import (
 	"github.com/cosmos/cosmos-sdk/testutil/configurator"
 	simtestutil "github.com/cosmos/cosmos-sdk/testutil/sims"
 
-	"github.com/hyle/hyle/zktx"
-	hylemodulev1 "github.com/hyle/hyle/zktx/api/module/v1"
-	"github.com/hyle/hyle/zktx/keeper"
+	hylemodulev1 "github.com/hyle-org/hyle/zktx/api/module/v1"
+	"github.com/hyle-org/hyle/zktx/keeper"
 )
 
 // ExampleModule is a configurator.ModuleOption that add the hyle module to the app config.

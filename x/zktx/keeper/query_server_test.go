@@ -3,7 +3,7 @@ package keeper_test
 import (
 	"testing"
 
-	"github.com/hyle/hyle/zktx"
+	"github.com/hyle-org/hyle/zktx"
 	"github.com/stretchr/testify/require"
 )
 

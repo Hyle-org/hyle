@@ -1,4 +1,4 @@
-module github.com/hyle/hyle/zktx/tests
+module github.com/hyle-org/hyle/zktx/tests
 
 go 1.21
 
@@ -10,7 +10,7 @@ require (
 	cosmossdk.io/depinject v1.0.0-alpha.4
 	cosmossdk.io/log v1.2.1
 	github.com/cosmos/cosmos-sdk v0.50.2
-	github.com/hyle/hyle/zktx v1.0.0
+	github.com/hyle-org/hyle/zktx v1.0.0
 	github.com/stretchr/testify v1.8.4
 )
 
@@ -157,4 +157,4 @@ require (
 )
 
 // always test the latest module code.
-replace github.com/hyle/hyle/zktx => ../.
+replace github.com/hyle-org/hyle/zktx => ../.
