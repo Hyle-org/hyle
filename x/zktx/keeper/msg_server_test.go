@@ -70,7 +70,7 @@ func generate_proof[C frontend.Circuit](circuit C) (gnark.Groth16Proof, error) {
 		return gnark.Groth16Proof{}, err
 	}
 
-	// Simulates what the sender would have to do
+	// Simulates what the origin would have to do
 	var proofBuf bytes.Buffer
 	proof.WriteTo(&proofBuf)
 	var vkBuf bytes.Buffer
@@ -102,8 +102,8 @@ func TestExecuteStateChangesGroth16(t *testing.T) {
 			Input:     []frontend.Variable{initial_state},
 			OutputLen: 1,
 			Output:    []frontend.Variable{end_state},
-			SenderLen: len("toto." + contract_name),
-			Sender:    gnark.ToArray256([]byte("toto." + contract_name)),
+			OriginLen: len("toto." + contract_name),
+			Origin:    gnark.ToArray256([]byte("toto." + contract_name)),
 			CallerLen: 0,
 			Caller:    gnark.ToArray256([]byte("")),
 			BlockTime: 0,
@@ -187,8 +187,8 @@ func TestExecuteLongStateChangeGroth16(t *testing.T) {
 			Input:     inp[0:2],
 			OutputLen: 2,
 			Output:    inp[2:4],
-			SenderLen: len("toto." + contract_name),
-			Sender:    gnark.ToArray256([]byte("toto." + contract_name)),
+			OriginLen: len("toto." + contract_name),
+			Origin:    gnark.ToArray256([]byte("toto." + contract_name)),
 			CallerLen: 0,
 			Caller:    gnark.ToArray256([]byte("")),
 			BlockTime: 0,
@@ -213,7 +213,7 @@ func TestExecuteLongStateChangeGroth16(t *testing.T) {
 	require.Equal(initial_state_witness, []byte{byte(initial_state[0]), byte(initial_state[1])})
 	require.Equal(final_state_witness, []byte{byte(end_state[0]), byte(end_state[1])})
 
-	require.Equal(data.Sender, "toto."+contract_name)
+	require.Equal(data.Origin, "toto."+contract_name)
 	require.Equal(data.Caller, "")
 	require.Equal(data.BlockTime, uint64(0))
 	require.Equal(data.BlockNumber, uint64(0))
@@ -249,13 +249,13 @@ func TestExecuteLongStateChangeGroth16(t *testing.T) {
 
 func TestUnmarshallHyleOutput(t *testing.T) {
 	require := require.New(t)
-	raw_json := "{\"version\":1,\"initial_state\":[0,0,0,1],\"next_state\":[0,0,0,15],\"sender\":\"\",\"caller\":\"\",\"block_number\":0,\"block_time\":0,\"tx_hash\":[1],\"program_outputs\":null}"
+	raw_json := "{\"version\":1,\"initial_state\":[0,0,0,1],\"next_state\":[0,0,0,15],\"origin\":\"\",\"caller\":\"\",\"block_number\":0,\"block_time\":0,\"tx_hash\":[1],\"program_outputs\":null}"
 	var output zktx.HyleOutput
 	err := json.Unmarshal([]byte(raw_json), &output)
 	require.NoError(err)
 }
 
-func TestBadSenders(t *testing.T) {
+func TestBadOrigins(t *testing.T) {
 	f := initFixture(t)
 	require := require.New(t)
 
@@ -268,8 +268,8 @@ func TestBadSenders(t *testing.T) {
 			Input:     []frontend.Variable{0},
 			OutputLen: 1,
 			Output:    []frontend.Variable{0},
-			SenderLen: len("toto.test"),
-			Sender:    gnark.ToArray256([]byte("toto.test")),
+			OriginLen: len("toto.test"),
+			Origin:    gnark.ToArray256([]byte("toto.test")),
 			CallerLen: 0,
 			Caller:    gnark.ToArray256([]byte("")),
 			BlockTime: 0,
@@ -303,8 +303,8 @@ func TestBadSenders(t *testing.T) {
 			Input:     []frontend.Variable{0},
 			OutputLen: 1,
 			Output:    []frontend.Variable{0},
-			SenderLen: len("toto.jack_test"),
-			Sender:    gnark.ToArray256([]byte("toto.jack_test")),
+			OriginLen: len("toto.jack_test"),
+			Origin:    gnark.ToArray256([]byte("toto.jack_test")),
 			CallerLen: 0,
 			Caller:    gnark.ToArray256([]byte("")),
 			BlockTime: 0,
@@ -338,8 +338,8 @@ func TestBadSenders(t *testing.T) {
 			Input:     []frontend.Variable{0},
 			OutputLen: 1,
 			Output:    []frontend.Variable{0},
-			SenderLen: 0,
-			Sender:    gnark.ToArray256([]byte("")),
+			OriginLen: 0,
+			Origin:    gnark.ToArray256([]byte("")),
 			CallerLen: 0,
 			Caller:    gnark.ToArray256([]byte("")),
 			BlockTime: 0,
@@ -365,7 +365,7 @@ func TestBadSenders(t *testing.T) {
 	})
 	require.NoError(err)
 
-	// First test: this works, the first sets the sender and the second of course works
+	// First test: this works, the first sets the origin and the second of course works
 	msg := &zktx.MsgExecuteStateChanges{
 		StateChanges: []*zktx.StateChange{
 			{
@@ -382,7 +382,7 @@ func TestBadSenders(t *testing.T) {
 	_, err = f.msgServer.ExecuteStateChanges(f.ctx, msg)
 	require.NoError(err)
 
-	// Fails: the sender is not the same
+	// Fails: the origin is not the same
 	msg = &zktx.MsgExecuteStateChanges{
 		StateChanges: []*zktx.StateChange{
 			{
@@ -397,9 +397,9 @@ func TestBadSenders(t *testing.T) {
 	}
 
 	_, err = f.msgServer.ExecuteStateChanges(f.ctx, msg)
-	require.ErrorContains(err, "verifier output does not match the expected sender")
+	require.ErrorContains(err, "verifier output does not match the expected origin")
 
-	// Fails: the sender must be none
+	// Fails: the origin must be none
 	msg = &zktx.MsgExecuteStateChanges{
 		StateChanges: []*zktx.StateChange{
 			{
@@ -414,9 +414,9 @@ func TestBadSenders(t *testing.T) {
 	}
 
 	_, err = f.msgServer.ExecuteStateChanges(f.ctx, msg)
-	require.ErrorContains(err, "verifier output does not match the expected sender")
+	require.ErrorContains(err, "verifier output does not match the expected origin")
 
-	// This succeeds: the anon contract does not expect any particular sender via ""
+	// This succeeds: the anon contract does not expect any particular origin via ""
 	msg = &zktx.MsgExecuteStateChanges{
 		StateChanges: []*zktx.StateChange{
 			{
