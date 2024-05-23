@@ -23,8 +23,8 @@ type HyleCircuit struct {
 	Input     []frontend.Variable `gnark:",public"`
 	OutputLen frontend.Variable   `gnark:",public"`
 	Output    []frontend.Variable `gnark:",public"`
-	SenderLen frontend.Variable   `gnark:",public"` // This is encoded as a single ASCII character per byte
-	Sender    [256]uints.U8       `gnark:",public"` // The max capacity is 256 bytes (arbitrarily)
+	OriginLen frontend.Variable   `gnark:",public"` // This is encoded as a single ASCII character per byte
+	Origin    [256]uints.U8       `gnark:",public"` // The max capacity is 256 bytes (arbitrarily)
 	CallerLen frontend.Variable   `gnark:",public"` // The 'len' arguments are necessary to parse the witness
 	Caller    [256]uints.U8       `gnark:",public"`
 	BlockTime frontend.Variable   `gnark:",public"`
@@ -149,11 +149,11 @@ func (proof *Groth16Proof) ExtractData(witness witness.Witness) (*zktx.HyleOutpu
 	if output.NextState, err = parseSlice(&slice); err != nil {
 		return nil, err
 	}
-	if output.Sender, err = parseString(&slice); err != nil {
+	if output.Origin, err = parseString(&slice); err != nil {
 		return nil, err
 	}
 	// Skip remaining bytes
-	slice = slice[256-len(output.Sender):]
+	slice = slice[256-len(output.Origin):]
 	if output.Caller, err = parseString(&slice); err != nil {
 		return nil, err
 	}

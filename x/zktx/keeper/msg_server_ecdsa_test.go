@@ -83,11 +83,11 @@ func (c *ecdsaCircuit[T, S]) Define(api frontend.API) error {
 		lower, upper := bitslice.Partition(api, res[i+12].Val, 4)
 		lower = selector.Mux(api, lower, hexChars[:]...)
 		upper = selector.Mux(api, upper, hexChars[:]...)
-		uapi.ByteAssertEq(uapi.ByteValueOf(upper), c.Sender[i*2])
-		uapi.ByteAssertEq(uapi.ByteValueOf(lower), c.Sender[i*2+1])
+		uapi.ByteAssertEq(uapi.ByteValueOf(upper), c.Origin[i*2])
+		uapi.ByteAssertEq(uapi.ByteValueOf(lower), c.Origin[i*2+1])
 	}
 	// Check that the next one is a dot, aka a name separator
-	uapi.ByteAssertEq(c.Sender[40], uints.NewU8(46))
+	uapi.ByteAssertEq(c.Origin[40], uints.NewU8(46))
 
 	c.Pub.Verify(api, sw_emulated.GetCurveParams[T](), &c.Msg, &c.Sig)
 	return nil
@@ -152,8 +152,8 @@ func generate_ecdsa_proof(privKey *ecdsa.PrivateKey, ethAddress string) (gnark.G
 			Input:     []frontend.Variable{0},
 			OutputLen: 1,
 			Output:    []frontend.Variable{0},
-			SenderLen: len(ethAddress),
-			Sender:    gnark.ToArray256([]byte(ethAddress)), // We expect only the sender as this is the "auth contract"
+			OriginLen: len(ethAddress),
+			Origin:    gnark.ToArray256([]byte(ethAddress)), // We expect only the origin as this is the "auth contract"
 			CallerLen: 0,
 			Caller:    gnark.ToArray256([]byte("")),
 			BlockTime: 0,
