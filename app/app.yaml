@@ -48,4 +48,4 @@ modules:
       skip_ante_handler: true
   - name: zktx
     config:
-      "@type": hyle.hyle.zktx.module.v1.Module
+      "@type": hyle.zktx.module.v1.Module
