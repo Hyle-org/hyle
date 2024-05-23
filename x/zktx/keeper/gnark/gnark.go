@@ -23,18 +23,39 @@ type HyleCircuit struct {
 	Input     []frontend.Variable `gnark:",public"`
 	OutputLen frontend.Variable   `gnark:",public"`
 	Output    []frontend.Variable `gnark:",public"`
-	SenderLen frontend.Variable   `gnark:",public"`
-	Sender    []uints.U8          `gnark:",public"`
-	CallerLen frontend.Variable   `gnark:",public"`
-	Caller    []uints.U8          `gnark:",public"`
+	SenderLen frontend.Variable   `gnark:",public"` // This is encoded as a single ASCII character per byte
+	Sender    [256]uints.U8       `gnark:",public"` // The max capacity is 256 bytes (arbitrarily)
+	CallerLen frontend.Variable   `gnark:",public"` // The 'len' arguments are necessary to parse the witness
+	Caller    [256]uints.U8       `gnark:",public"`
 	BlockTime frontend.Variable   `gnark:",public"`
 	BlockNb   frontend.Variable   `gnark:",public"`
-	TxHashLen frontend.Variable   `gnark:",public"`
-	TxHash    []uints.U8          `gnark:",public"`
+	TxHash    [64]uints.U8        `gnark:",public"`
 }
 
 func (c *HyleCircuit) Define(api frontend.API) error { return nil }
 
+// Utility for tests mostly
+func ToArray256(d []byte) [256]uints.U8 {
+	// Pad to 256
+	if len(d) < 256 {
+		padded := make([]byte, 256)
+		copy(padded, d)
+		d = padded
+	}
+	return [256]uints.U8(uints.NewU8Array(d))
+}
+
+func ToArray64(d []byte) [64]uints.U8 {
+	// Pad to 64
+	if len(d) < 64 {
+		padded := make([]byte, 64)
+		copy(padded, d)
+		d = padded
+	}
+	return [64]uints.U8(uints.NewU8Array(d))
+}
+
+// Struct type expected for the "proof" argument
 type Groth16Proof struct {
 	Proof         []byte `json:"proof"`
 	VerifyingKey  []byte `json:"verifying_key"`
@@ -68,27 +89,32 @@ func (proof *Groth16Proof) ParseProof() (groth16.Proof, groth16.VerifyingKey, wi
 	return g16p, vk, witness, nil
 }
 
-func parseArray(input *fr.Vector) ([]byte, error) {
+func parseArray(input *fr.Vector, length int) ([]byte, error) {
+	output := make([]byte, length)
+	for i := 0; i < length; i++ {
+		output[i] = uint8((*input)[i].Uint64())
+	}
+	// Consume the input
+	*input = (*input)[length:]
+	return output, nil
+}
+
+func parseSlice(input *fr.Vector) ([]byte, error) {
 	length := (*input)[0].Uint64()
 	if length == 0 {
 		*input = (*input)[1:]
 		return []byte{}, nil
 	}
+	*input = (*input)[1:]
 	// Sanity check
-	if length > uint64(len(*input)) {
+	if length > 0x1000000 || length > uint64(len(*input)) {
 		return nil, fmt.Errorf("array length exceeds input size")
 	}
-	output := make([]byte, length)
-	for i := uint64(0); i < length; i++ {
-		output[i] = uint8((*input)[i+1].Uint64())
-	}
-	// Consume the input
-	*input = (*input)[length+1:]
-	return output, nil
+	return parseArray(input, int(length))
 }
 
 func parseString(input *fr.Vector) (string, error) {
-	if output, err := parseArray(input); err != nil {
+	if output, err := parseSlice(input); err != nil {
 		return "", err
 	} else {
 		return string(output), nil
@@ -117,25 +143,29 @@ func (proof *Groth16Proof) ExtractData(witness witness.Witness) (*zktx.HyleOutpu
 	// Manually parse the circuit.
 	var err error
 	slice := pubWitVector[1:]
-	if output.InitialState, err = parseArray(&slice); err != nil {
+	if output.InitialState, err = parseSlice(&slice); err != nil {
 		return nil, err
 	}
-	if output.NextState, err = parseArray(&slice); err != nil {
+	if output.NextState, err = parseSlice(&slice); err != nil {
 		return nil, err
 	}
 	if output.Sender, err = parseString(&slice); err != nil {
 		return nil, err
 	}
+	// Skip remaining bytes
+	slice = slice[256-len(output.Sender):]
 	if output.Caller, err = parseString(&slice); err != nil {
 		return nil, err
 	}
+	// Skip remaining bytes
+	slice = slice[256-len(output.Caller):]
 	if output.BlockNumber, err = parseNumber[uint64](&slice); err != nil {
 		return nil, err
 	}
 	if output.BlockTime, err = parseNumber[uint64](&slice); err != nil {
 		return nil, err
 	}
-	if output.TxHash, err = parseArray(&slice); err != nil {
+	if output.TxHash, err = parseArray(&slice, 64); err != nil {
 		return nil, err
 	}
 

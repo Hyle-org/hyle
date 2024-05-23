@@ -153,13 +153,12 @@ func generate_ecdsa_proof(privKey *ecdsa.PrivateKey, ethAddress string) (gnark.G
 			OutputLen: 1,
 			Output:    []frontend.Variable{0},
 			SenderLen: len(ethAddress),
-			Sender:    uints.NewU8Array([]byte(ethAddress)), // We expect only the sender as this is the "auth contract"
+			Sender:    gnark.ToArray256([]byte(ethAddress)), // We expect only the sender as this is the "auth contract"
 			CallerLen: 0,
-			Caller:    uints.NewU8Array([]byte("")),
+			Caller:    gnark.ToArray256([]byte("")),
 			BlockTime: 0,
 			BlockNb:   0,
-			TxHashLen: len("TODO"),
-			TxHash:    uints.NewU8Array([]byte("TODO")),
+			TxHash:    gnark.ToArray64([]byte("TODO")),
 		},
 		Sig: circuitecdsa.Signature[emulated.Secp256k1Fr]{
 			R: emulated.ValueOf[emulated.Secp256k1Fr](r),
