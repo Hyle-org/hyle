@@ -129,7 +129,7 @@ func TestExecuteStateChangeGroth16(t *testing.T) {
 	_, err = f.msgServer.RegisterContract(f.ctx, &zktx.MsgRegisterContract{
 		Owner:        f.addrs[0].String(),
 		Verifier:     "gnark-groth16-te-BN254",
-		ProgramId:    "bad_program_id",
+		ProgramId:    []byte("bad_program_id"),
 		StateDigest:  initial_state_witness,
 		ContractName: contract_name,
 	})
@@ -167,7 +167,7 @@ func TestExecuteStateChangeGroth16(t *testing.T) {
 	// Fix VK (TODO: do this via a message)
 	contract, err := f.k.Contracts.Get(f.ctx, contract_name)
 	require.NoError(err)
-	contract.ProgramId = string(proof.VerifyingKey)
+	contract.ProgramId = proof.VerifyingKey
 	err = f.k.Contracts.Set(f.ctx, contract_name, contract)
 	require.NoError(err)
 
@@ -235,7 +235,7 @@ func TestExecuteLongStateChangeGroth16(t *testing.T) {
 	_, err = f.msgServer.RegisterContract(f.ctx, &zktx.MsgRegisterContract{
 		Owner:        f.addrs[0].String(),
 		Verifier:     "gnark-groth16-te-BN254",
-		ProgramId:    string(proof.VerifyingKey),
+		ProgramId:    proof.VerifyingKey,
 		StateDigest:  initial_state_witness,
 		ContractName: contract_name,
 	})

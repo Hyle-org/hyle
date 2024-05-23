@@ -244,7 +244,7 @@ func TestExecuteStateChangeGroth16ECDSA(t *testing.T) {
 	contract := zktx.Contract{
 		Verifier:    "gnark-groth16-te-BN254",
 		StateDigest: []byte{0},
-		ProgramId:   string(proof.VerifyingKey),
+		ProgramId:   proof.VerifyingKey,
 	}
 
 	// set the contract state
