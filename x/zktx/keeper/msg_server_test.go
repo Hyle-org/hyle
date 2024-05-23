@@ -84,7 +84,7 @@ func generate_proof[C frontend.Circuit](circuit C) (gnark.Groth16Proof, error) {
 	}, nil
 }
 
-func TestExecuteStateChangeGroth16(t *testing.T) {
+func TestExecuteStateChangesGroth16(t *testing.T) {
 	f := initFixture(t)
 	require := require.New(t)
 
@@ -92,7 +92,6 @@ func TestExecuteStateChangeGroth16(t *testing.T) {
 	var initial_state = 1
 	var end_state = 4
 	contract_name := "test-contract"
-	sender := "toto.test-contract"
 
 	// Generate the proof and marshal it
 	circuit := statefulCircuit{
@@ -134,11 +133,7 @@ func TestExecuteStateChangeGroth16(t *testing.T) {
 	require.NoError(err)
 
 	// Create a broken message.
-	msg := &zktx.MsgExecuteStateChange{
-		HyleSender: "noone.bad_contract",
-		BlockTime:  0,
-		BlockNb:    0,
-		TxHash:     []byte("TODO"),
+	msg := &zktx.MsgExecuteStateChanges{
 		StateChanges: []*zktx.StateChange{
 			{
 				ContractName: "bad_contract",
@@ -147,19 +142,15 @@ func TestExecuteStateChangeGroth16(t *testing.T) {
 		},
 	}
 
-	_, err = f.msgServer.ExecuteStateChange(f.ctx, msg)
+	_, err = f.msgServer.ExecuteStateChanges(f.ctx, msg)
 	require.ErrorContains(err, "no state is registered")
 
-	msg.HyleSender = sender
-	_, err = f.msgServer.ExecuteStateChange(f.ctx, msg)
-	require.ErrorContains(err, "invalid sender contract")
-
 	msg.StateChanges[0].ContractName = contract_name
-	_, err = f.msgServer.ExecuteStateChange(f.ctx, msg)
+	_, err = f.msgServer.ExecuteStateChanges(f.ctx, msg)
 	require.ErrorContains(err, "failed to unmarshal proof")
 
 	msg.StateChanges[0].Proof = jsonproof
-	_, err = f.msgServer.ExecuteStateChange(f.ctx, msg)
+	_, err = f.msgServer.ExecuteStateChanges(f.ctx, msg)
 	require.ErrorContains(err, "verifying key does not match the known VK")
 
 	// Fix VK (TODO: do this via a message)
@@ -170,7 +161,7 @@ func TestExecuteStateChangeGroth16(t *testing.T) {
 	require.NoError(err)
 
 	// execute the message, this time succeeding
-	_, err = f.msgServer.ExecuteStateChange(f.ctx, msg)
+	_, err = f.msgServer.ExecuteStateChanges(f.ctx, msg)
 	require.NoError(err)
 
 	// Check output state is correct
@@ -186,7 +177,6 @@ func TestExecuteLongStateChangeGroth16(t *testing.T) {
 	var initial_state = []int{1, 3}
 	var end_state = []int{234, 4}
 	contract_name := "test-contract"
-	sender := "toto.test-contract"
 
 	inp := [4]frontend.Variable{initial_state[0], initial_state[1], end_state[0], end_state[1]}
 	// Generate the proof and marshal it
@@ -239,11 +229,7 @@ func TestExecuteLongStateChangeGroth16(t *testing.T) {
 	require.NoError(err)
 
 	// Create the message
-	msg := &zktx.MsgExecuteStateChange{
-		HyleSender: sender,
-		BlockTime:  0,
-		BlockNb:    0,
-		TxHash:     []byte("TODO"),
+	msg := &zktx.MsgExecuteStateChanges{
 		StateChanges: []*zktx.StateChange{
 			{
 				ContractName: contract_name,
@@ -253,7 +239,7 @@ func TestExecuteLongStateChangeGroth16(t *testing.T) {
 	}
 
 	// execute the message, this time succeeding
-	_, err = f.msgServer.ExecuteStateChange(f.ctx, msg)
+	_, err = f.msgServer.ExecuteStateChanges(f.ctx, msg)
 	require.NoError(err)
 
 	// Check output state is correct
@@ -266,5 +252,184 @@ func TestUnmarshallHyleOutput(t *testing.T) {
 	raw_json := "{\"version\":1,\"initial_state\":[0,0,0,1],\"next_state\":[0,0,0,15],\"sender\":\"\",\"caller\":\"\",\"block_number\":0,\"block_time\":0,\"tx_hash\":[1],\"program_outputs\":null}"
 	var output zktx.HyleOutput
 	err := json.Unmarshal([]byte(raw_json), &output)
+	require.NoError(err)
+}
+
+func TestBadSenders(t *testing.T) {
+	f := initFixture(t)
+	require := require.New(t)
+
+	// Generate the proof and marshal it
+	circuit := statefulCircuit{
+		OtherData: 0,
+		HyleCircuit: gnark.HyleCircuit{
+			Version:   1,
+			InputLen:  1,
+			Input:     []frontend.Variable{0},
+			OutputLen: 1,
+			Output:    []frontend.Variable{0},
+			SenderLen: len("toto.test"),
+			Sender:    gnark.ToArray256([]byte("toto.test")),
+			CallerLen: 0,
+			Caller:    gnark.ToArray256([]byte("")),
+			BlockTime: 0,
+			BlockNb:   0,
+			TxHash:    gnark.ToArray64([]byte("TODO")),
+		},
+		StillMoreData: 0,
+	}
+
+	proof, err := generate_proof(&circuit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	toto_test_proof, _ := json.Marshal(proof)
+
+	// Setup contract
+	_, err = f.msgServer.RegisterContract(f.ctx, &zktx.MsgRegisterContract{
+		Owner:        f.addrs[0].String(),
+		Verifier:     "gnark-groth16-te-BN254",
+		ProgramId:    proof.VerifyingKey,
+		StateDigest:  []byte{byte(0)},
+		ContractName: "test",
+	})
+	require.NoError(err)
+
+	circuit = statefulCircuit{
+		OtherData: 0,
+		HyleCircuit: gnark.HyleCircuit{
+			Version:   1,
+			InputLen:  1,
+			Input:     []frontend.Variable{0},
+			OutputLen: 1,
+			Output:    []frontend.Variable{0},
+			SenderLen: len("toto.jack_test"),
+			Sender:    gnark.ToArray256([]byte("toto.jack_test")),
+			CallerLen: 0,
+			Caller:    gnark.ToArray256([]byte("")),
+			BlockTime: 0,
+			BlockNb:   0,
+			TxHash:    gnark.ToArray64([]byte("TODO")),
+		},
+		StillMoreData: 0,
+	}
+
+	proof, err = generate_proof(&circuit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	jack_test_proof, _ := json.Marshal(proof)
+
+	// Setup contract
+	_, err = f.msgServer.RegisterContract(f.ctx, &zktx.MsgRegisterContract{
+		Owner:        f.addrs[0].String(),
+		Verifier:     "gnark-groth16-te-BN254",
+		ProgramId:    proof.VerifyingKey,
+		StateDigest:  []byte{byte(0)},
+		ContractName: "jack_test",
+	})
+	require.NoError(err)
+
+	circuit = statefulCircuit{
+		OtherData: 0,
+		HyleCircuit: gnark.HyleCircuit{
+			Version:   1,
+			InputLen:  1,
+			Input:     []frontend.Variable{0},
+			OutputLen: 1,
+			Output:    []frontend.Variable{0},
+			SenderLen: 0,
+			Sender:    gnark.ToArray256([]byte("")),
+			CallerLen: 0,
+			Caller:    gnark.ToArray256([]byte("")),
+			BlockTime: 0,
+			BlockNb:   0,
+			TxHash:    gnark.ToArray64([]byte("TODO")),
+		},
+		StillMoreData: 0,
+	}
+
+	proof, err = generate_proof(&circuit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	anon_proof, _ := json.Marshal(proof)
+
+	// Setup contract
+	_, err = f.msgServer.RegisterContract(f.ctx, &zktx.MsgRegisterContract{
+		Owner:        f.addrs[0].String(),
+		Verifier:     "gnark-groth16-te-BN254",
+		ProgramId:    proof.VerifyingKey,
+		StateDigest:  []byte{byte(0)},
+		ContractName: "anon",
+	})
+	require.NoError(err)
+
+	// First test: this works, the first sets the sender and the second of course works
+	msg := &zktx.MsgExecuteStateChanges{
+		StateChanges: []*zktx.StateChange{
+			{
+				ContractName: "test",
+				Proof:        toto_test_proof,
+			},
+			{
+				ContractName: "test",
+				Proof:        toto_test_proof,
+			},
+		},
+	}
+
+	_, err = f.msgServer.ExecuteStateChanges(f.ctx, msg)
+	require.NoError(err)
+
+	// Fails: the sender is not the same
+	msg = &zktx.MsgExecuteStateChanges{
+		StateChanges: []*zktx.StateChange{
+			{
+				ContractName: "test",
+				Proof:        toto_test_proof,
+			},
+			{
+				ContractName: "jack_test",
+				Proof:        jack_test_proof,
+			},
+		},
+	}
+
+	_, err = f.msgServer.ExecuteStateChanges(f.ctx, msg)
+	require.ErrorContains(err, "verifier output does not match the expected sender")
+
+	// Fails: the sender must be none
+	msg = &zktx.MsgExecuteStateChanges{
+		StateChanges: []*zktx.StateChange{
+			{
+				ContractName: "anon",
+				Proof:        anon_proof,
+			},
+			{
+				ContractName: "jack_test",
+				Proof:        jack_test_proof,
+			},
+		},
+	}
+
+	_, err = f.msgServer.ExecuteStateChanges(f.ctx, msg)
+	require.ErrorContains(err, "verifier output does not match the expected sender")
+
+	// This succeeds: the anon contract does not expect any particular sender via ""
+	msg = &zktx.MsgExecuteStateChanges{
+		StateChanges: []*zktx.StateChange{
+			{
+				ContractName: "jack_test",
+				Proof:        jack_test_proof,
+			},
+			{
+				ContractName: "anon",
+				Proof:        anon_proof,
+			},
+		},
+	}
+
+	_, err = f.msgServer.ExecuteStateChanges(f.ctx, msg)
 	require.NoError(err)
 }

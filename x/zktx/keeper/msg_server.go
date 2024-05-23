@@ -17,6 +17,16 @@ import (
 	"github.com/consensys/gnark/backend/groth16"
 )
 
+// For clarity, split from ValidateProofData
+func SetContextIfNeeded(proofData zktx.HyleOutput, hyleContext *zktx.HyleContext) error {
+	// Only do this on the first call
+	if hyleContext.Caller != "" {
+		return nil
+	}
+	hyleContext.Sender = proofData.Sender
+	return nil
+}
+
 // TODO check block number, block time and tx hash
 func ValidateProofData(proofData zktx.HyleOutput, initialState []byte, hyleContext *zktx.HyleContext) error {
 	if !bytes.Equal(proofData.InitialState, initialState) {
@@ -53,31 +63,34 @@ func NewMsgServerImpl(keeper Keeper) zktx.MsgServer {
 	return &msgServer{k: keeper}
 }
 
-func (ms msgServer) ExecuteStateChange(ctx context.Context, msg *zktx.MsgExecuteStateChange) (*zktx.MsgExecuteStateChangeResponse, error) {
+func (ms msgServer) ExecuteStateChanges(ctx context.Context, msg *zktx.MsgExecuteStateChanges) (*zktx.MsgExecuteStateChangesResponse, error) {
+	if len(msg.StateChanges) == 0 {
+		return &zktx.MsgExecuteStateChangesResponse{}, nil
+	}
+
+	// Initialize context with unknown data at this point
 	hyleContext := zktx.HyleContext{
-		Sender:    msg.HyleSender,
+		Sender:    "",
 		Caller:    "",
-		BlockTime: msg.BlockTime,
-		BlockNb:   msg.BlockNb,
+		BlockTime: 0,
+		BlockNb:   0,
 		TxHash:    []byte("TODO"),
 	}
 
-	// Check that the sender contract matches the contract name in the first message
-	// Extract contract name from the last item in the sender
-	// TODO (temp): ignore sender if we get passed nothing.
-	if hyleContext.Sender != "" && len(msg.StateChanges) > 0 {
-		paths := strings.Split(hyleContext.Sender, ".")
-		if len(paths) < 2 || paths[len(paths)-1] != msg.StateChanges[0].ContractName {
-			return nil, fmt.Errorf("invalid sender contract, expected '%s', got '%s'", msg.StateChanges[0].ContractName, paths[len(paths)-1])
-		}
-	}
-
-	for _, stateChange := range msg.StateChanges {
+	for i, stateChange := range msg.StateChanges {
 		if err := ms.actuallyExecuteStateChange(ctx, &hyleContext, stateChange); err != nil {
 			return nil, err
 		}
+		if i == 0 && hyleContext.Sender != "" {
+			// Check sender matches contract name
+			paths := strings.Split(hyleContext.Sender, ".")
+			if len(paths) < 2 || paths[len(paths)-1] != stateChange.ContractName {
+				return nil, fmt.Errorf("invalid sender contract, expected '%s', got '%s'", stateChange.ContractName, paths[len(paths)-1])
+			}
+		}
 	}
-	return &zktx.MsgExecuteStateChangeResponse{}, nil
+
+	return &zktx.MsgExecuteStateChangesResponse{}, nil
 }
 
 func (ms msgServer) actuallyExecuteStateChange(ctx context.Context, hyleContext *zktx.HyleContext, msg *zktx.StateChange) error {
@@ -108,6 +121,7 @@ func (ms msgServer) actuallyExecuteStateChange(ctx context.Context, hyleContext 
 			return fmt.Errorf("failed to unmarshal verifier output: %s", err)
 		}
 
+		SetContextIfNeeded(objmap, hyleContext)
 		if err = ValidateProofData(objmap, contract.StateDigest, hyleContext); err != nil {
 			return err
 		}
@@ -132,6 +146,7 @@ func (ms msgServer) actuallyExecuteStateChange(ctx context.Context, hyleContext 
 			return fmt.Errorf("failed to unmarshal verifier output: %s", err)
 		}
 
+		SetContextIfNeeded(objmap, hyleContext)
 		if err = ValidateProofData(objmap, contract.StateDigest, hyleContext); err != nil {
 			return err
 		}
@@ -158,6 +173,7 @@ func (ms msgServer) actuallyExecuteStateChange(ctx context.Context, hyleContext 
 			return err
 		}
 
+		SetContextIfNeeded(*data, hyleContext)
 		if err = ValidateProofData(*data, contract.StateDigest, hyleContext); err != nil {
 			return err
 		}

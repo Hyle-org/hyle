@@ -87,33 +87,25 @@ func (m *StateChange) GetProof() []byte {
 }
 
 // execute a zk-proven state change - request type
-type MsgExecuteStateChange struct {
+type MsgExecuteStateChanges struct {
 	// Fake sender for Cosmos SDK - temporary
 	Sender string `protobuf:"bytes,1,opt,name=sender,proto3" json:"sender,omitempty"`
-	// Actual sender we'll use
-	HyleSender string `protobuf:"bytes,2,opt,name=hyle_sender,json=hyleSender,proto3" json:"hyle_sender,omitempty"`
-	// Block NB
-	BlockNb uint64 `protobuf:"varint,3,opt,name=block_nb,json=blockNb,proto3" json:"block_nb,omitempty"`
-	// Block time
-	BlockTime uint64 `protobuf:"varint,4,opt,name=block_time,json=blockTime,proto3" json:"block_time,omitempty"`
-	// Tx hash
-	TxHash []byte `protobuf:"bytes,5,opt,name=tx_hash,json=txHash,proto3" json:"tx_hash,omitempty"`
 	// list of state changes to execute
 	StateChanges []*StateChange `protobuf:"bytes,6,rep,name=state_changes,json=stateChanges,proto3" json:"state_changes,omitempty"`
 }
 
-func (m *MsgExecuteStateChange) Reset()         { *m = MsgExecuteStateChange{} }
-func (m *MsgExecuteStateChange) String() string { return proto.CompactTextString(m) }
-func (*MsgExecuteStateChange) ProtoMessage()    {}
-func (*MsgExecuteStateChange) Descriptor() ([]byte, []int) {
+func (m *MsgExecuteStateChanges) Reset()         { *m = MsgExecuteStateChanges{} }
+func (m *MsgExecuteStateChanges) String() string { return proto.CompactTextString(m) }
+func (*MsgExecuteStateChanges) ProtoMessage()    {}
+func (*MsgExecuteStateChanges) Descriptor() ([]byte, []int) {
 	return fileDescriptor_c6a34850ce07fe46, []int{1}
 }
-func (m *MsgExecuteStateChange) XXX_Unmarshal(b []byte) error {
+func (m *MsgExecuteStateChanges) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
 }
-func (m *MsgExecuteStateChange) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+func (m *MsgExecuteStateChanges) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
 	if deterministic {
-		return xxx_messageInfo_MsgExecuteStateChange.Marshal(b, m, deterministic)
+		return xxx_messageInfo_MsgExecuteStateChanges.Marshal(b, m, deterministic)
 	} else {
 		b = b[:cap(b)]
 		n, err := m.MarshalToSizedBuffer(b)
@@ -123,54 +115,26 @@ func (m *MsgExecuteStateChange) XXX_Marshal(b []byte, deterministic bool) ([]byt
 		return b[:n], nil
 	}
 }
-func (m *MsgExecuteStateChange) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_MsgExecuteStateChange.Merge(m, src)
+func (m *MsgExecuteStateChanges) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_MsgExecuteStateChanges.Merge(m, src)
 }
-func (m *MsgExecuteStateChange) XXX_Size() int {
+func (m *MsgExecuteStateChanges) XXX_Size() int {
 	return m.Size()
 }
-func (m *MsgExecuteStateChange) XXX_DiscardUnknown() {
-	xxx_messageInfo_MsgExecuteStateChange.DiscardUnknown(m)
+func (m *MsgExecuteStateChanges) XXX_DiscardUnknown() {
+	xxx_messageInfo_MsgExecuteStateChanges.DiscardUnknown(m)
 }
 
-var xxx_messageInfo_MsgExecuteStateChange proto.InternalMessageInfo
+var xxx_messageInfo_MsgExecuteStateChanges proto.InternalMessageInfo
 
-func (m *MsgExecuteStateChange) GetSender() string {
+func (m *MsgExecuteStateChanges) GetSender() string {
 	if m != nil {
 		return m.Sender
 	}
 	return ""
 }
 
-func (m *MsgExecuteStateChange) GetHyleSender() string {
-	if m != nil {
-		return m.HyleSender
-	}
-	return ""
-}
-
-func (m *MsgExecuteStateChange) GetBlockNb() uint64 {
-	if m != nil {
-		return m.BlockNb
-	}
-	return 0
-}
-
-func (m *MsgExecuteStateChange) GetBlockTime() uint64 {
-	if m != nil {
-		return m.BlockTime
-	}
-	return 0
-}
-
-func (m *MsgExecuteStateChange) GetTxHash() []byte {
-	if m != nil {
-		return m.TxHash
-	}
-	return nil
-}
-
-func (m *MsgExecuteStateChange) GetStateChanges() []*StateChange {
+func (m *MsgExecuteStateChanges) GetStateChanges() []*StateChange {
 	if m != nil {
 		return m.StateChanges
 	}
@@ -178,21 +142,21 @@ func (m *MsgExecuteStateChange) GetStateChanges() []*StateChange {
 }
 
 // No response
-type MsgExecuteStateChangeResponse struct {
+type MsgExecuteStateChangesResponse struct {
 }
 
-func (m *MsgExecuteStateChangeResponse) Reset()         { *m = MsgExecuteStateChangeResponse{} }
-func (m *MsgExecuteStateChangeResponse) String() string { return proto.CompactTextString(m) }
-func (*MsgExecuteStateChangeResponse) ProtoMessage()    {}
-func (*MsgExecuteStateChangeResponse) Descriptor() ([]byte, []int) {
+func (m *MsgExecuteStateChangesResponse) Reset()         { *m = MsgExecuteStateChangesResponse{} }
+func (m *MsgExecuteStateChangesResponse) String() string { return proto.CompactTextString(m) }
+func (*MsgExecuteStateChangesResponse) ProtoMessage()    {}
+func (*MsgExecuteStateChangesResponse) Descriptor() ([]byte, []int) {
 	return fileDescriptor_c6a34850ce07fe46, []int{2}
 }
-func (m *MsgExecuteStateChangeResponse) XXX_Unmarshal(b []byte) error {
+func (m *MsgExecuteStateChangesResponse) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
 }
-func (m *MsgExecuteStateChangeResponse) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+func (m *MsgExecuteStateChangesResponse) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
 	if deterministic {
-		return xxx_messageInfo_MsgExecuteStateChangeResponse.Marshal(b, m, deterministic)
+		return xxx_messageInfo_MsgExecuteStateChangesResponse.Marshal(b, m, deterministic)
 	} else {
 		b = b[:cap(b)]
 		n, err := m.MarshalToSizedBuffer(b)
@@ -202,25 +166,26 @@ func (m *MsgExecuteStateChangeResponse) XXX_Marshal(b []byte, deterministic bool
 		return b[:n], nil
 	}
 }
-func (m *MsgExecuteStateChangeResponse) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_MsgExecuteStateChangeResponse.Merge(m, src)
+func (m *MsgExecuteStateChangesResponse) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_MsgExecuteStateChangesResponse.Merge(m, src)
 }
-func (m *MsgExecuteStateChangeResponse) XXX_Size() int {
+func (m *MsgExecuteStateChangesResponse) XXX_Size() int {
 	return m.Size()
 }
-func (m *MsgExecuteStateChangeResponse) XXX_DiscardUnknown() {
-	xxx_messageInfo_MsgExecuteStateChangeResponse.DiscardUnknown(m)
+func (m *MsgExecuteStateChangesResponse) XXX_DiscardUnknown() {
+	xxx_messageInfo_MsgExecuteStateChangesResponse.DiscardUnknown(m)
 }
 
-var xxx_messageInfo_MsgExecuteStateChangeResponse proto.InternalMessageInfo
+var xxx_messageInfo_MsgExecuteStateChangesResponse proto.InternalMessageInfo
 
 // Only verify a ZK proof - request type
 type MsgVerifyProof struct {
-	ContractName string `protobuf:"bytes,1,opt,name=contract_name,json=contractName,proto3" json:"contract_name,omitempty"`
+	// Fake sender for Cosmos SDK - temporary
+	Sender string `protobuf:"bytes,1,opt,name=sender,proto3" json:"sender,omitempty"`
+	// Contract the proof is being sent to
+	ContractName string `protobuf:"bytes,2,opt,name=contract_name,json=contractName,proto3" json:"contract_name,omitempty"`
 	// Proof of the transaction
-	Proof []byte `protobuf:"bytes,2,opt,name=proof,proto3" json:"proof,omitempty"`
-	// TODO: handle this differently ?
-	Sender string `protobuf:"bytes,3,opt,name=sender,proto3" json:"sender,omitempty"`
+	Proof []byte `protobuf:"bytes,3,opt,name=proof,proto3" json:"proof,omitempty"`
 }
 
 func (m *MsgVerifyProof) Reset()         { *m = MsgVerifyProof{} }
@@ -256,6 +221,13 @@ func (m *MsgVerifyProof) XXX_DiscardUnknown() {
 
 var xxx_messageInfo_MsgVerifyProof proto.InternalMessageInfo
 
+func (m *MsgVerifyProof) GetSender() string {
+	if m != nil {
+		return m.Sender
+	}
+	return ""
+}
+
 func (m *MsgVerifyProof) GetContractName() string {
 	if m != nil {
 		return m.ContractName
@@ -268,13 +240,6 @@ func (m *MsgVerifyProof) GetProof() []byte {
 		return m.Proof
 	}
 	return nil
-}
-
-func (m *MsgVerifyProof) GetSender() string {
-	if m != nil {
-		return m.Sender
-	}
-	return ""
 }
 
 // No response
@@ -326,6 +291,8 @@ type MsgRegisterContract struct {
 	StateDigest []byte `protobuf:"bytes,4,opt,name=state_digest,json=stateDigest,proto3" json:"state_digest,omitempty"`
 	// Identifier of the contract name
 	ContractName string `protobuf:"bytes,5,opt,name=contract_name,json=contractName,proto3" json:"contract_name,omitempty"`
+	// Fake sender for Cosmos SDK - temporary
+	Sender string `protobuf:"bytes,6,opt,name=sender,proto3" json:"sender,omitempty"`
 }
 
 func (m *MsgRegisterContract) Reset()         { *m = MsgRegisterContract{} }
@@ -392,6 +359,13 @@ func (m *MsgRegisterContract) GetStateDigest() []byte {
 func (m *MsgRegisterContract) GetContractName() string {
 	if m != nil {
 		return m.ContractName
+	}
+	return ""
+}
+
+func (m *MsgRegisterContract) GetSender() string {
+	if m != nil {
+		return m.Sender
 	}
 	return ""
 }
@@ -530,8 +504,8 @@ var xxx_messageInfo_MsgUpdateParamsResponse proto.InternalMessageInfo
 
 func init() {
 	proto.RegisterType((*StateChange)(nil), "hyle.zktx.v1.StateChange")
-	proto.RegisterType((*MsgExecuteStateChange)(nil), "hyle.zktx.v1.MsgExecuteStateChange")
-	proto.RegisterType((*MsgExecuteStateChangeResponse)(nil), "hyle.zktx.v1.MsgExecuteStateChangeResponse")
+	proto.RegisterType((*MsgExecuteStateChanges)(nil), "hyle.zktx.v1.MsgExecuteStateChanges")
+	proto.RegisterType((*MsgExecuteStateChangesResponse)(nil), "hyle.zktx.v1.MsgExecuteStateChangesResponse")
 	proto.RegisterType((*MsgVerifyProof)(nil), "hyle.zktx.v1.MsgVerifyProof")
 	proto.RegisterType((*MsgVerifyProofResponse)(nil), "hyle.zktx.v1.MsgVerifyProofResponse")
 	proto.RegisterType((*MsgRegisterContract)(nil), "hyle.zktx.v1.MsgRegisterContract")
@@ -543,52 +517,48 @@ func init() {
 func init() { proto.RegisterFile("hyle/zktx/v1/tx.proto", fileDescriptor_c6a34850ce07fe46) }
 
 var fileDescriptor_c6a34850ce07fe46 = []byte{
-	// 717 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xa4, 0x54, 0xcf, 0x4f, 0x13, 0x4f,
-	0x14, 0xef, 0xb6, 0xb4, 0xd0, 0xd7, 0xf2, 0xfd, 0x31, 0x16, 0xd8, 0xae, 0xf6, 0x07, 0x45, 0x93,
-	0x8a, 0xd2, 0x15, 0x4c, 0x34, 0x72, 0x30, 0x11, 0x34, 0xc1, 0x43, 0x09, 0x2e, 0xe8, 0xc1, 0xcb,
-	0xba, 0x6d, 0x87, 0xe9, 0x06, 0x76, 0x67, 0xb3, 0x33, 0x60, 0xeb, 0xc9, 0x78, 0xe4, 0xe4, 0x9f,
-	0xe1, 0xb1, 0x07, 0xff, 0x08, 0x8e, 0xc4, 0x78, 0xf0, 0x64, 0x0c, 0x1c, 0xf8, 0x33, 0x34, 0x33,
-	0xbb, 0xfd, 0x45, 0x1b, 0x20, 0xf1, 0xd2, 0xcc, 0xfb, 0xbc, 0xcf, 0x7c, 0xde, 0xe7, 0xbd, 0x37,
-	0x5b, 0x98, 0x69, 0xb6, 0xf7, 0xb1, 0xfe, 0x61, 0x8f, 0xb7, 0xf4, 0xc3, 0x65, 0x9d, 0xb7, 0x2a,
-	0x9e, 0x4f, 0x39, 0x45, 0x69, 0x01, 0x57, 0x04, 0x5c, 0x39, 0x5c, 0xd6, 0xe6, 0xea, 0x94, 0x39,
-	0x94, 0xe9, 0x0e, 0x23, 0x82, 0xe5, 0x30, 0x12, 0xd0, 0xb4, 0x0c, 0xa1, 0x84, 0xca, 0xa3, 0x2e,
-	0x4e, 0x21, 0xfa, 0xbf, 0xe5, 0xd8, 0x2e, 0xd5, 0xe5, 0x6f, 0x08, 0xa9, 0xc3, 0x65, 0xda, 0x1e,
-	0x66, 0x61, 0x26, 0x1b, 0x68, 0x9b, 0x81, 0x4a, 0x10, 0x04, 0xa9, 0xd2, 0x06, 0xa4, 0xb6, 0xb9,
-	0xc5, 0xf1, 0x7a, 0xd3, 0x72, 0x09, 0x46, 0x0b, 0x30, 0x5d, 0xa7, 0x2e, 0xf7, 0xad, 0x3a, 0x37,
-	0x5d, 0xcb, 0xc1, 0xaa, 0x52, 0x54, 0xca, 0x49, 0x23, 0xdd, 0x05, 0x37, 0x2d, 0x07, 0xa3, 0x0c,
-	0xc4, 0x3d, 0x9f, 0xd2, 0x5d, 0x35, 0x5a, 0x54, 0xca, 0x69, 0x23, 0x08, 0x4a, 0x47, 0x51, 0x98,
-	0xa9, 0x32, 0xf2, 0xa2, 0x85, 0xeb, 0x07, 0x1c, 0x0f, 0x8a, 0x3e, 0x80, 0x04, 0xc3, 0x6e, 0x03,
-	0xfb, 0x81, 0xda, 0x9a, 0xfa, 0xed, 0xeb, 0x52, 0x26, 0x74, 0xf1, 0xac, 0xd1, 0xf0, 0x31, 0x63,
-	0xdb, 0xdc, 0xb7, 0x5d, 0x62, 0x84, 0x3c, 0x54, 0x80, 0x94, 0x68, 0xc6, 0x0c, 0xaf, 0x45, 0xa5,
-	0x09, 0x10, 0xd0, 0x76, 0x40, 0xc8, 0xc2, 0x54, 0x6d, 0x9f, 0xd6, 0xf7, 0x4c, 0xb7, 0xa6, 0xc6,
-	0x8a, 0x4a, 0x79, 0xc2, 0x98, 0x94, 0xf1, 0x66, 0x0d, 0xe5, 0x00, 0x82, 0x14, 0xb7, 0x1d, 0xac,
-	0x4e, 0xc8, 0x64, 0x52, 0x22, 0x3b, 0xb6, 0x83, 0xd1, 0x1c, 0x4c, 0xf2, 0x96, 0xd9, 0xb4, 0x58,
-	0x53, 0x8d, 0x4b, 0xfb, 0x09, 0xde, 0xda, 0xb0, 0x58, 0x13, 0x3d, 0x85, 0x69, 0x26, 0x4c, 0x9b,
-	0x75, 0xe9, 0x9a, 0xa9, 0x89, 0x62, 0xac, 0x9c, 0x5a, 0xc9, 0x56, 0x06, 0xd7, 0x54, 0x19, 0xe8,
-	0xcb, 0x48, 0xb3, 0x7e, 0xc0, 0x56, 0x53, 0x9f, 0xce, 0x3b, 0x8b, 0x61, 0x03, 0xa5, 0x02, 0xe4,
-	0xc6, 0xce, 0xc2, 0xc0, 0xcc, 0xa3, 0x2e, 0xc3, 0x25, 0x0f, 0xfe, 0xa9, 0x32, 0xf2, 0x06, 0xfb,
-	0xf6, 0x6e, 0x7b, 0x4b, 0xcc, 0xef, 0x2f, 0x46, 0x8f, 0x66, 0x7b, 0x03, 0x8e, 0xc9, 0x3b, 0x61,
-	0x34, 0x6c, 0x49, 0x85, 0xd9, 0xe1, 0x8a, 0x3d, 0x2f, 0xdf, 0x15, 0xb8, 0x51, 0x65, 0xc4, 0xc0,
-	0xc4, 0x66, 0x1c, 0xfb, 0xeb, 0x61, 0x41, 0x54, 0x81, 0x38, 0x7d, 0xef, 0x5e, 0x63, 0x6d, 0x01,
-	0x0d, 0x69, 0x30, 0x75, 0x28, 0xe4, 0xed, 0xde, 0xca, 0x7a, 0xb1, 0xd8, 0x8a, 0xe7, 0x53, 0xe2,
-	0x5b, 0x8e, 0x69, 0x37, 0xa4, 0xcd, 0xb4, 0x91, 0x0c, 0x91, 0x97, 0x0d, 0x34, 0x0f, 0xc1, 0x30,
-	0xcd, 0x86, 0x4d, 0x30, 0xe3, 0x72, 0x6d, 0x69, 0x23, 0x25, 0xb1, 0xe7, 0x12, 0x1a, 0x9d, 0x4f,
-	0x7c, 0x74, 0x3e, 0xab, 0x20, 0x3a, 0x0e, 0xec, 0x94, 0x72, 0x70, 0x73, 0x4c, 0x57, 0xbd, 0xae,
-	0x3b, 0x0a, 0xfc, 0x5b, 0x65, 0xe4, 0xb5, 0xd7, 0xb0, 0x38, 0xde, 0xb2, 0x7c, 0xcb, 0x61, 0xe8,
-	0x11, 0x24, 0xad, 0x03, 0xde, 0xa4, 0xbe, 0xcd, 0xdb, 0x57, 0x76, 0xdd, 0xa7, 0xa2, 0xc7, 0x90,
-	0xf0, 0xa4, 0x82, 0xec, 0x3b, 0xb5, 0x92, 0x19, 0x7e, 0x34, 0x81, 0xfa, 0x5a, 0xf2, 0xf8, 0x67,
-	0x21, 0xf2, 0xe5, 0xbc, 0xb3, 0xa8, 0x18, 0x21, 0x7d, 0xf5, 0xbe, 0xf0, 0xdb, 0x17, 0x3a, 0x3a,
-	0xef, 0x2c, 0x66, 0xfb, 0x9f, 0xf1, 0x05, 0x7b, 0xa5, 0x2c, 0xcc, 0x5d, 0x80, 0xba, 0xdd, 0xac,
-	0xfc, 0x8e, 0x42, 0xac, 0xca, 0x08, 0xda, 0x05, 0x34, 0xe6, 0x0b, 0x5c, 0x18, 0xf6, 0x33, 0xf6,
-	0x69, 0x6a, 0xf7, 0xae, 0x41, 0xea, 0xd6, 0x43, 0xaf, 0x20, 0x35, 0xf8, 0x78, 0x6f, 0x8d, 0xdc,
-	0x1d, 0xc8, 0x6a, 0xb7, 0x2f, 0xcb, 0xf6, 0x24, 0xdf, 0xc1, 0x7f, 0x23, 0x4f, 0x70, 0x7e, 0xe4,
-	0xe6, 0x45, 0x8a, 0x76, 0xf7, 0x4a, 0x4a, 0xaf, 0xc2, 0x0e, 0xa4, 0x87, 0xd6, 0x9d, 0x1b, 0xb9,
-	0x3a, 0x98, 0xd6, 0xee, 0x5c, 0x9a, 0xee, 0xaa, 0x6a, 0xf1, 0x8f, 0x62, 0xa5, 0x6b, 0x4f, 0x8e,
-	0x4f, 0xf3, 0xca, 0xc9, 0x69, 0x5e, 0xf9, 0x75, 0x9a, 0x57, 0x3e, 0x9f, 0xe5, 0x23, 0x27, 0x67,
-	0xf9, 0xc8, 0x8f, 0xb3, 0x7c, 0xe4, 0x6d, 0x81, 0xd8, 0xbc, 0x79, 0x50, 0xab, 0xd4, 0xa9, 0xa3,
-	0x0b, 0xc5, 0x25, 0xea, 0x13, 0x79, 0xd0, 0x5b, 0x72, 0xcf, 0xb5, 0x84, 0xfc, 0x2f, 0x7e, 0xf8,
-	0x27, 0x00, 0x00, 0xff, 0xff, 0xdb, 0x08, 0x8f, 0x14, 0x29, 0x06, 0x00, 0x00,
+	// 651 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x9c, 0x54, 0x3f, 0x6f, 0xd3, 0x4e,
+	0x18, 0x8e, 0x9b, 0x5f, 0xa3, 0x5f, 0x5e, 0xa7, 0xfc, 0xb9, 0x06, 0xea, 0x18, 0xea, 0xa6, 0xa1,
+	0x48, 0xa5, 0x6a, 0x6d, 0x5a, 0x24, 0x10, 0x1d, 0x90, 0x68, 0x41, 0x82, 0x21, 0xa8, 0xb8, 0xc0,
+	0xc0, 0x12, 0x5c, 0xfb, 0x7a, 0xb1, 0xc0, 0x3e, 0xeb, 0xee, 0x5a, 0x12, 0x26, 0xd4, 0xb1, 0x13,
+	0x1b, 0x5f, 0x81, 0x31, 0x03, 0x1f, 0xa2, 0x63, 0xc5, 0xc4, 0x84, 0x50, 0x3b, 0x74, 0xe2, 0x3b,
+	0x20, 0xff, 0x49, 0x62, 0xd7, 0x51, 0x5b, 0xb1, 0x44, 0x77, 0xcf, 0xfb, 0xdc, 0xf3, 0x3e, 0xef,
+	0x73, 0xe7, 0xc0, 0xb5, 0x76, 0xf7, 0x03, 0x36, 0x3e, 0xbd, 0x17, 0x1d, 0x63, 0x77, 0xd9, 0x10,
+	0x1d, 0x3d, 0x60, 0x54, 0x50, 0x54, 0x09, 0x61, 0x3d, 0x84, 0xf5, 0xdd, 0x65, 0x75, 0xca, 0xa6,
+	0xdc, 0xa3, 0xdc, 0xf0, 0x38, 0x09, 0x59, 0x1e, 0x27, 0x31, 0x4d, 0xad, 0x12, 0x4a, 0x68, 0xb4,
+	0x34, 0xc2, 0x55, 0x82, 0x5e, 0xb5, 0x3c, 0xd7, 0xa7, 0x46, 0xf4, 0x9b, 0x40, 0x4a, 0xb6, 0x4d,
+	0x37, 0xc0, 0x3c, 0xa9, 0xd4, 0x62, 0xed, 0x56, 0xac, 0x12, 0x6f, 0xe2, 0x52, 0xe3, 0x19, 0xc8,
+	0x9b, 0xc2, 0x12, 0x78, 0xbd, 0x6d, 0xf9, 0x04, 0xa3, 0x5b, 0x30, 0x61, 0x53, 0x5f, 0x30, 0xcb,
+	0x16, 0x2d, 0xdf, 0xf2, 0xb0, 0x22, 0xd5, 0xa5, 0xf9, 0xb2, 0x59, 0xe9, 0x83, 0x2f, 0x2c, 0x0f,
+	0xa3, 0x2a, 0x8c, 0x07, 0x8c, 0xd2, 0x6d, 0x65, 0xac, 0x2e, 0xcd, 0x57, 0xcc, 0x78, 0xd3, 0xf8,
+	0x2a, 0xc1, 0xf5, 0x26, 0x27, 0x4f, 0x3b, 0xd8, 0xde, 0x11, 0x38, 0x25, 0xca, 0xd1, 0x5d, 0x28,
+	0x71, 0xec, 0x3b, 0x98, 0xc5, 0x72, 0x6b, 0xca, 0x8f, 0xef, 0x4b, 0xd5, 0xc4, 0xc6, 0x63, 0xc7,
+	0x61, 0x98, 0xf3, 0x4d, 0xc1, 0x5c, 0x9f, 0x98, 0x09, 0x0f, 0x3d, 0x82, 0x09, 0x1e, 0x2a, 0xb4,
+	0xec, 0x58, 0x42, 0x29, 0xd5, 0x8b, 0xf3, 0xf2, 0x4a, 0x4d, 0x4f, 0x67, 0xa6, 0xa7, 0x9a, 0x98,
+	0x15, 0x9e, 0xea, 0xb8, 0x2a, 0xef, 0x9d, 0xf4, 0x16, 0x12, 0xb1, 0x46, 0x1d, 0xb4, 0xd1, 0xc6,
+	0x4c, 0xcc, 0x03, 0xea, 0x73, 0xdc, 0xd8, 0x97, 0xe0, 0x52, 0x93, 0x93, 0x37, 0x98, 0xb9, 0xdb,
+	0xdd, 0x8d, 0x70, 0x9c, 0x7f, 0xf0, 0x9c, 0xcb, 0x6e, 0xec, 0xac, 0xec, 0x8a, 0xa9, 0xec, 0xb2,
+	0x76, 0x95, 0x28, 0xc7, 0x94, 0x97, 0x81, 0xcd, 0x3f, 0x12, 0x4c, 0x36, 0x39, 0x31, 0x31, 0x71,
+	0xb9, 0xc0, 0x6c, 0x3d, 0x11, 0x0e, 0x45, 0xe9, 0x47, 0xbf, 0x6f, 0xd5, 0x8c, 0x37, 0x48, 0x85,
+	0xff, 0x77, 0x43, 0x11, 0x17, 0xb3, 0xc4, 0xca, 0x60, 0x8f, 0xa6, 0x01, 0x02, 0x46, 0x09, 0xb3,
+	0xbc, 0x96, 0xeb, 0x24, 0x5e, 0xca, 0x09, 0xf2, 0xdc, 0x41, 0xb3, 0x10, 0xc7, 0xd9, 0x72, 0x5c,
+	0x82, 0xb9, 0x50, 0xfe, 0x8b, 0x08, 0x72, 0x84, 0x3d, 0x89, 0xa0, 0xfc, 0xb4, 0xe3, 0x23, 0xa6,
+	0x1d, 0x86, 0x58, 0xba, 0x58, 0x88, 0xd9, 0x24, 0xa6, 0xe1, 0xc6, 0x88, 0x71, 0x07, 0x71, 0xf4,
+	0x24, 0xb8, 0xdc, 0xe4, 0xe4, 0x75, 0xe0, 0x58, 0x02, 0x6f, 0x58, 0xcc, 0xf2, 0x38, 0xba, 0x0f,
+	0x65, 0x6b, 0x47, 0xb4, 0x29, 0x73, 0x45, 0xf7, 0xdc, 0x9b, 0x1b, 0x52, 0xd1, 0x03, 0x28, 0x05,
+	0x91, 0x42, 0x14, 0x95, 0xbc, 0x52, 0xcd, 0xbe, 0xb4, 0x58, 0x7d, 0xad, 0x7c, 0xf0, 0x6b, 0xa6,
+	0xf0, 0xed, 0xa4, 0xb7, 0x20, 0x99, 0x09, 0x7d, 0x75, 0x31, 0x34, 0x3c, 0x14, 0xda, 0x3f, 0xe9,
+	0x2d, 0xd4, 0x86, 0x1f, 0xe2, 0x29, 0x7b, 0x8d, 0x1a, 0x4c, 0x9d, 0x82, 0xfa, 0xd3, 0xac, 0xec,
+	0x15, 0xa1, 0xd8, 0xe4, 0x04, 0xb9, 0x30, 0x39, 0xea, 0x1b, 0x9a, 0xcb, 0x1a, 0x1a, 0xfd, 0xa0,
+	0xd5, 0xc5, 0x8b, 0xb0, 0xfa, 0x2d, 0xd1, 0x4b, 0x90, 0xd3, 0x4f, 0xfe, 0x66, 0xee, 0x70, 0xaa,
+	0xaa, 0xce, 0x9d, 0x55, 0x1d, 0x48, 0xbe, 0x83, 0x2b, 0xb9, 0xe7, 0x39, 0x9b, 0x3b, 0x79, 0x9a,
+	0xa2, 0xde, 0x39, 0x97, 0x32, 0xe8, 0xf0, 0x0a, 0x2a, 0x99, 0x1b, 0x9f, 0xce, 0x1d, 0x4d, 0x97,
+	0xd5, 0xdb, 0x67, 0x96, 0xfb, 0xaa, 0xea, 0xf8, 0xe7, 0xf0, 0x56, 0xd7, 0x1e, 0x1e, 0x1c, 0x69,
+	0xd2, 0xe1, 0x91, 0x26, 0xfd, 0x3e, 0xd2, 0xa4, 0x2f, 0xc7, 0x5a, 0xe1, 0xf0, 0x58, 0x2b, 0xfc,
+	0x3c, 0xd6, 0x0a, 0x6f, 0x67, 0x88, 0x2b, 0xda, 0x3b, 0x5b, 0xba, 0x4d, 0x3d, 0x23, 0x54, 0x5c,
+	0xa2, 0x8c, 0x44, 0x0b, 0xa3, 0x13, 0x5d, 0xf5, 0x56, 0x29, 0xfa, 0x43, 0xbd, 0xf7, 0x37, 0x00,
+	0x00, 0xff, 0xff, 0x22, 0x0e, 0x79, 0x83, 0xee, 0x05, 0x00, 0x00,
 }
 
 // Reference imports to suppress errors if they are not otherwise used.
@@ -604,7 +574,7 @@ const _ = grpc.SupportPackageIsVersion4
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://godoc.org/google.golang.org/grpc#ClientConn.NewStream.
 type MsgClient interface {
 	// execute a zk-proven state change
-	ExecuteStateChange(ctx context.Context, in *MsgExecuteStateChange, opts ...grpc.CallOption) (*MsgExecuteStateChangeResponse, error)
+	ExecuteStateChanges(ctx context.Context, in *MsgExecuteStateChanges, opts ...grpc.CallOption) (*MsgExecuteStateChangesResponse, error)
 	// Only verify a ZK proof
 	VerifyProof(ctx context.Context, in *MsgVerifyProof, opts ...grpc.CallOption) (*MsgVerifyProofResponse, error)
 	// RegisterContract registers a contract
@@ -621,9 +591,9 @@ func NewMsgClient(cc grpc1.ClientConn) MsgClient {
 	return &msgClient{cc}
 }
 
-func (c *msgClient) ExecuteStateChange(ctx context.Context, in *MsgExecuteStateChange, opts ...grpc.CallOption) (*MsgExecuteStateChangeResponse, error) {
-	out := new(MsgExecuteStateChangeResponse)
-	err := c.cc.Invoke(ctx, "/hyle.zktx.v1.Msg/ExecuteStateChange", in, out, opts...)
+func (c *msgClient) ExecuteStateChanges(ctx context.Context, in *MsgExecuteStateChanges, opts ...grpc.CallOption) (*MsgExecuteStateChangesResponse, error) {
+	out := new(MsgExecuteStateChangesResponse)
+	err := c.cc.Invoke(ctx, "/hyle.zktx.v1.Msg/ExecuteStateChanges", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -660,7 +630,7 @@ func (c *msgClient) UpdateParams(ctx context.Context, in *MsgUpdateParams, opts 
 // MsgServer is the server API for Msg service.
 type MsgServer interface {
 	// execute a zk-proven state change
-	ExecuteStateChange(context.Context, *MsgExecuteStateChange) (*MsgExecuteStateChangeResponse, error)
+	ExecuteStateChanges(context.Context, *MsgExecuteStateChanges) (*MsgExecuteStateChangesResponse, error)
 	// Only verify a ZK proof
 	VerifyProof(context.Context, *MsgVerifyProof) (*MsgVerifyProofResponse, error)
 	// RegisterContract registers a contract
@@ -673,8 +643,8 @@ type MsgServer interface {
 type UnimplementedMsgServer struct {
 }
 
-func (*UnimplementedMsgServer) ExecuteStateChange(ctx context.Context, req *MsgExecuteStateChange) (*MsgExecuteStateChangeResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method ExecuteStateChange not implemented")
+func (*UnimplementedMsgServer) ExecuteStateChanges(ctx context.Context, req *MsgExecuteStateChanges) (*MsgExecuteStateChangesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ExecuteStateChanges not implemented")
 }
 func (*UnimplementedMsgServer) VerifyProof(ctx context.Context, req *MsgVerifyProof) (*MsgVerifyProofResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method VerifyProof not implemented")
@@ -690,20 +660,20 @@ func RegisterMsgServer(s grpc1.Server, srv MsgServer) {
 	s.RegisterService(&_Msg_serviceDesc, srv)
 }
 
-func _Msg_ExecuteStateChange_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(MsgExecuteStateChange)
+func _Msg_ExecuteStateChanges_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MsgExecuteStateChanges)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(MsgServer).ExecuteStateChange(ctx, in)
+		return srv.(MsgServer).ExecuteStateChanges(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: "/hyle.zktx.v1.Msg/ExecuteStateChange",
+		FullMethod: "/hyle.zktx.v1.Msg/ExecuteStateChanges",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(MsgServer).ExecuteStateChange(ctx, req.(*MsgExecuteStateChange))
+		return srv.(MsgServer).ExecuteStateChanges(ctx, req.(*MsgExecuteStateChanges))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -767,8 +737,8 @@ var _Msg_serviceDesc = grpc.ServiceDesc{
 	HandlerType: (*MsgServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
-			MethodName: "ExecuteStateChange",
-			Handler:    _Msg_ExecuteStateChange_Handler,
+			MethodName: "ExecuteStateChanges",
+			Handler:    _Msg_ExecuteStateChanges_Handler,
 		},
 		{
 			MethodName: "VerifyProof",
@@ -824,7 +794,7 @@ func (m *StateChange) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	return len(dAtA) - i, nil
 }
 
-func (m *MsgExecuteStateChange) Marshal() (dAtA []byte, err error) {
+func (m *MsgExecuteStateChanges) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
 	dAtA = make([]byte, size)
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
@@ -834,12 +804,12 @@ func (m *MsgExecuteStateChange) Marshal() (dAtA []byte, err error) {
 	return dAtA[:n], nil
 }
 
-func (m *MsgExecuteStateChange) MarshalTo(dAtA []byte) (int, error) {
+func (m *MsgExecuteStateChanges) MarshalTo(dAtA []byte) (int, error) {
 	size := m.Size()
 	return m.MarshalToSizedBuffer(dAtA[:size])
 }
 
-func (m *MsgExecuteStateChange) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+func (m *MsgExecuteStateChanges) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	i := len(dAtA)
 	_ = i
 	var l int
@@ -858,30 +828,6 @@ func (m *MsgExecuteStateChange) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			dAtA[i] = 0x32
 		}
 	}
-	if len(m.TxHash) > 0 {
-		i -= len(m.TxHash)
-		copy(dAtA[i:], m.TxHash)
-		i = encodeVarintTx(dAtA, i, uint64(len(m.TxHash)))
-		i--
-		dAtA[i] = 0x2a
-	}
-	if m.BlockTime != 0 {
-		i = encodeVarintTx(dAtA, i, uint64(m.BlockTime))
-		i--
-		dAtA[i] = 0x20
-	}
-	if m.BlockNb != 0 {
-		i = encodeVarintTx(dAtA, i, uint64(m.BlockNb))
-		i--
-		dAtA[i] = 0x18
-	}
-	if len(m.HyleSender) > 0 {
-		i -= len(m.HyleSender)
-		copy(dAtA[i:], m.HyleSender)
-		i = encodeVarintTx(dAtA, i, uint64(len(m.HyleSender)))
-		i--
-		dAtA[i] = 0x12
-	}
 	if len(m.Sender) > 0 {
 		i -= len(m.Sender)
 		copy(dAtA[i:], m.Sender)
@@ -892,7 +838,7 @@ func (m *MsgExecuteStateChange) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	return len(dAtA) - i, nil
 }
 
-func (m *MsgExecuteStateChangeResponse) Marshal() (dAtA []byte, err error) {
+func (m *MsgExecuteStateChangesResponse) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
 	dAtA = make([]byte, size)
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
@@ -902,12 +848,12 @@ func (m *MsgExecuteStateChangeResponse) Marshal() (dAtA []byte, err error) {
 	return dAtA[:n], nil
 }
 
-func (m *MsgExecuteStateChangeResponse) MarshalTo(dAtA []byte) (int, error) {
+func (m *MsgExecuteStateChangesResponse) MarshalTo(dAtA []byte) (int, error) {
 	size := m.Size()
 	return m.MarshalToSizedBuffer(dAtA[:size])
 }
 
-func (m *MsgExecuteStateChangeResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+func (m *MsgExecuteStateChangesResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	i := len(dAtA)
 	_ = i
 	var l int
@@ -935,24 +881,24 @@ func (m *MsgVerifyProof) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	_ = i
 	var l int
 	_ = l
-	if len(m.Sender) > 0 {
-		i -= len(m.Sender)
-		copy(dAtA[i:], m.Sender)
-		i = encodeVarintTx(dAtA, i, uint64(len(m.Sender)))
-		i--
-		dAtA[i] = 0x1a
-	}
 	if len(m.Proof) > 0 {
 		i -= len(m.Proof)
 		copy(dAtA[i:], m.Proof)
 		i = encodeVarintTx(dAtA, i, uint64(len(m.Proof)))
 		i--
-		dAtA[i] = 0x12
+		dAtA[i] = 0x1a
 	}
 	if len(m.ContractName) > 0 {
 		i -= len(m.ContractName)
 		copy(dAtA[i:], m.ContractName)
 		i = encodeVarintTx(dAtA, i, uint64(len(m.ContractName)))
+		i--
+		dAtA[i] = 0x12
+	}
+	if len(m.Sender) > 0 {
+		i -= len(m.Sender)
+		copy(dAtA[i:], m.Sender)
+		i = encodeVarintTx(dAtA, i, uint64(len(m.Sender)))
 		i--
 		dAtA[i] = 0xa
 	}
@@ -1002,6 +948,13 @@ func (m *MsgRegisterContract) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	_ = i
 	var l int
 	_ = l
+	if len(m.Sender) > 0 {
+		i -= len(m.Sender)
+		copy(dAtA[i:], m.Sender)
+		i = encodeVarintTx(dAtA, i, uint64(len(m.Sender)))
+		i--
+		dAtA[i] = 0x32
+	}
 	if len(m.ContractName) > 0 {
 		i -= len(m.ContractName)
 		copy(dAtA[i:], m.ContractName)
@@ -1154,27 +1107,13 @@ func (m *StateChange) Size() (n int) {
 	return n
 }
 
-func (m *MsgExecuteStateChange) Size() (n int) {
+func (m *MsgExecuteStateChanges) Size() (n int) {
 	if m == nil {
 		return 0
 	}
 	var l int
 	_ = l
 	l = len(m.Sender)
-	if l > 0 {
-		n += 1 + l + sovTx(uint64(l))
-	}
-	l = len(m.HyleSender)
-	if l > 0 {
-		n += 1 + l + sovTx(uint64(l))
-	}
-	if m.BlockNb != 0 {
-		n += 1 + sovTx(uint64(m.BlockNb))
-	}
-	if m.BlockTime != 0 {
-		n += 1 + sovTx(uint64(m.BlockTime))
-	}
-	l = len(m.TxHash)
 	if l > 0 {
 		n += 1 + l + sovTx(uint64(l))
 	}
@@ -1187,7 +1126,7 @@ func (m *MsgExecuteStateChange) Size() (n int) {
 	return n
 }
 
-func (m *MsgExecuteStateChangeResponse) Size() (n int) {
+func (m *MsgExecuteStateChangesResponse) Size() (n int) {
 	if m == nil {
 		return 0
 	}
@@ -1202,15 +1141,15 @@ func (m *MsgVerifyProof) Size() (n int) {
 	}
 	var l int
 	_ = l
+	l = len(m.Sender)
+	if l > 0 {
+		n += 1 + l + sovTx(uint64(l))
+	}
 	l = len(m.ContractName)
 	if l > 0 {
 		n += 1 + l + sovTx(uint64(l))
 	}
 	l = len(m.Proof)
-	if l > 0 {
-		n += 1 + l + sovTx(uint64(l))
-	}
-	l = len(m.Sender)
 	if l > 0 {
 		n += 1 + l + sovTx(uint64(l))
 	}
@@ -1249,6 +1188,10 @@ func (m *MsgRegisterContract) Size() (n int) {
 		n += 1 + l + sovTx(uint64(l))
 	}
 	l = len(m.ContractName)
+	if l > 0 {
+		n += 1 + l + sovTx(uint64(l))
+	}
+	l = len(m.Sender)
 	if l > 0 {
 		n += 1 + l + sovTx(uint64(l))
 	}
@@ -1410,7 +1353,7 @@ func (m *StateChange) Unmarshal(dAtA []byte) error {
 	}
 	return nil
 }
-func (m *MsgExecuteStateChange) Unmarshal(dAtA []byte) error {
+func (m *MsgExecuteStateChanges) Unmarshal(dAtA []byte) error {
 	l := len(dAtA)
 	iNdEx := 0
 	for iNdEx < l {
@@ -1433,10 +1376,10 @@ func (m *MsgExecuteStateChange) Unmarshal(dAtA []byte) error {
 		fieldNum := int32(wire >> 3)
 		wireType := int(wire & 0x7)
 		if wireType == 4 {
-			return fmt.Errorf("proto: MsgExecuteStateChange: wiretype end group for non-group")
+			return fmt.Errorf("proto: MsgExecuteStateChanges: wiretype end group for non-group")
 		}
 		if fieldNum <= 0 {
-			return fmt.Errorf("proto: MsgExecuteStateChange: illegal tag %d (wire type %d)", fieldNum, wire)
+			return fmt.Errorf("proto: MsgExecuteStateChanges: illegal tag %d (wire type %d)", fieldNum, wire)
 		}
 		switch fieldNum {
 		case 1:
@@ -1470,110 +1413,6 @@ func (m *MsgExecuteStateChange) Unmarshal(dAtA []byte) error {
 				return io.ErrUnexpectedEOF
 			}
 			m.Sender = string(dAtA[iNdEx:postIndex])
-			iNdEx = postIndex
-		case 2:
-			if wireType != 2 {
-				return fmt.Errorf("proto: wrong wireType = %d for field HyleSender", wireType)
-			}
-			var stringLen uint64
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return ErrIntOverflowTx
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				stringLen |= uint64(b&0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-			intStringLen := int(stringLen)
-			if intStringLen < 0 {
-				return ErrInvalidLengthTx
-			}
-			postIndex := iNdEx + intStringLen
-			if postIndex < 0 {
-				return ErrInvalidLengthTx
-			}
-			if postIndex > l {
-				return io.ErrUnexpectedEOF
-			}
-			m.HyleSender = string(dAtA[iNdEx:postIndex])
-			iNdEx = postIndex
-		case 3:
-			if wireType != 0 {
-				return fmt.Errorf("proto: wrong wireType = %d for field BlockNb", wireType)
-			}
-			m.BlockNb = 0
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return ErrIntOverflowTx
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				m.BlockNb |= uint64(b&0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-		case 4:
-			if wireType != 0 {
-				return fmt.Errorf("proto: wrong wireType = %d for field BlockTime", wireType)
-			}
-			m.BlockTime = 0
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return ErrIntOverflowTx
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				m.BlockTime |= uint64(b&0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-		case 5:
-			if wireType != 2 {
-				return fmt.Errorf("proto: wrong wireType = %d for field TxHash", wireType)
-			}
-			var byteLen int
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return ErrIntOverflowTx
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				byteLen |= int(b&0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-			if byteLen < 0 {
-				return ErrInvalidLengthTx
-			}
-			postIndex := iNdEx + byteLen
-			if postIndex < 0 {
-				return ErrInvalidLengthTx
-			}
-			if postIndex > l {
-				return io.ErrUnexpectedEOF
-			}
-			m.TxHash = append(m.TxHash[:0], dAtA[iNdEx:postIndex]...)
-			if m.TxHash == nil {
-				m.TxHash = []byte{}
-			}
 			iNdEx = postIndex
 		case 6:
 			if wireType != 2 {
@@ -1630,7 +1469,7 @@ func (m *MsgExecuteStateChange) Unmarshal(dAtA []byte) error {
 	}
 	return nil
 }
-func (m *MsgExecuteStateChangeResponse) Unmarshal(dAtA []byte) error {
+func (m *MsgExecuteStateChangesResponse) Unmarshal(dAtA []byte) error {
 	l := len(dAtA)
 	iNdEx := 0
 	for iNdEx < l {
@@ -1653,10 +1492,10 @@ func (m *MsgExecuteStateChangeResponse) Unmarshal(dAtA []byte) error {
 		fieldNum := int32(wire >> 3)
 		wireType := int(wire & 0x7)
 		if wireType == 4 {
-			return fmt.Errorf("proto: MsgExecuteStateChangeResponse: wiretype end group for non-group")
+			return fmt.Errorf("proto: MsgExecuteStateChangesResponse: wiretype end group for non-group")
 		}
 		if fieldNum <= 0 {
-			return fmt.Errorf("proto: MsgExecuteStateChangeResponse: illegal tag %d (wire type %d)", fieldNum, wire)
+			return fmt.Errorf("proto: MsgExecuteStateChangesResponse: illegal tag %d (wire type %d)", fieldNum, wire)
 		}
 		switch fieldNum {
 		default:
@@ -1711,6 +1550,38 @@ func (m *MsgVerifyProof) Unmarshal(dAtA []byte) error {
 		switch fieldNum {
 		case 1:
 			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Sender", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowTx
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthTx
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthTx
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Sender = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 2:
+			if wireType != 2 {
 				return fmt.Errorf("proto: wrong wireType = %d for field ContractName", wireType)
 			}
 			var stringLen uint64
@@ -1741,7 +1612,7 @@ func (m *MsgVerifyProof) Unmarshal(dAtA []byte) error {
 			}
 			m.ContractName = string(dAtA[iNdEx:postIndex])
 			iNdEx = postIndex
-		case 2:
+		case 3:
 			if wireType != 2 {
 				return fmt.Errorf("proto: wrong wireType = %d for field Proof", wireType)
 			}
@@ -1774,38 +1645,6 @@ func (m *MsgVerifyProof) Unmarshal(dAtA []byte) error {
 			if m.Proof == nil {
 				m.Proof = []byte{}
 			}
-			iNdEx = postIndex
-		case 3:
-			if wireType != 2 {
-				return fmt.Errorf("proto: wrong wireType = %d for field Sender", wireType)
-			}
-			var stringLen uint64
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return ErrIntOverflowTx
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				stringLen |= uint64(b&0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-			intStringLen := int(stringLen)
-			if intStringLen < 0 {
-				return ErrInvalidLengthTx
-			}
-			postIndex := iNdEx + intStringLen
-			if postIndex < 0 {
-				return ErrInvalidLengthTx
-			}
-			if postIndex > l {
-				return io.ErrUnexpectedEOF
-			}
-			m.Sender = string(dAtA[iNdEx:postIndex])
 			iNdEx = postIndex
 		default:
 			iNdEx = preIndex
@@ -2070,6 +1909,38 @@ func (m *MsgRegisterContract) Unmarshal(dAtA []byte) error {
 				return io.ErrUnexpectedEOF
 			}
 			m.ContractName = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 6:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Sender", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowTx
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthTx
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthTx
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Sender = string(dAtA[iNdEx:postIndex])
 			iNdEx = postIndex
 		default:
 			iNdEx = preIndex

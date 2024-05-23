@@ -19,10 +19,10 @@ import (
 const _ = grpc.SupportPackageIsVersion7
 
 const (
-	Msg_ExecuteStateChange_FullMethodName = "/hyle.zktx.v1.Msg/ExecuteStateChange"
-	Msg_VerifyProof_FullMethodName        = "/hyle.zktx.v1.Msg/VerifyProof"
-	Msg_RegisterContract_FullMethodName   = "/hyle.zktx.v1.Msg/RegisterContract"
-	Msg_UpdateParams_FullMethodName       = "/hyle.zktx.v1.Msg/UpdateParams"
+	Msg_ExecuteStateChanges_FullMethodName = "/hyle.zktx.v1.Msg/ExecuteStateChanges"
+	Msg_VerifyProof_FullMethodName         = "/hyle.zktx.v1.Msg/VerifyProof"
+	Msg_RegisterContract_FullMethodName    = "/hyle.zktx.v1.Msg/RegisterContract"
+	Msg_UpdateParams_FullMethodName        = "/hyle.zktx.v1.Msg/UpdateParams"
 )
 
 // MsgClient is the client API for Msg service.
@@ -30,7 +30,7 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type MsgClient interface {
 	// execute a zk-proven state change
-	ExecuteStateChange(ctx context.Context, in *MsgExecuteStateChange, opts ...grpc.CallOption) (*MsgExecuteStateChangeResponse, error)
+	ExecuteStateChanges(ctx context.Context, in *MsgExecuteStateChanges, opts ...grpc.CallOption) (*MsgExecuteStateChangesResponse, error)
 	// Only verify a ZK proof
 	VerifyProof(ctx context.Context, in *MsgVerifyProof, opts ...grpc.CallOption) (*MsgVerifyProofResponse, error)
 	// RegisterContract registers a contract
@@ -47,9 +47,9 @@ func NewMsgClient(cc grpc.ClientConnInterface) MsgClient {
 	return &msgClient{cc}
 }
 
-func (c *msgClient) ExecuteStateChange(ctx context.Context, in *MsgExecuteStateChange, opts ...grpc.CallOption) (*MsgExecuteStateChangeResponse, error) {
-	out := new(MsgExecuteStateChangeResponse)
-	err := c.cc.Invoke(ctx, Msg_ExecuteStateChange_FullMethodName, in, out, opts...)
+func (c *msgClient) ExecuteStateChanges(ctx context.Context, in *MsgExecuteStateChanges, opts ...grpc.CallOption) (*MsgExecuteStateChangesResponse, error) {
+	out := new(MsgExecuteStateChangesResponse)
+	err := c.cc.Invoke(ctx, Msg_ExecuteStateChanges_FullMethodName, in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -88,7 +88,7 @@ func (c *msgClient) UpdateParams(ctx context.Context, in *MsgUpdateParams, opts 
 // for forward compatibility
 type MsgServer interface {
 	// execute a zk-proven state change
-	ExecuteStateChange(context.Context, *MsgExecuteStateChange) (*MsgExecuteStateChangeResponse, error)
+	ExecuteStateChanges(context.Context, *MsgExecuteStateChanges) (*MsgExecuteStateChangesResponse, error)
 	// Only verify a ZK proof
 	VerifyProof(context.Context, *MsgVerifyProof) (*MsgVerifyProofResponse, error)
 	// RegisterContract registers a contract
@@ -102,8 +102,8 @@ type MsgServer interface {
 type UnimplementedMsgServer struct {
 }
 
-func (UnimplementedMsgServer) ExecuteStateChange(context.Context, *MsgExecuteStateChange) (*MsgExecuteStateChangeResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method ExecuteStateChange not implemented")
+func (UnimplementedMsgServer) ExecuteStateChanges(context.Context, *MsgExecuteStateChanges) (*MsgExecuteStateChangesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ExecuteStateChanges not implemented")
 }
 func (UnimplementedMsgServer) VerifyProof(context.Context, *MsgVerifyProof) (*MsgVerifyProofResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method VerifyProof not implemented")
@@ -127,20 +127,20 @@ func RegisterMsgServer(s grpc.ServiceRegistrar, srv MsgServer) {
 	s.RegisterService(&Msg_ServiceDesc, srv)
 }
 
-func _Msg_ExecuteStateChange_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(MsgExecuteStateChange)
+func _Msg_ExecuteStateChanges_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MsgExecuteStateChanges)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(MsgServer).ExecuteStateChange(ctx, in)
+		return srv.(MsgServer).ExecuteStateChanges(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: Msg_ExecuteStateChange_FullMethodName,
+		FullMethod: Msg_ExecuteStateChanges_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(MsgServer).ExecuteStateChange(ctx, req.(*MsgExecuteStateChange))
+		return srv.(MsgServer).ExecuteStateChanges(ctx, req.(*MsgExecuteStateChanges))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -207,8 +207,8 @@ var Msg_ServiceDesc = grpc.ServiceDesc{
 	HandlerType: (*MsgServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
-			MethodName: "ExecuteStateChange",
-			Handler:    _Msg_ExecuteStateChange_Handler,
+			MethodName: "ExecuteStateChanges",
+			Handler:    _Msg_ExecuteStateChanges_Handler,
 		},
 		{
 			MethodName: "VerifyProof",
