@@ -12,7 +12,6 @@ import (
 	"github.com/consensys/gnark/backend/groth16"
 	"github.com/consensys/gnark/frontend"
 	"github.com/consensys/gnark/frontend/cs/r1cs"
-	"github.com/consensys/gnark/std/math/uints"
 
 	"github.com/consensys/gnark-crypto/ecc"
 )
@@ -105,13 +104,12 @@ func TestExecuteStateChangeGroth16(t *testing.T) {
 			OutputLen: 1,
 			Output:    []frontend.Variable{end_state},
 			SenderLen: len("toto." + contract_name),
-			Sender:    uints.NewU8Array([]byte("toto." + contract_name)),
+			Sender:    gnark.ToArray256([]byte("toto." + contract_name)),
 			CallerLen: 0,
-			Caller:    uints.NewU8Array([]byte("")),
+			Caller:    gnark.ToArray256([]byte("")),
 			BlockTime: 0,
 			BlockNb:   0,
-			TxHashLen: len("TODO"),
-			TxHash:    uints.NewU8Array([]byte("TODO")),
+			TxHash:    gnark.ToArray64([]byte("TODO")),
 		},
 		StillMoreData: 0,
 	}
@@ -200,13 +198,12 @@ func TestExecuteLongStateChangeGroth16(t *testing.T) {
 			OutputLen: 2,
 			Output:    inp[2:4],
 			SenderLen: len("toto." + contract_name),
-			Sender:    uints.NewU8Array([]byte("toto." + contract_name)),
+			Sender:    gnark.ToArray256([]byte("toto." + contract_name)),
 			CallerLen: 0,
-			Caller:    uints.NewU8Array([]byte("")),
+			Caller:    gnark.ToArray256([]byte("")),
 			BlockTime: 0,
 			BlockNb:   0,
-			TxHashLen: len("TODO"),
-			TxHash:    uints.NewU8Array([]byte("TODO")),
+			TxHash:    gnark.ToArray64([]byte("TODO")),
 		},
 	}
 
@@ -230,7 +227,7 @@ func TestExecuteLongStateChangeGroth16(t *testing.T) {
 	require.Equal(data.Caller, "")
 	require.Equal(data.BlockTime, uint64(0))
 	require.Equal(data.BlockNumber, uint64(0))
-	require.Equal(data.TxHash, []byte("TODO"))
+	require.Equal(data.TxHash, append([]byte("TODO"), make([]byte, 60)...))
 
 	_, err = f.msgServer.RegisterContract(f.ctx, &zktx.MsgRegisterContract{
 		Owner:        f.addrs[0].String(),
