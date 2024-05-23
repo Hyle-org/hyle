@@ -58,6 +58,10 @@ func (am AppModule) AutoCLIOptions() *autocliv1.ModuleOptions {
 					},
 				},
 				{
+					RpcMethod: "ExecuteStateChanges",
+					Skip:      true, // Overloaded manually
+				},
+				{
 					RpcMethod: "UpdateParams",
 					Skip:      true, // This is a authority gated tx, so we skip it.
 				},

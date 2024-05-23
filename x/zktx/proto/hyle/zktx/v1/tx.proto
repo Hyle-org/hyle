@@ -14,8 +14,8 @@ service Msg {
   option (cosmos.msg.v1.service) = true;
 
   // execute a zk-proven state change
-  rpc ExecuteStateChange(MsgExecuteStateChange)
-      returns (MsgExecuteStateChangeResponse);
+  rpc ExecuteStateChanges(MsgExecuteStateChanges)
+      returns (MsgExecuteStateChangesResponse);
 
   // Only verify a ZK proof
   rpc VerifyProof(MsgVerifyProof) returns (MsgVerifyProofResponse);
@@ -37,36 +37,28 @@ message StateChange {
 }
 
 // execute a zk-proven state change - request type
-message MsgExecuteStateChange {
+message MsgExecuteStateChanges {
   option (cosmos.msg.v1.signer) = "sender"; // TODO remove this
 
   // Fake sender for Cosmos SDK - temporary
   string sender = 1 [ (cosmos_proto.scalar) = "cosmos.AddressString" ];
-  // Actual sender we'll use
-  string hyle_sender = 2;
-  // Block NB
-  uint64 block_nb = 3;
-  // Block time
-  uint64 block_time = 4;
-  // Tx hash
-  bytes tx_hash = 5;
-
   // list of state changes to execute
   repeated StateChange state_changes = 6;
 }
 
 // No response
-message MsgExecuteStateChangeResponse {}
+message MsgExecuteStateChangesResponse {}
 
 // Only verify a ZK proof - request type
 message MsgVerifyProof {
   option (cosmos.msg.v1.signer) = "sender"; // TODO remove this ?
 
-  string contract_name = 1;
+  // Fake sender for Cosmos SDK - temporary
+  string sender = 1 [ (cosmos_proto.scalar) = "cosmos.AddressString" ];
+  // Contract the proof is being sent to
+  string contract_name = 2;
   // Proof of the transaction
-  bytes proof = 2;
-  // TODO: handle this differently ?
-  string sender = 3;
+  bytes proof = 3;
 }
 
 // No response
@@ -74,10 +66,10 @@ message MsgVerifyProofResponse {}
 
 // Register a contract - request type
 message MsgRegisterContract {
-  option (cosmos.msg.v1.signer) = "owner";
+  option (cosmos.msg.v1.signer) = "sender";
 
   // owner is the contract owner
-  string owner = 1 [ (cosmos_proto.scalar) = "cosmos.AddressString" ];
+  string owner = 1;
 
   // Identifier of the verifier
   string verifier = 2;
@@ -90,6 +82,9 @@ message MsgRegisterContract {
 
   // Identifier of the contract name
   string contract_name = 5;
+
+  // Fake sender for Cosmos SDK - temporary
+  string sender = 6 [ (cosmos_proto.scalar) = "cosmos.AddressString" ];
 }
 
 // Register a contract - response type

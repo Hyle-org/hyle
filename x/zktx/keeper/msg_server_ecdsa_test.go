@@ -223,7 +223,7 @@ func generate_ecdsa_proof(privKey *ecdsa.PrivateKey, ethAddress string) (gnark.G
 	}, nil
 }
 
-func TestExecuteStateChangeGroth16ECDSA(t *testing.T) {
+func TestExecuteStateChangesGroth16ECDSA(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping ECDSA, takes a minute on my machine.")
 	}
@@ -250,11 +250,7 @@ func TestExecuteStateChangeGroth16ECDSA(t *testing.T) {
 	err = f.k.Contracts.Set(f.ctx, "ecdsa", contract)
 	require.NoError(err)
 
-	msg := &zktx.MsgExecuteStateChange{
-		HyleSender: ethAddress,
-		BlockTime:  0,
-		BlockNb:    0,
-		TxHash:     []byte("TODO"),
+	msg := &zktx.MsgExecuteStateChanges{
 		StateChanges: []*zktx.StateChange{
 			{
 				ContractName: "ecdsa",
@@ -262,7 +258,7 @@ func TestExecuteStateChangeGroth16ECDSA(t *testing.T) {
 			},
 		},
 	}
-	_, err = f.msgServer.ExecuteStateChange(f.ctx, msg)
+	_, err = f.msgServer.ExecuteStateChanges(f.ctx, msg)
 	require.NoError(err)
 
 	st, _ := f.k.Contracts.Get(f.ctx, "ecdsa")
