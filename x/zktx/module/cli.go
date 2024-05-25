@@ -37,8 +37,8 @@ func (am AppModule) GetTxCmd() *cobra.Command {
 			}
 
 			stateChanges := make([]*zktx.StateChange, 0, len(args)/2)
-			for i := 1; i < len(args); i += 2 {
-				proof, err := os.ReadFile(args[i])
+			for i := 0; i < len(args); i += 2 {
+				proof, err := os.ReadFile(args[i+1])
 				if err != nil {
 					return err
 				}
@@ -49,6 +49,7 @@ func (am AppModule) GetTxCmd() *cobra.Command {
 			}
 
 			msg := &zktx.MsgExecuteStateChanges{
+				Sender:       clientCtx.GetFromAddress().String(),
 				StateChanges: stateChanges,
 			}
 
