@@ -13,7 +13,7 @@ We plan to support all major proving schemes. Check [our list of currently suppo
 Install and run:
 
 ```sh
-git clone git@github.com:hyle-org/hyle.git
+git clone https://github.com/Hyle-org/hyle.git
 cd hyle
 make build # builds the `hyled` binary
 make init # initialize the chain
