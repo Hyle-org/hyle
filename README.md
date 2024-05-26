@@ -15,7 +15,8 @@ Install and run:
 ```sh
 git clone https://github.com/Hyle-org/hyle.git
 cd hyle
-make build # builds the `hyled` binary
+make install or make build # builds the `hyled` binary
+hyled --version # verify that the hyled command-line tool is installed and accessible
 make init # initialize the chain
 ./hyled start # start the chain
 ```
