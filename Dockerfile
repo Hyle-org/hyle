@@ -44,6 +44,8 @@ COPY --from=verifier /sp1-verifier /hyle/sp1-verifier
 COPY --from=verifier /noir-verifier /hyle/noir-verifier
 
 # Could be interesting to use the 'bundle build' artifacts here
+# Not possible ATM: https://github.com/oven-sh/bun/issues/11446
+# > bundle with esbuild not working as well cause we use wasm
 RUN cd /hyle/noir-verifier && bun install --frozen-lockfile
 
 EXPOSE 26657 1317 9090
