@@ -60,6 +60,9 @@ func NewMsgServerImpl(keeper Keeper) zktx.MsgServer {
 	if sp1VerifierPath == "" {
 		sp1VerifierPath = "/hyle/sp1-verifier"
 	}
+	if noirVerifierPath == "" {
+		noirVerifierPath = "/hyle/noir-verifier"
+	}
 
 	return &msgServer{k: keeper}
 }
@@ -169,7 +172,7 @@ func (ms msgServer) actuallyExecuteStateChange(ctx context.Context, hyleContext 
 		if err != nil {
 			return fmt.Errorf("failed to write vKey to file: %s", err)
 		}
-		outBytes, err := exec.Command("bun", "run", noirVerifierPath, "--vKeyPath", "/tmp/noir-vkey.b64", "--proofPath", "/tmp/noir-proof.json").Output()
+		outBytes, err := exec.Command("bun", "run", noirVerifierPath+"/verifier.ts", "--vKeyPath", "/tmp/noir-vkey.b64", "--proofPath", "/tmp/noir-proof.json").Output()
 		if err != nil {
 			return fmt.Errorf("verifier failed. Exit code: %s", err)
 		}
