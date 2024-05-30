@@ -50,6 +50,7 @@ var _ zktx.MsgServer = msgServer{}
 
 var risczeroVerifierPath = os.Getenv("RISCZERO_VERIFIER_PATH")
 var sp1VerifierPath = os.Getenv("SP1_VERIFIER_PATH")
+var noirVerifierPath = os.Getenv("NOIR_VERIFIER_PATH")
 
 // NewMsgServerImpl returns an implementation of the module MsgServer interface.
 func NewMsgServerImpl(keeper Keeper) zktx.MsgServer {
@@ -103,7 +104,7 @@ func (ms msgServer) actuallyExecuteStateChange(ctx context.Context, hyleContext 
 
 	if contract.Verifier == "risczero" {
 		// Save proof to a local file
-		err = os.WriteFile("risc0-proof.json", msg.Proof, 0644)
+		err = os.WriteFile("/tmp/risc0-proof.json", msg.Proof, 0644)
 
 		if err != nil {
 			return fmt.Errorf("failed to write proof to file: %s", err)
@@ -129,7 +130,7 @@ func (ms msgServer) actuallyExecuteStateChange(ctx context.Context, hyleContext 
 		finalStateDigest = objmap.NextState
 	} else if contract.Verifier == "sp1" {
 		// Save proof to a local file
-		err = os.WriteFile("sp1-proof.json", msg.Proof, 0644)
+		err = os.WriteFile("/tmp/sp1-proof.json", msg.Proof, 0644)
 
 		if err != nil {
 			return fmt.Errorf("failed to write proof to file: %s", err)
@@ -139,6 +140,40 @@ func (ms msgServer) actuallyExecuteStateChange(ctx context.Context, hyleContext 
 		if err != nil {
 			return fmt.Errorf("verifier failed. Exit code: %s", err)
 		}
+		// Then parse data from the verified proof.
+		var objmap zktx.HyleOutput
+		err = json.Unmarshal(outBytes, &objmap)
+		if err != nil {
+			return fmt.Errorf("failed to unmarshal verifier output: %s", err)
+		}
+
+		SetContextIfNeeded(objmap, hyleContext)
+		if err = ValidateProofData(objmap, contract.StateDigest, hyleContext); err != nil {
+			return err
+		}
+
+		finalStateDigest = objmap.NextState
+	} else if contract.Verifier == "noir" {
+		// Save proof to a local file
+		err = os.WriteFile("/tmp/noir-proof.json", msg.Proof, 0644)
+		if err != nil {
+			return fmt.Errorf("failed to write proof to file: %s", err)
+		}
+		// Save vKey to a local file
+		f, err := os.Create("/tmp/noir-vkey.b64")
+		if err != nil {
+			return fmt.Errorf("failed to create vKey file: %s", err)
+		}
+		b64ProgramId := base64.StdEncoding.EncodeToString(contract.ProgramId)
+		_, err = f.WriteString(b64ProgramId)
+		if err != nil {
+			return fmt.Errorf("failed to write vKey to file: %s", err)
+		}
+		outBytes, err := exec.Command("bun", "run", noirVerifierPath, "--vKeyPath", "/tmp/noir-vkey.b64", "--proofPath", "/tmp/noir-proof.json").Output()
+		if err != nil {
+			return fmt.Errorf("verifier failed. Exit code: %s", err)
+		}
+
 		// Then parse data from the verified proof.
 		var objmap zktx.HyleOutput
 		err = json.Unmarshal(outBytes, &objmap)
@@ -210,26 +245,42 @@ func (ms msgServer) VerifyProof(ctx context.Context, msg *zktx.MsgVerifyProof) (
 
 	if contract.Verifier == "risczero" {
 		// Save proof to a local file
-		err = os.WriteFile("risc0-proof.json", msg.Proof, 0644)
+		err = os.WriteFile("/tmp/risc0-proof.json", msg.Proof, 0644)
 
 		if err != nil {
 			return nil, fmt.Errorf("failed to write proof to file: %s", err)
 		}
 
 		b16ProgramId := hex.EncodeToString(contract.ProgramId)
-		_, err := exec.Command(risczeroVerifierPath, b16ProgramId, "risc0-proof.json").Output()
+		_, err := exec.Command(risczeroVerifierPath, b16ProgramId, "/tmp/risc0-proof.json").Output()
 		if err != nil {
 			return nil, fmt.Errorf("verifier failed. Exit code: %s", err)
 		}
 	} else if contract.Verifier == "sp1" {
 		// Save proof to a local file
-		err = os.WriteFile("sp1-proof.json", msg.Proof, 0644)
+		err = os.WriteFile("/tmp/sp1-proof.json", msg.Proof, 0644)
 
 		if err != nil {
 			return nil, fmt.Errorf("failed to write proof to file: %s", err)
 		}
 		b64ProgramId := base64.StdEncoding.EncodeToString(contract.ProgramId)
-		_, err := exec.Command(sp1VerifierPath, b64ProgramId, "sp1-proof.json").Output()
+		_, err := exec.Command(sp1VerifierPath, b64ProgramId, "/tmp/sp1-proof.json").Output()
+		if err != nil {
+			return nil, fmt.Errorf("verifier failed. Exit code: %s", err)
+		}
+	} else if contract.Verifier == "noir" {
+		// Save proof to a local file
+		err = os.WriteFile("/tmp/noir-proof.json", msg.Proof, 0644)
+		if err != nil {
+			return nil, fmt.Errorf("failed to write proof to file: %s", err)
+		}
+		// Save vKey to a local file
+		err = os.WriteFile("/tmp/noir-vkey.b64", contract.ProgramId, 0644)
+		if err != nil {
+			return nil, fmt.Errorf("failed to write vKey to file: %s", err)
+		}
+
+		_, err := exec.Command("bun", "run", noirVerifierPath, "--vKeyPath", "/tmp/noir-vkey.b64", "--proofPath", "/tmp/noir-proof.json").Output()
 		if err != nil {
 			return nil, fmt.Errorf("verifier failed. Exit code: %s", err)
 		}
