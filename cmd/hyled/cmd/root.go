@@ -4,7 +4,7 @@ import (
 	"os"
 	"time"
 
-	cmtcfg "github.com/cometbft/cometbft/config"
+	cmtcfg "github.com/cometbft/cometbft/tree/main/config"
 	"github.com/spf13/cobra"
 
 	"cosmossdk.io/client/v2/autocli"
