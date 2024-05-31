@@ -114,7 +114,7 @@ func (ms msgServer) actuallyExecuteStateChange(ctx context.Context, hyleContext 
 		}
 
 		b16ProgramId := hex.EncodeToString(contract.ProgramId)
-		outBytes, err := exec.Command(risczeroVerifierPath, b16ProgramId, "risc0-proof.json").Output()
+		outBytes, err := exec.Command(risczeroVerifierPath, b16ProgramId, "/tmp/risc0-proof.json").Output()
 		if err != nil {
 			return fmt.Errorf("verifier failed. Exit code: %s", err)
 		}
@@ -139,7 +139,7 @@ func (ms msgServer) actuallyExecuteStateChange(ctx context.Context, hyleContext 
 			return fmt.Errorf("failed to write proof to file: %s", err)
 		}
 		b64ProgramId := base64.StdEncoding.EncodeToString(contract.ProgramId)
-		outBytes, err := exec.Command(sp1VerifierPath, b64ProgramId, "sp1-proof.json").Output()
+		outBytes, err := exec.Command(sp1VerifierPath, b64ProgramId, "/tmp/sp1-proof.json").Output()
 		if err != nil {
 			return fmt.Errorf("verifier failed. Exit code: %s", err)
 		}
