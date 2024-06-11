@@ -37,25 +37,11 @@ func (am AppModule) AutoCLIOptions() *autocliv1.ModuleOptions {
 			RpcCommandOptions: []*autocliv1.RpcCommandOptions{
 				{
 					RpcMethod: "VerifyProof",
-					Use:       "verify [contract_name] [proof] [sender]",
-					Short:     "Verify a zero knowledge proof in a stateless manner.",
-					PositionalArgs: []*autocliv1.PositionalArgDescriptor{
-						{ProtoField: "contract_name"},
-						{ProtoField: "proof"},
-						{ProtoField: "sender"},
-					},
+					Skip:      true, // Overloaded manually
 				},
 				{
 					RpcMethod: "RegisterContract",
-					Use:       "register [owner] [contract_name] [verifier] [program_id] [state_digest]",
-					Short:     "Register a new smart contract.",
-					PositionalArgs: []*autocliv1.PositionalArgDescriptor{
-						{ProtoField: "owner"},
-						{ProtoField: "contract_name"},
-						{ProtoField: "verifier"},
-						{ProtoField: "program_id"},
-						{ProtoField: "state_digest"},
-					},
+					Skip:      true, // Overloaded manually
 				},
 				{
 					RpcMethod: "ExecuteStateChanges",

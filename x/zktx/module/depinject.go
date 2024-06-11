@@ -5,11 +5,14 @@ import (
 	"cosmossdk.io/core/appmodule"
 	"cosmossdk.io/core/store"
 	"cosmossdk.io/depinject"
+	"cosmossdk.io/x/tx/signing"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/cosmos/cosmos-sdk/codec"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 
 	modulev1 "github.com/hyle-org/hyle/x/zktx/api/module/v1"
+	zktxv1 "github.com/hyle-org/hyle/x/zktx/api/v1"
 	"github.com/hyle-org/hyle/x/zktx/keeper"
 )
 
@@ -21,11 +24,42 @@ func (am AppModule) IsOnePerModuleType() {}
 // IsAppModule implements the appmodule.AppModule interface.
 func (am AppModule) IsAppModule() {}
 
+// Provide custom signers that don't really do anything
+// We just want to send messages and ignore the cosmos SDK logic
+// (see also skipAnteHandlers in app.toml)
+func FakeRegisterSigner() signing.CustomGetSigner {
+	return signing.CustomGetSigner{
+		MsgType: proto.MessageName(&zktxv1.MsgRegisterContract{}),
+		Fn: func(msg proto.Message) ([][]byte, error) {
+			return [][]byte{[]byte("fake-signer")}, nil
+		},
+	}
+}
+func FakeExecuteSigner() signing.CustomGetSigner {
+	return signing.CustomGetSigner{
+		MsgType: proto.MessageName(&zktxv1.MsgExecuteStateChanges{}),
+		Fn: func(msg proto.Message) ([][]byte, error) {
+			return [][]byte{[]byte("fake-signer")}, nil
+		},
+	}
+}
+func FakeVerifySigner() signing.CustomGetSigner {
+	return signing.CustomGetSigner{
+		MsgType: proto.MessageName(&zktxv1.MsgVerifyProof{}),
+		Fn: func(msg proto.Message) ([][]byte, error) {
+			return [][]byte{[]byte("fake-signer")}, nil
+		},
+	}
+}
+
 func init() {
 	appmodule.Register(
 		&modulev1.Module{},
 		appmodule.Provide(
 			ProvideModule,
+			FakeRegisterSigner,
+			FakeExecuteSigner,
+			FakeVerifySigner,
 		),
 	)
 }

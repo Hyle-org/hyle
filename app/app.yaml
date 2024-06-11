@@ -45,6 +45,7 @@ modules:
   - name: tx
     config:
       "@type": cosmos.tx.config.v1.Config
+      # Skipping the ante handler as we'll want to reimplement most stuff here.
       skip_ante_handler: true
   - name: zktx
     config:
