@@ -38,12 +38,8 @@ message StateChange {
 
 // execute a zk-proven state change - request type
 message MsgExecuteStateChanges {
-  option (cosmos.msg.v1.signer) = "sender"; // TODO remove this
-
-  // Fake sender for Cosmos SDK - temporary
-  string sender = 1 [ (cosmos_proto.scalar) = "cosmos.AddressString" ];
   // list of state changes to execute
-  repeated StateChange state_changes = 6;
+  repeated StateChange state_changes = 1;
 }
 
 // No response
@@ -51,14 +47,10 @@ message MsgExecuteStateChangesResponse {}
 
 // Only verify a ZK proof - request type
 message MsgVerifyProof {
-  option (cosmos.msg.v1.signer) = "sender"; // TODO remove this ?
-
-  // Fake sender for Cosmos SDK - temporary
-  string sender = 1 [ (cosmos_proto.scalar) = "cosmos.AddressString" ];
   // Contract the proof is being sent to
-  string contract_name = 2;
+  string contract_name = 1;
   // Proof of the transaction
-  bytes proof = 3;
+  bytes proof = 2;
 }
 
 // No response
@@ -66,8 +58,6 @@ message MsgVerifyProofResponse {}
 
 // Register a contract - request type
 message MsgRegisterContract {
-  option (cosmos.msg.v1.signer) = "sender";
-
   // owner is the contract owner
   string owner = 1;
 
@@ -82,9 +72,6 @@ message MsgRegisterContract {
 
   // Identifier of the contract name
   string contract_name = 5;
-
-  // Fake sender for Cosmos SDK - temporary
-  string sender = 6 [ (cosmos_proto.scalar) = "cosmos.AddressString" ];
 }
 
 // Register a contract - response type
