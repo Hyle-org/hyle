@@ -54,14 +54,17 @@ var noirVerifierPath = os.Getenv("NOIR_VERIFIER_PATH")
 
 // NewMsgServerImpl returns an implementation of the module MsgServer interface.
 func NewMsgServerImpl(keeper Keeper) zktx.MsgServer {
+	// By default, assume the hylé repo shares a parent directory with the verifiers repo.
+	// They'll still need to be compiled in release mode.
+	// Noir expects bun to be installed.
 	if risczeroVerifierPath == "" {
-		risczeroVerifierPath = "/hyle/risc0-verifier"
+		risczeroVerifierPath = "../verifiers-for-hyle/target/release/risc0-verifier"
 	}
 	if sp1VerifierPath == "" {
-		sp1VerifierPath = "/hyle/sp1-verifier"
+		sp1VerifierPath = "../verifiers-for-hyle/target/release/sp1-verifier"
 	}
 	if noirVerifierPath == "" {
-		noirVerifierPath = "/hyle/noir-verifier"
+		noirVerifierPath = "../verifiers-for-hyle/noir-verifier"
 	}
 
 	return &msgServer{k: keeper}
