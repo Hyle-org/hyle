@@ -41,6 +41,10 @@ proto-format:
 proto-lint:
 	@$(protoImage) buf lint proto/ --error-format=json
 
+proto-ts:
+	@echo "Generating typescript files..."
+	@$(protoImage) sh ./scripts/protocgen-ts.sh
+
 .PHONY: proto-all proto-gen proto-format proto-lint
 
 #################
