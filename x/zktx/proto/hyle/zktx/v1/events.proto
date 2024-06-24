@@ -1,0 +1,16 @@
+syntax = "proto3";
+package hyle.zktx.v1;
+
+option go_package = "github.com/hyle-org/hyle/x/zktx";
+
+// EventStateChange is an event emitted when a contract state changes
+message EventStateChange {
+  // contract_name is the name of the contract
+  string contract_name = 1;
+}
+
+// EventContractRegistered is an event emitted when a contract is registered
+message EventContractRegistered {
+  // contract_name is the name of the contract
+  string contract_name = 1;
+}
