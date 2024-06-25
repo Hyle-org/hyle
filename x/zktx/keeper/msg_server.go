@@ -51,6 +51,7 @@ var _ zktx.MsgServer = msgServer{}
 var risczeroVerifierPath = os.Getenv("RISCZERO_VERIFIER_PATH")
 var sp1VerifierPath = os.Getenv("SP1_VERIFIER_PATH")
 var noirVerifierPath = os.Getenv("NOIR_VERIFIER_PATH")
+var cairoVerifierPath = os.Getenv("CAIRO_VERIFIER_PATH")
 
 // NewMsgServerImpl returns an implementation of the module MsgServer interface.
 func NewMsgServerImpl(keeper Keeper) zktx.MsgServer {
@@ -193,6 +194,31 @@ func (ms msgServer) actuallyExecuteStateChange(ctx context.Context, hyleContext 
 		}
 
 		finalStateDigest = objmap.NextState
+	} else if contract.Verifier == "cairo" {
+		// Save proof to a local file	
+		err = os.WriteFile("/tmp/cairo-proof.json", msg.Proof, 0644)
+		if err != nil {
+			return fmt.Errorf("failed to write proof to file: %s", err)
+		}
+
+		outBytes, err := exec.Command(cairoVerifierPath, "verify", "/tmp/cairo-proof.json").Output()
+		if err != nil {
+			return fmt.Errorf("verifier failed. Exit code: %s", err)
+		}
+		
+		// Then parse data from the verified proof.
+		var objmap zktx.HyleOutput
+		err = json.Unmarshal(outBytes, &objmap)
+		if err != nil {
+			panic(err)
+		}
+		
+		SetContextIfNeeded(objmap, hyleContext)
+		if err = ValidateProofData(objmap, contract.StateDigest, hyleContext); err != nil {
+			return err
+		}
+
+		finalStateDigest = objmap.NextState
 	} else if contract.Verifier == "gnark-groth16-te-BN254" {
 		// Order: first parse the proof, verify data, and then verify proof (assuming fastest failure in that order)
 		var proof gnark.Groth16Proof
@@ -287,6 +313,17 @@ func (ms msgServer) VerifyProof(ctx context.Context, msg *zktx.MsgVerifyProof) (
 		}
 
 		_, err := exec.Command("bun", "run", noirVerifierPath, "--vKeyPath", "/tmp/noir-vkey.b64", "--proofPath", "/tmp/noir-proof.json").Output()
+		if err != nil {
+			return nil, fmt.Errorf("verifier failed. Exit code: %s", err)
+		}
+	} else if contract.Verifier == "cairo" {
+		// Save proof to a local file
+		err = os.WriteFile("/tmp/cairo-proof.json", msg.Proof, 0644)
+		if err != nil {
+			return nil, fmt.Errorf("failed to write proof to file: %s", err)
+		}
+
+		_, err := exec.Command(cairoVerifierPath, "verify", "/tmp/cairo-proof.json").Output()
 		if err != nil {
 			return nil, fmt.Errorf("verifier failed. Exit code: %s", err)
 		}

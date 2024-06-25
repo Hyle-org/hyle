@@ -17,3 +17,4 @@ type HyleOutput struct {
 	BlockTime    uint64 `json:"block_time"`
 	TxHash       []byte `json:"tx_hash"`
 }
+
