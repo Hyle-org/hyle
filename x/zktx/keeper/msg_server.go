@@ -11,6 +11,8 @@ import (
 	"os/exec"
 	"strings"
 
+	sdk "github.com/cosmos/cosmos-sdk/types"
+
 	"github.com/hyle-org/hyle/x/zktx"
 	"github.com/hyle-org/hyle/x/zktx/keeper/gnark"
 
@@ -71,10 +73,12 @@ func NewMsgServerImpl(keeper Keeper) zktx.MsgServer {
 	return &msgServer{k: keeper}
 }
 
-func (ms msgServer) ExecuteStateChanges(ctx context.Context, msg *zktx.MsgExecuteStateChanges) (*zktx.MsgExecuteStateChangesResponse, error) {
+func (ms msgServer) ExecuteStateChanges(goCtx context.Context, msg *zktx.MsgExecuteStateChanges) (*zktx.MsgExecuteStateChangesResponse, error) {
 	if len(msg.StateChanges) == 0 {
 		return &zktx.MsgExecuteStateChangesResponse{}, nil
 	}
+
+	ctx := sdk.UnwrapSDKContext(goCtx)
 
 	// Initialize context with unknown data at this point
 	hyleContext := zktx.HyleContext{
@@ -101,7 +105,7 @@ func (ms msgServer) ExecuteStateChanges(ctx context.Context, msg *zktx.MsgExecut
 	return &zktx.MsgExecuteStateChangesResponse{}, nil
 }
 
-func (ms msgServer) actuallyExecuteStateChange(ctx context.Context, hyleContext *zktx.HyleContext, msg *zktx.StateChange) error {
+func (ms msgServer) actuallyExecuteStateChange(ctx sdk.Context, hyleContext *zktx.HyleContext, msg *zktx.StateChange) error {
 	contract, err := ms.k.Contracts.Get(ctx, msg.ContractName)
 	if err != nil {
 		return fmt.Errorf("invalid contract - no state is registered")
@@ -258,7 +262,12 @@ func (ms msgServer) actuallyExecuteStateChange(ctx context.Context, hyleContext 
 	// Update the caller for future state changes
 	hyleContext.Caller = msg.ContractName
 
-	// TODO: check block time / number / TX Hash
+	// TODO: validate tx Hash
+
+	// Emit event by contract name for TX indexation
+	if err := ctx.EventManager().EmitTypedEvent(&zktx.EventStateChange{ContractName: msg.ContractName}); err != nil {
+		return err
+	}
 
 	// Update contract
 	contract.StateDigest = finalStateDigest
@@ -353,9 +362,9 @@ func (ms msgServer) VerifyProof(ctx context.Context, msg *zktx.MsgVerifyProof) (
 	return &zktx.MsgVerifyProofResponse{}, nil
 }
 
-func (ms msgServer) RegisterContract(ctx context.Context, msg *zktx.MsgRegisterContract) (*zktx.MsgRegisterContractResponse, error) {
+func (ms msgServer) RegisterContract(goCtx context.Context, msg *zktx.MsgRegisterContract) (*zktx.MsgRegisterContractResponse, error) {
 
-	if exists, err := ms.k.Contracts.Has(ctx, msg.ContractName); err != nil || exists {
+	if exists, err := ms.k.Contracts.Has(goCtx, msg.ContractName); err != nil || exists {
 		return nil, fmt.Errorf("Contract with name {%s} already exists", msg.ContractName)
 	}
 
@@ -364,9 +373,17 @@ func (ms msgServer) RegisterContract(ctx context.Context, msg *zktx.MsgRegisterC
 		ProgramId:   msg.ProgramId,
 		StateDigest: []byte(msg.StateDigest),
 	}
-	if err := ms.k.Contracts.Set(ctx, msg.ContractName, newContract); err != nil {
+	if err := ms.k.Contracts.Set(goCtx, msg.ContractName, newContract); err != nil {
 		return nil, err
 	}
+
+	ctx := sdk.UnwrapSDKContext(goCtx)
+	fmt.Println("Registering contract", msg.ContractName)
+	// Emit event by contract name for TX indexation
+	if err := ctx.EventManager().EmitTypedEvent(&zktx.EventContractRegistered{ContractName: msg.ContractName}); err != nil {
+		return nil, err
+	}
+
 	return &zktx.MsgRegisterContractResponse{}, nil
 }
 
