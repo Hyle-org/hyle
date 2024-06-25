@@ -28,4 +28,7 @@ $HYLED_BIN genesis gentx alice 1000000hyle --chain-id hyle
 # Setup everything
 $HYLED_BIN genesis collect-gentxs
 
+# Allow CORS
+find ./hyled-data/config/config.toml -type f -exec sed -i 's/cors_allowed_origins = \[\]/cors_allowed_origins = \["*"\]/g' {} \;
+
 # Just run `$HYLED_BIN start` to start the node
