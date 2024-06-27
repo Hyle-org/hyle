@@ -69,7 +69,9 @@ func NewMsgServerImpl(keeper Keeper) zktx.MsgServer {
 	if noirVerifierPath == "" {
 		noirVerifierPath = "../verifiers-for-hyle/noir-verifier"
 	}
-
+	if cairoVerifierPath == "" {
+		cairoVerifierPath = "../verifiers-for-hyle/target/release/cairo-verifier"
+	}
 	return &msgServer{k: keeper}
 }
 

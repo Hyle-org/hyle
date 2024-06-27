@@ -29,6 +29,8 @@ $HYLED_BIN genesis gentx alice 1000000hyle --chain-id hyle
 $HYLED_BIN genesis collect-gentxs
 
 # Allow CORS
-find ./hyled-data/config/config.toml -type f -exec sed -i 's/cors_allowed_origins = \[\]/cors_allowed_origins = \["*"\]/g' {} \;
+sed -i.bak 's/cors_allowed_origins = \[\]/cors_allowed_origins = \["\*"\]/g' ./hyled-data/config/config.toml;
+sed -i.bak 's/max_tx_bytes = 1048576/max_tx_bytes = 10485760/g' ./hyled-data/config/config.toml;
+sed -i.bak 's/max_body_bytes = 1000000/max_body_bytes = 10000000/g' ./hyled-data/config/config.toml;
 
 # Just run `$HYLED_BIN start` to start the node
