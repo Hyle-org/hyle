@@ -21,25 +21,18 @@ import (
 
 // For clarity, split from ValidateProofData
 func SetContextIfNeeded(proofData zktx.HyleOutput, hyleContext *zktx.HyleContext) error {
-	// Only do this on the first call
-	if hyleContext.Caller != "" {
-		return nil
-	}
-	hyleContext.Origin = proofData.Origin
+	hyleContext.Identity = proofData.Identity
 	return nil
 }
 
-// TODO check block number, block time and tx hash
+// TODO check tx hash
 func ValidateProofData(proofData zktx.HyleOutput, initialState []byte, hyleContext *zktx.HyleContext) error {
 	if !bytes.Equal(proofData.InitialState, initialState) {
 		return fmt.Errorf("verifier output does not match the expected initial state")
 	}
-	// Assume that if the proof has an empty origin/caller, it's "free for all"
-	if proofData.Origin != "" && proofData.Origin != hyleContext.Origin {
-		return fmt.Errorf("verifier output does not match the expected origin")
-	}
-	if proofData.Caller != "" && proofData.Caller != hyleContext.Caller {
-		return fmt.Errorf("verifier output does not match the expected caller")
+	// Assume that if the proof has an empty Identity, it's "free for all"
+	if proofData.Identity != "" && proofData.Identity != hyleContext.Identity {
+		return fmt.Errorf("verifier output does not match the expected Identity")
 	}
 	return nil
 }
@@ -82,10 +75,7 @@ func (ms msgServer) ExecuteStateChanges(goCtx context.Context, msg *zktx.MsgExec
 
 	// Initialize context with unknown data at this point
 	hyleContext := zktx.HyleContext{
-		Origin:    "",
-		Caller:    "",
-		BlockTime: 0,
-		BlockNb:   0,
+		Identity:    "",
 		TxHash:    []byte("TODO"),
 	}
 
@@ -93,11 +83,13 @@ func (ms msgServer) ExecuteStateChanges(goCtx context.Context, msg *zktx.MsgExec
 		if err := ms.actuallyExecuteStateChange(ctx, &hyleContext, stateChange); err != nil {
 			return nil, err
 		}
-		if i == 0 && hyleContext.Origin != "" {
-			// Check origin matches contract name
-			paths := strings.Split(hyleContext.Origin, ".")
+		if i == 0 && hyleContext.Identity != "" {
+			// Check identity matches contract name
+			paths := strings.Split(hyleContext.Identity, ".")
+			fmt.Println(paths)
+			fmt.Println(len(paths)-1)
 			if len(paths) < 2 || paths[len(paths)-1] != stateChange.ContractName {
-				return nil, fmt.Errorf("invalid origin contract, expected '%s', got '%s'", stateChange.ContractName, paths[len(paths)-1])
+				return nil, fmt.Errorf("invalid identity contract, expected '%s', got '%s'", stateChange.ContractName, paths[len(paths)-1])
 			}
 		}
 	}
@@ -171,16 +163,15 @@ func (ms msgServer) actuallyExecuteStateChange(ctx sdk.Context, hyleContext *zkt
 			return fmt.Errorf("failed to write proof to file: %s", err)
 		}
 		// Save vKey to a local file
-		f, err := os.Create("/tmp/noir-vkey.b64")
+		f, err := os.Create("/tmp/noir-vkey")
 		if err != nil {
 			return fmt.Errorf("failed to create vKey file: %s", err)
 		}
-		b64ProgramId := base64.StdEncoding.EncodeToString(contract.ProgramId)
-		_, err = f.WriteString(b64ProgramId)
+		_, err = f.Write(contract.ProgramId)
 		if err != nil {
 			return fmt.Errorf("failed to write vKey to file: %s", err)
 		}
-		outBytes, err := exec.Command("bun", "run", noirVerifierPath+"/verifier.ts", "--vKeyPath", "/tmp/noir-vkey.b64", "--proofPath", "/tmp/noir-proof.json").Output()
+		outBytes, err := exec.Command("bun", "run", noirVerifierPath+"/verifier.ts", "--vKeyPath", "/tmp/noir-vkey", "--proofPath", "/tmp/noir-proof.json").Output()
 		if err != nil {
 			return fmt.Errorf("verifier failed. Exit code: %s", err)
 		}
@@ -258,9 +249,6 @@ func (ms msgServer) actuallyExecuteStateChange(ctx sdk.Context, hyleContext *zkt
 	} else {
 		return fmt.Errorf("unknown verifier %s", contract.Verifier)
 	}
-
-	// Update the caller for future state changes
-	hyleContext.Caller = msg.ContractName
 
 	// TODO: validate tx Hash
 

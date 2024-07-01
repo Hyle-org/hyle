@@ -23,6 +23,8 @@ type HyleCircuit struct {
 	Input     []frontend.Variable `gnark:",public"`
 	OutputLen frontend.Variable   `gnark:",public"`
 	Output    []frontend.Variable `gnark:",public"`
+	IdentityLen frontend.Variable `gnark:",public"` // This is encoded as a single ASCII character per byte
+	Identity    [256]uints.U8     `gnark:",public"` // The max capacity is 256 bytes (arbitrarily)
 	TxHash    [64]uints.U8        `gnark:",public"`
 }
 
@@ -107,6 +109,14 @@ func parseSlice(input *fr.Vector) ([]byte, error) {
 	return parseArray(input, int(length))
 }
 
+func parseString(input *fr.Vector) (string, error) {
+	if output, err := parseSlice(input); err != nil {
+		return "", err
+	} else {
+		return string(output), nil
+	}
+}
+
 func (proof *Groth16Proof) ExtractData(witness witness.Witness) (*zktx.HyleOutput, error) {
 	// Check payload version identifier
 	pubWitVector, ok := witness.Vector().(fr.Vector)
@@ -126,6 +136,11 @@ func (proof *Groth16Proof) ExtractData(witness witness.Witness) (*zktx.HyleOutpu
 	if output.NextState, err = parseSlice(&slice); err != nil {
 		return nil, err
 	}
+	if output.Origin, err = parseString(&slice); err != nil {
+		return nil, err
+	}
+	// Skip remaining bytes
+	slice = slice[256-len(output.Origin):]
 	if output.TxHash, err = parseArray(&slice, 64); err != nil {
 		return nil, err
 	}
