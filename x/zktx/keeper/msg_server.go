@@ -21,7 +21,9 @@ import (
 
 // For clarity, split from ValidateProofData
 func SetContextIfNeeded(proofData zktx.HyleOutput, hyleContext *zktx.HyleContext) error {
-	hyleContext.Identity = proofData.Identity
+	if hyleContext.Identity == "" {
+		hyleContext.Identity = proofData.Identity
+	}
 	return nil
 }
 
@@ -32,7 +34,7 @@ func ValidateProofData(proofData zktx.HyleOutput, initialState []byte, hyleConte
 	}
 	// Assume that if the proof has an empty Identity, it's "free for all"
 	if proofData.Identity != "" && proofData.Identity != hyleContext.Identity {
-		return fmt.Errorf("verifier output does not match the expected Identity")
+		return fmt.Errorf("verifier output does not match the expected identity")
 	}
 	return nil
 }
@@ -77,8 +79,8 @@ func (ms msgServer) ExecuteStateChanges(goCtx context.Context, msg *zktx.MsgExec
 
 	// Initialize context with unknown data at this point
 	hyleContext := zktx.HyleContext{
-		Identity:    "",
-		TxHash:    []byte("TODO"),
+		Identity: "",
+		TxHash:   []byte("TODO"),
 	}
 
 	for i, stateChange := range msg.StateChanges {
@@ -190,7 +192,7 @@ func (ms msgServer) actuallyExecuteStateChange(ctx sdk.Context, hyleContext *zkt
 
 		finalStateDigest = objmap.NextState
 	} else if contract.Verifier == "cairo" {
-		// Save proof to a local file	
+		// Save proof to a local file
 		err = os.WriteFile("/tmp/cairo-proof.json", msg.Proof, 0644)
 		if err != nil {
 			return fmt.Errorf("failed to write proof to file: %s", err)
@@ -200,14 +202,14 @@ func (ms msgServer) actuallyExecuteStateChange(ctx sdk.Context, hyleContext *zkt
 		if err != nil {
 			return fmt.Errorf("verifier failed. Exit code: %s", err)
 		}
-		
+
 		// Then parse data from the verified proof.
 		var objmap zktx.HyleOutput
 		err = json.Unmarshal(outBytes, &objmap)
 		if err != nil {
 			panic(err)
 		}
-		
+
 		SetContextIfNeeded(objmap, hyleContext)
 		if err = ValidateProofData(objmap, contract.StateDigest, hyleContext); err != nil {
 			return err
@@ -366,7 +368,7 @@ func (ms msgServer) RegisterContract(goCtx context.Context, msg *zktx.MsgRegiste
 	}
 
 	ctx := sdk.UnwrapSDKContext(goCtx)
-	fmt.Println("Registering contract", msg.ContractName)
+
 	// Emit event by contract name for TX indexation
 	if err := ctx.EventManager().EmitTypedEvent(&zktx.EventContractRegistered{ContractName: msg.ContractName}); err != nil {
 		return nil, err

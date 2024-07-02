@@ -24,7 +24,7 @@ type HyleCircuit struct {
 	OutputLen   frontend.Variable   `gnark:",public"`
 	Output      []frontend.Variable `gnark:",public"`
 	IdentityLen frontend.Variable   `gnark:",public"` // This is encoded as a single ASCII character per byte
-	Identity    []frontend.Variable `gnark:",public"` // The max capacity is 256 bytes (arbitrarily)
+	Identity    [256]uints.U8       `gnark:",public"` // The max capacity is 256 bytes (arbitrarily, but we need something static)
 	TxHash      [64]uints.U8        `gnark:",public"`
 }
 
@@ -136,11 +136,11 @@ func (proof *Groth16Proof) ExtractData(witness witness.Witness) (*zktx.HyleOutpu
 	if output.NextState, err = parseSlice(&slice); err != nil {
 		return nil, err
 	}
-	if output.Origin, err = parseString(&slice); err != nil {
+	if output.Identity, err = parseString(&slice); err != nil {
 		return nil, err
 	}
 	// Skip remaining bytes
-	slice = slice[256-len(output.Origin):]
+	slice = slice[256-len(output.Identity):]
 	if output.TxHash, err = parseArray(&slice, 64); err != nil {
 		return nil, err
 	}

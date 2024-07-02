@@ -83,11 +83,11 @@ func (c *ecdsaCircuit[T, S]) Define(api frontend.API) error {
 		lower, upper := bitslice.Partition(api, res[i+12].Val, 4)
 		lower = selector.Mux(api, lower, hexChars[:]...)
 		upper = selector.Mux(api, upper, hexChars[:]...)
-		uapi.ByteAssertEq(uapi.ByteValueOf(upper), c.Origin[i*2])
-		uapi.ByteAssertEq(uapi.ByteValueOf(lower), c.Origin[i*2+1])
+		uapi.ByteAssertEq(uapi.ByteValueOf(upper), c.Identity[i*2])
+		uapi.ByteAssertEq(uapi.ByteValueOf(lower), c.Identity[i*2+1])
 	}
 	// Check that the next one is a dot, aka a name separator
-	uapi.ByteAssertEq(c.Origin[40], uints.NewU8(46))
+	uapi.ByteAssertEq(c.Identity[40], uints.NewU8(46))
 
 	c.Pub.Verify(api, sw_emulated.GetCurveParams[T](), &c.Msg, &c.Sig)
 	return nil
@@ -147,18 +147,14 @@ func generate_ecdsa_proof(privKey *ecdsa.PrivateKey, ethAddress string) (gnark.G
 
 	circuit := ecdsaCircuit[emulated.Secp256k1Fp, emulated.Secp256k1Fr]{
 		HyleCircuit: gnark.HyleCircuit{
-			Version:   1,
-			InputLen:  1,
-			Input:     []frontend.Variable{0},
-			OutputLen: 1,
-			Output:    []frontend.Variable{0},
-			OriginLen: len(ethAddress),
-			Origin:    gnark.ToArray256([]byte(ethAddress)), // We expect only the origin as this is the "auth contract"
-			CallerLen: 0,
-			Caller:    gnark.ToArray256([]byte("")),
-			BlockTime: 0,
-			BlockNb:   0,
-			TxHash:    gnark.ToArray64([]byte("TODO")),
+			Version:     1,
+			InputLen:    1,
+			Input:       []frontend.Variable{0},
+			OutputLen:   1,
+			Output:      []frontend.Variable{0},
+			IdentityLen: len(ethAddress),
+			Identity:    gnark.ToArray256([]byte(ethAddress)), // We expect only the origin as this is the "auth contract"
+			TxHash:      gnark.ToArray64([]byte("TODO")),
 		},
 		Sig: circuitecdsa.Signature[emulated.Secp256k1Fr]{
 			R: emulated.ValueOf[emulated.Secp256k1Fr](r),
