@@ -18,18 +18,14 @@ import (
 
 // This is the public interface that a verifiable circuit must implement
 type HyleCircuit struct {
-	Version   frontend.Variable   `gnark:",public"`
-	InputLen  frontend.Variable   `gnark:",public"`
-	Input     []frontend.Variable `gnark:",public"`
-	OutputLen frontend.Variable   `gnark:",public"`
-	Output    []frontend.Variable `gnark:",public"`
-	OriginLen frontend.Variable   `gnark:",public"` // This is encoded as a single ASCII character per byte
-	Origin    [256]uints.U8       `gnark:",public"` // The max capacity is 256 bytes (arbitrarily)
-	CallerLen frontend.Variable   `gnark:",public"` // The 'len' arguments are necessary to parse the witness
-	Caller    [256]uints.U8       `gnark:",public"`
-	BlockTime frontend.Variable   `gnark:",public"`
-	BlockNb   frontend.Variable   `gnark:",public"`
-	TxHash    [64]uints.U8        `gnark:",public"`
+	Version     frontend.Variable   `gnark:",public"`
+	InputLen    frontend.Variable   `gnark:",public"`
+	Input       []frontend.Variable `gnark:",public"`
+	OutputLen   frontend.Variable   `gnark:",public"`
+	Output      []frontend.Variable `gnark:",public"`
+	IdentityLen frontend.Variable   `gnark:",public"` // This is encoded as a single ASCII character per byte
+	Identity    []frontend.Variable `gnark:",public"` // The max capacity is 256 bytes (arbitrarily)
+	TxHash      [64]uints.U8        `gnark:",public"`
 }
 
 func (c *HyleCircuit) Define(api frontend.API) error { return nil }
@@ -121,15 +117,6 @@ func parseString(input *fr.Vector) (string, error) {
 	}
 }
 
-func parseNumber[T uint8 | uint16 | uint32 | uint64](input *fr.Vector) (T, error) {
-	if len(*input) < 1 {
-		return 0, fmt.Errorf("input is empty")
-	}
-	val := T((*input)[0].Uint64())
-	*input = (*input)[1:]
-	return val, nil
-}
-
 func (proof *Groth16Proof) ExtractData(witness witness.Witness) (*zktx.HyleOutput, error) {
 	// Check payload version identifier
 	pubWitVector, ok := witness.Vector().(fr.Vector)
@@ -154,17 +141,6 @@ func (proof *Groth16Proof) ExtractData(witness witness.Witness) (*zktx.HyleOutpu
 	}
 	// Skip remaining bytes
 	slice = slice[256-len(output.Origin):]
-	if output.Caller, err = parseString(&slice); err != nil {
-		return nil, err
-	}
-	// Skip remaining bytes
-	slice = slice[256-len(output.Caller):]
-	if output.BlockNumber, err = parseNumber[uint64](&slice); err != nil {
-		return nil, err
-	}
-	if output.BlockTime, err = parseNumber[uint64](&slice); err != nil {
-		return nil, err
-	}
 	if output.TxHash, err = parseArray(&slice, 64); err != nil {
 		return nil, err
 	}
