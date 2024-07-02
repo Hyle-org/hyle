@@ -86,8 +86,6 @@ func (ms msgServer) ExecuteStateChanges(goCtx context.Context, msg *zktx.MsgExec
 		if i == 0 && hyleContext.Identity != "" {
 			// Check identity matches contract name
 			paths := strings.Split(hyleContext.Identity, ".")
-			fmt.Println(paths)
-			fmt.Println(len(paths)-1)
 			if len(paths) < 2 || paths[len(paths)-1] != stateChange.ContractName {
 				return nil, fmt.Errorf("invalid identity contract, expected '%s', got '%s'", stateChange.ContractName, paths[len(paths)-1])
 			}

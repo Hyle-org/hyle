@@ -18,14 +18,14 @@ import (
 
 // This is the public interface that a verifiable circuit must implement
 type HyleCircuit struct {
-	Version   frontend.Variable   `gnark:",public"`
-	InputLen  frontend.Variable   `gnark:",public"`
-	Input     []frontend.Variable `gnark:",public"`
-	OutputLen frontend.Variable   `gnark:",public"`
-	Output    []frontend.Variable `gnark:",public"`
-	IdentityLen frontend.Variable `gnark:",public"` // This is encoded as a single ASCII character per byte
-	Identity    [256]uints.U8     `gnark:",public"` // The max capacity is 256 bytes (arbitrarily)
-	TxHash    [64]uints.U8        `gnark:",public"`
+	Version     frontend.Variable   `gnark:",public"`
+	InputLen    frontend.Variable   `gnark:",public"`
+	Input       []frontend.Variable `gnark:",public"`
+	OutputLen   frontend.Variable   `gnark:",public"`
+	Output      []frontend.Variable `gnark:",public"`
+	IdentityLen frontend.Variable   `gnark:",public"` // This is encoded as a single ASCII character per byte
+	Identity    []frontend.Variable `gnark:",public"` // The max capacity is 256 bytes (arbitrarily)
+	TxHash      [64]uints.U8        `gnark:",public"`
 }
 
 func (c *HyleCircuit) Define(api frontend.API) error { return nil }
