@@ -40,7 +40,7 @@ WORKDIR /hyle
 COPY --from=builder /hyle/hyled /hyle
 COPY --from=builder /hyle/hyled-data /hyle/hyled-data
 COPY --from=verifier /risc0-verifier /hyle/risc0-verifier
-COPY --from=verifier /sp1-verifier /hyle/sp1-verifier
+# COPY --from=verifier /sp1-verifier /hyle/sp1-verifier
 COPY --from=verifier /noir-verifier /hyle/noir-verifier
 COPY --from=verifier /cairo-verifier /hyle/cairo-verifier
 
