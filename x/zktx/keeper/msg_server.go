@@ -175,7 +175,7 @@ func (ms msgServer) actuallyExecuteStateChange(ctx sdk.Context, hyleContext *zkt
 		}
 		outBytes, err := exec.Command("bun", "run", noirVerifierPath+"/verifier.ts", "--vKeyPath", "/tmp/noir-vkey", "--proofPath", "/tmp/noir-proof.json").Output()
 		if err != nil {
-			return fmt.Errorf("noir verifier failed on %s. Exit code: %s, outBytes: %s", msg.ContractName, err, outBytes)
+			return fmt.Errorf("noir verifier failed on %s. Exit code: %s", msg.ContractName, err)
 		}
 
 		// Then parse data from the verified proof.
