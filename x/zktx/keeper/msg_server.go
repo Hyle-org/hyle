@@ -118,7 +118,7 @@ func (ms msgServer) actuallyExecuteStateChange(ctx sdk.Context, hyleContext *zkt
 		b16ProgramId := hex.EncodeToString(contract.ProgramId)
 		outBytes, err := exec.Command(risczeroVerifierPath, b16ProgramId, "/tmp/risc0-proof.json").Output()
 		if err != nil {
-			return fmt.Errorf("verifier failed. Exit code: %s", err)
+			return fmt.Errorf("risczero verifier failed on %s. Exit code: %s", msg.ContractName, err)
 		}
 		// Then parse data from the verified proof.
 		var objmap zktx.HyleOutput
@@ -143,7 +143,7 @@ func (ms msgServer) actuallyExecuteStateChange(ctx sdk.Context, hyleContext *zkt
 		b64ProgramId := base64.StdEncoding.EncodeToString(contract.ProgramId)
 		outBytes, err := exec.Command(sp1VerifierPath, b64ProgramId, "/tmp/sp1-proof.json").Output()
 		if err != nil {
-			return fmt.Errorf("verifier failed. Exit code: %s", err)
+			return fmt.Errorf("sp1 verifier failed on %s. Exit code: %s", msg.ContractName, err)
 		}
 		// Then parse data from the verified proof.
 		var objmap zktx.HyleOutput
@@ -175,7 +175,7 @@ func (ms msgServer) actuallyExecuteStateChange(ctx sdk.Context, hyleContext *zkt
 		}
 		outBytes, err := exec.Command("bun", "run", noirVerifierPath+"/verifier.ts", "--vKeyPath", "/tmp/noir-vkey", "--proofPath", "/tmp/noir-proof.json").Output()
 		if err != nil {
-			return fmt.Errorf("verifier failed. Exit code: %s", err)
+			return fmt.Errorf("noir verifier failed on %s. Exit code: %s, outBytes: %s", msg.ContractName, err, outBytes)
 		}
 
 		// Then parse data from the verified proof.
@@ -200,7 +200,7 @@ func (ms msgServer) actuallyExecuteStateChange(ctx sdk.Context, hyleContext *zkt
 
 		outBytes, err := exec.Command(cairoVerifierPath, "verify", "/tmp/cairo-proof.json").Output()
 		if err != nil {
-			return fmt.Errorf("verifier failed. Exit code: %s", err)
+			return fmt.Errorf("cairo verifier failed on %s. Exit code: %s", msg.ContractName, err)
 		}
 
 		// Then parse data from the verified proof.
@@ -246,7 +246,7 @@ func (ms msgServer) actuallyExecuteStateChange(ctx sdk.Context, hyleContext *zkt
 
 		// Final step: actually check the proof here
 		if err := groth16.Verify(g16p, vk, witness); err != nil {
-			return fmt.Errorf("groth16 verification failed: %w", err)
+			return fmt.Errorf("groth16 verification failed on %s: %w", msg.ContractName, err)
 		}
 	} else {
 		return fmt.Errorf("unknown verifier %s", contract.Verifier)
@@ -279,7 +279,7 @@ func (ms msgServer) VerifyProof(ctx context.Context, msg *zktx.MsgVerifyProof) (
 		err = os.WriteFile("/tmp/risc0-proof.json", msg.Proof, 0644)
 
 		if err != nil {
-			return nil, fmt.Errorf("failed to write proof to file: %s", err)
+			return nil, fmt.Errorf("risczero verifier failed on %s. Exit code: %s", msg.ContractName, err)
 		}
 
 		b16ProgramId := hex.EncodeToString(contract.ProgramId)
@@ -297,7 +297,7 @@ func (ms msgServer) VerifyProof(ctx context.Context, msg *zktx.MsgVerifyProof) (
 		b64ProgramId := base64.StdEncoding.EncodeToString(contract.ProgramId)
 		_, err := exec.Command(sp1VerifierPath, b64ProgramId, "/tmp/sp1-proof.json").Output()
 		if err != nil {
-			return nil, fmt.Errorf("verifier failed. Exit code: %s", err)
+			return nil, fmt.Errorf("sp1 verifier failed on %s. Exit code: %s", msg.ContractName, err)
 		}
 	} else if contract.Verifier == "noir" {
 		// Save proof to a local file
@@ -313,7 +313,7 @@ func (ms msgServer) VerifyProof(ctx context.Context, msg *zktx.MsgVerifyProof) (
 
 		_, err := exec.Command("bun", "run", noirVerifierPath, "--vKeyPath", "/tmp/noir-vkey.b64", "--proofPath", "/tmp/noir-proof.json").Output()
 		if err != nil {
-			return nil, fmt.Errorf("verifier failed. Exit code: %s", err)
+			return nil, fmt.Errorf("noir verifier failed on %s. Exit code: %s", msg.ContractName, err)
 		}
 	} else if contract.Verifier == "cairo" {
 		// Save proof to a local file
@@ -324,7 +324,7 @@ func (ms msgServer) VerifyProof(ctx context.Context, msg *zktx.MsgVerifyProof) (
 
 		_, err := exec.Command(cairoVerifierPath, "verify", "/tmp/cairo-proof.json").Output()
 		if err != nil {
-			return nil, fmt.Errorf("verifier failed. Exit code: %s", err)
+			return nil, fmt.Errorf("cairo verifier failed on %s. Exit code: %s", msg.ContractName, err)
 		}
 
 	} else if contract.Verifier == "gnark-groth16-te-BN254" {
@@ -343,7 +343,7 @@ func (ms msgServer) VerifyProof(ctx context.Context, msg *zktx.MsgVerifyProof) (
 		}
 
 		if err := groth16.Verify(g16p, vk, witness); err != nil {
-			return nil, fmt.Errorf("groth16 verification failed: %w", err)
+			return nil, fmt.Errorf("groth16 verifier failed on %s. Exit code: %w", msg.ContractName, err)
 		}
 	} else {
 		return nil, fmt.Errorf("unknown verifier %s", contract.Verifier)
