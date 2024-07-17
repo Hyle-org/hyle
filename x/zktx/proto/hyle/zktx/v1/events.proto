@@ -7,6 +7,9 @@ option go_package = "github.com/hyle-org/hyle/x/zktx";
 message EventStateChange {
   // contract_name is the name of the contract
   string contract_name = 1;
+  // Arbitrary (ish) data output by verifiers (JSON for all but groth16 where
+  // it's binary)
+  string proof_data = 2;
 }
 
 // EventContractRegistered is an event emitted when a contract is registered

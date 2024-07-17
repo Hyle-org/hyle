@@ -30,7 +30,7 @@ func SetContextIfNeeded(proofData zktx.HyleOutput, hyleContext *zktx.HyleContext
 // TODO check tx hash
 func ValidateProofData(proofData zktx.HyleOutput, initialState []byte, hyleContext *zktx.HyleContext) error {
 	if !bytes.Equal(proofData.InitialState, initialState) {
-		return fmt.Errorf("verifier output does not match the expected initial state")
+		return fmt.Errorf("verifier output does not match the expected initial state, got %x, expected %x", proofData.InitialState, initialState)
 	}
 	// Assume that if the proof has an empty Identity, it's "free for all"
 	if proofData.Identity != "" && proofData.Identity != hyleContext.Identity {
@@ -107,6 +107,8 @@ func (ms msgServer) actuallyExecuteStateChange(ctx sdk.Context, hyleContext *zkt
 
 	var finalStateDigest []byte
 
+	var proofData string
+
 	if contract.Verifier == "risczero" {
 		// Save proof to a local file
 		err = os.WriteFile("/tmp/risc0-proof.json", msg.Proof, 0644)
@@ -126,6 +128,8 @@ func (ms msgServer) actuallyExecuteStateChange(ctx sdk.Context, hyleContext *zkt
 		if err != nil {
 			return fmt.Errorf("failed to unmarshal verifier output: %s", err)
 		}
+
+		proofData = string(outBytes)
 
 		SetContextIfNeeded(objmap, hyleContext)
 		if err = ValidateProofData(objmap, contract.StateDigest, hyleContext); err != nil {
@@ -151,6 +155,8 @@ func (ms msgServer) actuallyExecuteStateChange(ctx sdk.Context, hyleContext *zkt
 		if err != nil {
 			return fmt.Errorf("failed to unmarshal verifier output: %s", err)
 		}
+
+		proofData = string(outBytes)
 
 		SetContextIfNeeded(objmap, hyleContext)
 		if err = ValidateProofData(objmap, contract.StateDigest, hyleContext); err != nil {
@@ -185,6 +191,8 @@ func (ms msgServer) actuallyExecuteStateChange(ctx sdk.Context, hyleContext *zkt
 			return fmt.Errorf("failed to unmarshal verifier output: %s", err)
 		}
 
+		proofData = string(outBytes)
+
 		SetContextIfNeeded(objmap, hyleContext)
 		if err = ValidateProofData(objmap, contract.StateDigest, hyleContext); err != nil {
 			return err
@@ -209,6 +217,8 @@ func (ms msgServer) actuallyExecuteStateChange(ctx sdk.Context, hyleContext *zkt
 		if err != nil {
 			panic(err)
 		}
+
+		proofData = string(outBytes)
 
 		SetContextIfNeeded(objmap, hyleContext)
 		if err = ValidateProofData(objmap, contract.StateDigest, hyleContext); err != nil {
@@ -237,6 +247,8 @@ func (ms msgServer) actuallyExecuteStateChange(ctx sdk.Context, hyleContext *zkt
 			return err
 		}
 
+		proofData = base64.StdEncoding.EncodeToString(proof.PublicWitness)
+
 		SetContextIfNeeded(*data, hyleContext)
 		if err = ValidateProofData(*data, contract.StateDigest, hyleContext); err != nil {
 			return err
@@ -255,7 +267,7 @@ func (ms msgServer) actuallyExecuteStateChange(ctx sdk.Context, hyleContext *zkt
 	// TODO: validate tx Hash
 
 	// Emit event by contract name for TX indexation
-	if err := ctx.EventManager().EmitTypedEvent(&zktx.EventStateChange{ContractName: msg.ContractName}); err != nil {
+	if err := ctx.EventManager().EmitTypedEvent(&zktx.EventStateChange{ContractName: msg.ContractName, ProofData: proofData}); err != nil {
 		return err
 	}
 
