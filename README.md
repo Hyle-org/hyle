@@ -10,15 +10,28 @@ We plan to support all major proving schemes. Check [our list of currently suppo
 
 ### Installation
 
-Install and run:
+##### Build from source:
 
 ```sh
+mkdir hyle
+cd hyle
+# Installation of verifiers
+git clone git@github.com:hyle-org/verifiers-for-hyle.git
+cd verifiers-for-hyle
+cargo build --release
+```
+```sh
+cd ..
 git clone git@github.com:hyle-org/hyle.git
 cd hyle
 make build # builds the `hyled` binary
 make init # initialize the chain
-./hyled start # start the chain
+make start # start the chain with paths for verifiers.
 ```
+
+##### From docker :
+
+> _soon to come_
 
 ## Useful links
 
