@@ -1,54 +1,73 @@
 ARG GO_VERSION="1.21"
 ARG RUNNER_IMAGE="oven/bun:1"
-ARG TAG_VERIFIERS
 
 # --------------------------------------------------------
 # Builder
 # --------------------------------------------------------
-FROM golang:${GO_VERSION}-alpine3.18 as builder
+FROM golang:${GO_VERSION}-alpine3.18 as node_builder
 
-# Install minimum necessary dependencies
-ENV PACKAGES curl make bash jq sed zsh
-RUN apk add --no-cache $PACKAGES
+    # Install minimum necessary dependencies
+    ENV PACKAGES curl make bash jq sed zsh
+    RUN apk add --no-cache $PACKAGES
 
-WORKDIR /hyle
+    WORKDIR /hyle
 
-# Downoad go dependencies
-COPY go.mod go.sum ./x/zktx/go.mod ./
-RUN --mount=type=cache,target=/root/.cache/go-build \
-    --mount=type=cache,target=/root/go/pkg/mod \
-    go mod download
+    # Downoad go dependencies
+    COPY go.mod go.sum ./x/zktx/go.mod ./
+    RUN --mount=type=cache,target=/root/.cache/go-build \
+        --mount=type=cache,target=/root/go/pkg/mod \
+        go mod download
 
-# Add source file
-COPY . .
+    # Add source file
+    COPY . .
 
-# TODO: Warning! Each time you restart, that's a new blockchain :eyes:
-RUN make build && make init
+    # TODO: Warning! Each time you restart, that's a new blockchain :eyes:
+    RUN make build && make init
 
 # --------------------------------------------------------
 # Verifier
 # --------------------------------------------------------
-FROM europe-west3-docker.pkg.dev/hyle-413414/hyle-docker/verifiers-for-hyle:$TAG_VERIFIERS as verifier
+
+FROM rust:latest as verifiers_builder
+    WORKDIR /app
+
+    RUN apt-get update
+    RUN apt-get install libclang-dev -y
+
+    # install Go
+    COPY --from=golang:1.22-alpine /usr/local/go/ /usr/local/go/
+    ENV PATH="/usr/local/go/bin:${PATH}"
+
+    COPY verifiers/Cargo.toml verifiers/Cargo.lock ./
+    COPY verifiers/hyle-contract hyle-contract
+    COPY verifiers/risc0-verifier risc0-verifier
+    #COPY verifiers/sp1-verifier sp1-verifier
+    COPY verifiers/midenvm-verifier midenvm-verifier
+    COPY verifiers/cairo-verifier cairo-verifier
+    RUN RUSTFLAGS='-C target-feature=+crt-static' cargo build --release --target x86_64-unknown-linux-gnu
+
 # --------------------------------------------------------
 # Runner
 # --------------------------------------------------------
 FROM ${RUNNER_IMAGE}
 
-WORKDIR /hyle
+    WORKDIR /hyle
 
-# TODO: Embed everything together in a better way
-COPY --from=builder /hyle/hyled /hyle
-COPY --from=builder /hyle/hyled-data /hyle/hyled-data
-COPY --from=verifier /risc0-verifier /hyle/risc0-verifier
-# COPY --from=verifier /sp1-verifier /hyle/sp1-verifier
-COPY --from=verifier /noir-verifier /hyle/noir-verifier
-COPY --from=verifier /cairo-verifier /hyle/cairo-verifier
+    # TODO: Embed everything together in a better way
+    COPY --from=node_builder /hyle/hyled /hyle
+    COPY --from=node_builder /hyle/hyled-data /hyle/hyled-data
+    COPY --from=verifiers_builder /app/target/x86_64-unknown-linux-gnu/release/risc0-verifier /hyle/risc0-verifier
+    # COPY --from=verifiers_builder /app/target/x86_64-unknown-linux-gnu/release/sp1-verifier /hyle/sp1-verifier
+    COPY --from=verifiers_builder /app/target/x86_64-unknown-linux-gnu/release/midenvm-verifier midenvm-verifier
+    COPY --from=verifiers_builder /app/target/x86_64-unknown-linux-gnu/release/cairo-verifier /hyle/cairo-verifier
 
-# Could be interesting to use the 'bundle build' artifacts here
-# Not possible ATM: https://github.com/oven-sh/bun/issues/11446
-# > bundle with esbuild not working as well cause we use wasm
-RUN cd /hyle/noir-verifier && bun install --frozen-lockfile
+    COPY  verifiers/noir-verifier /hyle/noir-verifier
 
-EXPOSE 26657 1317 9090
+    # Could be interesting to use the 'bundle build' artifacts here
+    # Not possible ATM: https://github.com/oven-sh/bun/issues/11446
+    # > bundle with esbuild not working as well cause we use wasm
+    RUN cd /hyle/noir-verifier && bun install --frozen-lockfile
 
-CMD ["/hyle/hyled", "start"]
+    EXPOSE 26657 1317 9090
+
+    CMD ["/hyle/hyled", "start"]

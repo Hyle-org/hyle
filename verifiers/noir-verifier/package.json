@@ -1,0 +1,16 @@
+{
+  "name": "noir-verifier",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "devDependencies": {
+    "@types/bun": "^1.1.0",
+    "@types/node": "^20.12.12",
+    "rollup-plugin-copy": "^3.5.0"
+  },
+  "dependencies": {
+    "@noir-lang/backend_barretenberg": "^0.30.0",
+    "@noir-lang/noir_js": "^0.30.0",
+    "bun": "^1.1.10"
+  }
+}
