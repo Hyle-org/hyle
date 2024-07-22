@@ -44,7 +44,6 @@ FROM rust:latest as verifiers_builder
     #COPY verifiers/sp1-verifier sp1-verifier
     COPY verifiers/midenvm-verifier midenvm-verifier
     COPY verifiers/cairo-verifier cairo-verifier
-    RUN rustup override set nightly-2024-05-24
     RUN RUSTFLAGS='-C target-feature=+crt-static' cargo build --release --target x86_64-unknown-linux-gnu
 
 # --------------------------------------------------------
