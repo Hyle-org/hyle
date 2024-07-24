@@ -6,10 +6,7 @@ package zktx
 import (
 	context "context"
 	fmt "fmt"
-	_ "github.com/cosmos/cosmos-proto"
 	_ "github.com/cosmos/cosmos-sdk/types/msgservice"
-	_ "github.com/cosmos/cosmos-sdk/types/tx/amino"
-	_ "github.com/cosmos/gogoproto/gogoproto"
 	grpc1 "github.com/cosmos/gogoproto/grpc"
 	proto "github.com/cosmos/gogoproto/proto"
 	grpc "google.golang.org/grpc"
@@ -31,26 +28,26 @@ var _ = math.Inf
 // proto package needs to be updated.
 const _ = proto.GoGoProtoPackageIsVersion3 // please upgrade the proto package
 
-// StateChange is a zk-proven state change to be executed
-type StateChange struct {
+// Payload is a blob
+type Payload struct {
 	// Name of target contract
 	ContractName string `protobuf:"bytes,1,opt,name=contract_name,json=contractName,proto3" json:"contract_name,omitempty"`
-	// Proof of the transaction
-	Proof []byte `protobuf:"bytes,2,opt,name=proof,proto3" json:"proof,omitempty"`
+	// Payload data
+	Data []byte `protobuf:"bytes,2,opt,name=data,proto3" json:"data,omitempty"`
 }
 
-func (m *StateChange) Reset()         { *m = StateChange{} }
-func (m *StateChange) String() string { return proto.CompactTextString(m) }
-func (*StateChange) ProtoMessage()    {}
-func (*StateChange) Descriptor() ([]byte, []int) {
+func (m *Payload) Reset()         { *m = Payload{} }
+func (m *Payload) String() string { return proto.CompactTextString(m) }
+func (*Payload) ProtoMessage()    {}
+func (*Payload) Descriptor() ([]byte, []int) {
 	return fileDescriptor_c6a34850ce07fe46, []int{0}
 }
-func (m *StateChange) XXX_Unmarshal(b []byte) error {
+func (m *Payload) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
 }
-func (m *StateChange) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+func (m *Payload) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
 	if deterministic {
-		return xxx_messageInfo_StateChange.Marshal(b, m, deterministic)
+		return xxx_messageInfo_Payload.Marshal(b, m, deterministic)
 	} else {
 		b = b[:cap(b)]
 		n, err := m.MarshalToSizedBuffer(b)
@@ -60,50 +57,50 @@ func (m *StateChange) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) 
 		return b[:n], nil
 	}
 }
-func (m *StateChange) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_StateChange.Merge(m, src)
+func (m *Payload) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_Payload.Merge(m, src)
 }
-func (m *StateChange) XXX_Size() int {
+func (m *Payload) XXX_Size() int {
 	return m.Size()
 }
-func (m *StateChange) XXX_DiscardUnknown() {
-	xxx_messageInfo_StateChange.DiscardUnknown(m)
+func (m *Payload) XXX_DiscardUnknown() {
+	xxx_messageInfo_Payload.DiscardUnknown(m)
 }
 
-var xxx_messageInfo_StateChange proto.InternalMessageInfo
+var xxx_messageInfo_Payload proto.InternalMessageInfo
 
-func (m *StateChange) GetContractName() string {
+func (m *Payload) GetContractName() string {
 	if m != nil {
 		return m.ContractName
 	}
 	return ""
 }
 
-func (m *StateChange) GetProof() []byte {
+func (m *Payload) GetData() []byte {
 	if m != nil {
-		return m.Proof
+		return m.Data
 	}
 	return nil
 }
 
 // execute a zk-proven state change - request type
-type MsgExecuteStateChanges struct {
-	// list of state changes to execute
-	StateChanges []*StateChange `protobuf:"bytes,1,rep,name=state_changes,json=stateChanges,proto3" json:"state_changes,omitempty"`
+type MsgPublishPayloads struct {
+	// list of payloads
+	Payloads []*Payload `protobuf:"bytes,1,rep,name=payloads,proto3" json:"payloads,omitempty"`
 }
 
-func (m *MsgExecuteStateChanges) Reset()         { *m = MsgExecuteStateChanges{} }
-func (m *MsgExecuteStateChanges) String() string { return proto.CompactTextString(m) }
-func (*MsgExecuteStateChanges) ProtoMessage()    {}
-func (*MsgExecuteStateChanges) Descriptor() ([]byte, []int) {
+func (m *MsgPublishPayloads) Reset()         { *m = MsgPublishPayloads{} }
+func (m *MsgPublishPayloads) String() string { return proto.CompactTextString(m) }
+func (*MsgPublishPayloads) ProtoMessage()    {}
+func (*MsgPublishPayloads) Descriptor() ([]byte, []int) {
 	return fileDescriptor_c6a34850ce07fe46, []int{1}
 }
-func (m *MsgExecuteStateChanges) XXX_Unmarshal(b []byte) error {
+func (m *MsgPublishPayloads) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
 }
-func (m *MsgExecuteStateChanges) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+func (m *MsgPublishPayloads) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
 	if deterministic {
-		return xxx_messageInfo_MsgExecuteStateChanges.Marshal(b, m, deterministic)
+		return xxx_messageInfo_MsgPublishPayloads.Marshal(b, m, deterministic)
 	} else {
 		b = b[:cap(b)]
 		n, err := m.MarshalToSizedBuffer(b)
@@ -113,41 +110,41 @@ func (m *MsgExecuteStateChanges) XXX_Marshal(b []byte, deterministic bool) ([]by
 		return b[:n], nil
 	}
 }
-func (m *MsgExecuteStateChanges) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_MsgExecuteStateChanges.Merge(m, src)
+func (m *MsgPublishPayloads) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_MsgPublishPayloads.Merge(m, src)
 }
-func (m *MsgExecuteStateChanges) XXX_Size() int {
+func (m *MsgPublishPayloads) XXX_Size() int {
 	return m.Size()
 }
-func (m *MsgExecuteStateChanges) XXX_DiscardUnknown() {
-	xxx_messageInfo_MsgExecuteStateChanges.DiscardUnknown(m)
+func (m *MsgPublishPayloads) XXX_DiscardUnknown() {
+	xxx_messageInfo_MsgPublishPayloads.DiscardUnknown(m)
 }
 
-var xxx_messageInfo_MsgExecuteStateChanges proto.InternalMessageInfo
+var xxx_messageInfo_MsgPublishPayloads proto.InternalMessageInfo
 
-func (m *MsgExecuteStateChanges) GetStateChanges() []*StateChange {
+func (m *MsgPublishPayloads) GetPayloads() []*Payload {
 	if m != nil {
-		return m.StateChanges
+		return m.Payloads
 	}
 	return nil
 }
 
 // No response
-type MsgExecuteStateChangesResponse struct {
+type MsgPublishPayloadsResponse struct {
 }
 
-func (m *MsgExecuteStateChangesResponse) Reset()         { *m = MsgExecuteStateChangesResponse{} }
-func (m *MsgExecuteStateChangesResponse) String() string { return proto.CompactTextString(m) }
-func (*MsgExecuteStateChangesResponse) ProtoMessage()    {}
-func (*MsgExecuteStateChangesResponse) Descriptor() ([]byte, []int) {
+func (m *MsgPublishPayloadsResponse) Reset()         { *m = MsgPublishPayloadsResponse{} }
+func (m *MsgPublishPayloadsResponse) String() string { return proto.CompactTextString(m) }
+func (*MsgPublishPayloadsResponse) ProtoMessage()    {}
+func (*MsgPublishPayloadsResponse) Descriptor() ([]byte, []int) {
 	return fileDescriptor_c6a34850ce07fe46, []int{2}
 }
-func (m *MsgExecuteStateChangesResponse) XXX_Unmarshal(b []byte) error {
+func (m *MsgPublishPayloadsResponse) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
 }
-func (m *MsgExecuteStateChangesResponse) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+func (m *MsgPublishPayloadsResponse) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
 	if deterministic {
-		return xxx_messageInfo_MsgExecuteStateChangesResponse.Marshal(b, m, deterministic)
+		return xxx_messageInfo_MsgPublishPayloadsResponse.Marshal(b, m, deterministic)
 	} else {
 		b = b[:cap(b)]
 		n, err := m.MarshalToSizedBuffer(b)
@@ -157,38 +154,44 @@ func (m *MsgExecuteStateChangesResponse) XXX_Marshal(b []byte, deterministic boo
 		return b[:n], nil
 	}
 }
-func (m *MsgExecuteStateChangesResponse) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_MsgExecuteStateChangesResponse.Merge(m, src)
+func (m *MsgPublishPayloadsResponse) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_MsgPublishPayloadsResponse.Merge(m, src)
 }
-func (m *MsgExecuteStateChangesResponse) XXX_Size() int {
+func (m *MsgPublishPayloadsResponse) XXX_Size() int {
 	return m.Size()
 }
-func (m *MsgExecuteStateChangesResponse) XXX_DiscardUnknown() {
-	xxx_messageInfo_MsgExecuteStateChangesResponse.DiscardUnknown(m)
+func (m *MsgPublishPayloadsResponse) XXX_DiscardUnknown() {
+	xxx_messageInfo_MsgPublishPayloadsResponse.DiscardUnknown(m)
 }
 
-var xxx_messageInfo_MsgExecuteStateChangesResponse proto.InternalMessageInfo
+var xxx_messageInfo_MsgPublishPayloadsResponse proto.InternalMessageInfo
 
-// Only verify a ZK proof - request type
-type MsgVerifyProof struct {
-	// Contract the proof is being sent to
-	ContractName string `protobuf:"bytes,1,opt,name=contract_name,json=contractName,proto3" json:"contract_name,omitempty"`
-	// Proof of the transaction
-	Proof []byte `protobuf:"bytes,2,opt,name=proof,proto3" json:"proof,omitempty"`
+// Prove a previously published payload
+type MsgPublishPayloadProof struct {
+	// Tx hash of the payload to prove
+	TxHash []byte `protobuf:"bytes,1,opt,name=tx_hash,json=txHash,proto3" json:"tx_hash,omitempty"`
+	// Index of the payload in the tx
+	PayloadIndex uint32 `protobuf:"varint,2,opt,name=payload_index,json=payloadIndex,proto3" json:"payload_index,omitempty"`
+	// Name of target contract
+	ContractName string `protobuf:"bytes,3,opt,name=contract_name,json=contractName,proto3" json:"contract_name,omitempty"`
+	// Hash of the payload
+	PayloadHash []byte `protobuf:"bytes,4,opt,name=payload_hash,json=payloadHash,proto3" json:"payload_hash,omitempty"`
+	// Proof of the payload
+	Proof []byte `protobuf:"bytes,5,opt,name=proof,proto3" json:"proof,omitempty"`
 }
 
-func (m *MsgVerifyProof) Reset()         { *m = MsgVerifyProof{} }
-func (m *MsgVerifyProof) String() string { return proto.CompactTextString(m) }
-func (*MsgVerifyProof) ProtoMessage()    {}
-func (*MsgVerifyProof) Descriptor() ([]byte, []int) {
+func (m *MsgPublishPayloadProof) Reset()         { *m = MsgPublishPayloadProof{} }
+func (m *MsgPublishPayloadProof) String() string { return proto.CompactTextString(m) }
+func (*MsgPublishPayloadProof) ProtoMessage()    {}
+func (*MsgPublishPayloadProof) Descriptor() ([]byte, []int) {
 	return fileDescriptor_c6a34850ce07fe46, []int{3}
 }
-func (m *MsgVerifyProof) XXX_Unmarshal(b []byte) error {
+func (m *MsgPublishPayloadProof) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
 }
-func (m *MsgVerifyProof) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+func (m *MsgPublishPayloadProof) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
 	if deterministic {
-		return xxx_messageInfo_MsgVerifyProof.Marshal(b, m, deterministic)
+		return xxx_messageInfo_MsgPublishPayloadProof.Marshal(b, m, deterministic)
 	} else {
 		b = b[:cap(b)]
 		n, err := m.MarshalToSizedBuffer(b)
@@ -198,26 +201,47 @@ func (m *MsgVerifyProof) XXX_Marshal(b []byte, deterministic bool) ([]byte, erro
 		return b[:n], nil
 	}
 }
-func (m *MsgVerifyProof) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_MsgVerifyProof.Merge(m, src)
+func (m *MsgPublishPayloadProof) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_MsgPublishPayloadProof.Merge(m, src)
 }
-func (m *MsgVerifyProof) XXX_Size() int {
+func (m *MsgPublishPayloadProof) XXX_Size() int {
 	return m.Size()
 }
-func (m *MsgVerifyProof) XXX_DiscardUnknown() {
-	xxx_messageInfo_MsgVerifyProof.DiscardUnknown(m)
+func (m *MsgPublishPayloadProof) XXX_DiscardUnknown() {
+	xxx_messageInfo_MsgPublishPayloadProof.DiscardUnknown(m)
 }
 
-var xxx_messageInfo_MsgVerifyProof proto.InternalMessageInfo
+var xxx_messageInfo_MsgPublishPayloadProof proto.InternalMessageInfo
 
-func (m *MsgVerifyProof) GetContractName() string {
+func (m *MsgPublishPayloadProof) GetTxHash() []byte {
+	if m != nil {
+		return m.TxHash
+	}
+	return nil
+}
+
+func (m *MsgPublishPayloadProof) GetPayloadIndex() uint32 {
+	if m != nil {
+		return m.PayloadIndex
+	}
+	return 0
+}
+
+func (m *MsgPublishPayloadProof) GetContractName() string {
 	if m != nil {
 		return m.ContractName
 	}
 	return ""
 }
 
-func (m *MsgVerifyProof) GetProof() []byte {
+func (m *MsgPublishPayloadProof) GetPayloadHash() []byte {
+	if m != nil {
+		return m.PayloadHash
+	}
+	return nil
+}
+
+func (m *MsgPublishPayloadProof) GetProof() []byte {
 	if m != nil {
 		return m.Proof
 	}
@@ -225,21 +249,21 @@ func (m *MsgVerifyProof) GetProof() []byte {
 }
 
 // No response
-type MsgVerifyProofResponse struct {
+type MsgPublishPayloadProofResponse struct {
 }
 
-func (m *MsgVerifyProofResponse) Reset()         { *m = MsgVerifyProofResponse{} }
-func (m *MsgVerifyProofResponse) String() string { return proto.CompactTextString(m) }
-func (*MsgVerifyProofResponse) ProtoMessage()    {}
-func (*MsgVerifyProofResponse) Descriptor() ([]byte, []int) {
+func (m *MsgPublishPayloadProofResponse) Reset()         { *m = MsgPublishPayloadProofResponse{} }
+func (m *MsgPublishPayloadProofResponse) String() string { return proto.CompactTextString(m) }
+func (*MsgPublishPayloadProofResponse) ProtoMessage()    {}
+func (*MsgPublishPayloadProofResponse) Descriptor() ([]byte, []int) {
 	return fileDescriptor_c6a34850ce07fe46, []int{4}
 }
-func (m *MsgVerifyProofResponse) XXX_Unmarshal(b []byte) error {
+func (m *MsgPublishPayloadProofResponse) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
 }
-func (m *MsgVerifyProofResponse) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+func (m *MsgPublishPayloadProofResponse) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
 	if deterministic {
-		return xxx_messageInfo_MsgVerifyProofResponse.Marshal(b, m, deterministic)
+		return xxx_messageInfo_MsgPublishPayloadProofResponse.Marshal(b, m, deterministic)
 	} else {
 		b = b[:cap(b)]
 		n, err := m.MarshalToSizedBuffer(b)
@@ -249,17 +273,17 @@ func (m *MsgVerifyProofResponse) XXX_Marshal(b []byte, deterministic bool) ([]by
 		return b[:n], nil
 	}
 }
-func (m *MsgVerifyProofResponse) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_MsgVerifyProofResponse.Merge(m, src)
+func (m *MsgPublishPayloadProofResponse) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_MsgPublishPayloadProofResponse.Merge(m, src)
 }
-func (m *MsgVerifyProofResponse) XXX_Size() int {
+func (m *MsgPublishPayloadProofResponse) XXX_Size() int {
 	return m.Size()
 }
-func (m *MsgVerifyProofResponse) XXX_DiscardUnknown() {
-	xxx_messageInfo_MsgVerifyProofResponse.DiscardUnknown(m)
+func (m *MsgPublishPayloadProofResponse) XXX_DiscardUnknown() {
+	xxx_messageInfo_MsgPublishPayloadProofResponse.DiscardUnknown(m)
 }
 
-var xxx_messageInfo_MsgVerifyProofResponse proto.InternalMessageInfo
+var xxx_messageInfo_MsgPublishPayloadProofResponse proto.InternalMessageInfo
 
 // Register a contract - request type
 type MsgRegisterContract struct {
@@ -380,156 +404,52 @@ func (m *MsgRegisterContractResponse) XXX_DiscardUnknown() {
 
 var xxx_messageInfo_MsgRegisterContractResponse proto.InternalMessageInfo
 
-// MsgUpdateParams is the Msg/UpdateParams request type.
-type MsgUpdateParams struct {
-	// authority is the address that controls the module
-	// NOTE: Defaults to the governance module unless overwritten.
-	Authority string `protobuf:"bytes,1,opt,name=authority,proto3" json:"authority,omitempty"`
-	// params defines the module parameters to update.
-	// NOTE: All parameters must be supplied.
-	Params Params `protobuf:"bytes,2,opt,name=params,proto3" json:"params"`
-}
-
-func (m *MsgUpdateParams) Reset()         { *m = MsgUpdateParams{} }
-func (m *MsgUpdateParams) String() string { return proto.CompactTextString(m) }
-func (*MsgUpdateParams) ProtoMessage()    {}
-func (*MsgUpdateParams) Descriptor() ([]byte, []int) {
-	return fileDescriptor_c6a34850ce07fe46, []int{7}
-}
-func (m *MsgUpdateParams) XXX_Unmarshal(b []byte) error {
-	return m.Unmarshal(b)
-}
-func (m *MsgUpdateParams) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
-	if deterministic {
-		return xxx_messageInfo_MsgUpdateParams.Marshal(b, m, deterministic)
-	} else {
-		b = b[:cap(b)]
-		n, err := m.MarshalToSizedBuffer(b)
-		if err != nil {
-			return nil, err
-		}
-		return b[:n], nil
-	}
-}
-func (m *MsgUpdateParams) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_MsgUpdateParams.Merge(m, src)
-}
-func (m *MsgUpdateParams) XXX_Size() int {
-	return m.Size()
-}
-func (m *MsgUpdateParams) XXX_DiscardUnknown() {
-	xxx_messageInfo_MsgUpdateParams.DiscardUnknown(m)
-}
-
-var xxx_messageInfo_MsgUpdateParams proto.InternalMessageInfo
-
-func (m *MsgUpdateParams) GetAuthority() string {
-	if m != nil {
-		return m.Authority
-	}
-	return ""
-}
-
-func (m *MsgUpdateParams) GetParams() Params {
-	if m != nil {
-		return m.Params
-	}
-	return Params{}
-}
-
-// MsgUpdateParamsResponse defines the response structure for executing a
-// MsgUpdateParams message.
-type MsgUpdateParamsResponse struct {
-}
-
-func (m *MsgUpdateParamsResponse) Reset()         { *m = MsgUpdateParamsResponse{} }
-func (m *MsgUpdateParamsResponse) String() string { return proto.CompactTextString(m) }
-func (*MsgUpdateParamsResponse) ProtoMessage()    {}
-func (*MsgUpdateParamsResponse) Descriptor() ([]byte, []int) {
-	return fileDescriptor_c6a34850ce07fe46, []int{8}
-}
-func (m *MsgUpdateParamsResponse) XXX_Unmarshal(b []byte) error {
-	return m.Unmarshal(b)
-}
-func (m *MsgUpdateParamsResponse) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
-	if deterministic {
-		return xxx_messageInfo_MsgUpdateParamsResponse.Marshal(b, m, deterministic)
-	} else {
-		b = b[:cap(b)]
-		n, err := m.MarshalToSizedBuffer(b)
-		if err != nil {
-			return nil, err
-		}
-		return b[:n], nil
-	}
-}
-func (m *MsgUpdateParamsResponse) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_MsgUpdateParamsResponse.Merge(m, src)
-}
-func (m *MsgUpdateParamsResponse) XXX_Size() int {
-	return m.Size()
-}
-func (m *MsgUpdateParamsResponse) XXX_DiscardUnknown() {
-	xxx_messageInfo_MsgUpdateParamsResponse.DiscardUnknown(m)
-}
-
-var xxx_messageInfo_MsgUpdateParamsResponse proto.InternalMessageInfo
-
 func init() {
-	proto.RegisterType((*StateChange)(nil), "hyle.zktx.v1.StateChange")
-	proto.RegisterType((*MsgExecuteStateChanges)(nil), "hyle.zktx.v1.MsgExecuteStateChanges")
-	proto.RegisterType((*MsgExecuteStateChangesResponse)(nil), "hyle.zktx.v1.MsgExecuteStateChangesResponse")
-	proto.RegisterType((*MsgVerifyProof)(nil), "hyle.zktx.v1.MsgVerifyProof")
-	proto.RegisterType((*MsgVerifyProofResponse)(nil), "hyle.zktx.v1.MsgVerifyProofResponse")
+	proto.RegisterType((*Payload)(nil), "hyle.zktx.v1.Payload")
+	proto.RegisterType((*MsgPublishPayloads)(nil), "hyle.zktx.v1.MsgPublishPayloads")
+	proto.RegisterType((*MsgPublishPayloadsResponse)(nil), "hyle.zktx.v1.MsgPublishPayloadsResponse")
+	proto.RegisterType((*MsgPublishPayloadProof)(nil), "hyle.zktx.v1.MsgPublishPayloadProof")
+	proto.RegisterType((*MsgPublishPayloadProofResponse)(nil), "hyle.zktx.v1.MsgPublishPayloadProofResponse")
 	proto.RegisterType((*MsgRegisterContract)(nil), "hyle.zktx.v1.MsgRegisterContract")
 	proto.RegisterType((*MsgRegisterContractResponse)(nil), "hyle.zktx.v1.MsgRegisterContractResponse")
-	proto.RegisterType((*MsgUpdateParams)(nil), "hyle.zktx.v1.MsgUpdateParams")
-	proto.RegisterType((*MsgUpdateParamsResponse)(nil), "hyle.zktx.v1.MsgUpdateParamsResponse")
 }
 
 func init() { proto.RegisterFile("hyle/zktx/v1/tx.proto", fileDescriptor_c6a34850ce07fe46) }
 
 var fileDescriptor_c6a34850ce07fe46 = []byte{
-	// 612 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xa4, 0x54, 0x4d, 0x6f, 0xd3, 0x40,
-	0x10, 0x8d, 0x09, 0xad, 0xc8, 0x24, 0xe5, 0xc3, 0x0d, 0xd4, 0x31, 0xd4, 0x4d, 0x4d, 0x91, 0x4a,
-	0xd5, 0xda, 0x6a, 0x91, 0x40, 0x70, 0x40, 0xa2, 0x05, 0x09, 0x84, 0x82, 0x8a, 0x0b, 0x08, 0x71,
-	0x09, 0xae, 0xbd, 0xdd, 0x58, 0x60, 0xaf, 0xb5, 0xbb, 0x0d, 0x09, 0x27, 0xd4, 0x23, 0x27, 0x7e,
-	0x06, 0x27, 0x94, 0x03, 0x3f, 0xa2, 0xc7, 0x8a, 0x13, 0x27, 0x84, 0x92, 0x43, 0xfe, 0x06, 0xf2,
-	0xda, 0x49, 0x9c, 0x38, 0x2a, 0x48, 0x5c, 0xa2, 0x9d, 0x37, 0x6f, 0xde, 0xcc, 0xf3, 0x8c, 0x02,
-	0x97, 0x1b, 0xed, 0xf7, 0xc8, 0xfc, 0xf8, 0x8e, 0xb7, 0xcc, 0xe6, 0xa6, 0xc9, 0x5b, 0x46, 0x48,
-	0x09, 0x27, 0x72, 0x29, 0x82, 0x8d, 0x08, 0x36, 0x9a, 0x9b, 0xea, 0x82, 0x43, 0x98, 0x4f, 0x98,
-	0xe9, 0x33, 0x1c, 0xb1, 0x7c, 0x86, 0x63, 0x9a, 0x5a, 0xc6, 0x04, 0x13, 0xf1, 0x34, 0xa3, 0x57,
-	0x82, 0x5e, 0xb2, 0x7d, 0x2f, 0x20, 0xa6, 0xf8, 0x4d, 0x20, 0x65, 0xbc, 0x4d, 0x3b, 0x44, 0x2c,
-	0xc9, 0x54, 0x62, 0xed, 0x7a, 0xac, 0x12, 0x07, 0x71, 0x4a, 0x7f, 0x0c, 0xc5, 0x3d, 0x6e, 0x73,
-	0xb4, 0xd3, 0xb0, 0x03, 0x8c, 0xe4, 0xeb, 0x30, 0xe7, 0x90, 0x80, 0x53, 0xdb, 0xe1, 0xf5, 0xc0,
-	0xf6, 0x91, 0x22, 0x55, 0xa5, 0xd5, 0x82, 0x55, 0x1a, 0x80, 0xcf, 0x6c, 0x1f, 0xc9, 0x65, 0x98,
-	0x09, 0x29, 0x21, 0x07, 0xca, 0x99, 0xaa, 0xb4, 0x5a, 0xb2, 0xe2, 0x40, 0x7f, 0x0d, 0x57, 0x6a,
-	0x0c, 0x3f, 0x6a, 0x21, 0xe7, 0x90, 0xa3, 0x94, 0x26, 0x93, 0xef, 0xc3, 0x1c, 0x8b, 0xe2, 0xba,
-	0x13, 0x03, 0x8a, 0x54, 0xcd, 0xaf, 0x16, 0xb7, 0x2a, 0x46, 0xfa, 0x03, 0x18, 0xa9, 0x12, 0xab,
-	0xc4, 0x52, 0xf5, 0x7a, 0x15, 0xb4, 0xe9, 0xca, 0x16, 0x62, 0x21, 0x09, 0x18, 0xd2, 0x9f, 0xc2,
-	0xf9, 0x1a, 0xc3, 0xaf, 0x10, 0xf5, 0x0e, 0xda, 0xbb, 0xd1, 0x34, 0xff, 0x63, 0x44, 0x11, 0x46,
-	0x52, 0x62, 0xc3, 0x36, 0xdf, 0x24, 0x98, 0xaf, 0x31, 0x6c, 0x21, 0xec, 0x31, 0x8e, 0xe8, 0x4e,
-	0xa2, 0x15, 0xe9, 0x90, 0x0f, 0x01, 0xa2, 0x49, 0x93, 0x38, 0x90, 0x55, 0x38, 0xd7, 0x8c, 0x44,
-	0x3c, 0x44, 0x45, 0x83, 0x82, 0x35, 0x8c, 0xe5, 0x45, 0x80, 0x90, 0x12, 0x4c, 0x6d, 0xbf, 0xee,
-	0xb9, 0x4a, 0x5e, 0xb4, 0x2f, 0x24, 0xc8, 0x13, 0x57, 0x5e, 0x86, 0xf8, 0x0b, 0xd4, 0x5d, 0x0f,
-	0x23, 0xc6, 0x95, 0xb3, 0x82, 0x50, 0x14, 0xd8, 0x43, 0x01, 0x65, 0x0d, 0xce, 0x64, 0x0d, 0xea,
-	0x8b, 0x70, 0x75, 0xca, 0xbc, 0x43, 0x3f, 0x1d, 0x09, 0x2e, 0xd4, 0x18, 0x7e, 0x19, 0xba, 0x36,
-	0x47, 0xbb, 0x36, 0xb5, 0x7d, 0x26, 0xdf, 0x86, 0x82, 0x7d, 0xc8, 0x1b, 0x84, 0x7a, 0xbc, 0x1d,
-	0xfb, 0xd9, 0x56, 0x7e, 0x7c, 0xdf, 0x28, 0x27, 0x57, 0xf3, 0xc0, 0x75, 0x29, 0x62, 0x6c, 0x8f,
-	0x53, 0x2f, 0xc0, 0xd6, 0x88, 0x2a, 0xdf, 0x81, 0xd9, 0x50, 0x28, 0x08, 0xaf, 0xc5, 0xad, 0xf2,
-	0xf8, 0x76, 0x63, 0xf5, 0xed, 0xc2, 0xf1, 0xaf, 0xa5, 0xdc, 0xd7, 0x7e, 0x67, 0x4d, 0xb2, 0x12,
-	0xfa, 0xbd, 0xf5, 0xa3, 0x7e, 0x67, 0x6d, 0x24, 0xf4, 0xb9, 0xdf, 0x59, 0xab, 0x8c, 0x2e, 0x79,
-	0x62, 0x3c, 0xbd, 0x02, 0x0b, 0x13, 0xd0, 0xc0, 0xcd, 0xd6, 0x51, 0x1e, 0xf2, 0x35, 0x86, 0x65,
-	0x0f, 0xe6, 0xa7, 0x5d, 0xe1, 0xca, 0xf8, 0x40, 0xd3, 0x2f, 0x4a, 0x5d, 0xff, 0x17, 0xd6, 0xa0,
-	0xa5, 0xfc, 0x1c, 0x8a, 0xe9, 0xa3, 0xbb, 0x96, 0x29, 0x4e, 0x65, 0xd5, 0x95, 0xd3, 0xb2, 0x43,
-	0xc9, 0xb7, 0x70, 0x31, 0x73, 0x5f, 0xcb, 0x99, 0xca, 0x49, 0x8a, 0x7a, 0xf3, 0xaf, 0x94, 0x61,
-	0x87, 0x17, 0x50, 0x1a, 0xdb, 0xf8, 0x62, 0xa6, 0x34, 0x9d, 0x56, 0x6f, 0x9c, 0x9a, 0x1e, 0xa8,
-	0xaa, 0x33, 0x9f, 0xa2, 0xad, 0x6e, 0xdf, 0x3d, 0xee, 0x6a, 0xd2, 0x49, 0x57, 0x93, 0x7e, 0x77,
-	0x35, 0xe9, 0x4b, 0x4f, 0xcb, 0x9d, 0xf4, 0xb4, 0xdc, 0xcf, 0x9e, 0x96, 0x7b, 0xb3, 0x84, 0x3d,
-	0xde, 0x38, 0xdc, 0x37, 0x1c, 0xe2, 0x9b, 0x91, 0xe2, 0x06, 0xa1, 0x58, 0x3c, 0xcc, 0x96, 0x58,
-	0xf5, 0xfe, 0xac, 0xf8, 0x47, 0xba, 0xf5, 0x27, 0x00, 0x00, 0xff, 0xff, 0x08, 0x60, 0xe4, 0x14,
-	0x2f, 0x05, 0x00, 0x00,
+	// 498 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x8c, 0x53, 0xcf, 0x6e, 0xd3, 0x30,
+	0x1c, 0xae, 0xd7, 0x75, 0x5b, 0x7f, 0xcb, 0x04, 0xf2, 0x18, 0xab, 0x02, 0x0b, 0x5d, 0xe0, 0x50,
+	0x10, 0x24, 0xea, 0x38, 0x71, 0x1d, 0x48, 0xb0, 0x43, 0x51, 0x95, 0x23, 0x12, 0x0a, 0x6e, 0xe3,
+	0x39, 0x11, 0x4d, 0x1c, 0xd9, 0x5e, 0xc9, 0x38, 0xf1, 0x08, 0x3c, 0x09, 0xe2, 0xc0, 0x81, 0x47,
+	0xe0, 0xb8, 0x23, 0x47, 0xd4, 0x1e, 0x78, 0x0d, 0x14, 0xd7, 0xa9, 0x60, 0xa9, 0x54, 0x6e, 0xf6,
+	0x97, 0x2f, 0xdf, 0x1f, 0xfb, 0x67, 0x38, 0x88, 0x2f, 0x27, 0xd4, 0xff, 0xf8, 0x5e, 0x15, 0xfe,
+	0xb4, 0xef, 0xab, 0xc2, 0xcb, 0x05, 0x57, 0x1c, 0x5b, 0x25, 0xec, 0x95, 0xb0, 0x37, 0xed, 0xdb,
+	0x87, 0x63, 0x2e, 0x53, 0x2e, 0xfd, 0x54, 0xb2, 0x92, 0x95, 0x4a, 0xb6, 0xa0, 0xb9, 0xa7, 0xb0,
+	0x3d, 0x24, 0x97, 0x13, 0x4e, 0x22, 0x7c, 0x1f, 0xf6, 0xc6, 0x3c, 0x53, 0x82, 0x8c, 0x55, 0x98,
+	0x91, 0x94, 0x76, 0x50, 0x17, 0xf5, 0xda, 0x81, 0x55, 0x81, 0xaf, 0x49, 0x4a, 0x31, 0x86, 0xcd,
+	0x88, 0x28, 0xd2, 0xd9, 0xe8, 0xa2, 0x9e, 0x15, 0xe8, 0xb5, 0xfb, 0x12, 0xf0, 0x40, 0xb2, 0xe1,
+	0xc5, 0x68, 0x92, 0xc8, 0xd8, 0xa8, 0x49, 0xdc, 0x87, 0x9d, 0xdc, 0xac, 0x3b, 0xa8, 0xdb, 0xec,
+	0xed, 0x9e, 0x1c, 0x78, 0x7f, 0x67, 0xf2, 0x0c, 0x33, 0x58, 0xd2, 0xdc, 0xbb, 0x60, 0xd7, 0x85,
+	0x02, 0x2a, 0x73, 0x9e, 0x49, 0xea, 0x7e, 0x43, 0x70, 0xbb, 0xf6, 0x79, 0x28, 0x38, 0x3f, 0xc7,
+	0x87, 0xb0, 0xad, 0x8a, 0x30, 0x26, 0x32, 0xd6, 0xa1, 0xad, 0x60, 0x4b, 0x15, 0xaf, 0x88, 0x8c,
+	0xcb, 0x4e, 0x46, 0x3d, 0x4c, 0xb2, 0x88, 0x16, 0x3a, 0xf7, 0x5e, 0x60, 0x19, 0xf0, 0xac, 0xc4,
+	0xea, 0xc5, 0x9b, 0x2b, 0x8a, 0x1f, 0x43, 0xf5, 0xd3, 0xc2, 0x67, 0x53, 0xfb, 0xec, 0x1a, 0x4c,
+	0x9b, 0xdd, 0x82, 0x56, 0x5e, 0xc6, 0xe9, 0xb4, 0xf4, 0xb7, 0xc5, 0xc6, 0xed, 0x82, 0xb3, 0x3a,
+	0xf5, 0xb2, 0xd8, 0x17, 0x04, 0xfb, 0x03, 0xc9, 0x02, 0xca, 0x12, 0xa9, 0xa8, 0x78, 0x6e, 0x6c,
+	0x4b, 0x3d, 0xfe, 0x21, 0xa3, 0xc2, 0x5c, 0xc4, 0x62, 0x83, 0x6d, 0xd8, 0x99, 0x52, 0x91, 0x9c,
+	0x27, 0x54, 0xe8, 0x36, 0xed, 0x60, 0xb9, 0xc7, 0x47, 0x00, 0xb9, 0xe0, 0x4c, 0x90, 0x34, 0x4c,
+	0x22, 0x5d, 0xc3, 0x0a, 0xda, 0x06, 0x39, 0x8b, 0xca, 0x0e, 0x52, 0x11, 0x45, 0xc3, 0x28, 0x61,
+	0x54, 0xaa, 0xaa, 0x83, 0xc6, 0x5e, 0x68, 0xa8, 0x7e, 0x16, 0xad, 0xfa, 0x59, 0xb8, 0x47, 0x70,
+	0x67, 0x45, 0xde, 0xaa, 0xcf, 0xc9, 0xf7, 0x0d, 0x68, 0x0e, 0x24, 0xc3, 0x6f, 0xe1, 0xc6, 0xf5,
+	0xa1, 0xe8, 0xfe, 0x3b, 0x02, 0xf5, 0xdb, 0xb6, 0x7b, 0xeb, 0x18, 0x95, 0x0d, 0x4e, 0x60, 0x7f,
+	0xd5, 0x2c, 0x3c, 0x58, 0x23, 0xa0, 0x59, 0xf6, 0xe3, 0xff, 0x61, 0x2d, 0xad, 0xde, 0xc1, 0xcd,
+	0xda, 0xed, 0x1c, 0xd7, 0x14, 0xae, 0x53, 0xec, 0x87, 0x6b, 0x29, 0x95, 0x83, 0xdd, 0xfa, 0xf4,
+	0xfb, 0xeb, 0x23, 0x74, 0xfa, 0xec, 0xc7, 0xcc, 0x41, 0x57, 0x33, 0x07, 0xfd, 0x9a, 0x39, 0xe8,
+	0xf3, 0xdc, 0x69, 0x5c, 0xcd, 0x9d, 0xc6, 0xcf, 0xb9, 0xd3, 0x78, 0x73, 0x8f, 0x25, 0x2a, 0xbe,
+	0x18, 0x79, 0x63, 0x9e, 0xfa, 0xa5, 0xea, 0x13, 0x2e, 0x98, 0x5e, 0xf8, 0x85, 0x7e, 0xfc, 0xa3,
+	0x2d, 0xfd, 0xa0, 0x9f, 0xfe, 0x09, 0x00, 0x00, 0xff, 0xff, 0x9d, 0x4a, 0x76, 0xec, 0x10, 0x04,
+	0x00, 0x00,
 }
 
 // Reference imports to suppress errors if they are not otherwise used.
@@ -545,13 +465,11 @@ const _ = grpc.SupportPackageIsVersion4
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://godoc.org/google.golang.org/grpc#ClientConn.NewStream.
 type MsgClient interface {
 	// execute a zk-proven state change
-	ExecuteStateChanges(ctx context.Context, in *MsgExecuteStateChanges, opts ...grpc.CallOption) (*MsgExecuteStateChangesResponse, error)
-	// Only verify a ZK proof
-	VerifyProof(ctx context.Context, in *MsgVerifyProof, opts ...grpc.CallOption) (*MsgVerifyProofResponse, error)
+	PublishPayloads(ctx context.Context, in *MsgPublishPayloads, opts ...grpc.CallOption) (*MsgPublishPayloadsResponse, error)
+	// Verify a payload
+	PublishPayloadProof(ctx context.Context, in *MsgPublishPayloadProof, opts ...grpc.CallOption) (*MsgPublishPayloadProofResponse, error)
 	// RegisterContract registers a contract
 	RegisterContract(ctx context.Context, in *MsgRegisterContract, opts ...grpc.CallOption) (*MsgRegisterContractResponse, error)
-	// UpdateParams updates the module parameters.
-	UpdateParams(ctx context.Context, in *MsgUpdateParams, opts ...grpc.CallOption) (*MsgUpdateParamsResponse, error)
 }
 
 type msgClient struct {
@@ -562,18 +480,18 @@ func NewMsgClient(cc grpc1.ClientConn) MsgClient {
 	return &msgClient{cc}
 }
 
-func (c *msgClient) ExecuteStateChanges(ctx context.Context, in *MsgExecuteStateChanges, opts ...grpc.CallOption) (*MsgExecuteStateChangesResponse, error) {
-	out := new(MsgExecuteStateChangesResponse)
-	err := c.cc.Invoke(ctx, "/hyle.zktx.v1.Msg/ExecuteStateChanges", in, out, opts...)
+func (c *msgClient) PublishPayloads(ctx context.Context, in *MsgPublishPayloads, opts ...grpc.CallOption) (*MsgPublishPayloadsResponse, error) {
+	out := new(MsgPublishPayloadsResponse)
+	err := c.cc.Invoke(ctx, "/hyle.zktx.v1.Msg/PublishPayloads", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *msgClient) VerifyProof(ctx context.Context, in *MsgVerifyProof, opts ...grpc.CallOption) (*MsgVerifyProofResponse, error) {
-	out := new(MsgVerifyProofResponse)
-	err := c.cc.Invoke(ctx, "/hyle.zktx.v1.Msg/VerifyProof", in, out, opts...)
+func (c *msgClient) PublishPayloadProof(ctx context.Context, in *MsgPublishPayloadProof, opts ...grpc.CallOption) (*MsgPublishPayloadProofResponse, error) {
+	out := new(MsgPublishPayloadProofResponse)
+	err := c.cc.Invoke(ctx, "/hyle.zktx.v1.Msg/PublishPayloadProof", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -589,80 +507,66 @@ func (c *msgClient) RegisterContract(ctx context.Context, in *MsgRegisterContrac
 	return out, nil
 }
 
-func (c *msgClient) UpdateParams(ctx context.Context, in *MsgUpdateParams, opts ...grpc.CallOption) (*MsgUpdateParamsResponse, error) {
-	out := new(MsgUpdateParamsResponse)
-	err := c.cc.Invoke(ctx, "/hyle.zktx.v1.Msg/UpdateParams", in, out, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
 // MsgServer is the server API for Msg service.
 type MsgServer interface {
 	// execute a zk-proven state change
-	ExecuteStateChanges(context.Context, *MsgExecuteStateChanges) (*MsgExecuteStateChangesResponse, error)
-	// Only verify a ZK proof
-	VerifyProof(context.Context, *MsgVerifyProof) (*MsgVerifyProofResponse, error)
+	PublishPayloads(context.Context, *MsgPublishPayloads) (*MsgPublishPayloadsResponse, error)
+	// Verify a payload
+	PublishPayloadProof(context.Context, *MsgPublishPayloadProof) (*MsgPublishPayloadProofResponse, error)
 	// RegisterContract registers a contract
 	RegisterContract(context.Context, *MsgRegisterContract) (*MsgRegisterContractResponse, error)
-	// UpdateParams updates the module parameters.
-	UpdateParams(context.Context, *MsgUpdateParams) (*MsgUpdateParamsResponse, error)
 }
 
 // UnimplementedMsgServer can be embedded to have forward compatible implementations.
 type UnimplementedMsgServer struct {
 }
 
-func (*UnimplementedMsgServer) ExecuteStateChanges(ctx context.Context, req *MsgExecuteStateChanges) (*MsgExecuteStateChangesResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method ExecuteStateChanges not implemented")
+func (*UnimplementedMsgServer) PublishPayloads(ctx context.Context, req *MsgPublishPayloads) (*MsgPublishPayloadsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method PublishPayloads not implemented")
 }
-func (*UnimplementedMsgServer) VerifyProof(ctx context.Context, req *MsgVerifyProof) (*MsgVerifyProofResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method VerifyProof not implemented")
+func (*UnimplementedMsgServer) PublishPayloadProof(ctx context.Context, req *MsgPublishPayloadProof) (*MsgPublishPayloadProofResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method PublishPayloadProof not implemented")
 }
 func (*UnimplementedMsgServer) RegisterContract(ctx context.Context, req *MsgRegisterContract) (*MsgRegisterContractResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method RegisterContract not implemented")
-}
-func (*UnimplementedMsgServer) UpdateParams(ctx context.Context, req *MsgUpdateParams) (*MsgUpdateParamsResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method UpdateParams not implemented")
 }
 
 func RegisterMsgServer(s grpc1.Server, srv MsgServer) {
 	s.RegisterService(&_Msg_serviceDesc, srv)
 }
 
-func _Msg_ExecuteStateChanges_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(MsgExecuteStateChanges)
+func _Msg_PublishPayloads_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MsgPublishPayloads)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(MsgServer).ExecuteStateChanges(ctx, in)
+		return srv.(MsgServer).PublishPayloads(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: "/hyle.zktx.v1.Msg/ExecuteStateChanges",
+		FullMethod: "/hyle.zktx.v1.Msg/PublishPayloads",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(MsgServer).ExecuteStateChanges(ctx, req.(*MsgExecuteStateChanges))
+		return srv.(MsgServer).PublishPayloads(ctx, req.(*MsgPublishPayloads))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _Msg_VerifyProof_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(MsgVerifyProof)
+func _Msg_PublishPayloadProof_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MsgPublishPayloadProof)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(MsgServer).VerifyProof(ctx, in)
+		return srv.(MsgServer).PublishPayloadProof(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: "/hyle.zktx.v1.Msg/VerifyProof",
+		FullMethod: "/hyle.zktx.v1.Msg/PublishPayloadProof",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(MsgServer).VerifyProof(ctx, req.(*MsgVerifyProof))
+		return srv.(MsgServer).PublishPayloadProof(ctx, req.(*MsgPublishPayloadProof))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -685,50 +589,28 @@ func _Msg_RegisterContract_Handler(srv interface{}, ctx context.Context, dec fun
 	return interceptor(ctx, in, info, handler)
 }
 
-func _Msg_UpdateParams_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(MsgUpdateParams)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(MsgServer).UpdateParams(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: "/hyle.zktx.v1.Msg/UpdateParams",
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(MsgServer).UpdateParams(ctx, req.(*MsgUpdateParams))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 var _Msg_serviceDesc = grpc.ServiceDesc{
 	ServiceName: "hyle.zktx.v1.Msg",
 	HandlerType: (*MsgServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
-			MethodName: "ExecuteStateChanges",
-			Handler:    _Msg_ExecuteStateChanges_Handler,
+			MethodName: "PublishPayloads",
+			Handler:    _Msg_PublishPayloads_Handler,
 		},
 		{
-			MethodName: "VerifyProof",
-			Handler:    _Msg_VerifyProof_Handler,
+			MethodName: "PublishPayloadProof",
+			Handler:    _Msg_PublishPayloadProof_Handler,
 		},
 		{
 			MethodName: "RegisterContract",
 			Handler:    _Msg_RegisterContract_Handler,
-		},
-		{
-			MethodName: "UpdateParams",
-			Handler:    _Msg_UpdateParams_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
 	Metadata: "hyle/zktx/v1/tx.proto",
 }
 
-func (m *StateChange) Marshal() (dAtA []byte, err error) {
+func (m *Payload) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
 	dAtA = make([]byte, size)
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
@@ -738,20 +620,20 @@ func (m *StateChange) Marshal() (dAtA []byte, err error) {
 	return dAtA[:n], nil
 }
 
-func (m *StateChange) MarshalTo(dAtA []byte) (int, error) {
+func (m *Payload) MarshalTo(dAtA []byte) (int, error) {
 	size := m.Size()
 	return m.MarshalToSizedBuffer(dAtA[:size])
 }
 
-func (m *StateChange) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+func (m *Payload) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	i := len(dAtA)
 	_ = i
 	var l int
 	_ = l
-	if len(m.Proof) > 0 {
-		i -= len(m.Proof)
-		copy(dAtA[i:], m.Proof)
-		i = encodeVarintTx(dAtA, i, uint64(len(m.Proof)))
+	if len(m.Data) > 0 {
+		i -= len(m.Data)
+		copy(dAtA[i:], m.Data)
+		i = encodeVarintTx(dAtA, i, uint64(len(m.Data)))
 		i--
 		dAtA[i] = 0x12
 	}
@@ -765,7 +647,7 @@ func (m *StateChange) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	return len(dAtA) - i, nil
 }
 
-func (m *MsgExecuteStateChanges) Marshal() (dAtA []byte, err error) {
+func (m *MsgPublishPayloads) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
 	dAtA = make([]byte, size)
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
@@ -775,20 +657,20 @@ func (m *MsgExecuteStateChanges) Marshal() (dAtA []byte, err error) {
 	return dAtA[:n], nil
 }
 
-func (m *MsgExecuteStateChanges) MarshalTo(dAtA []byte) (int, error) {
+func (m *MsgPublishPayloads) MarshalTo(dAtA []byte) (int, error) {
 	size := m.Size()
 	return m.MarshalToSizedBuffer(dAtA[:size])
 }
 
-func (m *MsgExecuteStateChanges) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+func (m *MsgPublishPayloads) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	i := len(dAtA)
 	_ = i
 	var l int
 	_ = l
-	if len(m.StateChanges) > 0 {
-		for iNdEx := len(m.StateChanges) - 1; iNdEx >= 0; iNdEx-- {
+	if len(m.Payloads) > 0 {
+		for iNdEx := len(m.Payloads) - 1; iNdEx >= 0; iNdEx-- {
 			{
-				size, err := m.StateChanges[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+				size, err := m.Payloads[iNdEx].MarshalToSizedBuffer(dAtA[:i])
 				if err != nil {
 					return 0, err
 				}
@@ -802,7 +684,7 @@ func (m *MsgExecuteStateChanges) MarshalToSizedBuffer(dAtA []byte) (int, error) 
 	return len(dAtA) - i, nil
 }
 
-func (m *MsgExecuteStateChangesResponse) Marshal() (dAtA []byte, err error) {
+func (m *MsgPublishPayloadsResponse) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
 	dAtA = make([]byte, size)
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
@@ -812,12 +694,12 @@ func (m *MsgExecuteStateChangesResponse) Marshal() (dAtA []byte, err error) {
 	return dAtA[:n], nil
 }
 
-func (m *MsgExecuteStateChangesResponse) MarshalTo(dAtA []byte) (int, error) {
+func (m *MsgPublishPayloadsResponse) MarshalTo(dAtA []byte) (int, error) {
 	size := m.Size()
 	return m.MarshalToSizedBuffer(dAtA[:size])
 }
 
-func (m *MsgExecuteStateChangesResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+func (m *MsgPublishPayloadsResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	i := len(dAtA)
 	_ = i
 	var l int
@@ -825,7 +707,7 @@ func (m *MsgExecuteStateChangesResponse) MarshalToSizedBuffer(dAtA []byte) (int,
 	return len(dAtA) - i, nil
 }
 
-func (m *MsgVerifyProof) Marshal() (dAtA []byte, err error) {
+func (m *MsgPublishPayloadProof) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
 	dAtA = make([]byte, size)
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
@@ -835,12 +717,12 @@ func (m *MsgVerifyProof) Marshal() (dAtA []byte, err error) {
 	return dAtA[:n], nil
 }
 
-func (m *MsgVerifyProof) MarshalTo(dAtA []byte) (int, error) {
+func (m *MsgPublishPayloadProof) MarshalTo(dAtA []byte) (int, error) {
 	size := m.Size()
 	return m.MarshalToSizedBuffer(dAtA[:size])
 }
 
-func (m *MsgVerifyProof) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+func (m *MsgPublishPayloadProof) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	i := len(dAtA)
 	_ = i
 	var l int
@@ -850,19 +732,38 @@ func (m *MsgVerifyProof) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 		copy(dAtA[i:], m.Proof)
 		i = encodeVarintTx(dAtA, i, uint64(len(m.Proof)))
 		i--
-		dAtA[i] = 0x12
+		dAtA[i] = 0x2a
+	}
+	if len(m.PayloadHash) > 0 {
+		i -= len(m.PayloadHash)
+		copy(dAtA[i:], m.PayloadHash)
+		i = encodeVarintTx(dAtA, i, uint64(len(m.PayloadHash)))
+		i--
+		dAtA[i] = 0x22
 	}
 	if len(m.ContractName) > 0 {
 		i -= len(m.ContractName)
 		copy(dAtA[i:], m.ContractName)
 		i = encodeVarintTx(dAtA, i, uint64(len(m.ContractName)))
 		i--
+		dAtA[i] = 0x1a
+	}
+	if m.PayloadIndex != 0 {
+		i = encodeVarintTx(dAtA, i, uint64(m.PayloadIndex))
+		i--
+		dAtA[i] = 0x10
+	}
+	if len(m.TxHash) > 0 {
+		i -= len(m.TxHash)
+		copy(dAtA[i:], m.TxHash)
+		i = encodeVarintTx(dAtA, i, uint64(len(m.TxHash)))
+		i--
 		dAtA[i] = 0xa
 	}
 	return len(dAtA) - i, nil
 }
 
-func (m *MsgVerifyProofResponse) Marshal() (dAtA []byte, err error) {
+func (m *MsgPublishPayloadProofResponse) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
 	dAtA = make([]byte, size)
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
@@ -872,12 +773,12 @@ func (m *MsgVerifyProofResponse) Marshal() (dAtA []byte, err error) {
 	return dAtA[:n], nil
 }
 
-func (m *MsgVerifyProofResponse) MarshalTo(dAtA []byte) (int, error) {
+func (m *MsgPublishPayloadProofResponse) MarshalTo(dAtA []byte) (int, error) {
 	size := m.Size()
 	return m.MarshalToSizedBuffer(dAtA[:size])
 }
 
-func (m *MsgVerifyProofResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+func (m *MsgPublishPayloadProofResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	i := len(dAtA)
 	_ = i
 	var l int
@@ -966,69 +867,6 @@ func (m *MsgRegisterContractResponse) MarshalToSizedBuffer(dAtA []byte) (int, er
 	return len(dAtA) - i, nil
 }
 
-func (m *MsgUpdateParams) Marshal() (dAtA []byte, err error) {
-	size := m.Size()
-	dAtA = make([]byte, size)
-	n, err := m.MarshalToSizedBuffer(dAtA[:size])
-	if err != nil {
-		return nil, err
-	}
-	return dAtA[:n], nil
-}
-
-func (m *MsgUpdateParams) MarshalTo(dAtA []byte) (int, error) {
-	size := m.Size()
-	return m.MarshalToSizedBuffer(dAtA[:size])
-}
-
-func (m *MsgUpdateParams) MarshalToSizedBuffer(dAtA []byte) (int, error) {
-	i := len(dAtA)
-	_ = i
-	var l int
-	_ = l
-	{
-		size, err := m.Params.MarshalToSizedBuffer(dAtA[:i])
-		if err != nil {
-			return 0, err
-		}
-		i -= size
-		i = encodeVarintTx(dAtA, i, uint64(size))
-	}
-	i--
-	dAtA[i] = 0x12
-	if len(m.Authority) > 0 {
-		i -= len(m.Authority)
-		copy(dAtA[i:], m.Authority)
-		i = encodeVarintTx(dAtA, i, uint64(len(m.Authority)))
-		i--
-		dAtA[i] = 0xa
-	}
-	return len(dAtA) - i, nil
-}
-
-func (m *MsgUpdateParamsResponse) Marshal() (dAtA []byte, err error) {
-	size := m.Size()
-	dAtA = make([]byte, size)
-	n, err := m.MarshalToSizedBuffer(dAtA[:size])
-	if err != nil {
-		return nil, err
-	}
-	return dAtA[:n], nil
-}
-
-func (m *MsgUpdateParamsResponse) MarshalTo(dAtA []byte) (int, error) {
-	size := m.Size()
-	return m.MarshalToSizedBuffer(dAtA[:size])
-}
-
-func (m *MsgUpdateParamsResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
-	i := len(dAtA)
-	_ = i
-	var l int
-	_ = l
-	return len(dAtA) - i, nil
-}
-
 func encodeVarintTx(dAtA []byte, offset int, v uint64) int {
 	offset -= sovTx(v)
 	base := offset
@@ -1040,7 +878,7 @@ func encodeVarintTx(dAtA []byte, offset int, v uint64) int {
 	dAtA[offset] = uint8(v)
 	return base
 }
-func (m *StateChange) Size() (n int) {
+func (m *Payload) Size() (n int) {
 	if m == nil {
 		return 0
 	}
@@ -1050,21 +888,21 @@ func (m *StateChange) Size() (n int) {
 	if l > 0 {
 		n += 1 + l + sovTx(uint64(l))
 	}
-	l = len(m.Proof)
+	l = len(m.Data)
 	if l > 0 {
 		n += 1 + l + sovTx(uint64(l))
 	}
 	return n
 }
 
-func (m *MsgExecuteStateChanges) Size() (n int) {
+func (m *MsgPublishPayloads) Size() (n int) {
 	if m == nil {
 		return 0
 	}
 	var l int
 	_ = l
-	if len(m.StateChanges) > 0 {
-		for _, e := range m.StateChanges {
+	if len(m.Payloads) > 0 {
+		for _, e := range m.Payloads {
 			l = e.Size()
 			n += 1 + l + sovTx(uint64(l))
 		}
@@ -1072,7 +910,7 @@ func (m *MsgExecuteStateChanges) Size() (n int) {
 	return n
 }
 
-func (m *MsgExecuteStateChangesResponse) Size() (n int) {
+func (m *MsgPublishPayloadsResponse) Size() (n int) {
 	if m == nil {
 		return 0
 	}
@@ -1081,13 +919,24 @@ func (m *MsgExecuteStateChangesResponse) Size() (n int) {
 	return n
 }
 
-func (m *MsgVerifyProof) Size() (n int) {
+func (m *MsgPublishPayloadProof) Size() (n int) {
 	if m == nil {
 		return 0
 	}
 	var l int
 	_ = l
+	l = len(m.TxHash)
+	if l > 0 {
+		n += 1 + l + sovTx(uint64(l))
+	}
+	if m.PayloadIndex != 0 {
+		n += 1 + sovTx(uint64(m.PayloadIndex))
+	}
 	l = len(m.ContractName)
+	if l > 0 {
+		n += 1 + l + sovTx(uint64(l))
+	}
+	l = len(m.PayloadHash)
 	if l > 0 {
 		n += 1 + l + sovTx(uint64(l))
 	}
@@ -1098,7 +947,7 @@ func (m *MsgVerifyProof) Size() (n int) {
 	return n
 }
 
-func (m *MsgVerifyProofResponse) Size() (n int) {
+func (m *MsgPublishPayloadProofResponse) Size() (n int) {
 	if m == nil {
 		return 0
 	}
@@ -1145,37 +994,13 @@ func (m *MsgRegisterContractResponse) Size() (n int) {
 	return n
 }
 
-func (m *MsgUpdateParams) Size() (n int) {
-	if m == nil {
-		return 0
-	}
-	var l int
-	_ = l
-	l = len(m.Authority)
-	if l > 0 {
-		n += 1 + l + sovTx(uint64(l))
-	}
-	l = m.Params.Size()
-	n += 1 + l + sovTx(uint64(l))
-	return n
-}
-
-func (m *MsgUpdateParamsResponse) Size() (n int) {
-	if m == nil {
-		return 0
-	}
-	var l int
-	_ = l
-	return n
-}
-
 func sovTx(x uint64) (n int) {
 	return (math_bits.Len64(x|1) + 6) / 7
 }
 func sozTx(x uint64) (n int) {
 	return sovTx(uint64((x << 1) ^ uint64((int64(x) >> 63))))
 }
-func (m *StateChange) Unmarshal(dAtA []byte) error {
+func (m *Payload) Unmarshal(dAtA []byte) error {
 	l := len(dAtA)
 	iNdEx := 0
 	for iNdEx < l {
@@ -1198,10 +1023,10 @@ func (m *StateChange) Unmarshal(dAtA []byte) error {
 		fieldNum := int32(wire >> 3)
 		wireType := int(wire & 0x7)
 		if wireType == 4 {
-			return fmt.Errorf("proto: StateChange: wiretype end group for non-group")
+			return fmt.Errorf("proto: Payload: wiretype end group for non-group")
 		}
 		if fieldNum <= 0 {
-			return fmt.Errorf("proto: StateChange: illegal tag %d (wire type %d)", fieldNum, wire)
+			return fmt.Errorf("proto: Payload: illegal tag %d (wire type %d)", fieldNum, wire)
 		}
 		switch fieldNum {
 		case 1:
@@ -1238,7 +1063,7 @@ func (m *StateChange) Unmarshal(dAtA []byte) error {
 			iNdEx = postIndex
 		case 2:
 			if wireType != 2 {
-				return fmt.Errorf("proto: wrong wireType = %d for field Proof", wireType)
+				return fmt.Errorf("proto: wrong wireType = %d for field Data", wireType)
 			}
 			var byteLen int
 			for shift := uint(0); ; shift += 7 {
@@ -1265,9 +1090,9 @@ func (m *StateChange) Unmarshal(dAtA []byte) error {
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
-			m.Proof = append(m.Proof[:0], dAtA[iNdEx:postIndex]...)
-			if m.Proof == nil {
-				m.Proof = []byte{}
+			m.Data = append(m.Data[:0], dAtA[iNdEx:postIndex]...)
+			if m.Data == nil {
+				m.Data = []byte{}
 			}
 			iNdEx = postIndex
 		default:
@@ -1291,7 +1116,7 @@ func (m *StateChange) Unmarshal(dAtA []byte) error {
 	}
 	return nil
 }
-func (m *MsgExecuteStateChanges) Unmarshal(dAtA []byte) error {
+func (m *MsgPublishPayloads) Unmarshal(dAtA []byte) error {
 	l := len(dAtA)
 	iNdEx := 0
 	for iNdEx < l {
@@ -1314,15 +1139,15 @@ func (m *MsgExecuteStateChanges) Unmarshal(dAtA []byte) error {
 		fieldNum := int32(wire >> 3)
 		wireType := int(wire & 0x7)
 		if wireType == 4 {
-			return fmt.Errorf("proto: MsgExecuteStateChanges: wiretype end group for non-group")
+			return fmt.Errorf("proto: MsgPublishPayloads: wiretype end group for non-group")
 		}
 		if fieldNum <= 0 {
-			return fmt.Errorf("proto: MsgExecuteStateChanges: illegal tag %d (wire type %d)", fieldNum, wire)
+			return fmt.Errorf("proto: MsgPublishPayloads: illegal tag %d (wire type %d)", fieldNum, wire)
 		}
 		switch fieldNum {
 		case 1:
 			if wireType != 2 {
-				return fmt.Errorf("proto: wrong wireType = %d for field StateChanges", wireType)
+				return fmt.Errorf("proto: wrong wireType = %d for field Payloads", wireType)
 			}
 			var msglen int
 			for shift := uint(0); ; shift += 7 {
@@ -1349,8 +1174,8 @@ func (m *MsgExecuteStateChanges) Unmarshal(dAtA []byte) error {
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
-			m.StateChanges = append(m.StateChanges, &StateChange{})
-			if err := m.StateChanges[len(m.StateChanges)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+			m.Payloads = append(m.Payloads, &Payload{})
+			if err := m.Payloads[len(m.Payloads)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
 				return err
 			}
 			iNdEx = postIndex
@@ -1375,7 +1200,7 @@ func (m *MsgExecuteStateChanges) Unmarshal(dAtA []byte) error {
 	}
 	return nil
 }
-func (m *MsgExecuteStateChangesResponse) Unmarshal(dAtA []byte) error {
+func (m *MsgPublishPayloadsResponse) Unmarshal(dAtA []byte) error {
 	l := len(dAtA)
 	iNdEx := 0
 	for iNdEx < l {
@@ -1398,10 +1223,10 @@ func (m *MsgExecuteStateChangesResponse) Unmarshal(dAtA []byte) error {
 		fieldNum := int32(wire >> 3)
 		wireType := int(wire & 0x7)
 		if wireType == 4 {
-			return fmt.Errorf("proto: MsgExecuteStateChangesResponse: wiretype end group for non-group")
+			return fmt.Errorf("proto: MsgPublishPayloadsResponse: wiretype end group for non-group")
 		}
 		if fieldNum <= 0 {
-			return fmt.Errorf("proto: MsgExecuteStateChangesResponse: illegal tag %d (wire type %d)", fieldNum, wire)
+			return fmt.Errorf("proto: MsgPublishPayloadsResponse: illegal tag %d (wire type %d)", fieldNum, wire)
 		}
 		switch fieldNum {
 		default:
@@ -1425,7 +1250,7 @@ func (m *MsgExecuteStateChangesResponse) Unmarshal(dAtA []byte) error {
 	}
 	return nil
 }
-func (m *MsgVerifyProof) Unmarshal(dAtA []byte) error {
+func (m *MsgPublishPayloadProof) Unmarshal(dAtA []byte) error {
 	l := len(dAtA)
 	iNdEx := 0
 	for iNdEx < l {
@@ -1448,13 +1273,66 @@ func (m *MsgVerifyProof) Unmarshal(dAtA []byte) error {
 		fieldNum := int32(wire >> 3)
 		wireType := int(wire & 0x7)
 		if wireType == 4 {
-			return fmt.Errorf("proto: MsgVerifyProof: wiretype end group for non-group")
+			return fmt.Errorf("proto: MsgPublishPayloadProof: wiretype end group for non-group")
 		}
 		if fieldNum <= 0 {
-			return fmt.Errorf("proto: MsgVerifyProof: illegal tag %d (wire type %d)", fieldNum, wire)
+			return fmt.Errorf("proto: MsgPublishPayloadProof: illegal tag %d (wire type %d)", fieldNum, wire)
 		}
 		switch fieldNum {
 		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field TxHash", wireType)
+			}
+			var byteLen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowTx
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				byteLen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if byteLen < 0 {
+				return ErrInvalidLengthTx
+			}
+			postIndex := iNdEx + byteLen
+			if postIndex < 0 {
+				return ErrInvalidLengthTx
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.TxHash = append(m.TxHash[:0], dAtA[iNdEx:postIndex]...)
+			if m.TxHash == nil {
+				m.TxHash = []byte{}
+			}
+			iNdEx = postIndex
+		case 2:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field PayloadIndex", wireType)
+			}
+			m.PayloadIndex = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowTx
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.PayloadIndex |= uint32(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 3:
 			if wireType != 2 {
 				return fmt.Errorf("proto: wrong wireType = %d for field ContractName", wireType)
 			}
@@ -1486,7 +1364,41 @@ func (m *MsgVerifyProof) Unmarshal(dAtA []byte) error {
 			}
 			m.ContractName = string(dAtA[iNdEx:postIndex])
 			iNdEx = postIndex
-		case 2:
+		case 4:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field PayloadHash", wireType)
+			}
+			var byteLen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowTx
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				byteLen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if byteLen < 0 {
+				return ErrInvalidLengthTx
+			}
+			postIndex := iNdEx + byteLen
+			if postIndex < 0 {
+				return ErrInvalidLengthTx
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.PayloadHash = append(m.PayloadHash[:0], dAtA[iNdEx:postIndex]...)
+			if m.PayloadHash == nil {
+				m.PayloadHash = []byte{}
+			}
+			iNdEx = postIndex
+		case 5:
 			if wireType != 2 {
 				return fmt.Errorf("proto: wrong wireType = %d for field Proof", wireType)
 			}
@@ -1541,7 +1453,7 @@ func (m *MsgVerifyProof) Unmarshal(dAtA []byte) error {
 	}
 	return nil
 }
-func (m *MsgVerifyProofResponse) Unmarshal(dAtA []byte) error {
+func (m *MsgPublishPayloadProofResponse) Unmarshal(dAtA []byte) error {
 	l := len(dAtA)
 	iNdEx := 0
 	for iNdEx < l {
@@ -1564,10 +1476,10 @@ func (m *MsgVerifyProofResponse) Unmarshal(dAtA []byte) error {
 		fieldNum := int32(wire >> 3)
 		wireType := int(wire & 0x7)
 		if wireType == 4 {
-			return fmt.Errorf("proto: MsgVerifyProofResponse: wiretype end group for non-group")
+			return fmt.Errorf("proto: MsgPublishPayloadProofResponse: wiretype end group for non-group")
 		}
 		if fieldNum <= 0 {
-			return fmt.Errorf("proto: MsgVerifyProofResponse: illegal tag %d (wire type %d)", fieldNum, wire)
+			return fmt.Errorf("proto: MsgPublishPayloadProofResponse: illegal tag %d (wire type %d)", fieldNum, wire)
 		}
 		switch fieldNum {
 		default:
@@ -1832,171 +1744,6 @@ func (m *MsgRegisterContractResponse) Unmarshal(dAtA []byte) error {
 		}
 		if fieldNum <= 0 {
 			return fmt.Errorf("proto: MsgRegisterContractResponse: illegal tag %d (wire type %d)", fieldNum, wire)
-		}
-		switch fieldNum {
-		default:
-			iNdEx = preIndex
-			skippy, err := skipTx(dAtA[iNdEx:])
-			if err != nil {
-				return err
-			}
-			if (skippy < 0) || (iNdEx+skippy) < 0 {
-				return ErrInvalidLengthTx
-			}
-			if (iNdEx + skippy) > l {
-				return io.ErrUnexpectedEOF
-			}
-			iNdEx += skippy
-		}
-	}
-
-	if iNdEx > l {
-		return io.ErrUnexpectedEOF
-	}
-	return nil
-}
-func (m *MsgUpdateParams) Unmarshal(dAtA []byte) error {
-	l := len(dAtA)
-	iNdEx := 0
-	for iNdEx < l {
-		preIndex := iNdEx
-		var wire uint64
-		for shift := uint(0); ; shift += 7 {
-			if shift >= 64 {
-				return ErrIntOverflowTx
-			}
-			if iNdEx >= l {
-				return io.ErrUnexpectedEOF
-			}
-			b := dAtA[iNdEx]
-			iNdEx++
-			wire |= uint64(b&0x7F) << shift
-			if b < 0x80 {
-				break
-			}
-		}
-		fieldNum := int32(wire >> 3)
-		wireType := int(wire & 0x7)
-		if wireType == 4 {
-			return fmt.Errorf("proto: MsgUpdateParams: wiretype end group for non-group")
-		}
-		if fieldNum <= 0 {
-			return fmt.Errorf("proto: MsgUpdateParams: illegal tag %d (wire type %d)", fieldNum, wire)
-		}
-		switch fieldNum {
-		case 1:
-			if wireType != 2 {
-				return fmt.Errorf("proto: wrong wireType = %d for field Authority", wireType)
-			}
-			var stringLen uint64
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return ErrIntOverflowTx
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				stringLen |= uint64(b&0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-			intStringLen := int(stringLen)
-			if intStringLen < 0 {
-				return ErrInvalidLengthTx
-			}
-			postIndex := iNdEx + intStringLen
-			if postIndex < 0 {
-				return ErrInvalidLengthTx
-			}
-			if postIndex > l {
-				return io.ErrUnexpectedEOF
-			}
-			m.Authority = string(dAtA[iNdEx:postIndex])
-			iNdEx = postIndex
-		case 2:
-			if wireType != 2 {
-				return fmt.Errorf("proto: wrong wireType = %d for field Params", wireType)
-			}
-			var msglen int
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return ErrIntOverflowTx
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				msglen |= int(b&0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-			if msglen < 0 {
-				return ErrInvalidLengthTx
-			}
-			postIndex := iNdEx + msglen
-			if postIndex < 0 {
-				return ErrInvalidLengthTx
-			}
-			if postIndex > l {
-				return io.ErrUnexpectedEOF
-			}
-			if err := m.Params.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
-				return err
-			}
-			iNdEx = postIndex
-		default:
-			iNdEx = preIndex
-			skippy, err := skipTx(dAtA[iNdEx:])
-			if err != nil {
-				return err
-			}
-			if (skippy < 0) || (iNdEx+skippy) < 0 {
-				return ErrInvalidLengthTx
-			}
-			if (iNdEx + skippy) > l {
-				return io.ErrUnexpectedEOF
-			}
-			iNdEx += skippy
-		}
-	}
-
-	if iNdEx > l {
-		return io.ErrUnexpectedEOF
-	}
-	return nil
-}
-func (m *MsgUpdateParamsResponse) Unmarshal(dAtA []byte) error {
-	l := len(dAtA)
-	iNdEx := 0
-	for iNdEx < l {
-		preIndex := iNdEx
-		var wire uint64
-		for shift := uint(0); ; shift += 7 {
-			if shift >= 64 {
-				return ErrIntOverflowTx
-			}
-			if iNdEx >= l {
-				return io.ErrUnexpectedEOF
-			}
-			b := dAtA[iNdEx]
-			iNdEx++
-			wire |= uint64(b&0x7F) << shift
-			if b < 0x80 {
-				break
-			}
-		}
-		fieldNum := int32(wire >> 3)
-		wireType := int(wire & 0x7)
-		if wireType == 4 {
-			return fmt.Errorf("proto: MsgUpdateParamsResponse: wiretype end group for non-group")
-		}
-		if fieldNum <= 0 {
-			return fmt.Errorf("proto: MsgUpdateParamsResponse: illegal tag %d (wire type %d)", fieldNum, wire)
 		}
 		switch fieldNum {
 		default:

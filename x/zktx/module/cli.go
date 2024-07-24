@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
 
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/client/tx"
@@ -51,8 +52,8 @@ func (am AppModule) GetTxCmd() *cobra.Command {
 	}
 
 	txCmd.AddCommand(&cobra.Command{
-		Use:   "execute [[contract_name] [proof]]...",
-		Short: "Execute a number of state changes",
+		Use:   "publish [[contract_name] [payload]]...",
+		Short: "Publish a number of payloads",
 		Args:  cobra.MinimumNArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			clientCtx, err := client.GetClientTxContext(cmd)
@@ -69,20 +70,20 @@ func (am AppModule) GetTxCmd() *cobra.Command {
 				return fmt.Errorf("invalid state changes")
 			}
 
-			stateChanges := make([]*zktx.StateChange, 0, len(args)/2)
+			payloads := make([]*zktx.Payload, 0, len(args)/2)
 			for i := 0; i < len(args); i += 2 {
-				proof, err := GetBinaryValue(args[i+1])
+				data, err := GetBinaryValue(args[i+1])
 				if err != nil {
 					return err
 				}
-				stateChanges = append(stateChanges, &zktx.StateChange{
+				payloads = append(payloads, &zktx.Payload{
 					ContractName: args[i],
-					Proof:        proof,
+					Data:         data,
 				})
 			}
 
-			msg := &zktx.MsgExecuteStateChanges{
-				StateChanges: stateChanges,
+			msg := &zktx.MsgPublishPayloads{
+				Payloads: payloads,
 			}
 
 			return tx.GenerateOrBroadcastTxCLI(clientCtx, cmd.Flags(), msg)
@@ -90,9 +91,9 @@ func (am AppModule) GetTxCmd() *cobra.Command {
 	})
 
 	txCmd.AddCommand(&cobra.Command{
-		Use:   "verify [contract_name] [proof]",
-		Short: "Verify a proof",
-		Args:  cobra.MinimumNArgs(2),
+		Use:   "verify [tx_hash] [index] [contract_name] [payload_hash] [proof]",
+		Short: "Publish a proof for a payload",
+		Args:  cobra.MinimumNArgs(5),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			clientCtx, err := client.GetClientTxContext(cmd)
 
@@ -104,17 +105,35 @@ func (am AppModule) GetTxCmd() *cobra.Command {
 				return err
 			}
 
-			if len(args) != 2 {
-				return fmt.Errorf("expected 2 arguments, got %d", len(args))
+			if len(args) != 5 {
+				return fmt.Errorf("expected 5 arguments, got %d", len(args))
 			}
 
-			proof, err := GetBinaryValue(args[1])
+			tx_hash, err := GetBinaryValue(args[0])
 			if err != nil {
 				return err
 			}
 
-			msg := &zktx.MsgVerifyProof{
-				ContractName: args[0],
+			index, err := strconv.Atoi(args[1])
+			if err != nil {
+				return err
+			}
+			contract_name := args[2]
+
+			payload_hash, err := GetBinaryValue(args[3])
+			if err != nil {
+				return err
+			}
+			proof, err := GetBinaryValue(args[4])
+			if err != nil {
+				return err
+			}
+
+			msg := &zktx.MsgPublishPayloadProof{
+				TxHash:       tx_hash,
+				PayloadIndex: uint32(index),
+				ContractName: contract_name,
+				PayloadHash:  payload_hash,
 				Proof:        proof,
 			}
 

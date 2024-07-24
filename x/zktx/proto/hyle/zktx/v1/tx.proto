@@ -4,57 +4,59 @@ package hyle.zktx.v1;
 option go_package = "github.com/hyle-org/hyle/x/zktx";
 
 import "cosmos/msg/v1/msg.proto";
-import "gogoproto/gogo.proto";
-import "amino/amino.proto";
-import "hyle/zktx/v1/types.proto";
-import "cosmos_proto/cosmos.proto";
 
 // Msg defines the module Msg service.
 service Msg {
   option (cosmos.msg.v1.service) = true;
 
   // execute a zk-proven state change
-  rpc ExecuteStateChanges(MsgExecuteStateChanges)
-      returns (MsgExecuteStateChangesResponse);
+  rpc PublishPayloads(MsgPublishPayloads) returns (MsgPublishPayloadsResponse);
 
-  // Only verify a ZK proof
-  rpc VerifyProof(MsgVerifyProof) returns (MsgVerifyProofResponse);
+  // Verify a payload
+  rpc PublishPayloadProof(MsgPublishPayloadProof)
+      returns (MsgPublishPayloadProofResponse);
 
   // RegisterContract registers a contract
   rpc RegisterContract(MsgRegisterContract)
       returns (MsgRegisterContractResponse);
-
-  // UpdateParams updates the module parameters.
-  rpc UpdateParams(MsgUpdateParams) returns (MsgUpdateParamsResponse);
 }
 
-// StateChange is a zk-proven state change to be executed
-message StateChange {
+// Payload is a blob
+message Payload {
   // Name of target contract
   string contract_name = 1;
-  // Proof of the transaction
-  bytes proof = 2;
+  // Payload data
+  bytes data = 2;
 }
 
 // execute a zk-proven state change - request type
-message MsgExecuteStateChanges {
-  // list of state changes to execute
-  repeated StateChange state_changes = 1;
+message MsgPublishPayloads {
+  // list of payloads
+  repeated Payload payloads = 1;
 }
 
 // No response
-message MsgExecuteStateChangesResponse {}
+message MsgPublishPayloadsResponse {}
 
-// Only verify a ZK proof - request type
-message MsgVerifyProof {
-  // Contract the proof is being sent to
-  string contract_name = 1;
-  // Proof of the transaction
-  bytes proof = 2;
+// Prove a previously published payload
+message MsgPublishPayloadProof {
+  // Tx hash of the payload to prove
+  bytes tx_hash = 1;
+  // Index of the payload in the tx
+  uint32 payload_index = 2;
+
+  // Name of target contract
+  string contract_name = 3;
+
+  // Hash of the payload
+  bytes payload_hash = 4;
+
+  // Proof of the payload
+  bytes proof = 5;
 }
 
 // No response
-message MsgVerifyProofResponse {}
+message MsgPublishPayloadProofResponse {}
 
 // Register a contract - request type
 message MsgRegisterContract {
@@ -76,25 +78,3 @@ message MsgRegisterContract {
 
 // Register a contract - response type
 message MsgRegisterContractResponse {}
-
-//////////////////////////////
-///// Default stuff from the examples
-
-// MsgUpdateParams is the Msg/UpdateParams request type.
-message MsgUpdateParams {
-  option (cosmos.msg.v1.signer) = "authority";
-  option (amino.name) = "hyle/zktx/MsgUpdateParams";
-
-  // authority is the address that controls the module
-  // NOTE: Defaults to the governance module unless overwritten.
-  string authority = 1 [ (cosmos_proto.scalar) = "cosmos.AddressString" ];
-
-  // params defines the module parameters to update.
-  // NOTE: All parameters must be supplied.
-  Params params = 2
-      [ (gogoproto.nullable) = false, (amino.dont_omitempty) = true ];
-}
-
-// MsgUpdateParamsResponse defines the response structure for executing a
-// MsgUpdateParams message.
-message MsgUpdateParamsResponse {}

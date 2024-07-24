@@ -36,20 +36,16 @@ func (am AppModule) AutoCLIOptions() *autocliv1.ModuleOptions {
 			EnhanceCustomCommand: true,
 			RpcCommandOptions: []*autocliv1.RpcCommandOptions{
 				{
-					RpcMethod: "VerifyProof",
-					Skip:      true, // Overloaded manually
-				},
-				{
 					RpcMethod: "RegisterContract",
 					Skip:      true, // Overloaded manually
 				},
 				{
-					RpcMethod: "ExecuteStateChanges",
+					RpcMethod: "PublishPayloads",
 					Skip:      true, // Overloaded manually
 				},
 				{
-					RpcMethod: "UpdateParams",
-					Skip:      true, // This is a authority gated tx, so we skip it.
+					RpcMethod: "PublishPayloadProof",
+					Skip:      true, // Overloaded manually
 				},
 			},
 		},

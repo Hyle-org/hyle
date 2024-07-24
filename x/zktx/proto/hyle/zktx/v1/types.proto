@@ -27,3 +27,17 @@ message Contract {
   // Recap of the current contract state
   bytes state_digest = 3;
 }
+
+// PayloadMetadata is the transient state we need to keep to settle payloads
+message PayloadMetadata {
+  // Hash of the payload
+  bytes payload_hash = 1;
+  // Identity of the caller
+  string identity = 2;
+  // Contract name to settle
+  string contract_name = 3;
+  // The next state to transition to
+  bytes next_state = 4;
+  // If this payload was verified
+  bool verified = 5;
+}

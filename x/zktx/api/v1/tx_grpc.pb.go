@@ -19,10 +19,9 @@ import (
 const _ = grpc.SupportPackageIsVersion7
 
 const (
-	Msg_ExecuteStateChanges_FullMethodName = "/hyle.zktx.v1.Msg/ExecuteStateChanges"
-	Msg_VerifyProof_FullMethodName         = "/hyle.zktx.v1.Msg/VerifyProof"
+	Msg_PublishPayloads_FullMethodName     = "/hyle.zktx.v1.Msg/PublishPayloads"
+	Msg_PublishPayloadProof_FullMethodName = "/hyle.zktx.v1.Msg/PublishPayloadProof"
 	Msg_RegisterContract_FullMethodName    = "/hyle.zktx.v1.Msg/RegisterContract"
-	Msg_UpdateParams_FullMethodName        = "/hyle.zktx.v1.Msg/UpdateParams"
 )
 
 // MsgClient is the client API for Msg service.
@@ -30,13 +29,11 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type MsgClient interface {
 	// execute a zk-proven state change
-	ExecuteStateChanges(ctx context.Context, in *MsgExecuteStateChanges, opts ...grpc.CallOption) (*MsgExecuteStateChangesResponse, error)
-	// Only verify a ZK proof
-	VerifyProof(ctx context.Context, in *MsgVerifyProof, opts ...grpc.CallOption) (*MsgVerifyProofResponse, error)
+	PublishPayloads(ctx context.Context, in *MsgPublishPayloads, opts ...grpc.CallOption) (*MsgPublishPayloadsResponse, error)
+	// Verify a payload
+	PublishPayloadProof(ctx context.Context, in *MsgPublishPayloadProof, opts ...grpc.CallOption) (*MsgPublishPayloadProofResponse, error)
 	// RegisterContract registers a contract
 	RegisterContract(ctx context.Context, in *MsgRegisterContract, opts ...grpc.CallOption) (*MsgRegisterContractResponse, error)
-	// UpdateParams updates the module parameters.
-	UpdateParams(ctx context.Context, in *MsgUpdateParams, opts ...grpc.CallOption) (*MsgUpdateParamsResponse, error)
 }
 
 type msgClient struct {
@@ -47,18 +44,18 @@ func NewMsgClient(cc grpc.ClientConnInterface) MsgClient {
 	return &msgClient{cc}
 }
 
-func (c *msgClient) ExecuteStateChanges(ctx context.Context, in *MsgExecuteStateChanges, opts ...grpc.CallOption) (*MsgExecuteStateChangesResponse, error) {
-	out := new(MsgExecuteStateChangesResponse)
-	err := c.cc.Invoke(ctx, Msg_ExecuteStateChanges_FullMethodName, in, out, opts...)
+func (c *msgClient) PublishPayloads(ctx context.Context, in *MsgPublishPayloads, opts ...grpc.CallOption) (*MsgPublishPayloadsResponse, error) {
+	out := new(MsgPublishPayloadsResponse)
+	err := c.cc.Invoke(ctx, Msg_PublishPayloads_FullMethodName, in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *msgClient) VerifyProof(ctx context.Context, in *MsgVerifyProof, opts ...grpc.CallOption) (*MsgVerifyProofResponse, error) {
-	out := new(MsgVerifyProofResponse)
-	err := c.cc.Invoke(ctx, Msg_VerifyProof_FullMethodName, in, out, opts...)
+func (c *msgClient) PublishPayloadProof(ctx context.Context, in *MsgPublishPayloadProof, opts ...grpc.CallOption) (*MsgPublishPayloadProofResponse, error) {
+	out := new(MsgPublishPayloadProofResponse)
+	err := c.cc.Invoke(ctx, Msg_PublishPayloadProof_FullMethodName, in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -74,27 +71,16 @@ func (c *msgClient) RegisterContract(ctx context.Context, in *MsgRegisterContrac
 	return out, nil
 }
 
-func (c *msgClient) UpdateParams(ctx context.Context, in *MsgUpdateParams, opts ...grpc.CallOption) (*MsgUpdateParamsResponse, error) {
-	out := new(MsgUpdateParamsResponse)
-	err := c.cc.Invoke(ctx, Msg_UpdateParams_FullMethodName, in, out, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
 // MsgServer is the server API for Msg service.
 // All implementations must embed UnimplementedMsgServer
 // for forward compatibility
 type MsgServer interface {
 	// execute a zk-proven state change
-	ExecuteStateChanges(context.Context, *MsgExecuteStateChanges) (*MsgExecuteStateChangesResponse, error)
-	// Only verify a ZK proof
-	VerifyProof(context.Context, *MsgVerifyProof) (*MsgVerifyProofResponse, error)
+	PublishPayloads(context.Context, *MsgPublishPayloads) (*MsgPublishPayloadsResponse, error)
+	// Verify a payload
+	PublishPayloadProof(context.Context, *MsgPublishPayloadProof) (*MsgPublishPayloadProofResponse, error)
 	// RegisterContract registers a contract
 	RegisterContract(context.Context, *MsgRegisterContract) (*MsgRegisterContractResponse, error)
-	// UpdateParams updates the module parameters.
-	UpdateParams(context.Context, *MsgUpdateParams) (*MsgUpdateParamsResponse, error)
 	mustEmbedUnimplementedMsgServer()
 }
 
@@ -102,17 +88,14 @@ type MsgServer interface {
 type UnimplementedMsgServer struct {
 }
 
-func (UnimplementedMsgServer) ExecuteStateChanges(context.Context, *MsgExecuteStateChanges) (*MsgExecuteStateChangesResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method ExecuteStateChanges not implemented")
+func (UnimplementedMsgServer) PublishPayloads(context.Context, *MsgPublishPayloads) (*MsgPublishPayloadsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method PublishPayloads not implemented")
 }
-func (UnimplementedMsgServer) VerifyProof(context.Context, *MsgVerifyProof) (*MsgVerifyProofResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method VerifyProof not implemented")
+func (UnimplementedMsgServer) PublishPayloadProof(context.Context, *MsgPublishPayloadProof) (*MsgPublishPayloadProofResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method PublishPayloadProof not implemented")
 }
 func (UnimplementedMsgServer) RegisterContract(context.Context, *MsgRegisterContract) (*MsgRegisterContractResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method RegisterContract not implemented")
-}
-func (UnimplementedMsgServer) UpdateParams(context.Context, *MsgUpdateParams) (*MsgUpdateParamsResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method UpdateParams not implemented")
 }
 func (UnimplementedMsgServer) mustEmbedUnimplementedMsgServer() {}
 
@@ -127,38 +110,38 @@ func RegisterMsgServer(s grpc.ServiceRegistrar, srv MsgServer) {
 	s.RegisterService(&Msg_ServiceDesc, srv)
 }
 
-func _Msg_ExecuteStateChanges_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(MsgExecuteStateChanges)
+func _Msg_PublishPayloads_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MsgPublishPayloads)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(MsgServer).ExecuteStateChanges(ctx, in)
+		return srv.(MsgServer).PublishPayloads(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: Msg_ExecuteStateChanges_FullMethodName,
+		FullMethod: Msg_PublishPayloads_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(MsgServer).ExecuteStateChanges(ctx, req.(*MsgExecuteStateChanges))
+		return srv.(MsgServer).PublishPayloads(ctx, req.(*MsgPublishPayloads))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _Msg_VerifyProof_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(MsgVerifyProof)
+func _Msg_PublishPayloadProof_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MsgPublishPayloadProof)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(MsgServer).VerifyProof(ctx, in)
+		return srv.(MsgServer).PublishPayloadProof(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: Msg_VerifyProof_FullMethodName,
+		FullMethod: Msg_PublishPayloadProof_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(MsgServer).VerifyProof(ctx, req.(*MsgVerifyProof))
+		return srv.(MsgServer).PublishPayloadProof(ctx, req.(*MsgPublishPayloadProof))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -181,24 +164,6 @@ func _Msg_RegisterContract_Handler(srv interface{}, ctx context.Context, dec fun
 	return interceptor(ctx, in, info, handler)
 }
 
-func _Msg_UpdateParams_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(MsgUpdateParams)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(MsgServer).UpdateParams(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: Msg_UpdateParams_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(MsgServer).UpdateParams(ctx, req.(*MsgUpdateParams))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 // Msg_ServiceDesc is the grpc.ServiceDesc for Msg service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -207,20 +172,16 @@ var Msg_ServiceDesc = grpc.ServiceDesc{
 	HandlerType: (*MsgServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
-			MethodName: "ExecuteStateChanges",
-			Handler:    _Msg_ExecuteStateChanges_Handler,
+			MethodName: "PublishPayloads",
+			Handler:    _Msg_PublishPayloads_Handler,
 		},
 		{
-			MethodName: "VerifyProof",
-			Handler:    _Msg_VerifyProof_Handler,
+			MethodName: "PublishPayloadProof",
+			Handler:    _Msg_PublishPayloadProof_Handler,
 		},
 		{
 			MethodName: "RegisterContract",
 			Handler:    _Msg_RegisterContract_Handler,
-		},
-		{
-			MethodName: "UpdateParams",
-			Handler:    _Msg_UpdateParams_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

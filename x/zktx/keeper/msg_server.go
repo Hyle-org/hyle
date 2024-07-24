@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"strings"
 
+	"cosmossdk.io/collections"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
 	"github.com/hyle-org/hyle/x/zktx"
@@ -18,26 +19,6 @@ import (
 
 	"github.com/consensys/gnark/backend/groth16"
 )
-
-// For clarity, split from ValidateProofData
-func SetContextIfNeeded(proofData zktx.HyleOutput, hyleContext *zktx.HyleContext) error {
-	if hyleContext.Identity == "" {
-		hyleContext.Identity = proofData.Identity
-	}
-	return nil
-}
-
-// TODO check tx hash
-func ValidateProofData(proofData zktx.HyleOutput, initialState []byte, hyleContext *zktx.HyleContext) error {
-	if !bytes.Equal(proofData.InitialState, initialState) {
-		return fmt.Errorf("verifier output does not match the expected initial state, got %x, expected %x", proofData.InitialState, initialState)
-	}
-	// Assume that if the proof has an empty Identity, it's "free for all"
-	if proofData.Identity != "" && proofData.Identity != hyleContext.Identity {
-		return fmt.Errorf("verifier output does not match the expected identity")
-	}
-	return nil
-}
 
 type msgServer struct {
 	k Keeper
@@ -70,48 +51,112 @@ func NewMsgServerImpl(keeper Keeper) zktx.MsgServer {
 	return &msgServer{k: keeper}
 }
 
-func (ms msgServer) ExecuteStateChanges(goCtx context.Context, msg *zktx.MsgExecuteStateChanges) (*zktx.MsgExecuteStateChangesResponse, error) {
-	if len(msg.StateChanges) == 0 {
-		return &zktx.MsgExecuteStateChangesResponse{}, nil
-	}
-
+func (ms msgServer) PublishPayloads(goCtx context.Context, msg *zktx.MsgPublishPayloads) (*zktx.MsgPublishPayloadsResponse, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
-
-	// Initialize context with unknown data at this point
-	hyleContext := zktx.HyleContext{
-		Identity: "",
-		TxHash:   []byte("TODO"),
-	}
-
-	for i, stateChange := range msg.StateChanges {
-		if err := ms.actuallyExecuteStateChange(ctx, &hyleContext, stateChange); err != nil {
-			return nil, err
+	for i, payload := range msg.Payloads {
+		_, err := ms.k.Contracts.Get(ctx, payload.ContractName)
+		if err != nil {
+			return nil, fmt.Errorf("invalid contract - no state is registered")
 		}
-		if i == 0 && hyleContext.Identity != "" {
-			// Check identity matches contract name
-			paths := strings.Split(hyleContext.Identity, ".")
-			if len(paths) < 2 || paths[len(paths)-1] != stateChange.ContractName {
-				return nil, fmt.Errorf("invalid identity contract, expected '%s', got '%s'", stateChange.ContractName, paths[len(paths)-1])
-			}
-		}
+		// TODO: hash
+		ms.k.ProvenPayload.Set(ctx, collections.Join(ctx.TxBytes(), uint32(i)), zktx.PayloadMetadata{
+			PayloadHash:  payload.Data,
+			ContractName: payload.ContractName,
+		})
 	}
-
-	return &zktx.MsgExecuteStateChangesResponse{}, nil
+	// TODO fees
+	return &zktx.MsgPublishPayloadsResponse{}, nil
 }
 
-func (ms msgServer) actuallyExecuteStateChange(ctx sdk.Context, hyleContext *zktx.HyleContext, msg *zktx.StateChange) error {
-	contract, err := ms.k.Contracts.Get(ctx, msg.ContractName)
-	if err != nil {
-		return fmt.Errorf("invalid contract - no state is registered")
+func (ms msgServer) PublishPayloadProof(goCtx context.Context, msg *zktx.MsgPublishPayloadProof) (*zktx.MsgPublishPayloadProofResponse, error) {
+	ctx := sdk.UnwrapSDKContext(goCtx)
+
+	payload_metadata, err := ms.k.ProvenPayload.Get(ctx, collections.Join(msg.TxHash, msg.PayloadIndex))
+
+	if !bytes.Equal(payload_metadata.PayloadHash, msg.PayloadHash) {
+		return nil, fmt.Errorf("payload hash does not match the expected hash")
 	}
 
-	var finalStateDigest []byte
+	contract, err := ms.k.Contracts.Get(ctx, msg.ContractName)
+	if err != nil {
+		return nil, fmt.Errorf("invalid contract - no state is registered")
+	}
 
-	var proofData string
+	// TODO: add events back
+	//var proofData string
+	var objmap zktx.HyleOutput
 
+	if err := extractProof(&objmap, &contract, msg); err != nil {
+		return nil, err
+	}
+
+	if bytes.Equal(contract.StateDigest, objmap.InitialState) {
+		return nil, fmt.Errorf("verifier output does not match the expected initial state")
+	}
+
+	payload_metadata.ContractName = msg.ContractName
+	payload_metadata.NextState = objmap.NextState
+	payload_metadata.Identity = objmap.Identity
+	payload_metadata.Verified = true
+
+	ms.k.ProvenPayload.Set(ctx, collections.Join(msg.TxHash, msg.PayloadIndex), payload_metadata)
+
+	ms.maybeSettleTx(ctx, msg.TxHash)
+
+	/*
+		// Emit event by contract name for TX indexation
+		if err := ctx.EventManager().EmitTypedEvent(&zktx.EventStateChange{ContractName: msg.ContractName, ProofData: proofData}); err != nil {
+			return err
+		}
+	*/
+	return &zktx.MsgPublishPayloadProofResponse{}, nil
+}
+
+func (ms msgServer) maybeSettleTx(ctx sdk.Context, txHash []byte) error {
+	first_payload, err := ms.k.ProvenPayload.Get(ctx, collections.Join(txHash, uint32(0)))
+	if err != nil {
+		return fmt.Errorf("no payloads found for this tx")
+	}
+	expected_identity := first_payload.Identity
+	// check that this matches the contract name
+	paths := strings.Split(first_payload.Identity, ".")
+	if len(paths) < 2 || paths[len(paths)-1] != first_payload.ContractName {
+		return fmt.Errorf("invalid identity contract, expected '%s', got '%s'", first_payload.ContractName, paths[len(paths)-1])
+	}
+
+	for i := 1; ; i++ {
+		payload_metadata, err := ms.k.ProvenPayload.Get(ctx, collections.Join(txHash, uint32(i)))
+		if err == collections.ErrNotFound {
+			break
+		}
+		if payload_metadata.Identity != expected_identity || err != nil {
+			return fmt.Errorf("payloads have different identities")
+		}
+	}
+
+	// Then update the state
+	for i := 0; ; i++ {
+		payload_metadata, err := ms.k.ProvenPayload.Get(ctx, collections.Join(txHash, uint32(i)))
+		if err != nil { // will trigger on ErrNotFound when i is out of bounds, so we've iterated on the whole list
+			return nil
+		}
+		contract, err := ms.k.Contracts.Get(ctx, payload_metadata.ContractName)
+		if err != nil {
+			return fmt.Errorf("invalid contract - no state is registered")
+		}
+		contract.StateDigest = payload_metadata.NextState
+		if err := ms.k.Contracts.Set(ctx, payload_metadata.ContractName, contract); err != nil {
+			return err
+		}
+		// This is safe - cosmos sdk will revert the whole thing if the TX fails
+		ms.k.ProvenPayload.Remove(ctx, collections.Join(txHash, uint32(i)))
+	}
+}
+
+func extractProof(objmap *zktx.HyleOutput, contract *zktx.Contract, msg *zktx.MsgPublishPayloadProof) error {
 	if contract.Verifier == "risczero" {
 		// Save proof to a local file
-		err = os.WriteFile("/tmp/risc0-proof.json", msg.Proof, 0644)
+		err := os.WriteFile("/tmp/risc0-proof.json", msg.Proof, 0644)
 
 		if err != nil {
 			return fmt.Errorf("failed to write proof to file: %s", err)
@@ -123,23 +168,16 @@ func (ms msgServer) actuallyExecuteStateChange(ctx sdk.Context, hyleContext *zkt
 			return fmt.Errorf("risczero verifier failed on %s. Exit code: %s", msg.ContractName, err)
 		}
 		// Then parse data from the verified proof.
-		var objmap zktx.HyleOutput
+
 		err = json.Unmarshal(outBytes, &objmap)
 		if err != nil {
 			return fmt.Errorf("failed to unmarshal verifier output: %s", err)
 		}
 
-		proofData = string(outBytes)
-
-		SetContextIfNeeded(objmap, hyleContext)
-		if err = ValidateProofData(objmap, contract.StateDigest, hyleContext); err != nil {
-			return err
-		}
-
-		finalStateDigest = objmap.NextState
+		//proofData = string(outBytes)
 	} else if contract.Verifier == "sp1" {
 		// Save proof to a local file
-		err = os.WriteFile("/tmp/sp1-proof.json", msg.Proof, 0644)
+		err := os.WriteFile("/tmp/sp1-proof.json", msg.Proof, 0644)
 
 		if err != nil {
 			return fmt.Errorf("failed to write proof to file: %s", err)
@@ -150,23 +188,15 @@ func (ms msgServer) actuallyExecuteStateChange(ctx sdk.Context, hyleContext *zkt
 			return fmt.Errorf("sp1 verifier failed on %s. Exit code: %s", msg.ContractName, err)
 		}
 		// Then parse data from the verified proof.
-		var objmap zktx.HyleOutput
 		err = json.Unmarshal(outBytes, &objmap)
 		if err != nil {
 			return fmt.Errorf("failed to unmarshal verifier output: %s", err)
 		}
 
-		proofData = string(outBytes)
-
-		SetContextIfNeeded(objmap, hyleContext)
-		if err = ValidateProofData(objmap, contract.StateDigest, hyleContext); err != nil {
-			return err
-		}
-
-		finalStateDigest = objmap.NextState
+		//proofData = string(outBytes)
 	} else if contract.Verifier == "noir" {
 		// Save proof to a local file
-		err = os.WriteFile("/tmp/noir-proof.json", msg.Proof, 0644)
+		err := os.WriteFile("/tmp/noir-proof.json", msg.Proof, 0644)
 		if err != nil {
 			return fmt.Errorf("failed to write proof to file: %s", err)
 		}
@@ -185,23 +215,15 @@ func (ms msgServer) actuallyExecuteStateChange(ctx sdk.Context, hyleContext *zkt
 		}
 
 		// Then parse data from the verified proof.
-		var objmap zktx.HyleOutput
 		err = json.Unmarshal(outBytes, &objmap)
 		if err != nil {
 			return fmt.Errorf("failed to unmarshal verifier output: %s", err)
 		}
 
-		proofData = string(outBytes)
-
-		SetContextIfNeeded(objmap, hyleContext)
-		if err = ValidateProofData(objmap, contract.StateDigest, hyleContext); err != nil {
-			return err
-		}
-
-		finalStateDigest = objmap.NextState
+		//proofData = string(outBytes)
 	} else if contract.Verifier == "cairo" {
 		// Save proof to a local file
-		err = os.WriteFile("/tmp/cairo-proof.json", msg.Proof, 0644)
+		err := os.WriteFile("/tmp/cairo-proof.json", msg.Proof, 0644)
 		if err != nil {
 			return fmt.Errorf("failed to write proof to file: %s", err)
 		}
@@ -212,20 +234,12 @@ func (ms msgServer) actuallyExecuteStateChange(ctx sdk.Context, hyleContext *zkt
 		}
 
 		// Then parse data from the verified proof.
-		var objmap zktx.HyleOutput
 		err = json.Unmarshal(outBytes, &objmap)
 		if err != nil {
 			panic(err)
 		}
 
-		proofData = string(outBytes)
-
-		SetContextIfNeeded(objmap, hyleContext)
-		if err = ValidateProofData(objmap, contract.StateDigest, hyleContext); err != nil {
-			return err
-		}
-
-		finalStateDigest = objmap.NextState
+		//proofData = string(outBytes)
 	} else if contract.Verifier == "gnark-groth16-te-BN254" {
 		// Order: first parse the proof, verify data, and then verify proof (assuming fastest failure in that order)
 		var proof gnark.Groth16Proof
@@ -247,14 +261,8 @@ func (ms msgServer) actuallyExecuteStateChange(ctx sdk.Context, hyleContext *zkt
 			return err
 		}
 
-		proofData = base64.StdEncoding.EncodeToString(proof.PublicWitness)
-
-		SetContextIfNeeded(*data, hyleContext)
-		if err = ValidateProofData(*data, contract.StateDigest, hyleContext); err != nil {
-			return err
-		}
-
-		finalStateDigest = data.NextState
+		objmap = data
+		//proofData = base64.StdEncoding.EncodeToString(proof.PublicWitness)
 
 		// Final step: actually check the proof here
 		if err := groth16.Verify(g16p, vk, witness); err != nil {
@@ -263,105 +271,7 @@ func (ms msgServer) actuallyExecuteStateChange(ctx sdk.Context, hyleContext *zkt
 	} else {
 		return fmt.Errorf("unknown verifier %s", contract.Verifier)
 	}
-
-	// TODO: validate tx Hash
-
-	// Emit event by contract name for TX indexation
-	if err := ctx.EventManager().EmitTypedEvent(&zktx.EventStateChange{ContractName: msg.ContractName, ProofData: proofData}); err != nil {
-		return err
-	}
-
-	// Update contract
-	contract.StateDigest = finalStateDigest
-	if err := ms.k.Contracts.Set(ctx, msg.ContractName, contract); err != nil {
-		return err
-	}
-
 	return nil
-}
-
-func (ms msgServer) VerifyProof(ctx context.Context, msg *zktx.MsgVerifyProof) (*zktx.MsgVerifyProofResponse, error) {
-	contract, err := ms.k.Contracts.Get(ctx, msg.ContractName)
-	if err != nil {
-		return nil, fmt.Errorf("invalid contract - no state is registered")
-	}
-
-	if contract.Verifier == "risczero" {
-		// Save proof to a local file
-		err = os.WriteFile("/tmp/risc0-proof.json", msg.Proof, 0644)
-
-		if err != nil {
-			return nil, fmt.Errorf("risczero verifier failed on %s. Exit code: %s", msg.ContractName, err)
-		}
-
-		b16ProgramId := hex.EncodeToString(contract.ProgramId)
-		_, err := exec.Command(risczeroVerifierPath, b16ProgramId, "/tmp/risc0-proof.json").Output()
-		if err != nil {
-			return nil, fmt.Errorf("verifier failed. Exit code: %s", err)
-		}
-	} else if contract.Verifier == "sp1" {
-		// Save proof to a local file
-		err = os.WriteFile("/tmp/sp1-proof.json", msg.Proof, 0644)
-
-		if err != nil {
-			return nil, fmt.Errorf("failed to write proof to file: %s", err)
-		}
-		b64ProgramId := base64.StdEncoding.EncodeToString(contract.ProgramId)
-		_, err := exec.Command(sp1VerifierPath, b64ProgramId, "/tmp/sp1-proof.json").Output()
-		if err != nil {
-			return nil, fmt.Errorf("sp1 verifier failed on %s. Exit code: %s", msg.ContractName, err)
-		}
-	} else if contract.Verifier == "noir" {
-		// Save proof to a local file
-		err = os.WriteFile("/tmp/noir-proof.json", msg.Proof, 0644)
-		if err != nil {
-			return nil, fmt.Errorf("failed to write proof to file: %s", err)
-		}
-		// Save vKey to a local file
-		err = os.WriteFile("/tmp/noir-vkey.b64", contract.ProgramId, 0644)
-		if err != nil {
-			return nil, fmt.Errorf("failed to write vKey to file: %s", err)
-		}
-
-		_, err := exec.Command("bun", "run", noirVerifierPath, "--vKeyPath", "/tmp/noir-vkey.b64", "--proofPath", "/tmp/noir-proof.json").Output()
-		if err != nil {
-			return nil, fmt.Errorf("noir verifier failed on %s. Exit code: %s", msg.ContractName, err)
-		}
-	} else if contract.Verifier == "cairo" {
-		// Save proof to a local file
-		err = os.WriteFile("/tmp/cairo-proof.json", msg.Proof, 0644)
-		if err != nil {
-			return nil, fmt.Errorf("failed to write proof to file: %s", err)
-		}
-
-		_, err := exec.Command(cairoVerifierPath, "verify", "/tmp/cairo-proof.json").Output()
-		if err != nil {
-			return nil, fmt.Errorf("cairo verifier failed on %s. Exit code: %s", msg.ContractName, err)
-		}
-
-	} else if contract.Verifier == "gnark-groth16-te-BN254" {
-		var proof gnark.Groth16Proof
-		if err := json.Unmarshal(msg.Proof, &proof); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal proof: %s", err)
-		}
-
-		if !bytes.Equal(proof.VerifyingKey, contract.ProgramId) {
-			return nil, fmt.Errorf("verifying key does not match the known VK")
-		}
-
-		g16p, vk, witness, err := proof.ParseProof()
-		if err != nil {
-			return nil, err
-		}
-
-		if err := groth16.Verify(g16p, vk, witness); err != nil {
-			return nil, fmt.Errorf("groth16 verifier failed on %s. Exit code: %w", msg.ContractName, err)
-		}
-	} else {
-		return nil, fmt.Errorf("unknown verifier %s", contract.Verifier)
-	}
-
-	return &zktx.MsgVerifyProofResponse{}, nil
 }
 
 func (ms msgServer) RegisterContract(goCtx context.Context, msg *zktx.MsgRegisterContract) (*zktx.MsgRegisterContractResponse, error) {
@@ -387,27 +297,4 @@ func (ms msgServer) RegisterContract(goCtx context.Context, msg *zktx.MsgRegiste
 	}
 
 	return &zktx.MsgRegisterContractResponse{}, nil
-}
-
-///// Stuff from the default go project in the cosmos sdk minichain
-
-// UpdateParams params is defining the handler for the MsgUpdateParams message.
-func (ms msgServer) UpdateParams(ctx context.Context, msg *zktx.MsgUpdateParams) (*zktx.MsgUpdateParamsResponse, error) {
-	if _, err := ms.k.addressCodec.StringToBytes(msg.Authority); err != nil {
-		return nil, fmt.Errorf("invalid authority address: %w", err)
-	}
-
-	if authority := ms.k.GetAuthority(); !strings.EqualFold(msg.Authority, authority) {
-		return nil, fmt.Errorf("unauthorized, authority does not match the module's authority: got %s, want %s", msg.Authority, authority)
-	}
-
-	if err := msg.Params.Validate(); err != nil {
-		return nil, err
-	}
-
-	if err := ms.k.Params.Set(ctx, msg.Params); err != nil {
-		return nil, err
-	}
-
-	return &zktx.MsgUpdateParamsResponse{}, nil
 }
