@@ -37,7 +37,7 @@ func FakeRegisterSigner() signing.CustomGetSigner {
 }
 func FakeExecuteSigner() signing.CustomGetSigner {
 	return signing.CustomGetSigner{
-		MsgType: proto.MessageName(&zktxv1.MsgExecuteStateChanges{}),
+		MsgType: proto.MessageName(&zktxv1.MsgPublishPayloads{}),
 		Fn: func(msg proto.Message) ([][]byte, error) {
 			return [][]byte{[]byte("fake-signer")}, nil
 		},
@@ -45,7 +45,7 @@ func FakeExecuteSigner() signing.CustomGetSigner {
 }
 func FakeVerifySigner() signing.CustomGetSigner {
 	return signing.CustomGetSigner{
-		MsgType: proto.MessageName(&zktxv1.MsgVerifyProof{}),
+		MsgType: proto.MessageName(&zktxv1.MsgPublishPayloadProof{}),
 		Fn: func(msg proto.Message) ([][]byte, error) {
 			return [][]byte{[]byte("fake-signer")}, nil
 		},
