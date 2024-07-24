@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -90,7 +91,7 @@ func (ms msgServer) PublishPayloadProof(goCtx context.Context, msg *zktx.MsgPubl
 		return nil, err
 	}
 
-	if bytes.Equal(contract.StateDigest, objmap.InitialState) {
+	if !bytes.Equal(contract.StateDigest, objmap.InitialState) {
 		return nil, fmt.Errorf("verifier output does not match the expected initial state")
 	}
 
@@ -101,7 +102,10 @@ func (ms msgServer) PublishPayloadProof(goCtx context.Context, msg *zktx.MsgPubl
 
 	ms.k.ProvenPayload.Set(ctx, collections.Join(msg.TxHash, msg.PayloadIndex), payload_metadata)
 
-	ms.maybeSettleTx(ctx, msg.TxHash)
+	err = ms.maybeSettleTx(ctx, msg.TxHash)
+	if err != nil {
+		return nil, err
+	}
 
 	/*
 		// Emit event by contract name for TX indexation
@@ -118,27 +122,31 @@ func (ms msgServer) maybeSettleTx(ctx sdk.Context, txHash []byte) error {
 		return fmt.Errorf("no payloads found for this tx")
 	}
 	expected_identity := first_payload.Identity
-	// check that this matches the contract name
-	paths := strings.Split(first_payload.Identity, ".")
-	if len(paths) < 2 || paths[len(paths)-1] != first_payload.ContractName {
-		return fmt.Errorf("invalid identity contract, expected '%s', got '%s'", first_payload.ContractName, paths[len(paths)-1])
-	}
-
-	for i := 1; ; i++ {
-		payload_metadata, err := ms.k.ProvenPayload.Get(ctx, collections.Join(txHash, uint32(i)))
-		if err == collections.ErrNotFound {
-			break
+	if expected_identity != "" {
+		// check that this matches the contract name
+		paths := strings.Split(first_payload.Identity, ".")
+		if len(paths) < 2 || paths[len(paths)-1] != first_payload.ContractName {
+			return fmt.Errorf("invalid identity contract, expected '%s', got '%s'", first_payload.ContractName, paths[len(paths)-1])
 		}
-		if payload_metadata.Identity != expected_identity || err != nil {
-			return fmt.Errorf("payloads have different identities")
+
+		for i := 1; ; i++ {
+			payload_metadata, err := ms.k.ProvenPayload.Get(ctx, collections.Join(txHash, uint32(i)))
+			if errors.Is(err, collections.ErrNotFound) {
+				break
+			}
+			if payload_metadata.Identity != expected_identity || err != nil {
+				return fmt.Errorf("payloads have different identities")
+			}
 		}
 	}
 
 	// Then update the state
 	for i := 0; ; i++ {
 		payload_metadata, err := ms.k.ProvenPayload.Get(ctx, collections.Join(txHash, uint32(i)))
-		if err != nil { // will trigger on ErrNotFound when i is out of bounds, so we've iterated on the whole list
+		if errors.Is(err, collections.ErrNotFound) {
 			return nil
+		} else if err != nil {
+			return err
 		}
 		contract, err := ms.k.Contracts.Get(ctx, payload_metadata.ContractName)
 		if err != nil {
@@ -261,7 +269,7 @@ func extractProof(objmap *zktx.HyleOutput, contract *zktx.Contract, msg *zktx.Ms
 			return err
 		}
 
-		objmap = data
+		*objmap = *data
 		//proofData = base64.StdEncoding.EncodeToString(proof.PublicWitness)
 
 		// Final step: actually check the proof here

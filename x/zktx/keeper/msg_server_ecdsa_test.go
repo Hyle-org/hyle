@@ -246,15 +246,28 @@ func TestExecuteStateChangesGroth16ECDSA(t *testing.T) {
 	err = f.k.Contracts.Set(f.ctx, "ecdsa", contract)
 	require.NoError(err)
 
-	msg := &zktx.MsgExecuteStateChanges{
-		StateChanges: []*zktx.StateChange{
+	msg := &zktx.MsgPublishPayloads{
+		Payloads: []*zktx.Payload{
 			{
 				ContractName: "ecdsa",
-				Proof:        jsonproof,
+				Data:         []byte{0},
 			},
 		},
 	}
-	_, err = f.msgServer.ExecuteStateChanges(f.ctx, msg)
+
+	f.ctx = f.ctx.WithTxBytes([]byte("FakeTx"))
+
+	_, err = f.msgServer.PublishPayloads(f.ctx, msg)
+	require.NoError(err)
+
+	msg2 := &zktx.MsgPublishPayloadProof{
+		TxHash:       []byte("FakeTx"),
+		PayloadIndex: 0,
+		ContractName: "ecdsa",
+		PayloadHash:  []byte{0},
+		Proof:        jsonproof,
+	}
+	_, err = f.msgServer.PublishPayloadProof(f.ctx, msg2)
 	require.NoError(err)
 
 	st, _ := f.k.Contracts.Get(f.ctx, "ecdsa")
