@@ -21,9 +21,10 @@ import (
 )
 
 var (
-	_ module.AppModuleBasic = AppModule{}
-	_ module.HasGenesis     = AppModule{}
-	_ appmodule.AppModule   = AppModule{}
+	_ module.AppModuleBasic     = AppModule{}
+	_ module.HasGenesis         = AppModule{}
+	_ appmodule.AppModule       = AppModule{}
+	_ appmodule.HasBeginBlocker = AppModule{}
 )
 
 // ConsensusVersion defines the current module consensus version.
@@ -117,4 +118,10 @@ func (am AppModule) ExportGenesis(ctx sdk.Context, cdc codec.JSONCodec) json.Raw
 	}
 
 	return cdc.MustMarshalJSON(gs)
+}
+
+// BeginBlock returns the begin blocker for the distribution module.
+func (am AppModule) BeginBlock(ctx context.Context) error {
+	c := sdk.UnwrapSDKContext(ctx)
+	return keeper.BeginBlocker(c, am.keeper)
 }
