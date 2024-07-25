@@ -2354,6 +2354,970 @@ func (x *fastReflection_PayloadMetadata) ProtoMethods() *protoiface.Methods {
 	}
 }
 
+var (
+	md_InnerPayloadTimeout               protoreflect.MessageDescriptor
+	fd_InnerPayloadTimeout_tx_hash       protoreflect.FieldDescriptor
+	fd_InnerPayloadTimeout_payload_index protoreflect.FieldDescriptor
+)
+
+func init() {
+	file_hyle_zktx_v1_types_proto_init()
+	md_InnerPayloadTimeout = File_hyle_zktx_v1_types_proto.Messages().ByName("InnerPayloadTimeout")
+	fd_InnerPayloadTimeout_tx_hash = md_InnerPayloadTimeout.Fields().ByName("tx_hash")
+	fd_InnerPayloadTimeout_payload_index = md_InnerPayloadTimeout.Fields().ByName("payload_index")
+}
+
+var _ protoreflect.Message = (*fastReflection_InnerPayloadTimeout)(nil)
+
+type fastReflection_InnerPayloadTimeout InnerPayloadTimeout
+
+func (x *InnerPayloadTimeout) ProtoReflect() protoreflect.Message {
+	return (*fastReflection_InnerPayloadTimeout)(x)
+}
+
+func (x *InnerPayloadTimeout) slowProtoReflect() protoreflect.Message {
+	mi := &file_hyle_zktx_v1_types_proto_msgTypes[4]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+var _fastReflection_InnerPayloadTimeout_messageType fastReflection_InnerPayloadTimeout_messageType
+var _ protoreflect.MessageType = fastReflection_InnerPayloadTimeout_messageType{}
+
+type fastReflection_InnerPayloadTimeout_messageType struct{}
+
+func (x fastReflection_InnerPayloadTimeout_messageType) Zero() protoreflect.Message {
+	return (*fastReflection_InnerPayloadTimeout)(nil)
+}
+func (x fastReflection_InnerPayloadTimeout_messageType) New() protoreflect.Message {
+	return new(fastReflection_InnerPayloadTimeout)
+}
+func (x fastReflection_InnerPayloadTimeout_messageType) Descriptor() protoreflect.MessageDescriptor {
+	return md_InnerPayloadTimeout
+}
+
+// Descriptor returns message descriptor, which contains only the protobuf
+// type information for the message.
+func (x *fastReflection_InnerPayloadTimeout) Descriptor() protoreflect.MessageDescriptor {
+	return md_InnerPayloadTimeout
+}
+
+// Type returns the message type, which encapsulates both Go and protobuf
+// type information. If the Go type information is not needed,
+// it is recommended that the message descriptor be used instead.
+func (x *fastReflection_InnerPayloadTimeout) Type() protoreflect.MessageType {
+	return _fastReflection_InnerPayloadTimeout_messageType
+}
+
+// New returns a newly allocated and mutable empty message.
+func (x *fastReflection_InnerPayloadTimeout) New() protoreflect.Message {
+	return new(fastReflection_InnerPayloadTimeout)
+}
+
+// Interface unwraps the message reflection interface and
+// returns the underlying ProtoMessage interface.
+func (x *fastReflection_InnerPayloadTimeout) Interface() protoreflect.ProtoMessage {
+	return (*InnerPayloadTimeout)(x)
+}
+
+// Range iterates over every populated field in an undefined order,
+// calling f for each field descriptor and value encountered.
+// Range returns immediately if f returns false.
+// While iterating, mutating operations may only be performed
+// on the current field descriptor.
+func (x *fastReflection_InnerPayloadTimeout) Range(f func(protoreflect.FieldDescriptor, protoreflect.Value) bool) {
+	if len(x.TxHash) != 0 {
+		value := protoreflect.ValueOfBytes(x.TxHash)
+		if !f(fd_InnerPayloadTimeout_tx_hash, value) {
+			return
+		}
+	}
+	if x.PayloadIndex != uint32(0) {
+		value := protoreflect.ValueOfUint32(x.PayloadIndex)
+		if !f(fd_InnerPayloadTimeout_payload_index, value) {
+			return
+		}
+	}
+}
+
+// Has reports whether a field is populated.
+//
+// Some fields have the property of nullability where it is possible to
+// distinguish between the default value of a field and whether the field
+// was explicitly populated with the default value. Singular message fields,
+// member fields of a oneof, and proto2 scalar fields are nullable. Such
+// fields are populated only if explicitly set.
+//
+// In other cases (aside from the nullable cases above),
+// a proto3 scalar field is populated if it contains a non-zero value, and
+// a repeated field is populated if it is non-empty.
+func (x *fastReflection_InnerPayloadTimeout) Has(fd protoreflect.FieldDescriptor) bool {
+	switch fd.FullName() {
+	case "hyle.zktx.v1.InnerPayloadTimeout.tx_hash":
+		return len(x.TxHash) != 0
+	case "hyle.zktx.v1.InnerPayloadTimeout.payload_index":
+		return x.PayloadIndex != uint32(0)
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: hyle.zktx.v1.InnerPayloadTimeout"))
+		}
+		panic(fmt.Errorf("message hyle.zktx.v1.InnerPayloadTimeout does not contain field %s", fd.FullName()))
+	}
+}
+
+// Clear clears the field such that a subsequent Has call reports false.
+//
+// Clearing an extension field clears both the extension type and value
+// associated with the given field number.
+//
+// Clear is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_InnerPayloadTimeout) Clear(fd protoreflect.FieldDescriptor) {
+	switch fd.FullName() {
+	case "hyle.zktx.v1.InnerPayloadTimeout.tx_hash":
+		x.TxHash = nil
+	case "hyle.zktx.v1.InnerPayloadTimeout.payload_index":
+		x.PayloadIndex = uint32(0)
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: hyle.zktx.v1.InnerPayloadTimeout"))
+		}
+		panic(fmt.Errorf("message hyle.zktx.v1.InnerPayloadTimeout does not contain field %s", fd.FullName()))
+	}
+}
+
+// Get retrieves the value for a field.
+//
+// For unpopulated scalars, it returns the default value, where
+// the default value of a bytes scalar is guaranteed to be a copy.
+// For unpopulated composite types, it returns an empty, read-only view
+// of the value; to obtain a mutable reference, use Mutable.
+func (x *fastReflection_InnerPayloadTimeout) Get(descriptor protoreflect.FieldDescriptor) protoreflect.Value {
+	switch descriptor.FullName() {
+	case "hyle.zktx.v1.InnerPayloadTimeout.tx_hash":
+		value := x.TxHash
+		return protoreflect.ValueOfBytes(value)
+	case "hyle.zktx.v1.InnerPayloadTimeout.payload_index":
+		value := x.PayloadIndex
+		return protoreflect.ValueOfUint32(value)
+	default:
+		if descriptor.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: hyle.zktx.v1.InnerPayloadTimeout"))
+		}
+		panic(fmt.Errorf("message hyle.zktx.v1.InnerPayloadTimeout does not contain field %s", descriptor.FullName()))
+	}
+}
+
+// Set stores the value for a field.
+//
+// For a field belonging to a oneof, it implicitly clears any other field
+// that may be currently set within the same oneof.
+// For extension fields, it implicitly stores the provided ExtensionType.
+// When setting a composite type, it is unspecified whether the stored value
+// aliases the source's memory in any way. If the composite value is an
+// empty, read-only value, then it panics.
+//
+// Set is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_InnerPayloadTimeout) Set(fd protoreflect.FieldDescriptor, value protoreflect.Value) {
+	switch fd.FullName() {
+	case "hyle.zktx.v1.InnerPayloadTimeout.tx_hash":
+		x.TxHash = value.Bytes()
+	case "hyle.zktx.v1.InnerPayloadTimeout.payload_index":
+		x.PayloadIndex = uint32(value.Uint())
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: hyle.zktx.v1.InnerPayloadTimeout"))
+		}
+		panic(fmt.Errorf("message hyle.zktx.v1.InnerPayloadTimeout does not contain field %s", fd.FullName()))
+	}
+}
+
+// Mutable returns a mutable reference to a composite type.
+//
+// If the field is unpopulated, it may allocate a composite value.
+// For a field belonging to a oneof, it implicitly clears any other field
+// that may be currently set within the same oneof.
+// For extension fields, it implicitly stores the provided ExtensionType
+// if not already stored.
+// It panics if the field does not contain a composite type.
+//
+// Mutable is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_InnerPayloadTimeout) Mutable(fd protoreflect.FieldDescriptor) protoreflect.Value {
+	switch fd.FullName() {
+	case "hyle.zktx.v1.InnerPayloadTimeout.tx_hash":
+		panic(fmt.Errorf("field tx_hash of message hyle.zktx.v1.InnerPayloadTimeout is not mutable"))
+	case "hyle.zktx.v1.InnerPayloadTimeout.payload_index":
+		panic(fmt.Errorf("field payload_index of message hyle.zktx.v1.InnerPayloadTimeout is not mutable"))
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: hyle.zktx.v1.InnerPayloadTimeout"))
+		}
+		panic(fmt.Errorf("message hyle.zktx.v1.InnerPayloadTimeout does not contain field %s", fd.FullName()))
+	}
+}
+
+// NewField returns a new value that is assignable to the field
+// for the given descriptor. For scalars, this returns the default value.
+// For lists, maps, and messages, this returns a new, empty, mutable value.
+func (x *fastReflection_InnerPayloadTimeout) NewField(fd protoreflect.FieldDescriptor) protoreflect.Value {
+	switch fd.FullName() {
+	case "hyle.zktx.v1.InnerPayloadTimeout.tx_hash":
+		return protoreflect.ValueOfBytes(nil)
+	case "hyle.zktx.v1.InnerPayloadTimeout.payload_index":
+		return protoreflect.ValueOfUint32(uint32(0))
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: hyle.zktx.v1.InnerPayloadTimeout"))
+		}
+		panic(fmt.Errorf("message hyle.zktx.v1.InnerPayloadTimeout does not contain field %s", fd.FullName()))
+	}
+}
+
+// WhichOneof reports which field within the oneof is populated,
+// returning nil if none are populated.
+// It panics if the oneof descriptor does not belong to this message.
+func (x *fastReflection_InnerPayloadTimeout) WhichOneof(d protoreflect.OneofDescriptor) protoreflect.FieldDescriptor {
+	switch d.FullName() {
+	default:
+		panic(fmt.Errorf("%s is not a oneof field in hyle.zktx.v1.InnerPayloadTimeout", d.FullName()))
+	}
+	panic("unreachable")
+}
+
+// GetUnknown retrieves the entire list of unknown fields.
+// The caller may only mutate the contents of the RawFields
+// if the mutated bytes are stored back into the message with SetUnknown.
+func (x *fastReflection_InnerPayloadTimeout) GetUnknown() protoreflect.RawFields {
+	return x.unknownFields
+}
+
+// SetUnknown stores an entire list of unknown fields.
+// The raw fields must be syntactically valid according to the wire format.
+// An implementation may panic if this is not the case.
+// Once stored, the caller must not mutate the content of the RawFields.
+// An empty RawFields may be passed to clear the fields.
+//
+// SetUnknown is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_InnerPayloadTimeout) SetUnknown(fields protoreflect.RawFields) {
+	x.unknownFields = fields
+}
+
+// IsValid reports whether the message is valid.
+//
+// An invalid message is an empty, read-only value.
+//
+// An invalid message often corresponds to a nil pointer of the concrete
+// message type, but the details are implementation dependent.
+// Validity is not part of the protobuf data model, and may not
+// be preserved in marshaling or other operations.
+func (x *fastReflection_InnerPayloadTimeout) IsValid() bool {
+	return x != nil
+}
+
+// ProtoMethods returns optional fastReflectionFeature-path implementations of various operations.
+// This method may return nil.
+//
+// The returned methods type is identical to
+// "google.golang.org/protobuf/runtime/protoiface".Methods.
+// Consult the protoiface package documentation for details.
+func (x *fastReflection_InnerPayloadTimeout) ProtoMethods() *protoiface.Methods {
+	size := func(input protoiface.SizeInput) protoiface.SizeOutput {
+		x := input.Message.Interface().(*InnerPayloadTimeout)
+		if x == nil {
+			return protoiface.SizeOutput{
+				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+				Size:              0,
+			}
+		}
+		options := runtime.SizeInputToOptions(input)
+		_ = options
+		var n int
+		var l int
+		_ = l
+		l = len(x.TxHash)
+		if l > 0 {
+			n += 1 + l + runtime.Sov(uint64(l))
+		}
+		if x.PayloadIndex != 0 {
+			n += 1 + runtime.Sov(uint64(x.PayloadIndex))
+		}
+		if x.unknownFields != nil {
+			n += len(x.unknownFields)
+		}
+		return protoiface.SizeOutput{
+			NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+			Size:              n,
+		}
+	}
+
+	marshal := func(input protoiface.MarshalInput) (protoiface.MarshalOutput, error) {
+		x := input.Message.Interface().(*InnerPayloadTimeout)
+		if x == nil {
+			return protoiface.MarshalOutput{
+				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+				Buf:               input.Buf,
+			}, nil
+		}
+		options := runtime.MarshalInputToOptions(input)
+		_ = options
+		size := options.Size(x)
+		dAtA := make([]byte, size)
+		i := len(dAtA)
+		_ = i
+		var l int
+		_ = l
+		if x.unknownFields != nil {
+			i -= len(x.unknownFields)
+			copy(dAtA[i:], x.unknownFields)
+		}
+		if x.PayloadIndex != 0 {
+			i = runtime.EncodeVarint(dAtA, i, uint64(x.PayloadIndex))
+			i--
+			dAtA[i] = 0x10
+		}
+		if len(x.TxHash) > 0 {
+			i -= len(x.TxHash)
+			copy(dAtA[i:], x.TxHash)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.TxHash)))
+			i--
+			dAtA[i] = 0xa
+		}
+		if input.Buf != nil {
+			input.Buf = append(input.Buf, dAtA...)
+		} else {
+			input.Buf = dAtA
+		}
+		return protoiface.MarshalOutput{
+			NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+			Buf:               input.Buf,
+		}, nil
+	}
+	unmarshal := func(input protoiface.UnmarshalInput) (protoiface.UnmarshalOutput, error) {
+		x := input.Message.Interface().(*InnerPayloadTimeout)
+		if x == nil {
+			return protoiface.UnmarshalOutput{
+				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+				Flags:             input.Flags,
+			}, nil
+		}
+		options := runtime.UnmarshalInputToOptions(input)
+		_ = options
+		dAtA := input.Buf
+		l := len(dAtA)
+		iNdEx := 0
+		for iNdEx < l {
+			preIndex := iNdEx
+			var wire uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				wire |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			fieldNum := int32(wire >> 3)
+			wireType := int(wire & 0x7)
+			if wireType == 4 {
+				return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: InnerPayloadTimeout: wiretype end group for non-group")
+			}
+			if fieldNum <= 0 {
+				return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: InnerPayloadTimeout: illegal tag %d (wire type %d)", fieldNum, wire)
+			}
+			switch fieldNum {
+			case 1:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field TxHash", wireType)
+				}
+				var byteLen int
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					byteLen |= int(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				if byteLen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + byteLen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.TxHash = append(x.TxHash[:0], dAtA[iNdEx:postIndex]...)
+				if x.TxHash == nil {
+					x.TxHash = []byte{}
+				}
+				iNdEx = postIndex
+			case 2:
+				if wireType != 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field PayloadIndex", wireType)
+				}
+				x.PayloadIndex = 0
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					x.PayloadIndex |= uint32(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+			default:
+				iNdEx = preIndex
+				skippy, err := runtime.Skip(dAtA[iNdEx:])
+				if err != nil {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, err
+				}
+				if (skippy < 0) || (iNdEx+skippy) < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if (iNdEx + skippy) > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				if !options.DiscardUnknown {
+					x.unknownFields = append(x.unknownFields, dAtA[iNdEx:iNdEx+skippy]...)
+				}
+				iNdEx += skippy
+			}
+		}
+
+		if iNdEx > l {
+			return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+		}
+		return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, nil
+	}
+	return &protoiface.Methods{
+		NoUnkeyedLiterals: struct{}{},
+		Flags:             protoiface.SupportMarshalDeterministic | protoiface.SupportUnmarshalDiscardUnknown,
+		Size:              size,
+		Marshal:           marshal,
+		Unmarshal:         unmarshal,
+		Merge:             nil,
+		CheckInitialized:  nil,
+	}
+}
+
+var _ protoreflect.List = (*_PayloadTimeout_1_list)(nil)
+
+type _PayloadTimeout_1_list struct {
+	list *[]*InnerPayloadTimeout
+}
+
+func (x *_PayloadTimeout_1_list) Len() int {
+	if x.list == nil {
+		return 0
+	}
+	return len(*x.list)
+}
+
+func (x *_PayloadTimeout_1_list) Get(i int) protoreflect.Value {
+	return protoreflect.ValueOfMessage((*x.list)[i].ProtoReflect())
+}
+
+func (x *_PayloadTimeout_1_list) Set(i int, value protoreflect.Value) {
+	valueUnwrapped := value.Message()
+	concreteValue := valueUnwrapped.Interface().(*InnerPayloadTimeout)
+	(*x.list)[i] = concreteValue
+}
+
+func (x *_PayloadTimeout_1_list) Append(value protoreflect.Value) {
+	valueUnwrapped := value.Message()
+	concreteValue := valueUnwrapped.Interface().(*InnerPayloadTimeout)
+	*x.list = append(*x.list, concreteValue)
+}
+
+func (x *_PayloadTimeout_1_list) AppendMutable() protoreflect.Value {
+	v := new(InnerPayloadTimeout)
+	*x.list = append(*x.list, v)
+	return protoreflect.ValueOfMessage(v.ProtoReflect())
+}
+
+func (x *_PayloadTimeout_1_list) Truncate(n int) {
+	for i := n; i < len(*x.list); i++ {
+		(*x.list)[i] = nil
+	}
+	*x.list = (*x.list)[:n]
+}
+
+func (x *_PayloadTimeout_1_list) NewElement() protoreflect.Value {
+	v := new(InnerPayloadTimeout)
+	return protoreflect.ValueOfMessage(v.ProtoReflect())
+}
+
+func (x *_PayloadTimeout_1_list) IsValid() bool {
+	return x.list != nil
+}
+
+var (
+	md_PayloadTimeout          protoreflect.MessageDescriptor
+	fd_PayloadTimeout_payloads protoreflect.FieldDescriptor
+)
+
+func init() {
+	file_hyle_zktx_v1_types_proto_init()
+	md_PayloadTimeout = File_hyle_zktx_v1_types_proto.Messages().ByName("PayloadTimeout")
+	fd_PayloadTimeout_payloads = md_PayloadTimeout.Fields().ByName("payloads")
+}
+
+var _ protoreflect.Message = (*fastReflection_PayloadTimeout)(nil)
+
+type fastReflection_PayloadTimeout PayloadTimeout
+
+func (x *PayloadTimeout) ProtoReflect() protoreflect.Message {
+	return (*fastReflection_PayloadTimeout)(x)
+}
+
+func (x *PayloadTimeout) slowProtoReflect() protoreflect.Message {
+	mi := &file_hyle_zktx_v1_types_proto_msgTypes[5]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+var _fastReflection_PayloadTimeout_messageType fastReflection_PayloadTimeout_messageType
+var _ protoreflect.MessageType = fastReflection_PayloadTimeout_messageType{}
+
+type fastReflection_PayloadTimeout_messageType struct{}
+
+func (x fastReflection_PayloadTimeout_messageType) Zero() protoreflect.Message {
+	return (*fastReflection_PayloadTimeout)(nil)
+}
+func (x fastReflection_PayloadTimeout_messageType) New() protoreflect.Message {
+	return new(fastReflection_PayloadTimeout)
+}
+func (x fastReflection_PayloadTimeout_messageType) Descriptor() protoreflect.MessageDescriptor {
+	return md_PayloadTimeout
+}
+
+// Descriptor returns message descriptor, which contains only the protobuf
+// type information for the message.
+func (x *fastReflection_PayloadTimeout) Descriptor() protoreflect.MessageDescriptor {
+	return md_PayloadTimeout
+}
+
+// Type returns the message type, which encapsulates both Go and protobuf
+// type information. If the Go type information is not needed,
+// it is recommended that the message descriptor be used instead.
+func (x *fastReflection_PayloadTimeout) Type() protoreflect.MessageType {
+	return _fastReflection_PayloadTimeout_messageType
+}
+
+// New returns a newly allocated and mutable empty message.
+func (x *fastReflection_PayloadTimeout) New() protoreflect.Message {
+	return new(fastReflection_PayloadTimeout)
+}
+
+// Interface unwraps the message reflection interface and
+// returns the underlying ProtoMessage interface.
+func (x *fastReflection_PayloadTimeout) Interface() protoreflect.ProtoMessage {
+	return (*PayloadTimeout)(x)
+}
+
+// Range iterates over every populated field in an undefined order,
+// calling f for each field descriptor and value encountered.
+// Range returns immediately if f returns false.
+// While iterating, mutating operations may only be performed
+// on the current field descriptor.
+func (x *fastReflection_PayloadTimeout) Range(f func(protoreflect.FieldDescriptor, protoreflect.Value) bool) {
+	if len(x.Payloads) != 0 {
+		value := protoreflect.ValueOfList(&_PayloadTimeout_1_list{list: &x.Payloads})
+		if !f(fd_PayloadTimeout_payloads, value) {
+			return
+		}
+	}
+}
+
+// Has reports whether a field is populated.
+//
+// Some fields have the property of nullability where it is possible to
+// distinguish between the default value of a field and whether the field
+// was explicitly populated with the default value. Singular message fields,
+// member fields of a oneof, and proto2 scalar fields are nullable. Such
+// fields are populated only if explicitly set.
+//
+// In other cases (aside from the nullable cases above),
+// a proto3 scalar field is populated if it contains a non-zero value, and
+// a repeated field is populated if it is non-empty.
+func (x *fastReflection_PayloadTimeout) Has(fd protoreflect.FieldDescriptor) bool {
+	switch fd.FullName() {
+	case "hyle.zktx.v1.PayloadTimeout.payloads":
+		return len(x.Payloads) != 0
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: hyle.zktx.v1.PayloadTimeout"))
+		}
+		panic(fmt.Errorf("message hyle.zktx.v1.PayloadTimeout does not contain field %s", fd.FullName()))
+	}
+}
+
+// Clear clears the field such that a subsequent Has call reports false.
+//
+// Clearing an extension field clears both the extension type and value
+// associated with the given field number.
+//
+// Clear is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_PayloadTimeout) Clear(fd protoreflect.FieldDescriptor) {
+	switch fd.FullName() {
+	case "hyle.zktx.v1.PayloadTimeout.payloads":
+		x.Payloads = nil
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: hyle.zktx.v1.PayloadTimeout"))
+		}
+		panic(fmt.Errorf("message hyle.zktx.v1.PayloadTimeout does not contain field %s", fd.FullName()))
+	}
+}
+
+// Get retrieves the value for a field.
+//
+// For unpopulated scalars, it returns the default value, where
+// the default value of a bytes scalar is guaranteed to be a copy.
+// For unpopulated composite types, it returns an empty, read-only view
+// of the value; to obtain a mutable reference, use Mutable.
+func (x *fastReflection_PayloadTimeout) Get(descriptor protoreflect.FieldDescriptor) protoreflect.Value {
+	switch descriptor.FullName() {
+	case "hyle.zktx.v1.PayloadTimeout.payloads":
+		if len(x.Payloads) == 0 {
+			return protoreflect.ValueOfList(&_PayloadTimeout_1_list{})
+		}
+		listValue := &_PayloadTimeout_1_list{list: &x.Payloads}
+		return protoreflect.ValueOfList(listValue)
+	default:
+		if descriptor.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: hyle.zktx.v1.PayloadTimeout"))
+		}
+		panic(fmt.Errorf("message hyle.zktx.v1.PayloadTimeout does not contain field %s", descriptor.FullName()))
+	}
+}
+
+// Set stores the value for a field.
+//
+// For a field belonging to a oneof, it implicitly clears any other field
+// that may be currently set within the same oneof.
+// For extension fields, it implicitly stores the provided ExtensionType.
+// When setting a composite type, it is unspecified whether the stored value
+// aliases the source's memory in any way. If the composite value is an
+// empty, read-only value, then it panics.
+//
+// Set is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_PayloadTimeout) Set(fd protoreflect.FieldDescriptor, value protoreflect.Value) {
+	switch fd.FullName() {
+	case "hyle.zktx.v1.PayloadTimeout.payloads":
+		lv := value.List()
+		clv := lv.(*_PayloadTimeout_1_list)
+		x.Payloads = *clv.list
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: hyle.zktx.v1.PayloadTimeout"))
+		}
+		panic(fmt.Errorf("message hyle.zktx.v1.PayloadTimeout does not contain field %s", fd.FullName()))
+	}
+}
+
+// Mutable returns a mutable reference to a composite type.
+//
+// If the field is unpopulated, it may allocate a composite value.
+// For a field belonging to a oneof, it implicitly clears any other field
+// that may be currently set within the same oneof.
+// For extension fields, it implicitly stores the provided ExtensionType
+// if not already stored.
+// It panics if the field does not contain a composite type.
+//
+// Mutable is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_PayloadTimeout) Mutable(fd protoreflect.FieldDescriptor) protoreflect.Value {
+	switch fd.FullName() {
+	case "hyle.zktx.v1.PayloadTimeout.payloads":
+		if x.Payloads == nil {
+			x.Payloads = []*InnerPayloadTimeout{}
+		}
+		value := &_PayloadTimeout_1_list{list: &x.Payloads}
+		return protoreflect.ValueOfList(value)
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: hyle.zktx.v1.PayloadTimeout"))
+		}
+		panic(fmt.Errorf("message hyle.zktx.v1.PayloadTimeout does not contain field %s", fd.FullName()))
+	}
+}
+
+// NewField returns a new value that is assignable to the field
+// for the given descriptor. For scalars, this returns the default value.
+// For lists, maps, and messages, this returns a new, empty, mutable value.
+func (x *fastReflection_PayloadTimeout) NewField(fd protoreflect.FieldDescriptor) protoreflect.Value {
+	switch fd.FullName() {
+	case "hyle.zktx.v1.PayloadTimeout.payloads":
+		list := []*InnerPayloadTimeout{}
+		return protoreflect.ValueOfList(&_PayloadTimeout_1_list{list: &list})
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: hyle.zktx.v1.PayloadTimeout"))
+		}
+		panic(fmt.Errorf("message hyle.zktx.v1.PayloadTimeout does not contain field %s", fd.FullName()))
+	}
+}
+
+// WhichOneof reports which field within the oneof is populated,
+// returning nil if none are populated.
+// It panics if the oneof descriptor does not belong to this message.
+func (x *fastReflection_PayloadTimeout) WhichOneof(d protoreflect.OneofDescriptor) protoreflect.FieldDescriptor {
+	switch d.FullName() {
+	default:
+		panic(fmt.Errorf("%s is not a oneof field in hyle.zktx.v1.PayloadTimeout", d.FullName()))
+	}
+	panic("unreachable")
+}
+
+// GetUnknown retrieves the entire list of unknown fields.
+// The caller may only mutate the contents of the RawFields
+// if the mutated bytes are stored back into the message with SetUnknown.
+func (x *fastReflection_PayloadTimeout) GetUnknown() protoreflect.RawFields {
+	return x.unknownFields
+}
+
+// SetUnknown stores an entire list of unknown fields.
+// The raw fields must be syntactically valid according to the wire format.
+// An implementation may panic if this is not the case.
+// Once stored, the caller must not mutate the content of the RawFields.
+// An empty RawFields may be passed to clear the fields.
+//
+// SetUnknown is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_PayloadTimeout) SetUnknown(fields protoreflect.RawFields) {
+	x.unknownFields = fields
+}
+
+// IsValid reports whether the message is valid.
+//
+// An invalid message is an empty, read-only value.
+//
+// An invalid message often corresponds to a nil pointer of the concrete
+// message type, but the details are implementation dependent.
+// Validity is not part of the protobuf data model, and may not
+// be preserved in marshaling or other operations.
+func (x *fastReflection_PayloadTimeout) IsValid() bool {
+	return x != nil
+}
+
+// ProtoMethods returns optional fastReflectionFeature-path implementations of various operations.
+// This method may return nil.
+//
+// The returned methods type is identical to
+// "google.golang.org/protobuf/runtime/protoiface".Methods.
+// Consult the protoiface package documentation for details.
+func (x *fastReflection_PayloadTimeout) ProtoMethods() *protoiface.Methods {
+	size := func(input protoiface.SizeInput) protoiface.SizeOutput {
+		x := input.Message.Interface().(*PayloadTimeout)
+		if x == nil {
+			return protoiface.SizeOutput{
+				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+				Size:              0,
+			}
+		}
+		options := runtime.SizeInputToOptions(input)
+		_ = options
+		var n int
+		var l int
+		_ = l
+		if len(x.Payloads) > 0 {
+			for _, e := range x.Payloads {
+				l = options.Size(e)
+				n += 1 + l + runtime.Sov(uint64(l))
+			}
+		}
+		if x.unknownFields != nil {
+			n += len(x.unknownFields)
+		}
+		return protoiface.SizeOutput{
+			NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+			Size:              n,
+		}
+	}
+
+	marshal := func(input protoiface.MarshalInput) (protoiface.MarshalOutput, error) {
+		x := input.Message.Interface().(*PayloadTimeout)
+		if x == nil {
+			return protoiface.MarshalOutput{
+				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+				Buf:               input.Buf,
+			}, nil
+		}
+		options := runtime.MarshalInputToOptions(input)
+		_ = options
+		size := options.Size(x)
+		dAtA := make([]byte, size)
+		i := len(dAtA)
+		_ = i
+		var l int
+		_ = l
+		if x.unknownFields != nil {
+			i -= len(x.unknownFields)
+			copy(dAtA[i:], x.unknownFields)
+		}
+		if len(x.Payloads) > 0 {
+			for iNdEx := len(x.Payloads) - 1; iNdEx >= 0; iNdEx-- {
+				encoded, err := options.Marshal(x.Payloads[iNdEx])
+				if err != nil {
+					return protoiface.MarshalOutput{
+						NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+						Buf:               input.Buf,
+					}, err
+				}
+				i -= len(encoded)
+				copy(dAtA[i:], encoded)
+				i = runtime.EncodeVarint(dAtA, i, uint64(len(encoded)))
+				i--
+				dAtA[i] = 0xa
+			}
+		}
+		if input.Buf != nil {
+			input.Buf = append(input.Buf, dAtA...)
+		} else {
+			input.Buf = dAtA
+		}
+		return protoiface.MarshalOutput{
+			NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+			Buf:               input.Buf,
+		}, nil
+	}
+	unmarshal := func(input protoiface.UnmarshalInput) (protoiface.UnmarshalOutput, error) {
+		x := input.Message.Interface().(*PayloadTimeout)
+		if x == nil {
+			return protoiface.UnmarshalOutput{
+				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+				Flags:             input.Flags,
+			}, nil
+		}
+		options := runtime.UnmarshalInputToOptions(input)
+		_ = options
+		dAtA := input.Buf
+		l := len(dAtA)
+		iNdEx := 0
+		for iNdEx < l {
+			preIndex := iNdEx
+			var wire uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				wire |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			fieldNum := int32(wire >> 3)
+			wireType := int(wire & 0x7)
+			if wireType == 4 {
+				return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: PayloadTimeout: wiretype end group for non-group")
+			}
+			if fieldNum <= 0 {
+				return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: PayloadTimeout: illegal tag %d (wire type %d)", fieldNum, wire)
+			}
+			switch fieldNum {
+			case 1:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field Payloads", wireType)
+				}
+				var msglen int
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					msglen |= int(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				if msglen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + msglen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.Payloads = append(x.Payloads, &InnerPayloadTimeout{})
+				if err := options.Unmarshal(dAtA[iNdEx:postIndex], x.Payloads[len(x.Payloads)-1]); err != nil {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, err
+				}
+				iNdEx = postIndex
+			default:
+				iNdEx = preIndex
+				skippy, err := runtime.Skip(dAtA[iNdEx:])
+				if err != nil {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, err
+				}
+				if (skippy < 0) || (iNdEx+skippy) < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if (iNdEx + skippy) > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				if !options.DiscardUnknown {
+					x.unknownFields = append(x.unknownFields, dAtA[iNdEx:iNdEx+skippy]...)
+				}
+				iNdEx += skippy
+			}
+		}
+
+		if iNdEx > l {
+			return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+		}
+		return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, nil
+	}
+	return &protoiface.Methods{
+		NoUnkeyedLiterals: struct{}{},
+		Flags:             protoiface.SupportMarshalDeterministic | protoiface.SupportUnmarshalDiscardUnknown,
+		Size:              size,
+		Marshal:           marshal,
+		Unmarshal:         unmarshal,
+		Merge:             nil,
+		CheckInitialized:  nil,
+	}
+}
+
 // Code generated by protoc-gen-go. DO NOT EDIT.
 // versions:
 // 	protoc-gen-go v1.27.0
@@ -2567,6 +3531,89 @@ func (x *PayloadMetadata) GetVerified() bool {
 	return false
 }
 
+// InnerPayloadTimeout is data to trigger TX timeout.
+type InnerPayloadTimeout struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	// Hash of the TX
+	TxHash []byte `protobuf:"bytes,1,opt,name=tx_hash,json=txHash,proto3" json:"tx_hash,omitempty"`
+	// Index of the payload in the tx
+	PayloadIndex uint32 `protobuf:"varint,2,opt,name=payload_index,json=payloadIndex,proto3" json:"payload_index,omitempty"`
+}
+
+func (x *InnerPayloadTimeout) Reset() {
+	*x = InnerPayloadTimeout{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_hyle_zktx_v1_types_proto_msgTypes[4]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *InnerPayloadTimeout) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*InnerPayloadTimeout) ProtoMessage() {}
+
+// Deprecated: Use InnerPayloadTimeout.ProtoReflect.Descriptor instead.
+func (*InnerPayloadTimeout) Descriptor() ([]byte, []int) {
+	return file_hyle_zktx_v1_types_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *InnerPayloadTimeout) GetTxHash() []byte {
+	if x != nil {
+		return x.TxHash
+	}
+	return nil
+}
+
+func (x *InnerPayloadTimeout) GetPayloadIndex() uint32 {
+	if x != nil {
+		return x.PayloadIndex
+	}
+	return 0
+}
+
+// PayloadTimeout is a list of payloads and their timeouts
+type PayloadTimeout struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	// List of payloads and their timeouts
+	Payloads []*InnerPayloadTimeout `protobuf:"bytes,1,rep,name=payloads,proto3" json:"payloads,omitempty"`
+}
+
+func (x *PayloadTimeout) Reset() {
+	*x = PayloadTimeout{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_hyle_zktx_v1_types_proto_msgTypes[5]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *PayloadTimeout) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PayloadTimeout) ProtoMessage() {}
+
+// Deprecated: Use PayloadTimeout.ProtoReflect.Descriptor instead.
+func (*PayloadTimeout) Descriptor() ([]byte, []int) {
+	return file_hyle_zktx_v1_types_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *PayloadTimeout) GetPayloads() []*InnerPayloadTimeout {
+	if x != nil {
+		return x.Payloads
+	}
+	return nil
+}
+
 var File_hyle_zktx_v1_types_proto protoreflect.FileDescriptor
 
 var file_hyle_zktx_v1_types_proto_rawDesc = []byte{
@@ -2609,18 +3656,29 @@ var file_hyle_zktx_v1_types_proto_rawDesc = []byte{
 	0x0a, 0x6e, 0x65, 0x78, 0x74, 0x5f, 0x73, 0x74, 0x61, 0x74, 0x65, 0x18, 0x04, 0x20, 0x01, 0x28,
 	0x0c, 0x52, 0x09, 0x6e, 0x65, 0x78, 0x74, 0x53, 0x74, 0x61, 0x74, 0x65, 0x12, 0x1a, 0x0a, 0x08,
 	0x76, 0x65, 0x72, 0x69, 0x66, 0x69, 0x65, 0x64, 0x18, 0x05, 0x20, 0x01, 0x28, 0x08, 0x52, 0x08,
-	0x76, 0x65, 0x72, 0x69, 0x66, 0x69, 0x65, 0x64, 0x42, 0xa9, 0x01, 0x0a, 0x10, 0x63, 0x6f, 0x6d,
-	0x2e, 0x68, 0x79, 0x6c, 0x65, 0x2e, 0x7a, 0x6b, 0x74, 0x78, 0x2e, 0x76, 0x31, 0x42, 0x0a, 0x54,
-	0x79, 0x70, 0x65, 0x73, 0x50, 0x72, 0x6f, 0x74, 0x6f, 0x50, 0x01, 0x5a, 0x37, 0x67, 0x69, 0x74,
-	0x68, 0x75, 0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x68, 0x79, 0x6c, 0x65, 0x2d, 0x6f, 0x72, 0x67,
-	0x2f, 0x68, 0x79, 0x6c, 0x65, 0x2f, 0x78, 0x2f, 0x7a, 0x6b, 0x74, 0x78, 0x2f, 0x61, 0x70, 0x69,
-	0x2f, 0x68, 0x79, 0x6c, 0x65, 0x2f, 0x7a, 0x6b, 0x74, 0x78, 0x2f, 0x76, 0x31, 0x3b, 0x7a, 0x6b,
-	0x74, 0x78, 0x76, 0x31, 0xa2, 0x02, 0x03, 0x48, 0x5a, 0x58, 0xaa, 0x02, 0x0c, 0x48, 0x79, 0x6c,
-	0x65, 0x2e, 0x5a, 0x6b, 0x74, 0x78, 0x2e, 0x56, 0x31, 0xca, 0x02, 0x0c, 0x48, 0x79, 0x6c, 0x65,
-	0x5c, 0x5a, 0x6b, 0x74, 0x78, 0x5c, 0x56, 0x31, 0xe2, 0x02, 0x18, 0x48, 0x79, 0x6c, 0x65, 0x5c,
-	0x5a, 0x6b, 0x74, 0x78, 0x5c, 0x56, 0x31, 0x5c, 0x47, 0x50, 0x42, 0x4d, 0x65, 0x74, 0x61, 0x64,
-	0x61, 0x74, 0x61, 0xea, 0x02, 0x0e, 0x48, 0x79, 0x6c, 0x65, 0x3a, 0x3a, 0x5a, 0x6b, 0x74, 0x78,
-	0x3a, 0x3a, 0x56, 0x31, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
+	0x76, 0x65, 0x72, 0x69, 0x66, 0x69, 0x65, 0x64, 0x22, 0x53, 0x0a, 0x13, 0x49, 0x6e, 0x6e, 0x65,
+	0x72, 0x50, 0x61, 0x79, 0x6c, 0x6f, 0x61, 0x64, 0x54, 0x69, 0x6d, 0x65, 0x6f, 0x75, 0x74, 0x12,
+	0x17, 0x0a, 0x07, 0x74, 0x78, 0x5f, 0x68, 0x61, 0x73, 0x68, 0x18, 0x01, 0x20, 0x01, 0x28, 0x0c,
+	0x52, 0x06, 0x74, 0x78, 0x48, 0x61, 0x73, 0x68, 0x12, 0x23, 0x0a, 0x0d, 0x70, 0x61, 0x79, 0x6c,
+	0x6f, 0x61, 0x64, 0x5f, 0x69, 0x6e, 0x64, 0x65, 0x78, 0x18, 0x02, 0x20, 0x01, 0x28, 0x0d, 0x52,
+	0x0c, 0x70, 0x61, 0x79, 0x6c, 0x6f, 0x61, 0x64, 0x49, 0x6e, 0x64, 0x65, 0x78, 0x22, 0x4f, 0x0a,
+	0x0e, 0x50, 0x61, 0x79, 0x6c, 0x6f, 0x61, 0x64, 0x54, 0x69, 0x6d, 0x65, 0x6f, 0x75, 0x74, 0x12,
+	0x3d, 0x0a, 0x08, 0x70, 0x61, 0x79, 0x6c, 0x6f, 0x61, 0x64, 0x73, 0x18, 0x01, 0x20, 0x03, 0x28,
+	0x0b, 0x32, 0x21, 0x2e, 0x68, 0x79, 0x6c, 0x65, 0x2e, 0x7a, 0x6b, 0x74, 0x78, 0x2e, 0x76, 0x31,
+	0x2e, 0x49, 0x6e, 0x6e, 0x65, 0x72, 0x50, 0x61, 0x79, 0x6c, 0x6f, 0x61, 0x64, 0x54, 0x69, 0x6d,
+	0x65, 0x6f, 0x75, 0x74, 0x52, 0x08, 0x70, 0x61, 0x79, 0x6c, 0x6f, 0x61, 0x64, 0x73, 0x42, 0xa9,
+	0x01, 0x0a, 0x10, 0x63, 0x6f, 0x6d, 0x2e, 0x68, 0x79, 0x6c, 0x65, 0x2e, 0x7a, 0x6b, 0x74, 0x78,
+	0x2e, 0x76, 0x31, 0x42, 0x0a, 0x54, 0x79, 0x70, 0x65, 0x73, 0x50, 0x72, 0x6f, 0x74, 0x6f, 0x50,
+	0x01, 0x5a, 0x37, 0x67, 0x69, 0x74, 0x68, 0x75, 0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x68, 0x79,
+	0x6c, 0x65, 0x2d, 0x6f, 0x72, 0x67, 0x2f, 0x68, 0x79, 0x6c, 0x65, 0x2f, 0x78, 0x2f, 0x7a, 0x6b,
+	0x74, 0x78, 0x2f, 0x61, 0x70, 0x69, 0x2f, 0x68, 0x79, 0x6c, 0x65, 0x2f, 0x7a, 0x6b, 0x74, 0x78,
+	0x2f, 0x76, 0x31, 0x3b, 0x7a, 0x6b, 0x74, 0x78, 0x76, 0x31, 0xa2, 0x02, 0x03, 0x48, 0x5a, 0x58,
+	0xaa, 0x02, 0x0c, 0x48, 0x79, 0x6c, 0x65, 0x2e, 0x5a, 0x6b, 0x74, 0x78, 0x2e, 0x56, 0x31, 0xca,
+	0x02, 0x0c, 0x48, 0x79, 0x6c, 0x65, 0x5c, 0x5a, 0x6b, 0x74, 0x78, 0x5c, 0x56, 0x31, 0xe2, 0x02,
+	0x18, 0x48, 0x79, 0x6c, 0x65, 0x5c, 0x5a, 0x6b, 0x74, 0x78, 0x5c, 0x56, 0x31, 0x5c, 0x47, 0x50,
+	0x42, 0x4d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0xea, 0x02, 0x0e, 0x48, 0x79, 0x6c, 0x65,
+	0x3a, 0x3a, 0x5a, 0x6b, 0x74, 0x78, 0x3a, 0x3a, 0x56, 0x31, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74,
+	0x6f, 0x33,
 }
 
 var (
@@ -2635,23 +3693,26 @@ func file_hyle_zktx_v1_types_proto_rawDescGZIP() []byte {
 	return file_hyle_zktx_v1_types_proto_rawDescData
 }
 
-var file_hyle_zktx_v1_types_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
+var file_hyle_zktx_v1_types_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
 var file_hyle_zktx_v1_types_proto_goTypes = []interface{}{
-	(*Params)(nil),          // 0: hyle.zktx.v1.Params
-	(*GenesisState)(nil),    // 1: hyle.zktx.v1.GenesisState
-	(*Contract)(nil),        // 2: hyle.zktx.v1.Contract
-	(*PayloadMetadata)(nil), // 3: hyle.zktx.v1.PayloadMetadata
-	nil,                     // 4: hyle.zktx.v1.GenesisState.ContractsEntry
+	(*Params)(nil),              // 0: hyle.zktx.v1.Params
+	(*GenesisState)(nil),        // 1: hyle.zktx.v1.GenesisState
+	(*Contract)(nil),            // 2: hyle.zktx.v1.Contract
+	(*PayloadMetadata)(nil),     // 3: hyle.zktx.v1.PayloadMetadata
+	(*InnerPayloadTimeout)(nil), // 4: hyle.zktx.v1.InnerPayloadTimeout
+	(*PayloadTimeout)(nil),      // 5: hyle.zktx.v1.PayloadTimeout
+	nil,                         // 6: hyle.zktx.v1.GenesisState.ContractsEntry
 }
 var file_hyle_zktx_v1_types_proto_depIdxs = []int32{
 	0, // 0: hyle.zktx.v1.GenesisState.params:type_name -> hyle.zktx.v1.Params
-	4, // 1: hyle.zktx.v1.GenesisState.contracts:type_name -> hyle.zktx.v1.GenesisState.ContractsEntry
-	2, // 2: hyle.zktx.v1.GenesisState.ContractsEntry.value:type_name -> hyle.zktx.v1.Contract
-	3, // [3:3] is the sub-list for method output_type
-	3, // [3:3] is the sub-list for method input_type
-	3, // [3:3] is the sub-list for extension type_name
-	3, // [3:3] is the sub-list for extension extendee
-	0, // [0:3] is the sub-list for field type_name
+	6, // 1: hyle.zktx.v1.GenesisState.contracts:type_name -> hyle.zktx.v1.GenesisState.ContractsEntry
+	4, // 2: hyle.zktx.v1.PayloadTimeout.payloads:type_name -> hyle.zktx.v1.InnerPayloadTimeout
+	2, // 3: hyle.zktx.v1.GenesisState.ContractsEntry.value:type_name -> hyle.zktx.v1.Contract
+	4, // [4:4] is the sub-list for method output_type
+	4, // [4:4] is the sub-list for method input_type
+	4, // [4:4] is the sub-list for extension type_name
+	4, // [4:4] is the sub-list for extension extendee
+	0, // [0:4] is the sub-list for field type_name
 }
 
 func init() { file_hyle_zktx_v1_types_proto_init() }
@@ -2708,6 +3769,30 @@ func file_hyle_zktx_v1_types_proto_init() {
 				return nil
 			}
 		}
+		file_hyle_zktx_v1_types_proto_msgTypes[4].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*InnerPayloadTimeout); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_hyle_zktx_v1_types_proto_msgTypes[5].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*PayloadTimeout); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -2715,7 +3800,7 @@ func file_hyle_zktx_v1_types_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: file_hyle_zktx_v1_types_proto_rawDesc,
 			NumEnums:      0,
-			NumMessages:   5,
+			NumMessages:   7,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

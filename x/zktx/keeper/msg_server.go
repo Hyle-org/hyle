@@ -33,6 +33,8 @@ var sp1VerifierPath = os.Getenv("SP1_VERIFIER_PATH")
 var noirVerifierPath = os.Getenv("NOIR_VERIFIER_PATH")
 var cairoVerifierPath = os.Getenv("CAIRO_VERIFIER_PATH")
 
+var payloadTimeout = int64(100)
+
 // NewMsgServerImpl returns an implementation of the module MsgServer interface.
 func NewMsgServerImpl(keeper Keeper) zktx.MsgServer {
 	// By default, assume the hylé repo shares a parent directory with the verifiers repo.
@@ -68,6 +70,28 @@ func (ms msgServer) PublishPayloads(goCtx context.Context, msg *zktx.MsgPublishP
 			PayloadHash:  payload.Data,
 			ContractName: payload.ContractName,
 		})
+
+		payloads, err := ms.k.Timeout.Get(ctx, ctx.BlockHeight()+payloadTimeout)
+		var new_payloads zktx.PayloadTimeout
+		if errors.Is(err, collections.ErrNotFound) {
+			new_payloads = zktx.PayloadTimeout{
+				Payloads: []*zktx.InnerPayloadTimeout{
+					{
+						TxHash:       ctx.TxBytes(),
+						PayloadIndex: uint32(i),
+					},
+				},
+			}
+		} else if err != nil {
+			return nil, err
+		} else {
+			new_payloads = payloads
+			new_payloads.Payloads = append(new_payloads.Payloads, &zktx.InnerPayloadTimeout{
+				TxHash:       ctx.TxBytes(),
+				PayloadIndex: uint32(i),
+			})
+		}
+		ms.k.Timeout.Set(ctx, ctx.BlockHeight()+payloadTimeout, new_payloads)
 	}
 	// TODO fees
 	return &zktx.MsgPublishPayloadsResponse{}, nil

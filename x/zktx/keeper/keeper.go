@@ -25,8 +25,8 @@ type Keeper struct {
 	Contracts collections.Map[string, zktx.Contract]
 
 	// Proof stuff
-	// NbPayload     collections.Map[string, uint16]
 	ProvenPayload collections.Map[collections.Pair[[]byte, uint32], zktx.PayloadMetadata]
+	Timeout       collections.Map[int64, zktx.PayloadTimeout]
 }
 
 // NewKeeper creates a new Keeper instance
@@ -44,6 +44,7 @@ func NewKeeper(cdc codec.BinaryCodec, addressCodec address.Codec, storeService s
 		Contracts:    collections.NewMap(sb, zktx.ContractNameKey, "contracts", collections.StringKey, codec.CollValue[zktx.Contract](cdc)),
 		ProvenPayload: collections.NewMap(sb, zktx.ProvenPayloadKey, "proven_payload",
 			collections.PairKeyCodec(collections.BytesKey, collections.Uint32Key), codec.CollValue[zktx.PayloadMetadata](cdc)),
+		Timeout: collections.NewMap(sb, zktx.TimeoutKey, "timeout", collections.Int64Key, codec.CollValue[zktx.PayloadTimeout](cdc)),
 	}
 
 	schema, err := sb.Build()
