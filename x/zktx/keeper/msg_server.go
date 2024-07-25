@@ -3,6 +3,7 @@ package keeper
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -59,8 +60,11 @@ func (ms msgServer) PublishPayloads(goCtx context.Context, msg *zktx.MsgPublishP
 		if err != nil {
 			return nil, fmt.Errorf("invalid contract - no state is registered")
 		}
-		// TODO: hash
-		ms.k.ProvenPayload.Set(ctx, collections.Join(ctx.TxBytes(), uint32(i)), zktx.PayloadMetadata{
+		// Compute txHash
+		h := sha256.New()
+		h.Write(ctx.TxBytes())
+		txHash := h.Sum(nil)
+		ms.k.ProvenPayload.Set(ctx, collections.Join(txHash, uint32(i)), zktx.PayloadMetadata{
 			PayloadHash:  payload.Data,
 			ContractName: payload.ContractName,
 		})
@@ -73,6 +77,9 @@ func (ms msgServer) PublishPayloadProof(goCtx context.Context, msg *zktx.MsgPubl
 	ctx := sdk.UnwrapSDKContext(goCtx)
 
 	payload_metadata, err := ms.k.ProvenPayload.Get(ctx, collections.Join(msg.TxHash, msg.PayloadIndex))
+	if err != nil {
+		return nil, fmt.Errorf("no payload found for this txHash")
+	}
 
 	if !bytes.Equal(payload_metadata.PayloadHash, msg.PayloadHash) {
 		return nil, fmt.Errorf("payload hash does not match the expected hash")
