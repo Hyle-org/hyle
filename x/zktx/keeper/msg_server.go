@@ -15,6 +15,7 @@ import (
 
 	"cosmossdk.io/collections"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	"github.com/iden3/go-iden3-crypto/poseidon"
 
 	"github.com/hyle-org/hyle/x/zktx"
 	"github.com/hyle-org/hyle/x/zktx/keeper/gnark"
@@ -64,8 +65,11 @@ func (ms msgServer) PublishPayloads(goCtx context.Context, msg *zktx.MsgPublishP
 		h := sha256.New()
 		h.Write(ctx.TxBytes())
 		txHash := h.Sum(nil)
+
+		// Compute poseidon hash over payload.Data
+		payloadHash, _ := poseidon.HashBytes(payload.Data)
 		ms.k.ProvenPayload.Set(ctx, collections.Join(txHash, uint32(i)), zktx.PayloadMetadata{
-			PayloadHash:  payload.Data,
+			PayloadHash:   []byte(fmt.Sprintf("%x", payloadHash)),
 			ContractName: payload.ContractName,
 		})
 	}
@@ -100,6 +104,10 @@ func (ms msgServer) PublishPayloadProof(goCtx context.Context, msg *zktx.MsgPubl
 
 	if !bytes.Equal(contract.StateDigest, objmap.InitialState) {
 		return nil, fmt.Errorf("verifier output does not match the expected initial state")
+	}
+
+	if !bytes.Equal(objmap.PayloadHash, payload_metadata.PayloadHash) {
+		return nil, fmt.Errorf("proof is not related with correct payload hash")
 	}
 
 	payload_metadata.ContractName = msg.ContractName
