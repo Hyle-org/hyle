@@ -204,6 +204,8 @@ fn deserialize_output(input: &str) -> HyleOutput<Vec<u8>> {
     let identity: String = deserialize_cairo_bytesarray(&mut parts);
     // extract tx_hash
     let tx_hash: String = parts.remove(0).parse::<String>().unwrap();
+    // extract payload_hash
+    let payload_hash: String = parts.remove(0).parse::<String>().unwrap();
 
     let output = parts.join(" ").as_bytes().to_vec();
     let mut program_outputs = vec![output.len() as u8];
@@ -215,6 +217,7 @@ fn deserialize_output(input: &str) -> HyleOutput<Vec<u8>> {
         next_state: next_state.as_bytes().to_vec(),
         identity,
         tx_hash: tx_hash.as_bytes().to_vec(),
+        payload_hash: payload_hash.as_bytes().to_vec(),
         program_outputs: program_outputs,
     }
 }
