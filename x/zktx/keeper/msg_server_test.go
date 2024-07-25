@@ -2,6 +2,7 @@ package keeper_test
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/json"
 	"testing"
 
@@ -129,6 +130,9 @@ func TestExecuteStateChangesGroth16(t *testing.T) {
 	require.NoError(err)
 
 	f.ctx = f.ctx.WithTxBytes([]byte("FakeTx"))
+	h := sha256.New()
+	h.Write(f.ctx.TxBytes())
+	txHash := h.Sum(nil)
 
 	// First - send the payload
 	_, err = f.msgServer.PublishPayloads(f.ctx, &zktx.MsgPublishPayloads{
@@ -143,7 +147,7 @@ func TestExecuteStateChangesGroth16(t *testing.T) {
 
 	// Create a broken message.
 	msg := &zktx.MsgPublishPayloadProof{
-		TxHash:       []byte("FakeTx"),
+		TxHash:       txHash,
 		PayloadIndex: 0,
 		ContractName: "bad_contract",
 		PayloadHash:  []byte("bad_payload"),
@@ -234,6 +238,9 @@ func TestExecuteLongStateChangeGroth16(t *testing.T) {
 	require.NoError(err)
 
 	f.ctx = f.ctx.WithTxBytes([]byte("FakeTx"))
+	h := sha256.New()
+	h.Write(f.ctx.TxBytes())
+	txHash := h.Sum(nil)
 
 	// First - send the payload
 	_, err = f.msgServer.PublishPayloads(f.ctx, &zktx.MsgPublishPayloads{
@@ -248,7 +255,7 @@ func TestExecuteLongStateChangeGroth16(t *testing.T) {
 
 	// Create the message
 	msg := &zktx.MsgPublishPayloadProof{
-		TxHash:       []byte("FakeTx"),
+		TxHash:       txHash,
 		PayloadIndex: 0,
 		PayloadHash:  initial_state_witness,
 		ContractName: contract_name,

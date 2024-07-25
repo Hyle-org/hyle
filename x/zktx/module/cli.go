@@ -91,7 +91,7 @@ func (am AppModule) GetTxCmd() *cobra.Command {
 	})
 
 	txCmd.AddCommand(&cobra.Command{
-		Use:   "verify [tx_hash] [index] [contract_name] [payload_hash] [proof]",
+		Use:   "prove [tx_hash] [index] [contract_name] [payload_hash] [proof]",
 		Short: "Publish a proof for a payload",
 		Args:  cobra.MinimumNArgs(5),
 		RunE: func(cmd *cobra.Command, args []string) error {

@@ -256,12 +256,15 @@ func TestExecuteStateChangesGroth16ECDSA(t *testing.T) {
 	}
 
 	f.ctx = f.ctx.WithTxBytes([]byte("FakeTx"))
+	h := sha256.New()
+	h.Write(f.ctx.TxBytes())
+	txHash := h.Sum(nil)
 
 	_, err = f.msgServer.PublishPayloads(f.ctx, msg)
 	require.NoError(err)
 
 	msg2 := &zktx.MsgPublishPayloadProof{
-		TxHash:       []byte("FakeTx"),
+		TxHash:       txHash,
 		PayloadIndex: 0,
 		ContractName: "ecdsa",
 		PayloadHash:  []byte{0},
