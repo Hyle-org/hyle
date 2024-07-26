@@ -3,13 +3,30 @@ package hyle.zktx.v1;
 
 option go_package = "github.com/hyle-org/hyle/x/zktx";
 
-// EventStateChange is an event emitted when a contract state changes
-message EventStateChange {
-  // contract_name is the name of the contract
+// EventPayload is an event emitted for each payload processed in a transaction
+message EventPayload {
+  // contract_name is the name of the target contract
   string contract_name = 1;
-  // Arbitrary (ish) data output by verifiers (JSON for all but groth16 where
-  // it's binary)
-  string proof_data = 2;
+  // Arbitrary data of the payload
+  bytes data = 2;
+  // Index of the payload in the tx
+  uint32 payload_index = 3;
+}
+
+// EventPayloadSettled is emitted when a payload is settled
+message EventPayloadSettled {
+  // contract_name is the name of the target contract
+  string contract_name = 1;
+  // TX hash of the payload
+  bytes tx_hash = 2;
+  // Index of the payload in the tx
+  uint32 payload_index = 3;
+}
+
+// EventTxSettled is emitted when a full transaction is settled
+message EventTxSettled {
+  // TX hash of the payload
+  bytes tx_hash = 1;
 }
 
 // EventContractRegistered is an event emitted when a contract is registered
