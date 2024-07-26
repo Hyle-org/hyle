@@ -62,15 +62,28 @@ func (ms msgServer) PublishPayloads(goCtx context.Context, msg *zktx.MsgPublishP
 		if err != nil {
 			return nil, fmt.Errorf("invalid contract - no state is registered")
 		}
+
+		// TODO: figure out if we want to reemit TX Hash, payload Hash
+		// and maybe just give it a UUID ?
+		if err := ctx.EventManager().EmitTypedEvent(&zktx.EventPayload{
+			ContractName: payload.ContractName,
+			PayloadIndex: uint32(i),
+			Data:         payload.Data,
+		}); err != nil {
+			return nil, err
+		}
+
 		// Compute txHash
 		h := sha256.New()
 		h.Write(ctx.TxBytes())
 		txHash := h.Sum(nil)
+		// Keep some information around to verify the payload later.
 		ms.k.ProvenPayload.Set(ctx, collections.Join(txHash, uint32(i)), zktx.PayloadMetadata{
 			PayloadHash:  payload.Data,
 			ContractName: payload.ContractName,
 		})
 
+		// Setup verification timeout.
 		payloads, err := ms.k.Timeout.Get(ctx, ctx.BlockHeight()+payloadTimeout)
 		var new_payloads zktx.PayloadTimeout
 		if errors.Is(err, collections.ErrNotFound) {
@@ -114,8 +127,6 @@ func (ms msgServer) PublishPayloadProof(goCtx context.Context, msg *zktx.MsgPubl
 		return nil, fmt.Errorf("invalid contract - no state is registered")
 	}
 
-	// TODO: add events back
-	//var proofData string
 	var objmap zktx.HyleOutput
 
 	if err := extractProof(&objmap, &contract, msg); err != nil {
@@ -133,17 +144,21 @@ func (ms msgServer) PublishPayloadProof(goCtx context.Context, msg *zktx.MsgPubl
 
 	ms.k.ProvenPayload.Set(ctx, collections.Join(msg.TxHash, msg.PayloadIndex), payload_metadata)
 
+	// TODO: figure out if we want to reemit TX Hash, payload Hash
+	// and maybe just give it a UUID ?
+	if err := ctx.EventManager().EmitTypedEvent(&zktx.EventPayloadSettled{
+		ContractName: msg.ContractName,
+		PayloadIndex: msg.PayloadIndex,
+		TxHash:       msg.TxHash,
+	}); err != nil {
+		return nil, err
+	}
+
 	err = ms.maybeSettleTx(ctx, msg.TxHash)
 	if err != nil {
 		return nil, err
 	}
 
-	/*
-		// Emit event by contract name for TX indexation
-		if err := ctx.EventManager().EmitTypedEvent(&zktx.EventStateChange{ContractName: msg.ContractName, ProofData: proofData}); err != nil {
-			return err
-		}
-	*/
 	return &zktx.MsgPublishPayloadProofResponse{}, nil
 }
 
@@ -171,7 +186,14 @@ func (ms msgServer) maybeSettleTx(ctx sdk.Context, txHash []byte) error {
 		}
 	}
 
-	// Then update the state
+	// TODO: figure out if we want to reemit block height?
+	if err := ctx.EventManager().EmitTypedEvent(&zktx.EventTxSettled{
+		TxHash: txHash,
+	}); err != nil {
+		return err
+	}
+
+	// Transaction can be settle, let's update the state of the chain
 	for i := 0; ; i++ {
 		payload_metadata, err := ms.k.ProvenPayload.Get(ctx, collections.Join(txHash, uint32(i)))
 		if errors.Is(err, collections.ErrNotFound) {
