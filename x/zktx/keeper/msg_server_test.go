@@ -273,7 +273,7 @@ func TestExecuteLongStateChangeGroth16(t *testing.T) {
 
 func TestUnmarshallHyleOutput(t *testing.T) {
 	require := require.New(t)
-	raw_json := "{\"version\":1,\"initial_state\":[0,0,0,1],\"next_state\":[0,0,0,15],\"identity\":\"\",\"tx_hash\":[1],\"program_outputs\":null}"
+	raw_json := "{\"version\":1,\"initial_state\":[0,0,0,1],\"next_state\":[0,0,0,15],\"identity\":\"\",\"tx_hash\":[1],\"payload_hash\":[0],\"program_outputs\":null}"
 	var output zktx.HyleOutput
 	err := json.Unmarshal([]byte(raw_json), &output)
 	require.NoError(err)

@@ -43,6 +43,26 @@ function parseArray(vector: string[]): number[] {
   return resp
 }
 
+function bigintToBytesArray(bigint: bigint): number[] {
+  const byteArray: number[] = [];
+  let tempBigInt = bigint;
+
+  while (tempBigInt > 0n) {
+      const byte = Number(tempBigInt & 0xffn);
+      byteArray.push(byte);
+      tempBigInt >>= 8n;
+  }
+
+  while (byteArray.length < 4) {
+    byteArray.push(0);
+  }
+
+  if (byteArray.length === 0) {
+      byteArray.push(0);
+  }
+
+  return byteArray.reverse();
+}
 
 function deserializePublicInputs<T>(publicInputs: string[]): HyleOutput {
   const version = parseInt(publicInputs.shift() as string);
@@ -51,7 +71,7 @@ function deserializePublicInputs<T>(publicInputs: string[]): HyleOutput {
   const next_state = parseArray(publicInputs);
   const identity = parseString(publicInputs);
   const tx_hash = parseArray(publicInputs);
-  const payload_hash = parseArray(publicInputs);
+  const payload_hash = bigintToBytesArray(BigInt(publicInputs.shift()));
   // We don't parse the rest, which correspond to programOutputs
 
   return {

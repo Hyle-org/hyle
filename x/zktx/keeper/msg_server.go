@@ -9,17 +9,19 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/big"
 	"os"
 	"os/exec"
 	"strings"
 
 	"cosmossdk.io/collections"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	"github.com/iden3/go-iden3-crypto/poseidon"
 
 	"github.com/hyle-org/hyle/x/zktx"
 	"github.com/hyle-org/hyle/x/zktx/keeper/gnark"
 
+	"github.com/consensys/gnark-crypto/ecc/stark-curve/fp"
+	pedersenhash "github.com/consensys/gnark-crypto/ecc/stark-curve/pedersen-hash"
 	"github.com/consensys/gnark/backend/groth16"
 )
 
@@ -40,24 +42,46 @@ func NewMsgServerImpl(keeper Keeper) zktx.MsgServer {
 	// They'll still need to be compiled in release mode.
 	// Noir expects bun to be installed.
 	if risczeroVerifierPath == "" {
-		risczeroVerifierPath = "../verifiers-for-hyle/target/release/risc0-verifier"
+		risczeroVerifierPath = "./verifiers/target/release/risc0-verifier"
 	}
 	if sp1VerifierPath == "" {
-		sp1VerifierPath = "../verifiers-for-hyle/target/release/sp1-verifier"
+		sp1VerifierPath = "./verifiers/target/release/sp1-verifier"
 	}
 	if noirVerifierPath == "" {
-		noirVerifierPath = "../verifiers-for-hyle/noir-verifier"
+		noirVerifierPath = "./verifiers/noir-verifier"
 	}
 	if cairoVerifierPath == "" {
-		cairoVerifierPath = "../verifiers-for-hyle/target/release/cairo-verifier"
+		cairoVerifierPath = "./verifiers/target/release/cairo-verifier"
 	}
 	return &msgServer{k: keeper}
+}
+
+func ParseCairoPayload(payload []byte) ([]string) {
+	elements := strings.Split(strings.Trim(string(payload), "[]"), ", ")
+	var cairoPayload []string
+	for _, elem := range elements {
+		elem = strings.TrimSpace(elem)
+		if elem != "" {
+			cairoPayload = append(cairoPayload, elem)
+		}
+	}
+	return cairoPayload
+}
+
+func HashCairoPayload(cairoPayload []string) (*big.Int) {
+	var inputsElements []*fp.Element
+	for i := 0; i < len(cairoPayload); i += 1 {
+		elem, _ := new(fp.Element).SetString(cairoPayload[i])
+		inputsElements = append(inputsElements, elem)
+	}
+	pedersenHashedData := pedersenhash.PedersenArray(inputsElements...)
+	return pedersenHashedData.BigInt(new(big.Int))
 }
 
 func (ms msgServer) PublishPayloads(goCtx context.Context, msg *zktx.MsgPublishPayloads) (*zktx.MsgPublishPayloadsResponse, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
 	for i, payload := range msg.Payloads {
-		_, err := ms.k.Contracts.Get(ctx, payload.ContractName)
+		contract, err := ms.k.Contracts.Get(ctx, payload.ContractName)
 		if err != nil {
 			return nil, fmt.Errorf("invalid contract - no state is registered")
 		}
@@ -66,12 +90,29 @@ func (ms msgServer) PublishPayloads(goCtx context.Context, msg *zktx.MsgPublishP
 		h.Write(ctx.TxBytes())
 		txHash := h.Sum(nil)
 
-		// Compute poseidon hash over payload.Data
-		payloadHash, _ := poseidon.HashBytes(payload.Data)
-		ms.k.ProvenPayload.Set(ctx, collections.Join(txHash, uint32(i)), zktx.PayloadMetadata{
-			PayloadHash:   []byte(fmt.Sprintf("%x", payloadHash)),
-			ContractName: payload.ContractName,
-		})
+		if contract.Verifier == "cairo" {
+			// Compute pedersen hash over payload.Data
+
+			cairoPayload := ParseCairoPayload(payload.Data)
+			payloadHash := HashCairoPayload(cairoPayload)
+			
+			fmt.Println(payloadHash.Bytes())
+			fmt.Println(base64.StdEncoding.EncodeToString(payloadHash.Bytes()))
+
+			ms.k.ProvenPayload.Set(ctx, collections.Join(txHash, uint32(i)), zktx.PayloadMetadata{
+				PayloadHash: payloadHash.Bytes(),
+				ContractName: payload.ContractName,
+			})
+		} else if contract.Verifier == "noir" {
+			// TODO: hash payloadData for noir
+			// ATM we use 0 as payloadHash for convenience
+			// Hence it is !mandatory! for the noir code to use 0 as payloadHash
+			buf := make([]byte, 4)
+			ms.k.ProvenPayload.Set(ctx, collections.Join(txHash, uint32(i)), zktx.PayloadMetadata{
+				PayloadHash: buf,
+				ContractName: payload.ContractName,
+			})
+		}
 	}
 	// TODO fees
 	return &zktx.MsgPublishPayloadsResponse{}, nil
