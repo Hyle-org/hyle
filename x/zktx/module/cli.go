@@ -91,7 +91,7 @@ func (am AppModule) GetTxCmd() *cobra.Command {
 	})
 
 	txCmd.AddCommand(&cobra.Command{
-		Use:   "prove [tx_hash] [index] [contract_name] [payload_hash] [proof]",
+		Use:   "prove [tx_hash] [index] [contract_name] [payload] [proof]",
 		Short: "Publish a proof for a payload",
 		Args:  cobra.MinimumNArgs(5),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -118,13 +118,10 @@ func (am AppModule) GetTxCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+
 			contract_name := args[2]
 
-			payload_hash, err := GetBinaryValue(args[3])
-			if err != nil {
-				return err
-			}
-			proof, err := GetBinaryValue(args[4])
+			proof, err := GetBinaryValue(args[3])
 			if err != nil {
 				return err
 			}
@@ -133,7 +130,6 @@ func (am AppModule) GetTxCmd() *cobra.Command {
 				TxHash:       tx_hash,
 				PayloadIndex: uint32(index),
 				ContractName: contract_name,
-				PayloadHash:  payload_hash,
 				Proof:        proof,
 			}
 

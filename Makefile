@@ -40,4 +40,4 @@ init:
 	./scripts/init.sh
 
 start:
-	CAIRO_VERIFIER_PATH=../verifiers-for-hyle/target/release/cairo-verifier NOIR_VERIFIER_PATH=../verifiers-for-hyle/noir-verifier RISCZERO_VERIFIER_PATH=../verifiers-for-hyle/target/release/risc0-verifier SP1_VERIFIER_PATH=../verifiers-for-hyle/target/release/sp1-verifier ./hyled start
+	./hyled start

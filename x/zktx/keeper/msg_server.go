@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/big"
 	"os"
 	"os/exec"
 	"strings"
@@ -19,6 +20,8 @@ import (
 	"github.com/hyle-org/hyle/x/zktx"
 	"github.com/hyle-org/hyle/x/zktx/keeper/gnark"
 
+	"github.com/consensys/gnark-crypto/ecc/stark-curve/fp"
+	pedersenhash "github.com/consensys/gnark-crypto/ecc/stark-curve/pedersen-hash"
 	"github.com/consensys/gnark/backend/groth16"
 )
 
@@ -41,24 +44,70 @@ func NewMsgServerImpl(keeper Keeper) zktx.MsgServer {
 	// They'll still need to be compiled in release mode.
 	// Noir expects bun to be installed.
 	if risczeroVerifierPath == "" {
-		risczeroVerifierPath = "../verifiers-for-hyle/target/release/risc0-verifier"
+		risczeroVerifierPath = "./verifiers/target/release/risc0-verifier"
 	}
 	if sp1VerifierPath == "" {
-		sp1VerifierPath = "../verifiers-for-hyle/target/release/sp1-verifier"
+		sp1VerifierPath = "./verifiers/target/release/sp1-verifier"
 	}
 	if noirVerifierPath == "" {
-		noirVerifierPath = "../verifiers-for-hyle/noir-verifier"
+		noirVerifierPath = "./verifiers/noir-verifier"
 	}
 	if cairoVerifierPath == "" {
-		cairoVerifierPath = "../verifiers-for-hyle/target/release/cairo-verifier"
+		cairoVerifierPath = "./verifiers/target/release/cairo-verifier"
 	}
 	return &msgServer{k: keeper}
+}
+
+func ParseCairoPayload(payload []byte) ([]string) {
+	elements := strings.Split(strings.Trim(string(payload), "[]"), " ")
+	var cairoPayload []string
+	for _, elem := range elements {
+		elem = strings.TrimSpace(elem)
+		if elem != "" {
+			cairoPayload = append(cairoPayload, elem)
+		}
+	}
+	return cairoPayload
+}
+
+func HashCairoPayload(cairoPayload []string) (*big.Int, error) {
+	var inputsElements []*fp.Element
+	for i := 0; i < len(cairoPayload); i += 1 {
+		elem, err := new(fp.Element).SetString(cairoPayload[i])
+		if err != nil {
+			return nil, err
+		}
+
+		inputsElements = append(inputsElements, elem)
+	}
+	pedersenHashedData := pedersenhash.PedersenArray(inputsElements...)
+	return pedersenHashedData.BigInt(new(big.Int)), nil
+}
+
+
+func computePayloadHash(verifier string, payload_data []byte) ([]byte, error) {
+	if verifier == "cairo" {
+		// Compute pedersen hash over payload.Data
+		cairoPayload := ParseCairoPayload(payload_data)
+		payloadHash, err := HashCairoPayload(cairoPayload)
+		if err != nil {
+			return nil, err
+		}
+		return payloadHash.Bytes(), nil
+
+	} else if verifier == "noir" {
+		// TODO: hash payloadData for noir
+		// ATM we use 0 as payloadHash for convenience
+		// Hence it is !mandatory! for the noir code to use 0 as payloadHash
+		return make([]byte, 4), nil
+	}
+	return nil, fmt.Errorf("failed to hash payload: hash function not implemented for verifier %s", verifier)
 }
 
 func (ms msgServer) PublishPayloads(goCtx context.Context, msg *zktx.MsgPublishPayloads) (*zktx.MsgPublishPayloadsResponse, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
 	for i, payload := range msg.Payloads {
-		_, err := ms.k.Contracts.Get(ctx, payload.ContractName)
+		contract, err := ms.k.Contracts.Get(ctx, payload.ContractName)
 		if err != nil {
 			return nil, fmt.Errorf("invalid contract - no state is registered")
 		}
@@ -77,12 +126,13 @@ func (ms msgServer) PublishPayloads(goCtx context.Context, msg *zktx.MsgPublishP
 		h := sha256.New()
 		h.Write(ctx.TxBytes())
 		txHash := h.Sum(nil)
+
 		// Keep some information around to verify the payload later.
 		ms.k.ProvenPayload.Set(ctx, collections.Join(txHash, uint32(i)), zktx.PayloadMetadata{
 			PayloadHash:  payload.Data,
 			ContractName: payload.ContractName,
 		})
-
+		
 		// Setup verification timeout.
 		payloads, err := ms.k.Timeout.Get(ctx, ctx.BlockHeight()+payloadTimeout)
 		var new_payloads zktx.PayloadTimeout
@@ -105,6 +155,20 @@ func (ms msgServer) PublishPayloads(goCtx context.Context, msg *zktx.MsgPublishP
 			})
 		}
 		ms.k.Timeout.Set(ctx, ctx.BlockHeight()+payloadTimeout, new_payloads)
+
+		// Compute payload hash
+		payloadHash, err := computePayloadHash(contract.Verifier, payload.Data)
+		if err != nil {
+			return nil, err
+		}
+
+		err = ms.k.ProvenPayload.Set(ctx, collections.Join(txHash, uint32(i)), zktx.PayloadMetadata{
+			PayloadHash: payloadHash,
+			ContractName: payload.ContractName,
+		})
+		if err != nil {
+			return nil, err
+		}
 	}
 	// TODO fees
 	return &zktx.MsgPublishPayloadsResponse{}, nil
@@ -116,10 +180,6 @@ func (ms msgServer) PublishPayloadProof(goCtx context.Context, msg *zktx.MsgPubl
 	payload_metadata, err := ms.k.ProvenPayload.Get(ctx, collections.Join(msg.TxHash, msg.PayloadIndex))
 	if err != nil {
 		return nil, fmt.Errorf("no payload found for this txHash")
-	}
-
-	if !bytes.Equal(payload_metadata.PayloadHash, msg.PayloadHash) {
-		return nil, fmt.Errorf("payload hash does not match the expected hash")
 	}
 
 	contract, err := ms.k.Contracts.Get(ctx, msg.ContractName)
@@ -135,6 +195,10 @@ func (ms msgServer) PublishPayloadProof(goCtx context.Context, msg *zktx.MsgPubl
 
 	if !bytes.Equal(contract.StateDigest, objmap.InitialState) {
 		return nil, fmt.Errorf("verifier output does not match the expected initial state")
+	}
+
+	if !bytes.Equal(objmap.PayloadHash, payload_metadata.PayloadHash) {
+		return nil, fmt.Errorf("proof is not related with correct payload hash")
 	}
 
 	payload_metadata.ContractName = msg.ContractName
