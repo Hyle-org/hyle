@@ -120,6 +120,36 @@ func (ms msgServer) PublishPayloads(goCtx context.Context, msg *zktx.MsgPublishP
 		h.Write(ctx.TxBytes())
 		txHash := h.Sum(nil)
 
+		// Keep some information around to verify the payload later.
+		ms.k.ProvenPayload.Set(ctx, collections.Join(txHash, uint32(i)), zktx.PayloadMetadata{
+			PayloadHash:  payload.Data,
+			ContractName: payload.ContractName,
+		})
+		
+		// Setup verification timeout.
+		payloads, err := ms.k.Timeout.Get(ctx, ctx.BlockHeight()+payloadTimeout)
+		var new_payloads zktx.PayloadTimeout
+		if errors.Is(err, collections.ErrNotFound) {
+			new_payloads = zktx.PayloadTimeout{
+				Payloads: []*zktx.InnerPayloadTimeout{
+					{
+						TxHash:       ctx.TxBytes(),
+						PayloadIndex: uint32(i),
+					},
+				},
+			}
+		} else if err != nil {
+			return nil, err
+		} else {
+			new_payloads = payloads
+			new_payloads.Payloads = append(new_payloads.Payloads, &zktx.InnerPayloadTimeout{
+				TxHash:       ctx.TxBytes(),
+				PayloadIndex: uint32(i),
+			})
+		}
+		ms.k.Timeout.Set(ctx, ctx.BlockHeight()+payloadTimeout, new_payloads)
+
+		// Compute payload hash
 		payloadHash, err := computePayloadHash(contract.Verifier, payload.Data)
 		if err != nil {
 			return nil, err
