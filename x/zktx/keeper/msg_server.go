@@ -80,6 +80,23 @@ func HashCairoPayload(cairoPayload []string) (*big.Int) {
 	return pedersenHashedData.BigInt(new(big.Int))
 }
 
+
+func computePayloadHash(verifier string, payload_data []byte) ([]byte, error) {
+	if verifier == "cairo" {
+		// Compute pedersen hash over payload.Data
+		cairoPayload := ParseCairoPayload(payload_data)
+		payloadHash := HashCairoPayload(cairoPayload)
+		return payloadHash.Bytes(), nil
+
+	} else if verifier == "noir" {
+		// TODO: hash payloadData for noir
+		// ATM we use 0 as payloadHash for convenience
+		// Hence it is !mandatory! for the noir code to use 0 as payloadHash
+		return make([]byte, 4), nil
+	}
+	return nil, fmt.Errorf("failed to hash payload: hash function not implemented for verifier %s", verifier)
+}
+
 func (ms msgServer) PublishPayloads(goCtx context.Context, msg *zktx.MsgPublishPayloads) (*zktx.MsgPublishPayloadsResponse, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
 	for i, payload := range msg.Payloads {
@@ -103,28 +120,15 @@ func (ms msgServer) PublishPayloads(goCtx context.Context, msg *zktx.MsgPublishP
 		h.Write(ctx.TxBytes())
 		txHash := h.Sum(nil)
 
-		if contract.Verifier == "cairo" {
-			// Compute pedersen hash over payload.Data
-
-			cairoPayload := ParseCairoPayload(payload.Data)
-			payloadHash := HashCairoPayload(cairoPayload)
-			
-			fmt.Println(payloadHash.Bytes())
-			fmt.Println(base64.StdEncoding.EncodeToString(payloadHash.Bytes()))
-
-			ms.k.ProvenPayload.Set(ctx, collections.Join(txHash, uint32(i)), zktx.PayloadMetadata{
-				PayloadHash: payloadHash.Bytes(),
-				ContractName: payload.ContractName,
-			})
-		} else if contract.Verifier == "noir" {
-			// TODO: hash payloadData for noir
-			// ATM we use 0 as payloadHash for convenience
-			// Hence it is !mandatory! for the noir code to use 0 as payloadHash
-			ms.k.ProvenPayload.Set(ctx, collections.Join(txHash, uint32(i)), zktx.PayloadMetadata{
-				PayloadHash: make([]byte, 4),
-				ContractName: payload.ContractName,
-			})
+		payloadHash, err := computePayloadHash(contract.Verifier, payload.Data)
+		if err != nil {
+			return nil, err
 		}
+
+		ms.k.ProvenPayload.Set(ctx, collections.Join(txHash, uint32(i)), zktx.PayloadMetadata{
+			PayloadHash: payloadHash,
+			ContractName: payload.ContractName,
+		})
 	}
 	// TODO fees
 	return &zktx.MsgPublishPayloadsResponse{}, nil
@@ -138,13 +142,17 @@ func (ms msgServer) PublishPayloadProof(goCtx context.Context, msg *zktx.MsgPubl
 		return nil, fmt.Errorf("no payload found for this txHash")
 	}
 
-	if !bytes.Equal(payload_metadata.PayloadHash, msg.PayloadHash) {
-		return nil, fmt.Errorf("payload hash does not match the expected hash")
-	}
-
-	contract, err := ms.k.Contracts.Get(ctx, msg.ContractName)
+	contract, err := ms.k.Contracts.Get(ctx, msg.Payload.ContractName)
 	if err != nil {
 		return nil, fmt.Errorf("invalid contract - no state is registered")
+	}
+
+	msgPayloadHash, err := computePayloadHash(contract.Verifier, msg.Payload.Data)
+	if err != nil {
+		return nil, err
+	}
+	if !bytes.Equal(payload_metadata.PayloadHash, msgPayloadHash) {
+		return nil, fmt.Errorf("payload hash does not match the expected hash")
 	}
 
 	var objmap zktx.HyleOutput
@@ -161,7 +169,7 @@ func (ms msgServer) PublishPayloadProof(goCtx context.Context, msg *zktx.MsgPubl
 		return nil, fmt.Errorf("proof is not related with correct payload hash")
 	}
 
-	payload_metadata.ContractName = msg.ContractName
+	payload_metadata.ContractName = msg.Payload.ContractName
 	payload_metadata.NextState = objmap.NextState
 	payload_metadata.Identity = objmap.Identity
 	payload_metadata.Verified = true
@@ -171,7 +179,7 @@ func (ms msgServer) PublishPayloadProof(goCtx context.Context, msg *zktx.MsgPubl
 	// TODO: figure out if we want to reemit TX Hash, payload Hash
 	// and maybe just give it a UUID ?
 	if err := ctx.EventManager().EmitTypedEvent(&zktx.EventPayloadSettled{
-		ContractName: msg.ContractName,
+		ContractName: msg.Payload.ContractName,
 		PayloadIndex: msg.PayloadIndex,
 		TxHash:       msg.TxHash,
 	}); err != nil {
@@ -250,7 +258,7 @@ func extractProof(objmap *zktx.HyleOutput, contract *zktx.Contract, msg *zktx.Ms
 		b16ProgramId := hex.EncodeToString(contract.ProgramId)
 		outBytes, err := exec.Command(risczeroVerifierPath, b16ProgramId, "/tmp/risc0-proof.json").Output()
 		if err != nil {
-			return fmt.Errorf("risczero verifier failed on %s. Exit code: %s", msg.ContractName, err)
+			return fmt.Errorf("risczero verifier failed on %s. Exit code: %s", msg.Payload.ContractName, err)
 		}
 		// Then parse data from the verified proof.
 
@@ -270,7 +278,7 @@ func extractProof(objmap *zktx.HyleOutput, contract *zktx.Contract, msg *zktx.Ms
 		b64ProgramId := base64.StdEncoding.EncodeToString(contract.ProgramId)
 		outBytes, err := exec.Command(sp1VerifierPath, b64ProgramId, "/tmp/sp1-proof.json").Output()
 		if err != nil {
-			return fmt.Errorf("sp1 verifier failed on %s. Exit code: %s", msg.ContractName, err)
+			return fmt.Errorf("sp1 verifier failed on %s. Exit code: %s", msg.Payload.ContractName, err)
 		}
 		// Then parse data from the verified proof.
 		err = json.Unmarshal(outBytes, &objmap)
@@ -296,7 +304,7 @@ func extractProof(objmap *zktx.HyleOutput, contract *zktx.Contract, msg *zktx.Ms
 		}
 		outBytes, err := exec.Command("bun", "run", noirVerifierPath+"/verifier.ts", "--vKeyPath", "/tmp/noir-vkey", "--proofPath", "/tmp/noir-proof.json").Output()
 		if err != nil {
-			return fmt.Errorf("noir verifier failed on %s. Exit code: %s", msg.ContractName, err)
+			return fmt.Errorf("noir verifier failed on %s. Exit code: %s", msg.Payload.ContractName, err)
 		}
 
 		// Then parse data from the verified proof.
@@ -315,7 +323,7 @@ func extractProof(objmap *zktx.HyleOutput, contract *zktx.Contract, msg *zktx.Ms
 
 		outBytes, err := exec.Command(cairoVerifierPath, "verify", "/tmp/cairo-proof.json").Output()
 		if err != nil {
-			return fmt.Errorf("cairo verifier failed on %s. Exit code: %s", msg.ContractName, err)
+			return fmt.Errorf("cairo verifier failed on %s. Exit code: %s", msg.Payload.ContractName, err)
 		}
 
 		// Then parse data from the verified proof.
@@ -351,7 +359,7 @@ func extractProof(objmap *zktx.HyleOutput, contract *zktx.Contract, msg *zktx.Ms
 
 		// Final step: actually check the proof here
 		if err := groth16.Verify(g16p, vk, witness); err != nil {
-			return fmt.Errorf("groth16 verification failed on %s: %w", msg.ContractName, err)
+			return fmt.Errorf("groth16 verification failed on %s: %w", msg.Payload.ContractName, err)
 		}
 	} else {
 		return fmt.Errorf("unknown verifier %s", contract.Verifier)

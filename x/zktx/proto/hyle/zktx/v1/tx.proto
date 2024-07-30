@@ -42,17 +42,15 @@ message MsgPublishPayloadsResponse {}
 message MsgPublishPayloadProof {
   // Tx hash of the payload to prove
   bytes tx_hash = 1;
+  
   // Index of the payload in the tx
   uint32 payload_index = 2;
 
-  // Name of target contract
-  string contract_name = 3;
-
-  // Hash of the payload
-  bytes payload_hash = 4;
+  // Contract name and payload data
+  Payload payload = 3;
 
   // Proof of the payload
-  bytes proof = 5;
+  bytes proof = 4;
 }
 
 // No response
