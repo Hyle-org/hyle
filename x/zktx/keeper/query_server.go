@@ -2,6 +2,8 @@ package keeper
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/hex"
 	"errors"
 
 	"cosmossdk.io/collections"
@@ -20,6 +22,19 @@ func NewQueryServerImpl(k Keeper) zktx.QueryServer {
 
 type queryServer struct {
 	k Keeper
+}
+
+func (qs queryServer) SettlementStatus(ctx context.Context, req *zktx.SettlementStatusRequest) (*zktx.SettlementStatusResponse, error) {
+	hash, err := hex.DecodeString(base64.StdEncoding.EncodeToString(req.TxHash))
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	txStatus, err := qs.k.ProvenPayload.Get(ctx, collections.Join(hash, req.PayloadIndex))
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	return &zktx.SettlementStatusResponse{Settled: txStatus.Verified}, nil
 }
 
 // Handler for the contract contract query method
