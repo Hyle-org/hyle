@@ -36,6 +36,8 @@ var sp1VerifierPath = os.Getenv("SP1_VERIFIER_PATH")
 var noirVerifierPath = os.Getenv("NOIR_VERIFIER_PATH")
 var cairoVerifierPath = os.Getenv("CAIRO_VERIFIER_PATH")
 
+var payloadTimeout = int64(100)
+
 // NewMsgServerImpl returns an implementation of the module MsgServer interface.
 func NewMsgServerImpl(keeper Keeper) zktx.MsgServer {
 	// By default, assume the hylé repo shares a parent directory with the verifiers repo.
@@ -85,6 +87,17 @@ func (ms msgServer) PublishPayloads(goCtx context.Context, msg *zktx.MsgPublishP
 		if err != nil {
 			return nil, fmt.Errorf("invalid contract - no state is registered")
 		}
+
+		// TODO: figure out if we want to reemit TX Hash, payload Hash
+		// and maybe just give it a UUID ?
+		if err := ctx.EventManager().EmitTypedEvent(&zktx.EventPayload{
+			ContractName: payload.ContractName,
+			PayloadIndex: uint32(i),
+			Data:         payload.Data,
+		}); err != nil {
+			return nil, err
+		}
+
 		// Compute txHash
 		h := sha256.New()
 		h.Write(ctx.TxBytes())
@@ -107,9 +120,8 @@ func (ms msgServer) PublishPayloads(goCtx context.Context, msg *zktx.MsgPublishP
 			// TODO: hash payloadData for noir
 			// ATM we use 0 as payloadHash for convenience
 			// Hence it is !mandatory! for the noir code to use 0 as payloadHash
-			buf := make([]byte, 4)
 			ms.k.ProvenPayload.Set(ctx, collections.Join(txHash, uint32(i)), zktx.PayloadMetadata{
-				PayloadHash: buf,
+				PayloadHash: make([]byte, 4),
 				ContractName: payload.ContractName,
 			})
 		}
@@ -135,8 +147,6 @@ func (ms msgServer) PublishPayloadProof(goCtx context.Context, msg *zktx.MsgPubl
 		return nil, fmt.Errorf("invalid contract - no state is registered")
 	}
 
-	// TODO: add events back
-	//var proofData string
 	var objmap zktx.HyleOutput
 
 	if err := extractProof(&objmap, &contract, msg); err != nil {
@@ -158,17 +168,21 @@ func (ms msgServer) PublishPayloadProof(goCtx context.Context, msg *zktx.MsgPubl
 
 	ms.k.ProvenPayload.Set(ctx, collections.Join(msg.TxHash, msg.PayloadIndex), payload_metadata)
 
+	// TODO: figure out if we want to reemit TX Hash, payload Hash
+	// and maybe just give it a UUID ?
+	if err := ctx.EventManager().EmitTypedEvent(&zktx.EventPayloadSettled{
+		ContractName: msg.ContractName,
+		PayloadIndex: msg.PayloadIndex,
+		TxHash:       msg.TxHash,
+	}); err != nil {
+		return nil, err
+	}
+
 	err = ms.maybeSettleTx(ctx, msg.TxHash)
 	if err != nil {
 		return nil, err
 	}
 
-	/*
-		// Emit event by contract name for TX indexation
-		if err := ctx.EventManager().EmitTypedEvent(&zktx.EventStateChange{ContractName: msg.ContractName, ProofData: proofData}); err != nil {
-			return err
-		}
-	*/
 	return &zktx.MsgPublishPayloadProofResponse{}, nil
 }
 
@@ -196,7 +210,14 @@ func (ms msgServer) maybeSettleTx(ctx sdk.Context, txHash []byte) error {
 		}
 	}
 
-	// Then update the state
+	// TODO: figure out if we want to reemit block height?
+	if err := ctx.EventManager().EmitTypedEvent(&zktx.EventTxSettled{
+		TxHash: txHash,
+	}); err != nil {
+		return err
+	}
+
+	// Transaction can be settle, let's update the state of the chain
 	for i := 0; ; i++ {
 		payload_metadata, err := ms.k.ProvenPayload.Get(ctx, collections.Join(txHash, uint32(i)))
 		if errors.Is(err, collections.ErrNotFound) {
