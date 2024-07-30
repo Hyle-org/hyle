@@ -140,7 +140,7 @@ func (ms msgServer) PublishPayloads(goCtx context.Context, msg *zktx.MsgPublishP
 			new_payloads = zktx.PayloadTimeout{
 				Payloads: []*zktx.InnerPayloadTimeout{
 					{
-						TxHash:       ctx.TxBytes(),
+						TxHash:       txHash,
 						PayloadIndex: uint32(i),
 					},
 				},
@@ -150,7 +150,7 @@ func (ms msgServer) PublishPayloads(goCtx context.Context, msg *zktx.MsgPublishP
 		} else {
 			new_payloads = payloads
 			new_payloads.Payloads = append(new_payloads.Payloads, &zktx.InnerPayloadTimeout{
-				TxHash:       ctx.TxBytes(),
+				TxHash:       txHash,
 				PayloadIndex: uint32(i),
 			})
 		}
@@ -274,7 +274,10 @@ func (ms msgServer) maybeSettleTx(ctx sdk.Context, txHash []byte) error {
 			return err
 		}
 		// This is safe - cosmos sdk will revert the whole thing if the TX fails
-		ms.k.ProvenPayload.Remove(ctx, collections.Join(txHash, uint32(i)))
+		// See BeginBlock - we could remove this conceptually.
+		ms.k.ProvenPayload.Set(ctx, collections.Join(txHash, uint32(i)), zktx.PayloadMetadata{
+			Verified: true,
+		})
 	}
 }
 

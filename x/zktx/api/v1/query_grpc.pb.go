@@ -19,9 +19,10 @@ import (
 const _ = grpc.SupportPackageIsVersion7
 
 const (
-	Query_Contract_FullMethodName     = "/hyle.zktx.v1.Query/Contract"
-	Query_ContractList_FullMethodName = "/hyle.zktx.v1.Query/ContractList"
-	Query_Params_FullMethodName       = "/hyle.zktx.v1.Query/Params"
+	Query_Contract_FullMethodName         = "/hyle.zktx.v1.Query/Contract"
+	Query_ContractList_FullMethodName     = "/hyle.zktx.v1.Query/ContractList"
+	Query_SettlementStatus_FullMethodName = "/hyle.zktx.v1.Query/SettlementStatus"
+	Query_Params_FullMethodName           = "/hyle.zktx.v1.Query/Params"
 )
 
 // QueryClient is the client API for Query service.
@@ -33,6 +34,8 @@ type QueryClient interface {
 	// ContractList returns the list of all contracts with a given verifier and
 	// program_id
 	ContractList(ctx context.Context, in *ContractListRequest, opts ...grpc.CallOption) (*ContractListResponse, error)
+	// SettlementStatus returns whether a TX has been settled or not
+	SettlementStatus(ctx context.Context, in *SettlementStatusRequest, opts ...grpc.CallOption) (*SettlementStatusResponse, error)
 	// Params returns the module parameters.
 	Params(ctx context.Context, in *QueryParamsRequest, opts ...grpc.CallOption) (*QueryParamsResponse, error)
 }
@@ -63,6 +66,15 @@ func (c *queryClient) ContractList(ctx context.Context, in *ContractListRequest,
 	return out, nil
 }
 
+func (c *queryClient) SettlementStatus(ctx context.Context, in *SettlementStatusRequest, opts ...grpc.CallOption) (*SettlementStatusResponse, error) {
+	out := new(SettlementStatusResponse)
+	err := c.cc.Invoke(ctx, Query_SettlementStatus_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *queryClient) Params(ctx context.Context, in *QueryParamsRequest, opts ...grpc.CallOption) (*QueryParamsResponse, error) {
 	out := new(QueryParamsResponse)
 	err := c.cc.Invoke(ctx, Query_Params_FullMethodName, in, out, opts...)
@@ -81,6 +93,8 @@ type QueryServer interface {
 	// ContractList returns the list of all contracts with a given verifier and
 	// program_id
 	ContractList(context.Context, *ContractListRequest) (*ContractListResponse, error)
+	// SettlementStatus returns whether a TX has been settled or not
+	SettlementStatus(context.Context, *SettlementStatusRequest) (*SettlementStatusResponse, error)
 	// Params returns the module parameters.
 	Params(context.Context, *QueryParamsRequest) (*QueryParamsResponse, error)
 	mustEmbedUnimplementedQueryServer()
@@ -95,6 +109,9 @@ func (UnimplementedQueryServer) Contract(context.Context, *ContractRequest) (*Co
 }
 func (UnimplementedQueryServer) ContractList(context.Context, *ContractListRequest) (*ContractListResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ContractList not implemented")
+}
+func (UnimplementedQueryServer) SettlementStatus(context.Context, *SettlementStatusRequest) (*SettlementStatusResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SettlementStatus not implemented")
 }
 func (UnimplementedQueryServer) Params(context.Context, *QueryParamsRequest) (*QueryParamsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Params not implemented")
@@ -148,6 +165,24 @@ func _Query_ContractList_Handler(srv interface{}, ctx context.Context, dec func(
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Query_SettlementStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SettlementStatusRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(QueryServer).SettlementStatus(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Query_SettlementStatus_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(QueryServer).SettlementStatus(ctx, req.(*SettlementStatusRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _Query_Params_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(QueryParamsRequest)
 	if err := dec(in); err != nil {
@@ -180,6 +215,10 @@ var Query_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ContractList",
 			Handler:    _Query_ContractList_Handler,
+		},
+		{
+			MethodName: "SettlementStatus",
+			Handler:    _Query_SettlementStatus_Handler,
 		},
 		{
 			MethodName: "Params",

@@ -25,10 +25,34 @@ service Query {
     option (google.api.http).get = "/hyle/zktx/v1/contracts";
   }
 
+  // SettlementStatus returns whether a TX has been settled or not
+  rpc SettlementStatus(SettlementStatusRequest)
+      returns (SettlementStatusResponse) {
+    option (cosmos.query.v1.module_query_safe) = true;
+    option (google.api.http).get = "/hyle/zktx/v1/settlement/{tx_hash}";
+  }
+
   // Params returns the module parameters.
   rpc Params(QueryParamsRequest) returns (QueryParamsResponse) {
     option (google.api.http).get = "/hyle/zktx/v1/params";
   }
+}
+
+// SettlementStatusRequest is the request type for the Query/SettlementStatus
+// RPC
+message SettlementStatusRequest {
+  // tx_hash defines the hash of the transaction to query for the settlement
+  // status.
+  bytes tx_hash = 1;
+  // payload_index defines the index of the payload in the transaction to query
+  uint32 payload_index = 2;
+}
+
+// SettlementStatusResponse is the response type for the Query/SettlementStatus
+// RPC
+message SettlementStatusResponse {
+  // settled defines whether the transaction has been settled or not.
+  bool settled = 1;
 }
 
 // ContractRequest is the request type for the Query/Contract RPC
