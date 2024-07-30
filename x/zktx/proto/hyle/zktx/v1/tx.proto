@@ -46,8 +46,8 @@ message MsgPublishPayloadProof {
   // Index of the payload in the tx
   uint32 payload_index = 2;
 
-  // Contract name and payload data
-  Payload payload = 3;
+  // Contract name
+  string contract_name = 3;
 
   // Proof of the payload
   bytes proof = 4;

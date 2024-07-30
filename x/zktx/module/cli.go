@@ -119,16 +119,9 @@ func (am AppModule) GetTxCmd() *cobra.Command {
 				return err
 			}
 
-			data, err := GetBinaryValue(args[3])
-			if err != nil {
-				return err
-			}
-			payload := &zktx.Payload{
-				ContractName: args[2],
-				Data:         data,
-			}
+			contract_name := args[2]
 
-			proof, err := GetBinaryValue(args[4])
+			proof, err := GetBinaryValue(args[3])
 			if err != nil {
 				return err
 			}
@@ -136,7 +129,7 @@ func (am AppModule) GetTxCmd() *cobra.Command {
 			msg := &zktx.MsgPublishPayloadProof{
 				TxHash:       tx_hash,
 				PayloadIndex: uint32(index),
-				Payload: 	  payload,
+				ContractName: contract_name,
 				Proof:        proof,
 			}
 

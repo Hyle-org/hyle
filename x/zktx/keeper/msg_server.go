@@ -59,7 +59,7 @@ func NewMsgServerImpl(keeper Keeper) zktx.MsgServer {
 }
 
 func ParseCairoPayload(payload []byte) ([]string) {
-	elements := strings.Split(strings.Trim(string(payload), "[]"), ", ")
+	elements := strings.Split(strings.Trim(string(payload), "[]"), " ")
 	var cairoPayload []string
 	for _, elem := range elements {
 		elem = strings.TrimSpace(elem)
@@ -70,14 +70,18 @@ func ParseCairoPayload(payload []byte) ([]string) {
 	return cairoPayload
 }
 
-func HashCairoPayload(cairoPayload []string) (*big.Int) {
+func HashCairoPayload(cairoPayload []string) (*big.Int, error) {
 	var inputsElements []*fp.Element
 	for i := 0; i < len(cairoPayload); i += 1 {
-		elem, _ := new(fp.Element).SetString(cairoPayload[i])
+		elem, err := new(fp.Element).SetString(cairoPayload[i])
+		if err != nil {
+			return nil, err
+		}
+
 		inputsElements = append(inputsElements, elem)
 	}
 	pedersenHashedData := pedersenhash.PedersenArray(inputsElements...)
-	return pedersenHashedData.BigInt(new(big.Int))
+	return pedersenHashedData.BigInt(new(big.Int)), nil
 }
 
 
@@ -85,7 +89,10 @@ func computePayloadHash(verifier string, payload_data []byte) ([]byte, error) {
 	if verifier == "cairo" {
 		// Compute pedersen hash over payload.Data
 		cairoPayload := ParseCairoPayload(payload_data)
-		payloadHash := HashCairoPayload(cairoPayload)
+		payloadHash, err := HashCairoPayload(cairoPayload)
+		if err != nil {
+			return nil, err
+		}
 		return payloadHash.Bytes(), nil
 
 	} else if verifier == "noir" {
@@ -155,10 +162,13 @@ func (ms msgServer) PublishPayloads(goCtx context.Context, msg *zktx.MsgPublishP
 			return nil, err
 		}
 
-		ms.k.ProvenPayload.Set(ctx, collections.Join(txHash, uint32(i)), zktx.PayloadMetadata{
+		err = ms.k.ProvenPayload.Set(ctx, collections.Join(txHash, uint32(i)), zktx.PayloadMetadata{
 			PayloadHash: payloadHash,
 			ContractName: payload.ContractName,
 		})
+		if err != nil {
+			return nil, err
+		}
 	}
 	// TODO fees
 	return &zktx.MsgPublishPayloadsResponse{}, nil
@@ -172,17 +182,9 @@ func (ms msgServer) PublishPayloadProof(goCtx context.Context, msg *zktx.MsgPubl
 		return nil, fmt.Errorf("no payload found for this txHash")
 	}
 
-	contract, err := ms.k.Contracts.Get(ctx, msg.Payload.ContractName)
+	contract, err := ms.k.Contracts.Get(ctx, msg.ContractName)
 	if err != nil {
 		return nil, fmt.Errorf("invalid contract - no state is registered")
-	}
-
-	msgPayloadHash, err := computePayloadHash(contract.Verifier, msg.Payload.Data)
-	if err != nil {
-		return nil, err
-	}
-	if !bytes.Equal(payload_metadata.PayloadHash, msgPayloadHash) {
-		return nil, fmt.Errorf("payload hash does not match the expected hash")
 	}
 
 	var objmap zktx.HyleOutput
@@ -199,7 +201,7 @@ func (ms msgServer) PublishPayloadProof(goCtx context.Context, msg *zktx.MsgPubl
 		return nil, fmt.Errorf("proof is not related with correct payload hash")
 	}
 
-	payload_metadata.ContractName = msg.Payload.ContractName
+	payload_metadata.ContractName = msg.ContractName
 	payload_metadata.NextState = objmap.NextState
 	payload_metadata.Identity = objmap.Identity
 	payload_metadata.Verified = true
@@ -209,7 +211,7 @@ func (ms msgServer) PublishPayloadProof(goCtx context.Context, msg *zktx.MsgPubl
 	// TODO: figure out if we want to reemit TX Hash, payload Hash
 	// and maybe just give it a UUID ?
 	if err := ctx.EventManager().EmitTypedEvent(&zktx.EventPayloadSettled{
-		ContractName: msg.Payload.ContractName,
+		ContractName: msg.ContractName,
 		PayloadIndex: msg.PayloadIndex,
 		TxHash:       msg.TxHash,
 	}); err != nil {
@@ -288,7 +290,7 @@ func extractProof(objmap *zktx.HyleOutput, contract *zktx.Contract, msg *zktx.Ms
 		b16ProgramId := hex.EncodeToString(contract.ProgramId)
 		outBytes, err := exec.Command(risczeroVerifierPath, b16ProgramId, "/tmp/risc0-proof.json").Output()
 		if err != nil {
-			return fmt.Errorf("risczero verifier failed on %s. Exit code: %s", msg.Payload.ContractName, err)
+			return fmt.Errorf("risczero verifier failed on %s. Exit code: %s", msg.ContractName, err)
 		}
 		// Then parse data from the verified proof.
 
@@ -308,7 +310,7 @@ func extractProof(objmap *zktx.HyleOutput, contract *zktx.Contract, msg *zktx.Ms
 		b64ProgramId := base64.StdEncoding.EncodeToString(contract.ProgramId)
 		outBytes, err := exec.Command(sp1VerifierPath, b64ProgramId, "/tmp/sp1-proof.json").Output()
 		if err != nil {
-			return fmt.Errorf("sp1 verifier failed on %s. Exit code: %s", msg.Payload.ContractName, err)
+			return fmt.Errorf("sp1 verifier failed on %s. Exit code: %s", msg.ContractName, err)
 		}
 		// Then parse data from the verified proof.
 		err = json.Unmarshal(outBytes, &objmap)
@@ -334,7 +336,7 @@ func extractProof(objmap *zktx.HyleOutput, contract *zktx.Contract, msg *zktx.Ms
 		}
 		outBytes, err := exec.Command("bun", "run", noirVerifierPath+"/verifier.ts", "--vKeyPath", "/tmp/noir-vkey", "--proofPath", "/tmp/noir-proof.json").Output()
 		if err != nil {
-			return fmt.Errorf("noir verifier failed on %s. Exit code: %s", msg.Payload.ContractName, err)
+			return fmt.Errorf("noir verifier failed on %s. Exit code: %s", msg.ContractName, err)
 		}
 
 		// Then parse data from the verified proof.
@@ -353,7 +355,7 @@ func extractProof(objmap *zktx.HyleOutput, contract *zktx.Contract, msg *zktx.Ms
 
 		outBytes, err := exec.Command(cairoVerifierPath, "verify", "/tmp/cairo-proof.json").Output()
 		if err != nil {
-			return fmt.Errorf("cairo verifier failed on %s. Exit code: %s", msg.Payload.ContractName, err)
+			return fmt.Errorf("cairo verifier failed on %s. Exit code: %s", msg.ContractName, err)
 		}
 
 		// Then parse data from the verified proof.
@@ -389,7 +391,7 @@ func extractProof(objmap *zktx.HyleOutput, contract *zktx.Contract, msg *zktx.Ms
 
 		// Final step: actually check the proof here
 		if err := groth16.Verify(g16p, vk, witness); err != nil {
-			return fmt.Errorf("groth16 verification failed on %s: %w", msg.Payload.ContractName, err)
+			return fmt.Errorf("groth16 verification failed on %s: %w", msg.ContractName, err)
 		}
 	} else {
 		return fmt.Errorf("unknown verifier %s", contract.Verifier)
