@@ -44,21 +44,21 @@ func NewMsgServerImpl(keeper Keeper) zktx.MsgServer {
 	// They'll still need to be compiled in release mode.
 	// Noir expects bun to be installed.
 	if risczeroVerifierPath == "" {
-		risczeroVerifierPath = "./verifiers/target/release/risc0-verifier"
+		risczeroVerifierPath = "./target/release/risc0-verifier"
 	}
 	if sp1VerifierPath == "" {
-		sp1VerifierPath = "./verifiers/target/release/sp1-verifier"
+		sp1VerifierPath = "./target/release/sp1-verifier"
 	}
 	if noirVerifierPath == "" {
 		noirVerifierPath = "./verifiers/noir-verifier"
 	}
 	if cairoVerifierPath == "" {
-		cairoVerifierPath = "./verifiers/target/release/cairo-verifier"
+		cairoVerifierPath = "./target/release/cairo-verifier"
 	}
 	return &msgServer{k: keeper}
 }
 
-func ParseCairoPayload(payload []byte) ([]string) {
+func ParseCairoPayload(payload []byte) []string {
 	elements := strings.Split(strings.Trim(string(payload), "[]"), " ")
 	var cairoPayload []string
 	for _, elem := range elements {
@@ -83,7 +83,6 @@ func HashCairoPayload(cairoPayload []string) (*big.Int, error) {
 	pedersenHashedData := pedersenhash.PedersenArray(inputsElements...)
 	return pedersenHashedData.BigInt(new(big.Int)), nil
 }
-
 
 func computePayloadHash(verifier string, payload_data []byte) ([]byte, error) {
 	if verifier == "cairo" {
@@ -132,7 +131,7 @@ func (ms msgServer) PublishPayloads(goCtx context.Context, msg *zktx.MsgPublishP
 			PayloadHash:  payload.Data,
 			ContractName: payload.ContractName,
 		})
-		
+
 		// Setup verification timeout.
 		payloads, err := ms.k.Timeout.Get(ctx, ctx.BlockHeight()+payloadTimeout)
 		var new_payloads zktx.PayloadTimeout
@@ -163,7 +162,7 @@ func (ms msgServer) PublishPayloads(goCtx context.Context, msg *zktx.MsgPublishP
 		}
 
 		err = ms.k.ProvenPayload.Set(ctx, collections.Join(txHash, uint32(i)), zktx.PayloadMetadata{
-			PayloadHash: payloadHash,
+			PayloadHash:  payloadHash,
 			ContractName: payload.ContractName,
 		})
 		if err != nil {
@@ -190,7 +189,7 @@ func (ms msgServer) PublishPayloadProof(goCtx context.Context, msg *zktx.MsgPubl
 	var objmap zktx.HyleOutput
 
 	if err := extractProof(&objmap, &contract, msg); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("verification failed: %w", err)
 	}
 
 	if !bytes.Equal(contract.StateDigest, objmap.InitialState) {
@@ -215,9 +214,8 @@ func (ms msgServer) PublishPayloadProof(goCtx context.Context, msg *zktx.MsgPubl
 		PayloadIndex: msg.PayloadIndex,
 		TxHash:       msg.TxHash,
 	}); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("event emission failed: %w", err)
 	}
-
 	err = ms.maybeSettleTx(ctx, msg.TxHash)
 	if err != nil {
 		return nil, err
@@ -227,6 +225,17 @@ func (ms msgServer) PublishPayloadProof(goCtx context.Context, msg *zktx.MsgPubl
 }
 
 func (ms msgServer) maybeSettleTx(ctx sdk.Context, txHash []byte) error {
+	// Check if all payloads have been verified
+	for i := 1; ; i++ {
+		payload_metadata, err := ms.k.ProvenPayload.Get(ctx, collections.Join(txHash, uint32(i)))
+		if errors.Is(err, collections.ErrNotFound) {
+			break
+		}
+		if !payload_metadata.Verified {
+			return nil
+		}
+	}
+
 	first_payload, err := ms.k.ProvenPayload.Get(ctx, collections.Join(txHash, uint32(0)))
 	if err != nil {
 		return fmt.Errorf("no payloads found for this tx")
@@ -245,7 +254,7 @@ func (ms msgServer) maybeSettleTx(ctx sdk.Context, txHash []byte) error {
 				break
 			}
 			if payload_metadata.Identity != expected_identity || err != nil {
-				return fmt.Errorf("payloads have different identities")
+				return fmt.Errorf("payloads have different identities, expected '%s', got '%s'", expected_identity, payload_metadata.Identity)
 			}
 		}
 	}
@@ -273,11 +282,6 @@ func (ms msgServer) maybeSettleTx(ctx sdk.Context, txHash []byte) error {
 		if err := ms.k.Contracts.Set(ctx, payload_metadata.ContractName, contract); err != nil {
 			return err
 		}
-		// This is safe - cosmos sdk will revert the whole thing if the TX fails
-		// See BeginBlock - we could remove this conceptually.
-		ms.k.ProvenPayload.Set(ctx, collections.Join(txHash, uint32(i)), zktx.PayloadMetadata{
-			Verified: true,
-		})
 	}
 }
 
@@ -364,7 +368,7 @@ func extractProof(objmap *zktx.HyleOutput, contract *zktx.Contract, msg *zktx.Ms
 		// Then parse data from the verified proof.
 		err = json.Unmarshal(outBytes, &objmap)
 		if err != nil {
-			panic(err)
+			return fmt.Errorf("failed to unmarshall verifier's output on %s. Exit code: %w", msg.ContractName, err)
 		}
 
 		//proofData = string(outBytes)
