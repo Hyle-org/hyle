@@ -42,7 +42,7 @@ message MsgPublishPayloadsResponse {}
 message MsgPublishPayloadProof {
   // Tx hash of the payload to prove
   bytes tx_hash = 1;
-  
+
   // Index of the payload in the tx
   uint32 payload_index = 2;
 

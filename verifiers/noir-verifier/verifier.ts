@@ -1,5 +1,8 @@
-import { ProofData, BarretenbergVerifier as Verifier } from '@noir-lang/backend_barretenberg';
-import * as fs from 'fs';
+import {
+  ProofData,
+  BarretenbergVerifier as Verifier,
+} from "@noir-lang/backend_barretenberg";
+import * as fs from "fs";
 
 import { parseArgs } from "util";
 
@@ -7,10 +10,10 @@ const { values, positionals } = parseArgs({
   args: Bun.argv,
   options: {
     vKeyPath: {
-      type: 'string',
+      type: "string",
     },
     proofPath: {
-      type: 'string',
+      type: "string",
     },
   },
   strict: true,
@@ -24,15 +27,15 @@ interface HyleOutput {
   identity: string;
   tx_hash: number[];
   payload_hash: number[];
+  success: boolean;
 }
-
 
 function parseString(vector: string[]): string {
   let length = parseInt(vector.shift() as string);
   let resp = "";
   for (var i = 0; i < length; i += 1)
     resp += String.fromCharCode(parseInt(vector.shift() as string, 16));
-  return resp
+  return resp;
 }
 
 function parseArray(vector: string[]): number[] {
@@ -40,7 +43,7 @@ function parseArray(vector: string[]): number[] {
   let resp: number[] = [];
   for (var i = 0; i < length; i += 1)
     resp.push(parseInt(vector.shift() as string, 16));
-  return resp
+  return resp;
 }
 
 function bigintToBytesArray(bigint: bigint): number[] {
@@ -48,9 +51,9 @@ function bigintToBytesArray(bigint: bigint): number[] {
   let tempBigInt = bigint;
 
   while (tempBigInt > 0n) {
-      const byte = Number(tempBigInt & 0xffn);
-      byteArray.push(byte);
-      tempBigInt >>= 8n;
+    const byte = Number(tempBigInt & 0xffn);
+    byteArray.push(byte);
+    tempBigInt >>= 8n;
   }
 
   while (byteArray.length < 4) {
@@ -58,7 +61,7 @@ function bigintToBytesArray(bigint: bigint): number[] {
   }
 
   if (byteArray.length === 0) {
-      byteArray.push(0);
+    byteArray.push(0);
   }
 
   return byteArray.reverse();
@@ -75,39 +78,45 @@ function deserializePublicInputs<T>(publicInputs: string[]): HyleOutput {
   // We don't parse the rest, which correspond to programOutputs
 
   return {
-      version,
-      initial_state,
-      next_state,
-      identity,
-      tx_hash,
-      payload_hash
+    version,
+    initial_state,
+    next_state,
+    identity,
+    tx_hash,
+    payload_hash,
+    success: true,
   };
 }
 
-const proof = JSON.parse(fs.readFileSync(values.proofPath, { encoding: 'utf8' }));
+const proof = JSON.parse(
+  fs.readFileSync(values.proofPath, { encoding: "utf8" })
+);
 const file = Bun.file(values.vKeyPath);
 const vKey = await file.bytes();
 
 const deserializedProofData: ProofData = {
   proof: Uint8Array.from(proof.proof),
-  publicInputs: proof.publicInputs
+  publicInputs: proof.publicInputs,
 };
 
 // Verifying
 const verifier = new Verifier();
 const isValid = await verifier.verifyProof(deserializedProofData, vKey);
-if (isValid){
-  const hyleOutput = deserializePublicInputs(deserializedProofData.publicInputs);
+if (isValid) {
+  const hyleOutput = deserializePublicInputs(
+    deserializedProofData.publicInputs
+  );
 
   // bigint in json serialization is a pain in the ass :cry:
   // Disgusting work around -> needs refacto.
-  var stringified_output = JSON.stringify(hyleOutput, (_, v) => typeof v === 'bigint' ? 'BIGINT_' + v.toString() + '_BIGINT' : v);
-  stringified_output = stringified_output.replaceAll("\"BIGINT_", "");
-  stringified_output = stringified_output.replaceAll("_BIGINT\"", "");
+  var stringified_output = JSON.stringify(hyleOutput, (_, v) =>
+    typeof v === "bigint" ? "BIGINT_" + v.toString() + "_BIGINT" : v
+  );
+  stringified_output = stringified_output.replaceAll('"BIGINT_', "");
+  stringified_output = stringified_output.replaceAll('_BIGINT"', "");
 
   process.stdout.write(stringified_output);
   process.exit(0);
-}
-else {
+} else {
   process.exit(1);
 }

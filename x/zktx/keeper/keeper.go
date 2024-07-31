@@ -27,6 +27,9 @@ type Keeper struct {
 	// Proof stuff
 	ProvenPayload collections.Map[collections.Pair[[]byte, uint32], zktx.PayloadMetadata]
 	Timeout       collections.Map[int64, zktx.PayloadTimeout]
+
+	// Optimisation for Cosmos
+	SettledTx collections.Map[[]byte, bool] // if present, TX is fully settled, then true/false for accepted/rejected
 }
 
 // NewKeeper creates a new Keeper instance
@@ -44,7 +47,8 @@ func NewKeeper(cdc codec.BinaryCodec, addressCodec address.Codec, storeService s
 		Contracts:    collections.NewMap(sb, zktx.ContractNameKey, "contracts", collections.StringKey, codec.CollValue[zktx.Contract](cdc)),
 		ProvenPayload: collections.NewMap(sb, zktx.ProvenPayloadKey, "proven_payload",
 			collections.PairKeyCodec(collections.BytesKey, collections.Uint32Key), codec.CollValue[zktx.PayloadMetadata](cdc)),
-		Timeout: collections.NewMap(sb, zktx.TimeoutKey, "timeout", collections.Int64Key, codec.CollValue[zktx.PayloadTimeout](cdc)),
+		Timeout:   collections.NewMap(sb, zktx.TimeoutKey, "timeout", collections.Int64Key, codec.CollValue[zktx.PayloadTimeout](cdc)),
+		SettledTx: collections.NewMap(sb, zktx.SettledTxKey, "settled_tx", collections.BytesKey, codec.BoolValue),
 	}
 
 	schema, err := sb.Build()

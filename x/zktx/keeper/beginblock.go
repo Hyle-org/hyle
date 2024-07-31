@@ -5,7 +5,6 @@ import (
 
 	"cosmossdk.io/collections"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	"github.com/hyle-org/hyle/x/zktx"
 )
 
 func BeginBlocker(ctx sdk.Context, k Keeper) error {
@@ -20,13 +19,21 @@ func BeginBlocker(ctx sdk.Context, k Keeper) error {
 	// All we need to do is drop the in-flight payload
 	// TODO: maybe we want to increment nonces of accounts or something?
 	for _, tx := range txs.Payloads {
-		// TODO: we could conceptually just delete this, but it makes it quite annoying to do indexation
-		err = k.ProvenPayload.Set(ctx, collections.Join(tx.TxHash, tx.PayloadIndex), zktx.PayloadMetadata{
-			Verified: true,
-		}) // noop if already processed / not found
+		if has, err := k.ProvenPayload.Has(ctx, collections.Join(tx.TxHash, tx.PayloadIndex)); !has || err != nil {
+			continue
+		}
+		err = k.ProvenPayload.Remove(ctx, collections.Join(tx.TxHash, tx.PayloadIndex))
 		if err != nil {
 			return err
 		}
+		err = k.SettledTx.Set(ctx, tx.TxHash, false) // TODO: not efficient to do it several time but meh.
+		if err != nil {
+			return err
+		}
+	}
+	err = k.Timeout.Remove(ctx, height)
+	if err != nil {
+		return err
 	}
 	return nil
 }

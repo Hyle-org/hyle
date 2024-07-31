@@ -204,6 +204,7 @@ func (ms msgServer) PublishPayloadProof(goCtx context.Context, msg *zktx.MsgPubl
 	payload_metadata.NextState = objmap.NextState
 	payload_metadata.Identity = objmap.Identity
 	payload_metadata.Verified = true
+	payload_metadata.Success = objmap.Success
 
 	ms.k.ProvenPayload.Set(ctx, collections.Join(msg.TxHash, msg.PayloadIndex), payload_metadata)
 
@@ -225,21 +226,12 @@ func (ms msgServer) PublishPayloadProof(goCtx context.Context, msg *zktx.MsgPubl
 }
 
 func (ms msgServer) maybeSettleTx(ctx sdk.Context, txHash []byte) error {
-	// Check if all payloads have been verified
-	for i := 1; ; i++ {
-		payload_metadata, err := ms.k.ProvenPayload.Get(ctx, collections.Join(txHash, uint32(i)))
-		if errors.Is(err, collections.ErrNotFound) {
-			break
-		}
-		if !payload_metadata.Verified {
-			return nil
-		}
-	}
-
 	first_payload, err := ms.k.ProvenPayload.Get(ctx, collections.Join(txHash, uint32(0)))
 	if err != nil {
 		return fmt.Errorf("no payloads found for this tx")
 	}
+
+	// Consistency check / protocol checks across payloads
 	expected_identity := first_payload.Identity
 	if expected_identity != "" {
 		// check that this matches the contract name
@@ -259,20 +251,24 @@ func (ms msgServer) maybeSettleTx(ctx sdk.Context, txHash []byte) error {
 		}
 	}
 
-	// TODO: figure out if we want to reemit block height?
-	if err := ctx.EventManager().EmitTypedEvent(&zktx.EventTxSettled{
-		TxHash: txHash,
-	}); err != nil {
-		return err
-	}
-
-	// Transaction can be settle, let's update the state of the chain
+	// Attempt to settle
+	success := true
 	for i := 0; ; i++ {
 		payload_metadata, err := ms.k.ProvenPayload.Get(ctx, collections.Join(txHash, uint32(i)))
 		if errors.Is(err, collections.ErrNotFound) {
-			return nil
+			break
 		} else if err != nil {
 			return err
+		}
+		if !payload_metadata.Success {
+			// TODO: figure out side effects?
+			// If any payload fail, the whole TX can be rejected
+			success = false
+			break
+		}
+		if !payload_metadata.Verified {
+			// We can't settle a TX that isn't fully verified
+			return nil
 		}
 		contract, err := ms.k.Contracts.Get(ctx, payload_metadata.ContractName)
 		if err != nil {
@@ -282,7 +278,19 @@ func (ms msgServer) maybeSettleTx(ctx sdk.Context, txHash []byte) error {
 		if err := ms.k.Contracts.Set(ctx, payload_metadata.ContractName, contract); err != nil {
 			return err
 		}
+		ms.k.ProvenPayload.Remove(ctx, collections.Join(txHash, uint32(i)))
 	}
+	if success {
+		// TODO: figure out if we want to reemit block height?
+		if err := ctx.EventManager().EmitTypedEvent(&zktx.EventTxSettled{
+			TxHash: txHash,
+		}); err != nil {
+			return err
+		}
+	}
+	// Timeout will be automatically removed by not finding the ProvenPayload data
+	ms.k.SettledTx.Set(ctx, txHash, success)
+	return nil
 }
 
 func extractProof(objmap *zktx.HyleOutput, contract *zktx.Contract, msg *zktx.MsgPublishPayloadProof) error {

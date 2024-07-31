@@ -40,6 +40,8 @@ message PayloadMetadata {
   bytes next_state = 4;
   // If this payload was verified
   bool verified = 5;
+  // If this is a success or failure
+  bool success = 6;
 }
 
 // InnerPayloadTimeout is data to trigger TX timeout.
