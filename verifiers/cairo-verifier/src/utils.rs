@@ -20,10 +20,7 @@ pub fn verify_proof(proof: &Vec<u8>) -> Result<String, VerifierError> {
 
     let mut bytes = proof.as_slice();
     if bytes.len() < 8 {
-        return Err(VerifierError(format!(
-            "Error reading proof from file: {}",
-            proof_path
-        )));
+        return Err(VerifierError(format!("Proof is too short")));
     }
 
     // Proof len was stored as an u32, 4u8 needs to be read
@@ -31,19 +28,16 @@ pub fn verify_proof(proof: &Vec<u8>) -> Result<String, VerifierError> {
 
     bytes = &bytes[4..];
     if bytes.len() < proof_len {
-        return Err(VerifierError(format!(
-            "Error reading proof from file: {}",
-            proof_path
-        )));
+        return Err(VerifierError(format!("Proof is not correctly formed")));
     }
 
-    let Ok((proof, _)) =
-        bincode::serde::decode_from_slice(&bytes[0..proof_len], bincode::config::standard())
-    else {
-        return Err(VerifierError(format!(
-            "Error reading proof from file: {}",
-            proof_path
-        )));
+    let proof = match bincode::serde::decode_from_slice(&bytes[0..proof_len], bincode::config::standard()) {
+        Ok((proof, _)) => { proof },
+        Err(e) => {
+            return Err(VerifierError(format!(
+                "Error while decoding proof. Decode error: {}", e
+            )));
+        }
     };
 
     // PublicInputs len was stored as an u32, 4u8 needs to be read
@@ -51,32 +45,31 @@ pub fn verify_proof(proof: &Vec<u8>) -> Result<String, VerifierError> {
         u32::from_le_bytes(bytes[proof_len..proof_len + 4].try_into().unwrap()) as usize;
     let pub_inputs_bytes = &bytes[proof_len + 4..proof_len + 4 + pub_inputs_len];
 
-    let Ok((pub_inputs, _)) =
-        bincode::serde::decode_from_slice(pub_inputs_bytes, bincode::config::standard())
-    else {
-        return Err(VerifierError(format!(
-            "Error reading proof from file: {}",
-            proof_path
-        )));
+
+    let pub_inputs = match bincode::serde::decode_from_slice(pub_inputs_bytes, bincode::config::standard()) {
+        Ok((pub_inputs, _)) => { pub_inputs },
+        Err(e) => {
+            return Err(VerifierError(format!(
+                "Error while decoding proof's public input. Decode error: {}", e
+            )));
+        }
     };
     let program_output_bytes = &bytes[proof_len + 4 + pub_inputs_len..];
 
-    let Ok((program_output, _)) = bincode::serde::decode_from_slice::<HyleOutput<Vec<u8>>, _>(
-        program_output_bytes,
-        bincode::config::standard(),
-    ) else {
-        return Err(VerifierError(format!(
-            "Error reading proof from file: {}",
-            proof_path
-        )));
+    let program_output = match bincode::serde::decode_from_slice::<HyleOutput<Vec<u8>>, _>(program_output_bytes, bincode::config::standard()) {
+        Ok((program_output, _)) => { program_output },
+        Err(e) => {
+            return Err(VerifierError(format!(
+                "Error while decoding proof's output. Decode error: {}", e
+            )));
+        }
     };
 
     if verify_cairo_proof(&proof, &pub_inputs, &proof_options) {
         return Ok(serde_json::to_string(&program_output)?);
     } else {
         return Err(VerifierError(format!(
-            "Error reading proof from file: {}",
-            proof_path
+            "Proof verification failed."
         )));
     }
 }
