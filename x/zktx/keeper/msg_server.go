@@ -99,6 +99,8 @@ func computePayloadHash(verifier string, payload_data []byte) ([]byte, error) {
 		// ATM we use 0 as payloadHash for convenience
 		// Hence it is !mandatory! for the noir code to use 0 as payloadHash
 		return make([]byte, 4), nil
+	} else if verifier == "risczero" {
+		return payload_data, nil
 	}
 	return nil, fmt.Errorf("failed to hash payload: hash function not implemented for verifier %s", verifier)
 }
