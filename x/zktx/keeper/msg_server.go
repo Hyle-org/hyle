@@ -201,7 +201,7 @@ func (ms msgServer) PublishPayloadProof(goCtx context.Context, msg *zktx.MsgPubl
 		return nil, fmt.Errorf("proof is not related with correct payload hash")
 	}
 
-	if objmap.Identity != payload_metadata.Identity {
+	if payload_metadata.Identity != "" && objmap.Identity != payload_metadata.Identity {
 		return nil, fmt.Errorf("proof is not for the correct identity")
 	}
 
