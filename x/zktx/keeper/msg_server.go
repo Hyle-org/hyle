@@ -36,7 +36,7 @@ var sp1VerifierPath = os.Getenv("SP1_VERIFIER_PATH")
 var noirVerifierPath = os.Getenv("NOIR_VERIFIER_PATH")
 var cairoVerifierPath = os.Getenv("CAIRO_VERIFIER_PATH")
 
-var payloadTimeout = int64(100)
+var txTimeout = int64(100)
 
 // NewMsgServerImpl returns an implementation of the module MsgServer interface.
 func NewMsgServerImpl(keeper Keeper) zktx.MsgServer {
@@ -111,7 +111,22 @@ func (ms msgServer) PublishPayloads(goCtx context.Context, msg *zktx.MsgPublishP
 	h.Write(ctx.TxBytes())
 	txHash := h.Sum(nil)
 
-	validIdentity := false
+	// Setup verification timeout.
+	txs, err := ms.k.Timeout.Get(ctx, ctx.BlockHeight()+txTimeout)
+	var new_txs zktx.TxTimeout
+	if errors.Is(err, collections.ErrNotFound) {
+		new_txs = zktx.TxTimeout{
+			Txs: [][]byte{txHash},
+		}
+	} else if err != nil {
+		return nil, err
+	} else {
+		new_txs = txs
+		new_txs.Txs = append(new_txs.Txs, txHash)
+	}
+	ms.k.Timeout.Set(ctx, ctx.BlockHeight()+txTimeout, new_txs)
+
+	validIdentity := msg.Identity == ""
 	for i, payload := range msg.Payloads {
 		contract, err := ms.k.Contracts.Get(ctx, payload.ContractName)
 		if err != nil {
@@ -119,33 +134,12 @@ func (ms msgServer) PublishPayloads(goCtx context.Context, msg *zktx.MsgPublishP
 		}
 
 		// Check if this contract name matches the identity
-		paths := strings.Split(msg.Identity, ".")
-		if len(paths) >= 2 && paths[len(paths)-1] == payload.ContractName {
-			validIdentity = true
-		}
-
-		// Setup verification timeout.
-		payloads, err := ms.k.Timeout.Get(ctx, ctx.BlockHeight()+payloadTimeout)
-		var new_payloads zktx.PayloadTimeout
-		if errors.Is(err, collections.ErrNotFound) {
-			new_payloads = zktx.PayloadTimeout{
-				Payloads: []*zktx.InnerPayloadTimeout{
-					{
-						TxHash:       txHash,
-						PayloadIndex: uint32(i),
-					},
-				},
+		if !validIdentity {
+			paths := strings.Split(msg.Identity, ".")
+			if len(paths) >= 2 && paths[len(paths)-1] == payload.ContractName {
+				validIdentity = true
 			}
-		} else if err != nil {
-			return nil, err
-		} else {
-			new_payloads = payloads
-			new_payloads.Payloads = append(new_payloads.Payloads, &zktx.InnerPayloadTimeout{
-				TxHash:       txHash,
-				PayloadIndex: uint32(i),
-			})
 		}
-		ms.k.Timeout.Set(ctx, ctx.BlockHeight()+payloadTimeout, new_payloads)
 
 		// Compute payload hash
 		payloadHash, err := computePayloadHash(contract.Verifier, payload.Data)
@@ -153,6 +147,7 @@ func (ms msgServer) PublishPayloads(goCtx context.Context, msg *zktx.MsgPublishP
 			return nil, err
 		}
 
+		// Store enough metadata to check proofs later.
 		err = ms.k.ProvenPayload.Set(ctx, collections.Join(txHash, uint32(i)), zktx.PayloadMetadata{
 			PayloadHash:  payloadHash,
 			ContractName: payload.ContractName,
@@ -284,7 +279,7 @@ func (ms msgServer) maybeSettleTx(ctx sdk.Context, txHash []byte) error {
 	}); err != nil {
 		return err
 	}
-	// Timeout will be automatically removed by not finding the ProvenPayload data
+	// Timeout will be automatically ignored when a TX is settled
 	ms.k.SettledTx.Set(ctx, txHash, success)
 	return nil
 }
