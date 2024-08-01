@@ -9,4 +9,5 @@ var (
 	ContractNameKey  = collections.NewPrefix(1)
 	ProvenPayloadKey = collections.NewPrefix(2)
 	TimeoutKey       = collections.NewPrefix(3)
+	SettledTxKey     = collections.NewPrefix(4)
 )

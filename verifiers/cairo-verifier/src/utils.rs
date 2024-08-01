@@ -31,11 +31,15 @@ pub fn verify_proof(proof: &Vec<u8>) -> Result<String, VerifierError> {
         return Err(VerifierError(format!("Proof is not correctly formed")));
     }
 
-    let proof = match bincode::serde::decode_from_slice(&bytes[0..proof_len], bincode::config::standard()) {
-        Ok((proof, _)) => { proof },
+    let proof = match bincode::serde::decode_from_slice(
+        &bytes[0..proof_len],
+        bincode::config::standard(),
+    ) {
+        Ok((proof, _)) => proof,
         Err(e) => {
             return Err(VerifierError(format!(
-                "Error while decoding proof. Decode error: {}", e
+                "Error while decoding proof. Decode error: {}",
+                e
             )));
         }
     };
@@ -45,22 +49,27 @@ pub fn verify_proof(proof: &Vec<u8>) -> Result<String, VerifierError> {
         u32::from_le_bytes(bytes[proof_len..proof_len + 4].try_into().unwrap()) as usize;
     let pub_inputs_bytes = &bytes[proof_len + 4..proof_len + 4 + pub_inputs_len];
 
-
-    let pub_inputs = match bincode::serde::decode_from_slice(pub_inputs_bytes, bincode::config::standard()) {
-        Ok((pub_inputs, _)) => { pub_inputs },
-        Err(e) => {
-            return Err(VerifierError(format!(
-                "Error while decoding proof's public input. Decode error: {}", e
-            )));
-        }
-    };
+    let pub_inputs =
+        match bincode::serde::decode_from_slice(pub_inputs_bytes, bincode::config::standard()) {
+            Ok((pub_inputs, _)) => pub_inputs,
+            Err(e) => {
+                return Err(VerifierError(format!(
+                    "Error while decoding proof's public input. Decode error: {}",
+                    e
+                )));
+            }
+        };
     let program_output_bytes = &bytes[proof_len + 4 + pub_inputs_len..];
 
-    let program_output = match bincode::serde::decode_from_slice::<HyleOutput<Vec<u8>>, _>(program_output_bytes, bincode::config::standard()) {
-        Ok((program_output, _)) => { program_output },
+    let program_output = match bincode::serde::decode_from_slice::<HyleOutput<Vec<u8>>, _>(
+        program_output_bytes,
+        bincode::config::standard(),
+    ) {
+        Ok((program_output, _)) => program_output,
         Err(e) => {
             return Err(VerifierError(format!(
-                "Error while decoding proof's output. Decode error: {}", e
+                "Error while decoding proof's output. Decode error: {}",
+                e
             )));
         }
     };
@@ -68,9 +77,7 @@ pub fn verify_proof(proof: &Vec<u8>) -> Result<String, VerifierError> {
     if verify_cairo_proof(&proof, &pub_inputs, &proof_options) {
         return Ok(serde_json::to_string(&program_output)?);
     } else {
-        return Err(VerifierError(format!(
-            "Proof verification failed."
-        )));
+        return Err(VerifierError(format!("Proof verification failed.")));
     }
 }
 
@@ -188,15 +195,17 @@ fn deserialize_output(input: &str) -> HyleOutput<Vec<u8>> {
     let trimmed = input.trim_matches(|c| c == '[' || c == ']');
     let mut parts: Vec<&str> = trimmed.split_whitespace().collect();
     // extract version
-    let version = parts.remove(0).parse::<u32>().unwrap();
+    let version: u32 = parts.remove(0).parse().unwrap();
     // extract initial_state
-    let initial_state: String = parts.remove(0).parse::<String>().unwrap();
+    let initial_state: String = parts.remove(0).parse().unwrap();
     // extract next_state
-    let next_state: String = parts.remove(0).parse::<String>().unwrap();
+    let next_state: String = parts.remove(0).parse().unwrap();
     // extract identity
     let identity: String = deserialize_cairo_bytesarray(&mut parts);
     // extract tx_hash
-    let tx_hash: String = parts.remove(0).parse::<String>().unwrap();
+    let tx_hash: String = parts.remove(0).parse().unwrap();
+    // extract success
+    let success: bool = parts.remove(0).parse().unwrap();
     // extract payload_hash
     let (_, payload_hash) = parts.remove(0).parse::<BigInt>().unwrap().to_bytes_be();
 
@@ -210,7 +219,8 @@ fn deserialize_output(input: &str) -> HyleOutput<Vec<u8>> {
         next_state: next_state.as_bytes().to_vec(),
         identity,
         tx_hash: tx_hash.as_bytes().to_vec(),
-        payload_hash: payload_hash,
-        program_outputs: program_outputs,
+        payload_hash,
+        success,
+        program_outputs,
     }
 }

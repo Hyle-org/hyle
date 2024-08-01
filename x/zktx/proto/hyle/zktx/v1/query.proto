@@ -44,15 +44,15 @@ message SettlementStatusRequest {
   // tx_hash defines the hash of the transaction to query for the settlement
   // status.
   bytes tx_hash = 1;
-  // payload_index defines the index of the payload in the transaction to query
-  uint32 payload_index = 2;
 }
 
 // SettlementStatusResponse is the response type for the Query/SettlementStatus
 // RPC
 message SettlementStatusResponse {
-  // settled defines whether the transaction has been settled or not.
+  // settled defines whether the payload has been settled or not.
   bool settled = 1;
+  // success defines whether the payload is a success or failure
+  bool success = 2;
 }
 
 // ContractRequest is the request type for the Query/Contract RPC

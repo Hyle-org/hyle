@@ -1,8 +1,8 @@
 package zktx
 
 type HyleContext struct {
-	Identity    string
-	TxHash    []byte
+	Identity string
+	TxHash   []byte
 }
 
 type HyleOutput struct {
@@ -11,4 +11,5 @@ type HyleOutput struct {
 	Identity     string `json:"identity"`
 	TxHash       []byte `json:"tx_hash"`
 	PayloadHash  []byte `json:"payload_hash"`
+	Success      bool   `json:"success"`
 }

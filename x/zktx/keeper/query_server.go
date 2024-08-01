@@ -29,12 +29,13 @@ func (qs queryServer) SettlementStatus(ctx context.Context, req *zktx.Settlement
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
-	txStatus, err := qs.k.ProvenPayload.Get(ctx, collections.Join(hash, req.PayloadIndex))
-	if err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
+	// Check if the whole transaction is settled
+	transactionStatus, err := qs.k.SettledTx.Get(ctx, hash)
+	if err == nil {
+		return &zktx.SettlementStatusResponse{Settled: true, Success: transactionStatus}, nil
 	}
 
-	return &zktx.SettlementStatusResponse{Settled: txStatus.Verified}, nil
+	return &zktx.SettlementStatusResponse{Settled: false, Success: false}, nil
 }
 
 // Handler for the contract contract query method

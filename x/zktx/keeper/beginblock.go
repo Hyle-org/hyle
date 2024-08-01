@@ -5,7 +5,6 @@ import (
 
 	"cosmossdk.io/collections"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	"github.com/hyle-org/hyle/x/zktx"
 )
 
 func BeginBlocker(ctx sdk.Context, k Keeper) error {
@@ -17,16 +16,30 @@ func BeginBlocker(ctx sdk.Context, k Keeper) error {
 	if err != nil {
 		return err
 	}
-	// All we need to do is drop the in-flight payload
+	// All we need to do is drop the in-flight timeout
 	// TODO: maybe we want to increment nonces of accounts or something?
-	for _, tx := range txs.Payloads {
-		// TODO: we could conceptually just delete this, but it makes it quite annoying to do indexation
-		err = k.ProvenPayload.Set(ctx, collections.Join(tx.TxHash, tx.PayloadIndex), zktx.PayloadMetadata{
-			Verified: true,
-		}) // noop if already processed / not found
+	for _, tx := range txs.Txs {
+		// Ignore tx already settled - we can't easily remove timeouts from the list
+		// so this is done here.
+		if settled, err := k.SettledTx.Has(ctx, tx); err != nil || settled {
+			continue
+		}
+		// Remove the payload metadata as we no longer need it (this is just GC)
+		for i := uint32(0); ; i++ {
+			has, err := k.ProvenPayload.Has(ctx, collections.Join(tx, i))
+			if err != nil || !has {
+				break
+			}
+			k.ProvenPayload.Remove(ctx, collections.Join(tx, i))
+		}
+		err = k.SettledTx.Set(ctx, tx, false)
 		if err != nil {
 			return err
 		}
+	}
+	err = k.Timeout.Remove(ctx, height)
+	if err != nil {
+		return err
 	}
 	return nil
 }

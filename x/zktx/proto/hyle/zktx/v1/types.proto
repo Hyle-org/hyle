@@ -40,18 +40,12 @@ message PayloadMetadata {
   bytes next_state = 4;
   // If this payload was verified
   bool verified = 5;
+  // If this is a success or failure
+  bool success = 6;
 }
 
-// InnerPayloadTimeout is data to trigger TX timeout.
-message InnerPayloadTimeout {
-  // Hash of the TX
-  bytes tx_hash = 1;
-  // Index of the payload in the tx
-  uint32 payload_index = 2;
-}
-
-// PayloadTimeout is a list of payloads and their timeouts
-message PayloadTimeout {
-  // List of payloads and their timeouts
-  repeated InnerPayloadTimeout payloads = 1;
+// TxTimeout is a list of TXs used to timeout
+message TxTimeout {
+  // List of transactions to timeout
+  repeated bytes txs = 1;
 }

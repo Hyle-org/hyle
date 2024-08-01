@@ -52,12 +52,11 @@ func (am AppModule) GetTxCmd() *cobra.Command {
 	}
 
 	txCmd.AddCommand(&cobra.Command{
-		Use:   "publish [[contract_name] [payload]]...",
+		Use:   "publish [identity] [[contract_name] [payload]]...",
 		Short: "Publish a number of payloads",
-		Args:  cobra.MinimumNArgs(2),
+		Args:  cobra.MinimumNArgs(3),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			clientCtx, err := client.GetClientTxContext(cmd)
-
 			if err != nil {
 				return err
 			}
@@ -66,12 +65,12 @@ func (am AppModule) GetTxCmd() *cobra.Command {
 				return err
 			}
 
-			if len(args)%2 != 0 {
+			if len(args[1:])%2 != 0 {
 				return fmt.Errorf("invalid state changes")
 			}
 
-			payloads := make([]*zktx.Payload, 0, len(args)/2)
-			for i := 0; i < len(args); i += 2 {
+			payloads := make([]*zktx.Payload, 0, len(args[1:])/2)
+			for i := 1; i < len(args); i += 2 {
 				data, err := GetBinaryValue(args[i+1])
 				if err != nil {
 					return err
@@ -83,6 +82,7 @@ func (am AppModule) GetTxCmd() *cobra.Command {
 			}
 
 			msg := &zktx.MsgPublishPayloads{
+				Identity: args[0],
 				Payloads: payloads,
 			}
 
@@ -91,7 +91,7 @@ func (am AppModule) GetTxCmd() *cobra.Command {
 	})
 
 	txCmd.AddCommand(&cobra.Command{
-		Use:   "prove [tx_hash] [index] [contract_name] [payload] [proof]",
+		Use:   "prove [tx_hash] [index] [contract_name] [proof]",
 		Short: "Publish a proof for a payload",
 		Args:  cobra.MinimumNArgs(5),
 		RunE: func(cmd *cobra.Command, args []string) error {
