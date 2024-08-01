@@ -105,32 +105,24 @@ func computePayloadHash(verifier string, payload_data []byte) ([]byte, error) {
 
 func (ms msgServer) PublishPayloads(goCtx context.Context, msg *zktx.MsgPublishPayloads) (*zktx.MsgPublishPayloadsResponse, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
+
+	// Compute txHash
+	h := sha256.New()
+	h.Write(ctx.TxBytes())
+	txHash := h.Sum(nil)
+
+	validIdentity := false
 	for i, payload := range msg.Payloads {
 		contract, err := ms.k.Contracts.Get(ctx, payload.ContractName)
 		if err != nil {
 			return nil, fmt.Errorf("invalid contract - no state is registered")
 		}
 
-		// TODO: figure out if we want to reemit TX Hash, payload Hash
-		// and maybe just give it a UUID ?
-		if err := ctx.EventManager().EmitTypedEvent(&zktx.EventPayload{
-			ContractName: payload.ContractName,
-			PayloadIndex: uint32(i),
-			Data:         payload.Data,
-		}); err != nil {
-			return nil, err
+		// Check if this contract name matches the identity
+		paths := strings.Split(msg.Identity, ".")
+		if len(paths) >= 2 && paths[len(paths)-1] == payload.ContractName {
+			validIdentity = true
 		}
-
-		// Compute txHash
-		h := sha256.New()
-		h.Write(ctx.TxBytes())
-		txHash := h.Sum(nil)
-
-		// Keep some information around to verify the payload later.
-		ms.k.ProvenPayload.Set(ctx, collections.Join(txHash, uint32(i)), zktx.PayloadMetadata{
-			PayloadHash:  payload.Data,
-			ContractName: payload.ContractName,
-		})
 
 		// Setup verification timeout.
 		payloads, err := ms.k.Timeout.Get(ctx, ctx.BlockHeight()+payloadTimeout)
@@ -164,10 +156,24 @@ func (ms msgServer) PublishPayloads(goCtx context.Context, msg *zktx.MsgPublishP
 		err = ms.k.ProvenPayload.Set(ctx, collections.Join(txHash, uint32(i)), zktx.PayloadMetadata{
 			PayloadHash:  payloadHash,
 			ContractName: payload.ContractName,
+			Identity:     msg.Identity,
 		})
 		if err != nil {
 			return nil, err
 		}
+
+		// TODO: figure out if we want to reemit TX Hash, payload Hash
+		// and maybe just give it a UUID ?
+		if err := ctx.EventManager().EmitTypedEvent(&zktx.EventPayload{
+			ContractName: payload.ContractName,
+			PayloadIndex: uint32(i),
+			Data:         payload.Data,
+		}); err != nil {
+			return nil, err
+		}
+	}
+	if !validIdentity {
+		return nil, fmt.Errorf("identity does not match any contract name")
 	}
 	// TODO fees
 	return &zktx.MsgPublishPayloadsResponse{}, nil
@@ -200,11 +206,13 @@ func (ms msgServer) PublishPayloadProof(goCtx context.Context, msg *zktx.MsgPubl
 		return nil, fmt.Errorf("proof is not related with correct payload hash")
 	}
 
-	payload_metadata.ContractName = msg.ContractName
+	if objmap.Identity != payload_metadata.Identity {
+		return nil, fmt.Errorf("proof is not for the correct identity")
+	}
+
 	payload_metadata.NextState = objmap.NextState
-	payload_metadata.Identity = objmap.Identity
-	payload_metadata.Verified = true
 	payload_metadata.Success = objmap.Success
+	payload_metadata.Verified = true
 
 	ms.k.ProvenPayload.Set(ctx, collections.Join(msg.TxHash, msg.PayloadIndex), payload_metadata)
 
@@ -226,39 +234,16 @@ func (ms msgServer) PublishPayloadProof(goCtx context.Context, msg *zktx.MsgPubl
 }
 
 func (ms msgServer) maybeSettleTx(ctx sdk.Context, txHash []byte) error {
-	first_payload, err := ms.k.ProvenPayload.Get(ctx, collections.Join(txHash, uint32(0)))
-	if err != nil {
-		return fmt.Errorf("no payloads found for this tx")
-	}
-
-	// Consistency check / protocol checks across payloads
-	expected_identity := first_payload.Identity
-	if expected_identity != "" {
-		// check that this matches the contract name
-		paths := strings.Split(first_payload.Identity, ".")
-		if len(paths) < 2 || paths[len(paths)-1] != first_payload.ContractName {
-			return fmt.Errorf("invalid identity contract, expected '%s', got '%s'", first_payload.ContractName, paths[len(paths)-1])
-		}
-
-		for i := 1; ; i++ {
-			payload_metadata, err := ms.k.ProvenPayload.Get(ctx, collections.Join(txHash, uint32(i)))
-			if errors.Is(err, collections.ErrNotFound) {
-				break
-			}
-			if payload_metadata.Identity != expected_identity || err != nil {
-				return fmt.Errorf("payloads have different identities, expected '%s', got '%s'", expected_identity, payload_metadata.Identity)
-			}
-		}
-	}
-
-	// Attempt to settle
+	// Check if all payloads have been verified
 	success := true
+	fully_verified := true
 	for i := 0; ; i++ {
 		payload_metadata, err := ms.k.ProvenPayload.Get(ctx, collections.Join(txHash, uint32(i)))
 		if errors.Is(err, collections.ErrNotFound) {
 			break
-		} else if err != nil {
-			return err
+		}
+		if !payload_metadata.Verified {
+			fully_verified = false
 		}
 		if !payload_metadata.Success {
 			// TODO: figure out side effects?
@@ -266,27 +251,38 @@ func (ms msgServer) maybeSettleTx(ctx sdk.Context, txHash []byte) error {
 			success = false
 			break
 		}
-		if !payload_metadata.Verified {
-			// We can't settle a TX that isn't fully verified
-			return nil
-		}
-		contract, err := ms.k.Contracts.Get(ctx, payload_metadata.ContractName)
-		if err != nil {
-			return fmt.Errorf("invalid contract - no state is registered")
-		}
-		contract.StateDigest = payload_metadata.NextState
-		if err := ms.k.Contracts.Set(ctx, payload_metadata.ContractName, contract); err != nil {
+	}
+	// Can't settle until either a failure or all TXs are proven correct.
+	if success && !fully_verified {
+		return nil
+	}
+
+	// Settle
+	for i := 0; ; i++ {
+		payload_metadata, err := ms.k.ProvenPayload.Get(ctx, collections.Join(txHash, uint32(i)))
+		if errors.Is(err, collections.ErrNotFound) {
+			break
+		} else if err != nil {
 			return err
+		}
+		if success {
+			contract, err := ms.k.Contracts.Get(ctx, payload_metadata.ContractName)
+			if err != nil {
+				return fmt.Errorf("invalid contract - no state is registered")
+			}
+			contract.StateDigest = payload_metadata.NextState
+			if err := ms.k.Contracts.Set(ctx, payload_metadata.ContractName, contract); err != nil {
+				return err
+			}
 		}
 		ms.k.ProvenPayload.Remove(ctx, collections.Join(txHash, uint32(i)))
 	}
-	if success {
-		// TODO: figure out if we want to reemit block height?
-		if err := ctx.EventManager().EmitTypedEvent(&zktx.EventTxSettled{
-			TxHash: txHash,
-		}); err != nil {
-			return err
-		}
+	// TODO: figure out if we want to reemit block height?
+	if err := ctx.EventManager().EmitTypedEvent(&zktx.EventTxSettled{
+		TxHash:  txHash,
+		Success: success,
+	}); err != nil {
+		return err
 	}
 	// Timeout will be automatically removed by not finding the ProvenPayload data
 	ms.k.SettledTx.Set(ctx, txHash, success)

@@ -31,8 +31,10 @@ message Payload {
 
 // execute a zk-proven state change - request type
 message MsgPublishPayloads {
+  // Identity is the identity of the TX sender
+  string identity = 1;
   // list of payloads
-  repeated Payload payloads = 1;
+  repeated Payload payloads = 2;
 }
 
 // No response

@@ -27,6 +27,8 @@ message EventPayloadSettled {
 message EventTxSettled {
   // TX hash of the payload
   bytes tx_hash = 1;
+  // Success or failure of the TX
+  bool success = 2;
 }
 
 // EventContractRegistered is an event emitted when a contract is registered
