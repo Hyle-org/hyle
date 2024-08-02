@@ -181,7 +181,6 @@ func (ms msgServer) PublishPayloads(goCtx context.Context, msg *zktx.MsgPublishP
 func (ms msgServer) PublishPayloadProof(goCtx context.Context, msg *zktx.MsgPublishPayloadProof) (*zktx.MsgPublishPayloadProofResponse, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
 
-	fmt.Println("getting metadata for", msg.ContractName, msg.TxHash, msg.PayloadIndex)
 	payloadMetadata, err := ms.k.ProvenPayload.Get(ctx, collections.Join(msg.TxHash, msg.PayloadIndex))
 	if err != nil {
 		return nil, fmt.Errorf("no payload found for this txHash")
@@ -212,10 +211,8 @@ func (ms msgServer) PublishPayloadProof(goCtx context.Context, msg *zktx.MsgPubl
 
 	payloadMetadata.NextState = objmap.NextState
 	payloadMetadata.Success = objmap.Success
-	fmt.Println("success on ", msg.ContractName, objmap.Success)
 	payloadMetadata.Verified = true
 
-	fmt.Println("setting metadata for", msg.ContractName, msg.TxHash, msg.PayloadIndex, payloadMetadata)
 	ms.k.ProvenPayload.Set(ctx, collections.Join(msg.TxHash, msg.PayloadIndex), payloadMetadata)
 
 	// TODO: figure out if we want to reemit TX Hash, payload Hash
@@ -243,8 +240,6 @@ func MaybeSettleTx(k Keeper, ctx sdk.Context, txHash []byte) error {
 	for i := 0; ; i++ {
 		payloadMetadata, err := k.ProvenPayload.Get(ctx, collections.Join(txHash, uint32(i)))
 
-		fmt.Println("checking metadata for", txHash, i, payloadMetadata)
-		fmt.Println("Verifier: ", payloadMetadata.Verified, "Success:", payloadMetadata.Success)
 		if errors.Is(err, collections.ErrNotFound) {
 			break
 		}
@@ -281,7 +276,6 @@ func MaybeSettleTx(k Keeper, ctx sdk.Context, txHash []byte) error {
 			}
 		}
 
-		fmt.Println("Removing metadata for", txHash, i, payloadMetadata)
 		k.ProvenPayload.Remove(ctx, collections.Join(txHash, uint32(i)))
 	}
 	// TODO: figure out if we want to reemit block height?
