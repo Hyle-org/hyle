@@ -204,10 +204,10 @@ fn deserialize_output(input: &str) -> HyleOutput<Vec<u8>> {
     let identity: String = deserialize_cairo_bytesarray(&mut parts);
     // extract tx_hash
     let tx_hash: String = parts.remove(0).parse().unwrap();
-    // extract success
-    let success: bool = parts.remove(0).parse().unwrap();
     // extract payload_hash
     let (_, payload_hash) = parts.remove(0).parse::<BigInt>().unwrap().to_bytes_be();
+    // extract success
+    let success: bool = parts.remove(0).parse::<u32>().unwrap() == 1;
 
     let output = parts.join(" ").as_bytes().to_vec();
     let mut program_outputs = vec![output.len() as u8];

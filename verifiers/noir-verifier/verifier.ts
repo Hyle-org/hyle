@@ -75,7 +75,7 @@ function deserializePublicInputs<T>(publicInputs: string[]): HyleOutput {
   const identity = parseString(publicInputs);
   const tx_hash = parseArray(publicInputs);
   const payload_hash = bigintToBytesArray(BigInt(publicInputs.shift()));
-  const success = publicInputs.shift() === "1";
+  const success = parseInt(publicInputs.shift()) === 1;
   // We don't parse the rest, which correspond to programOutputs
 
   return {

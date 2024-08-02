@@ -6,15 +6,15 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/hyle-org/hyle/x/zktx"
-	"github.com/hyle-org/hyle/x/zktx/keeper/gnark"
-	"github.com/stretchr/testify/require"
-
+	"cosmossdk.io/collections"
+	"github.com/consensys/gnark-crypto/ecc"
 	"github.com/consensys/gnark/backend/groth16"
 	"github.com/consensys/gnark/frontend"
 	"github.com/consensys/gnark/frontend/cs/r1cs"
-
-	"github.com/consensys/gnark-crypto/ecc"
+	"github.com/hyle-org/hyle/x/zktx"
+	"github.com/hyle-org/hyle/x/zktx/keeper"
+	"github.com/hyle-org/hyle/x/zktx/keeper/gnark"
+	"github.com/stretchr/testify/require"
 )
 
 // Sample GNARK circuit for stateful transactions, with redundant private variables
@@ -276,6 +276,41 @@ func TestUnmarshallHyleOutput(t *testing.T) {
 	raw_json := "{\"version\":1,\"initial_state\":[0,0,0,1],\"next_state\":[0,0,0,15],\"identity\":\"\",\"tx_hash\":[1],\"payload_hash\":[0],\"program_outputs\":null}"
 	var output zktx.HyleOutput
 	err := json.Unmarshal([]byte(raw_json), &output)
+	require.NoError(err)
+}
+
+func TestMaybeSettle(t *testing.T) {
+	f := initFixture(t)
+	require := require.New(t)
+
+	// Setup
+	txHash := []byte("FakeTx")
+	payloadHash := []byte("FakePayloadHash")
+	contractName := "contract"
+	identity := "anon.contract"
+
+	payloadMetadataVerified := zktx.PayloadMetadata{
+		PayloadHash:  payloadHash,
+		ContractName: contractName,
+		Identity:     identity,
+		Verified:     true,
+		Success:      true,
+	}
+	payloadMetadataNotVerified := zktx.PayloadMetadata{
+		PayloadHash:  payloadHash,
+		ContractName: contractName,
+		Identity:     identity,
+		Verified:     false,
+	}
+	f.k.ProvenPayload.Set(f.ctx, collections.Join(txHash, uint32(0)), payloadMetadataVerified)
+	f.k.ProvenPayload.Set(f.ctx, collections.Join(txHash, uint32(1)), payloadMetadataNotVerified)
+
+	err := keeper.MaybeSettleTx(f.k, f.ctx, txHash)
+	require.NoError(err)
+
+	_, err = f.k.ProvenPayload.Get(f.ctx, collections.Join(txHash, uint32(0)))
+	require.NoError(err)
+	_, err = f.k.ProvenPayload.Get(f.ctx, collections.Join(txHash, uint32(1)))
 	require.NoError(err)
 }
 
