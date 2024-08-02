@@ -102,7 +102,7 @@ func computePayloadHash(verifier string, payloadData []byte) ([]byte, error) {
 		// Hence it is !mandatory! for the noir code to use 0 as payloadHash
 		return make([]byte, 4), nil
 	} else if verifier == "risczero" {
-		return payload_data, nil
+		return payloadData, nil
 	}
 	return nil, fmt.Errorf("failed to hash payload: hash function not implemented for verifier %s", verifier)
 }
@@ -181,6 +181,7 @@ func (ms msgServer) PublishPayloads(goCtx context.Context, msg *zktx.MsgPublishP
 func (ms msgServer) PublishPayloadProof(goCtx context.Context, msg *zktx.MsgPublishPayloadProof) (*zktx.MsgPublishPayloadProofResponse, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
 
+	fmt.Println("getting metadata for", msg.ContractName, msg.TxHash, msg.PayloadIndex)
 	payloadMetadata, err := ms.k.ProvenPayload.Get(ctx, collections.Join(msg.TxHash, msg.PayloadIndex))
 	if err != nil {
 		return nil, fmt.Errorf("no payload found for this txHash")
@@ -211,8 +212,10 @@ func (ms msgServer) PublishPayloadProof(goCtx context.Context, msg *zktx.MsgPubl
 
 	payloadMetadata.NextState = objmap.NextState
 	payloadMetadata.Success = objmap.Success
+	fmt.Println("success on ", msg.ContractName, objmap.Success)
 	payloadMetadata.Verified = true
 
+	fmt.Println("setting metadata for", msg.ContractName, msg.TxHash, msg.PayloadIndex, payloadMetadata)
 	ms.k.ProvenPayload.Set(ctx, collections.Join(msg.TxHash, msg.PayloadIndex), payloadMetadata)
 
 	// TODO: figure out if we want to reemit TX Hash, payload Hash
@@ -232,13 +235,16 @@ func (ms msgServer) PublishPayloadProof(goCtx context.Context, msg *zktx.MsgPubl
 	return &zktx.MsgPublishPayloadProofResponse{}, nil
 }
 
-// MaybeSettleTx zef
+// MaybeSettleTx attemps to settle whole transactions. Public for testing.
 func MaybeSettleTx(k Keeper, ctx sdk.Context, txHash []byte) error {
 	// Check if all payloads have been verified
 	success := true
 	fullyVerified := true
 	for i := 0; ; i++ {
 		payloadMetadata, err := k.ProvenPayload.Get(ctx, collections.Join(txHash, uint32(i)))
+
+		fmt.Println("checking metadata for", txHash, i, payloadMetadata)
+		fmt.Println("Verifier: ", payloadMetadata.Verified, "Success:", payloadMetadata.Success)
 		if errors.Is(err, collections.ErrNotFound) {
 			break
 		}
@@ -274,6 +280,8 @@ func MaybeSettleTx(k Keeper, ctx sdk.Context, txHash []byte) error {
 				return err
 			}
 		}
+
+		fmt.Println("Removing metadata for", txHash, i, payloadMetadata)
 		k.ProvenPayload.Remove(ctx, collections.Join(txHash, uint32(i)))
 	}
 	// TODO: figure out if we want to reemit block height?
