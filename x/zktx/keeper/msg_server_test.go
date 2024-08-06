@@ -18,7 +18,7 @@ func TestUnmarshallHyleOutput(t *testing.T) {
 	require.NoError(err)
 }
 
-func TestMaybeSettleReadinessFailure(t *testing.T) {
+func TestMaybeSettleReadinessIgnored(t *testing.T) {
 	f := initFixture(t)
 	require := require.New(t)
 
@@ -54,22 +54,20 @@ func TestMaybeSettleReadinessFailure(t *testing.T) {
 	require.NoError(err)
 	require.Equal([]byte("FakeInitState"), contract.StateDigest)
 
-	// Mark both as verified and a proving success - they will nonetheless be settled false
-	// as they start on the wrong initial state
+	// Mark both as verified and a proving success.
+	// They will still be ignored as they're based on the wrong initial state.
 	payloadMetadata.Verified = true
 	payloadMetadata.Success = true
 	f.k.ProvenPayload.Set(f.ctx, collections.Join(txHash, uint32(0)), payloadMetadata)
 	f.k.ProvenPayload.Set(f.ctx, collections.Join(txHash, uint32(1)), payloadMetadata)
 
-	err = keeper.MaybeSettleTx(f.k, f.ctx, txHash)
-	require.NoError(err)
-
-	settled, err := f.k.SettledTx.Get(f.ctx, txHash)
-	require.NoError(err)
-	require.Equal(settled, false)
+	// Check that nothing happened
+	has, _ = f.k.SettledTx.Has(f.ctx, txHash)
+	require.Equal(has, false)
 	contract, err = f.k.Contracts.Get(f.ctx, contractName)
 	require.NoError(err)
 	require.Equal([]byte("FakeInitState"), contract.StateDigest)
+
 }
 
 func TestMaybeSettleReadinessSuccess(t *testing.T) {
@@ -195,4 +193,40 @@ func TestMaybeSettleReadinessAllowRetry(t *testing.T) {
 	require.Equal([]byte("FakeNextState"), contract.StateDigest)
 	require.Equal(contract.NextTxToSettle, txHash2)
 	require.Equal(contract.LatestTxReceived, txHash2)
+}
+
+func TestMaybeSettleAsFailure(t *testing.T) {
+	f := initFixture(t)
+	require := require.New(t)
+
+	// Setup
+	txHash := []byte("FakeTx1")
+	payloadHash := []byte("FakePayloadHash")
+	contractName := "contract"
+	identity := "anon.contract"
+	init_state := []byte("FakeInitState")
+
+	f.k.Contracts.Set(f.ctx, contractName, zktx.Contract{
+		StateDigest:      init_state,
+		NextTxToSettle:   txHash,
+		LatestTxReceived: txHash,
+	})
+
+	payloadMetadata1 := zktx.PayloadMetadata{
+		PayloadHash:  payloadHash,
+		ContractName: contractName,
+		Identity:     identity,
+		Verified:     true,
+		Success:      false,
+		InitialState: init_state,
+		NextState:    []byte("FakeNextState"),
+	}
+	f.k.ProvenPayload.Set(f.ctx, collections.Join(txHash, uint32(0)), payloadMetadata1)
+
+	err := keeper.MaybeSettleTx(f.k, f.ctx, txHash)
+	require.NoError(err)
+
+	settled, err := f.k.SettledTx.Get(f.ctx, txHash)
+	require.NoError(err)
+	require.Equal(settled, false)
 }
