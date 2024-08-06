@@ -136,3 +136,63 @@ func TestMaybeSettleReadinessSuccess(t *testing.T) {
 	require.Nil(contract.NextTxToSettle)
 	require.Nil(contract.LatestTxReceived)
 }
+
+func TestMaybeSettleReadinessAllowRetry(t *testing.T) {
+	f := initFixture(t)
+	require := require.New(t)
+
+	// Setup
+	txHash := []byte("FakeTx1")
+	txHash2 := []byte("FakeTx2")
+	payloadHash := []byte("FakePayloadHash")
+	contractName := "contract"
+	identity := "anon.contract"
+	init_state := []byte("FakeInitState")
+
+	f.k.Contracts.Set(f.ctx, contractName, zktx.Contract{
+		StateDigest:      init_state,
+		NextTxToSettle:   txHash,
+		LatestTxReceived: txHash2,
+	})
+
+	payloadMetadata1 := zktx.PayloadMetadata{
+		PayloadHash:  payloadHash,
+		ContractName: contractName,
+		Identity:     identity,
+		Verified:     true,
+		Success:      true,
+		InitialState: init_state,
+		NextState:    []byte("FakeNextState"),
+		NextTxHash:   txHash2,
+	}
+	f.k.ProvenPayload.Set(f.ctx, collections.Join(txHash, uint32(0)), payloadMetadata1)
+
+	payloadMetadata2 := zktx.PayloadMetadata{
+		PayloadHash:  payloadHash,
+		ContractName: contractName,
+		Identity:     identity,
+		Verified:     true,
+		Success:      true,
+		InitialState: []byte("InvalidBranch"),
+		NextState:    []byte("FakeMetaState"),
+	}
+	f.k.ProvenPayload.Set(f.ctx, collections.Join(txHash2, uint32(0)), payloadMetadata2)
+
+	err := keeper.MaybeSettleTx(f.k, f.ctx, txHash)
+	require.NoError(err)
+
+	settled, err := f.k.SettledTx.Get(f.ctx, txHash)
+	require.NoError(err)
+	require.Equal(settled, true)
+
+	// The second proof should just be discarded
+	settled, err = f.k.SettledTx.Has(f.ctx, txHash2)
+	require.NoError(err)
+	require.Equal(settled, false)
+
+	contract, err := f.k.Contracts.Get(f.ctx, contractName)
+	require.NoError(err)
+	require.Equal([]byte("FakeNextState"), contract.StateDigest)
+	require.Equal(contract.NextTxToSettle, txHash2)
+	require.Equal(contract.LatestTxReceived, txHash2)
+}

@@ -264,6 +264,7 @@ func MaybeSettleTx(k Keeper, ctx sdk.Context, txHash []byte) error {
 	success := true
 	fullyVerified := true
 	shouldSettle := true
+	validProof := true
 
 	expectedState := make(map[string][]byte)
 	nextTxHash := make(map[string][]byte)
@@ -292,8 +293,13 @@ func MaybeSettleTx(k Keeper, ctx sdk.Context, txHash []byte) error {
 			fullyVerified = false
 		} else if !payloadMetadata.Success || !bytes.Equal(payloadMetadata.InitialState, expectedState[payloadMetadata.ContractName]) {
 			// TODO: figure out side effects?
-			// If any payload fail, the whole TX can be rejected
+			// If any payload fail, the whole TX can be rejected.
 			success = false
+			// However, this might just be an invalid proof, so we just need to discard this particular proof.
+			// I'm also setting success == false to skip the check below.
+			if !bytes.Equal(payloadMetadata.InitialState, expectedState[payloadMetadata.ContractName]) {
+				validProof = false
+			}
 			break
 		}
 		expectedState[payloadMetadata.ContractName] = payloadMetadata.NextState
@@ -307,6 +313,41 @@ func MaybeSettleTx(k Keeper, ctx sdk.Context, txHash []byte) error {
 	}
 
 	// Settle
+	for i := 0; ; i++ {
+		payloadMetadata, err := k.ProvenPayload.Get(ctx, collections.Join(txHash, uint32(i)))
+		if errors.Is(err, collections.ErrNotFound) {
+			break
+		} else if err != nil {
+			return err
+		}
+		if validProof {
+			// Update contract state
+			contract, err := k.Contracts.Get(ctx, payloadMetadata.ContractName)
+			// This _should_ never happen, but let's handle it gracefully ish regardless.
+			if err != nil {
+				return fmt.Errorf("invalid contract - no state is registered")
+			}
+
+			if success {
+				contract.StateDigest = payloadMetadata.NextState
+			}
+			// This must be idempotent if there are several payloads for the same
+			// contract in the same TX.
+			contract.NextTxToSettle = payloadMetadata.NextTxHash // may be nil - well formed
+			if bytes.Equal(contract.LatestTxReceived, txHash) {
+				contract.LatestTxReceived = nil
+			}
+			if err := k.Contracts.Set(ctx, payloadMetadata.ContractName, contract); err != nil {
+				return err
+			}
+		}
+
+		k.ProvenPayload.Remove(ctx, collections.Join(txHash, uint32(i)))
+	}
+	if !validProof {
+		return nil
+	}
+
 	// TODO: figure out if we want to reemit block height?
 	if err := ctx.EventManager().EmitTypedEvent(&zktx.EventTxSettled{
 		TxHash:  txHash,
@@ -315,36 +356,6 @@ func MaybeSettleTx(k Keeper, ctx sdk.Context, txHash []byte) error {
 		return err
 	}
 
-	for i := 0; ; i++ {
-		payloadMetadata, err := k.ProvenPayload.Get(ctx, collections.Join(txHash, uint32(i)))
-		if errors.Is(err, collections.ErrNotFound) {
-			break
-		} else if err != nil {
-			return err
-		}
-		// Update contract state
-
-		contract, err := k.Contracts.Get(ctx, payloadMetadata.ContractName)
-		// This _should_ never happen, but let's handle it gracefully ish regardless.
-		if err != nil {
-			return fmt.Errorf("invalid contract - no state is registered")
-		}
-
-		if success {
-			contract.StateDigest = payloadMetadata.NextState
-		}
-		// This must be idempotent if there are several payloads for the same
-		// contract in the same TX.
-		contract.NextTxToSettle = payloadMetadata.NextTxHash // may be nil - well formed
-		if bytes.Equal(contract.LatestTxReceived, txHash) {
-			contract.LatestTxReceived = nil
-		}
-
-		if err := k.Contracts.Set(ctx, payloadMetadata.ContractName, contract); err != nil {
-			return err
-		}
-		k.ProvenPayload.Remove(ctx, collections.Join(txHash, uint32(i)))
-	}
 	// Timeout will be automatically ignored when a TX is settled
 	k.SettledTx.Set(ctx, txHash, success)
 
