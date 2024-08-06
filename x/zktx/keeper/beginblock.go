@@ -1,6 +1,7 @@
 package keeper
 
 import (
+	"bytes"
 	"errors"
 
 	"cosmossdk.io/collections"
@@ -26,10 +27,27 @@ func BeginBlocker(ctx sdk.Context, k Keeper) error {
 		}
 		// Remove the payload metadata as we no longer need it (this is just GC)
 		for i := uint32(0); ; i++ {
-			has, err := k.ProvenPayload.Has(ctx, collections.Join(tx, i))
-			if err != nil || !has {
+			payload, err := k.ProvenPayload.Get(ctx, collections.Join(tx, i))
+			if err != nil {
 				break
 			}
+			// Update the contract transaction list
+			contract, err := k.Contracts.Get(ctx, payload.ContractName)
+			if err != nil {
+				break
+			}
+			// This ought always match because they're in order.
+			if bytes.Equal(contract.NextTxToSettle, tx) {
+				contract.NextTxToSettle = payload.NextTxHash
+			}
+			if bytes.Equal(contract.LatestTxReceived, tx) {
+				contract.LatestTxReceived = nil
+			}
+			err = k.Contracts.Set(ctx, payload.ContractName, contract)
+			if err != nil {
+				return err
+			}
+
 			k.ProvenPayload.Remove(ctx, collections.Join(tx, i))
 		}
 		err = k.SettledTx.Set(ctx, tx, false)

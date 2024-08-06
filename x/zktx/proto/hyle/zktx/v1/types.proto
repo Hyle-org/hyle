@@ -26,6 +26,10 @@ message Contract {
   bytes program_id = 2;
   // Recap of the current contract state
   bytes state_digest = 3;
+  // Hash of the next TX to settle, in order
+  bytes next_tx_to_settle = 4;
+  // Latest tx received to settle, for optimisation
+  bytes latest_tx_received = 5;
 }
 
 // PayloadMetadata is the transient state we need to keep to settle payloads
@@ -36,12 +40,16 @@ message PayloadMetadata {
   string identity = 2;
   // Contract name to settle
   string contract_name = 3;
+  // The initial state of the contract
+  bytes initial_state = 4;
   // The next state to transition to
-  bytes next_state = 4;
+  bytes next_state = 5;
   // If this payload was verified
-  bool verified = 5;
+  bool verified = 6;
   // If this is a success or failure
-  bool success = 6;
+  bool success = 7;
+  // Next TX hash in the list of TX to settle
+  bytes next_tx_hash = 8;
 }
 
 // TxTimeout is a list of TXs used to timeout
