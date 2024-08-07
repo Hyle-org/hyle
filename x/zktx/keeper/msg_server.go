@@ -210,6 +210,11 @@ func (ms msgServer) PublishPayloads(goCtx context.Context, msg *zktx.MsgPublishP
 func (ms msgServer) PublishPayloadProof(goCtx context.Context, msg *zktx.MsgPublishPayloadProof) (*zktx.MsgPublishPayloadProofResponse, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
 
+	// Check if the TX is already settled
+	if settled, err := ms.k.SettledTx.Has(ctx, msg.TxHash); err == nil && settled {
+		return nil, fmt.Errorf("TX already settled")
+	}
+
 	payloadMetadata, err := ms.k.ProvenPayload.Get(ctx, collections.Join(msg.TxHash, msg.PayloadIndex))
 	if err != nil {
 		return nil, fmt.Errorf("no payload found for this txHash")
