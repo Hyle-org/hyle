@@ -1,34 +1,41 @@
 [package]
-name = "cairo-verifier"
-version = "0.1.0"
-edition = "2021"
+  name = "cairo-verifier"
+  version = "0.1.0"
+  edition = "2021"
 
 [dependencies]
-clap = { version = "4.4.6", features = ["derive"] }
-cairo-platinum-prover = { git = "https://github.com/lambdaclass/lambdaworks.git", rev = "e465d7c", features = [ "parallel" ] }
-stark-platinum-prover = { git = "https://github.com/lambdaclass/lambdaworks.git", rev = "e465d7c", features = [ "parallel" ] }
-lambdaworks-math = { git = "https://github.com/lambdaclass/lambdaworks.git", rev = "e465d7c" }
-bincode = { version = "2.0.0-rc.2", tag = "v2.0.0-rc.2", git = "https://github.com/bincode-org/bincode.git", features= ['serde'] }
-hyle_contract = { path = "../hyle-contract" }
-serde_json = "1.0.111"
-serde = "1.0.203"
-wasm-bindgen = "0.2.92"
-num = "0.4.3"
-hex = "0.4.3"
-serde-wasm-bindgen = "0.6.5"
-console_error_panic_hook = "0.1.7"
+  clap = { version = "4.4.6", features = ["derive"] }
+  cairo-platinum-prover = { git = "https://github.com/lambdaclass/lambdaworks.git", rev = "e465d7c" }
+  stark-platinum-prover = { git = "https://github.com/lambdaclass/lambdaworks.git", rev = "e465d7c" }
+  lambdaworks-math = { git = "https://github.com/lambdaclass/lambdaworks.git", rev = "e465d7c" }
+  bincode = { version = "2.0.0-rc.2", tag = "v2.0.0-rc.2", git = "https://github.com/bincode-org/bincode.git", features = [
+    'serde',
+  ] }
+  hyle_contract = { path = "../hyle-contract" }
+  serde_json = "1.0.111"
+  serde = "1.0.203"
+  wasm-bindgen = "0.2.92"
+  num = "0.4.3"
+  hex = "0.4.3"
+  serde-wasm-bindgen = "0.6.5"
+  console_error_panic_hook = "0.1.7"
 
 [dependencies.web-sys]
-version = "0.3"
-features = [
-  "console",
-]
+  version = "0.3"
+  features = ["console"]
+
+[features]
+  default = ["parallel"]
+  parallel = [
+    "cairo-platinum-prover/parallel",
+    "stark-platinum-prover/parallel",
+  ]
 
 [lib]
-name = "cairo_verifier"
-path = "src/lib.rs"
-crate-type = ["cdylib", "rlib"] # cdylib for wasm
+  name = "cairo_verifier"
+  path = "src/lib.rs"
+  crate-type = ["cdylib", "rlib"] # cdylib for wasm
 
 [[bin]]
-name = "cairo-verifier"
-path = "src/main.rs"
+  name = "cairo-verifier"
+  path = "src/main.rs"
