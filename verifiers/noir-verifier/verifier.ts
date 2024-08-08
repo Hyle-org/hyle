@@ -3,14 +3,13 @@ import {
   BarretenbergVerifier as Verifier,
 } from "@noir-lang/backend_barretenberg";
 import * as fs from "fs";
+import { parseArgs } from "util";
 
 import { Crs } from "@aztec/bb.js";
 
 // This is used to work around an issue where having 0 points will download the full proving key (6gb file).
 // Doing this instead ensures we have a small file, while also hopefully not breaking with version changes.
-Crs.new(1);
-
-import { parseArgs } from "util";
+await Crs.new(1);
 
 const { values, positionals } = parseArgs({
   args: process.argv,
