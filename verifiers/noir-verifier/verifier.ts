@@ -4,10 +4,16 @@ import {
 } from "@noir-lang/backend_barretenberg";
 import * as fs from "fs";
 
+import { Crs } from "@aztec/bb.js";
+
+// This is used to work around an issue where having 0 points will download the full proving key (6gb file).
+// Doing this instead ensures we have a small file, while also hopefully not breaking with version changes.
+Crs.new(1);
+
 import { parseArgs } from "util";
 
 const { values, positionals } = parseArgs({
-  args: Bun.argv,
+  args: process.argv,
   options: {
     vKeyPath: {
       type: "string",
@@ -92,8 +98,7 @@ function deserializePublicInputs<T>(publicInputs: string[]): HyleOutput {
 const proof = JSON.parse(
   fs.readFileSync(values.proofPath, { encoding: "utf8" })
 );
-const file = Bun.file(values.vKeyPath);
-const vKey = await file.bytes();
+const vKey = fs.readFileSync(values.vKeyPath);
 
 const deserializedProofData: ProofData = {
   proof: Uint8Array.from(proof.proof),
