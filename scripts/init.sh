@@ -16,6 +16,8 @@ $HYLED_BIN config set app grpc.enable true
 # Enable the REST API for the explorer
 $HYLED_BIN config set app api.enable true
 $HYLED_BIN config set app api.enabled-unsafe-cors true
+$HYLED_BIN config set app telemetry.enabled true
+$HYLED_BIN config set app telemetry.prometheus-retention-time 3600
 
 # init validator
 $HYLED_BIN init hyle-validator --chain-id hyle-devnet --default-denom hyle
