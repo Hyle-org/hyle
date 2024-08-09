@@ -36,7 +36,7 @@ var sp1VerifierPath = os.Getenv("SP1_VERIFIER_PATH")
 var noirVerifierPath = os.Getenv("NOIR_VERIFIER_PATH")
 var cairoVerifierPath = os.Getenv("CAIRO_VERIFIER_PATH")
 
-var txTimeout = int64(100)
+var txTimeout = int64(1000)
 
 // NewMsgServerImpl returns an implementation of the module MsgServer interface.
 func NewMsgServerImpl(keeper Keeper) zktx.MsgServer {
@@ -161,6 +161,35 @@ func (ms msgServer) PublishPayloads(goCtx context.Context, msg *zktx.MsgPublishP
 			return nil, err
 		}
 
+		// Maintain the linked DAG of pending transactions.
+		// If there's no pending TX, just set it.
+		if contract.NextTxToSettle == nil {
+			contract.NextTxToSettle = txHash
+			contract.LatestTxReceived = txHash
+		} else {
+			// Otherwise we need to update the pending TX to maintain the list
+			// NB: there can be several payloads for the same contract in the same TX
+			for i := 0; ; i++ {
+				payloadMetadata, err := ms.k.ProvenPayload.Get(ctx, collections.Join(contract.LatestTxReceived, uint32(i)))
+				if errors.Is(err, collections.ErrNotFound) {
+					break
+				} else if err != nil {
+					return nil, err
+				}
+				if payloadMetadata.ContractName == payload.ContractName {
+					payloadMetadata.NextTxHash = txHash
+					err = ms.k.ProvenPayload.Set(ctx, collections.Join(contract.LatestTxReceived, uint32(i)), payloadMetadata)
+					if err != nil {
+						return nil, err
+					}
+				}
+			}
+			contract.LatestTxReceived = txHash
+		}
+		if err := ms.k.Contracts.Set(ctx, payload.ContractName, contract); err != nil {
+			return nil, err
+		}
+
 		// TODO: figure out if we want to reemit TX Hash, payload Hash
 		// and maybe just give it a UUID ?
 		if err := ctx.EventManager().EmitTypedEvent(&zktx.EventPayload{
@@ -181,6 +210,11 @@ func (ms msgServer) PublishPayloads(goCtx context.Context, msg *zktx.MsgPublishP
 func (ms msgServer) PublishPayloadProof(goCtx context.Context, msg *zktx.MsgPublishPayloadProof) (*zktx.MsgPublishPayloadProofResponse, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
 
+	// Check if the TX is already settled
+	if settled, err := ms.k.SettledTx.Has(ctx, msg.TxHash); err == nil && settled {
+		return nil, fmt.Errorf("TX already settled")
+	}
+
 	payloadMetadata, err := ms.k.ProvenPayload.Get(ctx, collections.Join(msg.TxHash, msg.PayloadIndex))
 	if err != nil {
 		return nil, fmt.Errorf("no payload found for this txHash")
@@ -197,10 +231,6 @@ func (ms msgServer) PublishPayloadProof(goCtx context.Context, msg *zktx.MsgPubl
 		return nil, fmt.Errorf("verification failed: %w", err)
 	}
 
-	if !bytes.Equal(contract.StateDigest, objmap.InitialState) {
-		return nil, fmt.Errorf("verifier output does not match the expected initial state")
-	}
-
 	if !bytes.Equal(objmap.PayloadHash, payloadMetadata.PayloadHash) {
 		return nil, fmt.Errorf("proof is not related with correct payload hash")
 	}
@@ -209,6 +239,7 @@ func (ms msgServer) PublishPayloadProof(goCtx context.Context, msg *zktx.MsgPubl
 		return nil, fmt.Errorf("proof is not for the correct identity")
 	}
 
+	payloadMetadata.InitialState = objmap.InitialState
 	payloadMetadata.NextState = objmap.NextState
 	payloadMetadata.Success = objmap.Success
 	payloadMetadata.Verified = true
@@ -234,24 +265,59 @@ func (ms msgServer) PublishPayloadProof(goCtx context.Context, msg *zktx.MsgPubl
 
 // MaybeSettleTx attemps to settle whole transactions. Public for testing.
 func MaybeSettleTx(k Keeper, ctx sdk.Context, txHash []byte) error {
-	// Check if all payloads have been verified
-	success := true
-	fullyVerified := true
+	// Check if this is the next TX to settle.
 	for i := 0; ; i++ {
 		payloadMetadata, err := k.ProvenPayload.Get(ctx, collections.Join(txHash, uint32(i)))
-
 		if errors.Is(err, collections.ErrNotFound) {
 			break
 		}
+		contract, err := k.Contracts.Get(ctx, payloadMetadata.ContractName)
+		if err != nil {
+			return fmt.Errorf("invalid contract - no state is registered")
+		}
+		if !bytes.Equal(contract.NextTxToSettle, txHash) {
+			// Not the next TX to settle, do nothing.
+			return nil
+		}
+	}
+
+	// Check if all payloads have been verified
+	success := true
+	fullyVerified := true
+	nextTxHash := make(map[string][]byte)
+	// Because we can have several payloads for the same contract in the same TX
+	// we need to update the expected state after each payload.
+	expectedState := make(map[string][]byte)
+	for i := 0; ; i++ {
+		payloadMetadata, err := k.ProvenPayload.Get(ctx, collections.Join(txHash, uint32(i)))
+		if errors.Is(err, collections.ErrNotFound) {
+			break
+		}
+		nextTxHash[payloadMetadata.ContractName] = payloadMetadata.NextTxHash
+
+		contract, err := k.Contracts.Get(ctx, payloadMetadata.ContractName)
+		if err != nil {
+			return fmt.Errorf("invalid contract - no state is registered")
+		}
+		if expectedState[payloadMetadata.ContractName] == nil {
+			expectedState[payloadMetadata.ContractName] = contract.StateDigest
+		}
+		if !bytes.Equal(payloadMetadata.InitialState, expectedState[payloadMetadata.ContractName]) {
+			// This proof is based on an incorrect state, so mark it as not verified (this essentially means the proof is rejected)
+			payloadMetadata.Verified = false
+		}
+		// If the payload is not proven, we can't do much.
 		if !payloadMetadata.Verified {
 			fullyVerified = false
 		} else if !payloadMetadata.Success {
 			// TODO: figure out side effects?
-			// If any payload fail, the whole TX can be rejected
+			// If any payload fail, the whole TX can be rejected.
 			success = false
 			break
 		}
+		expectedState[payloadMetadata.ContractName] = payloadMetadata.NextState
 	}
+
 	// Can't settle until either a failure or all TXs are proven correct.
 	if success && !fullyVerified {
 		return nil
@@ -265,19 +331,29 @@ func MaybeSettleTx(k Keeper, ctx sdk.Context, txHash []byte) error {
 		} else if err != nil {
 			return err
 		}
+		// Update contract state
+		contract, err := k.Contracts.Get(ctx, payloadMetadata.ContractName)
+		// This _should_ never happen, but let's handle it gracefully ish regardless.
+		if err != nil {
+			return fmt.Errorf("invalid contract - no state is registered")
+		}
+
 		if success {
-			contract, err := k.Contracts.Get(ctx, payloadMetadata.ContractName)
-			if err != nil {
-				return fmt.Errorf("invalid contract - no state is registered")
-			}
 			contract.StateDigest = payloadMetadata.NextState
-			if err := k.Contracts.Set(ctx, payloadMetadata.ContractName, contract); err != nil {
-				return err
-			}
+		}
+		// This must be idempotent if there are several payloads for the same
+		// contract in the same TX.
+		contract.NextTxToSettle = payloadMetadata.NextTxHash // may be nil - well formed
+		if bytes.Equal(contract.LatestTxReceived, txHash) {
+			contract.LatestTxReceived = nil
+		}
+		if err := k.Contracts.Set(ctx, payloadMetadata.ContractName, contract); err != nil {
+			return err
 		}
 
 		k.ProvenPayload.Remove(ctx, collections.Join(txHash, uint32(i)))
 	}
+
 	// TODO: figure out if we want to reemit block height?
 	if err := ctx.EventManager().EmitTypedEvent(&zktx.EventTxSettled{
 		TxHash:  txHash,
@@ -285,8 +361,17 @@ func MaybeSettleTx(k Keeper, ctx sdk.Context, txHash []byte) error {
 	}); err != nil {
 		return err
 	}
+
 	// Timeout will be automatically ignored when a TX is settled
 	k.SettledTx.Set(ctx, txHash, success)
+
+	for _, nextTx := range nextTxHash {
+		if nextTx != nil {
+			if err := MaybeSettleTx(k, ctx, nextTx); err != nil {
+				return err
+			}
+		}
+	}
 	return nil
 }
 

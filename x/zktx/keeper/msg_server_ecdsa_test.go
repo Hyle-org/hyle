@@ -267,7 +267,6 @@ func TestExecuteStateChangesGroth16ECDSA(t *testing.T) {
 		TxHash:       txHash,
 		PayloadIndex: 0,
 		ContractName: "ecdsa",
-		PayloadHash:  []byte{0},
 		Proof:        jsonproof,
 	}
 	_, err = f.msgServer.PublishPayloadProof(f.ctx, msg2)

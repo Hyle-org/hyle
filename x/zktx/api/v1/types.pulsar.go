@@ -1133,10 +1133,12 @@ func (x *fastReflection_GenesisState) ProtoMethods() *protoiface.Methods {
 }
 
 var (
-	md_Contract              protoreflect.MessageDescriptor
-	fd_Contract_verifier     protoreflect.FieldDescriptor
-	fd_Contract_program_id   protoreflect.FieldDescriptor
-	fd_Contract_state_digest protoreflect.FieldDescriptor
+	md_Contract                    protoreflect.MessageDescriptor
+	fd_Contract_verifier           protoreflect.FieldDescriptor
+	fd_Contract_program_id         protoreflect.FieldDescriptor
+	fd_Contract_state_digest       protoreflect.FieldDescriptor
+	fd_Contract_next_tx_to_settle  protoreflect.FieldDescriptor
+	fd_Contract_latest_tx_received protoreflect.FieldDescriptor
 )
 
 func init() {
@@ -1145,6 +1147,8 @@ func init() {
 	fd_Contract_verifier = md_Contract.Fields().ByName("verifier")
 	fd_Contract_program_id = md_Contract.Fields().ByName("program_id")
 	fd_Contract_state_digest = md_Contract.Fields().ByName("state_digest")
+	fd_Contract_next_tx_to_settle = md_Contract.Fields().ByName("next_tx_to_settle")
+	fd_Contract_latest_tx_received = md_Contract.Fields().ByName("latest_tx_received")
 }
 
 var _ protoreflect.Message = (*fastReflection_Contract)(nil)
@@ -1230,6 +1234,18 @@ func (x *fastReflection_Contract) Range(f func(protoreflect.FieldDescriptor, pro
 			return
 		}
 	}
+	if len(x.NextTxToSettle) != 0 {
+		value := protoreflect.ValueOfBytes(x.NextTxToSettle)
+		if !f(fd_Contract_next_tx_to_settle, value) {
+			return
+		}
+	}
+	if len(x.LatestTxReceived) != 0 {
+		value := protoreflect.ValueOfBytes(x.LatestTxReceived)
+		if !f(fd_Contract_latest_tx_received, value) {
+			return
+		}
+	}
 }
 
 // Has reports whether a field is populated.
@@ -1251,6 +1267,10 @@ func (x *fastReflection_Contract) Has(fd protoreflect.FieldDescriptor) bool {
 		return len(x.ProgramId) != 0
 	case "hyle.zktx.v1.Contract.state_digest":
 		return len(x.StateDigest) != 0
+	case "hyle.zktx.v1.Contract.next_tx_to_settle":
+		return len(x.NextTxToSettle) != 0
+	case "hyle.zktx.v1.Contract.latest_tx_received":
+		return len(x.LatestTxReceived) != 0
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: hyle.zktx.v1.Contract"))
@@ -1273,6 +1293,10 @@ func (x *fastReflection_Contract) Clear(fd protoreflect.FieldDescriptor) {
 		x.ProgramId = nil
 	case "hyle.zktx.v1.Contract.state_digest":
 		x.StateDigest = nil
+	case "hyle.zktx.v1.Contract.next_tx_to_settle":
+		x.NextTxToSettle = nil
+	case "hyle.zktx.v1.Contract.latest_tx_received":
+		x.LatestTxReceived = nil
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: hyle.zktx.v1.Contract"))
@@ -1297,6 +1321,12 @@ func (x *fastReflection_Contract) Get(descriptor protoreflect.FieldDescriptor) p
 		return protoreflect.ValueOfBytes(value)
 	case "hyle.zktx.v1.Contract.state_digest":
 		value := x.StateDigest
+		return protoreflect.ValueOfBytes(value)
+	case "hyle.zktx.v1.Contract.next_tx_to_settle":
+		value := x.NextTxToSettle
+		return protoreflect.ValueOfBytes(value)
+	case "hyle.zktx.v1.Contract.latest_tx_received":
+		value := x.LatestTxReceived
 		return protoreflect.ValueOfBytes(value)
 	default:
 		if descriptor.IsExtension() {
@@ -1324,6 +1354,10 @@ func (x *fastReflection_Contract) Set(fd protoreflect.FieldDescriptor, value pro
 		x.ProgramId = value.Bytes()
 	case "hyle.zktx.v1.Contract.state_digest":
 		x.StateDigest = value.Bytes()
+	case "hyle.zktx.v1.Contract.next_tx_to_settle":
+		x.NextTxToSettle = value.Bytes()
+	case "hyle.zktx.v1.Contract.latest_tx_received":
+		x.LatestTxReceived = value.Bytes()
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: hyle.zktx.v1.Contract"))
@@ -1350,6 +1384,10 @@ func (x *fastReflection_Contract) Mutable(fd protoreflect.FieldDescriptor) proto
 		panic(fmt.Errorf("field program_id of message hyle.zktx.v1.Contract is not mutable"))
 	case "hyle.zktx.v1.Contract.state_digest":
 		panic(fmt.Errorf("field state_digest of message hyle.zktx.v1.Contract is not mutable"))
+	case "hyle.zktx.v1.Contract.next_tx_to_settle":
+		panic(fmt.Errorf("field next_tx_to_settle of message hyle.zktx.v1.Contract is not mutable"))
+	case "hyle.zktx.v1.Contract.latest_tx_received":
+		panic(fmt.Errorf("field latest_tx_received of message hyle.zktx.v1.Contract is not mutable"))
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: hyle.zktx.v1.Contract"))
@@ -1368,6 +1406,10 @@ func (x *fastReflection_Contract) NewField(fd protoreflect.FieldDescriptor) prot
 	case "hyle.zktx.v1.Contract.program_id":
 		return protoreflect.ValueOfBytes(nil)
 	case "hyle.zktx.v1.Contract.state_digest":
+		return protoreflect.ValueOfBytes(nil)
+	case "hyle.zktx.v1.Contract.next_tx_to_settle":
+		return protoreflect.ValueOfBytes(nil)
+	case "hyle.zktx.v1.Contract.latest_tx_received":
 		return protoreflect.ValueOfBytes(nil)
 	default:
 		if fd.IsExtension() {
@@ -1450,6 +1492,14 @@ func (x *fastReflection_Contract) ProtoMethods() *protoiface.Methods {
 		if l > 0 {
 			n += 1 + l + runtime.Sov(uint64(l))
 		}
+		l = len(x.NextTxToSettle)
+		if l > 0 {
+			n += 1 + l + runtime.Sov(uint64(l))
+		}
+		l = len(x.LatestTxReceived)
+		if l > 0 {
+			n += 1 + l + runtime.Sov(uint64(l))
+		}
 		if x.unknownFields != nil {
 			n += len(x.unknownFields)
 		}
@@ -1478,6 +1528,20 @@ func (x *fastReflection_Contract) ProtoMethods() *protoiface.Methods {
 		if x.unknownFields != nil {
 			i -= len(x.unknownFields)
 			copy(dAtA[i:], x.unknownFields)
+		}
+		if len(x.LatestTxReceived) > 0 {
+			i -= len(x.LatestTxReceived)
+			copy(dAtA[i:], x.LatestTxReceived)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.LatestTxReceived)))
+			i--
+			dAtA[i] = 0x2a
+		}
+		if len(x.NextTxToSettle) > 0 {
+			i -= len(x.NextTxToSettle)
+			copy(dAtA[i:], x.NextTxToSettle)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.NextTxToSettle)))
+			i--
+			dAtA[i] = 0x22
 		}
 		if len(x.StateDigest) > 0 {
 			i -= len(x.StateDigest)
@@ -1649,6 +1713,74 @@ func (x *fastReflection_Contract) ProtoMethods() *protoiface.Methods {
 					x.StateDigest = []byte{}
 				}
 				iNdEx = postIndex
+			case 4:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field NextTxToSettle", wireType)
+				}
+				var byteLen int
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					byteLen |= int(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				if byteLen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + byteLen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.NextTxToSettle = append(x.NextTxToSettle[:0], dAtA[iNdEx:postIndex]...)
+				if x.NextTxToSettle == nil {
+					x.NextTxToSettle = []byte{}
+				}
+				iNdEx = postIndex
+			case 5:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field LatestTxReceived", wireType)
+				}
+				var byteLen int
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					byteLen |= int(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				if byteLen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + byteLen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.LatestTxReceived = append(x.LatestTxReceived[:0], dAtA[iNdEx:postIndex]...)
+				if x.LatestTxReceived == nil {
+					x.LatestTxReceived = []byte{}
+				}
+				iNdEx = postIndex
 			default:
 				iNdEx = preIndex
 				skippy, err := runtime.Skip(dAtA[iNdEx:])
@@ -1689,9 +1821,11 @@ var (
 	fd_PayloadMetadata_payload_hash  protoreflect.FieldDescriptor
 	fd_PayloadMetadata_identity      protoreflect.FieldDescriptor
 	fd_PayloadMetadata_contract_name protoreflect.FieldDescriptor
+	fd_PayloadMetadata_initial_state protoreflect.FieldDescriptor
 	fd_PayloadMetadata_next_state    protoreflect.FieldDescriptor
 	fd_PayloadMetadata_verified      protoreflect.FieldDescriptor
 	fd_PayloadMetadata_success       protoreflect.FieldDescriptor
+	fd_PayloadMetadata_next_tx_hash  protoreflect.FieldDescriptor
 )
 
 func init() {
@@ -1700,9 +1834,11 @@ func init() {
 	fd_PayloadMetadata_payload_hash = md_PayloadMetadata.Fields().ByName("payload_hash")
 	fd_PayloadMetadata_identity = md_PayloadMetadata.Fields().ByName("identity")
 	fd_PayloadMetadata_contract_name = md_PayloadMetadata.Fields().ByName("contract_name")
+	fd_PayloadMetadata_initial_state = md_PayloadMetadata.Fields().ByName("initial_state")
 	fd_PayloadMetadata_next_state = md_PayloadMetadata.Fields().ByName("next_state")
 	fd_PayloadMetadata_verified = md_PayloadMetadata.Fields().ByName("verified")
 	fd_PayloadMetadata_success = md_PayloadMetadata.Fields().ByName("success")
+	fd_PayloadMetadata_next_tx_hash = md_PayloadMetadata.Fields().ByName("next_tx_hash")
 }
 
 var _ protoreflect.Message = (*fastReflection_PayloadMetadata)(nil)
@@ -1788,6 +1924,12 @@ func (x *fastReflection_PayloadMetadata) Range(f func(protoreflect.FieldDescript
 			return
 		}
 	}
+	if len(x.InitialState) != 0 {
+		value := protoreflect.ValueOfBytes(x.InitialState)
+		if !f(fd_PayloadMetadata_initial_state, value) {
+			return
+		}
+	}
 	if len(x.NextState) != 0 {
 		value := protoreflect.ValueOfBytes(x.NextState)
 		if !f(fd_PayloadMetadata_next_state, value) {
@@ -1803,6 +1945,12 @@ func (x *fastReflection_PayloadMetadata) Range(f func(protoreflect.FieldDescript
 	if x.Success != false {
 		value := protoreflect.ValueOfBool(x.Success)
 		if !f(fd_PayloadMetadata_success, value) {
+			return
+		}
+	}
+	if len(x.NextTxHash) != 0 {
+		value := protoreflect.ValueOfBytes(x.NextTxHash)
+		if !f(fd_PayloadMetadata_next_tx_hash, value) {
 			return
 		}
 	}
@@ -1827,12 +1975,16 @@ func (x *fastReflection_PayloadMetadata) Has(fd protoreflect.FieldDescriptor) bo
 		return x.Identity != ""
 	case "hyle.zktx.v1.PayloadMetadata.contract_name":
 		return x.ContractName != ""
+	case "hyle.zktx.v1.PayloadMetadata.initial_state":
+		return len(x.InitialState) != 0
 	case "hyle.zktx.v1.PayloadMetadata.next_state":
 		return len(x.NextState) != 0
 	case "hyle.zktx.v1.PayloadMetadata.verified":
 		return x.Verified != false
 	case "hyle.zktx.v1.PayloadMetadata.success":
 		return x.Success != false
+	case "hyle.zktx.v1.PayloadMetadata.next_tx_hash":
+		return len(x.NextTxHash) != 0
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: hyle.zktx.v1.PayloadMetadata"))
@@ -1855,12 +2007,16 @@ func (x *fastReflection_PayloadMetadata) Clear(fd protoreflect.FieldDescriptor) 
 		x.Identity = ""
 	case "hyle.zktx.v1.PayloadMetadata.contract_name":
 		x.ContractName = ""
+	case "hyle.zktx.v1.PayloadMetadata.initial_state":
+		x.InitialState = nil
 	case "hyle.zktx.v1.PayloadMetadata.next_state":
 		x.NextState = nil
 	case "hyle.zktx.v1.PayloadMetadata.verified":
 		x.Verified = false
 	case "hyle.zktx.v1.PayloadMetadata.success":
 		x.Success = false
+	case "hyle.zktx.v1.PayloadMetadata.next_tx_hash":
+		x.NextTxHash = nil
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: hyle.zktx.v1.PayloadMetadata"))
@@ -1886,6 +2042,9 @@ func (x *fastReflection_PayloadMetadata) Get(descriptor protoreflect.FieldDescri
 	case "hyle.zktx.v1.PayloadMetadata.contract_name":
 		value := x.ContractName
 		return protoreflect.ValueOfString(value)
+	case "hyle.zktx.v1.PayloadMetadata.initial_state":
+		value := x.InitialState
+		return protoreflect.ValueOfBytes(value)
 	case "hyle.zktx.v1.PayloadMetadata.next_state":
 		value := x.NextState
 		return protoreflect.ValueOfBytes(value)
@@ -1895,6 +2054,9 @@ func (x *fastReflection_PayloadMetadata) Get(descriptor protoreflect.FieldDescri
 	case "hyle.zktx.v1.PayloadMetadata.success":
 		value := x.Success
 		return protoreflect.ValueOfBool(value)
+	case "hyle.zktx.v1.PayloadMetadata.next_tx_hash":
+		value := x.NextTxHash
+		return protoreflect.ValueOfBytes(value)
 	default:
 		if descriptor.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: hyle.zktx.v1.PayloadMetadata"))
@@ -1921,12 +2083,16 @@ func (x *fastReflection_PayloadMetadata) Set(fd protoreflect.FieldDescriptor, va
 		x.Identity = value.Interface().(string)
 	case "hyle.zktx.v1.PayloadMetadata.contract_name":
 		x.ContractName = value.Interface().(string)
+	case "hyle.zktx.v1.PayloadMetadata.initial_state":
+		x.InitialState = value.Bytes()
 	case "hyle.zktx.v1.PayloadMetadata.next_state":
 		x.NextState = value.Bytes()
 	case "hyle.zktx.v1.PayloadMetadata.verified":
 		x.Verified = value.Bool()
 	case "hyle.zktx.v1.PayloadMetadata.success":
 		x.Success = value.Bool()
+	case "hyle.zktx.v1.PayloadMetadata.next_tx_hash":
+		x.NextTxHash = value.Bytes()
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: hyle.zktx.v1.PayloadMetadata"))
@@ -1953,12 +2119,16 @@ func (x *fastReflection_PayloadMetadata) Mutable(fd protoreflect.FieldDescriptor
 		panic(fmt.Errorf("field identity of message hyle.zktx.v1.PayloadMetadata is not mutable"))
 	case "hyle.zktx.v1.PayloadMetadata.contract_name":
 		panic(fmt.Errorf("field contract_name of message hyle.zktx.v1.PayloadMetadata is not mutable"))
+	case "hyle.zktx.v1.PayloadMetadata.initial_state":
+		panic(fmt.Errorf("field initial_state of message hyle.zktx.v1.PayloadMetadata is not mutable"))
 	case "hyle.zktx.v1.PayloadMetadata.next_state":
 		panic(fmt.Errorf("field next_state of message hyle.zktx.v1.PayloadMetadata is not mutable"))
 	case "hyle.zktx.v1.PayloadMetadata.verified":
 		panic(fmt.Errorf("field verified of message hyle.zktx.v1.PayloadMetadata is not mutable"))
 	case "hyle.zktx.v1.PayloadMetadata.success":
 		panic(fmt.Errorf("field success of message hyle.zktx.v1.PayloadMetadata is not mutable"))
+	case "hyle.zktx.v1.PayloadMetadata.next_tx_hash":
+		panic(fmt.Errorf("field next_tx_hash of message hyle.zktx.v1.PayloadMetadata is not mutable"))
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: hyle.zktx.v1.PayloadMetadata"))
@@ -1978,12 +2148,16 @@ func (x *fastReflection_PayloadMetadata) NewField(fd protoreflect.FieldDescripto
 		return protoreflect.ValueOfString("")
 	case "hyle.zktx.v1.PayloadMetadata.contract_name":
 		return protoreflect.ValueOfString("")
+	case "hyle.zktx.v1.PayloadMetadata.initial_state":
+		return protoreflect.ValueOfBytes(nil)
 	case "hyle.zktx.v1.PayloadMetadata.next_state":
 		return protoreflect.ValueOfBytes(nil)
 	case "hyle.zktx.v1.PayloadMetadata.verified":
 		return protoreflect.ValueOfBool(false)
 	case "hyle.zktx.v1.PayloadMetadata.success":
 		return protoreflect.ValueOfBool(false)
+	case "hyle.zktx.v1.PayloadMetadata.next_tx_hash":
+		return protoreflect.ValueOfBytes(nil)
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: hyle.zktx.v1.PayloadMetadata"))
@@ -2065,6 +2239,10 @@ func (x *fastReflection_PayloadMetadata) ProtoMethods() *protoiface.Methods {
 		if l > 0 {
 			n += 1 + l + runtime.Sov(uint64(l))
 		}
+		l = len(x.InitialState)
+		if l > 0 {
+			n += 1 + l + runtime.Sov(uint64(l))
+		}
 		l = len(x.NextState)
 		if l > 0 {
 			n += 1 + l + runtime.Sov(uint64(l))
@@ -2074,6 +2252,10 @@ func (x *fastReflection_PayloadMetadata) ProtoMethods() *protoiface.Methods {
 		}
 		if x.Success {
 			n += 2
+		}
+		l = len(x.NextTxHash)
+		if l > 0 {
+			n += 1 + l + runtime.Sov(uint64(l))
 		}
 		if x.unknownFields != nil {
 			n += len(x.unknownFields)
@@ -2104,6 +2286,13 @@ func (x *fastReflection_PayloadMetadata) ProtoMethods() *protoiface.Methods {
 			i -= len(x.unknownFields)
 			copy(dAtA[i:], x.unknownFields)
 		}
+		if len(x.NextTxHash) > 0 {
+			i -= len(x.NextTxHash)
+			copy(dAtA[i:], x.NextTxHash)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.NextTxHash)))
+			i--
+			dAtA[i] = 0x42
+		}
 		if x.Success {
 			i--
 			if x.Success {
@@ -2112,7 +2301,7 @@ func (x *fastReflection_PayloadMetadata) ProtoMethods() *protoiface.Methods {
 				dAtA[i] = 0
 			}
 			i--
-			dAtA[i] = 0x30
+			dAtA[i] = 0x38
 		}
 		if x.Verified {
 			i--
@@ -2122,12 +2311,19 @@ func (x *fastReflection_PayloadMetadata) ProtoMethods() *protoiface.Methods {
 				dAtA[i] = 0
 			}
 			i--
-			dAtA[i] = 0x28
+			dAtA[i] = 0x30
 		}
 		if len(x.NextState) > 0 {
 			i -= len(x.NextState)
 			copy(dAtA[i:], x.NextState)
 			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.NextState)))
+			i--
+			dAtA[i] = 0x2a
+		}
+		if len(x.InitialState) > 0 {
+			i -= len(x.InitialState)
+			copy(dAtA[i:], x.InitialState)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.InitialState)))
 			i--
 			dAtA[i] = 0x22
 		}
@@ -2301,6 +2497,40 @@ func (x *fastReflection_PayloadMetadata) ProtoMethods() *protoiface.Methods {
 				iNdEx = postIndex
 			case 4:
 				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field InitialState", wireType)
+				}
+				var byteLen int
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					byteLen |= int(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				if byteLen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + byteLen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.InitialState = append(x.InitialState[:0], dAtA[iNdEx:postIndex]...)
+				if x.InitialState == nil {
+					x.InitialState = []byte{}
+				}
+				iNdEx = postIndex
+			case 5:
+				if wireType != 2 {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field NextState", wireType)
 				}
 				var byteLen int
@@ -2333,7 +2563,7 @@ func (x *fastReflection_PayloadMetadata) ProtoMethods() *protoiface.Methods {
 					x.NextState = []byte{}
 				}
 				iNdEx = postIndex
-			case 5:
+			case 6:
 				if wireType != 0 {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field Verified", wireType)
 				}
@@ -2353,7 +2583,7 @@ func (x *fastReflection_PayloadMetadata) ProtoMethods() *protoiface.Methods {
 					}
 				}
 				x.Verified = bool(v != 0)
-			case 6:
+			case 7:
 				if wireType != 0 {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field Success", wireType)
 				}
@@ -2373,6 +2603,40 @@ func (x *fastReflection_PayloadMetadata) ProtoMethods() *protoiface.Methods {
 					}
 				}
 				x.Success = bool(v != 0)
+			case 8:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field NextTxHash", wireType)
+				}
+				var byteLen int
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					byteLen |= int(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				if byteLen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + byteLen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.NextTxHash = append(x.NextTxHash[:0], dAtA[iNdEx:postIndex]...)
+				if x.NextTxHash == nil {
+					x.NextTxHash = []byte{}
+				}
+				iNdEx = postIndex
 			default:
 				iNdEx = preIndex
 				skippy, err := runtime.Skip(dAtA[iNdEx:])
@@ -2985,6 +3249,10 @@ type Contract struct {
 	ProgramId []byte `protobuf:"bytes,2,opt,name=program_id,json=programId,proto3" json:"program_id,omitempty"`
 	// Recap of the current contract state
 	StateDigest []byte `protobuf:"bytes,3,opt,name=state_digest,json=stateDigest,proto3" json:"state_digest,omitempty"`
+	// Hash of the next TX to settle, in order
+	NextTxToSettle []byte `protobuf:"bytes,4,opt,name=next_tx_to_settle,json=nextTxToSettle,proto3" json:"next_tx_to_settle,omitempty"`
+	// Latest tx received to settle, for optimisation
+	LatestTxReceived []byte `protobuf:"bytes,5,opt,name=latest_tx_received,json=latestTxReceived,proto3" json:"latest_tx_received,omitempty"`
 }
 
 func (x *Contract) Reset() {
@@ -3028,6 +3296,20 @@ func (x *Contract) GetStateDigest() []byte {
 	return nil
 }
 
+func (x *Contract) GetNextTxToSettle() []byte {
+	if x != nil {
+		return x.NextTxToSettle
+	}
+	return nil
+}
+
+func (x *Contract) GetLatestTxReceived() []byte {
+	if x != nil {
+		return x.LatestTxReceived
+	}
+	return nil
+}
+
 // PayloadMetadata is the transient state we need to keep to settle payloads
 type PayloadMetadata struct {
 	state         protoimpl.MessageState
@@ -3040,12 +3322,16 @@ type PayloadMetadata struct {
 	Identity string `protobuf:"bytes,2,opt,name=identity,proto3" json:"identity,omitempty"`
 	// Contract name to settle
 	ContractName string `protobuf:"bytes,3,opt,name=contract_name,json=contractName,proto3" json:"contract_name,omitempty"`
+	// The initial state of the contract
+	InitialState []byte `protobuf:"bytes,4,opt,name=initial_state,json=initialState,proto3" json:"initial_state,omitempty"`
 	// The next state to transition to
-	NextState []byte `protobuf:"bytes,4,opt,name=next_state,json=nextState,proto3" json:"next_state,omitempty"`
+	NextState []byte `protobuf:"bytes,5,opt,name=next_state,json=nextState,proto3" json:"next_state,omitempty"`
 	// If this payload was verified
-	Verified bool `protobuf:"varint,5,opt,name=verified,proto3" json:"verified,omitempty"`
+	Verified bool `protobuf:"varint,6,opt,name=verified,proto3" json:"verified,omitempty"`
 	// If this is a success or failure
-	Success bool `protobuf:"varint,6,opt,name=success,proto3" json:"success,omitempty"`
+	Success bool `protobuf:"varint,7,opt,name=success,proto3" json:"success,omitempty"`
+	// Next TX hash in the list of TX to settle
+	NextTxHash []byte `protobuf:"bytes,8,opt,name=next_tx_hash,json=nextTxHash,proto3" json:"next_tx_hash,omitempty"`
 }
 
 func (x *PayloadMetadata) Reset() {
@@ -3089,6 +3375,13 @@ func (x *PayloadMetadata) GetContractName() string {
 	return ""
 }
 
+func (x *PayloadMetadata) GetInitialState() []byte {
+	if x != nil {
+		return x.InitialState
+	}
+	return nil
+}
+
 func (x *PayloadMetadata) GetNextState() []byte {
 	if x != nil {
 		return x.NextState
@@ -3108,6 +3401,13 @@ func (x *PayloadMetadata) GetSuccess() bool {
 		return x.Success
 	}
 	return false
+}
+
+func (x *PayloadMetadata) GetNextTxHash() []byte {
+	if x != nil {
+		return x.NextTxHash
+	}
+	return nil
 }
 
 // TxTimeout is a list of TXs used to timeout
@@ -3171,40 +3471,50 @@ var file_hyle_zktx_v1_types_proto_rawDesc = []byte{
 	0x20, 0x01, 0x28, 0x09, 0x52, 0x03, 0x6b, 0x65, 0x79, 0x12, 0x2c, 0x0a, 0x05, 0x76, 0x61, 0x6c,
 	0x75, 0x65, 0x18, 0x02, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x16, 0x2e, 0x68, 0x79, 0x6c, 0x65, 0x2e,
 	0x7a, 0x6b, 0x74, 0x78, 0x2e, 0x76, 0x31, 0x2e, 0x43, 0x6f, 0x6e, 0x74, 0x72, 0x61, 0x63, 0x74,
-	0x52, 0x05, 0x76, 0x61, 0x6c, 0x75, 0x65, 0x3a, 0x02, 0x38, 0x01, 0x22, 0x68, 0x0a, 0x08, 0x43,
-	0x6f, 0x6e, 0x74, 0x72, 0x61, 0x63, 0x74, 0x12, 0x1a, 0x0a, 0x08, 0x76, 0x65, 0x72, 0x69, 0x66,
-	0x69, 0x65, 0x72, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x08, 0x76, 0x65, 0x72, 0x69, 0x66,
-	0x69, 0x65, 0x72, 0x12, 0x1d, 0x0a, 0x0a, 0x70, 0x72, 0x6f, 0x67, 0x72, 0x61, 0x6d, 0x5f, 0x69,
-	0x64, 0x18, 0x02, 0x20, 0x01, 0x28, 0x0c, 0x52, 0x09, 0x70, 0x72, 0x6f, 0x67, 0x72, 0x61, 0x6d,
-	0x49, 0x64, 0x12, 0x21, 0x0a, 0x0c, 0x73, 0x74, 0x61, 0x74, 0x65, 0x5f, 0x64, 0x69, 0x67, 0x65,
-	0x73, 0x74, 0x18, 0x03, 0x20, 0x01, 0x28, 0x0c, 0x52, 0x0b, 0x73, 0x74, 0x61, 0x74, 0x65, 0x44,
-	0x69, 0x67, 0x65, 0x73, 0x74, 0x22, 0xca, 0x01, 0x0a, 0x0f, 0x50, 0x61, 0x79, 0x6c, 0x6f, 0x61,
-	0x64, 0x4d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0x12, 0x21, 0x0a, 0x0c, 0x70, 0x61, 0x79,
-	0x6c, 0x6f, 0x61, 0x64, 0x5f, 0x68, 0x61, 0x73, 0x68, 0x18, 0x01, 0x20, 0x01, 0x28, 0x0c, 0x52,
-	0x0b, 0x70, 0x61, 0x79, 0x6c, 0x6f, 0x61, 0x64, 0x48, 0x61, 0x73, 0x68, 0x12, 0x1a, 0x0a, 0x08,
-	0x69, 0x64, 0x65, 0x6e, 0x74, 0x69, 0x74, 0x79, 0x18, 0x02, 0x20, 0x01, 0x28, 0x09, 0x52, 0x08,
-	0x69, 0x64, 0x65, 0x6e, 0x74, 0x69, 0x74, 0x79, 0x12, 0x23, 0x0a, 0x0d, 0x63, 0x6f, 0x6e, 0x74,
-	0x72, 0x61, 0x63, 0x74, 0x5f, 0x6e, 0x61, 0x6d, 0x65, 0x18, 0x03, 0x20, 0x01, 0x28, 0x09, 0x52,
-	0x0c, 0x63, 0x6f, 0x6e, 0x74, 0x72, 0x61, 0x63, 0x74, 0x4e, 0x61, 0x6d, 0x65, 0x12, 0x1d, 0x0a,
-	0x0a, 0x6e, 0x65, 0x78, 0x74, 0x5f, 0x73, 0x74, 0x61, 0x74, 0x65, 0x18, 0x04, 0x20, 0x01, 0x28,
-	0x0c, 0x52, 0x09, 0x6e, 0x65, 0x78, 0x74, 0x53, 0x74, 0x61, 0x74, 0x65, 0x12, 0x1a, 0x0a, 0x08,
-	0x76, 0x65, 0x72, 0x69, 0x66, 0x69, 0x65, 0x64, 0x18, 0x05, 0x20, 0x01, 0x28, 0x08, 0x52, 0x08,
-	0x76, 0x65, 0x72, 0x69, 0x66, 0x69, 0x65, 0x64, 0x12, 0x18, 0x0a, 0x07, 0x73, 0x75, 0x63, 0x63,
-	0x65, 0x73, 0x73, 0x18, 0x06, 0x20, 0x01, 0x28, 0x08, 0x52, 0x07, 0x73, 0x75, 0x63, 0x63, 0x65,
-	0x73, 0x73, 0x22, 0x1d, 0x0a, 0x09, 0x54, 0x78, 0x54, 0x69, 0x6d, 0x65, 0x6f, 0x75, 0x74, 0x12,
-	0x10, 0x0a, 0x03, 0x74, 0x78, 0x73, 0x18, 0x01, 0x20, 0x03, 0x28, 0x0c, 0x52, 0x03, 0x74, 0x78,
-	0x73, 0x42, 0xa9, 0x01, 0x0a, 0x10, 0x63, 0x6f, 0x6d, 0x2e, 0x68, 0x79, 0x6c, 0x65, 0x2e, 0x7a,
-	0x6b, 0x74, 0x78, 0x2e, 0x76, 0x31, 0x42, 0x0a, 0x54, 0x79, 0x70, 0x65, 0x73, 0x50, 0x72, 0x6f,
-	0x74, 0x6f, 0x50, 0x01, 0x5a, 0x37, 0x67, 0x69, 0x74, 0x68, 0x75, 0x62, 0x2e, 0x63, 0x6f, 0x6d,
-	0x2f, 0x68, 0x79, 0x6c, 0x65, 0x2d, 0x6f, 0x72, 0x67, 0x2f, 0x68, 0x79, 0x6c, 0x65, 0x2f, 0x78,
-	0x2f, 0x7a, 0x6b, 0x74, 0x78, 0x2f, 0x61, 0x70, 0x69, 0x2f, 0x68, 0x79, 0x6c, 0x65, 0x2f, 0x7a,
-	0x6b, 0x74, 0x78, 0x2f, 0x76, 0x31, 0x3b, 0x7a, 0x6b, 0x74, 0x78, 0x76, 0x31, 0xa2, 0x02, 0x03,
-	0x48, 0x5a, 0x58, 0xaa, 0x02, 0x0c, 0x48, 0x79, 0x6c, 0x65, 0x2e, 0x5a, 0x6b, 0x74, 0x78, 0x2e,
-	0x56, 0x31, 0xca, 0x02, 0x0c, 0x48, 0x79, 0x6c, 0x65, 0x5c, 0x5a, 0x6b, 0x74, 0x78, 0x5c, 0x56,
-	0x31, 0xe2, 0x02, 0x18, 0x48, 0x79, 0x6c, 0x65, 0x5c, 0x5a, 0x6b, 0x74, 0x78, 0x5c, 0x56, 0x31,
-	0x5c, 0x47, 0x50, 0x42, 0x4d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0xea, 0x02, 0x0e, 0x48,
-	0x79, 0x6c, 0x65, 0x3a, 0x3a, 0x5a, 0x6b, 0x74, 0x78, 0x3a, 0x3a, 0x56, 0x31, 0x62, 0x06, 0x70,
-	0x72, 0x6f, 0x74, 0x6f, 0x33,
+	0x52, 0x05, 0x76, 0x61, 0x6c, 0x75, 0x65, 0x3a, 0x02, 0x38, 0x01, 0x22, 0xc1, 0x01, 0x0a, 0x08,
+	0x43, 0x6f, 0x6e, 0x74, 0x72, 0x61, 0x63, 0x74, 0x12, 0x1a, 0x0a, 0x08, 0x76, 0x65, 0x72, 0x69,
+	0x66, 0x69, 0x65, 0x72, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x08, 0x76, 0x65, 0x72, 0x69,
+	0x66, 0x69, 0x65, 0x72, 0x12, 0x1d, 0x0a, 0x0a, 0x70, 0x72, 0x6f, 0x67, 0x72, 0x61, 0x6d, 0x5f,
+	0x69, 0x64, 0x18, 0x02, 0x20, 0x01, 0x28, 0x0c, 0x52, 0x09, 0x70, 0x72, 0x6f, 0x67, 0x72, 0x61,
+	0x6d, 0x49, 0x64, 0x12, 0x21, 0x0a, 0x0c, 0x73, 0x74, 0x61, 0x74, 0x65, 0x5f, 0x64, 0x69, 0x67,
+	0x65, 0x73, 0x74, 0x18, 0x03, 0x20, 0x01, 0x28, 0x0c, 0x52, 0x0b, 0x73, 0x74, 0x61, 0x74, 0x65,
+	0x44, 0x69, 0x67, 0x65, 0x73, 0x74, 0x12, 0x29, 0x0a, 0x11, 0x6e, 0x65, 0x78, 0x74, 0x5f, 0x74,
+	0x78, 0x5f, 0x74, 0x6f, 0x5f, 0x73, 0x65, 0x74, 0x74, 0x6c, 0x65, 0x18, 0x04, 0x20, 0x01, 0x28,
+	0x0c, 0x52, 0x0e, 0x6e, 0x65, 0x78, 0x74, 0x54, 0x78, 0x54, 0x6f, 0x53, 0x65, 0x74, 0x74, 0x6c,
+	0x65, 0x12, 0x2c, 0x0a, 0x12, 0x6c, 0x61, 0x74, 0x65, 0x73, 0x74, 0x5f, 0x74, 0x78, 0x5f, 0x72,
+	0x65, 0x63, 0x65, 0x69, 0x76, 0x65, 0x64, 0x18, 0x05, 0x20, 0x01, 0x28, 0x0c, 0x52, 0x10, 0x6c,
+	0x61, 0x74, 0x65, 0x73, 0x74, 0x54, 0x78, 0x52, 0x65, 0x63, 0x65, 0x69, 0x76, 0x65, 0x64, 0x22,
+	0x91, 0x02, 0x0a, 0x0f, 0x50, 0x61, 0x79, 0x6c, 0x6f, 0x61, 0x64, 0x4d, 0x65, 0x74, 0x61, 0x64,
+	0x61, 0x74, 0x61, 0x12, 0x21, 0x0a, 0x0c, 0x70, 0x61, 0x79, 0x6c, 0x6f, 0x61, 0x64, 0x5f, 0x68,
+	0x61, 0x73, 0x68, 0x18, 0x01, 0x20, 0x01, 0x28, 0x0c, 0x52, 0x0b, 0x70, 0x61, 0x79, 0x6c, 0x6f,
+	0x61, 0x64, 0x48, 0x61, 0x73, 0x68, 0x12, 0x1a, 0x0a, 0x08, 0x69, 0x64, 0x65, 0x6e, 0x74, 0x69,
+	0x74, 0x79, 0x18, 0x02, 0x20, 0x01, 0x28, 0x09, 0x52, 0x08, 0x69, 0x64, 0x65, 0x6e, 0x74, 0x69,
+	0x74, 0x79, 0x12, 0x23, 0x0a, 0x0d, 0x63, 0x6f, 0x6e, 0x74, 0x72, 0x61, 0x63, 0x74, 0x5f, 0x6e,
+	0x61, 0x6d, 0x65, 0x18, 0x03, 0x20, 0x01, 0x28, 0x09, 0x52, 0x0c, 0x63, 0x6f, 0x6e, 0x74, 0x72,
+	0x61, 0x63, 0x74, 0x4e, 0x61, 0x6d, 0x65, 0x12, 0x23, 0x0a, 0x0d, 0x69, 0x6e, 0x69, 0x74, 0x69,
+	0x61, 0x6c, 0x5f, 0x73, 0x74, 0x61, 0x74, 0x65, 0x18, 0x04, 0x20, 0x01, 0x28, 0x0c, 0x52, 0x0c,
+	0x69, 0x6e, 0x69, 0x74, 0x69, 0x61, 0x6c, 0x53, 0x74, 0x61, 0x74, 0x65, 0x12, 0x1d, 0x0a, 0x0a,
+	0x6e, 0x65, 0x78, 0x74, 0x5f, 0x73, 0x74, 0x61, 0x74, 0x65, 0x18, 0x05, 0x20, 0x01, 0x28, 0x0c,
+	0x52, 0x09, 0x6e, 0x65, 0x78, 0x74, 0x53, 0x74, 0x61, 0x74, 0x65, 0x12, 0x1a, 0x0a, 0x08, 0x76,
+	0x65, 0x72, 0x69, 0x66, 0x69, 0x65, 0x64, 0x18, 0x06, 0x20, 0x01, 0x28, 0x08, 0x52, 0x08, 0x76,
+	0x65, 0x72, 0x69, 0x66, 0x69, 0x65, 0x64, 0x12, 0x18, 0x0a, 0x07, 0x73, 0x75, 0x63, 0x63, 0x65,
+	0x73, 0x73, 0x18, 0x07, 0x20, 0x01, 0x28, 0x08, 0x52, 0x07, 0x73, 0x75, 0x63, 0x63, 0x65, 0x73,
+	0x73, 0x12, 0x20, 0x0a, 0x0c, 0x6e, 0x65, 0x78, 0x74, 0x5f, 0x74, 0x78, 0x5f, 0x68, 0x61, 0x73,
+	0x68, 0x18, 0x08, 0x20, 0x01, 0x28, 0x0c, 0x52, 0x0a, 0x6e, 0x65, 0x78, 0x74, 0x54, 0x78, 0x48,
+	0x61, 0x73, 0x68, 0x22, 0x1d, 0x0a, 0x09, 0x54, 0x78, 0x54, 0x69, 0x6d, 0x65, 0x6f, 0x75, 0x74,
+	0x12, 0x10, 0x0a, 0x03, 0x74, 0x78, 0x73, 0x18, 0x01, 0x20, 0x03, 0x28, 0x0c, 0x52, 0x03, 0x74,
+	0x78, 0x73, 0x42, 0xa9, 0x01, 0x0a, 0x10, 0x63, 0x6f, 0x6d, 0x2e, 0x68, 0x79, 0x6c, 0x65, 0x2e,
+	0x7a, 0x6b, 0x74, 0x78, 0x2e, 0x76, 0x31, 0x42, 0x0a, 0x54, 0x79, 0x70, 0x65, 0x73, 0x50, 0x72,
+	0x6f, 0x74, 0x6f, 0x50, 0x01, 0x5a, 0x37, 0x67, 0x69, 0x74, 0x68, 0x75, 0x62, 0x2e, 0x63, 0x6f,
+	0x6d, 0x2f, 0x68, 0x79, 0x6c, 0x65, 0x2d, 0x6f, 0x72, 0x67, 0x2f, 0x68, 0x79, 0x6c, 0x65, 0x2f,
+	0x78, 0x2f, 0x7a, 0x6b, 0x74, 0x78, 0x2f, 0x61, 0x70, 0x69, 0x2f, 0x68, 0x79, 0x6c, 0x65, 0x2f,
+	0x7a, 0x6b, 0x74, 0x78, 0x2f, 0x76, 0x31, 0x3b, 0x7a, 0x6b, 0x74, 0x78, 0x76, 0x31, 0xa2, 0x02,
+	0x03, 0x48, 0x5a, 0x58, 0xaa, 0x02, 0x0c, 0x48, 0x79, 0x6c, 0x65, 0x2e, 0x5a, 0x6b, 0x74, 0x78,
+	0x2e, 0x56, 0x31, 0xca, 0x02, 0x0c, 0x48, 0x79, 0x6c, 0x65, 0x5c, 0x5a, 0x6b, 0x74, 0x78, 0x5c,
+	0x56, 0x31, 0xe2, 0x02, 0x18, 0x48, 0x79, 0x6c, 0x65, 0x5c, 0x5a, 0x6b, 0x74, 0x78, 0x5c, 0x56,
+	0x31, 0x5c, 0x47, 0x50, 0x42, 0x4d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0xea, 0x02, 0x0e,
+	0x48, 0x79, 0x6c, 0x65, 0x3a, 0x3a, 0x5a, 0x6b, 0x74, 0x78, 0x3a, 0x3a, 0x56, 0x31, 0x62, 0x06,
+	0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
 }
 
 var (
