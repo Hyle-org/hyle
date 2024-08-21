@@ -116,23 +116,23 @@ func limbsToBytes(u64api *uints.BinaryField[uints.U64], limbs []frontend.Variabl
 	return result
 }
 
-func generate_ecdsa_proof(privKey *ecdsa.PrivateKey, ethAddress string) (gnark.Groth16Proof, error) {
+func generate_ecdsa_proof(privKey *ecdsa.PrivateKey, ethAddress string, sigBin *[]byte) (gnark.Groth16Proof, error) {
 	publicKey := privKey.PublicKey
 
 	// sign
 	msg := []byte("testing ECDSA (sha256)")
 	md := sha256.New()
-	sigBin, _ := privKey.Sign(msg, md)
+	*sigBin, _ = privKey.Sign(msg, md)
 
 	// check that the signature is correct
-	flag, _ := publicKey.Verify(sigBin, msg, md)
+	flag, _ := publicKey.Verify(*sigBin, msg, md)
 	if !flag {
 		return gnark.Groth16Proof{}, fmt.Errorf("invalid signature")
 	}
 
 	// unmarshal signature
 	var sig ecdsa.Signature
-	sig.SetBytes(sigBin)
+	sig.SetBytes(*sigBin)
 	r, s := new(big.Int), new(big.Int)
 	r.SetBytes(sig.R[:32])
 	s.SetBytes(sig.S[:32])
@@ -145,6 +145,11 @@ func generate_ecdsa_proof(privKey *ecdsa.PrivateKey, ethAddress string) (gnark.G
 	hramBin := md.Sum(nil)
 	hash := ecdsa.HashToInt(hramBin)
 
+	payloadHash, err := computePayloadHash(*sigBin)
+	if err != nil {
+		return gnark.Groth16Proof{}, err
+	}
+
 	circuit := ecdsaCircuit[emulated.Secp256k1Fp, emulated.Secp256k1Fr]{
 		HyleCircuit: gnark.HyleCircuit{
 			Version:     1,
@@ -155,6 +160,7 @@ func generate_ecdsa_proof(privKey *ecdsa.PrivateKey, ethAddress string) (gnark.G
 			IdentityLen: len(ethAddress),
 			Identity:    gnark.ToArray256([]byte(ethAddress)), // We expect only the origin as this is the "auth contract"
 			TxHash:      gnark.ToArray64([]byte("TODO")),
+			Success:     1,
 		},
 		Sig: circuitecdsa.Signature[emulated.Secp256k1Fr]{
 			R: emulated.ValueOf[emulated.Secp256k1Fr](r),
@@ -166,8 +172,11 @@ func generate_ecdsa_proof(privKey *ecdsa.PrivateKey, ethAddress string) (gnark.G
 			Y: emulated.ValueOf[emulated.Secp256k1Fp](privKey.PublicKey.A.Y),
 		},
 	}
+	for i, b := range payloadHash {
+		circuit.HyleCircuit.PayloadHash[i] = uints.NewU8(b)
+	}
 
-	err := test.IsSolved(&circuit, &circuit, ecc.BN254.ScalarField())
+	err = test.IsSolved(&circuit, &circuit, ecc.BN254.ScalarField())
 	if err != nil {
 		return gnark.Groth16Proof{}, err
 	}
@@ -231,7 +240,8 @@ func TestExecuteStateChangesGroth16ECDSA(t *testing.T) {
 	pubkeyBytes := privKey.PublicKey.A.RawBytes()
 	ethAddress := hex.EncodeToString(nativesha3.Keccak256(pubkeyBytes[:])[12:]) + ".ecdsa"
 
-	proof, err := generate_ecdsa_proof(privKey, ethAddress)
+	var sigBin []byte
+	proof, err := generate_ecdsa_proof(privKey, ethAddress, &sigBin)
 	require.NoError(err)
 	jsonproof, _ := json.Marshal(proof)
 
@@ -250,7 +260,7 @@ func TestExecuteStateChangesGroth16ECDSA(t *testing.T) {
 		Payloads: []*zktx.Payload{
 			{
 				ContractName: "ecdsa",
-				Data:         []byte{0},
+				Data:         sigBin,
 			},
 		},
 	}

@@ -10,9 +10,11 @@ import (
 	"github.com/consensys/gnark/backend/groth16"
 	"github.com/consensys/gnark/frontend"
 	"github.com/consensys/gnark/frontend/cs/r1cs"
+	"github.com/consensys/gnark/std/math/uints"
 	"github.com/hyle-org/hyle/x/zktx"
 	"github.com/hyle-org/hyle/x/zktx/keeper/gnark"
 	"github.com/stretchr/testify/require"
+	gosha3 "golang.org/x/crypto/sha3"
 )
 
 // Sample GNARK circuit for stateful transactions, with redundant private variables
@@ -83,6 +85,14 @@ func generate_proof[C frontend.Circuit](circuit C) (gnark.Groth16Proof, error) {
 	}, nil
 }
 
+func computePayloadHash(payload []byte) ([]byte, error) {
+	hasher := gosha3.NewLegacyKeccak256()
+	if _, err := hasher.Write(payload); err != nil {
+		return nil, err
+	}
+	return hasher.Sum(nil), nil
+}
+
 func TestExecuteStateChangesGroth16(t *testing.T) {
 	f := initFixture(t)
 	require := require.New(t)
@@ -91,6 +101,9 @@ func TestExecuteStateChangesGroth16(t *testing.T) {
 	var initial_state = 1
 	var end_state = 4
 	contract_name := "test-contract"
+
+	payloadHash, err := computePayloadHash([]byte{byte(initial_state)})
+	require.NoError(err)
 
 	// Generate the proof and marshal it
 	circuit := statefulCircuit{
@@ -104,8 +117,12 @@ func TestExecuteStateChangesGroth16(t *testing.T) {
 			IdentityLen: len("toto." + contract_name),
 			Identity:    gnark.ToArray256([]byte("toto." + contract_name)),
 			TxHash:      gnark.ToArray64([]byte("TODO")),
+			Success:     1,
 		},
 		StillMoreData: 0,
+	}
+	for i, b := range payloadHash {
+		circuit.PayloadHash[i] = uints.NewU8(b)
 	}
 
 	proof, err := generate_proof(&circuit)
@@ -152,7 +169,7 @@ func TestExecuteStateChangesGroth16(t *testing.T) {
 	}
 
 	_, err = f.msgServer.PublishPayloadProof(f.ctx, msg)
-	require.ErrorContains(err, "payload hash does not match the expected hash")
+	require.ErrorContains(err, "invalid contract - no state is registered")
 
 	msg.ContractName = contract_name
 	_, err = f.msgServer.PublishPayloadProof(f.ctx, msg)
@@ -187,6 +204,13 @@ func TestExecuteLongStateChangeGroth16(t *testing.T) {
 	var end_state = []int{234, 4}
 	contract_name := "test-contract"
 
+	initial_state_bytes := make([]byte, len(initial_state))
+	for i, state := range initial_state {
+		initial_state_bytes[i] = byte(state)
+	}
+	payloadHash, err := computePayloadHash(initial_state_bytes)
+	require.NoError(err)
+
 	inp := [4]frontend.Variable{initial_state[0], initial_state[1], end_state[0], end_state[1]}
 	// Generate the proof and marshal it
 	circuit := longStatefulCircuit{
@@ -199,7 +223,11 @@ func TestExecuteLongStateChangeGroth16(t *testing.T) {
 			IdentityLen: len("toto." + contract_name),
 			Identity:    gnark.ToArray256([]byte("toto." + contract_name)),
 			TxHash:      gnark.ToArray64([]byte("TODO")),
+			Success:     1,
 		},
+	}
+	for i, b := range payloadHash {
+		circuit.PayloadHash[i] = uints.NewU8(b)
 	}
 
 	proof, err := generate_proof(&circuit)
