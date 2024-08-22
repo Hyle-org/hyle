@@ -35,7 +35,7 @@ message Contract {
 // PayloadMetadata is the transient state we need to keep to settle payloads
 message PayloadMetadata {
   // Hash of the payload
-  bytes payload_hash = 1;
+  bytes payloads_hash = 1;
   // Identity of the caller
   string identity = 2;
   // Contract name to settle
