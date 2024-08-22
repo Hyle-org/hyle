@@ -93,7 +93,7 @@ func (am AppModule) GetTxCmd() *cobra.Command {
 	txCmd.AddCommand(&cobra.Command{
 		Use:   "prove [tx_hash] [index] [contract_name] [proof]",
 		Short: "Publish a proof for a payload",
-		Args:  cobra.MinimumNArgs(5),
+		Args:  cobra.MinimumNArgs(4),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			clientCtx, err := client.GetClientTxContext(cmd)
 
@@ -105,8 +105,8 @@ func (am AppModule) GetTxCmd() *cobra.Command {
 				return err
 			}
 
-			if len(args) != 5 {
-				return fmt.Errorf("expected 5 arguments, got %d", len(args))
+			if len(args) != 4 {
+				return fmt.Errorf("expected 4 arguments, got %d", len(args))
 			}
 
 			tx_hash, err := GetBinaryValue(args[0])
