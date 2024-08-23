@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/json"
+	"fmt"
 	"testing"
 
 	"github.com/consensys/gnark-crypto/ecc"
 	"github.com/consensys/gnark/backend/groth16"
 	"github.com/consensys/gnark/frontend"
 	"github.com/consensys/gnark/frontend/cs/r1cs"
+	"github.com/consensys/gnark/std/hash/sha3"
 	"github.com/consensys/gnark/std/math/uints"
 	"github.com/hyle-org/hyle/x/zktx"
 	"github.com/hyle-org/hyle/x/zktx/keeper/gnark"
@@ -28,16 +30,45 @@ type longStatefulCircuit struct {
 	gnark.HyleCircuit
 }
 
+func frontendVarToU8(v []frontend.Variable) []uints.U8 {
+	t := make([]uints.U8, len(v))
+	for i, b := range v {
+		t[i].Val = b
+	}
+	return t
+}
+
+func computeCircuitPayloadHash(api frontend.API, c *gnark.HyleCircuit) error {
+	uapi, err := uints.New[uints.U64](api)
+	if err != nil {
+		return err
+	}
+	newHasher, err := sha3.NewLegacyKeccak256(api)
+	if err != nil {
+		return err
+	}
+	input := frontendVarToU8(c.Input)
+	newHasher.Write(input)
+	payloadHash := newHasher.Sum()
+	if a, b := len(payloadHash), len(c.PayloadHash); a != b {
+		return fmt.Errorf("payload hash length mismatch %d != %d", a, b)
+	}
+	for i := 0; i < len(payloadHash); i++ {
+		uapi.ByteAssertEq(payloadHash[i], c.PayloadHash[i])
+	}
+	return nil
+}
+
 func (c *statefulCircuit) Define(api frontend.API) error {
 	c.StillMoreData = api.Add(c.Input[0], c.OtherData)
 	api.AssertIsEqual(c.Output[0], c.StillMoreData)
-	return nil
+	return computeCircuitPayloadHash(api, &c.HyleCircuit)
 }
 
 func (c *longStatefulCircuit) Define(api frontend.API) error {
 	temp := api.Add(c.Input[0], c.Input[1])
 	api.AssertIsEqual(temp, c.Output[1])
-	return nil
+	return computeCircuitPayloadHash(api, &c.HyleCircuit)
 }
 
 func generate_proof[C frontend.Circuit](circuit C) (gnark.Groth16Proof, error) {
@@ -117,12 +148,10 @@ func TestExecuteStateChangesGroth16(t *testing.T) {
 			IdentityLen: len("toto." + contract_name),
 			Identity:    gnark.ToArray256([]byte("toto." + contract_name)),
 			TxHash:      gnark.ToArray64([]byte("TODO")),
+			PayloadHash: gnark.ToArray32(payloadHash),
 			Success:     1,
 		},
 		StillMoreData: 0,
-	}
-	for i, b := range payloadHash {
-		circuit.PayloadHash[i] = uints.NewU8(b)
 	}
 
 	proof, err := generate_proof(&circuit)
@@ -224,10 +253,8 @@ func TestExecuteLongStateChangeGroth16(t *testing.T) {
 			Identity:    gnark.ToArray256([]byte("toto." + contract_name)),
 			TxHash:      gnark.ToArray64([]byte("TODO")),
 			Success:     1,
+			PayloadHash: gnark.ToArray32(payloadHash),
 		},
-	}
-	for i, b := range payloadHash {
-		circuit.PayloadHash[i] = uints.NewU8(b)
 	}
 
 	proof, err := generate_proof(&circuit)

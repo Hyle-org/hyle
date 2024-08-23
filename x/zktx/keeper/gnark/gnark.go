@@ -53,6 +53,16 @@ func ToArray64(d []byte) [64]uints.U8 {
 	return [64]uints.U8(uints.NewU8Array(d))
 }
 
+func ToArray32(d []byte) [32]uints.U8 {
+	// Pad to 32
+	if len(d) < 32 {
+		padded := make([]byte, 32)
+		copy(padded, d)
+		d = padded
+	}
+	return [32]uints.U8(uints.NewU8Array(d))
+}
+
 // Struct type expected for the "proof" argument
 type Groth16Proof struct {
 	Proof         []byte `json:"proof"`

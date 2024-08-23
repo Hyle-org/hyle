@@ -78,6 +78,20 @@ func (c *ecdsaCircuit[T, S]) Define(api frontend.API) error {
 		[]byte("f")[0],
 	}
 
+	// no Reset() on this hasher so make a new one
+	if newHasher, err = sha3.NewLegacyKeccak256(api); err != nil {
+		return err
+	}
+	newHasher.Write(limbsToBytes(uapi, c.Sig.R.Limbs))
+	newHasher.Write(limbsToBytes(uapi, c.Sig.S.Limbs))
+	payloadHash := newHasher.Sum()
+	if a, b := len(payloadHash), len(c.HyleCircuit.PayloadHash); a != b {
+		return fmt.Errorf("payload hash length mismatch %d != %d", a, b)
+	}
+	for i := 0; i < len(payloadHash); i++ {
+		uapi.ByteAssertEq(payloadHash[i], c.HyleCircuit.PayloadHash[i])
+	}
+
 	for i := 0; i < 20; i++ {
 		// Not sure if there's a more efficient way to do this but it works - we need to compare the ASCII values.
 		lower, upper := bitslice.Partition(api, res[i+12].Val, 4)
@@ -161,6 +175,7 @@ func generate_ecdsa_proof(privKey *ecdsa.PrivateKey, ethAddress string, sigBin *
 			Identity:    gnark.ToArray256([]byte(ethAddress)), // We expect only the origin as this is the "auth contract"
 			TxHash:      gnark.ToArray64([]byte("TODO")),
 			Success:     1,
+			PayloadHash: gnark.ToArray32(payloadHash),
 		},
 		Sig: circuitecdsa.Signature[emulated.Secp256k1Fr]{
 			R: emulated.ValueOf[emulated.Secp256k1Fr](r),
@@ -171,9 +186,6 @@ func generate_ecdsa_proof(privKey *ecdsa.PrivateKey, ethAddress string, sigBin *
 			X: emulated.ValueOf[emulated.Secp256k1Fp](privKey.PublicKey.A.X),
 			Y: emulated.ValueOf[emulated.Secp256k1Fp](privKey.PublicKey.A.Y),
 		},
-	}
-	for i, b := range payloadHash {
-		circuit.HyleCircuit.PayloadHash[i] = uints.NewU8(b)
 	}
 
 	err = test.IsSolved(&circuit, &circuit, ecc.BN254.ScalarField())
