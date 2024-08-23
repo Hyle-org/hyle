@@ -224,6 +224,36 @@ func TestExecuteStateChangesGroth16(t *testing.T) {
 	require.Equal(st.StateDigest, final_state_witness)
 }
 
+func TestBadPayloadGroth16(t *testing.T) {
+	require := require.New(t)
+
+	// Parameters:
+	var initial_state = 1
+	var end_state = 4
+	contract_name := "test-contract"
+
+	// Generate the proof and marshal it
+	circuit := statefulCircuit{
+		OtherData: 3,
+		HyleCircuit: gnark.HyleCircuit{
+			Version:     1,
+			InputLen:    1,
+			Input:       []frontend.Variable{initial_state},
+			OutputLen:   1,
+			Output:      []frontend.Variable{end_state},
+			IdentityLen: len("toto." + contract_name),
+			Identity:    gnark.ToArray256([]byte("toto." + contract_name)),
+			TxHash:      gnark.ToArray64([]byte("TODO")),
+			// do not set PayloadHash
+			Success: 1,
+		},
+		StillMoreData: 0,
+	}
+
+	_, err := generate_proof(&circuit)
+	require.Error(err, "payload hash should mismatch")
+}
+
 func TestExecuteLongStateChangeGroth16(t *testing.T) {
 	f := initFixture(t)
 	require := require.New(t)
