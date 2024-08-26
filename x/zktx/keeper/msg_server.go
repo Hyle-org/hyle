@@ -23,6 +23,7 @@ import (
 	"github.com/consensys/gnark-crypto/ecc/stark-curve/fp"
 	pedersenhash "github.com/consensys/gnark-crypto/ecc/stark-curve/pedersen-hash"
 	"github.com/consensys/gnark/backend/groth16"
+	gosha3 "golang.org/x/crypto/sha3"
 )
 
 type msgServer struct {
@@ -103,6 +104,12 @@ func computePayloadHash(verifier string, payloadData []byte) ([]byte, error) {
 		return make([]byte, 4), nil
 	} else if verifier == "risczero" {
 		return payloadData, nil
+	} else if verifier == "gnark-groth16-te-BN254" {
+		hasher := gosha3.NewLegacyKeccak256()
+		if _, err := hasher.Write(payloadData); err != nil {
+			return nil, err
+		}
+		return hasher.Sum(nil), nil
 	}
 	return nil, fmt.Errorf("failed to hash payload: hash function not implemented for verifier %s", verifier)
 }

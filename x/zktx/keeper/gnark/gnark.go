@@ -26,6 +26,8 @@ type HyleCircuit struct {
 	IdentityLen frontend.Variable   `gnark:",public"` // This is encoded as a single ASCII character per byte
 	Identity    [256]uints.U8       `gnark:",public"` // The max capacity is 256 bytes (arbitrarily, but we need something static)
 	TxHash      [64]uints.U8        `gnark:",public"`
+	PayloadHash [32]uints.U8        `gnark:",public"`
+	Success     frontend.Variable   `gnark:",public"`
 }
 
 func (c *HyleCircuit) Define(api frontend.API) error { return nil }
@@ -49,6 +51,16 @@ func ToArray64(d []byte) [64]uints.U8 {
 		d = padded
 	}
 	return [64]uints.U8(uints.NewU8Array(d))
+}
+
+func ToArray32(d []byte) [32]uints.U8 {
+	// Pad to 32
+	if len(d) < 32 {
+		padded := make([]byte, 32)
+		copy(padded, d)
+		d = padded
+	}
+	return [32]uints.U8(uints.NewU8Array(d))
 }
 
 // Struct type expected for the "proof" argument
@@ -117,6 +129,12 @@ func parseString(input *fr.Vector) (string, error) {
 	}
 }
 
+func parseBool(input *fr.Vector) bool {
+	b := (*input)[0].Uint64() == 1
+	*input = (*input)[1:]
+	return b
+}
+
 func (proof *Groth16Proof) ExtractData(witness witness.Witness) (*zktx.HyleOutput, error) {
 	// Check payload version identifier
 	pubWitVector, ok := witness.Vector().(fr.Vector)
@@ -144,6 +162,11 @@ func (proof *Groth16Proof) ExtractData(witness witness.Witness) (*zktx.HyleOutpu
 	if output.TxHash, err = parseArray(&slice, 64); err != nil {
 		return nil, err
 	}
+
+	if output.PayloadHash, err = parseArray(&slice, 32); err != nil {
+		return nil, err
+	}
+	output.Success = parseBool(&slice)
 
 	return output, nil
 }
