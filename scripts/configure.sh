@@ -24,6 +24,8 @@ $HYLED_BIN config set client chain-id hyle
 echo "Warning: Using the test keyring backend for devnet. This is insecure and should not be used for an real value."
 $HYLED_BIN config set client keyring-backend test
 
+$HYLED_BIN keys add default
+
 $HYLED_BIN config set client node "https://rpc.devnet.hyle.eu:443"
 
-echo "...All done ! run ${HYLED_BIN} status to check the configuration"
+echo "...All done !"
