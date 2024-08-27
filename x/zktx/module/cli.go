@@ -51,6 +51,9 @@ func (am AppModule) GetTxCmd() *cobra.Command {
 		RunE:  client.ValidateCmd,
 	}
 
+	txCmd.PersistentFlags().Int("account-number", 0, "Account number of the contract")
+	txCmd.PersistentFlags().Int("sequence", 0, "Sequence number of the contract")
+
 	txCmd.AddCommand(&cobra.Command{
 		Use:   "publish [identity] [[contract_name] [payload]]...",
 		Short: "Publish a number of payloads",
@@ -85,8 +88,10 @@ func (am AppModule) GetTxCmd() *cobra.Command {
 				Identity: args[0],
 				Payloads: payloads,
 			}
-
-			return tx.GenerateOrBroadcastTxCLI(clientCtx, cmd.Flags(), msg)
+			// Need to set them to something for offline mode.
+			cmd.Flags().Set("account-number", "0")
+			cmd.Flags().Set("sequence", "0")
+			return tx.GenerateOrBroadcastTxCLI(clientCtx.WithOffline(true), cmd.Flags(), msg)
 		},
 	})
 
@@ -132,8 +137,10 @@ func (am AppModule) GetTxCmd() *cobra.Command {
 				ContractName: contract_name,
 				Proof:        proof,
 			}
-
-			return tx.GenerateOrBroadcastTxCLI(clientCtx, cmd.Flags(), msg)
+			// Need to set them to something for offline mode.
+			cmd.Flags().Set("account-number", "0")
+			cmd.Flags().Set("sequence", "0")
+			return tx.GenerateOrBroadcastTxCLI(clientCtx.WithOffline(true), cmd.Flags(), msg)
 		},
 	})
 
@@ -165,8 +172,10 @@ func (am AppModule) GetTxCmd() *cobra.Command {
 				ContractName: args[3],
 				StateDigest:  StateDigest,
 			}
-
-			return tx.GenerateOrBroadcastTxCLI(clientCtx, cmd.Flags(), msg)
+			// Need to set them to something for offline mode.
+			cmd.Flags().Set("account-number", "0")
+			cmd.Flags().Set("sequence", "0")
+			return tx.GenerateOrBroadcastTxCLI(clientCtx.WithOffline(true), cmd.Flags(), msg)
 		},
 	})
 
