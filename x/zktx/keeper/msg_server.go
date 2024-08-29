@@ -54,12 +54,25 @@ func NewMsgServerImpl(keeper Keeper) zktx.MsgServer {
 	}
 	return &msgServer{k: keeper}
 }
+
 func hashPayloads(payloads []*zktx.Payload) ([]byte, error) {
-	jsonPayloads, err := json.Marshal(payloads)
-	if err != nil {
-		return nil, fmt.Errorf("invalid serialization of the payloads")
+	var concatenatedData []byte
+
+	// Iterate over all payloads and append their Data fields to the slice
+	for _, payload := range payloads {
+		if payload != nil {
+			concatenatedData = append(concatenatedData, payload.Data...)
+		}
 	}
-	payloadsHash := sha256.Sum256(jsonPayloads)
+	payloadsHash := sha256.Sum256(concatenatedData)
+
+	return payloadsHash[:], nil
+}
+
+func hashPayloadsFromContracts(payloads []byte) ([]byte, error) {
+	// TODO: Attention, fait comme ça il manque le premier élément du payload en cairo: la total length
+	payloadsHash := sha256.Sum256(payloads)
+
 	return payloadsHash[:], nil
 }
 
@@ -88,12 +101,10 @@ func (ms msgServer) PublishPayloads(goCtx context.Context, msg *zktx.MsgPublishP
 
 	validIdentity := msg.Identity == ""
 
-	fmt.Println("Hashing payloads:", msg.Payloads)
 	payloadsHash, err := hashPayloads(msg.Payloads)
 	if err != nil {
 		return nil, err
 	}
-	fmt.Println("Hashed payloads:", payloadsHash)
 
 	for i, payload := range msg.Payloads {
 		contract, err := ms.k.Contracts.Get(ctx, payload.ContractName)
@@ -189,12 +200,11 @@ func (ms msgServer) PublishPayloadProof(goCtx context.Context, msg *zktx.MsgPubl
 		return nil, fmt.Errorf("verification failed: %w", err)
 	}
 
-	fmt.Println("2) Hashing payloads:", objmap.Payloads)
-	payloadsHash, err := hashPayloads(objmap.Payloads)
+	fmt.Println("Proccessing ", msg.ContractName)
+	payloadsHash, err := hashPayloadsFromContracts(objmap.Payloads)
 	if err != nil {
 		return nil, err
 	}
-	fmt.Println("2) Hashed payloads:", payloadsHash)
 
 	if !bytes.Equal(payloadsHash, payloadMetadata.PayloadsHash) {
 		return nil, fmt.Errorf("proof is not related with correct payloads hash")
