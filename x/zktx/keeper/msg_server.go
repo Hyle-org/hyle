@@ -383,7 +383,7 @@ func extractProof(objmap *zktx.HyleOutput, contract *zktx.Contract, msg *zktx.Ms
 		//proofData = string(outBytes)
 	} else if contract.Verifier == "noir" {
 		// Save proof to a local file
-		err := os.WriteFile("/tmp/noir-proof.json", msg.Proof, 0644)
+		err := os.WriteFile("/tmp/noir-proof", msg.Proof, 0644)
 		if err != nil {
 			return fmt.Errorf("failed to write proof to file: %s", err)
 		}
@@ -396,7 +396,7 @@ func extractProof(objmap *zktx.HyleOutput, contract *zktx.Contract, msg *zktx.Ms
 		if err != nil {
 			return fmt.Errorf("failed to write vKey to file: %s", err)
 		}
-		outBytes, err := exec.Command("bun", "run", noirVerifierPath+"/verifier.ts", "--vKeyPath", "/tmp/noir-vkey", "--proofPath", "/tmp/noir-proof.json").Output()
+		outBytes, err := exec.Command("bun", "run", noirVerifierPath+"/verifier.ts", "--vKeyPath", "/tmp/noir-vkey", "--proofPath", "/tmp/noir-proof", "--outputPath", "/tmp/noir-output").Output()
 		if err != nil {
 			return fmt.Errorf("noir verifier failed on %s. Exit code: %s", msg.ContractName, err)
 		}
