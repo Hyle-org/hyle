@@ -71,9 +71,8 @@ function parsePayload(vector: string[]): number[] {
   let length = parseInt(vector.shift() as string);
   let payload: string = "[";
   for (var i = 0; i < length; i += 1)
-    payload += parseInt(vector.shift() as string, 16).toString();
-  payload += "]"
-
+    payload += BigInt(vector.shift() as string).toString() + " ";
+  payload = payload.slice(0, -1) + "]"
   return Array.from(new TextEncoder().encode(payload));
 }
 
