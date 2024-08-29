@@ -8,14 +8,12 @@ use error::VerifierError;
 use hyle_contract::HyleOutput;
 use lambdaworks_math::field::fields::fft_friendly::stark_252_prime_field::Stark252PrimeField;
 use num::BigInt;
-use serde::{Deserialize, Serialize};
 use stark_platinum_prover::proof::options::{ProofOptions, SecurityLevel};
 use stark_platinum_prover::proof::stark::StarkProof;
 
 pub mod error;
 
 pub fn verify_proof(proof: &Vec<u8>) -> Result<String, VerifierError> {
-    let proof_path = "none";
     let proof_options = ProofOptions::new_secure(SecurityLevel::Conjecturable100Bits, 3);
 
     let mut bytes = proof.as_slice();
@@ -186,11 +184,23 @@ fn deserialize_cairo_bytesarray(data: &mut Vec<&str>) -> String {
     word
 }
 
-/// Deserialize the output of the cairo erc20 contract.
-/// elements for the "from" address
-/// elements for the "to" address
-/// [-2] element for the amount transfered
-/// [-1] element for the next state
+// Payload deserialization
+// Extracts each value, add them in a string following cairo parsing "[a b c]"
+// Serialize this string as Vec<u8>
+fn deserialize_cairo_payload(data: &mut Vec<&str>) -> Vec<u8> {
+    let payload_size = data.remove(0).parse::<usize>().unwrap();
+    let mut payload: String = "[".to_owned();
+    payload.push_str(&payload_size.to_string());
+    for _ in 0..payload_size {
+        let d: String = data.remove(0).into();
+        payload.push_str(&" ");
+        payload.push_str(&d);
+    }
+    payload.push_str(&"]");
+    return payload.as_bytes().to_vec();
+}
+
+/// Deserialize the output of the cairo smile-token contract.
 fn deserialize_output(input: &str) -> HyleOutput<Vec<u8>> {
     let trimmed = input.trim_matches(|c| c == '[' || c == ']');
     let mut parts: Vec<&str> = trimmed.split_whitespace().collect();
@@ -204,8 +214,8 @@ fn deserialize_output(input: &str) -> HyleOutput<Vec<u8>> {
     let identity: String = deserialize_cairo_bytesarray(&mut parts);
     // extract tx_hash
     let tx_hash: String = parts.remove(0).parse().unwrap();
-    // extract payload_hash
-    let (_, payload_hash) = parts.remove(0).parse::<BigInt>().unwrap().to_bytes_be();
+    // extract payloads
+    let payloads = deserialize_cairo_payload(&mut parts);
     // extract success
     let success: bool = parts.remove(0).parse::<u32>().unwrap() == 1;
 
@@ -219,7 +229,7 @@ fn deserialize_output(input: &str) -> HyleOutput<Vec<u8>> {
         next_state: next_state.as_bytes().to_vec(),
         identity,
         tx_hash: tx_hash.as_bytes().to_vec(),
-        payload_hash,
+        payloads,
         success,
         program_outputs,
     }
