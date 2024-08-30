@@ -55,25 +55,10 @@ func NewMsgServerImpl(keeper Keeper) zktx.MsgServer {
 	return &msgServer{k: keeper}
 }
 
-func hashPayloads(payloads []*zktx.Payload) ([]byte, error) {
-	var concatenatedData []byte
-
-	// Iterate over all payloads and append their Data fields to the slice
-	for _, payload := range payloads {
-		if payload != nil {
-			concatenatedData = append(concatenatedData, payload.Data...)
-		}
-	}
-	payloadsHash := sha256.Sum256(concatenatedData)
-
-	return payloadsHash[:], nil
-}
-
-func hashPayloadsFromContracts(payloads []byte) ([]byte, error) {
-	// TODO: Attention, fait comme ça il manque le premier élément du payload en cairo: la total length
+func hashPayloads(payloads []byte) []byte {
 	payloadsHash := sha256.Sum256(payloads)
 
-	return payloadsHash[:], nil
+	return payloadsHash[:]
 }
 
 func (ms msgServer) PublishPayloads(goCtx context.Context, msg *zktx.MsgPublishPayloads) (*zktx.MsgPublishPayloadsResponse, error) {
@@ -101,13 +86,10 @@ func (ms msgServer) PublishPayloads(goCtx context.Context, msg *zktx.MsgPublishP
 
 	validIdentity := msg.Identity == ""
 
-	payloadsHash, err := hashPayloads(msg.Payloads)
-	if err != nil {
-		return nil, err
-	}
+	payloadsHash := hashPayloads(msg.Payloads.Data)
 
-	for i, payload := range msg.Payloads {
-		contract, err := ms.k.Contracts.Get(ctx, payload.ContractName)
+	for i, contractName := range msg.Payloads.ContractsName {
+		contract, err := ms.k.Contracts.Get(ctx, contractName)
 		if err != nil {
 			return nil, fmt.Errorf("invalid contract - no state is registered")
 		}
@@ -115,7 +97,7 @@ func (ms msgServer) PublishPayloads(goCtx context.Context, msg *zktx.MsgPublishP
 		// Check if this contract name matches the identity
 		if !validIdentity {
 			paths := strings.Split(msg.Identity, ".")
-			if len(paths) >= 2 && paths[len(paths)-1] == payload.ContractName {
+			if len(paths) >= 2 && paths[len(paths)-1] == contractName {
 				validIdentity = true
 			}
 		}
@@ -123,7 +105,7 @@ func (ms msgServer) PublishPayloads(goCtx context.Context, msg *zktx.MsgPublishP
 		// Store enough metadata to check proofs later.
 		err = ms.k.ProvenPayload.Set(ctx, collections.Join(txHash, uint32(i)), zktx.PayloadMetadata{
 			PayloadsHash: payloadsHash,
-			ContractName: payload.ContractName,
+			ContractName: contractName,
 			Identity:     msg.Identity,
 		})
 		if err != nil {
@@ -145,7 +127,7 @@ func (ms msgServer) PublishPayloads(goCtx context.Context, msg *zktx.MsgPublishP
 				} else if err != nil {
 					return nil, err
 				}
-				if payloadMetadata.ContractName == payload.ContractName {
+				if payloadMetadata.ContractName == contractName {
 					payloadMetadata.NextTxHash = txHash
 					err = ms.k.ProvenPayload.Set(ctx, collections.Join(contract.LatestTxReceived, uint32(i)), payloadMetadata)
 					if err != nil {
@@ -155,16 +137,16 @@ func (ms msgServer) PublishPayloads(goCtx context.Context, msg *zktx.MsgPublishP
 			}
 			contract.LatestTxReceived = txHash
 		}
-		if err := ms.k.Contracts.Set(ctx, payload.ContractName, contract); err != nil {
+		if err := ms.k.Contracts.Set(ctx, contractName, contract); err != nil {
 			return nil, err
 		}
 
 		// TODO: figure out if we want to reemit TX Hash, payload Hash
 		// and maybe just give it a UUID ?
 		if err := ctx.EventManager().EmitTypedEvent(&zktx.EventPayload{
-			ContractName: payload.ContractName,
+			ContractName: contractName,
 			PayloadIndex: uint32(i),
-			Data:         payload.Data,
+			Data:         msg.Payloads.Data,
 		}); err != nil {
 			return nil, err
 		}
@@ -199,12 +181,7 @@ func (ms msgServer) PublishPayloadProof(goCtx context.Context, msg *zktx.MsgPubl
 	if err := extractProof(&objmap, &contract, msg); err != nil {
 		return nil, fmt.Errorf("verification failed: %w", err)
 	}
-
-	fmt.Println("Proccessing ", msg.ContractName)
-	payloadsHash, err := hashPayloadsFromContracts(objmap.Payloads)
-	if err != nil {
-		return nil, err
-	}
+	payloadsHash := hashPayloads(objmap.Payloads)
 
 	if !bytes.Equal(payloadsHash, payloadMetadata.PayloadsHash) {
 		return nil, fmt.Errorf("proof is not related with correct payloads hash")

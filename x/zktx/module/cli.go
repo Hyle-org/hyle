@@ -52,8 +52,8 @@ func (am AppModule) GetTxCmd() *cobra.Command {
 	}
 
 	txCmd.AddCommand(&cobra.Command{
-		Use:   "publish [identity] [[contract_name] [payload]]...",
-		Short: "Publish a number of payloads",
+		Use:   "publish [identity] [data] [[contract_name]]...",
+		Short: "Publish a payload for a number of contract",
 		Args:  cobra.MinimumNArgs(3),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			clientCtx, err := client.GetClientTxContext(cmd)
@@ -65,20 +65,23 @@ func (am AppModule) GetTxCmd() *cobra.Command {
 				return err
 			}
 
-			if len(args[1:])%2 != 0 {
-				return fmt.Errorf("invalid state changes")
+			if len(args[2:]) == 0 {
+				return fmt.Errorf("no contract specified")
 			}
 
-			payloads := make([]*zktx.Payload, 0, len(args[1:])/2)
-			for i := 1; i < len(args); i += 2 {
-				data, err := GetBinaryValue(args[i+1])
-				if err != nil {
-					return err
-				}
-				payloads = append(payloads, &zktx.Payload{
-					ContractName: args[i],
-					Data:         data,
-				})
+			data, err := GetBinaryValue(args[1])
+			if err != nil {
+				return err
+			}
+
+			contractsList := make([]string, len(args[2:]))
+			for i := 2; i < 2+len(contractsList); i++ {
+				contractName := args[i]
+				contractsList = append(contractsList, contractName)
+			}
+			payloads := &zktx.Payloads{
+				ContractsName: contractsList,
+				Data:          data,
 			}
 
 			msg := &zktx.MsgPublishPayloads{
