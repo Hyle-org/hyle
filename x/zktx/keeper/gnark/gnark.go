@@ -16,7 +16,7 @@ import (
 	"github.com/hyle-org/hyle/x/zktx"
 )
 
-// This is the public interface that a verifiable circuit must implement
+// HyleCircuit This is the public interface that a verifiable circuit must implement
 type HyleCircuit struct {
 	Version     frontend.Variable   `gnark:",public"`
 	InputLen    frontend.Variable   `gnark:",public"`
@@ -26,7 +26,8 @@ type HyleCircuit struct {
 	IdentityLen frontend.Variable   `gnark:",public"` // This is encoded as a single ASCII character per byte
 	Identity    [256]uints.U8       `gnark:",public"` // The max capacity is 256 bytes (arbitrarily, but we need something static)
 	TxHash      [64]uints.U8        `gnark:",public"`
-	PayloadHash [32]uints.U8        `gnark:",public"`
+	PayloadsLen []frontend.Variable `gnark:",public"`
+	Payloads    []frontend.Variable `gnark:",public"`
 	Success     frontend.Variable   `gnark:",public"`
 }
 
@@ -163,7 +164,7 @@ func (proof *Groth16Proof) ExtractData(witness witness.Witness) (*zktx.HyleOutpu
 		return nil, err
 	}
 
-	if output.PayloadHash, err = parseArray(&slice, 32); err != nil {
+	if output.Payloads, err = parseSlice(&slice); err != nil {
 		return nil, err
 	}
 	output.Success = parseBool(&slice)
