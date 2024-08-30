@@ -55,10 +55,24 @@ func NewMsgServerImpl(keeper Keeper) zktx.MsgServer {
 	return &msgServer{k: keeper}
 }
 
-func hashPayloads(payloads []byte) []byte {
+func hashPayloads(payloads []*zktx.Payload) ([]byte, error) {
+	var concatenatedData []byte
+
+	// Iterate over all payloads and append their Data fields to the slice
+	for _, payload := range payloads {
+		if payload != nil {
+			concatenatedData = append(concatenatedData, payload.Data...)
+		}
+	}
+	payloadsHash := sha256.Sum256(concatenatedData)
+
+	return payloadsHash[:], nil
+}
+
+func hashPayloadsFromContracts(payloads []byte) ([]byte, error) {
 	payloadsHash := sha256.Sum256(payloads)
 
-	return payloadsHash[:]
+	return payloadsHash[:], nil
 }
 
 func (ms msgServer) PublishPayloads(goCtx context.Context, msg *zktx.MsgPublishPayloads) (*zktx.MsgPublishPayloadsResponse, error) {
@@ -86,10 +100,13 @@ func (ms msgServer) PublishPayloads(goCtx context.Context, msg *zktx.MsgPublishP
 
 	validIdentity := msg.Identity == ""
 
-	payloadsHash := hashPayloads(msg.Payloads.Data)
+	payloadsHash, err := hashPayloads(msg.Payloads)
+	if err != nil {
+		return nil, err
+	}
 
-	for i, contractName := range msg.Payloads.ContractsName {
-		contract, err := ms.k.Contracts.Get(ctx, contractName)
+	for i, payload := range msg.Payloads {
+		contract, err := ms.k.Contracts.Get(ctx, payload.ContractName)
 		if err != nil {
 			return nil, fmt.Errorf("invalid contract - no state is registered")
 		}
@@ -97,7 +114,7 @@ func (ms msgServer) PublishPayloads(goCtx context.Context, msg *zktx.MsgPublishP
 		// Check if this contract name matches the identity
 		if !validIdentity {
 			paths := strings.Split(msg.Identity, ".")
-			if len(paths) >= 2 && paths[len(paths)-1] == contractName {
+			if len(paths) >= 2 && paths[len(paths)-1] == payload.ContractName {
 				validIdentity = true
 			}
 		}
@@ -105,7 +122,7 @@ func (ms msgServer) PublishPayloads(goCtx context.Context, msg *zktx.MsgPublishP
 		// Store enough metadata to check proofs later.
 		err = ms.k.ProvenPayload.Set(ctx, collections.Join(txHash, uint32(i)), zktx.PayloadMetadata{
 			PayloadsHash: payloadsHash,
-			ContractName: contractName,
+			ContractName: payload.ContractName,
 			Identity:     msg.Identity,
 		})
 		if err != nil {
@@ -127,7 +144,7 @@ func (ms msgServer) PublishPayloads(goCtx context.Context, msg *zktx.MsgPublishP
 				} else if err != nil {
 					return nil, err
 				}
-				if payloadMetadata.ContractName == contractName {
+				if payloadMetadata.ContractName == payload.ContractName {
 					payloadMetadata.NextTxHash = txHash
 					err = ms.k.ProvenPayload.Set(ctx, collections.Join(contract.LatestTxReceived, uint32(i)), payloadMetadata)
 					if err != nil {
@@ -137,16 +154,16 @@ func (ms msgServer) PublishPayloads(goCtx context.Context, msg *zktx.MsgPublishP
 			}
 			contract.LatestTxReceived = txHash
 		}
-		if err := ms.k.Contracts.Set(ctx, contractName, contract); err != nil {
+		if err := ms.k.Contracts.Set(ctx, payload.ContractName, contract); err != nil {
 			return nil, err
 		}
 
 		// TODO: figure out if we want to reemit TX Hash, payload Hash
 		// and maybe just give it a UUID ?
 		if err := ctx.EventManager().EmitTypedEvent(&zktx.EventPayload{
-			ContractName: contractName,
+			ContractName: payload.ContractName,
 			PayloadIndex: uint32(i),
-			Data:         msg.Payloads.Data,
+			Data:         payload.Data,
 		}); err != nil {
 			return nil, err
 		}
@@ -181,7 +198,12 @@ func (ms msgServer) PublishPayloadProof(goCtx context.Context, msg *zktx.MsgPubl
 	if err := extractProof(&objmap, &contract, msg); err != nil {
 		return nil, fmt.Errorf("verification failed: %w", err)
 	}
-	payloadsHash := hashPayloads(objmap.Payloads)
+
+	fmt.Println("Proccessing ", msg.ContractName)
+	payloadsHash, err := hashPayloadsFromContracts(objmap.Payloads)
+	if err != nil {
+		return nil, err
+	}
 
 	if !bytes.Equal(payloadsHash, payloadMetadata.PayloadsHash) {
 		return nil, fmt.Errorf("proof is not related with correct payloads hash")
