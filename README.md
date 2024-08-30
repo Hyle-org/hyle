@@ -1,6 +1,8 @@
-# Hylé - your minimal layer one, focused only on verifying zero-knowledge proofs.
+# Hylé
 
-Repository for the [Hylé](https://hyle.eu) proof of concept chain.
+*A sequencing and settlement layer to help you build provable apps that are minimally, yet sufficiently, onchain.*
+
+Repository for the [Hylé](https://hyle.eu) chain - this is currently a proof-of-concept implementation based on the Cosmos SDK.
 
 Forked from [mini](https://github.com/cosmosregistry/chain-minimal) - the minimal Cosmos SDK chain.
 
@@ -28,10 +30,6 @@ make build # builds the `hyled` binary
 make init # initialize the chain
 make start # start the chain with paths for verifiers.
 ```
-
-##### From docker :
-
-> _soon to come_
 
 ## Useful links
 

@@ -51,6 +51,9 @@ func (am AppModule) GetTxCmd() *cobra.Command {
 		RunE:  client.ValidateCmd,
 	}
 
+	txCmd.PersistentFlags().Int("account-number", 0, "Account number of the contract")
+	txCmd.PersistentFlags().Int("sequence", 0, "Sequence number of the contract")
+
 	txCmd.AddCommand(&cobra.Command{
 		Use:   "publish [identity] [data] [[contract_name]]...",
 		Short: "Publish a payload for a number of contract",
@@ -88,15 +91,17 @@ func (am AppModule) GetTxCmd() *cobra.Command {
 				Identity: args[0],
 				Payloads: payloads,
 			}
-
-			return tx.GenerateOrBroadcastTxCLI(clientCtx, cmd.Flags(), msg)
+			// Need to set them to something for offline mode.
+			cmd.Flags().Set("account-number", "0")
+			cmd.Flags().Set("sequence", "0")
+			return tx.GenerateOrBroadcastTxCLI(clientCtx.WithOffline(true), cmd.Flags(), msg)
 		},
 	})
 
 	txCmd.AddCommand(&cobra.Command{
 		Use:   "prove [tx_hash] [index] [contract_name] [proof]",
 		Short: "Publish a proof for a payload",
-		Args:  cobra.MinimumNArgs(5),
+		Args:  cobra.MinimumNArgs(4),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			clientCtx, err := client.GetClientTxContext(cmd)
 
@@ -108,8 +113,8 @@ func (am AppModule) GetTxCmd() *cobra.Command {
 				return err
 			}
 
-			if len(args) != 5 {
-				return fmt.Errorf("expected 5 arguments, got %d", len(args))
+			if len(args) != 4 {
+				return fmt.Errorf("expected 4 arguments, got %d", len(args))
 			}
 
 			tx_hash, err := GetBinaryValue(args[0])
@@ -135,8 +140,10 @@ func (am AppModule) GetTxCmd() *cobra.Command {
 				ContractName: contract_name,
 				Proof:        proof,
 			}
-
-			return tx.GenerateOrBroadcastTxCLI(clientCtx, cmd.Flags(), msg)
+			// Need to set them to something for offline mode.
+			cmd.Flags().Set("account-number", "0")
+			cmd.Flags().Set("sequence", "0")
+			return tx.GenerateOrBroadcastTxCLI(clientCtx.WithOffline(true), cmd.Flags(), msg)
 		},
 	})
 
@@ -168,8 +175,10 @@ func (am AppModule) GetTxCmd() *cobra.Command {
 				ContractName: args[3],
 				StateDigest:  StateDigest,
 			}
-
-			return tx.GenerateOrBroadcastTxCLI(clientCtx, cmd.Flags(), msg)
+			// Need to set them to something for offline mode.
+			cmd.Flags().Set("account-number", "0")
+			cmd.Flags().Set("sequence", "0")
+			return tx.GenerateOrBroadcastTxCLI(clientCtx.WithOffline(true), cmd.Flags(), msg)
 		},
 	})
 
