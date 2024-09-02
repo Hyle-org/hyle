@@ -185,18 +185,17 @@ fn deserialize_cairo_bytesarray(data: &mut Vec<&str>) -> String {
 }
 
 // Payload deserialization
-// Extracts each value, add them in a string following cairo parsing "[a b c]"
-// Serialize this string as Vec<u8>
 fn deserialize_cairo_payload(data: &mut Vec<&str>) -> Vec<u8> {
-    let payload_size = data.remove(0).parse::<usize>().unwrap();
-    let mut payload: String = "[".to_owned();
-    payload.push_str(&payload_size.to_string());
-    for _ in 0..payload_size {
+    let payload_number = data.remove(0).parse::<usize>().unwrap();
+    let mut payload: String = "".to_owned();
+    for i in 0..payload_number {
         let d: String = data.remove(0).into();
-        payload.push_str(&" ");
+        if i != 0 {
+            payload.push_str(&" ");
+        }
         payload.push_str(&d);
     }
-    payload.push_str(&"]");
+
     return payload.as_bytes().to_vec();
 }
 
@@ -214,6 +213,8 @@ fn deserialize_output(input: &str) -> HyleOutput<Vec<u8>> {
     let identity: String = deserialize_cairo_bytesarray(&mut parts);
     // extract tx_hash
     let tx_hash: String = parts.remove(0).parse().unwrap();
+    // extract index
+    let index: u32 = parts.remove(0).parse().unwrap();
     // extract payloads
     let payloads = deserialize_cairo_payload(&mut parts);
     // extract success
@@ -229,6 +230,7 @@ fn deserialize_output(input: &str) -> HyleOutput<Vec<u8>> {
         next_state: next_state.as_bytes().to_vec(),
         identity,
         tx_hash: tx_hash.as_bytes().to_vec(),
+        index,
         payloads,
         success,
         program_outputs,

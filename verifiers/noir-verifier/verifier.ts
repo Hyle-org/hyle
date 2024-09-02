@@ -47,6 +47,7 @@ interface HyleOutput {
   next_state: number[];
   identity: string;
   tx_hash: number[];
+  index: number;
   payloads: number[];
   success: boolean;
 }
@@ -68,6 +69,11 @@ function parseArray(vector: string[]): number[] {
 }
 
 function parsePayload(vector: string[]): number[] {
+  // TODO: correctement parser le payload/ bien retirer ce qu'il y a la fin pour la data envoyé corresponde a ce qu'hylé va hasher
+  let payloadLen = parseInt(vector.shift() as string);
+  // vector.slice(payloadLen)
+
+
   let length = parseInt(vector.shift() as string);
   let payload: string = "[";
   for (var i = 0; i < length; i += 1)
@@ -83,6 +89,7 @@ function deserializePublicInputs<T>(publicInputs: string[]): HyleOutput {
   const next_state = parseArray(publicInputs);
   const identity = parseString(publicInputs);
   const tx_hash = parseArray(publicInputs);
+  const index = parseInt(publicInputs.shift() as string); // TODO:
   const payloads = parsePayload(publicInputs);
   const success = parseInt(publicInputs.shift() as string) === 1;
   // We don't parse the rest, which correspond to programOutputs
@@ -92,6 +99,7 @@ function deserializePublicInputs<T>(publicInputs: string[]): HyleOutput {
     next_state,
     identity,
     tx_hash,
+    index,
     payloads,
     success,
   };

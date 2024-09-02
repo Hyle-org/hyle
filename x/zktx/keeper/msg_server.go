@@ -69,7 +69,7 @@ func hashPayloads(payloads []*zktx.Payload) ([]byte, error) {
 	return payloadsHash[:], nil
 }
 
-func hashPayloadsFromContracts(payloads []byte) ([]byte, error) {
+func hashPayloadsFromProofs(payloads []byte) ([]byte, error) {
 	payloadsHash := sha256.Sum256(payloads)
 
 	return payloadsHash[:], nil
@@ -199,8 +199,7 @@ func (ms msgServer) PublishPayloadProof(goCtx context.Context, msg *zktx.MsgPubl
 		return nil, fmt.Errorf("verification failed: %w", err)
 	}
 
-	fmt.Println("Proccessing ", msg.ContractName)
-	payloadsHash, err := hashPayloadsFromContracts(objmap.Payloads)
+	payloadsHash, err := hashPayloadsFromProofs(objmap.Payloads)
 	if err != nil {
 		return nil, err
 	}

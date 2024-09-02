@@ -25,6 +25,7 @@ pub struct HyleOutput<T> {
     pub next_state: Vec<u8>,
     pub identity: String,
     pub tx_hash: Vec<u8>,
+    pub index: u32,
     pub payloads: Vec<u8>,
     pub success: bool,
     pub program_outputs: T,

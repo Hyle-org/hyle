@@ -6,6 +6,7 @@ type HyleOutput struct {
 	NextState    []byte `json:"next_state"`
 	Identity     string `json:"identity"`
 	TxHash       []byte `json:"tx_hash"`
+	Index        uint32 `json:"index"`
 	Payloads     []byte `json:"payloads"`
 	Success      bool   `json:"success"`
 }
