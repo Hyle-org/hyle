@@ -1,9 +1,0 @@
-[workspace]
-resolver = "2"
-members = [
-    "verifiers/hyle-contract",
-    "verifiers/midenvm-verifier",
-    "verifiers/risc0-verifier",
-    # "verifiers/sp1-verifier",
-    "verifiers/cairo-verifier"
-]

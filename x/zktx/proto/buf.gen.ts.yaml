@@ -1,5 +1,0 @@
-version: v1
-plugins:
-  - plugin: buf.build/community/stephenh-ts-proto
-    out: ../proto-ts/
-    opt: plugins=grpc,Mgoogle/protobuf/any.proto=github.com/cosmos/cosmos-sdk/codec/types,Mcosmos/orm/v1/orm.proto=cosmossdk.io/orm
