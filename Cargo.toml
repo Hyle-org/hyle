@@ -4,11 +4,11 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-s2n-quic = "1.45.0"
 tracing = "0.1"
 tracing-subscriber = "0.3"
 tokio = { version = "1.40.0", features = ["full"] }
 anyhow = "1.0.86"
+clap = { version = "4.5.16", features = ["derive"] }
 
 [profile.release]
 lto = "thin"
