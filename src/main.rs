@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use clap::Parser;
 use tracing::{error, info};
 
@@ -14,6 +14,9 @@ mod server;
 struct Args {
     #[arg(short, long, action = clap::ArgAction::SetTrue)]
     client: Option<bool>,
+
+    #[arg(short, long)]
+    id: usize,
 }
 
 #[tokio::main]
@@ -24,7 +27,8 @@ async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
 
     let config = config::read("config.ron").await?;
-    let rpc_addr = config.rpc_addr().to_string();
+
+    let rpc_addr = config.addr(args.id).context("peer id")?.to_string();
     let rest_addr = config.rest_addr().to_string();
 
     if args.client.unwrap_or(false) {

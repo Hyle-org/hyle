@@ -4,17 +4,16 @@ use tokio::fs;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Config {
-    rpc_addr: String,
-    rest_addr: String,
+    peers: Vec<String>,
+    rest: String,
 }
 
 impl Config {
-    pub fn rpc_addr(&self) -> &str {
-        return &self.rpc_addr;
+    pub fn addr(&self, id: usize) -> Option<&str> {
+        return self.peers.get(id).map(String::as_str);
     }
-
     pub fn rest_addr(&self) -> &str {
-        return &self.rest_addr;
+        return self.rest.as_str();
     }
 }
 
