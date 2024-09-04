@@ -22,8 +22,10 @@ impl Block {
             .map(char::from)
             .collect()
     }
+}
 
-    pub fn genesis() -> Block {
+impl std::default::Default for Block {
+    fn default() -> Self {
         Block {
             parent_hash: "000".to_string(),
             height: 0,
