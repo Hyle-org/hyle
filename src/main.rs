@@ -3,7 +3,7 @@ use clap::Parser;
 use tracing::{error, info};
 
 mod client;
-mod config;
+mod conf;
 mod ctx;
 mod model;
 mod p2p_network;
@@ -27,7 +27,7 @@ async fn main() -> Result<()> {
     // install global collector configured based on RUST_LOG env var.
     tracing_subscriber::fmt::init();
 
-    let config = config::read("config.ron").await?;
+    let config = conf::Conf::new()?;
     info!("Config: {:?}", config);
 
     let rpc_addr = config.addr(args.id).context("peer id")?.to_string();
@@ -39,28 +39,12 @@ async fn main() -> Result<()> {
     }
 
     info!("server mode");
+
     // Start RPC server
-    let rpc_server = tokio::spawn(async move {
-        if let Err(e) = server::rpc_server(&rpc_addr, &config).await {
-            error!("RPC server failed: {:?}", e);
-            Err(e)
-        } else {
-            Ok(())
-        }
-    });
+    let rpc_server = server::rpc_server(&rpc_addr, &config);
 
     // Start REST server
-    let rest_server = tokio::spawn(async move {
-        if let Err(e) = server::rest_server(&rest_addr).await {
-            error!("REST server failed: {:?}", e);
-            Err(e)
-        } else {
-            Ok(())
-        }
-    });
-
-    rpc_server.await??;
-    rest_server.await??;
+    let rest_server = server::rest_server(&rest_addr).await;
 
     Ok(())
 }
