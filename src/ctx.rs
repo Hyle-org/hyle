@@ -73,7 +73,7 @@ impl Ctx {
             }
             Err(error) => {
                 warn!(
-                    "Could not read wile data.bin. Error: {}. Starting with a fresh context.",
+                    "Could not read file data.bin. Error: {}. Starting with a fresh context.",
                     error
                 );
                 Ctx::default()
