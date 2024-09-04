@@ -18,7 +18,7 @@ pub async fn client(addr: &str) -> Result<()> {
         .context("connecting to server")?;
     loop {
         socket
-            .write(format!("{}", new_transaction()).as_ref())
+            .write(new_transaction().as_ref())
             .await
             .context("sending message")?;
         tokio::time::sleep(Duration::from_secs(1)).await;
