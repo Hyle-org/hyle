@@ -15,8 +15,7 @@ pub async fn server(addr: &str) -> Result<()> {
         tokio::spawn(async move {
             let mut buf = vec![0; 1024];
             let mut ctx = Ctx::default();
-            let genesis = Block::genesis();
-            ctx.add_block(genesis);
+            ctx.add_block(Block::default());
 
             loop {
                 let n = socket

@@ -1,6 +1,5 @@
-use tokio::time::{Duration, Instant};
-
 use crate::model::{Block, Transaction};
+use tokio::time::{Duration, Instant};
 use tracing::info;
 
 #[derive(Default)]
