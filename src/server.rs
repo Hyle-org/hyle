@@ -1,20 +1,33 @@
-use crate::ctx::Ctx;
+use crate::ctx::{Ctx, CtxCommand};
 use crate::model::Transaction;
 use anyhow::{Context, Result};
 use tokio::io::AsyncReadExt;
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
+use tokio::time::{sleep, Duration};
 use tracing::info;
 
 pub async fn server(addr: &str) -> Result<()> {
     let listener = TcpListener::bind(addr).await?;
     info!("listening on {}", addr);
 
-    let (tx, rx) = mpsc::channel::<Transaction>(100);
+    let (tx, rx) = mpsc::channel::<CtxCommand>(100);
 
     tokio::spawn(async move {
         let mut ctx = Ctx::load_from_disk();
         ctx.start(rx).await
+    });
+
+    let tx1 = tx.clone();
+
+    tokio::spawn(async move {
+        loop {
+            tx1.send(CtxCommand::SaveOnDisk)
+                .await
+                .expect("Cannot send message over channel");
+
+            sleep(Duration::from_secs(10)).await;
+        }
     });
 
     loop {
@@ -35,9 +48,9 @@ pub async fn server(addr: &str) -> Result<()> {
                     return;
                 }
                 let d = std::str::from_utf8(&buf[0..n]).unwrap();
-                tx2.send(Transaction {
+                tx2.send(CtxCommand::AddTransaction(Transaction {
                     inner: d.to_string(),
-                })
+                }))
                 .await
                 .unwrap();
             }

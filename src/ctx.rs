@@ -10,6 +10,12 @@ use tracing::warn;
 
 use crate::model::{Block, Transaction};
 
+#[derive(Debug)]
+pub enum CtxCommand {
+    AddTransaction(Transaction),
+    SaveOnDisk,
+}
+
 #[derive(Serialize, Deserialize)]
 pub struct Ctx {
     mempool: Vec<Transaction>,
@@ -37,8 +43,6 @@ impl Ctx {
                 txs: mempool,
             });
             info!("New block {:?}", self.blocks.last());
-
-            self.save_on_disk();
         }
     }
 
@@ -80,9 +84,12 @@ impl Ctx {
         }
     }
 
-    pub async fn start(&mut self, mut rx: Receiver<Transaction>) {
-        while let Some(tx) = rx.recv().await {
-            self.handle_tx(tx)
+    pub async fn start(&mut self, mut rx: Receiver<CtxCommand>) {
+        while let Some(msg) = rx.recv().await {
+            match msg {
+                CtxCommand::AddTransaction(tx) => self.handle_tx(tx),
+                CtxCommand::SaveOnDisk => self.save_on_disk(),
+            }
         }
     }
 }
