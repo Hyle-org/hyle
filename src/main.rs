@@ -1,9 +1,10 @@
 use clap::Parser;
-use tracing::info;
+use tracing::{error, info};
 
 mod client;
 mod ctx;
 mod model;
+mod rest_endpoints;
 mod server;
 
 use anyhow::Result;
@@ -22,13 +23,37 @@ async fn main() -> Result<()> {
     // install global collector configured based on RUST_LOG env var.
     tracing_subscriber::fmt::init();
 
-    let addr = "127.0.0.1:1234";
+    let rpc_addr = "127.0.0.1:1234";
+    let rest_addr = "127.0.0.1:4321";
 
     if args.client.unwrap_or(false) {
         info!("client mode");
-        client::client(addr).await?;
+        client::client(rpc_addr).await?;
     }
 
     info!("server mode");
-    return server::server(addr).await;
+    // Start RPC server
+    let rpc_server = tokio::spawn(async move {
+        if let Err(e) = server::rpc_server(rpc_addr).await {
+            error!("RPC server failed: {:?}", e);
+            Err(e)
+        } else {
+            Ok(())
+        }
+    });
+
+    // Start REST server
+    let rest_server = tokio::spawn(async move {
+        if let Err(e) = server::rest_server(rest_addr).await {
+            error!("REST server failed: {:?}", e);
+            Err(e)
+        } else {
+            Ok(())
+        }
+    });
+
+    rpc_server.await??;
+    rest_server.await??;
+
+    Ok(())
 }

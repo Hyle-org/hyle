@@ -1,13 +1,17 @@
-use crate::ctx::Ctx;
-use crate::model::Block;
-use anyhow::{Context, Result};
+use anyhow::{Context, Ok, Result};
+use axum::routing::get;
+use axum::Router;
 use tokio::io::AsyncReadExt;
 use tokio::net::TcpListener;
 use tracing::info;
 
-pub async fn server(addr: &str) -> Result<()> {
+use crate::ctx::Ctx;
+use crate::model::Block;
+use crate::rest_endpoints;
+
+pub async fn rpc_server(addr: &str) -> Result<()> {
     let listener = TcpListener::bind(addr).await?;
-    info!("listening on {}", addr);
+    info!("rpc listening on {}", addr);
 
     loop {
         let (mut socket, _) = listener.accept().await?;
@@ -32,4 +36,15 @@ pub async fn server(addr: &str) -> Result<()> {
             }
         });
     }
+}
+
+pub async fn rest_server(addr: &str) -> Result<()> {
+    info!("rest listening on {}", addr);
+    let app = Router::new()
+        .route("/getTransaction", get(rest_endpoints::get_transaction))
+        .route("/getBlock", get(rest_endpoints::get_block));
+
+    let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
+    axum::serve(listener, app).await.unwrap();
+    return Ok(());
 }

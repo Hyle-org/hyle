@@ -1,16 +1,17 @@
 use rand::{distributions::Alphanumeric, Rng};
-use tokio::time::Instant; // 0.8
+use serde::{Deserialize, Serialize};
+use std::time::{SystemTime, UNIX_EPOCH};
 
-#[derive(Debug)]
+#[derive(Serialize, Deserialize, Debug, Default)]
 pub struct Transaction {
     pub inner: String,
 }
 
-#[derive(Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct Block {
     pub parent_hash: String,
     pub height: usize,
-    pub timestamp: Instant,
+    pub timestamp: u64,
     pub txs: Vec<Transaction>,
 }
 
@@ -29,8 +30,15 @@ impl std::default::Default for Block {
         Block {
             parent_hash: "000".to_string(),
             height: 0,
-            timestamp: Instant::now(),
+            timestamp: get_current_timestamp(),
             txs: vec![],
         }
     }
+}
+
+pub fn get_current_timestamp() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("Time went backwards")
+        .as_secs()
 }
