@@ -1,6 +1,4 @@
 use std::fs;
-use std::time::Duration;
-use std::time::SystemTime;
 use tokio::sync::mpsc::Receiver;
 
 use serde::Deserialize;
@@ -8,6 +6,7 @@ use serde::Serialize;
 use tracing::info;
 use tracing::warn;
 
+use crate::model::get_current_timestamp;
 use crate::model::{Block, Transaction};
 
 #[derive(Debug)]
@@ -34,12 +33,12 @@ impl Ctx {
         let last_block = self.blocks.last().unwrap();
         let last = last_block.timestamp;
 
-        if last.elapsed().unwrap() > Duration::from_secs(5) {
+        if get_current_timestamp() - last > 5 {
             let mempool = self.mempool.drain(0..).collect();
             self.add_block(Block {
                 parent_hash: last_block.hash_block(),
                 height: last_block.height + 1,
-                timestamp: SystemTime::now(),
+                timestamp: get_current_timestamp(),
                 txs: mempool,
             });
             info!("New block {:?}", self.blocks.last());

@@ -1,9 +1,8 @@
-use std::time::SystemTime;
-
 use rand::{distributions::Alphanumeric, Rng};
 use serde::{Deserialize, Serialize};
+use std::time::{SystemTime, UNIX_EPOCH};
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Default)]
 pub struct Transaction {
     pub inner: String,
 }
@@ -12,7 +11,7 @@ pub struct Transaction {
 pub struct Block {
     pub parent_hash: String,
     pub height: usize,
-    pub timestamp: SystemTime,
+    pub timestamp: u64,
     pub txs: Vec<Transaction>,
 }
 
@@ -31,8 +30,15 @@ impl std::default::Default for Block {
         Block {
             parent_hash: "000".to_string(),
             height: 0,
-            timestamp: SystemTime::now(),
+            timestamp: get_current_timestamp(),
             txs: vec![],
         }
     }
+}
+
+pub fn get_current_timestamp() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("Time went backwards")
+        .as_secs()
 }
