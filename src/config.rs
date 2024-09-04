@@ -3,8 +3,14 @@ use serde::{Deserialize, Serialize};
 use tokio::fs;
 
 #[derive(Serialize, Deserialize, Debug)]
+pub struct Storage {
+    pub interval: u64,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
 pub struct Config {
     peers: Vec<String>,
+    pub storage: Storage,
     rest: String,
 }
 

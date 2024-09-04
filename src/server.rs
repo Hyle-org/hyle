@@ -1,4 +1,5 @@
-use crate::ctx::Ctx;
+use crate::config::Config;
+use crate::ctx::{Ctx, CtxCommand};
 use crate::model::Transaction;
 use anyhow::{Context, Ok, Result};
 use axum::routing::get;
@@ -6,19 +7,33 @@ use axum::Router;
 use tokio::io::AsyncReadExt;
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
+use tokio::time::{sleep, Duration};
 use tracing::info;
 
 use crate::rest_endpoints;
 
-pub async fn rpc_server(addr: &str) -> Result<()> {
+pub async fn rpc_server(addr: &str, config: &Config) -> Result<()> {
     let listener = TcpListener::bind(addr).await?;
     info!("rpc listening on {}", addr);
 
-    let (tx, rx) = mpsc::channel::<Transaction>(100);
+    let (tx, rx) = mpsc::channel::<CtxCommand>(100);
 
     tokio::spawn(async move {
         let mut ctx = Ctx::load_from_disk();
         ctx.start(rx).await
+    });
+
+    let tx1 = tx.clone();
+    let interval = config.storage.interval;
+
+    tokio::spawn(async move {
+        loop {
+            sleep(Duration::from_secs(interval)).await;
+
+            tx1.send(CtxCommand::SaveOnDisk)
+                .await
+                .expect("Cannot send message over channel");
+        }
     });
 
     loop {
@@ -39,9 +54,9 @@ pub async fn rpc_server(addr: &str) -> Result<()> {
                     return;
                 }
                 let d = std::str::from_utf8(&buf[0..n]).unwrap();
-                tx2.send(Transaction {
+                tx2.send(CtxCommand::AddTransaction(Transaction {
                     inner: d.to_string(),
-                })
+                }))
                 .await
                 .unwrap();
             }
