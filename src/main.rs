@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use clap::Parser;
 use tracing::info;
 
@@ -13,6 +13,9 @@ mod server;
 struct Args {
     #[arg(short, long, action = clap::ArgAction::SetTrue)]
     client: Option<bool>,
+
+    #[arg(short, long)]
+    id: usize,
 }
 
 #[tokio::main]
@@ -24,11 +27,13 @@ async fn main() -> Result<()> {
 
     let config = config::read("config.ron").await?;
 
+    let addr = config.addr(args.id).context("peer id")?;
+
     if args.client.unwrap_or(false) {
         info!("client mode");
-        client::client(config.addr()).await?;
+        client::client(addr).await?;
     }
 
     info!("server mode");
-    return server::server(config.addr()).await;
+    return server::server(addr).await;
 }

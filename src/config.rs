@@ -4,12 +4,12 @@ use tokio::fs;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Config {
-    addr: String,
+    peers: Vec<String>,
 }
 
 impl Config {
-    pub fn addr(&self) -> &str {
-        return &self.addr;
+    pub fn addr(&self, id: usize) -> Option<&str> {
+        return self.peers.get(id).map(String::as_str);
     }
 }
 
