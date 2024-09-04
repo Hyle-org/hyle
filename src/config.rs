@@ -4,7 +4,13 @@ use tokio::fs;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Config {
-    pub addr: String,
+    addr: String,
+}
+
+impl Config {
+    pub fn addr(&self) -> &str {
+        return &self.addr;
+    }
 }
 
 pub async fn read(path: &str) -> Result<Config> {

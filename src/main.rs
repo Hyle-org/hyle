@@ -26,9 +26,9 @@ async fn main() -> Result<()> {
 
     if args.client.unwrap_or(false) {
         info!("client mode");
-        client::client(&config.addr).await?;
+        client::client(config.addr()).await?;
     }
 
     info!("server mode");
-    return server::server(&config.addr).await;
+    return server::server(config.addr()).await;
 }
