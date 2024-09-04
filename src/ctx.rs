@@ -1,6 +1,7 @@
 use std::fs;
 use std::time::Duration;
 use std::time::SystemTime;
+use tokio::sync::mpsc::Receiver;
 
 use serde::Deserialize;
 use serde::Serialize;
@@ -20,26 +21,24 @@ impl Ctx {
         self.blocks.push(block);
     }
 
-    pub fn handle_tx(&mut self, data: &str) {
-        self.mempool.push(Transaction {
-            inner: data.to_string(),
-        });
+    pub fn handle_tx(&mut self, tx: Transaction) {
+        info!("New tx: {:?}", tx);
+        self.mempool.push(tx);
 
         let last_block = self.blocks.last().unwrap();
         let last = last_block.timestamp;
 
         if last.elapsed().unwrap() > Duration::from_secs(5) {
-            self.blocks.push(Block {
+            let mempool = self.mempool.drain(0..).collect();
+            self.add_block(Block {
                 parent_hash: last_block.hash_block(),
                 height: last_block.height + 1,
                 timestamp: SystemTime::now(),
-                txs: self.mempool.drain(0..).collect(),
+                txs: mempool,
             });
             info!("New block {:?}", self.blocks.last());
 
             self.save_on_disk();
-        } else {
-            info!("New tx: {}", data);
         }
     }
 
@@ -78,6 +77,12 @@ impl Ctx {
                 );
                 Ctx::default()
             }
+        }
+    }
+
+    pub async fn start(&mut self, mut rx: Receiver<Transaction>) {
+        while let Some(tx) = rx.recv().await {
+            self.handle_tx(tx)
         }
     }
 }
