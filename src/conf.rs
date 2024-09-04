@@ -1,6 +1,11 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 use config::{Config, ConfigError, Environment, File};
 use serde::{Deserialize, Serialize};
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct Storage {
+    pub interval: u64,
+}
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Conf {
