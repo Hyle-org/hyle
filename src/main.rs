@@ -1,9 +1,13 @@
-use std::time::Duration;
+use model::{Block, Transaction};
+use rand::{distributions::Alphanumeric, Rng};
+use tokio::time::{Duration, Instant};
 
 use clap::Parser;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tracing::info;
+
+mod model;
 
 use anyhow::{Context, Result};
 
@@ -14,18 +18,52 @@ struct Args {
     client: Option<bool>,
 }
 
+fn new_transaction() -> String {
+    rand::thread_rng()
+        .sample_iter(&Alphanumeric)
+        .take(7)
+        .map(char::from)
+        .collect()
+}
+
+#[derive(Default)]
+struct Ctx {
+    mempool: Vec<Transaction>,
+    blocks: Vec<Block>,
+}
+impl Ctx {
+    fn handle_tx(&mut self, data: &str) {
+        self.mempool.push(Transaction {
+            inner: data.to_string(),
+        });
+
+        let last_block = self.blocks.last().unwrap();
+        let last = last_block.timestamp;
+
+        if Instant::now() - last > Duration::from_secs(5) {
+            self.blocks.push(Block {
+                parent_hash: last_block.hash_block(),
+                height: last_block.height + 1,
+                timestamp: Instant::now(),
+                txs: self.mempool.drain(0..).collect(),
+            });
+            info!("New block {:?}", self.blocks.last());
+        } else {
+            info!("New tx: {}", data);
+        }
+    }
+}
+
 async fn client(addr: &str) -> Result<()> {
-    let mut i = 0;
     let mut socket = TcpStream::connect(&addr)
         .await
         .context("connecting to server")?;
     loop {
         socket
-            .write(format!("id {}", i).as_ref())
+            .write(format!("{}", new_transaction()).as_ref())
             .await
             .context("sending message")?;
         tokio::time::sleep(Duration::from_secs(1)).await;
-        i += 1;
     }
 }
 
@@ -38,6 +76,9 @@ async fn server(addr: &str) -> Result<()> {
 
         tokio::spawn(async move {
             let mut buf = vec![0; 1024];
+            let mut ctx = Ctx::default();
+            let genesis = Block::genesis();
+            ctx.blocks.push(genesis);
 
             loop {
                 let n = socket
@@ -49,7 +90,8 @@ async fn server(addr: &str) -> Result<()> {
                     info!("houston ?");
                     return;
                 }
-                info!("{}", std::str::from_utf8(&buf[0..n]).unwrap());
+                let d = std::str::from_utf8(&buf[0..n]).unwrap();
+                ctx.handle_tx(d);
             }
         });
     }
