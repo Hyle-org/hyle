@@ -6,7 +6,6 @@ use tokio::net::TcpListener;
 use tracing::info;
 
 use crate::ctx::Ctx;
-use crate::model::Block;
 use crate::rest_endpoints;
 
 pub async fn rpc_server(addr: &str) -> Result<()> {
@@ -18,8 +17,7 @@ pub async fn rpc_server(addr: &str) -> Result<()> {
 
         tokio::spawn(async move {
             let mut buf = vec![0; 1024];
-            let mut ctx = Ctx::default();
-            ctx.add_block(Block::default());
+            let mut ctx = Ctx::load_from_disk();
 
             loop {
                 let n = socket

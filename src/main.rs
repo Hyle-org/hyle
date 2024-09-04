@@ -24,16 +24,18 @@ async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
 
     let config = config::read("config.ron").await?;
+    let rpc_addr = config.rpc_addr().to_string();
+    let rest_addr = config.rest_addr().to_string();
 
     if args.client.unwrap_or(false) {
         info!("client mode");
-        client::client(config.addr()).await?;
+        client::client(&rpc_addr).await?;
     }
 
     info!("server mode");
     // Start RPC server
     let rpc_server = tokio::spawn(async move {
-        if let Err(e) = server::rpc_server(config.rpc_addr()).await {
+        if let Err(e) = server::rpc_server(&rpc_addr).await {
             error!("RPC server failed: {:?}", e);
             Err(e)
         } else {
@@ -43,7 +45,7 @@ async fn main() -> Result<()> {
 
     // Start REST server
     let rest_server = tokio::spawn(async move {
-        if let Err(e) = server::rest_server(config.rpc_addr()).await {
+        if let Err(e) = server::rest_server(&rest_addr).await {
             error!("REST server failed: {:?}", e);
             Err(e)
         } else {

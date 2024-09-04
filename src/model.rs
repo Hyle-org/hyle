@@ -2,12 +2,12 @@ use rand::{distributions::Alphanumeric, Rng};
 use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-#[derive(Serialize, Deserialize, Debug, Default)]
+#[derive(Debug, Serialize, Deserialize, Default)]
 pub struct Transaction {
     pub inner: String,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Block {
     pub parent_hash: String,
     pub height: usize,
