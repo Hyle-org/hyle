@@ -26,6 +26,7 @@ async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
 
     let config = config::read("config.ron").await?;
+    info!("Config: {:?}", config);
 
     let addr = config.addr(args.id).context("peer id")?;
 
@@ -35,5 +36,5 @@ async fn main() -> Result<()> {
     }
 
     info!("server mode");
-    return server::server(addr).await;
+    return server::server(addr, &config).await;
 }

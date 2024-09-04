@@ -1,3 +1,4 @@
+use crate::config::Config;
 use crate::ctx::{Ctx, CtxCommand};
 use crate::model::Transaction;
 use anyhow::{Context, Result};
@@ -7,7 +8,7 @@ use tokio::sync::mpsc;
 use tokio::time::{sleep, Duration};
 use tracing::info;
 
-pub async fn server(addr: &str) -> Result<()> {
+pub async fn server(addr: &str, config: &Config) -> Result<()> {
     let listener = TcpListener::bind(addr).await?;
     info!("listening on {}", addr);
 
@@ -19,14 +20,15 @@ pub async fn server(addr: &str) -> Result<()> {
     });
 
     let tx1 = tx.clone();
+    let interval = config.storage.interval;
 
     tokio::spawn(async move {
         loop {
+            sleep(Duration::from_secs(interval)).await;
+
             tx1.send(CtxCommand::SaveOnDisk)
                 .await
                 .expect("Cannot send message over channel");
-
-            sleep(Duration::from_secs(10)).await;
         }
     });
 
