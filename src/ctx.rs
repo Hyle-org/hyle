@@ -9,7 +9,7 @@ use tracing::warn;
 
 use crate::model::{Block, Transaction};
 
-#[derive(Default, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct Ctx {
     mempool: Vec<Transaction>,
     blocks: Vec<Block>,
@@ -67,10 +67,7 @@ impl Ctx {
                     }
                     Err(error) => {
                         warn!("Could not deserialize file data.bin. Error :{}. Starting a fresh context.", error);
-                        let mut ctx = Self::default();
-                        let genesis = Block::default();
-                        ctx.add_block(genesis);
-                        ctx
+                        Ctx::default()
                     }
                 }
             }
@@ -79,11 +76,17 @@ impl Ctx {
                     "Could not read wile data.bin. Error: {}. Starting with a fresh context.",
                     error
                 );
-                let mut ctx = Self::default();
-                let genesis = Block::default();
-                ctx.add_block(genesis);
-                ctx
+                Ctx::default()
             }
+        }
+    }
+}
+
+impl std::default::Default for Ctx {
+    fn default() -> Self {
+        Self {
+            mempool: vec![],
+            blocks: vec![Block::default()],
         }
     }
 }
