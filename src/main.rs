@@ -1,11 +1,12 @@
 use anyhow::{Context, Result};
 use clap::Parser;
-use tracing::info;
+use tracing::{error, info};
 
 mod client;
 mod config;
 mod ctx;
 mod model;
+mod rest_endpoints;
 mod server;
 
 #[derive(Parser, Debug)]
@@ -27,13 +28,37 @@ async fn main() -> Result<()> {
 
     let config = config::read("config.ron").await?;
 
-    let addr = config.addr(args.id).context("peer id")?;
+    let rpc_addr = config.addr(args.id).context("peer id")?.to_string();
+    let rest_addr = config.rest_addr().to_string();
 
     if args.client.unwrap_or(false) {
         info!("client mode");
-        client::client(addr).await?;
+        client::client(&rpc_addr).await?;
     }
 
     info!("server mode");
-    return server::server(addr).await;
+    // Start RPC server
+    let rpc_server = tokio::spawn(async move {
+        if let Err(e) = server::rpc_server(&rpc_addr).await {
+            error!("RPC server failed: {:?}", e);
+            Err(e)
+        } else {
+            Ok(())
+        }
+    });
+
+    // Start REST server
+    let rest_server = tokio::spawn(async move {
+        if let Err(e) = server::rest_server(&rest_addr).await {
+            error!("REST server failed: {:?}", e);
+            Err(e)
+        } else {
+            Ok(())
+        }
+    });
+
+    rpc_server.await??;
+    rest_server.await??;
+
+    Ok(())
 }
