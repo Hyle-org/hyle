@@ -1,16 +1,18 @@
-use rand::{distributions::Alphanumeric, Rng};
-use tokio::time::Instant; // 0.8
+use std::time::SystemTime;
 
-#[derive(Debug)]
+use rand::{distributions::Alphanumeric, Rng};
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Transaction {
     pub inner: String,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Block {
     pub parent_hash: String,
     pub height: usize,
-    pub timestamp: Instant,
+    pub timestamp: SystemTime,
     pub txs: Vec<Transaction>,
 }
 
@@ -29,7 +31,7 @@ impl std::default::Default for Block {
         Block {
             parent_hash: "000".to_string(),
             height: 0,
-            timestamp: Instant::now(),
+            timestamp: SystemTime::now(),
             txs: vec![],
         }
     }
