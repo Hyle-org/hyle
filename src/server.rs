@@ -30,6 +30,9 @@ pub async fn rpc_server(addr: &str, config: &Config) -> Result<()> {
         loop {
             sleep(Duration::from_secs(interval)).await;
 
+            tx1.send(CtxCommand::GenerateNewBlock)
+                .await
+                .expect("Cannot send message over channel");
             tx1.send(CtxCommand::SaveOnDisk)
                 .await
                 .expect("Cannot send message over channel");
