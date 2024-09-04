@@ -1,10 +1,13 @@
-use crate::model::{Block, Transaction};
+use std::fs;
 use std::time::Duration;
 use std::time::SystemTime;
 
 use serde::Deserialize;
 use serde::Serialize;
 use tracing::info;
+use tracing::warn;
+
+use crate::model::{Block, Transaction};
 
 #[derive(Default, Serialize, Deserialize)]
 pub struct Ctx {
@@ -33,12 +36,54 @@ impl Ctx {
                 txs: self.mempool.drain(0..).collect(),
             });
             info!("New block {:?}", self.blocks.last());
+
+            self.save_on_disk();
         } else {
             info!("New tx: {}", data);
         }
     }
 
     pub fn save_on_disk(&mut self) {
-        let encoded: Vec<u8> = bincode::serialize(&self).unwrap();
+        let encoded = bincode::serialize(&self).expect("Could not serialize chain");
+        fs::write("data.bin", encoded).expect("could not write file");
+        info!(
+            "Saved blockchain on disk with {} blocks and {} tx in mempool.",
+            self.blocks.len(),
+            self.mempool.len()
+        );
+    }
+
+    pub fn load_from_disk() -> Self {
+        match fs::read("data.bin") {
+            Ok(read_v) => {
+                match bincode::deserialize::<Self>(&read_v) {
+                    Ok(decoded_v) => {
+                        info!(
+                            "Loaded {} blocks and {} tx in mempool from disk.",
+                            decoded_v.blocks.len(),
+                            decoded_v.mempool.len()
+                        );
+                        decoded_v
+                    }
+                    Err(error) => {
+                        warn!("Could not deserialize file data.bin. Error :{}. Starting a fresh context.", error);
+                        let mut ctx = Self::default();
+                        let genesis = Block::default();
+                        ctx.add_block(genesis);
+                        ctx
+                    }
+                }
+            }
+            Err(error) => {
+                warn!(
+                    "Could not read wile data.bin. Error: {}. Starting with a fresh context.",
+                    error
+                );
+                let mut ctx = Self::default();
+                let genesis = Block::default();
+                ctx.add_block(genesis);
+                ctx
+            }
+        }
     }
 }

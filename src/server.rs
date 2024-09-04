@@ -1,5 +1,4 @@
 use crate::ctx::Ctx;
-use crate::model::Block;
 use anyhow::{Context, Result};
 use tokio::io::AsyncReadExt;
 use tokio::net::TcpListener;
@@ -14,8 +13,7 @@ pub async fn server(addr: &str) -> Result<()> {
 
         tokio::spawn(async move {
             let mut buf = vec![0; 1024];
-            let mut ctx = Ctx::default();
-            ctx.add_block(Block::default());
+            let mut ctx = Ctx::load_from_disk();
 
             loop {
                 let n = socket
