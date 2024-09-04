@@ -1,13 +1,13 @@
+use anyhow::Result;
 use clap::Parser;
 use tracing::{error, info};
 
 mod client;
+mod config;
 mod ctx;
 mod model;
 mod rest_endpoints;
 mod server;
-
-use anyhow::Result;
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -23,18 +23,17 @@ async fn main() -> Result<()> {
     // install global collector configured based on RUST_LOG env var.
     tracing_subscriber::fmt::init();
 
-    let rpc_addr = "127.0.0.1:1234";
-    let rest_addr = "127.0.0.1:4321";
+    let config = config::read("config.ron").await?;
 
     if args.client.unwrap_or(false) {
         info!("client mode");
-        client::client(rpc_addr).await?;
+        client::client(config.addr()).await?;
     }
 
     info!("server mode");
     // Start RPC server
     let rpc_server = tokio::spawn(async move {
-        if let Err(e) = server::rpc_server(rpc_addr).await {
+        if let Err(e) = server::rpc_server(config.rpc_addr()).await {
             error!("RPC server failed: {:?}", e);
             Err(e)
         } else {
@@ -44,7 +43,7 @@ async fn main() -> Result<()> {
 
     // Start REST server
     let rest_server = tokio::spawn(async move {
-        if let Err(e) = server::rest_server(rest_addr).await {
+        if let Err(e) = server::rest_server(config.rpc_addr()).await {
             error!("REST server failed: {:?}", e);
             Err(e)
         } else {
