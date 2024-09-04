@@ -1,36 +1,74 @@
 use std::time::Duration;
 
-use tokio::sync::mpsc;
+use clap::Parser;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::{TcpListener, TcpStream};
 use tracing::info;
 
 use anyhow::{Context, Result};
 
-#[tokio::main]
-async fn main() -> Result<()> {
-    // install global collector configured based on RUST_LOG env var.
-    tracing_subscriber::fmt::init();
+#[derive(Parser, Debug)]
+#[command(version, about, long_about = None)]
+struct Args {
+    #[arg(short, long, action = clap::ArgAction::SetTrue)]
+    client: Option<bool>,
+}
 
-    let (sender, mut receiver) = mpsc::unbounded_channel::<String>();
+async fn client(addr: &str) -> Result<()> {
+    let mut i = 0;
+    let mut socket = TcpStream::connect(&addr)
+        .await
+        .context("connecting to server")?;
+    loop {
+        socket
+            .write(format!("id {}", i).as_ref())
+            .await
+            .context("sending message")?;
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        i += 1;
+    }
+}
 
-    for i in 1..10 {
-        let s = sender.clone();
+async fn server(addr: &str) -> Result<()> {
+    let listener = TcpListener::bind(addr).await?;
+    info!("listening on {}", addr);
+
+    loop {
+        let (mut socket, _) = listener.accept().await?;
+
         tokio::spawn(async move {
+            let mut buf = vec![0; 1024];
+
             loop {
-                tokio::time::sleep(Duration::from_secs(1)).await;
-
-                info!("Making a server call");
-                // Call server
-
-                let _ = s
-                    .send(format!("Hello from {}", i))
-                    .context("Sending message");
+                let n = socket
+                    .read(&mut buf)
+                    .await
+                    .context("reading from socket")
+                    .unwrap();
+                if n == 0 {
+                    info!("houston ?");
+                    return;
+                }
+                info!("{}", std::str::from_utf8(&buf[0..n]).unwrap());
             }
         });
     }
+}
 
-    while let Some(msg) = receiver.recv().await {
-        info!("Received message from {msg}");
+#[tokio::main]
+async fn main() -> Result<()> {
+    let args = Args::parse();
+
+    // install global collector configured based on RUST_LOG env var.
+    tracing_subscriber::fmt::init();
+
+    let addr = "127.0.0.1:1234";
+
+    if args.client.unwrap_or(false) {
+        info!("client mode");
+        client(&addr).await?;
     }
 
-    Ok(())
+    info!("server mode");
+    return server(&addr).await;
 }
