@@ -57,13 +57,13 @@ impl Ctx {
         match fs::read("data.bin") {
             Ok(read_v) => {
                 match bincode::deserialize::<Self>(&read_v) {
-                    Ok(decoded_v) => {
+                    Ok(ctx) => {
                         info!(
                             "Loaded {} blocks and {} tx in mempool from disk.",
-                            decoded_v.blocks.len(),
-                            decoded_v.mempool.len()
+                            ctx.blocks.len(),
+                            ctx.mempool.len()
                         );
-                        decoded_v
+                        ctx
                     }
                     Err(error) => {
                         warn!("Could not deserialize file data.bin. Error :{}. Starting a fresh context.", error);
