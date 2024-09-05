@@ -1,6 +1,6 @@
 use anyhow::{anyhow, bail, Context, Error, Result};
 use tokio::io::Interest;
-use tracing::warn;
+use tracing::{debug, warn};
 use tracing::{info, trace};
 
 use tokio::io::AsyncReadExt;
@@ -30,7 +30,13 @@ impl Peer {
             NetMessage::Verack => Ok(()),
             NetMessage::Ping => todo!(),
             NetMessage::Pong => todo!(),
-            NetMessage::NewTransaction(_) => todo!(),
+            NetMessage::NewTransaction(tx) => {
+                debug!("Get new tx over p2p: {:?}", tx);
+                self.ctx
+                    .send(CtxCommand::AddTransaction(tx))
+                    .await
+                    .context("Failed to send over channel")
+            }
         }
     }
 
