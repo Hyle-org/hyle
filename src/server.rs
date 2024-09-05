@@ -12,29 +12,36 @@ use tracing::info;
 
 use crate::rest_endpoints;
 
-pub async fn p2p_server(addr: &str, config: &Config) -> Result<()> {
-    let listener = TcpListener::bind(addr).await?;
-    info!("rpc listening on {}", addr);
-
-    let (tx, rx) = mpsc::channel::<CtxCommand>(100);
-
+pub fn run_as_master(
+    tx: mpsc::Sender<CtxCommand>,
+    rx: mpsc::Receiver<CtxCommand>,
+    config: &Config,
+) {
     tokio::spawn(async move {
         let mut ctx = Ctx::load_from_disk();
         ctx.start(rx).await
     });
 
-    let tx1 = tx.clone();
     let interval = config.storage.interval;
 
     tokio::spawn(async move {
         loop {
             sleep(Duration::from_secs(interval)).await;
 
-            tx1.send(CtxCommand::SaveOnDisk)
+            tx.send(CtxCommand::SaveOnDisk)
                 .await
                 .expect("Cannot send message over channel");
         }
     });
+}
+
+pub async fn p2p_server(addr: &str, config: &Config) -> Result<()> {
+    let listener = TcpListener::bind(addr).await?;
+    info!("rpc listening on {}", addr);
+
+    let (tx, rx) = mpsc::channel::<CtxCommand>(100);
+
+    run_as_master(tx.clone(), rx, config);
 
     loop {
         let (mut socket, _) = listener.accept().await?;
@@ -72,5 +79,5 @@ pub async fn rest_server(addr: &str) -> Result<()> {
 
     let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
     axum::serve(listener, app).await.unwrap();
-    return Ok(());
+    Ok(())
 }
