@@ -4,7 +4,7 @@ use tokio::io::AsyncWriteExt;
 use tokio::net::TcpStream;
 use tokio::time::Duration;
 
-use crate::model::Transaction;
+use crate::model::{Transaction, TransactionData};
 use crate::p2p_network::NetMessage;
 
 pub fn new_transaction() -> Vec<u8> {
@@ -14,6 +14,8 @@ pub fn new_transaction() -> Vec<u8> {
             .take(7)
             .map(char::from)
             .collect(),
+        version: 1,
+        transaction_data: TransactionData::default(),
     })
     .as_binary()
 }
