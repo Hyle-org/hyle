@@ -97,7 +97,7 @@ impl Peer {
 
     async fn read_next_message(&mut self, msg_size: u32) -> Result<(), Error> {
         if msg_size == 0 {
-            return Err(anyhow!("Connection closed by remote (1)"));
+            bail!("Connection closed by remote (1)")
         }
 
         trace!("Reading {} bytes from buffer", msg_size);
@@ -106,7 +106,7 @@ impl Peer {
 
         let data = self.stream.read_exact(&mut buf).await?;
         if data == 0 {
-            return Err(anyhow!("Connection closed by remote (2)"));
+            bail!("Connection closed by remote (2)")
         }
 
         trace!("got buff {:?}", buf);
