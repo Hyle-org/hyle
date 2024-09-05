@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Context, Error, Result};
+use anyhow::{anyhow, bail, Context, Error, Result};
 use tokio::io::Interest;
 use tracing::warn;
 use tracing::{info, trace};
@@ -42,7 +42,7 @@ impl Peer {
                 .await?;
 
             if ready.is_error() {
-                return Err(anyhow!("Stream not ready"));
+                bail!("Stream not ready")
             }
 
             let res = match self.stream.read_u32().await {
