@@ -19,6 +19,9 @@ struct Args {
 
     #[arg(short, long)]
     id: usize,
+
+    #[arg(long, default_value = "config.ron")]
+    config_file: String,
 }
 
 #[tokio::main]
@@ -28,7 +31,7 @@ async fn main() -> Result<()> {
     // install global collector configured based on RUST_LOG env var.
     tracing_subscriber::fmt::init();
 
-    let config = conf::Conf::new()?;
+    let config = conf::Conf::new(args.config_file)?;
     info!("Starting node {} with config: {:?}", args.id, config);
 
     let rpc_addr = config.addr(args.id).context("peer id")?.to_string();

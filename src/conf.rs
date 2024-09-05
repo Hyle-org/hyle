@@ -23,10 +23,10 @@ impl Conf {
         return self.rest.as_str();
     }
 
-    pub fn new() -> Result<Self, ConfigError> {
+    pub fn new(config_file: String) -> Result<Self, ConfigError> {
         let s = Config::builder()
             // Start off by merging in the "default" configuration file
-            .add_source(File::with_name("config.ron"))
+            .add_source(File::with_name(&*config_file))
             .add_source(Environment::with_prefix("hyle"))
             // You may also programmatically change settings
             // .set_override("database.url", "postgres://")?
