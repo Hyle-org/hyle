@@ -1,6 +1,6 @@
 use crate::config::Config;
 use crate::ctx::{Ctx, CtxCommand};
-use crate::network::NetMessage;
+use crate::p2p_network::NetMessage;
 use anyhow::{Context, Ok, Result};
 use axum::routing::get;
 use axum::Router;
