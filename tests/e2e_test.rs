@@ -9,7 +9,7 @@ fn test_e2e_with_cli() {
     tracing_subscriber::fmt::init();
 
     // Start first node
-    let node1 = test_helpers::TestNode::new("0", "config.ron", false);
+    let node1 = test_helpers::TestNode::new("master.ron", false);
     // Start second node
     // let node2 = test_helpers::TestNode::new("1", "config.ron", false);
 
@@ -17,7 +17,7 @@ fn test_e2e_with_cli() {
     thread::sleep(time::Duration::from_secs(3));
 
     // Start client that connects to node1
-    let client1 = test_helpers::TestNode::new("0", "config.ron", true);
+    let client1 = test_helpers::TestNode::new("master.ron", true);
 
     // Request something on node1 to be sure it's alive and working
     let client = Client::new();
