@@ -1,12 +1,10 @@
 use crate::conf::Conf;
 use crate::ctx::{Ctx, CtxCommand};
-use crate::p2p::network::NetMessage;
 use crate::p2p::peer;
 use crate::rest_endpoints;
 use anyhow::{Context, Error, Result};
 use axum::routing::get;
 use axum::Router;
-use tokio::io::AsyncReadExt;
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 use tokio::time::{sleep, Duration};
@@ -53,8 +51,19 @@ pub async fn p2p_server(addr: &str, config: &Conf) -> Result<(), Error> {
             let tx2 = tx.clone();
 
             tokio::spawn(async move {
+                info!(
+                    "New peer: {}",
+                    socket
+                        .peer_addr()
+                        .map(|a| a.to_string())
+                        .unwrap_or("no address".to_string())
+                );
                 let mut peer_server = peer::Peer::new(socket, tx2.clone()).await?;
-                peer_server.start().await
+                match peer_server.start().await {
+                    Ok(_) => info!("Peer thread exited"),
+                    Err(e) => info!("Peer thread exited: {}", e),
+                }
+                anyhow::Ok(())
             });
         }
     } else {

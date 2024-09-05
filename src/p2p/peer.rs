@@ -1,8 +1,6 @@
-use std::mem::size_of;
-
 use anyhow::{anyhow, Context, Error, Result};
 use tokio::io::Interest;
-use tracing::error;
+use tracing::{error, warn};
 use tracing::{info, trace};
 
 use tokio::io::AsyncReadExt;
@@ -22,6 +20,20 @@ impl Peer {
         Ok(Peer { stream, ctx })
     }
 
+    async fn handle_net_message(&mut self, msg: NetMessage) -> Result<(), Error> {
+        trace!("RECV: {:?}", msg);
+        match msg {
+            NetMessage::Version(v) => {
+                info!("Got peer version {:?}", v);
+                self.send_message(NetMessage::Verack).await
+            }
+            NetMessage::Verack => Ok(()),
+            NetMessage::Ping => todo!(),
+            NetMessage::Pong => todo!(),
+            NetMessage::NewTransaction(_) => todo!(),
+        }
+    }
+
     pub async fn start(&mut self) -> Result<(), Error> {
         loop {
             let ready = self
@@ -30,48 +42,19 @@ impl Peer {
                 .await?;
 
             if ready.is_error() {
-                panic!("Error on stream");
+                return Err(anyhow!("Stream not ready"));
             }
 
-            let msg_size = self.stream.read_u32().await;
+            let res = match self.stream.read_u32().await {
+                Ok(msg_size) => self.read_next_message(msg_size).await,
+                Err(e) => Err(anyhow!(e)),
+            };
 
-            match msg_size {
-                Ok(0) => {
-                    info!("Connection closed by remote (1)");
-                    return Ok(());
-                }
-                Ok(exptected_msg_size) => {
-                    trace!("Reading {} bytes from buffer", exptected_msg_size);
-                    let mut buf = vec![0; exptected_msg_size as usize];
-                    trace!("buf before: {:?}", buf);
-                    let data = self.stream.read_exact(&mut buf).await;
-                    match data {
-                        Ok(0) => {
-                            info!("Connection closed by remote (2)");
-                            return Ok(());
-                        }
-                        Ok(_) => {
-                            trace!("got buff {:?}", buf);
-                            let message = Self::handle_read(&buf).await;
-
-                            match message {
-                                Ok(msg) => self.handle_net_message(msg).await,
-                                Err(e) => error!("{}", e),
-                            }
-                        }
-                        Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                            continue;
-                        }
-                        Err(e) => {
-                            return Err(e.into());
-                        }
-                    }
-                }
-                Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                    continue;
-                }
+            match res {
+                Ok(_) => continue,
                 Err(e) => {
-                    return Err(e.into());
+                    trace!("err: {:?}", e);
+                    return Err(e);
                 }
             }
         }
@@ -84,17 +67,6 @@ impl Peer {
                 Ok(conn)
             }
             Err(e) => Err(anyhow!("Failed to connect to peer: {}", e)),
-        }
-    }
-
-    async fn handle_net_message(&mut self, msg: NetMessage) {
-        trace!("RECV: {:?}", msg);
-        match msg {
-            NetMessage::Version(v) => info!("Got peer version {:?}", v),
-            NetMessage::Verack => todo!(),
-            NetMessage::Ping => todo!(),
-            NetMessage::Pong => todo!(),
-            NetMessage::NewTransaction(_) => todo!(),
         }
     }
 
@@ -115,6 +87,32 @@ impl Peer {
             .await
             .context("Failed to write data on stream")?;
         Ok(())
+    }
+
+    async fn read_next_message(&mut self, msg_size: u32) -> Result<(), Error> {
+        if msg_size == 0 {
+            return Err(anyhow!("Connection closed by remote (1)"));
+        }
+
+        trace!("Reading {} bytes from buffer", msg_size);
+        let mut buf = vec![0; msg_size as usize];
+        trace!("buf before: {:?}", buf);
+
+        let data = self.stream.read_exact(&mut buf).await?;
+        if data == 0 {
+            return Err(anyhow!("Connection closed by remote (2)"));
+        }
+
+        trace!("got buff {:?}", buf);
+        let message = Self::handle_read(&buf).await;
+
+        match message {
+            Ok(msg) => self.handle_net_message(msg).await,
+            Err(e) => {
+                warn!("Error while handling net message: {}", e);
+                Ok(())
+            }
+        }
     }
 
     async fn handle_read(buf: &[u8]) -> Result<NetMessage, Error> {
