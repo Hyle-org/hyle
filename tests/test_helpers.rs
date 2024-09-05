@@ -10,6 +10,7 @@ impl TestNode {
     pub fn new(config_file: &str, is_client: bool) -> Self {
         let mut cargo_bin = Command::cargo_bin("hyle").unwrap();
         let cmd = cargo_bin.arg("--config-file").arg(config_file);
+        cmd.arg("--id").arg("0");
 
         if is_client {
             cmd.arg("--client");
