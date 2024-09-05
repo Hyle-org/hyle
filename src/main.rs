@@ -2,14 +2,9 @@ use anyhow::{Context, Result};
 use clap::Parser;
 use tracing::{error, info};
 
-mod client;
-mod conf;
-mod ctx;
-mod logger;
-mod model;
-mod p2p;
-mod rest_endpoints;
-mod server;
+use hyle::client;
+use hyle::conf;
+use hyle::server;
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]

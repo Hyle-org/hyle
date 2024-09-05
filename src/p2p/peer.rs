@@ -1,6 +1,6 @@
 use anyhow::{anyhow, Context, Error, Result};
 use tokio::io::Interest;
-use tracing::{error, warn};
+use tracing::warn;
 use tracing::{info, trace};
 
 use tokio::io::AsyncReadExt;
