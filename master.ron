@@ -1,0 +1,9 @@
+Config(
+    port: 1234,
+    host: "127.0.0.1",
+    peers: [], // master knows no peers at start
+    storage: Storage(
+      interval: 10
+    ),
+    rest: "127.0.0.1:4321"
+)

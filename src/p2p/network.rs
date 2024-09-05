@@ -4,7 +4,14 @@ use tokio::sync::mpsc::Sender;
 use crate::{ctx::CtxCommand, model::Transaction};
 
 #[derive(Debug, Serialize, Deserialize)]
+pub struct Version {
+    pub id: u16,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 pub enum NetMessage {
+    Version(Version),
+    Verack,
     Ping,
     Pong,
     NewTransaction(Transaction),
@@ -22,6 +29,8 @@ impl NetMessage {
             NetMessage::NewTransaction(tx) => {
                 ctx.send(CtxCommand::AddTransaction(tx)).await.unwrap();
             }
+            NetMessage::Version(_) => todo!(),
+            NetMessage::Verack => todo!(),
         }
     }
 }
