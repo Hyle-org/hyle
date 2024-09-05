@@ -2,22 +2,14 @@ use anyhow::{Context, Result};
 use clap::Parser;
 use tracing::{error, info};
 
+use hyle::cli;
 use hyle::client;
 use hyle::conf;
 use hyle::server;
 
-#[derive(Parser, Debug)]
-#[command(version, about, long_about = None)]
-struct Args {
-    #[arg(short, long, action = clap::ArgAction::SetTrue)]
-    client: Option<bool>,
-
-    #[arg(long, default_value = "master.ron")]
-    config_file: String,
-}
 #[tokio::main]
 async fn main() -> Result<()> {
-    let args = Args::parse();
+    let args = cli::Args::parse();
 
     // install global collector configured based on RUST_LOG env var.
     tracing_subscriber::fmt::init();

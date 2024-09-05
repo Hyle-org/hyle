@@ -1,3 +1,4 @@
+pub mod cli;
 pub mod client;
 pub mod conf;
 pub mod ctx;
