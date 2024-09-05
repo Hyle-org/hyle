@@ -13,6 +13,7 @@ use crate::model::{Block, Transaction};
 pub enum CtxCommand {
     AddTransaction(Transaction),
     SaveOnDisk,
+    GenerateNewBlock,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -22,30 +23,29 @@ pub struct Ctx {
 }
 
 impl Ctx {
-    pub fn add_block(&mut self, block: Block) {
+    fn add_block(&mut self, block: Block) {
         self.blocks.push(block);
     }
 
-    pub fn handle_tx(&mut self, tx: Transaction) {
+    fn handle_tx(&mut self, tx: Transaction) {
         info!("New tx: {:?}", tx);
         self.mempool.push(tx);
-
-        let last_block = self.blocks.last().unwrap();
-        let last = last_block.timestamp;
-
-        if get_current_timestamp() - last > 5 {
-            let mempool = self.mempool.drain(0..).collect();
-            self.add_block(Block {
-                parent_hash: last_block.hash_block(),
-                height: last_block.height + 1,
-                timestamp: get_current_timestamp(),
-                txs: mempool,
-            });
-            info!("New block {:?}", self.blocks.last());
-        }
     }
 
-    pub fn save_on_disk(&mut self) {
+    fn new_block(&mut self) {
+        let last_block = self.blocks.last().unwrap();
+
+        let mempool = self.mempool.drain(0..).collect();
+        self.add_block(Block {
+            parent_hash: last_block.hash_block(),
+            height: last_block.height + 1,
+            timestamp: get_current_timestamp(),
+            txs: mempool,
+        });
+        info!("New block {:?}", self.blocks.last());
+    }
+
+    fn save_on_disk(&mut self) {
         let encoded = bincode::serialize(&self).expect("Could not serialize chain");
         fs::write("data.bin", encoded).expect("could not write file");
         info!(
@@ -88,6 +88,7 @@ impl Ctx {
             match msg {
                 CtxCommand::AddTransaction(tx) => self.handle_tx(tx),
                 CtxCommand::SaveOnDisk => self.save_on_disk(),
+                CtxCommand::GenerateNewBlock => self.new_block(),
             }
         }
     }
