@@ -7,6 +7,10 @@ use crate::model::{Block, Transaction};
 use serde::Deserialize;
 use serde::Serialize;
 use tracing::info;
+use tracing::warn;
+
+use crate::model::get_current_timestamp;
+use crate::model::{Block, Hashable, Transaction};
 
 #[derive(Debug)]
 pub enum CtxCommand {
@@ -29,6 +33,20 @@ impl Ctx {
     fn handle_tx(&mut self, tx: Transaction) {
         info!("New tx: {:?}", tx);
         self.mempool.push(tx);
+
+        let last_block = self.blocks.last().unwrap();
+        let last = last_block.timestamp;
+
+        if get_current_timestamp() - last > 5 {
+            let mempool = self.mempool.drain(0..).collect();
+            self.add_block(Block {
+                parent_hash: last_block.hash(),
+                height: last_block.height + 1,
+                timestamp: get_current_timestamp(),
+                txs: mempool,
+            });
+            info!("New block {:?}", self.blocks.last());
+        }
     }
 
     fn new_block(&mut self) {

@@ -2,7 +2,9 @@
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Sha3_256};
 use std::{
+    fmt::Display,
     io::Write,
+    ops::Deref,
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -11,32 +13,57 @@ pub struct Transaction {
     pub inner: String,
 }
 
+#[derive(Debug, Serialize, Deserialize, Default)]
+pub struct BlockHash {
+    inner: Vec<u8>,
+}
+
+impl Deref for BlockHash {
+    type Target = [u8];
+
+    fn deref(&self) -> &Self::Target {
+        return self.inner.deref();
+    }
+}
+
+impl Display for BlockHash {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", hex::encode(&self.inner))
+    }
+}
+
+pub trait Hashable {
+    fn hash(&self) -> BlockHash;
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Block {
-    pub parent_hash: String,
+    pub parent_hash: BlockHash,
     pub height: usize,
     pub timestamp: u64,
     pub txs: Vec<Transaction>,
 }
 
-impl Block {
-    pub fn hash_block(&self) -> String {
+impl Hashable for Block {
+    fn hash(&self) -> BlockHash {
         let mut hasher = Sha3_256::new();
-        hasher.update(self.parent_hash.as_bytes());
+        hasher.update(self.parent_hash.deref());
         _ = write!(hasher, "{}", self.height);
         _ = write!(hasher, "{}", self.timestamp);
         for tx in self.txs.iter() {
             // FIXME:
             hasher.update(tx.inner.as_bytes());
         }
-        hex::encode(hasher.finalize())
+        return BlockHash {
+            inner: hasher.finalize().as_slice().to_owned(),
+        };
     }
 }
 
 impl std::default::Default for Block {
     fn default() -> Self {
         Block {
-            parent_hash: "000".to_string(),
+            parent_hash: BlockHash::default(),
             height: 0,
             timestamp: get_current_timestamp(),
             txs: vec![],
