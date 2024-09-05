@@ -12,7 +12,7 @@ use tracing::info;
 
 use crate::rest_endpoints;
 
-pub async fn rpc_server(addr: &str, config: &Config) -> Result<()> {
+pub async fn p2p_server(addr: &str, config: &Config) -> Result<()> {
     let listener = TcpListener::bind(addr).await?;
     info!("rpc listening on {}", addr);
 

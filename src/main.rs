@@ -40,8 +40,8 @@ async fn main() -> Result<()> {
 
     info!("server mode");
     // Start RPC server
-    let rpc_server = tokio::spawn(async move {
-        if let Err(e) = server::rpc_server(&rpc_addr, &config).await {
+    let p2p_server = tokio::spawn(async move {
+        if let Err(e) = server::p2p_server(&rpc_addr, &config).await {
             error!("RPC server failed: {:?}", e);
             Err(e)
         } else {
@@ -59,7 +59,7 @@ async fn main() -> Result<()> {
         }
     });
 
-    rpc_server.await??;
+    p2p_server.await??;
     rest_server.await??;
 
     Ok(())
