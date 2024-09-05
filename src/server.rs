@@ -1,24 +1,23 @@
-use crate::config::Config;
+use crate::conf::Conf;
 use crate::ctx::{Ctx, CtxCommand};
 use crate::p2p_network::NetMessage;
-use anyhow::{Context, Ok, Result};
+use crate::rest_endpoints;
+use anyhow::{Context, Result};
 use axum::routing::get;
 use axum::Router;
 use tokio::io::AsyncReadExt;
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 use tokio::time::{sleep, Duration};
-use tracing::info;
+use tracing::{info, warn};
 
-use crate::rest_endpoints;
-
-pub fn run_as_master(
-    tx: mpsc::Sender<CtxCommand>,
-    rx: mpsc::Receiver<CtxCommand>,
-    config: &Config,
-) {
+pub fn run_as_master(tx: mpsc::Sender<CtxCommand>, rx: mpsc::Receiver<CtxCommand>, config: &Conf) {
     tokio::spawn(async move {
-        let mut ctx = Ctx::load_from_disk();
+        let mut ctx = Ctx::load_from_disk().unwrap_or_else(|_| {
+            warn!("Failed to load ctx from disk, using a default one");
+            Ctx::default()
+        });
+
         ctx.start(rx).await
     });
 
@@ -28,6 +27,9 @@ pub fn run_as_master(
         loop {
             sleep(Duration::from_secs(interval)).await;
 
+            tx.send(CtxCommand::GenerateNewBlock)
+                .await
+                .expect("Cannot send message over channel");
             tx.send(CtxCommand::SaveOnDisk)
                 .await
                 .expect("Cannot send message over channel");
@@ -35,7 +37,7 @@ pub fn run_as_master(
     });
 }
 
-pub async fn p2p_server(addr: &str, config: &Config) -> Result<()> {
+pub async fn p2p_server(addr: &str, config: &Conf) -> Result<()> {
     let listener = TcpListener::bind(addr).await?;
     info!("rpc listening on {}", addr);
 
@@ -77,7 +79,11 @@ pub async fn rest_server(addr: &str) -> Result<()> {
         .route("/getTransaction", get(rest_endpoints::get_transaction))
         .route("/getBlock", get(rest_endpoints::get_block));
 
-    let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
-    axum::serve(listener, app).await.unwrap();
-    Ok(())
+    let listener = tokio::net::TcpListener::bind(&addr)
+        .await
+        .context("Starting rest server")?;
+
+    axum::serve(listener, app)
+        .await
+        .context("Starting rest server")
 }

@@ -1,18 +1,18 @@
 use std::fs;
 use tokio::sync::mpsc::Receiver;
 
+use crate::logger::LogMe;
+use crate::model::get_current_timestamp;
+use crate::model::{Block, Transaction};
 use serde::Deserialize;
 use serde::Serialize;
 use tracing::info;
-use tracing::warn;
-
-use crate::model::get_current_timestamp;
-use crate::model::{Block, Transaction};
 
 #[derive(Debug)]
 pub enum CtxCommand {
     AddTransaction(Transaction),
     SaveOnDisk,
+    GenerateNewBlock,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -22,72 +22,59 @@ pub struct Ctx {
 }
 
 impl Ctx {
-    pub fn add_block(&mut self, block: Block) {
+    fn add_block(&mut self, block: Block) {
         self.blocks.push(block);
     }
 
-    pub fn handle_tx(&mut self, tx: Transaction) {
+    fn handle_tx(&mut self, tx: Transaction) {
         info!("New tx: {:?}", tx);
         self.mempool.push(tx);
-
-        let last_block = self.blocks.last().unwrap();
-        let last = last_block.timestamp;
-
-        if get_current_timestamp() - last > 5 {
-            let mempool = self.mempool.drain(0..).collect();
-            self.add_block(Block {
-                parent_hash: last_block.hash_block(),
-                height: last_block.height + 1,
-                timestamp: get_current_timestamp(),
-                txs: mempool,
-            });
-            info!("New block {:?}", self.blocks.last());
-        }
     }
 
-    pub fn save_on_disk(&mut self) {
-        let encoded = bincode::serialize(&self).expect("Could not serialize chain");
-        fs::write("data.bin", encoded).expect("could not write file");
+    fn new_block(&mut self) {
+        let last_block = self.blocks.last().unwrap();
+
+        let mempool = self.mempool.drain(0..).collect();
+        self.add_block(Block {
+            parent_hash: last_block.hash_block(),
+            height: last_block.height + 1,
+            timestamp: get_current_timestamp(),
+            txs: mempool,
+        });
+        info!("New block {:?}", self.blocks.last());
+    }
+
+    pub fn save_on_disk(&mut self) -> anyhow::Result<()> {
+        let encoded = bincode::serialize(&self).log_error("Serializing Ctx chain")?;
+        fs::write("data.bin", encoded).log_error("Write Ctx file")?;
         info!(
             "Saved blockchain on disk with {} blocks and {} tx in mempool.",
             self.blocks.len(),
             self.mempool.len()
         );
+        Ok(())
     }
 
-    pub fn load_from_disk() -> Self {
-        match fs::read("data.bin") {
-            Ok(read_v) => {
-                match bincode::deserialize::<Self>(&read_v) {
-                    Ok(ctx) => {
-                        info!(
-                            "Loaded {} blocks and {} tx in mempool from disk.",
-                            ctx.blocks.len(),
-                            ctx.mempool.len()
-                        );
-                        ctx
-                    }
-                    Err(error) => {
-                        warn!("Could not deserialize file data.bin. Error :{}. Starting a fresh context.", error);
-                        Ctx::default()
-                    }
-                }
-            }
-            Err(error) => {
-                warn!(
-                    "Could not read file data.bin. Error: {}. Starting with a fresh context.",
-                    error
-                );
-                Ctx::default()
-            }
-        }
+    pub fn load_from_disk() -> anyhow::Result<Self> {
+        let read_v = fs::read("data.bin").log_warn("Loading data from disk")?;
+        let ctx = bincode::deserialize::<Self>(&read_v).log_warn("Deserializing data from disk")?;
+        info!(
+            "Loaded {} blocks and {} tx in mempool from disk.",
+            ctx.blocks.len(),
+            ctx.mempool.len()
+        );
+
+        Ok(ctx)
     }
 
     pub async fn start(&mut self, mut rx: Receiver<CtxCommand>) {
         while let Some(msg) = rx.recv().await {
             match msg {
                 CtxCommand::AddTransaction(tx) => self.handle_tx(tx),
-                CtxCommand::SaveOnDisk => self.save_on_disk(),
+                CtxCommand::GenerateNewBlock => self.new_block(),
+                CtxCommand::SaveOnDisk => {
+                    self.save_on_disk();
+                }
             }
         }
     }
