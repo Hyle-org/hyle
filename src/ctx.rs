@@ -1,6 +1,4 @@
-use anyhow::Context;
 use std::fs;
-use std::sync::Arc;
 use tokio::sync::mpsc::{Receiver, UnboundedSender};
 
 use crate::logger::LogMe;
@@ -8,7 +6,7 @@ use crate::model::get_current_timestamp;
 use crate::model::{Block, Hashable, Transaction};
 use serde::Deserialize;
 use serde::Serialize;
-use tracing::{error, info};
+use tracing::info;
 
 #[derive(Debug)]
 pub enum CtxCommand {
