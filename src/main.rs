@@ -3,8 +3,9 @@ use clap::Parser;
 use tracing::{error, info};
 
 mod client;
-mod config;
+mod conf;
 mod ctx;
+mod logger;
 mod model;
 mod p2p_network;
 mod rest_endpoints;
@@ -18,6 +19,9 @@ struct Args {
 
     #[arg(short, long)]
     id: usize,
+
+    #[arg(long, default_value = "config.ron")]
+    config_file: String,
 }
 
 #[tokio::main]
@@ -27,8 +31,8 @@ async fn main() -> Result<()> {
     // install global collector configured based on RUST_LOG env var.
     tracing_subscriber::fmt::init();
 
-    let config = config::read("config.ron").await?;
-    info!("Config: {:?}", config);
+    let config = conf::Conf::new(args.config_file)?;
+    info!("Starting node {} with config: {:?}", args.id, config);
 
     let rpc_addr = config.addr(args.id).context("peer id")?.to_string();
     let rest_addr = config.rest_addr().to_string();
@@ -39,28 +43,17 @@ async fn main() -> Result<()> {
     }
 
     info!("server mode");
-    // Start RPC server
-    let rpc_server = tokio::spawn(async move {
+
+    tokio::spawn(async move {
         if let Err(e) = server::rpc_server(&rpc_addr, &config).await {
             error!("RPC server failed: {:?}", e);
-            Err(e)
-        } else {
-            Ok(())
         }
     });
 
     // Start REST server
-    let rest_server = tokio::spawn(async move {
-        if let Err(e) = server::rest_server(&rest_addr).await {
-            error!("REST server failed: {:?}", e);
-            Err(e)
-        } else {
-            Ok(())
-        }
-    });
-
-    rpc_server.await??;
-    rest_server.await??;
+    let _ = server::rest_server(&rest_addr)
+        .await
+        .context("Starting REST server")?;
 
     Ok(())
 }
