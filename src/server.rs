@@ -1,6 +1,6 @@
 use crate::config::Config;
 use crate::ctx::{Ctx, CtxCommand};
-use crate::model::Transaction;
+use crate::network::NetMessage;
 use anyhow::{Context, Ok, Result};
 use axum::routing::get;
 use axum::Router;
@@ -53,12 +53,12 @@ pub async fn rpc_server(addr: &str, config: &Config) -> Result<()> {
                     info!("houston ?");
                     return;
                 }
-                let d = std::str::from_utf8(&buf[0..n]).unwrap();
-                tx2.send(CtxCommand::AddTransaction(Transaction {
-                    inner: d.to_string(),
-                }))
-                .await
-                .unwrap();
+                match bincode::deserialize::<NetMessage>(&buf[0..n]) {
+                    std::result::Result::Ok(msg) => {
+                        msg.handle(&tx2).await;
+                    }
+                    std::result::Result::Err(_) => todo!(),
+                }
             }
         });
     }

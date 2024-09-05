@@ -6,6 +6,7 @@ mod client;
 mod config;
 mod ctx;
 mod model;
+mod network;
 mod rest_endpoints;
 mod server;
 
