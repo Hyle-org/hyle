@@ -13,7 +13,7 @@ pub struct Transaction {
     pub inner: String,
 }
 
-#[derive(Debug, Serialize, Deserialize, Default)]
+#[derive(Serialize, Deserialize, Default)]
 pub struct BlockHash {
     inner: Vec<u8>,
 }
@@ -29,6 +29,12 @@ impl Deref for BlockHash {
 impl Display for BlockHash {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", hex::encode(&self.inner))
+    }
+}
+
+impl std::fmt::Debug for BlockHash {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:x?}", &self.inner)
     }
 }
 
