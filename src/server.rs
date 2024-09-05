@@ -43,7 +43,12 @@ pub async fn p2p_server(addr: &str, config: &Conf) -> Result<()> {
 
     let (tx, rx) = mpsc::channel::<CtxCommand>(100);
 
-    run_as_master(tx.clone(), rx, config);
+    if config.peers.is_empty() {
+        warn!("No peers in conf, running as master");
+        run_as_master(tx.clone(), rx, config);
+    } else {
+        // connect to peers & fetch ctx
+    }
 
     loop {
         let (mut socket, _) = listener.accept().await?;

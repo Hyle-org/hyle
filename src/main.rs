@@ -17,13 +17,9 @@ struct Args {
     #[arg(short, long, action = clap::ArgAction::SetTrue)]
     client: Option<bool>,
 
-    #[arg(short, long)]
-    id: usize,
-
-    #[arg(long, default_value = "config.ron")]
+    #[arg(long, default_value = "master.ron")]
     config_file: String,
 }
-
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();
@@ -32,9 +28,9 @@ async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
 
     let config = conf::Conf::new(args.config_file)?;
-    info!("Starting node {} with config: {:?}", args.id, config);
+    info!("Starting node with config: {:?}", config);
 
-    let rpc_addr = config.addr(args.id).context("peer id")?.to_string();
+    let rpc_addr = config.addr();
     let rest_addr = config.rest_addr().to_string();
 
     if args.client.unwrap_or(false) {
