@@ -3,14 +3,10 @@ use tokio::sync::mpsc::Receiver;
 
 use crate::logger::LogMe;
 use crate::model::get_current_timestamp;
-use crate::model::{Block, Transaction};
+use crate::model::{Block, Hashable, Transaction};
 use serde::Deserialize;
 use serde::Serialize;
 use tracing::info;
-use tracing::warn;
-
-use crate::model::get_current_timestamp;
-use crate::model::{Block, Hashable, Transaction};
 
 #[derive(Debug)]
 pub enum CtxCommand {
@@ -39,13 +35,15 @@ impl Ctx {
 
         if get_current_timestamp() - last > 5 {
             let mempool = self.mempool.drain(0..).collect();
-            self.add_block(Block {
+            let b = Block {
                 parent_hash: last_block.hash(),
                 height: last_block.height + 1,
                 timestamp: get_current_timestamp(),
                 txs: mempool,
-            });
-            info!("New block {:?}", self.blocks.last());
+            };
+            info!("parent block hash: {}", b.parent_hash);
+            info!("New block {:?}", &b);
+            self.add_block(b);
         }
     }
 
@@ -54,7 +52,7 @@ impl Ctx {
 
         let mempool = self.mempool.drain(0..).collect();
         self.add_block(Block {
-            parent_hash: last_block.hash_block(),
+            parent_hash: last_block.hash(),
             height: last_block.height + 1,
             timestamp: get_current_timestamp(),
             txs: mempool,
@@ -90,9 +88,7 @@ impl Ctx {
             match msg {
                 CtxCommand::AddTransaction(tx) => self.handle_tx(tx),
                 CtxCommand::GenerateNewBlock => self.new_block(),
-                CtxCommand::SaveOnDisk => {
-                    let _ = self.save_on_disk();
-                }
+                CtxCommand::SaveOnDisk => _ = self.save_on_disk(),
             }
         }
         Ok(())
