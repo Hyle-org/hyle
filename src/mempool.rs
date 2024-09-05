@@ -60,7 +60,6 @@ impl Mempool {
 
     /// start starts the mempool server.
     pub async fn start(&mut self, mut rpc_receiver: UnboundedReceiver<Transaction>) -> Result<()> {
-        let id = self.id;
         let addr = self
             .peers
             .iter()
@@ -86,16 +85,17 @@ impl Mempool {
                             if buf.len() < n as usize {
                                 buf.resize(n as usize, 0);
                             }
-                            if let Err(e) = s.read_exact(buf.as_mut_slice()).await {
-                                error!("{}: failed to read message ({:#})", id, e);
-                            } else {
+                            if let Ok(_) = s
+                                .read_exact(buf.as_mut_slice())
+                                .await
+                                .log_error("reading message")
+                            {
                                 let str = String::from_utf8_lossy(&buf);
-                                if let Err(e) = sender.send(str.to_string()) {
-                                    error!("{}: failed to send message to mempool ({:#})", id, e);
-                                }
+                                _ = sender
+                                    .send(str.to_string())
+                                    .log_error("sending message to mempool");
                             }
                         }
-                        info!("{}: received a message", id);
                     }
                 }
             }
