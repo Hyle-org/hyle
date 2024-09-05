@@ -73,7 +73,7 @@ impl Ctx {
                 CtxCommand::AddTransaction(tx) => self.handle_tx(tx),
                 CtxCommand::GenerateNewBlock => self.new_block(),
                 CtxCommand::SaveOnDisk => {
-                    self.save_on_disk();
+                    let _ = self.save_on_disk();
                 }
             }
         }

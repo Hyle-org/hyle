@@ -1,25 +1,25 @@
 use crate::model::{Block, Transaction};
 use axum::{http::StatusCode, Json};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 pub async fn get_transaction(
-    Json(payload): Json<TransactionRequest>,
+    Json(_payload): Json<TransactionRequest>,
 ) -> (StatusCode, Json<Transaction>) {
     let response: Transaction = Default::default();
     (StatusCode::OK, Json(response))
 }
 
-pub async fn get_block(Json(payload): Json<BlockRequest>) -> (StatusCode, Json<Block>) {
+pub async fn get_block(Json(_payload): Json<BlockRequest>) -> (StatusCode, Json<Block>) {
     let response: Block = Default::default();
     (StatusCode::OK, Json(response))
 }
 
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct TransactionRequest {
-    tx_hash: String,
+    pub tx_hash: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct BlockRequest {
-    block_number: u64,
+    pub block_number: u64,
 }
