@@ -47,7 +47,7 @@ async fn main() -> Result<()> {
     });
 
     // Start REST server
-    let _ = server::rest_server(&rest_addr)
+    server::rest_server(&rest_addr)
         .await
         .context("Starting REST server")?;
 

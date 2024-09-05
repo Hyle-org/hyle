@@ -67,16 +67,17 @@ impl Ctx {
         Ok(ctx)
     }
 
-    pub async fn start(&mut self, mut rx: Receiver<CtxCommand>) {
+    pub async fn start(&mut self, mut rx: Receiver<CtxCommand>) -> anyhow::Result<()> {
         while let Some(msg) = rx.recv().await {
             match msg {
                 CtxCommand::AddTransaction(tx) => self.handle_tx(tx),
                 CtxCommand::GenerateNewBlock => self.new_block(),
                 CtxCommand::SaveOnDisk => {
-                    self.save_on_disk();
+                    self.save_on_disk()?;
                 }
             }
         }
+        Ok(())
     }
 }
 
