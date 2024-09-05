@@ -5,6 +5,8 @@ use tracing::{error, info};
 use hyle::cli;
 use hyle::client;
 use hyle::conf;
+use hyle::mempool::Mempool;
+use hyle::model::Transaction;
 use hyle::server;
 
 #[tokio::main]
@@ -27,16 +29,27 @@ async fn main() -> Result<()> {
 
     info!("server mode");
 
+    let mut mp = Mempool::new(args.id, config.mempool_peers.clone());
+    let (sender, receiver) = tokio::sync::mpsc::unbounded_channel::<Transaction>();
     tokio::spawn(async move {
-        if let Err(e) = server::p2p_server(&rpc_addr, &config).await {
-            error!("RPC server failed: {:?}", e);
-        }
+        _ = mp.start(receiver).await;
     });
 
-    // Start REST server
-    server::rest_server(&rest_addr)
-        .await
-        .context("Starting REST server")?;
-
+    if args.no_rest_server {
+        info!("not starting rest server");
+        if let Err(e) = server::p2p_server(&rpc_addr, &config, sender).await {
+            error!("RPC server failed: {:?}", e);
+        }
+    } else {
+        tokio::spawn(async move {
+            if let Err(e) = server::p2p_server(&rpc_addr, &config, sender).await {
+                error!("RPC server failed: {:?}", e);
+            }
+        });
+        // Start REST server
+        let _ = server::rest_server(&rest_addr)
+            .await
+            .context("Starting REST server")?;
+    }
     Ok(())
 }

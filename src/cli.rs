@@ -11,4 +11,7 @@ pub struct Args {
 
     #[arg(long, default_value = "config.ron")]
     pub config_file: String,
+
+    #[arg(long, action = clap::ArgAction::SetTrue)]
+    pub no_rest_server: bool,
 }

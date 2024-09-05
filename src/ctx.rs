@@ -1,12 +1,14 @@
+use anyhow::Context;
 use std::fs;
-use tokio::sync::mpsc::Receiver;
+use std::sync::Arc;
+use tokio::sync::mpsc::{Receiver, UnboundedSender};
 
 use crate::logger::LogMe;
 use crate::model::get_current_timestamp;
 use crate::model::{Block, Hashable, Transaction};
 use serde::Deserialize;
 use serde::Serialize;
-use tracing::info;
+use tracing::{error, info};
 
 #[derive(Debug)]
 pub enum CtxCommand {
@@ -26,8 +28,11 @@ impl Ctx {
         self.blocks.push(block);
     }
 
-    fn handle_tx(&mut self, tx: Transaction) {
+    async fn handle_tx(&mut self, tx: Transaction, sender: &UnboundedSender<Transaction>) {
         info!("New tx: {:?}", tx);
+        _ = sender
+            .send(tx.clone())
+            .log_error("broadcasting tx to mempool nodes");
         self.mempool.push(tx);
 
         let last_block = self.blocks.last().unwrap();
@@ -83,10 +88,14 @@ impl Ctx {
         Ok(ctx)
     }
 
-    pub async fn start(&mut self, mut rx: Receiver<CtxCommand>) -> anyhow::Result<()> {
+    pub async fn start(
+        &mut self,
+        mut rx: Receiver<CtxCommand>,
+        sender: UnboundedSender<Transaction>,
+    ) -> anyhow::Result<()> {
         while let Some(msg) = rx.recv().await {
             match msg {
-                CtxCommand::AddTransaction(tx) => self.handle_tx(tx),
+                CtxCommand::AddTransaction(tx) => self.handle_tx(tx, &sender).await,
                 CtxCommand::GenerateNewBlock => self.new_block(),
                 CtxCommand::SaveOnDisk => _ = self.save_on_disk(),
             }

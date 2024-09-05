@@ -1,23 +1,29 @@
 use crate::conf::Conf;
 use crate::ctx::{Ctx, CtxCommand};
+use crate::model::Transaction;
 use crate::p2p::peer;
 use crate::rest_endpoints;
 use anyhow::{Context, Error, Result};
 use axum::routing::get;
 use axum::Router;
 use tokio::net::TcpListener;
-use tokio::sync::mpsc;
+use tokio::sync::mpsc::{self, UnboundedSender};
 use tokio::time::{sleep, Duration};
 use tracing::{info, warn};
 
-pub fn run_as_master(tx: mpsc::Sender<CtxCommand>, rx: mpsc::Receiver<CtxCommand>, config: &Conf) {
+pub fn run_as_master(
+    tx: mpsc::Sender<CtxCommand>,
+    rx: mpsc::Receiver<CtxCommand>,
+    config: &Conf,
+    sender: UnboundedSender<Transaction>,
+) {
     tokio::spawn(async move {
         let mut ctx = Ctx::load_from_disk().unwrap_or_else(|_| {
             warn!("Failed to load ctx from disk, using a default one");
             Ctx::default()
         });
 
-        ctx.start(rx).await
+        _ = ctx.start(rx, sender).await;
     });
 
     let interval = config.storage.interval;
@@ -36,12 +42,16 @@ pub fn run_as_master(tx: mpsc::Sender<CtxCommand>, rx: mpsc::Receiver<CtxCommand
     });
 }
 
-pub async fn p2p_server(addr: &str, config: &Conf) -> Result<(), Error> {
+pub async fn p2p_server(
+    addr: &str,
+    config: &Conf,
+    sender: UnboundedSender<Transaction>,
+) -> Result<(), Error> {
     let (tx, rx) = mpsc::channel::<CtxCommand>(100);
 
     if config.peers.is_empty() {
         warn!("No peers in conf, running as master");
-        run_as_master(tx.clone(), rx, config);
+        run_as_master(tx.clone(), rx, config, sender);
 
         let listener = TcpListener::bind(addr).await?;
         info!("p2p listening on {}", addr);

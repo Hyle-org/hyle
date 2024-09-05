@@ -8,9 +8,16 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-#[derive(Debug, Serialize, Deserialize, Default)]
+#[derive(Debug, Serialize, Deserialize, Default, Clone)]
 pub struct Transaction {
     pub inner: String,
+}
+
+impl Transaction {
+    // FIXME:
+    pub fn as_bytes(&self) -> &[u8] {
+        self.inner.as_bytes()
+    }
 }
 
 #[derive(Serialize, Deserialize, Default)]

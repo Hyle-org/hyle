@@ -1,17 +1,20 @@
+use crate::mempool::Peer;
+
 use anyhow::Result;
 use config::{Config, ConfigError, Environment, File};
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct Storage {
     pub interval: u64,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct Conf {
     port: u16,
     host: String,
     pub peers: Vec<String>,
+    pub mempool_peers: Vec<Peer>,
     pub storage: Storage,
     rest: String,
 }
