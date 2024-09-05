@@ -1,9 +1,8 @@
 use crate::conf::Conf;
 use crate::ctx::{Ctx, CtxCommand};
-use crate::model::Transaction;
 use crate::p2p_network::NetMessage;
 use crate::rest_endpoints;
-use anyhow::{Context, Ok, Result};
+use anyhow::{Context, Result};
 use axum::routing::get;
 use axum::Router;
 use tokio::io::AsyncReadExt;
