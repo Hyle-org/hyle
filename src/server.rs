@@ -1,8 +1,9 @@
 use crate::conf::Conf;
 use crate::ctx::{Ctx, CtxCommand};
-use crate::p2p_network::NetMessage;
+use crate::p2p::network::NetMessage;
+use crate::p2p::peer;
 use crate::rest_endpoints;
-use anyhow::{Context, Result};
+use anyhow::{Context, Error, Result};
 use axum::routing::get;
 use axum::Router;
 use tokio::io::AsyncReadExt;
@@ -37,44 +38,33 @@ pub fn run_as_master(tx: mpsc::Sender<CtxCommand>, rx: mpsc::Receiver<CtxCommand
     });
 }
 
-pub async fn p2p_server(addr: &str, config: &Conf) -> Result<()> {
-    let listener = TcpListener::bind(addr).await?;
-    info!("rpc listening on {}", addr);
-
+pub async fn p2p_server(addr: &str, config: &Conf) -> Result<(), Error> {
     let (tx, rx) = mpsc::channel::<CtxCommand>(100);
 
     if config.peers.is_empty() {
         warn!("No peers in conf, running as master");
         run_as_master(tx.clone(), rx, config);
+
+        let listener = TcpListener::bind(addr).await?;
+        info!("p2p listening on {}", addr);
+
+        loop {
+            let (socket, _) = listener.accept().await?;
+            let tx2 = tx.clone();
+
+            tokio::spawn(async move {
+                let mut peer_server = peer::Peer::new(socket, tx2.clone()).await?;
+                peer_server.start().await
+            });
+        }
     } else {
-        // connect to peers & fetch ctx
-    }
+        let peer_address = config.peers.first().unwrap();
+        info!("Connecting to peer {}", peer_address);
+        let stream = peer::Peer::connect(peer_address).await?;
+        let mut peer = peer::Peer::new(stream, tx.clone()).await?;
 
-    loop {
-        let (mut socket, _) = listener.accept().await?;
-        let tx2 = tx.clone();
-
-        tokio::spawn(async move {
-            let mut buf = vec![0; 1024];
-
-            loop {
-                let n = socket
-                    .read(&mut buf)
-                    .await
-                    .context("reading from socket")
-                    .unwrap();
-                if n == 0 {
-                    info!("houston ?");
-                    return;
-                }
-                match bincode::deserialize::<NetMessage>(&buf[0..n]) {
-                    std::result::Result::Ok(msg) => {
-                        msg.handle(&tx2).await;
-                    }
-                    std::result::Result::Err(_) => todo!(),
-                }
-            }
-        });
+        peer.handshake().await?;
+        peer.start().await
     }
 }
 

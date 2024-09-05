@@ -7,7 +7,7 @@ mod conf;
 mod ctx;
 mod logger;
 mod model;
-mod p2p_network;
+mod p2p;
 mod rest_endpoints;
 mod server;
 
