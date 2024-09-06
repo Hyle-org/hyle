@@ -2,22 +2,16 @@ use anyhow::{Context, Result};
 use clap::Parser;
 use tracing::{error, info};
 
+use hyle::cli;
 use hyle::client;
 use hyle::conf;
+use hyle::mempool::Mempool;
+use hyle::model::Transaction;
 use hyle::server;
 
-#[derive(Parser, Debug)]
-#[command(version, about, long_about = None)]
-struct Args {
-    #[arg(short, long, action = clap::ArgAction::SetTrue)]
-    client: Option<bool>,
-
-    #[arg(long, default_value = "master.ron")]
-    config_file: String,
-}
 #[tokio::main]
 async fn main() -> Result<()> {
-    let args = Args::parse();
+    let args = cli::Args::parse();
 
     // install global collector configured based on RUST_LOG env var.
     tracing_subscriber::fmt::init();
@@ -35,16 +29,27 @@ async fn main() -> Result<()> {
 
     info!("server mode");
 
+    let mut mp = Mempool::new(args.id, config.mempool_peers.clone());
+    let (sender, receiver) = tokio::sync::mpsc::unbounded_channel::<Transaction>();
     tokio::spawn(async move {
-        if let Err(e) = server::p2p_server(&rpc_addr, &config).await {
-            error!("RPC server failed: {:?}", e);
-        }
+        _ = mp.start(receiver).await;
     });
 
-    // Start REST server
-    server::rest_server(&rest_addr)
-        .await
-        .context("Starting REST server")?;
-
+    if args.no_rest_server {
+        info!("not starting rest server");
+        if let Err(e) = server::p2p_server(&rpc_addr, &config, sender).await {
+            error!("RPC server failed: {:?}", e);
+        }
+    } else {
+        tokio::spawn(async move {
+            if let Err(e) = server::p2p_server(&rpc_addr, &config, sender).await {
+                error!("RPC server failed: {:?}", e);
+            }
+        });
+        // Start REST server
+        let _ = server::rest_server(&rest_addr)
+            .await
+            .context("Starting REST server")?;
+    }
     Ok(())
 }

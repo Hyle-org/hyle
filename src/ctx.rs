@@ -1,9 +1,9 @@
 use std::fs;
-use tokio::sync::mpsc::Receiver;
+use tokio::sync::mpsc::{Receiver, UnboundedSender};
 
 use crate::logger::LogMe;
 use crate::model::get_current_timestamp;
-use crate::model::{Block, Transaction};
+use crate::model::{Block, Hashable, Transaction};
 use serde::Deserialize;
 use serde::Serialize;
 use tracing::info;
@@ -26,9 +26,28 @@ impl Ctx {
         self.blocks.push(block);
     }
 
-    fn handle_tx(&mut self, tx: Transaction) {
+    async fn handle_tx(&mut self, tx: Transaction, sender: &UnboundedSender<Transaction>) {
         info!("New tx: {:?}", tx);
+        _ = sender
+            .send(tx.clone())
+            .log_error("broadcasting tx to mempool nodes");
         self.mempool.push(tx);
+
+        let last_block = self.blocks.last().unwrap();
+        let last = last_block.timestamp;
+
+        if get_current_timestamp() - last > 5 {
+            let mempool = self.mempool.drain(0..).collect();
+            let b = Block {
+                parent_hash: last_block.hash(),
+                height: last_block.height + 1,
+                timestamp: get_current_timestamp(),
+                txs: mempool,
+            };
+            info!("parent block hash: {}", b.parent_hash);
+            info!("New block {:?}", &b);
+            self.add_block(b);
+        }
     }
 
     fn new_block(&mut self) {
@@ -36,7 +55,7 @@ impl Ctx {
 
         let mempool = self.mempool.drain(0..).collect();
         self.add_block(Block {
-            parent_hash: last_block.hash_block(),
+            parent_hash: last_block.hash(),
             height: last_block.height + 1,
             timestamp: get_current_timestamp(),
             txs: mempool,
@@ -67,14 +86,16 @@ impl Ctx {
         Ok(ctx)
     }
 
-    pub async fn start(&mut self, mut rx: Receiver<CtxCommand>) -> anyhow::Result<()> {
+    pub async fn start(
+        &mut self,
+        mut rx: Receiver<CtxCommand>,
+        sender: UnboundedSender<Transaction>,
+    ) -> anyhow::Result<()> {
         while let Some(msg) = rx.recv().await {
             match msg {
-                CtxCommand::AddTransaction(tx) => self.handle_tx(tx),
+                CtxCommand::AddTransaction(tx) => self.handle_tx(tx, &sender).await,
                 CtxCommand::GenerateNewBlock => self.new_block(),
-                CtxCommand::SaveOnDisk => {
-                    let _ = self.save_on_disk();
-                }
+                CtxCommand::SaveOnDisk => _ = self.save_on_disk(),
             }
         }
         Ok(())
