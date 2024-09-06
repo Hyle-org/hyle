@@ -1,13 +1,15 @@
-use crate::conf::Conf;
 use crate::consensus::ConsensusCommand;
-use crate::p2p::peer;
-use crate::rest_endpoints;
+use crate::rest::endpoints;
+use crate::utils::conf::Conf;
 use anyhow::{Context, Error, Result};
 use axum::routing::get;
 use axum::Router;
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 use tracing::info;
+
+pub mod network; // FIXME(Bertrand): NetMessage should be private
+mod peer;
 
 pub async fn p2p_server(
     addr: &str,
@@ -52,8 +54,8 @@ pub async fn p2p_server(
 pub async fn rest_server(addr: &str) -> Result<()> {
     info!("rest listening on {}", addr);
     let app = Router::new()
-        .route("/getTransaction", get(rest_endpoints::get_transaction))
-        .route("/getBlock", get(rest_endpoints::get_block));
+        .route("/getTransaction", get(endpoints::get_transaction))
+        .route("/getBlock", get(endpoints::get_block));
 
     let listener = tokio::net::TcpListener::bind(&addr)
         .await

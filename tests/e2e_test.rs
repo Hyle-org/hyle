@@ -1,4 +1,4 @@
-use hyle::rest_endpoints::TransactionRequest;
+use hyle::rest::endpoints::TransactionRequest;
 use reqwest::blocking::Client;
 use std::{thread, time};
 
@@ -14,7 +14,7 @@ fn test_e2e_with_cli() {
     // let node2 = test_helpers::TestNode::new("1", "config.ron", false);
 
     // Wait for server to properly start
-    thread::sleep(time::Duration::from_secs(3));
+    thread::sleep(time::Duration::from_secs(1));
 
     // Start client that connects to node1
     let client1 = test_helpers::TestNode::new("master.ron", true);

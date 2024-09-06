@@ -4,8 +4,12 @@ use tokio::io::AsyncWriteExt;
 use tokio::net::TcpStream;
 use tokio::time::Duration;
 
-use crate::model::{Transaction, TransactionData};
-use crate::p2p::network::NetMessage;
+use clap::Parser;
+use hyle::model::{Transaction, TransactionData};
+use hyle::p2p::network::NetMessage;
+use tracing::info;
+
+use hyle::utils::conf;
 
 pub fn new_transaction() -> Vec<u8> {
     NetMessage::NewTransaction(Transaction {
@@ -31,4 +35,29 @@ pub async fn client(addr: &str) -> Result<()> {
             .context("sending message")?;
         tokio::time::sleep(Duration::from_secs(1)).await;
     }
+}
+
+#[derive(Parser, Debug)]
+#[command(version, about, long_about = None)]
+struct Args {
+    #[arg(long, default_value = "master.ron")]
+    config_file: String,
+}
+
+#[tokio::main]
+async fn main() -> Result<()> {
+    let args = Args::parse();
+
+    // install global collector configured based on RUST_LOG env var.
+    tracing_subscriber::fmt::init();
+
+    let config = conf::Conf::new(args.config_file)?;
+    info!("Starting client with config: {:?}", config);
+
+    let rpc_addr = config.addr();
+
+    info!("client mode");
+    client(&rpc_addr).await?;
+
+    Ok(())
 }
