@@ -4,7 +4,7 @@ use tokio::io::AsyncWriteExt;
 use tokio::net::TcpStream;
 use tokio::time::Duration;
 
-use crate::model::Transaction;
+use crate::model::{Transaction, TransactionData};
 use crate::p2p::network::NetMessage;
 
 pub fn new_transaction() -> Vec<u8> {
@@ -14,6 +14,8 @@ pub fn new_transaction() -> Vec<u8> {
             .take(7)
             .map(char::from)
             .collect(),
+        version: 1,
+        transaction_data: TransactionData::default(),
     })
     .as_binary()
 }
@@ -23,13 +25,8 @@ pub async fn client(addr: &str) -> Result<()> {
         .await
         .context("connecting to server")?;
     loop {
-        let msg = new_transaction();
         socket
-            .write_u32(msg.len() as u32)
-            .await
-            .context("sending message size")?;
-        socket
-            .write(msg.as_ref())
+            .write(new_transaction().as_ref())
             .await
             .context("sending message")?;
         tokio::time::sleep(Duration::from_secs(1)).await;

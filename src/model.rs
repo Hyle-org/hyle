@@ -4,7 +4,50 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct Transaction {
-    pub inner: String,
+    pub version: u32,
+    pub transaction_data: TransactionData,
+    pub inner: String, // FIXME: to remove
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub enum TransactionData {
+    Blob(BlobTransaction),
+    Proof(ProofTransaction),
+    RegisterContract(RegisterContractTransaction),
+}
+
+impl Default for TransactionData {
+    fn default() -> Self {
+        TransactionData::Blob(BlobTransaction::default())
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Default)]
+pub struct ProofTransaction {
+    tx_hash: Vec<u8>,
+    contract_name: String,
+    blob_index: u32,
+    proof: Vec<u8>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Default)]
+pub struct RegisterContractTransaction {
+    owner: String,
+    verifier: String,
+    program_id: Vec<u8>,
+    state_digest: Vec<u8>,
+    contract_name: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Default)]
+pub struct BlobTransaction {
+    identity: String,
+    blobs: Vec<Blob>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Default)]
+pub struct Blob {
+    data: Vec<u8>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
