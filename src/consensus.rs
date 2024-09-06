@@ -1,27 +1,31 @@
 use std::fs;
-use tokio::sync::mpsc::Receiver;
+use std::time::Duration;
 
+use serde::Deserialize;
+use serde::Serialize;
+use tokio::sync::mpsc::{Receiver, Sender};
+use tokio::time::sleep;
+use tracing::info;
+
+use crate::conf::Conf;
 use crate::logger::LogMe;
 use crate::model::get_current_timestamp;
 use crate::model::{Block, Transaction};
-use serde::Deserialize;
-use serde::Serialize;
-use tracing::info;
 
 #[derive(Debug)]
-pub enum CtxCommand {
+pub enum ConsensusCommand {
     AddTransaction(Transaction),
     SaveOnDisk,
     GenerateNewBlock,
 }
 
 #[derive(Serialize, Deserialize)]
-pub struct Ctx {
+pub struct Consensus {
     mempool: Vec<Transaction>,
     blocks: Vec<Block>,
 }
 
-impl Ctx {
+impl Consensus {
     fn add_block(&mut self, block: Block) {
         self.blocks.push(block);
     }
@@ -67,12 +71,39 @@ impl Ctx {
         Ok(ctx)
     }
 
-    pub async fn start(&mut self, mut rx: Receiver<CtxCommand>) -> anyhow::Result<()> {
+    pub async fn start(
+        &mut self,
+        tx: Sender<ConsensusCommand>,
+        mut rx: Receiver<ConsensusCommand>,
+        config: &Conf,
+    ) -> anyhow::Result<()> {
+        let interval = config.storage.interval;
+
+        if config.peers.is_empty() {
+            info!(
+                "No peers configured, starting as master generating blocks every {} seconds",
+                interval
+            );
+
+            tokio::spawn(async move {
+                loop {
+                    sleep(Duration::from_secs(interval)).await;
+
+                    tx.send(ConsensusCommand::GenerateNewBlock)
+                        .await
+                        .expect("Cannot send message over channel");
+                    tx.send(ConsensusCommand::SaveOnDisk)
+                        .await
+                        .expect("Cannot send message over channel");
+                }
+            });
+        }
+
         while let Some(msg) = rx.recv().await {
             match msg {
-                CtxCommand::AddTransaction(tx) => self.handle_tx(tx),
-                CtxCommand::GenerateNewBlock => self.new_block(),
-                CtxCommand::SaveOnDisk => {
+                ConsensusCommand::AddTransaction(tx) => self.handle_tx(tx),
+                ConsensusCommand::GenerateNewBlock => self.new_block(),
+                ConsensusCommand::SaveOnDisk => {
                     let _ = self.save_on_disk();
                 }
             }
@@ -81,7 +112,7 @@ impl Ctx {
     }
 }
 
-impl std::default::Default for Ctx {
+impl std::default::Default for Consensus {
     fn default() -> Self {
         Self {
             mempool: vec![],

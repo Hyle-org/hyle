@@ -1,22 +1,25 @@
 use anyhow::{anyhow, bail, Context, Error, Result};
+use tokio::io::AsyncReadExt;
+use tokio::io::AsyncWriteExt;
 use tokio::io::Interest;
+use tokio::{net::TcpStream, sync::mpsc};
 use tracing::{debug, warn};
 use tracing::{info, trace};
 
-use tokio::io::AsyncReadExt;
-use tokio::io::AsyncWriteExt;
-use tokio::{net::TcpStream, sync::mpsc};
-
 use super::network::{NetMessage, Version};
-use crate::ctx::CtxCommand;
+use crate::consensus::ConsensusCommand;
+
 #[derive(Debug)]
 pub struct Peer {
     stream: TcpStream,
-    ctx: mpsc::Sender<CtxCommand>,
+    ctx: mpsc::Sender<ConsensusCommand>,
 }
 
 impl Peer {
-    pub async fn new(stream: TcpStream, ctx: mpsc::Sender<CtxCommand>) -> Result<Self, Error> {
+    pub async fn new(
+        stream: TcpStream,
+        ctx: mpsc::Sender<ConsensusCommand>,
+    ) -> Result<Self, Error> {
         Ok(Peer { stream, ctx })
     }
 
@@ -33,7 +36,7 @@ impl Peer {
             NetMessage::NewTransaction(tx) => {
                 debug!("Get new tx over p2p: {:?}", tx);
                 self.ctx
-                    .send(CtxCommand::AddTransaction(tx))
+                    .send(ConsensusCommand::AddTransaction(tx))
                     .await
                     .context("Failed to send over channel")
             }

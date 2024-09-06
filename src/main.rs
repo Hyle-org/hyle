@@ -1,9 +1,12 @@
 use anyhow::{Context, Result};
 use clap::Parser;
+use tokio::sync::mpsc::{self, Receiver, Sender};
+use tracing::warn;
 use tracing::{error, info};
 
 use hyle::client;
-use hyle::conf;
+use hyle::conf::{self, Conf};
+use hyle::consensus::{Consensus, ConsensusCommand};
 use hyle::server;
 
 #[derive(Parser, Debug)]
@@ -15,6 +18,18 @@ struct Args {
     #[arg(long, default_value = "master.ron")]
     config_file: String,
 }
+
+fn start_consensus(tx: Sender<ConsensusCommand>, rx: Receiver<ConsensusCommand>, config: Conf) {
+    tokio::spawn(async move {
+        let mut consensus = Consensus::load_from_disk().unwrap_or_else(|_| {
+            warn!("Failed to load consensus state from disk, using a default one");
+            Consensus::default()
+        });
+
+        consensus.start(tx, rx, &config).await
+    });
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();
@@ -35,8 +50,12 @@ async fn main() -> Result<()> {
 
     info!("server mode");
 
+    let (consensus_tx, rx) = mpsc::channel::<ConsensusCommand>(100);
+
+    start_consensus(consensus_tx.clone(), rx, config.clone());
+
     tokio::spawn(async move {
-        if let Err(e) = server::p2p_server(&rpc_addr, &config).await {
+        if let Err(e) = server::p2p_server(&rpc_addr, &config, consensus_tx).await {
             error!("RPC server failed: {:?}", e);
         }
     });
