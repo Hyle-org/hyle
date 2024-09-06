@@ -13,6 +13,7 @@ pub struct Transaction {
 pub enum TransactionData {
     Blob(BlobTransaction),
     Proof(ProofTransaction),
+    RegisterContract(RegisterContractTransaction),
 }
 
 impl Default for TransactionData {
@@ -27,6 +28,15 @@ pub struct ProofTransaction {
     contract_name: String,
     blob_index: u32,
     proof: Vec<u8>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Default)]
+pub struct RegisterContractTransaction {
+    owner: String,
+    verifier: String,
+    program_id: Vec<u8>,
+    state_digest: Vec<u8>,
+    contract_name: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Default)]
