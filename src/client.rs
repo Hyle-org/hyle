@@ -5,7 +5,7 @@ use tokio::net::TcpStream;
 use tokio::time::Duration;
 
 use crate::model::{Transaction, TransactionData};
-use crate::p2p_network::NetMessage;
+use crate::p2p::network::NetMessage;
 
 pub fn new_transaction() -> Vec<u8> {
     NetMessage::NewTransaction(Transaction {

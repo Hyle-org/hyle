@@ -67,7 +67,7 @@ impl Ctx {
         Ok(ctx)
     }
 
-    pub async fn start(&mut self, mut rx: Receiver<CtxCommand>) {
+    pub async fn start(&mut self, mut rx: Receiver<CtxCommand>) -> anyhow::Result<()> {
         while let Some(msg) = rx.recv().await {
             match msg {
                 CtxCommand::AddTransaction(tx) => self.handle_tx(tx),
@@ -77,6 +77,7 @@ impl Ctx {
                 }
             }
         }
+        Ok(())
     }
 }
 

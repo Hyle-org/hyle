@@ -7,13 +7,9 @@ pub struct TestNode {
 
 impl TestNode {
     // Create a new process that spins up a node or a client
-    pub fn new(id: &str, config_file: &str, is_client: bool) -> Self {
+    pub fn new(config_file: &str, is_client: bool) -> Self {
         let mut cargo_bin = Command::cargo_bin("hyle").unwrap();
-        let cmd = cargo_bin
-            .arg("--id")
-            .arg(id)
-            .arg("--config-file")
-            .arg(config_file);
+        let cmd = cargo_bin.arg("--config-file").arg(config_file);
 
         if is_client {
             cmd.arg("--client");
