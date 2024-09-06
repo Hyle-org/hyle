@@ -1,4 +1,4 @@
-use hyle::rest::endpoints::TransactionRequest;
+use hyle::rest::model::TransactionRequest;
 use reqwest::blocking::Client;
 use std::{thread, time};
 

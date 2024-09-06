@@ -6,9 +6,11 @@ use tokio::sync::mpsc::{self, Receiver, Sender, UnboundedSender};
 use tracing::warn;
 use tracing::{error, info};
 
+use hyle::cli;
 use hyle::consensus::{Consensus, ConsensusCommand};
+use hyle::p2p;
+use hyle::rest;
 use hyle::utils::conf::{self, Conf};
-use hyle::{cli, p2p};
 
 fn start_consensus(
     tx: Sender<ConsensusCommand>,
@@ -63,7 +65,7 @@ async fn main() -> Result<()> {
             }
         });
         // Start REST server
-        p2p::rest_server(&rest_addr)
+        rest::rest_server(&rest_addr)
             .await
             .context("Starting REST server")?;
     }
