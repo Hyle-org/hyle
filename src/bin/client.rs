@@ -33,12 +33,11 @@ pub async fn client(config: SharedConf) -> Result<()> {
         socket
             .write_u32(res.len() as u32)
             .await
-            .context("sending message")?;
-
+            .context("sending tcp message size")?;
         socket
             .write(res.as_ref())
             .await
-            .context("sending message")?;
+            .context("sending tcp message")?;
         tokio::time::sleep(Duration::from_secs(1)).await;
     }
 }

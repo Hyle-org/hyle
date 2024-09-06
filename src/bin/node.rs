@@ -10,6 +10,7 @@ use hyle::{
     utils::conf::{self, SharedConf},
 };
 use std::sync::Arc;
+use tokio::sync::mpsc::UnboundedSender;
 use tracing::{debug, error, info, warn};
 
 fn start_consensus(bus: SharedMessageBus, config: SharedConf) {
@@ -28,6 +29,14 @@ fn start_node_state(bus: SharedMessageBus, config: SharedConf) {
     tokio::spawn(async move {
         let mut consensus = NodeState::default();
         consensus.start(bus, config).await
+    });
+}
+
+fn start_peer(bus: SharedMessageBus, config: SharedConf, mempool: UnboundedSender<MempoolMessage>) {
+    tokio::spawn(async move {
+        if let Err(e) = p2p::p2p_server(bus, config, mempool).await {
+            error!("RPC server failed: {:?}", e);
+        }
     });
 }
 
@@ -65,13 +74,11 @@ async fn main() -> Result<()> {
 
     start_node_state(SharedMessageBus::new_handle(&bus), Arc::clone(&config));
     start_consensus(SharedMessageBus::new_handle(&bus), Arc::clone(&config));
-
-    let p2p_config = Arc::clone(&config);
-    tokio::spawn(async move {
-        if let Err(e) = p2p::p2p_server(p2p_config, mempool_message_sender).await {
-            error!("RPC server failed: {:?}", e);
-        }
-    });
+    start_peer(
+        SharedMessageBus::new_handle(&bus),
+        Arc::clone(&config),
+        mempool_message_sender,
+    );
 
     // Start REST server
     rest::rest_server(config)

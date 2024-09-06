@@ -9,6 +9,10 @@ pub struct Storage {
     pub interval: u64,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct P2pConf {
+    pub ping_interval: u64,
+}
 pub type SharedConf = Arc<Conf>;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -18,6 +22,7 @@ pub struct Conf {
     pub peers: Vec<String>,
     pub storage: Storage,
     rest: String,
+    pub p2p: P2pConf,
 }
 
 impl Conf {

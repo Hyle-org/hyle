@@ -1,4 +1,10 @@
+use std::time::Duration;
+use std::time::SystemTime;
+
 use anyhow::{anyhow, bail, Context, Error, Result};
+use tokio::select;
+use tokio::sync::mpsc;
+use tokio::time::sleep;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt, Interest},
     net::TcpStream,
@@ -7,20 +13,45 @@ use tokio::{
 use tracing::{debug, info, trace, warn};
 
 use super::network::{MempoolMessage, NetMessage, Version};
+use crate::bus::SharedMessageBus;
+use crate::utils::conf::SharedConf;
 use crate::utils::logger::LogMe;
 
-#[derive(Debug)]
+//#[derive(Debug)]
 pub struct Peer {
     stream: TcpStream,
+    bus: SharedMessageBus,
     mempool: UnboundedSender<MempoolMessage>,
+    last_pong: SystemTime,
+    conf: SharedConf,
+
+    // peer internal channel
+    internal_cmd_tx: mpsc::Sender<Cmd>,
+    internal_cmd_rx: mpsc::Receiver<Cmd>,
+}
+
+enum Cmd {
+    Ping,
 }
 
 impl Peer {
     pub async fn new(
         stream: TcpStream,
+        bus: SharedMessageBus,
         mempool: UnboundedSender<MempoolMessage>,
+        conf: SharedConf,
     ) -> Result<Self, Error> {
-        Ok(Peer { stream, mempool })
+        let (cmd_tx, cmd_rx) = mpsc::channel::<Cmd>(100);
+
+        Ok(Peer {
+            stream,
+            bus,
+            mempool,
+            last_pong: SystemTime::now(),
+            conf,
+            internal_cmd_tx: cmd_tx,
+            internal_cmd_rx: cmd_rx,
+        })
     }
 
     async fn handle_net_message(&mut self, msg: NetMessage) -> Result<(), Error> {
@@ -28,11 +59,18 @@ impl Peer {
         match msg {
             NetMessage::Version(v) => {
                 info!("Got peer version {:?}", v);
-                self.send_message(NetMessage::Verack).await
+                self.send_net_message(NetMessage::Verack).await
             }
-            NetMessage::Verack => Ok(()),
-            NetMessage::Ping => todo!(),
-            NetMessage::Pong => todo!(),
+            NetMessage::Verack => self.ping_pong(),
+            NetMessage::Ping => {
+                debug!("Got ping");
+                self.send_net_message(NetMessage::Pong).await
+            }
+            NetMessage::Pong => {
+                debug!("pong");
+                self.last_pong = SystemTime::now();
+                Ok(())
+            }
             NetMessage::MempoolMessage(mempool_msg) => {
                 debug!("Received new mempool message {:?}", mempool_msg);
                 self.mempool
@@ -49,28 +87,82 @@ impl Peer {
         }
     }
 
+    async fn read_stream(stream: &mut TcpStream) -> Result<NetMessage, Error> {
+        let ready = stream
+            .ready(Interest::READABLE | Interest::WRITABLE | Interest::ERROR)
+            .await
+            .log_error("Reading from peer")?;
+
+        if ready.is_error() {
+            bail!("Stream not ready")
+        }
+
+        match stream.read_u32().await {
+            Ok(msg_size) => Self::read_net_message_from_buffer(stream, msg_size).await,
+            Err(e) => Err(anyhow!(e)),
+        }
+    }
+
+    fn ping_pong(&self) -> Result<(), Error> {
+        let tx = self.internal_cmd_tx.clone();
+        let interval = self.conf.p2p.ping_interval;
+        info!("Starting ping pong");
+
+        tokio::spawn(async move {
+            loop {
+                sleep(Duration::from_secs(interval)).await;
+                tx.send(Cmd::Ping).await.ok();
+            }
+        });
+
+        Ok(())
+    }
+
     pub async fn start(&mut self) -> Result<(), Error> {
         loop {
-            let ready = self
-                .stream
-                .ready(Interest::READABLE | Interest::WRITABLE | Interest::ERROR)
-                .await
-                .log_error("Reading from peer")?;
+            let wait_tcp = Self::read_stream(&mut self.stream); //FIXME: make read_stream cancel safe !
+            let wait_cmd = self.internal_cmd_rx.recv();
 
-            if ready.is_error() {
-                bail!("Stream not ready")
-            }
+            // select! waits on multiple concurrent branches, returning when the **first** branch
+            // completes, cancelling the remaining branches.
+            select! {
+                 res = wait_tcp => {
+                    match res {
+                        Ok(message) => match self.handle_net_message(message).await {
+                            Ok(_) => continue,
+                            Err(e) => {
+                                warn!("Error while handling net message: {}", e);
+                            }
+                        },
+                        Err(e) => {
+                            trace!("err: {:?}", e);
+                            return Err(e);
+                        }
+                    }
+                }
+                res = wait_cmd => {
+                    if let Some(cmd) = res {
+                        let cmd_res = match cmd {
+                            Cmd::Ping => {
+                                if let Ok(d) = SystemTime::now().duration_since(self.last_pong) {
+                                    if d > Duration::from_secs(self.conf.p2p.ping_interval * 5) {
+                                        warn!("Peer did not respond to last 5 pings. Disconnecting.");
+                                        return Ok(())
+                                    }
+                                }
+                                debug!("ping");
+                                self.send_net_message(NetMessage::Ping).await
+                            }
+                        };
 
-            let res = match self.stream.read_u32().await {
-                Ok(msg_size) => self.read_next_message(msg_size).await,
-                Err(e) => Err(anyhow!(e)),
-            };
+                        match cmd_res {
+                             Ok(_) => (),
+                             Err(e) => {
+                                warn!("Error while handling cmd: {}", e);
+                            },
+                          }
+                    }
 
-            match res {
-                Ok(_) => continue,
-                Err(e) => {
-                    trace!("err: {:?}", e);
-                    return Err(e);
                 }
             }
         }
@@ -87,11 +179,11 @@ impl Peer {
     }
 
     pub async fn handshake(&mut self) -> Result<(), Error> {
-        self.send_message(NetMessage::Version(Version { id: 1 }))
+        self.send_net_message(NetMessage::Version(Version { id: 1 }))
             .await
     }
 
-    async fn send_message(&mut self, msg: NetMessage) -> Result<(), Error> {
+    async fn send_net_message(&mut self, msg: NetMessage) -> Result<(), Error> {
         let binary = msg.to_binary();
         trace!("SEND {} bytes: {:?}", binary.len(), binary);
         self.stream
@@ -105,7 +197,10 @@ impl Peer {
         Ok(())
     }
 
-    async fn read_next_message(&mut self, msg_size: u32) -> Result<(), Error> {
+    async fn read_net_message_from_buffer(
+        stream: &mut TcpStream,
+        msg_size: u32,
+    ) -> Result<NetMessage, Error> {
         if msg_size == 0 {
             bail!("Connection closed by remote (1)")
         }
@@ -114,24 +209,16 @@ impl Peer {
         let mut buf = vec![0; msg_size as usize];
         trace!("buf before: {:?}", buf);
 
-        let data = self.stream.read_exact(&mut buf).await?;
+        let data = stream.read_exact(&mut buf).await?;
         if data == 0 {
             bail!("Connection closed by remote (2)")
         }
 
         trace!("got buff {:?}", buf);
-        let message = Self::handle_read(&buf).await;
-
-        match message {
-            Ok(msg) => self.handle_net_message(msg).await,
-            Err(e) => {
-                warn!("Error while handling net message: {}", e);
-                Ok(())
-            }
-        }
+        Self::parse_net_message(&buf).await
     }
 
-    async fn handle_read(buf: &[u8]) -> Result<NetMessage, Error> {
+    async fn parse_net_message(buf: &[u8]) -> Result<NetMessage, Error> {
         bincode::deserialize::<NetMessage>(buf).map_err(|_| anyhow!("Could not decode NetMessage"))
     }
 }
