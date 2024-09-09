@@ -85,10 +85,10 @@ impl Mempool {
                             if buf.len() < n as usize {
                                 buf.resize(n as usize, 0);
                             }
-                            if let Ok(_) = s
-                                .read_exact(buf.as_mut_slice())
+                            if s.read_exact(buf.as_mut_slice())
                                 .await
                                 .log_error("reading message")
+                                .is_ok()
                             {
                                 let str = String::from_utf8_lossy(&buf);
                                 _ = sender

@@ -15,7 +15,7 @@ pub struct Transaction {
     pub inner: String, // FIXME: to remove
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum TransactionData {
     Blob(BlobTransaction),
     Proof(ProofTransaction),
@@ -28,7 +28,7 @@ impl Default for TransactionData {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Default)]
+#[derive(Debug, Serialize, Deserialize, Default, Clone)]
 pub struct ProofTransaction {
     tx_hash: Vec<u8>,
     contract_name: String,
@@ -36,7 +36,7 @@ pub struct ProofTransaction {
     proof: Vec<u8>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Default)]
+#[derive(Debug, Serialize, Deserialize, Default, Clone)]
 pub struct RegisterContractTransaction {
     owner: String,
     verifier: String,
@@ -45,13 +45,13 @@ pub struct RegisterContractTransaction {
     contract_name: String,
 }
 
-#[derive(Debug, Serialize, Deserialize, Default)]
+#[derive(Debug, Serialize, Deserialize, Default, Clone)]
 pub struct BlobTransaction {
     identity: String,
     blobs: Vec<Blob>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Default)]
+#[derive(Debug, Serialize, Deserialize, Default, Clone)]
 pub struct Blob {
     data: Vec<u8>,
 }

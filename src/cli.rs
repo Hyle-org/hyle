@@ -9,7 +9,7 @@ pub struct Args {
     #[arg(short, long)]
     pub id: usize,
 
-    #[arg(long, default_value = "config.ron")]
+    #[arg(long, default_value = "master.ron")]
     pub config_file: String,
 
     #[arg(long, action = clap::ArgAction::SetTrue)]

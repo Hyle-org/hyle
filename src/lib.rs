@@ -1,7 +1,7 @@
 pub mod cli;
 pub mod client;
 pub mod conf;
-pub mod ctx;
+pub mod consensus;
 pub mod logger;
 pub mod mempool;
 pub mod model;

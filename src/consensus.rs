@@ -1,27 +1,32 @@
 use std::fs;
+use std::time::Duration;
 use tokio::sync::mpsc::{Receiver, UnboundedSender};
 
+use serde::Deserialize;
+use serde::Serialize;
+use tokio::sync::mpsc::Sender;
+use tokio::time::sleep;
+use tracing::info;
+
+use crate::conf::Conf;
 use crate::logger::LogMe;
 use crate::model::get_current_timestamp;
 use crate::model::{Block, Hashable, Transaction};
-use serde::Deserialize;
-use serde::Serialize;
-use tracing::info;
 
 #[derive(Debug)]
-pub enum CtxCommand {
+pub enum ConsensusCommand {
     AddTransaction(Transaction),
     SaveOnDisk,
     GenerateNewBlock,
 }
 
 #[derive(Serialize, Deserialize)]
-pub struct Ctx {
+pub struct Consensus {
     mempool: Vec<Transaction>,
     blocks: Vec<Block>,
 }
 
-impl Ctx {
+impl Consensus {
     fn add_block(&mut self, block: Block) {
         self.blocks.push(block);
     }
@@ -88,21 +93,49 @@ impl Ctx {
 
     pub async fn start(
         &mut self,
-        mut rx: Receiver<CtxCommand>,
+        tx: Sender<ConsensusCommand>,
+        mut rx: Receiver<ConsensusCommand>,
         sender: UnboundedSender<Transaction>,
+        config: &Conf,
     ) -> anyhow::Result<()> {
+        let interval = config.storage.interval;
+
+        if config.peers.is_empty() {
+            info!(
+                "No peers configured, starting as master generating blocks every {} seconds",
+                interval
+            );
+
+            tokio::spawn(async move {
+                loop {
+                    sleep(Duration::from_secs(interval)).await;
+
+                    tx.send(ConsensusCommand::GenerateNewBlock)
+                        .await
+                        .expect("Cannot send message over channel");
+                    tx.send(ConsensusCommand::SaveOnDisk)
+                        .await
+                        .expect("Cannot send message over channel");
+                }
+            });
+        }
+
         while let Some(msg) = rx.recv().await {
             match msg {
-                CtxCommand::AddTransaction(tx) => self.handle_tx(tx, &sender).await,
-                CtxCommand::GenerateNewBlock => self.new_block(),
-                CtxCommand::SaveOnDisk => _ = self.save_on_disk(),
+                // TODO: when the bus is ready, this Event AddTransaction should arrive directly
+                // from peer to mempool whithout passing through Consensus
+                ConsensusCommand::AddTransaction(tx) => self.handle_tx(tx, &sender).await,
+                ConsensusCommand::GenerateNewBlock => self.new_block(),
+                ConsensusCommand::SaveOnDisk => {
+                    let _ = self.save_on_disk();
+                }
             }
         }
         Ok(())
     }
 }
 
-impl std::default::Default for Ctx {
+impl std::default::Default for Consensus {
     fn default() -> Self {
         Self {
             mempool: vec![],

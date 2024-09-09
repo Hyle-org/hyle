@@ -1,13 +1,32 @@
 use anyhow::{Context, Result};
 use clap::Parser;
+use hyle::mempool::Mempool;
+use hyle::model::Transaction;
+use tokio::sync::mpsc::{self, Receiver, Sender, UnboundedSender};
+use tracing::warn;
 use tracing::{error, info};
 
 use hyle::cli;
 use hyle::client;
-use hyle::conf;
-use hyle::mempool::Mempool;
-use hyle::model::Transaction;
+use hyle::conf::{self, Conf};
+use hyle::consensus::{Consensus, ConsensusCommand};
 use hyle::server;
+
+fn start_consensus(
+    tx: Sender<ConsensusCommand>,
+    rx: Receiver<ConsensusCommand>,
+    sender: UnboundedSender<Transaction>,
+    config: Conf,
+) {
+    tokio::spawn(async move {
+        let mut consensus = Consensus::load_from_disk().unwrap_or_else(|_| {
+            warn!("Failed to load consensus state from disk, using a default one");
+            Consensus::default()
+        });
+
+        consensus.start(tx, rx, sender, &config).await
+    });
+}
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -35,14 +54,18 @@ async fn main() -> Result<()> {
         _ = mp.start(receiver).await;
     });
 
+    let (consensus_tx, rx) = mpsc::channel::<ConsensusCommand>(100);
+
+    start_consensus(consensus_tx.clone(), rx, sender, config.clone());
+
     if args.no_rest_server {
         info!("not starting rest server");
-        if let Err(e) = server::p2p_server(&rpc_addr, &config, sender).await {
+        if let Err(e) = server::p2p_server(&rpc_addr, &config, consensus_tx).await {
             error!("RPC server failed: {:?}", e);
         }
     } else {
         tokio::spawn(async move {
-            if let Err(e) = server::p2p_server(&rpc_addr, &config, sender).await {
+            if let Err(e) = server::p2p_server(&rpc_addr, &config, consensus_tx).await {
                 error!("RPC server failed: {:?}", e);
             }
         });
