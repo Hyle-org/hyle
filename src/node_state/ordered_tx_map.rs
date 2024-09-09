@@ -35,4 +35,13 @@ impl OrderedTxMap {
 
         self.map.insert(tx.hash.clone(), tx);
     }
+
+    pub fn is_next_unsettled_tx(&self, tx: &TxHash, contract: &ContractName) -> bool {
+        if let Some(order) = self.tx_order.get(contract) {
+            if let Some(first) = order.first() {
+                return first.eq(tx);
+            }
+        }
+        false
+    }
 }
