@@ -1,16 +1,17 @@
 use std::fs;
 use std::time::Duration;
+use tokio::sync::mpsc::{Receiver, UnboundedSender};
 
 use serde::Deserialize;
 use serde::Serialize;
-use tokio::sync::mpsc::{Receiver, Sender};
+use tokio::sync::mpsc::Sender;
 use tokio::time::sleep;
 use tracing::info;
 
 use crate::conf::Conf;
 use crate::logger::LogMe;
 use crate::model::get_current_timestamp;
-use crate::model::{Block, Transaction};
+use crate::model::{Block, Hashable, Transaction};
 
 #[derive(Debug)]
 pub enum ConsensusCommand {
@@ -30,9 +31,28 @@ impl Consensus {
         self.blocks.push(block);
     }
 
-    fn handle_tx(&mut self, tx: Transaction) {
+    async fn handle_tx(&mut self, tx: Transaction, sender: &UnboundedSender<Transaction>) {
         info!("New tx: {:?}", tx);
+        _ = sender
+            .send(tx.clone())
+            .log_error("broadcasting tx to mempool nodes");
         self.mempool.push(tx);
+
+        let last_block = self.blocks.last().unwrap();
+        let last = last_block.timestamp;
+
+        if get_current_timestamp() - last > 5 {
+            let mempool = self.mempool.drain(0..).collect();
+            let b = Block {
+                parent_hash: last_block.hash(),
+                height: last_block.height + 1,
+                timestamp: get_current_timestamp(),
+                txs: mempool,
+            };
+            info!("parent block hash: {}", b.parent_hash);
+            info!("New block {:?}", &b);
+            self.add_block(b);
+        }
     }
 
     fn new_block(&mut self) {
@@ -40,7 +60,7 @@ impl Consensus {
 
         let mempool = self.mempool.drain(0..).collect();
         self.add_block(Block {
-            parent_hash: last_block.hash_block(),
+            parent_hash: last_block.hash(),
             height: last_block.height + 1,
             timestamp: get_current_timestamp(),
             txs: mempool,
@@ -75,6 +95,7 @@ impl Consensus {
         &mut self,
         tx: Sender<ConsensusCommand>,
         mut rx: Receiver<ConsensusCommand>,
+        sender: UnboundedSender<Transaction>,
         config: &Conf,
     ) -> anyhow::Result<()> {
         let interval = config.storage.interval;
@@ -101,7 +122,7 @@ impl Consensus {
 
         while let Some(msg) = rx.recv().await {
             match msg {
-                ConsensusCommand::AddTransaction(tx) => self.handle_tx(tx),
+                ConsensusCommand::AddTransaction(tx) => self.handle_tx(tx, &sender).await,
                 ConsensusCommand::GenerateNewBlock => self.new_block(),
                 ConsensusCommand::SaveOnDisk => {
                     let _ = self.save_on_disk();
