@@ -1,4 +1,3 @@
-pub mod cli;
 pub mod consensus;
 pub mod mempool;
 pub mod model;

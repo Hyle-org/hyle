@@ -6,10 +6,10 @@ use tokio::sync::mpsc::{self, Receiver, Sender, UnboundedSender};
 use tracing::warn;
 use tracing::{error, info};
 
-use hyle::cli;
 use hyle::consensus::{Consensus, ConsensusCommand};
 use hyle::p2p;
 use hyle::rest;
+use hyle::utils::cli;
 use hyle::utils::conf::{self, Conf};
 
 fn start_consensus(
