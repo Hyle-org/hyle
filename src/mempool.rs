@@ -4,17 +4,19 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use tokio::{
     select,
-    sync::mpsc::{UnboundedReceiver, UnboundedSender},
+    sync::{broadcast::Sender, mpsc::UnboundedReceiver},
 };
 use tracing::{info, warn};
 
-use crate::{model::Transaction, p2p::network::MempoolMessage, utils::logger::LogMe};
+use crate::{
+    bus::MessageBus, model::Transaction, p2p::network::MempoolMessage, utils::logger::LogMe,
+};
 
 #[derive(Debug)]
 struct Batch(String, Vec<Transaction>);
 
-#[derive(Debug)]
 pub struct Mempool {
+    bus: MessageBus,
     // txs accumulated, not yet transmitted to the consensus
     pending_txs: Vec<Transaction>,
     // txs batched under a req_id, transmitted to the consensus to be packed in a block
@@ -23,20 +25,21 @@ pub struct Mempool {
     committed_batches: Vec<Batch>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum MempoolCommand {
     CreatePendingBatch { id: String },
     CommitBatches { ids: Vec<String> },
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum MempoolResponse {
     PendingBatch { id: String, txs: Vec<Transaction> },
 }
 
 impl Mempool {
-    pub fn new() -> Mempool {
+    pub fn new(bus: MessageBus) -> Mempool {
         Mempool {
+            bus,
             pending_txs: vec![],
             pending_batches: HashMap::new(),
             committed_batches: vec![],
@@ -47,9 +50,9 @@ impl Mempool {
     pub async fn start(
         &mut self,
         mut message_receiver: UnboundedReceiver<MempoolMessage>,
-        mut commands_receiver: UnboundedReceiver<MempoolCommand>,
-        response_sender: UnboundedSender<MempoolResponse>,
     ) -> Result<()> {
+        let mut command_receiver = self.bus.receiver::<MempoolCommand>().await;
+        let response_sender = self.bus.sender::<MempoolResponse>().await;
         loop {
             select! {
                 Some(msg) = message_receiver.recv() => {
@@ -60,7 +63,7 @@ impl Mempool {
                     }
                 }
 
-                Some(msg) = commands_receiver.recv() => {
+                Ok(msg) = command_receiver.recv() => {
                     _ = self.handle_command(msg, &response_sender);
                 }
             }
@@ -70,7 +73,7 @@ impl Mempool {
     fn handle_command(
         &mut self,
         command: MempoolCommand,
-        response_sender: &UnboundedSender<MempoolResponse>,
+        response_sender: &Sender<MempoolResponse>,
     ) -> Result<()> {
         match command {
             MempoolCommand::CreatePendingBatch { id } => {

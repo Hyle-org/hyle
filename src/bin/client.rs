@@ -7,7 +7,7 @@ use tokio::time::Duration;
 use clap::Parser;
 use hyle::model::{Transaction, TransactionData};
 use hyle::p2p::network::NetMessage;
-use tracing::{debug, info};
+use tracing::info;
 
 use hyle::utils::conf;
 

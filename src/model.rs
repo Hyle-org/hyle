@@ -73,6 +73,18 @@ pub struct StateDigest(pub Vec<u8>);
 #[derive(Debug, Serialize, Deserialize, Default, Clone)]
 pub struct BlobData(pub Vec<u8>);
 
+use crate::{
+    consensus::ConsensusCommand,
+    mempool::{MempoolCommand, MempoolResponse},
+};
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub enum BusMessage {
+    MempoolCommand(MempoolCommand),
+    MempoolResponse(MempoolResponse),
+    ConsensusCommand(ConsensusCommand),
+}
+
 #[derive(Debug, Serialize, Deserialize, Default, Clone)]
 pub struct Transaction {
     pub version: u32,

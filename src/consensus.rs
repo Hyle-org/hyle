@@ -2,14 +2,13 @@ use std::collections::HashMap;
 use std::fs;
 use std::time::Duration;
 use tokio::select;
-use tokio::sync::mpsc::{Receiver, UnboundedReceiver, UnboundedSender};
 
 use serde::Deserialize;
 use serde::Serialize;
-use tokio::sync::mpsc::Sender;
 use tokio::time::sleep;
 use tracing::info;
 
+use crate::bus::MessageBus;
 use crate::mempool::MempoolCommand;
 use crate::mempool::MempoolResponse;
 use crate::model::get_current_timestamp;
@@ -17,7 +16,7 @@ use crate::model::{Block, Hashable, Transaction};
 use crate::utils::conf::Conf;
 use crate::utils::logger::LogMe;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub enum ConsensusCommand {
     SaveOnDisk,
     GenerateNewBlock,
@@ -89,15 +88,13 @@ impl Consensus {
         Ok(ctx)
     }
 
-    pub async fn start(
-        &mut self,
-        consensus_command_sender: Sender<ConsensusCommand>,
-        mut consensus_command_receiver: Receiver<ConsensusCommand>,
-        mempool_command_sender: UnboundedSender<MempoolCommand>,
-        mut mempool_response_receiver: UnboundedReceiver<MempoolResponse>,
-        config: &Conf,
-    ) -> anyhow::Result<()> {
+    pub async fn start(&mut self, bus: MessageBus, config: &Conf) -> anyhow::Result<()> {
         let interval = config.storage.interval;
+
+        let consensus_command_sender = bus.sender().await;
+        let mut consensus_command_receiver = bus.receiver().await;
+        let mempool_command_sender = bus.sender().await;
+        let mut mempool_response_receiver = bus.receiver().await;
 
         let is_master = config.peers.is_empty();
 
@@ -111,13 +108,11 @@ impl Consensus {
                 loop {
                     sleep(Duration::from_secs(interval)).await;
 
-                    consensus_command_sender
+                    _ = consensus_command_sender
                         .send(ConsensusCommand::GenerateNewBlock)
-                        .await
                         .log_error("Cannot send message over channel");
-                    consensus_command_sender
+                    _ = consensus_command_sender
                         .send(ConsensusCommand::SaveOnDisk)
-                        .await
                         .log_error("Cannot send message over channel");
                 }
             });
@@ -127,23 +122,23 @@ impl Consensus {
 
         loop {
             select! {
-                Some(msg) = consensus_command_receiver.recv() => {
+                Ok(msg) = consensus_command_receiver.recv() => {
                     match msg {
                         ConsensusCommand::GenerateNewBlock => {
                             batch_id += 1;
-                            mempool_command_sender.send(MempoolCommand::CreatePendingBatch { id: batch_id.to_string() });
-                            self.new_block()
+                            _ = mempool_command_sender.send(MempoolCommand::CreatePendingBatch { id: batch_id.to_string() }).log_error("Creating a new block");
                         },
                         ConsensusCommand::SaveOnDisk => {
                             let _ = self.save_on_disk();
                         }
                     }
                 }
-                Some(mempool_response) = mempool_response_receiver.recv() => {
+                Ok(mempool_response) = mempool_response_receiver.recv() => {
                     match mempool_response {
                         MempoolResponse::PendingBatch { id, txs } => {
                             info!("Received pending batch {} with {} txs", &id, &txs.len());
                             self.tx_batches.insert(id, txs);
+                            self.new_block()
                         }
                     }
                 }
