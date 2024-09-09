@@ -9,7 +9,6 @@ use tracing::{error, info};
 use hyle::consensus::{Consensus, ConsensusCommand};
 use hyle::p2p;
 use hyle::rest;
-use hyle::utils::cli;
 use hyle::utils::conf::{self, Conf};
 
 fn start_consensus(
@@ -28,9 +27,25 @@ fn start_consensus(
     });
 }
 
+#[derive(Parser, Debug)]
+#[command(version, about, long_about = None)]
+pub struct Args {
+    #[arg(short, long, action = clap::ArgAction::SetTrue)]
+    pub client: Option<bool>,
+
+    #[arg(short, long)]
+    pub id: usize,
+
+    #[arg(long, default_value = "master.ron")]
+    pub config_file: String,
+
+    #[arg(long, action = clap::ArgAction::SetTrue)]
+    pub no_rest_server: bool,
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
-    let args = cli::Args::parse();
+    let args = Args::parse();
 
     // install global collector configured based on RUST_LOG env var.
     tracing_subscriber::fmt::init();
