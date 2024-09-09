@@ -122,6 +122,8 @@ impl Consensus {
 
         while let Some(msg) = rx.recv().await {
             match msg {
+                // TODO: when the bus is ready, this Event AddTransaction should arrive directly
+                // from peer to mempool whithout passing through Consensus
                 ConsensusCommand::AddTransaction(tx) => self.handle_tx(tx, &sender).await,
                 ConsensusCommand::GenerateNewBlock => self.new_block(),
                 ConsensusCommand::SaveOnDisk => {
