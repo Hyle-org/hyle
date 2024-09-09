@@ -1,4 +1,3 @@
-use crate::logger::LogMe;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use tokio::{
@@ -9,7 +8,7 @@ use tokio::{
 };
 use tracing::{error, info};
 
-use crate::model::Transaction;
+use crate::{model::Transaction, utils::logger::LogMe};
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Peer(usize, String);

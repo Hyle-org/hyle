@@ -8,10 +8,10 @@ use tokio::sync::mpsc::Sender;
 use tokio::time::sleep;
 use tracing::info;
 
-use crate::conf::Conf;
-use crate::logger::LogMe;
 use crate::model::get_current_timestamp;
 use crate::model::{Block, Hashable, Transaction};
+use crate::utils::conf::Conf;
+use crate::utils::logger::LogMe;
 
 #[derive(Debug)]
 pub enum ConsensusCommand {

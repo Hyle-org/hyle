@@ -2,6 +2,7 @@
 name = "hyle"
 version = "0.1.0"
 edition = "2021"
+default-run = "node"
 
 [dependencies]
 config = "0.14.0"

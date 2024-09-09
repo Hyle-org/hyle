@@ -7,10 +7,10 @@ use tracing::warn;
 use tracing::{error, info};
 
 use hyle::cli;
-use hyle::client;
-use hyle::conf::{self, Conf};
 use hyle::consensus::{Consensus, ConsensusCommand};
-use hyle::server;
+use hyle::p2p;
+use hyle::rest;
+use hyle::utils::conf::{self, Conf};
 
 fn start_consensus(
     tx: Sender<ConsensusCommand>,
@@ -41,11 +41,6 @@ async fn main() -> Result<()> {
     let rpc_addr = config.addr();
     let rest_addr = config.rest_addr().to_string();
 
-    if args.client.unwrap_or(false) {
-        info!("client mode");
-        client::client(&rpc_addr).await?;
-    }
-
     info!("server mode");
 
     let mut mp = Mempool::new(args.id, config.mempool_peers.clone());
@@ -60,17 +55,17 @@ async fn main() -> Result<()> {
 
     if args.no_rest_server {
         info!("not starting rest server");
-        if let Err(e) = server::p2p_server(&rpc_addr, &config, consensus_tx).await {
+        if let Err(e) = p2p::p2p_server(&rpc_addr, &config, consensus_tx).await {
             error!("RPC server failed: {:?}", e);
         }
     } else {
         tokio::spawn(async move {
-            if let Err(e) = server::p2p_server(&rpc_addr, &config, consensus_tx).await {
+            if let Err(e) = p2p::p2p_server(&rpc_addr, &config, consensus_tx).await {
                 error!("RPC server failed: {:?}", e);
             }
         });
         // Start REST server
-        let _ = server::rest_server(&rest_addr)
+        rest::rest_server(&rest_addr)
             .await
             .context("Starting REST server")?;
     }

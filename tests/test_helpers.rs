@@ -8,13 +8,9 @@ pub struct TestNode {
 impl TestNode {
     // Create a new process that spins up a node or a client
     pub fn new(config_file: &str, is_client: bool) -> Self {
-        let mut cargo_bin = Command::cargo_bin("hyle").unwrap();
+        let mut cargo_bin = Command::cargo_bin(if is_client { "client" } else { "node" }).unwrap();
         let cmd = cargo_bin.arg("--config-file").arg(config_file);
         cmd.arg("--id").arg("0");
-
-        if is_client {
-            cmd.arg("--client");
-        }
 
         let child = cmd.spawn().expect("Failed to start node");
         TestNode { child }
