@@ -1,5 +1,3 @@
-use crate::mempool::Peer;
-
 use anyhow::Result;
 use config::{Config, ConfigError, Environment, File};
 use serde::{Deserialize, Serialize};
@@ -14,7 +12,6 @@ pub struct Conf {
     port: u16,
     host: String,
     pub peers: Vec<String>,
-    pub mempool_peers: Vec<Peer>,
     pub storage: Storage,
     rest: String,
 }

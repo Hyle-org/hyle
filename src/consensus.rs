@@ -10,6 +10,7 @@ use tracing::info;
 
 use crate::model::get_current_timestamp;
 use crate::model::{Block, Hashable, Transaction};
+use crate::p2p::network::MempoolMessage;
 use crate::utils::conf::Conf;
 use crate::utils::logger::LogMe;
 
@@ -31,10 +32,10 @@ impl Consensus {
         self.blocks.push(block);
     }
 
-    async fn handle_tx(&mut self, tx: Transaction, sender: &UnboundedSender<Transaction>) {
+    async fn handle_tx(&mut self, tx: Transaction, sender: &UnboundedSender<MempoolMessage>) {
         info!("New tx: {:?}", tx);
         _ = sender
-            .send(tx.clone())
+            .send(MempoolMessage::NewTx(tx.clone()))
             .log_error("broadcasting tx to mempool nodes");
         self.mempool.push(tx);
 
@@ -95,7 +96,7 @@ impl Consensus {
         &mut self,
         tx: Sender<ConsensusCommand>,
         mut rx: Receiver<ConsensusCommand>,
-        sender: UnboundedSender<Transaction>,
+        sender: UnboundedSender<MempoolMessage>,
         config: &Conf,
     ) -> anyhow::Result<()> {
         let interval = config.storage.interval;

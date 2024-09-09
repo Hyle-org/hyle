@@ -4,10 +4,6 @@ Config(
     peers: [
         "127.0.0.1:1234",
     ],
-    mempool_peers: [
-        Peer(0, "127.0.0.1:4123"),
-        Peer(1, "127.0.0.1:5123"),
-    ],
     storage: Storage(
       interval: 10
     ),
