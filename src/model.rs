@@ -68,6 +68,7 @@ pub struct BlobTransaction {
 
 #[derive(Debug, Serialize, Deserialize, Default, Clone)]
 pub struct Blob {
+    pub contract_name: ContractName,
     pub data: Vec<u8>,
 }
 

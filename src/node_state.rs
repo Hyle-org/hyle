@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use anyhow::{bail, Error, Result};
+use ordered_tx_map::OrderedTxMap;
 
 use crate::model::{BlobTransaction, ContractName, ProofTransaction, Transaction, TxHash};
 use model::{
@@ -8,13 +9,13 @@ use model::{
 };
 
 mod model;
+mod ordered_tx_map;
 
 #[derive(Default, Debug, Clone)]
 pub struct NodeState {
-    pub timeouts: Timeouts,
-    pub contracts: HashMap<ContractName, Contract>,
-    pub transactions: HashMap<TxHash, UnsettledTransaction>,
-    pub tx_order: HashMap<ContractName, Vec<TxHash>>,
+    _timeouts: Timeouts,
+    _contracts: HashMap<ContractName, Contract>,
+    transactions: OrderedTxMap,
 }
 
 impl NodeState {
@@ -30,8 +31,29 @@ impl NodeState {
         res.map(|_| new_state)
     }
 
-    pub fn handle_blob_tx(&mut self, _tx: BlobTransaction) -> Result<(), Error> {
-        todo!()
+    pub fn handle_blob_tx(&mut self, tx: BlobTransaction) -> Result<(), Error> {
+        let (tx_hash, blobs_hash) = hash_transaction(&tx);
+
+        let blobs: Vec<UnsettledBlobDetail> = tx
+            .blobs
+            .iter()
+            .map(|blob| UnsettledBlobDetail {
+                contract_name: blob.contract_name.clone(),
+                verification_status: VerificationStatus::WaitingProof,
+                hyle_output: None,
+            })
+            .collect();
+
+        self.transactions.add(UnsettledTransaction {
+            identity: tx.identity,
+            hash: tx_hash.clone(),
+            blobs_hash,
+            blobs,
+        });
+
+        // Update timeouts
+
+        Ok(())
     }
 
     pub fn handle_proof(&mut self, tx: ProofTransaction) -> Result<(), Error> {
@@ -106,4 +128,9 @@ impl NodeState {
     fn settle_tx() -> Result<(), Error> {
         todo!()
     }
+}
+
+// TODO: move it somewhere else ?
+fn hash_transaction(_tx: &BlobTransaction) -> (TxHash, BlobsHash) {
+    todo!()
 }

@@ -32,7 +32,7 @@ pub struct UnsettledTransaction {
 
 #[derive(Default, Debug, Clone)]
 pub struct UnsettledBlobDetail {
-    pub contract_name: String,
+    pub contract_name: ContractName,
     pub verification_status: VerificationStatus,
     pub hyle_output: Option<HyleOutput>,
 }
