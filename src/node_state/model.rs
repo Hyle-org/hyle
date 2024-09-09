@@ -6,9 +6,6 @@ use crate::model::ContractName;
 use crate::model::Identity;
 use crate::model::TxHash;
 
-#[derive(Default, Debug, Clone, Eq, PartialEq)]
-pub struct BlobsHash(String);
-
 #[derive(Default, Debug, Clone)]
 pub struct Timeouts {
     by_block: HashMap<BlockHeight, Vec<TxHash>>,

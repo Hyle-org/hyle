@@ -18,10 +18,25 @@ pub struct BlockHeight(u64);
 pub struct BlobIndex(u32);
 
 #[derive(Default, Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
+pub struct BlobsHash(String);
+
+#[derive(Default, Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
 pub struct Identity(String);
 
 #[derive(Default, Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
+pub struct VerifierName(String);
+
+#[derive(Default, Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
 pub struct ContractName(String);
+
+#[derive(Default, Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
+pub struct OwnerName(String);
+
+#[derive(Default, Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
+pub struct ProgramId(String);
+
+#[derive(Default, Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
+pub struct ContractsStateHash(String);
 
 #[derive(Debug, Serialize, Deserialize, Default, Clone)]
 pub struct Transaction {
@@ -113,7 +128,43 @@ pub struct Block {
     pub parent_hash: BlockHash,
     pub height: usize,
     pub timestamp: u64,
-    pub txs: Vec<Transaction>,
+    pub txs: Vec<BlockTransaction>,
+    pub proofs: Vec<BlockProof>,
+    pub new_contracts: Vec<BlockContract>,
+    pub contracts_states: ContractsStateHash, // Merkle root hash of all contract state
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct BlockTransaction {
+    pub hash: TxHash,
+    pub blobs_contracts: Vec<ContractName>,
+    pub blobs_hash: BlobsHash,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct BlockContract {
+    pub name: ContractName,
+    pub state: Vec<u8>,
+    pub program_id: ProgramId,
+    pub verifier: VerifierName,
+    pub owner: OwnerName,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct BlockProof {
+    pub status: BlockProofStatus,
+    pub hash: TxHash,
+    pub blob_index: BlobIndex,
+    pub blobs_hash: BlobsHash,
+    pub new_state: Vec<u8>,
+}
+
+#[derive(Default, Serialize, Deserialize, Debug, Clone, Eq, PartialEq)]
+pub enum BlockProofStatus {
+    #[default]
+    Success,
+    InvalidProof,
+    ExecutionFailed,
 }
 
 impl Hashable for Block {

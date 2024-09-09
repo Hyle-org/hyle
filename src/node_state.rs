@@ -31,7 +31,7 @@ impl NodeState {
         res.map(|_| new_state)
     }
 
-    pub fn handle_blob_tx(&mut self, tx: BlobTransaction) -> Result<(), Error> {
+    fn handle_blob_tx(&mut self, tx: BlobTransaction) -> Result<(), Error> {
         let (tx_hash, blobs_hash) = hash_transaction(&tx);
 
         let blobs: Vec<UnsettledBlobDetail> = tx
@@ -56,7 +56,7 @@ impl NodeState {
         Ok(())
     }
 
-    pub fn handle_proof(&mut self, tx: ProofTransaction) -> Result<(), Error> {
+    fn handle_proof(&mut self, tx: ProofTransaction) -> Result<(), Error> {
         // Diverse verifications
         let unsettled_tx = match self.transactions.get(&tx.tx_hash) {
             Some(tx) => tx,
