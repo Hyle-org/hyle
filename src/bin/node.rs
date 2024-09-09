@@ -1,7 +1,6 @@
 use anyhow::{Context, Result};
 use clap::Parser;
 use hyle::mempool::Mempool;
-use hyle::model::Transaction;
 use hyle::p2p::network::MempoolMessage;
 use tokio::sync::mpsc::{self, Receiver, Sender, UnboundedSender};
 use tracing::warn;
@@ -34,14 +33,8 @@ pub struct Args {
     #[arg(short, long, action = clap::ArgAction::SetTrue)]
     pub client: Option<bool>,
 
-    #[arg(short, long)]
-    pub id: usize,
-
     #[arg(long, default_value = "master.ron")]
     pub config_file: String,
-
-    #[arg(long, action = clap::ArgAction::SetTrue)]
-    pub no_rest_server: bool,
 }
 
 #[tokio::main]
