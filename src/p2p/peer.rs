@@ -2,16 +2,19 @@ use anyhow::{anyhow, bail, Context, Error, Result};
 use tokio::io::AsyncReadExt;
 use tokio::io::AsyncWriteExt;
 use tokio::io::Interest;
+use tokio::sync::mpsc::UnboundedSender;
 use tokio::{net::TcpStream, sync::mpsc};
 use tracing::{debug, warn};
 use tracing::{info, trace};
 
+use super::network::MempoolMessage;
 use super::network::{NetMessage, Version};
 use crate::consensus::ConsensusCommand;
 
 #[derive(Debug)]
 pub struct Peer {
     stream: TcpStream,
+    mempool: UnboundedSender<MempoolMessage>,
     ctx: mpsc::Sender<ConsensusCommand>,
 }
 
@@ -19,8 +22,13 @@ impl Peer {
     pub async fn new(
         stream: TcpStream,
         ctx: mpsc::Sender<ConsensusCommand>,
+        mempool: UnboundedSender<MempoolMessage>,
     ) -> Result<Self, Error> {
-        Ok(Peer { stream, ctx })
+        Ok(Peer {
+            stream,
+            ctx,
+            mempool,
+        })
     }
 
     async fn handle_net_message(&mut self, msg: NetMessage) -> Result<(), Error> {
@@ -33,6 +41,12 @@ impl Peer {
             NetMessage::Verack => Ok(()),
             NetMessage::Ping => todo!(),
             NetMessage::Pong => todo!(),
+            NetMessage::MempoolMessage(mempool_msg) => {
+                debug!("Received new mempool message {:?}", mempool_msg);
+                self.mempool
+                    .send(mempool_msg)
+                    .context("Receiving mempool message")
+            }
             NetMessage::NewTransaction(tx) => {
                 debug!("Get new tx over p2p: {:?}", tx);
                 self.ctx

@@ -1,8 +1,9 @@
 use crate::consensus::ConsensusCommand;
 use crate::utils::conf::Conf;
 use anyhow::{Error, Result};
+use network::MempoolMessage;
 use tokio::net::TcpListener;
-use tokio::sync::mpsc;
+use tokio::sync::mpsc::{self, UnboundedSender};
 use tracing::info;
 
 pub mod network; // FIXME(Bertrand): NetMessage should be private
@@ -12,6 +13,7 @@ pub async fn p2p_server(
     addr: &str,
     config: &Conf,
     consensus: mpsc::Sender<ConsensusCommand>,
+    mempool: UnboundedSender<MempoolMessage>,
 ) -> Result<(), Error> {
     if config.peers.is_empty() {
         let listener = TcpListener::bind(addr).await?;
@@ -20,6 +22,7 @@ pub async fn p2p_server(
         loop {
             let (socket, _) = listener.accept().await?;
             let tx = consensus.clone();
+            let tx_mempool = mempool.clone();
 
             tokio::spawn(async move {
                 info!(
@@ -29,7 +32,8 @@ pub async fn p2p_server(
                         .map(|a| a.to_string())
                         .unwrap_or("no address".to_string())
                 );
-                let mut peer_server = peer::Peer::new(socket, tx.clone()).await?;
+                let mut peer_server =
+                    peer::Peer::new(socket, tx.clone(), tx_mempool.clone()).await?;
                 match peer_server.start().await {
                     Ok(_) => info!("Peer thread exited"),
                     Err(e) => info!("Peer thread exited: {}", e),
@@ -41,7 +45,7 @@ pub async fn p2p_server(
         let peer_address = config.peers.first().unwrap();
         info!("Connecting to peer {}", peer_address);
         let stream = peer::Peer::connect(peer_address).await?;
-        let mut peer = peer::Peer::new(stream, consensus.clone()).await?;
+        let mut peer = peer::Peer::new(stream, consensus.clone(), mempool.clone()).await?;
 
         peer.handshake().await?;
         peer.start().await

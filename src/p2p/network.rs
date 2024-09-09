@@ -14,6 +14,12 @@ pub enum NetMessage {
     Ping,
     Pong,
     NewTransaction(Transaction),
+    MempoolMessage(MempoolMessage),
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub enum MempoolMessage {
+    NewTx(Transaction),
 }
 
 impl NetMessage {

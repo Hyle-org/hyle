@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 use clap::Parser;
 use hyle::mempool::Mempool;
 use hyle::model::Transaction;
+use hyle::p2p::network::MempoolMessage;
 use tokio::sync::mpsc::{self, Receiver, Sender, UnboundedSender};
 use tracing::warn;
 use tracing::{error, info};
@@ -14,7 +15,7 @@ use hyle::utils::conf::{self, Conf};
 fn start_consensus(
     tx: Sender<ConsensusCommand>,
     rx: Receiver<ConsensusCommand>,
-    sender: UnboundedSender<Transaction>,
+    sender: UnboundedSender<MempoolMessage>,
     config: Conf,
 ) {
     tokio::spawn(async move {
@@ -58,31 +59,29 @@ async fn main() -> Result<()> {
 
     info!("server mode");
 
-    let mut mp = Mempool::new(args.id, config.mempool_peers.clone());
-    let (sender, receiver) = tokio::sync::mpsc::unbounded_channel::<Transaction>();
+    let mut mp = Mempool::new();
+    let (mempool_tx, mempool_rx) = tokio::sync::mpsc::unbounded_channel::<MempoolMessage>();
     tokio::spawn(async move {
-        _ = mp.start(receiver).await;
+        _ = mp.start(mempool_rx).await;
     });
 
-    let (consensus_tx, rx) = mpsc::channel::<ConsensusCommand>(100);
+    let (consensus_tx, consensus_rx) = mpsc::channel::<ConsensusCommand>(100);
 
-    start_consensus(consensus_tx.clone(), rx, sender, config.clone());
+    start_consensus(
+        consensus_tx.clone(),
+        consensus_rx,
+        mempool_tx.clone(),
+        config.clone(),
+    );
 
-    if args.no_rest_server {
-        info!("not starting rest server");
-        if let Err(e) = p2p::p2p_server(&rpc_addr, &config, consensus_tx).await {
+    tokio::spawn(async move {
+        if let Err(e) = p2p::p2p_server(&rpc_addr, &config, consensus_tx, mempool_tx).await {
             error!("RPC server failed: {:?}", e);
         }
-    } else {
-        tokio::spawn(async move {
-            if let Err(e) = p2p::p2p_server(&rpc_addr, &config, consensus_tx).await {
-                error!("RPC server failed: {:?}", e);
-            }
-        });
-        // Start REST server
-        rest::rest_server(&rest_addr)
-            .await
-            .context("Starting REST server")?;
-    }
+    });
+    // Start REST server
+    rest::rest_server(&rest_addr)
+        .await
+        .context("Starting REST server")?;
     Ok(())
 }
