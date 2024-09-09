@@ -8,6 +8,21 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+#[derive(Default, Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
+pub struct TxHash(String);
+
+#[derive(Default, Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
+pub struct BlockHeight(u64);
+
+#[derive(Default, Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
+pub struct BlobIndex(u32);
+
+#[derive(Default, Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
+pub struct Identity(String);
+
+#[derive(Default, Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
+pub struct ContractName(String);
+
 #[derive(Debug, Serialize, Deserialize, Default, Clone)]
 pub struct Transaction {
     pub version: u32,
@@ -30,30 +45,30 @@ impl Default for TransactionData {
 
 #[derive(Debug, Serialize, Deserialize, Default, Clone)]
 pub struct ProofTransaction {
-    tx_hash: Vec<u8>,
-    contract_name: String,
-    blob_index: u32,
-    proof: Vec<u8>,
+    pub tx_hash: TxHash,
+    pub contract_name: ContractName,
+    pub blob_index: BlobIndex,
+    pub proof: Vec<u8>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Default, Clone)]
 pub struct RegisterContractTransaction {
-    owner: String,
-    verifier: String,
-    program_id: Vec<u8>,
-    state_digest: Vec<u8>,
-    contract_name: String,
+    pub owner: String,
+    pub verifier: String,
+    pub program_id: Vec<u8>,
+    pub state_digest: Vec<u8>,
+    pub contract_name: ContractName,
 }
 
 #[derive(Debug, Serialize, Deserialize, Default, Clone)]
 pub struct BlobTransaction {
-    identity: String,
-    blobs: Vec<Blob>,
+    pub identity: Identity,
+    pub blobs: Vec<Blob>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Default, Clone)]
 pub struct Blob {
-    data: Vec<u8>,
+    pub data: Vec<u8>,
 }
 
 impl Transaction {
@@ -65,7 +80,7 @@ impl Transaction {
 
 #[derive(Serialize, Deserialize, Default)]
 pub struct BlockHash {
-    inner: Vec<u8>,
+    pub inner: Vec<u8>,
 }
 
 impl Deref for BlockHash {

@@ -1,56 +1,52 @@
 #![allow(dead_code, unused_variables)]
 use std::collections::HashMap;
 
-struct BlockHeight(u64);
-struct PayloadIndex(u32);
-struct Identity(String);
-struct ContractName(String);
-struct TxHash(String);
-struct PayloadsHash(String);
+use crate::model::BlockHeight;
+use crate::model::ContractName;
+use crate::model::Identity;
+use crate::model::TxHash;
 
-#[derive(Default)]
-pub struct NodeState {
-    timeouts: Timeouts,
-    contracts: HashMap<ContractName, Contract>,
-    transactions: HashMap<TxHash, UnsettledTransaction>,
-    tx_order: HashMap<ContractName, Vec<TxHash>>,
-}
+#[derive(Default, Debug, Clone, Eq, PartialEq)]
+pub struct BlobsHash(String);
 
-#[derive(Default)]
-struct Timeouts {
+#[derive(Default, Debug, Clone)]
+pub struct Timeouts {
     by_block: HashMap<BlockHeight, Vec<TxHash>>,
     by_tx_hash: HashMap<TxHash, BlockHeight>,
 }
 
-struct Contract {
-    name: ContractName,
-    program_id: u64,
-    state: Vec<u8>,
+#[derive(Default, Debug, Clone)]
+pub struct Contract {
+    pub name: ContractName,
+    pub program_id: u64,
+    pub state: Vec<u8>,
 }
 
-struct UnsettledTransaction {
-    identity: Identity,
-    hash: TxHash,
-    payloads_hash: PayloadsHash,
-    payloads: HashMap<PayloadIndex, PayloadDetail>,
+#[derive(Default, Debug, Clone)]
+pub struct UnsettledTransaction {
+    pub identity: Identity,
+    pub hash: TxHash,
+    pub blobs_hash: BlobsHash,
+    pub blobs: Vec<UnsettledBlobDetail>,
 }
 
-#[derive(Debug)]
-struct PayloadDetail {
-    contract_name: String,
-    verification_status: VerificationStatus,
-    hyle_output: Option<HyleOutput>,
+#[derive(Default, Debug, Clone)]
+pub struct UnsettledBlobDetail {
+    pub contract_name: String,
+    pub verification_status: VerificationStatus,
+    pub hyle_output: Option<HyleOutput>,
 }
 
-#[derive(Debug)]
-enum VerificationStatus {
+#[derive(Default, Debug, Clone, Eq, PartialEq)]
+pub enum VerificationStatus {
+    #[default]
     WaitingProof,
     Success,
     InvalidProof,
     ExecutionFailed,
 }
 
-#[derive(Debug)]
+#[derive(Default, Debug, Clone)]
 pub struct HyleOutput {
     pub version: u32,
     pub initial_state: Vec<u8>,
@@ -60,10 +56,6 @@ pub struct HyleOutput {
     pub index: u32,
     pub payloads: Vec<u8>,
     pub success: bool,
-}
-
-impl NodeState {
-    pub fn tt() {}
 }
 
 impl Timeouts {
