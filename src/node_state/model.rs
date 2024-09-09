@@ -7,7 +7,7 @@ use crate::model::Identity;
 use crate::model::TxHash;
 
 #[derive(Default, Debug, Clone, Eq, PartialEq)]
-pub struct BlobsHash(String);
+pub struct BlobsHash(pub String);
 
 #[derive(Default, Debug, Clone)]
 pub struct Timeouts {

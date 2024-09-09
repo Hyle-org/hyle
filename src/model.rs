@@ -9,19 +9,19 @@ use std::{
 };
 
 #[derive(Default, Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
-pub struct TxHash(String);
+pub struct TxHash(pub String);
 
 #[derive(Default, Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
-pub struct BlockHeight(u64);
+pub struct BlockHeight(pub u64);
 
 #[derive(Default, Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
-pub struct BlobIndex(u32);
+pub struct BlobIndex(pub u32);
 
 #[derive(Default, Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
-pub struct Identity(String);
+pub struct Identity(pub String);
 
 #[derive(Default, Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
-pub struct ContractName(String);
+pub struct ContractName(pub String);
 
 #[derive(Debug, Serialize, Deserialize, Default, Clone)]
 pub struct Transaction {
