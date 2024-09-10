@@ -1,8 +1,9 @@
 use std::collections::HashMap;
 
-use anyhow::{bail, Error, Result};
+use anyhow::{bail, Context, Error, Result};
 use ordered_tx_map::OrderedTxMap;
 use tracing::{debug, info};
+use tracing_subscriber::fmt::format;
 
 use crate::model::{
     BlobTransaction, BlobsHash, Block, BlockHeight, ContractName, Hashable, Identity,
@@ -86,10 +87,10 @@ impl NodeState {
 
     fn handle_proof(&mut self, tx: ProofTransaction) -> Result<(), Error> {
         // Diverse verifications
-        let _unsettled_tx = match self.unsettled_transactions.get(&tx.tx_hash) {
-            Some(tx) => tx,
-            None => bail!("Tx is either settled or does not exists."),
-        };
+        let _unsettled_tx = self
+            .unsettled_transactions
+            .get(&tx.tx_hash)
+            .context("Tx is either settled or does not exists.")?;
 
         if !self
             .unsettled_transactions
@@ -144,10 +145,10 @@ impl NodeState {
         tx: &ProofTransaction,
         blob_detail: UnsettledBlobDetail,
     ) -> Result<(), Error> {
-        let unsettled_tx = match self.unsettled_transactions.get_mut(&tx.tx_hash) {
-            Some(tx) => tx,
-            None => bail!("Tx is either settled or does not exists."),
-        };
+        let unsettled_tx = self
+            .unsettled_transactions
+            .get_mut(&tx.tx_hash)
+            .context("Tx is either settled or does not exists.")?;
 
         // TODO: better not using "as usize"
         unsettled_tx.blobs[tx.blob_index.0 as usize] = blob_detail;
@@ -186,6 +187,7 @@ impl NodeState {
     }
 
     fn extract_blobs_hash(blob: &UnsettledBlobDetail) -> Result<BlobsHash, Error> {
+        // TODO real implementation
         match blob.verification_status {
             VerificationStatus::Success(_) => Ok(BlobsHash::new("111")),
             _ => {
@@ -223,34 +225,33 @@ impl NodeState {
             Some(tx) => tx,
             None => bail!("Tx to settle not found!"),
         };
-        if let Some(contract) = self.contracts.get_mut(contract_name) {
-            if let Some(blob_detail) = unsettled_tx
-                .blobs
-                .iter()
-                .find(|b| b.contract_name == *contract_name)
-            {
-                match &blob_detail.verification_status {
-                    VerificationStatus::Success(hyle_output) => {
-                        debug!("Update contract state: {:?}", hyle_output.next_state);
-                        contract.state = hyle_output.next_state.clone();
-                    }
-                    _ => {
-                        bail!("Blob detail is not success, tx is not settled!")
-                    }
-                }
-            } else {
-                bail!(
-                    "Blob not found for contract {} on transaction to settle: {}",
-                    contract_name,
-                    tx
-                );
-            }
-        } else {
-            bail!(
+
+        let contract = self.contracts.get_mut(contract_name).with_context(|| {
+            format!(
                 "Contract {} not found when settling transaction {}",
-                contract_name,
-                tx
-            );
+                contract_name, tx,
+            )
+        })?;
+
+        let blob_detail = unsettled_tx
+            .blobs
+            .iter()
+            .find(|b| b.contract_name == *contract_name)
+            .with_context(|| {
+                format!(
+                    "Blob not found for contract {} on transaction to settle: {}",
+                    contract_name, tx
+                )
+            })?;
+
+        match &blob_detail.verification_status {
+            VerificationStatus::Success(hyle_output) => {
+                debug!("Update contract state: {:?}", hyle_output.next_state);
+                contract.state = hyle_output.next_state.clone();
+            }
+            _ => {
+                bail!("Blob detail is not success, tx is not settled!")
+            }
         }
         Ok(())
     }
