@@ -6,13 +6,14 @@ use crate::model::BlobsHash;
 use crate::model::BlockHeight;
 use crate::model::ContractName;
 use crate::model::Identity;
+use crate::model::StateDigest;
 use crate::model::TxHash;
 
 #[derive(Default, Debug, Clone)]
 pub struct Contract {
     pub name: ContractName,
     pub program_id: Vec<u8>,
-    pub state: Vec<u8>,
+    pub state: StateDigest,
 }
 
 #[derive(Default, Debug, Clone)]
@@ -40,18 +41,15 @@ pub enum VerificationStatus {
 
 impl VerificationStatus {
     pub fn is_success(&self) -> bool {
-        match self {
-            VerificationStatus::Success(_) => true,
-            _ => false,
-        }
+        matches!(self, VerificationStatus::Success(_))
     }
 }
 
 #[derive(Default, Debug, Clone)]
 pub struct HyleOutput {
     pub version: u32,
-    pub initial_state: Vec<u8>,
-    pub next_state: Vec<u8>,
+    pub initial_state: StateDigest,
+    pub next_state: StateDigest,
     pub identity: Identity,
     pub tx_hash: TxHash,
     pub index: BlobIndex, // @Bertrand to @Max: I changed from u32 to BlobIndex, am I right ?

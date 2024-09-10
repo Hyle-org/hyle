@@ -3,11 +3,10 @@ use std::collections::HashMap;
 use anyhow::{bail, Context, Error, Result};
 use ordered_tx_map::OrderedTxMap;
 use tracing::{debug, info};
-use tracing_subscriber::fmt::format;
 
 use crate::model::{
     BlobTransaction, BlobsHash, Block, BlockHeight, ContractName, Hashable, Identity,
-    ProofTransaction, RegisterContractTransaction, Transaction, TxHash,
+    ProofTransaction, RegisterContractTransaction, StateDigest, Transaction, TxHash,
 };
 use model::{Contract, Timeouts, UnsettledBlobDetail, UnsettledTransaction, VerificationStatus};
 
@@ -175,8 +174,8 @@ impl NodeState {
             contract_name: tx.contract_name.clone(),
             verification_status: VerificationStatus::Success(model::HyleOutput {
                 version: 1,
-                initial_state: vec![0, 1, 2, 3],
-                next_state: vec![4, 5, 6],
+                initial_state: StateDigest(vec![0, 1, 2, 3]),
+                next_state: StateDigest(vec![4, 5, 6]),
                 identity: Identity("test".to_string()),
                 tx_hash: tx.tx_hash.clone(),
                 index: tx.blob_index.clone(),
@@ -289,7 +288,7 @@ mod test {
                 owner: "test".to_string(),
                 verifier: "test".to_string(),
                 program_id: vec![],
-                state_digest: vec![],
+                state_digest: StateDigest(vec![]),
                 contract_name: name,
             },
         ))
@@ -337,6 +336,6 @@ mod test {
             .handle_transaction(proof_c2)
             .unwrap();
 
-        assert_eq!(new_state.contracts.get(&c1).unwrap().state, vec![4, 5, 6]);
+        assert_eq!(new_state.contracts.get(&c1).unwrap().state.0, vec![4, 5, 6]);
     }
 }

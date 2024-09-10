@@ -51,6 +51,9 @@ pub struct Identity(pub String);
 pub struct ContractName(pub String);
 
 #[derive(Debug, Serialize, Deserialize, Default, Clone)]
+pub struct StateDigest(pub Vec<u8>);
+
+#[derive(Debug, Serialize, Deserialize, Default, Clone)]
 pub struct Transaction {
     pub version: u32,
     pub transaction_data: TransactionData,
@@ -83,7 +86,7 @@ pub struct RegisterContractTransaction {
     pub owner: String,
     pub verifier: String,
     pub program_id: Vec<u8>,
-    pub state_digest: Vec<u8>,
+    pub state_digest: StateDigest,
     pub contract_name: ContractName,
 }
 
