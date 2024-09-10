@@ -45,6 +45,7 @@ impl Consensus {
         let mut all_txs = vec![];
 
         // prepare accumulated txs to feed the block
+        // a previous batch can be there because of a previous block that failed to commit
         for (batch_id, txs) in self.tx_batches.iter() {
             all_txs.extend(txs.clone());
             self.current_block_batches.push(batch_id.clone());
@@ -58,7 +59,10 @@ impl Consensus {
             txs: all_txs,
         };
 
-        // Commit block
+        // Waiting for commit... TODO split this task
+
+        // Commit block/if commit fails,
+        // block won't be added, next block will try to add the txs
         self.add_block(block);
 
         // Once commited we clean the state for the next block
@@ -73,7 +77,7 @@ impl Consensus {
     pub fn save_on_disk(&mut self) -> anyhow::Result<()> {
         let encoded = bincode::serialize(&self).log_error("Serializing Ctx chain")?;
         fs::write("data.bin", encoded).log_error("Write Ctx file")?;
-        info!("Saved blockchain on disk with {} blocks", self.blocks.len(),);
+        info!("Saved blockchain on disk with {} blocks", self.blocks.len());
         Ok(())
     }
 
