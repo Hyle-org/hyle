@@ -270,7 +270,7 @@ mod test {
     fn new_blob(contract: &ContractName) -> Blob {
         Blob {
             contract_name: contract.clone(),
-            data: vec![0, 1, 2, 3],
+            data: BlobData(vec![0, 1, 2, 3]),
         }
     }
 

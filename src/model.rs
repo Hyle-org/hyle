@@ -54,6 +54,9 @@ pub struct ContractName(pub String);
 pub struct StateDigest(pub Vec<u8>);
 
 #[derive(Debug, Serialize, Deserialize, Default, Clone)]
+pub struct BlobData(pub Vec<u8>);
+
+#[derive(Debug, Serialize, Deserialize, Default, Clone)]
 pub struct Transaction {
     pub version: u32,
     pub transaction_data: TransactionData,
@@ -99,7 +102,7 @@ pub struct BlobTransaction {
 #[derive(Debug, Serialize, Deserialize, Default, Clone)]
 pub struct Blob {
     pub contract_name: ContractName,
-    pub data: Vec<u8>,
+    pub data: BlobData,
 }
 
 impl Transaction {
@@ -185,7 +188,7 @@ impl BlobTransaction {
         for blob in self.blobs.iter() {
             // FIXME:
             _ = write!(hasher, "{}", blob.contract_name.0);
-            hasher.update(blob.data.as_slice());
+            hasher.update(blob.data.0.as_slice());
         }
         return BlobsHash(hasher.finalize().as_slice().to_owned());
     }
