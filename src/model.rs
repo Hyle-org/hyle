@@ -13,7 +13,7 @@ pub struct TxHash(pub Vec<u8>);
 
 impl TxHash {
     pub fn new(s: &str) -> TxHash {
-        TxHash(s.as_bytes().to_vec())
+        TxHash(s.into())
     }
 }
 

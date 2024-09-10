@@ -116,14 +116,14 @@ impl NodeState {
         //    )
         //}
 
-        self.update_state_tx(&tx, blob_detail)?;
+        self.save_blob_details(&tx, blob_detail)?;
 
         // check if tx can be settled
         let is_next_to_settle = self
             .unsettled_transactions
             .is_next_unsettled_tx(&tx.tx_hash, &tx.contract_name);
 
-        if is_next_to_settle && self.is_settled(&tx.tx_hash) {
+        if is_next_to_settle && self.is_ready_for_settlement(&tx.tx_hash) {
             // settle tx
             self.settle_tx(&tx)?;
         }
@@ -140,7 +140,7 @@ impl NodeState {
         }
     }
 
-    fn update_state_tx(
+    fn save_blob_details(
         &mut self,
         tx: &ProofTransaction,
         blob_detail: UnsettledBlobDetail,
@@ -156,7 +156,7 @@ impl NodeState {
         Ok(())
     }
 
-    fn is_settled(&self, tx_hash: &TxHash) -> bool {
+    fn is_ready_for_settlement(&self, tx_hash: &TxHash) -> bool {
         let tx = match self.unsettled_transactions.get(tx_hash) {
             Some(tx) => tx,
             None => {
@@ -195,6 +195,7 @@ impl NodeState {
         }
     }
 
+    // TODO rewrite this function and update_state_contract to avoid re-query of unsettled_tx
     fn settle_tx(&mut self, tx: &ProofTransaction) -> Result<(), Error> {
         info!("Settle tx {:?}", tx);
         let unsettled_tx = match self.unsettled_transactions.get_mut(&tx.tx_hash) {
