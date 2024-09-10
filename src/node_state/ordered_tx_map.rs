@@ -39,11 +39,15 @@ impl OrderedTxMap {
         self.map.insert(tx.hash.clone(), tx);
     }
 
-    pub fn remove(&mut self, contract: &ContractName, tx: &TxHash) {
-        if let Some(c) = self.tx_order.get_mut(contract) {
-            c.retain(|h| !h.eq(tx));
-            self.map.remove(tx);
+    pub fn remove(&mut self, hash: &TxHash) {
+        if let Some(tx) = self.map.get(hash) {
+            for blob in &tx.blobs {
+                if let Some(c) = self.tx_order.get_mut(&blob.contract_name) {
+                    c.retain(|h| !h.eq(hash));
+                }
+            }
         }
+        self.map.remove(hash);
     }
 
     pub fn is_next_unsettled_tx(&self, tx: &TxHash, contract: &ContractName) -> bool {
@@ -152,7 +156,7 @@ mod tests {
         map.add(new_tx("tx1", "c1"));
         map.add(new_tx("tx2", "c1"));
         map.add(new_tx("tx3", "c2"));
-        map.remove(&c1, &tx1);
+        map.remove(&tx1);
 
         assert!(!map.is_next_unsettled_tx(&tx1, &c1));
         assert!(map.is_next_unsettled_tx(&tx2, &c1));
@@ -165,7 +169,7 @@ mod tests {
         assert_eq!(map.tx_order.len(), 2);
         assert_eq!(map.tx_order[&c1].len(), 1);
 
-        map.remove(&c1, &tx2);
+        map.remove(&tx2);
         assert_eq!(map.map.len(), 1);
         assert_eq!(map.tx_order.len(), 2);
         assert_eq!(map.tx_order[&c1].len(), 0);

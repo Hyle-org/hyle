@@ -24,7 +24,7 @@ impl NodeState {
     pub fn handle_new_block(&self, block: Block) -> NodeState {
         let mut new_state = self.clone();
 
-        new_state.timeouts.drop(&block.height);
+        new_state.clear_timeouts(&block.height);
         new_state.current_height = block.height;
         new_state
     }
@@ -106,6 +106,13 @@ impl NodeState {
         }
 
         Ok(())
+    }
+
+    fn clear_timeouts(&mut self, height: &BlockHeight) {
+        let dropped = self.timeouts.drop(height);
+        for tx in dropped {
+            self.unsettled_transactions.remove(&tx);
+        }
     }
 
     fn update_state_tx(

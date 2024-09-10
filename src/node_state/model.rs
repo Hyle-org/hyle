@@ -57,11 +57,14 @@ pub struct Timeouts {
 }
 
 impl Timeouts {
-    pub fn drop(&mut self, at: &BlockHeight) {
+    pub fn drop(&mut self, at: &BlockHeight) -> Vec<TxHash> {
         if let Some(vec) = self.by_block.remove(at) {
             self.by_tx_hash.retain(|k, v| v != at);
+            return vec;
         }
+        vec![]
     }
+
     pub fn list_timeouts(&self, at: &BlockHeight) -> Option<&Vec<TxHash>> {
         self.by_block.get(at)
     }
