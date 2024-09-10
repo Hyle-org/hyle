@@ -4,12 +4,10 @@ use anyhow::{bail, Error, Result};
 use ordered_tx_map::OrderedTxMap;
 
 use crate::model::{
-    BlobTransaction, Block, BlockHeight, ContractName, Hashable, ProofTransaction, Transaction,
-    TxHash,
+    BlobTransaction, BlobsHash, Block, BlockHeight, ContractName, Hashable, ProofTransaction,
+    Transaction, TxHash,
 };
-use model::{
-    BlobsHash, Contract, Timeouts, UnsettledBlobDetail, UnsettledTransaction, VerificationStatus,
-};
+use model::{Contract, Timeouts, UnsettledBlobDetail, UnsettledTransaction, VerificationStatus};
 
 mod model;
 mod ordered_tx_map;

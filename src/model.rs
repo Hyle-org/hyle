@@ -20,6 +20,11 @@ impl TxHash {
 #[derive(Default, Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
 pub struct BlobsHash(pub Vec<u8>);
 
+impl BlobsHash {
+    pub fn new(s: &str) -> BlobsHash {
+        BlobsHash(s.as_bytes().to_vec())
+    }
+}
 #[derive(Default, Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash, Display, Copy)]
 pub struct BlockHeight(pub u64);
 
