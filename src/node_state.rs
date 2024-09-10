@@ -5,7 +5,7 @@ use ordered_tx_map::OrderedTxMap;
 
 use crate::model::{
     BlobTransaction, BlobsHash, Block, BlockHeight, ContractName, Hashable, ProofTransaction,
-    Transaction, TxHash,
+    RegisterContractTransaction, Transaction, TxHash,
 };
 use model::{Contract, Timeouts, UnsettledBlobDetail, UnsettledTransaction, VerificationStatus};
 
@@ -16,7 +16,7 @@ mod ordered_tx_map;
 pub struct NodeState {
     timeouts: Timeouts,
     current_height: BlockHeight,
-    _contracts: HashMap<ContractName, Contract>,
+    contracts: HashMap<ContractName, Contract>,
     unsettled_transactions: OrderedTxMap,
 }
 
@@ -35,10 +35,25 @@ impl NodeState {
         let res = match transaction.transaction_data {
             crate::model::TransactionData::Blob(tx) => new_state.handle_blob_tx(tx),
             crate::model::TransactionData::Proof(tx) => new_state.handle_proof(tx),
-            crate::model::TransactionData::RegisterContract(_) => todo!(),
+            crate::model::TransactionData::RegisterContract(tx) => {
+                new_state.handle_register_contract(tx)
+            }
         };
 
         res.map(|_| new_state)
+    }
+
+    fn handle_register_contract(&mut self, tx: RegisterContractTransaction) -> Result<(), Error> {
+        self.contracts.insert(
+            tx.contract_name.clone(),
+            Contract {
+                name: tx.contract_name,
+                program_id: tx.program_id,
+                state: tx.state_digest,
+            },
+        );
+
+        Ok(())
     }
 
     fn handle_blob_tx(&mut self, tx: BlobTransaction) -> Result<(), Error> {
@@ -102,7 +117,7 @@ impl NodeState {
 
         if is_next_to_settle && self.is_settled(&tx.tx_hash) {
             // settle tx
-            Self::settle_tx()?;
+            self.settle_tx(&tx)?;
         }
 
         Ok(())
@@ -157,8 +172,43 @@ impl NodeState {
         todo!()
     }
 
-    fn settle_tx() -> Result<(), Error> {
-        todo!()
+    fn settle_tx(&mut self, tx: &ProofTransaction) -> Result<(), Error> {
+        let unsettled_tx = match self.unsettled_transactions.get_mut(&tx.tx_hash) {
+            Some(tx) => tx,
+            None => bail!("Tx to settle not found!"),
+        };
+
+        if let Some(contract) = self.contracts.get_mut(&tx.contract_name) {
+            if let Some(blob_detail) = unsettled_tx
+                .blobs
+                .iter()
+                .find(|b| b.contract_name == tx.contract_name)
+            {
+                if let Some(hyle_output) = &blob_detail.hyle_output {
+                    // Update contract state
+                    contract.state = hyle_output.next_state.clone();
+                } else {
+                    bail!(
+                        "Blob detail output not found for contract {} on transaction to settle :{}",
+                        tx.contract_name,
+                        tx.tx_hash
+                    );
+                }
+            } else {
+                bail!(
+                    "Blob not found for contract {} on transaction to settle: {}",
+                    tx.contract_name,
+                    tx.tx_hash
+                );
+            }
+        } else {
+            bail!(
+                "Contract {} not found when settling transaction {}",
+                tx.contract_name,
+                tx.tx_hash
+            );
+        }
+        Ok(())
     }
 }
 

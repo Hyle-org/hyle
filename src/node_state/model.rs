@@ -10,7 +10,7 @@ use crate::model::TxHash;
 #[derive(Default, Debug, Clone)]
 pub struct Contract {
     pub name: ContractName,
-    pub program_id: u64,
+    pub program_id: Vec<u8>,
     pub state: Vec<u8>,
 }
 

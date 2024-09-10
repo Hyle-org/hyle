@@ -17,6 +17,12 @@ impl TxHash {
     }
 }
 
+impl Display for TxHash {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", hex::encode(&self.0))
+    }
+}
+
 #[derive(Default, Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
 pub struct BlobsHash(pub Vec<u8>);
 
@@ -25,6 +31,13 @@ impl BlobsHash {
         BlobsHash(s.as_bytes().to_vec())
     }
 }
+
+impl Display for BlobsHash {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", hex::encode(&self.0))
+    }
+}
+
 #[derive(Default, Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash, Display, Copy)]
 pub struct BlockHeight(pub u64);
 
@@ -93,9 +106,17 @@ impl Transaction {
     }
 }
 
-#[derive(Serialize, Deserialize, Default)]
+#[derive(Serialize, Deserialize, Default, Clone)]
 pub struct BlockHash {
     pub inner: Vec<u8>,
+}
+
+impl BlockHash {
+    pub fn new(s: &str) -> BlockHash {
+        BlockHash {
+            inner: s.as_bytes().to_vec(),
+        }
+    }
 }
 
 impl Deref for BlockHash {
