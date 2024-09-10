@@ -1,6 +1,7 @@
 #![allow(dead_code, unused_variables)]
 use std::collections::HashMap;
 
+use crate::model::BlobIndex;
 use crate::model::BlobsHash;
 use crate::model::BlockHeight;
 use crate::model::ContractName;
@@ -43,10 +44,10 @@ pub struct HyleOutput {
     pub version: u32,
     pub initial_state: Vec<u8>,
     pub next_state: Vec<u8>,
-    pub identity: String,
-    pub tx_hash: Vec<u8>,
-    pub index: u32,
-    pub payloads: Vec<u8>,
+    pub identity: Identity,
+    pub tx_hash: TxHash,
+    pub index: BlobIndex, // @Bertrand to @Max: I changed from u32 to BlobIndex, am I right ?
+    pub blobs: Vec<u8>,   // @Bertrand: I renamed it "blobs" instead of "payloads", hope it's fine
     pub success: bool,
 }
 

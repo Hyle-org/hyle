@@ -2,10 +2,11 @@ use std::collections::HashMap;
 
 use anyhow::{bail, Error, Result};
 use ordered_tx_map::OrderedTxMap;
+use tracing::{debug, info};
 
 use crate::model::{
-    BlobTransaction, BlobsHash, Block, BlockHeight, ContractName, Hashable, ProofTransaction,
-    RegisterContractTransaction, Transaction, TxHash,
+    BlobTransaction, BlobsHash, Block, BlockHeight, ContractName, Hashable, Identity,
+    ProofTransaction, RegisterContractTransaction, Transaction, TxHash,
 };
 use model::{Contract, Timeouts, UnsettledBlobDetail, UnsettledTransaction, VerificationStatus};
 
@@ -30,6 +31,7 @@ impl NodeState {
     }
 
     pub fn handle_transaction(&self, transaction: Transaction) -> Result<NodeState, Error> {
+        debug!("Got transaction to handle: {:?}", transaction);
         let mut new_state = self.clone();
 
         let res = match transaction.transaction_data {
@@ -69,6 +71,7 @@ impl NodeState {
             })
             .collect();
 
+        debug!("Add transaction to state");
         self.unsettled_transactions.add(UnsettledTransaction {
             identity: tx.identity,
             hash: tx_hash.clone(),
@@ -77,14 +80,14 @@ impl NodeState {
         });
 
         // Update timeouts
-        self.timeouts.set(tx_hash, self.current_height);
+        self.timeouts.set(tx_hash, self.current_height + 10); // TODO: Timeout after 10 blocks, make it configurable !
 
         Ok(())
     }
 
     fn handle_proof(&mut self, tx: ProofTransaction) -> Result<(), Error> {
         // Diverse verifications
-        let unsettled_tx = match self.unsettled_transactions.get(&tx.tx_hash) {
+        let _unsettled_tx = match self.unsettled_transactions.get(&tx.tx_hash) {
             Some(tx) => tx,
             None => bail!("Tx is either settled or does not exists."),
         };
@@ -101,12 +104,17 @@ impl NodeState {
         let blob_detail = Self::verify_proof(&tx)?;
 
         // hash payloads
-        let blobs_hash = Self::extract_blobs_hash(&blob_detail)?;
+        let _blobs_hash = Self::extract_blobs_hash(&blob_detail)?;
 
         // some verifications
-        if blobs_hash != unsettled_tx.blobs_hash {
-            bail!("Proof blobs hash do not correspond to transaction blobs hash.")
-        }
+        // TODO commented until we have a real blobs_hash
+        //if blobs_hash != unsettled_tx.blobs_hash {
+        //    bail!(
+        //        "Proof blobs hash '{}' do not correspond to transaction blobs hash '{}'.",
+        //        blobs_hash,
+        //        unsettled_tx.blobs_hash
+        //    )
+        //}
 
         self.update_state_tx(&tx, blob_detail)?;
 
@@ -119,6 +127,8 @@ impl NodeState {
             // settle tx
             self.settle_tx(&tx)?;
         }
+
+        debug!("Done {:?}", self);
 
         Ok(())
     }
@@ -164,48 +174,84 @@ impl NodeState {
         Ok(UnsettledBlobDetail {
             contract_name: tx.contract_name.clone(),
             verification_status: VerificationStatus::Success,
-            hyle_output: None,
+            hyle_output: Some(model::HyleOutput {
+                version: 1,
+                initial_state: vec![0, 1, 2, 3],
+                next_state: vec![4, 5, 6],
+                identity: Identity("test".to_string()),
+                tx_hash: tx.tx_hash.clone(),
+                index: tx.blob_index.clone(),
+                blobs: vec![],
+                success: true,
+            }),
         })
     }
 
-    fn extract_blobs_hash(_blob: &UnsettledBlobDetail) -> Result<BlobsHash, Error> {
-        todo!()
+    fn extract_blobs_hash(blob: &UnsettledBlobDetail) -> Result<BlobsHash, Error> {
+        if let Some(_output) = &blob.hyle_output {
+            Ok(BlobsHash::new("111"))
+        } else {
+            bail!("Missing output in blob details!");
+        }
     }
 
     fn settle_tx(&mut self, tx: &ProofTransaction) -> Result<(), Error> {
+        info!("Settle tx {:?}", tx);
         let unsettled_tx = match self.unsettled_transactions.get_mut(&tx.tx_hash) {
             Some(tx) => tx,
             None => bail!("Tx to settle not found!"),
         };
+        let contracts = unsettled_tx
+            .blobs
+            .iter()
+            .map(|b| b.contract_name.clone())
+            .collect::<Vec<ContractName>>();
 
-        if let Some(contract) = self.contracts.get_mut(&tx.contract_name) {
+        for contract_name in &contracts {
+            self.update_state_contract(contract_name, &tx.tx_hash)?;
+        }
+
+        Ok(())
+    }
+
+    fn update_state_contract(
+        &mut self,
+        contract_name: &ContractName,
+        tx: &TxHash,
+    ) -> Result<(), Error> {
+        let unsettled_tx = match self.unsettled_transactions.get_mut(tx) {
+            Some(tx) => tx,
+            None => bail!("Tx to settle not found!"),
+        };
+        if let Some(contract) = self.contracts.get_mut(contract_name) {
             if let Some(blob_detail) = unsettled_tx
                 .blobs
                 .iter()
-                .find(|b| b.contract_name == tx.contract_name)
+                .find(|b| b.contract_name == *contract_name)
             {
                 if let Some(hyle_output) = &blob_detail.hyle_output {
                     // Update contract state
+                    debug!("Update contract state: {:?}", hyle_output.next_state);
                     contract.state = hyle_output.next_state.clone();
                 } else {
                     bail!(
                         "Blob detail output not found for contract {} on transaction to settle :{}",
-                        tx.contract_name,
-                        tx.tx_hash
+                        contract_name,
+                        tx
                     );
                 }
             } else {
                 bail!(
                     "Blob not found for contract {} on transaction to settle: {}",
-                    tx.contract_name,
-                    tx.tx_hash
+                    contract_name,
+                    tx
                 );
             }
         } else {
             bail!(
                 "Contract {} not found when settling transaction {}",
-                tx.contract_name,
-                tx.tx_hash
+                contract_name,
+                tx
             );
         }
         Ok(())
@@ -215,4 +261,83 @@ impl NodeState {
 // TODO: move it somewhere else ?
 fn hash_transaction(tx: &BlobTransaction) -> (TxHash, BlobsHash) {
     (tx.hash(), tx.blobs_hash())
+}
+
+#[cfg(test)]
+mod test {
+    use crate::model::*;
+
+    use super::NodeState;
+
+    fn new_blob(contract: &ContractName) -> Blob {
+        Blob {
+            contract_name: contract.clone(),
+            data: vec![0, 1, 2, 3],
+        }
+    }
+
+    fn new_tx(transaction_data: TransactionData) -> Transaction {
+        Transaction {
+            version: 1,
+            transaction_data,
+            inner: "useless".to_string(),
+        }
+    }
+
+    fn new_register_contract(name: ContractName) -> Transaction {
+        new_tx(TransactionData::RegisterContract(
+            RegisterContractTransaction {
+                owner: "test".to_string(),
+                verifier: "test".to_string(),
+                program_id: vec![],
+                state_digest: vec![],
+                contract_name: name,
+            },
+        ))
+    }
+
+    #[test_log::test]
+    fn scenario() {
+        let state = NodeState::default();
+        let c1 = ContractName("c1".to_string());
+        let c2 = ContractName("c2".to_string());
+
+        let register_c1 = new_register_contract(c1.clone());
+        let register_c2 = new_register_contract(c2.clone());
+
+        let blob = BlobTransaction {
+            identity: Identity("test".to_string()),
+            blobs: vec![new_blob(&c1), new_blob(&c2)],
+        };
+        let tx_hash = blob.hash();
+        let blob_tx = new_tx(TransactionData::Blob(blob));
+
+        let proof_c1 = new_tx(TransactionData::Proof(ProofTransaction {
+            tx_hash: tx_hash.clone(),
+            contract_name: c1.clone(),
+            blob_index: BlobIndex(0),
+            proof: vec![],
+        }));
+
+        let proof_c2 = new_tx(TransactionData::Proof(ProofTransaction {
+            tx_hash,
+            contract_name: c2.clone(),
+            blob_index: BlobIndex(1),
+            proof: vec![],
+        }));
+
+        let new_state = state
+            .handle_transaction(register_c1)
+            .unwrap()
+            .handle_transaction(register_c2)
+            .unwrap()
+            .handle_transaction(blob_tx)
+            .unwrap()
+            .handle_transaction(proof_c1)
+            .unwrap()
+            .handle_transaction(proof_c2)
+            .unwrap();
+
+        assert_eq!(new_state.contracts.get(&c1).unwrap().state, vec![4, 5, 6]);
+    }
 }
