@@ -86,7 +86,7 @@ impl NodeState {
 
     fn handle_proof(&mut self, tx: ProofTransaction) -> Result<(), Error> {
         // Diverse verifications
-        let _unsettled_tx = self
+        let unsettled_tx = self
             .unsettled_transactions
             .get(&tx.blob_tx_hash)
             .context("Tx is either settled or does not exists.")?;
@@ -103,17 +103,16 @@ impl NodeState {
         let blob_detail = Self::verify_proof(&tx)?;
 
         // hash payloads
-        let _blobs_hash = Self::extract_blobs_hash(&blob_detail)?;
+        let blobs_hash = Self::extract_blobs_hash(&blob_detail)?;
 
         // some verifications
-        // TODO commented until we have a real blobs_hash
-        //if blobs_hash != unsettled_tx.blobs_hash {
-        //    bail!(
-        //        "Proof blobs hash '{}' do not correspond to transaction blobs hash '{}'.",
-        //        blobs_hash,
-        //        unsettled_tx.blobs_hash
-        //    )
-        //}
+        if blobs_hash != unsettled_tx.blobs_hash {
+            bail!(
+                "Proof blobs hash '{}' do not correspond to transaction blobs hash '{}'.",
+                blobs_hash,
+                unsettled_tx.blobs_hash
+            )
+        }
 
         self.save_blob_details(&tx, blob_detail)?;
 
@@ -179,16 +178,17 @@ impl NodeState {
                 identity: Identity("test".to_string()),
                 tx_hash: tx.blob_tx_hash.clone(),
                 index: tx.blob_index.clone(),
-                blobs: vec![],
+                blobs: vec![0, 1, 2, 3, 0, 1, 2, 3],
                 success: true,
             }),
         })
     }
 
     fn extract_blobs_hash(blob: &UnsettledBlobDetail) -> Result<BlobsHash, Error> {
-        // TODO real implementation
-        match blob.verification_status {
-            VerificationStatus::Success(_) => Ok(BlobsHash::new("111")),
+        match &blob.verification_status {
+            VerificationStatus::Success(hyle_output) => {
+                Ok(BlobsHash::from_concatenated(&hyle_output.blobs))
+            }
             _ => {
                 bail!("Blob details if not success, cannot extract blobs hash!");
             }

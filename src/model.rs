@@ -7,6 +7,7 @@ use std::{
     ops::{Add, Deref},
     time::{SystemTime, UNIX_EPOCH},
 };
+use tracing::debug;
 
 #[derive(Default, Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
 pub struct TxHash(pub Vec<u8>);
@@ -29,6 +30,22 @@ pub struct BlobsHash(pub Vec<u8>);
 impl BlobsHash {
     pub fn new(s: &str) -> BlobsHash {
         BlobsHash(s.as_bytes().to_vec())
+    }
+
+    pub fn from_vec(vec: &Vec<Blob>) -> BlobsHash {
+        debug!("From vec {:?}", vec);
+        let concatenated = vec
+            .iter()
+            .flat_map(|b| b.data.0.clone())
+            .collect::<Vec<u8>>();
+        Self::from_concatenated(&concatenated)
+    }
+
+    pub fn from_concatenated(vec: &Vec<u8>) -> BlobsHash {
+        debug!("From concatenated {:?}", vec);
+        let mut hasher = Sha3_256::new();
+        hasher.update(vec.as_slice());
+        BlobsHash(hasher.finalize().as_slice().to_owned())
     }
 }
 
@@ -184,13 +201,7 @@ impl Hashable<TxHash> for BlobTransaction {
 
 impl BlobTransaction {
     pub fn blobs_hash(&self) -> BlobsHash {
-        let mut hasher = Sha3_256::new();
-        for blob in self.blobs.iter() {
-            // FIXME:
-            _ = write!(hasher, "{}", blob.contract_name.0);
-            hasher.update(blob.data.0.as_slice());
-        }
-        return BlobsHash(hasher.finalize().as_slice().to_owned());
+        BlobsHash::from_vec(&self.blobs)
     }
 }
 
