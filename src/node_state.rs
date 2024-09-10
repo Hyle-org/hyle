@@ -134,12 +134,9 @@ impl NodeState {
             }
         };
 
-        let mut settled = true;
-        for blob in &tx.blobs {
-            settled = settled && (blob.verification_status == VerificationStatus::Success);
-        }
-
-        settled
+        tx.blobs
+            .iter()
+            .all(|blob| blob.verification_status == VerificationStatus::Success)
     }
 
     fn verify_proof(tx: &ProofTransaction) -> Result<UnsettledBlobDetail, Error> {
