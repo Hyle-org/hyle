@@ -1,9 +1,9 @@
 use anyhow::{Context, Result};
 use clap::Parser;
-use hyle::mempool::Mempool;
+use hyle::mempool::{Mempool, MempoolCommand, MempoolResponse};
 use hyle::p2p::network::MempoolMessage;
-use tokio::sync::mpsc::{self, Receiver, Sender, UnboundedSender};
-use tracing::warn;
+use tokio::sync::mpsc::{self, Receiver, Sender, UnboundedReceiver, UnboundedSender};
+use tracing::{debug, warn};
 use tracing::{error, info};
 
 use hyle::consensus::{Consensus, ConsensusCommand};
@@ -12,9 +12,10 @@ use hyle::rest;
 use hyle::utils::conf::{self, Conf};
 
 fn start_consensus(
-    tx: Sender<ConsensusCommand>,
-    rx: Receiver<ConsensusCommand>,
-    sender: UnboundedSender<MempoolMessage>,
+    consensus_command_sender: Sender<ConsensusCommand>,
+    consensus_command_receiver: Receiver<ConsensusCommand>,
+    mempool_command_sender: UnboundedSender<MempoolCommand>,
+    mempool_response_receiver: UnboundedReceiver<MempoolResponse>,
     config: Conf,
 ) {
     tokio::spawn(async move {
@@ -23,7 +24,15 @@ fn start_consensus(
             Consensus::default()
         });
 
-        consensus.start(tx, rx, sender, &config).await
+        consensus
+            .start(
+                consensus_command_sender,
+                consensus_command_receiver,
+                mempool_command_sender,
+                mempool_response_receiver,
+                &config,
+            )
+            .await
     });
 }
 
@@ -50,25 +59,45 @@ async fn main() -> Result<()> {
     let rpc_addr = config.addr();
     let rest_addr = config.rest_addr().to_string();
 
-    info!("server mode");
+    debug!("server mode");
 
     let mut mp = Mempool::new();
-    let (mempool_tx, mempool_rx) = tokio::sync::mpsc::unbounded_channel::<MempoolMessage>();
+    let (mempool_message_sender, mempool_message_receiver) =
+        tokio::sync::mpsc::unbounded_channel::<MempoolMessage>();
+    let (mempool_command_sender, mempool_command_receiver) =
+        tokio::sync::mpsc::unbounded_channel::<MempoolCommand>();
+    let (mempool_response_sender, mempool_response_receiver) =
+        tokio::sync::mpsc::unbounded_channel::<MempoolResponse>();
     tokio::spawn(async move {
-        _ = mp.start(mempool_rx).await;
+        _ = mp
+            .start(
+                mempool_message_receiver,
+                mempool_command_receiver,
+                mempool_response_sender,
+            )
+            .await;
     });
 
-    let (consensus_tx, consensus_rx) = mpsc::channel::<ConsensusCommand>(100);
+    let (consensus_command_sender, consensus_command_receiver) =
+        mpsc::channel::<ConsensusCommand>(100);
 
     start_consensus(
-        consensus_tx.clone(),
-        consensus_rx,
-        mempool_tx.clone(),
+        consensus_command_sender.clone(),
+        consensus_command_receiver,
+        mempool_command_sender.clone(),
+        mempool_response_receiver,
         config.clone(),
     );
 
     tokio::spawn(async move {
-        if let Err(e) = p2p::p2p_server(&rpc_addr, &config, consensus_tx, mempool_tx).await {
+        if let Err(e) = p2p::p2p_server(
+            &rpc_addr,
+            &config,
+            consensus_command_sender,
+            mempool_message_sender,
+        )
+        .await
+        {
             error!("RPC server failed: {:?}", e);
         }
     });

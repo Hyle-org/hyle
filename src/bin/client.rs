@@ -7,7 +7,7 @@ use tokio::time::Duration;
 use clap::Parser;
 use hyle::model::{Transaction, TransactionData};
 use hyle::p2p::network::NetMessage;
-use tracing::info;
+use tracing::{debug, info};
 
 use hyle::utils::conf;
 
@@ -28,9 +28,17 @@ pub async fn client(addr: &str) -> Result<()> {
     let mut socket = TcpStream::connect(&addr)
         .await
         .context("connecting to server")?;
+    info!("Starting client");
     loop {
+        info!("Sending a message");
+        let res = new_transaction();
         socket
-            .write(new_transaction().as_ref())
+            .write_u32(res.len() as u32)
+            .await
+            .context("sending message")?;
+
+        socket
+            .write(res.as_ref())
             .await
             .context("sending message")?;
         tokio::time::sleep(Duration::from_secs(1)).await;

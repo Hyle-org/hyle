@@ -10,6 +10,7 @@ use tracing::{info, trace};
 use super::network::MempoolMessage;
 use super::network::{NetMessage, Version};
 use crate::consensus::ConsensusCommand;
+use crate::utils::logger::LogMe;
 
 #[derive(Debug)]
 pub struct Peer {
@@ -47,11 +48,11 @@ impl Peer {
                     .send(mempool_msg)
                     .context("Receiving mempool message")
             }
+            // TODO: To replace with an ApiMessage equivalent
             NetMessage::NewTransaction(tx) => {
-                debug!("Get new tx over p2p: {:?}", tx);
-                self.ctx
-                    .send(ConsensusCommand::AddTransaction(tx))
-                    .await
+                info!("Get new tx over p2p: {:?}", tx);
+                self.mempool
+                    .send(MempoolMessage::NewTx(tx))
                     .context("Failed to send over channel")
             }
         }
@@ -62,7 +63,8 @@ impl Peer {
             let ready = self
                 .stream
                 .ready(Interest::READABLE | Interest::WRITABLE | Interest::ERROR)
-                .await?;
+                .await
+                .log_error("Reading from peer")?;
 
             if ready.is_error() {
                 bail!("Stream not ready")
