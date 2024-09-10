@@ -91,14 +91,6 @@ impl NodeState {
             .get(&tx.blob_tx_hash)
             .context("Tx is either settled or does not exists.")?;
 
-        if !self
-            .unsettled_transactions
-            .is_next_unsettled_tx(&tx.blob_tx_hash, &tx.contract_name)
-        {
-            // TODO: buffer this ProofTransaction to be handled later
-            bail!("Another tx needs to be settled before {}.", tx.blob_tx_hash);
-        }
-
         // Verify proof
         let blob_detail = Self::verify_proof(&tx)?;
 
@@ -116,8 +108,12 @@ impl NodeState {
 
         self.save_blob_details(&tx, blob_detail)?;
 
+        let is_next_to_settle = self
+            .unsettled_transactions
+            .is_next_unsettled_tx(&tx.blob_tx_hash, &tx.contract_name);
+
         // check if tx can be settled
-        if self.is_ready_for_settlement(&tx.blob_tx_hash) {
+        if is_next_to_settle && self.is_ready_for_settlement(&tx.blob_tx_hash) {
             // settle tx
             self.settle_tx(&tx)?;
         }
