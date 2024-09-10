@@ -67,7 +67,6 @@ impl NodeState {
             .map(|blob| UnsettledBlobDetail {
                 contract_name: blob.contract_name.clone(),
                 verification_status: VerificationStatus::WaitingProof,
-                hyle_output: None,
             })
             .collect();
 
@@ -166,15 +165,14 @@ impl NodeState {
 
         tx.blobs
             .iter()
-            .all(|blob| blob.verification_status == VerificationStatus::Success)
+            .all(|blob| blob.verification_status.is_success())
     }
 
     fn verify_proof(tx: &ProofTransaction) -> Result<UnsettledBlobDetail, Error> {
         // TODO real implementation
         Ok(UnsettledBlobDetail {
             contract_name: tx.contract_name.clone(),
-            verification_status: VerificationStatus::Success,
-            hyle_output: Some(model::HyleOutput {
+            verification_status: VerificationStatus::Success(model::HyleOutput {
                 version: 1,
                 initial_state: vec![0, 1, 2, 3],
                 next_state: vec![4, 5, 6],
@@ -188,10 +186,11 @@ impl NodeState {
     }
 
     fn extract_blobs_hash(blob: &UnsettledBlobDetail) -> Result<BlobsHash, Error> {
-        if let Some(_output) = &blob.hyle_output {
-            Ok(BlobsHash::new("111"))
-        } else {
-            bail!("Missing output in blob details!");
+        match blob.verification_status {
+            VerificationStatus::Success(_) => Ok(BlobsHash::new("111")),
+            _ => {
+                bail!("Blob details if not success, cannot extract blobs hash!");
+            }
         }
     }
 
@@ -230,16 +229,14 @@ impl NodeState {
                 .iter()
                 .find(|b| b.contract_name == *contract_name)
             {
-                if let Some(hyle_output) = &blob_detail.hyle_output {
-                    // Update contract state
-                    debug!("Update contract state: {:?}", hyle_output.next_state);
-                    contract.state = hyle_output.next_state.clone();
-                } else {
-                    bail!(
-                        "Blob detail output not found for contract {} on transaction to settle :{}",
-                        contract_name,
-                        tx
-                    );
+                match &blob_detail.verification_status {
+                    VerificationStatus::Success(hyle_output) => {
+                        debug!("Update contract state: {:?}", hyle_output.next_state);
+                        contract.state = hyle_output.next_state.clone();
+                    }
+                    _ => {
+                        bail!("Blob detail is not success, tx is not settled!")
+                    }
                 }
             } else {
                 bail!(

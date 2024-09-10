@@ -77,7 +77,6 @@ mod tests {
             blobs: vec![UnsettledBlobDetail {
                 contract_name: ContractName(contract.to_string()),
                 verification_status: VerificationStatus::default(),
-                hyle_output: None,
             }],
         }
     }

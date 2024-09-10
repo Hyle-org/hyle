@@ -27,16 +27,24 @@ pub struct UnsettledTransaction {
 pub struct UnsettledBlobDetail {
     pub contract_name: ContractName,
     pub verification_status: VerificationStatus,
-    pub hyle_output: Option<HyleOutput>,
 }
 
-#[derive(Default, Debug, Clone, Eq, PartialEq)]
+#[derive(Default, Debug, Clone)]
 pub enum VerificationStatus {
     #[default]
     WaitingProof,
-    Success,
+    Success(HyleOutput),
     InvalidProof,
     ExecutionFailed,
+}
+
+impl VerificationStatus {
+    pub fn is_success(&self) -> bool {
+        match self {
+            VerificationStatus::Success(_) => true,
+            _ => false,
+        }
+    }
 }
 
 #[derive(Default, Debug, Clone)]
