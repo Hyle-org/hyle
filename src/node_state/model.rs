@@ -59,9 +59,16 @@ pub struct HyleOutput {
 }
 
 impl Timeouts {
-    pub fn list_timeouts(&self, at: BlockHeight) {}
+    pub fn drop(&mut self, at: &BlockHeight) {
+        todo!()
+    }
+    pub fn list_timeouts(&self, at: BlockHeight) {
+        todo!()
+    }
     pub fn get(&self, tx: &TxHash) -> BlockHeight {
         todo!()
     }
-    pub fn set(&mut self, tx: TxHash, at: BlockHeight) {}
+    pub fn set(&mut self, tx: TxHash, at: BlockHeight) {
+        todo!()
+    }
 }

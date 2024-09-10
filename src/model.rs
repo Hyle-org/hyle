@@ -1,26 +1,26 @@
 // use rand::{distributions::Alphanumeric, Rng};
+use derive_more::Display;
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Sha3_256};
 use std::{
-    fmt::Display,
     io::Write,
-    ops::Deref,
+    ops::{Add, Deref},
     time::{SystemTime, UNIX_EPOCH},
 };
 
-#[derive(Default, Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
+#[derive(Default, Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash, Display)]
 pub struct TxHash(pub String);
 
-#[derive(Default, Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
+#[derive(Default, Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash, Display, Copy)]
 pub struct BlockHeight(pub u64);
 
-#[derive(Default, Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
+#[derive(Default, Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash, Display)]
 pub struct BlobIndex(pub u32);
 
-#[derive(Default, Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
+#[derive(Default, Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash, Display)]
 pub struct Identity(pub String);
 
-#[derive(Default, Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
+#[derive(Default, Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash, Display)]
 pub struct ContractName(pub String);
 
 #[derive(Debug, Serialize, Deserialize, Default, Clone)]
@@ -111,7 +111,7 @@ pub trait Hashable {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Block {
     pub parent_hash: BlockHash,
-    pub height: usize,
+    pub height: BlockHeight,
     pub timestamp: u64,
     pub txs: Vec<Transaction>,
 }
@@ -136,10 +136,31 @@ impl std::default::Default for Block {
     fn default() -> Self {
         Block {
             parent_hash: BlockHash::default(),
-            height: 0,
+            height: BlockHeight(0),
             timestamp: get_current_timestamp(),
             txs: vec![],
         }
+    }
+}
+
+impl Add<BlockHeight> for u64 {
+    type Output = BlockHeight;
+    fn add(self, other: BlockHeight) -> BlockHeight {
+        BlockHeight(self + other.0)
+    }
+}
+
+impl Add<u64> for BlockHeight {
+    type Output = BlockHeight;
+    fn add(self, other: u64) -> BlockHeight {
+        BlockHeight(self.0 + other)
+    }
+}
+
+impl Add<BlockHeight> for BlockHeight {
+    type Output = BlockHeight;
+    fn add(self, other: BlockHeight) -> BlockHeight {
+        BlockHeight(self.0 + other.0)
     }
 }
 
@@ -148,4 +169,23 @@ pub fn get_current_timestamp() -> u64 {
         .duration_since(UNIX_EPOCH)
         .expect("Time went backwards")
         .as_secs()
+}
+
+#[cfg(test)]
+mod tests {
+    use proptest::prelude::*;
+
+    use crate::model::BlockHeight;
+
+    proptest! {
+        #[test]
+        fn block_height_add(x in 0u64..10000, y in 0u64..10000) {
+            let b = BlockHeight(x);
+            let c = BlockHeight(y);
+
+            assert_eq!((b + c).0, (c + b).0);
+            assert_eq!((b + y).0, x + y);
+            assert_eq!((y + b).0, x + y);
+        }
+    }
 }

@@ -3,7 +3,9 @@ use std::collections::HashMap;
 use anyhow::{bail, Error, Result};
 use ordered_tx_map::OrderedTxMap;
 
-use crate::model::{BlobTransaction, ContractName, ProofTransaction, Transaction, TxHash};
+use crate::model::{
+    BlobTransaction, Block, BlockHeight, ContractName, ProofTransaction, Transaction, TxHash,
+};
 use model::{
     BlobsHash, Contract, Timeouts, UnsettledBlobDetail, UnsettledTransaction, VerificationStatus,
 };
@@ -13,13 +15,22 @@ mod ordered_tx_map;
 
 #[derive(Default, Debug, Clone)]
 pub struct NodeState {
-    _timeouts: Timeouts,
+    timeouts: Timeouts,
+    current_height: BlockHeight,
     _contracts: HashMap<ContractName, Contract>,
-    transactions: OrderedTxMap,
+    unsettled_transactions: OrderedTxMap,
 }
 
 impl NodeState {
-    pub fn handle_transaction(self, transaction: Transaction) -> Result<NodeState, Error> {
+    pub fn handle_new_block(&self, block: Block) -> NodeState {
+        let mut new_state = self.clone();
+
+        new_state.timeouts.drop(&block.height);
+        new_state.current_height = block.height;
+        new_state
+    }
+
+    pub fn handle_transaction(&self, transaction: Transaction) -> Result<NodeState, Error> {
         let mut new_state = self.clone();
 
         let res = match transaction.transaction_data {
@@ -31,7 +42,7 @@ impl NodeState {
         res.map(|_| new_state)
     }
 
-    pub fn handle_blob_tx(&mut self, tx: BlobTransaction) -> Result<(), Error> {
+    fn handle_blob_tx(&mut self, tx: BlobTransaction) -> Result<(), Error> {
         let (tx_hash, blobs_hash) = hash_transaction(&tx);
 
         let blobs: Vec<UnsettledBlobDetail> = tx
@@ -44,7 +55,7 @@ impl NodeState {
             })
             .collect();
 
-        self.transactions.add(UnsettledTransaction {
+        self.unsettled_transactions.add(UnsettledTransaction {
             identity: tx.identity,
             hash: tx_hash.clone(),
             blobs_hash,
@@ -52,19 +63,20 @@ impl NodeState {
         });
 
         // Update timeouts
+        self.timeouts.set(tx_hash, self.current_height);
 
         Ok(())
     }
 
-    pub fn handle_proof(&mut self, tx: ProofTransaction) -> Result<(), Error> {
+    fn handle_proof(&mut self, tx: ProofTransaction) -> Result<(), Error> {
         // Diverse verifications
-        let unsettled_tx = match self.transactions.get(&tx.tx_hash) {
+        let unsettled_tx = match self.unsettled_transactions.get(&tx.tx_hash) {
             Some(tx) => tx,
             None => bail!("Tx is either settled or does not exists."),
         };
 
         if !self
-            .transactions
+            .unsettled_transactions
             .is_next_unsettled_tx(&tx.tx_hash, &tx.contract_name)
         {
             // TODO: buffer this ProofTransaction to be handled later
@@ -99,7 +111,7 @@ impl NodeState {
         tx: &ProofTransaction,
         _blob_detail: UnsettledBlobDetail,
     ) -> Result<(), Error> {
-        let _unsettled_tx = match self.transactions.get_mut(&tx.tx_hash) {
+        let _unsettled_tx = match self.unsettled_transactions.get_mut(&tx.tx_hash) {
             Some(tx) => tx,
             None => bail!("Tx is either settled or does not exists."),
         };
@@ -110,7 +122,7 @@ impl NodeState {
     }
 
     fn is_settled(&self, tx_hash: &TxHash) -> bool {
-        let tx = match self.transactions.get(tx_hash) {
+        let tx = match self.unsettled_transactions.get(tx_hash) {
             Some(tx) => tx,
             None => {
                 return false;
