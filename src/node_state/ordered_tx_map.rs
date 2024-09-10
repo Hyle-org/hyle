@@ -68,7 +68,7 @@ mod tests {
     fn new_tx(hash: &str, contract: &str) -> UnsettledTransaction {
         UnsettledTransaction {
             identity: Identity("toto".to_string()),
-            hash: TxHash(hash.to_string()),
+            hash: TxHash::new(hash),
             blobs_hash: BlobsHash("blobs_hash".to_string()),
             blobs: vec![UnsettledBlobDetail {
                 contract_name: ContractName(contract.to_string()),
@@ -91,9 +91,9 @@ mod tests {
     #[test]
     fn can_get_tx() {
         let mut map = OrderedTxMap::default();
-        let tx1 = TxHash("tx1".to_string());
-        let tx2 = TxHash("tx2".to_string());
-        let tx3 = TxHash("tx3".to_string());
+        let tx1 = TxHash::new("tx1");
+        let tx2 = TxHash::new("tx2");
+        let tx3 = TxHash::new("tx3");
 
         map.add(new_tx("tx1", "c1"));
         map.add(new_tx("tx2", "c1"));
@@ -110,7 +110,7 @@ mod tests {
     #[test]
     fn double_add_ignored() {
         let mut map = OrderedTxMap::default();
-        let tx1 = TxHash("tx1".to_string());
+        let tx1 = TxHash::new("tx1");
 
         map.add(new_tx("tx1", "c1"));
         map.add(new_tx("tx1", "c1"));
@@ -125,8 +125,8 @@ mod tests {
     #[test]
     fn check_next_unsettled_tx() {
         let mut map = OrderedTxMap::default();
-        let tx1 = TxHash("tx1".to_string());
-        let tx2 = TxHash("tx2".to_string());
+        let tx1 = TxHash::new("tx1");
+        let tx2 = TxHash::new("tx2");
 
         map.add(new_tx("tx1", "c1"));
         map.add(new_tx("tx2", "c1"));
@@ -143,8 +143,8 @@ mod tests {
     #[test]
     fn remove_tx() {
         let mut map = OrderedTxMap::default();
-        let tx1 = TxHash("tx1".to_string());
-        let tx2 = TxHash("tx2".to_string());
+        let tx1 = TxHash::new("tx1");
+        let tx2 = TxHash::new("tx2");
         let c1 = ContractName("c1".to_string());
         let c2 = ContractName("c2".to_string());
         let c3 = ContractName("c3".to_string());

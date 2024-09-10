@@ -4,7 +4,8 @@ use anyhow::{bail, Error, Result};
 use ordered_tx_map::OrderedTxMap;
 
 use crate::model::{
-    BlobTransaction, Block, BlockHeight, ContractName, ProofTransaction, Transaction, TxHash,
+    BlobTransaction, Block, BlockHeight, ContractName, Hashable, ProofTransaction, Transaction,
+    TxHash,
 };
 use model::{
     BlobsHash, Contract, Timeouts, UnsettledBlobDetail, UnsettledTransaction, VerificationStatus,
@@ -86,19 +87,22 @@ impl NodeState {
         // Verify proof
         let blob_detail = Self::verify_proof(&tx)?;
 
-        // extract publicInputs
         // hash payloads
-        let blobs_hash = Self::hash_blobs(&blob_detail)?;
+        let blobs_hash = Self::extract_blobs_hash(&blob_detail)?;
 
         // some verifications
         if blobs_hash != unsettled_tx.blobs_hash {
-            todo!()
+            bail!("Proof blobs hash do not correspond to transaction blobs hash.")
         }
 
-        self.update_tx(&tx, blob_detail)?;
+        self.update_state_tx(&tx, blob_detail)?;
 
         // check if tx can be settled
-        if self.is_settled(&tx.tx_hash) {
+        let is_next_to_settle = self
+            .unsettled_transactions
+            .is_next_unsettled_tx(&tx.tx_hash, &tx.contract_name);
+
+        if is_next_to_settle && self.is_settled(&tx.tx_hash) {
             // settle tx
             Self::settle_tx()?;
         }
@@ -106,17 +110,18 @@ impl NodeState {
         Ok(())
     }
 
-    fn update_tx(
+    fn update_state_tx(
         &mut self,
         tx: &ProofTransaction,
-        _blob_detail: UnsettledBlobDetail,
+        blob_detail: UnsettledBlobDetail,
     ) -> Result<(), Error> {
-        let _unsettled_tx = match self.unsettled_transactions.get_mut(&tx.tx_hash) {
+        let unsettled_tx = match self.unsettled_transactions.get_mut(&tx.tx_hash) {
             Some(tx) => tx,
             None => bail!("Tx is either settled or does not exists."),
         };
 
-        // unsettled_tx.blobs[tx.blob_index] = blob_detail;
+        // TODO: better not using "as usize"
+        unsettled_tx.blobs[tx.blob_index.0 as usize] = blob_detail;
 
         Ok(())
     }
@@ -137,11 +142,16 @@ impl NodeState {
         settled
     }
 
-    fn verify_proof(_tx: &ProofTransaction) -> Result<UnsettledBlobDetail, Error> {
-        todo!()
+    fn verify_proof(tx: &ProofTransaction) -> Result<UnsettledBlobDetail, Error> {
+        // TODO real implementation
+        Ok(UnsettledBlobDetail {
+            contract_name: tx.contract_name.clone(),
+            verification_status: VerificationStatus::Success,
+            hyle_output: None,
+        })
     }
 
-    fn hash_blobs(_blob: &UnsettledBlobDetail) -> Result<BlobsHash, Error> {
+    fn extract_blobs_hash(_blob: &UnsettledBlobDetail) -> Result<BlobsHash, Error> {
         todo!()
     }
 
@@ -151,6 +161,6 @@ impl NodeState {
 }
 
 // TODO: move it somewhere else ?
-fn hash_transaction(_tx: &BlobTransaction) -> (TxHash, BlobsHash) {
-    todo!()
+fn hash_transaction(tx: &BlobTransaction) -> (TxHash, BlobsHash) {
+    (tx.hash(), tx.blobs_hash())
 }

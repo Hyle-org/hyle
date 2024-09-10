@@ -8,8 +8,17 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-#[derive(Default, Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash, Display)]
-pub struct TxHash(pub String);
+#[derive(Default, Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
+pub struct TxHash(pub Vec<u8>);
+
+impl TxHash {
+    pub fn new(s: &str) -> TxHash {
+        TxHash(s.as_bytes().to_vec())
+    }
+}
+
+#[derive(Default, Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
+pub struct BlobsHash(pub Vec<u8>);
 
 #[derive(Default, Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash, Display, Copy)]
 pub struct BlockHeight(pub u64);
@@ -104,8 +113,8 @@ impl std::fmt::Debug for BlockHash {
     }
 }
 
-pub trait Hashable {
-    fn hash(&self) -> BlockHash;
+pub trait Hashable<T> {
+    fn hash(&self) -> T;
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -116,7 +125,7 @@ pub struct Block {
     pub txs: Vec<Transaction>,
 }
 
-impl Hashable for Block {
+impl Hashable<BlockHash> for Block {
     fn hash(&self) -> BlockHash {
         let mut hasher = Sha3_256::new();
         hasher.update(self.parent_hash.deref());
@@ -129,6 +138,27 @@ impl Hashable for Block {
         return BlockHash {
             inner: hasher.finalize().as_slice().to_owned(),
         };
+    }
+}
+
+impl Hashable<TxHash> for BlobTransaction {
+    fn hash(&self) -> TxHash {
+        let mut hasher = Sha3_256::new();
+        _ = write!(hasher, "{}", self.identity.0);
+        hasher.update(self.blobs_hash().0);
+        return TxHash(hasher.finalize().as_slice().to_owned());
+    }
+}
+
+impl BlobTransaction {
+    pub fn blobs_hash(&self) -> BlobsHash {
+        let mut hasher = Sha3_256::new();
+        for blob in self.blobs.iter() {
+            // FIXME:
+            _ = write!(hasher, "{}", blob.contract_name.0);
+            hasher.update(blob.data.as_slice());
+        }
+        return BlobsHash(hasher.finalize().as_slice().to_owned());
     }
 }
 

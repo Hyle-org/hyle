@@ -1,13 +1,11 @@
 #![allow(dead_code, unused_variables)]
 use std::collections::HashMap;
 
+use crate::model::BlobsHash;
 use crate::model::BlockHeight;
 use crate::model::ContractName;
 use crate::model::Identity;
 use crate::model::TxHash;
-
-#[derive(Default, Debug, Clone, Eq, PartialEq)]
-pub struct BlobsHash(pub String);
 
 #[derive(Default, Debug, Clone)]
 pub struct Timeouts {
