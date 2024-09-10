@@ -59,7 +59,7 @@ impl NodeState {
     }
 
     fn handle_blob_tx(&mut self, tx: BlobTransaction) -> Result<(), Error> {
-        let (tx_hash, blobs_hash) = hash_transaction(&tx);
+        let (blob_tx_hash, blobs_hash) = hash_transaction(&tx);
 
         let blobs: Vec<UnsettledBlobDetail> = tx
             .blobs
@@ -73,13 +73,13 @@ impl NodeState {
         debug!("Add transaction to state");
         self.unsettled_transactions.add(UnsettledTransaction {
             identity: tx.identity,
-            hash: tx_hash.clone(),
+            hash: blob_tx_hash.clone(),
             blobs_hash,
             blobs,
         });
 
         // Update timeouts
-        self.timeouts.set(tx_hash, self.current_height + 10); // TODO: Timeout after 10 blocks, make it configurable !
+        self.timeouts.set(blob_tx_hash, self.current_height + 10); // TODO: Timeout after 10 blocks, make it configurable !
 
         Ok(())
     }
@@ -88,12 +88,12 @@ impl NodeState {
         // Diverse verifications
         let _unsettled_tx = self
             .unsettled_transactions
-            .get(&tx.tx_hash)
+            .get(&tx.blob_tx_hash)
             .context("Tx is either settled or does not exists.")?;
 
         if !self
             .unsettled_transactions
-            .is_next_unsettled_tx(&tx.tx_hash, &tx.contract_name)
+            .is_next_unsettled_tx(&tx.blob_tx_hash, &tx.contract_name)
         {
             // TODO: buffer this ProofTransaction to be handled later
             bail!("Another tx needs to be settled before.");
@@ -120,9 +120,9 @@ impl NodeState {
         // check if tx can be settled
         let is_next_to_settle = self
             .unsettled_transactions
-            .is_next_unsettled_tx(&tx.tx_hash, &tx.contract_name);
+            .is_next_unsettled_tx(&tx.blob_tx_hash, &tx.contract_name);
 
-        if is_next_to_settle && self.is_ready_for_settlement(&tx.tx_hash) {
+        if is_next_to_settle && self.is_ready_for_settlement(&tx.blob_tx_hash) {
             // settle tx
             self.settle_tx(&tx)?;
         }
@@ -146,7 +146,7 @@ impl NodeState {
     ) -> Result<(), Error> {
         let unsettled_tx = self
             .unsettled_transactions
-            .get_mut(&tx.tx_hash)
+            .get_mut(&tx.blob_tx_hash)
             .context("Tx is either settled or does not exists.")?;
 
         // TODO: better not using "as usize"
@@ -177,7 +177,7 @@ impl NodeState {
                 initial_state: StateDigest(vec![0, 1, 2, 3]),
                 next_state: StateDigest(vec![4, 5, 6]),
                 identity: Identity("test".to_string()),
-                tx_hash: tx.tx_hash.clone(),
+                tx_hash: tx.blob_tx_hash.clone(),
                 index: tx.blob_index.clone(),
                 blobs: vec![],
                 success: true,
@@ -198,7 +198,7 @@ impl NodeState {
     // TODO rewrite this function and update_state_contract to avoid re-query of unsettled_tx
     fn settle_tx(&mut self, tx: &ProofTransaction) -> Result<(), Error> {
         info!("Settle tx {:?}", tx);
-        let unsettled_tx = match self.unsettled_transactions.get_mut(&tx.tx_hash) {
+        let unsettled_tx = match self.unsettled_transactions.get_mut(&tx.blob_tx_hash) {
             Some(tx) => tx,
             None => bail!("Tx to settle not found!"),
         };
@@ -209,7 +209,7 @@ impl NodeState {
             .collect::<Vec<ContractName>>();
 
         for contract_name in &contracts {
-            self.update_state_contract(contract_name, &tx.tx_hash)?;
+            self.update_state_contract(contract_name, &tx.blob_tx_hash)?;
         }
 
         Ok(())
@@ -307,18 +307,18 @@ mod test {
             identity: Identity("test".to_string()),
             blobs: vec![new_blob(&c1), new_blob(&c2)],
         };
-        let tx_hash = blob.hash();
+        let blob_tx_hash = blob.hash();
         let blob_tx = new_tx(TransactionData::Blob(blob));
 
         let proof_c1 = new_tx(TransactionData::Proof(ProofTransaction {
-            tx_hash: tx_hash.clone(),
+            blob_tx_hash: blob_tx_hash.clone(),
             contract_name: c1.clone(),
             blob_index: BlobIndex(0),
             proof: vec![],
         }));
 
         let proof_c2 = new_tx(TransactionData::Proof(ProofTransaction {
-            tx_hash,
+            blob_tx_hash,
             contract_name: c2.clone(),
             blob_index: BlobIndex(1),
             proof: vec![],

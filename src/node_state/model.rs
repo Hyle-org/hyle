@@ -52,8 +52,8 @@ pub struct HyleOutput {
     pub next_state: StateDigest,
     pub identity: Identity,
     pub tx_hash: TxHash,
-    pub index: BlobIndex, // @Bertrand to @Max: I changed from u32 to BlobIndex, am I right ?
-    pub blobs: Vec<u8>,   // @Bertrand: I renamed it "blobs" instead of "payloads", hope it's fine
+    pub index: BlobIndex,
+    pub blobs: Vec<u8>,
     pub success: bool,
 }
 
