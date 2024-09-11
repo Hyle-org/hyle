@@ -9,14 +9,14 @@ use tokio::{
 use tracing::{info, warn};
 
 use crate::{
-    bus::MessageBus, model::Transaction, p2p::network::MempoolMessage, utils::logger::LogMe,
+    bus::SharedMessageBus, model::Transaction, p2p::network::MempoolMessage, utils::logger::LogMe,
 };
 
 #[derive(Debug)]
 struct Batch(String, Vec<Transaction>);
 
 pub struct Mempool {
-    bus: MessageBus,
+    bus: SharedMessageBus,
     // txs accumulated, not yet transmitted to the consensus
     pending_txs: Vec<Transaction>,
     // txs batched under a req_id, transmitted to the consensus to be packed in a block
@@ -37,7 +37,7 @@ pub enum MempoolResponse {
 }
 
 impl Mempool {
-    pub fn new(bus: MessageBus) -> Mempool {
+    pub fn new(bus: SharedMessageBus) -> Mempool {
         Mempool {
             bus,
             pending_txs: vec![],

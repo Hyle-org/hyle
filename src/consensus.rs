@@ -8,7 +8,7 @@ use serde::Serialize;
 use tokio::time::sleep;
 use tracing::info;
 
-use crate::bus::MessageBus;
+use crate::bus::SharedMessageBus;
 use crate::mempool::MempoolCommand;
 use crate::mempool::MempoolResponse;
 use crate::model::get_current_timestamp;
@@ -88,13 +88,13 @@ impl Consensus {
         Ok(ctx)
     }
 
-    pub async fn start(&mut self, bus: MessageBus, config: &Conf) -> anyhow::Result<()> {
+    pub async fn start(&mut self, bus: SharedMessageBus, config: &Conf) -> anyhow::Result<()> {
         let interval = config.storage.interval;
 
-        let consensus_command_sender = bus.sender().await;
-        let mut consensus_command_receiver = bus.receiver().await;
-        let mempool_command_sender = bus.sender().await;
-        let mut mempool_response_receiver = bus.receiver().await;
+        let consensus_command_sender = bus.sender::<ConsensusCommand>().await;
+        let mut consensus_command_receiver = bus.receiver::<ConsensusCommand>().await;
+        let mempool_command_sender = bus.sender::<MempoolCommand>().await;
+        let mut mempool_response_receiver = bus.receiver::<MempoolResponse>().await;
 
         let is_master = config.peers.is_empty();
 
@@ -126,7 +126,9 @@ impl Consensus {
                     match msg {
                         ConsensusCommand::GenerateNewBlock => {
                             batch_id += 1;
-                            _ = mempool_command_sender.send(MempoolCommand::CreatePendingBatch { id: batch_id.to_string() }).log_error("Creating a new block");
+                            _ = mempool_command_sender
+                                .send(MempoolCommand::CreatePendingBatch { id: batch_id.to_string() })
+                                .log_error("Creating a new block");
                         },
                         ConsensusCommand::SaveOnDisk => {
                             let _ = self.save_on_disk();

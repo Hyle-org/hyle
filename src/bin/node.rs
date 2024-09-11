@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use clap::Parser;
-use hyle::bus::MessageBus;
+use hyle::bus::SharedMessageBus;
 use hyle::mempool::Mempool;
 use hyle::p2p::network::MempoolMessage;
 use tracing::{debug, warn};
@@ -11,7 +11,7 @@ use hyle::p2p;
 use hyle::rest;
 use hyle::utils::conf::{self, Conf};
 
-fn start_consensus(bus: MessageBus, config: Conf) {
+fn start_consensus(bus: SharedMessageBus, config: Conf) {
     tokio::spawn(async move {
         let mut consensus = Consensus::load_from_disk().unwrap_or_else(|_| {
             warn!("Failed to load consensus state from disk, using a default one");
@@ -47,9 +47,9 @@ async fn main() -> Result<()> {
 
     debug!("server mode");
 
-    let bus = MessageBus::new();
+    let bus = SharedMessageBus::new();
 
-    let mut mp = Mempool::new(bus.clone());
+    let mut mp = Mempool::new(SharedMessageBus::new_handle(&bus));
     let (mempool_message_sender, mempool_message_receiver) =
         tokio::sync::mpsc::unbounded_channel::<MempoolMessage>();
 
@@ -57,7 +57,7 @@ async fn main() -> Result<()> {
         _ = mp.start(mempool_message_receiver).await;
     });
 
-    start_consensus(bus.clone(), config.clone());
+    start_consensus(SharedMessageBus::new_handle(&bus), config.clone());
 
     tokio::spawn(async move {
         if let Err(e) = p2p::p2p_server(&rpc_addr, &config, mempool_message_sender).await {

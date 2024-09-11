@@ -6,12 +6,17 @@ pub const CHANNEL_CAPACITY: usize = 1024;
 
 type AnyMap = Map<dyn Any + Send + Sync>;
 
-#[derive(Clone)]
-pub struct MessageBus {
+pub struct SharedMessageBus {
     channels: Arc<Mutex<AnyMap>>,
 }
 
-impl MessageBus {
+impl SharedMessageBus {
+    pub fn new_handle(&self) -> Self {
+        SharedMessageBus {
+            channels: Arc::clone(&self.channels),
+        }
+    }
+
     pub fn new() -> Self {
         Self {
             channels: Arc::new(Mutex::new(AnyMap::new())),
