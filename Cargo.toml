@@ -18,11 +18,14 @@ ron = "0.8.1"
 axum = "0.7.5"
 sha3 = "0.10.8"
 hex = "0.4.3"
+derive_more = { version ="1.0.0", features = ["display"] }
 
 [dev-dependencies]
 assert_cmd = "2.0.16"
 reqwest = { version = "0.11", features = ["json", "blocking"] }
 serde_json = "1.0.128"
+proptest = "1.5.0"
+test-log = { version ="0.2.16", features = ["color", "trace"] }
 
 [profile.release]
 lto = "thin"
