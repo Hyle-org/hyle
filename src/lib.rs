@@ -1,3 +1,4 @@
+pub mod bus;
 pub mod consensus;
 pub mod mempool;
 pub mod model;

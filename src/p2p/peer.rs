@@ -2,34 +2,27 @@ use anyhow::{anyhow, bail, Context, Error, Result};
 use tokio::io::AsyncReadExt;
 use tokio::io::AsyncWriteExt;
 use tokio::io::Interest;
+use tokio::net::TcpStream;
 use tokio::sync::mpsc::UnboundedSender;
-use tokio::{net::TcpStream, sync::mpsc};
 use tracing::{debug, warn};
 use tracing::{info, trace};
 
 use super::network::MempoolMessage;
 use super::network::{NetMessage, Version};
-use crate::consensus::ConsensusCommand;
 use crate::utils::logger::LogMe;
 
 #[derive(Debug)]
 pub struct Peer {
     stream: TcpStream,
     mempool: UnboundedSender<MempoolMessage>,
-    ctx: mpsc::Sender<ConsensusCommand>,
 }
 
 impl Peer {
     pub async fn new(
         stream: TcpStream,
-        ctx: mpsc::Sender<ConsensusCommand>,
         mempool: UnboundedSender<MempoolMessage>,
     ) -> Result<Self, Error> {
-        Ok(Peer {
-            stream,
-            ctx,
-            mempool,
-        })
+        Ok(Peer { stream, mempool })
     }
 
     async fn handle_net_message(&mut self, msg: NetMessage) -> Result<(), Error> {
