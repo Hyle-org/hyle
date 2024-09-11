@@ -123,7 +123,7 @@ impl NodeState {
             .map(|blob_ref| {
                 let is_next_to_settle = self
                     .unsettled_transactions
-                    .is_next_unsettled_tx(&blob_ref.blob_tx_hash, &tx.contract_name);
+                    .is_next_unsettled_tx(&blob_ref.blob_tx_hash, &blob_ref.contract_name);
 
                 // check if tx can be settled
                 if is_next_to_settle && self.is_ready_for_settlement(&blob_ref.blob_tx_hash) {
@@ -189,7 +189,7 @@ impl NodeState {
             .blobs_references
             .iter()
             .map(|blob_ref| UnsettledBlobDetail {
-                contract_name: tx.contract_name.clone(),
+                contract_name: blob_ref.contract_name.clone(),
                 verification_status: VerificationStatus::Success(model::HyleOutput {
                     version: 1,
                     initial_state: StateDigest(vec![0, 1, 2, 3]),
@@ -334,8 +334,8 @@ mod test {
         let blob_tx = new_tx(TransactionData::Blob(blob));
 
         let proof_c1 = new_tx(TransactionData::Proof(ProofTransaction {
-            contract_name: c1.clone(),
             blobs_references: vec![BlobReference {
+                contract_name: c1.clone(),
                 blob_tx_hash: blob_tx_hash.clone(),
 
                 blob_index: BlobIndex(0),
@@ -344,8 +344,8 @@ mod test {
         }));
 
         let proof_c2 = new_tx(TransactionData::Proof(ProofTransaction {
-            contract_name: c2.clone(),
             blobs_references: vec![BlobReference {
+                contract_name: c2.clone(),
                 blob_tx_hash,
                 blob_index: BlobIndex(1),
             }],
@@ -391,21 +391,24 @@ mod test {
         let blob_tx_2 = new_tx(TransactionData::Blob(blob_2));
 
         let proof_c1 = new_tx(TransactionData::Proof(ProofTransaction {
-            contract_name: c1.clone(),
             blobs_references: vec![
                 BlobReference {
+                    contract_name: c1.clone(),
                     blob_tx_hash: blob_tx_hash_1.clone(),
                     blob_index: BlobIndex(0),
                 },
                 BlobReference {
+                    contract_name: c2.clone(),
                     blob_tx_hash: blob_tx_hash_1.clone(),
                     blob_index: BlobIndex(1),
                 },
                 BlobReference {
+                    contract_name: c1.clone(),
                     blob_tx_hash: blob_tx_hash_2.clone(),
                     blob_index: BlobIndex(0),
                 },
                 BlobReference {
+                    contract_name: c2.clone(),
                     blob_tx_hash: blob_tx_hash_2.clone(),
                     blob_index: BlobIndex(1),
                 },
@@ -426,6 +429,6 @@ mod test {
             .unwrap();
 
         assert_eq!(new_state.contracts.get(&c1).unwrap().state.0, vec![4, 5, 6]);
-        assert!(new_state.contracts.get(&c2).unwrap().state.0.is_empty());
+        assert_eq!(new_state.contracts.get(&c2).unwrap().state.0, vec![4, 5, 6]);
     }
 }
