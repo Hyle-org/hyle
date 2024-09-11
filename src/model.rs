@@ -95,10 +95,15 @@ impl Default for TransactionData {
 
 #[derive(Debug, Serialize, Deserialize, Default, Clone)]
 pub struct ProofTransaction {
-    pub blob_tx_hash: TxHash,
     pub contract_name: ContractName,
-    pub blob_index: BlobIndex,
+    pub blobs_references: Vec<BlobReference>,
     pub proof: Vec<u8>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Default, Clone)]
+pub struct BlobReference {
+    pub blob_tx_hash: TxHash,
+    pub blob_index: BlobIndex,
 }
 
 #[derive(Debug, Serialize, Deserialize, Default, Clone)]
