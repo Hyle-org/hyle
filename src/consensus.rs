@@ -168,6 +168,10 @@ impl Consensus {
                             _ = consensus_events_sender.send(ConsensusEvent::CommitBlock {batch_id: id, block: block.clone() }).log_error("error sending new block");
                             // send to network
                             _ = bus.sender::<ConsensusNetMessage>().await.send(ConsensusNetMessage::CommitBlock(block)).log_warn("error sending new block on network bus");
+                        },
+                        MempoolResponse::Txs{ txs} => {
+
+                            info!("Received txs ");
                         }
                     }
                 }
