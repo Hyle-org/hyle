@@ -1,14 +1,12 @@
 use anyhow::{anyhow, bail, Context, Error, Result};
-use tokio::io::AsyncReadExt;
-use tokio::io::AsyncWriteExt;
-use tokio::io::Interest;
-use tokio::net::TcpStream;
-use tokio::sync::mpsc::UnboundedSender;
-use tracing::{debug, warn};
-use tracing::{info, trace};
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt, Interest},
+    net::TcpStream,
+    sync::mpsc::UnboundedSender,
+};
+use tracing::{debug, info, trace, warn};
 
-use super::network::MempoolMessage;
-use super::network::{NetMessage, Version};
+use super::network::{MempoolMessage, NetMessage, Version};
 use crate::utils::logger::LogMe;
 
 #[derive(Debug)]
@@ -94,14 +92,14 @@ impl Peer {
     }
 
     async fn send_message(&mut self, msg: NetMessage) -> Result<(), Error> {
-        let binary = msg.as_binary();
+        let binary = msg.to_binary();
         trace!("SEND {} bytes: {:?}", binary.len(), binary);
         self.stream
             .write_u32(binary.len() as u32)
             .await
             .context("Failed to write size on stream")?;
         self.stream
-            .write(msg.as_binary().as_ref())
+            .write(&binary)
             .await
             .context("Failed to write data on stream")?;
         Ok(())
@@ -134,9 +132,6 @@ impl Peer {
     }
 
     async fn handle_read(buf: &[u8]) -> Result<NetMessage, Error> {
-        match bincode::deserialize::<NetMessage>(buf) {
-            std::result::Result::Ok(msg) => Ok(msg),
-            std::result::Result::Err(_) => Err(anyhow!("Could not decode NetMessage")),
-        }
+        bincode::deserialize::<NetMessage>(buf).map_err(|_| anyhow!("Could not decode NetMessage"))
     }
 }

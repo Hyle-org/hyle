@@ -1,4 +1,3 @@
-// use rand::{distributions::Alphanumeric, Rng};
 use derive_more::Display;
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Sha3_256};
@@ -29,7 +28,7 @@ pub struct BlobsHash(pub Vec<u8>);
 
 impl BlobsHash {
     pub fn new(s: &str) -> BlobsHash {
-        BlobsHash(s.as_bytes().to_vec())
+        BlobsHash(s.into())
     }
 
     pub fn from_vec(vec: &Vec<Blob>) -> BlobsHash {
@@ -141,9 +140,7 @@ pub struct BlockHash {
 
 impl BlockHash {
     pub fn new(s: &str) -> BlockHash {
-        BlockHash {
-            inner: s.as_bytes().to_vec(),
-        }
+        BlockHash { inner: s.into() }
     }
 }
 

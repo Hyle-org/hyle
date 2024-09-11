@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use anyhow::Result;
 use config::{Config, ConfigError, Environment, File};
 use serde::{Deserialize, Serialize};
@@ -6,6 +8,8 @@ use serde::{Deserialize, Serialize};
 pub struct Storage {
     pub interval: u64,
 }
+
+pub type SharedConf = Arc<Conf>;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Conf {
@@ -17,8 +21,8 @@ pub struct Conf {
 }
 
 impl Conf {
-    pub fn addr(&self) -> String {
-        format!("{}:{}", self.host, self.port)
+    pub fn addr(&self) -> (&str, u16) {
+        (&self.host, self.port)
     }
 
     pub fn rest_addr(&self) -> &str {
@@ -36,5 +40,9 @@ impl Conf {
 
         // You can deserialize (and thus freeze) the entire configuration as
         s.try_deserialize()
+    }
+
+    pub fn new_shared(config_file: String) -> Result<SharedConf, ConfigError> {
+        Self::new(config_file).map(Arc::new)
     }
 }
