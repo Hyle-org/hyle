@@ -23,22 +23,7 @@ pub struct UnsettledTransaction {
 #[derive(Default, Debug, Clone)]
 pub struct UnsettledBlobMetadata {
     pub contract_name: ContractName,
-    pub verification_status: VerificationStatus,
-}
-
-#[derive(Default, Debug, Clone)]
-pub enum VerificationStatus {
-    #[default]
-    WaitingProof,
-    Success(HyleOutput),
-    InvalidProof,
-    ExecutionFailed,
-}
-
-impl VerificationStatus {
-    pub fn is_success(&self) -> bool {
-        matches!(self, VerificationStatus::Success(_))
-    }
+    pub metadata: Vec<HyleOutput>,
 }
 
 #[derive(Default, Debug, Clone)]

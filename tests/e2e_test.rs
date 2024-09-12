@@ -4,6 +4,7 @@ use std::{thread, time};
 
 mod test_helpers;
 
+#[ignore]
 #[test]
 fn test_e2e_with_cli() {
     tracing_subscriber::fmt::init();

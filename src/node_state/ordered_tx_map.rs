@@ -66,7 +66,7 @@ impl OrderedTxMap {
 mod tests {
     use crate::{
         model::{BlobsHash, Identity},
-        node_state::model::{UnsettledBlobMetadata, VerificationStatus},
+        node_state::model::UnsettledBlobMetadata,
     };
 
     use super::*;
@@ -78,7 +78,7 @@ mod tests {
             blobs_hash: BlobsHash::new("blobs_hash"),
             blobs: vec![UnsettledBlobMetadata {
                 contract_name: ContractName(contract.to_string()),
-                verification_status: VerificationStatus::default(),
+                metadata: vec![],
             }],
         }
     }
