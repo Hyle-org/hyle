@@ -1,24 +1,25 @@
 use anyhow::{Context, Result};
 use clap::Parser;
-use hyle::bus::SharedMessageBus;
-use hyle::mempool::Mempool;
-use hyle::p2p::network::MempoolMessage;
-use tracing::{debug, warn};
-use tracing::{error, info};
+use hyle::{
+    bus::SharedMessageBus,
+    consensus::Consensus,
+    mempool::Mempool,
+    p2p::{self, network::MempoolMessage},
+    rest,
+    utils::conf::{self, SharedConf},
+};
+use std::sync::Arc;
+use tracing::{debug, error, info, warn};
 
-use hyle::consensus::Consensus;
-use hyle::p2p;
-use hyle::rest;
-use hyle::utils::conf::{self, Conf};
-
-fn start_consensus(bus: SharedMessageBus, config: Conf) {
+fn start_consensus(bus: SharedMessageBus, config: SharedConf) {
     tokio::spawn(async move {
-        let mut consensus = Consensus::load_from_disk().unwrap_or_else(|_| {
-            warn!("Failed to load consensus state from disk, using a default one");
-            Consensus::default()
-        });
-
-        consensus.start(bus, &config).await
+        Consensus::load_from_disk()
+            .unwrap_or_else(|_| {
+                warn!("Failed to load consensus state from disk, using a default one");
+                Consensus::default()
+            })
+            .start(bus, config)
+            .await
     });
 }
 
@@ -39,11 +40,8 @@ async fn main() -> Result<()> {
     // install global collector configured based on RUST_LOG env var.
     tracing_subscriber::fmt::init();
 
-    let config = conf::Conf::new(args.config_file)?;
-    info!("Starting node with config: {:?}", config);
-
-    let rpc_addr = config.addr();
-    let rest_addr = config.rest_addr().to_string();
+    let config = conf::Conf::new_shared(args.config_file)?;
+    info!("Starting node with config: {:?}", &config);
 
     debug!("server mode");
 
@@ -54,19 +52,20 @@ async fn main() -> Result<()> {
         tokio::sync::mpsc::unbounded_channel::<MempoolMessage>();
 
     tokio::spawn(async move {
-        _ = mp.start(mempool_message_receiver).await;
+        mp.start(mempool_message_receiver).await;
     });
 
-    start_consensus(SharedMessageBus::new_handle(&bus), config.clone());
+    start_consensus(SharedMessageBus::new_handle(&bus), Arc::clone(&config));
 
+    let p2p_config = Arc::clone(&config);
     tokio::spawn(async move {
-        if let Err(e) = p2p::p2p_server(&rpc_addr, &config, mempool_message_sender).await {
+        if let Err(e) = p2p::p2p_server(p2p_config, mempool_message_sender).await {
             error!("RPC server failed: {:?}", e);
         }
     });
+
     // Start REST server
-    rest::rest_server(&rest_addr)
+    rest::rest_server(config)
         .await
-        .context("Starting REST server")?;
-    Ok(())
+        .context("Starting REST server")
 }

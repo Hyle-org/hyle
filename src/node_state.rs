@@ -1,9 +1,3 @@
-use std::collections::HashMap;
-
-use anyhow::{bail, Context, Error, Result};
-use ordered_tx_map::OrderedTxMap;
-use tracing::{debug, info};
-
 use crate::{
     model::{
         BlobReference, BlobTransaction, BlobsHash, Block, BlockHeight, ContractName, Hashable,
@@ -11,7 +5,11 @@ use crate::{
     },
     utils::vec_utils::{SequenceOption, SequenceResult},
 };
+use anyhow::{bail, Context, Error, Result};
 use model::{Contract, Timeouts, UnsettledBlobDetail, UnsettledTransaction, VerificationStatus};
+use ordered_tx_map::OrderedTxMap;
+use std::collections::HashMap;
+use tracing::{debug, info};
 
 mod model;
 mod ordered_tx_map;
@@ -221,7 +219,7 @@ impl NodeState {
     // TODO rewrite this function and update_state_contract to avoid re-query of unsettled_tx
     fn settle_tx(&mut self, blob_ref: &BlobReference) -> Result<(), Error> {
         info!("Settle tx {:?}", blob_ref);
-        let unsettled_tx = match self.unsettled_transactions.get_mut(&blob_ref.blob_tx_hash) {
+        let unsettled_tx = match self.unsettled_transactions.get(&blob_ref.blob_tx_hash) {
             Some(tx) => tx,
             None => bail!("Tx to settle not found!"),
         };
@@ -243,7 +241,7 @@ impl NodeState {
         contract_name: &ContractName,
         tx: &TxHash,
     ) -> Result<(), Error> {
-        let unsettled_tx = match self.unsettled_transactions.get_mut(tx) {
+        let unsettled_tx = match self.unsettled_transactions.get(tx) {
             Some(tx) => tx,
             None => bail!("Tx to settle not found!"),
         };

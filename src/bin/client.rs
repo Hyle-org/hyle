@@ -1,15 +1,13 @@
 use anyhow::{Context, Result};
-use rand::{distributions::Alphanumeric, Rng};
-use tokio::io::AsyncWriteExt;
-use tokio::net::TcpStream;
-use tokio::time::Duration;
-
 use clap::Parser;
-use hyle::model::{Transaction, TransactionData};
-use hyle::p2p::network::NetMessage;
+use hyle::{
+    model::{Transaction, TransactionData},
+    p2p::network::NetMessage,
+    utils::conf::{self, SharedConf},
+};
+use rand::{distributions::Alphanumeric, Rng};
+use tokio::{io::AsyncWriteExt, net::TcpStream, time::Duration};
 use tracing::info;
-
-use hyle::utils::conf;
 
 pub fn new_transaction() -> Vec<u8> {
     NetMessage::NewTransaction(Transaction {
@@ -21,11 +19,11 @@ pub fn new_transaction() -> Vec<u8> {
         version: 1,
         transaction_data: TransactionData::default(),
     })
-    .as_binary()
+    .to_binary()
 }
 
-pub async fn client(addr: &str) -> Result<()> {
-    let mut socket = TcpStream::connect(&addr)
+pub async fn client(config: SharedConf) -> Result<()> {
+    let mut socket = TcpStream::connect(config.addr())
         .await
         .context("connecting to server")?;
     info!("Starting client");
@@ -59,13 +57,9 @@ async fn main() -> Result<()> {
     // install global collector configured based on RUST_LOG env var.
     tracing_subscriber::fmt::init();
 
-    let config = conf::Conf::new(args.config_file)?;
+    let config = conf::Conf::new_shared(args.config_file)?;
     info!("Starting client with config: {:?}", config);
 
-    let rpc_addr = config.addr();
-
     info!("client mode");
-    client(&rpc_addr).await?;
-
-    Ok(())
+    client(config).await
 }

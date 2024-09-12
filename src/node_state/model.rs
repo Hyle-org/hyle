@@ -1,13 +1,9 @@
 #![allow(dead_code, unused_variables)]
-use std::collections::HashMap;
 
-use crate::model::BlobIndex;
-use crate::model::BlobsHash;
-use crate::model::BlockHeight;
-use crate::model::ContractName;
-use crate::model::Identity;
-use crate::model::StateDigest;
-use crate::model::TxHash;
+use crate::model::{
+    BlobIndex, BlobsHash, BlockHeight, ContractName, Identity, StateDigest, TxHash,
+};
+use std::collections::HashMap;
 
 #[derive(Default, Debug, Clone)]
 pub struct Contract {
@@ -66,7 +62,7 @@ pub struct Timeouts {
 impl Timeouts {
     pub fn drop(&mut self, at: &BlockHeight) -> Vec<TxHash> {
         if let Some(vec) = self.by_block.remove(at) {
-            self.by_tx_hash.retain(|k, v| v != at);
+            self.by_tx_hash.retain(|_, v| v != at);
             return vec;
         }
         vec![]
