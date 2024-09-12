@@ -1,4 +1,4 @@
-use crate::model::Transaction;
+use crate::model::{Block, Transaction};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -14,12 +14,18 @@ pub enum NetMessage {
     Pong,
     // TODO: To replace with an ApiMessage equivalent
     NewTransaction(Transaction),
-    MempoolMessage(MempoolMessage),
+    MempoolMessage(MempoolNetMessage),
+    ConsensusMessage(ConsensusNetMessage),
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub enum MempoolMessage {
+pub enum MempoolNetMessage {
     NewTx(Transaction),
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub enum ConsensusNetMessage {
+    CommitBlock(Block),
 }
 
 impl NetMessage {

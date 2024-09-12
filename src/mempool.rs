@@ -1,5 +1,6 @@
 use crate::{
-    bus::SharedMessageBus, model::Transaction, p2p::network::MempoolMessage, utils::logger::LogMe,
+    bus::SharedMessageBus, model::Transaction, p2p::network::MempoolNetMessage,
+    utils::logger::LogMe,
 };
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
@@ -45,14 +46,14 @@ impl Mempool {
     }
 
     /// start starts the mempool server.
-    pub async fn start(&mut self, mut message_receiver: UnboundedReceiver<MempoolMessage>) {
+    pub async fn start(&mut self, mut message_receiver: UnboundedReceiver<MempoolNetMessage>) {
         let mut command_receiver = self.bus.receiver::<MempoolCommand>().await;
         let response_sender = self.bus.sender::<MempoolResponse>().await;
         loop {
             select! {
                 Some(msg) = message_receiver.recv() => {
                     match msg {
-                        MempoolMessage::NewTx(tx) => {
+                        MempoolNetMessage::NewTx(tx) => {
                             self.pending_txs.push(tx);
                         }
                     }

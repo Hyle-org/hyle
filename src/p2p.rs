@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
-use crate::{bus::SharedMessageBus, utils::conf::SharedConf};
+use crate::{bus::SharedMessageBus, consensus, utils::conf::SharedConf};
 use anyhow::{Error, Result};
-use network::MempoolMessage;
+use network::{ConsensusNetMessage, MempoolNetMessage};
 use tokio::{net::TcpListener, sync::mpsc::UnboundedSender};
 use tracing::info;
 
@@ -12,7 +12,8 @@ mod peer;
 pub async fn p2p_server(
     bus: SharedMessageBus,
     config: SharedConf,
-    mempool: UnboundedSender<MempoolMessage>,
+    mempool: UnboundedSender<MempoolNetMessage>,
+    consensus: UnboundedSender<ConsensusNetMessage>,
 ) -> Result<(), Error> {
     if config.peers.is_empty() {
         let listener = TcpListener::bind(config.addr()).await?;
@@ -22,6 +23,7 @@ pub async fn p2p_server(
         loop {
             let (socket, _) = listener.accept().await?;
             let tx_mempool = mempool.clone();
+            let tx_consensus = consensus.clone();
             let bus2 = bus.new_handle();
             let conf = Arc::clone(&config);
 
@@ -33,7 +35,8 @@ pub async fn p2p_server(
                         .map(|a| a.to_string())
                         .unwrap_or("no address".to_string())
                 );
-                let mut peer_server = peer::Peer::new(socket, bus2, tx_mempool, conf).await?;
+                let mut peer_server =
+                    peer::Peer::new(socket, bus2, tx_mempool, tx_consensus, conf).await?;
                 match peer_server.start().await {
                     Ok(_) => info!("Peer thread exited"),
                     Err(e) => info!("Peer thread exited: {}", e),
@@ -45,7 +48,7 @@ pub async fn p2p_server(
         let peer_address = config.peers.first().unwrap();
         info!("Connecting to peer {}", peer_address);
         let stream = peer::Peer::connect(peer_address).await?;
-        let mut peer = peer::Peer::new(stream, bus, mempool, config).await?;
+        let mut peer = peer::Peer::new(stream, bus, mempool, consensus, config).await?;
 
         peer.handshake().await?;
         peer.start().await
