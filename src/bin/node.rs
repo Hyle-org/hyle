@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 use clap::Parser;
 use hyle::bus::SharedMessageBus;
 use hyle::mempool::Mempool;
+use hyle::node_state::NodeState;
 use hyle::p2p::network::MempoolMessage;
 use tracing::{debug, warn};
 use tracing::{error, info};
@@ -18,6 +19,13 @@ fn start_consensus(bus: SharedMessageBus, config: Conf) {
             Consensus::default()
         });
 
+        consensus.start(bus, &config).await
+    });
+}
+
+fn start_node_state(bus: SharedMessageBus, config: Conf) {
+    tokio::spawn(async move {
+        let mut consensus = NodeState::default();
         consensus.start(bus, &config).await
     });
 }
@@ -57,6 +65,7 @@ async fn main() -> Result<()> {
         _ = mp.start(mempool_message_receiver).await;
     });
 
+    start_node_state(SharedMessageBus::new_handle(&bus), config.clone());
     start_consensus(SharedMessageBus::new_handle(&bus), config.clone());
 
     tokio::spawn(async move {

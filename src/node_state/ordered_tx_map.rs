@@ -20,6 +20,10 @@ impl OrderedTxMap {
         self.map.get_mut(hash)
     }
 
+    pub fn len(&self) -> usize {
+        self.map.len()
+    }
+
     pub fn add(&mut self, tx: UnsettledTransaction) {
         if self.map.contains_key(&tx.hash) {
             return;

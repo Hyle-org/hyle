@@ -171,7 +171,7 @@ pub trait Hashable<T> {
     fn hash(&self) -> T;
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Block {
     pub parent_hash: BlockHash,
     pub height: BlockHeight,

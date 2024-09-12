@@ -22,6 +22,11 @@ pub enum ConsensusCommand {
     GenerateNewBlock,
 }
 
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub enum ConsensusEvent {
+    NewBlock(Block),
+}
+
 #[derive(Serialize, Deserialize)]
 pub struct Consensus {
     blocks: Vec<Block>,
@@ -38,7 +43,7 @@ impl Consensus {
         self.blocks.push(block);
     }
 
-    fn new_block(&mut self) {
+    fn new_block(&mut self) -> Block {
         let last_block = self.blocks.last().unwrap();
 
         let mut all_txs = vec![];
@@ -62,7 +67,7 @@ impl Consensus {
 
         // Commit block/if commit fails,
         // block won't be added, next block will try to add the txs
-        self.add_block(block);
+        self.add_block(block.clone());
 
         // Once commited we clean the state for the next block
         for cbb in self.current_block_batches.iter() {
@@ -70,7 +75,8 @@ impl Consensus {
         }
         _ = self.current_block_batches.drain(0..);
 
-        info!("New block {:?}", self.blocks.last());
+        info!("New block {:?}", block);
+        block
     }
 
     pub fn save_on_disk(&mut self) -> anyhow::Result<()> {
@@ -91,6 +97,7 @@ impl Consensus {
     pub async fn start(&mut self, bus: SharedMessageBus, config: &Conf) -> anyhow::Result<()> {
         let interval = config.storage.interval;
 
+        let consensus_events_sender = bus.sender::<ConsensusEvent>().await;
         let consensus_command_sender = bus.sender::<ConsensusCommand>().await;
         let mut consensus_command_receiver = bus.receiver::<ConsensusCommand>().await;
         let mempool_command_sender = bus.sender::<MempoolCommand>().await;
@@ -140,7 +147,8 @@ impl Consensus {
                         MempoolResponse::PendingBatch { id, txs } => {
                             info!("Received pending batch {} with {} txs", &id, &txs.len());
                             self.tx_batches.insert(id, txs);
-                            self.new_block()
+                            let block = self.new_block();
+                            _ = consensus_events_sender.send(ConsensusEvent::NewBlock(block)).log_error("error sending new block");
                         }
                     }
                 }
