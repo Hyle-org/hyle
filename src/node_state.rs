@@ -67,7 +67,7 @@ impl NodeState {
             .iter()
             .map(|blob| UnsettledBlobMetadata {
                 contract_name: blob.contract_name.clone(),
-                verification_status: VerificationStatus::WaitingProof,
+                verifications_status: vec![],
             })
             .collect();
 
@@ -158,8 +158,15 @@ impl NodeState {
                 self.unsettled_transactions
                     .get_mut(&blob_ref.blob_tx_hash)
                     .map(|unsettled_tx| {
-                        unsettled_tx.blobs[blob_ref.blob_index.0 as usize] =
-                            blobs_metadata[proof_blob_key].clone();
+                        unsettled_tx.blobs[blob_ref.blob_index.0 as usize]
+                            .verifications_status
+                            .push(
+                                blobs_metadata[proof_blob_key]
+                                    .verifications_status
+                                    .first()
+                                    .unwrap()
+                                    .clone(),
+                            );
                     })
                     .context("Tx is either settled or does not exists.")
             })
@@ -176,9 +183,12 @@ impl NodeState {
             }
         };
 
-        tx.blobs
-            .iter()
-            .all(|blob| blob.verification_status.is_success())
+        tx.blobs.iter().all(|blob_metadatas| {
+            blob_metadatas
+                .verifications_status
+                .iter()
+                .any(|verification_status| verification_status.is_success())
+        })
     }
 
     fn verify_proof(tx: &ProofTransaction) -> Result<Vec<UnsettledBlobMetadata>, Error> {
@@ -188,7 +198,7 @@ impl NodeState {
             .iter()
             .map(|blob_ref| UnsettledBlobMetadata {
                 contract_name: blob_ref.contract_name.clone(),
-                verification_status: VerificationStatus::Success(model::HyleOutput {
+                verifications_status: vec![VerificationStatus::Success(model::HyleOutput {
                     version: 1,
                     initial_state: StateDigest(vec![0, 1, 2, 3]),
                     next_state: StateDigest(vec![4, 5, 6]),
@@ -197,7 +207,7 @@ impl NodeState {
                     index: blob_ref.blob_index.clone(),
                     blobs: vec![0, 1, 2, 3, 0, 1, 2, 3],
                     success: true,
-                }),
+                })],
             })
             .collect())
     }
@@ -205,7 +215,7 @@ impl NodeState {
     fn extract_blobs_hash(blobs: &[UnsettledBlobMetadata]) -> Result<Vec<BlobsHash>, Error> {
         blobs
             .iter()
-            .map(|blob| match &blob.verification_status {
+            .map(|blob| match &blob.verifications_status.first().unwrap() {
                 VerificationStatus::Success(hyle_output) => {
                     Ok(BlobsHash::from_concatenated(&hyle_output.blobs))
                 }
@@ -223,12 +233,16 @@ impl NodeState {
             Some(tx) => tx,
             None => bail!("Tx to settle not found!"),
         };
+
+        // TODO: Check for each blob if any of the blob_metadata initial state matches the actual contract's initial state
+        // Select the first on that has matching arguments
+        // Clean les autres qui sont du coup faux ?
+
         let contracts = unsettled_tx
             .blobs
             .iter()
             .map(|b| b.contract_name.clone())
             .collect::<Vec<ContractName>>();
-
         for contract_name in &contracts {
             self.update_state_contract(contract_name, &blob_ref.blob_tx_hash)?;
         }
@@ -263,8 +277,7 @@ impl NodeState {
                     contract_name, tx
                 )
             })?;
-
-        match &blob_metadata.verification_status {
+        match &blob_metadata.verifications_status.first().unwrap() {
             VerificationStatus::Success(hyle_output) => {
                 debug!("Update contract state: {:?}", hyle_output.next_state);
                 contract.state = hyle_output.next_state.clone();
@@ -428,5 +441,63 @@ mod test {
 
         assert_eq!(new_state.contracts.get(&c1).unwrap().state.0, vec![4, 5, 6]);
         assert_eq!(new_state.contracts.get(&c2).unwrap().state.0, vec![4, 5, 6]);
+    }
+
+    #[test_log::test]
+    fn two_proof_for_same_blob() {
+        let state = NodeState::default();
+        let c1 = ContractName("c1".to_string());
+        let c2 = ContractName("c2".to_string());
+
+        let register_c1 = new_register_contract(c1.clone());
+        let register_c2 = new_register_contract(c2.clone());
+
+        let blob = BlobTransaction {
+            identity: Identity("test".to_string()),
+            blobs: vec![new_blob(&c1), new_blob(&c2)],
+        };
+        let blob_tx_hash = blob.hash();
+        let blob_tx = new_tx(TransactionData::Blob(blob));
+
+        let proof_c1 = new_tx(TransactionData::Proof(ProofTransaction {
+            blobs_references: vec![BlobReference {
+                contract_name: c1.clone(),
+                blob_tx_hash: blob_tx_hash.clone(),
+                blob_index: BlobIndex(0),
+            }],
+            proof: vec![1],
+        }));
+
+        let proof_c1_bis = new_tx(TransactionData::Proof(ProofTransaction {
+            blobs_references: vec![BlobReference {
+                contract_name: c1.clone(),
+                blob_tx_hash: blob_tx_hash.clone(),
+                blob_index: BlobIndex(0),
+            }],
+            proof: vec![2],
+        }));
+
+        let new_state = state
+            .handle_transaction(register_c1)
+            .unwrap()
+            .handle_transaction(register_c2)
+            .unwrap()
+            .handle_transaction(blob_tx)
+            .unwrap()
+            .handle_transaction(proof_c1)
+            .unwrap()
+            .handle_transaction(proof_c1_bis)
+            .unwrap();
+        assert_eq!(
+            new_state
+                .unsettled_transactions
+                .get(&blob_tx_hash)
+                .unwrap()
+                .blobs[0]
+                .verifications_status
+                .len(),
+            2
+        );
+        // TODO: other checks?
     }
 }
