@@ -1,19 +1,17 @@
 use std::sync::Arc;
 
-use crate::{bus::SharedMessageBus, consensus, utils::conf::SharedConf};
+use crate::{bus::SharedMessageBus, utils::conf::SharedConf};
 use anyhow::{Error, Result};
-use network::{ConsensusNetMessage, MempoolNetMessage};
-use tokio::{net::TcpListener, sync::mpsc::UnboundedSender};
+use tokio::net::TcpListener;
 use tracing::info;
 
 pub mod network; // FIXME(Bertrand): NetMessage should be private
 mod peer;
 
 pub async fn p2p_server(
-    bus: SharedMessageBus,
     config: SharedConf,
-    mempool: UnboundedSender<MempoolNetMessage>,
-    consensus: UnboundedSender<ConsensusNetMessage>,
+    mempool: SharedMessageBus,
+    consensus: SharedMessageBus,
 ) -> Result<(), Error> {
     if config.peers.is_empty() {
         let listener = TcpListener::bind(config.addr()).await?;
@@ -22,10 +20,10 @@ pub async fn p2p_server(
 
         loop {
             let (socket, _) = listener.accept().await?;
-            let tx_mempool = mempool.clone();
-            let tx_consensus = consensus.clone();
-            let bus2 = bus.new_handle();
             let conf = Arc::clone(&config);
+
+            let mempool = mempool.new_handle();
+            let consensus = consensus.new_handle();
 
             tokio::spawn(async move {
                 info!(
@@ -35,8 +33,7 @@ pub async fn p2p_server(
                         .map(|a| a.to_string())
                         .unwrap_or("no address".to_string())
                 );
-                let mut peer_server =
-                    peer::Peer::new(socket, bus2, tx_mempool, tx_consensus, conf).await?;
+                let mut peer_server = peer::Peer::new(socket, mempool, consensus, conf).await?;
                 match peer_server.start().await {
                     Ok(_) => info!("Peer thread exited"),
                     Err(e) => info!("Peer thread exited: {}", e),
@@ -48,7 +45,7 @@ pub async fn p2p_server(
         let peer_address = config.peers.first().unwrap();
         info!("Connecting to peer {}", peer_address);
         let stream = peer::Peer::connect(peer_address).await?;
-        let mut peer = peer::Peer::new(stream, bus, mempool, consensus, config).await?;
+        let mut peer = peer::Peer::new(stream, mempool, consensus, config).await?;
 
         peer.handshake().await?;
         peer.start().await

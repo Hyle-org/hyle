@@ -91,7 +91,12 @@ impl Consensus {
         Ok(ctx)
     }
 
-    pub async fn start(&mut self, bus: SharedMessageBus, config: SharedConf) -> Result<()> {
+    pub async fn start(
+        &mut self,
+        bus: SharedMessageBus,
+        net_bus: SharedMessageBus,
+        config: SharedConf,
+    ) -> Result<()> {
         let interval = config.storage.interval;
         let is_master = config.peers.is_empty();
 

@@ -5,10 +5,7 @@ use crate::{
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use tokio::{
-    select,
-    sync::{broadcast::Sender, mpsc::UnboundedReceiver},
-};
+use tokio::{select, sync::broadcast::Sender};
 use tracing::{info, warn};
 
 #[derive(Debug)]
@@ -16,6 +13,7 @@ struct Batch(String, Vec<Transaction>);
 
 pub struct Mempool {
     bus: SharedMessageBus,
+    net_bus: SharedMessageBus,
     // txs accumulated, not yet transmitted to the consensus
     pending_txs: Vec<Transaction>,
     // txs batched under a req_id, transmitted to the consensus to be packed in a block
@@ -36,9 +34,10 @@ pub enum MempoolResponse {
 }
 
 impl Mempool {
-    pub fn new(bus: SharedMessageBus) -> Mempool {
+    pub fn new(bus: SharedMessageBus, net_bus: SharedMessageBus) -> Mempool {
         Mempool {
             bus,
+            net_bus,
             pending_txs: vec![],
             pending_batches: HashMap::new(),
             committed_batches: vec![],
@@ -46,12 +45,13 @@ impl Mempool {
     }
 
     /// start starts the mempool server.
-    pub async fn start(&mut self, mut message_receiver: UnboundedReceiver<MempoolNetMessage>) {
+    pub async fn start(&mut self) {
         let mut command_receiver = self.bus.receiver::<MempoolCommand>().await;
+        let mut net_receiver = self.net_bus.receiver::<MempoolNetMessage>().await;
         let response_sender = self.bus.sender::<MempoolResponse>().await;
         loop {
             select! {
-                Some(msg) = message_receiver.recv() => {
+                Ok(msg) = net_receiver.recv() => {
                     match msg {
                         MempoolNetMessage::NewTx(tx) => {
                             self.pending_txs.push(tx);

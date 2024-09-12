@@ -8,22 +8,20 @@ use tokio::time::sleep;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt, Interest},
     net::TcpStream,
-    sync::mpsc::UnboundedSender,
 };
 use tracing::{debug, info, trace, warn};
 
-use super::network::ConsensusNetMessage;
 use super::network::{MempoolNetMessage, NetMessage, Version};
 use crate::bus::SharedMessageBus;
+use crate::p2p::network::ConsensusNetMessage;
 use crate::utils::conf::SharedConf;
 use crate::utils::logger::LogMe;
 
 //#[derive(Debug)]
 pub struct Peer {
     stream: TcpStream,
-    bus: SharedMessageBus,
-    mempool: UnboundedSender<MempoolNetMessage>,
-    consensus: UnboundedSender<ConsensusNetMessage>,
+    mempool: SharedMessageBus,
+    consensus: SharedMessageBus,
     last_pong: SystemTime,
     conf: SharedConf,
 
@@ -39,16 +37,14 @@ enum Cmd {
 impl Peer {
     pub async fn new(
         stream: TcpStream,
-        bus: SharedMessageBus,
-        mempool: UnboundedSender<MempoolNetMessage>,
-        consensus: UnboundedSender<ConsensusNetMessage>,
+        mempool: SharedMessageBus,
+        consensus: SharedMessageBus,
         conf: SharedConf,
     ) -> Result<Self, Error> {
         let (cmd_tx, cmd_rx) = mpsc::channel::<Cmd>(100);
 
         Ok(Peer {
             stream,
-            bus,
             mempool,
             consensus,
             last_pong: SystemTime::now(),
@@ -78,20 +74,29 @@ impl Peer {
             NetMessage::MempoolMessage(mempool_msg) => {
                 debug!("Received new mempool net message {:?}", mempool_msg);
                 self.mempool
+                    .sender::<MempoolNetMessage>()
+                    .await
                     .send(mempool_msg)
+                    .map(|_| ())
                     .context("Receiving mempool net message")
             }
             // TODO: To replace with an ApiMessage equivalent
             NetMessage::NewTransaction(tx) => {
                 info!("Get new tx over p2p: {:?}", tx);
                 self.mempool
+                    .sender::<MempoolNetMessage>()
+                    .await
                     .send(MempoolNetMessage::NewTx(tx))
+                    .map(|_| ())
                     .context("Failed to send over channel")
             }
             NetMessage::ConsensusMessage(consensus_msg) => {
                 debug!("Received new consensus net message {:?}", consensus_msg);
                 self.consensus
+                    .sender::<ConsensusNetMessage>()
+                    .await
                     .send(consensus_msg)
+                    .map(|_| ())
                     .context("Receiving consensus net message")
             }
         }

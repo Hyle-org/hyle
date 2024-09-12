@@ -18,12 +18,12 @@ pub enum NetMessage {
     ConsensusMessage(ConsensusNetMessage),
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum MempoolNetMessage {
     NewTx(Transaction),
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum ConsensusNetMessage {
     CommitBlock(Block),
 }

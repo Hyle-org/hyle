@@ -5,25 +5,20 @@ use hyle::{
     consensus::Consensus,
     mempool::Mempool,
     node_state::NodeState,
-    p2p::{
-        self,
-        network::{ConsensusNetMessage, MempoolNetMessage},
-    },
-    rest,
+    p2p, rest,
     utils::conf::{self, SharedConf},
 };
 use std::sync::Arc;
-use tokio::sync::mpsc::UnboundedSender;
 use tracing::{debug, error, info, warn};
 
-fn start_consensus(bus: SharedMessageBus, config: SharedConf) {
+fn start_consensus(bus: SharedMessageBus, net_bus: SharedMessageBus, config: SharedConf) {
     tokio::spawn(async move {
         Consensus::load_from_disk()
             .unwrap_or_else(|_| {
                 warn!("Failed to load consensus state from disk, using a default one");
                 Consensus::default()
             })
-            .start(bus, config)
+            .start(bus, net_bus, config)
             .await
     });
 }
@@ -35,14 +30,16 @@ fn start_node_state(bus: SharedMessageBus, config: SharedConf) {
     });
 }
 
-fn start_peer(
-    bus: SharedMessageBus,
-    config: SharedConf,
-    mempool: UnboundedSender<MempoolNetMessage>,
-    consensus: UnboundedSender<ConsensusNetMessage>,
-) {
+fn start_mempool(bus: SharedMessageBus, net_bus: SharedMessageBus) {
     tokio::spawn(async move {
-        if let Err(e) = p2p::p2p_server(bus, config, mempool, consensus).await {
+        let mut mempool = Mempool::new(bus, net_bus);
+        mempool.start().await
+    });
+}
+
+fn start_peer(config: SharedConf, mempool: SharedMessageBus, consensus: SharedMessageBus) {
+    tokio::spawn(async move {
+        if let Err(e) = p2p::p2p_server(config, mempool, consensus).await {
             error!("RPC server failed: {:?}", e);
         }
     });
@@ -71,23 +68,23 @@ async fn main() -> Result<()> {
     debug!("server mode");
 
     let bus = SharedMessageBus::new();
+    let mempool_net_bus = SharedMessageBus::new();
+    let consensus_net_bus = SharedMessageBus::new();
 
-    let mut mp = Mempool::new(SharedMessageBus::new_handle(&bus));
-    let (mempool_tx, mempool_rx) = tokio::sync::mpsc::unbounded_channel::<MempoolNetMessage>();
-    let (consensus_tx, consensus_rx) =
-        tokio::sync::mpsc::unbounded_channel::<ConsensusNetMessage>();
-
-    tokio::spawn(async move {
-        mp.start(mempool_rx).await;
-    });
-
-    start_node_state(SharedMessageBus::new_handle(&bus), Arc::clone(&config));
-    start_consensus(SharedMessageBus::new_handle(&bus), Arc::clone(&config));
-    start_peer(
+    start_mempool(
         SharedMessageBus::new_handle(&bus),
+        SharedMessageBus::new_handle(&mempool_net_bus),
+    );
+    start_node_state(SharedMessageBus::new_handle(&bus), Arc::clone(&config));
+    start_consensus(
+        SharedMessageBus::new_handle(&bus),
+        SharedMessageBus::new_handle(&consensus_net_bus),
         Arc::clone(&config),
-        mempool_tx,
-        consensus_tx,
+    );
+    start_peer(
+        Arc::clone(&config),
+        SharedMessageBus::new_handle(&mempool_net_bus),
+        SharedMessageBus::new_handle(&consensus_net_bus),
     );
 
     // Start REST server
