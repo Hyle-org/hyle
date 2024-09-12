@@ -8,7 +8,7 @@ use crate::{
     bus::SharedMessageBus,
     mempool::{MempoolCommand, MempoolResponse},
     model::{get_current_timestamp, Block, Hashable, Transaction},
-    p2p::network::ConsensusNetMessage,
+    p2p::network::{ConsensusNetMessage, NetCommand},
     utils::{conf::SharedConf, logger::LogMe},
 };
 
@@ -16,7 +16,6 @@ use crate::{
 pub enum ConsensusCommand {
     SaveOnDisk,
     GenerateNewBlock,
-    HandleNetMessage(ConsensusNetMessage),
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -94,6 +93,14 @@ impl Consensus {
         Ok(ctx)
     }
 
+    fn handle_net_command(&mut self, msg: NetCommand<ConsensusNetMessage>) {
+        match msg.msg {
+            ConsensusNetMessage::CommitBlock(block) => {
+                info!("Got a commited block {:?}", block)
+            }
+        }
+    }
+
     fn handle_command(
         &mut self,
         msg: ConsensusCommand,
@@ -111,19 +118,10 @@ impl Consensus {
             ConsensusCommand::SaveOnDisk => {
                 _ = self.save_on_disk();
             }
-            ConsensusCommand::HandleNetMessage(net_message) => {
-                info!("Got net message to handle {:?}", net_message);
-                // TODO real implementation
-            }
         }
     }
 
-    pub async fn start(
-        &mut self,
-        bus: SharedMessageBus,
-        net_bus: SharedMessageBus,
-        config: SharedConf,
-    ) -> Result<()> {
+    pub async fn start(&mut self, bus: SharedMessageBus, config: SharedConf) -> Result<()> {
         let interval = config.storage.interval;
         let is_master = config.peers.is_empty();
 
@@ -132,7 +130,8 @@ impl Consensus {
         let mut consensus_command_receiver = bus.receiver::<ConsensusCommand>().await;
         let mempool_command_sender = bus.sender::<MempoolCommand>().await;
         let mut mempool_response_receiver = bus.receiver::<MempoolResponse>().await;
-        let mut consensus_net_command_receiver = net_bus.receiver::<ConsensusCommand>().await;
+        let mut consensus_net_command_receiver =
+            bus.receiver::<NetCommand<ConsensusNetMessage>>().await;
 
         if is_master {
             info!(
@@ -169,12 +168,12 @@ impl Consensus {
                             // send to internal bus
                             _ = consensus_events_sender.send(ConsensusEvent::NewBlock(block.clone())).log_error("error sending new block");
                             // send to network
-                            _ = net_bus.sender::<ConsensusNetMessage>().await.send(ConsensusNetMessage::CommitBlock(block)).log_warn("error sending new block on network bus");
+                            _ = bus.sender::<ConsensusNetMessage>().await.send(ConsensusNetMessage::CommitBlock(block)).log_warn("error sending new block on network bus");
                         }
                     }
                 }
                 Ok(msg) = consensus_net_command_receiver.recv() => {
-                    self.handle_command(msg, sender);
+                    self.handle_net_command(msg);
                 }
             }
         }

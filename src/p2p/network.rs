@@ -6,6 +6,17 @@ pub struct Version {
     pub id: u16,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NetCommand<T> {
+    pub msg: T,
+}
+
+impl<T> NetCommand<T> {
+    pub fn new(msg: T) -> Self {
+        Self { msg }
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub enum NetMessage {
     Version(Version),

@@ -13,17 +13,14 @@ use tracing::{debug, info, trace, warn};
 
 use super::network::{MempoolNetMessage, NetMessage, Version};
 use crate::bus::SharedMessageBus;
-use crate::consensus::ConsensusCommand;
-use crate::mempool::MempoolCommand;
 use crate::p2p::network::ConsensusNetMessage;
+use crate::p2p::network::NetCommand;
 use crate::utils::conf::SharedConf;
 use crate::utils::logger::LogMe;
 
-//#[derive(Debug)]
 pub struct Peer {
     stream: TcpStream,
-    mempool: SharedMessageBus,
-    consensus: SharedMessageBus,
+    bus: SharedMessageBus,
     last_pong: SystemTime,
     conf: SharedConf,
 
@@ -39,16 +36,14 @@ enum Cmd {
 impl Peer {
     pub async fn new(
         stream: TcpStream,
-        mempool: SharedMessageBus,
-        consensus: SharedMessageBus,
+        bus: SharedMessageBus,
         conf: SharedConf,
     ) -> Result<Self, Error> {
         let (cmd_tx, cmd_rx) = mpsc::channel::<Cmd>(100);
 
         Ok(Peer {
             stream,
-            mempool,
-            consensus,
+            bus,
             last_pong: SystemTime::now(),
             conf,
             internal_cmd_tx: cmd_tx,
@@ -84,19 +79,19 @@ impl Peer {
             }
             NetMessage::MempoolMessage(mempool_msg) => {
                 debug!("Received new mempool net message {:?}", mempool_msg);
-                self.mempool
-                    .sender::<MempoolCommand>()
+                self.bus
+                    .sender::<NetCommand<MempoolNetMessage>>()
                     .await
-                    .send(MempoolCommand::HandleNetMessage(mempool_msg))
+                    .send(NetCommand::new(mempool_msg))
                     .map(|_| ())
                     .context("Receiving mempool net message")
             }
             NetMessage::ConsensusMessage(consensus_msg) => {
                 debug!("Received new consensus net message {:?}", consensus_msg);
-                self.consensus
-                    .sender::<ConsensusCommand>()
+                self.bus
+                    .sender::<NetCommand<ConsensusNetMessage>>()
                     .await
-                    .send(ConsensusCommand::HandleNetMessage(consensus_msg))
+                    .send(NetCommand::new(consensus_msg))
                     .map(|_| ())
                     .context("Receiving consensus net message")
             }
@@ -135,8 +130,9 @@ impl Peer {
     }
 
     pub async fn start(&mut self) -> Result<(), Error> {
-        let mut mempool_rx = self.mempool.receiver::<MempoolNetMessage>().await;
-        let mut consensus_rx = self.consensus.receiver::<ConsensusNetMessage>().await;
+        let mut mempool_rx = self.bus.receiver::<MempoolNetMessage>().await;
+        let mut consensus_rx = self.bus.receiver::<ConsensusNetMessage>().await;
+
         loop {
             let wait_tcp = Self::read_stream(&mut self.stream); //FIXME: make read_stream cancel safe !
             let wait_cmd = self.internal_cmd_rx.recv();

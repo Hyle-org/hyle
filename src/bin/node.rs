@@ -11,14 +11,14 @@ use hyle::{
 use std::sync::Arc;
 use tracing::{debug, error, info, warn};
 
-fn start_consensus(bus: SharedMessageBus, net_bus: SharedMessageBus, config: SharedConf) {
+fn start_consensus(bus: SharedMessageBus, config: SharedConf) {
     tokio::spawn(async move {
         Consensus::load_from_disk()
             .unwrap_or_else(|_| {
                 warn!("Failed to load consensus state from disk, using a default one");
                 Consensus::default()
             })
-            .start(bus, net_bus, config)
+            .start(bus, config)
             .await
     });
 }
@@ -30,16 +30,16 @@ fn start_node_state(bus: SharedMessageBus, config: SharedConf) {
     });
 }
 
-fn start_mempool(bus: SharedMessageBus, net_bus: SharedMessageBus) {
+fn start_mempool(bus: SharedMessageBus) {
     tokio::spawn(async move {
-        let mut mempool = Mempool::new(bus, net_bus);
+        let mut mempool = Mempool::new(bus);
         mempool.start().await
     });
 }
 
-fn start_peer(config: SharedConf, mempool: SharedMessageBus, consensus: SharedMessageBus) {
+fn start_p2p(config: SharedConf, bus: SharedMessageBus) {
     tokio::spawn(async move {
-        if let Err(e) = p2p::p2p_server(config, mempool, consensus).await {
+        if let Err(e) = p2p::p2p_server(config, bus).await {
             error!("RPC server failed: {:?}", e);
         }
     });
@@ -68,24 +68,11 @@ async fn main() -> Result<()> {
     debug!("server mode");
 
     let bus = SharedMessageBus::new();
-    let mempool_net_bus = SharedMessageBus::new();
-    let consensus_net_bus = SharedMessageBus::new();
 
-    start_mempool(
-        SharedMessageBus::new_handle(&bus),
-        SharedMessageBus::new_handle(&mempool_net_bus),
-    );
+    start_mempool(SharedMessageBus::new_handle(&bus));
     start_node_state(SharedMessageBus::new_handle(&bus), Arc::clone(&config));
-    start_consensus(
-        SharedMessageBus::new_handle(&bus),
-        SharedMessageBus::new_handle(&consensus_net_bus),
-        Arc::clone(&config),
-    );
-    start_peer(
-        Arc::clone(&config),
-        SharedMessageBus::new_handle(&mempool_net_bus),
-        SharedMessageBus::new_handle(&consensus_net_bus),
-    );
+    start_consensus(SharedMessageBus::new_handle(&bus), Arc::clone(&config));
+    start_p2p(Arc::clone(&config), SharedMessageBus::new_handle(&bus));
 
     // Start REST server
     rest::rest_server(config)

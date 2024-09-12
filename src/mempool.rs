@@ -1,5 +1,7 @@
 use crate::{
-    bus::SharedMessageBus, model::Transaction, p2p::network::MempoolNetMessage,
+    bus::SharedMessageBus,
+    model::Transaction,
+    p2p::network::{MempoolNetMessage, NetCommand},
     utils::logger::LogMe,
 };
 use anyhow::Result;
@@ -13,7 +15,6 @@ struct Batch(String, Vec<Transaction>);
 
 pub struct Mempool {
     bus: SharedMessageBus,
-    net_bus: SharedMessageBus,
     // txs accumulated, not yet transmitted to the consensus
     pending_txs: Vec<Transaction>,
     // txs batched under a req_id, transmitted to the consensus to be packed in a block
@@ -26,7 +27,6 @@ pub struct Mempool {
 pub enum MempoolCommand {
     CreatePendingBatch { id: String },
     CommitBatches { ids: Vec<String> },
-    HandleNetMessage(MempoolNetMessage),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -35,10 +35,9 @@ pub enum MempoolResponse {
 }
 
 impl Mempool {
-    pub fn new(bus: SharedMessageBus, net_bus: SharedMessageBus) -> Mempool {
+    pub fn new(bus: SharedMessageBus) -> Mempool {
         Mempool {
             bus,
-            net_bus,
             pending_txs: vec![],
             pending_batches: HashMap::new(),
             committed_batches: vec![],
@@ -48,12 +47,12 @@ impl Mempool {
     /// start starts the mempool server.
     pub async fn start(&mut self) {
         let mut command_receiver = self.bus.receiver::<MempoolCommand>().await;
-        let mut net_receiver = self.net_bus.receiver::<MempoolCommand>().await;
+        let mut net_receiver = self.bus.receiver::<NetCommand<MempoolNetMessage>>().await;
         let response_sender = self.bus.sender::<MempoolResponse>().await;
         loop {
             select! {
                 Ok(cmd) = net_receiver.recv() => {
-                    _ = self.handle_command(cmd, &response_sender)
+                    self.handle_net_command(cmd)
                 }
                 Ok(cmd) = command_receiver.recv() => {
                     _ = self.handle_command(cmd, &response_sender);
@@ -62,6 +61,13 @@ impl Mempool {
         }
     }
 
+    fn handle_net_command(&mut self, command: NetCommand<MempoolNetMessage>) {
+        match command.msg {
+            MempoolNetMessage::NewTx(tx) => {
+                self.pending_txs.push(tx);
+            }
+        }
+    }
     fn handle_command(
         &mut self,
         command: MempoolCommand,
@@ -89,11 +95,6 @@ impl Mempool {
                     }
                 }
             }
-            MempoolCommand::HandleNetMessage(msg) => match msg {
-                MempoolNetMessage::NewTx(tx) => {
-                    self.pending_txs.push(tx);
-                }
-            },
         }
         Ok(())
     }
