@@ -61,7 +61,11 @@ impl NodeState {
         let txs_count = block.txs.len();
 
         for tx in block.txs {
-            self.handle_transaction(tx)?;
+            let tx_hash = tx.hash();
+            match self.handle_transaction(tx) {
+                Ok(_) => info!("Handled tx {tx_hash}"),
+                Err(e) => error!("Failed handling tx {tx_hash} with error: {e}"),
+            }
         }
 
         info!("Handled {txs_count} transactions");

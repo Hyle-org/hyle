@@ -194,7 +194,15 @@ impl Hashable<BlockHash> for Block {
         };
     }
 }
-
+impl Hashable<TxHash> for Transaction {
+    fn hash(&self) -> TxHash {
+        match &self.transaction_data {
+            TransactionData::Blob(tx) => tx.hash(),
+            TransactionData::Proof(tx) => tx.hash(),
+            TransactionData::RegisterContract(tx) => tx.hash(),
+        }
+    }
+}
 impl Hashable<TxHash> for BlobTransaction {
     fn hash(&self) -> TxHash {
         let mut hasher = Sha3_256::new();
@@ -203,7 +211,29 @@ impl Hashable<TxHash> for BlobTransaction {
         return TxHash(hasher.finalize().as_slice().to_owned());
     }
 }
-
+impl Hashable<TxHash> for ProofTransaction {
+    fn hash(&self) -> TxHash {
+        let mut hasher = Sha3_256::new();
+        for blob_ref in self.blobs_references.iter() {
+            _ = write!(hasher, "{}", blob_ref.contract_name);
+            _ = write!(hasher, "{}", blob_ref.blob_tx_hash);
+            _ = write!(hasher, "{}", blob_ref.blob_index);
+        }
+        hasher.update(self.proof.clone());
+        return TxHash(hasher.finalize().as_slice().to_owned());
+    }
+}
+impl Hashable<TxHash> for RegisterContractTransaction {
+    fn hash(&self) -> TxHash {
+        let mut hasher = Sha3_256::new();
+        _ = write!(hasher, "{}", self.owner);
+        _ = write!(hasher, "{}", self.verifier);
+        hasher.update(self.program_id.clone());
+        hasher.update(self.state_digest.0.clone());
+        _ = write!(hasher, "{}", self.contract_name);
+        return TxHash(hasher.finalize().as_slice().to_owned());
+    }
+}
 impl BlobTransaction {
     pub fn blobs_hash(&self) -> BlobsHash {
         BlobsHash::from_vec(&self.blobs)
