@@ -1,8 +1,6 @@
-use std::collections::HashMap;
-
-use crate::model::{ContractName, TxHash};
-
 use super::model::UnsettledTransaction;
+use crate::model::{ContractName, TxHash};
+use std::collections::HashMap;
 
 // struct used to guarantee coherence between the 2 fields
 #[derive(Default, Debug, Clone)]

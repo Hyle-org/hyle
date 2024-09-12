@@ -1,18 +1,19 @@
 use anyhow::{Context, Result};
-use axum::routing::get;
-use axum::Router;
+use axum::{routing::get, Router};
 use tracing::info;
+
+use crate::utils::conf::SharedConf;
 
 mod endpoints;
 pub mod model;
 
-pub async fn rest_server(addr: &str) -> Result<()> {
-    info!("rest listening on {}", addr);
+pub async fn rest_server(config: SharedConf) -> Result<()> {
+    info!("rest listening on {}", config.rest_addr());
     let app = Router::new()
         .route("/getTransaction", get(endpoints::get_transaction))
         .route("/getBlock", get(endpoints::get_block));
 
-    let listener = tokio::net::TcpListener::bind(&addr)
+    let listener = tokio::net::TcpListener::bind(config.rest_addr())
         .await
         .context("Starting rest server")?;
 

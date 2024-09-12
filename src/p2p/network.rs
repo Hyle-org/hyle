@@ -1,6 +1,5 @@
-use serde::{Deserialize, Serialize};
-
 use crate::model::Transaction;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Version {
@@ -24,7 +23,7 @@ pub enum MempoolMessage {
 }
 
 impl NetMessage {
-    pub fn as_binary(&self) -> Vec<u8> {
+    pub fn to_binary(&self) -> Vec<u8> {
         bincode::serialize(&self).expect("Could not serialize NetMessage")
     }
 }

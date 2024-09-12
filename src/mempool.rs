@@ -1,16 +1,14 @@
-use std::collections::HashMap;
-
+use crate::{
+    bus::SharedMessageBus, model::Transaction, p2p::network::MempoolMessage, utils::logger::LogMe,
+};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use tokio::{
     select,
     sync::{broadcast::Sender, mpsc::UnboundedReceiver},
 };
 use tracing::{info, warn};
-
-use crate::{
-    bus::SharedMessageBus, model::Transaction, p2p::network::MempoolMessage, utils::logger::LogMe,
-};
 
 #[derive(Debug)]
 struct Batch(String, Vec<Transaction>);
@@ -47,24 +45,21 @@ impl Mempool {
     }
 
     /// start starts the mempool server.
-    pub async fn start(
-        &mut self,
-        mut message_receiver: UnboundedReceiver<MempoolMessage>,
-    ) -> Result<()> {
+    pub async fn start(&mut self, mut message_receiver: UnboundedReceiver<MempoolMessage>) {
         let mut command_receiver = self.bus.receiver::<MempoolCommand>().await;
         let response_sender = self.bus.sender::<MempoolResponse>().await;
         loop {
             select! {
                 Some(msg) = message_receiver.recv() => {
                     match msg {
-                        MempoolMessage::NewTx(msg) => {
-                            self.pending_txs.push(msg);
+                        MempoolMessage::NewTx(tx) => {
+                            self.pending_txs.push(tx);
                         }
                     }
                 }
 
-                Ok(msg) = command_receiver.recv() => {
-                    _ = self.handle_command(msg, &response_sender);
+                Ok(cmd) = command_receiver.recv() => {
+                    _ = self.handle_command(cmd, &response_sender);
                 }
             }
         }
@@ -81,10 +76,7 @@ impl Mempool {
                 let txs: Vec<Transaction> = self.pending_txs.drain(0..).collect();
                 self.pending_batches.insert(id.clone(), txs.clone());
                 _ = response_sender
-                    .send(MempoolResponse::PendingBatch {
-                        id: id.clone(),
-                        txs: txs.clone(),
-                    })
+                    .send(MempoolResponse::PendingBatch { id, txs })
                     .log_error("Sending pending batch");
             }
             MempoolCommand::CommitBatches { ids } => {

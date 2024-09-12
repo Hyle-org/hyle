@@ -1,9 +1,3 @@
-use std::collections::HashMap;
-
-use anyhow::{bail, Context, Error, Result};
-use ordered_tx_map::OrderedTxMap;
-use tracing::{debug, error, info};
-
 use crate::{
     bus::SharedMessageBus,
     consensus::ConsensusEvent,
@@ -12,11 +6,15 @@ use crate::{
         Identity, ProofTransaction, RegisterContractTransaction, StateDigest, Transaction, TxHash,
     },
     utils::{
-        conf::Conf,
+        conf::SharedConf,
         vec_utils::{SequenceOption, SequenceResult},
     },
 };
+use anyhow::{bail, Context, Error, Result};
 use model::{Contract, Timeouts, UnsettledBlobDetail, UnsettledTransaction, VerificationStatus};
+use ordered_tx_map::OrderedTxMap;
+use std::collections::HashMap;
+use tracing::{debug, error, info};
 
 mod model;
 mod ordered_tx_map;
@@ -30,7 +28,7 @@ pub struct NodeState {
 }
 
 impl NodeState {
-    pub async fn start(&mut self, bus: SharedMessageBus, _config: &Conf) -> Result<(), Error> {
+    pub async fn start(&mut self, bus: SharedMessageBus, _config: SharedConf) -> Result<(), Error> {
         info!(
             "Starting NodeState with {} contracts and {} unsettled transactions at height {}",
             self.contracts.len(),
@@ -257,7 +255,7 @@ impl NodeState {
     // TODO rewrite this function and update_state_contract to avoid re-query of unsettled_tx
     fn settle_tx(&mut self, blob_ref: &BlobReference) -> Result<(), Error> {
         info!("Settle tx {:?}", blob_ref);
-        let unsettled_tx = match self.unsettled_transactions.get_mut(&blob_ref.blob_tx_hash) {
+        let unsettled_tx = match self.unsettled_transactions.get(&blob_ref.blob_tx_hash) {
             Some(tx) => tx,
             None => bail!("Tx to settle not found!"),
         };
@@ -279,7 +277,7 @@ impl NodeState {
         contract_name: &ContractName,
         tx: &TxHash,
     ) -> Result<(), Error> {
-        let unsettled_tx = match self.unsettled_transactions.get_mut(tx) {
+        let unsettled_tx = match self.unsettled_transactions.get(tx) {
             Some(tx) => tx,
             None => bail!("Tx to settle not found!"),
         };

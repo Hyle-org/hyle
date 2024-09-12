@@ -1,20 +1,15 @@
-use std::collections::HashMap;
-use std::fs;
-use std::time::Duration;
-use tokio::select;
-
-use serde::Deserialize;
-use serde::Serialize;
-use tokio::time::sleep;
+use anyhow::Result;
+use serde::{Deserialize, Serialize};
+use std::{collections::HashMap, default::Default, fs, time::Duration};
+use tokio::{select, time::sleep};
 use tracing::info;
 
-use crate::bus::SharedMessageBus;
-use crate::mempool::MempoolCommand;
-use crate::mempool::MempoolResponse;
-use crate::model::get_current_timestamp;
-use crate::model::{Block, Hashable, Transaction};
-use crate::utils::conf::Conf;
-use crate::utils::logger::LogMe;
+use crate::{
+    bus::SharedMessageBus,
+    mempool::{MempoolCommand, MempoolResponse},
+    model::{get_current_timestamp, Block, Hashable, Transaction},
+    utils::{conf::SharedConf, logger::LogMe},
+};
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub enum ConsensusCommand {
@@ -79,31 +74,32 @@ impl Consensus {
         block
     }
 
-    pub fn save_on_disk(&mut self) -> anyhow::Result<()> {
-        let encoded = bincode::serialize(&self).log_error("Serializing Ctx chain")?;
-        fs::write("data.bin", encoded).log_error("Write Ctx file")?;
+    pub fn save_on_disk(&mut self) -> Result<()> {
+        let writer = fs::File::create("data.bin").log_error("Create Ctx file")?;
+        bincode::serialize_into(writer, &self).log_error("Serializing Ctx chain")?;
         info!("Saved blockchain on disk with {} blocks", self.blocks.len());
+
         Ok(())
     }
 
-    pub fn load_from_disk() -> anyhow::Result<Self> {
-        let read_v = fs::read("data.bin").log_warn("Loading data from disk")?;
-        let ctx = bincode::deserialize::<Self>(&read_v).log_warn("Deserializing data from disk")?;
+    pub fn load_from_disk() -> Result<Self> {
+        let reader = fs::File::open("data.bin").log_warn("Loading data from disk")?;
+        let ctx = bincode::deserialize_from::<_, Self>(reader)
+            .log_warn("Deserializing data from disk")?;
         info!("Loaded {} blocks from disk.", ctx.blocks.len());
 
         Ok(ctx)
     }
 
-    pub async fn start(&mut self, bus: SharedMessageBus, config: &Conf) -> anyhow::Result<()> {
+    pub async fn start(&mut self, bus: SharedMessageBus, config: SharedConf) -> Result<()> {
         let interval = config.storage.interval;
+        let is_master = config.peers.is_empty();
 
         let consensus_events_sender = bus.sender::<ConsensusEvent>().await;
         let consensus_command_sender = bus.sender::<ConsensusCommand>().await;
         let mut consensus_command_receiver = bus.receiver::<ConsensusCommand>().await;
         let mempool_command_sender = bus.sender::<MempoolCommand>().await;
         let mut mempool_response_receiver = bus.receiver::<MempoolResponse>().await;
-
-        let is_master = config.peers.is_empty();
 
         if is_master {
             info!(
@@ -138,7 +134,7 @@ impl Consensus {
                                 .log_error("Creating a new block");
                         },
                         ConsensusCommand::SaveOnDisk => {
-                            let _ = self.save_on_disk();
+                            _ = self.save_on_disk();
                         }
                     }
                 }
@@ -157,7 +153,7 @@ impl Consensus {
     }
 }
 
-impl std::default::Default for Consensus {
+impl Default for Consensus {
     fn default() -> Self {
         Self {
             blocks: vec![Block::default()],
