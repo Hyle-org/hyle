@@ -4,6 +4,7 @@ use hyle::{
     bus::SharedMessageBus,
     consensus::Consensus,
     mempool::Mempool,
+    node_state::NodeState,
     p2p::{self, network::MempoolMessage},
     rest,
     utils::conf::{self, SharedConf},
@@ -20,6 +21,13 @@ fn start_consensus(bus: SharedMessageBus, config: SharedConf) {
             })
             .start(bus, config)
             .await
+    });
+}
+
+fn start_node_state(bus: SharedMessageBus, config: SharedConf) {
+    tokio::spawn(async move {
+        let mut consensus = NodeState::default();
+        consensus.start(bus, config).await
     });
 }
 
@@ -55,6 +63,7 @@ async fn main() -> Result<()> {
         mp.start(mempool_message_receiver).await;
     });
 
+    start_node_state(SharedMessageBus::new_handle(&bus), Arc::clone(&config));
     start_consensus(SharedMessageBus::new_handle(&bus), Arc::clone(&config));
 
     let p2p_config = Arc::clone(&config);

@@ -1,15 +1,20 @@
 use crate::{
+    bus::SharedMessageBus,
+    consensus::ConsensusEvent,
     model::{
         BlobReference, BlobTransaction, BlobsHash, Block, BlockHeight, ContractName, Hashable,
         Identity, ProofTransaction, RegisterContractTransaction, StateDigest, Transaction, TxHash,
     },
-    utils::vec_utils::{SequenceOption, SequenceResult},
+    utils::{
+        conf::SharedConf,
+        vec_utils::{SequenceOption, SequenceResult},
+    },
 };
 use anyhow::{bail, Context, Error, Result};
 use model::{Contract, Timeouts, UnsettledBlobDetail, UnsettledTransaction, VerificationStatus};
 use ordered_tx_map::OrderedTxMap;
 use std::collections::HashMap;
-use tracing::{debug, info};
+use tracing::{debug, error, info};
 
 mod model;
 mod ordered_tx_map;
@@ -23,27 +28,58 @@ pub struct NodeState {
 }
 
 impl NodeState {
-    pub fn handle_new_block(&self, block: Block) -> NodeState {
-        let mut new_state = self.clone();
+    pub async fn start(&mut self, bus: SharedMessageBus, _config: SharedConf) -> Result<(), Error> {
+        info!(
+            "Starting NodeState with {} contracts and {} unsettled transactions at height {}",
+            self.contracts.len(),
+            self.unsettled_transactions.len(),
+            self.current_height
+        );
+        let mut events = bus.receiver::<ConsensusEvent>().await;
+        loop {
+            if let Ok(msg) = events.recv().await {
+                let res = match msg {
+                    ConsensusEvent::NewBlock(block) => {
+                        info!("New block to handle: {:}", block.hash());
+                        self.handle_new_block(block).context("handle new block")
+                    }
+                };
 
-        new_state.clear_timeouts(&block.height);
-        new_state.current_height = block.height;
-        new_state
+                match res {
+                    Ok(_) => (),
+                    Err(e) => error!("Error while handling consensus event: {e}"),
+                }
+            }
+        }
     }
 
-    pub fn handle_transaction(&self, transaction: Transaction) -> Result<NodeState, Error> {
-        debug!("Got transaction to handle: {:?}", transaction);
-        let mut new_state = self.clone();
+    pub fn handle_new_block(&mut self, block: Block) -> Result<(), Error> {
+        self.clear_timeouts(&block.height);
+        self.current_height = block.height;
+        let txs_count = block.txs.len();
 
-        let res = match transaction.transaction_data {
-            crate::model::TransactionData::Blob(tx) => new_state.handle_blob_tx(tx),
-            crate::model::TransactionData::Proof(tx) => new_state.handle_proof(tx),
-            crate::model::TransactionData::RegisterContract(tx) => {
-                new_state.handle_register_contract(tx)
+        for tx in block.txs {
+            let tx_hash = tx.hash();
+            match self.handle_transaction(tx) {
+                Ok(_) => info!("Handled tx {tx_hash}"),
+                Err(e) => error!("Failed handling tx {tx_hash} with error: {e}"),
             }
-        };
+        }
 
-        res.map(|_| new_state)
+        info!("Handled {txs_count} transactions");
+        Ok(())
+    }
+
+    fn handle_transaction(&mut self, transaction: Transaction) -> Result<(), Error> {
+        debug!("Got transaction to handle: {:?}", transaction);
+
+        match transaction.transaction_data {
+            crate::model::TransactionData::Blob(tx) => self.handle_blob_tx(tx),
+            crate::model::TransactionData::Proof(tx) => self.handle_proof(tx),
+            crate::model::TransactionData::RegisterContract(tx) => {
+                self.handle_register_contract(tx)
+            }
+        }
     }
 
     fn handle_register_contract(&mut self, tx: RegisterContractTransaction) -> Result<(), Error> {
@@ -317,7 +353,7 @@ mod test {
 
     #[test_log::test]
     fn two_proof_for_one_blob_tx() {
-        let state = NodeState::default();
+        let mut state = NodeState::default();
         let c1 = ContractName("c1".to_string());
         let c2 = ContractName("c2".to_string());
 
@@ -350,25 +386,19 @@ mod test {
             proof: vec![],
         }));
 
-        let new_state = state
-            .handle_transaction(register_c1)
-            .unwrap()
-            .handle_transaction(register_c2)
-            .unwrap()
-            .handle_transaction(blob_tx)
-            .unwrap()
-            .handle_transaction(proof_c1)
-            .unwrap()
-            .handle_transaction(proof_c2)
-            .unwrap();
+        state.handle_transaction(register_c1).unwrap();
+        state.handle_transaction(register_c2).unwrap();
+        state.handle_transaction(blob_tx).unwrap();
+        state.handle_transaction(proof_c1).unwrap();
+        state.handle_transaction(proof_c2).unwrap();
 
-        assert_eq!(new_state.contracts.get(&c1).unwrap().state.0, vec![4, 5, 6]);
-        assert_eq!(new_state.contracts.get(&c2).unwrap().state.0, vec![4, 5, 6]);
+        assert_eq!(state.contracts.get(&c1).unwrap().state.0, vec![4, 5, 6]);
+        assert_eq!(state.contracts.get(&c2).unwrap().state.0, vec![4, 5, 6]);
     }
 
     #[test_log::test]
     fn one_proof_for_two_blobs() {
-        let state = NodeState::default();
+        let mut state = NodeState::default();
         let c1 = ContractName("c1".to_string());
         let c2 = ContractName("c2".to_string());
 
@@ -414,19 +444,13 @@ mod test {
             proof: vec![],
         }));
 
-        let new_state = state
-            .handle_transaction(register_c1)
-            .unwrap()
-            .handle_transaction(register_c2)
-            .unwrap()
-            .handle_transaction(blob_tx_1)
-            .unwrap()
-            .handle_transaction(blob_tx_2)
-            .unwrap()
-            .handle_transaction(proof_c1)
-            .unwrap();
+        state.handle_transaction(register_c1).unwrap();
+        state.handle_transaction(register_c2).unwrap();
+        state.handle_transaction(blob_tx_1).unwrap();
+        state.handle_transaction(blob_tx_2).unwrap();
+        state.handle_transaction(proof_c1).unwrap();
 
-        assert_eq!(new_state.contracts.get(&c1).unwrap().state.0, vec![4, 5, 6]);
-        assert_eq!(new_state.contracts.get(&c2).unwrap().state.0, vec![4, 5, 6]);
+        assert_eq!(state.contracts.get(&c1).unwrap().state.0, vec![4, 5, 6]);
+        assert_eq!(state.contracts.get(&c2).unwrap().state.0, vec![4, 5, 6]);
     }
 }
