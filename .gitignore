@@ -1,5 +1,5 @@
 target
-data.bin
+*.bin
 
 # Added by cargo
 
