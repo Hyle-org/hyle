@@ -17,11 +17,11 @@ pub struct UnsettledTransaction {
     pub identity: Identity,
     pub hash: TxHash,
     pub blobs_hash: BlobsHash,
-    pub blobs: Vec<UnsettledBlobDetail>,
+    pub blobs: Vec<UnsettledBlobMetadata>,
 }
 
 #[derive(Default, Debug, Clone)]
-pub struct UnsettledBlobDetail {
+pub struct UnsettledBlobMetadata {
     pub contract_name: ContractName,
     pub verification_status: VerificationStatus,
 }
