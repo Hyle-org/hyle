@@ -26,6 +26,7 @@ pub struct Mempool {
 pub enum MempoolCommand {
     CreatePendingBatch { id: String },
     CommitBatches { ids: Vec<String> },
+    HandleNetMessage(MempoolNetMessage),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -47,18 +48,13 @@ impl Mempool {
     /// start starts the mempool server.
     pub async fn start(&mut self) {
         let mut command_receiver = self.bus.receiver::<MempoolCommand>().await;
-        let mut net_receiver = self.net_bus.receiver::<MempoolNetMessage>().await;
+        let mut net_receiver = self.net_bus.receiver::<MempoolCommand>().await;
         let response_sender = self.bus.sender::<MempoolResponse>().await;
         loop {
             select! {
-                Ok(msg) = net_receiver.recv() => {
-                    match msg {
-                        MempoolNetMessage::NewTx(tx) => {
-                            self.pending_txs.push(tx);
-                        }
-                    }
+                Ok(cmd) = net_receiver.recv() => {
+                    _ = self.handle_command(cmd, &response_sender)
                 }
-
                 Ok(cmd) = command_receiver.recv() => {
                     _ = self.handle_command(cmd, &response_sender);
                 }
@@ -93,6 +89,11 @@ impl Mempool {
                     }
                 }
             }
+            MempoolCommand::HandleNetMessage(msg) => match msg {
+                MempoolNetMessage::NewTx(tx) => {
+                    self.pending_txs.push(tx);
+                }
+            },
         }
         Ok(())
     }

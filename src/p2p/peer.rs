@@ -13,6 +13,8 @@ use tracing::{debug, info, trace, warn};
 
 use super::network::{MempoolNetMessage, NetMessage, Version};
 use crate::bus::SharedMessageBus;
+use crate::consensus::ConsensusCommand;
+use crate::mempool::MempoolCommand;
 use crate::p2p::network::ConsensusNetMessage;
 use crate::utils::conf::SharedConf;
 use crate::utils::logger::LogMe;
@@ -54,6 +56,15 @@ impl Peer {
         })
     }
 
+    async fn handle_consensus_message(&mut self, msg: ConsensusNetMessage) -> Result<(), Error> {
+        self.send_net_message(NetMessage::ConsensusMessage(msg))
+            .await
+    }
+
+    async fn handle_mempool_message(&mut self, msg: MempoolNetMessage) -> Result<(), Error> {
+        self.send_net_message(NetMessage::MempoolMessage(msg)).await
+    }
+
     async fn handle_net_message(&mut self, msg: NetMessage) -> Result<(), Error> {
         trace!("RECV: {:?}", msg);
         match msg {
@@ -74,28 +85,18 @@ impl Peer {
             NetMessage::MempoolMessage(mempool_msg) => {
                 debug!("Received new mempool net message {:?}", mempool_msg);
                 self.mempool
-                    .sender::<MempoolNetMessage>()
+                    .sender::<MempoolCommand>()
                     .await
-                    .send(mempool_msg)
+                    .send(MempoolCommand::HandleNetMessage(mempool_msg))
                     .map(|_| ())
                     .context("Receiving mempool net message")
-            }
-            // TODO: To replace with an ApiMessage equivalent
-            NetMessage::NewTransaction(tx) => {
-                info!("Get new tx over p2p: {:?}", tx);
-                self.mempool
-                    .sender::<MempoolNetMessage>()
-                    .await
-                    .send(MempoolNetMessage::NewTx(tx))
-                    .map(|_| ())
-                    .context("Failed to send over channel")
             }
             NetMessage::ConsensusMessage(consensus_msg) => {
                 debug!("Received new consensus net message {:?}", consensus_msg);
                 self.consensus
-                    .sender::<ConsensusNetMessage>()
+                    .sender::<ConsensusCommand>()
                     .await
-                    .send(consensus_msg)
+                    .send(ConsensusCommand::HandleNetMessage(consensus_msg))
                     .map(|_| ())
                     .context("Receiving consensus net message")
             }
@@ -134,14 +135,38 @@ impl Peer {
     }
 
     pub async fn start(&mut self) -> Result<(), Error> {
+        let mut mempool_rx = self.mempool.receiver::<MempoolNetMessage>().await;
+        let mut consensus_rx = self.consensus.receiver::<ConsensusNetMessage>().await;
         loop {
             let wait_tcp = Self::read_stream(&mut self.stream); //FIXME: make read_stream cancel safe !
             let wait_cmd = self.internal_cmd_rx.recv();
+            let wait_mempool = mempool_rx.recv();
+            let wait_consensus = consensus_rx.recv();
 
             // select! waits on multiple concurrent branches, returning when the **first** branch
             // completes, cancelling the remaining branches.
             select! {
-                 res = wait_tcp => {
+                res = wait_mempool => {
+                    if let Ok(message) = res {
+                        match self.handle_mempool_message(message).await {
+                            Ok(_) => continue,
+                            Err(e) => {
+                                warn!("Error while handling net message: {}", e);
+                            }
+                        }
+                    }
+                }
+                res = wait_consensus => {
+                    if let Ok(message) = res {
+                        match self.handle_consensus_message(message).await {
+                            Ok(_) => continue,
+                            Err(e) => {
+                                warn!("Error while handling net message: {}", e);
+                            }
+                        }
+                    }
+                }
+                res = wait_tcp => {
                     match res {
                         Ok(message) => match self.handle_net_message(message).await {
                             Ok(_) => continue,

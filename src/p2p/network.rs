@@ -12,8 +12,6 @@ pub enum NetMessage {
     Verack,
     Ping,
     Pong,
-    // TODO: To replace with an ApiMessage equivalent
-    NewTransaction(Transaction),
     MempoolMessage(MempoolNetMessage),
     ConsensusMessage(ConsensusNetMessage),
 }
