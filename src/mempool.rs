@@ -11,6 +11,7 @@ use std::collections::HashMap;
 use tokio::{select, sync::broadcast::Sender};
 use tracing::{info, warn};
 
+#[allow(dead_code)]
 #[derive(Debug)]
 struct Batch(String, Vec<Transaction>);
 
