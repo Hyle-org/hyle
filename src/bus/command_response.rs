@@ -1,3 +1,4 @@
+use std::future::Future;
 use std::time::Duration;
 
 use super::SharedMessageBus;
@@ -44,7 +45,6 @@ impl<Cmd: NeedAnswer<Res> + Clone + Send + Sync + 'static, Res: Clone + Send + S
 
         match tokio::time::timeout(Duration::from_secs(CLIENT_TIMEOUT_SECONDS), async move {
             loop {
-                // may be add timeout
                 if let Ok(resp) = receiver.recv().await {
                     if resp.id == next_id {
                         return resp.data.map_err(|err_str| anyhow!(err_str));
@@ -63,14 +63,52 @@ impl<Cmd: NeedAnswer<Res> + Clone + Send + Sync + 'static, Res: Clone + Send + S
     }
 }
 
-pub trait CmdRespServer<Cmd: NeedAnswer<Resp>, Resp> {
-    async fn spawn_serve(&self, routes: fn(Cmd) -> Result<Option<Resp>>) -> &Self;
+pub trait CmdRespAsyncServer<Cmd: NeedAnswer<Resp>, Resp> {
+    async fn serve_async<F, Fut>(&self, routes: F) -> &Self
+    where
+        F: Fn(Cmd) -> Fut + Send + 'static,
+        Fut: Future<Output = Result<Option<Resp>>> + Send + 'static;
 }
 
 impl<Cmd: NeedAnswer<Res> + Clone + Send + Sync + 'static, Res: Clone + Send + Sync + 'static>
-    CmdRespServer<Cmd, Res> for SharedMessageBus
+    CmdRespAsyncServer<Cmd, Res> for SharedMessageBus
 {
-    async fn spawn_serve(&self, routes: fn(Cmd) -> Result<Option<Res>>) -> &SharedMessageBus {
+    async fn serve_async<F, Fut>(&self, routes: F) -> &SharedMessageBus
+    where
+        F: Fn(Cmd) -> Fut + Send + 'static,
+        Fut: Future<Output = Result<Option<Res>>> + Send + 'static,
+    {
+        let mut receiver = self.receiver::<Query<Cmd>>().await;
+        let sender = self.sender::<QueryResponse<Res>>().await;
+
+        tokio::spawn(async move {
+            loop {
+                if let Ok(Query { id, data: cmd }) = receiver.recv().await {
+                    _ = sender.send(QueryResponse {
+                        id,
+                        data: routes(cmd).await.map_err(|err| err.to_string()),
+                    });
+                }
+            }
+        });
+        self
+    }
+}
+
+pub trait CmdRespSyncServer<Cmd: NeedAnswer<Resp>, Resp> {
+    async fn serve_sync(
+        &self,
+        routes: impl Fn(Cmd) -> Result<Option<Resp>> + Send + 'static,
+    ) -> &Self;
+}
+
+impl<Cmd: NeedAnswer<Res> + Clone + Send + Sync + 'static, Res: Clone + Send + Sync + 'static>
+    CmdRespSyncServer<Cmd, Res> for SharedMessageBus
+{
+    async fn serve_sync(
+        &self,
+        routes: impl Fn(Cmd) -> Result<Option<Res>> + Send + 'static,
+    ) -> &SharedMessageBus {
         let mut receiver = self.receiver::<Query<Cmd>>().await;
         let sender = self.sender::<QueryResponse<Res>>().await;
 
