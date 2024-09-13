@@ -5,8 +5,7 @@ use hyle::{
     consensus::Consensus,
     mempool::Mempool,
     node_state::NodeState,
-    p2p::{self, network::MempoolMessage},
-    rest,
+    p2p, rest,
     utils::conf::{self, SharedConf},
 };
 use std::sync::Arc;
@@ -28,6 +27,21 @@ fn start_node_state(bus: SharedMessageBus, config: SharedConf) {
     tokio::spawn(async move {
         let mut consensus = NodeState::default();
         consensus.start(bus, config).await
+    });
+}
+
+fn start_mempool(bus: SharedMessageBus) {
+    tokio::spawn(async move {
+        let mut mempool = Mempool::new(bus);
+        mempool.start().await
+    });
+}
+
+fn start_p2p(config: SharedConf, bus: SharedMessageBus) {
+    tokio::spawn(async move {
+        if let Err(e) = p2p::p2p_server(config, bus).await {
+            error!("RPC server failed: {:?}", e);
+        }
     });
 }
 
@@ -55,23 +69,10 @@ async fn main() -> Result<()> {
 
     let bus = SharedMessageBus::new();
 
-    let mut mp = Mempool::new(SharedMessageBus::new_handle(&bus));
-    let (mempool_message_sender, mempool_message_receiver) =
-        tokio::sync::mpsc::unbounded_channel::<MempoolMessage>();
-
-    tokio::spawn(async move {
-        mp.start(mempool_message_receiver).await;
-    });
-
+    start_mempool(SharedMessageBus::new_handle(&bus));
     start_node_state(SharedMessageBus::new_handle(&bus), Arc::clone(&config));
     start_consensus(SharedMessageBus::new_handle(&bus), Arc::clone(&config));
-
-    let p2p_config = Arc::clone(&config);
-    tokio::spawn(async move {
-        if let Err(e) = p2p::p2p_server(p2p_config, mempool_message_sender).await {
-            error!("RPC server failed: {:?}", e);
-        }
-    });
+    start_p2p(Arc::clone(&config), SharedMessageBus::new_handle(&bus));
 
     // Start REST server
     rest::rest_server(config)

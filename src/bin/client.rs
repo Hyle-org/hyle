@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use clap::Parser;
 use hyle::{
     model::{Transaction, TransactionData},
-    p2p::network::NetMessage,
+    p2p::network::{MempoolNetMessage, NetMessage},
     utils::conf::{self, SharedConf},
 };
 use rand::{distributions::Alphanumeric, Rng};
@@ -10,7 +10,7 @@ use tokio::{io::AsyncWriteExt, net::TcpStream, time::Duration};
 use tracing::info;
 
 pub fn new_transaction() -> Vec<u8> {
-    NetMessage::NewTransaction(Transaction {
+    NetMessage::MempoolMessage(MempoolNetMessage::NewTx(Transaction {
         inner: rand::thread_rng()
             .sample_iter(&Alphanumeric)
             .take(7)
@@ -18,7 +18,7 @@ pub fn new_transaction() -> Vec<u8> {
             .collect(),
         version: 1,
         transaction_data: TransactionData::default(),
-    })
+    }))
     .to_binary()
 }
 
@@ -33,12 +33,11 @@ pub async fn client(config: SharedConf) -> Result<()> {
         socket
             .write_u32(res.len() as u32)
             .await
-            .context("sending message")?;
-
+            .context("sending tcp message size")?;
         socket
             .write(res.as_ref())
             .await
-            .context("sending message")?;
+            .context("sending tcp message")?;
         tokio::time::sleep(Duration::from_secs(1)).await;
     }
 }

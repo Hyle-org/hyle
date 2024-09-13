@@ -1,13 +1,13 @@
 use crate::{
-    bus::SharedMessageBus, model::Transaction, p2p::network::MempoolMessage, utils::logger::LogMe,
+    bus::SharedMessageBus,
+    model::Transaction,
+    p2p::network::{MempoolNetMessage, NetInput},
+    utils::logger::LogMe,
 };
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use tokio::{
-    select,
-    sync::{broadcast::Sender, mpsc::UnboundedReceiver},
-};
+use tokio::{select, sync::broadcast::Sender};
 use tracing::{info, warn};
 
 #[derive(Debug)]
@@ -45,19 +45,15 @@ impl Mempool {
     }
 
     /// start starts the mempool server.
-    pub async fn start(&mut self, mut message_receiver: UnboundedReceiver<MempoolMessage>) {
+    pub async fn start(&mut self) {
         let mut command_receiver = self.bus.receiver::<MempoolCommand>().await;
+        let mut net_receiver = self.bus.receiver::<NetInput<MempoolNetMessage>>().await;
         let response_sender = self.bus.sender::<MempoolResponse>().await;
         loop {
             select! {
-                Some(msg) = message_receiver.recv() => {
-                    match msg {
-                        MempoolMessage::NewTx(tx) => {
-                            self.pending_txs.push(tx);
-                        }
-                    }
+                Ok(cmd) = net_receiver.recv() => {
+                    self.handle_net_input(cmd)
                 }
-
                 Ok(cmd) = command_receiver.recv() => {
                     _ = self.handle_command(cmd, &response_sender);
                 }
@@ -65,6 +61,13 @@ impl Mempool {
         }
     }
 
+    fn handle_net_input(&mut self, command: NetInput<MempoolNetMessage>) {
+        match command.msg {
+            MempoolNetMessage::NewTx(tx) => {
+                self.pending_txs.push(tx);
+            }
+        }
+    }
     fn handle_command(
         &mut self,
         command: MempoolCommand,

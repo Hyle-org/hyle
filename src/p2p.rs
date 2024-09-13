@@ -1,16 +1,14 @@
-use crate::utils::conf::SharedConf;
+use std::sync::Arc;
+
+use crate::{bus::SharedMessageBus, utils::conf::SharedConf};
 use anyhow::{Error, Result};
-use network::MempoolMessage;
-use tokio::{net::TcpListener, sync::mpsc::UnboundedSender};
+use tokio::net::TcpListener;
 use tracing::info;
 
 pub mod network; // FIXME(Bertrand): NetMessage should be private
 mod peer;
 
-pub async fn p2p_server(
-    config: SharedConf,
-    mempool: UnboundedSender<MempoolMessage>,
-) -> Result<(), Error> {
+pub async fn p2p_server(config: SharedConf, bus: SharedMessageBus) -> Result<(), Error> {
     if config.peers.is_empty() {
         let listener = TcpListener::bind(config.addr()).await?;
         let (addr, port) = config.addr();
@@ -18,7 +16,9 @@ pub async fn p2p_server(
 
         loop {
             let (socket, _) = listener.accept().await?;
-            let tx_mempool = mempool.clone();
+            let conf = Arc::clone(&config);
+
+            let bus = bus.new_handle();
 
             tokio::spawn(async move {
                 info!(
@@ -28,7 +28,7 @@ pub async fn p2p_server(
                         .map(|a| a.to_string())
                         .unwrap_or("no address".to_string())
                 );
-                let mut peer_server = peer::Peer::new(socket, tx_mempool).await?;
+                let mut peer_server = peer::Peer::new(socket, bus, conf).await?;
                 match peer_server.start().await {
                     Ok(_) => info!("Peer thread exited"),
                     Err(e) => info!("Peer thread exited: {}", e),
@@ -40,7 +40,7 @@ pub async fn p2p_server(
         let peer_address = config.peers.first().unwrap();
         info!("Connecting to peer {}", peer_address);
         let stream = peer::Peer::connect(peer_address).await?;
-        let mut peer = peer::Peer::new(stream, mempool).await?;
+        let mut peer = peer::Peer::new(stream, bus, config).await?;
 
         peer.handshake().await?;
         peer.start().await

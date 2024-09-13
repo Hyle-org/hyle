@@ -5,5 +5,8 @@ Config(
     storage: Storage(
       interval: 10
     ),
-    rest: "127.0.0.1:4321"
+    rest: "127.0.0.1:4321",
+  p2p: (
+    ping_interval: 10
+  )
 )

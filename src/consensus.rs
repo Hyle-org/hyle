@@ -1,13 +1,14 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, default::Default, fs, time::Duration};
-use tokio::{select, time::sleep};
+use tokio::{select, sync::broadcast::Sender, time::sleep};
 use tracing::info;
 
 use crate::{
     bus::SharedMessageBus,
     mempool::{MempoolCommand, MempoolResponse},
     model::{get_current_timestamp, Block, Hashable, Transaction},
+    p2p::network::{ConsensusNetMessage, NetInput},
     utils::{conf::SharedConf, logger::LogMe},
 };
 
@@ -25,6 +26,7 @@ pub enum ConsensusEvent {
 #[derive(Serialize, Deserialize)]
 pub struct Consensus {
     blocks: Vec<Block>,
+    batch_id: u64,
     // Accumulated batches from mempool
     tx_batches: HashMap<String, Vec<Transaction>>,
     // Current proposed block
@@ -91,6 +93,34 @@ impl Consensus {
         Ok(ctx)
     }
 
+    fn handle_net_input(&mut self, msg: NetInput<ConsensusNetMessage>) {
+        match msg.msg {
+            ConsensusNetMessage::CommitBlock(block) => {
+                info!("Got a commited block {:?}", block)
+            }
+        }
+    }
+
+    fn handle_command(
+        &mut self,
+        msg: ConsensusCommand,
+        mempool_command_sender: Sender<MempoolCommand>,
+    ) {
+        match msg {
+            ConsensusCommand::GenerateNewBlock => {
+                self.batch_id += 1;
+                _ = mempool_command_sender
+                    .send(MempoolCommand::CreatePendingBatch {
+                        id: self.batch_id.to_string(),
+                    })
+                    .log_error("Creating a new block");
+            }
+            ConsensusCommand::SaveOnDisk => {
+                _ = self.save_on_disk();
+            }
+        }
+    }
+
     pub async fn start(&mut self, bus: SharedMessageBus, config: SharedConf) -> Result<()> {
         let interval = config.storage.interval;
         let is_master = config.peers.is_empty();
@@ -100,6 +130,8 @@ impl Consensus {
         let mut consensus_command_receiver = bus.receiver::<ConsensusCommand>().await;
         let mempool_command_sender = bus.sender::<MempoolCommand>().await;
         let mut mempool_response_receiver = bus.receiver::<MempoolResponse>().await;
+        let mut consensus_net_input_receiver =
+            bus.receiver::<NetInput<ConsensusNetMessage>>().await;
 
         if is_master {
             info!(
@@ -121,22 +153,11 @@ impl Consensus {
             });
         }
 
-        let mut batch_id = 0;
-
         loop {
+            let sender = mempool_command_sender.clone();
             select! {
                 Ok(msg) = consensus_command_receiver.recv() => {
-                    match msg {
-                        ConsensusCommand::GenerateNewBlock => {
-                            batch_id += 1;
-                            _ = mempool_command_sender
-                                .send(MempoolCommand::CreatePendingBatch { id: batch_id.to_string() })
-                                .log_error("Creating a new block");
-                        },
-                        ConsensusCommand::SaveOnDisk => {
-                            _ = self.save_on_disk();
-                        }
-                    }
+                    self.handle_command(msg, sender);
                 }
                 Ok(mempool_response) = mempool_response_receiver.recv() => {
                     match mempool_response {
@@ -144,9 +165,15 @@ impl Consensus {
                             info!("Received pending batch {} with {} txs", &id, &txs.len());
                             self.tx_batches.insert(id, txs);
                             let block = self.new_block();
-                            _ = consensus_events_sender.send(ConsensusEvent::NewBlock(block)).log_error("error sending new block");
+                            // send to internal bus
+                            _ = consensus_events_sender.send(ConsensusEvent::NewBlock(block.clone())).log_error("error sending new block");
+                            // send to network
+                            _ = bus.sender::<ConsensusNetMessage>().await.send(ConsensusNetMessage::CommitBlock(block)).log_warn("error sending new block on network bus");
                         }
                     }
+                }
+                Ok(msg) = consensus_net_input_receiver.recv() => {
+                    self.handle_net_input(msg);
                 }
             }
         }
@@ -157,6 +184,7 @@ impl Default for Consensus {
     fn default() -> Self {
         Self {
             blocks: vec![Block::default()],
+            batch_id: 0,
             tx_batches: HashMap::new(),
             current_block_batches: vec![],
         }
