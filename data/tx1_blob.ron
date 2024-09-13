@@ -1,0 +1,10 @@
+BlobTransaction(
+  identity: "client",
+  blobs: [Blob(
+    contract_name: "c1",
+    data: [0,1,2,3]
+  ), Blob(
+    contract_name: "c2",
+    data: [0,1,2,3]
+  )]
+)
