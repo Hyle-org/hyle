@@ -5,19 +5,23 @@ use super::SharedMessageBus;
 use anyhow::anyhow;
 use anyhow::bail;
 use anyhow::Result;
+use tokio::sync::broadcast;
+use tokio::sync::broadcast::error::RecvError;
+use tokio::sync::broadcast::Receiver;
+use tokio::sync::broadcast::Sender;
 
 pub const CLIENT_TIMEOUT_SECONDS: u64 = 10;
 
 pub trait NeedAnswer<Answer> {}
 
 #[derive(Clone)]
-struct Query<Inner> {
+pub struct Query<Inner> {
     pub id: usize,
     pub data: Inner,
 }
 
 #[derive(Clone)]
-struct QueryResponse<Inner> {
+pub struct QueryResponse<Inner> {
     pub id: usize,
     // anyhow err is not cloneable...
     pub data: Result<Option<Inner>, String>,
@@ -63,65 +67,160 @@ impl<Cmd: NeedAnswer<Res> + Clone + Send + Sync + 'static, Res: Clone + Send + S
     }
 }
 
-pub trait CmdRespAsyncServer<Cmd: NeedAnswer<Resp>, Resp> {
-    async fn serve_async<F, Fut>(&self, routes: F) -> &Self
-    where
-        F: Fn(Cmd) -> Fut + Send + 'static,
-        Fut: Future<Output = Result<Option<Resp>>> + Send + 'static;
+pub struct CommandResponseServer<Cmd: NeedAnswer<Res>, Res> {
+    receiver: Receiver<Query<Cmd>>,
+    sender: Sender<QueryResponse<Res>>,
 }
 
-impl<Cmd: NeedAnswer<Res> + Clone + Send + Sync + 'static, Res: Clone + Send + Sync + 'static>
-    CmdRespAsyncServer<Cmd, Res> for SharedMessageBus
-{
-    async fn serve_async<F, Fut>(&self, routes: F) -> &SharedMessageBus
-    where
-        F: Fn(Cmd) -> Fut + Send + 'static,
-        Fut: Future<Output = Result<Option<Res>>> + Send + 'static,
-    {
-        let mut receiver = self.receiver::<Query<Cmd>>().await;
-        let sender = self.sender::<QueryResponse<Res>>().await;
+pub trait CommandResponseServerCreate<Cmd: NeedAnswer<Res>, Res> {
+    async fn create_server(&self) -> CommandResponseServer<Cmd, Res>;
+}
 
-        tokio::spawn(async move {
-            loop {
-                if let Ok(Query { id, data: cmd }) = receiver.recv().await {
-                    _ = sender.send(QueryResponse {
-                        id,
-                        data: routes(cmd).await.map_err(|err| err.to_string()),
-                    });
-                }
-            }
-        });
-        self
+impl<
+        Cmd: NeedAnswer<Resp> + Clone + Send + Sync + 'static,
+        Resp: Clone + Send + Sync + 'static,
+    > CommandResponseServerCreate<Cmd, Resp> for SharedMessageBus
+{
+    async fn create_server(&self) -> CommandResponseServer<Cmd, Resp> {
+        CommandResponseServer {
+            receiver: self.receiver().await,
+            sender: self.sender().await,
+        }
     }
 }
 
-pub trait CmdRespSyncServer<Cmd: NeedAnswer<Resp>, Resp> {
-    async fn serve_sync(
-        &self,
-        routes: impl Fn(Cmd) -> Result<Option<Resp>> + Send + 'static,
-    ) -> &Self;
-}
-
-impl<Cmd: NeedAnswer<Res> + Clone + Send + Sync + 'static, Res: Clone + Send + Sync + 'static>
-    CmdRespSyncServer<Cmd, Res> for SharedMessageBus
+impl<
+        Cmd: NeedAnswer<Resp> + Clone + Send + Sync + 'static,
+        Resp: Clone + Send + Sync + 'static,
+    > CommandResponseServer<Cmd, Resp>
 {
-    async fn serve_sync(
-        &self,
-        routes: impl Fn(Cmd) -> Result<Option<Res>> + Send + 'static,
-    ) -> &SharedMessageBus {
-        let mut receiver = self.receiver::<Query<Cmd>>().await;
-        let sender = self.sender::<QueryResponse<Res>>().await;
+}
+impl<Cmd: NeedAnswer<Res> + Clone + Send + Sync + 'static, Res: Clone + Send + Sync + 'static>
+    CommandResponseServer<Cmd, Res>
+{
+    pub async fn get_query(&mut self) -> Result<Query<Cmd>, RecvError> {
+        self.receiver.recv().await
+    }
+    // pub async fn respond<F, Fut>(&self, Query { id, data }: Query<Cmd>, f: F) -> Result<()>
+    // where
+    //     F: Fn(Cmd) -> Fut + Send + 'static,
+    //     Fut: Future<Output = Result<Option<Res>>> + Send + 'static,
+    // {
+    //     let sent = self.sender.send(QueryResponse {
+    //         id,
+    //         data: f(data).await.map_err(|err_anyhow| err_anyhow.to_string()),
+    //     });
 
-        tokio::spawn(async move {
-            loop {
-                if let Ok(Query { id, data: cmd }) = receiver.recv().await {
-                    _ = sender.send(QueryResponse {
-                        id,
-                        data: routes(cmd).map_err(|err| err.to_string()),
-                    });
-                }
-            }
-        });
-        self
+    //     match sent {
+    //         Ok(_) => Ok(()),
+    //         Err(e) => {
+    //             bail!(
+    //                 "Sending message through response channel: {}",
+    //                 e.to_string()
+    //             )
+    //         }
+    //     }
+    // }
+
+    // pub async fn respond_sync<F>(&self, Query { id, data }: Query<Cmd>, f: F) -> Result<()>
+    // where
+    //     F: Fn(Cmd) -> Result<Option<Res>> + Send + 'static,
+    // {
+    //     let sent = self.sender.send(QueryResponse {
+    //         id,
+    //         data: f(data).map_err(|err_anyhow| err_anyhow.to_string()),
+    //     });
+
+    //     match sent {
+    //         Ok(_) => Ok(()),
+    //         Err(e) => {
+    //             bail!(
+    //                 "Sending message through response channel: {}",
+    //                 e.to_string()
+    //             )
+    //         }
+    //     }
+    // }
+
+    pub fn respond(&self, res: QueryResponse<Res>) -> Result<()> {
+        let _ = self.sender.send(res);
+
+        Ok(())
+    }
+
+    pub fn to_response(&self, Query { id, data }: Query<Cmd>) -> (Cmd, QueryResponse<Res>) {
+        (data, QueryResponse { id, data: Ok(None) })
     }
 }
+
+impl<Res: Clone + Send + Sync + 'static> QueryResponse<Res> {
+    pub fn updated(self, res: Result<Option<Res>>) -> QueryResponse<Res> {
+        QueryResponse {
+            id: self.id,
+            data: res.map_err(|err| err.to_string()),
+        }
+    }
+}
+
+// pub trait CmdRespAsyncServer<Cmd: NeedAnswer<Resp>, Resp> {
+//     async fn serve_async<F, Fut>(&self, routes: F) -> &Self
+//     where
+//         F: Fn(Cmd) -> Fut + Send + 'static,
+//         Fut: Future<Output = Result<Option<Resp>>> + Send + 'static;
+// }
+
+// impl<Cmd: NeedAnswer<Res> + Clone + Send + Sync + 'static, Res: Clone + Send + Sync + 'static>
+//     CmdRespAsyncServer<Cmd, Res> for SharedMessageBus
+// {
+//     async fn serve_async<F, Fut>(&self, routes: F) -> &SharedMessageBus
+//     where
+//         F: Fn(Cmd) -> Fut + Send + 'static,
+//         Fut: Future<Output = Result<Option<Res>>> + Send + 'static,
+//     {
+//         let mut receiver = self.receiver::<Query<Cmd>>().await;
+//         let sender = self.sender::<QueryResponse<Res>>().await;
+
+//         tokio::spawn(async move {
+//             loop {
+//                 if let Ok(Query { id, data: cmd }) = receiver.recv().await {
+//                     _ = sender.send(QueryResponse {
+//                         id,
+//                         data: routes(cmd).await.map_err(|err| err.to_string()),
+//                     });
+//                 }
+//             }
+//         });
+//         self
+//     }
+// }
+
+// pub trait CmdRespSyncServer<Cmd: NeedAnswer<Resp>, Resp> {
+//     async fn serve_sync(
+//         &self,
+//         routes: impl Fn(Cmd) -> Result<Option<Resp>> + Send + 'static,
+//     ) -> &Self;
+// }
+
+// impl<Cmd: NeedAnswer<Res> + Clone + Send + Sync + 'static, Res: Clone + Send + Sync + 'static>
+//     CmdRespSyncServer<Cmd, Res> for SharedMessageBus
+// {
+//     async fn serve_sync(
+//         &self,
+//         routes: impl Fn(Cmd) -> Result<Option<Res>> + Send + 'static,
+//     ) -> &SharedMessageBus {
+//         let mut receiver = self.receiver::<Query<Cmd>>().await;
+//         let sender = self.sender::<QueryResponse<Res>>().await;
+
+//         tokio::spawn(async move {
+//             loop {
+//                 if let Ok(Query { id, data: cmd }) = receiver.recv().await {
+//                     _ = sender.send(QueryResponse {
+//                         id,
+//                         data: routes(cmd).map_err(|err| err.to_string()),
+//                     });
+//                 }
+//             }
+//         });
+//         self
+//     }
+// }

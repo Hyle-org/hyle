@@ -1,5 +1,10 @@
 use crate::{
-    bus::SharedMessageBus,
+    bus::{
+        command_response::{CommandResponseServer, CommandResponseServerCreate, NeedAnswer},
+        listener::Listener,
+        SharedMessageBus,
+    },
+    mempool,
     model::Transaction,
     p2p::network::{MempoolNetMessage, NetInput},
     utils::logger::LogMe,
@@ -34,6 +39,14 @@ pub enum MempoolResponse {
     PendingBatch { id: String, txs: Vec<Transaction> },
 }
 
+macro_rules! handle_query {
+    ($server:expr, $query:expr, $self:ident, $handler:ident) => {
+        let (cmd, response_writer) = $server.to_response($query);
+        let res = $self.$handler(cmd);
+        let _ = $server.respond(response_writer.updated(res));
+    };
+}
+
 impl Mempool {
     pub fn new(bus: SharedMessageBus) -> Mempool {
         Mempool {
@@ -46,16 +59,17 @@ impl Mempool {
 
     /// start starts the mempool server.
     pub async fn start(&mut self) {
-        let mut command_receiver = self.bus.receiver::<MempoolCommand>().await;
+        impl NeedAnswer<MempoolResponse> for MempoolCommand {}
+        let mut mempool_server: CommandResponseServer<MempoolCommand, MempoolResponse> =
+            self.bus.create_server().await;
         let mut net_receiver = self.bus.receiver::<NetInput<MempoolNetMessage>>().await;
-        let response_sender = self.bus.sender::<MempoolResponse>().await;
         loop {
             select! {
                 Ok(cmd) = net_receiver.recv() => {
                     self.handle_net_input(cmd)
                 }
-                Ok(cmd) = command_receiver.recv() => {
-                    _ = self.handle_command(cmd, &response_sender);
+                Ok(query) = mempool_server.get_query() => {
+                    handle_query!(mempool_server, query, self, handle_command);
                 }
             }
         }
@@ -68,19 +82,13 @@ impl Mempool {
             }
         }
     }
-    fn handle_command(
-        &mut self,
-        command: MempoolCommand,
-        response_sender: &Sender<MempoolResponse>,
-    ) -> Result<()> {
+    fn handle_command(&mut self, command: MempoolCommand) -> Result<Option<MempoolResponse>> {
         match command {
             MempoolCommand::CreatePendingBatch { id } => {
                 info!("Creating pending transaction batch with id {}", id);
                 let txs: Vec<Transaction> = self.pending_txs.drain(0..).collect();
                 self.pending_batches.insert(id.clone(), txs.clone());
-                _ = response_sender
-                    .send(MempoolResponse::PendingBatch { id, txs })
-                    .log_error("Sending pending batch");
+                return Ok(Some(MempoolResponse::PendingBatch { id, txs }));
             }
             MempoolCommand::CommitBatches { ids } => {
                 for b_id in ids.into_iter() {
@@ -96,6 +104,6 @@ impl Mempool {
                 }
             }
         }
-        Ok(())
+        Ok(None)
     }
 }
