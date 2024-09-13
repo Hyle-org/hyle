@@ -6,11 +6,14 @@ use hyle::{
         BlobTransaction, ProofTransaction, RegisterContractTransaction, Transaction,
         TransactionData,
     },
-    p2p::network::{MempoolNetMessage, NetMessage},
+    p2p::{
+        network::{MempoolNetMessage, NetMessage},
+        stream::send_net_message,
+    },
     utils::conf::{self, SharedConf},
 };
 use serde::de::Deserialize;
-use tokio::{io::AsyncWriteExt, net::TcpStream};
+use tokio::net::TcpStream;
 use tracing::info;
 
 fn load<'de, T: Deserialize<'de>>(file: String) -> Result<T, ConfigError> {
@@ -22,8 +25,8 @@ fn load<'de, T: Deserialize<'de>>(file: String) -> Result<T, ConfigError> {
     s.try_deserialize::<T>()
 }
 
-fn to_net_message(tx: Transaction) -> Vec<u8> {
-    NetMessage::MempoolMessage(MempoolNetMessage::NewTx(tx)).to_binary()
+fn wrap_net_message(tx: Transaction) -> NetMessage {
+    NetMessage::MempoolMessage(MempoolNetMessage::NewTx(tx))
 }
 
 fn wrap_tx(tx: TransactionData) -> Transaction {
@@ -47,7 +50,7 @@ fn load_contract(file: String) -> Result<Transaction> {
     Ok(wrap_tx(TransactionData::RegisterContract(blob)))
 }
 
-fn handle_send(send: SendArgs) -> Result<Vec<u8>> {
+fn handle_send(send: SendArgs) -> Result<NetMessage> {
     let tx = match send.command {
         SendCommands::Blob { file } => load_blob(file)?,
         SendCommands::B { file } => load_blob(file)?,
@@ -57,10 +60,10 @@ fn handle_send(send: SendArgs) -> Result<Vec<u8>> {
         SendCommands::C { file } => load_contract(file)?,
     };
     info!("Sending tx {:?}", tx);
-    Ok(to_net_message(tx))
+    Ok(wrap_net_message(tx))
 }
 
-fn handle_cli(cli: Cli) -> Result<Vec<u8>> {
+fn handle_cli(cli: Cli) -> Result<NetMessage> {
     match cli.command {
         Commands::Send(s) => handle_send(s),
         Commands::S(s) => handle_send(s),
@@ -73,14 +76,8 @@ async fn client(config: SharedConf, cli: Cli) -> Result<()> {
     let mut socket = TcpStream::connect(config.addr())
         .await
         .context("connecting to server")?;
-    socket
-        .write_u32(res.len() as u32)
-        .await
-        .context("sending tcp message size")?;
-    socket
-        .write(res.as_ref())
-        .await
-        .context("sending tcp message")?;
+
+    send_net_message(&mut socket, res).await?;
 
     info!("Done");
     Ok(())
