@@ -4,7 +4,7 @@ use crate::{
         listener::Listener,
         SharedMessageBus,
     },
-    mempool,
+    handle_server_query, mempool,
     model::Transaction,
     p2p::network::{MempoolNetMessage, NetInput},
     utils::logger::LogMe,
@@ -39,14 +39,6 @@ pub enum MempoolResponse {
     PendingBatch { id: String, txs: Vec<Transaction> },
 }
 
-macro_rules! handle_query {
-    ($server:expr, $query:expr, $self:ident, $handler:ident) => {
-        let (cmd, response_writer) = $server.to_response($query);
-        let res = $self.$handler(cmd);
-        let _ = $server.respond(response_writer.updated(res));
-    };
-}
-
 impl Mempool {
     pub fn new(bus: SharedMessageBus) -> Mempool {
         Mempool {
@@ -60,8 +52,10 @@ impl Mempool {
     /// start starts the mempool server.
     pub async fn start(&mut self) {
         impl NeedAnswer<MempoolResponse> for MempoolCommand {}
-        let mut mempool_server: CommandResponseServer<MempoolCommand, MempoolResponse> =
-            self.bus.create_server().await;
+        let mut mempool_server = self
+            .bus
+            .create_server::<MempoolCommand, MempoolResponse>()
+            .await;
         let mut net_receiver = self.bus.receiver::<NetInput<MempoolNetMessage>>().await;
         loop {
             select! {
@@ -69,7 +63,7 @@ impl Mempool {
                     self.handle_net_input(cmd)
                 }
                 Ok(query) = mempool_server.get_query() => {
-                    handle_query!(mempool_server, query, self, handle_command);
+                    handle_server_query!(mempool_server, query, self, handle_command);
                 }
             }
         }

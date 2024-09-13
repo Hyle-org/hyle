@@ -67,21 +67,35 @@ impl<Cmd: NeedAnswer<Res> + Clone + Send + Sync + 'static, Res: Clone + Send + S
     }
 }
 
+#[macro_export]
+macro_rules! handle_server_query {
+    ($server:expr, $query:expr, $self:ident, $handler:ident) => {
+        let (cmd, response_writer) = $server.to_response($query);
+        let res = $self.$handler(cmd);
+        let _ = $server.respond(response_writer.updated(res));
+    };
+}
 pub struct CommandResponseServer<Cmd: NeedAnswer<Res>, Res> {
     receiver: Receiver<Query<Cmd>>,
     sender: Sender<QueryResponse<Res>>,
 }
 
-pub trait CommandResponseServerCreate<Cmd: NeedAnswer<Res>, Res> {
-    async fn create_server(&self) -> CommandResponseServer<Cmd, Res>;
-}
-
-impl<
+pub trait CommandResponseServerCreate {
+    async fn create_server<
         Cmd: NeedAnswer<Resp> + Clone + Send + Sync + 'static,
         Resp: Clone + Send + Sync + 'static,
-    > CommandResponseServerCreate<Cmd, Resp> for SharedMessageBus
-{
-    async fn create_server(&self) -> CommandResponseServer<Cmd, Resp> {
+    >(
+        &self,
+    ) -> CommandResponseServer<Cmd, Resp>;
+}
+
+impl CommandResponseServerCreate for SharedMessageBus {
+    async fn create_server<
+        Cmd: NeedAnswer<Resp> + Clone + Send + Sync + 'static,
+        Resp: Clone + Send + Sync + 'static,
+    >(
+        &self,
+    ) -> CommandResponseServer<Cmd, Resp> {
         CommandResponseServer {
             receiver: self.receiver().await,
             sender: self.sender().await,
@@ -89,12 +103,6 @@ impl<
     }
 }
 
-impl<
-        Cmd: NeedAnswer<Resp> + Clone + Send + Sync + 'static,
-        Resp: Clone + Send + Sync + 'static,
-    > CommandResponseServer<Cmd, Resp>
-{
-}
 impl<Cmd: NeedAnswer<Res> + Clone + Send + Sync + 'static, Res: Clone + Send + Sync + 'static>
     CommandResponseServer<Cmd, Res>
 {
