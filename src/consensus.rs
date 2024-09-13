@@ -8,7 +8,7 @@ use crate::{
     bus::SharedMessageBus,
     mempool::{MempoolCommand, MempoolResponse},
     model::{get_current_timestamp, Block, Hashable, Transaction},
-    p2p::network::{ConsensusNetMessage, NetCommand},
+    p2p::network::{ConsensusNetMessage, NetInput},
     utils::{conf::SharedConf, logger::LogMe},
 };
 
@@ -93,7 +93,7 @@ impl Consensus {
         Ok(ctx)
     }
 
-    fn handle_net_command(&mut self, msg: NetCommand<ConsensusNetMessage>) {
+    fn handle_net_input(&mut self, msg: NetInput<ConsensusNetMessage>) {
         match msg.msg {
             ConsensusNetMessage::CommitBlock(block) => {
                 info!("Got a commited block {:?}", block)
@@ -130,8 +130,8 @@ impl Consensus {
         let mut consensus_command_receiver = bus.receiver::<ConsensusCommand>().await;
         let mempool_command_sender = bus.sender::<MempoolCommand>().await;
         let mut mempool_response_receiver = bus.receiver::<MempoolResponse>().await;
-        let mut consensus_net_command_receiver =
-            bus.receiver::<NetCommand<ConsensusNetMessage>>().await;
+        let mut consensus_net_input_receiver =
+            bus.receiver::<NetInput<ConsensusNetMessage>>().await;
 
         if is_master {
             info!(
@@ -172,8 +172,8 @@ impl Consensus {
                         }
                     }
                 }
-                Ok(msg) = consensus_net_command_receiver.recv() => {
-                    self.handle_net_command(msg);
+                Ok(msg) = consensus_net_input_receiver.recv() => {
+                    self.handle_net_input(msg);
                 }
             }
         }

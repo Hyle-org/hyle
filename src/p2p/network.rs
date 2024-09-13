@@ -7,11 +7,11 @@ pub struct Version {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct NetCommand<T> {
+pub struct NetInput<T> {
     pub msg: T,
 }
 
-impl<T> NetCommand<T> {
+impl<T> NetInput<T> {
     pub fn new(msg: T) -> Self {
         Self { msg }
     }

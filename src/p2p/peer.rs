@@ -14,7 +14,7 @@ use tracing::{debug, info, trace, warn};
 use super::network::{MempoolNetMessage, NetMessage, Version};
 use crate::bus::SharedMessageBus;
 use crate::p2p::network::ConsensusNetMessage;
-use crate::p2p::network::NetCommand;
+use crate::p2p::network::NetInput;
 use crate::utils::conf::SharedConf;
 use crate::utils::logger::LogMe;
 
@@ -80,18 +80,18 @@ impl Peer {
             NetMessage::MempoolMessage(mempool_msg) => {
                 debug!("Received new mempool net message {:?}", mempool_msg);
                 self.bus
-                    .sender::<NetCommand<MempoolNetMessage>>()
+                    .sender::<NetInput<MempoolNetMessage>>()
                     .await
-                    .send(NetCommand::new(mempool_msg))
+                    .send(NetInput::new(mempool_msg))
                     .map(|_| ())
                     .context("Receiving mempool net message")
             }
             NetMessage::ConsensusMessage(consensus_msg) => {
                 debug!("Received new consensus net message {:?}", consensus_msg);
                 self.bus
-                    .sender::<NetCommand<ConsensusNetMessage>>()
+                    .sender::<NetInput<ConsensusNetMessage>>()
                     .await
-                    .send(NetCommand::new(consensus_msg))
+                    .send(NetInput::new(consensus_msg))
                     .map(|_| ())
                     .context("Receiving consensus net message")
             }
