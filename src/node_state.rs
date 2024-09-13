@@ -11,7 +11,7 @@ use crate::{
     },
 };
 use anyhow::{bail, Context, Error, Result};
-use model::{Contract, Timeouts, UnsettledBlobDetail, UnsettledTransaction, VerificationStatus};
+use model::{Contract, Timeouts, UnsettledBlobMetadata, UnsettledTransaction, VerificationStatus};
 use ordered_tx_map::OrderedTxMap;
 use std::collections::HashMap;
 use tracing::{debug, error, info};
@@ -98,10 +98,10 @@ impl NodeState {
     fn handle_blob_tx(&mut self, tx: BlobTransaction) -> Result<(), Error> {
         let (blob_tx_hash, blobs_hash) = hash_transaction(&tx);
 
-        let blobs: Vec<UnsettledBlobDetail> = tx
+        let blobs: Vec<UnsettledBlobMetadata> = tx
             .blobs
             .iter()
-            .map(|blob| UnsettledBlobDetail {
+            .map(|blob| UnsettledBlobMetadata {
                 contract_name: blob.contract_name.clone(),
                 verification_status: VerificationStatus::WaitingProof,
             })
@@ -132,10 +132,10 @@ impl NodeState {
             .context("At lease 1 tx is either settled or does not exists")?;
 
         // Verify proof
-        let blobs_detail = Self::verify_proof(&tx)?;
+        let blobs_metadata = Self::verify_proof(&tx)?;
 
         // hash payloads
-        let extracted_blobs_hash = Self::extract_blobs_hash(&blobs_detail)?;
+        let extracted_blobs_hash = Self::extract_blobs_hash(&blobs_metadata)?;
 
         let initial_blobs_hash = unsettled_tx
             .iter()
@@ -150,7 +150,7 @@ impl NodeState {
             )
         }
 
-        self.save_blob_details(&tx, blobs_detail)?;
+        self.save_blob_metadata(&tx, blobs_metadata)?;
 
         tx.blobs_references
             .iter()
@@ -182,10 +182,10 @@ impl NodeState {
         }
     }
 
-    fn save_blob_details(
+    fn save_blob_metadata(
         &mut self,
         tx: &ProofTransaction,
-        blobs_detail: Vec<UnsettledBlobDetail>,
+        blobs_metadata: Vec<UnsettledBlobMetadata>,
     ) -> Result<(), Error> {
         tx.blobs_references
             .iter()
@@ -195,7 +195,7 @@ impl NodeState {
                     .get_mut(&blob_ref.blob_tx_hash)
                     .map(|unsettled_tx| {
                         unsettled_tx.blobs[blob_ref.blob_index.0 as usize] =
-                            blobs_detail[proof_blob_key].clone();
+                            blobs_metadata[proof_blob_key].clone();
                     })
                     .context("Tx is either settled or does not exists.")
             })
@@ -217,12 +217,12 @@ impl NodeState {
             .all(|blob| blob.verification_status.is_success())
     }
 
-    fn verify_proof(tx: &ProofTransaction) -> Result<Vec<UnsettledBlobDetail>, Error> {
+    fn verify_proof(tx: &ProofTransaction) -> Result<Vec<UnsettledBlobMetadata>, Error> {
         // TODO real implementation
         Ok(tx
             .blobs_references
             .iter()
-            .map(|blob_ref| UnsettledBlobDetail {
+            .map(|blob_ref| UnsettledBlobMetadata {
                 contract_name: blob_ref.contract_name.clone(),
                 verification_status: VerificationStatus::Success(model::HyleOutput {
                     version: 1,
@@ -238,7 +238,7 @@ impl NodeState {
             .collect())
     }
 
-    fn extract_blobs_hash(blobs: &[UnsettledBlobDetail]) -> Result<Vec<BlobsHash>, Error> {
+    fn extract_blobs_hash(blobs: &[UnsettledBlobMetadata]) -> Result<Vec<BlobsHash>, Error> {
         blobs
             .iter()
             .map(|blob| match &blob.verification_status {
@@ -246,7 +246,7 @@ impl NodeState {
                     Ok(BlobsHash::from_concatenated(&hyle_output.blobs))
                 }
                 _ => {
-                    bail!("Blob details if not success, cannot extract blobs hash!");
+                    bail!("Blob metadata if not success, cannot extract blobs hash!");
                 }
             })
             .collect()
@@ -289,7 +289,7 @@ impl NodeState {
             )
         })?;
 
-        let blob_detail = unsettled_tx
+        let blob_metadata = unsettled_tx
             .blobs
             .iter()
             .find(|b| b.contract_name == *contract_name)
@@ -300,13 +300,13 @@ impl NodeState {
                 )
             })?;
 
-        match &blob_detail.verification_status {
+        match &blob_metadata.verification_status {
             VerificationStatus::Success(hyle_output) => {
                 debug!("Update contract state: {:?}", hyle_output.next_state);
                 contract.state = hyle_output.next_state.clone();
             }
             _ => {
-                bail!("Blob detail is not success, tx is not settled!")
+                bail!("Blob metadata is not success, tx is not settled!")
             }
         }
         Ok(())

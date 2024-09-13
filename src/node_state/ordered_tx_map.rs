@@ -66,7 +66,7 @@ impl OrderedTxMap {
 mod tests {
     use crate::{
         model::{BlobsHash, Identity},
-        node_state::model::{UnsettledBlobDetail, VerificationStatus},
+        node_state::model::{UnsettledBlobMetadata, VerificationStatus},
     };
 
     use super::*;
@@ -76,7 +76,7 @@ mod tests {
             identity: Identity("toto".to_string()),
             hash: TxHash::new(hash),
             blobs_hash: BlobsHash::new("blobs_hash"),
-            blobs: vec![UnsettledBlobDetail {
+            blobs: vec![UnsettledBlobMetadata {
                 contract_name: ContractName(contract.to_string()),
                 verification_status: VerificationStatus::default(),
             }],
