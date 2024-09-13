@@ -83,7 +83,7 @@ async fn client(config: SharedConf, cli: Cli) -> Result<()> {
     Ok(())
 }
 
-/// A fictional versioning CLI
+/// A cli to interact with hyle node
 #[derive(Debug, Parser)] // requires `derive` feature
 #[command(name = "hyle")]
 #[command(about = "A CLI to interact with hyle node", long_about = None)]
@@ -100,7 +100,7 @@ enum Commands {
     /// Send transactions to node
     #[command(arg_required_else_help = true)]
     Send(SendArgs),
-    /// Send transactions to node
+    /// alias to Send
     S(SendArgs),
 }
 
@@ -116,15 +116,15 @@ struct SendArgs {
 enum SendCommands {
     /// Send blob transaction
     Blob { file: String },
-    /// Send blob transaction
+    /// alias to blob
     B { file: String },
     /// Send proof transaction
     Proof { file: String },
-    /// Send proof transaction
+    /// alias to proof
     P { file: String },
     /// Register contract
     Contract { file: String },
-    /// Register contract
+    /// alias to contract
     C { file: String },
 }
 
@@ -136,7 +136,6 @@ async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
 
     let config = conf::Conf::new_shared(cli.config_file.clone())?;
-    info!("Starting client with config: {:?}", config);
 
     client(config, cli).await
 }
