@@ -98,9 +98,8 @@ struct Cli {
 #[derive(Debug, Subcommand)]
 enum Commands {
     /// Send transactions to node
-    #[command(arg_required_else_help = true)]
     Send(SendArgs),
-    /// alias to Send
+    /// Send transactions to node
     S(SendArgs),
 }
 
@@ -116,15 +115,15 @@ struct SendArgs {
 enum SendCommands {
     /// Send blob transaction
     Blob { file: String },
-    /// alias to blob
+    /// Send blob transaction
     B { file: String },
     /// Send proof transaction
     Proof { file: String },
-    /// alias to proof
+    /// Send proof transaction
     P { file: String },
     /// Register contract
     Contract { file: String },
-    /// alias to contract
+    /// Register contract
     C { file: String },
 }
 
