@@ -36,3 +36,9 @@ impl SharedMessageBus {
             .clone()
     }
 }
+
+impl Default for SharedMessageBus {
+    fn default() -> Self {
+        Self::new()
+    }
+}

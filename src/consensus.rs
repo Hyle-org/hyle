@@ -20,7 +20,7 @@ pub enum ConsensusCommand {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub enum ConsensusEvent {
-    NewBlock(Block),
+    CommitBlock { batch_id: String, block: Block },
 }
 
 #[derive(Serialize, Deserialize)]
@@ -163,10 +163,10 @@ impl Consensus {
                     match mempool_response {
                         MempoolResponse::PendingBatch { id, txs } => {
                             info!("Received pending batch {} with {} txs", &id, &txs.len());
-                            self.tx_batches.insert(id, txs);
+                            self.tx_batches.insert(id.clone(), txs);
                             let block = self.new_block();
                             // send to internal bus
-                            _ = consensus_events_sender.send(ConsensusEvent::NewBlock(block.clone())).log_error("error sending new block");
+                            _ = consensus_events_sender.send(ConsensusEvent::CommitBlock {batch_id: id, block: block.clone() }).log_error("error sending new block");
                             // send to network
                             _ = bus.sender::<ConsensusNetMessage>().await.send(ConsensusNetMessage::CommitBlock(block)).log_warn("error sending new block on network bus");
                         }

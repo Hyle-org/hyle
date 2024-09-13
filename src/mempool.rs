@@ -1,5 +1,6 @@
 use crate::{
     bus::SharedMessageBus,
+    consensus::ConsensusEvent,
     model::Transaction,
     p2p::network::{MempoolNetMessage, NetInput},
     utils::logger::LogMe,
@@ -26,7 +27,6 @@ pub struct Mempool {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum MempoolCommand {
     CreatePendingBatch { id: String },
-    CommitBatches { ids: Vec<String> },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -48,6 +48,7 @@ impl Mempool {
     pub async fn start(&mut self) {
         let mut command_receiver = self.bus.receiver::<MempoolCommand>().await;
         let mut net_receiver = self.bus.receiver::<NetInput<MempoolNetMessage>>().await;
+        let mut event_receiver = self.bus.receiver::<ConsensusEvent>().await;
         let response_sender = self.bus.sender::<MempoolResponse>().await;
         loop {
             select! {
@@ -56,6 +57,26 @@ impl Mempool {
                 }
                 Ok(cmd) = command_receiver.recv() => {
                     _ = self.handle_command(cmd, &response_sender);
+                }
+                Ok(cmd) = event_receiver.recv() => {
+                    self.handle_event(cmd);
+                }
+            }
+        }
+    }
+
+    fn handle_event(&mut self, event: ConsensusEvent) {
+        match event {
+            ConsensusEvent::CommitBlock { batch_id, block: _ } => {
+                // TODO: do we really need a Batch id?
+                match self.pending_batches.remove(&batch_id) {
+                    Some(pb) => {
+                        info!("Committing transactions batch {}", &batch_id);
+                        self.committed_batches.push(Batch(batch_id.clone(), pb));
+                    }
+                    None => {
+                        warn!("Tried to commit an unknown pending batch {}", batch_id);
+                    }
                 }
             }
         }
@@ -81,19 +102,6 @@ impl Mempool {
                 _ = response_sender
                     .send(MempoolResponse::PendingBatch { id, txs })
                     .log_error("Sending pending batch");
-            }
-            MempoolCommand::CommitBatches { ids } => {
-                for b_id in ids.into_iter() {
-                    match self.pending_batches.remove(&b_id) {
-                        Some(pb) => {
-                            info!("Committing transactions batch {}", &b_id);
-                            self.committed_batches.push(Batch(b_id, pb));
-                        }
-                        None => {
-                            warn!("Tried to commit an unknown pending batch {}", b_id);
-                        }
-                    }
-                }
             }
         }
         Ok(())
