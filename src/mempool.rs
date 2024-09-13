@@ -25,14 +25,12 @@ pub struct Mempool {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum MempoolCommand {
-    GetTxs,
     CreatePendingBatch { id: String },
     CommitBatches { ids: Vec<String> },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum MempoolResponse {
-    Txs { txs: Vec<Transaction> },
     PendingBatch { id: String, txs: Vec<Transaction> },
 }
 
@@ -76,9 +74,6 @@ impl Mempool {
         response_sender: &Sender<MempoolResponse>,
     ) -> Result<()> {
         match command {
-            MempoolCommand::GetTxs => {
-                info!("Received GetTxs command");
-            }
             MempoolCommand::CreatePendingBatch { id } => {
                 info!("Creating pending transaction batch with id {}", id);
                 let txs: Vec<Transaction> = self.pending_txs.drain(0..).collect();

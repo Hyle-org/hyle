@@ -1,9 +1,10 @@
 use anymap::{any::Any, Map};
-use std::sync::{atomic::AtomicUsize, Arc};
+use std::{
+    borrow::BorrowMut,
+    sync::{atomic::AtomicUsize, Arc},
+    time::Duration,
+};
 use tokio::sync::{broadcast, Mutex};
-use tracing::info;
-
-use crate::{mempool::MempoolCommand, model::Transaction};
 
 pub mod command_response;
 pub mod listener;
@@ -58,90 +59,67 @@ impl SharedMessageBus {
 }
 
 #[tokio::test]
-async fn test_bus() -> anyhow::Result<()> {
-    // install global collector configured based on RUST_LOG env var.
-    tracing_subscriber::fmt::init();
-
-    impl NeedAnswer<String> for MempoolCommand {}
-
+async fn cmd_resp_server() -> anyhow::Result<()> {
+    use anyhow::Context;
+    use command_response::{CmdRespClient, CmdRespServer, NeedAnswer};
     use serde::{Deserialize, Serialize};
-
-    use crate::mempool::MempoolResponse;
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct CommandWithA;
-    impl NeedAnswer<MempoolResponse> for CommandWithA {}
+    impl NeedAnswer<usize> for CommandWithA {}
     impl NeedAnswer<String> for CommandWithA {}
 
-    #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub struct CommandWithoutA;
-
-    use anyhow::Context;
-    use command_response::{CmdRespClient, CmdRespServer, NeedAnswer};
-    use listener::Listener;
-
-    info!("Starting test");
     let bus = SharedMessageBus::new();
 
     let _ = &bus
-        .spawn_serve(|cmd: CommandWithA| {
-            info!("received gettxs command");
-
-            Ok(Some(MempoolResponse::Txs {
-                txs: vec![Transaction::default()],
-            }))
-        })
+        .spawn_serve(|cmd: CommandWithA| Ok(Some(1)))
         .await
-        .spawn_serve(|cmd: CommandWithA| {
-            info!("received gettxs command");
-
-            Ok(Some("test".to_string()))
-        })
-        .await
-        .spawn_serve(|cmd: MempoolCommand| match cmd {
-            _ => Ok(Some("".to_string())),
-        })
-        .await
-        .spawn_listen(|_: CommandWithoutA| {
-            info!("Test subscribe");
-        })
+        .spawn_serve(|cmd: CommandWithA| Ok(Some("test".to_string())))
         .await;
 
     // client request
     let resp: Option<String> = bus
-        .request(MempoolCommand::GetTxs)
+        .request(CommandWithA {})
         .await
         .context("Requesting txs in a test")?;
 
-    match resp.clone() {
-        Some(oder) => {
-            info!("Example of response reception: {} txs", oder);
-        }
-        None => {
-            info!("Empty response");
-        }
-    }
+    assert_eq!(resp, Some("test".to_string()));
 
-    let resp: Option<MempoolResponse> = bus
-        .request(CommandWithA)
+    Ok(())
+}
+#[tokio::test]
+async fn listener() -> anyhow::Result<()> {
+    use anyhow::Context;
+    use listener::{Listener, Shooter};
+    use serde::{Deserialize, Serialize};
+
+    // A command type without a NeedAnswer implem
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct CommandWithoutA;
+
+    let bus = SharedMessageBus::new();
+
+    let receipts: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(vec![]));
+    let shared_receipts = Arc::clone(&receipts);
+
+    let _ = &bus
+        .spawn_listen(move |cmd: CommandWithoutA| {
+            let shared_receipts_clone = shared_receipts.clone();
+            async move {
+                shared_receipts_clone.lock().await.push("test".to_string());
+            }
+        })
+        .await;
+
+    // client request
+    let _ = bus
+        .shoot(CommandWithoutA {})
         .await
         .context("Requesting txs in a test")?;
 
-    match resp.clone() {
-        Some(MempoolResponse::Txs { txs }) => {
-            info!("Example of response reception: {} txs", txs.len());
-        }
-        _ => {
-            info!("Empty response");
-        }
-    }
+    tokio::time::sleep(Duration::from_secs(1)).await;
 
-    assert_eq!(
-        resp.unwrap(),
-        MempoolResponse::Txs {
-            txs: vec![Transaction::default()]
-        }
-    );
+    assert!(receipts.lock().await.contains(&"test".to_string()));
 
     Ok(())
 }

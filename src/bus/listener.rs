@@ -1,18 +1,27 @@
+use std::future::Future;
+
 use super::SharedMessageBus;
 use anyhow::Result;
 
 pub trait Listener<Cmd> {
-    async fn spawn_listen(&self, routes: fn(Cmd)) -> &Self;
+    async fn spawn_listen<F, Fut>(&self, routes: F) -> &Self
+    where
+        F: Fn(Cmd) -> Fut + Send + 'static,
+        Fut: Future + Send + 'static;
 }
 
 impl<Cmd: Clone + Send + Sync + 'static> Listener<Cmd> for SharedMessageBus {
-    async fn spawn_listen(&self, routes: fn(Cmd)) -> &SharedMessageBus {
+    async fn spawn_listen<F, Fut>(&self, routes: F) -> &SharedMessageBus
+    where
+        F: Fn(Cmd) -> Fut + Send + 'static,
+        Fut: Future + Send + 'static,
+    {
         let mut receiver = self.receiver::<Cmd>().await;
 
         tokio::spawn(async move {
             loop {
                 if let Ok(msg) = receiver.recv().await {
-                    _ = routes(msg);
+                    routes(msg).await;
                 }
             }
         });
