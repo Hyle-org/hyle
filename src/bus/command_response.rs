@@ -27,14 +27,24 @@ pub struct QueryResponse<Inner> {
     pub data: Result<Option<Inner>, String>,
 }
 
-pub trait CmdRespClient<Cmd: NeedAnswer<Resp>, Resp> {
-    async fn request(&self, cmd: Cmd) -> Result<Option<Resp>>;
+pub trait CmdRespClient {
+    async fn request<
+        Cmd: NeedAnswer<Res> + Clone + Send + Sync + 'static,
+        Res: Clone + Send + Sync + 'static,
+    >(
+        &self,
+        cmd: Cmd,
+    ) -> Result<Option<Res>>;
 }
 
-impl<Cmd: NeedAnswer<Res> + Clone + Send + Sync + 'static, Res: Clone + Send + Sync + 'static>
-    CmdRespClient<Cmd, Res> for SharedMessageBus
-{
-    async fn request(&self, cmd: Cmd) -> Result<Option<Res>> {
+impl CmdRespClient for SharedMessageBus {
+    async fn request<
+        Cmd: NeedAnswer<Res> + Clone + Send + Sync + 'static,
+        Res: Clone + Send + Sync + 'static,
+    >(
+        &self,
+        cmd: Cmd,
+    ) -> Result<Option<Res>> {
         //TODO: Reminder/whatever: there is a lock on the whole counters map
         let next_id = self.next_id::<Cmd>().await;
 
