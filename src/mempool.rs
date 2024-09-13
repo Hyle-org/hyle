@@ -1,7 +1,7 @@
 use crate::{
     bus::SharedMessageBus,
     consensus::ConsensusEvent,
-    model::Transaction,
+    model::{Hashable, Transaction},
     p2p::network::{MempoolNetMessage, NetInput},
     utils::logger::LogMe,
 };
@@ -85,6 +85,7 @@ impl Mempool {
     fn handle_net_input(&mut self, command: NetInput<MempoolNetMessage>) {
         match command.msg {
             MempoolNetMessage::NewTx(tx) => {
+                info!("Got new tx {} {:?}", tx.hash(), tx);
                 self.pending_txs.push(tx);
             }
         }
