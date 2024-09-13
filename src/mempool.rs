@@ -1,14 +1,16 @@
 use crate::{
+    bus::command_response::{CommandResponseServerCreate, NeedAnswer},
     bus::SharedMessageBus,
     consensus::ConsensusEvent,
-    model::{Hashable, Transaction},
+    handle_server_query,
+    model::Hashable,
+    model::Transaction,
     p2p::network::{MempoolNetMessage, NetInput},
-    utils::logger::LogMe,
 };
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use tokio::{select, sync::broadcast::Sender};
+use tokio::select;
 use tracing::{info, warn};
 
 #[derive(Debug)]
@@ -26,13 +28,11 @@ pub struct Mempool {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum MempoolCommand {
-    GetTxs,
     CreatePendingBatch { id: String },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum MempoolResponse {
-    Txs { txs: Vec<Transaction> },
     PendingBatch { id: String, txs: Vec<Transaction> },
 }
 
@@ -48,17 +48,20 @@ impl Mempool {
 
     /// start starts the mempool server.
     pub async fn start(&mut self) {
-        let mut command_receiver = self.bus.receiver::<MempoolCommand>().await;
+        impl NeedAnswer<MempoolResponse> for MempoolCommand {}
+        let mut mempool_server = self
+            .bus
+            .create_server::<MempoolCommand, MempoolResponse>()
+            .await;
         let mut net_receiver = self.bus.receiver::<NetInput<MempoolNetMessage>>().await;
         let mut event_receiver = self.bus.receiver::<ConsensusEvent>().await;
-        let response_sender = self.bus.sender::<MempoolResponse>().await;
         loop {
             select! {
                 Ok(cmd) = net_receiver.recv() => {
                     self.handle_net_input(cmd)
                 }
-                Ok(cmd) = command_receiver.recv() => {
-                    _ = self.handle_command(cmd, &response_sender);
+                Ok(query) = mempool_server.get_query() => {
+                    handle_server_query!(mempool_server, query, self, handle_command);
                 }
                 Ok(cmd) = event_receiver.recv() => {
                     self.handle_event(cmd);
@@ -92,24 +95,14 @@ impl Mempool {
             }
         }
     }
-    fn handle_command(
-        &mut self,
-        command: MempoolCommand,
-        response_sender: &Sender<MempoolResponse>,
-    ) -> Result<()> {
+    fn handle_command(&mut self, command: MempoolCommand) -> Result<Option<MempoolResponse>> {
         match command {
-            MempoolCommand::GetTxs => {
-                info!("Received GetTxs command");
-            }
             MempoolCommand::CreatePendingBatch { id } => {
                 info!("Creating pending transaction batch with id {}", id);
                 let txs: Vec<Transaction> = self.pending_txs.drain(0..).collect();
                 self.pending_batches.insert(id.clone(), txs.clone());
-                _ = response_sender
-                    .send(MempoolResponse::PendingBatch { id, txs })
-                    .log_error("Sending pending batch");
+                return Ok(Some(MempoolResponse::PendingBatch { id, txs }));
             }
         }
-        Ok(())
     }
 }

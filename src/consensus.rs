@@ -1,5 +1,11 @@
+use anyhow::{Context, Result};
+use serde::{Deserialize, Serialize};
+use std::{collections::HashMap, default::Default, fs, time::Duration};
+use tokio::{select, sync::broadcast::Sender, time::sleep};
+use tracing::info;
+
 use crate::{
-    bus::SharedMessageBus,
+    bus::{command_response::CmdRespClient, SharedMessageBus},
     mempool::{MempoolCommand, MempoolResponse},
     model::{get_current_timestamp, Block, Hashable, Transaction},
     p2p::network::{ConsensusNetMessage, NetInput},
@@ -100,22 +106,48 @@ impl Consensus {
         }
     }
 
-    fn handle_command(
+    async fn handle_command(
         &mut self,
         msg: ConsensusCommand,
-        mempool_command_sender: Sender<MempoolCommand>,
-    ) {
+        bus: SharedMessageBus,
+        consensus_event_sender: Sender<ConsensusEvent>,
+        consensus_net_msg_sender: Sender<ConsensusNetMessage>,
+    ) -> Result<()> {
         match msg {
             ConsensusCommand::GenerateNewBlock => {
                 self.batch_id += 1;
-                _ = mempool_command_sender
-                    .send(MempoolCommand::CreatePendingBatch {
+                if let Some(res) = bus
+                    .request(MempoolCommand::CreatePendingBatch {
                         id: self.batch_id.to_string(),
                     })
-                    .log_error("Creating a new block");
+                    .await?
+                {
+                    match res {
+                        MempoolResponse::PendingBatch { id, txs } => {
+                            info!("Received pending batch {} with {} txs", &id, &txs.len());
+                            self.tx_batches.insert(id.clone(), txs);
+                            let block = self.new_block();
+                            // send to internal bus
+                            _ = consensus_event_sender
+                                .send(ConsensusEvent::CommitBlock {
+                                    batch_id: id,
+                                    block: block.clone(),
+                                })
+                                .context(
+                                    "Failed to send ConsensusEvent::CommitBlock msg on the bus",
+                                )?;
+                            // send to network
+                            _ = consensus_net_msg_sender
+                                .send(ConsensusNetMessage::CommitBlock(block)).context("Failed to send ConsensusNetMessage::CommitBlock msg on the bus")?;
+                        }
+                    }
+                }
+                Ok(())
             }
+
             ConsensusCommand::SaveOnDisk => {
                 _ = self.save_on_disk();
+                Ok(())
             }
         }
     }
@@ -123,12 +155,10 @@ impl Consensus {
     pub async fn start(&mut self, bus: SharedMessageBus, config: SharedConf) -> Result<()> {
         let interval = config.storage.interval;
         let is_master = config.peers.is_empty();
-
-        let consensus_events_sender = bus.sender::<ConsensusEvent>().await;
+        let consensus_event_sender = bus.sender::<ConsensusEvent>().await;
+        let consensus_net_msg_sender = bus.sender::<ConsensusNetMessage>().await;
         let consensus_command_sender = bus.sender::<ConsensusCommand>().await;
         let mut consensus_command_receiver = bus.receiver::<ConsensusCommand>().await;
-        let mempool_command_sender = bus.sender::<MempoolCommand>().await;
-        let mut mempool_response_receiver = bus.receiver::<MempoolResponse>().await;
         let mut consensus_net_input_receiver =
             bus.receiver::<NetInput<ConsensusNetMessage>>().await;
 
@@ -153,27 +183,11 @@ impl Consensus {
         }
 
         loop {
-            let sender = mempool_command_sender.clone();
+            let shared_bus = SharedMessageBus::new_handle(&bus);
             select! {
                 Ok(msg) = consensus_command_receiver.recv() => {
-                    self.handle_command(msg, sender);
-                }
-                Ok(mempool_response) = mempool_response_receiver.recv() => {
-                    match mempool_response {
-                        MempoolResponse::PendingBatch { id, txs } => {
-                            info!("Received pending batch {} with {} txs", &id, &txs.len());
-                            self.tx_batches.insert(id.clone(), txs);
-                            let block = self.new_block();
-                            // send to internal bus
-                            _ = consensus_events_sender.send(ConsensusEvent::CommitBlock {batch_id: id, block: block.clone() }).log_error("error sending new block");
-                            // send to network
-                            _ = bus.sender::<ConsensusNetMessage>().await.send(ConsensusNetMessage::CommitBlock(block)).log_warn("error sending new block on network bus");
-                        },
-                        MempoolResponse::Txs{ txs} => {
-
-                            info!("Received txs ");
-                        }
-                    }
+                    _ = self.handle_command(msg, shared_bus,
+                    consensus_event_sender.clone(), consensus_net_msg_sender.clone()).await;
                 }
                 Ok(msg) = consensus_net_input_receiver.recv() => {
                     self.handle_net_input(msg);
