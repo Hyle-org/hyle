@@ -14,7 +14,7 @@ pub async fn get_transaction(
         .await
         .get_tx(&tx_hash)
         .map(Json)
-        .ok_or_else(|| StatusCode::NOT_FOUND)
+        .ok_or(StatusCode::NOT_FOUND)
 }
 
 pub async fn get_block(
@@ -25,5 +25,5 @@ pub async fn get_block(
         .await
         .get_block(&height)
         .map(Json)
-        .ok_or_else(|| StatusCode::NOT_FOUND)
+        .ok_or(StatusCode::NOT_FOUND)
 }
