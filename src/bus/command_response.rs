@@ -1,5 +1,8 @@
 use std::time::Duration;
 
+use crate::mempool::MempoolCommand;
+use crate::mempool::MempoolResponse;
+
 use super::SharedMessageBus;
 use anyhow::anyhow;
 use anyhow::bail;
@@ -7,6 +10,7 @@ use anyhow::Result;
 use tokio::sync::broadcast::error::RecvError;
 use tokio::sync::broadcast::Receiver;
 use tokio::sync::broadcast::Sender;
+use tracing::info;
 
 pub const CLIENT_TIMEOUT_SECONDS: u64 = 10;
 
@@ -130,11 +134,58 @@ impl<Res: Clone + Send + Sync + 'static> QueryResponse<Res> {
     }
 }
 
-#[macro_export]
-macro_rules! handle_server_query {
-    ($server:expr, $query:expr, $self:ident, $handler:ident) => {
-        let (cmd, response_writer) = $server.to_response($query);
-        let res = $self.$handler(cmd);
-        let _ = $server.respond(response_writer.updated(res));
+#[macro_use]
+macro_rules! my_select {
+
+    (command_response($server:expr) = $res:ident => $handler:block, $($rest:tt)*) => {{
+        tokio::select! {
+            Ok(query) = $server.get_query() => {
+                let ($res, response_writer) = $server.to_response(query);
+                let res = $handler;
+                let _ = $server.respond(response_writer.updated(res));
+            }
+
+            $($rest)*
+        }
+    }};
+
+
+    // Match timeout case with specific duration
+    (timeout($duration:expr) => $timeout_block:block, $($rest:tt)*) => {{
+        use tokio::time::{sleep, Duration};
+        tokio::select! {
+            _ = sleep(Duration::from_millis($duration)) => $timeout_block,
+            $($rest)*
+        }
+    }};
+
+    // Fallback to normal select cases
+    ($($rest:tt)*) => {{
+        tokio::select! {
+            $($rest)*
+        }
+    }};
+
+
+
+}
+
+async fn test() {
+    let mut server = SharedMessageBus::new()
+        .create_server::<MempoolCommand, MempoolResponse>()
+        .await;
+
+    let mut receiver = SharedMessageBus::new().receiver::<MempoolCommand>().await;
+
+    my_select! {
+
+        command_response(server) = cmd => {
+            info!("{:?}", cmd);
+            Ok(Some(MempoolResponse::PendingBatch { id: 2.to_string(), txs: vec![] }))
+        },
+
+        Ok(q) = receiver.recv() => {
+
+        }
     };
 }
