@@ -1,7 +1,7 @@
 use crate::model::{Block, Transaction};
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Version {
     pub id: u16,
 }
@@ -17,7 +17,13 @@ impl<T> NetInput<T> {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Broadcast {
+    pub peer_id: u64,
+    pub msg: NetMessage,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum NetMessage {
     Version(Version),
     Verack,

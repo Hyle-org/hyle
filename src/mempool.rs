@@ -13,6 +13,7 @@ use std::collections::HashMap;
 use tokio::select;
 use tracing::{info, warn};
 
+#[allow(dead_code)]
 #[derive(Debug)]
 struct Batch(String, Vec<Transaction>);
 
