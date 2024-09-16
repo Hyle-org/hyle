@@ -2,8 +2,8 @@ use crate::{
     bus::SharedMessageBus,
     consensus::ConsensusEvent,
     model::{
-        BlobIndex, BlobTransaction, BlobsHash, Block, BlockHeight, ContractName, Hashable,
-        Identity, ProofTransaction, RegisterContractTransaction, StateDigest, Transaction, TxHash,
+        BlobTransaction, BlobsHash, Block, BlockHeight, ContractName, Hashable, Identity,
+        ProofTransaction, RegisterContractTransaction, StateDigest, Transaction, TxHash,
     },
     utils::{
         conf::SharedConf,
@@ -197,7 +197,7 @@ impl NodeState {
         blobs_metadata
             .iter()
             .enumerate()
-            .try_for_each(|(index, hyle_output)| {
+            .try_for_each(|(_index, hyle_output)| {
                 // Success verification
                 if !hyle_output.success {
                     bail!("Contract execution is not a success");
@@ -281,12 +281,13 @@ impl NodeState {
         info!("Settle tx {:?}", unsettled_tx.hash);
 
         for blob in &unsettled_tx.blobs {
-            let contract_name = blob.contract_name.clone();
-
-            let contract = self.contracts.get_mut(&contract_name).context(format!(
-                "Contract {} not found when settling transaction",
-                contract_name
-            ))?;
+            let contract = self
+                .contracts
+                .get_mut(&blob.contract_name)
+                .context(format!(
+                    "Contract {} not found when settling transaction",
+                    &blob.contract_name
+                ))?;
 
             let next_state = blob
                 .metadata
@@ -297,7 +298,7 @@ impl NodeState {
                 .clone();
 
             // TODO: chain settlements for all transactions on that contract
-            self.update_state_contract(&contract_name, next_state)?;
+            self.update_state_contract(&blob.contract_name, next_state)?;
         }
         // Clean the unsettled tx from the state
         self.unsettled_transactions.remove(&unsettled_tx.hash);
