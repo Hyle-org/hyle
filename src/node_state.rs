@@ -21,7 +21,7 @@ use std::collections::{HashMap, HashSet};
 use tokio::select;
 use tracing::{debug, error, info};
 
-mod model;
+pub mod model;
 mod ordered_tx_map;
 mod verifiers;
 
