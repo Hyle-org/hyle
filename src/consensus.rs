@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, default::Default, fs, time::Duration};
 use tokio::{select, sync::broadcast::Sender, time::sleep};
@@ -23,7 +24,7 @@ pub enum ConsensusEvent {
     CommitBlock { batch_id: String, block: Block },
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Encode, Decode)]
 pub struct Consensus {
     blocks: Vec<Block>,
     batch_id: u64,
@@ -76,18 +77,20 @@ impl Consensus {
         block
     }
 
-    pub fn save_on_disk(&mut self) -> Result<()> {
-        let writer = fs::File::create("data.bin").log_error("Create Ctx file")?;
-        bincode::serialize_into(writer, &self).log_error("Serializing Ctx chain")?;
+    pub fn save_on_disk(&self) -> Result<()> {
+        let mut writer = fs::File::create("data.bin").log_error("Create Ctx file")?;
+        bincode::encode_into_std_write(self, &mut writer, bincode::config::standard())
+            .log_error("Serializing Ctx chain")?;
         info!("Saved blockchain on disk with {} blocks", self.blocks.len());
 
         Ok(())
     }
 
     pub fn load_from_disk() -> Result<Self> {
-        let reader = fs::File::open("data.bin").log_warn("Loading data from disk")?;
-        let ctx = bincode::deserialize_from::<_, Self>(reader)
-            .log_warn("Deserializing data from disk")?;
+        let mut reader = fs::File::open("data.bin").log_warn("Loading data from disk")?;
+        let ctx: Consensus =
+            bincode::decode_from_std_read(&mut reader, bincode::config::standard())
+                .log_warn("Deserializing data from disk")?;
         info!("Loaded {} blocks from disk.", ctx.blocks.len());
 
         Ok(ctx)

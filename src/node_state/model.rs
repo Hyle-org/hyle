@@ -1,5 +1,7 @@
 #![allow(dead_code, unused_variables)]
 
+use serde::Deserialize;
+
 use crate::model::{
     BlobIndex, BlobsHash, BlockHeight, ContractName, Identity, StateDigest, TxHash,
 };
@@ -26,7 +28,7 @@ pub struct UnsettledBlobMetadata {
     pub metadata: Vec<HyleOutput>,
 }
 
-#[derive(Default, Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Default, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct HyleOutput {
     pub version: u32,
     pub initial_state: StateDigest,
