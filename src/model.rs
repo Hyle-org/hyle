@@ -106,20 +106,20 @@ pub struct Identity(pub String);
 #[derive(Default, Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash, Display)]
 pub struct ContractName(pub String);
 
-#[derive(Debug, Serialize, Deserialize, Default, Clone)]
+#[derive(Debug, Serialize, Deserialize, Default, Clone, PartialEq, Eq)]
 pub struct StateDigest(pub Vec<u8>);
 
-#[derive(Debug, Serialize, Deserialize, Default, Clone)]
+#[derive(Debug, Serialize, Deserialize, Default, Clone, PartialEq, Eq)]
 pub struct BlobData(pub Vec<u8>);
 
-#[derive(Debug, Serialize, Deserialize, Default, Clone)]
+#[derive(Debug, Serialize, Deserialize, Default, Clone, PartialEq, Eq)]
 pub struct Transaction {
     pub version: u32,
     pub transaction_data: TransactionData,
     pub inner: String, // FIXME: to remove
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub enum TransactionData {
     Blob(BlobTransaction),
     Proof(ProofTransaction),
@@ -132,20 +132,20 @@ impl Default for TransactionData {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Default, Clone)]
+#[derive(Debug, Serialize, Deserialize, Default, PartialEq, Eq, Clone)]
 pub struct ProofTransaction {
     pub blobs_references: Vec<BlobReference>,
     pub proof: Vec<u8>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Default, Clone)]
+#[derive(Debug, Serialize, Deserialize, Default, Clone, PartialEq, Eq)]
 pub struct BlobReference {
     pub contract_name: ContractName,
     pub blob_tx_hash: TxHash,
     pub blob_index: BlobIndex,
 }
 
-#[derive(Debug, Serialize, Deserialize, Default, Clone)]
+#[derive(Debug, Serialize, Deserialize, Default, Clone, PartialEq, Eq)]
 pub struct RegisterContractTransaction {
     pub owner: String,
     pub verifier: String,
@@ -154,13 +154,13 @@ pub struct RegisterContractTransaction {
     pub contract_name: ContractName,
 }
 
-#[derive(Debug, Serialize, Deserialize, Default, Clone)]
+#[derive(Debug, Serialize, Deserialize, Default, PartialEq, Eq, Clone)]
 pub struct BlobTransaction {
     pub identity: Identity,
     pub blobs: Vec<Blob>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Default, Clone)]
+#[derive(Debug, Serialize, Deserialize, Default, Clone, PartialEq, Eq)]
 pub struct Blob {
     pub contract_name: ContractName,
     pub data: BlobData,
