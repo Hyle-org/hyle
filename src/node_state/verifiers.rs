@@ -7,6 +7,25 @@ use crate::model::ProofTransaction;
 use super::model::HyleOutput;
 
 pub fn verify_proof(tx: &ProofTransaction, verifier: &str) -> Result<Vec<HyleOutput>, Error> {
+    // FIXME: Find a better mocking function
+    if cfg!(test) {
+        use crate::model::{Identity, StateDigest};
+        return Ok(tx
+            .blobs_references
+            .iter()
+            .map(|blob_ref| HyleOutput {
+                version: 1,
+                initial_state: StateDigest(vec![0, 1, 2, 3]),
+                next_state: StateDigest(vec![4, 5, 6]),
+                identity: Identity("test".to_string()),
+                tx_hash: blob_ref.blob_tx_hash.clone(),
+                index: blob_ref.blob_index.clone(),
+                blobs: vec![0, 1, 2, 3, 0, 1, 2, 3],
+                success: true,
+            })
+            .collect());
+    }
+
     match verifier {
         "cairo" => cairo_proof_verifier(&tx.proof),
         _ => bail!("{} verifier not implemented yet", verifier),
