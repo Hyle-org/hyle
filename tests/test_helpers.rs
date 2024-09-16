@@ -9,7 +9,10 @@ impl TestNode {
     // Create a new process that spins up a node or a client
     pub fn new(config_file: &str, is_client: bool) -> Self {
         let mut cargo_bin = Command::cargo_bin(if is_client { "client" } else { "node" }).unwrap();
-        let cmd = cargo_bin.arg("--config-file").arg(config_file);
+        let mut cmd = cargo_bin.arg("--config-file").arg(config_file);
+        if is_client {
+            cmd = cmd.arg("send").arg("blob").arg("data/tx1_blob.ron")
+        }
 
         let child = cmd.spawn().expect("Failed to start node");
         TestNode { child }

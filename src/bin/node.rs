@@ -3,6 +3,7 @@ use clap::Parser;
 use hyle::{
     bus::SharedMessageBus,
     consensus::Consensus,
+    indexer::Indexer,
     mempool::Mempool,
     node_state::NodeState,
     p2p, rest,
@@ -20,6 +21,12 @@ fn start_consensus(bus: SharedMessageBus, config: SharedConf) {
             })
             .start(bus, config)
             .await
+    });
+}
+
+fn start_indexer(mut idxr: Indexer, bus: SharedMessageBus, config: SharedConf) {
+    tokio::spawn(async move {
+        idxr.start(config, bus).await;
     });
 }
 
@@ -70,12 +77,16 @@ async fn main() -> Result<()> {
     let bus = SharedMessageBus::new();
 
     start_mempool(SharedMessageBus::new_handle(&bus));
+
+    let idxr = Indexer::new();
+    start_indexer(idxr.share(), bus.new_handle(), Arc::clone(&config));
+
     start_node_state(SharedMessageBus::new_handle(&bus), Arc::clone(&config));
     start_consensus(SharedMessageBus::new_handle(&bus), Arc::clone(&config));
     start_p2p(Arc::clone(&config), SharedMessageBus::new_handle(&bus));
 
     // Start REST server
-    rest::rest_server(config)
+    rest::rest_server(config, idxr)
         .await
         .context("Starting REST server")
 }

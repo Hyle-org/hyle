@@ -1,9 +1,3 @@
-use anyhow::Result;
-use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, default::Default, fs, time::Duration};
-use tokio::{select, sync::broadcast::Sender, time::sleep};
-use tracing::info;
-
 use crate::{
     bus::SharedMessageBus,
     mempool::{MempoolCommand, MempoolResponse},
@@ -11,6 +5,11 @@ use crate::{
     p2p::network::{ConsensusNetMessage, NetInput},
     utils::{conf::SharedConf, logger::LogMe},
 };
+use anyhow::Result;
+use serde::{Deserialize, Serialize};
+use std::{collections::HashMap, default::Default, fs, time::Duration};
+use tokio::{select, sync::broadcast::Sender, time::sleep};
+use tracing::info;
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub enum ConsensusCommand {
