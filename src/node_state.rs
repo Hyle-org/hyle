@@ -133,22 +133,19 @@ impl NodeState {
         let cloned_self = self.clone();
 
         // Only catch unique unsettled_txs
-        let mut seen_unsettled_tx: HashSet<TxHash> = HashSet::new();
-        let mut involved_unsettled_tx: Vec<&UnsettledTransaction> = Vec::new();
-
-        for blob_ref in tx.blobs_references {
-            if seen_unsettled_tx.insert(blob_ref.blob_tx_hash.clone()) {
-                match cloned_self
+        let unique_unsettled_txs: Vec<&UnsettledTransaction> = tx
+            .blobs_references
+            .iter()
+            .filter_map(|blob_ref| {
+                cloned_self
                     .unsettled_transactions
                     .get(&blob_ref.blob_tx_hash)
-                {
-                    Some(tx) => involved_unsettled_tx.push(tx),
-                    None => bail!("Unsettled transaction not found. Should never happen here"),
-                }
-            }
-        }
+            })
+            .collect::<HashSet<_>>()
+            .into_iter()
+            .collect::<Vec<&UnsettledTransaction>>();
 
-        for unsettled_tx in involved_unsettled_tx {
+        for unsettled_tx in unique_unsettled_txs {
             let all_blobs_proved_at_least_once = unsettled_tx
                 .blobs
                 .iter()

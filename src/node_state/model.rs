@@ -12,7 +12,7 @@ pub struct Contract {
     pub state: StateDigest,
 }
 
-#[derive(Default, Debug, Clone)]
+#[derive(Default, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct UnsettledTransaction {
     pub identity: Identity,
     pub hash: TxHash,
@@ -20,13 +20,13 @@ pub struct UnsettledTransaction {
     pub blobs: Vec<UnsettledBlobMetadata>,
 }
 
-#[derive(Default, Debug, Clone)]
+#[derive(Default, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct UnsettledBlobMetadata {
     pub contract_name: ContractName,
     pub metadata: Vec<HyleOutput>,
 }
 
-#[derive(Default, Debug, Clone)]
+#[derive(Default, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct HyleOutput {
     pub version: u32,
     pub initial_state: StateDigest,
