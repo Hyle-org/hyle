@@ -124,7 +124,7 @@ impl NodeState {
 
     fn handle_proof(&mut self, tx: ProofTransaction) -> Result<(), Error> {
         // TODO extract correct verifier
-        let verifier: String = "cairo".to_owned();
+        let verifier: String = "test".to_owned();
         // Verify proof
         let blobs_metadata: Vec<HyleOutput> = verifiers::verify_proof(&tx, &verifier)?;
 

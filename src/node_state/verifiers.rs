@@ -3,14 +3,14 @@ use cairo_platinum_prover::air::verify_cairo_proof;
 use stark_platinum_prover::proof::options::{ProofOptions, SecurityLevel};
 
 use crate::model::ProofTransaction;
+use crate::model::{Identity, StateDigest};
 
 use super::model::HyleOutput;
 
 pub fn verify_proof(tx: &ProofTransaction, verifier: &str) -> Result<Vec<HyleOutput>, Error> {
-    // FIXME: Find a better mocking function
-    if cfg!(test) {
-        use crate::model::{Identity, StateDigest};
-        return Ok(tx
+    // TODO: remove test
+    match verifier {
+        "test" => Ok(tx
             .blobs_references
             .iter()
             .map(|blob_ref| HyleOutput {
@@ -23,10 +23,7 @@ pub fn verify_proof(tx: &ProofTransaction, verifier: &str) -> Result<Vec<HyleOut
                 blobs: vec![0, 1, 2, 3, 0, 1, 2, 3],
                 success: true,
             })
-            .collect());
-    }
-
-    match verifier {
+            .collect()),
         "cairo" => cairo_proof_verifier(&tx.proof),
         _ => bail!("{} verifier not implemented yet", verifier),
     }
