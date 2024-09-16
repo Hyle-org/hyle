@@ -106,7 +106,7 @@ pub struct Identity(pub String);
 #[derive(Default, Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash, Display)]
 pub struct ContractName(pub String);
 
-#[derive(Debug, Serialize, Deserialize, Default, Clone, Eq, PartialEq, Hash, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, Default, Clone, Eq, PartialEq, Hash)]
 pub struct StateDigest(pub Vec<u8>);
 
 #[derive(Debug, Serialize, Deserialize, Default, Clone, PartialEq, Eq)]

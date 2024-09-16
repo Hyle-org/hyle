@@ -52,14 +52,6 @@ impl OrderedTxMap {
         self.map.remove(hash);
     }
 
-    pub fn remove_blob_metadata(&mut self, hash: &TxHash, at: usize) {
-        if let Some(tx) = self.map.get_mut(hash) {
-            for blob in tx.blobs.iter_mut() {
-                blob.metadata.remove(at);
-            }
-        }
-    }
-
     pub fn is_next_unsettled_tx(&self, tx: &TxHash) -> bool {
         match self.get(tx) {
             Some(unsettled_tx) => {

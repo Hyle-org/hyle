@@ -256,21 +256,25 @@ impl NodeState {
     fn is_settlement_ready(&mut self, unsettled_tx: &UnsettledTransaction) -> bool {
         // Check for each blob if initial state is correct.
         // As tx is next to be settled, remove all metadata with incorrect initial state.
-        for unsettled_blob_metadata in unsettled_tx.blobs.iter() {
-            if let Some(contract) = self.contracts.get(&unsettled_blob_metadata.contract_name) {
-                if unsettled_blob_metadata.metadata.len() == 0 {
-                    return false;
-                }
-                for (index, hyle_output) in unsettled_blob_metadata.metadata.iter().enumerate() {
-                    if hyle_output.initial_state != contract.state {
-                        self.unsettled_transactions
-                            .remove_blob_metadata(&unsettled_tx.hash, index);
-                        return false;
-                    }
-                }
+        for unsettled_blob in unsettled_tx.blobs.iter() {
+            if unsettled_blob.metadata.len() == 0 {
+                return false;
+            }
+            let contract = match self.contracts.get(&unsettled_blob.contract_name) {
+                Some(contract) => contract,
+                None => return false, // No contract found for this blob
+            };
+
+            let has_one_valid_initial_state = unsettled_blob
+                .metadata
+                .iter()
+                .any(|hyle_output| hyle_output.initial_state == contract.state);
+
+            if !has_one_valid_initial_state {
+                return false; // No valid metadata found for this blob
             }
         }
-        true
+        true // All blobs have at lease one valid metadata
     }
 
     fn settle_tx(&mut self, unsettled_tx: &UnsettledTransaction) -> Result<(), Error> {
@@ -279,10 +283,19 @@ impl NodeState {
         for blob in &unsettled_tx.blobs {
             let contract_name = blob.contract_name.clone();
 
-            let next_state = match blob.metadata.get(0) {
-                Some(hyle_output) => hyle_output.next_state.clone(),
-                None => bail!("No proof outputs were found. That is never supposed to happen."),
-            };
+            let contract = self.contracts.get_mut(&contract_name).context(format!(
+                "Contract {} not found when settling transaction",
+                contract_name
+            ))?;
+
+            let next_state = blob
+                .metadata
+                .iter()
+                .find(|hyle_output| hyle_output.initial_state == contract.state)
+                .context("No provided proofs are based on the correct initial state")?
+                .next_state
+                .clone();
+
             // TODO: chain settlements for all transactions on that contract
             self.update_state_contract(&contract_name, next_state)?;
         }
@@ -566,55 +579,5 @@ mod test {
         // Check that we did not settled
         assert_eq!(state.contracts.get(&c1).unwrap().state.0, vec![0, 1, 2, 3]);
         assert_eq!(state.contracts.get(&c2).unwrap().state.0, vec![0, 1, 2, 3]);
-    }
-
-    #[test_log::test]
-    fn metadata_cleaning_for_incorrect_initial_state_on_ready_unsettled_tx() {
-        let mut state = NodeState::default();
-        let c1 = ContractName("c1".to_string());
-        let blob = Blob {
-            contract_name: c1.clone(),
-            data: BlobData(vec![0, 1, 2, 3, 0, 1, 2, 3]),
-        };
-
-        let register_c1 = new_tx(TransactionData::RegisterContract(
-            RegisterContractTransaction {
-                owner: "test".to_string(),
-                verifier: "test".to_string(),
-                program_id: vec![],
-                state_digest: StateDigest(vec![0]),
-                contract_name: c1.clone(),
-            },
-        ));
-
-        let blob = BlobTransaction {
-            identity: Identity("test".to_string()),
-            blobs: vec![blob],
-        };
-        let blob_tx_hash = blob.hash();
-        let blob_tx = new_tx(TransactionData::Blob(blob));
-
-        let proof_c1 = new_tx(TransactionData::Proof(ProofTransaction {
-            blobs_references: vec![BlobReference {
-                contract_name: c1.clone(),
-                blob_tx_hash: blob_tx_hash.clone(),
-                blob_index: BlobIndex(0),
-            }],
-            proof: vec![1],
-        }));
-
-        state.handle_transaction(register_c1).unwrap();
-        state.handle_transaction(blob_tx).unwrap();
-        state.handle_transaction(proof_c1).unwrap();
-
-        // Check that we did not settled
-        assert_eq!(state.contracts.get(&c1).unwrap().state.0, vec![0]);
-        let unsettled_tx = state.unsettled_transactions.get(&blob_tx_hash);
-        match unsettled_tx {
-            // Check that the decoded proof is not is the state
-            Some(tx) => assert_eq!(tx.blobs[0].metadata.len(), 0),
-            // Check that the blob tx is still unsettled
-            None => panic!("Tx should still be unsettled"),
-        }
     }
 }
