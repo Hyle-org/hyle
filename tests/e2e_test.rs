@@ -1,4 +1,4 @@
-use hyle::rest::model::TransactionRequest;
+// use hyle::rest::model::TransactionRequest;
 use reqwest::blocking::Client;
 use std::{thread, time};
 
@@ -22,16 +22,18 @@ fn test_e2e_with_cli() {
 
     // Request something on node1 to be sure it's alive and working
     let client = Client::new();
-    let url = "http://127.0.0.1:4321/getTransaction";
-    let tx = TransactionRequest {
-        tx_hash: "h".to_owned(),
-    };
-    let request_body = serde_json::json!(tx);
+    let tx_hash = "d3b6fa8ff25fab0209f821530b9a138f72c757be5828ee40128072a592817eab".to_owned();
+    let url = format!("http://127.0.0.1:4321/getTransaction/{}", tx_hash);
+    // let tx = TransactionRequest { tx_hash };
+    // let request_body = serde_json::json!(tx);
+
+    // wait for new block to be emitted
+    std::thread::sleep(time::Duration::from_secs(10));
 
     let response = client
         .get(url)
         .header("Content-Type", "application/json")
-        .json(&request_body)
+        // .json(&request_body)
         .send()
         .expect("Failed to send request");
 

@@ -11,12 +11,14 @@ use tracing::{debug, info, trace, warn};
 use super::network::{MempoolNetMessage, NetMessage, Version};
 use super::stream::send_net_message;
 use crate::bus::SharedMessageBus;
+use crate::p2p::network::Broadcast;
 use crate::p2p::network::ConsensusNetMessage;
 use crate::p2p::network::NetInput;
 use crate::p2p::stream::read_stream;
 use crate::utils::conf::SharedConf;
 
 pub struct Peer {
+    id: u64,
     stream: TcpStream,
     bus: SharedMessageBus,
     last_pong: SystemTime,
@@ -33,6 +35,7 @@ enum Cmd {
 
 impl Peer {
     pub async fn new(
+        id: u64,
         stream: TcpStream,
         bus: SharedMessageBus,
         conf: SharedConf,
@@ -40,6 +43,7 @@ impl Peer {
         let (cmd_tx, cmd_rx) = mpsc::channel::<Cmd>(100);
 
         Ok(Peer {
+            id,
             stream,
             bus,
             last_pong: SystemTime::now(),
@@ -57,7 +61,14 @@ impl Peer {
         send_net_message(&mut self.stream, NetMessage::MempoolMessage(msg)).await
     }
 
-    async fn handle_net_message(&mut self, msg: NetMessage) -> Result<(), Error> {
+    async fn handle_broadcast_message(&mut self, msg: Broadcast) -> Result<(), Error> {
+        if msg.peer_id == self.id {
+            return Ok(());
+        }
+        send_net_message(&mut self.stream, msg.msg).await
+    }
+
+    async fn handle_stream_message(&mut self, msg: NetMessage) -> Result<(), Error> {
         trace!("RECV: {:?}", msg);
         match msg {
             NetMessage::Version(v) => {
@@ -79,9 +90,18 @@ impl Peer {
                 self.bus
                     .sender::<NetInput<MempoolNetMessage>>()
                     .await
-                    .send(NetInput::new(mempool_msg))
+                    .send(NetInput::new(mempool_msg.clone()))
                     .map(|_| ())
-                    .context("Receiving mempool net message")
+                    .context("Receiving mempool net message")?;
+                self.bus
+                    .sender::<Broadcast>()
+                    .await
+                    .send(Broadcast {
+                        peer_id: self.id,
+                        msg: NetMessage::MempoolMessage(mempool_msg),
+                    })
+                    .map(|_| ())
+                    .context("Broadcasting mempool net message")
             }
             NetMessage::ConsensusMessage(consensus_msg) => {
                 debug!("Received new consensus net message {:?}", consensus_msg);
@@ -113,12 +133,14 @@ impl Peer {
     pub async fn start(&mut self) -> Result<(), Error> {
         let mut mempool_rx = self.bus.receiver::<MempoolNetMessage>().await;
         let mut consensus_rx = self.bus.receiver::<ConsensusNetMessage>().await;
+        let mut broadcast_rx = self.bus.receiver::<Broadcast>().await;
 
         loop {
             let wait_tcp = read_stream(&mut self.stream); //FIXME: make read_stream cancel safe !
             let wait_cmd = self.internal_cmd_rx.recv();
             let wait_mempool = mempool_rx.recv();
             let wait_consensus = consensus_rx.recv();
+            let wait_broadcast = broadcast_rx.recv();
 
             // select! waits on multiple concurrent branches, returning when the **first** branch
             // completes, cancelling the remaining branches.
@@ -143,9 +165,19 @@ impl Peer {
                         }
                     }
                 }
+                res = wait_broadcast => {
+                    if let Ok(message) = res {
+                        match self.handle_broadcast_message(message).await {
+                            Ok(_) => continue,
+                            Err(e) => {
+                                warn!("Error while handling net message: {}", e);
+                            }
+                        }
+                    }
+                }
                 res = wait_tcp => {
                     match res {
-                        Ok(message) => match self.handle_net_message(message).await {
+                        Ok(message) => match self.handle_stream_message(message).await {
                             Ok(_) => continue,
                             Err(e) => {
                                 warn!("Error while handling net message: {}", e);
