@@ -22,7 +22,7 @@ fn test_e2e_with_cli() {
     // Request something on node1 to be sure it's alive and working
     let client = Client::new();
     let tx_hash = "d3b6fa8ff25fab0209f821530b9a138f72c757be5828ee40128072a592817eab".to_owned();
-    let url = format!("http://127.0.0.1:4321/getTransaction/{}", tx_hash);
+    let url = format!("http://127.0.0.1:4321/v1/tx/get/{}", tx_hash);
     // let tx = TransactionRequest { tx_hash };
     // let request_body = serde_json::json!(tx);
 

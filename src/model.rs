@@ -171,6 +171,14 @@ impl Transaction {
     pub fn as_bytes(&self) -> &[u8] {
         self.inner.as_bytes()
     }
+
+    pub fn wrap(data: TransactionData) -> Self {
+        Transaction {
+            version: 1,
+            transaction_data: data,
+            inner: "".to_string(),
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Default, Clone)]

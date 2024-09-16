@@ -44,7 +44,7 @@ fn start_mempool(bus: SharedMessageBus) {
     });
 }
 
-fn start_p2p(config: SharedConf, bus: SharedMessageBus) {
+fn start_p2p(bus: SharedMessageBus, config: SharedConf) {
     tokio::spawn(async move {
         if let Err(e) = p2p::p2p_server(config, bus).await {
             error!("RPC server failed: {:?}", e);
@@ -81,12 +81,12 @@ async fn main() -> Result<()> {
     let idxr = Indexer::new();
     start_indexer(idxr.share(), bus.new_handle(), Arc::clone(&config));
 
-    start_node_state(SharedMessageBus::new_handle(&bus), Arc::clone(&config));
-    start_consensus(SharedMessageBus::new_handle(&bus), Arc::clone(&config));
-    start_p2p(Arc::clone(&config), SharedMessageBus::new_handle(&bus));
+    start_node_state(bus.new_handle(), Arc::clone(&config));
+    start_consensus(bus.new_handle(), Arc::clone(&config));
+    start_p2p(bus.new_handle(), Arc::clone(&config));
 
     // Start REST server
-    rest::rest_server(config, idxr)
+    rest::rest_server(config, bus.new_handle(), idxr)
         .await
         .context("Starting REST server")
 }

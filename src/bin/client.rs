@@ -30,11 +30,7 @@ fn wrap_net_message(tx: Transaction) -> NetMessage {
 }
 
 fn wrap_tx(tx: TransactionData) -> Transaction {
-    Transaction {
-        version: 1,
-        transaction_data: tx,
-        inner: "".to_string(),
-    }
+    Transaction::wrap(tx)
 }
 
 fn load_blob(file: String) -> Result<Transaction> {
