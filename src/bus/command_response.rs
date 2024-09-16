@@ -26,13 +26,13 @@ pub struct QueryResponse<Inner> {
 }
 
 pub trait CmdRespClient {
-    async fn request<
+    fn request<
         Cmd: NeedAnswer<Res> + Clone + Send + Sync + 'static,
         Res: Clone + Send + Sync + 'static,
     >(
         &self,
         cmd: Cmd,
-    ) -> Result<Option<Res>>;
+    ) -> impl std::future::Future<Output = Result<Option<Res>>> + Send;
 }
 
 impl CmdRespClient for SharedMessageBus {
@@ -75,20 +75,18 @@ impl CmdRespClient for SharedMessageBus {
     }
 }
 
-#[macro_export]
-
 pub struct CommandResponseServer<Cmd: NeedAnswer<Res>, Res> {
     receiver: Receiver<Query<Cmd>>,
     sender: Sender<QueryResponse<Res>>,
 }
 
 pub trait CommandResponseServerCreate {
-    async fn create_server<
+    fn create_server<
         Cmd: NeedAnswer<Resp> + Clone + Send + Sync + 'static,
         Resp: Clone + Send + Sync + 'static,
     >(
         &self,
-    ) -> CommandResponseServer<Cmd, Resp>;
+    ) -> impl std::future::Future<Output = CommandResponseServer<Cmd, Resp>>;
 }
 
 impl CommandResponseServerCreate for SharedMessageBus {

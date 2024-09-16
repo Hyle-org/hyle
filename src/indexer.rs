@@ -82,6 +82,12 @@ impl Indexer {
     }
 }
 
+impl Default for Indexer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl std::ops::Deref for Indexer {
     type Target = Arc<Mutex<IndexerInner>>;
 

@@ -102,7 +102,7 @@ impl Mempool {
                 info!("Creating pending transaction batch with id {}", id);
                 let txs: Vec<Transaction> = self.pending_txs.drain(0..).collect();
                 self.pending_batches.insert(id.clone(), txs.clone());
-                return Ok(Some(MempoolResponse::PendingBatch { id, txs }));
+                Ok(Some(MempoolResponse::PendingBatch { id, txs }))
             }
         }
     }
