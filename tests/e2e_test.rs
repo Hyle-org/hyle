@@ -1,7 +1,7 @@
 use hyle::{
     model::{
         Blob, BlobData, BlobReference, BlobTransaction, ContractName, Identity, ProofTransaction,
-        RegisterContractTransaction, StateDigest,
+        RegisterContractTransaction, StateDigest, TxHash,
     },
     node_state::model::Contract,
 };
@@ -69,7 +69,7 @@ fn e2e_contract_state_updated() {
     .status()
     .is_success());
 
-    assert!(send(
+    let blob_response = send(
         &client,
         url("/v1/tx/send/blob"),
         BlobTransaction {
@@ -77,17 +77,20 @@ fn e2e_contract_state_updated() {
             blobs: vec![
                 Blob {
                     contract_name: ContractName("c1".to_string()),
-                    data: BlobData(vec![0, 1, 2, 3])
+                    data: BlobData(vec![0, 1, 2, 3]),
                 },
                 Blob {
                     contract_name: ContractName("c2".to_string()),
-                    data: BlobData(vec![0, 1, 2, 3])
-                }
-            ]
+                    data: BlobData(vec![0, 1, 2, 3]),
+                },
+            ],
         },
-    )
-    .status()
-    .is_success());
+    );
+
+    assert!(blob_response.status().is_success());
+    let blob_tx_hash = blob_response
+        .json::<TxHash>()
+        .expect("Failed to parse tx hash");
 
     assert!(send(
         &client,
@@ -96,18 +99,12 @@ fn e2e_contract_state_updated() {
             blobs_references: vec![
                 BlobReference {
                     contract_name: ContractName("c1".to_string()),
-                    blob_tx_hash: serde_json::from_str(
-                        "\"d3b6fa8ff25fab0209f821530b9a138f72c757be5828ee40128072a592817eab\""
-                    )
-                    .unwrap(),
+                    blob_tx_hash: blob_tx_hash.clone(),
                     blob_index: hyle::model::BlobIndex(0)
                 },
                 BlobReference {
                     contract_name: ContractName("c2".to_string()),
-                    blob_tx_hash: serde_json::from_str(
-                        "\"d3b6fa8ff25fab0209f821530b9a138f72c757be5828ee40128072a592817eab\""
-                    )
-                    .unwrap(),
+                    blob_tx_hash,
                     blob_index: hyle::model::BlobIndex(1)
                 }
             ],
