@@ -1,16 +1,16 @@
 use crate::{
-    bus::command_response::{CommandResponseServerCreate, NeedAnswer},
-    bus::SharedMessageBus,
+    bus::{
+        command_response::{CommandResponseServerCreate, NeedAnswer},
+        SharedMessageBus,
+    },
+    command_response_select,
     consensus::ConsensusEvent,
-    handle_server_query,
-    model::Hashable,
-    model::Transaction,
+    model::{Hashable, Transaction},
     p2p::network::{MempoolNetMessage, NetInput},
 };
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use tokio::select;
 use tracing::{info, warn};
 
 #[allow(dead_code)]
@@ -50,20 +50,16 @@ impl Mempool {
     /// start starts the mempool server.
     pub async fn start(&mut self) {
         impl NeedAnswer<MempoolResponse> for MempoolCommand {}
-        let mut mempool_server = self
-            .bus
-            .create_server::<MempoolCommand, MempoolResponse>()
-            .await;
         let mut net_receiver = self.bus.receiver::<NetInput<MempoolNetMessage>>().await;
         let mut event_receiver = self.bus.receiver::<ConsensusEvent>().await;
         loop {
-            select! {
+            command_response_select! {
+                command_response<MempoolCommand, MempoolResponse>(self.bus) = cmd => {
+                     Ok(None)
+                },
                 Ok(cmd) = net_receiver.recv() => {
                     self.handle_net_input(cmd)
-                }
-                Ok(query) = mempool_server.get_query() => {
-                    handle_server_query!(mempool_server, query, self, handle_command);
-                }
+                },
                 Ok(cmd) = event_receiver.recv() => {
                     self.handle_event(cmd);
                 }

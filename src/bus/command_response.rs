@@ -134,28 +134,28 @@ impl<Res: Clone + Send + Sync + 'static> QueryResponse<Res> {
     }
 }
 
-#[macro_use]
-macro_rules! my_select {
+#[macro_export]
+macro_rules! command_response_select {
+    ( $(command_response <$command:ident,$response:ident>($bus:expr) = $res:ident => $handler:block)+, $($rest:tt)*) => {{
+        use paste::paste;
+        use crate::bus::command_response::*;
 
-    (command_response($server:expr) = $res:ident => $handler:block, $($rest:tt)*) => {{
-        tokio::select! {
-            Ok(query) = $server.get_query() => {
-                let ($res, response_writer) = $server.to_response(query);
-                let res = $handler;
-                let _ = $server.respond(response_writer.updated(res));
+        $(
+            // In order to generate a variable with the name server$command$response for each server
+            paste! {
+                let mut [<server $command $response>] = $bus.create_server::<$command, $response>().await;
             }
+        )+
 
+        command_response_select! {
             $($rest)*
-        }
-    }};
-
-
-    // Match timeout case with specific duration
-    (timeout($duration:expr) => $timeout_block:block, $($rest:tt)*) => {{
-        use tokio::time::{sleep, Duration};
-        tokio::select! {
-            _ = sleep(Duration::from_millis($duration)) => $timeout_block,
-            $($rest)*
+            $(
+                Ok(query) = paste!([<server $command $response>]).get_query() => {
+                    let ($res, response_writer) = paste!([<server $command $response>]).to_response(query);
+                    let res = $handler;
+                    let _ = paste!([<server $command $response>]).respond(response_writer.updated(res));
+                }
+            )+
         }
     }};
 
@@ -165,27 +165,30 @@ macro_rules! my_select {
             $($rest)*
         }
     }};
-
-
-
 }
 
+pub use command_response_select;
+
 async fn test() {
-    let mut server = SharedMessageBus::new()
-        .create_server::<MempoolCommand, MempoolResponse>()
-        .await;
+    let bus = SharedMessageBus::new();
+    use crate::bus::command_response::CmdRespClient;
 
-    let mut receiver = SharedMessageBus::new().receiver::<MempoolCommand>().await;
-
-    my_select! {
-
-        command_response(server) = cmd => {
+    impl NeedAnswer<usize> for String {}
+    command_response_select! {
+        command_response<MempoolCommand,MempoolResponse>(bus) = cmd => {
             info!("{:?}", cmd);
-            Ok(Some(MempoolResponse::PendingBatch { id: 2.to_string(), txs: vec![] }))
+            Ok(None)
         },
+        // command_response::<String, usize>(bus) = cmd => {
+        //     info!("{:?}", cmd);
+        //     Ok(Some(3))
 
-        Ok(q) = receiver.recv() => {
+        // },
+        Ok(test) = async { anyhow::Ok(())} => {
+
+            info!("test {:?}", test);
 
         }
+
     };
 }

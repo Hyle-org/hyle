@@ -1136,6 +1136,7 @@ dependencies = [
  "console-subscriber",
  "derive_more",
  "hex",
+ "paste",
  "proptest",
  "rand",
  "reqwest",
