@@ -12,7 +12,7 @@ use axum::{
     Json,
 };
 
-use super::model::RouterState;
+use super::RouterState;
 
 async fn handle_send(
     state: RouterState,

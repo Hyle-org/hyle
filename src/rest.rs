@@ -4,11 +4,14 @@ use axum::{
     routing::{get, post},
     Router,
 };
-use model::RouterState;
 use tracing::info;
 
 mod endpoints;
-pub mod model;
+
+pub struct RouterState {
+    pub bus: SharedMessageBus,
+    pub idxr: Indexer,
+}
 
 pub async fn rest_server(config: SharedConf, bus: SharedMessageBus, idxr: Indexer) -> Result<()> {
     info!("rest listening on {}", config.rest_addr());
@@ -31,4 +34,13 @@ pub async fn rest_server(config: SharedConf, bus: SharedMessageBus, idxr: Indexe
     axum::serve(listener, app)
         .await
         .context("Starting rest server")
+}
+
+impl Clone for RouterState {
+    fn clone(&self) -> Self {
+        Self {
+            bus: self.bus.new_handle(),
+            idxr: self.idxr.clone(),
+        }
+    }
 }
