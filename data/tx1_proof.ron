@@ -1,0 +1,15 @@
+ProofTransaction(
+  blobs_references: [
+    BlobReference(
+      contract_name: "c1",
+      blob_tx_hash: "d3b6fa8ff25fab0209f821530b9a138f72c757be5828ee40128072a592817eab",
+      blob_index: 0
+    ),
+    BlobReference(
+      contract_name: "c2",
+      blob_tx_hash: "d3b6fa8ff25fab0209f821530b9a138f72c757be5828ee40128072a592817eab",
+      blob_index: 1
+    )
+  ],
+  proof: [5,5]
+)

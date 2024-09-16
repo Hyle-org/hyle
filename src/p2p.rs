@@ -7,6 +7,7 @@ use tracing::info;
 
 pub mod network; // FIXME(Bertrand): NetMessage should be private
 mod peer;
+pub mod stream;
 
 pub async fn p2p_server(config: SharedConf, bus: SharedMessageBus) -> Result<(), Error> {
     if config.peers.is_empty() {

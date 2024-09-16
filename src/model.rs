@@ -1,14 +1,18 @@
 use derive_more::Display;
-use serde::{Deserialize, Serialize};
+use serde::{
+    de::{self, Visitor},
+    Deserialize, Serialize,
+};
 use sha3::{Digest, Sha3_256};
 use std::{
+    fmt,
     io::Write,
     ops::{Add, Deref},
     time::{SystemTime, UNIX_EPOCH},
 };
 use tracing::debug;
 
-#[derive(Default, Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
+#[derive(Default, Debug, Clone, Eq, PartialEq, Hash)]
 pub struct TxHash(pub Vec<u8>);
 
 impl TxHash {
@@ -20,6 +24,42 @@ impl TxHash {
 impl Display for TxHash {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", hex::encode(&self.0))
+    }
+}
+
+impl Serialize for TxHash {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(hex::encode(&self.0).as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for TxHash {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct TxHashVisitor;
+
+        impl<'de> Visitor<'de> for TxHashVisitor {
+            type Value = TxHash;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("a hex string representing a TxHash")
+            }
+
+            fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                let bytes = hex::decode(value).map_err(de::Error::custom)?;
+                Ok(TxHash(bytes))
+            }
+        }
+
+        deserializer.deserialize_str(TxHashVisitor)
     }
 }
 

@@ -1,23 +1,21 @@
 use std::time::Duration;
 use std::time::SystemTime;
 
-use anyhow::{anyhow, bail, Context, Error, Result};
+use anyhow::{anyhow, Context, Error, Result};
+use tokio::net::TcpStream;
 use tokio::select;
 use tokio::sync::mpsc;
 use tokio::time::sleep;
-use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt, Interest},
-    net::TcpStream,
-};
 use tracing::{debug, info, trace, warn};
 
 use super::network::{MempoolNetMessage, NetMessage, Version};
+use super::stream::send_net_message;
 use crate::bus::SharedMessageBus;
 use crate::p2p::network::Broadcast;
 use crate::p2p::network::ConsensusNetMessage;
 use crate::p2p::network::NetInput;
+use crate::p2p::stream::read_stream;
 use crate::utils::conf::SharedConf;
-use crate::utils::logger::LogMe;
 
 pub struct Peer {
     id: u64,
@@ -56,12 +54,11 @@ impl Peer {
     }
 
     async fn handle_consensus_message(&mut self, msg: ConsensusNetMessage) -> Result<(), Error> {
-        self.send_net_message(NetMessage::ConsensusMessage(msg))
-            .await
+        send_net_message(&mut self.stream, NetMessage::ConsensusMessage(msg)).await
     }
 
     async fn handle_mempool_message(&mut self, msg: MempoolNetMessage) -> Result<(), Error> {
-        self.send_net_message(NetMessage::MempoolMessage(msg)).await
+        send_net_message(&mut self.stream, NetMessage::MempoolMessage(msg)).await
     }
 
     async fn handle_broadcast_message(&mut self, msg: Broadcast) -> Result<(), Error> {
@@ -76,12 +73,12 @@ impl Peer {
         match msg {
             NetMessage::Version(v) => {
                 info!("Got peer version {:?}", v);
-                self.send_net_message(NetMessage::Verack).await
+                send_net_message(&mut self.stream, NetMessage::Verack).await
             }
             NetMessage::Verack => self.ping_pong(),
             NetMessage::Ping => {
                 debug!("Got ping");
-                self.send_net_message(NetMessage::Pong).await
+                send_net_message(&mut self.stream, NetMessage::Pong).await
             }
             NetMessage::Pong => {
                 debug!("pong");
@@ -118,22 +115,6 @@ impl Peer {
         }
     }
 
-    async fn read_stream(stream: &mut TcpStream) -> Result<NetMessage, Error> {
-        let ready = stream
-            .ready(Interest::READABLE | Interest::WRITABLE | Interest::ERROR)
-            .await
-            .log_error("Reading from peer")?;
-
-        if ready.is_error() {
-            bail!("Stream not ready")
-        }
-
-        match stream.read_u32().await {
-            Ok(msg_size) => Self::read_net_message_from_buffer(stream, msg_size).await,
-            Err(e) => Err(anyhow!(e)),
-        }
-    }
-
     fn ping_pong(&self) -> Result<(), Error> {
         let tx = self.internal_cmd_tx.clone();
         let interval = self.conf.p2p.ping_interval;
@@ -155,7 +136,7 @@ impl Peer {
         let mut broadcast_rx = self.bus.receiver::<Broadcast>().await;
 
         loop {
-            let wait_tcp = Self::read_stream(&mut self.stream); //FIXME: make read_stream cancel safe !
+            let wait_tcp = read_stream(&mut self.stream); //FIXME: make read_stream cancel safe !
             let wait_cmd = self.internal_cmd_rx.recv();
             let wait_mempool = mempool_rx.recv();
             let wait_consensus = consensus_rx.recv();
@@ -219,7 +200,7 @@ impl Peer {
                                     }
                                 }
                                 debug!("ping");
-                                self.send_net_message(NetMessage::Ping).await
+                                send_net_message(&mut self.stream, NetMessage::Ping).await
                             }
                         };
 
@@ -247,46 +228,6 @@ impl Peer {
     }
 
     pub async fn handshake(&mut self) -> Result<(), Error> {
-        self.send_net_message(NetMessage::Version(Version { id: 1 }))
-            .await
-    }
-
-    async fn send_net_message(&mut self, msg: NetMessage) -> Result<(), Error> {
-        let binary = msg.to_binary();
-        trace!("SEND {} bytes: {:?}", binary.len(), binary);
-        self.stream
-            .write_u32(binary.len() as u32)
-            .await
-            .context("Failed to write size on stream")?;
-        self.stream
-            .write(&binary)
-            .await
-            .context("Failed to write data on stream")?;
-        Ok(())
-    }
-
-    async fn read_net_message_from_buffer(
-        stream: &mut TcpStream,
-        msg_size: u32,
-    ) -> Result<NetMessage, Error> {
-        if msg_size == 0 {
-            bail!("Connection closed by remote (1)")
-        }
-
-        trace!("Reading {} bytes from buffer", msg_size);
-        let mut buf = vec![0; msg_size as usize];
-        trace!("buf before: {:?}", buf);
-
-        let data = stream.read_exact(&mut buf).await?;
-        if data == 0 {
-            bail!("Connection closed by remote (2)")
-        }
-
-        trace!("got buff {:?}", buf);
-        Self::parse_net_message(&buf).await
-    }
-
-    async fn parse_net_message(buf: &[u8]) -> Result<NetMessage, Error> {
-        bincode::deserialize::<NetMessage>(buf).map_err(|_| anyhow!("Could not decode NetMessage"))
+        send_net_message(&mut self.stream, NetMessage::Version(Version { id: 1 })).await
     }
 }
