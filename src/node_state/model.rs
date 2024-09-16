@@ -61,6 +61,7 @@ impl Timeouts {
     }
 
     /// Set timeout for a tx, overrides existing if exists
+    /// TODO: try to settle following transactions when we timeout a tx
     pub fn set(&mut self, tx: TxHash, at: BlockHeight) {
         if let Some(existing) = self.get(&tx) {
             let existing2 = *existing; // copy
