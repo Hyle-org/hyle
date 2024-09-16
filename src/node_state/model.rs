@@ -14,7 +14,7 @@ pub struct Contract {
     pub state: StateDigest,
 }
 
-#[derive(Default, Debug, Clone)]
+#[derive(Default, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct UnsettledTransaction {
     pub identity: Identity,
     pub hash: TxHash,
@@ -22,28 +22,13 @@ pub struct UnsettledTransaction {
     pub blobs: Vec<UnsettledBlobMetadata>,
 }
 
-#[derive(Default, Debug, Clone)]
+#[derive(Default, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct UnsettledBlobMetadata {
     pub contract_name: ContractName,
-    pub verification_status: VerificationStatus,
+    pub metadata: Vec<HyleOutput>,
 }
 
-#[derive(Default, Debug, Clone)]
-pub enum VerificationStatus {
-    #[default]
-    WaitingProof,
-    Success(HyleOutput),
-    InvalidProof,
-    ExecutionFailed,
-}
-
-impl VerificationStatus {
-    pub fn is_success(&self) -> bool {
-        matches!(self, VerificationStatus::Success(_))
-    }
-}
-
-#[derive(Default, Debug, Clone)]
+#[derive(Default, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct HyleOutput {
     pub version: u32,
     pub initial_state: StateDigest,
@@ -78,6 +63,7 @@ impl Timeouts {
     }
 
     /// Set timeout for a tx, overrides existing if exists
+    /// TODO: try to settle following transactions when we timeout a tx
     pub fn set(&mut self, tx: TxHash, at: BlockHeight) {
         if let Some(existing) = self.get(&tx) {
             let existing2 = *existing; // copy

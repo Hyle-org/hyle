@@ -52,13 +52,22 @@ impl OrderedTxMap {
         self.map.remove(hash);
     }
 
-    pub fn is_next_unsettled_tx(&self, tx: &TxHash, contract: &ContractName) -> bool {
-        if let Some(order) = self.tx_order.get(contract) {
-            if let Some(first) = order.first() {
-                return first.eq(tx);
+    pub fn is_next_unsettled_tx(&self, tx: &TxHash) -> bool {
+        match self.get(tx) {
+            Some(unsettled_tx) => {
+                for blob in &unsettled_tx.blobs {
+                    if let Some(order) = self.tx_order.get(&blob.contract_name) {
+                        if let Some(first) = order.first() {
+                            if first != tx {
+                                return false;
+                            }
+                        }
+                    }
+                }
             }
+            None => return false,
         }
-        false
+        true
     }
 }
 
@@ -66,7 +75,7 @@ impl OrderedTxMap {
 mod tests {
     use crate::{
         model::{BlobsHash, Identity},
-        node_state::model::{UnsettledBlobMetadata, VerificationStatus},
+        node_state::model::UnsettledBlobMetadata,
     };
 
     use super::*;
@@ -78,7 +87,7 @@ mod tests {
             blobs_hash: BlobsHash::new("blobs_hash"),
             blobs: vec![UnsettledBlobMetadata {
                 contract_name: ContractName(contract.to_string()),
-                verification_status: VerificationStatus::default(),
+                metadata: vec![],
             }],
         }
     }
@@ -132,17 +141,18 @@ mod tests {
         let mut map = OrderedTxMap::default();
         let tx1 = TxHash::new("tx1");
         let tx2 = TxHash::new("tx2");
+        let tx3 = TxHash::new("tx3");
+        let tx4 = TxHash::new("tx4");
 
         map.add(new_tx("tx1", "c1"));
         map.add(new_tx("tx2", "c1"));
         map.add(new_tx("tx3", "c2"));
 
-        assert!(map.is_next_unsettled_tx(&tx1, &ContractName("c1".to_string())));
-        assert!(!map.is_next_unsettled_tx(&tx2, &ContractName("c1".to_string())));
-        // wrong contract
-        assert!(!map.is_next_unsettled_tx(&tx2, &ContractName("c2".to_string())));
-        // contract not even exits
-        assert!(!map.is_next_unsettled_tx(&tx2, &ContractName("c3".to_string())));
+        assert!(map.is_next_unsettled_tx(&tx1));
+        assert!(!map.is_next_unsettled_tx(&tx2));
+        assert!(map.is_next_unsettled_tx(&tx3));
+        // tx doesn't even exit
+        assert!(!map.is_next_unsettled_tx(&tx4));
     }
 
     #[test]
@@ -150,21 +160,17 @@ mod tests {
         let mut map = OrderedTxMap::default();
         let tx1 = TxHash::new("tx1");
         let tx2 = TxHash::new("tx2");
+        let tx3 = TxHash::new("tx3");
         let c1 = ContractName("c1".to_string());
-        let c2 = ContractName("c2".to_string());
-        let c3 = ContractName("c3".to_string());
 
         map.add(new_tx("tx1", "c1"));
         map.add(new_tx("tx2", "c1"));
         map.add(new_tx("tx3", "c2"));
         map.remove(&tx1);
 
-        assert!(!map.is_next_unsettled_tx(&tx1, &c1));
-        assert!(map.is_next_unsettled_tx(&tx2, &c1));
-        // wrong contract
-        assert!(!map.is_next_unsettled_tx(&tx2, &c2));
-        // contract not even exits
-        assert!(!map.is_next_unsettled_tx(&tx2, &c3));
+        assert!(!map.is_next_unsettled_tx(&tx1));
+        assert!(map.is_next_unsettled_tx(&tx2));
+        assert!(map.is_next_unsettled_tx(&tx3));
 
         assert_eq!(map.map.len(), 2);
         assert_eq!(map.tx_order.len(), 2);

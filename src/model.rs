@@ -106,7 +106,7 @@ pub struct Identity(pub String);
 #[derive(Default, Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash, Display)]
 pub struct ContractName(pub String);
 
-#[derive(Debug, Serialize, Deserialize, Default, Clone, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, Default, Clone, Eq, PartialEq, Hash)]
 pub struct StateDigest(pub Vec<u8>);
 
 #[derive(Debug, Serialize, Deserialize, Default, Clone, PartialEq, Eq)]
@@ -158,6 +158,7 @@ pub struct RegisterContractTransaction {
 pub struct BlobTransaction {
     pub identity: Identity,
     pub blobs: Vec<Blob>,
+    // FIXME: add a nonce or something to prevent BlobTransaction to share the same hash
 }
 
 #[derive(Debug, Serialize, Deserialize, Default, Clone, PartialEq, Eq)]
