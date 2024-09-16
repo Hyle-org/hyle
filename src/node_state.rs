@@ -132,14 +132,12 @@ impl NodeState {
         self.save_blob_metadata(&tx, blobs_metadata)?;
         let unsettled_transactions = self.unsettled_transactions.clone();
 
-        // Only catch unique unsettled_txs
-        let unique_unsettled_txs: Vec<&UnsettledTransaction> = tx
+        // Only catch unique unsettled_txs for tx next to be settled
+        let unique_unsettled_txs: HashSet<&UnsettledTransaction> = tx
             .blobs_references
             .iter()
             .filter_map(|blob_ref| unsettled_transactions.get(&blob_ref.blob_tx_hash))
-            .collect::<HashSet<_>>()
-            .into_iter()
-            .collect::<Vec<&UnsettledTransaction>>();
+            .collect::<HashSet<_>>();
 
         for unsettled_tx in unique_unsettled_txs {
             let all_blobs_proved_at_least_once = unsettled_tx
