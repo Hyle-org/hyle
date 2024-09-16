@@ -1,6 +1,10 @@
 use crate::{
-    bus::SharedMessageBus,
+    bus::{
+        command_response::{CommandResponseServerCreate, NeedAnswer},
+        SharedMessageBus,
+    },
     consensus::ConsensusEvent,
+    handle_server_query,
     model::{
         BlobReference, BlobTransaction, BlobsHash, Block, BlockHeight, ContractName, Hashable,
         Identity, ProofTransaction, RegisterContractTransaction, StateDigest, Transaction, TxHash,
@@ -14,13 +18,24 @@ use anyhow::{bail, Context, Error, Result};
 use model::{Contract, Timeouts, UnsettledBlobMetadata, UnsettledTransaction, VerificationStatus};
 use ordered_tx_map::OrderedTxMap;
 use std::collections::HashMap;
+use tokio::select;
 use tracing::{debug, error, info};
 
 mod model;
 mod ordered_tx_map;
 
-#[derive(Default, Debug, Clone)]
+#[derive(Debug, Clone)]
+pub enum NodeStateCommand {
+    GetContract { name: ContractName },
+}
+
+#[derive(Debug, Clone)]
+pub enum NodeStateResponse {
+    Contract { contract: Contract },
+}
+
 pub struct NodeState {
+    bus: SharedMessageBus,
     timeouts: Timeouts,
     current_height: BlockHeight,
     contracts: HashMap<ContractName, Contract>,
@@ -28,32 +43,69 @@ pub struct NodeState {
 }
 
 impl NodeState {
-    pub async fn start(&mut self, bus: SharedMessageBus, _config: SharedConf) -> Result<(), Error> {
+    pub fn new(bus: SharedMessageBus) -> NodeState {
+        NodeState {
+            bus,
+            timeouts: Timeouts::default(),
+            current_height: BlockHeight::default(),
+            contracts: HashMap::default(),
+            unsettled_transactions: OrderedTxMap::default(),
+        }
+    }
+
+    pub async fn start(&mut self, _config: SharedConf) -> Result<(), Error> {
         info!(
             "Starting NodeState with {} contracts and {} unsettled transactions at height {}",
             self.contracts.len(),
             self.unsettled_transactions.len(),
             self.current_height
         );
-        let mut events = bus.receiver::<ConsensusEvent>().await;
-        loop {
-            if let Ok(msg) = events.recv().await {
-                let res = match msg {
-                    ConsensusEvent::CommitBlock { batch_id: _, block } => {
-                        info!("New block to handle: {:}", block.hash());
-                        self.handle_new_block(block).context("handle new block")
-                    }
-                };
+        impl NeedAnswer<NodeStateResponse> for NodeStateCommand {}
+        let mut node_state_server = self
+            .bus
+            .create_server::<NodeStateCommand, NodeStateResponse>()
+            .await;
+        let mut event_receiver = self.bus.receiver::<ConsensusEvent>().await;
 
-                match res {
-                    Ok(_) => (),
-                    Err(e) => error!("Error while handling consensus event: {e}"),
+        loop {
+            select! {
+                Ok(cmd) = event_receiver.recv() => {
+                    self.handle_event(cmd);
+                }
+                Ok(query) = node_state_server.get_query() => {
+                    handle_server_query!(node_state_server, query, self, handle_command);
                 }
             }
         }
     }
+    fn handle_command(&mut self, command: NodeStateCommand) -> Result<Option<NodeStateResponse>> {
+        match command {
+            NodeStateCommand::GetContract { name } => {
+                Ok(self
+                    .contracts
+                    .get(&name)
+                    .map(|c| NodeStateResponse::Contract {
+                        contract: c.clone(),
+                    }))
+            }
+        }
+    }
 
-    pub fn handle_new_block(&mut self, block: Block) -> Result<(), Error> {
+    fn handle_event(&mut self, event: ConsensusEvent) {
+        let res = match event {
+            ConsensusEvent::CommitBlock { batch_id: _, block } => {
+                info!("New block to handle: {:}", block.hash());
+                self.handle_new_block(block).context("handle new block")
+            }
+        };
+
+        match res {
+            Ok(_) => (),
+            Err(e) => error!("Error while handling consensus event: {e}"),
+        }
+    }
+
+    fn handle_new_block(&mut self, block: Block) -> Result<(), Error> {
         self.clear_timeouts(&block.height);
         self.current_height = block.height;
         let txs_count = block.txs.len();
@@ -170,7 +222,7 @@ impl NodeState {
             .sequence()
             .map(|_| ())?;
 
-        debug!("Done {:?}", self);
+        debug!("Done! Contract states: {:?}", self.contracts);
 
         Ok(())
     }
@@ -310,6 +362,12 @@ impl NodeState {
             }
         }
         Ok(())
+    }
+}
+
+impl Default for NodeState {
+    fn default() -> Self {
+        Self::new(SharedMessageBus::default())
     }
 }
 
