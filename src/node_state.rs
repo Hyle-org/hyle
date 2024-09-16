@@ -130,17 +130,13 @@ impl NodeState {
 
         // If we arrived here, proof provided is OK and its outputs can now be saved
         self.save_blob_metadata(&tx, blobs_metadata)?;
-        let cloned_self = self.clone();
+        let unsettled_transactions = self.unsettled_transactions.clone();
 
         // Only catch unique unsettled_txs
         let unique_unsettled_txs: Vec<&UnsettledTransaction> = tx
             .blobs_references
             .iter()
-            .filter_map(|blob_ref| {
-                cloned_self
-                    .unsettled_transactions
-                    .get(&blob_ref.blob_tx_hash)
-            })
+            .filter_map(|blob_ref| unsettled_transactions.get(&blob_ref.blob_tx_hash))
             .collect::<HashSet<_>>()
             .into_iter()
             .collect::<Vec<&UnsettledTransaction>>();
@@ -204,17 +200,16 @@ impl NodeState {
             .enumerate()
             .try_for_each(|(index, hyle_output)| {
                 // Success verification
-                if hyle_output.success == false {
+                if !hyle_output.success {
                     bail!("Contract execution is not a success");
                 }
                 // Identity verification
                 // TODO: uncomment when verifier are implemented
-                // else if hyle_output.identity != unsettled_txs[index].identity {
-                //     return Err(anyhow!("Identity is incorrect"));
+                // if hyle_output.identity != unsettled_txs[index].identity {
+                //     bail!("Identity is incorrect");
                 // }
-                else {
-                    Ok(())
-                }
+
+                Ok(())
             })
     }
 
@@ -243,33 +238,20 @@ impl NodeState {
 
     fn verify_proof(tx: &ProofTransaction) -> Result<Vec<HyleOutput>, Error> {
         // TODO real verification implementation
-        match tx.blobs_references.len() {
-            0 => bail!("Proof not linked to any blob transaction"),
-            1 => Ok(vec![HyleOutput {
+        Ok(tx
+            .blobs_references
+            .iter()
+            .map(|blob_ref| HyleOutput {
                 version: 1,
                 initial_state: StateDigest(vec![0, 1, 2, 3]),
                 next_state: StateDigest(vec![4, 5, 6]),
                 identity: Identity("test".to_string()),
-                tx_hash: TxHash(vec![0]),
-                index: BlobIndex(0),
+                tx_hash: blob_ref.blob_tx_hash.clone(),
+                index: blob_ref.blob_index.clone(),
                 blobs: vec![0, 1, 2, 3, 0, 1, 2, 3],
                 success: true,
-            }]),
-            _ => Ok(tx
-                .blobs_references
-                .iter()
-                .map(|blob_ref| HyleOutput {
-                    version: 1,
-                    initial_state: StateDigest(vec![0, 1, 2, 3]),
-                    next_state: StateDigest(vec![4, 5, 6]),
-                    identity: Identity("test".to_string()),
-                    tx_hash: blob_ref.blob_tx_hash.clone(),
-                    index: blob_ref.blob_index.clone(),
-                    blobs: vec![0, 1, 2, 3, 0, 1, 2, 3],
-                    success: true,
-                })
-                .collect()),
-        }
+            })
+            .collect())
     }
 
     fn settle_tx(&mut self, unsettled_tx: &UnsettledTransaction) -> Result<(), Error> {
@@ -278,12 +260,10 @@ impl NodeState {
         for blob in &unsettled_tx.blobs {
             let contract_name = blob.contract_name.clone();
 
-            let contract = self.contracts.get_mut(&contract_name).with_context(|| {
-                format!(
-                    "Contract {} not found when settling transaction",
-                    contract_name
-                )
-            })?;
+            let contract = self.contracts.get_mut(&contract_name).context(format!(
+                "Contract {} not found when settling transaction",
+                contract_name
+            ))?;
 
             let is_next_to_settle = self
                 .unsettled_transactions
@@ -294,7 +274,7 @@ impl NodeState {
                     .metadata
                     .iter()
                     .find(|hyle_output| hyle_output.initial_state == contract.state)
-                    .with_context(|| "No provided proofs are based on the correct initial state")?
+                    .context("No provided proofs are based on the correct initial state")?
                     .next_state
                     .clone();
 
@@ -311,10 +291,10 @@ impl NodeState {
         contract_name: &ContractName,
         next_state: StateDigest,
     ) -> Result<(), Error> {
-        let contract = self
-            .contracts
-            .get_mut(contract_name)
-            .with_context(|| format!("Contract {} not found when settling", contract_name,))?;
+        let contract = self.contracts.get_mut(contract_name).context(format!(
+            "Contract {} not found when settling",
+            contract_name,
+        ))?;
         debug!("Update {} contract state: {:?}", contract_name, next_state);
         contract.state = next_state;
         Ok(())
