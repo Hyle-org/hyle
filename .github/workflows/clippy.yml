@@ -1,0 +1,23 @@
+name: 'clippy'
+
+on:
+  pull_request:
+    paths: ['**/*.rs']
+
+permissions:
+  contents: read
+  pull-requests: write
+  checks: write
+
+jobs:
+    clippy:
+        name: Clippy
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+            - uses: dtolnay/rust-toolchain@stable
+              with:
+                  components: clippy
+            - uses: auguwu/clippy-action@1.4.0
+              with:
+                  token: ${{secrets.GITHUB_TOKEN}}
