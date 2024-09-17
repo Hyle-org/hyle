@@ -1,13 +1,13 @@
 #![allow(dead_code, unused_variables)]
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::model::{
     BlobIndex, BlobsHash, BlockHeight, ContractName, Identity, StateDigest, TxHash,
 };
 use std::collections::HashMap;
 
-#[derive(Default, Debug, Clone)]
+#[derive(Default, Debug, Clone, Serialize, Deserialize)]
 pub struct Contract {
     pub name: ContractName,
     pub program_id: Vec<u8>,

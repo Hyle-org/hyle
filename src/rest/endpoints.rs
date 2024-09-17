@@ -1,10 +1,13 @@
 use crate::{
+    bus::command_response::CmdRespClient,
     model::{
-        BlobTransaction, BlockHeight, Hashable, ProofTransaction, RegisterContractTransaction,
-        Transaction, TransactionData, TxHash,
+        BlobTransaction, BlockHeight, ContractName, Hashable, ProofTransaction,
+        RegisterContractTransaction, Transaction, TransactionData, TxHash,
     },
+    node_state::{NodeStateQuery, NodeStateQueryResponse},
     p2p::network::{MempoolNetMessage, NetInput},
 };
+use anyhow::anyhow;
 use axum::{
     extract::{Path, State},
     http::StatusCode,
@@ -12,7 +15,7 @@ use axum::{
     Json,
 };
 
-use super::RouterState;
+use super::{AppError, RouterState};
 
 async fn handle_send(
     state: RouterState,
@@ -87,4 +90,25 @@ pub async fn get_current_block(
         .last_block()
         .map(Json)
         .ok_or(StatusCode::NOT_FOUND)
+}
+
+pub async fn get_contract(
+    Path(name): Path<ContractName>,
+    State(state): State<RouterState>,
+) -> Result<impl IntoResponse, AppError> {
+    let name_clone = name.clone();
+    if let Some(res) = state
+        .bus
+        .request(NodeStateQuery::GetContract { name })
+        .await?
+    {
+        match res {
+            NodeStateQueryResponse::Contract { contract } => Ok(Json(contract)),
+        }
+    } else {
+        Err(AppError(
+            StatusCode::NOT_FOUND,
+            anyhow!("Contract {} not found", name_clone),
+        ))
+    }
 }

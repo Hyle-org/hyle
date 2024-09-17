@@ -1,6 +1,8 @@
 use crate::{bus::SharedMessageBus, indexer::Indexer, utils::conf::SharedConf};
 use anyhow::{Context, Result};
 use axum::{
+    http::StatusCode,
+    response::{IntoResponse, Response},
     routing::{get, post},
     Router,
 };
@@ -25,6 +27,7 @@ pub async fn rest_server(config: SharedConf, bus: SharedMessageBus, idxr: Indexe
         .route("/v1/tx/get/:tx_hash", get(endpoints::get_transaction))
         .route("/v1/block/height/:height", get(endpoints::get_block))
         .route("/v1/block/current", get(endpoints::get_current_block))
+        .route("/v1/contract/:name", get(endpoints::get_contract))
         .with_state(RouterState { bus, idxr });
 
     let listener = tokio::net::TcpListener::bind(config.rest_addr())
@@ -42,5 +45,26 @@ impl Clone for RouterState {
             bus: self.bus.new_handle(),
             idxr: self.idxr.clone(),
         }
+    }
+}
+
+// Make our own error that wraps `anyhow::Error`.
+struct AppError(StatusCode, anyhow::Error);
+
+// Tell axum how to convert `AppError` into a response.
+impl IntoResponse for AppError {
+    fn into_response(self) -> Response {
+        (self.0, format!("{}", self.1)).into_response()
+    }
+}
+
+// This enables using `?` on functions that return `Result<_, anyhow::Error>` to turn them into
+// `Result<_, AppError>`. That way you don't need to do that manually.
+impl<E> From<E> for AppError
+where
+    E: Into<anyhow::Error>,
+{
+    fn from(err: E) -> Self {
+        Self(StatusCode::INTERNAL_SERVER_ERROR, err.into())
     }
 }
