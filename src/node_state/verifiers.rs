@@ -83,7 +83,7 @@ pub fn cairo_proof_verifier(proof: &Vec<u8>) -> Result<Vec<HyleOutput>, Error> {
     };
 
     if verify_cairo_proof(&proof, &pub_inputs, &proof_options) {
-        return Ok(program_output);
+        Ok(program_output)
     } else {
         bail!("Proof verification failed.");
     }
