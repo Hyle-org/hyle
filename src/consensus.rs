@@ -79,7 +79,7 @@ impl Consensus {
         }
         _ = self.current_block_batches.drain(0..);
 
-        info!("New block {:?}", block);
+        info!("New block {}", block.height);
         block
     }
 

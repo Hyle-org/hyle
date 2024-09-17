@@ -28,6 +28,7 @@ pub async fn rest_server(config: SharedConf, bus: SharedMessageBus, idxr: Indexe
         .route("/v1/tx/get/:tx_hash", get(endpoints::get_transaction))
         .route("/v1/block/height/:height", get(endpoints::get_block))
         .route("/v1/block/current", get(endpoints::get_current_block))
+        .route("/v1/tools/run_scenario", post(endpoints::run_scenario))
         .with_state(RouterState { bus, idxr });
 
     let listener = tokio::net::TcpListener::bind(config.rest_addr())

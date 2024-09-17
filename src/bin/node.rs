@@ -60,6 +60,15 @@ fn start_p2p(bus: SharedMessageBus, config: SharedConf) {
     });
 }
 
+fn start_mock_workflow(bus: SharedMessageBus) {
+    let _ = tokio::task::Builder::new()
+        .name("MockWorkflow")
+        .spawn(async move {
+            let mut mock_workflow = hyle::tools::mock_workflow::MockWorkflowHandler::new(bus);
+            mock_workflow.start().await;
+        });
+}
+
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 pub struct Args {
@@ -96,6 +105,8 @@ async fn main() -> Result<()> {
     start_node_state(bus.new_handle(), Arc::clone(&config));
     start_consensus(bus.new_handle(), Arc::clone(&config));
     start_p2p(bus.new_handle(), Arc::clone(&config));
+
+    start_mock_workflow(bus.new_handle());
 
     // Start REST server
     rest::rest_server(config, bus.new_handle(), idxr)

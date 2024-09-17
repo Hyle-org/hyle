@@ -1,4 +1,5 @@
 use crate::model::Transaction;
+use crate::tools::mock_workflow::RunScenario;
 use crate::{
     bus::command_response::CmdRespClient,
     model::{
@@ -119,4 +120,17 @@ pub async fn get_contract(
             anyhow!("Contract {} not found", name_clone),
         ))
     }
+}
+
+pub async fn run_scenario(
+    State(state): State<RouterState>,
+    Json(scenario): Json<RunScenario>,
+) -> Result<impl IntoResponse, StatusCode> {
+    state
+        .bus
+        .sender::<RunScenario>()
+        .await
+        .send(scenario)
+        .map(|_| StatusCode::OK)
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
 }
