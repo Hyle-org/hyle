@@ -46,7 +46,7 @@ pub enum ConsensusNetMessage {
 
 impl NetMessage {
     pub fn to_binary(&self) -> Vec<u8> {
-        bincode::encode_to_vec(&self, bincode::config::standard())
+        bincode::encode_to_vec(self, bincode::config::standard())
             .expect("Could not serialize NetMessage")
     }
 }

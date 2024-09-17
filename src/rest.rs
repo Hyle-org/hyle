@@ -18,6 +18,7 @@ pub struct RouterState {
 pub async fn rest_server(config: SharedConf, bus: SharedMessageBus, idxr: Indexer) -> Result<()> {
     info!("rest listening on {}", config.rest_addr());
     let app = Router::new()
+        .route("/v1/contract/:name", get(endpoints::get_contract))
         .route(
             "/v1/contract/register",
             post(endpoints::send_contract_transaction),
@@ -27,7 +28,6 @@ pub async fn rest_server(config: SharedConf, bus: SharedMessageBus, idxr: Indexe
         .route("/v1/tx/get/:tx_hash", get(endpoints::get_transaction))
         .route("/v1/block/height/:height", get(endpoints::get_block))
         .route("/v1/block/current", get(endpoints::get_current_block))
-        .route("/v1/contract/:name", get(endpoints::get_contract))
         .with_state(RouterState { bus, idxr });
 
     let listener = tokio::net::TcpListener::bind(config.rest_addr())

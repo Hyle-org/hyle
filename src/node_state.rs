@@ -21,7 +21,7 @@ use std::collections::{HashMap, HashSet};
 use tokio::select;
 use tracing::{debug, error, info, warn};
 
-mod model;
+pub mod model;
 mod ordered_tx_map;
 mod verifiers;
 
@@ -202,6 +202,7 @@ impl NodeState {
             })
             .collect::<HashSet<_>>();
 
+        debug!("Next unsettled txs: {:?}", unique_next_unsettled_txs);
         for unsettled_tx in unique_next_unsettled_txs {
             if self.is_settlement_ready(unsettled_tx) {
                 self.settle_tx(unsettled_tx)?;
@@ -223,7 +224,7 @@ impl NodeState {
     fn process_verifications(
         &self,
         tx: &ProofTransaction,
-        blobs_metadata: &Vec<HyleOutput>,
+        blobs_metadata: &[HyleOutput],
     ) -> Result<(), Error> {
         // Extract unsettled tx of each blob_ref
         let unsettled_txs: Vec<&UnsettledTransaction> = tx
@@ -297,12 +298,18 @@ impl NodeState {
         // Check for each blob if initial state is correct.
         // As tx is next to be settled, remove all metadata with incorrect initial state.
         for unsettled_blob in unsettled_tx.blobs.iter() {
-            if unsettled_blob.metadata.len() == 0 {
+            if unsettled_blob.metadata.is_empty() {
                 return false;
             }
             let contract = match self.contracts.get(&unsettled_blob.contract_name) {
                 Some(contract) => contract,
-                None => return false, // No contract found for this blob
+                None => {
+                    warn!(
+                        "Tx: {}: No contract '{}' found when checking for settlement",
+                        unsettled_tx.hash, unsettled_blob.contract_name
+                    );
+                    return false;
+                } // No contract found for this blob
             };
 
             let has_one_valid_initial_state = unsettled_blob
@@ -311,6 +318,10 @@ impl NodeState {
                 .any(|hyle_output| hyle_output.initial_state == contract.state);
 
             if !has_one_valid_initial_state {
+                info!(
+                    "Tx: {}: No initial state match current contract state for contract '{}'",
+                    unsettled_tx.hash, unsettled_blob.contract_name
+                );
                 return false; // No valid metadata found for this blob
             }
         }
