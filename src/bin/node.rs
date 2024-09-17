@@ -13,39 +13,47 @@ use std::sync::Arc;
 use tracing::{debug, error, info, warn};
 
 fn start_consensus(bus: SharedMessageBus, config: SharedConf) {
-    tokio::spawn(async move {
-        Consensus::load_from_disk()
-            .unwrap_or_else(|_| {
-                warn!("Failed to load consensus state from disk, using a default one");
-                Consensus::default()
-            })
-            .start(bus, config)
-            .await
-    });
+    let _ = tokio::task::Builder::new()
+        .name("Consensus")
+        .spawn(async move {
+            Consensus::load_from_disk()
+                .unwrap_or_else(|_| {
+                    warn!("Failed to load consensus state from disk, using a default one");
+                    Consensus::default()
+                })
+                .start(bus, config)
+                .await
+        });
 }
 
 fn start_indexer(mut idxr: Indexer, bus: SharedMessageBus, config: SharedConf) {
-    tokio::spawn(async move {
-        idxr.start(config, bus).await;
-    });
+    let _ = tokio::task::Builder::new()
+        .name("Indexer")
+        .spawn(async move {
+            idxr.start(config, bus).await;
+        });
 }
 
 fn start_node_state(bus: SharedMessageBus, config: SharedConf) {
-    tokio::spawn(async move {
-        let mut node_state = NodeState::new(bus);
-        node_state.start(config).await
-    });
+    let _ = tokio::task::Builder::new()
+        .name("NodeState")
+        .spawn(async move {
+            let mut node_state = NodeState::new(bus);
+            node_state.start(config).await
+        });
 }
 
 fn start_mempool(bus: SharedMessageBus) {
-    tokio::spawn(async move {
-        let mut mempool = Mempool::new(bus);
-        mempool.start().await
-    });
+    let _ = tokio::task::Builder::new()
+        .name("Mempool")
+        .spawn(async move {
+            let mut mempool = Mempool::new(bus);
+            mempool.start().await
+        });
 }
 
 fn start_p2p(bus: SharedMessageBus, config: SharedConf) {
-    tokio::spawn(async move {
+    let _ = tokio::task::Builder::new().name("p2p").spawn(async move {
         if let Err(e) = p2p::p2p_server(config, bus).await {
             error!("RPC server failed: {:?}", e);
         }
@@ -66,8 +74,12 @@ pub struct Args {
 async fn main() -> Result<()> {
     let args = Args::parse();
 
-    // install global collector configured based on RUST_LOG env var.
-    tracing_subscriber::fmt::init();
+    // The console subscriber also enables stdout logging by default, configured via RUST_LOG.
+    // If there is no RUST_LOG set, default to info
+    if std::env::var("RUST_LOG").is_err() {
+        std::env::set_var("RUST_LOG", "info");
+    }
+    console_subscriber::init();
 
     let config = conf::Conf::new_shared(args.config_file)?;
     info!("Starting node with config: {:?}", &config);

@@ -8,7 +8,7 @@ default-run = "node"
 config = "0.14.0"
 tracing = "0.1"
 tracing-subscriber = "0.3"
-tokio = { version = "1.40.0", features = ["full"] }
+tokio = { version = "1.40.0", features = ["full", "tracing"] }
 anyhow = "1.0.89"
 clap = { version = "4.5.16", features = ["derive"] }
 rand = "0.8.5"
@@ -22,6 +22,7 @@ derive_more = { version = "1.0.0", features = ["display"] }
 anymap = "0.12.1"
 cairo-platinum-prover = { git = "https://github.com/lambdaclass/lambdaworks.git", rev = "e465d7c" }
 stark-platinum-prover = { git = "https://github.com/lambdaclass/lambdaworks.git", rev = "e465d7c" }
+console-subscriber = "0.4.0"
 
 [dev-dependencies]
 assert_cmd = "2.0.16"
