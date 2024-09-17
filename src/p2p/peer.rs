@@ -2,6 +2,7 @@ use std::time::Duration;
 use std::time::SystemTime;
 
 use anyhow::{anyhow, Context, Error, Result};
+use bloomfilter::Bloom;
 use tokio::net::TcpStream;
 use tokio::select;
 use tokio::sync::mpsc;
@@ -23,6 +24,7 @@ pub struct Peer {
     bus: SharedMessageBus,
     last_pong: SystemTime,
     conf: SharedConf,
+    bloom_filter: Bloom<Vec<u8>>,
 
     // peer internal channel
     internal_cmd_tx: mpsc::Sender<Cmd>,
@@ -34,23 +36,20 @@ enum Cmd {
 }
 
 impl Peer {
-    pub async fn new(
-        id: u64,
-        stream: TcpStream,
-        bus: SharedMessageBus,
-        conf: SharedConf,
-    ) -> Result<Self, Error> {
+    pub fn new(id: u64, stream: TcpStream, bus: SharedMessageBus, conf: SharedConf) -> Self {
         let (cmd_tx, cmd_rx) = mpsc::channel::<Cmd>(100);
+        let bloom_filter = Bloom::new_for_fp_rate(10_000, 0.01);
 
-        Ok(Peer {
+        Peer {
             id,
             stream,
             bus,
             last_pong: SystemTime::now(),
             conf,
+            bloom_filter,
             internal_cmd_tx: cmd_tx,
             internal_cmd_rx: cmd_rx,
-        })
+        }
     }
 
     async fn handle_consensus_message(&mut self, msg: ConsensusNetMessage) -> Result<(), Error> {
@@ -65,7 +64,17 @@ impl Peer {
         if msg.peer_id == self.id {
             return Ok(());
         }
-        send_net_message(&mut self.stream, msg.msg).await
+        if !self.bloom_filter.check(&msg.msg.to_binary()) {
+            self.bloom_filter.set(&msg.msg.to_binary());
+            debug!(
+                "Broadcast message from #{} to #{}: {:?}",
+                msg.peer_id, self.id, msg
+            );
+            send_net_message(&mut self.stream, msg.msg).await
+        } else {
+            trace!("Message from #{} already broadcasted", msg.peer_id);
+            Ok(())
+        }
     }
 
     async fn handle_stream_message(&mut self, msg: NetMessage) -> Result<(), Error> {
@@ -108,9 +117,18 @@ impl Peer {
                 self.bus
                     .sender::<NetInput<ConsensusNetMessage>>()
                     .await
-                    .send(NetInput::new(consensus_msg))
+                    .send(NetInput::new(consensus_msg.clone()))
                     .map(|_| ())
-                    .context("Receiving consensus net message")
+                    .context("Receiving consensus net message")?;
+                self.bus
+                    .sender::<Broadcast>()
+                    .await
+                    .send(Broadcast {
+                        peer_id: self.id,
+                        msg: NetMessage::ConsensusMessage(consensus_msg),
+                    })
+                    .map(|_| ())
+                    .context("Broadcasting mempool net message")
             }
         }
     }
@@ -184,7 +202,7 @@ impl Peer {
                             }
                         },
                         Err(e) => {
-                            trace!("err: {:?}", e);
+                            warn!("Error reading tcp stream: {:?}", e);
                             return Err(e);
                         }
                     }

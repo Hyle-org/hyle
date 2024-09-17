@@ -49,14 +49,12 @@ async fn read_net_message_from_buffer(
 
     trace!("Reading {} bytes from buffer", msg_size);
     let mut buf = vec![0; msg_size as usize];
-    trace!("buf before: {:?}", buf);
 
     let data = stream.read_exact(&mut buf).await?;
     if data == 0 {
         bail!("Connection closed by remote (2)")
     }
 
-    trace!("got buff {:?}", buf);
     parse_net_message(&buf).await
 }
 
