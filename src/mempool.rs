@@ -9,7 +9,7 @@ use crate::{
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 #[allow(dead_code)]
 #[derive(Debug)]
@@ -97,7 +97,7 @@ impl Mempool {
     }
 
     async fn on_new_tx(&mut self, tx: Transaction) {
-        info!("Got new tx {} {:?}", tx.hash(), tx);
+        debug!("Got new tx {} {:?}", tx.hash(), tx);
         self.pending_txs.push(tx);
     }
 
