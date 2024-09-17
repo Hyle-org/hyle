@@ -26,12 +26,12 @@ mod ordered_tx_map;
 mod verifiers;
 
 #[derive(Debug, Clone)]
-pub enum NodeStateCommand {
+pub enum NodeStateQuery {
     GetContract { name: ContractName },
 }
 
 #[derive(Debug, Clone)]
-pub enum NodeStateResponse {
+pub enum NodeStateQueryResponse {
     Contract { contract: Contract },
 }
 
@@ -61,10 +61,10 @@ impl NodeState {
             self.unsettled_transactions.len(),
             self.current_height
         );
-        impl NeedAnswer<NodeStateResponse> for NodeStateCommand {}
+        impl NeedAnswer<NodeStateQueryResponse> for NodeStateQuery {}
         let mut node_state_server = self
             .bus
-            .create_server::<NodeStateCommand, NodeStateResponse>()
+            .create_server::<NodeStateQuery, NodeStateQueryResponse>()
             .await;
         let mut event_receiver = self.bus.receiver::<ConsensusEvent>().await;
 
@@ -79,13 +79,16 @@ impl NodeState {
             }
         }
     }
-    fn handle_command(&mut self, command: NodeStateCommand) -> Result<Option<NodeStateResponse>> {
+    fn handle_command(
+        &mut self,
+        command: NodeStateQuery,
+    ) -> Result<Option<NodeStateQueryResponse>> {
         match command {
-            NodeStateCommand::GetContract { name } => {
+            NodeStateQuery::GetContract { name } => {
                 Ok(self
                     .contracts
                     .get(&name)
-                    .map(|c| NodeStateResponse::Contract {
+                    .map(|c| NodeStateQueryResponse::Contract {
                         contract: c.clone(),
                     }))
             }

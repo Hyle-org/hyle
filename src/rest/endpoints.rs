@@ -4,7 +4,7 @@ use crate::{
         BlobTransaction, BlockHeight, ContractName, Hashable, ProofTransaction,
         RegisterContractTransaction, Transaction, TransactionData, TxHash,
     },
-    node_state::{NodeStateCommand, NodeStateResponse},
+    node_state::{NodeStateQuery, NodeStateQueryResponse},
     p2p::network::{MempoolNetMessage, NetInput},
 };
 use anyhow::anyhow;
@@ -99,11 +99,11 @@ pub async fn get_contract(
     let name_clone = name.clone();
     if let Some(res) = state
         .bus
-        .request(NodeStateCommand::GetContract { name })
+        .request(NodeStateQuery::GetContract { name })
         .await?
     {
         match res {
-            NodeStateResponse::Contract { contract } => Ok(Json(contract)),
+            NodeStateQueryResponse::Contract { contract } => Ok(Json(contract)),
         }
     } else {
         Err(AppError(
