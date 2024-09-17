@@ -6,8 +6,8 @@ use crate::{
     consensus::ConsensusEvent,
     handle_server_query,
     model::{
-        BlobTransaction, BlobsHash, Block, BlockHeight, ContractName, Hashable, Identity,
-        ProofTransaction, RegisterContractTransaction, StateDigest, Transaction, TxHash,
+        BlobTransaction, BlobsHash, Block, BlockHeight, ContractName, Hashable, ProofTransaction,
+        RegisterContractTransaction, StateDigest, Transaction, TxHash,
     },
     utils::{
         conf::SharedConf,
@@ -23,6 +23,7 @@ use tracing::{debug, error, info};
 
 mod model;
 mod ordered_tx_map;
+mod verifiers;
 
 #[derive(Debug, Clone)]
 pub enum NodeStateCommand {
@@ -174,8 +175,10 @@ impl NodeState {
     }
 
     fn handle_proof(&mut self, tx: ProofTransaction) -> Result<(), Error> {
+        // TODO extract correct verifier
+        let verifier: String = "test".to_owned();
         // Verify proof
-        let blobs_metadata: Vec<HyleOutput> = Self::verify_proof(&tx)?;
+        let blobs_metadata: Vec<HyleOutput> = verifiers::verify_proof(&tx, &verifier)?;
 
         // TODO: add diverse verifications ? (without the inital state checks!).
         self.process_verifications(&tx, &blobs_metadata)?;
@@ -285,24 +288,6 @@ impl NodeState {
             .collect::<Vec<Result<(), Error>>>()
             .sequence()
             .map(|_| ()) // transform ok result from Vec<()> to ()
-    }
-
-    fn verify_proof(tx: &ProofTransaction) -> Result<Vec<HyleOutput>, Error> {
-        // TODO real verification implementation
-        Ok(tx
-            .blobs_references
-            .iter()
-            .map(|blob_ref| HyleOutput {
-                version: 1,
-                initial_state: StateDigest(vec![0, 1, 2, 3]),
-                next_state: StateDigest(vec![4, 5, 6]),
-                identity: Identity("test".to_string()),
-                tx_hash: blob_ref.blob_tx_hash.clone(),
-                index: blob_ref.blob_index.clone(),
-                blobs: vec![0, 1, 2, 3, 0, 1, 2, 3],
-                success: true,
-            })
-            .collect())
     }
 
     fn is_settlement_ready(&mut self, unsettled_tx: &UnsettledTransaction) -> bool {

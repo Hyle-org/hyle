@@ -12,21 +12,23 @@ tokio = { version = "1.40.0", features = ["full"] }
 anyhow = "1.0.89"
 clap = { version = "4.5.16", features = ["derive"] }
 rand = "0.8.5"
-bincode = "1.3.3"
+bincode = { version = "2.0.0-rc.2", tag = "v2.0.0-rc.2", git = "https://github.com/bincode-org/bincode.git" }
 serde = { version = "1.0", features = ["derive"] }
 ron = "0.8.1"
 axum = "0.7.5"
 sha3 = "0.10.8"
 hex = "0.4.3"
-derive_more = { version ="1.0.0", features = ["display"] }
+derive_more = { version = "1.0.0", features = ["display"] }
 anymap = "0.12.1"
+cairo-platinum-prover = { git = "https://github.com/lambdaclass/lambdaworks.git", rev = "e465d7c" }
+stark-platinum-prover = { git = "https://github.com/lambdaclass/lambdaworks.git", rev = "e465d7c" }
 
 [dev-dependencies]
 assert_cmd = "2.0.16"
 reqwest = { version = "0.12", features = ["json", "blocking"] }
 serde_json = "1.0.128"
 proptest = "1.5.0"
-test-log = { version ="0.2.16", features = ["color", "trace"] }
+test-log = { version = "0.2.16", features = ["color", "trace"] }
 tokio-stream = "0.1.16"
 
 [profile.release]

@@ -28,7 +28,7 @@ pub struct UnsettledBlobMetadata {
     pub metadata: Vec<HyleOutput>,
 }
 
-#[derive(Default, Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Default, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct HyleOutput {
     pub version: u32,
     pub initial_state: StateDigest,

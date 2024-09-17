@@ -1,3 +1,4 @@
+use bincode::{Decode, Encode};
 use derive_more::Display;
 use serde::{
     de::{self, Visitor},
@@ -12,7 +13,7 @@ use std::{
 };
 use tracing::debug;
 
-#[derive(Default, Debug, Clone, Eq, PartialEq, Hash)]
+#[derive(Default, Debug, Clone, Eq, PartialEq, Hash, Encode, Decode)]
 pub struct TxHash(pub Vec<u8>);
 
 impl TxHash {
@@ -94,32 +95,51 @@ impl Display for BlobsHash {
     }
 }
 
-#[derive(Default, Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash, Display, Copy)]
+#[derive(
+    Default,
+    Debug,
+    Clone,
+    Serialize,
+    Deserialize,
+    Eq,
+    PartialEq,
+    Hash,
+    Display,
+    Copy,
+    Encode,
+    Decode,
+)]
 pub struct BlockHeight(pub u64);
 
-#[derive(Default, Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash, Display)]
+#[derive(
+    Default, Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash, Display, Encode, Decode,
+)]
 pub struct BlobIndex(pub u32);
 
-#[derive(Default, Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash, Display)]
+#[derive(
+    Default, Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash, Display, Encode, Decode,
+)]
 pub struct Identity(pub String);
 
-#[derive(Default, Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash, Display)]
+#[derive(
+    Default, Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash, Display, Encode, Decode,
+)]
 pub struct ContractName(pub String);
 
-#[derive(Debug, Serialize, Deserialize, Default, Clone, Eq, PartialEq, Hash)]
+#[derive(Debug, Serialize, Deserialize, Default, Clone, Eq, PartialEq, Hash, Encode, Decode)]
 pub struct StateDigest(pub Vec<u8>);
 
-#[derive(Debug, Serialize, Deserialize, Default, Clone, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, Default, Clone, PartialEq, Eq, Encode, Decode)]
 pub struct BlobData(pub Vec<u8>);
 
-#[derive(Debug, Serialize, Deserialize, Default, Clone, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, Default, Clone, PartialEq, Eq, Encode, Decode)]
 pub struct Transaction {
     pub version: u32,
     pub transaction_data: TransactionData,
     pub inner: String, // FIXME: to remove
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Encode, Decode)]
 pub enum TransactionData {
     Blob(BlobTransaction),
     Proof(ProofTransaction),
@@ -132,20 +152,20 @@ impl Default for TransactionData {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Default, PartialEq, Eq, Clone)]
+#[derive(Debug, Serialize, Deserialize, Default, PartialEq, Eq, Clone, Encode, Decode)]
 pub struct ProofTransaction {
     pub blobs_references: Vec<BlobReference>,
     pub proof: Vec<u8>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Default, Clone, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, Default, Clone, PartialEq, Eq, Encode, Decode)]
 pub struct BlobReference {
     pub contract_name: ContractName,
     pub blob_tx_hash: TxHash,
     pub blob_index: BlobIndex,
 }
 
-#[derive(Debug, Serialize, Deserialize, Default, Clone, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, Default, Clone, PartialEq, Eq, Encode, Decode)]
 pub struct RegisterContractTransaction {
     pub owner: String,
     pub verifier: String,
@@ -154,14 +174,14 @@ pub struct RegisterContractTransaction {
     pub contract_name: ContractName,
 }
 
-#[derive(Debug, Serialize, Deserialize, Default, PartialEq, Eq, Clone)]
+#[derive(Debug, Serialize, Deserialize, Default, PartialEq, Eq, Clone, Encode, Decode)]
 pub struct BlobTransaction {
     pub identity: Identity,
     pub blobs: Vec<Blob>,
     // FIXME: add a nonce or something to prevent BlobTransaction to share the same hash
 }
 
-#[derive(Debug, Serialize, Deserialize, Default, Clone, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, Default, Clone, PartialEq, Eq, Encode, Decode)]
 pub struct Blob {
     pub contract_name: ContractName,
     pub data: BlobData,
@@ -182,7 +202,7 @@ impl Transaction {
     }
 }
 
-#[derive(Serialize, Deserialize, Default, Clone)]
+#[derive(Serialize, Deserialize, Default, Clone, Encode, Decode)]
 pub struct BlockHash {
     pub inner: Vec<u8>,
 }
@@ -217,7 +237,7 @@ pub trait Hashable<T> {
     fn hash(&self) -> T;
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode)]
 pub struct Block {
     pub parent_hash: BlockHash,
     pub height: BlockHeight,
