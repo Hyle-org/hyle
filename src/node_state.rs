@@ -223,7 +223,7 @@ impl NodeState {
     fn process_verifications(
         &self,
         tx: &ProofTransaction,
-        blobs_metadata: &Vec<HyleOutput>,
+        blobs_metadata: &[HyleOutput],
     ) -> Result<(), Error> {
         // Extract unsettled tx of each blob_ref
         let unsettled_txs: Vec<&UnsettledTransaction> = tx
@@ -297,7 +297,7 @@ impl NodeState {
         // Check for each blob if initial state is correct.
         // As tx is next to be settled, remove all metadata with incorrect initial state.
         for unsettled_blob in unsettled_tx.blobs.iter() {
-            if unsettled_blob.metadata.len() == 0 {
+            if unsettled_blob.metadata.is_empty() {
                 return false;
             }
             let contract = match self.contracts.get(&unsettled_blob.contract_name) {
