@@ -32,8 +32,8 @@ fn start_indexer(mut idxr: Indexer, bus: SharedMessageBus, config: SharedConf) {
 
 fn start_node_state(bus: SharedMessageBus, config: SharedConf) {
     tokio::spawn(async move {
-        let mut cnode_state = NodeState::new(bus);
-        cnode_state.start(config).await
+        let mut node_state = NodeState::new(bus);
+        node_state.start(config).await
     });
 }
 
