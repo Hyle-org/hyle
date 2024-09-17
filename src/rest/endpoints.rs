@@ -6,6 +6,7 @@ use crate::{
     },
     node_state::{NodeStateQuery, NodeStateQueryResponse},
     p2p::network::{Broadcast, MempoolNetMessage, NetInput, NetMessage},
+    utils::logger::LogMe,
 };
 use anyhow::anyhow;
 use axum::{
@@ -32,7 +33,7 @@ async fn handle_send(
             msg: NetMessage::MempoolMessage(MempoolNetMessage::NewTx(tx.clone())),
         })
         .map(|_| ())
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        .ok();
     state
         .bus
         .sender::<NetInput<MempoolNetMessage>>()
