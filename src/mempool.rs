@@ -1,10 +1,7 @@
 use crate::{
-    bus::{
-        command_response::{CommandResponseServerCreate, NeedAnswer},
-        SharedMessageBus,
-    },
-    command_response_select,
+    bus::{command_response::NeedAnswer, SharedMessageBus},
     consensus::ConsensusEvent,
+    listen_to_bus,
     model::{Hashable, Transaction},
     p2p::network::{MempoolNetMessage, NetInput},
 };
@@ -50,19 +47,19 @@ impl Mempool {
     /// start starts the mempool server.
     pub async fn start(&mut self) {
         impl NeedAnswer<MempoolResponse> for MempoolCommand {}
-        let mut net_receiver = self.bus.receiver::<NetInput<MempoolNetMessage>>().await;
-        let mut event_receiver = self.bus.receiver::<ConsensusEvent>().await;
+        type NetInputMempoolNetMessage = NetInput<MempoolNetMessage>;
         loop {
-            command_response_select! {
+            listen_to_bus! {
                 command_response<MempoolCommand, MempoolResponse>(self.bus) = cmd => {
-                     Ok(None)
+                     self.handle_command(cmd)
                 },
-                Ok(cmd) = net_receiver.recv() => {
-                    self.handle_net_input(cmd)
+                listen<NetInputMempoolNetMessage>(self.bus) = cmd => {
+                    self.handle_net_input(cmd);
                 },
-                Ok(cmd) = event_receiver.recv() => {
+
+                listen<ConsensusEvent>(self.bus) = cmd => {
                     self.handle_event(cmd);
-                }
+                },
             }
         }
     }
