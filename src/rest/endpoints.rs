@@ -2,6 +2,7 @@ use crate::model::Transaction;
 use crate::tools::mock_workflow::RunScenario;
 use crate::{
     bus::command_response::CmdRespClient,
+    indexer::model::TransactionOwned,
     model::{
         BlobTransaction, BlockHeight, ContractName, Hashable, ProofTransaction,
         RegisterContractTransaction, TransactionData, TxHash,
@@ -67,38 +68,31 @@ pub async fn get_transaction(
     Path(tx_hash): Path<String>,
     State(state): State<RouterState>,
 ) -> Result<impl IntoResponse, StatusCode> {
-    state
-        .idxr
-        .lock()
-        .await
-        .get_tx(&tx_hash)
-        .map(Json)
-        .ok_or(StatusCode::NOT_FOUND)
+    match state.idxr.lock().await.get_tx(&tx_hash) {
+        Ok(Some(tx)) => Ok(Json(TransactionOwned::from(tx))),
+        Ok(None) => Err(StatusCode::NOT_FOUND),
+        Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
+    }
 }
 
 pub async fn get_block(
     Path(height): Path<BlockHeight>,
     State(state): State<RouterState>,
 ) -> Result<impl IntoResponse, StatusCode> {
-    state
-        .idxr
-        .lock()
-        .await
-        .get_block(&height)
-        .map(Json)
-        .ok_or(StatusCode::NOT_FOUND)
+    match state.idxr.lock().await.get_block(height) {
+        Ok(Some(block)) => Ok(Json(block)),
+        Ok(None) => Err(StatusCode::NOT_FOUND),
+        Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
+    }
 }
 
 pub async fn get_current_block(
     State(state): State<RouterState>,
 ) -> Result<impl IntoResponse, StatusCode> {
-    state
-        .idxr
-        .lock()
-        .await
-        .last_block()
-        .map(Json)
-        .ok_or(StatusCode::NOT_FOUND)
+    match state.idxr.lock().await.last_block() {
+        Some(block) => Ok(Json(block)),
+        None => Err(StatusCode::NOT_FOUND),
+    }
 }
 
 pub async fn get_contract(

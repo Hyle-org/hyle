@@ -99,7 +99,7 @@ async fn main() -> Result<()> {
 
     start_mempool(SharedMessageBus::new_handle(&bus));
 
-    let idxr = Indexer::new();
+    let idxr = Indexer::new()?;
     start_indexer(idxr.share(), bus.new_handle(), Arc::clone(&config));
     start_node_state(bus.new_handle(), Arc::clone(&config));
     start_consensus(bus.new_handle(), Arc::clone(&config));

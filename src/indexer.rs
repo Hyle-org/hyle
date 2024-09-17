@@ -1,30 +1,28 @@
+mod blobs;
+mod blocks;
+mod contracts;
+mod db;
+pub mod model;
+mod proofs;
+mod store;
+mod transactions;
+
 use crate::{
     bus::SharedMessageBus,
     consensus::ConsensusEvent,
-    model::{Block, BlockHeight, Hashable, Transaction},
-    utils::{conf::SharedConf, logger::LogMe},
+    model::{Block, BlockHeight, Hashable},
+    utils::conf::SharedConf,
 };
 use anyhow::Result;
-use bincode::{self, Decode, Encode};
-use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, fs, sync::Arc};
+use core::str;
+use db::Db;
+use model::{Contract, Transaction};
+use std::sync::Arc;
 use tokio::{
     sync::Mutex,
     time::{sleep, Duration},
 };
-use tracing::{error, info, warn};
-
-type Position = usize;
-
-#[derive(Debug, Serialize, Deserialize, Encode, Decode)]
-struct TxRef(BlockHeight, Position);
-
-#[derive(Debug, Serialize, Deserialize, Encode, Decode)]
-pub struct IndexerInner {
-    blocks: HashMap<BlockHeight, Block>,
-    txs: HashMap<String, TxRef>,
-    height: BlockHeight,
-}
+use tracing::{debug, error, info};
 
 #[derive(Debug, Clone)]
 pub struct Indexer {
@@ -32,14 +30,10 @@ pub struct Indexer {
 }
 
 impl Indexer {
-    pub fn new() -> Self {
-        Self {
-            inner: Arc::new(Mutex::new(IndexerInner {
-                blocks: HashMap::new(),
-                txs: HashMap::new(),
-                height: BlockHeight(0),
-            })),
-        }
+    pub fn new() -> Result<Self> {
+        Ok(Self {
+            inner: Arc::new(Mutex::new(IndexerInner::new()?)),
+        })
     }
 
     pub fn share(&self) -> Self {
@@ -52,39 +46,76 @@ impl Indexer {
         let interval = config.storage.interval;
         let mut receiver = bus.receiver::<ConsensusEvent>().await;
 
-        if let Err(e) = self.lock().await.load_from_disk() {
-            warn!("Loading from disk: {}", e);
-        }
-
         loop {
             sleep(Duration::from_secs(interval)).await;
             tokio::select! {
                 Ok(event) = receiver.recv() => {
                     match event {
-                        ConsensusEvent::CommitBlock{block, ..} => {
-                            info!("new block {} with {} txs", block.height, block.txs.len());
-                            let mut guard = self.inner.lock().await;
-                            guard.height = block.height;
-                            for (i, tx) in block.txs.iter().enumerate() {
-                                let hash = format!("{}", tx.hash());
-                                guard.txs.insert(hash, TxRef(block.height, i));
-                            }
-                            _ = guard.blocks.insert(block.height, block);
-                        }
+                        ConsensusEvent::CommitBlock{block, ..} => self.handle_block(block).await,
                     }
                 }
             }
-
-            if let Err(e) = self.lock().await.save_to_disk() {
-                error!("Saving to disk: {}", e);
-            }
         }
     }
-}
 
-impl Default for Indexer {
-    fn default() -> Self {
-        Self::new()
+    async fn handle_block(&mut self, block: Block) {
+        info!("new block {} with {} txs", block.height, block.txs.len());
+        let mut guard = self.inner.lock().await;
+        for (ti, tx) in block.txs.iter().enumerate() {
+            let tx_hash = format!("{}", tx.hash());
+            debug!("tx:{} hash {}", ti, tx_hash);
+            match tx.transaction_data {
+                crate::model::TransactionData::Blob(ref tx) => {
+                    for (bi, blob) in tx.blobs.iter().enumerate() {
+                        if let Err(e) =
+                            guard
+                                .db
+                                .blobs
+                                .store(block.height, ti, &tx_hash, bi, &tx.identity, blob)
+                        {
+                            error!("storing blob of tx {} in block {}: {}", ti, block.height, e);
+                        }
+                    }
+                }
+                crate::model::TransactionData::Proof(ref tx) => {
+                    if let Err(e) = guard.db.proofs.store(
+                        block.height,
+                        ti,
+                        &tx_hash,
+                        &tx.blobs_references,
+                        &tx.proof,
+                    ) {
+                        error!(
+                            "storing proof of tx {} in block {}: {}",
+                            ti, block.height, e
+                        );
+                    }
+                }
+                crate::model::TransactionData::RegisterContract(ref tx) => {
+                    if let Err(e) = guard.db.contracts.store(tx) {
+                        error!(
+                            "storing contract {} of tx {} in block {}: {}",
+                            tx.contract_name.0, ti, block.height, e
+                        );
+                    }
+                }
+            }
+            if let Err(e) =
+                guard
+                    .db
+                    .transactions
+                    .store(block.height, ti, &tx_hash, &tx.transaction_data)
+            {
+                error!(
+                    "storing contract of tx {} in block {}: {}",
+                    ti, block.height, e
+                );
+            }
+        }
+        // store block
+        if let Err(e) = guard.db.blocks.store(block) {
+            error!("storing block: {}", e);
+        }
     }
 }
 
@@ -96,44 +127,41 @@ impl std::ops::Deref for Indexer {
     }
 }
 
+#[derive(Debug)]
+pub struct IndexerInner {
+    // txs: Vec<Transaction>,
+    // contracts: Vec<Contract>,
+    // blobs: Vec<Blob>,
+    // proofs: Vec<Proof>,
+    pub db: Db,
+}
+
 impl IndexerInner {
-    pub fn save_to_disk(&self) -> Result<()> {
-        let mut writer = fs::File::create("indexer.bin").log_error("Create indexer file")?;
-        bincode::encode_into_std_write(self, &mut writer, bincode::config::standard())
-            .log_error("Serializing Ctx chain")?;
-        info!("Saved {} blocks to disk", self.blocks.len());
-
-        Ok(())
-    }
-
-    pub fn load_from_disk(&self) -> Result<Self> {
-        let mut reader = fs::File::open("indexer.bin").log_warn("Loading indexer from disk")?;
-        let ctx: IndexerInner =
-            bincode::decode_from_std_read(&mut reader, bincode::config::standard())
-                .log_warn("Deserializing data from disk")?;
-        info!("Loaded {} blocks from disk.", ctx.blocks.len());
-
-        Ok(ctx)
+    pub fn new() -> Result<Self> {
+        Ok(Self {
+            // txs: Vec::new(),
+            // contracts: Vec::new(),
+            // blobs: Vec::new(),
+            // proofs: Vec::new(),
+            db: Db::new("indexer.db")?,
+        })
     }
 
     // API:
 
-    pub fn get_block(&self, height: &BlockHeight) -> Option<Block> {
-        self.blocks.get(height).cloned()
+    pub fn get_contract(&self, name: &str) -> Result<Option<Contract>> {
+        self.db.contracts.retrieve(name)
+    }
+
+    pub fn get_block(&self, height: BlockHeight) -> Result<Option<Block>> {
+        self.db.blocks.retrieve(height)
     }
 
     pub fn last_block(&self) -> Option<Block> {
-        self.blocks.get(&self.height).cloned()
+        self.db.blocks.last.clone()
     }
 
-    pub fn get_tx(&self, txhash: &str) -> Option<Transaction> {
-        self.txs
-            .get(txhash)
-            .and_then(|TxRef(h, i)| self.blocks.get(h).and_then(|b| b.txs.get(*i)))
-            .cloned()
-    }
-
-    pub fn _get_txs(&self) -> Vec<Transaction> {
-        todo!()
+    pub fn get_tx(&self, tx_hash: &str) -> Result<Option<Transaction>> {
+        self.db.transactions.retrieve(tx_hash)
     }
 }
