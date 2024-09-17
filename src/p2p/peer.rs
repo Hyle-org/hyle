@@ -16,6 +16,7 @@ use crate::p2p::network::Broadcast;
 use crate::p2p::network::ConsensusNetMessage;
 use crate::p2p::network::NetInput;
 use crate::p2p::stream::read_stream;
+use crate::p2p::stream::send_binary;
 use crate::utils::conf::SharedConf;
 
 pub struct Peer {
@@ -64,13 +65,14 @@ impl Peer {
         if msg.peer_id == self.id {
             return Ok(());
         }
-        if !self.bloom_filter.check(&msg.msg.to_binary()) {
-            self.bloom_filter.set(&msg.msg.to_binary());
+        let binary = msg.msg.to_binary();
+        if !self.bloom_filter.check(&binary) {
+            self.bloom_filter.set(&binary);
             debug!(
                 "Broadcast message from #{} to #{}: {:?}",
                 msg.peer_id, self.id, msg
             );
-            send_net_message(&mut self.stream, msg.msg).await
+            send_binary(&mut self.stream, binary.as_slice()).await
         } else {
             trace!("Message from #{} already broadcasted", msg.peer_id);
             Ok(())
