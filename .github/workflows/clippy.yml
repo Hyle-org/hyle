@@ -1,0 +1,25 @@
+name: 'clippy'
+
+on:
+  pull_request:
+    paths: ['**/*.rs']
+
+permissions:
+  contents: read
+  pull-requests: write
+  checks: write
+
+jobs:
+  clippy:
+      name: clippy check
+      runs-on: ubuntu-latest
+      steps:
+          - uses: actions/checkout@v4
+          - uses: actions-rs/toolchain@v1
+            with:
+                toolchain: stable 
+                components: clippy
+                override: true
+          - uses: LoliGothick/clippy-check@master
+            with:
+                token: ${{ secrets.GITHUB_TOKEN }}
