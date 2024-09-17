@@ -19,7 +19,7 @@ use model::{Contract, HyleOutput, Timeouts, UnsettledBlobMetadata, UnsettledTran
 use ordered_tx_map::OrderedTxMap;
 use std::collections::{HashMap, HashSet};
 use tokio::select;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 mod model;
 mod ordered_tx_map;
