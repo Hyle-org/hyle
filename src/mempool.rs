@@ -48,19 +48,17 @@ impl Mempool {
     pub async fn start(&mut self) {
         impl NeedAnswer<MempoolResponse> for MempoolCommand {}
         type NetInputMempoolNetMessage = NetInput<MempoolNetMessage>;
-        loop {
-            listen_to_bus! {
-                command_response<MempoolCommand, MempoolResponse>(self.bus) = cmd => {
-                     self.handle_command(cmd)
-                },
-                listen<NetInputMempoolNetMessage>(self.bus) = cmd => {
-                    self.handle_net_input(cmd);
-                },
+        listen_to_bus! {
+            command_response<MempoolCommand, MempoolResponse>(self.bus) = cmd => {
+                 self.handle_command(cmd)
+            },
+            listen<NetInputMempoolNetMessage>(self.bus) = cmd => {
+                self.handle_net_input(cmd);
+            },
 
-                listen<ConsensusEvent>(self.bus) = cmd => {
-                    self.handle_event(cmd);
-                },
-            }
+            listen<ConsensusEvent>(self.bus) = cmd => {
+                self.handle_event(cmd);
+            },
         }
     }
 
