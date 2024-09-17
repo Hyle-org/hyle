@@ -295,7 +295,7 @@ name = "bincode"
 version = "2.0.0-rc.2"
 source = "git+https://github.com/bincode-org/bincode.git?tag=v2.0.0-rc.2#6c219e9214bda2bdce1327db6ed7f66d2fa4bf02"
 dependencies = [
- "bincode_derive",
+ "bincode_derive 2.0.0-rc.2",
  "serde",
 ]
 
@@ -309,11 +309,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "bincode"
+version = "2.0.0-rc.3"
+source = "git+https://github.com/bincode-org/bincode.git?tag=v2.0.0-rc.3#aada4bb4cb457677a4b8e47572ae7ca8dd44927c"
+dependencies = [
+ "bincode_derive 2.0.0-rc.3",
+ "serde",
+]
+
+[[package]]
 name = "bincode_derive"
 version = "2.0.0-rc.2"
 source = "git+https://github.com/bincode-org/bincode.git?tag=v2.0.0-rc.2#6c219e9214bda2bdce1327db6ed7f66d2fa4bf02"
 dependencies = [
- "virtue",
+ "virtue 0.0.8",
+]
+
+[[package]]
+name = "bincode_derive"
+version = "2.0.0-rc.3"
+source = "git+https://github.com/bincode-org/bincode.git?tag=v2.0.0-rc.3#aada4bb4cb457677a4b8e47572ae7ca8dd44927c"
+dependencies = [
+ "virtue 0.0.13",
 ]
 
 [[package]]
@@ -429,7 +446,7 @@ version = "0.9.0"
 source = "git+https://github.com/lambdaclass/cairo-vm?rev=e61ae177edb94e29470fed23bdda43329b16c057#e61ae177edb94e29470fed23bdda43329b16c057"
 dependencies = [
  "anyhow",
- "bincode 2.0.0-rc.3",
+ "bincode 2.0.0-rc.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "bitvec",
  "cairo-felt",
  "generic-array",
@@ -997,7 +1014,7 @@ dependencies = [
  "anymap",
  "assert_cmd",
  "axum",
- "bincode 2.0.0-rc.2",
+ "bincode 2.0.0-rc.3 (git+https://github.com/bincode-org/bincode.git?tag=v2.0.0-rc.3)",
  "cairo-platinum-prover",
  "clap",
  "config",
@@ -2719,6 +2736,12 @@ name = "virtue"
 version = "0.0.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7b60dcd6a64dd45abf9bd426970c9843726da7fc08f44cd6fcebf68c21220a63"
+
+[[package]]
+name = "virtue"
+version = "0.0.13"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9dcc60c0624df774c82a0ef104151231d37da4962957d691c011c852b2473314"
 
 [[package]]
 name = "wait-timeout"
