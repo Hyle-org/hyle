@@ -13,7 +13,7 @@ use std::{
 };
 use tracing::debug;
 
-#[derive(Default, Debug, Clone, Eq, PartialEq, Hash, Encode, Decode)]
+#[derive(Default, Clone, Eq, PartialEq, Hash, Encode, Decode)]
 pub struct TxHash(pub Vec<u8>);
 
 impl TxHash {
@@ -34,6 +34,14 @@ impl Serialize for TxHash {
         S: serde::Serializer,
     {
         serializer.serialize_str(hex::encode(&self.0).as_str())
+    }
+}
+
+impl std::fmt::Debug for TxHash {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("TxHash")
+            .field(&hex::encode(&self.0))
+            .finish()
     }
 }
 
@@ -64,7 +72,7 @@ impl<'de> Deserialize<'de> for TxHash {
     }
 }
 
-#[derive(Default, Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
+#[derive(Default, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
 pub struct BlobsHash(pub Vec<u8>);
 
 impl BlobsHash {
@@ -92,6 +100,13 @@ impl BlobsHash {
 impl Display for BlobsHash {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", hex::encode(&self.0))
+    }
+}
+impl std::fmt::Debug for BlobsHash {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("BlobsHash ")
+            .field(&hex::encode(&self.0))
+            .finish()
     }
 }
 
@@ -228,8 +243,10 @@ impl Display for BlockHash {
 }
 
 impl std::fmt::Debug for BlockHash {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:x?}", &self.inner)
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("BlockHash ")
+            .field(&hex::encode(&self.inner))
+            .finish()
     }
 }
 

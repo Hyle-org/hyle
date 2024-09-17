@@ -19,7 +19,7 @@ use model::{Contract, HyleOutput, Timeouts, UnsettledBlobMetadata, UnsettledTran
 use ordered_tx_map::OrderedTxMap;
 use std::collections::{HashMap, HashSet};
 use tokio::select;
-use tracing::{debug, error, info};
+use tracing::{debug, error, field::debug, info, warn};
 
 pub mod model;
 mod ordered_tx_map;
@@ -202,6 +202,7 @@ impl NodeState {
             })
             .collect::<HashSet<_>>();
 
+        debug!("Next unsettled txs: {:?}", unique_next_unsettled_txs);
         for unsettled_tx in unique_next_unsettled_txs {
             if self.is_settlement_ready(unsettled_tx) {
                 self.settle_tx(unsettled_tx)?;
@@ -302,7 +303,13 @@ impl NodeState {
             }
             let contract = match self.contracts.get(&unsettled_blob.contract_name) {
                 Some(contract) => contract,
-                None => return false, // No contract found for this blob
+                None => {
+                    warn!(
+                        "Tx: {}: No contract '{}' found when checking for settlement",
+                        unsettled_tx.hash, unsettled_blob.contract_name
+                    );
+                    return false;
+                } // No contract found for this blob
             };
 
             let has_one_valid_initial_state = unsettled_blob
@@ -311,6 +318,10 @@ impl NodeState {
                 .any(|hyle_output| hyle_output.initial_state == contract.state);
 
             if !has_one_valid_initial_state {
+                info!(
+                    "Tx: {}: No initial state match current contract state for contract '{}'",
+                    unsettled_tx.hash, unsettled_blob.contract_name
+                );
                 return false; // No valid metadata found for this blob
             }
         }

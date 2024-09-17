@@ -46,9 +46,9 @@ fn e2e_contract_state_updated() {
         url("/v1/contract/register"),
         RegisterContractTransaction {
             owner: "test".to_string(),
-            verifier: "yoloo".to_string(),
+            verifier: "test".to_string(),
             program_id: vec![1, 2, 3],
-            state_digest: StateDigest::default(),
+            state_digest: StateDigest(vec![0, 1, 2, 3]),
             contract_name: ContractName("c1".to_string()),
         },
     )
@@ -60,9 +60,9 @@ fn e2e_contract_state_updated() {
         url("/v1/contract/register"),
         RegisterContractTransaction {
             owner: "test".to_string(),
-            verifier: "yoloo".to_string(),
+            verifier: "test".to_string(),
             program_id: vec![1, 2, 3],
-            state_digest: StateDigest::default(),
+            state_digest: StateDigest(vec![0, 1, 2, 3]),
             contract_name: ContractName("c2".to_string()),
         },
     )
