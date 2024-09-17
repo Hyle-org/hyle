@@ -10,14 +10,17 @@ permissions:
   checks: write
 
 jobs:
-    clippy:
-        name: Clippy
-        runs-on: ubuntu-latest
-        steps:
-            - uses: actions/checkout@v4
-            - uses: dtolnay/rust-toolchain@stable
-              with:
-                  components: clippy
-            - uses: auguwu/clippy-action@1.4.0
-              with:
-                  token: ${{secrets.GITHUB_TOKEN}}
+  clippy:
+      name: clippy check
+      runs-on: ubuntu-latest
+      steps:
+          - uses: actions/checkout@v4
+          - uses: actions-rs/toolchain@v1
+            with:
+                toolchain: stable 
+                components: clippy
+                override: true
+          - uses: LoliGothick/clippy-check@master
+            with:
+                token: ${{ secrets.GITHUB_TOKEN }}
+                deny: warnings
