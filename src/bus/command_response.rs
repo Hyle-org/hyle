@@ -73,7 +73,7 @@ impl CmdRespClient for SharedMessageBus {
 }
 
 #[macro_export]
-macro_rules! listen_to_bus {
+macro_rules! handle_messages {
     ( $(command_response <$command:ident,$response:ident>($bus:expr) = $res:ident => $handler:block)+, $($rest:tt)*) => {{
         use paste::paste;
         use crate::bus::command_response::*;
@@ -86,7 +86,7 @@ macro_rules! listen_to_bus {
             }
         )+
 
-        listen_to_bus! {
+        handle_messages! {
             $($rest)*
             $(
                 Ok(Query{ id, data: $res }) = paste!([<receiver_query_ $command:lower>]).recv() => {
@@ -101,7 +101,6 @@ macro_rules! listen_to_bus {
 
     ( $(listen <$message:ident>($bus:expr) = $res:ident => $handler:block)+, $($rest:tt)*) => {{
         use paste::paste;
-        use crate::bus::command_response::*;
 
         $(
             // In order to generate a variable with the name server$command$response for each server
@@ -110,7 +109,7 @@ macro_rules! listen_to_bus {
             }
         )+
 
-        listen_to_bus! {
+        handle_messages! {
             $($rest)*
             $(
                 Ok($res) = paste!([<receiver_ $message:lower>]).recv() => {
@@ -130,4 +129,4 @@ macro_rules! listen_to_bus {
     }};
 }
 
-pub use listen_to_bus;
+pub use handle_messages;

@@ -1,7 +1,7 @@
 use crate::{
     bus::{command_response::NeedAnswer, SharedMessageBus},
     consensus::ConsensusEvent,
-    listen_to_bus,
+    handle_messages,
     model::{Hashable, Transaction},
     p2p::network::{MempoolNetMessage, NetInput},
 };
@@ -48,7 +48,7 @@ impl Mempool {
     pub async fn start(&mut self) {
         impl NeedAnswer<MempoolResponse> for MempoolCommand {}
         type NetInputMempoolNetMessage = NetInput<MempoolNetMessage>;
-        listen_to_bus! {
+        handle_messages! {
             command_response<MempoolCommand, MempoolResponse>(self.bus) = cmd => {
                  self.handle_command(cmd)
             },

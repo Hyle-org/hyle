@@ -1,10 +1,7 @@
 use crate::{
-    bus::{
-        command_response::{CommandResponseServerCreate, NeedAnswer},
-        SharedMessageBus,
-    },
+    bus::{command_response::NeedAnswer, SharedMessageBus},
     consensus::ConsensusEvent,
-    handle_server_query,
+    handle_messages,
     model::{
         BlobTransaction, BlobsHash, Block, BlockHeight, ContractName, Hashable, ProofTransaction,
         RegisterContractTransaction, StateDigest, Transaction, TxHash,
@@ -18,7 +15,6 @@ use anyhow::{bail, Context, Error, Result};
 use model::{Contract, HyleOutput, Timeouts, UnsettledBlobMetadata, UnsettledTransaction};
 use ordered_tx_map::OrderedTxMap;
 use std::collections::{HashMap, HashSet};
-use tokio::select;
 use tracing::{debug, error, info, warn};
 
 pub mod model;
@@ -62,21 +58,14 @@ impl NodeState {
             self.current_height
         );
         impl NeedAnswer<NodeStateQueryResponse> for NodeStateQuery {}
-        let mut node_state_server = self
-            .bus
-            .create_server::<NodeStateQuery, NodeStateQueryResponse>()
-            .await;
-        let mut event_receiver = self.bus.receiver::<ConsensusEvent>().await;
 
-        loop {
-            select! {
-                Ok(cmd) = event_receiver.recv() => {
-                    self.handle_event(cmd);
-                }
-                Ok(query) = node_state_server.get_query() => {
-                    handle_server_query!(node_state_server, query, self, handle_command);
-                }
-            }
+        handle_messages! {
+            command_response<NodeStateQuery,NodeStateQueryResponse>(self.bus) = cmd => {
+                self.handle_command(cmd)
+            },
+            listen<ConsensusEvent>(self.bus) = event => {
+                self.handle_event(event);
+            },
         }
     }
     fn handle_command(
