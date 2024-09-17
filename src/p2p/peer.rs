@@ -177,7 +177,7 @@ impl Peer {
                 }
                 res = wait_tcp => {
                     match res {
-                        Ok(message) => match self.handle_stream_message(message).await {
+                        Ok((message, _)) => match self.handle_stream_message(message).await {
                             Ok(_) => continue,
                             Err(e) => {
                                 warn!("Error while handling net message: {}", e);

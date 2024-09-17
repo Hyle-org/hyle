@@ -5,7 +5,7 @@ use crate::{
     utils::{conf::SharedConf, logger::LogMe},
 };
 use anyhow::Result;
-use bincode;
+use bincode::{self, Decode, Encode};
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, fs, sync::Arc};
 use tokio::{
@@ -16,10 +16,10 @@ use tracing::{error, info, warn};
 
 type Position = usize;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Encode, Decode)]
 struct TxRef(BlockHeight, Position);
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Encode, Decode)]
 pub struct IndexerInner {
     blocks: HashMap<BlockHeight, Block>,
     txs: HashMap<String, TxRef>,
@@ -97,18 +97,20 @@ impl std::ops::Deref for Indexer {
 }
 
 impl IndexerInner {
-    pub fn save_to_disk(&mut self) -> Result<()> {
-        let writer = fs::File::create("indexer.bin").log_error("Create indexer file")?;
-        bincode::serialize_into(writer, self).log_error("Serializing indexer chain")?;
+    pub fn save_to_disk(&self) -> Result<()> {
+        let mut writer = fs::File::create("indexer.bin").log_error("Create indexer file")?;
+        bincode::encode_into_std_write(self, &mut writer, bincode::config::standard())
+            .log_error("Serializing Ctx chain")?;
         info!("Saved {} blocks to disk", self.blocks.len());
 
         Ok(())
     }
 
     pub fn load_from_disk(&self) -> Result<Self> {
-        let reader = fs::File::open("indexer.bin").log_warn("Loading indexer from disk")?;
-        let ctx = bincode::deserialize_from::<_, Self>(reader)
-            .log_warn("Deserializing data from disk")?;
+        let mut reader = fs::File::open("indexer.bin").log_warn("Loading indexer from disk")?;
+        let ctx: IndexerInner =
+            bincode::decode_from_std_read(&mut reader, bincode::config::standard())
+                .log_warn("Deserializing data from disk")?;
         info!("Loaded {} blocks from disk.", ctx.blocks.len());
 
         Ok(ctx)

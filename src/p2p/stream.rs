@@ -9,7 +9,7 @@ use crate::utils::logger::LogMe;
 
 use super::network::NetMessage;
 
-pub async fn read_stream(stream: &mut TcpStream) -> Result<NetMessage, Error> {
+pub async fn read_stream(stream: &mut TcpStream) -> Result<(NetMessage, usize), Error> {
     let ready = stream
         .ready(Interest::READABLE | Interest::WRITABLE | Interest::ERROR)
         .await
@@ -42,7 +42,7 @@ pub async fn send_net_message(stream: &mut TcpStream, msg: NetMessage) -> Result
 async fn read_net_message_from_buffer(
     stream: &mut TcpStream,
     msg_size: u32,
-) -> Result<NetMessage, Error> {
+) -> Result<(NetMessage, usize), Error> {
     if msg_size == 0 {
         bail!("Connection closed by remote (1)")
     }
@@ -60,6 +60,7 @@ async fn read_net_message_from_buffer(
     parse_net_message(&buf).await
 }
 
-async fn parse_net_message(buf: &[u8]) -> Result<NetMessage, Error> {
-    bincode::deserialize::<NetMessage>(buf).map_err(|_| anyhow!("Could not decode NetMessage"))
+async fn parse_net_message(buf: &[u8]) -> Result<(NetMessage, usize), Error> {
+    bincode::decode_from_slice(buf, bincode::config::standard())
+        .map_err(|_| anyhow!("Could not decode NetMessage"))
 }
