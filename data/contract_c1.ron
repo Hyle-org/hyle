@@ -2,6 +2,6 @@ RegisterContractTransaction(
   owner: "client",
   verifier: "yoloo",
   program_id: [1,2,3],
-  state_digest: [],
+  state_digest: [0,1,2,3],
   contract_name: "c1"
 )
