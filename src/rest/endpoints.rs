@@ -1,12 +1,15 @@
+use crate::model::Transaction;
 use crate::{
     bus::command_response::CmdRespClient,
     model::{
         BlobTransaction, BlockHeight, ContractName, Hashable, ProofTransaction,
-        RegisterContractTransaction, Transaction, TransactionData, TxHash,
+        RegisterContractTransaction, TransactionData, TxHash,
     },
     node_state::{NodeStateQuery, NodeStateQueryResponse},
-    p2p::network::{MempoolNetMessage, OutboundMessage},
 };
+use bincode::{Decode, Encode};
+use serde::{Deserialize, Serialize};
+
 use anyhow::anyhow;
 use axum::{
     extract::{Path, State},
@@ -17,6 +20,11 @@ use axum::{
 
 use super::{AppError, RouterState};
 
+#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode)]
+pub enum RestApiMessage {
+    NewTx(Transaction),
+}
+
 async fn handle_send(
     state: RouterState,
     payload: TransactionData,
@@ -25,18 +33,9 @@ async fn handle_send(
     let tx_hash = tx.hash();
     state
         .bus
-        .sender::<OutboundMessage>()
+        .sender::<RestApiMessage>()
         .await
-        .send(OutboundMessage::broadcast(MempoolNetMessage::NewTx(
-            tx.clone(),
-        )))
-        .map(|_| ())
-        .ok();
-    state
-        .bus
-        .sender::<MempoolNetMessage>()
-        .await
-        .send(MempoolNetMessage::NewTx(tx))
+        .send(RestApiMessage::NewTx(tx))
         .map(|_| tx_hash)
         .map(Json)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)

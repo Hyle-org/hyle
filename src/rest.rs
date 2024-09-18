@@ -8,7 +8,7 @@ use axum::{
 };
 use tracing::info;
 
-mod endpoints;
+pub mod endpoints;
 
 pub struct RouterState {
     pub bus: SharedMessageBus,
@@ -49,7 +49,7 @@ impl Clone for RouterState {
 }
 
 // Make our own error that wraps `anyhow::Error`.
-struct AppError(StatusCode, anyhow::Error);
+pub struct AppError(StatusCode, anyhow::Error);
 
 // Tell axum how to convert `AppError` into a response.
 impl IntoResponse for AppError {
