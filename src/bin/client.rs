@@ -2,14 +2,12 @@ use anyhow::{Context, Result};
 use clap::{command, Args, Parser, Subcommand};
 use config::{Config, ConfigError, Environment, File};
 use hyle::{
+    mempool::MempoolNetMessage,
     model::{
         BlobTransaction, ProofTransaction, RegisterContractTransaction, Transaction,
         TransactionData,
     },
-    p2p::{
-        network::{MempoolNetMessage, NetMessage},
-        stream::send_net_message,
-    },
+    p2p::{network::NetMessage, stream::send_net_message},
     utils::conf::{self, SharedConf},
 };
 use serde::de::Deserialize;

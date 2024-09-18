@@ -1,4 +1,4 @@
-use crate::model::{Block, Transaction};
+use crate::{consensus::ConsensusNetMessage, mempool::MempoolNetMessage};
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 
@@ -38,16 +38,6 @@ pub enum HandshakeNetMessage {
     Verack,
     Ping,
     Pong,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode)]
-pub enum MempoolNetMessage {
-    NewTx(Transaction),
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode)]
-pub enum ConsensusNetMessage {
-    CommitBlock(Block),
 }
 
 impl From<HandshakeNetMessage> for NetMessage {
