@@ -50,6 +50,12 @@ pub enum ConsensusNetMessage {
     CommitBlock(Block),
 }
 
+impl From<HandshakeNetMessage> for NetMessage {
+    fn from(msg: HandshakeNetMessage) -> Self {
+        NetMessage::HandshakeMessage(msg)
+    }
+}
+
 impl From<MempoolNetMessage> for NetMessage {
     fn from(msg: MempoolNetMessage) -> Self {
         NetMessage::MempoolMessage(msg)

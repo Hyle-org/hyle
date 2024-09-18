@@ -78,7 +78,7 @@ impl Peer {
                 info!("Got peer version {:?}", v);
                 send_net_message(
                     &mut self.stream,
-                    NetMessage::HandshakeMessage(HandshakeNetMessage::Verack),
+                    NetMessage::from(HandshakeNetMessage::Verack),
                 )
                 .await
             }
@@ -87,7 +87,7 @@ impl Peer {
                 debug!("Got ping");
                 send_net_message(
                     &mut self.stream,
-                    NetMessage::HandshakeMessage(HandshakeNetMessage::Pong),
+                    NetMessage::from(HandshakeNetMessage::Pong),
                 )
                 .await
             }
@@ -197,7 +197,7 @@ impl Peer {
                                     }
                                 }
                                 debug!("ping");
-                                send_net_message(&mut self.stream, NetMessage::HandshakeMessage(HandshakeNetMessage::Ping)).await
+                                send_net_message(&mut self.stream, NetMessage::from(HandshakeNetMessage::Ping)).await
                             }
                         };
 
@@ -227,7 +227,7 @@ impl Peer {
     pub async fn handshake(&mut self) -> Result<(), Error> {
         send_net_message(
             &mut self.stream,
-            NetMessage::HandshakeMessage(HandshakeNetMessage::Version(Version { id: 1 })),
+            NetMessage::from(HandshakeNetMessage::Version(Version { id: 1 })),
         )
         .await
     }
