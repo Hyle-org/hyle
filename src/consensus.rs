@@ -57,7 +57,7 @@ impl BFTRoundState {
 pub struct ConsensusProposal {
     pub slot: u64,
     pub view: u64,
-    pub previous_commit_quorum_certificate: u64, // FIXME. This is the previous block Quorum Certificate
+    pub previous_commit_quorum_certificate: u64, // FIXME. Set correct type
     pub block: Block,                            // FIXME: Block ou cut ?
 }
 
@@ -149,6 +149,11 @@ impl Consensus {
         true
     }
 
+    fn leader_id(&self) -> u64 {
+        // TODO
+        1
+    }
+
     fn handle_net_message(
         &mut self,
         msg: ConsensusNetMessage,
@@ -162,7 +167,8 @@ impl Consensus {
                 let vote = self.verify_consensus_proposal(consensus_proposal);
                 // Responds PrepareVote message to leader with replica's vote on this proposal
                 _ = outbound_sender
-                    .send(OutboundMessage::broadcast(
+                    .send(OutboundMessage::send(
+                        self.leader_id(),
                         ConsensusNetMessage::PrepareVote(vote),
                     ))
                     .context("Failed to send ConsensusNetMessage::Confirm msg on the bus")?;
@@ -204,7 +210,10 @@ impl Consensus {
                 self.bft_round_state.prepare_quorum_certificate = prepare_quorum_certificate;
                 // Responds ConfirmAck to leader
                 _ = outbound_sender
-                    .send(OutboundMessage::broadcast(ConsensusNetMessage::ConfirmAck))
+                    .send(OutboundMessage::send(
+                        self.leader_id(),
+                        ConsensusNetMessage::ConfirmAck,
+                    ))
                     .context("Failed to send ConsensusNetMessage::ConfirmAck msg on the bus")?;
                 Ok(())
             }
@@ -305,8 +314,8 @@ impl Consensus {
                                     "Failed to send ConsensusEvent::CommitBlock msg on the bus",
                                 )?;
                             // send to network
-                            // _ = consensus_net_msg_sender
-                            //     .send(ConsensusNetMessage::CommitBlock(block)).context("Failed to send ConsensusNetMessage::CommitBlock msg on the bus")?;
+                            // _ = outbound_sender
+                            //     .send(OutboundMessage::broadcast((ConsensusNetMessage::CommitBlock(block))).context("Failed to send ConsensusNetMessage::CommitBlock msg on the bus")?;
                         }
                     }
                 }
