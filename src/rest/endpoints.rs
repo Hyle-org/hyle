@@ -2,16 +2,12 @@ use crate::model::Transaction;
 use crate::tools::mock_workflow::RunScenario;
 use crate::{
     bus::command_response::CmdRespClient,
-    indexer::model::TransactionOwned,
     model::{
-        BlobTransaction, BlockHeight, ContractName, Hashable, ProofTransaction,
-        RegisterContractTransaction, TransactionData, TxHash,
+        BlobTransaction, ContractName, Hashable, ProofTransaction, RegisterContractTransaction,
+        TransactionData, TxHash,
     },
     node_state::{NodeStateQuery, NodeStateQueryResponse},
 };
-use bincode::{Decode, Encode};
-use serde::{Deserialize, Serialize};
-
 use anyhow::anyhow;
 use axum::{
     extract::{Path, State},
@@ -19,6 +15,8 @@ use axum::{
     response::IntoResponse,
     Json,
 };
+use bincode::{Decode, Encode};
+use serde::{Deserialize, Serialize};
 
 use super::{AppError, RouterState};
 
@@ -62,37 +60,6 @@ pub async fn send_proof_transaction(
     Json(payload): Json<ProofTransaction>,
 ) -> Result<impl IntoResponse, StatusCode> {
     handle_send(state, TransactionData::Proof(payload)).await
-}
-
-pub async fn get_transaction(
-    Path(tx_hash): Path<String>,
-    State(state): State<RouterState>,
-) -> Result<impl IntoResponse, StatusCode> {
-    match state.idxr.lock().await.get_tx(&tx_hash) {
-        Ok(Some(tx)) => Ok(Json(TransactionOwned::from(tx))),
-        Ok(None) => Err(StatusCode::NOT_FOUND),
-        Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
-    }
-}
-
-pub async fn get_block(
-    Path(height): Path<BlockHeight>,
-    State(state): State<RouterState>,
-) -> Result<impl IntoResponse, StatusCode> {
-    match state.idxr.lock().await.get_block(height) {
-        Ok(Some(block)) => Ok(Json(block)),
-        Ok(None) => Err(StatusCode::NOT_FOUND),
-        Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
-    }
-}
-
-pub async fn get_current_block(
-    State(state): State<RouterState>,
-) -> Result<impl IntoResponse, StatusCode> {
-    match state.idxr.lock().await.last_block() {
-        Some(block) => Ok(Json(block)),
-        None => Err(StatusCode::NOT_FOUND),
-    }
 }
 
 pub async fn get_contract(

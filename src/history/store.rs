@@ -6,7 +6,7 @@ use tracing::debug;
 #[derive(Debug)]
 pub struct Store {
     name: &'static str,
-    tree: sled::Tree,
+    pub tree: sled::Tree,
 }
 
 impl Store {
@@ -19,6 +19,7 @@ impl Store {
         })
     }
 
+    #[allow(dead_code)]
     pub fn name(&self) -> &str {
         self.name
     }
@@ -71,6 +72,7 @@ impl Store {
         Ok(None)
     }
 
+    #[allow(dead_code)]
     pub fn last_with_key<T: DeserializeOwned>(&self) -> Result<Option<(String, T)>> {
         if let Some((key, value)) = self
             .tree
@@ -85,5 +87,9 @@ impl Store {
                 .map(Some);
         }
         Ok(None)
+    }
+
+    pub fn scan(&self, prefix: &str) -> sled::Iter {
+        self.tree.scan_prefix(prefix)
     }
 }

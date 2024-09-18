@@ -25,7 +25,13 @@ stark-platinum-prover = { git = "https://github.com/lambdaclass/lambdaworks.git"
 console-subscriber = "0.4.0"
 bloomfilter = "1.0.14"
 paste = "1.0.15"
-sled = { version = "0.34.7", features = ["compression", "zstd", "io_uring", "lock_free_delays"] }
+nocow = { path = "./nocow" }
+
+[target.'cfg(target_os="macos")'.dependencies]
+sled = { version = "0.34.7", features = ["compression", "lock_free_delays"] }
+
+[target.'cfg(target_os="linux")'.dependencies]
+sled = { version = "0.34.7", features = ["compression", "io_uring", "lock_free_delays"] }
 
 [dev-dependencies]
 assert_cmd = "2.0.16"

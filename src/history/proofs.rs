@@ -1,4 +1,7 @@
-use super::{model::Proof, store::Store};
+use super::{
+    model::{Proof, ProofCow},
+    store::Store,
+};
 use crate::model::{BlobReference, BlockHeight};
 use anyhow::{Context, Result};
 use std::borrow::Cow;
@@ -15,7 +18,7 @@ impl Proofs {
         })
     }
 
-    pub fn store(
+    pub fn put(
         &mut self,
         block_height: BlockHeight,
         transaction_index: usize,
@@ -23,10 +26,9 @@ impl Proofs {
         blobs_references: &Vec<BlobReference>,
         proof: &Vec<u8>,
     ) -> Result<()> {
-        let key = format!("{}:{}", block_height, transaction_index);
         self.store.put(
-            &key,
-            &Proof {
+            tx_hash,
+            &ProofCow {
                 blobs_references: Cow::Borrowed(blobs_references),
                 proof: Cow::Borrowed(proof),
                 block_height,
@@ -36,7 +38,7 @@ impl Proofs {
         )
     }
 
-    pub fn retrieve(&self, key: &str) -> Result<Option<Proof>> {
+    pub fn get(&self, key: &str) -> Result<Option<Proof>> {
         self.store
             .get(key)
             .with_context(|| format!("retrieving key {}", key))

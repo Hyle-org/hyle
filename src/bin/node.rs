@@ -3,7 +3,7 @@ use clap::Parser;
 use hyle::{
     bus::SharedMessageBus,
     consensus::Consensus,
-    indexer::Indexer,
+    history::History,
     mempool::Mempool,
     node_state::NodeState,
     p2p, rest,
@@ -26,11 +26,11 @@ fn start_consensus(bus: SharedMessageBus, config: SharedConf) {
         });
 }
 
-fn start_indexer(mut idxr: Indexer, bus: SharedMessageBus, config: SharedConf) {
+fn start_history(mut history: History, bus: SharedMessageBus, config: SharedConf) {
     let _ = tokio::task::Builder::new()
-        .name("Indexer")
+        .name("History")
         .spawn(async move {
-            idxr.start(config, bus).await;
+            history.start(config, bus).await;
         });
 }
 
@@ -99,8 +99,9 @@ async fn main() -> Result<()> {
 
     start_mempool(SharedMessageBus::new_handle(&bus));
 
-    let idxr = Indexer::new()?;
-    start_indexer(idxr.share(), bus.new_handle(), Arc::clone(&config));
+    let history = History::new()?;
+    start_history(history.share(), bus.new_handle(), Arc::clone(&config));
+
     start_node_state(bus.new_handle(), Arc::clone(&config));
     start_consensus(bus.new_handle(), Arc::clone(&config));
     start_p2p(bus.new_handle(), Arc::clone(&config));
@@ -108,7 +109,7 @@ async fn main() -> Result<()> {
     start_mock_workflow(bus.new_handle());
 
     // Start REST server
-    rest::rest_server(config, bus.new_handle(), idxr)
+    rest::rest_server(config, bus.new_handle(), history)
         .await
         .context("Starting REST server")
 }

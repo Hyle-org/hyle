@@ -1,4 +1,4 @@
-use crate::{bus::SharedMessageBus, indexer::Indexer, utils::conf::SharedConf};
+use crate::{bus::SharedMessageBus, history::History, utils::conf::SharedConf};
 use anyhow::{Context, Result};
 use axum::{
     http::StatusCode,
@@ -12,10 +12,14 @@ pub mod endpoints;
 
 pub struct RouterState {
     pub bus: SharedMessageBus,
-    pub idxr: Indexer,
+    pub history: History,
 }
 
-pub async fn rest_server(config: SharedConf, bus: SharedMessageBus, idxr: Indexer) -> Result<()> {
+pub async fn rest_server(
+    config: SharedConf,
+    bus: SharedMessageBus,
+    history: History,
+) -> Result<()> {
     info!("rest listening on {}", config.rest_addr());
     let app = Router::new()
         .route("/v1/contract/:name", get(endpoints::get_contract))
@@ -25,11 +29,9 @@ pub async fn rest_server(config: SharedConf, bus: SharedMessageBus, idxr: Indexe
         )
         .route("/v1/tx/send/blob", post(endpoints::send_blob_transaction))
         .route("/v1/tx/send/proof", post(endpoints::send_proof_transaction))
-        .route("/v1/tx/get/:tx_hash", get(endpoints::get_transaction))
-        .route("/v1/block/height/:height", get(endpoints::get_block))
-        .route("/v1/block/current", get(endpoints::get_current_block))
         .route("/v1/tools/run_scenario", post(endpoints::run_scenario))
-        .with_state(RouterState { bus, idxr });
+        .nest("/v1/indexer", History::api())
+        .with_state(RouterState { bus, history });
 
     let listener = tokio::net::TcpListener::bind(config.rest_addr())
         .await
@@ -44,7 +46,7 @@ impl Clone for RouterState {
     fn clone(&self) -> Self {
         Self {
             bus: self.bus.new_handle(),
-            idxr: self.idxr.clone(),
+            history: self.history.share(),
         }
     }
 }
