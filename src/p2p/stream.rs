@@ -26,14 +26,17 @@ pub async fn read_stream(stream: &mut TcpStream) -> Result<(NetMessage, usize), 
 }
 
 pub async fn send_net_message(stream: &mut TcpStream, msg: NetMessage) -> Result<(), Error> {
-    let binary = msg.to_binary();
+    send_binary(stream, msg.to_binary().as_slice()).await
+}
+
+pub(super) async fn send_binary(stream: &mut TcpStream, binary: &[u8]) -> Result<(), Error> {
     trace!("SEND {} bytes: {:?}", binary.len(), binary);
     stream
         .write_u32(binary.len() as u32)
         .await
         .context("Failed to write size on stream")?;
     stream
-        .write(&binary)
+        .write(binary)
         .await
         .context("Failed to write data on stream")?;
     Ok(())
@@ -49,14 +52,12 @@ async fn read_net_message_from_buffer(
 
     trace!("Reading {} bytes from buffer", msg_size);
     let mut buf = vec![0; msg_size as usize];
-    trace!("buf before: {:?}", buf);
 
     let data = stream.read_exact(&mut buf).await?;
     if data == 0 {
         bail!("Connection closed by remote (2)")
     }
 
-    trace!("got buff {:?}", buf);
     parse_net_message(&buf).await
 }
 

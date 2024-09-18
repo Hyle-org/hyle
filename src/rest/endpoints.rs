@@ -5,7 +5,8 @@ use crate::{
         RegisterContractTransaction, Transaction, TransactionData, TxHash,
     },
     node_state::{NodeStateQuery, NodeStateQueryResponse},
-    p2p::network::{MempoolNetMessage, NetInput},
+    p2p::network::{Broadcast, MempoolNetMessage, NetInput, NetMessage},
+    utils::logger::LogMe,
 };
 use anyhow::anyhow;
 use axum::{
@@ -23,6 +24,16 @@ async fn handle_send(
 ) -> Result<Json<TxHash>, StatusCode> {
     let tx = Transaction::wrap(payload);
     let tx_hash = tx.hash();
+    state
+        .bus
+        .sender::<Broadcast>()
+        .await
+        .send(Broadcast {
+            peer_id: 0,
+            msg: NetMessage::MempoolMessage(MempoolNetMessage::NewTx(tx.clone())),
+        })
+        .map(|_| ())
+        .ok();
     state
         .bus
         .sender::<NetInput<MempoolNetMessage>>()
