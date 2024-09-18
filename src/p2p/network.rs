@@ -8,20 +8,21 @@ pub struct Version {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct NetInput<T> {
-    pub msg: T,
+pub enum OutboundMessage {
+    SendMessage { peer_id: u64, msg: NetMessage },
+    BroadcastMessage(NetMessage),
 }
 
-impl<T> NetInput<T> {
-    pub fn new(msg: T) -> Self {
-        Self { msg }
+impl OutboundMessage {
+    pub fn broadcast<T: Into<NetMessage>>(msg: T) -> Self {
+        OutboundMessage::BroadcastMessage(msg.into())
     }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Broadcast {
-    pub peer_id: u64,
-    pub msg: NetMessage,
+    pub fn send<T: Into<NetMessage>>(peer_id: u64, msg: T) -> Self {
+        OutboundMessage::SendMessage {
+            peer_id,
+            msg: msg.into(),
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode)]
@@ -42,6 +43,18 @@ pub enum MempoolNetMessage {
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode)]
 pub enum ConsensusNetMessage {
     CommitBlock(Block),
+}
+
+impl From<MempoolNetMessage> for NetMessage {
+    fn from(msg: MempoolNetMessage) -> Self {
+        NetMessage::MempoolMessage(msg)
+    }
+}
+
+impl From<ConsensusNetMessage> for NetMessage {
+    fn from(msg: ConsensusNetMessage) -> Self {
+        NetMessage::ConsensusMessage(msg)
+    }
 }
 
 impl NetMessage {
