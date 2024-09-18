@@ -3,7 +3,7 @@ use crate::{
     consensus::ConsensusEvent,
     handle_messages,
     model::{Hashable, Transaction},
-    p2p::network::{MempoolNetMessage, NetInput},
+    p2p::network::MempoolNetMessage,
 };
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
@@ -47,13 +47,12 @@ impl Mempool {
     /// start starts the mempool server.
     pub async fn start(&mut self) {
         impl NeedAnswer<MempoolResponse> for MempoolCommand {}
-        type NetInputMempoolNetMessage = NetInput<MempoolNetMessage>;
         handle_messages! {
             command_response<MempoolCommand, MempoolResponse>(self.bus) = cmd => {
                  self.handle_command(cmd)
             },
-            listen<NetInputMempoolNetMessage>(self.bus) = cmd => {
-                self.handle_net_input(cmd);
+            listen<MempoolNetMessage>(self.bus) = cmd => {
+                self.handle_net_message(cmd).await
             },
 
             listen<ConsensusEvent>(self.bus) = cmd => {
@@ -79,14 +78,15 @@ impl Mempool {
         }
     }
 
-    fn handle_net_input(&mut self, command: NetInput<MempoolNetMessage>) {
-        match command.msg {
+    async fn handle_net_message(&mut self, command: MempoolNetMessage) {
+        match command {
             MempoolNetMessage::NewTx(tx) => {
                 info!("Got new tx {} {:?}", tx.hash(), tx);
-                self.pending_txs.push(tx);
+                self.pending_txs.push(tx.clone());
             }
         }
     }
+
     fn handle_command(&mut self, command: MempoolCommand) -> Result<Option<MempoolResponse>> {
         match command {
             MempoolCommand::CreatePendingBatch { id } => {

@@ -9,12 +9,11 @@ use tokio::sync::mpsc;
 use tokio::time::sleep;
 use tracing::{debug, info, trace, warn};
 
+use super::network::OutboundMessage;
 use super::network::{MempoolNetMessage, NetMessage, Version};
 use super::stream::send_net_message;
 use crate::bus::SharedMessageBus;
-use crate::p2p::network::Broadcast;
 use crate::p2p::network::ConsensusNetMessage;
-use crate::p2p::network::NetInput;
 use crate::p2p::stream::read_stream;
 use crate::p2p::stream::send_binary;
 use crate::utils::conf::SharedConf;
@@ -53,28 +52,21 @@ impl Peer {
         }
     }
 
-    async fn handle_consensus_message(&mut self, msg: ConsensusNetMessage) -> Result<(), Error> {
-        send_net_message(&mut self.stream, NetMessage::ConsensusMessage(msg)).await
-    }
-
-    async fn handle_mempool_message(&mut self, msg: MempoolNetMessage) -> Result<(), Error> {
-        send_net_message(&mut self.stream, NetMessage::MempoolMessage(msg)).await
-    }
-
-    async fn handle_broadcast_message(&mut self, msg: Broadcast) -> Result<(), Error> {
-        if msg.peer_id == self.id {
+    async fn handle_send_message(&mut self, peer_id: u64, msg: NetMessage) -> Result<(), Error> {
+        if peer_id != self.id {
             return Ok(());
         }
-        let binary = msg.msg.to_binary();
+        send_net_message(&mut self.stream, msg).await
+    }
+
+    async fn handle_broadcast_message(&mut self, msg: NetMessage) -> Result<(), Error> {
+        let binary = msg.to_binary();
         if !self.bloom_filter.check(&binary) {
             self.bloom_filter.set(&binary);
-            debug!(
-                "Broadcast message from #{} to #{}: {:?}",
-                msg.peer_id, self.id, msg
-            );
+            debug!("Broadcast message to #{}: {:?}", self.id, msg);
             send_binary(&mut self.stream, binary.as_slice()).await
         } else {
-            trace!("Message from #{} already broadcasted", msg.peer_id);
+            trace!("Message to #{} already broadcasted", self.id);
             Ok(())
         }
     }
@@ -99,38 +91,20 @@ impl Peer {
             NetMessage::MempoolMessage(mempool_msg) => {
                 debug!("Received new mempool net message {:?}", mempool_msg);
                 self.bus
-                    .sender::<NetInput<MempoolNetMessage>>()
+                    .sender::<MempoolNetMessage>()
                     .await
-                    .send(NetInput::new(mempool_msg.clone()))
+                    .send(mempool_msg)
                     .map(|_| ())
-                    .context("Receiving mempool net message")?;
-                self.bus
-                    .sender::<Broadcast>()
-                    .await
-                    .send(Broadcast {
-                        peer_id: self.id,
-                        msg: NetMessage::MempoolMessage(mempool_msg),
-                    })
-                    .map(|_| ())
-                    .context("Broadcasting mempool net message")
+                    .context("Receiving mempool net message")
             }
             NetMessage::ConsensusMessage(consensus_msg) => {
                 debug!("Received new consensus net message {:?}", consensus_msg);
                 self.bus
-                    .sender::<NetInput<ConsensusNetMessage>>()
+                    .sender::<ConsensusNetMessage>()
                     .await
-                    .send(NetInput::new(consensus_msg.clone()))
+                    .send(consensus_msg)
                     .map(|_| ())
-                    .context("Receiving consensus net message")?;
-                self.bus
-                    .sender::<Broadcast>()
-                    .await
-                    .send(Broadcast {
-                        peer_id: self.id,
-                        msg: NetMessage::ConsensusMessage(consensus_msg),
-                    })
-                    .map(|_| ())
-                    .context("Broadcasting mempool net message")
+                    .context("Receiving consensus net message")
             }
         }
     }
@@ -151,47 +125,32 @@ impl Peer {
     }
 
     pub async fn start(&mut self) -> Result<(), Error> {
-        let mut mempool_rx = self.bus.receiver::<MempoolNetMessage>().await;
-        let mut consensus_rx = self.bus.receiver::<ConsensusNetMessage>().await;
-        let mut broadcast_rx = self.bus.receiver::<Broadcast>().await;
+        let mut outbound_rx = self.bus.receiver::<OutboundMessage>().await;
 
         loop {
             let wait_tcp = read_stream(&mut self.stream); //FIXME: make read_stream cancel safe !
             let wait_cmd = self.internal_cmd_rx.recv();
-            let wait_mempool = mempool_rx.recv();
-            let wait_consensus = consensus_rx.recv();
-            let wait_broadcast = broadcast_rx.recv();
+            let wait_outbound = outbound_rx.recv();
 
             // select! waits on multiple concurrent branches, returning when the **first** branch
             // completes, cancelling the remaining branches.
             select! {
-                res = wait_mempool => {
-                    if let Ok(message) = res {
-                        match self.handle_mempool_message(message).await {
+                res = wait_outbound => {
+                    match res {
+                        Ok(OutboundMessage::SendMessage { peer_id, msg }) => match self.handle_send_message(peer_id, msg).await {
                             Ok(_) => continue,
                             Err(e) => {
-                                warn!("Error while handling net message: {}", e);
+                                warn!("Error while sending net message: {}", e);
                             }
                         }
-                    }
-                }
-                res = wait_consensus => {
-                    if let Ok(message) = res {
-                        match self.handle_consensus_message(message).await {
+                        Ok(OutboundMessage::BroadcastMessage(message)) => match self.handle_broadcast_message(message).await {
                             Ok(_) => continue,
                             Err(e) => {
-                                warn!("Error while handling net message: {}", e);
+                                warn!("Error while broadcasting net message: {}", e);
                             }
                         }
-                    }
-                }
-                res = wait_broadcast => {
-                    if let Ok(message) = res {
-                        match self.handle_broadcast_message(message).await {
-                            Ok(_) => continue,
-                            Err(e) => {
-                                warn!("Error while handling net message: {}", e);
-                            }
+                        Err(e) => {
+                            warn!("Error while receiving outbound message: {}", e);
                         }
                     }
                 }

@@ -5,8 +5,7 @@ use crate::{
         RegisterContractTransaction, Transaction, TransactionData, TxHash,
     },
     node_state::{NodeStateQuery, NodeStateQueryResponse},
-    p2p::network::{Broadcast, MempoolNetMessage, NetInput, NetMessage},
-    utils::logger::LogMe,
+    p2p::network::{MempoolNetMessage, OutboundMessage},
 };
 use anyhow::anyhow;
 use axum::{
@@ -26,19 +25,18 @@ async fn handle_send(
     let tx_hash = tx.hash();
     state
         .bus
-        .sender::<Broadcast>()
+        .sender::<OutboundMessage>()
         .await
-        .send(Broadcast {
-            peer_id: 0,
-            msg: NetMessage::MempoolMessage(MempoolNetMessage::NewTx(tx.clone())),
-        })
+        .send(OutboundMessage::broadcast(MempoolNetMessage::NewTx(
+            tx.clone(),
+        )))
         .map(|_| ())
         .ok();
     state
         .bus
-        .sender::<NetInput<MempoolNetMessage>>()
+        .sender::<MempoolNetMessage>()
         .await
-        .send(NetInput::new(MempoolNetMessage::NewTx(tx)))
+        .send(MempoolNetMessage::NewTx(tx))
         .map(|_| tx_hash)
         .map(Json)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
