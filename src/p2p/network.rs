@@ -47,7 +47,6 @@ pub enum MempoolNetMessage {
 
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode)]
 pub enum ConsensusNetMessage {
-    Request,
     Prepare(ConsensusProposal),
     PrepareVote(bool), // FIXME: set correct type
     Confirm(u64),      // FIXME: set correct type (*Prepare* Quorum Certificate)

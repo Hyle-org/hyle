@@ -39,7 +39,7 @@ pub struct BFTRoundState {
     prepare_quorum_certificate: u64,
     prep_votes: HashMap<u64, bool>, // FIXME: set correct type (here it's replica_peer_id:vote)
     commit_quorum_certificate: HashMap<u64, u64>, // FIXME: set correct type (here it's slot:quorum certificate)
-    confirm_ack: HashSet<u64>, // FIXME: set correct type (here it's replica_peer_id:ack)
+    confirm_ack: HashSet<u64>, // FIXME: set correct type (here it's replica_peer_id)
     block: Option<Block>,      // FIXME: Block ou cut ?
 }
 
@@ -144,50 +144,17 @@ impl Consensus {
         true
     }
 
+    fn is_next_leader(&self) -> bool {
+        // TODO
+        true
+    }
+
     fn handle_net_message(
         &mut self,
         msg: ConsensusNetMessage,
         consensus_sender: Sender<OutboundMessage>,
     ) -> Result<()> {
         match msg {
-            ConsensusNetMessage::Request => {
-                // Message received by new leader.
-
-                // Verifies last slot received a *Commit* Quorum Certificate
-                match self
-                    .bft_round_state
-                    .commit_quorum_certificate
-                    .get(&self.bft_round_state.slot)
-                {
-                    Some(previous_commit_quorum_certificate) => {
-                        // Update its bft round state
-                        self.bft_round_state.is_leader = true;
-                        self.bft_round_state.slot += 1; // FIXME: could be more resilient
-                        self.bft_round_state.view = 0;
-
-                        // Creates ConsensusProposal
-                        let consensus_proposal = ConsensusProposal {
-                            slot: self.bft_round_state.slot,
-                            view: self.bft_round_state.view,
-                            previous_commit_quorum_certificate: *previous_commit_quorum_certificate,
-                            block: Block::default(), // FIXME
-                        };
-                        // Send Prepare message to all replicas
-                        _ = consensus_sender
-                            .send(OutboundMessage::broadcast(ConsensusNetMessage::Prepare(
-                                consensus_proposal,
-                            )))
-                            .context(
-                                "Failed to send ConsensusNetMessage::Confirm msg on the bus",
-                            )?;
-                        Ok(())
-                    }
-                    None => {
-                        // Fails
-                        Ok(())
-                    }
-                }
-            }
             ConsensusNetMessage::Prepare(consensus_proposal) => {
                 // Message received by replica.
 
@@ -216,7 +183,7 @@ impl Consensus {
                     .fold(0, |acc, (_, vote)| acc + if *vote { 1 } else { 0 });
 
                 // Waits for at least 𝑛−𝑓 = 2𝑓 +1 matching PrepareVote messages
-                if validated_votes > 2 * self.bft_round_state.f + 1 {
+                if validated_votes == 2 * self.bft_round_state.f + 1 {
                     // Aggregates them into a *Prepare* Quorum Certificate
                     let prepare_quorum_certificate = 1; // FIXME
 
@@ -238,7 +205,7 @@ impl Consensus {
                 // Responds ConfirmAck to leader
                 _ = consensus_sender
                     .send(OutboundMessage::broadcast(ConsensusNetMessage::ConfirmAck))
-                    .context("Failed to send ConsensusNetMessage::Confirm msg on the bus")?;
+                    .context("Failed to send ConsensusNetMessage::ConfirmAck msg on the bus")?;
                 Ok(())
             }
             ConsensusNetMessage::ConfirmAck => {
@@ -264,26 +231,45 @@ impl Consensus {
                 }
                 // Update its bft roun state
                 self.bft_round_state.is_leader = false;
-                self.bft_round_state.slot += 1; // FIXME: could be more resilient
-                self.bft_round_state.view = 0;
+                self.bft_round_state.finish_round();
 
-                // FIXME: should send only to next leader
-                // Send message to next leader
-                _ = consensus_sender
-                    .send(OutboundMessage::broadcast(ConsensusNetMessage::Request))
-                    .context("Failed to send ConsensusNetMessage::Confirm msg on the bus")?;
                 Ok(())
             }
             ConsensusNetMessage::Commit(commit_quorum_certificate) => {
                 // Message received by replica.
 
-                // Verifies the *Commit* Quorum Certificate
+                // Verifies and save the *Commit* Quorum Certificate
                 self.verify_commit_quorum_certificate(commit_quorum_certificate);
+                self.bft_round_state
+                    .commit_quorum_certificate
+                    .insert(self.bft_round_state.slot, commit_quorum_certificate);
 
                 // Applies and add new block to its NodeState
+                // TODO
 
                 // Updates its bft round state
                 self.bft_round_state.finish_round();
+
+                if !self.is_next_leader() {
+                    return Ok(());
+                }
+                // Starts new slot
+                self.bft_round_state.is_leader = true;
+
+                // Creates ConsensusProposal
+                let consensus_proposal = ConsensusProposal {
+                    slot: self.bft_round_state.slot,
+                    view: self.bft_round_state.view,
+                    previous_commit_quorum_certificate: commit_quorum_certificate,
+                    block: Block::default(), // FIXME
+                };
+                // Send Prepare message to all replicas
+                _ = consensus_sender
+                    .send(OutboundMessage::broadcast(ConsensusNetMessage::Prepare(
+                        consensus_proposal,
+                    )))
+                    .context("Failed to send ConsensusNetMessage::Prepare msg on the bus")?;
+
                 Ok(())
             }
         }
