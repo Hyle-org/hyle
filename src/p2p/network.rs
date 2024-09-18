@@ -27,12 +27,17 @@ impl OutboundMessage {
 
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode)]
 pub enum NetMessage {
+    HandshakeMessage(HandshakeNetMessage),
+    MempoolMessage(MempoolNetMessage),
+    ConsensusMessage(ConsensusNetMessage),
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode)]
+pub enum HandshakeNetMessage {
     Version(Version),
     Verack,
     Ping,
     Pong,
-    MempoolMessage(MempoolNetMessage),
-    ConsensusMessage(ConsensusNetMessage),
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode)]
