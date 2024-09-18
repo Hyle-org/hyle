@@ -1,4 +1,4 @@
-use crate::model::{Block, Transaction};
+use crate::{consensus::ConsensusProposal, model::Transaction};
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 
@@ -47,7 +47,12 @@ pub enum MempoolNetMessage {
 
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode)]
 pub enum ConsensusNetMessage {
-    CommitBlock(Block),
+    Request,
+    Prepare(ConsensusProposal),
+    PrepareVote(bool), // FIXME: set correct type
+    Confirm(u64),      // FIXME: set correct type (*Prepare* Quorum Certificate)
+    ConfirmAck,
+    Commit(u64), // FIXME: set correct type (*Commit* Quorum Certificate)
 }
 
 impl From<HandshakeNetMessage> for NetMessage {
