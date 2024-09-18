@@ -4,9 +4,6 @@ use super::SharedMessageBus;
 use anyhow::anyhow;
 use anyhow::bail;
 use anyhow::Result;
-use tokio::sync::broadcast::error::RecvError;
-use tokio::sync::broadcast::Receiver;
-use tokio::sync::broadcast::Sender;
 
 pub const CLIENT_TIMEOUT_SECONDS: u64 = 10;
 
@@ -75,66 +72,61 @@ impl CmdRespClient for SharedMessageBus {
     }
 }
 
-pub struct CommandResponseServer<Cmd: NeedAnswer<Res>, Res> {
-    receiver: Receiver<Query<Cmd>>,
-    sender: Sender<QueryResponse<Res>>,
-}
-
-pub trait CommandResponseServerCreate {
-    fn create_server<
-        Cmd: NeedAnswer<Resp> + Clone + Send + Sync + 'static,
-        Resp: Clone + Send + Sync + 'static,
-    >(
-        &self,
-    ) -> impl std::future::Future<Output = CommandResponseServer<Cmd, Resp>>;
-}
-
-impl CommandResponseServerCreate for SharedMessageBus {
-    async fn create_server<
-        Cmd: NeedAnswer<Resp> + Clone + Send + Sync + 'static,
-        Resp: Clone + Send + Sync + 'static,
-    >(
-        &self,
-    ) -> CommandResponseServer<Cmd, Resp> {
-        CommandResponseServer {
-            receiver: self.receiver().await,
-            sender: self.sender().await,
-        }
-    }
-}
-
-impl<Cmd: NeedAnswer<Res> + Clone + Send + Sync + 'static, Res: Clone + Send + Sync + 'static>
-    CommandResponseServer<Cmd, Res>
-{
-    pub async fn get_query(&mut self) -> Result<Query<Cmd>, RecvError> {
-        self.receiver.recv().await
-    }
-
-    pub fn respond(&self, res: QueryResponse<Res>) -> Result<()> {
-        let _ = self.sender.send(res);
-
-        Ok(())
-    }
-
-    pub fn to_response(&self, Query { id, data }: Query<Cmd>) -> (Cmd, QueryResponse<Res>) {
-        (data, QueryResponse { id, data: Ok(None) })
-    }
-}
-
-impl<Res: Clone + Send + Sync + 'static> QueryResponse<Res> {
-    pub fn updated(self, res: Result<Option<Res>>) -> QueryResponse<Res> {
-        QueryResponse {
-            id: self.id,
-            data: res.map_err(|err| err.to_string()),
-        }
-    }
-}
-
 #[macro_export]
-macro_rules! handle_server_query {
-    ($server:expr, $query:expr, $self:ident, $handler:ident) => {
-        let (cmd, response_writer) = $server.to_response($query);
-        let res = $self.$handler(cmd);
-        let _ = $server.respond(response_writer.updated(res));
-    };
+macro_rules! handle_messages {
+    ( $(command_response <$command:ident,$response:ident>($bus:expr) = $res:ident => $handler:block)+, $($rest:tt)*) => {{
+        use paste::paste;
+        use crate::bus::command_response::*;
+
+        $(
+            // In order to generate a variable with the name server$command$response for each server
+            paste! {
+                let mut [<receiver_query_ $command:lower>] = $bus.receiver::<Query<$command>>().await;
+                let [<sender_response_ $response:lower>] = $bus.sender::<QueryResponse<$response>>().await;
+            }
+        )+
+
+        handle_messages! {
+            $($rest)*
+            $(
+                Ok(Query{ id, data: $res }) = paste!([<receiver_query_ $command:lower>]).recv() => {
+                    let mut response: QueryResponse<$response> = QueryResponse {id, data: Ok(None)};
+                    let res = $handler;
+                    response.data = res.map_err(|err| err.to_string());
+                    let _ = paste!([<sender_response_ $response:lower>]).send(response);
+                }
+            )+
+        }
+    }};
+
+    ( $(listen <$message:ident>($bus:expr) = $res:ident => $handler:block)+, $($rest:tt)*) => {{
+        use paste::paste;
+
+        $(
+            // In order to generate a variable with the name server$command$response for each server
+            paste! {
+                let mut [<receiver_ $message:lower>] = $bus.receiver::<$message>().await;
+            }
+        )+
+
+        handle_messages! {
+            $($rest)*
+            $(
+                Ok($res) = paste!([<receiver_ $message:lower>]).recv() => {
+                    $handler
+                }
+            )+
+        }
+    }};
+
+    // Fallback to normal select cases
+    ($($rest:tt)*) => {{
+        loop {
+            tokio::select! {
+                $($rest)*
+            }
+        }
+    }};
 }
+
+pub use handle_messages;
