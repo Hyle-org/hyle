@@ -3,7 +3,8 @@ use crate::{
     consensus::ConsensusEvent,
     handle_messages,
     model::{Hashable, Transaction},
-    p2p::network::MempoolNetMessage,
+    p2p::network::{MempoolNetMessage, OutboundMessage},
+    rest::endpoints::RestApiMessage,
 };
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
@@ -54,7 +55,9 @@ impl Mempool {
             listen<MempoolNetMessage>(self.bus) = cmd => {
                 self.handle_net_message(cmd).await
             },
-
+            listen<RestApiMessage>(self.bus) = cmd => {
+                self.handle_api_message(cmd).await
+            },
             listen<ConsensusEvent>(self.bus) = cmd => {
                 self.handle_event(cmd);
             },
@@ -80,11 +83,31 @@ impl Mempool {
 
     async fn handle_net_message(&mut self, command: MempoolNetMessage) {
         match command {
-            MempoolNetMessage::NewTx(tx) => {
-                info!("Got new tx {} {:?}", tx.hash(), tx);
-                self.pending_txs.push(tx.clone());
+            MempoolNetMessage::NewTx(tx) => self.on_new_tx(tx).await,
+        }
+    }
+
+    async fn handle_api_message(&mut self, command: RestApiMessage) {
+        match command {
+            RestApiMessage::NewTx(tx) => {
+                self.on_new_tx(tx.clone()).await;
+                self.broadcast_tx(tx).await
             }
         }
+    }
+
+    async fn on_new_tx(&mut self, tx: Transaction) {
+        info!("Got new tx {} {:?}", tx.hash(), tx);
+        self.pending_txs.push(tx);
+    }
+
+    async fn broadcast_tx(&mut self, tx: Transaction) {
+        self.bus
+            .sender::<OutboundMessage>()
+            .await
+            .send(OutboundMessage::broadcast(MempoolNetMessage::NewTx(tx)))
+            .map(|_| ())
+            .ok();
     }
 
     fn handle_command(&mut self, command: MempoolCommand) -> Result<Option<MempoolResponse>> {
