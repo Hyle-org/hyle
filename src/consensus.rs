@@ -9,7 +9,7 @@ use crate::{
     bus::{command_response::CmdRespClient, SharedMessageBus},
     mempool::{MempoolCommand, MempoolResponse},
     model::{get_current_timestamp, Block, Hashable, Transaction},
-    p2p::network::{ConsensusNetMessage, OutboundMessage},
+    p2p::network::{ConsensusNetMessage, OutboundMessage, Signed},
     utils::{conf::SharedConf, logger::LogMe},
 };
 
@@ -96,8 +96,8 @@ impl Consensus {
         Ok(ctx)
     }
 
-    fn handle_net_message(&mut self, msg: ConsensusNetMessage) {
-        match msg {
+    fn handle_net_message(&mut self, msg: Signed<ConsensusNetMessage>) {
+        match msg.msg {
             ConsensusNetMessage::CommitBlock(block) => {
                 info!("Got a commited block {:?}", block)
             }
@@ -136,7 +136,7 @@ impl Consensus {
                                 )?;
                             // send to network
                             _ = outbound_sender
-                                .send(OutboundMessage::broadcast(ConsensusNetMessage::CommitBlock(block))).context("Failed to send ConsensusNetMessage::CommitBlock msg on the bus")?;
+                                .send(OutboundMessage::broadcast(self.sign_net_message(ConsensusNetMessage::CommitBlock(block)))).context("Failed to send ConsensusNetMessage::CommitBlock msg on the bus")?;
                         }
                     }
                 }
@@ -157,7 +157,8 @@ impl Consensus {
         let consensus_event_sender = bus.sender::<ConsensusEvent>().await;
         let consensus_command_sender = bus.sender::<ConsensusCommand>().await;
         let mut consensus_command_receiver = bus.receiver::<ConsensusCommand>().await;
-        let mut consensus_net_message_receiver = bus.receiver::<ConsensusNetMessage>().await;
+        let mut consensus_net_message_receiver =
+            bus.receiver::<Signed<ConsensusNetMessage>>().await;
 
         if is_master {
             info!(
@@ -190,6 +191,14 @@ impl Consensus {
                     self.handle_net_message(msg);
                 }
             }
+        }
+    }
+
+    fn sign_net_message(&self, msg: ConsensusNetMessage) -> Signed<ConsensusNetMessage> {
+        Signed {
+            msg,
+            signature: Default::default(),
+            replica_pub_key: Default::default(),
         }
     }
 }

@@ -15,6 +15,7 @@ use super::network::{MempoolNetMessage, NetMessage, Version};
 use super::stream::send_net_message;
 use crate::bus::SharedMessageBus;
 use crate::p2p::network::ConsensusNetMessage;
+use crate::p2p::network::Signed;
 use crate::p2p::stream::read_stream;
 use crate::p2p::stream::send_binary;
 use crate::utils::conf::SharedConf;
@@ -101,7 +102,7 @@ impl Peer {
             NetMessage::MempoolMessage(mempool_msg) => {
                 debug!("Received new mempool net message {:?}", mempool_msg);
                 self.bus
-                    .sender::<MempoolNetMessage>()
+                    .sender::<Signed<MempoolNetMessage>>()
                     .await
                     .send(mempool_msg)
                     .map(|_| ())
@@ -110,7 +111,7 @@ impl Peer {
             NetMessage::ConsensusMessage(consensus_msg) => {
                 debug!("Received new consensus net message {:?}", consensus_msg);
                 self.bus
-                    .sender::<ConsensusNetMessage>()
+                    .sender::<Signed<ConsensusNetMessage>>()
                     .await
                     .send(consensus_msg)
                     .map(|_| ())

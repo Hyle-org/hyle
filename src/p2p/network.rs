@@ -25,11 +25,27 @@ impl OutboundMessage {
     }
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, Default)]
+pub struct Signature(pub Vec<u8>);
+
+#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, Default)]
+pub struct ReplicaPubKey(pub Vec<u8>);
+
+#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode)]
+pub struct Signed<T> {
+    pub msg: T,
+    pub signature: Signature,
+    pub replica_pub_key: ReplicaPubKey,
+}
+
+pub type SignedMempoolNetMessage = Signed<MempoolNetMessage>;
+pub type SignedConsensusNetMessage = Signed<ConsensusNetMessage>;
+
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode)]
 pub enum NetMessage {
     HandshakeMessage(HandshakeNetMessage),
-    MempoolMessage(MempoolNetMessage),
-    ConsensusMessage(ConsensusNetMessage),
+    MempoolMessage(SignedMempoolNetMessage),
+    ConsensusMessage(SignedConsensusNetMessage),
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode)]
@@ -56,14 +72,14 @@ impl From<HandshakeNetMessage> for NetMessage {
     }
 }
 
-impl From<MempoolNetMessage> for NetMessage {
-    fn from(msg: MempoolNetMessage) -> Self {
+impl From<Signed<MempoolNetMessage>> for NetMessage {
+    fn from(msg: Signed<MempoolNetMessage>) -> Self {
         NetMessage::MempoolMessage(msg)
     }
 }
 
-impl From<ConsensusNetMessage> for NetMessage {
-    fn from(msg: ConsensusNetMessage) -> Self {
+impl From<Signed<ConsensusNetMessage>> for NetMessage {
+    fn from(msg: Signed<ConsensusNetMessage>) -> Self {
         NetMessage::ConsensusMessage(msg)
     }
 }

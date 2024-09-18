@@ -3,7 +3,7 @@ use crate::{
     consensus::ConsensusEvent,
     handle_messages,
     model::{Hashable, Transaction},
-    p2p::network::{MempoolNetMessage, OutboundMessage},
+    p2p::network::{MempoolNetMessage, OutboundMessage, Signed, SignedMempoolNetMessage},
     rest::endpoints::RestApiMessage,
 };
 use anyhow::Result;
@@ -52,7 +52,7 @@ impl Mempool {
             command_response<MempoolCommand, MempoolResponse>(self.bus) = cmd => {
                  self.handle_command(cmd)
             },
-            listen<MempoolNetMessage>(self.bus) = cmd => {
+            listen<SignedMempoolNetMessage>(self.bus) = cmd => {
                 self.handle_net_message(cmd).await
             },
             listen<RestApiMessage>(self.bus) = cmd => {
@@ -81,8 +81,8 @@ impl Mempool {
         }
     }
 
-    async fn handle_net_message(&mut self, command: MempoolNetMessage) {
-        match command {
+    async fn handle_net_message(&mut self, command: Signed<MempoolNetMessage>) {
+        match command.msg {
             MempoolNetMessage::NewTx(tx) => self.on_new_tx(tx).await,
         }
     }
@@ -105,9 +105,19 @@ impl Mempool {
         self.bus
             .sender::<OutboundMessage>()
             .await
-            .send(OutboundMessage::broadcast(MempoolNetMessage::NewTx(tx)))
+            .send(OutboundMessage::broadcast(
+                self.sign_net_message(MempoolNetMessage::NewTx(tx)),
+            ))
             .map(|_| ())
             .ok();
+    }
+
+    fn sign_net_message(&self, msg: MempoolNetMessage) -> Signed<MempoolNetMessage> {
+        Signed {
+            msg,
+            signature: Default::default(),
+            replica_pub_key: Default::default(),
+        }
     }
 
     fn handle_command(&mut self, command: MempoolCommand) -> Result<Option<MempoolResponse>> {

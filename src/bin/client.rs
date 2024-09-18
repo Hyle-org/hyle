@@ -7,7 +7,7 @@ use hyle::{
         TransactionData,
     },
     p2p::{
-        network::{MempoolNetMessage, NetMessage},
+        network::{MempoolNetMessage, NetMessage, Signed},
         stream::send_net_message,
     },
     utils::conf::{self, SharedConf},
@@ -26,7 +26,11 @@ fn load<'de, T: Deserialize<'de>>(file: String) -> Result<T, ConfigError> {
 }
 
 fn wrap_net_message(tx: Transaction) -> NetMessage {
-    NetMessage::MempoolMessage(MempoolNetMessage::NewTx(tx))
+    NetMessage::MempoolMessage(Signed {
+        msg: MempoolNetMessage::NewTx(tx),
+        signature: Default::default(),
+        replica_pub_key: Default::default(),
+    })
 }
 
 fn wrap_tx(tx: TransactionData) -> Transaction {
