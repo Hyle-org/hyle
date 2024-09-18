@@ -9,6 +9,7 @@ use tokio::sync::mpsc;
 use tokio::time::sleep;
 use tracing::{debug, info, trace, warn};
 
+use super::network::HandshakeNetMessage;
 use super::network::OutboundMessage;
 use super::network::{MempoolNetMessage, NetMessage, Version};
 use super::stream::send_net_message;
@@ -71,22 +72,31 @@ impl Peer {
         }
     }
 
-    async fn handle_stream_message(&mut self, msg: NetMessage) -> Result<(), Error> {
-        trace!("RECV: {:?}", msg);
+    async fn handle_handshake_message(&mut self, msg: HandshakeNetMessage) -> Result<(), Error> {
         match msg {
-            NetMessage::Version(v) => {
+            HandshakeNetMessage::Version(v) => {
                 info!("Got peer version {:?}", v);
-                send_net_message(&mut self.stream, NetMessage::Verack).await
+                send_net_message(&mut self.stream, HandshakeNetMessage::Verack.into()).await
             }
-            NetMessage::Verack => self.ping_pong(),
-            NetMessage::Ping => {
+            HandshakeNetMessage::Verack => self.ping_pong(),
+            HandshakeNetMessage::Ping => {
                 debug!("Got ping");
-                send_net_message(&mut self.stream, NetMessage::Pong).await
+                send_net_message(&mut self.stream, HandshakeNetMessage::Pong.into()).await
             }
-            NetMessage::Pong => {
+            HandshakeNetMessage::Pong => {
                 debug!("pong");
                 self.last_pong = SystemTime::now();
                 Ok(())
+            }
+        }
+    }
+
+    async fn handle_stream_message(&mut self, msg: NetMessage) -> Result<(), Error> {
+        trace!("RECV: {:?}", msg);
+        match msg {
+            NetMessage::HandshakeMessage(handshake_msg) => {
+                debug!("Received new handshake net message {:?}", handshake_msg);
+                self.handle_handshake_message(handshake_msg).await
             }
             NetMessage::MempoolMessage(mempool_msg) => {
                 debug!("Received new mempool net message {:?}", mempool_msg);
@@ -179,7 +189,7 @@ impl Peer {
                                     }
                                 }
                                 debug!("ping");
-                                send_net_message(&mut self.stream, NetMessage::Ping).await
+                                send_net_message(&mut self.stream, HandshakeNetMessage::Ping.into()).await
                             }
                         };
 
@@ -207,6 +217,10 @@ impl Peer {
     }
 
     pub async fn handshake(&mut self) -> Result<(), Error> {
-        send_net_message(&mut self.stream, NetMessage::Version(Version { id: 1 })).await
+        send_net_message(
+            &mut self.stream,
+            HandshakeNetMessage::Version(Version { id: 1 }).into(),
+        )
+        .await
     }
 }

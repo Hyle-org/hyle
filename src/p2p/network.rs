@@ -27,12 +27,17 @@ impl OutboundMessage {
 
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode)]
 pub enum NetMessage {
+    HandshakeMessage(HandshakeNetMessage),
+    MempoolMessage(MempoolNetMessage),
+    ConsensusMessage(ConsensusNetMessage),
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode)]
+pub enum HandshakeNetMessage {
     Version(Version),
     Verack,
     Ping,
     Pong,
-    MempoolMessage(MempoolNetMessage),
-    ConsensusMessage(ConsensusNetMessage),
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode)]
@@ -43,6 +48,12 @@ pub enum MempoolNetMessage {
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode)]
 pub enum ConsensusNetMessage {
     CommitBlock(Block),
+}
+
+impl From<HandshakeNetMessage> for NetMessage {
+    fn from(msg: HandshakeNetMessage) -> Self {
+        NetMessage::HandshakeMessage(msg)
+    }
 }
 
 impl From<MempoolNetMessage> for NetMessage {
