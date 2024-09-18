@@ -81,7 +81,7 @@ async fn main() -> Result<()> {
     }
     console_subscriber::init();
 
-    let config = conf::Conf::new_shared(args.config_file)?;
+    let config = conf::Conf::new_shared(args.config_file).context("reading config file")?;
     info!("Starting node with config: {:?}", &config);
 
     debug!("server mode");
@@ -92,7 +92,6 @@ async fn main() -> Result<()> {
 
     let idxr = Indexer::new();
     start_indexer(idxr.share(), bus.new_handle(), Arc::clone(&config));
-
     start_node_state(bus.new_handle(), Arc::clone(&config));
     start_consensus(bus.new_handle(), Arc::clone(&config));
     start_p2p(bus.new_handle(), Arc::clone(&config));

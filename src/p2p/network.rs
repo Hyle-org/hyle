@@ -37,34 +37,16 @@ pub struct Signed<T: Encode> {
     pub signature: Signature,
     pub replica_id: ReplicaId,
 }
-<<<<<<< HEAD
 
 pub type SignedMempoolNetMessage = Signed<MempoolNetMessage>;
 pub type SignedConsensusNetMessage = Signed<ConsensusNetMessage>;
-=======
-
-impl<T: Wrappable<T> + Encode> Signed<T> {
-    pub fn wrap(self) -> NetMessage {
-        T::wrap(self)
-    }
-}
-
-pub trait Wrappable<T: Encode> {
-    fn wrap(msg: Signed<T>) -> NetMessage;
-}
->>>>>>> a8e9709 (✨ Add ReplicaRegistry)
 
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode)]
 pub enum NetMessage {
     HandshakeMessage(HandshakeNetMessage),
-<<<<<<< HEAD
     MempoolMessage(SignedMempoolNetMessage),
     ConsensusMessage(SignedConsensusNetMessage),
-=======
     ReplicaRegistryMessage(ReplicaRegistryNetMessage),
-    MempoolMessage(Signed<MempoolNetMessage>),
-    ConsensusMessage(Signed<ConsensusNetMessage>),
->>>>>>> a8e9709 (✨ Add ReplicaRegistry)
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode)]
@@ -93,6 +75,12 @@ pub enum ConsensusNetMessage {
 impl From<HandshakeNetMessage> for NetMessage {
     fn from(msg: HandshakeNetMessage) -> Self {
         NetMessage::HandshakeMessage(msg)
+    }
+}
+
+impl From<ReplicaRegistryNetMessage> for NetMessage {
+    fn from(msg: ReplicaRegistryNetMessage) -> Self {
+        NetMessage::ReplicaRegistryMessage(msg)
     }
 }
 

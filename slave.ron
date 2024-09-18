@@ -1,4 +1,5 @@
 Config(
+    id: "node-slave-1",
     port: 1235,
     host: "127.0.0.1",
     peers: [

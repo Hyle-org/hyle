@@ -194,7 +194,7 @@ impl Consensus {
                     self.handle_net_message(msg);
                 }
                 Ok(cmd) = replica_registry_receiver.recv() => {
-                    self.replicas.handle_net_message(cmd).await;
+                    self.replicas.handle_net_message(cmd);
                 }
             }
         }

@@ -1,4 +1,5 @@
 Config(
+    id: "node-master",
     port: 1234,
     host: "127.0.0.1",
     peers: [], // master knows no peers at start

@@ -3,7 +3,7 @@ use std::{collections::HashMap, fmt::Display};
 use anyhow::{Error, Result};
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
-use tracing::warn;
+use tracing::{info, warn};
 
 use crate::p2p::network::{ReplicaRegistryNetMessage, Signed};
 
@@ -37,13 +37,14 @@ impl ReplicaRegistry {
         }
     }
 
-    pub async fn handle_net_message(&mut self, msg: ReplicaRegistryNetMessage) {
+    pub fn handle_net_message(&mut self, msg: ReplicaRegistryNetMessage) {
         match msg {
             ReplicaRegistryNetMessage::NewReplica(r) => self.add_replica(r.id.clone(), r),
         }
     }
 
     fn add_replica(&mut self, id: ReplicaId, replica: Replica) {
+        info!("Adding replica '{}'", id);
         self.replicas.insert(id, replica);
     }
 

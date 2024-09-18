@@ -11,6 +11,7 @@ pub mod stream;
 
 pub async fn p2p_server(config: SharedConf, bus: SharedMessageBus) -> Result<(), Error> {
     let mut peer_id = 1u64;
+
     for peer in &config.peers {
         let config_clone = config.clone();
         let bus_clone = bus.new_handle();
@@ -66,6 +67,8 @@ pub async fn p2p_server(config: SharedConf, bus: SharedMessageBus) -> Result<(),
                     .unwrap_or("no address".to_string())
             );
             let mut peer_server = peer::Peer::new(id, socket, bus, conf);
+            _ = peer_server.handshake().await;
+            debug!("Handshake done !");
             match peer_server.start().await {
                 Ok(_) => info!("Peer thread exited"),
                 Err(e) => info!("Peer thread exited: {}", e),
