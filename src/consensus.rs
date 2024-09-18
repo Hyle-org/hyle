@@ -9,9 +9,14 @@ use crate::{
     bus::{command_response::CmdRespClient, SharedMessageBus},
     mempool::{MempoolCommand, MempoolResponse},
     model::{get_current_timestamp, Block, Hashable, Transaction},
-    p2p::network::{ConsensusNetMessage, OutboundMessage},
+    p2p::network::OutboundMessage,
     utils::{conf::SharedConf, logger::LogMe},
 };
+
+#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode)]
+pub enum ConsensusNetMessage {
+    CommitBlock(Block),
+}
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub enum ConsensusCommand {
