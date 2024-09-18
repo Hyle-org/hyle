@@ -9,7 +9,8 @@ use crate::{
     bus::{command_response::CmdRespClient, SharedMessageBus},
     mempool::{MempoolCommand, MempoolResponse},
     model::{get_current_timestamp, Block, Hashable, Transaction},
-    p2p::network::{ConsensusNetMessage, OutboundMessage, Signed},
+    p2p::network::{ConsensusNetMessage, OutboundMessage, ReplicaRegistryNetMessage, Signed},
+    replica_registry::ReplicaRegistry,
     utils::{conf::SharedConf, logger::LogMe},
 };
 
@@ -26,6 +27,7 @@ pub enum ConsensusEvent {
 
 #[derive(Serialize, Deserialize, Encode, Decode)]
 pub struct Consensus {
+    replicas: ReplicaRegistry,
     blocks: Vec<Block>,
     batch_id: u64,
     // Accumulated batches from mempool
@@ -159,6 +161,7 @@ impl Consensus {
         let mut consensus_command_receiver = bus.receiver::<ConsensusCommand>().await;
         let mut consensus_net_message_receiver =
             bus.receiver::<Signed<ConsensusNetMessage>>().await;
+        let mut replica_registry_receiver = bus.receiver::<ReplicaRegistryNetMessage>().await;
 
         if is_master {
             info!(
@@ -190,6 +193,9 @@ impl Consensus {
                 Ok(msg) = consensus_net_message_receiver.recv() => {
                     self.handle_net_message(msg);
                 }
+                Ok(cmd) = replica_registry_receiver.recv() => {
+                    self.replicas.handle_net_message(cmd).await;
+                }
             }
         }
     }
@@ -198,7 +204,7 @@ impl Consensus {
         Signed {
             msg,
             signature: Default::default(),
-            replica_pub_key: Default::default(),
+            replica_id: Default::default(),
         }
     }
 }
@@ -206,6 +212,7 @@ impl Consensus {
 impl Default for Consensus {
     fn default() -> Self {
         Self {
+            replicas: ReplicaRegistry::default(),
             blocks: vec![Block::default()],
             batch_id: 0,
             tx_batches: HashMap::new(),

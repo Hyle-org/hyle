@@ -15,6 +15,7 @@ use super::network::{MempoolNetMessage, NetMessage, Version};
 use super::stream::send_net_message;
 use crate::bus::SharedMessageBus;
 use crate::p2p::network::ConsensusNetMessage;
+use crate::p2p::network::ReplicaRegistryNetMessage;
 use crate::p2p::network::Signed;
 use crate::p2p::stream::read_stream;
 use crate::p2p::stream::send_binary;
@@ -116,6 +117,18 @@ impl Peer {
                     .send(consensus_msg)
                     .map(|_| ())
                     .context("Receiving consensus net message")
+            }
+            NetMessage::ReplicaRegistryMessage(replica_registry_msg) => {
+                debug!(
+                    "Received new replica registry net message {:?}",
+                    replica_registry_msg
+                );
+                self.bus
+                    .sender::<ReplicaRegistryNetMessage>()
+                    .await
+                    .send(replica_registry_msg)
+                    .map(|_| ())
+                    .context("Receiving replica registry net message")
             }
         }
     }

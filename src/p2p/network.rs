@@ -1,4 +1,7 @@
-use crate::model::{Block, Transaction};
+use crate::{
+    model::{Block, Transaction},
+    replica_registry::{Replica, ReplicaId},
+};
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 
@@ -28,24 +31,45 @@ impl OutboundMessage {
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, Default)]
 pub struct Signature(pub Vec<u8>);
 
-#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, Default)]
-pub struct ReplicaPubKey(pub Vec<u8>);
-
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode)]
-pub struct Signed<T> {
+pub struct Signed<T: Encode> {
     pub msg: T,
     pub signature: Signature,
-    pub replica_pub_key: ReplicaPubKey,
+    pub replica_id: ReplicaId,
 }
+<<<<<<< HEAD
 
 pub type SignedMempoolNetMessage = Signed<MempoolNetMessage>;
 pub type SignedConsensusNetMessage = Signed<ConsensusNetMessage>;
+=======
+
+impl<T: Wrappable<T> + Encode> Signed<T> {
+    pub fn wrap(self) -> NetMessage {
+        T::wrap(self)
+    }
+}
+
+pub trait Wrappable<T: Encode> {
+    fn wrap(msg: Signed<T>) -> NetMessage;
+}
+>>>>>>> a8e9709 (✨ Add ReplicaRegistry)
 
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode)]
 pub enum NetMessage {
     HandshakeMessage(HandshakeNetMessage),
+<<<<<<< HEAD
     MempoolMessage(SignedMempoolNetMessage),
     ConsensusMessage(SignedConsensusNetMessage),
+=======
+    ReplicaRegistryMessage(ReplicaRegistryNetMessage),
+    MempoolMessage(Signed<MempoolNetMessage>),
+    ConsensusMessage(Signed<ConsensusNetMessage>),
+>>>>>>> a8e9709 (✨ Add ReplicaRegistry)
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode)]
+pub enum ReplicaRegistryNetMessage {
+    NewReplica(Replica),
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode)]
