@@ -152,7 +152,7 @@ impl Consensus {
     fn handle_net_message(
         &mut self,
         msg: ConsensusNetMessage,
-        consensus_sender: Sender<OutboundMessage>,
+        outbound_sender: Sender<OutboundMessage>,
     ) -> Result<()> {
         match msg {
             ConsensusNetMessage::Prepare(consensus_proposal) => {
@@ -161,7 +161,7 @@ impl Consensus {
                 // Validate consensus_proposal slot, view, previous_qc and proposed block
                 let vote = self.verify_consensus_proposal(consensus_proposal);
                 // Responds PrepareVote message to leader with replica's vote on this proposal
-                _ = consensus_sender
+                _ = outbound_sender
                     .send(OutboundMessage::broadcast(
                         ConsensusNetMessage::PrepareVote(vote),
                     ))
@@ -189,7 +189,7 @@ impl Consensus {
 
                     // if fast-path ... TODO
                     // else send Confirm message to replicas
-                    _ = consensus_sender
+                    _ = outbound_sender
                         .send(OutboundMessage::broadcast(ConsensusNetMessage::Confirm(
                             prepare_quorum_certificate,
                         )))
@@ -203,7 +203,7 @@ impl Consensus {
                 // Buffers the *Prepare* Quorum Cerficiate
                 self.bft_round_state.prepare_quorum_certificate = prepare_quorum_certificate;
                 // Responds ConfirmAck to leader
-                _ = consensus_sender
+                _ = outbound_sender
                     .send(OutboundMessage::broadcast(ConsensusNetMessage::ConfirmAck))
                     .context("Failed to send ConsensusNetMessage::ConfirmAck msg on the bus")?;
                 Ok(())
@@ -223,7 +223,7 @@ impl Consensus {
                     let commit_quorum_certificate = 1; // FIXME
 
                     // Send Commit message of this certificate to all replicas
-                    _ = consensus_sender
+                    _ = outbound_sender
                         .send(OutboundMessage::broadcast(ConsensusNetMessage::Commit(
                             commit_quorum_certificate,
                         )))
@@ -264,7 +264,7 @@ impl Consensus {
                     block: Block::default(), // FIXME
                 };
                 // Send Prepare message to all replicas
-                _ = consensus_sender
+                _ = outbound_sender
                     .send(OutboundMessage::broadcast(ConsensusNetMessage::Prepare(
                         consensus_proposal,
                     )))

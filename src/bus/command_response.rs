@@ -76,7 +76,7 @@ impl CmdRespClient for SharedMessageBus {
 macro_rules! handle_messages {
     ( $(command_response <$command:ident,$response:ident>($bus:expr) = $res:ident => $handler:block)+, $($rest:tt)*) => {{
         use paste::paste;
-        use crate::bus::command_response::*;
+        use $crate::bus::command_response::*;
 
         $(
             // In order to generate a variable with the name server$command$response for each server
