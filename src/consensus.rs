@@ -10,7 +10,8 @@ use crate::{
     handle_messages,
     mempool::{MempoolCommand, MempoolResponse},
     model::{get_current_timestamp, Block, Hashable, Transaction},
-    p2p::network::{OutboundMessage, Signed},
+    p2p::network::{OutboundMessage, ReplicaRegistryNetMessage, Signed},
+    replica_registry::ReplicaRegistry,
     utils::{conf::SharedConf, logger::LogMe},
 };
 
@@ -32,7 +33,7 @@ pub enum ConsensusEvent {
 
 #[derive(Serialize, Deserialize, Encode, Decode)]
 pub struct Consensus {
-    blocks: Vec<Block>,
+    replicas: ReplicaRegistry,
     batch_id: u64,
     // Accumulated batches from mempool
     tx_batches: HashMap<String, Vec<Transaction>>,
@@ -196,6 +197,9 @@ impl Consensus {
             }
             listen<Signed<ConsensusNetMessage>>(bus) = cmd => {
                 self.handle_net_message(cmd);
+            }
+            listen<ReplicaRegistryNetMessage>(bus) = cmd => {
+                self.replicas.handle_net_message(cmd);
             }
         }
     }
