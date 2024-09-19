@@ -4,7 +4,6 @@ use std::time::SystemTime;
 use anyhow::{anyhow, Context, Error, Result};
 use bloomfilter::Bloom;
 use tokio::net::TcpStream;
-use tokio::select;
 use tokio::sync::mpsc;
 use tokio::time::sleep;
 use tracing::{debug, info, trace, warn};
@@ -15,6 +14,7 @@ use super::network::{NetMessage, Version};
 use super::stream::send_net_message;
 use crate::bus::SharedMessageBus;
 use crate::consensus::ConsensusNetMessage;
+use crate::handle_messages;
 use crate::mempool::MempoolNetMessage;
 use crate::p2p::network::ReplicaRegistryNetMessage;
 use crate::p2p::network::Signed;
@@ -163,72 +163,59 @@ impl Peer {
     }
 
     pub async fn start(&mut self) -> Result<(), Error> {
-        let mut outbound_rx = self.bus.receiver::<OutboundMessage>().await;
-
-        loop {
-            let wait_tcp = read_stream(&mut self.stream); //FIXME: make read_stream cancel safe !
-            let wait_cmd = self.internal_cmd_rx.recv();
-            let wait_outbound = outbound_rx.recv();
-
-            // select! waits on multiple concurrent branches, returning when the **first** branch
-            // completes, cancelling the remaining branches.
-            select! {
-                res = wait_outbound => {
-                    match res {
-                        Ok(OutboundMessage::SendMessage { peer_id, msg }) => match self.handle_send_message(peer_id, msg).await {
-                            Ok(_) => continue,
-                            Err(e) => {
-                                warn!("Error while sending net message: {}", e);
-                            }
-                        }
-                        Ok(OutboundMessage::BroadcastMessage(message)) => match self.handle_broadcast_message(message).await {
-                            Ok(_) => continue,
-                            Err(e) => {
-                                warn!("Error while broadcasting net message: {}", e);
-                            }
-                        }
+        handle_messages! {
+            on_bus self.bus,
+            listen<OutboundMessage> res => {
+                match res {
+                    OutboundMessage::SendMessage { peer_id, msg } => match self.handle_send_message(peer_id, msg).await {
+                        Ok(_) => continue,
                         Err(e) => {
-                            warn!("Error while receiving outbound message: {}", e);
+                            warn!("Error while sending net message: {}", e);
+                        }
+                    }
+                    OutboundMessage::BroadcastMessage(message) => match self.handle_broadcast_message(message).await {
+                        Ok(_) => continue,
+                        Err(e) => {
+                            warn!("Error while broadcasting net message: {}", e);
                         }
                     }
                 }
-                res = wait_tcp => {
-                    match res {
-                        Ok((message, _)) => match self.handle_stream_message(message).await {
-                            Ok(_) => continue,
-                            Err(e) => {
-                                warn!("Error while handling net message: {}", e);
-                            }
-                        },
-                        Err(e) => {
-                            warn!("Error reading tcp stream: {:?}", e);
-                            return Err(e);
-                        }
+            }
+
+            res = read_stream(&mut self.stream) => match res {
+                Ok((message, _)) => match self.handle_stream_message(message).await {
+                    Ok(_) => continue,
+                    Err(e) => {
+                        warn!("Error while handling net message: {}", e);
                     }
+                },
+                Err(e) => {
+                    warn!("Error reading tcp stream: {:?}", e);
+                    return Err(e);
                 }
-                res = wait_cmd => {
-                    if let Some(cmd) = res {
-                        let cmd_res = match cmd {
-                            Cmd::Ping => {
-                                if let Ok(d) = SystemTime::now().duration_since(self.last_pong) {
-                                    if d > Duration::from_secs(self.conf.p2p.ping_interval * 5) {
-                                        warn!("Peer did not respond to last 5 pings. Disconnecting.");
-                                        return Ok(())
-                                    }
+            },
+
+            res =  self.internal_cmd_rx.recv() => {
+                if let Some(cmd) = res {
+                    let cmd_res = match cmd {
+                        Cmd::Ping => {
+                            if let Ok(d) = SystemTime::now().duration_since(self.last_pong) {
+                                if d > Duration::from_secs(self.conf.p2p.ping_interval * 5) {
+                                    warn!("Peer did not respond to last 5 pings. Disconnecting.");
+                                    return Ok(())
                                 }
-                                debug!("ping");
-                                send_net_message(&mut self.stream, HandshakeNetMessage::Ping.into()).await
                             }
-                        };
+                            debug!("ping");
+                            send_net_message(&mut self.stream, HandshakeNetMessage::Ping.into()).await
+                        }
+                    };
 
-                        match cmd_res {
-                             Ok(_) => (),
-                             Err(e) => {
-                                warn!("Error while handling cmd: {}", e);
-                            },
-                          }
-                    }
-
+                    match cmd_res {
+                            Ok(_) => (),
+                            Err(e) => {
+                            warn!("Error while handling cmd: {}", e);
+                        },
+                        }
                 }
             }
         }
