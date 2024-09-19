@@ -164,7 +164,8 @@ impl Peer {
 
     pub async fn start(&mut self) -> Result<(), Error> {
         handle_messages! {
-            listen<OutboundMessage>(self.bus) = res => {
+            on_bus self.bus,
+            listen<OutboundMessage> res => {
                 match res {
                     OutboundMessage::SendMessage { peer_id, msg } => match self.handle_send_message(peer_id, msg).await {
                         Ok(_) => continue,
@@ -179,7 +180,7 @@ impl Peer {
                         }
                     }
                 }
-            },
+            }
 
             res = read_stream(&mut self.stream) => match res {
                 Ok((message, _)) => match self.handle_stream_message(message).await {

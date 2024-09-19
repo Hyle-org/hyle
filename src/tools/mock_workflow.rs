@@ -23,13 +23,14 @@ impl MockWorkflowHandler {
 
     pub async fn start(&mut self) {
         handle_messages! {
-            listen<RunScenario>(self.bus) = cmd => {
+            on_bus self.bus,
+            listen<RunScenario> cmd => {
                 match cmd {
                     RunScenario::StressTest => {
                         self.stress_test().await;
                     }
                 }
-            },
+            }
         }
     }
 
