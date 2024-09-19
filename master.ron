@@ -7,6 +7,7 @@ Config(
       interval: 10
     ),
     rest: "127.0.0.1:4321",
+    history_db: "master_history.db",
   p2p: (
     ping_interval: 10
   )

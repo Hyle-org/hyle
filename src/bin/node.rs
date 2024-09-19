@@ -75,6 +75,9 @@ pub struct Args {
     #[arg(short, long, action = clap::ArgAction::SetTrue)]
     pub client: Option<bool>,
 
+    #[arg(long, default_value = "history.db")]
+    pub history_db: String,
+
     #[arg(long, default_value = "master.ron")]
     pub config_file: String,
 }
@@ -99,7 +102,12 @@ async fn main() -> Result<()> {
 
     start_mempool(SharedMessageBus::new_handle(&bus));
 
-    let history = History::new(config.history_db.as_deref().unwrap_or("history.db"))?;
+    let history = History::new(
+        config
+            .history_db
+            .as_deref()
+            .unwrap_or(args.history_db.as_str()),
+    )?;
     start_history(history.share(), bus.new_handle(), Arc::clone(&config));
 
     start_node_state(bus.new_handle(), Arc::clone(&config));
