@@ -2,11 +2,12 @@ use anyhow::{Context, Result};
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, default::Default, fs, time::Duration};
-use tokio::{select, sync::broadcast::Sender, time::sleep};
+use tokio::{sync::broadcast::Sender, time::sleep};
 use tracing::info;
 
 use crate::{
     bus::{command_response::CmdRespClient, SharedMessageBus},
+    handle_messages,
     mempool::{MempoolCommand, MempoolResponse},
     model::{get_current_timestamp, Block, Hashable, Transaction},
     p2p::network::OutboundMessage,
@@ -112,9 +113,9 @@ impl Consensus {
     async fn handle_command(
         &mut self,
         msg: ConsensusCommand,
-        bus: SharedMessageBus,
-        consensus_event_sender: Sender<ConsensusEvent>,
-        outbound_sender: Sender<OutboundMessage>,
+        bus: &SharedMessageBus,
+        consensus_event_sender: &Sender<ConsensusEvent>,
+        outbound_sender: &Sender<OutboundMessage>,
     ) -> Result<()> {
         match msg {
             ConsensusCommand::GenerateNewBlock => {
@@ -161,8 +162,6 @@ impl Consensus {
         let outbound_sender = bus.sender::<OutboundMessage>().await;
         let consensus_event_sender = bus.sender::<ConsensusEvent>().await;
         let consensus_command_sender = bus.sender::<ConsensusCommand>().await;
-        let mut consensus_command_receiver = bus.receiver::<ConsensusCommand>().await;
-        let mut consensus_net_message_receiver = bus.receiver::<ConsensusNetMessage>().await;
 
         if is_master {
             info!(
@@ -183,18 +182,13 @@ impl Consensus {
                 }
             });
         }
-
-        loop {
-            let shared_bus = SharedMessageBus::new_handle(&bus);
-            select! {
-                Ok(msg) = consensus_command_receiver.recv() => {
-                    _ = self.handle_command(msg, shared_bus,
-                    consensus_event_sender.clone(), outbound_sender.clone()).await;
-                }
-                Ok(msg) = consensus_net_message_receiver.recv() => {
-                    self.handle_net_message(msg);
-                }
-            }
+        handle_messages! {
+            listen<ConsensusCommand>(bus) = cmd => {
+                _ = self.handle_command(cmd, &bus, &consensus_event_sender, &outbound_sender).await;
+            },
+            listen<ConsensusNetMessage>(bus) = cmd => {
+                self.handle_net_message(cmd);
+            },
         }
     }
 }
