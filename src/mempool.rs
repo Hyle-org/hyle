@@ -3,14 +3,12 @@ use crate::{
     consensus::ConsensusEvent,
     handle_messages,
     model::{Hashable, Transaction},
-    p2p::network::{
-        MempoolNetMessage, OutboundMessage, ReplicaRegistryNetMessage, Signed,
-        SignedMempoolNetMessage,
-    },
+    p2p::network::{OutboundMessage, ReplicaRegistryNetMessage, Signed, SignedMempoolNetMessage},
     replica_registry::ReplicaRegistry,
     rest::endpoints::RestApiMessage,
 };
 use anyhow::Result;
+use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tracing::{info, warn};
@@ -28,6 +26,11 @@ pub struct Mempool {
     pending_batches: HashMap<String, Vec<Transaction>>,
     // Block has been committed by the consensus, could be removed at some point
     committed_batches: Vec<Batch>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode)]
+pub enum MempoolNetMessage {
+    NewTx(Transaction),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
