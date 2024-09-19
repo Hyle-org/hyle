@@ -34,6 +34,7 @@ pub enum ConsensusEvent {
 #[derive(Serialize, Deserialize, Encode, Decode)]
 pub struct Consensus {
     replicas: ReplicaRegistry,
+    blocks: Vec<Block>,
     batch_id: u64,
     // Accumulated batches from mempool
     tx_batches: HashMap<String, Vec<Transaction>>,
@@ -217,6 +218,7 @@ impl Default for Consensus {
     fn default() -> Self {
         Self {
             blocks: vec![Block::default()],
+            replicas: ReplicaRegistry::default(),
             batch_id: 0,
             tx_batches: HashMap::new(),
             current_block_batches: vec![],
