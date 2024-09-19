@@ -7,12 +7,15 @@ use hyle::{
     mempool::Mempool,
     node_state::NodeState,
     p2p, rest,
-    utils::conf::{self, SharedConf},
+    utils::{
+        conf::{self, SharedConf},
+        crypto::BlstCrypto,
+    },
 };
 use std::sync::Arc;
 use tracing::{debug, error, info, warn};
 
-fn start_consensus(bus: SharedMessageBus, config: SharedConf) {
+fn start_consensus(bus: SharedMessageBus, config: SharedConf, crypto: BlstCrypto) {
     let _ = tokio::task::Builder::new()
         .name("Consensus")
         .spawn(async move {
@@ -21,7 +24,7 @@ fn start_consensus(bus: SharedMessageBus, config: SharedConf) {
                     warn!("Failed to load consensus state from disk, using a default one");
                     Consensus::default()
                 })
-                .start(bus, config)
+                .start(bus, config, crypto)
                 .await
         });
 }
@@ -43,18 +46,18 @@ fn start_node_state(bus: SharedMessageBus, config: SharedConf) {
         });
 }
 
-fn start_mempool(bus: SharedMessageBus) {
+fn start_mempool(bus: SharedMessageBus, crypto: BlstCrypto) {
     let _ = tokio::task::Builder::new()
         .name("Mempool")
         .spawn(async move {
-            let mut mempool = Mempool::new(bus);
+            let mut mempool = Mempool::new(bus, crypto);
             mempool.start().await
         });
 }
 
-fn start_p2p(bus: SharedMessageBus, config: SharedConf) {
+fn start_p2p(bus: SharedMessageBus, config: SharedConf, crypto: BlstCrypto) {
     let _ = tokio::task::Builder::new().name("p2p").spawn(async move {
-        if let Err(e) = p2p::p2p_server(config, bus).await {
+        if let Err(e) = p2p::p2p_server(config, bus, crypto).await {
             error!("RPC server failed: {:?}", e);
         }
     });
@@ -96,14 +99,15 @@ async fn main() -> Result<()> {
     debug!("server mode");
 
     let bus = SharedMessageBus::new();
+    let crypto = BlstCrypto::new(config.id.clone()); // TODO load sk from disk instead of random
 
-    start_mempool(SharedMessageBus::new_handle(&bus));
+    start_mempool(SharedMessageBus::new_handle(&bus), crypto.clone());
 
     let idxr = Indexer::new();
     start_indexer(idxr.share(), bus.new_handle(), Arc::clone(&config));
     start_node_state(bus.new_handle(), Arc::clone(&config));
-    start_consensus(bus.new_handle(), Arc::clone(&config));
-    start_p2p(bus.new_handle(), Arc::clone(&config));
+    start_consensus(bus.new_handle(), Arc::clone(&config), crypto.clone());
+    start_p2p(bus.new_handle(), Arc::clone(&config), crypto);
 
     start_mock_workflow(bus.new_handle());
 

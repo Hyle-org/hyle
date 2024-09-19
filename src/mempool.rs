@@ -6,6 +6,7 @@ use crate::{
     p2p::network::{OutboundMessage, ReplicaRegistryNetMessage, Signed, SignedMempoolNetMessage},
     replica_registry::ReplicaRegistry,
     rest::endpoints::RestApiMessage,
+    utils::crypto::BlstCrypto,
 };
 use anyhow::Result;
 use bincode::{Decode, Encode};
@@ -19,6 +20,7 @@ struct Batch(String, Vec<Transaction>);
 
 pub struct Mempool {
     bus: SharedMessageBus,
+    crypto: BlstCrypto,
     replicas: ReplicaRegistry,
     // txs accumulated, not yet transmitted to the consensus
     pending_txs: Vec<Transaction>,
@@ -44,9 +46,10 @@ pub enum MempoolResponse {
 }
 
 impl Mempool {
-    pub fn new(bus: SharedMessageBus) -> Mempool {
+    pub fn new(bus: SharedMessageBus, crypto: BlstCrypto) -> Mempool {
         Mempool {
             bus,
+            crypto,
             replicas: ReplicaRegistry::default(),
             pending_txs: vec![],
             pending_batches: HashMap::new(),
@@ -56,6 +59,7 @@ impl Mempool {
 
     /// start starts the mempool server.
     pub async fn start(&mut self) {
+        info!("Mempool starting");
         impl NeedAnswer<MempoolResponse> for MempoolCommand {}
         handle_messages! {
             command_response<MempoolCommand, MempoolResponse>(self.bus) = cmd => {
@@ -135,11 +139,7 @@ impl Mempool {
     }
 
     fn sign_net_message(&self, msg: MempoolNetMessage) -> Signed<MempoolNetMessage> {
-        Signed {
-            msg,
-            signature: Default::default(),
-            replica_id: Default::default(),
-        }
+        self.crypto.sign(msg).unwrap() // TODO unwrap
     }
 
     fn handle_command(&mut self, command: MempoolCommand) -> Result<Option<MempoolResponse>> {

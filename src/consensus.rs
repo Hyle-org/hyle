@@ -3,7 +3,7 @@ use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, default::Default, fs, time::Duration};
 use tokio::{sync::broadcast::Sender, time::sleep};
-use tracing::info;
+use tracing::{info, warn};
 
 use crate::{
     bus::{command_response::CmdRespClient, SharedMessageBus},
@@ -12,7 +12,7 @@ use crate::{
     model::{get_current_timestamp, Block, Hashable, Transaction},
     p2p::network::{OutboundMessage, ReplicaRegistryNetMessage, Signed, SignedConsensusNetMessage},
     replica_registry::ReplicaRegistry,
-    utils::{conf::SharedConf, logger::LogMe},
+    utils::{conf::SharedConf, crypto::BlstCrypto, logger::LogMe},
 };
 
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode)]
@@ -105,10 +105,19 @@ impl Consensus {
     }
 
     fn handle_net_message(&mut self, msg: Signed<ConsensusNetMessage>) {
-        match msg.msg {
-            ConsensusNetMessage::CommitBlock(block) => {
-                info!("Got a commited block {:?}", block)
+        match self.replicas.check_signed(&msg) {
+            Ok(valid) => {
+                if valid {
+                    match msg.msg {
+                        ConsensusNetMessage::CommitBlock(block) => {
+                            info!("Got a commited block {:?}", block)
+                        }
+                    }
+                } else {
+                    warn!("Invalid signature for message {:?}", msg);
+                }
             }
+            Err(e) => warn!("Error while checking signed message: {}", e),
         }
     }
 
@@ -116,6 +125,7 @@ impl Consensus {
         &mut self,
         msg: ConsensusCommand,
         bus: &SharedMessageBus,
+        crypto: &BlstCrypto,
         consensus_event_sender: &Sender<ConsensusEvent>,
         outbound_sender: &Sender<OutboundMessage>,
     ) -> Result<()> {
@@ -144,7 +154,7 @@ impl Consensus {
                                 )?;
                             // send to network
                             _ = outbound_sender
-                                .send(OutboundMessage::broadcast(self.sign_net_message(ConsensusNetMessage::CommitBlock(block)))).context("Failed to send ConsensusNetMessage::CommitBlock msg on the bus")?;
+                                .send(OutboundMessage::broadcast(Self::sign_net_message(crypto, ConsensusNetMessage::CommitBlock(block)))).context("Failed to send ConsensusNetMessage::CommitBlock msg on the bus")?;
                         }
                     }
                 }
@@ -158,7 +168,12 @@ impl Consensus {
         }
     }
 
-    pub async fn start(&mut self, bus: SharedMessageBus, config: SharedConf) -> Result<()> {
+    pub async fn start(
+        &mut self,
+        bus: SharedMessageBus,
+        config: SharedConf,
+        crypto: BlstCrypto,
+    ) -> Result<()> {
         let interval = config.storage.interval;
         let is_master = config.peers.is_empty();
         let outbound_sender = bus.sender::<OutboundMessage>().await;
@@ -186,7 +201,7 @@ impl Consensus {
         }
         handle_messages! {
             listen<ConsensusCommand>(bus) = cmd => {
-                _ = self.handle_command(cmd, &bus, &consensus_event_sender, &outbound_sender).await;
+                _ = self.handle_command(cmd, &bus, &crypto, &consensus_event_sender, &outbound_sender).await;
             },
             listen<SignedConsensusNetMessage>(bus) = cmd => {
                 self.handle_net_message(cmd);
@@ -197,12 +212,11 @@ impl Consensus {
         }
     }
 
-    fn sign_net_message(&self, msg: ConsensusNetMessage) -> Signed<ConsensusNetMessage> {
-        Signed {
-            msg,
-            signature: Default::default(),
-            replica_id: Default::default(),
-        }
+    fn sign_net_message(
+        crypto: &BlstCrypto,
+        msg: ConsensusNetMessage,
+    ) -> Signed<ConsensusNetMessage> {
+        crypto.sign(msg).unwrap() // TODO unwrap
     }
 }
 

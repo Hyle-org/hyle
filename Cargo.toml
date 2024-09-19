@@ -25,6 +25,7 @@ stark-platinum-prover = { git = "https://github.com/lambdaclass/lambdaworks.git"
 console-subscriber = "0.4.0"
 bloomfilter = "1.0.14"
 paste = "1.0.15"
+blst = "0.3.13"
 
 [dev-dependencies]
 assert_cmd = "2.0.16"

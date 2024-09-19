@@ -1,3 +1,5 @@
+use std::fmt;
+
 use crate::replica_registry::{Replica, ReplicaId};
 use crate::{consensus::ConsensusNetMessage, mempool::MempoolNetMessage};
 use bincode::{Decode, Encode};
@@ -26,8 +28,16 @@ impl OutboundMessage {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, Default)]
+#[derive(Serialize, Deserialize, Clone, Encode, Decode, Default)]
 pub struct Signature(pub Vec<u8>);
+
+impl std::fmt::Debug for Signature {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("Signature")
+            .field(&hex::encode(&self.0))
+            .finish()
+    }
+}
 
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode)]
 pub struct Signed<T: Encode> {
