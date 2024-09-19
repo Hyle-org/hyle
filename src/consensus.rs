@@ -139,6 +139,12 @@ impl Consensus {
         // TODO
         true
     }
+
+    fn verify_prepare_quorum_certificate(&self, _prepare_quorum_certificate: u64) -> bool {
+        // TODO
+        true
+    }
+
     fn verify_commit_quorum_certificate(&self, _commit_quorum_certificate: u64) -> bool {
         // TODO
         true
@@ -163,6 +169,12 @@ impl Consensus {
             ConsensusNetMessage::Prepare(consensus_proposal) => {
                 // Message received by replica.
 
+                let peer_id = 1; // FIXME: we need the peer_id of who sent the message
+
+                // Validate message comes from the correct leader
+                if self.leader_id() != peer_id {
+                    // fail
+                }
                 // Validate consensus_proposal slot, view, previous_qc and proposed block
                 let vote = self.verify_consensus_proposal(consensus_proposal);
                 // Responds PrepareVote message to leader with replica's vote on this proposal
@@ -188,7 +200,7 @@ impl Consensus {
                     .iter()
                     .fold(0, |acc, (_, vote)| acc + if *vote { 1 } else { 0 });
 
-                // Waits for at least 𝑛−𝑓 = 2𝑓 +1 matching PrepareVote messages
+                // Waits for at least 𝑛−𝑓 = 2𝑓+1 matching PrepareVote messages
                 if validated_votes == 2 * self.bft_round_state.f + 1 {
                     // Aggregates them into a *Prepare* Quorum Certificate
                     let prepare_quorum_certificate = 1; // FIXME
@@ -206,6 +218,10 @@ impl Consensus {
             ConsensusNetMessage::Confirm(prepare_quorum_certificate) => {
                 // Message received by replica.
 
+                // Verifies and save the *Prepare* Quorum Certificate
+                if !self.verify_prepare_quorum_certificate(prepare_quorum_certificate) {
+                    // Fail
+                }
                 // Buffers the *Prepare* Quorum Cerficiate
                 self.bft_round_state.prepare_quorum_certificate = prepare_quorum_certificate;
                 // Responds ConfirmAck to leader
@@ -262,6 +278,7 @@ impl Consensus {
                 if !self.is_next_leader() {
                     return Ok(());
                 }
+
                 // Starts new slot
                 self.bft_round_state.is_leader = true;
 
