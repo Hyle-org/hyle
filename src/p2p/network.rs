@@ -1,3 +1,4 @@
+use crate::replica_registry::{Replica, ReplicaId};
 use crate::{consensus::ConsensusNetMessage, mempool::MempoolNetMessage};
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
@@ -25,11 +26,30 @@ impl OutboundMessage {
     }
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, Default)]
+pub struct Signature(pub Vec<u8>);
+
+#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode)]
+pub struct Signed<T: Encode> {
+    pub msg: T,
+    pub signature: Signature,
+    pub replica_id: ReplicaId,
+}
+
+pub type SignedMempoolNetMessage = Signed<MempoolNetMessage>;
+pub type SignedConsensusNetMessage = Signed<ConsensusNetMessage>;
+
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode)]
 pub enum NetMessage {
     HandshakeMessage(HandshakeNetMessage),
-    MempoolMessage(MempoolNetMessage),
-    ConsensusMessage(ConsensusNetMessage),
+    MempoolMessage(SignedMempoolNetMessage),
+    ConsensusMessage(SignedConsensusNetMessage),
+    ReplicaRegistryMessage(ReplicaRegistryNetMessage),
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode)]
+pub enum ReplicaRegistryNetMessage {
+    NewReplica(Replica),
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode)]
@@ -46,14 +66,20 @@ impl From<HandshakeNetMessage> for NetMessage {
     }
 }
 
-impl From<MempoolNetMessage> for NetMessage {
-    fn from(msg: MempoolNetMessage) -> Self {
+impl From<ReplicaRegistryNetMessage> for NetMessage {
+    fn from(msg: ReplicaRegistryNetMessage) -> Self {
+        NetMessage::ReplicaRegistryMessage(msg)
+    }
+}
+
+impl From<Signed<MempoolNetMessage>> for NetMessage {
+    fn from(msg: Signed<MempoolNetMessage>) -> Self {
         NetMessage::MempoolMessage(msg)
     }
 }
 
-impl From<ConsensusNetMessage> for NetMessage {
-    fn from(msg: ConsensusNetMessage) -> Self {
+impl From<Signed<ConsensusNetMessage>> for NetMessage {
+    fn from(msg: Signed<ConsensusNetMessage>) -> Self {
         NetMessage::ConsensusMessage(msg)
     }
 }

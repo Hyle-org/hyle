@@ -1,8 +1,8 @@
 use crate::{
     bus::SharedMessageBus,
     handle_messages,
+    mempool::MempoolNetMessage,
     model::{Blob, BlobData, BlobTransaction, ContractName, Identity, Transaction},
-    p2p::network::MempoolNetMessage,
 };
 use serde::{Deserialize, Serialize};
 use tracing::warn;
