@@ -26,6 +26,7 @@ pub struct Conf {
     pub storage: Storage,
     rest: String,
     pub p2p: P2pConf,
+    pub data_directory: Option<String>,
 }
 
 impl Conf {

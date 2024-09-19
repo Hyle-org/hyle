@@ -48,9 +48,9 @@ pub struct History {
 }
 
 impl History {
-    pub fn new() -> Result<Self> {
+    pub fn new(db_name: &str) -> Result<Self> {
         Ok(Self {
-            inner: Arc::new(Mutex::new(HistoryInner::new()?)),
+            inner: Arc::new(Mutex::new(HistoryInner::new(db_name)?)),
         })
     }
 
@@ -177,11 +177,11 @@ pub struct HistoryInner {
 }
 
 impl HistoryInner {
-    pub fn new() -> Result<Self> {
+    pub fn new(db_name: &str) -> Result<Self> {
         let db = sled::Config::new()
             .use_compression(true)
             .compression_factor(15)
-            .path("history.db")
+            .path(db_name)
             .open()
             .context("opening the database")?;
         Ok(Self {
