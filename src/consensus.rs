@@ -154,7 +154,7 @@ impl Consensus {
                                 )?;
                             // send to network
                             _ = outbound_sender
-                                .send(OutboundMessage::broadcast(Self::sign_net_message(crypto, ConsensusNetMessage::CommitBlock(block)))).context("Failed to send ConsensusNetMessage::CommitBlock msg on the bus")?;
+                                .send(OutboundMessage::broadcast(Self::sign_net_message(crypto, ConsensusNetMessage::CommitBlock(block))?)).context("Failed to send ConsensusNetMessage::CommitBlock msg on the bus")?;
                         }
                     }
                 }
@@ -215,8 +215,8 @@ impl Consensus {
     fn sign_net_message(
         crypto: &BlstCrypto,
         msg: ConsensusNetMessage,
-    ) -> Signed<ConsensusNetMessage> {
-        crypto.sign(msg).unwrap() // TODO unwrap
+    ) -> Result<Signed<ConsensusNetMessage>> {
+        crypto.sign(msg)
     }
 }
 

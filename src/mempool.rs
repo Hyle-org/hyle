@@ -8,7 +8,7 @@ use crate::{
     rest::endpoints::RestApiMessage,
     utils::crypto::BlstCrypto,
 };
-use anyhow::Result;
+use anyhow::{Context, Result};
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -117,7 +117,7 @@ impl Mempool {
         match command {
             RestApiMessage::NewTx(tx) => {
                 self.on_new_tx(tx.clone()).await;
-                self.broadcast_tx(tx).await
+                self.broadcast_tx(tx).await.ok();
             }
         }
     }
@@ -127,19 +127,19 @@ impl Mempool {
         self.pending_txs.push(tx);
     }
 
-    async fn broadcast_tx(&mut self, tx: Transaction) {
+    async fn broadcast_tx(&mut self, tx: Transaction) -> Result<()> {
         self.bus
             .sender::<OutboundMessage>()
             .await
             .send(OutboundMessage::broadcast(
-                self.sign_net_message(MempoolNetMessage::NewTx(tx)),
+                self.sign_net_message(MempoolNetMessage::NewTx(tx))?,
             ))
             .map(|_| ())
-            .ok();
+            .context("broadcasting tx")
     }
 
-    fn sign_net_message(&self, msg: MempoolNetMessage) -> Signed<MempoolNetMessage> {
-        self.crypto.sign(msg).unwrap() // TODO unwrap
+    fn sign_net_message(&self, msg: MempoolNetMessage) -> Result<Signed<MempoolNetMessage>> {
+        self.crypto.sign(msg)
     }
 
     fn handle_command(&mut self, command: MempoolCommand) -> Result<Option<MempoolResponse>> {
