@@ -1,7 +1,8 @@
 use std::time::Duration;
 use std::time::SystemTime;
 
-use anyhow::{anyhow, Context, Error, Result};
+use anyhow::Context;
+use anyhow::{anyhow, Error, Result};
 use bloomfilter::Bloom;
 use tokio::net::TcpStream;
 use tokio::sync::mpsc;
@@ -114,7 +115,7 @@ impl Peer {
         match msg {
             NetMessage::HandshakeMessage(handshake_msg) => {
                 debug!("Received new handshake net message {:?}", handshake_msg);
-                self.handle_handshake_message(handshake_msg).await
+                self.handle_handshake_message(handshake_msg).await?;
             }
             NetMessage::MempoolMessage(mempool_msg) => {
                 debug!("Received new mempool net message {:?}", mempool_msg);
@@ -122,8 +123,7 @@ impl Peer {
                     .sender::<Signed<MempoolNetMessage>>()
                     .await
                     .send(mempool_msg)
-                    .map(|_| ())
-                    .context("Receiving mempool net message")
+                    .context("Receiving mempool net message")?;
             }
             NetMessage::ConsensusMessage(consensus_msg) => {
                 debug!("Received new consensus net message {:?}", consensus_msg);
@@ -131,8 +131,7 @@ impl Peer {
                     .sender::<Signed<ConsensusNetMessage>>()
                     .await
                     .send(consensus_msg)
-                    .map(|_| ())
-                    .context("Receiving consensus net message")
+                    .context("Receiving consensus net message")?;
             }
             NetMessage::ReplicaRegistryMessage(replica_registry_msg) => {
                 debug!(
@@ -143,10 +142,10 @@ impl Peer {
                     .sender::<ReplicaRegistryNetMessage>()
                     .await
                     .send(replica_registry_msg)
-                    .map(|_| ())
-                    .context("Receiving replica registry net message")
+                    .context("Receiving replica registry net message")?;
             }
         }
+        Ok(())
     }
 
     fn ping_pong(&self) {
@@ -185,7 +184,7 @@ impl Peer {
                 Ok((message, _)) => match self.handle_stream_message(message).await {
                     Ok(_) => continue,
                     Err(e) => {
-                        warn!("Error while handling net message: {}", e);
+                        warn!("Error while handling net message: {:#}", e);
                     }
                 },
                 Err(e) => {
