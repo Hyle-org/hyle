@@ -99,7 +99,7 @@ async fn main() -> Result<()> {
 
     start_mempool(SharedMessageBus::new_handle(&bus));
 
-    let history = History::new()?;
+    let history = History::new(config.history_db.as_deref().unwrap_or("history.db"))?;
     start_history(history.share(), bus.new_handle(), Arc::clone(&config));
 
     start_node_state(bus.new_handle(), Arc::clone(&config));
