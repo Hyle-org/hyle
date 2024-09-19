@@ -16,7 +16,7 @@ use crate::{
     mempool::{MempoolCommand, MempoolResponse},
     model::{get_current_timestamp, Block, Hashable, Transaction},
     p2p::network::{OutboundMessage, ReplicaRegistryNetMessage, Signed},
-    replica_registry::ReplicaRegistry,
+    replica_registry::{ReplicaId, ReplicaRegistry},
     utils::{conf::SharedConf, logger::LogMe},
 };
 
@@ -48,10 +48,10 @@ pub struct BFTRoundState {
     slot: u64,
     view: u64,
     prepare_quorum_certificate: u64,
-    prep_votes: HashMap<u64, bool>, // FIXME: set correct type (here it's replica_peer_id:vote)
+    prep_votes: HashMap<ReplicaId, bool>, // FIXME: set correct type (here it's replica_id:vote)
     commit_quorum_certificate: HashMap<u64, u64>, // FIXME: set correct type (here it's slot:quorum certificate)
-    confirm_ack: HashSet<u64>, // FIXME: set correct type (here it's replica_peer_id)
-    block: Option<Block>,      // FIXME: Block ou cut ?
+    confirm_ack: HashSet<ReplicaId>,              // FIXME: set correct type (here it's replica_id)
+    block: Option<Block>,                         // FIXME: Block ou cut ?
 }
 
 impl BFTRoundState {
@@ -166,9 +166,9 @@ impl Consensus {
         true
     }
 
-    fn leader_id(&self) -> u64 {
+    fn leader_id(&self) -> ReplicaId {
         // TODO
-        1
+        ReplicaId("".to_owned())
     }
 
     fn handle_net_message(
@@ -180,10 +180,8 @@ impl Consensus {
             ConsensusNetMessage::Prepare(consensus_proposal) => {
                 // Message received by replica.
 
-                let peer_id = 1; // FIXME: we need the peer_id of who sent the message
-
                 // Validate message comes from the correct leader
-                if self.leader_id() != peer_id {
+                if self.leader_id() != msg.replica_id {
                     // fail
                 }
                 // Validate consensus_proposal slot, view, previous_qc and proposed block
@@ -200,10 +198,8 @@ impl Consensus {
             ConsensusNetMessage::PrepareVote(vote) => {
                 // Message received by leader.
 
-                let peer_id = 1; // FIXME: we need the peer_id of who sent the message
-
                 // Save vote
-                self.bft_round_state.prep_votes.insert(peer_id, vote);
+                self.bft_round_state.prep_votes.insert(msg.replica_id, vote);
                 // Get matching vote count
                 let validated_votes = self
                     .bft_round_state
@@ -247,10 +243,8 @@ impl Consensus {
             ConsensusNetMessage::ConfirmAck => {
                 // Message received by leader.
 
-                let peer_id = 1; // FIXME: we need the peer_id of who sent the message
-
                 // Save ConfirmAck
-                self.bft_round_state.confirm_ack.insert(peer_id);
+                self.bft_round_state.confirm_ack.insert(msg.replica_id);
 
                 if self.bft_round_state.confirm_ack.len()
                     > (2 * self.bft_round_state.f + 1).try_into().unwrap()

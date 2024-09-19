@@ -10,7 +10,10 @@ pub struct Version {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum OutboundMessage {
-    SendMessage { peer_id: u64, msg: NetMessage },
+    SendMessage {
+        replica_id: ReplicaId,
+        msg: NetMessage,
+    },
     BroadcastMessage(NetMessage),
 }
 
@@ -18,9 +21,9 @@ impl OutboundMessage {
     pub fn broadcast<T: Into<NetMessage>>(msg: T) -> Self {
         OutboundMessage::BroadcastMessage(msg.into())
     }
-    pub fn send<T: Into<NetMessage>>(peer_id: u64, msg: T) -> Self {
+    pub fn send<T: Into<NetMessage>>(replica_id: ReplicaId, msg: T) -> Self {
         OutboundMessage::SendMessage {
-            peer_id,
+            replica_id,
             msg: msg.into(),
         }
     }

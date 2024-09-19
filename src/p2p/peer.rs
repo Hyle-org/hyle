@@ -21,6 +21,7 @@ use crate::p2p::network::Signed;
 use crate::p2p::stream::read_stream;
 use crate::p2p::stream::send_binary;
 use crate::replica_registry::Replica;
+use crate::replica_registry::ReplicaId;
 use crate::replica_registry::ReplicaPubKey;
 use crate::utils::conf::SharedConf;
 
@@ -64,7 +65,12 @@ impl Peer {
         }
     }
 
-    async fn handle_send_message(&mut self, peer_id: u64, msg: NetMessage) -> Result<(), Error> {
+    async fn handle_send_message(
+        &mut self,
+        _replica_id: ReplicaId,
+        msg: NetMessage,
+    ) -> Result<(), Error> {
+        let peer_id = 1; // FIXME: extract peer_id from replica_id
         if peer_id != self.id {
             return Ok(());
         }
@@ -167,7 +173,7 @@ impl Peer {
             on_bus self.bus,
             listen<OutboundMessage> res => {
                 match res {
-                    OutboundMessage::SendMessage { peer_id, msg } => match self.handle_send_message(peer_id, msg).await {
+                    OutboundMessage::SendMessage { replica_id, msg } => match self.handle_send_message(replica_id, msg).await {
                         Ok(_) => continue,
                         Err(e) => {
                             warn!("Error while sending net message: {}", e);
