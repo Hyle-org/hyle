@@ -106,7 +106,7 @@ impl NodeState {
         for tx in block.txs {
             let tx_hash = tx.hash();
             match self.handle_transaction(tx) {
-                Ok(_) => info!("Handled tx {tx_hash}"),
+                Ok(_) => debug!("Handled tx {tx_hash}"),
                 Err(e) => error!("Failed handling tx {tx_hash} with error: {e}"),
             }
         }

@@ -7,7 +7,10 @@ use hyle::{
         BlobTransaction, ProofTransaction, RegisterContractTransaction, Transaction,
         TransactionData,
     },
-    p2p::{network::NetMessage, stream::send_net_message},
+    p2p::{
+        network::{NetMessage, Signed},
+        stream::send_net_message,
+    },
     utils::conf::{self, SharedConf},
 };
 use serde::de::Deserialize;
@@ -24,7 +27,11 @@ fn load<'de, T: Deserialize<'de>>(file: String) -> Result<T, ConfigError> {
 }
 
 fn wrap_net_message(tx: Transaction) -> NetMessage {
-    NetMessage::MempoolMessage(MempoolNetMessage::NewTx(tx))
+    NetMessage::MempoolMessage(Signed {
+        msg: MempoolNetMessage::NewTx(tx),
+        signature: Default::default(),
+        replica_id: Default::default(),
+    })
 }
 
 fn wrap_tx(tx: TransactionData) -> Transaction {

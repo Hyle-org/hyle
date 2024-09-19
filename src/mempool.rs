@@ -3,14 +3,15 @@ use crate::{
     consensus::ConsensusEvent,
     handle_messages,
     model::{Hashable, Transaction},
-    p2p::network::OutboundMessage,
+    p2p::network::{OutboundMessage, ReplicaRegistryNetMessage, Signed, SignedMempoolNetMessage},
+    replica_registry::ReplicaRegistry,
     rest::endpoints::RestApiMessage,
 };
 use anyhow::Result;
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 #[allow(dead_code)]
 #[derive(Debug)]
@@ -18,6 +19,7 @@ struct Batch(String, Vec<Transaction>);
 
 pub struct Mempool {
     bus: SharedMessageBus,
+    replicas: ReplicaRegistry,
     // txs accumulated, not yet transmitted to the consensus
     pending_txs: Vec<Transaction>,
     // txs batched under a req_id, transmitted to the consensus to be packed in a block
@@ -45,6 +47,7 @@ impl Mempool {
     pub fn new(bus: SharedMessageBus) -> Mempool {
         Mempool {
             bus,
+            replicas: ReplicaRegistry::default(),
             pending_txs: vec![],
             pending_batches: HashMap::new(),
             committed_batches: vec![],
@@ -58,7 +61,7 @@ impl Mempool {
             command_response<MempoolCommand, MempoolResponse>(self.bus) = cmd => {
                  self.handle_command(cmd)
             },
-            listen<MempoolNetMessage>(self.bus) = cmd => {
+            listen<SignedMempoolNetMessage>(self.bus) = cmd => {
                 self.handle_net_message(cmd).await
             },
             listen<RestApiMessage>(self.bus) = cmd => {
@@ -67,6 +70,10 @@ impl Mempool {
             listen<ConsensusEvent>(self.bus) = cmd => {
                 self.handle_event(cmd);
             },
+            listen<ReplicaRegistryNetMessage>(self.bus) = cmd => {
+                self.replicas.handle_net_message(cmd);
+            },
+
         }
     }
 
@@ -87,9 +94,18 @@ impl Mempool {
         }
     }
 
-    async fn handle_net_message(&mut self, command: MempoolNetMessage) {
-        match command {
-            MempoolNetMessage::NewTx(tx) => self.on_new_tx(tx).await,
+    async fn handle_net_message(&mut self, msg: Signed<MempoolNetMessage>) {
+        match self.replicas.check_signed(&msg) {
+            Ok(valid) => {
+                if valid {
+                    match msg.msg {
+                        MempoolNetMessage::NewTx(tx) => self.on_new_tx(tx).await,
+                    }
+                } else {
+                    warn!("Invalid signature for message {:?}", msg);
+                }
+            }
+            Err(e) => warn!("Error while checking signed message: {}", e),
         }
     }
 
@@ -103,7 +119,7 @@ impl Mempool {
     }
 
     async fn on_new_tx(&mut self, tx: Transaction) {
-        info!("Got new tx {} {:?}", tx.hash(), tx);
+        debug!("Got new tx {} {:?}", tx.hash(), tx);
         self.pending_txs.push(tx);
     }
 
@@ -111,9 +127,19 @@ impl Mempool {
         self.bus
             .sender::<OutboundMessage>()
             .await
-            .send(OutboundMessage::broadcast(MempoolNetMessage::NewTx(tx)))
+            .send(OutboundMessage::broadcast(
+                self.sign_net_message(MempoolNetMessage::NewTx(tx)),
+            ))
             .map(|_| ())
             .ok();
+    }
+
+    fn sign_net_message(&self, msg: MempoolNetMessage) -> Signed<MempoolNetMessage> {
+        Signed {
+            msg,
+            signature: Default::default(),
+            replica_id: Default::default(),
+        }
     }
 
     fn handle_command(&mut self, command: MempoolCommand) -> Result<Option<MempoolResponse>> {

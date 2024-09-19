@@ -15,7 +15,8 @@ use crate::{
     handle_messages,
     mempool::{MempoolCommand, MempoolResponse},
     model::{get_current_timestamp, Block, Hashable, Transaction},
-    p2p::network::OutboundMessage,
+    p2p::network::{OutboundMessage, ReplicaRegistryNetMessage, Signed, SignedConsensusNetMessage},
+    replica_registry::ReplicaRegistry,
     utils::{conf::SharedConf, logger::LogMe},
 };
 
@@ -73,7 +74,7 @@ pub struct ConsensusProposal {
 
 #[derive(Serialize, Deserialize, Encode, Decode)]
 pub struct Consensus {
-    // For each replicas, leader keeps track of everu Prepare Vote
+    replicas: ReplicaRegistry,
     bft_round_state: BFTRoundState,
     blocks: Vec<Block>,
     batch_id: u64,
@@ -122,7 +123,7 @@ impl Consensus {
         }
         _ = self.current_block_batches.drain(0..);
 
-        info!("New block {:?}", block);
+        info!("New block {}", block.height);
         block
     }
 
@@ -172,10 +173,10 @@ impl Consensus {
 
     fn handle_net_message(
         &mut self,
-        msg: ConsensusNetMessage,
+        msg: Signed<ConsensusNetMessage>,
         outbound_sender: &Sender<OutboundMessage>,
     ) -> Result<()> {
-        match msg {
+        match msg.msg {
             ConsensusNetMessage::Prepare(consensus_proposal) => {
                 // Message received by replica.
 
@@ -191,7 +192,7 @@ impl Consensus {
                 _ = outbound_sender
                     .send(OutboundMessage::send(
                         self.leader_id(),
-                        ConsensusNetMessage::PrepareVote(vote),
+                        self.sign_net_message(ConsensusNetMessage::PrepareVote(vote)),
                     ))
                     .context("Failed to send ConsensusNetMessage::Confirm msg on the bus")?;
                 Ok(())
@@ -218,8 +219,8 @@ impl Consensus {
                     // if fast-path ... TODO
                     // else send Confirm message to replicas
                     _ = outbound_sender
-                        .send(OutboundMessage::broadcast(ConsensusNetMessage::Confirm(
-                            prepare_quorum_certificate,
+                        .send(OutboundMessage::broadcast(self.sign_net_message(
+                            ConsensusNetMessage::Confirm(prepare_quorum_certificate),
                         )))
                         .context("Failed to send ConsensusNetMessage::Confirm msg on the bus")?;
                 }
@@ -238,7 +239,7 @@ impl Consensus {
                 _ = outbound_sender
                     .send(OutboundMessage::send(
                         self.leader_id(),
-                        ConsensusNetMessage::ConfirmAck,
+                        self.sign_net_message(ConsensusNetMessage::ConfirmAck),
                     ))
                     .context("Failed to send ConsensusNetMessage::ConfirmAck msg on the bus")?;
                 Ok(())
@@ -259,8 +260,8 @@ impl Consensus {
 
                     // Send Commit message of this certificate to all replicas
                     _ = outbound_sender
-                        .send(OutboundMessage::broadcast(ConsensusNetMessage::Commit(
-                            commit_quorum_certificate,
+                        .send(OutboundMessage::broadcast(self.sign_net_message(
+                            ConsensusNetMessage::Commit(commit_quorum_certificate),
                         )))
                         .context("Failed to send ConsensusNetMessage::Confirm msg on the bus")?;
                 }
@@ -301,8 +302,8 @@ impl Consensus {
                 };
                 // Send Prepare message to all replicas
                 _ = outbound_sender
-                    .send(OutboundMessage::broadcast(ConsensusNetMessage::Prepare(
-                        consensus_proposal,
+                    .send(OutboundMessage::broadcast(self.sign_net_message(
+                        ConsensusNetMessage::Prepare(consensus_proposal),
                     )))
                     .context("Failed to send ConsensusNetMessage::Prepare msg on the bus")?;
 
@@ -342,7 +343,7 @@ impl Consensus {
                                 )?;
                             // send to network
                             // _ = outbound_sender
-                            //     .send(OutboundMessage::broadcast((ConsensusNetMessage::CommitBlock(block))).context("Failed to send ConsensusNetMessage::CommitBlock msg on the bus")?;
+                            //     .send(OutboundMessage::broadcast(self.sign_net_message(ConsensusNetMessage::CommitBlock(block)))).context("Failed to send ConsensusNetMessage::CommitBlock msg on the bus")?;
                         }
                     }
                 }
@@ -386,9 +387,20 @@ impl Consensus {
             listen<ConsensusCommand>(bus) = cmd => {
                 _ = self.handle_command(cmd, &bus, &consensus_event_sender).await;
             },
-            listen<ConsensusNetMessage>(bus) = cmd => {
+            listen<SignedConsensusNetMessage>(bus) = cmd => {
                 _ = self.handle_net_message(cmd, &outbound_sender);
             },
+            listen<ReplicaRegistryNetMessage>(bus) = cmd => {
+                self.replicas.handle_net_message(cmd);
+            },
+        }
+    }
+
+    fn sign_net_message(&self, msg: ConsensusNetMessage) -> Signed<ConsensusNetMessage> {
+        Signed {
+            msg,
+            signature: Default::default(),
+            replica_id: Default::default(),
         }
     }
 }
@@ -396,6 +408,7 @@ impl Consensus {
 impl Default for Consensus {
     fn default() -> Self {
         Self {
+            replicas: ReplicaRegistry::default(),
             blocks: vec![Block::default()],
             batch_id: 0,
             tx_batches: HashMap::new(),

@@ -16,8 +16,12 @@ use super::stream::send_net_message;
 use crate::bus::SharedMessageBus;
 use crate::consensus::ConsensusNetMessage;
 use crate::mempool::MempoolNetMessage;
+use crate::p2p::network::ReplicaRegistryNetMessage;
+use crate::p2p::network::Signed;
 use crate::p2p::stream::read_stream;
 use crate::p2p::stream::send_binary;
+use crate::replica_registry::Replica;
+use crate::replica_registry::ReplicaPubKey;
 use crate::utils::conf::SharedConf;
 
 pub struct Peer {
@@ -27,6 +31,7 @@ pub struct Peer {
     last_pong: SystemTime,
     conf: SharedConf,
     bloom_filter: Bloom<Vec<u8>>,
+    self_replica: Replica,
 
     // peer internal channel
     internal_cmd_tx: mpsc::Sender<Cmd>,
@@ -41,6 +46,10 @@ impl Peer {
     pub fn new(id: u64, stream: TcpStream, bus: SharedMessageBus, conf: SharedConf) -> Self {
         let (cmd_tx, cmd_rx) = mpsc::channel::<Cmd>(100);
         let bloom_filter = Bloom::new_for_fp_rate(10_000, 0.01);
+        let self_replica = Replica {
+            id: conf.id.clone(),
+            pub_key: ReplicaPubKey::default(),
+        };
 
         Peer {
             id,
@@ -49,6 +58,7 @@ impl Peer {
             last_pong: SystemTime::now(),
             conf,
             bloom_filter,
+            self_replica,
             internal_cmd_tx: cmd_tx,
             internal_cmd_rx: cmd_rx,
         }
@@ -79,7 +89,14 @@ impl Peer {
                 info!("Got peer version {:?}", v);
                 send_net_message(&mut self.stream, HandshakeNetMessage::Verack.into()).await
             }
-            HandshakeNetMessage::Verack => self.ping_pong(),
+            HandshakeNetMessage::Verack => {
+                self.ping_pong();
+                send_net_message(
+                    &mut self.stream,
+                    ReplicaRegistryNetMessage::NewReplica(self.self_replica.clone()).into(),
+                )
+                .await
+            }
             HandshakeNetMessage::Ping => {
                 debug!("Got ping");
                 send_net_message(&mut self.stream, HandshakeNetMessage::Pong.into()).await
@@ -102,7 +119,7 @@ impl Peer {
             NetMessage::MempoolMessage(mempool_msg) => {
                 debug!("Received new mempool net message {:?}", mempool_msg);
                 self.bus
-                    .sender::<MempoolNetMessage>()
+                    .sender::<Signed<MempoolNetMessage>>()
                     .await
                     .send(mempool_msg)
                     .map(|_| ())
@@ -111,16 +128,28 @@ impl Peer {
             NetMessage::ConsensusMessage(consensus_msg) => {
                 debug!("Received new consensus net message {:?}", consensus_msg);
                 self.bus
-                    .sender::<ConsensusNetMessage>()
+                    .sender::<Signed<ConsensusNetMessage>>()
                     .await
                     .send(consensus_msg)
                     .map(|_| ())
                     .context("Receiving consensus net message")
             }
+            NetMessage::ReplicaRegistryMessage(replica_registry_msg) => {
+                debug!(
+                    "Received new replica registry net message {:?}",
+                    replica_registry_msg
+                );
+                self.bus
+                    .sender::<ReplicaRegistryNetMessage>()
+                    .await
+                    .send(replica_registry_msg)
+                    .map(|_| ())
+                    .context("Receiving replica registry net message")
+            }
         }
     }
 
-    fn ping_pong(&self) -> Result<(), Error> {
+    fn ping_pong(&self) {
         let tx = self.internal_cmd_tx.clone();
         let interval = self.conf.p2p.ping_interval;
         info!("Starting ping pong");
@@ -131,8 +160,6 @@ impl Peer {
                 tx.send(Cmd::Ping).await.ok();
             }
         });
-
-        Ok(())
     }
 
     pub async fn start(&mut self) -> Result<(), Error> {
