@@ -9,7 +9,7 @@ use hyle::{
     p2p, rest,
     utils::conf::{self, SharedConf},
 };
-use std::sync::Arc;
+use std::{path::Path, sync::Arc};
 use tracing::{debug, error, info, warn};
 
 fn start_consensus(bus: SharedMessageBus, config: SharedConf) {
@@ -75,8 +75,8 @@ pub struct Args {
     #[arg(short, long, action = clap::ArgAction::SetTrue)]
     pub client: Option<bool>,
 
-    #[arg(long, default_value = "history.db")]
-    pub history_db: String,
+    #[arg(long, default_value =  None)]
+    pub data_directory: Option<String>,
 
     #[arg(long, default_value = "master.ron")]
     pub config_file: String,
@@ -102,11 +102,18 @@ async fn main() -> Result<()> {
 
     start_mempool(SharedMessageBus::new_handle(&bus));
 
-    let history = History::new(
-        config
-            .history_db
+    let data_directory = Path::new(
+        args.data_directory
             .as_deref()
-            .unwrap_or(args.history_db.as_str()),
+            .unwrap_or(config.data_directory.as_deref().unwrap_or("data")),
+    );
+    std::fs::create_dir_all(data_directory).context("creating data directory")?;
+
+    let history = History::new(
+        data_directory
+            .join("history.db")
+            .to_str()
+            .context("invalid data directory")?,
     )?;
     start_history(history.share(), bus.new_handle(), Arc::clone(&config));
 
