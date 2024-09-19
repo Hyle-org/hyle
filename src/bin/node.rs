@@ -10,7 +10,8 @@ use hyle::{
     utils::conf::{self, SharedConf},
 };
 use std::{path::Path, sync::Arc};
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info, level_filters::LevelFilter, warn};
+use tracing_subscriber::{prelude::*, EnvFilter};
 
 fn start_consensus(bus: SharedMessageBus, config: SharedConf) {
     let _ = tokio::task::Builder::new()
@@ -82,17 +83,32 @@ pub struct Args {
     pub config_file: String,
 }
 
+/// Setup tracing - stdout and tokio-console subscriber
+/// stdout defaults to INFO & sled to INFO even if RUST_LOG is set to e.g. debug (unless it contains "sled")
+fn setup_tracing() -> Result<()> {
+    let mut filter = EnvFilter::builder()
+        .with_default_directive(LevelFilter::INFO.into())
+        .from_env()?;
+
+    if let Ok(var) = std::env::var("RUST_LOG") {
+        if var.contains("sled") {
+            filter = filter.add_directive("sled=info".parse()?);
+        }
+    }
+
+    tracing_subscriber::registry()
+        .with(tracing_subscriber::fmt::layer().with_filter(filter))
+        .with(console_subscriber::spawn())
+        .init();
+
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
+    setup_tracing()?;
+
     let args = Args::parse();
-
-    // The console subscriber also enables stdout logging by default, configured via RUST_LOG.
-    // If there is no RUST_LOG set, default to info
-    if std::env::var("RUST_LOG").is_err() {
-        std::env::set_var("RUST_LOG", "info");
-    }
-    console_subscriber::init();
-
     let config = conf::Conf::new_shared(args.config_file).context("reading config file")?;
     info!("Starting node with config: {:?}", &config);
 
