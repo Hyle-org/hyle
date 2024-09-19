@@ -62,10 +62,10 @@ impl NodeState {
         handle_messages! {
             command_response<NodeStateQuery,NodeStateQueryResponse>(self.bus) = cmd => {
                 self.handle_command(cmd)
-            },
+            }
             listen<ConsensusEvent>(self.bus) = event => {
                 self.handle_event(event);
-            },
+            }
         }
     }
     fn handle_command(

@@ -74,56 +74,89 @@ impl CmdRespClient for SharedMessageBus {
 
 #[macro_export]
 macro_rules! handle_messages {
-    ( $(command_response <$command:ty,$response:ty>($bus:expr) = $res:ident => $handler:block)+, $($rest:tt)*) => {{
+    ( command_response<$command:ty, $response:ty>($bus:expr) = $res:ident => $handler:block $($rest:tt)*) => {{
         use paste::paste;
         use $crate::bus::command_response::*;
 
-        $(
-            // In order to generate a variable with the name server$command$response for each server
-            paste! {
-                let mut [<receiver_query_ $command:lower>] = $bus.receiver::<Query<$command>>().await;
-                let [<sender_response_ $response:lower>] = $bus.sender::<QueryResponse<$response>>().await;
-            }
-        )+
+        // In order to generate a variable with the name server$command$response for each server
+        paste! {
+            let mut receiver_query_myvar = $bus.receiver::<Query<$command>>().await;
+            let sender_response_myvar = $bus.sender::<QueryResponse<$response>>().await;
 
-        handle_messages! {
-            $($rest)*
-            $(
-                Ok(Query{ id, data: $res }) = paste!([<receiver_query_ $command:lower>]).recv() => {
+            handle_messages! {
+                counter(my_var_) $($rest)*
+                Ok(Query{ id, data: $res }) = receiver_query_myvar.recv() => {
                     let mut response: QueryResponse<$response> = QueryResponse {id, data: Ok(None)};
                     let res = $handler;
                     response.data = res.map_err(|err| err.to_string());
-                    let _ = paste!([<sender_response_ $response:lower>]).send(response);
+                    let _ = sender_response_myvar.send(response);
                 }
-            )+
+            }
         }
     }};
 
-    ( $(listen <$message:ty>($bus:expr) = $res:ident => $handler:block)+, $($rest:tt)*) => {{
+    ( counter($counter:ident) command_response<$command:ty,$response:ty>($bus:expr) = $res:ident => $handler:block $($rest:tt)*) => {{
         use paste::paste;
+        use $crate::bus::command_response::*;
 
-        $(
-            // In order to generate a variable with the name server$command$response for each server
-            paste! {
-                let mut [<receiver_ $message:lower>] = $bus.receiver::<$message>().await;
-            }
-        )+
+        // In order to generate a variable with the name server$command$response for each server
+        paste! {
+            let mut [<receiver_query_ $counter>] = $bus.receiver::<Query<$command>>().await;
+            let [<sender_response_ $counter>] = $bus.sender::<QueryResponse<$response>>().await;
+
 
         handle_messages! {
-            $($rest)*
-            $(
-                Ok($res) = paste!([<receiver_ $message:lower>]).recv() => {
+            counter([<$counter _>]) $($rest)*
+            Ok(Query{ id, data: $res }) = [<receiver_query_ $counter>].recv() => {
+                let mut response: QueryResponse<$response> = QueryResponse {id, data: Ok(None)};
+                let res = $handler;
+                response.data = res.map_err(|err| err.to_string());
+                let _ = [<sender_response_ $counter>].send(response);
+            }
+        }
+        }
+    }};
+
+
+    ( listen <$message:ty>($bus:expr) = $res:ident => $handler:block $($rest:tt)*) => {{
+
+        // In order to generate a variable with the name server$command$response for each server
+        let mut receiver_myvar = $bus.receiver::<$message>().await;
+
+        handle_messages! {
+            counter(myvar_) $($rest)*
+            Ok($res) = receiver_myvar.recv() => {
+                $handler
+            }
+        }
+    }};
+
+    ( counter($counter:ident) listen <$message:ty>($bus:expr) = $res:ident => $handler:block $($rest:tt)*) => {{
+        use paste::paste;
+        // In order to generate a variable with the name server$command$response for each server
+        paste!{
+            let mut [<receiver_ $counter>] = $bus.receiver::<$message>().await;
+        }
+
+        paste! {
+            handle_messages! {
+                counter([<$counter _>]) $($rest)*
+                Ok($res) = [<receiver_ $counter>].recv() => {
                     $handler
                 }
-            )+
+            }
         }
+    }};
+
+    (counter($counter:ident) $($rest:tt)+ ) => {{
+       handle_messages!($($rest)+)
     }};
 
     // Fallback to normal select cases
-    ($($rest:tt)*) => {{
+    ($($rest:tt)+) => {{
         loop {
             tokio::select! {
-                $($rest)*
+                $($rest)+
             }
         }
     }};

@@ -29,7 +29,7 @@ impl MockWorkflowHandler {
                         self.stress_test().await;
                     }
                 }
-            },
+            }
         }
     }
 

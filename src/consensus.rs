@@ -10,8 +10,8 @@ use crate::{
     handle_messages,
     mempool::{MempoolCommand, MempoolResponse},
     model::{get_current_timestamp, Block, Hashable, Transaction},
-    p2p::network::{OutboundMessage, ReplicaRegistryNetMessage, Signed, SignedConsensusNetMessage},
-    replica_registry::ReplicaRegistry,
+    p2p::network::{OutboundMessage, Signature, Signed},
+    replica_registry::ReplicaId,
     utils::{conf::SharedConf, logger::LogMe},
 };
 
@@ -33,7 +33,6 @@ pub enum ConsensusEvent {
 
 #[derive(Serialize, Deserialize, Encode, Decode)]
 pub struct Consensus {
-    replicas: ReplicaRegistry,
     blocks: Vec<Block>,
     batch_id: u64,
     // Accumulated batches from mempool
@@ -104,8 +103,8 @@ impl Consensus {
         Ok(ctx)
     }
 
-    fn handle_net_message(&mut self, msg: Signed<ConsensusNetMessage>) {
-        match msg.msg {
+    fn handle_net_message(&mut self, msg: ConsensusNetMessage) {
+        match msg {
             ConsensusNetMessage::CommitBlock(block) => {
                 info!("Got a commited block {:?}", block)
             }
@@ -142,9 +141,18 @@ impl Consensus {
                                 .context(
                                     "Failed to send ConsensusEvent::CommitBlock msg on the bus",
                                 )?;
+
                             // send to network
                             _ = outbound_sender
-                                .send(OutboundMessage::broadcast(self.sign_net_message(ConsensusNetMessage::CommitBlock(block)))).context("Failed to send ConsensusNetMessage::CommitBlock msg on the bus")?;
+                                .send(
+                                    OutboundMessage::broadcast(
+                                        Signed {
+                                            msg: ConsensusNetMessage::CommitBlock(block),
+                                            signature: Signature::default(),
+                                            replica_id: ReplicaId::default()
+                                         }
+                                    )
+                                ).context("Failed to send ConsensusNetMessage::CommitBlock msg on the bus")?;
                         }
                     }
                 }
@@ -187,21 +195,10 @@ impl Consensus {
         handle_messages! {
             listen<ConsensusCommand>(bus) = cmd => {
                 _ = self.handle_command(cmd, &bus, &consensus_event_sender, &outbound_sender).await;
-            },
-            listen<SignedConsensusNetMessage>(bus) = cmd => {
+            }
+            listen<ConsensusNetMessage>(bus) = cmd => {
                 self.handle_net_message(cmd);
-            },
-            listen<ReplicaRegistryNetMessage>(bus) = cmd => {
-                self.replicas.handle_net_message(cmd);
-            },
-        }
-    }
-
-    fn sign_net_message(&self, msg: ConsensusNetMessage) -> Signed<ConsensusNetMessage> {
-        Signed {
-            msg,
-            signature: Default::default(),
-            replica_id: Default::default(),
+            }
         }
     }
 }
@@ -209,7 +206,6 @@ impl Consensus {
 impl Default for Consensus {
     fn default() -> Self {
         Self {
-            replicas: ReplicaRegistry::default(),
             blocks: vec![Block::default()],
             batch_id: 0,
             tx_batches: HashMap::new(),
