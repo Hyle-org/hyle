@@ -4,7 +4,7 @@ use tokio::sync::{broadcast, Mutex};
 
 pub mod command_response;
 
-pub const CHANNEL_CAPACITY: usize = 1024;
+pub const CHANNEL_CAPACITY: usize = 1000000;
 
 type AnyMap = Map<dyn Any + Send + Sync>;
 
