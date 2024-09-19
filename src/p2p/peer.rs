@@ -11,10 +11,11 @@ use tracing::{debug, info, trace, warn};
 
 use super::network::HandshakeNetMessage;
 use super::network::OutboundMessage;
-use super::network::{MempoolNetMessage, NetMessage, Version};
+use super::network::{NetMessage, Version};
 use super::stream::send_net_message;
 use crate::bus::SharedMessageBus;
-use crate::p2p::network::ConsensusNetMessage;
+use crate::consensus::ConsensusNetMessage;
+use crate::mempool::MempoolNetMessage;
 use crate::p2p::stream::read_stream;
 use crate::p2p::stream::send_binary;
 use crate::utils::conf::SharedConf;

@@ -7,16 +7,26 @@ use std::{
     fs,
     time::Duration,
 };
-use tokio::{select, sync::broadcast::Sender, time::sleep};
+use tokio::{sync::broadcast::Sender, time::sleep};
 use tracing::info;
 
 use crate::{
     bus::{command_response::CmdRespClient, SharedMessageBus},
+    handle_messages,
     mempool::{MempoolCommand, MempoolResponse},
     model::{get_current_timestamp, Block, Hashable, Transaction},
-    p2p::network::{ConsensusNetMessage, OutboundMessage},
+    p2p::network::OutboundMessage,
     utils::{conf::SharedConf, logger::LogMe},
 };
+
+#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode)]
+pub enum ConsensusNetMessage {
+    Prepare(ConsensusProposal),
+    PrepareVote(bool), // FIXME: set correct type
+    Confirm(u64),      // FIXME: set correct type (*Prepare* Quorum Certificate)
+    ConfirmAck,
+    Commit(u64), // FIXME: set correct type (*Commit* Quorum Certificate)
+}
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub enum ConsensusCommand {
@@ -163,7 +173,7 @@ impl Consensus {
     fn handle_net_message(
         &mut self,
         msg: ConsensusNetMessage,
-        outbound_sender: Sender<OutboundMessage>,
+        outbound_sender: &Sender<OutboundMessage>,
     ) -> Result<()> {
         match msg {
             ConsensusNetMessage::Prepare(consensus_proposal) => {
@@ -304,8 +314,8 @@ impl Consensus {
     async fn handle_command(
         &mut self,
         msg: ConsensusCommand,
-        bus: SharedMessageBus,
-        consensus_event_sender: Sender<ConsensusEvent>,
+        bus: &SharedMessageBus,
+        consensus_event_sender: &Sender<ConsensusEvent>,
     ) -> Result<()> {
         match msg {
             ConsensusCommand::GenerateNewBlock => {
@@ -352,8 +362,6 @@ impl Consensus {
         let outbound_sender = bus.sender::<OutboundMessage>().await;
         let consensus_event_sender = bus.sender::<ConsensusEvent>().await;
         let consensus_command_sender = bus.sender::<ConsensusCommand>().await;
-        let mut consensus_command_receiver = bus.receiver::<ConsensusCommand>().await;
-        let mut consensus_net_message_receiver = bus.receiver::<ConsensusNetMessage>().await;
 
         if is_master {
             info!(
@@ -374,18 +382,13 @@ impl Consensus {
                 }
             });
         }
-
-        loop {
-            let shared_bus = SharedMessageBus::new_handle(&bus);
-            select! {
-                Ok(msg) = consensus_command_receiver.recv() => {
-                    _ = self.handle_command(msg, shared_bus,
-                    consensus_event_sender.clone()).await;
-                }
-                Ok(msg) = consensus_net_message_receiver.recv() => {
-                    let _ = self.handle_net_message(msg, outbound_sender.clone());
-                }
-            }
+        handle_messages! {
+            listen<ConsensusCommand>(bus) = cmd => {
+                _ = self.handle_command(cmd, &bus, &consensus_event_sender).await;
+            },
+            listen<ConsensusNetMessage>(bus) = cmd => {
+                _ = self.handle_net_message(cmd, &outbound_sender);
+            },
         }
     }
 }

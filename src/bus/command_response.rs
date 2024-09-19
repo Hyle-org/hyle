@@ -74,7 +74,7 @@ impl CmdRespClient for SharedMessageBus {
 
 #[macro_export]
 macro_rules! handle_messages {
-    ( $(command_response <$command:ident,$response:ident>($bus:expr) = $res:ident => $handler:block)+, $($rest:tt)*) => {{
+    ( $(command_response <$command:ty,$response:ty>($bus:expr) = $res:ident => $handler:block)+, $($rest:tt)*) => {{
         use paste::paste;
         use $crate::bus::command_response::*;
 
@@ -99,7 +99,7 @@ macro_rules! handle_messages {
         }
     }};
 
-    ( $(listen <$message:ident>($bus:expr) = $res:ident => $handler:block)+, $($rest:tt)*) => {{
+    ( $(listen <$message:ty>($bus:expr) = $res:ident => $handler:block)+, $($rest:tt)*) => {{
         use paste::paste;
 
         $(
