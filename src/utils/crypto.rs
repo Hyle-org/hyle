@@ -31,7 +31,7 @@ impl BlstCrypto {
     }
 
     pub fn as_replica(&self) -> Replica {
-        let pub_key = ReplicaPubKey(self.sk.sk_to_pk().to_bytes().as_slice().to_vec());
+        let pub_key = ReplicaPubKey(self.sk.sk_to_pk().compress().as_slice().to_vec());
         Replica {
             id: self.replica_id.clone(),
             pub_key,
@@ -57,16 +57,16 @@ impl BlstCrypto {
     {
         debug!("Verifying message {:?} against {:?}", msg, replica);
         let encoded = bincode::encode_to_vec(&msg.msg, bincode::config::standard())?;
-        let sig = Signature::from_bytes(&msg.signature.0)
+        let sig = Signature::uncompress(&msg.signature.0)
             .map_err(|_| anyhow!("Could not parse Signature"))?;
-        let pk = PublicKey::from_bytes(replica.0.as_slice())
+        let pk = PublicKey::uncompress(replica.0.as_slice())
             .map_err(|_| anyhow!("Could not parse PublicKey"))?;
         Ok(BlstCrypto::verify_bytes(encoded.as_slice(), &sig, &pk))
     }
 
     fn sign_bytes(&self, msg: &[u8]) -> [u8; SIG_SIZE] {
         let sig = self.sk.sign(msg, DST, &[]);
-        sig.to_bytes()
+        sig.compress()
     }
 
     fn verify_bytes(msg: &[u8], sig: &Signature, pk: &PublicKey) -> bool {
