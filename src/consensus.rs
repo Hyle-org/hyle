@@ -10,8 +10,7 @@ use crate::{
     handle_messages,
     mempool::{MempoolCommand, MempoolResponse},
     model::{get_current_timestamp, Block, Hashable, Transaction},
-    p2p::network::{OutboundMessage, Signature, Signed},
-    replica_registry::ReplicaId,
+    p2p::network::{OutboundMessage, Signed},
     utils::{conf::SharedConf, logger::LogMe},
 };
 
@@ -103,8 +102,8 @@ impl Consensus {
         Ok(ctx)
     }
 
-    fn handle_net_message(&mut self, msg: ConsensusNetMessage) {
-        match msg {
+    fn handle_net_message(&mut self, msg: Signed<ConsensusNetMessage>) {
+        match msg.msg {
             ConsensusNetMessage::CommitBlock(block) => {
                 info!("Got a commited block {:?}", block)
             }
@@ -143,16 +142,15 @@ impl Consensus {
                                 )?;
 
                             // send to network
-                            _ = outbound_sender
-                                .send(
-                                    OutboundMessage::broadcast(
-                                        Signed {
-                                            msg: ConsensusNetMessage::CommitBlock(block),
-                                            signature: Signature::default(),
-                                            replica_id: ReplicaId::default()
-                                         }
+                            _ = outbound_sender.send(
+                                OutboundMessage::broadcast(
+                                    self.sign_net_message(
+                                        ConsensusNetMessage::CommitBlock(block)
                                     )
-                                ).context("Failed to send ConsensusNetMessage::CommitBlock msg on the bus")?;
+                                )
+                            ).context(
+                                "Failed to send ConsensusNetMessage::CommitBlock msg on the bus",
+                            )?;
                         }
                     }
                 }
@@ -196,9 +194,17 @@ impl Consensus {
             listen<ConsensusCommand>(bus) = cmd => {
                 _ = self.handle_command(cmd, &bus, &consensus_event_sender, &outbound_sender).await;
             }
-            listen<ConsensusNetMessage>(bus) = cmd => {
+            listen<Signed<ConsensusNetMessage>>(bus) = cmd => {
                 self.handle_net_message(cmd);
             }
+        }
+    }
+
+    fn sign_net_message(&self, msg: ConsensusNetMessage) -> Signed<ConsensusNetMessage> {
+        Signed {
+            msg,
+            signature: Default::default(),
+            replica_id: Default::default(),
         }
     }
 }
