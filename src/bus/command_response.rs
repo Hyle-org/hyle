@@ -74,7 +74,15 @@ impl CmdRespClient for SharedMessageBus {
 
 #[macro_export]
 macro_rules! handle_messages {
-    ( command_response<$command:ty, $response:ty>($bus:expr) = $res:ident => $handler:block $($rest:tt)*) => {{
+    ( on_bus $bus:expr, $($rest:tt)*) => {{
+
+        handle_messages!{
+            bus($bus) $($rest)*
+        }
+
+    }};
+
+    ( bus($bus:expr) command_response<$command:ty, $response:ty> $res:pat => $handler:block $($rest:tt)*) => {{
         use paste::paste;
         use $crate::bus::command_response::*;
 
@@ -84,7 +92,7 @@ macro_rules! handle_messages {
             let sender_response_myvar = $bus.sender::<QueryResponse<$response>>().await;
 
             handle_messages! {
-                counter(my_var_) $($rest)*
+                bus($bus) counter(my_var_) $($rest)*
                 Ok(Query{ id, data: $res }) = receiver_query_myvar.recv() => {
                     let mut response: QueryResponse<$response> = QueryResponse {id, data: Ok(None)};
                     let res = $handler;
@@ -95,7 +103,7 @@ macro_rules! handle_messages {
         }
     }};
 
-    ( counter($counter:ident) command_response<$command:ty,$response:ty>($bus:expr) = $res:ident => $handler:block $($rest:tt)*) => {{
+    ( bus($bus:expr) counter($counter:ident) command_response<$command:ty,$response:ty> $res:pat => $handler:block $($rest:tt)*) => {{
         use paste::paste;
         use $crate::bus::command_response::*;
 
@@ -105,33 +113,33 @@ macro_rules! handle_messages {
             let [<sender_response_ $counter>] = $bus.sender::<QueryResponse<$response>>().await;
 
 
-        handle_messages! {
-            counter([<$counter _>]) $($rest)*
-            Ok(Query{ id, data: $res }) = [<receiver_query_ $counter>].recv() => {
-                let mut response: QueryResponse<$response> = QueryResponse {id, data: Ok(None)};
-                let res = $handler;
-                response.data = res.map_err(|err| err.to_string());
-                let _ = [<sender_response_ $counter>].send(response);
+            handle_messages! {
+                bus($bus) counter([<$counter _>]) $($rest)*
+                Ok(Query{ id, data: $res }) = [<receiver_query_ $counter>].recv() => {
+                    let mut response: QueryResponse<$response> = QueryResponse {id, data: Ok(None)};
+                    let res = $handler;
+                    response.data = res.map_err(|err| err.to_string());
+                    let _ = [<sender_response_ $counter>].send(response);
+                }
             }
-        }
         }
     }};
 
 
-    ( listen <$message:ty>($bus:expr) = $res:ident => $handler:block $($rest:tt)*) => {{
+    ( bus($bus:expr) listen <$message:ty> $res:pat => $handler:block $($rest:tt)*) => {{
 
         // In order to generate a variable with the name server$command$response for each server
         let mut receiver_myvar = $bus.receiver::<$message>().await;
 
         handle_messages! {
-            counter(myvar_) $($rest)*
+            bus($bus) counter(myvar_) $($rest)*
             Ok($res) = receiver_myvar.recv() => {
                 $handler
             }
         }
     }};
 
-    ( counter($counter:ident) listen <$message:ty>($bus:expr) = $res:ident => $handler:block $($rest:tt)*) => {{
+    ( bus($bus:expr) counter($counter:ident) listen <$message:ty> $res:pat => $handler:block $($rest:tt)*) => {{
         use paste::paste;
         // In order to generate a variable with the name server$command$response for each server
         paste!{
@@ -140,7 +148,7 @@ macro_rules! handle_messages {
 
         paste! {
             handle_messages! {
-                counter([<$counter _>]) $($rest)*
+                bus($bus) counter([<$counter _>]) $($rest)*
                 Ok($res) = [<receiver_ $counter>].recv() => {
                     $handler
                 }
@@ -149,6 +157,10 @@ macro_rules! handle_messages {
     }};
 
     (counter($counter:ident) $($rest:tt)+ ) => {{
+       handle_messages!($($rest)+)
+    }};
+
+    (bus($bus:expr) $($rest:tt)+ ) => {{
        handle_messages!($($rest)+)
     }};
 

@@ -193,13 +193,14 @@ impl Consensus {
             });
         }
         handle_messages! {
-            listen<ConsensusCommand>(bus) = cmd => {
+            on_bus bus,
+            listen<ConsensusCommand> cmd => {
                 _ = self.handle_command(cmd, &bus, &consensus_event_sender, &outbound_sender).await;
             }
-            listen<Signed<ConsensusNetMessage>>(bus) = cmd => {
+            listen<Signed<ConsensusNetMessage>> cmd => {
                 self.handle_net_message(cmd);
             }
-            listen<ReplicaRegistryNetMessage>(bus) = cmd => {
+            listen<ReplicaRegistryNetMessage> cmd => {
                 self.replicas.handle_net_message(cmd);
             }
         }
