@@ -1,3 +1,5 @@
+//! Lightweight archival system for past states. Optional.
+
 mod api;
 mod blobs;
 mod blocks;

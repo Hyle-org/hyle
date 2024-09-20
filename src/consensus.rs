@@ -1,3 +1,5 @@
+//! Handles all consensus logic up to block commitment.
+
 use anyhow::{Context, Result};
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};

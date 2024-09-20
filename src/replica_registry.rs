@@ -1,3 +1,5 @@
+//! Information about other validators of the consensus.
+
 use std::{
     collections::HashMap,
     fmt::{self, Debug, Display},

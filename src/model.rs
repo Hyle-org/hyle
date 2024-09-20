@@ -1,3 +1,5 @@
+//! Various data structures
+
 use bincode::{Decode, Encode};
 use derive_more::Display;
 use serde::{
