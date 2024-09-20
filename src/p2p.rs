@@ -1,6 +1,9 @@
 use std::{sync::Arc, time::Duration};
 
-use crate::{bus::SharedMessageBus, utils::conf::SharedConf};
+use crate::{
+    bus::SharedMessageBus,
+    utils::{conf::SharedConf, crypto::BlstCrypto},
+};
 use anyhow::{Error, Result};
 use tokio::{net::TcpListener, time::sleep};
 use tracing::{debug, error, info, warn};
@@ -9,12 +12,20 @@ pub mod network; // FIXME(Bertrand): NetMessage should be private
 mod peer;
 pub mod stream;
 
-pub async fn p2p_server(config: SharedConf, bus: SharedMessageBus) -> Result<(), Error> {
+pub async fn p2p_server(
+    config: SharedConf,
+    bus: SharedMessageBus,
+    crypto: BlstCrypto,
+) -> Result<(), Error> {
     let mut peer_id = 1u64;
 
+    // Wait all other threads to start correctly
+    sleep(Duration::from_secs(1)).await;
+
     for peer in &config.peers {
-        let config_clone = config.clone();
-        let bus_clone = bus.new_handle();
+        let config = config.clone();
+        let bus = bus.new_handle();
+        let crypto = crypto.clone();
         let peer_address = peer.clone();
         let id = peer_id;
         peer_id += 1;
@@ -24,8 +35,13 @@ pub async fn p2p_server(config: SharedConf, bus: SharedMessageBus) -> Result<(),
             while retry_count > 0 {
                 info!("Connecting to peer #{}: {}", id, peer_address);
                 if let Ok(stream) = peer::Peer::connect(peer_address.as_str()).await {
-                    let mut peer =
-                        peer::Peer::new(id, stream, bus_clone.new_handle(), config_clone.clone());
+                    let mut peer = peer::Peer::new(
+                        id,
+                        stream,
+                        bus.new_handle(),
+                        crypto.clone(),
+                        config.clone(),
+                    );
 
                     _ = peer.handshake().await;
                     debug!("Handshake done !");
@@ -54,6 +70,7 @@ pub async fn p2p_server(config: SharedConf, bus: SharedMessageBus) -> Result<(),
         let conf = Arc::clone(&config);
 
         let bus = bus.new_handle();
+        let crypto = crypto.clone();
         let id = peer_id;
         peer_id += 1;
 
@@ -66,7 +83,7 @@ pub async fn p2p_server(config: SharedConf, bus: SharedMessageBus) -> Result<(),
                     .map(|a| a.to_string())
                     .unwrap_or("no address".to_string())
             );
-            let mut peer_server = peer::Peer::new(id, socket, bus, conf);
+            let mut peer_server = peer::Peer::new(id, socket, bus, crypto, conf);
             _ = peer_server.handshake().await;
             debug!("Handshake done !");
             match peer_server.start().await {

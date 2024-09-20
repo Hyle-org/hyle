@@ -6,8 +6,9 @@ use crate::{
     p2p::network::{OutboundMessage, ReplicaRegistryNetMessage, Signed},
     replica_registry::ReplicaRegistry,
     rest::endpoints::RestApiMessage,
+    utils::crypto::BlstCrypto,
 };
-use anyhow::Result;
+use anyhow::{Context, Result};
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -19,6 +20,7 @@ struct Batch(String, Vec<Transaction>);
 
 pub struct Mempool {
     bus: SharedMessageBus,
+    crypto: BlstCrypto,
     replicas: ReplicaRegistry,
     // txs accumulated, not yet transmitted to the consensus
     pending_txs: Vec<Transaction>,
@@ -44,9 +46,10 @@ pub enum MempoolResponse {
 }
 
 impl Mempool {
-    pub fn new(bus: SharedMessageBus) -> Mempool {
+    pub fn new(bus: SharedMessageBus, crypto: BlstCrypto) -> Mempool {
         Mempool {
             bus,
+            crypto,
             replicas: ReplicaRegistry::default(),
             pending_txs: vec![],
             pending_batches: HashMap::new(),
@@ -56,6 +59,7 @@ impl Mempool {
 
     /// start starts the mempool server.
     pub async fn start(&mut self) {
+        info!("Mempool starting");
         impl NeedAnswer<MempoolResponse> for MempoolCommand {}
         handle_messages! {
             on_bus self.bus,
@@ -113,7 +117,7 @@ impl Mempool {
         match command {
             RestApiMessage::NewTx(tx) => {
                 self.on_new_tx(tx.clone()).await;
-                self.broadcast_tx(tx).await
+                self.broadcast_tx(tx).await.ok();
             }
         }
     }
@@ -123,23 +127,19 @@ impl Mempool {
         self.pending_txs.push(tx);
     }
 
-    async fn broadcast_tx(&mut self, tx: Transaction) {
+    async fn broadcast_tx(&mut self, tx: Transaction) -> Result<()> {
         self.bus
             .sender::<OutboundMessage>()
             .await
             .send(OutboundMessage::broadcast(
-                self.sign_net_message(MempoolNetMessage::NewTx(tx)),
+                self.sign_net_message(MempoolNetMessage::NewTx(tx))?,
             ))
             .map(|_| ())
-            .ok();
+            .context("broadcasting tx")
     }
 
-    fn sign_net_message(&self, msg: MempoolNetMessage) -> Signed<MempoolNetMessage> {
-        Signed {
-            msg,
-            signature: Default::default(),
-            replica_id: Default::default(),
-        }
+    fn sign_net_message(&self, msg: MempoolNetMessage) -> Result<Signed<MempoolNetMessage>> {
+        self.crypto.sign(msg)
     }
 
     fn handle_command(&mut self, command: MempoolCommand) -> Result<Option<MempoolResponse>> {

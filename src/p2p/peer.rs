@@ -22,8 +22,8 @@ use crate::p2p::network::Signed;
 use crate::p2p::stream::read_stream;
 use crate::p2p::stream::send_binary;
 use crate::replica_registry::Replica;
-use crate::replica_registry::ReplicaPubKey;
 use crate::utils::conf::SharedConf;
+use crate::utils::crypto::BlstCrypto;
 
 pub struct Peer {
     id: u64,
@@ -44,14 +44,16 @@ enum Cmd {
 }
 
 impl Peer {
-    pub fn new(id: u64, stream: TcpStream, bus: SharedMessageBus, conf: SharedConf) -> Self {
+    pub fn new(
+        id: u64,
+        stream: TcpStream,
+        bus: SharedMessageBus,
+        crypto: BlstCrypto,
+        conf: SharedConf,
+    ) -> Self {
         let (cmd_tx, cmd_rx) = mpsc::channel::<Cmd>(100);
         let bloom_filter = Bloom::new_for_fp_rate(10_000, 0.01);
-        let self_replica = Replica {
-            id: conf.id.clone(),
-            pub_key: ReplicaPubKey::default(),
-        };
-
+        let self_replica = crypto.as_replica();
         Peer {
             id,
             stream,
@@ -99,11 +101,9 @@ impl Peer {
                 .await
             }
             HandshakeNetMessage::Ping => {
-                debug!("Got ping");
                 send_net_message(&mut self.stream, HandshakeNetMessage::Pong.into()).await
             }
             HandshakeNetMessage::Pong => {
-                debug!("pong");
                 self.last_pong = SystemTime::now();
                 Ok(())
             }

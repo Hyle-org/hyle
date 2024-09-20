@@ -1,14 +1,28 @@
-use std::{collections::HashMap, fmt::Display};
+use std::{
+    collections::HashMap,
+    fmt::{self, Debug, Display},
+};
 
 use anyhow::{Error, Result};
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
-use crate::p2p::network::{ReplicaRegistryNetMessage, Signed};
+use crate::{
+    p2p::network::{ReplicaRegistryNetMessage, Signed},
+    utils::crypto::BlstCrypto,
+};
 
-#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, Default)]
+#[derive(Serialize, Deserialize, Clone, Encode, Decode, Default)]
 pub struct ReplicaPubKey(pub Vec<u8>);
+
+impl std::fmt::Debug for ReplicaPubKey {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("ReplicaPubKey")
+            .field(&hex::encode(&self.0))
+            .finish()
+    }
+}
 
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, Default, Hash, Eq, PartialEq)]
 pub struct ReplicaId(pub String);
@@ -45,21 +59,17 @@ impl ReplicaRegistry {
 
     fn add_replica(&mut self, id: ReplicaId, replica: Replica) {
         info!("Adding replica '{}'", id);
+        debug!("{:?}", replica);
         self.replicas.insert(id, replica);
     }
 
-    pub fn check_signed<T: Encode>(&self, msg: &Signed<T>) -> Result<bool, Error> {
+    pub fn check_signed<T>(&self, msg: &Signed<T>) -> Result<bool, Error>
+    where
+        T: Encode + Debug,
+    {
         let replica = self.replicas.get(&msg.replica_id);
         match replica {
-            Some(r) => {
-                let _encoded = bincode::encode_to_vec(&msg.msg, bincode::config::standard())?;
-                let _signature = &msg.signature;
-                let _pub_key = &r.pub_key;
-
-                // TODO: check if signature is valid for pub_key
-
-                Ok(true)
-            }
+            Some(r) => BlstCrypto::verify(msg, &r.pub_key),
             None => {
                 warn!("Replica '{}' not found", msg.replica_id);
                 Ok(false)
