@@ -3,7 +3,7 @@ use crate::{
     consensus::ConsensusEvent,
     handle_messages,
     model::{Hashable, Transaction},
-    p2p::network::{OutboundMessage, ReplicaRegistryNetMessage, Signed, SignedMempoolNetMessage},
+    p2p::network::{OutboundMessage, ReplicaRegistryNetMessage, Signed},
     replica_registry::ReplicaRegistry,
     rest::endpoints::RestApiMessage,
     utils::crypto::BlstCrypto,
@@ -62,22 +62,22 @@ impl Mempool {
         info!("Mempool starting");
         impl NeedAnswer<MempoolResponse> for MempoolCommand {}
         handle_messages! {
-            command_response<MempoolCommand, MempoolResponse>(self.bus) = cmd => {
+            on_bus self.bus,
+            command_response<MempoolCommand, MempoolResponse> cmd => {
                  self.handle_command(cmd)
-            },
-            listen<SignedMempoolNetMessage>(self.bus) = cmd => {
+            }
+            listen<Signed<MempoolNetMessage>> cmd => {
                 self.handle_net_message(cmd).await
-            },
-            listen<RestApiMessage>(self.bus) = cmd => {
+            }
+            listen<RestApiMessage> cmd => {
                 self.handle_api_message(cmd).await
-            },
-            listen<ConsensusEvent>(self.bus) = cmd => {
+            }
+            listen<ConsensusEvent> cmd => {
                 self.handle_event(cmd);
-            },
-            listen<ReplicaRegistryNetMessage>(self.bus) = cmd => {
+            }
+            listen<ReplicaRegistryNetMessage> cmd => {
                 self.replicas.handle_net_message(cmd);
-            },
-
+            }
         }
     }
 

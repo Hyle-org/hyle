@@ -1,6 +1,6 @@
 pub mod bus;
 pub mod consensus;
-pub mod indexer;
+pub mod history;
 pub mod mempool;
 pub mod model;
 pub mod node_state;

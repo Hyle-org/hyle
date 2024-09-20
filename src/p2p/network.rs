@@ -46,14 +46,11 @@ pub struct Signed<T: Encode> {
     pub replica_id: ReplicaId,
 }
 
-pub type SignedMempoolNetMessage = Signed<MempoolNetMessage>;
-pub type SignedConsensusNetMessage = Signed<ConsensusNetMessage>;
-
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode)]
 pub enum NetMessage {
     HandshakeMessage(HandshakeNetMessage),
-    MempoolMessage(SignedMempoolNetMessage),
-    ConsensusMessage(SignedConsensusNetMessage),
+    MempoolMessage(Signed<MempoolNetMessage>),
+    ConsensusMessage(Signed<ConsensusNetMessage>),
     ReplicaRegistryMessage(ReplicaRegistryNetMessage),
 }
 

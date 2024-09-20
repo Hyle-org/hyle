@@ -3,7 +3,7 @@ use clap::Parser;
 use hyle::{
     bus::SharedMessageBus,
     consensus::Consensus,
-    indexer::Indexer,
+    history::History,
     mempool::Mempool,
     node_state::NodeState,
     p2p, rest,
@@ -12,7 +12,7 @@ use hyle::{
         crypto::BlstCrypto,
     },
 };
-use std::sync::Arc;
+use std::{path::Path, sync::Arc};
 use tracing::{debug, error, info, warn};
 
 fn start_consensus(bus: SharedMessageBus, config: SharedConf, crypto: BlstCrypto) {
@@ -29,11 +29,11 @@ fn start_consensus(bus: SharedMessageBus, config: SharedConf, crypto: BlstCrypto
         });
 }
 
-fn start_indexer(mut idxr: Indexer, bus: SharedMessageBus, config: SharedConf) {
+fn start_history(mut history: History, bus: SharedMessageBus, config: SharedConf) {
     let _ = tokio::task::Builder::new()
-        .name("Indexer")
+        .name("History")
         .spawn(async move {
-            idxr.start(config, bus).await;
+            history.start(config, bus).await;
         });
 }
 
@@ -78,6 +78,9 @@ pub struct Args {
     #[arg(short, long, action = clap::ArgAction::SetTrue)]
     pub client: Option<bool>,
 
+    #[arg(long, default_value =  None)]
+    pub data_directory: Option<String>,
+
     #[arg(long, default_value = "master.ron")]
     pub config_file: String,
 }
@@ -103,8 +106,21 @@ async fn main() -> Result<()> {
 
     start_mempool(SharedMessageBus::new_handle(&bus), crypto.clone());
 
-    let idxr = Indexer::new();
-    start_indexer(idxr.share(), bus.new_handle(), Arc::clone(&config));
+    let data_directory = Path::new(
+        args.data_directory
+            .as_deref()
+            .unwrap_or(config.data_directory.as_deref().unwrap_or("data")),
+    );
+    std::fs::create_dir_all(data_directory).context("creating data directory")?;
+
+    let history = History::new(
+        data_directory
+            .join("history.db")
+            .to_str()
+            .context("invalid data directory")?,
+    )?;
+    start_history(history.share(), bus.new_handle(), Arc::clone(&config));
+
     start_node_state(bus.new_handle(), Arc::clone(&config));
     start_consensus(bus.new_handle(), Arc::clone(&config), crypto.clone());
     start_p2p(bus.new_handle(), Arc::clone(&config), crypto);
@@ -112,7 +128,7 @@ async fn main() -> Result<()> {
     start_mock_workflow(bus.new_handle());
 
     // Start REST server
-    rest::rest_server(config, bus.new_handle(), idxr)
+    rest::rest_server(config, bus.new_handle(), history)
         .await
         .context("Starting REST server")
 }
