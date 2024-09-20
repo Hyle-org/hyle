@@ -12,9 +12,9 @@ use crate::{
     handle_messages,
     mempool::{MempoolCommand, MempoolResponse},
     model::{get_current_timestamp, Block, Hashable, Transaction},
-    p2p::network::{OutboundMessage, ReplicaRegistryNetMessage, Signed},
-    replica_registry::ReplicaRegistry,
+    p2p::network::{OutboundMessage, Signed},
     utils::{conf::SharedConf, crypto::BlstCrypto, logger::LogMe},
+    validator_registry::{ValidatorRegistry, ValidatorRegistryNetMessage},
 };
 
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode)]
@@ -35,7 +35,7 @@ pub enum ConsensusEvent {
 
 #[derive(Serialize, Deserialize, Encode, Decode)]
 pub struct Consensus {
-    replicas: ReplicaRegistry,
+    validators: ValidatorRegistry,
     blocks: Vec<Block>,
     batch_id: u64,
     // Accumulated batches from mempool
@@ -107,7 +107,7 @@ impl Consensus {
     }
 
     fn handle_net_message(&mut self, msg: Signed<ConsensusNetMessage>) {
-        match self.replicas.check_signed(&msg) {
+        match self.validators.check_signed(&msg) {
             Ok(valid) => {
                 if valid {
                     match msg.msg {
@@ -218,8 +218,8 @@ impl Consensus {
             listen<Signed<ConsensusNetMessage>> cmd => {
                 self.handle_net_message(cmd);
             }
-            listen<ReplicaRegistryNetMessage> cmd => {
-                self.replicas.handle_net_message(cmd);
+            listen<ValidatorRegistryNetMessage> cmd => {
+                self.validators.handle_net_message(cmd);
             }
         }
     }
@@ -236,7 +236,7 @@ impl Default for Consensus {
     fn default() -> Self {
         Self {
             blocks: vec![Block::default()],
-            replicas: ReplicaRegistry::default(),
+            validators: ValidatorRegistry::default(),
             batch_id: 0,
             tx_batches: HashMap::new(),
             current_block_batches: vec![],

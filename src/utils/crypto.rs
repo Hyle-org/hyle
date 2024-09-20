@@ -8,32 +8,32 @@ use tracing::debug;
 
 use crate::{
     p2p::network::{self, Signed},
-    replica_registry::{Replica, ReplicaId, ReplicaPubKey},
+    validator_registry::{ConsensusValidator, ValidatorId, ValidatorPublicKey},
 };
 
 #[derive(Clone)]
 pub struct BlstCrypto {
     sk: SecretKey,
-    replica_id: ReplicaId,
+    validator_id: ValidatorId,
 }
 
 const DST: &[u8] = b"BLS_SIG_BLS12381G2_XMD:SHA-256_SSWU_RO_NUL_";
 pub const SIG_SIZE: usize = 48;
 
 impl BlstCrypto {
-    pub fn new(replica_id: ReplicaId) -> Self {
+    pub fn new(validator_id: ValidatorId) -> Self {
         let mut rng = rand::thread_rng();
         let mut ikm = [0u8; 32];
         rng.fill_bytes(&mut ikm);
 
         let sk = SecretKey::key_gen(&ikm, &[]).unwrap();
-        BlstCrypto { sk, replica_id }
+        BlstCrypto { sk, validator_id }
     }
 
-    pub fn as_replica(&self) -> Replica {
-        let pub_key = ReplicaPubKey(self.sk.sk_to_pk().compress().as_slice().to_vec());
-        Replica {
-            id: self.replica_id.clone(),
+    pub fn as_validator(&self) -> ConsensusValidator {
+        let pub_key = ValidatorPublicKey(self.sk.sk_to_pk().compress().as_slice().to_vec());
+        ConsensusValidator {
+            id: self.validator_id.clone(),
             pub_key,
         }
     }
@@ -47,19 +47,19 @@ impl BlstCrypto {
         Ok(Signed {
             msg,
             signature,
-            replica_id: self.replica_id.clone(),
+            validator_id: self.validator_id.clone(),
         })
     }
 
-    pub fn verify<T>(msg: &Signed<T>, replica: &ReplicaPubKey) -> Result<bool, Error>
+    pub fn verify<T>(msg: &Signed<T>, pub_key: &ValidatorPublicKey) -> Result<bool, Error>
     where
         T: bincode::Encode + Debug,
     {
-        debug!("Verifying message {:?} against {:?}", msg, replica);
+        debug!("Verifying message {:?} against {:?}", msg, pub_key);
         let encoded = bincode::encode_to_vec(&msg.msg, bincode::config::standard())?;
         let sig = Signature::uncompress(&msg.signature.0)
             .map_err(|_| anyhow!("Could not parse Signature"))?;
-        let pk = PublicKey::uncompress(replica.0.as_slice())
+        let pk = PublicKey::uncompress(pub_key.0.as_slice())
             .map_err(|_| anyhow!("Could not parse PublicKey"))?;
         Ok(BlstCrypto::verify_bytes(encoded.as_slice(), &sig, &pk))
     }
@@ -78,7 +78,7 @@ impl BlstCrypto {
 
 impl Default for BlstCrypto {
     fn default() -> Self {
-        Self::new(ReplicaId("default".to_string()))
+        Self::new(ValidatorId("default".to_string()))
     }
 }
 
@@ -101,9 +101,9 @@ mod tests {
     #[test]
     fn test_sign() {
         let crypto = BlstCrypto::default();
-        let replica = ReplicaPubKey(crypto.sk.sk_to_pk().to_bytes().as_slice().to_vec());
+        let pub_key = ValidatorPublicKey(crypto.sk.sk_to_pk().to_bytes().as_slice().to_vec());
         let msg = HandshakeNetMessage::Ping;
         let signed = crypto.sign(&msg).unwrap();
-        BlstCrypto::verify(&signed, &replica).unwrap();
+        BlstCrypto::verify(&signed, &pub_key).unwrap();
     }
 }

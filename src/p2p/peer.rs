@@ -17,13 +17,13 @@ use crate::bus::SharedMessageBus;
 use crate::consensus::ConsensusNetMessage;
 use crate::handle_messages;
 use crate::mempool::MempoolNetMessage;
-use crate::p2p::network::ReplicaRegistryNetMessage;
 use crate::p2p::network::Signed;
 use crate::p2p::stream::read_stream;
 use crate::p2p::stream::send_binary;
-use crate::replica_registry::Replica;
 use crate::utils::conf::SharedConf;
 use crate::utils::crypto::BlstCrypto;
+use crate::validator_registry::ConsensusValidator;
+use crate::validator_registry::ValidatorRegistryNetMessage;
 
 pub struct Peer {
     id: u64,
@@ -32,7 +32,7 @@ pub struct Peer {
     last_pong: SystemTime,
     conf: SharedConf,
     bloom_filter: Bloom<Vec<u8>>,
-    self_replica: Replica,
+    self_validator: ConsensusValidator,
 
     // peer internal channel
     internal_cmd_tx: mpsc::Sender<Cmd>,
@@ -53,7 +53,7 @@ impl Peer {
     ) -> Self {
         let (cmd_tx, cmd_rx) = mpsc::channel::<Cmd>(100);
         let bloom_filter = Bloom::new_for_fp_rate(10_000, 0.01);
-        let self_replica = crypto.as_replica();
+        let self_validator = crypto.as_validator();
         Peer {
             id,
             stream,
@@ -61,7 +61,7 @@ impl Peer {
             last_pong: SystemTime::now(),
             conf,
             bloom_filter,
-            self_replica,
+            self_validator,
             internal_cmd_tx: cmd_tx,
             internal_cmd_rx: cmd_rx,
         }
@@ -96,7 +96,7 @@ impl Peer {
                 self.ping_pong();
                 send_net_message(
                     &mut self.stream,
-                    ReplicaRegistryNetMessage::NewReplica(self.self_replica.clone()).into(),
+                    ValidatorRegistryNetMessage::NewValidator(self.self_validator.clone()).into(),
                 )
                 .await
             }
@@ -133,16 +133,16 @@ impl Peer {
                     .send(consensus_msg)
                     .context("Receiving consensus net message")?;
             }
-            NetMessage::ReplicaRegistryMessage(replica_registry_msg) => {
+            NetMessage::ValidatorRegistryMessage(validator_registry_msg) => {
                 debug!(
-                    "Received new replica registry net message {:?}",
-                    replica_registry_msg
+                    "Received new validator registry net message {:?}",
+                    validator_registry_msg
                 );
                 self.bus
-                    .sender::<ReplicaRegistryNetMessage>()
+                    .sender::<ValidatorRegistryNetMessage>()
                     .await
-                    .send(replica_registry_msg)
-                    .context("Receiving replica registry net message")?;
+                    .send(validator_registry_msg)
+                    .context("Receiving validator registry net message")?;
             }
         }
         Ok(())

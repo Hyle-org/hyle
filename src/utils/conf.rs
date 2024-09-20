@@ -4,7 +4,7 @@ use anyhow::Result;
 use config::{Config, ConfigError, Environment, File};
 use serde::{Deserialize, Serialize};
 
-use crate::replica_registry::ReplicaId;
+use crate::validator_registry::ValidatorId;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Storage {
@@ -21,7 +21,7 @@ pub type SharedConf = Arc<Conf>;
 pub struct Conf {
     port: u16,
     host: String,
-    pub id: ReplicaId,
+    pub id: ValidatorId,
     pub peers: Vec<String>,
     pub storage: Storage,
     rest: String,

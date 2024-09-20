@@ -1,6 +1,6 @@
 use std::fmt;
 
-use crate::replica_registry::{Replica, ReplicaId};
+use crate::validator_registry::{ValidatorId, ValidatorRegistryNetMessage};
 use crate::{consensus::ConsensusNetMessage, mempool::MempoolNetMessage};
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
@@ -43,7 +43,7 @@ impl std::fmt::Debug for Signature {
 pub struct Signed<T: Encode> {
     pub msg: T,
     pub signature: Signature,
-    pub replica_id: ReplicaId,
+    pub validator_id: ValidatorId,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode)]
@@ -51,12 +51,7 @@ pub enum NetMessage {
     HandshakeMessage(HandshakeNetMessage),
     MempoolMessage(Signed<MempoolNetMessage>),
     ConsensusMessage(Signed<ConsensusNetMessage>),
-    ReplicaRegistryMessage(ReplicaRegistryNetMessage),
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode)]
-pub enum ReplicaRegistryNetMessage {
-    NewReplica(Replica),
+    ValidatorRegistryMessage(ValidatorRegistryNetMessage),
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode)]
@@ -73,9 +68,9 @@ impl From<HandshakeNetMessage> for NetMessage {
     }
 }
 
-impl From<ReplicaRegistryNetMessage> for NetMessage {
-    fn from(msg: ReplicaRegistryNetMessage) -> Self {
-        NetMessage::ReplicaRegistryMessage(msg)
+impl From<ValidatorRegistryNetMessage> for NetMessage {
+    fn from(msg: ValidatorRegistryNetMessage) -> Self {
+        NetMessage::ValidatorRegistryMessage(msg)
     }
 }
 
