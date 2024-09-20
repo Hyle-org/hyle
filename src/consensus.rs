@@ -1,6 +1,6 @@
 //! Handles all consensus logic up to block commitment.
 
-use anyhow::{Context, Error, Result};
+use anyhow::{bail, Context, Error, Result};
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -179,6 +179,10 @@ impl Consensus {
         crypto: &BlstCrypto,
         outbound_sender: &Sender<OutboundMessage>,
     ) -> Result<(), Error> {
+        if !self.validators.check_signed(&msg)? {
+            bail!("Invalid signature for message {:?}", msg);
+        }
+
         match msg.msg {
             ConsensusNetMessage::Prepare(consensus_proposal) => {
                 // Message received by replica.
@@ -318,8 +322,9 @@ impl Consensus {
         &mut self,
         msg: ConsensusCommand,
         bus: &SharedMessageBus,
-        _crypto: &BlstCrypto,
+        crypto: &BlstCrypto,
         consensus_event_sender: &Sender<ConsensusEvent>,
+        outbound_sender: &Sender<OutboundMessage>,
     ) -> Result<()> {
         match msg {
             ConsensusCommand::GenerateNewBlock => {
@@ -346,16 +351,16 @@ impl Consensus {
                                 )?;
 
                             // send to network
-                            // _ = outbound_sender.send(
-                            //     OutboundMessage::broadcast(
-                            //         Self::sign_net_message(
-                            //             crypto,
-                            //             ConsensusNetMessage::Commit(block)
-                            //         )?
-                            //     )
-                            // ).context(
-                            //     "Failed to send ConsensusNetMessage::CommitBlock msg on the bus",
-                            // )?;
+                            _ = outbound_sender.send(
+                                OutboundMessage::broadcast(
+                                    Self::sign_net_message(
+                                        crypto,
+                                        ConsensusNetMessage::Commit(1)
+                                    )?
+                                )
+                            ).context(
+                                "Failed to send ConsensusNetMessage::CommitBlock msg on the bus",
+                            )?;
                         }
                     }
                 }
@@ -403,7 +408,7 @@ impl Consensus {
         handle_messages! {
             on_bus bus,
             listen<ConsensusCommand> cmd => {
-                match self.handle_command(cmd, &bus, &crypto, &consensus_event_sender).await{
+                match self.handle_command(cmd, &bus, &crypto, &consensus_event_sender, &outbound_sender).await{
                     Ok(_) => (),
                     Err(e) => warn!("Error while handling consensus command: {:#}", e),
                 }
