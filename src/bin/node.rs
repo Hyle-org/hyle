@@ -68,7 +68,7 @@ fn start_mock_workflow(bus: SharedMessageBus) {
     let _ = tokio::task::Builder::new()
         .name("MockWorkflow")
         .spawn(async move {
-            let mut mock_workflow = hyle::tools::mock_workflow::MockWorkflowHandler::new(bus);
+            let mut mock_workflow = hyle::tools::mock_workflow::MockWorkflowHandler::new(bus).await;
             mock_workflow.start().await;
         });
 }

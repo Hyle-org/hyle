@@ -27,6 +27,7 @@ bloomfilter = "1.0.14"
 paste = "1.0.15"
 blst = "0.3.13"
 nocow = { path = "./nocow" }
+frunk = "0.4.3"
 
 [target.'cfg(target_os="macos")'.dependencies]
 sled = { version = "0.34.7", features = ["compression", "lock_free_delays"] }

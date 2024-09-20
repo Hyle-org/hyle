@@ -1,10 +1,12 @@
 use crate::{
-    bus::SharedMessageBus,
+    bus::{BusClient, SharedMessageBus},
     handle_messages,
     mempool::MempoolNetMessage,
     model::{Blob, BlobData, BlobTransaction, ContractName, Identity, Transaction},
 };
+use frunk::{HCons, HNil};
 use serde::{Deserialize, Serialize};
+use tokio::sync::broadcast::{Receiver, Sender};
 use tracing::warn;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -13,18 +15,24 @@ pub enum RunScenario {
 }
 
 pub struct MockWorkflowHandler {
-    bus: SharedMessageBus,
+    bus: BusClient<HCons<Receiver<RunScenario>, HCons<Sender<MempoolNetMessage>, HNil>>>,
 }
 
 impl MockWorkflowHandler {
-    pub fn new(bus: SharedMessageBus) -> MockWorkflowHandler {
-        MockWorkflowHandler { bus }
+    pub async fn new(bus: SharedMessageBus) -> MockWorkflowHandler {
+        MockWorkflowHandler {
+            bus: BusClient::new()
+                .with_sender::<MempoolNetMessage>(&bus)
+                .await
+                .with_receiver::<RunScenario>(&bus)
+                .await,
+        }
     }
 
     pub async fn start(&mut self) {
         handle_messages! {
             on_bus self.bus,
-            listen<RunScenario> cmd => {
+            listen_client<RunScenario> cmd => {
                 match cmd {
                     RunScenario::StressTest => {
                         self.stress_test().await;
@@ -36,7 +44,6 @@ impl MockWorkflowHandler {
 
     async fn stress_test(&mut self) {
         warn!("Starting stress test");
-        let message_sender = self.bus.sender().await;
         let tx = MempoolNetMessage::NewTx(Transaction {
             version: 1,
             transaction_data: crate::model::TransactionData::Blob(BlobTransaction {
@@ -49,7 +56,7 @@ impl MockWorkflowHandler {
             inner: "???".to_string(),
         });
         for _ in 0..500000 {
-            let _ = message_sender.send(tx.clone());
+            let _ = self.bus.send(tx.clone());
         }
     }
 }

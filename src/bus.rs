@@ -1,8 +1,15 @@
 //! Event bus used for messaging across components asynchronously.
 
 use anymap::{any::Any, Map};
-use std::sync::{atomic::AtomicUsize, Arc};
-use tokio::sync::{broadcast, Mutex};
+use frunk::{hlist::Selector, HCons};
+use std::{
+    future::Future,
+    sync::{atomic::AtomicUsize, Arc},
+};
+use tokio::sync::{
+    broadcast::{self, error::RecvError, Receiver, Sender},
+    Mutex,
+};
 
 pub mod command_response;
 
@@ -58,5 +65,65 @@ impl SharedMessageBus {
 impl Default for SharedMessageBus {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+pub struct BusClient<T> {
+    inner: T,
+}
+
+impl<T> BusClient<T> {
+    pub fn new() -> BusClient<T>
+    where
+        T: Default,
+    {
+        BusClient::<T> {
+            inner: T::default(),
+        }
+    }
+
+    pub async fn with_sender<M: Send + Sync + Clone + 'static>(
+        self,
+        bus: &SharedMessageBus,
+    ) -> BusClient<HCons<Sender<M>, T>> {
+        let sender = bus.sender::<M>().await;
+        BusClient {
+            inner: HCons {
+                head: sender,
+                tail: self.inner,
+            },
+        }
+    }
+    pub async fn with_receiver<M: Send + Sync + Clone + 'static>(
+        self,
+        bus: &SharedMessageBus,
+    ) -> BusClient<HCons<Receiver<M>, T>> {
+        let sender = bus.receiver::<M>().await;
+        BusClient {
+            inner: HCons {
+                head: sender,
+                tail: self.inner,
+            },
+        }
+    }
+    pub fn send<M: Send + Sync + Clone + 'static, U>(
+        &self,
+        message: M,
+    ) -> Result<usize, broadcast::error::SendError<M>>
+    where
+        T: Selector<Sender<M>, U>,
+    {
+        let sender = self.inner.get();
+        sender.send(message)
+    }
+
+    pub fn recv<M: Send + Sync + Clone + 'static, U>(
+        &mut self,
+    ) -> impl Future<Output = Result<M, RecvError>> + '_
+    where
+        T: Selector<Receiver<M>, U>,
+    {
+        let receiver = self.inner.get_mut();
+        receiver.recv()
     }
 }

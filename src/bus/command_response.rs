@@ -156,6 +156,16 @@ macro_rules! handle_messages {
         }
     }};
 
+    ( bus($bus:expr) listen_client <$message:ty> $res:pat => $handler:block $($rest:tt)*) => {{
+
+        handle_messages! {
+            bus($bus) $($rest)*
+            Ok($res) = $bus.recv() => {
+                $handler
+            }
+        }
+    }};
+
     (counter($counter:ident) $($rest:tt)+ ) => {{
        handle_messages!($($rest)+)
     }};
