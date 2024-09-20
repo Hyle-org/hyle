@@ -13,7 +13,7 @@ use tokio::{sync::broadcast::Sender, time::sleep};
 use tracing::{info, warn};
 
 use crate::{
-    bus::{command_response::CmdRespClient, SharedMessageBus},
+    bus::{command_response::CmdRespClient, BusMessage, SharedMessageBus},
     handle_messages,
     mempool::{MempoolCommand, MempoolResponse},
     model::{get_current_timestamp, Block, Hashable, Transaction},
@@ -41,6 +41,10 @@ pub enum ConsensusCommand {
 pub enum ConsensusEvent {
     CommitBlock { batch_id: String, block: Block },
 }
+
+impl BusMessage for ConsensusCommand {}
+impl BusMessage for ConsensusEvent {}
+impl BusMessage for ConsensusNetMessage {}
 
 // TODO: move struct to model.rs ?
 #[derive(Serialize, Deserialize, Encode, Decode, Default)]

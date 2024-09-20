@@ -10,7 +10,7 @@ use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 use tracing::{debug, info, warn};
 
-use crate::{p2p::network::Signed, utils::crypto::BlstCrypto};
+use crate::{bus::BusMessage, p2p::network::Signed, utils::crypto::BlstCrypto};
 
 #[derive(Serialize, Deserialize, Clone, Encode, Decode, Default)]
 pub struct ValidatorPublicKey(pub Vec<u8>);
@@ -42,6 +42,7 @@ pub struct ConsensusValidator {
 pub enum ValidatorRegistryNetMessage {
     NewValidator(ConsensusValidator),
 }
+impl BusMessage for ValidatorRegistryNetMessage {}
 
 #[derive(Serialize, Deserialize, Encode, Decode)]
 pub struct ValidatorRegistry {
