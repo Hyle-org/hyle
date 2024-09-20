@@ -1,3 +1,4 @@
+use crate::bus::BusMessage;
 use crate::model::Transaction;
 use crate::model::{BlobTransaction, ContractName};
 use crate::tools::mock_workflow::RunScenario;
@@ -22,6 +23,7 @@ use super::{AppError, RouterState};
 pub enum RestApiMessage {
     NewTx(Transaction),
 }
+impl BusMessage for RestApiMessage {}
 
 async fn handle_send(
     state: RouterState,

@@ -1,9 +1,9 @@
-use std::fmt;
-
+use crate::bus::BusMessage;
 use crate::validator_registry::{ValidatorId, ValidatorRegistryNetMessage};
 use crate::{consensus::ConsensusNetMessage, mempool::MempoolNetMessage};
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
+use std::fmt;
 
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode)]
 pub struct Version {
@@ -30,6 +30,7 @@ impl OutboundMessage {
         }
     }
 }
+impl BusMessage for OutboundMessage {}
 
 #[derive(Serialize, Deserialize, Clone, Encode, Decode, Default)]
 pub struct Signature(pub Vec<u8>);
@@ -48,6 +49,8 @@ pub struct Signed<T: Encode> {
     pub signature: Signature,
     pub validator_id: ValidatorId,
 }
+
+impl<T> BusMessage for Signed<T> where T: Encode + BusMessage {}
 
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode)]
 pub enum NetMessage {

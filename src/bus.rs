@@ -10,6 +10,9 @@ pub const CHANNEL_CAPACITY: usize = 1000000;
 
 type AnyMap = Map<dyn Any + Send + Sync>;
 
+/// Types that implement BusMessage can be sent on the bus - this is mostly for documentation purposes.
+pub trait BusMessage {}
+
 pub struct SharedMessageBus {
     ids: Arc<Mutex<AnyMap>>,
     channels: Arc<Mutex<AnyMap>>,
@@ -31,7 +34,7 @@ impl SharedMessageBus {
     }
 
     //TODO: manage locks at entry level (whole map locks to generate the next id of one kind of channel)
-    pub async fn next_id<M: Send + Sync + Clone + 'static>(&self) -> usize {
+    pub async fn next_id<M: BusMessage + Send + Sync + Clone + 'static>(&self) -> usize {
         self.ids
             .lock()
             .await
@@ -41,11 +44,15 @@ impl SharedMessageBus {
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
     }
 
-    pub async fn receiver<M: Send + Sync + Clone + 'static>(&self) -> broadcast::Receiver<M> {
+    pub async fn receiver<M: BusMessage + Send + Sync + Clone + 'static>(
+        &self,
+    ) -> broadcast::Receiver<M> {
         self.sender().await.subscribe()
     }
 
-    pub async fn sender<M: Send + Sync + Clone + 'static>(&self) -> broadcast::Sender<M> {
+    pub async fn sender<M: BusMessage + Send + Sync + Clone + 'static>(
+        &self,
+    ) -> broadcast::Sender<M> {
         self.channels
             .lock()
             .await

@@ -1,7 +1,7 @@
 //! Mempool logic & pending transaction management.
 
 use crate::{
-    bus::{command_response::NeedAnswer, SharedMessageBus},
+    bus::{command_response::NeedAnswer, BusMessage, SharedMessageBus},
     consensus::ConsensusEvent,
     handle_messages,
     model::{Hashable, Transaction},
@@ -40,16 +40,20 @@ pub struct Mempool {
 pub enum MempoolNetMessage {
     NewTx(Transaction),
 }
+impl BusMessage for MempoolNetMessage {}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum MempoolCommand {
     CreatePendingBatch { id: String },
 }
+impl NeedAnswer<MempoolResponse> for MempoolCommand {}
+impl BusMessage for MempoolCommand {}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum MempoolResponse {
     PendingBatch { id: String, txs: Vec<Transaction> },
 }
+impl BusMessage for MempoolResponse {}
 
 impl Mempool {
     pub fn new(bus: SharedMessageBus, config: SharedConf, crypto: BlstCrypto) -> Mempool {
@@ -67,7 +71,6 @@ impl Mempool {
     /// start starts the mempool server.
     pub async fn start(&mut self) {
         info!("Mempool starting");
-        impl NeedAnswer<MempoolResponse> for MempoolCommand {}
         handle_messages! {
             on_bus self.bus,
             command_response<MempoolCommand, MempoolResponse> cmd => {
