@@ -23,6 +23,7 @@ use crate::p2p::stream::send_binary;
 use crate::utils::conf::SharedConf;
 use crate::utils::crypto::BlstCrypto;
 use crate::validator_registry::ConsensusValidator;
+use crate::validator_registry::ValidatorId;
 use crate::validator_registry::ValidatorRegistryNetMessage;
 
 pub struct Peer {
@@ -67,7 +68,12 @@ impl Peer {
         }
     }
 
-    async fn handle_send_message(&mut self, peer_id: u64, msg: NetMessage) -> Result<(), Error> {
+    async fn handle_send_message(
+        &mut self,
+        _validator_id: ValidatorId,
+        msg: NetMessage,
+    ) -> Result<(), Error> {
+        let peer_id = 1; // FIXME: extract peer_id from validator_id
         if peer_id != self.id {
             return Ok(());
         }
@@ -166,7 +172,7 @@ impl Peer {
             on_bus self.bus,
             listen<OutboundMessage> res => {
                 match res {
-                    OutboundMessage::SendMessage { peer_id, msg } => match self.handle_send_message(peer_id, msg).await {
+                    OutboundMessage::SendMessage { validator_id, msg } => match self.handle_send_message(validator_id, msg).await {
                         Ok(_) => continue,
                         Err(e) => {
                             warn!("Error while sending net message: {}", e);
