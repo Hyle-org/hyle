@@ -1,3 +1,5 @@
+//! Event bus used for messaging across components asynchronously.
+
 use anymap::{any::Any, Map};
 use std::sync::{atomic::AtomicUsize, Arc};
 use tokio::sync::{broadcast, Mutex};

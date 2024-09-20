@@ -30,7 +30,7 @@ fn wrap_net_message(tx: Transaction) -> NetMessage {
     NetMessage::MempoolMessage(Signed {
         msg: MempoolNetMessage::NewTx(tx),
         signature: Default::default(),
-        replica_id: Default::default(),
+        validator_id: Default::default(),
     })
 }
 

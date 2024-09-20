@@ -1,4 +1,6 @@
-use crate::replica_registry::{Replica, ReplicaId};
+use std::fmt;
+
+use crate::validator_registry::{ValidatorId, ValidatorRegistryNetMessage};
 use crate::{consensus::ConsensusNetMessage, mempool::MempoolNetMessage};
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
@@ -11,7 +13,7 @@ pub struct Version {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum OutboundMessage {
     SendMessage {
-        replica_id: ReplicaId,
+        validator_id: ValidatorId,
         msg: NetMessage,
     },
     BroadcastMessage(NetMessage),
@@ -21,22 +23,30 @@ impl OutboundMessage {
     pub fn broadcast<T: Into<NetMessage>>(msg: T) -> Self {
         OutboundMessage::BroadcastMessage(msg.into())
     }
-    pub fn send<T: Into<NetMessage>>(replica_id: ReplicaId, msg: T) -> Self {
+    pub fn send<T: Into<NetMessage>>(validator_id: ValidatorId, msg: T) -> Self {
         OutboundMessage::SendMessage {
-            replica_id,
+            validator_id,
             msg: msg.into(),
         }
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, Default)]
+#[derive(Serialize, Deserialize, Clone, Encode, Decode, Default)]
 pub struct Signature(pub Vec<u8>);
+
+impl std::fmt::Debug for Signature {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("Signature")
+            .field(&hex::encode(&self.0))
+            .finish()
+    }
+}
 
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode)]
 pub struct Signed<T: Encode> {
     pub msg: T,
     pub signature: Signature,
-    pub replica_id: ReplicaId,
+    pub validator_id: ValidatorId,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode)]
@@ -44,12 +54,7 @@ pub enum NetMessage {
     HandshakeMessage(HandshakeNetMessage),
     MempoolMessage(Signed<MempoolNetMessage>),
     ConsensusMessage(Signed<ConsensusNetMessage>),
-    ReplicaRegistryMessage(ReplicaRegistryNetMessage),
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode)]
-pub enum ReplicaRegistryNetMessage {
-    NewReplica(Replica),
+    ValidatorRegistryMessage(ValidatorRegistryNetMessage),
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode)]
@@ -66,9 +71,9 @@ impl From<HandshakeNetMessage> for NetMessage {
     }
 }
 
-impl From<ReplicaRegistryNetMessage> for NetMessage {
-    fn from(msg: ReplicaRegistryNetMessage) -> Self {
-        NetMessage::ReplicaRegistryMessage(msg)
+impl From<ValidatorRegistryNetMessage> for NetMessage {
+    fn from(msg: ValidatorRegistryNetMessage) -> Self {
+        NetMessage::ValidatorRegistryMessage(msg)
     }
 }
 

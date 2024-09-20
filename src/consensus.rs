@@ -1,3 +1,5 @@
+//! Handles all consensus logic up to block commitment.
+
 use anyhow::{Context, Error, Result};
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
@@ -15,9 +17,9 @@ use crate::{
     handle_messages,
     mempool::{MempoolCommand, MempoolResponse},
     model::{get_current_timestamp, Block, Hashable, Transaction},
-    p2p::network::{OutboundMessage, ReplicaRegistryNetMessage, Signed},
-    replica_registry::{ReplicaId, ReplicaRegistry},
-    utils::{conf::SharedConf, logger::LogMe},
+    p2p::network::{OutboundMessage, Signed},
+    utils::{conf::SharedConf, crypto::BlstCrypto, logger::LogMe},
+    validator_registry::{ValidatorId, ValidatorRegistry, ValidatorRegistryNetMessage},
 };
 
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode)]
@@ -48,10 +50,10 @@ pub struct BFTRoundState {
     slot: u64,
     view: u64,
     prepare_quorum_certificate: u64,
-    prep_votes: HashMap<ReplicaId, bool>, // FIXME: set correct type (here it's replica_id:vote)
+    prep_votes: HashMap<ValidatorId, bool>, // FIXME: set correct type (here it's validator_id:vote)
     commit_quorum_certificate: HashMap<u64, u64>, // FIXME: set correct type (here it's slot:quorum certificate)
-    confirm_ack: HashSet<ReplicaId>,              // FIXME: set correct type (here it's replica_id)
-    block: Option<Block>,                         // FIXME: Block ou cut ?
+    confirm_ack: HashSet<ValidatorId>, // FIXME: set correct type (here it's validator_id)
+    block: Option<Block>,              // FIXME: Block ou cut ?
 }
 
 impl BFTRoundState {
@@ -74,7 +76,7 @@ pub struct ConsensusProposal {
 
 #[derive(Serialize, Deserialize, Encode, Decode)]
 pub struct Consensus {
-    replicas: ReplicaRegistry,
+    validators: ValidatorRegistry,
     bft_round_state: BFTRoundState,
     blocks: Vec<Block>,
     batch_id: u64,
@@ -166,14 +168,15 @@ impl Consensus {
         true
     }
 
-    fn leader_id(&self) -> ReplicaId {
+    fn leader_id(&self) -> ValidatorId {
         // TODO
-        ReplicaId("".to_owned())
+        ValidatorId("".to_owned())
     }
 
     fn handle_net_message(
         &mut self,
         msg: Signed<ConsensusNetMessage>,
+        crypto: &BlstCrypto,
         outbound_sender: &Sender<OutboundMessage>,
     ) -> Result<(), Error> {
         match msg.msg {
@@ -181,7 +184,7 @@ impl Consensus {
                 // Message received by replica.
 
                 // Validate message comes from the correct leader
-                if self.leader_id() != msg.replica_id {
+                if self.leader_id() != msg.validator_id {
                     // fail
                 }
                 // Validate consensus_proposal slot, view, previous_qc and proposed block
@@ -190,7 +193,7 @@ impl Consensus {
                 _ = outbound_sender
                     .send(OutboundMessage::send(
                         self.leader_id(),
-                        self.sign_net_message(ConsensusNetMessage::PrepareVote(vote)),
+                        Self::sign_net_message(crypto, ConsensusNetMessage::PrepareVote(vote))?,
                     ))
                     .context("Failed to send ConsensusNetMessage::Confirm msg on the bus")?;
                 Ok(())
@@ -199,7 +202,9 @@ impl Consensus {
                 // Message received by leader.
 
                 // Save vote
-                self.bft_round_state.prep_votes.insert(msg.replica_id, vote);
+                self.bft_round_state
+                    .prep_votes
+                    .insert(msg.validator_id, vote);
                 // Get matching vote count
                 let validated_votes = self
                     .bft_round_state
@@ -215,9 +220,10 @@ impl Consensus {
                     // if fast-path ... TODO
                     // else send Confirm message to replicas
                     _ = outbound_sender
-                        .send(OutboundMessage::broadcast(self.sign_net_message(
+                        .send(OutboundMessage::broadcast(Self::sign_net_message(
+                            crypto,
                             ConsensusNetMessage::Confirm(prepare_quorum_certificate),
-                        )))
+                        )?))
                         .context("Failed to send ConsensusNetMessage::Confirm msg on the bus")?;
                 }
                 Ok(())
@@ -235,7 +241,7 @@ impl Consensus {
                 _ = outbound_sender
                     .send(OutboundMessage::send(
                         self.leader_id(),
-                        self.sign_net_message(ConsensusNetMessage::ConfirmAck),
+                        Self::sign_net_message(crypto, ConsensusNetMessage::ConfirmAck)?,
                     ))
                     .context("Failed to send ConsensusNetMessage::ConfirmAck msg on the bus")?;
                 Ok(())
@@ -244,7 +250,7 @@ impl Consensus {
                 // Message received by leader.
 
                 // Save ConfirmAck
-                self.bft_round_state.confirm_ack.insert(msg.replica_id);
+                self.bft_round_state.confirm_ack.insert(msg.validator_id);
 
                 if self.bft_round_state.confirm_ack.len()
                     > (2 * self.bft_round_state.f + 1).try_into().unwrap()
@@ -254,9 +260,10 @@ impl Consensus {
 
                     // Send Commit message of this certificate to all replicas
                     _ = outbound_sender
-                        .send(OutboundMessage::broadcast(self.sign_net_message(
+                        .send(OutboundMessage::broadcast(Self::sign_net_message(
+                            crypto,
                             ConsensusNetMessage::Commit(commit_quorum_certificate),
-                        )))
+                        )?))
                         .context("Failed to send ConsensusNetMessage::Confirm msg on the bus")?;
                 }
                 // Update its bft roun state
@@ -296,9 +303,10 @@ impl Consensus {
                 };
                 // Send Prepare message to all replicas
                 _ = outbound_sender
-                    .send(OutboundMessage::broadcast(self.sign_net_message(
+                    .send(OutboundMessage::broadcast(Self::sign_net_message(
+                        crypto,
                         ConsensusNetMessage::Prepare(consensus_proposal),
-                    )))
+                    )?))
                     .context("Failed to send ConsensusNetMessage::Prepare msg on the bus")?;
 
                 Ok(())
@@ -310,6 +318,7 @@ impl Consensus {
         &mut self,
         msg: ConsensusCommand,
         bus: &SharedMessageBus,
+        _crypto: &BlstCrypto,
         consensus_event_sender: &Sender<ConsensusEvent>,
     ) -> Result<()> {
         match msg {
@@ -339,9 +348,10 @@ impl Consensus {
                             // send to network
                             // _ = outbound_sender.send(
                             //     OutboundMessage::broadcast(
-                            //         self.sign_net_message(
-                            //             ConsensusNetMessage::CommitBlock(block)
-                            //         )
+                            //         Self::sign_net_message(
+                            //             crypto,
+                            //             ConsensusNetMessage::Commit(block)
+                            //         )?
                             //     )
                             // ).context(
                             //     "Failed to send ConsensusNetMessage::CommitBlock msg on the bus",
@@ -359,7 +369,12 @@ impl Consensus {
         }
     }
 
-    pub async fn start(&mut self, bus: SharedMessageBus, config: SharedConf) -> Result<()> {
+    pub async fn start(
+        &mut self,
+        bus: SharedMessageBus,
+        config: SharedConf,
+        crypto: BlstCrypto,
+    ) -> Result<()> {
         let interval = config.storage.interval;
         let is_master = config.peers.is_empty();
         let outbound_sender = bus.sender::<OutboundMessage>().await;
@@ -388,29 +403,28 @@ impl Consensus {
         handle_messages! {
             on_bus bus,
             listen<ConsensusCommand> cmd => {
-                match self.handle_command(cmd, &bus, &consensus_event_sender).await{
+                match self.handle_command(cmd, &bus, &crypto, &consensus_event_sender).await{
                     Ok(_) => (),
                     Err(e) => warn!("Error while handling consensus command: {:#}", e),
                 }
             }
             listen<Signed<ConsensusNetMessage>> cmd => {
-                match self.handle_net_message(cmd, &outbound_sender){
+                match self.handle_net_message(cmd, &crypto, &outbound_sender){
                     Ok(_) => (),
                     Err(e) => warn!("Error while handling consensus net message: {:#}", e),
                 }
             }
-            listen<ReplicaRegistryNetMessage> cmd => {
-                self.replicas.handle_net_message(cmd);
+            listen<ValidatorRegistryNetMessage> cmd => {
+                self.validators.handle_net_message(cmd);
             }
         }
     }
 
-    fn sign_net_message(&self, msg: ConsensusNetMessage) -> Signed<ConsensusNetMessage> {
-        Signed {
-            msg,
-            signature: Default::default(),
-            replica_id: Default::default(),
-        }
+    fn sign_net_message(
+        crypto: &BlstCrypto,
+        msg: ConsensusNetMessage,
+    ) -> Result<Signed<ConsensusNetMessage>> {
+        crypto.sign(msg)
     }
 }
 
@@ -418,7 +432,7 @@ impl Default for Consensus {
     fn default() -> Self {
         Self {
             blocks: vec![Block::default()],
-            replicas: ReplicaRegistry::default(),
+            validators: ValidatorRegistry::default(),
             batch_id: 0,
             tx_batches: HashMap::new(),
             current_block_batches: vec![],

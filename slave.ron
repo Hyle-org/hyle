@@ -9,6 +9,7 @@ Config(
       interval: 10
     ),
     rest: "127.0.0.1:4322",
+    data_directory: "data_slave",
   p2p: (
     ping_interval: 10
   )

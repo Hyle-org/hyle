@@ -1,7 +1,8 @@
 use std::time::Duration;
 use std::time::SystemTime;
 
-use anyhow::{anyhow, Context, Error, Result};
+use anyhow::Context;
+use anyhow::{anyhow, Error, Result};
 use bloomfilter::Bloom;
 use tokio::net::TcpStream;
 use tokio::sync::mpsc;
@@ -16,14 +17,14 @@ use crate::bus::SharedMessageBus;
 use crate::consensus::ConsensusNetMessage;
 use crate::handle_messages;
 use crate::mempool::MempoolNetMessage;
-use crate::p2p::network::ReplicaRegistryNetMessage;
 use crate::p2p::network::Signed;
 use crate::p2p::stream::read_stream;
 use crate::p2p::stream::send_binary;
-use crate::replica_registry::Replica;
-use crate::replica_registry::ReplicaId;
-use crate::replica_registry::ReplicaPubKey;
 use crate::utils::conf::SharedConf;
+use crate::utils::crypto::BlstCrypto;
+use crate::validator_registry::ConsensusValidator;
+use crate::validator_registry::ValidatorId;
+use crate::validator_registry::ValidatorRegistryNetMessage;
 
 pub struct Peer {
     id: u64,
@@ -32,7 +33,7 @@ pub struct Peer {
     last_pong: SystemTime,
     conf: SharedConf,
     bloom_filter: Bloom<Vec<u8>>,
-    self_replica: Replica,
+    self_validator: ConsensusValidator,
 
     // peer internal channel
     internal_cmd_tx: mpsc::Sender<Cmd>,
@@ -44,14 +45,16 @@ enum Cmd {
 }
 
 impl Peer {
-    pub fn new(id: u64, stream: TcpStream, bus: SharedMessageBus, conf: SharedConf) -> Self {
+    pub fn new(
+        id: u64,
+        stream: TcpStream,
+        bus: SharedMessageBus,
+        crypto: BlstCrypto,
+        conf: SharedConf,
+    ) -> Self {
         let (cmd_tx, cmd_rx) = mpsc::channel::<Cmd>(100);
         let bloom_filter = Bloom::new_for_fp_rate(10_000, 0.01);
-        let self_replica = Replica {
-            id: conf.id.clone(),
-            pub_key: ReplicaPubKey::default(),
-        };
-
+        let self_validator = crypto.as_validator();
         Peer {
             id,
             stream,
@@ -59,7 +62,7 @@ impl Peer {
             last_pong: SystemTime::now(),
             conf,
             bloom_filter,
-            self_replica,
+            self_validator,
             internal_cmd_tx: cmd_tx,
             internal_cmd_rx: cmd_rx,
         }
@@ -67,10 +70,10 @@ impl Peer {
 
     async fn handle_send_message(
         &mut self,
-        _replica_id: ReplicaId,
+        _validator_id: ValidatorId,
         msg: NetMessage,
     ) -> Result<(), Error> {
-        let peer_id = 1; // FIXME: extract peer_id from replica_id
+        let peer_id = 1; // FIXME: extract peer_id from validator_id
         if peer_id != self.id {
             return Ok(());
         }
@@ -99,16 +102,14 @@ impl Peer {
                 self.ping_pong();
                 send_net_message(
                     &mut self.stream,
-                    ReplicaRegistryNetMessage::NewReplica(self.self_replica.clone()).into(),
+                    ValidatorRegistryNetMessage::NewValidator(self.self_validator.clone()).into(),
                 )
                 .await
             }
             HandshakeNetMessage::Ping => {
-                debug!("Got ping");
                 send_net_message(&mut self.stream, HandshakeNetMessage::Pong.into()).await
             }
             HandshakeNetMessage::Pong => {
-                debug!("pong");
                 self.last_pong = SystemTime::now();
                 Ok(())
             }
@@ -120,7 +121,7 @@ impl Peer {
         match msg {
             NetMessage::HandshakeMessage(handshake_msg) => {
                 debug!("Received new handshake net message {:?}", handshake_msg);
-                self.handle_handshake_message(handshake_msg).await
+                self.handle_handshake_message(handshake_msg).await?;
             }
             NetMessage::MempoolMessage(mempool_msg) => {
                 debug!("Received new mempool net message {:?}", mempool_msg);
@@ -128,8 +129,7 @@ impl Peer {
                     .sender::<Signed<MempoolNetMessage>>()
                     .await
                     .send(mempool_msg)
-                    .map(|_| ())
-                    .context("Receiving mempool net message")
+                    .context("Receiving mempool net message")?;
             }
             NetMessage::ConsensusMessage(consensus_msg) => {
                 debug!("Received new consensus net message {:?}", consensus_msg);
@@ -137,22 +137,21 @@ impl Peer {
                     .sender::<Signed<ConsensusNetMessage>>()
                     .await
                     .send(consensus_msg)
-                    .map(|_| ())
-                    .context("Receiving consensus net message")
+                    .context("Receiving consensus net message")?;
             }
-            NetMessage::ReplicaRegistryMessage(replica_registry_msg) => {
+            NetMessage::ValidatorRegistryMessage(validator_registry_msg) => {
                 debug!(
-                    "Received new replica registry net message {:?}",
-                    replica_registry_msg
+                    "Received new validator registry net message {:?}",
+                    validator_registry_msg
                 );
                 self.bus
-                    .sender::<ReplicaRegistryNetMessage>()
+                    .sender::<ValidatorRegistryNetMessage>()
                     .await
-                    .send(replica_registry_msg)
-                    .map(|_| ())
-                    .context("Receiving replica registry net message")
+                    .send(validator_registry_msg)
+                    .context("Receiving validator registry net message")?;
             }
         }
+        Ok(())
     }
 
     fn ping_pong(&self) {
@@ -173,7 +172,7 @@ impl Peer {
             on_bus self.bus,
             listen<OutboundMessage> res => {
                 match res {
-                    OutboundMessage::SendMessage { replica_id, msg } => match self.handle_send_message(replica_id, msg).await {
+                    OutboundMessage::SendMessage { validator_id, msg } => match self.handle_send_message(validator_id, msg).await {
                         Ok(_) => continue,
                         Err(e) => {
                             warn!("Error while sending net message: {}", e);
@@ -192,7 +191,7 @@ impl Peer {
                 Ok((message, _)) => match self.handle_stream_message(message).await {
                     Ok(_) => continue,
                     Err(e) => {
-                        warn!("Error while handling net message: {}", e);
+                        warn!("Error while handling net message: {:#}", e);
                     }
                 },
                 Err(e) => {
