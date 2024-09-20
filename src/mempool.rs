@@ -5,10 +5,10 @@ use crate::{
     consensus::ConsensusEvent,
     handle_messages,
     model::{Hashable, Transaction},
-    p2p::network::{OutboundMessage, ReplicaRegistryNetMessage, Signed},
-    replica_registry::ReplicaRegistry,
+    p2p::network::{OutboundMessage, Signed},
     rest::endpoints::RestApiMessage,
     utils::crypto::BlstCrypto,
+    validator_registry::{ValidatorRegistry, ValidatorRegistryNetMessage},
 };
 use anyhow::{Context, Result};
 use bincode::{Decode, Encode};
@@ -23,7 +23,7 @@ struct Batch(String, Vec<Transaction>);
 pub struct Mempool {
     bus: SharedMessageBus,
     crypto: BlstCrypto,
-    replicas: ReplicaRegistry,
+    validators: ValidatorRegistry,
     // txs accumulated, not yet transmitted to the consensus
     pending_txs: Vec<Transaction>,
     // txs batched under a req_id, transmitted to the consensus to be packed in a block
@@ -52,7 +52,7 @@ impl Mempool {
         Mempool {
             bus,
             crypto,
-            replicas: ReplicaRegistry::default(),
+            validators: ValidatorRegistry::default(),
             pending_txs: vec![],
             pending_batches: HashMap::new(),
             committed_batches: vec![],
@@ -77,8 +77,8 @@ impl Mempool {
             listen<ConsensusEvent> cmd => {
                 self.handle_event(cmd);
             }
-            listen<ReplicaRegistryNetMessage> cmd => {
-                self.replicas.handle_net_message(cmd);
+            listen<ValidatorRegistryNetMessage> cmd => {
+                self.validators.handle_net_message(cmd);
             }
         }
     }
@@ -101,7 +101,7 @@ impl Mempool {
     }
 
     async fn handle_net_message(&mut self, msg: Signed<MempoolNetMessage>) {
-        match self.replicas.check_signed(&msg) {
+        match self.validators.check_signed(&msg) {
             Ok(valid) => {
                 if valid {
                     match msg.msg {
