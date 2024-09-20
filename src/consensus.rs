@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::{Context, Error, Result};
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -8,7 +8,7 @@ use std::{
     time::Duration,
 };
 use tokio::{sync::broadcast::Sender, time::sleep};
-use tracing::info;
+use tracing::{info, warn};
 
 use crate::{
     bus::{command_response::CmdRespClient, SharedMessageBus},
@@ -175,7 +175,7 @@ impl Consensus {
         &mut self,
         msg: Signed<ConsensusNetMessage>,
         outbound_sender: &Sender<OutboundMessage>,
-    ) -> Result<()> {
+    ) -> Result<(), Error> {
         match msg.msg {
             ConsensusNetMessage::Prepare(consensus_proposal) => {
                 // Message received by replica.
@@ -388,10 +388,16 @@ impl Consensus {
         handle_messages! {
             on_bus bus,
             listen<ConsensusCommand> cmd => {
-                _ = self.handle_command(cmd, &bus, &consensus_event_sender).await;
+                match self.handle_command(cmd, &bus, &consensus_event_sender).await{
+                    Ok(_) => (),
+                    Err(e) => warn!("Error while handling consensus command: {:#}", e),
+                }
             }
             listen<Signed<ConsensusNetMessage>> cmd => {
-                _ = self.handle_net_message(cmd, &outbound_sender);
+                match self.handle_net_message(cmd, &outbound_sender){
+                    Ok(_) => (),
+                    Err(e) => warn!("Error while handling consensus net message: {:#}", e),
+                }
             }
             listen<ReplicaRegistryNetMessage> cmd => {
                 self.replicas.handle_net_message(cmd);
