@@ -1,3 +1,5 @@
+//! Utilities.
+
 pub mod conf;
 pub mod crypto;
 pub mod logger;

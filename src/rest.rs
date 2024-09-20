@@ -1,3 +1,5 @@
+//! Public API for interacting with the node.
+
 use crate::{bus::SharedMessageBus, history::History, utils::conf::SharedConf};
 use anyhow::{Context, Result};
 use axum::{

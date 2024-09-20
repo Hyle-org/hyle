@@ -1,3 +1,5 @@
+//! State required for participation in consensus by the node.
+
 use crate::{
     bus::{command_response::NeedAnswer, SharedMessageBus},
     consensus::ConsensusEvent,

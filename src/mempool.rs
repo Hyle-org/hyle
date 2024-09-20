@@ -1,3 +1,5 @@
+//! Mempool logic & pending transaction management.
+
 use crate::{
     bus::{command_response::NeedAnswer, SharedMessageBus},
     consensus::ConsensusEvent,
