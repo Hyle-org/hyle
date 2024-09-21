@@ -22,6 +22,7 @@ pub struct Conf {
     port: u16,
     host: String,
     pub id: ValidatorId,
+    pub metrics_namespace: String,
     pub peers: Vec<String>,
     pub storage: Storage,
     rest: String,

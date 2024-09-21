@@ -2,6 +2,7 @@ Config(
     id: "node-master",
     port: 1234,
     host: "127.0.0.1",
+    metrics_namespace: "master_ron",
     peers: [], // master knows no peers at start
     storage: Storage(
       interval: 10

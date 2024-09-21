@@ -16,7 +16,7 @@ use crate::{
     bus::{command_response::CmdRespClient, SharedMessageBus},
     handle_messages,
     mempool::{MempoolCommand, MempoolResponse},
-    model::{get_current_timestamp, Block, Hashable, Transaction},
+    model::{get_current_timestamp, Block, BlockHash, BlockHeight, Hashable, Transaction},
     p2p::network::{OutboundMessage, Signed},
     utils::{conf::SharedConf, crypto::BlstCrypto, logger::LogMe},
     validator_registry::{ValidatorId, ValidatorRegistry, ValidatorRegistryNetMessage},
@@ -94,7 +94,14 @@ impl Consensus {
     }
 
     fn new_block(&mut self) -> Block {
-        let last_block = self.blocks.last().unwrap();
+        let last_block = self.blocks.last();
+
+        let parent_hash = last_block
+            .map(|b| b.hash())
+            .unwrap_or(BlockHash::new("000"));
+        let parent_height = last_block
+            .map(|b| b.height)
+            .unwrap_or(BlockHeight::default());
 
         let mut all_txs = vec![];
 
@@ -107,8 +114,8 @@ impl Consensus {
 
         // Start Consensus with following block
         let block = Block {
-            parent_hash: last_block.hash(),
-            height: last_block.height + 1,
+            parent_hash,
+            height: parent_height + 1,
             timestamp: get_current_timestamp(),
             txs: all_txs,
         };
