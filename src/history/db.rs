@@ -50,33 +50,14 @@ impl<T: DeserializeOwned> DoubleEndedIterator for Iter<T> {
     }
 }
 
-/// KeyMaker makes it easy to build keys from multiple parts.
-pub struct KeyMaker<'a> {
-    first: bool,
-    writer: &'a mut String,
+/// KeyMaker makes it easy to build keys without allocating each time.
+pub trait KeyMaker {
+    fn make_key<'a>(&self, writer: &'a mut String) -> &'a str;
 }
 
-impl<'a> KeyMaker<'a> {
-    /// Allows building keys part by part.
-    /// A key is built from all the parts joined together with a colon (:).
-    pub fn add<T: std::fmt::Display>(&mut self, elem: T) {
-        use std::fmt::Write;
-        if self.first {
-            _ = write!(&mut self.writer, "{:020}", elem);
-            self.first = false
-        } else {
-            _ = write!(&mut self.writer, ":{:020}", elem);
-        }
-    }
-}
-
-fn make_key<F: FnOnce(&'_ mut KeyMaker<'_>)>(writer: &mut String, f: F) -> &str {
+fn make_key(writer: &mut String, km: impl KeyMaker) -> &str {
     writer.clear();
-    f(&mut KeyMaker {
-        first: true,
-        writer,
-    });
-    writer.as_str()
+    km.make_key(writer)
 }
 
 /// Contains the `sled::Tree`
@@ -85,7 +66,7 @@ struct DbTree {
     // This is the name of the `sled::Tree`.
     name: &'static str,
     tree: sled::Tree,
-    // Buffer used by `KeyMaker` in order to build keys.
+    // Buffer used by to build keys.
     key: String,
 }
 
@@ -135,10 +116,7 @@ impl Db {
         self.ord.tree.len()
     }
 
-    fn get_raw<T: DeserializeOwned, F: FnOnce(&mut KeyMaker)>(
-        db: &mut DbTree,
-        key: F,
-    ) -> Result<Option<T>> {
+    fn get_raw<T: DeserializeOwned>(db: &mut DbTree, key: impl KeyMaker) -> Result<Option<T>> {
         let key = make_key(&mut db.key, key);
         let some_ivec = db
             .tree
@@ -156,10 +134,7 @@ impl Db {
 
     /// Retrieve a value if it exists.
     /// The key is built by using the `KeyMaker` given when `f` is called.
-    pub fn ord_get<T: DeserializeOwned, F: FnOnce(&mut KeyMaker)>(
-        &mut self,
-        key: F,
-    ) -> Result<Option<T>> {
+    pub fn ord_get<T: DeserializeOwned>(&mut self, key: impl KeyMaker) -> Result<Option<T>> {
         Self::get_raw(&mut self.ord, key)
     }
 
@@ -187,10 +162,10 @@ impl Db {
     }
 
     /// Create a double-ended iterator over tuples of keys and values, where the keys fall within the specified range.
-    pub fn ord_range<T: DeserializeOwned, F: FnOnce(&mut KeyMaker), G: FnOnce(&mut KeyMaker)>(
+    pub fn ord_range<T: DeserializeOwned>(
         &mut self,
-        min: F,
-        max: G,
+        min: impl KeyMaker,
+        max: impl KeyMaker,
     ) -> Iter<T> {
         let min = make_key(&mut self.ord.key, min).to_string();
         let max = make_key(&mut self.ord.key, max);
@@ -198,20 +173,14 @@ impl Db {
     }
 
     /// Create an iterator over tuples of keys and values, where the all the keys starts with the given prefix.
-    pub fn ord_scan_prefix<T: DeserializeOwned, F: FnOnce(&mut KeyMaker)>(
-        &mut self,
-        prefix: F,
-    ) -> Iter<T> {
+    pub fn ord_scan_prefix<T: DeserializeOwned>(&mut self, prefix: impl KeyMaker) -> Iter<T> {
         let prefix = make_key(&mut self.ord.key, prefix);
         Iter(self.ord.tree.scan_prefix(prefix), PhantomData)
     }
 
     /// Retrieve a value if it exists.
     /// The key is built by using the `KeyMaker` given when `f` is called.
-    pub fn alt_get<T: DeserializeOwned, F: FnOnce(&mut KeyMaker)>(
-        &mut self,
-        key: F,
-    ) -> Result<Option<T>> {
+    pub fn alt_get<T: DeserializeOwned>(&mut self, key: impl KeyMaker) -> Result<Option<T>> {
         Self::get_raw(
             self.alt
                 .as_mut()
@@ -222,10 +191,10 @@ impl Db {
 
     /// Create a double-ended iterator over tuples of keys and values, where the keys fall within the specified range.
     /// NOTE: the keys are unorederd.
-    pub fn alt_range<T: DeserializeOwned, F: FnOnce(&mut KeyMaker), G: FnOnce(&mut KeyMaker)>(
+    pub fn alt_range<T: DeserializeOwned>(
         &mut self,
-        min: F,
-        max: G,
+        min: impl KeyMaker,
+        max: impl KeyMaker,
     ) -> Option<Iter<T>> {
         self.alt.as_mut().map(|alt| {
             let min = make_key(&mut alt.key, min).to_string();
@@ -236,9 +205,9 @@ impl Db {
 
     /// Create an iterator over tuples of keys and values, where the all the keys starts with the given prefix.
     /// NOTE: the keys are unorederd.
-    pub fn alt_scan_prefix<T: DeserializeOwned, F: FnOnce(&mut KeyMaker)>(
+    pub fn alt_scan_prefix<T: DeserializeOwned>(
         &mut self,
-        prefix: F,
+        prefix: impl KeyMaker,
     ) -> Option<Iter<T>> {
         self.alt.as_mut().map(|alt| {
             let prefix = make_key(&mut alt.key, prefix);
@@ -247,10 +216,10 @@ impl Db {
     }
 
     /// Insert a key to a new value.
-    pub fn put<T: Serialize, F: FnOnce(&mut KeyMaker), G: FnOnce(&mut KeyMaker)>(
+    pub fn put<T: Serialize>(
         &mut self,
-        ord_key: F,
-        alt_key: G,
+        ord_key: impl KeyMaker,
+        alt_key: impl KeyMaker,
         data: &T,
     ) -> Result<()> {
         if let Some(alt) = self.alt.as_mut() {

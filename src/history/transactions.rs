@@ -1,12 +1,37 @@
 use super::{
-    db::Db,
+    db::{Db, Iter, KeyMaker},
     model::{Transaction, TransactionCow},
 };
 use crate::model::{BlockHeight, TransactionData};
 use anyhow::Result;
 use core::str;
+use serde::de::DeserializeOwned;
 use std::borrow::Cow;
 use tracing::info;
+
+/// TransactionsKey contains a `BlockHeight` and a `tx_index`
+#[derive(Debug, Default)]
+pub struct TransactionsKey(pub BlockHeight, pub usize);
+
+impl KeyMaker for TransactionsKey {
+    fn make_key<'a>(&self, writer: &'a mut String) -> &'a str {
+        use std::fmt::Write;
+        _ = write!(writer, "{:08x}:{:08x}", self.0 .0, self.1);
+        writer.as_str()
+    }
+}
+
+/// TransactionsKeyAlt contains a `tx_hash`
+#[derive(Debug, Default)]
+pub struct TransactionsKeyAlt<'b>(pub &'b str);
+
+impl<'b> KeyMaker for TransactionsKeyAlt<'b> {
+    fn make_key<'a>(&self, writer: &'a mut String) -> &'a str {
+        use std::fmt::Write;
+        _ = write!(writer, "{}", self.0);
+        writer.as_str()
+    }
+}
 
 pub fn transaction_cow<'a>(
     block_height: BlockHeight,
@@ -58,11 +83,8 @@ impl Transactions {
         let tx = transaction_cow(block_height, tx_index, tx_hash, data);
         info!("storing tx {}:{}", block_height, tx_index);
         self.db.put(
-            |km| {
-                km.add(block_height);
-                km.add(tx_index);
-            },
-            |km| km.add(tx_hash),
+            TransactionsKey(block_height, tx_index),
+            TransactionsKeyAlt(tx_hash),
             &tx,
         )
     }
@@ -72,17 +94,22 @@ impl Transactions {
         block_height: BlockHeight,
         tx_index: usize,
     ) -> Result<Option<Transaction>> {
-        self.db.ord_get(|km| {
-            km.add(block_height);
-            km.add(tx_index);
-        })
+        self.db.ord_get(TransactionsKey(block_height, tx_index))
     }
 
     pub fn get_with_hash(&mut self, tx_hash: &str) -> Result<Option<Transaction>> {
-        self.db.alt_get(|km| km.add(tx_hash))
+        self.db.alt_get(TransactionsKeyAlt(tx_hash))
     }
 
     pub fn last(&self) -> Result<Option<Transaction>> {
         self.db.ord_last()
+    }
+
+    pub fn range<T: DeserializeOwned>(
+        &mut self,
+        min: TransactionsKey,
+        max: TransactionsKey,
+    ) -> Iter<T> {
+        self.db.ord_range(min, max)
     }
 }

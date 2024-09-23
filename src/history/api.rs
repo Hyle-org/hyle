@@ -1,4 +1,11 @@
-use super::model::{Blob, Contract, Proof, Transaction};
+use super::{
+    blobs::BlobsKey,
+    blocks::BlocksKey,
+    contracts::ContractsKey,
+    model::{Blob, Contract, Proof, Transaction},
+    proofs::ProofsKey,
+    transactions::TransactionsKey,
+};
 use crate::{
     model::{Block, BlockHeight},
     rest::RouterState,
@@ -53,7 +60,7 @@ pub async fn get_blocks(
             .lock()
             .await
             .blocks
-            .ord_range(|km| km.add(0), |km| km.add(last_height)),
+            .range(BlocksKey(BlockHeight(0)), BlocksKey(last_height)),
         filters,
     )))
 }
@@ -84,15 +91,9 @@ pub async fn get_proofs(
     };
 
     Ok(Json(filter_iter(
-        state.history.lock().await.proofs.ord_range(
-            |km| {
-                km.add(0);
-                km.add(0);
-            },
-            |km| {
-                km.add(last.block_height);
-                km.add(last.tx_index);
-            },
+        state.history.lock().await.proofs.range(
+            ProofsKey(BlockHeight(0), 0),
+            ProofsKey(last.block_height, last.tx_index),
         ),
         filters,
     )))
@@ -145,17 +146,9 @@ pub async fn get_blobs(
     };
     Ok(Json({
         filter_iter(
-            state.history.lock().await.blobs.ord_range(
-                |km| {
-                    km.add(0);
-                    km.add(0);
-                    km.add(0);
-                },
-                |km| {
-                    km.add(blob.block_height);
-                    km.add(blob.tx_index);
-                    km.add(blob.blob_index);
-                },
+            state.history.lock().await.blobs.range(
+                BlobsKey(BlockHeight(0), 0, 0),
+                BlobsKey(blob.block_height, blob.tx_index, blob.blob_index),
             ),
             filters,
         )
@@ -215,15 +208,9 @@ pub async fn get_transactions(
     };
     Ok(Json({
         filter_iter(
-            state.history.lock().await.transactions.ord_range(
-                |km| {
-                    km.add(0);
-                    km.add(0);
-                },
-                |km| {
-                    km.add(last_height);
-                    km.add(txs_len);
-                },
+            state.history.lock().await.transactions.range(
+                TransactionsKey(BlockHeight(0), 0),
+                TransactionsKey(last_height, txs_len),
             ),
             filters,
         )
@@ -295,15 +282,9 @@ pub async fn get_contracts(
     };
     Ok(Json({
         filter_iter(
-            state.history.lock().await.contracts.ord_range(
-                |km| {
-                    km.add(0);
-                    km.add(0);
-                },
-                |km| {
-                    km.add(contract.block_height);
-                    km.add(contract.tx_index);
-                },
+            state.history.lock().await.contracts.range(
+                ContractsKey(BlockHeight(0), 0),
+                ContractsKey(contract.block_height, contract.tx_index),
             ),
             filters,
         )

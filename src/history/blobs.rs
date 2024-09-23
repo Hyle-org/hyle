@@ -1,11 +1,36 @@
 use super::{
-    db::Db,
+    db::{Db, Iter, KeyMaker},
     model::{Blob, BlobCow},
 };
 use crate::model::{Blob as NodeBlob, BlockHeight, Identity};
 use anyhow::Result;
+use serde::de::DeserializeOwned;
 use std::borrow::Cow;
 use tracing::info;
+
+/// BlobsKey contains a `BlockHeight` a `tx_index` and a `blob_index`
+#[derive(Debug, Default)]
+pub struct BlobsKey(pub BlockHeight, pub usize, pub usize);
+
+impl KeyMaker for BlobsKey {
+    fn make_key<'a>(&self, writer: &'a mut String) -> &'a str {
+        use std::fmt::Write;
+        _ = write!(writer, "{:08x}:{:08x}:{:08x}", self.0 .0, self.1, self.2);
+        writer.as_str()
+    }
+}
+
+/// BlobsKeyAlt contains a `tx_hash` and a `blob_index`
+#[derive(Debug, Default)]
+pub struct BlobsKeyAlt<'b>(pub &'b str, pub usize);
+
+impl<'b> KeyMaker for BlobsKeyAlt<'b> {
+    fn make_key<'a>(&self, writer: &'a mut String) -> &'a str {
+        use std::fmt::Write;
+        _ = write!(writer, "{}:{:08x}", self.0, self.1);
+        writer.as_str()
+    }
+}
 
 fn blob_cow<'a>(
     block_height: BlockHeight,
@@ -71,15 +96,8 @@ impl Blobs {
         );
         info!("storing blob {}:{}:{}", block_height, tx_index, blob_index);
         self.db.put(
-            |km| {
-                km.add(block_height);
-                km.add(tx_index);
-                km.add(blob_index);
-            },
-            |km| {
-                km.add(tx_hash);
-                km.add(blob_index);
-            },
+            BlobsKey(block_height, tx_index, blob_index),
+            BlobsKeyAlt(tx_hash, blob_index),
             &data,
         )
     }
@@ -90,21 +108,19 @@ impl Blobs {
         tx_index: usize,
         blob_index: usize,
     ) -> Result<Option<Blob>> {
-        self.db.ord_get(|km| {
-            km.add(block_height);
-            km.add(tx_index);
-            km.add(blob_index);
-        })
+        self.db
+            .ord_get(BlobsKey(block_height, tx_index, blob_index))
     }
 
     pub fn get_with_hash(&mut self, tx_hash: &str, blob_index: usize) -> Result<Option<Blob>> {
-        self.db.alt_get(|km| {
-            km.add(tx_hash);
-            km.add(blob_index);
-        })
+        self.db.alt_get(BlobsKeyAlt(tx_hash, blob_index))
     }
 
     pub fn last(&self) -> Result<Option<Blob>> {
         self.db.ord_last()
+    }
+
+    pub fn range<T: DeserializeOwned>(&mut self, min: BlobsKey, max: BlobsKey) -> Iter<T> {
+        self.db.ord_range(min, max)
     }
 }
