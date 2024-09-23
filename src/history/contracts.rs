@@ -21,9 +21,9 @@ impl KeyMaker for ContractsKey {
     }
 }
 
-/// ContractsKeyAlt contains a `tx_hash`
+/// ContractsKeyAlt contains a `name`
 #[derive(Debug, Default)]
-pub struct ContractsKeyAlt<'b>(pub &'b str /* name */);
+pub struct ContractsKeyAlt<'b>(pub &'b str);
 
 impl<'b> KeyMaker for ContractsKeyAlt<'b> {
     fn make_key<'a>(&self, writer: &'a mut String) -> &'a str {
@@ -56,25 +56,15 @@ pub struct Contracts {
     db: Db,
 }
 
-impl std::ops::Deref for Contracts {
-    type Target = Db;
-
-    fn deref(&self) -> &Self::Target {
-        &self.db
-    }
-}
-
-impl std::ops::DerefMut for Contracts {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.db
-    }
-}
-
 impl Contracts {
     pub fn new(db: &sled::Db) -> Result<Self> {
         Ok(Self {
             db: Db::new(db, "contracts_ord", Some("contracts_alt"))?,
         })
+    }
+
+    pub fn len(&self) -> usize {
+        self.db.len()
     }
 
     pub fn put(
@@ -107,5 +97,9 @@ impl Contracts {
 
     pub fn range<T: DeserializeOwned>(&mut self, min: ContractsKey, max: ContractsKey) -> Iter<T> {
         self.db.ord_range(min, max)
+    }
+
+    pub fn scan_prefix<T: DeserializeOwned>(&mut self, prefix: ContractsKey) -> Iter<T> {
+        self.db.ord_scan_prefix(prefix)
     }
 }

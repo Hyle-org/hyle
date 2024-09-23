@@ -73,6 +73,10 @@ impl Proofs {
         })
     }
 
+    pub fn len(&self) -> usize {
+        self.db.len()
+    }
+
     pub fn put(
         &mut self,
         block_height: BlockHeight,
@@ -103,5 +107,9 @@ impl Proofs {
 
     pub fn range<T: DeserializeOwned>(&mut self, min: ProofsKey, max: ProofsKey) -> Iter<T> {
         self.db.ord_range(min, max)
+    }
+
+    pub fn scan_prefix<T: DeserializeOwned>(&mut self, prefix: ProofsKey) -> Iter<T> {
+        self.db.ord_scan_prefix(prefix)
     }
 }

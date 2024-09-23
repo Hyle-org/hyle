@@ -56,25 +56,15 @@ pub struct Blobs {
     db: Db,
 }
 
-impl std::ops::Deref for Blobs {
-    type Target = Db;
-
-    fn deref(&self) -> &Self::Target {
-        &self.db
-    }
-}
-
-impl std::ops::DerefMut for Blobs {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.db
-    }
-}
-
 impl Blobs {
     pub fn new(db: &sled::Db) -> Result<Self> {
         Ok(Self {
             db: Db::new(db, "blobs_ord", Some("blobs_alt"))?,
         })
+    }
+
+    pub fn len(&self) -> usize {
+        self.db.len()
     }
 
     pub fn put(
@@ -122,5 +112,9 @@ impl Blobs {
 
     pub fn range<T: DeserializeOwned>(&mut self, min: BlobsKey, max: BlobsKey) -> Iter<T> {
         self.db.ord_range(min, max)
+    }
+
+    pub fn scan_prefix<T: DeserializeOwned>(&mut self, prefix: BlobsKey) -> Iter<T> {
+        self.db.ord_scan_prefix(prefix)
     }
 }

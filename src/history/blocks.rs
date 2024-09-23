@@ -22,20 +22,6 @@ pub struct Blocks {
     last: Option<Block>,
 }
 
-impl std::ops::Deref for Blocks {
-    type Target = Db;
-
-    fn deref(&self) -> &Self::Target {
-        &self.db
-    }
-}
-
-impl std::ops::DerefMut for Blocks {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.db
-    }
-}
-
 impl Blocks {
     pub fn new(db: &sled::Db) -> Result<Self> {
         let db = Db::new(db, "blocks_ord", None)?;
@@ -56,6 +42,10 @@ impl Blocks {
         Ok(blocks)
     }
 
+    pub fn len(&self) -> usize {
+        self.db.len()
+    }
+
     pub fn put(&mut self, data: &Block) -> Result<()> {
         info!("storing block {}", data.height);
         self.db
@@ -72,5 +62,9 @@ impl Blocks {
 
     pub fn range<T: DeserializeOwned>(&mut self, min: BlocksKey, max: BlocksKey) -> Iter<T> {
         self.db.ord_range(min, max)
+    }
+
+    pub fn scan_prefix<T: DeserializeOwned>(&mut self, prefix: BlocksKey) -> Iter<T> {
+        self.db.ord_scan_prefix(prefix)
     }
 }

@@ -55,19 +55,16 @@ pub trait KeyMaker {
     fn make_key<'a>(&self, writer: &'a mut String) -> &'a str;
 }
 
-fn make_key(writer: &mut String, km: impl KeyMaker) -> &str {
-    writer.clear();
-    km.make_key(writer)
-}
-
 /// Contains the `sled::Tree`
 #[derive(Debug)]
 struct DbTree {
     // This is the name of the `sled::Tree`.
     name: &'static str,
     tree: sled::Tree,
-    // Buffer used by to build keys.
+    // Buffer used to build keys.
     key: String,
+    // Buffer used to build range keys.
+    key_range: String,
 }
 
 /// Db contains the ordered sled::Tree and an optional unordered tree.
@@ -96,6 +93,7 @@ impl Db {
                     .open_tree(name)
                     .with_context(|| format!("opening {} database", name))?,
                 key: String::new(),
+                key_range: String::new(),
             })
         } else {
             None
@@ -107,6 +105,7 @@ impl Db {
                     .open_tree(ord_name)
                     .with_context(|| format!("opening {} database", ord_name))?,
                 key: String::new(),
+                key_range: String::new(),
             },
             alt,
         })
@@ -117,7 +116,8 @@ impl Db {
     }
 
     fn get_raw<T: DeserializeOwned>(db: &mut DbTree, key: impl KeyMaker) -> Result<Option<T>> {
-        let key = make_key(&mut db.key, key);
+        db.key.clear();
+        let key = key.make_key(&mut db.key);
         let some_ivec = db
             .tree
             .get(key)
@@ -167,14 +167,16 @@ impl Db {
         min: impl KeyMaker,
         max: impl KeyMaker,
     ) -> Iter<T> {
-        let min = make_key(&mut self.ord.key, min).to_string();
-        let max = make_key(&mut self.ord.key, max);
-        Iter(self.ord.tree.range(min.as_str()..max), PhantomData)
+        self.ord.key.clear();
+        let min = min.make_key(&mut self.ord.key);
+        let max = max.make_key(&mut self.ord.key_range);
+        Iter(self.ord.tree.range(min..max), PhantomData)
     }
 
     /// Create an iterator over tuples of keys and values, where the all the keys starts with the given prefix.
     pub fn ord_scan_prefix<T: DeserializeOwned>(&mut self, prefix: impl KeyMaker) -> Iter<T> {
-        let prefix = make_key(&mut self.ord.key, prefix);
+        self.ord.key.clear();
+        let prefix = prefix.make_key(&mut self.ord.key);
         Iter(self.ord.tree.scan_prefix(prefix), PhantomData)
     }
 
@@ -197,9 +199,10 @@ impl Db {
         max: impl KeyMaker,
     ) -> Option<Iter<T>> {
         self.alt.as_mut().map(|alt| {
-            let min = make_key(&mut alt.key, min).to_string();
-            let max = make_key(&mut alt.key, max);
-            Iter(alt.tree.range(min.as_str()..max), PhantomData)
+            alt.key.clear();
+            let min = min.make_key(&mut alt.key);
+            let max = max.make_key(&mut alt.key_range);
+            Iter(alt.tree.range(min..max), PhantomData)
         })
     }
 
@@ -210,7 +213,8 @@ impl Db {
         prefix: impl KeyMaker,
     ) -> Option<Iter<T>> {
         self.alt.as_mut().map(|alt| {
-            let prefix = make_key(&mut alt.key, prefix);
+            alt.key.clear();
+            let prefix = prefix.make_key(&mut alt.key);
             Iter(alt.tree.scan_prefix(prefix), PhantomData)
         })
     }
@@ -223,8 +227,10 @@ impl Db {
         data: &T,
     ) -> Result<()> {
         if let Some(alt) = self.alt.as_mut() {
-            let ord_key = make_key(&mut self.ord.key, ord_key);
-            let alt_key = make_key(&mut alt.key, alt_key);
+            self.ord.key.clear();
+            alt.key.clear();
+            let ord_key = ord_key.make_key(&mut self.ord.key);
+            let alt_key = alt_key.make_key(&mut alt.key);
             let serialized_data = ron::ser::to_string(data).with_context(|| {
                 format!("serializing data for {} in {}", ord_key, self.ord.name)
             })?;
@@ -247,7 +253,8 @@ impl Db {
                 .with_context(|| format!("fluhing {}", alt.name))?;
             debug!("{} written to {}", ord_key, self.ord.name);
         } else {
-            let key = make_key(&mut self.ord.key, ord_key);
+            self.ord.key.clear();
+            let key = ord_key.make_key(&mut self.ord.key);
             let serialized_data = ron::ser::to_string(data)
                 .with_context(|| format!("serializing data for {} in {}", key, self.ord.name))?;
             self.ord
