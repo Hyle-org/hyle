@@ -12,5 +12,5 @@ Config(
     data_directory: "data_slave",
   p2p: (
     ping_interval: 10
-  )
+  ),
 )

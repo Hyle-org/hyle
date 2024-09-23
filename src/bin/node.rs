@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use axum_otel_metrics::HttpMetricsLayerBuilder;
 use clap::Parser;
 use hyle::{
     bus::SharedMessageBus,
@@ -47,11 +48,11 @@ fn start_node_state(bus: SharedMessageBus, config: SharedConf) {
         });
 }
 
-fn start_mempool(bus: SharedMessageBus, crypto: BlstCrypto) {
+fn start_mempool(bus: SharedMessageBus, config: SharedConf, crypto: BlstCrypto) {
     let _ = tokio::task::Builder::new()
         .name("Mempool")
         .spawn(async move {
-            let mut mempool = Mempool::new(bus, crypto);
+            let mut mempool = Mempool::new(bus, config, crypto);
             mempool.start().await
         });
 }
@@ -93,6 +94,9 @@ fn setup_tracing() -> Result<()> {
         .with_default_directive(LevelFilter::INFO.into())
         .from_env()?;
 
+    // API request/response debug tracing
+    filter = filter.add_directive("tower_http::trace=debug".parse()?);
+
     if let Ok(var) = std::env::var("RUST_LOG") {
         if var.contains("sled") {
             filter = filter.add_directive("sled=info".parse()?);
@@ -117,16 +121,26 @@ async fn main() -> Result<()> {
 
     debug!("server mode");
 
+    // Init global metrics meter we expose as an endpoint
+    let metrics_layer = HttpMetricsLayerBuilder::new()
+        .with_service_name(config.id.to_string().clone())
+        .build();
+
     let bus = SharedMessageBus::new();
     let crypto = BlstCrypto::new(config.id.clone()); // TODO load sk from disk instead of random
 
-    start_mempool(SharedMessageBus::new_handle(&bus), crypto.clone());
+    start_mempool(
+        SharedMessageBus::new_handle(&bus),
+        Arc::clone(&config),
+        crypto.clone(),
+    );
 
     let data_directory = Path::new(
         args.data_directory
             .as_deref()
             .unwrap_or(config.data_directory.as_deref().unwrap_or("data")),
     );
+
     std::fs::create_dir_all(data_directory).context("creating data directory")?;
 
     let history = History::new(
@@ -144,7 +158,7 @@ async fn main() -> Result<()> {
     start_mock_workflow(bus.new_handle());
 
     // Start REST server
-    rest::rest_server(config, bus.new_handle(), history)
+    rest::rest_server(config, bus.new_handle(), metrics_layer, history)
         .await
         .context("Starting REST server")
 }

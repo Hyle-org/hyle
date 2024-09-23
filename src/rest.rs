@@ -8,6 +8,8 @@ use axum::{
     routing::{get, post},
     Router,
 };
+use axum_otel_metrics::HttpMetricsLayer;
+use tower_http::trace::TraceLayer;
 use tracing::info;
 
 pub mod endpoints;
@@ -20,10 +22,12 @@ pub struct RouterState {
 pub async fn rest_server(
     config: SharedConf,
     bus: SharedMessageBus,
+    metrics_layer: HttpMetricsLayer,
     history: History,
 ) -> Result<()> {
     info!("rest listening on {}", config.rest_addr());
     let app = Router::new()
+        .nest("/v1", metrics_layer.routes())
         .route("/v1/contract/:name", get(endpoints::get_contract))
         .route(
             "/v1/contract/register",
@@ -33,13 +37,15 @@ pub async fn rest_server(
         .route("/v1/tx/send/proof", post(endpoints::send_proof_transaction))
         .route("/v1/tools/run_scenario", post(endpoints::run_scenario))
         .nest("/v1/indexer", History::api())
+        .layer(metrics_layer)
         .with_state(RouterState { bus, history });
 
     let listener = tokio::net::TcpListener::bind(config.rest_addr())
         .await
         .context("Starting rest server")?;
 
-    axum::serve(listener, app)
+    // TODO: racelayer should be added only in "dev mode"
+    axum::serve(listener, app.layer(TraceLayer::new_for_http()))
         .await
         .context("Starting rest server")
 }
