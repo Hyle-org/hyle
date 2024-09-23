@@ -1,11 +1,12 @@
+use crate::bus::command_response::CmdRespClient;
+use crate::bus::BusClientSender;
 use crate::bus::BusMessage;
 use crate::model::Transaction;
 use crate::model::{BlobTransaction, ContractName};
 use crate::tools::mock_workflow::RunScenario;
 use crate::{
-    bus::command_response::CmdRespClient,
     model::{Hashable, ProofTransaction, RegisterContractTransaction, TransactionData, TxHash},
-    node_state::{NodeStateQuery, NodeStateQueryResponse},
+    node_state::NodeStateQuery,
 };
 use anyhow::anyhow;
 use axum::{
@@ -33,8 +34,6 @@ async fn handle_send(
     let tx_hash = tx.hash();
     state
         .bus
-        .sender::<RestApiMessage>()
-        .await
         .send(RestApiMessage::NewTx(tx))
         .map(|_| tx_hash)
         .map(Json)
@@ -117,22 +116,19 @@ pub async fn send_proof_transaction(
 
 pub async fn get_contract(
     Path(name): Path<ContractName>,
-    State(state): State<RouterState>,
+    State(mut state): State<RouterState>,
 ) -> Result<impl IntoResponse, AppError> {
     let name_clone = name.clone();
-    if let Some(res) = state
+    match state
         .bus
         .request(NodeStateQuery::GetContract { name })
-        .await?
+        .await
     {
-        match res {
-            NodeStateQueryResponse::Contract { contract } => Ok(Json(contract)),
-        }
-    } else {
-        Err(AppError(
-            StatusCode::NOT_FOUND,
-            anyhow!("Contract {} not found", name_clone),
-        ))
+        Ok(contract) => Ok(Json(contract)),
+        _ => Err(AppError(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            anyhow!("Error while getting contract {}", name_clone),
+        )),
     }
 }
 
@@ -142,8 +138,6 @@ pub async fn run_scenario(
 ) -> Result<impl IntoResponse, StatusCode> {
     state
         .bus
-        .sender::<RunScenario>()
-        .await
         .send(scenario)
         .map(|_| StatusCode::OK)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
