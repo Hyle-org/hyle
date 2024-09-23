@@ -1,5 +1,5 @@
 use crate::{
-    bus::SharedMessageBus,
+    bus::{BusMessage, SharedMessageBus},
     handle_messages,
     mempool::MempoolNetMessage,
     model::{Blob, BlobData, BlobTransaction, ContractName, Identity, Transaction},
@@ -11,6 +11,7 @@ use tracing::warn;
 pub enum RunScenario {
     StressTest,
 }
+impl BusMessage for RunScenario {}
 
 pub struct MockWorkflowHandler {
     bus: SharedMessageBus,

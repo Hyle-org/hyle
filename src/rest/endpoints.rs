@@ -1,11 +1,10 @@
+use crate::bus::BusMessage;
 use crate::model::Transaction;
+use crate::model::{BlobTransaction, ContractName};
 use crate::tools::mock_workflow::RunScenario;
 use crate::{
     bus::command_response::CmdRespClient,
-    model::{
-        BlobTransaction, ContractName, Hashable, ProofTransaction, RegisterContractTransaction,
-        TransactionData, TxHash,
-    },
+    model::{Hashable, ProofTransaction, RegisterContractTransaction, TransactionData, TxHash},
     node_state::{NodeStateQuery, NodeStateQueryResponse},
 };
 use anyhow::anyhow;
@@ -24,6 +23,7 @@ use super::{AppError, RouterState};
 pub enum RestApiMessage {
     NewTx(Transaction),
 }
+impl BusMessage for RestApiMessage {}
 
 async fn handle_send(
     state: RouterState,
@@ -48,6 +48,59 @@ pub async fn send_contract_transaction(
     handle_send(state, TransactionData::RegisterContract(payload)).await
 }
 
+/// # Curl example
+/// ```bash
+/// curl -X POST --location 'http://localhost:4321/v1/tx/send/blob' \
+///     --header 'Content-Type: application/json' \
+///     --data '{
+///         "identity": "ident",
+///         "blobs": [
+///             {
+///                 "contract_name": "contrat de test",
+///                 "data": []
+///             }
+///         ]
+///     }'
+/// ```
+/// # Example decoding
+/// ```
+/// use hyle::model::{Blob, BlobData, BlobTransaction, ContractName, Identity};
+///
+/// let payload_json = r#"
+///  {
+///     "identity": "ident",
+///     "blobs": [
+///         {
+///             "contract_name": "contrat de test",
+///             "data": []
+///         }
+///     ]
+/// }
+///  "#;
+/// let decoded: BlobTransaction = serde_json::from_str(payload_json).unwrap();
+/// assert_eq!(decoded.identity, Identity("ident".to_string()));
+/// ```
+///
+/// # Example encoding
+/// ```
+/// use hyle::model::{Blob, BlobData, BlobTransaction, ContractName, Identity};
+///
+/// let payload = BlobTransaction {
+///     identity: Identity("tata".to_string()),
+///     blobs: vec![Blob {
+///         contract_name: ContractName("contract_name".to_string()),
+///         data: BlobData(vec![]),
+///     }],
+/// };
+///
+/// let encoded = serde_json::to_string(&payload).unwrap();
+///
+/// assert_eq!(
+///     encoded,
+///     "{\"identity\":\"tata\",\"blobs\":[{\"contract_name\":\"contract_name\",\"data\":[]}]}"
+///         .to_string()
+/// );
+/// ```
 pub async fn send_blob_transaction(
     State(state): State<RouterState>,
     Json(payload): Json<BlobTransaction>,
