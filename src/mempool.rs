@@ -5,7 +5,7 @@ use crate::{
     consensus::ConsensusEvent,
     handle_messages,
     model::{Hashable, Transaction},
-    p2p::network::{OutboundMessage, Signed},
+    p2p::network::{OutboundMessage, SignedWithId},
     rest::endpoints::RestApiMessage,
     utils::{conf::SharedConf, crypto::BlstCrypto},
     validator_registry::{ValidatorRegistry, ValidatorRegistryNetMessage},
@@ -73,7 +73,7 @@ impl Mempool {
             command_response<MempoolCommand, MempoolResponse> cmd => {
                  self.handle_command(cmd)
             }
-            listen<Signed<MempoolNetMessage>> cmd => {
+            listen<SignedWithId<MempoolNetMessage>> cmd => {
                 self.handle_net_message(cmd).await
             }
             listen<RestApiMessage> cmd => {
@@ -105,7 +105,7 @@ impl Mempool {
         }
     }
 
-    async fn handle_net_message(&mut self, msg: Signed<MempoolNetMessage>) {
+    async fn handle_net_message(&mut self, msg: SignedWithId<MempoolNetMessage>) {
         match self.validators.check_signed(&msg) {
             Ok(valid) => {
                 if valid {
@@ -148,7 +148,7 @@ impl Mempool {
         Ok(())
     }
 
-    fn sign_net_message(&self, msg: MempoolNetMessage) -> Result<Signed<MempoolNetMessage>> {
+    fn sign_net_message(&self, msg: MempoolNetMessage) -> Result<SignedWithId<MempoolNetMessage>> {
         self.crypto.sign(msg)
     }
 
