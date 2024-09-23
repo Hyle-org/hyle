@@ -8,6 +8,7 @@ use std::{
     collections::{HashMap, HashSet},
     default::Default,
     fs,
+    path::Path,
     time::Duration,
 };
 use tokio::{sync::broadcast::Sender, time::sleep};
@@ -151,8 +152,9 @@ impl Consensus {
         Ok(())
     }
 
-    pub fn load_from_disk() -> Result<Self> {
-        let mut reader = fs::File::open("data.bin").log_warn("Loading data from disk")?;
+    pub fn load_from_disk(data_directory: &Path) -> Result<Self> {
+        let mut reader =
+            fs::File::open(data_directory.join("data.bin")).log_warn("Loading data from disk")?;
         let ctx: Consensus =
             bincode::decode_from_std_read(&mut reader, bincode::config::standard())
                 .log_warn("Deserializing data from disk")?;

@@ -8,7 +8,7 @@ use hyle::{
 };
 use reqwest::blocking::{Client, Response};
 use serde::Serialize;
-use std::{thread, time};
+use std::{fs, path::Path, thread, time};
 
 mod test_helpers;
 
@@ -32,7 +32,7 @@ fn e2e_contract_state_updated() {
     tracing_subscriber::fmt::init();
 
     // Start first node
-    let node1 = test_helpers::TestNode::new("master.ron", false, "6668");
+    let node1 = test_helpers::TestNode::new(Path::new("tests/node1"), false, "6668");
 
     // Wait for server to properly start
     thread::sleep(time::Duration::from_secs(1));
@@ -138,12 +138,15 @@ fn e2e_contract_state_updated() {
 fn e2e_consensus() {
     tracing_subscriber::fmt::init();
 
+    let path_node1 = Path::new("tests/node1");
+    let path_node2 = Path::new("tests/node2");
+
     // Start 2 nodes
-    let node1 = test_helpers::TestNode::new("node1.ron", false, "6668");
+    let node1 = test_helpers::TestNode::new(path_node1, false, "6668");
     // Wait for node to properly spin up
     thread::sleep(time::Duration::from_secs(3));
 
-    let node2 = test_helpers::TestNode::new("node2.ron", false, "6669");
+    let node2 = test_helpers::TestNode::new(path_node2, false, "6669");
     // Wait for node to properly spin up
     thread::sleep(time::Duration::from_secs(3));
 
@@ -155,11 +158,18 @@ fn e2e_consensus() {
     drop(node2);
 
     // Check that some blocks has been produced
-    // FIXME: load&save consensus from path.
-    // let path_node1 = Path::new("data_node1/data.bin");
-    // let path_node2 = Path::new("data_node2/data.bin");
-    let node1_consensus = Consensus::load_from_disk().unwrap();
-    // let node2_consensus = Consensus::load_from_disk(path_node2).unwrap();
+    let node1_consensus = Consensus::load_from_disk(path_node1).unwrap();
+    let node2_consensus = Consensus::load_from_disk(path_node2).unwrap();
     assert!(!node1_consensus.blocks.is_empty());
+    assert!(!node2_consensus.blocks.is_empty());
+    // FIXME: check that created blocks are the same.
+
+    // Clean created files
+    fs::remove_dir_all(path_node1.join("data_node1")).expect("file cleaning failed");
+    fs::remove_dir_all(path_node2.join("data_node2")).expect("file cleaning failed");
+
+    fs::remove_file(path_node1.join("data.bin")).expect("file cleaning failed");
+    fs::remove_file(path_node2.join("data.bin")).expect("file cleaning failed");
+
     //TODO: compare blocks from node1 and node2
 }

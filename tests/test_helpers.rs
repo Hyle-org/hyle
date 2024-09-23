@@ -1,5 +1,8 @@
 use assert_cmd::prelude::*;
-use std::process::{Child, Command};
+use std::{
+    path::Path,
+    process::{Child, Command},
+};
 
 pub struct TestNode {
     child: Child,
@@ -7,9 +10,12 @@ pub struct TestNode {
 
 impl TestNode {
     // Create a new process that spins up a node or a client
-    pub fn new(config_file: &str, is_client: bool, console_bind_port: &str) -> Self {
+    pub fn new(config_path: &Path, is_client: bool, console_bind_port: &str) -> Self {
         let mut cargo_bin = Command::cargo_bin(if is_client { "client" } else { "node" }).unwrap();
-        let mut cmd = cargo_bin.arg("--config-file").arg(config_file);
+        let mut cmd = cargo_bin
+            .arg("--config-file")
+            .arg("conf.ron")
+            .current_dir(config_path);
         if is_client {
             cmd = cmd.arg("send").arg("blob").arg("data/tx1_blob.ron")
         }

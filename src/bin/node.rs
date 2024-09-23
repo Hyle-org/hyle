@@ -16,11 +16,17 @@ use std::{path::Path, sync::Arc};
 use tracing::{debug, error, info, level_filters::LevelFilter, warn};
 use tracing_subscriber::{prelude::*, EnvFilter};
 
-fn start_consensus(bus: SharedMessageBus, config: SharedConf, crypto: BlstCrypto) {
+fn start_consensus(
+    bus: SharedMessageBus,
+    config: SharedConf,
+    crypto: BlstCrypto,
+    data_directory: &Path,
+) {
+    let data_directory = data_directory.to_path_buf();
     let _ = tokio::task::Builder::new()
         .name("Consensus")
         .spawn(async move {
-            Consensus::load_from_disk()
+            Consensus::load_from_disk(&data_directory)
                 .unwrap_or_else(|_| {
                     warn!("Failed to load consensus state from disk, using a default one");
                     Consensus::default()
@@ -138,7 +144,12 @@ async fn main() -> Result<()> {
     start_history(history.share(), bus.new_handle(), Arc::clone(&config));
 
     start_node_state(bus.new_handle(), Arc::clone(&config));
-    start_consensus(bus.new_handle(), Arc::clone(&config), crypto.clone());
+    start_consensus(
+        bus.new_handle(),
+        Arc::clone(&config),
+        crypto.clone(),
+        data_directory,
+    );
     start_p2p(bus.new_handle(), Arc::clone(&config), crypto);
 
     start_mock_workflow(bus.new_handle());
