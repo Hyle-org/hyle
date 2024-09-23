@@ -94,6 +94,9 @@ fn setup_tracing() -> Result<()> {
         .with_default_directive(LevelFilter::INFO.into())
         .from_env()?;
 
+    // API request/response debug tracing
+    filter = filter.add_directive("tower_http::trace=debug".parse()?);
+
     if let Ok(var) = std::env::var("RUST_LOG") {
         if var.contains("sled") {
             filter = filter.add_directive("sled=info".parse()?);

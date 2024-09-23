@@ -27,7 +27,7 @@ pub async fn rest_server(
 ) -> Result<()> {
     info!("rest listening on {}", config.rest_addr());
     let app = Router::new()
-        .merge(metrics_layer.routes())
+        .nest("/v1", metrics_layer.routes())
         .route("/v1/contract/:name", get(endpoints::get_contract))
         .route(
             "/v1/contract/register",
