@@ -31,9 +31,7 @@ fn e2e_contract_state_updated() {
     tracing_subscriber::fmt::init();
 
     // Start first node
-    let node1 = test_helpers::TestNode::new("master.ron", false);
-    // Start second node
-    // let node2 = test_helpers::TestNode::new("1", "config.ron", false);
+    let node1 = test_helpers::TestNode::new("master.ron", false, "6668");
 
     // Wait for server to properly start
     thread::sleep(time::Duration::from_secs(1));
@@ -133,4 +131,25 @@ fn e2e_contract_state_updated() {
 
     // Stop all processes
     drop(node1);
+}
+
+#[test]
+fn e2e_consensus() {
+    tracing_subscriber::fmt::init();
+
+    // Start 2 nodes
+    let node1 = test_helpers::TestNode::new("node1.ron", false, "6668");
+    // Wait for node to properly spin up
+    thread::sleep(time::Duration::from_secs(3));
+
+    let node2 = test_helpers::TestNode::new("node2.ron", false, "6669");
+    // Wait for node to properly spin up
+    thread::sleep(time::Duration::from_secs(3));
+
+    // Wait for some slots to be finished
+    thread::sleep(time::Duration::from_secs(10));
+
+    // Stop all processes
+    drop(node1);
+    drop(node2);
 }
