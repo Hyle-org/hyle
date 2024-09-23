@@ -7,14 +7,17 @@ use crate::{
     model::{Hashable, Transaction},
     p2p::network::{OutboundMessage, Signed},
     rest::endpoints::RestApiMessage,
-    utils::{conf::SharedConf, crypto::BlstCrypto, metrics::MempoolMetrics},
+    utils::{conf::SharedConf, crypto::BlstCrypto},
     validator_registry::{ValidatorRegistry, ValidatorRegistryNetMessage},
 };
 use anyhow::{Context, Result};
 use bincode::{Decode, Encode};
+use metrics::MempoolMetrics;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tracing::{debug, info, warn};
+
+mod metrics;
 
 #[allow(dead_code)]
 #[derive(Debug)]
@@ -128,13 +131,13 @@ impl Mempool {
 
     async fn on_new_tx(&mut self, tx: Transaction) {
         debug!("Got new tx {} {:?}", tx.hash(), tx);
-        self.metrics.api_tx("blob".to_string());
+        self.metrics.add_api_tx("blob".to_string());
         self.pending_txs.push(tx);
-        self.metrics.pending_tx(self.pending_txs.len());
+        self.metrics.snapshot_pending_tx(self.pending_txs.len());
     }
 
     async fn broadcast_tx(&mut self, tx: Transaction) -> Result<()> {
-        self.metrics.broadcasted_tx("blob".to_string());
+        self.metrics.add_broadcasted_tx("blob".to_string());
         self.bus
             .sender::<OutboundMessage>()
             .await
@@ -155,7 +158,8 @@ impl Mempool {
                 info!("Creating pending transaction batch with id {}", id);
                 let txs: Vec<Transaction> = self.pending_txs.drain(0..).collect();
                 self.pending_batches.insert(id.clone(), txs.clone());
-                self.metrics.batched_tx(self.pending_batches.len());
+                self.metrics.snapshot_batched_tx(self.pending_batches.len());
+                self.metrics.add_batch();
                 Ok(Some(MempoolResponse::PendingBatch { id, txs }))
             }
         }

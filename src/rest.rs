@@ -6,6 +6,7 @@ use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
     routing::{get, post},
+    Router,
 };
 use axum_otel_metrics::HttpMetricsLayer;
 use tower_http::trace::TraceLayer;
@@ -25,8 +26,8 @@ pub async fn rest_server(
     history: History,
 ) -> Result<()> {
     info!("rest listening on {}", config.rest_addr());
-    let app = metrics_layer
-        .routes()
+    let app = Router::new()
+        .merge(metrics_layer.routes())
         .route("/v1/contract/:name", get(endpoints::get_contract))
         .route(
             "/v1/contract/register",

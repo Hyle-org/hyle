@@ -118,9 +118,9 @@ async fn main() -> Result<()> {
 
     debug!("server mode");
 
-    // Init global metrics meter
+    // Init global metrics meter we expose as an endpoint
     let metrics_layer = HttpMetricsLayerBuilder::new()
-        .with_service_name(config.metrics_namespace.clone())
+        .with_service_name(config.id.to_string().clone())
         .build();
 
     let bus = SharedMessageBus::new();
