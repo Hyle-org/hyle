@@ -2,6 +2,7 @@
 
 use anyhow::{bail, Context, Error, Result};
 use bincode::{Decode, Encode};
+use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet},
@@ -24,6 +25,7 @@ use crate::{
 
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode)]
 pub enum ConsensusNetMessage {
+    StartNewSlot,
     Prepare(ConsensusProposal),
     PrepareVote(bool), // FIXME: set correct type
     Confirm(u64),      // FIXME: set correct type (*Prepare* Quorum Certificate)
@@ -46,7 +48,6 @@ pub enum ConsensusEvent {
 #[derive(Serialize, Deserialize, Encode, Decode, Default)]
 pub struct BFTRoundState {
     is_leader: bool,
-    f: u64,
     slot: u64,
     view: u64,
     prepare_quorum_certificate: u64,
@@ -57,11 +58,23 @@ pub struct BFTRoundState {
 }
 
 impl BFTRoundState {
-    fn finish_round(&mut self) {
+    fn finish_round(
+        &mut self,
+        consensus_command_sender: &Sender<ConsensusCommand>,
+    ) -> Result<(), Error> {
         self.slot += 1;
         self.view = 0;
         self.prep_votes = HashMap::default();
         self.confirm_ack = HashSet::default();
+
+        // Applies and add new block to its NodeState
+        _ = consensus_command_sender
+            .send(ConsensusCommand::GenerateNewBlock)
+            .context("Cannot send message over channel")?;
+        _ = consensus_command_sender
+            .send(ConsensusCommand::SaveOnDisk)
+            .context("Cannot send message over channel")?;
+        Ok(())
     }
 }
 
@@ -78,7 +91,7 @@ pub struct ConsensusProposal {
 pub struct Consensus {
     validators: ValidatorRegistry,
     bft_round_state: BFTRoundState,
-    blocks: Vec<Block>,
+    pub blocks: Vec<Block>,
     batch_id: u64,
     // Accumulated batches from mempool
     tx_batches: HashMap<String, Vec<Transaction>>,
@@ -163,14 +176,19 @@ impl Consensus {
         true
     }
 
-    fn is_next_leader(&self) -> bool {
+    fn is_leader(&self) -> bool {
         // TODO
         true
     }
 
+    fn get_next_leader(&self) -> ValidatorId {
+        // TODO
+        ValidatorId("node-1".to_owned())
+    }
+
     fn leader_id(&self) -> ValidatorId {
         // TODO
-        ValidatorId("".to_owned())
+        ValidatorId("node-1".to_owned())
     }
 
     fn handle_net_message(
@@ -178,12 +196,53 @@ impl Consensus {
         msg: Signed<ConsensusNetMessage>,
         crypto: &BlstCrypto,
         outbound_sender: &Sender<OutboundMessage>,
+        consensus_command_sender: &Sender<ConsensusCommand>,
     ) -> Result<(), Error> {
         if !self.validators.check_signed(&msg)? {
             bail!("Invalid signature for message {:?}", msg);
         }
 
         match msg.msg {
+            ConsensusNetMessage::StartNewSlot => {
+                // Message received by leader.
+
+                // Verifies that previous slot has a valid *Commit* Quorum Certificate
+
+                // Verifies that to-be-built block is large enough (?)
+
+                // Updates its bft state
+                self.bft_round_state.is_leader = true;
+
+                // Creates new block
+
+                // Creates ConsensusProposal
+                // let previous_commit_quorum_certificate = match self
+                //     .bft_round_state
+                //     .commit_quorum_certificate
+                //     .get(&self.bft_round_state.slot)
+                // {
+                //     Some(v) => v,
+                //     None => {
+                //         bail!("Can't start new slot: unknown previous commit quorum certificate")
+                //     }
+                // };
+                let consensus_proposal = ConsensusProposal {
+                    slot: self.bft_round_state.slot,
+                    view: self.bft_round_state.view,
+                    previous_commit_quorum_certificate: 1,
+                    block: self.new_block(),
+                };
+
+                // Broadcasts Prepare message to all replicas
+                _ = outbound_sender
+                    .send(OutboundMessage::broadcast(Self::sign_net_message(
+                        crypto,
+                        ConsensusNetMessage::Prepare(consensus_proposal),
+                    )?))
+                    .context("Failed to broadcast ConsensusNetMessage::Prepare msg on the bus")?;
+
+                Ok(())
+            }
             ConsensusNetMessage::Prepare(consensus_proposal) => {
                 // Message received by replica.
 
@@ -217,9 +276,10 @@ impl Consensus {
                     .fold(0, |acc, (_, vote)| acc + if *vote { 1 } else { 0 });
 
                 // Waits for at least 𝑛−𝑓 = 2𝑓+1 matching PrepareVote messages
-                if validated_votes == 2 * self.bft_round_state.f + 1 {
+                let f: usize = self.validators.get_validators_count() / 3;
+                if validated_votes == 2 * f + 1 {
                     // Aggregates them into a *Prepare* Quorum Certificate
-                    let prepare_quorum_certificate = 1; // FIXME
+                    let prepare_quorum_certificate = rand::thread_rng().gen(); // FIXME
 
                     // if fast-path ... TODO
                     // else send Confirm message to replicas
@@ -228,7 +288,9 @@ impl Consensus {
                             crypto,
                             ConsensusNetMessage::Confirm(prepare_quorum_certificate),
                         )?))
-                        .context("Failed to send ConsensusNetMessage::Confirm msg on the bus")?;
+                        .context(
+                            "Failed to broadcast ConsensusNetMessage::Confirm msg on the bus",
+                        )?;
                 }
                 Ok(())
             }
@@ -256,11 +318,10 @@ impl Consensus {
                 // Save ConfirmAck
                 self.bft_round_state.confirm_ack.insert(msg.validator_id);
 
-                if self.bft_round_state.confirm_ack.len()
-                    > (2 * self.bft_round_state.f + 1).try_into().unwrap()
-                {
+                let f: usize = self.validators.get_validators_count() / 3;
+                if self.bft_round_state.confirm_ack.len() >= (2 * f + 1) {
                     // Aggregates 2𝑓 +1 matching ConfirmAck messages into a *Commit* Quorum Certificate
-                    let commit_quorum_certificate = 1; // FIXME
+                    let commit_quorum_certificate = rand::thread_rng().gen(); // FIXME
 
                     // Send Commit message of this certificate to all replicas
                     _ = outbound_sender
@@ -268,11 +329,15 @@ impl Consensus {
                             crypto,
                             ConsensusNetMessage::Commit(commit_quorum_certificate),
                         )?))
-                        .context("Failed to send ConsensusNetMessage::Confirm msg on the bus")?;
+                        .context(
+                            "Failed to broadcast ConsensusNetMessage::Confirm msg on the bus",
+                        )?;
+
+                    // Finishes the bft round
+                    self.bft_round_state.is_leader = false;
+                    self.bft_round_state
+                        .finish_round(consensus_command_sender)?;
                 }
-                // Update its bft roun state
-                self.bft_round_state.is_leader = false;
-                self.bft_round_state.finish_round();
 
                 Ok(())
             }
@@ -285,34 +350,22 @@ impl Consensus {
                     .commit_quorum_certificate
                     .insert(self.bft_round_state.slot, commit_quorum_certificate);
 
-                // Applies and add new block to its NodeState
-                // TODO
+                // Finishes the bft round
+                self.bft_round_state
+                    .finish_round(consensus_command_sender)?;
 
-                // Updates its bft round state
-                self.bft_round_state.finish_round();
-
-                if !self.is_next_leader() {
-                    return Ok(());
+                // Sends message to next leader to start new slot
+                if self.is_leader() {
+                    // Send Prepare message to all replicas
+                    _ = outbound_sender
+                        .send(OutboundMessage::send(
+                            self.get_next_leader(),
+                            Self::sign_net_message(crypto, ConsensusNetMessage::StartNewSlot)?,
+                        ))
+                        .context(
+                            "Failed to send ConsensusNetMessage::SartNewSlot msg on the bus",
+                        )?;
                 }
-
-                // Starts new slot
-                self.bft_round_state.is_leader = true;
-
-                // Creates ConsensusProposal
-                let consensus_proposal = ConsensusProposal {
-                    slot: self.bft_round_state.slot,
-                    view: self.bft_round_state.view,
-                    previous_commit_quorum_certificate: commit_quorum_certificate,
-                    block: Block::default(), // FIXME
-                };
-                // Send Prepare message to all replicas
-                _ = outbound_sender
-                    .send(OutboundMessage::broadcast(Self::sign_net_message(
-                        crypto,
-                        ConsensusNetMessage::Prepare(consensus_proposal),
-                    )?))
-                    .context("Failed to send ConsensusNetMessage::Prepare msg on the bus")?;
-
                 Ok(())
             }
         }
@@ -322,9 +375,9 @@ impl Consensus {
         &mut self,
         msg: ConsensusCommand,
         bus: &SharedMessageBus,
-        crypto: &BlstCrypto,
+        _crypto: &BlstCrypto,
         consensus_event_sender: &Sender<ConsensusEvent>,
-        outbound_sender: &Sender<OutboundMessage>,
+        _outbound_sender: &Sender<OutboundMessage>,
     ) -> Result<()> {
         match msg {
             ConsensusCommand::GenerateNewBlock => {
@@ -349,18 +402,6 @@ impl Consensus {
                                 .context(
                                     "Failed to send ConsensusEvent::CommitBlock msg on the bus",
                                 )?;
-
-                            // send to network
-                            _ = outbound_sender.send(
-                                OutboundMessage::broadcast(
-                                    Self::sign_net_message(
-                                        crypto,
-                                        ConsensusNetMessage::Commit(1)
-                                    )?
-                                )
-                            ).context(
-                                "Failed to send ConsensusNetMessage::CommitBlock msg on the bus",
-                            )?;
                         }
                     }
                 }
@@ -380,31 +421,36 @@ impl Consensus {
         config: SharedConf,
         crypto: BlstCrypto,
     ) -> Result<()> {
-        let interval = config.storage.interval;
-        let is_master = config.peers.is_empty();
+        // let interval = config.storage.interval;
+        // let node_is_alone = config.peers.is_empty();
+        // FIXME: should be removed
+        let temp_outbound_sender = bus.sender::<OutboundMessage>().await;
         let outbound_sender = bus.sender::<OutboundMessage>().await;
         let consensus_event_sender = bus.sender::<ConsensusEvent>().await;
         let consensus_command_sender = bus.sender::<ConsensusCommand>().await;
 
-        if is_master {
-            info!(
-                "No peers configured, starting as master generating blocks every {} seconds",
-                interval
-            );
-
-            tokio::spawn(async move {
-                loop {
-                    sleep(Duration::from_secs(interval)).await;
-
-                    _ = consensus_command_sender
-                        .send(ConsensusCommand::GenerateNewBlock)
-                        .log_error("Cannot send message over channel");
-                    _ = consensus_command_sender
-                        .send(ConsensusCommand::SaveOnDisk)
-                        .log_error("Cannot send message over channel");
-                }
-            });
+        // FIXME: pour le moment node-1 sera le validateur à chaque slot
+        if config.id == ValidatorId("node-1".to_owned()) {
+            self.bft_round_state.is_leader = true;
         }
+        // FIXME: node-2 sera le validateur qui déclanchera le démarrage du premier slot
+        if config.id == ValidatorId("node-2".to_owned()) {
+            let next_leader = self.get_next_leader();
+            if let Ok(signed_message) =
+                Self::sign_net_message(&crypto, ConsensusNetMessage::StartNewSlot)
+            {
+                tokio::spawn(async move {
+                    // FIXME: on attend qlq secondes pour laisser le temps au bus de setup l'écoute
+                    sleep(Duration::from_secs(2)).await;
+                    _ = temp_outbound_sender
+                        .send(OutboundMessage::send(next_leader, signed_message))
+                        .log_error(
+                            "Failed to send ConsensusNetMessage::StartNewSlot msg on the bus",
+                        );
+                });
+            }
+        }
+
         handle_messages! {
             on_bus bus,
             listen<ConsensusCommand> cmd => {
@@ -414,7 +460,10 @@ impl Consensus {
                 }
             }
             listen<Signed<ConsensusNetMessage>> cmd => {
-                match self.handle_net_message(cmd, &crypto, &outbound_sender){
+                // FIXME: remove info message
+                info!("[{}] Received consensus message: {:?}", config.id, cmd);
+                sleep(Duration::from_secs(1)).await;
+                match self.handle_net_message(cmd, &crypto, &outbound_sender, &consensus_command_sender) {
                     Ok(_) => (),
                     Err(e) => warn!("Error while handling consensus net message: {:#}", e),
                 }

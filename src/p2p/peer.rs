@@ -73,7 +73,8 @@ impl Peer {
         _validator_id: ValidatorId,
         msg: NetMessage,
     ) -> Result<(), Error> {
-        let peer_id = 1; // FIXME: extract peer_id from validator_id
+        // FIXME: extract peer_id from validator_id
+        let peer_id = 1;
         if peer_id != self.id {
             return Ok(());
         }

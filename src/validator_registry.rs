@@ -55,6 +55,10 @@ impl ValidatorRegistry {
         }
     }
 
+    pub fn get_validators_count(&self) -> usize {
+        self.validators.keys().len()
+    }
+
     pub fn handle_net_message(&mut self, msg: ValidatorRegistryNetMessage) {
         match msg {
             ValidatorRegistryNetMessage::NewValidator(r) => self.add_validator(r.id.clone(), r),

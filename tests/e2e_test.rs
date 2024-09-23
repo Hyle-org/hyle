@@ -1,4 +1,5 @@
 use hyle::{
+    consensus::Consensus,
     model::{
         Blob, BlobData, BlobReference, BlobTransaction, ContractName, Identity, ProofTransaction,
         RegisterContractTransaction, StateDigest, TxHash,
@@ -152,4 +153,13 @@ fn e2e_consensus() {
     // Stop all processes
     drop(node1);
     drop(node2);
+
+    // Check that some blocks has been produced
+    // FIXME: load&save consensus from path.
+    // let path_node1 = Path::new("data_node1/data.bin");
+    // let path_node2 = Path::new("data_node2/data.bin");
+    let node1_consensus = Consensus::load_from_disk().unwrap();
+    // let node2_consensus = Consensus::load_from_disk(path_node2).unwrap();
+    assert!(!node1_consensus.blocks.is_empty());
+    //TODO: compare blocks from node1 and node2
 }
