@@ -36,7 +36,7 @@ pub async fn rest_server(
         .route("/v1/tx/send/blob", post(endpoints::send_blob_transaction))
         .route("/v1/tx/send/proof", post(endpoints::send_proof_transaction))
         .route("/v1/tools/run_scenario", post(endpoints::run_scenario))
-        .nest("/v1/indexer", History::api())
+        .nest("/v1/history", History::api())
         .layer(metrics_layer)
         .with_state(RouterState { bus, history });
 

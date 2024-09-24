@@ -1,73 +1,120 @@
 use super::{
+    db::{Db, Iter, KeyMaker},
     model::{Blob, BlobCow},
-    store::Store,
 };
-use crate::model::{self, BlockHeight, Identity};
-use anyhow::{bail, Context, Result};
-use core::str;
+use crate::model::{Blob as NodeBlob, BlockHeight, Identity};
+use anyhow::Result;
+use serde::de::DeserializeOwned;
 use std::borrow::Cow;
+use tracing::info;
+
+/// BlobsKey contains a `BlockHeight` a `tx_index` and a `blob_index`
+#[derive(Debug, Default)]
+pub struct BlobsKey(pub BlockHeight, pub usize, pub usize);
+
+impl KeyMaker for BlobsKey {
+    fn make_key<'a>(&self, writer: &'a mut String) -> &'a str {
+        use std::fmt::Write;
+        _ = write!(writer, "{:08x}:{:08x}:{:08x}", self.0 .0, self.1, self.2);
+        writer.as_str()
+    }
+}
+
+/// BlobsKeyAlt contains a `tx_hash` and a `blob_index`
+#[derive(Debug, Default)]
+pub struct BlobsKeyAlt<'b>(pub &'b str, pub usize);
+
+impl<'b> KeyMaker for BlobsKeyAlt<'b> {
+    fn make_key<'a>(&self, writer: &'a mut String) -> &'a str {
+        use std::fmt::Write;
+        _ = write!(writer, "{}:{:08x}", self.0, self.1);
+        writer.as_str()
+    }
+}
+
+fn blob_cow<'a>(
+    block_height: BlockHeight,
+    tx_index: usize,
+    blob_index: usize,
+    tx_hash: &'a String,
+    tx_identity: &'a Identity,
+    blob: &'a NodeBlob,
+) -> BlobCow<'a> {
+    BlobCow {
+        identity: Cow::Borrowed(tx_identity),
+        contract_name: Cow::Borrowed(&blob.contract_name),
+        data: Cow::Borrowed(&blob.data),
+        block_height,
+        tx_index,
+        blob_index,
+        tx_hash: Cow::Borrowed(tx_hash),
+    }
+}
 
 #[derive(Debug)]
 pub struct Blobs {
-    store: Store,
+    db: Db,
 }
 
 impl Blobs {
     pub fn new(db: &sled::Db) -> Result<Self> {
         Ok(Self {
-            store: Store::new("blobs", db)?,
+            db: Db::new(db, "blobs_ord", Some("blobs_alt"))?,
         })
+    }
+
+    pub fn len(&self) -> usize {
+        self.db.len()
     }
 
     pub fn put(
         &mut self,
         block_height: BlockHeight,
-        transaction_index: usize,
-        tx_hash: &String,
+        tx_index: usize,
         blob_index: usize,
+        tx_hash: &String,
         tx_identity: &Identity,
-        blob: &model::Blob,
+        data: &NodeBlob,
     ) -> Result<()> {
-        // let key = format!("{}:{}", tx_hash, blob_index);
-        let key = format!("{}:{}:{}", block_height, transaction_index, blob_index);
-        self.store.put(
-            &key,
-            &BlobCow {
-                identity: Cow::Borrowed(tx_identity),
-                contract_name: Cow::Borrowed(&blob.contract_name),
-                data: Cow::Borrowed(&blob.data),
-                block_height,
-                tx_index: transaction_index,
-                tx_hash: Cow::Borrowed(tx_hash),
-                blob_index,
-            },
+        let data = blob_cow(
+            block_height,
+            tx_index,
+            blob_index,
+            tx_hash,
+            tx_identity,
+            data,
+        );
+        info!("storing blob {}:{}:{}", block_height, tx_index, blob_index);
+        self.db.put(
+            BlobsKey(block_height, tx_index, blob_index),
+            BlobsKeyAlt(tx_hash, blob_index),
+            &data,
         )
     }
 
-    pub fn get(&self, tx_hash: &str, blob_index: usize) -> Result<Option<Blob>> {
-        let key = format!("{}:{}", tx_hash, blob_index);
-        self.store
-            .get(&key)
-            .with_context(|| format!("retrieving key {}", key))
+    pub fn get(
+        &mut self,
+        block_height: BlockHeight,
+        tx_index: usize,
+        blob_index: usize,
+    ) -> Result<Option<Blob>> {
+        self.db
+            .ord_get(BlobsKey(block_height, tx_index, blob_index))
     }
 
-    pub fn get_from_tx_hash(&self, tx_hash: &str) -> Result<Vec<Blob>> {
-        let mut blobs = Vec::new();
-        let mut iter = self.store.scan(tx_hash);
-        loop {
-            match iter.next() {
-                Some(Ok((k, v))) => {
-                    let blob = if let Ok(key) = str::from_utf8(&k) {
-                        ron::de::from_bytes(&v)
-                            .with_context(|| format!("deserializing data of {} from blobs", key))?
-                    } else {
-                        ron::de::from_bytes(&v).context("deserializing data from blobs")?
-                    };
-                    blobs.push(blob);
-                }
-                Some(Err(e)) => bail!("iterating on blobs: {}", e),
-                None => break Ok(blobs),
-            }
-        }
+    pub fn get_with_hash(&mut self, tx_hash: &str, blob_index: usize) -> Result<Option<Blob>> {
+        self.db.alt_get(BlobsKeyAlt(tx_hash, blob_index))
+    }
+
+    pub fn last(&self) -> Result<Option<Blob>> {
+        self.db.ord_last()
+    }
+
+    pub fn range<T: DeserializeOwned>(&mut self, min: BlobsKey, max: BlobsKey) -> Iter<T> {
+        self.db.ord_range(min, max)
+    }
+
+    pub fn scan_prefix<T: DeserializeOwned>(&mut self, prefix: BlobsKey) -> Iter<T> {
+        self.db.ord_scan_prefix(prefix)
     }
 }

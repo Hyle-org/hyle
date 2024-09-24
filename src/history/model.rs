@@ -47,4 +47,8 @@ pub struct ContractCow<'a> {
     pub program_id: Cow<'a, Vec<u8>>,
     pub verifier: Cow<'a, String>,
     pub state_digest: Cow<'a, StateDigest>,
+    // refs:
+    pub block_height: BlockHeight,
+    pub tx_index: usize,
+    pub tx_hash: Cow<'a, String>,
 }

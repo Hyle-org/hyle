@@ -3,14 +3,11 @@
 mod api;
 mod blobs;
 mod blocks;
-pub use blocks::BlocksFilter;
 mod contracts;
-pub use contracts::ContractsFilter;
+mod db;
 pub mod model;
 mod proofs;
-mod store;
 mod transactions;
-pub use transactions::TransactionsFilter;
 
 use crate::{
     bus::SharedMessageBus,
@@ -81,22 +78,32 @@ impl History {
     pub fn api() -> Router<rest::RouterState> {
         Router::new()
             // block
+            .route("/blocks", get(api::get_blocks))
             .route("/block/last", get(api::get_last_block))
             .route("/block/:height", get(api::get_block))
-            .route("/blocks", get(api::get_blocks))
-            // proof
-            .route("/proof/:tx_hash", get(api::get_proof))
-            // blob
-            .route("/blobs/:tx_hash", get(api::get_blobs))
-            .route("/blob/:tx_hash/:blob_index", get(api::get_blob))
             // transaction
             .route("/transactions", get(api::get_transactions))
-            .route("/transaction/:height/:tx_index", get(api::get_transaction2))
-            .route("/transaction/:tx_hash", get(api::get_transaction))
+            .route("/transaction/last", get(api::get_last_transaction))
+            .route("/transaction/:height/:tx_index", get(api::get_transaction))
+            .route("/transaction/:tx_hash", get(api::get_transaction_with_hash))
+            // blob
+            .route("/blobs", get(api::get_blobs))
+            .route("/blobs/last", get(api::get_last_blob))
+            .route(
+                "/blob/:block_height/:tx_index/:blob_index",
+                get(api::get_blob),
+            )
+            .route("/blobs/:tx_hash/:blob_index", get(api::get_blob_with_hash))
+            // proof
+            .route("/proofs", get(api::get_proofs))
+            .route("/proof/last", get(api::get_last_proof))
+            .route("/proof/:block_height/:tx_index", get(api::get_proof))
+            .route("/proof/:tx_hash", get(api::get_proof_with_hash))
             // contract
             .route("/contracts", get(api::get_contracts))
-            .route("/contracts/:name", get(api::get_contracts2))
-            .route("/contract/:name/:tx_hash", get(api::get_contract2))
+            .route("/contract/last", get(api::get_last_contract))
+            .route("/contracts/:name", get(api::get_contracts_with_name))
+            .route("/contract/:block_height/:tx_index", get(api::get_contract))
     }
 
     async fn handle_block(&mut self, block: Block) {
@@ -110,8 +117,8 @@ impl History {
                         if let Err(e) = self.inner.lock().await.blobs.put(
                             block.height,
                             ti,
-                            &tx_hash,
                             bi,
+                            &tx_hash,
                             &tx.identity,
                             blob,
                         ) {
@@ -120,13 +127,13 @@ impl History {
                     }
                 }
                 crate::model::TransactionData::Proof(ref tx) => {
-                    if let Err(e) = self.inner.lock().await.proofs.put(
-                        block.height,
-                        ti,
-                        &tx_hash,
-                        &tx.blobs_references,
-                        &tx.proof,
-                    ) {
+                    if let Err(e) =
+                        self.inner
+                            .lock()
+                            .await
+                            .proofs
+                            .put(block.height, ti, &tx_hash, tx)
+                    {
                         error!(
                             "storing proof of tx {} in block {}: {}",
                             ti, block.height, e
@@ -134,7 +141,13 @@ impl History {
                     }
                 }
                 crate::model::TransactionData::RegisterContract(ref tx) => {
-                    if let Err(e) = self.inner.lock().await.contracts.put(&tx_hash, tx) {
+                    if let Err(e) =
+                        self.inner
+                            .lock()
+                            .await
+                            .contracts
+                            .put(block.height, ti, &tx_hash, tx)
+                    {
                         error!(
                             "storing contract {} of tx {} in block {}: {}",
                             tx.contract_name.0, ti, block.height, e
@@ -155,7 +168,7 @@ impl History {
             }
         }
         // store block
-        if let Err(e) = self.inner.lock().await.blocks.put(block) {
+        if let Err(e) = self.inner.lock().await.blocks.put(&block) {
             error!("storing block: {}", e);
         }
     }
