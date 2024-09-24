@@ -49,10 +49,6 @@ impl Module for NodeState {
     fn name() -> &'static str {
         "NodeState"
     }
-
-    fn dependencies() -> Vec<&'static str> {
-        vec![]
-    }
 }
 
 impl NodeState {

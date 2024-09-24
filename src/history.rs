@@ -50,10 +50,6 @@ impl Module for History {
     fn name() -> &'static str {
         "History"
     }
-
-    fn dependencies() -> Vec<&'static str> {
-        vec![]
-    }
 }
 
 impl History {
@@ -69,7 +65,7 @@ impl History {
         }
     }
 
-    pub async fn start(&mut self, config: SharedConf, bus: SharedMessageBus) {
+    pub async fn start(&mut self, config: SharedConf, bus: SharedMessageBus) -> Result<()> {
         let interval = config.storage.interval;
         let mut receiver = bus.receiver::<ConsensusEvent>().await;
 

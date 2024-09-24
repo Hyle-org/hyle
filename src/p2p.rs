@@ -4,7 +4,6 @@ use std::{sync::Arc, time::Duration};
 
 use crate::{
     bus::SharedMessageBus,
-    mempool::Mempool,
     utils::{conf::SharedConf, crypto::BlstCrypto, modules::Module},
 };
 use anyhow::{Error, Result};
@@ -20,9 +19,6 @@ impl Module for P2P {
     fn name() -> &'static str {
         "P2P"
     }
-    fn dependencies() -> Vec<&'static str> {
-        vec![Mempool::name()]
-    }
 }
 
 pub async fn p2p_server(
@@ -34,6 +30,8 @@ pub async fn p2p_server(
 
     // Wait all other threads to start correctly
     sleep(Duration::from_secs(1)).await;
+
+    anyhow::bail!("Aie!");
 
     for peer in &config.peers {
         let config = config.clone();

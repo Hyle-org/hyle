@@ -59,10 +59,6 @@ impl Module for Mempool {
     fn name() -> &'static str {
         "Mempool"
     }
-
-    fn dependencies() -> Vec<&'static str> {
-        vec![]
-    }
 }
 
 impl Mempool {
@@ -79,7 +75,7 @@ impl Mempool {
     }
 
     /// start starts the mempool server.
-    pub async fn start(&mut self) {
+    pub async fn start(&mut self) -> Result<()> {
         info!("Mempool starting");
         handle_messages! {
             on_bus self.bus,

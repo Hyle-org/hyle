@@ -1,6 +1,10 @@
 //! Public API for interacting with the node.
 
-use crate::{bus::SharedMessageBus, history::History, utils::conf::SharedConf};
+use crate::{
+    bus::SharedMessageBus,
+    history::History,
+    utils::{conf::SharedConf, modules::Module},
+};
 use anyhow::{Context, Result};
 use axum::{
     http::StatusCode,
@@ -17,6 +21,13 @@ pub mod endpoints;
 pub struct RouterState {
     pub bus: SharedMessageBus,
     pub history: History,
+}
+
+pub struct RestApi {}
+impl Module for RestApi {
+    fn name() -> &'static str {
+        "RestApi"
+    }
 }
 
 pub async fn rest_server(

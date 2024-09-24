@@ -22,9 +22,6 @@ impl Module for MockWorkflowHandler {
     fn name() -> &'static str {
         "MockWorkflowHandler"
     }
-    fn dependencies() -> Vec<&'static str> {
-        vec![]
-    }
 }
 
 impl MockWorkflowHandler {
@@ -32,7 +29,7 @@ impl MockWorkflowHandler {
         MockWorkflowHandler { bus }
     }
 
-    pub async fn start(&mut self) {
+    pub async fn start(&mut self) -> anyhow::Result<()> {
         handle_messages! {
             on_bus self.bus,
             listen<RunScenario> cmd => {

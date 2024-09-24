@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use axum_otel_metrics::HttpMetricsLayerBuilder;
+use axum_otel_metrics::{HttpMetricsLayer, HttpMetricsLayerBuilder};
 use clap::Parser;
 use hyle::{
     bus::SharedMessageBus,
@@ -8,7 +8,7 @@ use hyle::{
     mempool::Mempool,
     node_state::NodeState,
     p2p::{self, P2P},
-    rest,
+    rest::{self, RestApi},
     tools::mock_workflow::MockWorkflowHandler,
     utils::{
         conf::{self, SharedConf},
@@ -25,33 +25,42 @@ async fn start_consensus(
     bus: SharedMessageBus,
     config: SharedConf,
     crypto: BlstCrypto,
-) {
-    _ = consensus.start(bus, config, crypto).await;
+) -> Result<()> {
+    consensus.start(bus, config, crypto).await
 }
 
-async fn start_history(mut history: History, bus: SharedMessageBus, config: SharedConf) {
-    history.start(config, bus).await;
+async fn start_history(
+    mut history: History,
+    bus: SharedMessageBus,
+    config: SharedConf,
+) -> Result<()> {
+    history.start(config, bus).await
 }
 
-async fn start_node_state(mut node_state: NodeState, config: SharedConf) {
-    if let Err(e) = node_state.start(config).await {
-        error!("Node state failed: {e}");
-    }
+async fn start_node_state(mut node_state: NodeState, config: SharedConf) -> Result<()> {
+    node_state.start(config).await
 }
 
-async fn start_mempool(mut mempool: Mempool) {
-    mempool.start().await;
+async fn start_mempool(mut mempool: Mempool) -> Result<()> {
+    mempool.start().await
 }
 
-async fn start_p2p(bus: SharedMessageBus, config: SharedConf, crypto: BlstCrypto) {
-    if let Err(e) = p2p::p2p_server(config, bus, crypto).await {
-        error!("RPC server failed: {:?}", e);
-    }
+async fn start_p2p(bus: SharedMessageBus, config: SharedConf, crypto: BlstCrypto) -> Result<()> {
+    p2p::p2p_server(config, bus, crypto).await
 }
 
-async fn start_mock_workflow(bus: SharedMessageBus) {
+async fn start_mock_workflow(bus: SharedMessageBus) -> Result<()> {
     let mut mock_workflow = hyle::tools::mock_workflow::MockWorkflowHandler::new(bus);
-    mock_workflow.start().await;
+    mock_workflow.start().await
+}
+
+async fn start_rest_server(
+    config: SharedConf,
+    bus: SharedMessageBus,
+    metrics_layer: HttpMetricsLayer,
+    history: History,
+) -> Result<()> {
+    rest::rest_server(config, bus, metrics_layer, history).await
 }
 
 #[derive(Parser, Debug)]
@@ -146,14 +155,16 @@ async fn main() -> Result<()> {
     ));
     handler.add_module::<P2P>(start_p2p(bus.new_handle(), Arc::clone(&config), crypto));
     handler.add_module::<MockWorkflowHandler>(start_mock_workflow(bus.new_handle()));
+    handler.add_module::<RestApi>(start_rest_server(
+        config.clone(),
+        bus.new_handle(),
+        metrics_layer,
+        history,
+    ));
 
-    match handler.start_modules() {
-        Ok(_) => info!("All modules started successfully"),
-        Err(e) => error!("Error starting modules: {}", e),
+    if let Err(e) = handler.start_modules().await {
+        error!("Error in module handler: {}", e)
     }
 
-    // Start REST server
-    rest::rest_server(config, bus.new_handle(), metrics_layer, history)
-        .await
-        .context("Starting REST server")
+    Ok(())
 }

@@ -96,10 +96,6 @@ impl Module for Consensus {
     fn name() -> &'static str {
         "Consensus"
     }
-
-    fn dependencies() -> Vec<&'static str> {
-        vec!["NodeState"]
-    }
 }
 
 impl Consensus {
