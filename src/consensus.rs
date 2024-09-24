@@ -19,7 +19,7 @@ use crate::{
     handle_messages,
     mempool::{MempoolCommand, MempoolResponse},
     model::{get_current_timestamp, Block, BlockHash, Hashable, Transaction},
-    p2p::network::{OutboundMessage, Signed},
+    p2p::network::{OutboundMessage, SignedWithId},
     utils::{conf::SharedConf, crypto::BlstCrypto, logger::LogMe},
     validator_registry::{ValidatorId, ValidatorRegistry, ValidatorRegistryNetMessage},
 };
@@ -204,7 +204,7 @@ impl Consensus {
 
     fn handle_net_message(
         &mut self,
-        msg: Signed<ConsensusNetMessage>,
+        msg: SignedWithId<ConsensusNetMessage>,
         crypto: &BlstCrypto,
         outbound_sender: &Sender<OutboundMessage>,
         consensus_command_sender: &Sender<ConsensusCommand>,
@@ -258,7 +258,7 @@ impl Consensus {
                 // Message received by replica.
 
                 // Validate message comes from the correct leader
-                if self.leader_id() != msg.validator_id {
+                if !msg.validators.contains(&self.leader_id()) {
                     // fail
                 }
                 // Validate consensus_proposal slot, view, previous_qc and proposed block
@@ -276,9 +276,9 @@ impl Consensus {
                 // Message received by leader.
 
                 // Save vote
-                self.bft_round_state
-                    .prep_votes
-                    .insert(msg.validator_id, vote);
+                msg.validators.iter().for_each(|v| {
+                    self.bft_round_state.prep_votes.insert(v.clone(), vote);
+                });
                 // Get matching vote count
                 let validated_votes = self
                     .bft_round_state
@@ -327,7 +327,9 @@ impl Consensus {
                 // Message received by leader.
 
                 // Save ConfirmAck
-                self.bft_round_state.confirm_ack.insert(msg.validator_id);
+                msg.validators.iter().for_each(|v| {
+                    self.bft_round_state.confirm_ack.insert(v.clone());
+                });
 
                 let f: usize = self.validators.get_validators_count() / 3;
                 if self.bft_round_state.confirm_ack.len() >= (2 * f + 1) {
@@ -470,7 +472,7 @@ impl Consensus {
                     Err(e) => warn!("Error while handling consensus command: {:#}", e),
                 }
             }
-            listen<Signed<ConsensusNetMessage>> cmd => {
+            listen<SignedWithId<ConsensusNetMessage>> cmd => {
                 // FIXME: remove info message
                 info!("[{}] Received consensus message: {:?}", config.id, cmd);
                 sleep(Duration::from_secs(1)).await;
@@ -488,7 +490,7 @@ impl Consensus {
     fn sign_net_message(
         crypto: &BlstCrypto,
         msg: ConsensusNetMessage,
-    ) -> Result<Signed<ConsensusNetMessage>> {
+    ) -> Result<SignedWithId<ConsensusNetMessage>> {
         crypto.sign(msg)
     }
 }
