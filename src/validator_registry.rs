@@ -10,9 +10,13 @@ use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 use tracing::{debug, info, warn};
 
-use crate::{bus::BusMessage, p2p::network::Signed, utils::crypto::BlstCrypto};
+use crate::{
+    bus::BusMessage,
+    p2p::network::SignedWithId,
+    utils::{crypto::BlstCrypto, vec_utils::SequenceOption},
+};
 
-#[derive(Serialize, Deserialize, Clone, Encode, Decode, Default)]
+#[derive(Serialize, Deserialize, Clone, Encode, Decode, Default, Eq, PartialEq)]
 pub struct ValidatorPublicKey(pub Vec<u8>);
 
 impl std::fmt::Debug for ValidatorPublicKey {
@@ -68,15 +72,27 @@ impl ValidatorRegistry {
         self.validators.insert(id, validator);
     }
 
-    pub fn check_signed<T>(&self, msg: &Signed<T>) -> Result<bool, Error>
+    pub fn check_signed<T>(&self, msg: &SignedWithId<T>) -> Result<bool, Error>
     where
-        T: Encode + Debug,
+        T: Encode + Debug + Clone,
     {
-        let validator = self.validators.get(&msg.validator_id);
-        match validator {
-            Some(r) => BlstCrypto::verify(msg, &r.pub_key),
+        let validators = msg
+            .validators
+            .iter()
+            .map(|v| self.validators.get(v))
+            .collect::<Vec<Option<_>>>()
+            .sequence();
+        match validators {
+            Some(vec) => {
+                let vec = vec
+                    .iter()
+                    .map(|validator| validator.pub_key.clone())
+                    .collect::<Vec<ValidatorPublicKey>>();
+
+                BlstCrypto::verify(&msg.with_pub_keys(vec))
+            }
             None => {
-                warn!("Validator '{}' not found", msg.validator_id);
+                warn!("Some validators not found in: {:?}", msg.validators);
                 Ok(false)
             }
         }
