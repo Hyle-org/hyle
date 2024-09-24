@@ -32,7 +32,7 @@ impl Blocks {
 
         if blocks.last.is_none() {
             blocks
-                .put(&Block::default())
+                .put(Block::default())
                 .context("writing genesis block")?;
         }
 
@@ -46,10 +46,12 @@ impl Blocks {
         self.db.len()
     }
 
-    pub fn put(&mut self, data: &Block) -> Result<()> {
+    pub fn put(&mut self, data: Block) -> Result<()> {
         info!("storing block {}", data.height);
         self.db
-            .put(BlocksKey(data.height), BlocksKey::default(), data)
+            .put(BlocksKey(data.height), BlocksKey::default(), &data)?;
+        self.last.replace(data);
+        Ok(())
     }
 
     pub fn get(&mut self, block_height: BlockHeight) -> Result<Option<Block>> {
