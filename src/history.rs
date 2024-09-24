@@ -178,7 +178,7 @@ impl History {
             }
         }
         // store block
-        if let Err(e) = self.inner.lock().await.blocks.put(&block) {
+        if let Err(e) = self.inner.lock().await.blocks.put(block) {
             error!("storing block: {}", e);
         }
     }
