@@ -18,7 +18,7 @@ use crate::{
     mempool::{MempoolCommand, MempoolResponse},
     model::{get_current_timestamp, Block, BlockHash, Hashable, Transaction},
     p2p::network::{OutboundMessage, SignedWithId},
-    utils::{conf::SharedConf, crypto::BlstCrypto, logger::LogMe},
+    utils::{conf::SharedConf, crypto::BlstCrypto, logger::LogMe, modules::Module},
     validator_registry::{ValidatorId, ValidatorRegistry, ValidatorRegistryNetMessage},
 };
 
@@ -90,6 +90,16 @@ pub struct Consensus {
     current_block_batches: Vec<String>,
     // Once a block commits, we store it there (or not ?)
     // committed_block_batches: HashMap<String, HashMap<String, Vec<Transaction>>>,
+}
+
+impl Module for Consensus {
+    fn name() -> &'static str {
+        "Consensus"
+    }
+
+    fn dependencies() -> Vec<&'static str> {
+        vec!["NodeState"]
+    }
 }
 
 impl Consensus {

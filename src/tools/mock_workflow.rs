@@ -3,6 +3,7 @@ use crate::{
     handle_messages,
     mempool::MempoolNetMessage,
     model::{Blob, BlobData, BlobTransaction, ContractName, Identity, Transaction},
+    utils::modules::Module,
 };
 use serde::{Deserialize, Serialize};
 use tracing::warn;
@@ -15,6 +16,15 @@ impl BusMessage for RunScenario {}
 
 pub struct MockWorkflowHandler {
     bus: SharedMessageBus,
+}
+
+impl Module for MockWorkflowHandler {
+    fn name() -> &'static str {
+        "MockWorkflowHandler"
+    }
+    fn dependencies() -> Vec<&'static str> {
+        vec![]
+    }
 }
 
 impl MockWorkflowHandler {

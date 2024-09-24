@@ -4,7 +4,8 @@ use std::{sync::Arc, time::Duration};
 
 use crate::{
     bus::SharedMessageBus,
-    utils::{conf::SharedConf, crypto::BlstCrypto},
+    mempool::Mempool,
+    utils::{conf::SharedConf, crypto::BlstCrypto, modules::Module},
 };
 use anyhow::{Error, Result};
 use tokio::{net::TcpListener, time::sleep};
@@ -13,6 +14,16 @@ use tracing::{debug, error, info, warn};
 pub mod network; // FIXME(Bertrand): NetMessage should be private
 mod peer;
 pub mod stream;
+
+pub struct P2P {}
+impl Module for P2P {
+    fn name() -> &'static str {
+        "P2P"
+    }
+    fn dependencies() -> Vec<&'static str> {
+        vec![Mempool::name()]
+    }
+}
 
 pub async fn p2p_server(
     config: SharedConf,

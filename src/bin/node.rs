@@ -7,71 +7,51 @@ use hyle::{
     history::History,
     mempool::Mempool,
     node_state::NodeState,
-    p2p, rest,
+    p2p::{self, P2P},
+    rest,
+    tools::mock_workflow::MockWorkflowHandler,
     utils::{
         conf::{self, SharedConf},
         crypto::BlstCrypto,
+        modules::ModulesHandler,
     },
 };
 use std::{path::Path, sync::Arc};
 use tracing::{debug, error, info, level_filters::LevelFilter, warn};
 use tracing_subscriber::{prelude::*, EnvFilter};
 
-fn start_consensus(bus: SharedMessageBus, config: SharedConf, crypto: BlstCrypto) {
-    let _ = tokio::task::Builder::new()
-        .name("Consensus")
-        .spawn(async move {
-            Consensus::load_from_disk()
-                .unwrap_or_else(|_| {
-                    warn!("Failed to load consensus state from disk, using a default one");
-                    Consensus::default()
-                })
-                .start(bus, config, crypto)
-                .await
-        });
+async fn start_consensus(
+    mut consensus: Consensus,
+    bus: SharedMessageBus,
+    config: SharedConf,
+    crypto: BlstCrypto,
+) {
+    _ = consensus.start(bus, config, crypto).await;
 }
 
-fn start_history(mut history: History, bus: SharedMessageBus, config: SharedConf) {
-    let _ = tokio::task::Builder::new()
-        .name("History")
-        .spawn(async move {
-            history.start(config, bus).await;
-        });
+async fn start_history(mut history: History, bus: SharedMessageBus, config: SharedConf) {
+    history.start(config, bus).await;
 }
 
-fn start_node_state(bus: SharedMessageBus, config: SharedConf) {
-    let _ = tokio::task::Builder::new()
-        .name("NodeState")
-        .spawn(async move {
-            let mut node_state = NodeState::new(bus);
-            node_state.start(config).await
-        });
+async fn start_node_state(mut node_state: NodeState, config: SharedConf) {
+    if let Err(e) = node_state.start(config).await {
+        error!("Node state failed: {e}");
+    }
 }
 
-fn start_mempool(bus: SharedMessageBus, config: SharedConf, crypto: BlstCrypto) {
-    let _ = tokio::task::Builder::new()
-        .name("Mempool")
-        .spawn(async move {
-            let mut mempool = Mempool::new(bus, config, crypto);
-            mempool.start().await
-        });
+async fn start_mempool(mut mempool: Mempool) {
+    mempool.start().await;
 }
 
-fn start_p2p(bus: SharedMessageBus, config: SharedConf, crypto: BlstCrypto) {
-    let _ = tokio::task::Builder::new().name("p2p").spawn(async move {
-        if let Err(e) = p2p::p2p_server(config, bus, crypto).await {
-            error!("RPC server failed: {:?}", e);
-        }
-    });
+async fn start_p2p(bus: SharedMessageBus, config: SharedConf, crypto: BlstCrypto) {
+    if let Err(e) = p2p::p2p_server(config, bus, crypto).await {
+        error!("RPC server failed: {:?}", e);
+    }
 }
 
-fn start_mock_workflow(bus: SharedMessageBus) {
-    let _ = tokio::task::Builder::new()
-        .name("MockWorkflow")
-        .spawn(async move {
-            let mut mock_workflow = hyle::tools::mock_workflow::MockWorkflowHandler::new(bus);
-            mock_workflow.start().await;
-        });
+async fn start_mock_workflow(bus: SharedMessageBus) {
+    let mut mock_workflow = hyle::tools::mock_workflow::MockWorkflowHandler::new(bus);
+    mock_workflow.start().await;
 }
 
 #[derive(Parser, Debug)]
@@ -129,12 +109,6 @@ async fn main() -> Result<()> {
     let bus = SharedMessageBus::new();
     let crypto = BlstCrypto::new(config.id.clone()); // TODO load sk from disk instead of random
 
-    start_mempool(
-        SharedMessageBus::new_handle(&bus),
-        Arc::clone(&config),
-        crypto.clone(),
-    );
-
     let data_directory = Path::new(
         args.data_directory
             .as_deref()
@@ -143,19 +117,40 @@ async fn main() -> Result<()> {
 
     std::fs::create_dir_all(data_directory).context("creating data directory")?;
 
+    let mempool = Mempool::new(bus.new_handle(), config.clone(), crypto.clone());
     let history = History::new(
         data_directory
             .join("history.db")
             .to_str()
             .context("invalid data directory")?,
     )?;
-    start_history(history.share(), bus.new_handle(), Arc::clone(&config));
+    let node_state = NodeState::new(bus.new_handle());
+    let consensus = Consensus::load_from_disk().unwrap_or_else(|_| {
+        warn!("Failed to load consensus state from disk, using a default one");
+        Consensus::default()
+    });
 
-    start_node_state(bus.new_handle(), Arc::clone(&config));
-    start_consensus(bus.new_handle(), Arc::clone(&config), crypto.clone());
-    start_p2p(bus.new_handle(), Arc::clone(&config), crypto);
+    let mut handler = ModulesHandler::default();
+    handler.add_module::<Mempool>(start_mempool(mempool));
+    handler.add_module::<History>(start_history(
+        history.share(),
+        bus.new_handle(),
+        Arc::clone(&config),
+    ));
+    handler.add_module::<NodeState>(start_node_state(node_state, Arc::clone(&config)));
+    handler.add_module::<Consensus>(start_consensus(
+        consensus,
+        bus.new_handle(),
+        Arc::clone(&config),
+        crypto.clone(),
+    ));
+    handler.add_module::<P2P>(start_p2p(bus.new_handle(), Arc::clone(&config), crypto));
+    handler.add_module::<MockWorkflowHandler>(start_mock_workflow(bus.new_handle()));
 
-    start_mock_workflow(bus.new_handle());
+    match handler.start_modules() {
+        Ok(_) => info!("All modules started successfully"),
+        Err(e) => error!("Error starting modules: {}", e),
+    }
 
     // Start REST server
     rest::rest_server(config, bus.new_handle(), metrics_layer, history)

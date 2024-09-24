@@ -10,6 +10,7 @@ use crate::{
     },
     utils::{
         conf::SharedConf,
+        modules::Module,
         vec_utils::{SequenceOption, SequenceResult},
     },
 };
@@ -42,6 +43,16 @@ pub struct NodeState {
     current_height: BlockHeight,
     contracts: HashMap<ContractName, Contract>,
     unsettled_transactions: OrderedTxMap,
+}
+
+impl Module for NodeState {
+    fn name() -> &'static str {
+        "NodeState"
+    }
+
+    fn dependencies() -> Vec<&'static str> {
+        vec![]
+    }
 }
 
 impl NodeState {

@@ -7,7 +7,7 @@ use crate::{
     model::{Hashable, Transaction},
     p2p::network::{OutboundMessage, SignedWithId},
     rest::endpoints::RestApiMessage,
-    utils::{conf::SharedConf, crypto::BlstCrypto},
+    utils::{conf::SharedConf, crypto::BlstCrypto, modules::Module},
     validator_registry::{ValidatorRegistry, ValidatorRegistryNetMessage},
 };
 use anyhow::{Context, Result};
@@ -54,6 +54,16 @@ pub enum MempoolResponse {
     PendingBatch { id: String, txs: Vec<Transaction> },
 }
 impl BusMessage for MempoolResponse {}
+
+impl Module for Mempool {
+    fn name() -> &'static str {
+        "Mempool"
+    }
+
+    fn dependencies() -> Vec<&'static str> {
+        vec![]
+    }
+}
 
 impl Mempool {
     pub fn new(bus: SharedMessageBus, config: SharedConf, crypto: BlstCrypto) -> Mempool {

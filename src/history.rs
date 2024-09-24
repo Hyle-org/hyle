@@ -14,7 +14,7 @@ use crate::{
     consensus::ConsensusEvent,
     model::{Block, Hashable},
     rest,
-    utils::conf::SharedConf,
+    utils::{conf::SharedConf, modules::Module},
 };
 use anyhow::{Context, Result};
 use axum::{routing::get, Router};
@@ -44,6 +44,16 @@ pub fn u64_to_str(u: u64, buf: &mut [u8]) -> &str {
 #[derive(Debug)]
 pub struct History {
     inner: Arc<Mutex<HistoryInner>>,
+}
+
+impl Module for History {
+    fn name() -> &'static str {
+        "History"
+    }
+
+    fn dependencies() -> Vec<&'static str> {
+        vec![]
+    }
 }
 
 impl History {
