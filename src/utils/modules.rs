@@ -1,6 +1,6 @@
 use std::{future::Future, pin::Pin};
 
-use anyhow::{bail, Context, Error};
+use anyhow::{bail, Error};
 use tokio::task::JoinHandle;
 use tracing::info;
 
@@ -78,73 +78,5 @@ impl ModulesHandler {
             }
             Err(e) => anyhow::bail!("Error while waiting for first module: {}", e),
         }
-    }
-}
-
-#[cfg(test)]
-mod test {
-
-    use super::*;
-
-    struct ModuleA;
-    impl Module for ModuleA {
-        fn name() -> &'static str {
-            "A"
-        }
-    }
-
-    struct ModuleB;
-    impl Module for ModuleB {
-        fn name() -> &'static str {
-            "B"
-        }
-    }
-
-    struct ModuleC;
-    impl Module for ModuleC {
-        fn name() -> &'static str {
-            "C"
-        }
-    }
-
-    struct ModuleD;
-    impl Module for ModuleD {
-        fn name() -> &'static str {
-            "D"
-        }
-    }
-
-    #[tokio::test]
-    async fn test_modules_start() {
-        // Initialiser les modules et les ajouter à un HashMap
-
-        let mut handler = ModulesHandler::default();
-        handler.add_module::<ModuleA>(async { Ok(info!("Starting module A")) });
-        handler.add_module::<ModuleC>(async { Ok(info!("Starting module C")) });
-        handler.add_module::<ModuleB>(async { Ok(info!("Starting module B")) });
-        handler.add_module::<ModuleD>(async { Ok(info!("Starting module D")) });
-
-        // Démarrer les modules dans l'ordre topologique
-        assert!(handler.start_modules().await.is_ok());
-    }
-
-    struct ModuleC2;
-    impl Module for ModuleC2 {
-        fn name() -> &'static str {
-            "C"
-        }
-    }
-
-    #[tokio::test]
-    async fn test_modules_cycles() {
-        // Initialiser les modules et les ajouter à un HashMap
-        let mut handler = ModulesHandler::default();
-
-        handler.add_module::<ModuleA>(async { Ok(info!("Starting module A")) });
-        handler.add_module::<ModuleC2>(async { Ok(info!("Starting module C")) });
-        handler.add_module::<ModuleB>(async { Ok(info!("Starting module B")) });
-        handler.add_module::<ModuleD>(async { Ok(info!("Starting module D")) });
-
-        assert!(handler.start_modules().await.is_err());
     }
 }

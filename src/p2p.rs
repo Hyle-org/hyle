@@ -31,8 +31,6 @@ pub async fn p2p_server(
     // Wait all other threads to start correctly
     sleep(Duration::from_secs(1)).await;
 
-    anyhow::bail!("Aie!");
-
     for peer in &config.peers {
         let config = config.clone();
         let bus = bus.new_handle();
