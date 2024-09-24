@@ -10,9 +10,6 @@ COPY . /usr/src/hyle
 
 # This is a dummy build to get the dependencies cached.
 RUN cargo build --target x86_64-unknown-linux-musl --release
-RUN ls -l /usr/src/hyle/target
-RUN ls -l /usr/src/hyle/target/x86_64-unknown-linux-musl
-RUN ls -l /usr/src/hyle/target/x86_64-unknown-linux-musl/release
 
 # RUNNER
 FROM --platform=linux/amd64 alpine:latest
