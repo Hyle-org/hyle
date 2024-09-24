@@ -1,7 +1,7 @@
 //! State required for participation in consensus by the node.
 
 use crate::{
-    bus::{command_response::NeedAnswer, SharedMessageBus},
+    bus::{command_response::NeedAnswer, BusMessage, SharedMessageBus},
     consensus::ConsensusEvent,
     handle_messages,
     model::{
@@ -27,11 +27,14 @@ mod verifiers;
 pub enum NodeStateQuery {
     GetContract { name: ContractName },
 }
+impl NeedAnswer<NodeStateQueryResponse> for NodeStateQuery {}
+impl BusMessage for NodeStateQuery {}
 
 #[derive(Debug, Clone)]
 pub enum NodeStateQueryResponse {
     Contract { contract: Contract },
 }
+impl BusMessage for NodeStateQueryResponse {}
 
 pub struct NodeState {
     bus: SharedMessageBus,
@@ -59,7 +62,6 @@ impl NodeState {
             self.unsettled_transactions.len(),
             self.current_height
         );
-        impl NeedAnswer<NodeStateQueryResponse> for NodeStateQuery {}
 
         handle_messages! {
             on_bus self.bus,

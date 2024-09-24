@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use tracing::{debug, info, warn};
 
 use crate::{
+    bus::BusMessage,
     p2p::network::SignedWithId,
     utils::{crypto::BlstCrypto, vec_utils::SequenceOption},
 };
@@ -45,6 +46,7 @@ pub struct ConsensusValidator {
 pub enum ValidatorRegistryNetMessage {
     NewValidator(ConsensusValidator),
 }
+impl BusMessage for ValidatorRegistryNetMessage {}
 
 #[derive(Serialize, Deserialize, Encode, Decode)]
 pub struct ValidatorRegistry {

@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use super::BusMessage;
 use super::SharedMessageBus;
 use anyhow::anyhow;
 use anyhow::bail;
@@ -7,13 +8,14 @@ use anyhow::Result;
 
 pub const CLIENT_TIMEOUT_SECONDS: u64 = 10;
 
-pub trait NeedAnswer<Answer> {}
+pub trait NeedAnswer<Answer>: BusMessage {}
 
 #[derive(Clone)]
 pub struct Query<Inner> {
     pub id: usize,
     pub data: Inner,
 }
+impl<T> BusMessage for Query<T> where T: BusMessage {}
 
 #[derive(Clone)]
 pub struct QueryResponse<Inner> {
@@ -21,11 +23,12 @@ pub struct QueryResponse<Inner> {
     // anyhow err is not cloneable...
     pub data: Result<Option<Inner>, String>,
 }
+impl<T> BusMessage for QueryResponse<T> where T: BusMessage {}
 
 pub trait CmdRespClient {
     fn request<
         Cmd: NeedAnswer<Res> + Clone + Send + Sync + 'static,
-        Res: Clone + Send + Sync + 'static,
+        Res: BusMessage + Clone + Send + Sync + 'static,
     >(
         &self,
         cmd: Cmd,
@@ -35,7 +38,7 @@ pub trait CmdRespClient {
 impl CmdRespClient for SharedMessageBus {
     async fn request<
         Cmd: NeedAnswer<Res> + Clone + Send + Sync + 'static,
-        Res: Clone + Send + Sync + 'static,
+        Res: BusMessage + Clone + Send + Sync + 'static,
     >(
         &self,
         cmd: Cmd,
