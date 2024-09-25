@@ -4,7 +4,6 @@ use super::{
 };
 use crate::model::{BlockHeight, ProofTransaction};
 use anyhow::Result;
-use serde::de::DeserializeOwned;
 use std::borrow::Cow;
 use tracing::info;
 
@@ -16,18 +15,6 @@ impl KeyMaker for ProofsKey {
     fn make_key<'a>(&self, writer: &'a mut String) -> &'a str {
         use std::fmt::Write;
         _ = write!(writer, "{:08x}:{:08x}", self.0 .0, self.1);
-        writer.as_str()
-    }
-}
-
-/// ProofsKeyAlt contains a `tx_hash`
-#[derive(Debug, Default)]
-pub struct ProofsKeyAlt<'b>(pub &'b str);
-
-impl<'b> KeyMaker for ProofsKeyAlt<'b> {
-    fn make_key<'a>(&self, writer: &'a mut String) -> &'a str {
-        use std::fmt::Write;
-        _ = write!(writer, "{}", self.0);
         writer.as_str()
     }
 }
@@ -86,11 +73,8 @@ impl Proofs {
     ) -> Result<()> {
         let data = proof_cow(block_height, tx_index, tx_hash, data);
         info!("storing proof {}:{}", block_height, tx_index);
-        self.db.put(
-            ProofsKey(block_height, tx_index),
-            ProofsKeyAlt(tx_hash),
-            &data,
-        )
+        self.db
+            .put(ProofsKey(block_height, tx_index), tx_hash.as_str(), &data)
     }
 
     pub fn get(&mut self, block_height: BlockHeight, tx_index: usize) -> Result<Option<Proof>> {
@@ -98,18 +82,18 @@ impl Proofs {
     }
 
     pub fn get_with_hash(&mut self, tx_hash: &str) -> Result<Option<Proof>> {
-        self.db.alt_get(ProofsKeyAlt(tx_hash))
+        self.db.alt_get(tx_hash)
     }
 
     pub fn last(&self) -> Result<Option<Proof>> {
         self.db.ord_last()
     }
 
-    pub fn range<T: DeserializeOwned>(&mut self, min: ProofsKey, max: ProofsKey) -> Iter<T> {
+    pub fn range(&mut self, min: ProofsKey, max: ProofsKey) -> Iter<Proof> {
         self.db.ord_range(min, max)
     }
 
-    pub fn scan_prefix<T: DeserializeOwned>(&mut self, prefix: ProofsKey) -> Iter<T> {
+    pub fn scan_prefix(&mut self, prefix: ProofsKey) -> Iter<Proof> {
         self.db.ord_scan_prefix(prefix)
     }
 }

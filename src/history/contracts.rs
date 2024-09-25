@@ -1,37 +1,15 @@
 use super::{
-    db::{Db, Iter, KeyMaker},
+    db::{Db, Iter},
     model::{Contract, ContractCow},
 };
-use crate::model::{BlockHeight, RegisterContractTransaction};
+use crate::{
+    history::db::NoKey,
+    model::{BlockHeight, RegisterContractTransaction},
+};
 use anyhow::Result;
 use core::str;
-use serde::de::DeserializeOwned;
 use std::borrow::Cow;
 use tracing::info;
-
-/// ContractsKey contains a `BlockHeight` and a `tx_index`
-#[derive(Debug, Default)]
-pub struct ContractsKey(pub BlockHeight, pub usize /* tx_index */);
-
-impl KeyMaker for ContractsKey {
-    fn make_key<'a>(&self, writer: &'a mut String) -> &'a str {
-        use std::fmt::Write;
-        _ = write!(writer, "{:08x}:{:08x}", self.0 .0, self.1);
-        writer.as_str()
-    }
-}
-
-/// ContractsKeyAlt contains a `name` and a `tx_hash`
-#[derive(Debug, Default)]
-pub struct ContractsKeyAlt<'b>(pub &'b str, pub &'b str);
-
-impl<'b> KeyMaker for ContractsKeyAlt<'b> {
-    fn make_key<'a>(&self, writer: &'a mut String) -> &'a str {
-        use std::fmt::Write;
-        _ = write!(writer, "{}:{}", self.0, self.1);
-        writer.as_str()
-    }
-}
 
 fn contract_cow<'a>(
     block_height: BlockHeight,
@@ -59,7 +37,7 @@ pub struct Contracts {
 impl Contracts {
     pub fn new(db: &sled::Db) -> Result<Self> {
         Ok(Self {
-            db: Db::new(db, "contracts_ord", Some("contracts_alt"))?,
+            db: Db::new(db, "contracts_ord", None)?,
         })
     }
 
@@ -76,30 +54,18 @@ impl Contracts {
     ) -> Result<()> {
         let data = contract_cow(block_height, tx_index, tx_hash, data);
         info!("storing contract {}:{}", block_height, tx_index);
-        self.db.put(
-            ContractsKey(block_height, tx_index),
-            ContractsKeyAlt(&data.contract_name.0, tx_hash),
-            &data,
-        )
+        self.db.put(data.contract_name.0.as_str(), NoKey, &data)
     }
 
-    pub fn get(&mut self, block_height: BlockHeight, tx_index: usize) -> Result<Option<Contract>> {
-        self.db.ord_get(ContractsKey(block_height, tx_index))
+    pub fn get(&mut self, name: &str) -> Result<Option<Contract>> {
+        self.db.ord_get(name)
     }
 
-    pub fn get_with_name(&mut self, name: &str) -> Option<Iter<Contract>> {
-        self.db.alt_scan_prefix(name)
+    pub fn all(&mut self) -> Iter<Contract> {
+        self.db.ord_range("", "\x7f")
     }
 
-    pub fn last(&self) -> Result<Option<Contract>> {
-        self.db.ord_last()
-    }
-
-    pub fn range<T: DeserializeOwned>(&mut self, min: ContractsKey, max: ContractsKey) -> Iter<T> {
-        self.db.ord_range(min, max)
-    }
-
-    pub fn scan_prefix<T: DeserializeOwned>(&mut self, prefix: ContractsKey) -> Iter<T> {
+    pub fn scan_prefix(&mut self, prefix: &str) -> Iter<Contract> {
         self.db.ord_scan_prefix(prefix)
     }
 }

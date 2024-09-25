@@ -5,7 +5,6 @@ use super::{
 use crate::model::{BlockHeight, TransactionData};
 use anyhow::Result;
 use core::str;
-use serde::de::DeserializeOwned;
 use std::borrow::Cow;
 use tracing::info;
 
@@ -17,18 +16,6 @@ impl KeyMaker for TransactionsKey {
     fn make_key<'a>(&self, writer: &'a mut String) -> &'a str {
         use std::fmt::Write;
         _ = write!(writer, "{:08x}:{:08x}", self.0 .0, self.1);
-        writer.as_str()
-    }
-}
-
-/// TransactionsKeyAlt contains a `tx_hash`
-#[derive(Debug, Default)]
-pub struct TransactionsKeyAlt<'b>(pub &'b str);
-
-impl<'b> KeyMaker for TransactionsKeyAlt<'b> {
-    fn make_key<'a>(&self, writer: &'a mut String) -> &'a str {
-        use std::fmt::Write;
-        _ = write!(writer, "{}", self.0);
         writer.as_str()
     }
 }
@@ -74,7 +61,7 @@ impl Transactions {
         info!("storing tx {}:{}", block_height, tx_index);
         self.db.put(
             TransactionsKey(block_height, tx_index),
-            TransactionsKeyAlt(tx_hash),
+            tx_hash.as_str(),
             &tx,
         )
     }
@@ -88,22 +75,18 @@ impl Transactions {
     }
 
     pub fn get_with_hash(&mut self, tx_hash: &str) -> Result<Option<Transaction>> {
-        self.db.alt_get(TransactionsKeyAlt(tx_hash))
+        self.db.alt_get(tx_hash)
     }
 
     pub fn last(&self) -> Result<Option<Transaction>> {
         self.db.ord_last()
     }
 
-    pub fn range<T: DeserializeOwned>(
-        &mut self,
-        min: TransactionsKey,
-        max: TransactionsKey,
-    ) -> Iter<T> {
+    pub fn range(&mut self, min: TransactionsKey, max: TransactionsKey) -> Iter<Transaction> {
         self.db.ord_range(min, max)
     }
 
-    pub fn scan_prefix<T: DeserializeOwned>(&mut self, prefix: TransactionsKey) -> Iter<T> {
+    pub fn scan_prefix(&mut self, prefix: TransactionsKey) -> Iter<Transaction> {
         self.db.ord_scan_prefix(prefix)
     }
 }

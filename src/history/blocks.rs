@@ -1,7 +1,6 @@
 use super::db::{Db, Iter, KeyMaker};
 use crate::model::{Block, BlockHeight};
 use anyhow::{Context, Result};
-use serde::de::DeserializeOwned;
 use tracing::{debug, info};
 
 #[derive(Debug, Default)]
@@ -62,11 +61,11 @@ impl Blocks {
         self.last.as_ref().unwrap()
     }
 
-    pub fn range<T: DeserializeOwned>(&mut self, min: BlocksKey, max: BlocksKey) -> Iter<T> {
+    pub fn range(&mut self, min: BlocksKey, max: BlocksKey) -> Iter<Block> {
         self.db.ord_range(min, max)
     }
 
-    pub fn scan_prefix<T: DeserializeOwned>(&mut self, prefix: BlocksKey) -> Iter<T> {
+    pub fn scan_prefix(&mut self, prefix: BlocksKey) -> Iter<Block> {
         self.db.ord_scan_prefix(prefix)
     }
 }

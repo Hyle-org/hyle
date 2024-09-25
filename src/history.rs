@@ -133,9 +133,7 @@ impl History {
             .route("/proof/:tx_hash", get(api::get_proof_with_hash))
             // contract
             .route("/contracts", get(api::get_contracts))
-            .route("/contract/last", get(api::get_last_contract))
-            .route("/contracts/:name", get(api::get_contracts_with_name))
-            .route("/contract/:block_height/:tx_index", get(api::get_contract))
+            .route("/contract/:name", get(api::get_contract))
     }
 
     async fn handle_block(&mut self, block: Block) {
@@ -376,29 +374,48 @@ mod tests {
 
         contracts.put(BlockHeight(2), 3, &tx_hash, &contract)?;
 
-        let last = contracts.get(BlockHeight(2), 3)?.expect("last contract");
-        assert!(last.block_height == BlockHeight(2));
-        assert!(last.tx_index == 3);
+        let contract = contracts.get(&contract_name).expect("contract with name");
+        assert!(contract.is_some());
+        let contract = contract.unwrap();
+        assert_eq!(contract.block_height, BlockHeight(2));
+        assert_eq!(contract.tx_index, 3);
 
-        let last = contracts.last()?.expect("last contract");
-        assert!(last.block_height == BlockHeight(2));
-        assert!(last.tx_index == 3);
+        let contract_name = "c2".to_string();
+        let contract = RegisterContractTransaction {
+            contract_name: ContractName(contract_name.clone()),
+            owner: "owner".to_string(),
+            program_id: vec![2, 4, 6],
+            verifier: "verifier".to_string(),
+            state_digest: StateDigest(vec![5, 7, 8]),
+        };
+        contracts.put(BlockHeight(4), 6, &tx_hash, &contract)?;
 
-        let unknown = contracts.get(BlockHeight(8), 6)?;
+        let unknown = contracts.get("c42")?;
         assert!(unknown.is_none());
 
-        let iter = contracts
-            .get_with_name(&contract_name)
-            .expect("contracts with name");
-        let mut found = false;
-        for item in iter {
+        let mut found = 0;
+        for (i, item) in contracts.all().enumerate() {
             let elem = item?;
-            let contract = elem.value()?;
-            assert!(contract.block_height == BlockHeight(2));
-            assert_eq!(contract.tx_hash, tx_hash);
-            found = true;
+            match i {
+                0 => {
+                    assert_eq!(elem.key(), Some("c1"));
+                    let c = elem.value()?;
+                    assert_eq!(c.block_height, BlockHeight(2));
+                    assert_eq!(c.tx_index, 3);
+                    found += 1;
+                }
+                1 => {
+                    assert_eq!(elem.key(), Some("c2"));
+                    let c = elem.value()?;
+                    assert_eq!(c.block_height, BlockHeight(4));
+                    assert_eq!(c.tx_index, 6);
+                    found += 1;
+                }
+                _ => unreachable!(),
+            }
         }
-        assert!(found, "get_with_name should return the contract");
+        assert!(found == 2);
+
         Ok(())
     }
 
