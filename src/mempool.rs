@@ -7,7 +7,7 @@ use crate::{
     model::{Hashable, SharedRunContext, Transaction},
     p2p::network::{OutboundMessage, SignedWithId},
     rest::endpoints::RestApiMessage,
-    utils::{conf::SharedConf, crypto::SharedBlstCrypto, modules::Module},
+    utils::{crypto::SharedBlstCrypto, modules::Module},
     validator_registry::{ValidatorRegistry, ValidatorRegistryNetMessage},
 };
 use anyhow::{Context, Result};
@@ -63,11 +63,7 @@ impl Module for Mempool {
     }
 
     fn build(ctx: &SharedRunContext) -> Result<Self> {
-        Ok(Mempool::new(
-            ctx.bus.new_handle(),
-            ctx.config.clone(),
-            ctx.crypto.clone(),
-        ))
+        Ok(Mempool::new(ctx))
     }
 
     fn run(&mut self, _ctx: Self::Context) -> impl futures::Future<Output = Result<()>> + Send {
@@ -76,12 +72,12 @@ impl Module for Mempool {
 }
 
 impl Mempool {
-    pub fn new(bus: SharedMessageBus, config: SharedConf, crypto: SharedBlstCrypto) -> Mempool {
+    pub fn new(ctx: &SharedRunContext) -> Mempool {
         Mempool {
-            bus,
-            metrics: MempoolMetrics::global(&config),
-            crypto,
-            validators: ValidatorRegistry::default(),
+            bus: ctx.bus.new_handle(),
+            metrics: MempoolMetrics::global(&ctx.config),
+            crypto: ctx.crypto.clone(),
+            validators: ctx.validator_registry.share(),
             pending_txs: vec![],
             pending_batches: HashMap::new(),
             committed_batches: vec![],

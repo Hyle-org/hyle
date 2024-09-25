@@ -12,10 +12,11 @@ use hyle::{
     rest::{RestApi, RestApiRunContext},
     tools::mock_workflow::MockWorkflowHandler,
     utils::{
-        conf::{self},
+        conf,
         crypto::BlstCrypto,
         modules::{Module, ModulesHandler},
     },
+    validator_registry::ValidatorRegistry,
 };
 use std::{path::Path, sync::Arc};
 use tracing::{debug, error, info, level_filters::LevelFilter};
@@ -87,11 +88,14 @@ async fn main() -> Result<()> {
 
     let data_directory = data_directory.to_path_buf();
 
+    let validator_registry = ValidatorRegistry::new();
+
     let ctx = Arc::new(RunContext {
         bus,
         config,
         crypto,
         data_directory,
+        validator_registry,
     });
 
     let history = History::build(&ctx)?;

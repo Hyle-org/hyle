@@ -3,6 +3,7 @@
 use std::{
     collections::HashMap,
     fmt::{self, Debug, Display},
+    sync::{Arc, RwLock},
 };
 
 use anyhow::{Error, Result};
@@ -13,7 +14,7 @@ use tracing::{debug, info, warn};
 use crate::{
     bus::BusMessage,
     p2p::network::SignedWithId,
-    utils::{crypto::BlstCrypto, vec_utils::SequenceOption},
+    utils::{crypto::BlstCrypto, serde::arc_rwlock_serde, vec_utils::SequenceOption},
 };
 
 #[derive(Serialize, Deserialize, Clone, Encode, Decode, Default, Eq, PartialEq)]
@@ -49,14 +50,28 @@ pub enum ValidatorRegistryNetMessage {
 impl BusMessage for ValidatorRegistryNetMessage {}
 
 #[derive(Serialize, Deserialize, Encode, Decode)]
-pub struct ValidatorRegistry {
+pub struct ValidatorRegistryInner {
     pub validators: HashMap<ValidatorId, ConsensusValidator>,
+}
+
+#[derive(Serialize, Deserialize, Encode, Decode)]
+pub struct ValidatorRegistry {
+    #[serde(with = "arc_rwlock_serde")]
+    pub inner: Arc<RwLock<ValidatorRegistryInner>>,
 }
 
 impl ValidatorRegistry {
     pub fn new() -> ValidatorRegistry {
-        ValidatorRegistry {
-            validators: Default::default(),
+        Self {
+            inner: Arc::new(RwLock::new(ValidatorRegistryInner {
+                validators: Default::default(),
+            })),
+        }
+    }
+
+    pub fn share(&self) -> Self {
+        Self {
+            inner: Arc::clone(&self.inner),
         }
     }
 
@@ -69,17 +84,18 @@ impl ValidatorRegistry {
     fn add_validator(&mut self, id: ValidatorId, validator: ConsensusValidator) {
         info!("Adding validator '{}'", id);
         debug!("{:?}", validator);
-        self.validators.insert(id, validator);
+        self.inner.write().unwrap().validators.insert(id, validator);
     }
 
     pub fn check_signed<T>(&self, msg: &SignedWithId<T>) -> Result<bool, Error>
     where
         T: Encode + Debug + Clone,
     {
+        let s = &self.inner.read().unwrap().validators;
         let validators = msg
             .validators
             .iter()
-            .map(|v| self.validators.get(v))
+            .map(|v| s.get(v))
             .collect::<Vec<Option<_>>>()
             .sequence();
         match validators {

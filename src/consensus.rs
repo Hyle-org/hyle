@@ -104,10 +104,11 @@ impl Module for Consensus {
 
     type Context = SharedRunContext;
 
-    fn build(_ctx: &Self::Context) -> Result<Self> {
+    fn build(ctx: &Self::Context) -> Result<Self> {
+        // FIXME load from disk create a new ValidatorRegistry instead of using shared one
         Ok(Consensus::load_from_disk().unwrap_or_else(|_| {
             warn!("Failed to load consensus state from disk, using a default one");
-            Consensus::default()
+            Consensus::new(ctx)
         }))
     }
 
@@ -117,6 +118,17 @@ impl Module for Consensus {
 }
 
 impl Consensus {
+    fn new(ctx: &SharedRunContext) -> Self {
+        Consensus {
+            validators: ctx.validator_registry.share(),
+            bft_round_state: BFTRoundState::default(),
+            blocks: vec![],
+            batch_id: 0,
+            tx_batches: HashMap::new(),
+            current_block_batches: vec![],
+        }
+    }
+
     fn add_block(&mut self, block: Block) {
         self.blocks.push(block);
     }
@@ -465,18 +477,5 @@ impl Consensus {
         msg: ConsensusNetMessage,
     ) -> Result<SignedWithId<ConsensusNetMessage>> {
         crypto.sign(msg)
-    }
-}
-
-impl Default for Consensus {
-    fn default() -> Self {
-        Self {
-            blocks: vec![Block::default()],
-            validators: ValidatorRegistry::default(),
-            batch_id: 0,
-            tx_batches: HashMap::new(),
-            current_block_batches: vec![],
-            bft_round_state: BFTRoundState::default(),
-        }
     }
 }
