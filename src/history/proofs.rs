@@ -15,7 +15,7 @@ pub struct ProofsKey(pub BlockHeight, pub usize);
 impl KeyMaker for ProofsKey {
     fn make_key<'a>(&self, writer: &'a mut String) -> &'a str {
         use std::fmt::Write;
-        _ = write!(writer, "{:.0020}:{:.0020}", self.0 .0, self.1);
+        _ = write!(writer, "{:08x}:{:08x}", self.0 .0, self.1);
         writer.as_str()
     }
 }

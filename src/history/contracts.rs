@@ -21,14 +21,14 @@ impl KeyMaker for ContractsKey {
     }
 }
 
-/// ContractsKeyAlt contains a `name`
+/// ContractsKeyAlt contains a `name` and a `tx_hash`
 #[derive(Debug, Default)]
-pub struct ContractsKeyAlt<'b>(pub &'b str);
+pub struct ContractsKeyAlt<'b>(pub &'b str, pub &'b str);
 
 impl<'b> KeyMaker for ContractsKeyAlt<'b> {
     fn make_key<'a>(&self, writer: &'a mut String) -> &'a str {
         use std::fmt::Write;
-        _ = write!(writer, "{}", self.0);
+        _ = write!(writer, "{}:{}", self.0, self.1);
         writer.as_str()
     }
 }
@@ -78,7 +78,7 @@ impl Contracts {
         info!("storing contract {}:{}", block_height, tx_index);
         self.db.put(
             ContractsKey(block_height, tx_index),
-            ContractsKeyAlt(tx_hash),
+            ContractsKeyAlt(&data.contract_name.0, tx_hash),
             &data,
         )
     }
@@ -88,7 +88,7 @@ impl Contracts {
     }
 
     pub fn get_with_name(&mut self, name: &str) -> Option<Iter<Contract>> {
-        self.db.alt_scan_prefix(ContractsKeyAlt(name))
+        self.db.alt_scan_prefix(name)
     }
 
     pub fn last(&self) -> Result<Option<Contract>> {
