@@ -4,8 +4,9 @@ use crate::{
     bus::SharedMessageBus,
     bus::{bus_client, command_response::Query},
     history::History,
+    model::ContractName,
     model::SharedRunContext,
-    node_state::{model::Contract, NodeStateQuery},
+    node_state::model::Contract,
     tools::mock_workflow::RunScenario,
     utils::conf::SharedConf,
     utils::modules::Module,
@@ -28,7 +29,7 @@ bus_client! {
 struct RestBusClient {
     sender(RestApiMessage),
     sender(RunScenario),
-    sender(Query<NodeStateQuery, Contract>),
+    sender(Query<ContractName, Contract>),
 }
 }
 
@@ -101,12 +102,12 @@ pub async fn rest_server(
 
 impl Clone for RouterState {
     fn clone(&self) -> Self {
-        use crate::utils::generic_tuple::Pick;
+        use crate::utils::static_type_map::Pick;
         Self {
             bus: RestBusClient::new(
                 Pick::<tokio::sync::broadcast::Sender<RestApiMessage>>::get(&self.bus).clone(),
                 Pick::<tokio::sync::broadcast::Sender<RunScenario>>::get(&self.bus).clone(),
-                Pick::<tokio::sync::broadcast::Sender<Query<NodeStateQuery, Contract>>>::get(
+                Pick::<tokio::sync::broadcast::Sender<Query<ContractName, Contract>>>::get(
                     &self.bus,
                 )
                 .clone(),

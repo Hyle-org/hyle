@@ -3,11 +3,10 @@ use crate::bus::BusClientSender;
 use crate::bus::BusMessage;
 use crate::model::Transaction;
 use crate::model::{BlobTransaction, ContractName};
-use crate::tools::mock_workflow::RunScenario;
-use crate::{
-    model::{Hashable, ProofTransaction, RegisterContractTransaction, TransactionData, TxHash},
-    node_state::NodeStateQuery,
+use crate::model::{
+    Hashable, ProofTransaction, RegisterContractTransaction, TransactionData, TxHash,
 };
+use crate::tools::mock_workflow::RunScenario;
 use anyhow::anyhow;
 use axum::{
     extract::{Path, State},
@@ -119,11 +118,7 @@ pub async fn get_contract(
     State(mut state): State<RouterState>,
 ) -> Result<impl IntoResponse, AppError> {
     let name_clone = name.clone();
-    match state
-        .bus
-        .request(NodeStateQuery::GetContract { name })
-        .await
-    {
+    match state.bus.request(name).await {
         Ok(contract) => Ok(Json(contract)),
         _ => Err(AppError(
             StatusCode::INTERNAL_SERVER_ERROR,

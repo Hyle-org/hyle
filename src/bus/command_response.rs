@@ -10,18 +10,45 @@ use crate::bus::BusClientSender;
 
 pub const CLIENT_TIMEOUT_SECONDS: u64 = 10;
 
-pub trait NeedAnswer<Answer>: BusMessage {}
+#[derive(Clone, Debug)]
+pub struct Query<Type, Answer>(Arc<Mutex<Option<InnerQuery<Type, Answer>>>>);
+impl<Type, Answer> Query<Type, Answer> {
+    pub fn take(self) -> Result<InnerQuery<Type, Answer>> {
+        match self.0.try_lock() {
+            Ok(mut guard) => match guard.take() {
+                Some(inner) => Ok(inner),
+                None => bail!("Query already answered"),
+            },
+            Err(_) => bail!("Query already answered"),
+        }
+    }
+}
 
-#[derive(Clone)]
-pub struct Query<Type, Answer> {
-    pub callback: Arc<Mutex<Option<tokio::sync::oneshot::Sender<Result<Answer>>>>>,
+#[derive(Debug)]
+pub struct InnerQuery<Type, Answer> {
+    pub callback: tokio::sync::oneshot::Sender<Result<Answer>>,
     pub data: Type,
 }
 impl<Cmd, Res> BusMessage for Query<Cmd, Res> {}
+impl<Cmd, Res> InnerQuery<Cmd, Res> {
+    pub fn answer(self, data: Res) -> Result<()> {
+        self.callback
+            .send(Ok(data))
+            .map_err(|_| anyhow::anyhow!("Error while sending response"))
+    }
+    pub fn bail<T>(self, error: T) -> Result<()>
+    where
+        T: Into<anyhow::Error>,
+    {
+        self.callback
+            .send(Err(error.into()))
+            .map_err(|_| anyhow::anyhow!("Error while sending response"))
+    }
+}
 
 pub trait CmdRespClient<Cmd, Res>
 where
-    Cmd: NeedAnswer<Res> + Clone + Send + Sync + 'static,
+    Cmd: Clone + Send + Sync + 'static,
     Res: Clone + Send + Sync + 'static,
 {
     fn request(&mut self, cmd: Cmd) -> impl std::future::Future<Output = Result<Res>> + Send;
@@ -29,15 +56,15 @@ where
 
 impl<Cmd, Res, T: BusClientSender<Query<Cmd, Res>> + Send> CmdRespClient<Cmd, Res> for T
 where
-    Cmd: NeedAnswer<Res> + Clone + Send + Sync + 'static,
+    Cmd: Clone + Send + Sync + 'static,
     Res: Clone + Send + Sync + 'static,
 {
     async fn request(&mut self, cmd: Cmd) -> Result<Res> {
         let (tx, rx) = tokio::sync::oneshot::channel();
-        let query_cmd = Query {
-            callback: Arc::new(Mutex::new(Some(tx))),
+        let query_cmd = Query(Arc::new(Mutex::new(Some(InnerQuery {
+            callback: tx,
             data: cmd,
-        };
+        }))));
 
         _ = self.send(query_cmd);
 
@@ -60,19 +87,32 @@ macro_rules! handle_messages {
         }
     };
 
-    (bus($bus:expr) command_response<$command:ident, $response:ty> $res:pat => $handler:block $($rest:tt)*) => {{
+    (bus($bus:expr) command_response<$command:ty, $response:ty> $res:pat => $handler:block $($rest:tt)*) => {{
         use paste::paste;
         use $crate::bus::command_response::*;
         #[allow(unused_imports)]
-        use $crate::utils::generic_tuple::Pick;
+        use $crate::utils::static_type_map::Pick;
         paste! {
             handle_messages! {
                 bus($bus) $($rest)*
-                Ok(_value) = unsafe { &mut *Pick::<tokio::sync::broadcast::Receiver<Query<$command, $response>>>::splitting_get_mut(&mut $bus) }.recv() => {
-                    let $res = _value.data;
-                    let res = $handler;
-                    if let Some(cb) = _value.callback.lock().await.take() {
-                        cb.send(res).unwrap();
+                Ok(_raw_query) = unsafe { &mut *Pick::<tokio::sync::broadcast::Receiver<Query<$command, $response>>>::splitting_get_mut(&mut $bus) }.recv() => {
+                    if let Ok(mut _value) = _raw_query.take() {
+                        let $res = &mut _value.data;
+                        let res: Result<$response> = $handler;
+                        match res {
+                            Ok(res) => {
+                                if let Err(e) = _value.answer(res) {
+                                    tracing::error!("Error while answering query: {}", e);
+                                }
+                            }
+                            Err(e) => {
+                                if let Err(e) = _value.bail(e) {
+                                    tracing::error!("Error while answering query: {}", e);
+                                }
+                            }
+                        }
+                    } else {
+                        tracing::error!("Query already answered");
                     }
                 }
             }
@@ -82,7 +122,7 @@ macro_rules! handle_messages {
     (bus($bus:expr) listen<$message:ty> $res:pat => $handler:block $($rest:tt)*) => {{
         use paste::paste;
         #[allow(unused_imports)]
-        use $crate::utils::generic_tuple::Pick;
+        use $crate::utils::static_type_map::Pick;
         paste! {
             handle_messages! {
                 bus($bus) $($rest)*
@@ -104,3 +144,36 @@ macro_rules! handle_messages {
 }
 
 pub(crate) use handle_messages;
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::bus::{bus_client, SharedMessageBus};
+
+    bus_client!(
+        struct TestBusClient {
+            sender(Query<i32, u8>),
+            receiver(Query<i32, u8>),
+        }
+    );
+
+    #[tokio::test]
+    async fn test_cmd_resp() {
+        let shared_bus = SharedMessageBus::default();
+        let mut sender = TestBusClient::new_from_bus(shared_bus.new_handle()).await;
+        let mut receiver = TestBusClient::new_from_bus(shared_bus).await;
+
+        // Spawn a task to handle the query
+        tokio::spawn(async move {
+            handle_messages! {
+                on_bus receiver,
+                command_response<i32, u8> _ => {
+                    Ok(3)
+                }
+            }
+        });
+        let res = sender.request(42);
+
+        assert_eq!(res.await.unwrap(), 3);
+    }
+}

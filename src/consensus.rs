@@ -428,13 +428,13 @@ impl Consensus {
         let is_master = config.peers.is_empty();
 
         let mut bus = ConsensusBusClient::new_from_bus(shared_bus.new_handle()).await;
-        let bus2 = ConsensusBusClient::new_from_bus(shared_bus).await;
         if is_master {
             info!(
                 "No peers configured, starting as master generating blocks every {} seconds",
                 interval
             );
 
+            let bus2 = ConsensusBusClient::new_from_bus(shared_bus).await;
             tokio::spawn(async move {
                 loop {
                     sleep(Duration::from_secs(interval)).await;

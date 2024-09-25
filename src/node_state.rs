@@ -1,12 +1,7 @@
 //! State required for participation in consensus by the node.
 
 use crate::{
-    bus::BusMessage,
-    bus::{
-        bus_client,
-        command_response::{NeedAnswer, Query},
-        SharedMessageBus,
-    },
+    bus::{bus_client, command_response::Query, SharedMessageBus},
     consensus::ConsensusEvent,
     handle_messages,
     model::{
@@ -29,16 +24,9 @@ pub mod model;
 mod ordered_tx_map;
 mod verifiers;
 
-#[derive(Debug, Clone)]
-pub enum NodeStateQuery {
-    GetContract { name: ContractName },
-}
-impl NeedAnswer<Contract> for NodeStateQuery {}
-impl BusMessage for NodeStateQuery {}
-
 bus_client! {
 struct NodeStateBusClient {
-    receiver(Query<NodeStateQuery, Contract>),
+    receiver(Query<ContractName, Contract>),
     receiver(ConsensusEvent),
 }
 }
@@ -88,20 +76,15 @@ impl NodeState {
 
         handle_messages! {
             on_bus self.bus,
-            command_response<NodeStateQuery, Contract> cmd => {
-                self.handle_command(cmd)
+            command_response<ContractName, Contract> cmd => {
+                match self.contracts.get(cmd) {
+                    Some(contract) => Ok(contract.clone()),
+                    None => Err(anyhow::anyhow!("Contract not found")),
+                }
             }
             listen<ConsensusEvent> event => {
                 self.handle_event(event);
             }
-        }
-    }
-    fn handle_command(&mut self, command: NodeStateQuery) -> Result<Contract> {
-        match command {
-            NodeStateQuery::GetContract { name } => match self.contracts.get(&name) {
-                Some(contract) => Ok(contract.clone()),
-                None => bail!("Contract {} not found", name),
-            },
         }
     }
 

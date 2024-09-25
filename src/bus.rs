@@ -1,6 +1,6 @@
 //! Event bus used for messaging across components asynchronously.
 
-use crate::utils::generic_tuple::Pick;
+use crate::utils::static_type_map::Pick;
 use anymap::{any::Any, Map};
 use std::sync::Arc;
 use tokio::sync::{broadcast, Mutex};
@@ -76,10 +76,10 @@ macro_rules! bus_client {
         use $crate::bus::BusClientReceiver;
         #[allow(unused_imports)]
         use $crate::bus::BusClientSender;
-        use $crate::utils::generic_tuple::generic_tuple;
+        use $crate::utils::static_type_map::static_type_map;
 
         $(#[$meta])*
-        generic_tuple! {
+        static_type_map! {
             struct $name (
                 $(tokio::sync::broadcast::Sender<$sender>,)*
                 $(tokio::sync::broadcast::Receiver<$receiver>,)*

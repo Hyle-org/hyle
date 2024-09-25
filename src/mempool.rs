@@ -2,11 +2,7 @@
 
 use crate::{
     bus::BusMessage,
-    bus::{
-        bus_client,
-        command_response::{NeedAnswer, Query},
-        SharedMessageBus,
-    },
+    bus::{bus_client, command_response::Query, SharedMessageBus},
     consensus::ConsensusEvent,
     handle_messages,
     model::{Hashable, SharedRunContext, Transaction},
@@ -62,7 +58,6 @@ impl BusMessage for MempoolNetMessage {}
 pub enum MempoolCommand {
     CreatePendingBatch { id: String },
 }
-impl NeedAnswer<MempoolResponse> for MempoolCommand {}
 impl BusMessage for MempoolCommand {}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -189,7 +184,7 @@ impl Mempool {
         self.crypto.sign(msg)
     }
 
-    fn handle_command(&mut self, command: MempoolCommand) -> Result<MempoolResponse> {
+    fn handle_command(&mut self, command: &mut MempoolCommand) -> Result<MempoolResponse> {
         match command {
             MempoolCommand::CreatePendingBatch { id } => {
                 info!("Creating pending transaction batch with id {}", id);
@@ -197,7 +192,10 @@ impl Mempool {
                 self.pending_batches.insert(id.clone(), txs.clone());
                 self.metrics.snapshot_batched_tx(self.pending_batches.len());
                 self.metrics.add_batch();
-                Ok(MempoolResponse::PendingBatch { id, txs })
+                Ok(MempoolResponse::PendingBatch {
+                    id: std::mem::take(id),
+                    txs,
+                })
             }
         }
     }
