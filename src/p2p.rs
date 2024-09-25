@@ -23,7 +23,7 @@ impl Module for P2P {
 
     type Context = SharedRunContext;
 
-    fn build(_ctx: &Self::Context) -> Result<Self> {
+    async fn build(_ctx: &Self::Context) -> Result<Self> {
         Ok(P2P {})
     }
 
@@ -61,7 +61,8 @@ pub async fn p2p_server(
                         bus.new_handle(),
                         crypto.clone(),
                         config.clone(),
-                    );
+                    )
+                    .await;
 
                     _ = peer.handshake().await;
                     debug!("Handshake done !");
@@ -103,7 +104,7 @@ pub async fn p2p_server(
                     .map(|a| a.to_string())
                     .unwrap_or("no address".to_string())
             );
-            let mut peer_server = peer::Peer::new(id, socket, bus, crypto, conf);
+            let mut peer_server = peer::Peer::new(id, socket, bus, crypto, conf).await;
             _ = peer_server.handshake().await;
             debug!("Handshake done !");
             match peer_server.start().await {

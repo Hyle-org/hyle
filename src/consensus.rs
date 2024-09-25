@@ -10,11 +10,16 @@ use std::{
     path::Path,
     time::Duration,
 };
-use tokio::{sync::broadcast::Sender, time::sleep};
+use tokio::time::sleep;
 use tracing::{info, warn};
 
 use crate::{
-    bus::{command_response::CmdRespClient, BusMessage, SharedMessageBus},
+    bus::BusMessage,
+    bus::{
+        bus_client,
+        command_response::{CmdRespClient, Query},
+        SharedMessageBus,
+    },
     handle_messages,
     mempool::{MempoolCommand, MempoolResponse},
     model::{get_current_timestamp, Block, BlockHash, Hashable, SharedRunContext, Transaction},
@@ -74,10 +79,7 @@ pub struct QuorumCertificate {
 }
 
 impl BFTRoundState {
-    fn finish_round(
-        &mut self,
-        consensus_command_sender: &Sender<ConsensusCommand>,
-    ) -> Result<(), Error> {
+    fn finish_round(&mut self, bus: &ConsensusBusClient) -> Result<(), Error> {
         self.slot += 1;
         self.view = 0;
         self.prepare_votes = HashSet::default();
@@ -85,10 +87,10 @@ impl BFTRoundState {
 
         // TODO: apply new block
         // Applies and add new block to its NodeState
-        _ = consensus_command_sender
+        _ = bus
             .send(ConsensusCommand::GenerateNewBlock)
             .context("Cannot send message over channel")?;
-        _ = consensus_command_sender
+        _ = bus
             .send(ConsensusCommand::SaveOnDisk)
             .context("Cannot send message over channel")?;
         Ok(())
@@ -117,6 +119,18 @@ impl Hashable<ConsensusProposalHash> for ConsensusProposal {
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, PartialEq, Eq, Hash, Default)]
 pub struct ConsensusProposalHash(Vec<u8>);
 
+bus_client! {
+struct ConsensusBusClient {
+    sender(OutboundMessage),
+    sender(ConsensusEvent),
+    sender(ConsensusCommand),
+    sender(Query<MempoolCommand, MempoolResponse>),
+    receiver(ValidatorRegistryNetMessage),
+    receiver(ConsensusCommand),
+    receiver(SignedWithId<ConsensusNetMessage>),
+}
+}
+
 #[derive(Serialize, Deserialize, Encode, Decode)]
 pub struct Consensus {
     validators: ValidatorRegistry,
@@ -138,7 +152,7 @@ impl Module for Consensus {
 
     type Context = SharedRunContext;
 
-    fn build(ctx: &Self::Context) -> Result<Self> {
+    async fn build(ctx: &Self::Context) -> Result<Self> {
         Ok(
             Consensus::load_from_disk(&ctx.data_directory).unwrap_or_else(|_| {
                 warn!("Failed to load consensus state from disk, using a default one");
@@ -268,8 +282,7 @@ impl Consensus {
         &mut self,
         msg: SignedWithId<ConsensusNetMessage>,
         crypto: &BlstCrypto,
-        outbound_sender: &Sender<OutboundMessage>,
-        consensus_command_sender: &Sender<ConsensusCommand>,
+        bus: &ConsensusBusClient,
     ) -> Result<(), Error> {
         if !self.validators.check_signed(&msg)? {
             bail!("Invalid signature for message {:?}", msg);
@@ -353,7 +366,7 @@ impl Consensus {
                 self.bft_round_state.consensus_proposal = consensus_proposal.clone();
 
                 // Broadcasts Prepare message to all validators
-                _ = outbound_sender
+                _ = bus
                     .send(OutboundMessage::broadcast(Self::sign_net_message(
                         crypto,
                         ConsensusNetMessage::Prepare(consensus_proposal),
@@ -374,7 +387,7 @@ impl Consensus {
                 let vote = self.verify_consensus_proposal(consensus_proposal);
 
                 // Responds PrepareVote message to leader with validator's vote on this proposal
-                _ = outbound_sender
+                _ = bus
                     .send(OutboundMessage::send(
                         self.leader_id(),
                         Self::sign_net_message(
@@ -435,7 +448,7 @@ impl Consensus {
                     // else send Confirm message to validators
 
                     // Broadcast the *Prepare* Quorum Certificate to all validators
-                    _ = outbound_sender
+                    _ = bus
                         .send(OutboundMessage::broadcast(Self::sign_net_message(
                             crypto,
                             ConsensusNetMessage::Confirm(
@@ -478,7 +491,7 @@ impl Consensus {
                 }
 
                 // Responds ConfirmAck to leader
-                _ = outbound_sender
+                _ = bus
                     .send(OutboundMessage::send(
                         self.leader_id(),
                         Self::sign_net_message(
@@ -540,7 +553,7 @@ impl Consensus {
                     );
 
                     // Broadcast the *Commit* Quorum Certificate to all validators
-                    _ = outbound_sender
+                    _ = bus
                         .send(OutboundMessage::broadcast(Self::sign_net_message(
                             crypto,
                             ConsensusNetMessage::Commit(
@@ -553,8 +566,7 @@ impl Consensus {
                         )?;
 
                     // Finishes the bft round
-                    self.bft_round_state
-                        .finish_round(consensus_command_sender)?;
+                    self.bft_round_state.finish_round(bus)?;
                 }
                 // TODO(?): Update behaviour when having more ?
                 Ok(())
@@ -592,13 +604,12 @@ impl Consensus {
                 }
 
                 // Finishes the bft round
-                self.bft_round_state
-                    .finish_round(consensus_command_sender)?;
+                self.bft_round_state.finish_round(bus)?;
 
                 // Sends message to next leader to start new slot
                 if self.is_leader() {
                     // Send Prepare message to all validators
-                    _ = outbound_sender
+                    _ = bus
                         .send(OutboundMessage::send(
                             self.get_next_leader(),
                             Self::sign_net_message(crypto, ConsensusNetMessage::StartNewSlot)?,
@@ -615,35 +626,29 @@ impl Consensus {
     async fn handle_command(
         &mut self,
         msg: ConsensusCommand,
-        bus: &SharedMessageBus,
+        bus: &mut ConsensusBusClient,
         _crypto: &BlstCrypto,
-        consensus_event_sender: &Sender<ConsensusEvent>,
-        _outbound_sender: &Sender<OutboundMessage>,
     ) -> Result<()> {
         match msg {
             ConsensusCommand::GenerateNewBlock => {
                 self.batch_id += 1;
-                if let Some(res) = bus
+                match bus
                     .request(MempoolCommand::CreatePendingBatch {
                         id: self.batch_id.to_string(),
                     })
                     .await?
                 {
-                    match res {
-                        MempoolResponse::PendingBatch { id, txs } => {
-                            info!("Received pending batch {} with {} txs", &id, &txs.len());
-                            self.tx_batches.insert(id.clone(), txs);
-                            let block = self.new_block();
-                            // send to internal bus
-                            _ = consensus_event_sender
-                                .send(ConsensusEvent::CommitBlock {
-                                    batch_id: id,
-                                    block: block.clone(),
-                                })
-                                .context(
-                                    "Failed to send ConsensusEvent::CommitBlock msg on the bus",
-                                )?;
-                        }
+                    MempoolResponse::PendingBatch { id, txs } => {
+                        info!("Received pending batch {} with {} txs", &id, &txs.len());
+                        self.tx_batches.insert(id.clone(), txs);
+                        let block = self.new_block();
+                        // send to internal bus
+                        _ = bus
+                            .send(ConsensusEvent::CommitBlock {
+                                batch_id: id,
+                                block: block.clone(),
+                            })
+                            .context("Failed to send ConsensusEvent::CommitBlock msg on the bus")?;
                     }
                 }
                 Ok(())
@@ -658,28 +663,25 @@ impl Consensus {
 
     pub async fn start(
         &mut self,
-        bus: SharedMessageBus,
+        shared_bus: SharedMessageBus,
         config: SharedConf,
         crypto: SharedBlstCrypto,
     ) -> Result<()> {
         // let interval = config.storage.interval;
-        // let node_is_alone = config.peers.is_empty();
-        // FIXME: should be removed
-        let temp_outbound_sender = bus.sender::<OutboundMessage>().await;
-        let outbound_sender = bus.sender::<OutboundMessage>().await;
-        let consensus_event_sender = bus.sender::<ConsensusEvent>().await;
-        let consensus_command_sender = bus.sender::<ConsensusCommand>().await;
+        // let is_master = config.peers.is_empty();
+        let mut bus = ConsensusBusClient::new_from_bus(shared_bus.new_handle()).await;
 
         // FIXME: node-2 sera le validateur qui déclanchera le démarrage du premier slot
         if config.id == ValidatorId("node-2".to_owned()) {
             let next_leader = self.get_next_leader();
+            let bus2 = ConsensusBusClient::new_from_bus(shared_bus).await;
             if let Ok(signed_message) =
                 Self::sign_net_message(&crypto, ConsensusNetMessage::StartNewSlot)
             {
                 tokio::spawn(async move {
                     // FIXME: on attend qlq secondes pour laisser le temps au bus de setup l'écoute
                     sleep(Duration::from_secs(2)).await;
-                    _ = temp_outbound_sender
+                    _ = bus2
                         .send(OutboundMessage::send(next_leader, signed_message))
                         .log_error(
                             "Failed to send ConsensusNetMessage::StartNewSlot msg on the bus",
@@ -691,7 +693,7 @@ impl Consensus {
         handle_messages! {
             on_bus bus,
             listen<ConsensusCommand> cmd => {
-                match self.handle_command(cmd, &bus, &crypto, &consensus_event_sender, &outbound_sender).await{
+                match self.handle_command(cmd, &mut bus, &crypto).await{
                     Ok(_) => (),
                     Err(e) => warn!("Error while handling consensus command: {:#}", e),
                 }
@@ -700,7 +702,7 @@ impl Consensus {
                 // FIXME: remove info message
                 info!("[{}] Received consensus message: {:?}", config.id, cmd);
                 sleep(Duration::from_secs(1)).await;
-                match self.handle_net_message(cmd, &crypto, &outbound_sender, &consensus_command_sender) {
+                match self.handle_net_message(cmd, &crypto, &bus) {
                     Ok(_) => (),
                     Err(e) => warn!("Error while handling consensus net message: {:#}", e),
                 }

@@ -13,6 +13,7 @@ use super::network::HandshakeNetMessage;
 use super::network::OutboundMessage;
 use super::network::{NetMessage, Version};
 use super::stream::send_net_message;
+use crate::bus::bus_client;
 use crate::bus::SharedMessageBus;
 use crate::consensus::ConsensusNetMessage;
 use crate::handle_messages;
@@ -26,10 +27,19 @@ use crate::validator_registry::ConsensusValidator;
 use crate::validator_registry::ValidatorId;
 use crate::validator_registry::ValidatorRegistryNetMessage;
 
+bus_client! {
+struct PeerBusClient {
+    sender(SignedWithId<MempoolNetMessage>),
+    sender(SignedWithId<ConsensusNetMessage>),
+    sender(ValidatorRegistryNetMessage),
+    receiver(OutboundMessage),
+}
+}
+
 pub struct Peer {
     id: u64,
     stream: TcpStream,
-    bus: SharedMessageBus,
+    bus: PeerBusClient,
     last_pong: SystemTime,
     conf: SharedConf,
     bloom_filter: Bloom<Vec<u8>>,
@@ -45,7 +55,7 @@ enum Cmd {
 }
 
 impl Peer {
-    pub fn new(
+    pub async fn new(
         id: u64,
         stream: TcpStream,
         bus: SharedMessageBus,
@@ -58,7 +68,7 @@ impl Peer {
         Peer {
             id,
             stream,
-            bus,
+            bus: PeerBusClient::new_from_bus(bus).await,
             last_pong: SystemTime::now(),
             conf,
             bloom_filter,
@@ -127,16 +137,12 @@ impl Peer {
             NetMessage::MempoolMessage(mempool_msg) => {
                 debug!("Received new mempool net message {:?}", mempool_msg);
                 self.bus
-                    .sender::<SignedWithId<MempoolNetMessage>>()
-                    .await
                     .send(mempool_msg)
                     .context("Receiving mempool net message")?;
             }
             NetMessage::ConsensusMessage(consensus_msg) => {
                 debug!("Received new consensus net message {:?}", consensus_msg);
                 self.bus
-                    .sender::<SignedWithId<ConsensusNetMessage>>()
-                    .await
                     .send(consensus_msg)
                     .context("Receiving consensus net message")?;
             }
@@ -146,8 +152,6 @@ impl Peer {
                     validator_registry_msg
                 );
                 self.bus
-                    .sender::<ValidatorRegistryNetMessage>()
-                    .await
                     .send(validator_registry_msg)
                     .context("Receiving validator registry net message")?;
             }

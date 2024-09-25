@@ -1,72 +1,76 @@
+use std::sync::Arc;
 use std::time::Duration;
 
 use super::BusMessage;
-use super::SharedMessageBus;
-use anyhow::anyhow;
 use anyhow::bail;
 use anyhow::Result;
+use tokio::sync::Mutex;
+
+use crate::bus::BusClientSender;
 
 pub const CLIENT_TIMEOUT_SECONDS: u64 = 10;
 
-pub trait NeedAnswer<Answer>: BusMessage {}
-
-#[derive(Clone)]
-pub struct Query<Inner> {
-    pub id: usize,
-    pub data: Inner,
-}
-impl<T> BusMessage for Query<T> where T: BusMessage {}
-
-#[derive(Clone)]
-pub struct QueryResponse<Inner> {
-    pub id: usize,
-    // anyhow err is not cloneable...
-    pub data: Result<Option<Inner>, String>,
-}
-impl<T> BusMessage for QueryResponse<T> where T: BusMessage {}
-
-pub trait CmdRespClient {
-    fn request<
-        Cmd: NeedAnswer<Res> + Clone + Send + Sync + 'static,
-        Res: BusMessage + Clone + Send + Sync + 'static,
-    >(
-        &self,
-        cmd: Cmd,
-    ) -> impl std::future::Future<Output = Result<Option<Res>>> + Send;
+#[derive(Clone, Debug)]
+pub struct Query<Type, Answer>(Arc<Mutex<Option<InnerQuery<Type, Answer>>>>);
+impl<Type, Answer> Query<Type, Answer> {
+    pub fn take(self) -> Result<InnerQuery<Type, Answer>> {
+        match self.0.try_lock() {
+            Ok(mut guard) => match guard.take() {
+                Some(inner) => Ok(inner),
+                None => bail!("Query already answered"),
+            },
+            Err(_) => bail!("Query already answered"),
+        }
+    }
 }
 
-impl CmdRespClient for SharedMessageBus {
-    async fn request<
-        Cmd: NeedAnswer<Res> + Clone + Send + Sync + 'static,
-        Res: BusMessage + Clone + Send + Sync + 'static,
-    >(
-        &self,
-        cmd: Cmd,
-    ) -> Result<Option<Res>> {
-        //TODO: Reminder/whatever: there is a lock on the whole counters map
-        let next_id = self.next_id::<Cmd>().await;
+#[derive(Debug)]
+pub struct InnerQuery<Type, Answer> {
+    pub callback: tokio::sync::oneshot::Sender<Result<Answer>>,
+    pub data: Type,
+}
+impl<Cmd, Res> BusMessage for Query<Cmd, Res> {}
+impl<Cmd, Res> InnerQuery<Cmd, Res> {
+    pub fn answer(self, data: Res) -> Result<()> {
+        self.callback
+            .send(Ok(data))
+            .map_err(|_| anyhow::anyhow!("Error while sending response"))
+    }
+    pub fn bail<T>(self, error: T) -> Result<()>
+    where
+        T: Into<anyhow::Error>,
+    {
+        self.callback
+            .send(Err(error.into()))
+            .map_err(|_| anyhow::anyhow!("Error while sending response"))
+    }
+}
 
-        let query_cmd = Query {
-            id: next_id,
+pub trait CmdRespClient<Cmd, Res>
+where
+    Cmd: Clone + Send + Sync + 'static,
+    Res: Clone + Send + Sync + 'static,
+{
+    fn request(&mut self, cmd: Cmd) -> impl std::future::Future<Output = Result<Res>> + Send;
+}
+
+impl<Cmd, Res, T: BusClientSender<Query<Cmd, Res>> + Send> CmdRespClient<Cmd, Res> for T
+where
+    Cmd: Clone + Send + Sync + 'static,
+    Res: Clone + Send + Sync + 'static,
+{
+    async fn request(&mut self, cmd: Cmd) -> Result<Res> {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let query_cmd = Query(Arc::new(Mutex::new(Some(InnerQuery {
+            callback: tx,
             data: cmd,
-        };
+        }))));
 
-        let mut receiver = self.receiver::<QueryResponse<Res>>().await;
+        _ = self.send(query_cmd);
 
-        _ = self.sender().await.send(query_cmd);
-
-        match tokio::time::timeout(Duration::from_secs(CLIENT_TIMEOUT_SECONDS), async move {
-            loop {
-                if let Ok(resp) = receiver.recv().await {
-                    if resp.id == next_id {
-                        return resp.data.map_err(|err_str| anyhow!(err_str));
-                    }
-                }
-            }
-        })
-        .await
-        {
-            Ok(res) => res,
+        match tokio::time::timeout(Duration::from_secs(CLIENT_TIMEOUT_SECONDS), rx).await {
+            Ok(Ok(res)) => res,
+            Ok(Err(e)) => bail!("Error while calling topic: {}", e),
             Err(timeouterror) => bail!(
                 "Timeout triggered while calling topic with query: {}",
                 timeouterror.to_string()
@@ -77,104 +81,99 @@ impl CmdRespClient for SharedMessageBus {
 
 #[macro_export]
 macro_rules! handle_messages {
-    ( on_bus $bus:expr, $($rest:tt)*) => {{
-
-        handle_messages!{
+    (on_bus $bus:expr, $($rest:tt)*) => {
+        handle_messages! {
             bus($bus) $($rest)*
         }
+    };
 
-    }};
-
-    ( bus($bus:expr) command_response<$command:ty, $response:ty> $res:pat => $handler:block $($rest:tt)*) => {{
+    (bus($bus:expr) command_response<$command:ty, $response:ty> $res:pat => $handler:block $($rest:tt)*) => {{
         use paste::paste;
         use $crate::bus::command_response::*;
-
-        // In order to generate a variable with the name server$command$response for each server
+        #[allow(unused_imports)]
+        use $crate::utils::static_type_map::Pick;
         paste! {
-            let mut receiver_query_myvar = $bus.receiver::<Query<$command>>().await;
-            let sender_response_myvar = $bus.sender::<QueryResponse<$response>>().await;
-
             handle_messages! {
-                bus($bus) counter(my_var_) $($rest)*
-                Ok(Query{ id, data: $res }) = receiver_query_myvar.recv() => {
-                    let mut response: QueryResponse<$response> = QueryResponse {id, data: Ok(None)};
-                    let res = $handler;
-                    response.data = res.map_err(|err| err.to_string());
-                    let _ = sender_response_myvar.send(response);
+                bus($bus) $($rest)*
+                Ok(_raw_query) = unsafe { &mut *Pick::<tokio::sync::broadcast::Receiver<Query<$command, $response>>>::splitting_get_mut(&mut $bus) }.recv() => {
+                    if let Ok(mut _value) = _raw_query.take() {
+                        let $res = &mut _value.data;
+                        let res: Result<$response> = $handler;
+                        match res {
+                            Ok(res) => {
+                                if let Err(e) = _value.answer(res) {
+                                    tracing::error!("Error while answering query: {}", e);
+                                }
+                            }
+                            Err(e) => {
+                                if let Err(e) = _value.bail(e) {
+                                    tracing::error!("Error while answering query: {}", e);
+                                }
+                            }
+                        }
+                    } else {
+                        tracing::error!("Query already answered");
+                    }
                 }
             }
         }
     }};
 
-    ( bus($bus:expr) counter($counter:ident) command_response<$command:ty,$response:ty> $res:pat => $handler:block $($rest:tt)*) => {{
+    (bus($bus:expr) listen<$message:ty> $res:pat => $handler:block $($rest:tt)*) => {{
         use paste::paste;
-        use $crate::bus::command_response::*;
-
-        // In order to generate a variable with the name server$command$response for each server
-        paste! {
-            let mut [<receiver_query_ $counter>] = $bus.receiver::<Query<$command>>().await;
-            let [<sender_response_ $counter>] = $bus.sender::<QueryResponse<$response>>().await;
-
-
-            handle_messages! {
-                bus($bus) counter([<$counter _>]) $($rest)*
-                Ok(Query{ id, data: $res }) = [<receiver_query_ $counter>].recv() => {
-                    let mut response: QueryResponse<$response> = QueryResponse {id, data: Ok(None)};
-                    let res = $handler;
-                    response.data = res.map_err(|err| err.to_string());
-                    let _ = [<sender_response_ $counter>].send(response);
-                }
-            }
-        }
-    }};
-
-
-    ( bus($bus:expr) listen <$message:ty> $res:pat => $handler:block $($rest:tt)*) => {{
-
-        // In order to generate a variable with the name server$command$response for each server
-        let mut receiver_myvar = $bus.receiver::<$message>().await;
-
-        handle_messages! {
-            bus($bus) counter(myvar_) $($rest)*
-            Ok($res) = receiver_myvar.recv() => {
-                $handler
-            }
-        }
-    }};
-
-    ( bus($bus:expr) counter($counter:ident) listen <$message:ty> $res:pat => $handler:block $($rest:tt)*) => {{
-        use paste::paste;
-        // In order to generate a variable with the name server$command$response for each server
-        paste!{
-            let mut [<receiver_ $counter>] = $bus.receiver::<$message>().await;
-        }
-
+        #[allow(unused_imports)]
+        use $crate::utils::static_type_map::Pick;
         paste! {
             handle_messages! {
-                bus($bus) counter([<$counter _>]) $($rest)*
-                Ok($res) = [<receiver_ $counter>].recv() => {
+                bus($bus) $($rest)*
+                Ok($res) = unsafe { &mut *Pick::<tokio::sync::broadcast::Receiver<$message>>::splitting_get_mut(&mut $bus) }.recv()  => {
                     $handler
                 }
             }
         }
     }};
 
-    (counter($counter:ident) $($rest:tt)+ ) => {{
-       handle_messages!($($rest)+)
-    }};
-
-    (bus($bus:expr) $($rest:tt)+ ) => {{
-       handle_messages!($($rest)+)
-    }};
-
     // Fallback to normal select cases
-    ($($rest:tt)+) => {{
+    (bus($bus:expr) $($rest:tt)+) => {
         loop {
             tokio::select! {
                 $($rest)+
             }
         }
-    }};
+    };
 }
 
-pub use handle_messages;
+pub(crate) use handle_messages;
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::bus::{bus_client, SharedMessageBus};
+
+    bus_client!(
+        struct TestBusClient {
+            sender(Query<i32, u8>),
+            receiver(Query<i32, u8>),
+        }
+    );
+
+    #[tokio::test]
+    async fn test_cmd_resp() {
+        let shared_bus = SharedMessageBus::default();
+        let mut sender = TestBusClient::new_from_bus(shared_bus.new_handle()).await;
+        let mut receiver = TestBusClient::new_from_bus(shared_bus).await;
+
+        // Spawn a task to handle the query
+        tokio::spawn(async move {
+            handle_messages! {
+                on_bus receiver,
+                command_response<i32, u8> _ => {
+                    Ok(3)
+                }
+            }
+        });
+        let res = sender.request(42);
+
+        assert_eq!(res.await.unwrap(), 3);
+    }
+}
