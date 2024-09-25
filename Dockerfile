@@ -6,24 +6,27 @@ RUN apt-get update && apt-get install musl-tools -y
 RUN rustup target add x86_64-unknown-linux-musl
 
 WORKDIR /usr/src/hyle
-COPY . /usr/src/hyle
+COPY Cargo.toml Cargo.lock .
+COPY src ./src
+COPY nocow ./nocow
+COPY .cargo/config.toml .cargo/config.toml
 
 # This is a dummy build to get the dependencies cached.
 RUN cargo build --target x86_64-unknown-linux-musl --release
 
 # RUNNER
-FROM --platform=linux/amd64 alpine:latest
+FROM alpine:latest
 
-WORKDIR /usr/local/bin
+WORKDIR /hyle
 
 COPY --from=builder /usr/src/hyle/target/x86_64-unknown-linux-musl/release/node ./
 COPY ./master.ron ./config.ron
 
-VOLUME /app/data
+VOLUME /hyle/data
 
 EXPOSE 4321 1234
 
-# refers to the volume /app/data
+# refers to the volume /var/hyle-data
 ENV HYLE_DATA_DIRECTORY="data"
 
-CMD ["node", "--config-file", "config.ron"]
+CMD ["./node", "--config-file", "config.ron"]
