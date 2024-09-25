@@ -1,0 +1,10 @@
+global:
+  scrape_interval: 15s  # Intervalle de scrape par défaut
+
+scrape_configs:
+  - job_name: 'local-metrics'
+    metrics_path: "/v1/metrics"
+    scrape_interval: 5s  # Intervalle spécifique pour ce job
+    static_configs:
+      - targets: ["localhost:4321"]
+
