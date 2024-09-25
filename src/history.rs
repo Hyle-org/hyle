@@ -28,7 +28,7 @@ use std::{
     sync::Arc,
 };
 use tokio::{
-    sync::Mutex,
+    sync::RwLock,
     time::{sleep, Duration},
 };
 use tracing::{debug, error, info};
@@ -43,13 +43,13 @@ pub fn u64_to_str(u: u64, buf: &mut [u8]) -> &str {
 
 #[derive(Debug)]
 pub struct History {
-    inner: Arc<Mutex<HistoryInner>>,
+    inner: Arc<RwLock<HistoryInner>>,
 }
 
 impl History {
     pub fn new(db_name: &str) -> Result<Self> {
         Ok(Self {
-            inner: Arc::new(Mutex::new(HistoryInner::new(db_name)?)),
+            inner: Arc::new(RwLock::new(HistoryInner::new(db_name)?)),
         })
     }
 
@@ -114,7 +114,7 @@ impl History {
             match tx.transaction_data {
                 crate::model::TransactionData::Blob(ref tx) => {
                     for (bi, blob) in tx.blobs.iter().enumerate() {
-                        if let Err(e) = self.inner.lock().await.blobs.put(
+                        if let Err(e) = self.inner.write().await.blobs.put(
                             block.height,
                             ti,
                             bi,
@@ -129,7 +129,7 @@ impl History {
                 crate::model::TransactionData::Proof(ref tx) => {
                     if let Err(e) =
                         self.inner
-                            .lock()
+                            .write()
                             .await
                             .proofs
                             .put(block.height, ti, &tx_hash, tx)
@@ -143,7 +143,7 @@ impl History {
                 crate::model::TransactionData::RegisterContract(ref tx) => {
                     if let Err(e) =
                         self.inner
-                            .lock()
+                            .write()
                             .await
                             .contracts
                             .put(block.height, ti, &tx_hash, tx)
@@ -155,7 +155,7 @@ impl History {
                     }
                 }
             }
-            if let Err(e) = self.inner.lock().await.transactions.put(
+            if let Err(e) = self.inner.write().await.transactions.put(
                 block.height,
                 ti,
                 &tx_hash,
@@ -168,14 +168,14 @@ impl History {
             }
         }
         // store block
-        if let Err(e) = self.inner.lock().await.blocks.put(block) {
+        if let Err(e) = self.inner.write().await.blocks.put(block) {
             error!("storing block: {}", e);
         }
     }
 }
 
 impl std::ops::Deref for History {
-    type Target = Mutex<HistoryInner>;
+    type Target = RwLock<HistoryInner>;
 
     fn deref(&self) -> &Self::Target {
         &self.inner
