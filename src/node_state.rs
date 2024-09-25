@@ -6,10 +6,11 @@ use crate::{
     handle_messages,
     model::{
         BlobTransaction, BlobsHash, Block, BlockHeight, ContractName, Hashable, ProofTransaction,
-        RegisterContractTransaction, StateDigest, Transaction, TxHash,
+        RegisterContractTransaction, SharedRunContext, StateDigest, Transaction, TxHash,
     },
     utils::{
         conf::SharedConf,
+        modules::Module,
         vec_utils::{SequenceOption, SequenceResult},
     },
 };
@@ -42,6 +43,22 @@ pub struct NodeState {
     current_height: BlockHeight,
     contracts: HashMap<ContractName, Contract>,
     unsettled_transactions: OrderedTxMap,
+}
+
+impl Module for NodeState {
+    fn name() -> &'static str {
+        "NodeState"
+    }
+
+    type Context = SharedRunContext;
+
+    fn build(ctx: &Self::Context) -> Result<Self> {
+        Ok(NodeState::new(ctx.bus.new_handle()))
+    }
+
+    fn run(&mut self, ctx: Self::Context) -> impl futures::Future<Output = Result<()>> + Send {
+        self.start(ctx.config.clone())
+    }
 }
 
 impl NodeState {

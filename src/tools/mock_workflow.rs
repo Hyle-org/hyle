@@ -2,8 +2,12 @@ use crate::{
     bus::{BusMessage, SharedMessageBus},
     handle_messages,
     mempool::MempoolNetMessage,
-    model::{Blob, BlobData, BlobTransaction, ContractName, Identity, Transaction},
+    model::{
+        Blob, BlobData, BlobTransaction, ContractName, Identity, SharedRunContext, Transaction,
+    },
+    utils::modules::Module,
 };
+use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use tracing::warn;
 
@@ -17,12 +21,28 @@ pub struct MockWorkflowHandler {
     bus: SharedMessageBus,
 }
 
+impl Module for MockWorkflowHandler {
+    fn name() -> &'static str {
+        "MockWorkflowHandler"
+    }
+
+    type Context = SharedRunContext;
+
+    fn build(ctx: &Self::Context) -> Result<Self> {
+        Ok(Self::new(ctx.bus.new_handle()))
+    }
+
+    fn run(&mut self, _ctx: Self::Context) -> impl futures::Future<Output = Result<()>> + Send {
+        self.start()
+    }
+}
+
 impl MockWorkflowHandler {
     pub fn new(bus: SharedMessageBus) -> MockWorkflowHandler {
         MockWorkflowHandler { bus }
     }
 
-    pub async fn start(&mut self) {
+    pub async fn start(&mut self) -> anyhow::Result<()> {
         handle_messages! {
             on_bus self.bus,
             listen<RunScenario> cmd => {

@@ -6,73 +6,20 @@ use hyle::{
     consensus::Consensus,
     history::History,
     mempool::Mempool,
+    model::RunContext,
     node_state::NodeState,
-    p2p, rest,
+    p2p::P2P,
+    rest::{RestApi, RestApiRunContext},
+    tools::mock_workflow::MockWorkflowHandler,
     utils::{
-        conf::{self, SharedConf},
+        conf::{self},
         crypto::BlstCrypto,
+        modules::{Module, ModulesHandler},
     },
 };
 use std::{path::Path, sync::Arc};
-use tracing::{debug, error, info, level_filters::LevelFilter, warn};
+use tracing::{debug, error, info, level_filters::LevelFilter};
 use tracing_subscriber::{prelude::*, EnvFilter};
-
-fn start_consensus(bus: SharedMessageBus, config: SharedConf, crypto: BlstCrypto) {
-    let _ = tokio::task::Builder::new()
-        .name("Consensus")
-        .spawn(async move {
-            Consensus::load_from_disk()
-                .unwrap_or_else(|_| {
-                    warn!("Failed to load consensus state from disk, using a default one");
-                    Consensus::default()
-                })
-                .start(bus, config, crypto)
-                .await
-        });
-}
-
-fn start_history(mut history: History, bus: SharedMessageBus, config: SharedConf) {
-    let _ = tokio::task::Builder::new()
-        .name("History")
-        .spawn(async move {
-            history.start(config, bus).await;
-        });
-}
-
-fn start_node_state(bus: SharedMessageBus, config: SharedConf) {
-    let _ = tokio::task::Builder::new()
-        .name("NodeState")
-        .spawn(async move {
-            let mut node_state = NodeState::new(bus);
-            node_state.start(config).await
-        });
-}
-
-fn start_mempool(bus: SharedMessageBus, config: SharedConf, crypto: BlstCrypto) {
-    let _ = tokio::task::Builder::new()
-        .name("Mempool")
-        .spawn(async move {
-            let mut mempool = Mempool::new(bus, config, crypto);
-            mempool.start().await
-        });
-}
-
-fn start_p2p(bus: SharedMessageBus, config: SharedConf, crypto: BlstCrypto) {
-    let _ = tokio::task::Builder::new().name("p2p").spawn(async move {
-        if let Err(e) = p2p::p2p_server(config, bus, crypto).await {
-            error!("RPC server failed: {:?}", e);
-        }
-    });
-}
-
-fn start_mock_workflow(bus: SharedMessageBus) {
-    let _ = tokio::task::Builder::new()
-        .name("MockWorkflow")
-        .spawn(async move {
-            let mut mock_workflow = hyle::tools::mock_workflow::MockWorkflowHandler::new(bus);
-            mock_workflow.start().await;
-        });
-}
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -128,13 +75,7 @@ async fn main() -> Result<()> {
         .build();
 
     let bus = SharedMessageBus::new();
-    let crypto = BlstCrypto::new(config.id.clone()); // TODO load sk from disk instead of random
-
-    start_mempool(
-        SharedMessageBus::new_handle(&bus),
-        Arc::clone(&config),
-        crypto.clone(),
-    );
+    let crypto = Arc::new(BlstCrypto::new(config.id.clone())); // TODO load sk from disk instead of random
 
     let data_directory = Path::new(
         args.data_directory
@@ -144,22 +85,36 @@ async fn main() -> Result<()> {
 
     std::fs::create_dir_all(data_directory).context("creating data directory")?;
 
-    let history = History::new(
-        data_directory
-            .join("history.db")
-            .to_str()
-            .context("invalid data directory")?,
-    )?;
-    start_history(history.share(), bus.new_handle(), Arc::clone(&config));
+    let data_directory = data_directory.to_path_buf();
 
-    start_node_state(bus.new_handle(), Arc::clone(&config));
-    start_consensus(bus.new_handle(), Arc::clone(&config), crypto.clone());
-    start_p2p(bus.new_handle(), Arc::clone(&config), crypto);
+    let ctx = Arc::new(RunContext {
+        bus,
+        config,
+        crypto,
+        data_directory,
+    });
 
-    start_mock_workflow(bus.new_handle());
+    let history = History::build(&ctx)?;
 
-    // Start REST server
-    rest::rest_server(config, bus.new_handle(), metrics_layer, history)
-        .await
-        .context("Starting REST server")
+    let rest_api_ctx = RestApiRunContext {
+        ctx: ctx.clone(),
+        metrics_layer,
+        history: history.share(),
+    };
+
+    let mut handler = ModulesHandler::default();
+    handler.build_module::<Mempool>(ctx.clone())?;
+    handler.build_module::<NodeState>(ctx.clone())?;
+    handler.build_module::<Consensus>(ctx.clone())?;
+    handler.build_module::<P2P>(ctx.clone())?;
+    handler.build_module::<MockWorkflowHandler>(ctx.clone())?;
+    handler.build_module::<RestApi>(rest_api_ctx)?;
+
+    handler.add_module(history, ctx.clone())?;
+
+    if let Err(e) = handler.start_modules().await {
+        error!("Error in module handler: {}", e)
+    }
+
+    Ok(())
 }

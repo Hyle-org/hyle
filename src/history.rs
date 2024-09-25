@@ -12,9 +12,9 @@ mod transactions;
 use crate::{
     bus::SharedMessageBus,
     consensus::ConsensusEvent,
-    model::{Block, Hashable},
+    model::{Block, Hashable, SharedRunContext},
     rest,
-    utils::conf::SharedConf,
+    utils::{conf::SharedConf, modules::Module},
 };
 use anyhow::{Context, Result};
 use axum::{routing::get, Router};
@@ -46,6 +46,27 @@ pub struct History {
     inner: Arc<RwLock<HistoryInner>>,
 }
 
+impl Module for History {
+    fn name() -> &'static str {
+        "History"
+    }
+
+    type Context = SharedRunContext;
+
+    fn build(ctx: &Self::Context) -> Result<Self> {
+        Self::new(
+            ctx.data_directory
+                .join("history.db")
+                .to_str()
+                .context("invalid data directory")?,
+        )
+    }
+
+    fn run(&mut self, ctx: Self::Context) -> impl futures::Future<Output = Result<()>> + Send {
+        self.start(ctx.config.clone(), ctx.bus.new_handle())
+    }
+}
+
 impl History {
     pub fn new(db_name: &str) -> Result<Self> {
         Ok(Self {
@@ -59,7 +80,7 @@ impl History {
         }
     }
 
-    pub async fn start(&mut self, config: SharedConf, bus: SharedMessageBus) {
+    pub async fn start(&mut self, config: SharedConf, bus: SharedMessageBus) -> Result<()> {
         let interval = config.storage.interval;
         let mut receiver = bus.receiver::<ConsensusEvent>().await;
 

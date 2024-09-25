@@ -16,9 +16,14 @@ use crate::{
     bus::{command_response::CmdRespClient, BusMessage, SharedMessageBus},
     handle_messages,
     mempool::{MempoolCommand, MempoolResponse},
-    model::{get_current_timestamp, Block, BlockHash, Hashable, Transaction},
+    model::{get_current_timestamp, Block, BlockHash, Hashable, SharedRunContext, Transaction},
     p2p::network::{OutboundMessage, SignedWithId},
-    utils::{conf::SharedConf, crypto::BlstCrypto, logger::LogMe},
+    utils::{
+        conf::SharedConf,
+        crypto::{BlstCrypto, SharedBlstCrypto},
+        logger::LogMe,
+        modules::Module,
+    },
     validator_registry::{ValidatorId, ValidatorRegistry, ValidatorRegistryNetMessage},
 };
 
@@ -90,6 +95,25 @@ pub struct Consensus {
     current_block_batches: Vec<String>,
     // Once a block commits, we store it there (or not ?)
     // committed_block_batches: HashMap<String, HashMap<String, Vec<Transaction>>>,
+}
+
+impl Module for Consensus {
+    fn name() -> &'static str {
+        "Consensus"
+    }
+
+    type Context = SharedRunContext;
+
+    fn build(_ctx: &Self::Context) -> Result<Self> {
+        Ok(Consensus::load_from_disk().unwrap_or_else(|_| {
+            warn!("Failed to load consensus state from disk, using a default one");
+            Consensus::default()
+        }))
+    }
+
+    fn run(&mut self, ctx: Self::Context) -> impl futures::Future<Output = Result<()>> + Send {
+        self.start(ctx.bus.new_handle(), ctx.config.clone(), ctx.crypto.clone())
+    }
 }
 
 impl Consensus {
@@ -389,7 +413,7 @@ impl Consensus {
         &mut self,
         bus: SharedMessageBus,
         config: SharedConf,
-        crypto: BlstCrypto,
+        crypto: SharedBlstCrypto,
     ) -> Result<()> {
         let interval = config.storage.interval;
         let is_master = config.peers.is_empty();
