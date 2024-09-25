@@ -11,7 +11,6 @@ use std::{
     fmt,
     io::Write,
     ops::{Add, Deref},
-    path::PathBuf,
     sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -19,10 +18,7 @@ use tracing::debug;
 
 use crate::{
     bus::SharedMessageBus,
-    utils::{
-        conf::SharedConf,
-        crypto::SharedBlstCrypto,
-    },
+    utils::{conf::SharedConf, crypto::SharedBlstCrypto},
 };
 
 #[derive(Default, Clone, Eq, PartialEq, Hash, Encode, Decode)]
@@ -378,7 +374,6 @@ pub struct RunContext {
     pub config: SharedConf,
     pub bus: SharedMessageBus,
     pub crypto: SharedBlstCrypto,
-    pub data_directory: PathBuf,
 }
 pub type SharedRunContext = Arc<RunContext>;
 

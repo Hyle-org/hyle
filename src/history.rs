@@ -55,7 +55,8 @@ impl Module for History {
 
     async fn build(ctx: &Self::Context) -> Result<Self> {
         Self::new(
-            ctx.data_directory
+            ctx.config
+                .data_directory
                 .join("history.db")
                 .to_str()
                 .context("invalid data directory")?,
