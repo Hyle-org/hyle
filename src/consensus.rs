@@ -7,9 +7,9 @@ use sha3::{Digest, Sha3_256};
 use std::{
     collections::{HashMap, HashSet},
     default::Default,
-    fs,
     io::Write,
-    path::Path,
+    ops::{Deref, DerefMut},
+    path::PathBuf,
     time::Duration,
 };
 use tokio::time::sleep;
@@ -131,8 +131,8 @@ struct ConsensusBusClient {
 
 #[derive(Serialize, Deserialize, Encode, Decode)]
 pub struct Consensus {
-    // TODO: should be removed
     is_next_leader: bool,
+    #[serde(skip_serializing)]
     validators: ValidatorRegistry,
     bft_round_state: BFTRoundState,
     // FIXME: pub is here for testing
@@ -146,14 +146,10 @@ impl Module for Consensus {
     }
 
     type Context = SharedRunContext;
+    type Store = ();
 
     async fn build(ctx: &Self::Context) -> Result<Self> {
-        Ok(
-            Consensus::load_from_disk(&ctx.config.data_directory).unwrap_or_else(|_| {
-                warn!("Failed to load consensus state from disk, using a default one");
-                Consensus::new()
-            }),
-        )
+        Ok(Consensus::new(ctx))
     }
 
     fn run(&mut self, ctx: Self::Context) -> impl futures::Future<Output = Result<()>> + Send {
@@ -162,11 +158,11 @@ impl Module for Consensus {
 }
 
 impl Consensus {
-    fn new() -> Self {
+    fn new(ctx: &SharedRunContext) -> Self {
         Self {
             is_next_leader: false,
             blocks: vec![Block::default()],
-            validators: ValidatorRegistry::default(),
+            validators: ctx.validator_registry.share(),
             bft_round_state: BFTRoundState::default(),
             pending_batches: vec![],
         }
@@ -246,26 +242,6 @@ impl Consensus {
         self.blocks
             .push(self.bft_round_state.consensus_proposal.block.clone());
         Ok(())
-    }
-
-    pub fn save_on_disk(&self) -> Result<()> {
-        let mut writer = fs::File::create("data.bin").log_error("Create Ctx file")?;
-        bincode::encode_into_std_write(self, &mut writer, bincode::config::standard())
-            .log_error("Serializing Ctx chain")?;
-        info!("Saved blockchain on disk with {} blocks", self.blocks.len());
-
-        Ok(())
-    }
-
-    pub fn load_from_disk(data_directory: &Path) -> Result<Self> {
-        let mut reader =
-            fs::File::open(data_directory.join("data.bin")).log_warn("Loading data from disk")?;
-        let ctx: Consensus =
-            bincode::decode_from_std_read(&mut reader, bincode::config::standard())
-                .log_warn("Deserializing data from disk")?;
-        info!("Loaded {} blocks from disk.", ctx.blocks.len());
-
-        Ok(ctx)
     }
 
     fn finish_round(&mut self, bus: &ConsensusBusClient) -> Result<(), Error> {
@@ -604,6 +580,7 @@ impl Consensus {
                     msg.with_pub_keys(self.validators.get_pub_keys_from_id(msg.validators.clone())),
                 ) {
                     info!("ConfirmAck has aleady been processed");
+
                     return Ok(());
                 }
 
@@ -726,7 +703,7 @@ impl Consensus {
         match msg {
             ConsensusCommand::SaveOnDisk => {
                 // FIXME: Might need to be removed as we have History module
-                _ = self.save_on_disk();
+                //_ = self.save_on_disk();
                 Ok(())
             }
         }

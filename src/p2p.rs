@@ -22,6 +22,7 @@ impl Module for P2P {
     }
 
     type Context = SharedRunContext;
+    type Store = ();
 
     async fn build(_ctx: &Self::Context) -> Result<Self> {
         Ok(P2P {})

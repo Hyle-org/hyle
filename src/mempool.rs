@@ -66,6 +66,7 @@ impl BusMessage for MempoolResponse {}
 
 impl Module for Mempool {
     type Context = SharedRunContext;
+    type Store = ();
 
     fn name() -> &'static str {
         "Mempool"

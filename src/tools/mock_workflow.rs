@@ -36,6 +36,7 @@ impl Module for MockWorkflowHandler {
     }
 
     type Context = SharedRunContext;
+    type Store = ();
 
     async fn build(ctx: &Self::Context) -> Result<Self> {
         Ok(Self::new(ctx.bus.new_handle()).await)
