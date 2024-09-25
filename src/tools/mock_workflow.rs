@@ -11,6 +11,15 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use tracing::warn;
 
+use crate::bus::bus_client;
+
+bus_client! {
+struct BusClient {
+    sender(MempoolNetMessage),
+    receiver(RunScenario),
+}
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum RunScenario {
     StressTest,
@@ -18,7 +27,7 @@ pub enum RunScenario {
 impl BusMessage for RunScenario {}
 
 pub struct MockWorkflowHandler {
-    bus: SharedMessageBus,
+    bus: BusClient,
 }
 
 impl Module for MockWorkflowHandler {
@@ -28,8 +37,8 @@ impl Module for MockWorkflowHandler {
 
     type Context = SharedRunContext;
 
-    fn build(ctx: &Self::Context) -> Result<Self> {
-        Ok(Self::new(ctx.bus.new_handle()))
+    async fn build(ctx: &Self::Context) -> Result<Self> {
+        Ok(Self::new(ctx.bus.new_handle()).await)
     }
 
     fn run(&mut self, _ctx: Self::Context) -> impl futures::Future<Output = Result<()>> + Send {
@@ -38,8 +47,10 @@ impl Module for MockWorkflowHandler {
 }
 
 impl MockWorkflowHandler {
-    pub fn new(bus: SharedMessageBus) -> MockWorkflowHandler {
-        MockWorkflowHandler { bus }
+    pub async fn new(bus: SharedMessageBus) -> MockWorkflowHandler {
+        MockWorkflowHandler {
+            bus: BusClient::new_from_bus(bus).await,
+        }
     }
 
     pub async fn start(&mut self) -> anyhow::Result<()> {
@@ -57,7 +68,6 @@ impl MockWorkflowHandler {
 
     async fn stress_test(&mut self) {
         warn!("Starting stress test");
-        let message_sender = self.bus.sender().await;
         let tx = MempoolNetMessage::NewTx(Transaction {
             version: 1,
             transaction_data: crate::model::TransactionData::Blob(BlobTransaction {
@@ -70,7 +80,7 @@ impl MockWorkflowHandler {
             inner: "???".to_string(),
         });
         for _ in 0..500000 {
-            let _ = message_sender.send(tx.clone());
+            let _ = self.bus.send(tx.clone());
         }
     }
 }

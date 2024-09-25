@@ -1,7 +1,7 @@
 //! State required for participation in consensus by the node.
 
 use crate::{
-    bus::{command_response::NeedAnswer, BusMessage, SharedMessageBus},
+    bus::{bus_client, command_response::Query, SharedMessageBus},
     consensus::ConsensusEvent,
     handle_messages,
     model::{
@@ -24,21 +24,15 @@ pub mod model;
 mod ordered_tx_map;
 mod verifiers;
 
-#[derive(Debug, Clone)]
-pub enum NodeStateQuery {
-    GetContract { name: ContractName },
+bus_client! {
+struct NodeStateBusClient {
+    receiver(Query<ContractName, Contract>),
+    receiver(ConsensusEvent),
 }
-impl NeedAnswer<NodeStateQueryResponse> for NodeStateQuery {}
-impl BusMessage for NodeStateQuery {}
-
-#[derive(Debug, Clone)]
-pub enum NodeStateQueryResponse {
-    Contract { contract: Contract },
 }
-impl BusMessage for NodeStateQueryResponse {}
 
 pub struct NodeState {
-    bus: SharedMessageBus,
+    bus: NodeStateBusClient,
     timeouts: Timeouts,
     current_height: BlockHeight,
     contracts: HashMap<ContractName, Contract>,
@@ -52,8 +46,8 @@ impl Module for NodeState {
 
     type Context = SharedRunContext;
 
-    fn build(ctx: &Self::Context) -> Result<Self> {
-        Ok(NodeState::new(ctx.bus.new_handle()))
+    async fn build(ctx: &Self::Context) -> Result<Self> {
+        Ok(NodeState::new(ctx.bus.new_handle()).await)
     }
 
     fn run(&mut self, ctx: Self::Context) -> impl futures::Future<Output = Result<()>> + Send {
@@ -62,9 +56,9 @@ impl Module for NodeState {
 }
 
 impl NodeState {
-    pub fn new(bus: SharedMessageBus) -> NodeState {
+    pub async fn new(bus: SharedMessageBus) -> NodeState {
         NodeState {
-            bus,
+            bus: NodeStateBusClient::new_from_bus(bus).await,
             timeouts: Timeouts::default(),
             current_height: BlockHeight::default(),
             contracts: HashMap::default(),
@@ -82,26 +76,14 @@ impl NodeState {
 
         handle_messages! {
             on_bus self.bus,
-            command_response<NodeStateQuery,NodeStateQueryResponse> cmd => {
-                self.handle_command(cmd)
+            command_response<ContractName, Contract> cmd => {
+                match self.contracts.get(cmd) {
+                    Some(contract) => Ok(contract.clone()),
+                    None => Err(anyhow::anyhow!("Contract not found")),
+                }
             }
             listen<ConsensusEvent> event => {
                 self.handle_event(event);
-            }
-        }
-    }
-    fn handle_command(
-        &mut self,
-        command: NodeStateQuery,
-    ) -> Result<Option<NodeStateQueryResponse>> {
-        match command {
-            NodeStateQuery::GetContract { name } => {
-                Ok(self
-                    .contracts
-                    .get(&name)
-                    .map(|c| NodeStateQueryResponse::Contract {
-                        contract: c.clone(),
-                    }))
             }
         }
     }
@@ -382,12 +364,6 @@ impl NodeState {
     }
 }
 
-impl Default for NodeState {
-    fn default() -> Self {
-        Self::new(SharedMessageBus::default())
-    }
-}
-
 // TODO: move it somewhere else ?
 fn hash_transaction(tx: &BlobTransaction) -> (TxHash, BlobsHash) {
     (tx.hash(), tx.blobs_hash())
@@ -395,7 +371,7 @@ fn hash_transaction(tx: &BlobTransaction) -> (TxHash, BlobsHash) {
 
 #[cfg(test)]
 mod test {
-    use crate::model::*;
+    use crate::{bus::SharedMessageBus, model::*};
 
     use super::NodeState;
 
@@ -426,9 +402,10 @@ mod test {
         ))
     }
 
+    #[tokio::test]
     #[test_log::test]
-    fn two_proof_for_one_blob_tx() {
-        let mut state = NodeState::default();
+    async fn two_proof_for_one_blob_tx() {
+        let mut state = NodeState::new(SharedMessageBus::default()).await;
         let c1 = ContractName("c1".to_string());
         let c2 = ContractName("c2".to_string());
 
@@ -472,9 +449,10 @@ mod test {
     }
 
     #[ignore] // As long as proof verification is mocked, we provide different blobs on same contract
+    #[tokio::test]
     #[test_log::test]
-    fn one_proof_for_two_blobs() {
-        let mut state = NodeState::default();
+    async fn one_proof_for_two_blobs() {
+        let mut state = NodeState::new(SharedMessageBus::default()).await;
         let c1 = ContractName("c1".to_string());
         let c2 = ContractName("c2".to_string());
 
@@ -530,9 +508,10 @@ mod test {
         assert_eq!(state.contracts.get(&c2).unwrap().state.0, vec![4, 5, 6]);
     }
 
+    #[tokio::test]
     #[test_log::test]
-    fn one_proof_for_two_blobs_txs_on_different_contract() {
-        let mut state = NodeState::default();
+    async fn one_proof_for_two_blobs_txs_on_different_contract() {
+        let mut state = NodeState::new(SharedMessageBus::default()).await;
         let c1 = ContractName("c1".to_string());
         let c2 = ContractName("c2".to_string());
         let c3 = ContractName("c3".to_string());
@@ -596,9 +575,10 @@ mod test {
         assert_eq!(state.contracts.get(&c4).unwrap().state.0, vec![4, 5, 6]);
     }
 
+    #[tokio::test]
     #[test_log::test]
-    fn two_proof_for_same_blob() {
-        let mut state = NodeState::default();
+    async fn two_proof_for_same_blob() {
+        let mut state = NodeState::new(SharedMessageBus::default()).await;
         let c1 = ContractName("c1".to_string());
         let c2 = ContractName("c2".to_string());
 

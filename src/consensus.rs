@@ -9,11 +9,16 @@ use std::{
     fs,
     time::Duration,
 };
-use tokio::{sync::broadcast::Sender, time::sleep};
+use tokio::time::sleep;
 use tracing::{info, warn};
 
 use crate::{
-    bus::{command_response::CmdRespClient, BusMessage, SharedMessageBus},
+    bus::BusMessage,
+    bus::{
+        bus_client,
+        command_response::{CmdRespClient, Query},
+        SharedMessageBus,
+    },
     handle_messages,
     mempool::{MempoolCommand, MempoolResponse},
     model::{get_current_timestamp, Block, BlockHash, Hashable, SharedRunContext, Transaction},
@@ -83,6 +88,18 @@ pub struct ConsensusProposal {
     pub block: Block,                            // FIXME: Block ou cut ?
 }
 
+bus_client! {
+struct ConsensusBusClient {
+    sender(OutboundMessage),
+    sender(ConsensusEvent),
+    sender(ConsensusCommand),
+    sender(Query<MempoolCommand, MempoolResponse>),
+    receiver(ValidatorRegistryNetMessage),
+    receiver(ConsensusCommand),
+    receiver(SignedWithId<ConsensusNetMessage>),
+}
+}
+
 #[derive(Serialize, Deserialize, Encode, Decode)]
 pub struct Consensus {
     validators: ValidatorRegistry,
@@ -104,7 +121,7 @@ impl Module for Consensus {
 
     type Context = SharedRunContext;
 
-    fn build(ctx: &Self::Context) -> Result<Self> {
+    async fn build(ctx: &Self::Context) -> Result<Self> {
         // FIXME load from disk create a new ValidatorRegistry instead of using shared one
         Ok(Consensus::load_from_disk().unwrap_or_else(|_| {
             warn!("Failed to load consensus state from disk, using a default one");
@@ -222,7 +239,7 @@ impl Consensus {
         &mut self,
         msg: SignedWithId<ConsensusNetMessage>,
         crypto: &BlstCrypto,
-        outbound_sender: &Sender<OutboundMessage>,
+        bus: &ConsensusBusClient,
     ) -> Result<(), Error> {
         if !self.validators.check_signed(&msg)? {
             bail!("Invalid signature for message {:?}", msg);
@@ -239,7 +256,7 @@ impl Consensus {
                 // Validate consensus_proposal slot, view, previous_qc and proposed block
                 let vote = self.verify_consensus_proposal(consensus_proposal);
                 // Responds PrepareVote message to leader with replica's vote on this proposal
-                _ = outbound_sender
+                _ = bus
                     .send(OutboundMessage::send(
                         self.leader_id(),
                         Self::sign_net_message(crypto, ConsensusNetMessage::PrepareVote(vote))?,
@@ -268,7 +285,7 @@ impl Consensus {
 
                     // if fast-path ... TODO
                     // else send Confirm message to replicas
-                    _ = outbound_sender
+                    _ = bus
                         .send(OutboundMessage::broadcast(Self::sign_net_message(
                             crypto,
                             ConsensusNetMessage::Confirm(prepare_quorum_certificate),
@@ -287,7 +304,7 @@ impl Consensus {
                 // Buffers the *Prepare* Quorum Cerficiate
                 self.bft_round_state.prepare_quorum_certificate = prepare_quorum_certificate;
                 // Responds ConfirmAck to leader
-                _ = outbound_sender
+                _ = bus
                     .send(OutboundMessage::send(
                         self.leader_id(),
                         Self::sign_net_message(crypto, ConsensusNetMessage::ConfirmAck)?,
@@ -310,7 +327,7 @@ impl Consensus {
                     let commit_quorum_certificate = 1; // FIXME
 
                     // Send Commit message of this certificate to all replicas
-                    _ = outbound_sender
+                    _ = bus
                         .send(OutboundMessage::broadcast(Self::sign_net_message(
                             crypto,
                             ConsensusNetMessage::Commit(commit_quorum_certificate),
@@ -353,7 +370,7 @@ impl Consensus {
                     block: Block::default(), // FIXME
                 };
                 // Send Prepare message to all replicas
-                _ = outbound_sender
+                _ = bus
                     .send(OutboundMessage::broadcast(Self::sign_net_message(
                         crypto,
                         ConsensusNetMessage::Prepare(consensus_proposal),
@@ -368,47 +385,39 @@ impl Consensus {
     async fn handle_command(
         &mut self,
         msg: ConsensusCommand,
-        bus: &SharedMessageBus,
+        bus: &mut ConsensusBusClient,
         crypto: &BlstCrypto,
-        consensus_event_sender: &Sender<ConsensusEvent>,
-        outbound_sender: &Sender<OutboundMessage>,
     ) -> Result<()> {
         match msg {
             ConsensusCommand::GenerateNewBlock => {
                 self.batch_id += 1;
-                if let Some(res) = bus
+                match bus
                     .request(MempoolCommand::CreatePendingBatch {
                         id: self.batch_id.to_string(),
                     })
                     .await?
                 {
-                    match res {
-                        MempoolResponse::PendingBatch { id, txs } => {
-                            info!("Received pending batch {} with {} txs", &id, &txs.len());
-                            self.tx_batches.insert(id.clone(), txs);
-                            let block = self.new_block();
-                            // send to internal bus
-                            _ = consensus_event_sender
-                                .send(ConsensusEvent::CommitBlock {
-                                    batch_id: id,
-                                    block: block.clone(),
-                                })
-                                .context(
-                                    "Failed to send ConsensusEvent::CommitBlock msg on the bus",
-                                )?;
+                    MempoolResponse::PendingBatch { id, txs } => {
+                        info!("Received pending batch {} with {} txs", &id, &txs.len());
+                        self.tx_batches.insert(id.clone(), txs);
+                        let block = self.new_block();
+                        // send to internal bus
+                        _ = bus
+                            .send(ConsensusEvent::CommitBlock {
+                                batch_id: id,
+                                block: block.clone(),
+                            })
+                            .context("Failed to send ConsensusEvent::CommitBlock msg on the bus")?;
 
-                            // send to network
-                            _ = outbound_sender.send(
-                                OutboundMessage::broadcast(
-                                    Self::sign_net_message(
-                                        crypto,
-                                        ConsensusNetMessage::Commit(1)
-                                    )?
-                                )
-                            ).context(
+                        // send to network
+                        _ = bus
+                            .send(OutboundMessage::broadcast(Self::sign_net_message(
+                                crypto,
+                                ConsensusNetMessage::Commit(1),
+                            )?))
+                            .context(
                                 "Failed to send ConsensusNetMessage::CommitBlock msg on the bus",
                             )?;
-                        }
                     }
                 }
                 Ok(())
@@ -423,30 +432,29 @@ impl Consensus {
 
     pub async fn start(
         &mut self,
-        bus: SharedMessageBus,
+        shared_bus: SharedMessageBus,
         config: SharedConf,
         crypto: SharedBlstCrypto,
     ) -> Result<()> {
         let interval = config.storage.interval;
         let is_master = config.peers.is_empty();
-        let outbound_sender = bus.sender::<OutboundMessage>().await;
-        let consensus_event_sender = bus.sender::<ConsensusEvent>().await;
-        let consensus_command_sender = bus.sender::<ConsensusCommand>().await;
 
+        let mut bus = ConsensusBusClient::new_from_bus(shared_bus.new_handle()).await;
         if is_master {
             info!(
                 "No peers configured, starting as master generating blocks every {} seconds",
                 interval
             );
 
+            let bus2 = ConsensusBusClient::new_from_bus(shared_bus).await;
             tokio::spawn(async move {
                 loop {
                     sleep(Duration::from_secs(interval)).await;
 
-                    _ = consensus_command_sender
+                    _ = bus2
                         .send(ConsensusCommand::GenerateNewBlock)
                         .log_error("Cannot send message over channel");
-                    _ = consensus_command_sender
+                    _ = bus2
                         .send(ConsensusCommand::SaveOnDisk)
                         .log_error("Cannot send message over channel");
                 }
@@ -455,13 +463,13 @@ impl Consensus {
         handle_messages! {
             on_bus bus,
             listen<ConsensusCommand> cmd => {
-                match self.handle_command(cmd, &bus, &crypto, &consensus_event_sender, &outbound_sender).await{
+                match self.handle_command(cmd, &mut bus, &crypto).await{
                     Ok(_) => (),
                     Err(e) => warn!("Error while handling consensus command: {:#}", e),
                 }
             }
             listen<SignedWithId<ConsensusNetMessage>> cmd => {
-                match self.handle_net_message(cmd, &crypto, &outbound_sender){
+                match self.handle_net_message(cmd, &crypto, &bus){
                     Ok(_) => (),
                     Err(e) => warn!("Error while handling consensus net message: {:#}", e),
                 }

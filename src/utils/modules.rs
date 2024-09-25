@@ -12,7 +12,7 @@ where
     type Context;
 
     fn name() -> &'static str;
-    fn build(ctx: &Self::Context) -> Result<Self>;
+    fn build(ctx: &Self::Context) -> impl futures::Future<Output = Result<Self>> + Send;
     fn run(&mut self, ctx: Self::Context) -> impl futures::Future<Output = Result<()>> + Send;
 }
 
@@ -43,12 +43,12 @@ impl ModulesHandler {
         module.run(ctx).await
     }
 
-    pub fn build_module<M>(&mut self, ctx: M::Context) -> Result<()>
+    pub async fn build_module<M>(&mut self, ctx: M::Context) -> Result<()>
     where
         M: Module + 'static + Send,
         <M as Module>::Context: std::marker::Send,
     {
-        let module = M::build(&ctx)?;
+        let module = M::build(&ctx).await?;
         self.add_module(module, ctx)
     }
 

@@ -53,7 +53,7 @@ impl Module for History {
 
     type Context = SharedRunContext;
 
-    fn build(ctx: &Self::Context) -> Result<Self> {
+    async fn build(ctx: &Self::Context) -> Result<Self> {
         Self::new(
             ctx.data_directory
                 .join("history.db")

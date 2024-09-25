@@ -1,7 +1,8 @@
 //! Mempool logic & pending transaction management.
 
 use crate::{
-    bus::{command_response::NeedAnswer, BusMessage, SharedMessageBus},
+    bus::BusMessage,
+    bus::{bus_client, command_response::Query, SharedMessageBus},
     consensus::ConsensusEvent,
     handle_messages,
     model::{Hashable, SharedRunContext, Transaction},
@@ -23,8 +24,19 @@ mod metrics;
 #[derive(Debug)]
 struct Batch(String, Vec<Transaction>);
 
+bus_client! {
+struct MempoolBusClient {
+    sender(OutboundMessage),
+    receiver(Query<MempoolCommand, MempoolResponse>),
+    receiver(SignedWithId<MempoolNetMessage>),
+    receiver(RestApiMessage),
+    receiver(ConsensusEvent),
+    receiver(ValidatorRegistryNetMessage),
+}
+}
+
 pub struct Mempool {
-    bus: SharedMessageBus,
+    bus: MempoolBusClient,
     crypto: SharedBlstCrypto,
     metrics: MempoolMetrics,
     validators: ValidatorRegistry,
@@ -46,7 +58,6 @@ impl BusMessage for MempoolNetMessage {}
 pub enum MempoolCommand {
     CreatePendingBatch { id: String },
 }
-impl NeedAnswer<MempoolResponse> for MempoolCommand {}
 impl BusMessage for MempoolCommand {}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -62,8 +73,8 @@ impl Module for Mempool {
         "Mempool"
     }
 
-    fn build(ctx: &SharedRunContext) -> Result<Self> {
-        Ok(Mempool::new(ctx))
+    async fn build(ctx: &SharedRunContext) -> Result<Self> {
+        Ok(Mempool::new(ctx).await)
     }
 
     fn run(&mut self, _ctx: Self::Context) -> impl futures::Future<Output = Result<()>> + Send {
@@ -72,9 +83,9 @@ impl Module for Mempool {
 }
 
 impl Mempool {
-    pub fn new(ctx: &SharedRunContext) -> Mempool {
+    pub async fn new(ctx: &SharedRunContext) -> Mempool {
         Mempool {
-            bus: ctx.bus.new_handle(),
+            bus: MempoolBusClient::new_from_bus(ctx.bus.new_handle()).await,
             metrics: MempoolMetrics::global(&ctx.config),
             crypto: ctx.crypto.clone(),
             validators: ctx.validator_registry.share(),
@@ -158,8 +169,6 @@ impl Mempool {
     async fn broadcast_tx(&mut self, tx: Transaction) -> Result<()> {
         self.metrics.add_broadcasted_tx("blob".to_string());
         self.bus
-            .sender::<OutboundMessage>()
-            .await
             .send(OutboundMessage::broadcast(
                 self.sign_net_message(MempoolNetMessage::NewTx(tx))?,
             ))
@@ -171,7 +180,7 @@ impl Mempool {
         self.crypto.sign(msg)
     }
 
-    fn handle_command(&mut self, command: MempoolCommand) -> Result<Option<MempoolResponse>> {
+    fn handle_command(&mut self, command: &mut MempoolCommand) -> Result<MempoolResponse> {
         match command {
             MempoolCommand::CreatePendingBatch { id } => {
                 info!("Creating pending transaction batch with id {}", id);
@@ -179,7 +188,10 @@ impl Mempool {
                 self.pending_batches.insert(id.clone(), txs.clone());
                 self.metrics.snapshot_batched_tx(self.pending_batches.len());
                 self.metrics.add_batch();
-                Ok(Some(MempoolResponse::PendingBatch { id, txs }))
+                Ok(MempoolResponse::PendingBatch {
+                    id: std::mem::take(id),
+                    txs,
+                })
             }
         }
     }

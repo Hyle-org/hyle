@@ -2,9 +2,14 @@
 
 use crate::{
     bus::SharedMessageBus,
+    bus::{bus_client, command_response::Query},
     history::History,
+    model::ContractName,
     model::SharedRunContext,
-    utils::{conf::SharedConf, modules::Module},
+    node_state::model::Contract,
+    tools::mock_workflow::RunScenario,
+    utils::conf::SharedConf,
+    utils::modules::Module,
 };
 use anyhow::{Context, Result};
 use axum::{
@@ -14,13 +19,22 @@ use axum::{
     Router,
 };
 use axum_otel_metrics::HttpMetricsLayer;
+use endpoints::RestApiMessage;
 use tower_http::trace::TraceLayer;
 use tracing::info;
 
 pub mod endpoints;
 
+bus_client! {
+struct RestBusClient {
+    sender(RestApiMessage),
+    sender(RunScenario),
+    sender(Query<ContractName, Contract>),
+}
+}
+
 pub struct RouterState {
-    pub bus: SharedMessageBus,
+    bus: RestBusClient,
     pub history: History,
 }
 
@@ -38,7 +52,7 @@ impl Module for RestApi {
 
     type Context = RestApiRunContext;
 
-    fn build(_ctx: &Self::Context) -> Result<Self> {
+    async fn build(_ctx: &Self::Context) -> Result<Self> {
         Ok(RestApi {})
     }
 
@@ -71,7 +85,10 @@ pub async fn rest_server(
         .route("/v1/tools/run_scenario", post(endpoints::run_scenario))
         .nest("/v1/history", History::api())
         .layer(metrics_layer)
-        .with_state(RouterState { bus, history });
+        .with_state(RouterState {
+            bus: RestBusClient::new_from_bus(bus).await,
+            history,
+        });
 
     let listener = tokio::net::TcpListener::bind(config.rest_addr())
         .await
@@ -85,8 +102,16 @@ pub async fn rest_server(
 
 impl Clone for RouterState {
     fn clone(&self) -> Self {
+        use crate::utils::static_type_map::Pick;
         Self {
-            bus: self.bus.new_handle(),
+            bus: RestBusClient::new(
+                Pick::<tokio::sync::broadcast::Sender<RestApiMessage>>::get(&self.bus).clone(),
+                Pick::<tokio::sync::broadcast::Sender<RunScenario>>::get(&self.bus).clone(),
+                Pick::<tokio::sync::broadcast::Sender<Query<ContractName, Contract>>>::get(
+                    &self.bus,
+                )
+                .clone(),
+            ),
             history: self.history.share(),
         }
     }
