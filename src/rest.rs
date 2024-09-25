@@ -1,15 +1,12 @@
 //! Public API for interacting with the node.
 
 use crate::{
-    bus::SharedMessageBus,
-    bus::{bus_client, command_response::Query},
-    history::History,
-    model::ContractName,
-    model::SharedRunContext,
+    bus::{bus_client, command_response::Query, SharedMessageBus},
+    history::{History, HistoryState},
+    model::{ContractName, SharedRunContext},
     node_state::model::Contract,
     tools::mock_workflow::RunScenario,
-    utils::conf::SharedConf,
-    utils::modules::Module,
+    utils::{conf::SharedConf, modules::Module},
 };
 use anyhow::{Context, Result};
 use axum::{
@@ -35,13 +32,13 @@ struct RestBusClient {
 
 pub struct RouterState {
     bus: RestBusClient,
-    pub history: History,
+    pub history: HistoryState,
 }
 
 pub struct RestApiRunContext {
     pub ctx: SharedRunContext,
     pub metrics_layer: HttpMetricsLayer,
-    pub history: History,
+    pub history: HistoryState,
 }
 
 pub struct RestApi {}
@@ -70,7 +67,7 @@ pub async fn rest_server(
     config: SharedConf,
     bus: SharedMessageBus,
     metrics_layer: HttpMetricsLayer,
-    history: History,
+    history: HistoryState,
 ) -> Result<()> {
     info!("rest listening on {}", config.rest_addr());
     let app = Router::new()
@@ -112,7 +109,7 @@ impl Clone for RouterState {
                 )
                 .clone(),
             ),
-            history: self.history.share(),
+            history: self.history.clone(),
         }
     }
 }

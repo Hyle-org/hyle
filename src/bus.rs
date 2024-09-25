@@ -31,21 +31,36 @@ impl SharedMessageBus {
         }
     }
 
-    pub async fn receiver<M: BusMessage + Send + Sync + Clone + 'static>(
+    async fn receiver<M: BusMessage + Send + Sync + Clone + 'static>(
         &self,
     ) -> broadcast::Receiver<M> {
         self.sender().await.subscribe()
     }
 
-    pub async fn sender<M: BusMessage + Send + Sync + Clone + 'static>(
-        &self,
-    ) -> broadcast::Sender<M> {
+    async fn sender<M: BusMessage + Send + Sync + Clone + 'static>(&self) -> broadcast::Sender<M> {
         self.channels
             .lock()
             .await
             .entry::<broadcast::Sender<M>>()
             .or_insert_with(|| broadcast::channel(CHANNEL_CAPACITY).0)
             .clone()
+    }
+}
+
+pub mod dont_use_this {
+    use super::*;
+    /// Get a sender for a specific message type.
+    /// Intended for use by BusClient implementations only.
+    pub async fn get_sender<M: BusMessage + Send + Sync + Clone + 'static>(
+        bus: &SharedMessageBus,
+    ) -> broadcast::Sender<M> {
+        bus.sender::<M>().await
+    }
+
+    pub async fn get_receiver<M: BusMessage + Send + Sync + Clone + 'static>(
+        bus: &SharedMessageBus,
+    ) -> broadcast::Receiver<M> {
+        bus.receiver::<M>().await
     }
 }
 
@@ -76,10 +91,11 @@ macro_rules! bus_client {
         use $crate::bus::BusClientReceiver;
         #[allow(unused_imports)]
         use $crate::bus::BusClientSender;
+        #[allow(unused_imports)]
+        use $crate::bus::dont_use_this::{get_receiver, get_sender};
         use $crate::utils::static_type_map::static_type_map;
-
-        $(#[$meta])*
         static_type_map! {
+            $(#[$meta])*
             struct $name (
                 $(tokio::sync::broadcast::Sender<$sender>,)*
                 $(tokio::sync::broadcast::Receiver<$receiver>,)*
@@ -88,8 +104,8 @@ macro_rules! bus_client {
         impl $name {
             pub async fn new_from_bus(bus: SharedMessageBus) -> $name {
                 $name::new(
-                    $(bus.sender::<$sender>().await,)*
-                    $(bus.receiver::<$receiver>().await,)*
+                    $(get_sender::<$sender>(&bus).await,)*
+                    $(get_receiver::<$receiver>(&bus).await,)*
                 )
             }
         }

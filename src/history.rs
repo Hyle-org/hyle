@@ -10,7 +10,7 @@ mod proofs;
 mod transactions;
 
 use crate::{
-    bus::SharedMessageBus,
+    bus::{bus_client, SharedMessageBus},
     consensus::ConsensusEvent,
     model::{Block, Hashable, SharedRunContext},
     rest,
@@ -41,9 +41,19 @@ pub fn u64_to_str(u: u64, buf: &mut [u8]) -> &str {
     str::from_utf8(&buf[..len]).unwrap()
 }
 
+bus_client! {
+#[derive(Debug)]
+struct HistoryBus {
+    receiver(ConsensusEvent),
+}
+}
+
+pub type HistoryState = Arc<RwLock<HistoryInner>>;
+
 #[derive(Debug)]
 pub struct History {
-    inner: Arc<RwLock<HistoryInner>>,
+    bus: HistoryBus,
+    inner: HistoryState,
 }
 
 impl Module for History {
@@ -55,40 +65,40 @@ impl Module for History {
 
     async fn build(ctx: &Self::Context) -> Result<Self> {
         Self::new(
+            ctx,
             ctx.config
                 .data_directory
                 .join("history.db")
                 .to_str()
                 .context("invalid data directory")?,
         )
+        .await
     }
 
     fn run(&mut self, ctx: Self::Context) -> impl futures::Future<Output = Result<()>> + Send {
-        self.start(ctx.config.clone(), ctx.bus.new_handle())
+        self.start(ctx.config.clone())
     }
 }
 
 impl History {
-    pub fn new(db_name: &str) -> Result<Self> {
+    pub async fn new(ctx: &SharedRunContext, db_name: &str) -> Result<Self> {
         Ok(Self {
-            inner: Arc::new(RwLock::new(HistoryInner::new(db_name)?)),
+            bus: HistoryBus::new_from_bus(ctx.bus.new_handle()).await,
+            inner: Arc::new(RwLock::new(HistoryInner::new(db_name).await?)),
         })
     }
 
-    pub fn share(&self) -> Self {
-        Self {
-            inner: Arc::clone(&self.inner),
-        }
+    pub fn share(&self) -> HistoryState {
+        self.inner.clone()
     }
 
-    pub async fn start(&mut self, config: SharedConf, bus: SharedMessageBus) -> Result<()> {
+    pub async fn start(&mut self, config: SharedConf) -> Result<()> {
         let interval = config.storage.interval;
-        let mut receiver = bus.receiver::<ConsensusEvent>().await;
 
         loop {
             sleep(Duration::from_secs(interval)).await;
             tokio::select! {
-                Ok(event) = receiver.recv() => {
+                Ok(event) = self.bus.recv() => {
                     match event {
                         ConsensusEvent::CommitBlock{block, ..} => self.handle_block(block).await,
                     }
@@ -214,7 +224,7 @@ pub struct HistoryInner {
 }
 
 impl HistoryInner {
-    pub fn new(db_name: &str) -> Result<Self> {
+    pub async fn new(db_name: &str) -> Result<Self> {
         let db = sled::Config::new()
             .use_compression(true)
             .compression_factor(15)
