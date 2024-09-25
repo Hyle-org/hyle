@@ -1,99 +1,105 @@
 use super::{
+    db::{Db, Iter, KeyMaker},
     model::{Contract, ContractCow},
-    store::Store,
 };
-use crate::model::RegisterContractTransaction;
-use anyhow::{bail, Context, Result};
+use crate::model::{BlockHeight, RegisterContractTransaction};
+use anyhow::Result;
 use core::str;
-use serde::Deserialize;
+use serde::de::DeserializeOwned;
 use std::borrow::Cow;
+use tracing::info;
+
+/// ContractsKey contains a `BlockHeight` and a `tx_index`
+#[derive(Debug, Default)]
+pub struct ContractsKey(pub BlockHeight, pub usize /* tx_index */);
+
+impl KeyMaker for ContractsKey {
+    fn make_key<'a>(&self, writer: &'a mut String) -> &'a str {
+        use std::fmt::Write;
+        _ = write!(writer, "{:08x}:{:08x}", self.0 .0, self.1);
+        writer.as_str()
+    }
+}
+
+/// ContractsKeyAlt contains a `name`
+#[derive(Debug, Default)]
+pub struct ContractsKeyAlt<'b>(pub &'b str);
+
+impl<'b> KeyMaker for ContractsKeyAlt<'b> {
+    fn make_key<'a>(&self, writer: &'a mut String) -> &'a str {
+        use std::fmt::Write;
+        _ = write!(writer, "{}", self.0);
+        writer.as_str()
+    }
+}
+
+fn contract_cow<'a>(
+    block_height: BlockHeight,
+    tx_index: usize,
+    tx_hash: &'a String,
+    contract: &'a RegisterContractTransaction,
+) -> ContractCow<'a> {
+    ContractCow {
+        owner: Cow::Borrowed(&contract.owner),
+        verifier: Cow::Borrowed(&contract.verifier),
+        program_id: Cow::Borrowed(&contract.program_id),
+        state_digest: Cow::Borrowed(&contract.state_digest),
+        contract_name: Cow::Borrowed(&contract.contract_name),
+        block_height,
+        tx_index,
+        tx_hash: Cow::Borrowed(tx_hash),
+    }
+}
 
 #[derive(Debug)]
 pub struct Contracts {
-    store: Store,
-}
-
-#[derive(Deserialize, Debug)]
-pub struct ContractsFilter {
-    pub limit: Option<usize>,
+    db: Db,
 }
 
 impl Contracts {
     pub fn new(db: &sled::Db) -> Result<Self> {
         Ok(Self {
-            store: Store::new("contracts", db)?,
+            db: Db::new(db, "contracts_ord", Some("contracts_alt"))?,
         })
     }
 
-    pub fn put(&mut self, tx_hash: &String, contract: &RegisterContractTransaction) -> Result<()> {
-        let key = format!("{}:{}", contract.contract_name, tx_hash);
-        self.store.put(
-            // &contract.contract_name.0, ?
-            &key,
-            &ContractCow {
-                contract_name: Cow::Borrowed(&contract.contract_name),
-                owner: Cow::Borrowed(&contract.owner),
-                program_id: Cow::Borrowed(&contract.program_id),
-                verifier: Cow::Borrowed(&contract.verifier),
-                state_digest: Cow::Borrowed(&contract.state_digest),
-            },
+    pub fn len(&self) -> usize {
+        self.db.len()
+    }
+
+    pub fn put(
+        &mut self,
+        block_height: BlockHeight,
+        tx_index: usize,
+        tx_hash: &String,
+        data: &RegisterContractTransaction,
+    ) -> Result<()> {
+        let data = contract_cow(block_height, tx_index, tx_hash, data);
+        info!("storing contract {}:{}", block_height, tx_index);
+        self.db.put(
+            ContractsKey(block_height, tx_index),
+            ContractsKeyAlt(tx_hash),
+            &data,
         )
     }
 
-    pub fn get(&self, contract: &str, tx_hash: &str) -> Result<Option<Contract>> {
-        let key = format!("{}:{}", contract, tx_hash);
-        self.store
-            .get(&key)
-            .with_context(|| format!("retrieving contract {}", contract))
+    pub fn get(&mut self, block_height: BlockHeight, tx_index: usize) -> Result<Option<Contract>> {
+        self.db.ord_get(ContractsKey(block_height, tx_index))
     }
 
-    pub fn search(&self, filter: &ContractsFilter) -> Result<Vec<Contract>> {
-        let limit = filter
-            .limit
-            .map(|l| if l > 50 { 50 } else { l })
-            .unwrap_or(50);
-        let mut contracts = Vec::with_capacity(limit);
-        let mut iter = self.store.tree.range(""..);
-        loop {
-            match iter.next() {
-                Some(Ok((k, v))) => {
-                    let contract = if let Ok(key) = str::from_utf8(&k) {
-                        ron::de::from_bytes(&v).with_context(|| {
-                            format!("deserializing data of {} from contracts", key)
-                        })?
-                    } else {
-                        ron::de::from_bytes(&v).context("deserializing data from contracts")?
-                    };
-                    contracts.push(contract);
-                }
-                Some(Err(e)) => bail!("iterating on contracts: {}", e),
-                None => break Ok(contracts),
-            }
-        }
+    pub fn get_with_name(&mut self, name: &str) -> Option<Iter<Contract>> {
+        self.db.alt_scan_prefix(ContractsKeyAlt(name))
     }
 
-    pub fn search_by_name(&self, name: &str, filter: &ContractsFilter) -> Result<Vec<Contract>> {
-        let limit = filter
-            .limit
-            .map(|l| if l > 50 { 50 } else { l })
-            .unwrap_or(50);
-        let mut contracts = Vec::with_capacity(limit);
-        let mut iter = self.store.tree.scan_prefix(name);
-        loop {
-            match iter.next() {
-                Some(Ok((k, v))) => {
-                    let contract = if let Ok(key) = str::from_utf8(&k) {
-                        ron::de::from_bytes(&v).with_context(|| {
-                            format!("deserializing data of {} from contracts", key)
-                        })?
-                    } else {
-                        ron::de::from_bytes(&v).context("deserializing data from contracts")?
-                    };
-                    contracts.push(contract);
-                }
-                Some(Err(e)) => bail!("iterating on contracts: {}", e),
-                None => break Ok(contracts),
-            }
-        }
+    pub fn last(&self) -> Result<Option<Contract>> {
+        self.db.ord_last()
+    }
+
+    pub fn range<T: DeserializeOwned>(&mut self, min: ContractsKey, max: ContractsKey) -> Iter<T> {
+        self.db.ord_range(min, max)
+    }
+
+    pub fn scan_prefix<T: DeserializeOwned>(&mut self, prefix: ContractsKey) -> Iter<T> {
+        self.db.ord_scan_prefix(prefix)
     }
 }

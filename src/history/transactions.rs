@@ -1,32 +1,66 @@
 use super::{
+    db::{Db, Iter, KeyMaker},
     model::{Transaction, TransactionCow},
-    store::Store,
 };
 use crate::model::{BlockHeight, TransactionData};
-use anyhow::{bail, Context, Result};
+use anyhow::Result;
 use core::str;
-use serde::Deserialize;
+use serde::de::DeserializeOwned;
 use std::borrow::Cow;
+use tracing::info;
 
-#[derive(Deserialize, Debug)]
-pub struct TransactionsFilter {
-    pub min: Option<usize>,
-    pub max: Option<usize>,
-    pub limit: Option<usize>,
+/// TransactionsKey contains a `BlockHeight` and a `tx_index`
+#[derive(Debug, Default)]
+pub struct TransactionsKey(pub BlockHeight, pub usize);
+
+impl KeyMaker for TransactionsKey {
+    fn make_key<'a>(&self, writer: &'a mut String) -> &'a str {
+        use std::fmt::Write;
+        _ = write!(writer, "{:08x}:{:08x}", self.0 .0, self.1);
+        writer.as_str()
+    }
+}
+
+/// TransactionsKeyAlt contains a `tx_hash`
+#[derive(Debug, Default)]
+pub struct TransactionsKeyAlt<'b>(pub &'b str);
+
+impl<'b> KeyMaker for TransactionsKeyAlt<'b> {
+    fn make_key<'a>(&self, writer: &'a mut String) -> &'a str {
+        use std::fmt::Write;
+        _ = write!(writer, "{}", self.0);
+        writer.as_str()
+    }
+}
+
+pub fn transaction_cow<'a>(
+    block_height: BlockHeight,
+    tx_index: usize,
+    tx_hash: &'a String,
+    data: &'a TransactionData,
+) -> TransactionCow<'a> {
+    TransactionCow {
+        block_height,
+        tx_index,
+        tx_hash: Cow::Borrowed(tx_hash),
+        data: Cow::Borrowed(data),
+    }
 }
 
 #[derive(Debug)]
 pub struct Transactions {
-    store: Store,
-    rels: Store,
+    db: Db,
 }
 
 impl Transactions {
     pub fn new(db: &sled::Db) -> Result<Self> {
         Ok(Self {
-            store: Store::new("transactions", db)?,
-            rels: Store::new("transactions_rels", db)?,
+            db: Db::new(db, "transactions_ord", Some("transactions_rels"))?,
         })
+    }
+
+    pub fn len(&self) -> usize {
+        self.db.len()
     }
 
     pub fn put(
@@ -36,80 +70,40 @@ impl Transactions {
         tx_hash: &String,
         data: &TransactionData,
     ) -> Result<()> {
-        // self.store.put(
-        //     tx_hash,
-        //     &TransactionCow {
-        //         block_height,
-        //         tx_index,
-        //         tx_hash: Cow::Borrowed(tx_hash),
-        //         data: Cow::Borrowed(data),
-        //     },
-        // )
-
-        // FIXME: store the relation in transactions_rels
-        // is relevant ? if we know block_height, we can retrieve the whole block
-        // and iter through the transactions
-        let res = self.store.put(
-            tx_hash,
-            &TransactionCow {
-                block_height,
-                tx_index,
-                tx_hash: Cow::Borrowed(tx_hash),
-                data: Cow::Borrowed(data),
-            },
-        );
-        self.rels
-            .put(&format!("{}:{}", block_height, tx_index), tx_hash)?;
-        res
+        let tx = transaction_cow(block_height, tx_index, tx_hash, data);
+        info!("storing tx {}:{}", block_height, tx_index);
+        self.db.put(
+            TransactionsKey(block_height, tx_index),
+            TransactionsKeyAlt(tx_hash),
+            &tx,
+        )
     }
 
-    pub fn get(&self, key: &str) -> Result<Option<Transaction>> {
-        self.store
-            .get(key)
-            .with_context(|| format!("retrieving key {}", key))
-    }
-
-    pub fn get_with_height_and_index(
-        &self,
+    pub fn get(
+        &mut self,
         block_height: BlockHeight,
         tx_index: usize,
     ) -> Result<Option<Transaction>> {
-        let key = format!("{}:{}", block_height, tx_index);
-        match self
-            .rels
-            .get::<String>(&key)
-            .with_context(|| format!("retrieving key {}", key))
-        {
-            Ok(Some(tx_hash)) => self.get(&tx_hash),
-            Ok(None) => Ok(None),
-            Err(e) => Err(e),
-        }
+        self.db.ord_get(TransactionsKey(block_height, tx_index))
     }
 
-    pub fn search(&self, filter: &TransactionsFilter) -> Result<Vec<Transaction>> {
-        let limit = filter
-            .limit
-            .map(|l| if l > 50 { 50 } else { l })
-            .unwrap_or(50);
-        let mut transactions = Vec::with_capacity(limit);
+    pub fn get_with_hash(&mut self, tx_hash: &str) -> Result<Option<Transaction>> {
+        self.db.alt_get(TransactionsKeyAlt(tx_hash))
+    }
 
-        let mut iter = self.store.tree.range(""..);
+    pub fn last(&self) -> Result<Option<Transaction>> {
+        self.db.ord_last()
+    }
 
-        loop {
-            match iter.next() {
-                Some(Ok((k, v))) => {
-                    let contract = if let Ok(key) = str::from_utf8(&k) {
-                        ron::de::from_bytes(&v).with_context(|| {
-                            format!("deserializing data of {} from transactions", key)
-                        })?
-                    } else {
-                        ron::de::from_bytes(&v).context("deserializing data from transactions")?
-                    };
-                    transactions.push(contract);
-                }
-                Some(Err(e)) => bail!("iterating on transactions: {}", e),
-                None => break Ok(transactions),
-            }
-        }
+    pub fn range<T: DeserializeOwned>(
+        &mut self,
+        min: TransactionsKey,
+        max: TransactionsKey,
+    ) -> Iter<T> {
+        self.db.ord_range(min, max)
+    }
+
+    pub fn scan_prefix<T: DeserializeOwned>(&mut self, prefix: TransactionsKey) -> Iter<T> {
+        self.db.ord_scan_prefix(prefix)
     }
 }

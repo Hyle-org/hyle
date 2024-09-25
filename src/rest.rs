@@ -1,6 +1,11 @@
 //! Public API for interacting with the node.
 
-use crate::{bus::SharedMessageBus, history::History, utils::conf::SharedConf};
+use crate::{
+    bus::SharedMessageBus,
+    history::History,
+    model::SharedRunContext,
+    utils::{conf::SharedConf, modules::Module},
+};
 use anyhow::{Context, Result};
 use axum::{
     http::StatusCode,
@@ -17,6 +22,34 @@ pub mod endpoints;
 pub struct RouterState {
     pub bus: SharedMessageBus,
     pub history: History,
+}
+
+pub struct RestApiRunContext {
+    pub ctx: SharedRunContext,
+    pub metrics_layer: HttpMetricsLayer,
+    pub history: History,
+}
+
+pub struct RestApi {}
+impl Module for RestApi {
+    fn name() -> &'static str {
+        "RestApi"
+    }
+
+    type Context = RestApiRunContext;
+
+    fn build(_ctx: &Self::Context) -> Result<Self> {
+        Ok(RestApi {})
+    }
+
+    fn run(&mut self, ctx: Self::Context) -> impl futures::Future<Output = Result<()>> + Send {
+        rest_server(
+            ctx.ctx.config.clone(),
+            ctx.ctx.bus.new_handle(),
+            ctx.metrics_layer,
+            ctx.history,
+        )
+    }
 }
 
 pub async fn rest_server(
@@ -36,7 +69,7 @@ pub async fn rest_server(
         .route("/v1/tx/send/blob", post(endpoints::send_blob_transaction))
         .route("/v1/tx/send/proof", post(endpoints::send_proof_transaction))
         .route("/v1/tools/run_scenario", post(endpoints::run_scenario))
-        .nest("/v1/indexer", History::api())
+        .nest("/v1/history", History::api())
         .layer(metrics_layer)
         .with_state(RouterState { bus, history });
 

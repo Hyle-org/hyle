@@ -4,7 +4,8 @@ use std::{sync::Arc, time::Duration};
 
 use crate::{
     bus::SharedMessageBus,
-    utils::{conf::SharedConf, crypto::BlstCrypto},
+    model::SharedRunContext,
+    utils::{conf::SharedConf, crypto::SharedBlstCrypto, modules::Module},
 };
 use anyhow::{Error, Result};
 use tokio::{net::TcpListener, time::sleep};
@@ -14,10 +15,27 @@ pub mod network; // FIXME(Bertrand): NetMessage should be private
 mod peer;
 pub mod stream;
 
+pub struct P2P {}
+impl Module for P2P {
+    fn name() -> &'static str {
+        "P2P"
+    }
+
+    type Context = SharedRunContext;
+
+    fn build(_ctx: &Self::Context) -> Result<Self> {
+        Ok(P2P {})
+    }
+
+    fn run(&mut self, ctx: Self::Context) -> impl futures::Future<Output = Result<()>> + Send {
+        p2p_server(ctx.config.clone(), ctx.bus.new_handle(), ctx.crypto.clone())
+    }
+}
+
 pub async fn p2p_server(
     config: SharedConf,
     bus: SharedMessageBus,
-    crypto: BlstCrypto,
+    crypto: SharedBlstCrypto,
 ) -> Result<(), Error> {
     let mut peer_id = 1u64;
 
