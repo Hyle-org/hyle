@@ -1,5 +1,7 @@
 #![allow(dead_code, unused_variables)]
 
+use std::sync::Arc;
+
 use anyhow::{anyhow, Error, Result};
 use blst::min_sig::{
     AggregatePublicKey, AggregateSignature, PublicKey, SecretKey, Signature as BlstSignature,
@@ -18,6 +20,7 @@ pub struct BlstCrypto {
     validator_pubkey: ValidatorPublicKey,
     validator_id: ValidatorId,
 }
+pub type SharedBlstCrypto = Arc<BlstCrypto>;
 
 #[derive(Default)]
 struct Aggregates {

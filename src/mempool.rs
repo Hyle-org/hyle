@@ -4,10 +4,10 @@ use crate::{
     bus::{command_response::NeedAnswer, BusMessage, SharedMessageBus},
     consensus::ConsensusEvent,
     handle_messages,
-    model::{Hashable, Transaction},
+    model::{Hashable, SharedRunContext, Transaction},
     p2p::network::{OutboundMessage, SignedWithId},
     rest::endpoints::RestApiMessage,
-    utils::{conf::SharedConf, crypto::BlstCrypto, modules::Module},
+    utils::{conf::SharedConf, crypto::SharedBlstCrypto, modules::Module},
     validator_registry::{ValidatorRegistry, ValidatorRegistryNetMessage},
 };
 use anyhow::{Context, Result};
@@ -25,7 +25,7 @@ struct Batch(String, Vec<Transaction>);
 
 pub struct Mempool {
     bus: SharedMessageBus,
-    crypto: BlstCrypto,
+    crypto: SharedBlstCrypto,
     metrics: MempoolMetrics,
     validators: ValidatorRegistry,
     // txs accumulated, not yet transmitted to the consensus
@@ -56,13 +56,27 @@ pub enum MempoolResponse {
 impl BusMessage for MempoolResponse {}
 
 impl Module for Mempool {
+    type Context = SharedRunContext;
+
     fn name() -> &'static str {
         "Mempool"
+    }
+
+    fn build(ctx: &SharedRunContext) -> Result<Self> {
+        Ok(Mempool::new(
+            ctx.bus.new_handle(),
+            ctx.config.clone(),
+            ctx.crypto.clone(),
+        ))
+    }
+
+    fn run(&mut self, _ctx: Self::Context) -> impl futures::Future<Output = Result<()>> + Send {
+        self.start()
     }
 }
 
 impl Mempool {
-    pub fn new(bus: SharedMessageBus, config: SharedConf, crypto: BlstCrypto) -> Mempool {
+    pub fn new(bus: SharedMessageBus, config: SharedConf, crypto: SharedBlstCrypto) -> Mempool {
         Mempool {
             bus,
             metrics: MempoolMetrics::global(&config),

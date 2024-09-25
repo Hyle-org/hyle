@@ -11,9 +11,19 @@ use std::{
     fmt,
     io::Write,
     ops::{Add, Deref},
+    path::PathBuf,
+    sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
 };
 use tracing::debug;
+
+use crate::{
+    bus::SharedMessageBus,
+    utils::{
+        conf::SharedConf,
+        crypto::SharedBlstCrypto,
+    },
+};
 
 #[derive(Default, Clone, Eq, PartialEq, Hash, Encode, Decode)]
 pub struct TxHash(pub Vec<u8>);
@@ -363,6 +373,14 @@ pub fn get_current_timestamp() -> u64 {
         .expect("Time went backwards")
         .as_secs()
 }
+
+pub struct RunContext {
+    pub config: SharedConf,
+    pub bus: SharedMessageBus,
+    pub crypto: SharedBlstCrypto,
+    pub data_directory: PathBuf,
+}
+pub type SharedRunContext = Arc<RunContext>;
 
 #[cfg(test)]
 mod tests {

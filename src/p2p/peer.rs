@@ -21,7 +21,7 @@ use crate::p2p::network::SignedWithId;
 use crate::p2p::stream::read_stream;
 use crate::p2p::stream::send_binary;
 use crate::utils::conf::SharedConf;
-use crate::utils::crypto::BlstCrypto;
+use crate::utils::crypto::SharedBlstCrypto;
 use crate::validator_registry::ConsensusValidator;
 use crate::validator_registry::ValidatorId;
 use crate::validator_registry::ValidatorRegistryNetMessage;
@@ -49,7 +49,7 @@ impl Peer {
         id: u64,
         stream: TcpStream,
         bus: SharedMessageBus,
-        crypto: BlstCrypto,
+        crypto: SharedBlstCrypto,
         conf: SharedConf,
     ) -> Self {
         let (cmd_tx, cmd_rx) = mpsc::channel::<Cmd>(100);

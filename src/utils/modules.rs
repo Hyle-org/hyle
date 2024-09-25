@@ -1,12 +1,19 @@
 use std::{future::Future, pin::Pin};
 
-use anyhow::{bail, Error};
+use anyhow::{bail, Error, Result};
 use tokio::task::JoinHandle;
 use tracing::info;
 
 /// Module trait to define startup dependencies
-pub trait Module {
+pub trait Module
+where
+    Self: Sized,
+{
+    type Context;
+
     fn name() -> &'static str;
+    fn build(ctx: &Self::Context) -> Result<Self>;
+    fn run(&mut self, ctx: Self::Context) -> impl futures::Future<Output = Result<()>> + Send;
 }
 
 struct ModuleStarter {
@@ -29,16 +36,32 @@ pub struct ModulesHandler {
 }
 
 impl ModulesHandler {
-    pub fn add_module<M>(
-        &mut self,
-        starter: impl Future<Output = Result<(), Error>> + Send + 'static,
-    ) where
+    async fn run_module<M>(mut module: M, ctx: M::Context) -> Result<()>
+    where
         M: Module,
+    {
+        module.run(ctx).await
+    }
+
+    pub fn build_module<M>(&mut self, ctx: M::Context) -> Result<()>
+    where
+        M: Module + 'static + Send,
+        <M as Module>::Context: std::marker::Send,
+    {
+        let module = M::build(&ctx)?;
+        self.add_module(module, ctx)
+    }
+
+    pub fn add_module<M>(&mut self, module: M, ctx: M::Context) -> Result<()>
+    where
+        M: Module + 'static + Send,
+        <M as Module>::Context: std::marker::Send,
     {
         self.modules.push(ModuleStarter {
             name: M::name(),
-            starter: Box::pin(starter),
+            starter: Box::pin(Self::run_module(module, ctx)),
         });
+        Ok(())
     }
 
     /// Start Modules

@@ -12,7 +12,7 @@ mod transactions;
 use crate::{
     bus::SharedMessageBus,
     consensus::ConsensusEvent,
-    model::{Block, Hashable},
+    model::{Block, Hashable, SharedRunContext},
     rest,
     utils::{conf::SharedConf, modules::Module},
 };
@@ -49,6 +49,21 @@ pub struct History {
 impl Module for History {
     fn name() -> &'static str {
         "History"
+    }
+
+    type Context = SharedRunContext;
+
+    fn build(ctx: &Self::Context) -> Result<Self> {
+        Self::new(
+            ctx.data_directory
+                .join("history.db")
+                .to_str()
+                .context("invalid data directory")?,
+        )
+    }
+
+    fn run(&mut self, ctx: Self::Context) -> impl futures::Future<Output = Result<()>> + Send {
+        self.start(ctx.config.clone(), ctx.bus.new_handle())
     }
 }
 

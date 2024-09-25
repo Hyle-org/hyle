@@ -6,7 +6,7 @@ use crate::{
     handle_messages,
     model::{
         BlobTransaction, BlobsHash, Block, BlockHeight, ContractName, Hashable, ProofTransaction,
-        RegisterContractTransaction, StateDigest, Transaction, TxHash,
+        RegisterContractTransaction, SharedRunContext, StateDigest, Transaction, TxHash,
     },
     utils::{
         conf::SharedConf,
@@ -48,6 +48,16 @@ pub struct NodeState {
 impl Module for NodeState {
     fn name() -> &'static str {
         "NodeState"
+    }
+
+    type Context = SharedRunContext;
+
+    fn build(ctx: &Self::Context) -> Result<Self> {
+        Ok(NodeState::new(ctx.bus.new_handle()))
+    }
+
+    fn run(&mut self, ctx: Self::Context) -> impl futures::Future<Output = Result<()>> + Send {
+        self.start(ctx.config.clone())
     }
 }
 

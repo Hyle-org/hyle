@@ -3,6 +3,7 @@
 use crate::{
     bus::SharedMessageBus,
     history::History,
+    model::SharedRunContext,
     utils::{conf::SharedConf, modules::Module},
 };
 use anyhow::{Context, Result};
@@ -23,10 +24,31 @@ pub struct RouterState {
     pub history: History,
 }
 
+pub struct RestApiRunContext {
+    pub ctx: SharedRunContext,
+    pub metrics_layer: HttpMetricsLayer,
+    pub history: History,
+}
+
 pub struct RestApi {}
 impl Module for RestApi {
     fn name() -> &'static str {
         "RestApi"
+    }
+
+    type Context = RestApiRunContext;
+
+    fn build(_ctx: &Self::Context) -> Result<Self> {
+        Ok(RestApi {})
+    }
+
+    fn run(&mut self, ctx: Self::Context) -> impl futures::Future<Output = Result<()>> + Send {
+        rest_server(
+            ctx.ctx.config.clone(),
+            ctx.ctx.bus.new_handle(),
+            ctx.metrics_layer,
+            ctx.history,
+        )
     }
 }
 

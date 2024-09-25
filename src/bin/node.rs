@@ -1,67 +1,67 @@
 use anyhow::{Context, Result};
-use axum_otel_metrics::{HttpMetricsLayer, HttpMetricsLayerBuilder};
+use axum_otel_metrics::HttpMetricsLayerBuilder;
 use clap::Parser;
 use hyle::{
     bus::SharedMessageBus,
     consensus::Consensus,
     history::History,
     mempool::Mempool,
+    model::RunContext,
     node_state::NodeState,
-    p2p::{self, P2P},
-    rest::{self, RestApi},
+    p2p::{P2P},
+    rest::{RestApi, RestApiRunContext},
     tools::mock_workflow::MockWorkflowHandler,
     utils::{
-        conf::{self, SharedConf},
+        conf::{self},
         crypto::BlstCrypto,
-        modules::ModulesHandler,
+        modules::{Module, ModulesHandler},
     },
 };
 use std::{path::Path, sync::Arc};
-use tracing::{debug, error, info, level_filters::LevelFilter, warn};
+use tracing::{debug, error, info, level_filters::LevelFilter};
 use tracing_subscriber::{prelude::*, EnvFilter};
 
-async fn start_consensus(
-    mut consensus: Consensus,
-    bus: SharedMessageBus,
-    config: SharedConf,
-    crypto: BlstCrypto,
-) -> Result<()> {
-    consensus.start(bus, config, crypto).await
-}
-
-async fn start_history(
-    mut history: History,
-    bus: SharedMessageBus,
-    config: SharedConf,
-) -> Result<()> {
-    history.start(config, bus).await
-}
-
-async fn start_node_state(mut node_state: NodeState, config: SharedConf) -> Result<()> {
-    node_state.start(config).await
-}
-
-async fn start_mempool(mut mempool: Mempool) -> Result<()> {
-    mempool.start().await
-}
-
-async fn start_p2p(bus: SharedMessageBus, config: SharedConf, crypto: BlstCrypto) -> Result<()> {
-    p2p::p2p_server(config, bus, crypto).await
-}
-
-async fn start_mock_workflow(bus: SharedMessageBus) -> Result<()> {
-    let mut mock_workflow = hyle::tools::mock_workflow::MockWorkflowHandler::new(bus);
-    mock_workflow.start().await
-}
-
-async fn start_rest_server(
-    config: SharedConf,
-    bus: SharedMessageBus,
-    metrics_layer: HttpMetricsLayer,
-    history: History,
-) -> Result<()> {
-    rest::rest_server(config, bus, metrics_layer, history).await
-}
+//async fn start_consensus(
+//    mut consensus: Consensus,
+//    bus: SharedMessageBus,
+//    config: SharedConf,
+//    crypto: BlstCrypto,
+//) -> Result<()> {
+//    consensus.start(bus, config, crypto).await
+//}
+//
+//async fn start_history(
+//    mut history: History,
+//    bus: SharedMessageBus,
+//    config: SharedConf,
+//) -> Result<()> {
+//    history.start(config, bus).await
+//}
+//
+//async fn start_node_state(mut node_state: NodeState, config: SharedConf) -> Result<()> {
+//    node_state.start(config).await
+//}
+//
+//async fn start_mempool(mut mempool: Mempool) -> Result<()> {
+//    mempool.start().await
+//}
+//
+//async fn start_p2p(bus: SharedMessageBus, config: SharedConf, crypto: BlstCrypto) -> Result<()> {
+//    p2p::p2p_server(config, bus, crypto).await
+//}
+//
+//async fn start_mock_workflow(mut mock_workflow: MockWorkflowHandler) -> Result<()> {
+//    mock_workflow.start().await
+//}
+//
+//async fn start_rest_server(
+//    config: SharedConf,
+//    bus: SharedMessageBus,
+//    metrics_layer: HttpMetricsLayer,
+//    history: History,
+//) -> Result<()> {
+//    rest::rest_server(config, bus, metrics_layer, history).await
+//}
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -117,7 +117,7 @@ async fn main() -> Result<()> {
         .build();
 
     let bus = SharedMessageBus::new();
-    let crypto = BlstCrypto::new(config.id.clone()); // TODO load sk from disk instead of random
+    let crypto = Arc::new(BlstCrypto::new(config.id.clone())); // TODO load sk from disk instead of random
 
     let data_directory = Path::new(
         args.data_directory
@@ -127,41 +127,32 @@ async fn main() -> Result<()> {
 
     std::fs::create_dir_all(data_directory).context("creating data directory")?;
 
-    let mempool = Mempool::new(bus.new_handle(), config.clone(), crypto.clone());
-    let history = History::new(
-        data_directory
-            .join("history.db")
-            .to_str()
-            .context("invalid data directory")?,
-    )?;
-    let node_state = NodeState::new(bus.new_handle());
-    let consensus = Consensus::load_from_disk().unwrap_or_else(|_| {
-        warn!("Failed to load consensus state from disk, using a default one");
-        Consensus::default()
+    let data_directory = data_directory.to_path_buf();
+
+    let ctx = Arc::new(RunContext {
+        bus,
+        config,
+        crypto,
+        data_directory,
     });
 
-    let mut handler = ModulesHandler::default();
-    handler.add_module::<Mempool>(start_mempool(mempool));
-    handler.add_module::<History>(start_history(
-        history.share(),
-        bus.new_handle(),
-        Arc::clone(&config),
-    ));
-    handler.add_module::<NodeState>(start_node_state(node_state, Arc::clone(&config)));
-    handler.add_module::<Consensus>(start_consensus(
-        consensus,
-        bus.new_handle(),
-        Arc::clone(&config),
-        crypto.clone(),
-    ));
-    handler.add_module::<P2P>(start_p2p(bus.new_handle(), Arc::clone(&config), crypto));
-    handler.add_module::<MockWorkflowHandler>(start_mock_workflow(bus.new_handle()));
-    handler.add_module::<RestApi>(start_rest_server(
-        config.clone(),
-        bus.new_handle(),
+    let history = History::build(&ctx)?;
+
+    let rest_api_ctx = RestApiRunContext {
+        ctx: ctx.clone(),
         metrics_layer,
-        history,
-    ));
+        history: history.share(),
+    };
+
+    let mut handler = ModulesHandler::default();
+    handler.build_module::<Mempool>(ctx.clone())?;
+    handler.build_module::<NodeState>(ctx.clone())?;
+    handler.build_module::<Consensus>(ctx.clone())?;
+    handler.build_module::<P2P>(ctx.clone())?;
+    handler.build_module::<MockWorkflowHandler>(ctx.clone())?;
+    handler.build_module::<RestApi>(rest_api_ctx)?;
+
+    handler.add_module(history, ctx.clone())?;
 
     if let Err(e) = handler.start_modules().await {
         error!("Error in module handler: {}", e)
