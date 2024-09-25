@@ -8,7 +8,7 @@ use hyle::{
     mempool::Mempool,
     model::RunContext,
     node_state::NodeState,
-    p2p::{P2P},
+    p2p::P2P,
     rest::{RestApi, RestApiRunContext},
     tools::mock_workflow::MockWorkflowHandler,
     utils::{
@@ -20,48 +20,6 @@ use hyle::{
 use std::{path::Path, sync::Arc};
 use tracing::{debug, error, info, level_filters::LevelFilter};
 use tracing_subscriber::{prelude::*, EnvFilter};
-
-//async fn start_consensus(
-//    mut consensus: Consensus,
-//    bus: SharedMessageBus,
-//    config: SharedConf,
-//    crypto: BlstCrypto,
-//) -> Result<()> {
-//    consensus.start(bus, config, crypto).await
-//}
-//
-//async fn start_history(
-//    mut history: History,
-//    bus: SharedMessageBus,
-//    config: SharedConf,
-//) -> Result<()> {
-//    history.start(config, bus).await
-//}
-//
-//async fn start_node_state(mut node_state: NodeState, config: SharedConf) -> Result<()> {
-//    node_state.start(config).await
-//}
-//
-//async fn start_mempool(mut mempool: Mempool) -> Result<()> {
-//    mempool.start().await
-//}
-//
-//async fn start_p2p(bus: SharedMessageBus, config: SharedConf, crypto: BlstCrypto) -> Result<()> {
-//    p2p::p2p_server(config, bus, crypto).await
-//}
-//
-//async fn start_mock_workflow(mut mock_workflow: MockWorkflowHandler) -> Result<()> {
-//    mock_workflow.start().await
-//}
-//
-//async fn start_rest_server(
-//    config: SharedConf,
-//    bus: SharedMessageBus,
-//    metrics_layer: HttpMetricsLayer,
-//    history: History,
-//) -> Result<()> {
-//    rest::rest_server(config, bus, metrics_layer, history).await
-//}
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
