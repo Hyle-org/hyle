@@ -59,8 +59,7 @@ pub struct BFTRoundState {
     prepare_quorum_certificate: QuorumCertificate,
     prep_votes: HashSet<Signed<ConsensusNetMessage, ValidatorPublicKey>>,
     confirm_ack: HashSet<Signed<ConsensusNetMessage, ValidatorPublicKey>>,
-    commit_quorum_certificate: HashMap<Slot, QuorumCertificate>,
-    block: Option<Block>, // FIXME: Block ou cut ?
+    commit_quorum_certificates: HashMap<Slot, (ConsensusProposalHash, QuorumCertificate)>,
 }
 
 #[derive(Serialize, Deserialize, Encode, Decode, Default, Debug, Clone, PartialEq, Eq, Hash)]
@@ -98,8 +97,8 @@ pub type View = u64;
 pub struct ConsensusProposal {
     pub slot: Slot,
     pub view: u64,
-    pub previous_commit_quorum_certificate: u64, // FIXME. Set correct type
-    pub block: Block,                            // FIXME: Block ou cut ?
+    pub previous_consensus_proposal_hash: ConsensusProposalHash,
+    pub block: Block, // FIXME: Block ou cut ?
 }
 
 impl Hashable<ConsensusProposalHash> for ConsensusProposal {
@@ -109,7 +108,7 @@ impl Hashable<ConsensusProposalHash> for ConsensusProposal {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, PartialEq, Eq, Hash)]
+#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, PartialEq, Eq, Hash, Default)]
 pub struct ConsensusProposalHash(Vec<u8>);
 
 #[derive(Serialize, Deserialize, Encode, Decode)]
@@ -239,28 +238,69 @@ impl Consensus {
                 // Message received by leader.
 
                 // Verifies that previous slot has a valid *Commit* Quorum Certificate
-
+                if self.bft_round_state.slot > 0 {
+                    match self
+                        .bft_round_state
+                        .commit_quorum_certificates
+                        .get(&(self.bft_round_state.slot - 1))
+                    {
+                        Some((
+                            previous_consensus_proposal_hash,
+                            previous_commit_quorum_certificate,
+                        )) => {
+                            let previous_commit_quorum_certificate_with_message = SignedWithKey {
+                                msg: ConsensusNetMessage::ConfirmAck(
+                                    previous_consensus_proposal_hash.clone(),
+                                ),
+                                signature: previous_commit_quorum_certificate.signature.clone(),
+                                validators: previous_commit_quorum_certificate.validators.clone(),
+                            };
+                            // Verify valid signature
+                            match BlstCrypto::verify(
+                                &previous_commit_quorum_certificate_with_message,
+                            ) {
+                                Ok(res) => {
+                                    if !res {
+                                        bail!("Previous Commit Quorum Certificate is invalid")
+                                    }
+                                }
+                                Err(err) => {
+                                    bail!("Previous Commit Quorum Certificate verification failed: {}", err)
+                                }
+                            }
+                            // Verify there is at least 2𝑓+1 validators that signed
+                            let unique_voting_validators =
+                                previous_commit_quorum_certificate_with_message
+                                    .validators
+                                    .iter()
+                                    .cloned()
+                                    .collect::<HashSet<ValidatorPublicKey>>();
+                            // TODO: f have to be computed for previous slot
+                            let f: usize = self.validators.get_validators_count() / 3;
+                            if unique_voting_validators.len() < (2 * f) + 1 {
+                                bail!("Previous Commit Quorum Certificate did not received enough signatures")
+                            }
+                            // Verify those validators are legit
+                        }
+                        None => {
+                            //TODO: bail and find a solution for genesisblock
+                            bail!(
+                                "Can't start new slot: unknown previous commit quorum certificate"
+                            )
+                        }
+                    };
+                }
                 // Verifies that to-be-built block is large enough (?)
 
                 // Updates its bft state
 
-                // Creates new block
-
                 // Creates ConsensusProposal
-                // let previous_commit_quorum_certificate = match self
-                //     .bft_round_state
-                //     .commit_quorum_certificate
-                //     .get(&self.bft_round_state.slot)
-                // {
-                //     Some(v) => v,
-                //     None => {
-                //         bail!("Can't start new slot: unknown previous commit quorum certificate")
-                //     }
-                // };
                 let consensus_proposal = ConsensusProposal {
                     slot: self.bft_round_state.slot,
                     view: self.bft_round_state.view,
-                    previous_commit_quorum_certificate: 1,
+                    previous_consensus_proposal_hash: ConsensusProposalHash(
+                        "todo!()".as_bytes().to_vec(),
+                    ),
                     block: self.new_block(),
                 };
 
@@ -324,6 +364,7 @@ impl Consensus {
 
                 // Waits for at least 𝑛−𝑓 = 2𝑓+1 matching PrepareVote messages
                 let f: usize = self.validators.get_validators_count() / 3;
+                // TODO: Only wait for 2 * f because leader himself if the +1
                 if validated_votes_validators.len() == 2 * f + 1 {
                     // Get all signatures received and change ValidatorId for ValidatorPubKey
                     let aggregates: &Vec<&Signed<ConsensusNetMessage, ValidatorPublicKey>> =
@@ -423,7 +464,9 @@ impl Consensus {
                     .collect::<HashSet<ValidatorPublicKey>>();
 
                 let f: usize = self.validators.get_validators_count() / 3;
-                if confirmed_ack_validators.len() >= (2 * f + 1) {
+
+                // TODO: Only waiting for 2 * f because leader himself if the +1
+                if confirmed_ack_validators.len() == (2 * f + 1) {
                     // Get all signatures received and change ValidatorId for ValidatorPubKey
                     let aggregates: &Vec<&Signed<ConsensusNetMessage, ValidatorPublicKey>> =
                         &self.bft_round_state.confirm_ack.iter().collect();
@@ -441,9 +484,13 @@ impl Consensus {
                         signature: commit_signed_aggregation.signature.clone(),
                         validators: commit_signed_aggregation.validators.clone(),
                     };
-                    self.bft_round_state
-                        .commit_quorum_certificate
-                        .insert(self.bft_round_state.slot, commit_quorum_certificate.clone());
+                    self.bft_round_state.commit_quorum_certificates.insert(
+                        self.bft_round_state.slot,
+                        (
+                            consensus_proposal_hash.clone(),
+                            commit_quorum_certificate.clone(),
+                        ),
+                    );
 
                     // Send Commit message of this certificate to all replicas
                     _ = outbound_sender
@@ -462,7 +509,7 @@ impl Consensus {
                     self.bft_round_state
                         .finish_round(consensus_command_sender)?;
                 }
-
+                // TODO(?): Update behaviour when having more ?
                 Ok(())
             }
             ConsensusNetMessage::Commit(consensus_proposal_hash, commit_quorum_certificate) => {
@@ -486,9 +533,13 @@ impl Consensus {
                             bail!("Commit Quorum Certificate received is invalid")
                         }
                         // Buffers the *Commit* Quorum Cerficiate
-                        self.bft_round_state
-                            .commit_quorum_certificate
-                            .insert(self.bft_round_state.slot, commit_quorum_certificate.clone());
+                        self.bft_round_state.commit_quorum_certificates.insert(
+                            self.bft_round_state.slot,
+                            (
+                                consensus_proposal_hash.clone(),
+                                commit_quorum_certificate.clone(),
+                            ),
+                        );
                     }
                     Err(err) => bail!("Commit Quorum Certificate verification failed: {}", err),
                 }

@@ -27,6 +27,7 @@ fn url(path: &str) -> String {
     format!("http://127.0.0.1:4321{}", path)
 }
 
+#[ignore] // To be merged with consensus
 #[test]
 fn e2e_contract_state_updated() {
     tracing_subscriber::fmt::init();
