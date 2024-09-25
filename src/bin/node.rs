@@ -94,7 +94,7 @@ async fn main() -> Result<()> {
         data_directory,
     });
 
-    let history = History::build(&ctx)?;
+    let history = History::build(&ctx).await?;
 
     let rest_api_ctx = RestApiRunContext {
         ctx: ctx.clone(),
@@ -103,12 +103,14 @@ async fn main() -> Result<()> {
     };
 
     let mut handler = ModulesHandler::default();
-    handler.build_module::<Mempool>(ctx.clone())?;
-    handler.build_module::<NodeState>(ctx.clone())?;
-    handler.build_module::<Consensus>(ctx.clone())?;
-    handler.build_module::<P2P>(ctx.clone())?;
-    handler.build_module::<MockWorkflowHandler>(ctx.clone())?;
-    handler.build_module::<RestApi>(rest_api_ctx)?;
+    handler.build_module::<Mempool>(ctx.clone()).await?;
+    handler.build_module::<NodeState>(ctx.clone()).await?;
+    handler.build_module::<Consensus>(ctx.clone()).await?;
+    handler.build_module::<P2P>(ctx.clone()).await?;
+    handler
+        .build_module::<MockWorkflowHandler>(ctx.clone())
+        .await?;
+    handler.build_module::<RestApi>(rest_api_ctx).await?;
 
     handler.add_module(history, ctx.clone())?;
 
