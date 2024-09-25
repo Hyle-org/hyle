@@ -14,7 +14,10 @@ pub trait Pick<T> {
 macro_rules! static_type_map {
     // Basic syntax - similar to a named tuple.
     // This just reformats to the recursive form
-    ($pub:vis struct $name:ident ($($t1:ty,)+);) => {
+    (
+        $(#[$meta:meta])*
+        $pub:vis struct $name:ident ($($t1:ty,)+);
+    ) => {
         use paste::paste;
         paste! {
             // Wrap it in a module to make the member names private
@@ -22,6 +25,7 @@ macro_rules! static_type_map {
                 use super::*;
                 use paste::paste;
                 static_type_map! {
+                    $(#[$meta])*
                     a: $pub struct $name ($($t1,)+) {}
                 }
             }
@@ -31,10 +35,12 @@ macro_rules! static_type_map {
     };
     // Recursive case - we append to $index every time, processing one type.
     (
+        $(#[$meta:meta])*
         $index:ident: $pub:vis struct $name:ident ($t1:ty, $($t2:ty,)*) { $($idx:ident: $t3:ty,)* }
     ) => {
         paste! {
             static_type_map! {
+                $(#[$meta])*
                 [<a $index>]: $pub struct $name ( $($t2,)* ) {
                     $($idx: $t3,)*
                     $index: $t1,
@@ -55,8 +61,10 @@ macro_rules! static_type_map {
     };
     // End state - just output the struct and the new function (which works like the named tuple constructor)
     (
+        $(#[$meta:meta])*
         $index:ident: $pub:vis struct $name:ident ( ) { $($idx:ident: $t3:ty,)+ }
     ) => {
+        $(#[$meta])*
         pub(super) struct $name {
             $($idx: $t3,)+
         }
