@@ -1,11 +1,11 @@
 services:
   hyle:
-    build: .
+    build: ./..
     privileged: true
     ports:
       - "4321:4321"
     volumes:
-      - ./dataa:/hyle/data
+      - /tmp/hyle-container-data:/hyle/data
     network_mode: host
       
   prometheus:
