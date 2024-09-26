@@ -3,10 +3,12 @@
 use anyhow::{bail, Context, Error, Result};
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
+use sha3::{Digest, Sha3_256};
 use std::{
     collections::{HashMap, HashSet},
     default::Default,
     fs,
+    io::Write,
     path::Path,
     time::Duration,
 };
@@ -87,8 +89,12 @@ pub struct ConsensusProposal {
 
 impl Hashable<ConsensusProposalHash> for ConsensusProposal {
     fn hash(&self) -> ConsensusProposalHash {
-        //TODO
-        ConsensusProposalHash(vec![])
+        let mut hasher = Sha3_256::new();
+        _ = write!(hasher, "{}", self.slot);
+        _ = write!(hasher, "{}", self.view);
+        _ = write!(hasher, "{:?}", self.previous_consensus_proposal_hash);
+        _ = write!(hasher, "{}", self.block);
+        return ConsensusProposalHash(hasher.finalize().as_slice().to_owned());
     }
 }
 
@@ -252,7 +258,7 @@ impl Consensus {
         consensus_proposal_hash: &ConsensusProposalHash,
     ) -> bool {
         // Verify that the vote is for the correct proposal
-        self.bft_round_state.consensus_proposal.hash() == *consensus_proposal_hash
+        self.bft_round_state.consensus_proposal.hash() == consensus_proposal_hash.clone()
     }
 
     fn is_leader(&self) -> bool {
@@ -370,6 +376,8 @@ impl Consensus {
                 }
                 // Verify consensus proposal
                 let vote = self.verify_consensus_proposal(consensus_proposal);
+
+                self.bft_round_state.consensus_proposal = consensus_proposal.clone();
 
                 // Responds PrepareVote message to leader with validator's vote on this proposal
                 _ = bus
