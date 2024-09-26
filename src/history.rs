@@ -133,9 +133,7 @@ impl History {
             .route("/proof/:tx_hash", get(api::get_proof_with_hash))
             // contract
             .route("/contracts", get(api::get_contracts))
-            .route("/contract/last", get(api::get_last_contract))
-            .route("/contracts/:name", get(api::get_contracts_with_name))
-            .route("/contract/:block_height/:tx_index", get(api::get_contract))
+            .route("/contract/:name", get(api::get_contract))
     }
 
     async fn handle_block(&mut self, block: Block) {
@@ -238,5 +236,221 @@ impl HistoryInner {
             contracts: Contracts::new(&db)?,
             transactions: Transactions::new(&db)?,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{
+        history::{blobs::Blobs, contracts::Contracts, proofs::Proofs, transactions::Transactions},
+        model::{
+            Blob, BlobData, BlobIndex, BlobReference, BlobTransaction, Block, BlockHash,
+            BlockHeight, ContractName, Identity, ProofTransaction, RegisterContractTransaction,
+            StateDigest, Transaction, TransactionData, TxHash,
+        },
+    };
+
+    use super::blocks::Blocks;
+    use anyhow::Result;
+
+    #[test]
+    fn test_blocks() -> Result<()> {
+        let tmpdir = tempdir::TempDir::new("history-tests")?;
+        let db = sled::open(tmpdir.path().join("history"))?;
+        let mut blocks = Blocks::new(&db)?;
+        assert!(
+            blocks.len() == 1,
+            "blocks should contain genesis block after creation"
+        );
+        let block = Block {
+            parent_hash: BlockHash {
+                inner: vec![0, 1, 2, 3],
+            },
+            height: BlockHeight(1),
+            timestamp: 42,
+            txs: vec![Transaction {
+                version: 1,
+                transaction_data: TransactionData::Blob(BlobTransaction {
+                    identity: Identity("tx_id".to_string()),
+                    blobs: vec![Blob {
+                        contract_name: ContractName("c1".to_string()),
+                        data: BlobData(vec![4, 5, 6]),
+                    }],
+                }),
+                inner: "tx".to_string(),
+            }],
+        };
+        blocks.put(block.clone())?;
+        assert!(blocks.last().height == block.height);
+        let last = blocks.get(BlockHeight(1))?;
+        assert!(last.is_some());
+        assert!(last.unwrap().height == BlockHeight(1));
+        Ok(())
+    }
+
+    #[test]
+    fn test_transactions() -> Result<()> {
+        let tmpdir = tempdir::TempDir::new("history-tests")?;
+        let db = sled::open(tmpdir.path().join("history"))?;
+        let mut transactions = Transactions::new(&db)?;
+        assert!(transactions.len() == 0);
+        let transaction = TransactionData::Blob(BlobTransaction {
+            identity: Identity("tx_id".to_string()),
+            blobs: vec![Blob {
+                contract_name: ContractName("c1".to_string()),
+                data: BlobData(vec![4, 5, 6]),
+            }],
+        });
+        let tx_hash = "hash123".to_string();
+        transactions.put(BlockHeight(2), 3, &tx_hash, &transaction)?;
+        let last = transactions
+            .get(BlockHeight(2), 3)?
+            .expect("last transaction");
+        assert!(last.block_height == BlockHeight(2));
+        assert!(last.tx_index == 3);
+
+        let unknown = transactions.get(BlockHeight(8), 42)?;
+        assert!(unknown.is_none());
+
+        let last = transactions.last()?.expect("last transaction");
+        assert!(last.block_height == BlockHeight(2));
+        assert!(last.tx_index == 3);
+
+        let last = transactions
+            .get_with_hash(&tx_hash)?
+            .expect("transaction with hash");
+        assert!(last.block_height == BlockHeight(2));
+        assert_eq!(last.tx_hash, tx_hash);
+        Ok(())
+    }
+
+    #[test]
+    fn test_blobs() -> Result<()> {
+        let tmpdir = tempdir::TempDir::new("history-tests")?;
+        let db = sled::open(tmpdir.path().join("history"))?;
+        let mut blobs = Blobs::new(&db)?;
+        assert!(blobs.len() == 0);
+        let blob = Blob {
+            contract_name: ContractName("c1".to_string()),
+            data: BlobData(vec![4, 5, 6]),
+        };
+        let tx_identity = Identity("tx_id".to_string());
+        let tx_hash = "hash123".to_string();
+        blobs.put(BlockHeight(2), 3, 4, &tx_hash, &tx_identity, &blob)?;
+
+        let last = blobs.get(BlockHeight(2), 3, 4)?.expect("last blob");
+        assert!(last.block_height == BlockHeight(2));
+        assert!(last.tx_index == 3);
+
+        let last = blobs.last()?.expect("last blob");
+        assert!(last.block_height == BlockHeight(2));
+        assert!(last.tx_index == 3);
+        assert!(last.blob_index == 4);
+
+        let unknown = blobs.get(BlockHeight(8), 42, 6)?;
+        assert!(unknown.is_none());
+
+        let last = blobs.get_with_hash(&tx_hash, 4)?.expect("blob with hash");
+        assert!(last.block_height == BlockHeight(2));
+        assert_eq!(last.tx_hash, tx_hash);
+        Ok(())
+    }
+
+    #[test]
+    fn test_contracts() -> Result<()> {
+        let tmpdir = tempdir::TempDir::new("history-tests")?;
+        let db = sled::open(tmpdir.path().join("history"))?;
+        let mut contracts = Contracts::new(&db)?;
+        assert!(contracts.len() == 0);
+        let contract_name = "c1".to_string();
+        let tx_hash = "hash123".to_string();
+        let contract = RegisterContractTransaction {
+            contract_name: ContractName(contract_name.clone()),
+            owner: "owner".to_string(),
+            program_id: vec![7, 8, 9],
+            verifier: "verifier".to_string(),
+            state_digest: StateDigest(vec![1, 3, 5]),
+        };
+
+        contracts.put(BlockHeight(2), 3, &tx_hash, &contract)?;
+
+        let contract = contracts.get(&contract_name).expect("contract with name");
+        assert!(contract.is_some());
+        let contract = contract.unwrap();
+        assert_eq!(contract.block_height, BlockHeight(2));
+        assert_eq!(contract.tx_index, 3);
+
+        let contract_name = "c2".to_string();
+        let contract = RegisterContractTransaction {
+            contract_name: ContractName(contract_name.clone()),
+            owner: "owner".to_string(),
+            program_id: vec![2, 4, 6],
+            verifier: "verifier".to_string(),
+            state_digest: StateDigest(vec![5, 7, 8]),
+        };
+        contracts.put(BlockHeight(4), 6, &tx_hash, &contract)?;
+
+        let unknown = contracts.get("c42")?;
+        assert!(unknown.is_none());
+
+        let mut found = 0;
+        for (i, item) in contracts.all().enumerate() {
+            let elem = item?;
+            match i {
+                0 => {
+                    assert_eq!(elem.key(), Some("c1"));
+                    let c = elem.value()?;
+                    assert_eq!(c.block_height, BlockHeight(2));
+                    assert_eq!(c.tx_index, 3);
+                    found += 1;
+                }
+                1 => {
+                    assert_eq!(elem.key(), Some("c2"));
+                    let c = elem.value()?;
+                    assert_eq!(c.block_height, BlockHeight(4));
+                    assert_eq!(c.tx_index, 6);
+                    found += 1;
+                }
+                _ => unreachable!(),
+            }
+        }
+        assert!(found == 2);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_proofs() -> Result<()> {
+        let tmpdir = tempdir::TempDir::new("history-tests")?;
+        let db = sled::open(tmpdir.path().join("history"))?;
+        let mut proofs = Proofs::new(&db)?;
+        assert!(proofs.len() == 0);
+        let contract_name = "c1".to_string();
+        let proof = ProofTransaction {
+            proof: vec![2, 4, 6],
+            blobs_references: vec![BlobReference {
+                contract_name: ContractName(contract_name.clone()),
+                blob_tx_hash: TxHash(vec![1, 7, 9]),
+                blob_index: BlobIndex(1),
+            }],
+        };
+        let tx_hash = "hash123".to_string();
+        proofs.put(BlockHeight(2), 3, &tx_hash, &proof)?;
+
+        let last = proofs.get(BlockHeight(2), 3)?.expect("last proof");
+        assert!(last.block_height == BlockHeight(2));
+        assert!(last.tx_index == 3);
+
+        let last = proofs.last()?.expect("last proof");
+        assert!(last.block_height == BlockHeight(2));
+        assert!(last.tx_index == 3);
+
+        let unknown = proofs.get(BlockHeight(8), 42)?;
+        assert!(unknown.is_none());
+
+        let last = proofs.get_with_hash(&tx_hash)?.expect("proof with hash");
+        assert!(last.block_height == BlockHeight(2));
+        assert_eq!(last.tx_hash, tx_hash);
+        Ok(())
     }
 }
