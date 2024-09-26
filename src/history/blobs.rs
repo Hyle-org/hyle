@@ -4,7 +4,6 @@ use super::{
 };
 use crate::model::{Blob as NodeBlob, BlockHeight, Identity};
 use anyhow::Result;
-use serde::de::DeserializeOwned;
 use std::borrow::Cow;
 use tracing::info;
 
@@ -110,11 +109,11 @@ impl Blobs {
         self.db.ord_last()
     }
 
-    pub fn range<T: DeserializeOwned>(&mut self, min: BlobsKey, max: BlobsKey) -> Iter<T> {
+    pub fn range(&mut self, min: BlobsKey, max: BlobsKey) -> Iter<Blob> {
         self.db.ord_range(min, max)
     }
 
-    pub fn scan_prefix<T: DeserializeOwned>(&mut self, prefix: BlobsKey) -> Iter<T> {
+    pub fn scan_prefix(&mut self, prefix: BlobsKey) -> Iter<Blob> {
         self.db.ord_scan_prefix(prefix)
     }
 }

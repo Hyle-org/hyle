@@ -18,7 +18,7 @@ use hyle::{
     },
     validator_registry::ValidatorRegistry,
 };
-use std::{path::Path, sync::Arc};
+use std::sync::Arc;
 use tracing::{debug, error, info, level_filters::LevelFilter};
 use tracing_subscriber::{prelude::*, EnvFilter};
 
@@ -65,7 +65,8 @@ async fn main() -> Result<()> {
     setup_tracing()?;
 
     let args = Args::parse();
-    let config = conf::Conf::new_shared(args.config_file).context("reading config file")?;
+    let config = conf::Conf::new_shared(args.config_file, args.data_directory)
+        .context("reading config file")?;
     info!("Starting node with config: {:?}", &config);
 
     debug!("server mode");
@@ -78,15 +79,7 @@ async fn main() -> Result<()> {
     let bus = SharedMessageBus::new();
     let crypto = Arc::new(BlstCrypto::new(config.id.clone())); // TODO load sk from disk instead of random
 
-    let data_directory = Path::new(
-        args.data_directory
-            .as_deref()
-            .unwrap_or(config.data_directory.as_deref().unwrap_or("data")),
-    );
-
-    std::fs::create_dir_all(data_directory).context("creating data directory")?;
-
-    let data_directory = data_directory.to_path_buf();
+    std::fs::create_dir_all(&config.data_directory).context("creating data directory")?;
 
     let validator_registry = ValidatorRegistry::new();
 
@@ -94,7 +87,6 @@ async fn main() -> Result<()> {
         bus,
         config,
         crypto,
-        data_directory,
         validator_registry,
     });
 

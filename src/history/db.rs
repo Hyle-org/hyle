@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use core::str;
 use serde::{de::DeserializeOwned, Serialize};
 use sled::Transactional;
-use std::marker::PhantomData;
+use std::{fmt::Write, marker::PhantomData};
 use tracing::debug;
 
 /// Tiny wrapper around sled's iterator item.
@@ -53,6 +53,42 @@ impl<T: DeserializeOwned> DoubleEndedIterator for Iter<T> {
 /// KeyMaker makes it easy to build keys without allocating each time.
 pub trait KeyMaker {
     fn make_key<'a>(&self, writer: &'a mut String) -> &'a str;
+}
+
+impl KeyMaker for &str {
+    fn make_key<'a>(&self, writer: &'a mut String) -> &'a str {
+        _ = write!(writer, "{}", self);
+        writer.as_str()
+    }
+}
+
+impl KeyMaker for usize {
+    fn make_key<'a>(&self, writer: &'a mut String) -> &'a str {
+        let width = std::mem::size_of::<usize>();
+        _ = write!(writer, "{:0width$x}", self);
+        writer.as_str()
+    }
+}
+
+impl KeyMaker for u64 {
+    fn make_key<'a>(&self, writer: &'a mut String) -> &'a str {
+        _ = write!(writer, "{:08x}", self);
+        writer.as_str()
+    }
+}
+
+impl<T: KeyMaker> KeyMaker for &T {
+    fn make_key<'a>(&self, writer: &'a mut String) -> &'a str {
+        KeyMaker::make_key(*self, writer)
+    }
+}
+
+pub struct NoKey;
+
+impl KeyMaker for NoKey {
+    fn make_key<'a>(&self, _writer: &'a mut String) -> &'a str {
+        ""
+    }
 }
 
 /// Contains the `sled::Tree`
@@ -267,6 +303,182 @@ impl Db {
                 .with_context(|| format!("flushing {}", self.ord.name))?;
             debug!("{} written to {}", key, self.ord.name);
         }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Db, KeyMaker};
+    use anyhow::Result;
+    use core::str;
+
+    struct TestKeyOrd(usize, usize);
+
+    impl KeyMaker for TestKeyOrd {
+        fn make_key<'a>(&self, writer: &'a mut String) -> &'a str {
+            use std::fmt::Write;
+            _ = write!(writer, "{:08x}:{:08x}", self.0, self.1);
+            writer.as_str()
+        }
+    }
+
+    struct TestKeyAlt<'a>(&'a str, usize);
+
+    impl<'b> KeyMaker for TestKeyAlt<'b> {
+        fn make_key<'a>(&self, writer: &'a mut String) -> &'a str {
+            use std::fmt::Write;
+            _ = write!(writer, "{}:{:08x}", self.0, self.1);
+            writer.as_str()
+        }
+    }
+
+    type TestDataType = [u8; std::mem::size_of::<usize>()];
+
+    #[test]
+    fn test_db_noalt() -> Result<()> {
+        let tmpdir = tempdir::TempDir::new("history-tests")?;
+        let db = sled::open(tmpdir.path().join("history"))?;
+        let mut tree = Db::new(&db, "db", None)?;
+        assert!(
+            tree.len() == 0,
+            "calling len on an empty database should return 0"
+        );
+        let last = tree.ord_last::<TestDataType>()?;
+        assert!(
+            last.is_none(),
+            "calling last on an empty database should return nothing"
+        );
+
+        let data = 1usize;
+        let ord_key = TestKeyOrd(1, 1);
+        let alt_key = TestKeyAlt("test1", 1);
+        tree.put(&ord_key, &alt_key, &data.to_be_bytes())?;
+        assert!(tree.len() == 1, "after calling put, len should be 1");
+        let last = tree.ord_last::<TestDataType>()?;
+        assert_eq!(
+            last,
+            Some(data.to_be_bytes()),
+            "last should return the last entry"
+        );
+
+        let tmp = tree.ord_get::<TestDataType>(&ord_key)?;
+        assert!(tmp.is_some(), "get (ord) should return the entry");
+        assert_eq!(
+            tmp,
+            Some(data.to_be_bytes()),
+            "get should return the entry requested"
+        );
+        let tmp = tree.alt_get::<TestDataType>(&alt_key);
+        assert!(tmp.is_err(), "get (alt) should return an error");
+        assert_eq!(
+            format!("{}", tmp.unwrap_err()),
+            "no alternate tree for db",
+            "get (alt) should return the entry"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_db() -> Result<()> {
+        let tmpdir = tempdir::TempDir::new("history-tests")?;
+        let db = sled::open(tmpdir.path().join("history"))?;
+        let mut tree = Db::new(&db, "db", Some("db_alt"))?;
+        assert!(
+            tree.len() == 0,
+            "calling len on an empty database should return 0"
+        );
+        let last = tree.ord_last::<TestDataType>()?;
+        assert!(
+            last.is_none(),
+            "calling last on an empty database should return nothing"
+        );
+
+        let mut data = 1usize;
+        let ord_key = TestKeyOrd(1, 1);
+        let alt_key = TestKeyAlt("test1", 1);
+        tree.put(&ord_key, &alt_key, &data.to_be_bytes())?;
+        assert!(tree.len() == 1, "after calling put, len should be 1");
+        let last = tree.ord_last::<TestDataType>()?;
+        assert_eq!(
+            last,
+            Some(data.to_be_bytes()),
+            "last should return the last entry"
+        );
+
+        let tmp = tree.ord_get::<TestDataType>(&ord_key)?;
+        assert!(tmp.is_some(), "get (ord) should return the entry");
+        assert_eq!(
+            tmp,
+            Some(data.to_be_bytes()),
+            "get should return the entry requested"
+        );
+
+        data = 0;
+        let mut key = String::new();
+        for path1 in 1..=5 {
+            for path2 in 1..=5 {
+                data += 1;
+                let ord_key = TestKeyOrd(path1, path2);
+                let k1 = format!("test{}", data);
+                let alt_key = TestKeyAlt(k1.as_str(), path2);
+                tree.put(&ord_key, alt_key, &data.to_be_bytes())?;
+                let last = tree.ord_last::<TestDataType>()?;
+                assert_eq!(
+                    last,
+                    Some(data.to_be_bytes()),
+                    "last should return the last entry"
+                );
+            }
+        }
+
+        assert_eq!(tree.len(), data, "invalid tree length");
+
+        key.clear();
+        let min = TestKeyOrd(1, 1);
+        let max = TestKeyOrd(5, 5);
+        let iter = tree.ord_range::<TestDataType>(&min, &max);
+        for (i, item) in iter.enumerate() {
+            let elem = item?;
+            let ord_key = TestKeyOrd(i / 5 + 1, i % 5 + 1);
+            key.clear();
+            assert_eq!(
+                elem.key(),
+                Some(ord_key.make_key(&mut key)),
+                "key should match"
+            );
+            assert_eq!(
+                elem.value(),
+                Ok((i + 1).to_be_bytes()),
+                "data should match {}",
+                elem.key().unwrap()
+            );
+            let k1 = format!("test{}", i + 1);
+            let alt_key = TestKeyAlt(k1.as_str(), i % 5 + 1);
+            key.clear();
+            println!("XXXX {}", alt_key.make_key(&mut key));
+            let alt = tree.alt_get::<TestDataType>(alt_key)?;
+            assert!(alt.is_some());
+            let alt = alt.unwrap();
+            assert_eq!(
+                usize::from_be_bytes(alt),
+                i + 1,
+                "alt_get should return the data"
+            );
+        }
+
+        key.clear();
+        let prefix = KeyMaker::make_key(&2usize, &mut key);
+        let iter = tree.ord_scan_prefix::<TestDataType>(prefix);
+        let mut found = false;
+        for (i, item) in iter.enumerate() {
+            let elem = item?;
+            key.clear();
+            TestKeyOrd(2, i + 1).make_key(&mut key);
+            assert_eq!(elem.key(), Some(key.as_str()), "key should match");
+            found = true;
+        }
+        assert!(found, "scan_prefix failed");
         Ok(())
     }
 }
