@@ -1,6 +1,5 @@
 use std::fmt::Display;
 
-use anyhow::Context;
 use tracing::{error, warn};
 // A simple way to log without interrupting fluency
 pub trait LogMe<T> {
@@ -10,20 +9,30 @@ pub trait LogMe<T> {
 
 // Will log a warning in case of error
 // WARN {context_msg}: {cause}
-impl<T, Error: std::error::Error + Send + Sync + 'static> LogMe<T> for Result<T, Error> {
+impl<T, Error: Into<anyhow::Error> + Display + Send + Sync + 'static> LogMe<T>
+    for Result<T, Error>
+{
     fn log_warn<C: Display + Send + Sync + 'static>(self, context_msg: C) -> anyhow::Result<T> {
-        let res = self.context(context_msg);
-        if let Err(e) = &res {
-            warn!("{:#}", e);
+        match self {
+            Err(e) => {
+                let ae: anyhow::Error = e.into();
+                let ae = ae.context(context_msg);
+                warn!("{:#}", ae);
+                Err(ae)
+            }
+            Ok(t) => Ok(t),
         }
-        res
     }
 
     fn log_error<C: Display + Send + Sync + 'static>(self, context_msg: C) -> anyhow::Result<T> {
-        let res = self.context(context_msg);
-        if let Err(e) = &res {
-            error!("{:#}", e);
+        match self {
+            Err(e) => {
+                let ae: anyhow::Error = e.into();
+                let ae = ae.context(context_msg);
+                error!("{:#}", ae);
+                Err(ae)
+            }
+            Ok(t) => Ok(t),
         }
-        res
     }
 }
