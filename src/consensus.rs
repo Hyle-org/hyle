@@ -11,15 +11,10 @@ use std::{
     time::Duration,
 };
 use tokio::time::sleep;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 use crate::{
-    bus::BusMessage,
-    bus::{
-        bus_client,
-        command_response::{CmdRespClient, Query},
-        SharedMessageBus,
-    },
+    bus::{bus_client, command_response::Query, BusMessage, SharedMessageBus},
     handle_messages,
     mempool::{MempoolCommand, MempoolResponse},
     model::{get_current_timestamp, Block, BlockHash, Hashable, SharedRunContext, Transaction},
@@ -48,12 +43,12 @@ pub enum ConsensusNetMessage {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub enum ConsensusCommand {
     SaveOnDisk,
-    GenerateNewBlock,
+    ReceiveLatestBatch(Vec<Transaction>),
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub enum ConsensusEvent {
-    CommitBlock { batch_id: String, block: Block },
+    CommitBlock { block: Block },
 }
 
 impl BusMessage for ConsensusCommand {}
@@ -76,25 +71,6 @@ pub struct BFTRoundState {
 pub struct QuorumCertificate {
     signature: Signature,
     validators: Vec<ValidatorPublicKey>,
-}
-
-impl BFTRoundState {
-    fn finish_round(&mut self, bus: &ConsensusBusClient) -> Result<(), Error> {
-        self.slot += 1;
-        self.view = 0;
-        self.prepare_votes = HashSet::default();
-        self.confirm_ack = HashSet::default();
-
-        // TODO: apply new block
-        // Applies and add new block to its NodeState
-        _ = bus
-            .send(ConsensusCommand::GenerateNewBlock)
-            .context("Cannot send message over channel")?;
-        _ = bus
-            .send(ConsensusCommand::SaveOnDisk)
-            .context("Cannot send message over channel")?;
-        Ok(())
-    }
 }
 
 pub type Slot = u64;
@@ -136,13 +112,7 @@ pub struct Consensus {
     validators: ValidatorRegistry,
     bft_round_state: BFTRoundState,
     pub blocks: Vec<Block>,
-    batch_id: u64,
-    // Accumulated batches from mempool
-    tx_batches: HashMap<String, Vec<Transaction>>,
-    // Current proposed block
-    current_block_batches: Vec<String>,
-    // Once a block commits, we store it there (or not ?)
-    // committed_block_batches: HashMap<String, HashMap<String, Vec<Transaction>>>,
+    pending_batches: Vec<Vec<Transaction>>,
 }
 
 impl Module for Consensus {
@@ -167,11 +137,11 @@ impl Module for Consensus {
 }
 
 impl Consensus {
-    fn add_block(&mut self, block: Block) {
-        self.blocks.push(block);
-    }
-
-    fn new_block(&mut self) -> Block {
+    fn create_consensus_approval(
+        &mut self,
+        previous_consensus_proposal_hash: ConsensusProposalHash,
+    ) -> Result<(), Error> {
+        // Trigger the generation of a new tc batch
         let last_block = self.blocks.last();
 
         let parent_hash = last_block
@@ -179,37 +149,43 @@ impl Consensus {
             .unwrap_or(BlockHash::new("000"));
         let parent_height = last_block.map(|b| b.height).unwrap_or_default();
 
-        let mut all_txs = vec![];
-
-        // prepare accumulated txs to feed the block
-        // a previous batch can be there because of a previous block that failed to commit
-        for (batch_id, txs) in self.tx_batches.iter() {
-            all_txs.extend(txs.clone());
-            self.current_block_batches.push(batch_id.clone());
+        // Create block to-be-proposed
+        let mut txs = vec![];
+        if !self.pending_batches.is_empty() {
+            txs = self.pending_batches.remove(0);
         }
-
-        // Start Consensus with following block
         let block = Block {
             parent_hash,
             height: parent_height + 1,
             timestamp: get_current_timestamp(),
-            txs: all_txs,
+            txs,
         };
 
-        // Waiting for commit... TODO split this task
+        // Start Consensus with following block
+        self.bft_round_state.consensus_proposal = ConsensusProposal {
+            slot: self.bft_round_state.slot,
+            view: self.bft_round_state.view,
+            previous_consensus_proposal_hash,
+            block,
+        };
+        Ok(())
+    }
 
-        // Commit block/if commit fails,
-        // block won't be added, next block will try to add the txs
-        self.add_block(block.clone());
+    fn add_block(&mut self, bus: &ConsensusBusClient) -> Result<(), Error> {
+        // Send block to internal bus
+        _ = bus
+            .send(ConsensusEvent::CommitBlock {
+                block: self.bft_round_state.consensus_proposal.block.clone(),
+            })
+            .context("Failed to send ConsensusEvent::CommitBlock msg on the bus")?;
 
-        // Once commited we clean the state for the next block
-        for cbb in self.current_block_batches.iter() {
-            self.tx_batches.remove(cbb);
-        }
-        _ = self.current_block_batches.drain(0..);
-
-        info!("New block {}", block.height);
-        block
+        info!(
+            "New block {}",
+            self.bft_round_state.consensus_proposal.block.height
+        );
+        self.blocks
+            .push(self.bft_round_state.consensus_proposal.block.clone());
+        Ok(())
     }
 
     pub fn save_on_disk(&self) -> Result<()> {
@@ -230,6 +206,22 @@ impl Consensus {
         info!("Loaded {} blocks from disk.", ctx.blocks.len());
 
         Ok(ctx)
+    }
+
+    fn finish_round(&mut self, bus: &ConsensusBusClient) -> Result<(), Error> {
+        self.bft_round_state.slot += 1;
+        self.bft_round_state.view = 0;
+        self.bft_round_state.prepare_votes = HashSet::default();
+        self.bft_round_state.confirm_ack = HashSet::default();
+
+        // Add and applies new block to its NodeState
+        self.add_block(bus)?;
+
+        // Save added block
+        _ = bus
+            .send(ConsensusCommand::SaveOnDisk)
+            .context("Cannot send message over channel")?;
+        Ok(())
     }
 
     fn verify_consensus_proposal(&self, consensus_proposal: &ConsensusProposal) -> bool {
@@ -288,9 +280,6 @@ impl Consensus {
             bail!("Invalid signature for message {:?}", msg);
         }
 
-        let mut prev_consensus_proposal_hash =
-            ConsensusProposalHash("GenesisBlock".as_bytes().to_vec());
-
         match &msg.msg {
             ConsensusNetMessage::StartNewSlot => {
                 // Message received by leader.
@@ -306,7 +295,6 @@ impl Consensus {
                             previous_consensus_proposal_hash,
                             previous_commit_quorum_certificate,
                         )) => {
-                            prev_consensus_proposal_hash = previous_consensus_proposal_hash.clone();
                             let previous_commit_quorum_certificate_with_message = SignedWithKey {
                                 msg: ConsensusNetMessage::ConfirmAck(
                                     previous_consensus_proposal_hash.clone(),
@@ -341,6 +329,11 @@ impl Consensus {
                             }
 
                             // Verify those validators are legit
+
+                            // Creates ConsensusProposal
+                            self.create_consensus_approval(
+                                previous_consensus_proposal_hash.clone(),
+                            )?;
                         }
                         None => {
                             bail!(
@@ -355,21 +348,13 @@ impl Consensus {
                 // TODO: update view when rebellion
                 // self.bft_round_state.view += 1;
 
-                // Creates ConsensusProposal
-                let consensus_proposal = ConsensusProposal {
-                    slot: self.bft_round_state.slot,
-                    view: self.bft_round_state.view,
-                    previous_consensus_proposal_hash: prev_consensus_proposal_hash,
-                    block: self.new_block(),
-                };
-
-                self.bft_round_state.consensus_proposal = consensus_proposal.clone();
-
                 // Broadcasts Prepare message to all validators
                 _ = bus
                     .send(OutboundMessage::broadcast(Self::sign_net_message(
                         crypto,
-                        ConsensusNetMessage::Prepare(consensus_proposal),
+                        ConsensusNetMessage::Prepare(
+                            self.bft_round_state.consensus_proposal.clone(),
+                        ),
                     )?))
                     .context("Failed to broadcast ConsensusNetMessage::Prepare msg on the bus")?;
 
@@ -566,7 +551,7 @@ impl Consensus {
                         )?;
 
                     // Finishes the bft round
-                    self.bft_round_state.finish_round(bus)?;
+                    self.finish_round(bus)?;
                 }
                 // TODO(?): Update behaviour when having more ?
                 Ok(())
@@ -604,7 +589,7 @@ impl Consensus {
                 }
 
                 // Finishes the bft round
-                self.bft_round_state.finish_round(bus)?;
+                self.finish_round(bus)?;
 
                 // Sends message to next leader to start new slot
                 if self.is_leader() {
@@ -623,38 +608,16 @@ impl Consensus {
         }
     }
 
-    async fn handle_command(
-        &mut self,
-        msg: ConsensusCommand,
-        bus: &mut ConsensusBusClient,
-        _crypto: &BlstCrypto,
-    ) -> Result<()> {
+    async fn handle_command(&mut self, msg: ConsensusCommand, _crypto: &BlstCrypto) -> Result<()> {
         match msg {
-            ConsensusCommand::GenerateNewBlock => {
-                self.batch_id += 1;
-                match bus
-                    .request(MempoolCommand::CreatePendingBatch {
-                        id: self.batch_id.to_string(),
-                    })
-                    .await?
-                {
-                    MempoolResponse::PendingBatch { id, txs } => {
-                        info!("Received pending batch {} with {} txs", &id, &txs.len());
-                        self.tx_batches.insert(id.clone(), txs);
-                        let block = self.new_block();
-                        // send to internal bus
-                        _ = bus
-                            .send(ConsensusEvent::CommitBlock {
-                                batch_id: id,
-                                block: block.clone(),
-                            })
-                            .context("Failed to send ConsensusEvent::CommitBlock msg on the bus")?;
-                    }
-                }
+            ConsensusCommand::ReceiveLatestBatch(batch) => {
+                debug!("Received batch with txs: {:?}", batch);
+                self.pending_batches.push(batch);
+
                 Ok(())
             }
-
             ConsensusCommand::SaveOnDisk => {
+                // FIXME: Might need to be removed as we have History module
                 _ = self.save_on_disk();
                 Ok(())
             }
@@ -693,15 +656,12 @@ impl Consensus {
         handle_messages! {
             on_bus bus,
             listen<ConsensusCommand> cmd => {
-                match self.handle_command(cmd, &mut bus, &crypto).await{
+                match self.handle_command(cmd, &crypto).await{
                     Ok(_) => (),
                     Err(e) => warn!("Error while handling consensus command: {:#}", e),
                 }
             }
             listen<SignedWithId<ConsensusNetMessage>> cmd => {
-                // FIXME: remove info message
-                info!("[{}] Received consensus message: {:?}", config.id, cmd);
-                sleep(Duration::from_secs(1)).await;
                 match self.handle_net_message(cmd, &crypto, &bus) {
                     Ok(_) => (),
                     Err(e) => warn!("Error while handling consensus net message: {:#}", e),
@@ -726,10 +686,8 @@ impl Default for Consensus {
         Self {
             blocks: vec![Block::default()],
             validators: ValidatorRegistry::default(),
-            batch_id: 0,
-            tx_batches: HashMap::new(),
-            current_block_batches: vec![],
             bft_round_state: BFTRoundState::default(),
+            pending_batches: vec![],
         }
     }
 }

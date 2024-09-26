@@ -27,22 +27,9 @@ fn url(path: &str) -> String {
     format!("http://127.0.0.1:4321{}", path)
 }
 
-#[ignore] // To be merged with consensus
-#[test]
-fn e2e_contract_state_updated() {
-    tracing_subscriber::fmt::init();
-
-    // Start first node
-    let node1 = test_helpers::TestNode::new(Path::new("tests/node1"), false, "6668");
-
-    // Wait for server to properly start
-    thread::sleep(time::Duration::from_secs(1));
-
-    // Request something on node1 to be sure it's alive and working
-    let client = Client::new();
-
+fn register_contracts(client: &Client) {
     assert!(send(
-        &client,
+        client,
         url("/v1/contract/register"),
         RegisterContractTransaction {
             owner: "test".to_string(),
@@ -56,7 +43,7 @@ fn e2e_contract_state_updated() {
     .is_success());
 
     assert!(send(
-        &client,
+        client,
         url("/v1/contract/register"),
         RegisterContractTransaction {
             owner: "test".to_string(),
@@ -68,9 +55,11 @@ fn e2e_contract_state_updated() {
     )
     .status()
     .is_success());
+}
 
+fn send_blobs(client: &Client) {
     let blob_response = send(
-        &client,
+        client,
         url("/v1/tx/send/blob"),
         BlobTransaction {
             identity: Identity("client".to_string()),
@@ -93,7 +82,7 @@ fn e2e_contract_state_updated() {
         .expect("Failed to parse tx hash");
 
     assert!(send(
-        &client,
+        client,
         url("/v1/tx/send/proof"),
         ProofTransaction {
             blobs_references: vec![
@@ -113,30 +102,26 @@ fn e2e_contract_state_updated() {
     )
     .status()
     .is_success());
+}
 
-    // wait for new block to be emitted
-    std::thread::sleep(time::Duration::from_secs(10));
-
+fn verify_contract_state(client: &Client) {
     let response = client
         .get(url("/v1/contract/c1"))
         .header("Content-Type", "application/json")
         .send()
         .expect("Failed to fetch contract");
 
-    assert!(response.status().is_success());
+    assert!(response.status().is_success(), "{}", response.status());
 
     let contract = response
         .json::<Contract>()
         .expect("failed to parse response");
 
     assert_eq!(contract.state.0, vec![4, 5, 6]);
-
-    // Stop all processes
-    drop(node1);
 }
 
 #[test]
-fn e2e_consensus() {
+fn e2e() {
     tracing_subscriber::fmt::init();
 
     let path_node1 = Path::new("tests/node1");
@@ -145,14 +130,19 @@ fn e2e_consensus() {
     // Start 2 nodes
     let node1 = test_helpers::TestNode::new(path_node1, false, "6668");
     // Wait for node to properly spin up
-    thread::sleep(time::Duration::from_secs(3));
+    thread::sleep(time::Duration::from_secs(2));
 
     let node2 = test_helpers::TestNode::new(path_node2, false, "6669");
     // Wait for node to properly spin up
-    thread::sleep(time::Duration::from_secs(3));
 
+    // Request something on node1 to be sure it's alive and working
+    let client = Client::new();
+
+    register_contracts(&client);
+    send_blobs(&client);
     // Wait for some slots to be finished
-    thread::sleep(time::Duration::from_secs(10));
+    thread::sleep(time::Duration::from_secs(8));
+    verify_contract_state(&client);
 
     // Stop all processes
     drop(node1);

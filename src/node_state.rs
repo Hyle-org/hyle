@@ -90,7 +90,7 @@ impl NodeState {
 
     fn handle_event(&mut self, event: ConsensusEvent) {
         let res = match event {
-            ConsensusEvent::CommitBlock { batch_id: _, block } => {
+            ConsensusEvent::CommitBlock { block } => {
                 info!("New block to handle: {:}", block.hash());
                 self.handle_new_block(block).context("handle new block")
             }
