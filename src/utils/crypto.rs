@@ -10,7 +10,6 @@ use rand::RngCore;
 
 use crate::{
     p2p::network::{self, Signed, SignedWithId, SignedWithKey},
-    utils::vec_utils::SequenceResult,
     validator_registry::{ConsensusValidator, ValidatorId, ValidatorPublicKey},
 };
 
@@ -172,8 +171,8 @@ impl BlstCrypto {
                 PublicKey::uncompress(v.0.as_slice())
                     .map_err(|e| anyhow!("Could not parse PublicKey: {:?}", e))
             })
-            .collect::<Vec<Result<PublicKey>>>()
-            .sequence()?;
+            .collect::<Result<Vec<PublicKey>>>()?;
+
         let pks_refs: Vec<&PublicKey> = pks.iter().collect();
 
         let pk = AggregatePublicKey::aggregate(pks_refs.as_slice(), true)

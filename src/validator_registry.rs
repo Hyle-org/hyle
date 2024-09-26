@@ -10,11 +10,7 @@ use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 use tracing::{debug, info, warn};
 
-use crate::{
-    bus::BusMessage,
-    p2p::network::SignedWithId,
-    utils::{crypto::BlstCrypto, vec_utils::SequenceOption},
-};
+use crate::{bus::BusMessage, p2p::network::SignedWithId, utils::crypto::BlstCrypto};
 
 #[derive(Serialize, Deserialize, Clone, Encode, Decode, Default, Eq, PartialEq)]
 pub struct ValidatorPublicKey(pub Vec<u8>);
@@ -80,8 +76,7 @@ impl ValidatorRegistry {
             .validators
             .iter()
             .map(|v| self.validators.get(v))
-            .collect::<Vec<Option<_>>>()
-            .sequence();
+            .collect::<Option<Vec<_>>>();
         match validators {
             Some(vec) => {
                 let vec = vec
