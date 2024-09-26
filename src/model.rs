@@ -225,7 +225,7 @@ impl Transaction {
     }
 }
 
-#[derive(Serialize, Deserialize, Default, Clone, Encode, Decode)]
+#[derive(Default, Clone, Encode, Decode)]
 pub struct BlockHash {
     pub inner: Vec<u8>,
 }
@@ -247,6 +247,42 @@ impl Deref for BlockHash {
 impl Display for BlockHash {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", hex::encode(&self.inner))
+    }
+}
+
+impl Serialize for BlockHash {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(hex::encode(&self.inner).as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for BlockHash {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct BlockHashVisitor;
+
+        impl<'de> Visitor<'de> for BlockHashVisitor {
+            type Value = BlockHash;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("a hex string representing a BlockHash")
+            }
+
+            fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                let bytes = hex::decode(value).map_err(de::Error::custom)?;
+                Ok(BlockHash { inner: bytes })
+            }
+        }
+
+        deserializer.deserialize_str(BlockHashVisitor)
     }
 }
 
