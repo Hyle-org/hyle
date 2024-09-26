@@ -96,7 +96,7 @@ macro_rules! handle_messages {
         paste! {
             handle_messages! {
                 bus($bus) $($rest)*
-                Ok(_raw_query) = unsafe { &mut *Pick::<tokio::sync::broadcast::Receiver<Query<$command, $response>>>::splitting_get_mut(&mut $bus) }.recv() => {
+                Ok(_raw_query) = #[allow(clippy::macro_metavars_in_unsafe)] unsafe { &mut *Pick::<tokio::sync::broadcast::Receiver<Query<$command, $response>>>::splitting_get_mut(&mut $bus) }.recv() => {
                     if let Ok(mut _value) = _raw_query.take() {
                         let $res = &mut _value.data;
                         let res: Result<$response> = $handler;

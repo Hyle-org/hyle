@@ -8,11 +8,7 @@ use crate::{
         BlobTransaction, BlobsHash, Block, BlockHeight, ContractName, Hashable, ProofTransaction,
         RegisterContractTransaction, SharedRunContext, StateDigest, Transaction, TxHash,
     },
-    utils::{
-        conf::SharedConf,
-        modules::Module,
-        vec_utils::{SequenceOption, SequenceResult},
-    },
+    utils::{conf::SharedConf, logger::LogMe, modules::Module},
 };
 use anyhow::{bail, Context, Error, Result};
 use model::{Contract, HyleOutput, Timeouts, UnsettledBlobMetadata, UnsettledTransaction};
@@ -77,29 +73,23 @@ impl NodeState {
         handle_messages! {
             on_bus self.bus,
             command_response<ContractName, Contract> cmd => {
-                match self.contracts.get(cmd) {
-                    Some(contract) => Ok(contract.clone()),
-                    None => Err(anyhow::anyhow!("Contract not found")),
-                }
+                self.contracts.get(cmd).cloned().context("Contract not found")
             }
             listen<ConsensusEvent> event => {
-                self.handle_event(event);
+                _ = self.handle_event(event)
+                    .log_error("NodeState: Error while handling consensus event");
             }
         }
     }
 
-    fn handle_event(&mut self, event: ConsensusEvent) {
-        let res = match event {
+    fn handle_event(&mut self, event: ConsensusEvent) -> anyhow::Result<()> {
+        match event {
             ConsensusEvent::CommitBlock { block } => {
                 info!("New block to handle: {:}", block.hash());
-                self.handle_new_block(block).context("handle new block")
+                self.handle_new_block(block).context("handle new block")?;
             }
         };
-
-        match res {
-            Ok(_) => (),
-            Err(e) => error!("Error while handling consensus event: {e}"),
-        }
+        Ok(())
     }
 
     fn handle_new_block(&mut self, block: Block) -> Result<(), Error> {
@@ -224,8 +214,7 @@ impl NodeState {
             .blobs_references
             .iter()
             .map(|blob_ref| self.unsettled_transactions.get(&blob_ref.blob_tx_hash))
-            .collect::<Vec<Option<&UnsettledTransaction>>>()
-            .sequence()
+            .collect::<Option<Vec<&UnsettledTransaction>>>()
             .context("At lease 1 tx is either settled or does not exists")?;
 
         // blob_hash verification
@@ -269,22 +258,18 @@ impl NodeState {
         tx: &ProofTransaction,
         blobs_metadata: Vec<HyleOutput>,
     ) -> Result<(), Error> {
-        tx.blobs_references
-            .iter()
-            .enumerate()
-            .map(|(proof_blob_key, blob_ref)| {
-                self.unsettled_transactions
-                    .get_mut(&blob_ref.blob_tx_hash)
-                    .map(|unsettled_tx| {
-                        unsettled_tx.blobs[blob_ref.blob_index.0 as usize]
-                            .metadata
-                            .push(blobs_metadata[proof_blob_key].clone());
-                    })
-                    .context("Tx is either settled or does not exists.")
-            })
-            .collect::<Vec<Result<(), Error>>>()
-            .sequence()
-            .map(|_| ()) // transform ok result from Vec<()> to ()
+        for (proof_blob_key, blob_ref) in tx.blobs_references.iter().enumerate() {
+            let unsettled_tx = self
+                .unsettled_transactions
+                .get_mut(&blob_ref.blob_tx_hash)
+                .context("Tx is either settled or does not exists.")?;
+
+            unsettled_tx.blobs[blob_ref.blob_index.0 as usize]
+                .metadata
+                .push(blobs_metadata[proof_blob_key].clone());
+        }
+
+        Ok(())
     }
 
     fn is_settlement_ready(&mut self, unsettled_tx: &UnsettledTransaction) -> bool {

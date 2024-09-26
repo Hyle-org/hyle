@@ -30,7 +30,7 @@ nocow = { path = "./nocow" }
 # opentelemetry and axum-otel-metrics must be updated together (so that there is only one opentelemetry version)
 opentelemetry = "0.25.0"
 axum-otel-metrics = "0.9.0-alpha.2"
-tower-http = {version = "0.6.1", features=["trace"]}
+tower-http = {version = "0.6.1", features=["trace", "cors"]}
 futures = "0.3.30"
 
 [target.'cfg(target_os="macos")'.dependencies]
