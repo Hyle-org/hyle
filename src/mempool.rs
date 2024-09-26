@@ -2,7 +2,7 @@
 
 use crate::{
     bus::{bus_client, command_response::Query, BusMessage, SharedMessageBus},
-    consensus::{ConsensusCommand, ConsensusEvent},
+    consensus::ConsensusEvent,
     handle_messages,
     model::{Hashable, SharedRunContext, Transaction},
     p2p::network::{OutboundMessage, SignedWithId},
@@ -22,7 +22,7 @@ mod metrics;
 bus_client! {
 struct MempoolBusClient {
     sender(OutboundMessage),
-    sender(ConsensusCommand),
+    sender(MempoolEvent),
     receiver(Query<MempoolCommand, MempoolResponse>),
     receiver(SignedWithId<MempoolNetMessage>),
     receiver(RestApiMessage),
@@ -51,6 +51,12 @@ pub enum MempoolCommand {
     CreatePendingBatch,
 }
 impl BusMessage for MempoolCommand {}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub enum MempoolEvent {
+    LatestBatch(Vec<Transaction>),
+}
+impl BusMessage for MempoolEvent {}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum MempoolResponse {
@@ -156,7 +162,7 @@ impl Mempool {
             let batch = self.pending_txs.drain(0..).collect::<Vec<Transaction>>();
             self.batched_txs.insert(batch.clone());
             _ = bus
-                .send(ConsensusCommand::ReceiveLatestBatch(batch))
+                .send(MempoolEvent::LatestBatch(batch))
                 .context("Cannot send message over channel")
                 .ok();
         }

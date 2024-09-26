@@ -18,7 +18,7 @@ use tracing::{debug, info, warn};
 use crate::{
     bus::{bus_client, command_response::Query, BusMessage, SharedMessageBus},
     handle_messages,
-    mempool::{MempoolCommand, MempoolResponse},
+    mempool::{MempoolCommand, MempoolEvent, MempoolResponse},
     model::{
         get_current_timestamp, Block, BlockHash, BlockHeight, Hashable, SharedRunContext,
         Transaction,
@@ -48,7 +48,6 @@ pub enum ConsensusNetMessage {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub enum ConsensusCommand {
     SaveOnDisk,
-    ReceiveLatestBatch(Vec<Transaction>),
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -112,6 +111,7 @@ struct ConsensusBusClient {
     sender(Query<MempoolCommand, MempoolResponse>),
     receiver(ValidatorRegistryNetMessage),
     receiver(ConsensusCommand),
+    receiver(MempoolEvent),
     receiver(SignedWithId<ConsensusNetMessage>),
 }
 }
@@ -644,15 +644,20 @@ impl Consensus {
 
     async fn handle_command(&mut self, msg: ConsensusCommand, _crypto: &BlstCrypto) -> Result<()> {
         match msg {
-            ConsensusCommand::ReceiveLatestBatch(batch) => {
-                debug!("Received batch with txs: {:?}", batch);
-                self.pending_batches.push(batch);
-
-                Ok(())
-            }
             ConsensusCommand::SaveOnDisk => {
                 // FIXME: Might need to be removed as we have History module
                 _ = self.save_on_disk();
+                Ok(())
+            }
+        }
+    }
+
+    async fn handle_mempool_event(&mut self, msg: MempoolEvent) -> Result<()> {
+        match msg {
+            MempoolEvent::LatestBatch(batch) => {
+                debug!("Received batch with txs: {:?}", batch);
+                self.pending_batches.push(batch);
+
                 Ok(())
             }
         }
@@ -693,6 +698,12 @@ impl Consensus {
                 match self.handle_command(cmd, &crypto).await{
                     Ok(_) => (),
                     Err(e) => warn!("Error while handling consensus command: {:#}", e),
+                }
+            }
+            listen<MempoolEvent> cmd => {
+                match self.handle_mempool_event(cmd).await{
+                    Ok(_) => (),
+                    Err(e) => warn!("Error while handling mempool event: {:#}", e),
                 }
             }
             listen<SignedWithId<ConsensusNetMessage>> cmd => {
