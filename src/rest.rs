@@ -82,6 +82,7 @@ pub async fn rest_server(
         .route("/v1/tools/run_scenario", post(endpoints::run_scenario))
         .nest("/v1/history", History::api())
         .layer(metrics_layer)
+        .layer(tower_http::cors::CorsLayer::permissive())
         .with_state(RouterState {
             bus: RestBusClient::new_from_bus(bus).await,
             history,
