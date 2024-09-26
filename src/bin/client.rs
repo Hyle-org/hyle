@@ -135,7 +135,7 @@ async fn main() -> Result<()> {
     // install global collector configured based on RUST_LOG env var.
     tracing_subscriber::fmt::init();
 
-    let config = conf::Conf::new_shared(cli.config_file.clone())?;
+    let config = conf::Conf::new_shared(cli.config_file.clone(), None)?;
 
     client(config, cli).await
 }

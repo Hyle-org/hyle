@@ -11,7 +11,6 @@ use std::{
     fmt,
     io::Write,
     ops::{Add, Deref},
-    path::PathBuf,
     sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -376,7 +375,6 @@ pub struct RunContext {
     pub config: SharedConf,
     pub bus: SharedMessageBus,
     pub crypto: SharedBlstCrypto,
-    pub data_directory: PathBuf,
 }
 pub type SharedRunContext = Arc<RunContext>;
 

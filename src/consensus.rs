@@ -130,7 +130,7 @@ impl Module for Consensus {
 
     async fn build(ctx: &Self::Context) -> Result<Self> {
         Ok(
-            Consensus::load_from_disk(&ctx.data_directory).unwrap_or_else(|_| {
+            Consensus::load_from_disk(&ctx.config.data_directory).unwrap_or_else(|_| {
                 warn!("Failed to load consensus state from disk, using a default one");
                 Consensus::default()
             }),

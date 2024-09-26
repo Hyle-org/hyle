@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{path::PathBuf, sync::Arc};
 
 use anyhow::Result;
 use config::{Config, ConfigError, Environment, File};
@@ -26,7 +26,7 @@ pub struct Conf {
     pub storage: Storage,
     rest: String,
     pub p2p: P2pConf,
-    pub data_directory: Option<String>,
+    pub data_directory: PathBuf,
 }
 
 impl Conf {
@@ -38,20 +38,22 @@ impl Conf {
         return self.rest.as_str();
     }
 
-    pub fn new(config_file: String) -> Result<Self, ConfigError> {
+    pub fn new(config_file: String, data_directory: Option<String>) -> Result<Self, ConfigError> {
         let s = Config::builder()
-            // Start off by merging in the "default" configuration file
+            // Priority order: config file, then environment variables, then CLI
             .add_source(File::with_name(config_file.as_str()))
             .add_source(Environment::with_prefix("hyle"))
-            // You may also programmatically change settings
-            // .set_override("database.url", "postgres://")?
+            .set_override_option("data_directory", data_directory)?
             .build()?;
 
         // You can deserialize (and thus freeze) the entire configuration as
         s.try_deserialize()
     }
 
-    pub fn new_shared(config_file: String) -> Result<SharedConf, ConfigError> {
-        Self::new(config_file).map(Arc::new)
+    pub fn new_shared(
+        config_file: String,
+        data_directory: Option<String>,
+    ) -> Result<SharedConf, ConfigError> {
+        Self::new(config_file, data_directory).map(Arc::new)
     }
 }

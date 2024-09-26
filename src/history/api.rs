@@ -1,7 +1,6 @@
 use super::{
     blobs::BlobsKey,
     blocks::BlocksKey,
-    contracts::ContractsKey,
     model::{Blob, Contract, Proof, Transaction},
     proofs::ProofsKey,
     transactions::TransactionsKey,
@@ -261,69 +260,22 @@ pub async fn get_transaction_with_hash(
     }
 }
 
-pub async fn get_last_contract(
-    State(state): State<RouterState>,
-) -> Result<Json<Contract>, StatusCode> {
-    match state.history.read().await.contracts.last() {
-        Ok(Some(contract)) => Ok(Json(contract)),
-        Ok(None) => Err(StatusCode::NOT_FOUND),
-        Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
-    }
-}
-
 pub async fn get_contracts(
     Query(filters): Query<Filters>,
     State(state): State<RouterState>,
 ) -> Result<Json<Vec<Contract>>, StatusCode> {
-    let contract = match state.history.read().await.contracts.last() {
-        Ok(Some(contract)) => contract,
-        Ok(None) => return Err(StatusCode::NOT_FOUND),
-        Err(_) => return Err(StatusCode::INTERNAL_SERVER_ERROR),
-    };
     Ok(Json({
-        filter_iter(
-            state.history.write().await.contracts.range(
-                ContractsKey(BlockHeight(0), 0),
-                ContractsKey(contract.block_height, contract.tx_index),
-            ),
-            filters,
-        )
+        filter_iter(state.history.write().await.contracts.all(), filters)
     }))
 }
 
 pub async fn get_contract(
-    Path((block_height, tx_index)): Path<(BlockHeight, usize)>,
+    Path(name): Path<String>,
     State(state): State<RouterState>,
 ) -> Result<Json<Contract>, StatusCode> {
-    match state
-        .history
-        .write()
-        .await
-        .contracts
-        .get(block_height, tx_index)
-    {
+    match state.history.write().await.contracts.get(&name) {
         Ok(Some(contract)) => Ok(Json(contract)),
         Ok(None) => Err(StatusCode::NOT_FOUND),
         Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
-    }
-}
-
-pub async fn get_contracts_with_name(
-    Query(limit): Query<Option<usize>>,
-    Path(name): Path<String>,
-    State(state): State<RouterState>,
-) -> Result<Json<Vec<Contract>>, StatusCode> {
-    match state.history.write().await.contracts.get_with_name(&name) {
-        Some(contracts) => Ok(Json(
-            contracts
-                .take(limit.map(|l| if l > 50 { 50 } else { l }).unwrap_or(10))
-                .flat_map(|i| {
-                    i.map(|i| i.value().map_err(|e| error!("deserializing  data: {}", e)))
-                        .map_err(|e| error!("iterating over data: {}", e))
-                })
-                .filter_map(|i| i.ok())
-                .collect(),
-        )),
-        None => Err(StatusCode::NOT_FOUND),
     }
 }
