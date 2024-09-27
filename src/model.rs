@@ -19,6 +19,7 @@ use tracing::debug;
 use crate::{
     bus::SharedMessageBus,
     utils::{conf::SharedConf, crypto::SharedBlstCrypto},
+    validator_registry::ValidatorRegistry,
 };
 
 #[derive(Default, Clone, Eq, PartialEq, Hash, Encode, Decode)]
@@ -375,6 +376,7 @@ pub struct RunContext {
     pub config: SharedConf,
     pub bus: SharedMessageBus,
     pub crypto: SharedBlstCrypto,
+    pub validator_registry: ValidatorRegistry,
 }
 pub type SharedRunContext = Arc<RunContext>;
 

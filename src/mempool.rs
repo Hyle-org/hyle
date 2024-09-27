@@ -7,7 +7,7 @@ use crate::{
     model::{Hashable, SharedRunContext, Transaction},
     p2p::network::{OutboundMessage, SignedWithId},
     rest::endpoints::RestApiMessage,
-    utils::{conf::SharedConf, crypto::SharedBlstCrypto, modules::Module},
+    utils::{crypto::SharedBlstCrypto, modules::Module},
     validator_registry::{ValidatorRegistry, ValidatorRegistryNetMessage},
 };
 use anyhow::{Context, Result};
@@ -72,7 +72,7 @@ impl Module for Mempool {
     }
 
     async fn build(ctx: &SharedRunContext) -> Result<Self> {
-        Ok(Mempool::new(ctx.config.clone(), ctx.crypto.clone()).await)
+        Ok(Mempool::new(ctx).await)
     }
 
     fn run(&mut self, ctx: Self::Context) -> impl futures::Future<Output = Result<()>> + Send {
@@ -81,11 +81,11 @@ impl Module for Mempool {
 }
 
 impl Mempool {
-    pub async fn new(config: SharedConf, crypto: SharedBlstCrypto) -> Mempool {
+    pub async fn new(ctx: &SharedRunContext) -> Mempool {
         Mempool {
-            metrics: MempoolMetrics::global(&config),
-            crypto,
-            validators: ValidatorRegistry::default(),
+            metrics: MempoolMetrics::global(&ctx.config),
+            crypto: ctx.crypto.clone(),
+            validators: ctx.validator_registry.share(),
             pending_txs: vec![],
             batched_txs: HashSet::default(),
         }

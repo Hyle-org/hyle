@@ -12,10 +12,11 @@ use hyle::{
     rest::{RestApi, RestApiRunContext},
     tools::mock_workflow::MockWorkflowHandler,
     utils::{
-        conf::{self},
+        conf,
         crypto::BlstCrypto,
         modules::{Module, ModulesHandler},
     },
+    validator_registry::ValidatorRegistry,
 };
 use std::sync::Arc;
 use tracing::{debug, error, info, level_filters::LevelFilter};
@@ -80,10 +81,13 @@ async fn main() -> Result<()> {
 
     std::fs::create_dir_all(&config.data_directory).context("creating data directory")?;
 
+    let validator_registry = ValidatorRegistry::new();
+
     let ctx = Arc::new(RunContext {
         bus,
         config,
         crypto,
+        validator_registry,
     });
 
     let history = History::build(&ctx).await?;

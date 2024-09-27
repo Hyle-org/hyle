@@ -151,7 +151,7 @@ impl Module for Consensus {
         Ok(
             Consensus::load_from_disk(&ctx.config.data_directory).unwrap_or_else(|_| {
                 warn!("Failed to load consensus state from disk, using a default one");
-                Consensus::default()
+                Consensus::new()
             }),
         )
     }
@@ -162,6 +162,16 @@ impl Module for Consensus {
 }
 
 impl Consensus {
+    fn new() -> Self {
+        Self {
+            is_next_leader: false,
+            blocks: vec![Block::default()],
+            validators: ValidatorRegistry::default(),
+            bft_round_state: BFTRoundState::default(),
+            pending_batches: vec![],
+        }
+    }
+
     fn create_consensus_proposal(
         &mut self,
         previous_consensus_proposal_hash: ConsensusProposalHash,
@@ -779,17 +789,5 @@ impl Consensus {
         msg: ConsensusNetMessage,
     ) -> Result<SignedWithId<ConsensusNetMessage>> {
         crypto.sign(msg)
-    }
-}
-
-impl Default for Consensus {
-    fn default() -> Self {
-        Self {
-            is_next_leader: false,
-            blocks: vec![Block::default()],
-            validators: ValidatorRegistry::default(),
-            bft_round_state: BFTRoundState::default(),
-            pending_batches: vec![],
-        }
     }
 }
