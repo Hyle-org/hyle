@@ -1,7 +1,10 @@
 use anyhow::{Context, Result};
-use reqwest::Url;
+use reqwest::{Response, Url};
 
-use crate::model::{BlobTransaction, ProofTransaction, RegisterContractTransaction};
+use crate::{
+    model::{BlobTransaction, ContractName, ProofTransaction, RegisterContractTransaction},
+    tools::mock_workflow::RunScenario,
+};
 
 pub struct ApiHttpClient {
     pub url: Url,
@@ -9,43 +12,55 @@ pub struct ApiHttpClient {
 }
 
 impl ApiHttpClient {
-    pub async fn send_tx_blob(&self, tx: &BlobTransaction) -> Result<String> {
-        let res = self
-            .reqwest_client
+    pub async fn send_tx_blob(&self, tx: &BlobTransaction) -> Result<Response> {
+        self.reqwest_client
             .post(format!("{}v1/tx/send/blob", self.url))
             .body(serde_json::to_string(tx)?)
             .header("Content-Type", "application/json")
             .send()
             .await
-            .context("Sending tx blob")?;
-
-        res.text().await.context("Decoding response")
+            .context("Sending tx blob")
     }
-    pub async fn send_tx_proof(&self, tx: &ProofTransaction) -> Result<String> {
-        let res = self
-            .reqwest_client
+
+    pub async fn send_tx_proof(&self, tx: &ProofTransaction) -> Result<Response> {
+        self.reqwest_client
             .post(format!("{}v1/tx/send/proof", self.url))
             .body(serde_json::to_string(&tx)?)
             .header("Content-Type", "application/json")
             .send()
             .await
-            .context("Sending tx proof")?;
-
-        res.text().await.context("Decoding response")
+            .context("Sending tx proof")
     }
+
     pub async fn send_tx_register_contract(
         &self,
         tx: &RegisterContractTransaction,
-    ) -> Result<String> {
-        let res = self
-            .reqwest_client
+    ) -> Result<Response> {
+        self.reqwest_client
             .post(format!("{}v1/contract/register", self.url))
             .body(serde_json::to_string(&tx)?)
             .header("Content-Type", "application/json")
             .send()
             .await
-            .context("Sending tx register contract")?;
+            .context("Sending tx register contract")
+    }
 
-        res.text().await.context("Decoding response")
+    pub async fn get_contract(&self, contract_name: &ContractName) -> Result<Response> {
+        self.reqwest_client
+            .get(format!("{}v1/contract/{}", self.url, contract_name))
+            .header("Content-Type", "application/json")
+            .send()
+            .await
+            .context("Sending tx register contract")
+    }
+
+    pub async fn run_scenario_api_test(&self) -> Result<Response> {
+        self.reqwest_client
+            .post(format!("{}v1/tools/run_scenario", self.url))
+            .body(serde_json::to_string(&RunScenario::ApiTest)?)
+            .header("Content-Type", "application/json")
+            .send()
+            .await
+            .context("Starting api test scenario")
     }
 }

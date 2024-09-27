@@ -33,13 +33,20 @@ struct Cli {
 enum SendCommands {
     /// Send blob transaction
     #[command(alias = "b")]
-    Blob { file: String },
+    Blob {
+        file: String,
+    },
     /// Send proof transaction
     #[command(alias = "p")]
-    Proof { file: String },
+    Proof {
+        file: String,
+    },
     /// Register contract
     #[command(alias = "c")]
-    Contract { file: String },
+    Contract {
+        file: String,
+    },
+    Auto,
 }
 
 #[tokio::main]
@@ -58,18 +65,22 @@ async fn main() -> Result<()> {
         SendCommands::Blob { file } => {
             let blob = load::<BlobTransaction>(file).context("loading blob tx from file")?;
             let res = api_client.send_tx_blob(&blob).await?;
-            info!("Received response {}", res);
+            info!("Received response {}", res.text().await?);
         }
         SendCommands::Proof { file } => {
             let blob = load::<ProofTransaction>(file).context("loading proof tx from file")?;
             let res = api_client.send_tx_proof(&blob).await?;
-            info!("Received response {}", res);
+            info!("Received response {}", res.text().await?);
         }
         SendCommands::Contract { file } => {
             let blob = load::<RegisterContractTransaction>(file)
                 .context("loading contract tx from file")?;
             let res = api_client.send_tx_register_contract(&blob).await?;
-            info!("Received response {}", res);
+            info!("Received response {}", res.text().await?);
+        }
+        SendCommands::Auto => {
+            info!("Running scenario api test");
+            api_client.run_scenario_api_test().await?;
         }
     }
 
