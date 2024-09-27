@@ -77,6 +77,15 @@ pub struct QuorumCertificate {
     validators: Vec<ValidatorPublicKey>,
 }
 
+impl Hashable<QuorumCertificateHash> for QuorumCertificate {
+    fn hash(&self) -> QuorumCertificateHash {
+        let mut hasher = Sha3_256::new();
+        _ = write!(hasher, "{:?}", self.signature);
+        _ = write!(hasher, "{:?}", self.validators);
+        return QuorumCertificateHash(hasher.finalize().as_slice().to_owned());
+    }
+}
+
 pub type Slot = u64;
 pub type View = u64;
 
@@ -86,6 +95,7 @@ pub struct ConsensusProposal {
     pub slot: Slot,
     pub view: u64,
     pub previous_consensus_proposal_hash: ConsensusProposalHash,
+    pub previous_commit_quorum_certificate: QuorumCertificate,
     pub block: Block, // FIXME: Block ou cut ?
 }
 
@@ -95,6 +105,7 @@ impl Hashable<ConsensusProposalHash> for ConsensusProposal {
         _ = write!(hasher, "{}", self.slot);
         _ = write!(hasher, "{}", self.view);
         _ = write!(hasher, "{:?}", self.previous_consensus_proposal_hash);
+        _ = write!(hasher, "{:?}", self.previous_commit_quorum_certificate);
         _ = write!(hasher, "{}", self.block);
         return ConsensusProposalHash(hasher.finalize().as_slice().to_owned());
     }
@@ -102,6 +113,8 @@ impl Hashable<ConsensusProposalHash> for ConsensusProposal {
 
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, PartialEq, Eq, Hash, Default)]
 pub struct ConsensusProposalHash(Vec<u8>);
+#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, PartialEq, Eq, Hash, Default)]
+pub struct QuorumCertificateHash(Vec<u8>);
 
 bus_client! {
 struct ConsensusBusClient {
@@ -151,6 +164,7 @@ impl Consensus {
     fn create_consensus_proposal(
         &mut self,
         previous_consensus_proposal_hash: ConsensusProposalHash,
+        previous_commit_quorum_certificate: QuorumCertificate,
     ) -> Result<(), Error> {
         let last_block = self.blocks.last();
 
@@ -176,6 +190,7 @@ impl Consensus {
             slot: self.bft_round_state.slot,
             view: self.bft_round_state.view,
             previous_consensus_proposal_hash,
+            previous_commit_quorum_certificate,
             block,
         };
         Ok(())
@@ -200,6 +215,7 @@ impl Consensus {
             slot: self.bft_round_state.slot,
             view: self.bft_round_state.view,
             previous_consensus_proposal_hash: ConsensusProposalHash(vec![]),
+            previous_commit_quorum_certificate: QuorumCertificate::default(),
             block: first_block,
         };
     }
@@ -242,7 +258,7 @@ impl Consensus {
     }
 
     fn finish_round(&mut self, bus: &ConsensusBusClient) -> Result<(), Error> {
-        // Add and applies new block to its NodeState
+        // Add and applies new block to its NodeState through ConsensusEvent
         self.add_block(bus)?;
 
         // Save added block
@@ -283,43 +299,28 @@ impl Consensus {
     ) -> Result<(), Error> {
         // Message received by leader.
 
-        // Verifies that previous slot has a valid *Commit* Quorum Certificate
+        // Verifies that previous slot received a *Commit* Quorum Certificate.
         match self
             .bft_round_state
             .commit_quorum_certificates
             .get(&(self.bft_round_state.slot.saturating_sub(1)))
         {
             Some((previous_consensus_proposal_hash, previous_commit_quorum_certificate)) => {
-                let previous_commit_quorum_certificate_with_message = SignedWithKey {
-                    msg: ConsensusNetMessage::ConfirmAck(previous_consensus_proposal_hash.clone()),
-                    signature: previous_commit_quorum_certificate.signature.clone(),
-                    validators: previous_commit_quorum_certificate.validators.clone(),
-                };
-                // Verify valid signature
-                match BlstCrypto::verify(&previous_commit_quorum_certificate_with_message) {
-                    Ok(res) => {
-                        if !res {
-                            bail!("Previous Commit Quorum Certificate is invalid")
-                        }
-                    }
-                    Err(err) => {
-                        bail!(
-                            "Previous Commit Quorum Certificate verification failed: {}",
-                            err
-                        )
-                    }
-                }
                 // Creates ConsensusProposal
-                self.create_consensus_proposal(previous_consensus_proposal_hash.clone())?;
+                self.create_consensus_proposal(
+                    previous_consensus_proposal_hash.clone(),
+                    previous_commit_quorum_certificate.clone(),
+                )?;
             }
             None if self.bft_round_state.slot == 0 => {
                 info!("#### Genesis block creation ####");
                 self.create_genesis_consensus_proposal();
             }
             None => {
-                bail!("Can't start new slot: unknown previous commit quorum certificate")
+                bail!("Can't start new slot: previous commit quorum certificate not found")
             }
         };
+
         // Verifies that to-be-built block is large enough (?)
 
         // Updates its bft state
@@ -350,7 +351,7 @@ impl Consensus {
         match &msg.msg {
             ConsensusNetMessage::StartNewSlot => self.start_new_stot(bus, crypto),
             ConsensusNetMessage::Prepare(consensus_proposal) => {
-                // Message received by validator.
+                // Message received by follower.
 
                 // Validate message comes from the correct leader
                 if !msg.validators.contains(&self.leader_id()) {
@@ -358,28 +359,96 @@ impl Consensus {
                     // TODO: slash ?
                 }
 
-                // Verify consensus proposal
-                let mut vote = true;
-                // Verify slot
-                if self.bft_round_state.slot != consensus_proposal.slot {
-                    warn!(
-                        "Consensus proposal slot is incorrect. Received {} and expected {}",
-                        consensus_proposal.slot, self.bft_round_state.slot
-                    );
-                    vote = false;
-                }
-                // Verify view
-                if self.bft_round_state.view != consensus_proposal.view {
-                    warn!(
-                        "Consensus proposal view is incorrect. Received {} and expected {}",
-                        consensus_proposal.view, self.bft_round_state.view
-                    );
-                    vote = false;
-                }
+                // Verify received previous *Commit* Quorum Certificate
+                // If a previous *Commit* Quorum Certificate exists, verify hashes
+                // If no previous *Commit* Quorum Certificate is found, verify this one and save it if legit
+                match self
+                    .bft_round_state
+                    .commit_quorum_certificates
+                    .get(&(self.bft_round_state.slot.saturating_sub(1)))
+                {
+                    Some((
+                        previous_consensus_proposal_hash,
+                        previous_commit_quorum_certificate,
+                    )) => {
+                        // FIXME: Ici on a besoin d'avoir une trace du consensus_proposal precedent...
+                        // Quid des validators qui arrivent en cours de route ?
+                        // On veut sûrement garder trace de quelques consensus_proposals précedents.
+                        if previous_commit_quorum_certificate.hash()
+                            != consensus_proposal.previous_commit_quorum_certificate.hash()
+                        {
+                            bail!("PrepareVote consensus proposal does not contain correct previous commit quorum certificate");
+                        }
+                        if previous_consensus_proposal_hash
+                            != &consensus_proposal.previous_consensus_proposal_hash
+                        {
+                            bail!("PrepareVote previous consensus proposal hash does not match");
+                        }
+                        // Verify slot
+                        if self.bft_round_state.slot != consensus_proposal.slot {
+                            bail!(
+                                "Consensus proposal slot is incorrect. Received {} and expected {}",
+                                consensus_proposal.slot,
+                                self.bft_round_state.slot
+                            );
+                        }
+                        // Verify view
+                        if self.bft_round_state.view != consensus_proposal.view {
+                            bail!(
+                                "Consensus proposal view is incorrect. Received {} and expected {}",
+                                consensus_proposal.view,
+                                self.bft_round_state.view
+                            );
+                        }
+                        // Verify block
+                    }
+                    None if self.bft_round_state.slot == 0 => {
+                        info!("#### Received genesis block proposal ####");
+                    }
+                    None => {
+                        let previous_commit_quorum_certificate_with_message = SignedWithKey {
+                            msg: ConsensusNetMessage::ConfirmAck(
+                                consensus_proposal.previous_consensus_proposal_hash.clone(),
+                            ),
+                            signature: consensus_proposal
+                                .previous_commit_quorum_certificate
+                                .signature
+                                .clone(),
+                            validators: consensus_proposal
+                                .previous_commit_quorum_certificate
+                                .validators
+                                .clone(),
+                        };
+                        // Verify valid signature
+                        match BlstCrypto::verify(&previous_commit_quorum_certificate_with_message) {
+                            Ok(res) => {
+                                if !res {
+                                    bail!("Previous Commit Quorum Certificate is invalid")
+                                }
+                                // Buffers the previous *Commit* Quorum Cerficiate
+                                self.bft_round_state.commit_quorum_certificates.insert(
+                                    self.bft_round_state.slot - 1,
+                                    (
+                                        consensus_proposal.previous_consensus_proposal_hash.clone(),
+                                        consensus_proposal
+                                            .previous_commit_quorum_certificate
+                                            .clone(),
+                                    ),
+                                );
+                            }
+                            Err(err) => {
+                                bail!(
+                                    "Previous Commit Quorum Certificate verification failed: {}",
+                                    err
+                                )
+                            }
+                        }
+                        // Properly finish the previous round
+                        self.finish_round(bus)?;
+                    }
+                };
 
-                // Verify previous consensus hash is correct
-                // Verify block
-
+                // Update consensus_proposal
                 self.bft_round_state.consensus_proposal = consensus_proposal.clone();
 
                 // Responds PrepareVote message to leader with validator's vote on this proposal
@@ -388,12 +457,13 @@ impl Consensus {
                         self.leader_id(),
                         Self::sign_net_message(
                             crypto,
-                            ConsensusNetMessage::PrepareVote(consensus_proposal.hash(), vote),
+                            ConsensusNetMessage::PrepareVote(consensus_proposal.hash(), true),
                         )?,
                     ))
                     .context("Failed to send ConsensusNetMessage::Confirm msg on the bus")?;
                 Ok(())
             }
+            // TODO: remove the vote
             ConsensusNetMessage::PrepareVote(consensus_proposal_hash, vote) => {
                 // Message received by leader.
 
@@ -461,7 +531,7 @@ impl Consensus {
                 Ok(())
             }
             ConsensusNetMessage::Confirm(consensus_proposal_hash, prepare_quorum_certificate) => {
-                // Message received by validator.
+                // Message received by follower.
 
                 // Verify that the Confirm is for the correct proposal
                 if !self.verify_consensus_proposal_hash(consensus_proposal_hash) {
@@ -585,7 +655,7 @@ impl Consensus {
                 Ok(())
             }
             ConsensusNetMessage::Commit(consensus_proposal_hash, commit_quorum_certificate) => {
-                // Message received by validator.
+                // Message received by follower.
 
                 // Verify that the vote is for the correct proposal
                 if !self.verify_consensus_proposal_hash(consensus_proposal_hash) {
