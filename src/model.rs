@@ -4,6 +4,7 @@ use bincode::{Decode, Encode};
 use derive_more::Display;
 use serde::{
     de::{self, Visitor},
+    ser::SerializeStruct,
     Deserialize, Serialize,
 };
 use sha3::{Digest, Sha3_256};
@@ -155,7 +156,7 @@ pub struct StateDigest(pub Vec<u8>);
 #[derive(Debug, Serialize, Deserialize, Default, Clone, PartialEq, Eq, Encode, Decode)]
 pub struct BlobData(pub Vec<u8>);
 
-#[derive(Debug, Serialize, Deserialize, Default, Clone, PartialEq, Eq, Encode, Decode)]
+#[derive(Debug, Deserialize, Default, Clone, PartialEq, Eq, Encode, Decode)]
 pub struct Transaction {
     pub version: u32,
     pub transaction_data: TransactionData,
@@ -225,7 +226,21 @@ impl Transaction {
     }
 }
 
-#[derive(Serialize, Deserialize, Default, Clone, Encode, Decode)]
+impl Serialize for Transaction {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let mut x = serializer.serialize_struct("Transaction", 4)?;
+        x.serialize_field("hash", &self.hash())?;
+        x.serialize_field("version", &self.version)?;
+        x.serialize_field("transaction_data", &self.transaction_data)?;
+        x.serialize_field("inner", &self.inner)?;
+        x.end()
+    }
+}
+
+#[derive(Default, Clone, Encode, Decode)]
 pub struct BlockHash {
     pub inner: Vec<u8>,
 }
@@ -250,6 +265,42 @@ impl Display for BlockHash {
     }
 }
 
+impl Serialize for BlockHash {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(hex::encode(&self.inner).as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for BlockHash {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct BlockHashVisitor;
+
+        impl<'de> Visitor<'de> for BlockHashVisitor {
+            type Value = BlockHash;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("a hex string representing a BlockHash")
+            }
+
+            fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                let bytes = hex::decode(value).map_err(de::Error::custom)?;
+                Ok(BlockHash { inner: bytes })
+            }
+        }
+
+        deserializer.deserialize_str(BlockHashVisitor)
+    }
+}
+
 impl std::fmt::Debug for BlockHash {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_tuple("BlockHash ")
@@ -262,14 +313,27 @@ pub trait Hashable<T> {
     fn hash(&self) -> T;
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode)]
+#[derive(Debug, Deserialize, Clone, Encode, Decode)]
 pub struct Block {
     pub parent_hash: BlockHash,
     pub height: BlockHeight,
     pub timestamp: u64,
     pub txs: Vec<Transaction>,
 }
-
+impl Serialize for Block {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let mut x = serializer.serialize_struct("Block", 5)?;
+        x.serialize_field("hash", &self.hash())?;
+        x.serialize_field("parent_hash", &self.parent_hash)?;
+        x.serialize_field("height", &self.height)?;
+        x.serialize_field("timestamp", &self.timestamp)?;
+        x.serialize_field("txs", &self.txs)?;
+        x.end()
+    }
+}
 impl Hashable<BlockHash> for Block {
     fn hash(&self) -> BlockHash {
         let mut hasher = Sha3_256::new();
