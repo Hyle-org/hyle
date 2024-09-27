@@ -52,7 +52,6 @@ impl Module for NodeState {
     }
 
     type Context = SharedRunContext;
-    type Store = NodeStateStore;
 
     async fn build(ctx: &Self::Context) -> Result<Self> {
         let file = ctx.config.data_directory.clone().join("node_state.bin");

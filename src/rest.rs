@@ -48,7 +48,6 @@ impl Module for RestApi {
     }
 
     type Context = RestApiRunContext;
-    type Store = ();
 
     async fn build(_ctx: &Self::Context) -> Result<Self> {
         Ok(RestApi {})

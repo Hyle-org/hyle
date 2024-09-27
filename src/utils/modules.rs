@@ -12,15 +12,14 @@ where
     Self: Sized,
 {
     type Context;
-    type Store;
 
     fn name() -> &'static str;
     fn build(ctx: &Self::Context) -> impl futures::Future<Output = Result<Self>> + Send;
     fn run(&mut self, ctx: Self::Context) -> impl futures::Future<Output = Result<()>> + Send;
 
-    fn load_from_disk_or_default(file: &Path) -> Self::Store
+    fn load_from_disk_or_default<S>(file: &Path) -> S
     where
-        <Self as Module>::Store: bincode::Decode + Default,
+        S: bincode::Decode + Default,
     {
         fs::File::open(file)
             .map_err(|e| e.to_string())
@@ -34,13 +33,13 @@ where
                     Self::name(),
                     file.display()
                 );
-                Self::Store::default()
+                S::default()
             })
     }
 
-    fn save_on_disk(file: &Path, store: &Self::Store) -> Result<()>
+    fn save_on_disk<S>(file: &Path, store: &S) -> Result<()>
     where
-        <Self as Module>::Store: bincode::Encode,
+        S: bincode::Encode,
     {
         let mut writer = fs::File::create(file).log_error("Create file")?;
         bincode::encode_into_std_write(store, &mut writer, bincode::config::standard())

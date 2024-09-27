@@ -59,7 +59,6 @@ impl Module for History {
     }
 
     type Context = SharedRunContext;
-    type Store = ();
 
     async fn build(ctx: &Self::Context) -> Result<Self> {
         Self::new(
@@ -73,7 +72,7 @@ impl Module for History {
         .await
     }
 
-    fn run(&mut self, ctx: Self::Context) -> impl futures::Future<Output = Result<()>> + Send {
+    fn run(&mut self, _ctx: Self::Context) -> impl futures::Future<Output = Result<()>> + Send {
         self.start()
     }
 }

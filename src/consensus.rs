@@ -8,8 +8,6 @@ use std::{
     collections::{HashMap, HashSet},
     default::Default,
     io::Write,
-    ops::{Deref, DerefMut},
-    path::PathBuf,
     time::Duration,
 };
 use tokio::time::sleep;
@@ -27,7 +25,6 @@ use crate::{
     utils::{
         conf::SharedConf,
         crypto::{BlstCrypto, SharedBlstCrypto},
-        logger::LogMe,
         modules::Module,
     },
     validator_registry::{
@@ -146,7 +143,6 @@ impl Module for Consensus {
     }
 
     type Context = SharedRunContext;
-    type Store = ();
 
     async fn build(ctx: &Self::Context) -> Result<Self> {
         Ok(Consensus::new(ctx))
