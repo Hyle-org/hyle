@@ -1702,8 +1702,6 @@ dependencies = [
 [[package]]
 name = "oasgen"
 version = "0.21.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "13df7908a3d0713aa8335450b6f3f1c7e60df4c4a7ac826fafe63f71df753295"
 dependencies = [
  "axum",
  "futures",
@@ -1725,9 +1723,7 @@ dependencies = [
 
 [[package]]
 name = "oasgen-core"
-version = "0.21.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a51cc71092f2d88ae1916f3783a1bae74a99aa380ebadffe9985628ccccd5b12"
+version = "0.21.2"
 dependencies = [
  "axum",
  "http",
@@ -1743,8 +1739,6 @@ dependencies = [
 [[package]]
 name = "oasgen-macro"
 version = "0.21.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f8880504b8ee3c0141923b69d51e748b9f0b353715b3481a60a6806a41fc891d"
 dependencies = [
  "oasgen-core",
  "proc-macro2",
@@ -3028,8 +3022,6 @@ checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 [[package]]
 name = "swagger-ui2"
 version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "938cfc08661af4a3660f5a009479ac3aacfcecd25698ab325a9c374c33888d35"
 dependencies = [
  "bytes",
  "http",

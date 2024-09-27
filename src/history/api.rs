@@ -49,7 +49,7 @@ fn filter_iter<T: DeserializeOwned>(iter: crate::history::db::Iter<T>, filters: 
     }
 }
 
-#[oasgen]
+#[oasgen(tags("history"))]
 pub async fn get_blocks(
     Query(filters): Query<Filters>,
     State(state): State<RouterState>,
@@ -66,7 +66,7 @@ pub async fn get_blocks(
     )))
 }
 
-#[oasgen]
+#[oasgen(tags("history"))]
 pub async fn get_block(
     Path(height): Path<BlockHeight>,
     State(state): State<RouterState>,
@@ -78,12 +78,12 @@ pub async fn get_block(
     }
 }
 
-#[oasgen]
+#[oasgen(tags("history"))]
 pub async fn get_last_block(State(state): State<RouterState>) -> Result<Json<Block>, StatusCode> {
     Ok(Json(state.history.read().await.blocks.last().clone()))
 }
 
-#[oasgen]
+#[oasgen(tags("history"))]
 pub async fn get_proofs(
     Query(filters): Query<Filters>,
     State(state): State<RouterState>,
@@ -103,7 +103,7 @@ pub async fn get_proofs(
     )))
 }
 
-#[oasgen]
+#[oasgen(tags("history"))]
 pub async fn get_last_proof(State(state): State<RouterState>) -> Result<Json<Proof>, StatusCode> {
     match state.history.read().await.proofs.last() {
         Ok(Some(proof)) => Ok(Json(proof)),
@@ -112,7 +112,7 @@ pub async fn get_last_proof(State(state): State<RouterState>) -> Result<Json<Pro
     }
 }
 
-#[oasgen]
+#[oasgen(tags("history"))]
 pub async fn get_proof(
     Path((block_height, tx_index)): Path<(BlockHeight, usize)>,
     State(state): State<RouterState>,
@@ -130,7 +130,7 @@ pub async fn get_proof(
     }
 }
 
-#[oasgen]
+#[oasgen(tags("history"))]
 pub async fn get_proof_with_hash(
     Path(tx_hash): Path<String>,
     State(state): State<RouterState>,
@@ -142,7 +142,7 @@ pub async fn get_proof_with_hash(
     }
 }
 
-#[oasgen]
+#[oasgen(tags("history"))]
 pub async fn get_blobs(
     Query(filters): Query<Filters>,
     State(state): State<RouterState>,
@@ -163,7 +163,7 @@ pub async fn get_blobs(
     }))
 }
 
-#[oasgen]
+#[oasgen(tags("history"))]
 pub async fn get_last_blob(State(state): State<RouterState>) -> Result<Json<Blob>, StatusCode> {
     match state.history.read().await.blobs.last() {
         Ok(Some(blob)) => Ok(Json(blob)),
@@ -172,7 +172,7 @@ pub async fn get_last_blob(State(state): State<RouterState>) -> Result<Json<Blob
     }
 }
 
-#[oasgen]
+#[oasgen(tags("history"))]
 pub async fn get_blob(
     Path((block_height, tx_index, blob_index)): Path<(BlockHeight, usize, usize)>,
     State(state): State<RouterState>,
@@ -190,7 +190,7 @@ pub async fn get_blob(
     }
 }
 
-#[oasgen]
+#[oasgen(tags("history"))]
 pub async fn get_blob_with_hash(
     Path((tx_hash, blob_index)): Path<(String, usize)>,
     State(state): State<RouterState>,
@@ -208,7 +208,7 @@ pub async fn get_blob_with_hash(
     }
 }
 
-#[oasgen]
+#[oasgen(tags("history"))]
 pub async fn get_transactions(
     Query(filters): Query<Filters>,
     State(state): State<RouterState>,
@@ -229,7 +229,7 @@ pub async fn get_transactions(
     }))
 }
 
-#[oasgen]
+#[oasgen(tags("history"))]
 pub async fn get_last_transaction(
     State(state): State<RouterState>,
 ) -> Result<Json<Transaction>, StatusCode> {
@@ -240,7 +240,7 @@ pub async fn get_last_transaction(
     }
 }
 
-#[oasgen]
+#[oasgen(tags("history"))]
 pub async fn get_transaction(
     Path((block_height, tx_index)): Path<(BlockHeight, usize)>,
     State(state): State<RouterState>,
@@ -258,7 +258,7 @@ pub async fn get_transaction(
     }
 }
 
-#[oasgen]
+#[oasgen(tags("history"))]
 pub async fn get_transaction_with_hash(
     Path(tx_hash): Path<String>,
     State(state): State<RouterState>,
@@ -276,7 +276,7 @@ pub async fn get_transaction_with_hash(
     }
 }
 
-#[oasgen]
+#[oasgen(tags("history"))]
 pub async fn get_contracts(
     Query(filters): Query<Filters>,
     State(state): State<RouterState>,
@@ -286,7 +286,7 @@ pub async fn get_contracts(
     }))
 }
 
-#[oasgen]
+#[oasgen(tags("history"))]
 pub async fn get_contract(
     Path(name): Path<String>,
     State(state): State<RouterState>,

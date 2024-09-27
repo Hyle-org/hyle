@@ -22,6 +22,7 @@ use blobs::Blobs;
 use blocks::Blocks;
 use contracts::Contracts;
 use core::str;
+use oasgen::OpenAPI;
 use proofs::Proofs;
 use std::{
     io::{Cursor, Write},
@@ -107,8 +108,9 @@ impl History {
         }
     }
 
-    pub fn api() -> Router<rest::RouterState> {
-        oasgen::Server::axum()
+    pub fn api() -> (Arc<OpenAPI>, Router<rest::RouterState>) {
+        let server = oasgen::Server::axum()
+            .prefix("/v1/history") // For open api doc generation only
             // block
             .get("/blocks", api::get_blocks)
             .get("/block/last", api::get_last_block)
@@ -131,8 +133,8 @@ impl History {
             // contract
             .get("/contracts", api::get_contracts)
             .get("/contract/:name", api::get_contract)
-            .freeze()
-            .into_router()
+            .freeze();
+        (server.openapi.clone(), server.into_router())
     }
 
     async fn handle_block(&mut self, block: Block) {

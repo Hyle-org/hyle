@@ -73,7 +73,7 @@ pub async fn rest_server(
 
     let mut server = oasgen::Server::axum();
     server.openapi.info.title = "Hyle Node API".to_string();
-    let server = server
+    let mut server = server
         .get("/v1/contract/:name", endpoints::get_contract)
         .post(
             "/v1/contract/register",
@@ -83,13 +83,20 @@ pub async fn rest_server(
         .post("/v1/tx/send/proof", endpoints::send_proof_transaction)
         .post("/v1/tools/run_scenario", endpoints::run_scenario)
         .route_json_spec("/openapi.json")
-        .swagger_ui("/openapi/")
-        .freeze();
+        .swagger_ui("/openapi/");
+
+    let (history_openapi, history_router) = History::api();
+
+    server
+        .openapi
+        .paths
+        .paths
+        .append(&mut history_openapi.paths.paths.clone());
 
     let app = Router::new()
         .nest("/v1", metrics_layer.routes())
-        .merge(server.into_router())
-        .nest("/v1/history", History::api())
+        .merge(server.freeze().into_router())
+        .nest("/v1/history", history_router)
         .layer(metrics_layer)
         .layer(tower_http::cors::CorsLayer::permissive())
         .with_state(RouterState {

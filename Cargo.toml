@@ -57,3 +57,6 @@ incremental = true
 inherits = "release"
 debug = true         # Keep debug info for profiling
 strip = "none"
+
+[patch.crates-io]
+oasgen = { path = "../oasgen/oasgen" }
