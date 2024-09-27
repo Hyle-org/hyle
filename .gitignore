@@ -1,6 +1,6 @@
 target
 *.bin
-history.db/
+data_*/
 
 # Added by cargo
 

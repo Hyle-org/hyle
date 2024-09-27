@@ -69,6 +69,7 @@ macro_rules! static_type_map {
             $($idx: $t3,)+
         }
         impl $name {
+            #[allow(clippy::too_many_arguments)]
             pub fn new($($idx: $t3,)*) -> Self {
                 Self {
                     $($idx,)*

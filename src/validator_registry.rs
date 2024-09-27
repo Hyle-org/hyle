@@ -12,7 +12,7 @@ use tracing::{debug, info, warn};
 
 use crate::{bus::BusMessage, p2p::network::SignedWithId, utils::crypto::BlstCrypto};
 
-#[derive(Serialize, Deserialize, Clone, Encode, Decode, Default, Eq, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Encode, Decode, Default, Eq, PartialEq, Hash)]
 pub struct ValidatorPublicKey(pub Vec<u8>);
 
 impl std::fmt::Debug for ValidatorPublicKey {
@@ -54,6 +54,21 @@ impl ValidatorRegistry {
         ValidatorRegistry {
             validators: Default::default(),
         }
+    }
+
+    pub fn get_validators_count(&self) -> usize {
+        self.validators.keys().len()
+    }
+
+    pub fn get_pub_keys_from_id(&self, validators_id: Vec<ValidatorId>) -> Vec<ValidatorPublicKey> {
+        validators_id
+            .into_iter()
+            .filter_map(|id| {
+                self.validators
+                    .get(&id)
+                    .map(|validator| validator.pub_key.clone())
+            })
+            .collect()
     }
 
     pub fn handle_net_message(&mut self, msg: ValidatorRegistryNetMessage) {
