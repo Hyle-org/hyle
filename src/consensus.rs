@@ -3,53 +3,56 @@
 use anyhow::{bail, Context, Error, Result};
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
+use sha3::{Digest, Sha3_256};
 use std::{
     collections::{HashMap, HashSet},
     default::Default,
     fs,
+    io::Write,
+    path::Path,
     time::Duration,
 };
 use tokio::time::sleep;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 use crate::{
-    bus::BusMessage,
-    bus::{
-        bus_client,
-        command_response::{CmdRespClient, Query},
-        SharedMessageBus,
-    },
+    bus::{bus_client, command_response::Query, BusMessage, SharedMessageBus},
     handle_messages,
-    mempool::{MempoolCommand, MempoolResponse},
-    model::{get_current_timestamp, Block, BlockHash, Hashable, SharedRunContext, Transaction},
-    p2p::network::{OutboundMessage, SignedWithId},
+    mempool::{MempoolCommand, MempoolEvent, MempoolResponse},
+    model::{
+        get_current_timestamp, Block, BlockHash, BlockHeight, Hashable, SharedRunContext,
+        Transaction,
+    },
+    p2p::network::{OutboundMessage, Signature, Signed, SignedWithId, SignedWithKey},
     utils::{
         conf::SharedConf,
         crypto::{BlstCrypto, SharedBlstCrypto},
         logger::LogMe,
         modules::Module,
     },
-    validator_registry::{ValidatorId, ValidatorRegistry, ValidatorRegistryNetMessage},
+    validator_registry::{
+        ValidatorId, ValidatorPublicKey, ValidatorRegistry, ValidatorRegistryNetMessage,
+    },
 };
 
-#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode)]
+#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, PartialEq, Eq, Hash)]
 pub enum ConsensusNetMessage {
+    StartNewSlot,
     Prepare(ConsensusProposal),
-    PrepareVote(bool), // FIXME: set correct type
-    Confirm(u64),      // FIXME: set correct type (*Prepare* Quorum Certificate)
-    ConfirmAck,
-    Commit(u64), // FIXME: set correct type (*Commit* Quorum Certificate)
+    PrepareVote(ConsensusProposalHash),
+    Confirm(ConsensusProposalHash, QuorumCertificate),
+    ConfirmAck(ConsensusProposalHash),
+    Commit(ConsensusProposalHash, QuorumCertificate),
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub enum ConsensusCommand {
     SaveOnDisk,
-    GenerateNewBlock,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub enum ConsensusEvent {
-    CommitBlock { batch_id: String, block: Block },
+    CommitBlock { block: Block },
 }
 
 impl BusMessage for ConsensusCommand {}
@@ -59,34 +62,59 @@ impl BusMessage for ConsensusNetMessage {}
 // TODO: move struct to model.rs ?
 #[derive(Serialize, Deserialize, Encode, Decode, Default)]
 pub struct BFTRoundState {
-    is_leader: bool,
-    f: u64,
-    slot: u64,
-    view: u64,
-    prepare_quorum_certificate: u64,
-    prep_votes: HashMap<ValidatorId, bool>, // FIXME: set correct type (here it's validator_id:vote)
-    commit_quorum_certificate: HashMap<u64, u64>, // FIXME: set correct type (here it's slot:quorum certificate)
-    confirm_ack: HashSet<ValidatorId>, // FIXME: set correct type (here it's validator_id)
-    block: Option<Block>,              // FIXME: Block ou cut ?
+    consensus_proposal: ConsensusProposal,
+    slot: Slot,
+    view: View,
+    prepare_votes: HashSet<Signed<ConsensusNetMessage, ValidatorPublicKey>>,
+    prepare_quorum_certificate: QuorumCertificate,
+    confirm_ack: HashSet<Signed<ConsensusNetMessage, ValidatorPublicKey>>,
+    commit_quorum_certificates: HashMap<Slot, (ConsensusProposalHash, QuorumCertificate)>,
 }
 
-impl BFTRoundState {
-    fn finish_round(&mut self) {
-        self.slot += 1;
-        self.view = 0;
-        self.prep_votes = HashMap::default();
-        self.confirm_ack = HashSet::default();
+#[derive(Serialize, Deserialize, Encode, Decode, Default, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct QuorumCertificate {
+    signature: Signature,
+    validators: Vec<ValidatorPublicKey>,
+}
+
+impl Hashable<QuorumCertificateHash> for QuorumCertificate {
+    fn hash(&self) -> QuorumCertificateHash {
+        let mut hasher = Sha3_256::new();
+        _ = write!(hasher, "{:?}", self.signature);
+        _ = write!(hasher, "{:?}", self.validators);
+        return QuorumCertificateHash(hasher.finalize().as_slice().to_owned());
     }
 }
 
+pub type Slot = u64;
+pub type View = u64;
+
 // TODO: move struct to model.rs ?
-#[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, Encode, Decode, PartialEq, Eq, Hash)]
 pub struct ConsensusProposal {
-    pub slot: u64,
-    pub view: u64,
-    pub previous_commit_quorum_certificate: u64, // FIXME. Set correct type
-    pub block: Block,                            // FIXME: Block ou cut ?
+    slot: Slot,
+    view: u64,
+    previous_consensus_proposal_hash: ConsensusProposalHash,
+    previous_commit_quorum_certificate: QuorumCertificate,
+    block: Block, // FIXME: Block ou cut ?
 }
+
+impl Hashable<ConsensusProposalHash> for ConsensusProposal {
+    fn hash(&self) -> ConsensusProposalHash {
+        let mut hasher = Sha3_256::new();
+        _ = write!(hasher, "{}", self.slot);
+        _ = write!(hasher, "{}", self.view);
+        _ = write!(hasher, "{:?}", self.previous_consensus_proposal_hash);
+        _ = write!(hasher, "{:?}", self.previous_commit_quorum_certificate);
+        _ = write!(hasher, "{}", self.block);
+        return ConsensusProposalHash(hasher.finalize().as_slice().to_owned());
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, PartialEq, Eq, Hash, Default)]
+pub struct ConsensusProposalHash(Vec<u8>);
+#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, PartialEq, Eq, Hash, Default)]
+pub struct QuorumCertificateHash(Vec<u8>);
 
 bus_client! {
 struct ConsensusBusClient {
@@ -96,22 +124,20 @@ struct ConsensusBusClient {
     sender(Query<MempoolCommand, MempoolResponse>),
     receiver(ValidatorRegistryNetMessage),
     receiver(ConsensusCommand),
+    receiver(MempoolEvent),
     receiver(SignedWithId<ConsensusNetMessage>),
 }
 }
 
 #[derive(Serialize, Deserialize, Encode, Decode)]
 pub struct Consensus {
+    // TODO: should be removed
+    is_next_leader: bool,
     validators: ValidatorRegistry,
     bft_round_state: BFTRoundState,
-    blocks: Vec<Block>,
-    batch_id: u64,
-    // Accumulated batches from mempool
-    tx_batches: HashMap<String, Vec<Transaction>>,
-    // Current proposed block
-    current_block_batches: Vec<String>,
-    // Once a block commits, we store it there (or not ?)
-    // committed_block_batches: HashMap<String, HashMap<String, Vec<Transaction>>>,
+    // FIXME: pub is here for testing
+    pub blocks: Vec<Block>,
+    pending_batches: Vec<Vec<Transaction>>,
 }
 
 impl Module for Consensus {
@@ -122,11 +148,12 @@ impl Module for Consensus {
     type Context = SharedRunContext;
 
     async fn build(ctx: &Self::Context) -> Result<Self> {
-        // FIXME load from disk create a new ValidatorRegistry instead of using shared one
-        Ok(Consensus::load_from_disk().unwrap_or_else(|_| {
-            warn!("Failed to load consensus state from disk, using a default one");
-            Consensus::new(ctx)
-        }))
+        Ok(
+            Consensus::load_from_disk(&ctx.config.data_directory).unwrap_or_else(|_| {
+                warn!("Failed to load consensus state from disk, using a default one");
+                Consensus::new()
+            }),
+        )
     }
 
     fn run(&mut self, ctx: Self::Context) -> impl futures::Future<Output = Result<()>> + Send {
@@ -135,22 +162,21 @@ impl Module for Consensus {
 }
 
 impl Consensus {
-    fn new(ctx: &SharedRunContext) -> Self {
-        Consensus {
-            validators: ctx.validator_registry.share(),
+    fn new() -> Self {
+        Self {
+            is_next_leader: false,
+            blocks: vec![Block::default()],
+            validators: ValidatorRegistry::default(),
             bft_round_state: BFTRoundState::default(),
-            blocks: vec![],
-            batch_id: 0,
-            tx_batches: HashMap::new(),
-            current_block_batches: vec![],
+            pending_batches: vec![],
         }
     }
 
-    fn add_block(&mut self, block: Block) {
-        self.blocks.push(block);
-    }
-
-    fn new_block(&mut self) -> Block {
+    fn create_consensus_proposal(
+        &mut self,
+        previous_consensus_proposal_hash: ConsensusProposalHash,
+        previous_commit_quorum_certificate: QuorumCertificate,
+    ) -> Result<(), Error> {
         let last_block = self.blocks.last();
 
         let parent_hash = last_block
@@ -158,37 +184,68 @@ impl Consensus {
             .unwrap_or(BlockHash::new("000"));
         let parent_height = last_block.map(|b| b.height).unwrap_or_default();
 
-        let mut all_txs = vec![];
-
-        // prepare accumulated txs to feed the block
-        // a previous batch can be there because of a previous block that failed to commit
-        for (batch_id, txs) in self.tx_batches.iter() {
-            all_txs.extend(txs.clone());
-            self.current_block_batches.push(batch_id.clone());
+        // Create block to-be-proposed
+        let mut txs = vec![];
+        if !self.pending_batches.is_empty() {
+            txs = self.pending_batches.remove(0);
         }
-
-        // Start Consensus with following block
         let block = Block {
             parent_hash,
             height: parent_height + 1,
             timestamp: get_current_timestamp(),
-            txs: all_txs,
+            txs,
         };
 
-        // Waiting for commit... TODO split this task
+        // Start Consensus with following block
+        self.bft_round_state.consensus_proposal = ConsensusProposal {
+            slot: self.bft_round_state.slot,
+            view: self.bft_round_state.view,
+            previous_consensus_proposal_hash,
+            previous_commit_quorum_certificate,
+            block,
+        };
+        Ok(())
+    }
 
-        // Commit block/if commit fails,
-        // block won't be added, next block will try to add the txs
-        self.add_block(block.clone());
+    fn create_genesis_consensus_proposal(&mut self) {
+        let first_block = Block {
+            parent_hash: BlockHash {
+                inner: [
+                    70, 105, 97, 116, 32, 108, 117, 120, 32, 101, 116, 32, 102, 97, 99, 116, 97,
+                    32, 101, 115, 116, 32, 108, 117, 120,
+                ]
+                .to_vec(),
+            },
+            height: BlockHeight(0),
+            timestamp: get_current_timestamp(),
+            txs: vec![],
+        };
 
-        // Once commited we clean the state for the next block
-        for cbb in self.current_block_batches.iter() {
-            self.tx_batches.remove(cbb);
-        }
-        _ = self.current_block_batches.drain(0..);
+        // Start Consensus with following block
+        self.bft_round_state.consensus_proposal = ConsensusProposal {
+            slot: self.bft_round_state.slot,
+            view: self.bft_round_state.view,
+            previous_consensus_proposal_hash: ConsensusProposalHash(vec![]),
+            previous_commit_quorum_certificate: QuorumCertificate::default(),
+            block: first_block,
+        };
+    }
 
-        info!("New block {}", block.height);
-        block
+    fn add_block(&mut self, bus: &ConsensusBusClient) -> Result<(), Error> {
+        // Send block to internal bus
+        _ = bus
+            .send(ConsensusEvent::CommitBlock {
+                block: self.bft_round_state.consensus_proposal.block.clone(),
+            })
+            .context("Failed to send ConsensusEvent::CommitBlock msg on the bus")?;
+
+        info!(
+            "New block {}",
+            self.bft_round_state.consensus_proposal.block.height
+        );
+        self.blocks
+            .push(self.bft_round_state.consensus_proposal.block.clone());
+        Ok(())
     }
 
     pub fn save_on_disk(&self) -> Result<()> {
@@ -200,8 +257,9 @@ impl Consensus {
         Ok(())
     }
 
-    pub fn load_from_disk() -> Result<Self> {
-        let mut reader = fs::File::open("data.bin").log_warn("Loading data from disk")?;
+    pub fn load_from_disk(data_directory: &Path) -> Result<Self> {
+        let mut reader =
+            fs::File::open(data_directory.join("data.bin")).log_warn("Loading data from disk")?;
         let ctx: Consensus =
             bincode::decode_from_std_read(&mut reader, bincode::config::standard())
                 .log_warn("Deserializing data from disk")?;
@@ -210,29 +268,85 @@ impl Consensus {
         Ok(ctx)
     }
 
-    fn verify_consensus_proposal(&self, _consensus_proposal: ConsensusProposal) -> bool {
-        // TODO
-        true
+    fn finish_round(&mut self, bus: &ConsensusBusClient) -> Result<(), Error> {
+        // Add and applies new block to its NodeState through ConsensusEvent
+        self.add_block(bus)?;
+
+        // Save added block
+        _ = bus
+            .send(ConsensusCommand::SaveOnDisk)
+            .context("Cannot send message over channel")?;
+
+        self.bft_round_state.slot += 1;
+        self.bft_round_state.view = 0;
+        self.bft_round_state.prepare_votes = HashSet::default();
+        self.bft_round_state.confirm_ack = HashSet::default();
+
+        Ok(())
     }
 
-    fn verify_prepare_quorum_certificate(&self, _prepare_quorum_certificate: u64) -> bool {
-        // TODO
-        true
-    }
-
-    fn verify_commit_quorum_certificate(&self, _commit_quorum_certificate: u64) -> bool {
-        // TODO
-        true
+    fn verify_consensus_proposal_hash(
+        &self,
+        consensus_proposal_hash: &ConsensusProposalHash,
+    ) -> bool {
+        // Verify that the vote is for the correct proposal
+        &self.bft_round_state.consensus_proposal.hash() == consensus_proposal_hash
     }
 
     fn is_next_leader(&self) -> bool {
         // TODO
-        true
+        self.is_next_leader
     }
 
     fn leader_id(&self) -> ValidatorId {
         // TODO
-        ValidatorId("".to_owned())
+        ValidatorId("node-1".to_owned())
+    }
+
+    fn start_new_slot(
+        &mut self,
+        bus: &ConsensusBusClient,
+        crypto: &BlstCrypto,
+    ) -> Result<(), Error> {
+        // Message received by leader.
+
+        // Verifies that previous slot received a *Commit* Quorum Certificate.
+        match self
+            .bft_round_state
+            .commit_quorum_certificates
+            .get(&(self.bft_round_state.slot.saturating_sub(1)))
+        {
+            Some((previous_consensus_proposal_hash, previous_commit_quorum_certificate)) => {
+                // Creates ConsensusProposal
+                self.create_consensus_proposal(
+                    previous_consensus_proposal_hash.clone(),
+                    previous_commit_quorum_certificate.clone(),
+                )?;
+            }
+            None if self.bft_round_state.slot == 0 => {
+                info!("#### Genesis block creation ####");
+                self.create_genesis_consensus_proposal();
+            }
+            None => {
+                bail!("Can't start new slot: previous commit quorum certificate not found")
+            }
+        };
+
+        // Verifies that to-be-built block is large enough (?)
+
+        // Updates its bft state
+        // TODO: update view when rebellion
+        // self.bft_round_state.view += 1;
+
+        // Broadcasts Prepare message to all validators
+        _ = bus
+            .send(OutboundMessage::broadcast(Self::sign_net_message(
+                crypto,
+                ConsensusNetMessage::Prepare(self.bft_round_state.consensus_proposal.clone()),
+            )?))
+            .context("Failed to broadcast ConsensusNetMessage::Prepare msg on the bus")?;
+
+        Ok(())
     }
 
     fn handle_net_message(
@@ -245,186 +359,385 @@ impl Consensus {
             bail!("Invalid signature for message {:?}", msg);
         }
 
-        match msg.msg {
+        match &msg.msg {
+            ConsensusNetMessage::StartNewSlot => self.start_new_slot(bus, crypto),
             ConsensusNetMessage::Prepare(consensus_proposal) => {
-                // Message received by replica.
+                // Message received by follower.
 
                 // Validate message comes from the correct leader
                 if !msg.validators.contains(&self.leader_id()) {
-                    // fail
+                    bail!("Prepare consensus message does not come from current leader");
+                    // TODO: slash ?
                 }
-                // Validate consensus_proposal slot, view, previous_qc and proposed block
-                let vote = self.verify_consensus_proposal(consensus_proposal);
-                // Responds PrepareVote message to leader with replica's vote on this proposal
+
+                // Verify received previous *Commit* Quorum Certificate
+                // If a previous *Commit* Quorum Certificate exists, verify hashes
+                // If no previous *Commit* Quorum Certificate is found, verify this one and save it if legit
+                match self
+                    .bft_round_state
+                    .commit_quorum_certificates
+                    .get(&(self.bft_round_state.slot.saturating_sub(1)))
+                {
+                    Some((
+                        previous_consensus_proposal_hash,
+                        previous_commit_quorum_certificate,
+                    )) => {
+                        // FIXME: Ici on a besoin d'avoir une trace du consensus_proposal precedent...
+                        // Quid des validators qui arrivent en cours de route ?
+                        // On veut sûrement garder trace de quelques consensus_proposals précedents.
+                        if previous_commit_quorum_certificate.hash()
+                            != consensus_proposal.previous_commit_quorum_certificate.hash()
+                        {
+                            bail!("PrepareVote consensus proposal does not contain correct previous commit quorum certificate");
+                        }
+                        if previous_consensus_proposal_hash
+                            != &consensus_proposal.previous_consensus_proposal_hash
+                        {
+                            bail!("PrepareVote previous consensus proposal hash does not match");
+                        }
+                        // Verify slot
+                        if self.bft_round_state.slot != consensus_proposal.slot {
+                            bail!(
+                                "Consensus proposal slot is incorrect. Received {} and expected {}",
+                                consensus_proposal.slot,
+                                self.bft_round_state.slot
+                            );
+                        }
+                        // Verify view
+                        if self.bft_round_state.view != consensus_proposal.view {
+                            bail!(
+                                "Consensus proposal view is incorrect. Received {} and expected {}",
+                                consensus_proposal.view,
+                                self.bft_round_state.view
+                            );
+                        }
+                        // Verify block
+                    }
+                    None if self.bft_round_state.slot == 0 => {
+                        info!("#### Received genesis block proposal ####");
+                    }
+                    None => {
+                        // Verify proposal hash is correct
+                        if !self.verify_consensus_proposal_hash(
+                            &consensus_proposal.previous_consensus_proposal_hash,
+                        ) {
+                            // TODO Retrieve that data on other validators
+                            bail!("Previsou Commit Quorum certificate is about an unknown consensus proposal. Can't process any furter");
+                        }
+
+                        let previous_commit_quorum_certificate_with_message = SignedWithKey {
+                            msg: ConsensusNetMessage::ConfirmAck(
+                                consensus_proposal.previous_consensus_proposal_hash.clone(),
+                            ),
+                            signature: consensus_proposal
+                                .previous_commit_quorum_certificate
+                                .signature
+                                .clone(),
+                            validators: consensus_proposal
+                                .previous_commit_quorum_certificate
+                                .validators
+                                .clone(),
+                        };
+                        // Verify valid signature
+                        match BlstCrypto::verify(&previous_commit_quorum_certificate_with_message) {
+                            Ok(res) => {
+                                if !res {
+                                    bail!("Previous Commit Quorum Certificate is invalid")
+                                }
+                                // Buffers the previous *Commit* Quorum Cerficiate
+                                self.bft_round_state.commit_quorum_certificates.insert(
+                                    self.bft_round_state.slot - 1,
+                                    (
+                                        consensus_proposal.previous_consensus_proposal_hash.clone(),
+                                        consensus_proposal
+                                            .previous_commit_quorum_certificate
+                                            .clone(),
+                                    ),
+                                );
+                            }
+                            Err(err) => {
+                                bail!(
+                                    "Previous Commit Quorum Certificate verification failed: {}",
+                                    err
+                                )
+                            }
+                        }
+                        // Properly finish the previous round
+                        self.finish_round(bus)?;
+                    }
+                };
+
+                // Update consensus_proposal
+                self.bft_round_state.consensus_proposal = consensus_proposal.clone();
+
+                // Responds PrepareVote message to leader with validator's vote on this proposal
                 _ = bus
                     .send(OutboundMessage::send(
                         self.leader_id(),
-                        Self::sign_net_message(crypto, ConsensusNetMessage::PrepareVote(vote))?,
+                        Self::sign_net_message(
+                            crypto,
+                            ConsensusNetMessage::PrepareVote(consensus_proposal.hash()),
+                        )?,
                     ))
                     .context("Failed to send ConsensusNetMessage::Confirm msg on the bus")?;
                 Ok(())
             }
-            ConsensusNetMessage::PrepareVote(vote) => {
+            ConsensusNetMessage::PrepareVote(consensus_proposal_hash) => {
                 // Message received by leader.
 
-                // Save vote
-                msg.validators.iter().for_each(|v| {
-                    self.bft_round_state.prep_votes.insert(v.clone(), vote);
-                });
+                // Verify that the PrepareVote is for the correct proposal
+                if !self.verify_consensus_proposal_hash(consensus_proposal_hash) {
+                    bail!("PrepareVote has not received valid consensus proposal hash");
+                }
+
+                // Save vote message
+                self.bft_round_state.prepare_votes.insert(
+                    msg.with_pub_keys(self.validators.get_pub_keys_from_id(msg.validators.clone())),
+                );
+
                 // Get matching vote count
                 let validated_votes = self
                     .bft_round_state
-                    .prep_votes
+                    .prepare_votes
                     .iter()
-                    .fold(0, |acc, (_, vote)| acc + if *vote { 1 } else { 0 });
+                    .flat_map(|signed_message| signed_message.validators.clone())
+                    .collect::<HashSet<ValidatorPublicKey>>();
 
-                // Waits for at least 𝑛−𝑓 = 2𝑓+1 matching PrepareVote messages
-                if validated_votes == 2 * self.bft_round_state.f + 1 {
+                // Waits for at least n-f = 2f+1 matching PrepareVote messages
+                let f: usize = self.validators.get_validators_count() / 3;
+                // TODO: Only wait for 2 * f because leader himself if the +1
+                if validated_votes.len() == 2 * f + 1 {
+                    // Get all received signatures
+                    let aggregates: &Vec<&Signed<ConsensusNetMessage, ValidatorPublicKey>> =
+                        &self.bft_round_state.prepare_votes.iter().collect();
+
                     // Aggregates them into a *Prepare* Quorum Certificate
-                    let prepare_quorum_certificate = 1; // FIXME
+                    let prepvote_signed_aggregation = crypto.sign_aggregate(
+                        ConsensusNetMessage::PrepareVote(
+                            self.bft_round_state.consensus_proposal.hash(),
+                        ),
+                        aggregates,
+                    )?;
+
+                    // Buffers the *Prepare* Quorum Cerficiate
+                    self.bft_round_state.prepare_quorum_certificate = QuorumCertificate {
+                        signature: prepvote_signed_aggregation.signature.clone(),
+                        validators: prepvote_signed_aggregation.validators.clone(),
+                    };
 
                     // if fast-path ... TODO
-                    // else send Confirm message to replicas
+                    // else send Confirm message to validators
+
+                    // Broadcast the *Prepare* Quorum Certificate to all validators
                     _ = bus
                         .send(OutboundMessage::broadcast(Self::sign_net_message(
                             crypto,
-                            ConsensusNetMessage::Confirm(prepare_quorum_certificate),
+                            ConsensusNetMessage::Confirm(
+                                consensus_proposal_hash.clone(),
+                                self.bft_round_state.prepare_quorum_certificate.clone(),
+                            ),
                         )?))
-                        .context("Failed to send ConsensusNetMessage::Confirm msg on the bus")?;
+                        .context(
+                            "Failed to broadcast ConsensusNetMessage::Confirm msg on the bus",
+                        )?;
                 }
+                // TODO(?): Update behaviour when having more ?
+                // else if validated_votes > 2 * f + 1 {}
                 Ok(())
             }
-            ConsensusNetMessage::Confirm(prepare_quorum_certificate) => {
-                // Message received by replica.
+            ConsensusNetMessage::Confirm(consensus_proposal_hash, prepare_quorum_certificate) => {
+                // Message received by follower.
 
-                // Verifies and save the *Prepare* Quorum Certificate
-                if !self.verify_prepare_quorum_certificate(prepare_quorum_certificate) {
-                    // Fail
+                // Verify that the Confirm is for the correct proposal
+                if !self.verify_consensus_proposal_hash(consensus_proposal_hash) {
+                    bail!("Confirm has not received valid consensus proposal hash");
                 }
-                // Buffers the *Prepare* Quorum Cerficiate
-                self.bft_round_state.prepare_quorum_certificate = prepare_quorum_certificate;
+
+                // Verifies the *Prepare* Quorum Certificate
+                let prepare_quorum_certificate_with_message = SignedWithKey {
+                    msg: ConsensusNetMessage::PrepareVote(consensus_proposal_hash.clone()),
+                    signature: prepare_quorum_certificate.signature.clone(),
+                    validators: prepare_quorum_certificate.validators.clone(),
+                };
+                match BlstCrypto::verify(&prepare_quorum_certificate_with_message) {
+                    Ok(res) => {
+                        if !res {
+                            bail!("Prepare Quorum Certificate received is invalid")
+                        }
+                        // Verify enough validators signed
+                        let f: usize = self.validators.get_validators_count() / 3;
+                        if prepare_quorum_certificate.validators.len() < 2 * f + 1 {
+                            bail!("Prepare Quorum Certificate does not contain enough validators signatures")
+                        }
+                        // Verify that validators that signed are legit
+                        // TODO
+
+                        // Buffers the *Prepare* Quorum Cerficiate
+                        self.bft_round_state.prepare_quorum_certificate =
+                            prepare_quorum_certificate.clone();
+                    }
+                    Err(err) => bail!("Prepare Quorum Certificate verification failed: {}", err),
+                }
+
                 // Responds ConfirmAck to leader
                 _ = bus
                     .send(OutboundMessage::send(
                         self.leader_id(),
-                        Self::sign_net_message(crypto, ConsensusNetMessage::ConfirmAck)?,
+                        Self::sign_net_message(
+                            crypto,
+                            ConsensusNetMessage::ConfirmAck(consensus_proposal_hash.clone()),
+                        )?,
                     ))
                     .context("Failed to send ConsensusNetMessage::ConfirmAck msg on the bus")?;
                 Ok(())
             }
-            ConsensusNetMessage::ConfirmAck => {
+            ConsensusNetMessage::ConfirmAck(consensus_proposal_hash) => {
                 // Message received by leader.
 
-                // Save ConfirmAck
-                msg.validators.iter().for_each(|v| {
-                    self.bft_round_state.confirm_ack.insert(v.clone());
-                });
-
-                if self.bft_round_state.confirm_ack.len()
-                    > (2 * self.bft_round_state.f + 1).try_into().unwrap()
-                {
-                    // Aggregates 2𝑓 +1 matching ConfirmAck messages into a *Commit* Quorum Certificate
-                    let commit_quorum_certificate = 1; // FIXME
-
-                    // Send Commit message of this certificate to all replicas
-                    _ = bus
-                        .send(OutboundMessage::broadcast(Self::sign_net_message(
-                            crypto,
-                            ConsensusNetMessage::Commit(commit_quorum_certificate),
-                        )?))
-                        .context("Failed to send ConsensusNetMessage::Confirm msg on the bus")?;
+                // Verify that the ConfirmAck is for the correct proposal
+                if !self.verify_consensus_proposal_hash(consensus_proposal_hash) {
+                    bail!("ConfirmAck has not received valid consensus proposal hash");
                 }
-                // Update its bft roun state
-                self.bft_round_state.is_leader = false;
-                self.bft_round_state.finish_round();
 
-                Ok(())
-            }
-            ConsensusNetMessage::Commit(commit_quorum_certificate) => {
-                // Message received by replica.
-
-                // Verifies and save the *Commit* Quorum Certificate
-                self.verify_commit_quorum_certificate(commit_quorum_certificate);
-                self.bft_round_state
-                    .commit_quorum_certificate
-                    .insert(self.bft_round_state.slot, commit_quorum_certificate);
-
-                // Applies and add new block to its NodeState
-                // TODO
-
-                // Updates its bft round state
-                self.bft_round_state.finish_round();
-
-                if !self.is_next_leader() {
+                // Save ConfirmAck. Ends if the message already has been processed
+                if !self.bft_round_state.confirm_ack.insert(
+                    msg.with_pub_keys(self.validators.get_pub_keys_from_id(msg.validators.clone())),
+                ) {
+                    info!("ConfirmAck has aleady been processed");
                     return Ok(());
                 }
 
-                // Starts new slot
-                self.bft_round_state.is_leader = true;
+                // Get ConfirmAck count
+                let confirmed_ack_validators = self
+                    .bft_round_state
+                    .confirm_ack
+                    .iter()
+                    .flat_map(|signed_message| signed_message.validators.clone())
+                    .collect::<HashSet<ValidatorPublicKey>>();
 
-                // Creates ConsensusProposal
-                let consensus_proposal = ConsensusProposal {
-                    slot: self.bft_round_state.slot,
-                    view: self.bft_round_state.view,
-                    previous_commit_quorum_certificate: commit_quorum_certificate,
-                    block: Block::default(), // FIXME
+                let f: usize = self.validators.get_validators_count() / 3;
+
+                // TODO: Only waiting for 2 * f because leader himself if the +1
+                if confirmed_ack_validators.len() == (2 * f + 1) {
+                    // Get all signatures received and change ValidatorId for ValidatorPubKey
+                    let aggregates: &Vec<&Signed<ConsensusNetMessage, ValidatorPublicKey>> =
+                        &self.bft_round_state.confirm_ack.iter().collect();
+
+                    // Aggregates them into a *Commit* Quorum Certificate
+                    let commit_signed_aggregation = crypto.sign_aggregate(
+                        ConsensusNetMessage::ConfirmAck(
+                            self.bft_round_state.consensus_proposal.hash(),
+                        ),
+                        aggregates,
+                    )?;
+
+                    // Buffers the *Commit* Quorum Cerficiate
+                    let commit_quorum_certificate = QuorumCertificate {
+                        signature: commit_signed_aggregation.signature.clone(),
+                        validators: commit_signed_aggregation.validators.clone(),
+                    };
+                    self.bft_round_state.commit_quorum_certificates.insert(
+                        self.bft_round_state.slot,
+                        (
+                            consensus_proposal_hash.clone(),
+                            commit_quorum_certificate.clone(),
+                        ),
+                    );
+
+                    // Broadcast the *Commit* Quorum Certificate to all validators
+                    _ = bus
+                        .send(OutboundMessage::broadcast(Self::sign_net_message(
+                            crypto,
+                            ConsensusNetMessage::Commit(
+                                consensus_proposal_hash.clone(),
+                                commit_quorum_certificate,
+                            ),
+                        )?))
+                        .context(
+                            "Failed to broadcast ConsensusNetMessage::Confirm msg on the bus",
+                        )?;
+
+                    // Finishes the bft round
+                    self.finish_round(bus)?;
+
+                    // Start new slot
+                    if self.is_next_leader() {
+                        // Send Prepare message to all validators
+                        self.start_new_slot(bus, crypto)?;
+                    }
+                }
+                // TODO(?): Update behaviour when having more ?
+                Ok(())
+            }
+            ConsensusNetMessage::Commit(consensus_proposal_hash, commit_quorum_certificate) => {
+                // Message received by follower.
+
+                // Verify that the vote is for the correct proposal
+                if !self.verify_consensus_proposal_hash(consensus_proposal_hash) {
+                    bail!("PrepareVote has not received valid consensus proposal hash");
+                }
+
+                // Verifies and save the *Commit* Quorum Certificate
+                let commit_quorum_certificate_with_message = SignedWithKey {
+                    msg: ConsensusNetMessage::ConfirmAck(consensus_proposal_hash.clone()),
+                    signature: commit_quorum_certificate.signature.clone(),
+                    validators: commit_quorum_certificate.validators.clone(),
                 };
-                // Send Prepare message to all replicas
-                _ = bus
-                    .send(OutboundMessage::broadcast(Self::sign_net_message(
-                        crypto,
-                        ConsensusNetMessage::Prepare(consensus_proposal),
-                    )?))
-                    .context("Failed to send ConsensusNetMessage::Prepare msg on the bus")?;
 
+                match BlstCrypto::verify(&commit_quorum_certificate_with_message) {
+                    Ok(res) => {
+                        if !res {
+                            bail!("Commit Quorum Certificate received is invalid")
+                        }
+                        // Verify enough validators signed
+                        let f: usize = self.validators.get_validators_count() / 3;
+                        if commit_quorum_certificate.validators.len() < 2 * f + 1 {
+                            bail!("Commit Quorum Certificate does not contain enough validators signatures")
+                        }
+                        // Verify that validators that signed are legit
+                        // TODO
+
+                        // Buffers the *Commit* Quorum Cerficiate
+                        self.bft_round_state.commit_quorum_certificates.insert(
+                            self.bft_round_state.slot,
+                            (
+                                consensus_proposal_hash.clone(),
+                                commit_quorum_certificate.clone(),
+                            ),
+                        );
+                    }
+                    Err(err) => bail!("Commit Quorum Certificate verification failed: {}", err),
+                }
+
+                // Finishes the bft round
+                self.finish_round(bus)?;
+
+                // Start new slot
+                if self.is_next_leader() {
+                    // Send Prepare message to all validators
+                    self.start_new_slot(bus, crypto)?;
+                }
                 Ok(())
             }
         }
     }
 
-    async fn handle_command(
-        &mut self,
-        msg: ConsensusCommand,
-        bus: &mut ConsensusBusClient,
-        crypto: &BlstCrypto,
-    ) -> Result<()> {
+    async fn handle_command(&mut self, msg: ConsensusCommand) -> Result<()> {
         match msg {
-            ConsensusCommand::GenerateNewBlock => {
-                self.batch_id += 1;
-                match bus
-                    .request(MempoolCommand::CreatePendingBatch {
-                        id: self.batch_id.to_string(),
-                    })
-                    .await?
-                {
-                    MempoolResponse::PendingBatch { id, txs } => {
-                        info!("Received pending batch {} with {} txs", &id, &txs.len());
-                        self.tx_batches.insert(id.clone(), txs);
-                        let block = self.new_block();
-                        // send to internal bus
-                        _ = bus
-                            .send(ConsensusEvent::CommitBlock {
-                                batch_id: id,
-                                block: block.clone(),
-                            })
-                            .context("Failed to send ConsensusEvent::CommitBlock msg on the bus")?;
-
-                        // send to network
-                        _ = bus
-                            .send(OutboundMessage::broadcast(Self::sign_net_message(
-                                crypto,
-                                ConsensusNetMessage::Commit(1),
-                            )?))
-                            .context(
-                                "Failed to send ConsensusNetMessage::CommitBlock msg on the bus",
-                            )?;
-                    }
-                }
+            ConsensusCommand::SaveOnDisk => {
+                // FIXME: Might need to be removed as we have History module
+                _ = self.save_on_disk();
                 Ok(())
             }
+        }
+    }
 
-            ConsensusCommand::SaveOnDisk => {
-                _ = self.save_on_disk();
+    async fn handle_mempool_event(&mut self, msg: MempoolEvent) -> Result<()> {
+        match msg {
+            MempoolEvent::LatestBatch(batch) => {
+                debug!("Received batch with txs: {:?}", batch);
+                self.pending_batches.push(batch);
+
                 Ok(())
             }
         }
@@ -436,40 +749,31 @@ impl Consensus {
         config: SharedConf,
         crypto: SharedBlstCrypto,
     ) -> Result<()> {
-        let interval = config.storage.interval;
-        let is_master = config.peers.is_empty();
-
         let mut bus = ConsensusBusClient::new_from_bus(shared_bus.new_handle()).await;
-        if is_master {
-            info!(
-                "No peers configured, starting as master generating blocks every {} seconds",
-                interval
-            );
 
-            let bus2 = ConsensusBusClient::new_from_bus(shared_bus).await;
-            tokio::spawn(async move {
-                loop {
-                    sleep(Duration::from_secs(interval)).await;
-
-                    _ = bus2
-                        .send(ConsensusCommand::GenerateNewBlock)
-                        .log_error("Cannot send message over channel");
-                    _ = bus2
-                        .send(ConsensusCommand::SaveOnDisk)
-                        .log_error("Cannot send message over channel");
-                }
-            });
+        // FIXME: node-1 sera le leader
+        if config.id == ValidatorId("node-1".to_owned()) {
+            sleep(Duration::from_secs(3)).await;
+            self.is_next_leader = true;
+            _ = self.start_new_slot(&bus, &crypto);
         }
+
         handle_messages! {
             on_bus bus,
             listen<ConsensusCommand> cmd => {
-                match self.handle_command(cmd, &mut bus, &crypto).await{
+                match self.handle_command(cmd).await{
                     Ok(_) => (),
                     Err(e) => warn!("Error while handling consensus command: {:#}", e),
                 }
             }
+            listen<MempoolEvent> cmd => {
+                match self.handle_mempool_event(cmd).await{
+                    Ok(_) => (),
+                    Err(e) => warn!("Error while handling mempool event: {:#}", e),
+                }
+            }
             listen<SignedWithId<ConsensusNetMessage>> cmd => {
-                match self.handle_net_message(cmd, &crypto, &bus){
+                match self.handle_net_message(cmd, &crypto, &bus) {
                     Ok(_) => (),
                     Err(e) => warn!("Error while handling consensus net message: {:#}", e),
                 }

@@ -79,6 +79,9 @@ pub trait BusClientReceiver<T> {
     ) -> impl std::future::Future<Output = Result<T, tokio::sync::broadcast::error::RecvError>> + Send;
 }
 
+/// Macro to create  a struct that registers sender/receiver using a shared bus.
+/// This can be used to ensure that channels are open without locking in a typesafe manner.
+/// It also serves as documentation for the types of messages used by each modules.
 macro_rules! bus_client {
     (
         $(#[$meta:meta])*

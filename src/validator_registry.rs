@@ -14,10 +14,10 @@ use tracing::{debug, info, warn};
 use crate::{
     bus::BusMessage,
     p2p::network::SignedWithId,
-    utils::{crypto::BlstCrypto, serde::arc_rwlock_serde, vec_utils::SequenceOption},
+    utils::{crypto::BlstCrypto, serde::arc_rwlock_serde},
 };
 
-#[derive(Serialize, Deserialize, Clone, Encode, Decode, Default, Eq, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Encode, Decode, Default, Eq, PartialEq, Hash)]
 pub struct ValidatorPublicKey(pub Vec<u8>);
 
 impl std::fmt::Debug for ValidatorPublicKey {
@@ -75,6 +75,24 @@ impl ValidatorRegistry {
         }
     }
 
+    pub fn get_validators_count(&self) -> usize {
+        self.inner.read().unwrap().validators.keys().len()
+    }
+
+    pub fn get_pub_keys_from_id(&self, validators_id: Vec<ValidatorId>) -> Vec<ValidatorPublicKey> {
+        validators_id
+            .into_iter()
+            .filter_map(|id| {
+                self.inner
+                    .read()
+                    .unwrap()
+                    .validators
+                    .get(&id)
+                    .map(|validator| validator.pub_key.clone())
+            })
+            .collect()
+    }
+
     pub fn handle_net_message(&mut self, msg: ValidatorRegistryNetMessage) {
         match msg {
             ValidatorRegistryNetMessage::NewValidator(r) => self.add_validator(r.id.clone(), r),
@@ -96,8 +114,8 @@ impl ValidatorRegistry {
             .validators
             .iter()
             .map(|v| s.get(v))
-            .collect::<Vec<Option<_>>>()
-            .sequence();
+            .collect::<Option<Vec<_>>>();
+
         match validators {
             Some(vec) => {
                 let vec = vec

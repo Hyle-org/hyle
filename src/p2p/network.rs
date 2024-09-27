@@ -32,7 +32,7 @@ impl OutboundMessage {
 }
 impl BusMessage for OutboundMessage {}
 
-#[derive(Serialize, Deserialize, Clone, Encode, Decode, Default)]
+#[derive(Serialize, Deserialize, Clone, Encode, Decode, Default, PartialEq, Eq, Hash)]
 pub struct Signature(pub Vec<u8>);
 
 impl std::fmt::Debug for Signature {
@@ -49,7 +49,7 @@ impl<T> BusMessage for SignedWithKey<T> where T: Encode + BusMessage {}
 pub type SignedWithId<T> = Signed<T, ValidatorId>;
 pub type SignedWithKey<T> = Signed<T, ValidatorPublicKey>;
 
-#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode)]
+#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, PartialEq, Eq, Hash)]
 pub struct Signed<T: Encode, V> {
     pub msg: T,
     pub signature: Signature,
