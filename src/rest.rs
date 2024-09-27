@@ -20,6 +20,7 @@ use endpoints::RestApiMessage;
 use tower_http::trace::TraceLayer;
 use tracing::info;
 
+pub mod client;
 pub mod endpoints;
 
 bus_client! {
