@@ -406,6 +406,14 @@ impl Consensus {
                         info!("#### Received genesis block proposal ####");
                     }
                     None => {
+                        // Verify proposal hash is correct
+                        if !self.verify_consensus_proposal_hash(
+                            &consensus_proposal.previous_consensus_proposal_hash,
+                        ) {
+                            // TODO Retrieve that data on other validators
+                            bail!("Previsou Commit Quorum certificate is about an unknown consensus proposal. Can't process any furter");
+                        }
+
                         let previous_commit_quorum_certificate_with_message = SignedWithKey {
                             msg: ConsensusNetMessage::ConfirmAck(
                                 consensus_proposal.previous_consensus_proposal_hash.clone(),
@@ -466,7 +474,7 @@ impl Consensus {
             ConsensusNetMessage::PrepareVote(consensus_proposal_hash) => {
                 // Message received by leader.
 
-                // Verify that the vote is for the correct proposal
+                // Verify that the PrepareVote is for the correct proposal
                 if !self.verify_consensus_proposal_hash(consensus_proposal_hash) {
                     bail!("PrepareVote has not received valid consensus proposal hash");
                 }
