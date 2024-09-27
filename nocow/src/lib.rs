@@ -58,7 +58,11 @@ pub fn nocow(
                 }
             }
 
-            let structs = [quote!( #input ), quote!( #nocow_struct )];
+            let inp = quote!(
+                #[derive(OaSchema)]
+                #nocow_struct
+            );
+            let structs = [quote!( #input ), inp];
             let expanded = quote!(
                 #( #structs )*
             );
