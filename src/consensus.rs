@@ -39,7 +39,7 @@ use crate::{
 pub enum ConsensusNetMessage {
     StartNewSlot,
     Prepare(ConsensusProposal),
-    PrepareVote(ConsensusProposalHash, bool),
+    PrepareVote(ConsensusProposalHash),
     Confirm(ConsensusProposalHash, QuorumCertificate),
     ConfirmAck(ConsensusProposalHash),
     Commit(ConsensusProposalHash, QuorumCertificate),
@@ -457,21 +457,18 @@ impl Consensus {
                         self.leader_id(),
                         Self::sign_net_message(
                             crypto,
-                            ConsensusNetMessage::PrepareVote(consensus_proposal.hash(), true),
+                            ConsensusNetMessage::PrepareVote(consensus_proposal.hash()),
                         )?,
                     ))
                     .context("Failed to send ConsensusNetMessage::Confirm msg on the bus")?;
                 Ok(())
             }
-            // TODO: remove the vote
-            ConsensusNetMessage::PrepareVote(consensus_proposal_hash, vote) => {
+            ConsensusNetMessage::PrepareVote(consensus_proposal_hash) => {
                 // Message received by leader.
 
                 // Verify that the vote is for the correct proposal
                 if !self.verify_consensus_proposal_hash(consensus_proposal_hash) {
                     bail!("PrepareVote has not received valid consensus proposal hash");
-                } else if !vote {
-                    bail!("PrepareVote received is false");
                 }
 
                 // Save vote message
@@ -499,7 +496,6 @@ impl Consensus {
                     let prepvote_signed_aggregation = crypto.sign_aggregate(
                         ConsensusNetMessage::PrepareVote(
                             self.bft_round_state.consensus_proposal.hash(),
-                            true,
                         ),
                         aggregates,
                     )?;
@@ -540,7 +536,7 @@ impl Consensus {
 
                 // Verifies the *Prepare* Quorum Certificate
                 let prepare_quorum_certificate_with_message = SignedWithKey {
-                    msg: ConsensusNetMessage::PrepareVote(consensus_proposal_hash.clone(), true),
+                    msg: ConsensusNetMessage::PrepareVote(consensus_proposal_hash.clone()),
                     signature: prepare_quorum_certificate.signature.clone(),
                     validators: prepare_quorum_certificate.validators.clone(),
                 };
