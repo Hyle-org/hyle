@@ -2,6 +2,7 @@
 
 use bincode::{Decode, Encode};
 use derive_more::Display;
+use oasgen::OaSchema;
 use serde::{
     de::{self, Visitor},
     ser::SerializeStruct,
@@ -22,7 +23,7 @@ use crate::{
     utils::{conf::SharedConf, crypto::SharedBlstCrypto},
 };
 
-#[derive(Default, Clone, Eq, PartialEq, Hash, Encode, Decode)]
+#[derive(Default, Clone, Eq, PartialEq, Hash, Encode, Decode, OaSchema)]
 pub struct TxHash(pub Vec<u8>);
 
 impl TxHash {
@@ -132,38 +133,76 @@ impl std::fmt::Debug for BlobsHash {
     Copy,
     Encode,
     Decode,
+    OaSchema,
 )]
 pub struct BlockHeight(pub u64);
 
 #[derive(
-    Default, Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash, Display, Encode, Decode,
+    Default,
+    Debug,
+    Clone,
+    Serialize,
+    Deserialize,
+    Eq,
+    PartialEq,
+    Hash,
+    Display,
+    Encode,
+    Decode,
+    OaSchema,
 )]
 pub struct BlobIndex(pub u32);
 
 #[derive(
-    Default, Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash, Display, Encode, Decode,
+    Default,
+    Debug,
+    Clone,
+    Serialize,
+    Deserialize,
+    Eq,
+    PartialEq,
+    Hash,
+    Display,
+    Encode,
+    Decode,
+    OaSchema,
 )]
 pub struct Identity(pub String);
 
 #[derive(
-    Default, Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash, Display, Encode, Decode,
+    Default,
+    Debug,
+    Clone,
+    Serialize,
+    Deserialize,
+    Eq,
+    PartialEq,
+    Hash,
+    Display,
+    Encode,
+    Decode,
+    OaSchema,
 )]
 pub struct ContractName(pub String);
 
-#[derive(Debug, Serialize, Deserialize, Default, Clone, Eq, PartialEq, Hash, Encode, Decode)]
+#[derive(
+    Debug, Serialize, Deserialize, Default, Clone, Eq, PartialEq, Hash, Encode, Decode, OaSchema,
+)]
 pub struct StateDigest(pub Vec<u8>);
 
-#[derive(Debug, Serialize, Deserialize, Default, Clone, PartialEq, Eq, Encode, Decode)]
+#[derive(
+    Debug, Serialize, Deserialize, Default, Clone, PartialEq, Eq, Encode, Decode, OaSchema,
+)]
 pub struct BlobData(pub Vec<u8>);
 
-#[derive(Debug, Deserialize, Default, Clone, PartialEq, Eq, Encode, Decode)]
+#[derive(Debug, Deserialize, Default, Clone, PartialEq, Eq, Encode, Decode, OaSchema)]
 pub struct Transaction {
     pub version: u32,
     pub transaction_data: TransactionData,
     pub inner: String, // FIXME: to remove
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Encode, Decode)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Encode, Decode, OaSchema)]
 pub enum TransactionData {
     Blob(BlobTransaction),
     Proof(ProofTransaction),
@@ -176,20 +215,26 @@ impl Default for TransactionData {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Default, PartialEq, Eq, Clone, Encode, Decode)]
+#[derive(
+    Debug, Serialize, Deserialize, Default, PartialEq, Eq, Clone, Encode, Decode, OaSchema,
+)]
 pub struct ProofTransaction {
     pub blobs_references: Vec<BlobReference>,
     pub proof: Vec<u8>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Default, Clone, PartialEq, Eq, Encode, Decode)]
+#[derive(
+    Debug, Serialize, Deserialize, Default, Clone, PartialEq, Eq, Encode, Decode, OaSchema,
+)]
 pub struct BlobReference {
     pub contract_name: ContractName,
     pub blob_tx_hash: TxHash,
     pub blob_index: BlobIndex,
 }
 
-#[derive(Debug, Serialize, Deserialize, Default, Clone, PartialEq, Eq, Encode, Decode)]
+#[derive(
+    Debug, Serialize, Deserialize, Default, Clone, PartialEq, Eq, Encode, Decode, OaSchema,
+)]
 pub struct RegisterContractTransaction {
     pub owner: String,
     pub verifier: String,
@@ -198,14 +243,18 @@ pub struct RegisterContractTransaction {
     pub contract_name: ContractName,
 }
 
-#[derive(Debug, Serialize, Deserialize, Default, PartialEq, Eq, Clone, Encode, Decode)]
+#[derive(
+    Debug, Serialize, Deserialize, Default, PartialEq, Eq, Clone, Encode, Decode, OaSchema,
+)]
 pub struct BlobTransaction {
     pub identity: Identity,
     pub blobs: Vec<Blob>,
     // FIXME: add a nonce or something to prevent BlobTransaction to share the same hash
 }
 
-#[derive(Debug, Serialize, Deserialize, Default, Clone, PartialEq, Eq, Encode, Decode)]
+#[derive(
+    Debug, Serialize, Deserialize, Default, Clone, PartialEq, Eq, Encode, Decode, OaSchema,
+)]
 pub struct Blob {
     pub contract_name: ContractName,
     pub data: BlobData,
@@ -240,7 +289,7 @@ impl Serialize for Transaction {
     }
 }
 
-#[derive(Default, Clone, Encode, Decode)]
+#[derive(Default, Clone, Encode, Decode, OaSchema)]
 pub struct BlockHash {
     pub inner: Vec<u8>,
 }
@@ -313,7 +362,7 @@ pub trait Hashable<T> {
     fn hash(&self) -> T;
 }
 
-#[derive(Debug, Deserialize, Clone, Encode, Decode)]
+#[derive(Debug, Deserialize, Clone, Encode, Decode, OaSchema)]
 pub struct Block {
     pub parent_hash: BlockHash,
     pub height: BlockHeight,

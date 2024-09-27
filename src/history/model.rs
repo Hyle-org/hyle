@@ -2,6 +2,7 @@ use crate::model::{
     BlobData, BlobReference, BlockHeight, ContractName, Identity, StateDigest, TransactionData,
 };
 use nocow::nocow;
+use oasgen::OaSchema;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 

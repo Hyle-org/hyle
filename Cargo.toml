@@ -32,6 +32,7 @@ opentelemetry = "0.25.0"
 axum-otel-metrics = "0.9.0-alpha.2"
 tower-http = {version = "0.6.1", features=["trace", "cors"]}
 futures = "0.3.30"
+oasgen = {version = "0.21.0", features=["axum", "swagger-ui"]}
 
 [target.'cfg(target_os="macos")'.dependencies]
 sled = { version = "0.34.7", features = ["compression", "lock_free_delays"] }

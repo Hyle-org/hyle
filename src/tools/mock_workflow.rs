@@ -8,6 +8,7 @@ use crate::{
     utils::modules::Module,
 };
 use anyhow::Result;
+use oasgen::OaSchema;
 use serde::{Deserialize, Serialize};
 use tracing::warn;
 
@@ -20,7 +21,7 @@ struct BusClient {
 }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, OaSchema)]
 pub enum RunScenario {
     StressTest,
 }

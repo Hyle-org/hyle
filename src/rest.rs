@@ -70,16 +70,25 @@ pub async fn rest_server(
     history: HistoryState,
 ) -> Result<()> {
     info!("rest listening on {}", config.rest_addr());
+
+    let mut server = oasgen::Server::axum();
+    server.openapi.info.title = "Hyle Node API".to_string();
+    let server = server
+        .get("/v1/contract/:name", endpoints::get_contract)
+        .post(
+            "/v1/contract/register",
+            endpoints::send_contract_transaction,
+        )
+        .post("/v1/tx/send/blob", endpoints::send_blob_transaction)
+        .post("/v1/tx/send/proof", endpoints::send_proof_transaction)
+        .post("/v1/tools/run_scenario", endpoints::run_scenario)
+        .route_json_spec("/openapi.json")
+        .swagger_ui("/openapi/")
+        .freeze();
+
     let app = Router::new()
         .nest("/v1", metrics_layer.routes())
-        .route("/v1/contract/:name", get(endpoints::get_contract))
-        .route(
-            "/v1/contract/register",
-            post(endpoints::send_contract_transaction),
-        )
-        .route("/v1/tx/send/blob", post(endpoints::send_blob_transaction))
-        .route("/v1/tx/send/proof", post(endpoints::send_proof_transaction))
-        .route("/v1/tools/run_scenario", post(endpoints::run_scenario))
+        .merge(server.into_router())
         .nest("/v1/history", History::api())
         .layer(metrics_layer)
         .layer(tower_http::cors::CorsLayer::permissive())

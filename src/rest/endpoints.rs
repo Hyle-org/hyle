@@ -6,15 +6,16 @@ use crate::model::{BlobTransaction, ContractName};
 use crate::model::{
     Hashable, ProofTransaction, RegisterContractTransaction, TransactionData, TxHash,
 };
+use crate::node_state::model::Contract;
 use crate::tools::mock_workflow::RunScenario;
 use anyhow::anyhow;
 use axum::{
     extract::{Path, State},
     http::StatusCode,
-    response::IntoResponse,
     Json,
 };
 use bincode::{Decode, Encode};
+use oasgen::{oasgen, OaSchema};
 use serde::{Deserialize, Serialize};
 
 use super::{AppError, RouterState};
@@ -39,10 +40,11 @@ async fn handle_send(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
 }
 
+#[oasgen]
 pub async fn send_contract_transaction(
     State(state): State<RouterState>,
     Json(payload): Json<RegisterContractTransaction>,
-) -> Result<impl IntoResponse, StatusCode> {
+) -> Result<Json<TxHash>, StatusCode> {
     handle_send(state, TransactionData::RegisterContract(payload)).await
 }
 
@@ -99,24 +101,27 @@ pub async fn send_contract_transaction(
 ///         .to_string()
 /// );
 /// ```
+#[oasgen]
 pub async fn send_blob_transaction(
     State(state): State<RouterState>,
     Json(payload): Json<BlobTransaction>,
-) -> Result<impl IntoResponse, StatusCode> {
+) -> Result<Json<TxHash>, StatusCode> {
     handle_send(state, TransactionData::Blob(payload)).await
 }
 
+#[oasgen]
 pub async fn send_proof_transaction(
     State(state): State<RouterState>,
     Json(payload): Json<ProofTransaction>,
-) -> Result<impl IntoResponse, StatusCode> {
+) -> Result<Json<TxHash>, StatusCode> {
     handle_send(state, TransactionData::Proof(payload)).await
 }
 
+#[oasgen]
 pub async fn get_contract(
     Path(name): Path<ContractName>,
     State(mut state): State<RouterState>,
-) -> Result<impl IntoResponse, AppError> {
+) -> Result<Json<Contract>, AppError> {
     let name_clone = name.clone();
     match state.bus.request(name).await {
         Ok(contract) => Ok(Json(contract)),
@@ -127,13 +132,14 @@ pub async fn get_contract(
     }
 }
 
+#[oasgen]
 pub async fn run_scenario(
     State(state): State<RouterState>,
     Json(scenario): Json<RunScenario>,
-) -> Result<impl IntoResponse, StatusCode> {
+) -> Result<String, StatusCode> {
     state
         .bus
         .send(scenario)
-        .map(|_| StatusCode::OK)
+        .map(|_| StatusCode::OK.to_string())
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
 }

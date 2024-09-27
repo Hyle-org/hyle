@@ -108,32 +108,31 @@ impl History {
     }
 
     pub fn api() -> Router<rest::RouterState> {
-        Router::new()
+        oasgen::Server::axum()
             // block
-            .route("/blocks", get(api::get_blocks))
-            .route("/block/last", get(api::get_last_block))
-            .route("/block/:height", get(api::get_block))
+            .get("/blocks", api::get_blocks)
+            .get("/block/last", api::get_last_block)
+            .get("/block/:height", api::get_block)
             // transaction
-            .route("/transactions", get(api::get_transactions))
-            .route("/transaction/last", get(api::get_last_transaction))
-            .route("/transaction/:height/:tx_index", get(api::get_transaction))
-            .route("/transaction/:tx_hash", get(api::get_transaction_with_hash))
+            .get("/transactions", api::get_transactions)
+            .get("/transaction/last", api::get_last_transaction)
+            .get("/transaction/:height/:tx_index", api::get_transaction)
+            .get("/transaction/:tx_hash", api::get_transaction_with_hash)
             // blob
-            .route("/blobs", get(api::get_blobs))
-            .route("/blobs/last", get(api::get_last_blob))
-            .route(
-                "/blob/:block_height/:tx_index/:blob_index",
-                get(api::get_blob),
-            )
-            .route("/blobs/:tx_hash/:blob_index", get(api::get_blob_with_hash))
+            .get("/blobs", api::get_blobs)
+            .get("/blobs/last", api::get_last_blob)
+            .get("/blob/:block_height/:tx_index/:blob_index", api::get_blob)
+            .get("/blobs/:tx_hash/:blob_index", api::get_blob_with_hash)
             // proof
-            .route("/proofs", get(api::get_proofs))
-            .route("/proof/last", get(api::get_last_proof))
-            .route("/proof/:block_height/:tx_index", get(api::get_proof))
-            .route("/proof/:tx_hash", get(api::get_proof_with_hash))
+            .get("/proofs", api::get_proofs)
+            .get("/proof/last", api::get_last_proof)
+            .get("/proof/:block_height/:tx_index", api::get_proof)
+            .get("/proof/:tx_hash", api::get_proof_with_hash)
             // contract
-            .route("/contracts", get(api::get_contracts))
-            .route("/contract/:name", get(api::get_contract))
+            .get("/contracts", api::get_contracts)
+            .get("/contract/:name", api::get_contract)
+            .freeze()
+            .into_router()
     }
 
     async fn handle_block(&mut self, block: Block) {

@@ -1,3 +1,4 @@
+use oasgen::OaSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::model::{
@@ -5,7 +6,7 @@ use crate::model::{
 };
 use std::collections::HashMap;
 
-#[derive(Default, Debug, Clone, Serialize, Deserialize)]
+#[derive(Default, Debug, Clone, Serialize, Deserialize, OaSchema)]
 pub struct Contract {
     pub name: ContractName,
     pub program_id: Vec<u8>,
