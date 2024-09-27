@@ -26,7 +26,7 @@ macro_rules! static_type_map {
                 use paste::paste;
                 static_type_map! {
                     $(#[$meta])*
-                    a: $pub struct $name ($($t1,)+) {}
+                    ha: $pub struct $name ($($t1,)+) {}
                 }
             }
             #[doc(inline)]
@@ -41,7 +41,7 @@ macro_rules! static_type_map {
         paste! {
             static_type_map! {
                 $(#[$meta])*
-                [<a $index>]: $pub struct $name ( $($t2,)* ) {
+                [<ha $index>]: $pub struct $name ( $($t2,)* ) {
                     $($idx: $t3,)*
                     $index: $t1,
                 }
