@@ -92,11 +92,11 @@ pub type View = u64;
 // TODO: move struct to model.rs ?
 #[derive(Debug, Clone, Default, Serialize, Deserialize, Encode, Decode, PartialEq, Eq, Hash)]
 pub struct ConsensusProposal {
-    pub slot: Slot,
-    pub view: u64,
-    pub previous_consensus_proposal_hash: ConsensusProposalHash,
-    pub previous_commit_quorum_certificate: QuorumCertificate,
-    pub block: Block, // FIXME: Block ou cut ?
+    slot: Slot,
+    view: u64,
+    previous_consensus_proposal_hash: ConsensusProposalHash,
+    previous_commit_quorum_certificate: QuorumCertificate,
+    block: Block, // FIXME: Block ou cut ?
 }
 
 impl Hashable<ConsensusProposalHash> for ConsensusProposal {
@@ -135,6 +135,7 @@ pub struct Consensus {
     is_next_leader: bool,
     validators: ValidatorRegistry,
     bft_round_state: BFTRoundState,
+    // FIXME: pub is here for testing
     pub blocks: Vec<Block>,
     pending_batches: Vec<Vec<Transaction>>,
 }
@@ -292,7 +293,7 @@ impl Consensus {
         ValidatorId("node-1".to_owned())
     }
 
-    fn start_new_stot(
+    fn start_new_slot(
         &mut self,
         bus: &ConsensusBusClient,
         crypto: &BlstCrypto,
@@ -349,7 +350,7 @@ impl Consensus {
         }
 
         match &msg.msg {
-            ConsensusNetMessage::StartNewSlot => self.start_new_stot(bus, crypto),
+            ConsensusNetMessage::StartNewSlot => self.start_new_slot(bus, crypto),
             ConsensusNetMessage::Prepare(consensus_proposal) => {
                 // Message received by follower.
 
@@ -652,7 +653,7 @@ impl Consensus {
                     // Start new slot
                     if self.is_next_leader() {
                         // Send Prepare message to all validators
-                        self.start_new_stot(bus, crypto)?;
+                        self.start_new_slot(bus, crypto)?;
                     }
                 }
                 // TODO(?): Update behaviour when having more ?
@@ -704,7 +705,7 @@ impl Consensus {
                 // Start new slot
                 if self.is_next_leader() {
                     // Send Prepare message to all validators
-                    self.start_new_stot(bus, crypto)?;
+                    self.start_new_slot(bus, crypto)?;
                 }
                 Ok(())
             }
@@ -744,7 +745,7 @@ impl Consensus {
         if config.id == ValidatorId("node-1".to_owned()) {
             sleep(Duration::from_secs(3)).await;
             self.is_next_leader = true;
-            _ = self.start_new_stot(&bus, &crypto);
+            _ = self.start_new_slot(&bus, &crypto);
         }
 
         handle_messages! {
