@@ -9,15 +9,12 @@ use hyle::{
     utils::modules::Module,
 };
 use reqwest::{Client, Url};
-use std::{fs, path::Path, thread, time};
+use std::{fs, path::Path, time};
+use tokio::time::sleep;
 
 mod test_helpers;
 
 use anyhow::Result;
-
-fn url(path: &str) -> String {
-    format!("http://127.0.0.1:4321{}", path)
-}
 
 async fn register_contracts(client: &ApiHttpClient) -> Result<()> {
     assert!(client
@@ -93,18 +90,16 @@ async fn send_blobs(client: &ApiHttpClient) -> Result<()> {
 
 async fn verify_contract_state(client: &ApiHttpClient) -> Result<()> {
     let response = client.get_contract(&ContractName("c1".to_string())).await?;
-
     assert!(response.status().is_success(), "{}", response.status());
 
     let contract = response.json::<Contract>().await?;
-
     assert_eq!(contract.state.0, vec![4, 5, 6]);
 
     Ok(())
 }
 
 #[tokio::test]
-async fn e2e() {
+async fn e2e() -> Result<()> {
     tracing_subscriber::fmt::init();
 
     // FIXME: use tmp dir
@@ -116,7 +111,7 @@ async fn e2e() {
     let node2 = test_helpers::TestNode::new(path_node2, false, "6669");
 
     // Wait for node to properly spin up
-    thread::sleep(time::Duration::from_secs(2));
+    sleep(time::Duration::from_secs(2)).await;
 
     // Request something on node1 to be sure it's alive and working
     let client = ApiHttpClient {
@@ -124,11 +119,11 @@ async fn e2e() {
         reqwest_client: Client::new(),
     };
 
-    register_contracts(&client);
-    send_blobs(&client);
+    _ = register_contracts(&client).await?;
+    _ = send_blobs(&client).await?;
     // Wait for some slots to be finished
-    thread::sleep(time::Duration::from_secs(5));
-    verify_contract_state(&client);
+    sleep(time::Duration::from_secs(5)).await;
+    _ = verify_contract_state(&client).await?;
 
     // Stop all processes
     drop(node1);
@@ -148,4 +143,6 @@ async fn e2e() {
     fs::remove_dir_all(path_node2.join("data_node2")).expect("file cleaning failed");
 
     //TODO: compare blocks from node1 and node2
+
+    Ok(())
 }
