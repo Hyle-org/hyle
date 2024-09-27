@@ -129,11 +129,10 @@ fn e2e() {
 
     // Start 2 nodes
     let node1 = test_helpers::TestNode::new(path_node1, false, "6668");
-    // Wait for node to properly spin up
-    thread::sleep(time::Duration::from_secs(2));
-
     let node2 = test_helpers::TestNode::new(path_node2, false, "6669");
+
     // Wait for node to properly spin up
+    thread::sleep(time::Duration::from_secs(1));
 
     // Request something on node1 to be sure it's alive and working
     let client = Client::new();
@@ -141,7 +140,7 @@ fn e2e() {
     register_contracts(&client);
     send_blobs(&client);
     // Wait for some slots to be finished
-    thread::sleep(time::Duration::from_secs(8));
+    thread::sleep(time::Duration::from_secs(5));
     verify_contract_state(&client);
 
     // Stop all processes
