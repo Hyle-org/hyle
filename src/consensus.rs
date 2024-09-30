@@ -250,9 +250,10 @@ impl Consensus {
     }
 
     pub fn save_on_disk(&self) -> Result<()> {
-        let mut writer = fs::File::create("data.bin").log_error("Create Ctx file")?;
+        let mut writer = fs::File::create("data_temp.bin").log_error("Create Ctx file")?;
         bincode::encode_into_std_write(self, &mut writer, bincode::config::standard())
             .log_error("Serializing Ctx chain")?;
+        fs::rename("data_temp.bin", "data.bin").log_error("Rename Ctx file")?;
         info!("Saved blockchain on disk with {} blocks", self.blocks.len());
 
         Ok(())
