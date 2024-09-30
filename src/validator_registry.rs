@@ -11,11 +11,7 @@ use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 use tracing::{debug, info, warn};
 
-use crate::{
-    bus::BusMessage,
-    p2p::network::SignedWithId,
-    utils::{crypto::BlstCrypto, serde::arc_rwlock_serde},
-};
+use crate::{bus::BusMessage, p2p::network::SignedWithId, utils::crypto::BlstCrypto};
 
 #[derive(Serialize, Deserialize, Clone, Encode, Decode, Default, Eq, PartialEq, Hash)]
 pub struct ValidatorPublicKey(pub Vec<u8>);
@@ -54,9 +50,7 @@ pub struct ValidatorRegistryInner {
     pub validators: HashMap<ValidatorId, ConsensusValidator>,
 }
 
-#[derive(Serialize, Deserialize, Encode, Decode)]
 pub struct ValidatorRegistry {
-    #[serde(with = "arc_rwlock_serde")]
     pub inner: Arc<RwLock<ValidatorRegistryInner>>,
 }
 

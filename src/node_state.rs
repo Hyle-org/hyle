@@ -11,9 +11,14 @@ use crate::{
     utils::{conf::SharedConf, logger::LogMe, modules::Module},
 };
 use anyhow::{bail, Context, Error, Result};
+use bincode::{Decode, Encode};
 use model::{Contract, HyleOutput, Timeouts, UnsettledBlobMetadata, UnsettledTransaction};
 use ordered_tx_map::OrderedTxMap;
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    ops::{Deref, DerefMut},
+    path::PathBuf,
+};
 use tracing::{debug, error, info, warn};
 
 pub mod model;
@@ -27,12 +32,18 @@ struct NodeStateBusClient {
 }
 }
 
-pub struct NodeState {
-    bus: NodeStateBusClient,
+#[derive(Default, Encode, Decode)]
+pub struct NodeStateStore {
     timeouts: Timeouts,
     current_height: BlockHeight,
     contracts: HashMap<ContractName, Contract>,
     unsettled_transactions: OrderedTxMap,
+}
+
+pub struct NodeState {
+    bus: NodeStateBusClient,
+    file: PathBuf,
+    store: NodeStateStore,
 }
 
 impl Module for NodeState {
@@ -43,7 +54,9 @@ impl Module for NodeState {
     type Context = SharedRunContext;
 
     async fn build(ctx: &Self::Context) -> Result<Self> {
-        Ok(NodeState::new(ctx.bus.new_handle()).await)
+        let file = ctx.config.data_directory.clone().join("node_state.bin");
+        let store = Self::load_from_disk_or_default(file.as_path());
+        Ok(NodeState::new(ctx.bus.new_handle(), file, store).await)
     }
 
     fn run(&mut self, ctx: Self::Context) -> impl futures::Future<Output = Result<()>> + Send {
@@ -52,13 +65,11 @@ impl Module for NodeState {
 }
 
 impl NodeState {
-    pub async fn new(bus: SharedMessageBus) -> NodeState {
+    pub async fn new(bus: SharedMessageBus, file: PathBuf, store: NodeStateStore) -> NodeState {
         NodeState {
             bus: NodeStateBusClient::new_from_bus(bus).await,
-            timeouts: Timeouts::default(),
-            current_height: BlockHeight::default(),
-            contracts: HashMap::default(),
-            unsettled_transactions: OrderedTxMap::default(),
+            file,
+            store,
         }
     }
 
@@ -106,6 +117,7 @@ impl NodeState {
         }
 
         info!("Handled {txs_count} transactions");
+        _ = Self::save_on_disk(self.file.as_path(), &self.store);
         Ok(())
     }
 
@@ -155,7 +167,9 @@ impl NodeState {
         });
 
         // Update timeouts
-        self.timeouts.set(blob_tx_hash, self.current_height + 10); // TODO: Timeout after 10 blocks, make it configurable !
+        self.store
+            .timeouts
+            .set(blob_tx_hash, self.store.current_height + 10); // TODO: Timeout after 10 blocks, make it configurable !
 
         Ok(())
     }
@@ -354,11 +368,35 @@ fn hash_transaction(tx: &BlobTransaction) -> (TxHash, BlobsHash) {
     (tx.hash(), tx.blobs_hash())
 }
 
+impl Deref for NodeState {
+    type Target = NodeStateStore;
+    fn deref(&self) -> &Self::Target {
+        &self.store
+    }
+}
+
+impl DerefMut for NodeState {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.store
+    }
+}
+
 #[cfg(test)]
 mod test {
+    use std::path::PathBuf;
+
     use crate::{bus::SharedMessageBus, model::*};
 
-    use super::NodeState;
+    use super::*;
+
+    async fn new_node_state() -> NodeState {
+        NodeState::new(
+            SharedMessageBus::default(),
+            PathBuf::default(),
+            NodeStateStore::default(),
+        )
+        .await
+    }
 
     fn new_blob(contract: &ContractName) -> Blob {
         Blob {
@@ -390,7 +428,7 @@ mod test {
     #[tokio::test]
     #[test_log::test]
     async fn two_proof_for_one_blob_tx() {
-        let mut state = NodeState::new(SharedMessageBus::default()).await;
+        let mut state = new_node_state().await;
         let c1 = ContractName("c1".to_string());
         let c2 = ContractName("c2".to_string());
 
@@ -437,7 +475,7 @@ mod test {
     #[tokio::test]
     #[test_log::test]
     async fn one_proof_for_two_blobs() {
-        let mut state = NodeState::new(SharedMessageBus::default()).await;
+        let mut state = new_node_state().await;
         let c1 = ContractName("c1".to_string());
         let c2 = ContractName("c2".to_string());
 
@@ -496,7 +534,7 @@ mod test {
     #[tokio::test]
     #[test_log::test]
     async fn one_proof_for_two_blobs_txs_on_different_contract() {
-        let mut state = NodeState::new(SharedMessageBus::default()).await;
+        let mut state = new_node_state().await;
         let c1 = ContractName("c1".to_string());
         let c2 = ContractName("c2".to_string());
         let c3 = ContractName("c3".to_string());
@@ -563,7 +601,7 @@ mod test {
     #[tokio::test]
     #[test_log::test]
     async fn two_proof_for_same_blob() {
-        let mut state = NodeState::new(SharedMessageBus::default()).await;
+        let mut state = new_node_state().await;
         let c1 = ContractName("c1".to_string());
         let c2 = ContractName("c2".to_string());
 

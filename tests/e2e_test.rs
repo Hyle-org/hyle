@@ -1,10 +1,11 @@
 use hyle::{
-    consensus::Consensus,
+    consensus::{Consensus, ConsensusStore},
     model::{
         Blob, BlobData, BlobReference, BlobTransaction, ContractName, Identity, ProofTransaction,
         RegisterContractTransaction, StateDigest, TxHash,
     },
     node_state::model::Contract,
+    utils::modules::Module,
 };
 use reqwest::blocking::{Client, Response};
 use serde::Serialize;
@@ -148,8 +149,10 @@ fn e2e() {
     drop(node2);
 
     // Check that some blocks has been produced
-    let node1_consensus = Consensus::load_from_disk(path_node1).unwrap();
-    let node2_consensus = Consensus::load_from_disk(path_node2).unwrap();
+    let node1_consensus: ConsensusStore =
+        Consensus::load_from_disk_or_default(path_node1.join("data_node1/consensus.bin").as_path());
+    let node2_consensus: ConsensusStore =
+        Consensus::load_from_disk_or_default(path_node2.join("data_node2/consensus.bin").as_path());
     assert!(!node1_consensus.blocks.is_empty());
     assert!(!node2_consensus.blocks.is_empty());
     // FIXME: check that created blocks are the same.
@@ -157,9 +160,6 @@ fn e2e() {
     // Clean created files
     fs::remove_dir_all(path_node1.join("data_node1")).expect("file cleaning failed");
     fs::remove_dir_all(path_node2.join("data_node2")).expect("file cleaning failed");
-
-    fs::remove_file(path_node1.join("data.bin")).expect("file cleaning failed");
-    fs::remove_file(path_node2.join("data.bin")).expect("file cleaning failed");
 
     //TODO: compare blocks from node1 and node2
 }

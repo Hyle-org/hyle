@@ -7,9 +7,9 @@ use sha3::{Digest, Sha3_256};
 use std::{
     collections::{HashMap, HashSet},
     default::Default,
-    fs,
     io::Write,
-    path::Path,
+    ops::{Deref, DerefMut},
+    path::PathBuf,
     time::Duration,
 };
 use tokio::time::sleep;
@@ -47,7 +47,6 @@ pub enum ConsensusNetMessage {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub enum ConsensusCommand {
-    SaveOnDisk,
     SingleNodeBlockGeneration,
 }
 
@@ -130,15 +129,32 @@ struct ConsensusBusClient {
 }
 }
 
-#[derive(Serialize, Deserialize, Encode, Decode)]
-pub struct Consensus {
-    // TODO: should be removed
+#[derive(Encode, Decode, Default)]
+pub struct ConsensusStore {
     is_next_leader: bool,
-    validators: ValidatorRegistry,
     bft_round_state: BFTRoundState,
     // FIXME: pub is here for testing
     pub blocks: Vec<Block>,
     pending_batches: Vec<Vec<Transaction>>,
+}
+
+pub struct Consensus {
+    validators: ValidatorRegistry,
+    file: PathBuf,
+    store: ConsensusStore,
+}
+
+impl Deref for Consensus {
+    type Target = ConsensusStore;
+    fn deref(&self) -> &Self::Target {
+        &self.store
+    }
+}
+
+impl DerefMut for Consensus {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.store
+    }
 }
 
 impl Module for Consensus {
@@ -149,12 +165,9 @@ impl Module for Consensus {
     type Context = SharedRunContext;
 
     async fn build(ctx: &Self::Context) -> Result<Self> {
-        Ok(
-            Consensus::load_from_disk(&ctx.config.data_directory).unwrap_or_else(|_| {
-                warn!("Failed to load consensus state from disk, using a default one");
-                Consensus::new()
-            }),
-        )
+        let file = ctx.config.data_directory.clone().join("consensus.bin");
+        let store = Self::load_from_disk_or_default(file.as_path());
+        Ok(Consensus::new(ctx, file, store))
     }
 
     fn run(&mut self, ctx: Self::Context) -> impl futures::Future<Output = Result<()>> + Send {
@@ -163,13 +176,11 @@ impl Module for Consensus {
 }
 
 impl Consensus {
-    fn new() -> Self {
+    fn new(ctx: &SharedRunContext, file: PathBuf, store: ConsensusStore) -> Self {
         Self {
-            is_next_leader: false,
-            blocks: vec![Block::default()],
-            validators: ValidatorRegistry::default(),
-            bft_round_state: BFTRoundState::default(),
-            pending_batches: vec![],
+            validators: ctx.validator_registry.share(),
+            file,
+            store,
         }
     }
 
@@ -244,30 +255,10 @@ impl Consensus {
             "New block {}",
             self.bft_round_state.consensus_proposal.block.height
         );
-        self.blocks
-            .push(self.bft_round_state.consensus_proposal.block.clone());
+        self.store
+            .blocks
+            .push(self.store.bft_round_state.consensus_proposal.block.clone());
         Ok(())
-    }
-
-    pub fn save_on_disk(&self) -> Result<()> {
-        let mut writer = fs::File::create("data_temp.bin").log_error("Create Ctx file")?;
-        bincode::encode_into_std_write(self, &mut writer, bincode::config::standard())
-            .log_error("Serializing Ctx chain")?;
-        fs::rename("data_temp.bin", "data.bin").log_error("Rename Ctx file")?;
-        info!("Saved blockchain on disk with {} blocks", self.blocks.len());
-
-        Ok(())
-    }
-
-    pub fn load_from_disk(data_directory: &Path) -> Result<Self> {
-        let mut reader =
-            fs::File::open(data_directory.join("data.bin")).log_warn("Loading data from disk")?;
-        let ctx: Consensus =
-            bincode::decode_from_std_read(&mut reader, bincode::config::standard())
-                .log_warn("Deserializing data from disk")?;
-        info!("Loaded {} blocks from disk.", ctx.blocks.len());
-
-        Ok(ctx)
     }
 
     fn finish_round(&mut self, bus: &ConsensusBusClient) -> Result<(), Error> {
@@ -275,9 +266,7 @@ impl Consensus {
         self.add_block(bus)?;
 
         // Save added block
-        _ = bus
-            .send(ConsensusCommand::SaveOnDisk)
-            .context("Cannot send message over channel")?;
+        Self::save_on_disk(self.file.as_path(), &self.store)?;
 
         self.bft_round_state.slot += 1;
         self.bft_round_state.view = 0;
@@ -447,15 +436,20 @@ impl Consensus {
                                     bail!("Previous Commit Quorum Certificate is invalid")
                                 }
                                 // Buffers the previous *Commit* Quorum Cerficiate
-                                self.bft_round_state.commit_quorum_certificates.insert(
-                                    self.bft_round_state.slot - 1,
-                                    (
-                                        consensus_proposal.previous_consensus_proposal_hash.clone(),
-                                        consensus_proposal
-                                            .previous_commit_quorum_certificate
-                                            .clone(),
-                                    ),
-                                );
+                                self.store
+                                    .bft_round_state
+                                    .commit_quorum_certificates
+                                    .insert(
+                                        self.store.bft_round_state.slot - 1,
+                                        (
+                                            consensus_proposal
+                                                .previous_consensus_proposal_hash
+                                                .clone(),
+                                            consensus_proposal
+                                                .previous_commit_quorum_certificate
+                                                .clone(),
+                                        ),
+                                    );
                             }
                             Err(err) => {
                                 bail!(
@@ -493,7 +487,7 @@ impl Consensus {
                 }
 
                 // Save vote message
-                self.bft_round_state.prepare_votes.insert(
+                self.store.bft_round_state.prepare_votes.insert(
                     msg.with_pub_keys(self.validators.get_pub_keys_from_id(msg.validators.clone())),
                 );
 
@@ -602,10 +596,11 @@ impl Consensus {
                 }
 
                 // Save ConfirmAck. Ends if the message already has been processed
-                if !self.bft_round_state.confirm_ack.insert(
+                if !self.store.bft_round_state.confirm_ack.insert(
                     msg.with_pub_keys(self.validators.get_pub_keys_from_id(msg.validators.clone())),
                 ) {
                     info!("ConfirmAck has aleady been processed");
+
                     return Ok(());
                 }
 
@@ -638,13 +633,16 @@ impl Consensus {
                         signature: commit_signed_aggregation.signature.clone(),
                         validators: commit_signed_aggregation.validators.clone(),
                     };
-                    self.bft_round_state.commit_quorum_certificates.insert(
-                        self.bft_round_state.slot,
-                        (
-                            consensus_proposal_hash.clone(),
-                            commit_quorum_certificate.clone(),
-                        ),
-                    );
+                    self.store
+                        .bft_round_state
+                        .commit_quorum_certificates
+                        .insert(
+                            self.store.bft_round_state.slot,
+                            (
+                                consensus_proposal_hash.clone(),
+                                commit_quorum_certificate.clone(),
+                            ),
+                        );
 
                     // Broadcast the *Commit* Quorum Certificate to all validators
                     _ = bus
@@ -700,13 +698,16 @@ impl Consensus {
                         // TODO
 
                         // Buffers the *Commit* Quorum Cerficiate
-                        self.bft_round_state.commit_quorum_certificates.insert(
-                            self.bft_round_state.slot,
-                            (
-                                consensus_proposal_hash.clone(),
-                                commit_quorum_certificate.clone(),
-                            ),
-                        );
+                        self.store
+                            .bft_round_state
+                            .commit_quorum_certificates
+                            .insert(
+                                self.store.bft_round_state.slot,
+                                (
+                                    consensus_proposal_hash.clone(),
+                                    commit_quorum_certificate.clone(),
+                                ),
+                            );
                     }
                     Err(err) => bail!("Commit Quorum Certificate verification failed: {}", err),
                 }
@@ -748,11 +749,6 @@ impl Consensus {
                     .context("Failed to send ConsensusEvent::CommitBlock msg on the bus")?;
                 Ok(())
             }
-            ConsensusCommand::SaveOnDisk => {
-                // FIXME: Might need to be removed as we have History module
-                _ = self.save_on_disk();
-                Ok(())
-            }
         }
     }
 
@@ -790,9 +786,6 @@ impl Consensus {
 
                     _ = bus2
                         .send(ConsensusCommand::SingleNodeBlockGeneration)
-                        .log_error("Cannot send message over channel");
-                    _ = bus2
-                        .send(ConsensusCommand::SaveOnDisk)
                         .log_error("Cannot send message over channel");
                 }
             });
