@@ -97,6 +97,8 @@ pub struct ConsensusProposal {
     previous_consensus_proposal_hash: ConsensusProposalHash,
     previous_commit_quorum_certificate: QuorumCertificate,
     block: Block, // FIXME: Block ou cut ?
+    // Validators for current slot
+    validators: Vec<ValidatorPublicKey>,
 }
 
 impl Hashable<ConsensusProposalHash> for ConsensusProposal {
@@ -195,6 +197,7 @@ impl Consensus {
             timestamp: get_current_timestamp(),
             txs,
         };
+        let validators = self.validators.list_validators();
 
         // Start Consensus with following block
         self.bft_round_state.consensus_proposal = ConsensusProposal {
@@ -202,6 +205,7 @@ impl Consensus {
             view: self.bft_round_state.view,
             previous_consensus_proposal_hash,
             previous_commit_quorum_certificate,
+            validators,
             block,
         };
         Ok(())
@@ -227,6 +231,7 @@ impl Consensus {
             view: self.bft_round_state.view,
             previous_consensus_proposal_hash: ConsensusProposalHash(vec![]),
             previous_commit_quorum_certificate: QuorumCertificate::default(),
+            validators: self.validators.list_validators(),
             block: first_block,
         };
     }
@@ -293,6 +298,19 @@ impl Consensus {
         &self.bft_round_state.consensus_proposal.hash() == consensus_proposal_hash
     }
 
+    fn verify_validators_quorum_certificates(
+        &self,
+        quorum_certificate: &QuorumCertificate,
+    ) -> bool {
+        quorum_certificate.validators.iter().all(|v| {
+            self.bft_round_state
+                .consensus_proposal
+                .validators
+                .iter()
+                .any(|v2| v2 == v)
+        })
+    }
+
     fn is_next_leader(&self) -> bool {
         // TODO
         self.is_next_leader
@@ -310,7 +328,10 @@ impl Consensus {
     ) -> Result<(), Error> {
         // Message received by leader.
 
-        info!("🚀 Starting new slot");
+        info!(
+            "🚀 Starting new slot with {} validators",
+            self.validators.get_validators_count()
+        );
         // Verifies that previous slot received a *Commit* Quorum Certificate.
         match self
             .bft_round_state
@@ -369,6 +390,15 @@ impl Consensus {
                 if !msg.validators.contains(&self.leader_id()) {
                     bail!("Prepare consensus message does not come from current leader");
                     // TODO: slash ?
+                }
+
+                // Follower is not part of the consensus for this slot. Ignore it.
+                if !consensus_proposal
+                    .validators
+                    .contains(crypto.validator_pubkey())
+                {
+                    info!("😥 I'm not part of the consensus for this slot. Ignoring it.");
+                    return Ok(());
                 }
 
                 // Verify received previous *Commit* Quorum Certificate
@@ -505,7 +535,14 @@ impl Consensus {
                     .collect::<HashSet<ValidatorPublicKey>>();
 
                 // Waits for at least n-f = 2f+1 matching PrepareVote messages
-                let f: usize = self.validators.get_validators_count() / 3;
+                let f: usize = self.bft_round_state.consensus_proposal.validators.len() / 3;
+                info!(
+                    "📥 Slot {} validated votes: {} / {} ({} validators)",
+                    self.bft_round_state.slot,
+                    validated_votes.len(),
+                    2 * f + 1,
+                    self.bft_round_state.consensus_proposal.validators.len()
+                );
                 // TODO: Only wait for 2 * f because leader himself if the +1
                 if validated_votes.len() == 2 * f + 1 {
                     // Get all received signatures
@@ -552,6 +589,10 @@ impl Consensus {
                 // Verify that the Confirm is for the correct proposal
                 if !self.verify_consensus_proposal_hash(consensus_proposal_hash) {
                     bail!("Confirm has not received valid consensus proposal hash");
+                }
+
+                if !self.verify_validators_quorum_certificates(prepare_quorum_certificate) {
+                    bail!("Confirm has not received valid quorum certificate")
                 }
 
                 // Verifies the *Prepare* Quorum Certificate
@@ -616,8 +657,14 @@ impl Consensus {
                     .flat_map(|signed_message| signed_message.validators.clone())
                     .collect::<HashSet<ValidatorPublicKey>>();
 
-                let f: usize = self.validators.get_validators_count() / 3;
-
+                let f: usize = self.bft_round_state.consensus_proposal.validators.len() / 3;
+                info!(
+                    "✅ Slot {} confirmed acks: {} / {} ({} validators)",
+                    self.bft_round_state.slot,
+                    confirmed_ack_validators.len(),
+                    2 * f + 1,
+                    self.bft_round_state.consensus_proposal.validators.len()
+                );
                 // TODO: Only waiting for 2 * f because leader himself if the +1
                 if confirmed_ack_validators.len() == (2 * f + 1) {
                     // Get all signatures received and change ValidatorId for ValidatorPubKey
@@ -675,7 +722,11 @@ impl Consensus {
 
                 // Verify that the vote is for the correct proposal
                 if !self.verify_consensus_proposal_hash(consensus_proposal_hash) {
-                    bail!("PrepareVote has not received valid consensus proposal hash");
+                    bail!("Commit has not received valid consensus proposal hash");
+                }
+
+                if !self.verify_validators_quorum_certificates(commit_quorum_certificate) {
+                    bail!("Commit has not received valid qurom certificate")
                 }
 
                 // Verifies and save the *Commit* Quorum Certificate
@@ -779,7 +830,7 @@ impl Consensus {
             }
             listen<ValidatorRegistryNetMessage> cmd => {
                 self.validators.handle_net_message(cmd.clone());
-                if self.validators.get_validators_count() == 1 && self.is_next_leader() {
+                if self.validators.get_validators_count() == 2 && self.is_next_leader() {
                     // Start first slot
                     sleep(Duration::from_secs(2)).await;
                     _ = self.start_new_slot(&bus, &crypto);
@@ -817,7 +868,7 @@ mod test {
             let event_receiver = get_receiver::<ConsensusEvent>(&bus).await;
             let bus = ConsensusBusClient::new_from_bus(bus.new_handle()).await;
 
-            let mut registry = ValidatorRegistry::new();
+            let mut registry = ValidatorRegistry::new(crypto.as_validator());
             registry.handle_net_message(ValidatorRegistryNetMessage::NewValidator(
                 c_other.as_validator(),
             ));
@@ -920,8 +971,6 @@ mod test {
 
         let leader_commit = leader.assert_broadcast("Leader commit");
         slave.handle_msg(leader_commit, "Leader commit");
-
-        info!("{:?}", slave.consensus.blocks);
 
         assert!(slave.consensus.blocks.len() == 2);
     }

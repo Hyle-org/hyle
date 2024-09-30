@@ -67,10 +67,10 @@ pub struct ValidatorRegistry {
 }
 
 impl ValidatorRegistry {
-    pub fn new() -> ValidatorRegistry {
+    pub fn new(self_validator: ConsensusValidator) -> ValidatorRegistry {
         Self {
             inner: Arc::new(RwLock::new(ValidatorRegistryInner {
-                validators: Default::default(),
+                validators: HashMap::from([(self_validator.id.clone(), self_validator)]),
             })),
         }
     }
@@ -79,6 +79,16 @@ impl ValidatorRegistry {
         Self {
             inner: Arc::clone(&self.inner),
         }
+    }
+
+    pub fn list_validators(&self) -> Vec<ValidatorPublicKey> {
+        self.inner
+            .read()
+            .unwrap()
+            .validators
+            .values()
+            .map(|v| v.pub_key.clone())
+            .collect()
     }
 
     pub fn get_validators_count(&self) -> usize {
@@ -106,7 +116,7 @@ impl ValidatorRegistry {
     }
 
     fn add_validator(&mut self, id: ValidatorId, validator: ConsensusValidator) {
-        info!("Adding validator '{}'", id);
+        info!("👋 New validator '{}'", id);
         debug!("{:?}", validator);
         self.inner.write().unwrap().validators.insert(id, validator);
     }
@@ -139,11 +149,5 @@ impl ValidatorRegistry {
                 Ok(false)
             }
         }
-    }
-}
-
-impl Default for ValidatorRegistry {
-    fn default() -> Self {
-        Self::new()
     }
 }

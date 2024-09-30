@@ -47,6 +47,14 @@ impl BlstCrypto {
         }
     }
 
+    pub fn validator_id(&self) -> &ValidatorId {
+        &self.validator_id
+    }
+
+    pub fn validator_pubkey(&self) -> &ValidatorPublicKey {
+        &self.validator_pubkey
+    }
+
     pub fn as_validator(&self) -> ConsensusValidator {
         let pub_key = self.sk.sk_to_pk().into();
         ConsensusValidator {
