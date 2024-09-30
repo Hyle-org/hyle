@@ -37,13 +37,19 @@ impl Display for ValidatorId {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode)]
+impl From<&str> for ValidatorId {
+    fn from(s: &str) -> Self {
+        Self(s.to_string())
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, Eq, PartialEq)]
 pub struct ConsensusValidator {
     pub id: ValidatorId,
     pub pub_key: ValidatorPublicKey,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode)]
+#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, Eq, PartialEq)]
 pub enum ValidatorRegistryNetMessage {
     NewValidator(ConsensusValidator),
 }
@@ -109,6 +115,7 @@ impl ValidatorRegistry {
     where
         T: Encode + Debug + Clone,
     {
+        info!("Checking signed message: {:?}", msg);
         let s = &self.inner.read().unwrap().validators;
         let validators = msg
             .validators
@@ -122,6 +129,8 @@ impl ValidatorRegistry {
                     .iter()
                     .map(|validator| validator.pub_key.clone())
                     .collect::<Vec<ValidatorPublicKey>>();
+
+                info!("Checking signature with pub keys: {:?}", vec);
 
                 BlstCrypto::verify(&msg.with_pub_keys(vec))
             }

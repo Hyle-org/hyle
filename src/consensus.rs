@@ -795,3 +795,182 @@ impl Consensus {
         crypto.sign(msg)
     }
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::{p2p::network::NetMessage, utils::crypto};
+    use tokio::sync::broadcast::Receiver;
+    use ConsensusNetMessage::*;
+
+    struct TestCtx {
+        bus: ConsensusBusClient,
+        crypto: BlstCrypto,
+        out_receiver: Receiver<OutboundMessage>,
+        event_receiver: Receiver<ConsensusEvent>,
+        consensus: Consensus,
+    }
+
+    impl TestCtx {
+        async fn new(crypto: BlstCrypto, c_other: BlstCrypto) -> Self {
+            let bus = SharedMessageBus::new();
+            let out_receiver = get_receiver::<OutboundMessage>(&bus).await;
+            let event_receiver = get_receiver::<ConsensusEvent>(&bus).await;
+            let bus = ConsensusBusClient::new_from_bus(bus.new_handle()).await;
+
+            let mut registry = ValidatorRegistry::new();
+            registry.handle_net_message(ValidatorRegistryNetMessage::NewValidator(
+                c_other.as_validator(),
+            ));
+            let consensus = Consensus::new(registry);
+            Self {
+                bus,
+                crypto,
+                out_receiver,
+                event_receiver,
+                consensus,
+            }
+        }
+
+        async fn build() -> (Self, Self) {
+            let crypto = crypto::BlstCrypto::new("node-1".into());
+            let c_other = crypto::BlstCrypto::new("node-2".into());
+            (
+                Self::new(crypto.clone(), c_other.clone()).await,
+                Self::new(c_other, crypto).await,
+            )
+        }
+
+        fn handle_msg(&mut self, msg: SignedWithId<ConsensusNetMessage>) -> Result<()> {
+            self.consensus
+                .handle_net_message(msg, &self.crypto, &self.bus)
+        }
+
+        fn start_new_slot(&mut self) {
+            self.consensus
+                .start_new_slot(&self.bus, &self.crypto)
+                .expect("Failed to start slot");
+        }
+
+        async fn assert_broadcast(
+            &mut self,
+            msg: ConsensusNetMessage,
+        ) -> Result<Signed<ConsensusNetMessage, ValidatorId>> {
+            let rec = self.out_receiver.recv().await?;
+
+            if let OutboundMessage::BroadcastMessage(net_msg) = &rec {
+                let signed = self.crypto.sign(msg).unwrap();
+                let net: NetMessage = signed.clone().into();
+                assert_eq!(net, *net_msg, "Broadcasted message is incorrect");
+                info!("Broadcasted message: {:?}", net);
+                Ok(signed)
+            } else {
+                bail!("Broadcast OutboundMessage message is missing");
+            }
+        }
+
+        async fn assert_send(
+            &mut self,
+            to: &ValidatorId,
+            msg: ConsensusNetMessage,
+        ) -> Result<Signed<ConsensusNetMessage, ValidatorId>> {
+            let rec = self.out_receiver.recv().await?;
+
+            if let OutboundMessage::SendMessage {
+                validator_id: dest,
+                msg: net_msg,
+            } = &rec
+            {
+                let signed = self.crypto.sign(msg).unwrap();
+                let net: NetMessage = signed.clone().into();
+                assert_eq!(net, *net_msg, "Broadcasted message is incorrect");
+                assert_eq!(to, dest);
+                info!("Broadcasted message: {:?}", net);
+                Ok(signed)
+            } else {
+                bail!("Send OutboundMessage message is missing");
+            }
+        }
+    }
+
+    #[test_log::test(tokio::test)]
+    async fn test_happy_path() {
+        let (mut leader, mut slave) = TestCtx::build().await;
+
+        leader.start_new_slot();
+        let leader_proposal = leader
+            .assert_broadcast(Prepare(
+                leader.consensus.bft_round_state.consensus_proposal.clone(),
+            ))
+            .await
+            .expect("Leader did not broadcast prepare");
+        assert_eq!(leader.consensus.bft_round_state.slot, 0);
+
+        slave
+            .handle_msg(leader_proposal)
+            .expect("Slave failed to handle Prepare message");
+
+        let slave_vote = slave
+            .assert_send(
+                &"node-1".into(),
+                PrepareVote(leader.consensus.bft_round_state.consensus_proposal.hash()),
+            )
+            .await
+            .expect("Slave did not send PrepareVote to leader");
+
+        leader
+            .handle_msg(slave_vote)
+            .expect("Leader failed to handle PrepareVote message");
+
+        let leader_confirm = leader
+            .assert_broadcast(Confirm(
+                leader.consensus.bft_round_state.consensus_proposal.hash(),
+                leader
+                    .consensus
+                    .bft_round_state
+                    .prepare_quorum_certificate
+                    .clone(),
+            ))
+            .await
+            .expect("Leader did not broadcast confirm");
+
+        slave
+            .handle_msg(leader_confirm)
+            .expect("Slave failed to handle Confirm message");
+
+        let slave_confirm_ack = slave
+            .assert_send(
+                &"node-1".into(),
+                ConfirmAck(leader.consensus.bft_round_state.consensus_proposal.hash()),
+            )
+            .await
+            .expect("Slave did not send ConfirmAck to leader");
+
+        leader
+            .handle_msg(slave_confirm_ack)
+            .expect("Leader failed to handle ConfirmAck message");
+
+        let leader_commit = leader
+            .assert_broadcast(Commit(
+                leader.consensus.bft_round_state.consensus_proposal.hash(),
+                leader
+                    .consensus
+                    .bft_round_state
+                    .commit_quorum_certificates
+                    .get(&0)
+                    .unwrap()
+                    .1
+                    .clone(),
+            ))
+            .await
+            .expect("Leader did not broadcast commit");
+
+        slave
+            .handle_msg(leader_commit)
+            .expect("Slave failed to handle Commit message");
+
+        info!("{:?}", slave.consensus.blocks);
+
+        assert!(slave.consensus.blocks.len() == 2);
+    }
+}

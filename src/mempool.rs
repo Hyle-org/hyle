@@ -40,7 +40,7 @@ pub struct Mempool {
     batched_txs: HashSet<Vec<Transaction>>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode)]
+#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, Eq, PartialEq)]
 pub enum MempoolNetMessage {
     NewTx(Transaction),
 }
