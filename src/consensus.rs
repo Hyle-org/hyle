@@ -151,7 +151,7 @@ impl Module for Consensus {
         Ok(
             Consensus::load_from_disk(&ctx.config.data_directory).unwrap_or_else(|_| {
                 warn!("Failed to load consensus state from disk, using a default one");
-                Consensus::new()
+                Consensus::new(ctx.validator_registry.share())
             }),
         )
     }
@@ -162,11 +162,11 @@ impl Module for Consensus {
 }
 
 impl Consensus {
-    fn new() -> Self {
+    fn new(validators: ValidatorRegistry) -> Self {
         Self {
             is_next_leader: false,
             blocks: vec![Block::default()],
-            validators: ValidatorRegistry::default(),
+            validators,
             bft_round_state: BFTRoundState::default(),
             pending_batches: vec![],
         }
@@ -310,6 +310,7 @@ impl Consensus {
     ) -> Result<(), Error> {
         // Message received by leader.
 
+        info!("🚀 Starting new slot");
         // Verifies that previous slot received a *Commit* Quorum Certificate.
         match self
             .bft_round_state
@@ -753,9 +754,7 @@ impl Consensus {
 
         // FIXME: node-1 sera le leader
         if config.id == ValidatorId("node-1".to_owned()) {
-            sleep(Duration::from_secs(3)).await;
             self.is_next_leader = true;
-            _ = self.start_new_slot(&bus, &crypto);
         }
 
         handle_messages! {
@@ -779,7 +778,12 @@ impl Consensus {
                 }
             }
             listen<ValidatorRegistryNetMessage> cmd => {
-                self.validators.handle_net_message(cmd);
+                self.validators.handle_net_message(cmd.clone());
+                if self.validators.get_validators_count() == 1 && self.is_next_leader() {
+                    // Start first slot
+                    sleep(Duration::from_secs(2)).await;
+                    _ = self.start_new_slot(&bus, &crypto);
+                }
             }
         }
     }
