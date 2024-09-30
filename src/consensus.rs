@@ -27,6 +27,7 @@ use crate::{
     utils::{
         conf::SharedConf,
         crypto::{BlstCrypto, SharedBlstCrypto},
+        logger::LogMe,
         modules::Module,
     },
     validator_registry::{
@@ -45,10 +46,16 @@ pub enum ConsensusNetMessage {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+pub enum ConsensusCommand {
+    SingleNodeBlockGeneration,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub enum ConsensusEvent {
     CommitBlock { block: Block },
 }
 
+impl BusMessage for ConsensusCommand {}
 impl BusMessage for ConsensusEvent {}
 impl BusMessage for ConsensusNetMessage {}
 
@@ -113,8 +120,10 @@ bus_client! {
 struct ConsensusBusClient {
     sender(OutboundMessage),
     sender(ConsensusEvent),
+    sender(ConsensusCommand),
     sender(Query<MempoolCommand, MempoolResponse>),
     receiver(ValidatorRegistryNetMessage),
+    receiver(ConsensusCommand),
     receiver(MempoolEvent),
     receiver(SignedWithId<ConsensusNetMessage>),
 }
@@ -716,6 +725,33 @@ impl Consensus {
         }
     }
 
+    async fn handle_command(
+        &mut self,
+        msg: ConsensusCommand,
+        bus: &ConsensusBusClient,
+    ) -> Result<()> {
+        match msg {
+            ConsensusCommand::SingleNodeBlockGeneration => {
+                let mut txs = vec![];
+                if !self.pending_batches.is_empty() {
+                    txs = self.pending_batches.remove(0);
+                }
+                let block = Block {
+                    parent_hash: BlockHash::new(""),
+                    height: BlockHeight(0),
+                    timestamp: get_current_timestamp(),
+                    txs,
+                };
+                _ = bus
+                    .send(ConsensusEvent::CommitBlock {
+                        block: block.clone(),
+                    })
+                    .context("Failed to send ConsensusEvent::CommitBlock msg on the bus")?;
+                Ok(())
+            }
+        }
+    }
+
     async fn handle_mempool_event(&mut self, msg: MempoolEvent) -> Result<()> {
         match msg {
             MempoolEvent::LatestBatch(batch) => {
@@ -735,6 +771,25 @@ impl Consensus {
     ) -> Result<()> {
         let mut bus = ConsensusBusClient::new_from_bus(shared_bus.new_handle()).await;
 
+        let interval = config.storage.interval;
+
+        if config.id == ValidatorId("single-node".to_owned()) {
+            info!(
+                "No peers configured, starting as master generating blocks every {} seconds",
+                interval
+            );
+
+            let bus2 = ConsensusBusClient::new_from_bus(shared_bus).await;
+            tokio::spawn(async move {
+                loop {
+                    sleep(Duration::from_secs(interval)).await;
+
+                    _ = bus2
+                        .send(ConsensusCommand::SingleNodeBlockGeneration)
+                        .log_error("Cannot send message over channel");
+                }
+            });
+        }
         // FIXME: node-1 sera le leader
         if config.id == ValidatorId("node-1".to_owned()) {
             sleep(Duration::from_secs(3)).await;
@@ -744,6 +799,12 @@ impl Consensus {
 
         handle_messages! {
             on_bus bus,
+            listen<ConsensusCommand> cmd => {
+                match self.handle_command(cmd, &bus).await{
+                    Ok(_) => (),
+                    Err(e) => warn!("Error while handling consensus command: {:#}", e),
+                }
+            }
             listen<MempoolEvent> cmd => {
                 match self.handle_mempool_event(cmd).await{
                     Ok(_) => (),
