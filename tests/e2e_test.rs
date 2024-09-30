@@ -133,7 +133,7 @@ fn e2e() {
     let node2 = test_helpers::TestNode::new(path_node2, false, "6669");
 
     // Wait for node to properly spin up
-    thread::sleep(time::Duration::from_secs(1));
+    thread::sleep(time::Duration::from_secs(2));
 
     // Request something on node1 to be sure it's alive and working
     let client = Client::new();

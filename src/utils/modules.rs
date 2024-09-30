@@ -2,7 +2,7 @@ use std::{fs, future::Future, path::Path, pin::Pin};
 
 use anyhow::{bail, Error, Result};
 use tokio::task::JoinHandle;
-use tracing::{debug, info, warn};
+use tracing::{info, warn};
 
 use crate::utils::logger::LogMe;
 
@@ -41,10 +41,11 @@ where
     where
         S: bincode::Encode,
     {
-        let mut writer = fs::File::create(file).log_error("Create file")?;
+        let tmp = format!("{}.data.tmp", Self::name());
+        let mut writer = fs::File::create(tmp.clone()).log_error("Create file")?;
         bincode::encode_into_std_write(store, &mut writer, bincode::config::standard())
-            .log_error(format!("Error serializing {}", Self::name()))?;
-        debug!("Saved {} data to disk", Self::name());
+            .log_error("Serializing Ctx chain")?;
+        fs::rename(tmp, file).log_error("Rename Ctx file")?;
         Ok(())
     }
 }
