@@ -60,8 +60,19 @@ fn setup_tracing() -> Result<()> {
     Ok(())
 }
 
+#[cfg(feature = "dhat")]
+#[global_allocator]
+/// Use dhat to profile memory usage
+static ALLOC: dhat::Alloc = dhat::Alloc;
+
 #[tokio::main]
 async fn main() -> Result<()> {
+    #[cfg(feature = "dhat")]
+    let _profiler = {
+        info!("Running with dhat memory profiler");
+        dhat::Profiler::new_heap()
+    };
+
     setup_tracing()?;
 
     let args = Args::parse();
@@ -110,8 +121,16 @@ async fn main() -> Result<()> {
 
     handler.add_module(history, ctx.clone())?;
 
-    if let Err(e) = handler.start_modules().await {
-        error!("Error in module handler: {}", e)
+    let (running_modules, abort) = handler.start_modules()?;
+
+    tokio::select! {
+        Err(e) = running_modules => {
+            error!("Error running modules: {:?}", e);
+        }
+        _ = tokio::signal::ctrl_c() => {
+            info!("Ctrl-C received, shutting down");
+            abort();
+        }
     }
 
     Ok(())
