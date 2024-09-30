@@ -99,7 +99,15 @@ impl ModulesHandler {
     }
 
     /// Start Modules
-    pub async fn start_modules(&mut self) -> Result<(), Error> {
+    pub fn start_modules(
+        &mut self,
+    ) -> Result<
+        (
+            impl Future<Output = Result<(), Error>> + Send,
+            impl FnOnce() + Send,
+        ),
+        Error,
+    > {
         let mut tasks: Vec<JoinHandle<Result<(), Error>>> = vec![];
         let mut names: Vec<&'static str> = vec![];
 
@@ -109,8 +117,19 @@ impl ModulesHandler {
             tasks.push(handle);
         }
 
-        // Wait for the first task to finish
-        Self::wait_for_first(tasks, names).await
+        // Create an abort command (mildly hacky)
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let abort = move || {
+            tx.send(()).ok();
+        };
+        tasks.push(tokio::spawn(async move {
+            rx.await.ok();
+            Ok(())
+        }));
+        names.push("abort");
+
+        // Return a future that waits for the first error or the abort command.
+        Ok((Self::wait_for_first(tasks, names), abort))
     }
 
     async fn wait_for_first(

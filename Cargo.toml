@@ -30,23 +30,34 @@ nocow = { path = "./nocow" }
 # opentelemetry and axum-otel-metrics must be updated together (so that there is only one opentelemetry version)
 opentelemetry = "0.24.0"
 axum-otel-metrics = "0.9.0-alpha.2"
-tower-http = {version = "0.6.1", features=["trace", "cors"]}
+tower-http = { version = "0.6.1", features = ["trace", "cors"] }
 futures = "0.3.30"
+dhat = { version = "0.3.3", optional = true }
 
 [target.'cfg(target_os="macos")'.dependencies]
 sled = { version = "0.34.7", features = ["compression", "lock_free_delays"] }
 
 [target.'cfg(target_os="linux")'.dependencies]
-sled = { version = "0.34.7", features = ["compression", "io_uring", "lock_free_delays"] }
+sled = { version = "0.34.7", features = [
+    "compression",
+    "io_uring",
+    "lock_free_delays",
+] }
 
 [dev-dependencies]
 assert_cmd = "2.0.16"
 reqwest = { version = "0.12", features = ["json", "blocking"] }
 serde_json = "1.0.128"
 proptest = "1.5.0"
-test-log = { version = "0.2.16", features = ["color", "trace"], default-features = false }
+test-log = { version = "0.2.16", features = [
+    "color",
+    "trace",
+], default-features = false }
 tokio-stream = "0.1.16"
 tempdir = "0.3.7"
+
+[features]
+dhat = ["dep:dhat"]
 
 [profile.release]
 lto = "thin"
