@@ -3,7 +3,7 @@ use axum::Router;
 use axum_otel_metrics::HttpMetricsLayerBuilder;
 use clap::Parser;
 use hyle::{
-    bus::SharedMessageBus,
+    bus::{metrics::BusMetrics, SharedMessageBus},
     consensus::Consensus,
     indexer::Indexer,
     mempool::Mempool,
@@ -13,7 +13,7 @@ use hyle::{
     rest::{RestApi, RestApiRunContext},
     tools::mock_workflow::MockWorkflowHandler,
     utils::{
-        conf,
+        conf::{self},
         crypto::BlstCrypto,
         modules::{Module, ModulesHandler},
     },
@@ -94,7 +94,7 @@ async fn main() -> Result<()> {
         .with_service_name(config.id.to_string().clone())
         .build();
 
-    let bus = SharedMessageBus::new();
+    let bus = SharedMessageBus::new(BusMetrics::global(config.id.0.clone()));
     let crypto = Arc::new(BlstCrypto::new(config.id.clone())); // TODO load sk from disk instead of random
 
     std::fs::create_dir_all(&config.data_directory).context("creating data directory")?;

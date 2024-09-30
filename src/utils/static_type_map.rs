@@ -1,3 +1,5 @@
+use std::any::type_name;
+
 pub trait Pick<T> {
     fn get(&self) -> &T;
     fn get_mut(&mut self) -> &mut T;
@@ -5,6 +7,10 @@ pub trait Pick<T> {
     /// This function is unsafe because it returns a raw pointer to the inner value.
     /// This is intended for splitting borrows.
     unsafe fn splitting_get_mut(&mut self) -> *mut T;
+}
+
+pub fn type_name_of_variable<T>(_: &T) -> &'static str {
+    type_name::<T>()
 }
 
 /// This creates a struct that provides Pick for each type in the initial list,

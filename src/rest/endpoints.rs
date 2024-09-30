@@ -26,7 +26,7 @@ pub enum RestApiMessage {
 impl BusMessage for RestApiMessage {}
 
 async fn handle_send(
-    state: RouterState,
+    mut state: RouterState,
     payload: TransactionData,
 ) -> Result<Json<TxHash>, StatusCode> {
     let tx = Transaction::wrap(payload);
@@ -128,7 +128,7 @@ pub async fn get_contract(
 }
 
 pub async fn run_scenario(
-    State(state): State<RouterState>,
+    State(mut state): State<RouterState>,
     Json(scenario): Json<RunScenario>,
 ) -> Result<impl IntoResponse, StatusCode> {
     state
