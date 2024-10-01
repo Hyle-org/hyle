@@ -4,8 +4,6 @@ use crate::{consensus::ConsensusNetMessage, mempool::MempoolNetMessage};
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 use std::fmt;
-use tokio_util::bytes::{BufMut, BytesMut};
-use tokio_util::codec::{Decoder, Encoder};
 
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode)]
 pub struct Version {
@@ -115,46 +113,5 @@ impl NetMessage {
     pub fn to_binary(&self) -> Vec<u8> {
         bincode::encode_to_vec(self, bincode::config::standard())
             .expect("Could not serialize NetMessage")
-    }
-}
-
-pub struct NetMessageCodec;
-
-impl Decoder for NetMessageCodec {
-    type Item = NetMessage;
-    type Error = anyhow::Error;
-
-    fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
-        // We expect at least 4 bytes for the message size
-        if src.len() < 4 {
-            return Ok(None);
-        }
-
-        let msg_size = u32::from_be_bytes(src[..4].try_into()?);
-
-        if src.len() < (msg_size + 4) as usize {
-            // Not enough bytes yet, wait for more data
-            return Ok(None);
-        }
-
-        // Split off the first 4 bytes (size) and then the message itself
-        let _ = src.split_to(4);
-        let data = src.split_to(msg_size as usize);
-
-        let (net_msg, _) = bincode::decode_from_slice(&data, bincode::config::standard())
-            .map_err(|_| anyhow::anyhow!("Could not decode NetMessage"))?;
-        Ok(Some(net_msg))
-    }
-}
-
-impl Encoder<NetMessage> for NetMessageCodec {
-    type Error = anyhow::Error;
-
-    fn encode(&mut self, item: NetMessage, dst: &mut BytesMut) -> Result<(), Self::Error> {
-        let binary = item.to_binary();
-        let size = (binary.len() as u32).to_be_bytes();
-        dst.put(&size[..]);
-        dst.put(&binary[..]);
-        Ok(())
     }
 }
