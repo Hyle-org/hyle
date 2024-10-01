@@ -637,10 +637,11 @@ impl Consensus {
                 // Message received by leader.
                 if !matches!(self.step, Step::PrepareVote) {
                     self.metrics.prepare_vote_error("wrong_step");
-                    bail!(
+                    debug!(
                         "PrepareVote received at wrong step (step = {:?})",
                         self.step
                     );
+                    return Ok(());
                 }
 
                 // Verify that the PrepareVote is for the correct proposal
@@ -789,7 +790,8 @@ impl Consensus {
 
                 if !matches!(self.step, Step::ConfirmAck) {
                     self.metrics.confirm_ack_error("wrong_step");
-                    bail!("ConfirmAck received at wrong step (step ={:?})", self.step);
+                    debug!("ConfirmAck received at wrong step (step ={:?})", self.step);
+                    return Ok(());
                 }
 
                 // Verify that the ConfirmAck is for the correct proposal
