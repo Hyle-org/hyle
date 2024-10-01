@@ -193,7 +193,7 @@ impl Peer {
             }
 
             res = read_stream(&mut self.stream) => match res {
-                Ok((message, _)) => match self.handle_stream_message(message).await {
+                Ok(message) => match self.handle_stream_message(message).await {
                     Ok(_) => continue,
                     Err(e) => {
                         warn!("Error while handling net message: {:#}", e);
