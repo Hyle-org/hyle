@@ -247,6 +247,7 @@ impl Module for Consensus {
     }
 
     fn run(&mut self, ctx: Self::Context) -> impl futures::Future<Output = Result<()>> + Send {
+        _ = self.start_master(ctx.config.clone());
         self.start(ctx.config.clone(), ctx.crypto.clone())
     }
 }
