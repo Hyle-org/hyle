@@ -14,7 +14,7 @@ use crate::{
     consensus::ConsensusEvent,
     model::{Block, Hashable, SharedRunContext},
     rest,
-    utils::{conf::SharedConf, modules::Module},
+    utils::modules::Module,
 };
 use anyhow::{Context, Result};
 use axum::{routing::get, Router};
@@ -27,10 +27,7 @@ use std::{
     io::{Cursor, Write},
     sync::Arc,
 };
-use tokio::{
-    sync::RwLock,
-    time::{sleep, Duration},
-};
+use tokio::sync::RwLock;
 use tracing::{debug, error, info};
 use transactions::Transactions;
 
@@ -75,8 +72,8 @@ impl Module for History {
         .await
     }
 
-    fn run(&mut self, ctx: Self::Context) -> impl futures::Future<Output = Result<()>> + Send {
-        self.start(ctx.config.clone())
+    fn run(&mut self, _ctx: Self::Context) -> impl futures::Future<Output = Result<()>> + Send {
+        self.start()
     }
 }
 
@@ -92,11 +89,8 @@ impl History {
         self.inner.clone()
     }
 
-    pub async fn start(&mut self, config: SharedConf) -> Result<()> {
-        let interval = config.storage.interval;
-
+    pub async fn start(&mut self) -> Result<()> {
         loop {
-            sleep(Duration::from_secs(interval)).await;
             tokio::select! {
                 Ok(event) = self.bus.recv() => {
                     match event {

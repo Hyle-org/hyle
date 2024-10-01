@@ -1,9 +1,11 @@
+use bincode::{Decode, Encode};
+
 use super::model::UnsettledTransaction;
 use crate::model::{ContractName, TxHash};
 use std::collections::HashMap;
 
 // struct used to guarantee coherence between the 2 fields
-#[derive(Default, Debug, Clone)]
+#[derive(Default, Debug, Clone, Encode, Decode)]
 pub struct OrderedTxMap {
     map: HashMap<TxHash, UnsettledTransaction>,
     tx_order: HashMap<ContractName, Vec<TxHash>>,

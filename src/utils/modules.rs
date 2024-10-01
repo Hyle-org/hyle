@@ -1,8 +1,10 @@
-use std::{future::Future, pin::Pin};
+use std::{fs, future::Future, path::Path, pin::Pin};
 
 use anyhow::{bail, Error, Result};
 use tokio::task::JoinHandle;
-use tracing::info;
+use tracing::{info, warn};
+
+use crate::utils::logger::LogMe;
 
 /// Module trait to define startup dependencies
 pub trait Module
@@ -14,6 +16,38 @@ where
     fn name() -> &'static str;
     fn build(ctx: &Self::Context) -> impl futures::Future<Output = Result<Self>> + Send;
     fn run(&mut self, ctx: Self::Context) -> impl futures::Future<Output = Result<()>> + Send;
+
+    fn load_from_disk_or_default<S>(file: &Path) -> S
+    where
+        S: bincode::Decode + Default,
+    {
+        fs::File::open(file)
+            .map_err(|e| e.to_string())
+            .and_then(|mut reader| {
+                bincode::decode_from_std_read(&mut reader, bincode::config::standard())
+                    .map_err(|e| e.to_string())
+            })
+            .unwrap_or_else(|e| {
+                warn!(
+                    "{}: Failed to load data from disk ({}). Error was: {e}",
+                    Self::name(),
+                    file.display()
+                );
+                S::default()
+            })
+    }
+
+    fn save_on_disk<S>(file: &Path, store: &S) -> Result<()>
+    where
+        S: bincode::Encode,
+    {
+        let tmp = format!("{}.data.tmp", Self::name());
+        let mut writer = fs::File::create(tmp.clone()).log_error("Create file")?;
+        bincode::encode_into_std_write(store, &mut writer, bincode::config::standard())
+            .log_error("Serializing Ctx chain")?;
+        fs::rename(tmp, file).log_error("Rename file")?;
+        Ok(())
+    }
 }
 
 struct ModuleStarter {
@@ -65,7 +99,15 @@ impl ModulesHandler {
     }
 
     /// Start Modules
-    pub async fn start_modules(&mut self) -> Result<(), Error> {
+    pub fn start_modules(
+        &mut self,
+    ) -> Result<
+        (
+            impl Future<Output = Result<(), Error>> + Send,
+            impl FnOnce() + Send,
+        ),
+        Error,
+    > {
         let mut tasks: Vec<JoinHandle<Result<(), Error>>> = vec![];
         let mut names: Vec<&'static str> = vec![];
 
@@ -75,8 +117,19 @@ impl ModulesHandler {
             tasks.push(handle);
         }
 
-        // Wait for the first task to finish
-        Self::wait_for_first(tasks, names).await
+        // Create an abort command (mildly hacky)
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let abort = move || {
+            tx.send(()).ok();
+        };
+        tasks.push(tokio::spawn(async move {
+            rx.await.ok();
+            Ok(())
+        }));
+        names.push("abort");
+
+        // Return a future that waits for the first error or the abort command.
+        Ok((Self::wait_for_first(tasks, names), abort))
     }
 
     async fn wait_for_first(

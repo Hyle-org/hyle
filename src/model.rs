@@ -81,7 +81,7 @@ impl<'de> Deserialize<'de> for TxHash {
     }
 }
 
-#[derive(Default, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
+#[derive(Default, Clone, Serialize, Deserialize, Eq, PartialEq, Hash, Encode, Decode)]
 pub struct BlobsHash(pub Vec<u8>);
 
 impl BlobsHash {

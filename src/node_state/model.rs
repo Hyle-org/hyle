@@ -1,3 +1,4 @@
+use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 
 use crate::model::{
@@ -5,14 +6,14 @@ use crate::model::{
 };
 use std::collections::HashMap;
 
-#[derive(Default, Debug, Clone, Serialize, Deserialize)]
+#[derive(Default, Debug, Clone, Serialize, Deserialize, Encode, Decode)]
 pub struct Contract {
     pub name: ContractName,
     pub program_id: Vec<u8>,
     pub state: StateDigest,
 }
 
-#[derive(Default, Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Default, Debug, Clone, PartialEq, Eq, Hash, Encode, Decode)]
 pub struct UnsettledTransaction {
     pub identity: Identity,
     pub hash: TxHash,
@@ -20,13 +21,13 @@ pub struct UnsettledTransaction {
     pub blobs: Vec<UnsettledBlobMetadata>,
 }
 
-#[derive(Default, Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Default, Debug, Clone, PartialEq, Eq, Hash, Encode, Decode)]
 pub struct UnsettledBlobMetadata {
     pub contract_name: ContractName,
     pub metadata: Vec<HyleOutput>,
 }
 
-#[derive(Default, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Default, Deserialize, Debug, Clone, PartialEq, Eq, Hash, Encode, Decode)]
 pub struct HyleOutput {
     pub version: u32,
     pub initial_state: StateDigest,
@@ -38,7 +39,7 @@ pub struct HyleOutput {
     pub success: bool,
 }
 
-#[derive(Default, Debug, Clone)]
+#[derive(Default, Debug, Clone, Encode, Decode)]
 pub struct Timeouts {
     by_tx_hash: HashMap<TxHash, BlockHeight>,
     by_block: HashMap<BlockHeight, Vec<TxHash>>,

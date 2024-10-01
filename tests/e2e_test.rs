@@ -1,67 +1,52 @@
 use hyle::{
-    consensus::Consensus,
+    consensus::{Consensus, ConsensusStore},
     model::{
         Blob, BlobData, BlobReference, BlobTransaction, ContractName, Identity, ProofTransaction,
         RegisterContractTransaction, StateDigest, TxHash,
     },
     node_state::model::Contract,
+    rest::client::ApiHttpClient,
+    utils::modules::Module,
 };
-use reqwest::blocking::{Client, Response};
-use serde::Serialize;
-use std::{fs, path::Path, thread, time};
+use reqwest::{Client, Url};
+use std::{fs, path::Path, time};
+use tokio::time::sleep;
 
 mod test_helpers;
 
-fn send<T: Serialize>(client: &Client, url: String, obj: T) -> Response {
-    let request_body = serde_json::json!(obj);
+use anyhow::Result;
 
-    client
-        .post(url)
-        .header("Content-Type", "application/json")
-        .json(&request_body)
-        .send()
-        .expect("Failed to send request")
-}
-
-fn url(path: &str) -> String {
-    format!("http://127.0.0.1:4321{}", path)
-}
-
-fn register_contracts(client: &Client) {
-    assert!(send(
-        client,
-        url("/v1/contract/register"),
-        RegisterContractTransaction {
+async fn register_contracts(client: &ApiHttpClient) -> Result<()> {
+    assert!(client
+        .send_tx_register_contract(&RegisterContractTransaction {
             owner: "test".to_string(),
             verifier: "test".to_string(),
             program_id: vec![1, 2, 3],
             state_digest: StateDigest(vec![0, 1, 2, 3]),
             contract_name: ContractName("c1".to_string()),
-        },
-    )
-    .status()
-    .is_success());
+        })
+        .await?
+        .status()
+        .is_success());
 
-    assert!(send(
-        client,
-        url("/v1/contract/register"),
-        RegisterContractTransaction {
+    assert!(client
+        .send_tx_register_contract(&RegisterContractTransaction {
             owner: "test".to_string(),
             verifier: "test".to_string(),
             program_id: vec![1, 2, 3],
             state_digest: StateDigest(vec![0, 1, 2, 3]),
             contract_name: ContractName("c2".to_string()),
-        },
-    )
-    .status()
-    .is_success());
+        })
+        .await?
+        .status()
+        .is_success());
+
+    Ok(())
 }
 
-fn send_blobs(client: &Client) {
-    let blob_response = send(
-        client,
-        url("/v1/tx/send/blob"),
-        BlobTransaction {
+async fn send_blobs(client: &ApiHttpClient) -> Result<()> {
+    let blob_response = client
+        .send_tx_blob(&BlobTransaction {
             identity: Identity("client".to_string()),
             blobs: vec![
                 Blob {
@@ -73,18 +58,15 @@ fn send_blobs(client: &Client) {
                     data: BlobData(vec![0, 1, 2, 3]),
                 },
             ],
-        },
-    );
+        })
+        .await?;
 
     assert!(blob_response.status().is_success());
-    let blob_tx_hash = blob_response
-        .json::<TxHash>()
-        .expect("Failed to parse tx hash");
 
-    assert!(send(
-        client,
-        url("/v1/tx/send/proof"),
-        ProofTransaction {
+    let blob_tx_hash = blob_response.json::<TxHash>().await?;
+
+    assert!(client
+        .send_tx_proof(&ProofTransaction {
             blobs_references: vec![
                 BlobReference {
                     contract_name: ContractName("c1".to_string()),
@@ -98,32 +80,29 @@ fn send_blobs(client: &Client) {
                 }
             ],
             proof: vec![5, 5]
-        },
-    )
-    .status()
-    .is_success());
+        })
+        .await?
+        .status()
+        .is_success());
+
+    Ok(())
 }
 
-fn verify_contract_state(client: &Client) {
-    let response = client
-        .get(url("/v1/contract/c1"))
-        .header("Content-Type", "application/json")
-        .send()
-        .expect("Failed to fetch contract");
-
+async fn verify_contract_state(client: &ApiHttpClient) -> Result<()> {
+    let response = client.get_contract(&ContractName("c1".to_string())).await?;
     assert!(response.status().is_success(), "{}", response.status());
 
-    let contract = response
-        .json::<Contract>()
-        .expect("failed to parse response");
-
+    let contract = response.json::<Contract>().await?;
     assert_eq!(contract.state.0, vec![4, 5, 6]);
+
+    Ok(())
 }
 
-#[test]
-fn e2e() {
+#[tokio::test]
+async fn e2e() -> Result<()> {
     tracing_subscriber::fmt::init();
 
+    // FIXME: use tmp dir
     let path_node1 = Path::new("tests/node1");
     let path_node2 = Path::new("tests/node2");
 
@@ -132,24 +111,29 @@ fn e2e() {
     let node2 = test_helpers::TestNode::new(path_node2, false, "6669");
 
     // Wait for node to properly spin up
-    thread::sleep(time::Duration::from_secs(1));
+    sleep(time::Duration::from_secs(2)).await;
 
     // Request something on node1 to be sure it's alive and working
-    let client = Client::new();
+    let client = ApiHttpClient {
+        url: Url::parse("http://localhost:4321").unwrap(),
+        reqwest_client: Client::new(),
+    };
 
-    register_contracts(&client);
-    send_blobs(&client);
+    register_contracts(&client).await?;
+    send_blobs(&client).await?;
     // Wait for some slots to be finished
-    thread::sleep(time::Duration::from_secs(5));
-    verify_contract_state(&client);
+    sleep(time::Duration::from_secs(5)).await;
+    verify_contract_state(&client).await?;
 
     // Stop all processes
     drop(node1);
     drop(node2);
 
     // Check that some blocks has been produced
-    let node1_consensus = Consensus::load_from_disk(path_node1).unwrap();
-    let node2_consensus = Consensus::load_from_disk(path_node2).unwrap();
+    let node1_consensus: ConsensusStore =
+        Consensus::load_from_disk_or_default(path_node1.join("data_node1/consensus.bin").as_path());
+    let node2_consensus: ConsensusStore =
+        Consensus::load_from_disk_or_default(path_node2.join("data_node2/consensus.bin").as_path());
     assert!(!node1_consensus.blocks.is_empty());
     assert!(!node2_consensus.blocks.is_empty());
     // FIXME: check that created blocks are the same.
@@ -158,8 +142,7 @@ fn e2e() {
     fs::remove_dir_all(path_node1.join("data_node1")).expect("file cleaning failed");
     fs::remove_dir_all(path_node2.join("data_node2")).expect("file cleaning failed");
 
-    fs::remove_file(path_node1.join("data.bin")).expect("file cleaning failed");
-    fs::remove_file(path_node2.join("data.bin")).expect("file cleaning failed");
-
     //TODO: compare blocks from node1 and node2
+
+    Ok(())
 }

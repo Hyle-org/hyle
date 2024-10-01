@@ -6,18 +6,18 @@ use serde::{Deserialize, Serialize};
 
 use crate::validator_registry::ValidatorId;
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct Storage {
     pub interval: u64,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct P2pConf {
     pub ping_interval: u64,
 }
 pub type SharedConf = Arc<Conf>;
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct Conf {
     port: u16,
     host: String,
