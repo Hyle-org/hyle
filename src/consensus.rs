@@ -2,6 +2,7 @@
 
 use anyhow::{bail, Context, Error, Result};
 use bincode::{Decode, Encode};
+use metrics::ConsensusMetrics;
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Sha3_256};
 use std::{
@@ -34,6 +35,8 @@ use crate::{
         ValidatorId, ValidatorPublicKey, ValidatorRegistry, ValidatorRegistryNetMessage,
     },
 };
+
+pub mod metrics;
 
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, PartialEq, Eq, Hash)]
 pub enum ConsensusNetMessage {
@@ -139,6 +142,7 @@ pub struct ConsensusStore {
 }
 
 pub struct Consensus {
+    metrics: ConsensusMetrics,
     validators: ValidatorRegistry,
     file: PathBuf,
     store: ConsensusStore,
@@ -167,7 +171,12 @@ impl Module for Consensus {
     async fn build(ctx: &Self::Context) -> Result<Self> {
         let file = ctx.config.data_directory.clone().join("consensus.bin");
         let store = Self::load_from_disk_or_default(file.as_path());
-        Ok(Consensus::new(ctx, file, store))
+        Ok(Consensus::new(
+            ctx,
+            file,
+            store,
+            ConsensusMetrics::global(&ctx.config),
+        ))
     }
 
     fn run(&mut self, ctx: Self::Context) -> impl futures::Future<Output = Result<()>> + Send {
@@ -176,8 +185,14 @@ impl Module for Consensus {
 }
 
 impl Consensus {
-    fn new(ctx: &SharedRunContext, file: PathBuf, store: ConsensusStore) -> Self {
+    fn new(
+        ctx: &SharedRunContext,
+        file: PathBuf,
+        store: ConsensusStore,
+        metrics: ConsensusMetrics,
+    ) -> Self {
         Self {
+            metrics,
             validators: ctx.validator_registry.share(),
             file,
             store,
@@ -313,12 +328,17 @@ impl Consensus {
                     previous_consensus_proposal_hash.clone(),
                     previous_commit_quorum_certificate.clone(),
                 )?;
+
+                self.metrics.start_new_slot("consensus_proposal");
             }
             None if self.bft_round_state.slot == 0 => {
                 info!("#### Genesis block creation ####");
                 self.create_genesis_consensus_proposal();
+                self.metrics.start_new_slot("genesis");
             }
             None => {
+                self.metrics
+                    .start_new_slot_error("previous_commit_qc_not_found");
                 bail!("Can't start new slot: previous commit quorum certificate not found")
             }
         };
@@ -347,6 +367,7 @@ impl Consensus {
         bus: &ConsensusBusClient,
     ) -> Result<(), Error> {
         if !self.validators.check_signed(&msg)? {
+            self.metrics.signature_error("prepare");
             bail!("Invalid signature for message {:?}", msg);
         }
 
@@ -357,6 +378,7 @@ impl Consensus {
 
                 // Validate message comes from the correct leader
                 if !msg.validators.contains(&self.leader_id()) {
+                    self.metrics.prepare_error("wrong_leader");
                     bail!("Prepare consensus message does not come from current leader");
                     // TODO: slash ?
                 }
@@ -379,15 +401,18 @@ impl Consensus {
                         if previous_commit_quorum_certificate.hash()
                             != consensus_proposal.previous_commit_quorum_certificate.hash()
                         {
+                            self.metrics.prepare_error("missing_correct_commit_qc");
                             bail!("PrepareVote consensus proposal does not contain correct previous commit quorum certificate");
                         }
                         if previous_consensus_proposal_hash
                             != &consensus_proposal.previous_consensus_proposal_hash
                         {
+                            self.metrics.prepare_error("proposal_match");
                             bail!("PrepareVote previous consensus proposal hash does not match");
                         }
                         // Verify slot
                         if self.bft_round_state.slot != consensus_proposal.slot {
+                            self.metrics.prepare_error("wrong_slot");
                             bail!(
                                 "Consensus proposal slot is incorrect. Received {} and expected {}",
                                 consensus_proposal.slot,
@@ -396,6 +421,7 @@ impl Consensus {
                         }
                         // Verify view
                         if self.bft_round_state.view != consensus_proposal.view {
+                            self.metrics.prepare_error("wrong_view");
                             bail!(
                                 "Consensus proposal view is incorrect. Received {} and expected {}",
                                 consensus_proposal.view,
@@ -412,6 +438,7 @@ impl Consensus {
                         if !self.verify_consensus_proposal_hash(
                             &consensus_proposal.previous_consensus_proposal_hash,
                         ) {
+                            self.metrics.prepare_error("previous_commit_qc_unknown");
                             // TODO Retrieve that data on other validators
                             bail!("Previsou Commit Quorum certificate is about an unknown consensus proposal. Can't process any furter");
                         }
@@ -433,6 +460,7 @@ impl Consensus {
                         match BlstCrypto::verify(&previous_commit_quorum_certificate_with_message) {
                             Ok(res) => {
                                 if !res {
+                                    self.metrics.prepare_error("previous_commit_qc_invalid");
                                     bail!("Previous Commit Quorum Certificate is invalid")
                                 }
                                 // Buffers the previous *Commit* Quorum Cerficiate
@@ -452,6 +480,7 @@ impl Consensus {
                                     );
                             }
                             Err(err) => {
+                                self.metrics.prepare_error("bls_failure");
                                 bail!(
                                     "Previous Commit Quorum Certificate verification failed: {}",
                                     err
@@ -475,7 +504,9 @@ impl Consensus {
                             ConsensusNetMessage::PrepareVote(consensus_proposal.hash()),
                         )?,
                     ))
-                    .context("Failed to send ConsensusNetMessage::Confirm msg on the bus")?;
+                    .context("Failed to send ConsensusNetMessage::PrepareVote msg on the bus")?;
+
+                self.metrics.prepare();
                 Ok(())
             }
             ConsensusNetMessage::PrepareVote(consensus_proposal_hash) => {
@@ -483,6 +514,7 @@ impl Consensus {
 
                 // Verify that the PrepareVote is for the correct proposal
                 if !self.verify_consensus_proposal_hash(consensus_proposal_hash) {
+                    self.metrics.prepare_vote_error("invalid_proposal_hash");
                     bail!("PrepareVote has not received valid consensus proposal hash");
                 }
 
@@ -490,6 +522,9 @@ impl Consensus {
                 self.store.bft_round_state.prepare_votes.insert(
                     msg.with_pub_keys(self.validators.get_pub_keys_from_id(msg.validators.clone())),
                 );
+
+                self.metrics
+                    .prepare_votes_gauge(self.bft_round_state.prepare_votes.len());
 
                 // Get matching vote count
                 let validated_votes = self
@@ -514,6 +549,8 @@ impl Consensus {
                         ),
                         aggregates,
                     )?;
+
+                    self.metrics.prepare_votes_aggregation();
 
                     // Buffers the *Prepare* Quorum Cerficiate
                     self.bft_round_state.prepare_quorum_certificate = QuorumCertificate {
@@ -546,6 +583,7 @@ impl Consensus {
 
                 // Verify that the Confirm is for the correct proposal
                 if !self.verify_consensus_proposal_hash(consensus_proposal_hash) {
+                    self.metrics.confirm_error("invalid_proposal_hash");
                     bail!("Confirm has not received valid consensus proposal hash");
                 }
 
@@ -558,11 +596,13 @@ impl Consensus {
                 match BlstCrypto::verify(&prepare_quorum_certificate_with_message) {
                     Ok(res) => {
                         if !res {
+                            self.metrics.confirm_error("prepare_qc_invalid");
                             bail!("Prepare Quorum Certificate received is invalid")
                         }
                         // Verify enough validators signed
                         let f: usize = self.validators.get_validators_count() / 3;
                         if prepare_quorum_certificate.validators.len() < 2 * f + 1 {
+                            self.metrics.confirm_error("prepare_qc_incomplete");
                             bail!("Prepare Quorum Certificate does not contain enough validators signatures")
                         }
                         // Verify that validators that signed are legit
@@ -592,6 +632,7 @@ impl Consensus {
 
                 // Verify that the ConfirmAck is for the correct proposal
                 if !self.verify_consensus_proposal_hash(consensus_proposal_hash) {
+                    self.metrics.confirm_ack_error("invalid_proposal_hash");
                     bail!("ConfirmAck has not received valid consensus proposal hash");
                 }
 
@@ -599,6 +640,7 @@ impl Consensus {
                 if !self.store.bft_round_state.confirm_ack.insert(
                     msg.with_pub_keys(self.validators.get_pub_keys_from_id(msg.validators.clone())),
                 ) {
+                    self.metrics.confirm_ack("already_processed");
                     info!("ConfirmAck has aleady been processed");
 
                     return Ok(());
@@ -614,6 +656,9 @@ impl Consensus {
 
                 let f: usize = self.validators.get_validators_count() / 3;
 
+                self.metrics
+                    .confirmed_ack_gauge(confirmed_ack_validators.len());
+
                 // TODO: Only waiting for 2 * f because leader himself if the +1
                 if confirmed_ack_validators.len() == (2 * f + 1) {
                     // Get all signatures received and change ValidatorId for ValidatorPubKey
@@ -627,6 +672,8 @@ impl Consensus {
                         ),
                         aggregates,
                     )?;
+
+                    self.metrics.confirm_ack_commit_aggregate();
 
                     // Buffers the *Commit* Quorum Cerficiate
                     let commit_quorum_certificate = QuorumCertificate {
@@ -674,6 +721,7 @@ impl Consensus {
 
                 // Verify that the vote is for the correct proposal
                 if !self.verify_consensus_proposal_hash(consensus_proposal_hash) {
+                    self.metrics.commit_error("invalid_proposal_hash");
                     bail!("PrepareVote has not received valid consensus proposal hash");
                 }
 
@@ -687,11 +735,13 @@ impl Consensus {
                 match BlstCrypto::verify(&commit_quorum_certificate_with_message) {
                     Ok(res) => {
                         if !res {
+                            self.metrics.commit_error("invalid_qc");
                             bail!("Commit Quorum Certificate received is invalid")
                         }
                         // Verify enough validators signed
                         let f: usize = self.validators.get_validators_count() / 3;
                         if commit_quorum_certificate.validators.len() < 2 * f + 1 {
+                            self.metrics.commit_error("incomplete_qc");
                             bail!("Commit Quorum Certificate does not contain enough validators signatures")
                         }
                         // Verify that validators that signed are legit
@@ -709,11 +759,16 @@ impl Consensus {
                                 ),
                             );
                     }
-                    Err(err) => bail!("Commit Quorum Certificate verification failed: {}", err),
+                    Err(err) => {
+                        self.metrics.commit_error("bls_failure");
+                        bail!("Commit Quorum Certificate verification failed: {}", err);
+                    }
                 }
 
                 // Finishes the bft round
                 self.finish_round(bus)?;
+
+                self.metrics.commit();
 
                 // Start new slot
                 if self.is_next_leader() {
