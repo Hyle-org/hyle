@@ -7,14 +7,17 @@ use crate::{
     model::{Hashable, SharedRunContext, Transaction},
     p2p::network::{OutboundMessage, SignedWithId},
     rest::endpoints::RestApiMessage,
-    utils::{crypto::SharedBlstCrypto, modules::Module},
+    utils::{
+        crypto::{BlstCrypto, SharedBlstCrypto},
+        modules::Module,
+    },
     validator_registry::{ValidatorRegistry, ValidatorRegistryNetMessage},
 };
 use anyhow::{Context, Result};
 use bincode::{Decode, Encode};
 use metrics::MempoolMetrics;
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
+use std::{collections::HashSet, sync::Arc};
 use tracing::{debug, info, warn};
 
 mod metrics;
@@ -32,6 +35,7 @@ struct MempoolBusClient {
 }
 
 pub struct Mempool {
+    bus: MempoolBusClient,
     crypto: SharedBlstCrypto,
     metrics: MempoolMetrics,
     validators: ValidatorRegistry,
@@ -72,40 +76,53 @@ impl Module for Mempool {
     }
 
     async fn build(ctx: &SharedRunContext) -> Result<Self> {
-        Ok(Mempool::new(ctx).await)
+        let bus = MempoolBusClient::new_from_bus(ctx.bus.new_handle()).await;
+        let metrics = MempoolMetrics::global(&ctx.config);
+        Ok(Mempool::new(
+            bus,
+            metrics,
+            Arc::clone(&ctx.crypto),
+            ctx.validator_registry.share(),
+        )
+        .await)
     }
 
-    fn run(&mut self, ctx: Self::Context) -> impl futures::Future<Output = Result<()>> + Send {
-        self.start(ctx.bus.new_handle())
+    fn run(&mut self, _ctx: Self::Context) -> impl futures::Future<Output = Result<()>> + Send {
+        self.start()
     }
 }
 
 impl Mempool {
-    pub async fn new(ctx: &SharedRunContext) -> Mempool {
+    async fn new(
+        bus: MempoolBusClient,
+        metrics: MempoolMetrics,
+        crypto: Arc<BlstCrypto>,
+        validators: ValidatorRegistry,
+    ) -> Mempool {
         Mempool {
-            metrics: MempoolMetrics::global(&ctx.config),
-            crypto: ctx.crypto.clone(),
-            validators: ctx.validator_registry.share(),
+            bus,
+            metrics,
+            crypto,
+            validators,
             pending_txs: vec![],
             batched_txs: HashSet::default(),
         }
     }
 
     /// start starts the mempool server.
-    pub async fn start(&mut self, shared_bus: SharedMessageBus) -> Result<()> {
+    pub async fn start(&mut self) -> Result<()> {
         info!("Mempool starting");
 
-        let mut bus = MempoolBusClient::new_from_bus(shared_bus.new_handle()).await;
         handle_messages! {
-            on_bus bus,
+            on_bus self.bus,
             command_response<MempoolCommand, MempoolResponse> cmd => {
                  self.handle_command(cmd)
             }
             listen<SignedWithId<MempoolNetMessage>> cmd => {
-                self.handle_net_message(cmd, &bus).await
+                self.handle_net_message(cmd).await
             }
             listen<RestApiMessage> cmd => {
-                self.handle_api_message(cmd, &bus).await
+                self.handle_api_message(cmd).await
             }
             listen<ConsensusEvent> cmd => {
                 self.handle_event(cmd);
@@ -125,16 +142,12 @@ impl Mempool {
         }
     }
 
-    async fn handle_net_message(
-        &mut self,
-        msg: SignedWithId<MempoolNetMessage>,
-        bus: &MempoolBusClient,
-    ) {
+    async fn handle_net_message(&mut self, msg: SignedWithId<MempoolNetMessage>) {
         match self.validators.check_signed(&msg) {
             Ok(valid) => {
                 if valid {
                     match msg.msg {
-                        MempoolNetMessage::NewTx(tx) => self.on_new_tx(tx, bus).await,
+                        MempoolNetMessage::NewTx(tx) => self.on_new_tx(tx).await,
                     }
                 } else {
                     warn!("Invalid signature for message {:?}", msg);
@@ -144,16 +157,16 @@ impl Mempool {
         }
     }
 
-    async fn handle_api_message(&mut self, command: RestApiMessage, bus: &MempoolBusClient) {
+    async fn handle_api_message(&mut self, command: RestApiMessage) {
         match command {
             RestApiMessage::NewTx(tx) => {
-                self.on_new_tx(tx.clone(), bus).await;
-                self.broadcast_tx(tx, bus).await.ok();
+                self.on_new_tx(tx.clone()).await;
+                self.broadcast_tx(tx).await.ok();
             }
         }
     }
 
-    async fn on_new_tx(&mut self, tx: Transaction, bus: &MempoolBusClient) {
+    async fn on_new_tx(&mut self, tx: Transaction) {
         debug!("Got new tx {} {:?}", tx.hash(), tx);
         self.metrics.add_api_tx("blob".to_string());
         self.pending_txs.push(tx.clone());
@@ -161,7 +174,8 @@ impl Mempool {
         if self.pending_txs.len() == 1 {
             let batch = self.pending_txs.drain(0..).collect::<Vec<Transaction>>();
             self.batched_txs.insert(batch.clone());
-            _ = bus
+            _ = self
+                .bus
                 .send(MempoolEvent::LatestBatch(batch))
                 .context("Cannot send message over channel")
                 .ok();
@@ -169,9 +183,10 @@ impl Mempool {
         self.metrics.snapshot_pending_tx(self.pending_txs.len());
     }
 
-    async fn broadcast_tx(&mut self, tx: Transaction, bus: &MempoolBusClient) -> Result<()> {
+    async fn broadcast_tx(&mut self, tx: Transaction) -> Result<()> {
         self.metrics.add_broadcasted_tx("blob".to_string());
-        _ = bus
+        _ = self
+            .bus
             .send(OutboundMessage::broadcast(
                 self.sign_net_message(MempoolNetMessage::NewTx(tx))?,
             ))
