@@ -28,6 +28,12 @@ impl std::fmt::Debug for ValidatorPublicKey {
     }
 }
 
+impl Display for ValidatorPublicKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", hex::encode(&self.0))
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, Default, Hash, Eq, PartialEq)]
 pub struct ValidatorId(pub String);
 
@@ -125,7 +131,7 @@ impl ValidatorRegistry {
     where
         T: Encode + Debug + Clone,
     {
-        info!("Checking signed message: {:?}", msg);
+        debug!("Checking signed message: {:?}", msg);
         let s = &self.inner.read().unwrap().validators;
         let validators = msg
             .validators
@@ -140,7 +146,7 @@ impl ValidatorRegistry {
                     .map(|validator| validator.pub_key.clone())
                     .collect::<Vec<ValidatorPublicKey>>();
 
-                info!("Checking signature with pub keys: {:?}", vec);
+                debug!("Checking signature with pub keys: {:?}", vec);
 
                 BlstCrypto::verify(&msg.with_pub_keys(vec))
             }
