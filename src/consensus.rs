@@ -50,6 +50,14 @@ pub enum ConsensusNetMessage {
     ValidatorCandidacy(ValidatorCandidacy),
 }
 
+#[derive(Encode, Decode, Default, Debug)]
+enum Step {
+    #[default]
+    StartNewSlot,
+    PrepareVote,
+    ConfirmAck,
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub enum ConsensusCommand {
     SingleNodeBlockGeneration,
@@ -187,6 +195,7 @@ pub struct ConsensusStore {
     // FIXME: pub is here for testing
     pub blocks: Vec<Block>,
     pending_batches: Vec<Vec<Transaction>>,
+    step: Step,
 }
 
 pub struct Consensus {
@@ -349,6 +358,7 @@ impl Consensus {
             self.bft_round_state.consensus_proposal.slot
         );
 
+        self.step = Step::StartNewSlot;
         self.bft_round_state.slot = self.bft_round_state.consensus_proposal.slot + 1;
         self.bft_round_state.view = 0;
         self.bft_round_state.prepare_votes = HashSet::default();
@@ -444,6 +454,11 @@ impl Consensus {
         // self.bft_round_state.view += 1;
 
         // Broadcasts Prepare message to all validators
+        debug!(
+            proposal_hash = %self.bft_round_state.consensus_proposal.hash(),
+            "🌐 Slot {} started. Broadcasting Prepare message", self.bft_round_state.slot,
+        );
+        self.step = Step::PrepareVote;
         _ = bus
             .send(OutboundMessage::broadcast(Self::sign_net_message(
                 crypto,
@@ -597,6 +612,7 @@ impl Consensus {
                 // Responds PrepareVote message to leader with validator's vote on this proposal
                 if self.is_part_of_consensus(crypto.validator_pubkey()) {
                     info!(
+                        proposal_hash = %consensus_proposal.hash(),
                         "📤 Slot {} Prepare message validated. Sending PrepareVote to leader",
                         self.bft_round_state.slot
                     );
@@ -619,6 +635,13 @@ impl Consensus {
             }
             ConsensusNetMessage::PrepareVote(consensus_proposal_hash) => {
                 // Message received by leader.
+                if !matches!(self.step, Step::PrepareVote) {
+                    self.metrics.prepare_vote_error("wrong_step");
+                    bail!(
+                        "PrepareVote received at wrong step (step = {:?})",
+                        self.step
+                    );
+                }
 
                 // Verify that the PrepareVote is for the correct proposal
                 if !self.verify_consensus_proposal_hash(consensus_proposal_hash) {
@@ -645,7 +668,7 @@ impl Consensus {
                 // Waits for at least n-f = 2f+1 matching PrepareVote messages
                 let f: usize = self.bft_round_state.consensus_proposal.validators.len() / 3;
                 info!(
-                    "📥 Slot {} validated votes: {} / {} ({} validators)",
+                    "📩 Slot {} validated votes: {} / {} ({} validators)",
                     self.bft_round_state.slot,
                     validated_votes.len(),
                     2 * f,
@@ -681,6 +704,7 @@ impl Consensus {
                         "Slot {} PrepareVote message validated. Broadcasting Confirm",
                         self.bft_round_state.slot
                     );
+                    self.step = Step::ConfirmAck;
                     _ = bus
                         .send(OutboundMessage::broadcast(Self::sign_net_message(
                             crypto,
@@ -703,7 +727,7 @@ impl Consensus {
                 // Verify that the Confirm is for the correct proposal
                 if !self.verify_consensus_proposal_hash(consensus_proposal_hash) {
                     self.metrics.confirm_error("invalid_proposal_hash");
-                    bail!("Confirm has not received valid consensus proposal hash");
+                    bail!("Confirm step got invalid proposal hash.");
                 }
 
                 // Verify that validators that signed are legit
@@ -742,6 +766,7 @@ impl Consensus {
                 // Responds ConfirmAck to leader
                 if self.is_part_of_consensus(crypto.validator_pubkey()) {
                     info!(
+                        proposal_hash = %consensus_proposal_hash,
                         "📤 Slot {} Confirm message validated. Sending ConfirmAck to leader",
                         self.bft_round_state.slot
                     );
@@ -762,10 +787,20 @@ impl Consensus {
             ConsensusNetMessage::ConfirmAck(consensus_proposal_hash) => {
                 // Message received by leader.
 
+                if !matches!(self.step, Step::ConfirmAck) {
+                    self.metrics.confirm_ack_error("wrong_step");
+                    bail!("ConfirmAck received at wrong step (step ={:?})", self.step);
+                }
+
                 // Verify that the ConfirmAck is for the correct proposal
                 if !self.verify_consensus_proposal_hash(consensus_proposal_hash) {
                     self.metrics.confirm_ack_error("invalid_proposal_hash");
-                    bail!("ConfirmAck has not received valid consensus proposal hash");
+                    debug!(
+                        "Got {} exptected {}",
+                        consensus_proposal_hash,
+                        self.bft_round_state.consensus_proposal.hash()
+                    );
+                    bail!("ConfirmAck got invalid consensus proposal hash");
                 }
 
                 // Save ConfirmAck. Ends if the message already has been processed
@@ -1071,7 +1106,7 @@ impl Consensus {
             listen<SignedWithId<ConsensusNetMessage>> cmd => {
                 match self.handle_net_message(&cmd, &crypto, &bus) {
                     Ok(_) => (),
-                    Err(e) => warn!("Error while handling consensus net message: {:#}", e),
+                    Err(e) => warn!("Consensus message failed: {:#}", e),
                 }
             }
             listen<ValidatorRegistryNetMessage> cmd => {
