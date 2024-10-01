@@ -16,6 +16,7 @@ use axum::{
 };
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
+use tracing::error;
 
 use super::{AppError, RouterState};
 
@@ -120,10 +121,13 @@ pub async fn get_contract(
     let name_clone = name.clone();
     match state.bus.request(name).await {
         Ok(contract) => Ok(Json(contract)),
-        _ => Err(AppError(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            anyhow!("Error while getting contract {}", name_clone),
-        )),
+        Err(e) => {
+            error!("Got error {e}");
+            Err(AppError(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                anyhow!("Error while getting contract {}", name_clone),
+            ))
+        }
     }
 }
 

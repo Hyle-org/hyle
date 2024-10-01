@@ -11,6 +11,11 @@ pub struct Storage {
     pub interval: u64,
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+pub struct Consensus {
+    pub slot_duration: u64,
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct P2pConf {
     pub ping_interval: u64,
@@ -24,6 +29,7 @@ pub struct Conf {
     pub id: ValidatorId,
     pub peers: Vec<String>,
     pub storage: Storage,
+    pub consensus: Consensus,
     rest: String,
     pub p2p: P2pConf,
     pub data_directory: PathBuf,

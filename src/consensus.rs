@@ -194,6 +194,7 @@ pub struct Consensus {
     validators: ValidatorRegistry,
     file: Option<PathBuf>,
     store: ConsensusStore,
+    config: SharedConf,
 }
 
 impl Deref for Consensus {
@@ -224,6 +225,7 @@ impl Module for Consensus {
             Some(file),
             store,
             ConsensusMetrics::global(&ctx.config),
+            ctx.config.clone(),
         ))
     }
 
@@ -238,12 +240,14 @@ impl Consensus {
         file: Option<PathBuf>,
         store: ConsensusStore,
         metrics: ConsensusMetrics,
+        config: SharedConf,
     ) -> Self {
         Self {
             metrics,
             validators,
             file,
             store,
+            config,
         }
     }
 
@@ -843,8 +847,13 @@ impl Consensus {
                     if self.is_next_leader() {
                         #[cfg(not(test))]
                         {
-                            info!("⏱️  Sleeping 5 seconds before starting a new slot");
-                            std::thread::sleep(Duration::from_secs(5));
+                            info!(
+                                "⏱️  Sleeping {} seconds before starting a new slot",
+                                self.config.consensus.slot_duration
+                            );
+                            std::thread::sleep(Duration::from_secs(
+                                self.config.consensus.slot_duration,
+                            ));
                         }
                         self.start_new_slot(bus, crypto)?;
                     }
@@ -1069,6 +1078,7 @@ impl Consensus {
                 self.validators.handle_net_message(cmd.clone());
                 if self.validators.get_validators_count() == 2 && self.is_next_leader() {
                     // Start first slot
+                    debug!("Got a 2nd validator, starting first slot");
                     sleep(Duration::from_secs(2)).await;
                     _ = self.start_new_slot(&bus, &crypto);
                 }
@@ -1086,8 +1096,14 @@ impl Consensus {
 
 #[cfg(test)]
 mod test {
+    use std::sync::Arc;
+
     use super::*;
-    use crate::{p2p::network::NetMessage, utils::crypto, validator_registry::ConsensusValidator};
+    use crate::{
+        p2p::network::NetMessage,
+        utils::{conf::Conf, crypto},
+        validator_registry::ConsensusValidator,
+    };
     use tokio::sync::broadcast::Receiver;
 
     struct TestCtx {
@@ -1108,11 +1124,13 @@ mod test {
             let mut registry = ValidatorRegistry::new(crypto.as_validator());
             registry.handle_net_message(ValidatorRegistryNetMessage::NewValidator(other));
             let store = ConsensusStore::default();
+            let conf = Arc::new(Conf::default());
             let consensus = Consensus::new(
                 registry,
                 None,
                 store,
                 ConsensusMetrics::global(&Default::default()),
+                conf,
             );
             Self {
                 bus,
