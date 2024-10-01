@@ -121,13 +121,10 @@ pub async fn get_contract(
     let name_clone = name.clone();
     match state.bus.request(name).await {
         Ok(contract) => Ok(Json(contract)),
-        Err(e) => {
-            error!("Got error {e}");
-            Err(AppError(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                anyhow!("Error while getting contract {}", name_clone),
-            ))
-        }
+        _ => Err(AppError(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            anyhow!("Error while getting contract {}", name_clone),
+        )),
     }
 }
 
