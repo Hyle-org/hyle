@@ -1,7 +1,7 @@
 target
 *.bin
 data_*/
-
+**/Consensus.data.tmp
 # Added by cargo
 
 /target
