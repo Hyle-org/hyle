@@ -7,10 +7,7 @@ use crate::{
     model::{Hashable, SharedRunContext, Transaction},
     p2p::network::{OutboundMessage, SignedWithId},
     rest::endpoints::RestApiMessage,
-    utils::{
-        crypto::{BlstCrypto, SharedBlstCrypto},
-        modules::Module,
-    },
+    utils::{crypto::SharedBlstCrypto, modules::Module},
     validator_registry::{ValidatorRegistry, ValidatorRegistryNetMessage},
 };
 use anyhow::{Context, Result};
@@ -77,14 +74,15 @@ impl Module for Mempool {
 
     async fn build(ctx: &SharedRunContext) -> Result<Self> {
         let bus = MempoolBusClient::new_from_bus(ctx.bus.new_handle()).await;
-        let metrics = MempoolMetrics::global(&ctx.config);
-        Ok(Mempool::new(
+        let metrics = MempoolMetrics::global(ctx.config.id.clone());
+        Ok(Mempool {
             bus,
             metrics,
-            Arc::clone(&ctx.crypto),
-            ctx.validator_registry.share(),
-        )
-        .await)
+            crypto: Arc::clone(&ctx.crypto),
+            validators: ctx.validator_registry.share(),
+            pending_txs: vec![],
+            batched_txs: HashSet::default(),
+        })
     }
 
     fn run(&mut self, _ctx: Self::Context) -> impl futures::Future<Output = Result<()>> + Send {
@@ -93,22 +91,6 @@ impl Module for Mempool {
 }
 
 impl Mempool {
-    async fn new(
-        bus: MempoolBusClient,
-        metrics: MempoolMetrics,
-        crypto: Arc<BlstCrypto>,
-        validators: ValidatorRegistry,
-    ) -> Mempool {
-        Mempool {
-            bus,
-            metrics,
-            crypto,
-            validators,
-            pending_txs: vec![],
-            batched_txs: HashSet::default(),
-        }
-    }
-
     /// start starts the mempool server.
     pub async fn start(&mut self) -> Result<()> {
         info!("Mempool starting");
