@@ -122,7 +122,7 @@ async fn e2e() -> Result<()> {
     register_contracts(&client).await?;
     send_blobs(&client).await?;
     // Wait for some slots to be finished
-    sleep(time::Duration::from_secs(2)).await;
+    sleep(time::Duration::from_secs(5)).await;
     verify_contract_state(&client).await?;
 
     // Stop all processes
