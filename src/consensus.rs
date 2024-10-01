@@ -7,6 +7,7 @@ use sha3::{Digest, Sha3_256};
 use std::{
     collections::{HashMap, HashSet},
     default::Default,
+    fmt::Display,
     fs,
     io::Write,
     path::Path,
@@ -118,6 +119,41 @@ impl Hashable<ConsensusProposalHash> for ConsensusProposal {
         _ = write!(hasher, "{:?}", self.previous_commit_quorum_certificate);
         _ = write!(hasher, "{}", self.block);
         return ConsensusProposalHash(hasher.finalize().as_slice().to_owned());
+    }
+}
+
+impl Display for ValidatorCandidacy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Pubkey: {}, Slot: {}, Previous hash: {}",
+            self.pubkey, self.slot, self.previous_consensus_proposal_hash
+        )
+    }
+}
+
+impl Display for ConsensusProposal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Hash: {}, Slot: {}, View: {}, Previous hash: {}, Previous commit hash: {}, Block: {}",
+            self.hash(),
+            self.slot,
+            self.view,
+            self.previous_consensus_proposal_hash,
+            self.previous_commit_quorum_certificate.hash(),
+            self.block
+        )
+    }
+}
+impl Display for ConsensusProposalHash {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", hex::encode(&self.0))
+    }
+}
+impl Display for QuorumCertificateHash {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", hex::encode(&self.0))
     }
 }
 
@@ -297,7 +333,10 @@ impl Consensus {
             .send(ConsensusCommand::SaveOnDisk)
             .context("Cannot send message over channel")?;
 
-        info!("🔒 Slot {} finished", self.bft_round_state.slot);
+        info!(
+            "🔒 Slot {} finished",
+            self.bft_round_state.consensus_proposal.slot
+        );
 
         self.bft_round_state.slot = self.bft_round_state.consensus_proposal.slot + 1;
         self.bft_round_state.view = 0;
@@ -401,11 +440,11 @@ impl Consensus {
 
     fn handle_net_message(
         &mut self,
-        msg: SignedWithId<ConsensusNetMessage>,
+        msg: &SignedWithId<ConsensusNetMessage>,
         crypto: &BlstCrypto,
         bus: &ConsensusBusClient,
     ) -> Result<(), Error> {
-        if !self.validators.check_signed(&msg)? {
+        if !self.validators.check_signed(msg)? {
             bail!("Invalid signature for message {:?}", msg);
         }
 
@@ -414,7 +453,7 @@ impl Consensus {
             ConsensusNetMessage::StartNewSlot => self.start_new_slot(bus, crypto),
             ConsensusNetMessage::Prepare(consensus_proposal) => {
                 // Message received by follower.
-
+                debug!("Received Prepare message: {}", consensus_proposal);
                 // Validate message comes from the correct leader
                 if !msg.validators.contains(&self.leader_id()) {
                     bail!("Prepare consensus message does not come from current leader");
@@ -467,8 +506,9 @@ impl Consensus {
                     None if self.bft_round_state.slot == 0 => {
                         if consensus_proposal.slot != 0 {
                             info!("🔄 Consensus state out of sync, need to catchup");
+                        } else {
+                            info!("#### Received genesis block proposal ####");
                         }
-                        info!("#### Received genesis block proposal ####");
                     }
                     None => {
                         // Verify proposal hash is correct
@@ -539,6 +579,8 @@ impl Consensus {
                             )?,
                         ))
                         .context("Failed to send ConsensusNetMessage::Confirm msg on the bus")?;
+                } else {
+                    debug!("😥 Not part of consensus, not sending PrepareVote");
                 }
                 Ok(())
             }
@@ -596,6 +638,10 @@ impl Consensus {
                     // else send Confirm message to validators
 
                     // Broadcast the *Prepare* Quorum Certificate to all validators
+                    debug!(
+                        "Slot {} PrepareVote message validated. Broadcasting Confirm",
+                        self.bft_round_state.slot
+                    );
                     _ = bus
                         .send(OutboundMessage::broadcast(Self::sign_net_message(
                             crypto,
@@ -666,6 +712,8 @@ impl Consensus {
                             )?,
                         ))
                         .context("Failed to send ConsensusNetMessage::ConfirmAck msg on the bus")?;
+                } else {
+                    debug!("😥 Not part of consensus, not sending ConfirmAck");
                 }
                 Ok(())
             }
@@ -743,11 +791,13 @@ impl Consensus {
 
                     // Finishes the bft round
                     self.finish_round(bus)?;
-
                     // Start new slot
                     if self.is_next_leader() {
-                        info!("⏱️  Sleeping 5 seconds before starting a new slot");
-                        std::thread::sleep(Duration::from_secs(5));
+                        #[cfg(not(test))]
+                        {
+                            info!("⏱️  Sleeping 5 seconds before starting a new slot");
+                            std::thread::sleep(Duration::from_secs(5));
+                        }
                         self.start_new_slot(bus, crypto)?;
                     }
                 }
@@ -808,23 +858,32 @@ impl Consensus {
                     self.start_new_slot(bus, crypto)?;
                 } else if !self.is_part_of_consensus(crypto.validator_pubkey()) {
                     // Ask to be part of consensus
-                    info!("📝 Sending candidacy message to be part of consensus");
+                    let candidacy = ValidatorCandidacy {
+                        pubkey: crypto.validator_pubkey().clone(),
+                        slot: self.bft_round_state.slot,
+                        previous_consensus_proposal_hash: consensus_proposal_hash.clone(),
+                    };
+                    info!(
+                        "📝 Sending candidacy message to be part of consensus.  {}",
+                        candidacy
+                    );
                     _ = bus
                         .send(OutboundMessage::broadcast(Self::sign_net_message(
                             crypto,
-                            ConsensusNetMessage::ValidatorCandidacy(ValidatorCandidacy {
-                                pubkey: crypto.validator_pubkey().clone(),
-                                slot: self.bft_round_state.slot,
-                                previous_consensus_proposal_hash: consensus_proposal_hash.clone(),
-                            }),
+                            ConsensusNetMessage::ValidatorCandidacy(candidacy),
                         )?))
                         .context("Failed to send candidacy msg on the bus")?;
                 }
                 Ok(())
             }
             ConsensusNetMessage::ValidatorCandidacy(candidacy) => {
-                // Message received by leader.
-                info!("📝 Received candidacy message from {}", candidacy.pubkey);
+                // Message received by leader & follower.
+                info!("📝 Received candidacy message: {}", candidacy);
+
+                debug!(
+                    "Current consensus proposal: {}",
+                    self.bft_round_state.consensus_proposal
+                );
 
                 // Verify that the candidacy is for the correct slot
                 if candidacy.slot != self.bft_round_state.slot {
@@ -841,7 +900,8 @@ impl Consensus {
                 }
                 // Verify that the validator is not already part of the consensus
                 if self.is_part_of_consensus(&candidacy.pubkey) {
-                    bail!("Validator is already part of the consensus");
+                    debug!("Validator is already part of the consensus");
+                    return Ok(());
                 }
                 // Add validator to consensus candidates
                 self.consensus_candidates.push(candidacy.pubkey.clone());
@@ -903,7 +963,7 @@ impl Consensus {
                 }
             }
             listen<SignedWithId<ConsensusNetMessage>> cmd => {
-                match self.handle_net_message(cmd, &crypto, &bus) {
+                match self.handle_net_message(&cmd, &crypto, &bus) {
                     Ok(_) => (),
                     Err(e) => warn!("Error while handling consensus net message: {:#}", e),
                 }
@@ -930,7 +990,7 @@ impl Consensus {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::{p2p::network::NetMessage, utils::crypto};
+    use crate::{p2p::network::NetMessage, utils::crypto, validator_registry::ConsensusValidator};
     use tokio::sync::broadcast::Receiver;
 
     struct TestCtx {
@@ -942,16 +1002,14 @@ mod test {
     }
 
     impl TestCtx {
-        async fn new(crypto: BlstCrypto, c_other: BlstCrypto) -> Self {
+        async fn new(crypto: BlstCrypto, other: ConsensusValidator) -> Self {
             let bus = SharedMessageBus::new();
             let out_receiver = get_receiver::<OutboundMessage>(&bus).await;
             let event_receiver = get_receiver::<ConsensusEvent>(&bus).await;
             let bus = ConsensusBusClient::new_from_bus(bus.new_handle()).await;
 
             let mut registry = ValidatorRegistry::new(crypto.as_validator());
-            registry.handle_net_message(ValidatorRegistryNetMessage::NewValidator(
-                c_other.as_validator(),
-            ));
+            registry.handle_net_message(ValidatorRegistryNetMessage::NewValidator(other));
             let consensus = Consensus::new(registry);
             Self {
                 bus,
@@ -965,14 +1023,26 @@ mod test {
         async fn build() -> (Self, Self) {
             let crypto = crypto::BlstCrypto::new("node-1".into());
             let c_other = crypto::BlstCrypto::new("node-2".into());
-            (
-                Self::new(crypto.clone(), c_other.clone()).await,
-                Self::new(c_other, crypto).await,
-            )
+            let mut leader = Self::new(crypto.clone(), c_other.as_validator()).await;
+            leader.consensus.is_next_leader = true;
+            (leader, Self::new(c_other, crypto.as_validator()).await)
+        }
+
+        async fn new_slave(leader: &mut TestCtx, id: &str) -> Self {
+            let crypto = crypto::BlstCrypto::new(id.into());
+            leader.consensus.validators.handle_net_message(
+                ValidatorRegistryNetMessage::NewValidator(crypto.as_validator()),
+            );
+            Self::new(crypto.clone(), leader.crypto.as_validator()).await
         }
 
         #[track_caller]
-        fn handle_msg(&mut self, msg: SignedWithId<ConsensusNetMessage>, err: &str) {
+        fn handle_msg(&mut self, msg: &SignedWithId<ConsensusNetMessage>, err: &str) {
+            debug!(
+                "📥 {} Handling message: {:?}",
+                self.crypto.validator_id(),
+                msg
+            );
             self.consensus
                 .handle_net_message(msg, &self.crypto, &self.bus)
                 .expect(err);
@@ -1037,21 +1107,133 @@ mod test {
         let (mut leader, mut slave) = TestCtx::build().await;
 
         leader.start_new_slot();
-        let leader_proposal = leader.assert_broadcast("Leader proposal");
-        slave.handle_msg(leader_proposal, "Leader proposal");
+        for _ in 0..3 {
+            let leader_proposal = leader.assert_broadcast("Leader proposal");
+            slave.handle_msg(&leader_proposal, "Leader proposal");
 
-        let slave_vote = slave.assert_send("node-1".into(), "Slave vote");
-        leader.handle_msg(slave_vote, "Slave vote");
+            let slave_vote = slave.assert_send("node-1".into(), "Slave vote");
+            leader.handle_msg(&slave_vote, "Slave vote");
 
-        let leader_confirm = leader.assert_broadcast("Leader confirm");
-        slave.handle_msg(leader_confirm, "Leader confirm");
+            let leader_confirm = leader.assert_broadcast("Leader confirm");
+            slave.handle_msg(&leader_confirm, "Leader confirm");
 
-        let slave_confirm_ack = slave.assert_send("node-1".into(), "Slave confirm ack");
-        leader.handle_msg(slave_confirm_ack, "Slave confirm ack");
+            let slave_confirm_ack = slave.assert_send("node-1".into(), "Slave confirm ack");
+            leader.handle_msg(&slave_confirm_ack, "Slave confirm ack");
 
-        let leader_commit = leader.assert_broadcast("Leader commit");
-        slave.handle_msg(leader_commit, "Leader commit");
+            let leader_commit = leader.assert_broadcast("Leader commit");
+            slave.handle_msg(&leader_commit, "Leader commit");
+        }
 
-        assert!(slave.consensus.blocks.len() == 2);
+        assert_eq!(slave.consensus.blocks.len(), 4);
+    }
+
+    #[test_log::test(tokio::test)]
+    async fn test_candidacy() {
+        let (mut leader, mut slave) = TestCtx::build().await;
+
+        // Slot 0
+        {
+            leader.start_new_slot();
+            let leader_proposal = leader.assert_broadcast("Leader proposal");
+            slave.handle_msg(&leader_proposal, "Leader proposal");
+            let slave_vote = slave.assert_send("node-1".into(), "Slave vote");
+            leader.handle_msg(&slave_vote, "Slave vote");
+            let leader_confirm = leader.assert_broadcast("Leader confirm");
+            slave.handle_msg(&leader_confirm, "Leader confirm");
+            let slave_confirm_ack = slave.assert_send("node-1".into(), "Slave confirm ack");
+            leader.handle_msg(&slave_confirm_ack, "Slave confirm ack");
+            let leader_commit = leader.assert_broadcast("Leader commit");
+            slave.handle_msg(&leader_commit, "Leader commit");
+        }
+
+        let mut slave2 = TestCtx::new_slave(&mut leader, "node-3").await;
+        // Slot 1: New slave catchup
+        {
+            info!("➡️  Leader proposal");
+            let leader_proposal = leader.assert_broadcast("Leader proposal");
+            slave.handle_msg(&leader_proposal, "Leader proposal");
+            slave2.handle_msg(&leader_proposal, "Leader proposal");
+            info!("➡️  Slave vote");
+            let slave_vote = slave.assert_send("node-1".into(), "Slave vote");
+            leader.handle_msg(&slave_vote, "Slave vote");
+            info!("➡️  Leader confirm");
+            let leader_confirm = leader.assert_broadcast("Leader confirm");
+            slave.handle_msg(&leader_confirm, "Leader confirm");
+            slave2.handle_msg(&leader_confirm, "Leader confirm");
+            info!("➡️  Slave confirm ack");
+            let slave_confirm_ack = slave.assert_send("node-1".into(), "Slave confirm ack");
+            leader.handle_msg(&slave_confirm_ack, "Slave confirm ack");
+            info!("➡️  Leader commit");
+            let leader_commit = leader.assert_broadcast("Leader commit");
+            slave.handle_msg(&leader_commit, "Leader commit");
+            slave2.handle_msg(&leader_commit, "Leader commit");
+            info!("➡️  Slave 2 candidacy");
+            let slave2_candidacy = slave2.assert_broadcast("Slave 2 candidacy");
+            leader.handle_msg(&slave2_candidacy, "Slave 2 candidacy");
+        }
+
+        // Slot 2: Still a slot without slave 2
+        {
+            info!("➡️  Leader proposal");
+            let leader_proposal = leader.assert_broadcast("Leader proposal");
+            if let ConsensusNetMessage::Prepare(consensus_proposal) = &leader_proposal.msg {
+                assert_eq!(consensus_proposal.validators.len(), 2);
+            } else {
+                panic!("Leader proposal is not a Prepare message");
+            }
+            slave.handle_msg(&leader_proposal, "Leader proposal");
+            slave2.handle_msg(&leader_proposal, "Leader proposal");
+            info!("➡️  Slave vote");
+            let slave_vote = slave.assert_send("node-1".into(), "Slave vote");
+            leader.handle_msg(&slave_vote, "Slave vote");
+            info!("➡️  Leader confirm");
+            let leader_confirm = leader.assert_broadcast("Leader confirm");
+            slave.handle_msg(&leader_confirm, "Leader confirm");
+            slave2.handle_msg(&leader_confirm, "Leader confirm");
+            info!("➡️  Slave confirm ack");
+            let slave_confirm_ack = slave.assert_send("node-1".into(), "Slave confirm ack");
+            leader.handle_msg(&slave_confirm_ack, "Slave confirm ack");
+            info!("➡️  Leader commit");
+            let leader_commit = leader.assert_broadcast("Leader commit");
+            slave.handle_msg(&leader_commit, "Leader commit");
+            slave2.handle_msg(&leader_commit, "Leader commit");
+            info!("➡️  Slave 2 candidacy");
+            let slave2_candidacy = slave2.assert_broadcast("Slave 2 candidacy");
+            leader.handle_msg(&slave2_candidacy, "Slave 2 candidacy");
+        }
+
+        // Slot 3: Slave 2 joined consensus
+        {
+            info!("➡️  Leader proposal");
+            let leader_proposal = leader.assert_broadcast("Leader proposal");
+            if let ConsensusNetMessage::Prepare(consensus_proposal) = &leader_proposal.msg {
+                assert_eq!(consensus_proposal.validators.len(), 3);
+            } else {
+                panic!("Leader proposal is not a Prepare message");
+            }
+            slave.handle_msg(&leader_proposal, "Leader proposal");
+            slave2.handle_msg(&leader_proposal, "Leader proposal");
+            info!("➡️  Slave vote");
+            let slave_vote = slave.assert_send("node-1".into(), "Slave vote");
+            let slave2_vote = slave2.assert_send("node-1".into(), "Slave vote");
+            leader.handle_msg(&slave_vote, "Slave vote");
+            leader.handle_msg(&slave2_vote, "Slave vote");
+            info!("➡️  Leader confirm");
+            let leader_confirm = leader.assert_broadcast("Leader confirm");
+            slave.handle_msg(&leader_confirm, "Leader confirm");
+            slave2.handle_msg(&leader_confirm, "Leader confirm");
+            info!("➡️  Slave confirm ack");
+            let slave_confirm_ack = slave.assert_send("node-1".into(), "Slave confirm ack");
+            let slave2_confirm_ack = slave2.assert_send("node-1".into(), "Slave confirm ack");
+            leader.handle_msg(&slave_confirm_ack, "Slave confirm ack");
+            leader.handle_msg(&slave2_confirm_ack, "Slave confirm ack");
+            info!("➡️  Leader commit");
+            let leader_commit = leader.assert_broadcast("Leader commit");
+            slave.handle_msg(&leader_commit, "Leader commit");
+            slave2.handle_msg(&leader_commit, "Leader commit");
+        }
+
+        assert_eq!(slave.consensus.bft_round_state.slot, 4);
+        assert_eq!(slave2.consensus.bft_round_state.slot, 4);
     }
 }
