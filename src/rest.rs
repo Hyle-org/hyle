@@ -42,9 +42,7 @@ pub struct RestApiRunContext {
     pub history: HistoryState,
 }
 
-pub struct RestApi {
-    bus: RestBusClient,
-}
+pub struct RestApi {}
 impl Module for RestApi {
     fn name() -> &'static str {
         "RestApi"
@@ -54,8 +52,8 @@ impl Module for RestApi {
 
     async fn build(ctx: &Self::Context) -> Result<Self> {
         // TODO: do better, splitting router from start is harder than expected
-        let bus = RestBusClient::new_from_bus(ctx.ctx.bus.new_handle()).await;
-        Ok(RestApi { bus })
+        let _ = RestBusClient::new_from_bus(ctx.ctx.bus.new_handle()).await;
+        Ok(RestApi {})
     }
 
     fn run(&mut self, ctx: Self::Context) -> impl futures::Future<Output = Result<()>> + Send {
