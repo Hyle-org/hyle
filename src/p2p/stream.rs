@@ -1,10 +1,7 @@
-use std::io::IoSlice;
-
 use anyhow::{anyhow, bail, Context, Error};
-use futures::StreamExt;
-use tokio::{io::AsyncWriteExt, net::TcpStream};
-use tokio_util::codec::FramedRead;
-use tracing::trace;
+use futures::{SinkExt, StreamExt};
+use tokio::net::TcpStream;
+use tokio_util::codec::{FramedRead, FramedWrite};
 
 use super::network::{NetMessage, NetMessageCodec};
 
@@ -22,17 +19,12 @@ pub async fn read_stream(stream: &mut TcpStream) -> Result<NetMessage, Error> {
 }
 
 pub async fn send_net_message(stream: &mut TcpStream, msg: NetMessage) -> Result<(), Error> {
-    send_binary(stream, msg.to_binary().as_slice()).await
-}
+    let mut framed = FramedWrite::new(stream, NetMessageCodec);
 
-pub(super) async fn send_binary(stream: &mut TcpStream, binary: &[u8]) -> Result<(), Error> {
-    trace!("SEND {} bytes: {:?}", binary.len(), binary);
-    // Create a new buffer with the size of the message prepended
-    let size: [u8; 4] = (binary.len() as u32).to_be_bytes();
-    let bufs: &[_] = &[IoSlice::new(&size), IoSlice::new(binary)];
-    stream
-        .write_vectored(bufs)
+    framed
+        .send(msg)
         .await
-        .context("Failed to write data on stream")?;
+        .context("Failed to send NetMessage")?;
+
     Ok(())
 }
