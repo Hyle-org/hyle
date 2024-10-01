@@ -21,7 +21,16 @@ pub async fn read_stream(stream: &mut TcpStream) -> Result<(NetMessage, usize), 
         bail!("Stream not ready")
     }
 
-    read_net_message_from_buffer(stream).await
+    let mut buf = [0; 4];
+    match stream.peek(&mut buf).await {
+        Ok(msg_size) => {
+            if msg_size != 4 {
+                bail!("Invalid message size")
+            }
+            read_net_message_from_buffer(stream, u32::from_be_bytes(buf)).await
+        }
+        Err(e) => Err(anyhow!(e)),
+    }
 }
 
 pub async fn send_net_message(stream: &mut TcpStream, msg: NetMessage) -> Result<(), Error> {
@@ -42,25 +51,15 @@ pub(super) async fn send_binary(stream: &mut TcpStream, binary: &[u8]) -> Result
 
 async fn read_net_message_from_buffer(
     stream: &mut TcpStream,
+    msg_size: u32,
 ) -> Result<(NetMessage, usize), Error> {
-    // Extract message size on 4 bytes and convert it to usize
-    let size_buf = read_exact_cancel_safe(stream, 4).await?;
-    if size_buf.len() != 4 {
-        bail!("Invalid message size")
-    }
-    let byte_array: [u8; 4] = size_buf
-        .try_into()
-        .map_err(|_| anyhow!("Failed to convert Vec<u8> to [u8; 4]. Should never happen"))?;
-
-    let msg_size = u32::from_be_bytes(byte_array) as usize;
-
     if msg_size == 0 {
-        bail!("Connection closed by remote (2)");
+        bail!("Connection closed by remote (1)")
     }
 
     // Extract the message in a cancel safe way
     trace!("Reading {} bytes from buffer", msg_size);
-    let data = read_exact_cancel_safe(stream, msg_size).await?;
+    let data = read_exact_cancel_safe(stream, (msg_size + 4) as usize).await?;
 
     parse_net_message(&data).await
 }
@@ -95,5 +94,5 @@ async fn read_exact_cancel_safe<R: AsyncReadExt + Unpin>(
         bytes_read += n;
     }
 
-    Ok(all_bytes)
+    Ok(all_bytes[4..].to_vec())
 }
