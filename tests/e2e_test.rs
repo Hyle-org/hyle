@@ -119,11 +119,11 @@ async fn e2e() -> Result<()> {
         reqwest_client: Client::new(),
     };
 
-    _ = register_contracts(&client).await?;
-    _ = send_blobs(&client).await?;
+    register_contracts(&client).await?;
+    send_blobs(&client).await?;
     // Wait for some slots to be finished
-    sleep(time::Duration::from_secs(5)).await;
-    _ = verify_contract_state(&client).await?;
+    sleep(time::Duration::from_secs(2)).await;
+    verify_contract_state(&client).await?;
 
     // Stop all processes
     drop(node1);

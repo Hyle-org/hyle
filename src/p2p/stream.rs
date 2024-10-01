@@ -21,16 +21,7 @@ pub async fn read_stream(stream: &mut TcpStream) -> Result<(NetMessage, usize), 
         bail!("Stream not ready")
     }
 
-    let mut buf = [0; 4];
-    match stream.peek(&mut buf).await {
-        Ok(msg_size) => {
-            if msg_size != 4 {
-                bail!("Invalid message size")
-            }
-            read_net_message_from_buffer(stream, u32::from_be_bytes(buf)).await
-        }
-        Err(e) => Err(anyhow!(e)),
-    }
+    read_net_message_from_buffer(stream).await
 }
 
 pub async fn send_net_message(stream: &mut TcpStream, msg: NetMessage) -> Result<(), Error> {
@@ -51,24 +42,58 @@ pub(super) async fn send_binary(stream: &mut TcpStream, binary: &[u8]) -> Result
 
 async fn read_net_message_from_buffer(
     stream: &mut TcpStream,
-    msg_size: u32,
 ) -> Result<(NetMessage, usize), Error> {
+    // Extract message size on 4 bytes and convert it to usize
+    let size_buf = read_exact_cancel_safe(stream, 4).await?;
+    if size_buf.len() != 4 {
+        bail!("Invalid message size")
+    }
+    let byte_array: [u8; 4] = size_buf
+        .try_into()
+        .map_err(|_| anyhow!("Failed to convert Vec<u8> to [u8; 4]. Should never happen"))?;
+
+    let msg_size = u32::from_be_bytes(byte_array) as usize;
+
     if msg_size == 0 {
-        bail!("Connection closed by remote (1)")
+        bail!("Connection closed by remote (2)");
     }
 
+    // Extract the message in a cancel safe way
     trace!("Reading {} bytes from buffer", msg_size);
-    let mut buf = vec![0; 4 + msg_size as usize];
+    let data = read_exact_cancel_safe(stream, msg_size).await?;
 
-    let data = stream.read_exact(&mut buf).await?;
-    if data == 0 {
-        bail!("Connection closed by remote (2)")
-    }
-
-    parse_net_message(&buf[4..]).await
+    parse_net_message(&data).await
 }
 
 async fn parse_net_message(buf: &[u8]) -> Result<(NetMessage, usize), Error> {
     bincode::decode_from_slice(buf, bincode::config::standard())
         .map_err(|_| anyhow!("Could not decode NetMessage"))
+}
+
+async fn read_exact_cancel_safe<R: AsyncReadExt + Unpin>(
+    reader: &mut R,
+    waited_bytes: usize,
+) -> Result<Vec<u8>, Error> {
+    let mut all_bytes = Vec::with_capacity(waited_bytes);
+    let mut bytes_read = 0;
+
+    while bytes_read < waited_bytes {
+        let mut buf: Vec<u8> = vec![0u8; waited_bytes - bytes_read];
+
+        // Read bytes in temporary buffer
+        let n = reader.read(&mut buf).await?;
+        if n == 0 {
+            return Err(anyhow!(
+                "{} {}",
+                tokio::io::ErrorKind::UnexpectedEof,
+                "early eof",
+            ));
+        }
+
+        all_bytes.extend_from_slice(&buf[..n]);
+
+        bytes_read += n;
+    }
+
+    Ok(all_bytes)
 }
