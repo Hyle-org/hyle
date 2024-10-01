@@ -44,6 +44,10 @@ impl Conf {
         return self.rest.as_str();
     }
 
+    pub fn history_db_path(&self) -> PathBuf {
+        self.data_directory.join("history.db")
+    }
+
     pub fn new(config_file: String, data_directory: Option<String>) -> Result<Self, ConfigError> {
         let s = Config::builder()
             // Priority order: config file, then environment variables, then CLI

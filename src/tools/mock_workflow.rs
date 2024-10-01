@@ -20,7 +20,7 @@ use tracing::{error, info, warn};
 use crate::bus::bus_client;
 
 bus_client! {
-struct BusClient {
+struct MockWorkflowBusClient {
     sender(MempoolNetMessage),
     receiver(RunScenario),
 }
@@ -34,7 +34,7 @@ pub enum RunScenario {
 impl BusMessage for RunScenario {}
 
 pub struct MockWorkflowHandler {
-    bus: BusClient,
+    bus: MockWorkflowBusClient,
 }
 
 impl Module for MockWorkflowHandler {
@@ -45,7 +45,8 @@ impl Module for MockWorkflowHandler {
     type Context = SharedRunContext;
 
     async fn build(ctx: &Self::Context) -> Result<Self> {
-        Ok(Self::new(ctx.bus.new_handle()).await)
+        let bus = MockWorkflowBusClient::new_from_bus(ctx.bus.new_handle()).await;
+        Ok(MockWorkflowHandler { bus })
     }
 
     fn run(&mut self, _ctx: Self::Context) -> impl futures::Future<Output = Result<()>> + Send {
@@ -54,12 +55,6 @@ impl Module for MockWorkflowHandler {
 }
 
 impl MockWorkflowHandler {
-    pub async fn new(bus: SharedMessageBus) -> MockWorkflowHandler {
-        MockWorkflowHandler {
-            bus: BusClient::new_from_bus(bus).await,
-        }
-    }
-
     pub async fn start(&mut self) -> anyhow::Result<()> {
         handle_messages! {
             on_bus self.bus,

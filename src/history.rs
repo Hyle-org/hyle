@@ -62,15 +62,21 @@ impl Module for History {
     type Context = SharedRunContext;
 
     async fn build(ctx: &Self::Context) -> Result<Self> {
-        Self::new(
-            ctx,
-            ctx.config
-                .data_directory
-                .join("history.db")
-                .to_str()
-                .context("invalid data directory")?,
-        )
-        .await
+        let bus = HistoryBusClient::new_from_bus(ctx.bus.new_handle()).await;
+
+        let db = sled::Config::new()
+            .use_compression(true)
+            .compression_factor(15)
+            .path(ctx.config.history_db_path())
+            .open()
+            .context("opening the database")?;
+
+        let inner = HistoryInner::new(db)?;
+
+        Ok(History {
+            bus,
+            inner: Arc::new(RwLock::new(inner)),
+        })
     }
 
     fn run(&mut self, _ctx: Self::Context) -> impl futures::Future<Output = Result<()>> + Send {
@@ -79,13 +85,6 @@ impl Module for History {
 }
 
 impl History {
-    pub async fn new(ctx: &SharedRunContext, db_name: &str) -> Result<Self> {
-        Ok(Self {
-            bus: HistoryBusClient::new_from_bus(ctx.bus.new_handle()).await,
-            inner: Arc::new(RwLock::new(HistoryInner::new(db_name).await?)),
-        })
-    }
-
     pub fn share(&self) -> HistoryState {
         self.inner.clone()
     }
@@ -220,13 +219,7 @@ pub struct HistoryInner {
 }
 
 impl HistoryInner {
-    pub async fn new(db_name: &str) -> Result<Self> {
-        let db = sled::Config::new()
-            .use_compression(true)
-            .compression_factor(15)
-            .path(db_name)
-            .open()
-            .context("opening the database")?;
+    pub fn new(db: sled::Db) -> Result<Self> {
         Ok(Self {
             blocks: Blocks::new(&db)?,
             blobs: Blobs::new(&db)?,
