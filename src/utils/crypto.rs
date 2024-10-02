@@ -6,7 +6,6 @@ use anyhow::{anyhow, Error, Result};
 use blst::min_sig::{
     AggregatePublicKey, AggregateSignature, PublicKey, SecretKey, Signature as BlstSignature,
 };
-use rand::RngCore;
 
 use crate::{
     p2p::network::{self, Signed, SignedWithId, SignedWithKey},
@@ -33,9 +32,12 @@ pub const SIG_SIZE: usize = 48;
 
 impl BlstCrypto {
     pub fn new(validator_id: ValidatorId) -> Self {
-        let mut rng = rand::thread_rng();
+        // TODO load secret key from keyring or other
+        // here basically secret_key <=> validator_id which is very badly secure !
+        let validator_id_bytes = validator_id.0.as_bytes();
         let mut ikm = [0u8; 32];
-        rng.fill_bytes(&mut ikm);
+        let len = std::cmp::min(validator_id_bytes.len(), 32);
+        ikm[..len].copy_from_slice(&validator_id_bytes[..len]);
 
         let sk = SecretKey::key_gen(&ikm, &[]).unwrap();
         let validator_pubkey = sk.sk_to_pk().into();
