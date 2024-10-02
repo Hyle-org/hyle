@@ -377,7 +377,7 @@ impl Consensus {
     }
 
     /// Verify that quorum certificate includes only validators that are part of the consensus
-    fn verify_quroum_signers_part_of_consensus(
+    fn verify_quorum_signers_part_of_consensus(
         &self,
         quorum_certificate: &QuorumCertificate,
     ) -> bool {
@@ -733,7 +733,7 @@ impl Consensus {
                 }
 
                 // Verify that validators that signed are legit
-                if !self.verify_quroum_signers_part_of_consensus(prepare_quorum_certificate) {
+                if !self.verify_quorum_signers_part_of_consensus(prepare_quorum_certificate) {
                     bail!("Prepare quorum certificate includes validators that are not part of the consensus")
                 }
 
@@ -911,7 +911,7 @@ impl Consensus {
                 }
 
                 // Verify that validators that signed are legit
-                if !self.verify_quroum_signers_part_of_consensus(commit_quorum_certificate) {
+                if !self.verify_quorum_signers_part_of_consensus(commit_quorum_certificate) {
                     self.metrics
                         .commit_error("invalid_validators_qorum_certificate");
                     bail!("Commit quorum certificate includes validators that are not part of the consensus")
