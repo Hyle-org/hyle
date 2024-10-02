@@ -349,11 +349,6 @@ impl Consensus {
         // Add and applies new block to its NodeState through ConsensusEvent
         self.add_block(bus)?;
 
-        // Save added block
-        if let Some(file) = &self.file {
-            Self::save_on_disk(file.as_path(), &self.store)?;
-        }
-
         info!(
             "🔒 Slot {} finished",
             self.bft_round_state.consensus_proposal.slot
@@ -364,6 +359,11 @@ impl Consensus {
         self.bft_round_state.view = 0;
         self.bft_round_state.prepare_votes = HashSet::default();
         self.bft_round_state.confirm_ack = HashSet::default();
+
+        // Save added block
+        if let Some(file) = &self.file {
+            Self::save_on_disk(file.as_path(), &self.store)?;
+        }
 
         Ok(())
     }
@@ -813,7 +813,7 @@ impl Consensus {
                     msg.with_pub_keys(self.validators.get_pub_keys_from_id(msg.validators.clone())),
                 ) {
                     self.metrics.confirm_ack("already_processed");
-                    info!("ConfirmAck has aleady been processed");
+                    info!("ConfirmAck has already been processed");
 
                     return Ok(());
                 }
