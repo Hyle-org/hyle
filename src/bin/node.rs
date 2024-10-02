@@ -92,7 +92,7 @@ async fn main() -> Result<()> {
 
     std::fs::create_dir_all(&config.data_directory).context("creating data directory")?;
 
-    let validator_registry = ValidatorRegistry::new();
+    let validator_registry = ValidatorRegistry::new(crypto.as_validator());
 
     let ctx = Arc::new(RunContext {
         bus,

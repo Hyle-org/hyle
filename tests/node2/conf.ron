@@ -10,7 +10,10 @@ Config(
     ),
     rest: "127.0.0.1:4322",
     data_directory: "data_node2",
-  p2p: (
-    ping_interval: 10
-  )
+    consensus: Consensus (
+      slot_duration: 0,
+    ),
+    p2p: (
+      ping_interval: 10
+    )
 )

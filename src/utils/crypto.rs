@@ -6,7 +6,7 @@ use anyhow::{anyhow, Error, Result};
 use blst::min_sig::{
     AggregatePublicKey, AggregateSignature, PublicKey, SecretKey, Signature as BlstSignature,
 };
-use rand::RngCore;
+use rand::Rng;
 
 use crate::{
     p2p::network::{self, Signed, SignedWithId, SignedWithKey},
@@ -33,9 +33,12 @@ pub const SIG_SIZE: usize = 48;
 
 impl BlstCrypto {
     pub fn new(validator_id: ValidatorId) -> Self {
-        let mut rng = rand::thread_rng();
+        // TODO load secret key from keyring or other
+        // here basically secret_key <=> validator_id which is very badly secure !
+        let validator_id_bytes = validator_id.0.as_bytes();
         let mut ikm = [0u8; 32];
-        rng.fill_bytes(&mut ikm);
+        let len = std::cmp::min(validator_id_bytes.len(), 32);
+        ikm[..len].copy_from_slice(&validator_id_bytes[..len]);
 
         let sk = SecretKey::key_gen(&ikm, &[]).unwrap();
         let validator_pubkey = sk.sk_to_pk().into();
@@ -45,6 +48,22 @@ impl BlstCrypto {
             validator_id,
             validator_pubkey,
         }
+    }
+
+    pub fn new_random() -> Self {
+        let mut rng = rand::thread_rng();
+        let id: String = (0..32)
+            .map(|_| rng.gen_range(33..127) as u8 as char) // Caractères imprimables ASCII
+            .collect();
+        Self::new(id.as_str().into())
+    }
+
+    pub fn validator_id(&self) -> &ValidatorId {
+        &self.validator_id
+    }
+
+    pub fn validator_pubkey(&self) -> &ValidatorPublicKey {
+        &self.validator_pubkey
     }
 
     pub fn as_validator(&self) -> ConsensusValidator {
@@ -194,12 +213,6 @@ impl From<PublicKey> for ValidatorPublicKey {
     }
 }
 
-impl Default for BlstCrypto {
-    fn default() -> Self {
-        Self::new(ValidatorId("default".to_string()))
-    }
-}
-
 #[cfg(test)]
 mod tests {
 
@@ -208,7 +221,7 @@ mod tests {
     use super::*;
     #[test]
     fn test_sign_bytes() {
-        let crypto = BlstCrypto::default();
+        let crypto = BlstCrypto::new_random();
         let msg = b"hello";
         let sig = crypto.sign_bytes(msg);
         let valid = BlstCrypto::verify_bytes(msg, &sig, &crypto.sk.sk_to_pk());
@@ -217,7 +230,7 @@ mod tests {
 
     #[test]
     fn test_sign() {
-        let crypto = BlstCrypto::default();
+        let crypto = BlstCrypto::new_random();
         let pub_key = ValidatorPublicKey(crypto.sk.sk_to_pk().to_bytes().as_slice().to_vec());
         let msg = HandshakeNetMessage::Ping;
         let signed = crypto.sign(&msg).unwrap();
@@ -226,7 +239,7 @@ mod tests {
     }
 
     fn new_signed<T: bincode::Encode + Clone>(msg: T) -> (SignedWithKey<T>, ValidatorPublicKey) {
-        let crypto = BlstCrypto::default();
+        let crypto = BlstCrypto::new_random();
         let pub_key = ValidatorPublicKey(crypto.sk.sk_to_pk().to_bytes().as_slice().to_vec());
         (
             crypto.sign(msg).unwrap().with_pub_keys(vec![pub_key]),
@@ -241,7 +254,7 @@ mod tests {
         let (s3, pk3) = new_signed(HandshakeNetMessage::Ping);
         let (_, pk4) = new_signed(HandshakeNetMessage::Ping);
 
-        let crypto = BlstCrypto::default();
+        let crypto = BlstCrypto::new_random();
         let aggregates = vec![&s1, &s2, &s3];
         let mut signed = crypto
             .sign_aggregate(HandshakeNetMessage::Ping, aggregates.as_slice())
@@ -293,7 +306,7 @@ mod tests {
         let (s2, pk2) = new_signed(HandshakeNetMessage::Ping);
         let (s3, pk3) = new_signed(HandshakeNetMessage::Pong); // different message
 
-        let crypto = BlstCrypto::default();
+        let crypto = BlstCrypto::new_random();
         let aggregates = vec![&s1, &s2, &s3];
         let signed = crypto.sign_aggregate(HandshakeNetMessage::Ping, aggregates.as_slice());
 
@@ -310,21 +323,21 @@ mod tests {
         let (s3, pk3) = new_signed(HandshakeNetMessage::Ping);
         let (s4, pk4) = new_signed(HandshakeNetMessage::Ping);
 
-        let crypto1 = BlstCrypto::default();
+        let crypto1 = BlstCrypto::new_random();
         let aggregates1 = vec![&s1, &s2, &s3];
         let signed1 = crypto1
             .sign_aggregate(HandshakeNetMessage::Ping, aggregates1.as_slice())
             .unwrap();
         assert!(BlstCrypto::verify(&signed1).unwrap());
 
-        let crypto2 = BlstCrypto::default();
+        let crypto2 = BlstCrypto::new_random();
         let aggregates2 = vec![&s2, &s3, &s4];
         let signed2 = crypto2
             .sign_aggregate(HandshakeNetMessage::Ping, aggregates2.as_slice())
             .unwrap();
         assert!(BlstCrypto::verify(&signed2).unwrap());
 
-        let crypto = BlstCrypto::default();
+        let crypto = BlstCrypto::new_random();
         let aggregates = vec![&signed1, &signed2];
         let signed = crypto
             .sign_aggregate(HandshakeNetMessage::Ping, aggregates.as_slice())

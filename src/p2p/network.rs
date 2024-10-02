@@ -5,7 +5,7 @@ use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
-#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode)]
+#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, Eq, PartialEq)]
 pub struct Version {
     pub id: u16,
 }
@@ -69,7 +69,7 @@ impl<T: Encode> Signed<T, ValidatorId> {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode)]
+#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, Eq, PartialEq)]
 pub enum NetMessage {
     HandshakeMessage(HandshakeNetMessage),
     MempoolMessage(SignedWithId<MempoolNetMessage>),
@@ -77,7 +77,7 @@ pub enum NetMessage {
     ValidatorRegistryMessage(ValidatorRegistryNetMessage),
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode)]
+#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, Eq, PartialEq)]
 pub enum HandshakeNetMessage {
     Version(Version),
     Verack,

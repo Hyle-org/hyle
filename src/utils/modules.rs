@@ -58,7 +58,7 @@ where
         let mut writer = fs::File::create(tmp.clone()).log_error("Create file")?;
         bincode::encode_into_std_write(store, &mut writer, bincode::config::standard())
             .log_error("Serializing Ctx chain")?;
-        fs::rename(tmp, file).log_error("Rename Ctx file")?;
+        fs::rename(tmp, file).log_error("Rename file")?;
         Ok(())
     }
 }

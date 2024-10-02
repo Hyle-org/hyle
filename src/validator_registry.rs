@@ -24,6 +24,12 @@ impl std::fmt::Debug for ValidatorPublicKey {
     }
 }
 
+impl Display for ValidatorPublicKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", hex::encode(&self.0))
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, Default, Hash, Eq, PartialEq)]
 pub struct ValidatorId(pub String);
 
@@ -33,13 +39,19 @@ impl Display for ValidatorId {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode)]
+impl From<&str> for ValidatorId {
+    fn from(s: &str) -> Self {
+        Self(s.to_string())
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, Eq, PartialEq)]
 pub struct ConsensusValidator {
     pub id: ValidatorId,
     pub pub_key: ValidatorPublicKey,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode)]
+#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, Eq, PartialEq)]
 pub enum ValidatorRegistryNetMessage {
     NewValidator(ConsensusValidator),
 }
@@ -55,10 +67,10 @@ pub struct ValidatorRegistry {
 }
 
 impl ValidatorRegistry {
-    pub fn new() -> ValidatorRegistry {
+    pub fn new(self_validator: ConsensusValidator) -> ValidatorRegistry {
         Self {
             inner: Arc::new(RwLock::new(ValidatorRegistryInner {
-                validators: Default::default(),
+                validators: HashMap::from([(self_validator.id.clone(), self_validator)]),
             })),
         }
     }
@@ -67,6 +79,16 @@ impl ValidatorRegistry {
         Self {
             inner: Arc::clone(&self.inner),
         }
+    }
+
+    pub fn list_validators(&self) -> Vec<ValidatorPublicKey> {
+        self.inner
+            .read()
+            .unwrap()
+            .validators
+            .values()
+            .map(|v| v.pub_key.clone())
+            .collect()
     }
 
     pub fn get_validators_count(&self) -> usize {
@@ -94,7 +116,7 @@ impl ValidatorRegistry {
     }
 
     fn add_validator(&mut self, id: ValidatorId, validator: ConsensusValidator) {
-        info!("Adding validator '{}'", id);
+        info!("👋 New validator '{}'", id);
         debug!("{:?}", validator);
         self.inner.write().unwrap().validators.insert(id, validator);
     }
@@ -103,6 +125,7 @@ impl ValidatorRegistry {
     where
         T: Encode + Debug + Clone,
     {
+        debug!("Checking signed message: {:?}", msg);
         let s = &self.inner.read().unwrap().validators;
         let validators = msg
             .validators
@@ -117,6 +140,8 @@ impl ValidatorRegistry {
                     .map(|validator| validator.pub_key.clone())
                     .collect::<Vec<ValidatorPublicKey>>();
 
+                debug!("Checking signature with pub keys: {:?}", vec);
+
                 BlstCrypto::verify(&msg.with_pub_keys(vec))
             }
             None => {
@@ -124,11 +149,5 @@ impl ValidatorRegistry {
                 Ok(false)
             }
         }
-    }
-}
-
-impl Default for ValidatorRegistry {
-    fn default() -> Self {
-        Self::new()
     }
 }
