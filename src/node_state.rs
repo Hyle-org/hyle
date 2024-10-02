@@ -56,7 +56,8 @@ impl Module for NodeState {
     async fn build(ctx: &Self::Context) -> Result<Self> {
         let file = ctx.config.data_directory.clone().join("node_state.bin");
         let store = Self::load_from_disk_or_default(file.as_path());
-        Ok(NodeState::new(ctx.bus.new_handle(), file, store).await)
+        let bus = NodeStateBusClient::new_from_bus(ctx.bus.new_handle()).await;
+        Ok(NodeState { bus, file, store })
     }
 
     fn run(&mut self, ctx: Self::Context) -> impl futures::Future<Output = Result<()>> + Send {
@@ -65,14 +66,6 @@ impl Module for NodeState {
 }
 
 impl NodeState {
-    pub async fn new(bus: SharedMessageBus, file: PathBuf, store: NodeStateStore) -> NodeState {
-        NodeState {
-            bus: NodeStateBusClient::new_from_bus(bus).await,
-            file,
-            store,
-        }
-    }
-
     pub async fn start(&mut self, _config: SharedConf) -> Result<(), Error> {
         info!(
             "Starting NodeState with {} contracts and {} unsettled transactions at height {}",
@@ -390,12 +383,11 @@ mod test {
     use super::*;
 
     async fn new_node_state() -> NodeState {
-        NodeState::new(
-            SharedMessageBus::default(),
-            PathBuf::default(),
-            NodeStateStore::default(),
-        )
-        .await
+        NodeState {
+            bus: NodeStateBusClient::new_from_bus(SharedMessageBus::default()).await,
+            file: PathBuf::default(),
+            store: NodeStateStore::default(),
+        }
     }
 
     fn new_blob(contract: &ContractName) -> Blob {

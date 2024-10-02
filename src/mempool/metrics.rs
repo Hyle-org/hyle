@@ -1,6 +1,6 @@
 use opentelemetry::KeyValue;
 
-use crate::utils::conf::Conf;
+use crate::validator_registry::ValidatorId;
 
 pub struct MempoolMetrics {
     api_tx: opentelemetry::metrics::Counter<u64>,
@@ -10,8 +10,8 @@ pub struct MempoolMetrics {
 }
 
 impl MempoolMetrics {
-    pub fn global(conf: &Conf) -> MempoolMetrics {
-        let my_meter = opentelemetry::global::meter(conf.id.to_string().clone());
+    pub fn global(id: ValidatorId) -> MempoolMetrics {
+        let my_meter = opentelemetry::global::meter(id.0.clone());
 
         MempoolMetrics {
             api_tx: my_meter.u64_counter("api_tx").init(),

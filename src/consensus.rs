@@ -15,7 +15,7 @@ use std::{
     path::PathBuf,
     time::Duration,
 };
-use tokio::time::sleep;
+use tokio::{sync::broadcast, time::sleep};
 use tracing::{debug, info, warn};
 
 use crate::{
@@ -32,6 +32,7 @@ use crate::{
         crypto::{BlstCrypto, SharedBlstCrypto},
         logger::LogMe,
         modules::Module,
+        static_type_map::Pick,
     },
     validator_registry::{
         ValidatorId, ValidatorPublicKey, ValidatorRegistry, ValidatorRegistryNetMessage,
@@ -201,6 +202,7 @@ pub struct ConsensusStore {
 
 pub struct Consensus {
     metrics: ConsensusMetrics,
+    bus: ConsensusBusClient,
     validators: ValidatorRegistry,
     file: Option<PathBuf>,
     store: ConsensusStore,
@@ -230,37 +232,27 @@ impl Module for Consensus {
     async fn build(ctx: &Self::Context) -> Result<Self> {
         let file = ctx.config.data_directory.clone().join("consensus.bin");
         let store = Self::load_from_disk_or_default(file.as_path());
-        Ok(Consensus::new(
-            ctx.validator_registry.share(),
-            Some(file),
+        let metrics = ConsensusMetrics::global(ctx.config.id.clone());
+        let validators = ctx.validator_registry.share();
+        let bus = ConsensusBusClient::new_from_bus(ctx.bus.new_handle()).await;
+
+        Ok(Consensus {
+            metrics,
+            bus,
+            validators,
+            file: Some(file),
             store,
-            ConsensusMetrics::global(&ctx.config),
-            ctx.config.clone(),
-        ))
+            config: ctx.config.clone(),
+        })
     }
 
     fn run(&mut self, ctx: Self::Context) -> impl futures::Future<Output = Result<()>> + Send {
-        self.start(ctx.bus.new_handle(), ctx.config.clone(), ctx.crypto.clone())
+        _ = self.start_master(ctx.config.clone());
+        self.start(ctx.config.clone(), ctx.crypto.clone())
     }
 }
 
 impl Consensus {
-    fn new(
-        validators: ValidatorRegistry,
-        file: Option<PathBuf>,
-        store: ConsensusStore,
-        metrics: ConsensusMetrics,
-        config: SharedConf,
-    ) -> Self {
-        Self {
-            metrics,
-            validators,
-            file,
-            store,
-            config,
-        }
-    }
-
     /// Create a consensus proposal with the given previous consensus proposal
     /// includes previous validators and add the candidates
     fn create_consensus_proposal(
@@ -327,9 +319,10 @@ impl Consensus {
         };
     }
 
-    fn add_block(&mut self, bus: &ConsensusBusClient) -> Result<(), Error> {
+    fn add_block(&mut self) -> Result<(), Error> {
         // Send block to internal bus
-        _ = bus
+        _ = self
+            .bus
             .send(ConsensusEvent::CommitBlock {
                 block: self.bft_round_state.consensus_proposal.block.clone(),
             })
@@ -345,9 +338,9 @@ impl Consensus {
         Ok(())
     }
 
-    fn finish_round(&mut self, bus: &ConsensusBusClient) -> Result<(), Error> {
+    fn finish_round(&mut self) -> Result<(), Error> {
         // Add and applies new block to its NodeState through ConsensusEvent
-        self.add_block(bus)?;
+        self.add_block()?;
 
         info!(
             "🔒 Slot {} finished",
@@ -407,11 +400,7 @@ impl Consensus {
         ValidatorId("node-1".to_owned())
     }
 
-    fn start_new_slot(
-        &mut self,
-        bus: &ConsensusBusClient,
-        crypto: &BlstCrypto,
-    ) -> Result<(), Error> {
+    fn start_new_slot(&mut self, crypto: &BlstCrypto) -> Result<(), Error> {
         // Message received by leader.
 
         // Verifies that previous slot received a *Commit* Quorum Certificate.
@@ -461,7 +450,8 @@ impl Consensus {
             "🌐 Slot {} started. Broadcasting Prepare message", self.bft_round_state.slot,
         );
         self.bft_round_state.step = Step::PrepareVote;
-        _ = bus
+        _ = self
+            .bus
             .send(OutboundMessage::broadcast(Self::sign_net_message(
                 crypto,
                 ConsensusNetMessage::Prepare(self.bft_round_state.consensus_proposal.clone()),
@@ -475,7 +465,6 @@ impl Consensus {
         &mut self,
         msg: &SignedWithId<ConsensusNetMessage>,
         crypto: &BlstCrypto,
-        bus: &ConsensusBusClient,
     ) -> Result<(), Error> {
         if !self.validators.check_signed(msg)? {
             self.metrics.signature_error("prepare");
@@ -484,7 +473,7 @@ impl Consensus {
 
         match &msg.msg {
             // TODO: do we really get a net message for StartNewSlot ?
-            ConsensusNetMessage::StartNewSlot => self.start_new_slot(bus, crypto),
+            ConsensusNetMessage::StartNewSlot => self.start_new_slot(crypto),
             ConsensusNetMessage::Prepare(consensus_proposal) => {
                 // Message received by follower.
                 debug!("Received Prepare message: {}", consensus_proposal);
@@ -604,7 +593,7 @@ impl Consensus {
                             }
                         }
                         // Properly finish the previous round
-                        self.finish_round(bus)?;
+                        self.finish_round()?;
                     }
                 };
 
@@ -618,7 +607,8 @@ impl Consensus {
                         "📤 Slot {} Prepare message validated. Sending PrepareVote to leader",
                         self.bft_round_state.slot
                     );
-                    _ = bus
+                    _ = self
+                        .bus
                         .send(OutboundMessage::send(
                             self.leader_id(),
                             Self::sign_net_message(
@@ -626,7 +616,9 @@ impl Consensus {
                                 ConsensusNetMessage::PrepareVote(consensus_proposal.hash()),
                             )?,
                         ))
-                        .context("Failed to send ConsensusNetMessage::Confirm msg on the bus")?;
+                        .context(
+                            "Failed to send ConsensusNetMessage::PrepareVote msg on the bus",
+                        )?;
                 } else {
                     debug!("😥 Not part of consensus, not sending PrepareVote");
                 }
@@ -707,7 +699,8 @@ impl Consensus {
                         self.bft_round_state.slot
                     );
                     self.bft_round_state.step = Step::ConfirmAck;
-                    _ = bus
+                    _ = self
+                        .bus
                         .send(OutboundMessage::broadcast(Self::sign_net_message(
                             crypto,
                             ConsensusNetMessage::Confirm(
@@ -772,7 +765,8 @@ impl Consensus {
                         "📤 Slot {} Confirm message validated. Sending ConfirmAck to leader",
                         self.bft_round_state.slot
                     );
-                    _ = bus
+                    _ = self
+                        .bus
                         .send(OutboundMessage::send(
                             self.leader_id(),
                             Self::sign_net_message(
@@ -869,7 +863,8 @@ impl Consensus {
                         );
 
                     // Broadcast the *Commit* Quorum Certificate to all validators
-                    _ = bus
+                    _ = self
+                        .bus
                         .send(OutboundMessage::broadcast(Self::sign_net_message(
                             crypto,
                             ConsensusNetMessage::Commit(
@@ -882,7 +877,7 @@ impl Consensus {
                         )?;
 
                     // Finishes the bft round
-                    self.finish_round(bus)?;
+                    self.finish_round()?;
                     // Start new slot
                     if self.is_next_leader() {
                         #[cfg(not(test))]
@@ -895,7 +890,7 @@ impl Consensus {
                                 self.config.consensus.slot_duration,
                             ));
                         }
-                        self.start_new_slot(bus, crypto)?;
+                        self.start_new_slot(crypto)?;
                     }
                 }
                 // TODO(?): Update behaviour when having more ?
@@ -958,14 +953,14 @@ impl Consensus {
                 }
 
                 // Finishes the bft round
-                self.finish_round(bus)?;
+                self.finish_round()?;
 
                 self.metrics.commit();
 
                 // Start new slot
                 if self.is_next_leader() {
                     // Send Prepare message to all validators
-                    self.start_new_slot(bus, crypto)?;
+                    self.start_new_slot(crypto)?;
                 } else if !self.is_part_of_consensus(crypto.validator_pubkey()) {
                     // Ask to be part of consensus
                     let candidacy = ValidatorCandidacy {
@@ -977,7 +972,8 @@ impl Consensus {
                         "📝 Sending candidacy message to be part of consensus.  {}",
                         candidacy
                     );
-                    _ = bus
+                    _ = self
+                        .bus
                         .send(OutboundMessage::broadcast(Self::sign_net_message(
                             crypto,
                             ConsensusNetMessage::ValidatorCandidacy(candidacy),
@@ -1024,11 +1020,7 @@ impl Consensus {
         }
     }
 
-    async fn handle_command(
-        &mut self,
-        msg: ConsensusCommand,
-        bus: &ConsensusBusClient,
-    ) -> Result<()> {
+    async fn handle_command(&mut self, msg: ConsensusCommand) -> Result<()> {
         match msg {
             ConsensusCommand::SingleNodeBlockGeneration => {
                 let mut txs = vec![];
@@ -1041,7 +1033,8 @@ impl Consensus {
                     timestamp: get_current_timestamp(),
                     txs,
                 };
-                _ = bus
+                _ = self
+                    .bus
                     .send(ConsensusEvent::CommitBlock {
                         block: block.clone(),
                     })
@@ -1062,42 +1055,41 @@ impl Consensus {
         }
     }
 
-    pub async fn start(
-        &mut self,
-        shared_bus: SharedMessageBus,
-        config: SharedConf,
-        crypto: SharedBlstCrypto,
-    ) -> Result<()> {
-        let mut bus = ConsensusBusClient::new_from_bus(shared_bus.new_handle()).await;
-
+    pub async fn start_master(&mut self, config: SharedConf) -> Result<()> {
         let interval = config.storage.interval;
 
+        // hack to avoid another bus for a specific wip case
+        let command_sender = Pick::<broadcast::Sender<ConsensusCommand>>::get(&self.bus).clone();
         if config.id == ValidatorId("single-node".to_owned()) {
             info!(
                 "No peers configured, starting as master generating blocks every {} seconds",
                 interval
             );
 
-            let bus2 = ConsensusBusClient::new_from_bus(shared_bus).await;
             tokio::spawn(async move {
                 loop {
                     sleep(Duration::from_secs(interval)).await;
 
-                    _ = bus2
+                    _ = command_sender
                         .send(ConsensusCommand::SingleNodeBlockGeneration)
                         .log_error("Cannot send message over channel");
                 }
             });
         }
+
+        Ok(())
+    }
+
+    pub async fn start(&mut self, config: SharedConf, crypto: SharedBlstCrypto) -> Result<()> {
         // FIXME: node-1 sera le leader
         if config.id == ValidatorId("node-1".to_owned()) {
             self.is_next_leader = true;
         }
 
         handle_messages! {
-            on_bus bus,
+            on_bus self.bus,
             listen<ConsensusCommand> cmd => {
-                match self.handle_command(cmd, &bus).await{
+                match self.handle_command(cmd).await{
                     Ok(_) => (),
                     Err(e) => warn!("Error while handling consensus command: {:#}", e),
                 }
@@ -1109,7 +1101,7 @@ impl Consensus {
                 }
             }
             listen<SignedWithId<ConsensusNetMessage>> cmd => {
-                match self.handle_net_message(&cmd, &crypto, &bus) {
+                match self.handle_net_message(&cmd, &crypto) {
                     Ok(_) => (),
                     Err(e) => warn!("Consensus message failed: {:#}", e),
                 }
@@ -1120,7 +1112,7 @@ impl Consensus {
                     // Start first slot
                     debug!("Got a 2nd validator, starting first slot");
                     sleep(Duration::from_secs(2)).await;
-                    _ = self.start_new_slot(&bus, &crypto);
+                    _ = self.start_new_slot(&crypto);
                 }
             }
         }
@@ -1147,7 +1139,6 @@ mod test {
     use tokio::sync::broadcast::Receiver;
 
     struct TestCtx {
-        bus: ConsensusBusClient,
         crypto: BlstCrypto,
         out_receiver: Receiver<OutboundMessage>,
         _event_receiver: Receiver<ConsensusEvent>,
@@ -1156,24 +1147,25 @@ mod test {
 
     impl TestCtx {
         async fn new(crypto: BlstCrypto, other: ConsensusValidator) -> Self {
-            let bus = SharedMessageBus::new();
-            let out_receiver = get_receiver::<OutboundMessage>(&bus).await;
-            let event_receiver = get_receiver::<ConsensusEvent>(&bus).await;
-            let bus = ConsensusBusClient::new_from_bus(bus.new_handle()).await;
+            let shared_bus = SharedMessageBus::new();
+            let out_receiver = get_receiver::<OutboundMessage>(&shared_bus).await;
+            let event_receiver = get_receiver::<ConsensusEvent>(&shared_bus).await;
+            let bus = ConsensusBusClient::new_from_bus(shared_bus.new_handle()).await;
 
             let mut registry = ValidatorRegistry::new(crypto.as_validator());
             registry.handle_net_message(ValidatorRegistryNetMessage::NewValidator(other));
             let store = ConsensusStore::default();
             let conf = Arc::new(Conf::default());
-            let consensus = Consensus::new(
-                registry,
-                None,
-                store,
-                ConsensusMetrics::global(&Default::default()),
-                conf,
-            );
-            Self {
+            let consensus = Consensus {
+                metrics: ConsensusMetrics::global(ValidatorId("id".to_string())),
                 bus,
+                validators: registry,
+                file: None,
+                store,
+                config: conf,
+            };
+
+            Self {
                 crypto,
                 out_receiver,
                 _event_receiver: event_receiver,
@@ -1205,13 +1197,13 @@ mod test {
                 msg
             );
             self.consensus
-                .handle_net_message(msg, &self.crypto, &self.bus)
+                .handle_net_message(msg, &self.crypto)
                 .expect(err);
         }
 
         fn start_new_slot(&mut self) {
             self.consensus
-                .start_new_slot(&self.bus, &self.crypto)
+                .start_new_slot(&self.crypto)
                 .expect("Failed to start slot");
         }
 
