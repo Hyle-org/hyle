@@ -2,7 +2,7 @@
 
 use crate::{
     bus::{bus_client, command_response::Query, SharedMessageBus},
-    history::{History, HistoryState},
+    indexer::{Indexer, IndexerState},
     model::{ContractName, SharedRunContext},
     node_state::model::Contract,
     tools::mock_workflow::RunScenario,
@@ -33,13 +33,13 @@ struct RestBusClient {
 
 pub struct RouterState {
     bus: RestBusClient,
-    pub history: HistoryState,
+    pub indexer: IndexerState,
 }
 
 pub struct RestApiRunContext {
     pub ctx: SharedRunContext,
     pub metrics_layer: HttpMetricsLayer,
-    pub history: HistoryState,
+    pub indexer: IndexerState,
 }
 
 pub struct RestApi {}
@@ -60,7 +60,7 @@ impl Module for RestApi {
         self.serve(
             ctx.ctx.config.clone(),
             ctx.metrics_layer,
-            ctx.history,
+            ctx.indexer,
             ctx.ctx.bus.new_handle(),
         )
     }
@@ -71,7 +71,7 @@ impl RestApi {
         &self,
         config: SharedConf,
         metrics_layer: HttpMetricsLayer,
-        history: HistoryState,
+        indexer: IndexerState,
         bus: SharedMessageBus,
     ) -> Result<()> {
         info!("rest listening on {}", config.rest_addr());
@@ -85,12 +85,12 @@ impl RestApi {
             .route("/v1/tx/send/blob", post(endpoints::send_blob_transaction))
             .route("/v1/tx/send/proof", post(endpoints::send_proof_transaction))
             .route("/v1/tools/run_scenario", post(endpoints::run_scenario))
-            .nest("/v1/history", History::api())
+            .nest("/v1/indexer", Indexer::api())
             .layer(metrics_layer)
             .layer(tower_http::cors::CorsLayer::permissive())
             .with_state(RouterState {
                 bus: RestBusClient::new_from_bus(bus.new_handle()).await,
-                history,
+                indexer,
             });
 
         let listener = tokio::net::TcpListener::bind(config.rest_addr())
@@ -116,7 +116,7 @@ impl Clone for RouterState {
                 )
                 .clone(),
             ),
-            history: self.history.clone(),
+            indexer: self.indexer.clone(),
         }
     }
 }

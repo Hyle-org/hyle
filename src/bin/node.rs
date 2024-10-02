@@ -4,7 +4,7 @@ use clap::Parser;
 use hyle::{
     bus::SharedMessageBus,
     consensus::Consensus,
-    history::History,
+    indexer::Indexer,
     mempool::Mempool,
     model::RunContext,
     node_state::NodeState,
@@ -101,12 +101,12 @@ async fn main() -> Result<()> {
         validator_registry,
     });
 
-    let history = History::build(&ctx).await?;
+    let history = Indexer::build(&ctx).await?;
 
     let rest_api_ctx = RestApiRunContext {
         ctx: ctx.clone(),
         metrics_layer,
-        history: history.share(),
+        indexer: history.share(),
     };
 
     let mut handler = ModulesHandler::default();

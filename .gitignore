@@ -1,6 +1,6 @@
 target
 *.bin
-data_*/
+data_node*
 **/Consensus.data.tmp
 # Added by cargo
 

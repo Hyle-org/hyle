@@ -1,10 +1,9 @@
-//! Lightweight archival system for past states. Optional.
+//! Archival system for historical data. Should cover most simple use cases.
 
 mod api;
 mod blobs;
 mod blocks;
 mod contracts;
-mod db;
 pub mod model;
 mod proofs;
 mod transactions;
@@ -15,7 +14,7 @@ use crate::{
     handle_messages,
     model::{Block, Hashable, SharedRunContext},
     rest,
-    utils::modules::Module,
+    utils::{db, modules::Module},
 };
 use anyhow::{Context, Result};
 use axum::{routing::get, Router};
@@ -41,39 +40,39 @@ pub fn u64_to_str(u: u64, buf: &mut [u8]) -> &str {
 
 bus_client! {
 #[derive(Debug)]
-struct HistoryBusClient {
+struct IndexerBusClient {
     receiver(ConsensusEvent),
 }
 }
 
-pub type HistoryState = Arc<RwLock<HistoryInner>>;
+pub type IndexerState = Arc<RwLock<IndexerInner>>;
 
 #[derive(Debug)]
-pub struct History {
-    bus: HistoryBusClient,
-    inner: HistoryState,
+pub struct Indexer {
+    bus: IndexerBusClient,
+    inner: IndexerState,
 }
 
-impl Module for History {
+impl Module for Indexer {
     fn name() -> &'static str {
-        "History"
+        "Indexer"
     }
 
     type Context = SharedRunContext;
 
     async fn build(ctx: &Self::Context) -> Result<Self> {
-        let bus = HistoryBusClient::new_from_bus(ctx.bus.new_handle()).await;
+        let bus = IndexerBusClient::new_from_bus(ctx.bus.new_handle()).await;
 
         let db = sled::Config::new()
             .use_compression(true)
             .compression_factor(15)
-            .path(ctx.config.history_db_path())
+            .path(ctx.config.data_directory.join("indexer.db"))
             .open()
             .context("opening the database")?;
 
-        let inner = HistoryInner::new(db)?;
+        let inner = IndexerInner::new(db)?;
 
-        Ok(History {
+        Ok(Indexer {
             bus,
             inner: Arc::new(RwLock::new(inner)),
         })
@@ -84,8 +83,8 @@ impl Module for History {
     }
 }
 
-impl History {
-    pub fn share(&self) -> HistoryState {
+impl Indexer {
+    pub fn share(&self) -> IndexerState {
         self.inner.clone()
     }
 
@@ -201,8 +200,8 @@ impl History {
     }
 }
 
-impl std::ops::Deref for History {
-    type Target = RwLock<HistoryInner>;
+impl std::ops::Deref for Indexer {
+    type Target = RwLock<IndexerInner>;
 
     fn deref(&self) -> &Self::Target {
         &self.inner
@@ -210,7 +209,7 @@ impl std::ops::Deref for History {
 }
 
 #[derive(Debug)]
-pub struct HistoryInner {
+pub struct IndexerInner {
     pub blocks: Blocks,
     pub blobs: Blobs,
     pub proofs: Proofs,
@@ -218,7 +217,7 @@ pub struct HistoryInner {
     pub transactions: Transactions,
 }
 
-impl HistoryInner {
+impl IndexerInner {
     pub fn new(db: sled::Db) -> Result<Self> {
         Ok(Self {
             blocks: Blocks::new(&db)?,
@@ -233,7 +232,7 @@ impl HistoryInner {
 #[cfg(test)]
 mod tests {
     use crate::{
-        history::{blobs::Blobs, contracts::Contracts, proofs::Proofs, transactions::Transactions},
+        indexer::{blobs::Blobs, contracts::Contracts, proofs::Proofs, transactions::Transactions},
         model::{
             Blob, BlobData, BlobIndex, BlobReference, BlobTransaction, Block, BlockHash,
             BlockHeight, ContractName, Identity, ProofTransaction, RegisterContractTransaction,
@@ -246,8 +245,8 @@ mod tests {
 
     #[test]
     fn test_blocks() -> Result<()> {
-        let tmpdir = tempdir::TempDir::new("history-tests")?;
-        let db = sled::open(tmpdir.path().join("history"))?;
+        let tmpdir = tempdir::TempDir::new("indexer-tests")?;
+        let db = sled::open(tmpdir.path().join("indexer"))?;
         let mut blocks = Blocks::new(&db)?;
         assert!(
             blocks.len() == 1,
@@ -281,8 +280,8 @@ mod tests {
 
     #[test]
     fn test_transactions() -> Result<()> {
-        let tmpdir = tempdir::TempDir::new("history-tests")?;
-        let db = sled::open(tmpdir.path().join("history"))?;
+        let tmpdir = tempdir::TempDir::new("indexer-tests")?;
+        let db = sled::open(tmpdir.path().join("indexer"))?;
         let mut transactions = Transactions::new(&db)?;
         assert!(transactions.len() == 0);
         let transaction = TransactionData::Blob(BlobTransaction {
@@ -317,8 +316,8 @@ mod tests {
 
     #[test]
     fn test_blobs() -> Result<()> {
-        let tmpdir = tempdir::TempDir::new("history-tests")?;
-        let db = sled::open(tmpdir.path().join("history"))?;
+        let tmpdir = tempdir::TempDir::new("indexer-tests")?;
+        let db = sled::open(tmpdir.path().join("indexer"))?;
         let mut blobs = Blobs::new(&db)?;
         assert!(blobs.len() == 0);
         let blob = Blob {
@@ -349,8 +348,8 @@ mod tests {
 
     #[test]
     fn test_contracts() -> Result<()> {
-        let tmpdir = tempdir::TempDir::new("history-tests")?;
-        let db = sled::open(tmpdir.path().join("history"))?;
+        let tmpdir = tempdir::TempDir::new("indexer-tests")?;
+        let db = sled::open(tmpdir.path().join("indexer"))?;
         let mut contracts = Contracts::new(&db)?;
         assert!(contracts.len() == 0);
         let contract_name = "c1".to_string();
@@ -412,8 +411,8 @@ mod tests {
 
     #[test]
     fn test_proofs() -> Result<()> {
-        let tmpdir = tempdir::TempDir::new("history-tests")?;
-        let db = sled::open(tmpdir.path().join("history"))?;
+        let tmpdir = tempdir::TempDir::new("indexer-tests")?;
+        let db = sled::open(tmpdir.path().join("indexer"))?;
         let mut proofs = Proofs::new(&db)?;
         assert!(proofs.len() == 0);
         let contract_name = "c1".to_string();

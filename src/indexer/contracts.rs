@@ -3,7 +3,7 @@ use super::{
     model::{Contract, ContractCow},
 };
 use crate::{
-    history::db::NoKey,
+    indexer::db::NoKey,
     model::{BlockHeight, RegisterContractTransaction},
 };
 use anyhow::Result;
