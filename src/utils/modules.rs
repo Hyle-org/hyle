@@ -1,6 +1,7 @@
 use std::{fs, future::Future, path::Path, pin::Pin};
 
 use anyhow::{bail, Error, Result};
+use rand::{distributions::Alphanumeric, Rng};
 use tokio::task::JoinHandle;
 use tracing::{info, warn};
 
@@ -41,7 +42,19 @@ where
     where
         S: bincode::Encode,
     {
-        let tmp = format!("{}.data.tmp", Self::name());
+        // TODO/FIXME: Concurrent writes can happen, and an older state can override a newer one
+        // Example:
+        // State 1 starts creating a tmp file data.state1.tmp
+        // State 2 starts creating a tmp file data.state2.tmp
+        // rename data.state2.tmp into store (atomic override)
+        // renemae data.state1.tmp into
+        let salt: String = rand::thread_rng()
+            .sample_iter(&Alphanumeric)
+            .take(8)
+            .map(char::from)
+            .collect();
+        let tmp = format!("{}.{}.data.tmp", salt, Self::name());
+        info!("Saving on disk in a tmp file {}", tmp.clone());
         let mut writer = fs::File::create(tmp.clone()).log_error("Create file")?;
         bincode::encode_into_std_write(store, &mut writer, bincode::config::standard())
             .log_error("Serializing Ctx chain")?;

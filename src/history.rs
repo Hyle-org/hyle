@@ -12,6 +12,7 @@ mod transactions;
 use crate::{
     bus::{bus_client, SharedMessageBus},
     consensus::ConsensusEvent,
+    handle_messages,
     model::{Block, Hashable, SharedRunContext},
     rest,
     utils::modules::Module,
@@ -40,7 +41,7 @@ pub fn u64_to_str(u: u64, buf: &mut [u8]) -> &str {
 
 bus_client! {
 #[derive(Debug)]
-struct HistoryBus {
+struct HistoryBusClient {
     receiver(ConsensusEvent),
 }
 }
@@ -49,7 +50,7 @@ pub type HistoryState = Arc<RwLock<HistoryInner>>;
 
 #[derive(Debug)]
 pub struct History {
-    bus: HistoryBus,
+    bus: HistoryBusClient,
     inner: HistoryState,
 }
 
@@ -80,7 +81,7 @@ impl Module for History {
 impl History {
     pub async fn new(ctx: &SharedRunContext, db_name: &str) -> Result<Self> {
         Ok(Self {
-            bus: HistoryBus::new_from_bus(ctx.bus.new_handle()).await,
+            bus: HistoryBusClient::new_from_bus(ctx.bus.new_handle()).await,
             inner: Arc::new(RwLock::new(HistoryInner::new(db_name).await?)),
         })
     }
@@ -90,13 +91,10 @@ impl History {
     }
 
     pub async fn start(&mut self) -> Result<()> {
-        loop {
-            tokio::select! {
-                Ok(event) = self.bus.recv() => {
-                    match event {
-                        ConsensusEvent::CommitBlock{block, ..} => self.handle_block(block).await,
-                    }
-                }
+        handle_messages! {
+            on_bus self.bus,
+            listen<ConsensusEvent> cmd => {
+                self.handle_consensus_event(cmd).await;
             }
         }
     }
@@ -128,6 +126,12 @@ impl History {
             // contract
             .route("/contracts", get(api::get_contracts))
             .route("/contract/:name", get(api::get_contract))
+    }
+
+    async fn handle_consensus_event(&mut self, event: ConsensusEvent) {
+        match event {
+            ConsensusEvent::CommitBlock { block, .. } => self.handle_block(block).await,
+        }
     }
 
     async fn handle_block(&mut self, block: Block) {

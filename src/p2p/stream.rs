@@ -1,74 +1,36 @@
-use std::io::IoSlice;
-
 use anyhow::{anyhow, bail, Context, Error};
-use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt, Interest},
-    net::TcpStream,
-};
-use tracing::trace;
-
-use crate::utils::logger::LogMe;
+use futures::{SinkExt, StreamExt};
+use tokio::net::TcpStream;
+use tokio_util::codec::{FramedRead, FramedWrite, LengthDelimitedCodec};
 
 use super::network::NetMessage;
 
-pub async fn read_stream(stream: &mut TcpStream) -> Result<(NetMessage, usize), Error> {
-    let ready = stream
-        .ready(Interest::READABLE | Interest::WRITABLE | Interest::ERROR)
-        .await
-        .log_error("Reading from peer")?;
+pub async fn read_stream(stream: &mut TcpStream) -> Result<NetMessage, Error> {
+    let mut framed = FramedRead::new(stream, LengthDelimitedCodec::new());
 
-    if ready.is_error() {
-        bail!("Stream not ready")
-    }
-
-    let mut buf = [0; 4];
-    match stream.peek(&mut buf).await {
-        Ok(msg_size) => {
-            if msg_size != 4 {
-                bail!("Invalid message size")
+    if let Some(result) = framed.next().await {
+        match result {
+            Ok(data) => {
+                let (net_msg, _) = bincode::decode_from_slice(&data, bincode::config::standard())
+                    .map_err(|_| anyhow::anyhow!("Could not decode NetMessage"))?;
+                Ok(net_msg)
             }
-            read_net_message_from_buffer(stream, u32::from_be_bytes(buf)).await
+            Err(e) => Err(anyhow!(e).context("Error while reading NetMessage")),
         }
-        Err(e) => Err(anyhow!(e)),
+    } else {
+        bail!("Stream closed or no message available");
     }
 }
 
 pub async fn send_net_message(stream: &mut TcpStream, msg: NetMessage) -> Result<(), Error> {
-    send_binary(stream, msg.to_binary().as_slice()).await
-}
+    let mut framed = FramedWrite::new(stream, LengthDelimitedCodec::new());
 
-pub(super) async fn send_binary(stream: &mut TcpStream, binary: &[u8]) -> Result<(), Error> {
-    trace!("SEND {} bytes: {:?}", binary.len(), binary);
-    // Create a new buffer with the size of the message prepended
-    let size: [u8; 4] = (binary.len() as u32).to_be_bytes();
-    let bufs: &[_] = &[IoSlice::new(&size), IoSlice::new(binary)];
-    stream
-        .write_vectored(bufs)
+    let binary = msg.to_binary();
+
+    framed
+        .send(binary.into())
         .await
-        .context("Failed to write data on stream")?;
+        .context("Failed to send NetMessage")?;
+
     Ok(())
-}
-
-async fn read_net_message_from_buffer(
-    stream: &mut TcpStream,
-    msg_size: u32,
-) -> Result<(NetMessage, usize), Error> {
-    if msg_size == 0 {
-        bail!("Connection closed by remote (1)")
-    }
-
-    trace!("Reading {} bytes from buffer", msg_size);
-    let mut buf = vec![0; 4 + msg_size as usize];
-
-    let data = stream.read_exact(&mut buf).await?;
-    if data == 0 {
-        bail!("Connection closed by remote (2)")
-    }
-
-    parse_net_message(&buf[4..]).await
-}
-
-async fn parse_net_message(buf: &[u8]) -> Result<(NetMessage, usize), Error> {
-    bincode::decode_from_slice(buf, bincode::config::standard())
-        .map_err(|_| anyhow!("Could not decode NetMessage"))
 }
