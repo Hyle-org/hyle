@@ -6,6 +6,7 @@ use metrics::ConsensusMetrics;
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Sha3_256};
 use std::{
+    cmp::max,
     collections::{HashMap, HashSet},
     default::Default,
     fmt::Display,
@@ -80,11 +81,12 @@ pub struct ValidatorCandidacy {
 }
 
 // TODO: move struct to model.rs ?
-#[derive(Serialize, Deserialize, Encode, Decode, Default)]
+#[derive(Encode, Decode, Default)]
 pub struct BFTRoundState {
     consensus_proposal: ConsensusProposal,
     slot: Slot,
     view: View,
+    step: Step,
     prepare_votes: HashSet<Signed<ConsensusNetMessage, ValidatorPublicKey>>,
     prepare_quorum_certificate: QuorumCertificate,
     confirm_ack: HashSet<Signed<ConsensusNetMessage, ValidatorPublicKey>>,
@@ -195,7 +197,6 @@ pub struct ConsensusStore {
     // FIXME: pub is here for testing
     pub blocks: Vec<Block>,
     pending_batches: Vec<Vec<Transaction>>,
-    step: Step,
 }
 
 pub struct Consensus {
@@ -358,7 +359,7 @@ impl Consensus {
             self.bft_round_state.consensus_proposal.slot
         );
 
-        self.step = Step::StartNewSlot;
+        self.bft_round_state.step = Step::StartNewSlot;
         self.bft_round_state.slot = self.bft_round_state.consensus_proposal.slot + 1;
         self.bft_round_state.view = 0;
         self.bft_round_state.prepare_votes = HashSet::default();
@@ -375,7 +376,8 @@ impl Consensus {
         &self.bft_round_state.consensus_proposal.hash() == consensus_proposal_hash
     }
 
-    fn verify_validators_quorum_certificates(
+    /// Verify that quorum certificate includes only validators that are part of the consensus
+    fn verify_quroum_signers_part_of_consensus(
         &self,
         quorum_certificate: &QuorumCertificate,
     ) -> bool {
@@ -458,7 +460,7 @@ impl Consensus {
             proposal_hash = %self.bft_round_state.consensus_proposal.hash(),
             "🌐 Slot {} started. Broadcasting Prepare message", self.bft_round_state.slot,
         );
-        self.step = Step::PrepareVote;
+        self.bft_round_state.step = Step::PrepareVote;
         _ = bus
             .send(OutboundMessage::broadcast(Self::sign_net_message(
                 crypto,
@@ -635,11 +637,10 @@ impl Consensus {
             }
             ConsensusNetMessage::PrepareVote(consensus_proposal_hash) => {
                 // Message received by leader.
-                if !matches!(self.step, Step::PrepareVote) {
-                    self.metrics.prepare_vote_error("wrong_step");
+                if !matches!(self.bft_round_state.step, Step::PrepareVote) {
                     debug!(
                         "PrepareVote received at wrong step (step = {:?})",
-                        self.step
+                        self.bft_round_state.step
                     );
                     return Ok(());
                 }
@@ -676,7 +677,7 @@ impl Consensus {
                     self.bft_round_state.consensus_proposal.validators.len()
                 );
                 // TODO: Only wait for 2 * f because leader himself if the +1
-                if validated_votes.len() >= 2 * f {
+                if validated_votes.len() == max(1, 2 * f) {
                     // Get all received signatures
                     let aggregates: &Vec<&Signed<ConsensusNetMessage, ValidatorPublicKey>> =
                         &self.bft_round_state.prepare_votes.iter().collect();
@@ -705,7 +706,7 @@ impl Consensus {
                         "Slot {} PrepareVote message validated. Broadcasting Confirm",
                         self.bft_round_state.slot
                     );
-                    self.step = Step::ConfirmAck;
+                    self.bft_round_state.step = Step::ConfirmAck;
                     _ = bus
                         .send(OutboundMessage::broadcast(Self::sign_net_message(
                             crypto,
@@ -732,7 +733,7 @@ impl Consensus {
                 }
 
                 // Verify that validators that signed are legit
-                if !self.verify_validators_quorum_certificates(prepare_quorum_certificate) {
+                if !self.verify_quroum_signers_part_of_consensus(prepare_quorum_certificate) {
                     bail!("Prepare quorum certificate includes validators that are not part of the consensus")
                 }
 
@@ -788,9 +789,11 @@ impl Consensus {
             ConsensusNetMessage::ConfirmAck(consensus_proposal_hash) => {
                 // Message received by leader.
 
-                if !matches!(self.step, Step::ConfirmAck) {
-                    self.metrics.confirm_ack_error("wrong_step");
-                    debug!("ConfirmAck received at wrong step (step ={:?})", self.step);
+                if !matches!(self.bft_round_state.step, Step::ConfirmAck) {
+                    debug!(
+                        "ConfirmAck received at wrong step (step ={:?})",
+                        self.bft_round_state.step
+                    );
                     return Ok(());
                 }
 
@@ -834,7 +837,7 @@ impl Consensus {
                 self.metrics
                     .confirmed_ack_gauge(confirmed_ack_validators.len());
                 // TODO: Only waiting for 2 * f because leader himself if the +1
-                if confirmed_ack_validators.len() >= (2 * f) {
+                if confirmed_ack_validators.len() == max(1, 2 * f) {
                     // Get all signatures received and change ValidatorId for ValidatorPubKey
                     let aggregates: &Vec<&Signed<ConsensusNetMessage, ValidatorPublicKey>> =
                         &self.bft_round_state.confirm_ack.iter().collect();
@@ -908,7 +911,7 @@ impl Consensus {
                 }
 
                 // Verify that validators that signed are legit
-                if !self.verify_validators_quorum_certificates(commit_quorum_certificate) {
+                if !self.verify_quroum_signers_part_of_consensus(commit_quorum_certificate) {
                     self.metrics
                         .commit_error("invalid_validators_qorum_certificate");
                     bail!("Commit quorum certificate includes validators that are not part of the consensus")
