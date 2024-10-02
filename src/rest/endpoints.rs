@@ -16,7 +16,6 @@ use axum::{
 };
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
-use tracing::error;
 
 use super::{AppError, RouterState};
 
