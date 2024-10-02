@@ -85,5 +85,5 @@ Otherwise, we recommend (samply)[https://github.com/mstange/samply].
 
 #### Memory profiling
 
-Hylé has built-in support for the `dhat` crate, which uses the valdring dhat viewer for memory profiling.
+Hylé has built-in support for the `dhat` crate, which uses the valgrind dhat viewer for memory profiling.
 This has a runtime performance cost, so should only be enabled when needed. The corresponding feature is `dhat`.

@@ -20,7 +20,6 @@ use crate::handle_messages;
 use crate::mempool::MempoolNetMessage;
 use crate::p2p::network::SignedWithId;
 use crate::p2p::stream::read_stream;
-use crate::p2p::stream::send_binary;
 use crate::utils::conf::SharedConf;
 use crate::utils::crypto::SharedBlstCrypto;
 use crate::validator_registry::ConsensusValidator;
@@ -96,7 +95,7 @@ impl Peer {
         if !self.bloom_filter.check(&binary) {
             self.bloom_filter.set(&binary);
             debug!("Broadcast message to #{}: {:?}", self.id, msg);
-            send_binary(&mut self.stream, binary.as_slice()).await
+            send_net_message(&mut self.stream, msg).await
         } else {
             trace!("Message to #{} already broadcasted", self.id);
             Ok(())
@@ -193,7 +192,7 @@ impl Peer {
             }
 
             res = read_stream(&mut self.stream) => match res {
-                Ok((message, _)) => match self.handle_stream_message(message).await {
+                Ok(message) => match self.handle_stream_message(message).await {
                     Ok(_) => continue,
                     Err(e) => {
                         warn!("Error while handling net message: {:#}", e);
