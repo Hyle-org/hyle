@@ -1,13 +1,22 @@
 use anyhow::{bail, Result};
+use bincode::{Decode, Encode};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 use crate::validator_registry::ValidatorPublicKey;
 
-#[derive(Debug, Clone, Copy)]
-pub struct Stake {
-    amount: u64,
+#[derive(Debug, Encode, Decode, Clone, Serialize, Deserialize)]
+pub struct Staker {
+    pub pubkey: ValidatorPublicKey,
+    pub stake: Stake,
 }
 
+#[derive(Debug, Encode, Decode, Clone, Copy, Serialize, Deserialize)]
+pub struct Stake {
+    pub amount: u64,
+}
+
+#[derive(Encode, Decode, Default)]
 pub struct Staking {
     stakers: HashMap<ValidatorPublicKey, Stake>,
     bonded: Vec<ValidatorPublicKey>,
@@ -24,8 +33,12 @@ impl Staking {
     }
 
     /// Add a staking validator
-    pub fn add_staker(&mut self, validator: ValidatorPublicKey, stake: Stake) {
-        self.stakers.insert(validator, stake);
+    pub fn add_staker(&mut self, staker: Staker) -> Result<()> {
+        if self.stakers.contains_key(&staker.pubkey) {
+            bail!("Validator already staking")
+        }
+        self.stakers.insert(staker.pubkey, staker.stake);
+        Ok(())
     }
 
     /// Unbond a staking validator
@@ -67,12 +80,6 @@ impl Staking {
     }
 }
 
-impl Default for Staking {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 #[cfg(test)]
 mod test {
 
@@ -80,14 +87,16 @@ mod test {
     #[test]
     fn test_staking() {
         let mut staking = Staking::new();
-        let validator = ValidatorPublicKey::default();
-        let stake = Stake { amount: 100 };
-        staking.add_staker(validator.clone(), stake);
+        let staker = Staker {
+            pubkey: ValidatorPublicKey::default(),
+            stake: Stake { amount: 100 },
+        };
+        staking.add_staker(staker.clone());
         assert_eq!(staking.total_bond(), 0);
-        let stake = staking.bond(validator.clone()).unwrap();
+        let stake = staking.bond(staker.pubkey.clone()).unwrap();
         assert_eq!(staking.total_bond(), 100);
         assert_eq!(stake.amount, 100);
-        let stake = staking.unbond(&validator).unwrap();
+        let stake = staking.unbond(&staker.pubkey).unwrap();
         assert_eq!(staking.total_bond(), 0);
         assert_eq!(stake.amount, 100);
     }
@@ -95,14 +104,16 @@ mod test {
     #[test]
     fn test_errors() {
         let mut staking = Staking::new();
-        let validator = ValidatorPublicKey::default();
-        let stake = Stake { amount: 100 };
-        assert!(staking.bond(validator.clone()).is_err());
-        assert!(staking.unbond(&validator).is_err());
-        staking.add_staker(validator.clone(), stake);
-        assert!(staking.bond(validator.clone()).is_ok());
-        assert!(staking.bond(validator.clone()).is_err());
-        assert!(staking.unbond(&validator).is_ok());
-        assert!(staking.unbond(&validator).is_err());
+        let staker = Staker {
+            pubkey: ValidatorPublicKey::default(),
+            stake: Stake { amount: 100 },
+        };
+        assert!(staking.bond(staker.pubkey.clone()).is_err());
+        assert!(staking.unbond(&staker.pubkey).is_err());
+        staking.add_staker(staker.clone());
+        assert!(staking.bond(staker.pubkey.clone()).is_ok());
+        assert!(staking.bond(staker.pubkey.clone()).is_err());
+        assert!(staking.unbond(&staker.pubkey).is_ok());
+        assert!(staking.unbond(&staker.pubkey).is_err());
     }
 }

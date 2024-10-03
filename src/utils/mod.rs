@@ -1,6 +1,7 @@
 //! Utilities.
 
 pub mod conf;
+pub mod constants;
 pub mod crypto;
 pub mod logger;
 pub mod modules;

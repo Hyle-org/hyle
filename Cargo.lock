@@ -186,6 +186,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "assertables"
+version = "8.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0cf610eced7c93b309386e5495854fe6e1fb21bf4ea3a4a74e3406858f8f046b"
+
+[[package]]
 name = "async-stream"
 version = "0.3.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1254,6 +1260,7 @@ dependencies = [
  "anyhow",
  "anymap",
  "assert_cmd",
+ "assertables",
  "axum",
  "axum-otel-metrics",
  "bincode 2.0.0-rc.2",
