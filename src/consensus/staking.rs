@@ -1,17 +1,24 @@
 use anyhow::{bail, Result};
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::{collections::HashMap, fmt::Display};
+use tracing::info;
 
 use crate::validator_registry::ValidatorPublicKey;
 
-#[derive(Debug, Encode, Decode, Clone, Serialize, Deserialize)]
+#[derive(Debug, Encode, Decode, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Staker {
     pub pubkey: ValidatorPublicKey,
     pub stake: Stake,
 }
 
-#[derive(Debug, Encode, Decode, Clone, Copy, Serialize, Deserialize)]
+impl Display for Staker {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?} with stake {:?}", self.pubkey, self.stake.amount)
+    }
+}
+
+#[derive(Debug, Encode, Decode, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Stake {
     pub amount: u64,
 }
@@ -37,6 +44,7 @@ impl Staking {
         if self.stakers.contains_key(&staker.pubkey) {
             bail!("Validator already staking")
         }
+        info!("💰 New staker {}", staker);
         self.stakers.insert(staker.pubkey, staker.stake);
         Ok(())
     }
@@ -67,6 +75,7 @@ impl Staking {
 
     /// Bond a staking validator
     pub fn bond(&mut self, validator: ValidatorPublicKey) -> Result<Stake> {
+        info!("🔐 Bonded validator {}", validator);
         if let Some(stake) = self.stakers.get(&validator) {
             if self.bonded.contains(&validator) {
                 bail!("Validator already bonded")
