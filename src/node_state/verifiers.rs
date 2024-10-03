@@ -28,6 +28,7 @@ pub fn verify_proof(
                 index: blob_ref.blob_index.clone(),
                 blobs: vec![0, 1, 2, 3, 0, 1, 2, 3],
                 success: true,
+                program_outputs: vec![],
             })
             .collect()),
         "cairo" => cairo_proof_verifier(&tx.proof),
@@ -41,7 +42,7 @@ pub fn cairo_proof_verifier(proof: &Vec<u8>) -> Result<Vec<HyleOutput>, Error> {
 
     let mut bytes = proof.as_slice();
     if bytes.len() < 8 {
-        bail!("Cairo oroof is too short");
+        bail!("Cairo proof is too short");
     }
 
     // Proof len was stored as an u32, 4u8 needs to be read
@@ -113,22 +114,19 @@ pub fn risc0_proof_verifier(
 
     let image_bytes: Digest = image_id.try_into().expect("Invalid Risc0 image ID");
 
-    // On peut récuperer l'image ID depuis le Receipt et le comparer avec ce qu'on a pour ne pas lancer la vérification s'ils ne matchent pas
-    // TODO: remove unwrap
-    // let claim = receipt.claim().unwrap().value().unwrap();
-    // println!("claim.pre.digest(): {:?}", claim.pre.digest());
-    // asserteq!(claim.pre.digest(), image_bytes);
+    match receipt.verify(image_bytes) {
+        Ok(_) => (),
+        Err(e) => bail!("Risc0 proof verification failed: {}", e),
+    };
 
-    receipt
-        .verify(image_bytes)
-        .expect("Risc0 proof verification failed");
+    println!("receipt.journal: {:?}", receipt.journal);
 
-    let hyle_output = receipt
-        .journal
-        .decode::<HyleOutput>()
-        .expect("Failed to extract HyleOuput from Risc0's journal");
+    let hyle_output = match receipt.journal.decode::<HyleOutput>() {
+        Ok(v) => v,
+        Err(e) => bail!("Failed to extract HyleOuput from Risc0's journal: {}", e),
+    };
 
-    // TODO: allow multiple outputs when verifying
+    // // TODO: allow multiple outputs when verifying
     Ok(vec![hyle_output])
 }
 
@@ -151,7 +149,7 @@ mod tests {
         let encoded_receipt = load_encoded_receipt_from_file("./tests/proofs/erc20.risc0.proof");
 
         let image_id =
-            hex::decode("a77b03e5db5b05ce9e05920e528a18985d40aecda607cbb808235c87f535f606")
+            hex::decode("0f0e89496853ab498a5eda2d06ced45909faf490776c8121063df9066bbb9ea4")
                 .expect("Image id decoding failed");
 
         let result = risc0_proof_verifier(&encoded_receipt, &image_id);

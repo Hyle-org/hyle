@@ -37,6 +37,7 @@ pub struct HyleOutput {
     pub index: BlobIndex,
     pub blobs: Vec<u8>,
     pub success: bool,
+    pub program_outputs: Vec<u8>,
 }
 
 #[derive(Default, Debug, Clone, Encode, Decode)]
