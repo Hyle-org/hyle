@@ -114,9 +114,21 @@ async fn main() -> Result<()> {
         .build_module::<MockWorkflowHandler>(ctx.clone())
         .await?;
     handler.add_module(indexer, ctx.clone())?;
+
     // Should come last so the other modules have nested their own routes.
+    let router = ctx
+        .router
+        .lock()
+        .expect("Context router should be available")
+        .take()
+        .expect("Context router should be available");
     handler
-        .build_module::<RestApi>(RestApiRunContext { ctx, metrics_layer })
+        .build_module::<RestApi>(RestApiRunContext {
+            rest_addr: ctx.config.rest_addr().clone(),
+            bus: ctx.bus.new_handle(),
+            metrics_layer,
+            router,
+        })
         .await?;
 
     let (running_modules, abort) = handler.start_modules()?;
