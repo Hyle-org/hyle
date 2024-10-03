@@ -12,7 +12,7 @@ use crate::{
     bus::{bus_client, SharedMessageBus},
     consensus::ConsensusEvent,
     handle_messages,
-    model::{Block, Hashable, SharedRunContext},
+    model::{Block, CommonRunContext, Hashable},
     utils::{db, modules::Module},
 };
 use anyhow::{Context, Result};
@@ -57,9 +57,9 @@ impl Module for Indexer {
         "Indexer"
     }
 
-    type Context = SharedRunContext;
+    type Context = Arc<CommonRunContext>;
 
-    async fn build(ctx: &Self::Context) -> Result<Self> {
+    async fn build(ctx: Self::Context) -> Result<Self> {
         let bus = IndexerBusClient::new_from_bus(ctx.bus.new_handle()).await;
 
         let db = sled::Config::new()
@@ -89,7 +89,7 @@ impl Module for Indexer {
         Ok(indexer)
     }
 
-    fn run(&mut self, _ctx: Self::Context) -> impl futures::Future<Output = Result<()>> + Send {
+    fn run(&mut self) -> impl futures::Future<Output = Result<()>> + Send {
         self.start()
     }
 }

@@ -44,6 +44,7 @@ pub struct NodeState {
     bus: NodeStateBusClient,
     file: PathBuf,
     store: NodeStateStore,
+    config: SharedConf,
 }
 
 impl Module for NodeState {
@@ -53,15 +54,26 @@ impl Module for NodeState {
 
     type Context = SharedRunContext;
 
-    async fn build(ctx: &Self::Context) -> Result<Self> {
-        let file = ctx.config.data_directory.clone().join("node_state.bin");
+    async fn build(ctx: Self::Context) -> Result<Self> {
+        let file = ctx
+            .common
+            .config
+            .data_directory
+            .clone()
+            .join("node_state.bin");
         let store = Self::load_from_disk_or_default(file.as_path());
-        let bus = NodeStateBusClient::new_from_bus(ctx.bus.new_handle()).await;
-        Ok(NodeState { bus, file, store })
+        let bus = NodeStateBusClient::new_from_bus(ctx.common.bus.new_handle()).await;
+        let config = ctx.common.config.clone();
+        Ok(NodeState {
+            bus,
+            file,
+            store,
+            config,
+        })
     }
 
-    fn run(&mut self, ctx: Self::Context) -> impl futures::Future<Output = Result<()>> + Send {
-        self.start(ctx.config.clone())
+    fn run(&mut self) -> impl futures::Future<Output = Result<()>> + Send {
+        self.start(self.config.clone())
     }
 }
 
@@ -378,7 +390,7 @@ impl DerefMut for NodeState {
 mod test {
     use std::path::PathBuf;
 
-    use crate::{bus::SharedMessageBus, model::*};
+    use crate::{bus::SharedMessageBus, model::*, utils::conf::Conf};
 
     use super::*;
 
@@ -387,6 +399,7 @@ mod test {
             bus: NodeStateBusClient::new_from_bus(SharedMessageBus::default()).await,
             file: PathBuf::default(),
             store: NodeStateStore::default(),
+            config: Conf::default().into(),
         }
     }
 

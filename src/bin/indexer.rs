@@ -4,20 +4,13 @@ use axum_otel_metrics::HttpMetricsLayerBuilder;
 use clap::Parser;
 use hyle::{
     bus::SharedMessageBus,
-    consensus::Consensus,
     indexer::Indexer,
-    mempool::Mempool,
-    model::{CommonRunContext, NodeRunContext, SharedRunContext},
-    node_state::NodeState,
-    p2p::P2P,
+    model::CommonRunContext,
     rest::{RestApi, RestApiRunContext},
-    tools::mock_workflow::MockWorkflowHandler,
     utils::{
         conf,
-        crypto::BlstCrypto,
         modules::{Module, ModulesHandler},
     },
-    validator_registry::ValidatorRegistry,
 };
 use std::sync::{Arc, Mutex};
 use tracing::{debug, error, info, level_filters::LevelFilter};
@@ -26,15 +19,6 @@ use tracing_subscriber::{prelude::*, EnvFilter};
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 pub struct Args {
-    #[arg(short, long, action = clap::ArgAction::SetTrue)]
-    pub client: Option<bool>,
-
-    #[arg(long, default_value =  None)]
-    pub data_directory: Option<String>,
-
-    #[arg(long, action = clap::ArgAction::SetTrue)]
-    pub run_indexer: Option<bool>,
-
     #[arg(long, default_value = "master.ron")]
     pub config_file: String,
 }
@@ -80,7 +64,7 @@ async fn main() -> Result<()> {
     setup_tracing()?;
 
     let args = Args::parse();
-    let config = conf::Conf::new_shared(args.config_file, args.data_directory, args.run_indexer)
+    let config = conf::Conf::new_shared(args.config_file, None, Some(true))
         .context("reading config file")?;
     info!("Starting node with config: {:?}", &config);
 
@@ -92,45 +76,24 @@ async fn main() -> Result<()> {
         .build();
 
     let bus = SharedMessageBus::new();
-    let crypto = Arc::new(BlstCrypto::new(config.id.clone())); // TODO load sk from disk instead of random
 
     std::fs::create_dir_all(&config.data_directory).context("creating data directory")?;
 
-    let validator_registry = ValidatorRegistry::new(crypto.as_validator());
-
-    let run_indexer = config.run_indexer;
-
-    let ctx = SharedRunContext {
-        common: CommonRunContext {
-            bus: bus.new_handle(),
-            config: config.clone(),
-            router: Mutex::new(Some(Router::new())),
-        }
-        .into(),
-        node: NodeRunContext {
-            crypto,
-            validator_registry,
-        }
-        .into(),
-    };
-
     let mut handler = ModulesHandler::default();
-    handler.build_module::<Mempool>(ctx.clone()).await?;
-    handler.build_module::<NodeState>(ctx.clone()).await?;
-    handler.build_module::<Consensus>(ctx.clone()).await?;
-    handler.build_module::<P2P>(ctx.clone()).await?;
-    handler
-        .build_module::<MockWorkflowHandler>(ctx.clone())
-        .await?;
 
-    if run_indexer {
-        let indexer = Indexer::build(ctx.common.clone()).await?;
+    let ctx = Arc::new(CommonRunContext {
+        bus: bus.new_handle(),
+        config: config.clone(),
+        router: Mutex::new(Some(Router::new())),
+    });
+
+    if config.run_indexer {
+        let indexer = Indexer::build(ctx.clone()).await?;
         handler.add_module(indexer)?;
     }
 
     // Should come last so the other modules have nested their own routes.
     let router = ctx
-        .common
         .router
         .lock()
         .expect("Context router should be available")
@@ -138,8 +101,8 @@ async fn main() -> Result<()> {
         .expect("Context router should be available");
     handler
         .build_module::<RestApi>(RestApiRunContext {
-            rest_addr: ctx.common.config.rest.clone(),
-            bus: ctx.common.bus.new_handle(),
+            rest_addr: ctx.config.rest.clone(),
+            bus: ctx.bus.new_handle(),
             metrics_layer,
             router: router.clone(),
         })

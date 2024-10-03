@@ -13,6 +13,7 @@ use std::{
     io::Write,
     ops::{Deref, DerefMut},
     path::PathBuf,
+    sync::Arc,
     time::Duration,
 };
 use tokio::{sync::broadcast, time::sleep};
@@ -207,6 +208,7 @@ pub struct Consensus {
     file: Option<PathBuf>,
     store: ConsensusStore,
     config: SharedConf,
+    crypto: Arc<BlstCrypto>,
 }
 
 impl Deref for Consensus {
@@ -229,12 +231,17 @@ impl Module for Consensus {
 
     type Context = SharedRunContext;
 
-    async fn build(ctx: &Self::Context) -> Result<Self> {
-        let file = ctx.config.data_directory.clone().join("consensus.bin");
+    async fn build(ctx: Self::Context) -> Result<Self> {
+        let file = ctx
+            .common
+            .config
+            .data_directory
+            .clone()
+            .join("consensus.bin");
         let store = Self::load_from_disk_or_default(file.as_path());
-        let metrics = ConsensusMetrics::global(ctx.config.id.clone());
-        let validators = ctx.validator_registry.share();
-        let bus = ConsensusBusClient::new_from_bus(ctx.bus.new_handle()).await;
+        let metrics = ConsensusMetrics::global(ctx.common.config.id.clone());
+        let validators = ctx.node.validator_registry.share();
+        let bus = ConsensusBusClient::new_from_bus(ctx.common.bus.new_handle()).await;
 
         Ok(Consensus {
             metrics,
@@ -242,13 +249,14 @@ impl Module for Consensus {
             validators,
             file: Some(file),
             store,
-            config: ctx.config.clone(),
+            config: ctx.common.config.clone(),
+            crypto: ctx.node.crypto.clone(),
         })
     }
 
-    fn run(&mut self, ctx: Self::Context) -> impl futures::Future<Output = Result<()>> + Send {
-        _ = self.start_master(ctx.config.clone());
-        self.start(ctx.config.clone(), ctx.crypto.clone())
+    fn run(&mut self) -> impl futures::Future<Output = Result<()>> + Send {
+        _ = self.start_master(self.config.clone());
+        self.start(self.config.clone(), self.crypto.clone())
     }
 }
 
@@ -1163,6 +1171,7 @@ mod test {
                 file: None,
                 store,
                 config: conf,
+                crypto: crypto.clone().into(),
             };
 
             Self {

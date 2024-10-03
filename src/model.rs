@@ -373,14 +373,21 @@ pub fn get_current_timestamp() -> u64 {
         .as_secs()
 }
 
-pub struct RunContext {
+pub struct CommonRunContext {
     pub config: SharedConf,
     pub bus: SharedMessageBus,
-    pub crypto: SharedBlstCrypto,
-    pub validator_registry: ValidatorRegistry,
     pub router: std::sync::Mutex<Option<Router>>,
 }
-pub type SharedRunContext = Arc<RunContext>;
+pub struct NodeRunContext {
+    pub crypto: SharedBlstCrypto,
+    pub validator_registry: ValidatorRegistry,
+}
+
+#[derive(Clone)]
+pub struct SharedRunContext {
+    pub common: Arc<CommonRunContext>,
+    pub node: Arc<NodeRunContext>,
+}
 
 #[cfg(test)]
 mod tests {
