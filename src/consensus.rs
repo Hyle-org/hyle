@@ -5,7 +5,7 @@ use bincode::{Decode, Encode};
 use metrics::ConsensusMetrics;
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Sha3_256};
-use staking::{Staker, Staking};
+use staking::{Stake, Staker, Staking};
 use std::{
     collections::{HashMap, HashSet},
     default::Default,
@@ -329,6 +329,9 @@ impl Consensus {
             txs: vec![],
         };
 
+        self.genesis_bond(self.pubkeys.list_validators().as_slice())
+            .expect("Failed to bond genesis validators");
+
         // Start Consensus with following block
         self.bft_round_state.consensus_proposal = ConsensusProposal {
             slot: self.bft_round_state.slot,
@@ -339,6 +342,18 @@ impl Consensus {
             new_bonded_validators: vec![],
             block: first_block,
         };
+    }
+
+    fn genesis_bond(&mut self, validators: &[ValidatorPublicKey]) -> Result<()> {
+        // Bond all validators
+        for validator in validators {
+            self.bft_round_state.staking.add_staker(Staker {
+                pubkey: validator.clone(),
+                stake: Stake { amount: 100 },
+            })?;
+            self.bft_round_state.staking.bond(validator.clone())?;
+        }
+        Ok(())
     }
 
     /// Send block to internal bus
@@ -568,11 +583,10 @@ impl Consensus {
     }
 
     fn compute_voting_power(&self, validators: &[ValidatorPublicKey]) -> u64 {
-        self.get_own_voting_power()
-            + validators
-                .iter()
-                .flat_map(|v| self.bft_round_state.staking.get_stake(v).map(|s| s.amount))
-                .sum::<u64>()
+        validators
+            .iter()
+            .flat_map(|v| self.bft_round_state.staking.get_stake(v).map(|s| s.amount))
+            .sum::<u64>()
     }
 
     fn handle_net_message(&mut self, msg: &SignedWithId<ConsensusNetMessage>) -> Result<(), Error> {
@@ -646,6 +660,7 @@ impl Consensus {
                             info!("🔄 Consensus state out of sync, need to catchup");
                         } else {
                             info!("#### Received genesis block proposal ####");
+                            self.genesis_bond(&consensus_proposal.validators)?;
                         }
                     }
                     None => {
@@ -767,9 +782,11 @@ impl Consensus {
                     .flat_map(|signed_message| signed_message.validators.clone())
                     .collect::<HashSet<ValidatorPublicKey>>();
 
-                let voting_power = self.compute_voting_power(
+                let votes_power = self.compute_voting_power(
                     validated_votes.into_iter().collect::<Vec<_>>().as_slice(),
                 );
+
+                let voting_power = votes_power + self.get_own_voting_power();
 
                 self.metrics.prepare_votes_gauge(voting_power);
 
@@ -862,6 +879,16 @@ impl Consensus {
 
                         // Verify enough validators signed
                         let f = self.compute_f();
+
+                        info!(
+                            "📩 Slot {} validated votes: {} / {} ({} validators for a total bond = {})",
+                                self.bft_round_state.slot,
+                                voting_power,
+                                2 * f + 1,
+                                self.bft_round_state.consensus_proposal.validators.len(),
+                                self.bft_round_state.staking.total_bond()
+                        );
+
                         if voting_power < 2 * f + 1 {
                             self.metrics.confirm_error("prepare_qc_incomplete");
                             bail!("Prepare Quorum Certificate does not contain enough voting power")
@@ -937,12 +964,13 @@ impl Consensus {
                     .flat_map(|signed_message| signed_message.validators.clone())
                     .collect::<HashSet<ValidatorPublicKey>>();
 
-                let voting_power = self.compute_voting_power(
+                let confirmed_power = self.compute_voting_power(
                     confirmed_ack_validators
                         .into_iter()
                         .collect::<Vec<_>>()
                         .as_slice(),
                 );
+                let voting_power = confirmed_power + self.get_own_voting_power();
                 let f = self.compute_f();
                 info!(
                     "✅ Slot {} confirmed acks: {} / {} ({} validators for a total bond = {})",
@@ -1314,13 +1342,7 @@ mod test {
             let mut leader = Self::new(crypto.clone(), c_other.as_validator()).await;
             leader.consensus.is_next_leader = true;
 
-            let mut slave = Self::new(c_other, crypto.as_validator()).await;
-
-            leader.with_bonded_stake(100, "Add stake");
-            leader.add_bonded_staker(&slave, 100, "Add staker");
-
-            slave.with_bonded_stake(100, "Add stake");
-            slave.add_bonded_staker(&leader, 100, "Add staker");
+            let slave = Self::new(c_other, crypto.as_validator()).await;
 
             (leader, slave)
         }
@@ -1397,13 +1419,6 @@ mod test {
                     stake: Stake { amount },
                 }))
                 .expect(err);
-        }
-
-        #[track_caller]
-        fn with_bonded_stake(&mut self, amount: u64, err: &str) {
-            self.with_stake(amount, err);
-            let pk = self.consensus.crypto.validator_pubkey().clone();
-            self.consensus.bft_round_state.staking.bond(pk).expect(err);
         }
 
         #[track_caller]
@@ -1591,6 +1606,7 @@ mod test {
             } else {
                 panic!("Leader proposal is not a Prepare message");
             }
+            // Slave refuses to vote because it does not know slave 2 stake
             assert_contains!(
                 slave.handle_msg_err(&leader_proposal).to_string(),
                 "validator has no stake"
