@@ -204,7 +204,7 @@ pub struct ConsensusStore {
 pub struct Consensus {
     metrics: ConsensusMetrics,
     bus: ConsensusBusClient,
-    validators: ValidatorRegistry,
+    pubkeys: ValidatorRegistry,
     file: Option<PathBuf>,
     store: ConsensusStore,
     config: SharedConf,
@@ -234,13 +234,13 @@ impl Module for Consensus {
         let file = ctx.config.data_directory.clone().join("consensus.bin");
         let store = Self::load_from_disk_or_default(file.as_path());
         let metrics = ConsensusMetrics::global(ctx.config.id.clone());
-        let validators = ctx.validator_registry.share();
+        let pubkeys = ctx.validator_registry.share();
         let bus = ConsensusBusClient::new_from_bus(ctx.bus.new_handle()).await;
 
         Ok(Consensus {
             metrics,
             bus,
-            validators,
+            pubkeys,
             file: Some(file),
             store,
             config: ctx.config.clone(),
@@ -315,7 +315,7 @@ impl Consensus {
             view: self.bft_round_state.view,
             previous_consensus_proposal_hash: ConsensusProposalHash(vec![]),
             previous_commit_quorum_certificate: QuorumCertificate::default(),
-            validators: self.validators.list_validators(),
+            validators: self.pubkeys.list_validators(),
             block: first_block,
         };
     }
@@ -427,7 +427,7 @@ impl Consensus {
             None if self.bft_round_state.slot == 0 => {
                 info!(
                     "🚀 Starting genesis slot with all known {} validators ",
-                    self.validators.get_validators_count(),
+                    self.pubkeys.get_validators_count(),
                 );
                 self.create_genesis_consensus_proposal();
                 self.metrics.start_new_slot("genesis");
@@ -467,7 +467,7 @@ impl Consensus {
         msg: &SignedWithId<ConsensusNetMessage>,
         crypto: &BlstCrypto,
     ) -> Result<(), Error> {
-        if !self.validators.check_signed(msg)? {
+        if !self.pubkeys.check_signed(msg)? {
             self.metrics.signature_error("prepare");
             bail!("Invalid signature for message {:?}", msg);
         }
@@ -646,7 +646,7 @@ impl Consensus {
 
                 // Save vote message
                 self.store.bft_round_state.prepare_votes.insert(
-                    msg.with_pub_keys(self.validators.get_pub_keys_from_id(msg.validators.clone())),
+                    msg.with_pub_keys(self.pubkeys.get_pub_keys_from_id(msg.validators.clone())),
                 );
 
                 self.metrics
@@ -805,7 +805,7 @@ impl Consensus {
 
                 // Save ConfirmAck. Ends if the message already has been processed
                 if !self.store.bft_round_state.confirm_ack.insert(
-                    msg.with_pub_keys(self.validators.get_pub_keys_from_id(msg.validators.clone())),
+                    msg.with_pub_keys(self.pubkeys.get_pub_keys_from_id(msg.validators.clone())),
                 ) {
                     self.metrics.confirm_ack("already_processed");
                     info!("ConfirmAck has already been processed");
@@ -1108,8 +1108,8 @@ impl Consensus {
                 }
             }
             listen<ValidatorRegistryNetMessage> cmd => {
-                self.validators.handle_net_message(cmd.clone());
-                if self.validators.get_validators_count() == 2 && self.is_next_leader() {
+                self.pubkeys.handle_net_message(cmd.clone());
+                if self.pubkeys.get_validators_count() == 2 && self.is_next_leader() {
                     // Start first slot
                     debug!("Got a 2nd validator, starting first slot");
                     sleep(Duration::from_secs(2)).await;
@@ -1160,7 +1160,7 @@ mod test {
             let consensus = Consensus {
                 metrics: ConsensusMetrics::global(ValidatorId("id".to_string())),
                 bus,
-                validators: registry,
+                pubkeys: registry,
                 file: None,
                 store,
                 config: conf,
@@ -1184,9 +1184,12 @@ mod test {
 
         async fn new_slave(leader: &mut TestCtx, id: &str) -> Self {
             let crypto = crypto::BlstCrypto::new(id.into());
-            leader.consensus.validators.handle_net_message(
-                ValidatorRegistryNetMessage::NewValidator(crypto.as_validator()),
-            );
+            leader
+                .consensus
+                .pubkeys
+                .handle_net_message(ValidatorRegistryNetMessage::NewValidator(
+                    crypto.as_validator(),
+                ));
             Self::new(crypto.clone(), leader.crypto.as_validator()).await
         }
 
