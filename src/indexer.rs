@@ -13,7 +13,6 @@ use crate::{
     consensus::ConsensusEvent,
     handle_messages,
     model::{Block, Hashable, SharedRunContext},
-    rest,
     utils::{db, modules::Module},
 };
 use anyhow::{Context, Result};
@@ -72,10 +71,22 @@ impl Module for Indexer {
 
         let inner = IndexerInner::new(db)?;
 
-        Ok(Indexer {
+        let indexer = Indexer {
             bus,
             inner: Arc::new(RwLock::new(inner)),
-        })
+        };
+
+        let mut ctx_router = ctx
+            .router
+            .lock()
+            .expect("Context router should be available");
+        let router = ctx_router
+            .take()
+            .expect("Context router should be available")
+            .nest("/v1/indexer", indexer.api());
+        let _ = ctx_router.insert(router);
+
+        Ok(indexer)
     }
 
     fn run(&mut self, _ctx: Self::Context) -> impl futures::Future<Output = Result<()>> + Send {
@@ -97,7 +108,7 @@ impl Indexer {
         }
     }
 
-    pub fn api() -> Router<rest::RouterState> {
+    pub fn api(&self) -> Router<()> {
         Router::new()
             // block
             .route("/blocks", get(api::get_blocks))
@@ -124,6 +135,7 @@ impl Indexer {
             // contract
             .route("/contracts", get(api::get_contracts))
             .route("/contract/:name", get(api::get_contract))
+            .with_state(self.inner.clone())
     }
 
     async fn handle_consensus_event(&mut self, event: ConsensusEvent) {

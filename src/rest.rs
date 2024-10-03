@@ -2,11 +2,10 @@
 
 use crate::{
     bus::{bus_client, command_response::Query, SharedMessageBus},
-    indexer::{Indexer, IndexerState},
     model::{ContractName, SharedRunContext},
     node_state::model::Contract,
     tools::mock_workflow::RunScenario,
-    utils::{conf::SharedConf, modules::Module},
+    utils::modules::Module,
 };
 use anyhow::{Context, Result};
 use axum::{
@@ -33,13 +32,11 @@ struct RestBusClient {
 
 pub struct RouterState {
     bus: RestBusClient,
-    pub indexer: IndexerState,
 }
 
 pub struct RestApiRunContext {
     pub ctx: SharedRunContext,
     pub metrics_layer: HttpMetricsLayer,
-    pub indexer: IndexerState,
 }
 
 pub struct RestApi {}
@@ -58,10 +55,15 @@ impl Module for RestApi {
 
     fn run(&mut self, ctx: Self::Context) -> impl futures::Future<Output = Result<()>> + Send {
         self.serve(
-            ctx.ctx.config.clone(),
+            ctx.ctx.config.rest_addr().clone(),
             ctx.metrics_layer,
-            ctx.indexer,
             ctx.ctx.bus.new_handle(),
+            ctx.ctx
+                .router
+                .lock()
+                .expect("Context router should be available")
+                .take()
+                .expect("Context router should be available"),
         )
     }
 }
@@ -69,31 +71,32 @@ impl Module for RestApi {
 impl RestApi {
     pub async fn serve(
         &self,
-        config: SharedConf,
+        rest_addr: String,
         metrics_layer: HttpMetricsLayer,
-        indexer: IndexerState,
         bus: SharedMessageBus,
+        router: Router,
     ) -> Result<()> {
-        info!("rest listening on {}", config.rest_addr());
-        let app = Router::new()
-            .nest("/v1", metrics_layer.routes())
-            .route("/v1/contract/:name", get(endpoints::get_contract))
-            .route(
-                "/v1/contract/register",
-                post(endpoints::send_contract_transaction),
+        info!("rest listening on {}", rest_addr);
+        let app = router
+            .merge(
+                Router::new()
+                    .route("/v1/contract/:name", get(endpoints::get_contract))
+                    .route(
+                        "/v1/contract/register",
+                        post(endpoints::send_contract_transaction),
+                    )
+                    .route("/v1/tx/send/blob", post(endpoints::send_blob_transaction))
+                    .route("/v1/tx/send/proof", post(endpoints::send_proof_transaction))
+                    .route("/v1/tools/run_scenario", post(endpoints::run_scenario))
+                    .with_state(RouterState {
+                        bus: RestBusClient::new_from_bus(bus).await,
+                    })
+                    .nest("/v1", metrics_layer.routes()),
             )
-            .route("/v1/tx/send/blob", post(endpoints::send_blob_transaction))
-            .route("/v1/tx/send/proof", post(endpoints::send_proof_transaction))
-            .route("/v1/tools/run_scenario", post(endpoints::run_scenario))
-            .nest("/v1/indexer", Indexer::api())
             .layer(metrics_layer)
-            .layer(tower_http::cors::CorsLayer::permissive())
-            .with_state(RouterState {
-                bus: RestBusClient::new_from_bus(bus.new_handle()).await,
-                indexer,
-            });
+            .layer(tower_http::cors::CorsLayer::permissive());
 
-        let listener = tokio::net::TcpListener::bind(config.rest_addr())
+        let listener = tokio::net::TcpListener::bind(rest_addr)
             .await
             .context("Starting rest server")?;
 
@@ -116,7 +119,6 @@ impl Clone for RouterState {
                 )
                 .clone(),
             ),
-            indexer: self.indexer.clone(),
         }
     }
 }

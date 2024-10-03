@@ -40,8 +40,8 @@ impl Conf {
         (&self.host, self.port)
     }
 
-    pub fn rest_addr(&self) -> &str {
-        return self.rest.as_str();
+    pub fn rest_addr(&self) -> &String {
+        &self.rest
     }
 
     pub fn new(config_file: String, data_directory: Option<String>) -> Result<Self, ConfigError> {

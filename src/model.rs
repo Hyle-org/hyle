@@ -1,5 +1,6 @@
 //! Various data structures
 
+use axum::Router;
 use bincode::{Decode, Encode};
 use derive_more::Display;
 use serde::{
@@ -377,6 +378,7 @@ pub struct RunContext {
     pub bus: SharedMessageBus,
     pub crypto: SharedBlstCrypto,
     pub validator_registry: ValidatorRegistry,
+    pub router: std::sync::Mutex<Option<Router>>,
 }
 pub type SharedRunContext = Arc<RunContext>;
 
