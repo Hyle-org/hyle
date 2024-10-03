@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use axum::Router;
 use axum_otel_metrics::HttpMetricsLayerBuilder;
 use clap::Parser;
 use hyle::{
@@ -18,7 +19,7 @@ use hyle::{
     },
     validator_registry::ValidatorRegistry,
 };
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use tracing::{debug, error, info, level_filters::LevelFilter};
 use tracing_subscriber::{prelude::*, EnvFilter};
 
@@ -99,15 +100,10 @@ async fn main() -> Result<()> {
         config,
         crypto,
         validator_registry,
+        router: Mutex::new(Some(Router::new())),
     });
 
-    let history = Indexer::build(&ctx).await?;
-
-    let rest_api_ctx = RestApiRunContext {
-        ctx: ctx.clone(),
-        metrics_layer,
-        indexer: history.share(),
-    };
+    let indexer = Indexer::build(&ctx).await?;
 
     let mut handler = ModulesHandler::default();
     handler.build_module::<Mempool>(ctx.clone()).await?;
@@ -117,9 +113,11 @@ async fn main() -> Result<()> {
     handler
         .build_module::<MockWorkflowHandler>(ctx.clone())
         .await?;
-    handler.build_module::<RestApi>(rest_api_ctx).await?;
-
-    handler.add_module(history, ctx.clone())?;
+    handler.add_module(indexer, ctx.clone())?;
+    // Should come last so the other modules have nested their own routes.
+    handler
+        .build_module::<RestApi>(RestApiRunContext { ctx, metrics_layer })
+        .await?;
 
     let (running_modules, abort) = handler.start_modules()?;
 
