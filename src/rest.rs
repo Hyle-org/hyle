@@ -30,10 +30,6 @@ struct RestBusClient {
 }
 }
 
-pub struct RouterState {
-    bus: RestBusClient,
-}
-
 pub struct RestApiRunContext {
     pub rest_addr: String,
     pub bus: SharedMessageBus,
@@ -41,7 +37,14 @@ pub struct RestApiRunContext {
     pub metrics_layer: HttpMetricsLayer,
 }
 
-pub struct RestApi {}
+pub struct RouterState {
+    bus: RestBusClient,
+}
+
+pub struct RestApi {
+    rest_addr: String,
+    app: Option<Router>,
+}
 impl Module for RestApi {
     fn name() -> &'static str {
         "RestApi"
@@ -49,32 +52,9 @@ impl Module for RestApi {
 
     type Context = RestApiRunContext;
 
-    async fn build(ctx: &Self::Context) -> Result<Self> {
-        // TODO: do better, splitting router from start is harder than expected
-        let _ = RestBusClient::new_from_bus(ctx.bus.new_handle()).await;
-        Ok(RestApi {})
-    }
-
-    fn run(&mut self, ctx: Self::Context) -> impl futures::Future<Output = Result<()>> + Send {
-        self.serve(
-            ctx.rest_addr,
-            ctx.metrics_layer,
-            ctx.bus.new_handle(),
-            ctx.router,
-        )
-    }
-}
-
-impl RestApi {
-    pub async fn serve(
-        &self,
-        rest_addr: String,
-        metrics_layer: HttpMetricsLayer,
-        bus: SharedMessageBus,
-        router: Router,
-    ) -> Result<()> {
-        info!("rest listening on {}", rest_addr);
-        let app = router
+    async fn build(ctx: Self::Context) -> Result<Self> {
+        let app = ctx
+            .router
             .merge(
                 Router::new()
                     .route("/v1/contract/:name", get(endpoints::get_contract))
@@ -86,19 +66,34 @@ impl RestApi {
                     .route("/v1/tx/send/proof", post(endpoints::send_proof_transaction))
                     .route("/v1/tools/run_scenario", post(endpoints::run_scenario))
                     .with_state(RouterState {
-                        bus: RestBusClient::new_from_bus(bus).await,
+                        bus: RestBusClient::new_from_bus(ctx.bus).await,
                     })
-                    .nest("/v1", metrics_layer.routes()),
+                    .nest("/v1", ctx.metrics_layer.routes()),
             )
-            .layer(metrics_layer)
-            .layer(tower_http::cors::CorsLayer::permissive());
+            .layer(ctx.metrics_layer)
+            .layer(tower_http::cors::CorsLayer::permissive())
+            // TODO: Tracelayer should be added only in "dev mode"
+            .layer(TraceLayer::new_for_http());
+        Ok(RestApi {
+            rest_addr: ctx.rest_addr.clone(),
+            app: Some(app),
+        })
+    }
 
-        let listener = tokio::net::TcpListener::bind(rest_addr)
+    fn run(&mut self) -> impl futures::Future<Output = Result<()>> + Send {
+        self.serve()
+    }
+}
+
+impl RestApi {
+    pub async fn serve(&mut self) -> Result<()> {
+        let listener = tokio::net::TcpListener::bind(&self.rest_addr)
             .await
             .context("Starting rest server")?;
 
-        // TODO: racelayer should be added only in "dev mode"
-        axum::serve(listener, app.layer(TraceLayer::new_for_http()))
+        info!("rest listening on {}", self.rest_addr);
+
+        axum::serve(listener, self.app.take().expect("app is not set"))
             .await
             .context("Starting rest server")
     }

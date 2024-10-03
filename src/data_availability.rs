@@ -42,13 +42,18 @@ impl Module for DataAvailability {
 
     type Context = SharedRunContext;
 
-    async fn build(ctx: &Self::Context) -> Result<Self> {
-        let bus = DABusClient::new_from_bus(ctx.bus.new_handle()).await;
+    async fn build(ctx: Self::Context) -> Result<Self> {
+        let bus = DABusClient::new_from_bus(ctx.common.bus.new_handle()).await;
 
         let db = sled::Config::new()
             .use_compression(true)
             .compression_factor(15)
-            .path(ctx.config.data_directory.join("data_availability.db"))
+            .path(
+                ctx.common
+                    .config
+                    .data_directory
+                    .join("data_availability.db"),
+            )
             .open()
             .context("opening the database")?;
 
@@ -58,7 +63,7 @@ impl Module for DataAvailability {
         })
     }
 
-    fn run(&mut self, _ctx: Self::Context) -> impl futures::Future<Output = Result<()>> + Send {
+    fn run(&mut self) -> impl futures::Future<Output = Result<()>> + Send {
         self.start()
     }
 }
