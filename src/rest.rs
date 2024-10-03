@@ -2,7 +2,7 @@
 
 use crate::{
     bus::{bus_client, command_response::Query, SharedMessageBus},
-    model::{ContractName, SharedRunContext},
+    model::ContractName,
     node_state::model::Contract,
     tools::mock_workflow::RunScenario,
     utils::modules::Module,
@@ -35,7 +35,9 @@ pub struct RouterState {
 }
 
 pub struct RestApiRunContext {
-    pub ctx: SharedRunContext,
+    pub rest_addr: String,
+    pub bus: SharedMessageBus,
+    pub router: Router,
     pub metrics_layer: HttpMetricsLayer,
 }
 
@@ -49,21 +51,16 @@ impl Module for RestApi {
 
     async fn build(ctx: &Self::Context) -> Result<Self> {
         // TODO: do better, splitting router from start is harder than expected
-        let _ = RestBusClient::new_from_bus(ctx.ctx.bus.new_handle()).await;
+        let _ = RestBusClient::new_from_bus(ctx.bus.new_handle()).await;
         Ok(RestApi {})
     }
 
     fn run(&mut self, ctx: Self::Context) -> impl futures::Future<Output = Result<()>> + Send {
         self.serve(
-            ctx.ctx.config.rest_addr().clone(),
+            ctx.rest_addr,
             ctx.metrics_layer,
-            ctx.ctx.bus.new_handle(),
-            ctx.ctx
-                .router
-                .lock()
-                .expect("Context router should be available")
-                .take()
-                .expect("Context router should be available"),
+            ctx.bus.new_handle(),
+            ctx.router,
         )
     }
 }
