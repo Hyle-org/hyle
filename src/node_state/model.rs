@@ -11,6 +11,7 @@ pub struct Contract {
     pub name: ContractName,
     pub program_id: Vec<u8>,
     pub state: StateDigest,
+    pub verifier: String,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Eq, Hash, Encode, Decode)]

@@ -13,6 +13,33 @@ pub fn verify_proof(
     tx: &ProofTransaction,
     verifier: &str,
     program_id: &[u8],
+) -> Result<HyleOutput, Error> {
+    // TODO: remove test
+    match verifier {
+        "test" => {
+            let tx_hash = tx.blobs_references.first().unwrap().blob_tx_hash.clone();
+            let index = tx.blobs_references.first().unwrap().blob_index.clone();
+            Ok(HyleOutput {
+                version: 1,
+                initial_state: StateDigest(vec![0, 1, 2, 3]),
+                next_state: StateDigest(vec![4, 5, 6]),
+                identity: Identity("test".to_string()),
+                tx_hash,
+                index,
+                blobs: vec![0, 1, 2, 3, 0, 1, 2, 3],
+                success: true,
+                program_outputs: vec![],
+            })
+        }
+        "cairo" => cairo_proof_verifier(&tx.proof),
+        "risc0" => risc0_proof_verifier(&tx.proof, program_id),
+        _ => bail!("{} verifier not implemented yet", verifier),
+    }
+}
+
+pub fn verify_recursion_proof(
+    tx: &ProofTransaction,
+    verifier: &str,
 ) -> Result<Vec<HyleOutput>, Error> {
     // TODO: remove test
     match verifier {
@@ -31,13 +58,11 @@ pub fn verify_proof(
                 program_outputs: vec![],
             })
             .collect()),
-        "cairo" => cairo_proof_verifier(&tx.proof),
-        "risc0" => risc0_proof_verifier(&tx.proof, program_id),
-        _ => bail!("{} verifier not implemented yet", verifier),
+        _ => bail!("{} recursion verifier not implemented yet", verifier),
     }
 }
 
-pub fn cairo_proof_verifier(proof: &Vec<u8>) -> Result<Vec<HyleOutput>, Error> {
+pub fn cairo_proof_verifier(proof: &Vec<u8>) -> Result<HyleOutput, Error> {
     let proof_options = ProofOptions::new_secure(SecurityLevel::Conjecturable100Bits, 3);
 
     let mut bytes = proof.as_slice();
@@ -80,7 +105,7 @@ pub fn cairo_proof_verifier(proof: &Vec<u8>) -> Result<Vec<HyleOutput>, Error> {
         };
     let program_output_bytes = &bytes[proof_len + 4 + pub_inputs_len..];
 
-    let program_output = match bincode::serde::decode_from_slice::<Vec<HyleOutput>, _>(
+    let program_output = match bincode::serde::decode_from_slice::<HyleOutput, _>(
         program_output_bytes,
         bincode::config::standard(),
     ) {
@@ -100,10 +125,7 @@ pub fn cairo_proof_verifier(proof: &Vec<u8>) -> Result<Vec<HyleOutput>, Error> {
     }
 }
 
-pub fn risc0_proof_verifier(
-    encoded_receipt: &[u8],
-    image_id: &[u8],
-) -> Result<Vec<HyleOutput>, Error> {
+pub fn risc0_proof_verifier(encoded_receipt: &[u8], image_id: &[u8]) -> Result<HyleOutput, Error> {
     let receipt = match from_slice::<risc0_zkvm::Receipt>(encoded_receipt) {
         Ok(v) => v,
         Err(e) => bail!(
@@ -119,20 +141,23 @@ pub fn risc0_proof_verifier(
         Err(e) => bail!("Risc0 proof verification failed: {}", e),
     };
 
-    println!("receipt.journal: {:?}", receipt.journal);
-
     let hyle_output = match receipt.journal.decode::<HyleOutput>() {
         Ok(v) => v,
         Err(e) => bail!("Failed to extract HyleOuput from Risc0's journal: {}", e),
     };
 
     // // TODO: allow multiple outputs when verifying
-    Ok(vec![hyle_output])
+    Ok(hyle_output)
 }
 
 #[cfg(test)]
 mod tests {
     use std::{fs::File, io::Read};
+
+    use crate::{
+        model::{BlobIndex, Identity, StateDigest, TxHash},
+        node_state::model::HyleOutput,
+    };
 
     use super::risc0_proof_verifier;
 
@@ -156,7 +181,28 @@ mod tests {
 
         match result {
             Ok(outputs) => {
-                assert!(!outputs.is_empty(), "HyleOutput should not be empty");
+                assert_eq!(
+                    outputs,
+                    HyleOutput {
+                        version: 1,
+                        initial_state: StateDigest(vec![
+                            237, 40, 107, 60, 57, 178, 248, 111, 156, 232, 107, 188, 53, 69, 95,
+                            231, 232, 247, 179, 249, 104, 59, 167, 110, 11, 204, 99, 126, 181, 96,
+                            47, 61
+                        ]),
+                        next_state: StateDigest(vec![
+                            154, 65, 139, 95, 54, 114, 201, 168, 66, 153, 34, 153, 43, 237, 17,
+                            198, 0, 39, 64, 81, 204, 183, 209, 41, 84, 147, 193, 217, 48, 42, 213,
+                            57
+                        ]),
+                        identity: Identity("max".to_owned()),
+                        tx_hash: TxHash(vec![1]),
+                        index: BlobIndex(0),
+                        blobs: vec![1, 3, 109, 97, 120, 27],
+                        success: true,
+                        program_outputs: "Minted 27 to max".to_owned().as_bytes().to_vec()
+                    }
+                );
             }
             Err(e) => panic!("Risc0 verification failed: {:?}", e),
         }
