@@ -40,6 +40,7 @@ use crate::{
 };
 
 pub mod metrics;
+pub mod staking;
 
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, PartialEq, Eq, Hash)]
 pub enum ConsensusNetMessage {
