@@ -100,7 +100,7 @@ mod test {
             pubkey: ValidatorPublicKey::default(),
             stake: Stake { amount: 100 },
         };
-        staking.add_staker(staker.clone());
+        assert!(staking.add_staker(staker.clone()).is_ok());
         assert_eq!(staking.total_bond(), 0);
         let stake = staking.bond(staker.pubkey.clone()).unwrap();
         assert_eq!(staking.total_bond(), 100);
@@ -119,7 +119,7 @@ mod test {
         };
         assert!(staking.bond(staker.pubkey.clone()).is_err());
         assert!(staking.unbond(&staker.pubkey).is_err());
-        staking.add_staker(staker.clone());
+        assert!(staking.add_staker(staker.clone()).is_ok());
         assert!(staking.bond(staker.pubkey.clone()).is_ok());
         assert!(staking.bond(staker.pubkey.clone()).is_err());
         assert!(staking.unbond(&staker.pubkey).is_ok());

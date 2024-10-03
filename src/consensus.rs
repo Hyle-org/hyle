@@ -5,9 +5,8 @@ use bincode::{Decode, Encode};
 use metrics::ConsensusMetrics;
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Sha3_256};
-use staking::{Stake, Staker, Staking};
+use staking::{Staker, Staking};
 use std::{
-    cmp::max,
     collections::{HashMap, HashSet},
     default::Default,
     fmt::Display,
@@ -217,6 +216,7 @@ pub struct Consensus {
     file: Option<PathBuf>,
     store: ConsensusStore,
     crypto: SharedBlstCrypto,
+    #[allow(dead_code)]
     config: SharedConf,
 }
 
