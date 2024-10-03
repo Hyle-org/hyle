@@ -171,7 +171,9 @@ impl NodeState {
         // TODO extract correct verifier
         let verifier: String = "test".to_owned();
         // Verify proof
-        let blobs_metadata: Vec<HyleOutput> = verifiers::verify_proof(&tx, &verifier)?;
+        // TODO get correct program_id
+        let program_id = vec![];
+        let blobs_metadata: Vec<HyleOutput> = verifiers::verify_proof(&tx, &verifier, &program_id)?;
 
         // TODO: add diverse verifications ? (without the inital state checks!).
         self.process_verifications(&tx, &blobs_metadata)?;

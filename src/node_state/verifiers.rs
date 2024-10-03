@@ -1,5 +1,7 @@
 use anyhow::{bail, Error};
+use borsh::from_slice;
 use cairo_platinum_prover::air::verify_cairo_proof;
+use risc0_zkvm::sha::Digest;
 use stark_platinum_prover::proof::options::{ProofOptions, SecurityLevel};
 
 use crate::model::ProofTransaction;
@@ -7,7 +9,11 @@ use crate::model::{Identity, StateDigest};
 
 use super::model::HyleOutput;
 
-pub fn verify_proof(tx: &ProofTransaction, verifier: &str) -> Result<Vec<HyleOutput>, Error> {
+pub fn verify_proof(
+    tx: &ProofTransaction,
+    verifier: &str,
+    program_id: &[u8],
+) -> Result<Vec<HyleOutput>, Error> {
     // TODO: remove test
     match verifier {
         "test" => Ok(tx
@@ -25,6 +31,7 @@ pub fn verify_proof(tx: &ProofTransaction, verifier: &str) -> Result<Vec<HyleOut
             })
             .collect()),
         "cairo" => cairo_proof_verifier(&tx.proof),
+        "risc0" => risc0_proof_verifier(&tx.proof, program_id),
         _ => bail!("{} verifier not implemented yet", verifier),
     }
 }
@@ -34,7 +41,7 @@ pub fn cairo_proof_verifier(proof: &Vec<u8>) -> Result<Vec<HyleOutput>, Error> {
 
     let mut bytes = proof.as_slice();
     if bytes.len() < 8 {
-        bail!("Proof is too short");
+        bail!("Cairo oroof is too short");
     }
 
     // Proof len was stored as an u32, 4u8 needs to be read
@@ -42,7 +49,7 @@ pub fn cairo_proof_verifier(proof: &Vec<u8>) -> Result<Vec<HyleOutput>, Error> {
 
     bytes = &bytes[4..];
     if bytes.len() < proof_len {
-        bail!("Proof is not correctly formed");
+        bail!("Cairo proof is not correctly formed");
     }
 
     let proof = match bincode::serde::decode_from_slice(
@@ -51,7 +58,7 @@ pub fn cairo_proof_verifier(proof: &Vec<u8>) -> Result<Vec<HyleOutput>, Error> {
     ) {
         Ok((proof, _)) => proof,
         Err(e) => {
-            bail!("Error while decoding proof. Decode error: {}", e);
+            bail!("Error while decoding cairo proof. Decode error: {}", e);
         }
     };
 
@@ -65,7 +72,7 @@ pub fn cairo_proof_verifier(proof: &Vec<u8>) -> Result<Vec<HyleOutput>, Error> {
             Ok((pub_inputs, _)) => pub_inputs,
             Err(e) => {
                 bail!(
-                    "Error while decoding proof's public input. Decode error: {}",
+                    "Error while decoding cairo proof's public input. Decode error: {}",
                     e
                 );
             }
@@ -78,13 +85,82 @@ pub fn cairo_proof_verifier(proof: &Vec<u8>) -> Result<Vec<HyleOutput>, Error> {
     ) {
         Ok((program_output, _)) => program_output,
         Err(e) => {
-            bail!("Error while decoding proof's output. Decode error: {}", e);
+            bail!(
+                "Error while decoding cairo proof's output. Decode error: {}",
+                e
+            );
         }
     };
 
     if verify_cairo_proof(&proof, &pub_inputs, &proof_options) {
         Ok(program_output)
     } else {
-        bail!("Proof verification failed.");
+        bail!("Cairo proof verification failed.");
+    }
+}
+
+pub fn risc0_proof_verifier(
+    encoded_receipt: &[u8],
+    image_id: &[u8],
+) -> Result<Vec<HyleOutput>, Error> {
+    let receipt = match from_slice::<risc0_zkvm::Receipt>(encoded_receipt) {
+        Ok(v) => v,
+        Err(e) => bail!(
+            "Error while decoding Risc0 proof's receipt. Decode error: {}",
+            e
+        ),
+    };
+
+    let image_bytes: Digest = image_id.try_into().expect("Invalid Risc0 image ID");
+
+    // On peut récuperer l'image ID depuis le Receipt et le comparer avec ce qu'on a pour ne pas lancer la vérification s'ils ne matchent pas
+    // TODO: remove unwrap
+    // let claim = receipt.claim().unwrap().value().unwrap();
+    // println!("claim.pre.digest(): {:?}", claim.pre.digest());
+    // asserteq!(claim.pre.digest(), image_bytes);
+
+    receipt
+        .verify(image_bytes)
+        .expect("Risc0 proof verification failed");
+
+    let hyle_output = receipt
+        .journal
+        .decode::<HyleOutput>()
+        .expect("Failed to extract HyleOuput from Risc0's journal");
+
+    // TODO: allow multiple outputs when verifying
+    Ok(vec![hyle_output])
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{fs::File, io::Read};
+
+    use super::risc0_proof_verifier;
+
+    fn load_encoded_receipt_from_file(path: &str) -> Vec<u8> {
+        let mut file = File::open(path).expect("Failed to open proof file");
+        let mut encoded_receipt = Vec::new();
+        file.read_to_end(&mut encoded_receipt)
+            .expect("Failed to read file content");
+        encoded_receipt
+    }
+
+    #[test]
+    fn test_risc0_proof_verifier() {
+        let encoded_receipt = load_encoded_receipt_from_file("./tests/proofs/erc20.risc0.proof");
+
+        let image_id =
+            hex::decode("a77b03e5db5b05ce9e05920e528a18985d40aecda607cbb808235c87f535f606")
+                .expect("Image id decoding failed");
+
+        let result = risc0_proof_verifier(&encoded_receipt, &image_id);
+
+        match result {
+            Ok(outputs) => {
+                assert!(!outputs.is_empty(), "HyleOutput should not be empty");
+            }
+            Err(e) => panic!("Risc0 verification failed: {:?}", e),
+        }
     }
 }
