@@ -151,8 +151,6 @@ pub struct Identity(pub String);
 )]
 pub struct ContractName(pub String);
 
-pub struct CName<'a>(pub &'a str);
-
 #[derive(Debug, Serialize, Deserialize, Default, Clone, Eq, PartialEq, Hash, Encode, Decode)]
 pub struct StateDigest(pub Vec<u8>);
 

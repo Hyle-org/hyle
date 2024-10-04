@@ -26,12 +26,12 @@ impl BusMetrics {
     }
 
     // Fonction pour simplifier le nom de type en utilisant `syn`
-    fn simplifie_type_name(type_name: &str) -> String {
+    fn simplify_type_name(type_name: &str) -> String {
         // Tente de parser `type_name` en tant que Type
         let parsed_type: Type = parse_str(type_name).expect("Erreur lors du parsing du type");
 
         // Fonction auxiliaire pour extraire les segments de base sans le chemin complet
-        fn simplifie_type(ty: &Type) -> String {
+        fn simplify_type(ty: &Type) -> String {
             match ty {
                 Type::Path(type_path) => {
                     // Prend le dernier segment du chemin (nom de base du type)
@@ -44,7 +44,7 @@ impl BusMetrics {
                             .args
                             .iter()
                             .map(|arg| match arg {
-                                syn::GenericArgument::Type(inner_ty) => simplifie_type(inner_ty),
+                                syn::GenericArgument::Type(inner_ty) => simplify_type(inner_ty),
                                 _ => arg.to_token_stream().to_string(),
                             })
                             .collect::<Vec<_>>()
@@ -58,12 +58,8 @@ impl BusMetrics {
             }
         }
 
-        simplifie_type(&parsed_type)
+        simplify_type(&parsed_type)
     }
-    // }
-    // fn simplifie_type_name<'a>(type_name: &'a str) -> &'a str {
-    //     type_name.rsplit("::").last().unwrap()
-    // }
 
     fn get_key<Msg: 'static, Client: 'static>(&self) -> (TypeId, TypeId) {
         (TypeId::of::<Msg>(), TypeId::of::<Client>())
@@ -72,10 +68,10 @@ impl BusMetrics {
     fn get_or_insert_labels<Msg: 'static, Client: 'static>(&mut self, key: &(TypeId, TypeId)) {
         self.labels.entry(*key).or_insert_with(|| {
             [
-                KeyValue::new("msg", BusMetrics::simplifie_type_name(type_name::<Msg>())),
+                KeyValue::new("msg", BusMetrics::simplify_type_name(type_name::<Msg>())),
                 KeyValue::new(
                     "client_id",
-                    BusMetrics::simplifie_type_name(type_name::<Client>()),
+                    BusMetrics::simplify_type_name(type_name::<Client>()),
                 ),
             ]
         });
