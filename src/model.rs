@@ -177,10 +177,20 @@ impl Default for TransactionData {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Default, PartialEq, Eq, Clone, Encode, Decode, Hash)]
+#[derive(Serialize, Deserialize, Default, PartialEq, Eq, Clone, Encode, Decode, Hash)]
 pub struct ProofTransaction {
     pub blobs_references: Vec<BlobReference>,
     pub proof: Vec<u8>,
+}
+
+impl fmt::Debug for ProofTransaction {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ProofTransaction")
+            .field("blobs_references", &self.blobs_references)
+            .field("proof", &"[HIDDEN]")
+            .field("proof_len", &self.proof.len())
+            .finish()
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Default, Clone, PartialEq, Eq, Encode, Decode, Hash)]

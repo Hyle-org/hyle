@@ -207,6 +207,7 @@ pub struct Consensus {
     validators: ValidatorRegistry,
     file: Option<PathBuf>,
     store: ConsensusStore,
+    #[allow(dead_code)]
     config: SharedConf,
     crypto: Arc<BlstCrypto>,
 }

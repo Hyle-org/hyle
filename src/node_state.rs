@@ -145,6 +145,7 @@ impl NodeState {
                 name: tx.contract_name,
                 program_id: tx.program_id,
                 state: tx.state_digest,
+                verifier: tx.verifier,
             },
         );
 
@@ -182,8 +183,27 @@ impl NodeState {
     fn handle_proof(&mut self, tx: ProofTransaction) -> Result<(), Error> {
         // TODO extract correct verifier
         let verifier: String = "test".to_owned();
+
         // Verify proof
-        let blobs_metadata: Vec<HyleOutput> = verifiers::verify_proof(&tx, &verifier)?;
+        let blobs_metadata = match tx.blobs_references.len() {
+            0 => bail!("ProofTx needs to specify a BlobTx"),
+            1 => {
+                let contract_name = &tx.blobs_references.first().unwrap().contract_name;
+                let contract = match self.contracts.get(contract_name) {
+                    Some(contract) => contract,
+                    None => {
+                        bail!(
+                            "No contract '{}' found when checking for proof verification",
+                            contract_name
+                        );
+                    }
+                };
+                let program_id = &contract.program_id;
+                let verifier = &contract.verifier;
+                vec![verifiers::verify_proof(&tx, verifier, program_id)?]
+            }
+            _ => verifiers::verify_recursion_proof(&tx, &verifier)?,
+        };
 
         // TODO: add diverse verifications ? (without the inital state checks!).
         self.process_verifications(&tx, &blobs_metadata)?;
