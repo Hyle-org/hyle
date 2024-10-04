@@ -1,14 +1,16 @@
 use anyhow::{anyhow, bail, Context, Error};
 use futures::{SinkExt, StreamExt};
 use tokio::net::TcpStream;
-use tokio_util::codec::{FramedRead, FramedWrite, LengthDelimitedCodec};
+use tokio_util::codec::{Framed, LengthDelimitedCodec};
+use tracing::trace;
 
 use super::network::NetMessage;
 
-pub async fn read_stream(stream: &mut TcpStream) -> Result<NetMessage, Error> {
-    let mut framed = FramedRead::new(stream, LengthDelimitedCodec::new());
-
-    if let Some(result) = framed.next().await {
+pub async fn read_stream(
+    stream: &mut Framed<TcpStream, LengthDelimitedCodec>,
+) -> Result<NetMessage, Error> {
+    trace!("Waiting for data");
+    if let Some(result) = stream.next().await {
         match result {
             Ok(data) => {
                 let (net_msg, _) = bincode::decode_from_slice(&data, bincode::config::standard())
@@ -22,12 +24,13 @@ pub async fn read_stream(stream: &mut TcpStream) -> Result<NetMessage, Error> {
     }
 }
 
-pub async fn send_net_message(stream: &mut TcpStream, msg: NetMessage) -> Result<(), Error> {
-    let mut framed = FramedWrite::new(stream, LengthDelimitedCodec::new());
-
+pub async fn send_net_message(
+    stream: &mut Framed<TcpStream, LengthDelimitedCodec>,
+    msg: NetMessage,
+) -> Result<(), Error> {
     let binary = msg.to_binary();
 
-    framed
+    stream
         .send(binary.into())
         .await
         .context("Failed to send NetMessage")?;
