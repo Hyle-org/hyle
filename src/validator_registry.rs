@@ -154,6 +154,10 @@ impl ValidatorRegistry {
         }
     }
 
+    pub fn add(&mut self, id: ValidatorId, pub_key: ValidatorPublicKey) {
+        self.add_validator(id.clone(), ConsensusValidator { id, pub_key });
+    }
+
     pub fn add_validator(&mut self, id: ValidatorId, validator: ConsensusValidator) {
         info!("👋 New validator '{}'", id);
         debug!("{:?}", validator);

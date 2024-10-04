@@ -446,6 +446,13 @@ impl Consensus {
                 bail!("New bonded validator has no stake");
             }
             // Verify that the new validator has a valid signature
+            let id = new_validator
+                .msg
+                .validators
+                .first()
+                .ok_or(anyhow!("No validator in msg"))?
+                .clone();
+            self.pubkeys.add(id, new_validator.pubkey.clone());
             if !self.pubkeys.check_signed(&new_validator.msg)? {
                 bail!("New bonded validator has an invalid signature");
             }
