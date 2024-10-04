@@ -1064,7 +1064,7 @@ impl Consensus {
         }
     }
 
-    pub async fn start_master(&mut self, config: SharedConf) -> Result<()> {
+    pub fn start_master(&mut self, config: SharedConf) -> Result<()> {
         let interval = config.storage.interval;
 
         // hack to avoid another bus for a specific wip case
