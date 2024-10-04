@@ -161,6 +161,10 @@ impl Peer {
                     .context("Receiving consensus net message")?;
             }
             NetMessage::ValidatorRegistryMessage(validator_registry_msg) => {
+                debug!(
+                    "Received new validator registry net message {:?}",
+                    validator_registry_msg
+                );
                 self.bus
                     .send(validator_registry_msg)
                     .context("Receiving validator registry net message")?;
