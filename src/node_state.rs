@@ -2,7 +2,7 @@
 
 use crate::{
     bus::{bus_client, command_response::Query, SharedMessageBus},
-    consensus::ConsensusEvent,
+    consensus::{staking::Staker, ConsensusCommand, ConsensusEvent},
     handle_messages,
     model::{
         BlobTransaction, BlobsHash, Block, BlockHeight, ContractName, Hashable, ProofTransaction,
@@ -27,6 +27,7 @@ mod verifiers;
 
 bus_client! {
 struct NodeStateBusClient {
+    sender(ConsensusCommand),
     receiver(Query<ContractName, Contract>),
     receiver(ConsensusEvent),
 }
@@ -118,6 +119,7 @@ impl NodeState {
         debug!("Got transaction to handle: {:?}", transaction);
 
         match transaction.transaction_data {
+            crate::model::TransactionData::Stake(staker) => self.handle_stake_tx(staker),
             crate::model::TransactionData::Blob(tx) => self.handle_blob_tx(tx),
             crate::model::TransactionData::Proof(tx) => self.handle_proof(tx),
             crate::model::TransactionData::RegisterContract(tx) => {
@@ -136,6 +138,14 @@ impl NodeState {
             },
         );
 
+        Ok(())
+    }
+
+    // FIXME: to remove when we have a real staking smart contract
+    fn handle_stake_tx(&mut self, staker: Staker) -> Result<(), Error> {
+        self.bus
+            .send(ConsensusCommand::NewStaker(staker))
+            .context("Send stake event")?;
         Ok(())
     }
 

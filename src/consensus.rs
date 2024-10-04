@@ -1,6 +1,6 @@
 //! Handles all consensus logic up to block commitment.
 
-use anyhow::{bail, Context, Error, Result};
+use anyhow::{anyhow, bail, Context, Error, Result};
 use bincode::{Decode, Encode};
 use metrics::ConsensusMetrics;
 use serde::{Deserialize, Serialize};
@@ -52,6 +52,8 @@ pub enum ConsensusNetMessage {
     ConfirmAck(ConsensusProposalHash),
     Commit(ConsensusProposalHash, QuorumCertificate),
     ValidatorCandidacy(ValidatorCandidacy),
+    CatchupRequest(),
+    CatchupResponse(Staking),
 }
 
 #[derive(Encode, Decode, Default, Debug)]
@@ -658,6 +660,16 @@ impl Consensus {
                     None if self.bft_round_state.slot == 0 => {
                         if consensus_proposal.slot != 0 {
                             info!("🔄 Consensus state out of sync, need to catchup");
+                            _ = self
+                                .bus
+                                .send(OutboundMessage::send(
+                                    self.leader_id(),
+                                    self.sign_net_message(ConsensusNetMessage::CatchupRequest(
+                                    ))?,
+                                ))
+                                .context(
+                                    "Failed to send ConsensusNetMessage::PrepareVote msg on the bus",
+                                )?;
                         } else {
                             info!("#### Received genesis block proposal ####");
                             self.genesis_bond(&consensus_proposal.validators)?;
@@ -746,7 +758,7 @@ impl Consensus {
                             "Failed to send ConsensusNetMessage::PrepareVote msg on the bus",
                         )?;
                 } else {
-                    debug!("😥 Not part of consensus, not sending PrepareVote");
+                    info!("😥 Not part of consensus, not sending PrepareVote");
                 }
 
                 self.metrics.prepare();
@@ -920,7 +932,7 @@ impl Consensus {
                         ))
                         .context("Failed to send ConsensusNetMessage::ConfirmAck msg on the bus")?;
                 } else {
-                    debug!("😥 Not part of consensus, not sending ConfirmAck");
+                    info!("😥 Not part of consensus, not sending ConfirmAck");
                 }
                 Ok(())
             }
@@ -1175,6 +1187,35 @@ impl Consensus {
                     msg: msg.clone(),
                 });
                 Ok(())
+            }
+            ConsensusNetMessage::CatchupRequest() => {
+                info!("🔄 Catchup request received");
+                _ = self
+                    .bus
+                    .send(OutboundMessage::send(
+                        msg.validators
+                            .first()
+                            .ok_or(anyhow!("No validator in msg"))?
+                            .clone(),
+                        self.sign_net_message(ConsensusNetMessage::CatchupResponse(
+                            self.bft_round_state.staking.clone(),
+                        ))?,
+                    ))
+                    .context(
+                        "Failed to send ConsensusNetMessage::CatchupResponse msg on the bus",
+                    )?;
+                Ok(())
+            }
+            ConsensusNetMessage::CatchupResponse(staking) => {
+                info!("🔄 Catchup response received");
+                if self.bft_round_state.slot == 0
+                    && self.bft_round_state.slot != self.bft_round_state.consensus_proposal.slot
+                {
+                    self.bft_round_state.staking = staking.clone();
+                    Ok(())
+                } else {
+                    bail!("CatchupResponse is only valid for genesis block");
+                }
             }
         }
     }

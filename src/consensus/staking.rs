@@ -1,7 +1,7 @@
 use anyhow::{bail, Result};
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, fmt::Display};
+use std::fmt::Display;
 use tracing::info;
 
 use crate::validator_registry::ValidatorPublicKey;
@@ -23,9 +23,9 @@ pub struct Stake {
     pub amount: u64,
 }
 
-#[derive(Encode, Decode, Default)]
+#[derive(Debug, Default, Serialize, Deserialize, Clone, Encode, Decode, PartialEq, Eq, Hash)]
 pub struct Staking {
-    stakers: HashMap<ValidatorPublicKey, Stake>,
+    stakers: Vec<Staker>,
     bonded: Vec<ValidatorPublicKey>,
     total_bond: u64,
 }
@@ -41,23 +41,23 @@ impl Staking {
 
     /// Add a staking validator
     pub fn add_staker(&mut self, staker: Staker) -> Result<()> {
-        if self.stakers.contains_key(&staker.pubkey) {
+        if self.stakers.iter().any(|s| s.pubkey == staker.pubkey) {
             bail!("Validator already staking")
         }
         info!("💰 New staker {}", staker);
-        self.stakers.insert(staker.pubkey, staker.stake);
+        self.stakers.push(staker);
         Ok(())
     }
 
     /// Unbond a staking validator
     pub fn unbond(&mut self, validator: &ValidatorPublicKey) -> Result<Stake> {
-        if let Some(stake) = self.stakers.get(validator) {
+        if let Some(staker) = self.stakers.iter().find(|s| &s.pubkey == validator) {
             if !self.bonded.contains(validator) {
                 bail!("Validator already unbonded")
             }
             self.bonded.retain(|v| v != validator);
-            self.total_bond -= stake.amount;
-            Ok(*stake)
+            self.total_bond -= staker.stake.amount;
+            Ok(staker.stake)
         } else {
             bail!("Validator not staking")
         }
@@ -70,19 +70,22 @@ impl Staking {
 
     /// Get the stake for a validator
     pub fn get_stake(&self, validator: &ValidatorPublicKey) -> Option<Stake> {
-        self.stakers.get(validator).copied()
+        self.stakers
+            .iter()
+            .find(|s| &s.pubkey == validator)
+            .map(|s| s.stake)
     }
 
     /// Bond a staking validator
     pub fn bond(&mut self, validator: ValidatorPublicKey) -> Result<Stake> {
         info!("🔐 Bonded validator {}", validator);
-        if let Some(stake) = self.stakers.get(&validator) {
+        if let Some(staker) = self.stakers.iter().find(|s| s.pubkey == validator) {
             if self.bonded.contains(&validator) {
                 bail!("Validator already bonded")
             }
             self.bonded.push(validator);
-            self.total_bond += stake.amount;
-            Ok(*stake)
+            self.total_bond += staker.stake.amount;
+            Ok(staker.stake)
         } else {
             bail!("Validator not staking")
         }

@@ -18,6 +18,7 @@ use tracing::debug;
 
 use crate::{
     bus::SharedMessageBus,
+    consensus::staking::Staker,
     utils::{conf::SharedConf, crypto::SharedBlstCrypto},
     validator_registry::ValidatorRegistry,
 };
@@ -150,6 +151,12 @@ pub struct Identity(pub String);
 )]
 pub struct ContractName(pub String);
 
+impl From<&str> for ContractName {
+    fn from(s: &str) -> Self {
+        ContractName(s.to_string())
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize, Default, Clone, Eq, PartialEq, Hash, Encode, Decode)]
 pub struct StateDigest(pub Vec<u8>);
 
@@ -165,6 +172,7 @@ pub struct Transaction {
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Encode, Decode, Hash)]
 pub enum TransactionData {
+    Stake(Staker), // FIXME: to remove, this is temporary waiting for real staking contract !!
     Blob(BlobTransaction),
     Proof(ProofTransaction),
     RegisterContract(RegisterContractTransaction),
@@ -290,12 +298,22 @@ impl Hashable<BlockHash> for Block {
 impl Hashable<TxHash> for Transaction {
     fn hash(&self) -> TxHash {
         match &self.transaction_data {
+            TransactionData::Stake(staker) => staker.hash(),
             TransactionData::Blob(tx) => tx.hash(),
             TransactionData::Proof(tx) => tx.hash(),
             TransactionData::RegisterContract(tx) => tx.hash(),
         }
     }
 }
+impl Hashable<TxHash> for Staker {
+    fn hash(&self) -> TxHash {
+        let mut hasher = Sha3_256::new();
+        _ = write!(hasher, "{:?}", self.pubkey.0);
+        _ = write!(hasher, "{}", self.stake.amount);
+        return TxHash(hasher.finalize().as_slice().to_owned());
+    }
+}
+
 impl Hashable<TxHash> for BlobTransaction {
     fn hash(&self) -> TxHash {
         let mut hasher = Sha3_256::new();
