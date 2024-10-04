@@ -46,6 +46,9 @@ fn setup_tracing() -> Result<()> {
         if !var.contains("sled") {
             filter = filter.add_directive("sled=info".parse()?);
         }
+        if !var.contains("risc0_zkvm") {
+            filter = filter.add_directive("risc0_zkvm=info".parse()?);
+        }
         if !var.contains("tower_http") {
             // API request/response debug tracing
             filter = filter.add_directive("tower_http::trace=debug".parse()?);

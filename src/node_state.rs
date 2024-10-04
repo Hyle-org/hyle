@@ -181,7 +181,7 @@ impl NodeState {
                     Some(contract) => contract,
                     None => {
                         bail!(
-                            "No contract '{}' found when checking for settlement",
+                            "No contract '{}' found when checking for proof verification",
                             contract_name
                         );
                     }

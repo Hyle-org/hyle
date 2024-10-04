@@ -149,7 +149,7 @@ impl Mempool {
     }
 
     async fn on_new_tx(&mut self, tx: Transaction) {
-        debug!("Got new tx {} {:?}", tx.hash(), tx);
+        debug!("Got new tx {}", tx.hash());
         self.metrics.add_api_tx("blob".to_string());
         self.pending_txs.push(tx.clone());
         // TODO: Change this when we implement Motorway
