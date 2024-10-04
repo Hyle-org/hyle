@@ -29,7 +29,6 @@ use crate::{
     p2p::network::{OutboundMessage, Signature, Signed, SignedWithId, SignedWithKey},
     utils::{
         conf::SharedConf,
-        constants,
         crypto::{BlstCrypto, SharedBlstCrypto},
         logger::LogMe,
         modules::Module,
@@ -444,7 +443,7 @@ impl Consensus {
                 .staking
                 .get_stake(&new_validator.pubkey)
             {
-                if stake.amount < constants::MIN_STAKE {
+                if stake.amount < staking::MIN_STAKE {
                     bail!("New bonded validator has not enough stake to be bonded");
                 }
             } else {
@@ -1187,7 +1186,7 @@ impl Consensus {
 
                 // Verify that the candidate has enough stake
                 if let Some(stake) = self.bft_round_state.staking.get_stake(&candidacy.pubkey) {
-                    if stake.amount < constants::MIN_STAKE {
+                    if stake.amount < staking::MIN_STAKE {
                         bail!("🛑 Candidate validator does not have enough stake to be part of consensus");
                     }
                 } else {
@@ -1455,12 +1454,6 @@ mod test {
         }
 
         #[track_caller]
-        fn add_bonded_staker(&mut self, staker: &Self, amount: u64, err: &str) {
-            self.add_staker(staker, amount, err);
-            self.bond(staker, err);
-        }
-
-        #[track_caller]
         fn with_stake(&mut self, amount: u64, err: &str) {
             self.consensus
                 .pubkeys
@@ -1472,20 +1465,6 @@ mod test {
                     pubkey: self.consensus.crypto.validator_pubkey().clone(),
                     stake: Stake { amount },
                 }))
-                .expect(err);
-        }
-
-        #[track_caller]
-        fn bond(&mut self, staker: &Self, err: &str) {
-            debug!(
-                "➕ {} Bond staker: {:?}",
-                self.consensus.crypto.validator_id(),
-                staker.consensus.crypto.validator_id()
-            );
-            self.consensus
-                .bft_round_state
-                .staking
-                .bond(staker.consensus.crypto.validator_pubkey().clone())
                 .expect(err);
         }
 

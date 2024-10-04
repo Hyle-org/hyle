@@ -30,6 +30,9 @@ pub struct Staking {
     total_bond: u64,
 }
 
+/// Minimal stake necessary to be part of consensus
+pub const MIN_STAKE: u64 = 32;
+
 impl Staking {
     pub fn new() -> Self {
         Staking {
