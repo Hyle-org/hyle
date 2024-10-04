@@ -6,8 +6,9 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, Eq, PartialEq)]
-pub struct Version {
-    pub id: u16,
+pub struct Hello {
+    pub version: u16,
+    pub validator_id: ValidatorId,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -79,7 +80,7 @@ pub enum NetMessage {
 
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, Eq, PartialEq)]
 pub enum HandshakeNetMessage {
-    Version(Version),
+    Hello(Hello),
     Verack,
     Ping,
     Pong,

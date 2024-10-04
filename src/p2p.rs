@@ -64,7 +64,9 @@ pub async fn p2p_server(
                     )
                     .await;
 
-                    _ = peer.handshake().await;
+                    if let Err(e) = peer.handshake().await {
+                        warn!("Error in handshake: {}", e);
+                    }
                     debug!("Handshake done !");
                     match peer.start().await {
                         Ok(_) => warn!("Peer #{} thread ended with success.", id),
