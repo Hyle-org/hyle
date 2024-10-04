@@ -1583,15 +1583,17 @@ mod test {
         }
 
         let mut slave2 = TestCtx::new_slave(&mut leader, "node-3").await;
-        slave2.with_stake(100, "Add stake");
-        slave2.add_bonded_staker(&leader, 100, "Add staker");
-        slave2.add_bonded_staker(&slave, 100, "Add staker");
         // Slot 1: New slave catchup
         {
             info!("➡️  Leader proposal");
             let leader_proposal = leader.assert_broadcast("Leader proposal");
             slave.handle_msg(&leader_proposal, "Leader proposal");
             slave2.handle_msg(&leader_proposal, "Leader proposal");
+            info!("➡️  Slave 2 catchup");
+            let slave2_catchup_req = slave2.assert_send("node-1".into(), "Slave2 catchup");
+            leader.handle_msg(&slave2_catchup_req, "Slave2 catchup");
+            let leader_catchup_resp = leader.assert_send("node-3".into(), "Salve2 catchup");
+            slave2.handle_msg(&leader_catchup_resp, "Slave2 catchup");
             info!("➡️  Slave vote");
             let slave_vote = slave.assert_send("node-1".into(), "Slave vote");
             leader.handle_msg(&slave_vote, "Slave vote");
@@ -1612,6 +1614,7 @@ mod test {
                 leader.handle_msg_err(&slave2_candidacy).to_string(),
                 "validator is not staking"
             );
+            slave2.with_stake(100, "Add stake");
             leader.add_staker(&slave2, 100, "Add staker");
             leader.handle_msg(&slave2_candidacy, "Slave 2 candidacy");
         }
