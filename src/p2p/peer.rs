@@ -39,7 +39,7 @@ struct PeerBusClient {
 
 pub struct Peer {
     id: u64,
-    framed: Framed<TcpStream, LengthDelimitedCodec>,
+    stream: Framed<TcpStream, LengthDelimitedCodec>,
     bus: PeerBusClient,
     last_pong: SystemTime,
     conf: SharedConf,
@@ -71,7 +71,7 @@ impl Peer {
 
         Peer {
             id,
-            framed,
+            stream: framed,
             bus: PeerBusClient::new_from_bus(bus).await,
             last_pong: SystemTime::now(),
             conf,
@@ -90,7 +90,7 @@ impl Peer {
     ) -> Result<(), Error> {
         if let Some(peer_validator) = &self.peer_validator {
             if *peer_validator == validator_id {
-                return send_net_message(&mut self.framed, msg).await;
+                return send_net_message(&mut self.stream, msg).await;
             } else {
                 warn!(
                     "Validator id mismatch. Expected: {:?}, got: {:?}",
@@ -108,7 +108,7 @@ impl Peer {
         if !self.bloom_filter.check(&binary) {
             self.bloom_filter.set(&binary);
             debug!("Broadcast message to #{}: {:?}", self.id, msg);
-            send_net_message(&mut self.framed, msg).await
+            send_net_message(&mut self.stream, msg).await
         } else {
             trace!("Message to #{} already broadcasted", self.id);
             Ok(())
@@ -120,19 +120,19 @@ impl Peer {
             HandshakeNetMessage::Hello(v) => {
                 info!("Got peer hello message {:?}", v);
                 self.peer_validator = Some(v.validator_id);
-                send_net_message(&mut self.framed, HandshakeNetMessage::Verack.into()).await
+                send_net_message(&mut self.stream, HandshakeNetMessage::Verack.into()).await
             }
             HandshakeNetMessage::Verack => {
                 debug!("Got peer verack message");
                 self.ping_pong();
                 send_net_message(
-                    &mut self.framed,
+                    &mut self.stream,
                     ValidatorRegistryNetMessage::NewValidator(self.self_validator.clone()).into(),
                 )
                 .await
             }
             HandshakeNetMessage::Ping => {
-                send_net_message(&mut self.framed, HandshakeNetMessage::Pong.into()).await
+                send_net_message(&mut self.stream, HandshakeNetMessage::Pong.into()).await
             }
             HandshakeNetMessage::Pong => {
                 self.last_pong = SystemTime::now();
@@ -202,7 +202,7 @@ impl Peer {
                 }
             }
 
-            res = read_stream(&mut self.framed) => match res {
+            res = read_stream(&mut self.stream) => match res {
                 Ok(message) => match self.handle_stream_message(message).await {
                     Ok(_) => continue,
                     Err(e) => {
@@ -226,7 +226,7 @@ impl Peer {
                                 }
                             }
                             debug!("ping");
-                            send_net_message(&mut self.framed, HandshakeNetMessage::Ping.into()).await
+                            send_net_message(&mut self.stream, HandshakeNetMessage::Ping.into()).await
                         }
                     };
 
@@ -253,7 +253,7 @@ impl Peer {
 
     pub async fn handshake(&mut self) -> Result<(), Error> {
         send_net_message(
-            &mut self.framed,
+            &mut self.stream,
             HandshakeNetMessage::Hello(Hello {
                 version: 1,
                 validator_id: self.self_validator.id.clone(),
