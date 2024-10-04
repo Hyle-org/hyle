@@ -299,7 +299,8 @@ impl Consensus {
             // Bond the candidate
             self.bft_round_state
                 .staking
-                .bond(new_validator.pubkey.clone())?;
+                .bond(new_validator.pubkey.clone())
+                .expect("Failed to bond new validator");
             validators.push(new_validator.pubkey);
         }
 
