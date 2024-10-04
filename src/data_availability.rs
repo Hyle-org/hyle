@@ -6,13 +6,21 @@ use crate::{
     bus::{bus_client, SharedMessageBus},
     consensus::ConsensusEvent,
     handle_messages,
-    model::{Block, SharedRunContext},
+    model::{Block, BlockHeight, SharedRunContext},
     utils::modules::Module,
 };
 use anyhow::{Context, Result};
+use axum::{
+    extract::{Query, State},
+    Router,
+};
 use blocks::Blocks;
 use core::str;
+use futures::{SinkExt, StreamExt};
+use reqwest::StatusCode;
 use std::io::{Cursor, Write};
+use tokio::{net::TcpStream, task::JoinSet};
+use tokio_util::codec::{Framed, LengthDelimitedCodec};
 use tracing::{error, info};
 
 pub fn u64_to_str(u: u64, buf: &mut [u8]) -> &str {
@@ -20,6 +28,24 @@ pub fn u64_to_str(u: u64, buf: &mut [u8]) -> &str {
     _ = write!(cursor, "{}", u);
     let len = cursor.position() as usize;
     str::from_utf8(&buf[..len]).unwrap()
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct StreamRequest {
+    start_height: u64,
+    peer_ip: String,
+}
+
+async fn api_stream_request(
+    Query(filters): Query<StreamRequest>,
+    State(state): State<tokio::sync::mpsc::Sender<StreamRequest>>,
+) -> Result<(), StatusCode> {
+    if let Err(err) = state.send(filters).await {
+        error!("Error sending stream request: {}", err);
+        return Err(StatusCode::INTERNAL_SERVER_ERROR);
+    }
+    info!("stream request sent");
+    Ok(())
 }
 
 bus_client! {
@@ -33,6 +59,8 @@ struct DABusClient {
 pub struct DataAvailability {
     bus: DABusClient,
     pub blocks: Blocks,
+    request_receiver: tokio::sync::mpsc::Receiver<StreamRequest>,
+    streams: JoinSet<Option<(BlockHeight, Framed<TcpStream, LengthDelimitedCodec>)>>,
 }
 
 impl Module for DataAvailability {
@@ -57,9 +85,27 @@ impl Module for DataAvailability {
             .open()
             .context("opening the database")?;
 
+        let (tx, rx) = tokio::sync::mpsc::channel(100);
+
+        let mut ctx_router = ctx
+            .common
+            .router
+            .lock()
+            .expect("Context router should be available");
+        let router = Router::new()
+            .route(
+                "/v1/da/stream_request",
+                axum::routing::get(api_stream_request),
+            )
+            .with_state(tx)
+            .merge(ctx_router.take().expect("Router should be available"));
+        let _ = ctx_router.insert(router);
+
         Ok(DataAvailability {
             bus,
             blocks: Blocks::new(&db)?,
+            request_receiver: rx,
+            streams: JoinSet::new(),
         })
     }
 
@@ -74,6 +120,30 @@ impl DataAvailability {
             on_bus self.bus,
             listen<ConsensusEvent> cmd => {
                 self.handle_consensus_event(cmd).await;
+            }
+
+            cmd = self.request_receiver.recv() => {
+                if let Some(cmd) = cmd {
+                    self.handle_stream_request(cmd.start_height, &cmd.peer_ip).await?;
+                }
+            }
+
+            Some(cmd) = self.streams.join_next() => {
+                if let Ok(Some((height, mut framed))) = cmd {
+                    let item = self.blocks.get(height);
+                    if let Ok(Some(item)) = item {
+                        info!("streaming block {}", height);
+                        let bytes = bincode::encode_to_vec(item, bincode::config::standard())
+                        .expect("Could not serialize Block");
+                        framed.send(bytes.into()).await?;
+                        // Spawn the next task
+                        self.stream_block(height.0 + 1, framed);
+                    } else {
+                    // TODO: Else... For now we'll wait for a new ping
+                    // Maybe we should just sleep for a bit and try again?
+                    info!("block {} not found", height.0);
+                    }
+                }
             }
         }
     }
@@ -90,6 +160,20 @@ impl DataAvailability {
         if let Err(e) = self.blocks.put(block) {
             error!("storing block: {}", e);
         }
+    }
+
+    async fn handle_stream_request(&mut self, start_height: u64, peer_ip: &str) -> Result<()> {
+        let stream = TcpStream::connect(peer_ip).await?;
+        info!("DA streaming listener setup on {}", stream.local_addr()?);
+        let framed = Framed::new(stream, LengthDelimitedCodec::new());
+        self.stream_block(start_height, framed);
+
+        Ok(())
+    }
+
+    fn stream_block(&mut self, height: u64, mut framed: Framed<TcpStream, LengthDelimitedCodec>) {
+        self.streams
+            .spawn(async move { framed.next().await.map(|_| (BlockHeight(height), framed)) });
     }
 }
 

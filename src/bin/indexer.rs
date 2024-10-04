@@ -88,7 +88,8 @@ async fn main() -> Result<()> {
     });
 
     if config.run_indexer {
-        let indexer = Indexer::build(ctx.clone()).await?;
+        let mut indexer = Indexer::build(ctx.clone()).await?;
+        indexer.connect_to().await?;
         handler.add_module(indexer)?;
     }
 
