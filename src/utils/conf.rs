@@ -30,9 +30,10 @@ pub struct Conf {
     pub peers: Vec<String>,
     pub storage: Storage,
     pub consensus: Consensus,
-    rest: String,
+    pub rest: String,
     pub p2p: P2pConf,
     pub data_directory: PathBuf,
+    pub run_indexer: bool,
 }
 
 impl Conf {
@@ -40,20 +41,18 @@ impl Conf {
         (&self.host, self.port)
     }
 
-    pub fn rest_addr(&self) -> &str {
-        return self.rest.as_str();
-    }
-
-    pub fn history_db_path(&self) -> PathBuf {
-        self.data_directory.join("history.db")
-    }
-
-    pub fn new(config_file: String, data_directory: Option<String>) -> Result<Self, ConfigError> {
+    pub fn new(
+        config_file: String,
+        data_directory: Option<String>,
+        run_indexer: Option<bool>,
+    ) -> Result<Self, ConfigError> {
         let s = Config::builder()
+            .set_default("run_indexer", true)?
             // Priority order: config file, then environment variables, then CLI
             .add_source(File::with_name(config_file.as_str()))
             .add_source(Environment::with_prefix("hyle"))
             .set_override_option("data_directory", data_directory)?
+            .set_override_option("run_indexer", run_indexer)?
             .build()?;
 
         // You can deserialize (and thus freeze) the entire configuration as
@@ -63,7 +62,8 @@ impl Conf {
     pub fn new_shared(
         config_file: String,
         data_directory: Option<String>,
+        run_indexer: Option<bool>,
     ) -> Result<SharedConf, ConfigError> {
-        Self::new(config_file, data_directory).map(Arc::new)
+        Self::new(config_file, data_directory, run_indexer).map(Arc::new)
     }
 }

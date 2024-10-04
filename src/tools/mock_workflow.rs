@@ -44,12 +44,12 @@ impl Module for MockWorkflowHandler {
 
     type Context = SharedRunContext;
 
-    async fn build(ctx: &Self::Context) -> Result<Self> {
-        let bus = MockWorkflowBusClient::new_from_bus(ctx.bus.new_handle()).await;
+    async fn build(ctx: Self::Context) -> Result<Self> {
+        let bus = MockWorkflowBusClient::new_from_bus(ctx.common.bus.new_handle()).await;
         Ok(MockWorkflowHandler { bus })
     }
 
-    fn run(&mut self, _ctx: Self::Context) -> impl futures::Future<Output = Result<()>> + Send {
+    fn run(&mut self) -> impl futures::Future<Output = Result<()>> + Send {
         self.start()
     }
 }

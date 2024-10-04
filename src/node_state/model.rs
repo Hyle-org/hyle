@@ -11,6 +11,7 @@ pub struct Contract {
     pub name: ContractName,
     pub program_id: Vec<u8>,
     pub state: StateDigest,
+    pub verifier: String,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Eq, Hash, Encode, Decode)]
@@ -37,6 +38,7 @@ pub struct HyleOutput {
     pub index: BlobIndex,
     pub blobs: Vec<u8>,
     pub success: bool,
+    pub program_outputs: Vec<u8>,
 }
 
 #[derive(Default, Debug, Clone, Encode, Decode)]

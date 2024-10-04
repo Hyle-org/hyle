@@ -15,8 +15,8 @@ where
     type Context;
 
     fn name() -> &'static str;
-    fn build(ctx: &Self::Context) -> impl futures::Future<Output = Result<Self>> + Send;
-    fn run(&mut self, ctx: Self::Context) -> impl futures::Future<Output = Result<()>> + Send;
+    fn build(ctx: Self::Context) -> impl futures::Future<Output = Result<Self>> + Send;
+    fn run(&mut self) -> impl futures::Future<Output = Result<()>> + Send;
 
     fn load_from_disk_or_default<S>(file: &Path) -> S
     where
@@ -83,11 +83,11 @@ pub struct ModulesHandler {
 }
 
 impl ModulesHandler {
-    async fn run_module<M>(mut module: M, ctx: M::Context) -> Result<()>
+    async fn run_module<M>(mut module: M) -> Result<()>
     where
         M: Module,
     {
-        module.run(ctx).await
+        module.run().await
     }
 
     pub async fn build_module<M>(&mut self, ctx: M::Context) -> Result<()>
@@ -95,18 +95,18 @@ impl ModulesHandler {
         M: Module + 'static + Send,
         <M as Module>::Context: std::marker::Send,
     {
-        let module = M::build(&ctx).await?;
-        self.add_module(module, ctx)
+        let module = M::build(ctx).await?;
+        self.add_module(module)
     }
 
-    pub fn add_module<M>(&mut self, module: M, ctx: M::Context) -> Result<()>
+    pub fn add_module<M>(&mut self, module: M) -> Result<()>
     where
         M: Module + 'static + Send,
         <M as Module>::Context: std::marker::Send,
     {
         self.modules.push(ModuleStarter {
             name: M::name(),
-            starter: Box::pin(Self::run_module(module, ctx)),
+            starter: Box::pin(Self::run_module(module)),
         });
         Ok(())
     }

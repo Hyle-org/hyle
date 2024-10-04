@@ -217,9 +217,9 @@ pub struct Consensus {
     pubkeys: ValidatorRegistry,
     file: Option<PathBuf>,
     store: ConsensusStore,
-    crypto: SharedBlstCrypto,
     #[allow(dead_code)]
     config: SharedConf,
+    crypto: SharedBlstCrypto,
 }
 
 impl Deref for Consensus {
@@ -241,12 +241,17 @@ impl Module for Consensus {
 
     type Context = SharedRunContext;
 
-    async fn build(ctx: &Self::Context) -> Result<Self> {
-        let file = ctx.config.data_directory.clone().join("consensus.bin");
+    async fn build(ctx: Self::Context) -> Result<Self> {
+        let file = ctx
+            .common
+            .config
+            .data_directory
+            .clone()
+            .join("consensus.bin");
         let store = Self::load_from_disk_or_default(file.as_path());
-        let metrics = ConsensusMetrics::global(ctx.config.id.clone());
-        let pubkeys = ctx.validator_registry.share();
-        let bus = ConsensusBusClient::new_from_bus(ctx.bus.new_handle()).await;
+        let metrics = ConsensusMetrics::global(ctx.common.config.id.clone());
+        let pubkeys = ctx.node.validator_registry.share();
+        let bus = ConsensusBusClient::new_from_bus(ctx.common.bus.new_handle()).await;
 
         Ok(Consensus {
             metrics,
@@ -254,14 +259,14 @@ impl Module for Consensus {
             pubkeys,
             file: Some(file),
             store,
-            crypto: ctx.crypto.clone(),
-            config: ctx.config.clone(),
+            config: ctx.common.config.clone(),
+            crypto: ctx.node.crypto.clone(),
         })
     }
 
-    fn run(&mut self, ctx: Self::Context) -> impl futures::Future<Output = Result<()>> + Send {
-        _ = self.start_master(ctx.config.clone());
-        self.start(ctx.config.clone())
+    fn run(&mut self) -> impl futures::Future<Output = Result<()>> + Send {
+        _ = self.start_master(self.config.clone());
+        self.start(self.config.clone())
     }
 }
 
@@ -1374,8 +1379,8 @@ mod test {
                 pubkeys: registry,
                 file: None,
                 store,
-                crypto: Arc::new(crypto),
                 config: conf,
+                crypto: Arc::new(crypto),
             };
 
             Self {

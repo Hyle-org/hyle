@@ -45,6 +45,7 @@ pub struct NodeState {
     bus: NodeStateBusClient,
     file: PathBuf,
     store: NodeStateStore,
+    config: SharedConf,
 }
 
 impl Module for NodeState {
@@ -54,15 +55,26 @@ impl Module for NodeState {
 
     type Context = SharedRunContext;
 
-    async fn build(ctx: &Self::Context) -> Result<Self> {
-        let file = ctx.config.data_directory.clone().join("node_state.bin");
+    async fn build(ctx: Self::Context) -> Result<Self> {
+        let file = ctx
+            .common
+            .config
+            .data_directory
+            .clone()
+            .join("node_state.bin");
         let store = Self::load_from_disk_or_default(file.as_path());
-        let bus = NodeStateBusClient::new_from_bus(ctx.bus.new_handle()).await;
-        Ok(NodeState { bus, file, store })
+        let bus = NodeStateBusClient::new_from_bus(ctx.common.bus.new_handle()).await;
+        let config = ctx.common.config.clone();
+        Ok(NodeState {
+            bus,
+            file,
+            store,
+            config,
+        })
     }
 
-    fn run(&mut self, ctx: Self::Context) -> impl futures::Future<Output = Result<()>> + Send {
-        self.start(ctx.config.clone())
+    fn run(&mut self) -> impl futures::Future<Output = Result<()>> + Send {
+        self.start(self.config.clone())
     }
 }
 
@@ -135,6 +147,7 @@ impl NodeState {
                 name: tx.contract_name,
                 program_id: tx.program_id,
                 state: tx.state_digest,
+                verifier: tx.verifier,
             },
         );
 
@@ -180,8 +193,27 @@ impl NodeState {
     fn handle_proof(&mut self, tx: ProofTransaction) -> Result<(), Error> {
         // TODO extract correct verifier
         let verifier: String = "test".to_owned();
+
         // Verify proof
-        let blobs_metadata: Vec<HyleOutput> = verifiers::verify_proof(&tx, &verifier)?;
+        let blobs_metadata = match tx.blobs_references.len() {
+            0 => bail!("ProofTx needs to specify a BlobTx"),
+            1 => {
+                let contract_name = &tx.blobs_references.first().unwrap().contract_name;
+                let contract = match self.contracts.get(contract_name) {
+                    Some(contract) => contract,
+                    None => {
+                        bail!(
+                            "No contract '{}' found when checking for proof verification",
+                            contract_name
+                        );
+                    }
+                };
+                let program_id = &contract.program_id;
+                let verifier = &contract.verifier;
+                vec![verifiers::verify_proof(&tx, verifier, program_id)?]
+            }
+            _ => verifiers::verify_recursion_proof(&tx, &verifier)?,
+        };
 
         // TODO: add diverse verifications ? (without the inital state checks!).
         self.process_verifications(&tx, &blobs_metadata)?;
@@ -388,7 +420,7 @@ impl DerefMut for NodeState {
 mod test {
     use std::path::PathBuf;
 
-    use crate::{bus::SharedMessageBus, model::*};
+    use crate::{bus::SharedMessageBus, model::*, utils::conf::Conf};
 
     use super::*;
 
@@ -397,6 +429,7 @@ mod test {
             bus: NodeStateBusClient::new_from_bus(SharedMessageBus::default()).await,
             file: PathBuf::default(),
             store: NodeStateStore::default(),
+            config: Conf::default().into(),
         }
     }
 

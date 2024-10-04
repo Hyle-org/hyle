@@ -1,5 +1,6 @@
 //! Various data structures
 
+use axum::Router;
 use bincode::{Decode, Encode};
 use derive_more::Display;
 use serde::{
@@ -184,10 +185,20 @@ impl Default for TransactionData {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Default, PartialEq, Eq, Clone, Encode, Decode, Hash)]
+#[derive(Serialize, Deserialize, Default, PartialEq, Eq, Clone, Encode, Decode, Hash)]
 pub struct ProofTransaction {
     pub blobs_references: Vec<BlobReference>,
     pub proof: Vec<u8>,
+}
+
+impl fmt::Debug for ProofTransaction {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ProofTransaction")
+            .field("blobs_references", &self.blobs_references)
+            .field("proof", &"[HIDDEN]")
+            .field("proof_len", &self.proof.len())
+            .finish()
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Default, Clone, PartialEq, Eq, Encode, Decode, Hash)]
@@ -390,13 +401,21 @@ pub fn get_current_timestamp() -> u64 {
         .as_secs()
 }
 
-pub struct RunContext {
+pub struct CommonRunContext {
     pub config: SharedConf,
     pub bus: SharedMessageBus,
+    pub router: std::sync::Mutex<Option<Router>>,
+}
+pub struct NodeRunContext {
     pub crypto: SharedBlstCrypto,
     pub validator_registry: ValidatorRegistry,
 }
-pub type SharedRunContext = Arc<RunContext>;
+
+#[derive(Clone)]
+pub struct SharedRunContext {
+    pub common: Arc<CommonRunContext>,
+    pub node: Arc<NodeRunContext>,
+}
 
 #[cfg(test)]
 mod tests {

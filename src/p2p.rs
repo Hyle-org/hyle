@@ -15,7 +15,9 @@ pub mod network; // FIXME(Bertrand): NetMessage should be private
 mod peer;
 pub mod stream;
 
-pub struct P2P {}
+pub struct P2P {
+    ctx: SharedRunContext,
+}
 impl Module for P2P {
     fn name() -> &'static str {
         "P2P"
@@ -23,12 +25,16 @@ impl Module for P2P {
 
     type Context = SharedRunContext;
 
-    async fn build(_ctx: &Self::Context) -> Result<Self> {
-        Ok(P2P {})
+    async fn build(ctx: Self::Context) -> Result<Self> {
+        Ok(P2P { ctx: ctx.clone() })
     }
 
-    fn run(&mut self, ctx: Self::Context) -> impl futures::Future<Output = Result<()>> + Send {
-        p2p_server(ctx.config.clone(), ctx.bus.new_handle(), ctx.crypto.clone())
+    fn run(&mut self) -> impl futures::Future<Output = Result<()>> + Send {
+        p2p_server(
+            self.ctx.common.config.clone(),
+            self.ctx.common.bus.new_handle(),
+            self.ctx.node.crypto.clone(),
+        )
     }
 }
 

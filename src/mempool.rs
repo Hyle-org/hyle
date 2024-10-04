@@ -66,26 +66,26 @@ pub enum MempoolResponse {
 impl BusMessage for MempoolResponse {}
 
 impl Module for Mempool {
-    type Context = SharedRunContext;
-
     fn name() -> &'static str {
         "Mempool"
     }
 
-    async fn build(ctx: &SharedRunContext) -> Result<Self> {
-        let bus = MempoolBusClient::new_from_bus(ctx.bus.new_handle()).await;
-        let metrics = MempoolMetrics::global(ctx.config.id.clone());
+    type Context = SharedRunContext;
+
+    async fn build(ctx: Self::Context) -> Result<Self> {
+        let bus = MempoolBusClient::new_from_bus(ctx.common.bus.new_handle()).await;
+        let metrics = MempoolMetrics::global(ctx.common.config.id.clone());
         Ok(Mempool {
             bus,
             metrics,
-            crypto: Arc::clone(&ctx.crypto),
-            validators: ctx.validator_registry.share(),
+            crypto: Arc::clone(&ctx.node.crypto),
+            validators: ctx.node.validator_registry.share(),
             pending_txs: vec![],
             batched_txs: HashSet::default(),
         })
     }
 
-    fn run(&mut self, _ctx: Self::Context) -> impl futures::Future<Output = Result<()>> + Send {
+    fn run(&mut self) -> impl futures::Future<Output = Result<()>> + Send {
         self.start()
     }
 }
@@ -149,7 +149,7 @@ impl Mempool {
     }
 
     async fn on_new_tx(&mut self, tx: Transaction) {
-        debug!("Got new tx {} {:?}", tx.hash(), tx);
+        debug!("Got new tx {}", tx.hash());
         self.metrics.add_api_tx("blob".to_string());
         self.pending_txs.push(tx.clone());
         // TODO: Change this when we implement Motorway
