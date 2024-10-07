@@ -2,10 +2,12 @@
 
 use crate::utils::static_type_map::Pick;
 use anymap::{any::Any, Map};
+use metrics::BusMetrics;
 use std::sync::Arc;
 use tokio::sync::{broadcast, Mutex};
 
 pub mod command_response;
+pub mod metrics;
 
 // Arbitrarily "high enough" value. Memory use is around 200Mb when setting this,
 // we can lower it for some rarely used channels if needed.
@@ -18,18 +20,21 @@ pub trait BusMessage {}
 
 pub struct SharedMessageBus {
     channels: Arc<Mutex<AnyMap>>,
+    pub metrics: BusMetrics,
 }
 
 impl SharedMessageBus {
     pub fn new_handle(&self) -> Self {
         SharedMessageBus {
             channels: Arc::clone(&self.channels),
+            metrics: self.metrics.clone(),
         }
     }
 
-    pub fn new() -> Self {
+    pub fn new(metrics: BusMetrics) -> Self {
         Self {
             channels: Arc::new(Mutex::new(AnyMap::new())),
+            metrics,
         }
     }
 
@@ -68,12 +73,12 @@ pub mod dont_use_this {
 
 impl Default for SharedMessageBus {
     fn default() -> Self {
-        Self::new()
+        Self::new(BusMetrics::global("default".to_string()))
     }
 }
 
 pub trait BusClientSender<T> {
-    fn send(&self, message: T) -> Result<usize, tokio::sync::broadcast::error::SendError<T>>;
+    fn send(&mut self, message: T) -> Result<usize, tokio::sync::broadcast::error::SendError<T>>;
 }
 pub trait BusClientReceiver<T> {
     fn recv(
@@ -92,6 +97,7 @@ macro_rules! bus_client {
             $(receiver($receiver:ty),)*
         }
     ) => {
+        use $crate::bus::metrics::BusMetrics;
         #[allow(unused_imports)]
         use $crate::bus::BusClientReceiver;
         #[allow(unused_imports)]
@@ -102,6 +108,7 @@ macro_rules! bus_client {
         static_type_map! {
             $(#[$meta])*
             struct $name (
+                BusMetrics,
                 $(tokio::sync::broadcast::Sender<$sender>,)*
                 $(tokio::sync::broadcast::Receiver<$receiver>,)*
             );
@@ -109,6 +116,7 @@ macro_rules! bus_client {
         impl $name {
             pub async fn new_from_bus(bus: SharedMessageBus) -> $name {
                 $name::new(
+                    bus.metrics.clone(),
                     $(get_sender::<$sender>(&bus).await,)*
                     $(get_receiver::<$receiver>(&bus).await,)*
                 )
@@ -118,23 +126,28 @@ macro_rules! bus_client {
 }
 pub(crate) use bus_client;
 
-impl<T, M: Clone> BusClientSender<M> for T
+impl<Client, Msg: Clone + 'static> BusClientSender<Msg> for Client
 where
-    T: Pick<tokio::sync::broadcast::Sender<M>>,
+    Client: Pick<tokio::sync::broadcast::Sender<Msg>> + Pick<BusMetrics> + 'static,
 {
-    fn send(&self, message: M) -> Result<usize, tokio::sync::broadcast::error::SendError<M>> {
-        self.get().send(message)
+    fn send(
+        &mut self,
+        message: Msg,
+    ) -> Result<usize, tokio::sync::broadcast::error::SendError<Msg>> {
+        Pick::<BusMetrics>::get_mut(self).send::<Msg, Client>();
+        Pick::<tokio::sync::broadcast::Sender<Msg>>::get(self).send(message)
     }
 }
 
-impl<T, M: 'static + Clone + Send> BusClientReceiver<M> for T
+impl<Client, Msg: 'static + Clone + Send> BusClientReceiver<Msg> for Client
 where
-    T: Pick<tokio::sync::broadcast::Receiver<M>>,
+    Client: Pick<tokio::sync::broadcast::Receiver<Msg>> + Pick<BusMetrics> + 'static,
 {
     fn recv(
         &mut self,
-    ) -> impl std::future::Future<Output = Result<M, tokio::sync::broadcast::error::RecvError>> + Send
+    ) -> impl std::future::Future<Output = Result<Msg, tokio::sync::broadcast::error::RecvError>> + Send
     {
-        self.get_mut().recv()
+        Pick::<BusMetrics>::get_mut(self).receive::<Msg, Client>();
+        Pick::<tokio::sync::broadcast::Receiver<Msg>>::get_mut(self).recv()
     }
 }

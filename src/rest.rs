@@ -104,6 +104,7 @@ impl Clone for RouterState {
         use crate::utils::static_type_map::Pick;
         Self {
             bus: RestBusClient::new(
+                Pick::<BusMetrics>::get(&self.bus).clone(),
                 Pick::<tokio::sync::broadcast::Sender<RestApiMessage>>::get(&self.bus).clone(),
                 Pick::<tokio::sync::broadcast::Sender<RunScenario>>::get(&self.bus).clone(),
                 Pick::<tokio::sync::broadcast::Sender<Query<ContractName, Contract>>>::get(
