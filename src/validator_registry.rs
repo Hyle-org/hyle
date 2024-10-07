@@ -134,6 +134,16 @@ impl ValidatorRegistry {
         self.inner.read().unwrap().validators.keys().len()
     }
 
+    pub fn get_validator_id(&self, pubkey: &ValidatorPublicKey) -> Option<ValidatorId> {
+        self.inner
+            .read()
+            .unwrap()
+            .validators
+            .values()
+            .find(|v| &v.pub_key == pubkey)
+            .map(|v| v.id.clone())
+    }
+
     pub fn get_pub_keys_from_id(&self, validators_id: Vec<ValidatorId>) -> Vec<ValidatorPublicKey> {
         validators_id
             .into_iter()

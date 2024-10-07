@@ -92,6 +92,8 @@ pub struct BFTRoundState {
     slot: Slot,
     view: View,
     step: Step,
+    leader_index: u64,
+    leader_id: ValidatorId,
     staking: Staking,
     prepare_votes: HashSet<Signed<ConsensusNetMessage, ValidatorPublicKey>>,
     prepare_quorum_certificate: QuorumCertificate,
@@ -122,6 +124,7 @@ pub type View = u64;
 pub struct ConsensusProposal {
     slot: Slot,
     view: u64,
+    next_leader: u64,
     previous_consensus_proposal_hash: ConsensusProposalHash,
     previous_commit_quorum_certificate: QuorumCertificate,
     block: Block, // FIXME: Block ou cut ?
@@ -247,10 +250,19 @@ impl Module for Consensus {
             .data_directory
             .clone()
             .join("consensus.bin");
-        let store = Self::load_from_disk_or_default(file.as_path());
+        let mut store: ConsensusStore = Self::load_from_disk_or_default(file.as_path());
         let metrics = ConsensusMetrics::global(ctx.common.config.id.clone());
         let pubkeys = ctx.node.validator_registry.share();
         let bus = ConsensusBusClient::new_from_bus(ctx.common.bus.new_handle()).await;
+
+        // FIXME a bit hacky for now
+        if store.bft_round_state.leader_id == ValidatorId::default() {
+            store.bft_round_state.leader_index = 0;
+            store.bft_round_state.leader_id = "node-1".into();
+            if ctx.common.config.id == ValidatorId("node-1".to_owned()) {
+                store.is_next_leader = true;
+            }
+        }
 
         Ok(Consensus {
             metrics,
@@ -265,7 +277,7 @@ impl Module for Consensus {
 
     fn run(&mut self) -> impl futures::Future<Output = Result<()>> + Send {
         _ = self.start_master(self.config.clone());
-        self.start(self.config.clone())
+        self.start()
     }
 }
 
@@ -312,6 +324,7 @@ impl Consensus {
         self.bft_round_state.consensus_proposal = ConsensusProposal {
             slot: self.bft_round_state.slot,
             view: self.bft_round_state.view,
+            next_leader: (self.bft_round_state.leader_index + 1) % validators.len() as u64,
             previous_consensus_proposal_hash,
             previous_commit_quorum_certificate,
             validators,
@@ -345,6 +358,7 @@ impl Consensus {
         self.bft_round_state.consensus_proposal = ConsensusProposal {
             slot: self.bft_round_state.slot,
             view: self.bft_round_state.view,
+            next_leader: 1,
             previous_consensus_proposal_hash: ConsensusProposalHash(vec![]),
             previous_commit_quorum_certificate: QuorumCertificate::default(),
             validators: self.pubkeys.list_validators(),
@@ -397,9 +411,25 @@ impl Consensus {
 
         self.bft_round_state.step = Step::StartNewSlot;
         self.bft_round_state.slot = self.bft_round_state.consensus_proposal.slot + 1;
+        self.bft_round_state.leader_index = self.bft_round_state.consensus_proposal.next_leader;
         self.bft_round_state.view = 0;
         self.bft_round_state.prepare_votes = HashSet::default();
         self.bft_round_state.confirm_ack = HashSet::default();
+
+        self.bft_round_state.leader_id = self
+            .bft_round_state
+            .consensus_proposal
+            .validators
+            .get(self.bft_round_state.leader_index as usize)
+            .and_then(|pubkey| self.pubkeys.get_validator_id(pubkey))
+            .ok_or_else(|| anyhow!("wrong leader index {}", self.bft_round_state.leader_index))?;
+
+        self.is_next_leader = self.leader_id() == *self.crypto.validator_id();
+        if self.is_next_leader() {
+            info!("👑 I'm the new leader! 👑");
+        } else {
+            info!("👑 Next leader: {}", self.leader_id());
+        }
 
         // Save added block
         if let Some(file) = &self.file {
@@ -472,12 +502,12 @@ impl Consensus {
             }) = &new_validator.msg.msg
             {
                 if pubkey != &new_validator.pubkey
-                    || slot != &self.bft_round_state.consensus_proposal.slot
-                    || previous_consensus_proposal_hash
-                        != &self
-                            .bft_round_state
-                            .consensus_proposal
-                            .previous_consensus_proposal_hash
+                //|| slot != &self.bft_round_state.consensus_proposal.slot
+                //|| previous_consensus_proposal_hash
+                //    != &self
+                //        .bft_round_state
+                //        .consensus_proposal
+                //        .previous_consensus_proposal_hash
                 {
                     debug!("Invalid candidacy message");
                     debug!("Got - Expected");
@@ -508,7 +538,6 @@ impl Consensus {
     }
 
     fn is_next_leader(&self) -> bool {
-        // TODO
         self.is_next_leader
     }
 
@@ -520,13 +549,19 @@ impl Consensus {
     }
 
     fn leader_id(&self) -> ValidatorId {
-        // TODO
-        ValidatorId("node-1".to_owned())
+        self.bft_round_state.leader_id.clone()
     }
 
     fn start_new_slot(&mut self) -> Result<(), Error> {
         // Message received by leader.
-
+        #[cfg(not(test))]
+        {
+            info!(
+                "⏱️  Sleeping {} seconds before starting a new slot",
+                self.config.consensus.slot_duration
+            );
+            std::thread::sleep(Duration::from_secs(self.config.consensus.slot_duration));
+        }
         // Verifies that previous slot received a *Commit* Quorum Certificate.
         match self
             .bft_round_state
@@ -1061,16 +1096,6 @@ impl Consensus {
                     self.finish_round()?;
                     // Start new slot
                     if self.is_next_leader() {
-                        #[cfg(not(test))]
-                        {
-                            info!(
-                                "⏱️  Sleeping {} seconds before starting a new slot",
-                                self.config.consensus.slot_duration
-                            );
-                            std::thread::sleep(Duration::from_secs(
-                                self.config.consensus.slot_duration,
-                            ));
-                        }
                         self.start_new_slot()?;
                     }
                 }
@@ -1303,12 +1328,7 @@ impl Consensus {
         Ok(())
     }
 
-    pub async fn start(&mut self, config: SharedConf) -> Result<()> {
-        // FIXME: node-1 sera le leader
-        if config.id == ValidatorId("node-1".to_owned()) {
-            self.is_next_leader = true;
-        }
-
+    pub async fn start(&mut self) -> Result<()> {
         handle_messages! {
             on_bus self.bus,
             listen<ConsensusCommand> cmd => {
