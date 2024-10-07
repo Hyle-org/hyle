@@ -169,19 +169,28 @@ pub async fn get_blob(
     }
 }
 
-pub async fn get_blob_with_hash(
-    Path((tx_hash, blob_index)): Path<(String, usize)>,
+pub async fn get_blobs_by_contract_name(
+    Path(mut contract_name): Path<String>,
     State(state): State<IndexerState>,
-) -> Result<Json<Blob>, StatusCode> {
+) -> Result<Json<Vec<Blob>>, StatusCode> {
+    // Adding ":" to prevent overlapping research on contract with same prefix
+    contract_name.push(':');
     match state
         .write()
         .await
         .blobs
-        .get_with_hash(&tx_hash, blob_index)
+        .get_by_contract_name(&contract_name)
     {
-        Ok(Some(blob)) => Ok(Json(blob)),
-        Ok(None) => Err(StatusCode::NOT_FOUND),
-        Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
+        Some(iter_blobs) => Ok(Json(
+            iter_blobs
+                .flat_map(|i| {
+                    i.map(|i| i.value().map_err(|e| error!("deserializing  data: {}", e)))
+                        .map_err(|e| error!("iterating over data: {}", e))
+                })
+                .filter_map(|i| i.ok())
+                .collect::<Vec<Blob>>(),
+        )),
+        None => Err(StatusCode::NOT_FOUND),
     }
 }
 

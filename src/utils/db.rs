@@ -247,7 +247,7 @@ impl Db {
     }
 
     /// Create an iterator over tuples of keys and values, where the all the keys starts with the given prefix.
-    /// NOTE: the keys are unorederd.
+    /// NOTE: the keys are unordered.
     pub fn alt_scan_prefix<T: DeserializeOwned>(
         &mut self,
         prefix: impl KeyMaker,

@@ -19,14 +19,14 @@ impl KeyMaker for BlobsKey {
     }
 }
 
-/// BlobsKeyAlt contains a `tx_hash` and a `blob_index`
+/// BlobsKeyAlt contains a `contract_name`, a `tx_hash` and a `blob_index`
 #[derive(Debug, Default)]
-pub struct BlobsKeyAlt<'b>(pub &'b str, pub usize);
+pub struct BlobsKeyAlt<'b>(pub &'b str, pub &'b str, pub usize);
 
 impl<'b> KeyMaker for BlobsKeyAlt<'b> {
     fn make_key<'a>(&self, writer: &'a mut String) -> &'a str {
         use std::fmt::Write;
-        _ = write!(writer, "{}:{:08x}", self.0, self.1);
+        _ = write!(writer, "{}:{}:{:08x}", self.0, self.1, self.2);
         writer.as_str()
     }
 }
@@ -86,7 +86,7 @@ impl Blobs {
         info!("storing blob {}:{}:{}", block_height, tx_index, blob_index);
         self.db.put(
             BlobsKey(block_height, tx_index, blob_index),
-            BlobsKeyAlt(tx_hash, blob_index),
+            BlobsKeyAlt(data.contract_name.0.as_ref(), tx_hash, blob_index),
             &data,
         )
     }
@@ -101,8 +101,8 @@ impl Blobs {
             .ord_get(BlobsKey(block_height, tx_index, blob_index))
     }
 
-    pub fn get_with_hash(&mut self, tx_hash: &str, blob_index: usize) -> Result<Option<Blob>> {
-        self.db.alt_get(BlobsKeyAlt(tx_hash, blob_index))
+    pub fn get_by_contract_name(&mut self, contract_name: &str) -> Option<Iter<Blob>> {
+        self.db.alt_scan_prefix(contract_name)
     }
 
     pub fn last(&self) -> Result<Option<Blob>> {

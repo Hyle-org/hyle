@@ -1065,7 +1065,7 @@ impl Consensus {
     }
 
     pub fn start_master(&mut self, config: SharedConf) -> Result<()> {
-        let interval = config.storage.interval;
+        let interval = config.consensus.slot_duration;
 
         // hack to avoid another bus for a specific wip case
         let command_sender = Pick::<broadcast::Sender<ConsensusCommand>>::get(&self.bus).clone();
