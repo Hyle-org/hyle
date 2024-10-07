@@ -67,6 +67,7 @@ enum Step {
 pub enum ConsensusCommand {
     SingleNodeBlockGeneration,
     NewStaker(Staker),
+    StartNewSlot,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -552,16 +553,31 @@ impl Consensus {
         self.bft_round_state.leader_id.clone()
     }
 
-    fn start_new_slot(&mut self) -> Result<(), Error> {
-        // Message received by leader.
+    fn delay_start_new_slot(&mut self) -> Result<(), Error> {
         #[cfg(not(test))]
         {
-            info!(
-                "⏱️  Sleeping {} seconds before starting a new slot",
-                self.config.consensus.slot_duration
-            );
-            std::thread::sleep(Duration::from_secs(self.config.consensus.slot_duration));
+            let command_sender =
+                Pick::<broadcast::Sender<ConsensusCommand>>::get(&self.bus).clone();
+            let interval = self.config.consensus.slot_duration;
+            tokio::spawn(async move {
+                info!(
+                    "⏱️  Sleeping {} seconds before starting a new slot",
+                    interval
+                );
+                sleep(Duration::from_secs(interval)).await;
+
+                _ = command_sender
+                    .send(ConsensusCommand::StartNewSlot)
+                    .log_error("Cannot send message over channel");
+            });
+            Ok(())
         }
+        #[cfg(test)]
+        self.start_new_slot()
+    }
+
+    fn start_new_slot(&mut self) -> Result<(), Error> {
+        // Message received by leader.
         // Verifies that previous slot received a *Commit* Quorum Certificate.
         match self
             .bft_round_state
@@ -1096,7 +1112,7 @@ impl Consensus {
                     self.finish_round()?;
                     // Start new slot
                     if self.is_next_leader() {
-                        self.start_new_slot()?;
+                        self.delay_start_new_slot()?;
                     }
                 }
                 // TODO(?): Update behaviour when having more ?
@@ -1168,7 +1184,7 @@ impl Consensus {
                 // Start new slot
                 if self.is_next_leader() {
                     // Send Prepare message to all validators
-                    self.start_new_slot()?;
+                    self.delay_start_new_slot()?;
                 } else if !self.is_part_of_consensus(self.crypto.validator_pubkey()) {
                     // Ask to be part of consensus
                     let candidacy = ValidatorCandidacy {
@@ -1289,6 +1305,7 @@ impl Consensus {
             ConsensusCommand::NewStaker(staker) => {
                 self.store.bft_round_state.staking.add_staker(staker)
             }
+            ConsensusCommand::StartNewSlot => self.start_new_slot(),
         }
     }
 
