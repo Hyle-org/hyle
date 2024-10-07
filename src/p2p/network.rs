@@ -19,11 +19,18 @@ pub enum OutboundMessage {
         msg: NetMessage,
     },
     BroadcastMessage(NetMessage),
+    BroadcastMessageOnlyFor(Vec<ValidatorPublicKey>, NetMessage),
 }
 
 impl OutboundMessage {
     pub fn broadcast<T: Into<NetMessage>>(msg: T) -> Self {
         OutboundMessage::BroadcastMessage(msg.into())
+    }
+    pub fn broadcast_only_for<T: Into<NetMessage>>(
+        only_for: Vec<ValidatorPublicKey>,
+        msg: T,
+    ) -> Self {
+        OutboundMessage::BroadcastMessageOnlyFor(only_for, msg.into())
     }
     pub fn send<T: Into<NetMessage>>(validator_id: ValidatorPublicKey, msg: T) -> Self {
         OutboundMessage::SendMessage {
