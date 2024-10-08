@@ -53,9 +53,22 @@ pub enum MempoolCommand {
 }
 impl BusMessage for MempoolCommand {}
 
+#[derive(Debug, Clone, Encode, Decode, Default, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub struct BatchInfo {
+    pub validator: ValidatorId,
+    pub pos: usize,
+    pub parent: Option<usize>,
+}
+
+#[derive(Debug, Clone, Encode, Decode, Default, Serialize, Deserialize)]
+pub struct Batch {
+    pub info: BatchInfo,
+    pub txs: Vec<Transaction>,
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub enum MempoolEvent {
-    LatestBatch(Vec<Transaction>),
+    LatestBatch(Batch),
 }
 impl BusMessage for MempoolEvent {}
 
@@ -112,13 +125,8 @@ impl Mempool {
 
     fn handle_event(&mut self, event: ConsensusEvent) {
         match event {
-            ConsensusEvent::CommitBlock { block } => {
-                // Remove all txs that have been commited
-                // FIXME:
-                // FIXME:
-                // FIXME:
-                // TODO: update storage lanes
-                // self.pending_txs.retain(|tx| !block.txs.contains(tx));
+            ConsensusEvent::CommitBlock { batch_info, block } => {
+                self.storage.update_lanes_after_commit(batch_info, block);
             }
         }
     }
@@ -283,9 +291,17 @@ impl Mempool {
                     }
 
                     // FIXME: push to consensus
+                    // LatestBatch => validator_id + extra infos (tip_parent, tip_pos) ?
                     if let Err(e) = self
                         .bus
-                        .send(MempoolEvent::LatestBatch(tip_txs))
+                        .send(MempoolEvent::LatestBatch(Batch {
+                            info: BatchInfo {
+                                validator: ValidatorId(self.storage.id.clone()),
+                                pos: tip_pos,
+                                parent: tip_parent,
+                            },
+                            txs: tip_txs,
+                        }))
                         .context("Cannot send message over channel")
                     {
                         error!("{:?}", e);

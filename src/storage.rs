@@ -8,7 +8,10 @@ use std::{
 };
 use tracing::{error, info, warn};
 
-use crate::model::{Block, Transaction};
+use crate::{
+    mempool::BatchInfo,
+    model::{Block, Transaction},
+};
 
 type Tip = (usize, Option<usize>, Vec<Transaction>, Vec<String>);
 
@@ -57,13 +60,7 @@ pub trait Storage: Display + Send + Sync {
         voters: HashSet<String>,
     ) -> Option<Vec<String>>;
 
-    fn update_lanes_after_commit(
-        &mut self,
-        validator: &str,
-        pos: usize,
-        parent: Option<usize>,
-        block: Block,
-    );
+    fn update_lanes_after_commit(&mut self, info: BatchInfo, block: Block);
 }
 
 #[derive(Debug, Clone)]
@@ -125,7 +122,7 @@ impl Storage for InMemoryStorage {
             .lane
             .cars
             .iter_mut()
-            .find(|b| b.id == data_proposal.pos && b.txs == data_proposal.inner);
+            .find(|c| c.id == data_proposal.pos && c.txs == data_proposal.inner);
 
         match car {
             None => {
@@ -152,7 +149,7 @@ impl Storage for InMemoryStorage {
             let car = lane
                 .cars
                 .iter_mut()
-                .find(|b| b.id == data_proposal.pos && b.txs == data_proposal.inner);
+                .find(|c| c.id == data_proposal.pos && c.txs == data_proposal.inner);
 
             match car {
                 None => {
@@ -208,7 +205,7 @@ impl Storage for InMemoryStorage {
             .or_default()
             .cars
             .iter()
-            .any(|b| b.id == data_proposal.pos && b.txs == data_proposal.inner);
+            .any(|c| c.id == data_proposal.pos && c.txs == data_proposal.inner);
 
         if !found {
             warn!(
@@ -236,7 +233,7 @@ impl Storage for InMemoryStorage {
             .lane
             .cars
             .iter()
-            .find(|b| b.id == data_proposal.pos && b.txs == data_proposal.inner);
+            .find(|c| c.id == data_proposal.pos && c.txs == data_proposal.inner);
 
         match car {
             None => {
@@ -255,7 +252,7 @@ impl Storage for InMemoryStorage {
                             .cars
                             .clone()
                             .into_iter()
-                            .take_while(|b| b.id != v.id)
+                            .take_while(|c| c.id != v.id)
                             .collect(),
                     ),
                     // If there is an index, two cases
@@ -356,6 +353,21 @@ impl Storage for InMemoryStorage {
     fn flush_pending_txs(&mut self) -> Vec<Transaction> {
         self.pending_txs.drain(0..).collect()
     }
+
+    fn update_lanes_after_commit(&mut self, batch_info: BatchInfo, _block: Block) {
+        if self.id == batch_info.validator.0 {
+            // TODO
+        } else {
+            // TODO
+        }
+        for (v, _lane) in self.other_lanes.iter() {
+            if v == &batch_info.validator.0 {
+                // TODO
+            } else {
+                // TODO
+            }
+        }
+    }
 }
 
 #[derive(Clone, Default, Debug, Eq, PartialEq, Serialize, Deserialize, Encode, Decode)]
@@ -421,14 +433,14 @@ impl Lane {
     pub fn count_poa(&self, nb_replicas: usize) -> usize {
         self.cars
             .iter()
-            .filter(|b| b.votes.len() > nb_replicas / 3)
+            .filter(|c| c.votes.len() > nb_replicas / 3)
             .count()
     }
 
     pub fn count_poa_txs(&self, nb_replicas: usize) -> usize {
         self.cars
             .iter()
-            .filter(|b| b.votes.len() > nb_replicas / 3)
+            .filter(|c| c.votes.len() > nb_replicas / 3)
             .fold(0, |nb, car| nb + car.txs.len())
     }
 
