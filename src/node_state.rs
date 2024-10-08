@@ -158,7 +158,7 @@ impl NodeState {
     fn handle_stake_tx(&mut self, staker: Staker) -> Result<(), Error> {
         self.bus
             .send(ConsensusCommand::NewStaker(staker))
-            .context("Send stake event")?;
+            .context("Send new staker consensus command")?;
         Ok(())
     }
 

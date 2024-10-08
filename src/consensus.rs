@@ -680,7 +680,7 @@ impl Consensus {
                                     ))?,
                                 ))
                                 .context(
-                                    "Failed to send ConsensusNetMessage::PrepareVote msg on the bus",
+                                    "Failed to send ConsensusNetMessage::CatchupRequest msg on the bus",
                                 )?;
                         } else {
                             info!("#### Received genesis block proposal ####");
@@ -825,7 +825,7 @@ impl Consensus {
                     self.bft_round_state.consensus_proposal.validators.len(),
                     self.bft_round_state.staking.total_bond()
                 );
-                if voting_power > 2 * f + 1 {
+                if voting_power > 2 * f {
                     // Get all received signatures
                     let aggregates: &Vec<&Signed<ConsensusNetMessage, ValidatorPublicKey>> =
                         &self.bft_round_state.prepare_votes.iter().collect();
@@ -1005,7 +1005,7 @@ impl Consensus {
                     self.bft_round_state.staking.total_bond()
                 );
                 self.metrics.confirmed_ack_gauge(voting_power);
-                if voting_power > 2 * f + 1 {
+                if voting_power > 2 * f {
                     // Get all signatures received and change ValidatorId for ValidatorPubKey
                     let aggregates: &Vec<&Signed<ConsensusNetMessage, ValidatorPublicKey>> =
                         &self.bft_round_state.confirm_ack.iter().collect();
