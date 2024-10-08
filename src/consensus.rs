@@ -492,6 +492,10 @@ impl Consensus {
 
                     bail!("New bonded validator has an invalid candidacy message");
                 }
+
+                self.bft_round_state
+                    .staking
+                    .bond(new_validator.pubkey.clone())?;
             } else {
                 bail!("New bonded validator forwarded signed message is not a candidacy message");
             }
