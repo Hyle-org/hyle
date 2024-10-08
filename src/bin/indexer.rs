@@ -3,7 +3,7 @@ use axum::Router;
 use axum_otel_metrics::HttpMetricsLayerBuilder;
 use clap::Parser;
 use hyle::{
-    bus::SharedMessageBus,
+    bus::{metrics::BusMetrics, SharedMessageBus},
     indexer::Indexer,
     model::CommonRunContext,
     rest::{RestApi, RestApiRunContext},
@@ -75,7 +75,7 @@ async fn main() -> Result<()> {
         .with_service_name(config.id.to_string().clone())
         .build();
 
-    let bus = SharedMessageBus::new();
+    let bus = SharedMessageBus::new(BusMetrics::global(config.id.0.clone()));
 
     std::fs::create_dir_all(&config.data_directory).context("creating data directory")?;
 

@@ -50,7 +50,13 @@ impl Conf {
             .set_default("run_indexer", true)?
             // Priority order: config file, then environment variables, then CLI
             .add_source(File::with_name(config_file.as_str()))
-            .add_source(Environment::with_prefix("hyle"))
+            .add_source(
+                Environment::with_prefix("hyle")
+                    .separator("_")
+                    .list_separator(",")
+                    .with_list_parse_key("peers") // Parse this key into Vec<String>
+                    .try_parsing(true),
+            )
             .set_override_option("data_directory", data_directory)?
             .set_override_option("run_indexer", run_indexer)?
             .build()?;

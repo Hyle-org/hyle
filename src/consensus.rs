@@ -1270,7 +1270,7 @@ impl Consensus {
         }
     }
 
-    pub async fn start_master(&mut self, config: SharedConf) -> Result<()> {
+    pub fn start_master(&mut self, config: SharedConf) -> Result<()> {
         let interval = config.storage.interval;
 
         // hack to avoid another bus for a specific wip case
@@ -1363,7 +1363,7 @@ mod test {
 
     impl TestCtx {
         async fn new(crypto: BlstCrypto, other: ConsensusValidator) -> Self {
-            let shared_bus = SharedMessageBus::new();
+            let shared_bus = SharedMessageBus::new(BusMetrics::global("global".to_string()));
             let out_receiver = get_receiver::<OutboundMessage>(&shared_bus).await;
             let event_receiver = get_receiver::<ConsensusEvent>(&shared_bus).await;
             let bus = ConsensusBusClient::new_from_bus(shared_bus.new_handle()).await;

@@ -1,12 +1,39 @@
 services:
-  hyle:
+  hyle1:
     build: ./..
     privileged: true
-    ports:
-      - "4321:4321"
     volumes:
-      - /tmp/hyle-container-data:/hyle/data
+      - /tmp/hyle-container-data-1:/hyle/data
     network_mode: host
+    environment:
+      - HYLE_REST=localhost:4001
+      - HYLE_PORT=1001
+  hyle2:
+    build: ./..
+    privileged: true
+    volumes:
+      - /tmp/hyle-container-data-2:/hyle/data
+    environment:
+      - HYLE_ID=hyle2
+      - HYLE_PEERS=localhost:1001
+      - HYLE_REST=localhost:4002
+      - HYLE_PORT=1002
+    network_mode: host
+    depends_on:
+      - hyle1
+  hyle3:
+    build: ./..
+    privileged: true
+    volumes:
+      - /tmp/hyle-container-data-3:/hyle/data
+    environment:
+      - HYLE_ID=hyle3
+      - HYLE_PEERS=localhost:1001
+      - HYLE_REST=localhost:4003
+      - HYLE_PORT=1003
+    network_mode: host
+    depends_on:
+      - hyle1
       
   prometheus:
     image: prom/prometheus:latest
@@ -18,7 +45,9 @@ services:
       - "9090:9090"  # Port pour accéder à l'interface de Prometheus
     network_mode: host
     depends_on:
-      - hyle
+      - hyle1
+      - hyle2
+      - hyle3
 
   grafana:
     image: grafana/grafana:latest

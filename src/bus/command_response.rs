@@ -79,9 +79,20 @@ where
     }
 }
 
+pub mod handle_messages_helpers {
+    use crate::bus::metrics::BusMetrics;
+    use crate::utils::static_type_map::Pick;
+    pub fn receive_bus_metrics<Msg: 'static, Client: Pick<BusMetrics> + 'static>(
+        _bus: &mut Client,
+    ) {
+        Pick::<BusMetrics>::get_mut(_bus).receive::<Msg, Client>();
+    }
+}
+
 #[macro_export]
 macro_rules! handle_messages {
     (on_bus $bus:expr, $($rest:tt)*) => {
+
         handle_messages! {
             bus($bus) $($rest)*
         }
@@ -92,10 +103,13 @@ macro_rules! handle_messages {
         use $crate::bus::command_response::*;
         #[allow(unused_imports)]
         use $crate::utils::static_type_map::Pick;
+        #[allow(unused_imports)]
+        use $crate::bus::command_response::handle_messages_helpers::receive_bus_metrics;
         paste! {
             handle_messages! {
                 bus($bus) $($rest)*
                 Ok(_raw_query) = #[allow(clippy::macro_metavars_in_unsafe)] unsafe { &mut *Pick::<tokio::sync::broadcast::Receiver<Query<$command, $response>>>::splitting_get_mut(&mut $bus) }.recv() => {
+                    receive_bus_metrics::<Query<$command, $response>,_>(&mut $bus);
                     if let Ok(mut _value) = _raw_query.take() {
                         let $res = &mut _value.data;
                         let res: Result<$response> = $handler;
@@ -123,10 +137,13 @@ macro_rules! handle_messages {
         use paste::paste;
         #[allow(unused_imports)]
         use $crate::utils::static_type_map::Pick;
+        #[allow(unused_imports)]
+        use $crate::bus::command_response::handle_messages_helpers::receive_bus_metrics;
         paste! {
             handle_messages! {
                 bus($bus) $($rest)*
                 Ok($res) = unsafe { &mut *Pick::<tokio::sync::broadcast::Receiver<$message>>::splitting_get_mut(&mut $bus) }.recv()  => {
+                    receive_bus_metrics::<$message, _>(&mut $bus);
                     $handler
                 }
             }

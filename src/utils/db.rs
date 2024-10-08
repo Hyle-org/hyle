@@ -151,6 +151,10 @@ impl Db {
         self.ord.tree.len()
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
     fn get_raw<T: DeserializeOwned>(db: &mut DbTree, key: impl KeyMaker) -> Result<Option<T>> {
         db.key.clear();
         let key = key.make_key(&mut db.key);
@@ -341,7 +345,7 @@ mod tests {
         let db = sled::open(tmpdir.path().join("db"))?;
         let mut tree = Db::new(&db, "db", None)?;
         assert!(
-            tree.len() == 0,
+            tree.is_empty(),
             "calling len on an empty database should return 0"
         );
         let last = tree.ord_last::<TestDataType>()?;
@@ -385,7 +389,7 @@ mod tests {
         let db = sled::open(tmpdir.path().join("db"))?;
         let mut tree = Db::new(&db, "db", Some("db_alt"))?;
         assert!(
-            tree.len() == 0,
+            tree.is_empty(),
             "calling len on an empty database should return 0"
         );
         let last = tree.ord_last::<TestDataType>()?;
