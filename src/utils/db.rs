@@ -62,6 +62,12 @@ impl KeyMaker for &str {
     }
 }
 
+impl KeyMaker for String {
+    fn make_key<'a>(&self, writer: &'a mut String) -> &'a str {
+        self.as_str().make_key(writer)
+    }
+}
+
 impl KeyMaker for usize {
     fn make_key<'a>(&self, writer: &'a mut String) -> &'a str {
         let width = std::mem::size_of::<usize>();
@@ -256,6 +262,35 @@ impl Db {
             alt.key.clear();
             let prefix = prefix.make_key(&mut alt.key);
             Iter(alt.tree.scan_prefix(prefix), PhantomData)
+        })
+    }
+
+    pub fn alt_scan_partial_key<T: DeserializeOwned>(
+        &mut self,
+        partial_key: &str,
+    ) -> Option<Iter<T>> {
+        self.alt.as_mut().map(|alt| {
+            alt.key.clear();
+            let prefix = ""; // To retrieve all keys
+            let iter = alt.tree.scan_prefix(prefix);
+
+            let filtered_iter = iter.filter_map(move |entry| {
+                match entry {
+                    Ok((key, value)) => {
+                        if let Ok(key_str) = std::str::from_utf8(&key) {
+                            if key_str.contains(partial_key) {
+                                return Some(Ok(Item(key, value, PhantomData)));
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("Error reading entry: {:?}", e);
+                    }
+                }
+                None
+            });
+
+            Iter(filtered_iter, PhantomData)
         })
     }
 

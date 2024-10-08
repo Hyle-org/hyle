@@ -101,8 +101,15 @@ impl Blobs {
             .ord_get(BlobsKey(block_height, tx_index, blob_index))
     }
 
+    pub fn get_by_hash(&mut self, tx_hash: &str, blob_index: usize) -> Option<Iter<Blob>> {
+        let key = format!("{}:{}", tx_hash, blob_index);
+        self.db.alt_scan_prefix(key)
+    }
+
     pub fn get_by_contract_name(&mut self, contract_name: &str) -> Option<Iter<Blob>> {
-        self.db.alt_scan_prefix(contract_name)
+        let mut key = contract_name.to_string();
+        key.push(':');
+        self.db.alt_scan_prefix(&key)
     }
 
     pub fn last(&self) -> Result<Option<Blob>> {

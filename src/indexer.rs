@@ -126,6 +126,7 @@ impl Indexer {
                 "/blob/:block_height/:tx_index/:blob_index",
                 get(api::get_blob),
             )
+            .route("/blobs/:tx_hash/:blob_index", get(api::get_blobs_with_hash))
             .route(
                 "/blobs/:contract_name",
                 get(api::get_blobs_by_contract_name),
@@ -354,6 +355,17 @@ mod tests {
 
         let unknown = blobs.get(BlockHeight(8), 42, 6)?;
         assert!(unknown.is_none());
+
+        let last = blobs
+            .get_by_hash(&tx_hash, 4)
+            .expect("an iterator over blobs")
+            .last()
+            .expect("the last blob")
+            .expect("a blob from sled")
+            .value()
+            .expect("a deserialized blob");
+        assert!(last.block_height == BlockHeight(2));
+        assert_eq!(last.tx_hash, tx_hash);
 
         let blob = blobs
             .get_by_contract_name("c1")
