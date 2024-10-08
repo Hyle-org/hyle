@@ -14,7 +14,7 @@ use anyhow::{Context, Result};
 use bincode::{Decode, Encode};
 use metrics::MempoolMetrics;
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
+use std::{collections::HashSet, sync::Arc};
 use tracing::{debug, error, info, warn};
 
 mod metrics;
@@ -264,10 +264,10 @@ impl Mempool {
 
         match self.storage.tip_data() {
             Some((tip_pos, tip_parent, tip_txs, tip_votes)) => {
-                self.storage.accumulate_request(tx.clone());
+                self.storage.accumulate_tx(tx.clone());
                 let nb_replicas = self.validators.len();
                 if tip_votes.len() > nb_replicas / 3 {
-                    let requests = self.storage.flush_requests();
+                    let requests = self.storage.flush_pending_txs();
                     // Create tx chunk and broadcast it
                     let tip_id = self.storage.add_data_to_local_lane(requests.clone());
 
@@ -350,7 +350,7 @@ impl Mempool {
 
     fn broadcast_data_proposal_only_for(
         &mut self,
-        only_for: Vec<ValidatorId>,
+        only_for: HashSet<ValidatorId>,
         data_proposal: DataProposal,
     ) -> Result<()> {
         self.metrics

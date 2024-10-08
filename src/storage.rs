@@ -8,24 +8,24 @@ use std::{
 };
 use tracing::{error, info, warn};
 
-use crate::model::Transaction;
+use crate::model::{Block, Transaction};
 
 type Tip = (usize, Option<usize>, Vec<Transaction>, Vec<String>);
 
 pub trait Storage: Display + Send + Sync {
     fn snapshot(&self) -> StateSnapshot;
 
-    // Received a new request when the previous data proposal had no PoA yet
-    fn accumulate_request(&mut self, req: Transaction);
+    // Received a new transaction when the previous data proposal had no PoA yet
+    fn accumulate_tx(&mut self, tx: Transaction);
 
-    fn has_requests(&self) -> bool;
-    fn flush_requests(&mut self) -> Vec<Transaction>;
+    fn has_pending_txs(&self) -> bool;
+    fn flush_pending_txs(&mut self) -> Vec<Transaction>;
 
     //
     fn tip_data(&self) -> Option<Tip>;
 
-    // Called after receiving a request, before broadcasting a dataproposal
-    fn add_data_to_local_lane(&mut self, reqs: Vec<Transaction>) -> usize;
+    // Called after receiving a transaction, before broadcasting a dataproposal
+    fn add_data_to_local_lane(&mut self, txs: Vec<Transaction>) -> usize;
     // Called when a data proposal is received try to bind it to the previous tip (true) or fails (false)
     fn append_data_proposal(&mut self, sender: &str, data_proposal: &DataProposal) -> bool;
     fn has_data_proposal(&mut self, sender: &str, data_proposal: &DataProposal) -> bool;
@@ -56,12 +56,20 @@ pub trait Storage: Display + Send + Sync {
         data_proposal: &DataProposal,
         voters: HashSet<String>,
     ) -> Option<Vec<String>>;
+
+    fn update_lanes_after_commit(
+        &mut self,
+        validator: &str,
+        pos: usize,
+        parent: Option<usize>,
+        block: Block,
+    );
 }
 
 #[derive(Debug, Clone)]
 pub struct InMemoryStorage {
     pub id: String,
-    pub requests: Vec<Transaction>,
+    pub pending_txs: Vec<Transaction>,
     pub lane: Lane,
     pub other_lanes: HashMap<String, Lane>,
 }
@@ -82,9 +90,9 @@ impl InMemoryStorage {
     pub fn new(id: String) -> InMemoryStorage {
         InMemoryStorage {
             id,
-            requests: vec![],
+            pending_txs: vec![],
             lane: Lane {
-                blocks: vec![],
+                cars: vec![],
                 waiting: HashSet::new(),
             },
             other_lanes: HashMap::new(),
@@ -93,15 +101,15 @@ impl InMemoryStorage {
 }
 
 impl Storage for InMemoryStorage {
-    fn add_data_to_local_lane(&mut self, reqs: Vec<Transaction>) -> usize {
+    fn add_data_to_local_lane(&mut self, txs: Vec<Transaction>) -> usize {
         let tip_id = self.lane.current().map(|car| car.id);
 
         let current_id = tip_id.unwrap_or(0) + 1;
 
-        self.lane.blocks.push(Car {
+        self.lane.cars.push(Car {
             id: current_id,
             parent: tip_id,
-            txs: reqs,
+            txs,
             votes: HashSet::from([self.id.clone()]),
         });
 
@@ -115,7 +123,7 @@ impl Storage for InMemoryStorage {
     ) -> Option<HashSet<String>> {
         let car = self
             .lane
-            .blocks
+            .cars
             .iter_mut()
             .find(|b| b.id == data_proposal.pos && b.txs == data_proposal.inner);
 
@@ -142,7 +150,7 @@ impl Storage for InMemoryStorage {
     ) -> Option<Vec<String>> {
         if let Some(lane) = self.other_lanes.get_mut(sender) {
             let car = lane
-                .blocks
+                .cars
                 .iter_mut()
                 .find(|b| b.id == data_proposal.pos && b.txs == data_proposal.inner);
 
@@ -181,7 +189,7 @@ impl Storage for InMemoryStorage {
         }
 
         if data_proposal.parent == tip_id {
-            lane.blocks.push(Car {
+            lane.cars.push(Car {
                 id: tip_id.unwrap_or(0) + 1,
                 parent: tip_id,
                 txs: data_proposal.inner.clone(),
@@ -198,7 +206,7 @@ impl Storage for InMemoryStorage {
             .other_lanes
             .entry(sender.to_string())
             .or_default()
-            .blocks
+            .cars
             .iter()
             .any(|b| b.id == data_proposal.pos && b.txs == data_proposal.inner);
 
@@ -226,7 +234,7 @@ impl Storage for InMemoryStorage {
     ) -> Option<Vec<Car>> {
         let car = self
             .lane
-            .blocks
+            .cars
             .iter()
             .find(|b| b.id == data_proposal.pos && b.txs == data_proposal.inner);
 
@@ -244,7 +252,7 @@ impl Storage for InMemoryStorage {
                     // Nothing on the lane, we send everything, up to the data proposal id/pos
                     None => Some(
                         self.lane
-                            .blocks
+                            .cars
                             .clone()
                             .into_iter()
                             .take_while(|b| b.id != v.id)
@@ -264,11 +272,8 @@ impl Storage for InMemoryStorage {
                             let mut missing_cars: Vec<Car> = vec![];
                             let mut current_car = v;
                             loop {
-                                current_car = self
-                                    .lane
-                                    .blocks
-                                    .get(current_car.parent.unwrap() - 1)
-                                    .unwrap();
+                                current_car =
+                                    self.lane.cars.get(current_car.parent.unwrap() - 1).unwrap();
                                 if current_car.id == last_index_usize
                                     || current_car.parent.is_none()
                                 {
@@ -307,7 +312,7 @@ impl Storage for InMemoryStorage {
 
         for c in ordered_cars.into_iter() {
             if c.parent == lane.current().map(|l| l.id) {
-                lane.blocks.push(c);
+                lane.cars.push(c);
             }
         }
     }
@@ -325,12 +330,12 @@ impl Storage for InMemoryStorage {
             self.id.clone(),
             self.lane.clone(),
             self.other_lanes.clone(),
-            self.requests.clone(),
+            self.pending_txs.clone(),
         )
     }
 
-    fn accumulate_request(&mut self, req: Transaction) {
-        self.requests.push(req);
+    fn accumulate_tx(&mut self, tx: Transaction) {
+        self.pending_txs.push(tx);
     }
 
     fn tip_data(&self) -> Option<(usize, Option<usize>, Vec<Transaction>, Vec<String>)> {
@@ -344,12 +349,12 @@ impl Storage for InMemoryStorage {
         })
     }
 
-    fn has_requests(&self) -> bool {
-        !self.requests.is_empty()
+    fn has_pending_txs(&self) -> bool {
+        !self.pending_txs.is_empty()
     }
 
-    fn flush_requests(&mut self) -> Vec<Transaction> {
-        self.requests.drain(0..).collect()
+    fn flush_pending_txs(&mut self) -> Vec<Transaction> {
+        self.pending_txs.drain(0..).collect()
     }
 }
 
@@ -375,13 +380,13 @@ impl Display for Car {
 
 #[derive(Default, Debug, Clone)]
 pub struct Lane {
-    blocks: Vec<Car>,
+    cars: Vec<Car>,
     waiting: HashSet<DataProposal>,
 }
 
 impl Display for Lane {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        for c in self.blocks.iter() {
+        for c in self.cars.iter() {
             match c.parent {
                 None => {
                     let _ = write!(f, "{}", c);
@@ -398,30 +403,30 @@ impl Display for Lane {
 
 impl Lane {
     pub fn current_mut(&mut self) -> Option<&mut Car> {
-        self.blocks.last_mut()
+        self.cars.last_mut()
     }
 
     pub fn current(&self) -> Option<&Car> {
-        self.blocks.last()
+        self.cars.last()
     }
 
     pub fn size(&self) -> usize {
-        self.blocks.len()
+        self.cars.len()
     }
 
-    pub fn size_reqs(&self) -> usize {
-        self.blocks.iter().fold(0, |nb, car| nb + car.txs.len())
+    pub fn size_txs(&self) -> usize {
+        self.cars.iter().fold(0, |nb, car| nb + car.txs.len())
     }
 
     pub fn count_poa(&self, nb_replicas: usize) -> usize {
-        self.blocks
+        self.cars
             .iter()
             .filter(|b| b.votes.len() > nb_replicas / 3)
             .count()
     }
 
-    pub fn count_poa_reqs(&self, nb_replicas: usize) -> usize {
-        self.blocks
+    pub fn count_poa_txs(&self, nb_replicas: usize) -> usize {
+        self.cars
             .iter()
             .filter(|b| b.votes.len() > nb_replicas / 3)
             .fold(0, |nb, car| nb + car.txs.len())
