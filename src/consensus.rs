@@ -83,7 +83,6 @@ impl BusMessage for ConsensusNetMessage {}
 pub struct ValidatorCandidacy {
     pubkey: ValidatorPublicKey,
     slot: Slot,
-    previous_consensus_proposal_hash: ConsensusProposalHash,
 }
 
 // TODO: move struct to model.rs ?
@@ -147,11 +146,7 @@ impl Hashable<ConsensusProposalHash> for ConsensusProposal {
 }
 impl Display for ValidatorCandidacy {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "Pubkey: {}, Slot: {}, Previous hash: {}",
-            self.pubkey, self.slot, self.previous_consensus_proposal_hash
-        )
+        write!(f, "Pubkey: {}, Slot: {}", self.pubkey, self.slot)
     }
 }
 impl Display for ConsensusProposal {
@@ -496,29 +491,12 @@ impl Consensus {
                 bail!("New bonded validator has an invalid signature");
             }
             // Verify that the signed message is a matching candidacy
-            if let ConsensusNetMessage::ValidatorCandidacy(ValidatorCandidacy {
-                pubkey,
-                slot,
-                previous_consensus_proposal_hash,
-            }) = &new_validator.msg.msg
+            if let ConsensusNetMessage::ValidatorCandidacy(ValidatorCandidacy { pubkey, slot }) =
+                &new_validator.msg.msg
             {
-                if pubkey != &new_validator.pubkey
-                //|| slot != &self.bft_round_state.consensus_proposal.slot
-                //|| previous_consensus_proposal_hash
-                //    != &self
-                //        .bft_round_state
-                //        .consensus_proposal
-                //        .previous_consensus_proposal_hash
-                {
+                if pubkey != &new_validator.pubkey || slot != &self.bft_round_state.slot {
                     debug!("Invalid candidacy message");
                     debug!("Got - Expected");
-                    debug!(
-                        "{} - {}",
-                        previous_consensus_proposal_hash,
-                        self.bft_round_state
-                            .consensus_proposal
-                            .previous_consensus_proposal_hash
-                    );
                     debug!(
                         "{} - {}",
                         slot, self.bft_round_state.consensus_proposal.slot
@@ -531,6 +509,8 @@ impl Consensus {
                 self.bft_round_state
                     .staking
                     .bond(new_validator.pubkey.clone())?;
+                self.new_validators_candidates
+                    .retain(|v| v.pubkey != new_validator.pubkey);
             } else {
                 bail!("New bonded validator forwarded signed message is not a candidacy message");
             }
@@ -1185,12 +1165,17 @@ impl Consensus {
                 if self.is_next_leader() {
                     // Send Prepare message to all validators
                     self.delay_start_new_slot()?;
-                } else if !self.is_part_of_consensus(self.crypto.validator_pubkey()) {
+                } else if !self.is_part_of_consensus(self.crypto.validator_pubkey())
+                    && self
+                        .bft_round_state
+                        .staking
+                        .get_stake(self.crypto.validator_pubkey())
+                        .is_some()
+                {
                     // Ask to be part of consensus
                     let candidacy = ValidatorCandidacy {
                         pubkey: self.crypto.validator_pubkey().clone(),
                         slot: self.bft_round_state.slot,
-                        previous_consensus_proposal_hash: consensus_proposal_hash.clone(),
                     };
                     info!(
                         "📝 Sending candidacy message to be part of consensus.  {}",
@@ -1218,15 +1203,7 @@ impl Consensus {
                 if candidacy.slot != self.bft_round_state.slot {
                     bail!("Candidacy is not up-to-date with current slot");
                 }
-                // Verify that the candidacy is for the correct previous consensus proposal hash
-                if candidacy.previous_consensus_proposal_hash
-                    != self
-                        .bft_round_state
-                        .consensus_proposal
-                        .previous_consensus_proposal_hash
-                {
-                    bail!("Candidacy is not up-to-date with the correct previous consensus proposal hash");
-                }
+
                 // Verify that the validator is not already part of the consensus
                 if self.is_part_of_consensus(&candidacy.pubkey) {
                     debug!("Validator is already part of the consensus");
