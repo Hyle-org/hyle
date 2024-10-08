@@ -91,11 +91,6 @@ impl Peer {
         if let Some(peer_validator) = &self.peer_validator {
             if *peer_validator == validator_id {
                 return send_net_message(&mut self.stream, msg).await;
-            } else {
-                warn!(
-                    "Validator id mismatch. Expected: {:?}, got: {:?}",
-                    peer_validator, validator_id
-                );
             }
         } else {
             warn!("Peer validator not set. Ignoring message");
