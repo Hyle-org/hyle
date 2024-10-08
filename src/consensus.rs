@@ -321,7 +321,9 @@ impl Consensus {
         Ok(())
     }
 
-    /// Create a consensus proposal with all validators connected
+    /// On genesis, create a consensus proposal with all validators connected to node-1
+    /// will grand them a gree stake to start
+    /// this genesis logic might change later
     fn create_genesis_consensus_proposal(&mut self) {
         let first_block = Block {
             parent_hash: BlockHash {
@@ -351,6 +353,8 @@ impl Consensus {
         };
     }
 
+    /// On genesis slot, bond all validators
+    /// see create_genesis_consensus_proposal
     fn genesis_bond(&mut self, validators: &[ValidatorPublicKey]) -> Result<()> {
         // Bond all validators
         for validator in validators {
