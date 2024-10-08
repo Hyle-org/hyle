@@ -1164,13 +1164,14 @@ impl Consensus {
                 // Start new slot
                 if self.is_next_leader() {
                     // Send Prepare message to all validators
-                    self.delay_start_new_slot()?;
-                } else if !self.is_part_of_consensus(self.crypto.validator_pubkey())
-                    && self
-                        .bft_round_state
-                        .staking
-                        .get_stake(self.crypto.validator_pubkey())
-                        .is_some()
+                    self.delay_start_new_slot()
+                } else if self.is_part_of_consensus(self.crypto.validator_pubkey()) {
+                    return Ok(());
+                } else if self
+                    .bft_round_state
+                    .staking
+                    .get_stake(self.crypto.validator_pubkey())
+                    .is_some()
                 {
                     // Ask to be part of consensus
                     let candidacy = ValidatorCandidacy {
@@ -1187,8 +1188,14 @@ impl Consensus {
                             ConsensusNetMessage::ValidatorCandidacy(candidacy),
                         )?))
                         .context("Failed to send candidacy msg on the bus")?;
+                    return Ok(());
+                } else {
+                    info!(
+                        "😥 No stake on pubkey '{}'. Not sending candidacy.",
+                        self.crypto.validator_pubkey()
+                    );
+                    return Ok(());
                 }
-                Ok(())
             }
             ConsensusNetMessage::ValidatorCandidacy(candidacy) => {
                 // Message received by leader & follower.
