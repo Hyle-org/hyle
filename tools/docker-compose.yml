@@ -6,8 +6,10 @@ services:
       - /tmp/hyle-container-data-1:/hyle/data
     network_mode: host
     environment:
+      - HYLE_ID=node-1
       - HYLE_REST=localhost:4001
       - HYLE_PORT=1001
+      - HYLE_CONSENSUS_SLOT_DURATION=3
   hyle2:
     build: ./..
     privileged: true
@@ -18,6 +20,7 @@ services:
       - HYLE_PEERS=localhost:1001
       - HYLE_REST=localhost:4002
       - HYLE_PORT=1002
+      - HYLE_CONSENSUS_SLOT_DURATION=3
     network_mode: host
     depends_on:
       - hyle1
@@ -31,6 +34,7 @@ services:
       - HYLE_PEERS=localhost:1001
       - HYLE_REST=localhost:4003
       - HYLE_PORT=1003
+      - HYLE_CONSENSUS_SLOT_DURATION=3
     network_mode: host
     depends_on:
       - hyle1

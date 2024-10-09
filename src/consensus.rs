@@ -26,7 +26,10 @@ use crate::{
         get_current_timestamp, Block, BlockHash, BlockHeight, Hashable, SharedRunContext,
         Transaction, ValidatorPublicKey,
     },
-    p2p::network::{OutboundMessage, PeerEvent, Signature, Signed, SignedWithKey},
+    p2p::{
+        network::{OutboundMessage, PeerEvent, Signature, Signed, SignedWithKey},
+        P2PCommand,
+    },
     utils::{
         conf::SharedConf,
         crypto::{BlstCrypto, SharedBlstCrypto},
@@ -79,6 +82,7 @@ impl BusMessage for ConsensusNetMessage {}
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, PartialEq, Eq, Hash)]
 pub struct ValidatorCandidacy {
     pubkey: ValidatorPublicKey,
+    peer_address: String,
 }
 
 // TODO: move struct to model.rs ?
@@ -180,6 +184,7 @@ struct ConsensusBusClient {
     sender(OutboundMessage),
     sender(ConsensusEvent),
     sender(ConsensusCommand),
+    sender(P2PCommand),
     sender(Query<MempoolCommand, MempoolResponse>),
     receiver(ConsensusCommand),
     receiver(MempoolEvent),
@@ -481,8 +486,10 @@ impl Consensus {
                 bail!("New bonded validator has an invalid signature");
             }
             // Verify that the signed message is a matching candidacy
-            if let ConsensusNetMessage::ValidatorCandidacy(ValidatorCandidacy { pubkey }) =
-                &new_validator.msg.msg
+            if let ConsensusNetMessage::ValidatorCandidacy(ValidatorCandidacy {
+                pubkey,
+                peer_address,
+            }) = &new_validator.msg.msg
             {
                 if pubkey != &new_validator.pubkey {
                     debug!("Invalid candidacy message");
@@ -497,6 +504,9 @@ impl Consensus {
                     .bond(new_validator.pubkey.clone())?;
                 self.new_validators_candidates
                     .retain(|v| v.pubkey != new_validator.pubkey);
+                self.bus.send(P2PCommand::ConnectTo {
+                    peer: peer_address.clone(),
+                })?;
             } else {
                 bail!("New bonded validator forwarded signed message is not a candidacy message");
             }
@@ -683,6 +693,25 @@ impl Consensus {
         Ok(())
     }
 
+    /// Connect to all validators & ask to be part of consensus
+    fn send_candidacy(&mut self) -> Result<()> {
+        let candidacy = ValidatorCandidacy {
+            pubkey: self.crypto.validator_pubkey().clone(),
+            peer_address: self.config.peer_addr(),
+        };
+        info!(
+            "📝 Sending candidacy message to be part of consensus.  {}",
+            candidacy
+        );
+        _ = self
+            .bus
+            .send(OutboundMessage::broadcast(self.sign_net_message(
+                ConsensusNetMessage::ValidatorCandidacy(candidacy),
+            )?))
+            .context("Failed to send candidacy msg on the bus")?;
+        Ok(())
+    }
+
     fn handle_net_message(
         &mut self,
         msg: &SignedWithKey<ConsensusNetMessage>,
@@ -710,7 +739,7 @@ impl Consensus {
                     self.metrics.prepare_error("wrong_leader");
                     self.buffered_invalid_proposals
                         .insert(consensus_proposal.hash(), consensus_proposal.clone());
-                    bail!("Prepare consensus message does not come from current leader. I won't vote for it.");
+                    bail!("Prepare consensus message does not come from current leader {}. I won't vote for it.", self.leader_id());
                 }
 
                 // Verify received previous *Commit* Quorum Certificate
@@ -1203,21 +1232,7 @@ impl Consensus {
                     .get_stake(self.crypto.validator_pubkey())
                     .is_some()
                 {
-                    // Ask to be part of consensus
-                    let candidacy = ValidatorCandidacy {
-                        pubkey: self.crypto.validator_pubkey().clone(),
-                    };
-                    info!(
-                        "📝 Sending candidacy message to be part of consensus.  {}",
-                        candidacy
-                    );
-                    _ = self
-                        .bus
-                        .send(OutboundMessage::broadcast(self.sign_net_message(
-                            ConsensusNetMessage::ValidatorCandidacy(candidacy),
-                        )?))
-                        .context("Failed to send candidacy msg on the bus")?;
-                    return Ok(());
+                    self.send_candidacy()
                 } else {
                     info!(
                         "😥 No stake on pubkey '{}'. Not sending candidacy.",

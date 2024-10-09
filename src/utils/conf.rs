@@ -38,6 +38,9 @@ impl Conf {
     pub fn addr(&self) -> (&str, u16) {
         (&self.host, self.port)
     }
+    pub fn peer_addr(&self) -> String {
+        format!("{}:{}", self.host, self.port)
+    }
 
     pub fn new(
         config_file: String,
