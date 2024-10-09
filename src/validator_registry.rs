@@ -130,6 +130,14 @@ impl ValidatorRegistry {
             .collect()
     }
 
+    /// validators sorted by their id
+    pub fn sorted_validators(&self) -> Vec<ValidatorPublicKey> {
+        let binding = self.inner.read().unwrap();
+        let mut validators = binding.validators.values().collect::<Vec<_>>();
+        validators.sort_by(|a, b| a.id.0.cmp(&b.id.0));
+        validators.iter().map(|v| v.pub_key.clone()).collect()
+    }
+
     pub fn get_validators_count(&self) -> usize {
         self.inner.read().unwrap().validators.keys().len()
     }
