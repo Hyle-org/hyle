@@ -136,6 +136,13 @@ impl std::fmt::Debug for BlobsHash {
 )]
 pub struct BlockHeight(pub u64);
 
+impl From<i64> for BlockHeight {
+    fn from(value: i64) -> Self {
+        assert!(value >= 0, "BlockHeight cannot be negative");
+        BlockHeight(value as u64)
+    }
+}
+
 #[derive(
     Default, Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash, Display, Encode, Decode,
 )]
@@ -274,6 +281,14 @@ impl std::fmt::Debug for BlockHash {
         f.debug_tuple("BlockHash ")
             .field(&hex::encode(&self.inner))
             .finish()
+    }
+}
+
+impl From<String> for BlockHash {
+    fn from(s: String) -> Self {
+        BlockHash {
+            inner: s.into_bytes(),
+        }
     }
 }
 

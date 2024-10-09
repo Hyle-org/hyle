@@ -1,8 +1,8 @@
-use std::{path::PathBuf, sync::Arc};
-
 use anyhow::Result;
 use config::{Config, ConfigError, Environment, File};
+use dotenv::dotenv;
 use serde::{Deserialize, Serialize};
+use std::{path::PathBuf, sync::Arc};
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct Storage {
@@ -29,6 +29,7 @@ pub struct Conf {
     pub storage: Storage,
     pub consensus: Consensus,
     pub rest: String,
+    pub database_url: String,
     pub p2p: P2pConf,
     pub data_directory: PathBuf,
     pub run_indexer: bool,
@@ -44,6 +45,8 @@ impl Conf {
         data_directory: Option<String>,
         run_indexer: Option<bool>,
     ) -> Result<Self, ConfigError> {
+        dotenv().ok(); // Read the .env file and set the environment variables
+
         let s = Config::builder()
             .set_default("run_indexer", true)?
             // Priority order: config file, then environment variables, then CLI
