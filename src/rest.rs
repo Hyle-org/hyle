@@ -62,6 +62,10 @@ impl Module for RestApi {
                         "/v1/contract/register",
                         post(endpoints::send_contract_transaction),
                     )
+                    .route(
+                        "/v1/tx/send/stake",
+                        post(endpoints::send_staking_transaction),
+                    )
                     .route("/v1/tx/send/blob", post(endpoints::send_blob_transaction))
                     .route("/v1/tx/send/proof", post(endpoints::send_proof_transaction))
                     .route("/v1/tools/run_scenario", post(endpoints::run_scenario))

@@ -1,6 +1,7 @@
 use crate::bus::command_response::CmdRespClient;
 use crate::bus::BusClientSender;
 use crate::bus::BusMessage;
+use crate::consensus::staking::Staker;
 use crate::model::Transaction;
 use crate::model::{BlobTransaction, ContractName};
 use crate::model::{
@@ -16,6 +17,7 @@ use axum::{
 };
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
+use tracing::error;
 
 use super::{AppError, RouterState};
 
@@ -113,6 +115,13 @@ pub async fn send_proof_transaction(
     handle_send(state, TransactionData::Proof(payload)).await
 }
 
+pub async fn send_staking_transaction(
+    State(state): State<RouterState>,
+    Json(payload): Json<Staker>,
+) -> Result<impl IntoResponse, StatusCode> {
+    handle_send(state, TransactionData::Stake(payload)).await
+}
+
 pub async fn get_contract(
     Path(name): Path<ContractName>,
     State(mut state): State<RouterState>,
@@ -120,10 +129,14 @@ pub async fn get_contract(
     let name_clone = name.clone();
     match state.bus.request(name).await {
         Ok(contract) => Ok(Json(contract)),
-        _ => Err(AppError(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            anyhow!("Error while getting contract {}", name_clone),
-        )),
+        err => {
+            error!("{:?}", err);
+
+            Err(AppError(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                anyhow!("Error while getting contract {}", name_clone),
+            ))
+        }
     }
 }
 

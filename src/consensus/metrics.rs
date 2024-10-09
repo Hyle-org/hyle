@@ -99,11 +99,11 @@ impl ConsensusMetrics {
         self.confirm_ack_commit_aggregate.add(1, &[]);
     }
 
-    pub fn confirmed_ack_gauge(&self, nb: usize) {
-        self.confirmed_ack_gauge.record(nb as u64, &[])
+    pub fn confirmed_ack_gauge(&self, nb: u64) {
+        self.confirmed_ack_gauge.record(nb, &[])
     }
-    pub fn prepare_votes_gauge(&self, nb: usize) {
-        self.prepare_votes_gauge.record(nb as u64, &[])
+    pub fn prepare_votes_gauge(&self, nb: u64) {
+        self.prepare_votes_gauge.record(nb, &[])
     }
 
     pub fn commit(&self) {

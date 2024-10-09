@@ -27,7 +27,7 @@ use std::{
     sync::Arc,
 };
 use tokio::sync::RwLock;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 use transactions::Transactions;
 
 pub fn u64_to_str(u: u64, buf: &mut [u8]) -> &str {
@@ -191,6 +191,9 @@ impl Indexer {
                             tx.contract_name.0, ti, block.height, e
                         );
                     }
+                }
+                crate::model::TransactionData::Stake(_) => {
+                    warn!("Temporary transaction type 'Stake' not stored in history.")
                 }
             }
             if let Err(e) = self.inner.write().await.transactions.put(
