@@ -150,6 +150,16 @@ macro_rules! handle_messages {
         }
     }};
 
+    // Fallback to else case
+    (bus($bus:expr) else => $h:block $($rest:tt)*) => {
+        loop {
+            tokio::select! {
+                $($rest)*
+                else => $h
+            }
+        }
+    };
+
     // Fallback to normal select cases
     (bus($bus:expr) $($rest:tt)+) => {
         loop {

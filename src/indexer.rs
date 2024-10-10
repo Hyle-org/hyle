@@ -21,12 +21,18 @@ use blobs::Blobs;
 use blocks::Blocks;
 use contracts::Contracts;
 use core::str;
+use futures::{SinkExt, StreamExt};
 use proofs::Proofs;
+use reqwest::Client;
 use std::{
     io::{Cursor, Write},
     sync::Arc,
 };
-use tokio::sync::RwLock;
+use tokio::{
+    net::{TcpListener, TcpStream},
+    sync::RwLock,
+};
+use tokio_util::codec::{Framed, LengthDelimitedCodec};
 use tracing::{debug, error, info, warn};
 use transactions::Transactions;
 
@@ -49,6 +55,7 @@ pub type IndexerState = Arc<RwLock<IndexerInner>>;
 #[derive(Debug)]
 pub struct Indexer {
     bus: IndexerBusClient,
+    da_stream: Option<Framed<TcpStream, LengthDelimitedCodec>>,
     inner: IndexerState,
 }
 
@@ -73,6 +80,7 @@ impl Module for Indexer {
 
         let indexer = Indexer {
             bus,
+            da_stream: None,
             inner: Arc::new(RwLock::new(inner)),
         };
 
@@ -99,43 +107,62 @@ impl Indexer {
         self.inner.clone()
     }
 
-    pub async fn start(&mut self) -> Result<()> {
-        handle_messages! {
-            on_bus self.bus,
-            listen<ConsensusEvent> cmd => {
-                self.handle_consensus_event(cmd).await;
-            }
-        }
+    pub async fn connect_to(&mut self, target: &str) -> Result<()> {
+        info!("Connecting to node for data availability stream");
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("Failed to bind to port");
+
+        let addr = listener
+            .local_addr()
+            .expect("Failed to get local port")
+            .to_string();
+
+        let waiter = listener.accept();
+
+        Client::new()
+            .get(format!("{}v1/da/stream_request", target))
+            .query(&[("start_height", "1"), ("peer_ip", &addr)])
+            .timeout(std::time::Duration::from_secs(5))
+            .send()
+            .await?;
+
+        let (stream, _) = waiter.await?;
+        self.da_stream = Some(Framed::new(stream, LengthDelimitedCodec::new()));
+        info!("Connected to data stream");
+
+        Ok(())
     }
 
-    pub fn api(&self) -> Router<()> {
-        Router::new()
-            // block
-            .route("/blocks", get(api::get_blocks))
-            .route("/block/last", get(api::get_last_block))
-            .route("/block/:height", get(api::get_block))
-            // transaction
-            .route("/transactions", get(api::get_transactions))
-            .route("/transaction/last", get(api::get_last_transaction))
-            .route("/transaction/:height/:tx_index", get(api::get_transaction))
-            .route("/transaction/:tx_hash", get(api::get_transaction_with_hash))
-            // blob
-            .route("/blobs", get(api::get_blobs))
-            .route("/blobs/last", get(api::get_last_blob))
-            .route(
-                "/blob/:block_height/:tx_index/:blob_index",
-                get(api::get_blob),
-            )
-            .route("/blobs/:tx_hash/:blob_index", get(api::get_blob_with_hash))
-            // proof
-            .route("/proofs", get(api::get_proofs))
-            .route("/proof/last", get(api::get_last_proof))
-            .route("/proof/:block_height/:tx_index", get(api::get_proof))
-            .route("/proof/:tx_hash", get(api::get_proof_with_hash))
-            // contract
-            .route("/contracts", get(api::get_contracts))
-            .route("/contract/:name", get(api::get_contract))
-            .with_state(self.inner.clone())
+    pub async fn start(&mut self) -> Result<()> {
+        if self.da_stream.is_none() {
+            handle_messages! {
+                on_bus self.bus,
+                listen<ConsensusEvent> cmd => {
+                    self.handle_consensus_event(cmd).await;
+                }
+            }
+        } else {
+            handle_messages! {
+                    on_bus self.bus,
+                    cmd = self.da_stream.as_mut().unwrap().next() => {
+                    if let Some(Ok(cmd)) = cmd {
+                        let bytes = cmd;
+                        let block: Block = bincode::decode_from_slice(&bytes, bincode::config::standard()).unwrap().0;
+                        self.handle_block(block).await;
+                        SinkExt::<bytes::Bytes>::send(self.da_stream.as_mut().unwrap(), "ok".into()).await.unwrap();
+                    } else if cmd.is_none() {
+                        self.da_stream = None;
+                        // TODO: retry
+                        return Err(anyhow::anyhow!("DA stream closed"));
+                    } else if let Some(Err(e)) = cmd {
+                        self.da_stream = None;
+                        // TODO: retry
+                        return Err(anyhow::anyhow!("Error while reading DA stream: {}", e));
+                    }
+                }
+            }
+        }
     }
 
     async fn handle_consensus_event(&mut self, event: ConsensusEvent) {
@@ -212,6 +239,36 @@ impl Indexer {
         if let Err(e) = self.inner.write().await.blocks.put(block) {
             error!("storing block: {}", e);
         }
+    }
+
+    pub fn api(&self) -> Router<()> {
+        Router::new()
+            // block
+            .route("/blocks", get(api::get_blocks))
+            .route("/block/last", get(api::get_last_block))
+            .route("/block/:height", get(api::get_block))
+            // transaction
+            .route("/transactions", get(api::get_transactions))
+            .route("/transaction/last", get(api::get_last_transaction))
+            .route("/transaction/:height/:tx_index", get(api::get_transaction))
+            .route("/transaction/:tx_hash", get(api::get_transaction_with_hash))
+            // blob
+            .route("/blobs", get(api::get_blobs))
+            .route("/blobs/last", get(api::get_last_blob))
+            .route(
+                "/blob/:block_height/:tx_index/:blob_index",
+                get(api::get_blob),
+            )
+            .route("/blobs/:tx_hash/:blob_index", get(api::get_blob_with_hash))
+            // proof
+            .route("/proofs", get(api::get_proofs))
+            .route("/proof/last", get(api::get_last_proof))
+            .route("/proof/:block_height/:tx_index", get(api::get_proof))
+            .route("/proof/:tx_hash", get(api::get_proof_with_hash))
+            // contract
+            .route("/contracts", get(api::get_contracts))
+            .route("/contract/:name", get(api::get_contract))
+            .with_state(self.inner.clone())
     }
 }
 
