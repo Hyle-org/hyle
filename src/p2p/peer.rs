@@ -13,6 +13,7 @@ use tracing::{debug, info, trace, warn};
 
 use super::network::HandshakeNetMessage;
 use super::network::OutboundMessage;
+use super::network::PeerEvent;
 use super::network::SignedWithKey;
 use super::network::{Hello, NetMessage};
 use super::stream::send_net_message;
@@ -30,6 +31,7 @@ bus_client! {
 struct PeerBusClient {
     sender(SignedWithKey<MempoolNetMessage>),
     sender(SignedWithKey<ConsensusNetMessage>),
+    sender(PeerEvent),
     receiver(OutboundMessage),
 }
 }
@@ -110,12 +112,17 @@ impl Peer {
     async fn handle_handshake_message(&mut self, msg: HandshakeNetMessage) -> Result<(), Error> {
         match msg {
             HandshakeNetMessage::Hello(v) => {
-                info!("Got peer hello message {:?}", v);
+                info!("👋 Got peer hello message {:?}", v);
                 self.peer_pubkey = Some(v.validator_pubkey);
                 send_net_message(&mut self.stream, HandshakeNetMessage::Verack.into()).await
             }
             HandshakeNetMessage::Verack => {
                 debug!("Got peer verack message");
+                if let Some(pubkey) = &self.peer_pubkey {
+                    self.bus.send(PeerEvent::NewPeer {
+                        pubkey: pubkey.clone(),
+                    })?;
+                }
                 self.ping_pong();
                 Ok(())
             }

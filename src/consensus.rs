@@ -26,7 +26,7 @@ use crate::{
         get_current_timestamp, Block, BlockHash, BlockHeight, Hashable, SharedRunContext,
         Transaction, ValidatorPublicKey,
     },
-    p2p::network::{OutboundMessage, Signature, Signed, SignedWithKey},
+    p2p::network::{OutboundMessage, PeerEvent, Signature, Signed, SignedWithKey},
     utils::{
         conf::SharedConf,
         crypto::{BlstCrypto, SharedBlstCrypto},
@@ -184,6 +184,7 @@ struct ConsensusBusClient {
     receiver(ConsensusCommand),
     receiver(MempoolEvent),
     receiver(SignedWithKey<ConsensusNetMessage>),
+    receiver(PeerEvent),
 }
 }
 
@@ -257,7 +258,7 @@ impl Module for Consensus {
         Ok(Consensus {
             metrics,
             bus,
-            genesis_pubkeys: vec![],
+            genesis_pubkeys: vec![ctx.node.crypto.validator_pubkey().clone()],
             file: Some(file),
             store,
             config: ctx.common.config.clone(),
@@ -641,6 +642,13 @@ impl Consensus {
             ConsensusNetMessage::Prepare(consensus_proposal) => {
                 // Message received by follower.
                 debug!("Received Prepare message: {}", consensus_proposal);
+                // if slot is 0, we are in genesis and we accept any leader
+                // unless we already have one set (e.g. in tests)
+                if self.bft_round_state.slot == 0
+                    && self.bft_round_state.leader_pubkey == ValidatorPublicKey::default()
+                {
+                    self.bft_round_state.leader_pubkey = consensus_proposal.validators[0].clone();
+                }
                 // Validate message comes from the correct leader
                 if !msg.validators.contains(&self.leader_id()) {
                     self.metrics.prepare_error("wrong_leader");
@@ -1281,6 +1289,27 @@ impl Consensus {
         }
     }
 
+    fn handle_peer_event(&mut self, msg: PeerEvent) -> Result<()> {
+        match msg {
+            PeerEvent::NewPeer { pubkey } => {
+                if self.bft_round_state.slot != 0 {
+                    return Ok(());
+                }
+                if !self.is_next_leader() {
+                    return Ok(());
+                }
+                info!("New peer added to genesis: {}", pubkey);
+                self.genesis_pubkeys.push(pubkey.clone());
+                if self.genesis_pubkeys.len() == 2 {
+                    // Start first slot
+                    debug!("Got a 2nd validator, starting first slot after delay");
+                    return self.delay_start_new_slot();
+                }
+                Ok(())
+            }
+        }
+    }
+
     pub fn start_master(&mut self, config: SharedConf) -> Result<()> {
         let interval = config.storage.interval;
 
@@ -1325,6 +1354,12 @@ impl Consensus {
                 match self.handle_net_message(&cmd) {
                     Ok(_) => (),
                     Err(e) => warn!("Consensus message failed: {:#}", e),
+                }
+            }
+            listen<PeerEvent> cmd => {
+                match self.handle_peer_event(cmd) {
+                    Ok(_) => (),
+                    Err(e) => warn!("Error while handling peer event: {:#}", e),
                 }
             }
         }

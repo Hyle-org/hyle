@@ -31,6 +31,13 @@ impl OutboundMessage {
         }
     }
 }
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub enum PeerEvent {
+    NewPeer { pubkey: ValidatorPublicKey },
+}
+
+impl BusMessage for PeerEvent {}
 impl BusMessage for OutboundMessage {}
 
 #[derive(Serialize, Deserialize, Clone, Encode, Decode, Default, PartialEq, Eq, Hash)]
