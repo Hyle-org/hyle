@@ -174,7 +174,6 @@ pub struct BlobData(pub Vec<u8>);
 pub struct Transaction {
     pub version: u32,
     pub transaction_data: TransactionData,
-    pub inner: String, // FIXME: to remove
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Encode, Decode, Hash)]
@@ -237,21 +236,27 @@ pub struct Blob {
 }
 
 impl Transaction {
-    // FIXME:
-    pub fn as_bytes(&self) -> &[u8] {
-        self.inner.as_bytes()
-    }
-
     pub fn wrap(data: TransactionData) -> Self {
         Transaction {
             version: 1,
             transaction_data: data,
-            inner: "".to_string(),
         }
     }
 }
 
-#[derive(Serialize, Deserialize, Default, Clone, Encode, Decode, PartialEq, Eq, Hash)]
+#[derive(
+    Serialize,
+    Deserialize,
+    Default,
+    Clone,
+    Encode,
+    Decode,
+    PartialEq,
+    Eq,
+    Hash,
+    sqlx::Encode,
+    sqlx::Decode,
+)]
 pub struct BlockHash {
     pub inner: Vec<u8>,
 }
@@ -312,8 +317,7 @@ impl Hashable<BlockHash> for Block {
         _ = write!(hasher, "{}", self.height);
         _ = write!(hasher, "{}", self.timestamp);
         for tx in self.txs.iter() {
-            // FIXME:
-            hasher.update(tx.inner.as_bytes());
+            hasher.update(tx.hash().0);
         }
         return BlockHash {
             inner: hasher.finalize().as_slice().to_owned(),
