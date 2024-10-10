@@ -1,7 +1,8 @@
 target
 *.bin
 data_node*
-**/Consensus.data.tmp
+**/*Consensus.data.tmp
 # Added by cargo
 
 /target
+.sqlx

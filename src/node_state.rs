@@ -447,7 +447,6 @@ mod test {
         Transaction {
             version: 1,
             transaction_data,
-            inner: "useless".to_string(),
         }
     }
 

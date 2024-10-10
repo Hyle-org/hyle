@@ -82,7 +82,6 @@ impl MockWorkflowHandler {
                     data: BlobData(vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9]),
                 }],
             }),
-            inner: "???".to_string(),
         });
         for _ in 0..500000 {
             let _ = self.bus.send(tx.clone());

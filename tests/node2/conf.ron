@@ -10,6 +10,8 @@ Config(
     ),
     rest: "127.0.0.1:4322",
     data_directory: "data_node2",
+    migration_directory: "./src/indexer/migrations",
+    database_url: "postgres://postgres:password@localhost:5432/postgres",
     consensus: Consensus (
       slot_duration: 0,
     ),

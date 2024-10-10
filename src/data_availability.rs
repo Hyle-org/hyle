@@ -127,7 +127,6 @@ mod tests {
                         data: BlobData(vec![4, 5, 6]),
                     }],
                 }),
-                inner: "tx".to_string(),
             }],
         };
         blocks.put(block.clone())?;
