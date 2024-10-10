@@ -17,7 +17,6 @@ use hyle::{
         crypto::BlstCrypto,
         modules::{Module, ModulesHandler},
     },
-    validator_registry::ValidatorRegistry,
 };
 use std::sync::{Arc, Mutex};
 use tracing::{debug, error, info, level_filters::LevelFilter};
@@ -91,15 +90,13 @@ async fn main() -> Result<()> {
 
     // Init global metrics meter we expose as an endpoint
     let metrics_layer = HttpMetricsLayerBuilder::new()
-        .with_service_name(config.id.to_string().clone())
+        .with_service_name(config.id.clone())
         .build();
 
-    let bus = SharedMessageBus::new(BusMetrics::global(config.id.0.clone()));
-    let crypto = Arc::new(BlstCrypto::new(config.id.clone())); // TODO load sk from disk instead of random
+    let bus = SharedMessageBus::new(BusMetrics::global(config.id.clone()));
+    let crypto = Arc::new(BlstCrypto::new(config.id.clone()));
 
     std::fs::create_dir_all(&config.data_directory).context("creating data directory")?;
-
-    let validator_registry = ValidatorRegistry::new(crypto.as_validator());
 
     let run_indexer = config.run_indexer;
 
@@ -110,11 +107,7 @@ async fn main() -> Result<()> {
             router: Mutex::new(Some(Router::new())),
         }
         .into(),
-        node: NodeRunContext {
-            crypto,
-            validator_registry,
-        }
-        .into(),
+        node: NodeRunContext { crypto }.into(),
     };
 
     let mut handler = ModulesHandler::default();

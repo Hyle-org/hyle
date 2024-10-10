@@ -3,8 +3,6 @@ use opentelemetry::{
     KeyValue,
 };
 
-use crate::validator_registry::ValidatorId;
-
 pub struct ConsensusMetrics {
     signature_error: Counter<u64>,
     start_new_slot: Counter<u64>,
@@ -26,8 +24,8 @@ pub struct ConsensusMetrics {
 }
 
 impl ConsensusMetrics {
-    pub fn global(id: ValidatorId) -> ConsensusMetrics {
-        let my_meter = opentelemetry::global::meter(id.0.clone());
+    pub fn global(id: String) -> ConsensusMetrics {
+        let my_meter = opentelemetry::global::meter(id);
 
         ConsensusMetrics {
             signature_error: my_meter.u64_counter("signature_error").init(),

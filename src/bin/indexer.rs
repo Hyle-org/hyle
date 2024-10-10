@@ -72,10 +72,10 @@ async fn main() -> Result<()> {
 
     // Init global metrics meter we expose as an endpoint
     let metrics_layer = HttpMetricsLayerBuilder::new()
-        .with_service_name(config.id.to_string().clone())
+        .with_service_name(config.id.clone())
         .build();
 
-    let bus = SharedMessageBus::new(BusMetrics::global(config.id.0.clone()));
+    let bus = SharedMessageBus::new(BusMetrics::global(config.id.clone()));
 
     std::fs::create_dir_all(&config.data_directory).context("creating data directory")?;
 

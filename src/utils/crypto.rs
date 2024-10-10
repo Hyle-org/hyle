@@ -3,21 +3,20 @@
 use std::sync::Arc;
 
 use anyhow::{anyhow, Error, Result};
-use blst::min_sig::{
+use blst::min_pk::{
     AggregatePublicKey, AggregateSignature, PublicKey, SecretKey, Signature as BlstSignature,
 };
 use rand::Rng;
 
 use crate::{
-    p2p::network::{self, Signed, SignedWithId, SignedWithKey},
-    validator_registry::{ConsensusValidator, ValidatorId, ValidatorPublicKey},
+    model::ValidatorPublicKey,
+    p2p::network::{self, Signed, SignedWithKey},
 };
 
 #[derive(Clone)]
 pub struct BlstCrypto {
     sk: SecretKey,
     validator_pubkey: ValidatorPublicKey,
-    validator_id: ValidatorId,
 }
 pub type SharedBlstCrypto = Arc<BlstCrypto>;
 
@@ -32,20 +31,19 @@ const DST: &[u8] = b"BLS_SIG_BLS12381G2_XMD:SHA-256_SSWU_RO_NUL_";
 pub const SIG_SIZE: usize = 48;
 
 impl BlstCrypto {
-    pub fn new(validator_id: ValidatorId) -> Self {
+    pub fn new(validator_name: String) -> Self {
         // TODO load secret key from keyring or other
         // here basically secret_key <=> validator_id which is very badly secure !
-        let validator_id_bytes = validator_id.0.as_bytes();
+        let validator_name_bytes = validator_name.as_bytes();
         let mut ikm = [0u8; 32];
-        let len = std::cmp::min(validator_id_bytes.len(), 32);
-        ikm[..len].copy_from_slice(&validator_id_bytes[..len]);
+        let len = std::cmp::min(validator_name_bytes.len(), 32);
+        ikm[..len].copy_from_slice(&validator_name_bytes[..len]);
 
         let sk = SecretKey::key_gen(&ikm, &[]).unwrap();
         let validator_pubkey = sk.sk_to_pk().into();
 
         BlstCrypto {
             sk,
-            validator_id,
             validator_pubkey,
         }
     }
@@ -58,23 +56,11 @@ impl BlstCrypto {
         Self::new(id.as_str().into())
     }
 
-    pub fn validator_id(&self) -> &ValidatorId {
-        &self.validator_id
-    }
-
     pub fn validator_pubkey(&self) -> &ValidatorPublicKey {
         &self.validator_pubkey
     }
 
-    pub fn as_validator(&self) -> ConsensusValidator {
-        let pub_key = self.sk.sk_to_pk().into();
-        ConsensusValidator {
-            id: self.validator_id.clone(),
-            pub_key,
-        }
-    }
-
-    pub fn sign<T>(&self, msg: T) -> Result<SignedWithId<T>, Error>
+    pub fn sign<T>(&self, msg: T) -> Result<SignedWithKey<T>, Error>
     where
         T: bincode::Encode,
     {
@@ -82,7 +68,7 @@ impl BlstCrypto {
         Ok(Signed {
             msg,
             signature,
-            validators: vec![self.validator_id.clone()],
+            validators: vec![self.validator_pubkey.clone()],
         })
     }
 
@@ -234,17 +220,14 @@ mod tests {
         let pub_key = ValidatorPublicKey(crypto.sk.sk_to_pk().to_bytes().as_slice().to_vec());
         let msg = HandshakeNetMessage::Ping;
         let signed = crypto.sign(&msg).unwrap();
-        let valid = BlstCrypto::verify(&signed.with_pub_keys(vec![pub_key])).unwrap();
+        let valid = BlstCrypto::verify(&signed).unwrap();
         assert!(valid);
     }
 
     fn new_signed<T: bincode::Encode + Clone>(msg: T) -> (SignedWithKey<T>, ValidatorPublicKey) {
         let crypto = BlstCrypto::new_random();
         let pub_key = ValidatorPublicKey(crypto.sk.sk_to_pk().to_bytes().as_slice().to_vec());
-        (
-            crypto.sign(msg).unwrap().with_pub_keys(vec![pub_key]),
-            crypto.validator_pubkey.clone(),
-        )
+        (crypto.sign(msg).unwrap(), crypto.validator_pubkey.clone())
     }
 
     #[test]

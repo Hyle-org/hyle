@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::fmt::Display;
 use tracing::info;
 
-use crate::validator_registry::ValidatorPublicKey;
+use crate::model::ValidatorPublicKey;
 
 #[derive(Debug, Encode, Decode, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Staker {

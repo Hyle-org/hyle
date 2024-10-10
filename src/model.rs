@@ -21,7 +21,6 @@ use crate::{
     bus::SharedMessageBus,
     consensus::staking::Staker,
     utils::{conf::SharedConf, crypto::SharedBlstCrypto},
-    validator_registry::ValidatorRegistry,
 };
 
 #[derive(Default, Clone, Eq, PartialEq, Hash, Encode, Decode)]
@@ -394,6 +393,59 @@ impl Add<BlockHeight> for BlockHeight {
     }
 }
 
+#[derive(Clone, Encode, Decode, Default, Eq, PartialEq, Hash)]
+pub struct ValidatorPublicKey(pub Vec<u8>);
+
+impl std::fmt::Debug for ValidatorPublicKey {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("ValidatorPublicKey")
+            .field(&hex::encode(&self.0))
+            .finish()
+    }
+}
+
+impl Display for ValidatorPublicKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", hex::encode(&self.0))
+    }
+}
+
+impl Serialize for ValidatorPublicKey {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(hex::encode(&self.0).as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for ValidatorPublicKey {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct ValidatorPublicKeyVisitor;
+
+        impl<'de> Visitor<'de> for ValidatorPublicKeyVisitor {
+            type Value = ValidatorPublicKey;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("a hex string representing a ValidatorPublicKey")
+            }
+
+            fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                let bytes = hex::decode(value).map_err(de::Error::custom)?;
+                Ok(ValidatorPublicKey(bytes))
+            }
+        }
+
+        deserializer.deserialize_str(ValidatorPublicKeyVisitor)
+    }
+}
+
 pub fn get_current_timestamp() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -408,7 +460,6 @@ pub struct CommonRunContext {
 }
 pub struct NodeRunContext {
     pub crypto: SharedBlstCrypto,
-    pub validator_registry: ValidatorRegistry,
 }
 
 #[derive(Clone)]
