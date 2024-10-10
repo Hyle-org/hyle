@@ -38,5 +38,5 @@ VALUES
 -- Inserting test data for the contract_state table
 INSERT INTO contract_state (contract_name, block_hash, block_number, state)
 VALUES
-    ('contract_1', convert_to('block1', 'UTF-8'), 1, '{"state": "000"}'),  -- State for Contract 1
-    ('contract_1', convert_to('block2', 'UTF-8'), 2, '{"state": "001"}');  -- State for Contract 2
+    ('contract_1', convert_to('block1', 'UTF-8'), 1, convert_to('state_digest_1', 'UTF-8')),  -- State for Contract 1
+    ('contract_1', convert_to('block2', 'UTF-8'), 2, convert_to('state_digest_1Bis', 'UTF-8'));  -- State for Contract 2

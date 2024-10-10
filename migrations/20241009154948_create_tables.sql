@@ -52,6 +52,6 @@ CREATE TABLE contract_state (
     contract_name TEXT NOT NULL,      -- Name of the contract
     block_hash BYTEA NOT NULL REFERENCES blocks(hash) ON DELETE CASCADE,  -- Block where the state is captured
     block_number INT NOT NULL,        -- Block number for easier querying by number
-    state JSONB NOT NULL,             -- The contract state stored in JSON format for flexibility
+    state BYTEA NOT NULL,             -- The contract state stored in JSON format for flexibility
     PRIMARY KEY (contract_name, block_hash)
 );
