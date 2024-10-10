@@ -13,6 +13,8 @@ use tracing::{debug, info, trace, warn};
 
 use super::network::HandshakeNetMessage;
 use super::network::OutboundMessage;
+use super::network::PeerEvent;
+use super::network::SignedWithKey;
 use super::network::{Hello, NetMessage};
 use super::stream::send_net_message;
 use crate::bus::bus_client;
@@ -20,19 +22,16 @@ use crate::bus::SharedMessageBus;
 use crate::consensus::ConsensusNetMessage;
 use crate::handle_messages;
 use crate::mempool::MempoolNetMessage;
-use crate::p2p::network::SignedWithId;
+use crate::model::ValidatorPublicKey;
 use crate::p2p::stream::read_stream;
 use crate::utils::conf::SharedConf;
 use crate::utils::crypto::SharedBlstCrypto;
-use crate::validator_registry::ConsensusValidator;
-use crate::validator_registry::ValidatorId;
-use crate::validator_registry::ValidatorRegistryNetMessage;
 
 bus_client! {
 struct PeerBusClient {
-    sender(SignedWithId<MempoolNetMessage>),
-    sender(SignedWithId<ConsensusNetMessage>),
-    sender(ValidatorRegistryNetMessage),
+    sender(SignedWithKey<MempoolNetMessage>),
+    sender(SignedWithKey<ConsensusNetMessage>),
+    sender(PeerEvent),
     receiver(OutboundMessage),
 }
 }
@@ -44,8 +43,8 @@ pub struct Peer {
     last_pong: SystemTime,
     conf: SharedConf,
     bloom_filter: Bloom<Vec<u8>>,
-    self_validator: ConsensusValidator,
-    peer_validator: Option<ValidatorId>,
+    self_pubkey: ValidatorPublicKey,
+    peer_pubkey: Option<ValidatorPublicKey>,
 
     // peer internal channel
     internal_cmd_tx: mpsc::Sender<Cmd>,
@@ -66,7 +65,7 @@ impl Peer {
     ) -> Self {
         let (cmd_tx, cmd_rx) = mpsc::channel::<Cmd>(100);
         let bloom_filter = Bloom::new_for_fp_rate(10_000, 0.01);
-        let self_validator = crypto.as_validator();
+        let self_validator = crypto.validator_pubkey().clone();
         let framed = Framed::new(stream, LengthDelimitedCodec::new());
 
         Peer {
@@ -76,8 +75,8 @@ impl Peer {
             last_pong: SystemTime::now(),
             conf,
             bloom_filter,
-            self_validator,
-            peer_validator: None,
+            self_pubkey: self_validator,
+            peer_pubkey: None,
             internal_cmd_tx: cmd_tx,
             internal_cmd_rx: cmd_rx,
         }
@@ -85,10 +84,10 @@ impl Peer {
 
     async fn handle_send_message(
         &mut self,
-        validator_id: ValidatorId,
+        validator_id: ValidatorPublicKey,
         msg: NetMessage,
     ) -> Result<(), Error> {
-        if let Some(peer_validator) = &self.peer_validator {
+        if let Some(peer_validator) = &self.peer_pubkey {
             if *peer_validator == validator_id {
                 return send_net_message(&mut self.stream, msg).await;
             }
@@ -113,18 +112,19 @@ impl Peer {
     async fn handle_handshake_message(&mut self, msg: HandshakeNetMessage) -> Result<(), Error> {
         match msg {
             HandshakeNetMessage::Hello(v) => {
-                info!("Got peer hello message {:?}", v);
-                self.peer_validator = Some(v.validator_id);
+                info!("👋 Got peer hello message {:?}", v);
+                self.peer_pubkey = Some(v.validator_pubkey);
                 send_net_message(&mut self.stream, HandshakeNetMessage::Verack.into()).await
             }
             HandshakeNetMessage::Verack => {
                 debug!("Got peer verack message");
+                if let Some(pubkey) = &self.peer_pubkey {
+                    self.bus.send(PeerEvent::NewPeer {
+                        pubkey: pubkey.clone(),
+                    })?;
+                }
                 self.ping_pong();
-                send_net_message(
-                    &mut self.stream,
-                    ValidatorRegistryNetMessage::NewValidator(self.self_validator.clone()).into(),
-                )
-                .await
+                Ok(())
             }
             HandshakeNetMessage::Ping => {
                 send_net_message(&mut self.stream, HandshakeNetMessage::Pong.into()).await
@@ -154,15 +154,6 @@ impl Peer {
                 self.bus
                     .send(consensus_msg)
                     .context("Receiving consensus net message")?;
-            }
-            NetMessage::ValidatorRegistryMessage(validator_registry_msg) => {
-                debug!(
-                    "Received new validator registry net message {:?}",
-                    validator_registry_msg
-                );
-                self.bus
-                    .send(validator_registry_msg)
-                    .context("Receiving validator registry net message")?;
             }
         }
         Ok(())
@@ -255,7 +246,7 @@ impl Peer {
             &mut self.stream,
             HandshakeNetMessage::Hello(Hello {
                 version: 1,
-                validator_id: self.self_validator.id.clone(),
+                validator_pubkey: self.self_pubkey.clone(),
             })
             .into(),
         )

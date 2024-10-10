@@ -1,5 +1,5 @@
 use crate::bus::BusMessage;
-use crate::validator_registry::{ValidatorId, ValidatorPublicKey, ValidatorRegistryNetMessage};
+use crate::model::ValidatorPublicKey;
 use crate::{consensus::ConsensusNetMessage, mempool::MempoolNetMessage};
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
@@ -8,13 +8,13 @@ use std::fmt;
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, Eq, PartialEq)]
 pub struct Hello {
     pub version: u16,
-    pub validator_id: ValidatorId,
+    pub validator_pubkey: ValidatorPublicKey,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum OutboundMessage {
     SendMessage {
-        validator_id: ValidatorId,
+        validator_id: ValidatorPublicKey,
         msg: NetMessage,
     },
     BroadcastMessage(NetMessage),
@@ -24,13 +24,20 @@ impl OutboundMessage {
     pub fn broadcast<T: Into<NetMessage>>(msg: T) -> Self {
         OutboundMessage::BroadcastMessage(msg.into())
     }
-    pub fn send<T: Into<NetMessage>>(validator_id: ValidatorId, msg: T) -> Self {
+    pub fn send<T: Into<NetMessage>>(validator_id: ValidatorPublicKey, msg: T) -> Self {
         OutboundMessage::SendMessage {
             validator_id,
             msg: msg.into(),
         }
     }
 }
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub enum PeerEvent {
+    NewPeer { pubkey: ValidatorPublicKey },
+}
+
+impl BusMessage for PeerEvent {}
 impl BusMessage for OutboundMessage {}
 
 #[derive(Serialize, Deserialize, Clone, Encode, Decode, Default, PartialEq, Eq, Hash)]
@@ -44,10 +51,8 @@ impl std::fmt::Debug for Signature {
     }
 }
 
-impl<T> BusMessage for SignedWithId<T> where T: Encode + BusMessage {}
 impl<T> BusMessage for SignedWithKey<T> where T: Encode + BusMessage {}
 
-pub type SignedWithId<T> = Signed<T, ValidatorId>;
 pub type SignedWithKey<T> = Signed<T, ValidatorPublicKey>;
 
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, PartialEq, Eq, Hash)]
@@ -57,25 +62,11 @@ pub struct Signed<T: Encode, V> {
     pub validators: Vec<V>,
 }
 
-impl<T: Encode> Signed<T, ValidatorId> {
-    pub fn with_pub_keys(&self, pub_key: Vec<ValidatorPublicKey>) -> Signed<T, ValidatorPublicKey>
-    where
-        T: Encode + Clone,
-    {
-        SignedWithKey {
-            msg: self.msg.clone(),
-            signature: self.signature.clone(),
-            validators: pub_key,
-        }
-    }
-}
-
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, Eq, PartialEq)]
 pub enum NetMessage {
     HandshakeMessage(HandshakeNetMessage),
-    MempoolMessage(SignedWithId<MempoolNetMessage>),
-    ConsensusMessage(SignedWithId<ConsensusNetMessage>),
-    ValidatorRegistryMessage(ValidatorRegistryNetMessage),
+    MempoolMessage(SignedWithKey<MempoolNetMessage>),
+    ConsensusMessage(SignedWithKey<ConsensusNetMessage>),
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, Eq, PartialEq)]
@@ -92,20 +83,14 @@ impl From<HandshakeNetMessage> for NetMessage {
     }
 }
 
-impl From<ValidatorRegistryNetMessage> for NetMessage {
-    fn from(msg: ValidatorRegistryNetMessage) -> Self {
-        NetMessage::ValidatorRegistryMessage(msg)
-    }
-}
-
-impl From<SignedWithId<MempoolNetMessage>> for NetMessage {
-    fn from(msg: SignedWithId<MempoolNetMessage>) -> Self {
+impl From<SignedWithKey<MempoolNetMessage>> for NetMessage {
+    fn from(msg: SignedWithKey<MempoolNetMessage>) -> Self {
         NetMessage::MempoolMessage(msg)
     }
 }
 
-impl From<SignedWithId<ConsensusNetMessage>> for NetMessage {
-    fn from(msg: SignedWithId<ConsensusNetMessage>) -> Self {
+impl From<SignedWithKey<ConsensusNetMessage>> for NetMessage {
+    fn from(msg: SignedWithKey<ConsensusNetMessage>) -> Self {
         NetMessage::ConsensusMessage(msg)
     }
 }

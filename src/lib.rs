@@ -23,4 +23,3 @@ pub mod p2p;
 pub mod rest;
 pub mod tools;
 pub mod utils;
-pub mod validator_registry;

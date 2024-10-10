@@ -5,10 +5,12 @@ use crate::{
     consensus::ConsensusEvent,
     handle_messages,
     model::{Hashable, SharedRunContext, Transaction, TransactionData},
-    p2p::network::{OutboundMessage, SignedWithId},
+    p2p::network::{OutboundMessage, SignedWithKey},
     rest::endpoints::RestApiMessage,
-    utils::{crypto::SharedBlstCrypto, modules::Module},
-    validator_registry::{ValidatorRegistry, ValidatorRegistryNetMessage},
+    utils::{
+        crypto::{BlstCrypto, SharedBlstCrypto},
+        modules::Module,
+    },
 };
 use anyhow::{Context, Result};
 use bincode::{Decode, Encode};
@@ -24,10 +26,9 @@ struct MempoolBusClient {
     sender(OutboundMessage),
     sender(MempoolEvent),
     receiver(Query<MempoolCommand, MempoolResponse>),
-    receiver(SignedWithId<MempoolNetMessage>),
+    receiver(SignedWithKey<MempoolNetMessage>),
     receiver(RestApiMessage),
     receiver(ConsensusEvent),
-    receiver(ValidatorRegistryNetMessage),
 }
 }
 
@@ -35,7 +36,6 @@ pub struct Mempool {
     bus: MempoolBusClient,
     crypto: SharedBlstCrypto,
     metrics: MempoolMetrics,
-    validators: ValidatorRegistry,
     // txs accumulated, not yet transmitted to the consensus
     pending_txs: Vec<Transaction>,
     batched_txs: HashSet<Vec<Transaction>>,
@@ -79,7 +79,6 @@ impl Module for Mempool {
             bus,
             metrics,
             crypto: Arc::clone(&ctx.node.crypto),
-            validators: ctx.node.validator_registry.share(),
             pending_txs: vec![],
             batched_txs: HashSet::default(),
         })
@@ -100,7 +99,7 @@ impl Mempool {
             command_response<MempoolCommand, MempoolResponse> cmd => {
                  self.handle_command(cmd)
             }
-            listen<SignedWithId<MempoolNetMessage>> cmd => {
+            listen<SignedWithKey<MempoolNetMessage>> cmd => {
                 self.handle_net_message(cmd).await
             }
             listen<RestApiMessage> cmd => {
@@ -109,9 +108,9 @@ impl Mempool {
             listen<ConsensusEvent> cmd => {
                 self.handle_event(cmd);
             }
-            listen<ValidatorRegistryNetMessage> cmd => {
-                self.validators.handle_net_message(cmd);
-            }
+            //listen<ValidatorRegistryNetMessage> cmd => {
+            //    self.validators.handle_net_message(cmd);
+            //}
         }
     }
 
@@ -124,8 +123,8 @@ impl Mempool {
         }
     }
 
-    async fn handle_net_message(&mut self, msg: SignedWithId<MempoolNetMessage>) {
-        match self.validators.check_signed(&msg) {
+    async fn handle_net_message(&mut self, msg: SignedWithKey<MempoolNetMessage>) {
+        match BlstCrypto::verify(&msg) {
             Ok(valid) => {
                 if valid {
                     match msg.msg {
@@ -179,7 +178,7 @@ impl Mempool {
         Ok(())
     }
 
-    fn sign_net_message(&self, msg: MempoolNetMessage) -> Result<SignedWithId<MempoolNetMessage>> {
+    fn sign_net_message(&self, msg: MempoolNetMessage) -> Result<SignedWithKey<MempoolNetMessage>> {
         self.crypto.sign(msg)
     }
 
