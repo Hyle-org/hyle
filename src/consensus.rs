@@ -271,6 +271,7 @@ impl Consensus {
                 validator: self.config.id.clone(),
                 pos: 0,
                 parent: None,
+                votes: vec![],
             },
             previous_consensus_proposal_hash: ConsensusProposalHash(vec![]),
             previous_commit_quorum_certificate: QuorumCertificate::default(),

@@ -308,6 +308,7 @@ impl Storage for InMemoryStorage {
         );
 
         for c in ordered_cars.into_iter() {
+            // XXX: that means we can only have 1 missing car ?
             if c.parent == lane.current().map(|l| l.id) {
                 lane.cars.push(c);
             }
@@ -354,18 +355,32 @@ impl Storage for InMemoryStorage {
         self.pending_txs.drain(0..).collect()
     }
 
-    fn update_lanes_after_commit(&mut self, batch_info: BatchInfo, _block: Block) {
-        if self.id == batch_info.validator.0 {
-            // TODO
-        } else {
-            // TODO
+    fn update_lanes_after_commit(&mut self, batch_info: BatchInfo, block: Block) {
+        Self::collect_lane(&mut self.lane, &self.id, &batch_info, &block.txs);
+        for (v, lane) in self.other_lanes.iter_mut() {
+            Self::collect_lane(lane, v, &batch_info, &block.txs);
         }
-        for (v, _lane) in self.other_lanes.iter() {
-            if v == &batch_info.validator.0 {
-                // TODO
-            } else {
-                // TODO
+    }
+}
+
+impl InMemoryStorage {
+    fn collect_lane(
+        lane: &mut Lane,
+        validator: &str,
+        batch_info: &BatchInfo,
+        txs: &Vec<Transaction>,
+    ) {
+        if validator == batch_info.validator.0 {
+            if let Some(i) = lane.cars.iter().position(|c| c.id == batch_info.pos) {
+                // anything prior to last_pos can be collected
+                lane.cars.drain(0..i);
             }
+        } else if let Some(i) = lane
+            .cars
+            .iter()
+            .position(|c| c.id == batch_info.pos && &c.txs == txs)
+        {
+            lane.cars.drain(0..i);
         }
     }
 }
