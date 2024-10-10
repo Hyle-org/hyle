@@ -306,6 +306,7 @@ impl Hashable<BlockHash> for Block {
         };
     }
 }
+
 impl Hashable<TxHash> for Transaction {
     fn hash(&self) -> TxHash {
         match &self.transaction_data {

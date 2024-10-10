@@ -89,7 +89,7 @@ async fn main() -> Result<()> {
 
     if config.run_indexer {
         let mut indexer = Indexer::build(ctx.clone()).await?;
-        indexer.connect_to().await?;
+        indexer.connect_to("http://127.0.0.1:4321/").await?;
         handler.add_module(indexer)?;
     }
 

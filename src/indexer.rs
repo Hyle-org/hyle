@@ -13,7 +13,6 @@ use crate::{
     consensus::ConsensusEvent,
     handle_messages,
     model::{Block, CommonRunContext, Hashable},
-    rest::client::ApiHttpClient,
     utils::{db, modules::Module},
 };
 use anyhow::{Context, Result};
@@ -24,18 +23,16 @@ use contracts::Contracts;
 use core::str;
 use futures::{SinkExt, StreamExt};
 use proofs::Proofs;
-use reqwest::{Client, Url};
+use reqwest::Client;
 use std::{
     io::{Cursor, Write},
     sync::Arc,
-    time::Duration,
 };
 use tokio::{
     net::{TcpListener, TcpStream},
     sync::RwLock,
-    time::sleep,
 };
-use tokio_util::codec::{Framed, FramedWrite, LengthDelimitedCodec};
+use tokio_util::codec::{Framed, LengthDelimitedCodec};
 use tracing::{debug, error, info, warn};
 use transactions::Transactions;
 
@@ -110,7 +107,7 @@ impl Indexer {
         self.inner.clone()
     }
 
-    pub async fn connect_to(&mut self) -> Result<()> {
+    pub async fn connect_to(&mut self, target: &str) -> Result<()> {
         info!("Connecting to node for data availability stream");
         let listener = TcpListener::bind("127.0.0.1:0")
             .await
@@ -124,34 +121,45 @@ impl Indexer {
         let waiter = listener.accept();
 
         Client::new()
-            .get("http://127.0.0.1:4321/v1/da/stream_request")
+            .get(format!("{}v1/da/stream_request", target))
             .query(&[("start_height", "1"), ("peer_ip", &addr)])
-            .timeout(std::time::Duration::from_secs(2))
+            .timeout(std::time::Duration::from_secs(5))
             .send()
             .await?;
 
         let (stream, _) = waiter.await?;
-        let mut framed = Framed::new(stream, LengthDelimitedCodec::new());
-        framed.send("Hello".into()).await.unwrap();
-        self.da_stream = Some(framed);
+        self.da_stream = Some(Framed::new(stream, LengthDelimitedCodec::new()));
         info!("Connected to data stream");
 
         Ok(())
     }
 
     pub async fn start(&mut self) -> Result<()> {
-        handle_messages! {
-            on_bus self.bus,
-            listen<ConsensusEvent> cmd => {
-                self.handle_consensus_event(cmd).await;
+        if self.da_stream.is_none() {
+            handle_messages! {
+                on_bus self.bus,
+                listen<ConsensusEvent> cmd => {
+                    self.handle_consensus_event(cmd).await;
+                }
             }
-
-            cmd = self.da_stream.as_mut().unwrap().next(), if self.da_stream.is_some() => {
-                if let Some(Ok(cmd)) = cmd {
-                    let bytes = cmd;
-                    let block: Block = bincode::decode_from_slice(&bytes, bincode::config::standard()).unwrap().0;
-                    self.handle_block(block).await;
-                    self.da_stream.as_mut().unwrap().send("Hello".into()).await.unwrap();
+        } else {
+            handle_messages! {
+                    on_bus self.bus,
+                    cmd = self.da_stream.as_mut().unwrap().next() => {
+                    if let Some(Ok(cmd)) = cmd {
+                        let bytes = cmd;
+                        let block: Block = bincode::decode_from_slice(&bytes, bincode::config::standard()).unwrap().0;
+                        self.handle_block(block).await;
+                        SinkExt::<bytes::Bytes>::send(self.da_stream.as_mut().unwrap(), "ok".into()).await.unwrap();
+                    } else if cmd.is_none() {
+                        self.da_stream = None;
+                        // TODO: retry
+                        return Err(anyhow::anyhow!("DA stream closed"));
+                    } else if let Some(Err(e)) = cmd {
+                        self.da_stream = None;
+                        // TODO: retry
+                        return Err(anyhow::anyhow!("Error while reading DA stream: {}", e));
+                    }
                 }
             }
         }
