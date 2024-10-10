@@ -69,7 +69,11 @@ pub enum ConsensusCommand {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub enum ConsensusEvent {
-    CommitBlock { batch_info: BatchInfo, block: Block },
+    CommitBlock {
+        validators: Vec<ValidatorPublicKey>,
+        batch_info: BatchInfo,
+        block: Block,
+    },
 }
 
 impl BusMessage for ConsensusCommand {}
@@ -289,7 +293,7 @@ impl Consensus {
         let parent_height = last_block.map(|b| b.height).unwrap_or_default();
 
         // Create block to-be-proposed
-        let batch = if !self.pending_batches.is_empty() {
+        let batch = if self.pending_batches.is_empty() {
             Batch::default()
         } else {
             self.pending_batches.remove(0)
@@ -354,7 +358,7 @@ impl Consensus {
             slot: self.bft_round_state.slot,
             view: self.bft_round_state.view,
             next_leader: 1,
-            batch_info: BatchInfo::new(self.config.id.clone()),
+            batch_info: BatchInfo::new(self.crypto.validator_pubkey().clone()),
             previous_consensus_proposal_hash: ConsensusProposalHash(vec![]),
             previous_commit_quorum_certificate: QuorumCertificate::default(),
             validators,
@@ -382,6 +386,7 @@ impl Consensus {
         _ = self
             .bus
             .send(ConsensusEvent::CommitBlock {
+                validators: self.bft_round_state.consensus_proposal.validators.clone(),
                 batch_info: self.bft_round_state.consensus_proposal.batch_info.clone(),
                 block: self.bft_round_state.consensus_proposal.block.clone(),
             })
@@ -1272,6 +1277,7 @@ impl Consensus {
                 _ = self
                     .bus
                     .send(ConsensusEvent::CommitBlock {
+                        validators: self.bft_round_state.consensus_proposal.validators.clone(),
                         batch_info: batch.info,
                         block: block.clone(),
                     })

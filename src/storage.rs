@@ -10,14 +10,14 @@ use tracing::{error, info, warn};
 
 use crate::{
     mempool::BatchInfo,
-    model::{Block, Transaction},
+    model::{Block, Transaction, ValidatorPublicKey},
 };
 
 #[derive(Debug, Clone, Encode, Decode, Default, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct TipData {
     pub pos: usize,
     pub parent: Option<usize>,
-    pub votes: Vec<String>,
+    pub votes: Vec<ValidatorPublicKey>,
 }
 
 pub trait Storage: Display + Send + Sync {
@@ -35,11 +35,23 @@ pub trait Storage: Display + Send + Sync {
     // Called after receiving a transaction, before broadcasting a dataproposal
     fn add_data_to_local_lane(&mut self, txs: Vec<Transaction>) -> usize;
     // Called when a data proposal is received try to bind it to the previous tip (true) or fails (false)
-    fn append_data_proposal(&mut self, sender: &str, data_proposal: &DataProposal) -> bool;
-    fn has_data_proposal(&mut self, sender: &str, data_proposal: &DataProposal) -> bool;
+    fn append_data_proposal(
+        &mut self,
+        sender: &ValidatorPublicKey,
+        data_proposal: &DataProposal,
+    ) -> bool;
+    fn has_data_proposal(
+        &mut self,
+        sender: &ValidatorPublicKey,
+        data_proposal: &DataProposal,
+    ) -> bool;
     // Called when validate return
-    fn push_data_proposal_into_waiting_room(&mut self, sender: &str, data_proposal: DataProposal);
-    fn get_last_data_index(&self, sender: &str) -> Option<usize>;
+    fn push_data_proposal_into_waiting_room(
+        &mut self,
+        sender: &ValidatorPublicKey,
+        data_proposal: DataProposal,
+    );
+    fn get_last_data_index(&self, sender: &ValidatorPublicKey) -> Option<usize>;
     fn get_missing_cars(
         &self,
         last_index: Option<usize>,
@@ -47,33 +59,33 @@ pub trait Storage: Display + Send + Sync {
     ) -> Option<Vec<Car>>;
 
     // Updates local view other lane matching the sender with sent cars
-    fn add_missing_cars(&mut self, sender: &str, cars: Vec<Car>);
+    fn add_missing_cars(&mut self, sender: &ValidatorPublicKey, cars: Vec<Car>);
 
-    fn get_waiting_proposals(&mut self, sender: &str) -> Vec<DataProposal>;
+    fn get_waiting_proposals(&mut self, sender: &ValidatorPublicKey) -> Vec<DataProposal>;
 
     // Called by the initial proposal sender to aggregate votes
     fn add_data_vote(
         &mut self,
-        sender: &str,
+        sender: &ValidatorPublicKey,
         data_proposal: &DataProposal,
-    ) -> Option<HashSet<String>>;
+    ) -> Option<HashSet<ValidatorPublicKey>>;
 
     fn update_other_votes(
         &mut self,
-        sender: &str,
+        sender: &ValidatorPublicKey,
         data_proposal: &DataProposal,
-        voters: HashSet<String>,
-    ) -> Option<Vec<String>>;
+        voters: HashSet<ValidatorPublicKey>,
+    ) -> Option<Vec<ValidatorPublicKey>>;
 
     fn update_lanes_after_commit(&mut self, info: BatchInfo, block: Block);
 }
 
 #[derive(Debug, Clone)]
 pub struct InMemoryStorage {
-    pub id: String,
+    pub id: ValidatorPublicKey,
     pub pending_txs: Vec<Transaction>,
     pub lane: Lane,
-    pub other_lanes: HashMap<String, Lane>,
+    pub other_lanes: HashMap<ValidatorPublicKey, Lane>,
 }
 
 impl Display for InMemoryStorage {
@@ -89,7 +101,7 @@ impl Display for InMemoryStorage {
 }
 
 impl InMemoryStorage {
-    pub fn new(id: String) -> InMemoryStorage {
+    pub fn new(id: ValidatorPublicKey) -> InMemoryStorage {
         InMemoryStorage {
             id,
             pending_txs: vec![],
@@ -103,11 +115,11 @@ impl InMemoryStorage {
 
     fn collect_lane(
         lane: &mut Lane,
-        validator: &str,
+        validator: &ValidatorPublicKey,
         batch_info: &BatchInfo,
         txs: &Vec<Transaction>,
     ) {
-        if validator == batch_info.validator.0 {
+        if validator == &batch_info.validator {
             if let Some(i) = lane.cars.iter().position(|c| c.id == batch_info.tip.pos) {
                 // anything prior to last_pos can be collected
                 lane.cars.drain(0..i);
@@ -140,9 +152,9 @@ impl Storage for InMemoryStorage {
 
     fn add_data_vote(
         &mut self,
-        sender: &str,
+        sender: &ValidatorPublicKey,
         data_proposal: &DataProposal,
-    ) -> Option<HashSet<String>> {
+    ) -> Option<HashSet<ValidatorPublicKey>> {
         let car = self
             .lane
             .cars
@@ -158,7 +170,7 @@ impl Storage for InMemoryStorage {
                 None
             }
             Some(v) => {
-                v.votes.insert(sender.to_string());
+                v.votes.insert(sender.clone());
                 Some(v.votes.clone())
             }
         }
@@ -166,10 +178,10 @@ impl Storage for InMemoryStorage {
 
     fn update_other_votes(
         &mut self,
-        sender: &str,
+        sender: &ValidatorPublicKey,
         data_proposal: &DataProposal,
-        voters: HashSet<String>,
-    ) -> Option<Vec<String>> {
+        voters: HashSet<ValidatorPublicKey>,
+    ) -> Option<Vec<ValidatorPublicKey>> {
         if let Some(lane) = self.other_lanes.get_mut(sender) {
             let car = lane
                 .cars
@@ -193,8 +205,12 @@ impl Storage for InMemoryStorage {
         None
     }
 
-    fn append_data_proposal(&mut self, sender: &str, data_proposal: &DataProposal) -> bool {
-        let lane = self.other_lanes.entry(sender.to_string()).or_default();
+    fn append_data_proposal(
+        &mut self,
+        sender: &ValidatorPublicKey,
+        data_proposal: &DataProposal,
+    ) -> bool {
+        let lane = self.other_lanes.entry(sender.clone()).or_default();
         let tip = lane.current_mut();
 
         let mut tip_id: Option<usize> = None;
@@ -215,7 +231,7 @@ impl Storage for InMemoryStorage {
                 id: tip_id.unwrap_or(0) + 1,
                 parent: tip_id,
                 txs: data_proposal.inner.clone(),
-                votes: HashSet::from([self.id.clone(), sender.to_string()]),
+                votes: HashSet::from([self.id.clone(), sender.clone()]),
             });
             true
         } else {
@@ -223,10 +239,14 @@ impl Storage for InMemoryStorage {
         }
     }
 
-    fn has_data_proposal(&mut self, sender: &str, data_proposal: &DataProposal) -> bool {
+    fn has_data_proposal(
+        &mut self,
+        sender: &ValidatorPublicKey,
+        data_proposal: &DataProposal,
+    ) -> bool {
         let found = self
             .other_lanes
-            .entry(sender.to_string())
+            .entry(sender.clone())
             .or_default()
             .cars
             .iter()
@@ -242,7 +262,7 @@ impl Storage for InMemoryStorage {
         found
     }
 
-    fn get_last_data_index(&self, sender: &str) -> Option<usize> {
+    fn get_last_data_index(&self, sender: &ValidatorPublicKey) -> Option<usize> {
         self.other_lanes
             .get(sender)
             .and_then(|lane| lane.current())
@@ -314,15 +334,15 @@ impl Storage for InMemoryStorage {
         }
     }
 
-    fn get_waiting_proposals(&mut self, sender: &str) -> Vec<DataProposal> {
+    fn get_waiting_proposals(&mut self, sender: &ValidatorPublicKey) -> Vec<DataProposal> {
         match self.other_lanes.get_mut(sender) {
             Some(sl) => sl.waiting.drain().collect(),
             None => vec![],
         }
     }
 
-    fn add_missing_cars(&mut self, sender: &str, cars: Vec<Car>) {
-        let lane = self.other_lanes.entry(sender.to_string()).or_default();
+    fn add_missing_cars(&mut self, sender: &ValidatorPublicKey, cars: Vec<Car>) {
+        let lane = self.other_lanes.entry(sender.clone()).or_default();
 
         let mut ordered_cars = cars;
         ordered_cars.sort_by_key(|car| car.id);
@@ -339,9 +359,13 @@ impl Storage for InMemoryStorage {
         }
     }
 
-    fn push_data_proposal_into_waiting_room(&mut self, sender: &str, data_proposal: DataProposal) {
+    fn push_data_proposal_into_waiting_room(
+        &mut self,
+        sender: &ValidatorPublicKey,
+        data_proposal: DataProposal,
+    ) {
         self.other_lanes
-            .entry(sender.to_string())
+            .entry(sender.clone())
             .or_default()
             .waiting
             .insert(data_proposal);
@@ -394,7 +418,7 @@ pub struct Car {
     id: usize,
     parent: Option<usize>,
     txs: Vec<Transaction>,
-    pub votes: HashSet<String>,
+    pub votes: HashSet<ValidatorPublicKey>,
 }
 
 impl Display for Car {
@@ -472,7 +496,7 @@ impl Lane {
 pub struct DataProposal {
     pub pos: usize,
     pub parent: Option<usize>,
-    pub parent_poa: Option<Vec<String>>,
+    pub parent_poa: Option<Vec<ValidatorPublicKey>>,
     pub inner: Vec<Transaction>,
 }
 
@@ -490,9 +514,9 @@ impl Display for DataProposal {
 
 #[derive(Debug, Clone)]
 pub struct StateSnapshot(
-    pub String,
+    pub ValidatorPublicKey,
     pub Lane,
-    pub HashMap<String, Lane>,
+    pub HashMap<ValidatorPublicKey, Lane>,
     pub Vec<Transaction>,
 );
 
