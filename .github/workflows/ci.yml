@@ -22,6 +22,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: rustup update ${{ matrix.toolchain }} && rustup default ${{ matrix.toolchain }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+            save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: cargo build --verbose
       - run: cargo test --verbose
   
