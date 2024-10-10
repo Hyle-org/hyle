@@ -10,7 +10,7 @@ use crate::{
     model::{Block, CommonRunContext, Hashable},
     utils::modules::Module,
 };
-use anyhow::{Context, Result};
+use anyhow::{Context, Error, Result};
 use axum::{routing::get, Router};
 use core::str;
 use sqlx::{postgres::PgPoolOptions, PgPool, Pool, Postgres};
@@ -58,7 +58,6 @@ impl Module for Indexer {
             .await
             .context("Failed to connect to the database")?;
 
-        // FIXME: is it the right place to run migration ?
         debug!("Checking for new DB migration...");
         sqlx::migrate!().run(&inner).await?;
 
@@ -91,7 +90,7 @@ impl Indexer {
         handle_messages! {
             on_bus self.bus,
             listen<ConsensusEvent> cmd => {
-                self.handle_consensus_event(cmd).await;
+                self.handle_consensus_event(cmd).await?;
             }
         }
     }
@@ -141,77 +140,142 @@ impl Indexer {
             .with_state(self.inner.clone())
     }
 
-    async fn handle_consensus_event(&mut self, event: ConsensusEvent) {
+    async fn handle_consensus_event(&mut self, event: ConsensusEvent) -> Result<()> {
         match event {
-            ConsensusEvent::CommitBlock { block, .. } => self.handle_block(block).await,
+            ConsensusEvent::CommitBlock { block } => self.handle_block(block).await,
         }
     }
 
-    async fn handle_block(&mut self, block: Block) {
+    async fn handle_block(&mut self, block: Block) -> Result<(), Error> {
         info!("new block {} with {} txs", block.height, block.txs.len());
-        for tx in block.txs.iter() {
-            let tx_hash = format!("{}", tx.hash());
-            debug!("tx:{:?} hash {}", tx, tx_hash);
-            // match tx.transaction_data {
-            //     crate::model::TransactionData::Blob(ref tx) => {
-            //         for (bi, blob) in tx.blobs.iter().enumerate() {
-            //             if let Err(e) = self.inner.write().await.blobs.put(
-            //                 block.height,
-            //                 ti,
-            //                 bi,
-            //                 &tx_hash,
-            //                 &tx.identity,
-            //                 blob,
-            //             ) {
-            //                 error!("storing blob of tx {} in block {}: {}", ti, block.height, e);
-            //             }
-            //         }
-            //     }
-            //     crate::model::TransactionData::Proof(ref tx) => {
-            //         if let Err(e) =
-            //             self.inner
-            //                 .write()
-            //                 .await
-            //                 .proofs
-            //                 .put(block.height, ti, &tx_hash, tx)
-            //         {
-            //             error!(
-            //                 "storing proof of tx {} in block {}: {}",
-            //                 ti, block.height, e
-            //             );
-            //         }
-            //     }
-            //     crate::model::TransactionData::RegisterContract(ref tx) => {
-            //         if let Err(e) =
-            //             self.inner
-            //                 .write()
-            //                 .await
-            //                 .contracts
-            //                 .put(block.height, ti, &tx_hash, tx)
-            //         {
-            //             error!(
-            //                 "storing contract {} of tx {} in block {}: {}",
-            //                 tx.contract_name.0, ti, block.height, e
-            //             );
-            //         }
-            //     }
-            // }
-            // if let Err(e) = self.inner.write().await.transactions.put(
-            //     block.height,
-            //     ti,
-            //     &tx_hash,
-            //     &tx.transaction_data,
-            // ) {
-            //     error!(
-            //         "storing contract of tx {} in block {}: {}",
-            //         ti, block.height, e
-            //     );
-            // }
+
+        let mut transaction = self.inner.begin().await?;
+
+        let block_hash = block.hash().inner;
+
+        // Insert the block into the blocks table
+        sqlx::query!(
+            "INSERT INTO blocks (hash, parent_hash, height, timestamp) VALUES ($1, $2, $3, $4)",
+            block_hash,
+            block.parent_hash.inner,
+            block.height.0 as i64,
+            block.timestamp as i64
+        )
+        .execute(&mut *transaction)
+        .await?;
+
+        for (tx_index, tx) in block.txs.iter().enumerate() {
+            let tx_hash: Vec<u8> = tx.hash().0;
+            debug!("tx:{:?} hash {:?}", tx_hash, tx);
+
+            let version = tx.version as i32;
+
+            match tx.transaction_data {
+                crate::model::TransactionData::Blob(ref tx) => {
+                    // Insert the transaction into the transactions table
+                    sqlx::query!(
+                        "INSERT INTO transactions (tx_hash, block_hash, tx_index, version, transaction_type, transaction_status)
+                        VALUES ($1, $2, $3, $4, $5, $6)",
+                        tx_hash,
+                        block_hash,
+                        tx_index as i32,
+                        version,
+                        "BlobTransaction",
+                        "sequenced".to_string()
+                    )
+                    .execute(&mut *transaction)
+                    .await?;
+
+                    for (blob_index, blob) in tx.blobs.iter().enumerate() {
+                        sqlx::query!(
+                            "INSERT INTO blobs (tx_hash, blob_index, identity, contract_name, data)
+                             VALUES ($1, $2, $3, $4, $5)",
+                            tx_hash,
+                            blob_index as i32,
+                            tx.identity.0,
+                            blob.contract_name.0,
+                            blob.data.0
+                        )
+                        .execute(&mut *transaction)
+                        .await?;
+                    }
+                }
+                crate::model::TransactionData::Proof(ref tx) => {
+                    // Insert the transaction into the transactions table
+                    sqlx::query!(
+                        "INSERT INTO transactions (tx_hash, block_hash, tx_index, version, transaction_type, transaction_status)
+                        VALUES ($1, $2, $3, $4, $5, $6)",
+                        tx_hash,
+                        block_hash,
+                        tx_index as i32,
+                        version,
+                        "ProofTransaction",
+                        "verified".to_string()
+                    )
+                    .execute(&mut *transaction)
+                    .await?;
+
+                    sqlx::query!(
+                        "INSERT INTO proofs (tx_hash, proof) VALUES ($1, $2)",
+                        tx_hash,
+                        tx.proof
+                    )
+                    .execute(&mut *transaction)
+                    .await?;
+
+                    // Adding all blob_references
+                    for blob_ref in tx.blobs_references.iter() {
+                        sqlx::query!(
+                            "INSERT INTO blob_references (tx_hash, contract_name, blob_tx_hash, blob_index)
+                             VALUES ($1, $2, $3, $4)",
+                            tx_hash,
+                            blob_ref.contract_name.0,
+                            blob_ref.blob_tx_hash.0,
+                            blob_ref.blob_index.0 as i32
+                        )
+                        .execute(&mut *transaction)
+                        .await?;
+                    }
+                    // TODO: si la vérification est correcte, changer la transaction status du blob associé
+                    // TODO; si la vérification est correcte, ajouter HyleOutput
+                }
+                crate::model::TransactionData::RegisterContract(ref tx) => {
+                    // Adding to Contract table
+                    sqlx::query!(
+                        "INSERT INTO contracts (tx_hash, owner, verifier, program_id, state_digest, contract_name)
+                        VALUES ($1, $2, $3, $4, $5, $6)",
+                        tx_hash,
+                        tx.owner,
+                        tx.verifier,
+                        tx.program_id,
+                        tx.state_digest.0,
+                        tx.contract_name.0
+                    )
+                    .execute(&mut *transaction)
+                    .await?;
+
+                    // Adding to ContractState table
+                    sqlx::query!(
+                        "INSERT INTO contract_state (contract_name, block_hash, block_number, state)
+                        VALUES ($1, $2, $3, $4)",
+                        tx.contract_name.0,
+                        block_hash,
+                        block.height.0 as i64,
+                        tx.state_digest.0
+                    )
+                    .execute(&mut *transaction)
+                    .await?;
+                }
+                crate::model::TransactionData::Stake(ref _staker) => {
+                    tracing::warn!("TODO: add staking to indexer db");
+                }
+            }
         }
-        // store block
-        // if let Err(e) = self.inner.write().await.blocks.put(block) {
-        //     error!("storing block: {}", e);
-        // }
+
+        // Commit the transaction
+        transaction.commit().await?;
+
+        Ok(())
     }
 }
 
