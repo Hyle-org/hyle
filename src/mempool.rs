@@ -7,7 +7,7 @@ use crate::{
     model::{Hashable, SharedRunContext, Transaction, TransactionData},
     p2p::network::{OutboundMessage, SignedWithKey},
     rest::endpoints::RestApiMessage,
-    storage::{Car, DataProposal, InMemoryStorage, Storage},
+    storage::{Car, DataProposal, InMemoryStorage, Storage, TipData},
     utils::{crypto::SharedBlstCrypto, logger::LogMe, modules::Module},
 };
 use anyhow::{Context, Result};
@@ -55,10 +55,17 @@ impl BusMessage for MempoolCommand {}
 
 #[derive(Debug, Clone, Encode, Decode, Default, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct BatchInfo {
+    pub tip: TipData,
     pub validator: ValidatorId,
-    pub pos: usize,
-    pub parent: Option<usize>,
-    pub votes: Vec<String>,
+}
+
+impl BatchInfo {
+    pub fn new(validator: ValidatorId) -> Self {
+        Self {
+            tip: TipData::default(),
+            validator,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Encode, Decode, Default, Serialize, Deserialize)]
@@ -272,10 +279,10 @@ impl Mempool {
         self.metrics.add_api_tx("blob".to_string());
 
         match self.storage.tip_data() {
-            Some((tip_pos, tip_parent, tip_txs, tip_votes)) => {
+            Some((tip, txs)) => {
                 self.storage.accumulate_tx(tx.clone());
                 let nb_replicas = self.validators.len();
-                if tip_votes.len() > nb_replicas / 3 {
+                if tip.votes.len() > nb_replicas / 3 {
                     let requests = self.storage.flush_pending_txs();
                     // Create tx chunk and broadcast it
                     let tip_id = self.storage.add_data_to_local_lane(requests.clone());
@@ -284,7 +291,7 @@ impl Mempool {
                         inner: requests,
                         pos: tip_id,
                         parent: if tip_id == 1 { None } else { Some(tip_id - 1) },
-                        parent_poa: Some(tip_votes.clone()),
+                        parent_poa: Some(tip.votes.clone()),
                     };
 
                     if let Err(e) = self.broadcast_data_proposal(data_proposal).await {
@@ -298,11 +305,9 @@ impl Mempool {
                         .send(MempoolEvent::LatestBatch(Batch {
                             info: BatchInfo {
                                 validator: ValidatorId(self.storage.id.clone()),
-                                pos: tip_pos,
-                                parent: tip_parent,
-                                votes: tip_votes,
+                                tip,
                             },
-                            txs: tip_txs,
+                            txs,
                         }))
                         .context("Cannot send message over channel")
                     {
@@ -311,13 +316,13 @@ impl Mempool {
                 } else {
                     // No PoA means we rebroadcast the data proposal for non present voters
                     let mut only_for = self.validators.ids();
-                    only_for.retain(|v| !tip_votes.contains(&v.0));
+                    only_for.retain(|v| !tip.votes.contains(&v.0));
                     if let Err(e) = self.broadcast_data_proposal_only_for(
                         only_for,
                         DataProposal {
-                            inner: tip_txs,
-                            pos: tip_pos,
-                            parent: tip_parent,
+                            inner: txs,
+                            pos: tip.pos,
+                            parent: tip.parent,
                             parent_poa: None, // TODO: fetch parent votes
                         },
                     ) {

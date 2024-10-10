@@ -13,7 +13,12 @@ use crate::{
     model::{Block, Transaction},
 };
 
-type Tip = (usize, Option<usize>, Vec<Transaction>, Vec<String>);
+#[derive(Debug, Clone, Encode, Decode, Default, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub struct TipData {
+    pub pos: usize,
+    pub parent: Option<usize>,
+    pub votes: Vec<String>,
+}
 
 pub trait Storage: Display + Send + Sync {
     fn snapshot(&self) -> StateSnapshot;
@@ -25,7 +30,7 @@ pub trait Storage: Display + Send + Sync {
     fn flush_pending_txs(&mut self) -> Vec<Transaction>;
 
     //
-    fn tip_data(&self) -> Option<Tip>;
+    fn tip_data(&self) -> Option<(TipData, Vec<Transaction>)>;
 
     // Called after receiving a transaction, before broadcasting a dataproposal
     fn add_data_to_local_lane(&mut self, txs: Vec<Transaction>) -> usize;
@@ -336,13 +341,15 @@ impl Storage for InMemoryStorage {
         self.pending_txs.push(tx);
     }
 
-    fn tip_data(&self) -> Option<(usize, Option<usize>, Vec<Transaction>, Vec<String>)> {
+    fn tip_data(&self) -> Option<(TipData, Vec<Transaction>)> {
         self.lane.current().map(|car| {
             (
-                car.id,
-                car.parent,
+                TipData {
+                    pos: car.id,
+                    parent: car.parent,
+                    votes: car.votes.clone().into_iter().collect(),
+                },
                 car.txs.clone(),
-                car.votes.clone().into_iter().collect(),
             )
         })
     }
@@ -371,14 +378,14 @@ impl InMemoryStorage {
         txs: &Vec<Transaction>,
     ) {
         if validator == batch_info.validator.0 {
-            if let Some(i) = lane.cars.iter().position(|c| c.id == batch_info.pos) {
+            if let Some(i) = lane.cars.iter().position(|c| c.id == batch_info.tip.pos) {
                 // anything prior to last_pos can be collected
                 lane.cars.drain(0..i);
             }
         } else if let Some(i) = lane
             .cars
             .iter()
-            .position(|c| c.id == batch_info.pos && &c.txs == txs)
+            .position(|c| c.id == batch_info.tip.pos && &c.txs == txs)
         {
             lane.cars.drain(0..i);
         }
