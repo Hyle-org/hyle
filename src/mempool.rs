@@ -58,6 +58,7 @@ pub struct BatchInfo {
     pub validator: ValidatorId,
     pub pos: usize,
     pub parent: Option<usize>,
+    pub votes: Vec<String>,
 }
 
 #[derive(Debug, Clone, Encode, Decode, Default, Serialize, Deserialize)]
@@ -283,7 +284,7 @@ impl Mempool {
                         inner: requests,
                         pos: tip_id,
                         parent: if tip_id == 1 { None } else { Some(tip_id - 1) },
-                        parent_poa: Some(tip_votes),
+                        parent_poa: Some(tip_votes.clone()),
                     };
 
                     if let Err(e) = self.broadcast_data_proposal(data_proposal).await {
@@ -299,6 +300,7 @@ impl Mempool {
                                 validator: ValidatorId(self.storage.id.clone()),
                                 pos: tip_pos,
                                 parent: tip_parent,
+                                votes: tip_votes,
                             },
                             txs: tip_txs,
                         }))
