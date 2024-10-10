@@ -216,7 +216,7 @@ async fn e2e() -> Result<()> {
     send_blobs_and_proofs(&client).await?;
 
     // Wait for some slots to be finished
-    sleep(time::Duration::from_secs(8)).await;
+    sleep(time::Duration::from_secs(15)).await;
 
     verify_test_contract_state(&client).await?;
     verify_contract_state(&client).await?;
