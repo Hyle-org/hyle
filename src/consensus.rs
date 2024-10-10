@@ -267,12 +267,7 @@ impl Consensus {
             slot: self.bft_round_state.slot,
             view: self.bft_round_state.view,
             next_leader: 1,
-            batch_info: BatchInfo {
-                validator: self.config.id.clone(),
-                pos: 0,
-                parent: None,
-                votes: vec![],
-            },
+            batch_info: BatchInfo::new(self.config.id.clone()),
             previous_consensus_proposal_hash: ConsensusProposalHash(vec![]),
             previous_commit_quorum_certificate: QuorumCertificate::default(),
             validators,
@@ -1272,7 +1267,7 @@ impl Consensus {
             MempoolEvent::LatestBatch(batch) => {
                 debug!(
                     "Received batch from {} with txs: {:?} pos {} parent {:?}",
-                    batch.info.validator, batch.txs, batch.info.pos, batch.info.parent,
+                    batch.info.validator, batch.txs, batch.info.tip.pos, batch.info.tip.parent,
                 );
                 self.pending_batches.push(batch);
 
