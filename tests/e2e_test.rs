@@ -191,6 +191,10 @@ async fn e2e() -> Result<()> {
     let path_node1 = Path::new("tests/node1");
     let path_node2 = Path::new("tests/node2");
 
+    // Clean created files
+    _ = fs::remove_dir_all(path_node1.join("data_node1"));
+    _ = fs::remove_dir_all(path_node2.join("data_node2"));
+
     // Start 2 nodes
     let node1 = test_helpers::TestNode::new(path_node1, false, "6668");
     let node2 = test_helpers::TestNode::new(path_node2, false, "6669");
@@ -212,7 +216,7 @@ async fn e2e() -> Result<()> {
     send_blobs_and_proofs(&client).await?;
 
     // Wait for some slots to be finished
-    sleep(time::Duration::from_secs(8)).await;
+    sleep(time::Duration::from_secs(15)).await;
 
     verify_test_contract_state(&client).await?;
     verify_contract_state(&client).await?;

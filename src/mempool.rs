@@ -4,7 +4,7 @@ use crate::{
     bus::{bus_client, command_response::Query, BusMessage, SharedMessageBus},
     consensus::ConsensusEvent,
     handle_messages,
-    model::{Hashable, SharedRunContext, Transaction},
+    model::{Hashable, SharedRunContext, Transaction, TransactionData},
     p2p::network::{OutboundMessage, SignedWithId},
     rest::endpoints::RestApiMessage,
     utils::{crypto::SharedBlstCrypto, modules::Module},
@@ -143,7 +143,10 @@ impl Mempool {
         match command {
             RestApiMessage::NewTx(tx) => {
                 self.on_new_tx(tx.clone()).await;
-                self.broadcast_tx(tx).await.ok();
+                // hacky stuff waiting for staking contract: do not broadcast stake txs
+                if !matches!(tx.transaction_data, TransactionData::Stake(_)) {
+                    self.broadcast_tx(tx).await.ok();
+                }
             }
         }
     }
