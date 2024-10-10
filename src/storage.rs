@@ -100,6 +100,26 @@ impl InMemoryStorage {
             other_lanes: HashMap::new(),
         }
     }
+
+    fn collect_lane(
+        lane: &mut Lane,
+        validator: &str,
+        batch_info: &BatchInfo,
+        txs: &Vec<Transaction>,
+    ) {
+        if validator == batch_info.validator.0 {
+            if let Some(i) = lane.cars.iter().position(|c| c.id == batch_info.tip.pos) {
+                // anything prior to last_pos can be collected
+                lane.cars.drain(0..i);
+            }
+        } else if let Some(i) = lane
+            .cars
+            .iter()
+            .position(|c| c.id == batch_info.tip.pos && &c.txs == txs)
+        {
+            lane.cars.drain(0..i);
+        }
+    }
 }
 
 impl Storage for InMemoryStorage {
@@ -313,7 +333,6 @@ impl Storage for InMemoryStorage {
         );
 
         for c in ordered_cars.into_iter() {
-            // XXX: that means we can only have 1 missing car ?
             if c.parent == lane.current().map(|l| l.id) {
                 lane.cars.push(c);
             }
@@ -366,28 +385,6 @@ impl Storage for InMemoryStorage {
         Self::collect_lane(&mut self.lane, &self.id, &batch_info, &block.txs);
         for (v, lane) in self.other_lanes.iter_mut() {
             Self::collect_lane(lane, v, &batch_info, &block.txs);
-        }
-    }
-}
-
-impl InMemoryStorage {
-    fn collect_lane(
-        lane: &mut Lane,
-        validator: &str,
-        batch_info: &BatchInfo,
-        txs: &Vec<Transaction>,
-    ) {
-        if validator == batch_info.validator.0 {
-            if let Some(i) = lane.cars.iter().position(|c| c.id == batch_info.tip.pos) {
-                // anything prior to last_pos can be collected
-                lane.cars.drain(0..i);
-            }
-        } else if let Some(i) = lane
-            .cars
-            .iter()
-            .position(|c| c.id == batch_info.tip.pos && &c.txs == txs)
-        {
-            lane.cars.drain(0..i);
         }
     }
 }
