@@ -62,7 +62,7 @@ enum Step {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub enum ConsensusCommand {
-    SingleNodeBlockGeneration,
+    SingleNodeBlockGeneration(u64),
     NewStaker(Staker),
     StartNewSlot,
 }
@@ -1252,14 +1252,19 @@ impl Consensus {
 
     fn handle_command(&mut self, msg: ConsensusCommand) -> Result<()> {
         match msg {
-            ConsensusCommand::SingleNodeBlockGeneration => {
+            ConsensusCommand::SingleNodeBlockGeneration(block_number) => {
                 let mut txs = vec![];
                 if !self.pending_batches.is_empty() {
                     txs = self.pending_batches.remove(0);
                 }
+                let parent_hash: String =
+                    rand::Rng::sample_iter(rand::thread_rng(), &rand::distributions::Alphanumeric)
+                        .take(8)
+                        .map(char::from)
+                        .collect();
                 let block = Block {
-                    parent_hash: BlockHash::new(""),
-                    height: BlockHeight(0),
+                    parent_hash: BlockHash::new(&parent_hash),
+                    height: BlockHeight(block_number),
                     timestamp: get_current_timestamp(),
                     txs,
                 };
@@ -1322,12 +1327,14 @@ impl Consensus {
             );
 
             tokio::spawn(async move {
+                let mut block_number = 0;
                 loop {
                     sleep(Duration::from_secs(interval)).await;
 
                     _ = command_sender
-                        .send(ConsensusCommand::SingleNodeBlockGeneration)
+                        .send(ConsensusCommand::SingleNodeBlockGeneration(block_number))
                         .log_error("Cannot send message over channel");
+                    block_number += 1;
                 }
             });
         }

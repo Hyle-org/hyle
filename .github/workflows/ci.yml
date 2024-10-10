@@ -33,6 +33,8 @@ jobs:
       - run: rustup update ${{ matrix.toolchain }} && rustup default ${{ matrix.toolchain }}
       - uses: Swatinem/rust-cache@v2
         with:
-            save-if: ${{ github.ref == 'refs/heads/main' }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - run: cargo install sqlx-cli
+      - run: sqlx migrate run --database-url "postgres://postgres:password@localhost:5432/postgres" --source ./src/indexer/migrations
       - run: cargo build --verbose
       - run: cargo test --verbose

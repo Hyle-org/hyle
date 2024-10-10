@@ -13,9 +13,10 @@ use crate::{
 use anyhow::{Context, Error, Result};
 use axum::{routing::get, Router};
 use core::str;
-use sqlx::{postgres::PgPoolOptions, PgPool, Pool, Postgres};
+use sqlx::{migrate::Migrator, postgres::PgPoolOptions, PgPool, Pool, Postgres};
 use std::{
     io::{Cursor, Write},
+    path::Path,
     sync::Arc,
 };
 use tracing::{debug, info};
@@ -58,8 +59,12 @@ impl Module for Indexer {
             .await
             .context("Failed to connect to the database")?;
 
-        debug!("Checking for new DB migration...");
-        sqlx::migrate!().run(&inner).await?;
+        info!("Checking for new DB migration...");
+        let migrator = Migrator::new(Path::new(&ctx.config.migration_directory)).await?;
+        migrator
+            .run(&inner)
+            .await
+            .context("Failed to migrate database")?;
 
         let indexer = Indexer { bus, inner };
 
@@ -307,7 +312,7 @@ mod test {
     }
 
     #[test_log::test(sqlx::test(
-        migrations = "./migrations",
+        migrations = "./src/indexer/migrations",
         fixtures(path = "../tests/fixtures", scripts("test_data"))
     ))]
     async fn test_indexer_api(pool: PgPool) -> Result<()> {

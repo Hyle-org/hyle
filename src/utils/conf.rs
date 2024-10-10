@@ -32,6 +32,7 @@ pub struct Conf {
     pub database_url: String,
     pub p2p: P2pConf,
     pub data_directory: PathBuf,
+    pub migration_directory: String,
     pub run_indexer: bool,
 }
 
