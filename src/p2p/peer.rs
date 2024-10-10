@@ -198,8 +198,8 @@ impl Peer {
                         }
                     }
                     OutboundMessage::BroadcastMessageOnlyFor(only_for, message) => {
-                        if let Some(validator_id) = self.peer_validator.as_ref() {
-                            if only_for.contains(validator_id) {
+                        if let Some(ref pubkey) = self.peer_pubkey {
+                            if only_for.contains(pubkey) {
                             match self.handle_broadcast_message(message).await {
                                 Ok(_) => continue,
                                 Err(e) => {
@@ -207,7 +207,7 @@ impl Peer {
                                 }
                             }
                             }
-                        }
+                            }
                     }
                 }
             }
