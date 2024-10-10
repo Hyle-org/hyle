@@ -17,27 +17,16 @@ use axum::{
 use blocks::Blocks;
 use bytes::Bytes;
 use core::str;
-use futures::{
-    stream::{SplitSink, SplitStream},
-    SinkExt, StreamExt,
-};
+use futures::{stream::SplitSink, SinkExt, StreamExt};
 use reqwest::StatusCode;
 use std::{
+    collections::HashMap,
     io::{Cursor, Write},
-    sync::{
-        atomic::{AtomicU64, Ordering},
-        Arc,
-    },
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::{SystemTime, UNIX_EPOCH},
 };
-use tokio::{
-    net::TcpStream,
-    sync::Mutex,
-    task::{AbortHandle, JoinSet},
-    time::sleep,
-};
+use tokio::{net::TcpStream, task::JoinHandle};
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 pub fn u64_to_str(u: u64, buf: &mut [u8]) -> &str {
     let mut cursor = Cursor::new(&mut buf[..]);
@@ -59,18 +48,15 @@ struct StreamRequest {
     peer_ip: String,
 }
 
-type FramedByLength = Framed<TcpStream, LengthDelimitedCodec>;
-type BlockSink = SplitSink<FramedByLength, Bytes>;
-
 /// A peer we are streaming blocks to
 #[derive(Debug)]
 struct BlockStreamPeer {
     /// Last timestamp we received a ping from the peer.
-    last_ping: Arc<AtomicU64>,
-    /// Sending side of the stream
-    sender: Arc<Mutex<BlockSink>>,
+    last_ping: u64,
+    /// Sender to stream blocks to the peer
+    sender: SplitSink<Framed<TcpStream, LengthDelimitedCodec>, Bytes>,
     /// Handle to abort the receiving side of the stream
-    receiver_abort: AbortHandle,
+    keepalive_abort: JoinHandle<()>,
 }
 
 #[derive(Debug)]
@@ -80,13 +66,12 @@ pub struct DataAvailability {
 
     // To avoid mutexing DA we use a channel to process API requests
     stream_request_receiver: tokio::sync::mpsc::Receiver<StreamRequest>,
-    // List of peers subscribed to block streaming
-    stream_peer_metadata: Vec<BlockStreamPeer>,
-    // List of tasks streaming past blocks to peers.
-    // These stop on their own once we've reached the head of the chain.
-    stream_catchup_tasks: JoinSet<(BlockHeight, Arc<Mutex<BlockSink>>)>,
-    // Tasks that process pings from peers to keep track of their liveness
-    peer_keepalives: JoinSet<(Arc<AtomicU64>, SplitStream<FramedByLength>)>,
+
+    // Peers subscribed to block streaming
+    stream_peer_metadata: HashMap<String, BlockStreamPeer>,
+
+    ping_sender: tokio::sync::mpsc::Sender<String>,
+    ping_receiver: tokio::sync::mpsc::Receiver<String>,
 }
 
 impl Module for DataAvailability {
@@ -111,7 +96,7 @@ impl Module for DataAvailability {
             .open()
             .context("opening the database")?;
 
-        let (tx, rx) = tokio::sync::mpsc::channel(100);
+        let (stream_request_sender, stream_request_receiver) = tokio::sync::mpsc::channel(100);
 
         let mut ctx_router = ctx
             .common
@@ -123,17 +108,20 @@ impl Module for DataAvailability {
                 "/v1/da/stream_request",
                 axum::routing::get(Self::api_stream_request),
             )
-            .with_state(tx)
+            .with_state(stream_request_sender)
             .merge(ctx_router.take().expect("Router should be available"));
         let _ = ctx_router.insert(router);
+
+        // TODO: this is a soft cap on the number of peers we can stream to.
+        let (ping_sender, ping_receiver) = tokio::sync::mpsc::channel(100);
 
         Ok(DataAvailability {
             bus,
             blocks: Blocks::new(&db)?,
-            stream_request_receiver: rx,
-            stream_peer_metadata: Vec::new(),
-            stream_catchup_tasks: JoinSet::new(),
-            peer_keepalives: JoinSet::new(),
+            stream_request_receiver,
+            ping_sender,
+            ping_receiver,
+            stream_peer_metadata: HashMap::new(),
         })
     }
 
@@ -156,24 +144,9 @@ impl DataAvailability {
                 }
             }
 
-            Some(Ok((timestamp, mut receiver))) = self.peer_keepalives.join_next() => {
-                timestamp.store(SystemTime::now().duration_since(UNIX_EPOCH).expect("time went backwards").as_secs(), Ordering::Relaxed);
-                // Spawn a new task waiting for a message, which we'll process here.
-                // This allows us to remain logically synchronous while still processing messages asynchronously.
-                self.peer_keepalives.spawn(async move {
-                    sleep(Duration::from_secs(60)).await;
-                    receiver.next().await;
-                    (timestamp, receiver)
-                });
-            }
-
-            Some(Ok((block_height, sender))) = self.stream_catchup_tasks.join_next() => {
-                if let Ok(Some(item)) = self.blocks.get(block_height) {
-                    info!("streaming block {}", block_height);
-                    let bytes: bytes::Bytes = bincode::encode_to_vec(item, bincode::config::standard())?.into();
-                    sender.lock().await.send(bytes).await?;
-                    self.stream_catchup_tasks
-                    .spawn(async move { (block_height + 1, sender) });
+            Some(peer_id) = self.ping_receiver.recv() => {
+                if let Some(peer) = self.stream_peer_metadata.get_mut(&peer_id) {
+                    peer.last_ping = SystemTime::now().duration_since(UNIX_EPOCH).expect("time went backwards").as_secs();
                 }
             }
         }
@@ -191,34 +164,36 @@ impl DataAvailability {
         if let Err(e) = self.blocks.put(block.clone()) {
             error!("storing block: {}", e);
         } else {
-            // stream block to peers
+            // Stream block to all peers
+            // TODO: use retain once async closures are supported ?
             let mut to_remove = Vec::new();
-            for (i, peer) in self.stream_peer_metadata.iter().enumerate() {
-                let last_ping = peer.last_ping.load(Ordering::Relaxed);
+            for (peer_id, peer) in self.stream_peer_metadata.iter_mut() {
+                let last_ping = peer.last_ping;
                 if last_ping + 60 * 5
                     < SystemTime::now()
                         .duration_since(UNIX_EPOCH)
                         .expect("time went backwards")
                         .as_secs()
                 {
-                    info!("peer {} timed out", i);
-                    peer.receiver_abort.abort();
-                    to_remove.push(i);
+                    info!("peer {} timed out", &peer_id);
+                    peer.keepalive_abort.abort();
+                    to_remove.push(peer_id.clone());
                 } else {
-                    info!("streaming block {} to peer {}", block.height, i);
+                    info!("streaming block {} to peer {}", block.height, &peer_id);
                     match bincode::encode_to_vec(block.clone(), bincode::config::standard()) {
                         Ok(bytes) => {
-                            if let Err(e) = peer.sender.lock().await.send(bytes.into()).await {
-                                error!("sending block to peer: {}", e);
-                                to_remove.push(i);
+                            if let Err(e) = peer.sender.send(bytes.into()).await {
+                                warn!("failed to send block to peer {}: {}", &peer_id, e);
+                                // TODO: retry?
+                                to_remove.push(peer_id.clone());
                             }
                         }
                         Err(e) => error!("encoding block: {}", e),
                     }
                 }
             }
-            for i in to_remove {
-                self.stream_peer_metadata.remove(i);
+            for peer_id in to_remove {
+                self.stream_peer_metadata.remove(&peer_id);
             }
         }
     }
@@ -244,7 +219,31 @@ impl DataAvailability {
         let stream = TcpStream::connect(peer_ip).await?;
         info!("DA stream setup on {} to {}", stream.local_addr()?, peer_ip);
         let (sender, mut receiver) = Framed::new(stream, LengthDelimitedCodec::new()).split();
-        let sender = Arc::new(Mutex::new(sender));
+
+        // Start a task to process pings from the peer.
+        // We do the processing in the main select! loop to keep things synchronous.
+        let peer_ip_keepalive = peer_ip.to_string();
+        let ping_sender = self.ping_sender.clone();
+        let keepalive_abort = tokio::spawn(async move {
+            loop {
+                receiver.next().await;
+                let _ = ping_sender.send(peer_ip_keepalive.clone()).await;
+            }
+        });
+
+        // Then store data so we can send new blocks as they come.
+        self.stream_peer_metadata.insert(
+            peer_ip.to_string(),
+            BlockStreamPeer {
+                last_ping: SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .expect("time went backwards")
+                    .as_secs(),
+                sender,
+                keepalive_abort,
+            },
+        );
+
         // First: figure out if we have past blocks to send them.
         // If so, spin futures - we'll process them as part of the main select! loop.
         let mut range = self.blocks.range(
@@ -253,31 +252,21 @@ impl DataAvailability {
         );
         if let Some(Ok(start)) = range.next() {
             if let Ok(block) = start.value() {
-                let sender = sender.clone();
-                self.stream_catchup_tasks
-                    .spawn(async move { (block.height, sender) });
+                let mut block_height = block.height;
+                while let Ok(Some(block)) = self.blocks.get(block_height) {
+                    let bytes: bytes::Bytes =
+                        bincode::encode_to_vec(block, bincode::config::standard())?.into();
+                    self.stream_peer_metadata
+                        .get_mut(peer_ip)
+                        .unwrap()
+                        .sender
+                        .send(bytes)
+                        .await?;
+                    block_height.0 += 1;
+                }
             }
         }
-        // Then start a task to process pings from the peer.
-        // Likewise, we actually do the processing in the main select! loop.
-        let timestamp = Arc::new(AtomicU64::new(
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .expect("time went backwards")
-                .as_secs(),
-        ));
-        let cloned_timestamp = timestamp.clone();
-        let t = self.peer_keepalives.spawn(async move {
-            receiver.next().await;
-            (cloned_timestamp, receiver)
-        });
 
-        // Then store data so we can send new blocks as they come.
-        self.stream_peer_metadata.push(BlockStreamPeer {
-            last_ping: timestamp,
-            sender,
-            receiver_abort: t,
-        });
         Ok(())
     }
 }
