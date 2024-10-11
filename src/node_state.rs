@@ -103,7 +103,7 @@ impl NodeState {
     fn handle_data_event(&mut self, event: DataEvent) -> anyhow::Result<()> {
         match event {
             DataEvent::NewBlock(block) => {
-                info!("New block to handle: {:}", block.hash());
+                debug!("New block to handle: {:}", block.hash());
                 self.handle_new_block(block).context("handle new block")?;
             }
         };
@@ -114,6 +114,7 @@ impl NodeState {
         self.clear_timeouts(&block.height);
         self.current_height = block.height;
         let txs_count = block.txs.len();
+        let block_hash = block.hash();
 
         for tx in block.txs {
             let tx_hash = tx.hash();
@@ -123,7 +124,11 @@ impl NodeState {
             }
         }
 
-        info!("Handled {txs_count} transactions");
+        info!(
+           block_hash = %block_hash,
+            block_height = %block.height,
+            "Handled {txs_count} transactions");
+
         _ = Self::save_on_disk(self.file.as_path(), &self.store);
         Ok(())
     }
