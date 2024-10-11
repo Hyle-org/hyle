@@ -2,7 +2,7 @@
 
 use crate::{
     bus::{bus_client, command_response::Query, SharedMessageBus},
-    consensus::{staking::Staker, ConsensusCommand, ConsensusEvent},
+    consensus::{staking::Staker, ConsensusCommand},
     data_availability::DataEvent,
     handle_messages,
     model::{
