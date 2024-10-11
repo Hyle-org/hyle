@@ -328,12 +328,19 @@ pub async fn get_contract(
 }
 
 pub async fn get_contract_state_by_height(
-    Path((contract_name, height)): Path<(String, i32)>,
+    Path((contract_name, height)): Path<(String, i64)>,
     State(state): State<IndexerState>,
 ) -> Result<Json<ContractStateDb>, StatusCode> {
     let contract = sqlx::query_as!(
         ContractStateDb,
-        "SELECT * FROM contract_state WHERE contract_name = $1 AND block_number = $2",
+        r#"
+        SELECT
+            cs.contract_name,
+            cs.block_hash,
+            cs.state
+        FROM contract_state cs
+        JOIN blocks b ON cs.block_hash = b.hash
+        WHERE contract_name = $1 AND height = $2"#,
         contract_name,
         height
     )

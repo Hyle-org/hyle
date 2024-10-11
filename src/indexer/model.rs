@@ -64,6 +64,5 @@ pub struct ContractStateDb {
     // Struct for the contract_state table
     pub contract_name: String,    // Name of the contract
     pub block_hash: Vec<u8>,      // Hash of the block where the state is captured
-    pub block_number: i32,        // Block number for easier querying by number
     pub state: serde_json::Value, // The contract state stored in JSON format
 }

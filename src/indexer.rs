@@ -261,11 +261,10 @@ impl Indexer {
 
                     // Adding to ContractState table
                     sqlx::query!(
-                        "INSERT INTO contract_state (contract_name, block_hash, block_number, state)
-                        VALUES ($1, $2, $3, $4)",
+                        "INSERT INTO contract_state (contract_name, block_hash, state)
+                        VALUES ($1, $2, $3)",
                         tx.contract_name.0,
                         block_hash,
-                        block.height.0 as i64,
                         tx.state_digest.0
                     )
                     .execute(&mut *transaction)
