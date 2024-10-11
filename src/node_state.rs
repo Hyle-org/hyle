@@ -93,13 +93,13 @@ impl NodeState {
                 self.contracts.get(cmd).cloned().context("Contract not found")
             }
             listen<ConsensusEvent> event => {
-                _ = self.handle_event(event)
+                _ = self.handle_consensus_event(event)
                     .log_error("NodeState: Error while handling consensus event");
             }
         }
     }
 
-    fn handle_event(&mut self, event: ConsensusEvent) -> anyhow::Result<()> {
+    fn handle_consensus_event(&mut self, event: ConsensusEvent) -> anyhow::Result<()> {
         match event {
             ConsensusEvent::CommitBlock { block } => {
                 info!("New block to handle: {:}", block.hash());

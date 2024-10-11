@@ -200,6 +200,10 @@ pub struct ConsensusStore {
     /// Validators that asked to be part of consensus
     new_validators_candidates: Vec<NewValidatorCandidate>,
     bft_round_state: BFTRoundState,
+    /// Proposals that we refuse to vote for, but that might be valid
+    /// it can happen we consider invalid because we missed a slot
+    /// but if we get a consensus on this proposal, we should accept it
+    buffered_invalid_proposals: HashMap<ConsensusProposalHash, ConsensusProposal>,
     // FIXME: pub is here for testing
     pub blocks: Vec<Block>,
     pending_batches: Vec<Vec<Transaction>>,
@@ -441,16 +445,13 @@ impl Consensus {
 
     /// Verify that quorum certificate includes only validators that are part of the consensus
     fn verify_quorum_signers_part_of_consensus(
-        &self,
         quorum_certificate: &QuorumCertificate,
+        consensus_proposal: &ConsensusProposal,
     ) -> bool {
-        quorum_certificate.validators.iter().all(|v| {
-            self.bft_round_state
-                .consensus_proposal
-                .validators
-                .iter()
-                .any(|v2| v2 == v)
-        })
+        quorum_certificate
+            .validators
+            .iter()
+            .all(|v| consensus_proposal.validators.iter().any(|v2| v2 == v))
     }
 
     /// Verify that new bonded validators
@@ -627,6 +628,44 @@ impl Consensus {
             .sum::<u64>()
     }
 
+    /// Verify that the certificate signers are legit for proposal
+    /// and update current proposal if the quorum is valid
+    /// precondition: verification of voting power is already made on quorum
+    fn verify_quorum_and_catchup(
+        &mut self,
+        consensus_proposal_hash: &ConsensusProposalHash,
+        prepare_quorum_certificate: &QuorumCertificate,
+    ) -> Result<(), Error> {
+        // Verify that the Confirm is for the correct proposal
+        let proposal: ConsensusProposal = match self
+            .verify_consensus_proposal_hash(consensus_proposal_hash)
+        {
+            true => self.bft_round_state.consensus_proposal.clone(),
+            false => {
+                // If the verification failed, we might have missed a slot
+                if let Some(proposal) = self
+                    .buffered_invalid_proposals
+                    .remove(consensus_proposal_hash)
+                {
+                    warn!("Confirm refers to proposal hash I didn't vote for because I might have missed a slot. Restoring this proposal as valid if quorum signers are part of the consensus.");
+                    proposal
+                } else {
+                    bail!("Confirm refers to an unknwon proposal hash.");
+                }
+            }
+        };
+
+        // Verify that validators that signed are legit
+        if !Self::verify_quorum_signers_part_of_consensus(prepare_quorum_certificate, &proposal) {
+            bail!(
+                "Prepare quorum certificate includes validators that are not part of the consensus"
+            )
+        }
+
+        self.bft_round_state.consensus_proposal = proposal;
+        Ok(())
+    }
+
     fn handle_net_message(
         &mut self,
         msg: &SignedWithKey<ConsensusNetMessage>,
@@ -652,8 +691,9 @@ impl Consensus {
                 // Validate message comes from the correct leader
                 if !msg.validators.contains(&self.leader_id()) {
                     self.metrics.prepare_error("wrong_leader");
-                    bail!("Prepare consensus message does not come from current leader");
-                    // TODO: slash ?
+                    self.buffered_invalid_proposals
+                        .insert(consensus_proposal.hash(), consensus_proposal.clone());
+                    bail!("Prepare consensus message does not come from current leader. I won't vote for it.");
                 }
 
                 // Verify received previous *Commit* Quorum Certificate
@@ -906,17 +946,6 @@ impl Consensus {
             ConsensusNetMessage::Confirm(consensus_proposal_hash, prepare_quorum_certificate) => {
                 // Message received by follower.
 
-                // Verify that the Confirm is for the correct proposal
-                if !self.verify_consensus_proposal_hash(consensus_proposal_hash) {
-                    self.metrics.confirm_error("invalid_proposal_hash");
-                    bail!("Confirm step got invalid proposal hash.");
-                }
-
-                // Verify that validators that signed are legit
-                if !self.verify_quorum_signers_part_of_consensus(prepare_quorum_certificate) {
-                    bail!("Prepare quorum certificate includes validators that are not part of the consensus")
-                }
-
                 // Verifies the *Prepare* Quorum Certificate
                 let prepare_quorum_certificate_with_message = SignedWithKey {
                     msg: ConsensusNetMessage::PrepareVote(consensus_proposal_hash.clone()),
@@ -949,8 +978,11 @@ impl Consensus {
                             self.metrics.confirm_error("prepare_qc_incomplete");
                             bail!("Prepare Quorum Certificate does not contain enough voting power")
                         }
-                        // Verify that validators that signed are legit
-                        // TODO
+
+                        self.verify_quorum_and_catchup(
+                            consensus_proposal_hash,
+                            prepare_quorum_certificate,
+                        )?;
 
                         // Buffers the *Prepare* Quorum Cerficiate
                         self.bft_round_state.prepare_quorum_certificate =
@@ -1092,19 +1124,6 @@ impl Consensus {
             ConsensusNetMessage::Commit(consensus_proposal_hash, commit_quorum_certificate) => {
                 // Message received by follower.
 
-                // Verify that the vote is for the correct proposal
-                if !self.verify_consensus_proposal_hash(consensus_proposal_hash) {
-                    self.metrics.commit_error("invalid_proposal_hash");
-                    bail!("Commit has not received valid consensus proposal hash");
-                }
-
-                // Verify that validators that signed are legit
-                if !self.verify_quorum_signers_part_of_consensus(commit_quorum_certificate) {
-                    self.metrics
-                        .commit_error("invalid_validators_qorum_certificate");
-                    bail!("Commit quorum certificate includes validators that are not part of the consensus")
-                }
-
                 // Verifies and save the *Commit* Quorum Certificate
                 let commit_quorum_certificate_with_message = SignedWithKey {
                     msg: ConsensusNetMessage::ConfirmAck(consensus_proposal_hash.clone()),
@@ -1126,8 +1145,11 @@ impl Consensus {
                             self.metrics.commit_error("incomplete_qc");
                             bail!("Commit Quorum Certificate does not contain enough validators signatures")
                         }
-                        // Verify that validators that signed are legit
-                        // TODO
+
+                        self.verify_quorum_and_catchup(
+                            consensus_proposal_hash,
+                            commit_quorum_certificate,
+                        )?;
 
                         // Buffers the *Commit* Quorum Cerficiate
                         self.store

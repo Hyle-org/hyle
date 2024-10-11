@@ -3,17 +3,23 @@
 mod blocks;
 
 use crate::{
-    bus::{bus_client, SharedMessageBus},
+    bus::{bus_client, BusMessage, SharedMessageBus},
     consensus::ConsensusEvent,
     handle_messages,
-    model::{Block, SharedRunContext},
-    utils::modules::Module,
+    model::{Block, BlockHash, BlockHeight, Hashable, SharedRunContext, ValidatorPublicKey},
+    p2p::network::{NetMessage, OutboundMessage},
+    utils::{logger::LogMe, modules::Module},
 };
 use anyhow::{Context, Result};
+use bincode::{Decode, Encode};
 use blocks::Blocks;
 use core::str;
-use std::io::{Cursor, Write};
-use tracing::{error, info};
+use serde::{Deserialize, Serialize};
+use std::{
+    collections::BTreeSet,
+    io::{Cursor, Write},
+};
+use tracing::{debug, error, info};
 
 pub fn u64_to_str(u: u64, buf: &mut [u8]) -> &str {
     let mut cursor = Cursor::new(&mut buf[..]);
@@ -22,10 +28,31 @@ pub fn u64_to_str(u: u64, buf: &mut [u8]) -> &str {
     str::from_utf8(&buf[..len]).unwrap()
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, Eq, PartialEq)]
+pub enum DataMessage {
+    QueryBlock {
+        respond_to: ValidatorPublicKey,
+        hash: BlockHash,
+    },
+    QueryBlockResponse {
+        block: Block,
+    },
+}
+
+impl BusMessage for DataMessage {}
+
+impl From<DataMessage> for NetMessage {
+    fn from(msg: DataMessage) -> Self {
+        NetMessage::DataMessage(msg)
+    }
+}
+
 bus_client! {
 #[derive(Debug)]
 struct DABusClient {
+    sender(OutboundMessage),
     receiver(ConsensusEvent),
+    receiver(DataMessage),
 }
 }
 
@@ -33,6 +60,8 @@ struct DABusClient {
 pub struct DataAvailability {
     bus: DABusClient,
     pub blocks: Blocks,
+    buffered_blocks: BTreeSet<Block>,
+    self_pubkey: ValidatorPublicKey,
 }
 
 impl Module for DataAvailability {
@@ -57,9 +86,14 @@ impl Module for DataAvailability {
             .open()
             .context("opening the database")?;
 
+        let buffered_blocks = BTreeSet::new();
+        let self_pubkey = ctx.node.crypto.validator_pubkey().clone();
+
         Ok(DataAvailability {
             bus,
             blocks: Blocks::new(&db)?,
+            buffered_blocks,
+            self_pubkey,
         })
     }
 
@@ -75,29 +109,126 @@ impl DataAvailability {
             listen<ConsensusEvent> cmd => {
                 self.handle_consensus_event(cmd).await;
             }
+            listen<DataMessage> msg => {
+                _ = self.handle_data_message(msg)
+                    .log_error("NodeState: Error while handling data message");
+            }
         }
+    }
+
+    fn handle_data_message(&mut self, msg: DataMessage) -> Result<()> {
+        match msg {
+            DataMessage::QueryBlock { respond_to, hash } => {
+                self.blocks.get(hash).map(|block| {
+                    if let Some(block) = block {
+                        _ = self.bus.send(OutboundMessage::send(
+                            respond_to,
+                            DataMessage::QueryBlockResponse { block },
+                        ));
+                    }
+                })?;
+            }
+            DataMessage::QueryBlockResponse { block } => {
+                debug!(
+                    block_hash = %block.hash(),
+                    block_height = %block.height,
+                    "⬇️  Received block data");
+                self.handle_block(block);
+            }
+        }
+        Ok(())
     }
 
     async fn handle_consensus_event(&mut self, event: ConsensusEvent) {
         match event {
-            ConsensusEvent::CommitBlock { block, .. } => self.handle_block(block).await,
+            ConsensusEvent::CommitBlock { block, .. } => {
+                info!(
+                    block_hash = %block.hash(),
+                    block_height = %block.height,
+                    "🔒  Block committed");
+                self.handle_block(block);
+            }
         }
     }
 
-    async fn handle_block(&mut self, block: Block) {
-        info!("new block {} with {} txs", block.height, block.txs.len());
+    fn handle_block(&mut self, block: Block) {
+        // if new block is not the next block in the chain, buffer
+        if self.blocks.last().is_some() {
+            if self
+                .blocks
+                .get(block.parent_hash.clone())
+                .unwrap_or(None)
+                .is_none()
+            {
+                debug!(
+                    "Parent block '{}' not found for block hash='{}' height {}",
+                    block.parent_hash,
+                    block.hash(),
+                    block.height
+                );
+                self.query_block(block.parent_hash.clone());
+                self.buffered_blocks.insert(block);
+                return;
+            }
+        // if genesis block is missing, buffer
+        } else if block.height != BlockHeight(0) {
+            debug!(
+                "Received block with height {} but genesis block is missing",
+                block.height
+            );
+            self.query_block(block.parent_hash.clone());
+            self.buffered_blocks.insert(block);
+            return;
+        }
+
+        info!(
+            "new block {} with {} txs, last hash = {:?}",
+            block.height,
+            block.txs.len(),
+            self.blocks.last_block_hash()
+        );
         // store block
+        let block_hash = block.hash();
+        //panic!("store block");
         if let Err(e) = self.blocks.put(block) {
             error!("storing block: {}", e);
         }
+
+        self.pop_buffer(block_hash);
+    }
+
+    fn pop_buffer(&mut self, mut last_block_hash: BlockHash) {
+        while let Some(first_buffered) = self.buffered_blocks.first() {
+            if first_buffered.parent_hash != last_block_hash {
+                break;
+            }
+
+            let first_buffered = self.buffered_blocks.pop_first().unwrap();
+            let first_buffered_hash = first_buffered.hash();
+
+            if let Err(e) = self.blocks.put(first_buffered) {
+                error!("storing buffered block: {}", e);
+            }
+
+            last_block_hash = first_buffered_hash;
+        }
+    }
+
+    fn query_block(&mut self, hash: BlockHash) {
+        _ = self
+            .bus
+            .send(OutboundMessage::broadcast(DataMessage::QueryBlock {
+                respond_to: self.self_pubkey.clone(),
+                hash,
+            }));
     }
 }
 
 #[cfg(test)]
 mod tests {
     use crate::model::{
-        Blob, BlobData, BlobTransaction, Block, BlockHash, BlockHeight, ContractName, Identity,
-        Transaction, TransactionData,
+        Blob, BlobData, BlobTransaction, Block, BlockHash, BlockHeight, ContractName, Hashable,
+        Identity, Transaction, TransactionData,
     };
 
     use super::blocks::Blocks;
@@ -131,8 +262,8 @@ mod tests {
             }],
         };
         blocks.put(block.clone())?;
-        assert!(blocks.last().height == block.height);
-        let last = blocks.get(BlockHeight(1))?;
+        assert!(blocks.last().unwrap().height == block.height);
+        let last = blocks.get(block.hash())?;
         assert!(last.is_some());
         assert!(last.unwrap().height == BlockHeight(1));
         Ok(())

@@ -1,4 +1,5 @@
 use crate::bus::BusMessage;
+use crate::data_availability::DataMessage;
 use crate::model::ValidatorPublicKey;
 use crate::{consensus::ConsensusNetMessage, mempool::MempoolNetMessage};
 use bincode::{Decode, Encode};
@@ -65,6 +66,7 @@ pub struct Signed<T: Encode, V> {
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, Eq, PartialEq)]
 pub enum NetMessage {
     HandshakeMessage(HandshakeNetMessage),
+    DataMessage(DataMessage),
     MempoolMessage(SignedWithKey<MempoolNetMessage>),
     ConsensusMessage(SignedWithKey<ConsensusNetMessage>),
 }
