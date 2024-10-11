@@ -1,0 +1,35 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            cs.contract_name,\n            cs.block_hash,\n            cs.state\n        FROM contract_state cs\n        JOIN blocks b ON cs.block_hash = b.hash\n        WHERE contract_name = $1 AND height = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "contract_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "block_hash",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 2,
+        "name": "state",
+        "type_info": "Bytea"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "52b012eedf54575a0e87aa272c2a4ea0d902a4822f545603ea02adf43605c8aa"
+}

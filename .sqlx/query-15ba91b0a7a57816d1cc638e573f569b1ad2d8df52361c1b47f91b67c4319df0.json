@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO blobs (tx_hash, blob_index, identity, contract_name, data)\n                             VALUES ($1, $2, $3, $4, $5)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Int4",
+        "Text",
+        "Text",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "15ba91b0a7a57816d1cc638e573f569b1ad2d8df52361c1b47f91b67c4319df0"
+}

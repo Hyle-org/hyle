@@ -14,15 +14,6 @@ jobs:
     name: clippy check
     if: github.event.pull_request.draft == false
     runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:latest
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: password
-          POSTGRES_DB: postgres
-        ports:
-          - 5432:5432
     steps:
       - uses: actions/checkout@v4
       - uses: actions-rs/toolchain@v1
@@ -30,8 +21,8 @@ jobs:
           toolchain: stable
           components: clippy
           override: true
-      - run: cargo install sqlx-cli
-      - run: sqlx migrate run --database-url "postgres://postgres:password@localhost:5432/postgres" --source ./src/indexer/migrations
       - uses: LoliGothick/clippy-check@master
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
+      - run: cargo install sqlx-cli
+      - run: cargo sqlx prepare --check

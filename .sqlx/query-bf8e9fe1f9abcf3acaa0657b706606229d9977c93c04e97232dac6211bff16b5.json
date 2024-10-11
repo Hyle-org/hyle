@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO contracts (tx_hash, owner, verifier, program_id, state_digest, contract_name)\n                        VALUES ($1, $2, $3, $4, $5, $6)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Text",
+        "Text",
+        "Bytea",
+        "Bytea",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "bf8e9fe1f9abcf3acaa0657b706606229d9977c93c04e97232dac6211bff16b5"
+}

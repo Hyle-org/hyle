@@ -5,4 +5,3 @@ data_node*
 # Added by cargo
 
 /target
-.sqlx
