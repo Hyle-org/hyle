@@ -292,6 +292,7 @@ mod tests {
             },
             height: BlockHeight(1),
             timestamp: 42,
+            new_bonded_validators: vec![],
             txs: vec![Transaction {
                 version: 1,
                 transaction_data: TransactionData::Blob(BlobTransaction {
