@@ -28,10 +28,8 @@ pub async fn send_net_message(
     stream: &mut Framed<TcpStream, LengthDelimitedCodec>,
     msg: NetMessage,
 ) -> Result<(), Error> {
-    let binary = msg.to_binary();
-
     stream
-        .send(binary.into())
+        .send(msg.to_binary().into())
         .await
         .context("Failed to send NetMessage")?;
 

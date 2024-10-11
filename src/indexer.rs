@@ -13,10 +13,13 @@ use crate::{
 use anyhow::{bail, Context, Error, Result};
 use axum::{routing::get, Router};
 use core::str;
+use futures::{SinkExt, StreamExt};
 use model::{TransactionStatus, TransactionType};
 use sqlx::types::chrono::DateTime;
 use sqlx::{postgres::PgPoolOptions, PgPool, Pool, Postgres};
 use std::sync::Arc;
+use tokio::net::TcpStream;
+use tokio_util::codec::{Framed, LengthDelimitedCodec};
 use tracing::{debug, error, info};
 
 bus_client! {
@@ -31,6 +34,7 @@ pub type IndexerState = PgPool;
 #[derive(Debug)]
 pub struct Indexer {
     bus: IndexerBusClient,
+    da_stream: Option<Framed<TcpStream, LengthDelimitedCodec>>,
     inner: IndexerState,
 }
 
@@ -55,7 +59,11 @@ impl Module for Indexer {
             .run(&inner)
             .await?;
 
-        let indexer = Indexer { bus, inner };
+        let indexer = Indexer {
+            bus,
+            inner,
+            da_stream: None,
+        };
 
         let mut ctx_router = ctx
             .router
@@ -81,15 +89,57 @@ impl Indexer {
     }
 
     pub async fn start(&mut self) -> Result<()> {
-        handle_messages! {
-            on_bus self.bus,
-            listen<ConsensusEvent> cmd => {
-                match self.handle_consensus_event(cmd).await{
-                    Ok(_) => (),
-                    Err(e) => error!("Error while handling consensus event: {:#}", e),
+        if self.da_stream.is_none() {
+            handle_messages! {
+                on_bus self.bus,
+                listen<ConsensusEvent> cmd => {
+                    if let Err(e) = self.handle_consensus_event(cmd).await {
+                        error!("Error while handling consensus event: {:#}", e)
+                    }
+                }
+            }
+        } else {
+            handle_messages! {
+                    on_bus self.bus,
+                    cmd = self.da_stream.as_mut().expect("da_stream must exist").next() => {
+                    if let Some(Ok(cmd)) = cmd {
+                        let bytes = cmd;
+                        let block: Block = bincode::decode_from_slice(&bytes, bincode::config::standard()).unwrap().0;
+                        if let Err(e) = self.handle_block(block).await {
+                            error!("Error while handling block: {:#}", e);
+                        }
+                        SinkExt::<bytes::Bytes>::send(self.da_stream.as_mut().expect("da_stream must exist"), "ok".into()).await.unwrap();
+                    } else if cmd.is_none() {
+                        self.da_stream = None;
+                        // TODO: retry
+                        return Err(anyhow::anyhow!("DA stream closed"));
+                    } else if let Some(Err(e)) = cmd {
+                        self.da_stream = None;
+                        // TODO: retry
+                        return Err(anyhow::anyhow!("Error while reading DA stream: {}", e));
+                    }
                 }
             }
         }
+    }
+
+    pub async fn connect_to(&mut self, target: &str) -> Result<()> {
+        info!(
+            "Connecting to node for data availability stream on {}",
+            &target
+        );
+        let stream = TcpStream::connect(&target).await?;
+        let addr = stream.local_addr()?;
+        self.da_stream = Some(Framed::new(stream, LengthDelimitedCodec::new()));
+        info!("Connected to data stream to {} on {}", &target, addr);
+        // Send the start height
+        let height_as_bytes: bytes::BytesMut = u64::to_be_bytes(0)[..].into();
+        self.da_stream
+            .as_mut()
+            .expect("da_stream must exist")
+            .send(height_as_bytes.into())
+            .await?;
+        Ok(())
     }
 
     pub fn api(&self) -> Router<()> {
@@ -341,6 +391,7 @@ mod test {
         Indexer {
             bus: IndexerBusClient::new_from_bus(SharedMessageBus::default()).await,
             inner: pool,
+            da_stream: None,
         }
     }
 

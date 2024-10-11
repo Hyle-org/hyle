@@ -1,7 +1,7 @@
 use crate::model::{Block, BlockHash, BlockHeight, Hashable};
 use crate::utils::db::{Db, Iter, KeyMaker};
 use anyhow::Result;
-use tracing::info;
+use tracing::{error, info};
 
 pub struct BlocksKey(pub BlockHash);
 pub struct BlocksOrdKey(pub BlockHeight);
@@ -27,24 +27,14 @@ impl KeyMaker for BlocksOrdKey {
 #[derive(Debug)]
 pub struct Blocks {
     db: Db,
-    last: Option<Block>,
 }
 
 impl Blocks {
     pub fn new(db: &sled::Db) -> Result<Self> {
         let db = Db::new(db, "blocks_ord", Some("blocks_alt"))?;
-        let blocks = Self {
-            last: db.ord_last()?,
-            db,
-        };
+        let blocks = Self { db };
 
         info!("{} block(s) available", blocks.db.len());
-        if let Some(last) = blocks.last() {
-            info!(
-                block_hash = %last.hash(),
-                block_height = %last.height,
-                "last block is {:?}", last);
-        }
 
         Ok(blocks)
     }
@@ -60,7 +50,6 @@ impl Blocks {
         info!("📦 storing block {}", data.height);
         self.db
             .put(BlocksOrdKey(data.height), BlocksKey(data.hash()), &data)?;
-        self.last.replace(data);
         Ok(())
     }
 
@@ -68,19 +57,21 @@ impl Blocks {
         self.db.alt_get(BlocksKey(block_hash))
     }
 
-    pub fn last(&self) -> Option<&Block> {
-        self.last.as_ref()
+    pub fn last(&self) -> Option<Block> {
+        match self.db.ord_last() {
+            Ok(block) => block,
+            Err(e) => {
+                error!("Error getting last block: {:?}", e);
+                None
+            }
+        }
     }
 
     pub fn last_block_hash(&self) -> Option<BlockHash> {
-        self.last.as_ref().map(|b| b.hash())
+        self.last().map(|b| b.hash())
     }
 
-    pub fn range(&mut self, min: BlocksKey, max: BlocksKey) -> Iter<Block> {
+    pub fn range(&mut self, min: BlocksOrdKey, max: BlocksOrdKey) -> Iter<Block> {
         self.db.ord_range(min, max)
-    }
-
-    pub fn scan_prefix(&mut self, prefix: BlocksKey) -> Iter<Block> {
-        self.db.ord_scan_prefix(prefix)
     }
 }

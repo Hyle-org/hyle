@@ -33,6 +33,7 @@ pub struct Conf {
     pub data_directory: PathBuf,
     pub migration_directory: String,
     pub run_indexer: bool,
+    pub da_address: String,
 }
 
 impl Conf {

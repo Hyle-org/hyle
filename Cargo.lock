@@ -1865,6 +1865,7 @@ dependencies = [
  "bloomfilter",
  "blst",
  "borsh",
+ "bytes",
  "cairo-platinum-prover",
  "chrono",
  "clap",
