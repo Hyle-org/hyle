@@ -1,7 +1,9 @@
 use crate::indexer::model::BlockDb;
 
 use super::{
-    model::{BlobDb, ContractDb, ContractStateDb, TransactionDb},
+    model::{
+        BlobDb, ContractDb, ContractStateDb, TransactionDb, TransactionStatus, TransactionType,
+    },
     IndexerState,
 };
 use axum::{
@@ -77,10 +79,22 @@ pub async fn get_block_by_hash(
 pub async fn get_transactions(
     State(state): State<IndexerState>,
 ) -> Result<Json<Vec<TransactionDb>>, StatusCode> {
-    let transactions = sqlx::query_as!(TransactionDb, "SELECT * FROM transactions")
-        .fetch_all(&state)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let transactions = sqlx::query_as!(
+        TransactionDb,
+        r#"
+        SELECT
+            tx_hash,
+            block_hash,
+            tx_index,
+            version,
+            transaction_type as "transaction_type: TransactionType",
+            transaction_status as "transaction_status: TransactionStatus"
+        FROM transactions
+        "#
+    )
+    .fetch_all(&state)
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     match transactions.len() {
         0 => Err(StatusCode::NOT_FOUND),
@@ -94,7 +108,13 @@ pub async fn get_transactions_with_contract_name(
     let transactions = sqlx::query_as!(
         TransactionDb,
         r#"
-        SELECT t.tx_hash, t.block_hash, t.tx_index, t.version, t.transaction_type, t.transaction_status
+        SELECT
+            t.tx_hash,
+            t.block_hash,
+            t.tx_index,
+            t.version,
+            t.transaction_type as "transaction_type: TransactionType",
+            t.transaction_status as "transaction_status: TransactionStatus"
         FROM transactions t
         JOIN blobs b ON t.tx_hash = b.tx_hash
         WHERE b.contract_name = $1
@@ -123,8 +143,8 @@ pub async fn get_transactions_by_height(
             t.block_hash,
             t.tx_index,
             t.version,
-            t.transaction_type,
-            t.transaction_status
+            t.transaction_type as "transaction_type: TransactionType",
+            t.transaction_status as "transaction_status: TransactionStatus"
         FROM transactions t
         JOIN blocks b ON t.block_hash = b.hash
         WHERE b.height = $1
@@ -149,7 +169,13 @@ pub async fn get_transaction_with_hash(
     let transaction = sqlx::query_as!(
         TransactionDb,
         r#"
-        SELECT tx_hash, block_hash, tx_index, version, transaction_type, transaction_status
+        SELECT
+            tx_hash,
+            block_hash,
+            tx_index,
+            version,
+            transaction_type as "transaction_type: TransactionType",
+            transaction_status as "transaction_status: TransactionStatus"
         FROM transactions
         WHERE tx_hash = $1
         "#,
@@ -177,7 +203,7 @@ pub async fn get_settled_blobs_by_contract_name(
         SELECT b.*
         FROM blobs b
         JOIN transactions t ON b.tx_hash = t.tx_hash
-        WHERE b.contract_name = $1 AND t.transaction_status = 'success'
+        WHERE b.contract_name = $1 AND t.transaction_status = 'Success'
         "#,
         contract_name
     )
@@ -202,7 +228,7 @@ pub async fn get_unsettled_blobs_by_contract_name(
         SELECT b.*
         FROM blobs b
         JOIN transactions t ON b.tx_hash = t.tx_hash
-        WHERE b.contract_name = $1 AND t.transaction_status = 'sequenced'
+        WHERE b.contract_name = $1 AND t.transaction_status = 'Sequenced'
         "#,
         contract_name
     )

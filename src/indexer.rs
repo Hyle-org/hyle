@@ -185,8 +185,8 @@ impl Indexer {
                         block_hash,
                         tx_index as i32,
                         version,
-                        "BlobTransaction",
-                        "sequenced".to_string()
+                        "BlobTransaction" as _,
+                        "Sequenced".to_string() as _
                     )
                     .execute(&mut *transaction)
                     .await?;
@@ -214,8 +214,8 @@ impl Indexer {
                         block_hash,
                         tx_index as i32,
                         version,
-                        "ProofTransaction",
-                        "verified".to_string()
+                        "ProofTransaction" as _,
+                        "verified".to_string() as _
                     )
                     .execute(&mut *transaction)
                     .await?;
@@ -245,6 +245,20 @@ impl Indexer {
                     // TODO; si la vérification est correcte, ajouter HyleOutput
                 }
                 crate::model::TransactionData::RegisterContract(ref tx) => {
+                    // Insert the transaction into the transactions table
+                    sqlx::query!(
+                        "INSERT INTO transactions (tx_hash, block_hash, tx_index, version, transaction_type, transaction_status)
+                        VALUES ($1, $2, $3, $4, $5, $6)",
+                        tx_hash,
+                        block_hash,
+                        tx_index as i32,
+                        version,
+                        "RegisterContractTransaction" as _,
+                        "verified".to_string() as _
+                    )
+                    .execute(&mut *transaction)
+                    .await?;
+
                     // Adding to Contract table
                     sqlx::query!(
                         "INSERT INTO contracts (tx_hash, owner, verifier, program_id, state_digest, contract_name)
@@ -334,7 +348,9 @@ mod test {
         assert!(!transactions_response.text().is_empty());
 
         // Get block by hash
-        let transactions_response = server.get("/block/hash/block1").await;
+        let transactions_response = server
+            .get("/block/hash/block1aaaaaaaaaaaaaaaaaaaaaaaaaa")
+            .await;
         transactions_response.assert_status_ok();
         assert!(!transactions_response.text().is_empty());
 
@@ -359,7 +375,9 @@ mod test {
         transactions_response.assert_status_not_found();
 
         // Get an existing transaction by hash
-        let transactions_response = server.get("/transaction/hash/test_tx_hash_1").await;
+        let transactions_response = server
+            .get("/transaction/hash/test_tx_hash_1aaaaaaaaaaaaaaaaaa")
+            .await;
         transactions_response.assert_status_ok();
         assert!(!transactions_response.text().is_empty());
 
@@ -379,21 +397,29 @@ mod test {
         assert!(!transactions_response.text().is_empty());
 
         // Get blobs by tx_hash
-        let transactions_response = server.get("/blobs/hash/test_tx_hash_2").await;
+        let transactions_response = server
+            .get("/blobs/hash/test_tx_hash_2aaaaaaaaaaaaaaaaaa")
+            .await;
         transactions_response.assert_status_ok();
         assert!(!transactions_response.text().is_empty());
 
         // Get unknown blobs by tx_hash
-        let transactions_response = server.get("/blobs/hash/test_tx_hash_1").await;
+        let transactions_response = server
+            .get("/blobs/hash/test_tx_hash_1aaaaaaaaaaaaaaaaaa")
+            .await;
         transactions_response.assert_status_not_found();
 
         // Get blob by tx_hash and index
-        let transactions_response = server.get("/blob/hash/test_tx_hash_2/index/0").await;
+        let transactions_response = server
+            .get("/blob/hash/test_tx_hash_2aaaaaaaaaaaaaaaaaa/index/0")
+            .await;
         transactions_response.assert_status_ok();
         assert!(!transactions_response.text().is_empty());
 
         // Get blob by tx_hash and unknown index
-        let transactions_response = server.get("/blob/hash/test_tx_hash_2/index/1000").await;
+        let transactions_response = server
+            .get("/blob/hash/test_tx_hash_2aaaaaaaaaaaaaaaaaa/index/1000")
+            .await;
         transactions_response.assert_status_not_found();
 
         // Contracts
