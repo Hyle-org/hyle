@@ -4,14 +4,10 @@ use anyhow::{anyhow, bail, Context, Error, Result};
 use bincode::{Decode, Encode};
 use metrics::ConsensusMetrics;
 use serde::{Deserialize, Serialize};
-use sha3::{Digest, Sha3_256};
 use staking::{Stake, Staker, Staking};
 use std::{
     collections::{HashMap, HashSet},
     default::Default,
-    fmt::Display,
-    io::Write,
-    ops::{Deref, DerefMut},
     path::PathBuf,
     time::Duration,
 };
@@ -23,8 +19,8 @@ use crate::{
     handle_messages,
     mempool::{MempoolCommand, MempoolEvent, MempoolResponse},
     model::{
-        get_current_timestamp, Block, BlockHash, BlockHeight, Hashable, SharedRunContext,
-        Transaction, ValidatorPublicKey,
+        get_current_timestamp, Block, BlockHash, BlockHeight, Hashable, Transaction,
+        ValidatorPublicKey,
     },
     p2p::network::{OutboundMessage, PeerEvent, Signature, Signed, SignedWithKey},
     utils::{
@@ -37,7 +33,9 @@ use crate::{
 };
 
 pub mod metrics;
+pub mod module;
 pub mod staking;
+pub mod utils;
 
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, PartialEq, Eq, Hash)]
 pub enum ConsensusNetMessage {
@@ -103,15 +101,6 @@ pub struct QuorumCertificate {
     validators: Vec<ValidatorPublicKey>,
 }
 
-impl Hashable<QuorumCertificateHash> for QuorumCertificate {
-    fn hash(&self) -> QuorumCertificateHash {
-        let mut hasher = Sha3_256::new();
-        _ = write!(hasher, "{:?}", self.signature);
-        _ = write!(hasher, "{:?}", self.validators);
-        return QuorumCertificateHash(hasher.finalize().as_slice().to_owned());
-    }
-}
-
 pub type Slot = u64;
 pub type View = u64;
 
@@ -129,64 +118,10 @@ pub struct ConsensusProposal {
     new_bonded_validators: Vec<NewValidatorCandidate>,
 }
 
-impl Hashable<ConsensusProposalHash> for ConsensusProposal {
-    fn hash(&self) -> ConsensusProposalHash {
-        let mut hasher = Sha3_256::new();
-        _ = write!(hasher, "{}", self.slot);
-        _ = write!(hasher, "{}", self.view);
-        _ = write!(hasher, "{:?}", self.previous_consensus_proposal_hash);
-        _ = write!(hasher, "{:?}", self.previous_commit_quorum_certificate);
-        _ = write!(hasher, "{}", self.block);
-        return ConsensusProposalHash(hasher.finalize().as_slice().to_owned());
-    }
-}
-impl Display for ValidatorCandidacy {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Pubkey: {}", self.pubkey)
-    }
-}
-impl Display for ConsensusProposal {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "Hash: {}, Slot: {}, View: {}, Previous hash: {}, Previous commit hash: {}, Block: {}",
-            self.hash(),
-            self.slot,
-            self.view,
-            self.previous_consensus_proposal_hash,
-            self.previous_commit_quorum_certificate.hash(),
-            self.block
-        )
-    }
-}
-impl Display for ConsensusProposalHash {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", hex::encode(&self.0))
-    }
-}
-impl Display for QuorumCertificateHash {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", hex::encode(&self.0))
-    }
-}
-
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, PartialEq, Eq, Hash, Default)]
 pub struct ConsensusProposalHash(Vec<u8>);
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, PartialEq, Eq, Hash, Default)]
 pub struct QuorumCertificateHash(Vec<u8>);
-
-bus_client! {
-struct ConsensusBusClient {
-    sender(OutboundMessage),
-    sender(ConsensusEvent),
-    sender(ConsensusCommand),
-    sender(Query<MempoolCommand, MempoolResponse>),
-    receiver(ConsensusCommand),
-    receiver(MempoolEvent),
-    receiver(SignedWithKey<ConsensusNetMessage>),
-    receiver(PeerEvent),
-}
-}
 
 #[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode, PartialEq, Eq, Hash)]
 pub struct NewValidatorCandidate {
@@ -220,60 +155,17 @@ pub struct Consensus {
     crypto: SharedBlstCrypto,
 }
 
-impl Deref for Consensus {
-    type Target = ConsensusStore;
-    fn deref(&self) -> &Self::Target {
-        &self.store
-    }
+bus_client! {
+struct ConsensusBusClient {
+    sender(OutboundMessage),
+    sender(ConsensusEvent),
+    sender(ConsensusCommand),
+    sender(Query<MempoolCommand, MempoolResponse>),
+    receiver(ConsensusCommand),
+    receiver(MempoolEvent),
+    receiver(SignedWithKey<ConsensusNetMessage>),
+    receiver(PeerEvent),
 }
-impl DerefMut for Consensus {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.store
-    }
-}
-
-impl Module for Consensus {
-    fn name() -> &'static str {
-        "Consensus"
-    }
-
-    type Context = SharedRunContext;
-
-    async fn build(ctx: Self::Context) -> Result<Self> {
-        let file = ctx
-            .common
-            .config
-            .data_directory
-            .clone()
-            .join("consensus.bin");
-        let mut store: ConsensusStore = Self::load_from_disk_or_default(file.as_path());
-        let metrics = ConsensusMetrics::global(ctx.common.config.id.clone());
-        let bus = ConsensusBusClient::new_from_bus(ctx.common.bus.new_handle()).await;
-
-        // FIXME a bit hacky for now
-        if store.bft_round_state.leader_pubkey == ValidatorPublicKey::default() {
-            store.bft_round_state.leader_index = 0;
-            //store.bft_round_state.leader_id = "node-1".to_string(); FIXME
-            if ctx.common.config.id == "node-1" {
-                store.is_next_leader = true;
-            }
-        }
-
-        Ok(Consensus {
-            metrics,
-            bus,
-            genesis_pubkeys: vec![ctx.node.crypto.validator_pubkey().clone()],
-            file: Some(file),
-            store,
-            config: ctx.common.config.clone(),
-            crypto: ctx.node.crypto.clone(),
-        })
-    }
-
-    fn run(&mut self) -> impl futures::Future<Output = Result<()>> + Send {
-        _ = self.start_master(self.config.clone());
-        self.start()
-    }
 }
 
 impl Consensus {
