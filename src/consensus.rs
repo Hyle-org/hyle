@@ -20,7 +20,7 @@ use crate::{
     mempool::{MempoolCommand, MempoolEvent, MempoolResponse},
     model::{
         get_current_timestamp, Block, BlockHash, BlockHeight, Hashable, Transaction,
-        ValidatorPublicKey,
+        TransactionData, ValidatorPublicKey,
     },
     p2p::{
         network::{OutboundMessage, PeerEvent, Signature, Signed, SignedWithKey},
@@ -49,8 +49,6 @@ pub enum ConsensusNetMessage {
     ConfirmAck(ConsensusProposalHash),
     Commit(ConsensusProposalHash, QuorumCertificate),
     ValidatorCandidacy(ValidatorCandidacy),
-    CatchupRequest(),
-    CatchupResponse(Staking),
 }
 
 #[derive(Encode, Decode, Default, Debug)]
@@ -230,6 +228,18 @@ impl Consensus {
     /// will grand them a gree stake to start
     /// this genesis logic might change later
     fn create_genesis_consensus_proposal(&mut self) {
+        let txs = self
+            .genesis_pubkeys
+            .clone()
+            .into_iter()
+            .map(|pubkey| {
+                Transaction::wrap(TransactionData::Stake(Staker {
+                    pubkey,
+                    stake: Stake { amount: 100 },
+                }))
+            })
+            .collect::<Vec<Transaction>>();
+
         let first_block = Block {
             parent_hash: BlockHash {
                 inner: [
@@ -240,7 +250,7 @@ impl Consensus {
             },
             height: BlockHeight(0),
             timestamp: get_current_timestamp(),
-            txs: vec![],
+            txs,
         };
 
         let validators = self.genesis_pubkeys.clone();
@@ -634,8 +644,6 @@ impl Consensus {
             ConsensusNetMessage::ValidatorCandidacy(candidacy) => {
                 self.on_validator_candidacy(msg, candidacy)
             }
-            ConsensusNetMessage::CatchupRequest() => self.on_catchup_request(msg),
-            ConsensusNetMessage::CatchupResponse(staking) => self.on_catchup_response(staking),
         }
     }
 
@@ -709,16 +717,7 @@ impl Consensus {
             }
             None if self.bft_round_state.slot == 0 => {
                 if consensus_proposal.slot != 0 {
-                    info!("🔄 Consensus state out of sync, need to catchup");
-                    _ = self
-                        .bus
-                        .send(OutboundMessage::send(
-                            self.leader_id(),
-                            self.sign_net_message(ConsensusNetMessage::CatchupRequest())?,
-                        ))
-                        .context(
-                            "Failed to send ConsensusNetMessage::CatchupRequest msg on the bus",
-                        )?;
+                    warn!("🔄 Consensus state out of sync, need to catchup");
                 } else {
                     info!("#### Received genesis block proposal ####");
                     self.genesis_bond(&consensus_proposal.validators)?;
@@ -1196,35 +1195,6 @@ impl Consensus {
         Ok(())
     }
 
-    fn on_catchup_request(&mut self, msg: &SignedWithKey<ConsensusNetMessage>) -> Result<()> {
-        info!("🔄 Catchup request received");
-        _ = self
-            .bus
-            .send(OutboundMessage::send(
-                msg.validators
-                    .first()
-                    .ok_or(anyhow!("No validator in msg"))?
-                    .clone(),
-                self.sign_net_message(ConsensusNetMessage::CatchupResponse(
-                    self.bft_round_state.staking.clone(),
-                ))?,
-            ))
-            .context("Failed to send ConsensusNetMessage::CatchupResponse msg on the bus")?;
-        Ok(())
-    }
-
-    fn on_catchup_response(&mut self, staking: &Staking) -> Result<()> {
-        info!("🔄 Catchup response received");
-        if self.bft_round_state.slot == 0
-            && self.bft_round_state.slot != self.bft_round_state.consensus_proposal.slot
-        {
-            self.bft_round_state.staking = staking.clone();
-            Ok(())
-        } else {
-            bail!("CatchupResponse is only valid for genesis block");
-        }
-    }
-
     fn handle_command(&mut self, msg: ConsensusCommand) -> Result<()> {
         match msg {
             ConsensusCommand::SingleNodeBlockGeneration(block_number) => {
@@ -1252,7 +1222,11 @@ impl Consensus {
                 Ok(())
             }
             ConsensusCommand::NewStaker(staker) => {
-                self.store.bft_round_state.staking.add_staker(staker)
+                // ignore new stakers from genesis block as they are already bonded
+                if self.bft_round_state.slot != 1 {
+                    self.store.bft_round_state.staking.add_staker(staker)?;
+                }
+                Ok(())
             }
             ConsensusCommand::StartNewSlot => self.start_new_slot(),
         }
