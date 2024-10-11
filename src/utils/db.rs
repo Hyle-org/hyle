@@ -33,22 +33,22 @@ macro_rules! query_as_with_feature {
         }
     }};
 
-    ($query:expr) => {{
+    // ($query:expr) => {{
+    //     #[cfg(feature = "use_query_as_macro")]
+    //     {
+    //         sqlx::query!($query)
+    //     }
+
+    //     #[cfg(not(feature = "use_query_as_macro"))]
+    //     {
+    //         sqlx::query($query)
+    //     }
+    // }};
+
+    ($query:expr, $($args:tt,)*) => {{
         #[cfg(feature = "use_query_as_macro")]
         {
-            sqlx::query!($query)
-        }
-
-        #[cfg(not(feature = "use_query_as_macro"))]
-        {
-            sqlx::query($query)
-        }
-    }};
-
-    ($query:expr, $($args:expr),+) => {{
-        #[cfg(feature = "use_query_as_macro")]
-        {
-            sqlx::query!($query, $($args),*)
+            sqlx::sqlx_macros::expand_query!(source = $query, args = [$($args),*])
         }
         #[cfg(not(feature = "use_query_as_macro"))]
         {

@@ -14,6 +14,7 @@ use crate::{
 use anyhow::{Context, Error, Result};
 use axum::{routing::get, Router};
 use core::str;
+use model::{TransactionStatus, TransactionType};
 use sqlx::{migrate::Migrator, postgres::PgPoolOptions, PgPool, Pool, Postgres};
 use std::{
     io::{Cursor, Write},
@@ -157,52 +158,60 @@ impl Indexer {
 
         let mut transaction = self.inner.begin().await?;
 
-        let block_hash = block.hash().inner;
+        let block_hash = &block.hash().inner;
+        let block_parent_hash = &block.parent_hash.inner;
+        let block_height = block.height.0 as i64;
+        let block_timestamp = block.timestamp as i64;
 
         // Insert the block into the blocks table
         query_as_with_feature!(
             "INSERT INTO blocks (hash, parent_hash, height, timestamp) VALUES ($1, $2, $3, $4)",
-            &block_hash,
-            block.parent_hash.inner,
-            block.height.0 as i64,
-            block.timestamp as i64
+            block_hash,
+            block_parent_hash,
+            block_height,
+            block_timestamp,
         )
         .execute(&mut *transaction)
         .await?;
 
         for (tx_index, tx) in block.txs.iter().enumerate() {
-            let tx_hash: Vec<u8> = tx.hash().0;
+            let tx_hash = &tx.hash().0;
             debug!("tx:{:?} hash {:?}", tx_hash, tx);
 
             let version = tx.version as i32;
+            let tx_index = tx_index as i32;
 
             match tx.transaction_data {
                 crate::model::TransactionData::Blob(ref tx) => {
                     // Insert the transaction into the transactions table
-                    let tx_type = "blob_transaction";
-                    let tx_status = "sequenced";
+                    let tx_type = TransactionType::BlobTransaction;
+                    let tx_status = TransactionStatus::Sequenced;
                     query_as_with_feature!(
                         "INSERT INTO transactions (tx_hash, block_hash, tx_index, version, transaction_type, transaction_status)
                         VALUES ($1, $2, $3, $4, $5, $6)",
-                        &tx_hash,
-                        &block_hash,
-                        tx_index as i32,
+                        tx_hash,
+                        block_hash,
+                        tx_index,
                         version,
                         tx_type,
-                        tx_status
+                        tx_status,
                     )
                     .execute(&mut *transaction)
                     .await?;
 
                     for (blob_index, blob) in tx.blobs.iter().enumerate() {
+                        let blob_index = blob_index as i32;
+                        let identity = &tx.identity.0;
+                        let contract_name = &blob.contract_name.0;
+                        let blob = &blob.data.0;
                         query_as_with_feature!(
                             "INSERT INTO blobs (tx_hash, blob_index, identity, contract_name, data)
                              VALUES ($1, $2, $3, $4, $5)",
-                            &tx_hash,
-                            blob_index as i32,
-                            &tx.identity.0,
-                            &blob.contract_name.0,
-                            &blob.data.0
+                            tx_hash,
+                            blob_index,
+                            identity,
+                            contract_name,
+                            blob,
                         )
                         .execute(&mut *transaction)
                         .await?;
@@ -210,38 +219,43 @@ impl Indexer {
                 }
                 crate::model::TransactionData::Proof(ref tx) => {
                     // Insert the transaction into the transactions table
-                    let tx_type = "proof_transaction";
-                    let tx_status = "success";
+                    let tx_type = TransactionType::ProofTransaction;
+                    let tx_status = TransactionStatus::Success;
                     query_as_with_feature!(
                         "INSERT INTO transactions (tx_hash, block_hash, tx_index, version, transaction_type, transaction_status)
                         VALUES ($1, $2, $3, $4, $5, $6)",
-                        &tx_hash,
-                        &block_hash,
-                        tx_index as i32,
+                        tx_hash,
+                        block_hash,
+                        tx_index,
                         version,
                         tx_type,
-                        tx_status
+                        tx_status,
                     )
                     .execute(&mut *transaction)
                     .await?;
 
+                    let proof = &tx.proof;
+
                     query_as_with_feature!(
                         "INSERT INTO proofs (tx_hash, proof) VALUES ($1, $2)",
-                        &tx_hash,
-                        &tx.proof
+                        tx_hash,
+                        proof,
                     )
                     .execute(&mut *transaction)
                     .await?;
 
                     // Adding all blob_references
                     for blob_ref in tx.blobs_references.iter() {
+                        let contract_name = &blob_ref.contract_name.0;
+                        let blob_tx_hash = &blob_ref.blob_tx_hash.0;
+                        let blob_index = blob_ref.blob_index.0 as i32;
                         query_as_with_feature!(
                             "INSERT INTO blob_references (tx_hash, contract_name, blob_tx_hash, blob_index)
                              VALUES ($1, $2, $3, $4)",
-                            &tx_hash,
-                            &blob_ref.contract_name.0,
-                            &blob_ref.blob_tx_hash.0,
-                            blob_ref.blob_index.0 as i32
+                            tx_hash,
+                            contract_name,
+                            blob_tx_hash,
+                            blob_index,
                         )
                         .execute(&mut *transaction)
                         .await?;
@@ -251,31 +265,36 @@ impl Indexer {
                 }
                 crate::model::TransactionData::RegisterContract(ref tx) => {
                     // Insert the transaction into the transactions table
-                    let tx_type = "register_contract_transaction";
-                    let tx_status = "success";
+                    let tx_type = TransactionType::RegisterContractTransaction;
+                    let tx_status = TransactionStatus::Success;
                     query_as_with_feature!(
                         "INSERT INTO transactions (tx_hash, block_hash, tx_index, version, transaction_type, transaction_status)
                         VALUES ($1, $2, $3, $4, $5, $6)",
-                        &tx_hash,
-                        &block_hash,
-                        tx_index as i32,
+                        tx_hash,
+                        block_hash,
+                        tx_index,
                         version,
                         tx_type,
-                        tx_status
+                        tx_status,
                     )
                     .execute(&mut *transaction)
                     .await?;
+                    let owner = &tx.owner;
+                    let verifier = &tx.verifier;
+                    let program_id = &tx.program_id;
+                    let state_digest = &tx.state_digest.0;
+                    let contract_name = &tx.contract_name.0;
 
                     // Adding to Contract table
                     query_as_with_feature!(
                         "INSERT INTO contracts (tx_hash, owner, verifier, program_id, state_digest, contract_name)
                         VALUES ($1, $2, $3, $4, $5, $6)",
-                        &tx_hash,
-                        &tx.owner,
-                        &tx.verifier,
-                        &tx.program_id,
-                        &tx.state_digest.0,
-                        &tx.contract_name.0
+                        tx_hash,
+                        owner,
+                        verifier,
+                        program_id,
+                        state_digest,
+                        contract_name,
                     )
                     .execute(&mut *transaction)
                     .await?;
@@ -284,9 +303,9 @@ impl Indexer {
                     query_as_with_feature!(
                         "INSERT INTO contract_state (contract_name, block_hash, state_digest)
                         VALUES ($1, $2, $3)",
-                        &tx.contract_name.0,
-                        &block_hash,
-                        &tx.state_digest.0
+                        contract_name,
+                        block_hash,
+                        state_digest,
                     )
                     .execute(&mut *transaction)
                     .await?;
