@@ -1,15 +1,11 @@
 //! Handles all consensus logic up to block commitment.
-
 use anyhow::{anyhow, bail, Context, Error, Result};
 use bincode::{Decode, Encode};
 use metrics::ConsensusMetrics;
 use serde::{Deserialize, Serialize};
 use staking::{Stake, Staker, Staking};
 use std::{
-    collections::{HashMap, HashSet},
-    default::Default,
-    path::PathBuf,
-    time::Duration,
+    cmp::max, collections::{HashMap, HashSet}, default::Default, path::PathBuf, time::Duration
 };
 use tokio::{sync::broadcast, time::sleep};
 use tracing::{debug, info, warn};
@@ -27,11 +23,7 @@ use crate::{
         P2PCommand,
     },
     utils::{
-        conf::SharedConf,
-        crypto::{BlstCrypto, SharedBlstCrypto},
-        logger::LogMe,
-        modules::Module,
-        static_type_map::Pick,
+        conf::SharedConf, crypto::{BlstCrypto, SharedBlstCrypto}, logger::LogMe, modules::Module, static_type_map::Pick,
     },
 };
 
@@ -51,6 +43,8 @@ pub enum ConsensusNetMessage {
     ConfirmAck(ConsensusProposalHash),
     Commit(ConsensusProposalHash, QuorumCertificate),
     ValidatorCandidacy(ValidatorCandidacy),
+    Timeout(Slot, View, ConsensusProposalHash),
+    TimeoutCertificate(Slot, View, QuorumCertificate),
 }
 
 #[derive(Encode, Decode, Default, Debug)]
@@ -67,6 +61,7 @@ pub enum ConsensusCommand {
     NewStaker(Staker),
     NewBonded(ValidatorPublicKey),
     StartNewSlot,
+    TimeoutTick,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -88,13 +83,53 @@ pub struct ValidatorCandidacy {
     peer_address: String,
 }
 
+#[derive(Debug, Encode, Decode, Default)]
+enum ConsensusTimeoutState {
+    #[default]
+    // Initial state
+    Inactive,
+    // A new slot was created, and its timeout is scheduled
+    Scheduled {
+        timestamp: u64,
+    },
+}
+
+impl ConsensusTimeoutState {
+    pub const TIMEOUT_SECS: u64 = 10;
+    pub fn schedule_next(&mut self, timestamp: u64) -> Result<()> {
+        match self {
+            ConsensusTimeoutState::Inactive => {
+                info!("Scheduling timeout");
+            }
+            ConsensusTimeoutState::Scheduled { .. } => {
+                info!("Rescheduling timeout");
+            }
+        }
+        *self = ConsensusTimeoutState::Scheduled {
+            timestamp: timestamp + ConsensusTimeoutState::TIMEOUT_SECS,
+        };
+        Ok(())
+    }
+    pub fn cancel(&mut self) -> Result<()> {
+        match self {
+            ConsensusTimeoutState::Scheduled { timestamp: _ } => {
+                *self = ConsensusTimeoutState::Inactive;
+                Ok(())
+            }
+            els => {
+                bail!("Consensus Timeout cannot be cancelled ({:?})", els);
+            }
+        }
+    }
+}
+
 // TODO: move struct to model.rs ?
 #[derive(Encode, Decode, Default)]
 pub struct BFTRoundState {
     consensus_proposal: ConsensusProposal,
+    step: Step,
     slot: Slot,
     view: View,
-    step: Step,
     leader_index: u64,
     leader_pubkey: ValidatorPublicKey,
     staking: Staking,
@@ -102,6 +137,11 @@ pub struct BFTRoundState {
     prepare_quorum_certificate: QuorumCertificate,
     confirm_ack: HashSet<Signed<ConsensusNetMessage, ValidatorPublicKey>>,
     commit_quorum_certificates: HashMap<Slot, (ConsensusProposalHash, QuorumCertificate)>,
+    //
+    timeout_requests:
+        HashMap<Slot, HashMap<View, HashSet<Signed<ConsensusNetMessage, ValidatorPublicKey>>>>,
+    timeout_certificates: HashMap<Slot, HashMap<View, QuorumCertificate>>,
+    timeout_state: ConsensusTimeoutState,
 }
 
 #[derive(Serialize, Deserialize, Encode, Decode, Default, Debug, Clone, PartialEq, Eq, Hash)]
@@ -117,12 +157,12 @@ pub type View = u64;
 #[derive(Debug, Clone, Default, Serialize, Deserialize, Encode, Decode, PartialEq, Eq, Hash)]
 pub struct ConsensusProposal {
     slot: Slot,
-    view: u64,
+    view: View,
     next_leader: u64,
     cut_lanes: Cut,
     previous_consensus_proposal_hash: ConsensusProposalHash,
     previous_commit_quorum_certificate: QuorumCertificate,
-    block: Block, // FIXME: Block ou cut ?
+    block: Block, // FIXME: cut = list of tips = list of hashes of batches of lanes
     /// Validators for current slot
     validators: Vec<ValidatorPublicKey>, // TODO use ID instead of pubkey ?
     new_bonded_validators: Vec<NewValidatorCandidate>,
@@ -346,6 +386,11 @@ impl Consensus {
         if let Some(file) = &self.file {
             Self::save_on_disk(file.as_path(), &self.store)?;
         }
+
+        // Schedule timeout
+        self.bft_round_state
+            .timeout_state
+            .schedule_next(get_current_timestamp())?;
 
         Ok(())
     }
@@ -622,11 +667,8 @@ impl Consensus {
         Ok(())
     }
 
-    fn handle_net_message(
-        &mut self,
-        msg: &SignedWithKey<ConsensusNetMessage>,
-    ) -> Result<(), Error> {
-        if !BlstCrypto::verify(msg)? {
+    fn handle_net_message(&mut self, msg: &SignedWithKey<ConsensusNetMessage>) -> Result<()> {
+       if !BlstCrypto::verify(msg)? {
             self.metrics.signature_error("prepare");
             bail!("Invalid signature for message {:?}", msg);
         }
@@ -646,15 +688,187 @@ impl Consensus {
             ConsensusNetMessage::ConfirmAck(consensus_proposal_hash) => {
                 self.on_confirm_ack(msg, consensus_proposal_hash)
             }
-            ConsensusNetMessage::Commit(consensus_proposal_hash, commit_quorum_certificate) => {
-                self.on_commit(consensus_proposal_hash, commit_quorum_certificate)
+            ConsensusNetMessage::Commit(hash, cert) => {
+                self.on_commit(hash, cert)
+            }
+            ConsensusNetMessage::Timeout(slot, view, consensus_proposal_hash) => {
+                self.on_timeout(msg, slot, view, consensus_proposal_hash)
+            }
+            ConsensusNetMessage::TimeoutCertificate(slot, view, certificate) => {
+                self.on_timeout_certificate(view, slot, certificate)
             }
             ConsensusNetMessage::ValidatorCandidacy(candidacy) => {
                 self.on_validator_candidacy(msg, candidacy)
             }
         }
     }
+    fn broadcast_net_message(&mut self, consensus_net_message: ConsensusNetMessage) -> Result<()> {
+        // TODO: use strum to generate variant names in logs
+        _ = self
+            .bus
+            .send(OutboundMessage::broadcast(
+                self.sign_net_message(consensus_net_message)?,
+            ))
+            .context(format!("Failed to broadcast ConsensusNetMessage msg on the bus"))?;
+        Ok(())
+    }
 
+    fn send_net_message(&mut self, to: ValidatorPublicKey, consensus_net_message: ConsensusNetMessage) -> Result<()> {
+        _ = self
+            .bus
+            .send(OutboundMessage::send(
+                to,
+                self.sign_net_message(consensus_net_message)?,
+            ))
+            .context("Failed to send ConsensusNetMessage msg on the bus")?;
+        Ok(())
+    }
+    
+
+    fn on_timeout_certificate(&mut self, view: &View, slot: &Slot, certificate: &QuorumCertificate) -> Result<()> {
+        // Wrong view
+        if *view < self.bft_round_state.view {
+            bail!("Received timeout message for an obsolete view {}", view);
+        }
+
+        if *slot < self.bft_round_state.slot {
+            bail!("Received timeout message for an obsolete slot {}", slot);
+        }
+
+        self.bft_round_state
+            .timeout_certificates
+            .entry(*slot)
+            .or_insert_with(|| HashMap::new())
+            .insert(*view, certificate.clone());
+
+        self.bft_round_state.slot = *slot;
+        self.bft_round_state.view = view + 1;
+
+        if self.is_next_leader() {
+            // Send Prepare message to all validators
+            self.start_new_slot()?;
+        } else if !self.is_part_of_consensus(self.crypto.validator_pubkey()) {
+            self.send_candidacy()?;
+        }
+
+        Ok(())
+    }
+
+    fn on_timeout(&mut self, msg: &SignedWithKey<ConsensusNetMessage>, view: &View, slot: &Slot, consensus_proposal_hash: &ConsensusProposalHash) -> Result<()> {
+        // Only timeout if it is in consensus
+
+        debug!(
+            "timeout message received for slot {} and view {}",
+            slot, view
+        );
+
+        if self.is_part_of_consensus(self.crypto.validator_pubkey()) {
+            // Wrong view
+            if *view < self.bft_round_state.view {
+                bail!("Received timeout message for an obsolete view {}", view);
+            }
+
+            // return commit if present
+            if let Some((consensus_proposal_hash, commit_qc)) =
+                self.bft_round_state.commit_quorum_certificates.get(slot)
+            {
+                return self.send_net_message(
+                    // TODO ? Create a simple struct with unique validator
+                    msg.validators.get(0).unwrap().clone(),
+                    ConsensusNetMessage::Commit(
+                    consensus_proposal_hash.clone(),
+                    commit_qc.clone(),
+                ));
+            }
+
+            let f: usize = self.bft_round_state.consensus_proposal.validators.len() / 3;
+
+            // Save Timeout. Ends if the message already has been processed
+            let timeout_requests_of_same_view = &mut self
+                .store
+                .bft_round_state
+                .timeout_requests
+                .entry(*slot)
+                .or_insert_with(|| HashMap::new())
+                .entry(*view)
+                .or_insert_with(|| HashSet::new());
+
+
+            // Insert timeout request and if already present notify
+            if !timeout_requests_of_same_view.insert(msg.clone()) {
+                // self.metrics.timeout_request("already_processed");
+                info!("Timeout has already been processed");
+                return Ok(());
+            }
+
+            let len = timeout_requests_of_same_view.len();
+
+            // Count requests and if f+1 requests, join the mutiny
+            if len == f + 1 {
+                // Broadcast a timeout message
+                _ = &self.broadcast_net_message(ConsensusNetMessage::Timeout(
+                    slot.clone(),
+                    view.clone(),
+                    consensus_proposal_hash.clone(),
+                ))?;
+                return Ok(());
+            }
+
+            // Create TC if applicable
+            if len == max(1, 2 * f) {
+                // Get all signatures received and change ValidatorId for ValidatorPubKey
+                let aggregates: &Vec<&Signed<ConsensusNetMessage, ValidatorPublicKey>> =
+                    &self
+                        .bft_round_state
+                        .timeout_requests
+                        .get(slot)
+                        .unwrap()
+                        .get(view)
+                        .unwrap()
+                        .iter()
+                        .collect();
+
+                let consensus_proposal_hash =
+                    &self.bft_round_state.consensus_proposal.hash();
+
+                // Aggregates them into a Timeout Certificate
+                let timeout_signed_aggregation = self.crypto.sign_aggregate(
+                    ConsensusNetMessage::Timeout(
+                        slot.clone(),
+                        view.clone(),
+                        consensus_proposal_hash.clone(),
+                    ),
+                    aggregates.as_slice(),
+                )?;
+
+                // self.metrics.timeout_certificate_aggregate();
+
+                // Buffers the timeout Cerficiate
+                let timeout_certificate = QuorumCertificate {
+                    signature: timeout_signed_aggregation.signature.clone(),
+                    validators: timeout_signed_aggregation.validators.clone(),
+                };
+
+                self.store
+                    .bft_round_state
+                    .timeout_certificates
+                    .entry(self.store.bft_round_state.slot)
+                    .or_insert_with(|| HashMap::new())
+                    .insert(self.store.bft_round_state.view, timeout_certificate.clone());
+
+                // Broadcast the Timeout Certificate to all validators
+                _ = self.broadcast_net_message(ConsensusNetMessage::TimeoutCertificate(
+                    self.store.bft_round_state.slot,
+                    self.store.bft_round_state.view,
+                    timeout_certificate,
+                ))?;
+
+                self.bft_round_state.timeout_state.cancel()?;
+            }
+        }
+        Ok(())
+    }
+    
     /// Message received by follower.
     fn on_prepare(
         &mut self,
@@ -712,14 +926,64 @@ impl Consensus {
                         self.bft_round_state.slot
                     );
                 }
+                
                 // Verify view
-                if self.bft_round_state.view != consensus_proposal.view {
+                // Ignore previous views
+                if consensus_proposal.view < self.bft_round_state.view {
                     self.metrics.prepare_error("wrong_view");
                     bail!(
                         "Consensus proposal view is incorrect. Received {} and expected {}",
                         consensus_proposal.view,
                         self.bft_round_state.view
                     );
+                }
+
+                // Verify timeout certificate of view > 0
+                if consensus_proposal.view > 0 {
+                    // Checking previous view timeout
+                    if let Some(views) = self
+                        .bft_round_state
+                        .timeout_certificates
+                        .get(&(consensus_proposal.slot.saturating_sub(1)))
+                    {
+                        if let Some(cert) =
+                            views.get(&(consensus_proposal.view.saturating_sub(1)))
+                        {
+                            // validate certificate
+
+                            let previous_timeout_certificate_with_message = SignedWithKey {
+                                msg: ConsensusNetMessage::Timeout(
+                                    consensus_proposal.slot,
+                                    consensus_proposal.view,
+                                    consensus_proposal.hash(),
+                                ),
+                                signature: cert.signature.clone(),
+                                validators: cert.validators.clone(),
+                            };
+                            // Verify valid signature
+                            match BlstCrypto::verify(
+                                &previous_timeout_certificate_with_message,
+                            ) {
+                                Ok(res) if !res => {
+                                    self.metrics
+                                        .prepare_error("previous_timeout_cert_invalid");
+                                    bail!("Previous Timeout Certificate is invalid")
+                                }
+                                Ok(_) => {
+                                    info!("Timeout certificate is valid");
+                                }
+                                Err(err) => {
+                                    self.metrics.prepare_error("bls_failure");
+                                    bail!(
+                                        "Previous Timeout Certificate verification failed: {}",
+                                        err
+                                    );
+                                }
+                            }
+                        } else {
+                            bail!("Timeout certificate not found");
+                        }
+                    }
                 }
                 // Verify block
             }
@@ -1120,6 +1384,12 @@ impl Consensus {
             }
         }
 
+         // At this point we have a valid commit certificate
+        // When committing, we want to cancel the current scheduled timeout
+        // we cannot have a timeout certificate for the current round and both receive a commit QC
+        // So cancel is safe here, and if not, there is a big problem
+        _ = self.bft_round_state.timeout_state.cancel();
+        
         // Finishes the bft round
         self.finish_round()?;
 
@@ -1238,6 +1508,24 @@ impl Consensus {
                 Ok(())
             }
             ConsensusCommand::StartNewSlot => self.start_new_slot(),
+            ConsensusCommand::TimeoutTick => match &self.bft_round_state.timeout_state {
+                ConsensusTimeoutState::Scheduled { timestamp }
+                    if get_current_timestamp() >= *timestamp =>
+                {
+                    // Trigger state transition to mutiny
+                    info!("Trigger timeout");
+                    _ = self.broadcast_net_message(ConsensusNetMessage::Timeout(
+                        self.bft_round_state.slot.clone(),
+                        self.bft_round_state.view.clone(),
+                        self.bft_round_state.consensus_proposal.hash(),
+                    ))?;
+
+                    let _ = &self.bft_round_state.timeout_state.cancel()?;
+
+                    Ok(())
+                }
+                _ => Ok(()),
+            },
         }
     }
 
@@ -1293,6 +1581,27 @@ impl Consensus {
                 Ok(())
             }
         }
+    }
+    fn send_command_every(&self, interval: Duration, msg: ConsensusCommand) -> Result<()> {
+        let command_sender = Pick::<broadcast::Sender<ConsensusCommand>>::get(&self.bus).clone();
+
+        tokio::spawn(async move {
+            loop {
+                sleep(interval).await;
+
+                _ = command_sender
+                    .send(msg.clone())
+                    .log_error("Cannot send message over channel");
+            }
+        });
+
+        Ok(())
+    }
+
+    // a routine that regularly checks whether it's time to trigger
+    // a consensus timeout based on current timestamp
+    pub fn start_timeout_checker(&mut self, config: SharedConf) -> Result<()> {
+        self.send_command_every(Duration::from_secs(2), ConsensusCommand::TimeoutTick)
     }
 
     pub fn start_master(&mut self, config: SharedConf) -> Result<()> {

@@ -49,6 +49,7 @@ impl Module for Consensus {
 
     fn run(&mut self) -> impl futures::Future<Output = Result<()>> + Send {
         _ = self.start_master(self.config.clone());
+        _ = self.start_timeout_checker(self.config.clone());
         self.start()
     }
 }
