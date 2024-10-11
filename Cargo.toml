@@ -47,7 +47,6 @@ sqlx = { version = "0.8.2", features = [
 ] }
 chrono = { version = "0.4", features = ["serde"] }
 axum-test = "16.2.0"
-dotenv = "0.15.0"
 syn = "2.0.79"
 quote = "1.0.37"
 
@@ -75,7 +74,6 @@ tempdir = "0.3.7"
 
 [features]
 dhat = ["dep:dhat"]
-use_query_as_macro = []
 
 [profile.release]
 lto = "thin"

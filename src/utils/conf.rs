@@ -1,6 +1,5 @@
 use anyhow::Result;
 use config::{Config, ConfigError, Environment, File};
-use dotenv::dotenv;
 use serde::{Deserialize, Serialize};
 use std::{path::PathBuf, sync::Arc};
 
@@ -46,8 +45,6 @@ impl Conf {
         data_directory: Option<String>,
         run_indexer: Option<bool>,
     ) -> Result<Self, ConfigError> {
-        dotenv().ok(); // Read the .env file and set the environment variables
-
         let s = Config::builder()
             .set_default("run_indexer", true)?
             // Priority order: config file, then environment variables, then CLI

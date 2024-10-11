@@ -1,4 +1,4 @@
-use crate::{indexer::model::BlockDb, query_as_with_feature};
+use crate::indexer::model::BlockDb;
 
 use super::{
     model::{BlobDb, ContractDb, ContractStateDb, TransactionDb},
@@ -14,7 +14,7 @@ use axum::{
 pub async fn get_blocks(
     State(state): State<IndexerState>,
 ) -> Result<Json<Vec<BlockDb>>, StatusCode> {
-    let blocks = query_as_with_feature!(BlockDb, "SELECT * FROM blocks")
+    let blocks = sqlx::query_as::<_, BlockDb>("SELECT * FROM blocks")
         .fetch_all(&state)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
@@ -28,11 +28,10 @@ pub async fn get_blocks(
 pub async fn get_last_block(
     State(state): State<IndexerState>,
 ) -> Result<Json<BlockDb>, StatusCode> {
-    let block =
-        query_as_with_feature!(BlockDb, "SELECT * FROM blocks ORDER BY height DESC LIMIT 1")
-            .fetch_optional(&state)
-            .await
-            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let block = sqlx::query_as::<_, BlockDb>("SELECT * FROM blocks ORDER BY height DESC LIMIT 1")
+        .fetch_optional(&state)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     match block {
         Some(block) => Ok(Json(block)),
@@ -44,7 +43,8 @@ pub async fn get_block(
     Path(height): Path<i64>,
     State(state): State<IndexerState>,
 ) -> Result<Json<BlockDb>, StatusCode> {
-    let block = query_as_with_feature!(BlockDb, "SELECT * FROM blocks WHERE height = $1", height)
+    let block = sqlx::query_as::<_, BlockDb>("SELECT * FROM blocks WHERE height = $1")
+        .bind(height)
         .fetch_optional(&state)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
@@ -59,8 +59,8 @@ pub async fn get_block_by_hash(
     Path(hash): Path<String>,
     State(state): State<IndexerState>,
 ) -> Result<Json<BlockDb>, StatusCode> {
-    let hash_bytes = hash.as_bytes();
-    let block = query_as_with_feature!(BlockDb, "SELECT * FROM blocks WHERE hash = $1", hash_bytes)
+    let block = sqlx::query_as::<_, BlockDb>("SELECT * FROM blocks WHERE hash = $1")
+        .bind(hash.as_bytes())
         .fetch_optional(&state)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
@@ -75,7 +75,7 @@ pub async fn get_block_by_hash(
 pub async fn get_transactions(
     State(state): State<IndexerState>,
 ) -> Result<Json<Vec<TransactionDb>>, StatusCode> {
-    let transactions = query_as_with_feature!(TransactionDb, "SELECT * FROM transactions")
+    let transactions = sqlx::query_as::<_, TransactionDb>("SELECT * FROM transactions")
         .fetch_all(&state)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
@@ -89,16 +89,15 @@ pub async fn get_transactions_with_contract_name(
     Path(contract_name): Path<String>,
     State(state): State<IndexerState>,
 ) -> Result<Json<Vec<TransactionDb>>, StatusCode> {
-    let transactions = query_as_with_feature!(
-        TransactionDb,
+    let transactions = sqlx::query_as::<_, TransactionDb>(
         r#"
         SELECT t.*
         FROM transactions t
         JOIN blobs b ON t.tx_hash = b.tx_hash
         WHERE b.contract_name = $1
         "#,
-        contract_name
     )
+    .bind(contract_name)
     .fetch_all(&state)
     .await
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
@@ -113,16 +112,15 @@ pub async fn get_transactions_by_height(
     Path(height): Path<i64>,
     State(state): State<IndexerState>,
 ) -> Result<Json<TransactionDb>, StatusCode> {
-    let transaction = query_as_with_feature!(
-        TransactionDb,
+    let transaction = sqlx::query_as::<_, TransactionDb>(
         r#"
         SELECT t.*
         FROM transactions t
         JOIN blocks b ON t.block_hash = b.hash
         WHERE b.height = $1
         "#,
-        height
     )
+    .bind(height)
     .fetch_optional(&state)
     .await
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
@@ -138,15 +136,14 @@ pub async fn get_transaction_with_hash(
     State(state): State<IndexerState>,
 ) -> Result<Json<TransactionDb>, StatusCode> {
     let tx_hash_bytes = tx_hash.as_bytes();
-    let transaction = query_as_with_feature!(
-        TransactionDb,
+    let transaction = sqlx::query_as::<_, TransactionDb>(
         r#"
         SELECT *
         FROM transactions
         WHERE tx_hash = $1
         "#,
-        tx_hash_bytes
     )
+    .bind(tx_hash_bytes)
     .fetch_optional(&state)
     .await
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
@@ -163,16 +160,15 @@ pub async fn get_settled_blobs_by_contract_name(
     State(state): State<IndexerState>,
 ) -> Result<Json<Vec<BlobDb>>, StatusCode> {
     // TODO: Order transactions ?
-    let blobs = query_as_with_feature!(
-        BlobDb,
+    let blobs = sqlx::query_as::<_, BlobDb>(
         r#"
         SELECT b.*
         FROM blobs b
         JOIN transactions t ON b.tx_hash = t.tx_hash
         WHERE b.contract_name = $1 AND t.transaction_status = 'success'
         "#,
-        contract_name
     )
+    .bind(contract_name)
     .fetch_all(&state)
     .await
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
@@ -188,16 +184,15 @@ pub async fn get_unsettled_blobs_by_contract_name(
     State(state): State<IndexerState>,
 ) -> Result<Json<Vec<BlobDb>>, StatusCode> {
     // TODO: Order transaction ?
-    let blobs = query_as_with_feature!(
-        BlobDb,
+    let blobs = sqlx::query_as::<_, BlobDb>(
         r#"
         SELECT b.*
         FROM blobs b
         JOIN transactions t ON b.tx_hash = t.tx_hash
         WHERE b.contract_name = $1 AND t.transaction_status = 'sequenced'
         "#,
-        contract_name
     )
+    .bind(contract_name)
     .fetch_all(&state)
     .await
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
@@ -213,14 +208,11 @@ pub async fn get_blobs_by_tx_hash(
 ) -> Result<Json<Vec<BlobDb>>, StatusCode> {
     let tx_hash_bytes = tx_hash.as_bytes();
     // TODO: Order transaction ?
-    let blobs = query_as_with_feature!(
-        BlobDb,
-        "SELECT * FROM blobs WHERE tx_hash = $1",
-        tx_hash_bytes
-    )
-    .fetch_all(&state)
-    .await
-    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let blobs = sqlx::query_as::<_, BlobDb>("SELECT * FROM blobs WHERE tx_hash = $1")
+        .bind(tx_hash_bytes)
+        .fetch_all(&state)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     match blobs.len() {
         0 => Err(StatusCode::NOT_FOUND),
@@ -233,15 +225,13 @@ pub async fn get_blob(
     State(state): State<IndexerState>,
 ) -> Result<Json<BlobDb>, StatusCode> {
     let tx_hash_bytes = tx_hash.as_bytes();
-    let blob = query_as_with_feature!(
-        BlobDb,
-        "SELECT * FROM blobs WHERE tx_hash = $1 AND blob_index = $2",
-        tx_hash_bytes,
-        blob_index
-    )
-    .fetch_optional(&state)
-    .await
-    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let blob =
+        sqlx::query_as::<_, BlobDb>("SELECT * FROM blobs WHERE tx_hash = $1 AND blob_index = $2")
+            .bind(tx_hash_bytes)
+            .bind(blob_index)
+            .fetch_optional(&state)
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     match blob {
         Some(blob) => Ok(Json(blob)),
@@ -251,54 +241,50 @@ pub async fn get_blob(
 
 // Proofs
 // pub async fn get_last_proof(State(state): State<IndexerState>) -> Result<Json<Proof>, StatusCode> {
-//     let proof = query_as_with_feature!(Proof, "SELECT * FROM proofs ORDER BY id DESC LIMIT 1")
+//     let proof = sqlx::query_as::<_, Proof>("SELECT * FROM proofs ORDER BY id DESC LIMIT 1")
 //         .fetch_optional(&state)
 //         .await
 //         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-//      match proof {
-//          Some(proof) => Ok(Json(proof)),
-//          None => Err(StatusCode::NOT_FOUND),
-//      }
+//     match proof {
+//         Some(proof) => Ok(Json(proof)),
+//         None => Err(StatusCode::NOT_FOUND),
+//     }
 // }
 
 // pub async fn get_proof(
 //     Path((block_height, tx_index)): Path<(i64, i32)>,
 //     State(state): State<IndexerState>,
 // ) -> Result<Json<Proof>, StatusCode> {
-//     let proof = query_as_with_feature!(
-//         Proof,
-//         "SELECT * FROM proofs WHERE block_height = $1 AND tx_index = $2",
-//         block_height,
+//     let proof = sqlx::query_as::<_, Proof>(
+//         "SELECT * FROM proofs WHERE block_height = $1 AND tx_index = $2".bind(
+//         block_height).bind(
 //         tx_index
 //     )
 //     .fetch_optional(&state)
 //     .await
 //     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-//      match proof {
-//          Some(proof) => Ok(Json(proof)),
-//          None => Err(StatusCode::NOT_FOUND),
-//      }
+//     match proof {
+//         Some(proof) => Ok(Json(proof)),
+//         None => Err(StatusCode::NOT_FOUND),
+//     }
 // }
 
 // pub async fn get_proof_with_hash(
 //     Path(tx_hash): Path<String>,
 //     State(state): State<IndexerState>,
 // ) -> Result<Json<Proof>, StatusCode> {
-//     let proof = query_as_with_feature!(
-//         Proof,
-//         "SELECT * FROM proofs WHERE tx_hash = $1",
-//         tx_hash.as_bytes()
-//     )
-//     .fetch_optional(&state)
-//     .await
-//     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+//     let proof = sqlx::query_as::<_, Proof>(Proof, "SELECT * FROM proofs WHERE tx_hash = $1")
+//         .bind(tx_hash.as_bytes())
+//         .fetch_optional(&state)
+//         .await
+//         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-//      match proof {
-//          Some(proof) => Ok(Json(proof)),
-//          None => Err(StatusCode::NOT_FOUND),
-//      }
+//     match proof {
+//         Some(proof) => Ok(Json(proof)),
+//         None => Err(StatusCode::NOT_FOUND),
+//     }
 // }
 
 // Contracts
@@ -306,14 +292,12 @@ pub async fn get_contract(
     Path(contract_name): Path<String>,
     State(state): State<IndexerState>,
 ) -> Result<Json<ContractDb>, StatusCode> {
-    let contract = query_as_with_feature!(
-        ContractDb,
-        "SELECT * FROM contracts WHERE contract_name = $1",
-        contract_name
-    )
-    .fetch_optional(&state)
-    .await
-    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let contract =
+        sqlx::query_as::<_, ContractDb>("SELECT * FROM contracts WHERE contract_name = $1")
+            .bind(contract_name)
+            .fetch_optional(&state)
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     match contract {
         Some(contract) => Ok(Json(contract)),
@@ -325,16 +309,15 @@ pub async fn get_contract_state_by_height(
     Path((contract_name, height)): Path<(String, i64)>,
     State(state): State<IndexerState>,
 ) -> Result<Json<ContractStateDb>, StatusCode> {
-    let contract = query_as_with_feature!(
-        ContractStateDb,
+    let contract = sqlx::query_as::<_, ContractStateDb>(
         r#"
         SELECT cs.*
         FROM contract_state cs
         JOIN blocks b ON cs.block_hash = b.hash
         WHERE contract_name = $1 AND height = $2"#,
-        contract_name,
-        height
     )
+    .bind(contract_name)
+    .bind(height)
     .fetch_optional(&state)
     .await
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;

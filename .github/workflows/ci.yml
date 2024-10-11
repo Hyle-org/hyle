@@ -34,10 +34,5 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      - run: cargo install sqlx-cli
-      # Run DB migrations
-      - run: sqlx migrate run --database-url "postgres://postgres:password@localhost:5432/postgres" --source ./src/indexer/migrations
-      # Gather and check that all the queries are correctly built
-      - run: cargo sqlx prepare --database-url "postgres://postgres:password@localhost:5432/postgres" -- --features use_query_as_macro
-      - run: cargo build --verbose --features "use_query_as_macro"
-      - run: cargo test --verbose
+      - run: cargo build --verbose
+      - run: DATABASE_URL="postgres://postgres:password@localhost:5432/postgres" cargo test --verbose
