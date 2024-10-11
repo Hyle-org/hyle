@@ -5,6 +5,7 @@ use clap::Parser;
 use hyle::{
     bus::{metrics::BusMetrics, SharedMessageBus},
     consensus::Consensus,
+    data_availability::DataAvailability,
     indexer::Indexer,
     mempool::Mempool,
     model::{CommonRunContext, NodeRunContext, SharedRunContext},
@@ -13,7 +14,7 @@ use hyle::{
     rest::{RestApi, RestApiRunContext},
     tools::mock_workflow::MockWorkflowHandler,
     utils::{
-        conf::{self},
+        conf,
         crypto::BlstCrypto,
         modules::{Module, ModulesHandler},
     },
@@ -123,6 +124,9 @@ async fn main() -> Result<()> {
         let indexer = Indexer::build(ctx.common.clone()).await?;
         handler.add_module(indexer)?;
     }
+    handler
+        .build_module::<DataAvailability>(ctx.clone())
+        .await?;
 
     // Should come last so the other modules have nested their own routes.
     let router = ctx

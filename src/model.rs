@@ -9,6 +9,7 @@ use serde::{
 };
 use sha3::{Digest, Sha3_256};
 use std::{
+    cmp::Ordering,
     fmt,
     io::Write,
     ops::{Add, Deref},
@@ -281,13 +282,40 @@ pub trait Hashable<T> {
     fn hash(&self) -> T;
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, PartialEq, Eq, Hash, Display)]
+#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, Display)]
 #[display("")]
 pub struct Block {
     pub parent_hash: BlockHash,
     pub height: BlockHeight,
     pub timestamp: u64,
     pub txs: Vec<Transaction>,
+}
+
+impl Ord for Block {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.height.0.cmp(&other.height.0)
+    }
+}
+
+impl PartialOrd for Block {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl PartialEq for Block {
+    fn eq(&self, other: &Self) -> bool {
+        self.hash() == other.hash()
+    }
+}
+
+impl Eq for Block {}
+
+impl std::hash::Hash for Block {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        let h: BlockHash = Hashable::hash(self);
+        h.hash(state);
+    }
 }
 
 impl Hashable<BlockHash> for Block {

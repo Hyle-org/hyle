@@ -1,13 +1,22 @@
-use crate::model::{Block, BlockHeight};
+use crate::model::{Block, BlockHash, BlockHeight, Hashable};
 use crate::utils::db::{Db, Iter, KeyMaker};
-use anyhow::{Context, Result};
+use anyhow::Result;
 use tracing::{debug, info};
 
-#[derive(Debug, Default)]
-pub struct BlocksKey(pub BlockHeight);
+pub struct BlocksKey(pub BlockHash);
+pub struct BlocksOrdKey(pub BlockHeight);
+
+/// BlocksKey contains a `BlockHash`
+impl KeyMaker for BlocksKey {
+    fn make_key<'a>(&self, writer: &'a mut String) -> &'a str {
+        use std::fmt::Write;
+        _ = write!(writer, "{}", hex::encode(&self.0.inner));
+        writer.as_str()
+    }
+}
 
 /// BlocksKey contains a `BlockHeight`
-impl KeyMaker for BlocksKey {
+impl KeyMaker for BlocksOrdKey {
     fn make_key<'a>(&self, writer: &'a mut String) -> &'a str {
         use std::fmt::Write;
         _ = write!(writer, "{:08x}", self.0 .0);
@@ -23,20 +32,19 @@ pub struct Blocks {
 
 impl Blocks {
     pub fn new(db: &sled::Db) -> Result<Self> {
-        let db = Db::new(db, "blocks_ord", None)?;
-        let mut blocks = Self {
+        let db = Db::new(db, "blocks_ord", Some("blocks_alt"))?;
+        let blocks = Self {
             last: db.ord_last()?,
             db,
         };
 
-        if blocks.last.is_none() {
-            blocks
-                .put(Block::default())
-                .context("writing genesis block")?;
-        }
-
         debug!("{} block(s) available", blocks.db.len());
-        info!("last block is {}", blocks.last.as_ref().unwrap().height);
+        if let Some(last) = blocks.last() {
+            info!(
+                block_hash = %last.hash(),
+                block_height = %last.height,
+                "last block is {:?}", last);
+        }
 
         Ok(blocks)
     }
@@ -46,19 +54,23 @@ impl Blocks {
     }
 
     pub fn put(&mut self, data: Block) -> Result<()> {
-        info!("storing block {}", data.height);
+        info!("📦 storing block {}", data.height);
         self.db
-            .put(BlocksKey(data.height), BlocksKey::default(), &data)?;
+            .put(BlocksOrdKey(data.height), BlocksKey(data.hash()), &data)?;
         self.last.replace(data);
         Ok(())
     }
 
-    pub fn get(&mut self, block_height: BlockHeight) -> Result<Option<Block>> {
-        self.db.ord_get(BlocksKey(block_height))
+    pub fn get(&mut self, block_hash: BlockHash) -> Result<Option<Block>> {
+        self.db.alt_get(BlocksKey(block_hash))
     }
 
-    pub fn last(&self) -> &Block {
-        self.last.as_ref().unwrap()
+    pub fn last(&self) -> Option<&Block> {
+        self.last.as_ref()
+    }
+
+    pub fn last_block_hash(&self) -> Option<BlockHash> {
+        self.last.as_ref().map(|b| b.hash())
     }
 
     pub fn range(&mut self, min: BlocksKey, max: BlocksKey) -> Iter<Block> {

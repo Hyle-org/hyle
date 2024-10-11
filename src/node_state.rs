@@ -2,7 +2,8 @@
 
 use crate::{
     bus::{bus_client, command_response::Query, SharedMessageBus},
-    consensus::{staking::Staker, ConsensusCommand, ConsensusEvent},
+    consensus::{staking::Staker, ConsensusCommand},
+    data_availability::DataEvent,
     handle_messages,
     model::{
         BlobTransaction, BlobsHash, Block, BlockHeight, ContractName, Hashable, ProofTransaction,
@@ -29,7 +30,7 @@ bus_client! {
 struct NodeStateBusClient {
     sender(ConsensusCommand),
     receiver(Query<ContractName, Contract>),
-    receiver(ConsensusEvent),
+    receiver(DataEvent),
 }
 }
 
@@ -92,16 +93,16 @@ impl NodeState {
             command_response<ContractName, Contract> cmd => {
                 self.contracts.get(cmd).cloned().context("Contract not found")
             }
-            listen<ConsensusEvent> event => {
-                _ = self.handle_event(event)
-                    .log_error("NodeState: Error while handling consensus event");
+            listen<DataEvent> event => {
+                _ = self.handle_data_event(event)
+                    .log_error("NodeState: Error while handling data event");
             }
         }
     }
 
-    fn handle_event(&mut self, event: ConsensusEvent) -> anyhow::Result<()> {
+    fn handle_data_event(&mut self, event: DataEvent) -> anyhow::Result<()> {
         match event {
-            ConsensusEvent::CommitBlock { block } => {
+            DataEvent::NewBlock(block) => {
                 info!("New block to handle: {:}", block.hash());
                 self.handle_new_block(block).context("handle new block")?;
             }
