@@ -43,7 +43,9 @@ sqlx = { version = "0.8.2", features = [
     "runtime-tokio",
     "postgres",
     "migrate",
+    "chrono",
 ] }
+chrono = { version = "0.4", features = ["serde"] }
 axum-test = "16.2.0"
 dotenv = "0.15.0"
 syn = "2.0.79"

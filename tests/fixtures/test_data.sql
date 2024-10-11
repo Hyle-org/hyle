@@ -3,8 +3,8 @@
 -- Inserting test data for the blocks table
 INSERT INTO blocks (hash, parent_hash, height, timestamp)
 VALUES
-    (convert_to('block1aaaaaaaaaaaaaaaaaaaaaaaaaa', 'UTF-8'), convert_to('block0', 'UTF-8'), 1, 1632938400),  -- Block 1
-    (convert_to('block2aaaaaaaaaaaaaaaaaaaaaaaaaa', 'UTF-8'), convert_to('block1', 'UTF-8'), 2, 1632938460);  -- Block 2
+    (convert_to('block1aaaaaaaaaaaaaaaaaaaaaaaaaa', 'UTF-8'), convert_to('block0', 'UTF-8'), 1, to_timestamp(1632938400)),  -- Block 1
+    (convert_to('block2aaaaaaaaaaaaaaaaaaaaaaaaaa', 'UTF-8'), convert_to('block1', 'UTF-8'), 2, to_timestamp(1632938460));  -- Block 2
 
 -- Inserting test data for the transactions table
 INSERT INTO transactions (tx_hash, block_hash, tx_index, version, transaction_type, transaction_status)

@@ -1,12 +1,13 @@
 use serde::{Deserialize, Serialize};
+use sqlx::types::chrono::NaiveDateTime;
 
 #[derive(Debug, sqlx::FromRow, Serialize, Deserialize)]
 pub struct BlockDb {
     // Struct for the blocks table
-    pub hash: Vec<u8>,        // Corresponds to BlockHash
-    pub parent_hash: Vec<u8>, // Parent block hash
-    pub height: i64,          // Corresponds to BlockHeight
-    pub timestamp: i64,       // UNIX timestamp
+    pub hash: Vec<u8>,            // Corresponds to BlockHash
+    pub parent_hash: Vec<u8>,     // Parent block hash
+    pub height: i64,              // Corresponds to BlockHeight
+    pub timestamp: NaiveDateTime, // UNIX timestamp
 }
 
 #[derive(Debug, sqlx::Type, Serialize, Deserialize)]

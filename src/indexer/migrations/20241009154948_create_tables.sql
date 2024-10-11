@@ -3,7 +3,7 @@ CREATE TABLE blocks (
     hash BYTEA PRIMARY KEY,         -- Corresponds to BlockHash (inner Vec<u8>)
     parent_hash BYTEA NOT NULL,     -- Parent block hash (BlockHash)
     height BIGINT NOT NULL,         -- Corresponds to BlockHeight (u64)
-    timestamp BIGINT NOT NULL,      -- UNIX timestamp (u64)
+    timestamp TIMESTAMP NOT NULL,   -- UNIX timestamp (u64)
     UNIQUE (height),                -- Ensure each block height is unique
     CHECK (octet_length(hash) = 32) -- Ensure the hash is exactly 32 bytes
 );
