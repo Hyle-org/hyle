@@ -10,31 +10,15 @@ pub struct BlockDb {
     pub timestamp: NaiveDateTime, // UNIX timestamp
 }
 
-#[derive(Debug, sqlx::Type, Serialize, Deserialize)]
-#[sqlx(type_name = "transaction_type")]
-pub enum TransactionType {
-    BlobTransaction,
-    ProofTransaction,
-    RegisterContractTransaction,
-}
-
-#[derive(Debug, sqlx::Type, Serialize, Deserialize)]
-#[sqlx(type_name = "transaction_status")]
-pub enum TransactionStatus {
-    Success,
-    Failure,
-    Sequenced,
-}
-
 #[derive(Debug, sqlx::FromRow, Serialize, Deserialize)]
 pub struct TransactionDb {
     // Struct for the transactions table
-    pub tx_hash: Vec<u8>,                      // Transaction hash
-    pub block_hash: Vec<u8>,                   // Corresponds to the block hash
-    pub tx_index: i32,                         // Index of the transaction in the block
-    pub version: i32,                          // Transaction version
-    pub transaction_type: TransactionType,     // Type of transaction
-    pub transaction_status: TransactionStatus, // Status of the transaction
+    pub tx_hash: Vec<u8>,           // Transaction hash
+    pub block_hash: Vec<u8>,        // Corresponds to the block hash
+    pub tx_index: i32,              // Index of the transaction in the block
+    pub version: i32,               // Transaction version
+    pub transaction_type: String,   // Type of transaction
+    pub transaction_status: String, // Status of the transaction
 }
 
 #[derive(Debug, sqlx::FromRow, Serialize, Deserialize)]
@@ -79,7 +63,7 @@ pub struct ContractDb {
 #[derive(Debug, sqlx::FromRow, Serialize, Deserialize)]
 pub struct ContractStateDb {
     // Struct for the contract_state table
-    pub contract_name: String,    // Name of the contract
-    pub block_hash: Vec<u8>,      // Hash of the block where the state is captured
-    pub state: serde_json::Value, // The contract state stored in JSON format
+    pub contract_name: String, // Name of the contract
+    pub block_hash: Vec<u8>,   // Hash of the block where the state is captured
+    pub state_digest: Vec<u8>, // The contract state stored in JSON format
 }

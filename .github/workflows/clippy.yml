@@ -24,5 +24,3 @@ jobs:
       - uses: LoliGothick/clippy-check@master
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-      - run: cargo install sqlx-cli
-      - run: cargo sqlx prepare --check

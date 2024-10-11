@@ -5,6 +5,60 @@ use sled::Transactional;
 use std::{fmt::Write, marker::PhantomData};
 use tracing::debug;
 
+#[macro_export]
+macro_rules! query_as_with_feature {
+    ($type:ty, $query:expr) => {{
+        #[cfg(feature = "use_query_as_macro")]
+        {
+            sqlx::query_as!($type, $query)
+        }
+
+        #[cfg(not(feature = "use_query_as_macro"))]
+        {
+            sqlx::query_as::<_, $type>($query)
+        }
+    }};
+
+    ($type:ty, $query:expr, $($args:expr),+) => {{
+        #[cfg(feature = "use_query_as_macro")]
+        {
+            sqlx::query_as!($type, $query, $($args),*)
+        }
+
+        #[cfg(not(feature = "use_query_as_macro"))]
+        {
+            let mut sqlx_query = sqlx::query_as::<_, $type>($query);
+            $(sqlx_query = sqlx_query.bind($args);)*
+            sqlx_query
+        }
+    }};
+
+    ($query:expr) => {{
+        #[cfg(feature = "use_query_as_macro")]
+        {
+            sqlx::query!($query)
+        }
+
+        #[cfg(not(feature = "use_query_as_macro"))]
+        {
+            sqlx::query($query)
+        }
+    }};
+
+    ($query:expr, $($args:expr),+) => {{
+        #[cfg(feature = "use_query_as_macro")]
+        {
+            sqlx::query!($query, $($args),*)
+        }
+        #[cfg(not(feature = "use_query_as_macro"))]
+        {
+            let mut query = sqlx::query($query);
+            $(query = query.bind($args);)*
+            query
+        }
+    }};
+}
+
 /// Tiny wrapper around sled's iterator item.
 pub struct Item<T: DeserializeOwned>(sled::IVec, sled::IVec, PhantomData<T>);
 

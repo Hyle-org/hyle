@@ -9,10 +9,10 @@ VALUES
 -- Inserting test data for the transactions table
 INSERT INTO transactions (tx_hash, block_hash, tx_index, version, transaction_type, transaction_status)
 VALUES
-    (convert_to('test_tx_hash_1aaaaaaaaaaaaaaaaaa', 'UTF-8'), convert_to('block2aaaaaaaaaaaaaaaaaaaaaaaaaa', 'UTF-8'), 0, 1, 'RegisterContractTransaction', 'Success'),  -- Transaction 1 (contract_registration)
-    (convert_to('test_tx_hash_2aaaaaaaaaaaaaaaaaa', 'UTF-8'), convert_to('block2aaaaaaaaaaaaaaaaaaaaaaaaaa', 'UTF-8'), 1, 1, 'BlobTransaction', 'Success'),              -- Transaction 2 (blob)
-    (convert_to('test_tx_hash_3aaaaaaaaaaaaaaaaaa', 'UTF-8'), convert_to('block2aaaaaaaaaaaaaaaaaaaaaaaaaa', 'UTF-8'), 2, 1, 'ProofTransaction', 'Success'),             -- Transaction 3 (proof)
-    (convert_to('test_tx_hash_4aaaaaaaaaaaaaaaaaa', 'UTF-8'), convert_to('block2aaaaaaaaaaaaaaaaaaaaaaaaaa', 'UTF-8'), 3, 1, 'BlobTransaction', 'Sequenced');            -- Transaction 4 (blob)
+    (convert_to('test_tx_hash_1aaaaaaaaaaaaaaaaaa', 'UTF-8'), convert_to('block2aaaaaaaaaaaaaaaaaaaaaaaaaa', 'UTF-8'), 0, 1, 'register_contract_transaction', 'success'),  -- Transaction 1 (contract_registration)
+    (convert_to('test_tx_hash_2aaaaaaaaaaaaaaaaaa', 'UTF-8'), convert_to('block2aaaaaaaaaaaaaaaaaaaaaaaaaa', 'UTF-8'), 1, 1, 'blob_transaction', 'success'),               -- Transaction 2 (blob)
+    (convert_to('test_tx_hash_3aaaaaaaaaaaaaaaaaa', 'UTF-8'), convert_to('block2aaaaaaaaaaaaaaaaaaaaaaaaaa', 'UTF-8'), 2, 1, 'proof_transaction', 'success'),              -- Transaction 3 (proof)
+    (convert_to('test_tx_hash_4aaaaaaaaaaaaaaaaaa', 'UTF-8'), convert_to('block2aaaaaaaaaaaaaaaaaaaaaaaaaa', 'UTF-8'), 3, 1, 'blob_transaction', 'sequenced');             -- Transaction 4 (blob)
 
 -- Inserting test data for the blob_transactions table
 INSERT INTO blobs (tx_hash, blob_index, identity, contract_name, data)
@@ -36,7 +36,7 @@ VALUES
     (convert_to('test_tx_hash_1aaaaaaaaaaaaaaaaaa', 'UTF-8'), 'owner_1', 'verifier_1', convert_to('program_id_1', 'UTF-8'), convert_to('state_digest_1', 'UTF-8'), 'contract_1');  -- Contract 1
 
 -- Inserting test data for the contract_state table
-INSERT INTO contract_state (contract_name, block_hash, state)
+INSERT INTO contract_state (contract_name, block_hash, state_digest)
 VALUES
-    ('contract_1', convert_to('block1aaaaaaaaaaaaaaaaaaaaaaaaaa', 'UTF-8'), convert_to('state_digest_1', 'UTF-8')),  -- State for Contract 1
+    ('contract_1', convert_to('block1aaaaaaaaaaaaaaaaaaaaaaaaaa', 'UTF-8'), convert_to('state_digest_1', 'UTF-8')),     -- State for Contract 1
     ('contract_1', convert_to('block2aaaaaaaaaaaaaaaaaaaaaaaaaa', 'UTF-8'), convert_to('state_digest_1Bis', 'UTF-8'));  -- State for Contract 2

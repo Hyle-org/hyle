@@ -75,6 +75,7 @@ tempdir = "0.3.7"
 
 [features]
 dhat = ["dep:dhat"]
+use_query_as_macro = []
 
 [profile.release]
 lto = "thin"
