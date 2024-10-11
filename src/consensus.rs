@@ -655,6 +655,23 @@ impl Consensus {
             }
         };
 
+        if proposal.slot < self.bft_round_state.slot {
+            bail!(
+                "Quorum for a passed slot {} while we are in slot {}",
+                proposal.slot,
+                self.bft_round_state.slot
+            );
+        }
+        if proposal.slot == self.bft_round_state.slot && proposal.view < self.bft_round_state.view {
+            bail!(
+                "Quorum for a passed view {}:{} while we are in slot {}:{}",
+                proposal.slot,
+                proposal.view,
+                self.bft_round_state.slot,
+                self.bft_round_state.view
+            );
+        }
+
         // Verify that validators that signed are legit
         if !Self::verify_quorum_signers_part_of_consensus(prepare_quorum_certificate, &proposal) {
             bail!(
