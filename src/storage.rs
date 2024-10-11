@@ -427,7 +427,7 @@ impl Display for Car {
             f,
             "[{}/{:?}/{}v]",
             self.id,
-            self.txs.first().unwrap(),
+            self.txs.first(),
             self.votes.len()
         )
     }
@@ -507,7 +507,7 @@ impl Display for DataProposal {
             "{{ {:?} <- [{}/{:?}] }}",
             self.parent,
             self.pos,
-            self.inner.first().unwrap()
+            self.inner.first()
         )
     }
 }

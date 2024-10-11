@@ -52,33 +52,30 @@ async fn register_contracts(client: &ApiHttpClient) -> Result<()> {
 }
 
 async fn send_blobs_and_proofs(client: &ApiHttpClient) -> Result<()> {
-    let blob_response = client
-        .send_tx_blob(&BlobTransaction {
-            identity: Identity("client".to_string()),
-            blobs: vec![Blob {
-                contract_name: ContractName("erc20-risc0".to_string()),
-                data: BlobData(vec![1, 3, 109, 97, 120, 27]),
-            }],
-        })
-        .await?;
+    let blob_tx = BlobTransaction {
+        identity: Identity("client".to_string()),
+        blobs: vec![Blob {
+            contract_name: ContractName("erc20-risc0".to_string()),
+            data: BlobData(vec![1, 3, 109, 97, 120, 27]),
+        }],
+    };
+    let blob_response = client.send_tx_blob(&blob_tx).await?;
 
     assert!(blob_response.status().is_success());
 
     let blob_tx_hash = blob_response.json::<TxHash>().await?;
 
     let proof = load_encoded_receipt_from_file("./tests/proofs/erc20.risc0.proof");
-    assert!(client
-        .send_tx_proof(&ProofTransaction {
-            blobs_references: vec![BlobReference {
-                contract_name: ContractName("erc20-risc0".to_string()),
-                blob_tx_hash: blob_tx_hash.clone(),
-                blob_index: hyle::model::BlobIndex(0)
-            },],
-            proof
-        })
-        .await?
-        .status()
-        .is_success());
+    let proof_tx = ProofTransaction {
+        blobs_references: vec![BlobReference {
+            contract_name: ContractName("erc20-risc0".to_string()),
+            blob_tx_hash: blob_tx_hash.clone(),
+            blob_index: hyle::model::BlobIndex(0),
+        }],
+        proof,
+    };
+
+    assert!(client.send_tx_proof(&proof_tx).await?.status().is_success());
 
     Ok(())
 }

@@ -131,6 +131,9 @@ impl Mempool {
             listen<ConsensusEvent> cmd => {
                 self.handle_event(cmd);
             }
+            _ = tokio::time::sleep(tokio::time::Duration::from_millis(100)) => {
+                    self.check_data_proposal().await
+            }
         }
     }
 
@@ -280,15 +283,12 @@ impl Mempool {
         Ok(())
     }
 
-    async fn on_new_tx(&mut self, tx: Transaction) {
-        debug!("Got new tx {}", tx.hash());
-        self.metrics.add_api_tx("blob".to_string());
-
+    async fn check_data_proposal(&mut self) {
         match self.storage.tip_data() {
             Some((tip, txs)) => {
-                self.storage.accumulate_tx(tx.clone());
                 let nb_validators = self.validators.len();
                 if tip.votes.len() > nb_validators / 3 {
+                    info!("");
                     let requests = self.storage.flush_pending_txs();
                     // Create tx chunk and broadcast it
                     let tip_id = self.storage.add_data_to_local_lane(requests.clone());
@@ -304,8 +304,6 @@ impl Mempool {
                         error!("{:?}", e);
                     }
 
-                    // FIXME: push to consensus
-                    // LatestBatch => validator_id + extra infos (tip_parent, tip_pos) ?
                     if let Err(e) = self
                         .bus
                         .send(MempoolEvent::LatestBatch(Batch {
@@ -342,10 +340,11 @@ impl Mempool {
             }
             None => {
                 // Genesis create a mono tx chunk and broadcast it
-                let tip_id = self.storage.add_data_to_local_lane(vec![tx.clone()]);
+                let pending_txs = self.storage.flush_pending_txs();
+                let tip_id = self.storage.add_data_to_local_lane(pending_txs.clone());
 
                 let data_proposal = DataProposal {
-                    inner: vec![tx],
+                    inner: pending_txs,
                     pos: tip_id,
                     parent: None,
                     parent_poa: None,
@@ -356,6 +355,12 @@ impl Mempool {
                 }
             }
         }
+    }
+
+    async fn on_new_tx(&mut self, tx: Transaction) {
+        debug!("Got new tx {}", tx.hash());
+        self.metrics.add_api_tx("blob".to_string());
+        self.storage.accumulate_tx(tx.clone());
     }
 
     async fn broadcast_tx(&mut self, tx: Transaction) -> Result<()> {

@@ -460,7 +460,6 @@ mod tests {
             let k1 = format!("test{}", i + 1);
             let alt_key = TestKeyAlt(k1.as_str(), i % 5 + 1);
             key.clear();
-            println!("XXXX {}", alt_key.make_key(&mut key));
             let alt = tree.alt_get::<TestDataType>(alt_key)?;
             assert!(alt.is_some());
             let alt = alt.unwrap();
