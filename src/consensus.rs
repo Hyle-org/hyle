@@ -1336,6 +1336,7 @@ mod test {
     struct TestCtx {
         out_receiver: Receiver<OutboundMessage>,
         _event_receiver: Receiver<ConsensusEvent>,
+        _p2p_receiver: Receiver<P2PCommand>,
         consensus: Consensus,
         name: String,
     }
@@ -1345,6 +1346,7 @@ mod test {
             let shared_bus = SharedMessageBus::new(BusMetrics::global("global".to_string()));
             let out_receiver = get_receiver::<OutboundMessage>(&shared_bus).await;
             let event_receiver = get_receiver::<ConsensusEvent>(&shared_bus).await;
+            let p2p_receiver = get_receiver::<P2PCommand>(&shared_bus).await;
             let bus = ConsensusBusClient::new_from_bus(shared_bus.new_handle()).await;
 
             let store = ConsensusStore::default();
@@ -1362,6 +1364,7 @@ mod test {
             Self {
                 out_receiver,
                 _event_receiver: event_receiver,
+                _p2p_receiver: p2p_receiver,
                 consensus,
                 name: name.to_string(),
             }
