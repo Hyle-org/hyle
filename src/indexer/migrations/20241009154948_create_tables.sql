@@ -8,16 +8,16 @@ CREATE TABLE blocks (
     CHECK (octet_length(hash) = 32) -- Ensure the hash is exactly 32 bytes
 );
 
--- CREATE TYPE transaction_type AS ENUM ('blob_transaction', 'proof_transaction', 'register_contract_transaction');
--- CREATE TYPE transaction_status AS ENUM ('success', 'failure', 'sequenced');
+CREATE TYPE transaction_type AS ENUM ('blob_transaction', 'proof_transaction', 'register_contract_transaction');
+CREATE TYPE transaction_status AS ENUM ('success', 'failure', 'sequenced');
 
 CREATE TABLE transactions (
     tx_hash BYTEA PRIMARY KEY,
     block_hash BYTEA NOT NULL REFERENCES blocks(hash) ON DELETE CASCADE,
     tx_index INT NOT NULL,
     version INT NOT NULL,
-    transaction_type TEXT NOT NULL,    -- Field to identify the type of transaction (used for joins)
-    transaction_status TEXT NOT NULL   -- Field to identify the status of the transaction
+    transaction_type transaction_type NOT NULL,      -- Field to identify the type of transaction (used for joins)
+    transaction_status transaction_status NOT NULL   -- Field to identify the status of the transaction
     CHECK (octet_length(tx_hash) = 32) -- Ensure the hash is exactly 32 bytes
 );
 

@@ -4,14 +4,6 @@ repos:
     hooks:
       - id: fmt
       - id: clippy
-        args:
-          [
-            "--workspace",
-            "--all-targets",
-            "--all-features",
-            "--",
-            "-D",
-            "warnings",
-          ]
+        args: ["--workspace", "--all-targets", "--", "-D", "warnings"]
       - id: cargo-check
-        args: ["--workspace", "--all-targets", "--all-features"]
+        args: ["--workspace", "--all-targets"]

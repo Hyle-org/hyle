@@ -10,15 +10,53 @@ pub struct BlockDb {
     pub timestamp: NaiveDateTime, // UNIX timestamp
 }
 
+#[derive(Debug, sqlx::Type, Serialize, Deserialize)]
+#[sqlx(type_name = "transaction_type", rename_all = "snake_case")]
+pub enum TransactionType {
+    BlobTransaction,
+    ProofTransaction,
+    RegisterContractTransaction,
+}
+
+impl From<String> for TransactionType {
+    fn from(s: String) -> Self {
+        match s.as_str() {
+            "blob_transaction" => TransactionType::BlobTransaction,
+            "proof_transaction" => TransactionType::ProofTransaction,
+            "register_contract_transaction" => TransactionType::RegisterContractTransaction,
+            _ => panic!("Invalid transaction type"),
+        }
+    }
+}
+
+#[derive(Debug, sqlx::Type, Serialize, Deserialize)]
+#[sqlx(type_name = "transaction_status", rename_all = "snake_case")]
+pub enum TransactionStatus {
+    Success,
+    Failure,
+    Sequenced,
+}
+
+impl From<String> for TransactionStatus {
+    fn from(s: String) -> Self {
+        match s.as_str() {
+            "success" => TransactionStatus::Success,
+            "failure" => TransactionStatus::Failure,
+            "sequenced" => TransactionStatus::Sequenced,
+            _ => panic!("Invalid transaction status"),
+        }
+    }
+}
+
 #[derive(Debug, sqlx::FromRow, Serialize, Deserialize)]
 pub struct TransactionDb {
     // Struct for the transactions table
-    pub tx_hash: Vec<u8>,           // Transaction hash
-    pub block_hash: Vec<u8>,        // Corresponds to the block hash
-    pub tx_index: i32,              // Index of the transaction in the block
-    pub version: i32,               // Transaction version
-    pub transaction_type: String,   // Type of transaction
-    pub transaction_status: String, // Status of the transaction
+    pub tx_hash: Vec<u8>,                      // Transaction hash
+    pub block_hash: Vec<u8>,                   // Corresponds to the block hash
+    pub tx_index: i32,                         // Index of the transaction in the block
+    pub version: i32,                          // Transaction version
+    pub transaction_type: TransactionType,     // Type of transaction
+    pub transaction_status: TransactionStatus, // Status of the transaction
 }
 
 #[derive(Debug, sqlx::FromRow, Serialize, Deserialize)]
