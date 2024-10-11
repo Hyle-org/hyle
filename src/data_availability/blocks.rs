@@ -1,7 +1,7 @@
 use crate::model::{Block, BlockHash, BlockHeight, Hashable};
 use crate::utils::db::{Db, Iter, KeyMaker};
 use anyhow::Result;
-use tracing::{debug, info};
+use tracing::info;
 
 pub struct BlocksKey(pub BlockHash);
 pub struct BlocksOrdKey(pub BlockHeight);
@@ -38,7 +38,7 @@ impl Blocks {
             db,
         };
 
-        debug!("{} block(s) available", blocks.db.len());
+        info!("{} block(s) available", blocks.db.len());
         if let Some(last) = blocks.last() {
             info!(
                 block_hash = %last.hash(),
@@ -54,6 +54,9 @@ impl Blocks {
     }
 
     pub fn put(&mut self, data: Block) -> Result<()> {
+        if self.get(data.hash())?.is_some() {
+            return Ok(());
+        }
         info!("📦 storing block {}", data.height);
         self.db
             .put(BlocksOrdKey(data.height), BlocksKey(data.hash()), &data)?;
