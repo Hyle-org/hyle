@@ -20,7 +20,7 @@ use super::stream::send_net_message;
 use crate::bus::bus_client;
 use crate::bus::SharedMessageBus;
 use crate::consensus::ConsensusNetMessage;
-use crate::data_availability::DataMessage;
+use crate::data_availability::DataNetMessage;
 use crate::handle_messages;
 use crate::mempool::MempoolNetMessage;
 use crate::model::ValidatorPublicKey;
@@ -33,7 +33,7 @@ struct PeerBusClient {
     sender(SignedWithKey<MempoolNetMessage>),
     sender(SignedWithKey<ConsensusNetMessage>),
     sender(PeerEvent),
-    sender(DataMessage),
+    sender(DataNetMessage),
     receiver(OutboundMessage),
 }
 }

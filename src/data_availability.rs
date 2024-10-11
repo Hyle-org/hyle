@@ -29,7 +29,7 @@ pub fn u64_to_str(u: u64, buf: &mut [u8]) -> &str {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, Eq, PartialEq)]
-pub enum DataMessage {
+pub enum DataNetMessage {
     QueryBlock {
         respond_to: ValidatorPublicKey,
         hash: BlockHash,
@@ -39,10 +39,16 @@ pub enum DataMessage {
     },
 }
 
-impl BusMessage for DataMessage {}
+#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, Eq, PartialEq)]
+pub enum DataEvent {
+    NewBlock(Block),
+}
 
-impl From<DataMessage> for NetMessage {
-    fn from(msg: DataMessage) -> Self {
+impl BusMessage for DataNetMessage {}
+impl BusMessage for DataEvent {}
+
+impl From<DataNetMessage> for NetMessage {
+    fn from(msg: DataNetMessage) -> Self {
         NetMessage::DataMessage(msg)
     }
 }
@@ -51,8 +57,9 @@ bus_client! {
 #[derive(Debug)]
 struct DABusClient {
     sender(OutboundMessage),
+    sender(DataEvent),
     receiver(ConsensusEvent),
-    receiver(DataMessage),
+    receiver(DataNetMessage),
 }
 }
 
@@ -109,26 +116,26 @@ impl DataAvailability {
             listen<ConsensusEvent> cmd => {
                 self.handle_consensus_event(cmd).await;
             }
-            listen<DataMessage> msg => {
+            listen<DataNetMessage> msg => {
                 _ = self.handle_data_message(msg)
                     .log_error("NodeState: Error while handling data message");
             }
         }
     }
 
-    fn handle_data_message(&mut self, msg: DataMessage) -> Result<()> {
+    fn handle_data_message(&mut self, msg: DataNetMessage) -> Result<()> {
         match msg {
-            DataMessage::QueryBlock { respond_to, hash } => {
+            DataNetMessage::QueryBlock { respond_to, hash } => {
                 self.blocks.get(hash).map(|block| {
                     if let Some(block) = block {
                         _ = self.bus.send(OutboundMessage::send(
                             respond_to,
-                            DataMessage::QueryBlockResponse { block },
+                            DataNetMessage::QueryBlockResponse { block },
                         ));
                     }
                 })?;
             }
-            DataMessage::QueryBlockResponse { block } => {
+            DataNetMessage::QueryBlockResponse { block } => {
                 debug!(
                     block_hash = %block.hash(),
                     block_height = %block.height,
@@ -189,11 +196,7 @@ impl DataAvailability {
         );
         // store block
         let block_hash = block.hash();
-        //panic!("store block");
-        if let Err(e) = self.blocks.put(block) {
-            error!("storing block: {}", e);
-        }
-
+        self.add_block(block);
         self.pop_buffer(block_hash);
     }
 
@@ -206,18 +209,26 @@ impl DataAvailability {
             let first_buffered = self.buffered_blocks.pop_first().unwrap();
             let first_buffered_hash = first_buffered.hash();
 
-            if let Err(e) = self.blocks.put(first_buffered) {
-                error!("storing buffered block: {}", e);
-            }
-
+            self.add_block(first_buffered);
             last_block_hash = first_buffered_hash;
+        }
+    }
+
+    fn add_block(&mut self, block: Block) {
+        if let Err(e) = self.blocks.put(block.clone()) {
+            error!("storing block: {}", e);
+        } else {
+            _ = self
+                .bus
+                .send(DataEvent::NewBlock(block))
+                .log_error("Error sending DataEvent");
         }
     }
 
     fn query_block(&mut self, hash: BlockHash) {
         _ = self
             .bus
-            .send(OutboundMessage::broadcast(DataMessage::QueryBlock {
+            .send(OutboundMessage::broadcast(DataNetMessage::QueryBlock {
                 respond_to: self.self_pubkey.clone(),
                 hash,
             }));
