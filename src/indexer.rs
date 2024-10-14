@@ -15,10 +15,9 @@ use axum::{routing::get, Router};
 use core::str;
 use model::{TransactionStatus, TransactionType};
 use sqlx::types::chrono::DateTime;
-use sqlx::{migrate::Migrator, postgres::PgPoolOptions, PgPool, Pool, Postgres};
+use sqlx::{postgres::PgPoolOptions, PgPool, Pool, Postgres};
 use std::{
     io::{Cursor, Write},
-    path::Path,
     sync::Arc,
 };
 use tracing::{debug, info};
@@ -62,11 +61,9 @@ impl Module for Indexer {
             .context("Failed to connect to the database")?;
 
         info!("Checking for new DB migration...");
-        let migrator = Migrator::new(Path::new(&ctx.config.migration_directory)).await?;
-        migrator
+        sqlx::migrate!("./src/indexer/migrations")
             .run(&inner)
-            .await
-            .context("Failed to migrate database")?;
+            .await?;
 
         let indexer = Indexer { bus, inner };
 
