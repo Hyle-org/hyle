@@ -187,7 +187,7 @@ impl Consensus {
             .unwrap_or(BlockHash::new("000"));
         let parent_height = last_block.map(|b| b.height).unwrap_or_default();
 
-        // add new bonded validators pubkeys to Validators
+        // proposition of new validators for next slot
         let new_bonded_validators = self
             .new_validators_candidates
             .clone()
