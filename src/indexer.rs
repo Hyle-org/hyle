@@ -164,8 +164,8 @@ impl Indexer {
             let tx_hash = &tx.hash().0;
             debug!("tx:{:?} hash {:?}", tx_hash, tx);
 
-            let version = tx.version as i32;
-            let tx_index = tx_index as i32;
+            let version = tx.version as i64;
+            let tx_index = tx_index as i64;
 
             match tx.transaction_data {
                 crate::model::TransactionData::Blob(ref tx) => {
@@ -185,7 +185,7 @@ impl Indexer {
                     .await?;
 
                     for (blob_index, blob) in tx.blobs.iter().enumerate() {
-                        let blob_index = blob_index as i32;
+                        let blob_index = blob_index as i64;
                         let identity = &tx.identity.0;
                         let contract_name = &blob.contract_name.0;
                         let blob = &blob.data.0;
@@ -230,7 +230,7 @@ impl Indexer {
                     for blob_ref in tx.blobs_references.iter() {
                         let contract_name = &blob_ref.contract_name.0;
                         let blob_tx_hash = &blob_ref.blob_tx_hash.0;
-                        let blob_index = blob_ref.blob_index.0 as i32;
+                        let blob_index = blob_ref.blob_index.0 as i64;
                         sqlx::query(                            "INSERT INTO blob_references (tx_hash, contract_name, blob_tx_hash, blob_index)
                              VALUES ($1, $2, $3, $4)")
                         .bind(tx_hash)
