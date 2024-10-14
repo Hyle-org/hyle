@@ -3,7 +3,7 @@ use std::{fs, future::Future, path::Path, pin::Pin};
 use anyhow::{bail, Error, Result};
 use rand::{distributions::Alphanumeric, Rng};
 use tokio::task::JoinHandle;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 use crate::utils::logger::LogMe;
 
@@ -54,7 +54,7 @@ where
             .map(char::from)
             .collect();
         let tmp = format!("{}.{}.data.tmp", salt, Self::name());
-        info!("Saving on disk in a tmp file {}", tmp.clone());
+        debug!("Saving on disk in a tmp file {}", tmp.clone());
         let mut writer = fs::File::create(tmp.clone()).log_error("Create file")?;
         bincode::encode_into_std_write(store, &mut writer, bincode::config::standard())
             .log_error("Serializing Ctx chain")?;
