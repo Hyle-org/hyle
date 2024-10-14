@@ -17,7 +17,7 @@ use model::{TransactionStatus, TransactionType};
 use sqlx::types::chrono::DateTime;
 use sqlx::{postgres::PgPoolOptions, PgPool, Pool, Postgres};
 use std::sync::Arc;
-use tracing::{debug, info};
+use tracing::{debug, error, info};
 
 bus_client! {
 #[derive(Debug)]
@@ -84,7 +84,10 @@ impl Indexer {
         handle_messages! {
             on_bus self.bus,
             listen<ConsensusEvent> cmd => {
-                self.handle_consensus_event(cmd).await?;
+                match self.handle_consensus_event(cmd).await{
+                    Ok(_) => (),
+                    Err(e) => error!("Error while handling consensus event: {:#}", e),
+                }
             }
         }
     }
