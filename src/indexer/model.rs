@@ -4,9 +4,10 @@ use sqlx::types::chrono::NaiveDateTime;
 #[derive(Debug, sqlx::FromRow, Serialize, Deserialize)]
 pub struct BlockDb {
     // Struct for the blocks table
-    pub hash: Vec<u8>,            // Corresponds to BlockHash
-    pub parent_hash: Vec<u8>,     // Parent block hash
-    pub height: i64,              // Corresponds to BlockHeight
+    pub hash: Vec<u8>,        // Corresponds to BlockHash
+    pub parent_hash: Vec<u8>, // Parent block hash
+    #[sqlx(try_from = "i64")]
+    pub height: u64, // Corresponds to BlockHeight
     pub timestamp: NaiveDateTime, // UNIX timestamp
 }
 
@@ -28,21 +29,23 @@ pub enum TransactionStatus {
 #[derive(Debug, sqlx::FromRow, Serialize, Deserialize)]
 pub struct TransactionDb {
     // Struct for the transactions table
-    pub tx_hash: Vec<u8>,                      // Transaction hash
-    pub block_hash: Vec<u8>,                   // Corresponds to the block hash
-    pub tx_index: i32,                         // Index of the transaction in the block
-    pub version: i32,                          // Transaction version
-    pub transaction_type: TransactionType,     // Type of transaction
+    pub tx_hash: Vec<u8>,    // Transaction hash
+    pub block_hash: Vec<u8>, // Corresponds to the block hash
+    pub tx_index: i32,       // Index of the transaction in the block
+    #[sqlx(try_from = "i32")]
+    pub version: u32, // Transaction version
+    pub transaction_type: TransactionType, // Type of transaction
     pub transaction_status: TransactionStatus, // Status of the transaction
 }
 
 #[derive(Debug, sqlx::FromRow, Serialize, Deserialize)]
 pub struct BlobDb {
-    pub tx_hash: Vec<u8>,      // Corresponds to the transaction hash (BYTEA in SQL)
-    pub blob_index: i32,       // Index of the blob within the transaction
-    pub identity: String,      // Identity of the blob (TEXT in SQL)
+    pub tx_hash: Vec<u8>, // Corresponds to the transaction hash (BYTEA in SQL)
+    #[sqlx(try_from = "i32")]
+    pub blob_index: u32, // Index of the blob within the transaction
+    pub identity: String, // Identity of the blob (TEXT in SQL)
     pub contract_name: String, // Contract name associated with the blob (TEXT in SQL)
-    pub data: Vec<u8>,         // Actual blob data (BYTEA in SQL)
+    pub data: Vec<u8>,    // Actual blob data (BYTEA in SQL)
 }
 
 #[derive(Debug, sqlx::FromRow, Serialize, Deserialize)]
@@ -59,7 +62,8 @@ pub struct BlobReferenceDb {
     pub tx_hash: Vec<u8>,      // Corresponds to the proof transaction hash
     pub contract_name: String, // Contract name
     pub blob_tx_hash: Vec<u8>, // Blob transaction hash
-    pub blob_index: i32,       // Index of the blob
+    #[sqlx(try_from = "i32")]
+    pub blob_index: u32, // Index of the blob
     // Optional field for extra data
     pub hyle_output: Option<serde_json::Value>, // Optional data in JSON format
 }

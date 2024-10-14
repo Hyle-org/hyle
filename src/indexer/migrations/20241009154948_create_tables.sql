@@ -5,7 +5,8 @@ CREATE TABLE blocks (
     height BIGINT NOT NULL,         -- Corresponds to BlockHeight (u64)
     timestamp TIMESTAMP NOT NULL,   -- UNIX timestamp (u64)
     UNIQUE (height),                -- Ensure each block height is unique
-    CHECK (octet_length(hash) = 32) -- Ensure the hash is exactly 32 bytes
+    CHECK (octet_length(hash) = 32),-- Ensure the hash is exactly 32 bytes
+    CHECK (height >= 0)             -- Ensure the height is positive
 );
 
 CREATE TYPE transaction_type AS ENUM ('blob_transaction', 'proof_transaction', 'register_contract_transaction');
@@ -18,7 +19,8 @@ CREATE TABLE transactions (
     version INT NOT NULL,
     transaction_type transaction_type NOT NULL,      -- Field to identify the type of transaction (used for joins)
     transaction_status transaction_status NOT NULL   -- Field to identify the status of the transaction
-    CHECK (octet_length(tx_hash) = 32) -- Ensure the hash is exactly 32 bytes
+    CHECK (octet_length(tx_hash) = 32),-- Ensure the hash is exactly 32 bytes
+    CHECK (tx_index >= 0)              -- Ensure the index is positive
 );
 
 CREATE TABLE blobs (
@@ -27,7 +29,8 @@ CREATE TABLE blobs (
     identity TEXT NOT NULL,            -- Identity field from the original BlobTransaction struct
     contract_name TEXT NOT NULL,       -- Contract name associated with the blob
     data BYTEA NOT NULL,               -- Actual blob data (stored as binary)
-    PRIMARY KEY (tx_hash, blob_index)  -- Composite primary key (tx_hash + blob_index) to uniquely identify each blob
+    PRIMARY KEY (tx_hash, blob_index), -- Composite primary key (tx_hash + blob_index) to uniquely identify each blob
+    CHECK (blob_index >= 0)              -- Ensure the index is positive
 );
 
 CREATE TABLE proofs (
@@ -40,8 +43,9 @@ CREATE TABLE blob_references (
     tx_hash BYTEA REFERENCES proofs(tx_hash) ON DELETE CASCADE,  -- Foreign key linking to proof_transactions
     contract_name TEXT NOT NULL,                                 -- Contract name (you could also use BYTEA depending on how you store ContractName)
     blob_tx_hash BYTEA NOT NULL,                                 -- Blob transaction hash
-    blob_index INTEGER NOT NULL                                  -- Index of the blob
+    blob_index INTEGER NOT NULL,                                 -- Index of the blob
     -- hyle_output JSONB  -- Optional field for extra data
+    CHECK (blob_index >= 0)                                      -- Ensure the index is positive
 );
 
 CREATE TABLE contracts (

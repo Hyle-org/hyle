@@ -143,8 +143,14 @@ impl Indexer {
 
         let block_hash = &block.hash().inner;
         let block_parent_hash = &block.parent_hash.inner;
-        let block_height = block.height.0 as i64;
-        let block_timestamp = match DateTime::from_timestamp(block.timestamp as i64, 0) {
+        let block_height = i64::try_from(block.height.0)
+            .map_err(|_| anyhow::anyhow!("Block height is too large to fit into an i64"))?;
+
+        let block_timestamp = match DateTime::from_timestamp(
+            i64::try_from(block.timestamp)
+                .map_err(|_| anyhow::anyhow!("Timestamp too large for i64"))?,
+            0,
+        ) {
             Some(date) => date,
             None => bail!("Block's timestamp is incorrect"),
         };
@@ -164,8 +170,10 @@ impl Indexer {
             let tx_hash = &tx.hash().0;
             debug!("tx:{:?} hash {:?}", tx_hash, tx);
 
-            let version = tx.version as i64;
-            let tx_index = tx_index as i64;
+            let version = i32::try_from(tx.version)
+                .map_err(|_| anyhow::anyhow!("Tx version is too large to fit into an i32"))?;
+            let tx_index = i32::try_from(tx_index)
+                .map_err(|_| anyhow::anyhow!("Tx index is too large to fit into an i64"))?;
 
             match tx.transaction_data {
                 crate::model::TransactionData::Blob(ref tx) => {
@@ -185,7 +193,9 @@ impl Indexer {
                     .await?;
 
                     for (blob_index, blob) in tx.blobs.iter().enumerate() {
-                        let blob_index = blob_index as i64;
+                        let blob_index = i32::try_from(blob_index).map_err(|_| {
+                            anyhow::anyhow!("Blob index is too large to fit into an i32")
+                        })?;
                         let identity = &tx.identity.0;
                         let contract_name = &blob.contract_name.0;
                         let blob = &blob.data.0;
@@ -230,7 +240,10 @@ impl Indexer {
                     for blob_ref in tx.blobs_references.iter() {
                         let contract_name = &blob_ref.contract_name.0;
                         let blob_tx_hash = &blob_ref.blob_tx_hash.0;
-                        let blob_index = blob_ref.blob_index.0 as i64;
+                        let blob_index = i32::try_from(blob_ref.blob_index.0).map_err(|_| {
+                            anyhow::anyhow!("Blob index is too large to fit into an i32")
+                        })?;
+
                         sqlx::query(                            "INSERT INTO blob_references (tx_hash, contract_name, blob_tx_hash, blob_index)
                              VALUES ($1, $2, $3, $4)")
                         .bind(tx_hash)
