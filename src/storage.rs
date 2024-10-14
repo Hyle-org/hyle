@@ -413,3 +413,342 @@ impl Display for DataProposal {
         )
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashSet;
+
+    use crate::{
+        mempool::BatchInfo,
+        model::{
+            Blob, BlobData, BlobTransaction, Block, BlockHash, BlockHeight, ContractName, Identity,
+            Transaction, TransactionData, ValidatorPublicKey,
+        },
+        storage::{Car, DataProposal, InMemoryStorage},
+    };
+
+    use super::TipData;
+
+    fn make_tx(inner_tx: &'static str) -> Transaction {
+        Transaction {
+            version: 1,
+            transaction_data: TransactionData::Blob(BlobTransaction {
+                identity: Identity("id".to_string()),
+                blobs: vec![Blob {
+                    contract_name: ContractName("c1".to_string()),
+                    data: BlobData(inner_tx.as_bytes().to_vec()),
+                }],
+            }),
+        }
+    }
+
+    #[test]
+    fn test_workflow() {
+        let pubkey2 = ValidatorPublicKey(vec![2]);
+        let pubkey3 = ValidatorPublicKey(vec![3]);
+        let mut store = InMemoryStorage::new(pubkey3.clone());
+
+        store.append_data_proposal(
+            &pubkey2,
+            &DataProposal {
+                pos: 1,
+                parent: None,
+                inner: vec![make_tx("test1")],
+                parent_poa: None,
+            },
+        );
+
+        store.append_data_proposal(
+            &pubkey2,
+            &DataProposal {
+                pos: 2,
+                parent: Some(1),
+                inner: vec![make_tx("test2")],
+                parent_poa: None,
+            },
+        );
+
+        store.append_data_proposal(
+            &pubkey2,
+            &DataProposal {
+                pos: 3,
+                parent: Some(2),
+                inner: vec![make_tx("test3")],
+                parent_poa: None,
+            },
+        );
+
+        store.append_data_proposal(
+            &pubkey2,
+            &DataProposal {
+                pos: 4,
+                parent: Some(3),
+                inner: vec![make_tx("test4")],
+                parent_poa: None,
+            },
+        );
+
+        assert_eq!(store.other_lanes.len(), 1);
+        assert!(store.other_lanes.contains_key(&pubkey2));
+
+        assert_eq!(
+            *store
+                .other_lanes
+                .get(&pubkey2)
+                .unwrap()
+                .cars
+                .first()
+                .unwrap(),
+            Car {
+                id: 1,
+                parent: None,
+                txs: vec![make_tx("test1")],
+                votes: HashSet::from([pubkey3.clone(), pubkey2.clone()]),
+            }
+        );
+
+        let missing = store.get_missing_cars(
+            Some(1),
+            &DataProposal {
+                pos: 4,
+                parent: Some(3),
+                inner: vec![make_tx("test4")],
+                parent_poa: None,
+            },
+        );
+
+        assert_eq!(missing, None);
+    }
+
+    #[test]
+    fn test_vote() {
+        let pubkey1 = ValidatorPublicKey(vec![1]);
+        let pubkey2 = ValidatorPublicKey(vec![2]);
+        let pubkey3 = ValidatorPublicKey(vec![3]);
+        let mut store = InMemoryStorage::new(pubkey3.clone());
+
+        store.accumulate_tx(make_tx("test1"));
+        store.accumulate_tx(make_tx("test2"));
+        store.accumulate_tx(make_tx("test3"));
+        store.accumulate_tx(make_tx("test4"));
+
+        let txs = store.flush_pending_txs();
+        store.add_data_to_local_lane(txs.clone());
+
+        let data_proposal = DataProposal {
+            inner: txs,
+            pos: 1,
+            parent: None,
+            parent_poa: None,
+        };
+
+        store.append_data_proposal(&pubkey2, &data_proposal);
+        assert!(store.has_data_proposal(&pubkey2, &data_proposal));
+        assert_eq!(store.get_last_data_index(&pubkey2), Some(1));
+        store.append_data_proposal(&pubkey1, &data_proposal);
+        assert!(store.has_data_proposal(&pubkey1, &data_proposal));
+        assert_eq!(store.get_last_data_index(&pubkey1), Some(1));
+
+        let some_tip = store.tip_data();
+        assert!(some_tip.is_some());
+        let (tip, txs) = some_tip.unwrap();
+        assert_eq!(tip.votes.len(), 1);
+        assert_eq!(txs.len(), 4);
+
+        store.add_data_vote(&pubkey2, &data_proposal);
+        store.add_data_vote(&pubkey1, &data_proposal);
+
+        let some_tip = store.tip_data();
+        assert!(some_tip.is_some());
+        let tip = some_tip.unwrap().0;
+        assert_eq!(tip.votes.len(), 3);
+        assert!(&tip.votes.contains(&pubkey3));
+        assert!(&tip.votes.contains(&pubkey1));
+        assert!(&tip.votes.contains(&pubkey2));
+    }
+
+    #[test]
+    fn test_update_lanes_after_commit() {
+        let pubkey2 = ValidatorPublicKey(vec![2]);
+        let pubkey3 = ValidatorPublicKey(vec![3]);
+        let mut store = InMemoryStorage::new(pubkey3.clone());
+
+        let data_proposal1 = DataProposal {
+            inner: vec![make_tx("test1"), make_tx("test2"), make_tx("test3")],
+            pos: 1,
+            parent: None,
+            parent_poa: None,
+        };
+
+        let data_proposal2 = DataProposal {
+            inner: vec![make_tx("test4"), make_tx("test5"), make_tx("test6")],
+            pos: 2,
+            parent: Some(1),
+            parent_poa: Some(vec![pubkey3.clone(), pubkey2.clone()]),
+        };
+
+        let data_proposal3 = DataProposal {
+            inner: vec![make_tx("test7"), make_tx("test8"), make_tx("test9")],
+            pos: 3,
+            parent: Some(2),
+            parent_poa: Some(vec![pubkey3.clone(), pubkey2.clone()]),
+        };
+
+        let data_proposal4 = DataProposal {
+            inner: vec![make_tx("testA"), make_tx("testB"), make_tx("testC")],
+            pos: 4,
+            parent: Some(3),
+            parent_poa: Some(vec![pubkey3.clone(), pubkey2.clone()]),
+        };
+
+        store.add_data_to_local_lane(data_proposal1.inner.clone());
+        store.add_data_to_local_lane(data_proposal2.inner.clone());
+        store.add_data_to_local_lane(data_proposal3.inner.clone());
+        store.add_data_to_local_lane(data_proposal4.inner.clone());
+
+        store.append_data_proposal(&pubkey2, &data_proposal1);
+        store.append_data_proposal(&pubkey2, &data_proposal2);
+        store.append_data_proposal(&pubkey2, &data_proposal3);
+        store.append_data_proposal(&pubkey2, &data_proposal4);
+
+        let batch_info = BatchInfo {
+            tip: TipData {
+                pos: 4,
+                parent: Some(3),
+                votes: vec![pubkey3.clone(), pubkey2.clone()],
+            },
+            validator: pubkey3.clone(),
+        };
+        let block = Block {
+            parent_hash: BlockHash {
+                inner: vec![4, 5, 6],
+            },
+            height: BlockHeight(42),
+            timestamp: 1234,
+            txs: vec![make_tx("testA"), make_tx("testB"), make_tx("testC")],
+            new_bonded_validators: vec![pubkey3.clone(), pubkey2.clone()],
+        };
+
+        assert_eq!(store.lane.size(), 4);
+        assert_eq!(store.other_lanes.get(&pubkey2).map(|l| l.size()), Some(4));
+
+        store.update_lanes_after_commit(batch_info, block);
+
+        assert_eq!(store.lane.size(), 1);
+        assert_eq!(store.other_lanes.get(&pubkey2).map(|l| l.size()), Some(1));
+        assert_eq!(store.lane.current().map(|c| c.id), Some(4));
+        assert_eq!(
+            store
+                .other_lanes
+                .get(&pubkey2)
+                .and_then(|l| l.current().map(|c| c.id)),
+            Some(4)
+        );
+    }
+
+    #[test]
+    fn test_add_missing_cars() {
+        let pubkey1 = ValidatorPublicKey(vec![1]);
+        let pubkey2 = ValidatorPublicKey(vec![2]);
+        let pubkey3 = ValidatorPublicKey(vec![3]);
+        let mut store = InMemoryStorage::new(pubkey3.clone());
+
+        store.add_missing_cars(
+            &pubkey2,
+            vec![
+                Car {
+                    id: 1,
+                    parent: None,
+                    txs: vec![
+                        make_tx("test1"),
+                        make_tx("test2"),
+                        make_tx("test3"),
+                        make_tx("test4"),
+                    ],
+                    votes: HashSet::from([pubkey1.clone(), pubkey2.clone()]),
+                },
+                Car {
+                    id: 2,
+                    parent: Some(1),
+                    txs: vec![make_tx("test5"), make_tx("test6"), make_tx("test7")],
+                    votes: HashSet::from([pubkey1.clone(), pubkey2.clone()]),
+                },
+            ],
+        );
+
+        assert_eq!(store.get_last_data_index(&pubkey2), Some(2));
+    }
+
+    #[test]
+    fn test_missing_cars() {
+        let pubkey3 = ValidatorPublicKey(vec![3]);
+        let mut store = InMemoryStorage::new(pubkey3.clone());
+
+        store.add_data_to_local_lane(vec![make_tx("test_local")]);
+        store.add_data_to_local_lane(vec![make_tx("test_local2")]);
+        store.add_data_to_local_lane(vec![make_tx("test_local3")]);
+        store.add_data_to_local_lane(vec![make_tx("test_local4")]);
+
+        let missing = store.get_missing_cars(
+            Some(1),
+            &DataProposal {
+                pos: 4,
+                parent: Some(3),
+                inner: vec![make_tx("test_local4")],
+                parent_poa: None,
+            },
+        );
+
+        assert_eq!(
+            missing,
+            Some(vec![
+                Car {
+                    id: 2,
+                    parent: Some(1),
+                    txs: vec![make_tx("test_local2")],
+                    votes: HashSet::from_iter(vec![pubkey3.clone()])
+                },
+                Car {
+                    id: 3,
+                    parent: Some(2),
+                    txs: vec![make_tx("test_local3")],
+                    votes: HashSet::from_iter(vec![pubkey3.clone()])
+                }
+            ])
+        );
+
+        let missing = store.get_missing_cars(
+            None,
+            &DataProposal {
+                pos: 4,
+                parent: Some(3),
+                inner: vec![make_tx("test_local4")],
+                parent_poa: None,
+            },
+        );
+
+        assert_eq!(
+            missing,
+            Some(vec![
+                Car {
+                    id: 1,
+                    parent: None,
+                    txs: vec![make_tx("test_local")],
+                    votes: HashSet::from_iter(vec![pubkey3.clone()])
+                },
+                Car {
+                    id: 2,
+                    parent: Some(1),
+                    txs: vec![make_tx("test_local2")],
+                    votes: HashSet::from_iter(vec![pubkey3.clone()])
+                },
+                Car {
+                    id: 3,
+                    parent: Some(2),
+                    txs: vec![make_tx("test_local3")],
+                    votes: HashSet::from_iter(vec![pubkey3.clone()])
+                }
+            ])
+        );
+    }
+}
