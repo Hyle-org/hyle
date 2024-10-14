@@ -239,54 +239,6 @@ pub async fn get_blob(
     }
 }
 
-// Proofs
-// pub async fn get_last_proof(State(state): State<IndexerState>) -> Result<Json<Proof>, StatusCode> {
-//     let proof = sqlx::query_as::<_, Proof>("SELECT * FROM proofs ORDER BY id DESC LIMIT 1")
-//         .fetch_optional(&state)
-//         .await
-//         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-//     match proof {
-//         Some(proof) => Ok(Json(proof)),
-//         None => Err(StatusCode::NOT_FOUND),
-//     }
-// }
-
-// pub async fn get_proof(
-//     Path((block_height, tx_index)): Path<(i64, i32)>,
-//     State(state): State<IndexerState>,
-// ) -> Result<Json<Proof>, StatusCode> {
-//     let proof = sqlx::query_as::<_, Proof>(
-//         "SELECT * FROM proofs WHERE block_height = $1 AND tx_index = $2".bind(
-//         block_height).bind(
-//         tx_index
-//     )
-//     .fetch_optional(&state)
-//     .await
-//     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-//     match proof {
-//         Some(proof) => Ok(Json(proof)),
-//         None => Err(StatusCode::NOT_FOUND),
-//     }
-// }
-
-// pub async fn get_proof_with_hash(
-//     Path(tx_hash): Path<String>,
-//     State(state): State<IndexerState>,
-// ) -> Result<Json<Proof>, StatusCode> {
-//     let proof = sqlx::query_as::<_, Proof>(Proof, "SELECT * FROM proofs WHERE tx_hash = $1")
-//         .bind(tx_hash.as_bytes())
-//         .fetch_optional(&state)
-//         .await
-//         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-//     match proof {
-//         Some(proof) => Ok(Json(proof)),
-//         None => Err(StatusCode::NOT_FOUND),
-//     }
-// }
-
 // Contracts
 pub async fn get_contract(
     Path(contract_name): Path<String>,

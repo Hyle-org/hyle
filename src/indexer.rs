@@ -16,18 +16,8 @@ use core::str;
 use model::{TransactionStatus, TransactionType};
 use sqlx::types::chrono::DateTime;
 use sqlx::{postgres::PgPoolOptions, PgPool, Pool, Postgres};
-use std::{
-    io::{Cursor, Write},
-    sync::Arc,
-};
+use std::sync::Arc;
 use tracing::{debug, info};
-
-pub fn u64_to_str(u: u64, buf: &mut [u8]) -> &str {
-    let mut cursor = Cursor::new(&mut buf[..]);
-    _ = write!(cursor, "{}", u);
-    let len = cursor.position() as usize;
-    str::from_utf8(&buf[..len]).unwrap()
-}
 
 bus_client! {
 #[derive(Debug)]
@@ -131,10 +121,6 @@ impl Indexer {
             )
             .route("/blobs/hash/:tx_hash", get(api::get_blobs_by_tx_hash))
             .route("/blob/hash/:tx_hash/index/:blob_index", get(api::get_blob))
-            // proof
-            // .route("/proof/last", get(api::get_last_proof))
-            // .route("/proof/:block_height/:tx_index", get(api::get_proof))
-            // .route("/proof/:tx_hash", get(api::get_proof_with_hash))
             // contract
             .route("/contract/:contract_name", get(api::get_contract))
             .route(
@@ -254,8 +240,8 @@ impl Indexer {
                         .execute(&mut *transaction)
                         .await?;
                     }
-                    // TODO: si la vérification est correcte, changer la transaction status du blob associé
-                    // TODO; si la vérification est correcte, ajouter HyleOutput
+                    // TODO: if verification is correct, change the transaction status for associated blod
+                    // TODO: if verification is correct, add HyleOutput
                 }
                 crate::model::TransactionData::RegisterContract(ref tx) => {
                     // Insert the transaction into the transactions table

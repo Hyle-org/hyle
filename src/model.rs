@@ -136,13 +136,6 @@ impl std::fmt::Debug for BlobsHash {
 )]
 pub struct BlockHeight(pub u64);
 
-impl From<i64> for BlockHeight {
-    fn from(value: i64) -> Self {
-        assert!(value >= 0, "BlockHeight cannot be negative");
-        BlockHeight(value as u64)
-    }
-}
-
 #[derive(
     Default, Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash, Display, Encode, Decode,
 )]
