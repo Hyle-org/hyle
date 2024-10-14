@@ -1,6 +1,7 @@
-use opentelemetry::KeyValue;
+use opentelemetry::{metrics::Counter, KeyValue};
 
 pub struct MempoolMetrics {
+    signature_error: Counter<u64>,
     api_tx: opentelemetry::metrics::Counter<u64>,
     broadcasted_tx: opentelemetry::metrics::Counter<u64>,
     broadcasted_data_proposal: opentelemetry::metrics::Counter<u64>,
@@ -17,6 +18,7 @@ impl MempoolMetrics {
         let my_meter = opentelemetry::global::meter(node_name);
 
         MempoolMetrics {
+            signature_error: my_meter.u64_counter("signature_error").init(),
             api_tx: my_meter.u64_counter("api_tx").init(),
             broadcasted_tx: my_meter.u64_counter("broadcasted_tx").init(),
             broadcasted_data_proposal: my_meter.u64_counter("broadcasted_data_proposal").init(),
@@ -29,6 +31,10 @@ impl MempoolMetrics {
             in_memory_tx: my_meter.u64_gauge("in_memory_tx").init(),
             batches: my_meter.u64_counter("batches").init(),
         }
+    }
+
+    pub fn signature_error(&self, kind: &'static str) {
+        self.signature_error.add(1, &[KeyValue::new("kind", kind)]);
     }
 
     pub fn add_api_tx(&self, kind: String) {

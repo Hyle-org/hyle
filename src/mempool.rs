@@ -7,7 +7,7 @@ use crate::{
     model::{Hashable, SharedRunContext, Transaction, TransactionData, ValidatorPublicKey},
     p2p::network::{OutboundMessage, SignedWithKey},
     rest::endpoints::RestApiMessage,
-    storage::{Car, DataProposal, InMemoryStorage, Storage, TipData},
+    storage::{Car, DataProposal, InMemoryStorage, TipData},
     utils::{
         crypto::{BlstCrypto, SharedBlstCrypto},
         logger::LogMe,
@@ -19,7 +19,7 @@ use bincode::{Decode, Encode};
 use metrics::MempoolMetrics;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashSet, sync::Arc};
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info};
 
 mod metrics;
 
@@ -152,38 +152,38 @@ impl Mempool {
 
     async fn handle_net_message(&mut self, msg: SignedWithKey<MempoolNetMessage>) {
         match BlstCrypto::verify(&msg) {
-            Ok(valid) => {
-                if valid {
-                    let validator = msg.validators.first().unwrap();
-                    match msg.msg {
-                        MempoolNetMessage::NewTx(tx) => self.on_new_tx(tx).await,
-                        MempoolNetMessage::DataProposal(data_proposal) => {
-                            if let Err(e) = self.on_data_proposal(validator, data_proposal).await {
-                                error!("{:?}", e);
-                            }
-                        }
-                        MempoolNetMessage::DataVote(data_proposal) => {
-                            self.on_data_vote(validator, data_proposal).await;
-                        }
-                        MempoolNetMessage::SyncRequest(data_proposal, last_index) => {
-                            self.on_sync_request(validator, data_proposal, last_index)
-                                .await;
-                        }
-                        MempoolNetMessage::SyncReply(cars) => {
-                            if let Err(e) = self
-                                // TODO: we don't know who sent the message
-                                .on_sync_reply(validator, cars)
-                                .await
-                            {
-                                error!("{:?}", e);
-                            }
+            Ok(true) => {
+                let validator = msg.validators.first().unwrap();
+                match msg.msg {
+                    MempoolNetMessage::NewTx(tx) => self.on_new_tx(tx).await,
+                    MempoolNetMessage::DataProposal(data_proposal) => {
+                        if let Err(e) = self.on_data_proposal(validator, data_proposal).await {
+                            error!("{:?}", e);
                         }
                     }
-                } else {
-                    warn!("Invalid signature for message {:?}", msg);
+                    MempoolNetMessage::DataVote(data_proposal) => {
+                        self.on_data_vote(validator, data_proposal).await;
+                    }
+                    MempoolNetMessage::SyncRequest(data_proposal, last_index) => {
+                        self.on_sync_request(validator, data_proposal, last_index)
+                            .await;
+                    }
+                    MempoolNetMessage::SyncReply(cars) => {
+                        if let Err(e) = self
+                            // TODO: we don't know who sent the message
+                            .on_sync_reply(validator, cars)
+                            .await
+                        {
+                            error!("{:?}", e);
+                        }
+                    }
                 }
             }
-            Err(e) => warn!("Error while checking signed message: {}", e),
+            Ok(false) => {
+                self.metrics.signature_error("mempool");
+                error!("Invalid signature for message {:?}", msg);
+            }
+            Err(e) => error!("Error while checking signed message: {}", e),
         }
     }
 
@@ -206,7 +206,7 @@ impl Mempool {
     ) -> Result<()> {
         info!("{} SyncReply from sender {validator}", self.storage.id);
 
-        info!(
+        debug!(
             "{} adding {} missing cars to lane {validator}",
             self.storage.id,
             missing_cars.len()
@@ -234,7 +234,7 @@ impl Mempool {
         info!("{} SyncRequest received from sender {validator} for last_index {:?} with data proposal {} \n{}", self.storage.id, last_index, data_proposal, self.storage);
 
         let missing_cars = self.storage.get_missing_cars(last_index, &data_proposal);
-        info!("Missing cars on {} are {:?}", validator, missing_cars);
+        debug!("Missing cars on {} are {:?}", validator, missing_cars);
 
         match missing_cars {
             None => info!("{} no missing cars", self.storage.id),
@@ -247,10 +247,10 @@ impl Mempool {
     }
 
     async fn on_data_vote(&mut self, validator: &ValidatorPublicKey, data_proposal: DataProposal) {
-        info!("Vote received from sender {}", validator);
+        debug!("Vote received from sender {}", validator);
         match self.storage.add_data_vote(validator, &data_proposal) {
             Some(_) => {
-                info!("{} DataVote from {}", self.storage.id, validator)
+                debug!("{} DataVote from {}", self.storage.id, validator)
             }
             None => {
                 error!("{} unexpected DataVote from {}", self.storage.id, validator)
@@ -275,7 +275,7 @@ impl Mempool {
 
             let last_available_index = self.storage.get_last_data_index(validator);
 
-            warn!("Emitting sync request with local state {} last_available_index {:?} and data_proposal {}", self.storage, last_available_index, data_proposal);
+            debug!("Emitting sync request with local state {} last_available_index {:?} and data_proposal {}", self.storage, last_available_index, data_proposal);
 
             self.send_sync_request(validator, data_proposal, last_available_index)
                 .await?;
@@ -288,7 +288,6 @@ impl Mempool {
             Some((tip, txs)) => {
                 let nb_validators = self.validators.len();
                 if tip.votes.len() > nb_validators / 3 {
-                    info!("");
                     let requests = self.storage.flush_pending_txs();
                     // Create tx chunk and broadcast it
                     let tip_id = self.storage.add_data_to_local_lane(requests.clone());
