@@ -6,7 +6,6 @@ RUN apk add --no-cache openssl-libs-static
 WORKDIR /usr/src/hyle
 COPY Cargo.toml Cargo.lock .
 COPY src ./src
-COPY nocow ./nocow
 COPY .cargo/config.toml .cargo/config.toml
 
 RUN cargo build --release

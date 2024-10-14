@@ -1,41 +1,23 @@
-//! Archival system for historical data. Should cover most simple use cases.
+//! Index system for historical data.
 
 mod api;
-mod blobs;
-mod blocks;
-mod contracts;
 pub mod model;
-mod proofs;
-mod transactions;
 
 use crate::{
     bus::{bus_client, SharedMessageBus},
     consensus::ConsensusEvent,
     handle_messages,
     model::{Block, CommonRunContext, Hashable},
-    utils::{db, modules::Module},
+    utils::modules::Module,
 };
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Error, Result};
 use axum::{routing::get, Router};
-use blobs::Blobs;
-use blocks::Blocks;
-use contracts::Contracts;
 use core::str;
-use proofs::Proofs;
-use std::{
-    io::{Cursor, Write},
-    sync::Arc,
-};
-use tokio::sync::RwLock;
-use tracing::{debug, error, info, warn};
-use transactions::Transactions;
-
-pub fn u64_to_str(u: u64, buf: &mut [u8]) -> &str {
-    let mut cursor = Cursor::new(&mut buf[..]);
-    _ = write!(cursor, "{}", u);
-    let len = cursor.position() as usize;
-    str::from_utf8(&buf[..len]).unwrap()
-}
+use model::{TransactionStatus, TransactionType};
+use sqlx::types::chrono::DateTime;
+use sqlx::{postgres::PgPoolOptions, PgPool, Pool, Postgres};
+use std::sync::Arc;
+use tracing::{debug, info};
 
 bus_client! {
 #[derive(Debug)]
@@ -44,7 +26,7 @@ struct IndexerBusClient {
 }
 }
 
-pub type IndexerState = Arc<RwLock<IndexerInner>>;
+pub type IndexerState = PgPool;
 
 #[derive(Debug)]
 pub struct Indexer {
@@ -62,19 +44,18 @@ impl Module for Indexer {
     async fn build(ctx: Self::Context) -> Result<Self> {
         let bus = IndexerBusClient::new_from_bus(ctx.bus.new_handle()).await;
 
-        let db = sled::Config::new()
-            .use_compression(true)
-            .compression_factor(15)
-            .path(ctx.config.data_directory.join("indexer.db"))
-            .open()
-            .context("opening the database")?;
+        let inner = PgPoolOptions::new()
+            .max_connections(20)
+            .connect(&ctx.config.database_url)
+            .await
+            .context("Failed to connect to the database")?;
 
-        let inner = IndexerInner::new(db)?;
+        info!("Checking for new DB migration...");
+        sqlx::migrate!("./src/indexer/migrations")
+            .run(&inner)
+            .await?;
 
-        let indexer = Indexer {
-            bus,
-            inner: Arc::new(RwLock::new(inner)),
-        };
+        let indexer = Indexer { bus, inner };
 
         let mut ctx_router = ctx
             .router
@@ -103,7 +84,7 @@ impl Indexer {
         handle_messages! {
             on_bus self.bus,
             listen<ConsensusEvent> cmd => {
-                self.handle_consensus_event(cmd).await;
+                self.handle_consensus_event(cmd).await?;
             }
         }
     }
@@ -113,349 +94,362 @@ impl Indexer {
             // block
             .route("/blocks", get(api::get_blocks))
             .route("/block/last", get(api::get_last_block))
-            .route("/block/:height", get(api::get_block))
+            .route("/block/height/:height", get(api::get_block))
+            .route("/block/hash/:hash", get(api::get_block_by_hash))
             // transaction
             .route("/transactions", get(api::get_transactions))
-            .route("/transaction/last", get(api::get_last_transaction))
-            .route("/transaction/:height/:tx_index", get(api::get_transaction))
-            .route("/transaction/:tx_hash", get(api::get_transaction_with_hash))
-            // blob
-            .route("/blobs", get(api::get_blobs))
-            .route("/blobs/last", get(api::get_last_blob))
             .route(
-                "/blob/:block_height/:tx_index/:blob_index",
-                get(api::get_blob),
+                "/transactions/block/:height",
+                get(api::get_transactions_by_height),
             )
-            .route("/blobs/:tx_hash/:blob_index", get(api::get_blob_with_hash))
-            // proof
-            .route("/proofs", get(api::get_proofs))
-            .route("/proof/last", get(api::get_last_proof))
-            .route("/proof/:block_height/:tx_index", get(api::get_proof))
-            .route("/proof/:tx_hash", get(api::get_proof_with_hash))
+            .route(
+                "/transactions/contract/:contract_name",
+                get(api::get_transactions_with_contract_name),
+            )
+            .route(
+                "/transaction/hash/:tx_hash",
+                get(api::get_transaction_with_hash),
+            )
+            // blob
+            .route(
+                "/blobs/settled/contract/:contract_name",
+                get(api::get_settled_blobs_by_contract_name),
+            )
+            .route(
+                "/blobs/unsettled/contract/:contract_name",
+                get(api::get_unsettled_blobs_by_contract_name),
+            )
+            .route("/blobs/hash/:tx_hash", get(api::get_blobs_by_tx_hash))
+            .route("/blob/hash/:tx_hash/index/:blob_index", get(api::get_blob))
             // contract
-            .route("/contracts", get(api::get_contracts))
-            .route("/contract/:name", get(api::get_contract))
+            .route("/contract/:contract_name", get(api::get_contract))
+            .route(
+                "/state/contract/:contract_name/block/:height",
+                get(api::get_contract_state_by_height),
+            )
             .with_state(self.inner.clone())
     }
 
-    async fn handle_consensus_event(&mut self, event: ConsensusEvent) {
+    async fn handle_consensus_event(&mut self, event: ConsensusEvent) -> Result<()> {
         match event {
-            ConsensusEvent::CommitBlock { block, .. } => self.handle_block(block).await,
+            ConsensusEvent::CommitBlock { block } => self.handle_block(block).await,
         }
     }
 
-    async fn handle_block(&mut self, block: Block) {
+    async fn handle_block(&mut self, block: Block) -> Result<(), Error> {
         info!("new block {} with {} txs", block.height, block.txs.len());
-        for (ti, tx) in block.txs.iter().enumerate() {
-            let tx_hash = format!("{}", tx.hash());
-            debug!("tx:{} hash {}", ti, tx_hash);
+
+        let mut transaction = self.inner.begin().await?;
+
+        let block_hash = &block.hash().inner;
+        let block_parent_hash = &block.parent_hash.inner;
+        let block_height = i64::try_from(block.height.0)
+            .map_err(|_| anyhow::anyhow!("Block height is too large to fit into an i64"))?;
+
+        let block_timestamp = match DateTime::from_timestamp(
+            i64::try_from(block.timestamp)
+                .map_err(|_| anyhow::anyhow!("Timestamp too large for i64"))?,
+            0,
+        ) {
+            Some(date) => date,
+            None => bail!("Block's timestamp is incorrect"),
+        };
+
+        // Insert the block into the blocks table
+        sqlx::query(
+            "INSERT INTO blocks (hash, parent_hash, height, timestamp) VALUES ($1, $2, $3, $4)",
+        )
+        .bind(block_hash)
+        .bind(block_parent_hash)
+        .bind(block_height)
+        .bind(block_timestamp)
+        .execute(&mut *transaction)
+        .await?;
+
+        for (tx_index, tx) in block.txs.iter().enumerate() {
+            let tx_hash = &tx.hash().0;
+            debug!("tx:{:?} hash {:?}", tx_hash, tx);
+
+            let version = i32::try_from(tx.version)
+                .map_err(|_| anyhow::anyhow!("Tx version is too large to fit into an i32"))?;
+            let tx_index = i32::try_from(tx_index)
+                .map_err(|_| anyhow::anyhow!("Tx index is too large to fit into an i64"))?;
+
             match tx.transaction_data {
                 crate::model::TransactionData::Blob(ref tx) => {
-                    for (bi, blob) in tx.blobs.iter().enumerate() {
-                        if let Err(e) = self.inner.write().await.blobs.put(
-                            block.height,
-                            ti,
-                            bi,
-                            &tx_hash,
-                            &tx.identity,
-                            blob,
-                        ) {
-                            error!("storing blob of tx {} in block {}: {}", ti, block.height, e);
-                        }
+                    // Insert the transaction into the transactions table
+                    let tx_type = TransactionType::BlobTransaction;
+                    let tx_status = TransactionStatus::Sequenced;
+                    sqlx::query(
+                        "INSERT INTO transactions (tx_hash, block_hash, tx_index, version, transaction_type, transaction_status)
+                        VALUES ($1, $2, $3, $4, $5, $6)")
+                    .bind(tx_hash)
+                    .bind(block_hash)
+                    .bind(tx_index)
+                    .bind(version)
+                    .bind(tx_type)
+                    .bind(tx_status)
+                    .execute(&mut *transaction)
+                    .await?;
+
+                    for (blob_index, blob) in tx.blobs.iter().enumerate() {
+                        let blob_index = i32::try_from(blob_index).map_err(|_| {
+                            anyhow::anyhow!("Blob index is too large to fit into an i32")
+                        })?;
+                        let identity = &tx.identity.0;
+                        let contract_name = &blob.contract_name.0;
+                        let blob = &blob.data.0;
+                        sqlx::query(
+                            "INSERT INTO blobs (tx_hash, blob_index, identity, contract_name, data)
+                             VALUES ($1, $2, $3, $4, $5)",
+                        )
+                        .bind(tx_hash)
+                        .bind(blob_index)
+                        .bind(identity)
+                        .bind(contract_name)
+                        .bind(blob)
+                        .execute(&mut *transaction)
+                        .await?;
                     }
                 }
                 crate::model::TransactionData::Proof(ref tx) => {
-                    if let Err(e) =
-                        self.inner
-                            .write()
-                            .await
-                            .proofs
-                            .put(block.height, ti, &tx_hash, tx)
-                    {
-                        error!(
-                            "storing proof of tx {} in block {}: {}",
-                            ti, block.height, e
-                        );
+                    // Insert the transaction into the transactions table
+                    let tx_type = TransactionType::ProofTransaction;
+                    let tx_status = TransactionStatus::Success;
+                    sqlx::query(
+                        "INSERT INTO transactions (tx_hash, block_hash, tx_index, version, transaction_type, transaction_status)
+                        VALUES ($1, $2, $3, $4, $5, $6)")
+                    .bind(tx_hash)
+                    .bind(block_hash)
+                    .bind(tx_index)
+                    .bind(version)
+                    .bind(tx_type)
+                    .bind(tx_status)
+                    .execute(&mut *transaction)
+                    .await?;
+
+                    let proof = &tx.proof;
+
+                    sqlx::query("INSERT INTO proofs (tx_hash, proof) VALUES ($1, $2)")
+                        .bind(tx_hash)
+                        .bind(proof)
+                        .execute(&mut *transaction)
+                        .await?;
+
+                    // Adding all blob_references
+                    for blob_ref in tx.blobs_references.iter() {
+                        let contract_name = &blob_ref.contract_name.0;
+                        let blob_tx_hash = &blob_ref.blob_tx_hash.0;
+                        let blob_index = i32::try_from(blob_ref.blob_index.0).map_err(|_| {
+                            anyhow::anyhow!("Blob index is too large to fit into an i32")
+                        })?;
+
+                        sqlx::query(                            "INSERT INTO blob_references (tx_hash, contract_name, blob_tx_hash, blob_index)
+                             VALUES ($1, $2, $3, $4)")
+                        .bind(tx_hash)
+                        .bind(contract_name)
+                        .bind(blob_tx_hash)
+                        .bind(blob_index)
+                        .execute(&mut *transaction)
+                        .await?;
                     }
+                    // TODO: if verification is correct, change the transaction status for associated blod
+                    // TODO: if verification is correct, add HyleOutput
                 }
                 crate::model::TransactionData::RegisterContract(ref tx) => {
-                    if let Err(e) =
-                        self.inner
-                            .write()
-                            .await
-                            .contracts
-                            .put(block.height, ti, &tx_hash, tx)
-                    {
-                        error!(
-                            "storing contract {} of tx {} in block {}: {}",
-                            tx.contract_name.0, ti, block.height, e
-                        );
-                    }
+                    // Insert the transaction into the transactions table
+                    let tx_type = TransactionType::RegisterContractTransaction;
+                    let tx_status = TransactionStatus::Success;
+                    sqlx::query(
+                        "INSERT INTO transactions (tx_hash, block_hash, tx_index, version, transaction_type, transaction_status)
+                        VALUES ($1, $2, $3, $4, $5, $6)")
+                    .bind(tx_hash)
+                    .bind(block_hash)
+                    .bind(tx_index)
+                    .bind(version)
+                    .bind(tx_type)
+                    .bind(tx_status)
+                    .execute(&mut *transaction)
+                    .await?;
+                    let owner = &tx.owner;
+                    let verifier = &tx.verifier;
+                    let program_id = &tx.program_id;
+                    let state_digest = &tx.state_digest.0;
+                    let contract_name = &tx.contract_name.0;
+
+                    // Adding to Contract table
+                    sqlx::query(
+                        "INSERT INTO contracts (tx_hash, owner, verifier, program_id, state_digest, contract_name)
+                        VALUES ($1, $2, $3, $4, $5, $6)")
+                    .bind(tx_hash)
+                    .bind(owner)
+                    .bind(verifier)
+                    .bind(program_id)
+                    .bind(state_digest)
+                    .bind(contract_name)
+                    .execute(&mut *transaction)
+                    .await?;
+
+                    // Adding to ContractState table
+                    sqlx::query(
+                        "INSERT INTO contract_state (contract_name, block_hash, state_digest)
+                        VALUES ($1, $2, $3)",
+                    )
+                    .bind(contract_name)
+                    .bind(block_hash)
+                    .bind(state_digest)
+                    .execute(&mut *transaction)
+                    .await?;
                 }
-                crate::model::TransactionData::Stake(_) => {
-                    warn!("Temporary transaction type 'Stake' not stored in history.")
+                crate::model::TransactionData::Stake(ref _staker) => {
+                    tracing::warn!("TODO: add staking to indexer db");
                 }
             }
-            if let Err(e) = self.inner.write().await.transactions.put(
-                block.height,
-                ti,
-                &tx_hash,
-                &tx.transaction_data,
-            ) {
-                error!(
-                    "storing contract of tx {} in block {}: {}",
-                    ti, block.height, e
-                );
-            }
         }
-        // store block
-        if let Err(e) = self.inner.write().await.blocks.put(block) {
-            error!("storing block: {}", e);
-        }
+
+        // Commit the transaction
+        transaction.commit().await?;
+
+        Ok(())
     }
 }
 
 impl std::ops::Deref for Indexer {
-    type Target = RwLock<IndexerInner>;
+    type Target = Pool<Postgres>;
 
     fn deref(&self) -> &Self::Target {
         &self.inner
     }
 }
 
-#[derive(Debug)]
-pub struct IndexerInner {
-    pub blocks: Blocks,
-    pub blobs: Blobs,
-    pub proofs: Proofs,
-    pub contracts: Contracts,
-    pub transactions: Transactions,
-}
-
-impl IndexerInner {
-    pub fn new(db: sled::Db) -> Result<Self> {
-        Ok(Self {
-            blocks: Blocks::new(&db)?,
-            blobs: Blobs::new(&db)?,
-            proofs: Proofs::new(&db)?,
-            contracts: Contracts::new(&db)?,
-            transactions: Transactions::new(&db)?,
-        })
-    }
-}
-
 #[cfg(test)]
-mod tests {
-    use crate::{
-        indexer::{blobs::Blobs, contracts::Contracts, proofs::Proofs, transactions::Transactions},
-        model::{
-            Blob, BlobData, BlobIndex, BlobReference, BlobTransaction, Block, BlockHash,
-            BlockHeight, ContractName, Identity, ProofTransaction, RegisterContractTransaction,
-            StateDigest, Transaction, TransactionData, TxHash,
-        },
-    };
+mod test {
+    use axum_test::TestServer;
 
-    use super::blocks::Blocks;
-    use anyhow::Result;
+    use super::*;
 
-    #[test]
-    fn test_blocks() -> Result<()> {
-        let tmpdir = tempdir::TempDir::new("indexer-tests")?;
-        let db = sled::open(tmpdir.path().join("indexer"))?;
-        let mut blocks = Blocks::new(&db)?;
-        assert!(
-            blocks.len() == 1,
-            "blocks should contain genesis block after creation"
-        );
-        let block = Block {
-            parent_hash: BlockHash {
-                inner: vec![0, 1, 2, 3],
-            },
-            height: BlockHeight(1),
-            timestamp: 42,
-            txs: vec![Transaction {
-                version: 1,
-                transaction_data: TransactionData::Blob(BlobTransaction {
-                    identity: Identity("tx_id".to_string()),
-                    blobs: vec![Blob {
-                        contract_name: ContractName("c1".to_string()),
-                        data: BlobData(vec![4, 5, 6]),
-                    }],
-                }),
-                inner: "tx".to_string(),
-            }],
-        };
-        blocks.put(block.clone())?;
-        assert!(blocks.last().height == block.height);
-        let last = blocks.get(BlockHeight(1))?;
-        assert!(last.is_some());
-        assert!(last.unwrap().height == BlockHeight(1));
-        Ok(())
+    async fn setup_indexer(pool: PgPool) -> Result<TestServer> {
+        let indexer = new_indexer(pool).await;
+        let router = indexer.api();
+        TestServer::new(router)
     }
 
-    #[test]
-    fn test_transactions() -> Result<()> {
-        let tmpdir = tempdir::TempDir::new("indexer-tests")?;
-        let db = sled::open(tmpdir.path().join("indexer"))?;
-        let mut transactions = Transactions::new(&db)?;
-        assert!(transactions.len() == 0);
-        let transaction = TransactionData::Blob(BlobTransaction {
-            identity: Identity("tx_id".to_string()),
-            blobs: vec![Blob {
-                contract_name: ContractName("c1".to_string()),
-                data: BlobData(vec![4, 5, 6]),
-            }],
-        });
-        let tx_hash = "hash123".to_string();
-        transactions.put(BlockHeight(2), 3, &tx_hash, &transaction)?;
-        let last = transactions
-            .get(BlockHeight(2), 3)?
-            .expect("last transaction");
-        assert!(last.block_height == BlockHeight(2));
-        assert!(last.tx_index == 3);
-
-        let unknown = transactions.get(BlockHeight(8), 42)?;
-        assert!(unknown.is_none());
-
-        let last = transactions.last()?.expect("last transaction");
-        assert!(last.block_height == BlockHeight(2));
-        assert!(last.tx_index == 3);
-
-        let last = transactions
-            .get_with_hash(&tx_hash)?
-            .expect("transaction with hash");
-        assert!(last.block_height == BlockHeight(2));
-        assert_eq!(last.tx_hash, tx_hash);
-        Ok(())
-    }
-
-    #[test]
-    fn test_blobs() -> Result<()> {
-        let tmpdir = tempdir::TempDir::new("indexer-tests")?;
-        let db = sled::open(tmpdir.path().join("indexer"))?;
-        let mut blobs = Blobs::new(&db)?;
-        assert!(blobs.len() == 0);
-        let blob = Blob {
-            contract_name: ContractName("c1".to_string()),
-            data: BlobData(vec![4, 5, 6]),
-        };
-        let tx_identity = Identity("tx_id".to_string());
-        let tx_hash = "hash123".to_string();
-        blobs.put(BlockHeight(2), 3, 4, &tx_hash, &tx_identity, &blob)?;
-
-        let last = blobs.get(BlockHeight(2), 3, 4)?.expect("last blob");
-        assert!(last.block_height == BlockHeight(2));
-        assert!(last.tx_index == 3);
-
-        let last = blobs.last()?.expect("last blob");
-        assert!(last.block_height == BlockHeight(2));
-        assert!(last.tx_index == 3);
-        assert!(last.blob_index == 4);
-
-        let unknown = blobs.get(BlockHeight(8), 42, 6)?;
-        assert!(unknown.is_none());
-
-        let last = blobs.get_with_hash(&tx_hash, 4)?.expect("blob with hash");
-        assert!(last.block_height == BlockHeight(2));
-        assert_eq!(last.tx_hash, tx_hash);
-        Ok(())
-    }
-
-    #[test]
-    fn test_contracts() -> Result<()> {
-        let tmpdir = tempdir::TempDir::new("indexer-tests")?;
-        let db = sled::open(tmpdir.path().join("indexer"))?;
-        let mut contracts = Contracts::new(&db)?;
-        assert!(contracts.len() == 0);
-        let contract_name = "c1".to_string();
-        let tx_hash = "hash123".to_string();
-        let contract = RegisterContractTransaction {
-            contract_name: ContractName(contract_name.clone()),
-            owner: "owner".to_string(),
-            program_id: vec![7, 8, 9],
-            verifier: "verifier".to_string(),
-            state_digest: StateDigest(vec![1, 3, 5]),
-        };
-
-        contracts.put(BlockHeight(2), 3, &tx_hash, &contract)?;
-
-        let contract = contracts.get(&contract_name).expect("contract with name");
-        assert!(contract.is_some());
-        let contract = contract.unwrap();
-        assert_eq!(contract.block_height, BlockHeight(2));
-        assert_eq!(contract.tx_index, 3);
-
-        let contract_name = "c2".to_string();
-        let contract = RegisterContractTransaction {
-            contract_name: ContractName(contract_name.clone()),
-            owner: "owner".to_string(),
-            program_id: vec![2, 4, 6],
-            verifier: "verifier".to_string(),
-            state_digest: StateDigest(vec![5, 7, 8]),
-        };
-        contracts.put(BlockHeight(4), 6, &tx_hash, &contract)?;
-
-        let unknown = contracts.get("c42")?;
-        assert!(unknown.is_none());
-
-        let mut found = 0;
-        for (i, item) in contracts.all().enumerate() {
-            let elem = item?;
-            match i {
-                0 => {
-                    assert_eq!(elem.key(), Some("c1"));
-                    let c = elem.value()?;
-                    assert_eq!(c.block_height, BlockHeight(2));
-                    assert_eq!(c.tx_index, 3);
-                    found += 1;
-                }
-                1 => {
-                    assert_eq!(elem.key(), Some("c2"));
-                    let c = elem.value()?;
-                    assert_eq!(c.block_height, BlockHeight(4));
-                    assert_eq!(c.tx_index, 6);
-                    found += 1;
-                }
-                _ => unreachable!(),
-            }
+    async fn new_indexer(pool: PgPool) -> Indexer {
+        Indexer {
+            bus: IndexerBusClient::new_from_bus(SharedMessageBus::default()).await,
+            inner: pool,
         }
-        assert!(found == 2);
-
-        Ok(())
     }
 
-    #[test]
-    fn test_proofs() -> Result<()> {
-        let tmpdir = tempdir::TempDir::new("indexer-tests")?;
-        let db = sled::open(tmpdir.path().join("indexer"))?;
-        let mut proofs = Proofs::new(&db)?;
-        assert!(proofs.len() == 0);
-        let contract_name = "c1".to_string();
-        let proof = ProofTransaction {
-            proof: vec![2, 4, 6],
-            blobs_references: vec![BlobReference {
-                contract_name: ContractName(contract_name.clone()),
-                blob_tx_hash: TxHash(vec![1, 7, 9]),
-                blob_index: BlobIndex(1),
-            }],
-        };
-        let tx_hash = "hash123".to_string();
-        proofs.put(BlockHeight(2), 3, &tx_hash, &proof)?;
+    #[test_log::test(sqlx::test(
+        migrations = "./src/indexer/migrations",
+        fixtures(path = "../tests/fixtures", scripts("test_data"))
+    ))]
+    async fn test_indexer_api(pool: PgPool) -> Result<()> {
+        let server = setup_indexer(pool).await?;
 
-        let last = proofs.get(BlockHeight(2), 3)?.expect("last proof");
-        assert!(last.block_height == BlockHeight(2));
-        assert!(last.tx_index == 3);
+        // Blocks
+        // Get all blocks
+        let transactions_response = server.get("/blocks").await;
+        transactions_response.assert_status_ok();
+        assert!(!transactions_response.text().is_empty());
 
-        let last = proofs.last()?.expect("last proof");
-        assert!(last.block_height == BlockHeight(2));
-        assert!(last.tx_index == 3);
+        // Get the last block
+        let transactions_response = server.get("/block/last").await;
+        transactions_response.assert_status_ok();
+        assert!(!transactions_response.text().is_empty());
 
-        let unknown = proofs.get(BlockHeight(8), 42)?;
-        assert!(unknown.is_none());
+        // Get block by height
+        let transactions_response = server.get("/block/height/1").await;
+        transactions_response.assert_status_ok();
+        assert!(!transactions_response.text().is_empty());
 
-        let last = proofs.get_with_hash(&tx_hash)?.expect("proof with hash");
-        assert!(last.block_height == BlockHeight(2));
-        assert_eq!(last.tx_hash, tx_hash);
+        // Get block by hash
+        let transactions_response = server
+            .get("/block/hash/block1aaaaaaaaaaaaaaaaaaaaaaaaaa")
+            .await;
+        transactions_response.assert_status_ok();
+        assert!(!transactions_response.text().is_empty());
+
+        // Transactions
+        // Get all transactions
+        let transactions_response = server.get("/transactions").await;
+        transactions_response.assert_status_ok();
+        assert!(!transactions_response.text().is_empty());
+
+        // Get all transactions by height
+        let transactions_response = server.get("/transactions/block/2").await;
+        transactions_response.assert_status_ok();
+        assert!(!transactions_response.text().is_empty());
+
+        // Get an existing transaction by name
+        let transactions_response = server.get("/transactions/contract/contract_1").await;
+        transactions_response.assert_status_ok();
+        assert!(!transactions_response.text().is_empty());
+
+        // Get an unknown transaction by name
+        let transactions_response = server.get("/transactions/contract/unknown_contract").await;
+        transactions_response.assert_status_not_found();
+
+        // Get an existing transaction by hash
+        let transactions_response = server
+            .get("/transaction/hash/test_tx_hash_1aaaaaaaaaaaaaaaaaa")
+            .await;
+        transactions_response.assert_status_ok();
+        assert!(!transactions_response.text().is_empty());
+
+        // Get an unknown transaction by hash
+        let unknown_tx = server.get("/transaction/hash/unknown").await;
+        unknown_tx.assert_status_not_found();
+
+        // Blobs
+        // Get all settled blobs by contract name
+        let transactions_response = server.get("/blobs/settled/contract/contract_1").await;
+        transactions_response.assert_status_ok();
+        assert!(!transactions_response.text().is_empty());
+
+        // Get all unsettled blobs by contract name
+        let transactions_response = server.get("/blobs/unsettled/contract/contract_1").await;
+        transactions_response.assert_status_ok();
+        assert!(!transactions_response.text().is_empty());
+
+        // Get blobs by tx_hash
+        let transactions_response = server
+            .get("/blobs/hash/test_tx_hash_2aaaaaaaaaaaaaaaaaa")
+            .await;
+        transactions_response.assert_status_ok();
+        assert!(!transactions_response.text().is_empty());
+
+        // Get unknown blobs by tx_hash
+        let transactions_response = server
+            .get("/blobs/hash/test_tx_hash_1aaaaaaaaaaaaaaaaaa")
+            .await;
+        transactions_response.assert_status_not_found();
+
+        // Get blob by tx_hash and index
+        let transactions_response = server
+            .get("/blob/hash/test_tx_hash_2aaaaaaaaaaaaaaaaaa/index/0")
+            .await;
+        transactions_response.assert_status_ok();
+        assert!(!transactions_response.text().is_empty());
+
+        // Get blob by tx_hash and unknown index
+        let transactions_response = server
+            .get("/blob/hash/test_tx_hash_2aaaaaaaaaaaaaaaaaa/index/1000")
+            .await;
+        transactions_response.assert_status_not_found();
+
+        // Contracts
+        // Get contract by name
+        let transactions_response = server.get("/contract/contract_1").await;
+        transactions_response.assert_status_ok();
+        assert!(!transactions_response.text().is_empty());
+
+        // Get contract state by name and height
+        let transactions_response = server.get("/state/contract/contract_1/block/1").await;
+        transactions_response.assert_status_ok();
+        assert!(!transactions_response.text().is_empty());
+
         Ok(())
     }
 }

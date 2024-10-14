@@ -1,8 +1,7 @@
-use std::{path::PathBuf, sync::Arc};
-
 use anyhow::Result;
 use config::{Config, ConfigError, Environment, File};
 use serde::{Deserialize, Serialize};
+use std::{path::PathBuf, sync::Arc};
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct Storage {
@@ -29,8 +28,10 @@ pub struct Conf {
     pub storage: Storage,
     pub consensus: Consensus,
     pub rest: String,
+    pub database_url: String,
     pub p2p: P2pConf,
     pub data_directory: PathBuf,
+    pub migration_directory: String,
     pub run_indexer: bool,
 }
 

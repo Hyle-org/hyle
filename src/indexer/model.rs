@@ -1,54 +1,88 @@
-use crate::model::{
-    BlobData, BlobReference, BlockHeight, ContractName, Identity, StateDigest, TransactionData,
-};
-use nocow::nocow;
 use serde::{Deserialize, Serialize};
-use std::borrow::Cow;
+use sqlx::types::chrono::NaiveDateTime;
 
-#[nocow(Transaction)]
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct TransactionCow<'a> {
-    pub tx_hash: Cow<'a, String>,
-    pub data: Cow<'a, TransactionData>,
-    // refs:
-    pub block_height: BlockHeight,
-    pub tx_index: usize,
+#[derive(Debug, sqlx::FromRow, Serialize, Deserialize)]
+pub struct BlockDb {
+    // Struct for the blocks table
+    pub hash: Vec<u8>,        // Corresponds to BlockHash
+    pub parent_hash: Vec<u8>, // Parent block hash
+    #[sqlx(try_from = "i64")]
+    pub height: u64, // Corresponds to BlockHeight
+    pub timestamp: NaiveDateTime, // UNIX timestamp
 }
 
-#[nocow(Blob)]
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct BlobCow<'a> {
-    pub identity: Cow<'a, Identity>,
-    pub contract_name: Cow<'a, ContractName>,
-    pub data: Cow<'a, BlobData>,
-    // refs:
-    pub block_height: BlockHeight,
-    pub tx_index: usize,
-    pub tx_hash: Cow<'a, String>,
-    pub blob_index: usize,
+#[derive(Debug, sqlx::Type, Serialize, Deserialize)]
+#[sqlx(type_name = "transaction_type", rename_all = "snake_case")]
+pub enum TransactionType {
+    BlobTransaction,
+    ProofTransaction,
+    RegisterContractTransaction,
 }
 
-#[nocow(Proof)]
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct ProofCow<'a> {
-    pub blobs_references: Cow<'a, Vec<BlobReference>>,
-    pub proof: Cow<'a, Vec<u8>>,
-    // refs:
-    pub block_height: BlockHeight,
-    pub tx_index: usize,
-    pub tx_hash: Cow<'a, String>,
+#[derive(Debug, sqlx::Type, Serialize, Deserialize)]
+#[sqlx(type_name = "transaction_status", rename_all = "snake_case")]
+pub enum TransactionStatus {
+    Success,
+    Failure,
+    Sequenced,
+}
+#[derive(Debug, sqlx::FromRow, Serialize, Deserialize)]
+pub struct TransactionDb {
+    // Struct for the transactions table
+    pub tx_hash: Vec<u8>,    // Transaction hash
+    pub block_hash: Vec<u8>, // Corresponds to the block hash
+    pub tx_index: i32,       // Index of the transaction in the block
+    #[sqlx(try_from = "i32")]
+    pub version: u32, // Transaction version
+    pub transaction_type: TransactionType, // Type of transaction
+    pub transaction_status: TransactionStatus, // Status of the transaction
 }
 
-#[nocow(Contract)]
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct ContractCow<'a> {
-    pub contract_name: Cow<'a, ContractName>,
-    pub owner: Cow<'a, String>,
-    pub program_id: Cow<'a, Vec<u8>>,
-    pub verifier: Cow<'a, String>,
-    pub state_digest: Cow<'a, StateDigest>,
-    // refs:
-    pub block_height: BlockHeight,
-    pub tx_index: usize,
-    pub tx_hash: Cow<'a, String>,
+#[derive(Debug, sqlx::FromRow, Serialize, Deserialize)]
+pub struct BlobDb {
+    pub tx_hash: Vec<u8>, // Corresponds to the transaction hash (BYTEA in SQL)
+    #[sqlx(try_from = "i32")]
+    pub blob_index: u32, // Index of the blob within the transaction
+    pub identity: String, // Identity of the blob (TEXT in SQL)
+    pub contract_name: String, // Contract name associated with the blob (TEXT in SQL)
+    pub data: Vec<u8>,    // Actual blob data (BYTEA in SQL)
+}
+
+#[derive(Debug, sqlx::FromRow, Serialize, Deserialize)]
+pub struct ProofTransactionDb {
+    // Struct for the proof_transactions table
+    pub tx_hash: Vec<u8>, // Corresponds to the transaction hash
+    pub proof: Vec<u8>,   // Proof associated with the transaction
+}
+
+#[derive(Debug, sqlx::FromRow, Serialize, Deserialize)]
+pub struct BlobReferenceDb {
+    // Struct for the blob_references table
+    pub id: i32,               // Unique ID for each blob reference
+    pub tx_hash: Vec<u8>,      // Corresponds to the proof transaction hash
+    pub contract_name: String, // Contract name
+    pub blob_tx_hash: Vec<u8>, // Blob transaction hash
+    #[sqlx(try_from = "i32")]
+    pub blob_index: u32, // Index of the blob
+    // Optional field for extra data
+    pub hyle_output: Option<serde_json::Value>, // Optional data in JSON format
+}
+
+#[derive(Debug, sqlx::FromRow, Serialize, Deserialize)]
+pub struct ContractDb {
+    // Struct for the contracts table
+    pub tx_hash: Vec<u8>,    // Corresponds to the registration transaction hash
+    pub owner: String,       // Owner of the contract
+    pub verifier: String,    // Verifier of the contract
+    pub program_id: Vec<u8>, // Program ID
+    pub state_digest: Vec<u8>, // State digest of the contract
+    pub contract_name: String, // Contract name
+}
+
+#[derive(Debug, sqlx::FromRow, Serialize, Deserialize)]
+pub struct ContractStateDb {
+    // Struct for the contract_state table
+    pub contract_name: String, // Name of the contract
+    pub block_hash: Vec<u8>,   // Hash of the block where the state is captured
+    pub state_digest: Vec<u8>, // The contract state stored in JSON format
 }
