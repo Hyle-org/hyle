@@ -1,25 +1,17 @@
-use crate::bus::command_response::CmdRespClient;
 use crate::bus::BusClientSender;
 use crate::bus::BusMessage;
 use crate::consensus::staking::Staker;
+use crate::model::BlobTransaction;
 use crate::model::Transaction;
-use crate::model::{BlobTransaction, ContractName};
 use crate::model::{
     Hashable, ProofTransaction, RegisterContractTransaction, TransactionData, TxHash,
 };
 use crate::tools::mock_workflow::RunScenario;
-use anyhow::anyhow;
-use axum::{
-    extract::{Path, State},
-    http::StatusCode,
-    response::IntoResponse,
-    Json,
-};
+use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
-use tracing::error;
 
-use super::{AppError, RouterState};
+use super::RouterState;
 
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode)]
 pub enum RestApiMessage {
@@ -120,24 +112,6 @@ pub async fn send_staking_transaction(
     Json(payload): Json<Staker>,
 ) -> Result<impl IntoResponse, StatusCode> {
     handle_send(state, TransactionData::Stake(payload)).await
-}
-
-pub async fn get_contract(
-    Path(name): Path<ContractName>,
-    State(mut state): State<RouterState>,
-) -> Result<impl IntoResponse, AppError> {
-    let name_clone = name.clone();
-    match state.bus.request(name).await {
-        Ok(contract) => Ok(Json(contract)),
-        err => {
-            error!("{:?}", err);
-
-            Err(AppError(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                anyhow!("Error while getting contract {}", name_clone),
-            ))
-        }
-    }
 }
 
 pub async fn run_scenario(

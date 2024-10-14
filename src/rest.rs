@@ -1,9 +1,7 @@
 //! Public API for interacting with the node.
 
 use crate::{
-    bus::{bus_client, command_response::Query, SharedMessageBus},
-    model::ContractName,
-    node_state::model::Contract,
+    bus::{bus_client, SharedMessageBus},
     tools::mock_workflow::RunScenario,
     utils::modules::Module,
 };
@@ -11,7 +9,7 @@ use anyhow::{Context, Result};
 use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
-    routing::{get, post},
+    routing::post,
     Router,
 };
 use axum_otel_metrics::HttpMetricsLayer;
@@ -26,7 +24,6 @@ bus_client! {
 struct RestBusClient {
     sender(RestApiMessage),
     sender(RunScenario),
-    sender(Query<ContractName, Contract>),
 }
 }
 
@@ -57,7 +54,6 @@ impl Module for RestApi {
             .router
             .merge(
                 Router::new()
-                    .route("/v1/contract/:name", get(endpoints::get_contract))
                     .route(
                         "/v1/contract/register",
                         post(endpoints::send_contract_transaction),
@@ -111,10 +107,6 @@ impl Clone for RouterState {
                 Pick::<BusMetrics>::get(&self.bus).clone(),
                 Pick::<tokio::sync::broadcast::Sender<RestApiMessage>>::get(&self.bus).clone(),
                 Pick::<tokio::sync::broadcast::Sender<RunScenario>>::get(&self.bus).clone(),
-                Pick::<tokio::sync::broadcast::Sender<Query<ContractName, Contract>>>::get(
-                    &self.bus,
-                )
-                .clone(),
             ),
         }
     }

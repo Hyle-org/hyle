@@ -90,9 +90,6 @@ impl NodeState {
 
         handle_messages! {
             on_bus self.bus,
-            command_response<ContractName, Contract> cmd => {
-                self.contracts.get(cmd).cloned().context("Contract not found")
-            }
             listen<DataEvent> event => {
                 _ = self.handle_data_event(event)
                     .log_error("NodeState: Error while handling data event");
