@@ -20,7 +20,7 @@ use crate::{
     mempool::{MempoolCommand, MempoolEvent, MempoolResponse},
     model::{
         get_current_timestamp, Block, BlockHash, BlockHeight, Hashable, Transaction,
-        ValidatorPublicKey,
+        TransactionData, ValidatorPublicKey,
     },
     p2p::{
         network::{OutboundMessage, PeerEvent, Signature, Signed, SignedWithKey},
@@ -49,8 +49,6 @@ pub enum ConsensusNetMessage {
     ConfirmAck(ConsensusProposalHash),
     Commit(ConsensusProposalHash, QuorumCertificate),
     ValidatorCandidacy(ValidatorCandidacy),
-    CatchupRequest(),
-    CatchupResponse(Staking),
 }
 
 #[derive(Encode, Decode, Default, Debug)]
@@ -65,6 +63,7 @@ enum Step {
 pub enum ConsensusCommand {
     SingleNodeBlockGeneration(u64),
     NewStaker(Staker),
+    NewBonded(ValidatorPublicKey),
     StartNewSlot,
 }
 
@@ -188,6 +187,14 @@ impl Consensus {
             .unwrap_or(BlockHash::new("000"));
         let parent_height = last_block.map(|b| b.height).unwrap_or_default();
 
+        // proposition of new validators for next slot
+        let new_bonded_validators = self
+            .new_validators_candidates
+            .clone()
+            .into_iter()
+            .map(|v| v.pubkey)
+            .collect();
+
         // Create block to-be-proposed
         let mut txs = vec![];
         if !self.pending_batches.is_empty() {
@@ -197,20 +204,11 @@ impl Consensus {
             parent_hash,
             height: parent_height + 1,
             timestamp: get_current_timestamp(),
+            new_bonded_validators,
             txs,
         };
-        let mut validators = self.bft_round_state.consensus_proposal.validators.clone();
 
-        // add new bonded validators pubkeys to Validators
-        let new_validators = self.new_validators_candidates.clone();
-        for new_validator in new_validators {
-            // Bond the candidate
-            self.bft_round_state
-                .staking
-                .bond(new_validator.pubkey.clone())
-                .expect("Failed to bond new validator");
-            validators.push(new_validator.pubkey);
-        }
+        let validators = self.bft_round_state.staking.bonded();
 
         // Start Consensus with following block
         self.bft_round_state.consensus_proposal = ConsensusProposal {
@@ -230,6 +228,19 @@ impl Consensus {
     /// will grand them a gree stake to start
     /// this genesis logic might change later
     fn create_genesis_consensus_proposal(&mut self) {
+        let txs = self
+            .genesis_pubkeys
+            .clone()
+            .into_iter()
+            .map(|pubkey| {
+                Transaction::wrap(TransactionData::Stake(Staker {
+                    pubkey,
+                    stake: Stake { amount: 100 },
+                }))
+            })
+            .collect::<Vec<Transaction>>();
+        let new_bonded_validators = self.genesis_pubkeys.clone();
+
         let first_block = Block {
             parent_hash: BlockHash {
                 inner: [
@@ -240,7 +251,8 @@ impl Consensus {
             },
             height: BlockHeight(0),
             timestamp: get_current_timestamp(),
-            txs: vec![],
+            new_bonded_validators,
+            txs,
         };
 
         let validators = self.genesis_pubkeys.clone();
@@ -352,15 +364,21 @@ impl Consensus {
     }
 
     /// Verify that new bonded validators
-    /// are part of the consensus
     /// and have enough stake
     /// and have a valid signature
     fn verify_new_bonded_validators(&mut self, proposal: &ConsensusProposal) -> Result<()> {
+        let proposal_pubkeys = proposal
+            .new_bonded_validators
+            .clone()
+            .into_iter()
+            .map(|c| c.pubkey)
+            .collect::<Vec<ValidatorPublicKey>>();
+        if proposal.slot != 0 && proposal_pubkeys != proposal.block.new_bonded_validators {
+            bail!("New bonded validators in proposal and block do not match. Proposal: {:?}, block: {:?}",
+                proposal_pubkeys, 
+                proposal.block.new_bonded_validators);
+        }
         for new_validator in &proposal.new_bonded_validators {
-            // Verify that the new validator is part of the consensus
-            if !proposal.validators.contains(&new_validator.pubkey) {
-                bail!("New bonded validator is not part of the consensus");
-            }
             // Verify that the new validator has enough stake
             if let Some(stake) = self
                 .bft_round_state
@@ -391,9 +409,6 @@ impl Consensus {
                     bail!("New bonded validator has an invalid candidacy message");
                 }
 
-                self.bft_round_state
-                    .staking
-                    .bond(new_validator.pubkey.clone())?;
                 self.new_validators_candidates
                     .retain(|v| v.pubkey != new_validator.pubkey);
                 self.bus.send(P2PCommand::ConnectTo {
@@ -441,11 +456,15 @@ impl Consensus {
             Ok(())
         }
         #[cfg(test)]
-        self.start_new_slot()
+        Ok(())
     }
 
     fn start_new_slot(&mut self) -> Result<(), Error> {
         // Message received by leader.
+        let mut new_validators = self.new_validators_candidates.clone();
+        new_validators.retain(|c| !self.bft_round_state.staking.is_bonded(&c.pubkey));
+        self.new_validators_candidates = new_validators;
+        
         // Verifies that previous slot received a *Commit* Quorum Certificate.
         match self
             .bft_round_state
@@ -454,7 +473,8 @@ impl Consensus {
         {
             Some((previous_consensus_proposal_hash, previous_commit_quorum_certificate)) => {
                 info!(
-                    "🚀 Starting new slot with {} existing validators and {} candidates",
+                    "🚀 Starting new slot {} with {} existing validators and {} candidates",
+                    self.bft_round_state.slot,
                     self.bft_round_state.consensus_proposal.validators.len(),
                     self.new_validators_candidates.len()
                 );
@@ -634,8 +654,6 @@ impl Consensus {
             ConsensusNetMessage::ValidatorCandidacy(candidacy) => {
                 self.on_validator_candidacy(msg, candidacy)
             }
-            ConsensusNetMessage::CatchupRequest() => self.on_catchup_request(msg),
-            ConsensusNetMessage::CatchupResponse(staking) => self.on_catchup_response(staking),
         }
     }
 
@@ -709,16 +727,7 @@ impl Consensus {
             }
             None if self.bft_round_state.slot == 0 => {
                 if consensus_proposal.slot != 0 {
-                    info!("🔄 Consensus state out of sync, need to catchup");
-                    _ = self
-                        .bus
-                        .send(OutboundMessage::send(
-                            self.leader_id(),
-                            self.sign_net_message(ConsensusNetMessage::CatchupRequest())?,
-                        ))
-                        .context(
-                            "Failed to send ConsensusNetMessage::CatchupRequest msg on the bus",
-                        )?;
+                    warn!("🔄 Consensus state out of sync, need to catchup");
                 } else {
                     info!("#### Received genesis block proposal ####");
                     self.genesis_bond(&consensus_proposal.validators)?;
@@ -1179,6 +1188,11 @@ impl Consensus {
             return Ok(());
         }
 
+        if self.bft_round_state.staking.is_bonded(&candidacy.pubkey) {
+            debug!("Validator is already bonded. Ignoring candidacy");
+            return Ok(());
+        }
+
         // Verify that the candidate has enough stake
         if let Some(stake) = self.bft_round_state.staking.get_stake(&candidacy.pubkey) {
             if stake.amount < staking::MIN_STAKE {
@@ -1194,35 +1208,6 @@ impl Consensus {
             msg: msg.clone(),
         });
         Ok(())
-    }
-
-    fn on_catchup_request(&mut self, msg: &SignedWithKey<ConsensusNetMessage>) -> Result<()> {
-        info!("🔄 Catchup request received");
-        _ = self
-            .bus
-            .send(OutboundMessage::send(
-                msg.validators
-                    .first()
-                    .ok_or(anyhow!("No validator in msg"))?
-                    .clone(),
-                self.sign_net_message(ConsensusNetMessage::CatchupResponse(
-                    self.bft_round_state.staking.clone(),
-                ))?,
-            ))
-            .context("Failed to send ConsensusNetMessage::CatchupResponse msg on the bus")?;
-        Ok(())
-    }
-
-    fn on_catchup_response(&mut self, staking: &Staking) -> Result<()> {
-        info!("🔄 Catchup response received");
-        if self.bft_round_state.slot == 0
-            && self.bft_round_state.slot != self.bft_round_state.consensus_proposal.slot
-        {
-            self.bft_round_state.staking = staking.clone();
-            Ok(())
-        } else {
-            bail!("CatchupResponse is only valid for genesis block");
-        }
     }
 
     fn handle_command(&mut self, msg: ConsensusCommand) -> Result<()> {
@@ -1241,6 +1226,7 @@ impl Consensus {
                     parent_hash: BlockHash::new(&parent_hash),
                     height: BlockHeight(block_number),
                     timestamp: get_current_timestamp(),
+                    new_bonded_validators: vec![],
                     txs,
                 };
                 _ = self
@@ -1252,7 +1238,18 @@ impl Consensus {
                 Ok(())
             }
             ConsensusCommand::NewStaker(staker) => {
-                self.store.bft_round_state.staking.add_staker(staker)
+                // ignore new stakers from genesis block as they are already bonded
+                if self.bft_round_state.slot != 1 {
+                    self.store.bft_round_state.staking.add_staker(staker)?;
+                }
+                Ok(())
+            }
+            ConsensusCommand::NewBonded(validator) => {
+                // ignore new stakers from genesis block as they are already bonded
+                if self.bft_round_state.slot != 1 {
+                    self.store.bft_round_state.staking.bond(validator)?;
+                }
+                Ok(())
             }
             ConsensusCommand::StartNewSlot => self.start_new_slot(),
         }
@@ -1455,6 +1452,17 @@ mod test {
         }
 
         #[track_caller]
+        fn handle_block(&mut self, msg: &SignedWithKey<ConsensusNetMessage>) {
+        if let ConsensusNetMessage::Prepare(consensus_proposal) = &msg.msg {
+                for bonded in consensus_proposal.block.new_bonded_validators.clone() {
+                   self.consensus.handle_command(ConsensusCommand::NewBonded(bonded)).expect("handle block");
+                }
+            } else {
+                panic!("Leader proposal is not a Prepare message");
+            }
+        }
+
+        #[track_caller]
         fn add_staker(&mut self, staker: &Self, amount: u64, err: &str) {
             debug!("➕ {} Add staker: {:?}", self.name, staker.name);
             self.consensus
@@ -1463,6 +1471,12 @@ mod test {
                     stake: Stake { amount },
                 }))
                 .expect(err)
+        }
+
+        #[track_caller]
+        fn add_bonded_staker(&mut self, staker: &Self, amount: u64, err: &str) {
+            self.add_staker(staker, amount, err);
+            self.consensus.handle_command(ConsensusCommand::NewBonded(staker.pubkey())).expect(err);
         }
 
         #[track_caller]
@@ -1554,6 +1568,7 @@ mod test {
         node2.handle_msg(&leader_commit, "Leader commit");
 
         // Slot 1 - leader = node2
+        node2.start_new_slot();
         let leader_proposal = node2.assert_broadcast("Leader proposal");
         node1.handle_msg(&leader_proposal, "Leader proposal");
 
@@ -1570,6 +1585,7 @@ mod test {
         node1.handle_msg(&leader_commit, "Leader commit");
 
         // Slot 2 - leader = node1
+        node1.start_new_slot();
         let leader_proposal = node1.assert_broadcast("Leader proposal");
         node2.handle_msg(&leader_proposal, "Leader proposal");
 
@@ -1606,20 +1622,22 @@ mod test {
             node1.handle_msg(&slave_confirm_ack, "Slave confirm ack");
             let leader_commit = node1.assert_broadcast("Leader commit");
             node2.handle_msg(&leader_commit, "Leader commit");
+
+            info!("➡️  Handle block");
+            node1.handle_block(&leader_proposal);
+            node2.handle_block(&leader_proposal);
         }
 
         let mut node3 = TestCtx::new_node("node-3", &node2, 1).await;
-        // Slot 1: New slave catchup - leader = node2
+        node3.add_bonded_staker(&node1, 100, "Add staker");
+        node3.add_bonded_staker(&node2, 100, "Add staker");
+        // Slot 1: New slave candidates - leader = node2
         {
             info!("➡️  Leader proposal");
+            node2.start_new_slot();
             let leader_proposal = node2.assert_broadcast("Leader proposal");
             node1.handle_msg(&leader_proposal, "Leader proposal");
             node3.handle_msg(&leader_proposal, "Leader proposal");
-            info!("➡️  Slave 2 catchup");
-            let slave2_catchup_req = node3.assert_send(&node2, "Slave2 catchup");
-            node2.handle_msg(&slave2_catchup_req, "Slave2 catchup");
-            let leader_catchup_resp = node2.assert_send(&node3, "Salve2 catchup");
-            node3.handle_msg(&leader_catchup_resp, "Slave2 catchup");
             info!("➡️  Slave vote");
             let slave_vote = node1.assert_send(&node2, "Slave vote");
             node2.handle_msg(&slave_vote, "Slave vote");
@@ -1646,11 +1664,17 @@ mod test {
             node1.handle_msg(&slave2_candidacy, "Slave 2 candidacy");
             node2.add_staker(&node3, 100, "Add staker");
             node2.handle_msg(&slave2_candidacy, "Slave 2 candidacy");
+            
+            info!("➡️  Handle block");
+            node1.handle_block(&leader_proposal);
+            node2.handle_block(&leader_proposal);
+            node3.handle_block(&leader_proposal);
         }
 
         // Slot 2: Still a slot without slave 2 - leader = node 1
         {
             info!("➡️  Leader proposal");
+            node1.start_new_slot();
             let leader_proposal = node1.assert_broadcast("Leader proposal");
             if let ConsensusNetMessage::Prepare(consensus_proposal) = &leader_proposal.msg {
                 assert_eq!(consensus_proposal.validators.len(), 2);
@@ -1677,11 +1701,17 @@ mod test {
             let slave2_candidacy = node3.assert_broadcast("Slave 2 candidacy");
             node1.handle_msg(&slave2_candidacy, "Slave 2 candidacy");
             node2.handle_msg(&slave2_candidacy, "Slave 2 candidacy");
+ 
+            info!("➡️  Handle block");
+            node1.handle_block(&leader_proposal);
+            node2.handle_block(&leader_proposal);
+            node3.handle_block(&leader_proposal);
         }
 
         // Slot 3: Slave 2 joined consensus, leader = node-2
         {
             info!("➡️  Leader proposal");
+            node2.start_new_slot();
             let leader_proposal = node2.assert_broadcast("Leader proposal");
             if let ConsensusNetMessage::Prepare(consensus_proposal) = &leader_proposal.msg {
                 assert_eq!(consensus_proposal.validators.len(), 3);
@@ -1708,6 +1738,10 @@ mod test {
             let leader_commit = node2.assert_broadcast("Leader commit");
             node1.handle_msg(&leader_commit, "Leader commit");
             node3.handle_msg(&leader_commit, "Leader commit");
+            info!("➡️  Handle block");
+            node1.handle_block(&leader_proposal);
+            node2.handle_block(&leader_proposal);
+            node3.handle_block(&leader_proposal);
         }
 
         assert_eq!(node1.consensus.bft_round_state.slot, 4);

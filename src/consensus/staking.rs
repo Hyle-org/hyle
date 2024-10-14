@@ -52,6 +52,11 @@ impl Staking {
         Ok(())
     }
 
+    /// list bonded validators
+    pub fn bonded(&self) -> Vec<ValidatorPublicKey> {
+        self.bonded.clone()
+    }
+
     /// Unbond a staking validator
     pub fn unbond(&mut self, validator: &ValidatorPublicKey) -> Result<Stake> {
         if let Some(staker) = self.stakers.iter().find(|s| &s.pubkey == validator) {
@@ -92,6 +97,10 @@ impl Staking {
         } else {
             bail!("Validator not staking")
         }
+    }
+
+    pub fn is_bonded(&self, pubkey: &ValidatorPublicKey) -> bool {
+        self.bonded.iter().any(|v| v == pubkey)
     }
 }
 

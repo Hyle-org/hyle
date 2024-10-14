@@ -7,7 +7,7 @@ use crate::{
     consensus::ConsensusEvent,
     handle_messages,
     model::{Block, BlockHash, BlockHeight, Hashable, SharedRunContext, ValidatorPublicKey},
-    p2p::network::{NetMessage, OutboundMessage},
+    p2p::network::{NetMessage, OutboundMessage, PeerEvent},
     utils::{logger::LogMe, modules::Module},
 };
 use anyhow::{Context, Result};
@@ -33,6 +33,9 @@ pub enum DataNetMessage {
     QueryBlock {
         respond_to: ValidatorPublicKey,
         hash: BlockHash,
+    },
+    QueryLastBlock {
+        respond_to: ValidatorPublicKey,
     },
     QueryBlockResponse {
         block: Block,
@@ -60,6 +63,7 @@ struct DABusClient {
     sender(DataEvent),
     receiver(ConsensusEvent),
     receiver(DataNetMessage),
+    receiver(PeerEvent),
 }
 }
 
@@ -69,6 +73,7 @@ pub struct DataAvailability {
     pub blocks: Blocks,
     buffered_blocks: BTreeSet<Block>,
     self_pubkey: ValidatorPublicKey,
+    asked_last_block: bool,
 }
 
 impl Module for DataAvailability {
@@ -101,6 +106,7 @@ impl Module for DataAvailability {
             blocks: Blocks::new(&db)?,
             buffered_blocks,
             self_pubkey,
+            asked_last_block: false,
         })
     }
 
@@ -119,6 +125,17 @@ impl DataAvailability {
             listen<DataNetMessage> msg => {
                 _ = self.handle_data_message(msg)
                     .log_error("NodeState: Error while handling data message");
+            }
+            listen<PeerEvent> msg => {
+                match msg {
+                    PeerEvent::NewPeer { pubkey, .. } => {
+                        if !self.asked_last_block {
+                            info!("📡  Asking for last block from new peer");
+                            self.query_last_block(pubkey);
+                            self.asked_last_block = true;
+                        }
+                    }
+                }
             }
         }
     }
@@ -141,6 +158,16 @@ impl DataAvailability {
                     block_height = %block.height,
                     "⬇️  Received block data");
                 self.handle_block(block);
+            }
+            DataNetMessage::QueryLastBlock { respond_to } => {
+                if let Some(block) = self.blocks.last() {
+                    _ = self.bus.send(OutboundMessage::send(
+                        respond_to,
+                        DataNetMessage::QueryBlockResponse {
+                            block: block.clone(),
+                        },
+                    ));
+                }
             }
         }
         Ok(())
@@ -233,6 +260,15 @@ impl DataAvailability {
                 hash,
             }));
     }
+
+    fn query_last_block(&mut self, peer: ValidatorPublicKey) {
+        _ = self.bus.send(OutboundMessage::send(
+            peer,
+            DataNetMessage::QueryLastBlock {
+                respond_to: self.self_pubkey.clone(),
+            },
+        ));
+    }
 }
 
 #[cfg(test)]
@@ -256,6 +292,7 @@ mod tests {
             },
             height: BlockHeight(1),
             timestamp: 42,
+            new_bonded_validators: vec![],
             txs: vec![Transaction {
                 version: 1,
                 transaction_data: TransactionData::Blob(BlobTransaction {

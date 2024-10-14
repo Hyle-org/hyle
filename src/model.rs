@@ -301,6 +301,7 @@ pub struct Block {
     pub parent_hash: BlockHash,
     pub height: BlockHeight,
     pub timestamp: u64,
+    pub new_bonded_validators: Vec<ValidatorPublicKey>,
     pub txs: Vec<Transaction>,
 }
 
@@ -406,6 +407,7 @@ impl std::default::Default for Block {
         Block {
             parent_hash: BlockHash::default(),
             height: BlockHeight(0),
+            new_bonded_validators: vec![],
             timestamp: get_current_timestamp(),
             txs: vec![],
         }
