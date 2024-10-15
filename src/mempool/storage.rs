@@ -1,3 +1,4 @@
+use anyhow::{bail, Result};
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -19,6 +20,12 @@ pub struct TipData {
     pub parent: Option<usize>,
     pub votes: Vec<ValidatorPublicKey>,
     pub used: bool,
+}
+
+#[derive(Debug, Clone)]
+pub enum ProposalVerdict {
+    Wait(Option<usize>),
+    Vote,
 }
 
 #[derive(Debug, Clone)]
@@ -92,11 +99,11 @@ impl InMemoryStorage {
     }
 
     // Called by the initial proposal sender to aggregate votes
-    pub fn add_data_vote(
+    pub fn new_data_vote(
         &mut self,
         sender: &ValidatorPublicKey,
         data_proposal: &DataProposal,
-    ) -> Option<HashSet<ValidatorPublicKey>> {
+    ) -> Option<()> {
         let car = self
             .lane
             .cars
@@ -112,71 +119,98 @@ impl InMemoryStorage {
                 None
             }
             Some(v) => {
-                v.votes.insert(sender.clone());
-                Some(v.votes.clone())
-            }
-        }
-    }
-
-    // Called when a data proposal is received try to bind it to the previous tip (true) or fails (false)
-    pub fn append_data_proposal(
-        &mut self,
-        sender: &ValidatorPublicKey,
-        data_proposal: &DataProposal,
-    ) -> bool {
-        let lane = self.other_lanes.entry(sender.clone()).or_default();
-        let tip = lane.current_mut();
-
-        let mut tip_id: Option<usize> = None;
-
-        // merge parent votes
-        if let Some(p) = tip {
-            tip_id = Some(p.id);
-            if let Some(v) = data_proposal.parent_poa.as_ref() {
-                p.votes.reserve(v.len());
-                for v in v.iter() {
-                    p.votes.insert(v.clone());
+                if v.votes.contains(sender) {
+                    warn!(
+                        "{} already voted for data proposal {}",
+                        sender, data_proposal
+                    );
+                    None
+                } else {
+                    v.votes.insert(sender.clone());
+                    Some(())
                 }
             }
         }
+    }
 
-        if data_proposal.parent == tip_id {
-            lane.cars.push(Car {
-                id: tip_id.unwrap_or(0) + 1,
-                parent: tip_id,
-                txs: data_proposal.txs.clone(),
-                votes: HashSet::from([self.id.clone(), sender.clone()]),
-                used: false,
-            });
-            true
+    pub fn new_data_proposal(
+        &mut self,
+        validator: &ValidatorPublicKey,
+        data_proposal: &DataProposal,
+    ) -> Result<ProposalVerdict> {
+        if !self.has_parent_data_proposal(validator, data_proposal) {
+            self.push_data_proposal_into_waiting_room(validator, data_proposal.clone());
+            return Ok(ProposalVerdict::Wait(data_proposal.parent));
+        }
+        if let (Some(parent), Some(parent_poa)) = (data_proposal.parent, &data_proposal.parent_poa)
+        {
+            self.update_parent_poa(validator, parent, parent_poa)
+        }
+        if self.has_data_proposal(validator, data_proposal) {
+            bail!(
+                "we have already voted for {}'s data_proposal {} ",
+                validator,
+                data_proposal
+            );
+        }
+        self.add_data_proposal(validator, data_proposal);
+        Ok(ProposalVerdict::Vote)
+    }
+
+    fn add_data_proposal(&mut self, validator: &ValidatorPublicKey, data_proposal: &DataProposal) {
+        let lane = self.other_lanes.entry(validator.clone()).or_default();
+        let tip_id = lane.current().map(|car| car.id);
+        lane.cars.push(Car {
+            id: tip_id.unwrap_or(0) + 1,
+            parent: tip_id,
+            txs: data_proposal.txs.clone(),
+            votes: HashSet::from([self.id.clone(), validator.clone()]),
+            used: false,
+        });
+    }
+
+    fn has_parent_data_proposal(
+        &mut self,
+        validator: &ValidatorPublicKey,
+        data_proposal: &DataProposal,
+    ) -> bool {
+        let lane = self.other_lanes.entry(validator.clone()).or_default();
+        let tip = lane.current_mut();
+        if let Some(parent) = data_proposal.parent {
+            tip.map(|car| car.id == parent).unwrap_or_default()
         } else {
-            false
+            true
         }
     }
 
-    pub fn has_data_proposal(
+    fn update_parent_poa(
+        &mut self,
+        validator: &ValidatorPublicKey,
+        parent: usize,
+        parent_poa: &[ValidatorPublicKey],
+    ) {
+        let lane = self.other_lanes.entry(validator.clone()).or_default();
+        if let Some(tip) = lane.current_mut() {
+            if tip.id == parent {
+                tip.votes.extend(parent_poa.iter().cloned());
+            }
+        }
+    }
+
+    fn has_data_proposal(
         &mut self,
         sender: &ValidatorPublicKey,
         data_proposal: &DataProposal,
     ) -> bool {
-        let found = self
-            .other_lanes
+        self.other_lanes
             .entry(sender.clone())
             .or_default()
             .cars
             .iter()
-            .any(|c| c.id == data_proposal.pos && c.txs == data_proposal.txs);
-
-        if !found {
-            debug!(
-                "Data proposal {} not found in lane {}",
-                data_proposal, self.lane
-            );
-        }
-
-        found
+            .any(|c| c.id == data_proposal.pos && c.txs == data_proposal.txs)
     }
 
+    #[cfg(test)]
     pub fn get_last_data_index(&self, sender: &ValidatorPublicKey) -> Option<usize> {
         self.other_lanes
             .get(sender)
@@ -312,7 +346,9 @@ impl InMemoryStorage {
     }
 
     pub fn tip_used(&mut self) {
-        self.lane.current_mut().map(|car| car.used = true);
+        if let Some(tip) = self.lane.current_mut() {
+            tip.used = true;
+        }
     }
 
     pub fn flush_pending_txs(&mut self) -> Vec<Transaction> {
@@ -443,7 +479,7 @@ mod tests {
         let pubkey3 = ValidatorPublicKey(vec![3]);
         let mut store = InMemoryStorage::new(pubkey3.clone());
 
-        store.append_data_proposal(
+        store.add_data_proposal(
             &pubkey2,
             &DataProposal {
                 pos: 1,
@@ -453,7 +489,7 @@ mod tests {
             },
         );
 
-        store.append_data_proposal(
+        store.add_data_proposal(
             &pubkey2,
             &DataProposal {
                 pos: 2,
@@ -463,7 +499,7 @@ mod tests {
             },
         );
 
-        store.append_data_proposal(
+        store.add_data_proposal(
             &pubkey2,
             &DataProposal {
                 pos: 3,
@@ -473,7 +509,7 @@ mod tests {
             },
         );
 
-        store.append_data_proposal(
+        store.add_data_proposal(
             &pubkey2,
             &DataProposal {
                 pos: 4,
@@ -538,10 +574,10 @@ mod tests {
             parent_poa: None,
         };
 
-        store.append_data_proposal(&pubkey2, &data_proposal);
+        store.add_data_proposal(&pubkey2, &data_proposal);
         assert!(store.has_data_proposal(&pubkey2, &data_proposal));
         assert_eq!(store.get_last_data_index(&pubkey2), Some(1));
-        store.append_data_proposal(&pubkey1, &data_proposal);
+        store.add_data_proposal(&pubkey1, &data_proposal);
         assert!(store.has_data_proposal(&pubkey1, &data_proposal));
         assert_eq!(store.get_last_data_index(&pubkey1), Some(1));
 
@@ -551,8 +587,8 @@ mod tests {
         assert_eq!(tip.votes.len(), 1);
         assert_eq!(txs.len(), 4);
 
-        store.add_data_vote(&pubkey2, &data_proposal);
-        store.add_data_vote(&pubkey1, &data_proposal);
+        store.new_data_vote(&pubkey2, &data_proposal);
+        store.new_data_vote(&pubkey1, &data_proposal);
 
         let some_tip = store.tip_data();
         assert!(some_tip.is_some());
@@ -602,10 +638,10 @@ mod tests {
         store.add_data_to_local_lane(data_proposal3.txs.clone());
         store.add_data_to_local_lane(data_proposal4.txs.clone());
 
-        store.append_data_proposal(&pubkey2, &data_proposal1);
-        store.append_data_proposal(&pubkey2, &data_proposal2);
-        store.append_data_proposal(&pubkey2, &data_proposal3);
-        store.append_data_proposal(&pubkey2, &data_proposal4);
+        store.add_data_proposal(&pubkey2, &data_proposal1);
+        store.add_data_proposal(&pubkey2, &data_proposal2);
+        store.add_data_proposal(&pubkey2, &data_proposal3);
+        store.add_data_proposal(&pubkey2, &data_proposal4);
 
         let batch_info = BatchInfo {
             tip: TipData {

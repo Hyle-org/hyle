@@ -22,6 +22,7 @@ use std::{
     collections::{HashMap, HashSet},
     sync::Arc,
 };
+use storage::ProposalVerdict;
 use tracing::{debug, error, info, warn};
 
 mod metrics;
@@ -254,13 +255,14 @@ impl Mempool {
 
     async fn on_data_vote(&mut self, validator: &ValidatorPublicKey, data_proposal: DataProposal) {
         debug!("Vote received from sender {}", validator);
-        match self.storage.add_data_vote(validator, &data_proposal) {
-            Some(_) => {
-                debug!("{} DataVote from {}", self.storage.id, validator)
-            }
-            None => {
-                error!("{} unexpected DataVote from {}", self.storage.id, validator)
-            }
+        if self
+            .storage
+            .new_data_vote(validator, &data_proposal)
+            .is_some()
+        {
+            debug!("{} DataVote from {}", self.storage.id, validator)
+        } else {
+            error!("{} unexpected DataVote from {}", self.storage.id, validator)
         }
     }
 
@@ -276,22 +278,18 @@ impl Mempool {
             );
             return Ok(());
         }
-        if self.storage.has_data_proposal(validator, &data_proposal)
-            || self.storage.append_data_proposal(validator, &data_proposal)
-        {
-            // Normal case, we receive a proposal we already have the parent in store
-            self.send_vote(validator, data_proposal).await
-        } else {
-            //We dont have the parent, so we push the data proposal in the waiting room and craft a sync demand
-            self.storage
-                .push_data_proposal_into_waiting_room(validator, data_proposal.clone());
+        match self.storage.new_data_proposal(validator, &data_proposal)? {
+            ProposalVerdict::Vote => {
+                // Normal case, we receive a proposal we already have the parent in store
+                self.send_vote(validator, data_proposal).await
+            }
+            ProposalVerdict::Wait(last_index) => {
+                //We dont have the parent, so we craft a sync demand
+                debug!("Emitting sync request with local state {} last_available_index {:?} and data_proposal {}", self.storage, last_index, data_proposal);
 
-            let last_available_index = self.storage.get_last_data_index(validator);
-
-            debug!("Emitting sync request with local state {} last_available_index {:?} and data_proposal {}", self.storage, last_available_index, data_proposal);
-
-            self.send_sync_request(validator, data_proposal, last_available_index)
-                .await
+                self.send_sync_request(validator, data_proposal, last_index)
+                    .await
+            }
         }
     }
 
