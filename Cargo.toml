@@ -49,6 +49,7 @@ chrono = { version = "0.4", features = ["serde"] }
 axum-test = "16.2.0"
 syn = "2.0.79"
 quote = "1.0.37"
+bytes = "1.7.2"
 testcontainers-modules = { version = "0.11.2", features = ["postgres"] }
 
 [target.'cfg(target_os="macos")'.dependencies]

@@ -46,17 +46,16 @@ fn setup_tracing() -> Result<()> {
         .with_default_directive(LevelFilter::INFO.into())
         .from_env()?;
 
-    if let Ok(var) = std::env::var("RUST_LOG") {
-        if !var.contains("sled") {
-            filter = filter.add_directive("sled=info".parse()?);
-        }
-        if !var.contains("risc0_zkvm") {
-            filter = filter.add_directive("risc0_zkvm=info".parse()?);
-        }
-        if !var.contains("tower_http") {
-            // API request/response debug tracing
-            filter = filter.add_directive("tower_http::trace=debug".parse()?);
-        }
+    let var = std::env::var("RUST_LOG").unwrap_or("".to_string());
+    if !var.contains("sled") {
+        filter = filter.add_directive("sled=info".parse()?);
+    }
+    if !var.contains("risc0_zkvm") {
+        filter = filter.add_directive("risc0_zkvm=info".parse()?);
+    }
+    if !var.contains("tower_http") {
+        // API request/response debug tracing
+        filter = filter.add_directive("tower_http::trace=debug".parse()?);
     }
 
     tracing_subscriber::registry()

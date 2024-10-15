@@ -4,6 +4,7 @@ use crate::model::ValidatorPublicKey;
 use crate::{consensus::ConsensusNetMessage, mempool::MempoolNetMessage};
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::fmt;
 
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, Eq, PartialEq)]
@@ -19,11 +20,18 @@ pub enum OutboundMessage {
         msg: NetMessage,
     },
     BroadcastMessage(NetMessage),
+    BroadcastMessageOnlyFor(HashSet<ValidatorPublicKey>, NetMessage),
 }
 
 impl OutboundMessage {
     pub fn broadcast<T: Into<NetMessage>>(msg: T) -> Self {
         OutboundMessage::BroadcastMessage(msg.into())
+    }
+    pub fn broadcast_only_for<T: Into<NetMessage>>(
+        only_for: HashSet<ValidatorPublicKey>,
+        msg: T,
+    ) -> Self {
+        OutboundMessage::BroadcastMessageOnlyFor(only_for, msg.into())
     }
     pub fn send<T: Into<NetMessage>>(validator_id: ValidatorPublicKey, msg: T) -> Self {
         OutboundMessage::SendMessage {

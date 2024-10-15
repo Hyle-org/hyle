@@ -15,5 +15,7 @@ Config(
     ),
     p2p: (
       ping_interval: 10
-    )
+    ),
+    run_indexer: false,
+    da_address: "127.0.0.1:4141"
 )
