@@ -197,6 +197,18 @@ impl Peer {
                             warn!("Error while broadcasting net message: {}", e);
                         }
                     }
+                    OutboundMessage::BroadcastMessageOnlyFor(only_for, message) => {
+                        if let Some(ref pubkey) = self.peer_pubkey {
+                            if only_for.contains(pubkey) {
+                            match self.handle_broadcast_message(message).await {
+                                Ok(_) => continue,
+                                Err(e) => {
+                                    warn!("Error while broadcasting net message: {}", e);
+                                }
+                            }
+                            }
+                            }
+                    }
                 }
             }
 

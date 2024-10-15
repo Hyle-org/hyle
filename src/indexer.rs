@@ -135,7 +135,7 @@ impl Indexer {
 
     async fn handle_consensus_event(&mut self, event: ConsensusEvent) -> Result<()> {
         match event {
-            ConsensusEvent::CommitBlock { block } => self.handle_block(block).await,
+            ConsensusEvent::CommitBlock { block, .. } => self.handle_block(block).await,
         }
     }
 

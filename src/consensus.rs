@@ -17,7 +17,7 @@ use tracing::{debug, info, warn};
 use crate::{
     bus::{bus_client, command_response::Query, BusMessage, SharedMessageBus},
     handle_messages,
-    mempool::{MempoolCommand, MempoolEvent, MempoolResponse},
+    mempool::{Batch, BatchInfo, MempoolCommand, MempoolEvent, MempoolResponse},
     model::{
         get_current_timestamp, Block, BlockHash, BlockHeight, Hashable, Transaction,
         TransactionData, ValidatorPublicKey,
@@ -69,7 +69,11 @@ pub enum ConsensusCommand {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub enum ConsensusEvent {
-    CommitBlock { block: Block },
+    CommitBlock {
+        validators: Vec<ValidatorPublicKey>,
+        batch_info: BatchInfo,
+        block: Block,
+    },
 }
 
 impl BusMessage for ConsensusCommand {}
@@ -113,6 +117,7 @@ pub struct ConsensusProposal {
     slot: Slot,
     view: u64,
     next_leader: u64,
+    batch_info: BatchInfo,
     previous_consensus_proposal_hash: ConsensusProposalHash,
     previous_commit_quorum_certificate: QuorumCertificate,
     block: Block, // FIXME: Block ou cut ?
@@ -144,7 +149,7 @@ pub struct ConsensusStore {
     buffered_invalid_proposals: HashMap<ConsensusProposalHash, ConsensusProposal>,
     // FIXME: pub is here for testing
     pub blocks: Vec<Block>,
-    pending_batches: Vec<Vec<Transaction>>,
+    pending_batches: Vec<Batch>,
 }
 
 pub struct Consensus {
@@ -196,16 +201,17 @@ impl Consensus {
             .collect();
 
         // Create block to-be-proposed
-        let mut txs = vec![];
-        if !self.pending_batches.is_empty() {
-            txs = self.pending_batches.remove(0);
-        }
+        let batch = if self.pending_batches.is_empty() {
+            Batch::default()
+        } else {
+            self.pending_batches.remove(0)
+        };
         let block = Block {
             parent_hash,
             height: parent_height + 1,
             timestamp: get_current_timestamp(),
             new_bonded_validators,
-            txs,
+            txs: batch.txs,
         };
 
         let validators = self.bft_round_state.staking.bonded();
@@ -215,6 +221,7 @@ impl Consensus {
             slot: self.bft_round_state.slot,
             view: self.bft_round_state.view,
             next_leader: (self.bft_round_state.leader_index + 1) % validators.len() as u64,
+            batch_info: batch.info,
             previous_consensus_proposal_hash,
             previous_commit_quorum_certificate,
             validators,
@@ -264,6 +271,7 @@ impl Consensus {
             slot: self.bft_round_state.slot,
             view: self.bft_round_state.view,
             next_leader: 1,
+            batch_info: BatchInfo::new(self.crypto.validator_pubkey().clone()),
             previous_consensus_proposal_hash: ConsensusProposalHash(vec![]),
             previous_commit_quorum_certificate: QuorumCertificate::default(),
             validators,
@@ -291,6 +299,8 @@ impl Consensus {
         _ = self
             .bus
             .send(ConsensusEvent::CommitBlock {
+                validators: self.bft_round_state.consensus_proposal.validators.clone(),
+                batch_info: self.bft_round_state.consensus_proposal.batch_info.clone(),
                 block: self.bft_round_state.consensus_proposal.block.clone(),
             })
             .context("Failed to send ConsensusEvent::CommitBlock msg on the bus")?;
@@ -1213,10 +1223,11 @@ impl Consensus {
     fn handle_command(&mut self, msg: ConsensusCommand) -> Result<()> {
         match msg {
             ConsensusCommand::SingleNodeBlockGeneration(block_number) => {
-                let mut txs = vec![];
-                if !self.pending_batches.is_empty() {
-                    txs = self.pending_batches.remove(0);
-                }
+                let batch = if self.pending_batches.is_empty() {
+                    Batch::default()
+                } else {
+                    self.pending_batches.remove(0)
+                };
                 let parent_hash: String =
                     rand::Rng::sample_iter(rand::thread_rng(), &rand::distributions::Alphanumeric)
                         .take(8)
@@ -1227,11 +1238,13 @@ impl Consensus {
                     height: BlockHeight(block_number),
                     timestamp: get_current_timestamp(),
                     new_bonded_validators: vec![],
-                    txs,
+                    txs: batch.txs,
                 };
                 _ = self
                     .bus
                     .send(ConsensusEvent::CommitBlock {
+                        validators: self.bft_round_state.consensus_proposal.validators.clone(),
+                        batch_info: batch.info,
                         block: block.clone(),
                     })
                     .context("Failed to send ConsensusEvent::CommitBlock msg on the bus")?;
@@ -1258,7 +1271,10 @@ impl Consensus {
     async fn handle_mempool_event(&mut self, msg: MempoolEvent) -> Result<()> {
         match msg {
             MempoolEvent::LatestBatch(batch) => {
-                debug!("Received batch with txs: {:?}", batch);
+                debug!(
+                    "Received batch from {} with txs: {:?} pos {} parent {:?}",
+                    batch.info.validator, batch.txs, batch.info.tip.pos, batch.info.tip.parent,
+                );
                 self.pending_batches.push(batch);
 
                 Ok(())
