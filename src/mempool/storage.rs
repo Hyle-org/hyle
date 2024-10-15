@@ -419,12 +419,14 @@ mod tests {
     use std::collections::HashSet;
 
     use crate::{
-        mempool::BatchInfo,
+        mempool::{
+            storage::{Car, DataProposal, InMemoryStorage},
+            BatchInfo,
+        },
         model::{
             Blob, BlobData, BlobTransaction, Block, BlockHash, BlockHeight, ContractName, Identity,
             Transaction, TransactionData, ValidatorPublicKey,
         },
-        storage::{Car, DataProposal, InMemoryStorage},
     };
 
     use super::TipData;

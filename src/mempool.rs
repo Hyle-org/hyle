@@ -4,10 +4,10 @@ use crate::{
     bus::{bus_client, command_response::Query, BusMessage, SharedMessageBus},
     consensus::ConsensusEvent,
     handle_messages,
+    mempool::storage::{Car, DataProposal, InMemoryStorage, TipData},
     model::{Hashable, SharedRunContext, Transaction, TransactionData, ValidatorPublicKey},
     p2p::network::{OutboundMessage, SignedWithKey},
     rest::endpoints::RestApiMessage,
-    storage::{Car, DataProposal, InMemoryStorage, TipData},
     utils::{
         crypto::{BlstCrypto, SharedBlstCrypto},
         logger::LogMe,
@@ -19,9 +19,10 @@ use bincode::{Decode, Encode};
 use metrics::MempoolMetrics;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashSet, sync::Arc};
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 mod metrics;
+mod storage;
 
 bus_client! {
 struct MempoolBusClient {
@@ -181,7 +182,7 @@ impl Mempool {
             }
             Ok(false) => {
                 self.metrics.signature_error("mempool");
-                error!("Invalid signature for message {:?}", msg);
+                warn!("Invalid signature for message {:?}", msg);
             }
             Err(e) => error!("Error while checking signed message: {}", e),
         }
@@ -267,7 +268,7 @@ impl Mempool {
             || self.storage.append_data_proposal(validator, &data_proposal)
         {
             // Normal case, we receive a proposal we already have the parent in store
-            self.send_vote(validator, data_proposal).await?;
+            self.send_vote(validator, data_proposal).await
         } else {
             //We dont have the parent, so we push the data proposal in the waiting room and craft a sync demand
             self.storage
@@ -278,9 +279,8 @@ impl Mempool {
             debug!("Emitting sync request with local state {} last_available_index {:?} and data_proposal {}", self.storage, last_available_index, data_proposal);
 
             self.send_sync_request(validator, data_proposal, last_available_index)
-                .await?;
+                .await
         }
-        Ok(())
     }
 
     async fn check_data_proposal(&mut self) {
