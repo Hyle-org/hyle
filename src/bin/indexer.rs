@@ -110,13 +110,34 @@ async fn main() -> Result<()> {
 
     let (running_modules, abort) = handler.start_modules()?;
 
-    tokio::select! {
-        Err(e) = running_modules => {
-            error!("Error running modules: {:?}", e);
+    #[cfg(unix)]
+    {
+        use tokio::signal::unix;
+        let mut terminate = unix::signal(unix::SignalKind::interrupt())?;
+        tokio::select! {
+            Err(e) = running_modules => {
+                error!("Error running modules: {:?}", e);
+            }
+            _ = tokio::signal::ctrl_c() => {
+                info!("Ctrl-C received, shutting down");
+                abort();
+            }
+            _ = terminate.recv() =>  {
+                info!("SIGTERM received, shutting down");
+                abort();
+            }
         }
-        _ = tokio::signal::ctrl_c() => {
-            info!("Ctrl-C received, shutting down");
-            abort();
+    }
+    #[cfg(not(unix))]
+    {
+        tokio::select! {
+            Err(e) = running_modules => {
+                error!("Error running modules: {:?}", e);
+            }
+            _ = tokio::signal::ctrl_c() => {
+                info!("Ctrl-C received, shutting down");
+                abort();
+            }
         }
     }
 
