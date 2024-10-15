@@ -101,7 +101,7 @@ impl InMemoryStorage {
             .lane
             .cars
             .iter_mut()
-            .find(|c| c.id == data_proposal.pos && c.txs == data_proposal.inner);
+            .find(|c| c.id == data_proposal.pos && c.txs == data_proposal.txs);
 
         match car {
             None => {
@@ -144,7 +144,7 @@ impl InMemoryStorage {
             lane.cars.push(Car {
                 id: tip_id.unwrap_or(0) + 1,
                 parent: tip_id,
-                txs: data_proposal.inner.clone(),
+                txs: data_proposal.txs.clone(),
                 votes: HashSet::from([self.id.clone(), sender.clone()]),
                 used: false,
             });
@@ -165,7 +165,7 @@ impl InMemoryStorage {
             .or_default()
             .cars
             .iter()
-            .any(|c| c.id == data_proposal.pos && c.txs == data_proposal.inner);
+            .any(|c| c.id == data_proposal.pos && c.txs == data_proposal.txs);
 
         if !found {
             debug!(
@@ -193,7 +193,7 @@ impl InMemoryStorage {
             .lane
             .cars
             .iter()
-            .find(|c| c.id == data_proposal.pos && c.txs == data_proposal.inner);
+            .find(|c| c.id == data_proposal.pos && c.txs == data_proposal.txs);
 
         match car {
             None => {
@@ -392,7 +392,7 @@ pub struct DataProposal {
     pub pos: usize,
     pub parent: Option<usize>,
     pub parent_poa: Option<Vec<ValidatorPublicKey>>,
-    pub inner: Vec<Transaction>,
+    pub txs: Vec<Transaction>,
 }
 
 impl Display for DataProposal {
@@ -402,7 +402,7 @@ impl Display for DataProposal {
             "{{ {:?} <- [{}/{:?}] }}",
             self.parent,
             self.pos,
-            self.inner.first()
+            self.txs.first()
         )
     }
 }
@@ -448,7 +448,7 @@ mod tests {
             &DataProposal {
                 pos: 1,
                 parent: None,
-                inner: vec![make_tx("test1")],
+                txs: vec![make_tx("test1")],
                 parent_poa: None,
             },
         );
@@ -458,7 +458,7 @@ mod tests {
             &DataProposal {
                 pos: 2,
                 parent: Some(1),
-                inner: vec![make_tx("test2")],
+                txs: vec![make_tx("test2")],
                 parent_poa: None,
             },
         );
@@ -468,7 +468,7 @@ mod tests {
             &DataProposal {
                 pos: 3,
                 parent: Some(2),
-                inner: vec![make_tx("test3")],
+                txs: vec![make_tx("test3")],
                 parent_poa: None,
             },
         );
@@ -478,7 +478,7 @@ mod tests {
             &DataProposal {
                 pos: 4,
                 parent: Some(3),
-                inner: vec![make_tx("test4")],
+                txs: vec![make_tx("test4")],
                 parent_poa: None,
             },
         );
@@ -508,7 +508,7 @@ mod tests {
             &DataProposal {
                 pos: 4,
                 parent: Some(3),
-                inner: vec![make_tx("test4")],
+                txs: vec![make_tx("test4")],
                 parent_poa: None,
             },
         );
@@ -532,7 +532,7 @@ mod tests {
         store.add_data_to_local_lane(txs.clone());
 
         let data_proposal = DataProposal {
-            inner: txs,
+            txs,
             pos: 1,
             parent: None,
             parent_poa: None,
@@ -570,37 +570,37 @@ mod tests {
         let mut store = InMemoryStorage::new(pubkey3.clone());
 
         let data_proposal1 = DataProposal {
-            inner: vec![make_tx("test1"), make_tx("test2"), make_tx("test3")],
+            txs: vec![make_tx("test1"), make_tx("test2"), make_tx("test3")],
             pos: 1,
             parent: None,
             parent_poa: None,
         };
 
         let data_proposal2 = DataProposal {
-            inner: vec![make_tx("test4"), make_tx("test5"), make_tx("test6")],
+            txs: vec![make_tx("test4"), make_tx("test5"), make_tx("test6")],
             pos: 2,
             parent: Some(1),
             parent_poa: Some(vec![pubkey3.clone(), pubkey2.clone()]),
         };
 
         let data_proposal3 = DataProposal {
-            inner: vec![make_tx("test7"), make_tx("test8"), make_tx("test9")],
+            txs: vec![make_tx("test7"), make_tx("test8"), make_tx("test9")],
             pos: 3,
             parent: Some(2),
             parent_poa: Some(vec![pubkey3.clone(), pubkey2.clone()]),
         };
 
         let data_proposal4 = DataProposal {
-            inner: vec![make_tx("testA"), make_tx("testB"), make_tx("testC")],
+            txs: vec![make_tx("testA"), make_tx("testB"), make_tx("testC")],
             pos: 4,
             parent: Some(3),
             parent_poa: Some(vec![pubkey3.clone(), pubkey2.clone()]),
         };
 
-        store.add_data_to_local_lane(data_proposal1.inner.clone());
-        store.add_data_to_local_lane(data_proposal2.inner.clone());
-        store.add_data_to_local_lane(data_proposal3.inner.clone());
-        store.add_data_to_local_lane(data_proposal4.inner.clone());
+        store.add_data_to_local_lane(data_proposal1.txs.clone());
+        store.add_data_to_local_lane(data_proposal2.txs.clone());
+        store.add_data_to_local_lane(data_proposal3.txs.clone());
+        store.add_data_to_local_lane(data_proposal4.txs.clone());
 
         store.append_data_proposal(&pubkey2, &data_proposal1);
         store.append_data_proposal(&pubkey2, &data_proposal2);
@@ -693,7 +693,7 @@ mod tests {
             &DataProposal {
                 pos: 4,
                 parent: Some(3),
-                inner: vec![make_tx("test_local4")],
+                txs: vec![make_tx("test_local4")],
                 parent_poa: None,
             },
         );
@@ -723,7 +723,7 @@ mod tests {
             &DataProposal {
                 pos: 4,
                 parent: Some(3),
-                inner: vec![make_tx("test_local4")],
+                txs: vec![make_tx("test_local4")],
                 parent_poa: None,
             },
         );

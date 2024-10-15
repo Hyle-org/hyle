@@ -269,7 +269,7 @@ impl Mempool {
         validator: &ValidatorPublicKey,
         data_proposal: DataProposal,
     ) -> Result<()> {
-        if data_proposal.inner.is_empty() {
+        if data_proposal.txs.is_empty() {
             warn!(
                 "received empty data proposal from {}, ignoring...",
                 validator
@@ -302,7 +302,7 @@ impl Mempool {
         }
         let tip_id = self.storage.add_data_to_local_lane(pending_txs.clone());
         let data_proposal = DataProposal {
-            inner: pending_txs,
+            txs: pending_txs,
             pos: tip_id,
             parent: if tip_id == 1 { None } else { Some(tip_id - 1) },
             parent_poa: votes,
@@ -355,7 +355,7 @@ impl Mempool {
                     if let Err(e) = self.broadcast_data_proposal_only_for(
                         only_for,
                         DataProposal {
-                            inner: txs,
+                            txs,
                             pos: tip.pos,
                             parent: tip.parent,
                             parent_poa: None, // TODO: fetch parent votes
