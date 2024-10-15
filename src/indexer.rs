@@ -104,11 +104,11 @@ impl Indexer {
                     cmd = self.da_stream.as_mut().expect("da_stream must exist").next() => {
                     if let Some(Ok(cmd)) = cmd {
                         let bytes = cmd;
-                        let block: Block = bincode::decode_from_slice(&bytes, bincode::config::standard()).unwrap().0;
+                        let block: Block = bincode::decode_from_slice(&bytes, bincode::config::standard())?.0;
                         if let Err(e) = self.handle_block(block).await {
                             error!("Error while handling block: {:#}", e);
                         }
-                        SinkExt::<bytes::Bytes>::send(self.da_stream.as_mut().expect("da_stream must exist"), "ok".into()).await.unwrap();
+                        SinkExt::<bytes::Bytes>::send(self.da_stream.as_mut().expect("da_stream must exist"), "ok".into()).await?;
                     } else if cmd.is_none() {
                         self.da_stream = None;
                         // TODO: retry
