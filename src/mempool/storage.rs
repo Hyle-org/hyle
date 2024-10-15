@@ -367,30 +367,9 @@ impl Lane {
         self.cars.last()
     }
 
+    #[cfg(test)]
     pub fn size(&self) -> usize {
         self.cars.len()
-    }
-
-    pub fn size_txs(&self) -> usize {
-        self.cars.iter().fold(0, |nb, car| nb + car.txs.len())
-    }
-
-    pub fn count_poa(&self, nb_replicas: usize) -> usize {
-        self.cars
-            .iter()
-            .filter(|c| c.votes.len() > nb_replicas / 3)
-            .count()
-    }
-
-    pub fn count_poa_txs(&self, nb_replicas: usize) -> usize {
-        self.cars
-            .iter()
-            .filter(|c| c.votes.len() > nb_replicas / 3)
-            .fold(0, |nb, car| nb + car.txs.len())
-    }
-
-    pub fn count_waiting(&self) -> usize {
-        self.waiting.len()
     }
 }
 

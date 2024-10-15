@@ -303,6 +303,7 @@ impl Mempool {
                         error!("{:?}", e);
                     }
 
+                    let txs_len = txs.len();
                     if let Err(e) = self
                         .bus
                         .send(MempoolEvent::LatestBatch(Batch {
@@ -315,6 +316,9 @@ impl Mempool {
                         .context("Cannot send message over channel")
                     {
                         error!("{:?}", e);
+                    } else {
+                        self.metrics.add_batch();
+                        self.metrics.snapshot_batched_tx(txs_len);
                     }
                 } else {
                     // No PoA means we rebroadcast the data proposal for non present voters
@@ -360,6 +364,8 @@ impl Mempool {
         debug!("Got new tx {}", tx.hash());
         self.metrics.add_api_tx("blob".to_string());
         self.storage.accumulate_tx(tx.clone());
+        self.metrics
+            .snapshot_pending_tx(self.storage.pending_txs.len());
     }
 
     async fn broadcast_tx(&mut self, tx: Transaction) -> Result<()> {
