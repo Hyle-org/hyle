@@ -34,6 +34,8 @@ pub struct Indexer {
     inner: IndexerState,
 }
 
+pub static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("./src/indexer/migrations");
+
 impl Module for Indexer {
     fn name() -> &'static str {
         "Indexer"
@@ -51,9 +53,7 @@ impl Module for Indexer {
             .context("Failed to connect to the database")?;
 
         info!("Checking for new DB migration...");
-        sqlx::migrate!("./src/indexer/migrations")
-            .run(&inner)
-            .await?;
+        MIGRATOR.run(&inner).await?;
 
         let indexer = Indexer { bus, inner };
 
@@ -331,6 +331,9 @@ mod test {
 
     use super::*;
 
+    use sqlx::postgres::PgPoolOptions;
+    use testcontainers_modules::{postgres::Postgres, testcontainers::runners::AsyncRunner};
+
     async fn setup_indexer(pool: PgPool) -> Result<TestServer> {
         let indexer = new_indexer(pool).await;
         let router = indexer.api();
@@ -344,12 +347,23 @@ mod test {
         }
     }
 
-    #[test_log::test(sqlx::test(
-        migrations = "./src/indexer/migrations",
-        fixtures(path = "../tests/fixtures", scripts("test_data"))
-    ))]
-    async fn test_indexer_api(pool: PgPool) -> Result<()> {
-        let server = setup_indexer(pool).await?;
+    #[test_log::test(tokio::test)]
+    async fn test_indexer_api() -> Result<()> {
+        let container = Postgres::default().start().await.unwrap();
+        let db = PgPoolOptions::new()
+            .max_connections(5)
+            .connect(&format!(
+                "postgresql://postgres:postgres@localhost:{}/postgres",
+                container.get_host_port_ipv4(5432).await.unwrap()
+            ))
+            .await
+            .unwrap();
+        MIGRATOR.run(&db).await.unwrap();
+        sqlx::raw_sql(include_str!("../tests/fixtures/test_data.sql"))
+            .execute(&db)
+            .await?;
+
+        let server = setup_indexer(db).await?;
 
         // Blocks
         // Get all blocks
