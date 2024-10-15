@@ -5,6 +5,7 @@ Config(
   storage: Storage(
     interval: 10
   ),
+  log_format: "full",
   rest: "127.0.0.1:4321",
   data_directory: "data_node1",
   database_url: "postgres://postgres:postgres@localhost:5432/postgres",

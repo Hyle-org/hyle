@@ -9,42 +9,18 @@ use hyle::{
     rest::{RestApi, RestApiRunContext},
     utils::{
         conf,
+        logger::{setup_tracing, TracingMode},
         modules::{Module, ModulesHandler},
     },
 };
 use std::sync::{Arc, Mutex};
-use tracing::{debug, error, info, level_filters::LevelFilter};
-use tracing_subscriber::{prelude::*, EnvFilter};
+use tracing::{debug, error, info};
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 pub struct Args {
     #[arg(long, default_value = "config.ron")]
     pub config_file: Option<String>,
-}
-
-/// Setup tracing - stdout and tokio-console subscriber
-/// stdout defaults to INFO & sled to INFO even if RUST_LOG is set to e.g. debug (unless it contains "sled")
-fn setup_tracing() -> Result<()> {
-    let mut filter = EnvFilter::builder()
-        .with_default_directive(LevelFilter::INFO.into())
-        .from_env()?;
-
-    let var = std::env::var("RUST_LOG").unwrap_or("".to_string());
-    if !var.contains("sled") {
-        filter = filter.add_directive("sled=info".parse()?);
-    }
-    if !var.contains("tower_http") {
-        // API request/response debug tracing
-        filter = filter.add_directive("tower_http::trace=debug".parse()?);
-    }
-
-    tracing_subscriber::registry()
-        .with(tracing_subscriber::fmt::layer().with_filter(filter))
-        .with(console_subscriber::spawn())
-        .init();
-
-    Ok(())
 }
 
 #[cfg(feature = "dhat")]
@@ -60,12 +36,19 @@ async fn main() -> Result<()> {
         dhat::Profiler::new_heap()
     };
 
-    setup_tracing()?;
-
     let args = Args::parse();
     let config = Arc::new(
         conf::Conf::new(args.config_file, None, Some(true)).context("reading config file")?,
     );
+
+    setup_tracing(
+        match config.log_format.as_str() {
+            "json" => TracingMode::Json,
+            "node" => TracingMode::NodeName,
+            _ => TracingMode::Full,
+        },
+        config.id.clone(),
+    )?;
 
     info!("Starting node with config: {:?}", &config);
 

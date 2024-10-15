@@ -1,23 +1,32 @@
 use assert_cmd::prelude::*;
-use hyle::utils::conf::Conf;
+use hyle::utils::conf::{Conf, Consensus};
 use std::process::{Child, Command};
 use tempfile::TempDir;
 
-#[derive(Default)]
-pub struct ConfMaker(u16);
+pub struct ConfMaker {
+    i: u16,
+    pub default: Conf,
+}
 
 impl ConfMaker {
     pub fn build(&mut self) -> Conf {
-        let defaults = Conf::new(None, None, None).unwrap();
-        self.0 += 1;
+        self.i += 1;
         Conf {
-            id: format!("node-{}", self.0),
-            host: format!("localhost:{}", 3000 + self.0),
-            da_address: format!("localhost:{}", 4000 + self.0),
-            rest: format!("localhost:{}", 5000 + self.0),
-            run_indexer: false, // disable indexer by default to avoid needed PG
-            ..defaults.clone()
+            id: format!("node-{}", self.i),
+            host: format!("localhost:{}", 3000 + self.i),
+            da_address: format!("localhost:{}", 4000 + self.i),
+            rest: format!("localhost:{}", 5000 + self.i),
+            ..self.default.clone()
         }
+    }
+}
+
+impl Default for ConfMaker {
+    fn default() -> Self {
+        let mut default = Conf::new(None, None, None).unwrap();
+        default.run_indexer = false; // disable indexer by default to avoid needed PG
+        default.log_format = "node".to_string(); // Activate node name in logs for convenience in tests.
+        Self { i: 0, default }
     }
 }
 
