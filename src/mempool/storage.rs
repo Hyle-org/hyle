@@ -18,6 +18,7 @@ pub struct TipData {
     pub pos: usize,
     pub parent: Option<usize>,
     pub votes: Vec<ValidatorPublicKey>,
+    pub used: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -84,6 +85,7 @@ impl InMemoryStorage {
             parent: tip_id,
             txs,
             votes: HashSet::from([self.id.clone()]),
+            used: false,
         });
 
         current_id
@@ -144,6 +146,7 @@ impl InMemoryStorage {
                 parent: tip_id,
                 txs: data_proposal.inner.clone(),
                 votes: HashSet::from([self.id.clone(), sender.clone()]),
+                used: false,
             });
             true
         } else {
@@ -297,10 +300,19 @@ impl InMemoryStorage {
                     pos: car.id,
                     parent: car.parent,
                     votes: car.votes.clone().into_iter().collect(),
+                    used: car.used,
                 },
                 car.txs.clone(),
             )
         })
+    }
+
+    pub fn tip_already_used(&self) -> bool {
+        self.lane.current().map(|car| car.used).unwrap_or_default()
+    }
+
+    pub fn tip_used(&mut self) {
+        self.lane.current_mut().map(|car| car.used = true);
     }
 
     pub fn flush_pending_txs(&mut self) -> Vec<Transaction> {
@@ -321,16 +333,18 @@ pub struct Car {
     parent: Option<usize>,
     txs: Vec<Transaction>,
     pub votes: HashSet<ValidatorPublicKey>,
+    used: bool,
 }
 
 impl Display for Car {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "[{}/{:?}/{}v]",
+            "[{}/{:?}/{}v] (used: {})",
             self.id,
             self.txs.first(),
-            self.votes.len()
+            self.votes.len(),
+            self.used,
         )
     }
 }
@@ -485,6 +499,7 @@ mod tests {
                 parent: None,
                 txs: vec![make_tx("test1")],
                 votes: HashSet::from([pubkey3.clone(), pubkey2.clone()]),
+                used: false,
             }
         );
 
@@ -597,6 +612,7 @@ mod tests {
                 pos: 4,
                 parent: Some(3),
                 votes: vec![pubkey3.clone(), pubkey2.clone()],
+                used: false,
             },
             validator: pubkey3.clone(),
         };
@@ -647,12 +663,14 @@ mod tests {
                         make_tx("test4"),
                     ],
                     votes: HashSet::from([pubkey1.clone(), pubkey2.clone()]),
+                    used: false,
                 },
                 Car {
                     id: 2,
                     parent: Some(1),
                     txs: vec![make_tx("test5"), make_tx("test6"), make_tx("test7")],
                     votes: HashSet::from([pubkey1.clone(), pubkey2.clone()]),
+                    used: false,
                 },
             ],
         );
@@ -687,13 +705,15 @@ mod tests {
                     id: 2,
                     parent: Some(1),
                     txs: vec![make_tx("test_local2")],
-                    votes: HashSet::from_iter(vec![pubkey3.clone()])
+                    votes: HashSet::from_iter(vec![pubkey3.clone()]),
+                    used: false,
                 },
                 Car {
                     id: 3,
                     parent: Some(2),
                     txs: vec![make_tx("test_local3")],
-                    votes: HashSet::from_iter(vec![pubkey3.clone()])
+                    votes: HashSet::from_iter(vec![pubkey3.clone()]),
+                    used: false,
                 }
             ])
         );
@@ -715,19 +735,22 @@ mod tests {
                     id: 1,
                     parent: None,
                     txs: vec![make_tx("test_local")],
-                    votes: HashSet::from_iter(vec![pubkey3.clone()])
+                    votes: HashSet::from_iter(vec![pubkey3.clone()]),
+                    used: false,
                 },
                 Car {
                     id: 2,
                     parent: Some(1),
                     txs: vec![make_tx("test_local2")],
-                    votes: HashSet::from_iter(vec![pubkey3.clone()])
+                    votes: HashSet::from_iter(vec![pubkey3.clone()]),
+                    used: false,
                 },
                 Car {
                     id: 3,
                     parent: Some(2),
                     txs: vec![make_tx("test_local3")],
-                    votes: HashSet::from_iter(vec![pubkey3.clone()])
+                    votes: HashSet::from_iter(vec![pubkey3.clone()]),
+                    used: false,
                 }
             ])
         );

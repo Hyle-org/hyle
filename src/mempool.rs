@@ -269,6 +269,13 @@ impl Mempool {
         validator: &ValidatorPublicKey,
         data_proposal: DataProposal,
     ) -> Result<()> {
+        if data_proposal.inner.is_empty() {
+            warn!(
+                "received empty data proposal from {}, ignoring...",
+                validator
+            );
+            return Ok(());
+        }
         if self.storage.has_data_proposal(validator, &data_proposal)
             || self.storage.append_data_proposal(validator, &data_proposal)
         {
@@ -288,27 +295,38 @@ impl Mempool {
         }
     }
 
+    async fn try_data_proposal(&mut self, votes: Option<Vec<ValidatorPublicKey>>) {
+        let pending_txs = self.storage.flush_pending_txs();
+        if pending_txs.is_empty() {
+            return;
+        }
+        let tip_id = self.storage.add_data_to_local_lane(pending_txs.clone());
+        let data_proposal = DataProposal {
+            inner: pending_txs,
+            pos: tip_id,
+            parent: if tip_id == 1 { None } else { Some(tip_id - 1) },
+            parent_poa: votes,
+        };
+
+        if let Err(e) = self.broadcast_data_proposal(data_proposal).await {
+            error!("{:?}", e);
+        }
+    }
+
     async fn check_data_proposal(&mut self) {
+        if self.storage.tip_already_used() {
+            return;
+        }
         match self.storage.tip_data() {
             Some((tip, txs)) => {
-                let nb_validators = self.validators.len();
-                if tip.votes.len() > nb_validators / 3 {
-                    let requests = self.storage.flush_pending_txs();
-                    // Create tx chunk and broadcast it
-                    let tip_id = self.storage.add_data_to_local_lane(requests.clone());
-
-                    let data_proposal = DataProposal {
-                        inner: requests,
-                        pos: tip_id,
-                        parent: if tip_id == 1 { None } else { Some(tip_id - 1) },
-                        parent_poa: Some(tip.votes.clone()),
-                    };
-
-                    if let Err(e) = self.broadcast_data_proposal(data_proposal).await {
-                        error!("{:?}", e);
-                    }
+                if tip.votes.len() > self.validators.len() / 3 {
+                    self.try_data_proposal(Some(tip.votes.clone())).await;
 
                     let txs_len = txs.len();
+                    if txs_len == 0 {
+                        warn!("ignoring empty car with no txs (should not happen)");
+                        return;
+                    }
                     if let Err(e) = self
                         .bus
                         .send(MempoolEvent::LatestBatch(Batch {
@@ -322,6 +340,7 @@ impl Mempool {
                     {
                         error!("{:?}", e);
                     } else {
+                        self.storage.tip_used();
                         self.metrics.add_batch();
                         self.metrics.snapshot_batched_tx(txs_len);
                     }
@@ -348,19 +367,7 @@ impl Mempool {
             }
             None => {
                 // Genesis create a mono tx chunk and broadcast it
-                let pending_txs = self.storage.flush_pending_txs();
-                let tip_id = self.storage.add_data_to_local_lane(pending_txs.clone());
-
-                let data_proposal = DataProposal {
-                    inner: pending_txs,
-                    pos: tip_id,
-                    parent: None,
-                    parent_poa: None,
-                };
-
-                if let Err(e) = self.broadcast_data_proposal(data_proposal).await {
-                    error!("{:?}", e)
-                }
+                self.try_data_proposal(None).await;
             }
         }
     }
