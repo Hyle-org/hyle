@@ -65,17 +65,13 @@ impl Module for Indexer {
             da_stream: None,
         };
 
-        let mut ctx_router = ctx
-            .router
-            .lock()
-            .expect("Context router should be available");
-        let router = ctx_router
-            .take()
-            .expect("Context router should be available")
-            .nest("/v1/indexer", indexer.api());
-        let _ = ctx_router.insert(router);
-
-        Ok(indexer)
+        if let Ok(mut guard) = ctx.router.lock() {
+            if let Some(router) = guard.take() {
+                guard.replace(router.nest("/v1/indexer", indexer.api()));
+                return Ok(indexer);
+            }
+        }
+        anyhow::bail!("context router should be available");
     }
 
     fn run(&mut self) -> impl futures::Future<Output = Result<()>> + Send {
