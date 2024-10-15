@@ -30,6 +30,12 @@ use crate::{
 )]
 pub struct TxHash(pub String);
 
+impl From<String> for TxHash {
+    fn from(s: String) -> Self {
+        TxHash(s)
+    }
+}
+
 impl Type<Postgres> for TxHash {
     fn type_info() -> sqlx::postgres::PgTypeInfo {
         <String as Type<Postgres>>::type_info()
@@ -113,19 +119,31 @@ pub struct BlockHeight(pub u64);
 )]
 pub struct BlobIndex(pub u32);
 
+impl From<u32> for BlobIndex {
+    fn from(i: u32) -> Self {
+        BlobIndex(i)
+    }
+}
+
 #[derive(
     Default, Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash, Display, Encode, Decode,
 )]
 pub struct Identity(pub String);
+
+impl From<String> for Identity {
+    fn from(s: String) -> Self {
+        Identity(s)
+    }
+}
 
 #[derive(
     Default, Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash, Display, Encode, Decode,
 )]
 pub struct ContractName(pub String);
 
-impl From<&str> for ContractName {
-    fn from(s: &str) -> Self {
-        ContractName(s.to_string())
+impl From<String> for ContractName {
+    fn from(s: String) -> Self {
+        ContractName(s)
     }
 }
 
