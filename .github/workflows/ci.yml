@@ -19,15 +19,6 @@ jobs:
           - stable
           # - beta
           # - nightly
-    services:
-      postgres:
-        image: postgres:latest
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: password
-          POSTGRES_DB: postgres
-        ports:
-          - 5432:5432
     steps:
       - uses: actions/checkout@v4
       - run: rustup update ${{ matrix.toolchain }} && rustup default ${{ matrix.toolchain }}
@@ -35,4 +26,4 @@ jobs:
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: cargo build --verbose
-      - run: DATABASE_URL="postgres://postgres:password@localhost:5432/postgres" cargo test --verbose
+      - run: cargo test --verbose
