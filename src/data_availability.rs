@@ -460,7 +460,7 @@ mod tests {
 
     #[test]
     fn test_blocks() -> Result<()> {
-        let tmpdir = tempdir::TempDir::new("history-tests")?;
+        let tmpdir = tempfile::Builder::new().prefix("history-tests").tempdir()?;
         let db = sled::open(tmpdir.path().join("history"))?;
         let mut blocks = Blocks::new(&db)?;
         let block = Block {

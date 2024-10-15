@@ -71,7 +71,7 @@ test-log = { version = "0.2.16", features = [
     "trace",
 ], default-features = false }
 tokio-stream = "0.1.16"
-tempdir = "0.3.7"
+tempfile = "3.13.0"
 
 [features]
 dhat = ["dep:dhat"]
