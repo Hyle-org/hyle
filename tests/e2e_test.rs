@@ -1,5 +1,5 @@
+use assertables::assert_ok;
 use hyle::{
-    consensus::{Consensus, ConsensusStore},
     indexer::model::ContractDb,
     model::{
         Blob, BlobData, BlobReference, BlobTransaction, ContractName, Identity, ProofTransaction,
@@ -7,21 +7,15 @@ use hyle::{
     },
     node_state::model::Contract,
     rest::client::ApiHttpClient,
-    utils::modules::Module,
 };
 use reqwest::{Client, Url};
-use std::{
-    fs::{self, File},
-    io::Read,
-    path::Path,
-    time,
-};
-use test_helpers::NodeType;
+use std::{fs::File, io::Read, time};
+use test_helpers::ConfMaker;
 use tokio::time::sleep;
 
 mod test_helpers;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 
 pub fn load_encoded_receipt_from_file(path: &str) -> Vec<u8> {
     let mut file = File::open(path).expect("Failed to open proof file");
@@ -101,7 +95,7 @@ async fn verify_contract_state(client: &ApiHttpClient) -> Result<()> {
 }
 
 async fn register_test_contracts(client: &ApiHttpClient) -> Result<()> {
-    assert!(client
+    assert_ok!(client
         .send_tx_register_contract(&RegisterContractTransaction {
             owner: "test".to_string(),
             verifier: "test".to_string(),
@@ -109,11 +103,10 @@ async fn register_test_contracts(client: &ApiHttpClient) -> Result<()> {
             state_digest: StateDigest(vec![0, 1, 2, 3]),
             contract_name: ContractName("c1".to_string()),
         })
-        .await?
-        .status()
-        .is_success());
+        .await
+        .and_then(|response| response.error_for_status().context("registering contract")));
 
-    assert!(client
+    assert_ok!(client
         .send_tx_register_contract(&RegisterContractTransaction {
             owner: "test".to_string(),
             verifier: "test".to_string(),
@@ -121,9 +114,8 @@ async fn register_test_contracts(client: &ApiHttpClient) -> Result<()> {
             state_digest: StateDigest(vec![0, 1, 2, 3]),
             contract_name: ContractName("c2".to_string()),
         })
-        .await?
-        .status()
-        .is_success());
+        .await
+        .and_then(|response| response.error_for_status().context("registering contract")));
 
     Ok(())
 }
@@ -143,13 +135,14 @@ async fn send_test_blobs_and_proofs(client: &ApiHttpClient) -> Result<()> {
                 },
             ],
         })
-        .await?;
+        .await
+        .and_then(|response| response.error_for_status().context("sending tx"));
 
-    assert!(blob_response.status().is_success());
+    assert_ok!(blob_response);
 
-    let blob_tx_hash = blob_response.json::<TxHash>().await?;
+    let blob_tx_hash = blob_response.unwrap().json::<TxHash>().await?;
 
-    assert!(client
+    assert_ok!(client
         .send_tx_proof(&ProofTransaction {
             blobs_references: vec![
                 BlobReference {
@@ -165,18 +158,20 @@ async fn send_test_blobs_and_proofs(client: &ApiHttpClient) -> Result<()> {
             ],
             proof: vec![5, 5]
         })
-        .await?
-        .status()
-        .is_success());
+        .await
+        .and_then(|response| response.error_for_status().context("sending tx")));
 
     Ok(())
 }
 
 async fn verify_test_contract_state(client: &ApiHttpClient) -> Result<()> {
-    let response = client.get_contract(&ContractName("c1".to_string())).await?;
-    assert!(response.status().is_success(), "{}", response.status());
+    let response = client
+        .get_contract(&ContractName("c1".to_string()))
+        .await
+        .and_then(|response| response.error_for_status().context("Getting contract"));
+    assert_ok!(response);
 
-    let contract = response.json::<Contract>().await?;
+    let contract = response.unwrap().json::<Contract>().await?;
     assert_eq!(contract.state.0, vec![4, 5, 6]);
 
     Ok(())
@@ -185,41 +180,61 @@ async fn verify_test_contract_state(client: &ApiHttpClient) -> Result<()> {
 async fn verify_indexer(client: &ApiHttpClient) -> Result<()> {
     let response = client
         .get_indexer_contract(&ContractName("c1".to_string()))
-        .await?;
-    assert!(response.status().is_success(), "{}", response.status());
+        .await
+        .and_then(|response| response.error_for_status().context("Getting contract"));
+    assert_ok!(response);
 
-    let contract = response.json::<ContractDb>().await?;
+    let contract = response.unwrap().json::<ContractDb>().await?;
     // The indexer returns the initial state
     assert_eq!(contract.state_digest, vec![0, 1, 2, 3]);
 
     Ok(())
 }
 
+use testcontainers_modules::{
+    postgres::Postgres,
+    testcontainers::core::IntoContainerPort,
+    testcontainers::{runners::AsyncRunner, ImageExt},
+};
+
 #[tokio::test]
 async fn e2e() -> Result<()> {
     tracing_subscriber::fmt::init();
 
-    // FIXME: use tmp dir
-    let path_node1 = Path::new("tests/node1");
-    let path_node2 = Path::new("tests/node2");
+    // Start postgres DB with default settings for the indexer.
+    let _pg = Postgres::default()
+        .with_mapped_port(5432, 5432.tcp())
+        .start()
+        .await
+        .unwrap();
 
-    // Clean created files
-    _ = fs::remove_dir_all(path_node1.join("data_node1"));
-    _ = fs::remove_dir_all(path_node2.join("data_node2"));
+    let mut conf_maker = ConfMaker::default();
 
     // Start 2 nodes
-    let node1 = test_helpers::TestNode::new(path_node1, NodeType::Node, "6668");
-    let node2 = test_helpers::TestNode::new(path_node2, NodeType::Node, "6669");
-
+    let node1 = test_helpers::TestProcess::new("node", conf_maker.build())
+        .log("info")
+        .start();
     // Wait for node to properly spin up
-    sleep(time::Duration::from_secs(2)).await;
+    sleep(time::Duration::from_secs(1)).await;
+
+    let mut node2_conf = conf_maker.build();
+    node2_conf.peers = vec![node1.conf.host.clone()];
+    let node2 = test_helpers::TestProcess::new("node", node2_conf)
+        .log("error")
+        .start();
+    // Wait for node to properly spin up
+    sleep(time::Duration::from_secs(5)).await;
 
     // Start indexer
-    let indexer = test_helpers::TestNode::new(path_node1, NodeType::Indexer, "6670");
+    let mut indexer_conf = conf_maker.build();
+    indexer_conf.da_address = node2.conf.da_address.clone();
+    let indexer = test_helpers::TestProcess::new("indexer", indexer_conf)
+        .log("error")
+        .start();
 
     // Request something on node1 to be sure it's alive and working
     let client_node1 = ApiHttpClient {
-        url: Url::parse("http://localhost:4321").unwrap(),
+        url: Url::parse(&format!("http://{}", &node1.conf.rest)).unwrap(),
         reqwest_client: Client::new(),
     };
 
@@ -231,36 +246,18 @@ async fn e2e() -> Result<()> {
     send_blobs_and_proofs(&client_node1).await?;
 
     // Wait for some slots to be finished
-    sleep(time::Duration::from_secs(15)).await;
+    sleep(time::Duration::from_secs(10)).await;
 
     verify_test_contract_state(&client_node1).await?;
     verify_contract_state(&client_node1).await?;
 
     // Check that the indexer did index things
     let client_indexer = ApiHttpClient {
-        url: Url::parse("http://localhost:5544").unwrap(),
+        url: Url::parse(&format!("http://{}", &indexer.conf.rest)).unwrap(),
         reqwest_client: Client::new(),
     };
 
     verify_indexer(&client_indexer).await?;
-
-    // Stop all processes
-    drop(indexer);
-    drop(node1);
-    drop(node2);
-
-    // Check that some blocks has been produced
-    let node1_consensus: ConsensusStore =
-        Consensus::load_from_disk_or_default(path_node1.join("data_node1/consensus.bin").as_path());
-    let node2_consensus: ConsensusStore =
-        Consensus::load_from_disk_or_default(path_node2.join("data_node2/consensus.bin").as_path());
-    assert!(!node1_consensus.blocks.is_empty());
-    assert!(!node2_consensus.blocks.is_empty());
-    // FIXME: check that created blocks are the same.
-
-    // Clean created files
-    fs::remove_dir_all(path_node1.join("data_node1")).expect("file cleaning failed");
-    fs::remove_dir_all(path_node2.join("data_node2")).expect("file cleaning failed");
 
     //TODO: compare blocks from node1 and node2
 

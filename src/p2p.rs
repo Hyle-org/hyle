@@ -114,9 +114,8 @@ impl P2P {
             self.spawn_peer(peer);
         }
 
-        let listener = TcpListener::bind(self.config.addr()).await?;
-        let (addr, port) = self.config.addr();
-        info!("p2p listening on {}:{}", addr, port);
+        let listener = TcpListener::bind(&self.config.host).await?;
+        info!("p2p listening on {}", listener.local_addr()?);
 
         handle_messages! {
             on_bus self.bus_client,

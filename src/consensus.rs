@@ -619,7 +619,7 @@ impl Consensus {
     fn send_candidacy(&mut self) -> Result<()> {
         let candidacy = ValidatorCandidacy {
             pubkey: self.crypto.validator_pubkey().clone(),
-            peer_address: self.config.peer_addr(),
+            peer_address: self.config.host.clone(),
         };
         info!(
             "📝 Sending candidacy message to be part of consensus.  {}",
