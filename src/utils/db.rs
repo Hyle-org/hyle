@@ -341,7 +341,7 @@ mod tests {
 
     #[test]
     fn test_db_noalt() -> Result<()> {
-        let tmpdir = tempdir::TempDir::new("tests")?;
+        let tmpdir = tempfile::Builder::new().prefix("tests").tempdir()?;
         let db = sled::open(tmpdir.path().join("db"))?;
         let mut tree = Db::new(&db, "db", None)?;
         assert!(
@@ -385,7 +385,7 @@ mod tests {
 
     #[test]
     fn test_db() -> Result<()> {
-        let tmpdir = tempdir::TempDir::new("tests")?;
+        let tmpdir = tempfile::Builder::new().prefix("tests").tempdir()?;
         let db = sled::open(tmpdir.path().join("db"))?;
         let mut tree = Db::new(&db, "db", Some("db_alt"))?;
         assert!(
