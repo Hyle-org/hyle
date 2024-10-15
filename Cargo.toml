@@ -49,6 +49,7 @@ chrono = { version = "0.4", features = ["serde"] }
 axum-test = "16.2.0"
 syn = "2.0.79"
 quote = "1.0.37"
+bytes = "1.7.2"
 
 [target.'cfg(target_os="macos")'.dependencies]
 sled = { version = "0.34.7", features = ["compression", "lock_free_delays"] }

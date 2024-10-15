@@ -51,7 +51,16 @@ impl ApiHttpClient {
             .header("Content-Type", "application/json")
             .send()
             .await
-            .context("Sending tx register contract")
+            .context("getting Contract")
+    }
+
+    pub async fn get_indexer_contract(&self, contract_name: &ContractName) -> Result<Response> {
+        self.reqwest_client
+            .get(format!("{}v1/indexer/contract/{}", self.url, contract_name))
+            .header("Content-Type", "application/json")
+            .send()
+            .await
+            .context("getting Contract")
     }
 
     pub async fn run_scenario_api_test(&self) -> Result<Response> {

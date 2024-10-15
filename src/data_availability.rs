@@ -6,27 +6,31 @@ use crate::{
     bus::{bus_client, BusMessage, SharedMessageBus},
     consensus::ConsensusEvent,
     handle_messages,
-    model::{Block, BlockHash, BlockHeight, Hashable, SharedRunContext, ValidatorPublicKey},
+    model::{
+        get_current_timestamp, Block, BlockHash, BlockHeight, Hashable, SharedRunContext,
+        ValidatorPublicKey,
+    },
     p2p::network::{NetMessage, OutboundMessage, PeerEvent},
-    utils::{logger::LogMe, modules::Module},
+    utils::{conf::SharedConf, logger::LogMe, modules::Module},
 };
 use anyhow::{Context, Result};
 use bincode::{Decode, Encode};
 use blocks::Blocks;
+use bytes::Bytes;
 use core::str;
-use serde::{Deserialize, Serialize};
-use std::{
-    collections::BTreeSet,
-    io::{Cursor, Write},
+use futures::{
+    stream::{SplitSink, SplitStream},
+    SinkExt, StreamExt,
 };
-use tracing::{debug, error, info};
-
-pub fn u64_to_str(u: u64, buf: &mut [u8]) -> &str {
-    let mut cursor = Cursor::new(&mut buf[..]);
-    _ = write!(cursor, "{}", u);
-    let len = cursor.position() as usize;
-    str::from_utf8(&buf[..len]).unwrap()
-}
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::collections::{BTreeSet, HashSet};
+use tokio::{
+    net::{TcpListener, TcpStream},
+    task::{JoinHandle, JoinSet},
+};
+use tokio_util::codec::{Framed, LengthDelimitedCodec};
+use tracing::{debug, error, info, warn};
 
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, Eq, PartialEq)]
 pub enum DataNetMessage {
@@ -67,13 +71,29 @@ struct DABusClient {
 }
 }
 
+/// A peer we are streaming blocks to
+#[derive(Debug)]
+struct BlockStreamPeer {
+    /// Last timestamp we received a ping from the peer.
+    last_ping: u64,
+    /// Sender to stream blocks to the peer
+    sender: SplitSink<Framed<TcpStream, LengthDelimitedCodec>, Bytes>,
+    /// Handle to abort the receiving side of the stream
+    keepalive_abort: JoinHandle<()>,
+}
+
 #[derive(Debug)]
 pub struct DataAvailability {
+    config: SharedConf,
     bus: DABusClient,
     pub blocks: Blocks,
+
     buffered_blocks: BTreeSet<Block>,
     self_pubkey: ValidatorPublicKey,
     asked_last_block: bool,
+
+    // Peers subscribed to block streaming
+    stream_peer_metadata: HashMap<String, BlockStreamPeer>,
 }
 
 impl Module for DataAvailability {
@@ -102,11 +122,13 @@ impl Module for DataAvailability {
         let self_pubkey = ctx.node.crypto.validator_pubkey().clone();
 
         Ok(DataAvailability {
+            config: ctx.common.config.clone(),
             bus,
             blocks: Blocks::new(&db)?,
             buffered_blocks,
             self_pubkey,
             asked_last_block: false,
+            stream_peer_metadata: HashMap::new(),
         })
     }
 
@@ -117,13 +139,22 @@ impl Module for DataAvailability {
 
 impl DataAvailability {
     pub async fn start(&mut self) -> Result<()> {
+        let stream_request_receiver = TcpListener::bind(&self.config.da_address).await?;
+
+        let mut pending_stream_requests = JoinSet::new();
+
+        // TODO: this is a soft cap on the number of peers we can stream to.
+        let (ping_sender, mut ping_receiver) = tokio::sync::mpsc::channel(100);
+        let (catchup_sender, mut catchup_receiver) = tokio::sync::mpsc::channel(100);
+
         handle_messages! {
             on_bus self.bus,
             listen<ConsensusEvent> cmd => {
                 self.handle_consensus_event(cmd).await;
             }
+
             listen<DataNetMessage> msg => {
-                _ = self.handle_data_message(msg)
+                _ = self.handle_data_message(msg).await
                     .log_error("NodeState: Error while handling data message");
             }
             listen<PeerEvent> msg => {
@@ -137,10 +168,72 @@ impl DataAvailability {
                     }
                 }
             }
+
+            // Handle new TCP connections to stream data to peers
+            // We spawn an async task that waits for the start height as the first message.
+            Ok((stream, addr)) = stream_request_receiver.accept() => {
+                // This handler is defined inline so I don't have to give a type to pending_stream_requests
+                pending_stream_requests.spawn(async move {
+                    let (sender, mut receiver) = Framed::new(stream, LengthDelimitedCodec::new()).split();
+                    // Read the start height from the peer.
+                    match receiver.next().await {
+                        Some(Ok(data)) => {
+                            let (start_height, _) =
+                                bincode::decode_from_slice(&data, bincode::config::standard())
+                                    .map_err(|_| anyhow::anyhow!("Could not decode start height"))?;
+                            Ok((start_height, sender, receiver, addr.to_string()))
+                        }
+                        _ => Err(anyhow::anyhow!("no start height")),
+                    }
+                });
+            }
+
+            // Actually connect to a peer and start streaming data.
+            Some(Ok(cmd)) = pending_stream_requests.join_next() => {
+                match cmd {
+                    Ok((start_height, sender, receiver, peer_ip)) => {
+                        if let Err(e) = self.start_streaming_to_peer(start_height, ping_sender.clone(), catchup_sender.clone(), sender, receiver, &peer_ip).await {
+                            error!("Error while starting stream to peer {}: {:?}", &peer_ip, e)
+                        }
+                    }
+                    Err(e) => {
+                        error!("Error while handling stream request: {:?}", e);
+                    }
+                }
+            }
+
+            // Send one block to a peer as part of "catchup",
+            // once we have sent all blocks the peer is presumably synchronised.
+            Some((mut block_hashes, peer_ip)) = catchup_receiver.recv() => {
+                let hash = block_hashes
+                .iter()
+                .next();
+                if let Some(hash) = hash {
+                    if let Some(Ok(Some(block))) = block_hashes.take(&hash.clone()).map(|hash| self.blocks.get(hash))
+                    {
+                        let bytes: bytes::Bytes =
+                            bincode::encode_to_vec(block, bincode::config::standard())?.into();
+                        if self.stream_peer_metadata
+                            .get_mut(&peer_ip)
+                            .context("peer not found")?
+                            .sender
+                            .send(bytes)
+                            .await.is_ok() {
+                            let _ = catchup_sender.send((block_hashes, peer_ip)).await;
+                        }
+                    }
+                }
+            }
+
+            Some(peer_id) = ping_receiver.recv() => {
+                if let Some(peer) = self.stream_peer_metadata.get_mut(&peer_id) {
+                    peer.last_ping = get_current_timestamp();
+                }
+            }
         }
     }
 
-    fn handle_data_message(&mut self, msg: DataNetMessage) -> Result<()> {
+    async fn handle_data_message(&mut self, msg: DataNetMessage) -> Result<()> {
         match msg {
             DataNetMessage::QueryBlock { respond_to, hash } => {
                 self.blocks.get(hash).map(|block| {
@@ -157,7 +250,7 @@ impl DataAvailability {
                     block_hash = %block.hash(),
                     block_height = %block.height,
                     "⬇️  Received block data");
-                self.handle_block(block);
+                self.handle_block(block).await;
             }
             DataNetMessage::QueryLastBlock { respond_to } => {
                 if let Some(block) = self.blocks.last() {
@@ -180,12 +273,12 @@ impl DataAvailability {
                     block_hash = %block.hash(),
                     block_height = %block.height,
                     "🔒  Block committed");
-                self.handle_block(block);
+                self.handle_block(block).await;
             }
         }
     }
 
-    fn handle_block(&mut self, block: Block) {
+    async fn handle_block(&mut self, block: Block) {
         // if new block is not the next block in the chain, buffer
         if self.blocks.last().is_some() {
             if self
@@ -223,8 +316,35 @@ impl DataAvailability {
         );
         // store block
         let block_hash = block.hash();
-        self.add_block(block);
-        self.pop_buffer(block_hash);
+        self.add_block(block.clone());
+        self.pop_buffer(block_hash.clone());
+
+        // Stream block to all peers
+        // TODO: use retain once async closures are supported ?
+        let mut to_remove = Vec::new();
+        for (peer_id, peer) in self.stream_peer_metadata.iter_mut() {
+            let last_ping = peer.last_ping;
+            if last_ping + 60 * 5 < get_current_timestamp() {
+                info!("peer {} timed out", &peer_id);
+                peer.keepalive_abort.abort();
+                to_remove.push(peer_id.clone());
+            } else {
+                info!("streaming block {} to peer {}", block_hash, &peer_id);
+                match bincode::encode_to_vec(block.clone(), bincode::config::standard()) {
+                    Ok(bytes) => {
+                        if let Err(e) = peer.sender.send(bytes.into()).await {
+                            warn!("failed to send block to peer {}: {}", &peer_id, e);
+                            // TODO: retry?
+                            to_remove.push(peer_id.clone());
+                        }
+                    }
+                    Err(e) => error!("encoding block: {}", e),
+                }
+            }
+        }
+        for peer_id in to_remove {
+            self.stream_peer_metadata.remove(&peer_id);
+        }
     }
 
     fn pop_buffer(&mut self, mut last_block_hash: BlockHash) {
@@ -268,6 +388,63 @@ impl DataAvailability {
                 respond_to: self.self_pubkey.clone(),
             },
         ));
+    }
+
+    async fn start_streaming_to_peer(
+        &mut self,
+        start_height: u64,
+        ping_sender: tokio::sync::mpsc::Sender<String>,
+        catchup_sender: tokio::sync::mpsc::Sender<(HashSet<BlockHash>, String)>,
+        sender: SplitSink<Framed<TcpStream, LengthDelimitedCodec>, Bytes>,
+        mut receiver: SplitStream<Framed<TcpStream, LengthDelimitedCodec>>,
+        peer_ip: &String,
+    ) -> Result<()> {
+        // Start a task to process pings from the peer.
+        // We do the processing in the main select! loop to keep things synchronous.
+        // This makes it easier to store data in the same struct without mutexing.
+        let peer_ip_keepalive = peer_ip.to_string();
+        let keepalive_abort = tokio::spawn(async move {
+            loop {
+                receiver.next().await;
+                let _ = ping_sender.send(peer_ip_keepalive.clone()).await;
+            }
+        });
+
+        // Then store data so we can send new blocks as they come.
+        self.stream_peer_metadata.insert(
+            peer_ip.to_string(),
+            BlockStreamPeer {
+                last_ping: get_current_timestamp(),
+                sender,
+                keepalive_abort,
+            },
+        );
+
+        // Finally, stream past blocks as required.
+        // We'll create a copy of the range so we don't stream everything.
+        // We will safely stream everything as any new block will be sent
+        // because we registered in the struct beforehand.
+        // Like pings, this just sends a message processed in the main select! loop.
+        let block_hashes: HashSet<BlockHash> = self
+            .blocks
+            .range(
+                blocks::BlocksOrdKey(BlockHeight(start_height)),
+                blocks::BlocksOrdKey(
+                    self.blocks
+                        .last()
+                        .map_or(BlockHeight(start_height), |block| block.height),
+                ),
+            )
+            .filter_map(|block| {
+                block
+                    .map(|b| b.value().map_or(BlockHash::new(""), |i| i.hash()))
+                    .ok()
+            })
+            .collect();
+
+        catchup_sender.send((block_hashes, peer_ip.clone())).await?;
+
+        Ok(())
     }
 }
 
