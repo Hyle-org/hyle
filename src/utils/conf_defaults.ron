@@ -1,14 +1,13 @@
 Config(
   id: "single-node",
-  port: 1231,
-  host: "127.0.0.1",
+  host: "127.0.0.1:1231",
   peers: [],
   storage: Storage(
     interval: 10
   ),
   rest: "127.0.0.1:4321",
   data_directory: "data_node1",
-  database_url: "postgres://postgres:password@localhost:5432/postgres",
+  database_url: "postgres://postgres:postgres@localhost:5432/postgres",
   consensus: Consensus (
     slot_duration: 0,
   ),

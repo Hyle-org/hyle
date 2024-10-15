@@ -52,6 +52,7 @@ impl Module for Indexer {
 
         let inner = PgPoolOptions::new()
             .max_connections(20)
+            .acquire_timeout(std::time::Duration::from_secs(1))
             .connect(&ctx.config.database_url)
             .await
             .context("Failed to connect to the database")?;

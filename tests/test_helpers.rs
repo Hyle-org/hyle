@@ -1,50 +1,93 @@
 use assert_cmd::prelude::*;
-use std::{
-    path::Path,
-    process::{Child, Command},
-};
+use hyle::utils::conf::Conf;
+use std::process::{Child, Command};
+use tempfile::TempDir;
 
-pub struct TestNode {
-    child: Child,
-}
+#[derive(Default)]
+pub struct ConfMaker(u16);
 
-pub enum NodeType {
-    Node,
-    #[allow(dead_code)]
-    Client,
-    Indexer,
-}
-
-impl TestNode {
-    // Create a new process that spins up a node or a client
-    pub fn new(config_path: &Path, node_type: NodeType, console_bind_port: &str) -> Self {
-        let mut cargo_bin = Command::cargo_bin(match node_type {
-            NodeType::Node => "node",
-            NodeType::Client => "client",
-            NodeType::Indexer => "indexer",
-        })
-        .unwrap();
-        let mut cmd = cargo_bin.current_dir(config_path);
-        match node_type {
-            NodeType::Client => cmd = cmd.arg("send").arg("blob").arg("data/tx1_blob.ron"),
-            NodeType::Indexer => cmd = cmd.env("HYLE_REST", "127.0.0.1:5544"),
-            _ => (),
+impl ConfMaker {
+    pub fn build(&mut self) -> Conf {
+        let defaults = Conf::new(None, None, None).unwrap();
+        self.0 += 1;
+        Conf {
+            id: format!("node-{}", self.0),
+            host: format!("localhost:{}", 3000 + self.0),
+            da_address: format!("localhost:{}", 4000 + self.0),
+            rest: format!("localhost:{}", 5000 + self.0),
+            run_indexer: false, // disable indexer by default to avoid needed PG
+            ..defaults.clone()
         }
+    }
+}
 
-        // When spinning up multiple node, they need to use different ports for tracing
+enum TestProcessState {
+    Command(Command),
+    Child(Child),
+}
+
+pub struct TestProcess {
+    pub conf: Conf,
+    #[allow(dead_code)]
+    pub dir: TempDir,
+    state: TestProcessState,
+}
+
+impl TestProcess {
+    pub fn new(command: &str, mut conf: Conf) -> Self {
+        let mut cargo_bin = Command::cargo_bin(command).unwrap();
+
+        // Create a temporary directory for the node
+        let tmpdir = tempfile::Builder::new().prefix("hyle").tempdir().unwrap();
+        let cmd = cargo_bin.current_dir(&tmpdir);
+
+        conf.data_directory = tmpdir.path().to_path_buf();
+        // Serialize the configuration to a file
+        let conf_file = tmpdir.path().join("config.ron");
+        ron::ser::to_writer(std::fs::File::create(&conf_file).unwrap(), &conf).unwrap();
+
+        let console_port: u16 = conf.da_address.split(':').last().unwrap().parse().unwrap();
         cmd.env(
             "TOKIO_CONSOLE_BIND",
-            format!("127.0.0.1:{}", console_bind_port),
+            format!("127.0.0.1:{}", console_port + 10000),
         );
-        let child = cmd.spawn().expect("Failed to start node");
-        TestNode { child }
+        Self {
+            conf,
+            dir: tmpdir,
+            state: TestProcessState::Command(cargo_bin),
+        }
+    }
+
+    pub fn log(mut self, level: &str) -> Self {
+        if let TestProcessState::Command(cmd) = &mut self.state {
+            cmd.env("RUST_LOG", level);
+        };
+        self
+    }
+
+    pub fn start(mut self) -> Self {
+        self.state = match &mut self.state {
+            TestProcessState::Command(cmd) => {
+                println!("Starting process: {:?}", cmd);
+                TestProcessState::Child(cmd.spawn().unwrap())
+            }
+            TestProcessState::Child(child) => {
+                panic!("Process already started: {:?}", child.id());
+            }
+        };
+        self
     }
 }
 
 // Drop implem to be sure that process is well stopped
-impl Drop for TestNode {
+impl Drop for TestProcess {
     fn drop(&mut self) {
-        let _ = self.child.kill(); // Kill child process if still active
-        let _ = self.child.wait(); // Wait for end of process
+        match &mut self.state {
+            TestProcessState::Command(_) => (),
+            TestProcessState::Child(child) => {
+                child.kill().unwrap();
+                child.wait().unwrap();
+            }
+        }
     }
 }
