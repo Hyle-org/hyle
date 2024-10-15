@@ -1,0 +1,10 @@
+Config(
+  id: "node-2",
+  peers: [
+      "127.0.0.1:1231",
+  ],
+  rest: "127.0.0.1:4322",
+  data_directory: "data_node2",
+  run_indexer: false,
+  da_address: "127.0.0.1:4411"
+)

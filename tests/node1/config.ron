@@ -1,0 +1,4 @@
+Config(
+  id: "node-1",
+  run_indexer: false,
+)
