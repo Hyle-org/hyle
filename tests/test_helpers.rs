@@ -24,10 +24,7 @@ impl TestNode {
             NodeType::Indexer => "indexer",
         })
         .unwrap();
-        let mut cmd = cargo_bin
-            .arg("--config-file")
-            .arg("conf.ron")
-            .current_dir(config_path);
+        let mut cmd = cargo_bin.current_dir(config_path);
         match node_type {
             NodeType::Client => cmd = cmd.arg("send").arg("blob").arg("data/tx1_blob.ron"),
             NodeType::Indexer => cmd = cmd.env("HYLE_REST", "127.0.0.1:5544"),

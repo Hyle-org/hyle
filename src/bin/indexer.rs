@@ -19,8 +19,8 @@ use tracing_subscriber::{prelude::*, EnvFilter};
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 pub struct Args {
-    #[arg(long, default_value = "master.ron")]
-    pub config_file: String,
+    #[arg(long, default_value = "config.ron")]
+    pub config_file: Option<String>,
 }
 
 /// Setup tracing - stdout and tokio-console subscriber
@@ -63,8 +63,10 @@ async fn main() -> Result<()> {
     setup_tracing()?;
 
     let args = Args::parse();
-    let config = conf::Conf::new_shared(args.config_file, None, Some(true))
-        .context("reading config file")?;
+    let config = Arc::new(
+        conf::Conf::new(args.config_file, None, Some(true)).context("reading config file")?,
+    );
+
     info!("Starting node with config: {:?}", &config);
 
     debug!("server mode");

@@ -31,7 +31,6 @@ pub struct Conf {
     pub database_url: String,
     pub p2p: P2pConf,
     pub data_directory: PathBuf,
-    pub migration_directory: String,
     pub run_indexer: bool,
     pub da_address: String,
 }
@@ -45,34 +44,28 @@ impl Conf {
     }
 
     pub fn new(
-        config_file: String,
+        config_file: Option<String>,
         data_directory: Option<String>,
         run_indexer: Option<bool>,
     ) -> Result<Self, ConfigError> {
-        let s = Config::builder()
-            .set_default("run_indexer", true)?
-            // Priority order: config file, then environment variables, then CLI
-            .add_source(File::with_name(config_file.as_str()))
-            .add_source(
-                Environment::with_prefix("hyle")
-                    .separator("_")
-                    .list_separator(",")
-                    .with_list_parse_key("peers") // Parse this key into Vec<String>
-                    .try_parsing(true),
-            )
-            .set_override_option("data_directory", data_directory)?
-            .set_override_option("run_indexer", run_indexer)?
-            .build()?;
-
-        // You can deserialize (and thus freeze) the entire configuration as
-        s.try_deserialize()
-    }
-
-    pub fn new_shared(
-        config_file: String,
-        data_directory: Option<String>,
-        run_indexer: Option<bool>,
-    ) -> Result<SharedConf, ConfigError> {
-        Self::new(config_file, data_directory, run_indexer).map(Arc::new)
+        let mut s = Config::builder().add_source(File::from_str(
+            include_str!("conf_defaults.ron"),
+            config::FileFormat::Ron,
+        ));
+        // Priority order: config file, then environment variables, then CLI
+        if let Some(config_file) = config_file {
+            s = s.add_source(File::with_name(&config_file).required(false));
+        }
+        s.add_source(
+            Environment::with_prefix("hyle")
+                .separator("_")
+                .list_separator(",")
+                .with_list_parse_key("peers") // Parse this key into Vec<String>
+                .try_parsing(true),
+        )
+        .set_override_option("data_directory", data_directory)?
+        .set_override_option("run_indexer", run_indexer)?
+        .build()?
+        .try_deserialize()
     }
 }
