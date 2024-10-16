@@ -309,9 +309,6 @@ impl Mempool {
     }
 
     async fn check_data_proposal(&mut self) {
-        if self.storage.tip_already_used() {
-            return;
-        }
         if let Some(cut) = self.storage.try_a_new_cut(self.validators.len()) {
             let poa = self.storage.tip_poa();
             self.try_data_proposal(poa).await;
