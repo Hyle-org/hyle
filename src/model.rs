@@ -436,7 +436,7 @@ impl Add<BlockHeight> for BlockHeight {
     }
 }
 
-#[derive(Clone, Encode, Decode, Default, Eq, PartialEq, Hash)]
+#[derive(Clone, Encode, Decode, Default, Eq, PartialEq, Hash, PartialOrd, Ord)]
 pub struct ValidatorPublicKey(pub Vec<u8>);
 
 impl std::fmt::Debug for ValidatorPublicKey {

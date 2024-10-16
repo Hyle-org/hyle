@@ -19,10 +19,12 @@ use bincode::{Decode, Encode};
 use metrics::MempoolMetrics;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashSet, sync::Arc};
+use storage::ProposalVerdict;
 use tracing::{debug, error, info, warn};
 
 mod metrics;
 mod storage;
+pub use storage::{Cut, CutWithTxs};
 
 bus_client! {
 struct MempoolBusClient {
@@ -82,7 +84,7 @@ pub struct Batch {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub enum MempoolEvent {
-    LatestBatch(Batch),
+    NewCut(CutWithTxs),
 }
 impl BusMessage for MempoolEvent {}
 
@@ -142,11 +144,11 @@ impl Mempool {
         match event {
             ConsensusEvent::CommitBlock {
                 validators,
-                batch_info,
-                block,
+                cut_lanes,
+                ..
             } => {
                 self.validators = validators;
-                self.storage.update_lanes_after_commit(batch_info, block);
+                self.storage.update_lanes_after_commit(cut_lanes);
             }
         }
     }
@@ -184,7 +186,7 @@ impl Mempool {
                 self.metrics.signature_error("mempool");
                 warn!("Invalid signature for message {:?}", msg);
             }
-            Err(e) => error!("Error while checking signed message: {}", e),
+            Err(e) => error!("Error while checking signed message: {:?}", e),
         }
     }
 
@@ -205,7 +207,7 @@ impl Mempool {
         validator: &ValidatorPublicKey,
         missing_cars: Vec<Car>,
     ) -> Result<()> {
-        info!("{} SyncReply from sender {validator}", self.storage.id);
+        info!("{} SyncReply from validator {validator}", self.storage.id);
 
         debug!(
             "{} adding {} missing cars to lane {validator}",
@@ -232,7 +234,10 @@ impl Mempool {
         data_proposal: DataProposal,
         last_index: Option<usize>,
     ) {
-        info!("{} SyncRequest received from sender {validator} for last_index {:?} with data proposal {} \n{}", self.storage.id, last_index, data_proposal, self.storage);
+        info!(
+            "{} SyncRequest received from validator {validator} for last_index {:?}",
+            self.storage.id, last_index
+        );
 
         let missing_cars = self.storage.get_missing_cars(last_index, &data_proposal);
         debug!("Missing cars on {} are {:?}", validator, missing_cars);
@@ -248,14 +253,15 @@ impl Mempool {
     }
 
     async fn on_data_vote(&mut self, validator: &ValidatorPublicKey, data_proposal: DataProposal) {
-        debug!("Vote received from sender {}", validator);
-        match self.storage.add_data_vote(validator, &data_proposal) {
-            Some(_) => {
-                debug!("{} DataVote from {}", self.storage.id, validator)
-            }
-            None => {
-                error!("{} unexpected DataVote from {}", self.storage.id, validator)
-            }
+        debug!("Vote received from validator {}", validator);
+        if self
+            .storage
+            .new_data_vote(validator, &data_proposal)
+            .is_some()
+        {
+            debug!("{} DataVote from {}", self.storage.id, validator)
+        } else {
+            error!("{} unexpected DataVote from {}", self.storage.id, validator)
         }
     }
 
@@ -264,99 +270,86 @@ impl Mempool {
         validator: &ValidatorPublicKey,
         data_proposal: DataProposal,
     ) -> Result<()> {
-        if self.storage.has_data_proposal(validator, &data_proposal)
-            || self.storage.append_data_proposal(validator, &data_proposal)
-        {
-            // Normal case, we receive a proposal we already have the parent in store
-            self.send_vote(validator, data_proposal).await
-        } else {
-            //We dont have the parent, so we push the data proposal in the waiting room and craft a sync demand
-            self.storage
-                .push_data_proposal_into_waiting_room(validator, data_proposal.clone());
+        if data_proposal.txs.is_empty() {
+            warn!(
+                "received empty data proposal from {}, ignoring...",
+                validator
+            );
+            return Ok(());
+        }
+        match self.storage.new_data_proposal(validator, &data_proposal)? {
+            ProposalVerdict::Vote => {
+                // Normal case, we receive a proposal we already have the parent in store
+                self.send_vote(validator, data_proposal).await
+            }
+            ProposalVerdict::Wait(last_index) => {
+                //We dont have the parent, so we craft a sync demand
+                debug!("Emitting sync request with local state {} last_available_index {:?} and data_proposal {}", self.storage, last_index, data_proposal);
 
-            let last_available_index = self.storage.get_last_data_index(validator);
+                self.send_sync_request(validator, data_proposal, last_index)
+                    .await
+            }
+        }
+    }
 
-            debug!("Emitting sync request with local state {} last_available_index {:?} and data_proposal {}", self.storage, last_available_index, data_proposal);
+    async fn try_data_proposal(&mut self, poa: Option<Vec<ValidatorPublicKey>>) {
+        let pending_txs = self.storage.flush_pending_txs();
+        if pending_txs.is_empty() {
+            return;
+        }
+        let tip_id = self.storage.add_data_to_local_lane(pending_txs.clone());
+        let data_proposal = DataProposal {
+            txs: pending_txs,
+            pos: tip_id,
+            parent: if tip_id == 1 { None } else { Some(tip_id - 1) },
+            parent_poa: poa,
+        };
 
-            self.send_sync_request(validator, data_proposal, last_available_index)
-                .await
+        if let Err(e) = self.broadcast_data_proposal(data_proposal).await {
+            error!("{:?}", e);
         }
     }
 
     async fn check_data_proposal(&mut self) {
-        match self.storage.tip_data() {
-            Some((tip, txs)) => {
-                let nb_validators = self.validators.len();
-                if tip.votes.len() > nb_validators / 3 {
-                    let requests = self.storage.flush_pending_txs();
-                    // Create tx chunk and broadcast it
-                    let tip_id = self.storage.add_data_to_local_lane(requests.clone());
-
-                    let data_proposal = DataProposal {
-                        inner: requests,
-                        pos: tip_id,
-                        parent: if tip_id == 1 { None } else { Some(tip_id - 1) },
-                        parent_poa: Some(tip.votes.clone()),
-                    };
-
-                    if let Err(e) = self.broadcast_data_proposal(data_proposal).await {
-                        error!("{:?}", e);
-                    }
-
-                    let txs_len = txs.len();
-                    if let Err(e) = self
-                        .bus
-                        .send(MempoolEvent::LatestBatch(Batch {
-                            info: BatchInfo {
-                                validator: self.crypto.validator_pubkey().clone(),
-                                tip,
-                            },
-                            txs,
-                        }))
-                        .context("Cannot send message over channel")
-                    {
-                        error!("{:?}", e);
-                    } else {
-                        self.metrics.add_batch();
-                        self.metrics.snapshot_batched_tx(txs_len);
-                    }
-                } else {
-                    // No PoA means we rebroadcast the data proposal for non present voters
-                    let only_for = HashSet::from_iter(
-                        self.validators
-                            .iter()
-                            .filter(|pubkey| !tip.votes.contains(pubkey))
-                            .cloned(),
-                    );
-                    if let Err(e) = self.broadcast_data_proposal_only_for(
-                        only_for,
-                        DataProposal {
-                            inner: txs,
-                            pos: tip.pos,
-                            parent: tip.parent,
-                            parent_poa: None, // TODO: fetch parent votes
-                        },
-                    ) {
-                        error!("{:?}", e);
-                    }
-                }
+        if self.storage.tip_already_used() {
+            return;
+        }
+        if let Some(cut) = self.storage.try_a_new_cut(self.validators.len()) {
+            let poa = self.storage.tip_poa();
+            self.try_data_proposal(poa).await;
+            let total_txs = cut.txs.len();
+            if let Err(e) = self
+                .bus
+                .send(MempoolEvent::NewCut(cut))
+                .context("Cannot send message over channel")
+            {
+                error!("{:?}", e);
+            } else {
+                self.metrics.add_batch();
+                self.metrics.snapshot_batched_tx(total_txs);
             }
-            None => {
-                // Genesis create a mono tx chunk and broadcast it
-                let pending_txs = self.storage.flush_pending_txs();
-                let tip_id = self.storage.add_data_to_local_lane(pending_txs.clone());
-
-                let data_proposal = DataProposal {
-                    inner: pending_txs,
-                    pos: tip_id,
-                    parent: None,
-                    parent_poa: None,
-                };
-
-                if let Err(e) = self.broadcast_data_proposal(data_proposal).await {
-                    error!("{:?}", e)
-                }
+        } else if let Some((tip, txs)) = self.storage.tip_data() {
+            // No PoA means we rebroadcast the data proposal for non present voters
+            let only_for = HashSet::from_iter(
+                self.validators
+                    .iter()
+                    .filter(|pubkey| !tip.poa.contains(pubkey))
+                    .cloned(),
+            );
+            if let Err(e) = self.broadcast_data_proposal_only_for(
+                only_for,
+                DataProposal {
+                    txs,
+                    pos: tip.pos,
+                    parent: tip.parent,
+                    parent_poa: None, // TODO: fetch parent votes
+                },
+            ) {
+                error!("{:?}", e);
             }
+        } else {
+            // Genesis create a mono tx chunk and broadcast it
+            self.try_data_proposal(None).await;
         }
     }
 
@@ -380,6 +373,9 @@ impl Mempool {
     }
 
     async fn broadcast_data_proposal(&mut self, data_proposal: DataProposal) -> Result<()> {
+        if self.validators.is_empty() {
+            return Ok(());
+        }
         self.metrics
             .add_broadcasted_data_proposal("blob".to_string());
         _ = self
@@ -446,6 +442,7 @@ impl Mempool {
         validator: &ValidatorPublicKey,
         cars: Vec<Car>,
     ) -> Result<()> {
+        // cleanup previously tracked sent sync request
         self.metrics.add_sent_sync_reply("blob".to_string());
         _ = self
             .bus
