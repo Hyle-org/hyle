@@ -1574,7 +1574,7 @@ impl Consensus {
                     if get_current_timestamp() >= *timestamp =>
                 {
                     // Trigger state transition to mutiny
-                    info!("Trigger timeout");
+                    info!("⏰ Trigger timeout for slot {} and view {}", self.bft_round_state.slot, self.bft_round_state.view);
                     self.broadcast_net_message(ConsensusNetMessage::Timeout(
                         self.bft_round_state.slot,
                         self.bft_round_state.view,
