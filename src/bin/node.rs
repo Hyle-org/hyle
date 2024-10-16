@@ -32,7 +32,7 @@ pub struct Args {
     #[arg(long, default_value =  None)]
     pub data_directory: Option<String>,
 
-    #[arg(long, action = clap::ArgAction::SetTrue)]
+    #[arg(long)]
     pub run_indexer: Option<bool>,
 
     #[arg(long, default_value = "config.ron")]

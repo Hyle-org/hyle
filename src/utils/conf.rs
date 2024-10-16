@@ -21,9 +21,8 @@ pub type SharedConf = Arc<Conf>;
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct Conf {
-    port: u16,
-    host: String,
     pub id: String,
+    pub host: String,
     pub peers: Vec<String>,
     pub storage: Storage,
     pub consensus: Consensus,
@@ -36,13 +35,6 @@ pub struct Conf {
 }
 
 impl Conf {
-    pub fn addr(&self) -> (&str, u16) {
-        (&self.host, self.port)
-    }
-    pub fn peer_addr(&self) -> String {
-        format!("{}:{}", self.host, self.port)
-    }
-
     pub fn new(
         config_file: Option<String>,
         data_directory: Option<String>,
