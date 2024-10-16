@@ -754,7 +754,7 @@ impl Consensus {
         Ok(())
     }
 
-    fn on_timeout(&mut self, msg: &SignedWithKey<ConsensusNetMessage>, view: &View, slot: &Slot, consensus_proposal_hash: &ConsensusProposalHash) -> Result<()> {
+    fn on_timeout(&mut self, received_msg: &SignedWithKey<ConsensusNetMessage>, view: &View, slot: &Slot, received_consensus_proposal_hash: &ConsensusProposalHash) -> Result<()> {
         // Only timeout if it is in consensus
 
         debug!(
@@ -774,7 +774,7 @@ impl Consensus {
             {
                 return self.send_net_message(
                     // TODO ? Create a simple struct with unique validator
-                    msg.validators.first().context("No validator found in message! Can't send a commit to anyone")?.clone(),
+                    received_msg.validators.first().context("No validator found in message! Can't send a commit to anyone")?.clone(),
                     ConsensusNetMessage::Commit(
                     consensus_proposal_hash.clone(),
                     commit_qc.clone(),
@@ -795,7 +795,7 @@ impl Consensus {
 
 
             // Insert timeout request and if already present notify
-            if !timeout_requests_of_same_view.insert(msg.clone()) {
+            if !timeout_requests_of_same_view.insert(received_msg.clone()) {
                 // self.metrics.timeout_request("already_processed");
                 info!("Timeout has already been processed");
                 return Ok(());
@@ -809,7 +809,7 @@ impl Consensus {
                 return self.broadcast_net_message(ConsensusNetMessage::Timeout(
                     *slot,
                     *view,
-                    consensus_proposal_hash.clone(),
+                    received_consensus_proposal_hash.clone(),
                 ));
             }
 
