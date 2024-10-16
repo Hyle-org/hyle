@@ -25,34 +25,15 @@ pub enum ProposalVerdict {
     Vote,
 }
 
-pub type Cut = BTreeMap<ValidatorPublicKey, Option<CutCar>>;
+pub type Cut = BTreeMap<ValidatorPublicKey, Option<usize>>;
 
 fn add_lane_tip_to_cut(cut: &mut Cut, validator: &ValidatorPublicKey, lane: &Lane) {
     cut.insert(
         validator.clone(),
-        lane.cars.last().and_then(|car| {
-            if car.used_in_cut {
-                None
-            } else {
-                Some(CutCar {
-                    id: car.id,
-                    parent: car.parent,
-                })
-            }
-        }),
+        lane.cars
+            .last()
+            .and_then(|car| if car.used_in_cut { None } else { Some(car.id) }),
     );
-}
-
-#[derive(Debug, Default, Clone, Deserialize, Serialize, Encode, Decode)]
-pub struct CutWithTxs {
-    pub tips: Cut,
-    pub txs: Vec<Transaction>,
-}
-
-#[derive(Debug, Default, Clone, Deserialize, Serialize, Encode, Decode, PartialEq, Eq, Hash)]
-pub struct CutCar {
-    pub id: usize,
-    pub parent: Option<usize>,
 }
 
 #[derive(Debug, Clone)]
@@ -371,9 +352,9 @@ impl InMemoryStorage {
         self.pending_txs.drain(0..).collect()
     }
 
-    fn collect_old_used_cars(cars: &mut Vec<Car>, some_tip: &Option<CutCar>) {
+    fn collect_old_used_cars(cars: &mut Vec<Car>, some_tip: &Option<usize>) {
         if let Some(tip) = some_tip {
-            cars.retain_mut(|car| match car.id.cmp(&tip.id) {
+            cars.retain_mut(|car| match car.id.cmp(tip) {
                 Ordering::Less => false,
                 Ordering::Equal => {
                     car.used_in_cut = true;
