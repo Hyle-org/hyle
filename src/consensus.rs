@@ -524,7 +524,7 @@ impl Consensus {
         let mut ticket: Option<Ticket> = ticket;
 
         // If no ticket was provided, we try to craft one from locally stored certificates
-        if ticket == None {
+        if ticket.is_none() {
             // Verifies that previous slot received a *Commit* Quorum Certificate.
             match self
                 .bft_round_state
