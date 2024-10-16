@@ -27,7 +27,7 @@ use tracing::{debug, error, info, warn};
 
 mod metrics;
 mod storage;
-pub use storage::Cut;
+pub use storage::{Cut, CutLanes};
 
 bus_client! {
 struct MempoolBusClient {
@@ -147,9 +147,13 @@ impl Mempool {
 
     fn handle_event(&mut self, event: ConsensusEvent) {
         match event {
-            ConsensusEvent::CommitBlock { validators, .. } => {
+            ConsensusEvent::CommitBlock {
+                validators,
+                cut_lanes,
+                ..
+            } => {
                 self.validators = validators;
-                self.storage.update_lanes_after_commit();
+                self.storage.update_lanes_after_commit(cut_lanes);
             }
         }
     }
@@ -315,9 +319,7 @@ impl Mempool {
         if let Some(cut) = self.storage.try_a_new_cut(self.validators.len()) {
             let poa = self.storage.tip_poa();
             self.try_data_proposal(poa).await;
-            let total_txs = cut.data.values().fold(0, |acc, lane| {
-                acc + lane.iter().fold(0, |acc, car| acc + car.txs.len())
-            });
+            let total_txs = cut.txs.len();
             if let Err(e) = self
                 .bus
                 .send(MempoolEvent::NewCut(cut))
@@ -325,7 +327,6 @@ impl Mempool {
             {
                 error!("{:?}", e);
             } else {
-                self.storage.tip_used();
                 self.metrics.add_batch();
                 self.metrics.snapshot_batched_tx(total_txs);
             }

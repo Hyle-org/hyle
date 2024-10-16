@@ -2,7 +2,8 @@ use anyhow::{bail, Result};
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::{HashMap, HashSet},
+    cmp::Ordering,
+    collections::{BTreeMap, HashMap, HashSet},
     fmt::Display,
     hash::Hash,
     vec,
@@ -16,7 +17,6 @@ pub struct TipData {
     pub pos: usize,
     pub parent: Option<usize>,
     pub poa: Vec<ValidatorPublicKey>,
-    pub used: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -45,29 +45,42 @@ impl Display for InMemoryStorage {
     }
 }
 
+pub type CutLanes = BTreeMap<ValidatorPublicKey, Option<CutCar>>;
+
 #[derive(Debug, Default, Clone, Deserialize, Serialize, Encode, Decode)]
 pub struct Cut {
-    pub validator: ValidatorPublicKey,
-    pub data: HashMap<ValidatorPublicKey, CutLane>,
+    pub lanes: CutLanes,
+    pub txs: Vec<Transaction>,
 }
 
 impl Cut {
-    pub fn txs(self) -> Vec<Transaction> {
-        self.data.into_values().fold(vec![], |mut acc, lanes| {
-            lanes.into_iter().for_each(|car| acc.extend(car.txs));
-            acc
-        })
+    fn extend_from_lane(
+        &mut self,
+        validator: &ValidatorPublicKey,
+        lane: &mut Lane,
+        txs: &mut HashSet<Transaction>,
+    ) {
+        self.lanes.insert(
+            validator.clone(),
+            lane.cars.last().and_then(|car| {
+                if car.used_in_cut {
+                    None
+                } else {
+                    txs.extend(car.txs.clone());
+                    Some(CutCar {
+                        id: car.id,
+                        parent: car.parent,
+                    })
+                }
+            }),
+        );
     }
 }
 
-pub type CutLane = Vec<CutCar>;
-
-#[derive(Debug, Default, Clone, Deserialize, Serialize, Encode, Decode)]
+#[derive(Debug, Default, Clone, Deserialize, Serialize, Encode, Decode, PartialEq, Eq, Hash)]
 pub struct CutCar {
     pub id: usize,
     pub parent: Option<usize>,
-    pub txs: Vec<Transaction>,
-    pub poa: HashSet<ValidatorPublicKey>,
 }
 
 impl InMemoryStorage {
@@ -89,35 +102,19 @@ impl InMemoryStorage {
             .map(|car| car.poa.clone().drain().collect())
     }
 
-    fn make_cut_lane(lane: &mut Lane) -> CutLane {
-        lane.cars
-            .iter_mut()
-            .filter(|car| !car.used)
-            .map(|car| {
-                car.used = true;
-                CutCar {
-                    id: car.id,
-                    parent: car.parent,
-                    txs: car.txs.clone(),
-                    poa: car.poa.clone(),
-                }
-            })
-            .collect()
-    }
-
     pub fn try_a_new_cut(&mut self, nb_validators: usize) -> Option<Cut> {
         if let Some(car) = self.lane.current() {
             if car.poa.len() > nb_validators / 3 {
+                let mut txs = HashSet::new();
                 let mut cut = Cut {
-                    validator: self.id.clone(),
-                    data: HashMap::with_capacity(self.other_lanes.len() + 1),
+                    txs: Vec::new(),
+                    lanes: BTreeMap::new(),
                 };
-                cut.data
-                    .insert(self.id.clone(), Self::make_cut_lane(&mut self.lane));
+                cut.extend_from_lane(&self.id, &mut self.lane, &mut txs);
                 for (validator, lane) in self.other_lanes.iter_mut() {
-                    cut.data
-                        .insert(validator.clone(), Self::make_cut_lane(lane));
+                    cut.extend_from_lane(validator, lane, &mut txs);
                 }
+                cut.txs.extend(txs);
                 return Some(cut);
             }
         }
@@ -135,7 +132,7 @@ impl InMemoryStorage {
             parent: tip_id,
             txs,
             poa: HashSet::from([self.id.clone()]),
-            used: false,
+            used_in_cut: false,
         });
 
         current_id
@@ -208,7 +205,7 @@ impl InMemoryStorage {
             parent: tip_id,
             txs: data_proposal.txs.clone(),
             poa: HashSet::from([self.id.clone(), validator.clone()]),
-            used: false,
+            used_in_cut: false,
         });
     }
 
@@ -377,7 +374,6 @@ impl InMemoryStorage {
                     pos: car.id,
                     parent: car.parent,
                     poa: car.poa.clone().into_iter().collect(),
-                    used: car.used,
                 },
                 car.txs.clone(),
             )
@@ -385,35 +381,37 @@ impl InMemoryStorage {
     }
 
     pub fn tip_already_used(&self) -> bool {
-        self.lane.current().map(|car| car.used).unwrap_or_default()
-    }
-
-    pub fn tip_used(&mut self) {
-        if let Some(tip) = self.lane.current_mut() {
-            tip.used = true;
-        }
+        self.lane
+            .current()
+            .map(|car| car.used_in_cut)
+            .unwrap_or_default()
     }
 
     pub fn flush_pending_txs(&mut self) -> Vec<Transaction> {
         self.pending_txs.drain(0..).collect()
     }
 
-    fn collect_old_used_cars(cars: &mut Vec<Car>) {
-        let mut last_used = None;
-        cars.iter().for_each(|car| {
-            if car.used {
-                last_used.replace(car.id);
-            }
-        });
-        if let Some(last_used) = last_used {
-            cars.retain(|car| car.id >= last_used);
+    fn collect_old_used_cars(cars: &mut Vec<Car>, some_tip: &Option<CutCar>) {
+        if let Some(tip) = some_tip {
+            cars.retain_mut(|car| match car.id.cmp(&tip.id) {
+                Ordering::Less => false,
+                Ordering::Equal => {
+                    car.used_in_cut = true;
+                    true
+                }
+                Ordering::Greater => true,
+            });
         }
     }
 
-    pub fn update_lanes_after_commit(&mut self) {
-        Self::collect_old_used_cars(&mut self.lane.cars);
-        for lane in self.other_lanes.values_mut() {
-            Self::collect_old_used_cars(&mut lane.cars);
+    pub fn update_lanes_after_commit(&mut self, lanes: CutLanes) {
+        if let Some(tip) = lanes.get(&self.id) {
+            Self::collect_old_used_cars(&mut self.lane.cars, tip);
+        }
+        for (validator, lane) in self.other_lanes.iter_mut() {
+            if let Some(tip) = lanes.get(validator) {
+                Self::collect_old_used_cars(&mut lane.cars, tip);
+            }
         }
     }
 }
@@ -424,7 +422,7 @@ pub struct Car {
     parent: Option<usize>,
     txs: Vec<Transaction>,
     pub poa: HashSet<ValidatorPublicKey>,
-    used: bool,
+    used_in_cut: bool,
 }
 
 impl Display for Car {
@@ -435,7 +433,7 @@ impl Display for Car {
             self.id,
             self.txs.first(),
             self.poa.len(),
-            self.used,
+            self.used_in_cut,
         )
     }
 }
@@ -585,7 +583,7 @@ mod tests {
                 parent: None,
                 txs: vec![make_tx("test1")],
                 poa: HashSet::from([pubkey3.clone(), pubkey2.clone()]),
-                used: false,
+                used_in_cut: false,
             }
         );
 
@@ -690,9 +688,9 @@ mod tests {
 
         let cut = store.try_a_new_cut(2);
         assert!(cut.is_some());
-        assert_eq!(cut.map(|cut| cut.txs().len()), Some(9));
+        assert_eq!(cut.as_ref().map(|cut| cut.txs.len()), Some(6));
 
-        store.update_lanes_after_commit();
+        store.update_lanes_after_commit(cut.unwrap().lanes);
 
         assert_eq!(store.lane.size(), 1);
         assert_eq!(store.other_lanes.get(&pubkey2).map(|l| l.size()), Some(1));
@@ -726,14 +724,14 @@ mod tests {
                         make_tx("test4"),
                     ],
                     poa: HashSet::from([pubkey1.clone(), pubkey2.clone()]),
-                    used: false,
+                    used_in_cut: false,
                 },
                 Car {
                     id: 2,
                     parent: Some(1),
                     txs: vec![make_tx("test5"), make_tx("test6"), make_tx("test7")],
                     poa: HashSet::from([pubkey1.clone(), pubkey2.clone()]),
-                    used: false,
+                    used_in_cut: false,
                 },
             ],
         );
@@ -769,14 +767,14 @@ mod tests {
                     parent: Some(1),
                     txs: vec![make_tx("test_local2")],
                     poa: HashSet::from_iter(vec![pubkey3.clone()]),
-                    used: false,
+                    used_in_cut: false,
                 },
                 Car {
                     id: 3,
                     parent: Some(2),
                     txs: vec![make_tx("test_local3")],
                     poa: HashSet::from_iter(vec![pubkey3.clone()]),
-                    used: false,
+                    used_in_cut: false,
                 }
             ])
         );
@@ -799,21 +797,21 @@ mod tests {
                     parent: None,
                     txs: vec![make_tx("test_local")],
                     poa: HashSet::from_iter(vec![pubkey3.clone()]),
-                    used: false,
+                    used_in_cut: false,
                 },
                 Car {
                     id: 2,
                     parent: Some(1),
                     txs: vec![make_tx("test_local2")],
                     poa: HashSet::from_iter(vec![pubkey3.clone()]),
-                    used: false,
+                    used_in_cut: false,
                 },
                 Car {
                     id: 3,
                     parent: Some(2),
                     txs: vec![make_tx("test_local3")],
                     poa: HashSet::from_iter(vec![pubkey3.clone()]),
-                    used: false,
+                    used_in_cut: false,
                 }
             ])
         );
