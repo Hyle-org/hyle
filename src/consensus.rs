@@ -1245,14 +1245,14 @@ impl Consensus {
                 if let Some(file) = &self.file {
                     Self::save_on_disk(file.as_path(), &self.store)?;
                 }
-                _ = self
+                self
                     .bus
                     .send(ConsensusEvent::CommitBlock {
                         validators: self.bft_round_state.consensus_proposal.validators.clone(),
                         batch_info: batch.info,
                         block: block.clone(),
                     })
-                    .context("Failed to send ConsensusEvent::CommitBlock msg on the bus")?;
+                    .expect("Failed to send ConsensusEvent::CommitBlock msg on the bus");
                 Ok(())
             }
             ConsensusCommand::NewStaker(staker) => {
