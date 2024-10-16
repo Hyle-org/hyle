@@ -26,25 +26,11 @@ pub enum ProposalVerdict {
 
 pub type Cut = BTreeMap<ValidatorPublicKey, usize>;
 
-#[derive(Debug, Default, Clone, Deserialize, Serialize, Encode, Decode)]
-pub struct CutWithTxs {
-    pub tips: Cut,
-    pub txs: Vec<Transaction>,
-}
-
-impl CutWithTxs {
-    fn extend_from_lane(
-        &mut self,
-        validator: &ValidatorPublicKey,
-        lane: &mut Lane,
-        txs: &mut HashSet<Transaction>,
-    ) {
-        if let Some(car) = lane.cars.last_mut() {
-            if !car.used_in_cut {
-                car.used_in_cut = true;
-                txs.extend(car.txs.clone());
-                self.tips.insert(validator.clone(), car.id);
-            }
+fn add_lane_tip_to_cut(cut: &mut Cut, validator: &ValidatorPublicKey, lane: &mut Lane) {
+    if let Some(tip) = lane.cars.last_mut() {
+        if !tip.used_in_cut {
+            tip.used_in_cut = true;
+            cut.insert(validator.clone(), tip.id);
         }
     }
 }
@@ -88,19 +74,14 @@ impl InMemoryStorage {
             .map(|car| car.poa.iter().cloned().collect())
     }
 
-    pub fn try_a_new_cut(&mut self, nb_validators: usize) -> Option<CutWithTxs> {
+    pub fn try_a_new_cut(&mut self, nb_validators: usize) -> Option<Cut> {
         if let Some(car) = self.lane.current() {
             if car.poa.len() > nb_validators / 3 {
-                let mut txs = HashSet::new();
-                let mut cut = CutWithTxs {
-                    txs: Vec::new(),
-                    tips: BTreeMap::new(),
-                };
-                cut.extend_from_lane(&self.id, &mut self.lane, &mut txs);
+                let mut cut = BTreeMap::new();
+                add_lane_tip_to_cut(&mut cut, &self.id, &mut self.lane);
                 for (validator, lane) in self.other_lanes.iter_mut() {
-                    cut.extend_from_lane(validator, lane, &mut txs);
+                    add_lane_tip_to_cut(&mut cut, validator, lane);
                 }
-                cut.txs.extend(txs);
                 return Some(cut);
             }
         }
@@ -439,7 +420,7 @@ impl Display for Car {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "[{}/{:?}/{}v] (used: {})",
+            "[{}/{:?}/{}v] (used:{})",
             self.id,
             self.txs.first(),
             self.poa.len(),
@@ -708,7 +689,7 @@ mod tests {
         let cut = store.try_a_new_cut(2);
         assert!(cut.is_some());
 
-        store.update_lanes_after_commit(cut.unwrap().tips);
+        store.update_lanes_after_commit(cut.unwrap());
 
         // should contain only the tip on all the lanes
         assert_eq!(store.lane.size(), 1);

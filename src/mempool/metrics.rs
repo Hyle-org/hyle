@@ -44,10 +44,6 @@ impl MempoolMetrics {
         self.in_memory_tx
             .record(nb as u64, &[KeyValue::new("status", "pending")])
     }
-    pub fn snapshot_batched_tx(&self, nb: usize) {
-        self.in_memory_tx
-            .record(nb as u64, &[KeyValue::new("status", "batch")])
-    }
     pub fn add_broadcasted_tx(&self, kind: String) {
         self.broadcasted_tx.add(1, &[KeyValue::new("kind", kind)])
     }

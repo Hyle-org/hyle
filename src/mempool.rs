@@ -25,7 +25,7 @@ use tracing::{debug, error, info, warn};
 
 mod metrics;
 mod storage;
-pub use storage::{Cut, CutWithTxs};
+pub use storage::Cut;
 
 bus_client! {
 struct MempoolBusClient {
@@ -85,7 +85,7 @@ pub struct Batch {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub enum MempoolEvent {
-    NewCut(CutWithTxs),
+    NewCut(Cut),
 }
 impl BusMessage for MempoolEvent {}
 
@@ -146,12 +146,10 @@ impl Mempool {
     fn handle_event(&mut self, event: ConsensusEvent) {
         match event {
             ConsensusEvent::CommitBlock {
-                validators,
-                cut_lanes,
-                ..
+                validators, cut, ..
             } => {
                 self.validators = validators;
-                self.storage.update_lanes_after_commit(cut_lanes);
+                self.storage.update_lanes_after_commit(cut);
             }
         }
     }
@@ -317,7 +315,6 @@ impl Mempool {
         if let Some(cut) = self.storage.try_a_new_cut(self.validators.len()) {
             let poa = self.storage.tip_poa();
             self.try_data_proposal(poa).await;
-            let total_txs = cut.txs.len();
             if let Err(e) = self
                 .bus
                 .send(MempoolEvent::NewCut(cut))
@@ -326,7 +323,6 @@ impl Mempool {
                 error!("{:?}", e);
             } else {
                 self.metrics.add_batch();
-                self.metrics.snapshot_batched_tx(total_txs);
             }
         } else if let Some((tip, txs)) = self.storage.tip_data() {
             // No PoA means we rebroadcast the data proposal for non present voters
