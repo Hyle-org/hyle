@@ -7,7 +7,7 @@ use staking::{Stake, Staker, Staking};
 use std::{
     cmp::max, collections::{HashMap, HashSet}, default::Default, path::PathBuf, time::Duration
 };
-use tokio::{sync::broadcast, time::sleep};
+use tokio::{sync::broadcast, time::{interval, sleep}};
 use tracing::{debug, info, warn};
 
 use crate::{
@@ -709,7 +709,7 @@ impl Consensus {
             .send(OutboundMessage::broadcast(
                 self.sign_net_message(consensus_net_message)?,
             ))
-            .context(format!("Failed to broadcast ConsensusNetMessage msg on the bus"))?;
+            .context("Failed to broadcast ConsensusNetMessage msg on the bus")?;
         Ok(())
     }
 
@@ -738,7 +738,7 @@ impl Consensus {
         self.bft_round_state
             .timeout_certificates
             .entry(*slot)
-            .or_insert_with(|| HashMap::new())
+            .or_default()
             .insert(*view, certificate.clone());
 
         self.bft_round_state.slot = *slot;
@@ -774,7 +774,7 @@ impl Consensus {
             {
                 return self.send_net_message(
                     // TODO ? Create a simple struct with unique validator
-                    msg.validators.get(0).unwrap().clone(),
+                    msg.validators.first().context("No validator found in message! Can't send a commit to anyone")?.clone(),
                     ConsensusNetMessage::Commit(
                     consensus_proposal_hash.clone(),
                     commit_qc.clone(),
@@ -789,9 +789,9 @@ impl Consensus {
                 .bft_round_state
                 .timeout_requests
                 .entry(*slot)
-                .or_insert_with(|| HashMap::new())
+                .or_default()
                 .entry(*view)
-                .or_insert_with(|| HashSet::new());
+                .or_default();
 
 
             // Insert timeout request and if already present notify
@@ -806,12 +806,11 @@ impl Consensus {
             // Count requests and if f+1 requests, join the mutiny
             if len == f + 1 {
                 // Broadcast a timeout message
-                _ = &self.broadcast_net_message(ConsensusNetMessage::Timeout(
-                    slot.clone(),
-                    view.clone(),
+                return self.broadcast_net_message(ConsensusNetMessage::Timeout(
+                    *slot,
+                    *view,
                     consensus_proposal_hash.clone(),
-                ))?;
-                return Ok(());
+                ));
             }
 
             // Create TC if applicable
@@ -834,8 +833,8 @@ impl Consensus {
                 // Aggregates them into a Timeout Certificate
                 let timeout_signed_aggregation = self.crypto.sign_aggregate(
                     ConsensusNetMessage::Timeout(
-                        slot.clone(),
-                        view.clone(),
+                        *slot,
+                        *view,
                         consensus_proposal_hash.clone(),
                     ),
                     aggregates.as_slice(),
@@ -853,11 +852,11 @@ impl Consensus {
                     .bft_round_state
                     .timeout_certificates
                     .entry(self.store.bft_round_state.slot)
-                    .or_insert_with(|| HashMap::new())
+                    .or_default()
                     .insert(self.store.bft_round_state.view, timeout_certificate.clone());
 
                 // Broadcast the Timeout Certificate to all validators
-                _ = self.broadcast_net_message(ConsensusNetMessage::TimeoutCertificate(
+                self.broadcast_net_message(ConsensusNetMessage::TimeoutCertificate(
                     self.store.bft_round_state.slot,
                     self.store.bft_round_state.view,
                     timeout_certificate,
@@ -1514,9 +1513,9 @@ impl Consensus {
                 {
                     // Trigger state transition to mutiny
                     info!("Trigger timeout");
-                    _ = self.broadcast_net_message(ConsensusNetMessage::Timeout(
-                        self.bft_round_state.slot.clone(),
-                        self.bft_round_state.view.clone(),
+                    self.broadcast_net_message(ConsensusNetMessage::Timeout(
+                        self.bft_round_state.slot,
+                        self.bft_round_state.view,
                         self.bft_round_state.consensus_proposal.hash(),
                     ))?;
 
@@ -1582,27 +1581,6 @@ impl Consensus {
             }
         }
     }
-    fn send_command_every(&self, interval: Duration, msg: ConsensusCommand) -> Result<()> {
-        let command_sender = Pick::<broadcast::Sender<ConsensusCommand>>::get(&self.bus).clone();
-
-        tokio::spawn(async move {
-            loop {
-                sleep(interval).await;
-
-                _ = command_sender
-                    .send(msg.clone())
-                    .log_error("Cannot send message over channel");
-            }
-        });
-
-        Ok(())
-    }
-
-    // a routine that regularly checks whether it's time to trigger
-    // a consensus timeout based on current timestamp
-    pub fn start_timeout_checker(&mut self, config: SharedConf) -> Result<()> {
-        self.send_command_every(Duration::from_secs(2), ConsensusCommand::TimeoutTick)
-    }
 
     pub fn start_master(&mut self, config: SharedConf) -> Result<()> {
         let interval = config.consensus.slot_duration;
@@ -1630,8 +1608,12 @@ impl Consensus {
     }
 
     pub async fn start(&mut self) -> Result<()> {
+
+        let mut timeout_ticker = interval(Duration::from_secs(2));
+        
         handle_messages! {
             on_bus self.bus,
+            
             listen<ConsensusCommand> cmd => {
                 match self.handle_command(cmd) {
                     Ok(_) => (),
@@ -1655,6 +1637,10 @@ impl Consensus {
                     Ok(_) => (),
                     Err(e) => warn!("Error while handling peer event: {:#}", e),
                 }
+            }
+            _ = timeout_ticker.tick() => {
+                self.bus.send(ConsensusCommand::TimeoutTick)
+                    .log_error("Cannot send message over channel")?;
             }
         }
     }
