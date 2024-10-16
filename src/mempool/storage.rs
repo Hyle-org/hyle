@@ -25,6 +25,36 @@ pub enum ProposalVerdict {
     Vote,
 }
 
+pub type Cut = BTreeMap<ValidatorPublicKey, Option<CutCar>>;
+
+fn add_lane_tip_to_cut(cut: &mut Cut, validator: &ValidatorPublicKey, lane: &Lane) {
+    cut.insert(
+        validator.clone(),
+        lane.cars.last().and_then(|car| {
+            if car.used_in_cut {
+                None
+            } else {
+                Some(CutCar {
+                    id: car.id,
+                    parent: car.parent,
+                })
+            }
+        }),
+    );
+}
+
+#[derive(Debug, Default, Clone, Deserialize, Serialize, Encode, Decode)]
+pub struct CutWithTxs {
+    pub tips: Cut,
+    pub txs: Vec<Transaction>,
+}
+
+#[derive(Debug, Default, Clone, Deserialize, Serialize, Encode, Decode, PartialEq, Eq, Hash)]
+pub struct CutCar {
+    pub id: usize,
+    pub parent: Option<usize>,
+}
+
 #[derive(Debug, Clone)]
 pub struct InMemoryStorage {
     pub id: ValidatorPublicKey,
@@ -43,44 +73,6 @@ impl Display for InMemoryStorage {
 
         Ok(())
     }
-}
-
-pub type Cut = BTreeMap<ValidatorPublicKey, Option<CutCar>>;
-
-#[derive(Debug, Default, Clone, Deserialize, Serialize, Encode, Decode)]
-pub struct CutWithTxs {
-    pub tips: Cut,
-    pub txs: Vec<Transaction>,
-}
-
-impl CutWithTxs {
-    fn extend_from_lane(
-        &mut self,
-        validator: &ValidatorPublicKey,
-        lane: &mut Lane,
-        txs: &mut HashSet<Transaction>,
-    ) {
-        self.tips.insert(
-            validator.clone(),
-            lane.cars.last().and_then(|car| {
-                if car.used_in_cut {
-                    None
-                } else {
-                    txs.extend(car.txs.clone());
-                    Some(CutCar {
-                        id: car.id,
-                        parent: car.parent,
-                    })
-                }
-            }),
-        );
-    }
-}
-
-#[derive(Debug, Default, Clone, Deserialize, Serialize, Encode, Decode, PartialEq, Eq, Hash)]
-pub struct CutCar {
-    pub id: usize,
-    pub parent: Option<usize>,
 }
 
 impl InMemoryStorage {
@@ -102,19 +94,14 @@ impl InMemoryStorage {
             .map(|car| car.poa.clone().drain().collect())
     }
 
-    pub fn try_a_new_cut(&mut self, nb_validators: usize) -> Option<CutWithTxs> {
+    pub fn try_a_new_cut(&mut self, nb_validators: usize) -> Option<Cut> {
         if let Some(car) = self.lane.current() {
             if car.poa.len() > nb_validators / 3 {
-                let mut txs = HashSet::new();
-                let mut cut = CutWithTxs {
-                    txs: Vec::new(),
-                    tips: BTreeMap::new(),
-                };
-                cut.extend_from_lane(&self.id, &mut self.lane, &mut txs);
-                for (validator, lane) in self.other_lanes.iter_mut() {
-                    cut.extend_from_lane(validator, lane, &mut txs);
+                let mut cut = BTreeMap::new();
+                add_lane_tip_to_cut(&mut cut, &self.id, &self.lane);
+                for (validator, lane) in self.other_lanes.iter() {
+                    add_lane_tip_to_cut(&mut cut, validator, lane);
                 }
-                cut.txs.extend(txs);
                 return Some(cut);
             }
         }
@@ -681,9 +668,8 @@ mod tests {
 
         let cut = store.try_a_new_cut(2);
         assert!(cut.is_some());
-        assert_eq!(cut.as_ref().map(|cut| cut.txs.len()), Some(6));
 
-        store.update_lanes_after_commit(cut.unwrap().tips);
+        store.update_lanes_after_commit(cut.unwrap());
 
         assert_eq!(store.lane.size(), 1);
         assert_eq!(store.other_lanes.get(&pubkey2).map(|l| l.size()), Some(1));
