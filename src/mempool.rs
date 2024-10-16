@@ -18,10 +18,7 @@ use anyhow::{Context, Result};
 use bincode::{Decode, Encode};
 use metrics::MempoolMetrics;
 use serde::{Deserialize, Serialize};
-use std::{
-    collections::{HashMap, HashSet},
-    sync::Arc,
-};
+use std::{collections::HashSet, sync::Arc};
 use storage::ProposalVerdict;
 use tracing::{debug, error, info, warn};
 
@@ -46,7 +43,6 @@ pub struct Mempool {
     metrics: MempoolMetrics,
     storage: InMemoryStorage,
     validators: Vec<ValidatorPublicKey>,
-    previous_sync_requests: HashMap<ValidatorPublicKey, Option<usize>>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, Eq, PartialEq)]
@@ -114,7 +110,6 @@ impl Module for Mempool {
             crypto: Arc::clone(&ctx.node.crypto),
             storage: InMemoryStorage::new(ctx.node.crypto.validator_pubkey().clone()),
             validators: vec![],
-            previous_sync_requests: HashMap::new(),
         })
     }
 
@@ -425,17 +420,6 @@ impl Mempool {
         data_proposal: DataProposal,
         last_index: Option<usize>,
     ) -> Result<()> {
-        let previous_sync_request = self.previous_sync_requests.get(validator);
-        // we don't want to resend an "old" sync request
-        match (last_index, previous_sync_request) {
-            (None, Some(None)) => return Ok(()),
-            (Some(li), Some(Some(psr))) if li <= *psr => return Ok(()),
-            _ => {}
-        }
-
-        self.previous_sync_requests
-            .insert(validator.clone(), last_index);
-
         self.metrics.add_sent_sync_request("blob".to_string());
         _ = self
             .bus
@@ -453,7 +437,6 @@ impl Mempool {
         cars: Vec<Car>,
     ) -> Result<()> {
         // cleanup previously tracked sent sync request
-        self.previous_sync_requests.remove(validator);
         self.metrics.add_sent_sync_reply("blob".to_string());
         _ = self
             .bus
