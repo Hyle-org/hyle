@@ -45,22 +45,22 @@ impl Display for InMemoryStorage {
     }
 }
 
-pub type CutLanes = BTreeMap<ValidatorPublicKey, Option<CutCar>>;
+pub type Cut = BTreeMap<ValidatorPublicKey, Option<CutCar>>;
 
 #[derive(Debug, Default, Clone, Deserialize, Serialize, Encode, Decode)]
-pub struct Cut {
-    pub lanes: CutLanes,
+pub struct CutWithTxs {
+    pub tips: Cut,
     pub txs: Vec<Transaction>,
 }
 
-impl Cut {
+impl CutWithTxs {
     fn extend_from_lane(
         &mut self,
         validator: &ValidatorPublicKey,
         lane: &mut Lane,
         txs: &mut HashSet<Transaction>,
     ) {
-        self.lanes.insert(
+        self.tips.insert(
             validator.clone(),
             lane.cars.last().and_then(|car| {
                 if car.used_in_cut {
@@ -102,13 +102,13 @@ impl InMemoryStorage {
             .map(|car| car.poa.clone().drain().collect())
     }
 
-    pub fn try_a_new_cut(&mut self, nb_validators: usize) -> Option<Cut> {
+    pub fn try_a_new_cut(&mut self, nb_validators: usize) -> Option<CutWithTxs> {
         if let Some(car) = self.lane.current() {
             if car.poa.len() > nb_validators / 3 {
                 let mut txs = HashSet::new();
-                let mut cut = Cut {
+                let mut cut = CutWithTxs {
                     txs: Vec::new(),
-                    lanes: BTreeMap::new(),
+                    tips: BTreeMap::new(),
                 };
                 cut.extend_from_lane(&self.id, &mut self.lane, &mut txs);
                 for (validator, lane) in self.other_lanes.iter_mut() {
@@ -404,7 +404,7 @@ impl InMemoryStorage {
         }
     }
 
-    pub fn update_lanes_after_commit(&mut self, lanes: CutLanes) {
+    pub fn update_lanes_after_commit(&mut self, lanes: Cut) {
         if let Some(tip) = lanes.get(&self.id) {
             Self::collect_old_used_cars(&mut self.lane.cars, tip);
         }
@@ -690,7 +690,7 @@ mod tests {
         assert!(cut.is_some());
         assert_eq!(cut.as_ref().map(|cut| cut.txs.len()), Some(6));
 
-        store.update_lanes_after_commit(cut.unwrap().lanes);
+        store.update_lanes_after_commit(cut.unwrap().tips);
 
         assert_eq!(store.lane.size(), 1);
         assert_eq!(store.other_lanes.get(&pubkey2).map(|l| l.size()), Some(1));

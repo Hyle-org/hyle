@@ -27,7 +27,7 @@ use tracing::{debug, error, info, warn};
 
 mod metrics;
 mod storage;
-pub use storage::{Cut, CutLanes};
+pub use storage::{Cut, CutWithTxs};
 
 bus_client! {
 struct MempoolBusClient {
@@ -88,7 +88,7 @@ pub struct Batch {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub enum MempoolEvent {
-    NewCut(Cut),
+    NewCut(CutWithTxs),
 }
 impl BusMessage for MempoolEvent {}
 
