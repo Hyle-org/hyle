@@ -112,10 +112,10 @@ impl ConsensusTimeoutState {
     pub fn schedule_next(&mut self, timestamp: u64) -> Result<()> {
         match self {
             ConsensusTimeoutState::Inactive => {
-                info!("Scheduling timeout");
+                info!("⏲️ Scheduling timeout");
             }
             ConsensusTimeoutState::Scheduled { .. } => {
-                info!("Rescheduling timeout");
+                info!("⏲️ Rescheduling timeout");
             }
         }
         *self = ConsensusTimeoutState::Scheduled {
