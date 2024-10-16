@@ -61,7 +61,7 @@ enum Step {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub enum ConsensusCommand {
-    SingleNodeBlockGeneration(u64),
+    SingleNodeBlockGeneration,
     NewStaker(Staker),
     NewBonded(ValidatorPublicKey),
     StartNewSlot,
@@ -1222,32 +1222,37 @@ impl Consensus {
 
     fn handle_command(&mut self, msg: ConsensusCommand) -> Result<()> {
         match msg {
-            ConsensusCommand::SingleNodeBlockGeneration(block_number) => {
+            ConsensusCommand::SingleNodeBlockGeneration => {
                 let cut = if self.pending_cuts.is_empty() {
                     CutWithTxs::default()
                 } else {
                     self.pending_cuts.remove(0)
                 };
-                let parent_hash: String =
-                    rand::Rng::sample_iter(rand::thread_rng(), &rand::distributions::Alphanumeric)
-                        .take(8)
-                        .map(char::from)
-                        .collect();
+                let last_block = self.blocks.last();
+                let parent_hash = last_block
+                    .map(|b| b.hash())
+                    .unwrap_or(BlockHash::new("000"));
+                let height = last_block.map(|b| b.height + 1).unwrap_or(BlockHeight(0));
                 let block = Block {
-                    parent_hash: BlockHash::new(&parent_hash),
-                    height: BlockHeight(block_number),
+                    parent_hash,
+                    height,
                     timestamp: get_current_timestamp(),
                     new_bonded_validators: vec![],
                     txs: cut.txs,
                 };
-                _ = self
+                self.blocks.push(block.clone());
+
+                if let Some(file) = &self.file {
+                    Self::save_on_disk(file.as_path(), &self.store)?;
+                }
+                self
                     .bus
                     .send(ConsensusEvent::CommitBlock {
                         validators: self.bft_round_state.consensus_proposal.validators.clone(),
                         cut_lanes: cut.tips,
                         block: block.clone(),
                     })
-                    .context("Failed to send ConsensusEvent::CommitBlock msg on the bus")?;
+                    .expect("Failed to send ConsensusEvent::CommitBlock msg on the bus");
                 Ok(())
             }
             ConsensusCommand::NewStaker(staker) => {
@@ -1300,7 +1305,7 @@ impl Consensus {
     }
 
     pub fn start_master(&mut self, config: SharedConf) -> Result<()> {
-        let interval = config.storage.interval;
+        let interval = config.consensus.slot_duration;
 
         // hack to avoid another bus for a specific wip case
         let command_sender = Pick::<broadcast::Sender<ConsensusCommand>>::get(&self.bus).clone();
@@ -1311,14 +1316,12 @@ impl Consensus {
             );
 
             tokio::spawn(async move {
-                let mut block_number = 0;
                 loop {
                     sleep(Duration::from_secs(interval)).await;
 
                     _ = command_sender
-                        .send(ConsensusCommand::SingleNodeBlockGeneration(block_number))
+                        .send(ConsensusCommand::SingleNodeBlockGeneration)
                         .log_error("Cannot send message over channel");
-                    block_number += 1;
                 }
             });
         }
