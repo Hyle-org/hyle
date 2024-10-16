@@ -848,12 +848,8 @@ impl Consensus {
                     validators: timeout_signed_aggregation.validators.clone(),
                 };
 
-                self.store
-                    .bft_round_state
-                    .timeout_certificates
-                    .entry(self.store.bft_round_state.slot)
-                    .or_default()
-                    .insert(self.store.bft_round_state.view, timeout_certificate.clone());
+                self.on_timeout_certificate(view, slot, &timeout_certificate)
+                    .context("Handling timeout certificate")?;
 
                 // Broadcast the Timeout Certificate to all validators
                 self.broadcast_net_message(ConsensusNetMessage::TimeoutCertificate(
