@@ -153,17 +153,14 @@ impl InMemoryStorage {
         match car {
             None => {
                 warn!(
-                    "Vote for Car that does not exist! ({validator}) data_proposal: {} / lane: {}",
-                    data_proposal, self.lane
+                    "Vote for Car that does not exist! ({validator}) / lane: {}",
+                    self.lane
                 );
                 None
             }
             Some(c) => {
                 if c.poa.contains(validator) {
-                    warn!(
-                        "{} already voted for data proposal {}",
-                        validator, data_proposal
-                    );
+                    warn!("{} already voted for data proposal", validator);
                     None
                 } else {
                     c.poa.insert(validator.clone());
@@ -187,11 +184,7 @@ impl InMemoryStorage {
             self.update_parent_poa(validator, parent, parent_poa)
         }
         if self.has_data_proposal(validator, data_proposal) {
-            bail!(
-                "we have already voted for {}'s data_proposal {} ",
-                validator,
-                data_proposal
-            );
+            bail!("we already have voted for {}'s data_proposal", validator);
         }
         self.add_data_proposal(validator, data_proposal);
         Ok(ProposalVerdict::Vote)
@@ -272,8 +265,8 @@ impl InMemoryStorage {
         match car {
             None => {
                 error!(
-                    "data proposal does exist locally as a car! data_proposal: {} / lane: {}",
-                    data_proposal, self.lane
+                    "data proposal does exist locally as a car! lane: {}",
+                    self.lane
                 );
                 None
             }

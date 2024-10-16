@@ -186,7 +186,7 @@ impl Mempool {
                 self.metrics.signature_error("mempool");
                 warn!("Invalid signature for message {:?}", msg);
             }
-            Err(e) => error!("Error while checking signed message: {}", e),
+            Err(e) => error!("Error while checking signed message: {:?}", e),
         }
     }
 
@@ -234,7 +234,10 @@ impl Mempool {
         data_proposal: DataProposal,
         last_index: Option<usize>,
     ) {
-        info!("{} SyncRequest received from validator {validator} for last_index {:?} with data proposal {} \n{}", self.storage.id, last_index, data_proposal, self.storage);
+        info!(
+            "{} SyncRequest received from validator {validator} for last_index {:?}",
+            self.storage.id, last_index
+        );
 
         let missing_cars = self.storage.get_missing_cars(last_index, &data_proposal);
         debug!("Missing cars on {} are {:?}", validator, missing_cars);
@@ -370,6 +373,9 @@ impl Mempool {
     }
 
     async fn broadcast_data_proposal(&mut self, data_proposal: DataProposal) -> Result<()> {
+        if self.validators.is_empty() {
+            return Ok(());
+        }
         self.metrics
             .add_broadcasted_data_proposal("blob".to_string());
         _ = self
