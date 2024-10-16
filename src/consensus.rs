@@ -18,10 +18,7 @@ use crate::{
     bus::{bus_client, command_response::Query, BusMessage, SharedMessageBus},
     handle_messages,
     mempool::{Cut, MempoolCommand, MempoolEvent, MempoolResponse},
-    model::{
-        get_current_timestamp, Block, BlockHash, BlockHeight, Hashable, Transaction,
-        TransactionData, ValidatorPublicKey,
-    },
+    model::{Hashable, ValidatorPublicKey},
     p2p::{
         network::{OutboundMessage, PeerEvent, Signature, Signed, SignedWithKey},
         P2PCommand,
@@ -74,7 +71,6 @@ pub enum ConsensusEvent {
     CommitBlock {
         validators: Vec<ValidatorPublicKey>,
         cut: Cut,
-        block: Block,
     },
 }
 
@@ -122,7 +118,6 @@ pub struct ConsensusProposal {
     cut: Cut,
     previous_consensus_proposal_hash: ConsensusProposalHash,
     previous_commit_quorum_certificate: QuorumCertificate,
-    block: Block, // FIXME: Block ou cut ?
     /// Validators for current slot
     validators: Vec<ValidatorPublicKey>, // TODO use ID instead of pubkey ?
     new_bonded_validators: Vec<NewValidatorCandidate>,
@@ -149,8 +144,6 @@ pub struct ConsensusStore {
     /// it can happen we consider invalid because we missed a slot
     /// but if we get a consensus on this proposal, we should accept it
     buffered_invalid_proposals: HashMap<ConsensusProposalHash, ConsensusProposal>,
-    // FIXME: pub is here for testing
-    pub blocks: Vec<Block>,
     pending_cut: Option<Cut>,
 }
 
@@ -187,31 +180,8 @@ impl Consensus {
         previous_consensus_proposal_hash: ConsensusProposalHash,
         previous_commit_quorum_certificate: QuorumCertificate,
     ) -> Result<(), Error> {
-        let last_block = self.blocks.last();
-
-        let parent_hash = last_block
-            .map(|b| b.hash())
-            .unwrap_or(BlockHash::new("000"));
-        let parent_height = last_block.map(|b| b.height).unwrap_or_default();
-
-        // proposition of new validators for next slot
-        let new_bonded_validators = self
-            .new_validators_candidates
-            .clone()
-            .into_iter()
-            .map(|v| v.pubkey)
-            .collect();
-
         // Create block to-be-proposed
         let cut = self.pending_cut.take().unwrap_or_default();
-        let block = Block {
-            parent_hash,
-            height: parent_height + 1,
-            timestamp: get_current_timestamp(),
-            new_bonded_validators,
-            // TODO: retrieve the transactions
-            txs: vec![],
-        };
 
         let validators = self.bft_round_state.staking.bonded();
 
@@ -225,7 +195,6 @@ impl Consensus {
             previous_commit_quorum_certificate,
             validators,
             new_bonded_validators: self.new_validators_candidates.drain(..).collect(),
-            block,
         };
         Ok(())
     }
@@ -234,27 +203,6 @@ impl Consensus {
     /// will grand them a gree stake to start
     /// this genesis logic might change later
     fn create_genesis_consensus_proposal(&mut self) {
-        let txs = self
-            .genesis_pubkeys
-            .clone()
-            .into_iter()
-            .map(|pubkey| {
-                Transaction::wrap(TransactionData::Stake(Staker {
-                    pubkey,
-                    stake: Stake { amount: 100 },
-                }))
-            })
-            .collect::<Vec<Transaction>>();
-        let new_bonded_validators = self.genesis_pubkeys.clone();
-
-        let first_block = Block {
-            parent_hash: BlockHash::new("46696174206c757820657420666163746120657374206c7578"),
-            height: BlockHeight(0),
-            timestamp: get_current_timestamp(),
-            new_bonded_validators,
-            txs,
-        };
-
         let validators = self.genesis_pubkeys.clone();
         self.genesis_bond(validators.as_slice())
             .expect("Failed to bond genesis validators");
@@ -269,7 +217,6 @@ impl Consensus {
             previous_commit_quorum_certificate: QuorumCertificate::default(),
             validators,
             new_bonded_validators: vec![],
-            block: first_block,
         };
     }
 
@@ -287,31 +234,8 @@ impl Consensus {
         Ok(())
     }
 
-    /// Send block to internal bus
-    fn add_block(&mut self) -> Result<(), Error> {
-        _ = self
-            .bus
-            .send(ConsensusEvent::CommitBlock {
-                validators: self.bft_round_state.consensus_proposal.validators.clone(),
-                cut: self.bft_round_state.consensus_proposal.cut.clone(),
-                block: self.bft_round_state.consensus_proposal.block.clone(),
-            })
-            .context("Failed to send ConsensusEvent::CommitBlock msg on the bus")?;
-
-        info!(
-            "New block {}",
-            self.bft_round_state.consensus_proposal.block.height
-        );
-        self.store
-            .blocks
-            .push(self.store.bft_round_state.consensus_proposal.block.clone());
-        Ok(())
-    }
-
     /// Add and applies new block to its NodeState through ConsensusEvent
     fn finish_round(&mut self) -> Result<(), Error> {
-        self.add_block()?;
-
         info!(
             "🔒 Slot {} finished",
             self.bft_round_state.consensus_proposal.slot
@@ -370,17 +294,18 @@ impl Consensus {
     /// and have enough stake
     /// and have a valid signature
     fn verify_new_bonded_validators(&mut self, proposal: &ConsensusProposal) -> Result<()> {
-        let proposal_pubkeys = proposal
-            .new_bonded_validators
-            .clone()
-            .into_iter()
-            .map(|c| c.pubkey)
-            .collect::<Vec<ValidatorPublicKey>>();
-        if proposal.slot != 0 && proposal_pubkeys != proposal.block.new_bonded_validators {
-            bail!("New bonded validators in proposal and block do not match. Proposal: {:?}, block: {:?}",
-                proposal_pubkeys, 
-                proposal.block.new_bonded_validators);
-        }
+        // TODO:
+        // let proposal_pubkeys = proposal
+        //     .new_bonded_validators
+        //     .clone()
+        //     .into_iter()
+        //     .map(|c| c.pubkey)
+        //     .collect::<Vec<ValidatorPublicKey>>();
+        // if proposal.slot != 0 && proposal_pubkeys != proposal.block.new_bonded_validators {
+        //     bail!("New bonded validators in proposal and block do not match. Proposal: {:?}, block: {:?}",
+        //         proposal_pubkeys,
+        //         proposal.block.new_bonded_validators);
+        // }
         for new_validator in &proposal.new_bonded_validators {
             // Verify that the new validator has enough stake
             if let Some(stake) = self
@@ -467,7 +392,7 @@ impl Consensus {
         let mut new_validators = self.new_validators_candidates.clone();
         new_validators.retain(|c| !self.bft_round_state.staking.is_bonded(&c.pubkey));
         self.new_validators_candidates = new_validators;
-        
+
         // Verifies that previous slot received a *Commit* Quorum Certificate.
         match self
             .bft_round_state
@@ -1180,30 +1105,29 @@ impl Consensus {
         match msg {
             ConsensusCommand::SingleNodeBlockGeneration => {
                 let cut = self.pending_cut.take().unwrap_or_default();
-                let last_block = self.blocks.last();
-                let parent_hash = last_block
-                    .map(|b| b.hash())
-                    .unwrap_or(BlockHash::new("000"));
-                let height = last_block.map(|b| b.height + 1).unwrap_or(BlockHeight(0));
-                let block = Block {
-                    parent_hash,
-                    height,
-                    timestamp: get_current_timestamp(),
-                    new_bonded_validators: vec![],
-                    // TODO: retrieve the transactions
-                    txs: vec![],
-                };
-                self.blocks.push(block.clone());
+                // TODO:
+                // let last_block = self.blocks.last();
+                // let parent_hash = last_block
+                //     .map(|b| b.hash())
+                //     .unwrap_or(BlockHash::new("000"));
+                // let height = last_block.map(|b| b.height + 1).unwrap_or(BlockHeight(0));
+                // let block = Block {
+                //     parent_hash,
+                //     height,
+                //     timestamp: get_current_timestamp(),
+                //     new_bonded_validators: vec![],
+                //     // TODO: retrieve the transactions
+                //     txs: vec![],
+                // };
+                // self.blocks.push(block.clone());
 
-                if let Some(file) = &self.file {
-                    Self::save_on_disk(file.as_path(), &self.store)?;
-                }
-                self
-                    .bus
+                // if let Some(file) = &self.file {
+                //     Self::save_on_disk(file.as_path(), &self.store)?;
+                // }
+                self.bus
                     .send(ConsensusEvent::CommitBlock {
                         validators: self.bft_round_state.consensus_proposal.validators.clone(),
                         cut,
-                        block: block.clone(),
                     })
                     .expect("Failed to send ConsensusEvent::CommitBlock msg on the bus");
                 Ok(())
@@ -1445,10 +1369,13 @@ mod test {
 
         #[track_caller]
         fn handle_block(&mut self, msg: &SignedWithKey<ConsensusNetMessage>) {
-        if let ConsensusNetMessage::Prepare(consensus_proposal) = &msg.msg {
-                for bonded in consensus_proposal.block.new_bonded_validators.clone() {
-                   self.consensus.handle_command(ConsensusCommand::NewBonded(bonded)).expect("handle block");
-                }
+            if let ConsensusNetMessage::Prepare(_) = &msg.msg {
+                // TODO:
+                // for bonded in consensus_proposal.block.new_bonded_validators.clone() {
+                //     self.consensus
+                //         .handle_command(ConsensusCommand::NewBonded(bonded))
+                //         .expect("handle block");
+                // }
             } else {
                 panic!("Leader proposal is not a Prepare message");
             }
@@ -1468,7 +1395,9 @@ mod test {
         #[track_caller]
         fn add_bonded_staker(&mut self, staker: &Self, amount: u64, err: &str) {
             self.add_staker(staker, amount, err);
-            self.consensus.handle_command(ConsensusCommand::NewBonded(staker.pubkey())).expect(err);
+            self.consensus
+                .handle_command(ConsensusCommand::NewBonded(staker.pubkey()))
+                .expect(err);
         }
 
         #[track_caller]
@@ -1593,8 +1522,9 @@ mod test {
         let leader_commit = node1.assert_broadcast("Leader commit");
         node2.handle_msg(&leader_commit, "Leader commit");
 
-        assert_eq!(node1.consensus.blocks.len(), 3);
-        assert_eq!(node2.consensus.blocks.len(), 3);
+        // FIXME:
+        // assert_eq!(node1.consensus.blocks.len(), 3);
+        // assert_eq!(node2.consensus.blocks.len(), 3);
     }
 
     #[test_log::test(tokio::test)]
@@ -1656,7 +1586,7 @@ mod test {
             node1.handle_msg(&slave2_candidacy, "Slave 2 candidacy");
             node2.add_staker(&node3, 100, "Add staker");
             node2.handle_msg(&slave2_candidacy, "Slave 2 candidacy");
-            
+
             info!("➡️  Handle block");
             node1.handle_block(&leader_proposal);
             node2.handle_block(&leader_proposal);
@@ -1693,7 +1623,7 @@ mod test {
             let slave2_candidacy = node3.assert_broadcast("Slave 2 candidacy");
             node1.handle_msg(&slave2_candidacy, "Slave 2 candidacy");
             node2.handle_msg(&slave2_candidacy, "Slave 2 candidacy");
- 
+
             info!("➡️  Handle block");
             node1.handle_block(&leader_proposal);
             node2.handle_block(&leader_proposal);

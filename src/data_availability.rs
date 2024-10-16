@@ -275,12 +275,13 @@ impl DataAvailability {
 
     async fn handle_consensus_event(&mut self, event: ConsensusEvent) {
         match event {
-            ConsensusEvent::CommitBlock { block, .. } => {
-                info!(
-                    block_hash = %block.hash(),
-                    block_height = %block.height,
-                    "🔒  Block committed");
-                self.handle_block(block).await;
+            ConsensusEvent::CommitBlock { .. } => {
+                // TODO:
+                // info!(
+                //     block_hash = %block.hash(),
+                //     block_height = %block.height,
+                //     "🔒  Block committed");
+                // self.handle_block(block).await;
             }
         }
     }
