@@ -26,4 +26,4 @@ jobs:
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: cargo build --verbose
-      - run: cargo test --verbose
+      - run: cargo test --lib --verbose
