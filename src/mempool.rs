@@ -85,6 +85,7 @@ pub struct Batch {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub enum MempoolEvent {
     NewCut(CutWithTxs),
+    NewTx(Transaction),
 }
 impl BusMessage for MempoolEvent {}
 
@@ -356,7 +357,11 @@ impl Mempool {
     async fn on_new_tx(&mut self, tx: Transaction) {
         debug!("Got new tx {}", tx.hash());
         self.metrics.add_api_tx("blob".to_string());
-        self.storage.accumulate_tx(tx.clone());
+        // self.storage.accumulate_tx(tx.clone());
+        _ = self
+            .bus
+            .send(MempoolEvent::NewTx(tx))
+            .context("Cannot send message over channel");
         self.metrics
             .snapshot_pending_tx(self.storage.pending_txs.len());
     }
