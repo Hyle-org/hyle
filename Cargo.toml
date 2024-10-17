@@ -50,6 +50,8 @@ axum-test = "16.2.0"
 syn = "2.0.79"
 quote = "1.0.37"
 bytes = "1.7.2"
+strum = "0.26.3"
+strum_macros = "0.26.4"
 
 [target.'cfg(target_os="macos")'.dependencies]
 sled = { version = "0.34.7", features = ["compression", "lock_free_delays"] }
