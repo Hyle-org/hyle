@@ -249,13 +249,7 @@ impl Consensus {
         let new_bonded_validators = self.genesis_pubkeys.clone();
 
         let first_block = Block {
-            parent_hash: BlockHash {
-                inner: [
-                    70, 105, 97, 116, 32, 108, 117, 120, 32, 101, 116, 32, 102, 97, 99, 116, 97,
-                    32, 101, 115, 116, 32, 108, 117, 120,
-                ]
-                .to_vec(),
-            },
+            parent_hash: BlockHash::new("46696174206c757820657420666163746120657374206c7578"),
             height: BlockHeight(0),
             timestamp: get_current_timestamp(),
             new_bonded_validators,
