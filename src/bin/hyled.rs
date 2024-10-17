@@ -190,7 +190,13 @@ async fn handle_args(args: Args) -> Result<()> {
             )
             .await
         }
-        SendCommands::Auto => todo!(),
+        SendCommands::Auto => {
+            let _ = client
+                .run_scenario_api_test()
+                .await
+                .map_err(|e| anyhow::anyhow!("Failed to run scenario test {}", e))?;
+            Ok(())
+        }
     }
 }
 
