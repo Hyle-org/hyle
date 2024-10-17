@@ -739,6 +739,37 @@ impl Consensus {
             bail!("Received timeout message for an obsolete slot {}", slot);
         }
 
+        let previous_timeout_certificate_with_message = SignedWithKey {
+            msg: ConsensusNetMessage::Timeout(
+                self.bft_round_state.slot,
+                self.bft_round_state.view,
+                self.bft_round_state.consensus_proposal.hash(),
+            ),
+            signature: certificate.signature.clone(),
+            validators: certificate.validators.clone(),
+        };
+        
+        // Verify valid signature
+        match BlstCrypto::verify(
+            &previous_timeout_certificate_with_message,
+        ) {
+            Ok(res) if !res => {
+                self.metrics
+                    .prepare_error("previous_timeout_cert_invalid");
+                bail!("Previous Timeout Certificate is invalid")
+            }
+            Ok(_) => {
+                info!("Timeout certificate is valid");
+            }
+            Err(err) => {
+                self.metrics.prepare_error("bls_failure");
+                bail!(
+                    "Previous Timeout Certificate verification failed: {}",
+                    err
+                );
+            }
+        }
+
         self.bft_round_state
             .timeout_certificates
             .entry(*slot)
@@ -954,10 +985,6 @@ impl Consensus {
                                 self.bft_round_state.view
                             );
                         }
-
-                        // Verify timeout certificate of view > 0
-                        
-                        // Verify block
                     }
                     None if self.bft_round_state.slot == 0 => {
                         if consensus_proposal.slot != 0 {
@@ -1011,6 +1038,7 @@ impl Consensus {
                 
             }
             Ticket::TC(TimeoutCertificate(slot, view, cert)) => {
+                // Checks necessary for now (consensus proposal contains slot + view info)
                 if consensus_proposal.slot != *slot {
                     bail!("Consensus proposal slot {} should be equal to timeout certificate slot {}", consensus_proposal.slot, slot);
                 }
@@ -1022,38 +1050,9 @@ impl Consensus {
                 if consensus_proposal.view != view - 1 {
                     bail!("Ticket view should be {} and is actually {}", consensus_proposal.view + 1, view);
                 }
-                
-                // validate certificate
 
-                let previous_timeout_certificate_with_message = SignedWithKey {
-                    msg: ConsensusNetMessage::Timeout(
-                        consensus_proposal.slot,
-                        consensus_proposal.view,
-                        consensus_proposal.hash(),
-                    ),
-                    signature: cert.signature.clone(),
-                    validators: cert.validators.clone(),
-                };
-                // Verify valid signature
-                match BlstCrypto::verify(
-                    &previous_timeout_certificate_with_message,
-                ) {
-                    Ok(res) if !res => {
-                        self.metrics
-                            .prepare_error("previous_timeout_cert_invalid");
-                        bail!("Previous Timeout Certificate is invalid")
-                    }
-                    Ok(_) => {
-                        info!("Timeout certificate is valid");
-                    }
-                    Err(err) => {
-                        self.metrics.prepare_error("bls_failure");
-                        bail!(
-                            "Previous Timeout Certificate verification failed: {}",
-                            err
-                        );
-                    }
-                }
+                self.on_timeout_certificate(view, slot, cert)
+                    .context("Handling TC ticket")?;
             }
         }
 
