@@ -69,6 +69,7 @@ struct DABusClient {
     receiver(ConsensusEvent),
     receiver(DataNetMessage),
     receiver(PeerEvent),
+    receiver(MempoolEvent),
 }
 }
 
@@ -150,6 +151,13 @@ impl DataAvailability {
 
         handle_messages! {
             on_bus self.bus,
+            listen<MempoolEvent> cmd => {
+                match cmd {
+                    MempoolEvent::NewCut(cut) => {
+                        self.handle_new_cut_event(cut).await;
+                    }
+                }
+            }
             listen<ConsensusEvent> cmd => {
                 self.handle_consensus_event(cmd).await;
             }
@@ -274,11 +282,11 @@ impl DataAvailability {
     async fn handle_consensus_event(&mut self, event: ConsensusEvent) {
         match event {
             ConsensusEvent::CommitCut { .. } => {
-                // TODO:
+                // TODO: build block !
                 // info!(
                 //     block_hash = %block.hash(),
                 //     block_height = %block.height,
-                //     "🔒  Block committed");
+                //     "🔒  Cut committed");
                 // self.handle_block(block).await;
             }
         }
