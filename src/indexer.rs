@@ -217,8 +217,8 @@ impl Indexer {
         .await?;
 
         for (tx_index, tx) in block.txs.iter().enumerate() {
-            let tx_hash = &tx.hash().0;
-            debug!("tx:{:?} hash {:?}", tx_hash, tx);
+            let tx_hash = &tx.hash();
+            debug!("tx hash {:?}", tx_hash);
 
             let version = i32::try_from(tx.version)
                 .map_err(|_| anyhow::anyhow!("Tx version is too large to fit into an i32"))?;
@@ -278,7 +278,7 @@ impl Indexer {
                     .execute(&mut *transaction)
                     .await?;
 
-                    let proof = &tx.proof;
+                    let proof = &tx.proof.to_bytes()?;
 
                     sqlx::query("INSERT INTO proofs (tx_hash, proof) VALUES ($1, $2)")
                         .bind(tx_hash)

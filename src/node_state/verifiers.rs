@@ -29,8 +29,8 @@ pub fn verify_proof(
                 program_outputs: vec![],
             })
         }
-        "cairo" => cairo_proof_verifier(&tx.proof),
-        "risc0" => risc0_proof_verifier(&tx.proof, program_id),
+        "cairo" => cairo_proof_verifier(&tx.proof.to_bytes()?),
+        "risc0" => risc0_proof_verifier(&tx.proof.to_bytes()?, program_id),
         _ => bail!("{} verifier not implemented yet", verifier),
     }
 }

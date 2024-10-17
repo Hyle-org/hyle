@@ -1,7 +1,7 @@
-use crate::indexer::model::BlockDb;
+use crate::model::{Blob, BlobData, ContractName, TxHash};
 
 use super::{
-    model::{BlobDb, ContractDb, ContractStateDb, TransactionDb},
+    model::{BlobDb, BlockDb, ContractDb, ContractStateDb, TransactionDb, TransactionWithBlobs},
     IndexerState,
 };
 use axum::{
@@ -9,6 +9,7 @@ use axum::{
     http::StatusCode,
     Json,
 };
+use sqlx::Row;
 
 // Blocks
 pub async fn get_blocks(
@@ -85,6 +86,7 @@ pub async fn get_transactions(
         _ => Ok(Json(transactions)),
     }
 }
+
 pub async fn get_transactions_with_contract_name(
     Path(contract_name): Path<String>,
     State(state): State<IndexerState>,
