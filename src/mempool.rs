@@ -159,7 +159,7 @@ impl Mempool {
             Ok(true) => {
                 let validator = msg.validators.first().unwrap();
                 match msg.msg {
-                    MempoolNetMessage::NewTx(tx) => self.on_new_tx(tx).await,
+                    MempoolNetMessage::NewTx(tx) => self.on_new_tx(tx),
                     MempoolNetMessage::DataProposal(data_proposal) => {
                         if let Err(e) = self.on_data_proposal(validator, data_proposal).await {
                             error!("{:?}", e);
@@ -194,10 +194,10 @@ impl Mempool {
     async fn handle_api_message(&mut self, command: RestApiMessage) {
         match command {
             RestApiMessage::NewTx(tx) => {
-                self.on_new_tx(tx.clone()).await;
+                self.on_new_tx(tx.clone());
                 // hacky stuff waiting for staking contract: do not broadcast stake txs
                 if !matches!(tx.transaction_data, TransactionData::Stake(_)) {
-                    self.broadcast_tx(tx).await.ok();
+                    self.broadcast_tx(tx).ok();
                 }
             }
         }
@@ -281,7 +281,7 @@ impl Mempool {
         match self.storage.new_data_proposal(validator, &data_proposal)? {
             ProposalVerdict::Vote => {
                 // Normal case, we receive a proposal we already have the parent in store
-                self.send_vote(validator, data_proposal).await
+                self.send_vote(validator, data_proposal)
             }
             ProposalVerdict::Wait(last_index) => {
                 //We dont have the parent, so we craft a sync demand
@@ -305,7 +305,7 @@ impl Mempool {
             parent_poa: poa,
         };
 
-        if let Err(e) = self.broadcast_data_proposal(data_proposal).await {
+        if let Err(e) = self.broadcast_data_proposal(data_proposal) {
             error!("{:?}", e);
         }
     }
@@ -363,7 +363,7 @@ impl Mempool {
 
     fn broadcast_tx(&mut self, tx: Transaction) -> Result<()> {
         self.metrics.add_broadcasted_tx("blob".to_string());
-        _ = self.broadcast_net_message(MempoolNetMessage::NewTx(tx))?;
+        self.broadcast_net_message(MempoolNetMessage::NewTx(tx))?;
         Ok(())
     }
 
@@ -373,7 +373,7 @@ impl Mempool {
         }
         self.metrics
             .add_broadcasted_data_proposal("blob".to_string());
-        _ = self.broadcast_net_message(MempoolNetMessage::DataProposal(data_proposal))?;
+        self.broadcast_net_message(MempoolNetMessage::DataProposal(data_proposal))?;
         Ok(())
     }
 
@@ -400,7 +400,7 @@ impl Mempool {
         data_proposal: DataProposal,
     ) -> Result<()> {
         self.metrics.add_sent_data_vote("blob".to_string());
-        _ = self.send_net_message(
+        self.send_net_message(
             validator.clone(),
             MempoolNetMessage::DataVote(data_proposal),
         )?;
@@ -414,7 +414,7 @@ impl Mempool {
         last_index: Option<usize>,
     ) -> Result<()> {
         self.metrics.add_sent_sync_request("blob".to_string());
-        _ = self.send_net_message(
+        self.send_net_message(
             validator.clone(),
             MempoolNetMessage::SyncRequest(data_proposal, last_index),
         )?;
@@ -424,7 +424,7 @@ impl Mempool {
     fn send_sync_reply(&mut self, validator: &ValidatorPublicKey, cars: Vec<Car>) -> Result<()> {
         // cleanup previously tracked sent sync request
         self.metrics.add_sent_sync_reply("blob".to_string());
-        _ = self.send_net_message(validator.clone(), MempoolNetMessage::SyncReply(cars))?;
+        self.send_net_message(validator.clone(), MempoolNetMessage::SyncReply(cars))?;
         Ok(())
     }
 
@@ -432,8 +432,7 @@ impl Mempool {
     fn broadcast_net_message(&mut self, net_message: MempoolNetMessage) -> Result<()> {
         let signed_msg = self.sign_net_message(net_message)?;
         let enum_variant_name: &'static str = (&signed_msg.msg).into();
-        _ = self
-            .bus
+        self.bus
             .send(OutboundMessage::broadcast(signed_msg))
             .context(format!(
                 "Broadcasting MempoolNetMessage::{} msg on the bus",

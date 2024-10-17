@@ -519,7 +519,7 @@ impl Consensus {
             "🌐 Slot {} started. Broadcasting Prepare message", self.bft_round_state.slot,
         );
         self.bft_round_state.step = Step::PrepareVote;
-        _ = self.broadcast_net_message(
+        self.broadcast_net_message(
             ConsensusNetMessage::Prepare(self.bft_round_state.consensus_proposal.clone()),
         )?;
 
@@ -618,7 +618,7 @@ impl Consensus {
             "📝 Sending candidacy message to be part of consensus.  {}",
             candidacy
         );
-        _ = self.broadcast_net_message(ConsensusNetMessage::ValidatorCandidacy(candidacy))?;
+        self.broadcast_net_message(ConsensusNetMessage::ValidatorCandidacy(candidacy))?;
         Ok(())
     }
 
@@ -800,7 +800,7 @@ impl Consensus {
                 "📤 Slot {} Prepare message validated. Sending PrepareVote to leader",
                 self.bft_round_state.slot
             );
-            _ = self.send_net_message(
+            self.send_net_message(
                 self.leader_id(),
                 ConsensusNetMessage::PrepareVote(consensus_proposal.hash())
             )?;
@@ -890,7 +890,7 @@ impl Consensus {
                 self.bft_round_state.slot
             );
             self.bft_round_state.step = Step::ConfirmAck;
-            _ = self.broadcast_net_message(ConsensusNetMessage::Confirm(
+            self.broadcast_net_message(ConsensusNetMessage::Confirm(
                 consensus_proposal_hash.clone(),
                 self.bft_round_state.prepare_quorum_certificate.clone(),
             ))?;
@@ -958,7 +958,7 @@ impl Consensus {
                 "📤 Slot {} Confirm message validated. Sending ConfirmAck to leader",
                 self.bft_round_state.slot
             );
-            _ = self.send_net_message(
+            self.send_net_message(
                 self.leader_id(),
                 ConsensusNetMessage::ConfirmAck(consensus_proposal_hash.clone()),
             )?;
@@ -1056,7 +1056,7 @@ impl Consensus {
                 );
 
             // Broadcast the *Commit* Quorum Certificate to all validators
-            _ = self.broadcast_net_message(ConsensusNetMessage::Commit(
+            self.broadcast_net_message(ConsensusNetMessage::Commit(
                 consensus_proposal_hash.clone(),
                 commit_quorum_certificate,
             ))?;
