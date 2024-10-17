@@ -16,13 +16,11 @@ FROM alpine:latest
 WORKDIR /hyle
 
 COPY --from=builder /usr/src/hyle/target/release/node ./
-COPY ./master.ron ./config.ron
 
 VOLUME /hyle/data
 
 EXPOSE 4321 1234
 
-# refers to the volume /var/hyle-data
 ENV HYLE_DATA_DIRECTORY="data"
 
 CMD ["./node", "--config-file", "config.ron"]

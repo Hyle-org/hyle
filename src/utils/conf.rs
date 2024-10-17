@@ -1,7 +1,7 @@
 use anyhow::Result;
 use config::{Config, ConfigError, Environment, File};
 use serde::{Deserialize, Serialize};
-use std::{path::PathBuf, sync::Arc};
+use std::{fmt::Debug, path::PathBuf, sync::Arc};
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct Storage {
@@ -32,6 +32,7 @@ pub struct Conf {
     pub data_directory: PathBuf,
     pub run_indexer: bool,
     pub da_address: String,
+    pub log_format: String,
 }
 
 impl Conf {
@@ -50,7 +51,8 @@ impl Conf {
         }
         s.add_source(
             Environment::with_prefix("hyle")
-                .separator("_")
+                .separator("__")
+                .prefix_separator("_")
                 .list_separator(",")
                 .with_list_parse_key("peers") // Parse this key into Vec<String>
                 .try_parsing(true),
