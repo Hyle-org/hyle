@@ -95,32 +95,34 @@ pub fn setup_tracing(mode: TracingMode, node_name: String) -> Result<()> {
         filter = filter.add_directive("tower_http::trace=debug".parse()?);
     }
 
-    // Pretty redundant because these are all typed values.
+    // Can't use match inline because these are different return types
     match mode {
-        TracingMode::Full => tracing_subscriber::registry()
-            .with(tracing_subscriber::fmt::layer().with_filter(filter))
-            .with(console_subscriber::spawn())
-            .init(),
-        TracingMode::Json => tracing_subscriber::registry()
-            .with(
-                tracing_subscriber::fmt::layer()
-                    .event_format(tracing_subscriber::fmt::format().json())
-                    .with_filter(filter),
-            )
-            .with(console_subscriber::spawn())
-            .init(),
-        TracingMode::NodeName => tracing_subscriber::registry()
-            .with(
-                tracing_subscriber::fmt::layer()
-                    .event_format(NodeNameFormatter {
-                        node_name,
-                        base_formatter: tracing_subscriber::fmt::format(),
-                    })
-                    .with_filter(filter),
-            )
-            .with(console_subscriber::spawn())
-            .init(),
-    }
+        TracingMode::Full => register_global_subscriber(filter, tracing_subscriber::fmt::layer()),
+        TracingMode::Json => register_global_subscriber(
+            filter,
+            tracing_subscriber::fmt::layer().event_format(tracing_subscriber::fmt::format().json()),
+        ),
+        TracingMode::NodeName => register_global_subscriber(
+            filter,
+            tracing_subscriber::fmt::layer().event_format(NodeNameFormatter {
+                node_name,
+                base_formatter: tracing_subscriber::fmt::format(),
+            }),
+        ),
+    };
 
     Ok(())
+}
+
+fn register_global_subscriber<T, S>(filter: EnvFilter, fmt_layer: T)
+where
+    S: Subscriber,
+    T: tracing_subscriber::Layer<S> + Send + Sync,
+    tracing_subscriber::filter::Filtered<T, tracing_subscriber::EnvFilter, S>:
+        tracing_subscriber::Layer<tracing_subscriber::Registry>,
+{
+    tracing_subscriber::registry()
+        .with(fmt_layer.with_filter(filter))
+        .with(console_subscriber::spawn())
+        .init();
 }
