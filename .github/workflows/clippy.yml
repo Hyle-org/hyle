@@ -23,4 +23,5 @@ jobs:
           override: true
       - uses: LoliGothick/clippy-check@master
         with:
+          deny: warnings
           token: ${{ secrets.GITHUB_TOKEN }}

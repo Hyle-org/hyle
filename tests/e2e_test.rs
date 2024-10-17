@@ -11,6 +11,7 @@ use hyle::{
 use reqwest::{Client, Url};
 use std::{fs::File, io::Read, time};
 use test_helpers::ConfMaker;
+use testcontainers_modules::{postgres::Postgres, testcontainers::runners::AsyncRunner};
 use tokio::time::sleep;
 
 mod test_helpers;
@@ -191,46 +192,34 @@ async fn verify_indexer(client: &ApiHttpClient) -> Result<()> {
     Ok(())
 }
 
-use testcontainers_modules::{
-    postgres::Postgres,
-    testcontainers::core::IntoContainerPort,
-    testcontainers::{runners::AsyncRunner, ImageExt},
-};
-
 #[tokio::test]
 async fn e2e() -> Result<()> {
     tracing_subscriber::fmt::init();
 
     // Start postgres DB with default settings for the indexer.
-    let _pg = Postgres::default()
-        .with_mapped_port(5432, 5432.tcp())
-        .start()
-        .await
-        .unwrap();
+    let pg = Postgres::default().start().await.unwrap();
 
     let mut conf_maker = ConfMaker::default();
+    conf_maker.default.database_url = format!(
+        "postgres://postgres:postgres@localhost:{}/postgres",
+        pg.get_host_port_ipv4(5432).await.unwrap()
+    );
 
     // Start 2 nodes
-    let node1 = test_helpers::TestProcess::new("node", conf_maker.build())
-        .log("info")
-        .start();
+    let node1 = test_helpers::TestProcess::new("node", conf_maker.build()).start();
     // Wait for node to properly spin up
     sleep(time::Duration::from_secs(1)).await;
 
     let mut node2_conf = conf_maker.build();
     node2_conf.peers = vec![node1.conf.host.clone()];
-    let node2 = test_helpers::TestProcess::new("node", node2_conf)
-        .log("error")
-        .start();
+    let node2 = test_helpers::TestProcess::new("node", node2_conf).start();
     // Wait for node to properly spin up
     sleep(time::Duration::from_secs(5)).await;
 
     // Start indexer
     let mut indexer_conf = conf_maker.build();
     indexer_conf.da_address = node2.conf.da_address.clone();
-    let indexer = test_helpers::TestProcess::new("indexer", indexer_conf)
-        .log("error")
-        .start();
+    let indexer = test_helpers::TestProcess::new("indexer", indexer_conf).start();
 
     // Request something on node1 to be sure it's alive and working
     let client_node1 = ApiHttpClient {

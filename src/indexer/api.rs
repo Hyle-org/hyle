@@ -60,7 +60,7 @@ pub async fn get_block_by_hash(
     State(state): State<IndexerState>,
 ) -> Result<Json<BlockDb>, StatusCode> {
     let block = sqlx::query_as::<_, BlockDb>("SELECT * FROM blocks WHERE hash = $1")
-        .bind(hash.as_bytes())
+        .bind(hash)
         .fetch_optional(&state)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
@@ -135,7 +135,6 @@ pub async fn get_transaction_with_hash(
     Path(tx_hash): Path<String>,
     State(state): State<IndexerState>,
 ) -> Result<Json<TransactionDb>, StatusCode> {
-    let tx_hash_bytes = tx_hash.as_bytes();
     let transaction = sqlx::query_as::<_, TransactionDb>(
         r#"
         SELECT *
@@ -143,7 +142,7 @@ pub async fn get_transaction_with_hash(
         WHERE tx_hash = $1
         "#,
     )
-    .bind(tx_hash_bytes)
+    .bind(tx_hash)
     .fetch_optional(&state)
     .await
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
@@ -206,10 +205,9 @@ pub async fn get_blobs_by_tx_hash(
     Path(tx_hash): Path<String>,
     State(state): State<IndexerState>,
 ) -> Result<Json<Vec<BlobDb>>, StatusCode> {
-    let tx_hash_bytes = tx_hash.as_bytes();
     // TODO: Order transaction ?
     let blobs = sqlx::query_as::<_, BlobDb>("SELECT * FROM blobs WHERE tx_hash = $1")
-        .bind(tx_hash_bytes)
+        .bind(tx_hash)
         .fetch_all(&state)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
@@ -224,10 +222,9 @@ pub async fn get_blob(
     Path((tx_hash, blob_index)): Path<(String, i32)>,
     State(state): State<IndexerState>,
 ) -> Result<Json<BlobDb>, StatusCode> {
-    let tx_hash_bytes = tx_hash.as_bytes();
     let blob =
         sqlx::query_as::<_, BlobDb>("SELECT * FROM blobs WHERE tx_hash = $1 AND blob_index = $2")
-            .bind(tx_hash_bytes)
+            .bind(tx_hash)
             .bind(blob_index)
             .fetch_optional(&state)
             .await

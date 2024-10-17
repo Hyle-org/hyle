@@ -8,11 +8,12 @@ use serde::{
     Deserialize, Serialize,
 };
 use sha3::{Digest, Sha3_256};
+use sqlx::{prelude::Type, Postgres};
 use std::{
     cmp::Ordering,
     fmt,
     io::Write,
-    ops::{Add, Deref},
+    ops::Add,
     sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -24,67 +25,55 @@ use crate::{
     utils::{conf::SharedConf, crypto::SharedBlstCrypto},
 };
 
-#[derive(Default, Clone, Eq, PartialEq, Hash, Encode, Decode)]
-pub struct TxHash(pub Vec<u8>);
+#[derive(
+    Debug, Display, Default, Clone, Eq, PartialEq, Hash, Encode, Decode, Deserialize, Serialize,
+)]
+pub struct TxHash(pub String);
 
+impl From<String> for TxHash {
+    fn from(s: String) -> Self {
+        TxHash(s)
+    }
+}
+
+impl Type<Postgres> for TxHash {
+    fn type_info() -> sqlx::postgres::PgTypeInfo {
+        <String as Type<Postgres>>::type_info()
+    }
+}
+impl<'q> sqlx::Encode<'q, sqlx::Postgres> for TxHash {
+    fn encode_by_ref(
+        &self,
+        buf: &mut sqlx::postgres::PgArgumentBuffer,
+    ) -> std::result::Result<
+        sqlx::encode::IsNull,
+        std::boxed::Box<(dyn std::error::Error + std::marker::Send + std::marker::Sync + 'static)>,
+    > {
+        <String as sqlx::Encode<sqlx::Postgres>>::encode_by_ref(&self.0, buf)
+    }
+}
+
+impl<'r> sqlx::Decode<'r, sqlx::Postgres> for TxHash {
+    fn decode(
+        value: sqlx::postgres::PgValueRef<'r>,
+    ) -> std::result::Result<
+        TxHash,
+        std::boxed::Box<(dyn std::error::Error + std::marker::Send + std::marker::Sync + 'static)>,
+    > {
+        let inner = <String as sqlx::Decode<sqlx::Postgres>>::decode(value)?;
+        Ok(TxHash(inner))
+    }
+}
 impl TxHash {
     pub fn new(s: &str) -> TxHash {
         TxHash(s.into())
     }
 }
 
-impl Display for TxHash {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", hex::encode(&self.0))
-    }
-}
-
-impl Serialize for TxHash {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        serializer.serialize_str(hex::encode(&self.0).as_str())
-    }
-}
-
-impl std::fmt::Debug for TxHash {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_tuple("TxHash")
-            .field(&hex::encode(&self.0))
-            .finish()
-    }
-}
-
-impl<'de> Deserialize<'de> for TxHash {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        struct TxHashVisitor;
-
-        impl<'de> Visitor<'de> for TxHashVisitor {
-            type Value = TxHash;
-
-            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                formatter.write_str("a hex string representing a TxHash")
-            }
-
-            fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
-            where
-                E: de::Error,
-            {
-                let bytes = hex::decode(value).map_err(de::Error::custom)?;
-                Ok(TxHash(bytes))
-            }
-        }
-
-        deserializer.deserialize_str(TxHashVisitor)
-    }
-}
-
-#[derive(Default, Clone, Serialize, Deserialize, Eq, PartialEq, Hash, Encode, Decode)]
-pub struct BlobsHash(pub Vec<u8>);
+#[derive(
+    Debug, Display, Default, Clone, Serialize, Deserialize, Eq, PartialEq, Hash, Encode, Decode,
+)]
+pub struct BlobsHash(pub String);
 
 impl BlobsHash {
     pub fn new(s: &str) -> BlobsHash {
@@ -104,20 +93,8 @@ impl BlobsHash {
         debug!("From concatenated {:?}", vec);
         let mut hasher = Sha3_256::new();
         hasher.update(vec.as_slice());
-        BlobsHash(hasher.finalize().as_slice().to_owned())
-    }
-}
-
-impl Display for BlobsHash {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", hex::encode(&self.0))
-    }
-}
-impl std::fmt::Debug for BlobsHash {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_tuple("BlobsHash ")
-            .field(&hex::encode(&self.0))
-            .finish()
+        let hash_bytes = hasher.finalize();
+        BlobsHash(hex::encode(hash_bytes))
     }
 }
 
@@ -142,19 +119,31 @@ pub struct BlockHeight(pub u64);
 )]
 pub struct BlobIndex(pub u32);
 
+impl From<u32> for BlobIndex {
+    fn from(i: u32) -> Self {
+        BlobIndex(i)
+    }
+}
+
 #[derive(
     Default, Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash, Display, Encode, Decode,
 )]
 pub struct Identity(pub String);
+
+impl From<String> for Identity {
+    fn from(s: String) -> Self {
+        Identity(s)
+    }
+}
 
 #[derive(
     Default, Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash, Display, Encode, Decode,
 )]
 pub struct ContractName(pub String);
 
-impl From<&str> for ContractName {
-    fn from(s: &str) -> Self {
-        ContractName(s.to_string())
+impl From<String> for ContractName {
+    fn from(s: String) -> Self {
+        ContractName(s)
     }
 }
 
@@ -239,55 +228,42 @@ impl Transaction {
 }
 
 #[derive(
-    Serialize,
-    Deserialize,
-    Default,
-    Clone,
-    Encode,
-    Decode,
-    PartialEq,
-    Eq,
-    Hash,
-    sqlx::Encode,
-    sqlx::Decode,
+    Display, Debug, Serialize, Deserialize, Default, Clone, Encode, Decode, PartialEq, Eq, Hash,
 )]
-pub struct BlockHash {
-    pub inner: Vec<u8>,
+pub struct BlockHash(pub String);
+
+impl Type<Postgres> for BlockHash {
+    fn type_info() -> sqlx::postgres::PgTypeInfo {
+        <String as Type<Postgres>>::type_info()
+    }
+}
+impl<'q> sqlx::Encode<'q, sqlx::Postgres> for BlockHash {
+    fn encode_by_ref(
+        &self,
+        buf: &mut sqlx::postgres::PgArgumentBuffer,
+    ) -> std::result::Result<
+        sqlx::encode::IsNull,
+        std::boxed::Box<(dyn std::error::Error + std::marker::Send + std::marker::Sync + 'static)>,
+    > {
+        <String as sqlx::Encode<sqlx::Postgres>>::encode_by_ref(&self.0, buf)
+    }
+}
+
+impl<'r> sqlx::Decode<'r, sqlx::Postgres> for BlockHash {
+    fn decode(
+        value: sqlx::postgres::PgValueRef<'r>,
+    ) -> std::result::Result<
+        BlockHash,
+        std::boxed::Box<(dyn std::error::Error + std::marker::Send + std::marker::Sync + 'static)>,
+    > {
+        let inner = <String as sqlx::Decode<sqlx::Postgres>>::decode(value)?;
+        Ok(BlockHash(inner))
+    }
 }
 
 impl BlockHash {
     pub fn new(s: &str) -> BlockHash {
-        BlockHash { inner: s.into() }
-    }
-}
-
-impl Deref for BlockHash {
-    type Target = [u8];
-
-    fn deref(&self) -> &Self::Target {
-        return self.inner.deref();
-    }
-}
-
-impl Display for BlockHash {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", hex::encode(&self.inner))
-    }
-}
-
-impl std::fmt::Debug for BlockHash {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_tuple("BlockHash ")
-            .field(&hex::encode(&self.inner))
-            .finish()
-    }
-}
-
-impl From<String> for BlockHash {
-    fn from(s: String) -> Self {
-        BlockHash {
-            inner: s.into_bytes(),
-        }
+        BlockHash(s.into())
     }
 }
 
@@ -335,15 +311,13 @@ impl std::hash::Hash for Block {
 impl Hashable<BlockHash> for Block {
     fn hash(&self) -> BlockHash {
         let mut hasher = Sha3_256::new();
-        hasher.update(self.parent_hash.deref());
+        _ = write!(hasher, "{}", self.parent_hash);
         _ = write!(hasher, "{}", self.height);
         _ = write!(hasher, "{}", self.timestamp);
         for tx in self.txs.iter() {
             hasher.update(tx.hash().0);
         }
-        return BlockHash {
-            inner: hasher.finalize().as_slice().to_owned(),
-        };
+        BlockHash(hex::encode(hasher.finalize()))
     }
 }
 
@@ -362,7 +336,8 @@ impl Hashable<TxHash> for Staker {
         let mut hasher = Sha3_256::new();
         _ = write!(hasher, "{:?}", self.pubkey.0);
         _ = write!(hasher, "{}", self.stake.amount);
-        return TxHash(hasher.finalize().as_slice().to_owned());
+        let hash_bytes = hasher.finalize();
+        TxHash(hex::encode(hash_bytes))
     }
 }
 
@@ -371,7 +346,8 @@ impl Hashable<TxHash> for BlobTransaction {
         let mut hasher = Sha3_256::new();
         _ = write!(hasher, "{}", self.identity.0);
         hasher.update(self.blobs_hash().0);
-        return TxHash(hasher.finalize().as_slice().to_owned());
+        let hash_bytes = hasher.finalize();
+        TxHash(hex::encode(hash_bytes))
     }
 }
 impl Hashable<TxHash> for ProofTransaction {
@@ -383,7 +359,8 @@ impl Hashable<TxHash> for ProofTransaction {
             _ = write!(hasher, "{}", blob_ref.blob_index);
         }
         hasher.update(self.proof.clone());
-        return TxHash(hasher.finalize().as_slice().to_owned());
+        let hash_bytes = hasher.finalize();
+        TxHash(hex::encode(hash_bytes))
     }
 }
 impl Hashable<TxHash> for RegisterContractTransaction {
@@ -394,7 +371,8 @@ impl Hashable<TxHash> for RegisterContractTransaction {
         hasher.update(self.program_id.clone());
         hasher.update(self.state_digest.0.clone());
         _ = write!(hasher, "{}", self.contract_name);
-        return TxHash(hasher.finalize().as_slice().to_owned());
+        let hash_bytes = hasher.finalize();
+        TxHash(hex::encode(hash_bytes))
     }
 }
 impl BlobTransaction {
