@@ -156,6 +156,117 @@ pub async fn get_transaction_with_hash(
 }
 
 // Blobs
+pub async fn get_blob_transactions_by_contract_name(
+    Path(contract_name): Path<String>,
+    State(state): State<IndexerState>,
+) -> Result<Json<Vec<TransactionWithBlobs>>, StatusCode> {
+    let rows = sqlx::query(
+        r#"
+        SELECT
+            t.*,
+            b.identity,
+            b.contract_name,
+            b.data
+        FROM blobs b
+        JOIN transactions t ON b.tx_hash = t.tx_hash
+        WHERE b.tx_hash IN (
+            SELECT tx_hash
+            FROM blobs
+            WHERE contract_name = $1
+        )"#,
+    )
+    .bind(contract_name)
+    .fetch_all(&state)
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let mut transactions: Vec<TransactionWithBlobs> = Vec::new();
+    let mut current_tx_hash: Option<TxHash> = None;
+    let mut current_transaction: Option<TransactionWithBlobs> = None;
+
+    for row in rows {
+        let tx_hash: TxHash = row
+            .try_get("tx_hash")
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        let contract_name: String = row
+            .try_get("contract_name")
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        let data: Vec<u8> = row
+            .try_get("data")
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        let blob = Blob {
+            contract_name: ContractName(contract_name),
+            data: BlobData(data),
+        };
+
+        if current_tx_hash.is_none() || current_tx_hash.as_ref() != Some(&tx_hash) {
+            if let Some(transaction) = current_transaction.take() {
+                transactions.push(transaction);
+            }
+
+            current_tx_hash = Some(tx_hash.clone());
+            current_transaction = Some(TransactionWithBlobs {
+                tx_hash: tx_hash.clone(),
+                block_hash: row
+                    .try_get("block_hash")
+                    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?,
+                tx_index: row
+                    .try_get("tx_index")
+                    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?,
+                version: row
+                    .try_get("version")
+                    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?,
+                transaction_type: row
+                    .try_get("transaction_type")
+                    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?,
+                transaction_status: row
+                    .try_get("transaction_status")
+                    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?,
+                identity: row
+                    .try_get("identity")
+                    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?,
+                blobs: Vec::new(),
+            });
+        }
+
+        if let Some(transaction) = &mut current_transaction {
+            transaction.blobs.push(blob);
+        }
+    }
+
+    if let Some(transaction) = current_transaction {
+        transactions.push(transaction);
+    }
+    match transactions.len() {
+        0 => Err(StatusCode::NOT_FOUND),
+        _ => Ok(Json(transactions)),
+    }
+}
+
+pub async fn get_blobs_by_contract_name(
+    Path(contract_name): Path<String>,
+    State(state): State<IndexerState>,
+) -> Result<Json<Vec<BlobDb>>, StatusCode> {
+    // TODO: Order transactions ?
+    let blobs = sqlx::query_as::<_, BlobDb>(
+        r#"
+        SELECT b.*, t.transaction_status
+        FROM blobs b
+        JOIN transactions t ON b.tx_hash = t.tx_hash
+        WHERE b.contract_name = $1
+        "#,
+    )
+    .bind(contract_name)
+    .fetch_all(&state)
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    match blobs.len() {
+        0 => Err(StatusCode::NOT_FOUND),
+        _ => Ok(Json(blobs)),
+    }
+}
+
 pub async fn get_settled_blobs_by_contract_name(
     Path(contract_name): Path<String>,
     State(state): State<IndexerState>,

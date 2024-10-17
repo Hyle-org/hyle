@@ -42,6 +42,18 @@ pub struct TransactionDb {
     pub transaction_status: TransactionStatus, // Status of the transaction
 }
 
+#[derive(Serialize, Debug)]
+pub struct TransactionWithBlobs {
+    pub tx_hash: TxHash,
+    pub block_hash: BlockHash,
+    pub tx_index: i32,
+    pub version: i32,
+    pub transaction_type: TransactionType,
+    pub transaction_status: TransactionStatus,
+    pub identity: String,
+    pub blobs: Vec<Blob>,
+}
+
 #[derive(Debug, sqlx::FromRow, Serialize, Deserialize)]
 pub struct BlobDb {
     pub tx_hash: TxHashDb, // Corresponds to the transaction hash
