@@ -5,7 +5,7 @@ use crate::{
     handle_messages,
     mempool::MempoolNetMessage,
     model::{
-        Blob, BlobData, BlobTransaction, ContractName, ProofTransaction,
+        Blob, BlobData, BlobTransaction, ContractName, ProofData, ProofTransaction,
         RegisterContractTransaction, SharedRunContext, Transaction,
     },
     rest::client::ApiHttpClient,
@@ -107,7 +107,7 @@ impl MockWorkflowHandler {
 
         let tx_proof = ProofTransaction {
             blobs_references: vec![],
-            proof: vec![],
+            proof: ProofData::Bytes(vec![]),
         };
 
         let tx_contract = RegisterContractTransaction {
@@ -131,7 +131,7 @@ impl MockWorkflowHandler {
                 2 => {
                     info!("Sending tx proof");
                     let mut new_tx_proof = tx_proof.clone();
-                    new_tx_proof.proof = vec![i];
+                    new_tx_proof.proof = ProofData::Bytes(vec![i]);
                     _ = api_client.send_tx_proof(&tx_proof).await;
                 }
                 3 => {

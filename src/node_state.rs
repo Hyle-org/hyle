@@ -501,7 +501,7 @@ mod test {
 
                 blob_index: BlobIndex(0),
             }],
-            proof: vec![],
+            proof: ProofData::Bytes(vec![]),
         }));
 
         let proof_c2 = new_tx(TransactionData::Proof(ProofTransaction {
@@ -510,7 +510,7 @@ mod test {
                 blob_tx_hash,
                 blob_index: BlobIndex(1),
             }],
-            proof: vec![],
+            proof: ProofData::Bytes(vec![]),
         }));
 
         state.handle_transaction(register_c1).unwrap();
@@ -570,7 +570,7 @@ mod test {
                     blob_index: BlobIndex(1),
                 },
             ],
-            proof: vec![],
+            proof: ProofData::Bytes(vec![]),
         }));
 
         state.handle_transaction(register_c1).unwrap();
@@ -633,7 +633,7 @@ mod test {
                     blob_index: BlobIndex(1),
                 },
             ],
-            proof: vec![],
+            proof: ProofData::Bytes(vec![]),
         }));
 
         state.handle_transaction(register_c1).unwrap();
@@ -673,7 +673,7 @@ mod test {
                 blob_tx_hash: blob_tx_hash.clone(),
                 blob_index: BlobIndex(0),
             }],
-            proof: vec![1],
+            proof: ProofData::Bytes(vec![1]),
         }));
 
         let proof_c1_bis = new_tx(TransactionData::Proof(ProofTransaction {
@@ -682,7 +682,7 @@ mod test {
                 blob_tx_hash: blob_tx_hash.clone(),
                 blob_index: BlobIndex(0),
             }],
-            proof: vec![2],
+            proof: ProofData::Bytes(vec![2]),
         }));
 
         state.handle_transaction(register_c1).unwrap();
