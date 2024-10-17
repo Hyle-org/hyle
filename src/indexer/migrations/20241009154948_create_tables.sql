@@ -1,6 +1,6 @@
 -- Add migration script here
 CREATE TABLE blocks (
-    hash TEXT PRIMARY KEY,          -- Corresponds to BlockHash (inner Vec<u8>)
+    hash TEXT PRIMARY KEY,          -- Corresponds to BlockHash 
     parent_hash TEXT NOT NULL,      -- Parent block hash (BlockHash)
     height BIGINT NOT NULL,         -- Corresponds to BlockHeight (u64)
     timestamp TIMESTAMP NOT NULL,   -- UNIX timestamp (u64)
