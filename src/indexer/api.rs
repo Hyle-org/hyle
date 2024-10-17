@@ -1,7 +1,10 @@
-use crate::indexer::model::BlockDb;
+use crate::model::{Blob, BlobData, BlockHash, ContractName, TxHash};
 
 use super::{
-    model::{BlobDb, ContractDb, ContractStateDb, TransactionDb},
+    model::{
+        BlobDb, BlockDb, ContractDb, ContractStateDb, TransactionDb, TransactionStatus,
+        TransactionType, TransactionWithBlobs,
+    },
     IndexerState,
 };
 use axum::{
@@ -9,6 +12,7 @@ use axum::{
     http::StatusCode,
     Json,
 };
+use sqlx::Row;
 
 // Blocks
 pub async fn get_blocks(
@@ -85,6 +89,7 @@ pub async fn get_transactions(
         _ => Ok(Json(transactions)),
     }
 }
+
 pub async fn get_transactions_with_contract_name(
     Path(contract_name): Path<String>,
     State(state): State<IndexerState>,
@@ -154,6 +159,105 @@ pub async fn get_transaction_with_hash(
 }
 
 // Blobs
+pub async fn get_blob_transactions_by_contract_name(
+    Path(contract_name): Path<String>,
+    State(state): State<IndexerState>,
+) -> Result<Json<Vec<TransactionWithBlobs>>, StatusCode> {
+    let rows = sqlx::query(
+        r#"
+        SELECT
+            t.tx_hash,
+            t.block_hash,
+            t.tx_index,
+            t.version,
+            t.transaction_type,
+            t.transaction_status,
+            b.identity,
+            ARRAY_AGG(ROW(b.contract_name, b.data)) AS blobs
+        FROM transactions t
+        JOIN blobs b ON t.tx_hash = b.tx_hash
+        WHERE b.tx_hash IN (
+            SELECT tx_hash
+            FROM blobs
+            WHERE contract_name = $1)
+        GROUP BY
+            t.tx_hash,
+            t.block_hash,
+            t.tx_index,
+            t.version,
+            t.transaction_type,
+            t.transaction_status,
+            b.identity
+        "#,
+    )
+    .bind(contract_name)
+    .fetch_all(&state)
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let transactions: Vec<TransactionWithBlobs> = rows
+        .into_iter()
+        .map(|row| {
+            let tx_hash: TxHash = row.try_get("tx_hash").unwrap();
+            let block_hash: BlockHash = row.try_get("block_hash").unwrap();
+            let tx_index: i32 = row.try_get("tx_index").unwrap();
+            let version: i32 = row.try_get("version").unwrap();
+            let transaction_type: TransactionType = row.try_get("transaction_type").unwrap();
+            let transaction_status: TransactionStatus = row.try_get("transaction_status").unwrap();
+            let identity: String = row.try_get("identity").unwrap();
+            let blobs: Vec<(String, Vec<u8>)> = row.try_get("blobs").unwrap();
+
+            let blobs = blobs
+                .into_iter()
+                .map(|(contract_name, data)| Blob {
+                    contract_name: ContractName(contract_name),
+                    data: BlobData(data),
+                })
+                .collect();
+
+            TransactionWithBlobs {
+                tx_hash,
+                block_hash,
+                tx_index,
+                version,
+                transaction_type,
+                transaction_status,
+                identity,
+                blobs,
+            }
+        })
+        .collect();
+
+    match transactions.len() {
+        0 => Err(StatusCode::NOT_FOUND),
+        _ => Ok(Json(transactions)),
+    }
+}
+
+pub async fn get_blobs_by_contract_name(
+    Path(contract_name): Path<String>,
+    State(state): State<IndexerState>,
+) -> Result<Json<Vec<BlobDb>>, StatusCode> {
+    // TODO: Order transactions ?
+    let blobs = sqlx::query_as::<_, BlobDb>(
+        r#"
+        SELECT b.*, t.transaction_status
+        FROM blobs b
+        JOIN transactions t ON b.tx_hash = t.tx_hash
+        WHERE b.contract_name = $1
+        "#,
+    )
+    .bind(contract_name)
+    .fetch_all(&state)
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    match blobs.len() {
+        0 => Err(StatusCode::NOT_FOUND),
+        _ => Ok(Json(blobs)),
+    }
+}
+
 pub async fn get_settled_blobs_by_contract_name(
     Path(contract_name): Path<String>,
     State(state): State<IndexerState>,

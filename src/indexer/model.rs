@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use sqlx::types::chrono::NaiveDateTime;
 
-use crate::model::{BlockHash, TxHash};
+use crate::model::{Blob, BlockHash, TxHash};
 
 #[derive(Debug, sqlx::FromRow, Serialize, Deserialize)]
 pub struct BlockDb {
@@ -38,6 +38,18 @@ pub struct TransactionDb {
     pub version: u32, // Transaction version
     pub transaction_type: TransactionType, // Type of transaction
     pub transaction_status: TransactionStatus, // Status of the transaction
+}
+
+#[derive(Serialize, Debug)]
+pub struct TransactionWithBlobs {
+    pub tx_hash: TxHash,
+    pub block_hash: BlockHash,
+    pub tx_index: i32,
+    pub version: i32,
+    pub transaction_type: TransactionType,
+    pub transaction_status: TransactionStatus,
+    pub identity: String,
+    pub blobs: Vec<Blob>,
 }
 
 #[derive(Debug, sqlx::FromRow, Serialize, Deserialize)]
