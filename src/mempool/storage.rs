@@ -1,9 +1,9 @@
 use anyhow::{bail, Result};
-use bincode::{Decode, Encode};
+use bincode::{BorrowDecode, Decode, Encode};
 use serde::{Deserialize, Serialize};
 use std::{
     cmp::Ordering,
-    collections::{BTreeMap, HashMap, HashSet},
+    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
     fmt::Display,
     hash::Hash,
     vec,
@@ -99,7 +99,7 @@ impl InMemoryStorage {
     pub fn tip_poa(&self) -> Option<Vec<ValidatorPublicKey>> {
         self.lane
             .current()
-            .map(|car| car.poa.clone().drain().collect())
+            .map(|car| car.poa.iter().cloned().collect())
     }
 
     pub fn try_a_new_cut(&mut self, nb_validators: usize) -> Option<CutWithTxs> {
@@ -131,7 +131,7 @@ impl InMemoryStorage {
             id: current_id,
             parent: tip_id,
             txs,
-            poa: HashSet::from([self.id.clone()]),
+            poa: Poa(BTreeSet::from([self.id.clone()])),
             used_in_cut: false,
         });
 
@@ -197,7 +197,7 @@ impl InMemoryStorage {
             id: tip_id.unwrap_or(0) + 1,
             parent: tip_id,
             txs: data_proposal.txs.clone(),
-            poa: HashSet::from([self.id.clone(), validator.clone()]),
+            poa: Poa(BTreeSet::from([self.id.clone(), validator.clone()])),
             used_in_cut: false,
         });
     }
@@ -366,7 +366,7 @@ impl InMemoryStorage {
                 TipData {
                     pos: car.id,
                     parent: car.parent,
-                    poa: car.poa.clone().into_iter().collect(),
+                    poa: car.poa.0.clone().into_iter().collect(),
                 },
                 car.txs.clone(),
             )
@@ -414,8 +414,63 @@ pub struct Car {
     id: usize,
     parent: Option<usize>,
     txs: Vec<Transaction>,
-    pub poa: HashSet<ValidatorPublicKey>,
+    pub poa: Poa,
     used_in_cut: bool,
+}
+
+#[derive(Clone, Default, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct Poa(pub BTreeSet<ValidatorPublicKey>);
+
+impl std::ops::Deref for Poa {
+    type Target = BTreeSet<ValidatorPublicKey>;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl std::ops::DerefMut for Poa {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl Encode for Poa {
+    fn encode<E: bincode::enc::Encoder>(
+        &self,
+        encoder: &mut E,
+    ) -> std::result::Result<(), bincode::error::EncodeError> {
+        self.len().encode(encoder)?;
+        for pubkey in self.iter() {
+            pubkey.encode(encoder)?;
+        }
+        Ok(())
+    }
+}
+
+impl<'de> BorrowDecode<'de> for Poa {
+    fn borrow_decode<D: bincode::de::BorrowDecoder<'de>>(
+        decoder: &mut D,
+    ) -> std::result::Result<Self, bincode::error::DecodeError> {
+        let len = usize::borrow_decode(decoder)?;
+        let mut bts = BTreeSet::new();
+        for _ in 0..len {
+            bts.insert(ValidatorPublicKey::borrow_decode(decoder)?);
+        }
+        Ok(Poa(bts))
+    }
+}
+
+impl Decode for Poa {
+    fn decode<D: bincode::de::Decoder>(
+        decoder: &mut D,
+    ) -> std::result::Result<Self, bincode::error::DecodeError> {
+        let len = usize::decode(decoder)?;
+        let mut bts = BTreeSet::new();
+        for _ in 0..len {
+            bts.insert(ValidatorPublicKey::decode(decoder)?);
+        }
+        Ok(Poa(bts))
+    }
 }
 
 impl Display for Car {
@@ -491,10 +546,10 @@ impl Display for DataProposal {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashSet;
+    use std::collections::BTreeSet;
 
     use crate::{
-        mempool::storage::{Car, DataProposal, InMemoryStorage},
+        mempool::storage::{Car, DataProposal, InMemoryStorage, Poa},
         model::{
             Blob, BlobData, BlobTransaction, ContractName, Identity, Transaction, TransactionData,
             ValidatorPublicKey,
@@ -575,7 +630,7 @@ mod tests {
                 id: 1,
                 parent: None,
                 txs: vec![make_tx("test1")],
-                poa: HashSet::from([pubkey3.clone(), pubkey2.clone()]),
+                poa: Poa(BTreeSet::from([pubkey3.clone(), pubkey2.clone()])),
                 used_in_cut: false,
             }
         );
@@ -716,14 +771,14 @@ mod tests {
                         make_tx("test3"),
                         make_tx("test4"),
                     ],
-                    poa: HashSet::from([pubkey1.clone(), pubkey2.clone()]),
+                    poa: Poa(BTreeSet::from([pubkey1.clone(), pubkey2.clone()])),
                     used_in_cut: false,
                 },
                 Car {
                     id: 2,
                     parent: Some(1),
                     txs: vec![make_tx("test5"), make_tx("test6"), make_tx("test7")],
-                    poa: HashSet::from([pubkey1.clone(), pubkey2.clone()]),
+                    poa: Poa(BTreeSet::from([pubkey1.clone(), pubkey2.clone()])),
                     used_in_cut: false,
                 },
             ],
@@ -759,14 +814,14 @@ mod tests {
                     id: 2,
                     parent: Some(1),
                     txs: vec![make_tx("test_local2")],
-                    poa: HashSet::from_iter(vec![pubkey3.clone()]),
+                    poa: Poa(BTreeSet::from_iter(vec![pubkey3.clone()])),
                     used_in_cut: false,
                 },
                 Car {
                     id: 3,
                     parent: Some(2),
                     txs: vec![make_tx("test_local3")],
-                    poa: HashSet::from_iter(vec![pubkey3.clone()]),
+                    poa: Poa(BTreeSet::from_iter(vec![pubkey3.clone()])),
                     used_in_cut: false,
                 }
             ])
@@ -789,21 +844,21 @@ mod tests {
                     id: 1,
                     parent: None,
                     txs: vec![make_tx("test_local")],
-                    poa: HashSet::from_iter(vec![pubkey3.clone()]),
+                    poa: Poa(BTreeSet::from_iter(vec![pubkey3.clone()])),
                     used_in_cut: false,
                 },
                 Car {
                     id: 2,
                     parent: Some(1),
                     txs: vec![make_tx("test_local2")],
-                    poa: HashSet::from_iter(vec![pubkey3.clone()]),
+                    poa: Poa(BTreeSet::from_iter(vec![pubkey3.clone()])),
                     used_in_cut: false,
                 },
                 Car {
                     id: 3,
                     parent: Some(2),
                     txs: vec![make_tx("test_local3")],
-                    poa: HashSet::from_iter(vec![pubkey3.clone()]),
+                    poa: Poa(BTreeSet::from_iter(vec![pubkey3.clone()])),
                     used_in_cut: false,
                 }
             ])
