@@ -1964,6 +1964,7 @@ dependencies = [
  "axum",
  "axum-otel-metrics",
  "axum-test",
+ "base64 0.22.1",
  "bincode 2.0.0-rc.2",
  "bloomfilter",
  "blst",

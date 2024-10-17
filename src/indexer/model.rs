@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use sqlx::types::chrono::NaiveDateTime;
 
-use crate::model::{BlockHash, TxHash};
+use crate::model::{Blob, BlockHash, TxHash};
 
 #[derive(Debug, sqlx::FromRow, Serialize, Deserialize)]
 pub struct BlockDb {
