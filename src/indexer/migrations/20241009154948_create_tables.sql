@@ -30,7 +30,7 @@ CREATE TABLE blobs (
     contract_name TEXT NOT NULL,       -- Contract name associated with the blob
     data BYTEA NOT NULL,               -- Actual blob data (stored as binary)
     PRIMARY KEY (tx_hash, blob_index), -- Composite primary key (tx_hash + blob_index) to uniquely identify each blob
-    CHECK (blob_index >= 0)              -- Ensure the index is positive
+    CHECK (blob_index >= 0)            -- Ensure the index is positive
 );
 
 CREATE TABLE proofs (

@@ -162,6 +162,14 @@ impl Indexer {
             )
             // blob
             .route(
+                "/blobs/transactions/contract/:contract_name",
+                get(api::get_blob_transactions_by_contract_name),
+            )
+            .route(
+                "/blobs/contract/:contract_name",
+                get(api::get_blobs_by_contract_name),
+            )
+            .route(
                 "/blobs/settled/contract/:contract_name",
                 get(api::get_settled_blobs_by_contract_name),
             )
@@ -464,10 +472,20 @@ mod test {
         assert!(!transactions_response.text().is_empty());
 
         // Get an unknown transaction by hash
-        let unknown_tx = server.get("/transaction/hash/unknown").await;
+        let unknown_tx = server.get("/transaction/hash/1111111111111111111111111111111111111111111111111111111111111111").await;
         unknown_tx.assert_status_not_found();
 
         // Blobs
+        // Get all transactions for a specific contract name
+        let transactions_response = server.get("/blobs/transactions/contract/contract_1").await;
+        transactions_response.assert_status_ok();
+        assert!(!transactions_response.text().is_empty());
+
+        // Get all blobs for a specific contract name
+        let transactions_response = server.get("/blobs/contract/contract_1").await;
+        transactions_response.assert_status_ok();
+        assert!(!transactions_response.text().is_empty());
+
         // Get all settled blobs by contract name
         let transactions_response = server.get("/blobs/settled/contract/contract_1").await;
         transactions_response.assert_status_ok();
