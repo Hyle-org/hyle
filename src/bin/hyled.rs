@@ -4,12 +4,13 @@ use anyhow::Result;
 use clap::{command, Parser, Subcommand};
 use hyle::{
     model::{
-        Blob, BlobData, BlobIndex, BlobReference, BlobTransaction, ContractName, Identity,
-        ProofTransaction, RegisterContractTransaction, StateDigest, TxHash,
+        Blob, BlobData, BlobReference, BlobTransaction, ContractName, ProofTransaction,
+        RegisterContractTransaction,
     },
     rest::client::ApiHttpClient,
 };
 use reqwest::{Client, Url};
+use sdk::{BlobIndex, Identity, StateDigest, TxHash};
 
 pub fn load_encoded_receipt_from_file(path: &str) -> Vec<u8> {
     let mut file = File::open(path).expect("Failed to open proof file");

@@ -1,7 +1,8 @@
 use bincode::{Decode, Encode};
 
 use super::model::UnsettledTransaction;
-use crate::model::{ContractName, TxHash};
+use crate::model::ContractName;
+use sdk::TxHash;
 use std::collections::HashMap;
 
 // struct used to guarantee coherence between the 2 fields
@@ -75,10 +76,8 @@ impl OrderedTxMap {
 
 #[cfg(test)]
 mod tests {
-    use crate::{
-        model::{BlobsHash, Identity},
-        node_state::model::UnsettledBlobMetadata,
-    };
+    use crate::{model::BlobsHash, node_state::model::UnsettledBlobMetadata};
+    use sdk::Identity;
 
     use super::*;
 

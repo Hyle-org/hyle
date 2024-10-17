@@ -5,9 +5,7 @@ use risc0_zkvm::sha::Digest;
 use stark_platinum_prover::proof::options::{ProofOptions, SecurityLevel};
 
 use crate::model::ProofTransaction;
-use crate::model::{Identity, StateDigest};
-
-use super::model::HyleOutput;
+use sdk::{HyleOutput, Identity, StateDigest};
 
 pub fn verify_proof(
     tx: &ProofTransaction,
@@ -141,6 +139,7 @@ pub fn risc0_proof_verifier(encoded_receipt: &[u8], image_id: &[u8]) -> Result<H
         Err(e) => bail!("Risc0 proof verification failed: {}", e),
     };
 
+    tracing::info!("🦄🦄 receipt.journal {:?} ", receipt.journal);
     let hyle_output = match receipt.journal.decode::<HyleOutput>() {
         Ok(v) => v,
         Err(e) => bail!("Failed to extract HyleOuput from Risc0's journal: {}", e),
@@ -154,10 +153,7 @@ pub fn risc0_proof_verifier(encoded_receipt: &[u8], image_id: &[u8]) -> Result<H
 mod tests {
     use std::{fs::File, io::Read};
 
-    use crate::{
-        model::{BlobIndex, Identity, StateDigest, TxHash},
-        node_state::model::HyleOutput,
-    };
+    use sdk::{BlobIndex, HyleOutput, Identity, StateDigest, TxHash};
 
     use super::risc0_proof_verifier;
 

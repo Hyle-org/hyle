@@ -525,10 +525,11 @@ mod tests {
     use crate::{
         mempool::storage::{Car, DataProposal, InMemoryStorage, Poa, ProposalVerdict},
         model::{
-            Blob, BlobData, BlobTransaction, ContractName, Identity, Transaction, TransactionData,
+            Blob, BlobData, BlobTransaction, ContractName, Transaction, TransactionData,
             ValidatorPublicKey,
         },
     };
+    use sdk::Identity;
 
     fn make_tx(inner_tx: &'static str) -> Transaction {
         Transaction {

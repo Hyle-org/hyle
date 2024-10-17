@@ -1986,6 +1986,7 @@ dependencies = [
  "reqwest",
  "risc0-zkvm",
  "ron",
+ "sdk",
  "serde",
  "serde_json",
  "sha3",
@@ -3852,6 +3853,15 @@ name = "scopeguard"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
+
+[[package]]
+name = "sdk"
+version = "0.1.0"
+dependencies = [
+ "bincode 2.0.0-rc.2",
+ "hex",
+ "serde",
+]
 
 [[package]]
 name = "security-framework"
