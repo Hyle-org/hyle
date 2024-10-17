@@ -24,10 +24,12 @@ pub enum ProposalVerdict {
     Vote,
 }
 
-pub type Cut = BTreeMap<ValidatorPublicKey, Option<usize>>;
+pub type Cut = BTreeMap<ValidatorPublicKey, usize>;
 
 fn add_lane_tip_to_cut(cut: &mut Cut, validator: &ValidatorPublicKey, lane: &Lane) {
-    cut.insert(validator.clone(), lane.cars.last().map(|car| car.id));
+    if let Some(car) = lane.cars.last() {
+        cut.insert(validator.clone(), car.id);
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -337,19 +339,17 @@ impl InMemoryStorage {
         self.pending_txs.drain(0..).collect()
     }
 
-    fn collect_cars(cars: &mut Vec<Car>, some_tip: &Option<usize>) {
-        if let Some(tip) = some_tip {
-            cars.retain_mut(|car| car.id >= *tip);
-        }
+    fn collect_cars(cars: &mut Vec<Car>, tip: usize) {
+        cars.retain_mut(|car| car.id >= tip);
     }
 
     pub fn update_lanes_after_commit(&mut self, lanes: Cut) {
         if let Some(tip) = lanes.get(&self.id) {
-            Self::collect_cars(&mut self.lane.cars, tip);
+            Self::collect_cars(&mut self.lane.cars, *tip);
         }
         for (validator, lane) in self.other_lanes.iter_mut() {
             if let Some(tip) = lanes.get(validator) {
-                Self::collect_cars(&mut lane.cars, tip);
+                Self::collect_cars(&mut lane.cars, *tip);
             }
         }
     }
