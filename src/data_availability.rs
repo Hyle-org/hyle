@@ -464,9 +464,7 @@ mod tests {
         let db = sled::open(tmpdir.path().join("history"))?;
         let mut blocks = Blocks::new(&db)?;
         let block = Block {
-            parent_hash: BlockHash {
-                inner: vec![0, 1, 2, 3],
-            },
+            parent_hash: BlockHash::new("0123456789abcdef"),
             height: BlockHeight(1),
             timestamp: 42,
             new_bonded_validators: vec![],

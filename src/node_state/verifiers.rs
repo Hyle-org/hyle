@@ -196,7 +196,7 @@ mod tests {
                             57
                         ]),
                         identity: Identity("max".to_owned()),
-                        tx_hash: TxHash(vec![1]),
+                        tx_hash: TxHash("01".to_owned()),
                         index: BlobIndex(0),
                         blobs: vec![1, 3, 109, 97, 120, 27],
                         success: true,

@@ -191,8 +191,8 @@ impl Indexer {
 
         let mut transaction = self.inner.begin().await?;
 
-        let block_hash = &block.hash().inner;
-        let block_parent_hash = &block.parent_hash.inner;
+        let block_hash = &block.hash();
+        let block_parent_hash = &block.parent_hash;
         let block_height = i64::try_from(block.height.0)
             .map_err(|_| anyhow::anyhow!("Block height is too large to fit into an i64"))?;
 
@@ -431,7 +431,7 @@ mod test {
 
         // Get block by hash
         let transactions_response = server
-            .get("/block/hash/block1aaaaaaaaaaaaaaaaaaaaaaaaaa")
+            .get("/block/hash/block1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
             .await;
         transactions_response.assert_status_ok();
         assert!(!transactions_response.text().is_empty());
@@ -458,7 +458,7 @@ mod test {
 
         // Get an existing transaction by hash
         let transactions_response = server
-            .get("/transaction/hash/test_tx_hash_1aaaaaaaaaaaaaaaaaa")
+            .get("/transaction/hash/test_tx_hash_1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
             .await;
         transactions_response.assert_status_ok();
         assert!(!transactions_response.text().is_empty());
@@ -480,27 +480,27 @@ mod test {
 
         // Get blobs by tx_hash
         let transactions_response = server
-            .get("/blobs/hash/test_tx_hash_2aaaaaaaaaaaaaaaaaa")
+            .get("/blobs/hash/test_tx_hash_2aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
             .await;
         transactions_response.assert_status_ok();
         assert!(!transactions_response.text().is_empty());
 
         // Get unknown blobs by tx_hash
         let transactions_response = server
-            .get("/blobs/hash/test_tx_hash_1aaaaaaaaaaaaaaaaaa")
+            .get("/blobs/hash/test_tx_hash_1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
             .await;
         transactions_response.assert_status_not_found();
 
         // Get blob by tx_hash and index
         let transactions_response = server
-            .get("/blob/hash/test_tx_hash_2aaaaaaaaaaaaaaaaaa/index/0")
+            .get("/blob/hash/test_tx_hash_2aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/index/0")
             .await;
         transactions_response.assert_status_ok();
         assert!(!transactions_response.text().is_empty());
 
         // Get blob by tx_hash and unknown index
         let transactions_response = server
-            .get("/blob/hash/test_tx_hash_2aaaaaaaaaaaaaaaaaa/index/1000")
+            .get("/blob/hash/test_tx_hash_2aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/index/1000")
             .await;
         transactions_response.assert_status_not_found();
 
