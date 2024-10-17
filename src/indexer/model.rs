@@ -6,7 +6,7 @@ use crate::model::{BlockHash, TxHash};
 #[derive(Debug, sqlx::FromRow, Serialize, Deserialize)]
 pub struct BlockDb {
     // Struct for the blocks table
-    pub hash: BlockHash,        // Corresponds to BlockHash
+    pub hash: BlockHash,
     pub parent_hash: BlockHash, // Parent block hash
     #[sqlx(try_from = "i64")]
     pub height: u64, // Corresponds to BlockHeight
