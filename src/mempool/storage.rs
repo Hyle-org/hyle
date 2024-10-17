@@ -44,7 +44,7 @@ impl Display for InMemoryStorage {
     }
 }
 
-pub type Cut = BTreeMap<ValidatorPublicKey, CutCar>;
+pub type Cut = BTreeMap<ValidatorPublicKey, usize>;
 
 #[derive(Debug, Default, Clone, Deserialize, Serialize, Encode, Decode)]
 pub struct CutWithTxs {
@@ -63,21 +63,10 @@ impl CutWithTxs {
             if !car.used_in_cut {
                 car.used_in_cut = true;
                 txs.extend(car.txs.clone());
-                self.tips.insert(validator.clone(), {
-                    CutCar {
-                        id: car.id,
-                        parent: car.parent,
-                    }
-                });
+                self.tips.insert(validator.clone(), car.id);
             }
         }
     }
-}
-
-#[derive(Debug, Default, Clone, Deserialize, Serialize, Encode, Decode, PartialEq, Eq, Hash)]
-pub struct CutCar {
-    pub id: usize,
-    pub parent: Option<usize>,
 }
 
 impl InMemoryStorage {
@@ -209,7 +198,7 @@ impl InMemoryStorage {
         if let Some(parent) = data_proposal.parent {
             tip.map(|car| car.id == parent).unwrap_or_default()
         } else {
-            true
+            false
         }
     }
 
@@ -381,17 +370,17 @@ impl InMemoryStorage {
         self.pending_txs.drain(0..).collect()
     }
 
-    fn collect_old_used_cars(cars: &mut Vec<Car>, tip: &CutCar) {
-        cars.retain_mut(|car| car.id >= tip.id);
+    fn collect_old_used_cars(cars: &mut Vec<Car>, tip: usize) {
+        cars.retain_mut(|car| car.id >= tip);
     }
 
     pub fn update_lanes_after_commit(&mut self, lanes: Cut) {
         if let Some(tip) = lanes.get(&self.id) {
-            Self::collect_old_used_cars(&mut self.lane.cars, tip);
+            Self::collect_old_used_cars(&mut self.lane.cars, *tip);
         }
         for (validator, lane) in self.other_lanes.iter_mut() {
             if let Some(tip) = lanes.get(validator) {
-                Self::collect_old_used_cars(&mut lane.cars, tip);
+                Self::collect_old_used_cars(&mut lane.cars, *tip);
             }
         }
     }
