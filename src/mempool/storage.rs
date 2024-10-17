@@ -2,7 +2,6 @@ use anyhow::{bail, Result};
 use bincode::{BorrowDecode, Decode, Encode};
 use serde::{Deserialize, Serialize};
 use std::{
-    cmp::Ordering,
     collections::{BTreeMap, BTreeSet, HashMap, HashSet},
     fmt::Display,
     hash::Hash,
@@ -45,7 +44,7 @@ impl Display for InMemoryStorage {
     }
 }
 
-pub type Cut = BTreeMap<ValidatorPublicKey, Option<CutCar>>;
+pub type Cut = BTreeMap<ValidatorPublicKey, CutCar>;
 
 #[derive(Debug, Default, Clone, Deserialize, Serialize, Encode, Decode)]
 pub struct CutWithTxs {
@@ -60,20 +59,18 @@ impl CutWithTxs {
         lane: &mut Lane,
         txs: &mut HashSet<Transaction>,
     ) {
-        self.tips.insert(
-            validator.clone(),
-            lane.cars.last().and_then(|car| {
-                if car.used_in_cut {
-                    None
-                } else {
-                    txs.extend(car.txs.clone());
-                    Some(CutCar {
+        if let Some(car) = lane.cars.last_mut() {
+            if !car.used_in_cut {
+                car.used_in_cut = true;
+                txs.extend(car.txs.clone());
+                self.tips.insert(validator.clone(), {
+                    CutCar {
                         id: car.id,
                         parent: car.parent,
-                    })
-                }
-            }),
-        );
+                    }
+                });
+            }
+        }
     }
 }
 
@@ -384,17 +381,8 @@ impl InMemoryStorage {
         self.pending_txs.drain(0..).collect()
     }
 
-    fn collect_old_used_cars(cars: &mut Vec<Car>, some_tip: &Option<CutCar>) {
-        if let Some(tip) = some_tip {
-            cars.retain_mut(|car| match car.id.cmp(&tip.id) {
-                Ordering::Less => false,
-                Ordering::Equal => {
-                    car.used_in_cut = true;
-                    true
-                }
-                Ordering::Greater => true,
-            });
-        }
+    fn collect_old_used_cars(cars: &mut Vec<Car>, tip: &CutCar) {
+        cars.retain_mut(|car| car.id >= tip.id);
     }
 
     pub fn update_lanes_after_commit(&mut self, lanes: Cut) {
