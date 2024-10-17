@@ -1,4 +1,4 @@
-**Hylé** has a grant program supporting developers who want to work on trust infrastructure and programmable cryptography on Hylé.
+**Hylé** has a grant program supporting developers who want to work on [trust infrastructure](https://gestalt.cafe/trust-infrastructure/) and programmable cryptography on Hylé.
 
 Please contact us [through this form](https://docs.google.com/forms/d/e/1FAIpQLSf5i2HNkeR3lHSljBdeeTR_0Xx4FsJc6zCb2MY2eBgz-EnbjQ/viewform?usp=sf_link) if you're interested in developing one of the ideas below, or if you have your own original idea!
 
