@@ -35,12 +35,14 @@ use crate::{
     },
 };
 
+use strum_macros::IntoStaticStr;
+
 pub mod metrics;
 pub mod module;
 pub mod staking;
 pub mod utils;
 
-#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, PartialEq, Eq, Hash)]
+#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, PartialEq, Eq, Hash, IntoStaticStr)]
 pub enum ConsensusNetMessage {
     StartNewSlot,
     Prepare(ConsensusProposal),
@@ -517,12 +519,9 @@ impl Consensus {
             "🌐 Slot {} started. Broadcasting Prepare message", self.bft_round_state.slot,
         );
         self.bft_round_state.step = Step::PrepareVote;
-        _ = self
-            .bus
-            .send(OutboundMessage::broadcast(self.sign_net_message(
-                ConsensusNetMessage::Prepare(self.bft_round_state.consensus_proposal.clone()),
-            )?))
-            .context("Failed to broadcast ConsensusNetMessage::Prepare msg on the bus")?;
+        _ = self.broadcast_net_message(
+            ConsensusNetMessage::Prepare(self.bft_round_state.consensus_proposal.clone()),
+        )?;
 
         Ok(())
     }
@@ -619,12 +618,7 @@ impl Consensus {
             "📝 Sending candidacy message to be part of consensus.  {}",
             candidacy
         );
-        _ = self
-            .bus
-            .send(OutboundMessage::broadcast(self.sign_net_message(
-                ConsensusNetMessage::ValidatorCandidacy(candidacy),
-            )?))
-            .context("Failed to send candidacy msg on the bus")?;
+        _ = self.broadcast_net_message(ConsensusNetMessage::ValidatorCandidacy(candidacy))?;
         Ok(())
     }
 
@@ -806,15 +800,10 @@ impl Consensus {
                 "📤 Slot {} Prepare message validated. Sending PrepareVote to leader",
                 self.bft_round_state.slot
             );
-            _ = self
-                .bus
-                .send(OutboundMessage::send(
-                    self.leader_id(),
-                    self.sign_net_message(ConsensusNetMessage::PrepareVote(
-                        consensus_proposal.hash(),
-                    ))?,
-                ))
-                .context("Failed to send ConsensusNetMessage::PrepareVote msg on the bus")?;
+            _ = self.send_net_message(
+                self.leader_id(),
+                ConsensusNetMessage::PrepareVote(consensus_proposal.hash())
+            )?;
         } else {
             info!("😥 Not part of consensus, not sending PrepareVote");
         }
@@ -901,15 +890,10 @@ impl Consensus {
                 self.bft_round_state.slot
             );
             self.bft_round_state.step = Step::ConfirmAck;
-            _ = self
-                .bus
-                .send(OutboundMessage::broadcast(self.sign_net_message(
-                    ConsensusNetMessage::Confirm(
-                        consensus_proposal_hash.clone(),
-                        self.bft_round_state.prepare_quorum_certificate.clone(),
-                    ),
-                )?))
-                .context("Failed to broadcast ConsensusNetMessage::Confirm msg on the bus")?;
+            _ = self.broadcast_net_message(ConsensusNetMessage::Confirm(
+                consensus_proposal_hash.clone(),
+                self.bft_round_state.prepare_quorum_certificate.clone(),
+            ))?;
         }
         // TODO(?): Update behaviour when having more ?
         // else if validated_votes > 2 * f + 1 {}
@@ -974,15 +958,10 @@ impl Consensus {
                 "📤 Slot {} Confirm message validated. Sending ConfirmAck to leader",
                 self.bft_round_state.slot
             );
-            _ = self
-                .bus
-                .send(OutboundMessage::send(
-                    self.leader_id(),
-                    self.sign_net_message(ConsensusNetMessage::ConfirmAck(
-                        consensus_proposal_hash.clone(),
-                    ))?,
-                ))
-                .context("Failed to send ConsensusNetMessage::ConfirmAck msg on the bus")?;
+            _ = self.send_net_message(
+                self.leader_id(),
+                ConsensusNetMessage::ConfirmAck(consensus_proposal_hash.clone()),
+            )?;
         } else {
             info!("😥 Not part of consensus, not sending ConfirmAck");
         }
@@ -1077,15 +1056,10 @@ impl Consensus {
                 );
 
             // Broadcast the *Commit* Quorum Certificate to all validators
-            _ = self
-                .bus
-                .send(OutboundMessage::broadcast(self.sign_net_message(
-                    ConsensusNetMessage::Commit(
-                        consensus_proposal_hash.clone(),
-                        commit_quorum_certificate,
-                    ),
-                )?))
-                .context("Failed to broadcast ConsensusNetMessage::Confirm msg on the bus")?;
+            _ = self.broadcast_net_message(ConsensusNetMessage::Commit(
+                consensus_proposal_hash.clone(),
+                commit_quorum_certificate,
+            ))?;
 
             // Finishes the bft round
             self.finish_round()?;
@@ -1265,6 +1239,29 @@ impl Consensus {
             }
             ConsensusCommand::StartNewSlot => self.start_new_slot(),
         }
+    }
+
+    #[inline(always)]
+    fn broadcast_net_message(&mut self, net_message: ConsensusNetMessage) -> Result<()> {
+        let signed_msg = self.sign_net_message(net_message)?;
+        let enum_variant_name: &'static str = (&signed_msg.msg).into();
+        _ = self
+            .bus
+            .send(OutboundMessage::broadcast(signed_msg))
+            .context(format!("Failed to broadcast {} msg on the bus", enum_variant_name))?;
+        Ok(())
+        
+    }
+
+    #[inline(always)]
+    fn send_net_message(&mut self, to: ValidatorPublicKey, net_message: ConsensusNetMessage) -> Result<()> {
+        let signed_msg = self.sign_net_message(net_message)?;
+        let enum_variant_name: &'static str = (&signed_msg.msg).into();
+        _ = self
+            .bus
+            .send(OutboundMessage::send(to, signed_msg))
+            .context(format!("Failed to send {} msg on the bus", enum_variant_name))?;
+        Ok(())
     }
 
     async fn handle_mempool_event(&mut self, msg: MempoolEvent) -> Result<()> {
