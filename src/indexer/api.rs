@@ -1,7 +1,10 @@
-use crate::model::{Blob, BlobData, ContractName, TxHash};
+use crate::model::{Blob, BlobData, BlockHash, ContractName, TxHash};
 
 use super::{
-    model::{BlobDb, BlockDb, ContractDb, ContractStateDb, TransactionDb, TransactionWithBlobs},
+    model::{
+        BlobDb, BlockDb, ContractDb, ContractStateDb, TransactionDb, TransactionStatus,
+        TransactionType, TransactionWithBlobs,
+    },
     IndexerState,
 };
 use axum::{
@@ -163,80 +166,68 @@ pub async fn get_blob_transactions_by_contract_name(
     let rows = sqlx::query(
         r#"
         SELECT
-            t.*,
+            t.tx_hash,
+            t.block_hash,
+            t.tx_index,
+            t.version,
+            t.transaction_type,
+            t.transaction_status,
             b.identity,
-            b.contract_name,
-            b.data
-        FROM blobs b
-        JOIN transactions t ON b.tx_hash = t.tx_hash
+            ARRAY_AGG(ROW(b.contract_name, b.data)) AS blobs
+        FROM transactions t
+        JOIN blobs b ON t.tx_hash = b.tx_hash
         WHERE b.tx_hash IN (
             SELECT tx_hash
             FROM blobs
-            WHERE contract_name = $1
-        )"#,
+            WHERE contract_name = $1)
+        GROUP BY
+            t.tx_hash,
+            t.block_hash,
+            t.tx_index,
+            t.version,
+            t.transaction_type,
+            t.transaction_status,
+            b.identity
+        "#,
     )
     .bind(contract_name)
     .fetch_all(&state)
     .await
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    let mut transactions: Vec<TransactionWithBlobs> = Vec::new();
-    let mut current_tx_hash: Option<TxHash> = None;
-    let mut current_transaction: Option<TransactionWithBlobs> = None;
+    let transactions: Vec<TransactionWithBlobs> = rows
+        .into_iter()
+        .map(|row| {
+            let tx_hash: TxHash = row.try_get("tx_hash").unwrap();
+            let block_hash: BlockHash = row.try_get("block_hash").unwrap();
+            let tx_index: i32 = row.try_get("tx_index").unwrap();
+            let version: i32 = row.try_get("version").unwrap();
+            let transaction_type: TransactionType = row.try_get("transaction_type").unwrap();
+            let transaction_status: TransactionStatus = row.try_get("transaction_status").unwrap();
+            let identity: String = row.try_get("identity").unwrap();
+            let blobs: Vec<(String, Vec<u8>)> = row.try_get("blobs").unwrap();
 
-    for row in rows {
-        let tx_hash: TxHash = row
-            .try_get("tx_hash")
-            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-        let contract_name: String = row
-            .try_get("contract_name")
-            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-        let data: Vec<u8> = row
-            .try_get("data")
-            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-        let blob = Blob {
-            contract_name: ContractName(contract_name),
-            data: BlobData(data),
-        };
+            let blobs = blobs
+                .into_iter()
+                .map(|(contract_name, data)| Blob {
+                    contract_name: ContractName(contract_name),
+                    data: BlobData(data),
+                })
+                .collect();
 
-        if current_tx_hash.is_none() || current_tx_hash.as_ref() != Some(&tx_hash) {
-            if let Some(transaction) = current_transaction.take() {
-                transactions.push(transaction);
+            TransactionWithBlobs {
+                tx_hash,
+                block_hash,
+                tx_index,
+                version,
+                transaction_type,
+                transaction_status,
+                identity,
+                blobs,
             }
+        })
+        .collect();
 
-            current_tx_hash = Some(tx_hash.clone());
-            current_transaction = Some(TransactionWithBlobs {
-                tx_hash: tx_hash.clone(),
-                block_hash: row
-                    .try_get("block_hash")
-                    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?,
-                tx_index: row
-                    .try_get("tx_index")
-                    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?,
-                version: row
-                    .try_get("version")
-                    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?,
-                transaction_type: row
-                    .try_get("transaction_type")
-                    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?,
-                transaction_status: row
-                    .try_get("transaction_status")
-                    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?,
-                identity: row
-                    .try_get("identity")
-                    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?,
-                blobs: Vec::new(),
-            });
-        }
-
-        if let Some(transaction) = &mut current_transaction {
-            transaction.blobs.push(blob);
-        }
-    }
-
-    if let Some(transaction) = current_transaction {
-        transactions.push(transaction);
-    }
     match transactions.len() {
         0 => Err(StatusCode::NOT_FOUND),
         _ => Ok(Json(transactions)),
