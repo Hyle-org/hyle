@@ -152,6 +152,7 @@ pub struct ConsensusStore {
     // FIXME: pub is here for testing
     pub blocks: Vec<Block>,
     pending_cuts: Vec<CutWithTxs>,
+    pending_tx: Vec<Transaction>,
 }
 
 pub struct Consensus {
@@ -1206,7 +1207,7 @@ impl Consensus {
                     height,
                     timestamp: get_current_timestamp(),
                     new_bonded_validators: vec![],
-                    txs: cut.txs,
+                    txs: self.pending_tx.drain(..).collect(),
                 };
                 self.blocks.push(block.clone());
 
@@ -1269,6 +1270,11 @@ impl Consensus {
             MempoolEvent::NewCut(cut) => {
                 debug!("Received a new cut");
                 self.pending_cuts.push(cut);
+                Ok(())
+            },
+            MempoolEvent::NewTx(tx) => {
+                debug!("Received a new cut");
+                self.pending_tx.push(tx);
                 Ok(())
             }
         }
