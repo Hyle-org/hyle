@@ -145,7 +145,7 @@ impl Mempool {
 
     fn handle_event(&mut self, event: ConsensusEvent) {
         match event {
-            ConsensusEvent::CommitBlock {
+            ConsensusEvent::CommitCut {
                 validators, cut, ..
             } => {
                 self.validators = validators;

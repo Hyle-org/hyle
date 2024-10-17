@@ -275,7 +275,7 @@ impl DataAvailability {
 
     async fn handle_consensus_event(&mut self, event: ConsensusEvent) {
         match event {
-            ConsensusEvent::CommitBlock { .. } => {
+            ConsensusEvent::CommitCut { .. } => {
                 // TODO:
                 // info!(
                 //     block_hash = %block.hash(),

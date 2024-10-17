@@ -283,7 +283,7 @@ impl Indexer {
 
     async fn handle_consensus_event(&mut self, event: ConsensusEvent) -> Result<()> {
         match event {
-            ConsensusEvent::CommitBlock { .. } => Ok(()), // TODO: self.handle_block(block).await,
+            ConsensusEvent::CommitCut { .. } => Ok(()), // TODO: self.handle_block(block).await,
         }
     }
 
