@@ -26,8 +26,6 @@ impl Hashable<ConsensusProposalHash> for ConsensusProposal {
         let mut hasher = Sha3_256::new();
         _ = write!(hasher, "{}", self.slot);
         _ = write!(hasher, "{}", self.view);
-        _ = write!(hasher, "{:?}", self.previous_consensus_proposal_hash);
-        _ = write!(hasher, "{:?}", self.previous_commit_quorum_certificate);
         _ = write!(hasher, "{}", self.block);
         return ConsensusProposalHash(hasher.finalize().as_slice().to_owned());
     }
@@ -41,12 +39,10 @@ impl Display for ConsensusProposal {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "Hash: {}, Slot: {}, View: {}, Previous hash: {}, Previous commit hash: {}, Block: {}",
+            "Hash: {}, Slot: {}, View: {}, Block: {}",
             self.hash(),
             self.slot,
             self.view,
-            self.previous_consensus_proposal_hash,
-            self.previous_commit_quorum_certificate.hash(),
             self.block
         )
     }
