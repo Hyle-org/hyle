@@ -5,7 +5,7 @@ use crate::{
     handle_messages,
     mempool::MempoolNetMessage,
     model::{
-        Blob, BlobData, BlobTransaction, ContractName, ProofTransaction,
+        Blob, BlobData, BlobTransaction, ContractName, Fees, ProofTransaction,
         RegisterContractTransaction, SharedRunContext, Transaction,
     },
     rest::client::ApiHttpClient,
@@ -77,6 +77,7 @@ impl MockWorkflowHandler {
         let tx = MempoolNetMessage::NewTx(Transaction {
             version: 1,
             transaction_data: crate::model::TransactionData::Blob(BlobTransaction {
+                fees: Fees::default_test(),
                 identity: Identity("toto".to_string()),
                 blobs: vec![Blob {
                     contract_name: ContractName("test".to_string()),
@@ -98,6 +99,7 @@ impl MockWorkflowHandler {
         };
 
         let tx_blob = BlobTransaction {
+            fees: Fees::default_test(),
             identity: Identity("id".to_string()),
             blobs: vec![Blob {
                 contract_name: ContractName("contract_name".to_string()),

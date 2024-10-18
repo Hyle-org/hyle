@@ -6,7 +6,7 @@ use tokio::time::sleep;
 use hyle::{
     indexer::model::ContractDb,
     model::{
-        Blob, BlobData, BlobReference, BlobTransaction, ContractName, ProofTransaction,
+        Blob, BlobData, BlobReference, BlobTransaction, ContractName, Fees, ProofTransaction,
         RegisterContractTransaction,
     },
     node_state::model::Contract,
@@ -52,6 +52,7 @@ async fn register_contracts(client: &ApiHttpClient) -> Result<()> {
 
 async fn send_blobs_and_proofs(client: &ApiHttpClient) -> Result<()> {
     let blob_tx = BlobTransaction {
+        fees: Fees::default_test(),
         identity: Identity("client".to_string()),
         blobs: vec![Blob {
             contract_name: ContractName("erc20-risc0".to_string()),
@@ -126,6 +127,7 @@ async fn register_test_contracts(client: &ApiHttpClient) -> Result<()> {
 async fn send_test_blobs_and_proofs(client: &ApiHttpClient) -> Result<()> {
     let blob_response = client
         .send_tx_blob(&BlobTransaction {
+            fees: Fees::default_test(),
             identity: Identity("client".to_string()),
             blobs: vec![
                 Blob {

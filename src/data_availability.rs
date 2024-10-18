@@ -451,10 +451,9 @@ impl DataAvailability {
 #[cfg(test)]
 mod tests {
     use crate::model::{
-        Blob, BlobData, BlobTransaction, Block, BlockHash, BlockHeight, ContractName, Hashable,
+        Blob, BlobData, BlobTransaction, Block, BlockHash, BlockHeight, Fees, Hashable,
         Transaction, TransactionData,
     };
-    use hyle_contract_sdk::Identity;
 
     use super::blocks::Blocks;
     use anyhow::Result;
@@ -472,9 +471,10 @@ mod tests {
             txs: vec![Transaction {
                 version: 1,
                 transaction_data: TransactionData::Blob(BlobTransaction {
-                    identity: Identity("tx_id".to_string()),
+                    fees: Fees::default_test(),
+                    identity: "tx_id".into(),
                     blobs: vec![Blob {
-                        contract_name: ContractName("c1".to_string()),
+                        contract_name: "c1".into(),
                         data: BlobData(vec![4, 5, 6]),
                     }],
                 }),

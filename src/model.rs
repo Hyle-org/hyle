@@ -80,6 +80,11 @@ impl From<String> for ContractName {
         ContractName(s)
     }
 }
+impl From<&str> for ContractName {
+    fn from(s: &str) -> Self {
+        ContractName(s.into())
+    }
+}
 
 #[derive(Debug, Serialize, Deserialize, Default, Clone, PartialEq, Eq, Encode, Decode, Hash)]
 pub struct BlobData(pub Vec<u8>);
@@ -137,7 +142,17 @@ pub struct RegisterContractTransaction {
 }
 
 #[derive(Debug, Serialize, Deserialize, Default, PartialEq, Eq, Clone, Encode, Decode, Hash)]
+pub struct Fees {
+    pub payer: Identity,
+    pub amount: u64,
+    pub fee_contract: ContractName,
+    pub identity_contract: ContractName,
+    pub identity_proof: Vec<u8>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Default, PartialEq, Eq, Clone, Encode, Decode, Hash)]
 pub struct BlobTransaction {
+    pub fees: Fees,
     pub identity: Identity,
     pub blobs: Vec<Blob>,
     // FIXME: add a nonce or something to prevent BlobTransaction to share the same hash

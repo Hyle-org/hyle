@@ -39,9 +39,19 @@ impl From<String> for Identity {
         Identity(s)
     }
 }
+impl From<&str> for Identity {
+    fn from(s: &str) -> Self {
+        Identity(s.into())
+    }
+}
 impl From<String> for TxHash {
     fn from(s: String) -> Self {
         Self(s)
+    }
+}
+impl From<&str> for TxHash {
+    fn from(s: &str) -> Self {
+        Self(s.into())
     }
 }
 
