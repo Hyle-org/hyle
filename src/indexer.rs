@@ -22,7 +22,7 @@ use axum::{
 };
 use core::str;
 use futures::{SinkExt, StreamExt};
-use model::{TransactionStatus, TransactionType, TransactionWithBlobs};
+use model::{TransactionStatus, TransactionType, TransactionWithBlobs, TxHashDb};
 use sqlx::types::chrono::DateTime;
 use sqlx::{postgres::PgPoolOptions, PgPool, Pool, Postgres};
 use std::{collections::HashMap, sync::Arc};
@@ -248,7 +248,7 @@ impl Indexer {
         .await?;
 
         for (tx_index, tx) in block.txs.iter().enumerate() {
-            let tx_hash = &tx.hash();
+            let tx_hash: &TxHashDb = &tx.hash().into();
             debug!("tx hash {:?}", tx_hash);
 
             let version = i32::try_from(tx.version)
@@ -464,8 +464,9 @@ impl std::ops::Deref for Indexer {
 
 #[cfg(test)]
 mod test {
-    use crate::model::{Blob, BlobData, BlockHash, TxHash};
+    use crate::model::{Blob, BlobData, BlockHash};
     use axum_test::TestServer;
+    use hyle_contract_sdk::TxHash;
     use std::{
         future::IntoFuture,
         net::{Ipv4Addr, SocketAddr},
@@ -643,7 +644,7 @@ mod test {
                 contract_name: ContractName("contract_1".to_string()),
                 data: BlobData(vec![]),
             }],
-            tx_hash: TxHash::new(""),
+            tx_hash: TxHash::new("").into(),
             block_hash: BlockHash::new(""),
             tx_index: 0,
             version: 1,

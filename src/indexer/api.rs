@@ -1,9 +1,9 @@
-use crate::model::{Blob, BlobData, BlockHash, ContractName, TxHash};
+use crate::model::{Blob, BlobData, BlockHash, ContractName};
 
 use super::{
     model::{
         BlobDb, BlockDb, ContractDb, ContractStateDb, TransactionDb, TransactionStatus,
-        TransactionType, TransactionWithBlobs,
+        TransactionType, TransactionWithBlobs, TxHashDb,
     },
     IndexerState,
 };
@@ -198,7 +198,7 @@ pub async fn get_blob_transactions_by_contract(
     let transactions: Vec<TransactionWithBlobs> = rows
         .into_iter()
         .map(|row| {
-            let tx_hash: TxHash = row.try_get("tx_hash").unwrap();
+            let tx_hash: TxHashDb = row.try_get("tx_hash").unwrap();
             let block_hash: BlockHash = row.try_get("block_hash").unwrap();
             let tx_index: i32 = row.try_get("tx_index").unwrap();
             let version: i32 = row.try_get("version").unwrap();
