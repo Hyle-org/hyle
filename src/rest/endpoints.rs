@@ -2,6 +2,7 @@ use crate::bus::command_response::CmdRespClient;
 use crate::bus::BusClientSender;
 use crate::bus::BusMessage;
 use crate::consensus::staking::Staker;
+use crate::model::ProofData;
 use crate::model::Transaction;
 use crate::model::{BlobTransaction, ContractName};
 use crate::model::{Hashable, ProofTransaction, RegisterContractTransaction, TransactionData};
@@ -109,8 +110,13 @@ pub async fn send_blob_transaction(
 
 pub async fn send_proof_transaction(
     State(state): State<RouterState>,
-    Json(payload): Json<ProofTransaction>,
+    Json(mut payload): Json<ProofTransaction>,
 ) -> Result<impl IntoResponse, StatusCode> {
+    let proof_bytes = payload
+        .proof
+        .to_bytes()
+        .map_err(|_| StatusCode::BAD_REQUEST)?;
+    payload.proof = ProofData::Bytes(proof_bytes);
     handle_send(state, TransactionData::Proof(payload)).await
 }
 

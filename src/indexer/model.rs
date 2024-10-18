@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::types::chrono::NaiveDateTime;
 use sqlx::{prelude::Type, Postgres};
 
-use crate::model::BlockHash;
+use crate::model::{Blob, BlockHash};
 use hyle_contract_sdk::TxHash;
 
 #[derive(Debug, sqlx::FromRow, Serialize, Deserialize)]
@@ -15,7 +15,7 @@ pub struct BlockDb {
     pub timestamp: NaiveDateTime, // UNIX timestamp
 }
 
-#[derive(Debug, sqlx::Type, Serialize, Deserialize)]
+#[derive(Debug, sqlx::Type, Serialize, Deserialize, Clone, PartialEq)]
 #[sqlx(type_name = "transaction_type", rename_all = "snake_case")]
 pub enum TransactionType {
     BlobTransaction,
@@ -23,7 +23,7 @@ pub enum TransactionType {
     RegisterContractTransaction,
 }
 
-#[derive(Debug, sqlx::Type, Serialize, Deserialize)]
+#[derive(Debug, sqlx::Type, Serialize, Deserialize, Clone, PartialEq)]
 #[sqlx(type_name = "transaction_status", rename_all = "snake_case")]
 pub enum TransactionStatus {
     Success,
@@ -40,6 +40,18 @@ pub struct TransactionDb {
     pub version: u32, // Transaction version
     pub transaction_type: TransactionType, // Type of transaction
     pub transaction_status: TransactionStatus, // Status of the transaction
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct TransactionWithBlobs {
+    pub tx_hash: TxHashDb,
+    pub block_hash: BlockHash,
+    pub tx_index: i32,
+    pub version: i32,
+    pub transaction_type: TransactionType,
+    pub transaction_status: TransactionStatus,
+    pub identity: String,
+    pub blobs: Vec<Blob>,
 }
 
 #[derive(Debug, sqlx::FromRow, Serialize, Deserialize)]
@@ -90,7 +102,7 @@ pub struct ContractStateDb {
     pub state_digest: Vec<u8>, // The contract state stored in JSON format
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct TxHashDb(pub TxHash);
 
 impl From<TxHash> for TxHashDb {

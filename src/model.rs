@@ -1,6 +1,7 @@
 //! Various data structures
 
 use axum::Router;
+use base64::prelude::*;
 use bincode::{Decode, Encode};
 use derive_more::Display;
 use hyle_contract_sdk::{BlobIndex, Identity, StateDigest, TxHash};
@@ -104,10 +105,32 @@ impl Default for TransactionData {
     }
 }
 
+#[derive(Serialize, Deserialize, PartialEq, Eq, Clone, Encode, Decode, Hash)]
+#[serde(untagged)]
+pub enum ProofData {
+    Base64(String),
+    Bytes(Vec<u8>),
+}
+
+impl Default for ProofData {
+    fn default() -> Self {
+        ProofData::Bytes(Vec::new())
+    }
+}
+
+impl ProofData {
+    pub fn to_bytes(&self) -> Result<Vec<u8>, base64::DecodeError> {
+        match self {
+            ProofData::Base64(s) => BASE64_STANDARD.decode(s),
+            ProofData::Bytes(b) => Ok(b.clone()),
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Default, PartialEq, Eq, Clone, Encode, Decode, Hash)]
 pub struct ProofTransaction {
     pub blobs_references: Vec<BlobReference>,
-    pub proof: Vec<u8>,
+    pub proof: ProofData,
 }
 
 impl fmt::Debug for ProofTransaction {
@@ -115,7 +138,10 @@ impl fmt::Debug for ProofTransaction {
         f.debug_struct("ProofTransaction")
             .field("blobs_references", &self.blobs_references)
             .field("proof", &"[HIDDEN]")
-            .field("proof_len", &self.proof.len())
+            .field(
+                "proof_len",
+                &self.proof.to_bytes().unwrap_or_default().len(),
+            )
             .finish()
     }
 }
@@ -289,7 +315,10 @@ impl Hashable<TxHash> for ProofTransaction {
             _ = write!(hasher, "{}", blob_ref.blob_tx_hash);
             _ = write!(hasher, "{}", blob_ref.blob_index);
         }
-        hasher.update(self.proof.clone());
+        match self.proof.clone() {
+            ProofData::Base64(v) => hasher.update(v),
+            ProofData::Bytes(vec) => hasher.update(vec),
+        }
         let hash_bytes = hasher.finalize();
         TxHash(hex::encode(hash_bytes))
     }
