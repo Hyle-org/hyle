@@ -218,9 +218,7 @@ impl Mempool {
 
         self.storage.add_missing_cars(validator, missing_cars);
 
-        let mut waiting_proposals = self.storage.get_waiting_proposals(validator);
-        waiting_proposals.sort_by_key(|wp| wp.pos);
-
+        let waiting_proposals = self.storage.get_waiting_proposals(validator);
         for wp in waiting_proposals {
             if let Err(e) = self.on_data_proposal(validator, wp).await {
                 error!("{:?}", e);
