@@ -44,25 +44,21 @@ impl MempoolMetrics {
         self.in_memory_tx
             .record(nb as u64, &[KeyValue::new("status", "pending")])
     }
-    pub fn snapshot_batched_tx(&self, nb: usize) {
-        self.in_memory_tx
-            .record(nb as u64, &[KeyValue::new("status", "batch")])
-    }
     pub fn add_broadcasted_tx(&self, kind: String) {
         self.broadcasted_tx.add(1, &[KeyValue::new("kind", kind)])
     }
     pub fn add_batch(&self) {
         self.batches.add(1, &[])
     }
-    pub fn add_broadcasted_data_proposal(&self, kind: String) {
+    pub fn add_broadcasted_car_proposal(&self, kind: String) {
         self.broadcasted_data_proposal
             .add(1, &[KeyValue::new("kind", kind)])
     }
-    pub fn add_broadcasted_data_proposal_only_for(&self, kind: String) {
+    pub fn add_broadcasted_car_proposal_only_for(&self, kind: String) {
         self.broadcasted_data_proposal_only_for
             .add(1, &[KeyValue::new("kind", kind)])
     }
-    pub fn add_sent_data_vote(&self, kind: String) {
+    pub fn add_sent_proposal_vote(&self, kind: String) {
         self.sent_data_vote.add(1, &[KeyValue::new("kind", kind)])
     }
     pub fn add_sent_sync_request(&self, kind: String) {

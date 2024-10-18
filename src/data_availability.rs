@@ -6,6 +6,7 @@ use crate::{
     bus::{bus_client, BusMessage, SharedMessageBus},
     consensus::ConsensusEvent,
     handle_messages,
+    mempool::{CutWithTxs, MempoolEvent},
     model::{
         get_current_timestamp, Block, BlockHash, BlockHeight, Hashable, SharedRunContext,
         ValidatorPublicKey,
@@ -68,6 +69,7 @@ struct DABusClient {
     receiver(ConsensusEvent),
     receiver(DataNetMessage),
     receiver(PeerEvent),
+    receiver(MempoolEvent),
 }
 }
 
@@ -88,6 +90,7 @@ pub struct DataAvailability {
     bus: DABusClient,
     pub blocks: Blocks,
 
+    pending_cuts: Vec<CutWithTxs>,
     buffered_blocks: BTreeSet<Block>,
     self_pubkey: ValidatorPublicKey,
     asked_last_block: bool,
@@ -125,6 +128,7 @@ impl Module for DataAvailability {
             config: ctx.common.config.clone(),
             bus,
             blocks: Blocks::new(&db)?,
+            pending_cuts: Vec::new(),
             buffered_blocks,
             self_pubkey,
             asked_last_block: false,
@@ -149,6 +153,13 @@ impl DataAvailability {
 
         handle_messages! {
             on_bus self.bus,
+            listen<MempoolEvent> cmd => {
+                match cmd {
+                    MempoolEvent::NewCut(cut) => {
+                        self.handle_new_cut_event(cut).await;
+                    }
+                }
+            }
             listen<ConsensusEvent> cmd => {
                 self.handle_consensus_event(cmd).await;
             }
@@ -266,14 +277,43 @@ impl DataAvailability {
         Ok(())
     }
 
+    async fn handle_new_cut_event(&mut self, cut: CutWithTxs) {
+        // TODO:
+        self.pending_cuts.push(cut);
+    }
+
     async fn handle_consensus_event(&mut self, event: ConsensusEvent) {
         match event {
-            ConsensusEvent::CommitBlock { block, .. } => {
-                info!(
-                    block_hash = %block.hash(),
-                    block_height = %block.height,
-                    "🔒  Block committed");
-                self.handle_block(block).await;
+            ConsensusEvent::CommitCut { cut, validators } => {
+                if cut.is_empty() {
+                    return;
+                }
+                info!("🔒  Cut committed");
+                if let Some(pos) = self
+                    .pending_cuts
+                    .iter()
+                    .position(|pending| pending.tips == cut)
+                {
+                    let cut = self.pending_cuts.remove(pos);
+
+                    let last_block = self.blocks.last();
+                    let parent_hash = last_block
+                        .as_ref()
+                        .map(|b| b.hash())
+                        .unwrap_or(BlockHash::new("000"));
+                    let parent_height = last_block.map(|b| b.height).unwrap_or_default();
+
+                    self.handle_block(Block {
+                        parent_hash,
+                        height: parent_height + 1,
+                        timestamp: get_current_timestamp(),
+                        new_bonded_validators: validators,
+                        txs: cut.txs,
+                    })
+                    .await;
+                } else {
+                    error!("Committed cut not found in pending cuts");
+                }
             }
         }
     }
