@@ -20,6 +20,7 @@ use metrics::MempoolMetrics;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashSet, sync::Arc};
 use storage::ProposalVerdict;
+use strum_macros::IntoStaticStr;
 use tracing::{debug, error, info, warn};
 
 mod metrics;
@@ -45,7 +46,7 @@ pub struct Mempool {
     validators: Vec<ValidatorPublicKey>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, Eq, PartialEq)]
+#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, Eq, PartialEq, IntoStaticStr)]
 pub enum MempoolNetMessage {
     NewTx(Transaction),
     DataProposal(DataProposal),
@@ -158,7 +159,7 @@ impl Mempool {
             Ok(true) => {
                 let validator = msg.validators.first().unwrap();
                 match msg.msg {
-                    MempoolNetMessage::NewTx(tx) => self.on_new_tx(tx).await,
+                    MempoolNetMessage::NewTx(tx) => self.on_new_tx(tx),
                     MempoolNetMessage::DataProposal(data_proposal) => {
                         if let Err(e) = self.on_data_proposal(validator, data_proposal).await {
                             error!("{:?}", e);
@@ -193,10 +194,10 @@ impl Mempool {
     async fn handle_api_message(&mut self, command: RestApiMessage) {
         match command {
             RestApiMessage::NewTx(tx) => {
-                self.on_new_tx(tx.clone()).await;
+                self.on_new_tx(tx.clone());
                 // hacky stuff waiting for staking contract: do not broadcast stake txs
                 if !matches!(tx.transaction_data, TransactionData::Stake(_)) {
-                    self.broadcast_tx(tx).await.ok();
+                    self.broadcast_tx(tx).ok();
                 }
             }
         }
@@ -245,7 +246,7 @@ impl Mempool {
         match missing_cars {
             None => info!("{} no missing cars", self.storage.id),
             Some(cars) => {
-                if let Err(e) = self.send_sync_reply(validator, cars).await {
+                if let Err(e) = self.send_sync_reply(validator, cars) {
                     error!("{:?}", e)
                 }
             }
@@ -280,14 +281,13 @@ impl Mempool {
         match self.storage.new_data_proposal(validator, &data_proposal)? {
             ProposalVerdict::Vote => {
                 // Normal case, we receive a proposal we already have the parent in store
-                self.send_vote(validator, data_proposal).await
+                self.send_vote(validator, data_proposal)
             }
             ProposalVerdict::Wait(last_index) => {
                 //We dont have the parent, so we craft a sync demand
                 debug!("Emitting sync request with local state {} last_available_index {:?} and data_proposal {}", self.storage, last_index, data_proposal);
 
                 self.send_sync_request(validator, data_proposal, last_index)
-                    .await
             }
         }
     }
@@ -305,7 +305,7 @@ impl Mempool {
             parent_poa: poa,
         };
 
-        if let Err(e) = self.broadcast_data_proposal(data_proposal).await {
+        if let Err(e) = self.broadcast_data_proposal(data_proposal) {
             error!("{:?}", e);
         }
     }
@@ -353,7 +353,7 @@ impl Mempool {
         }
     }
 
-    async fn on_new_tx(&mut self, tx: Transaction) {
+    fn on_new_tx(&mut self, tx: Transaction) {
         debug!("Got new tx {}", tx.hash());
         self.metrics.add_api_tx("blob".to_string());
         self.storage.accumulate_tx(tx.clone());
@@ -361,29 +361,19 @@ impl Mempool {
             .snapshot_pending_tx(self.storage.pending_txs.len());
     }
 
-    async fn broadcast_tx(&mut self, tx: Transaction) -> Result<()> {
+    fn broadcast_tx(&mut self, tx: Transaction) -> Result<()> {
         self.metrics.add_broadcasted_tx("blob".to_string());
-        _ = self
-            .bus
-            .send(OutboundMessage::broadcast(
-                self.sign_net_message(MempoolNetMessage::NewTx(tx))?,
-            ))
-            .context("broadcasting tx")?;
+        self.broadcast_net_message(MempoolNetMessage::NewTx(tx))?;
         Ok(())
     }
 
-    async fn broadcast_data_proposal(&mut self, data_proposal: DataProposal) -> Result<()> {
+    fn broadcast_data_proposal(&mut self, data_proposal: DataProposal) -> Result<()> {
         if self.validators.is_empty() {
             return Ok(());
         }
         self.metrics
             .add_broadcasted_data_proposal("blob".to_string());
-        _ = self
-            .bus
-            .send(OutboundMessage::broadcast(self.sign_net_message(
-                MempoolNetMessage::DataProposal(data_proposal),
-            )?))
-            .log_error("broadcasting data_proposal");
+        self.broadcast_net_message(MempoolNetMessage::DataProposal(data_proposal))?;
         Ok(())
     }
 
@@ -404,53 +394,68 @@ impl Mempool {
         Ok(())
     }
 
-    async fn send_vote(
+    fn send_vote(
         &mut self,
         validator: &ValidatorPublicKey,
         data_proposal: DataProposal,
     ) -> Result<()> {
         self.metrics.add_sent_data_vote("blob".to_string());
-        _ = self
-            .bus
-            .send(OutboundMessage::send(
-                validator.clone(),
-                self.sign_net_message(MempoolNetMessage::DataVote(data_proposal))?,
-            ))
-            .log_error("broadcasting data_vote");
+        self.send_net_message(
+            validator.clone(),
+            MempoolNetMessage::DataVote(data_proposal),
+        )?;
         Ok(())
     }
 
-    async fn send_sync_request(
+    fn send_sync_request(
         &mut self,
         validator: &ValidatorPublicKey,
         data_proposal: DataProposal,
         last_index: Option<usize>,
     ) -> Result<()> {
         self.metrics.add_sent_sync_request("blob".to_string());
-        _ = self
-            .bus
-            .send(OutboundMessage::send(
-                validator.clone(),
-                self.sign_net_message(MempoolNetMessage::SyncRequest(data_proposal, last_index))?,
-            ))
-            .log_error("broadcasting sync_request");
+        self.send_net_message(
+            validator.clone(),
+            MempoolNetMessage::SyncRequest(data_proposal, last_index),
+        )?;
         Ok(())
     }
 
-    async fn send_sync_reply(
-        &mut self,
-        validator: &ValidatorPublicKey,
-        cars: Vec<Car>,
-    ) -> Result<()> {
+    fn send_sync_reply(&mut self, validator: &ValidatorPublicKey, cars: Vec<Car>) -> Result<()> {
         // cleanup previously tracked sent sync request
         self.metrics.add_sent_sync_reply("blob".to_string());
+        self.send_net_message(validator.clone(), MempoolNetMessage::SyncReply(cars))?;
+        Ok(())
+    }
+
+    #[inline(always)]
+    fn broadcast_net_message(&mut self, net_message: MempoolNetMessage) -> Result<()> {
+        let signed_msg = self.sign_net_message(net_message)?;
+        let enum_variant_name: &'static str = (&signed_msg.msg).into();
+        self.bus
+            .send(OutboundMessage::broadcast(signed_msg))
+            .context(format!(
+                "Broadcasting MempoolNetMessage::{} msg on the bus",
+                enum_variant_name
+            ))?;
+        Ok(())
+    }
+
+    #[inline(always)]
+    fn send_net_message(
+        &mut self,
+        to: ValidatorPublicKey,
+        net_message: MempoolNetMessage,
+    ) -> Result<()> {
+        let signed_msg = self.sign_net_message(net_message)?;
+        let enum_variant_name: &'static str = (&signed_msg.msg).into();
         _ = self
             .bus
-            .send(OutboundMessage::send(
-                validator.clone(),
-                self.sign_net_message(MempoolNetMessage::SyncReply(cars))?,
-            ))
-            .log_error("broadcasting sync_reply");
+            .send(OutboundMessage::send(to, signed_msg))
+            .context(format!(
+                "Sending MempoolNetMessage::{} msg on the bus",
+                enum_variant_name
+            ))?;
         Ok(())
     }
 

@@ -1,5 +1,5 @@
 use assert_cmd::prelude::*;
-use hyle::utils::conf::{Conf, Consensus};
+use hyle::utils::conf::Conf;
 use std::process::{Child, Command};
 use tempfile::TempDir;
 
