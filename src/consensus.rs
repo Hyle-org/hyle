@@ -1,17 +1,13 @@
 //! Handles all consensus logic up to block commitment.
-
 use anyhow::{anyhow, bail, Context, Error, Result};
 use bincode::{Decode, Encode};
 use metrics::ConsensusMetrics;
 use serde::{Deserialize, Serialize};
 use staking::{Stake, Staker, Staking};
 use std::{
-    collections::{HashMap, HashSet},
-    default::Default,
-    path::PathBuf,
-    time::Duration,
+    cmp::max, collections::{HashMap, HashSet}, default::Default, path::PathBuf, time::Duration
 };
-use tokio::{sync::broadcast, time::sleep};
+use tokio::{sync::broadcast, time::{interval, sleep}};
 use tracing::{debug, info, warn};
 
 use crate::{
@@ -27,11 +23,7 @@ use crate::{
         P2PCommand,
     },
     utils::{
-        conf::SharedConf,
-        crypto::{BlstCrypto, SharedBlstCrypto},
-        logger::LogMe,
-        modules::Module,
-        static_type_map::Pick,
+        conf::SharedConf, crypto::{BlstCrypto, SharedBlstCrypto}, logger::LogMe, modules::Module, static_type_map::Pick,
     },
 };
 
@@ -42,15 +34,30 @@ pub mod module;
 pub mod staking;
 pub mod utils;
 
+// A Ticket is necessary to send a valid prepare
+#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, PartialEq, Eq, Hash)]
+pub enum Ticket {
+    CommitQC(CommitQuorumCertificate),
+    TC(TimeoutCertificate)
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, PartialEq, Eq, Hash)]
+pub struct CommitQuorumCertificate(ConsensusProposalHash, QuorumCertificate);
+
+#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, PartialEq, Eq, Hash)]
+pub struct TimeoutCertificate(Slot, View, QuorumCertificate);
+
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, PartialEq, Eq, Hash, IntoStaticStr)]
 pub enum ConsensusNetMessage {
     StartNewSlot,
-    Prepare(ConsensusProposal),
+    Prepare(ConsensusProposal, Ticket),
     PrepareVote(ConsensusProposalHash),
     Confirm(ConsensusProposalHash, QuorumCertificate),
     ConfirmAck(ConsensusProposalHash),
-    Commit(ConsensusProposalHash, QuorumCertificate),
+    Commit(CommitQuorumCertificate),
     ValidatorCandidacy(ValidatorCandidacy),
+    Timeout(Slot, View, ConsensusProposalHash),
+    TimeoutCertificate(TimeoutCertificate),
 }
 
 #[derive(Encode, Decode, Default, Debug)]
@@ -67,6 +74,7 @@ pub enum ConsensusCommand {
     NewStaker(Staker),
     NewBonded(ValidatorPublicKey),
     StartNewSlot,
+    TimeoutTick,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -88,13 +96,53 @@ pub struct ValidatorCandidacy {
     peer_address: String,
 }
 
+#[derive(Debug, Encode, Decode, Default)]
+enum ConsensusTimeoutState {
+    #[default]
+    // Initial state
+    Inactive,
+    // A new slot was created, and its timeout is scheduled
+    Scheduled {
+        timestamp: u64,
+    },
+}
+
+impl ConsensusTimeoutState {
+    pub const TIMEOUT_SECS: u64 = 10;
+    pub fn schedule_next(&mut self, timestamp: u64) -> Result<()> {
+        match self {
+            ConsensusTimeoutState::Inactive => {
+                info!("⏲️ Scheduling timeout");
+            }
+            ConsensusTimeoutState::Scheduled { .. } => {
+                info!("⏲️ Rescheduling timeout");
+            }
+        }
+        *self = ConsensusTimeoutState::Scheduled {
+            timestamp: timestamp + ConsensusTimeoutState::TIMEOUT_SECS,
+        };
+        Ok(())
+    }
+    pub fn cancel(&mut self) -> Result<()> {
+        match self {
+            ConsensusTimeoutState::Scheduled { timestamp: _ } => {
+                *self = ConsensusTimeoutState::Inactive;
+                Ok(())
+            }
+            els => {
+                bail!("Consensus Timeout cannot be cancelled ({:?})", els);
+            }
+        }
+    }
+}
+
 // TODO: move struct to model.rs ?
 #[derive(Encode, Decode, Default)]
 pub struct BFTRoundState {
     consensus_proposal: ConsensusProposal,
+    step: Step,
     slot: Slot,
     view: View,
-    step: Step,
     leader_index: u64,
     leader_pubkey: ValidatorPublicKey,
     staking: Staking,
@@ -102,6 +150,11 @@ pub struct BFTRoundState {
     prepare_quorum_certificate: QuorumCertificate,
     confirm_ack: HashSet<Signed<ConsensusNetMessage, ValidatorPublicKey>>,
     commit_quorum_certificates: HashMap<Slot, (ConsensusProposalHash, QuorumCertificate)>,
+    //
+    timeout_requests:
+        HashMap<Slot, HashMap<View, HashSet<Signed<ConsensusNetMessage, ValidatorPublicKey>>>>,
+    timeout_certificates: HashMap<Slot, HashMap<View, QuorumCertificate>>,
+    timeout_state: ConsensusTimeoutState,
 }
 
 #[derive(Serialize, Deserialize, Encode, Decode, Default, Debug, Clone, PartialEq, Eq, Hash)]
@@ -117,12 +170,10 @@ pub type View = u64;
 #[derive(Debug, Clone, Default, Serialize, Deserialize, Encode, Decode, PartialEq, Eq, Hash)]
 pub struct ConsensusProposal {
     slot: Slot,
-    view: u64,
+    view: View,
     next_leader: u64,
     cut_lanes: Cut,
-    previous_consensus_proposal_hash: ConsensusProposalHash,
-    previous_commit_quorum_certificate: QuorumCertificate,
-    block: Block, // FIXME: Block ou cut ?
+    block: Block, // FIXME: cut = list of tips = list of hashes of batches of lanes
     /// Validators for current slot
     validators: Vec<ValidatorPublicKey>, // TODO use ID instead of pubkey ?
     new_bonded_validators: Vec<NewValidatorCandidate>,
@@ -184,8 +235,6 @@ impl Consensus {
     /// includes previous validators and add the candidates
     fn create_consensus_proposal(
         &mut self,
-        previous_consensus_proposal_hash: ConsensusProposalHash,
-        previous_commit_quorum_certificate: QuorumCertificate,
     ) -> Result<(), Error> {
         let last_block = self.blocks.last();
 
@@ -224,8 +273,6 @@ impl Consensus {
             view: self.bft_round_state.view,
             next_leader: (self.bft_round_state.leader_index + 1) % validators.len() as u64,
             cut_lanes: cut.tips,
-            previous_consensus_proposal_hash,
-            previous_commit_quorum_certificate,
             validators,
             new_bonded_validators: self.new_validators_candidates.drain(..).collect(),
             block,
@@ -268,8 +315,6 @@ impl Consensus {
             view: self.bft_round_state.view,
             next_leader: 1,
             cut_lanes: Cut::default(),
-            previous_consensus_proposal_hash: ConsensusProposalHash(vec![]),
-            previous_commit_quorum_certificate: QuorumCertificate::default(),
             validators,
             new_bonded_validators: vec![],
             block: first_block,
@@ -346,6 +391,11 @@ impl Consensus {
         if let Some(file) = &self.file {
             Self::save_on_disk(file.as_path(), &self.store)?;
         }
+
+        // Schedule timeout
+        self.bft_round_state
+            .timeout_state
+            .schedule_next(get_current_timestamp())?;
 
         Ok(())
     }
@@ -465,47 +515,68 @@ impl Consensus {
         Ok(())
     }
 
-    fn start_new_slot(&mut self) -> Result<(), Error> {
+    fn start_new_slot(&mut self, ticket: Option<Ticket>) -> Result<()> {
         // Message received by leader.
         let mut new_validators = self.new_validators_candidates.clone();
         new_validators.retain(|c| !self.bft_round_state.staking.is_bonded(&c.pubkey));
         self.new_validators_candidates = new_validators;
-        
-        // Verifies that previous slot received a *Commit* Quorum Certificate.
-        match self
-            .bft_round_state
-            .commit_quorum_certificates
-            .get(&(self.bft_round_state.slot.saturating_sub(1)))
-        {
-            Some((previous_consensus_proposal_hash, previous_commit_quorum_certificate)) => {
-                info!(
-                    "🚀 Starting new slot {} with {} existing validators and {} candidates",
-                    self.bft_round_state.slot,
-                    self.bft_round_state.consensus_proposal.validators.len(),
-                    self.new_validators_candidates.len()
-                );
-                // Creates ConsensusProposal
-                self.create_consensus_proposal(
-                    previous_consensus_proposal_hash.clone(),
-                    previous_commit_quorum_certificate.clone(),
-                )?;
 
-                self.metrics.start_new_slot("consensus_proposal");
-            }
-            None if self.bft_round_state.slot == 0 => {
-                info!(
-                    "🚀 Starting genesis slot with all known {} validators ",
-                    self.genesis_pubkeys.len(),
-                );
-                self.create_genesis_consensus_proposal();
-                self.metrics.start_new_slot("genesis");
-            }
-            None => {
-                self.metrics
-                    .start_new_slot_error("previous_commit_qc_not_found");
-                bail!("Can't start new slot: previous commit quorum certificate not found")
-            }
-        };
+        let mut ticket: Option<Ticket> = ticket;
+
+        // If no ticket was provided, we try to craft one from locally stored certificates
+        if ticket.is_none() {
+            // Verifies that previous slot received a *Commit* Quorum Certificate.
+            match self
+                .bft_round_state
+                .commit_quorum_certificates
+                .get(&(self.bft_round_state.slot.saturating_sub(1)))
+            {
+                Some((previous_consensus_proposal_hash, previous_commit_quorum_certificate)) => {
+                    info!(
+                        "🚀 Starting new slot {} with {} existing validators and {} candidates",
+                        self.bft_round_state.slot,
+                        self.bft_round_state.consensus_proposal.validators.len(),
+                        self.new_validators_candidates.len()
+                    );
+                
+                    ticket = Some(
+                        Ticket::CommitQC(
+                            CommitQuorumCertificate(
+                                previous_consensus_proposal_hash.clone(), 
+                                previous_commit_quorum_certificate.clone()
+                            )
+                        )
+                    );
+                
+                    // Creates ConsensusProposal
+                    self.create_consensus_proposal()?;
+                    self.metrics.start_new_slot("consensus_proposal");
+                }
+                None if self.bft_round_state.slot == 0 => {
+                    info!(
+                        "🚀 Starting genesis slot with all known {} validators ",
+                        self.genesis_pubkeys.len(),
+                    );
+                
+                    ticket = Some(
+                        Ticket::CommitQC(
+                            CommitQuorumCertificate(
+                                ConsensusProposalHash(vec![]),
+                                QuorumCertificate::default()
+                            )
+                        )
+                    );
+                
+                    self.create_genesis_consensus_proposal();
+                    self.metrics.start_new_slot("genesis");
+                }
+                None => {
+                    self.metrics
+                        .start_new_slot_error("previous_commit_qc_not_found");
+                    bail!("Can't start new slot: previous commit quorum certificate not found")
+                }
+            };
+        }
 
         // Verifies that to-be-built block is large enough (?)
 
@@ -520,7 +591,7 @@ impl Consensus {
         );
         self.bft_round_state.step = Step::PrepareVote;
         self.broadcast_net_message(
-            ConsensusNetMessage::Prepare(self.bft_round_state.consensus_proposal.clone()),
+            ConsensusNetMessage::Prepare(self.bft_round_state.consensus_proposal.clone(), ticket.context("Missing ticket while sending Prepare msg")?),
         )?;
 
         Ok(())
@@ -622,20 +693,17 @@ impl Consensus {
         Ok(())
     }
 
-    fn handle_net_message(
-        &mut self,
-        msg: &SignedWithKey<ConsensusNetMessage>,
-    ) -> Result<(), Error> {
-        if !BlstCrypto::verify(msg)? {
+    fn handle_net_message(&mut self, msg: &SignedWithKey<ConsensusNetMessage>) -> Result<()> {
+       if !BlstCrypto::verify(msg)? {
             self.metrics.signature_error("prepare");
             bail!("Invalid signature for message {:?}", msg);
         }
 
         match &msg.msg {
             // TODO: do we really get a net message for StartNewSlot ?
-            ConsensusNetMessage::StartNewSlot => self.start_new_slot(),
-            ConsensusNetMessage::Prepare(consensus_proposal) => {
-                self.on_prepare(msg, consensus_proposal)
+            ConsensusNetMessage::StartNewSlot => self.start_new_slot(None),
+            ConsensusNetMessage::Prepare(consensus_proposal, ticket) => {
+                self.on_prepare(msg, consensus_proposal, ticket)
             }
             ConsensusNetMessage::PrepareVote(consensus_proposal_hash) => {
                 self.on_prepare_vote(msg, consensus_proposal_hash)
@@ -646,8 +714,14 @@ impl Consensus {
             ConsensusNetMessage::ConfirmAck(consensus_proposal_hash) => {
                 self.on_confirm_ack(msg, consensus_proposal_hash)
             }
-            ConsensusNetMessage::Commit(consensus_proposal_hash, commit_quorum_certificate) => {
-                self.on_commit(consensus_proposal_hash, commit_quorum_certificate)
+            ConsensusNetMessage::Commit(CommitQuorumCertificate(hash, cert)) => {
+                self.on_commit(hash, cert)
+            }
+            ConsensusNetMessage::Timeout(slot, view, consensus_proposal_hash) => {
+                self.on_timeout(msg, slot, view, consensus_proposal_hash)
+            }
+            ConsensusNetMessage::TimeoutCertificate(TimeoutCertificate(slot, view, certificate)) => {
+                self.on_timeout_certificate(view, slot, certificate)
             }
             ConsensusNetMessage::ValidatorCandidacy(candidacy) => {
                 self.on_validator_candidacy(msg, candidacy)
@@ -655,11 +729,199 @@ impl Consensus {
         }
     }
 
+    fn on_timeout_certificate(&mut self, view: &View, slot: &Slot, certificate: &QuorumCertificate) -> Result<()> {
+        // Wrong view
+        if *view < self.bft_round_state.view {
+            bail!("Received timeout message for an obsolete view {}", view);
+        }
+
+        if *slot < self.bft_round_state.slot {
+            bail!("Received timeout message for an obsolete slot {}", slot);
+        }
+
+        let previous_timeout_certificate_with_message = SignedWithKey {
+            msg: ConsensusNetMessage::Timeout(
+                self.bft_round_state.slot,
+                self.bft_round_state.view,
+                self.bft_round_state.consensus_proposal.hash(),
+            ),
+            signature: certificate.signature.clone(),
+            validators: certificate.validators.clone(),
+        };
+        
+        // Verify valid signature
+        match BlstCrypto::verify(
+            &previous_timeout_certificate_with_message,
+        ) {
+            Ok(res) if !res => {
+                self.metrics
+                    .prepare_error("previous_timeout_cert_invalid");
+                bail!("Previous Timeout Certificate is invalid")
+            }
+            Ok(_) => {
+                info!("Timeout certificate is valid");
+            }
+            Err(err) => {
+                self.metrics.prepare_error("bls_failure");
+                bail!(
+                    "Previous Timeout Certificate verification failed: {}",
+                    err
+                );
+            }
+        }
+
+        self.bft_round_state
+            .timeout_certificates
+            .entry(*slot)
+            .or_default()
+            .insert(*view, certificate.clone());
+
+        self.bft_round_state.slot = *slot;
+        self.bft_round_state.view = view + 1;
+
+        if self.is_next_leader() {
+            // Send Prepare message to all validators
+            self.start_new_slot(
+                Some(
+                    Ticket::TC(
+                        TimeoutCertificate(
+                            self.bft_round_state.slot,
+                            self.bft_round_state.view,
+                            certificate.clone() 
+                        )
+                    )
+                )
+            )?;
+        } else if !self.is_part_of_consensus(self.crypto.validator_pubkey()) {
+            self.send_candidacy()?;
+        }
+
+        Ok(())
+    }
+
+    fn on_timeout(&mut self, received_msg: &SignedWithKey<ConsensusNetMessage>, view: &View, slot: &Slot, received_consensus_proposal_hash: &ConsensusProposalHash) -> Result<()> {
+        // Only timeout if it is in consensus
+
+        debug!(
+            "timeout message received for slot {} and view {}",
+            slot, view
+        );
+
+        if self.is_part_of_consensus(self.crypto.validator_pubkey()) {
+            // Wrong view
+            if *view < self.bft_round_state.view {
+                bail!("Received timeout message for an obsolete view {}", view);
+            }
+
+            // return commit if present
+            if let Some((consensus_proposal_hash, commit_qc)) =
+                self.bft_round_state.commit_quorum_certificates.get(slot)
+            {
+                return self.send_net_message(
+                    // TODO ? Create a simple struct with unique validator
+                    received_msg.validators.first().context("No validator found in message! Can't send a commit to anyone")?.clone(),
+                    ConsensusNetMessage::Commit(
+                        CommitQuorumCertificate(
+                            consensus_proposal_hash.clone(),
+                            commit_qc.clone(),
+                        )
+                    )
+                );
+            }
+
+            let f: usize = self.bft_round_state.consensus_proposal.validators.len() / 3;
+
+            // Save Timeout. Ends if the message already has been processed
+            let timeout_requests_of_same_view = &mut self
+                .store
+                .bft_round_state
+                .timeout_requests
+                .entry(*slot)
+                .or_default()
+                .entry(*view)
+                .or_default();
+
+
+            // Insert timeout request and if already present notify
+            if !timeout_requests_of_same_view.insert(received_msg.clone()) {
+                // self.metrics.timeout_request("already_processed");
+                info!("Timeout has already been processed");
+                return Ok(());
+            }
+
+            let len = timeout_requests_of_same_view.len();
+
+            // Count requests and if f+1 requests, join the mutiny
+            if len == f + 1 {
+                // Broadcast a timeout message
+                return self.broadcast_net_message(ConsensusNetMessage::Timeout(
+                    *slot,
+                    *view,
+                    received_consensus_proposal_hash.clone(),
+                ));
+            }
+
+            // Create TC if applicable
+            if len == max(1, 2 * f) {
+                // Get all signatures received and change ValidatorId for ValidatorPubKey
+                let aggregates: &Vec<&Signed<ConsensusNetMessage, ValidatorPublicKey>> =
+                    &self
+                        .bft_round_state
+                        .timeout_requests
+                        .get(slot)
+                        .unwrap()
+                        .get(view)
+                        .unwrap()
+                        .iter()
+                        .collect();
+
+                let consensus_proposal_hash =
+                    &self.bft_round_state.consensus_proposal.hash();
+
+                // Aggregates them into a Timeout Certificate
+                let timeout_signed_aggregation = self.crypto.sign_aggregate(
+                    ConsensusNetMessage::Timeout(
+                        *slot,
+                        *view,
+                        consensus_proposal_hash.clone(),
+                    ),
+                    aggregates.as_slice(),
+                )?;
+
+                // self.metrics.timeout_certificate_aggregate();
+
+                // Buffers the timeout Cerficiate
+                let timeout_certificate = QuorumCertificate {
+                    signature: timeout_signed_aggregation.signature.clone(),
+                    validators: timeout_signed_aggregation.validators.clone(),
+                };
+
+                self.on_timeout_certificate(view, slot, &timeout_certificate)
+                    .context("Handling timeout certificate")?;
+
+                // Broadcast the Timeout Certificate to all validators
+                self.broadcast_net_message(
+                    ConsensusNetMessage::TimeoutCertificate(
+                        TimeoutCertificate(
+                            self.store.bft_round_state.slot,
+                            self.store.bft_round_state.view,
+                            timeout_certificate,
+                        )
+                    )
+                )?;
+
+                self.bft_round_state.timeout_state.cancel()?;
+            }
+        }
+        Ok(())
+    }
+    
     /// Message received by follower.
     fn on_prepare(
         &mut self,
         msg: &SignedWithKey<ConsensusNetMessage>,
         consensus_proposal: &ConsensusProposal,
+        ticket: &Ticket
     ) -> Result<(), Error> {
         debug!("Received Prepare message: {}", consensus_proposal);
         // if slot is 0, we are in genesis and we accept any leader
@@ -679,114 +941,120 @@ impl Consensus {
             );
         }
 
-        // Verify received previous *Commit* Quorum Certificate
-        // If a previous *Commit* Quorum Certificate exists, verify hashes
-        // If no previous *Commit* Quorum Certificate is found, verify this one and save it if legit
-        match self
-            .bft_round_state
-            .commit_quorum_certificates
-            .get(&(self.bft_round_state.slot.saturating_sub(1)))
-        {
-            Some((previous_consensus_proposal_hash, previous_commit_quorum_certificate)) => {
-                // FIXME: Ici on a besoin d'avoir une trace du consensus_proposal precedent...
-                // Quid des validators qui arrivent en cours de route ?
-                // On veut sûrement garder trace de quelques consensus_proposals précedents.
-                if previous_commit_quorum_certificate.hash()
-                    != consensus_proposal.previous_commit_quorum_certificate.hash()
-                {
-                    self.metrics.prepare_error("missing_correct_commit_qc");
-                    bail!("PrepareVote consensus proposal does not contain correct previous commit quorum certificate");
+        // Checking ticket
+        match ticket {
+            Ticket::CommitQC(CommitQuorumCertificate(hash, cert)) => {
+
+                // Verify received previous *Commit* Quorum Certificate
+                // If a previous *Commit* Quorum Certificate exists, verify hashes
+                // If no previous *Commit* Quorum Certificate is found, verify this one and save it if legit
+                match self
+                    .bft_round_state
+                    .commit_quorum_certificates
+                    .get(&(self.bft_round_state.slot.saturating_sub(1))) {
+
+                    Some((previous_consensus_proposal_hash, previous_commit_quorum_certificate)) => {
+                        // FIXME: Ici on a besoin d'avoir une trace du consensus_proposal precedent...
+                        // Quid des validators qui arrivent en cours de route ?
+                        // On veut sûrement garder trace de quelques consensus_proposals précedents.
+                        if previous_commit_quorum_certificate.hash() != cert.hash() {
+                            self.metrics.prepare_error("missing_correct_commit_qc");
+                            bail!("PrepareVote consensus proposal does not contain correct previous commit quorum certificate");
+                        }
+                        if previous_consensus_proposal_hash != hash {
+                            self.metrics.prepare_error("proposal_match");
+                            bail!("PrepareVote previous consensus proposal hash does not match");
+                        }
+                        // Verify slot
+                        if self.bft_round_state.slot != consensus_proposal.slot {
+                            self.metrics.prepare_error("wrong_slot");
+                            bail!(
+                                "Consensus proposal slot is incorrect. Received {} and expected {}",
+                                consensus_proposal.slot,
+                                self.bft_round_state.slot
+                            );
+                        }
+                
+                        // Verify view
+                        // Ignore previous views
+                        if consensus_proposal.view < self.bft_round_state.view {
+                            self.metrics.prepare_error("wrong_view");
+                            bail!(
+                                "Consensus proposal view is incorrect. Received {} and expected {}",
+                                consensus_proposal.view,
+                                self.bft_round_state.view
+                            );
+                        }
+                    }
+                    None if self.bft_round_state.slot == 0 => {
+                        if consensus_proposal.slot != 0 {
+                            warn!("🔄 Consensus state out of sync, need to catchup");
+                        } else {
+                            info!("#### Received genesis block proposal ####");
+                            self.genesis_bond(&consensus_proposal.validators)?;
+                        }
+                    }
+                    None => {
+                        // Verify proposal hash is correct
+                        if !self.verify_consensus_proposal_hash(hash) {
+                            self.metrics.prepare_error("previous_commit_qc_unknown");
+                            // TODO Retrieve that data on other validators
+                            bail!("Previsou Commit Quorum certificate is about an unknown consensus proposal. Can't process any furter");
+                        }
+
+                        let previous_commit_quorum_certificate_with_message = SignedWithKey {
+                            msg: ConsensusNetMessage::ConfirmAck(hash.clone()),
+                            signature: cert.signature.clone(),
+                            validators: cert.validators.clone(),
+                        };
+                        // Verify valid signature
+                        match BlstCrypto::verify(&previous_commit_quorum_certificate_with_message) {
+                            Ok(res) => {
+                                if !res {
+                                    self.metrics.prepare_error("previous_commit_qc_invalid");
+                                    bail!("Previous Commit Quorum Certificate is invalid")
+                                }
+                                // Buffers the previous *Commit* Quorum Cerficiate
+                                self.store
+                                    .bft_round_state
+                                    .commit_quorum_certificates
+                                    .insert(
+                                        self.store.bft_round_state.slot - 1,
+                                        (hash.clone(), cert.clone()),
+                                    );
+                            }
+                            Err(err) => {
+                                self.metrics.prepare_error("bls_failure");
+                                bail!(
+                                    "Previous Commit Quorum Certificate verification failed: {}",
+                                    err
+                                )
+                            }
+                        }
+                        // Properly finish the previous round
+                        self.finish_round()?;
+                    }
                 }
-                if previous_consensus_proposal_hash
-                    != &consensus_proposal.previous_consensus_proposal_hash
-                {
-                    self.metrics.prepare_error("proposal_match");
-                    bail!("PrepareVote previous consensus proposal hash does not match");
-                }
-                // Verify slot
-                if self.bft_round_state.slot != consensus_proposal.slot {
-                    self.metrics.prepare_error("wrong_slot");
-                    bail!(
-                        "Consensus proposal slot is incorrect. Received {} and expected {}",
-                        consensus_proposal.slot,
-                        self.bft_round_state.slot
-                    );
-                }
-                // Verify view
-                if self.bft_round_state.view != consensus_proposal.view {
-                    self.metrics.prepare_error("wrong_view");
-                    bail!(
-                        "Consensus proposal view is incorrect. Received {} and expected {}",
-                        consensus_proposal.view,
-                        self.bft_round_state.view
-                    );
-                }
-                // Verify block
+                
             }
-            None if self.bft_round_state.slot == 0 => {
-                if consensus_proposal.slot != 0 {
-                    warn!("🔄 Consensus state out of sync, need to catchup");
-                } else {
-                    info!("#### Received genesis block proposal ####");
-                    self.genesis_bond(&consensus_proposal.validators)?;
+            Ticket::TC(TimeoutCertificate(slot, view, cert)) => {
+                // Checks necessary for now (consensus proposal contains slot + view info)
+                if consensus_proposal.slot != *slot {
+                    bail!("Consensus proposal slot {} should be equal to timeout certificate slot {}", consensus_proposal.slot, slot);
                 }
-            }
-            None => {
-                // Verify proposal hash is correct
-                if !self.verify_consensus_proposal_hash(
-                    &consensus_proposal.previous_consensus_proposal_hash,
-                ) {
-                    self.metrics.prepare_error("previous_commit_qc_unknown");
-                    // TODO Retrieve that data on other validators
-                    bail!("Previsou Commit Quorum certificate is about an unknown consensus proposal. Can't process any furter");
+                
+                if consensus_proposal.view == 0 {
+                    bail!("Ticket is a TC, consensus proposal view should be > 0");
                 }
 
-                let previous_commit_quorum_certificate_with_message = SignedWithKey {
-                    msg: ConsensusNetMessage::ConfirmAck(
-                        consensus_proposal.previous_consensus_proposal_hash.clone(),
-                    ),
-                    signature: consensus_proposal
-                        .previous_commit_quorum_certificate
-                        .signature
-                        .clone(),
-                    validators: consensus_proposal
-                        .previous_commit_quorum_certificate
-                        .validators
-                        .clone(),
-                };
-                // Verify valid signature
-                match BlstCrypto::verify(&previous_commit_quorum_certificate_with_message) {
-                    Ok(res) => {
-                        if !res {
-                            self.metrics.prepare_error("previous_commit_qc_invalid");
-                            bail!("Previous Commit Quorum Certificate is invalid")
-                        }
-                        // Buffers the previous *Commit* Quorum Cerficiate
-                        self.store
-                            .bft_round_state
-                            .commit_quorum_certificates
-                            .insert(
-                                self.store.bft_round_state.slot - 1,
-                                (
-                                    consensus_proposal.previous_consensus_proposal_hash.clone(),
-                                    consensus_proposal
-                                        .previous_commit_quorum_certificate
-                                        .clone(),
-                                ),
-                            );
-                    }
-                    Err(err) => {
-                        self.metrics.prepare_error("bls_failure");
-                        bail!(
-                            "Previous Commit Quorum Certificate verification failed: {}",
-                            err
-                        )
-                    }
+                if consensus_proposal.view != view - 1 {
+                    bail!("Ticket view should be {} and is actually {}", consensus_proposal.view + 1, view);
                 }
-                // Properly finish the previous round
-                self.finish_round()?;
+
+                self.on_timeout_certificate(view, slot, cert)
+                    .context("Handling TC ticket")?;
             }
-        };
+        }
 
         self.verify_new_bonded_validators(consensus_proposal)?;
 
@@ -1057,8 +1325,10 @@ impl Consensus {
 
             // Broadcast the *Commit* Quorum Certificate to all validators
             self.broadcast_net_message(ConsensusNetMessage::Commit(
-                consensus_proposal_hash.clone(),
-                commit_quorum_certificate,
+                CommitQuorumCertificate(
+                    consensus_proposal_hash.clone(),
+                    commit_quorum_certificate,
+                )
             ))?;
 
             // Finishes the bft round
@@ -1120,6 +1390,12 @@ impl Consensus {
             }
         }
 
+         // At this point we have a valid commit certificate
+        // When committing, we want to cancel the current scheduled timeout
+        // we cannot have a timeout certificate for the current round and both receive a commit QC
+        // So cancel is safe here, and if not, there is a big problem
+        _ = self.bft_round_state.timeout_state.cancel();
+        
         // Finishes the bft round
         self.finish_round()?;
 
@@ -1237,7 +1513,25 @@ impl Consensus {
                 }
                 Ok(())
             }
-            ConsensusCommand::StartNewSlot => self.start_new_slot(),
+            ConsensusCommand::StartNewSlot => self.start_new_slot(None),
+            ConsensusCommand::TimeoutTick => match &self.bft_round_state.timeout_state {
+                ConsensusTimeoutState::Scheduled { timestamp }
+                    if get_current_timestamp() >= *timestamp =>
+                {
+                    // Trigger state transition to mutiny
+                    info!("⏰ Trigger timeout for slot {} and view {}", self.bft_round_state.slot, self.bft_round_state.view);
+                    self.broadcast_net_message(ConsensusNetMessage::Timeout(
+                        self.bft_round_state.slot,
+                        self.bft_round_state.view,
+                        self.bft_round_state.consensus_proposal.hash(),
+                    ))?;
+
+                    let _ = &self.bft_round_state.timeout_state.cancel()?;
+
+                    Ok(())
+                }
+                _ => Ok(()),
+            },
         }
     }
 
@@ -1321,8 +1615,12 @@ impl Consensus {
     }
 
     pub async fn start(&mut self) -> Result<()> {
+
+        let mut timeout_ticker = interval(Duration::from_secs(2));
+        
         handle_messages! {
             on_bus self.bus,
+            
             listen<ConsensusCommand> cmd => {
                 match self.handle_command(cmd) {
                     Ok(_) => (),
@@ -1346,6 +1644,10 @@ impl Consensus {
                     Ok(_) => (),
                     Err(e) => warn!("Error while handling peer event: {:#}", e),
                 }
+            }
+            _ = timeout_ticker.tick() => {
+                self.bus.send(ConsensusCommand::TimeoutTick)
+                    .log_error("Cannot send message over channel")?;
             }
         }
     }
@@ -1459,7 +1761,7 @@ mod test {
 
         #[track_caller]
         fn handle_block(&mut self, msg: &SignedWithKey<ConsensusNetMessage>) {
-        if let ConsensusNetMessage::Prepare(consensus_proposal) = &msg.msg {
+        if let ConsensusNetMessage::Prepare(consensus_proposal, _) = &msg.msg {
                 for bonded in consensus_proposal.block.new_bonded_validators.clone() {
                    self.consensus.handle_command(ConsensusCommand::NewBonded(bonded)).expect("handle block");
                 }
@@ -1495,9 +1797,9 @@ mod test {
                 .expect(err);
         }
 
-        fn start_new_slot(&mut self) {
+        fn start_new_slot(&mut self, ticket: Option<Ticket>) {
             self.consensus
-                .start_new_slot()
+                .start_new_slot(ticket)
                 .expect("Failed to start slot");
         }
 
@@ -1556,7 +1858,7 @@ mod test {
     async fn test_happy_path() {
         let (mut node1, mut node2) = TestCtx::build().await;
 
-        node1.start_new_slot();
+        node1.start_new_slot(None);
         // Slot 0 - leader = node1
         let leader_proposal = node1.assert_broadcast("Leader proposal");
         node2.handle_msg(&leader_proposal, "Leader proposal");
@@ -1574,7 +1876,7 @@ mod test {
         node2.handle_msg(&leader_commit, "Leader commit");
 
         // Slot 1 - leader = node2
-        node2.start_new_slot();
+        node2.start_new_slot(None);
         let leader_proposal = node2.assert_broadcast("Leader proposal");
         node1.handle_msg(&leader_proposal, "Leader proposal");
 
@@ -1591,7 +1893,7 @@ mod test {
         node1.handle_msg(&leader_commit, "Leader commit");
 
         // Slot 2 - leader = node1
-        node1.start_new_slot();
+        node1.start_new_slot(None);
         let leader_proposal = node1.assert_broadcast("Leader proposal");
         node2.handle_msg(&leader_proposal, "Leader proposal");
 
@@ -1617,7 +1919,7 @@ mod test {
 
         // Slot 0
         {
-            node1.start_new_slot();
+            node1.start_new_slot(None);
             let leader_proposal = node1.assert_broadcast("Leader proposal");
             node2.handle_msg(&leader_proposal, "Leader proposal");
             let slave_vote = node2.assert_send(&node1, "Slave vote");
@@ -1640,7 +1942,7 @@ mod test {
         // Slot 1: New slave candidates - leader = node2
         {
             info!("➡️  Leader proposal");
-            node2.start_new_slot();
+            node2.start_new_slot(None);
             let leader_proposal = node2.assert_broadcast("Leader proposal");
             node1.handle_msg(&leader_proposal, "Leader proposal");
             node3.handle_msg(&leader_proposal, "Leader proposal");
@@ -1680,9 +1982,9 @@ mod test {
         // Slot 2: Still a slot without slave 2 - leader = node 1
         {
             info!("➡️  Leader proposal");
-            node1.start_new_slot();
+            node1.start_new_slot(None);
             let leader_proposal = node1.assert_broadcast("Leader proposal");
-            if let ConsensusNetMessage::Prepare(consensus_proposal) = &leader_proposal.msg {
+            if let ConsensusNetMessage::Prepare(consensus_proposal, _) = &leader_proposal.msg {
                 assert_eq!(consensus_proposal.validators.len(), 2);
             } else {
                 panic!("Leader proposal is not a Prepare message");
@@ -1717,9 +2019,9 @@ mod test {
         // Slot 3: Slave 2 joined consensus, leader = node-2
         {
             info!("➡️  Leader proposal");
-            node2.start_new_slot();
+            node2.start_new_slot(None);
             let leader_proposal = node2.assert_broadcast("Leader proposal");
-            if let ConsensusNetMessage::Prepare(consensus_proposal) = &leader_proposal.msg {
+            if let ConsensusNetMessage::Prepare(consensus_proposal, _) = &leader_proposal.msg {
                 assert_eq!(consensus_proposal.validators.len(), 3);
             } else {
                 panic!("Leader proposal is not a Prepare message");
