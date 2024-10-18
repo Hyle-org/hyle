@@ -529,7 +529,7 @@ mod tests {
             ValidatorPublicKey,
         },
     };
-    use sdk::Identity;
+    use hyle_contract_sdk::Identity;
 
     fn make_tx(inner_tx: &'static str) -> Transaction {
         Transaction {

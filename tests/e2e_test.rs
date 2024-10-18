@@ -12,8 +12,8 @@ use hyle::{
     node_state::model::Contract,
     rest::client::ApiHttpClient,
 };
+use hyle_contract_sdk::{Identity, StateDigest, TxHash};
 use reqwest::{Client, Url};
-use sdk::{Identity, StateDigest, TxHash};
 use test_helpers::ConfMaker;
 
 mod test_helpers;
@@ -69,7 +69,7 @@ async fn send_blobs_and_proofs(client: &ApiHttpClient) -> Result<()> {
         blobs_references: vec![BlobReference {
             contract_name: ContractName("erc20-risc0".to_string()),
             blob_tx_hash: blob_tx_hash.clone(),
-            blob_index: sdk::BlobIndex(0),
+            blob_index: hyle_contract_sdk::BlobIndex(0),
         }],
         proof,
     };
@@ -151,12 +151,12 @@ async fn send_test_blobs_and_proofs(client: &ApiHttpClient) -> Result<()> {
                 BlobReference {
                     contract_name: ContractName("c1".to_string()),
                     blob_tx_hash: blob_tx_hash.clone(),
-                    blob_index: sdk::BlobIndex(0)
+                    blob_index: hyle_contract_sdk::BlobIndex(0)
                 },
                 BlobReference {
                     contract_name: ContractName("c2".to_string()),
                     blob_tx_hash,
-                    blob_index: sdk::BlobIndex(1)
+                    blob_index: hyle_contract_sdk::BlobIndex(1)
                 }
             ],
             proof: vec![5, 5]

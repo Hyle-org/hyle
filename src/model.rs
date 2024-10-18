@@ -3,7 +3,7 @@
 use axum::Router;
 use bincode::{Decode, Encode};
 use derive_more::Display;
-use sdk::{BlobIndex, Identity, StateDigest, TxHash};
+use hyle_contract_sdk::{BlobIndex, Identity, StateDigest, TxHash};
 use serde::{
     de::{self, Visitor},
     Deserialize, Serialize,

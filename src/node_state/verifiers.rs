@@ -5,7 +5,7 @@ use risc0_zkvm::sha::Digest;
 use stark_platinum_prover::proof::options::{ProofOptions, SecurityLevel};
 
 use crate::model::ProofTransaction;
-use sdk::{HyleOutput, Identity, StateDigest};
+use hyle_contract_sdk::{HyleOutput, Identity, StateDigest};
 
 pub fn verify_proof(
     tx: &ProofTransaction,
@@ -153,7 +153,7 @@ pub fn risc0_proof_verifier(encoded_receipt: &[u8], image_id: &[u8]) -> Result<H
 mod tests {
     use std::{fs::File, io::Read};
 
-    use sdk::{BlobIndex, HyleOutput, Identity, StateDigest, TxHash};
+    use hyle_contract_sdk::{BlobIndex, HyleOutput, Identity, StateDigest, TxHash};
 
     use super::risc0_proof_verifier;
 

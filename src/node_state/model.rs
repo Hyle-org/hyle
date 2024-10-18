@@ -1,5 +1,5 @@
 use bincode::{Decode, Encode};
-use sdk::{HyleOutput, Identity, StateDigest, TxHash};
+use hyle_contract_sdk::{HyleOutput, Identity, StateDigest, TxHash};
 use serde::{Deserialize, Serialize};
 
 use crate::model::{BlobsHash, BlockHeight, ContractName};

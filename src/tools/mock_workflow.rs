@@ -12,8 +12,8 @@ use crate::{
     utils::modules::Module,
 };
 use anyhow::Result;
+use hyle_contract_sdk::{Identity, StateDigest};
 use reqwest::{Client, Url};
-use sdk::{Identity, StateDigest};
 use serde::{Deserialize, Serialize};
 use tokio::time::sleep;
 use tracing::{error, info, warn};

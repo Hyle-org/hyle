@@ -2,7 +2,7 @@ use bincode::{Decode, Encode};
 
 use super::model::UnsettledTransaction;
 use crate::model::ContractName;
-use sdk::TxHash;
+use hyle_contract_sdk::TxHash;
 use std::collections::HashMap;
 
 // struct used to guarantee coherence between the 2 fields
@@ -77,7 +77,7 @@ impl OrderedTxMap {
 #[cfg(test)]
 mod tests {
     use crate::{model::BlobsHash, node_state::model::UnsettledBlobMetadata};
-    use sdk::Identity;
+    use hyle_contract_sdk::Identity;
 
     use super::*;
 

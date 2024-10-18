@@ -13,9 +13,9 @@ use crate::{
 };
 use anyhow::{bail, Context, Error, Result};
 use bincode::{Decode, Encode};
+use hyle_contract_sdk::{HyleOutput, StateDigest, TxHash};
 use model::{Contract, Timeouts, UnsettledBlobMetadata, UnsettledTransaction};
 use ordered_tx_map::OrderedTxMap;
-use sdk::{HyleOutput, StateDigest, TxHash};
 use std::{
     collections::{HashMap, HashSet},
     ops::{Deref, DerefMut},
@@ -436,7 +436,7 @@ impl DerefMut for NodeState {
 mod test {
     use std::path::PathBuf;
 
-    use sdk::{BlobIndex, Identity};
+    use hyle_contract_sdk::{BlobIndex, Identity};
 
     use crate::{bus::SharedMessageBus, model::*, utils::conf::Conf};
 

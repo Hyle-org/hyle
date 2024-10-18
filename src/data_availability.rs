@@ -454,7 +454,7 @@ mod tests {
         Blob, BlobData, BlobTransaction, Block, BlockHash, BlockHeight, ContractName, Hashable,
         Transaction, TransactionData,
     };
-    use sdk::Identity;
+    use hyle_contract_sdk::Identity;
 
     use super::blocks::Blocks;
     use anyhow::Result;

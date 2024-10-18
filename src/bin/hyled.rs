@@ -9,8 +9,8 @@ use hyle::{
     },
     rest::client::ApiHttpClient,
 };
+use hyle_contract_sdk::{BlobIndex, Identity, StateDigest, TxHash};
 use reqwest::{Client, Url};
-use sdk::{BlobIndex, Identity, StateDigest, TxHash};
 
 pub fn load_encoded_receipt_from_file(path: &str) -> Vec<u8> {
     let mut file = File::open(path).expect("Failed to open proof file");

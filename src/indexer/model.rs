@@ -3,7 +3,7 @@ use sqlx::types::chrono::NaiveDateTime;
 use sqlx::{prelude::Type, Postgres};
 
 use crate::model::BlockHash;
-use sdk::TxHash;
+use hyle_contract_sdk::TxHash;
 
 #[derive(Debug, sqlx::FromRow, Serialize, Deserialize)]
 pub struct BlockDb {

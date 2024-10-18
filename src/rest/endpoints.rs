@@ -14,7 +14,7 @@ use axum::{
     Json,
 };
 use bincode::{Decode, Encode};
-use sdk::TxHash;
+use hyle_contract_sdk::TxHash;
 use serde::{Deserialize, Serialize};
 use tracing::error;
 
