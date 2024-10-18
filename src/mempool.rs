@@ -4,7 +4,7 @@ use crate::{
     bus::{bus_client, command_response::Query, BusMessage, SharedMessageBus},
     consensus::ConsensusEvent,
     handle_messages,
-    mempool::storage::{Car, DataProposal, InMemoryStorage, TipData},
+    mempool::storage::{Car, CarProposal, InMemoryStorage, TipInfo},
     model::{Hashable, SharedRunContext, Transaction, TransactionData, ValidatorPublicKey},
     p2p::network::{OutboundMessage, SignedWithKey},
     rest::endpoints::RestApiMessage,
@@ -25,7 +25,7 @@ use tracing::{debug, error, info, warn};
 
 mod metrics;
 mod storage;
-pub use storage::Cut;
+pub use storage::{Cut, CutWithTxs};
 
 bus_client! {
 struct MempoolBusClient {
@@ -49,9 +49,9 @@ pub struct Mempool {
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, Eq, PartialEq, IntoStaticStr)]
 pub enum MempoolNetMessage {
     NewTx(Transaction),
-    DataProposal(DataProposal),
-    DataVote(DataProposal),
-    SyncRequest(DataProposal, Option<usize>),
+    DataProposal(CarProposal),
+    DataVote(CarProposal),
+    SyncRequest(CarProposal, Option<usize>),
     SyncReply(Vec<Car>),
 }
 impl BusMessage for MempoolNetMessage {}
@@ -64,14 +64,14 @@ impl BusMessage for MempoolCommand {}
 
 #[derive(Debug, Clone, Encode, Decode, Default, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct BatchInfo {
-    pub tip: TipData,
+    pub tip: TipInfo,
     pub validator: ValidatorPublicKey,
 }
 
 impl BatchInfo {
     pub fn new(validator: ValidatorPublicKey) -> Self {
         Self {
-            tip: TipData::default(),
+            tip: TipInfo::default(),
             validator,
         }
     }
@@ -85,7 +85,7 @@ pub struct Batch {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub enum MempoolEvent {
-    NewCut(Cut),
+    NewCut(CutWithTxs),
 }
 impl BusMessage for MempoolEvent {}
 
@@ -138,7 +138,7 @@ impl Mempool {
                 self.handle_event(cmd);
             }
             _ = interval.tick() => {
-                    self.check_data_proposal().await
+                    self.time_to_cut_or_propose().await
             }
         }
     }
@@ -160,16 +160,16 @@ impl Mempool {
                 let validator = msg.validators.first().unwrap();
                 match msg.msg {
                     MempoolNetMessage::NewTx(tx) => self.on_new_tx(tx),
-                    MempoolNetMessage::DataProposal(data_proposal) => {
-                        if let Err(e) = self.on_data_proposal(validator, data_proposal).await {
+                    MempoolNetMessage::DataProposal(car_proposal) => {
+                        if let Err(e) = self.on_car_proposal(validator, car_proposal).await {
                             error!("{:?}", e);
                         }
                     }
-                    MempoolNetMessage::DataVote(data_proposal) => {
-                        self.on_data_vote(validator, data_proposal).await;
+                    MempoolNetMessage::DataVote(car_proposal) => {
+                        self.on_proposal_vote(validator, car_proposal).await;
                     }
-                    MempoolNetMessage::SyncRequest(data_proposal, last_index) => {
-                        self.on_sync_request(validator, data_proposal, last_index)
+                    MempoolNetMessage::SyncRequest(car_proposal, last_index) => {
+                        self.on_sync_request(validator, car_proposal, last_index)
                             .await;
                     }
                     MempoolNetMessage::SyncReply(cars) => {
@@ -216,11 +216,12 @@ impl Mempool {
             missing_cars.len()
         );
 
-        self.storage.add_missing_cars(validator, missing_cars);
+        self.storage
+            .other_lane_add_missing_cars(validator, missing_cars);
 
         let waiting_proposals = self.storage.get_waiting_proposals(validator);
         for wp in waiting_proposals {
-            if let Err(e) = self.on_data_proposal(validator, wp).await {
+            if let Err(e) = self.on_car_proposal(validator, wp).await {
                 error!("{:?}", e);
             }
         }
@@ -230,7 +231,7 @@ impl Mempool {
     async fn on_sync_request(
         &mut self,
         validator: &ValidatorPublicKey,
-        data_proposal: DataProposal,
+        car_proposal: CarProposal,
         last_index: Option<usize>,
     ) {
         info!(
@@ -238,7 +239,7 @@ impl Mempool {
             self.storage.id, last_index
         );
 
-        let missing_cars = self.storage.get_missing_cars(last_index, &data_proposal);
+        let missing_cars = self.storage.get_missing_cars(last_index, &car_proposal);
         debug!("Missing cars on {} are {:?}", validator, missing_cars);
 
         match missing_cars {
@@ -251,11 +252,15 @@ impl Mempool {
         }
     }
 
-    async fn on_data_vote(&mut self, validator: &ValidatorPublicKey, data_proposal: DataProposal) {
+    async fn on_proposal_vote(
+        &mut self,
+        validator: &ValidatorPublicKey,
+        car_proposal: CarProposal,
+    ) {
         debug!("Vote received from validator {}", validator);
         if self
             .storage
-            .new_data_vote(validator, &data_proposal)
+            .new_vote_for_proposal(validator, &car_proposal)
             .is_some()
         {
             debug!("{} DataVote from {}", self.storage.id, validator)
@@ -264,57 +269,41 @@ impl Mempool {
         }
     }
 
-    async fn on_data_proposal(
+    async fn on_car_proposal(
         &mut self,
         validator: &ValidatorPublicKey,
-        data_proposal: DataProposal,
+        car_proposal: CarProposal,
     ) -> Result<()> {
-        if data_proposal.txs.is_empty() {
-            warn!(
-                "received empty data proposal from {}, ignoring...",
-                validator
-            );
-            return Ok(());
-        }
-        match self.storage.new_data_proposal(validator, &data_proposal)? {
+        match self.storage.new_car_proposal(validator, &car_proposal)? {
+            ProposalVerdict::Empty => Ok(()),
             ProposalVerdict::Vote => {
                 // Normal case, we receive a proposal we already have the parent in store
-                self.send_vote(validator, data_proposal)
+                self.send_vote(validator, car_proposal)
             }
             ProposalVerdict::Wait(last_index) => {
                 //We dont have the parent, so we craft a sync demand
-                debug!("Emitting sync request with local state {} last_available_index {:?} and data_proposal {}", self.storage, last_index, data_proposal);
+                debug!("Emitting sync request with local state {} last_available_index {:?} and car_proposal {}", self.storage, last_index, car_proposal);
 
-                self.send_sync_request(validator, data_proposal, last_index)
+                self.send_sync_request(validator, car_proposal, last_index)
             }
         }
     }
 
-    async fn try_data_proposal(&mut self, poa: Option<Vec<ValidatorPublicKey>>) {
-        let pending_txs = self.storage.flush_pending_txs();
-        if pending_txs.is_empty() {
-            return;
-        }
-        let tip_id = self.storage.add_data_to_local_lane(pending_txs.clone());
-        let data_proposal = DataProposal {
-            txs: pending_txs,
-            pos: tip_id,
-            parent: if tip_id == 1 { None } else { Some(tip_id - 1) },
-            parent_poa: poa,
-        };
-
-        if let Err(e) = self.broadcast_data_proposal(data_proposal) {
-            error!("{:?}", e);
+    fn try_car_proposal(&mut self, poa: Option<Vec<ValidatorPublicKey>>) {
+        if let Some(car_proposal) = self.storage.try_car_proposal(poa) {
+            if let Err(e) = self.broadcast_car_proposal(car_proposal) {
+                error!("{:?}", e);
+            }
         }
     }
 
-    async fn check_data_proposal(&mut self) {
+    async fn time_to_cut_or_propose(&mut self) {
         if self.storage.tip_already_used() {
             return;
         }
-        if let Some(cut) = self.storage.try_a_new_cut(self.validators.len()) {
+        if let Some(cut) = self.storage.try_new_cut(self.validators.len()) {
             let poa = self.storage.tip_poa();
-            self.try_data_proposal(poa).await;
+            self.try_car_proposal(poa);
             if let Err(e) = self
                 .bus
                 .send(MempoolEvent::NewCut(cut))
@@ -324,19 +313,19 @@ impl Mempool {
             } else {
                 self.metrics.add_batch();
             }
-        } else if let Some((tip, txs)) = self.storage.tip_data() {
-            // No PoA means we rebroadcast the data proposal for non present voters
+        } else if let Some((tip, txs)) = self.storage.tip_info() {
+            // No PoA means we rebroadcast the Car proposal for non present voters
             let only_for = HashSet::from_iter(
                 self.validators
                     .iter()
                     .filter(|pubkey| !tip.poa.contains(pubkey))
                     .cloned(),
             );
-            if let Err(e) = self.broadcast_data_proposal_only_for(
+            if let Err(e) = self.broadcast_car_proposal_only_for(
                 only_for,
-                DataProposal {
+                CarProposal {
                     txs,
-                    pos: tip.pos,
+                    id: tip.pos,
                     parent: tip.parent,
                     parent_poa: None, // TODO: fetch parent votes
                 },
@@ -345,14 +334,14 @@ impl Mempool {
             }
         } else {
             // Genesis create a mono tx chunk and broadcast it
-            self.try_data_proposal(None).await;
+            self.try_car_proposal(None);
         }
     }
 
     fn on_new_tx(&mut self, tx: Transaction) {
         debug!("Got new tx {}", tx.hash());
         self.metrics.add_api_tx("blob".to_string());
-        self.storage.accumulate_tx(tx.clone());
+        self.storage.add_new_tx(tx.clone());
         self.metrics
             .snapshot_pending_tx(self.storage.pending_txs.len());
     }
@@ -363,56 +352,53 @@ impl Mempool {
         Ok(())
     }
 
-    fn broadcast_data_proposal(&mut self, data_proposal: DataProposal) -> Result<()> {
+    fn broadcast_car_proposal(&mut self, car_proposal: CarProposal) -> Result<()> {
         if self.validators.is_empty() {
             return Ok(());
         }
         self.metrics
-            .add_broadcasted_data_proposal("blob".to_string());
-        self.broadcast_net_message(MempoolNetMessage::DataProposal(data_proposal))?;
+            .add_broadcasted_car_proposal("blob".to_string());
+        self.broadcast_net_message(MempoolNetMessage::DataProposal(car_proposal))?;
         Ok(())
     }
 
-    fn broadcast_data_proposal_only_for(
+    fn broadcast_car_proposal_only_for(
         &mut self,
         only_for: HashSet<ValidatorPublicKey>,
-        data_proposal: DataProposal,
+        car_proposal: CarProposal,
     ) -> Result<()> {
         self.metrics
-            .add_broadcasted_data_proposal_only_for("blob".to_string());
+            .add_broadcasted_car_proposal_only_for("blob".to_string());
         _ = self
             .bus
             .send(OutboundMessage::broadcast_only_for(
                 only_for,
-                self.sign_net_message(MempoolNetMessage::DataProposal(data_proposal))?,
+                self.sign_net_message(MempoolNetMessage::DataProposal(car_proposal))?,
             ))
-            .log_error("broadcasting data_proposal_only_for");
+            .log_error("broadcasting car_proposal_only_for");
         Ok(())
     }
 
     fn send_vote(
         &mut self,
         validator: &ValidatorPublicKey,
-        data_proposal: DataProposal,
+        car_proposal: CarProposal,
     ) -> Result<()> {
-        self.metrics.add_sent_data_vote("blob".to_string());
-        self.send_net_message(
-            validator.clone(),
-            MempoolNetMessage::DataVote(data_proposal),
-        )?;
+        self.metrics.add_sent_proposal_vote("blob".to_string());
+        self.send_net_message(validator.clone(), MempoolNetMessage::DataVote(car_proposal))?;
         Ok(())
     }
 
     fn send_sync_request(
         &mut self,
         validator: &ValidatorPublicKey,
-        data_proposal: DataProposal,
+        car_proposal: CarProposal,
         last_index: Option<usize>,
     ) -> Result<()> {
         self.metrics.add_sent_sync_request("blob".to_string());
         self.send_net_message(
             validator.clone(),
-            MempoolNetMessage::SyncRequest(data_proposal, last_index),
+            MempoolNetMessage::SyncRequest(car_proposal, last_index),
         )?;
         Ok(())
     }

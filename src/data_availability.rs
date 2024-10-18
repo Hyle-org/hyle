@@ -6,6 +6,7 @@ use crate::{
     bus::{bus_client, command_response::Query, BusMessage, SharedMessageBus},
     consensus::ConsensusEvent,
     handle_messages,
+    mempool::{CutWithTxs, MempoolEvent},
     model::{
         get_current_timestamp, Block, BlockHash, BlockHeight, Hashable, SharedRunContext,
         ValidatorPublicKey,
@@ -271,6 +272,10 @@ impl DataAvailability {
             }
         }
         Ok(())
+    }
+
+    async fn handle_new_cut_event(&mut self, _cut: CutWithTxs) {
+        // TODO:
     }
 
     async fn handle_consensus_event(&mut self, event: ConsensusEvent) {

@@ -17,7 +17,7 @@ use tracing::{debug, info, warn};
 use crate::{
     bus::{bus_client, command_response::Query, BusMessage, SharedMessageBus},
     handle_messages,
-    mempool::{Cut, MempoolCommand, MempoolEvent, MempoolResponse},
+    mempool::{Cut, CutWithTxs, MempoolCommand, MempoolEvent, MempoolResponse},
     model::{Hashable, ValidatorPublicKey},
     p2p::{
         network::{OutboundMessage, PeerEvent, Signature, Signed, SignedWithKey},
@@ -39,7 +39,9 @@ pub mod module;
 pub mod staking;
 pub mod utils;
 
-#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, PartialEq, Eq, Hash, IntoStaticStr)]
+#[derive(
+    Debug, Serialize, Deserialize, Clone, Encode, Decode, PartialEq, Eq, Hash, IntoStaticStr,
+)]
 pub enum ConsensusNetMessage {
     StartNewSlot,
     Prepare(ConsensusProposal),
@@ -454,9 +456,9 @@ impl Consensus {
             "🌐 Slot {} started. Broadcasting Prepare message", self.bft_round_state.slot,
         );
         self.bft_round_state.step = Step::PrepareVote;
-        self.broadcast_net_message(
-            ConsensusNetMessage::Prepare(self.bft_round_state.consensus_proposal.clone()),
-        )?;
+        self.broadcast_net_message(ConsensusNetMessage::Prepare(
+            self.bft_round_state.consensus_proposal.clone(),
+        ))?;
 
         Ok(())
     }
@@ -713,7 +715,7 @@ impl Consensus {
             );
             self.send_net_message(
                 self.leader_id(),
-                ConsensusNetMessage::PrepareVote(consensus_proposal.hash())
+                ConsensusNetMessage::PrepareVote(consensus_proposal.hash()),
             )?;
         } else {
             info!("😥 Not part of consensus, not sending PrepareVote");
@@ -1151,25 +1153,34 @@ impl Consensus {
         _ = self
             .bus
             .send(OutboundMessage::broadcast(signed_msg))
-            .context(format!("Failed to broadcast {} msg on the bus", enum_variant_name))?;
+            .context(format!(
+                "Failed to broadcast {} msg on the bus",
+                enum_variant_name
+            ))?;
         Ok(())
-        
     }
 
     #[inline(always)]
-    fn send_net_message(&mut self, to: ValidatorPublicKey, net_message: ConsensusNetMessage) -> Result<()> {
+    fn send_net_message(
+        &mut self,
+        to: ValidatorPublicKey,
+        net_message: ConsensusNetMessage,
+    ) -> Result<()> {
         let signed_msg = self.sign_net_message(net_message)?;
         let enum_variant_name: &'static str = (&signed_msg.msg).into();
         _ = self
             .bus
             .send(OutboundMessage::send(to, signed_msg))
-            .context(format!("Failed to send {} msg on the bus", enum_variant_name))?;
+            .context(format!(
+                "Failed to send {} msg on the bus",
+                enum_variant_name
+            ))?;
         Ok(())
     }
 
     async fn handle_mempool_event(&mut self, msg: MempoolEvent) -> Result<()> {
         match msg {
-            MempoolEvent::NewCut(cut) => {
+            MempoolEvent::NewCut(CutWithTxs { tips: cut, .. }) => {
                 debug!("Received a new cut");
                 assert!(self.pending_cut.is_none());
                 self.pending_cut.replace(cut);
