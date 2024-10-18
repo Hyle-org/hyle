@@ -40,36 +40,38 @@ pub fn transfer(from: Identity, to: Identity, amount: u64);
 A Blob Transaction is:
 
 ```rust
-pub struct IdentifiedBlobs {
-    pub identity: Identity,
-    pub blobs: Vec<Blob>,
+pub struct Fees {
+    pub payer: Identity,
+    pub amount: u64,
+    pub fee_contract: ContractName,
+    pub identity_contract: ContractName,
+    pub identity_proof: Vec<u8>
 }
 
 pub struct BlobTransaction {
-    pub data: IdentifiedBlobs,
-    pub fees: IdentifiedBlobs,
+    pub fees: Fees,
+    pub identity: Identity,
+    pub blobs: Vec<Blob>,
 }
 ```
 
-When a new transaction is sent to the node, it checks if the `fees` part contains:
+When a new transaction is sent to the node, it runs the `hyfi` & `hydentity` smart contracts code with blobs built from `Fees` attributes.
 
-- A blob for contract `hydentity` & identity is valid 
-    - note: later we could consider a "whitelist" of contracts there
-- A blob for contract `hyfi`
-    - note: later we could consider a "whitelist" of contracts there
-    - this is a call to method `pay_fees` from `fees.identity` 
-    - `fees.identity` has enough balance
+➡️  For now we check that `fees.identity_contract == "hydentity" && fees.fee_contract == "hyfi"`, but later we could consider whitelists.
 
-If all those are valid, the node knows it will be able to generate a proof for this blob and gather the fees. 
-- ⚠️  Modulo there is no other transaction in an other batch that would be included before
+If the execution succeeds **and** resulting balance of `payer` is greater that `base_amount` (Cf next ⚠️ ), it can be sent to mempool for data dissemination. A proof will be generated later.
+
+⚠️  At this stage, the node knows it will be able to generate a proof for this blob and gather the fees. Modulo there is no other transaction 
+in an other batch that would be included before
     - if such a case happens, an `identity` can have a negative balance
-
-🔎 We can "execute" the `hyfi` & `hydentity` smart contract code itself to check the output without proving it now.
-
-If the transaction is valid, it can be sent to mempool for data dissemination.
+    - to limit the "negative balance" issue, we can consider that an `identity` needs to always have at least `base_amount` of token. If the payer has a balance under this amount the fees won't 
+be accepted, but if the payers got multiple transactions in different lanes that ended to pay more fees than allowed, the payer won't get a negative balance. The payer won't be able to pay for fees
+until it gains some more tokens.
+    - It does not 100% delete the "negative balance issue", unless this `base_amount` is high enough... This is an hyper parameter to find.
 
 ❓ Should each node do this verification when receiving the tx in data dissemination ? If we don't, the network might accept transactions with no fees if a node "don't care" about fees in its data lane.
 - Could be retro-actively slashed
+- See ⚠️  in `## Fees gathering` 
 
 ❓ How to check balances with unsettled transactions ?
 - Fees are taken independently of transaction settlement. The fee part will be settled by the node itself.
@@ -82,15 +84,18 @@ If the transaction is valid, it can be sent to mempool for data dissemination.
 
 ## Fees gathering
 
-Once the blob transaction is sequenced in a block, any node can generate the ProofTransaction for all fees blobs in the previous block, and once 
-this one is disseminated & included in a block, all fees will be effectively moved to the `network` account.
-
+Once the blob transaction is sequenced in a block, any node can generate the FeeProofTransaction for all fees blobs in the previous block(s), and once 
+this one is disseminated & included in a block, all fees will be effectively taken.
 ```rust
-pub struct ProofTransaction {
-    pub blobs_references: Vec<BlobReference>,
+pub struct FeeProofTransaction {
+    pub transactions: Vec<TxHash>,
     pub proof: Vec<u8>,
 }
 ```
+
+⚠️  If a transaction was introduced in a block by a node that didn't check the identity. This FeeProofTransaction won't be able to be generated, (unless this single transaction is removed 
+from the `transactions` list, which makes the logic complexe where it shouldn't). That's why we need a guarantee that no transactions are sequenced if the identity is valid. To ensure that, all nodes needs to check `identity_proof` during data dissemination.
+
 ❓ If no nodes feels "responsible" of that, we could be in a situation where most nodes say "I don't need to do it, someone else will do it", and then it's always the same nodes 
 that does this proof generation... How can we incentivize _all_ nodes to participates to this effort ?
 
