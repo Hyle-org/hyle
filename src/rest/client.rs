@@ -2,7 +2,6 @@ use anyhow::{Context, Result};
 use reqwest::{Response, Url};
 
 use crate::{
-    consensus::Slot,
     model::{
         BlobTransaction, BlockHeight, ContractName, ProofTransaction, RegisterContractTransaction,
     },
@@ -48,7 +47,7 @@ impl ApiHttpClient {
             .context("Sending tx register contract")
     }
 
-    pub async fn get_current_slot(&self) -> Result<BlockHeight> {
+    pub async fn get_block_height(&self) -> Result<BlockHeight> {
         self.reqwest_client
             .get(format!("{}v1/da/block/height", self.url))
             .header("Content-Type", "application/json")

@@ -59,7 +59,7 @@ impl Module for RestApi {
             .router
             .merge(
                 Router::new()
-                    .route("/v1/da/block/height", get(endpoints::get_slot))
+                    .route("/v1/da/block/height", get(endpoints::get_block_height))
                     .route("/v1/contract/:name", get(endpoints::get_contract))
                     .route(
                         "/v1/contract/register",

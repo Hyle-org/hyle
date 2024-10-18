@@ -140,7 +140,9 @@ pub async fn get_contract(
     }
 }
 
-pub async fn get_slot(State(mut state): State<RouterState>) -> Result<impl IntoResponse, AppError> {
+pub async fn get_block_height(
+    State(mut state): State<RouterState>,
+) -> Result<impl IntoResponse, AppError> {
     match state.bus.request(QueryBlockHeight {}).await {
         Ok(block_height) => Ok(Json(block_height)),
         err => {
@@ -148,7 +150,7 @@ pub async fn get_slot(State(mut state): State<RouterState>) -> Result<impl IntoR
 
             Err(AppError(
                 StatusCode::INTERNAL_SERVER_ERROR,
-                anyhow!("Error while getting slot"),
+                anyhow!("Error while getting block height"),
             ))
         }
     }

@@ -102,9 +102,9 @@ impl Drop for TestProcess {
     }
 }
 
-pub async fn wait_slot(client: &ApiHttpClient, slots: u64) -> anyhow::Result<()> {
+pub async fn wait_height(client: &ApiHttpClient, slots: u64) -> anyhow::Result<()> {
     loop {
-        if let Ok(mut current_slot) = client.get_current_slot().await {
+        if let Ok(mut current_slot) = client.get_block_height().await {
             let target_slot = current_slot + slots;
             while current_slot.0 < target_slot.0 {
                 info!(
@@ -112,7 +112,7 @@ pub async fn wait_slot(client: &ApiHttpClient, slots: u64) -> anyhow::Result<()>
                     target_slot, current_slot
                 );
                 std::thread::sleep(std::time::Duration::from_millis(250));
-                current_slot = client.get_current_slot().await?;
+                current_slot = client.get_block_height().await?;
             }
             return Ok(());
         } else {

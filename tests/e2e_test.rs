@@ -13,7 +13,7 @@ use hyle::{
 };
 use hyle_contract_sdk::{Identity, StateDigest, TxHash};
 use reqwest::{Client, Url};
-use test_helpers::{wait_slot, ConfMaker};
+use test_helpers::{wait_height, ConfMaker};
 
 mod test_helpers;
 
@@ -225,7 +225,7 @@ async fn e2e() -> Result<()> {
     let indexer = test_helpers::TestProcess::new("indexer", indexer_conf).start();
 
     // Wait for nodes to properly spin up
-    wait_slot(&client_node1, 5).await?;
+    wait_height(&client_node1, 5).await?;
 
     // Using a fake proofs
     register_test_contracts(&client_node1).await?;
@@ -235,7 +235,7 @@ async fn e2e() -> Result<()> {
     send_blobs_and_proofs(&client_node1).await?;
 
     // Wait for some slots to be finished
-    wait_slot(&client_node1, 10).await?;
+    wait_height(&client_node1, 10).await?;
 
     verify_test_contract_state(&client_node1).await?;
     verify_contract_state(&client_node1).await?;
