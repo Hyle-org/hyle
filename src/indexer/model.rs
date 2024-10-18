@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::types::chrono::NaiveDateTime;
 use sqlx::{prelude::Type, Postgres};
 
-use crate::model::BlockHash;
+use crate::model::{Blob, BlockHash};
 use hyle_contract_sdk::TxHash;
 
 #[derive(Debug, sqlx::FromRow, Serialize, Deserialize)]
@@ -44,7 +44,7 @@ pub struct TransactionDb {
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct TransactionWithBlobs {
-    pub tx_hash: TxHash,
+    pub tx_hash: TxHashDb,
     pub block_hash: BlockHash,
     pub tx_index: i32,
     pub version: i32,
@@ -102,7 +102,7 @@ pub struct ContractStateDb {
     pub state_digest: Vec<u8>, // The contract state stored in JSON format
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct TxHashDb(pub TxHash);
 
 impl From<TxHash> for TxHashDb {
