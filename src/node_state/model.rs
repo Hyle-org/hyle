@@ -1,9 +1,8 @@
 use bincode::{Decode, Encode};
+use hyle_contract_sdk::{HyleOutput, Identity, StateDigest, TxHash};
 use serde::{Deserialize, Serialize};
 
-use crate::model::{
-    BlobIndex, BlobsHash, BlockHeight, ContractName, Identity, StateDigest, TxHash,
-};
+use crate::model::{BlobsHash, BlockHeight, ContractName};
 use std::collections::HashMap;
 
 #[derive(Default, Debug, Clone, Serialize, Deserialize, Encode, Decode)]
@@ -26,19 +25,6 @@ pub struct UnsettledTransaction {
 pub struct UnsettledBlobMetadata {
     pub contract_name: ContractName,
     pub metadata: Vec<HyleOutput>,
-}
-
-#[derive(Default, Deserialize, Debug, Clone, PartialEq, Eq, Hash, Encode, Decode)]
-pub struct HyleOutput {
-    pub version: u32,
-    pub initial_state: StateDigest,
-    pub next_state: StateDigest,
-    pub identity: Identity,
-    pub tx_hash: TxHash,
-    pub index: BlobIndex,
-    pub blobs: Vec<u8>,
-    pub success: bool,
-    pub program_outputs: Vec<u8>,
 }
 
 #[derive(Default, Debug, Clone, Encode, Decode)]

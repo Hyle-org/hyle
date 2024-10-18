@@ -7,13 +7,14 @@ use crate::{
     handle_messages,
     model::{
         BlobTransaction, BlobsHash, Block, BlockHeight, ContractName, Hashable, ProofTransaction,
-        RegisterContractTransaction, SharedRunContext, StateDigest, Transaction, TxHash,
+        RegisterContractTransaction, SharedRunContext, Transaction,
     },
     utils::{conf::SharedConf, logger::LogMe, modules::Module},
 };
 use anyhow::{bail, Context, Error, Result};
 use bincode::{Decode, Encode};
-use model::{Contract, HyleOutput, Timeouts, UnsettledBlobMetadata, UnsettledTransaction};
+use hyle_contract_sdk::{HyleOutput, StateDigest, TxHash};
+use model::{Contract, Timeouts, UnsettledBlobMetadata, UnsettledTransaction};
 use ordered_tx_map::OrderedTxMap;
 use std::{
     collections::{HashMap, HashSet},
@@ -434,6 +435,8 @@ impl DerefMut for NodeState {
 #[cfg(test)]
 mod test {
     use std::path::PathBuf;
+
+    use hyle_contract_sdk::{BlobIndex, Identity};
 
     use crate::{bus::SharedMessageBus, model::*, utils::conf::Conf};
 

@@ -4,11 +4,12 @@ use anyhow::Result;
 use clap::{command, Parser, Subcommand};
 use hyle::{
     model::{
-        Blob, BlobData, BlobIndex, BlobReference, BlobTransaction, ContractName, Identity,
-        ProofTransaction, RegisterContractTransaction, StateDigest, TxHash,
+        Blob, BlobData, BlobReference, BlobTransaction, ContractName, ProofTransaction,
+        RegisterContractTransaction,
     },
     rest::client::ApiHttpClient,
 };
+use hyle_contract_sdk::{BlobIndex, Identity, StateDigest, TxHash};
 use reqwest::{Client, Url};
 
 pub fn load_encoded_receipt_from_file(path: &str) -> Vec<u8> {

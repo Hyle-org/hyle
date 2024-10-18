@@ -4,9 +4,7 @@ use crate::bus::BusMessage;
 use crate::consensus::staking::Staker;
 use crate::model::Transaction;
 use crate::model::{BlobTransaction, ContractName};
-use crate::model::{
-    Hashable, ProofTransaction, RegisterContractTransaction, TransactionData, TxHash,
-};
+use crate::model::{Hashable, ProofTransaction, RegisterContractTransaction, TransactionData};
 use crate::tools::mock_workflow::RunScenario;
 use anyhow::anyhow;
 use axum::{
@@ -16,6 +14,7 @@ use axum::{
     Json,
 };
 use bincode::{Decode, Encode};
+use hyle_contract_sdk::TxHash;
 use serde::{Deserialize, Serialize};
 use tracing::error;
 

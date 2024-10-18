@@ -1,7 +1,9 @@
 use serde::{Deserialize, Serialize};
 use sqlx::types::chrono::NaiveDateTime;
+use sqlx::{prelude::Type, Postgres};
 
-use crate::model::{BlockHash, TxHash};
+use crate::model::BlockHash;
+use hyle_contract_sdk::TxHash;
 
 #[derive(Debug, sqlx::FromRow, Serialize, Deserialize)]
 pub struct BlockDb {
@@ -31,7 +33,7 @@ pub enum TransactionStatus {
 #[derive(Debug, sqlx::FromRow, Serialize, Deserialize)]
 pub struct TransactionDb {
     // Struct for the transactions table
-    pub tx_hash: TxHash,       // Transaction hash
+    pub tx_hash: TxHashDb,     // Transaction hash
     pub block_hash: BlockHash, // Corresponds to the block hash
     pub tx_index: i32,         // Index of the transaction in the block
     #[sqlx(try_from = "i32")]
@@ -42,27 +44,27 @@ pub struct TransactionDb {
 
 #[derive(Debug, sqlx::FromRow, Serialize, Deserialize)]
 pub struct BlobDb {
-    pub tx_hash: TxHash, // Corresponds to the transaction hash
+    pub tx_hash: TxHashDb, // Corresponds to the transaction hash
     #[sqlx(try_from = "i32")]
     pub blob_index: u32, // Index of the blob within the transaction
-    pub identity: String, // Identity of the blob
+    pub identity: String,  // Identity of the blob
     pub contract_name: String, // Contract name associated with the blob
-    pub data: Vec<u8>,   // Actual blob data
+    pub data: Vec<u8>,     // Actual blob data
 }
 
 #[derive(Debug, sqlx::FromRow, Serialize, Deserialize)]
 pub struct ProofTransactionDb {
     // Struct for the proof_transactions table
-    pub tx_hash: TxHash, // Corresponds to the transaction hash
-    pub proof: Vec<u8>,  // Proof associated with the transaction
+    pub tx_hash: TxHashDb, // Corresponds to the transaction hash
+    pub proof: Vec<u8>,    // Proof associated with the transaction
 }
 
 #[derive(Debug, sqlx::FromRow, Serialize, Deserialize)]
 pub struct BlobReferenceDb {
     // Struct for the blob_references table
-    pub tx_hash: TxHash,       // Corresponds to the proof transaction hash
-    pub contract_name: String, // Contract name
-    pub blob_tx_hash: TxHash,  // Blob transaction hash
+    pub tx_hash: TxHashDb,      // Corresponds to the proof transaction hash
+    pub contract_name: String,  // Contract name
+    pub blob_tx_hash: TxHashDb, // Blob transaction hash
     #[sqlx(try_from = "i32")]
     pub blob_index: u32, // Index of the blob
     // Optional field for extra data
@@ -72,10 +74,10 @@ pub struct BlobReferenceDb {
 #[derive(Debug, sqlx::FromRow, Serialize, Deserialize)]
 pub struct ContractDb {
     // Struct for the contracts table
-    pub tx_hash: TxHash,       // Corresponds to the registration transaction hash
-    pub owner: String,         // Owner of the contract
-    pub verifier: String,      // Verifier of the contract
-    pub program_id: Vec<u8>,   // Program ID
+    pub tx_hash: TxHashDb,   // Corresponds to the registration transaction hash
+    pub owner: String,       // Owner of the contract
+    pub verifier: String,    // Verifier of the contract
+    pub program_id: Vec<u8>, // Program ID
     pub state_digest: Vec<u8>, // State digest of the contract
     pub contract_name: String, // Contract name
 }
@@ -86,4 +88,42 @@ pub struct ContractStateDb {
     pub contract_name: String, // Name of the contract
     pub block_hash: BlockHash, // Hash of the block where the state is captured
     pub state_digest: Vec<u8>, // The contract state stored in JSON format
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct TxHashDb(pub TxHash);
+
+impl From<TxHash> for TxHashDb {
+    fn from(tx_hash: TxHash) -> Self {
+        TxHashDb(tx_hash)
+    }
+}
+
+impl Type<Postgres> for TxHashDb {
+    fn type_info() -> sqlx::postgres::PgTypeInfo {
+        <String as Type<Postgres>>::type_info()
+    }
+}
+impl<'q> sqlx::Encode<'q, sqlx::Postgres> for TxHashDb {
+    fn encode_by_ref(
+        &self,
+        buf: &mut sqlx::postgres::PgArgumentBuffer,
+    ) -> std::result::Result<
+        sqlx::encode::IsNull,
+        std::boxed::Box<(dyn std::error::Error + std::marker::Send + std::marker::Sync + 'static)>,
+    > {
+        <String as sqlx::Encode<sqlx::Postgres>>::encode_by_ref(&self.0 .0, buf)
+    }
+}
+
+impl<'r> sqlx::Decode<'r, sqlx::Postgres> for TxHashDb {
+    fn decode(
+        value: sqlx::postgres::PgValueRef<'r>,
+    ) -> std::result::Result<
+        TxHashDb,
+        std::boxed::Box<(dyn std::error::Error + std::marker::Send + std::marker::Sync + 'static)>,
+    > {
+        let inner = <String as sqlx::Decode<sqlx::Postgres>>::decode(value)?;
+        Ok(TxHashDb(TxHash(inner)))
+    }
 }

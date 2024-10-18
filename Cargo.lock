@@ -1978,6 +1978,7 @@ dependencies = [
  "dhat",
  "futures",
  "hex",
+ "hyle-contract-sdk",
  "opentelemetry",
  "paste",
  "proptest",
@@ -2004,6 +2005,15 @@ dependencies = [
  "tower-http",
  "tracing",
  "tracing-subscriber 0.3.18",
+]
+
+[[package]]
+name = "hyle-contract-sdk"
+version = "0.1.0"
+dependencies = [
+ "bincode 2.0.0-rc.2",
+ "hex",
+ "serde",
 ]
 
 [[package]]

@@ -452,8 +452,9 @@ impl DataAvailability {
 mod tests {
     use crate::model::{
         Blob, BlobData, BlobTransaction, Block, BlockHash, BlockHeight, ContractName, Hashable,
-        Identity, Transaction, TransactionData,
+        Transaction, TransactionData,
     };
+    use hyle_contract_sdk::Identity;
 
     use super::blocks::Blocks;
     use anyhow::Result;

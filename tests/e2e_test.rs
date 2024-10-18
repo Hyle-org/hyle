@@ -1,18 +1,20 @@
 use assertables::assert_ok;
+use std::{fs::File, io::Read, time};
+use testcontainers_modules::{postgres::Postgres, testcontainers::runners::AsyncRunner};
+use tokio::time::sleep;
+
 use hyle::{
     indexer::model::ContractDb,
     model::{
-        Blob, BlobData, BlobReference, BlobTransaction, ContractName, Identity, ProofTransaction,
-        RegisterContractTransaction, StateDigest, TxHash,
+        Blob, BlobData, BlobReference, BlobTransaction, ContractName, ProofTransaction,
+        RegisterContractTransaction,
     },
     node_state::model::Contract,
     rest::client::ApiHttpClient,
 };
+use hyle_contract_sdk::{Identity, StateDigest, TxHash};
 use reqwest::{Client, Url};
-use std::{fs::File, io::Read, time};
 use test_helpers::ConfMaker;
-use testcontainers_modules::{postgres::Postgres, testcontainers::runners::AsyncRunner};
-use tokio::time::sleep;
 
 mod test_helpers;
 
@@ -67,7 +69,7 @@ async fn send_blobs_and_proofs(client: &ApiHttpClient) -> Result<()> {
         blobs_references: vec![BlobReference {
             contract_name: ContractName("erc20-risc0".to_string()),
             blob_tx_hash: blob_tx_hash.clone(),
-            blob_index: hyle::model::BlobIndex(0),
+            blob_index: hyle_contract_sdk::BlobIndex(0),
         }],
         proof,
     };
@@ -149,12 +151,12 @@ async fn send_test_blobs_and_proofs(client: &ApiHttpClient) -> Result<()> {
                 BlobReference {
                     contract_name: ContractName("c1".to_string()),
                     blob_tx_hash: blob_tx_hash.clone(),
-                    blob_index: hyle::model::BlobIndex(0)
+                    blob_index: hyle_contract_sdk::BlobIndex(0)
                 },
                 BlobReference {
                     contract_name: ContractName("c2".to_string()),
                     blob_tx_hash,
-                    blob_index: hyle::model::BlobIndex(1)
+                    blob_index: hyle_contract_sdk::BlobIndex(1)
                 }
             ],
             proof: vec![5, 5]

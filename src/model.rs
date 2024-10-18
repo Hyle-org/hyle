@@ -3,6 +3,7 @@
 use axum::Router;
 use bincode::{Decode, Encode};
 use derive_more::Display;
+use hyle_contract_sdk::{BlobIndex, Identity, StateDigest, TxHash};
 use serde::{
     de::{self, Visitor},
     Deserialize, Serialize,
@@ -24,51 +25,6 @@ use crate::{
     consensus::staking::Staker,
     utils::{conf::SharedConf, crypto::SharedBlstCrypto},
 };
-
-#[derive(
-    Debug, Display, Default, Clone, Eq, PartialEq, Hash, Encode, Decode, Deserialize, Serialize,
-)]
-pub struct TxHash(pub String);
-
-impl From<String> for TxHash {
-    fn from(s: String) -> Self {
-        TxHash(s)
-    }
-}
-
-impl Type<Postgres> for TxHash {
-    fn type_info() -> sqlx::postgres::PgTypeInfo {
-        <String as Type<Postgres>>::type_info()
-    }
-}
-impl<'q> sqlx::Encode<'q, sqlx::Postgres> for TxHash {
-    fn encode_by_ref(
-        &self,
-        buf: &mut sqlx::postgres::PgArgumentBuffer,
-    ) -> std::result::Result<
-        sqlx::encode::IsNull,
-        std::boxed::Box<(dyn std::error::Error + std::marker::Send + std::marker::Sync + 'static)>,
-    > {
-        <String as sqlx::Encode<sqlx::Postgres>>::encode_by_ref(&self.0, buf)
-    }
-}
-
-impl<'r> sqlx::Decode<'r, sqlx::Postgres> for TxHash {
-    fn decode(
-        value: sqlx::postgres::PgValueRef<'r>,
-    ) -> std::result::Result<
-        TxHash,
-        std::boxed::Box<(dyn std::error::Error + std::marker::Send + std::marker::Sync + 'static)>,
-    > {
-        let inner = <String as sqlx::Decode<sqlx::Postgres>>::decode(value)?;
-        Ok(TxHash(inner))
-    }
-}
-impl TxHash {
-    pub fn new(s: &str) -> TxHash {
-        TxHash(s.into())
-    }
-}
 
 #[derive(
     Debug, Display, Default, Clone, Serialize, Deserialize, Eq, PartialEq, Hash, Encode, Decode,
@@ -117,28 +73,6 @@ pub struct BlockHeight(pub u64);
 #[derive(
     Default, Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash, Display, Encode, Decode,
 )]
-pub struct BlobIndex(pub u32);
-
-impl From<u32> for BlobIndex {
-    fn from(i: u32) -> Self {
-        BlobIndex(i)
-    }
-}
-
-#[derive(
-    Default, Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash, Display, Encode, Decode,
-)]
-pub struct Identity(pub String);
-
-impl From<String> for Identity {
-    fn from(s: String) -> Self {
-        Identity(s)
-    }
-}
-
-#[derive(
-    Default, Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash, Display, Encode, Decode,
-)]
 pub struct ContractName(pub String);
 
 impl From<String> for ContractName {
@@ -146,9 +80,6 @@ impl From<String> for ContractName {
         ContractName(s)
     }
 }
-
-#[derive(Debug, Serialize, Deserialize, Default, Clone, Eq, PartialEq, Hash, Encode, Decode)]
-pub struct StateDigest(pub Vec<u8>);
 
 #[derive(Debug, Serialize, Deserialize, Default, Clone, PartialEq, Eq, Encode, Decode, Hash)]
 pub struct BlobData(pub Vec<u8>);
