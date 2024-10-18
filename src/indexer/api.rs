@@ -19,7 +19,7 @@ pub async fn get_blocks(
     State(state): State<IndexerState>,
 ) -> Result<Json<Vec<BlockDb>>, StatusCode> {
     let blocks = sqlx::query_as::<_, BlockDb>("SELECT * FROM blocks")
-        .fetch_all(&state)
+        .fetch_all(&state.db)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
@@ -33,7 +33,7 @@ pub async fn get_last_block(
     State(state): State<IndexerState>,
 ) -> Result<Json<BlockDb>, StatusCode> {
     let block = sqlx::query_as::<_, BlockDb>("SELECT * FROM blocks ORDER BY height DESC LIMIT 1")
-        .fetch_optional(&state)
+        .fetch_optional(&state.db)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
@@ -49,7 +49,7 @@ pub async fn get_block(
 ) -> Result<Json<BlockDb>, StatusCode> {
     let block = sqlx::query_as::<_, BlockDb>("SELECT * FROM blocks WHERE height = $1")
         .bind(height)
-        .fetch_optional(&state)
+        .fetch_optional(&state.db)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
@@ -65,7 +65,7 @@ pub async fn get_block_by_hash(
 ) -> Result<Json<BlockDb>, StatusCode> {
     let block = sqlx::query_as::<_, BlockDb>("SELECT * FROM blocks WHERE hash = $1")
         .bind(hash)
-        .fetch_optional(&state)
+        .fetch_optional(&state.db)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
@@ -80,7 +80,7 @@ pub async fn get_transactions(
     State(state): State<IndexerState>,
 ) -> Result<Json<Vec<TransactionDb>>, StatusCode> {
     let transactions = sqlx::query_as::<_, TransactionDb>("SELECT * FROM transactions")
-        .fetch_all(&state)
+        .fetch_all(&state.db)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
@@ -103,7 +103,7 @@ pub async fn get_transactions_with_contract_name(
         "#,
     )
     .bind(contract_name)
-    .fetch_all(&state)
+    .fetch_all(&state.db)
     .await
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
@@ -126,7 +126,7 @@ pub async fn get_transactions_by_height(
         "#,
     )
     .bind(height)
-    .fetch_optional(&state)
+    .fetch_optional(&state.db)
     .await
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
@@ -148,7 +148,7 @@ pub async fn get_transaction_with_hash(
         "#,
     )
     .bind(tx_hash)
-    .fetch_optional(&state)
+    .fetch_optional(&state.db)
     .await
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
@@ -191,7 +191,7 @@ pub async fn get_blob_transactions_by_contract_name(
         "#,
     )
     .bind(contract_name)
-    .fetch_all(&state)
+    .fetch_all(&state.db)
     .await
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
@@ -248,7 +248,7 @@ pub async fn get_blobs_by_contract_name(
         "#,
     )
     .bind(contract_name)
-    .fetch_all(&state)
+    .fetch_all(&state.db)
     .await
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
@@ -272,7 +272,7 @@ pub async fn get_settled_blobs_by_contract_name(
         "#,
     )
     .bind(contract_name)
-    .fetch_all(&state)
+    .fetch_all(&state.db)
     .await
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
@@ -296,7 +296,7 @@ pub async fn get_unsettled_blobs_by_contract_name(
         "#,
     )
     .bind(contract_name)
-    .fetch_all(&state)
+    .fetch_all(&state.db)
     .await
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
@@ -312,7 +312,7 @@ pub async fn get_blobs_by_tx_hash(
     // TODO: Order transaction ?
     let blobs = sqlx::query_as::<_, BlobDb>("SELECT * FROM blobs WHERE tx_hash = $1")
         .bind(tx_hash)
-        .fetch_all(&state)
+        .fetch_all(&state.db)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
@@ -330,7 +330,7 @@ pub async fn get_blob(
         sqlx::query_as::<_, BlobDb>("SELECT * FROM blobs WHERE tx_hash = $1 AND blob_index = $2")
             .bind(tx_hash)
             .bind(blob_index)
-            .fetch_optional(&state)
+            .fetch_optional(&state.db)
             .await
             .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
@@ -348,7 +348,7 @@ pub async fn get_contract(
     let contract =
         sqlx::query_as::<_, ContractDb>("SELECT * FROM contracts WHERE contract_name = $1")
             .bind(contract_name)
-            .fetch_optional(&state)
+            .fetch_optional(&state.db)
             .await
             .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
@@ -371,7 +371,7 @@ pub async fn get_contract_state_by_height(
     )
     .bind(contract_name)
     .bind(height)
-    .fetch_optional(&state)
+    .fetch_optional(&state.db)
     .await
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 

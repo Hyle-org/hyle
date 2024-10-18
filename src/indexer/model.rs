@@ -15,7 +15,7 @@ pub struct BlockDb {
     pub timestamp: NaiveDateTime, // UNIX timestamp
 }
 
-#[derive(Debug, sqlx::Type, Serialize, Deserialize)]
+#[derive(Debug, sqlx::Type, Serialize, Deserialize, Clone, PartialEq)]
 #[sqlx(type_name = "transaction_type", rename_all = "snake_case")]
 pub enum TransactionType {
     BlobTransaction,
@@ -23,7 +23,7 @@ pub enum TransactionType {
     RegisterContractTransaction,
 }
 
-#[derive(Debug, sqlx::Type, Serialize, Deserialize)]
+#[derive(Debug, sqlx::Type, Serialize, Deserialize, Clone, PartialEq)]
 #[sqlx(type_name = "transaction_status", rename_all = "snake_case")]
 pub enum TransactionStatus {
     Success,
@@ -42,7 +42,7 @@ pub struct TransactionDb {
     pub transaction_status: TransactionStatus, // Status of the transaction
 }
 
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct TransactionWithBlobs {
     pub tx_hash: TxHash,
     pub block_hash: BlockHash,
