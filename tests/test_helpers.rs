@@ -1,7 +1,8 @@
 use assert_cmd::prelude::*;
-use hyle::utils::conf::Conf;
+use hyle::{rest::client::ApiHttpClient, utils::conf::Conf};
 use std::process::{Child, Command};
 use tempfile::TempDir;
+use tracing::info;
 
 pub struct ConfMaker {
     i: u16,
@@ -97,6 +98,26 @@ impl Drop for TestProcess {
                 child.kill().unwrap();
                 child.wait().unwrap();
             }
+        }
+    }
+}
+
+pub async fn wait_slot(client: &ApiHttpClient, slots: u64) -> anyhow::Result<()> {
+    loop {
+        if let Ok(mut current_slot) = client.get_current_slot().await {
+            let target_slot = current_slot + slots;
+            while current_slot < target_slot {
+                info!(
+                    "⏰ Waiting for slot {} to be reached. Current is {}",
+                    target_slot, current_slot
+                );
+                std::thread::sleep(std::time::Duration::from_millis(250));
+                current_slot = client.get_current_slot().await?;
+            }
+            return Ok(());
+        } else {
+            info!("⏰ Waiting for node to be ready");
+            std::thread::sleep(std::time::Duration::from_millis(500));
         }
     }
 }

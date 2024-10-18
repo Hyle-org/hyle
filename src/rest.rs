@@ -2,6 +2,7 @@
 
 use crate::{
     bus::{bus_client, command_response::Query, SharedMessageBus},
+    consensus::{QuerySlot, Slot},
     model::ContractName,
     node_state::model::Contract,
     tools::mock_workflow::RunScenario,
@@ -27,6 +28,7 @@ struct RestBusClient {
     sender(RestApiMessage),
     sender(RunScenario),
     sender(Query<ContractName, Contract>),
+    sender(Query<QuerySlot, Slot>),
 }
 }
 
@@ -57,6 +59,7 @@ impl Module for RestApi {
             .router
             .merge(
                 Router::new()
+                    .route("/v1/consensus/slot", get(endpoints::get_slot))
                     .route("/v1/contract/:name", get(endpoints::get_contract))
                     .route(
                         "/v1/contract/register",
@@ -115,6 +118,8 @@ impl Clone for RouterState {
                     &self.bus,
                 )
                 .clone(),
+                Pick::<tokio::sync::broadcast::Sender<Query<QuerySlot, Slot>>>::get(&self.bus)
+                    .clone(),
             ),
         }
     }

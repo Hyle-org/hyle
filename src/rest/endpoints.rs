@@ -2,6 +2,7 @@ use crate::bus::command_response::CmdRespClient;
 use crate::bus::BusClientSender;
 use crate::bus::BusMessage;
 use crate::consensus::staking::Staker;
+use crate::consensus::QuerySlot;
 use crate::model::Transaction;
 use crate::model::{BlobTransaction, ContractName};
 use crate::model::{Hashable, ProofTransaction, RegisterContractTransaction, TransactionData};
@@ -134,6 +135,20 @@ pub async fn get_contract(
             Err(AppError(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 anyhow!("Error while getting contract {}", name_clone),
+            ))
+        }
+    }
+}
+
+pub async fn get_slot(State(mut state): State<RouterState>) -> Result<impl IntoResponse, AppError> {
+    match state.bus.request(QuerySlot {}).await {
+        Ok(slot) => Ok(Json(slot)),
+        err => {
+            error!("{:?}", err);
+
+            Err(AppError(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                anyhow!("Error while getting slot"),
             ))
         }
     }

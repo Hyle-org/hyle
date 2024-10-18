@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 use reqwest::{Response, Url};
 
 use crate::{
+    consensus::Slot,
     model::{BlobTransaction, ContractName, ProofTransaction, RegisterContractTransaction},
     tools::mock_workflow::RunScenario,
 };
@@ -43,6 +44,18 @@ impl ApiHttpClient {
             .send()
             .await
             .context("Sending tx register contract")
+    }
+
+    pub async fn get_current_slot(&self) -> Result<Slot> {
+        self.reqwest_client
+            .get(format!("{}v1/consensus/slot", self.url))
+            .header("Content-Type", "application/json")
+            .send()
+            .await
+            .context("getting Slot")?
+            .json::<Slot>()
+            .await
+            .context("reading slot response")
     }
 
     pub async fn get_contract(&self, contract_name: &ContractName) -> Result<Response> {
