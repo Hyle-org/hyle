@@ -2,7 +2,6 @@ use anyhow::{bail, Result};
 use bincode::{BorrowDecode, Decode, Encode};
 use serde::{Deserialize, Serialize};
 use std::{
-    cmp::Ordering,
     collections::{BTreeMap, BTreeSet, HashMap, HashSet},
     fmt::Display,
     hash::Hash,
@@ -19,10 +18,35 @@ pub struct TipData {
     pub poa: Vec<ValidatorPublicKey>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProposalVerdict {
     Wait(Option<usize>),
     Vote,
+}
+
+pub type Cut = BTreeMap<ValidatorPublicKey, usize>;
+
+#[derive(Debug, Default, Clone, Deserialize, Serialize, Encode, Decode)]
+pub struct CutWithTxs {
+    pub tips: Cut,
+    pub txs: Vec<Transaction>,
+}
+
+impl CutWithTxs {
+    fn extend_from_lane(
+        &mut self,
+        validator: &ValidatorPublicKey,
+        lane: &mut Lane,
+        txs: &mut HashSet<Transaction>,
+    ) {
+        if let Some(car) = lane.cars.last_mut() {
+            if !car.used_in_cut {
+                car.used_in_cut = true;
+                txs.extend(car.txs.clone());
+                self.tips.insert(validator.clone(), car.id);
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -45,51 +69,20 @@ impl Display for InMemoryStorage {
     }
 }
 
-pub type Cut = BTreeMap<ValidatorPublicKey, Option<CutCar>>;
-
-#[derive(Debug, Default, Clone, Deserialize, Serialize, Encode, Decode)]
-pub struct CutWithTxs {
-    pub tips: Cut,
-    pub txs: Vec<Transaction>,
-}
-
-impl CutWithTxs {
-    fn extend_from_lane(
-        &mut self,
-        validator: &ValidatorPublicKey,
-        lane: &mut Lane,
-        txs: &mut HashSet<Transaction>,
-    ) {
-        self.tips.insert(
-            validator.clone(),
-            lane.cars.last().and_then(|car| {
-                if car.used_in_cut {
-                    None
-                } else {
-                    txs.extend(car.txs.clone());
-                    Some(CutCar {
-                        id: car.id,
-                        parent: car.parent,
-                    })
-                }
-            }),
-        );
-    }
-}
-
-#[derive(Debug, Default, Clone, Deserialize, Serialize, Encode, Decode, PartialEq, Eq, Hash)]
-pub struct CutCar {
-    pub id: usize,
-    pub parent: Option<usize>,
-}
-
 impl InMemoryStorage {
     pub fn new(id: ValidatorPublicKey) -> InMemoryStorage {
+        let genesis_car = Car {
+            id: 0,
+            parent: None,
+            txs: vec![],
+            poa: Poa(BTreeSet::from([id.clone()])),
+            used_in_cut: true,
+        };
         InMemoryStorage {
             id,
             pending_txs: vec![],
             lane: Lane {
-                cars: vec![],
+                cars: vec![genesis_car],
                 waiting: HashSet::new(),
             },
             other_lanes: HashMap::new(),
@@ -208,11 +201,11 @@ impl InMemoryStorage {
         data_proposal: &DataProposal,
     ) -> bool {
         let lane = self.other_lanes.entry(validator.clone()).or_default();
-        let tip = lane.current_mut();
+        let tip = lane.current();
         if let Some(parent) = data_proposal.parent {
             tip.map(|car| car.id == parent).unwrap_or_default()
         } else {
-            true
+            false
         }
     }
 
@@ -264,10 +257,7 @@ impl InMemoryStorage {
 
         match car {
             None => {
-                error!(
-                    "data proposal does exist locally as a car! lane: {}",
-                    self.lane
-                );
+                error!("data proposal does exist locally");
                 None
             }
             Some(c) => {
@@ -277,38 +267,27 @@ impl InMemoryStorage {
                     None => Some(
                         self.lane
                             .cars
-                            .clone()
-                            .into_iter()
-                            .take_while(|car| car.id != c.id)
+                            .iter()
+                            .take_while(|car| car.id < c.id)
+                            .cloned()
                             .collect(),
                     ),
                     // If there is an index, two cases
                     // - it matches the current tip, in this case we don't send any more data
                     // - it does not match, we send the diff
-                    Some(last_index_usize) => {
-                        if last_index_usize == c.id {
+                    Some(last_index) => {
+                        if last_index == c.id {
                             None
                         } else {
-                            debug!(
-                                "Trying to compute diff between {} and last_index {}",
-                                c, last_index_usize
-                            );
-                            let mut missing_cars: Vec<Car> = vec![];
-                            let mut current_car = c;
-                            loop {
-                                current_car =
-                                    self.lane.cars.get(current_car.parent.unwrap() - 1).unwrap();
-                                if current_car.id == last_index_usize
-                                    || current_car.parent.is_none()
-                                {
-                                    break;
-                                }
-                                missing_cars.push(current_car.clone());
-                            }
-
-                            missing_cars.sort_by_key(|car| car.id);
-
-                            Some(missing_cars)
+                            Some(
+                                self.lane
+                                    .cars
+                                    .iter()
+                                    .skip_while(|car| car.id <= last_index)
+                                    .take_while(|car| car.id < c.id)
+                                    .cloned()
+                                    .collect(),
+                            )
                         }
                     }
                 }
@@ -318,7 +297,11 @@ impl InMemoryStorage {
 
     pub fn get_waiting_proposals(&mut self, validator: &ValidatorPublicKey) -> Vec<DataProposal> {
         match self.other_lanes.get_mut(validator) {
-            Some(sl) => sl.waiting.drain().collect(),
+            Some(sl) => {
+                let mut wp = sl.waiting.drain().collect::<Vec<_>>();
+                wp.sort_by_key(|wp| wp.pos);
+                wp
+            }
             None => vec![],
         }
     }
@@ -384,26 +367,17 @@ impl InMemoryStorage {
         self.pending_txs.drain(0..).collect()
     }
 
-    fn collect_old_used_cars(cars: &mut Vec<Car>, some_tip: &Option<CutCar>) {
-        if let Some(tip) = some_tip {
-            cars.retain_mut(|car| match car.id.cmp(&tip.id) {
-                Ordering::Less => false,
-                Ordering::Equal => {
-                    car.used_in_cut = true;
-                    true
-                }
-                Ordering::Greater => true,
-            });
-        }
+    fn collect_old_used_cars(cars: &mut Vec<Car>, tip: usize) {
+        cars.retain_mut(|car| car.id >= tip);
     }
 
     pub fn update_lanes_after_commit(&mut self, lanes: Cut) {
         if let Some(tip) = lanes.get(&self.id) {
-            Self::collect_old_used_cars(&mut self.lane.cars, tip);
+            Self::collect_old_used_cars(&mut self.lane.cars, *tip);
         }
         for (validator, lane) in self.other_lanes.iter_mut() {
             if let Some(tip) = lanes.get(validator) {
-                Self::collect_old_used_cars(&mut lane.cars, tip);
+                Self::collect_old_used_cars(&mut lane.cars, *tip);
             }
         }
     }
@@ -549,7 +523,7 @@ mod tests {
     use std::collections::BTreeSet;
 
     use crate::{
-        mempool::storage::{Car, DataProposal, InMemoryStorage, Poa},
+        mempool::storage::{Car, DataProposal, InMemoryStorage, Poa, ProposalVerdict},
         model::{
             Blob, BlobData, BlobTransaction, ContractName, Identity, Transaction, TransactionData,
             ValidatorPublicKey,
@@ -704,14 +678,14 @@ mod tests {
         let data_proposal1 = DataProposal {
             txs: vec![make_tx("test1"), make_tx("test2"), make_tx("test3")],
             pos: 1,
-            parent: None,
+            parent: Some(0),
             parent_poa: None,
         };
 
         let data_proposal2 = DataProposal {
             txs: vec![make_tx("test4"), make_tx("test5"), make_tx("test6")],
             pos: 1,
-            parent: None,
+            parent: Some(0),
             parent_poa: Some(vec![pubkey3.clone(), pubkey2.clone()]),
         };
 
@@ -724,15 +698,51 @@ mod tests {
 
         store.add_data_to_local_lane(data_proposal1.txs.clone());
         store.new_data_vote(&pubkey2, &data_proposal1);
-        store
-            .new_data_proposal(&pubkey2, &data_proposal2)
-            .expect("add proposal 2");
-        store
-            .new_data_proposal(&pubkey2, &data_proposal3)
-            .expect("add proposal 3");
 
-        assert_eq!(store.lane.size(), 1);
-        assert_eq!(store.other_lanes.get(&pubkey2).map(|l| l.size()), Some(2));
+        assert_eq!(
+            store
+                .new_data_proposal(&pubkey2, &data_proposal2)
+                .expect("add proposal 2"),
+            ProposalVerdict::Wait(Some(0))
+        );
+        // sync request, sync reply
+        store.add_missing_cars(
+            &pubkey2,
+            vec![Car {
+                id: 0,
+                parent: None,
+                txs: vec![],
+                poa: Poa(BTreeSet::from([pubkey2.clone()])),
+                used_in_cut: true,
+            }],
+        );
+        // make sure it's there
+        assert_eq!(
+            store.other_lanes.get(&pubkey2).map(|lane| lane.cars.len()),
+            Some(1)
+        );
+        assert!(store.has_parent_data_proposal(&pubkey2, &data_proposal2));
+
+        // replay waiting proposals
+        let wp = store.get_waiting_proposals(&pubkey2);
+        for proposal in wp.into_iter() {
+            assert_eq!(
+                store
+                    .new_data_proposal(&pubkey2, &proposal)
+                    .expect("add waiting proposal"),
+                ProposalVerdict::Vote
+            );
+        }
+
+        assert_eq!(
+            store
+                .new_data_proposal(&pubkey2, &data_proposal3)
+                .expect("add proposal 3"),
+            ProposalVerdict::Vote
+        );
+
+        assert_eq!(store.lane.size(), 2); // genesis car + data_proposal 1
+        assert_eq!(store.other_lanes.get(&pubkey2).map(|l| l.size()), Some(3)); // genesis car + data_proposal 2 and 3
 
         let cut = store.try_a_new_cut(2);
         assert!(cut.is_some());
@@ -740,6 +750,7 @@ mod tests {
 
         store.update_lanes_after_commit(cut.unwrap().tips);
 
+        // should contain only the tip on all the lanes
         assert_eq!(store.lane.size(), 1);
         assert_eq!(store.other_lanes.get(&pubkey2).map(|l| l.size()), Some(1));
         assert_eq!(store.lane.current().map(|c| c.id), Some(1));
@@ -749,6 +760,16 @@ mod tests {
                 .get(&pubkey2)
                 .and_then(|l| l.current().map(|c| c.id)),
             Some(2)
+        );
+        // the tips should be marked as used in a cut
+        assert_eq!(store.lane.current().map(|car| car.used_in_cut), Some(true));
+        assert_eq!(
+            store
+                .other_lanes
+                .get(&pubkey2)
+                .and_then(|lane| lane.cars.first())
+                .map(|car| car.used_in_cut),
+            Some(true)
         );
     }
 
@@ -796,6 +817,7 @@ mod tests {
         store.add_data_to_local_lane(vec![make_tx("test_local2")]);
         store.add_data_to_local_lane(vec![make_tx("test_local3")]);
         store.add_data_to_local_lane(vec![make_tx("test_local4")]);
+        assert_eq!(store.lane.cars.len(), 5);
 
         let missing = store.get_missing_cars(
             Some(1),
@@ -841,8 +863,15 @@ mod tests {
             missing,
             Some(vec![
                 Car {
-                    id: 1,
+                    id: 0,
                     parent: None,
+                    txs: vec![],
+                    poa: Poa(BTreeSet::from_iter(vec![pubkey3.clone()])),
+                    used_in_cut: true,
+                },
+                Car {
+                    id: 1,
+                    parent: Some(0),
                     txs: vec![make_tx("test_local")],
                     poa: Poa(BTreeSet::from_iter(vec![pubkey3.clone()])),
                     used_in_cut: false,
