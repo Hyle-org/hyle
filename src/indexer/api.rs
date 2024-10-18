@@ -90,7 +90,7 @@ pub async fn get_transactions(
     }
 }
 
-pub async fn get_transactions_with_contract_name(
+pub async fn get_transactions_by_contract(
     Path(contract_name): Path<String>,
     State(state): State<IndexerState>,
 ) -> Result<Json<Vec<TransactionDb>>, StatusCode> {
@@ -159,7 +159,7 @@ pub async fn get_transaction_with_hash(
 }
 
 // Blobs
-pub async fn get_blob_transactions_by_contract_name(
+pub async fn get_blob_transactions_by_contract(
     Path(contract_name): Path<String>,
     State(state): State<IndexerState>,
 ) -> Result<Json<Vec<TransactionWithBlobs>>, StatusCode> {
@@ -234,7 +234,7 @@ pub async fn get_blob_transactions_by_contract_name(
     }
 }
 
-pub async fn get_blobs_by_contract_name(
+pub async fn get_blobs_by_contract(
     Path(contract_name): Path<String>,
     State(state): State<IndexerState>,
 ) -> Result<Json<Vec<BlobDb>>, StatusCode> {
@@ -258,7 +258,7 @@ pub async fn get_blobs_by_contract_name(
     }
 }
 
-pub async fn get_settled_blobs_by_contract_name(
+pub async fn get_settled_blobs_by_contract(
     Path(contract_name): Path<String>,
     State(state): State<IndexerState>,
 ) -> Result<Json<Vec<BlobDb>>, StatusCode> {
@@ -282,7 +282,7 @@ pub async fn get_settled_blobs_by_contract_name(
     }
 }
 
-pub async fn get_unsettled_blobs_by_contract_name(
+pub async fn get_unsettled_blobs_by_contract(
     Path(contract_name): Path<String>,
     State(state): State<IndexerState>,
 ) -> Result<Json<Vec<BlobDb>>, StatusCode> {

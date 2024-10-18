@@ -173,7 +173,7 @@ impl Indexer {
             )
             .route(
                 "/transactions/contract/:contract_name",
-                get(api::get_transactions_with_contract_name),
+                get(api::get_transactions_by_contract),
             )
             .route(
                 "/transaction/hash/:tx_hash",
@@ -182,23 +182,23 @@ impl Indexer {
             // blob
             .route(
                 "/blobs/transactions/contract/:contract_name",
-                get(api::get_blob_transactions_by_contract_name),
+                get(api::get_blob_transactions_by_contract),
             )
             .route(
                 "/blobs/transactions/contract/:contract_name/ws",
-                get(Self::get_blob_transactions_by_contract_name_ws_handler),
+                get(Self::get_blob_transactions_by_contract_ws_handler),
             )
             .route(
                 "/blobs/contract/:contract_name",
-                get(api::get_blobs_by_contract_name),
+                get(api::get_blobs_by_contract),
             )
             .route(
                 "/blobs/settled/contract/:contract_name",
-                get(api::get_settled_blobs_by_contract_name),
+                get(api::get_settled_blobs_by_contract),
             )
             .route(
                 "/blobs/unsettled/contract/:contract_name",
-                get(api::get_unsettled_blobs_by_contract_name),
+                get(api::get_unsettled_blobs_by_contract),
             )
             .route("/blobs/hash/:tx_hash", get(api::get_blobs_by_tx_hash))
             .route("/blob/hash/:tx_hash/index/:blob_index", get(api::get_blob))
@@ -417,21 +417,17 @@ impl Indexer {
         Ok(())
     }
 
-    async fn get_blob_transactions_by_contract_name_ws_handler(
+    async fn get_blob_transactions_by_contract_ws_handler(
         ws: WebSocketUpgrade,
         Path(contract_name): Path<String>,
         State(state): State<IndexerState>,
     ) -> impl IntoResponse {
         ws.on_upgrade(move |socket| {
-            Self::get_blob_transactions_by_contract_name_ws(
-                socket,
-                contract_name,
-                state.subscribers,
-            )
+            Self::get_blob_transactions_by_contract_ws(socket, contract_name, state.subscribers)
         })
     }
 
-    async fn get_blob_transactions_by_contract_name_ws(
+    async fn get_blob_transactions_by_contract_ws(
         mut socket: WebSocket,
         contract_name: String,
         subscribers: Subscribers,
