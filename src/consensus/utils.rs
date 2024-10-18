@@ -28,8 +28,7 @@ impl Hashable<ConsensusProposalHash> for ConsensusProposal {
         _ = write!(hasher, "{}", self.view);
         _ = write!(hasher, "{:?}", self.previous_consensus_proposal_hash);
         _ = write!(hasher, "{:?}", self.previous_commit_quorum_certificate);
-        // TODO:
-        // _ = write!(hasher, "{}", self.block);
+        _ = write!(hasher, "{:?}", self.cut);
         return ConsensusProposalHash(hasher.finalize().as_slice().to_owned());
     }
 }
@@ -42,15 +41,13 @@ impl Display for ConsensusProposal {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            // "Hash: {}, Slot: {}, View: {}, Previous hash: {}, Previous commit hash: {}, Block: {}",
-            "Hash: {}, Slot: {}, View: {}, Previous hash: {}, Previous commit hash: {}",
+            "Hash: {}, Slot: {}, View: {}, Previous hash: {}, Previous commit hash: {}, Cut: {:?}",
             self.hash(),
             self.slot,
             self.view,
             self.previous_consensus_proposal_hash,
             self.previous_commit_quorum_certificate.hash(),
-            // TODO:
-            // self.block
+            self.cut
         )
     }
 }

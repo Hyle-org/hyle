@@ -27,7 +27,7 @@ pub enum ProposalVerdict {
 
 pub type Cut = BTreeMap<ValidatorPublicKey, usize>;
 
-#[derive(Debug, Default, Clone, Deserialize, Serialize, Encode, Decode)]
+#[derive(Debug, Default, Clone, Deserialize, Serialize, Encode, Decode, PartialEq, Eq)]
 pub struct CutWithTxs {
     pub tips: Cut,
     pub txs: Vec<Transaction>,

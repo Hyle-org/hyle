@@ -570,7 +570,13 @@ impl Consensus {
 
         match &msg.msg {
             // TODO: do we really get a net message for StartNewSlot ?
-            ConsensusNetMessage::StartNewSlot => self.start_new_slot(),
+            ConsensusNetMessage::StartNewSlot => {
+                if self.pending_cut.is_some() {
+                    self.start_new_slot()
+                } else {
+                    Ok(())
+                }
+            }
             ConsensusNetMessage::Prepare(consensus_proposal) => {
                 self.on_prepare(msg, consensus_proposal)
             }
@@ -1119,13 +1125,14 @@ impl Consensus {
     fn handle_command(&mut self, msg: ConsensusCommand) -> Result<()> {
         match msg {
             ConsensusCommand::SingleNodeBlockGeneration => {
-                let cut = self.pending_cut.take().unwrap_or_default();
-                self.bus
-                    .send(ConsensusEvent::CommitCut {
-                        validators: self.bft_round_state.consensus_proposal.validators.clone(),
-                        cut,
-                    })
-                    .expect("Failed to send ConsensusEvent::CommitCut msg on the bus");
+                if let Some(cut) = self.pending_cut.take() {
+                    self.bus
+                        .send(ConsensusEvent::CommitCut {
+                            validators: self.bft_round_state.consensus_proposal.validators.clone(),
+                            cut,
+                        })
+                        .expect("Failed to send ConsensusEvent::CommitCut msg on the bus");
+                }
                 Ok(())
             }
             ConsensusCommand::NewStaker(staker) => {
@@ -1526,13 +1533,9 @@ mod test {
 
         let leader_commit = node1.assert_broadcast("Leader commit");
         node2.handle_msg(&leader_commit, "Leader commit");
-
-        // FIXME(XXX):
-        // assert_eq!(node1.consensus.blocks.len(), 3);
-        // assert_eq!(node2.consensus.blocks.len(), 3);
     }
 
-    #[ignore]
+    #[ignore = "cannot verify new_bonded_validators with an empty cut"]
     #[test_log::test(tokio::test)]
     async fn test_candidacy() {
         let (mut node1, mut node2) = TestCtx::build().await;

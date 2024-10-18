@@ -94,6 +94,7 @@ pub struct DataAvailability {
     bus: DABusClient,
     pub blocks: Blocks,
 
+    pending_cuts: Vec<CutWithTxs>,
     buffered_blocks: BTreeSet<Block>,
     self_pubkey: ValidatorPublicKey,
     asked_last_block: bool,
@@ -131,6 +132,7 @@ impl Module for DataAvailability {
             config: ctx.common.config.clone(),
             bus,
             blocks: Blocks::new(&db)?,
+            pending_cuts: Vec::new(),
             buffered_blocks,
             self_pubkey,
             asked_last_block: false,
@@ -282,19 +284,46 @@ impl DataAvailability {
         Ok(())
     }
 
-    async fn handle_new_cut_event(&mut self, _cut: CutWithTxs) {
+    async fn handle_new_cut_event(&mut self, cut: CutWithTxs) {
+        if cut.txs.is_empty() || cut.tips.is_empty() {
+            return;
+        }
         // TODO:
+        self.pending_cuts.push(cut);
     }
 
     async fn handle_consensus_event(&mut self, event: ConsensusEvent) {
         match event {
-            ConsensusEvent::CommitCut { .. } => {
-                // TODO: build block !
-                // info!(
-                //     block_hash = %block.hash(),
-                //     block_height = %block.height,
-                //     "🔒  Cut committed");
-                // self.handle_block(block).await;
+            ConsensusEvent::CommitCut { cut, validators } => {
+                if cut.is_empty() {
+                    return;
+                }
+                info!("🔒  Cut committed");
+                if let Some(pos) = self
+                    .pending_cuts
+                    .iter()
+                    .position(|pending| pending.tips == cut)
+                {
+                    let cut = self.pending_cuts.remove(pos);
+
+                    let last_block = self.blocks.last();
+                    let parent_hash = last_block
+                        .as_ref()
+                        .map(|b| b.hash())
+                        .unwrap_or(BlockHash::new("000"));
+                    let parent_height = last_block.map(|b| b.height).unwrap_or_default();
+
+                    self.handle_block(Block {
+                        parent_hash,
+                        height: parent_height + 1,
+                        timestamp: get_current_timestamp(),
+                        new_bonded_validators: validators,
+                        txs: cut.txs,
+                    })
+                    .await;
+                } else {
+                    error!("Committed cut not found in pending cuts");
+                }
             }
         }
     }

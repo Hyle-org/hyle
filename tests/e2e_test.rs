@@ -251,25 +251,6 @@ async fn e2e() -> Result<()> {
 
     verify_indexer(&client_indexer).await?;
 
-    // Stop all processes
-    drop(indexer);
-    drop(node1);
-    drop(node2);
-
-    // Check that some blocks has been produced
-    // TODO:
-    // let node1_consensus: ConsensusStore =
-    //     Consensus::load_from_disk_or_default(path_node1.join("data_node1/consensus.bin").as_path());
-    // let node2_consensus: ConsensusStore =
-    //     Consensus::load_from_disk_or_default(path_node2.join("data_node2/consensus.bin").as_path());
-    // assert!(!node1_consensus.blocks.is_empty());
-    // assert!(!node2_consensus.blocks.is_empty());
-    // FIXME: check that created blocks are the same.
-
-    // Clean created files
-    // fs::remove_dir_all(path_node1.join("data_node1")).expect("file cleaning failed");
-    // fs::remove_dir_all(path_node2.join("data_node2")).expect("file cleaning failed");
-
     //TODO: compare blocks from node1 and node2
 
     Ok(())
