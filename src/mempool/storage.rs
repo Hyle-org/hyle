@@ -1,4 +1,3 @@
-use anyhow::{bail, Result};
 use bincode::{BorrowDecode, Decode, Encode};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -23,6 +22,7 @@ pub enum ProposalVerdict {
     Empty,
     Wait(Option<usize>),
     Vote,
+    DidVote,
 }
 
 pub type Cut = BTreeMap<ValidatorPublicKey, usize>;
@@ -75,18 +75,11 @@ impl Display for InMemoryStorage {
 
 impl InMemoryStorage {
     pub fn new(id: ValidatorPublicKey) -> InMemoryStorage {
-        let genesis_car = Car {
-            id: 0,
-            parent: None,
-            txs: vec![],
-            poa: Poa(BTreeSet::from([id.clone()])),
-            used_in_cut: true,
-        };
         InMemoryStorage {
             id,
             pending_txs: vec![],
             lane: Lane {
-                cars: vec![genesis_car],
+                cars: vec![],
                 waiting: HashSet::new(),
             },
             other_lanes: HashMap::new(),
@@ -174,26 +167,22 @@ impl InMemoryStorage {
         &mut self,
         validator: &ValidatorPublicKey,
         car_proposal: &CarProposal,
-    ) -> Result<ProposalVerdict> {
+    ) -> ProposalVerdict {
         if car_proposal.txs.is_empty() {
-            warn!(
-                "received empty Car proposal from {}, ignoring...",
-                validator
-            );
-            return Ok(ProposalVerdict::Empty);
+            return ProposalVerdict::Empty;
+        }
+        if self.other_lane_has_proposal(validator, car_proposal) {
+            return ProposalVerdict::DidVote;
         }
         if !self.other_lane_has_parent_proposal(validator, car_proposal) {
             self.proposal_will_wait(validator, car_proposal.clone());
-            return Ok(ProposalVerdict::Wait(car_proposal.parent));
+            return ProposalVerdict::Wait(car_proposal.parent);
         }
         if let (Some(parent), Some(parent_poa)) = (car_proposal.parent, &car_proposal.parent_poa) {
             self.update_other_lane_parent_poa(validator, parent, parent_poa)
         }
-        if self.other_lane_has_proposal(validator, car_proposal) {
-            bail!("we already have voted for {}'s Car proposal", validator);
-        }
         self.other_lane_add_proposal(validator, car_proposal);
-        Ok(ProposalVerdict::Vote)
+        ProposalVerdict::Vote
     }
 
     fn other_lane_add_proposal(
@@ -218,12 +207,7 @@ impl InMemoryStorage {
         car_proposal: &CarProposal,
     ) -> bool {
         let lane = self.other_lanes.entry(validator.clone()).or_default();
-        let tip = lane.current();
-        if let Some(parent) = car_proposal.parent {
-            tip.map(|car| car.id == parent).unwrap_or_default()
-        } else {
-            false
-        }
+        car_proposal.parent == lane.current().map(|car| car.id)
     }
 
     fn update_other_lane_parent_poa(
@@ -380,9 +364,13 @@ impl InMemoryStorage {
         self.pending_txs.drain(0..).collect()
     }
 
+    pub fn genesis(&self) -> bool {
+        self.lane.cars.is_empty()
+    }
+
     pub fn try_car_proposal(
         &mut self,
-        poa: Option<Vec<ValidatorPublicKey>>,
+        parent_poa: Option<Vec<ValidatorPublicKey>>,
     ) -> Option<CarProposal> {
         let pending_txs = self.flush_pending_txs();
         if pending_txs.is_empty() {
@@ -393,7 +381,7 @@ impl InMemoryStorage {
             txs: pending_txs,
             id: tip_id,
             parent: if tip_id == 1 { None } else { Some(tip_id - 1) },
-            parent_poa: poa,
+            parent_poa,
         })
     }
 
@@ -709,15 +697,15 @@ mod tests {
         let car_proposal1 = CarProposal {
             txs: vec![make_tx("test1"), make_tx("test2"), make_tx("test3")],
             id: 1,
-            parent: Some(0),
+            parent: None,
             parent_poa: None,
         };
 
         let car_proposal2 = CarProposal {
             txs: vec![make_tx("test4"), make_tx("test5"), make_tx("test6")],
             id: 1,
-            parent: Some(0),
-            parent_poa: Some(vec![pubkey3.clone(), pubkey2.clone()]),
+            parent: None,
+            parent_poa: None,
         };
 
         let car_proposal3 = CarProposal {
@@ -731,49 +719,17 @@ mod tests {
         store.new_vote_for_proposal(&pubkey2, &car_proposal1);
 
         assert_eq!(
-            store
-                .new_car_proposal(&pubkey2, &car_proposal2)
-                .expect("add proposal 2"),
-            ProposalVerdict::Wait(Some(0))
-        );
-        // sync request, sync reply
-        store.other_lane_add_missing_cars(
-            &pubkey2,
-            vec![Car {
-                id: 0,
-                parent: None,
-                txs: vec![],
-                poa: Poa(BTreeSet::from([pubkey2.clone()])),
-                used_in_cut: true,
-            }],
-        );
-        // make sure it's there
-        assert_eq!(
-            store.other_lanes.get(&pubkey2).map(|lane| lane.cars.len()),
-            Some(1)
-        );
-        assert!(store.other_lane_has_parent_proposal(&pubkey2, &car_proposal2));
-
-        // replay waiting proposals
-        let wp = store.get_waiting_proposals(&pubkey2);
-        for proposal in wp.into_iter() {
-            assert_eq!(
-                store
-                    .new_car_proposal(&pubkey2, &proposal)
-                    .expect("add waiting proposal"),
-                ProposalVerdict::Vote
-            );
-        }
-
-        assert_eq!(
-            store
-                .new_car_proposal(&pubkey2, &car_proposal3)
-                .expect("add proposal 3"),
+            store.new_car_proposal(&pubkey2, &car_proposal2),
             ProposalVerdict::Vote
         );
 
-        assert_eq!(store.lane.size(), 2); // genesis car + car_proposal 1
-        assert_eq!(store.other_lanes.get(&pubkey2).map(|l| l.size()), Some(3)); // genesis car + car_proposal 2 and 3
+        assert_eq!(
+            store.new_car_proposal(&pubkey2, &car_proposal3),
+            ProposalVerdict::Vote
+        );
+
+        assert_eq!(store.lane.size(), 1);
+        assert_eq!(store.other_lanes.get(&pubkey2).map(|l| l.size()), Some(2));
 
         let cut = store.try_new_cut(2);
         assert!(cut.is_some());
@@ -847,7 +803,7 @@ mod tests {
         store.add_new_car_to_lane(vec![make_tx("test_local2")]);
         store.add_new_car_to_lane(vec![make_tx("test_local3")]);
         store.add_new_car_to_lane(vec![make_tx("test_local4")]);
-        assert_eq!(store.lane.cars.len(), 5);
+        assert_eq!(store.lane.cars.len(), 4);
 
         let missing = store.get_missing_cars(
             Some(1),
@@ -893,15 +849,8 @@ mod tests {
             missing,
             Some(vec![
                 Car {
-                    id: 0,
-                    parent: None,
-                    txs: vec![],
-                    poa: Poa(BTreeSet::from_iter(vec![pubkey3.clone()])),
-                    used_in_cut: true,
-                },
-                Car {
                     id: 1,
-                    parent: Some(0),
+                    parent: None,
                     txs: vec![make_tx("test_local")],
                     poa: Poa(BTreeSet::from_iter(vec![pubkey3.clone()])),
                     used_in_cut: false,
