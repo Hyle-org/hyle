@@ -1,4 +1,3 @@
-use anyhow::{bail, Result};
 use bincode::{BorrowDecode, Decode, Encode};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -23,6 +22,7 @@ pub enum ProposalVerdict {
     Empty,
     Wait(Option<usize>),
     Vote,
+    DidVote,
 }
 
 pub type Cut = BTreeMap<ValidatorPublicKey, usize>;
@@ -167,26 +167,22 @@ impl InMemoryStorage {
         &mut self,
         validator: &ValidatorPublicKey,
         car_proposal: &CarProposal,
-    ) -> Result<ProposalVerdict> {
+    ) -> ProposalVerdict {
         if car_proposal.txs.is_empty() {
-            warn!(
-                "received empty Car proposal from {}, ignoring...",
-                validator
-            );
-            return Ok(ProposalVerdict::Empty);
+            return ProposalVerdict::Empty;
+        }
+        if self.other_lane_has_proposal(validator, car_proposal) {
+            return ProposalVerdict::DidVote;
         }
         if !self.other_lane_has_parent_proposal(validator, car_proposal) {
             self.proposal_will_wait(validator, car_proposal.clone());
-            return Ok(ProposalVerdict::Wait(car_proposal.parent));
+            return ProposalVerdict::Wait(car_proposal.parent);
         }
         if let (Some(parent), Some(parent_poa)) = (car_proposal.parent, &car_proposal.parent_poa) {
             self.update_other_lane_parent_poa(validator, parent, parent_poa)
         }
-        if self.other_lane_has_proposal(validator, car_proposal) {
-            bail!("we already have voted for {}'s Car proposal", validator);
-        }
         self.other_lane_add_proposal(validator, car_proposal);
-        Ok(ProposalVerdict::Vote)
+        ProposalVerdict::Vote
     }
 
     fn other_lane_add_proposal(
@@ -368,9 +364,13 @@ impl InMemoryStorage {
         self.pending_txs.drain(0..).collect()
     }
 
+    pub fn genesis(&self) -> bool {
+        self.lane.cars.is_empty()
+    }
+
     pub fn try_car_proposal(
         &mut self,
-        poa: Option<Vec<ValidatorPublicKey>>,
+        parent_poa: Option<Vec<ValidatorPublicKey>>,
     ) -> Option<CarProposal> {
         let pending_txs = self.flush_pending_txs();
         if pending_txs.is_empty() {
@@ -381,7 +381,7 @@ impl InMemoryStorage {
             txs: pending_txs,
             id: tip_id,
             parent: if tip_id == 1 { None } else { Some(tip_id - 1) },
-            parent_poa: poa,
+            parent_poa,
         })
     }
 
@@ -719,16 +719,12 @@ mod tests {
         store.new_vote_for_proposal(&pubkey2, &car_proposal1);
 
         assert_eq!(
-            store
-                .new_car_proposal(&pubkey2, &car_proposal2)
-                .expect("add proposal 2"),
+            store.new_car_proposal(&pubkey2, &car_proposal2),
             ProposalVerdict::Vote
         );
 
         assert_eq!(
-            store
-                .new_car_proposal(&pubkey2, &car_proposal3)
-                .expect("add proposal 3"),
+            store.new_car_proposal(&pubkey2, &car_proposal3),
             ProposalVerdict::Vote
         );
 

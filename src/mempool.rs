@@ -138,7 +138,7 @@ impl Mempool {
                 self.handle_event(cmd);
             }
             _ = interval.tick() => {
-                    self.time_to_cut_or_propose().await
+                self.time_for_a_cut().await
             }
         }
     }
@@ -274,19 +274,28 @@ impl Mempool {
         validator: &ValidatorPublicKey,
         car_proposal: CarProposal,
     ) -> Result<()> {
-        match self.storage.new_car_proposal(validator, &car_proposal)? {
-            ProposalVerdict::Empty => Ok(()),
+        match self.storage.new_car_proposal(validator, &car_proposal) {
+            ProposalVerdict::Empty => {
+                warn!(
+                    "received empty Car proposal from {}, ignoring...",
+                    validator
+                );
+            }
             ProposalVerdict::Vote => {
                 // Normal case, we receive a proposal we already have the parent in store
-                self.send_vote(validator, car_proposal)
+                self.send_vote(validator, car_proposal)?;
+            }
+            ProposalVerdict::DidVote => {
+                error!("we already have voted for {}'s Car proposal", validator);
             }
             ProposalVerdict::Wait(last_index) => {
                 //We dont have the parent, so we craft a sync demand
                 debug!("Emitting sync request with local state {} last_available_index {:?} and car_proposal {}", self.storage, last_index, car_proposal);
 
-                self.send_sync_request(validator, car_proposal, last_index)
+                self.send_sync_request(validator, car_proposal, last_index)?;
             }
         }
+        Ok(())
     }
 
     fn try_car_proposal(&mut self, poa: Option<Vec<ValidatorPublicKey>>) {
@@ -297,7 +306,7 @@ impl Mempool {
         }
     }
 
-    async fn time_to_cut_or_propose(&mut self) {
+    async fn time_for_a_cut(&mut self) {
         if self.storage.tip_already_used() {
             return;
         }
@@ -332,9 +341,6 @@ impl Mempool {
             ) {
                 error!("{:?}", e);
             }
-        } else {
-            // Genesis create a mono tx chunk and broadcast it
-            self.try_car_proposal(None);
         }
     }
 
@@ -342,6 +348,10 @@ impl Mempool {
         debug!("Got new tx {}", tx.hash());
         self.metrics.add_api_tx("blob".to_string());
         self.storage.add_new_tx(tx.clone());
+        if self.storage.genesis() {
+            // Genesis create and broadcast a new Car proposal
+            self.try_car_proposal(None);
+        }
         self.metrics
             .snapshot_pending_tx(self.storage.pending_txs.len());
     }
