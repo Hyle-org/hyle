@@ -106,7 +106,7 @@ pub async fn wait_slot(client: &ApiHttpClient, slots: u64) -> anyhow::Result<()>
     loop {
         if let Ok(mut current_slot) = client.get_current_slot().await {
             let target_slot = current_slot + slots;
-            while current_slot < target_slot {
+            while current_slot.0 < target_slot.0 {
                 info!(
                     "⏰ Waiting for slot {} to be reached. Current is {}",
                     target_slot, current_slot

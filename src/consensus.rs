@@ -165,9 +165,6 @@ pub struct Consensus {
     crypto: SharedBlstCrypto,
 }
 
-#[derive(Clone)]
-pub struct QuerySlot {}
-
 bus_client! {
 struct ConsensusBusClient {
     sender(OutboundMessage),
@@ -179,7 +176,6 @@ struct ConsensusBusClient {
     receiver(MempoolEvent),
     receiver(SignedWithKey<ConsensusNetMessage>),
     receiver(PeerEvent),
-    receiver(Query<QuerySlot, Slot>),
 }
 }
 
@@ -1350,9 +1346,6 @@ impl Consensus {
                     Ok(_) => (),
                     Err(e) => warn!("Error while handling peer event: {:#}", e),
                 }
-            }
-            command_response<QuerySlot, Slot> _ => {
-                Ok(self.bft_round_state.slot)
             }
         }
     }

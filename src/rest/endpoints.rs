@@ -2,7 +2,7 @@ use crate::bus::command_response::CmdRespClient;
 use crate::bus::BusClientSender;
 use crate::bus::BusMessage;
 use crate::consensus::staking::Staker;
-use crate::consensus::QuerySlot;
+use crate::data_availability::QueryBlockHeight;
 use crate::model::Transaction;
 use crate::model::{BlobTransaction, ContractName};
 use crate::model::{Hashable, ProofTransaction, RegisterContractTransaction, TransactionData};
@@ -141,8 +141,8 @@ pub async fn get_contract(
 }
 
 pub async fn get_slot(State(mut state): State<RouterState>) -> Result<impl IntoResponse, AppError> {
-    match state.bus.request(QuerySlot {}).await {
-        Ok(slot) => Ok(Json(slot)),
+    match state.bus.request(QueryBlockHeight {}).await {
+        Ok(block_height) => Ok(Json(block_height)),
         err => {
             error!("{:?}", err);
 
