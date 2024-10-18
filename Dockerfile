@@ -8,19 +8,20 @@ COPY Cargo.toml Cargo.lock .
 COPY src ./src
 COPY .cargo/config.toml .cargo/config.toml
 
-RUN cargo build --release
+RUN cargo build
 
 # RUNNER
 FROM alpine:latest
 
 WORKDIR /hyle
 
-COPY --from=builder /usr/src/hyle/target/release/node ./
+COPY --from=builder /usr/src/hyle/target/debug/node ./
 
 VOLUME /hyle/data
 
 EXPOSE 4321 1234
 
 ENV HYLE_DATA_DIRECTORY="data"
+ENV HYLE_RUN_INDEXER="false"
 
-CMD ["./node", "--config-file", "config.ron"]
+CMD ["./node"]

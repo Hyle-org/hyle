@@ -2,24 +2,24 @@ services:
   hyle1:
     build: ./..
     privileged: true
-    volumes:
-      - /tmp/hyle-container-data-1:/hyle/data
     network_mode: host
     environment:
       - HYLE_ID=node-1
       - HYLE_REST=localhost:4001
       - HYLE_HOST=localhost:1001
+      - HYLE_DA_ADDRESS=localhost:4141
+      - RUST_LOG=debug
       - HYLE_CONSENSUS__SLOT_DURATION=3
   hyle2:
     build: ./..
     privileged: true
-    volumes:
-      - /tmp/hyle-container-data-2:/hyle/data
     environment:
       - HYLE_ID=hyle2
       - HYLE_PEERS=localhost:1001
       - HYLE_REST=localhost:4002
       - HYLE_HOST=localhost:1002
+      - HYLE_DA_ADDRESS=localhost:4142
+      - RUST_LOG=debug
       - HYLE_CONSENSUS__SLOT_DURATION=3
     network_mode: host
     depends_on:
@@ -27,13 +27,13 @@ services:
   hyle3:
     build: ./..
     privileged: true
-    volumes:
-      - /tmp/hyle-container-data-3:/hyle/data
     environment:
       - HYLE_ID=hyle3
       - HYLE_PEERS=localhost:1001
       - HYLE_REST=localhost:4003
       - HYLE_HOST=localhost:1003
+      - RUST_LOG=debug
+      - HYLE_DA_ADDRESS=localhost:4143
       - HYLE_CONSENSUS__SLOT_DURATION=3
     network_mode: host
     depends_on:
