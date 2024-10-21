@@ -164,16 +164,20 @@ impl Mempool {
         }
     }
 
+    fn add_stake_tx_on_genesis_for(&mut self, pubkey: ValidatorPublicKey) {
+        let tx = Transaction::wrap(TransactionData::Stake(Staker {
+            pubkey: pubkey.clone(),
+            stake: Stake { amount: 100 },
+        }));
+        self.on_new_tx(tx);
+        self.validators.push(pubkey);
+    }
+
     fn handle_peer_event(&mut self, event: PeerEvent) {
         match event {
             PeerEvent::NewPeer { pubkey } => {
                 if self.genesis {
-                    let tx = Transaction::wrap(TransactionData::Stake(Staker {
-                        pubkey: pubkey.clone(),
-                        stake: Stake { amount: 100 },
-                    }));
-                    self.on_new_tx(tx);
-                    self.validators.push(pubkey);
+                    self.add_stake_tx_on_genesis_for(pubkey);
                 }
             }
         }
