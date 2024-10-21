@@ -5,7 +5,7 @@ use testcontainers_modules::{postgres::Postgres, testcontainers::runners::AsyncR
 use hyle::{
     indexer::model::ContractDb,
     model::{
-        Blob, BlobData, BlobReference, BlobTransaction, ContractName, ProofTransaction,
+        Blob, BlobData, BlobReference, BlobTransaction, ContractName, ProofData, ProofTransaction,
         RegisterContractTransaction,
     },
     node_state::model::Contract,
@@ -70,7 +70,7 @@ async fn send_blobs_and_proofs(client: &ApiHttpClient) -> Result<()> {
             blob_tx_hash: blob_tx_hash.clone(),
             blob_index: hyle_contract_sdk::BlobIndex(0),
         }],
-        proof,
+        proof: ProofData::Bytes(proof),
     };
 
     assert!(client.send_tx_proof(&proof_tx).await?.status().is_success());
@@ -158,7 +158,7 @@ async fn send_test_blobs_and_proofs(client: &ApiHttpClient) -> Result<()> {
                     blob_index: hyle_contract_sdk::BlobIndex(1)
                 }
             ],
-            proof: vec![5, 5]
+            proof: ProofData::Bytes(vec![5, 5])
         })
         .await
         .and_then(|response| response.error_for_status().context("sending tx")));
