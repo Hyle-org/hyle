@@ -3,7 +3,7 @@
 mod blocks;
 
 use crate::{
-    bus::{bus_client, BusMessage, SharedMessageBus},
+    bus::{bus_client, command_response::Query, BusMessage, SharedMessageBus},
     consensus::ConsensusEvent,
     handle_messages,
     model::{
@@ -60,6 +60,9 @@ impl From<DataNetMessage> for NetMessage {
     }
 }
 
+#[derive(Clone)]
+pub struct QueryBlockHeight {}
+
 bus_client! {
 #[derive(Debug)]
 struct DABusClient {
@@ -68,6 +71,7 @@ struct DABusClient {
     receiver(ConsensusEvent),
     receiver(DataNetMessage),
     receiver(PeerEvent),
+    receiver(Query<QueryBlockHeight , BlockHeight>),
 }
 }
 
@@ -167,6 +171,9 @@ impl DataAvailability {
                         }
                     }
                 }
+            }
+            command_response<QueryBlockHeight, BlockHeight> _ => {
+                Ok(self.blocks.last().map(|block| block.height).unwrap_or(BlockHeight(0)))
             }
 
             // Handle new TCP connections to stream data to peers

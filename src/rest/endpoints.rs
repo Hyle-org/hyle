@@ -2,6 +2,7 @@ use crate::bus::command_response::CmdRespClient;
 use crate::bus::BusClientSender;
 use crate::bus::BusMessage;
 use crate::consensus::staking::Staker;
+use crate::data_availability::QueryBlockHeight;
 use crate::model::Transaction;
 use crate::model::{BlobTransaction, ContractName};
 use crate::model::{Hashable, ProofTransaction, RegisterContractTransaction, TransactionData};
@@ -134,6 +135,22 @@ pub async fn get_contract(
             Err(AppError(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 anyhow!("Error while getting contract {}", name_clone),
+            ))
+        }
+    }
+}
+
+pub async fn get_block_height(
+    State(mut state): State<RouterState>,
+) -> Result<impl IntoResponse, AppError> {
+    match state.bus.request(QueryBlockHeight {}).await {
+        Ok(block_height) => Ok(Json(block_height)),
+        err => {
+            error!("{:?}", err);
+
+            Err(AppError(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                anyhow!("Error while getting block height"),
             ))
         }
     }
