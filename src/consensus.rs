@@ -70,6 +70,7 @@ pub enum ConsensusCommand {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub enum ConsensusEvent {
+    Genesis(Vec<ValidatorPublicKey>),
     CommitCut {
         validators: Vec<ValidatorPublicKey>,
         cut: Cut,
@@ -1128,7 +1129,7 @@ impl Consensus {
                 if let Some(cut) = self.pending_cut.take() {
                     self.bus
                         .send(ConsensusEvent::CommitCut {
-                            validators: self.bft_round_state.consensus_proposal.validators.clone(),
+                            validators: vec![self.crypto.validator_pubkey().clone()],
                             cut,
                         })
                         .expect("Failed to send ConsensusEvent::CommitCut msg on the bus");
@@ -1207,6 +1208,9 @@ impl Consensus {
                 }
                 info!("New peer added to genesis: {}", pubkey);
                 self.genesis_pubkeys.push(pubkey.clone());
+                self.bus
+                    .send(ConsensusEvent::Genesis(self.genesis_pubkeys.clone()))
+                    .context("sending genesis event")?;
                 if self.genesis_pubkeys.len() == 2 {
                     // Start first slot
                     debug!("Got a 2nd validator, starting first slot after delay");

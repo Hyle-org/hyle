@@ -2,7 +2,10 @@
 
 use crate::{
     bus::{bus_client, command_response::Query, BusMessage, SharedMessageBus},
-    consensus::ConsensusEvent,
+    consensus::{
+        staking::{Stake, Staker},
+        ConsensusEvent,
+    },
     handle_messages,
     mempool::storage::{Car, CarProposal, InMemoryStorage, TipInfo},
     model::{Hashable, SharedRunContext, Transaction, TransactionData, ValidatorPublicKey},
@@ -135,7 +138,7 @@ impl Mempool {
                 self.handle_api_message(cmd).await
             }
             listen<ConsensusEvent> cmd => {
-                self.handle_event(cmd);
+                self.handle_event(cmd).await;
             }
             _ = interval.tick() => {
                 self.time_for_a_cut().await
@@ -143,8 +146,14 @@ impl Mempool {
         }
     }
 
-    fn handle_event(&mut self, event: ConsensusEvent) {
+    async fn handle_event(&mut self, event: ConsensusEvent) {
         match event {
+            ConsensusEvent::Genesis(validators) => {
+                self.validators = validators;
+                if self.storage.genesis() {
+                    self.genesis_cut().await;
+                }
+            }
             ConsensusEvent::CommitCut {
                 validators, cut, ..
             } => {
@@ -152,6 +161,17 @@ impl Mempool {
                 self.storage.update_lanes_after_commit(cut);
             }
         }
+    }
+
+    pub async fn genesis_cut(&mut self) {
+        for validator in self.validators.iter() {
+            let tx = Transaction::wrap(TransactionData::Stake(Staker {
+                pubkey: validator.clone(),
+                stake: Stake { amount: 100 },
+            }));
+            self.storage.add_new_tx(tx);
+        }
+        self.time_for_a_cut().await;
     }
 
     async fn handle_net_message(&mut self, msg: SignedWithKey<MempoolNetMessage>) {

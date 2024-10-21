@@ -288,12 +288,12 @@ impl DataAvailability {
         if cut.txs.is_empty() || cut.tips.is_empty() {
             return;
         }
-        // TODO:
         self.pending_cuts.push(cut);
     }
 
     async fn handle_consensus_event(&mut self, event: ConsensusEvent) {
         match event {
+            ConsensusEvent::Genesis(_) => {}
             ConsensusEvent::CommitCut { cut, validators } => {
                 if cut.is_empty() {
                     return;
@@ -307,15 +307,18 @@ impl DataAvailability {
                     let cut = self.pending_cuts.remove(pos);
 
                     let last_block = self.blocks.last();
-                    let parent_hash = last_block
-                        .as_ref()
-                        .map(|b| b.hash())
-                        .unwrap_or(BlockHash::new("000"));
-                    let parent_height = last_block.map(|b| b.height).unwrap_or_default();
+                    let parent_hash =
+                        last_block
+                            .as_ref()
+                            .map(|b| b.hash())
+                            .unwrap_or(BlockHash::new(
+                                "46696174206c757820657420666163746120657374206c7578",
+                            ));
+                    let next_height = last_block.map(|b| b.height.0 + 1).unwrap_or(1);
 
                     self.handle_block(Block {
                         parent_hash,
-                        height: parent_height + 1,
+                        height: BlockHeight(next_height),
                         timestamp: get_current_timestamp(),
                         new_bonded_validators: validators,
                         txs: cut.txs,
