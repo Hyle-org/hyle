@@ -42,10 +42,10 @@ A Blob Transaction is:
 ```rust
 pub struct Fees {
     pub payer: Identity,
-    pub amount: u64,
-    pub fee_contract: ContractName,
-    pub identity_contract: ContractName,
-    pub identity_proof: Vec<u8>
+    pub fee: Blob,
+    pub identity: Blob,
+    // If the identity blob is from a "known" contract, the node will be able to verify the identity without the proof
+    pub identity_proof: Option<Vec<u8>> 
 }
 
 pub struct BlobTransaction {
@@ -55,11 +55,14 @@ pub struct BlobTransaction {
 }
 ```
 
-When a new transaction is sent to the node, it runs the `hyfi` & `hydentity` smart contracts code with blobs built from `Fees` attributes.
+When a new transaction is sent to the node, it runs the `hyfi` & `hydentity` smart contracts code with `fee` and `identity` blobs.
+
+If the identity blob is from a "known" contract like `hydentity`, the node will be able to verify the identity without the proof, so it can only verify the blob, 
+but for later implementation, if identity comes from an unknown identity, the proof needs to be verified by the node before adding the transaction to its lane.
 
 ➡️  For now we check that `fees.identity_contract == "hydentity" && fees.fee_contract == "hyfi"`, but later we could consider whitelists.
 
-If the execution succeeds **and** resulting balance of `payer` is greater that `base_amount` (Cf next ⚠️ ), it can be sent to mempool for data dissemination. A proof will be generated later.
+If the execution succeeds **and** resulting balance of `payer` is greater that `base_amount` (Cf next ⚠️ ), it can be sent to mempool for data dissemination. A proof will be generated later (unless it's given).
 
 ⚠️  At this stage, the node knows it will be able to generate a proof for this blob and gather the fees. Modulo there is no other transaction 
 in an other batch that would be included before
