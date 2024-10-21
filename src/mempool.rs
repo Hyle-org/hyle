@@ -172,7 +172,7 @@ impl Mempool {
                         pubkey: pubkey.clone(),
                         stake: Stake { amount: 100 },
                     }));
-                    self.storage.add_new_tx(tx);
+                    self.on_new_tx(tx);
                     self.validators.push(pubkey);
                 }
             }
