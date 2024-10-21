@@ -10,7 +10,7 @@ config = "0.14.0"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["json"] }
 tokio = { version = "1.40.0", features = ["full", "tracing"] }
-anyhow = "1.0.89"
+anyhow = "1.0.90"
 clap = { version = "4.5.20", features = ["derive"] }
 rand = "0.8.5"
 bincode = { version = "2.0.0-rc.2", tag = "v2.0.0-rc.2", git = "https://github.com/bincode-org/bincode.git" }
