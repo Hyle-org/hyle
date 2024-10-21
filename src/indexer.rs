@@ -275,6 +275,7 @@ impl Indexer {
         contract_name: String,
         new_sub_sender: mpsc::Sender<(ContractName, WebSocket)>,
     ) {
+        // TODO: properly handle errors and ws messages
         _ = new_sub_sender
             .send((ContractName(contract_name), socket))
             .await;
