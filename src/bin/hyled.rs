@@ -4,7 +4,7 @@ use anyhow::Result;
 use clap::{command, Parser, Subcommand};
 use hyle::{
     model::{
-        Blob, BlobData, BlobReference, BlobTransaction, ContractName, ProofTransaction,
+        Blob, BlobData, BlobReference, BlobTransaction, ContractName, Fees, ProofTransaction,
         RegisterContractTransaction,
     },
     rest::client::ApiHttpClient,
@@ -55,6 +55,7 @@ async fn send_blob(
     let data = BlobData(hex::decode(blob_data).expect("Data decoding failed"));
     let res = client
         .send_tx_blob(&BlobTransaction {
+            fees: Fees::default(), // TODO
             identity,
             blobs: vec![Blob {
                 contract_name,

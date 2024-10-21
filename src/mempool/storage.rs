@@ -525,7 +525,7 @@ mod tests {
     use crate::{
         mempool::storage::{Car, DataProposal, InMemoryStorage, Poa, ProposalVerdict},
         model::{
-            Blob, BlobData, BlobTransaction, ContractName, Transaction, TransactionData,
+            Blob, BlobData, BlobTransaction, ContractName, Fees, Transaction, TransactionData,
             ValidatorPublicKey,
         },
     };
@@ -535,6 +535,7 @@ mod tests {
         Transaction {
             version: 1,
             transaction_data: TransactionData::Blob(BlobTransaction {
+                fees: Fees::default_test(),
                 identity: Identity("id".to_string()),
                 blobs: vec![Blob {
                     contract_name: ContractName("c1".to_string()),

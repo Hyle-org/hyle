@@ -1,3 +1,7 @@
+[workspace]
+members = ["contract-sdk"]
+resolver = "2"
+
 [package]
 name = "hyle"
 version = "0.1.0"

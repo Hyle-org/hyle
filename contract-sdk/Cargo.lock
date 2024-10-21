@@ -26,6 +26,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
 
 [[package]]
+name = "hyle-contract-sdk"
+version = "0.1.0"
+dependencies = [
+ "bincode",
+ "hex",
+ "serde",
+]
+
+[[package]]
 name = "proc-macro2"
 version = "1.0.88"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -41,15 +50,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b5b9d34b8991d19d98081b46eacdd8eb58c6f2b201139f7c5f643cc155a633af"
 dependencies = [
  "proc-macro2",
-]
-
-[[package]]
-name = "sdk"
-version = "0.1.0"
-dependencies = [
- "bincode",
- "hex",
- "serde",
 ]
 
 [[package]]
