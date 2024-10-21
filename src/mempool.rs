@@ -48,13 +48,14 @@ pub struct Mempool {
     storage: InMemoryStorage,
     validators: Vec<ValidatorPublicKey>,
     genesis: bool,
+    is_genesis_leader: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, Eq, PartialEq, IntoStaticStr)]
 pub enum MempoolNetMessage {
     NewTx(Transaction),
-    DataProposal(CarProposal),
-    DataVote(CarProposal),
+    CarProposal(CarProposal),
+    CarProposalVote(CarProposal),
     SyncRequest(CarProposal, Option<usize>),
     SyncReply(Vec<Car>),
 }
@@ -83,6 +84,7 @@ impl Module for Mempool {
             storage: InMemoryStorage::new(ctx.node.crypto.validator_pubkey().clone()),
             validators: vec![],
             genesis: true,
+            is_genesis_leader: ctx.common.config.id == "node-1",
         })
     }
 
@@ -113,7 +115,7 @@ impl Mempool {
                 self.handle_consensus_event(cmd).await
             }
             _ = interval.tick() => {
-                self.time_for_a_cut().await
+                self.time_to_cut().await
             }
         }
     }
@@ -121,8 +123,19 @@ impl Mempool {
     async fn handle_consensus_event(&mut self, event: ConsensusEvent) {
         match event {
             ConsensusEvent::CommitCut {
-                validators, cut, ..
+                cut,
+                new_bonded_validators,
+                validators,
             } => {
+                if cut.is_empty() {
+                    return;
+                }
+                debug!(
+                    "Received CommitCut ({} validators, {} new_bonded_validators, {} cut tips)",
+                    validators.len(),
+                    new_bonded_validators.len(),
+                    cut.len()
+                );
                 self.genesis = false;
                 self.validators = validators;
                 self.storage.update_lanes_after_commit(cut);
@@ -142,7 +155,7 @@ impl Mempool {
     fn handle_peer_event(&mut self, event: PeerEvent) {
         match event {
             PeerEvent::NewPeer { pubkey } => {
-                if self.genesis {
+                if self.genesis && self.is_genesis_leader {
                     self.add_stake_tx_on_genesis_for(pubkey);
                 }
             }
@@ -155,12 +168,12 @@ impl Mempool {
                 let validator = msg.validators.first().unwrap();
                 match msg.msg {
                     MempoolNetMessage::NewTx(tx) => self.on_new_tx(tx),
-                    MempoolNetMessage::DataProposal(car_proposal) => {
+                    MempoolNetMessage::CarProposal(car_proposal) => {
                         if let Err(e) = self.on_car_proposal(validator, car_proposal).await {
                             error!("{:?}", e);
                         }
                     }
-                    MempoolNetMessage::DataVote(car_proposal) => {
+                    MempoolNetMessage::CarProposalVote(car_proposal) => {
                         self.on_proposal_vote(validator, car_proposal).await;
                     }
                     MempoolNetMessage::SyncRequest(car_proposal, last_index) => {
@@ -258,9 +271,9 @@ impl Mempool {
             .new_vote_for_proposal(validator, &car_proposal)
             .is_some()
         {
-            debug!("{} DataVote from {}", self.storage.id, validator)
+            debug!("{} Vote from {}", self.storage.id, validator)
         } else {
-            error!("{} unexpected DataVote from {}", self.storage.id, validator)
+            error!("{} unexpected Vote from {}", self.storage.id, validator)
         }
     }
 
@@ -278,6 +291,7 @@ impl Mempool {
             }
             ProposalVerdict::Vote => {
                 // Normal case, we receive a proposal we already have the parent in store
+                debug!("Send vote for Car proposal");
                 self.send_vote(validator, car_proposal)?;
             }
             ProposalVerdict::DidVote => {
@@ -285,7 +299,10 @@ impl Mempool {
             }
             ProposalVerdict::Wait(last_index) => {
                 //We dont have the parent, so we craft a sync demand
-                debug!("Emitting sync request with local state {} last_available_index {:?} and car_proposal {}", self.storage, last_index, car_proposal);
+                debug!(
+                    "Emitting sync request with local state {} last_available_index {:?}",
+                    self.storage, last_index
+                );
 
                 self.send_sync_request(validator, car_proposal, last_index)?;
             }
@@ -295,19 +312,24 @@ impl Mempool {
 
     fn try_car_proposal(&mut self, poa: Option<Vec<ValidatorPublicKey>>) {
         if let Some(car_proposal) = self.storage.try_car_proposal(poa) {
+            debug!(
+                "Broadcast Car proposal ({} validators)",
+                self.validators.len()
+            );
             if let Err(e) = self.broadcast_car_proposal(car_proposal) {
                 error!("{:?}", e);
             }
         }
     }
 
-    async fn time_for_a_cut(&mut self) {
+    async fn time_to_cut(&mut self) {
         if self.storage.tip_already_used() {
             return;
         }
         if let Some(cut) = self.storage.try_new_cut(self.validators.len()) {
             let poa = self.storage.tip_poa();
             self.try_car_proposal(poa);
+            debug!("Send NewCut event ({} validators)", self.validators.len());
             if let Err(e) = self
                 .bus
                 .send(MempoolEvent::NewCut(cut))
@@ -363,7 +385,7 @@ impl Mempool {
         }
         self.metrics
             .add_broadcasted_car_proposal("blob".to_string());
-        self.broadcast_net_message(MempoolNetMessage::DataProposal(car_proposal))?;
+        self.broadcast_net_message(MempoolNetMessage::CarProposal(car_proposal))?;
         Ok(())
     }
 
@@ -378,7 +400,7 @@ impl Mempool {
             .bus
             .send(OutboundMessage::broadcast_only_for(
                 only_for,
-                self.sign_net_message(MempoolNetMessage::DataProposal(car_proposal))?,
+                self.sign_net_message(MempoolNetMessage::CarProposal(car_proposal))?,
             ))
             .log_error("broadcasting car_proposal_only_for");
         Ok(())
@@ -390,7 +412,10 @@ impl Mempool {
         car_proposal: CarProposal,
     ) -> Result<()> {
         self.metrics.add_sent_proposal_vote("blob".to_string());
-        self.send_net_message(validator.clone(), MempoolNetMessage::DataVote(car_proposal))?;
+        self.send_net_message(
+            validator.clone(),
+            MempoolNetMessage::CarProposalVote(car_proposal),
+        )?;
         Ok(())
     }
 

@@ -315,7 +315,7 @@ impl Consensus {
     /// and have a valid signature
     fn verify_new_bonded_validators(&mut self, proposal: &ConsensusProposal) -> Result<()> {
         if proposal.slot != 0 {
-            bail!("proposal slot != 0");
+            return Ok(());
         }
         for new_validator in &proposal.new_bonded_validators {
             // Verify that the new validator has enough stake
