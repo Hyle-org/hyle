@@ -293,8 +293,11 @@ impl DataAvailability {
 
     async fn handle_consensus_event(&mut self, event: ConsensusEvent) {
         match event {
-            ConsensusEvent::Genesis(_) => {}
-            ConsensusEvent::CommitCut { cut, .. } => {
+            ConsensusEvent::CommitCut {
+                cut,
+                new_bonded_validators,
+                ..
+            } => {
                 if cut.is_empty() {
                     return;
                 }
@@ -320,7 +323,7 @@ impl DataAvailability {
                         parent_hash,
                         height: BlockHeight(next_height),
                         timestamp: get_current_timestamp(),
-                        new_bonded_validators: vec![],
+                        new_bonded_validators,
                         txs: cut.txs,
                     })
                     .await;

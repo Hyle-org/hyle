@@ -70,9 +70,9 @@ pub enum ConsensusCommand {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub enum ConsensusEvent {
-    Genesis(Vec<ValidatorPublicKey>),
     CommitCut {
         validators: Vec<ValidatorPublicKey>,
+        new_bonded_validators: Vec<ValidatorPublicKey>,
         cut: Cut,
     },
 }
@@ -124,7 +124,6 @@ pub struct ConsensusProposal {
     /// Validators for current slot
     validators: Vec<ValidatorPublicKey>, // TODO use ID instead of pubkey ?
     new_bonded_validators: Vec<NewValidatorCandidate>,
-    new_bonded_validators_pubkeys: Vec<ValidatorPublicKey>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, PartialEq, Eq, Hash, Default)]
@@ -188,13 +187,6 @@ impl Consensus {
         let cut = self.pending_cut.take().unwrap_or_default();
         let validators = self.bft_round_state.staking.bonded();
 
-        let new_bonded_validators = self
-            .new_validators_candidates
-            .clone()
-            .into_iter()
-            .map(|v| v.pubkey)
-            .collect();
-
         // Start Consensus with following cut
         self.bft_round_state.consensus_proposal = ConsensusProposal {
             slot: self.bft_round_state.slot,
@@ -205,7 +197,6 @@ impl Consensus {
             previous_commit_quorum_certificate,
             validators,
             new_bonded_validators: self.new_validators_candidates.drain(..).collect(),
-            new_bonded_validators_pubkeys: new_bonded_validators,
         };
         Ok(())
     }
@@ -219,8 +210,6 @@ impl Consensus {
         self.genesis_bond(validators.as_slice())
             .expect("Failed to bond genesis validators");
 
-        let new_bonded_validators = self.genesis_pubkeys.clone();
-
         // Start Consensus with following cut
         self.bft_round_state.consensus_proposal = ConsensusProposal {
             slot: self.bft_round_state.slot,
@@ -231,7 +220,6 @@ impl Consensus {
             previous_commit_quorum_certificate: QuorumCertificate::default(),
             validators,
             new_bonded_validators: vec![],
-            new_bonded_validators_pubkeys: new_bonded_validators,
         };
     }
 
@@ -253,9 +241,20 @@ impl Consensus {
     fn finish_round(&mut self) -> Result<(), Error> {
         let cut = self.bft_round_state.consensus_proposal.cut.clone();
         let validators = self.bft_round_state.consensus_proposal.validators.clone();
+        let new_bonded_validators = self
+            .bft_round_state
+            .consensus_proposal
+            .new_bonded_validators
+            .iter()
+            .map(|v| v.pubkey.clone())
+            .collect();
         _ = self
             .bus
-            .send(ConsensusEvent::CommitCut { validators, cut })
+            .send(ConsensusEvent::CommitCut {
+                validators,
+                cut,
+                new_bonded_validators,
+            })
             .context("Failed to send ConsensusEvent::CommitCut on the bus");
 
         info!(
@@ -322,13 +321,16 @@ impl Consensus {
             .into_iter()
             .map(|c| c.pubkey)
             .collect::<Vec<ValidatorPublicKey>>();
-        if proposal.slot != 0 && proposal_pubkeys != proposal.new_bonded_validators_pubkeys {
+        let proposal_new_bonded_validators = proposal
+            .new_bonded_validators
+            .iter()
+            .map(|v| v.pubkey.clone())
+            .collect::<Vec<_>>();
+        if proposal.slot != 0 && proposal_pubkeys != proposal_new_bonded_validators {
             bail!(
                 "New bonded validators in proposal do not match. Proposal: {:?} != {:?}",
                 proposal_pubkeys,
-                self.bft_round_state
-                    .consensus_proposal
-                    .new_bonded_validators_pubkeys
+                proposal_new_bonded_validators
             );
         }
         for new_validator in &proposal.new_bonded_validators {
@@ -1139,6 +1141,7 @@ impl Consensus {
                     self.bus
                         .send(ConsensusEvent::CommitCut {
                             validators: vec![self.crypto.validator_pubkey().clone()],
+                            new_bonded_validators: vec![self.crypto.validator_pubkey().clone()],
                             cut,
                         })
                         .expect("Failed to send ConsensusEvent::CommitCut msg on the bus");
@@ -1217,9 +1220,6 @@ impl Consensus {
                 }
                 info!("New peer added to genesis: {}", pubkey);
                 self.genesis_pubkeys.push(pubkey.clone());
-                self.bus
-                    .send(ConsensusEvent::Genesis(self.genesis_pubkeys.clone()))
-                    .context("sending genesis event")?;
                 if self.genesis_pubkeys.len() == 2 {
                     // Start first slot
                     debug!("Got a 2nd validator, starting first slot after delay");
@@ -1396,7 +1396,11 @@ mod test {
         #[track_caller]
         fn handle_block(&mut self, msg: &SignedWithKey<ConsensusNetMessage>) {
             if let ConsensusNetMessage::Prepare(consensus_proposal) = &msg.msg {
-                for bonded in consensus_proposal.cut.keys().cloned() {
+                for bonded in consensus_proposal
+                    .new_bonded_validators
+                    .iter()
+                    .map(|v| v.pubkey.clone())
+                {
                     self.consensus
                         .handle_command(ConsensusCommand::NewBonded(bonded))
                         .expect("handle cut");

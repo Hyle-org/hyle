@@ -9,7 +9,7 @@ use crate::{
     handle_messages,
     mempool::storage::{Car, CarProposal, InMemoryStorage, TipInfo},
     model::{Hashable, SharedRunContext, Transaction, TransactionData, ValidatorPublicKey},
-    p2p::network::{OutboundMessage, SignedWithKey},
+    p2p::network::{OutboundMessage, PeerEvent, SignedWithKey},
     rest::endpoints::RestApiMessage,
     utils::{
         crypto::{BlstCrypto, SharedBlstCrypto},
@@ -38,6 +38,7 @@ struct MempoolBusClient {
     receiver(SignedWithKey<MempoolNetMessage>),
     receiver(RestApiMessage),
     receiver(ConsensusEvent),
+    receiver(PeerEvent),
 }
 }
 
@@ -47,6 +48,7 @@ pub struct Mempool {
     metrics: MempoolMetrics,
     storage: InMemoryStorage,
     validators: Vec<ValidatorPublicKey>,
+    genesis: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, Eq, PartialEq, IntoStaticStr)]
@@ -114,6 +116,7 @@ impl Module for Mempool {
             crypto: Arc::clone(&ctx.node.crypto),
             storage: InMemoryStorage::new(ctx.node.crypto.validator_pubkey().clone()),
             validators: vec![],
+            genesis: true,
         })
     }
 
@@ -131,6 +134,9 @@ impl Mempool {
 
         handle_messages! {
             on_bus self.bus,
+            listen<PeerEvent> cmd => {
+                self.handle_peer_event(cmd)
+            }
             listen<SignedWithKey<MempoolNetMessage>> cmd => {
                 self.handle_net_message(cmd).await
             }
@@ -138,7 +144,7 @@ impl Mempool {
                 self.handle_api_message(cmd).await
             }
             listen<ConsensusEvent> cmd => {
-                self.handle_event(cmd).await;
+                self.handle_consensus_event(cmd).await
             }
             _ = interval.tick() => {
                 self.time_for_a_cut().await
@@ -146,32 +152,31 @@ impl Mempool {
         }
     }
 
-    async fn handle_event(&mut self, event: ConsensusEvent) {
+    async fn handle_consensus_event(&mut self, event: ConsensusEvent) {
         match event {
-            ConsensusEvent::Genesis(validators) => {
-                self.validators = validators;
-                if self.storage.genesis() {
-                    self.genesis_cut().await;
-                }
-            }
             ConsensusEvent::CommitCut {
                 validators, cut, ..
             } => {
+                self.genesis = false;
                 self.validators = validators;
                 self.storage.update_lanes_after_commit(cut);
             }
         }
     }
 
-    pub async fn genesis_cut(&mut self) {
-        for validator in self.validators.iter() {
-            let tx = Transaction::wrap(TransactionData::Stake(Staker {
-                pubkey: validator.clone(),
-                stake: Stake { amount: 100 },
-            }));
-            self.storage.add_new_tx(tx);
+    fn handle_peer_event(&mut self, event: PeerEvent) {
+        match event {
+            PeerEvent::NewPeer { pubkey } => {
+                if self.genesis {
+                    let tx = Transaction::wrap(TransactionData::Stake(Staker {
+                        pubkey: pubkey.clone(),
+                        stake: Stake { amount: 100 },
+                    }));
+                    self.storage.add_new_tx(tx);
+                    self.validators.push(pubkey);
+                }
+            }
         }
-        self.time_for_a_cut().await;
     }
 
     async fn handle_net_message(&mut self, msg: SignedWithKey<MempoolNetMessage>) {
