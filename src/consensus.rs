@@ -314,23 +314,8 @@ impl Consensus {
     /// and have enough stake
     /// and have a valid signature
     fn verify_new_bonded_validators(&mut self, proposal: &ConsensusProposal) -> Result<()> {
-        let proposal_pubkeys = proposal
-            .new_bonded_validators
-            .clone()
-            .into_iter()
-            .map(|c| c.pubkey)
-            .collect::<Vec<ValidatorPublicKey>>();
-        let proposal_new_bonded_validators = proposal
-            .new_bonded_validators
-            .iter()
-            .map(|v| v.pubkey.clone())
-            .collect::<Vec<_>>();
-        if proposal.slot != 0 && proposal_pubkeys != proposal_new_bonded_validators {
-            bail!(
-                "New bonded validators in proposal do not match. Proposal: {:?} != {:?}",
-                proposal_pubkeys,
-                proposal_new_bonded_validators
-            );
+        if proposal.slot != 0 {
+            bail!("proposal slot != 0");
         }
         for new_validator in &proposal.new_bonded_validators {
             // Verify that the new validator has enough stake
@@ -681,7 +666,7 @@ impl Consensus {
                 if consensus_proposal.slot != 0 {
                     warn!("🔄 Consensus state out of sync, need to catchup");
                 } else {
-                    info!("#### Received genesis ut proposal ####");
+                    info!("#### Received genesis cut proposal ####");
                     self.genesis_bond(&consensus_proposal.validators)?;
                 }
             }
