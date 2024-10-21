@@ -124,6 +124,7 @@ pub struct ConsensusProposal {
     /// Validators for current slot
     validators: Vec<ValidatorPublicKey>, // TODO use ID instead of pubkey ?
     new_bonded_validators: Vec<NewValidatorCandidate>,
+    new_bonded_validators_pubkeys: Vec<ValidatorPublicKey>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, PartialEq, Eq, Hash, Default)]
@@ -187,6 +188,13 @@ impl Consensus {
         let cut = self.pending_cut.take().unwrap_or_default();
         let validators = self.bft_round_state.staking.bonded();
 
+        let new_bonded_validators = self
+            .new_validators_candidates
+            .clone()
+            .into_iter()
+            .map(|v| v.pubkey)
+            .collect();
+
         // Start Consensus with following cut
         self.bft_round_state.consensus_proposal = ConsensusProposal {
             slot: self.bft_round_state.slot,
@@ -197,6 +205,7 @@ impl Consensus {
             previous_commit_quorum_certificate,
             validators,
             new_bonded_validators: self.new_validators_candidates.drain(..).collect(),
+            new_bonded_validators_pubkeys: new_bonded_validators,
         };
         Ok(())
     }
@@ -210,6 +219,8 @@ impl Consensus {
         self.genesis_bond(validators.as_slice())
             .expect("Failed to bond genesis validators");
 
+        let new_bonded_validators = self.genesis_pubkeys.clone();
+
         // Start Consensus with following cut
         self.bft_round_state.consensus_proposal = ConsensusProposal {
             slot: self.bft_round_state.slot,
@@ -220,6 +231,7 @@ impl Consensus {
             previous_commit_quorum_certificate: QuorumCertificate::default(),
             validators,
             new_bonded_validators: vec![],
+            new_bonded_validators_pubkeys: new_bonded_validators,
         };
     }
 
@@ -304,22 +316,19 @@ impl Consensus {
     /// and have enough stake
     /// and have a valid signature
     fn verify_new_bonded_validators(&mut self, proposal: &ConsensusProposal) -> Result<()> {
-        let cut_pubkeys = proposal
-            .cut
-            .keys()
-            .cloned()
-            .collect::<Vec<ValidatorPublicKey>>();
         let proposal_pubkeys = proposal
             .new_bonded_validators
             .clone()
             .into_iter()
             .map(|c| c.pubkey)
             .collect::<Vec<ValidatorPublicKey>>();
-        if proposal.slot != 0 && proposal_pubkeys != cut_pubkeys {
+        if proposal.slot != 0 && proposal_pubkeys != proposal.new_bonded_validators_pubkeys {
             bail!(
-                "New bonded validators in proposal and cut do not match. Proposal: {:?}, cut: {:?}",
+                "New bonded validators in proposal do not match. Proposal: {:?} != {:?}",
                 proposal_pubkeys,
-                cut_pubkeys
+                self.bft_round_state
+                    .consensus_proposal
+                    .new_bonded_validators_pubkeys
             );
         }
         for new_validator in &proposal.new_bonded_validators {
@@ -1539,7 +1548,6 @@ mod test {
         node2.handle_msg(&leader_commit, "Leader commit");
     }
 
-    #[ignore = "cannot verify new_bonded_validators with an empty cut"]
     #[test_log::test(tokio::test)]
     async fn test_candidacy() {
         let (mut node1, mut node2) = TestCtx::build().await;
