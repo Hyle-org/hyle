@@ -294,7 +294,7 @@ impl DataAvailability {
     async fn handle_consensus_event(&mut self, event: ConsensusEvent) {
         match event {
             ConsensusEvent::Genesis(_) => {}
-            ConsensusEvent::CommitCut { cut, validators } => {
+            ConsensusEvent::CommitCut { cut, .. } => {
                 if cut.is_empty() {
                     return;
                 }
@@ -314,13 +314,13 @@ impl DataAvailability {
                             .unwrap_or(BlockHash::new(
                                 "46696174206c757820657420666163746120657374206c7578",
                             ));
-                    let next_height = last_block.map(|b| b.height.0 + 1).unwrap_or(1);
+                    let next_height = last_block.map(|b| b.height.0 + 1).unwrap_or(0);
 
                     self.handle_block(Block {
                         parent_hash,
                         height: BlockHeight(next_height),
                         timestamp: get_current_timestamp(),
-                        new_bonded_validators: validators,
+                        new_bonded_validators: vec![],
                         txs: cut.txs,
                     })
                     .await;
