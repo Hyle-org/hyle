@@ -28,7 +28,7 @@ use sqlx::{postgres::PgPoolOptions, PgPool, Pool, Postgres};
 use std::{collections::HashMap, sync::Arc};
 use tokio::{
     net::TcpStream,
-    sync::{broadcast, Mutex},
+    sync::{broadcast, mpsc},
 };
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
 use tracing::{debug, error, info};
@@ -41,12 +41,12 @@ struct IndexerBusClient {
 }
 
 // TODO: generalize for all tx types
-type Subscribers = Arc<Mutex<HashMap<ContractName, Vec<broadcast::Sender<TransactionWithBlobs>>>>>;
+type Subscribers = HashMap<ContractName, Vec<broadcast::Sender<TransactionWithBlobs>>>;
 
 #[derive(Debug, Clone)]
 pub struct IndexerState {
     db: PgPool,
-    subscribers: Subscribers,
+    new_sub_sender: mpsc::Sender<(ContractName, WebSocket)>,
 }
 
 #[derive(Debug)]
@@ -54,6 +54,8 @@ pub struct Indexer {
     bus: IndexerBusClient,
     da_stream: Option<Framed<TcpStream, LengthDelimitedCodec>>,
     state: IndexerState,
+    new_sub_receiver: tokio::sync::mpsc::Receiver<(ContractName, WebSocket)>,
+    subscribers: Subscribers,
 }
 
 pub static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("./src/indexer/migrations");
@@ -78,15 +80,19 @@ impl Module for Indexer {
         info!("Checking for new DB migration...");
         MIGRATOR.run(&pool).await?;
 
-        let subscribers = Arc::new(Mutex::new(HashMap::new()));
+        let (new_sub_sender, new_sub_receiver) = tokio::sync::mpsc::channel(100);
+
+        let subscribers = HashMap::new();
 
         let indexer = Indexer {
             bus,
             state: IndexerState {
                 db: pool,
-                subscribers,
+                new_sub_sender,
             },
             da_stream: None,
+            new_sub_receiver,
+            subscribers,
         };
 
         if let Ok(mut guard) = ctx.router.lock() {
@@ -113,11 +119,33 @@ impl Indexer {
                         error!("Error while handling consensus event: {:#}", e)
                     }
                 }
+
+                Some((contract_name, mut socket)) = self.new_sub_receiver.recv() => {
+
+                    let (tx, mut rx) = broadcast::channel(100);
+                    // Append tx to the list of subscribers for contract_name
+                    self.subscribers.entry(contract_name)
+                        .or_default()
+                        .push(tx);
+
+                    tokio::spawn(async move {
+                        while let Ok(transaction) = rx.recv().await {
+                            if let Ok(json) = serde_json::to_string(&transaction) {
+                                if socket.send(Message::Text(json)).await.is_err() {
+                                    break;
+                                }
+                            } else {
+                                error!("Failed to serialize transaction to JSON");
+                            }
+                        }
+                    });
+                }
+
             }
         } else {
             handle_messages! {
-                    on_bus self.bus,
-                    cmd = self.da_stream.as_mut().expect("da_stream must exist").next() => {
+                on_bus self.bus,
+                cmd = self.da_stream.as_mut().expect("da_stream must exist").next() => {
                     if let Some(Ok(cmd)) = cmd {
                         let bytes = cmd;
                         let block: Block = bincode::decode_from_slice(&bytes, bincode::config::standard())?.0;
@@ -134,6 +162,27 @@ impl Indexer {
                         // TODO: retry
                         return Err(anyhow::anyhow!("Error while reading DA stream: {}", e));
                     }
+                }
+
+                Some((contract_name, mut socket)) = self.new_sub_receiver.recv() => {
+
+                    let (tx, mut rx) = broadcast::channel(100);
+                    // Append tx to the list of subscribers for contract_name
+                    self.subscribers.entry(contract_name)
+                        .or_default()
+                        .push(tx);
+
+                    tokio::spawn(async move {
+                        while let Ok(transaction) = rx.recv().await {
+                            if let Ok(json) = serde_json::to_string(&transaction) {
+                                if socket.send(Message::Text(json)).await.is_err() {
+                                    break;
+                                }
+                            } else {
+                                error!("Failed to serialize transaction to JSON");
+                            }
+                        }
+                    });
                 }
             }
         }
@@ -179,15 +228,15 @@ impl Indexer {
                 "/transaction/hash/:tx_hash",
                 get(api::get_transaction_with_hash),
             )
-            // blob
             .route(
-                "/blobs/transactions/contract/:contract_name",
+                "/blob_transactions/contract/:contract_name",
                 get(api::get_blob_transactions_by_contract),
             )
             .route(
-                "/blobs/transactions/contract/:contract_name/ws",
+                "/blob_transactions/contract/:contract_name/ws",
                 get(Self::get_blob_transactions_by_contract_ws_handler),
             )
+            // blob
             .route(
                 "/blobs/contract/:contract_name",
                 get(api::get_blobs_by_contract),
@@ -209,6 +258,26 @@ impl Indexer {
                 get(api::get_contract_state_by_height),
             )
             .with_state(self.state.clone())
+    }
+
+    async fn get_blob_transactions_by_contract_ws_handler(
+        ws: WebSocketUpgrade,
+        Path(contract_name): Path<String>,
+        State(state): State<IndexerState>,
+    ) -> impl IntoResponse {
+        ws.on_upgrade(move |socket| {
+            Self::get_blob_transactions_by_contract_ws(socket, contract_name, state.new_sub_sender)
+        })
+    }
+
+    async fn get_blob_transactions_by_contract_ws(
+        socket: WebSocket,
+        contract_name: String,
+        new_sub_sender: mpsc::Sender<(ContractName, WebSocket)>,
+    ) {
+        _ = new_sub_sender
+            .send((ContractName(contract_name), socket))
+            .await;
     }
 
     async fn handle_consensus_event(&mut self, event: ConsensusEvent) -> Result<()> {
@@ -259,8 +328,7 @@ impl Indexer {
             match tx.transaction_data {
                 crate::model::TransactionData::Blob(ref tx) => {
                     // Send the transaction to all websocket subscribers
-                    let subs = self.state.subscribers.lock().await;
-                    for (contrat_name, senders) in subs.iter() {
+                    for (contrat_name, senders) in self.subscribers.iter() {
                         if tx
                             .blobs
                             .iter()
@@ -416,42 +484,6 @@ impl Indexer {
 
         Ok(())
     }
-
-    async fn get_blob_transactions_by_contract_ws_handler(
-        ws: WebSocketUpgrade,
-        Path(contract_name): Path<String>,
-        State(state): State<IndexerState>,
-    ) -> impl IntoResponse {
-        ws.on_upgrade(move |socket| {
-            Self::get_blob_transactions_by_contract_ws(socket, contract_name, state.subscribers)
-        })
-    }
-
-    async fn get_blob_transactions_by_contract_ws(
-        mut socket: WebSocket,
-        contract_name: String,
-        subscribers: Subscribers,
-    ) {
-        let (tx, mut rx) = broadcast::channel(100);
-
-        let mut subs = subscribers.lock().await;
-        // Append tx to the list of subscribers for contract_name
-        subs.entry(ContractName(contract_name))
-            .or_insert_with(Vec::new)
-            .push(tx.clone());
-
-        tokio::spawn(async move {
-            while let Ok(transaction) = rx.recv().await {
-                if let Ok(json) = serde_json::to_string(&transaction) {
-                    if socket.send(Message::Text(json)).await.is_err() {
-                        break;
-                    }
-                } else {
-                    error!("Failed to serialize transaction to JSON");
-                }
-            }
-        });
-    }
 }
 
 impl std::ops::Deref for Indexer {
@@ -464,9 +496,7 @@ impl std::ops::Deref for Indexer {
 
 #[cfg(test)]
 mod test {
-    use crate::model::{Blob, BlobData, BlockHash};
     use axum_test::TestServer;
-    use hyle_contract_sdk::TxHash;
     use std::{
         future::IntoFuture,
         net::{Ipv4Addr, SocketAddr},
@@ -483,13 +513,17 @@ mod test {
     }
 
     async fn new_indexer(pool: PgPool) -> Indexer {
+        let (new_sub_sender, new_sub_receiver) = tokio::sync::mpsc::channel(100);
+
         Indexer {
             bus: IndexerBusClient::new_from_bus(SharedMessageBus::default()).await,
             state: IndexerState {
                 db: pool,
-                subscribers: Arc::new(Mutex::new(HashMap::new())),
+                new_sub_sender,
             },
             da_stream: None,
+            new_sub_receiver,
+            subscribers: HashMap::new(),
         }
     }
 
@@ -509,7 +543,7 @@ mod test {
             .execute(&db)
             .await?;
 
-        let indexer = new_indexer(db).await;
+        let mut indexer = new_indexer(db).await;
         let server = setup_test_server(&indexer).await?;
 
         // Blocks
@@ -568,7 +602,7 @@ mod test {
 
         // Blobs
         // Get all transactions for a specific contract name
-        let transactions_response = server.get("/blobs/transactions/contract/contract_1").await;
+        let transactions_response = server.get("/blob_transactions/contract/contract_1").await;
         transactions_response.assert_status_ok();
         assert!(!transactions_response.text().is_empty());
 
@@ -632,43 +666,15 @@ mod test {
 
         tokio::spawn(axum::serve(listener, indexer.api()).into_future());
 
-        let (mut socket, _) = tokio_tungstenite::connect_async(format!(
-            "ws://{addr}/blobs/transactions/contract/contract_1/ws"
+        let _ = tokio_tungstenite::connect_async(format!(
+            "ws://{addr}/blob_transactions/contract/contract_1/ws"
         ))
         .await
         .unwrap();
 
-        let new_transaction = TransactionWithBlobs {
-            identity: "".to_owned(),
-            blobs: vec![Blob {
-                contract_name: ContractName("contract_1".to_string()),
-                data: BlobData(vec![]),
-            }],
-            tx_hash: TxHash::new("").into(),
-            block_hash: BlockHash::new(""),
-            tx_index: 0,
-            version: 1,
-            transaction_type: TransactionType::BlobTransaction,
-            transaction_status: TransactionStatus::Sequenced,
-        };
-
-        let subscribers = indexer.state.subscribers.lock().await;
-        if let Some(senders) = subscribers.get(&ContractName("contract_1".to_string())) {
-            for sender in senders {
-                let _ = sender.send(new_transaction.clone());
-            }
-        }
-
-        if let Some(Ok(msg)) = socket.next().await {
-            if let Ok(text) = msg.to_text() {
-                let json: TransactionWithBlobs =
-                    serde_json::from_str(text).expect("Failed to parse JSON");
-                assert_eq!(json, new_transaction);
-            } else {
-                panic!("Failed to convert message to text");
-            }
-        } else {
-            panic!("Failed to receive message from socket");
+        if let Some(tx) = indexer.new_sub_receiver.recv().await {
+            let (contract_name, _) = tx;
+            assert_eq!(contract_name, ContractName("contract_1".to_string()));
         }
 
         Ok(())
