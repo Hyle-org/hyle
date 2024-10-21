@@ -1,13 +1,13 @@
 //! Mempool logic & pending transaction management.
 
 use crate::{
-    bus::{bus_client, command_response::Query, BusMessage, SharedMessageBus},
+    bus::{bus_client, BusMessage, SharedMessageBus},
     consensus::{
         staking::{Stake, Staker},
         ConsensusEvent,
     },
     handle_messages,
-    mempool::storage::{Car, CarProposal, InMemoryStorage, TipInfo},
+    mempool::storage::{Car, CarProposal, InMemoryStorage},
     model::{Hashable, SharedRunContext, Transaction, TransactionData, ValidatorPublicKey},
     p2p::network::{OutboundMessage, PeerEvent, SignedWithKey},
     rest::endpoints::RestApiMessage,
@@ -34,7 +34,6 @@ bus_client! {
 struct MempoolBusClient {
     sender(OutboundMessage),
     sender(MempoolEvent),
-    receiver(Query<MempoolCommand, MempoolResponse>),
     receiver(SignedWithKey<MempoolNetMessage>),
     receiver(RestApiMessage),
     receiver(ConsensusEvent),
@@ -61,44 +60,11 @@ pub enum MempoolNetMessage {
 }
 impl BusMessage for MempoolNetMessage {}
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum MempoolCommand {
-    CreatePendingBatch,
-}
-impl BusMessage for MempoolCommand {}
-
-#[derive(Debug, Clone, Encode, Decode, Default, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct BatchInfo {
-    pub tip: TipInfo,
-    pub validator: ValidatorPublicKey,
-}
-
-impl BatchInfo {
-    pub fn new(validator: ValidatorPublicKey) -> Self {
-        Self {
-            tip: TipInfo::default(),
-            validator,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Encode, Decode, Default, Serialize, Deserialize)]
-pub struct Batch {
-    pub info: BatchInfo,
-    pub txs: Vec<Transaction>,
-}
-
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub enum MempoolEvent {
     NewCut(CutWithTxs),
 }
 impl BusMessage for MempoolEvent {}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub enum MempoolResponse {
-    PendingBatch { txs: Vec<Transaction> },
-}
-impl BusMessage for MempoolResponse {}
 
 impl Module for Mempool {
     fn name() -> &'static str {

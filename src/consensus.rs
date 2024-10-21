@@ -15,9 +15,9 @@ use tokio::{sync::broadcast, time::sleep};
 use tracing::{debug, info, warn};
 
 use crate::{
-    bus::{bus_client, command_response::Query, BusMessage, SharedMessageBus},
+    bus::{bus_client, BusMessage, SharedMessageBus},
     handle_messages,
-    mempool::{Cut, CutWithTxs, MempoolCommand, MempoolEvent, MempoolResponse},
+    mempool::{Cut, CutWithTxs, MempoolEvent},
     model::{Hashable, ValidatorPublicKey},
     p2p::{
         network::{OutboundMessage, PeerEvent, Signature, Signed, SignedWithKey},
@@ -167,7 +167,6 @@ struct ConsensusBusClient {
     sender(ConsensusEvent),
     sender(ConsensusCommand),
     sender(P2PCommand),
-    sender(Query<MempoolCommand, MempoolResponse>),
     receiver(ConsensusCommand),
     receiver(MempoolEvent),
     receiver(SignedWithKey<ConsensusNetMessage>),
