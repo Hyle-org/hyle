@@ -5,7 +5,7 @@ use super::{
         BlobDb, BlockDb, ContractDb, ContractStateDb, TransactionDb, TransactionStatus,
         TransactionType, TransactionWithBlobs, TxHashDb,
     },
-    IndexerState,
+    IndexerApiState,
 };
 use axum::{
     extract::{Path, State},
@@ -16,7 +16,7 @@ use sqlx::Row;
 
 // Blocks
 pub async fn get_blocks(
-    State(state): State<IndexerState>,
+    State(state): State<IndexerApiState>,
 ) -> Result<Json<Vec<BlockDb>>, StatusCode> {
     let blocks = sqlx::query_as::<_, BlockDb>("SELECT * FROM blocks")
         .fetch_all(&state.db)
@@ -30,7 +30,7 @@ pub async fn get_blocks(
 }
 
 pub async fn get_last_block(
-    State(state): State<IndexerState>,
+    State(state): State<IndexerApiState>,
 ) -> Result<Json<BlockDb>, StatusCode> {
     let block = sqlx::query_as::<_, BlockDb>("SELECT * FROM blocks ORDER BY height DESC LIMIT 1")
         .fetch_optional(&state.db)
@@ -45,7 +45,7 @@ pub async fn get_last_block(
 
 pub async fn get_block(
     Path(height): Path<i64>,
-    State(state): State<IndexerState>,
+    State(state): State<IndexerApiState>,
 ) -> Result<Json<BlockDb>, StatusCode> {
     let block = sqlx::query_as::<_, BlockDb>("SELECT * FROM blocks WHERE height = $1")
         .bind(height)
@@ -61,7 +61,7 @@ pub async fn get_block(
 
 pub async fn get_block_by_hash(
     Path(hash): Path<String>,
-    State(state): State<IndexerState>,
+    State(state): State<IndexerApiState>,
 ) -> Result<Json<BlockDb>, StatusCode> {
     let block = sqlx::query_as::<_, BlockDb>("SELECT * FROM blocks WHERE hash = $1")
         .bind(hash)
@@ -77,7 +77,7 @@ pub async fn get_block_by_hash(
 
 // Transactions
 pub async fn get_transactions(
-    State(state): State<IndexerState>,
+    State(state): State<IndexerApiState>,
 ) -> Result<Json<Vec<TransactionDb>>, StatusCode> {
     let transactions = sqlx::query_as::<_, TransactionDb>("SELECT * FROM transactions")
         .fetch_all(&state.db)
@@ -92,7 +92,7 @@ pub async fn get_transactions(
 
 pub async fn get_transactions_by_contract(
     Path(contract_name): Path<String>,
-    State(state): State<IndexerState>,
+    State(state): State<IndexerApiState>,
 ) -> Result<Json<Vec<TransactionDb>>, StatusCode> {
     let transactions = sqlx::query_as::<_, TransactionDb>(
         r#"
@@ -115,7 +115,7 @@ pub async fn get_transactions_by_contract(
 
 pub async fn get_transactions_by_height(
     Path(height): Path<i64>,
-    State(state): State<IndexerState>,
+    State(state): State<IndexerApiState>,
 ) -> Result<Json<TransactionDb>, StatusCode> {
     let transaction = sqlx::query_as::<_, TransactionDb>(
         r#"
@@ -138,7 +138,7 @@ pub async fn get_transactions_by_height(
 
 pub async fn get_transaction_with_hash(
     Path(tx_hash): Path<String>,
-    State(state): State<IndexerState>,
+    State(state): State<IndexerApiState>,
 ) -> Result<Json<TransactionDb>, StatusCode> {
     let transaction = sqlx::query_as::<_, TransactionDb>(
         r#"
@@ -161,7 +161,7 @@ pub async fn get_transaction_with_hash(
 // Blobs
 pub async fn get_blob_transactions_by_contract(
     Path(contract_name): Path<String>,
-    State(state): State<IndexerState>,
+    State(state): State<IndexerApiState>,
 ) -> Result<Json<Vec<TransactionWithBlobs>>, StatusCode> {
     let rows = sqlx::query(
         r#"
@@ -236,7 +236,7 @@ pub async fn get_blob_transactions_by_contract(
 
 pub async fn get_blobs_by_contract(
     Path(contract_name): Path<String>,
-    State(state): State<IndexerState>,
+    State(state): State<IndexerApiState>,
 ) -> Result<Json<Vec<BlobDb>>, StatusCode> {
     // TODO: Order transactions ?
     let blobs = sqlx::query_as::<_, BlobDb>(
@@ -260,7 +260,7 @@ pub async fn get_blobs_by_contract(
 
 pub async fn get_settled_blobs_by_contract(
     Path(contract_name): Path<String>,
-    State(state): State<IndexerState>,
+    State(state): State<IndexerApiState>,
 ) -> Result<Json<Vec<BlobDb>>, StatusCode> {
     // TODO: Order transactions ?
     let blobs = sqlx::query_as::<_, BlobDb>(
@@ -284,7 +284,7 @@ pub async fn get_settled_blobs_by_contract(
 
 pub async fn get_unsettled_blobs_by_contract(
     Path(contract_name): Path<String>,
-    State(state): State<IndexerState>,
+    State(state): State<IndexerApiState>,
 ) -> Result<Json<Vec<BlobDb>>, StatusCode> {
     // TODO: Order transaction ?
     let blobs = sqlx::query_as::<_, BlobDb>(
@@ -307,7 +307,7 @@ pub async fn get_unsettled_blobs_by_contract(
 }
 pub async fn get_blobs_by_tx_hash(
     Path(tx_hash): Path<String>,
-    State(state): State<IndexerState>,
+    State(state): State<IndexerApiState>,
 ) -> Result<Json<Vec<BlobDb>>, StatusCode> {
     // TODO: Order transaction ?
     let blobs = sqlx::query_as::<_, BlobDb>("SELECT * FROM blobs WHERE tx_hash = $1")
@@ -324,7 +324,7 @@ pub async fn get_blobs_by_tx_hash(
 
 pub async fn get_blob(
     Path((tx_hash, blob_index)): Path<(String, i32)>,
-    State(state): State<IndexerState>,
+    State(state): State<IndexerApiState>,
 ) -> Result<Json<BlobDb>, StatusCode> {
     let blob =
         sqlx::query_as::<_, BlobDb>("SELECT * FROM blobs WHERE tx_hash = $1 AND blob_index = $2")
@@ -343,7 +343,7 @@ pub async fn get_blob(
 // Contracts
 pub async fn get_contract(
     Path(contract_name): Path<String>,
-    State(state): State<IndexerState>,
+    State(state): State<IndexerApiState>,
 ) -> Result<Json<ContractDb>, StatusCode> {
     let contract =
         sqlx::query_as::<_, ContractDb>("SELECT * FROM contracts WHERE contract_name = $1")
@@ -360,7 +360,7 @@ pub async fn get_contract(
 
 pub async fn get_contract_state_by_height(
     Path((contract_name, height)): Path<(String, i64)>,
-    State(state): State<IndexerState>,
+    State(state): State<IndexerApiState>,
 ) -> Result<Json<ContractStateDb>, StatusCode> {
     let contract = sqlx::query_as::<_, ContractStateDb>(
         r#"

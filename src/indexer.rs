@@ -44,7 +44,7 @@ struct IndexerBusClient {
 type Subscribers = HashMap<ContractName, Vec<broadcast::Sender<TransactionWithBlobs>>>;
 
 #[derive(Debug, Clone)]
-pub struct IndexerState {
+pub struct IndexerApiState {
     db: PgPool,
     new_sub_sender: mpsc::Sender<(ContractName, WebSocket)>,
 }
@@ -53,7 +53,7 @@ pub struct IndexerState {
 pub struct Indexer {
     bus: IndexerBusClient,
     da_stream: Option<Framed<TcpStream, LengthDelimitedCodec>>,
-    state: IndexerState,
+    state: IndexerApiState,
     new_sub_receiver: tokio::sync::mpsc::Receiver<(ContractName, WebSocket)>,
     subscribers: Subscribers,
 }
@@ -86,7 +86,7 @@ impl Module for Indexer {
 
         let indexer = Indexer {
             bus,
-            state: IndexerState {
+            state: IndexerApiState {
                 db: pool,
                 new_sub_sender,
             },
@@ -263,7 +263,7 @@ impl Indexer {
     async fn get_blob_transactions_by_contract_ws_handler(
         ws: WebSocketUpgrade,
         Path(contract_name): Path<String>,
-        State(state): State<IndexerState>,
+        State(state): State<IndexerApiState>,
     ) -> impl IntoResponse {
         ws.on_upgrade(move |socket| {
             Self::get_blob_transactions_by_contract_ws(socket, contract_name, state.new_sub_sender)
@@ -518,7 +518,7 @@ mod test {
 
         Indexer {
             bus: IndexerBusClient::new_from_bus(SharedMessageBus::default()).await,
-            state: IndexerState {
+            state: IndexerApiState {
                 db: pool,
                 new_sub_sender,
             },
