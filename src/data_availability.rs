@@ -285,8 +285,10 @@ impl DataAvailability {
     }
 
     async fn handle_new_cut_event(&mut self, cut: CutWithTxs) {
-        if cut.txs.is_empty() || cut.tips.is_empty() {
-            return;
+        if let Some(last_cut) = self.pending_cuts.last() {
+            if last_cut == &cut {
+                return;
+            }
         }
         self.pending_cuts.push(cut);
     }

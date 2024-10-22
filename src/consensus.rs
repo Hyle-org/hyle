@@ -147,7 +147,7 @@ pub struct ConsensusStore {
     /// it can happen we consider invalid because we missed a slot
     /// but if we get a consensus on this proposal, we should accept it
     buffered_invalid_proposals: HashMap<ConsensusProposalHash, ConsensusProposal>,
-    pending_cut: Option<Cut>,
+    pending_cuts: Vec<Cut>,
 }
 
 pub struct Consensus {
@@ -183,7 +183,7 @@ impl Consensus {
         previous_commit_quorum_certificate: QuorumCertificate,
     ) -> Result<(), Error> {
         // Create cut to-be-proposed
-        let cut = self.pending_cut.take().unwrap_or_default();
+        let cut = self.next_cut().unwrap_or_default();
         let validators = self.bft_round_state.staking.bonded();
 
         // Start Consensus with following cut
@@ -200,11 +200,19 @@ impl Consensus {
         Ok(())
     }
 
+    fn next_cut(&mut self) -> Option<Cut> {
+        if self.pending_cuts.is_empty() {
+            None
+        } else {
+            Some(self.pending_cuts.remove(0))
+        }
+    }
+
     /// On genesis, create a consensus proposal with all validators connected to node-1
     /// will grand them a gree stake to start
     /// this genesis logic might change later
     fn create_genesis_consensus_proposal(&mut self) {
-        let cut = self.pending_cut.take().unwrap_or_default();
+        let cut = self.next_cut().unwrap_or_default();
         let validators = self.genesis_pubkeys.clone();
         self.genesis_bond(validators.as_slice())
             .expect("Failed to bond genesis validators");
@@ -564,7 +572,7 @@ impl Consensus {
         match &msg.msg {
             // TODO: do we really get a net message for StartNewSlot ?
             ConsensusNetMessage::StartNewSlot => {
-                if self.pending_cut.is_some() {
+                if !self.pending_cuts.is_empty() {
                     self.start_new_slot()
                 } else {
                     Ok(())
@@ -1118,7 +1126,7 @@ impl Consensus {
     fn handle_command(&mut self, msg: ConsensusCommand) -> Result<()> {
         match msg {
             ConsensusCommand::SingleNodeBlockGeneration => {
-                if let Some(cut) = self.pending_cut.take() {
+                if let Some(cut) = self.next_cut() {
                     self.bus
                         .send(ConsensusEvent::CommitCut {
                             validators: vec![self.crypto.validator_pubkey().clone()],
@@ -1182,9 +1190,13 @@ impl Consensus {
     async fn handle_mempool_event(&mut self, msg: MempoolEvent) -> Result<()> {
         match msg {
             MempoolEvent::NewCut(CutWithTxs { tips: cut, .. }) => {
+                if let Some(last_cut) = self.pending_cuts.last() {
+                    if last_cut == &cut {
+                        return Ok(());
+                    }
+                }
                 debug!("Received a new cut");
-                assert!(self.pending_cut.is_none());
-                self.pending_cut.replace(cut);
+                self.pending_cuts.push(cut);
                 Ok(())
             }
         }

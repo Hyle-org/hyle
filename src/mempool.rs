@@ -327,13 +327,9 @@ impl Mempool {
     }
 
     async fn time_to_cut(&mut self) {
-        if self.storage.tip_already_used() {
-            return;
-        }
         if let Some(cut) = self.storage.try_new_cut(self.validators.len()) {
             let poa = self.storage.tip_poa();
             self.try_car_proposal(poa);
-            debug!("Send NewCut event ({} validators)", self.validators.len());
             if let Err(e) = self
                 .bus
                 .send(MempoolEvent::NewCut(cut))

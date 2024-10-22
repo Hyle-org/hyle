@@ -101,14 +101,10 @@ impl InMemoryStorage {
                 for (validator, lane) in self.other_lanes.iter_mut() {
                     prepare_cut_with_txs(&mut cut, validator, lane, &mut txs);
                 }
-                return if txs.is_empty() || cut.is_empty() {
-                    None
-                } else {
-                    Some(CutWithTxs {
-                        tips: cut,
-                        txs: txs.into_iter().collect(),
-                    })
-                };
+                return Some(CutWithTxs {
+                    tips: cut,
+                    txs: txs.into_iter().collect(),
+                });
             }
         }
         None
@@ -351,13 +347,6 @@ impl InMemoryStorage {
                 car.txs.clone(),
             )
         })
-    }
-
-    pub fn tip_already_used(&self) -> bool {
-        self.lane
-            .current()
-            .map(|car| car.used_in_cut)
-            .unwrap_or_default()
     }
 
     fn flush_pending_txs(&mut self) -> Vec<Transaction> {
