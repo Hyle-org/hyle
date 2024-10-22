@@ -1446,6 +1446,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4f2c92ceda6ceec50f43169f9ee8424fe2db276791afde7b2cd8bc084cb376ab"
 dependencies = [
  "log",
+ "regex",
 ]
 
 [[package]]
@@ -1457,6 +1458,7 @@ dependencies = [
  "anstream",
  "anstyle",
  "env_filter",
+ "humantime",
  "log",
 ]
 
@@ -2155,6 +2157,27 @@ dependencies = [
  "pin-project-lite",
  "tokio",
  "tower-service",
+]
+
+[[package]]
+name = "hyrun"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "base64 0.22.1",
+ "bincode 2.0.0-rc.2",
+ "borsh",
+ "clap",
+ "env_logger",
+ "hex",
+ "hydentity",
+ "hyfi",
+ "hyle-contract-sdk",
+ "reqwest",
+ "risc0-zkvm",
+ "serde",
+ "serde_json",
+ "tracing-subscriber 0.3.18",
 ]
 
 [[package]]

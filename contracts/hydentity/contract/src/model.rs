@@ -71,7 +71,7 @@ pub struct ContractInput {
     pub index: usize,
 }
 
-#[derive(Serialize, Deserialize, Encode, Decode, Debug)]
+#[derive(Serialize, Deserialize, Encode, Decode, Debug, Clone)]
 pub enum ContractFunction {
     Register { account: String, password: String },
     CheckPassword { account: String, password: String },
