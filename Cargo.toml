@@ -1,5 +1,5 @@
 [workspace]
-members = ["contract-sdk", "contracts/hyfi"]
+members = []
 resolver = "2"
 
 [package]
@@ -10,8 +10,8 @@ default-run = "node"
 
 [dependencies]
 hyle-contract-sdk = { path = "./contract-sdk"}
-hyfi = { path = "./contracts/hyfi"}
-hydentity = { path = "./contracts/hydentity"}
+hyfi = { path = "./contracts/hyfi/contract"}
+hydentity = { path = "./contracts/hydentity/contract"}
 config = "0.14.0"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["json"] }

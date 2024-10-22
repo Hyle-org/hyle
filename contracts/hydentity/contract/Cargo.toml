@@ -1,10 +1,10 @@
 [package]
-name = "hyfi"
+name = "hydentity"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-sdk = { path = "../../contract-sdk", package="hyle-contract-sdk" }
+sdk = { path = "../../../contract-sdk", package="hyle-contract-sdk" }
 serde = { version = "1.0", default-features = false, features = [
     "derive",
     "alloc",
