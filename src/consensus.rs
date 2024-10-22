@@ -733,6 +733,7 @@ impl Consensus {
             }
             None => {
                 // Verify proposal hash is correct
+                // For now the slot is contained in the consensus proposal, so checking the hash is enough
                 if !self.verify_consensus_proposal_hash(
                     &consensus_proposal.previous_consensus_proposal_hash,
                 ) {
@@ -741,48 +742,23 @@ impl Consensus {
                     bail!("Previsou Commit Quorum certificate is about an unknown consensus proposal. Can't process any furter");
                 }
 
-                let previous_commit_quorum_certificate_with_message = SignedWithKey {
-                    msg: ConsensusNetMessage::ConfirmAck(
-                        consensus_proposal.previous_consensus_proposal_hash.clone(),
-                    ),
-                    signature: consensus_proposal
-                        .previous_commit_quorum_certificate
-                        .signature
-                        .clone(),
-                    validators: consensus_proposal
-                        .previous_commit_quorum_certificate
-                        .validators
-                        .clone(),
-                };
-                // Verify valid signature
-                match BlstCrypto::verify(&previous_commit_quorum_certificate_with_message) {
-                    Ok(res) => {
-                        if !res {
-                            self.metrics.prepare_error("previous_commit_qc_invalid");
-                            bail!("Previous Commit Quorum Certificate is invalid")
-                        }
+                self.verify_commit_qc(
+                    &consensus_proposal.previous_consensus_proposal_hash, 
+                    &consensus_proposal.previous_commit_quorum_certificate
+                )?;
                         // Buffers the previous *Commit* Quorum Cerficiate
-                        self.store
-                            .bft_round_state
-                            .commit_quorum_certificates
-                            .insert(
-                                self.store.bft_round_state.slot - 1,
-                                (
-                                    consensus_proposal.previous_consensus_proposal_hash.clone(),
-                                    consensus_proposal
-                                        .previous_commit_quorum_certificate
-                                        .clone(),
-                                ),
-                            );
-                    }
-                    Err(err) => {
-                        self.metrics.prepare_error("bls_failure");
-                        bail!(
-                            "Previous Commit Quorum Certificate verification failed: {}",
-                            err
-                        )
-                    }
-                }
+                self.store
+                    .bft_round_state
+                    .commit_quorum_certificates
+                    .insert(
+                        self.store.bft_round_state.slot - 1,
+                        (
+                            consensus_proposal.previous_consensus_proposal_hash.clone(),
+                            consensus_proposal
+                                .previous_commit_quorum_certificate
+                                .clone(),
+                        ),
+                    );
                 // Properly finish the previous round
                 self.finish_round()?;
             }
@@ -811,6 +787,29 @@ impl Consensus {
         self.metrics.prepare();
 
         Ok(())
+    }
+
+    fn verify_commit_qc(&self, consensus_proposal_hash: &ConsensusProposalHash, cert: &QuorumCertificate) -> Result<()> {
+        let previous_commit_quorum_certificate_with_message = SignedWithKey {
+            msg: ConsensusNetMessage::ConfirmAck(consensus_proposal_hash.clone()),
+            signature: cert.signature.clone(),
+            validators: cert.validators.clone(),
+        };
+
+        match BlstCrypto::verify(&previous_commit_quorum_certificate_with_message) {
+            Ok(res) if !res => {
+                self.metrics.prepare_error("previous_commit_qc_invalid");
+                bail!("Previous Commit Quorum Certificate is invalid")
+            }
+            Ok(_) => Ok(()),
+            Err(err) => {
+                self.metrics.prepare_error("bls_failure");
+                bail!(
+                    "Previous Commit Quorum Certificate verification failed: {}",
+                    err
+                )
+            }
+        }
     }
 
     /// Message received by leader.
@@ -900,9 +899,7 @@ impl Consensus {
         Ok(())
     }
 
-    /// Message received by follower.
-    fn on_confirm(
-        &mut self,
+    fn verify_prepare_qc(&self, 
         consensus_proposal_hash: &ConsensusProposalHash,
         prepare_quorum_certificate: &QuorumCertificate,
     ) -> Result<()> {
@@ -912,44 +909,54 @@ impl Consensus {
             signature: prepare_quorum_certificate.signature.clone(),
             validators: prepare_quorum_certificate.validators.clone(),
         };
+
         match BlstCrypto::verify(&prepare_quorum_certificate_with_message) {
-            Ok(res) => {
-                if !res {
-                    self.metrics.confirm_error("prepare_qc_invalid");
-                    bail!("Prepare Quorum Certificate received is invalid")
-                }
-
-                let voting_power =
-                    self.compute_voting_power(prepare_quorum_certificate.validators.as_slice());
-
-                // Verify enough validators signed
-                let f = self.compute_f();
-
-                info!(
-                    "📩 Slot {} validated votes: {} / {} ({} validators for a total bond = {})",
-                    self.bft_round_state.slot,
-                    voting_power,
-                    2 * f + 1,
-                    self.bft_round_state.consensus_proposal.validators.len(),
-                    self.bft_round_state.staking.total_bond()
-                );
-
-                if voting_power < 2 * f + 1 {
-                    self.metrics.confirm_error("prepare_qc_incomplete");
-                    bail!("Prepare Quorum Certificate does not contain enough voting power")
-                }
-
-                self.verify_quorum_and_catchup(
-                    consensus_proposal_hash,
-                    prepare_quorum_certificate,
-                )?;
-
-                // Buffers the *Prepare* Quorum Cerficiate
-                self.bft_round_state.prepare_quorum_certificate =
-                    prepare_quorum_certificate.clone();
+            Ok(res) if !res => {
+                self.metrics.confirm_error("prepare_qc_invalid");
+                bail!("Prepare Quorum Certificate received is invalid")
             }
+            Ok(_) => Ok(()),
             Err(err) => bail!("Prepare Quorum Certificate verification failed: {}", err),
+        }                    
+    }
+
+    /// Message received by follower.
+    fn on_confirm(
+        &mut self,
+        consensus_proposal_hash: &ConsensusProposalHash,
+        prepare_quorum_certificate: &QuorumCertificate,
+    ) -> Result<()> {
+        self.verify_prepare_qc(consensus_proposal_hash, prepare_quorum_certificate)?;
+        
+        let voting_power =
+            self.compute_voting_power(prepare_quorum_certificate.validators.as_slice());
+
+        // Verify enough validators signed
+        let f = self.compute_f();
+
+        info!(
+            "📩 Slot {} validated votes: {} / {} ({} validators for a total bond = {})",
+            self.bft_round_state.slot,
+            voting_power,
+            2 * f + 1,
+            self.bft_round_state.consensus_proposal.validators.len(),
+            self.bft_round_state.staking.total_bond()
+        );
+
+        if voting_power < 2 * f + 1 {
+            self.metrics.confirm_error("prepare_qc_incomplete");
+            bail!("Prepare Quorum Certificate does not contain enough voting power")
         }
+
+        self.verify_quorum_and_catchup(
+            consensus_proposal_hash,
+            prepare_quorum_certificate,
+        )?;
+
+        // Buffers the *Prepare* Quorum Cerficiate
+        self.bft_round_state.prepare_quorum_certificate =
+            prepare_quorum_certificate.clone();
+        
 
         // Responds ConfirmAck to leader
         if self.is_part_of_consensus(self.crypto.validator_pubkey()) {
@@ -1078,47 +1085,31 @@ impl Consensus {
         consensus_proposal_hash: &ConsensusProposalHash,
         commit_quorum_certificate: &QuorumCertificate,
     ) -> Result<()> {
-        // Verifies and save the *Commit* Quorum Certificate
-        let commit_quorum_certificate_with_message = SignedWithKey {
-            msg: ConsensusNetMessage::ConfirmAck(consensus_proposal_hash.clone()),
-            signature: commit_quorum_certificate.signature.clone(),
-            validators: commit_quorum_certificate.validators.clone(),
-        };
 
-        match BlstCrypto::verify(&commit_quorum_certificate_with_message) {
-            Ok(res) => {
-                if !res {
-                    self.metrics.commit_error("invalid_qc");
-                    bail!("Commit Quorum Certificate received is invalid")
-                }
-                // Verify enough validators signed
-                let voting_power =
-                    self.compute_voting_power(commit_quorum_certificate.validators.as_slice());
-                let f = self.compute_f();
-                if voting_power < 2 * f + 1 {
-                    self.metrics.commit_error("incomplete_qc");
-                    bail!("Commit Quorum Certificate does not contain enough validators signatures")
-                }
-
-                self.verify_quorum_and_catchup(consensus_proposal_hash, commit_quorum_certificate)?;
-
-                // Buffers the *Commit* Quorum Cerficiate
-                self.store
-                    .bft_round_state
-                    .commit_quorum_certificates
-                    .insert(
-                        self.store.bft_round_state.slot,
-                        (
-                            consensus_proposal_hash.clone(),
-                            commit_quorum_certificate.clone(),
-                        ),
-                    );
-            }
-            Err(err) => {
-                self.metrics.commit_error("bls_failure");
-                bail!("Commit Quorum Certificate verification failed: {}", err);
-            }
+        self.verify_commit_qc(consensus_proposal_hash, commit_quorum_certificate)?;
+        
+        // Verify enough validators signed
+        let voting_power =
+            self.compute_voting_power(commit_quorum_certificate.validators.as_slice());
+        let f = self.compute_f();
+        if voting_power < 2 * f + 1 {
+            self.metrics.commit_error("incomplete_qc");
+            bail!("Commit Quorum Certificate does not contain enough validators signatures")
         }
+
+        self.verify_quorum_and_catchup(consensus_proposal_hash, commit_quorum_certificate)?;
+
+        // Buffers the *Commit* Quorum Cerficiate
+        self.store
+            .bft_round_state
+            .commit_quorum_certificates
+            .insert(
+                self.store.bft_round_state.slot,
+                (
+                    consensus_proposal_hash.clone(),
+                    commit_quorum_certificate.clone(),
+                ),
+            );
 
         // Finishes the bft round
         self.finish_round()?;
