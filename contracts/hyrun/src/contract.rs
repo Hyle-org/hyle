@@ -88,7 +88,7 @@ pub fn run<ContractFunction, State, ContractInput, Builder>(
         .expect("Verification 2 failed");
 }
 
-fn fetch_current_state<State>(cli: &Cli, contract_name: &str) -> Result<State, Error>
+pub fn fetch_current_state<State>(cli: &Cli, contract_name: &str) -> Result<State, Error>
 where
     State: TryFrom<sdk::StateDigest, Error = Error>,
 {

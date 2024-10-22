@@ -1,5 +1,6 @@
 use anyhow::{bail, Result};
 use hyle_contract_sdk::Identity;
+use tracing::info;
 
 use crate::model::*;
 
@@ -16,6 +17,7 @@ fn check_blob_fees(tx: &BlobTransaction) -> Result<()> {
     if fee_id != id {
         bail!("Fee payer identity does not match identity in blob");
     }
+    info!("💸 Fees will be paid by: {}", fee_id.0);
     Ok(())
 }
 

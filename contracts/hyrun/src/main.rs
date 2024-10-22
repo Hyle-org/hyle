@@ -19,6 +19,7 @@ pub struct Contract {
 #[derive(Subcommand, Clone)]
 pub enum HyfiArgs {
     Init,
+    State,
     Transfer {
         from: String,
         to: String,
@@ -35,6 +36,7 @@ impl From<HyfiArgs> for hyfi::model::ContractFunction {
             HyfiArgs::Transfer { from, to, amount } => Self::Transfer { from, to, amount },
             HyfiArgs::Mint { to, amount } => Self::Mint { to, amount },
             HyfiArgs::Init => panic!("Init is not a valid contract function"),
+            HyfiArgs::State => panic!("State is not a valid contract function"),
         }
     }
 }
@@ -93,6 +95,11 @@ fn main() {
         ContractChoice::Hyfi { command } => {
             if matches!(command, HyfiArgs::Init) {
                 contract::init("hyfi", hyfi::model::Balances::default());
+                return;
+            }
+            if matches!(command, HyfiArgs::State) {
+                let state = contract::fetch_current_state::<hyfi::model::Balances>(&cli, "hyfi");
+                println!("Current state: {:?}", state);
                 return;
             }
             let cf: hyfi::model::ContractFunction = command.into();
