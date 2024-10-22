@@ -29,7 +29,7 @@ pub fn run<ContractFunction, State, ContractInput, Builder>(
     };
     println!("Inital state: {:?}", initial_state);
 
-    let prove_info = prove(initial_state, build_contract_input);
+    let prove_info = prove(initial_state, build_contract_input, contract_name);
 
     let receipt = prove_info.receipt;
     let encoded_receipt = to_vec(&receipt).expect("Unable to encode receipt");
@@ -104,6 +104,7 @@ where
 fn prove<State, ContractInput, Builder>(
     balances: State,
     build_contract_input: Builder,
+    contract_name: &str,
 ) -> risc0_zkvm::ProveInfo
 where
     ContractInput: serde::Serialize,
@@ -118,12 +119,14 @@ where
         .unwrap();
 
     let prover = risc0_zkvm::default_prover();
-    if let Ok(binary) =
-        std::fs::read("target/riscv-guest/riscv32im-risc0-zkvm-elf/docker/hyfi_guest/hyfi-guest")
-    {
+    let file_path = format!(
+        "target/riscv-guest/riscv32im-risc0-zkvm-elf/docker/{}_guest/{}-guest",
+        contract_name, contract_name
+    );
+    if let Ok(binary) = std::fs::read(file_path.as_str()) {
         prover.prove(env, &binary).unwrap()
     } else {
-        println!("Could not read ELF binary at target/riscv-guest/riscv32im-risc0-zkvm-elf/docker/hyfi_guest/hyfi-guest.");
+        println!("Could not read ELF binary at {}.", file_path);
         println!("Please ensure that the ELF binary is built and located at the specified path.");
         println!("\x1b[93m--> Tip: Did you run build_contracts.sh ?\x1b[0m");
         panic!("Could not read ELF binary");
