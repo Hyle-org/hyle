@@ -148,14 +148,18 @@ impl Mempool {
             pubkey: pubkey.clone(),
             stake: Stake { amount: 100 },
         }));
-        self.on_new_tx(tx);
         self.validators.push(pubkey);
+        self.on_new_tx(tx);
     }
 
     fn handle_peer_event(&mut self, event: PeerEvent) {
         match event {
             PeerEvent::NewPeer { pubkey } => {
                 if self.genesis && self.is_genesis_leader {
+                    let my_pubkey = self.crypto.validator_pubkey().clone();
+                    if !self.validators.contains(&my_pubkey) {
+                        self.add_stake_tx_on_genesis_for(my_pubkey);
+                    }
                     self.add_stake_tx_on_genesis_for(pubkey);
                 }
             }

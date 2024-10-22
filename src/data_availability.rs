@@ -301,12 +301,12 @@ impl DataAvailability {
                 if cut.is_empty() {
                     return;
                 }
-                info!("🔒  Cut committed");
                 if let Some(pos) = self
                     .pending_cuts
                     .iter()
                     .position(|pending| pending.tips == cut)
                 {
+                    info!("🔒  Cut committed");
                     let cut = self.pending_cuts.remove(pos);
 
                     let last_block = self.blocks.last();
@@ -328,7 +328,7 @@ impl DataAvailability {
                     })
                     .await;
                 } else {
-                    error!("Committed cut not found in pending cuts");
+                    error!("Cut not found in pending cuts");
                 }
             }
         }
