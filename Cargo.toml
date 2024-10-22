@@ -9,7 +9,7 @@ hyle-contract-sdk = { path = "./contract-sdk"}
 config = "0.14.0"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["json"] }
-tokio = { version = "1.40.0", features = ["full", "tracing"] }
+tokio = { version = "1.41.0", features = ["full", "tracing"] }
 anyhow = "1.0.90"
 clap = { version = "4.5.20", features = ["derive"] }
 rand = "0.8.5"
