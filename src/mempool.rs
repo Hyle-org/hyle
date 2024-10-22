@@ -127,9 +127,6 @@ impl Mempool {
                 new_bonded_validators,
                 validators,
             } => {
-                if cut.is_empty() {
-                    return;
-                }
                 debug!(
                     "Received CommitCut ({} validators, {} new_bonded_validators, {} cut tips)",
                     validators.len(),
@@ -331,6 +328,7 @@ impl Mempool {
         if let Some(cut) = self.storage.try_new_cut(self.validators.len()) {
             let poa = self.storage.tip_poa();
             self.try_car_proposal(poa);
+            debug!("Sending new Cut");
             if let Err(e) = self
                 .bus
                 .send(MempoolEvent::NewCut(cut))

@@ -290,6 +290,7 @@ impl DataAvailability {
                 return;
             }
         }
+        debug!("Received a new Cut");
         self.pending_cuts.push(cut);
     }
 
@@ -300,38 +301,34 @@ impl DataAvailability {
                 new_bonded_validators,
                 ..
             } => {
-                if cut.is_empty() {
-                    return;
-                }
-                if let Some(pos) = self
+                let txs = if let Some(pos) = self
                     .pending_cuts
                     .iter()
                     .position(|pending| pending.tips == cut)
                 {
-                    info!("🔒  Cut committed");
-                    let cut = self.pending_cuts.remove(pos);
-
-                    let last_block = self.blocks.last();
-                    let parent_hash =
-                        last_block
-                            .as_ref()
-                            .map(|b| b.hash())
-                            .unwrap_or(BlockHash::new(
-                                "46696174206c757820657420666163746120657374206c7578",
-                            ));
-                    let next_height = last_block.map(|b| b.height.0 + 1).unwrap_or(0);
-
-                    self.handle_block(Block {
-                        parent_hash,
-                        height: BlockHeight(next_height),
-                        timestamp: get_current_timestamp(),
-                        new_bonded_validators,
-                        txs: cut.txs,
-                    })
-                    .await;
+                    self.pending_cuts.remove(pos).txs
                 } else {
-                    error!("Cut not found in pending cuts");
-                }
+                    vec![]
+                };
+                info!("🔒  Cut committed");
+
+                let last_block = self.blocks.last();
+                let parent_hash = last_block
+                    .as_ref()
+                    .map(|b| b.hash())
+                    .unwrap_or(BlockHash::new(
+                        "46696174206c757820657420666163746120657374206c7578",
+                    ));
+                let next_height = last_block.map(|b| b.height.0 + 1).unwrap_or(0);
+
+                self.handle_block(Block {
+                    parent_hash,
+                    height: BlockHeight(next_height),
+                    timestamp: get_current_timestamp(),
+                    new_bonded_validators,
+                    txs,
+                })
+                .await;
             }
         }
     }

@@ -571,13 +571,7 @@ impl Consensus {
 
         match &msg.msg {
             // TODO: do we really get a net message for StartNewSlot ?
-            ConsensusNetMessage::StartNewSlot => {
-                if !self.pending_cuts.is_empty() {
-                    self.start_new_slot()
-                } else {
-                    Ok(())
-                }
-            }
+            ConsensusNetMessage::StartNewSlot => self.start_new_slot(),
             ConsensusNetMessage::Prepare(consensus_proposal) => {
                 self.on_prepare(msg, consensus_proposal)
             }
@@ -1195,7 +1189,7 @@ impl Consensus {
                         return Ok(());
                     }
                 }
-                debug!("Received a new cut");
+                debug!("Received a new Cut");
                 self.pending_cuts.push(cut);
                 Ok(())
             }
