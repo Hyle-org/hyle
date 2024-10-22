@@ -741,7 +741,7 @@ impl Consensus {
                     bail!("Previsou Commit Quorum certificate is about an unknown consensus proposal. Can't process any furter");
                 }
 
-                let _ = self.verify_commit_qc(
+                self.verify_commit_qc(
                     &consensus_proposal.previous_consensus_proposal_hash, 
                     &consensus_proposal.previous_commit_quorum_certificate
                 )?;
@@ -925,7 +925,7 @@ impl Consensus {
         consensus_proposal_hash: &ConsensusProposalHash,
         prepare_quorum_certificate: &QuorumCertificate,
     ) -> Result<()> {
-        let _ = self.verify_prepare_qc(consensus_proposal_hash, prepare_quorum_certificate)?;
+        self.verify_prepare_qc(consensus_proposal_hash, prepare_quorum_certificate)?;
         
         let voting_power =
             self.compute_voting_power(prepare_quorum_certificate.validators.as_slice());
@@ -1085,7 +1085,7 @@ impl Consensus {
         commit_quorum_certificate: &QuorumCertificate,
     ) -> Result<()> {
 
-        let _ = self.verify_commit_qc(consensus_proposal_hash, commit_quorum_certificate)?;
+        self.verify_commit_qc(consensus_proposal_hash, commit_quorum_certificate)?;
         
         // Verify enough validators signed
         let voting_power =
