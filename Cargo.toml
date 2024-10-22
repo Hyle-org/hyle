@@ -51,7 +51,7 @@ axum-test = "16.2.0"
 syn = "2.0.82"
 quote = "1.0.37"
 base64 = "0.22.1"
-bytes = "1.7.2"
+bytes = "1.8.0"
 strum = "0.26.3"
 strum_macros = "0.26.4"
 
