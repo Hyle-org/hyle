@@ -7,6 +7,7 @@ use alloc::format;
 use alloc::string::ToString;
 use hydentity::model::{ContractFunction, ContractInput};
 use risc0_zkvm::guest::env;
+use sdk::Digestable;
 use sdk::HyleOutput;
 
 risc0_zkvm::guest::entry!(main);
@@ -23,8 +24,8 @@ fn main() {
             let flattened_blobs = input.blobs.into_iter().flat_map(|b| b.0).collect();
             env::commit(&HyleOutput {
                 version: 1,
-                initial_state: initial_balances.as_state(),
-                next_state: initial_balances.as_state(),
+                initial_state: initial_balances.as_digest(),
+                next_state: initial_balances.as_digest(),
                 identity: sdk::Identity("".to_string()),
                 tx_hash: sdk::TxHash(input.tx_hash),
                 index: sdk::BlobIndex(input.index as u32),
@@ -46,8 +47,8 @@ fn main() {
     let flattened_blobs = input.blobs.into_iter().flat_map(|b| b.0).collect();
     env::commit(&HyleOutput {
         version: 1,
-        initial_state: initial_balances.as_state(),
-        next_state: next_balances.as_state(),
+        initial_state: initial_balances.as_digest(),
+        next_state: next_balances.as_digest(),
         identity: sdk::Identity(res.identity),
         tx_hash: sdk::TxHash(input.tx_hash),
         index: sdk::BlobIndex(input.index as u32),

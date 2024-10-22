@@ -60,14 +60,16 @@ impl TryFrom<sdk::StateDigest> for Balances {
     }
 }
 
-impl Balances {
-    pub fn as_state(&self) -> sdk::StateDigest {
+impl sdk::Digestable for Balances {
+    fn as_digest(&self) -> sdk::StateDigest {
         sdk::StateDigest(
             bincode::encode_to_vec(self, bincode::config::standard())
                 .expect("Failed to encode Balances"),
         )
     }
+}
 
+impl Balances {
     pub fn add_account(&mut self, account: Account) {
         self.accounts.push(account);
     }

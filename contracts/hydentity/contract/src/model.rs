@@ -4,7 +4,7 @@ use alloc::vec::Vec;
 use alloc::{string::String, vec};
 use anyhow::{bail, Error};
 use bincode::{Decode, Encode};
-use sdk::BlobData;
+use sdk::{BlobData, Digestable};
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, Clone, Hash, bincode::Encode, bincode::Decode)]
@@ -50,14 +50,16 @@ impl TryFrom<sdk::StateDigest> for Identities {
     }
 }
 
-impl Identities {
-    pub fn as_state(&self) -> sdk::StateDigest {
+impl Digestable for Identities {
+    fn as_digest(&self) -> sdk::StateDigest {
         sdk::StateDigest(
             bincode::encode_to_vec(self, bincode::config::standard())
                 .expect("Failed to encode Identities"),
         )
     }
+}
 
+impl Identities {
     pub fn register(&mut self, account: String, password: String) -> Result<(), Error> {
         self.accounts.push(Account::new(account, password));
         Ok(())

@@ -18,6 +18,7 @@ pub struct Contract {
 
 #[derive(Subcommand, Clone)]
 pub enum HyfiArgs {
+    Init,
     Transfer {
         from: String,
         to: String,
@@ -33,12 +34,14 @@ impl From<HyfiArgs> for hyfi::model::ContractFunction {
         match cmd {
             HyfiArgs::Transfer { from, to, amount } => Self::Transfer { from, to, amount },
             HyfiArgs::Mint { to, amount } => Self::Mint { to, amount },
+            HyfiArgs::Init => panic!("Init is not a valid contract function"),
         }
     }
 }
 
 #[derive(Subcommand, Clone)]
 pub enum HydentityArgs {
+    Init,
     Register { account: String, password: String },
     CheckPassword { account: String, password: String },
 }
@@ -49,6 +52,7 @@ impl From<HydentityArgs> for hydentity::model::ContractFunction {
             HydentityArgs::CheckPassword { account, password } => {
                 Self::CheckPassword { account, password }
             }
+            HydentityArgs::Init => panic!("Init is not a valid contract function"),
         }
     }
 }
@@ -87,6 +91,10 @@ fn main() {
 
     match cli.command.clone() {
         ContractChoice::Hyfi { command } => {
+            if matches!(command, HyfiArgs::Init) {
+                contract::init("hyfi", hyfi::model::Balances::default());
+                return;
+            }
             let cf: hyfi::model::ContractFunction = command.into();
             contract::run(
                 &cli,
@@ -113,6 +121,10 @@ fn main() {
             );
         }
         ContractChoice::Hydentity { command } => {
+            if matches!(command, HydentityArgs::Init) {
+                contract::init("hydentity", hydentity::model::Identities::default());
+                return;
+            }
             let cf: hydentity::model::ContractFunction = command.into();
             contract::run(
                 &cli,

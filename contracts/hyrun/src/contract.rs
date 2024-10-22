@@ -1,9 +1,28 @@
 use anyhow::{bail, Error};
 use borsh::to_vec;
 use risc0_zkvm::sha::Digestible;
-use sdk::HyleOutput;
+use sdk::{Digestable, HyleOutput};
 
 use crate::{Cli, Contract};
+
+pub fn init<State>(contract_name: &str, initial_state: State)
+where
+    State: Digestable + std::fmt::Debug,
+{
+    println!("Initial state: {:?}", initial_state);
+    let initial_state = hex::encode(initial_state.as_digest().0);
+    let file_path = format!("contracts/{}/{}.txt", contract_name, contract_name);
+    let image_id = std::fs::read_to_string(file_path)
+        .expect("Unable to read image id")
+        .trim_end()
+        .to_string();
+
+    println!("You can register the contract by running:");
+    println!(
+        "hyled contract default risc0 {} {} {}",
+        image_id, contract_name, initial_state
+    );
+}
 
 pub fn run<ContractFunction, State, ContractInput, Builder>(
     cli: &Cli,
@@ -14,17 +33,14 @@ pub fn run<ContractFunction, State, ContractInput, Builder>(
     ContractFunction: bincode::Encode + std::fmt::Debug + Clone,
     State: Default + std::fmt::Debug + TryFrom<sdk::StateDigest, Error = Error>,
     ContractInput: serde::Serialize,
+    State: Digestable,
     Builder: Fn(State) -> ContractInput,
 {
-    let initial_state = if cli.init {
-        State::default()
-    } else {
-        match fetch_current_state(cli, contract_name) {
-            Ok(s) => s,
-            Err(e) => {
-                println!("fetch current state error: {}", e);
-                return;
-            }
+    let initial_state = match fetch_current_state(cli, contract_name) {
+        Ok(s) => s,
+        Err(e) => {
+            println!("fetch current state error: {}", e);
+            return;
         }
     };
     println!("Inital state: {:?}", initial_state);
@@ -59,13 +75,6 @@ pub fn run<ContractFunction, State, ContractInput, Builder>(
     );
     println!("{}", "-".repeat(20));
 
-    if cli.init {
-        println!("You can register the contract by running:");
-        println!(
-            "hyled contract default risc0 {} {} {}",
-            method_id, contract_name, initial_state
-        );
-    }
     println!("You can send the blob tx:");
     println!(
         "hyled blob IDENTITY {} {}",
@@ -119,10 +128,7 @@ where
         .unwrap();
 
     let prover = risc0_zkvm::default_prover();
-    let file_path = format!(
-        "target/riscv-guest/riscv32im-risc0-zkvm-elf/docker/{}_guest/{}-guest",
-        contract_name, contract_name
-    );
+    let file_path = format!("contracts/{}/{}.img", contract_name, contract_name);
     if let Ok(binary) = std::fs::read(file_path.as_str()) {
         prover.prove(env, &binary).unwrap()
     } else {

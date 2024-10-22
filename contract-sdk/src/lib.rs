@@ -9,6 +9,10 @@ use alloc::vec::Vec;
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 
+pub trait Digestable {
+    fn as_digest(&self) -> StateDigest;
+}
+
 #[derive(Default, Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash, Encode, Decode)]
 pub struct StateDigest(pub Vec<u8>);
 
