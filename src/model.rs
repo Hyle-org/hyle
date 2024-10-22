@@ -144,10 +144,10 @@ pub struct RegisterContractTransaction {
 #[derive(Debug, Serialize, Deserialize, Default, PartialEq, Eq, Clone, Encode, Decode, Hash)]
 pub struct Fees {
     pub payer: Identity,
-    pub amount: u64,
-    pub fee_contract: ContractName,
-    pub identity_contract: ContractName,
-    pub identity_proof: Vec<u8>,
+    pub fee: Blob,
+    pub identity: Blob,
+    // If the identity blob is from a "known" contract, the node will be able to verify the identity without the proof
+    pub identity_proof: Option<Vec<u8>>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Default, PartialEq, Eq, Clone, Encode, Decode, Hash)]

@@ -1,13 +1,18 @@
-use crate::model::Fees;
+use crate::model::{Blob, BlobData, Fees};
 
 impl Fees {
     pub fn default_test() -> Self {
         Self {
             payer: "payer".into(),
-            amount: 0,
-            fee_contract: "hyfi".into(),
-            identity_contract: "hydentity".into(),
-            identity_proof: vec![],
+            identity_proof: Some(vec![]),
+            fee: Blob {
+                contract_name: "hyfi".into(),
+                data: BlobData(vec![]),
+            },
+            identity: Blob {
+                contract_name: "hydentity".into(),
+                data: BlobData(vec![]),
+            },
         }
     }
 }

@@ -23,6 +23,7 @@ use storage::ProposalVerdict;
 use strum_macros::IntoStaticStr;
 use tracing::{debug, error, info, warn};
 
+mod fees_checker;
 mod metrics;
 mod storage;
 pub use storage::{Cut, CutWithTxs};
@@ -352,6 +353,10 @@ impl Mempool {
     }
 
     fn on_new_tx(&mut self, tx: Transaction) {
+        if let Err(e) = fees_checker::check_fees(&tx) {
+            error!("Invalid fees for transaction {}: {:?}", tx.hash(), e);
+            return;
+        }
         debug!("Got new tx {}", tx.hash());
         self.metrics.add_api_tx("blob".to_string());
         self.storage.accumulate_tx(tx.clone());
