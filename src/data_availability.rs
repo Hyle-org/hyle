@@ -451,12 +451,13 @@ impl DataAvailability {
 #[cfg(test)]
 mod tests {
     use crate::model::{
-        Blob, BlobData, BlobTransaction, Block, BlockHash, BlockHeight, Fees, Hashable,
-        Transaction, TransactionData,
+        Blob, BlobTransaction, Block, BlockHash, BlockHeight, Fees, Hashable, Transaction,
+        TransactionData,
     };
 
     use super::blocks::Blocks;
     use anyhow::Result;
+    use hyle_contract_sdk::BlobData;
 
     #[test]
     fn test_blocks() -> Result<()> {

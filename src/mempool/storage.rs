@@ -525,11 +525,11 @@ mod tests {
     use crate::{
         mempool::storage::{Car, DataProposal, InMemoryStorage, Poa, ProposalVerdict},
         model::{
-            Blob, BlobData, BlobTransaction, ContractName, Fees, Transaction, TransactionData,
+            Blob, BlobTransaction, ContractName, Fees, Transaction, TransactionData,
             ValidatorPublicKey,
         },
     };
-    use hyle_contract_sdk::Identity;
+    use hyle_contract_sdk::{BlobData, Identity};
 
     fn make_tx(inner_tx: &'static str) -> Transaction {
         Transaction {

@@ -22,6 +22,9 @@ pub struct TxHash(pub String);
 pub struct BlobIndex(pub u32);
 
 #[derive(Default, Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash, Encode, Decode)]
+pub struct BlobData(pub Vec<u8>);
+
+#[derive(Default, Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash, Encode, Decode)]
 pub struct HyleOutput {
     pub version: u32,
     pub initial_state: StateDigest,

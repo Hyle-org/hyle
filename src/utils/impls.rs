@@ -1,4 +1,6 @@
-use crate::model::{Blob, BlobData, Fees};
+use hyle_contract_sdk::BlobData;
+
+use crate::model::{Blob, Fees};
 
 impl Fees {
     pub fn default_test() -> Self {

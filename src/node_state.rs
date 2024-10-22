@@ -436,7 +436,7 @@ impl DerefMut for NodeState {
 mod test {
     use std::path::PathBuf;
 
-    use hyle_contract_sdk::{BlobIndex, Identity};
+    use hyle_contract_sdk::{BlobData, BlobIndex, Identity};
 
     use crate::{bus::SharedMessageBus, model::*, utils::conf::Conf};
 

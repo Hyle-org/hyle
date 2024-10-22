@@ -1,9 +1,10 @@
 extern crate alloc;
 
-use alloc::string::String;
 use alloc::vec::Vec;
+use alloc::{string::String, vec};
 use anyhow::{bail, Error};
 use bincode::{Decode, Encode};
+use sdk::BlobData;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, Clone, Hash, bincode::Encode, bincode::Decode)]
@@ -26,10 +27,19 @@ impl Account {
     }
 }
 
-#[derive(Default, Clone, Serialize, Deserialize, Debug, Hash, bincode::Encode, bincode::Decode)]
+#[derive(Clone, Serialize, Deserialize, Debug, Hash, bincode::Encode, bincode::Decode)]
 pub struct Identities {
     accounts: Vec<Account>,
 }
+
+impl Default for Identities {
+    fn default() -> Self {
+        Identities {
+            accounts: vec![Account::new("test".into(), "1234".into())],
+        }
+    }
+}
+
 impl TryFrom<sdk::StateDigest> for Identities {
     type Error = Error;
 
@@ -77,13 +87,13 @@ pub enum ContractFunction {
     CheckPassword { account: String, password: String },
 }
 impl ContractFunction {
-    pub fn encode(&self) -> Result<Vec<u8>, Error> {
+    pub fn encode(&self) -> Result<BlobData, Error> {
         let r = bincode::encode_to_vec(self, bincode::config::standard())?;
-        Ok(r)
+        Ok(BlobData(r))
     }
 
-    pub fn decode(data: &[u8]) -> Result<Self, Error> {
-        let (v, _) = bincode::decode_from_slice(data, bincode::config::standard())?;
+    pub fn decode(data: &BlobData) -> Result<Self, Error> {
+        let (v, _) = bincode::decode_from_slice(data.0.as_slice(), bincode::config::standard())?;
         Ok(v)
     }
 }

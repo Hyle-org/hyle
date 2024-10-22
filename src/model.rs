@@ -3,7 +3,7 @@
 use axum::Router;
 use bincode::{Decode, Encode};
 use derive_more::Display;
-use hyle_contract_sdk::{BlobIndex, Identity, StateDigest, TxHash};
+use hyle_contract_sdk::{BlobData, BlobIndex, Identity, StateDigest, TxHash};
 use serde::{
     de::{self, Visitor},
     Deserialize, Serialize,
@@ -85,9 +85,6 @@ impl From<&str> for ContractName {
         ContractName(s.into())
     }
 }
-
-#[derive(Debug, Serialize, Deserialize, Default, Clone, PartialEq, Eq, Encode, Decode, Hash)]
-pub struct BlobData(pub Vec<u8>);
 
 #[derive(Debug, Serialize, Deserialize, Default, Clone, PartialEq, Eq, Encode, Decode, Hash)]
 pub struct Transaction {

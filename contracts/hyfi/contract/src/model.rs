@@ -5,6 +5,7 @@ use alloc::vec::Vec;
 use alloc::{string::String, vec};
 use anyhow::{bail, Error};
 use bincode::{Decode, Encode};
+use sdk::BlobData;
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Sha3_256};
 
@@ -41,7 +42,10 @@ pub struct Balances {
 impl Default for Balances {
     fn default() -> Self {
         Balances {
-            accounts: vec![Account::new("faucet".to_owned(), 1_000_000)],
+            accounts: vec![
+                Account::new("faucet".into(), 1_000_000),
+                Account::new("test".into(), 1_000),
+            ],
             collected_fee: 0,
         }
     }
@@ -164,13 +168,13 @@ pub enum ContractFunction {
     },
 }
 impl ContractFunction {
-    pub fn encode(&self) -> Result<Vec<u8>, Error> {
+    pub fn encode(&self) -> Result<BlobData, Error> {
         let r = bincode::encode_to_vec(self, bincode::config::standard())?;
-        Ok(r)
+        Ok(BlobData(r))
     }
 
-    pub fn decode(data: &[u8]) -> Result<Self, Error> {
-        let (v, _) = bincode::decode_from_slice(data, bincode::config::standard())?;
+    pub fn decode(data: &BlobData) -> Result<Self, Error> {
+        let (v, _) = bincode::decode_from_slice(data.0.as_slice(), bincode::config::standard())?;
         Ok(v)
     }
 }

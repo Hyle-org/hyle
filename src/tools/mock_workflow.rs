@@ -5,14 +5,14 @@ use crate::{
     handle_messages,
     mempool::MempoolNetMessage,
     model::{
-        Blob, BlobData, BlobTransaction, ContractName, Fees, ProofTransaction,
-        RegisterContractTransaction, SharedRunContext, Transaction,
+        Blob, BlobTransaction, ContractName, Fees, ProofTransaction, RegisterContractTransaction,
+        SharedRunContext, Transaction,
     },
     rest::client::ApiHttpClient,
     utils::modules::Module,
 };
 use anyhow::Result;
-use hyle_contract_sdk::{Identity, StateDigest};
+use hyle_contract_sdk::{BlobData, Identity, StateDigest};
 use reqwest::{Client, Url};
 use serde::{Deserialize, Serialize};
 use tokio::time::sleep;

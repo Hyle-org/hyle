@@ -6,13 +6,13 @@ use tokio::time::sleep;
 use hyle::{
     indexer::model::ContractDb,
     model::{
-        Blob, BlobData, BlobReference, BlobTransaction, ContractName, Fees, ProofTransaction,
+        Blob, BlobReference, BlobTransaction, ContractName, Fees, ProofTransaction,
         RegisterContractTransaction,
     },
     node_state::model::Contract,
     rest::client::ApiHttpClient,
 };
-use hyle_contract_sdk::{Identity, StateDigest, TxHash};
+use hyle_contract_sdk::{BlobData, Identity, StateDigest, TxHash};
 use reqwest::{Client, Url};
 use test_helpers::ConfMaker;
 

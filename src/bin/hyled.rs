@@ -4,12 +4,12 @@ use anyhow::Result;
 use clap::{command, Parser, Subcommand};
 use hyle::{
     model::{
-        Blob, BlobData, BlobReference, BlobTransaction, ContractName, Fees, ProofTransaction,
+        Blob, BlobReference, BlobTransaction, ContractName, Fees, ProofTransaction,
         RegisterContractTransaction,
     },
     rest::client::ApiHttpClient,
 };
-use hyle_contract_sdk::{BlobIndex, Identity, StateDigest, TxHash};
+use hyle_contract_sdk::{BlobData, BlobIndex, Identity, StateDigest, TxHash};
 use reqwest::{Client, Url};
 
 pub fn load_encoded_receipt_from_file(path: &str) -> Vec<u8> {
@@ -51,11 +51,31 @@ async fn send_blob(
     identity: Identity,
     contract_name: ContractName,
     blob_data: String,
+    payer: Payer,
 ) -> Result<()> {
     let data = BlobData(hex::decode(blob_data).expect("Data decoding failed"));
+    let fee_blob = hyfi::model::ContractFunction::PayFees {
+        from: payer.account.clone(),
+        amount: 10,
+    };
     let res = client
         .send_tx_blob(&BlobTransaction {
-            fees: Fees::default(), // TODO
+            fees: Fees {
+                payer: identity.clone(),
+                fee: Blob {
+                    contract_name: "hyfi".into(),
+                    data: fee_blob.encode()?,
+                },
+                identity: Blob {
+                    contract_name: "hydentity".into(),
+                    data: hydentity::model::ContractFunction::CheckPassword {
+                        account: payer.account,
+                        password: payer.password,
+                    }
+                    .encode()?,
+                },
+                identity_proof: None,
+            },
             identity,
             blobs: vec![Blob {
                 contract_name,
@@ -114,6 +134,12 @@ struct Args {
 
     #[arg(long, default_value = "4321")]
     pub port: u32,
+
+    // For hydentity contract
+    #[arg(long, default_value = "test")]
+    pub payer: String,
+    #[arg(long, default_value = "1234")]
+    pub payer_password: String,
 }
 
 #[derive(Debug, Subcommand)]
@@ -145,6 +171,11 @@ enum SendCommands {
     Auto,
 }
 
+struct Payer {
+    account: String,
+    password: String,
+}
+
 async fn handle_args(args: Args) -> Result<()> {
     let url = format!("http://{}:{}", args.host, args.port);
 
@@ -153,12 +184,17 @@ async fn handle_args(args: Args) -> Result<()> {
         reqwest_client: Client::new(),
     };
 
+    let payer = Payer {
+        account: args.payer,
+        password: args.payer_password,
+    };
+
     match args.command {
         SendCommands::Blob {
             identity,
             contract_name,
             data,
-        } => send_blob(&client, identity.into(), contract_name.into(), data).await,
+        } => send_blob(&client, identity.into(), contract_name.into(), data, payer).await,
         SendCommands::Proof {
             tx_hash,
             blob_index,

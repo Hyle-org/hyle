@@ -28,7 +28,7 @@ fn check_contract(blob: &Blob) -> Result<Identity> {
 }
 
 fn check_hyfi_contract(blob: &Blob) -> Result<Identity> {
-    let parameters = hyfi::model::ContractFunction::decode(blob.data.0.as_slice())?;
+    let parameters = hyfi::model::ContractFunction::decode(&blob.data)?;
     let mut state = hyfi::model::Balances::default(); // TODO: fetch state from chain
     let result = hyfi::run(&mut state, parameters);
     if !result.success {
@@ -38,7 +38,7 @@ fn check_hyfi_contract(blob: &Blob) -> Result<Identity> {
 }
 
 fn check_hydentity_contract(blob: &Blob) -> Result<Identity> {
-    let parameters = hydentity::model::ContractFunction::decode(blob.data.0.as_slice())?;
+    let parameters = hydentity::model::ContractFunction::decode(&blob.data)?;
     let mut state = hydentity::model::Identities::default(); // TODO: fetch state from chain
     let result = hydentity::run(&mut state, parameters);
     if !result.success {
