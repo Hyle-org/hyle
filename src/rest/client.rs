@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 use reqwest::{Response, Url};
+use tracing::info;
 
 use crate::{
     model::{BlobTransaction, ContractName, ProofTransaction, RegisterContractTransaction},
@@ -13,6 +14,7 @@ pub struct ApiHttpClient {
 
 impl ApiHttpClient {
     pub async fn send_tx_blob(&self, tx: &BlobTransaction) -> Result<Response> {
+        info!("Sending tx blob: {:?}", tx);
         self.reqwest_client
             .post(format!("{}v1/tx/send/blob", self.url))
             .body(serde_json::to_string(tx)?)
@@ -23,6 +25,7 @@ impl ApiHttpClient {
     }
 
     pub async fn send_tx_proof(&self, tx: &ProofTransaction) -> Result<Response> {
+        info!("Sending tx proof: {:?}", tx);
         self.reqwest_client
             .post(format!("{}v1/tx/send/proof", self.url))
             .body(serde_json::to_string(&tx)?)
@@ -36,6 +39,7 @@ impl ApiHttpClient {
         &self,
         tx: &RegisterContractTransaction,
     ) -> Result<Response> {
+        info!("Sending tx register contract: {:?}", tx);
         self.reqwest_client
             .post(format!("{}v1/contract/register", self.url))
             .body(serde_json::to_string(&tx)?)

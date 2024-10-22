@@ -58,10 +58,11 @@ async fn send_blob(
         from: payer.account.clone(),
         amount: 10,
     };
+    println!("Fees will be paid by {}", payer.account);
     let res = client
         .send_tx_blob(&BlobTransaction {
             fees: Fees {
-                payer: identity.clone(),
+                payer: payer.account.clone().into(),
                 fee: Blob {
                     contract_name: "hyfi".into(),
                     data: fee_blob.encode()?,
@@ -241,6 +242,8 @@ async fn handle_args(args: Args) -> Result<()> {
 #[tokio::main]
 async fn main() {
     let args = Args::parse();
+
+    tracing_subscriber::fmt::init();
 
     match handle_args(args).await {
         Ok(_) => println!("Success"),
