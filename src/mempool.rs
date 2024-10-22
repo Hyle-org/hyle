@@ -252,11 +252,12 @@ impl Mempool {
         );
 
         let missing_cars = self.storage.get_missing_cars(last_index, &car_proposal);
-        debug!("Missing cars on {} are {:?}", validator, missing_cars);
 
         match missing_cars {
             None => info!("{} no missing cars", self.storage.id),
+            Some(cars) if cars.is_empty() => {}
             Some(cars) => {
+                debug!("Missing cars on {} are {:?}", validator, cars);
                 if let Err(e) = self.send_sync_reply(validator, cars) {
                     error!("{:?}", e)
                 }
