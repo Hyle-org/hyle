@@ -81,13 +81,13 @@ impl Display for ConsensusNetMessage {
                 write!(f, "{}", enum_variant)
             }
             ConsensusNetMessage::Prepare(cp) => {
-                write!(f, "{} CP {}", enum_variant, cp)
+                write!(f, "{} CP: {}", enum_variant, cp)
             }
             ConsensusNetMessage::PrepareVote(cphash) => {
-                write!(f, "{} CP hash {}", enum_variant, cphash)
+                write!(f, "{} (CP hash: {})", enum_variant, cphash)
             }
             ConsensusNetMessage::Confirm(cphash, cert) => {
-                _ = writeln!(f, "{} CP hash {}", enum_variant, cphash);
+                _ = writeln!(f, "{} (CP hash: {})", enum_variant, cphash);
                 _ = write!(f, "Certificate {} with validators ", cert.signature);
                 for v in cert.validators.iter() {
                     _ = write!(f, "{},", v);
@@ -95,10 +95,10 @@ impl Display for ConsensusNetMessage {
                 write!(f, "")
             }
             ConsensusNetMessage::ConfirmAck(cphash) => {
-                write!(f, "{} CP hash {}", enum_variant, cphash)
+                write!(f, "{} (CP hash: {})", enum_variant, cphash)
             }
             ConsensusNetMessage::Commit(cphash, cert) => {
-                _ = writeln!(f, "{} CP hash {}", enum_variant, cphash);
+                _ = writeln!(f, "{} (CP hash {})", enum_variant, cphash);
                 _ = write!(f, "Certificate {} with validators ", cert.signature);
                 for v in cert.validators.iter() {
                     _ = write!(f, "{},", v);
@@ -106,7 +106,7 @@ impl Display for ConsensusNetMessage {
                 write!(f, "")
             }
             ConsensusNetMessage::ValidatorCandidacy(candidacy) => {
-                write!(f, "{} CP hash {}", enum_variant, candidacy)
+                write!(f, "{} (CP hash {})", enum_variant, candidacy)
             }
         }
     }
