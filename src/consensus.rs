@@ -733,6 +733,7 @@ impl Consensus {
             }
             None => {
                 // Verify proposal hash is correct
+                // For now the slot is contained in the consensus proposal, so checking the hash is enough
                 if !self.verify_consensus_proposal_hash(
                     &consensus_proposal.previous_consensus_proposal_hash,
                 ) {
