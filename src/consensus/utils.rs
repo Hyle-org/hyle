@@ -87,7 +87,7 @@ impl Display for ConsensusNetMessage {
                 write!(f, "{} CP hash {}", enum_variant, cphash)
             }
             ConsensusNetMessage::Confirm(cphash, cert) => {
-                _ = write!(f, "{} CP hash {}\n", enum_variant, cphash);
+                _ = writeln!(f, "{} CP hash {}", enum_variant, cphash);
                 _ = write!(f, "Certificate {} with validators ", cert.signature);
                 for v in cert.validators.iter() {
                     _ = write!(f, "{},", v);
@@ -98,7 +98,7 @@ impl Display for ConsensusNetMessage {
                 write!(f, "{} CP hash {}", enum_variant, cphash)
             }
             ConsensusNetMessage::Commit(cphash, cert) => {
-                _ = write!(f, "{} CP hash {}\n", enum_variant, cphash);
+                _ = writeln!(f, "{} CP hash {}", enum_variant, cphash);
                 _ = write!(f, "Certificate {} with validators ", cert.signature);
                 for v in cert.validators.iter() {
                     _ = write!(f, "{},", v);
