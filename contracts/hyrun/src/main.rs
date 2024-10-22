@@ -1,3 +1,4 @@
+use sdk::BlobData;
 use serde::Deserialize;
 
 use clap::{Parser, Subcommand};
@@ -95,11 +96,10 @@ fn main() {
                     // TODO: Allow user to add real tx_hash
                     let tx_hash = "".to_string();
                     // TODO: Allow user to add multiple values in payload
-                    let blobs =
-                        vec![
-                            bincode::encode_to_vec(cf.clone(), bincode::config::standard())
-                                .expect("failed to encode program inputs"),
-                        ];
+                    let blobs = vec![BlobData(
+                        bincode::encode_to_vec(cf.clone(), bincode::config::standard())
+                            .expect("failed to encode program inputs"),
+                    )];
 
                     let index = 0;
 
@@ -122,11 +122,10 @@ fn main() {
                     // TODO: Allow user to add real tx_hash
                     let tx_hash = "".to_string();
                     // TODO: Allow user to add multiple values in payload
-                    let blobs =
-                        vec![
-                            bincode::encode_to_vec(cf.clone(), bincode::config::standard())
-                                .expect("failed to encode program inputs"),
-                        ];
+                    let blobs = vec![BlobData(
+                        bincode::encode_to_vec(cf.clone(), bincode::config::standard())
+                            .expect("failed to encode program inputs"),
+                    )];
 
                     let index = 0;
 

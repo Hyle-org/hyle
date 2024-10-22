@@ -147,7 +147,7 @@ impl Balances {
 pub struct ContractInput {
     pub balances: Balances,
     pub tx_hash: String,
-    pub blobs: Vec<Vec<u8>>,
+    pub blobs: Vec<BlobData>,
     pub index: usize,
 }
 

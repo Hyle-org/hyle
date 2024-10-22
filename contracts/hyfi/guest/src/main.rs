@@ -20,7 +20,7 @@ fn main() {
         Some(v) => v,
         None => {
             env::log("Unable to find the payload");
-            let flattened_blobs = input.blobs.into_iter().flatten().collect();
+            let flattened_blobs = input.blobs.into_iter().flat_map(|b| b.0).collect();
             env::commit(&HyleOutput {
                 version: 1,
                 initial_state: initial_balances.as_state(),
@@ -43,7 +43,7 @@ fn main() {
     env::log(&format!("New balances: {:?}", input.balances));
     let next_balances = input.balances;
 
-    let flattened_blobs = input.blobs.into_iter().flatten().collect();
+    let flattened_blobs = input.blobs.into_iter().flat_map(|b| b.0).collect();
     env::commit(&HyleOutput {
         version: 1,
         initial_state: initial_balances.as_state(),

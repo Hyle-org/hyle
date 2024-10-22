@@ -77,7 +77,7 @@ impl Identities {
 pub struct ContractInput {
     pub identities: Identities,
     pub tx_hash: String,
-    pub blobs: Vec<Vec<u8>>,
+    pub blobs: Vec<BlobData>,
     pub index: usize,
 }
 
