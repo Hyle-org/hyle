@@ -155,8 +155,9 @@ impl NodeState {
 
     fn handle_register_contract(&mut self, tx: RegisterContractTransaction) -> Result<(), Error> {
         if self.contracts.contains_key(&tx.contract_name) {
-            bail!("Contract already exists")
+            bail!("Contract {} already exists", tx.contract_name);
         }
+        info!("Register contract {}", tx.contract_name);
         self.contracts.insert(
             tx.contract_name.clone(),
             Contract {
