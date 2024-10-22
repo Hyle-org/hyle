@@ -117,7 +117,7 @@ pub type View = u64;
 #[derive(Debug, Clone, Default, Serialize, Deserialize, Encode, Decode, PartialEq, Eq, Hash)]
 pub struct ConsensusProposal {
     slot: Slot,
-    view: u64,
+    view: View,
     next_leader: u64,
     cut_lanes: Cut,
     previous_consensus_proposal_hash: ConsensusProposalHash,
@@ -1345,7 +1345,7 @@ impl Consensus {
         &self,
         msg: ConsensusNetMessage,
     ) -> Result<SignedWithKey<ConsensusNetMessage>> {
-        debug!("🔏 Signing message: {:?}", msg);
+        debug!("🔏 Signing message: {}", msg);
         self.crypto.sign(msg)
     }
 }

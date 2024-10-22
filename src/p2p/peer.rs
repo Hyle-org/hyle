@@ -103,7 +103,7 @@ impl Peer {
         let binary = msg.to_binary();
         if !self.bloom_filter.check(&binary) {
             self.bloom_filter.set(&binary);
-            debug!("Broadcast message to #{}: {:?}", self.id, msg);
+            debug!("Broadcast message to #{}: {}", self.id, msg);
             send_net_message(&mut self.stream, msg).await
         } else {
             trace!("Message to #{} already broadcasted", self.id);
@@ -146,13 +146,13 @@ impl Peer {
                 self.handle_handshake_message(handshake_msg).await?;
             }
             NetMessage::MempoolMessage(mempool_msg) => {
-                debug!("Received new mempool net message {:?}", mempool_msg);
+                debug!("Received new mempool net message {}", mempool_msg);
                 self.bus
                     .send(mempool_msg)
                     .context("Receiving mempool net message")?;
             }
             NetMessage::ConsensusMessage(consensus_msg) => {
-                debug!("Received new consensus net message {:?}", consensus_msg);
+                debug!("Received new consensus net message {}", consensus_msg);
                 self.bus
                     .send(consensus_msg)
                     .context("Receiving consensus net message")?;

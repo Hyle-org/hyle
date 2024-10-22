@@ -23,7 +23,7 @@ use tracing::debug;
 
 use crate::{
     bus::SharedMessageBus,
-    consensus::staking::Staker,
+    consensus::{staking::Staker, utils::HASH_DISPLAY_SIZE},
     utils::{conf::SharedConf, crypto::SharedBlstCrypto},
 };
 
@@ -379,15 +379,15 @@ pub struct ValidatorPublicKey(pub Vec<u8>);
 
 impl std::fmt::Debug for ValidatorPublicKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_tuple("ValidatorPublicKey")
-            .field(&hex::encode(&self.0))
+        f.debug_tuple("ValidatorPubK")
+            .field(&hex::encode(&self.0[..HASH_DISPLAY_SIZE]))
             .finish()
     }
 }
 
 impl Display for ValidatorPublicKey {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", hex::encode(&self.0))
+        write!(f, "{}", hex::encode(&self.0[..HASH_DISPLAY_SIZE]))
     }
 }
 
