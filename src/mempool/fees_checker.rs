@@ -17,6 +17,9 @@ fn check_blob_fees(tx: &BlobTransaction) -> Result<()> {
     if fee_id != id {
         bail!("Fee payer identity does not match identity in blob");
     }
+    if fee_id != tx.fees.payer {
+        bail!("Fee payer identity does not match payer identity");
+    }
     info!("💸 Fees will be paid by: {}", fee_id.0);
     Ok(())
 }
