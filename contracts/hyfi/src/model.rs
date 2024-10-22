@@ -140,7 +140,7 @@ impl Balances {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct TokenContractInput {
+pub struct ContractInput {
     pub balances: Balances,
     pub tx_hash: String,
     pub blobs: Vec<Vec<u8>>,
@@ -164,14 +164,13 @@ pub enum ContractFunction {
     },
 }
 impl ContractFunction {
-    pub fn encode(&self) -> Vec<u8> {
-        bincode::encode_to_vec(self, bincode::config::standard())
-            .expect("Failed to encode ContractFunction")
+    pub fn encode(&self) -> Result<Vec<u8>, Error> {
+        let r = bincode::encode_to_vec(self, bincode::config::standard())?;
+        Ok(r)
     }
 
-    pub fn decode(data: &[u8]) -> Self {
-        let (v, _) = bincode::decode_from_slice(data, bincode::config::standard())
-            .expect("Failed to decode ContractFunction");
-        v
+    pub fn decode(data: &[u8]) -> Result<Self, Error> {
+        let (v, _) = bincode::decode_from_slice(data, bincode::config::standard())?;
+        Ok(v)
     }
 }
