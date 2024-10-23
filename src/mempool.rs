@@ -28,7 +28,7 @@ use tracing::{debug, error, info, warn};
 
 mod metrics;
 mod storage;
-pub use storage::{Cut, CutWithTxs};
+pub use storage::Cut;
 
 bus_client! {
 struct MempoolBusClient {
@@ -63,7 +63,8 @@ impl BusMessage for MempoolNetMessage {}
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub enum MempoolEvent {
-    NewCut(CutWithTxs),
+    NewCut(Cut),
+    CommitBlock(Vec<Transaction>, Vec<ValidatorPublicKey>),
 }
 impl BusMessage for MempoolEvent {}
 
@@ -137,7 +138,14 @@ impl Mempool {
                     cut.len()
                 );
                 self.validators = validators;
-                self.storage.update_lanes_after_commit(cut);
+                let txs = self.storage.update_lanes_after_commit(cut);
+                if let Err(e) = self
+                    .bus
+                    .send(MempoolEvent::CommitBlock(txs, new_bonded_validators))
+                    .context("Cannot send message over channel")
+                {
+                    error!("{:?}", e);
+                };
             }
         }
     }
