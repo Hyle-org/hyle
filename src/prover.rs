@@ -7,7 +7,6 @@ use crate::{
 };
 use anyhow::{bail, Context, Error, Result};
 use borsh::to_vec;
-use hyle_contract_sdk::{BlobData, Digestable};
 use serde::{Deserialize, Serialize};
 use tracing::info;
 
@@ -82,15 +81,28 @@ impl Prover {
         }
         info!("⚒️  Proving hyfi for transaction: {}", tx.hash());
 
+        let blobs = vec![fees.fee.data.clone(), fees.identity.data.clone()];
+        let tx_hash = tx.hash().0;
+
         let initial_state = hyfi::model::Balances::default();
-        let contract_inputs = Self::build_contract_inputs(initial_state, fees.fee.data.clone());
+        let contract_inputs = hyle_contract_sdk::ContractInput {
+            initial_state,
+            tx_hash: tx_hash.clone(),
+            blobs: blobs.clone(),
+            index: 0,
+        };
         let fees_proof = Self::prove(contract_inputs, HYFI_BIN)?;
 
         info!("⚒️  Proving hydentity for transaction: {}", tx.hash());
 
         let initial_state = hydentity::model::Identities::default();
-        let contract_inputs =
-            Self::build_contract_inputs(initial_state, fees.identity.data.clone());
+        let contract_inputs = hyle_contract_sdk::ContractInput {
+            initial_state,
+            tx_hash,
+            blobs,
+            index: 1,
+        };
+
         let identities_proof = Self::prove(contract_inputs, HYDENTITY_BIN)?;
 
         let fee_proof_tx = FeeProofTransaction {
@@ -108,24 +120,6 @@ impl Prover {
             .context("Cannot send message over channel");
 
         Ok(())
-    }
-
-    fn build_contract_inputs<State>(
-        initial_state: State,
-        data: BlobData,
-    ) -> hyle_contract_sdk::ContractInput<State>
-    where
-        State: Digestable,
-    {
-        let tx_hash = "".to_string();
-        let blobs = vec![data];
-        let index = 0;
-        hyle_contract_sdk::ContractInput::<State> {
-            initial_state,
-            tx_hash,
-            blobs,
-            index,
-        }
     }
 
     fn prove<ContractInput>(contract_input: ContractInput, binary: &[u8]) -> Result<Vec<u8>>
