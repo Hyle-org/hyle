@@ -81,6 +81,7 @@ impl Module for NodeState {
     }
 }
 
+#[derive(Debug)]
 struct UnsettledBlobReference {
     contract_name: ContractName,
     blobs_hash: BlobsHash,
@@ -157,13 +158,14 @@ impl NodeState {
                 .and_then(|_| self.handle_blobs(tx.hash(), tx.blobs.clone(), false))
                 .and_then(|_| self.set_timeout(tx.hash())),
             crate::model::TransactionData::Proof(tx) => {
-                self.handle_proof_tx(&tx.proof, &tx.blobs_references)
+                self.handle_proof_tx(&tx.proof, &tx.blobs_references, false)
             }
             crate::model::TransactionData::RegisterContract(tx) => {
                 self.handle_register_contract(tx)
             }
             crate::model::TransactionData::FeeProof(tx) => {
-                self.handle_proof_tx(&tx.proof, &tx.blobs_references)
+                debug!("Got a new fee proof transaction: {:?}", tx);
+                self.handle_proof_tx(&tx.proof, &tx.blobs_references, true)
             }
         }
     }
@@ -229,12 +231,13 @@ impl NodeState {
         &mut self,
         proof: &[u8],
         blobs_references: &[BlobReference],
+        fees: bool,
     ) -> Result<(), Error> {
         let references = blobs_references
-            .into_iter()
+            .iter()
             .map(|blob_ref| {
                 self.unsettled_transactions
-                    .get_for_blobs(&blob_ref.blob_tx_hash)
+                    .get_for(&blob_ref.blob_tx_hash, fees)
                     .map(|tx| UnsettledBlobReference {
                         blobs_hash: tx.blobs_hash.clone(),
                         contract_name: blob_ref.contract_name.clone(),
@@ -252,6 +255,8 @@ impl NodeState {
         proof: &[u8],
         references: Vec<UnsettledBlobReference>,
     ) -> Result<(), Error> {
+        debug!("Handle proof with references: {:?}", references);
+
         // TODO extract correct verifier
         let verifier: String = "test".to_owned();
 
@@ -319,6 +324,7 @@ impl NodeState {
         references: &[UnsettledBlobReference],
         blobs_metadata: &[HyleOutput],
     ) -> Result<(), Error> {
+        debug!("Process verifications");
         // Extract unsettled tx of each blob_ref
         let unsettled_txs: Vec<&UnsettledTransaction> = references
             .iter()
@@ -367,6 +373,7 @@ impl NodeState {
         references: &[UnsettledBlobReference],
         blobs_metadata: Vec<HyleOutput>,
     ) -> Result<(), Error> {
+        debug!("Save blob metadata");
         for (proof_blob_key, blob_ref) in references.iter().enumerate() {
             let unsettled_tx = self
                 .unsettled_transactions

@@ -3,6 +3,7 @@ use borsh::from_slice;
 use cairo_platinum_prover::air::verify_cairo_proof;
 use risc0_zkvm::sha::Digest;
 use stark_platinum_prover::proof::options::{ProofOptions, SecurityLevel};
+use tracing::info;
 
 use crate::model::ProofTransaction;
 use hyle_contract_sdk::{HyleOutput, Identity, StateDigest};
@@ -126,6 +127,8 @@ pub fn risc0_proof_verifier(encoded_receipt: &[u8], image_id: &[u8]) -> Result<H
     };
 
     let image_bytes: Digest = image_id.try_into().expect("Invalid Risc0 image ID");
+
+    info!("🔎 Verifying Risc0 proof");
 
     match receipt.verify(image_bytes) {
         Ok(_) => (),

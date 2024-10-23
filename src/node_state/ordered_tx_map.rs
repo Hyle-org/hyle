@@ -24,6 +24,14 @@ impl OrderedTxMap {
         self.map.get_mut(hash)
     }
 
+    pub fn get_for(&self, hash: &TxHash, fees: bool) -> Option<&UnsettledTransaction> {
+        if fees {
+            self.get_for_fees(hash)
+        } else {
+            self.get_for_blobs(hash)
+        }
+    }
+
     pub fn get_for_blobs(&self, hash: &TxHash) -> Option<&UnsettledTransaction> {
         self.blobs_hash_for_blobs
             .get(hash)
