@@ -3,62 +3,17 @@
 
 extern crate alloc;
 
-use alloc::format;
-use alloc::string::ToString;
-use hydentity::model::{ContractFunction, ContractInput};
-use risc0_zkvm::guest::env;
-use sdk::Digestable;
-use sdk::HyleOutput;
+use hydentity::model::ContractFunction;
+use hydentity::model::Identities;
 
 risc0_zkvm::guest::entry!(main);
 
 fn main() {
-    let mut input: ContractInput = env::read();
+    let (input, parameters) = sdk::guest::init::<Identities, ContractFunction>();
 
-    let initial_balances = input.identities.clone();
+    let mut state = input.initial_state.clone();
 
-    let payload = match input.blobs.get(input.index) {
-        Some(v) => v,
-        None => {
-            fail(input, "Unable to find the payload");
-            return;
-        }
-    };
+    let res = hydentity::run(&mut state, parameters);
 
-    let contract_function =
-        ContractFunction::decode(payload).expect("Failed to decode contract function");
-    let res = hydentity::run(&mut input.identities, contract_function);
-
-    env::log(&format!("New identities: {:?}", input.identities));
-    let next_balances = input.identities;
-
-    let flattened_blobs = input.blobs.into_iter().flat_map(|b| b.0).collect();
-    env::commit(&HyleOutput {
-        version: 1,
-        initial_state: initial_balances.as_digest(),
-        next_state: next_balances.as_digest(),
-        identity: sdk::Identity(res.identity),
-        tx_hash: sdk::TxHash(input.tx_hash),
-        index: sdk::BlobIndex(input.index as u32),
-        blobs: flattened_blobs,
-        success: res.success,
-        program_outputs: res.program_outputs,
-    })
-}
-
-fn fail(input: ContractInput, message: &str) {
-    env::log(message);
-
-    let flattened_blobs = input.blobs.into_iter().flat_map(|b| b.0).collect();
-    env::commit(&HyleOutput {
-        version: 1,
-        initial_state: input.identities.as_digest(),
-        next_state: input.identities.as_digest(),
-        identity: sdk::Identity("".to_string()),
-        tx_hash: sdk::TxHash(input.tx_hash),
-        index: sdk::BlobIndex(input.index as u32),
-        blobs: flattened_blobs,
-        success: false,
-        program_outputs: message.to_string().into_bytes(),
-    });
+    sdk::guest::commit(input, state, res);
 }

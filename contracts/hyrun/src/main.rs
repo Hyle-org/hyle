@@ -1,4 +1,4 @@
-use sdk::BlobData;
+use sdk::{BlobData, ContractInput};
 use serde::Deserialize;
 
 use clap::{Parser, Subcommand};
@@ -107,7 +107,7 @@ fn main() {
                 &cli,
                 "hyfi",
                 cf.clone(),
-                |balances: hyfi::model::Balances| -> hyfi::model::ContractInput {
+                |balances: hyfi::model::Balances| -> ContractInput<hyfi::model::Balances> {
                     // TODO: Allow user to add real tx_hash
                     let tx_hash = "".to_string();
                     // TODO: Allow user to add multiple values in payload
@@ -118,8 +118,8 @@ fn main() {
 
                     let index = 0;
 
-                    hyfi::model::ContractInput {
-                        balances,
+                    ContractInput::<hyfi::model::Balances> {
+                        initial_state: balances,
                         tx_hash,
                         blobs,
                         index,
@@ -137,7 +137,7 @@ fn main() {
                 &cli,
                 "hydentity",
                 cf.clone(),
-                |identities: hydentity::model::Identities| -> hydentity::model::ContractInput {
+                |identities: hydentity::model::Identities| -> ContractInput::<hydentity::model::Identities> {
                     // TODO: Allow user to add real tx_hash
                     let tx_hash = "".to_string();
                     // TODO: Allow user to add multiple values in payload
@@ -148,8 +148,8 @@ fn main() {
 
                     let index = 0;
 
-                    hydentity::model::ContractInput {
-                        identities,
+                    ContractInput::<hydentity::model::Identities> {
+                        initial_state: identities,
                         tx_hash,
                         blobs,
                         index,

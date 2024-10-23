@@ -113,3 +113,7 @@ This blob transaction needs to be checked by the consensus, to verify that the l
 
 ❓ Can we do this verification somewhere else ? It is mandatory that no one "sneaky" distribute fees with invalid list of validators rates.
 
+## WIP ideas todos:
+Blobs integrity: Sign blobs & check signature (in hydentity ?)
+Use pubkey instead of password for hydentity
+

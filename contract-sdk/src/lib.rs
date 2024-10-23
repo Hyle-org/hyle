@@ -9,8 +9,21 @@ use alloc::vec::Vec;
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 
+pub mod guest;
+
 pub trait Digestable {
     fn as_digest(&self) -> StateDigest;
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct ContractInput<State>
+where
+    State: Digestable,
+{
+    pub initial_state: State,
+    pub tx_hash: String,
+    pub blobs: Vec<BlobData>,
+    pub index: usize,
 }
 
 #[derive(Default, Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash, Encode, Decode)]

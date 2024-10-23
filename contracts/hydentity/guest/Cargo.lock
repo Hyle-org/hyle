@@ -515,6 +515,7 @@ version = "0.1.0"
 dependencies = [
  "bincode",
  "hex",
+ "risc0-zkvm",
  "serde",
 ]
 

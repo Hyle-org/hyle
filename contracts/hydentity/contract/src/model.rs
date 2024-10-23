@@ -75,14 +75,6 @@ impl Identities {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
-pub struct ContractInput {
-    pub identities: Identities,
-    pub tx_hash: String,
-    pub blobs: Vec<BlobData>,
-    pub index: usize,
-}
-
 #[derive(Serialize, Deserialize, Encode, Decode, Debug, Clone)]
 pub enum ContractFunction {
     Register { account: String, password: String },

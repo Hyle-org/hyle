@@ -1,20 +1,11 @@
 #![no_std]
 extern crate alloc;
 
-use alloc::{
-    format,
-    string::{String, ToString},
-    vec::Vec,
-};
+use alloc::{format, string::ToString};
 use model::{Balances, ContractFunction};
+use sdk::guest::RunResult;
 
 pub mod model;
-
-pub struct RunResult {
-    pub success: bool,
-    pub identity: String,
-    pub program_outputs: Vec<u8>,
-}
 
 pub fn run(state: &mut Balances, parameters: ContractFunction) -> RunResult {
     match parameters {

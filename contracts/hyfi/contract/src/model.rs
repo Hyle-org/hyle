@@ -145,14 +145,6 @@ impl Balances {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
-pub struct ContractInput {
-    pub balances: Balances,
-    pub tx_hash: String,
-    pub blobs: Vec<BlobData>,
-    pub index: usize,
-}
-
 #[derive(Serialize, Deserialize, Encode, Decode, Debug, Clone)]
 pub enum ContractFunction {
     Transfer {
