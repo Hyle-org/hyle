@@ -7,6 +7,7 @@ use crate::{
     mempool::storage::{Car, DataProposal, InMemoryStorage, TipData},
     model::{Hashable, SharedRunContext, Transaction, TransactionData, ValidatorPublicKey},
     p2p::network::{OutboundMessage, SignedWithKey},
+    prover::ProverEvent,
     rest::endpoints::RestApiMessage,
     utils::{
         crypto::{BlstCrypto, SharedBlstCrypto},
@@ -24,7 +25,6 @@ use strum_macros::IntoStaticStr;
 use tracing::{debug, error, info, warn};
 
 mod fees_checker;
-mod fees_prover;
 mod metrics;
 mod storage;
 pub use storage::{Cut, CutWithTxs};
@@ -37,6 +37,7 @@ struct MempoolBusClient {
     receiver(SignedWithKey<MempoolNetMessage>),
     receiver(RestApiMessage),
     receiver(ConsensusEvent),
+    receiver(ProverEvent),
 }
 }
 
@@ -136,7 +137,10 @@ impl Mempool {
                 self.handle_api_message(cmd).await
             }
             listen<ConsensusEvent> cmd => {
-                self.handle_event(cmd);
+                self.handle_consensus_event(cmd);
+            }
+            listen<ProverEvent> cmd => {
+                self.handle_prover_event(cmd);
             }
             _ = tokio::time::sleep(tokio::time::Duration::from_millis(100)) => {
                     self.check_data_proposal().await
@@ -144,7 +148,13 @@ impl Mempool {
         }
     }
 
-    fn handle_event(&mut self, event: ConsensusEvent) {
+    fn handle_prover_event(&mut self, event: ProverEvent) {
+        match event {
+            ProverEvent::NewTx(tx) => self.on_new_tx(tx),
+        }
+    }
+
+    fn handle_consensus_event(&mut self, event: ConsensusEvent) {
         match event {
             ConsensusEvent::CommitBlock {
                 validators,
