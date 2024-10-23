@@ -24,6 +24,7 @@ use strum_macros::IntoStaticStr;
 use tracing::{debug, error, info, warn};
 
 mod fees_checker;
+mod fees_prover;
 mod metrics;
 mod storage;
 pub use storage::{Cut, CutWithTxs};

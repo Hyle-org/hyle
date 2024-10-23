@@ -97,6 +97,7 @@ pub enum TransactionData {
     Stake(Staker), // FIXME: to remove, this is temporary waiting for real staking contract !!
     Blob(BlobTransaction),
     Proof(ProofTransaction),
+    FeeProof(FeeProofTransaction),
     RegisterContract(RegisterContractTransaction),
 }
 
@@ -122,6 +123,25 @@ impl fmt::Debug for ProofTransaction {
     }
 }
 
+#[derive(Serialize, Deserialize, Default, PartialEq, Eq, Clone, Encode, Decode, Hash)]
+pub struct FeeProofTransaction {
+    pub transactions: Vec<TxHash>,
+    pub fees_proof: Vec<u8>,
+    pub identities_proof: Vec<u8>,
+}
+
+impl fmt::Debug for FeeProofTransaction {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("FeeProofTransaction")
+            .field("transactions", &self.transactions)
+            .field("fees_proof", &"[HIDDEN]")
+            .field("fees_proof_len", &self.fees_proof.len())
+            .field("identities_proof", &"[HIDDEN]")
+            .field("identities_proof_len", &self.identities_proof.len())
+            .finish()
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize, Default, Clone, PartialEq, Eq, Encode, Decode, Hash)]
 pub struct BlobReference {
     pub contract_name: ContractName,
@@ -143,8 +163,6 @@ pub struct Fees {
     pub payer: Identity,
     pub fee: Blob,
     pub identity: Blob,
-    // If the identity blob is from a "known" contract, the node will be able to verify the identity without the proof
-    pub identity_proof: Option<Vec<u8>>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Default, PartialEq, Eq, Clone, Encode, Decode, Hash)]
@@ -271,6 +289,7 @@ impl Hashable<TxHash> for Transaction {
             TransactionData::Blob(tx) => tx.hash(),
             TransactionData::Proof(tx) => tx.hash(),
             TransactionData::RegisterContract(tx) => tx.hash(),
+            TransactionData::FeeProof(tx) => tx.hash(),
         }
     }
 }
@@ -302,6 +321,18 @@ impl Hashable<TxHash> for ProofTransaction {
             _ = write!(hasher, "{}", blob_ref.blob_index);
         }
         hasher.update(self.proof.clone());
+        let hash_bytes = hasher.finalize();
+        TxHash(hex::encode(hash_bytes))
+    }
+}
+impl Hashable<TxHash> for FeeProofTransaction {
+    fn hash(&self) -> TxHash {
+        let mut hasher = Sha3_256::new();
+        for blob_ref in self.transactions.iter() {
+            _ = write!(hasher, "{}", blob_ref);
+        }
+        hasher.update(self.fees_proof.clone());
+        hasher.update(self.identities_proof.clone());
         let hash_bytes = hasher.finalize();
         TxHash(hex::encode(hash_bytes))
     }

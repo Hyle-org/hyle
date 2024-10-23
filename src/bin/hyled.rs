@@ -75,7 +75,6 @@ async fn send_blob(
                     }
                     .encode()?,
                 },
-                identity_proof: None,
             },
             identity,
             blobs: vec![Blob {

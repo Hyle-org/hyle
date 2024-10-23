@@ -6,8 +6,8 @@ use crate::{
     data_availability::DataEvent,
     handle_messages,
     model::{
-        BlobTransaction, BlobsHash, Block, BlockHeight, ContractName, Hashable, ProofTransaction,
-        RegisterContractTransaction, SharedRunContext, Transaction,
+        BlobTransaction, BlobsHash, Block, BlockHeight, ContractName, FeeProofTransaction,
+        Hashable, ProofTransaction, RegisterContractTransaction, SharedRunContext, Transaction,
     },
     utils::{conf::SharedConf, logger::LogMe, modules::Module},
 };
@@ -150,6 +150,7 @@ impl NodeState {
             crate::model::TransactionData::RegisterContract(tx) => {
                 self.handle_register_contract(tx)
             }
+            crate::model::TransactionData::FeeProof(tx) => self.handle_fee_proof(tx),
         }
     }
 
@@ -204,6 +205,10 @@ impl NodeState {
             .timeouts
             .set(blob_tx_hash, self.store.current_height + 10); // TODO: Timeout after 10 blocks, make it configurable !
 
+        Ok(())
+    }
+
+    fn handle_fee_proof(&mut self, tx: FeeProofTransaction) -> Result<(), Error> {
         Ok(())
     }
 
@@ -266,6 +271,7 @@ impl NodeState {
     fn clear_timeouts(&mut self, height: &BlockHeight) {
         let dropped = self.timeouts.drop(height);
         for tx in dropped {
+            info!("Transaction timed out: {}", tx);
             self.unsettled_transactions.remove(&tx);
         }
     }
