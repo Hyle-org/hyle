@@ -20,7 +20,7 @@ use sqlx::{postgres::PgPoolOptions, PgPool, Pool, Postgres};
 use std::sync::Arc;
 use tokio::net::TcpStream;
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 bus_client! {
 #[derive(Debug)]
@@ -242,11 +242,13 @@ impl Indexer {
                     .execute(&mut *transaction)
                     .await?;
 
-                    for (blob_index, blob) in tx.blobs.iter().enumerate() {
+                    warn!("TODO: save fees blobs");
+
+                    for (blob_index, blob) in tx.blobs.blobs.iter().enumerate() {
                         let blob_index = i32::try_from(blob_index).map_err(|_| {
                             anyhow::anyhow!("Blob index is too large to fit into an i32")
                         })?;
-                        let identity = &tx.identity.0;
+                        let identity = &tx.blobs.identity.0;
                         let contract_name = &blob.contract_name.0;
                         let blob = &blob.data.0;
                         sqlx::query(

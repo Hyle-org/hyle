@@ -16,7 +16,7 @@ pub struct Contract {
 #[derive(Default, Debug, Clone, PartialEq, Eq, Hash, Encode, Decode)]
 pub struct UnsettledTransaction {
     pub identity: Identity,
-    pub hash: TxHash,
+    pub tx_hash: TxHash,
     pub blobs_hash: BlobsHash,
     pub blobs: Vec<UnsettledBlobMetadata>,
 }

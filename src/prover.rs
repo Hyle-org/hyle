@@ -2,11 +2,15 @@ use crate::{
     bus::{bus_client, BusMessage, SharedMessageBus},
     handle_messages,
     mempool::MempoolEvent,
-    model::{BlobTransaction, FeeProofTransaction, Hashable, SharedRunContext, Transaction},
+    model::{
+        BlobReference, BlobTransaction, FeeProofTransaction, Hashable, SharedRunContext,
+        Transaction,
+    },
     utils::{logger::LogMe, modules::Module},
 };
 use anyhow::{bail, Context, Error, Result};
 use borsh::to_vec;
+use hyle_contract_sdk::{BlobData, BlobIndex};
 use serde::{Deserialize, Serialize};
 use tracing::info;
 
@@ -70,47 +74,41 @@ impl Prover {
     fn prove_fees(&mut self, tx: BlobTransaction) -> Result<()> {
         info!("Got a new transaction to prove fees: {}", tx.hash());
         let fees = &tx.fees;
-        if fees.fee.contract_name.0 != "hyfi" {
-            bail!("Unsupported fee contract: {}", fees.fee.contract_name);
+        if fees.blobs.len() != 2 {
+            bail!("Invalid number of blobs in fee transaction");
         }
-        if fees.identity.contract_name.0 != "hydentity" {
+        if fees.blobs[0].contract_name.0 != "hyfi" {
+            bail!("Unsupported fee contract: {}", fees.blobs[0].contract_name);
+        }
+        if fees.blobs[1].contract_name.0 != "hydentity" {
             bail!(
                 "Unsupported identity contract: {}",
-                fees.identity.contract_name
+                fees.blobs[1].contract_name
             );
         }
         info!("⚒️  Proving hyfi for transaction: {}", tx.hash());
 
-        let blobs = vec![fees.fee.data.clone(), fees.identity.data.clone()];
-        let tx_hash = tx.hash().0;
+        let blobs: Vec<BlobData> = fees.blobs.iter().map(|b| b.data.clone()).collect();
+        let tx_hash = tx.hash();
 
         let initial_state = hyfi::model::Balances::default();
         let contract_inputs = hyle_contract_sdk::ContractInput {
             initial_state,
-            tx_hash: tx_hash.clone(),
+            tx_hash: tx_hash.0.clone(),
             blobs: blobs.clone(),
             index: 0,
         };
         let fees_proof = Self::prove(contract_inputs, HYFI_BIN)?;
-
-        info!("⚒️  Proving hydentity for transaction: {}", tx.hash());
-
-        let initial_state = hydentity::model::Identities::default();
-        let contract_inputs = hyle_contract_sdk::ContractInput {
-            initial_state,
-            tx_hash,
-            blobs,
-            index: 1,
-        };
-
-        let identities_proof = Self::prove(contract_inputs, HYDENTITY_BIN)?;
-
-        let fee_proof_tx = FeeProofTransaction {
-            transactions: vec![tx.hash()],
-            fees_proof,
-            identities_proof,
-        };
-        let proof_tx = Transaction::wrap(crate::model::TransactionData::FeeProof(fee_proof_tx));
+        let proof_tx = Transaction::wrap(crate::model::TransactionData::FeeProof(
+            FeeProofTransaction {
+                blobs_references: vec![BlobReference {
+                    contract_name: "hyfi".into(),
+                    blob_tx_hash: tx_hash.clone(),
+                    blob_index: BlobIndex(0),
+                }],
+                proof: fees_proof,
+            },
+        ));
 
         info!("🚀 Sending proof tx to mempool: {}", proof_tx.hash());
 
@@ -119,6 +117,34 @@ impl Prover {
             .send(ProverEvent::NewTx(proof_tx))
             .context("Cannot send message over channel");
 
+        info!("⚒️  Proving hydentity for transaction: {}", tx.hash());
+
+        let initial_state = hydentity::model::Identities::default();
+        let contract_inputs = hyle_contract_sdk::ContractInput {
+            initial_state,
+            tx_hash: tx_hash.0.clone(),
+            blobs,
+            index: 1,
+        };
+
+        let identities_proof = Self::prove(contract_inputs, HYDENTITY_BIN)?;
+        let proof_tx = Transaction::wrap(crate::model::TransactionData::FeeProof(
+            FeeProofTransaction {
+                blobs_references: vec![BlobReference {
+                    contract_name: "hydentity".into(),
+                    blob_tx_hash: tx_hash,
+                    blob_index: BlobIndex(1),
+                }],
+                proof: identities_proof,
+            },
+        ));
+
+        info!("🚀 Sending proof tx to mempool: {}", proof_tx.hash());
+
+        _ = self
+            .bus
+            .send(ProverEvent::NewTx(proof_tx))
+            .context("Cannot send message over channel");
         Ok(())
     }
 

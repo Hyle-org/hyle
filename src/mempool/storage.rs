@@ -525,7 +525,7 @@ mod tests {
     use crate::{
         mempool::storage::{Car, DataProposal, InMemoryStorage, Poa, ProposalVerdict},
         model::{
-            Blob, BlobTransaction, ContractName, Fees, Transaction, TransactionData,
+            Blob, BlobTransaction, Blobs, ContractName, Transaction, TransactionData,
             ValidatorPublicKey,
         },
     };
@@ -535,12 +535,20 @@ mod tests {
         Transaction {
             version: 1,
             transaction_data: TransactionData::Blob(BlobTransaction {
-                fees: Fees::default_test(),
-                identity: Identity("id".to_string()),
-                blobs: vec![Blob {
-                    contract_name: ContractName("c1".to_string()),
-                    data: BlobData(inner_tx.as_bytes().to_vec()),
-                }],
+                fees: Blobs {
+                    identity: Identity("id".to_string()),
+                    blobs: vec![Blob {
+                        contract_name: ContractName("c1".to_string()),
+                        data: BlobData(inner_tx.as_bytes().to_vec()),
+                    }],
+                },
+                blobs: Blobs {
+                    identity: Identity("id".to_string()),
+                    blobs: vec![Blob {
+                        contract_name: ContractName("c1".to_string()),
+                        data: BlobData(inner_tx.as_bytes().to_vec()),
+                    }],
+                },
             }),
         }
     }

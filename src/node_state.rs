@@ -6,14 +6,15 @@ use crate::{
     data_availability::DataEvent,
     handle_messages,
     model::{
-        BlobTransaction, BlobsHash, Block, BlockHeight, ContractName, FeeProofTransaction,
-        Hashable, ProofTransaction, RegisterContractTransaction, SharedRunContext, Transaction,
+        BlobReference, BlobTransaction, Blobs, BlobsHash, Block, BlockHeight, ContractName,
+        FeeProofTransaction, Hashable, ProofTransaction, RegisterContractTransaction,
+        SharedRunContext, Transaction,
     },
     utils::{conf::SharedConf, logger::LogMe, modules::Module},
 };
 use anyhow::{bail, Context, Error, Result};
 use bincode::{Decode, Encode};
-use hyle_contract_sdk::{HyleOutput, StateDigest, TxHash};
+use hyle_contract_sdk::{BlobIndex, HyleOutput, StateDigest, TxHash};
 use model::{Contract, Timeouts, UnsettledBlobMetadata, UnsettledTransaction};
 use ordered_tx_map::OrderedTxMap;
 use std::{
@@ -78,6 +79,12 @@ impl Module for NodeState {
     fn run(&mut self) -> impl futures::Future<Output = Result<()>> + Send {
         self.start(self.config.clone())
     }
+}
+
+struct UnsettledBlobReference {
+    contract_name: ContractName,
+    blobs_hash: BlobsHash,
+    blob_index: BlobIndex,
 }
 
 impl NodeState {
@@ -145,12 +152,19 @@ impl NodeState {
 
         match transaction.transaction_data {
             crate::model::TransactionData::Stake(staker) => self.handle_stake_tx(staker),
-            crate::model::TransactionData::Blob(tx) => self.handle_blob_tx(tx),
-            crate::model::TransactionData::Proof(tx) => self.handle_proof(tx),
+            crate::model::TransactionData::Blob(tx) => self
+                .handle_blobs(tx.hash(), tx.fees.clone(), true)
+                .and_then(|_| self.handle_blobs(tx.hash(), tx.blobs.clone(), false))
+                .and_then(|_| self.set_timeout(tx.hash())),
+            crate::model::TransactionData::Proof(tx) => {
+                self.handle_proof_tx(&tx.proof, &tx.blobs_references)
+            }
             crate::model::TransactionData::RegisterContract(tx) => {
                 self.handle_register_contract(tx)
             }
-            crate::model::TransactionData::FeeProof(tx) => self.handle_fee_proof(tx),
+            crate::model::TransactionData::FeeProof(tx) => {
+                self.handle_proof_tx(&tx.proof, &tx.blobs_references)
+            }
         }
     }
 
@@ -180,8 +194,8 @@ impl NodeState {
         Ok(())
     }
 
-    fn handle_blob_tx(&mut self, tx: BlobTransaction) -> Result<(), Error> {
-        let (blob_tx_hash, blobs_hash) = hash_transaction(&tx);
+    fn handle_blobs(&mut self, tx_hash: TxHash, tx: Blobs, fees: bool) -> Result<(), Error> {
+        let blobs_hash = tx.hash();
 
         let blobs: Vec<UnsettledBlobMetadata> = tx
             .blobs
@@ -193,35 +207,60 @@ impl NodeState {
             .collect();
 
         debug!("Add transaction to state");
-        self.unsettled_transactions.add(UnsettledTransaction {
-            identity: tx.identity,
-            hash: blob_tx_hash.clone(),
-            blobs_hash,
-            blobs,
-        });
-
-        // Update timeouts
-        self.store
-            .timeouts
-            .set(blob_tx_hash, self.store.current_height + 10); // TODO: Timeout after 10 blocks, make it configurable !
+        self.unsettled_transactions.add(
+            UnsettledTransaction {
+                identity: tx.identity,
+                tx_hash: tx_hash.clone(),
+                blobs_hash,
+                blobs,
+            },
+            fees,
+        );
 
         Ok(())
     }
 
-    fn handle_fee_proof(&mut self, tx: FeeProofTransaction) -> Result<(), Error> {
+    fn set_timeout(&mut self, tx: TxHash) -> Result<()> {
+        self.store.timeouts.set(tx, self.store.current_height + 10);
         Ok(())
     }
 
-    fn handle_proof(&mut self, tx: ProofTransaction) -> Result<(), Error> {
+    fn handle_proof_tx(
+        &mut self,
+        proof: &[u8],
+        blobs_references: &[BlobReference],
+    ) -> Result<(), Error> {
+        let references = blobs_references
+            .into_iter()
+            .map(|blob_ref| {
+                self.unsettled_transactions
+                    .get_for_blobs(&blob_ref.blob_tx_hash)
+                    .map(|tx| UnsettledBlobReference {
+                        blobs_hash: tx.blobs_hash.clone(),
+                        contract_name: blob_ref.contract_name.clone(),
+                        blob_index: blob_ref.blob_index.clone(),
+                    })
+                    .context("Tx is either settled or does not exists.")
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        self.handle_proof(proof, references)
+    }
+
+    fn handle_proof(
+        &mut self,
+        proof: &[u8],
+        references: Vec<UnsettledBlobReference>,
+    ) -> Result<(), Error> {
         // TODO extract correct verifier
         let verifier: String = "test".to_owned();
 
         // Verify proof
-        let blobs_metadata = match tx.blobs_references.len() {
+        let blobs_metadata = match references.len() {
             0 => bail!("ProofTx needs to specify a BlobTx"),
             1 => {
-                let contract_name = &tx.blobs_references.first().unwrap().contract_name;
-                let contract = match self.contracts.get(contract_name) {
+                let contract_name = references.first().unwrap().contract_name.clone();
+                let contract = match self.contracts.get(&contract_name) {
                     Some(contract) => contract,
                     None => {
                         bail!(
@@ -232,26 +271,25 @@ impl NodeState {
                 };
                 let program_id = &contract.program_id;
                 let verifier = &contract.verifier;
-                vec![verifiers::verify_proof(&tx, verifier, program_id)?]
+                vec![verifiers::verify_proof(proof, verifier, program_id)?]
             }
-            _ => verifiers::verify_recursion_proof(&tx, &verifier)?,
+            _ => verifiers::verify_recursion_proof(proof, &verifier)?,
         };
 
         // TODO: add diverse verifications ? (without the inital state checks!).
-        self.process_verifications(&tx, &blobs_metadata)?;
+        self.process_verifications(&references, &blobs_metadata)?;
 
         // If we arrived here, proof provided is OK and its outputs can now be saved
-        self.save_blob_metadata(&tx, blobs_metadata)?;
+        self.save_blob_metadata(&references, blobs_metadata)?;
         let unsettled_transactions = self.unsettled_transactions.clone();
 
         // Only catch unique unsettled_txs that are next to be settled
-        let unique_next_unsettled_txs: HashSet<&UnsettledTransaction> = tx
-            .blobs_references
+        let unique_next_unsettled_txs: HashSet<&UnsettledTransaction> = references
             .iter()
             .filter_map(|blob_ref| {
                 unsettled_transactions
-                    .is_next_unsettled_tx(&blob_ref.blob_tx_hash)
-                    .then(|| unsettled_transactions.get(&blob_ref.blob_tx_hash))
+                    .is_next_unsettled_tx(&blob_ref.blobs_hash)
+                    .then(|| unsettled_transactions.get(&blob_ref.blobs_hash))
                     .flatten()
             })
             .collect::<HashSet<_>>();
@@ -272,20 +310,19 @@ impl NodeState {
         let dropped = self.timeouts.drop(height);
         for tx in dropped {
             info!("Transaction timed out: {}", tx);
-            self.unsettled_transactions.remove(&tx);
+            self.unsettled_transactions.remove_for_blob(&tx);
         }
     }
 
     fn process_verifications(
         &self,
-        tx: &ProofTransaction,
+        references: &[UnsettledBlobReference],
         blobs_metadata: &[HyleOutput],
     ) -> Result<(), Error> {
         // Extract unsettled tx of each blob_ref
-        let unsettled_txs: Vec<&UnsettledTransaction> = tx
-            .blobs_references
+        let unsettled_txs: Vec<&UnsettledTransaction> = references
             .iter()
-            .map(|blob_ref| self.unsettled_transactions.get(&blob_ref.blob_tx_hash))
+            .map(|blob_ref| self.unsettled_transactions.get(&blob_ref.blobs_hash))
             .collect::<Option<Vec<&UnsettledTransaction>>>()
             .context("At lease 1 tx is either settled or does not exists")?;
 
@@ -327,13 +364,13 @@ impl NodeState {
 
     fn save_blob_metadata(
         &mut self,
-        tx: &ProofTransaction,
+        references: &[UnsettledBlobReference],
         blobs_metadata: Vec<HyleOutput>,
     ) -> Result<(), Error> {
-        for (proof_blob_key, blob_ref) in tx.blobs_references.iter().enumerate() {
+        for (proof_blob_key, blob_ref) in references.iter().enumerate() {
             let unsettled_tx = self
                 .unsettled_transactions
-                .get_mut(&blob_ref.blob_tx_hash)
+                .get_mut(&blob_ref.blobs_hash)
                 .context("Tx is either settled or does not exists.")?;
 
             unsettled_tx.blobs[blob_ref.blob_index.0 as usize]
@@ -356,7 +393,7 @@ impl NodeState {
                 None => {
                     warn!(
                         "Tx: {}: No contract '{}' found when checking for settlement",
-                        unsettled_tx.hash, unsettled_blob.contract_name
+                        unsettled_tx.tx_hash, unsettled_blob.contract_name
                     );
                     return false;
                 } // No contract found for this blob
@@ -370,7 +407,7 @@ impl NodeState {
             if !has_one_valid_initial_state {
                 info!(
                     "Tx: {}: No initial state match current contract state for contract '{}'",
-                    unsettled_tx.hash, unsettled_blob.contract_name
+                    unsettled_tx.tx_hash, unsettled_blob.contract_name
                 );
                 return false; // No valid metadata found for this blob
             }
@@ -379,7 +416,7 @@ impl NodeState {
     }
 
     fn settle_tx(&mut self, unsettled_tx: &UnsettledTransaction) -> Result<(), Error> {
-        info!("Settle tx {:?}", unsettled_tx.hash);
+        info!("Settle tx {:?}", unsettled_tx.tx_hash);
 
         for blob in &unsettled_tx.blobs {
             let contract = self
@@ -402,7 +439,7 @@ impl NodeState {
             self.update_state_contract(&blob.contract_name, next_state)?;
         }
         // Clean the unsettled tx from the state
-        self.unsettled_transactions.remove(&unsettled_tx.hash);
+        self.unsettled_transactions.remove(&unsettled_tx.blobs_hash);
         Ok(())
     }
 
@@ -419,11 +456,6 @@ impl NodeState {
         contract.state = next_state;
         Ok(())
     }
-}
-
-// TODO: move it somewhere else ?
-fn hash_transaction(tx: &BlobTransaction) -> (TxHash, BlobsHash) {
-    (tx.hash(), tx.blobs_hash())
 }
 
 impl Deref for NodeState {
@@ -495,9 +527,14 @@ mod test {
         let register_c2 = new_register_contract(c2.clone());
 
         let blob = BlobTransaction {
-            fees: Fees::default_test(),
-            identity: Identity("test".to_string()),
-            blobs: vec![new_blob(&c1), new_blob(&c2)],
+            fees: Blobs {
+                identity: Identity("payer".to_string()),
+                blobs: vec![new_blob(&c1), new_blob(&c2)],
+            },
+            blobs: Blobs {
+                identity: Identity("test".to_string()),
+                blobs: vec![new_blob(&c1), new_blob(&c2)],
+            },
         };
         let blob_tx_hash = blob.hash();
         let blob_tx = new_tx(TransactionData::Blob(blob));
@@ -543,14 +580,24 @@ mod test {
         let register_c2 = new_register_contract(c2.clone());
 
         let blob_1 = BlobTransaction {
-            fees: Fees::default_test(),
-            identity: Identity("test".to_string()),
-            blobs: vec![new_blob(&c1), new_blob(&c2)],
+            fees: Blobs {
+                identity: Identity("payer1".to_string()),
+                blobs: vec![new_blob(&c1), new_blob(&c2)],
+            },
+            blobs: Blobs {
+                identity: Identity("test1".to_string()),
+                blobs: vec![new_blob(&c1), new_blob(&c2)],
+            },
         };
         let blob_2 = BlobTransaction {
-            fees: Fees::default_test(),
-            identity: Identity("test".to_string()),
-            blobs: vec![new_blob(&c1), new_blob(&c2)],
+            fees: Blobs {
+                identity: Identity("payer".to_string()),
+                blobs: vec![new_blob(&c1), new_blob(&c2)],
+            },
+            blobs: Blobs {
+                identity: Identity("test".to_string()),
+                blobs: vec![new_blob(&c1), new_blob(&c2)],
+            },
         };
         let blob_tx_hash_1 = blob_1.hash();
         let blob_tx_hash_2 = blob_2.hash();
@@ -608,14 +655,24 @@ mod test {
         let register_c4 = new_register_contract(c4.clone());
 
         let blob_1 = BlobTransaction {
-            fees: Fees::default_test(),
-            identity: Identity("test1".to_string()),
-            blobs: vec![new_blob(&c1), new_blob(&c2)],
+            fees: Blobs {
+                identity: Identity("payer1".to_string()),
+                blobs: vec![new_blob(&c1), new_blob(&c2)],
+            },
+            blobs: Blobs {
+                identity: Identity("test1".to_string()),
+                blobs: vec![new_blob(&c1), new_blob(&c2)],
+            },
         };
         let blob_2 = BlobTransaction {
-            fees: Fees::default_test(),
-            identity: Identity("test2".to_string()),
-            blobs: vec![new_blob(&c3), new_blob(&c4)],
+            fees: Blobs {
+                identity: Identity("payer2".to_string()),
+                blobs: vec![new_blob(&c3), new_blob(&c4)],
+            },
+            blobs: Blobs {
+                identity: Identity("test2".to_string()),
+                blobs: vec![new_blob(&c3), new_blob(&c4)],
+            },
         };
         let blob_tx_hash_1 = blob_1.hash();
         let blob_tx_hash_2 = blob_2.hash();
@@ -673,9 +730,14 @@ mod test {
         let register_c2 = new_register_contract(c2.clone());
 
         let blob = BlobTransaction {
-            fees: Fees::default_test(),
-            identity: Identity("test".to_string()),
-            blobs: vec![new_blob(&c1), new_blob(&c2)],
+            fees: Blobs {
+                identity: Identity("payer".to_string()),
+                blobs: vec![new_blob(&c1), new_blob(&c2)],
+            },
+            blobs: Blobs {
+                identity: Identity("test".to_string()),
+                blobs: vec![new_blob(&c1), new_blob(&c2)],
+            },
         };
         let blob_tx_hash = blob.hash();
         let blob_tx = new_tx(TransactionData::Blob(blob));
@@ -706,7 +768,7 @@ mod test {
         assert_eq!(
             state
                 .unsettled_transactions
-                .get(&blob_tx_hash)
+                .get_for_blobs(&blob_tx_hash)
                 .unwrap()
                 .blobs[0]
                 .metadata

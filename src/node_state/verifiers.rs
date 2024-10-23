@@ -7,63 +7,56 @@ use stark_platinum_prover::proof::options::{ProofOptions, SecurityLevel};
 use crate::model::ProofTransaction;
 use hyle_contract_sdk::{HyleOutput, Identity, StateDigest};
 
-pub fn verify_proof(
-    tx: &ProofTransaction,
-    verifier: &str,
-    program_id: &[u8],
-) -> Result<HyleOutput, Error> {
+pub fn verify_proof(proof: &[u8], verifier: &str, program_id: &[u8]) -> Result<HyleOutput, Error> {
     // TODO: remove test
     match verifier {
-        "test" => {
-            let tx_hash = tx.blobs_references.first().unwrap().blob_tx_hash.clone();
-            let index = tx.blobs_references.first().unwrap().blob_index.clone();
-            Ok(HyleOutput {
-                version: 1,
-                initial_state: StateDigest(vec![0, 1, 2, 3]),
-                next_state: StateDigest(vec![4, 5, 6]),
-                identity: Identity("test".to_string()),
-                tx_hash,
-                index,
-                blobs: vec![0, 1, 2, 3, 0, 1, 2, 3],
-                success: true,
-                program_outputs: vec![],
-            })
-        }
-        "cairo" => cairo_proof_verifier(&tx.proof),
-        "risc0" => risc0_proof_verifier(&tx.proof, program_id),
+        //"test" => {
+        //    let tx_hash = tx.blobs_references.first().unwrap().blob_tx_hash.clone();
+        //    let index = tx.blobs_references.first().unwrap().blob_index.clone();
+        //    Ok(HyleOutput {
+        //        version: 1,
+        //        initial_state: StateDigest(vec![0, 1, 2, 3]),
+        //        next_state: StateDigest(vec![4, 5, 6]),
+        //        identity: Identity("test".to_string()),
+        //        tx_hash,
+        //        index,
+        //        blobs: vec![0, 1, 2, 3, 0, 1, 2, 3],
+        //        success: true,
+        //        program_outputs: vec![],
+        //    })
+        //}
+        "cairo" => cairo_proof_verifier(proof),
+        "risc0" => risc0_proof_verifier(proof, program_id),
         _ => bail!("{} verifier not implemented yet", verifier),
     }
 }
 
-pub fn verify_recursion_proof(
-    tx: &ProofTransaction,
-    verifier: &str,
-) -> Result<Vec<HyleOutput>, Error> {
+pub fn verify_recursion_proof(proof: &[u8], verifier: &str) -> Result<Vec<HyleOutput>, Error> {
     // TODO: remove test
     match verifier {
-        "test" => Ok(tx
-            .blobs_references
-            .iter()
-            .map(|blob_ref| HyleOutput {
-                version: 1,
-                initial_state: StateDigest(vec![0, 1, 2, 3]),
-                next_state: StateDigest(vec![4, 5, 6]),
-                identity: Identity("test".to_string()),
-                tx_hash: blob_ref.blob_tx_hash.clone(),
-                index: blob_ref.blob_index.clone(),
-                blobs: vec![0, 1, 2, 3, 0, 1, 2, 3],
-                success: true,
-                program_outputs: vec![],
-            })
-            .collect()),
+        //"test" => Ok(tx
+        //    .blobs_references
+        //    .iter()
+        //    .map(|blob_ref| HyleOutput {
+        //        version: 1,
+        //        initial_state: StateDigest(vec![0, 1, 2, 3]),
+        //        next_state: StateDigest(vec![4, 5, 6]),
+        //        identity: Identity("test".to_string()),
+        //        tx_hash: blob_ref.blob_tx_hash.clone(),
+        //        index: blob_ref.blob_index.clone(),
+        //        blobs: vec![0, 1, 2, 3, 0, 1, 2, 3],
+        //        success: true,
+        //        program_outputs: vec![],
+        //    })
+        //    .collect()),
         _ => bail!("{} recursion verifier not implemented yet", verifier),
     }
 }
 
-pub fn cairo_proof_verifier(proof: &Vec<u8>) -> Result<HyleOutput, Error> {
+pub fn cairo_proof_verifier(proof: &[u8]) -> Result<HyleOutput, Error> {
     let proof_options = ProofOptions::new_secure(SecurityLevel::Conjecturable100Bits, 3);
 
-    let mut bytes = proof.as_slice();
+    let mut bytes = proof;
     if bytes.len() < 8 {
         bail!("Cairo proof is too short");
     }

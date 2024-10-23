@@ -12,15 +12,21 @@ pub fn check_fees(tx: &Transaction) -> Result<()> {
 }
 
 fn check_blob_fees(tx: &BlobTransaction) -> Result<()> {
-    let fee_id = check_contract(&tx.fees.fee)?;
-    let id = check_contract(&tx.fees.identity)?;
-    if fee_id != id {
-        bail!("Fee payer identity does not match identity in blob");
+    let ids = tx
+        .fees
+        .blobs
+        .iter()
+        .map(|blob| check_contract(blob))
+        .collect::<Result<Vec<_>>>()?;
+
+    if !ids.windows(2).all(|w| w[0] == w[1]) {
+        bail!("Fees blob identities does not match");
     }
-    if fee_id != tx.fees.payer {
-        bail!("Fee payer identity does not match payer identity");
+    if tx.fees.identity != ids[0] {
+        bail!("Fees identity does not match");
     }
-    info!("💸 Fees will be paid by: {}", fee_id.0);
+
+    info!("💸 Fees will be paid by: {}", ids[0].0);
     Ok(())
 }
 

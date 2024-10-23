@@ -4,7 +4,7 @@ use anyhow::Result;
 use clap::{command, Parser, Subcommand};
 use hyle::{
     model::{
-        Blob, BlobReference, BlobTransaction, ContractName, Fees, ProofTransaction,
+        Blob, BlobReference, BlobTransaction, Blobs, ContractName, ProofTransaction,
         RegisterContractTransaction,
     },
     rest::client::ApiHttpClient,
@@ -61,26 +61,30 @@ async fn send_blob(
     println!("Fees will be paid by {}", payer.account);
     let res = client
         .send_tx_blob(&BlobTransaction {
-            fees: Fees {
-                payer: payer.account.clone().into(),
-                fee: Blob {
-                    contract_name: "hyfi".into(),
-                    data: fee_blob.encode()?,
-                },
-                identity: Blob {
-                    contract_name: "hydentity".into(),
-                    data: hydentity::model::ContractFunction::CheckPassword {
-                        account: payer.account,
-                        password: payer.password,
-                    }
-                    .encode()?,
-                },
+            fees: Blobs {
+                identity: payer.account.clone().into(),
+                blobs: vec![
+                    Blob {
+                        contract_name: "hyfi".into(),
+                        data: fee_blob.encode()?,
+                    },
+                    Blob {
+                        contract_name: "hydentity".into(),
+                        data: hydentity::model::ContractFunction::CheckPassword {
+                            account: payer.account,
+                            password: payer.password,
+                        }
+                        .encode()?,
+                    },
+                ],
             },
-            identity,
-            blobs: vec![Blob {
-                contract_name,
-                data,
-            }],
+            blobs: Blobs {
+                identity,
+                blobs: vec![Blob {
+                    contract_name,
+                    data,
+                }],
+            },
         })
         .await?;
 

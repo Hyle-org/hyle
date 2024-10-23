@@ -6,7 +6,7 @@ use tokio::time::sleep;
 use hyle::{
     indexer::model::ContractDb,
     model::{
-        Blob, BlobReference, BlobTransaction, ContractName, Fees, ProofTransaction,
+        Blob, BlobReference, BlobTransaction, Blobs, ContractName, ProofTransaction,
         RegisterContractTransaction,
     },
     node_state::model::Contract,
@@ -52,12 +52,26 @@ async fn register_contracts(client: &ApiHttpClient) -> Result<()> {
 
 async fn send_blobs_and_proofs(client: &ApiHttpClient) -> Result<()> {
     let blob_tx = BlobTransaction {
-        fees: Fees::default_test(),
-        identity: Identity("client".to_string()),
-        blobs: vec![Blob {
-            contract_name: ContractName("erc20-risc0".to_string()),
-            data: BlobData(vec![1, 3, 109, 97, 120, 27]),
-        }],
+        fees: Blobs {
+            identity: Identity("test".to_string()),
+            blobs: vec![
+                Blob {
+                    contract_name: ContractName("hyfi".to_string()),
+                    data: BlobData(vec![1, 3, 109, 97, 120, 27]), // TODO
+                },
+                Blob {
+                    contract_name: ContractName("hydentity".to_string()),
+                    data: BlobData(vec![1, 3, 109, 97, 120, 27]), // TODO
+                },
+            ],
+        },
+        blobs: Blobs {
+            identity: Identity("client".to_string()),
+            blobs: vec![Blob {
+                contract_name: ContractName("erc20-risc0".to_string()),
+                data: BlobData(vec![1, 3, 109, 97, 120, 27]),
+            }],
+        },
     };
     let blob_response = client.send_tx_blob(&blob_tx).await?;
 
@@ -127,18 +141,32 @@ async fn register_test_contracts(client: &ApiHttpClient) -> Result<()> {
 async fn send_test_blobs_and_proofs(client: &ApiHttpClient) -> Result<()> {
     let blob_response = client
         .send_tx_blob(&BlobTransaction {
-            fees: Fees::default_test(),
-            identity: Identity("client".to_string()),
-            blobs: vec![
-                Blob {
-                    contract_name: ContractName("c1".to_string()),
-                    data: BlobData(vec![0, 1, 2, 3]),
-                },
-                Blob {
-                    contract_name: ContractName("c2".to_string()),
-                    data: BlobData(vec![0, 1, 2, 3]),
-                },
-            ],
+            fees: Blobs {
+                identity: Identity("test".to_string()),
+                blobs: vec![
+                    Blob {
+                        contract_name: ContractName("hyfi".to_string()),
+                        data: BlobData(vec![0, 1, 2, 3]),
+                    },
+                    Blob {
+                        contract_name: ContractName("hydentity".to_string()),
+                        data: BlobData(vec![0, 1, 2, 3]),
+                    },
+                ],
+            },
+            blobs: Blobs {
+                identity: Identity("client".to_string()),
+                blobs: vec![
+                    Blob {
+                        contract_name: ContractName("c1".to_string()),
+                        data: BlobData(vec![0, 1, 2, 3]),
+                    },
+                    Blob {
+                        contract_name: ContractName("c2".to_string()),
+                        data: BlobData(vec![0, 1, 2, 3]),
+                    },
+                ],
+            },
         })
         .await
         .and_then(|response| response.error_for_status().context("sending tx"));

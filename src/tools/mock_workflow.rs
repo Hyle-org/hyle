@@ -5,7 +5,7 @@ use crate::{
     handle_messages,
     mempool::MempoolNetMessage,
     model::{
-        Blob, BlobTransaction, ContractName, Fees, ProofTransaction, RegisterContractTransaction,
+        Blob, BlobTransaction, Blobs, ContractName, ProofTransaction, RegisterContractTransaction,
         SharedRunContext, Transaction,
     },
     rest::client::ApiHttpClient,
@@ -77,12 +77,20 @@ impl MockWorkflowHandler {
         let tx = MempoolNetMessage::NewTx(Transaction {
             version: 1,
             transaction_data: crate::model::TransactionData::Blob(BlobTransaction {
-                fees: Fees::default_test(),
-                identity: Identity("toto".to_string()),
-                blobs: vec![Blob {
-                    contract_name: ContractName("test".to_string()),
-                    data: BlobData(vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9]),
-                }],
+                fees: Blobs {
+                    identity: Identity("toto".to_string()),
+                    blobs: vec![Blob {
+                        contract_name: ContractName("test".to_string()),
+                        data: BlobData(vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9]),
+                    }],
+                },
+                blobs: Blobs {
+                    identity: Identity("toto".to_string()),
+                    blobs: vec![Blob {
+                        contract_name: ContractName("test".to_string()),
+                        data: BlobData(vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9]),
+                    }],
+                },
             }),
         });
         for _ in 0..500000 {
@@ -99,12 +107,20 @@ impl MockWorkflowHandler {
         };
 
         let tx_blob = BlobTransaction {
-            fees: Fees::default_test(),
-            identity: Identity("id".to_string()),
-            blobs: vec![Blob {
-                contract_name: ContractName("contract_name".to_string()),
-                data: BlobData(vec![0, 1, 2]),
-            }],
+            fees: Blobs {
+                identity: Identity("id".to_string()),
+                blobs: vec![Blob {
+                    contract_name: ContractName("contract_name".to_string()),
+                    data: BlobData(vec![0, 1, 2]),
+                }],
+            },
+            blobs: Blobs {
+                identity: Identity("id".to_string()),
+                blobs: vec![Blob {
+                    contract_name: ContractName("contract_name".to_string()),
+                    data: BlobData(vec![0, 1, 2]),
+                }],
+            },
         };
 
         let tx_proof = ProofTransaction {
@@ -127,7 +143,10 @@ impl MockWorkflowHandler {
                 1 => {
                     info!("Sending tx blob");
                     let mut new_tx_blob = tx_blob.clone();
-                    new_tx_blob.identity = Identity(format!("{}{}", tx_blob.identity.0, i));
+                    new_tx_blob.fees.identity =
+                        Identity(format!("{}{}", tx_blob.fees.identity.0, i));
+                    new_tx_blob.blobs.identity =
+                        Identity(format!("{}{}", tx_blob.blobs.identity.0, i));
                     _ = api_client.send_tx_blob(&new_tx_blob).await;
                 }
                 2 => {

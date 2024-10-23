@@ -125,19 +125,16 @@ impl fmt::Debug for ProofTransaction {
 
 #[derive(Serialize, Deserialize, Default, PartialEq, Eq, Clone, Encode, Decode, Hash)]
 pub struct FeeProofTransaction {
-    pub transactions: Vec<TxHash>,
-    pub fees_proof: Vec<u8>,
-    pub identities_proof: Vec<u8>,
+    pub blobs_references: Vec<BlobReference>,
+    pub proof: Vec<u8>,
 }
 
 impl fmt::Debug for FeeProofTransaction {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("FeeProofTransaction")
-            .field("transactions", &self.transactions)
-            .field("fees_proof", &"[HIDDEN]")
-            .field("fees_proof_len", &self.fees_proof.len())
-            .field("identities_proof", &"[HIDDEN]")
-            .field("identities_proof_len", &self.identities_proof.len())
+            .field("blobs_references", &self.blobs_references)
+            .field("proof", &"[HIDDEN]")
+            .field("proof_len", &self.proof.len())
             .finish()
     }
 }
@@ -159,17 +156,15 @@ pub struct RegisterContractTransaction {
 }
 
 #[derive(Debug, Serialize, Deserialize, Default, PartialEq, Eq, Clone, Encode, Decode, Hash)]
-pub struct Fees {
-    pub payer: Identity,
-    pub fee: Blob,
-    pub identity: Blob,
+pub struct Blobs {
+    pub identity: Identity,
+    pub blobs: Vec<Blob>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Default, PartialEq, Eq, Clone, Encode, Decode, Hash)]
 pub struct BlobTransaction {
-    pub fees: Fees,
-    pub identity: Identity,
-    pub blobs: Vec<Blob>,
+    pub fees: Blobs,
+    pub blobs: Blobs,
     // FIXME: add a nonce or something to prevent BlobTransaction to share the same hash
 }
 
@@ -303,11 +298,16 @@ impl Hashable<TxHash> for Staker {
     }
 }
 
+impl Hashable<BlobsHash> for Blobs {
+    fn hash(&self) -> BlobsHash {
+        BlobsHash::from_vec(&self.blobs)
+    }
+}
 impl Hashable<TxHash> for BlobTransaction {
     fn hash(&self) -> TxHash {
         let mut hasher = Sha3_256::new();
-        _ = write!(hasher, "{}", self.identity.0);
-        hasher.update(self.blobs_hash().0);
+        _ = write!(hasher, "{}", self.fees.hash().0);
+        _ = write!(hasher, "{}", self.blobs.hash().0);
         let hash_bytes = hasher.finalize();
         TxHash(hex::encode(hash_bytes))
     }
@@ -328,11 +328,12 @@ impl Hashable<TxHash> for ProofTransaction {
 impl Hashable<TxHash> for FeeProofTransaction {
     fn hash(&self) -> TxHash {
         let mut hasher = Sha3_256::new();
-        for blob_ref in self.transactions.iter() {
-            _ = write!(hasher, "{}", blob_ref);
+        for blob_ref in self.blobs_references.iter() {
+            _ = write!(hasher, "{}", blob_ref.contract_name);
+            _ = write!(hasher, "{}", blob_ref.blob_tx_hash);
+            _ = write!(hasher, "{}", blob_ref.blob_index);
         }
-        hasher.update(self.fees_proof.clone());
-        hasher.update(self.identities_proof.clone());
+        hasher.update(self.proof.clone());
         let hash_bytes = hasher.finalize();
         TxHash(hex::encode(hash_bytes))
     }
@@ -347,11 +348,6 @@ impl Hashable<TxHash> for RegisterContractTransaction {
         _ = write!(hasher, "{}", self.contract_name);
         let hash_bytes = hasher.finalize();
         TxHash(hex::encode(hash_bytes))
-    }
-}
-impl BlobTransaction {
-    pub fn blobs_hash(&self) -> BlobsHash {
-        BlobsHash::from_vec(&self.blobs)
     }
 }
 
