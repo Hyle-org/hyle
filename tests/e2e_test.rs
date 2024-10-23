@@ -215,17 +215,20 @@ async fn e2e() -> Result<()> {
         reqwest_client: Client::new(),
     };
 
+    // Wait for node1 to properly spin up
+    wait_height(&client_node1, 0).await?;
+
     let mut node2_conf = conf_maker.build();
     node2_conf.peers = vec![node1.conf.host.clone()];
     let node2 = test_helpers::TestProcess::new("node", node2_conf).start();
+
+    // Wait for node2 to properly spin up
+    wait_height(&client_node1, 5).await?;
 
     // Start indexer
     let mut indexer_conf = conf_maker.build();
     indexer_conf.da_address = node2.conf.da_address.clone();
     let indexer = test_helpers::TestProcess::new("indexer", indexer_conf).start();
-
-    // Wait for nodes to properly spin up
-    wait_height(&client_node1, 5).await?;
 
     // Using a fake proofs
     register_test_contracts(&client_node1).await?;
