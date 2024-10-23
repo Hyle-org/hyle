@@ -68,13 +68,6 @@ impl TestProcess {
         }
     }
 
-    pub fn log(mut self, level: &str) -> Self {
-        if let TestProcessState::Command(cmd) = &mut self.state {
-            cmd.env("RUST_LOG", level);
-        };
-        self
-    }
-
     pub fn start(mut self) -> Self {
         self.state = match &mut self.state {
             TestProcessState::Command(cmd) => {
