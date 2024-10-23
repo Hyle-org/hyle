@@ -5,7 +5,6 @@ pub mod model;
 
 use crate::{
     bus::{bus_client, SharedMessageBus},
-    data_availability::DataEvent,
     handle_messages,
     model::{
         BlobTransaction, BlockHash, CommonRunContext, ContractName, Hashable, ProcessedBlock,
@@ -25,7 +24,7 @@ use axum::{
     Router,
 };
 use core::str;
-use futures::SinkExt;
+use futures::{SinkExt, StreamExt};
 use model::{TransactionStatus, TransactionType, TransactionWithBlobs, TxHashDb};
 use sqlx::types::chrono::DateTime;
 use sqlx::{postgres::PgPoolOptions, PgPool};
@@ -149,26 +148,24 @@ impl Indexer {
         } else {
             handle_messages! {
                 on_bus self.bus,
-
-                // TODO: Do we still need that ?
-                // cmd = self.da_stream.as_mut().expect("da_stream must exist").next() => {
-                //     if let Some(Ok(cmd)) = cmd {
-                //         let bytes = cmd;
-                //         let block: Block = bincode::decode_from_slice(&bytes, bincode::config::standard())?.0;
-                //         if let Err(e) = self.handle_processsed_block(block).await {
-                //             error!("Error while handling block: {:#}", e);
-                //         }
-                //         SinkExt::<bytes::Bytes>::send(self.da_stream.as_mut().expect("da_stream must exist"), "ok".into()).await?;
-                //     } else if cmd.is_none() {
-                //         self.da_stream = None;
-                //         // TODO: retry
-                //         return Err(anyhow::anyhow!("DA stream closed"));
-                //     } else if let Some(Err(e)) = cmd {
-                //         self.da_stream = None;
-                //         // TODO: retry
-                //         return Err(anyhow::anyhow!("Error while reading DA stream: {}", e));
-                //     }
-                // }
+                cmd = self.da_stream.as_mut().expect("da_stream must exist").next() => {
+                    if let Some(Ok(cmd)) = cmd {
+                        let bytes = cmd;
+                        let block: ProcessedBlock = bincode::decode_from_slice(&bytes, bincode::config::standard())?.0;
+                        if let Err(e) = self.handle_processsed_block(block).await {
+                            error!("Error while handling block: {:#}", e);
+                        }
+                        SinkExt::<bytes::Bytes>::send(self.da_stream.as_mut().expect("da_stream must exist"), "ok".into()).await?;
+                    } else if cmd.is_none() {
+                        self.da_stream = None;
+                        // TODO: retry
+                        return Err(anyhow::anyhow!("DA stream closed"));
+                    } else if let Some(Err(e)) = cmd {
+                        self.da_stream = None;
+                        // TODO: retry
+                        return Err(anyhow::anyhow!("Error while reading DA stream: {}", e));
+                    }
+                }
 
                 Some((contract_name, mut socket)) = self.new_sub_receiver.recv() => {
 
