@@ -20,19 +20,7 @@ fn main() {
     let payload = match input.blobs.get(input.index) {
         Some(v) => v,
         None => {
-            env::log("Unable to find the payload");
-            let flattened_blobs = input.blobs.into_iter().flat_map(|b| b.0).collect();
-            env::commit(&HyleOutput {
-                version: 1,
-                initial_state: initial_balances.as_digest(),
-                next_state: initial_balances.as_digest(),
-                identity: sdk::Identity("".to_string()),
-                tx_hash: sdk::TxHash(input.tx_hash),
-                index: sdk::BlobIndex(input.index as u32),
-                blobs: flattened_blobs,
-                success: false,
-                program_outputs: "Payload not found".to_string().into_bytes(),
-            });
+            fail(input, "Unable to find the payload");
             return;
         }
     };
@@ -56,4 +44,21 @@ fn main() {
         success: res.success,
         program_outputs: res.program_outputs,
     })
+}
+
+fn fail(input: ContractInput, message: &str) {
+    env::log(message);
+
+    let flattened_blobs = input.blobs.into_iter().flat_map(|b| b.0).collect();
+    env::commit(&HyleOutput {
+        version: 1,
+        initial_state: input.balances.as_digest(),
+        next_state: input.balances.as_digest(),
+        identity: sdk::Identity("".to_string()),
+        tx_hash: sdk::TxHash(input.tx_hash),
+        index: sdk::BlobIndex(input.index as u32),
+        blobs: flattened_blobs,
+        success: false,
+        program_outputs: message.to_string().into_bytes(),
+    });
 }
