@@ -124,6 +124,8 @@ impl Mempool {
     pub async fn start(&mut self) -> Result<()> {
         info!("Mempool starting");
 
+        let mut interval = tokio::time::interval(tokio::time::Duration::from_millis(100));
+
         handle_messages! {
             on_bus self.bus,
             listen<SignedWithKey<MempoolNetMessage>> cmd => {
@@ -135,7 +137,7 @@ impl Mempool {
             listen<ConsensusEvent> cmd => {
                 self.handle_event(cmd);
             }
-            _ = tokio::time::sleep(tokio::time::Duration::from_millis(100)) => {
+            _ = interval.tick() => {
                     self.check_data_proposal().await
             }
         }
