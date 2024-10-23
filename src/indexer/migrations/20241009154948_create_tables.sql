@@ -10,7 +10,7 @@ CREATE TABLE blocks (
 );
 
 CREATE TYPE transaction_type AS ENUM ('blob_transaction', 'proof_transaction', 'register_contract_transaction');
-CREATE TYPE transaction_status AS ENUM ('success', 'failure', 'sequenced');
+CREATE TYPE transaction_status AS ENUM ('success', 'failure', 'sequenced', 'timed_out');
 
 CREATE TABLE transactions (
     tx_hash TEXT PRIMARY KEY,
@@ -29,6 +29,7 @@ CREATE TABLE blobs (
     identity TEXT NOT NULL,            -- Identity field from the original BlobTransaction struct
     contract_name TEXT NOT NULL,       -- Contract name associated with the blob
     data BYTEA NOT NULL,               -- Actual blob data (stored as binary)
+    verified BOOLEAN NOT NULL,         -- Field to indicate if the blob is verified
     PRIMARY KEY (tx_hash, blob_index), -- Composite primary key (tx_hash + blob_index) to uniquely identify each blob
     CHECK (blob_index >= 0)            -- Ensure the index is positive
 );
@@ -43,6 +44,7 @@ CREATE TABLE blob_references (
     contract_name TEXT NOT NULL,                                 -- Contract name
     blob_tx_hash TEXT NOT NULL,                                  -- Blob transaction hash
     PRIMARY KEY (blob_index, tx_hash),                           -- Composite primary key (blob_index + tx_hash) to uniquely identify each blob reference
+    hyle_output JSONB,                                           -- Additional metadata stored in JSONB format
     CHECK (blob_index >= 0)                                      -- Ensure the index is positive
 );
 
