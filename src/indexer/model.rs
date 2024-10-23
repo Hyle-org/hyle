@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::types::chrono::NaiveDateTime;
 use sqlx::{prelude::Type, Postgres};
 
-use crate::model::{Blob, BlockHash};
+use crate::model::{Blob, BlockHash, Transaction, TransactionData};
 use hyle_contract_sdk::TxHash;
 
 #[derive(Debug, sqlx::FromRow, Serialize, Deserialize)]
@@ -21,6 +21,18 @@ pub enum TransactionType {
     BlobTransaction,
     ProofTransaction,
     RegisterContractTransaction,
+    Stake,
+}
+
+impl TransactionType {
+    pub fn get_type_from_transaction(transaction: &Transaction) -> Self {
+        match transaction.transaction_data {
+            TransactionData::Blob(_) => TransactionType::BlobTransaction,
+            TransactionData::Proof(_) => TransactionType::ProofTransaction,
+            TransactionData::RegisterContract(_) => TransactionType::RegisterContractTransaction,
+            TransactionData::Stake(_) => TransactionType::Stake,
+        }
+    }
 }
 
 #[derive(Debug, sqlx::Type, Serialize, Deserialize, Clone, PartialEq)]

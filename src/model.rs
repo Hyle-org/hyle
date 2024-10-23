@@ -93,8 +93,8 @@ pub struct Transaction {
 
 #[derive(Debug, Serialize, Deserialize, Default, Clone, PartialEq, Eq, Encode, Decode, Hash)]
 pub struct ProcessedTransaction {
-    pub version: u32,
-    pub transaction_data: ProcessedTransactionData,
+    pub transaction: Transaction,
+    pub hyle_outputs: Option<Vec<HyleOutput>>,
     pub success: bool,
 }
 
@@ -109,20 +109,6 @@ pub enum TransactionData {
 impl Default for TransactionData {
     fn default() -> Self {
         TransactionData::Blob(BlobTransaction::default())
-    }
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Encode, Decode, Hash)]
-pub enum ProcessedTransactionData {
-    Stake(Staker),
-    Blob(BlobTransaction),
-    Proof(VerifiedProofTransaction),
-    RegisterContract(RegisterContractTransaction),
-}
-
-impl Default for ProcessedTransactionData {
-    fn default() -> Self {
-        ProcessedTransactionData::Blob(BlobTransaction::default())
     }
 }
 
@@ -167,36 +153,11 @@ impl fmt::Debug for ProofTransaction {
     }
 }
 
-#[derive(Serialize, Deserialize, Default, PartialEq, Eq, Clone, Encode, Decode, Hash)]
-pub struct VerifiedProofTransaction {
-    pub verified_blobs_references: Vec<VerifiedBlobReference>,
-    pub proof: ProofData,
-}
-
-impl fmt::Debug for VerifiedProofTransaction {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("ProofTransaction")
-            .field("blobs_references", &self.verified_blobs_references)
-            .field("proof", &"[HIDDEN]")
-            .field(
-                "proof_len",
-                &self.proof.to_bytes().unwrap_or_default().len(),
-            )
-            .finish()
-    }
-}
 #[derive(Debug, Serialize, Deserialize, Default, Clone, PartialEq, Eq, Encode, Decode, Hash)]
 pub struct BlobReference {
     pub contract_name: ContractName,
     pub blob_tx_hash: TxHash,
     pub blob_index: BlobIndex,
-}
-#[derive(Debug, Serialize, Deserialize, Default, Clone, PartialEq, Eq, Encode, Decode, Hash)]
-pub struct VerifiedBlobReference {
-    pub contract_name: ContractName,
-    pub blob_tx_hash: TxHash,
-    pub blob_index: BlobIndex,
-    pub hyle_output: HyleOutput,
 }
 
 #[derive(Debug, Serialize, Deserialize, Default, Clone, PartialEq, Eq, Encode, Decode, Hash)]
@@ -360,12 +321,7 @@ impl Hashable<TxHash> for Transaction {
 }
 impl Hashable<TxHash> for ProcessedTransaction {
     fn hash(&self) -> TxHash {
-        match &self.transaction_data {
-            ProcessedTransactionData::Stake(staker) => staker.hash(),
-            ProcessedTransactionData::Blob(tx) => tx.hash(),
-            ProcessedTransactionData::Proof(tx) => tx.hash(),
-            ProcessedTransactionData::RegisterContract(tx) => tx.hash(),
-        }
+        self.transaction.hash()
     }
 }
 impl Hashable<TxHash> for Staker {
@@ -403,32 +359,7 @@ impl Hashable<TxHash> for ProofTransaction {
         TxHash(hex::encode(hash_bytes))
     }
 }
-impl Hashable<TxHash> for VerifiedProofTransaction {
-    fn hash(&self) -> TxHash {
-        let mut hasher = Sha3_256::new();
-        for verified_blob_ref in self.verified_blobs_references.iter() {
-            hasher.update(verified_blob_ref.contract_name.0.as_bytes());
-            hasher.update(verified_blob_ref.blob_tx_hash.0.as_bytes());
-            hasher.update(verified_blob_ref.blob_index.0.to_le_bytes());
 
-            hasher.update(verified_blob_ref.hyle_output.version.to_le_bytes());
-            hasher.update(verified_blob_ref.hyle_output.initial_state.0.clone());
-            hasher.update(verified_blob_ref.hyle_output.next_state.0.clone());
-            hasher.update(verified_blob_ref.hyle_output.identity.0.as_bytes());
-            hasher.update(verified_blob_ref.hyle_output.tx_hash.0.as_bytes());
-            hasher.update(verified_blob_ref.hyle_output.index.0.to_le_bytes());
-            hasher.update(verified_blob_ref.hyle_output.blobs.clone());
-            hasher.update([verified_blob_ref.hyle_output.success as u8]);
-            hasher.update(verified_blob_ref.hyle_output.program_outputs.clone());
-        }
-        match self.proof.clone() {
-            ProofData::Base64(v) => hasher.update(v),
-            ProofData::Bytes(vec) => hasher.update(vec),
-        }
-        let hash_bytes = hasher.finalize();
-        TxHash(hex::encode(hash_bytes))
-    }
-}
 impl Hashable<TxHash> for RegisterContractTransaction {
     fn hash(&self) -> TxHash {
         let mut hasher = Sha3_256::new();
