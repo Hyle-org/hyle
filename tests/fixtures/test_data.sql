@@ -15,10 +15,10 @@ VALUES
     ('test_tx_hash_4aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'block2aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 3, 1, 'blob_transaction', 'sequenced');             -- Transaction 4 (blob)
 
 -- Inserting test data for the blob_transactions table
-INSERT INTO blobs (tx_hash, blob_index, identity, contract_name, data)
+INSERT INTO blobs (tx_hash, blob_index, identity, contract_name, data, verified)
 VALUES
-    ('test_tx_hash_2aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 0, 'identity_1', 'contract_1', '{"data": "blob_data_1"}'),  -- Blob Transaction 2
-    ('test_tx_hash_4aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 0, 'identity_1', 'contract_1', '{"data": "blob_data_4"}');  -- Blob Transaction 2
+    ('test_tx_hash_2aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 0, 'identity_1', 'contract_1', '{"data": "blob_data_1"}', false),  -- Blob Transaction 2
+    ('test_tx_hash_4aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 0, 'identity_1', 'contract_1', '{"data": "blob_data_4"}', false);  -- Blob Transaction 2
 
 -- Inserting test data for the proof_transactions table
 INSERT INTO proofs (tx_hash, proof)

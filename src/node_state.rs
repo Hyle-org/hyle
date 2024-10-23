@@ -1,13 +1,15 @@
 //! State required for participation in consensus by the node.
 
 use crate::{
-    bus::{bus_client, command_response::Query, SharedMessageBus},
+    bus::{bus_client, command_response::Query, BusMessage, SharedMessageBus},
     consensus::{staking::Staker, ConsensusCommand},
     data_availability::DataEvent,
     handle_messages,
     model::{
-        BlobTransaction, BlobsHash, Block, BlockHeight, ContractName, Hashable, ProofTransaction,
-        RegisterContractTransaction, SharedRunContext, Transaction,
+        BlobTransaction, BlobsHash, Block, BlockHeight, ContractName, Hashable, ProcessedBlock,
+        ProcessedTransaction, ProcessedTransactionData, ProofTransaction,
+        RegisterContractTransaction, SharedRunContext, Transaction, VerifiedBlobReference,
+        VerifiedProofTransaction,
     },
     utils::{conf::SharedConf, logger::LogMe, modules::Module},
 };
@@ -16,6 +18,7 @@ use bincode::{Decode, Encode};
 use hyle_contract_sdk::{HyleOutput, StateDigest, TxHash};
 use model::{Contract, Timeouts, UnsettledBlobMetadata, UnsettledTransaction};
 use ordered_tx_map::OrderedTxMap;
+use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet},
     ops::{Deref, DerefMut},
@@ -29,11 +32,19 @@ mod verifiers;
 
 bus_client! {
 struct NodeStateBusClient {
+    sender(NodeStateEvent),
     sender(ConsensusCommand),
     receiver(Query<ContractName, Contract>),
     receiver(DataEvent),
 }
 }
+
+#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, Eq, PartialEq)]
+pub enum NodeStateEvent {
+    NewProcessedBlock(ProcessedBlock),
+}
+
+impl BusMessage for NodeStateEvent {}
 
 #[derive(Default, Encode, Decode)]
 pub struct NodeStateStore {
@@ -112,22 +123,20 @@ impl NodeState {
     }
 
     fn handle_new_block(&mut self, block: Block) -> Result<(), Error> {
-        self.clear_timeouts(&block.height);
+        let timed_out_txs = self.clear_timeouts(&block.height);
         self.current_height = block.height;
         let txs_count = block.txs.len();
         let block_hash = block.hash();
 
-        for tx in block.txs {
-            let tx_hash = tx.hash();
-            match self.handle_transaction(tx.clone()) {
-                Ok(_) => debug!("Handled tx {tx_hash}"),
-                Err(e) => error!("Failed handling tx {:?} with error: {e}", tx),
-            }
-        }
+        let processed_transactions = block
+            .txs
+            .into_iter()
+            .map(|tx| self.handle_transaction(tx))
+            .collect::<Result<Vec<ProcessedTransaction>, Error>>()?;
 
-        for validator in block.new_bonded_validators {
+        for validator in &block.new_bonded_validators {
             self.bus
-                .send(ConsensusCommand::NewBonded(validator))
+                .send(ConsensusCommand::NewBonded(validator.clone()))
                 .context("Send new staker consensus command")?;
         }
 
@@ -137,48 +146,125 @@ impl NodeState {
             "Handled {txs_count} transactions");
 
         _ = Self::save_on_disk(self.file.as_path(), &self.store);
+        _ = self
+            .bus
+            .send(NodeStateEvent::NewProcessedBlock(ProcessedBlock {
+                height: block.height,
+                parent_hash: block.parent_hash,
+                timestamp: block.timestamp,
+                new_bonded_validators: block.new_bonded_validators,
+                txs: processed_transactions,
+                timed_out_txs,
+            }))
+            .context("Send new NodeState processed block")?;
         Ok(())
     }
 
-    fn handle_transaction(&mut self, transaction: Transaction) -> Result<(), Error> {
+    fn handle_transaction(
+        &mut self,
+        transaction: Transaction, // TODO: use reference to prevent from cloning
+    ) -> Result<ProcessedTransaction, Error> {
         debug!("Got transaction to handle: {:?}", transaction);
-
-        match transaction.transaction_data {
-            crate::model::TransactionData::Stake(staker) => self.handle_stake_tx(staker),
-            crate::model::TransactionData::Blob(tx) => self.handle_blob_tx(tx),
-            crate::model::TransactionData::Proof(tx) => self.handle_proof(tx),
-            crate::model::TransactionData::RegisterContract(tx) => {
-                self.handle_register_contract(tx)
+        let transaction_data: ProcessedTransactionData = match transaction.transaction_data {
+            crate::model::TransactionData::Stake(staker) => {
+                match self.handle_stake_tx(staker.clone()) {
+                    Ok(v) => ProcessedTransactionData::Stake(v),
+                    Err(e) => {
+                        error!("Failed to handle stake tx: {:?}", e);
+                        return Ok(ProcessedTransaction {
+                            success: false,
+                            version: transaction.version,
+                            transaction_data: ProcessedTransactionData::Stake(staker),
+                        });
+                    }
+                }
             }
-        }
+            crate::model::TransactionData::Blob(tx) => match self.handle_blob_tx(tx.clone()) {
+                Ok(v) => ProcessedTransactionData::Blob(v),
+                Err(e) => {
+                    error!("Failed to handle blob tx: {:?}", e);
+                    return Ok(ProcessedTransaction {
+                        success: false,
+                        version: transaction.version,
+                        transaction_data: ProcessedTransactionData::Blob(tx.clone()),
+                    });
+                }
+            },
+            crate::model::TransactionData::Proof(tx) => match self.handle_proof(tx.clone()) {
+                Ok(v) => ProcessedTransactionData::Proof(v),
+                Err(e) => {
+                    error!("Failed to verify proof tx: {:?}", e);
+                    let v: VerifiedProofTransaction = VerifiedProofTransaction {
+                        verified_blobs_references: tx
+                            .blobs_references
+                            .iter()
+                            .map(|blob_ref| VerifiedBlobReference {
+                                contract_name: blob_ref.contract_name.clone(),
+                                blob_tx_hash: blob_ref.blob_tx_hash.clone(),
+                                blob_index: blob_ref.blob_index.clone(),
+                                hyle_output: HyleOutput::default(),
+                            })
+                            .collect(),
+                        proof: tx.proof.clone(),
+                    };
+                    // FIXME
+                    return Ok(ProcessedTransaction {
+                        success: false,
+                        version: transaction.version,
+                        transaction_data: ProcessedTransactionData::Proof(v),
+                    });
+                }
+            },
+            crate::model::TransactionData::RegisterContract(tx) => {
+                match self.handle_register_contract(tx.clone()) {
+                    Ok(v) => ProcessedTransactionData::RegisterContract(v),
+                    Err(e) => {
+                        error!("Failed to register contract: {:?}", e);
+                        return Ok(ProcessedTransaction {
+                            success: false,
+                            version: transaction.version,
+                            transaction_data: ProcessedTransactionData::RegisterContract(tx),
+                        });
+                    }
+                }
+            }
+        };
+        Ok(ProcessedTransaction {
+            success: true,
+            version: transaction.version,
+            transaction_data,
+        })
     }
 
-    fn handle_register_contract(&mut self, tx: RegisterContractTransaction) -> Result<(), Error> {
+    fn handle_register_contract(
+        &mut self,
+        tx: RegisterContractTransaction,
+    ) -> Result<RegisterContractTransaction, Error> {
         if self.contracts.contains_key(&tx.contract_name) {
             bail!("Contract already exists")
         }
         self.contracts.insert(
             tx.contract_name.clone(),
             Contract {
-                name: tx.contract_name,
-                program_id: tx.program_id,
-                state: tx.state_digest,
-                verifier: tx.verifier,
+                name: tx.contract_name.clone(),
+                program_id: tx.program_id.clone(),
+                state: tx.state_digest.clone(),
+                verifier: tx.verifier.clone(),
             },
         );
 
-        Ok(())
+        Ok(tx)
     }
 
     // FIXME: to remove when we have a real staking smart contract
-    fn handle_stake_tx(&mut self, staker: Staker) -> Result<(), Error> {
+    fn handle_stake_tx(&mut self, staker: Staker) -> Result<Staker, Error> {
         self.bus
-            .send(ConsensusCommand::NewStaker(staker))
+            .send(ConsensusCommand::NewStaker(staker.clone()))
             .context("Send new staker consensus command")?;
-        Ok(())
+        Ok(staker)
     }
 
-    fn handle_blob_tx(&mut self, tx: BlobTransaction) -> Result<(), Error> {
+    fn handle_blob_tx(&mut self, tx: BlobTransaction) -> Result<BlobTransaction, Error> {
         let (blob_tx_hash, blobs_hash) = hash_transaction(&tx);
 
         let blobs: Vec<UnsettledBlobMetadata> = tx
@@ -192,7 +278,7 @@ impl NodeState {
 
         debug!("Add transaction to state");
         self.unsettled_transactions.add(UnsettledTransaction {
-            identity: tx.identity,
+            identity: tx.identity.clone(),
             hash: blob_tx_hash.clone(),
             blobs_hash,
             blobs,
@@ -201,12 +287,14 @@ impl NodeState {
         // Update timeouts
         self.store
             .timeouts
-            .set(blob_tx_hash, self.store.current_height + 100); // TODO: Timeout after 100 blocks, make it configurable !
+            .set(blob_tx_hash, self.store.current_height + 10); // TODO: Timeout after 10 blocks, make it configurable !
 
-        Ok(())
+        Ok(tx)
     }
 
-    fn handle_proof(&mut self, tx: ProofTransaction) -> Result<(), Error> {
+    fn handle_proof(&mut self, tx: ProofTransaction) -> Result<VerifiedProofTransaction, Error> {
+        // FIXME: maintenaint qu'on a VerifiedBlobReference on peut peut-etre changer un peu cette fonction pour utiliser des types harmonieux
+
         // TODO extract correct verifier
         let verifier: String = "test".to_owned();
 
@@ -235,7 +323,7 @@ impl NodeState {
         self.process_verifications(&tx, &blobs_metadata)?;
 
         // If we arrived here, proof provided is OK and its outputs can now be saved
-        self.save_blob_metadata(&tx, blobs_metadata)?;
+        self.save_blob_metadata(&tx, &blobs_metadata)?;
         let unsettled_transactions = self.unsettled_transactions.clone();
 
         // Only catch unique unsettled_txs that are next to be settled
@@ -259,14 +347,31 @@ impl NodeState {
         }
         debug!("Done! Contract states: {:?}", self.contracts);
 
-        Ok(())
+        // For each blob_ref, we create a new VerifiedBlobReference object that contains the reference to the blob and the verified metadata
+        let verified_blobs_references = tx
+            .blobs_references
+            .iter()
+            .zip(blobs_metadata)
+            .map(|(blob_ref, hyle_output)| VerifiedBlobReference {
+                contract_name: blob_ref.contract_name.clone(),
+                blob_tx_hash: blob_ref.blob_tx_hash.clone(),
+                blob_index: blob_ref.blob_index.clone(),
+                hyle_output: hyle_output.clone(),
+            })
+            .collect();
+
+        Ok(VerifiedProofTransaction {
+            verified_blobs_references,
+            proof: tx.proof,
+        })
     }
 
-    fn clear_timeouts(&mut self, height: &BlockHeight) {
+    fn clear_timeouts(&mut self, height: &BlockHeight) -> Vec<TxHash> {
         let dropped = self.timeouts.drop(height);
-        for tx in dropped {
-            self.unsettled_transactions.remove(&tx);
+        for tx in dropped.iter() {
+            self.unsettled_transactions.remove(tx);
         }
+        dropped
     }
 
     fn process_verifications(
@@ -321,7 +426,7 @@ impl NodeState {
     fn save_blob_metadata(
         &mut self,
         tx: &ProofTransaction,
-        blobs_metadata: Vec<HyleOutput>,
+        blobs_metadata: &[HyleOutput],
     ) -> Result<(), Error> {
         for (proof_blob_key, blob_ref) in tx.blobs_references.iter().enumerate() {
             let unsettled_tx = self

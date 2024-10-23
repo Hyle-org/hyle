@@ -29,6 +29,7 @@ pub enum TransactionStatus {
     Success,
     Failure,
     Sequenced,
+    TimedOut,
 }
 #[derive(Debug, sqlx::FromRow, Serialize, Deserialize)]
 pub struct TransactionDb {
