@@ -238,7 +238,7 @@ async fn e2e() -> Result<()> {
     send_blobs_and_proofs(&client_node1).await?;
 
     // Wait for some slots to be finished
-    wait_height(&client_node1, 10).await?;
+    wait_height(&client_node1, 50).await?;
 
     verify_test_contract_state(&client_node1).await?;
     verify_contract_state(&client_node1).await?;

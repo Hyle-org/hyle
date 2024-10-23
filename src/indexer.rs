@@ -5,7 +5,7 @@ pub mod model;
 
 use crate::{
     bus::{bus_client, SharedMessageBus},
-    consensus::ConsensusEvent,
+    data_availability::DataEvent,
     handle_messages,
     model::{Block, CommonRunContext, ContractName, Hashable},
     utils::modules::Module,
@@ -36,7 +36,7 @@ use tracing::{debug, error, info};
 bus_client! {
 #[derive(Debug)]
 struct IndexerBusClient {
-    receiver(ConsensusEvent),
+    receiver(DataEvent),
 }
 }
 
@@ -114,9 +114,9 @@ impl Indexer {
         if self.da_stream.is_none() {
             handle_messages! {
                 on_bus self.bus,
-                listen<ConsensusEvent> cmd => {
-                    if let Err(e) = self.handle_consensus_event(cmd).await {
-                        error!("Error while handling consensus event: {:#}", e)
+                listen<DataEvent> cmd => {
+                    if let Err(e) = self.handle_data_availability_event(cmd).await {
+                        error!("Error while handling data availability event: {:#}", e)
                     }
                 }
 
@@ -281,9 +281,9 @@ impl Indexer {
             .await;
     }
 
-    async fn handle_consensus_event(&mut self, event: ConsensusEvent) -> Result<()> {
+    async fn handle_data_availability_event(&mut self, event: DataEvent) -> Result<()> {
         match event {
-            ConsensusEvent::CommitBlock { block, .. } => self.handle_block(block).await,
+            DataEvent::NewBlock(block) => self.handle_block(block).await,
         }
     }
 
