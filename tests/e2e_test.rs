@@ -222,6 +222,11 @@ async fn e2e() -> Result<()> {
     node2_conf.peers = vec![node1.conf.host.clone()];
     let node2 = test_helpers::TestProcess::new("node", node2_conf).start();
 
+    // Start a third node just to see what happens.
+    let mut node3_conf = conf_maker.build();
+    node3_conf.peers = vec![node1.conf.host.clone(), node2.conf.host.clone()];
+    let _node3 = test_helpers::TestProcess::new("node", node3_conf).start();
+
     // Wait for node2 to properly spin up
     wait_height(&client_node1, 5).await?;
 
