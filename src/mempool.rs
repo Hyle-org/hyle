@@ -21,7 +21,7 @@ use anyhow::{Context, Result};
 use bincode::{Decode, Encode};
 use metrics::MempoolMetrics;
 use serde::{Deserialize, Serialize};
-use std::{collections::HashSet, sync::Arc};
+use std::{collections::HashSet, fmt::Display, sync::Arc};
 use storage::ProposalVerdict;
 use strum_macros::IntoStaticStr;
 use tracing::{debug, error, info, warn};
@@ -59,6 +59,14 @@ pub enum MempoolNetMessage {
     SyncRequest(CarProposal, Option<usize>),
     SyncReply(Vec<Car>),
 }
+
+impl Display for MempoolNetMessage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let enum_variant: &'static str = self.into();
+        write!(f, "{}", enum_variant)
+    }
+}
+
 impl BusMessage for MempoolNetMessage {}
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
