@@ -53,8 +53,8 @@ impl Staking {
     }
 
     /// list bonded validators
-    pub fn bonded(&self) -> Vec<ValidatorPublicKey> {
-        self.bonded.clone()
+    pub fn bonded(&self) -> &Vec<ValidatorPublicKey> {
+        &self.bonded
     }
 
     /// Unbond a staking validator
@@ -92,6 +92,7 @@ impl Staking {
                 bail!("Validator already bonded")
             }
             self.bonded.push(validator);
+            self.bonded.sort(); // TODO insert in order?
             self.total_bond += staker.stake.amount;
             Ok(staker.stake)
         } else {
