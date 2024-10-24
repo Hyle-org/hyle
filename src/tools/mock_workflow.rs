@@ -13,7 +13,6 @@ use crate::{
 };
 use anyhow::Result;
 use hyle_contract_sdk::{Identity, StateDigest};
-use reqwest::{Client, Url};
 use serde::{Deserialize, Serialize};
 use tokio::time::sleep;
 use tracing::{error, info, warn};
@@ -92,10 +91,7 @@ impl MockWorkflowHandler {
     async fn api_test(&mut self) {
         info!("Starting api test");
 
-        let api_client = ApiHttpClient {
-            url: Url::parse("http://localhost:4321").unwrap(),
-            reqwest_client: Client::new(),
-        };
+        let api_client = ApiHttpClient::from(&"http://localhost:4321".to_string()).unwrap();
 
         let tx_blob = BlobTransaction {
             identity: Identity("id".to_string()),

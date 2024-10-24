@@ -149,7 +149,7 @@ async fn handle_args(args: Args) -> Result<()> {
 
     let client = ApiHttpClient {
         url: Url::parse(url.as_str()).unwrap(),
-        reqwest_client: Client::new(),
+        reqwest_client: Client::new().into(),
     };
 
     match args.command {

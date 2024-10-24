@@ -54,6 +54,7 @@ base64 = "0.22.1"
 bytes = "1.8.0"
 strum = "0.26.3"
 strum_macros = "0.26.4"
+reqwest-middleware = "0.3.3"
 
 [target.'cfg(target_os="macos")'.dependencies]
 sled = { version = "0.34.7", features = ["compression", "lock_free_delays"] }
@@ -68,6 +69,7 @@ sled = { version = "0.34.7", features = [
 [dev-dependencies]
 assert_cmd = "2.0.16"
 tokio-tungstenite = "0.24.0"
+reqwest-retry = "0.6.1"
 reqwest = { version = "0.12", features = ["json", "blocking"] }
 serde_json = "1.0.132"
 proptest = "1.5.0"

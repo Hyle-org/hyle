@@ -1,5 +1,8 @@
+use std::any::type_name;
+
 use anyhow::{Context, Result};
 use reqwest::{Response, Url};
+use reqwest_middleware::ClientWithMiddleware;
 
 use crate::{
     model::{
@@ -10,10 +13,23 @@ use crate::{
 
 pub struct ApiHttpClient {
     pub url: Url,
-    pub reqwest_client: reqwest::Client,
+    pub reqwest_client: ClientWithMiddleware,
 }
 
 impl ApiHttpClient {
+    pub fn new(url: Url) -> ApiHttpClient {
+        ApiHttpClient {
+            url,
+            reqwest_client: reqwest::Client::new().into(),
+        }
+    }
+
+    pub fn from(url: &String) -> Result<ApiHttpClient> {
+        let url = Url::parse(format!("http://{}", url).as_ref())
+            .context(format!("parsing url to build {}", type_name::<Self>()))?;
+        Ok(Self::new(url))
+    }
+
     pub async fn send_tx_blob(&self, tx: &BlobTransaction) -> Result<Response> {
         self.reqwest_client
             .post(format!("{}v1/tx/send/blob", self.url))
