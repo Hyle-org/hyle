@@ -192,6 +192,7 @@ impl Consensus {
     /// this genesis logic might change later
     pub fn add_genesis_validator(&mut self, pubkey: ValidatorPublicKey) -> Result<()> {
         self.bft_round_state.validators.push(pubkey.clone());
+        self.bft_round_state.validators.sort();
         self.bft_round_state
             .staking
             .add_staker(Staker {
