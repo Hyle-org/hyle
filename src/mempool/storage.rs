@@ -90,6 +90,7 @@ impl InMemoryStorage {
                     } else if let Some(lane) = self.other_lanes.get_mut(validator) {
                         prepare_cut(&mut cut, validator, lane);
                     } else {
+                        // can happen if validator does not have any car proposal yet
                         error!(
                             "Validator {} not found in lane of {} (cutting)",
                             validator, self.id
@@ -381,6 +382,7 @@ impl InMemoryStorage {
             } else if let Some(lane) = self.other_lanes.get_mut(validator) {
                 Self::collect_old_used_cars(&mut lane.cars, *tip, &mut txs);
             } else {
+                // can happen if validator does not have any car proposal yet
                 error!(
                     "Validator {} not found in lane of {} (updating)",
                     validator, self.id
