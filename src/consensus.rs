@@ -581,7 +581,9 @@ impl Consensus {
                 }
             }
             Ticket::CommitQC(commit_qc, previous_proposal, validators) => {
-                self.verify_commit_ticket(commit_qc, previous_proposal, validators);
+                if !self.verify_commit_ticket(commit_qc, previous_proposal, validators) {
+                    bail!("Invalid commit ticket");
+                }
             }
             Ticket::TC(_timeout_certificate) => {
                 todo!()
