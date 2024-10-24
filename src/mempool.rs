@@ -28,7 +28,7 @@ use tracing::{debug, error, info, warn};
 
 mod metrics;
 mod storage;
-pub use storage::{Cut, CutWithTxs};
+pub use storage::Cut;
 
 bus_client! {
 struct MempoolBusClient {
@@ -63,7 +63,8 @@ impl BusMessage for MempoolNetMessage {}
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub enum MempoolEvent {
-    NewCut(CutWithTxs),
+    NewCut(Cut),
+    CommitBlock(Vec<Transaction>, Vec<ValidatorPublicKey>),
 }
 impl BusMessage for MempoolEvent {}
 
@@ -115,7 +116,10 @@ impl Mempool {
                 self.handle_consensus_event(cmd).await
             }
             _ = interval.tick() => {
-                self.time_to_cut().await
+                if !(self.genesis && self.is_genesis_leader) {
+                    debug!("Time to Cut");
+                    self.time_to_cut().await
+                }
             }
         }
     }
@@ -133,9 +137,15 @@ impl Mempool {
                     new_bonded_validators.len(),
                     cut.len()
                 );
-                self.genesis = false;
                 self.validators = validators;
-                self.storage.update_lanes_after_commit(cut);
+                let txs = self.storage.update_lanes_after_commit(cut);
+                if let Err(e) = self
+                    .bus
+                    .send(MempoolEvent::CommitBlock(txs, new_bonded_validators))
+                    .context("Cannot send message over channel")
+                {
+                    error!("{:?}", e);
+                };
             }
         }
     }
@@ -273,6 +283,10 @@ impl Mempool {
             .new_vote_for_proposal(validator, &car_proposal)
             .is_some()
         {
+            if self.genesis && self.is_genesis_leader {
+                debug!("Genesis Cut");
+                self.time_to_cut().await;
+            }
             debug!("{} Vote from {}", self.storage.id, validator)
         } else {
             error!("{} unexpected Vote from {}", self.storage.id, validator)
@@ -364,7 +378,7 @@ impl Mempool {
         debug!("Got new tx {}", tx.hash());
         self.metrics.add_api_tx("blob".to_string());
         self.storage.add_new_tx(tx.clone());
-        if self.storage.genesis() {
+        if self.storage.genesis() && self.storage.pending_txs.len() >= 2 {
             // Genesis create and broadcast a new Car proposal
             self.try_car_proposal(None);
         }

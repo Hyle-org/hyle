@@ -4,12 +4,11 @@ mod blocks;
 
 use crate::{
     bus::{bus_client, command_response::Query, BusMessage, SharedMessageBus},
-    consensus::ConsensusEvent,
     handle_messages,
-    mempool::{CutWithTxs, MempoolEvent},
+    mempool::MempoolEvent,
     model::{
         get_current_timestamp, Block, BlockHash, BlockHeight, Hashable, SharedRunContext,
-        ValidatorPublicKey,
+        Transaction, ValidatorPublicKey,
     },
     p2p::network::{NetMessage, OutboundMessage, PeerEvent},
     utils::{conf::SharedConf, logger::LogMe, modules::Module},
@@ -69,7 +68,6 @@ bus_client! {
 struct DABusClient {
     sender(OutboundMessage),
     sender(DataEvent),
-    receiver(ConsensusEvent),
     receiver(DataNetMessage),
     receiver(PeerEvent),
     receiver(Query<QueryBlockHeight , BlockHeight>),
@@ -94,7 +92,6 @@ pub struct DataAvailability {
     bus: DABusClient,
     pub blocks: Blocks,
 
-    pending_cuts: Vec<CutWithTxs>,
     buffered_blocks: BTreeSet<Block>,
     self_pubkey: ValidatorPublicKey,
     asked_last_block: bool,
@@ -132,7 +129,6 @@ impl Module for DataAvailability {
             config: ctx.common.config.clone(),
             bus,
             blocks: Blocks::new(&db)?,
-            pending_cuts: Vec::new(),
             buffered_blocks,
             self_pubkey,
             asked_last_block: false,
@@ -159,13 +155,11 @@ impl DataAvailability {
             on_bus self.bus,
             listen<MempoolEvent> cmd => {
                 match cmd {
-                    MempoolEvent::NewCut(cut) => {
-                        self.handle_new_cut_event(cut).await;
+                    MempoolEvent::NewCut(_) => {}
+                    MempoolEvent::CommitBlock(txs, new_bonded_validators) => {
+                        self.handle_commit_block_event(txs, new_bonded_validators).await;
                     }
                 }
-            }
-            listen<ConsensusEvent> cmd => {
-                self.handle_consensus_event(cmd).await;
             }
 
             listen<DataNetMessage> msg => {
@@ -284,53 +278,29 @@ impl DataAvailability {
         Ok(())
     }
 
-    async fn handle_new_cut_event(&mut self, cut: CutWithTxs) {
-        if let Some(last_cut) = self.pending_cuts.last() {
-            if last_cut == &cut {
-                return;
-            }
-        }
-        debug!("Received a new Cut");
-        self.pending_cuts.push(cut);
-    }
+    async fn handle_commit_block_event(
+        &mut self,
+        txs: Vec<Transaction>,
+        new_bonded_validators: Vec<ValidatorPublicKey>,
+    ) {
+        info!("🔒  Cut committed");
+        let last_block = self.blocks.last();
+        let parent_hash = last_block
+            .as_ref()
+            .map(|b| b.hash())
+            .unwrap_or(BlockHash::new(
+                "46696174206c757820657420666163746120657374206c7578",
+            ));
+        let next_height = last_block.map(|b| b.height.0 + 1).unwrap_or(0);
 
-    async fn handle_consensus_event(&mut self, event: ConsensusEvent) {
-        match event {
-            ConsensusEvent::CommitCut {
-                cut,
-                new_bonded_validators,
-                ..
-            } => {
-                let txs = if let Some(pos) = self
-                    .pending_cuts
-                    .iter()
-                    .position(|pending| pending.tips == cut)
-                {
-                    self.pending_cuts.remove(pos).txs
-                } else {
-                    vec![]
-                };
-                info!("🔒  Cut committed");
-
-                let last_block = self.blocks.last();
-                let parent_hash = last_block
-                    .as_ref()
-                    .map(|b| b.hash())
-                    .unwrap_or(BlockHash::new(
-                        "46696174206c757820657420666163746120657374206c7578",
-                    ));
-                let next_height = last_block.map(|b| b.height.0 + 1).unwrap_or(0);
-
-                self.handle_block(Block {
-                    parent_hash,
-                    height: BlockHeight(next_height),
-                    timestamp: get_current_timestamp(),
-                    new_bonded_validators,
-                    txs,
-                })
-                .await;
-            }
-        }
+        self.handle_block(Block {
+            parent_hash,
+            height: BlockHeight(next_height),
+            timestamp: get_current_timestamp(),
+            new_bonded_validators,
+            txs,
+        })
+        .await;
     }
 
     async fn handle_block(&mut self, block: Block) {

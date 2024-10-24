@@ -27,18 +27,7 @@ pub enum ProposalVerdict {
 
 pub type Cut = BTreeMap<ValidatorPublicKey, usize>;
 
-#[derive(Debug, Default, Clone, Deserialize, Serialize, Encode, Decode, PartialEq, Eq)]
-pub struct CutWithTxs {
-    pub tips: Cut,
-    pub txs: Vec<Transaction>,
-}
-
-fn prepare_cut_with_txs(
-    cut: &mut Cut,
-    validator: &ValidatorPublicKey,
-    lane: &mut Lane,
-    txs: &mut HashSet<Transaction>,
-) {
+fn prepare_cut(cut: &mut Cut, validator: &ValidatorPublicKey, lane: &mut Lane) {
     if let Some(tip) = lane.cars.last() {
         if !tip.used_in_cut {
             cut.insert(validator.clone(), tip.id);
@@ -49,7 +38,6 @@ fn prepare_cut_with_txs(
         .filter(|car| !car.used_in_cut)
         .for_each(|car| {
             car.used_in_cut = true;
-            txs.extend(car.txs.iter().cloned())
         });
 }
 
@@ -92,19 +80,15 @@ impl InMemoryStorage {
             .map(|car| car.poa.iter().cloned().collect())
     }
 
-    pub fn try_new_cut(&mut self, nb_validators: usize) -> Option<CutWithTxs> {
+    pub fn try_new_cut(&mut self, nb_validators: usize) -> Option<Cut> {
         if let Some(car) = self.lane.current() {
             if car.poa.len() > nb_validators / 3 {
-                let mut txs = HashSet::new();
                 let mut cut = BTreeMap::new();
-                prepare_cut_with_txs(&mut cut, &self.id, &mut self.lane, &mut txs);
+                prepare_cut(&mut cut, &self.id, &mut self.lane);
                 for (validator, lane) in self.other_lanes.iter_mut() {
-                    prepare_cut_with_txs(&mut cut, validator, lane, &mut txs);
+                    prepare_cut(&mut cut, validator, lane);
                 }
-                return Some(CutWithTxs {
-                    tips: cut,
-                    txs: txs.into_iter().collect(),
-                });
+                return Some(cut);
             }
         }
         None
@@ -374,19 +358,24 @@ impl InMemoryStorage {
         })
     }
 
-    fn collect_old_used_cars(cars: &mut Vec<Car>, tip: usize) {
-        cars.retain_mut(|car| car.id >= tip);
+    fn collect_old_used_cars(cars: &mut Vec<Car>, tip: usize, txs: &mut HashSet<Transaction>) {
+        cars.retain_mut(|car| {
+            txs.extend(std::mem::take(&mut car.txs));
+            car.id >= tip
+        });
     }
 
-    pub fn update_lanes_after_commit(&mut self, lanes: Cut) {
+    pub fn update_lanes_after_commit(&mut self, lanes: Cut) -> Vec<Transaction> {
+        let mut txs = HashSet::new();
         if let Some(tip) = lanes.get(&self.id) {
-            Self::collect_old_used_cars(&mut self.lane.cars, *tip);
+            Self::collect_old_used_cars(&mut self.lane.cars, *tip, &mut txs);
         }
         for (validator, lane) in self.other_lanes.iter_mut() {
             if let Some(tip) = lanes.get(validator) {
-                Self::collect_old_used_cars(&mut lane.cars, *tip);
+                Self::collect_old_used_cars(&mut lane.cars, *tip, &mut txs);
             }
         }
+        txs.drain().collect()
     }
 }
 
@@ -723,7 +712,7 @@ mod tests {
         let cut = store.try_new_cut(2);
         assert!(cut.is_some());
 
-        store.update_lanes_after_commit(cut.unwrap().tips);
+        store.update_lanes_after_commit(cut.unwrap());
 
         // should contain only the tip on all the lanes
         assert_eq!(store.lane.size(), 1);

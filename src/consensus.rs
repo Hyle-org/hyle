@@ -17,7 +17,7 @@ use tracing::{debug, info, warn};
 use crate::{
     bus::{bus_client, BusMessage, SharedMessageBus},
     handle_messages,
-    mempool::{Cut, CutWithTxs, MempoolEvent},
+    mempool::{Cut, MempoolEvent},
     model::{Hashable, ValidatorPublicKey},
     p2p::{
         network::{OutboundMessage, PeerEvent, Signature, Signed, SignedWithKey},
@@ -1183,7 +1183,8 @@ impl Consensus {
 
     async fn handle_mempool_event(&mut self, msg: MempoolEvent) -> Result<()> {
         match msg {
-            MempoolEvent::NewCut(CutWithTxs { tips: cut, .. }) => {
+            MempoolEvent::CommitBlock(..) => Ok(()),
+            MempoolEvent::NewCut(cut) => {
                 if let Some(last_cut) = self.pending_cuts.last() {
                     if last_cut == &cut {
                         return Ok(());
