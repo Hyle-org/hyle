@@ -11,6 +11,7 @@ use std::fmt;
 pub struct Hello {
     pub version: u16,
     pub validator_pubkey: ValidatorPublicKey,
+    pub name: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -43,7 +44,10 @@ impl OutboundMessage {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub enum PeerEvent {
-    NewPeer { pubkey: ValidatorPublicKey },
+    NewPeer {
+        name: String,
+        pubkey: ValidatorPublicKey,
+    },
 }
 
 impl BusMessage for PeerEvent {}

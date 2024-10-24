@@ -28,23 +28,22 @@ impl Module for Consensus {
         let bus = ConsensusBusClient::new_from_bus(ctx.common.bus.new_handle()).await;
 
         // FIXME a bit hacky for now
-        if store.bft_round_state.leader_pubkey == ValidatorPublicKey::default() {
-            store.bft_round_state.leader_index = 0;
-            //store.bft_round_state.leader_id = "node-1".to_string(); FIXME
-            if ctx.common.config.id == "node-1" {
-                store.is_next_leader = true;
-            }
+        if store.bft_round_state.round_leader == ValidatorPublicKey::default()
+            && ctx.common.config.id == "node-1"
+        {
+            store.bft_round_state.round_leader = ctx.node.crypto.validator_pubkey().clone();
         }
 
-        Ok(Consensus {
+        let mut consensus = Consensus {
             metrics,
             bus,
-            genesis_pubkeys: vec![ctx.node.crypto.validator_pubkey().clone()],
             file: Some(file),
             store,
             config: ctx.common.config.clone(),
             crypto: ctx.node.crypto.clone(),
-        })
+        };
+        consensus.add_genesis_validator(ctx.node.crypto.validator_pubkey().clone())?;
+        Ok(consensus)
     }
 
     fn run(&mut self) -> impl futures::Future<Output = Result<()>> + Send {

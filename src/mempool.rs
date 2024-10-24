@@ -161,7 +161,7 @@ impl Mempool {
 
     fn handle_peer_event(&mut self, event: PeerEvent) {
         match event {
-            PeerEvent::NewPeer { pubkey } => {
+            PeerEvent::NewPeer { pubkey, .. } => {
                 if self.genesis && self.is_genesis_leader {
                     let my_pubkey = self.crypto.validator_pubkey().clone();
                     if !self.validators.contains(&my_pubkey) {
