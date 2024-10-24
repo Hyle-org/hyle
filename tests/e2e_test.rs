@@ -196,7 +196,8 @@ async fn verify_indexer(client: &ApiHttpClient) -> Result<()> {
 }
 
 fn client_with_retry(url: &String) -> ApiHttpClient {
-    let retry_policy = ExponentialBackoff::builder().build_with_max_retries(10);
+    let retry_policy =
+        ExponentialBackoff::builder().build_with_total_retry_duration(Duration::from_secs(15));
     let client = ClientBuilder::new(Client::new())
         .with(RetryTransientMiddleware::new_with_policy(retry_policy))
         .build();
