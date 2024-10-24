@@ -7,7 +7,7 @@ use crate::{
     handle_messages,
     model::{
         BlobTransaction, BlobsHash, Block, BlockHeight, ContractName, Hashable, ProofTransaction,
-        RegisterContractTransaction, SharedRunContext, Transaction,
+        RegisterContractTransaction, SharedRunContext, Transaction, TransactionData,
     },
     utils::{conf::SharedConf, logger::LogMe, modules::Module},
 };
@@ -111,11 +111,19 @@ impl NodeState {
         Ok(())
     }
 
-    fn handle_new_block(&mut self, block: Block) -> Result<(), Error> {
+    fn handle_new_block(&mut self, mut block: Block) -> Result<(), Error> {
         self.clear_timeouts(&block.height);
         self.current_height = block.height;
         let txs_count = block.txs.len();
         let block_hash = block.hash();
+
+        block.txs.sort_by(
+            |tx1, tx2| match (&tx1.transaction_data, &tx2.transaction_data) {
+                (TransactionData::RegisterContract(_), _) => std::cmp::Ordering::Greater,
+                (_, TransactionData::RegisterContract(_)) => std::cmp::Ordering::Less,
+                (_, _) => std::cmp::Ordering::Equal,
+            },
+        );
 
         for tx in block.txs {
             let tx_hash = tx.hash();
