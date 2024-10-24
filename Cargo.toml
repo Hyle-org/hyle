@@ -6,7 +6,7 @@ default-run = "node"
 
 [dependencies]
 hyle-contract-sdk = { path = "./contract-sdk"}
-config = "0.14.0"
+config = "0.14.1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["json"] }
 tokio = { version = "1.41.0", features = ["full", "tracing"] }
