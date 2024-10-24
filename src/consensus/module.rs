@@ -42,7 +42,7 @@ impl Module for Consensus {
             config: ctx.common.config.clone(),
             crypto: ctx.node.crypto.clone(),
         };
-        consensus.add_genesis_validator(ctx.node.crypto.validator_pubkey().clone())?;
+        consensus.add_trusted_validator(ctx.node.crypto.validator_pubkey().clone())?;
         Ok(consensus)
     }
 

@@ -187,10 +187,10 @@ struct ConsensusBusClient {
 }
 
 impl Consensus {
-    /// On genesis, create a consensus proposal with all validators connected to node-1
-    /// will grand them a gree stake to start
-    /// this genesis logic might change later
-    pub fn add_genesis_validator(&mut self, pubkey: ValidatorPublicKey) -> Result<()> {
+    /// Add a validator with the default stake to our consensus.
+    /// This is trusted because it's out of the usual consensus process,
+    /// either at genesis or when fast-forwarding.
+    pub fn add_trusted_validator(&mut self, pubkey: ValidatorPublicKey) -> Result<()> {
         self.bft_round_state.validators.push(pubkey.clone());
         self.bft_round_state.validators.sort();
         self.bft_round_state
@@ -199,23 +199,20 @@ impl Consensus {
                 pubkey: pubkey.clone(),
                 stake: Stake { amount: 100 },
             })
-            .context("cannot add genesis staker")?;
+            .context("cannot add trusted staker")?;
         self.bft_round_state
             .staking
             .bond(pubkey.clone())
-            .context("cannot bond genesis validator")?;
-        info!("🎉 Genesis validator added: {}", pubkey);
+            .context("cannot bond trusted validator")?;
+        info!("🎉 Trusted validator added: {}", pubkey);
         Ok(())
     }
 
     // Reset bft_round_state for the next round of consensus.
     fn finish_round(&mut self, committed_proposal: Option<ConsensusProposal>) -> Result<(), Error> {
         let round_validators = self.bft_round_state.validators.clone();
-        let slot = self.bft_round_state.slot;
         let view = self.bft_round_state.view;
         let staking = std::mem::take(&mut self.bft_round_state.staking);
-
-        info!("🔒 Slot {}, view {} finished", slot, view);
 
         let leader_index = self
             .bft_round_state
@@ -243,10 +240,6 @@ impl Consensus {
         if let Some(committed_proposal) = committed_proposal {
             self.bft_round_state.slot = committed_proposal.slot + 1;
             self.bft_round_state.view = 0;
-            info!(
-                "Adding {} new validators",
-                committed_proposal.new_validators_to_bond.len()
-            );
             // Any new validators are added to the consensus and removed from candidates.
             self.bft_round_state.validators.append(
                 &mut committed_proposal
@@ -263,7 +256,16 @@ impl Consensus {
             });
         } else {
             // just bump the view.
-            self.bft_round_state.view += 1;
+            self.bft_round_state.view = view + 1;
+        }
+
+        info!(
+            "🥋 Ready for slot {}, view {}",
+            self.bft_round_state.slot, self.bft_round_state.view
+        );
+
+        if self.is_round_leader() {
+            info!("👑 I'm the new leader! 👑")
         }
 
         Ok(())
@@ -484,7 +486,7 @@ impl Consensus {
         // Verify enough validators signed
         if voting_power < 2 * f + 1 {
             self.metrics.confirm_error("prepare_qc_incomplete");
-            bail!("Prepare Quorum Certificate does not contain enough voting power")
+            bail!("Quorum Certificate does not contain enough voting power")
         }
         Ok(())
     }
@@ -557,12 +559,17 @@ impl Consensus {
         }
         // So one option here is that we missed a slot.
         // We should block and sync, but for now we'll just "trust the QC" and continue.
-        warn!("Received Prepare message with an unknown ticket. Trying to fast-forward for now");
+        warn!("⏩ Received Prepare message with an unknown ticket. Fast-forwarding for now.");
         // Try to commit again.
         // We _do not_ check the validity of the QC, because self.verify_quorum_certificate
         // assumes the current round, and we cannot trust the list of validators anyways.
-        self.commit_proposal(previous_proposal, commit_qc.1, previous_validators)
-            .is_ok()
+        // TODO: fix this, we currently just assume all validators are worth 100 tokens
+        self.bft_round_state.staking = Staking::default();
+        self.bft_round_state.validators = vec![];
+        for val in previous_validators {
+            let _ = self.add_trusted_validator(val);
+        }
+        self.commit_proposal(previous_proposal, commit_qc.1).is_ok()
     }
 
     /// Message received by follower after start_round
@@ -839,11 +846,7 @@ impl Consensus {
 
             // Process the same locally.
             let consensus_proposal = std::mem::take(&mut self.bft_round_state.consensus_proposal);
-            self.commit_proposal(
-                consensus_proposal,
-                commit_quorum_certificate,
-                self.bft_round_state.validators.clone(),
-            )?;
+            self.commit_proposal(consensus_proposal, commit_quorum_certificate)?;
         }
         // TODO(?): Update behaviour when having more ?
         Ok(())
@@ -860,11 +863,7 @@ impl Consensus {
         )?;
 
         let consensus_proposal = std::mem::take(&mut self.bft_round_state.consensus_proposal);
-        self.commit_proposal(
-            consensus_proposal,
-            commit_quorum_certificate,
-            self.bft_round_state.validators.clone(),
-        )
+        self.commit_proposal(consensus_proposal, commit_quorum_certificate)
     }
 
     /// This assumes we've checked the CQC
@@ -872,8 +871,6 @@ impl Consensus {
         &mut self,
         consensus_proposal: ConsensusProposal,
         commit_quorum_certificate: QuorumCertificate,
-        // This is added to make code simpler but we should check if we actually use it.
-        validators: Vec<ValidatorPublicKey>,
     ) -> Result<()> {
         self.store.committed_proposals.insert(
             consensus_proposal.slot,
@@ -886,7 +883,7 @@ impl Consensus {
             .bus
             .send(ConsensusEvent::CommitCut {
                 // TODO: investigate if those are necessary here
-                validators,
+                validators: self.bft_round_state.validators.clone(),
                 cut: consensus_proposal.cut.clone(),
                 new_bonded_validators: consensus_proposal
                     .new_validators_to_bond
@@ -1073,7 +1070,7 @@ impl Consensus {
                     self.bft_round_state.round_leader = pubkey.clone();
                     info!("👑 Setting node-1({}) as leader for genesis", &pubkey);
                 }
-                self.add_genesis_validator(pubkey)?;
+                self.add_trusted_validator(pubkey)?;
                 // TODO: rely on config to know how many validators we expect.
                 if self.bft_round_state.validators.len() == 2 && self.is_round_leader() {
                     // Start first slot
@@ -1208,16 +1205,16 @@ mod test {
 
             _ = node1
                 .consensus
-                .add_genesis_validator(crypto.validator_pubkey().clone());
+                .add_trusted_validator(crypto.validator_pubkey().clone());
             _ = node1
                 .consensus
-                .add_genesis_validator(c_other.validator_pubkey().clone());
+                .add_trusted_validator(c_other.validator_pubkey().clone());
             _ = node2
                 .consensus
-                .add_genesis_validator(crypto.validator_pubkey().clone());
+                .add_trusted_validator(crypto.validator_pubkey().clone());
             _ = node2
                 .consensus
-                .add_genesis_validator(c_other.validator_pubkey().clone());
+                .add_trusted_validator(c_other.validator_pubkey().clone());
 
             node1.consensus.bft_round_state.round_leader = crypto.validator_pubkey().clone();
             node2.consensus.bft_round_state.round_leader = crypto.validator_pubkey().clone();
