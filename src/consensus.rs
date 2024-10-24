@@ -43,7 +43,6 @@ pub mod utils;
     Debug, Serialize, Deserialize, Clone, Encode, Decode, PartialEq, Eq, Hash, IntoStaticStr,
 )]
 pub enum ConsensusNetMessage {
-    StartNewSlot,
     Prepare(ConsensusProposal),
     PrepareVote(ConsensusProposalHash),
     Confirm(ConsensusProposalHash, QuorumCertificate),
@@ -116,7 +115,7 @@ pub type View = u64;
 #[derive(Debug, Clone, Default, Serialize, Deserialize, Encode, Decode, PartialEq, Eq, Hash)]
 pub struct ConsensusProposal {
     slot: Slot,
-    view: u64,
+    view: View,
     next_leader: u64,
     cut: Cut,
     previous_consensus_proposal_hash: ConsensusProposalHash,
@@ -570,8 +569,6 @@ impl Consensus {
         }
 
         match &msg.msg {
-            // TODO: do we really get a net message for StartNewSlot ?
-            ConsensusNetMessage::StartNewSlot => self.start_new_slot(),
             ConsensusNetMessage::Prepare(consensus_proposal) => {
                 self.on_prepare(msg, consensus_proposal)
             }
@@ -681,10 +678,10 @@ impl Consensus {
                 }
 
                 self.verify_commit_qc(
-                    &consensus_proposal.previous_consensus_proposal_hash, 
-                    &consensus_proposal.previous_commit_quorum_certificate
+                    &consensus_proposal.previous_consensus_proposal_hash,
+                    &consensus_proposal.previous_commit_quorum_certificate,
                 )?;
-                        // Buffers the previous *Commit* Quorum Cerficiate
+                // Buffers the previous *Commit* Quorum Cerficiate
                 self.store
                     .bft_round_state
                     .commit_quorum_certificates
@@ -727,7 +724,11 @@ impl Consensus {
         Ok(())
     }
 
-    fn verify_commit_qc(&self, consensus_proposal_hash: &ConsensusProposalHash, cert: &QuorumCertificate) -> Result<()> {
+    fn verify_commit_qc(
+        &self,
+        consensus_proposal_hash: &ConsensusProposalHash,
+        cert: &QuorumCertificate,
+    ) -> Result<()> {
         let previous_commit_quorum_certificate_with_message = SignedWithKey {
             msg: ConsensusNetMessage::ConfirmAck(consensus_proposal_hash.clone()),
             signature: cert.signature.clone(),
@@ -837,7 +838,8 @@ impl Consensus {
         Ok(())
     }
 
-    fn verify_prepare_qc(&self, 
+    fn verify_prepare_qc(
+        &self,
         consensus_proposal_hash: &ConsensusProposalHash,
         prepare_quorum_certificate: &QuorumCertificate,
     ) -> Result<()> {
@@ -855,7 +857,7 @@ impl Consensus {
             }
             Ok(_) => Ok(()),
             Err(err) => bail!("Prepare Quorum Certificate verification failed: {}", err),
-        }                    
+        }
     }
 
     /// Message received by follower.
@@ -865,7 +867,7 @@ impl Consensus {
         prepare_quorum_certificate: &QuorumCertificate,
     ) -> Result<()> {
         self.verify_prepare_qc(consensus_proposal_hash, prepare_quorum_certificate)?;
-        
+
         let voting_power =
             self.compute_voting_power(prepare_quorum_certificate.validators.as_slice());
 
@@ -886,15 +888,10 @@ impl Consensus {
             bail!("Prepare Quorum Certificate does not contain enough voting power")
         }
 
-        self.verify_quorum_and_catchup(
-            consensus_proposal_hash,
-            prepare_quorum_certificate,
-        )?;
+        self.verify_quorum_and_catchup(consensus_proposal_hash, prepare_quorum_certificate)?;
 
         // Buffers the *Prepare* Quorum Cerficiate
-        self.bft_round_state.prepare_quorum_certificate =
-            prepare_quorum_certificate.clone();
-        
+        self.bft_round_state.prepare_quorum_certificate = prepare_quorum_certificate.clone();
 
         // Responds ConfirmAck to leader
         if self.is_part_of_consensus(self.crypto.validator_pubkey()) {
@@ -1023,9 +1020,8 @@ impl Consensus {
         consensus_proposal_hash: &ConsensusProposalHash,
         commit_quorum_certificate: &QuorumCertificate,
     ) -> Result<()> {
-
         self.verify_commit_qc(consensus_proposal_hash, commit_quorum_certificate)?;
-        
+
         // Verify enough validators signed
         let voting_power =
             self.compute_voting_power(commit_quorum_certificate.validators.as_slice());

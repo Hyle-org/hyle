@@ -1,5 +1,7 @@
 use assertables::assert_ok;
-use std::{fs::File, io::Read};
+use reqwest_middleware::ClientBuilder;
+use reqwest_retry::{policies::ExponentialBackoff, RetryTransientMiddleware};
+use std::{fs::File, io::Read, time::Duration};
 use testcontainers_modules::{postgres::Postgres, testcontainers::runners::AsyncRunner};
 
 use hyle::{
@@ -13,7 +15,7 @@ use hyle::{
 };
 use hyle_contract_sdk::{Identity, StateDigest, TxHash};
 use reqwest::{Client, Url};
-use test_helpers::{wait_height, ConfMaker};
+use test_helpers::ConfMaker;
 
 mod test_helpers;
 
@@ -193,6 +195,19 @@ async fn verify_indexer(client: &ApiHttpClient) -> Result<()> {
     Ok(())
 }
 
+fn client_with_retry(url: &String) -> ApiHttpClient {
+    let retry_policy = ExponentialBackoff::builder().build_with_max_retries(10);
+    let client = ClientBuilder::new(Client::new())
+        .with(RetryTransientMiddleware::new_with_policy(retry_policy))
+        .build();
+
+    let client_with_retry = ApiHttpClient {
+        url: Url::parse(format!("http://{}", url).as_ref()).unwrap(),
+        reqwest_client: client,
+    };
+    client_with_retry
+}
+
 #[tokio::test]
 async fn e2e() -> Result<()> {
     tracing_subscriber::fmt::init();
@@ -210,25 +225,20 @@ async fn e2e() -> Result<()> {
     let node1 = test_helpers::TestProcess::new("node", conf_maker.build()).start();
 
     // Request something on node1 to be sure it's alive and working
-    let client_node1 = ApiHttpClient {
-        url: Url::parse(&format!("http://{}", &node1.conf.rest)).unwrap(),
-        reqwest_client: Client::new(),
-    };
-
-    // Wait for node1 to properly spin up
-    wait_height(&client_node1, 0).await?;
+    let client_node1 = ApiHttpClient::from(&node1.conf.rest).unwrap();
+    let client_node1_with_retry = client_with_retry(&node1.conf.rest);
 
     let mut node2_conf = conf_maker.build();
     node2_conf.peers = vec![node1.conf.host.clone()];
     let node2 = test_helpers::TestProcess::new("node", node2_conf).start();
 
-    // Wait for node2 to properly spin up
-    wait_height(&client_node1, 5).await?;
-
     // Start indexer
     let mut indexer_conf = conf_maker.build();
     indexer_conf.da_address = node2.conf.da_address.clone();
     let indexer = test_helpers::TestProcess::new("indexer", indexer_conf).start();
+
+    // Wait for the api to be available
+    _ = client_node1_with_retry.get_block_height().await;
 
     // Using a fake proofs
     register_test_contracts(&client_node1).await?;
@@ -237,16 +247,13 @@ async fn e2e() -> Result<()> {
     register_contracts(&client_node1).await?;
     send_blobs_and_proofs(&client_node1).await?;
 
-    // Wait for some slots to be finished
-    wait_height(&client_node1, 50).await?;
-
-    verify_test_contract_state(&client_node1).await?;
-    verify_contract_state(&client_node1).await?;
+    verify_test_contract_state(&client_node1_with_retry).await?;
+    verify_contract_state(&client_node1_with_retry).await?;
 
     // Check that the indexer did index things
     let client_indexer = ApiHttpClient {
         url: Url::parse(&format!("http://{}", &indexer.conf.rest)).unwrap(),
-        reqwest_client: Client::new(),
+        reqwest_client: Client::new().into(),
     };
 
     verify_indexer(&client_indexer).await?;
