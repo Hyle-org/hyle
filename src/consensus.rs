@@ -87,34 +87,6 @@ pub struct ValidatorCandidacy {
     peer_address: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode, PartialEq, Eq, Hash)]
-pub struct NewValidatorCandidate {
-    pubkey: ValidatorPublicKey, // TODO: possible optim: the pubkey is already present in the msg,
-    msg: SignedWithKey<ConsensusNetMessage>,
-}
-
-pub type Slot = u64;
-pub type View = u64;
-
-#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, PartialEq, Eq, Hash, Default)]
-pub struct ConsensusProposalHash(Vec<u8>);
-#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, PartialEq, Eq, Hash, Default)]
-pub struct QuorumCertificateHash(Vec<u8>);
-
-#[derive(Serialize, Deserialize, Encode, Decode, Default, Debug, Clone, PartialEq, Eq, Hash)]
-pub struct QuorumCertificate {
-    signature: Signature,
-    validators: Vec<ValidatorPublicKey>,
-}
-
-#[derive(Debug, Clone, Default, Serialize, Deserialize, Encode, Decode, PartialEq, Eq, Hash)]
-pub struct ConsensusProposal {
-    slot: Slot,
-    view: u64,
-    cut: Cut,
-    new_validators_to_bond: Vec<NewValidatorCandidate>,
-}
-
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, PartialEq, Eq, Hash)]
 pub struct CommitQuorumCertificate(ConsensusProposalHash, QuorumCertificate);
 
@@ -148,6 +120,34 @@ pub struct BFTRoundState {
     prepare_votes: HashSet<Signed<ConsensusNetMessage, ValidatorPublicKey>>,
     confirm_ack: HashSet<Signed<ConsensusNetMessage, ValidatorPublicKey>>,
     pending_ticket: Option<Ticket>,
+}
+
+#[derive(Serialize, Deserialize, Encode, Decode, Default, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct QuorumCertificate {
+    signature: Signature,
+    validators: Vec<ValidatorPublicKey>,
+}
+
+pub type Slot = u64;
+pub type View = u64;
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, Encode, Decode, PartialEq, Eq, Hash)]
+pub struct ConsensusProposal {
+    slot: Slot,
+    view: u64,
+    cut: Cut,
+    new_validators_to_bond: Vec<NewValidatorCandidate>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, PartialEq, Eq, Hash, Default)]
+pub struct ConsensusProposalHash(Vec<u8>);
+#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, PartialEq, Eq, Hash, Default)]
+pub struct QuorumCertificateHash(Vec<u8>);
+
+#[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode, PartialEq, Eq, Hash)]
+pub struct NewValidatorCandidate {
+    pubkey: ValidatorPublicKey, // TODO: possible optim: the pubkey is already present in the msg,
+    msg: SignedWithKey<ConsensusNetMessage>,
 }
 
 #[derive(Encode, Decode, Default)]
@@ -204,6 +204,67 @@ impl Consensus {
             .bond(pubkey.clone())
             .context("cannot bond genesis validator")?;
         info!("🎉 Genesis validator added: {}", pubkey);
+        Ok(())
+    }
+
+    // Reset bft_round_state for the next round of consensus.
+    fn finish_round(&mut self, committed_proposal: Option<ConsensusProposal>) -> Result<(), Error> {
+        let round_validators = self.bft_round_state.validators.clone();
+        let slot = self.bft_round_state.slot;
+        let view = self.bft_round_state.view;
+        let staking = std::mem::take(&mut self.bft_round_state.staking);
+
+        info!("🔒 Slot {}, view {} finished", slot, view);
+
+        let leader_index = self
+            .bft_round_state
+            .validators
+            .iter()
+            .position(|v| v == &self.bft_round_state.round_leader)
+            .context("Leader not found in validators")?;
+
+        // Reset round state.
+        self.bft_round_state = BFTRoundState::default();
+
+        // Carry over existing validators in any case.
+        self.bft_round_state.validators = round_validators;
+        self.bft_round_state.staking = staking;
+
+        // Find out who the next leader will be.
+        self.bft_round_state.round_leader = self
+            .bft_round_state
+            .validators
+            .get((leader_index + 1) % self.bft_round_state.validators.len())
+            .context("No next leader found")?
+            .clone();
+
+        // If we finish the round via a committed proposal, update some state
+        if let Some(committed_proposal) = committed_proposal {
+            self.bft_round_state.slot = committed_proposal.slot + 1;
+            self.bft_round_state.view = 0;
+            info!(
+                "Adding {} new validators",
+                committed_proposal.new_validators_to_bond.len()
+            );
+            // Any new validators are added to the consensus and removed from candidates.
+            self.bft_round_state.validators.append(
+                &mut committed_proposal
+                    .new_validators_to_bond
+                    .iter()
+                    .map(|v| v.pubkey.clone())
+                    .collect(),
+            );
+            self.validator_candidates.retain(|v| {
+                !committed_proposal
+                    .new_validators_to_bond
+                    .iter()
+                    .any(|new_v| new_v.pubkey == v.pubkey)
+            });
+        } else {
+            // just bump the view.
+            self.bft_round_state.view += 1;
+        }
+
         Ok(())
     }
 
@@ -281,6 +342,61 @@ impl Consensus {
         {
             Ok(())
         }
+    }
+
+    fn start_round(&mut self) -> Result<(), Error> {
+        if !matches!(self.bft_round_state.step, Step::StartNewSlot) {
+            bail!(
+                "Cannot start a new slot while in step {:?}",
+                self.bft_round_state.step
+            );
+        }
+
+        if !self.is_round_leader() {
+            bail!("I'm not the leader for this slot");
+        }
+
+        let ticket = self
+            .bft_round_state
+            .pending_ticket
+            .take()
+            .ok_or(anyhow!("No ticket available for this slot"))?;
+
+        info!(
+            "🚀 Starting new slot {} with {} existing validators and {} candidates",
+            self.bft_round_state.slot,
+            self.bft_round_state.validators.len(),
+            self.validator_candidates.len()
+        );
+
+        // Creates ConsensusProposal
+        let cut = self.next_cut().unwrap_or_default();
+
+        self.bft_round_state.step = Step::PrepareVote;
+
+        // Start Consensus with following cut
+        self.bft_round_state.consensus_proposal = ConsensusProposal {
+            slot: self.bft_round_state.slot,
+            view: self.bft_round_state.view,
+            cut,
+            new_validators_to_bond: self.validator_candidates.clone(),
+        };
+
+        self.metrics.start_new_slot("consensus_proposal"); // TODO rename
+
+        // Verifies that to-be-built block is large enough (?)
+
+        // Broadcasts Prepare message to all validators
+        debug!(
+            proposal_hash = %self.bft_round_state.consensus_proposal.hash(),
+            "🌐 Slot {} started. Broadcasting Prepare message", self.bft_round_state.slot,
+        );
+        self.broadcast_net_message(ConsensusNetMessage::Prepare(
+            self.bft_round_state.consensus_proposal.clone(),
+            ticket,
+        ))?;
+
+        Ok(())
     }
 
     fn is_round_leader(&self) -> bool {
@@ -419,61 +535,6 @@ impl Consensus {
                 self.on_validator_candidacy(msg, candidacy)
             }
         }
-    }
-
-    fn start_round(&mut self) -> Result<(), Error> {
-        if !matches!(self.bft_round_state.step, Step::StartNewSlot) {
-            bail!(
-                "Cannot start a new slot while in step {:?}",
-                self.bft_round_state.step
-            );
-        }
-
-        if !self.is_round_leader() {
-            bail!("I'm not the leader for this slot");
-        }
-
-        let ticket = self
-            .bft_round_state
-            .pending_ticket
-            .take()
-            .ok_or(anyhow!("No ticket available for this slot"))?;
-
-        info!(
-            "🚀 Starting new slot {} with {} existing validators and {} candidates",
-            self.bft_round_state.slot,
-            self.bft_round_state.validators.len(),
-            self.validator_candidates.len()
-        );
-
-        // Creates ConsensusProposal
-        let cut = self.next_cut().unwrap_or_default();
-
-        self.bft_round_state.step = Step::PrepareVote;
-
-        // Start Consensus with following cut
-        self.bft_round_state.consensus_proposal = ConsensusProposal {
-            slot: self.bft_round_state.slot,
-            view: self.bft_round_state.view,
-            cut,
-            new_validators_to_bond: self.validator_candidates.clone(),
-        };
-
-        self.metrics.start_new_slot("consensus_proposal"); // TODO rename
-
-        // Verifies that to-be-built block is large enough (?)
-
-        // Broadcasts Prepare message to all validators
-        debug!(
-            proposal_hash = %self.bft_round_state.consensus_proposal.hash(),
-            "🌐 Slot {} started. Broadcasting Prepare message", self.bft_round_state.slot,
-        );
-        self.broadcast_net_message(ConsensusNetMessage::Prepare(
-            self.bft_round_state.consensus_proposal.clone(),
-            ticket,
-        ))?;
-
-        Ok(())
     }
 
     fn verify_commit_ticket(
@@ -869,67 +930,6 @@ impl Consensus {
             );
             Ok(())
         }
-    }
-
-    // Reset bft_round_state for the next round of consensus.
-    fn finish_round(&mut self, committed_proposal: Option<ConsensusProposal>) -> Result<(), Error> {
-        let round_validators = self.bft_round_state.validators.clone();
-        let slot = self.bft_round_state.slot;
-        let view = self.bft_round_state.view;
-        let staking = std::mem::take(&mut self.bft_round_state.staking);
-
-        info!("🔒 Slot {}, view {} finished", slot, view);
-
-        let leader_index = self
-            .bft_round_state
-            .validators
-            .iter()
-            .position(|v| v == &self.bft_round_state.round_leader)
-            .context("Leader not found in validators")?;
-
-        // Reset round state.
-        self.bft_round_state = BFTRoundState::default();
-
-        // Carry over existing validators in any case.
-        self.bft_round_state.validators = round_validators;
-        self.bft_round_state.staking = staking;
-
-        // Find out who the next leader will be.
-        self.bft_round_state.round_leader = self
-            .bft_round_state
-            .validators
-            .get((leader_index + 1) % self.bft_round_state.validators.len())
-            .context("No next leader found")?
-            .clone();
-
-        // If we finish the round via a committed proposal, update some state
-        if let Some(committed_proposal) = committed_proposal {
-            self.bft_round_state.slot = committed_proposal.slot + 1;
-            self.bft_round_state.view = 0;
-            info!(
-                "Adding {} new validators",
-                committed_proposal.new_validators_to_bond.len()
-            );
-            // Any new validators are added to the consensus and removed from candidates.
-            self.bft_round_state.validators.append(
-                &mut committed_proposal
-                    .new_validators_to_bond
-                    .iter()
-                    .map(|v| v.pubkey.clone())
-                    .collect(),
-            );
-            self.validator_candidates.retain(|v| {
-                !committed_proposal
-                    .new_validators_to_bond
-                    .iter()
-                    .any(|new_v| new_v.pubkey == v.pubkey)
-            });
-        } else {
-            // just bump the view.
-            self.bft_round_state.view += 1;
-        }
-
-        Ok(())
     }
 
     /// Message received by leader & follower.
