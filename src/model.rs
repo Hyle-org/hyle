@@ -4,7 +4,7 @@ use axum::Router;
 use base64::prelude::*;
 use bincode::{Decode, Encode};
 use derive_more::Display;
-use hyle_contract_sdk::{BlobIndex, Identity, StateDigest, TxHash};
+use hyle_contract_sdk::{BlobIndex, HyleOutput, Identity, StateDigest, TxHash};
 use serde::{
     de::{self, Visitor},
     Deserialize, Serialize,
@@ -89,6 +89,13 @@ pub struct BlobData(pub Vec<u8>);
 pub struct Transaction {
     pub version: u32,
     pub transaction_data: TransactionData,
+}
+
+#[derive(Debug, Serialize, Deserialize, Default, Clone, PartialEq, Eq, Encode, Decode, Hash)]
+pub struct ProcessedTransaction {
+    pub transaction: Transaction,
+    pub hyle_outputs: Option<Vec<HyleOutput>>,
+    pub success: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Encode, Decode, Hash)]
@@ -278,6 +285,30 @@ impl Hashable<BlockHash> for Block {
     }
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, Eq, PartialEq)]
+pub struct ProcessedBlock {
+    pub parent_hash: BlockHash,
+    pub height: BlockHeight,
+    pub timestamp: u64,
+    pub new_bonded_validators: Vec<ValidatorPublicKey>,
+    pub txs: Vec<ProcessedTransaction>,
+    pub timed_out_txs: Vec<TxHash>,
+}
+
+impl Hashable<BlockHash> for ProcessedBlock {
+    fn hash(&self) -> BlockHash {
+        let mut hasher = Sha3_256::new();
+        _ = write!(hasher, "{}", self.parent_hash);
+        _ = write!(hasher, "{}", self.height);
+        _ = write!(hasher, "{}", self.timestamp);
+        for tx in self.txs.iter() {
+            hasher.update(tx.hash().0);
+        }
+        _ = write!(hasher, "{:?}", self.timed_out_txs);
+        BlockHash(hex::encode(hasher.finalize()))
+    }
+}
+
 impl Hashable<TxHash> for Transaction {
     fn hash(&self) -> TxHash {
         match &self.transaction_data {
@@ -286,6 +317,11 @@ impl Hashable<TxHash> for Transaction {
             TransactionData::Proof(tx) => tx.hash(),
             TransactionData::RegisterContract(tx) => tx.hash(),
         }
+    }
+}
+impl Hashable<TxHash> for ProcessedTransaction {
+    fn hash(&self) -> TxHash {
+        self.transaction.hash()
     }
 }
 impl Hashable<TxHash> for Staker {
@@ -323,6 +359,7 @@ impl Hashable<TxHash> for ProofTransaction {
         TxHash(hex::encode(hash_bytes))
     }
 }
+
 impl Hashable<TxHash> for RegisterContractTransaction {
     fn hash(&self) -> TxHash {
         let mut hasher = Sha3_256::new();

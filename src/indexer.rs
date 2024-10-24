@@ -5,9 +5,12 @@ pub mod model;
 
 use crate::{
     bus::{bus_client, SharedMessageBus},
-    data_availability::DataEvent,
     handle_messages,
-    model::{Block, CommonRunContext, ContractName, Hashable},
+    model::{
+        BlobTransaction, BlockHash, CommonRunContext, ContractName, Hashable, ProcessedBlock,
+        TransactionData,
+    },
+    node_state::NodeStateEvent,
     utils::modules::Module,
 };
 use anyhow::{bail, Context, Error, Result};
@@ -24,7 +27,7 @@ use core::str;
 use futures::{SinkExt, StreamExt};
 use model::{TransactionStatus, TransactionType, TransactionWithBlobs, TxHashDb};
 use sqlx::types::chrono::DateTime;
-use sqlx::{postgres::PgPoolOptions, PgPool, Pool, Postgres};
+use sqlx::{postgres::PgPoolOptions, PgPool};
 use std::{collections::HashMap, sync::Arc};
 use tokio::{
     net::TcpStream,
@@ -36,7 +39,7 @@ use tracing::{debug, error, info};
 bus_client! {
 #[derive(Debug)]
 struct IndexerBusClient {
-    receiver(DataEvent),
+    receiver(NodeStateEvent),
 }
 }
 
@@ -114,8 +117,8 @@ impl Indexer {
         if self.da_stream.is_none() {
             handle_messages! {
                 on_bus self.bus,
-                listen<DataEvent> cmd => {
-                    if let Err(e) = self.handle_data_availability_event(cmd).await {
+                listen<NodeStateEvent> cmd => {
+                    if let Err(e) = self.handle_node_state_event(cmd).await {
                         error!("Error while handling data availability event: {:#}", e)
                     }
                 }
@@ -148,8 +151,8 @@ impl Indexer {
                 cmd = self.da_stream.as_mut().expect("da_stream must exist").next() => {
                     if let Some(Ok(cmd)) = cmd {
                         let bytes = cmd;
-                        let block: Block = bincode::decode_from_slice(&bytes, bincode::config::standard())?.0;
-                        if let Err(e) = self.handle_block(block).await {
+                        let block: ProcessedBlock = bincode::decode_from_slice(&bytes, bincode::config::standard())?.0;
+                        if let Err(e) = self.handle_processsed_block(block).await {
                             error!("Error while handling block: {:#}", e);
                         }
                         SinkExt::<bytes::Bytes>::send(self.da_stream.as_mut().expect("da_stream must exist"), "ok".into()).await?;
@@ -281,13 +284,13 @@ impl Indexer {
             .await;
     }
 
-    async fn handle_data_availability_event(&mut self, event: DataEvent) -> Result<()> {
+    async fn handle_node_state_event(&mut self, event: NodeStateEvent) -> Result<()> {
         match event {
-            DataEvent::NewBlock(block) => self.handle_block(block).await,
+            NodeStateEvent::NewProcessedBlock(block) => self.handle_processsed_block(block).await,
         }
     }
 
-    async fn handle_block(&mut self, block: Block) -> Result<(), Error> {
+    async fn handle_processsed_block(&mut self, block: ProcessedBlock) -> Result<(), Error> {
         info!("new block {} with {} txs", block.height, block.txs.len());
 
         let mut transaction = self.state.db.begin().await?;
@@ -317,54 +320,42 @@ impl Indexer {
         .execute(&mut *transaction)
         .await?;
 
-        for (tx_index, tx) in block.txs.iter().enumerate() {
-            let tx_hash: &TxHashDb = &tx.hash().into();
+        for (tx_index, processed_tx) in block.txs.iter().enumerate() {
+            let tx_hash: &TxHashDb = &processed_tx.hash().into();
             debug!("tx hash {:?}", tx_hash);
 
-            let version = i32::try_from(tx.version)
+            let version = i32::try_from(processed_tx.transaction.version)
                 .map_err(|_| anyhow::anyhow!("Tx version is too large to fit into an i32"))?;
             let tx_index = i32::try_from(tx_index)
                 .map_err(|_| anyhow::anyhow!("Tx index is too large to fit into an i64"))?;
 
-            match tx.transaction_data {
-                crate::model::TransactionData::Blob(ref tx) => {
-                    // Send the transaction to all websocket subscribers
-                    for (contrat_name, senders) in self.subscribers.iter() {
-                        if tx
-                            .blobs
-                            .iter()
-                            .any(|blob| &blob.contract_name == contrat_name)
-                        {
-                            let enriched_tx = TransactionWithBlobs {
-                                tx_hash: tx_hash.clone(),
-                                block_hash: block_hash.clone(),
-                                tx_index,
-                                version,
-                                transaction_type: TransactionType::BlobTransaction,
-                                transaction_status: TransactionStatus::Sequenced,
-                                identity: tx.identity.0.clone(),
-                                blobs: tx.blobs.clone(),
-                            };
-                            senders.iter().for_each(|sender| {
-                                let _ = sender.send(enriched_tx.clone());
-                            });
-                        }
-                    }
-                    // Insert the transaction into the transactions table
-                    let tx_type = TransactionType::BlobTransaction;
-                    let tx_status = TransactionStatus::Sequenced;
-                    sqlx::query(
-                        "INSERT INTO transactions (tx_hash, block_hash, tx_index, version, transaction_type, transaction_status)
-                        VALUES ($1, $2, $3, $4, $5, $6)")
-                    .bind(tx_hash)
-                    .bind(block_hash)
-                    .bind(tx_index)
-                    .bind(version)
-                    .bind(tx_type)
-                    .bind(tx_status)
-                    .execute(&mut *transaction)
-                    .await?;
+            // Insert the transaction into the transactions table
+            let tx_type = TransactionType::get_type_from_transaction(&processed_tx.transaction);
+            // Determine the transaction status based on success and type
+            let tx_status = match (&processed_tx.success, &tx_type) {
+                (true, TransactionType::BlobTransaction) => TransactionStatus::Sequenced,
+                (true, _) => TransactionStatus::Success,
+                (false, _) => TransactionStatus::Failure,
+            };
+            sqlx::query("INSERT INTO transactions (tx_hash, block_hash, tx_index, version, transaction_type, transaction_status)
+                            VALUES ($1, $2, $3, $4, $5, $6)")
+                .bind(tx_hash)
+                .bind(block_hash)
+                .bind(tx_index)
+                .bind(version)
+                .bind(tx_type)
+                .bind(tx_status)
+                .execute(&mut *transaction)
+                .await?;
 
+            match processed_tx.transaction.transaction_data {
+                TransactionData::Blob(ref tx) => {
+                    // Send the transaction to all websocket subscribers
+                    self.send_blob_transaction_to_websocket_subscribers(
+                        tx, tx_hash, block_hash, &tx_index, &version,
+                    );
+
+                    // Insert all blobs into the blobs table
                     for (blob_index, blob) in tx.blobs.iter().enumerate() {
                         let blob_index = i32::try_from(blob_index).map_err(|_| {
                             anyhow::anyhow!("Blob index is too large to fit into an i32")
@@ -373,34 +364,31 @@ impl Indexer {
                         let contract_name = &blob.contract_name.0;
                         let blob = &blob.data.0;
                         sqlx::query(
-                            "INSERT INTO blobs (tx_hash, blob_index, identity, contract_name, data)
-                             VALUES ($1, $2, $3, $4, $5)",
+                            "INSERT INTO blobs (tx_hash, blob_index, identity, contract_name, data, verified)
+                             VALUES ($1, $2, $3, $4, $5, $6)",
                         )
                         .bind(tx_hash)
                         .bind(blob_index)
                         .bind(identity)
                         .bind(contract_name)
                         .bind(blob)
+                        .bind(false)
                         .execute(&mut *transaction)
                         .await?;
                     }
                 }
-                crate::model::TransactionData::Proof(ref tx) => {
-                    // Insert the transaction into the transactions table
-                    let tx_type = TransactionType::ProofTransaction;
-                    let tx_status = TransactionStatus::Success;
-                    sqlx::query(
-                        "INSERT INTO transactions (tx_hash, block_hash, tx_index, version, transaction_type, transaction_status)
-                        VALUES ($1, $2, $3, $4, $5, $6)")
-                    .bind(tx_hash)
-                    .bind(block_hash)
-                    .bind(tx_index)
-                    .bind(version)
-                    .bind(tx_type)
-                    .bind(tx_status)
-                    .execute(&mut *transaction)
-                    .await?;
+                TransactionData::Proof(ref tx) => {
+                    let hyle_outputs = match &processed_tx.hyle_outputs {
+                        Some(v) => v.clone(),
+                        None => {
+                            if !processed_tx.success {
+                                bail!("Proof transaction has no output but is a success.");
+                            };
+                            vec![]
+                        }
+                    };
 
+                    // Insert the proof into the proofs table
                     let proof = &tx.proof.to_bytes()?;
 
                     sqlx::query("INSERT INTO proofs (tx_hash, proof) VALUES ($1, $2)")
@@ -410,40 +398,67 @@ impl Indexer {
                         .await?;
 
                     // Adding all blob_references
-                    for blob_ref in tx.blobs_references.iter() {
+                    for (index, blob_ref) in tx.blobs_references.iter().enumerate() {
+                        // If transaction is successful; update blob transaction status in transaction table with hyle_output.success value
+                        let blob_index = i32::try_from(blob_ref.blob_index.0).map_err(|_| {
+                            anyhow::anyhow!("Blob index is too large to fit into an i32")
+                        })?;
+
+                        let mut serialized_hyle_output: Option<String> = None;
+                        let hyle_output_success = hyle_outputs
+                            .get(index)
+                            .map_or(false, |output| output.success);
+                        if hyle_output_success {
+                            if processed_tx.success {
+                                sqlx::query(
+                                    "UPDATE blobs SET verified = true WHERE tx_hash = $1 AND blob_index = $2",
+                                )
+                                .bind(blob_ref.blob_tx_hash.0.clone())
+                                .bind(blob_index)
+                                .execute(&mut *transaction)
+                                .await?;
+                            }
+
+                            serialized_hyle_output =
+                                Some(serde_json::to_string(&hyle_outputs[index])?);
+                        }
                         let contract_name = &blob_ref.contract_name.0;
                         let blob_tx_hash = &blob_ref.blob_tx_hash.0;
                         let blob_index = i32::try_from(blob_ref.blob_index.0).map_err(|_| {
                             anyhow::anyhow!("Blob index is too large to fit into an i32")
                         })?;
 
-                        sqlx::query(                            "INSERT INTO blob_references (tx_hash, contract_name, blob_tx_hash, blob_index)
-                             VALUES ($1, $2, $3, $4)")
+                        sqlx::query("INSERT INTO blob_references (tx_hash, contract_name, blob_tx_hash, blob_index, hyle_output)
+                             VALUES ($1, $2, $3, $4, $5::jsonb)")
                         .bind(tx_hash)
                         .bind(contract_name)
                         .bind(blob_tx_hash)
                         .bind(blob_index)
+                        .bind(serialized_hyle_output)
                         .execute(&mut *transaction)
                         .await?;
+
+                        // Check if all blobs are verified and that the blob transaction can be set to Success
+                        let all_blobs_verified = sqlx::query_scalar::<_, bool>(
+                                "SELECT bool_and(verified) FROM blobs WHERE tx_hash = $1 GROUP BY tx_hash"
+                            )
+                            .bind(blob_ref.blob_tx_hash.0.clone())
+                            .fetch_one(&self.state.db)
+                            .await?;
+
+                        if all_blobs_verified {
+                            sqlx::query(
+                                    "UPDATE transactions SET transaction_status = $1 WHERE tx_hash = $2"
+                                )
+                                .bind(TransactionStatus::Success)
+                                .bind(blob_ref.blob_tx_hash.0.clone())
+                                .execute(&mut *transaction)
+                                .await?;
+                        }
                     }
-                    // TODO: if verification is correct, change the transaction status for associated blod
-                    // TODO: if verification is correct, add HyleOutput
                 }
-                crate::model::TransactionData::RegisterContract(ref tx) => {
-                    // Insert the transaction into the transactions table
-                    let tx_type = TransactionType::RegisterContractTransaction;
-                    let tx_status = TransactionStatus::Success;
-                    sqlx::query(
-                        "INSERT INTO transactions (tx_hash, block_hash, tx_index, version, transaction_type, transaction_status)
-                        VALUES ($1, $2, $3, $4, $5, $6)")
-                    .bind(tx_hash)
-                    .bind(block_hash)
-                    .bind(tx_index)
-                    .bind(version)
-                    .bind(tx_type)
-                    .bind(tx_status)
-                    .execute(&mut *transaction)
-                    .await?;
+                TransactionData::RegisterContract(ref tx) => {
+                    // Insert the contract into the contracts table
                     let owner = &tx.owner;
                     let verifier = &tx.verifier;
                     let program_id = &tx.program_id;
@@ -474,24 +489,57 @@ impl Indexer {
                     .execute(&mut *transaction)
                     .await?;
                 }
-                crate::model::TransactionData::Stake(ref _staker) => {
+                TransactionData::Stake(ref _staker) => {
                     tracing::warn!("TODO: add staking to indexer db");
                 }
             }
         }
 
-        // Commit the transaction
+        // Change transaction status for blob_transaction that timed_out
+        for timed_out_tx_hash in block.timed_out_txs {
+            let tx_hash: &TxHashDb = &timed_out_tx_hash.into();
+            sqlx::query("UPDATE transactions SET transaction_status = $1 WHERE tx_hash = $2")
+                .bind(TransactionStatus::TimedOut)
+                .bind(tx_hash)
+                .execute(&mut *transaction)
+                .await?;
+        }
+
+        // Commit the sql transaction
         transaction.commit().await?;
 
         Ok(())
     }
-}
 
-impl std::ops::Deref for Indexer {
-    type Target = Pool<Postgres>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.state.db
+    fn send_blob_transaction_to_websocket_subscribers(
+        &self,
+        tx: &BlobTransaction,
+        tx_hash: &TxHashDb,
+        block_hash: &BlockHash,
+        tx_index: &i32,
+        version: &i32,
+    ) {
+        for (contrat_name, senders) in self.subscribers.iter() {
+            if tx
+                .blobs
+                .iter()
+                .any(|blob| &blob.contract_name == contrat_name)
+            {
+                let enriched_tx = TransactionWithBlobs {
+                    tx_hash: tx_hash.clone(),
+                    block_hash: block_hash.clone(),
+                    tx_index: *tx_index,
+                    version: *version,
+                    transaction_type: TransactionType::BlobTransaction,
+                    transaction_status: TransactionStatus::Sequenced,
+                    identity: tx.identity.0.clone(),
+                    blobs: tx.blobs.clone(),
+                };
+                senders.iter().for_each(|sender| {
+                    let _ = sender.send(enriched_tx.clone());
+                });
+            }
+        }
     }
 }
 
