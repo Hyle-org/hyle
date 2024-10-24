@@ -1,7 +1,7 @@
 use bincode::{BorrowDecode, Decode, Encode};
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
+    collections::{BTreeSet, HashMap, HashSet},
     fmt::Display,
     hash::Hash,
     vec,
@@ -25,12 +25,12 @@ pub enum ProposalVerdict {
     DidVote,
 }
 
-pub type Cut = BTreeMap<ValidatorPublicKey, usize>;
+pub type Cut = Vec<(ValidatorPublicKey, usize)>;
 
 fn prepare_cut(cut: &mut Cut, validator: &ValidatorPublicKey, lane: &mut Lane) {
     if let Some(tip) = lane.cars.last() {
         if !tip.used_in_cut {
-            cut.insert(validator.clone(), tip.id);
+            cut.push((validator.clone(), tip.id));
         }
     }
     lane.cars
@@ -80,13 +80,21 @@ impl InMemoryStorage {
             .map(|car| car.poa.iter().cloned().collect())
     }
 
-    pub fn try_new_cut(&mut self, nb_validators: usize) -> Option<Cut> {
+    pub fn try_new_cut(&mut self, validators: &[ValidatorPublicKey]) -> Option<Cut> {
         if let Some(car) = self.lane.current() {
-            if car.poa.len() > nb_validators / 3 {
-                let mut cut = BTreeMap::new();
-                prepare_cut(&mut cut, &self.id, &mut self.lane);
-                for (validator, lane) in self.other_lanes.iter_mut() {
-                    prepare_cut(&mut cut, validator, lane);
+            if car.poa.len() > validators.len() / 3 {
+                let mut cut = Vec::new();
+                for validator in validators.iter() {
+                    if validator == &self.id {
+                        prepare_cut(&mut cut, validator, &mut self.lane);
+                    } else if let Some(lane) = self.other_lanes.get_mut(validator) {
+                        prepare_cut(&mut cut, validator, lane);
+                    } else {
+                        error!(
+                            "Validator {} not found in lane of {} (cutting)",
+                            validator, self.id
+                        );
+                    }
                 }
                 return Some(cut);
             }
@@ -367,12 +375,16 @@ impl InMemoryStorage {
 
     pub fn update_lanes_after_commit(&mut self, lanes: Cut) -> Vec<Transaction> {
         let mut txs = HashSet::new();
-        if let Some(tip) = lanes.get(&self.id) {
-            Self::collect_old_used_cars(&mut self.lane.cars, *tip, &mut txs);
-        }
-        for (validator, lane) in self.other_lanes.iter_mut() {
-            if let Some(tip) = lanes.get(validator) {
+        for (validator, tip) in lanes.iter() {
+            if validator == &self.id {
+                Self::collect_old_used_cars(&mut self.lane.cars, *tip, &mut txs);
+            } else if let Some(lane) = self.other_lanes.get_mut(validator) {
                 Self::collect_old_used_cars(&mut lane.cars, *tip, &mut txs);
+            } else {
+                error!(
+                    "Validator {} not found in lane of {} (updating)",
+                    validator, self.id
+                );
             }
         }
         txs.drain().collect()
@@ -709,7 +721,7 @@ mod tests {
         assert_eq!(store.lane.size(), 1);
         assert_eq!(store.other_lanes.get(&pubkey2).map(|l| l.size()), Some(2));
 
-        let cut = store.try_new_cut(2);
+        let cut = store.try_new_cut(&[pubkey3.clone(), pubkey2.clone()]);
         assert!(cut.is_some());
 
         store.update_lanes_after_commit(cut.unwrap());
