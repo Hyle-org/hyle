@@ -1123,7 +1123,7 @@ impl Consensus {
                     self.bus
                         .send(ConsensusEvent::CommitCut {
                             validators: vec![self.crypto.validator_pubkey().clone()],
-                            new_bonded_validators: vec![self.crypto.validator_pubkey().clone()],
+                            new_bonded_validators: vec![],
                             cut,
                         })
                         .expect("Failed to send ConsensusEvent::CommitCut msg on the bus");
