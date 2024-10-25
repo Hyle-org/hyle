@@ -145,17 +145,19 @@ impl NodeState {
             "Handled {txs_count} transactions");
 
         _ = Self::save_on_disk(self.file.as_path(), &self.store);
-        _ = self
-            .bus
-            .send(NodeStateEvent::NewProcessedBlock(ProcessedBlock {
-                height: block.height,
-                parent_hash: block.parent_hash,
-                timestamp: block.timestamp,
-                new_bonded_validators: block.new_bonded_validators,
-                txs: processed_transactions,
-                timed_out_txs,
-            }))
-            .context("Send new NodeState processed block")?;
+        if self.config.run_indexer {
+            _ = self
+                .bus
+                .send(NodeStateEvent::NewProcessedBlock(ProcessedBlock {
+                    height: block.height,
+                    parent_hash: block.parent_hash,
+                    timestamp: block.timestamp,
+                    new_bonded_validators: block.new_bonded_validators,
+                    txs: processed_transactions,
+                    timed_out_txs,
+                }))
+                .context("Send new NodeState processed block")?;
+        }
         Ok(())
     }
 
@@ -167,36 +169,34 @@ impl NodeState {
         let mut success = true;
         let mut hyle_outputs: Option<Vec<HyleOutput>> = None;
         match &transaction.transaction_data {
-            crate::model::TransactionData::Stake(staker) => match self.handle_stake_tx(staker) {
+            TransactionData::Stake(staker) => match self.handle_stake_tx(staker) {
                 Ok(()) => (),
                 Err(e) => {
                     success = false;
                     error!("Failed to handle stake tx: {:?}", e);
                 }
             },
-            crate::model::TransactionData::Blob(tx) => match self.handle_blob_tx(tx) {
+            TransactionData::Blob(tx) => match self.handle_blob_tx(tx) {
                 Ok(()) => (),
                 Err(e) => {
                     success = false;
                     error!("Failed to handle blob tx: {:?}", e);
                 }
             },
-            crate::model::TransactionData::Proof(tx) => match self.handle_proof(tx) {
+            TransactionData::Proof(tx) => match self.handle_proof(tx) {
                 Ok(v) => hyle_outputs = Some(v),
                 Err(e) => {
                     success = false;
                     error!("Failed to verify proof tx: {:?}", e);
                 }
             },
-            crate::model::TransactionData::RegisterContract(tx) => {
-                match self.handle_register_contract(tx) {
-                    Ok(()) => (),
-                    Err(e) => {
-                        success = false;
-                        error!("Failed to register contract: {:?}", e);
-                    }
+            TransactionData::RegisterContract(tx) => match self.handle_register_contract(tx) {
+                Ok(()) => (),
+                Err(e) => {
+                    success = false;
+                    error!("Failed to register contract: {:?}", e);
                 }
-            }
+            },
         };
         Ok(ProcessedTransaction {
             transaction,
