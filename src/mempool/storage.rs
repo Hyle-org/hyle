@@ -367,7 +367,7 @@ impl InMemoryStorage {
         })
     }
 
-    fn collect_old_used_cars(cars: &mut Vec<Car>, tip: usize, txs: &mut HashSet<Transaction>) {
+    fn collect_old_used_cars(cars: &mut Vec<Car>, tip: usize, txs: &mut Vec<Transaction>) {
         cars.retain_mut(|car| {
             txs.extend(std::mem::take(&mut car.txs));
             car.id >= tip
@@ -375,7 +375,7 @@ impl InMemoryStorage {
     }
 
     pub fn update_lanes_after_commit(&mut self, lanes: Cut) -> Vec<Transaction> {
-        let mut txs = HashSet::new();
+        let mut txs = Vec::new();
         for (validator, tip) in lanes.iter() {
             if validator == &self.id {
                 Self::collect_old_used_cars(&mut self.lane.cars, *tip, &mut txs);
@@ -389,7 +389,7 @@ impl InMemoryStorage {
                 );
             }
         }
-        txs.drain().collect()
+        txs
     }
 }
 
