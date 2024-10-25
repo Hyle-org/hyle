@@ -50,7 +50,7 @@ async fn main() -> Result<()> {
         config.id.clone(),
     )?;
 
-    info!("Starting node with config: {:?}", &config);
+    info!("Starting indexer with config: {:?}", &config);
 
     debug!("server mode");
 

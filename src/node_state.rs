@@ -7,7 +7,7 @@ use crate::{
     handle_messages,
     model::{
         BlobTransaction, BlobsHash, Block, BlockHeight, ContractName, Hashable, ProofTransaction,
-        RegisterContractTransaction, SharedRunContext, Transaction, TransactionData,
+        RegisterContractTransaction, SharedRunContext, Transaction,
     },
     utils::{conf::SharedConf, logger::LogMe, modules::Module},
 };
@@ -111,25 +111,17 @@ impl NodeState {
         Ok(())
     }
 
-    fn handle_new_block(&mut self, mut block: Block) -> Result<(), Error> {
+    fn handle_new_block(&mut self, block: Block) -> Result<(), Error> {
         self.clear_timeouts(&block.height);
         self.current_height = block.height;
         let txs_count = block.txs.len();
         let block_hash = block.hash();
 
-        block.txs.sort_by(
-            |tx1, tx2| match (&tx1.transaction_data, &tx2.transaction_data) {
-                (TransactionData::RegisterContract(_), _) => std::cmp::Ordering::Greater,
-                (_, TransactionData::RegisterContract(_)) => std::cmp::Ordering::Less,
-                (_, _) => std::cmp::Ordering::Equal,
-            },
-        );
-
         for tx in block.txs {
             let tx_hash = tx.hash();
-            match self.handle_transaction(tx) {
+            match self.handle_transaction(tx.clone()) {
                 Ok(_) => debug!("Handled tx {tx_hash}"),
-                Err(e) => error!("Failed handling tx {tx_hash} with error: {e}"),
+                Err(e) => error!("Failed handling tx {:?} with error: {e}", tx),
             }
         }
 
@@ -209,7 +201,7 @@ impl NodeState {
         // Update timeouts
         self.store
             .timeouts
-            .set(blob_tx_hash, self.store.current_height + 10); // TODO: Timeout after 10 blocks, make it configurable !
+            .set(blob_tx_hash, self.store.current_height + 100); // TODO: Timeout after 100 blocks, make it configurable !
 
         Ok(())
     }

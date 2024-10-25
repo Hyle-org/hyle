@@ -65,7 +65,8 @@ pub async fn send_contract_transaction(
 /// ```
 /// # Example decoding
 /// ```
-/// use hyle::model::{Blob, BlobData, BlobTransaction, ContractName, Identity};
+/// use hyle::model::{Blob, BlobData, BlobTransaction, ContractName};
+/// use hyle_contract_sdk::Identity;
 ///
 /// let payload_json = r#"
 ///  {
@@ -84,7 +85,8 @@ pub async fn send_contract_transaction(
 ///
 /// # Example encoding
 /// ```
-/// use hyle::model::{Blob, BlobData, BlobTransaction, ContractName, Identity};
+/// use hyle::model::{Blob, BlobData, BlobTransaction, ContractName};
+/// use hyle_contract_sdk::Identity;
 ///
 /// let payload = BlobTransaction {
 ///     identity: Identity("tata".to_string()),
