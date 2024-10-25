@@ -3,7 +3,9 @@ use reqwest::{Response, Url};
 use tracing::info;
 
 use crate::{
-    model::{BlobTransaction, ContractName, ProofTransaction, RegisterContractTransaction},
+    model::{
+        BlobTransaction, BlockHeight, ContractName, ProofTransaction, RegisterContractTransaction,
+    },
     tools::mock_workflow::RunScenario,
 };
 
@@ -47,6 +49,18 @@ impl ApiHttpClient {
             .send()
             .await
             .context("Sending tx register contract")
+    }
+
+    pub async fn get_block_height(&self) -> Result<BlockHeight> {
+        self.reqwest_client
+            .get(format!("{}v1/da/block/height", self.url))
+            .header("Content-Type", "application/json")
+            .send()
+            .await
+            .context("getting block height")?
+            .json::<BlockHeight>()
+            .await
+            .context("reading block height response")
     }
 
     pub async fn get_contract(&self, contract_name: &ContractName) -> Result<Response> {

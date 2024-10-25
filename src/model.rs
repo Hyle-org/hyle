@@ -1,6 +1,7 @@
 //! Various data structures
 
 use axum::Router;
+use base64::prelude::*;
 use bincode::{Decode, Encode};
 use derive_more::Display;
 use hyle_contract_sdk::{BlobData, BlobIndex, Identity, StateDigest, TxHash};
@@ -21,7 +22,7 @@ use std::{
 
 use crate::{
     bus::SharedMessageBus,
-    consensus::staking::Staker,
+    consensus::{staking::Staker, utils::HASH_DISPLAY_SIZE},
     utils::{conf::SharedConf, crypto::SharedBlstCrypto},
 };
 
@@ -45,7 +46,7 @@ impl BlobDataHash {
     pub fn new(s: &str) -> Self {
         Self(s.into())
     }
-    pub fn from_vec(vec: &Vec<Blob>) -> BlobDataHash {
+    pub fn from_vec(vec: &[Blob]) -> BlobDataHash {
         let concatenated = vec
             .iter()
             .flat_map(|b| b.data.0.clone())
@@ -53,9 +54,9 @@ impl BlobDataHash {
         Self::from_concatenated(&concatenated)
     }
 
-    pub fn from_concatenated(vec: &Vec<u8>) -> BlobDataHash {
+    pub fn from_concatenated(vec: &[u8]) -> BlobDataHash {
         let mut hasher = Sha3_256::new();
-        hasher.update(vec.as_slice());
+        hasher.update(vec);
         let hash_bytes = hasher.finalize();
         BlobDataHash(hex::encode(hash_bytes))
     }
@@ -114,10 +115,47 @@ impl Default for TransactionData {
     }
 }
 
+#[derive(Serialize, Deserialize, PartialEq, Eq, Clone, Encode, Decode, Hash)]
+#[serde(untagged)]
+pub enum ProofData {
+    Base64(String),
+    Bytes(Vec<u8>),
+}
+
+impl Default for ProofData {
+    fn default() -> Self {
+        ProofData::Bytes(Vec::new())
+    }
+}
+
+impl ProofData {
+    pub fn to_bytes(&self) -> Result<Vec<u8>, base64::DecodeError> {
+        match self {
+            ProofData::Base64(s) => BASE64_STANDARD.decode(s),
+            ProofData::Bytes(b) => Ok(b.clone()),
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        match self {
+            ProofData::Base64(s) => s.len(),
+            ProofData::Bytes(b) => b.len(),
+        }
+    }
+
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        match self {
+            ProofData::Base64(s) => s.is_empty(),
+            ProofData::Bytes(b) => b.is_empty(),
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Default, PartialEq, Eq, Clone, Encode, Decode, Hash)]
 pub struct ProofTransaction {
     pub blobs_references: Vec<BlobReference>,
-    pub proof: Vec<u8>,
+    pub proof: ProofData,
 }
 
 impl fmt::Debug for ProofTransaction {
@@ -125,7 +163,10 @@ impl fmt::Debug for ProofTransaction {
         f.debug_struct("ProofTransaction")
             .field("blobs_references", &self.blobs_references)
             .field("proof", &"[HIDDEN]")
-            .field("proof_len", &self.proof.len())
+            .field(
+                "proof_len",
+                &self.proof.to_bytes().unwrap_or_default().len(),
+            )
             .finish()
     }
 }
@@ -133,7 +174,7 @@ impl fmt::Debug for ProofTransaction {
 #[derive(Serialize, Deserialize, Default, PartialEq, Eq, Clone, Encode, Decode, Hash)]
 pub struct FeeProofTransaction {
     pub blobs_references: Vec<BlobReference>,
-    pub proof: Vec<u8>,
+    pub proof: ProofData,
 }
 
 impl fmt::Debug for FeeProofTransaction {
@@ -331,7 +372,10 @@ impl Hashable<TxHash> for ProofTransaction {
             _ = write!(hasher, "{}", blob_ref.blob_tx_hash);
             _ = write!(hasher, "{}", blob_ref.blob_index);
         }
-        hasher.update(self.proof.clone());
+        match self.proof.clone() {
+            ProofData::Base64(v) => hasher.update(v),
+            ProofData::Bytes(vec) => hasher.update(vec),
+        }
         let hash_bytes = hasher.finalize();
         TxHash(hex::encode(hash_bytes))
     }
@@ -344,7 +388,10 @@ impl Hashable<TxHash> for FeeProofTransaction {
             _ = write!(hasher, "{}", blob_ref.blob_tx_hash);
             _ = write!(hasher, "{}", blob_ref.blob_index);
         }
-        hasher.update(self.proof.clone());
+        match &self.proof {
+            ProofData::Base64(v) => hasher.update(v),
+            ProofData::Bytes(vec) => hasher.update(vec),
+        }
         let hash_bytes = hasher.finalize();
         TxHash(hex::encode(hash_bytes))
     }
@@ -400,15 +447,15 @@ pub struct ValidatorPublicKey(pub Vec<u8>);
 
 impl std::fmt::Debug for ValidatorPublicKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_tuple("ValidatorPublicKey")
-            .field(&hex::encode(&self.0))
+        f.debug_tuple("ValidatorPubK")
+            .field(&hex::encode(&self.0[..HASH_DISPLAY_SIZE]))
             .finish()
     }
 }
 
 impl Display for ValidatorPublicKey {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", hex::encode(&self.0))
+        write!(f, "{}", hex::encode(&self.0[..HASH_DISPLAY_SIZE]))
     }
 }
 

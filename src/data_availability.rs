@@ -3,12 +3,12 @@
 mod blocks;
 
 use crate::{
-    bus::{bus_client, BusMessage, SharedMessageBus},
-    consensus::ConsensusEvent,
+    bus::{bus_client, command_response::Query, BusMessage, SharedMessageBus},
     handle_messages,
+    mempool::MempoolEvent,
     model::{
         get_current_timestamp, Block, BlockHash, BlockHeight, Hashable, SharedRunContext,
-        ValidatorPublicKey,
+        Transaction, ValidatorPublicKey,
     },
     p2p::network::{NetMessage, OutboundMessage, PeerEvent},
     utils::{conf::SharedConf, logger::LogMe, modules::Module},
@@ -60,14 +60,18 @@ impl From<DataNetMessage> for NetMessage {
     }
 }
 
+#[derive(Clone)]
+pub struct QueryBlockHeight {}
+
 bus_client! {
 #[derive(Debug)]
 struct DABusClient {
     sender(OutboundMessage),
     sender(DataEvent),
-    receiver(ConsensusEvent),
     receiver(DataNetMessage),
     receiver(PeerEvent),
+    receiver(Query<QueryBlockHeight , BlockHeight>),
+    receiver(MempoolEvent),
 }
 }
 
@@ -149,8 +153,10 @@ impl DataAvailability {
 
         handle_messages! {
             on_bus self.bus,
-            listen<ConsensusEvent> cmd => {
-                self.handle_consensus_event(cmd).await;
+            listen<MempoolEvent> cmd => {
+                if let MempoolEvent::CommitBlock(txs, new_bonded_validators) = cmd {
+                    self.handle_commit_block_event(txs, new_bonded_validators).await;
+               }
             }
 
             listen<DataNetMessage> msg => {
@@ -167,6 +173,9 @@ impl DataAvailability {
                         }
                     }
                 }
+            }
+            command_response<QueryBlockHeight, BlockHeight> _ => {
+                Ok(self.blocks.last().map(|block| block.height).unwrap_or(BlockHeight(0)))
             }
 
             // Handle new TCP connections to stream data to peers
@@ -266,16 +275,29 @@ impl DataAvailability {
         Ok(())
     }
 
-    async fn handle_consensus_event(&mut self, event: ConsensusEvent) {
-        match event {
-            ConsensusEvent::CommitBlock { block, .. } => {
-                info!(
-                    block_hash = %block.hash(),
-                    block_height = %block.height,
-                    "🔒  Block committed");
-                self.handle_block(block).await;
-            }
-        }
+    async fn handle_commit_block_event(
+        &mut self,
+        txs: Vec<Transaction>,
+        new_bonded_validators: Vec<ValidatorPublicKey>,
+    ) {
+        info!("🔒  Cut committed");
+        let last_block = self.blocks.last();
+        let parent_hash = last_block
+            .as_ref()
+            .map(|b| b.hash())
+            .unwrap_or(BlockHash::new(
+                "46696174206c757820657420666163746120657374206c7578",
+            ));
+        let next_height = last_block.map(|b| b.height.0 + 1).unwrap_or(0);
+
+        self.handle_block(Block {
+            parent_hash,
+            height: BlockHeight(next_height),
+            timestamp: get_current_timestamp(),
+            new_bonded_validators,
+            txs,
+        })
+        .await;
     }
 
     async fn handle_block(&mut self, block: Block) {

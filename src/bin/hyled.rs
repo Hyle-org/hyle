@@ -4,7 +4,7 @@ use anyhow::Result;
 use clap::{command, Parser, Subcommand};
 use hyle::{
     model::{
-        Blob, BlobReference, BlobTransaction, Blobs, ContractName, ProofTransaction,
+        Blob, BlobReference, BlobTransaction, Blobs, ContractName, ProofData, ProofTransaction,
         RegisterContractTransaction,
     },
     rest::client::ApiHttpClient,
@@ -35,7 +35,7 @@ async fn send_proof(
                 blob_tx_hash,
                 blob_index,
             }],
-            proof,
+            proof: ProofData::Bytes(proof),
         })
         .await?;
     assert!(res.status().is_success());

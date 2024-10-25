@@ -15,15 +15,15 @@ hydentity = { path = "./contracts/hydentity/contract"}
 config = "0.14.0"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["json"] }
-tokio = { version = "1.40.0", features = ["full", "tracing"] }
-anyhow = "1.0.89"
+tokio = { version = "1.41.0", features = ["full", "tracing"] }
+anyhow = "1.0.91"
 clap = { version = "4.5.20", features = ["derive"] }
 rand = "0.8.5"
 bincode = { version = "2.0.0-rc.2", tag = "v2.0.0-rc.2", git = "https://github.com/bincode-org/bincode.git" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1"
 ron = "0.8.1"
-axum = "0.7.7"
+axum = { version = "0.7.7", features = ["ws"] }
 sha3 = "0.10.8"
 hex = "0.4.3"
 derive_more = { version = "1.0.0", features = ["display"] }
@@ -54,9 +54,10 @@ sqlx = { version = "0.8.2", features = [
 ] }
 chrono = { version = "0.4", features = ["serde"] }
 axum-test = "16.2.0"
-syn = "2.0.79"
+syn = "2.0.82"
 quote = "1.0.37"
-bytes = "1.7.2"
+base64 = "0.22.1"
+bytes = "1.8.0"
 strum = "0.26.3"
 strum_macros = "0.26.4"
 
@@ -72,8 +73,9 @@ sled = { version = "0.34.7", features = [
 
 [dev-dependencies]
 assert_cmd = "2.0.16"
+tokio-tungstenite = "0.24.0"
 reqwest = { version = "0.12", features = ["json", "blocking"] }
-serde_json = "1.0.128"
+serde_json = "1.0.132"
 proptest = "1.5.0"
 test-log = { version = "0.2.16", features = [
     "color",
@@ -81,7 +83,7 @@ test-log = { version = "0.2.16", features = [
 ], default-features = false }
 tokio-stream = "0.1.16"
 tempfile = "3.13.0"
-testcontainers-modules = { version = "0.11.2", features = ["postgres"] }
+testcontainers-modules = { version = "0.11.3", features = ["postgres"] }
 
 [features]
 dhat = ["dep:dhat"]

@@ -1,11 +1,13 @@
 use crate::bus::BusMessage;
+use crate::consensus::utils::HASH_DISPLAY_SIZE;
 use crate::data_availability::DataNetMessage;
 use crate::model::ValidatorPublicKey;
 use crate::{consensus::ConsensusNetMessage, mempool::MempoolNetMessage};
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
-use std::fmt;
+use std::fmt::{self, Display};
+use strum_macros::IntoStaticStr;
 
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, Eq, PartialEq)]
 pub struct Hello {
@@ -60,6 +62,45 @@ impl std::fmt::Debug for Signature {
     }
 }
 
+impl Display for Signature {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", &hex::encode(&self.0[..HASH_DISPLAY_SIZE]))
+    }
+}
+
+impl Display for NetMessage {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let enum_variant: &'static str = self.into();
+        match self {
+            NetMessage::HandshakeMessage(_) => {
+                write!(f, "{}", enum_variant)
+            }
+            NetMessage::DataMessage(_) => {
+                write!(f, "{}", enum_variant)
+            }
+            NetMessage::MempoolMessage(signed_msg) => {
+                _ = write!(f, "NetMessage::{} ", enum_variant);
+                write!(f, "{}", signed_msg)
+            }
+            NetMessage::ConsensusMessage(signed_msg) => {
+                _ = write!(f, "NetMessage::{} ", enum_variant);
+                write!(f, "{}", signed_msg)
+            }
+        }
+    }
+}
+
+impl<T: Display + bincode::Encode> Display for Signed<T, ValidatorPublicKey> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        _ = write!(f, "{}", self.msg);
+        _ = write!(f, "\nSigned with {} and validators ", self.signature);
+        for v in self.validators.iter() {
+            _ = write!(f, "{},", v);
+        }
+        write!(f, "")
+    }
+}
+
 impl<T> BusMessage for SignedWithKey<T> where T: Encode + BusMessage {}
 
 pub type SignedWithKey<T> = Signed<T, ValidatorPublicKey>;
@@ -71,7 +112,7 @@ pub struct Signed<T: Encode, V> {
     pub validators: Vec<V>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, Eq, PartialEq)]
+#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, Eq, PartialEq, IntoStaticStr)]
 pub enum NetMessage {
     HandshakeMessage(HandshakeNetMessage),
     DataMessage(DataNetMessage),

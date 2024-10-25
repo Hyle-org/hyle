@@ -7,7 +7,7 @@ use crate::{
     handle_messages,
     model::{
         BlobDataHash, BlobReference, Blobs, BlobsHash, Block, BlockHeight, ContractName, Hashable,
-        RegisterContractTransaction, SharedRunContext, Transaction,
+        ProofData, RegisterContractTransaction, SharedRunContext, Transaction, TransactionData,
     },
     utils::{conf::SharedConf, logger::LogMe, modules::Module},
 };
@@ -124,11 +124,19 @@ impl NodeState {
         Ok(())
     }
 
-    fn handle_new_block(&mut self, block: Block) -> Result<(), Error> {
+    fn handle_new_block(&mut self, mut block: Block) -> Result<(), Error> {
         self.clear_timeouts(&block.height);
         self.current_height = block.height;
         let txs_count = block.txs.len();
         let block_hash = block.hash();
+
+        block.txs.sort_by(
+            |tx1, tx2| match (&tx1.transaction_data, &tx2.transaction_data) {
+                (TransactionData::RegisterContract(_), _) => std::cmp::Ordering::Greater,
+                (_, TransactionData::RegisterContract(_)) => std::cmp::Ordering::Less,
+                (_, _) => std::cmp::Ordering::Equal,
+            },
+        );
 
         for tx in block.txs {
             let tx_hash = tx.hash();
@@ -238,7 +246,7 @@ impl NodeState {
 
     fn handle_proof_tx(
         &mut self,
-        proof: &[u8],
+        proof: &ProofData,
         blobs_references: &[BlobReference],
         fees: bool,
     ) -> Result<(), Error> {
@@ -262,7 +270,7 @@ impl NodeState {
 
     fn handle_proof(
         &mut self,
-        proof: &[u8],
+        proof: &ProofData,
         references: Vec<UnsettledBlobReference>,
     ) -> Result<(), Error> {
         debug!("Handle proof with references: {:?}", references);
@@ -287,13 +295,13 @@ impl NodeState {
                     .verifiers
                     .get(verifier)
                     .context(format!("verifier {verifier} not found"))?
-                    .verify_proof(proof, program_id)?]
+                    .verify_proof(proof.to_bytes()?.as_slice(), program_id)?]
             }
             _ => self
                 .verifiers
                 .get("test")
                 .context("verifier test not found")?
-                .verify_recursion_proof(proof)?,
+                .verify_recursion_proof(proof.to_bytes()?.as_slice())?,
         };
 
         debug!("Proof verified: {:?}", blobs_metadata);
@@ -595,8 +603,10 @@ mod test {
     fn new_proof(blob_references: Vec<BlobReference>) -> ProofTransaction {
         ProofTransaction {
             blobs_references: blob_references.clone(),
-            proof: bincode::encode_to_vec(blob_references, bincode::config::standard())
-                .expect("blob ref"),
+            proof: ProofData::Bytes(
+                bincode::encode_to_vec(blob_references, bincode::config::standard())
+                    .expect("blob ref"),
+            ),
         }
     }
 

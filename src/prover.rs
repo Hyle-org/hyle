@@ -3,7 +3,7 @@ use crate::{
     handle_messages,
     mempool::MempoolEvent,
     model::{
-        BlobReference, BlobTransaction, FeeProofTransaction, Hashable, SharedRunContext,
+        BlobReference, BlobTransaction, FeeProofTransaction, Hashable, ProofData, SharedRunContext,
         Transaction,
     },
     utils::{logger::LogMe, modules::Module},
@@ -106,7 +106,7 @@ impl Prover {
                     blob_tx_hash: tx_hash.clone(),
                     blob_index: BlobIndex(0),
                 }],
-                proof: fees_proof,
+                proof: ProofData::Bytes(fees_proof),
             },
         ));
 
@@ -135,7 +135,7 @@ impl Prover {
                     blob_tx_hash: tx_hash,
                     blob_index: BlobIndex(1),
                 }],
-                proof: identities_proof,
+                proof: ProofData::Bytes(identities_proof),
             },
         ));
 
