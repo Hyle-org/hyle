@@ -18,7 +18,6 @@ use std::{
     sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
 };
-use tracing::debug;
 
 use crate::{
     bus::SharedMessageBus,
@@ -29,15 +28,24 @@ use crate::{
 #[derive(
     Debug, Display, Default, Clone, Serialize, Deserialize, Eq, PartialEq, Hash, Encode, Decode,
 )]
+pub struct BlobDataHash(pub String);
+
+#[derive(
+    Debug, Display, Default, Clone, Serialize, Deserialize, Eq, PartialEq, Hash, Encode, Decode,
+)]
 pub struct BlobsHash(pub String);
 
 impl BlobsHash {
-    pub fn new(s: &str) -> BlobsHash {
-        BlobsHash(s.into())
+    pub fn new(s: &str) -> Self {
+        Self(s.into())
     }
+}
 
-    pub fn from_vec(vec: &Vec<Blob>) -> BlobsHash {
-        debug!("From vec {:?}", vec);
+impl BlobDataHash {
+    pub fn new(s: &str) -> Self {
+        Self(s.into())
+    }
+    pub fn from_vec(vec: &Vec<Blob>) -> BlobDataHash {
         let concatenated = vec
             .iter()
             .flat_map(|b| b.data.0.clone())
@@ -45,12 +53,11 @@ impl BlobsHash {
         Self::from_concatenated(&concatenated)
     }
 
-    pub fn from_concatenated(vec: &Vec<u8>) -> BlobsHash {
-        debug!("From concatenated {:?}", vec);
+    pub fn from_concatenated(vec: &Vec<u8>) -> BlobDataHash {
         let mut hasher = Sha3_256::new();
         hasher.update(vec.as_slice());
         let hash_bytes = hasher.finalize();
-        BlobsHash(hex::encode(hash_bytes))
+        BlobDataHash(hex::encode(hash_bytes))
     }
 }
 
@@ -300,7 +307,11 @@ impl Hashable<TxHash> for Staker {
 
 impl Hashable<BlobsHash> for Blobs {
     fn hash(&self) -> BlobsHash {
-        BlobsHash::from_vec(&self.blobs)
+        let mut hasher = Sha3_256::new();
+        _ = write!(hasher, "{}", self.identity.0);
+        _ = write!(hasher, "{}", BlobDataHash::from_vec(&self.blobs).0);
+        let hash_bytes = hasher.finalize();
+        BlobsHash(hex::encode(hash_bytes))
     }
 }
 impl Hashable<TxHash> for BlobTransaction {

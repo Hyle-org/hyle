@@ -1,7 +1,7 @@
 use bincode::{Decode, Encode};
 use hyle_contract_sdk::TxHash;
 
-use super::model::UnsettledTransaction;
+use super::{model::UnsettledTransaction, UnsettledBlobReference};
 use crate::model::{BlobsHash, ContractName};
 use std::collections::HashMap;
 
@@ -49,10 +49,13 @@ impl OrderedTxMap {
     }
 
     pub fn add(&mut self, tx: UnsettledTransaction, fees: bool) {
-        if self.map.contains_key(&tx.blobs_hash) {
+        if fees && self.blobs_hash_for_fees.contains_key(&tx.tx_hash) {
             return;
         }
-        for blob in &tx.blobs {
+        if !fees && self.blobs_hash_for_blobs.contains_key(&tx.tx_hash) {
+            return;
+        }
+        for blob in &tx.blobs_unsettled_metadata {
             match self.tx_order.get_mut(&blob.contract_name) {
                 Some(vec) => {
                     vec.push(tx.blobs_hash.clone());
@@ -76,7 +79,7 @@ impl OrderedTxMap {
 
     pub fn remove(&mut self, hash: &BlobsHash) {
         if let Some(tx) = self.map.get(hash) {
-            for blob in &tx.blobs {
+            for blob in &tx.blobs_unsettled_metadata {
                 if let Some(c) = self.tx_order.get_mut(&blob.contract_name) {
                     c.retain(|h| !h.eq(hash));
                 }
@@ -90,7 +93,7 @@ impl OrderedTxMap {
     pub fn remove_for_blob(&mut self, hash: &TxHash) {
         let blob_hash = self.blobs_hash_for_blobs.remove(hash);
         if let Some(tx) = blob_hash.clone().and_then(|h| self.map.get(&h)) {
-            for blob in &tx.blobs {
+            for blob in &tx.blobs_unsettled_metadata {
                 if let Some(c) = self.tx_order.get_mut(&blob.contract_name) {
                     c.retain(|h| !h.eq(&tx.blobs_hash));
                 }
@@ -99,28 +102,23 @@ impl OrderedTxMap {
         blob_hash.and_then(|h| self.map.remove(&h));
     }
 
-    pub fn is_next_unsettled_tx(&self, tx: &BlobsHash) -> bool {
-        match self.get(tx) {
-            Some(unsettled_tx) => {
-                for blob in &unsettled_tx.blobs {
-                    if let Some(order) = self.tx_order.get(&blob.contract_name) {
-                        if let Some(first) = order.first() {
-                            if first != tx {
-                                return false;
-                            }
-                        }
-                    }
-                }
-            }
-            None => return false,
-        }
-        true
+    pub fn is_next_unsettled_tx(
+        &self,
+        contract_name: &ContractName,
+        blobs_hash: &BlobsHash,
+    ) -> bool {
+        self.tx_order.get(contract_name).map_or(false, |order| {
+            order.first().map_or(false, |first| first == blobs_hash)
+        })
     }
 }
 
 #[cfg(test)]
-mod tests {
-    use crate::{model::BlobsHash, node_state::model::UnsettledBlobMetadata};
+mod test {
+    use crate::{
+        model::{BlobDataHash, BlobsHash},
+        node_state::model::UnsettledBlobMetadata,
+    };
     use hyle_contract_sdk::Identity;
 
     use super::*;
@@ -129,8 +127,9 @@ mod tests {
         UnsettledTransaction {
             identity: Identity("toto".to_string()),
             tx_hash: TxHash::new(hash),
-            blobs_hash: BlobsHash::new(blobs_hash),
-            blobs: vec![UnsettledBlobMetadata {
+            blobs_hash: BlobsHash(blobs_hash.into()),
+            blobs_data_hash: BlobDataHash("data_hash".into()),
+            blobs_unsettled_metadata: vec![UnsettledBlobMetadata {
                 contract_name: ContractName(contract.to_string()),
                 metadata: vec![],
             }],
@@ -202,12 +201,13 @@ mod tests {
         map.add(tx2.clone(), false);
         map.add(tx3.clone(), false);
 
-        assert!(map.is_next_unsettled_tx(&blobs_hash1));
-        assert!(!map.is_next_unsettled_tx(&blobs_hash2));
-        assert!(map.is_next_unsettled_tx(&blobs_hash3));
+        assert!(map.is_next_unsettled_tx(&"c1".into(), &blobs_hash1));
+        assert!(!map.is_next_unsettled_tx(&"c1".into(), &blobs_hash2));
+        assert!(!map.is_next_unsettled_tx(&"c1".into(), &blobs_hash3));
+        assert!(map.is_next_unsettled_tx(&"c2".into(), &blobs_hash3));
 
         let blobs_hash4 = BlobsHash::new("blobs_hash4");
-        assert!(!map.is_next_unsettled_tx(&blobs_hash4)); // Non-existent transaction
+        assert!(!map.is_next_unsettled_tx(&"c1".into(), &blobs_hash4)); // Non-existent transaction
     }
 
     #[test]
@@ -228,9 +228,9 @@ mod tests {
 
         map.remove(&blobs_hash1);
 
-        assert!(!map.is_next_unsettled_tx(&blobs_hash1));
-        assert!(map.is_next_unsettled_tx(&blobs_hash2));
-        assert!(map.is_next_unsettled_tx(&blobs_hash3));
+        assert!(!map.is_next_unsettled_tx(&"c1".into(), &blobs_hash1));
+        assert!(map.is_next_unsettled_tx(&"c1".into(), &blobs_hash2));
+        assert!(map.is_next_unsettled_tx(&"c2".into(), &blobs_hash3));
 
         assert_eq!(map.map.len(), 2);
         assert_eq!(map.tx_order.len(), 2);

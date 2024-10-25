@@ -5,88 +5,53 @@ use risc0_zkvm::sha::Digest;
 use stark_platinum_prover::proof::options::{ProofOptions, SecurityLevel};
 use tracing::info;
 
-use crate::model::ProofTransaction;
-use hyle_contract_sdk::{HyleOutput, Identity, StateDigest};
+use hyle_contract_sdk::HyleOutput;
 
-pub fn verify_proof(proof: &[u8], verifier: &str, program_id: &[u8]) -> Result<HyleOutput, Error> {
-    // TODO: remove test
-    match verifier {
-        //"test" => {
-        //    let tx_hash = tx.blobs_references.first().unwrap().blob_tx_hash.clone();
-        //    let index = tx.blobs_references.first().unwrap().blob_index.clone();
-        //    Ok(HyleOutput {
-        //        version: 1,
-        //        initial_state: StateDigest(vec![0, 1, 2, 3]),
-        //        next_state: StateDigest(vec![4, 5, 6]),
-        //        identity: Identity("test".to_string()),
-        //        tx_hash,
-        //        index,
-        //        blobs: vec![0, 1, 2, 3, 0, 1, 2, 3],
-        //        success: true,
-        //        program_outputs: vec![],
-        //    })
-        //}
-        "cairo" => cairo_proof_verifier(proof),
-        "risc0" => risc0_proof_verifier(proof, program_id),
-        _ => bail!("{} verifier not implemented yet", verifier),
-    }
+pub trait Verifier
+where
+    Self: Send,
+{
+    fn verify_proof(&self, proof: &[u8], program_id: &[u8]) -> Result<HyleOutput, Error>;
+    fn verify_recursion_proof(&self, proof: &[u8]) -> Result<Vec<HyleOutput>, Error>;
 }
 
-pub fn verify_recursion_proof(proof: &[u8], verifier: &str) -> Result<Vec<HyleOutput>, Error> {
-    // TODO: remove test
-    match verifier {
-        //"test" => Ok(tx
-        //    .blobs_references
-        //    .iter()
-        //    .map(|blob_ref| HyleOutput {
-        //        version: 1,
-        //        initial_state: StateDigest(vec![0, 1, 2, 3]),
-        //        next_state: StateDigest(vec![4, 5, 6]),
-        //        identity: Identity("test".to_string()),
-        //        tx_hash: blob_ref.blob_tx_hash.clone(),
-        //        index: blob_ref.blob_index.clone(),
-        //        blobs: vec![0, 1, 2, 3, 0, 1, 2, 3],
-        //        success: true,
-        //        program_outputs: vec![],
-        //    })
-        //    .collect()),
-        _ => bail!("{} recursion verifier not implemented yet", verifier),
-    }
-}
+pub struct CairoVerifier;
+impl Verifier for CairoVerifier {
+    fn verify_proof(&self, proof: &[u8], _program_id: &[u8]) -> Result<HyleOutput, Error> {
+        let proof_options = ProofOptions::new_secure(SecurityLevel::Conjecturable100Bits, 3);
 
-pub fn cairo_proof_verifier(proof: &[u8]) -> Result<HyleOutput, Error> {
-    let proof_options = ProofOptions::new_secure(SecurityLevel::Conjecturable100Bits, 3);
-
-    let mut bytes = proof;
-    if bytes.len() < 8 {
-        bail!("Cairo proof is too short");
-    }
-
-    // Proof len was stored as an u32, 4u8 needs to be read
-    let proof_len = u32::from_le_bytes(bytes[0..4].try_into().unwrap()) as usize;
-
-    bytes = &bytes[4..];
-    if bytes.len() < proof_len {
-        bail!("Cairo proof is not correctly formed");
-    }
-
-    let proof = match bincode::serde::decode_from_slice(
-        &bytes[0..proof_len],
-        bincode::config::standard(),
-    ) {
-        Ok((proof, _)) => proof,
-        Err(e) => {
-            bail!("Error while decoding cairo proof. Decode error: {}", e);
+        let mut bytes = proof;
+        if bytes.len() < 8 {
+            bail!("Cairo proof is too short");
         }
-    };
 
-    // PublicInputs len was stored as an u32, 4u8 needs to be read
-    let pub_inputs_len =
-        u32::from_le_bytes(bytes[proof_len..proof_len + 4].try_into().unwrap()) as usize;
-    let pub_inputs_bytes = &bytes[proof_len + 4..proof_len + 4 + pub_inputs_len];
+        // Proof len was stored as an u32, 4u8 needs to be read
+        let proof_len = u32::from_le_bytes(bytes[0..4].try_into().unwrap()) as usize;
 
-    let pub_inputs =
-        match bincode::serde::decode_from_slice(pub_inputs_bytes, bincode::config::standard()) {
+        bytes = &bytes[4..];
+        if bytes.len() < proof_len {
+            bail!("Cairo proof is not correctly formed");
+        }
+
+        let proof = match bincode::serde::decode_from_slice(
+            &bytes[0..proof_len],
+            bincode::config::standard(),
+        ) {
+            Ok((proof, _)) => proof,
+            Err(e) => {
+                bail!("Error while decoding cairo proof. Decode error: {}", e);
+            }
+        };
+
+        // PublicInputs len was stored as an u32, 4u8 needs to be read
+        let pub_inputs_len =
+            u32::from_le_bytes(bytes[proof_len..proof_len + 4].try_into().unwrap()) as usize;
+        let pub_inputs_bytes = &bytes[proof_len + 4..proof_len + 4 + pub_inputs_len];
+
+        let pub_inputs = match bincode::serde::decode_from_slice(
+            pub_inputs_bytes,
+            bincode::config::standard(),
+        ) {
             Ok((pub_inputs, _)) => pub_inputs,
             Err(e) => {
                 bail!(
@@ -95,55 +60,109 @@ pub fn cairo_proof_verifier(proof: &[u8]) -> Result<HyleOutput, Error> {
                 );
             }
         };
-    let program_output_bytes = &bytes[proof_len + 4 + pub_inputs_len..];
+        let program_output_bytes = &bytes[proof_len + 4 + pub_inputs_len..];
 
-    let program_output = match bincode::serde::decode_from_slice::<HyleOutput, _>(
-        program_output_bytes,
-        bincode::config::standard(),
-    ) {
-        Ok((program_output, _)) => program_output,
-        Err(e) => {
-            bail!(
-                "Error while decoding cairo proof's output. Decode error: {}",
-                e
-            );
+        let program_output = match bincode::serde::decode_from_slice::<HyleOutput, _>(
+            program_output_bytes,
+            bincode::config::standard(),
+        ) {
+            Ok((program_output, _)) => program_output,
+            Err(e) => {
+                bail!(
+                    "Error while decoding cairo proof's output. Decode error: {}",
+                    e
+                );
+            }
+        };
+
+        if verify_cairo_proof(&proof, &pub_inputs, &proof_options) {
+            Ok(program_output)
+        } else {
+            bail!("Cairo proof verification failed.");
         }
-    };
-
-    if verify_cairo_proof(&proof, &pub_inputs, &proof_options) {
-        Ok(program_output)
-    } else {
-        bail!("Cairo proof verification failed.");
+    }
+    fn verify_recursion_proof(&self, _proof: &[u8]) -> Result<Vec<HyleOutput>, Error> {
+        bail!("Cairo recursion verifier not implemented yet");
     }
 }
 
-pub fn risc0_proof_verifier(encoded_receipt: &[u8], image_id: &[u8]) -> Result<HyleOutput, Error> {
-    let receipt = match from_slice::<risc0_zkvm::Receipt>(encoded_receipt) {
-        Ok(v) => v,
-        Err(e) => bail!(
-            "Error while decoding Risc0 proof's receipt. Decode error: {}",
-            e
-        ),
-    };
+pub struct Risc0Verifier;
+impl Verifier for Risc0Verifier {
+    fn verify_proof(&self, proof: &[u8], program_id: &[u8]) -> Result<HyleOutput, Error> {
+        let receipt = match from_slice::<risc0_zkvm::Receipt>(proof) {
+            Ok(v) => v,
+            Err(e) => bail!(
+                "Error while decoding Risc0 proof's receipt. Decode error: {}",
+                e
+            ),
+        };
 
-    let image_bytes: Digest = image_id.try_into().expect("Invalid Risc0 image ID");
+        let image_bytes: Digest = program_id.try_into().expect("Invalid Risc0 image ID");
 
-    info!("🔎 Verifying Risc0 proof");
+        info!("🔎 Verifying Risc0 proof");
 
-    match receipt.verify(image_bytes) {
-        Ok(_) => (),
-        Err(e) => bail!("Risc0 proof verification failed: {}", e),
-    };
+        match receipt.verify(image_bytes) {
+            Ok(_) => (),
+            Err(e) => bail!("Risc0 proof verification failed: {}", e),
+        };
 
-    tracing::info!("🦄🦄 receipt.journal {:?} ", receipt.journal);
-    let hyle_output = match receipt.journal.decode::<HyleOutput>() {
-        Ok(v) => v,
-        Err(e) => bail!("Failed to extract HyleOuput from Risc0's journal: {}", e),
-    };
+        let hyle_output = match receipt.journal.decode::<HyleOutput>() {
+            Ok(v) => v,
+            Err(e) => bail!("Failed to extract HyleOuput from Risc0's journal: {}", e),
+        };
 
-    // // TODO: allow multiple outputs when verifying
-    Ok(hyle_output)
+        // // TODO: allow multiple outputs when verifying
+        Ok(hyle_output)
+    }
+
+    fn verify_recursion_proof(&self, _proof: &[u8]) -> Result<Vec<HyleOutput>, Error> {
+        bail!("Risc0 recursion verifier not implemented yet");
+    }
 }
+
+//pub fn verify_proof(proof: &[u8], verifier: &str, program_id: &[u8]) -> Result<HyleOutput, Error> {
+//    // TODO: remove test
+//    match verifier {
+//        //"test" => {
+//        //    let tx_hash = tx.blobs_references.first().unwrap().blob_tx_hash.clone();
+//        //    let index = tx.blobs_references.first().unwrap().blob_index.clone();
+//        //    Ok(HyleOutput {
+//        //        version: 1,
+//        //        initial_state: StateDigest(vec![0, 1, 2, 3]),
+//        //        next_state: StateDigest(vec![4, 5, 6]),
+//        //        identity: Identity("test".to_string()),
+//        //        tx_hash,
+//        //        index,
+//        //        blobs: vec![0, 1, 2, 3, 0, 1, 2, 3],
+//        //        success: true,
+//        //        program_outputs: vec![],
+//        //    })
+//        //}
+//        _ => bail!("{} verifier not implemented yet", verifier),
+//    }
+//}
+
+//pub fn verify_recursion_proof(proof: &[u8], verifier: &str) -> Result<Vec<HyleOutput>, Error> {
+//    // TODO: remove test
+//    match verifier {
+//        //"test" => Ok(tx
+//        //    .blobs_references
+//        //    .iter()
+//        //    .map(|blob_ref| HyleOutput {
+//        //        version: 1,
+//        //        initial_state: StateDigest(vec![0, 1, 2, 3]),
+//        //        next_state: StateDigest(vec![4, 5, 6]),
+//        //        identity: Identity("test".to_string()),
+//        //        tx_hash: blob_ref.blob_tx_hash.clone(),
+//        //        index: blob_ref.blob_index.clone(),
+//        //        blobs: vec![0, 1, 2, 3, 0, 1, 2, 3],
+//        //        success: true,
+//        //        program_outputs: vec![],
+//        //    })
+//        //    .collect()),
+//        _ => bail!("{} recursion verifier not implemented yet", verifier),
+//    }
+//}
 
 #[cfg(test)]
 mod tests {
@@ -151,7 +170,7 @@ mod tests {
 
     use hyle_contract_sdk::{BlobIndex, HyleOutput, Identity, StateDigest, TxHash};
 
-    use super::risc0_proof_verifier;
+    use super::{Risc0Verifier, Verifier};
 
     fn load_encoded_receipt_from_file(path: &str) -> Vec<u8> {
         let mut file = File::open(path).expect("Failed to open proof file");
@@ -169,7 +188,9 @@ mod tests {
             hex::decode("0f0e89496853ab498a5eda2d06ced45909faf490776c8121063df9066bbb9ea4")
                 .expect("Image id decoding failed");
 
-        let result = risc0_proof_verifier(&encoded_receipt, &image_id);
+        let verifier = Risc0Verifier {};
+
+        let result = verifier.verify_proof(&encoded_receipt, &image_id);
 
         match result {
             Ok(outputs) => {

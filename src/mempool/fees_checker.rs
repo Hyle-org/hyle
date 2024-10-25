@@ -16,7 +16,7 @@ fn check_blob_fees(tx: &BlobTransaction) -> Result<()> {
         .fees
         .blobs
         .iter()
-        .map(|blob| check_contract(blob))
+        .map(check_contract)
         .collect::<Result<Vec<_>>>()?;
 
     if !ids.windows(2).all(|w| w[0] == w[1]) {
