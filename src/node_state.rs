@@ -125,11 +125,12 @@ impl NodeState {
             }
         }
 
-        for validator in block.new_bonded_validators {
-            self.bus
-                .send(ConsensusCommand::NewBonded(validator))
-                .context("Send new staker consensus command")?;
-        }
+        // Temporarily deactivated - handled in consensus directly, catchup TODO.
+        // for validator in block.new_bonded_validators {
+        //     self.bus
+        //         .send(ConsensusCommand::NewBonded(validator))
+        //         .context("Send new staker consensus command")?;
+        // }
 
         info!(
            block_hash = %block_hash,

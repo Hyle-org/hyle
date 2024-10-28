@@ -2,14 +2,11 @@
 
 use crate::{
     bus::{bus_client, BusMessage, SharedMessageBus},
-    consensus::{
-        staking::{Stake, Staker},
-        ConsensusEvent,
-    },
+    consensus::ConsensusEvent,
     handle_messages,
     mempool::storage::{Car, CarProposal, InMemoryStorage},
     model::{Hashable, SharedRunContext, Transaction, TransactionData, ValidatorPublicKey},
-    p2p::network::{OutboundMessage, PeerEvent, SignedWithKey},
+    p2p::network::{OutboundMessage, SignedWithKey},
     rest::endpoints::RestApiMessage,
     utils::{
         crypto::{BlstCrypto, SharedBlstCrypto},
@@ -37,7 +34,6 @@ struct MempoolBusClient {
     receiver(SignedWithKey<MempoolNetMessage>),
     receiver(RestApiMessage),
     receiver(ConsensusEvent),
-    receiver(PeerEvent),
 }
 }
 
@@ -111,9 +107,6 @@ impl Mempool {
 
         handle_messages! {
             on_bus self.bus,
-            listen<PeerEvent> cmd => {
-                self.handle_peer_event(cmd)
-            }
             listen<SignedWithKey<MempoolNetMessage>> cmd => {
                 self.handle_net_message(cmd).await
             }
@@ -154,29 +147,6 @@ impl Mempool {
                 {
                     error!("{:?}", e);
                 };
-            }
-        }
-    }
-
-    fn add_stake_tx_on_genesis_for(&mut self, pubkey: ValidatorPublicKey) {
-        let tx = Transaction::wrap(TransactionData::Stake(Staker {
-            pubkey: pubkey.clone(),
-            stake: Stake { amount: 100 },
-        }));
-        self.validators.push(pubkey);
-        self.on_new_tx(tx);
-    }
-
-    fn handle_peer_event(&mut self, event: PeerEvent) {
-        match event {
-            PeerEvent::NewPeer { pubkey } => {
-                if self.genesis && self.is_genesis_leader {
-                    let my_pubkey = self.crypto.validator_pubkey().clone();
-                    if !self.validators.contains(&my_pubkey) {
-                        self.add_stake_tx_on_genesis_for(my_pubkey);
-                    }
-                    self.add_stake_tx_on_genesis_for(pubkey);
-                }
             }
         }
     }

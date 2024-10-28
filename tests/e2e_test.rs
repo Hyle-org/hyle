@@ -207,7 +207,9 @@ async fn e2e() -> Result<()> {
     );
 
     // Start 2 nodes
-    let node1 = test_helpers::TestProcess::new("node", conf_maker.build()).start();
+    let node1 = test_helpers::TestProcess::new("node", conf_maker.build())
+        .log("hyle=info,tower_http=error")
+        .start();
 
     // Request something on node1 to be sure it's alive and working
     let client_node1 = ApiHttpClient {
@@ -220,10 +222,17 @@ async fn e2e() -> Result<()> {
 
     let mut node2_conf = conf_maker.build();
     node2_conf.peers = vec![node1.conf.host.clone()];
-    let node2 = test_helpers::TestProcess::new("node", node2_conf).start();
+    let node2 = test_helpers::TestProcess::new("node", node2_conf)
+        .log("hyle=info,tower_http=error")
+        .start();
 
     // Wait for node2 to properly spin up
     wait_height(&client_node1, 5).await?;
+
+    // Start a third node just to see what happens.
+    let mut node3_conf = conf_maker.build();
+    node3_conf.peers = vec![node1.conf.host.clone(), node2.conf.host.clone()];
+    let _node3 = test_helpers::TestProcess::new("node", node3_conf).start();
 
     // Start indexer
     let mut indexer_conf = conf_maker.build();
@@ -238,7 +247,7 @@ async fn e2e() -> Result<()> {
     send_blobs_and_proofs(&client_node1).await?;
 
     // Wait for some slots to be finished
-    wait_height(&client_node1, 50).await?;
+    wait_height(&client_node1, 12).await?;
 
     verify_test_contract_state(&client_node1).await?;
     verify_contract_state(&client_node1).await?;
