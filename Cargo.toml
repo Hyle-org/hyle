@@ -25,7 +25,7 @@ anymap = "0.12.1"
 cairo-platinum-prover = { git = "https://github.com/lambdaclass/lambdaworks.git", rev = "e465d7c" }
 stark-platinum-prover = { git = "https://github.com/lambdaclass/lambdaworks.git", rev = "e465d7c" }
 console-subscriber = "0.4.1"
-bloomfilter = "1.0.14"
+bloomfilter = "1.0.15"
 paste = "1.0.15"
 blst = "0.3.13"
 # opentelemetry and axum-otel-metrics must be updated together (so that there is only one opentelemetry version)
