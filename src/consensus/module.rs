@@ -1,12 +1,10 @@
 use anyhow::Result;
 
-use crate::{
-    model::{SharedRunContext, ValidatorPublicKey},
-    utils::modules::Module,
-};
+use crate::{model::SharedRunContext, utils::modules::Module};
 
 use super::{
-    consensus_bus_client::ConsensusBusClient, metrics::ConsensusMetrics, Consensus, ConsensusStore,
+    consensus_bus_client::ConsensusBusClient, metrics::ConsensusMetrics, staking::Stake, Consensus,
+    ConsensusStore, StateTag,
 };
 
 impl Module for Consensus {
@@ -36,13 +34,20 @@ impl Module for Consensus {
             crypto: ctx.node.crypto.clone(),
         };
 
-        // FIXME a bit hacky for now
-        if consensus.store.bft_round_state.round_leader == ValidatorPublicKey::default() {
-            if ctx.common.config.id == "node-1" {
-                consensus.store.bft_round_state.round_leader =
-                    ctx.node.crypto.validator_pubkey().clone();
-            }
-            consensus.add_trusted_validator(ctx.node.crypto.validator_pubkey().clone())?;
+        if let Some(stake) = ctx
+            .common
+            .config
+            .consensus
+            .genesis_stakers
+            .get(&ctx.common.config.id)
+        {
+            consensus.store.bft_round_state.state_tag = StateTag::Genesis;
+            consensus.add_trusted_validator(
+                &ctx.node.crypto.validator_pubkey().clone(),
+                Stake { amount: *stake },
+            )?;
+        } else {
+            consensus.store.bft_round_state.state_tag = StateTag::Joining;
         }
 
         Ok(consensus)

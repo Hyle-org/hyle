@@ -1,7 +1,7 @@
 use anyhow::Result;
 use config::{Config, ConfigError, Environment, File};
 use serde::{Deserialize, Serialize};
-use std::{fmt::Debug, path::PathBuf, sync::Arc};
+use std::{collections::HashMap, fmt::Debug, path::PathBuf, sync::Arc};
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct Storage {
@@ -11,6 +11,8 @@ pub struct Storage {
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct Consensus {
     pub slot_duration: u64,
+    pub genesis_leader: String,
+    pub genesis_stakers: HashMap<String, u64>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
@@ -61,5 +63,17 @@ impl Conf {
         .set_override_option("run_indexer", run_indexer)?
         .build()?
         .try_deserialize()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use assertables::assert_ok;
+
+    use super::*;
+
+    #[test]
+    fn test_load_default_conf() {
+        assert_ok!(Conf::new(None, None, None));
     }
 }
