@@ -41,11 +41,12 @@ impl Module for Consensus {
             .genesis_stakers
             .get(&ctx.common.config.id)
         {
-            consensus.store.bft_round_state.state_tag = StateTag::Genesis;
-            consensus.add_trusted_validator(
-                &ctx.node.crypto.validator_pubkey().clone(),
-                Stake { amount: *stake },
-            )?;
+            if matches!(consensus.store.bft_round_state.state_tag, StateTag::Genesis) {
+                consensus.add_trusted_validator(
+                    &ctx.node.crypto.validator_pubkey().clone(),
+                    Stake { amount: *stake },
+                )?;
+            }
         } else {
             consensus.store.bft_round_state.state_tag = StateTag::Joining;
         }

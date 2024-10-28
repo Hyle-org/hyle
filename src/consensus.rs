@@ -13,7 +13,7 @@ use crate::{
     bus::{bus_client, BusMessage, SharedMessageBus},
     handle_messages,
     mempool::{Cut, MempoolEvent},
-    model::{Hashable, ValidatorPublicKey},
+    model::{BlockHeight, Hashable, ValidatorPublicKey},
     p2p::{
         network::{OutboundMessage, PeerEvent, Signature, Signed, SignedWithKey},
         P2PCommand,
@@ -60,6 +60,7 @@ pub enum ConsensusCommand {
     SingleNodeBlockGeneration,
     NewStaker(Staker),
     NewBonded(ValidatorPublicKey),
+    ProcessedBlock(BlockHeight),
     StartNewSlot,
 }
 
@@ -109,6 +110,7 @@ pub struct BFTRoundState {
 
     leader: LeaderState,
     follower: FollowerState,
+    joining: JoiningState,
     state_tag: StateTag,
 }
 
@@ -133,6 +135,11 @@ pub struct LeaderState {
 pub struct FollowerState {
     round_leader: ValidatorPublicKey,
     buffered_quorum_certificate: Option<QuorumCertificate>, // if we receive a commit before the next prepare
+}
+
+#[derive(Encode, Decode, Default)]
+pub struct JoiningState {
+    staking_updated_to: Slot,
 }
 
 #[derive(Serialize, Deserialize, Encode, Decode, Default, Debug, Clone, PartialEq, Eq, Hash)]
@@ -455,10 +462,7 @@ impl Consensus {
     }
 
     fn is_round_leader(&self) -> bool {
-        match self.bft_round_state.state_tag {
-            StateTag::Leader => true,
-            _ => false,
-        }
+        matches!(self.bft_round_state.state_tag, StateTag::Leader)
     }
 
     fn next_cut(&mut self) -> Option<Cut> {
@@ -647,6 +651,24 @@ impl Consensus {
     ) -> Result<(), Error> {
         debug!("Received Prepare message: {}", consensus_proposal);
 
+        match self.bft_round_state.state_tag {
+            StateTag::Joining => {
+                info!(
+                    "🚪 Slot {} / view {} Prepare message received while joining. Storing proposal.",
+                    consensus_proposal.slot, consensus_proposal.view
+                );
+                self.bft_round_state.follower.round_leader = validators[0].clone();
+                self.bft_round_state.slot = consensus_proposal.slot;
+                self.bft_round_state.view = consensus_proposal.view;
+                self.bft_round_state.consensus_proposal = consensus_proposal;
+                return Ok(());
+            }
+            StateTag::Follower => {}
+            _ => {
+                bail!("Prepare message received while not follower");
+            }
+        }
+
         // Process the ticket
         match ticket {
             Ticket::Genesis => {
@@ -797,8 +819,12 @@ impl Consensus {
 
     /// Message received by follower.
     fn on_confirm(&mut self, prepare_quorum_certificate: QuorumCertificate) -> Result<()> {
-        if !matches!(self.bft_round_state.state_tag, StateTag::Follower) {
-            bail!("Confirm received while not follower");
+        match self.bft_round_state.state_tag {
+            StateTag::Follower => {}
+            StateTag::Joining => {
+                return Ok(());
+            }
+            _ => bail!("Confirm message received while not follower"),
         }
 
         // Check that this is a QC for PrepareVote for the expected proposal.
@@ -923,6 +949,35 @@ impl Consensus {
 
     /// Message received by follower.
     fn on_commit(&mut self, commit_quorum_certificate: QuorumCertificate) -> Result<()> {
+        if matches!(self.bft_round_state.state_tag, StateTag::Joining) {
+            info!("Commit message received while joining.");
+            if self.bft_round_state.joining.staking_updated_to + 1 >= self.bft_round_state.slot {
+                info!("We should be caught up, attempting to commit.");
+                // Update the bonding state accordingly
+                let mut to_unbond = vec![];
+                for validator in self.bft_round_state.staking.bonded() {
+                    if !commit_quorum_certificate.validators.contains(validator) {
+                        to_unbond.push(validator.clone());
+                    }
+                }
+                for validator in to_unbond {
+                    self.bft_round_state.staking.unbond(&validator)?;
+                }
+                for validator in &commit_quorum_certificate.validators {
+                    if !self.bft_round_state.staking.is_bonded(validator) {
+                        self.bft_round_state.staking.bond(validator.clone())?;
+                    }
+                }
+                self.bft_round_state.state_tag = StateTag::Follower;
+            } else {
+                info!(
+                    "We are only caught up to {} ({} needed), ignoring commit message.",
+                    self.bft_round_state.joining.staking_updated_to,
+                    self.bft_round_state.slot - 1
+                );
+                return Ok(());
+            }
+        }
         // Check that this is a QC for ConfirmAck for the expected proposal.
         // This also checks slot/view as those are part of the hash.
         // TODO: would probably be good to make that more explicit.
@@ -1055,16 +1110,34 @@ impl Consensus {
                 Ok(())
             }
             ConsensusCommand::NewStaker(staker) => {
-                // ignore new stakers from genesis cut as they are already bonded
-                if self.bft_round_state.slot != 0 {
-                    self.store.bft_round_state.staking.add_staker(staker)?;
+                match self.bft_round_state.state_tag {
+                    StateTag::Genesis => {} // Ignore at genesis, we take a different path
+                    _ => {
+                        self.store.bft_round_state.staking.add_staker(staker)?;
+                    }
                 }
                 Ok(())
             }
             ConsensusCommand::NewBonded(validator) => {
-                // ignore new stakers from genesis cut as they are already bonded
-                if self.bft_round_state.slot != 0 {
-                    self.store.bft_round_state.staking.bond(validator)?;
+                match self.bft_round_state.state_tag {
+                    StateTag::Joining => {
+                        self.store.bft_round_state.staking.bond(validator)?;
+                    }
+                    _ => {
+                        // Ignore in all other cases:
+                        // - For genesis, we know all validators
+                        // - For the rest, we are updating as part of consensus logic.
+                    }
+                }
+                Ok(())
+            }
+            ConsensusCommand::ProcessedBlock(block_height) => {
+                if matches!(self.bft_round_state.state_tag, StateTag::Joining) {
+                    info!(
+                            "🚪 Slot {} Block message received while joining. Setting up for next round.",
+                            block_height.0
+                        );
+                    self.store.bft_round_state.joining.staking_updated_to = block_height.0;
                 }
                 Ok(())
             }
@@ -1127,14 +1200,22 @@ impl Consensus {
         match msg {
             PeerEvent::NewPeer { name, pubkey } => {
                 debug!("New peer: {} ({})", &name, &pubkey);
-                if !matches!(self.bft_round_state.state_tag, StateTag::Genesis) {
-                    return Ok(());
-                }
+                match self.bft_round_state.state_tag {
+                    StateTag::Genesis => {}
+                    StateTag::Joining => {}
+                    _ => {
+                        return Ok(());
+                    }
+                };
                 let Some(stake) = self.config.consensus.genesis_stakers.get(&name) else {
                     return Ok(());
                 };
                 info!("New peer {} added to genesis: {}", &name, &pubkey);
                 self.add_trusted_validator(&pubkey, Stake { amount: *stake })?;
+
+                if matches!(self.bft_round_state.state_tag, StateTag::Joining) {
+                    return Ok(());
+                }
 
                 if name == self.config.consensus.genesis_leader {
                     // Mild hack: set this directly in the right struct
