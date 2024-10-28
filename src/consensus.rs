@@ -388,10 +388,10 @@ impl Consensus {
             let interval = self.config.consensus.slot_duration;
             tokio::spawn(async move {
                 info!(
-                    "⏱️  Sleeping {} seconds before starting a new slot",
+                    "⏱️  Sleeping {} milliseconds before starting a new slot",
                     interval
                 );
-                sleep(Duration::from_secs(interval)).await;
+                sleep(Duration::from_millis(interval)).await;
 
                 _ = command_sender
                     .send(ConsensusCommand::StartNewSlot)
@@ -681,10 +681,10 @@ impl Consensus {
                 }
 
                 self.verify_commit_qc(
-                    &consensus_proposal.previous_consensus_proposal_hash, 
-                    &consensus_proposal.previous_commit_quorum_certificate
+                    &consensus_proposal.previous_consensus_proposal_hash,
+                    &consensus_proposal.previous_commit_quorum_certificate,
                 )?;
-                        // Buffers the previous *Commit* Quorum Cerficiate
+                // Buffers the previous *Commit* Quorum Cerficiate
                 self.store
                     .bft_round_state
                     .commit_quorum_certificates
@@ -727,7 +727,11 @@ impl Consensus {
         Ok(())
     }
 
-    fn verify_commit_qc(&self, consensus_proposal_hash: &ConsensusProposalHash, cert: &QuorumCertificate) -> Result<()> {
+    fn verify_commit_qc(
+        &self,
+        consensus_proposal_hash: &ConsensusProposalHash,
+        cert: &QuorumCertificate,
+    ) -> Result<()> {
         let previous_commit_quorum_certificate_with_message = SignedWithKey {
             msg: ConsensusNetMessage::ConfirmAck(consensus_proposal_hash.clone()),
             signature: cert.signature.clone(),
@@ -837,7 +841,8 @@ impl Consensus {
         Ok(())
     }
 
-    fn verify_prepare_qc(&self, 
+    fn verify_prepare_qc(
+        &self,
         consensus_proposal_hash: &ConsensusProposalHash,
         prepare_quorum_certificate: &QuorumCertificate,
     ) -> Result<()> {
@@ -855,7 +860,7 @@ impl Consensus {
             }
             Ok(_) => Ok(()),
             Err(err) => bail!("Prepare Quorum Certificate verification failed: {}", err),
-        }                    
+        }
     }
 
     /// Message received by follower.
@@ -865,7 +870,7 @@ impl Consensus {
         prepare_quorum_certificate: &QuorumCertificate,
     ) -> Result<()> {
         self.verify_prepare_qc(consensus_proposal_hash, prepare_quorum_certificate)?;
-        
+
         let voting_power =
             self.compute_voting_power(prepare_quorum_certificate.validators.as_slice());
 
@@ -886,15 +891,10 @@ impl Consensus {
             bail!("Prepare Quorum Certificate does not contain enough voting power")
         }
 
-        self.verify_quorum_and_catchup(
-            consensus_proposal_hash,
-            prepare_quorum_certificate,
-        )?;
+        self.verify_quorum_and_catchup(consensus_proposal_hash, prepare_quorum_certificate)?;
 
         // Buffers the *Prepare* Quorum Cerficiate
-        self.bft_round_state.prepare_quorum_certificate =
-            prepare_quorum_certificate.clone();
-        
+        self.bft_round_state.prepare_quorum_certificate = prepare_quorum_certificate.clone();
 
         // Responds ConfirmAck to leader
         if self.is_part_of_consensus(self.crypto.validator_pubkey()) {
@@ -1023,9 +1023,8 @@ impl Consensus {
         consensus_proposal_hash: &ConsensusProposalHash,
         commit_quorum_certificate: &QuorumCertificate,
     ) -> Result<()> {
-
         self.verify_commit_qc(consensus_proposal_hash, commit_quorum_certificate)?;
-        
+
         // Verify enough validators signed
         let voting_power =
             self.compute_voting_power(commit_quorum_certificate.validators.as_slice());
@@ -1225,13 +1224,14 @@ impl Consensus {
         let command_sender = Pick::<broadcast::Sender<ConsensusCommand>>::get(&self.bus).clone();
         if config.id == "single-node" {
             info!(
-                "No peers configured, starting as master generating cuts every {} seconds",
+                "No peers configured, starting as master generating cuts every {} milliseconds",
                 interval
             );
 
             tokio::spawn(async move {
                 loop {
-                    sleep(Duration::from_secs(interval)).await;
+                    info!("🚀 Generating a new block");
+                    sleep(Duration::from_millis(interval)).await;
 
                     _ = command_sender
                         .send(ConsensusCommand::SingleNodeBlockGeneration)

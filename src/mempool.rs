@@ -93,7 +93,7 @@ impl Module for Mempool {
             storage: InMemoryStorage::new(ctx.node.crypto.validator_pubkey().clone()),
             validators: vec![],
             genesis: true,
-            is_genesis_leader: ctx.common.config.id == "node-1",
+            is_genesis_leader: ctx.common.config.id.starts_with("leader-"),
         })
     }
 

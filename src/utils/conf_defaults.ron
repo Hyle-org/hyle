@@ -10,7 +10,7 @@ Config(
   data_directory: "data_node1",
   database_url: "postgres://postgres:postgres@localhost:5432/postgres",
   consensus: Consensus (
-    slot_duration: 0,
+    slot_duration: 500,
   ),
   p2p: (
     ping_interval: 10

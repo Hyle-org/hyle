@@ -31,7 +31,7 @@ impl Module for Consensus {
         if store.bft_round_state.leader_pubkey == ValidatorPublicKey::default() {
             store.bft_round_state.leader_index = 0;
             //store.bft_round_state.leader_id = "node-1".to_string(); FIXME
-            if ctx.common.config.id == "node-1" {
+            if ctx.common.config.id.starts_with("leader-") {
                 store.is_next_leader = true;
             }
         }

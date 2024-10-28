@@ -10,10 +10,10 @@ pub struct ConfMaker {
 }
 
 impl ConfMaker {
-    pub fn build(&mut self) -> Conf {
+    pub fn build(&mut self, prefix: &str) -> Conf {
         self.i += 1;
         Conf {
-            id: format!("node-{}", self.i),
+            id: format!("{}-{}", prefix, self.i),
             host: format!("localhost:{}", 3000 + self.i),
             da_address: format!("localhost:{}", 4000 + self.i),
             rest: format!("localhost:{}", 5000 + self.i),
@@ -45,6 +45,7 @@ pub struct TestProcess {
 
 impl TestProcess {
     pub fn new(command: &str, mut conf: Conf) -> Self {
+        info!("🚀 Starting process with conf: {:?}", conf);
         let mut cargo_bin = Command::cargo_bin(command).unwrap();
 
         // Create a temporary directory for the node
