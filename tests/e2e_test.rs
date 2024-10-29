@@ -83,10 +83,7 @@ async fn e2e_tx_can_be_settled() -> Result<()> {
     Ok(())
 }
 
-#[test_log::test(tokio::test)]
-async fn e2e_risc0_settle_tx() -> Result<()> {
-    let ctx = E2ECtx::new_multi(2, 500).await?;
-
+async fn scenario_erc20(ctx: E2ECtx) -> Result<()> {
     info!("➡️  Registering contract erc20-risc0");
     ctx.register_contract::<ERC20Contract>("erc20-risc0")
         .await?;
@@ -125,4 +122,19 @@ async fn e2e_risc0_settle_tx() -> Result<()> {
     );
 
     Ok(())
+}
+
+#[test_log::test(tokio::test)]
+async fn e2e_risc0_single_node() -> Result<()> {
+    let ctx = E2ECtx::new_single(500).await?;
+
+    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+
+    scenario_erc20(ctx).await
+}
+
+#[test_log::test(tokio::test)]
+async fn e2e_risc0_multi_nodes() -> Result<()> {
+    let ctx = E2ECtx::new_multi(2, 500).await?;
+    scenario_erc20(ctx).await
 }
