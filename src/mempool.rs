@@ -125,8 +125,7 @@ impl Mempool {
                 self.handle_consensus_event(cmd).await
             }
             _ = interval.tick() => {
-                    debug!("Time to Cut");
-                    self.time_to_cut().await
+                self.time_to_cut().await
             }
         }
     }
@@ -139,10 +138,9 @@ impl Mempool {
                 validators,
             } => {
                 debug!(
-                    "Received CommitCut ({} validators, {} new_bonded_validators, {} cut tips)",
-                    validators.len(),
-                    new_bonded_validators.len(),
-                    cut.len()
+                    "✂️ Received CommitCut ({:?} cut, {} pending txs)",
+                    cut,
+                    self.storage.pending_txs.len()
                 );
                 self.validators = validators;
                 let txs = self.storage.update_lanes_after_commit(cut);
@@ -309,8 +307,9 @@ impl Mempool {
     fn try_car_proposal(&mut self, poa: Option<Vec<ValidatorPublicKey>>) {
         if let Some(car_proposal) = self.storage.try_car_proposal(poa) {
             debug!(
-                "Broadcast Car proposal ({} validators)",
-                self.validators.len()
+                "🚗 Broadcast Car proposal ({} validators, {} txs)",
+                self.validators.len(),
+                car_proposal.txs.len()
             );
             if let Err(e) = self.broadcast_car_proposal(car_proposal) {
                 error!("{:?}", e);
@@ -322,7 +321,6 @@ impl Mempool {
         if let Some(cut) = self.storage.try_new_cut(&self.validators) {
             let poa = self.storage.tip_poa();
             self.try_car_proposal(poa);
-            debug!("Sending new Cut");
             if let Err(e) = self
                 .bus
                 .send(MempoolEvent::NewCut(cut))

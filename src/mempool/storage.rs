@@ -368,10 +368,15 @@ impl InMemoryStorage {
     }
 
     fn collect_old_used_cars(cars: &mut Vec<Car>, tip: usize, txs: &mut Vec<Transaction>) {
-        cars.retain_mut(|car| {
-            txs.extend(std::mem::take(&mut car.txs));
-            car.id >= tip
-        });
+        if let Some(pos) = cars.iter().position(|car| car.id == tip) {
+            let latest_txs = std::mem::take(&mut cars[pos].txs);
+            cars.drain(..pos).for_each(|mut car| {
+                txs.extend(std::mem::take(&mut car.txs));
+            });
+            txs.extend(latest_txs);
+        } else {
+            error!("Car {} not found !", tip);
+        }
     }
 
     pub fn update_lanes_after_commit(&mut self, lanes: Cut) -> Vec<Transaction> {
