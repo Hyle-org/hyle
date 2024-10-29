@@ -4,7 +4,7 @@ mod blocks;
 
 use crate::{
     bus::{bus_client, command_response::Query, BusMessage, SharedMessageBus},
-    consensus::ConsensusCommand,
+    consensus::{ConsensusCommand, ConsensusEvent},
     handle_messages,
     mempool::MempoolEvent,
     model::{
@@ -76,6 +76,7 @@ struct DABusClient {
     receiver(PeerEvent),
     receiver(Query<QueryBlockHeight , BlockHeight>),
     receiver(MempoolEvent),
+    receiver(ConsensusEvent),
 }
 }
 
@@ -177,6 +178,18 @@ impl DataAvailability {
                     MempoolEvent::CommitBlock(txs, new_bonded_validators) => {
                         self.handle_commit_block_event(txs, new_bonded_validators).await;
                     }
+                }
+            }
+
+            listen<ConsensusEvent> cmd => {
+                if let ConsensusEvent::GenesisBlock { initial_validators, stake_txs } = cmd {
+                    self.handle_block(Block {
+                        parent_hash: BlockHash::new("0000000000000000"),
+                        height: BlockHeight(0),
+                        timestamp: 420,
+                        new_bonded_validators: initial_validators,
+                        txs: stake_txs,
+                    }).await;
                 }
             }
 
@@ -394,7 +407,7 @@ impl DataAvailability {
         // store block
         let block_hash = block.hash();
         self.add_block(block.clone());
-        self.pop_buffer(block_hash.clone());
+        Box::pin(self.pop_buffer(block_hash.clone())).await;
 
         // Stream block to all peers
         // TODO: use retain once async closures are supported ?
@@ -424,7 +437,7 @@ impl DataAvailability {
         }
     }
 
-    fn pop_buffer(&mut self, mut last_block_hash: BlockHash) {
+    async fn pop_buffer(&mut self, mut last_block_hash: BlockHash) {
         while let Some(first_buffered) = self.buffered_blocks.first() {
             if first_buffered.parent_hash != last_block_hash {
                 break;
@@ -433,7 +446,7 @@ impl DataAvailability {
             let first_buffered = self.buffered_blocks.pop_first().unwrap();
             let first_buffered_hash = first_buffered.hash();
 
-            self.add_block(first_buffered);
+            self.handle_block(first_buffered).await;
             last_block_hash = first_buffered_hash;
         }
     }

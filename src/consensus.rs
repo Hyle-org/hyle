@@ -5,7 +5,12 @@ use bincode::{Decode, Encode};
 use metrics::ConsensusMetrics;
 use serde::{Deserialize, Serialize};
 use staking::{Stake, Staker, Staking, MIN_STAKE};
-use std::{collections::HashSet, default::Default, path::PathBuf, time::Duration};
+use std::{
+    collections::{HashMap, HashSet},
+    default::Default,
+    path::PathBuf,
+    time::Duration,
+};
 use tokio::{sync::broadcast, time::sleep};
 use tracing::{debug, info, warn};
 
@@ -13,7 +18,7 @@ use crate::{
     bus::{bus_client, command_response::Query, BusMessage, SharedMessageBus},
     handle_messages,
     mempool::{Cut, MempoolEvent},
-    model::{BlockHeight, Hashable, ValidatorPublicKey},
+    model::{BlockHeight, Hashable, Transaction, TransactionData, ValidatorPublicKey},
     p2p::{
         network::{OutboundMessage, PeerEvent, Signature, Signed, SignedWithKey},
         P2PCommand,
@@ -71,6 +76,10 @@ pub enum ConsensusEvent {
         new_bonded_validators: Vec<ValidatorPublicKey>,
         cut: Cut,
     },
+    GenesisBlock {
+        stake_txs: Vec<Transaction>,
+        initial_validators: Vec<ValidatorPublicKey>,
+    },
 }
 
 impl BusMessage for ConsensusCommand {}
@@ -104,6 +113,7 @@ pub struct BFTRoundState {
     leader: LeaderState,
     follower: FollowerState,
     joining: JoiningState,
+    genesis: GenesisState,
     state_tag: StateTag,
 }
 
@@ -133,6 +143,11 @@ pub struct FollowerState {
 pub struct JoiningState {
     staking_updated_to: Slot,
     buffered_prepares: Vec<ConsensusProposal>,
+}
+
+#[derive(Encode, Decode, Default)]
+pub struct GenesisState {
+    peer_pubkey: HashMap<String, ValidatorPublicKey>,
 }
 
 #[derive(Serialize, Deserialize, Encode, Decode, Default, Debug, Clone, PartialEq, Eq, Hash)]
@@ -671,7 +686,7 @@ impl Consensus {
         // Process the ticket
         match ticket {
             Ticket::Genesis => {
-                if self.bft_round_state.consensus_proposal.slot != 0 {
+                if self.bft_round_state.consensus_proposal.slot != 1 {
                     bail!("Genesis ticket is only valid for the first slot.");
                 }
             }
@@ -997,21 +1012,6 @@ impl Consensus {
             self.bft_round_state.consensus_proposal.slot
         );
 
-        // Update the bonding state accordingly
-        let mut to_unbond = vec![];
-        for validator in self.bft_round_state.staking.bonded() {
-            if !commit_quorum_certificate.validators.contains(validator) {
-                to_unbond.push(validator.clone());
-            }
-        }
-        for validator in to_unbond {
-            self.bft_round_state.staking.unbond(&validator)?;
-        }
-        for validator in &commit_quorum_certificate.validators {
-            if !self.bft_round_state.staking.is_bonded(validator) {
-                self.bft_round_state.staking.bond(validator.clone())?;
-            }
-        }
         // Try to commit the proposal
         self.bft_round_state.state_tag = StateTag::Follower;
         if self
@@ -1147,36 +1147,52 @@ impl Consensus {
                 Ok(())
             }
             ConsensusCommand::NewStaker(staker) => {
-                match self.bft_round_state.state_tag {
-                    StateTag::Genesis => {} // Ignore at genesis, we take a different path
-                    _ => {
-                        self.store.bft_round_state.staking.add_staker(staker)?;
-                    }
-                }
+                self.store.bft_round_state.staking.add_staker(staker)?;
                 Ok(())
             }
             ConsensusCommand::NewBonded(validator) => {
                 match self.bft_round_state.state_tag {
-                    StateTag::Joining => {
+                    StateTag::Joining | StateTag::Genesis => {
                         self.store.bft_round_state.staking.bond(validator)?;
                     }
                     _ => {
-                        // Ignore in all other cases:
-                        // - For genesis, we know all validators
-                        // - For the rest, we are updating as part of consensus logic.
+                        // Ignore, we are updating as part of consensus logic.
                     }
                 }
                 Ok(())
             }
             ConsensusCommand::ProcessedBlock(block_height) => {
-                if matches!(self.bft_round_state.state_tag, StateTag::Joining)
-                    && self.store.bft_round_state.joining.staking_updated_to < block_height.0
-                {
-                    info!(
-                        "🚪 Slot {} Block message received while joining. Setting up for next round.",
-                        block_height.0
-                    );
-                    self.store.bft_round_state.joining.staking_updated_to = block_height.0;
+                match self.bft_round_state.state_tag {
+                    StateTag::Genesis => {
+                        // ACHTUNG: this only works because Staking, Bonding and Processed messages
+                        // are part of the same channel and so will be processed in order.
+                        if block_height == BlockHeight(0) {
+                            // Genesis logic: we rely on all peers connecting with each other
+                            // before the first round starts, or the validators list will mismatch.
+                            // TODO: this is hacky & duplicates logic in the module building.
+                            if self.config.consensus.genesis_leader == self.config.id {
+                                self.bft_round_state.state_tag = StateTag::Leader;
+                                self.bft_round_state.consensus_proposal.slot = 1;
+                                info!("👑 Starting consensus as leader");
+                                self.delay_start_new_round(Ticket::Genesis)?;
+                            } else {
+                                self.bft_round_state.state_tag = StateTag::Follower;
+                                self.bft_round_state.consensus_proposal.slot = 1;
+                                info!("👑 Starting consensus as follower");
+                            }
+                        }
+                    }
+                    StateTag::Joining => {
+                        info!(
+                            "🚪 Received {} {}",
+                            self.store.bft_round_state.joining.staking_updated_to, block_height.0
+                        );
+                        if self.store.bft_round_state.joining.staking_updated_to < block_height.0 {
+                            info!("🚪 Processed block {}", block_height.0);
+                            self.store.bft_round_state.joining.staking_updated_to = block_height.0;
+                        }
+                    }
+                    _ => {}
                 }
                 Ok(())
             }
@@ -1239,42 +1255,53 @@ impl Consensus {
         match msg {
             PeerEvent::NewPeer { name, pubkey } => {
                 debug!("New peer: {} ({})", &name, &pubkey);
-                match self.bft_round_state.state_tag {
-                    StateTag::Genesis => {}
-                    StateTag::Joining => {}
-                    _ => {
-                        return Ok(());
-                    }
-                };
-                let Some(stake) = self.config.consensus.genesis_stakers.get(&name) else {
-                    return Ok(());
-                };
-                info!("New peer {} added to genesis: {}", &name, &pubkey);
-                self.add_trusted_validator(&pubkey, Stake { amount: *stake })?;
-
-                if matches!(self.bft_round_state.state_tag, StateTag::Joining) {
+                if !matches!(self.bft_round_state.state_tag, StateTag::Genesis) {
                     return Ok(());
                 }
+                info!("New peer {} added to genesis: {}", &name, &pubkey);
+                self.bft_round_state
+                    .genesis
+                    .peer_pubkey
+                    .insert(name.clone(), pubkey.clone());
 
                 if name == self.config.consensus.genesis_leader {
                     info!("👑 Setting {}({}) as leader for genesis", &name, &pubkey);
                     self.bft_round_state.consensus_proposal.round_leader = pubkey;
                 }
 
-                if self.bft_round_state.staking.bonded().len()
+                // Once we know everyone in the initial quorum, craft & process the genesis block.
+                if self.bft_round_state.genesis.peer_pubkey.len()
                     == self.config.consensus.genesis_stakers.len()
                 {
-                    // Genesis logic: we rely on all peers connecting with each other
-                    // before the first round starts, or the validators list will mismatch.
-                    // TODO: this is hacky & duplicates logic in the module building.
-                    if self.config.consensus.genesis_leader == self.config.id {
-                        self.bft_round_state.state_tag = StateTag::Leader;
-                        info!("👑 Starting consensus as leader");
-                        self.delay_start_new_round(Ticket::Genesis)?;
-                    } else {
-                        self.bft_round_state.state_tag = StateTag::Follower;
-                        info!("👑 Starting consensus as follower");
-                    }
+                    _ = self.bus.send(ConsensusEvent::GenesisBlock {
+                        initial_validators: self
+                            .bft_round_state
+                            .genesis
+                            .peer_pubkey
+                            .values()
+                            .cloned()
+                            .collect(),
+                        stake_txs: self
+                            .bft_round_state
+                            .genesis
+                            .peer_pubkey
+                            .iter()
+                            .map(|(k, v)| {
+                                Transaction::wrap(TransactionData::Stake(Staker {
+                                    pubkey: v.clone(),
+                                    stake: Stake {
+                                        amount: *self
+                                            .config
+                                            .consensus
+                                            .genesis_stakers
+                                            .get(k)
+                                            .unwrap_or(&100),
+                                    },
+                                }))
+                            })
+                            .collect(),
+                    });
+                    // We will wait until we've bonded everyone to actually start.
                 }
                 Ok(())
             }
@@ -1283,7 +1310,12 @@ impl Consensus {
 
     /// Setup the state of the node at startup.
     fn setup_initial_state(&mut self) -> Result<()> {
-        if let Some(stake) = self.config.consensus.genesis_stakers.get(&self.config.id) {
+        if self
+            .config
+            .consensus
+            .genesis_stakers
+            .contains_key(&self.config.id)
+        {
             if matches!(self.bft_round_state.state_tag, StateTag::Genesis) {
                 if self.config.id == self.config.consensus.genesis_leader {
                     info!(
@@ -1295,10 +1327,10 @@ impl Consensus {
                         self.crypto.validator_pubkey().clone();
                 }
                 // We will start from the genesis block.
-                self.add_trusted_validator(
-                    &self.crypto.validator_pubkey().clone(),
-                    Stake { amount: *stake },
-                )?;
+                self.store.bft_round_state.genesis.peer_pubkey.insert(
+                    self.config.id.clone(),
+                    self.crypto.validator_pubkey().clone(),
+                );
             }
         } else {
             self.bft_round_state.state_tag = StateTag::Joining;
@@ -1448,12 +1480,14 @@ mod test {
                 .consensus
                 .add_trusted_validator(&c_other.validator_pubkey().clone(), Stake { amount: 100 });
 
+            node1.consensus.bft_round_state.consensus_proposal.slot = 1;
             node1.consensus.bft_round_state.state_tag = StateTag::Leader;
             node1
                 .consensus
                 .bft_round_state
                 .consensus_proposal
                 .round_leader = crypto.validator_pubkey().clone();
+            node2.consensus.bft_round_state.consensus_proposal.slot = 1;
             node2.consensus.bft_round_state.state_tag = StateTag::Follower;
             node2
                 .consensus
@@ -1664,7 +1698,7 @@ mod test {
 
         let mut node3 = TestCtx::new_node("node-3").await;
         node3.consensus.bft_round_state.state_tag = StateTag::Joining;
-        node3.consensus.bft_round_state.joining.staking_updated_to = 0;
+        node3.consensus.bft_round_state.joining.staking_updated_to = 1;
         node3.add_bonded_staker(&node1, 100, "Add staker");
         node3.add_bonded_staker(&node2, 100, "Add staker");
 
@@ -1805,8 +1839,8 @@ mod test {
             node3.handle_block(&leader_proposal);
         }
 
-        assert_eq!(node1.consensus.bft_round_state.consensus_proposal.slot, 5);
-        assert_eq!(node2.consensus.bft_round_state.consensus_proposal.slot, 5);
-        assert_eq!(node3.consensus.bft_round_state.consensus_proposal.slot, 5);
+        assert_eq!(node1.consensus.bft_round_state.consensus_proposal.slot, 6);
+        assert_eq!(node2.consensus.bft_round_state.consensus_proposal.slot, 6);
+        assert_eq!(node3.consensus.bft_round_state.consensus_proposal.slot, 6);
     }
 }
