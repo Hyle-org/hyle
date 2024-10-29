@@ -368,7 +368,7 @@ impl Mempool {
         }
 
         self.metrics.add_api_tx("blob".to_string());
-        self.storage.add_new_tx(tx.clone());
+        self.storage.add_new_tx(tx);
         if self.storage.genesis() {
             // Genesis create and broadcast a new Car proposal
             self.try_car_proposal(None);
