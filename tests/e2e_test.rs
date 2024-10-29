@@ -208,7 +208,7 @@ async fn e2e() -> Result<()> {
 
     // Start 2 nodes
     let node1 = test_helpers::TestProcess::new("node", conf_maker.build())
-        .log("hyle=error,tower_http=error")
+        .log("hyle=info,tower_http=error")
         .start();
 
     // Request something on node1 to be sure it's alive and working
@@ -223,7 +223,7 @@ async fn e2e() -> Result<()> {
     let mut node2_conf = conf_maker.build();
     node2_conf.peers = vec![node1.conf.host.clone()];
     let node2 = test_helpers::TestProcess::new("node", node2_conf)
-        .log("hyle=error,tower_http=error")
+        .log("hyle=info,tower_http=error")
         .start();
 
     // Wait for node2 to properly spin up
