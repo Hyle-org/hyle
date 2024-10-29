@@ -1246,7 +1246,6 @@ impl Consensus {
                 }
 
                 if name == self.config.consensus.genesis_leader {
-                    // Mild hack: set this directly in the right struct
                     info!("👑 Setting {}({}) as leader for genesis", &name, &pubkey);
                     self.bft_round_state.consensus_proposal.round_leader = pubkey;
                 }
@@ -1276,9 +1275,8 @@ impl Consensus {
         if let Some(stake) = self.config.consensus.genesis_stakers.get(&self.config.id) {
             if matches!(self.bft_round_state.state_tag, StateTag::Genesis) {
                 if self.config.id == self.config.consensus.genesis_leader {
-                    // Mild hack: set this directly in the right struct
                     info!(
-                        "👑 Setting ouselves {}({}) as leader for genesis",
+                        "👑 Setting ourselves {}({}) as leader for genesis",
                         &self.config.id,
                         self.crypto.validator_pubkey()
                     );
