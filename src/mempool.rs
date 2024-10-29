@@ -44,8 +44,6 @@ pub struct Mempool {
     metrics: MempoolMetrics,
     storage: InMemoryStorage,
     validators: Vec<ValidatorPublicKey>,
-    genesis: bool,
-    is_genesis_leader: bool,
     node_state: NodeState,
 }
 
@@ -99,8 +97,6 @@ impl Module for Mempool {
             crypto: Arc::clone(&ctx.node.crypto),
             storage: InMemoryStorage::new(ctx.node.crypto.validator_pubkey().clone()),
             validators: vec![],
-            genesis: true,
-            is_genesis_leader: ctx.common.config.id == "node-1",
             node_state,
         })
     }
@@ -129,10 +125,8 @@ impl Mempool {
                 self.handle_consensus_event(cmd).await
             }
             _ = interval.tick() => {
-                if !(self.genesis && self.is_genesis_leader) {
                     debug!("Time to Cut");
                     self.time_to_cut().await
-                }
             }
         }
     }
@@ -273,10 +267,6 @@ impl Mempool {
             .new_vote_for_proposal(validator, &car_proposal)
             .is_some()
         {
-            if self.genesis && self.is_genesis_leader {
-                debug!("Genesis Cut");
-                self.time_to_cut().await;
-            }
             debug!("{} Vote from {}", self.storage.id, validator)
         } else {
             error!("{} unexpected Vote from {}", self.storage.id, validator)
@@ -387,7 +377,7 @@ impl Mempool {
 
         self.metrics.add_api_tx("blob".to_string());
         self.storage.add_new_tx(tx.clone());
-        if self.storage.genesis() && self.storage.pending_txs.len() >= 2 {
+        if self.storage.genesis() {
             // Genesis create and broadcast a new Car proposal
             self.try_car_proposal(None);
         }
