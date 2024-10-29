@@ -1230,7 +1230,6 @@ impl Consensus {
 
             tokio::spawn(async move {
                 loop {
-                    info!("🚀 Generating a new block");
                     sleep(Duration::from_millis(interval)).await;
 
                     _ = command_sender

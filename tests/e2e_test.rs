@@ -20,8 +20,17 @@ pub fn load_encoded_receipt_from_file(path: &str) -> Vec<u8> {
 }
 
 #[test_log::test(tokio::test)]
+async fn e2e_consensus_can_run_lot_of_nodes() -> Result<()> {
+    let ctx = E2ECtx::new_multi(10, 500).await?;
+
+    ctx.wait_height(2).await?;
+
+    Ok(())
+}
+
+#[test_log::test(tokio::test)]
 async fn e2e_tx_can_be_settled() -> Result<()> {
-    let ctx = E2ECtx::new().await?;
+    let ctx = E2ECtx::new_multi_with_indexer(2, 500).await?;
 
     info!("➡️  Registering contracts c1 & c2");
     ctx.register_contract::<TestContract>("c1").await?;
@@ -76,7 +85,7 @@ async fn e2e_tx_can_be_settled() -> Result<()> {
 
 #[test_log::test(tokio::test)]
 async fn e2e_risc0_settle_tx() -> Result<()> {
-    let ctx = E2ECtx::new().await?;
+    let ctx = E2ECtx::new_multi(2, 500).await?;
 
     info!("➡️  Registering contract erc20-risc0");
     ctx.register_contract::<ERC20Contract>("erc20-risc0")

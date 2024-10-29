@@ -13,12 +13,21 @@ impl ConfMaker {
     pub fn build(&mut self, prefix: &str) -> Conf {
         self.i += 1;
         Conf {
-            id: format!("{}-{}", prefix, self.i),
+            id: if prefix == "single-node" {
+                prefix.into()
+            } else {
+                format!("{}-{}", prefix, self.i)
+            },
             host: format!("localhost:{}", 3000 + self.i),
             da_address: format!("localhost:{}", 4000 + self.i),
             rest: format!("localhost:{}", 5000 + self.i),
             ..self.default.clone()
         }
+    }
+    pub fn reset_default(&mut self) {
+        let i = self.i;
+        *self = ConfMaker::default();
+        self.i = i;
     }
 }
 
