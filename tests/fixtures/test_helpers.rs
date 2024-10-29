@@ -1,7 +1,11 @@
 use assert_cmd::prelude::*;
 use hyle::{rest::client::ApiHttpClient, utils::conf::Conf};
-use std::process::{Child, Command};
+use std::{
+    process::{Child, Command},
+    time::Duration,
+};
 use tempfile::TempDir;
+use tokio::time::timeout;
 use tracing::info;
 
 pub struct ConfMaker {
@@ -113,21 +117,26 @@ impl Drop for TestProcess {
 }
 
 pub async fn wait_height(client: &ApiHttpClient, slots: u64) -> anyhow::Result<()> {
-    loop {
-        if let Ok(mut current_slot) = client.get_block_height().await {
-            let target_slot = current_slot + slots;
-            while current_slot.0 < target_slot.0 {
-                info!(
-                    "⏰ Waiting for slot {} to be reached. Current is {}",
-                    target_slot, current_slot
-                );
-                std::thread::sleep(std::time::Duration::from_millis(250));
-                current_slot = client.get_block_height().await?;
+    timeout(Duration::from_secs(15), async {
+        loop {
+            if let Ok(mut current_slot) = client.get_block_height().await {
+                let target_slot = current_slot + slots;
+                while current_slot.0 < target_slot.0 {
+                    info!(
+                        "⏰ Waiting for slot {} to be reached. Current is {}",
+                        target_slot, current_slot
+                    );
+                    tokio::time::sleep(Duration::from_millis(250)).await;
+                    current_slot = client.get_block_height().await?;
+                }
+                return anyhow::Ok(());
+            } else {
+                info!("⏰ Waiting for node to be ready");
+                tokio::time::sleep(Duration::from_millis(500)).await;
             }
-            return Ok(());
-        } else {
-            info!("⏰ Waiting for node to be ready");
-            std::thread::sleep(std::time::Duration::from_millis(500));
         }
-    }
+    })
+    .await?
+
+    //result.map_err(|_| anyhow::anyhow!("Timeout reached while waiting for height"))
 }

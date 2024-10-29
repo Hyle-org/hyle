@@ -89,6 +89,9 @@ impl E2ECtx {
             reqwest_client: Client::new(),
         };
 
+        // TODO remove when the single node genesis is fixed
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+
         info!("🚀 E2E test environment is ready!");
         Ok(E2ECtx {
             pg: None,
@@ -156,6 +159,10 @@ impl E2ECtx {
 
     pub fn client(&self) -> &ApiHttpClient {
         &self.clients[self.client_index]
+    }
+
+    pub fn has_indexer(&self) -> bool {
+        self.pg.is_some()
     }
 
     pub async fn register_contract<Contract>(&self, name: &str) -> Result<()>
