@@ -1431,6 +1431,11 @@ mod test {
                 .add_trusted_validator(&c_other.validator_pubkey().clone(), Stake { amount: 100 });
 
             node1.consensus.bft_round_state.state_tag = StateTag::Leader;
+            node1
+                .consensus
+                .bft_round_state
+                .consensus_proposal
+                .round_leader = crypto.validator_pubkey().clone();
             node2.consensus.bft_round_state.state_tag = StateTag::Follower;
             node2
                 .consensus
@@ -1640,17 +1645,12 @@ mod test {
         }
 
         let mut node3 = TestCtx::new_node("node-3").await;
-        node3.consensus.bft_round_state.state_tag = StateTag::Follower;
-        node3
-            .consensus
-            .bft_round_state
-            .consensus_proposal
-            .round_leader = node1.pubkey();
-        node3.consensus.bft_round_state.consensus_proposal.slot = 1;
+        node3.consensus.bft_round_state.state_tag = StateTag::Joining;
+        node3.consensus.bft_round_state.joining.staking_updated_to = 1;
         node3.add_bonded_staker(&node1, 100, "Add staker");
         node3.add_bonded_staker(&node2, 100, "Add staker");
 
-        // Slot 1: New slave candidates - leader = node2
+        // Slot 1: Node3 synchronizes its consensus to the others. - leader = node2
         {
             info!("➡️  Leader proposal");
             node2.start_round();
@@ -1670,37 +1670,18 @@ mod test {
             info!("➡️  Leader commit");
             let leader_commit = node2.assert_broadcast("Leader commit");
             node1.handle_msg(&leader_commit, "Leader commit");
-
-            info!("➡️  Slave 2 candidacy");
-            node3.with_stake(100, "Add stake");
-            // This should trigger send_candidacy as we now have stake.
             node3.handle_msg(&leader_commit, "Leader commit");
-            let slave2_candidacy = node3.assert_broadcast("Slave 2 candidacy");
-            assert_contains!(
-                node2.handle_msg_err(&slave2_candidacy).to_string(),
-                "validator is not staking"
-            );
-            node1.add_staker(&node3, 100, "Add staker");
-            node1.handle_msg(&slave2_candidacy, "Slave 2 candidacy");
-            node2.add_staker(&node3, 100, "Add staker");
-            node2.handle_msg(&slave2_candidacy, "Slave 2 candidacy");
-
             info!("➡️  Handle block");
             node1.handle_block(&leader_proposal);
             node2.handle_block(&leader_proposal);
             node3.handle_block(&leader_proposal);
         }
 
-        // Slot 2: Still a slot without slave 2 - leader = node 1
+        // Slot 2: New slave candidates - leader = node1
         {
-            info!("➡️  Leader proposal - Slot 2");
+            info!("➡️  Leader proposal");
             node1.start_round();
             let leader_proposal = node1.assert_broadcast("Leader proposal");
-            if let ConsensusNetMessage::Prepare(_, _) = &leader_proposal.msg {
-                assert_eq!(node1.consensus.bft_round_state.staking.bonded().len(), 2);
-            } else {
-                panic!("Leader proposal is not a Prepare message");
-            }
             node2.handle_msg(&leader_proposal, "Leader proposal");
             node3.handle_msg(&leader_proposal, "Leader proposal");
             info!("➡️  Slave vote");
@@ -1716,7 +1697,20 @@ mod test {
             info!("➡️  Leader commit");
             let leader_commit = node1.assert_broadcast("Leader commit");
             node2.handle_msg(&leader_commit, "Leader commit");
+
+            info!("➡️  Slave 2 candidacy");
+            node3.with_stake(100, "Add stake");
+            // This should trigger send_candidacy as we now have stake.
             node3.handle_msg(&leader_commit, "Leader commit");
+            let slave2_candidacy = node3.assert_broadcast("Slave 2 candidacy");
+            assert_contains!(
+                node1.handle_msg_err(&slave2_candidacy).to_string(),
+                "validator is not staking"
+            );
+            node1.add_staker(&node3, 100, "Add staker");
+            node1.handle_msg(&slave2_candidacy, "Slave 2 candidacy");
+            node2.add_staker(&node3, 100, "Add staker");
+            node2.handle_msg(&slave2_candidacy, "Slave 2 candidacy");
 
             info!("➡️  Handle block");
             node1.handle_block(&leader_proposal);
@@ -1724,13 +1718,13 @@ mod test {
             node3.handle_block(&leader_proposal);
         }
 
-        // Slot 3: Slave 2 joined consensus, leader = node-2
+        // Slot 3: Still a slot without slave 2 - leader = node 2
         {
-            info!("➡️  Leader proposal");
+            info!("➡️  Leader proposal - Slot 3");
             node2.start_round();
             let leader_proposal = node2.assert_broadcast("Leader proposal");
             if let ConsensusNetMessage::Prepare(_, _) = &leader_proposal.msg {
-                assert_eq!(node1.consensus.bft_round_state.staking.bonded().len(), 3);
+                assert_eq!(node2.consensus.bft_round_state.staking.bonded().len(), 2);
             } else {
                 panic!("Leader proposal is not a Prepare message");
             }
@@ -1738,21 +1732,54 @@ mod test {
             node3.handle_msg(&leader_proposal, "Leader proposal");
             info!("➡️  Slave vote");
             let slave_vote = node1.assert_send(&node2, "Slave vote");
-            let slave2_vote = node3.assert_send(&node2, "Slave vote");
             node2.handle_msg(&slave_vote, "Slave vote");
-            node2.handle_msg(&slave2_vote, "Slave vote");
             info!("➡️  Leader confirm");
             let leader_confirm = node2.assert_broadcast("Leader confirm");
             node1.handle_msg(&leader_confirm, "Leader confirm");
             node3.handle_msg(&leader_confirm, "Leader confirm");
             info!("➡️  Slave confirm ack");
             let slave_confirm_ack = node1.assert_send(&node2, "Slave confirm ack");
-            let slave2_confirm_ack = node3.assert_send(&node2, "Slave confirm ack");
             node2.handle_msg(&slave_confirm_ack, "Slave confirm ack");
-            node2.handle_msg(&slave2_confirm_ack, "Slave confirm ack");
             info!("➡️  Leader commit");
             let leader_commit = node2.assert_broadcast("Leader commit");
             node1.handle_msg(&leader_commit, "Leader commit");
+            node3.handle_msg(&leader_commit, "Leader commit");
+
+            info!("➡️  Handle block");
+            node1.handle_block(&leader_proposal);
+            node2.handle_block(&leader_proposal);
+            node3.handle_block(&leader_proposal);
+        }
+
+        // Slot 4: Slave 2 joined consensus, leader = node-1
+        {
+            info!("➡️  Leader proposal");
+            node1.start_round();
+            let leader_proposal = node1.assert_broadcast("Leader proposal");
+            if let ConsensusNetMessage::Prepare(_, _) = &leader_proposal.msg {
+                assert_eq!(node2.consensus.bft_round_state.staking.bonded().len(), 3);
+            } else {
+                panic!("Leader proposal is not a Prepare message");
+            }
+            node2.handle_msg(&leader_proposal, "Leader proposal");
+            node3.handle_msg(&leader_proposal, "Leader proposal");
+            info!("➡️  Slave vote");
+            let slave_vote = node2.assert_send(&node1, "Slave vote");
+            let slave2_vote = node3.assert_send(&node1, "Slave vote");
+            node1.handle_msg(&slave_vote, "Slave vote");
+            node1.handle_msg(&slave2_vote, "Slave vote");
+            info!("➡️  Leader confirm");
+            let leader_confirm = node1.assert_broadcast("Leader confirm");
+            node2.handle_msg(&leader_confirm, "Leader confirm");
+            node3.handle_msg(&leader_confirm, "Leader confirm");
+            info!("➡️  Slave confirm ack");
+            let slave_confirm_ack = node2.assert_send(&node1, "Slave confirm ack");
+            let slave2_confirm_ack = node3.assert_send(&node1, "Slave confirm ack");
+            node1.handle_msg(&slave_confirm_ack, "Slave confirm ack");
+            node1.handle_msg(&slave2_confirm_ack, "Slave confirm ack");
+            info!("➡️  Leader commit");
+            let leader_commit = node1.assert_broadcast("Leader commit");
+            node2.handle_msg(&leader_commit, "Leader commit");
             node3.handle_msg(&leader_commit, "Leader commit");
             info!("➡️  Handle block");
             node1.handle_block(&leader_proposal);
@@ -1760,8 +1787,8 @@ mod test {
             node3.handle_block(&leader_proposal);
         }
 
-        assert_eq!(node1.consensus.bft_round_state.consensus_proposal.slot, 4);
-        assert_eq!(node2.consensus.bft_round_state.consensus_proposal.slot, 4);
-        assert_eq!(node3.consensus.bft_round_state.consensus_proposal.slot, 4);
+        assert_eq!(node1.consensus.bft_round_state.consensus_proposal.slot, 5);
+        assert_eq!(node2.consensus.bft_round_state.consensus_proposal.slot, 5);
+        assert_eq!(node3.consensus.bft_round_state.consensus_proposal.slot, 5);
     }
 }
