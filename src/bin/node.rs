@@ -9,7 +9,6 @@ use hyle::{
     indexer::Indexer,
     mempool::Mempool,
     model::{CommonRunContext, NodeRunContext, SharedRunContext},
-    node_state::NodeState,
     p2p::P2P,
     rest::{RestApi, RestApiRunContext},
     tools::mock_workflow::MockWorkflowHandler,
@@ -95,7 +94,6 @@ async fn main() -> Result<()> {
 
     let mut handler = ModulesHandler::default();
     handler.build_module::<Mempool>(ctx.clone()).await?;
-    handler.build_module::<NodeState>(ctx.clone()).await?;
     handler.build_module::<Consensus>(ctx.clone()).await?;
     handler.build_module::<P2P>(ctx.clone()).await?;
     handler

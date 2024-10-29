@@ -1,186 +1,88 @@
 //! State required for participation in consensus by the node.
 
 use crate::{
-    bus::{bus_client, command_response::Query, SharedMessageBus},
-    consensus::{staking::Staker, ConsensusCommand},
-    data_availability::DataEvent,
-    handle_messages,
+    consensus::staking::Staker,
     model::{
         BlobTransaction, BlobsHash, Block, BlockHeight, ContractName, Hashable, ProofTransaction,
-        RegisterContractTransaction, SharedRunContext, Transaction,
+        RegisterContractTransaction, TransactionData,
     },
-    utils::{conf::SharedConf, logger::LogMe, modules::Module},
 };
 use anyhow::{bail, Context, Error, Result};
 use bincode::{Decode, Encode};
-use hyle_contract_sdk::{HyleOutput, StateDigest, TxHash};
+use hyle_contract_sdk::{HyleOutput, StateDigest};
 use model::{Contract, Timeouts, UnsettledBlobMetadata, UnsettledTransaction};
 use ordered_tx_map::OrderedTxMap;
-use std::{
-    collections::{HashMap, HashSet},
-    ops::{Deref, DerefMut},
-    path::PathBuf,
-};
+use std::collections::{HashMap, HashSet};
 use tracing::{debug, error, info, warn};
 
 pub mod model;
 mod ordered_tx_map;
 mod verifiers;
 
-bus_client! {
-struct NodeStateBusClient {
-    sender(ConsensusCommand),
-    receiver(Query<ContractName, Contract>),
-    receiver(DataEvent),
-}
-}
-
-#[derive(Default, Encode, Decode)]
-pub struct NodeStateStore {
+#[derive(Default, Encode, Decode, Debug)]
+pub struct NodeState {
     timeouts: Timeouts,
     current_height: BlockHeight,
-    contracts: HashMap<ContractName, Contract>,
+    // This field is public for testing purposes
+    pub contracts: HashMap<ContractName, Contract>,
     unsettled_transactions: OrderedTxMap,
 }
 
-pub struct NodeState {
-    bus: NodeStateBusClient,
-    file: PathBuf,
-    store: NodeStateStore,
-    config: SharedConf,
-}
-
-impl Module for NodeState {
-    fn name() -> &'static str {
-        "NodeState"
-    }
-
-    type Context = SharedRunContext;
-
-    async fn build(ctx: Self::Context) -> Result<Self> {
-        let file = ctx
-            .common
-            .config
-            .data_directory
-            .clone()
-            .join("node_state.bin");
-        let store = Self::load_from_disk_or_default(file.as_path());
-        let bus = NodeStateBusClient::new_from_bus(ctx.common.bus.new_handle()).await;
-        let config = ctx.common.config.clone();
-        Ok(NodeState {
-            bus,
-            file,
-            store,
-            config,
-        })
-    }
-
-    fn run(&mut self) -> impl futures::Future<Output = Result<()>> + Send {
-        self.start(self.config.clone())
-    }
-}
-
 impl NodeState {
-    pub async fn start(&mut self, _config: SharedConf) -> Result<(), Error> {
-        info!(
-            "Starting NodeState with {} contracts and {} unsettled transactions at height {}",
-            self.contracts.len(),
-            self.unsettled_transactions.len(),
-            self.current_height
-        );
-
-        handle_messages! {
-            on_bus self.bus,
-            command_response<ContractName, Contract> cmd => {
-                self.contracts.get(cmd).cloned().context("Contract not found")
-            }
-            listen<DataEvent> event => {
-                _ = self.handle_data_event(event)
-                    .log_error("NodeState: Error while handling data event");
-            }
-        }
-    }
-
-    fn handle_data_event(&mut self, event: DataEvent) -> anyhow::Result<()> {
-        match event {
-            DataEvent::NewBlock(block) => {
-                debug!("New block to handle: {:}", block.hash());
-                self.handle_new_block(block).context("handle new block")?;
-            }
-        };
-        Ok(())
-    }
-
-    fn handle_new_block(&mut self, block: Block) -> Result<(), Error> {
+    pub fn handle_new_block(&mut self, block: Block) -> Vec<Staker> {
         self.clear_timeouts(&block.height);
         self.current_height = block.height;
-        let txs_count = block.txs.len();
-        let block_hash = block.hash();
 
-        for tx in block.txs {
-            let tx_hash = tx.hash();
-            match self.handle_transaction(tx.clone()) {
-                Ok(_) => debug!("Handled tx {tx_hash}"),
-                Err(e) => error!("Failed handling tx {:?} with error: {e}", tx),
+        let mut stakers = vec![];
+        // Handle all transactions
+        for tx in block.txs.iter() {
+            match &tx.transaction_data {
+                // FIXME: to remove when we have a real staking smart contract
+                TransactionData::Stake(staker) => {
+                    stakers.push(staker.clone());
+                }
+                TransactionData::Blob(blob_transaction) => {
+                    if let Err(e) = self.handle_blob_tx(blob_transaction) {
+                        error!("Failed to handle blob transaction: {:?}", e);
+                    }
+                }
+                TransactionData::Proof(proof_transaction) => {
+                    if let Err(e) = self.handle_proof(proof_transaction) {
+                        error!("Failed to handle proof transaction: {:?}", e);
+                    }
+                }
+                TransactionData::RegisterContract(register_contract_transaction) => {
+                    if let Err(e) = self.handle_register_contract(register_contract_transaction) {
+                        error!("Failed to handle register contract transaction: {:?}", e);
+                    }
+                }
             }
         }
-
-        // Temporarily deactivated - handled in consensus directly, catchup TODO.
-        // for validator in block.new_bonded_validators {
-        //     self.bus
-        //         .send(ConsensusCommand::NewBonded(validator))
-        //         .context("Send new staker consensus command")?;
-        // }
-
-        info!(
-           block_hash = %block_hash,
-            block_height = %block.height,
-            "Handled {txs_count} transactions");
-
-        _ = Self::save_on_disk(self.file.as_path(), &self.store);
-        Ok(())
+        stakers
     }
 
-    fn handle_transaction(&mut self, transaction: Transaction) -> Result<(), Error> {
-        debug!("Got transaction to handle: {:?}", transaction);
-
-        match transaction.transaction_data {
-            crate::model::TransactionData::Stake(staker) => self.handle_stake_tx(staker),
-            crate::model::TransactionData::Blob(tx) => self.handle_blob_tx(tx),
-            crate::model::TransactionData::Proof(tx) => self.handle_proof(tx),
-            crate::model::TransactionData::RegisterContract(tx) => {
-                self.handle_register_contract(tx)
-            }
-        }
-    }
-
-    fn handle_register_contract(&mut self, tx: RegisterContractTransaction) -> Result<(), Error> {
+    pub fn handle_register_contract(
+        &mut self,
+        tx: &RegisterContractTransaction,
+    ) -> Result<(), Error> {
         if self.contracts.contains_key(&tx.contract_name) {
             bail!("Contract already exists")
         }
         self.contracts.insert(
             tx.contract_name.clone(),
             Contract {
-                name: tx.contract_name,
-                program_id: tx.program_id,
-                state: tx.state_digest,
-                verifier: tx.verifier,
+                name: tx.contract_name.clone(),
+                program_id: tx.program_id.clone(),
+                state: tx.state_digest.clone(),
+                verifier: tx.verifier.clone(),
             },
         );
 
         Ok(())
     }
 
-    // FIXME: to remove when we have a real staking smart contract
-    fn handle_stake_tx(&mut self, staker: Staker) -> Result<(), Error> {
-        self.bus
-            .send(ConsensusCommand::NewStaker(staker))
-            .context("Send new staker consensus command")?;
-        Ok(())
-    }
-
-    fn handle_blob_tx(&mut self, tx: BlobTransaction) -> Result<(), Error> {
-        let (blob_tx_hash, blobs_hash) = hash_transaction(&tx);
+    fn handle_blob_tx(&mut self, tx: &BlobTransaction) -> Result<(), Error> {
+        let (blob_tx_hash, blobs_hash) = (tx.hash(), tx.blobs_hash());
 
         let blobs: Vec<UnsettledBlobMetadata> = tx
             .blobs
@@ -193,21 +95,19 @@ impl NodeState {
 
         debug!("Add transaction to state");
         self.unsettled_transactions.add(UnsettledTransaction {
-            identity: tx.identity,
+            identity: tx.identity.clone(),
             hash: blob_tx_hash.clone(),
             blobs_hash,
             blobs,
         });
 
         // Update timeouts
-        self.store
-            .timeouts
-            .set(blob_tx_hash, self.store.current_height + 100); // TODO: Timeout after 100 blocks, make it configurable !
+        self.timeouts.set(blob_tx_hash, self.current_height + 100); // TODO: Timeout after 100 blocks, make it configurable !
 
         Ok(())
     }
 
-    fn handle_proof(&mut self, tx: ProofTransaction) -> Result<(), Error> {
+    fn handle_proof(&mut self, tx: &ProofTransaction) -> Result<(), Error> {
         // TODO extract correct verifier
         let verifier: String = "test".to_owned();
 
@@ -227,16 +127,16 @@ impl NodeState {
                 };
                 let program_id = &contract.program_id;
                 let verifier = &contract.verifier;
-                vec![verifiers::verify_proof(&tx, verifier, program_id)?]
+                vec![verifiers::verify_proof(tx, verifier, program_id)?]
             }
-            _ => verifiers::verify_recursion_proof(&tx, &verifier)?,
+            _ => verifiers::verify_recursion_proof(tx, &verifier)?,
         };
 
         // TODO: add diverse verifications ? (without the inital state checks!).
-        self.process_verifications(&tx, &blobs_metadata)?;
+        self.process_verifications(tx, &blobs_metadata)?;
 
         // If we arrived here, proof provided is OK and its outputs can now be saved
-        self.save_blob_metadata(&tx, blobs_metadata)?;
+        self.save_blob_metadata(tx, &blobs_metadata)?;
         let unsettled_transactions = self.unsettled_transactions.clone();
 
         // Only catch unique unsettled_txs that are next to be settled
@@ -322,7 +222,7 @@ impl NodeState {
     fn save_blob_metadata(
         &mut self,
         tx: &ProofTransaction,
-        blobs_metadata: Vec<HyleOutput>,
+        blobs_metadata: &[HyleOutput],
     ) -> Result<(), Error> {
         for (proof_blob_key, blob_ref) in tx.blobs_references.iter().enumerate() {
             let unsettled_tx = self
@@ -415,41 +315,14 @@ impl NodeState {
     }
 }
 
-// TODO: move it somewhere else ?
-fn hash_transaction(tx: &BlobTransaction) -> (TxHash, BlobsHash) {
-    (tx.hash(), tx.blobs_hash())
-}
-
-impl Deref for NodeState {
-    type Target = NodeStateStore;
-    fn deref(&self) -> &Self::Target {
-        &self.store
-    }
-}
-
-impl DerefMut for NodeState {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.store
-    }
-}
-
 #[cfg(test)]
 mod test {
-    use std::path::PathBuf;
-
+    use super::*;
+    use crate::model::*;
     use hyle_contract_sdk::{BlobIndex, Identity};
 
-    use crate::{bus::SharedMessageBus, model::*, utils::conf::Conf};
-
-    use super::*;
-
     async fn new_node_state() -> NodeState {
-        NodeState {
-            bus: NodeStateBusClient::new_from_bus(SharedMessageBus::default()).await,
-            file: PathBuf::default(),
-            store: NodeStateStore::default(),
-            config: Conf::default().into(),
-        }
+        NodeState::default()
     }
 
     fn new_blob(contract: &ContractName) -> Blob {
@@ -514,11 +387,14 @@ mod test {
             proof: ProofData::Bytes(vec![]),
         }));
 
-        state.handle_transaction(register_c1).unwrap();
-        state.handle_transaction(register_c2).unwrap();
-        state.handle_transaction(blob_tx).unwrap();
-        state.handle_transaction(proof_c1).unwrap();
-        state.handle_transaction(proof_c2).unwrap();
+        let block = Block {
+            height: BlockHeight(1),
+            txs: vec![register_c1, register_c2, blob_tx, proof_c1, proof_c2],
+            parent_hash: BlockHash::new(""),
+            timestamp: 0,
+            new_bonded_validators: vec![],
+        };
+        state.handle_new_block(block);
 
         assert_eq!(state.contracts.get(&c1).unwrap().state.0, vec![4, 5, 6]);
         assert_eq!(state.contracts.get(&c2).unwrap().state.0, vec![4, 5, 6]);
@@ -574,11 +450,14 @@ mod test {
             proof: ProofData::Bytes(vec![]),
         }));
 
-        state.handle_transaction(register_c1).unwrap();
-        state.handle_transaction(register_c2).unwrap();
-        state.handle_transaction(blob_tx_1).unwrap();
-        state.handle_transaction(blob_tx_2).unwrap();
-        state.handle_transaction(proof_c1).unwrap();
+        let block = Block {
+            height: BlockHeight(1),
+            txs: vec![register_c1, register_c2, blob_tx_1, blob_tx_2, proof_c1],
+            parent_hash: BlockHash::new(""),
+            timestamp: 0,
+            new_bonded_validators: vec![],
+        };
+        state.handle_new_block(block);
 
         assert_eq!(state.contracts.get(&c1).unwrap().state.0, vec![4, 5, 6]);
         assert_eq!(state.contracts.get(&c2).unwrap().state.0, vec![4, 5, 6]);
@@ -637,13 +516,22 @@ mod test {
             proof: ProofData::Bytes(vec![]),
         }));
 
-        state.handle_transaction(register_c1).unwrap();
-        state.handle_transaction(register_c2).unwrap();
-        state.handle_transaction(register_c3).unwrap();
-        state.handle_transaction(register_c4).unwrap();
-        state.handle_transaction(blob_tx_1).unwrap();
-        state.handle_transaction(blob_tx_2).unwrap();
-        state.handle_transaction(proof_c1).unwrap();
+        let block = Block {
+            height: BlockHeight(1),
+            txs: vec![
+                register_c1,
+                register_c2,
+                register_c3,
+                register_c4,
+                blob_tx_1,
+                blob_tx_2,
+                proof_c1,
+            ],
+            parent_hash: BlockHash::new(""),
+            timestamp: 0,
+            new_bonded_validators: vec![],
+        };
+        state.handle_new_block(block);
 
         assert_eq!(state.contracts.get(&c1).unwrap().state.0, vec![4, 5, 6]);
         assert_eq!(state.contracts.get(&c2).unwrap().state.0, vec![4, 5, 6]);
@@ -686,11 +574,15 @@ mod test {
             proof: ProofData::Bytes(vec![2]),
         }));
 
-        state.handle_transaction(register_c1).unwrap();
-        state.handle_transaction(register_c2).unwrap();
-        state.handle_transaction(blob_tx).unwrap();
-        state.handle_transaction(proof_c1).unwrap();
-        state.handle_transaction(proof_c1_bis).unwrap();
+        let block = Block {
+            height: BlockHeight(1),
+            txs: vec![register_c1, register_c2, blob_tx, proof_c1, proof_c1_bis],
+            parent_hash: BlockHash::new(""),
+            timestamp: 0,
+            new_bonded_validators: vec![],
+        };
+        state.handle_new_block(block);
+
         assert_eq!(
             state
                 .unsettled_transactions
