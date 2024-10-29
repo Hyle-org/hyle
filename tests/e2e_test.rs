@@ -29,7 +29,7 @@ async fn e2e_consensus_can_run_lot_of_nodes() -> Result<()> {
 }
 
 #[test_log::test(tokio::test)]
-async fn e2e_tx_can_be_settled() -> Result<()> {
+async fn e2e_tx_settled_on_indexer() -> Result<()> {
     let ctx = E2ECtx::new_multi_with_indexer(2, 500).await?;
 
     info!("➡️  Registering contracts c1 & c2");
@@ -75,11 +75,8 @@ async fn e2e_tx_can_be_settled() -> Result<()> {
     let contract = ctx.get_contract("c1").await?;
     assert_eq!(contract.state.0, vec![4, 5, 6]);
 
-    info!("➡️  Getting contracts from indexer");
-    let ctx = ctx.on_indexer();
-
-    ctx.get_contract("c1").await?;
-    assert_eq!(contract.state.0, vec![4, 5, 6]);
+    let contract = ctx.get_indexer_contract("c1").await?;
+    assert_eq!(contract.state_digest, vec![4, 5, 6]);
     Ok(())
 }
 
@@ -128,6 +125,7 @@ async fn scenario_erc20(ctx: E2ECtx) -> Result<()> {
 async fn e2e_risc0_single_node() -> Result<()> {
     let ctx = E2ECtx::new_single(500).await?;
 
+    // TODO remove when the single node genesis is fixed
     tokio::time::sleep(std::time::Duration::from_secs(2)).await;
 
     scenario_erc20(ctx).await
@@ -136,5 +134,6 @@ async fn e2e_risc0_single_node() -> Result<()> {
 #[test_log::test(tokio::test)]
 async fn e2e_risc0_multi_nodes() -> Result<()> {
     let ctx = E2ECtx::new_multi(2, 500).await?;
+
     scenario_erc20(ctx).await
 }

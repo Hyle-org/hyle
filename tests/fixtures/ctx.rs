@@ -1,3 +1,5 @@
+#![allow(unused)]
+
 use anyhow::{Context, Result};
 use assertables::assert_ok;
 use reqwest::{Client, Url};
@@ -7,8 +9,10 @@ use testcontainers_modules::{
     testcontainers::{runners::AsyncRunner, ContainerAsync},
 };
 use tokio::sync::Mutex;
+use tracing::info;
 
 use hyle::{
+    indexer::model::ContractDb,
     model::{
         Blob, BlobReference, BlobTransaction, ProofData, ProofTransaction,
         RegisterContractTransaction,
@@ -55,7 +59,7 @@ impl E2ECtx {
             node_conf.peers = peers.clone();
             peers.push(node_conf.host.clone());
             let node = test_helpers::TestProcess::new("node", node_conf)
-                .log("hyle=info,tower_http=error")
+                //.log("hyle=info,tower_http=error")
                 .start();
 
             // Request something on node1 to be sure it's alive and working
@@ -76,7 +80,7 @@ impl E2ECtx {
 
         let node_conf = conf_maker.build("single-node");
         let node = test_helpers::TestProcess::new("node", node_conf)
-            .log("hyle=info,tower_http=error")
+            //.log("hyle=info,tower_http=error")
             .start();
 
         // Request something on node1 to be sure it's alive and working
@@ -85,6 +89,7 @@ impl E2ECtx {
             reqwest_client: Client::new(),
         };
 
+        info!("🚀 E2E test environment is ready!");
         Ok(E2ECtx {
             pg: None,
             nodes: vec![node],
@@ -101,6 +106,7 @@ impl E2ECtx {
         let (nodes, clients) = Self::build_nodes(count, &mut conf_maker);
         wait_height(clients.first().unwrap(), 1).await?;
 
+        info!("🚀 E2E test environment is ready!");
         Ok(E2ECtx {
             pg: None,
             nodes,
@@ -139,22 +145,13 @@ impl E2ECtx {
 
         let pg = Some(pg);
 
+        info!("🚀 E2E test environment is ready!");
         Ok(E2ECtx {
             pg,
             nodes,
             clients,
             client_index: 0,
         })
-    }
-
-    #[track_caller]
-    pub fn on_indexer(self) -> E2ECtx {
-        assert!(self.pg.is_some(), "Indexer is not started");
-
-        Self {
-            client_index: self.clients.len() - 1,
-            ..self
-        }
     }
 
     pub fn client(&self) -> &ApiHttpClient {
@@ -172,12 +169,6 @@ impl E2ECtx {
             state_digest: Contract::state_digest(),
             contract_name: name.into(),
         };
-        assert_ok!(self
-            .client()
-            .send_tx_register_contract(tx)
-            .await
-            .and_then(|response| response.error_for_status().context("registering contract")));
-
         assert_ok!(self
             .client()
             .send_tx_register_contract(tx)
@@ -224,7 +215,7 @@ impl E2ECtx {
     }
 
     pub async fn wait_height(&self, height: u64) -> Result<()> {
-        wait_height(&self.client(), height).await
+        wait_height(self.client(), height).await
     }
 
     pub async fn get_contract(&self, name: &str) -> Result<Contract> {
@@ -236,6 +227,20 @@ impl E2ECtx {
         assert_ok!(response);
 
         let contract = response.unwrap().json::<Contract>().await?;
+        Ok(contract)
+    }
+
+    pub async fn get_indexer_contract(&self, name: &str) -> Result<ContractDb> {
+        let response = self
+            .clients
+            .last()
+            .unwrap()
+            .get_indexer_contract(&name.into())
+            .await
+            .and_then(|response| response.error_for_status().context("Getting contract"));
+        assert_ok!(response);
+
+        let contract = response.unwrap().json::<ContractDb>().await?;
         Ok(contract)
     }
 }
