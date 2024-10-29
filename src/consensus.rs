@@ -43,7 +43,7 @@ pub enum ConsensusNetMessage {
     // TODO: these should probably just be "SignedWithQuorumCertificate" to be consistent
     Confirm(QuorumCertificate),
     ConfirmAck(ConsensusProposalHash),
-    Commit(QuorumCertificate),
+    Commit(QuorumCertificate, ConsensusProposalHash),
     ValidatorCandidacy(ValidatorCandidacy),
 }
 
@@ -99,8 +99,6 @@ pub enum Ticket {
 #[derive(Encode, Decode, Default)]
 pub struct BFTRoundState {
     consensus_proposal: ConsensusProposal,
-    slot: Slot,
-    view: View,
     staking: Staking,
 
     leader: LeaderState,
@@ -128,13 +126,13 @@ pub struct LeaderState {
 
 #[derive(Encode, Decode, Default)]
 pub struct FollowerState {
-    round_leader: ValidatorPublicKey,
     buffered_quorum_certificate: Option<QuorumCertificate>, // if we receive a commit before the next prepare
 }
 
 #[derive(Encode, Decode, Default)]
 pub struct JoiningState {
     staking_updated_to: Slot,
+    buffered_prepares: Vec<ConsensusProposal>,
 }
 
 #[derive(Serialize, Deserialize, Encode, Decode, Default, Debug, Clone, PartialEq, Eq, Hash)]
@@ -148,8 +146,11 @@ pub type View = u64;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, Encode, Decode, PartialEq, Eq, Hash)]
 pub struct ConsensusProposal {
+    // These first few items are checked when receiving the proposal from the leader.
     slot: Slot,
     view: View,
+    round_leader: ValidatorPublicKey,
+    // Below items aren't.
     cut: Cut,
     new_validators_to_bond: Vec<NewValidatorCandidate>,
 }
@@ -221,68 +222,73 @@ impl Consensus {
     }
 
     // Reset bft_round_state for the next round of consensus.
-    fn finish_round(
-        &mut self,
-        commit: Option<(ConsensusProposal, QuorumCertificate)>,
-    ) -> Result<(), Error> {
+    fn finish_round(&mut self, commit: Option<QuorumCertificate>) -> Result<(), Error> {
         match self.bft_round_state.state_tag {
             StateTag::Follower => {}
             StateTag::Leader => {}
-            _ => bail!("Invalid state tag"),
+            _ => bail!("Cannot finish_round unless synchronized to the consensus."),
         }
 
-        let view = self.bft_round_state.view;
-        let staking = std::mem::take(&mut self.bft_round_state.staking);
-
-        let leader_index = staking
-            .bonded()
-            .iter()
-            .position(|v| {
-                v == match self.bft_round_state.state_tag {
-                    StateTag::Leader => self.crypto.validator_pubkey(),
-                    StateTag::Follower => &self.bft_round_state.follower.round_leader,
-                    _ => unreachable!(),
-                }
-            })
-            .context("Leader not found in validators")?;
-
-        // Reset round state.
-        self.bft_round_state = BFTRoundState::default();
-
-        // Carry over existing staking
-        self.bft_round_state.staking = staking;
-        let validators = self.bft_round_state.staking.bonded();
+        // Reset round state, carrying over staking and current proposal.
+        self.bft_round_state = BFTRoundState {
+            consensus_proposal: std::mem::take(&mut self.bft_round_state.consensus_proposal),
+            staking: std::mem::take(&mut self.bft_round_state.staking),
+            ..BFTRoundState::default()
+        };
 
         // Find out who the next leader will be.
-        self.bft_round_state.follower.round_leader = validators
-            .get((leader_index + 1) % validators.len())
+        let leader_index = self
+            .bft_round_state
+            .staking
+            .bonded()
+            .iter()
+            .position(|v| v == &self.bft_round_state.consensus_proposal.round_leader)
+            .context(format!(
+                "Leader {} not found in validators",
+                &self.bft_round_state.consensus_proposal.round_leader,
+            ))?;
+
+        self.bft_round_state.consensus_proposal.round_leader = self
+            .bft_round_state
+            .staking
+            .bonded()
+            .get((leader_index + 1) % self.bft_round_state.staking.bonded().len())
             .context("No next leader found")?
             .clone();
 
-        if self.bft_round_state.follower.round_leader == *self.crypto.validator_pubkey() {
+        if self.bft_round_state.consensus_proposal.round_leader == *self.crypto.validator_pubkey() {
             self.bft_round_state.state_tag = StateTag::Leader;
         } else {
             self.bft_round_state.state_tag = StateTag::Follower;
         }
 
         // If we finish the round via a committed proposal, update some state
-        if let Some((committed_proposal, qc)) = commit {
-            self.bft_round_state.slot = committed_proposal.slot + 1;
-            self.bft_round_state.view = 0;
+        if let Some(qc) = commit {
+            self.bft_round_state.consensus_proposal.slot += 1;
+            self.bft_round_state.consensus_proposal.view = 0;
             self.bft_round_state.follower.buffered_quorum_certificate = Some(qc);
             // Any new validators are added to the consensus and removed from candidates.
-            for new_v in &committed_proposal.new_validators_to_bond {
+            for new_v in &self
+                .store
+                .bft_round_state
+                .consensus_proposal
+                .new_validators_to_bond
+            {
                 warn!("🎉 New validator bonded: {}", new_v.pubkey);
-                self.bft_round_state.staking.bond(new_v.pubkey.clone())?;
+                self.store
+                    .bft_round_state
+                    .staking
+                    .bond(new_v.pubkey.clone())?;
             }
         } else {
-            self.bft_round_state.view = view + 1;
+            self.bft_round_state.consensus_proposal.view += 1;
             self.bft_round_state.follower.buffered_quorum_certificate = None;
         }
 
         info!(
             "🥋 Ready for slot {}, view {}",
-            self.bft_round_state.slot, self.bft_round_state.view
+            self.bft_round_state.consensus_proposal.slot,
+            self.bft_round_state.consensus_proposal.view
         );
 
         if self.is_round_leader() {
@@ -421,7 +427,7 @@ impl Consensus {
 
         info!(
             "🚀 Starting new slot {} with {} existing validators and {} candidates",
-            self.bft_round_state.slot,
+            self.bft_round_state.consensus_proposal.slot,
             self.bft_round_state.staking.bonded().len(),
             new_validators_to_bond.len()
         );
@@ -432,12 +438,10 @@ impl Consensus {
         self.bft_round_state.leader.step = Step::PrepareVote;
 
         // Start Consensus with following cut
-        self.bft_round_state.consensus_proposal = ConsensusProposal {
-            slot: self.bft_round_state.slot,
-            view: self.bft_round_state.view,
-            cut,
-            new_validators_to_bond,
-        };
+        self.bft_round_state.consensus_proposal.cut = cut;
+        self.bft_round_state
+            .consensus_proposal
+            .new_validators_to_bond = new_validators_to_bond;
 
         self.metrics.start_new_round("consensus_proposal");
 
@@ -446,7 +450,7 @@ impl Consensus {
         // Broadcasts Prepare message to all validators
         debug!(
             proposal_hash = %self.bft_round_state.consensus_proposal.hash(),
-            "🌐 Slot {} started. Broadcasting Prepare message", self.bft_round_state.slot,
+            "🌐 Slot {} started. Broadcasting Prepare message", self.bft_round_state.consensus_proposal.slot,
         );
         self.broadcast_net_message(ConsensusNetMessage::Prepare(
             self.bft_round_state.consensus_proposal.clone(),
@@ -537,7 +541,7 @@ impl Consensus {
 
         info!(
             "📩 Slot {} validated votes: {} / {} ({} validators for a total bond = {})",
-            self.bft_round_state.slot,
+            self.bft_round_state.consensus_proposal.slot,
             voting_power,
             2 * f + 1,
             self.bft_round_state.staking.bonded().len(),
@@ -592,8 +596,8 @@ impl Consensus {
             ConsensusNetMessage::ConfirmAck(consensus_proposal_hash) => {
                 self.on_confirm_ack(msg, consensus_proposal_hash)
             }
-            ConsensusNetMessage::Commit(commit_quorum_certificate) => {
-                self.on_commit(commit_quorum_certificate)
+            ConsensusNetMessage::Commit(commit_quorum_certificate, proposal_hash_hint) => {
+                self.on_commit(commit_quorum_certificate, proposal_hash_hint)
             }
             ConsensusNetMessage::ValidatorCandidacy(candidacy) => {
                 self.on_validator_candidacy(msg, candidacy)
@@ -609,13 +613,13 @@ impl Consensus {
         if let Some(qc) = &self.bft_round_state.follower.buffered_quorum_certificate {
             return qc == &commit_qc;
         }
-        self.on_commit(commit_qc.clone()).is_ok()
+        self.try_commit_current_proposal(commit_qc.clone()).is_ok()
     }
 
     /// Message received by follower after start_round
     fn on_prepare(
         &mut self,
-        validators: Vec<ValidatorPublicKey>,
+        signers: Vec<ValidatorPublicKey>,
         consensus_proposal: ConsensusProposal,
         ticket: Ticket,
     ) -> Result<(), Error> {
@@ -623,16 +627,28 @@ impl Consensus {
 
         match self.bft_round_state.state_tag {
             StateTag::Joining => {
+                // Ignore obviously outdated messages.
+                // We'll be optimistic for ones in the future and hope that
+                // maybe we'll have caught up by the time the commit rolls around.
+                if consensus_proposal.slot <= self.bft_round_state.joining.staking_updated_to {
+                    info!(
+                        "🌑 Outdated Prepare message (Slot {} / view {}) received while joining. Ignoring.",
+                        consensus_proposal.slot, consensus_proposal.view
+                    );
+                    return Ok(());
+                }
                 info!(
-                    "🚪 Slot {} / view {} Prepare message received while joining. Storing proposal.",
+                    "🌕 Prepare message (Slot {} / view {}) received while joining. Storing.",
                     consensus_proposal.slot, consensus_proposal.view
                 );
-                // TODO: we probably should process this differently,
-                // as we are susceptible to rogue proposals not sent by the leader.
-                self.bft_round_state.follower.round_leader = validators[0].clone();
-                self.bft_round_state.slot = consensus_proposal.slot;
-                self.bft_round_state.view = consensus_proposal.view;
-                self.bft_round_state.consensus_proposal = consensus_proposal;
+                // Store the message until we receive a matching Commit.
+                // Because we may receive old or rogue proposals, we store all of them.
+                // TODO: it would be slightly DOS-safer to only save those from validators we know,
+                // but I'm not sure it's an actual problem in practice.
+                self.bft_round_state
+                    .joining
+                    .buffered_prepares
+                    .push(consensus_proposal);
                 return Ok(());
             }
             StateTag::Follower => {}
@@ -644,7 +660,7 @@ impl Consensus {
         // Process the ticket
         match ticket {
             Ticket::Genesis => {
-                if self.bft_round_state.slot != 0 {
+                if self.bft_round_state.consensus_proposal.slot != 0 {
                     bail!("Genesis ticket is only valid for the first slot.");
                 }
             }
@@ -660,17 +676,17 @@ impl Consensus {
 
         // After processing the ticket, we should be in the right slot/view.
 
-        if consensus_proposal.slot != self.bft_round_state.slot {
+        if consensus_proposal.slot != self.bft_round_state.consensus_proposal.slot {
             self.metrics.prepare_error("wrong_slot");
             bail!("Prepare message received for wrong slot");
         }
-        if consensus_proposal.view != self.bft_round_state.view {
+        if consensus_proposal.view != self.bft_round_state.consensus_proposal.view {
             self.metrics.prepare_error("wrong_view");
             bail!("Prepare message received for wrong view");
         }
 
         // Validate message comes from the correct leader
-        if !validators.contains(&self.bft_round_state.follower.round_leader) {
+        if !signers.contains(&self.bft_round_state.consensus_proposal.round_leader) {
             self.metrics.prepare_error("wrong_leader");
             bail!(
                 "Prepare consensus message does not come from current leader. I won't vote for it."
@@ -687,10 +703,10 @@ impl Consensus {
             info!(
                 proposal_hash = %consensus_proposal.hash(),
                 "📤 Slot {} Prepare message validated. Sending PrepareVote to leader",
-                self.bft_round_state.slot
+                self.bft_round_state.consensus_proposal.slot
             );
             self.send_net_message(
-                self.bft_round_state.follower.round_leader.clone(),
+                self.bft_round_state.consensus_proposal.round_leader.clone(),
                 ConsensusNetMessage::PrepareVote(consensus_proposal.hash()),
             )?;
         } else {
@@ -748,7 +764,7 @@ impl Consensus {
 
         info!(
             "📩 Slot {} validated votes: {} / {} ({} validators for a total bond = {})",
-            self.bft_round_state.slot,
+            self.bft_round_state.consensus_proposal.slot,
             voting_power,
             2 * f + 1,
             self.bft_round_state.staking.bonded().len(),
@@ -777,7 +793,7 @@ impl Consensus {
             // Broadcast the *Prepare* Quorum Certificate to all validators
             debug!(
                 "Slot {} PrepareVote message validated. Broadcasting Confirm",
-                self.bft_round_state.slot
+                self.bft_round_state.consensus_proposal.slot
             );
             self.broadcast_net_message(ConsensusNetMessage::Confirm(QuorumCertificate {
                 signature: prepvote_signed_aggregation.signature,
@@ -813,10 +829,10 @@ impl Consensus {
             info!(
                 proposal_hash = %consensus_proposal_hash,
                 "📤 Slot {} Confirm message validated. Sending ConfirmAck to leader",
-                self.bft_round_state.slot
+                self.bft_round_state.consensus_proposal.slot
             );
             self.send_net_message(
-                self.bft_round_state.follower.round_leader.clone(),
+                self.bft_round_state.consensus_proposal.round_leader.clone(),
                 ConsensusNetMessage::ConfirmAck(consensus_proposal_hash.clone()),
             )?;
         } else {
@@ -878,7 +894,7 @@ impl Consensus {
 
         info!(
             "✅ Slot {} confirmed acks: {} / {} ({} validators for a total bond = {})",
-            self.bft_round_state.slot,
+            self.bft_round_state.consensus_proposal.slot,
             voting_power,
             2 * f + 1,
             self.bft_round_state.staking.bonded().len(),
@@ -909,53 +925,98 @@ impl Consensus {
             // Broadcast the *Commit* Quorum Certificate to all validators
             self.broadcast_net_message(ConsensusNetMessage::Commit(
                 commit_quorum_certificate.clone(),
+                consensus_proposal_hash,
             ))?;
 
             // Process the same locally.
-            let consensus_proposal = std::mem::take(&mut self.bft_round_state.consensus_proposal);
-            self.commit_proposal(consensus_proposal, commit_quorum_certificate)?;
+            self.try_commit_current_proposal(commit_quorum_certificate)?;
         }
         // TODO(?): Update behaviour when having more ?
         Ok(())
     }
 
     /// Message received by follower.
-    fn on_commit(&mut self, commit_quorum_certificate: QuorumCertificate) -> Result<()> {
-        if matches!(self.bft_round_state.state_tag, StateTag::Joining) {
-            if self.bft_round_state.joining.staking_updated_to + 1 >= self.bft_round_state.slot {
-                info!(
-                    "📦 Commit message received for slot {}, trying to synchronize.",
-                    self.bft_round_state.slot
-                );
-                // Update the bonding state accordingly
-                let mut to_unbond = vec![];
-                for validator in self.bft_round_state.staking.bonded() {
-                    if !commit_quorum_certificate.validators.contains(validator) {
-                        to_unbond.push(validator.clone());
-                    }
-                }
-                for validator in to_unbond {
-                    self.bft_round_state.staking.unbond(&validator)?;
-                }
-                for validator in &commit_quorum_certificate.validators {
-                    if !self.bft_round_state.staking.is_bonded(validator) {
-                        self.bft_round_state.staking.bond(validator.clone())?;
-                    }
-                }
-                self.bft_round_state.state_tag = StateTag::Follower;
-                if self.on_commit(commit_quorum_certificate).is_err() {
-                    self.bft_round_state.state_tag = StateTag::Joining;
-                    bail!("⛑️ Failed to synchronize, retrying soon.");
-                }
-            } else {
-                info!(
-                    "🏃‍♀️ Ignoring commit message, we are only caught up to {} ({} needed).",
-                    self.bft_round_state.joining.staking_updated_to,
-                    self.bft_round_state.slot - 1
-                );
+    fn on_commit(
+        &mut self,
+        commit_quorum_certificate: QuorumCertificate,
+        proposal_hash_hint: ConsensusProposalHash,
+    ) -> Result<()> {
+        match self.bft_round_state.state_tag {
+            StateTag::Follower => {
+                return self.try_commit_current_proposal(commit_quorum_certificate)
             }
+            StateTag::Joining => {}
+            _ => bail!("Commit message received while not follower"),
+        };
+
+        // We are joining consensus, try to sync our state.
+        // First find the prepare message to this commit.
+        let Some(proposal_index) = self
+            .bft_round_state
+            .joining
+            .buffered_prepares
+            .iter()
+            .position(|p| p.hash() == proposal_hash_hint)
+        else {
+            // Maybe we just missed it, carry on.
+            return Ok(());
+        };
+        // Use that as our proposal.
+        self.bft_round_state.consensus_proposal = self
+            .bft_round_state
+            .joining
+            .buffered_prepares
+            .swap_remove(proposal_index);
+        self.bft_round_state.joining.buffered_prepares.clear();
+
+        // At this point check that we're caught up enough that it's realistic to verify the QC.
+        if self.bft_round_state.joining.staking_updated_to + 1
+            < self.bft_round_state.consensus_proposal.slot
+        {
+            info!(
+                "🏃‍♀️ Ignoring commit message, we are only caught up to {} ({} needed).",
+                self.bft_round_state.joining.staking_updated_to,
+                self.bft_round_state.consensus_proposal.slot - 1
+            );
             return Ok(());
         }
+
+        info!(
+            "📦 Commit message received for slot {}, trying to synchronize.",
+            self.bft_round_state.consensus_proposal.slot
+        );
+
+        // Update the bonding state accordingly
+        let mut to_unbond = vec![];
+        for validator in self.bft_round_state.staking.bonded() {
+            if !commit_quorum_certificate.validators.contains(validator) {
+                to_unbond.push(validator.clone());
+            }
+        }
+        for validator in to_unbond {
+            self.bft_round_state.staking.unbond(&validator)?;
+        }
+        for validator in &commit_quorum_certificate.validators {
+            if !self.bft_round_state.staking.is_bonded(validator) {
+                self.bft_round_state.staking.bond(validator.clone())?;
+            }
+        }
+        // Try to commit the proposal
+        self.bft_round_state.state_tag = StateTag::Follower;
+        if self
+            .try_commit_current_proposal(commit_quorum_certificate)
+            .is_err()
+        {
+            self.bft_round_state.state_tag = StateTag::Joining;
+            bail!("⛑️ Failed to synchronize, retrying soon.");
+        }
+        Ok(())
+    }
+
+    fn try_commit_current_proposal(
+        &mut self,
+        commit_quorum_certificate: QuorumCertificate,
+    ) -> Result<()> {
         // Check that this is a QC for ConfirmAck for the expected proposal.
         // This also checks slot/view as those are part of the hash.
         // TODO: would probably be good to make that more explicit.
@@ -964,16 +1025,6 @@ impl Consensus {
             &commit_quorum_certificate,
         )?;
 
-        let consensus_proposal = std::mem::take(&mut self.bft_round_state.consensus_proposal);
-        self.commit_proposal(consensus_proposal, commit_quorum_certificate)
-    }
-
-    /// This assumes we've checked the CQC
-    fn commit_proposal(
-        &mut self,
-        consensus_proposal: ConsensusProposal,
-        commit_quorum_certificate: QuorumCertificate,
-    ) -> Result<()> {
         self.metrics.commit();
 
         _ = self
@@ -981,8 +1032,10 @@ impl Consensus {
             .send(ConsensusEvent::CommitCut {
                 // TODO: investigate if those are necessary here
                 validators: self.bft_round_state.staking.bonded().clone(),
-                cut: consensus_proposal.cut.clone(),
-                new_bonded_validators: consensus_proposal
+                cut: self.bft_round_state.consensus_proposal.cut.clone(),
+                new_bonded_validators: self
+                    .bft_round_state
+                    .consensus_proposal
                     .new_validators_to_bond
                     .iter()
                     .map(|v| v.pubkey.clone())
@@ -995,13 +1048,13 @@ impl Consensus {
             Self::save_on_disk(file.as_path(), &self.store)?;
         }
 
-        info!("📈 Slot {} committed", &consensus_proposal.slot);
+        info!(
+            "📈 Slot {} committed",
+            &self.bft_round_state.consensus_proposal.slot
+        );
 
         // Prepare our state for the next round.
-        self.finish_round(Some((
-            consensus_proposal,
-            commit_quorum_certificate.clone(),
-        )))?;
+        self.finish_round(Some(commit_quorum_certificate.clone()))?;
 
         if self.is_round_leader() {
             // Setup our ticket for the next round
@@ -1195,7 +1248,7 @@ impl Consensus {
                 if name == self.config.consensus.genesis_leader {
                     // Mild hack: set this directly in the right struct
                     info!("👑 Setting {}({}) as leader for genesis", &name, &pubkey);
-                    self.bft_round_state.follower.round_leader = pubkey;
+                    self.bft_round_state.consensus_proposal.round_leader = pubkey;
                 }
 
                 if self.bft_round_state.staking.bonded().len()
@@ -1218,7 +1271,34 @@ impl Consensus {
         }
     }
 
-    pub fn start_master(&mut self, config: SharedConf) -> Result<()> {
+    /// Setup the state of the node at startup.
+    fn setup_initial_state(&mut self) -> Result<()> {
+        if let Some(stake) = self.config.consensus.genesis_stakers.get(&self.config.id) {
+            if matches!(self.bft_round_state.state_tag, StateTag::Genesis) {
+                if self.config.id == self.config.consensus.genesis_leader {
+                    // Mild hack: set this directly in the right struct
+                    info!(
+                        "👑 Setting ouselves {}({}) as leader for genesis",
+                        &self.config.id,
+                        self.crypto.validator_pubkey()
+                    );
+                    self.store.bft_round_state.consensus_proposal.round_leader =
+                        self.crypto.validator_pubkey().clone();
+                }
+                // We will start from the genesis block.
+                self.add_trusted_validator(
+                    &self.crypto.validator_pubkey().clone(),
+                    Stake { amount: *stake },
+                )?;
+            }
+        } else {
+            self.bft_round_state.state_tag = StateTag::Joining;
+        }
+
+        Ok(())
+    }
+
+    fn start_master(&mut self, config: SharedConf) -> Result<()> {
         let interval = config.consensus.slot_duration;
 
         // hack to avoid another bus for a specific wip case
@@ -1243,7 +1323,7 @@ impl Consensus {
         Ok(())
     }
 
-    pub async fn start(&mut self) -> Result<()> {
+    async fn start(&mut self) -> Result<()> {
         handle_messages! {
             on_bus self.bus,
             listen<ConsensusCommand> cmd => {
@@ -1354,8 +1434,11 @@ mod test {
 
             node1.consensus.bft_round_state.state_tag = StateTag::Leader;
             node2.consensus.bft_round_state.state_tag = StateTag::Follower;
-            node2.consensus.bft_round_state.follower.round_leader =
-                crypto.validator_pubkey().clone();
+            node2
+                .consensus
+                .bft_round_state
+                .consensus_proposal
+                .round_leader = crypto.validator_pubkey().clone();
 
             node1.consensus.bft_round_state.leader.pending_ticket = Some(Ticket::Genesis);
 
@@ -1560,8 +1643,12 @@ mod test {
 
         let mut node3 = TestCtx::new_node("node-3").await;
         node3.consensus.bft_round_state.state_tag = StateTag::Follower;
-        node3.consensus.bft_round_state.follower.round_leader = node1.pubkey();
-        node3.consensus.bft_round_state.slot = 1;
+        node3
+            .consensus
+            .bft_round_state
+            .consensus_proposal
+            .round_leader = node1.pubkey();
+        node3.consensus.bft_round_state.consensus_proposal.slot = 1;
         node3.add_bonded_staker(&node1, 100, "Add staker");
         node3.add_bonded_staker(&node2, 100, "Add staker");
 
@@ -1675,8 +1762,8 @@ mod test {
             node3.handle_block(&leader_proposal);
         }
 
-        assert_eq!(node1.consensus.bft_round_state.slot, 4);
-        assert_eq!(node2.consensus.bft_round_state.slot, 4);
-        assert_eq!(node3.consensus.bft_round_state.slot, 4);
+        assert_eq!(node1.consensus.bft_round_state.consensus_proposal.slot, 4);
+        assert_eq!(node2.consensus.bft_round_state.consensus_proposal.slot, 4);
+        assert_eq!(node3.consensus.bft_round_state.consensus_proposal.slot, 4);
     }
 }

@@ -3,8 +3,7 @@ use anyhow::Result;
 use crate::{model::SharedRunContext, utils::modules::Module};
 
 use super::{
-    consensus_bus_client::ConsensusBusClient, metrics::ConsensusMetrics, staking::Stake, Consensus,
-    ConsensusStore, StateTag,
+    consensus_bus_client::ConsensusBusClient, metrics::ConsensusMetrics, Consensus, ConsensusStore,
 };
 
 impl Module for Consensus {
@@ -33,24 +32,7 @@ impl Module for Consensus {
             config: ctx.common.config.clone(),
             crypto: ctx.node.crypto.clone(),
         };
-
-        if let Some(stake) = ctx
-            .common
-            .config
-            .consensus
-            .genesis_stakers
-            .get(&ctx.common.config.id)
-        {
-            if matches!(consensus.store.bft_round_state.state_tag, StateTag::Genesis) {
-                consensus.add_trusted_validator(
-                    &ctx.node.crypto.validator_pubkey().clone(),
-                    Stake { amount: *stake },
-                )?;
-            }
-        } else {
-            consensus.store.bft_round_state.state_tag = StateTag::Joining;
-        }
-
+        consensus.setup_initial_state()?;
         Ok(consensus)
     }
 

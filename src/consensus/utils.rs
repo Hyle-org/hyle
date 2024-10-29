@@ -99,8 +99,8 @@ impl Display for ConsensusNetMessage {
             ConsensusNetMessage::ConfirmAck(cphash) => {
                 write!(f, "{} (CP hash: {})", enum_variant, cphash)
             }
-            ConsensusNetMessage::Commit(cert) => {
-                _ = writeln!(f, "{}", enum_variant);
+            ConsensusNetMessage::Commit(cert, cphash) => {
+                _ = writeln!(f, "{} (CP hash: {})", enum_variant, cphash);
                 _ = write!(f, "Certificate {} with validators ", cert.signature);
                 for v in cert.validators.iter() {
                     _ = write!(f, "{},", v);
