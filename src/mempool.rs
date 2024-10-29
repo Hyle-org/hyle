@@ -203,11 +203,7 @@ impl Mempool {
     async fn handle_api_message(&mut self, command: RestApiMessage) {
         match command {
             RestApiMessage::NewTx(tx) => {
-                self.on_new_tx(tx.clone());
-                // hacky stuff waiting for staking contract: do not broadcast stake txs
-                if !matches!(tx.transaction_data, TransactionData::Stake(_)) {
-                    self.broadcast_tx(tx).ok();
-                }
+                self.on_new_tx(tx);
             }
         }
     }
@@ -393,12 +389,6 @@ impl Mempool {
         }
         self.metrics
             .snapshot_pending_tx(self.storage.pending_txs.len());
-    }
-
-    fn broadcast_tx(&mut self, tx: Transaction) -> Result<()> {
-        self.metrics.add_broadcasted_tx("blob".to_string());
-        self.broadcast_net_message(MempoolNetMessage::NewTx(tx))?;
-        Ok(())
     }
 
     fn broadcast_car_proposal(&mut self, car_proposal: CarProposal) -> Result<()> {
