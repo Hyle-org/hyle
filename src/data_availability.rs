@@ -135,7 +135,7 @@ impl Module for DataAvailability {
             ctx.common
                 .config
                 .data_directory
-                .join("node_state.bin")
+                .join("da_node_state.bin")
                 .as_path(),
         );
 
