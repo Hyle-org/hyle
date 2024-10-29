@@ -4,12 +4,14 @@ mod blocks;
 
 use crate::{
     bus::{bus_client, command_response::Query, BusMessage, SharedMessageBus},
+    consensus::ConsensusCommand,
     handle_messages,
     mempool::MempoolEvent,
     model::{
-        get_current_timestamp, Block, BlockHash, BlockHeight, Hashable, SharedRunContext,
-        Transaction, ValidatorPublicKey,
+        get_current_timestamp, Block, BlockHash, BlockHeight, ContractName, Hashable,
+        SharedRunContext, Transaction, ValidatorPublicKey,
     },
+    node_state::{model::Contract, NodeState},
     p2p::network::{NetMessage, OutboundMessage, PeerEvent},
     utils::{conf::SharedConf, logger::LogMe, modules::Module},
 };
@@ -68,6 +70,8 @@ bus_client! {
 struct DABusClient {
     sender(OutboundMessage),
     sender(DataEvent),
+    sender(ConsensusCommand),
+    receiver(Query<ContractName, Contract>),
     receiver(DataNetMessage),
     receiver(PeerEvent),
     receiver(Query<QueryBlockHeight , BlockHeight>),
@@ -98,6 +102,8 @@ pub struct DataAvailability {
 
     // Peers subscribed to block streaming
     stream_peer_metadata: HashMap<String, BlockStreamPeer>,
+
+    node_state: NodeState,
 }
 
 impl Module for DataAvailability {
@@ -125,6 +131,14 @@ impl Module for DataAvailability {
         let buffered_blocks = BTreeSet::new();
         let self_pubkey = ctx.node.crypto.validator_pubkey().clone();
 
+        let node_state = Self::load_from_disk_or_default::<NodeState>(
+            ctx.common
+                .config
+                .data_directory
+                .join("da_node_state.bin")
+                .as_path(),
+        );
+
         Ok(DataAvailability {
             config: ctx.common.config.clone(),
             bus,
@@ -133,6 +147,7 @@ impl Module for DataAvailability {
             self_pubkey,
             asked_last_block: false,
             stream_peer_metadata: HashMap::new(),
+            node_state,
         })
     }
 
@@ -153,6 +168,9 @@ impl DataAvailability {
 
         handle_messages! {
             on_bus self.bus,
+            command_response<ContractName, Contract> cmd => {
+                self.node_state.contracts.get(cmd).cloned().context("Contract not found")
+            }
             listen<MempoolEvent> cmd => {
                 match cmd {
                     MempoolEvent::NewCut(_) => {}
@@ -339,6 +357,33 @@ impl DataAvailability {
             block.txs.len(),
             self.blocks.last_block_hash()
         );
+
+        // Process the block innode state
+        let new_stakers = self.node_state.handle_new_block(block.clone());
+
+        // FIXME: to remove when we have a real staking smart contract
+        // Send message for each new staker.
+        for staker in new_stakers {
+            if let Err(e) = self
+                .bus
+                .send(ConsensusCommand::NewStaker(staker))
+                .context("Send new staker consensus command")
+            {
+                error!("Failed to send new staker consensus command: {:?}", e);
+            }
+        }
+
+        // Send message for new bounded validators
+        for validator in &block.new_bonded_validators {
+            if let Err(e) = self
+                .bus
+                .send(ConsensusCommand::NewBonded(validator.clone()))
+                .context("Send new staker consensus command")
+            {
+                error!("Failed to send new staker consensus command: {:?}", e);
+            }
+        }
+
         // store block
         let block_hash = block.hash();
         self.add_block(block.clone());
@@ -389,7 +434,7 @@ impl DataAvailability {
     fn add_block(&mut self, block: Block) {
         if let Err(e) = self.blocks.put(block.clone()) {
             error!("storing block: {}", e);
-        } else {
+        } else if self.config.run_indexer {
             _ = self
                 .bus
                 .send(DataEvent::NewBlock(block))

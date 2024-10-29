@@ -2,14 +2,12 @@
 
 use crate::{
     bus::{bus_client, BusMessage, SharedMessageBus},
-    consensus::{
-        staking::{Stake, Staker},
-        ConsensusEvent,
-    },
+    consensus::ConsensusEvent,
     handle_messages,
     mempool::storage::{Car, CarProposal, InMemoryStorage},
     model::{Hashable, SharedRunContext, Transaction, TransactionData, ValidatorPublicKey},
-    p2p::network::{OutboundMessage, PeerEvent, SignedWithKey},
+    node_state::NodeState,
+    p2p::network::{OutboundMessage, SignedWithKey},
     rest::endpoints::RestApiMessage,
     utils::{
         crypto::{BlstCrypto, SharedBlstCrypto},
@@ -37,7 +35,6 @@ struct MempoolBusClient {
     receiver(SignedWithKey<MempoolNetMessage>),
     receiver(RestApiMessage),
     receiver(ConsensusEvent),
-    receiver(PeerEvent),
 }
 }
 
@@ -49,6 +46,7 @@ pub struct Mempool {
     validators: Vec<ValidatorPublicKey>,
     genesis: bool,
     is_genesis_leader: bool,
+    node_state: NodeState,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, Eq, PartialEq, IntoStaticStr)]
@@ -86,6 +84,15 @@ impl Module for Mempool {
     async fn build(ctx: Self::Context) -> Result<Self> {
         let bus = MempoolBusClient::new_from_bus(ctx.common.bus.new_handle()).await;
         let metrics = MempoolMetrics::global(ctx.common.config.id.clone());
+
+        let node_state = Self::load_from_disk_or_default::<NodeState>(
+            ctx.common
+                .config
+                .data_directory
+                .join("mempool_node_state.bin")
+                .as_path(),
+        );
+
         Ok(Mempool {
             bus,
             metrics,
@@ -93,7 +100,8 @@ impl Module for Mempool {
             storage: InMemoryStorage::new(ctx.node.crypto.validator_pubkey().clone()),
             validators: vec![],
             genesis: true,
-            is_genesis_leader: ctx.common.config.id.starts_with("leader-"),
+            is_genesis_leader: ctx.common.config.id.starts_with("leader"),
+            node_state,
         })
     }
 
@@ -111,9 +119,6 @@ impl Mempool {
 
         handle_messages! {
             on_bus self.bus,
-            listen<PeerEvent> cmd => {
-                self.handle_peer_event(cmd)
-            }
             listen<SignedWithKey<MempoolNetMessage>> cmd => {
                 self.handle_net_message(cmd).await
             }
@@ -154,29 +159,6 @@ impl Mempool {
                 {
                     error!("{:?}", e);
                 };
-            }
-        }
-    }
-
-    fn add_stake_tx_on_genesis_for(&mut self, pubkey: ValidatorPublicKey) {
-        let tx = Transaction::wrap(TransactionData::Stake(Staker {
-            pubkey: pubkey.clone(),
-            stake: Stake { amount: 100 },
-        }));
-        self.validators.push(pubkey);
-        self.on_new_tx(tx);
-    }
-
-    fn handle_peer_event(&mut self, event: PeerEvent) {
-        match event {
-            PeerEvent::NewPeer { pubkey } => {
-                if self.genesis && self.is_genesis_leader {
-                    let my_pubkey = self.crypto.validator_pubkey().clone();
-                    if !self.validators.contains(&my_pubkey) {
-                        self.add_stake_tx_on_genesis_for(my_pubkey);
-                    }
-                    self.add_stake_tx_on_genesis_for(pubkey);
-                }
             }
         }
     }
@@ -384,6 +366,25 @@ impl Mempool {
 
     fn on_new_tx(&mut self, tx: Transaction) {
         debug!("Got new tx {}", tx.hash());
+        // TODO: Verify fees ?
+        // TODO: Verify identity ?
+
+        match &tx.transaction_data {
+            TransactionData::RegisterContract(register_contract_transaction) => {
+                if let Err(e) = self
+                    .node_state
+                    .handle_register_contract(register_contract_transaction)
+                {
+                    error!("Failed to handle register contract transaction: {:?}", e);
+                }
+            }
+            TransactionData::Stake(_staker) => {}
+            TransactionData::Blob(_blob_transaction) => {}
+            TransactionData::Proof(_proof_transaction) => {
+                // TODO: Verify and extract proof
+            }
+        }
+
         self.metrics.add_api_tx("blob".to_string());
         self.storage.add_new_tx(tx.clone());
         if self.storage.genesis() && self.storage.pending_txs.len() >= 2 {

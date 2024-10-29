@@ -4,7 +4,7 @@ services:
     privileged: true
     network_mode: host
     environment:
-      - HYLE_ID=node-1
+      - HYLE_ID=leader-1
       - HYLE_REST=localhost:4001
       - HYLE_HOST=localhost:1001
       - HYLE_DA_ADDRESS=localhost:4141

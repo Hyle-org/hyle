@@ -47,6 +47,7 @@ pub struct Peer {
     bloom_filter: Bloom<Vec<u8>>,
     self_pubkey: ValidatorPublicKey,
     peer_pubkey: Option<ValidatorPublicKey>,
+    peer_name: Option<String>,
 
     // peer internal channel
     internal_cmd_tx: mpsc::Sender<Cmd>,
@@ -81,6 +82,7 @@ impl Peer {
             peer_pubkey: None,
             internal_cmd_tx: cmd_tx,
             internal_cmd_rx: cmd_rx,
+            peer_name: None,
         }
     }
 
@@ -116,12 +118,14 @@ impl Peer {
             HandshakeNetMessage::Hello(v) => {
                 info!("👋 Got peer hello message {:?}", v);
                 self.peer_pubkey = Some(v.validator_pubkey);
+                self.peer_name = Some(v.name);
                 send_net_message(&mut self.stream, HandshakeNetMessage::Verack.into()).await
             }
             HandshakeNetMessage::Verack => {
                 debug!("Got peer verack message");
                 if let Some(pubkey) = &self.peer_pubkey {
                     self.bus.send(PeerEvent::NewPeer {
+                        name: self.peer_name.clone().unwrap_or("unknown".to_string()),
                         pubkey: pubkey.clone(),
                     })?;
                 }
@@ -267,6 +271,7 @@ impl Peer {
             HandshakeNetMessage::Hello(Hello {
                 version: 1,
                 validator_pubkey: self.self_pubkey.clone(),
+                name: self.conf.id.clone(),
             })
             .into(),
         )

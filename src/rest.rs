@@ -60,6 +60,7 @@ impl Module for RestApi {
             .merge(
                 Router::new()
                     .route("/v1/da/block/height", get(endpoints::get_block_height))
+                    // FIXME: we expose this endpoint for testing purposes. This should be removed or adapted
                     .route("/v1/contract/:name", get(endpoints::get_contract))
                     .route(
                         "/v1/contract/register",

@@ -5,8 +5,8 @@ use opentelemetry::{
 
 pub struct ConsensusMetrics {
     signature_error: Counter<u64>,
-    start_new_slot: Counter<u64>,
-    start_new_slot_error: Counter<u64>,
+    start_new_round: Counter<u64>,
+    start_new_round_error: Counter<u64>,
     prepare: Counter<u64>,
     prepare_error: Counter<u64>,
     prepare_vote: Counter<u64>,
@@ -29,8 +29,8 @@ impl ConsensusMetrics {
 
         ConsensusMetrics {
             signature_error: my_meter.u64_counter("signature_error").init(),
-            start_new_slot: my_meter.u64_counter("start_new_slot").init(),
-            start_new_slot_error: my_meter.u64_counter("start_new_slot_error").init(),
+            start_new_round: my_meter.u64_counter("start_new_round").init(),
+            start_new_round_error: my_meter.u64_counter("start_new_round_error").init(),
             prepare: my_meter.u64_counter("prepare").init(),
             prepare_error: my_meter.u64_counter("prepare_error").init(),
             prepare_vote: my_meter.u64_counter("prepare_vote").init(),
@@ -54,11 +54,11 @@ impl ConsensusMetrics {
         self.signature_error.add(1, &[KeyValue::new("kind", kind)]);
     }
 
-    pub fn start_new_slot(&self, kind: &'static str) {
-        self.start_new_slot.add(1, &[KeyValue::new("kind", kind)]);
+    pub fn start_new_round(&self, kind: &'static str) {
+        self.start_new_round.add(1, &[KeyValue::new("kind", kind)]);
     }
-    pub fn start_new_slot_error(&self, kind: &'static str) {
-        self.start_new_slot_error
+    pub fn start_new_round_error(&self, kind: &'static str) {
+        self.start_new_round_error
             .add(1, &[KeyValue::new("kind", kind)]);
     }
     pub fn prepare(&self) {

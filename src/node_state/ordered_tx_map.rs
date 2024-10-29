@@ -21,6 +21,7 @@ impl OrderedTxMap {
         self.map.get_mut(hash)
     }
 
+    #[allow(dead_code)]
     pub fn len(&self) -> usize {
         self.map.len()
     }

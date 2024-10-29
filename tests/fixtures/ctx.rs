@@ -54,7 +54,9 @@ impl E2ECtx {
             let mut node_conf = conf_maker.build(prefix);
             node_conf.peers = peers.clone();
             peers.push(node_conf.host.clone());
-            let node = test_helpers::TestProcess::new("node", node_conf).start();
+            let node = test_helpers::TestProcess::new("node", node_conf)
+                .log("hyle=info,tower_http=error")
+                .start();
 
             // Request something on node1 to be sure it's alive and working
             let client = ApiHttpClient {
@@ -73,7 +75,9 @@ impl E2ECtx {
         conf_maker.default.consensus.slot_duration = slot_duration;
 
         let node_conf = conf_maker.build("single-node");
-        let node = test_helpers::TestProcess::new("node", node_conf).start();
+        let node = test_helpers::TestProcess::new("node", node_conf)
+            .log("hyle=info,tower_http=error")
+            .start();
 
         // Request something on node1 to be sure it's alive and working
         let client = ApiHttpClient {
