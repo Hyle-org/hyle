@@ -91,12 +91,7 @@ pub struct TimeoutCertificate(Slot, View, QuorumCertificate);
 pub enum Ticket {
     // Special value for the initial Cut
     Genesis,
-    // ConsensusProposal and validator vec are here as temporary hacks to make the consensus logic simpler.
-    CommitQC(
-        QuorumCertificate,
-        ConsensusProposal,
-        Vec<ValidatorPublicKey>,
-    ),
+    CommitQC(QuorumCertificate),
     TC(TimeoutCertificate),
 }
 
@@ -418,8 +413,8 @@ impl Consensus {
             self.bft_round_state
                 .staking
                 .get_stake(&v.pubkey)
-                .unwrap_or(Stake { amount: 0 })
-                .amount
+                .map(|s| s.amount)
+                .unwrap_or(0)
                 > MIN_STAKE
                 && !self.bft_round_state.staking.is_bonded(&v.pubkey)
         });
@@ -606,40 +601,15 @@ impl Consensus {
         }
     }
 
-    fn verify_commit_ticket(
-        &mut self,
-        commit_qc: QuorumCertificate,
-        previous_proposal: ConsensusProposal,
-        previous_validators: Vec<ValidatorPublicKey>,
-    ) -> bool {
-        // It's possible (in fact, somewhat expected) that we receive a Commit message before the Prepare message.
-        // In that case, we've already processed this QC, so we can no longer do so as we called finish_round already.
-        // If so, we have buffered it locally so we can check everything works out nicely.
+    fn verify_commit_ticket(&mut self, commit_qc: QuorumCertificate) -> bool {
+        // Three options:
+        // - we have already received the commit message for this ticket, so we already processed the QC.
+        // - we haven't, so we process it right away
+        // - the CQC is invalid and we just ignore it.
         if let Some(qc) = &self.bft_round_state.follower.buffered_quorum_certificate {
             return qc == &commit_qc;
         }
-        // It's plausible that we haven't received the commit message for the proposal represented by the CQC.
-        // In this case, we'll process it instantly.
-        if self.on_commit(commit_qc.clone()).is_ok() {
-            return true;
-        }
-        // So one option here is that we missed a slot.
-        // We should block and sync, but for now we'll just "trust the QC" and continue.
-        warn!("⏩ Received Prepare message with an unknown ticket. Fast-forwarding for now.");
-        self.bft_round_state.state_tag = StateTag::Follower;
-        self.bft_round_state.follower.round_leader = previous_validators[0].clone();
-
-        // Try to commit again.
-        // We _do not_ check the validity of the QC, because self.verify_quorum_certificate
-        // assumes the current round, and we cannot trust the list of validators anyways.
-        // TODO: fix this, we currently just assume all validators are worth 100 tokens
-        self.bft_round_state.staking = Staking::default();
-        for val in previous_validators {
-            let _ = self.add_trusted_validator(&val, Stake { amount: 100 });
-        }
-        self.commit_proposal(previous_proposal, commit_qc)
-            .log_error("⏩📛 Failed to fast-forward")
-            .is_ok()
+        self.on_commit(commit_qc.clone()).is_ok()
     }
 
     /// Message received by follower after start_round
@@ -657,6 +627,8 @@ impl Consensus {
                     "🚪 Slot {} / view {} Prepare message received while joining. Storing proposal.",
                     consensus_proposal.slot, consensus_proposal.view
                 );
+                // TODO: we probably should process this differently,
+                // as we are susceptible to rogue proposals not sent by the leader.
                 self.bft_round_state.follower.round_leader = validators[0].clone();
                 self.bft_round_state.slot = consensus_proposal.slot;
                 self.bft_round_state.view = consensus_proposal.view;
@@ -676,8 +648,8 @@ impl Consensus {
                     bail!("Genesis ticket is only valid for the first slot.");
                 }
             }
-            Ticket::CommitQC(commit_qc, previous_proposal, validators) => {
-                if !self.verify_commit_ticket(commit_qc, previous_proposal, validators) {
+            Ticket::CommitQC(commit_qc) => {
+                if !self.verify_commit_ticket(commit_qc) {
                     bail!("Invalid commit ticket");
                 }
             }
@@ -950,9 +922,11 @@ impl Consensus {
     /// Message received by follower.
     fn on_commit(&mut self, commit_quorum_certificate: QuorumCertificate) -> Result<()> {
         if matches!(self.bft_round_state.state_tag, StateTag::Joining) {
-            info!("Commit message received while joining.");
             if self.bft_round_state.joining.staking_updated_to + 1 >= self.bft_round_state.slot {
-                info!("We should be caught up, attempting to commit.");
+                info!(
+                    "📦 Commit message received for slot {}, trying to synchronize.",
+                    self.bft_round_state.slot
+                );
                 // Update the bonding state accordingly
                 let mut to_unbond = vec![];
                 for validator in self.bft_round_state.staking.bonded() {
@@ -969,14 +943,18 @@ impl Consensus {
                     }
                 }
                 self.bft_round_state.state_tag = StateTag::Follower;
+                if self.on_commit(commit_quorum_certificate).is_err() {
+                    self.bft_round_state.state_tag = StateTag::Joining;
+                    bail!("⛑️ Failed to synchronize, retrying soon.");
+                }
             } else {
                 info!(
-                    "We are only caught up to {} ({} needed), ignoring commit message.",
+                    "🏃‍♀️ Ignoring commit message, we are only caught up to {} ({} needed).",
                     self.bft_round_state.joining.staking_updated_to,
                     self.bft_round_state.slot - 1
                 );
-                return Ok(());
             }
+            return Ok(());
         }
         // Check that this is a QC for ConfirmAck for the expected proposal.
         // This also checks slot/view as those are part of the hash.
@@ -1019,30 +997,25 @@ impl Consensus {
 
         info!("📈 Slot {} committed", &consensus_proposal.slot);
 
-        // TODO: reduce cloning, we need to save some things if we're leader next.
-        let prop_validators = self.bft_round_state.staking.bonded().clone();
-
         // Prepare our state for the next round.
         self.finish_round(Some((
-            consensus_proposal.clone(),
+            consensus_proposal,
             commit_quorum_certificate.clone(),
         )))?;
 
         if self.is_round_leader() {
             // Setup our ticket for the next round
             // Send Prepare message to all validators
-            self.delay_start_new_round(Ticket::CommitQC(
-                commit_quorum_certificate,
-                consensus_proposal,
-                prop_validators,
-            ))
+            self.delay_start_new_round(Ticket::CommitQC(commit_quorum_certificate))
         } else if self.is_part_of_consensus(self.crypto.validator_pubkey()) {
             Ok(())
         } else if self
             .bft_round_state
             .staking
             .get_stake(self.crypto.validator_pubkey())
-            .is_some()
+            .map(|s| s.amount)
+            .unwrap_or(0)
+            > MIN_STAKE
         {
             self.send_candidacy()
         } else {
@@ -1132,11 +1105,13 @@ impl Consensus {
                 Ok(())
             }
             ConsensusCommand::ProcessedBlock(block_height) => {
-                if matches!(self.bft_round_state.state_tag, StateTag::Joining) {
+                if matches!(self.bft_round_state.state_tag, StateTag::Joining)
+                    && self.store.bft_round_state.joining.staking_updated_to < block_height.0
+                {
                     info!(
-                            "🚪 Slot {} Block message received while joining. Setting up for next round.",
-                            block_height.0
-                        );
+                        "🚪 Slot {} Block message received while joining. Setting up for next round.",
+                        block_height.0
+                    );
                     self.store.bft_round_state.joining.staking_updated_to = block_height.0;
                 }
                 Ok(())
