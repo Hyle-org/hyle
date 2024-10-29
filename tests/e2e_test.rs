@@ -227,7 +227,7 @@ async fn e2e() -> Result<()> {
         .start();
 
     // Wait for node2 to properly spin up
-    wait_height(&client_node1, 5).await?;
+    wait_height(&client_node1, 2).await?;
 
     // Start a third node just to see what happens.
     let mut node3_conf = conf_maker.build();
@@ -238,6 +238,9 @@ async fn e2e() -> Result<()> {
     let mut indexer_conf = conf_maker.build();
     indexer_conf.da_address = node2.conf.da_address.clone();
     let indexer = test_helpers::TestProcess::new("indexer", indexer_conf).start();
+
+    // Wait for node2 to properly spin up
+    wait_height(&client_node1, 5).await?;
 
     // Using a fake proofs
     register_test_contracts(&client_node1).await?;

@@ -231,7 +231,12 @@ impl Consensus {
 
         // Reset round state, carrying over staking and current proposal.
         self.bft_round_state = BFTRoundState {
-            consensus_proposal: std::mem::take(&mut self.bft_round_state.consensus_proposal),
+            consensus_proposal: ConsensusProposal {
+                slot: self.bft_round_state.consensus_proposal.slot,
+                view: self.bft_round_state.consensus_proposal.view,
+                round_leader: self.bft_round_state.consensus_proposal.round_leader.clone(),
+                ..ConsensusProposal::default()
+            },
             staking: std::mem::take(&mut self.bft_round_state.staking),
             ..BFTRoundState::default()
         };
