@@ -31,7 +31,6 @@ impl Module for Consensus {
             config: ctx.common.config.clone(),
             crypto: ctx.node.crypto.clone(),
         };
-        consensus.setup_initial_state()?;
         Ok(consensus)
     }
 
