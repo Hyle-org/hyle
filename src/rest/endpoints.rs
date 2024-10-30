@@ -2,6 +2,7 @@ use crate::bus::command_response::CmdRespClient;
 use crate::bus::BusClientSender;
 use crate::bus::BusMessage;
 use crate::consensus::staking::Staker;
+use crate::consensus::QueryConsensusInfo;
 use crate::data_availability::QueryBlockHeight;
 use crate::model::ProofData;
 use crate::model::Transaction;
@@ -173,4 +174,24 @@ pub async fn run_scenario(
         .send(scenario)
         .map(|_| StatusCode::OK)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
+}
+
+pub async fn get_info(State(state): State<RouterState>) -> Result<impl IntoResponse, AppError> {
+    Ok(Json(state.info))
+}
+
+pub async fn get_consensus_state(
+    State(mut state): State<RouterState>,
+) -> Result<impl IntoResponse, AppError> {
+    match state.bus.request(QueryConsensusInfo {}).await {
+        Ok(consensus_state) => Ok(Json(consensus_state)),
+        err => {
+            error!("{:?}", err);
+
+            Err(AppError(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                anyhow!("Error while getting consensus state"),
+            ))
+        }
+    }
 }

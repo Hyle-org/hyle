@@ -90,6 +90,11 @@ async fn main() -> Result<()> {
             bus: ctx.bus.new_handle(),
             metrics_layer,
             router: router.clone(),
+            info: hyle::rest::NodeInfo {
+                id: ctx.config.id.clone(),
+                da_address: ctx.config.da_address.clone(),
+                pubkey: None,
+            },
         })
         .await?;
 

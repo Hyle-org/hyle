@@ -2,11 +2,14 @@ use anyhow::{Context, Result};
 use reqwest::{Response, Url};
 
 use crate::{
+    consensus::{staking::Staker, ConsensusInfo},
     model::{
         BlobTransaction, BlockHeight, ContractName, ProofTransaction, RegisterContractTransaction,
     },
     tools::mock_workflow::RunScenario,
 };
+
+use super::NodeInfo;
 
 pub struct ApiHttpClient {
     pub url: Url,
@@ -45,6 +48,40 @@ impl ApiHttpClient {
             .send()
             .await
             .context("Sending tx register contract")
+    }
+
+    pub async fn send_stake_tx(&self, tx: &Staker) -> Result<Response> {
+        self.reqwest_client
+            .post(format!("{}v1/tx/send/stake", self.url))
+            .body(serde_json::to_string(&tx)?)
+            .header("Content-Type", "application/json")
+            .send()
+            .await
+            .context("Sending tx stake")
+    }
+
+    pub async fn get_consensus_info(&self) -> Result<ConsensusInfo> {
+        self.reqwest_client
+            .get(format!("{}v1/consensus/info", self.url))
+            .header("Content-Type", "application/json")
+            .send()
+            .await
+            .context("getting consensus info")?
+            .json::<ConsensusInfo>()
+            .await
+            .context("reading consensus info response")
+    }
+
+    pub async fn get_node_info(&self) -> Result<NodeInfo> {
+        self.reqwest_client
+            .get(format!("{}v1/info", self.url))
+            .header("Content-Type", "application/json")
+            .send()
+            .await
+            .context("getting node info")?
+            .json::<NodeInfo>()
+            .await
+            .context("reading node info response")
     }
 
     pub async fn get_block_height(&self) -> Result<BlockHeight> {

@@ -10,7 +10,7 @@ use tokio::{sync::broadcast, time::sleep};
 use tracing::{debug, info, warn};
 
 use crate::{
-    bus::{bus_client, BusMessage, SharedMessageBus},
+    bus::{bus_client, command_response::Query, BusMessage, SharedMessageBus},
     handle_messages,
     mempool::{Cut, MempoolEvent},
     model::{BlockHeight, Hashable, ValidatorPublicKey},
@@ -184,6 +184,17 @@ pub struct Consensus {
     crypto: SharedBlstCrypto,
 }
 
+#[derive(Clone)]
+pub struct QueryConsensusInfo {}
+
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub struct ConsensusInfo {
+    pub slot: Slot,
+    pub view: View,
+    pub round_leader: ValidatorPublicKey,
+    pub validators: Vec<ValidatorPublicKey>,
+}
+
 bus_client! {
 struct ConsensusBusClient {
     sender(OutboundMessage),
@@ -194,6 +205,7 @@ struct ConsensusBusClient {
     receiver(MempoolEvent),
     receiver(SignedWithKey<ConsensusNetMessage>),
     receiver(PeerEvent),
+    receiver(Query<QueryConsensusInfo, ConsensusInfo>),
 }
 }
 
@@ -1346,6 +1358,13 @@ impl Consensus {
                     Ok(_) => (),
                     Err(e) => warn!("Error while handling peer event: {:#}", e),
                 }
+            }
+            command_response<QueryConsensusInfo, ConsensusInfo> _ => {
+                let slot = self.bft_round_state.consensus_proposal.slot;
+                let view = self.bft_round_state.consensus_proposal.view;
+                let round_leader = self.bft_round_state.consensus_proposal.round_leader.clone();
+                let validators = self.bft_round_state.staking.bonded().clone();
+                Ok(ConsensusInfo { slot, view, round_leader, validators })
             }
         }
     }

@@ -2,8 +2,9 @@
 
 use crate::{
     bus::{bus_client, command_response::Query, SharedMessageBus},
+    consensus::{ConsensusInfo, QueryConsensusInfo},
     data_availability::QueryBlockHeight,
-    model::{BlockHeight, ContractName},
+    model::{BlockHeight, ContractName, ValidatorPublicKey},
     node_state::model::Contract,
     tools::mock_workflow::RunScenario,
     utils::modules::Module,
@@ -17,6 +18,7 @@ use axum::{
 };
 use axum_otel_metrics::HttpMetricsLayer;
 use endpoints::RestApiMessage;
+use serde::{Deserialize, Serialize};
 use tower_http::trace::TraceLayer;
 use tracing::info;
 
@@ -29,11 +31,20 @@ struct RestBusClient {
     sender(RunScenario),
     sender(Query<ContractName, Contract>),
     sender(Query<QueryBlockHeight, BlockHeight>),
+    sender(Query<QueryConsensusInfo, ConsensusInfo>),
 }
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+pub struct NodeInfo {
+    pub id: String,
+    pub pubkey: Option<ValidatorPublicKey>,
+    pub da_address: String,
 }
 
 pub struct RestApiRunContext {
     pub rest_addr: String,
+    pub info: NodeInfo,
     pub bus: SharedMessageBus,
     pub router: Router,
     pub metrics_layer: HttpMetricsLayer,
@@ -41,6 +52,7 @@ pub struct RestApiRunContext {
 
 pub struct RouterState {
     bus: RestBusClient,
+    info: NodeInfo,
 }
 
 pub struct RestApi {
@@ -59,6 +71,8 @@ impl Module for RestApi {
             .router
             .merge(
                 Router::new()
+                    .route("/v1/info", get(endpoints::get_info))
+                    .route("/v1/consensus/info", get(endpoints::get_consensus_state))
                     .route("/v1/da/block/height", get(endpoints::get_block_height))
                     // FIXME: we expose this endpoint for testing purposes. This should be removed or adapted
                     .route("/v1/contract/:name", get(endpoints::get_contract))
@@ -75,6 +89,7 @@ impl Module for RestApi {
                     .route("/v1/tools/run_scenario", post(endpoints::run_scenario))
                     .with_state(RouterState {
                         bus: RestBusClient::new_from_bus(ctx.bus).await,
+                        info: ctx.info,
                     })
                     .nest("/v1", ctx.metrics_layer.routes()),
             )
@@ -123,7 +138,12 @@ impl Clone for RouterState {
                     &self.bus,
                 )
                 .clone(),
+                Pick::<tokio::sync::broadcast::Sender<Query<QueryConsensusInfo, ConsensusInfo>>>::get(
+                    &self.bus,
+                )
+                .clone(),
             ),
+            info: self.info.clone(),
         }
     }
 }
