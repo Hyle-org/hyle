@@ -49,6 +49,7 @@ pub struct Mempool {
 
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, Eq, PartialEq, IntoStaticStr)]
 pub enum MempoolNetMessage {
+    NewCut(Cut),
     CarProposal(CarProposal),
     CarProposalVote(CarProposal),
     SyncRequest(CarProposal, Option<usize>),
@@ -159,6 +160,9 @@ impl Mempool {
             Ok(true) => {
                 let validator = msg.validators.first().unwrap();
                 match msg.msg {
+                    MempoolNetMessage::NewCut(cut) => {
+                        self.send_new_cut(cut);
+                    }
                     MempoolNetMessage::CarProposal(car_proposal) => {
                         if let Err(e) = self.on_car_proposal(validator, car_proposal).await {
                             error!("{:?}", e);
@@ -311,19 +315,29 @@ impl Mempool {
         }
     }
 
+    fn send_new_cut(&mut self, cut: Cut) {
+        if let Err(e) = self
+            .bus
+            .send(MempoolEvent::NewCut(cut))
+            .context("Cannot send NewCut over channel")
+        {
+            error!("{:?}", e);
+        } else {
+            self.metrics.add_batch();
+        }
+    }
+
     async fn time_to_cut(&mut self) {
         if let Some(cut) = self.storage.try_new_cut(&self.validators) {
             let poa = self.storage.tip_poa();
             self.try_car_proposal(poa);
             if let Err(e) = self
-                .bus
-                .send(MempoolEvent::NewCut(cut))
-                .context("Cannot send message over channel")
+                .broadcast_net_message(MempoolNetMessage::NewCut(cut.clone()))
+                .context("Cannot broadcast NewCut message")
             {
                 error!("{:?}", e);
-            } else {
-                self.metrics.add_batch();
             }
+            self.send_new_cut(cut);
         } else if let Some((tip, txs)) = self.storage.tip_info() {
             // No PoA means we rebroadcast the Car proposal for non present voters
             let only_for = HashSet::from_iter(
