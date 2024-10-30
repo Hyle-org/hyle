@@ -44,14 +44,11 @@ pub struct Mempool {
     metrics: MempoolMetrics,
     storage: InMemoryStorage,
     validators: Vec<ValidatorPublicKey>,
-    genesis: bool,
-    is_genesis_leader: bool,
     node_state: NodeState,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, Eq, PartialEq, IntoStaticStr)]
 pub enum MempoolNetMessage {
-    NewTx(Transaction),
     CarProposal(CarProposal),
     CarProposalVote(CarProposal),
     SyncRequest(CarProposal, Option<usize>),
@@ -99,8 +96,6 @@ impl Module for Mempool {
             crypto: Arc::clone(&ctx.node.crypto),
             storage: InMemoryStorage::new(ctx.node.crypto.validator_pubkey().clone()),
             validators: vec![],
-            genesis: true,
-            is_genesis_leader: ctx.common.config.id == "node-1",
             node_state,
         })
     }
@@ -129,10 +124,7 @@ impl Mempool {
                 self.handle_consensus_event(cmd).await
             }
             _ = interval.tick() => {
-                if !(self.genesis && self.is_genesis_leader) {
-                    debug!("Time to Cut");
-                    self.time_to_cut().await
-                }
+                self.time_to_cut().await
             }
         }
     }
@@ -145,10 +137,9 @@ impl Mempool {
                 validators,
             } => {
                 debug!(
-                    "Received CommitCut ({} validators, {} new_bonded_validators, {} cut tips)",
-                    validators.len(),
-                    new_bonded_validators.len(),
-                    cut.len()
+                    "✂️ Received CommitCut ({:?} cut, {} pending txs)",
+                    cut,
+                    self.storage.pending_txs.len()
                 );
                 self.validators = validators;
                 let txs = self.storage.update_lanes_after_commit(cut);
@@ -168,7 +159,6 @@ impl Mempool {
             Ok(true) => {
                 let validator = msg.validators.first().unwrap();
                 match msg.msg {
-                    MempoolNetMessage::NewTx(tx) => self.on_new_tx(tx),
                     MempoolNetMessage::CarProposal(car_proposal) => {
                         if let Err(e) = self.on_car_proposal(validator, car_proposal).await {
                             error!("{:?}", e);
@@ -204,10 +194,6 @@ impl Mempool {
         match command {
             RestApiMessage::NewTx(tx) => {
                 self.on_new_tx(tx.clone());
-                // hacky stuff waiting for staking contract: do not broadcast stake txs
-                if !matches!(tx.transaction_data, TransactionData::Stake(_)) {
-                    self.broadcast_tx(tx).ok();
-                }
             }
         }
     }
@@ -273,10 +259,6 @@ impl Mempool {
             .new_vote_for_proposal(validator, &car_proposal)
             .is_some()
         {
-            if self.genesis && self.is_genesis_leader {
-                debug!("Genesis Cut");
-                self.time_to_cut().await;
-            }
             debug!("{} Vote from {}", self.storage.id, validator)
         } else {
             error!("{} unexpected Vote from {}", self.storage.id, validator)
@@ -319,8 +301,9 @@ impl Mempool {
     fn try_car_proposal(&mut self, poa: Option<Vec<ValidatorPublicKey>>) {
         if let Some(car_proposal) = self.storage.try_car_proposal(poa) {
             debug!(
-                "Broadcast Car proposal ({} validators)",
-                self.validators.len()
+                "🚗 Broadcast Car proposal ({} validators, {} txs)",
+                self.validators.len(),
+                car_proposal.txs.len()
             );
             if let Err(e) = self.broadcast_car_proposal(car_proposal) {
                 error!("{:?}", e);
@@ -332,7 +315,6 @@ impl Mempool {
         if let Some(cut) = self.storage.try_new_cut(&self.validators) {
             let poa = self.storage.tip_poa();
             self.try_car_proposal(poa);
-            debug!("Sending new Cut");
             if let Err(e) = self
                 .bus
                 .send(MempoolEvent::NewCut(cut))
@@ -387,18 +369,12 @@ impl Mempool {
 
         self.metrics.add_api_tx("blob".to_string());
         self.storage.add_new_tx(tx.clone());
-        if self.storage.genesis() && self.storage.pending_txs.len() >= 2 {
+        if self.storage.genesis() {
             // Genesis create and broadcast a new Car proposal
             self.try_car_proposal(None);
         }
         self.metrics
             .snapshot_pending_tx(self.storage.pending_txs.len());
-    }
-
-    fn broadcast_tx(&mut self, tx: Transaction) -> Result<()> {
-        self.metrics.add_broadcasted_tx("blob".to_string());
-        self.broadcast_net_message(MempoolNetMessage::NewTx(tx))?;
-        Ok(())
     }
 
     fn broadcast_car_proposal(&mut self, car_proposal: CarProposal) -> Result<()> {

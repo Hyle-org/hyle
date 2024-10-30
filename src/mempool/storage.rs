@@ -6,7 +6,7 @@ use std::{
     hash::Hash,
     vec,
 };
-use tracing::{debug, error, warn};
+use tracing::{debug, error, info, warn};
 
 use crate::model::{Transaction, ValidatorPublicKey};
 
@@ -91,7 +91,7 @@ impl InMemoryStorage {
                         prepare_cut(&mut cut, validator, lane);
                     } else {
                         // can happen if validator does not have any car proposal yet
-                        error!(
+                        info!(
                             "Validator {} not found in lane of {} (cutting)",
                             validator, self.id
                         );
@@ -368,10 +368,16 @@ impl InMemoryStorage {
     }
 
     fn collect_old_used_cars(cars: &mut Vec<Car>, tip: usize, txs: &mut Vec<Transaction>) {
-        cars.retain_mut(|car| {
-            txs.extend(std::mem::take(&mut car.txs));
-            car.id >= tip
-        });
+        if let Some(pos) = cars.iter().position(|car| car.id == tip) {
+            let latest_txs = std::mem::take(&mut cars[pos].txs);
+            // collect all cars but the last. we need it for future cuts.
+            cars.drain(..pos).for_each(|mut car| {
+                txs.extend(std::mem::take(&mut car.txs));
+            });
+            txs.extend(latest_txs);
+        } else {
+            error!("Car {} not found !", tip);
+        }
     }
 
     pub fn update_lanes_after_commit(&mut self, lanes: Cut) -> Vec<Transaction> {
@@ -383,7 +389,7 @@ impl InMemoryStorage {
                 Self::collect_old_used_cars(&mut lane.cars, *tip, &mut txs);
             } else {
                 // can happen if validator does not have any car proposal yet
-                error!(
+                info!(
                     "Validator {} not found in lane of {} (updating)",
                     validator, self.id
                 );
