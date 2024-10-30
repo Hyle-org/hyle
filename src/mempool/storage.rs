@@ -370,6 +370,7 @@ impl InMemoryStorage {
     fn collect_old_used_cars(cars: &mut Vec<Car>, tip: usize, txs: &mut Vec<Transaction>) {
         if let Some(pos) = cars.iter().position(|car| car.id == tip) {
             let latest_txs = std::mem::take(&mut cars[pos].txs);
+            // collect all cars but the last. we need it for future cuts.
             cars.drain(..pos).for_each(|mut car| {
                 txs.extend(std::mem::take(&mut car.txs));
             });
