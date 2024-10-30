@@ -171,7 +171,7 @@ pub struct ConsensusStore {
     bft_round_state: BFTRoundState,
     /// Validators that asked to be part of consensus
     validator_candidates: Vec<NewValidatorCandidate>,
-    pending_cuts: Vec<Cut>,
+    pending_cut: Option<Cut>,
 }
 
 pub struct Consensus {
@@ -440,7 +440,7 @@ impl Consensus {
         );
 
         // Creates ConsensusProposal
-        let cut = self.next_cut().unwrap_or_default();
+        let cut = self.pending_cut.take().unwrap_or_default();
 
         self.bft_round_state.leader.step = Step::PrepareVote;
 
@@ -469,14 +469,6 @@ impl Consensus {
 
     fn is_round_leader(&self) -> bool {
         matches!(self.bft_round_state.state_tag, StateTag::Leader)
-    }
-
-    fn next_cut(&mut self) -> Option<Cut> {
-        if self.pending_cuts.is_empty() {
-            None
-        } else {
-            Some(self.pending_cuts.remove(0))
-        }
     }
 
     fn compute_f(&self) -> u64 {
@@ -1131,7 +1123,7 @@ impl Consensus {
     fn handle_command(&mut self, msg: ConsensusCommand) -> Result<()> {
         match msg {
             ConsensusCommand::SingleNodeBlockGeneration => {
-                if let Some(cut) = self.next_cut() {
+                if let Some(cut) = self.pending_cut.take() {
                     self.bus
                         .send(ConsensusEvent::CommitCut {
                             validators: vec![self.crypto.validator_pubkey().clone()],
@@ -1219,13 +1211,13 @@ impl Consensus {
         match msg {
             MempoolEvent::CommitBlock(..) => Ok(()),
             MempoolEvent::NewCut(cut) => {
-                if let Some(last_cut) = self.pending_cuts.last() {
-                    if last_cut == &cut {
+                if let Some(ref last_cut) = self.pending_cut {
+                    if last_cut == &cut || cut.is_empty() {
                         return Ok(());
                     }
                 }
-                debug!("Received a new Cut");
-                self.pending_cuts.push(cut);
+                debug!("✂️ Received a new Cut ({:?})", cut);
+                self.pending_cut.replace(cut);
                 Ok(())
             }
         }

@@ -142,7 +142,6 @@ mod e2e_tx_settle {
         scenario_erc20(ctx).await
     }
 
-    #[ignore = "Bug: some transactions are dropped by the mempool ?"]
     #[test_log::test(tokio::test)]
     async fn risc0_multi_nodes() -> Result<()> {
         let ctx = E2ECtx::new_multi(2, 500).await?;
