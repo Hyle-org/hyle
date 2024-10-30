@@ -9,7 +9,10 @@ use std::{
 };
 use tracing::{debug, error, warn};
 
-use crate::model::{Transaction, ValidatorPublicKey};
+use crate::{
+    model::{Transaction, TransactionData, ValidatorPublicKey},
+    node_state::NodeState,
+};
 
 #[derive(Debug, Clone, Encode, Decode, Default, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct TipInfo {
@@ -24,6 +27,7 @@ pub enum ProposalVerdict {
     Wait(Option<CarId>),
     Vote,
     DidVote,
+    Refuse,
 }
 
 pub type Cut = Vec<(ValidatorPublicKey, CarId)>;
@@ -148,6 +152,7 @@ impl InMemoryStorage {
         &mut self,
         validator: &ValidatorPublicKey,
         car_proposal: &CarProposal,
+        node_state: &NodeState,
     ) -> ProposalVerdict {
         if car_proposal.txs.is_empty() {
             return ProposalVerdict::Empty;
@@ -158,6 +163,30 @@ impl InMemoryStorage {
         if !self.other_lane_has_parent_proposal(validator, car_proposal) {
             self.proposal_will_wait(validator, car_proposal.clone());
             return ProposalVerdict::Wait(car_proposal.parent);
+        }
+        for tx in car_proposal.txs.iter() {
+            match &tx.transaction_data {
+                TransactionData::Proof(_) => {
+                    warn!("Refusing Car Proposal: unverified proof transaction");
+                    return ProposalVerdict::Refuse;
+                }
+                TransactionData::VerifiedProof(proof_tx) => {
+                    // Verifying the proof before voting
+                    match proof_tx.proof_transaction.clone().verify(node_state) {
+                        Ok(verified_proof_tx) => {
+                            if verified_proof_tx.hyle_outputs != proof_tx.hyle_outputs {
+                                warn!("Refusing Car proposal: incorrect HyleOutput in proof transaction");
+                                return ProposalVerdict::Refuse;
+                            }
+                        }
+                        Err(e) => {
+                            warn!("Refusing Car Proposal: invalid proof transaction: {}", e);
+                            return ProposalVerdict::Refuse;
+                        }
+                    }
+                }
+                _ => {}
+            }
         }
         if let (Some(parent), Some(parent_poa)) = (car_proposal.parent, &car_proposal.parent_poa) {
             self.update_other_lane_parent_poa(validator, parent, parent_poa)
@@ -584,9 +613,10 @@ mod tests {
     use crate::{
         mempool::storage::{Car, CarId, CarProposal, InMemoryStorage, Poa, ProposalVerdict},
         model::{
-            Blob, BlobData, BlobTransaction, ContractName, Transaction, TransactionData,
-            ValidatorPublicKey,
+            Blob, BlobData, BlobTransaction, ContractName, ProofData, ProofTransaction,
+            Transaction, TransactionData, ValidatorPublicKey,
         },
+        node_state::NodeState,
     };
     use hyle_contract_sdk::Identity;
 
@@ -729,10 +759,40 @@ mod tests {
     }
 
     #[test]
+    fn test_update_lane_with_unverified_proof_transaction() {
+        let pubkey2 = ValidatorPublicKey(vec![2]);
+        let pubkey3 = ValidatorPublicKey(vec![3]);
+        let mut store = InMemoryStorage::new(pubkey3.clone());
+        let node_state = NodeState::default();
+
+        let proof_tx = Transaction {
+            version: 1,
+            transaction_data: TransactionData::Proof(ProofTransaction {
+                blobs_references: vec![],
+                proof: ProofData::default(),
+            }),
+        };
+
+        let car_proposal = CarProposal {
+            txs: vec![proof_tx.clone()],
+            id: 1,
+            parent: None,
+            parent_poa: None,
+        };
+
+        let verdict = store.new_car_proposal(&pubkey2, &car_proposal, &node_state);
+        assert_eq!(verdict, ProposalVerdict::Refuse);
+
+        // Ensure the lane was not updated with the unverified proof transaction
+        assert!(!store.other_lane_has_proposal(&pubkey2, &car_proposal));
+    }
+
+    #[test]
     fn test_update_lanes_after_commit() {
         let pubkey2 = ValidatorPublicKey(vec![2]);
         let pubkey3 = ValidatorPublicKey(vec![3]);
         let mut store = InMemoryStorage::new(pubkey3.clone());
+        let node_state = NodeState::default();
 
         let car_proposal1 = CarProposal {
             txs: vec![make_tx("test1"), make_tx("test2"), make_tx("test3")],
@@ -759,12 +819,12 @@ mod tests {
         store.new_vote_for_proposal(&pubkey2, &car_proposal1);
 
         assert_eq!(
-            store.new_car_proposal(&pubkey2, &car_proposal2),
+            store.new_car_proposal(&pubkey2, &car_proposal2, &node_state),
             ProposalVerdict::Vote
         );
 
         assert_eq!(
-            store.new_car_proposal(&pubkey2, &car_proposal3),
+            store.new_car_proposal(&pubkey2, &car_proposal3, &node_state),
             ProposalVerdict::Vote
         );
 

@@ -281,7 +281,10 @@ impl Mempool {
         validator: &ValidatorPublicKey,
         car_proposal: CarProposal,
     ) -> Result<()> {
-        match self.storage.new_car_proposal(validator, &car_proposal) {
+        match self
+            .storage
+            .new_car_proposal(validator, &car_proposal, &self.node_state)
+        {
             ProposalVerdict::Empty => {
                 warn!(
                     "received empty Car proposal from {}, ignoring...",
@@ -305,6 +308,7 @@ impl Mempool {
 
                 self.send_sync_request(validator, car_proposal, last_car_id)?;
             }
+            ProposalVerdict::Refuse => {}
         }
         Ok(())
     }
