@@ -202,10 +202,26 @@ impl InMemoryStorage {
     ) {
         let lane = self.other_lanes.entry(validator.clone()).or_default();
         let tip_id = lane.current().map(|car| car.id);
+        // Removing proofs from transactions
+        let mut txs_without_proofs = car_proposal.txs.clone();
+        txs_without_proofs.iter_mut().for_each(|tx| {
+            match &mut tx.transaction_data {
+                TransactionData::VerifiedProof(proof_tx) => {
+                    proof_tx.proof_transaction.proof = Default::default();
+                }
+                TransactionData::Proof(_) => {
+                    // This can never happen
+                    unreachable!();
+                }
+                TransactionData::Blob(_)
+                | TransactionData::Stake(_)
+                | TransactionData::RegisterContract(_) => {}
+            }
+        });
         lane.cars.push(Car {
             id: tip_id.unwrap_or(CarId(0)) + 1,
             parent: tip_id,
-            txs: car_proposal.txs.clone(),
+            txs: txs_without_proofs,
             poa: Poa(BTreeSet::from([self.id.clone(), validator.clone()])),
         });
     }
