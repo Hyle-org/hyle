@@ -343,7 +343,7 @@ impl InMemoryStorage {
     }
 
     fn flush_pending_txs(&mut self) -> Vec<Transaction> {
-        self.pending_txs.drain(0..).collect()
+        std::mem::take(&mut self.pending_txs)
     }
 
     pub fn genesis(&self) -> bool {
