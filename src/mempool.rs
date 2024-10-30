@@ -10,6 +10,7 @@ use crate::{
     p2p::network::{OutboundMessage, SignedWithKey},
     rest::endpoints::RestApiMessage,
     utils::{
+        conf::SharedConf,
         crypto::{BlstCrypto, SharedBlstCrypto},
         logger::LogMe,
         modules::Module,
@@ -39,6 +40,7 @@ struct MempoolBusClient {
 }
 
 pub struct Mempool {
+    config: SharedConf,
     bus: MempoolBusClient,
     crypto: SharedBlstCrypto,
     metrics: MempoolMetrics,
@@ -91,6 +93,7 @@ impl Module for Mempool {
         );
 
         Ok(Mempool {
+            config: ctx.common.config.clone(),
             bus,
             metrics,
             crypto: Arc::clone(&ctx.node.crypto),
@@ -110,7 +113,9 @@ impl Mempool {
     pub async fn start(&mut self) -> Result<()> {
         info!("Mempool starting");
 
-        let mut interval = tokio::time::interval(tokio::time::Duration::from_millis(100));
+        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(
+            self.config.consensus.slot_duration,
+        ));
 
         handle_messages! {
             on_bus self.bus,
