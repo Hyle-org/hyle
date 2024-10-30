@@ -367,14 +367,22 @@ impl InMemoryStorage {
         })
     }
 
+    fn dedup_push_txs(txs: &mut Vec<Transaction>, car_txs: Vec<Transaction>) {
+        for tx in car_txs.into_iter() {
+            if !txs.contains(&tx) {
+                txs.push(tx);
+            }
+        }
+    }
+
     fn collect_old_used_cars(cars: &mut Vec<Car>, tip: usize, txs: &mut Vec<Transaction>) {
         if let Some(pos) = cars.iter().position(|car| car.id == tip) {
             let latest_txs = std::mem::take(&mut cars[pos].txs);
             // collect all cars but the last. we need it for future cuts.
-            cars.drain(..pos).for_each(|mut car| {
-                txs.extend(std::mem::take(&mut car.txs));
+            cars.drain(..pos).for_each(|car| {
+                Self::dedup_push_txs(txs, car.txs);
             });
-            txs.extend(latest_txs);
+            Self::dedup_push_txs(txs, latest_txs);
         } else {
             error!("Car {} not found !", tip);
         }
