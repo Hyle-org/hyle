@@ -49,7 +49,6 @@ pub struct Mempool {
 
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, Eq, PartialEq, IntoStaticStr)]
 pub enum MempoolNetMessage {
-    NewTx(Transaction),
     CarProposal(CarProposal),
     CarProposalVote(CarProposal),
     SyncRequest(CarProposal, Option<usize>),
@@ -160,7 +159,6 @@ impl Mempool {
             Ok(true) => {
                 let validator = msg.validators.first().unwrap();
                 match msg.msg {
-                    MempoolNetMessage::NewTx(tx) => self.on_new_tx(tx),
                     MempoolNetMessage::CarProposal(car_proposal) => {
                         if let Err(e) = self.on_car_proposal(validator, car_proposal).await {
                             error!("{:?}", e);
@@ -196,10 +194,6 @@ impl Mempool {
         match command {
             RestApiMessage::NewTx(tx) => {
                 self.on_new_tx(tx.clone());
-                // hacky stuff waiting for staking contract: do not broadcast stake txs
-                if !matches!(tx.transaction_data, TransactionData::Stake(_)) {
-                    self.broadcast_tx(tx).ok();
-                }
             }
         }
     }
@@ -381,12 +375,6 @@ impl Mempool {
         }
         self.metrics
             .snapshot_pending_tx(self.storage.pending_txs.len());
-    }
-
-    fn broadcast_tx(&mut self, tx: Transaction) -> Result<()> {
-        self.metrics.add_broadcasted_tx("blob".to_string());
-        self.broadcast_net_message(MempoolNetMessage::NewTx(tx))?;
-        Ok(())
     }
 
     fn broadcast_car_proposal(&mut self, car_proposal: CarProposal) -> Result<()> {

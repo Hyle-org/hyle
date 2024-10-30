@@ -3,7 +3,6 @@ use opentelemetry::{metrics::Counter, KeyValue};
 pub struct MempoolMetrics {
     signature_error: Counter<u64>,
     api_tx: opentelemetry::metrics::Counter<u64>,
-    broadcasted_tx: opentelemetry::metrics::Counter<u64>,
     broadcasted_data_proposal: opentelemetry::metrics::Counter<u64>,
     broadcasted_data_proposal_only_for: opentelemetry::metrics::Counter<u64>,
     sent_data_vote: opentelemetry::metrics::Counter<u64>,
@@ -20,7 +19,6 @@ impl MempoolMetrics {
         MempoolMetrics {
             signature_error: my_meter.u64_counter("signature_error").init(),
             api_tx: my_meter.u64_counter("api_tx").init(),
-            broadcasted_tx: my_meter.u64_counter("broadcasted_tx").init(),
             broadcasted_data_proposal: my_meter.u64_counter("broadcasted_data_proposal").init(),
             broadcasted_data_proposal_only_for: my_meter
                 .u64_counter("broadcasted_data_proposal_only_for")
@@ -43,9 +41,6 @@ impl MempoolMetrics {
     pub fn snapshot_pending_tx(&self, nb: usize) {
         self.in_memory_tx
             .record(nb as u64, &[KeyValue::new("status", "pending")])
-    }
-    pub fn add_broadcasted_tx(&self, kind: String) {
-        self.broadcasted_tx.add(1, &[KeyValue::new("kind", kind)])
     }
     pub fn add_batch(&self) {
         self.batches.add(1, &[])
