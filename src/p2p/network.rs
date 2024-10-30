@@ -71,11 +71,7 @@ impl Display for Signature {
         write!(
             f,
             "{}",
-            &self
-                .0
-                .get(..HASH_DISPLAY_SIZE)
-                .map(hex::encode)
-                .unwrap_or_default()
+            &hex::encode(self.0.get(..HASH_DISPLAY_SIZE).unwrap_or(&self.0))
         )
     }
 }
