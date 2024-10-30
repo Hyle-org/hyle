@@ -4,12 +4,12 @@ services:
     privileged: true
     network_mode: host
     environment:
-      - HYLE_ID=node-1
+      - HYLE_ID=leader-1
       - HYLE_REST=localhost:4001
       - HYLE_HOST=localhost:1001
       - HYLE_DA_ADDRESS=localhost:4141
       - RUST_LOG=debug
-      - HYLE_CONSENSUS__SLOT_DURATION=3
+      - HYLE_CONSENSUS__SLOT_DURATION=3000
   hyle2:
     build: ./..
     privileged: true
@@ -20,7 +20,7 @@ services:
       - HYLE_HOST=localhost:1002
       - HYLE_DA_ADDRESS=localhost:4142
       - RUST_LOG=debug
-      - HYLE_CONSENSUS__SLOT_DURATION=3
+      - HYLE_CONSENSUS__SLOT_DURATION=3000
     network_mode: host
     depends_on:
       - hyle1
@@ -34,7 +34,7 @@ services:
       - HYLE_HOST=localhost:1003
       - RUST_LOG=debug
       - HYLE_DA_ADDRESS=localhost:4143
-      - HYLE_CONSENSUS__SLOT_DURATION=3
+      - HYLE_CONSENSUS__SLOT_DURATION=3000
     network_mode: host
     depends_on:
       - hyle1

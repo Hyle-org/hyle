@@ -3,8 +3,12 @@ use hyle::{
     rest::client::ApiHttpClient,
     utils::conf::{Conf, Consensus},
 };
-use std::process::{Child, Command};
+use std::{
+    process::{Child, Command},
+    time::Duration,
+};
 use tempfile::TempDir;
+use tokio::time::timeout;
 use tracing::info;
 
 pub struct ConfMaker {
@@ -13,15 +17,24 @@ pub struct ConfMaker {
 }
 
 impl ConfMaker {
-    pub fn build(&mut self) -> Conf {
+    pub fn build(&mut self, prefix: &str) -> Conf {
         self.i += 1;
         Conf {
-            id: format!("node-{}", self.i),
+            id: if prefix == "single-node" {
+                prefix.into()
+            } else {
+                format!("{}-{}", prefix, self.i)
+            },
             host: format!("localhost:{}", 3000 + self.i),
             da_address: format!("localhost:{}", 4000 + self.i),
             rest: format!("localhost:{}", 5000 + self.i),
             ..self.default.clone()
         }
+    }
+    pub fn reset_default(&mut self) {
+        let i = self.i;
+        *self = ConfMaker::default();
+        self.i = i;
     }
 }
 
@@ -60,6 +73,7 @@ pub struct TestProcess {
 
 impl TestProcess {
     pub fn new(command: &str, mut conf: Conf) -> Self {
+        info!("🚀 Starting process with conf: {:?}", conf);
         let mut cargo_bin = Command::cargo_bin(command).unwrap();
 
         // Create a temporary directory for the node
@@ -118,21 +132,26 @@ impl Drop for TestProcess {
 }
 
 pub async fn wait_height(client: &ApiHttpClient, slots: u64) -> anyhow::Result<()> {
-    loop {
-        if let Ok(mut current_slot) = client.get_block_height().await {
-            let target_slot = current_slot + slots;
-            while current_slot.0 < target_slot.0 {
-                info!(
-                    "⏰ Waiting for slot {} to be reached. Current is {}",
-                    target_slot, current_slot
-                );
-                std::thread::sleep(std::time::Duration::from_millis(250));
-                current_slot = client.get_block_height().await?;
+    timeout(Duration::from_secs(15), async {
+        loop {
+            if let Ok(mut current_slot) = client.get_block_height().await {
+                let target_slot = current_slot + slots;
+                while current_slot.0 < target_slot.0 {
+                    info!(
+                        "⏰ Waiting for slot {} to be reached. Current is {}",
+                        target_slot, current_slot
+                    );
+                    tokio::time::sleep(Duration::from_millis(250)).await;
+                    current_slot = client.get_block_height().await?;
+                }
+                return anyhow::Ok(());
+            } else {
+                info!("⏰ Waiting for node to be ready");
+                tokio::time::sleep(Duration::from_millis(500)).await;
             }
-            return Ok(());
-        } else {
-            info!("⏰ Waiting for node to be ready");
-            std::thread::sleep(std::time::Duration::from_millis(500));
         }
-    }
+    })
+    .await?
+
+    //result.map_err(|_| anyhow::anyhow!("Timeout reached while waiting for height"))
 }

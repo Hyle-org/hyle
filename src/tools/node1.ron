@@ -1,4 +1,4 @@
 Config(
-  id: "node-1",
+  id: "leader-1",
   run_indexer: false,
 )

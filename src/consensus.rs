@@ -384,10 +384,10 @@ impl Consensus {
             let interval = self.config.consensus.slot_duration;
             tokio::spawn(async move {
                 info!(
-                    "⏱️  Sleeping {} seconds before starting a new slot",
+                    "⏱️  Sleeping {} milliseconds before starting a new slot",
                     interval
                 );
-                sleep(Duration::from_secs(interval)).await;
+                sleep(Duration::from_millis(interval)).await;
 
                 _ = command_sender
                     .send(ConsensusCommand::StartNewSlot)
@@ -1310,13 +1310,13 @@ impl Consensus {
         let command_sender = Pick::<broadcast::Sender<ConsensusCommand>>::get(&self.bus).clone();
         if config.id == "single-node" {
             info!(
-                "No peers configured, starting as master generating cuts every {} seconds",
+                "No peers configured, starting as master generating cuts every {} milliseconds",
                 interval
             );
 
             tokio::spawn(async move {
                 loop {
-                    sleep(Duration::from_secs(interval)).await;
+                    sleep(Duration::from_millis(interval)).await;
 
                     _ = command_sender
                         .send(ConsensusCommand::SingleNodeBlockGeneration)

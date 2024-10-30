@@ -193,7 +193,7 @@ impl Mempool {
     async fn handle_api_message(&mut self, command: RestApiMessage) {
         match command {
             RestApiMessage::NewTx(tx) => {
-                self.on_new_tx(tx.clone());
+                self.on_new_tx(tx);
             }
         }
     }

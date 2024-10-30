@@ -82,6 +82,12 @@ impl From<String> for ContractName {
     }
 }
 
+impl From<&str> for ContractName {
+    fn from(s: &str) -> Self {
+        ContractName(s.into())
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize, Default, Clone, PartialEq, Eq, Encode, Decode, Hash)]
 pub struct BlobData(pub Vec<u8>);
 
