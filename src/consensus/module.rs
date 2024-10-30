@@ -23,15 +23,14 @@ impl Module for Consensus {
         let store: ConsensusStore = Self::load_from_disk_or_default(file.as_path());
         let metrics = ConsensusMetrics::global(ctx.common.config.id.clone());
         let bus = ConsensusBusClient::new_from_bus(ctx.common.bus.new_handle()).await;
-        let mut consensus = Consensus {
+        Ok(Consensus {
             metrics,
             bus,
             file: Some(file),
             store,
             config: ctx.common.config.clone(),
             crypto: ctx.node.crypto.clone(),
-        };
-        Ok(consensus)
+        })
     }
 
     fn run(&mut self) -> impl futures::Future<Output = Result<()>> + Send {
