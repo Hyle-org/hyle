@@ -68,7 +68,15 @@ impl std::fmt::Debug for Signature {
 
 impl Display for Signature {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", &hex::encode(&self.0[..HASH_DISPLAY_SIZE]))
+        write!(
+            f,
+            "{}",
+            &self
+                .0
+                .get(..HASH_DISPLAY_SIZE)
+                .map(hex::encode)
+                .unwrap_or_default()
+        )
     }
 }
 

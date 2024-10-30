@@ -27,7 +27,6 @@ mod e2e_consensus {
         Ok(())
     }
 
-    #[ignore = "broken for now"]
     #[test_log::test(tokio::test)]
     async fn can_run_lot_of_nodes() -> Result<()> {
         let ctx = E2ECtx::new_multi(10, 500).await?;
@@ -37,7 +36,6 @@ mod e2e_consensus {
         Ok(())
     }
 
-    #[ignore = "broken for now"]
     #[test_log::test(tokio::test)]
     async fn can_rejoin() -> Result<()> {
         let mut ctx = E2ECtx::new_multi(2, 500).await?;

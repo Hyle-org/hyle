@@ -399,7 +399,15 @@ impl std::fmt::Debug for ValidatorPublicKey {
 
 impl Display for ValidatorPublicKey {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", hex::encode(&self.0[..HASH_DISPLAY_SIZE]))
+        write!(
+            f,
+            "{}",
+            &self
+                .0
+                .get(..HASH_DISPLAY_SIZE)
+                .map(hex::encode)
+                .unwrap_or_default()
+        )
     }
 }
 
