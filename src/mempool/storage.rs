@@ -29,16 +29,8 @@ pub type Cut = Vec<(ValidatorPublicKey, usize)>;
 
 fn prepare_cut(cut: &mut Cut, validator: &ValidatorPublicKey, lane: &mut Lane) {
     if let Some(tip) = lane.cars.last() {
-        if !tip.used_in_cut {
-            cut.push((validator.clone(), tip.id));
-        }
+        cut.push((validator.clone(), tip.id));
     }
-    lane.cars
-        .iter_mut()
-        .filter(|car| !car.used_in_cut)
-        .for_each(|car| {
-            car.used_in_cut = true;
-        });
 }
 
 #[derive(Debug, Clone)]
@@ -114,7 +106,6 @@ impl InMemoryStorage {
             parent: tip_id,
             txs,
             poa: Poa(BTreeSet::from([self.id.clone()])),
-            used_in_cut: false,
         });
 
         current_id
@@ -186,7 +177,6 @@ impl InMemoryStorage {
             parent: tip_id,
             txs: car_proposal.txs.clone(),
             poa: Poa(BTreeSet::from([self.id.clone(), validator.clone()])),
-            used_in_cut: false,
         });
     }
 
@@ -433,7 +423,6 @@ pub struct Car {
     parent: Option<usize>,
     txs: Vec<Transaction>,
     pub poa: Poa,
-    used_in_cut: bool,
 }
 
 #[derive(Clone, Default, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -495,11 +484,10 @@ impl Display for Car {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "[{}/{:?}/{}v] (used:{})",
+            "[{}/{:?}/{}v]",
             self.id,
             self.txs.first(),
             self.poa.len(),
-            self.used_in_cut,
         )
     }
 }
@@ -630,7 +618,6 @@ mod tests {
                 parent: None,
                 txs: vec![make_tx("test1")],
                 poa: Poa(BTreeSet::from([pubkey3.clone(), pubkey2.clone()])),
-                used_in_cut: false,
             }
         );
 
@@ -753,16 +740,6 @@ mod tests {
                 .and_then(|l| l.current().map(|c| c.id)),
             Some(2)
         );
-        // the tips should be marked as used in a cut
-        assert_eq!(store.lane.current().map(|car| car.used_in_cut), Some(true));
-        assert_eq!(
-            store
-                .other_lanes
-                .get(&pubkey2)
-                .and_then(|lane| lane.cars.first())
-                .map(|car| car.used_in_cut),
-            Some(true)
-        );
     }
 
     #[test]
@@ -785,14 +762,12 @@ mod tests {
                         make_tx("test4"),
                     ],
                     poa: Poa(BTreeSet::from([pubkey1.clone(), pubkey2.clone()])),
-                    used_in_cut: false,
                 },
                 Car {
                     id: 2,
                     parent: Some(1),
                     txs: vec![make_tx("test5"), make_tx("test6"), make_tx("test7")],
                     poa: Poa(BTreeSet::from([pubkey1.clone(), pubkey2.clone()])),
-                    used_in_cut: false,
                 },
             ],
         );
@@ -829,14 +804,12 @@ mod tests {
                     parent: Some(1),
                     txs: vec![make_tx("test_local2")],
                     poa: Poa(BTreeSet::from_iter(vec![pubkey3.clone()])),
-                    used_in_cut: false,
                 },
                 Car {
                     id: 3,
                     parent: Some(2),
                     txs: vec![make_tx("test_local3")],
                     poa: Poa(BTreeSet::from_iter(vec![pubkey3.clone()])),
-                    used_in_cut: false,
                 }
             ])
         );
@@ -859,21 +832,18 @@ mod tests {
                     parent: None,
                     txs: vec![make_tx("test_local")],
                     poa: Poa(BTreeSet::from_iter(vec![pubkey3.clone()])),
-                    used_in_cut: false,
                 },
                 Car {
                     id: 2,
                     parent: Some(1),
                     txs: vec![make_tx("test_local2")],
                     poa: Poa(BTreeSet::from_iter(vec![pubkey3.clone()])),
-                    used_in_cut: false,
                 },
                 Car {
                     id: 3,
                     parent: Some(2),
                     txs: vec![make_tx("test_local3")],
                     poa: Poa(BTreeSet::from_iter(vec![pubkey3.clone()])),
-                    used_in_cut: false,
                 }
             ])
         );
