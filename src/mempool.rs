@@ -389,7 +389,7 @@ impl Mempool {
                 tx.transaction_data = TransactionData::VerifiedProof(verified_proof_tx);
             }
             TransactionData::VerifiedProof(_) => {
-                bail!("Alreadt verified ProofTransaction are not allowed to be received in the mempool");
+                bail!("Already verified ProofTransaction are not allowed to be received in the mempool");
             }
         }
 
