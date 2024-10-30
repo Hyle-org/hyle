@@ -1,7 +1,7 @@
 #![allow(unused)]
 
 use anyhow::{Context, Result};
-use assertables::assert_ok;
+use assertables::{assert_any, assert_ok};
 use reqwest::{Client, Url};
 use std::sync::LazyLock;
 use testcontainers_modules::{
@@ -37,6 +37,7 @@ pub struct E2ECtx {
     nodes: Vec<test_helpers::TestProcess>,
     clients: Vec<ApiHttpClient>,
     client_index: usize,
+    indexer_client_index: usize,
 }
 
 impl E2ECtx {
@@ -107,6 +108,7 @@ impl E2ECtx {
             nodes: vec![node],
             clients: vec![client],
             client_index: 0,
+            indexer_client_index: 0,
         })
     }
 
@@ -124,7 +126,32 @@ impl E2ECtx {
             nodes,
             clients,
             client_index: 0,
+            indexer_client_index: 0,
         })
+    }
+
+    pub async fn add_node(&mut self) -> Result<&ApiHttpClient> {
+        let mut conf_maker = CONF_MAKER.lock().await;
+        conf_maker.reset_default();
+        let mut node_conf = conf_maker.build("node");
+        //node_conf.peers = vec![self.nodes[0].conf.host.clone()];
+        node_conf.peers = self
+            .nodes
+            .iter()
+            .map(|node| node.conf.host.clone())
+            .collect();
+        let node = test_helpers::TestProcess::new("node", node_conf)
+            //.log("hyle=info,tower_http=error")
+            .start();
+        // Request something on node1 to be sure it's alive and working
+        let client = ApiHttpClient {
+            url: Url::parse(&format!("http://{}", &node.conf.rest)).unwrap(),
+            reqwest_client: Client::new(),
+        };
+        wait_height(&client, 1).await?;
+        self.nodes.push(node);
+        self.clients.push(client);
+        Ok(self.clients.last().unwrap())
     }
 
     pub async fn new_multi_with_indexer(count: usize, slot_duration: u64) -> Result<E2ECtx> {
@@ -150,6 +177,7 @@ impl E2ECtx {
             url: Url::parse(&format!("http://{}", &indexer_conf.rest)).unwrap(),
             reqwest_client: Client::new(),
         });
+        let indexer_client_index = clients.len() - 1;
 
         // Wait for node2 to properly spin up
         let client = clients.first().unwrap();
@@ -163,6 +191,7 @@ impl E2ECtx {
             nodes,
             clients,
             client_index: 0,
+            indexer_client_index,
         })
     }
 
@@ -247,10 +276,7 @@ impl E2ECtx {
     }
 
     pub async fn get_indexer_contract(&self, name: &str) -> Result<ContractDb> {
-        let response = self
-            .clients
-            .last()
-            .unwrap()
+        let response = self.clients[self.indexer_client_index]
             .get_indexer_contract(&name.into())
             .await
             .and_then(|response| response.error_for_status().context("Getting contract"));

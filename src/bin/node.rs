@@ -10,7 +10,7 @@ use hyle::{
     mempool::Mempool,
     model::{CommonRunContext, NodeRunContext, SharedRunContext},
     p2p::P2P,
-    rest::{RestApi, RestApiRunContext},
+    rest::{NodeInfo, RestApi, RestApiRunContext},
     tools::mock_workflow::MockWorkflowHandler,
     utils::{
         conf,
@@ -77,6 +77,7 @@ async fn main() -> Result<()> {
 
     let bus = SharedMessageBus::new(BusMetrics::global(config.id.clone()));
     let crypto = Arc::new(BlstCrypto::new(config.id.clone()));
+    let pubkey = Some(crypto.validator_pubkey().clone());
 
     std::fs::create_dir_all(&config.data_directory).context("creating data directory")?;
 
@@ -119,6 +120,11 @@ async fn main() -> Result<()> {
     handler
         .build_module::<RestApi>(RestApiRunContext {
             rest_addr: ctx.common.config.rest.clone(),
+            info: NodeInfo {
+                id: config.id.clone(),
+                pubkey,
+                da_address: config.da_address.clone(),
+            },
             bus: ctx.common.bus.new_handle(),
             metrics_layer,
             router: router.clone(),
