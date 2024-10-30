@@ -46,18 +46,27 @@ impl E2ECtx {
     }
 
     fn build_nodes(
-        count: u16,
+        count: usize,
         conf_maker: &mut ConfMaker,
     ) -> (Vec<test_helpers::TestProcess>, Vec<ApiHttpClient>) {
         let mut nodes = Vec::new();
         let mut clients = Vec::new();
         let mut peers = Vec::new();
+        let mut confs = Vec::new();
+        let mut genesis_stakers = std::collections::HashMap::new();
+
         for i in 0..count {
-            let prefix = if i == 0 { "leader" } else { "node" };
-            // Start 2 nodes
-            let mut node_conf = conf_maker.build(prefix);
+            let mut node_conf = conf_maker.build("node");
             node_conf.peers = peers.clone();
+            genesis_stakers.insert(node_conf.id.clone(), 100);
             peers.push(node_conf.host.clone());
+            confs.push(node_conf);
+        }
+
+        for i in 0..count {
+            let mut node_conf = confs[i].clone();
+            node_conf.consensus.genesis_leader = confs[0].id.clone();
+            node_conf.consensus.genesis_stakers = genesis_stakers.clone();
             let node = test_helpers::TestProcess::new("node", node_conf)
                 //.log("hyle=info,tower_http=error")
                 .start();
@@ -101,7 +110,7 @@ impl E2ECtx {
         })
     }
 
-    pub async fn new_multi(count: u16, slot_duration: u64) -> Result<E2ECtx> {
+    pub async fn new_multi(count: usize, slot_duration: u64) -> Result<E2ECtx> {
         let mut conf_maker = CONF_MAKER.lock().await;
         conf_maker.reset_default();
         conf_maker.default.consensus.slot_duration = slot_duration;
@@ -118,7 +127,7 @@ impl E2ECtx {
         })
     }
 
-    pub async fn new_multi_with_indexer(count: u16, slot_duration: u64) -> Result<E2ECtx> {
+    pub async fn new_multi_with_indexer(count: usize, slot_duration: u64) -> Result<E2ECtx> {
         let pg = Self::init().await;
 
         let mut conf_maker = CONF_MAKER.lock().await;

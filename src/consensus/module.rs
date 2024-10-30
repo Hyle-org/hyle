@@ -1,9 +1,6 @@
 use anyhow::Result;
 
-use crate::{
-    model::{SharedRunContext, ValidatorPublicKey},
-    utils::modules::Module,
-};
+use crate::{model::SharedRunContext, utils::modules::Module};
 
 use super::{
     consensus_bus_client::ConsensusBusClient, metrics::ConsensusMetrics, Consensus, ConsensusStore,
@@ -34,16 +31,7 @@ impl Module for Consensus {
             config: ctx.common.config.clone(),
             crypto: ctx.node.crypto.clone(),
         };
-
-        // FIXME a bit hacky for now
-        if consensus.store.bft_round_state.round_leader == ValidatorPublicKey::default() {
-            if ctx.common.config.id.starts_with("leader") {
-                consensus.store.bft_round_state.round_leader =
-                    ctx.node.crypto.validator_pubkey().clone();
-            }
-            consensus.add_trusted_validator(ctx.node.crypto.validator_pubkey().clone())?;
-        }
-
+        consensus.setup_initial_state()?;
         Ok(consensus)
     }
 
