@@ -4,7 +4,7 @@ mod blocks;
 
 use crate::{
     bus::{bus_client, command_response::Query, BusMessage, SharedMessageBus},
-    consensus::ConsensusCommand,
+    consensus::{ConsensusCommand, ConsensusEvent},
     handle_messages,
     mempool::MempoolEvent,
     model::{
@@ -76,6 +76,7 @@ struct DABusClient {
     receiver(PeerEvent),
     receiver(Query<QueryBlockHeight , BlockHeight>),
     receiver(MempoolEvent),
+    receiver(ConsensusEvent),
 }
 }
 
@@ -177,6 +178,18 @@ impl DataAvailability {
                     MempoolEvent::CommitBlock(txs, new_bonded_validators) => {
                         self.handle_commit_block_event(txs, new_bonded_validators).await;
                     }
+                }
+            }
+
+            listen<ConsensusEvent> cmd => {
+                if let ConsensusEvent::GenesisBlock { initial_validators, stake_txs } = cmd {
+                    self.handle_block(Block {
+                        parent_hash: BlockHash::new("0000000000000000"),
+                        height: BlockHeight(0),
+                        timestamp: 420,
+                        new_bonded_validators: initial_validators,
+                        txs: stake_txs,
+                    }).await;
                 }
             }
 
@@ -351,6 +364,36 @@ impl DataAvailability {
             return;
         }
 
+        // store block
+        let block_hash = block.hash();
+        self.add_block(block_hash.clone(), block.clone()).await;
+        self.pop_buffer(block_hash).await;
+    }
+
+    async fn pop_buffer(&mut self, mut last_block_hash: BlockHash) {
+        // Iterative loop to avoid stack overflows
+        while let Some(first_buffered) = self.buffered_blocks.first() {
+            if first_buffered.parent_hash != last_block_hash {
+                break;
+            }
+
+            let first_buffered = self.buffered_blocks.pop_first().unwrap();
+            let first_buffered_hash = first_buffered.hash();
+
+            self.add_block(first_buffered_hash.clone(), first_buffered)
+                .await;
+            last_block_hash = first_buffered_hash;
+        }
+    }
+
+    async fn add_block(&mut self, block_hash: BlockHash, block: Block) {
+        #[cfg(not(test))]
+        // Don't run this in tests, takes forever.
+        if let Err(e) = self.blocks.put(block.clone()) {
+            error!("storing block: {}", e);
+            return;
+        }
+
         info!(
             "new block {} with {} txs, last hash = {:?}",
             block.height,
@@ -358,7 +401,7 @@ impl DataAvailability {
             self.blocks.last_block_hash()
         );
 
-        // Process the block innode state
+        // Process the block in node state
         let new_stakers = self.node_state.handle_new_block(block.clone());
 
         // FIXME: to remove when we have a real staking smart contract
@@ -391,11 +434,6 @@ impl DataAvailability {
             error!("Failed to send processed block consensus command: {:?}", e);
         }
 
-        // store block
-        let block_hash = block.hash();
-        self.add_block(block.clone());
-        self.pop_buffer(block_hash.clone());
-
         // Stream block to all peers
         // TODO: use retain once async closures are supported ?
         let mut to_remove = Vec::new();
@@ -422,26 +460,8 @@ impl DataAvailability {
         for peer_id in to_remove {
             self.stream_peer_metadata.remove(&peer_id);
         }
-    }
 
-    fn pop_buffer(&mut self, mut last_block_hash: BlockHash) {
-        while let Some(first_buffered) = self.buffered_blocks.first() {
-            if first_buffered.parent_hash != last_block_hash {
-                break;
-            }
-
-            let first_buffered = self.buffered_blocks.pop_first().unwrap();
-            let first_buffered_hash = first_buffered.hash();
-
-            self.add_block(first_buffered);
-            last_block_hash = first_buffered_hash;
-        }
-    }
-
-    fn add_block(&mut self, block: Block) {
-        if let Err(e) = self.blocks.put(block.clone()) {
-            error!("storing block: {}", e);
-        } else if self.config.run_indexer {
+        if self.config.run_indexer {
             _ = self
                 .bus
                 .send(DataEvent::NewBlock(block))
@@ -563,5 +583,47 @@ mod tests {
         assert!(last.is_some());
         assert!(last.unwrap().height == BlockHeight(1));
         Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_pop_buffer_large() {
+        let tmpdir = tempfile::Builder::new()
+            .prefix("history-tests")
+            .tempdir()
+            .unwrap();
+        let db = sled::open(tmpdir.path().join("history")).unwrap();
+        let blocks = Blocks::new(&db).unwrap();
+
+        let bus = super::DABusClient::new_from_bus(crate::bus::SharedMessageBus::new(
+            crate::bus::metrics::BusMetrics::global("global".to_string()),
+        ))
+        .await;
+        let mut da = super::DataAvailability {
+            config: Default::default(),
+            bus,
+            blocks,
+            buffered_blocks: Default::default(),
+            self_pubkey: Default::default(),
+            asked_last_block: Default::default(),
+            stream_peer_metadata: Default::default(),
+            node_state: Default::default(),
+        };
+        let mut block = Block {
+            parent_hash: BlockHash::new("0000000000000000"),
+            height: BlockHeight(0),
+            timestamp: 420,
+            new_bonded_validators: vec![],
+            txs: vec![],
+        };
+        let mut blocks = vec![];
+        for i in 1..1000 {
+            blocks.push(block.clone());
+            block.parent_hash = block.hash();
+            block.height = BlockHeight(i);
+        }
+        blocks.reverse();
+        for block in blocks {
+            da.handle_block(block).await;
+        }
     }
 }

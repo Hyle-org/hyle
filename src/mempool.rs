@@ -152,6 +152,7 @@ impl Mempool {
                     error!("{:?}", e);
                 };
             }
+            ConsensusEvent::GenesisBlock { .. } => {}
         }
     }
 
