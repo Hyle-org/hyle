@@ -6,7 +6,7 @@ use std::{
     hash::Hash,
     vec,
 };
-use tracing::{debug, error, warn};
+use tracing::{debug, error, info, warn};
 
 use crate::model::{Transaction, ValidatorPublicKey};
 
@@ -91,7 +91,7 @@ impl InMemoryStorage {
                         prepare_cut(&mut cut, validator, lane);
                     } else {
                         // can happen if validator does not have any car proposal yet
-                        error!(
+                        info!(
                             "Validator {} not found in lane of {} (cutting)",
                             validator, self.id
                         );
@@ -388,7 +388,7 @@ impl InMemoryStorage {
                 Self::collect_old_used_cars(&mut lane.cars, *tip, &mut txs);
             } else {
                 // can happen if validator does not have any car proposal yet
-                error!(
+                info!(
                     "Validator {} not found in lane of {} (updating)",
                     validator, self.id
                 );
