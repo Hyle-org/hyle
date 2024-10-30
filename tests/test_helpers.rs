@@ -1,5 +1,8 @@
 use assert_cmd::prelude::*;
-use hyle::{rest::client::ApiHttpClient, utils::conf::Conf};
+use hyle::{
+    rest::client::ApiHttpClient,
+    utils::conf::{Conf, Consensus},
+};
 use std::process::{Child, Command};
 use tempfile::TempDir;
 use tracing::info;
@@ -27,6 +30,18 @@ impl Default for ConfMaker {
         let mut default = Conf::new(None, None, None).unwrap();
         default.run_indexer = false; // disable indexer by default to avoid needed PG
         default.log_format = "node".to_string(); // Activate node name in logs for convenience in tests.
+        info!("Default conf: {:?}", default);
+        default.consensus = Consensus {
+            slot_duration: 1,
+            genesis_leader: "node-1".to_owned(),
+            genesis_stakers: {
+                let mut stakers = std::collections::HashMap::new();
+                stakers.insert("node-1".to_owned(), 100);
+                stakers.insert("node-2".to_owned(), 100);
+                stakers
+            },
+        };
+        info!("Default conf: {:?}", default);
         Self { i: 0, default }
     }
 }

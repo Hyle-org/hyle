@@ -378,10 +378,17 @@ impl DataAvailability {
             if let Err(e) = self
                 .bus
                 .send(ConsensusCommand::NewBonded(validator.clone()))
-                .context("Send new staker consensus command")
+                .context("Send new bonded consensus command")
             {
-                error!("Failed to send new staker consensus command: {:?}", e);
+                error!("Failed to send new bonded consensus command: {:?}", e);
             }
+        }
+
+        if let Err(e) = self
+            .bus
+            .send(ConsensusCommand::ProcessedBlock(block.height))
+        {
+            error!("Failed to send processed block consensus command: {:?}", e);
         }
 
         // store block
