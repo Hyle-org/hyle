@@ -229,6 +229,13 @@ impl Consensus {
             _ => bail!("Cannot finish_round unless synchronized to the consensus."),
         }
 
+        let new_validators_to_bond = std::mem::take(
+            &mut self
+                .bft_round_state
+                .consensus_proposal
+                .new_validators_to_bond,
+        );
+
         // Reset round state, carrying over staking and current proposal.
         self.bft_round_state = BFTRoundState {
             consensus_proposal: ConsensusProposal {
@@ -273,12 +280,7 @@ impl Consensus {
             self.bft_round_state.consensus_proposal.view = 0;
             self.bft_round_state.follower.buffered_quorum_certificate = Some(qc);
             // Any new validators are added to the consensus and removed from candidates.
-            for new_v in &self
-                .store
-                .bft_round_state
-                .consensus_proposal
-                .new_validators_to_bond
-            {
+            for new_v in new_validators_to_bond {
                 warn!("🎉 New validator bonded: {}", new_v.pubkey);
                 self.store
                     .bft_round_state
@@ -637,8 +639,8 @@ impl Consensus {
                 // maybe we'll have caught up by the time the commit rolls around.
                 if consensus_proposal.slot <= self.bft_round_state.joining.staking_updated_to {
                     info!(
-                        "🌑 Outdated Prepare message (Slot {} / view {}) received while joining. Ignoring.",
-                        consensus_proposal.slot, consensus_proposal.view
+                        "🌑 Outdated Prepare message (Slot {} / view {} while at {}) received while joining. Ignoring.",
+                        consensus_proposal.slot, consensus_proposal.view, self.bft_round_state.joining.staking_updated_to
                     );
                     return Ok(());
                 }
@@ -1651,7 +1653,7 @@ mod test {
 
         let mut node3 = TestCtx::new_node("node-3").await;
         node3.consensus.bft_round_state.state_tag = StateTag::Joining;
-        node3.consensus.bft_round_state.joining.staking_updated_to = 1;
+        node3.consensus.bft_round_state.joining.staking_updated_to = 0;
         node3.add_bonded_staker(&node1, 100, "Add staker");
         node3.add_bonded_staker(&node2, 100, "Add staker");
 
