@@ -97,6 +97,7 @@ impl TestProcess {
         }
     }
 
+    #[allow(dead_code)]
     pub fn log(mut self, level: &str) -> Self {
         if let TestProcessState::Command(cmd) = &mut self.state {
             cmd.env("RUST_LOG", level);
