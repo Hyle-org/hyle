@@ -187,6 +187,7 @@ pub struct ConsensusStore {
     /// Validators that asked to be part of consensus
     validator_candidates: Vec<NewValidatorCandidate>,
     pending_cut: Option<Cut>,
+    last_cut: Option<Cut>,
 }
 
 pub struct Consensus {
@@ -1244,8 +1245,17 @@ impl Consensus {
                         return Ok(());
                     }
                 }
+                if let Some(ref last) = self.last_cut {
+                    for (validator, tip) in cut.iter() {
+                        if let Some((_, last_tip)) = last.iter().find(|(v, _)| v == validator) {
+                            if last_tip >= tip {
+                                bail!("Tip of last Cut for {validator} was {last_tip} but new Cut says it is {tip}");
+                            }
+                        }
+                    }
+                }
                 debug!("✂️ Received a new Cut ({:?})", cut);
-                self.pending_cut.replace(cut);
+                self.last_cut = self.pending_cut.replace(cut);
                 Ok(())
             }
         }
