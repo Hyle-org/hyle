@@ -477,6 +477,9 @@ impl Indexer {
                 crate::model::TransactionData::Stake(ref _staker) => {
                     tracing::warn!("TODO: add staking to indexer db");
                 }
+                crate::model::TransactionData::VerifiedProof(ref _verified_proof_transaction) => {
+                    todo!()
+                }
             }
         }
 

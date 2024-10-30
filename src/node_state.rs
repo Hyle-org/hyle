@@ -4,7 +4,7 @@ use crate::{
     consensus::staking::Staker,
     model::{
         BlobTransaction, BlobsHash, Block, BlockHeight, ContractName, Hashable, ProofTransaction,
-        RegisterContractTransaction, TransactionData,
+        RegisterContractTransaction, TransactionData, VerifiedProofTransaction,
     },
 };
 use anyhow::{bail, Context, Error, Result};
@@ -46,13 +46,17 @@ impl NodeState {
                         error!("Failed to handle blob transaction: {:?}", e);
                     }
                 }
-                TransactionData::Proof(proof_transaction) => {
-                    if let Err(e) = self.handle_proof(proof_transaction) {
+                TransactionData::Proof(_) => {
+                    error!("Unverified proof transaction should not be in a block");
+                }
+                TransactionData::VerifiedProof(verified_proof_transaction) => {
+                    if let Err(e) = self.handle_verified_proof_tx(verified_proof_transaction) {
                         error!("Failed to handle proof transaction: {:?}", e);
                     }
                 }
                 TransactionData::RegisterContract(register_contract_transaction) => {
-                    if let Err(e) = self.handle_register_contract(register_contract_transaction) {
+                    if let Err(e) = self.handle_register_contract_tx(register_contract_transaction)
+                    {
                         error!("Failed to handle register contract transaction: {:?}", e);
                     }
                 }
@@ -61,7 +65,7 @@ impl NodeState {
         stakers
     }
 
-    pub fn handle_register_contract(
+    pub fn handle_register_contract_tx(
         &mut self,
         tx: &RegisterContractTransaction,
     ) -> Result<(), Error> {
@@ -107,40 +111,17 @@ impl NodeState {
         Ok(())
     }
 
-    fn handle_proof(&mut self, tx: &ProofTransaction) -> Result<(), Error> {
-        // TODO extract correct verifier
-        let verifier: String = "test".to_owned();
-
-        // Verify proof
-        let blobs_metadata = match tx.blobs_references.len() {
-            0 => bail!("ProofTx needs to specify a BlobTx"),
-            1 => {
-                let contract_name = &tx.blobs_references.first().unwrap().contract_name;
-                let contract = match self.contracts.get(contract_name) {
-                    Some(contract) => contract,
-                    None => {
-                        bail!(
-                            "No contract '{}' found when checking for proof verification",
-                            contract_name
-                        );
-                    }
-                };
-                let program_id = &contract.program_id;
-                let verifier = &contract.verifier;
-                vec![verifiers::verify_proof(tx, verifier, program_id)?]
-            }
-            _ => verifiers::verify_recursion_proof(tx, &verifier)?,
-        };
-
+    fn handle_verified_proof_tx(&mut self, tx: &VerifiedProofTransaction) -> Result<(), Error> {
         // TODO: add diverse verifications ? (without the inital state checks!).
-        self.process_verifications(tx, &blobs_metadata)?;
+        self.verify_blobs_metadata(&tx.proof_transaction, &tx.hyle_outputs)?;
 
         // If we arrived here, proof provided is OK and its outputs can now be saved
-        self.save_blob_metadata(tx, &blobs_metadata)?;
+        self.save_blob_metadata(&tx.proof_transaction, &tx.hyle_outputs)?;
         let unsettled_transactions = self.unsettled_transactions.clone();
 
         // Only catch unique unsettled_txs that are next to be settled
         let unique_next_unsettled_txs: HashSet<&UnsettledTransaction> = tx
+            .proof_transaction
             .blobs_references
             .iter()
             .filter_map(|blob_ref| {
@@ -170,7 +151,34 @@ impl NodeState {
         }
     }
 
-    fn process_verifications(
+    pub fn verify_proof(&self, tx: &ProofTransaction) -> Result<Vec<HyleOutput>, Error> {
+        // TODO extract correct verifier
+        let verifier: String = "test".to_owned();
+
+        // Verify proof
+        let blobs_metadata = match tx.blobs_references.len() {
+            0 => bail!("ProofTx needs to specify a BlobTx"),
+            1 => {
+                let contract_name = &tx.blobs_references.first().unwrap().contract_name;
+                let contract = match self.contracts.get(contract_name) {
+                    Some(contract) => contract,
+                    None => {
+                        bail!(
+                            "No contract '{}' found when checking for proof verification",
+                            contract_name
+                        );
+                    }
+                };
+                let program_id = &contract.program_id;
+                let verifier = &contract.verifier;
+                vec![verifiers::verify_proof(tx, verifier, program_id)?]
+            }
+            _ => verifiers::verify_recursion_proof(tx, &verifier)?,
+        };
+        Ok(blobs_metadata)
+    }
+
+    fn verify_blobs_metadata(
         &self,
         tx: &ProofTransaction,
         blobs_metadata: &[HyleOutput],
@@ -332,23 +340,14 @@ mod test {
         }
     }
 
-    fn new_tx(transaction_data: TransactionData) -> Transaction {
-        Transaction {
-            version: 1,
-            transaction_data,
+    fn new_register_contract(name: ContractName) -> RegisterContractTransaction {
+        RegisterContractTransaction {
+            owner: "test".to_string(),
+            verifier: "test".to_string(),
+            program_id: vec![],
+            state_digest: StateDigest(vec![0, 1, 2, 3]),
+            contract_name: name,
         }
-    }
-
-    fn new_register_contract(name: ContractName) -> Transaction {
-        new_tx(TransactionData::RegisterContract(
-            RegisterContractTransaction {
-                owner: "test".to_string(),
-                verifier: "test".to_string(),
-                program_id: vec![],
-                state_digest: StateDigest(vec![0, 1, 2, 3]),
-                contract_name: name,
-            },
-        ))
     }
 
     #[tokio::test]
@@ -361,14 +360,17 @@ mod test {
         let register_c1 = new_register_contract(c1.clone());
         let register_c2 = new_register_contract(c2.clone());
 
-        let blob = BlobTransaction {
+        let blob_tx = BlobTransaction {
             identity: Identity("test".to_string()),
             blobs: vec![new_blob(&c1), new_blob(&c2)],
         };
-        let blob_tx_hash = blob.hash();
-        let blob_tx = new_tx(TransactionData::Blob(blob));
+        let blob_tx_hash = blob_tx.hash();
 
-        let proof_c1 = new_tx(TransactionData::Proof(ProofTransaction {
+        state.handle_register_contract_tx(&register_c1).unwrap();
+        state.handle_register_contract_tx(&register_c2).unwrap();
+        state.handle_blob_tx(&blob_tx).unwrap();
+
+        let verified_proof_c1 = ProofTransaction {
             blobs_references: vec![BlobReference {
                 contract_name: c1.clone(),
                 blob_tx_hash: blob_tx_hash.clone(),
@@ -376,25 +378,23 @@ mod test {
                 blob_index: BlobIndex(0),
             }],
             proof: ProofData::Bytes(vec![]),
-        }));
+        }
+        .verify(&state)
+        .unwrap();
 
-        let proof_c2 = new_tx(TransactionData::Proof(ProofTransaction {
+        let verified_proof_c2 = ProofTransaction {
             blobs_references: vec![BlobReference {
                 contract_name: c2.clone(),
                 blob_tx_hash,
                 blob_index: BlobIndex(1),
             }],
             proof: ProofData::Bytes(vec![]),
-        }));
+        }
+        .verify(&state)
+        .unwrap();
 
-        let block = Block {
-            height: BlockHeight(1),
-            txs: vec![register_c1, register_c2, blob_tx, proof_c1, proof_c2],
-            parent_hash: BlockHash::new(""),
-            timestamp: 0,
-            new_bonded_validators: vec![],
-        };
-        state.handle_new_block(block);
+        state.handle_verified_proof_tx(&verified_proof_c1).unwrap();
+        state.handle_verified_proof_tx(&verified_proof_c2).unwrap();
 
         assert_eq!(state.contracts.get(&c1).unwrap().state.0, vec![4, 5, 6]);
         assert_eq!(state.contracts.get(&c2).unwrap().state.0, vec![4, 5, 6]);
@@ -411,20 +411,23 @@ mod test {
         let register_c1 = new_register_contract(c1.clone());
         let register_c2 = new_register_contract(c2.clone());
 
-        let blob_1 = BlobTransaction {
+        let blob_tx_1 = BlobTransaction {
             identity: Identity("test".to_string()),
             blobs: vec![new_blob(&c1), new_blob(&c2)],
         };
-        let blob_2 = BlobTransaction {
+        let blob_tx_2 = BlobTransaction {
             identity: Identity("test".to_string()),
             blobs: vec![new_blob(&c1), new_blob(&c2)],
         };
-        let blob_tx_hash_1 = blob_1.hash();
-        let blob_tx_hash_2 = blob_2.hash();
-        let blob_tx_1 = new_tx(TransactionData::Blob(blob_1));
-        let blob_tx_2 = new_tx(TransactionData::Blob(blob_2));
+        let blob_tx_hash_1 = blob_tx_1.hash();
+        let blob_tx_hash_2 = blob_tx_2.hash();
 
-        let proof_c1 = new_tx(TransactionData::Proof(ProofTransaction {
+        state.handle_register_contract_tx(&register_c1).unwrap();
+        state.handle_register_contract_tx(&register_c2).unwrap();
+        state.handle_blob_tx(&blob_tx_1).unwrap();
+        state.handle_blob_tx(&blob_tx_2).unwrap();
+
+        let verified_proof_c1 = ProofTransaction {
             blobs_references: vec![
                 BlobReference {
                     contract_name: c1.clone(),
@@ -448,16 +451,11 @@ mod test {
                 },
             ],
             proof: ProofData::Bytes(vec![]),
-        }));
+        }
+        .verify(&state)
+        .unwrap();
 
-        let block = Block {
-            height: BlockHeight(1),
-            txs: vec![register_c1, register_c2, blob_tx_1, blob_tx_2, proof_c1],
-            parent_hash: BlockHash::new(""),
-            timestamp: 0,
-            new_bonded_validators: vec![],
-        };
-        state.handle_new_block(block);
+        state.handle_verified_proof_tx(&verified_proof_c1).unwrap();
 
         assert_eq!(state.contracts.get(&c1).unwrap().state.0, vec![4, 5, 6]);
         assert_eq!(state.contracts.get(&c2).unwrap().state.0, vec![4, 5, 6]);
@@ -477,20 +475,25 @@ mod test {
         let register_c3 = new_register_contract(c3.clone());
         let register_c4 = new_register_contract(c4.clone());
 
-        let blob_1 = BlobTransaction {
+        let blob_tx_1 = BlobTransaction {
             identity: Identity("test1".to_string()),
             blobs: vec![new_blob(&c1), new_blob(&c2)],
         };
-        let blob_2 = BlobTransaction {
+        let blob_tx_2 = BlobTransaction {
             identity: Identity("test2".to_string()),
             blobs: vec![new_blob(&c3), new_blob(&c4)],
         };
-        let blob_tx_hash_1 = blob_1.hash();
-        let blob_tx_hash_2 = blob_2.hash();
-        let blob_tx_1 = new_tx(TransactionData::Blob(blob_1));
-        let blob_tx_2 = new_tx(TransactionData::Blob(blob_2));
+        let blob_tx_hash_1 = blob_tx_1.hash();
+        let blob_tx_hash_2 = blob_tx_2.hash();
 
-        let proof_c1 = new_tx(TransactionData::Proof(ProofTransaction {
+        state.handle_register_contract_tx(&register_c1).unwrap();
+        state.handle_register_contract_tx(&register_c2).unwrap();
+        state.handle_register_contract_tx(&register_c3).unwrap();
+        state.handle_register_contract_tx(&register_c4).unwrap();
+        state.handle_blob_tx(&blob_tx_1).unwrap();
+        state.handle_blob_tx(&blob_tx_2).unwrap();
+
+        let verified_proof_c1 = ProofTransaction {
             blobs_references: vec![
                 BlobReference {
                     contract_name: c1.clone(),
@@ -514,24 +517,11 @@ mod test {
                 },
             ],
             proof: ProofData::Bytes(vec![]),
-        }));
+        }
+        .verify(&state)
+        .unwrap();
 
-        let block = Block {
-            height: BlockHeight(1),
-            txs: vec![
-                register_c1,
-                register_c2,
-                register_c3,
-                register_c4,
-                blob_tx_1,
-                blob_tx_2,
-                proof_c1,
-            ],
-            parent_hash: BlockHash::new(""),
-            timestamp: 0,
-            new_bonded_validators: vec![],
-        };
-        state.handle_new_block(block);
+        state.handle_verified_proof_tx(&verified_proof_c1).unwrap();
 
         assert_eq!(state.contracts.get(&c1).unwrap().state.0, vec![4, 5, 6]);
         assert_eq!(state.contracts.get(&c2).unwrap().state.0, vec![4, 5, 6]);
@@ -549,39 +539,42 @@ mod test {
         let register_c1 = new_register_contract(c1.clone());
         let register_c2 = new_register_contract(c2.clone());
 
-        let blob = BlobTransaction {
+        let blob_tx = BlobTransaction {
             identity: Identity("test".to_string()),
             blobs: vec![new_blob(&c1), new_blob(&c2)],
         };
-        let blob_tx_hash = blob.hash();
-        let blob_tx = new_tx(TransactionData::Blob(blob));
+        let blob_tx_hash = blob_tx.hash();
 
-        let proof_c1 = new_tx(TransactionData::Proof(ProofTransaction {
+        state.handle_register_contract_tx(&register_c1).unwrap();
+        state.handle_register_contract_tx(&register_c2).unwrap();
+        state.handle_blob_tx(&blob_tx).unwrap();
+
+        let verified_proof_c1 = ProofTransaction {
             blobs_references: vec![BlobReference {
                 contract_name: c1.clone(),
                 blob_tx_hash: blob_tx_hash.clone(),
                 blob_index: BlobIndex(0),
             }],
             proof: ProofData::Bytes(vec![1]),
-        }));
+        }
+        .verify(&state)
+        .unwrap();
 
-        let proof_c1_bis = new_tx(TransactionData::Proof(ProofTransaction {
+        let verified_proof_c1_bis = ProofTransaction {
             blobs_references: vec![BlobReference {
                 contract_name: c1.clone(),
                 blob_tx_hash: blob_tx_hash.clone(),
                 blob_index: BlobIndex(0),
             }],
             proof: ProofData::Bytes(vec![2]),
-        }));
+        }
+        .verify(&state)
+        .unwrap();
 
-        let block = Block {
-            height: BlockHeight(1),
-            txs: vec![register_c1, register_c2, blob_tx, proof_c1, proof_c1_bis],
-            parent_hash: BlockHash::new(""),
-            timestamp: 0,
-            new_bonded_validators: vec![],
-        };
-        state.handle_new_block(block);
+        state.handle_verified_proof_tx(&verified_proof_c1).unwrap();
+        state
+            .handle_verified_proof_tx(&verified_proof_c1_bis)
+            .unwrap();
 
         assert_eq!(
             state

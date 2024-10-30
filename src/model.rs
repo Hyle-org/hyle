@@ -1,10 +1,11 @@
 //! Various data structures
 
+use anyhow::Error;
 use axum::Router;
 use base64::prelude::*;
 use bincode::{Decode, Encode};
 use derive_more::Display;
-use hyle_contract_sdk::{BlobIndex, Identity, StateDigest, TxHash};
+use hyle_contract_sdk::{BlobIndex, HyleOutput, Identity, StateDigest, TxHash};
 use serde::{
     de::{self, Visitor},
     Deserialize, Serialize,
@@ -24,6 +25,7 @@ use tracing::debug;
 use crate::{
     bus::SharedMessageBus,
     consensus::{staking::Staker, utils::HASH_DISPLAY_SIZE},
+    node_state::NodeState,
     utils::{conf::SharedConf, crypto::SharedBlstCrypto},
 };
 
@@ -102,6 +104,7 @@ pub enum TransactionData {
     Stake(Staker), // FIXME: to remove, this is temporary waiting for real staking contract !!
     Blob(BlobTransaction),
     Proof(ProofTransaction),
+    VerifiedProof(VerifiedProofTransaction),
     RegisterContract(RegisterContractTransaction),
 }
 
@@ -132,7 +135,6 @@ impl ProofData {
         }
     }
 }
-
 #[derive(Serialize, Deserialize, Default, PartialEq, Eq, Clone, Encode, Decode, Hash)]
 pub struct ProofTransaction {
     pub blobs_references: Vec<BlobReference>,
@@ -150,6 +152,22 @@ impl fmt::Debug for ProofTransaction {
             )
             .finish()
     }
+}
+
+impl ProofTransaction {
+    pub fn verify(self, node_state: &NodeState) -> Result<VerifiedProofTransaction, Error> {
+        let hyle_outputs = node_state.verify_proof(&self)?;
+        Ok(VerifiedProofTransaction {
+            proof_transaction: self,
+            hyle_outputs,
+        })
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Encode, Decode, Hash)]
+pub struct VerifiedProofTransaction {
+    pub proof_transaction: ProofTransaction,
+    pub hyle_outputs: Vec<HyleOutput>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Default, Clone, PartialEq, Eq, Encode, Decode, Hash)]
@@ -290,6 +308,7 @@ impl Hashable<TxHash> for Transaction {
             TransactionData::Stake(staker) => staker.hash(),
             TransactionData::Blob(tx) => tx.hash(),
             TransactionData::Proof(tx) => tx.hash(),
+            TransactionData::VerifiedProof(tx) => tx.hash(),
             TransactionData::RegisterContract(tx) => tx.hash(),
         }
     }
@@ -327,6 +346,11 @@ impl Hashable<TxHash> for ProofTransaction {
         }
         let hash_bytes = hasher.finalize();
         TxHash(hex::encode(hash_bytes))
+    }
+}
+impl Hashable<TxHash> for VerifiedProofTransaction {
+    fn hash(&self) -> TxHash {
+        self.proof_transaction.hash()
     }
 }
 impl Hashable<TxHash> for RegisterContractTransaction {
