@@ -60,35 +60,20 @@ impl Display for ConsensusProposal {
 pub const HASH_DISPLAY_SIZE: usize = 3;
 impl Display for ConsensusProposalHash {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.0.len() > HASH_DISPLAY_SIZE {
-            write!(
-                f,
-                "{}",
-                &self
-                    .0
-                    .get(..HASH_DISPLAY_SIZE)
-                    .map(hex::encode)
-                    .unwrap_or_default()
-            )
-        } else {
-            write!(f, "{}", hex::encode(&self.0))
-        }
+        write!(
+            f,
+            "{}",
+            &hex::encode(self.0.get(..HASH_DISPLAY_SIZE).unwrap_or(&self.0))
+        )
     }
 }
 impl Display for QuorumCertificateHash {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.0.len() > HASH_DISPLAY_SIZE {
-            write!(
-                f,
-                "{}",
-                self.0
-                    .get(..HASH_DISPLAY_SIZE)
-                    .map(hex::encode)
-                    .unwrap_or_default()
-            )
-        } else {
-            write!(f, "{}", hex::encode(&self.0))
-        }
+        write!(
+            f,
+            "{}",
+            hex::encode(self.0.get(..HASH_DISPLAY_SIZE).unwrap_or(&self.0))
+        )
     }
 }
 

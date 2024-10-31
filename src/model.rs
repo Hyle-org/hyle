@@ -386,13 +386,9 @@ pub struct ValidatorPublicKey(pub Vec<u8>);
 impl std::fmt::Debug for ValidatorPublicKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_tuple("ValidatorPubK")
-            .field(
-                &self
-                    .0
-                    .get(..HASH_DISPLAY_SIZE)
-                    .map(hex::encode)
-                    .unwrap_or_default(),
-            )
+            .field(&hex::encode(
+                self.0.get(..HASH_DISPLAY_SIZE).unwrap_or(&self.0),
+            ))
             .finish()
     }
 }
@@ -402,11 +398,7 @@ impl Display for ValidatorPublicKey {
         write!(
             f,
             "{}",
-            &self
-                .0
-                .get(..HASH_DISPLAY_SIZE)
-                .map(hex::encode)
-                .unwrap_or_default()
+            &hex::encode(self.0.get(..HASH_DISPLAY_SIZE).unwrap_or(&self.0),)
         )
     }
 }
