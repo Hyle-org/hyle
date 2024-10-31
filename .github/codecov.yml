@@ -1,0 +1,3 @@
+github_checks:
+  # Disable annotations, too noisy.
+  annotations: false
