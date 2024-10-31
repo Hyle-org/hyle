@@ -193,11 +193,17 @@ impl Indexer {
             "Connecting to node for data availability stream on {}",
             &target
         );
+        let timeout = std::time::Duration::from_secs(10);
+        let start = std::time::Instant::now();
+
         let stream = loop {
             debug!("Trying to connect to {}", target);
             match TcpStream::connect(&target).await {
                 Ok(stream) => break stream,
                 Err(e) => {
+                    if start.elapsed() >= timeout {
+                        bail!("Failed to connect to {}: {}. Timeout reached.", target, e);
+                    }
                     warn!(
                         "Failed to connect to {}: {}. Retrying in 20 milliseconds...",
                         target, e
