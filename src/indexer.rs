@@ -31,7 +31,7 @@ use tokio::{
     sync::{broadcast, mpsc},
 };
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 bus_client! {
 #[derive(Debug)]
@@ -193,7 +193,19 @@ impl Indexer {
             "Connecting to node for data availability stream on {}",
             &target
         );
-        let stream = TcpStream::connect(&target).await?;
+        let stream = loop {
+            debug!("Trying to connect to {}", target);
+            match TcpStream::connect(&target).await {
+                Ok(stream) => break stream,
+                Err(e) => {
+                    warn!(
+                        "Failed to connect to {}: {}. Retrying in 20 milliseconds...",
+                        target, e
+                    );
+                    tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+                }
+            }
+        };
         let addr = stream.local_addr()?;
         self.da_stream = Some(Framed::new(stream, LengthDelimitedCodec::new()));
         info!("Connected to data stream to {} on {}", &target, addr);

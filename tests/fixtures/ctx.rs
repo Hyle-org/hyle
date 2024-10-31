@@ -169,6 +169,7 @@ impl E2ECtx {
 
         // Start indexer
         let mut indexer_conf = conf_maker.build("indexer");
+        conf_maker.default.run_indexer = true;
         indexer_conf.da_address = nodes.last().unwrap().conf.da_address.clone();
         let indexer = test_helpers::TestProcess::new("indexer", indexer_conf.clone()).start();
 
