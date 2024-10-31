@@ -134,8 +134,12 @@ where
         &mut self,
         message: Msg,
     ) -> Result<usize, tokio::sync::broadcast::error::SendError<Msg>> {
-        Pick::<BusMetrics>::get_mut(self).send::<Msg, Client>();
-        Pick::<tokio::sync::broadcast::Sender<Msg>>::get(self).send(message)
+        if Pick::<tokio::sync::broadcast::Sender<Msg>>::get(self).receiver_count() > 0 {
+            Pick::<BusMetrics>::get_mut(self).send::<Msg, Client>();
+            Pick::<tokio::sync::broadcast::Sender<Msg>>::get(self).send(message)
+        } else {
+            Ok(0)
+        }
     }
 }
 
