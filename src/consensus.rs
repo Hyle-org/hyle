@@ -39,26 +39,9 @@ pub mod module;
 pub mod staking;
 pub mod utils;
 
-#[derive(
-    Debug, Serialize, Deserialize, Clone, Encode, Decode, PartialEq, Eq, Hash, IntoStaticStr,
-)]
-pub enum ConsensusNetMessage {
-    Prepare(ConsensusProposal, Ticket),
-    PrepareVote(ConsensusProposalHash),
-    // TODO: these should probably just be "SignedWithQuorumCertificate" to be consistent
-    Confirm(QuorumCertificate),
-    ConfirmAck(ConsensusProposalHash),
-    Commit(QuorumCertificate, ConsensusProposalHash),
-    ValidatorCandidacy(ValidatorCandidacy),
-}
-
-#[derive(Encode, Decode, Default, Debug)]
-enum Step {
-    #[default]
-    StartNewSlot,
-    PrepareVote,
-    ConfirmAck,
-}
+// -----------------------------
+// ------ Consensus bus --------
+// -----------------------------
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub enum ConsensusCommand {
@@ -82,14 +65,58 @@ pub enum ConsensusEvent {
     },
 }
 
+#[derive(Clone)]
+pub struct QueryConsensusInfo {}
+
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub struct ConsensusInfo {
+    pub slot: Slot,
+    pub view: View,
+    pub round_leader: ValidatorPublicKey,
+    pub validators: Vec<ValidatorPublicKey>,
+}
+
 impl BusMessage for ConsensusCommand {}
 impl BusMessage for ConsensusEvent {}
 impl BusMessage for ConsensusNetMessage {}
+
+bus_client! {
+struct ConsensusBusClient {
+    sender(OutboundMessage),
+    sender(ConsensusEvent),
+    sender(ConsensusCommand),
+    sender(P2PCommand),
+    receiver(ConsensusCommand),
+    receiver(MempoolEvent),
+    receiver(SignedWithKey<ConsensusNetMessage>),
+    receiver(PeerEvent),
+    receiver(Query<QueryConsensusInfo, ConsensusInfo>),
+}
+}
+
+// -----------------------------
+// --- Consensus data model ----
+// -----------------------------
 
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, PartialEq, Eq, Hash)]
 pub struct ValidatorCandidacy {
     pubkey: ValidatorPublicKey,
     peer_address: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode, PartialEq, Eq, Hash)]
+pub struct NewValidatorCandidate {
+    pubkey: ValidatorPublicKey, // TODO: possible optim: the pubkey is already present in the msg,
+    msg: SignedWithKey<ConsensusNetMessage>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, PartialEq, Eq, Hash, Default)]
+pub struct QuorumCertificateHash(Vec<u8>);
+
+#[derive(Serialize, Deserialize, Encode, Decode, Default, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct QuorumCertificate {
+    signature: Signature,
+    validators: Vec<ValidatorPublicKey>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, PartialEq, Eq, Hash)]
@@ -102,6 +129,36 @@ pub enum Ticket {
     Genesis,
     CommitQC(QuorumCertificate),
     TC(TimeoutCertificate),
+}
+
+pub type Slot = u64;
+pub type View = u64;
+
+#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, PartialEq, Eq, Hash, Default)]
+pub struct ConsensusProposalHash(Vec<u8>);
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, Encode, Decode, PartialEq, Eq, Hash)]
+pub struct ConsensusProposal {
+    // These first few items are checked when receiving the proposal from the leader.
+    slot: Slot,
+    view: View,
+    round_leader: ValidatorPublicKey,
+    // Below items aren't.
+    cut: Cut,
+    new_validators_to_bond: Vec<NewValidatorCandidate>,
+}
+
+#[derive(
+    Debug, Serialize, Deserialize, Clone, Encode, Decode, PartialEq, Eq, Hash, IntoStaticStr,
+)]
+pub enum ConsensusNetMessage {
+    Prepare(ConsensusProposal, Ticket),
+    PrepareVote(ConsensusProposalHash),
+    // TODO: these should probably just be "SignedWithQuorumCertificate" to be consistent
+    Confirm(QuorumCertificate),
+    ConfirmAck(ConsensusProposalHash),
+    Commit(QuorumCertificate, ConsensusProposalHash),
+    ValidatorCandidacy(ValidatorCandidacy),
 }
 
 // TODO: move struct to model.rs ?
@@ -124,6 +181,14 @@ enum StateTag {
     Joining,
     Leader,
     Follower,
+}
+
+#[derive(Encode, Decode, Default, Debug)]
+enum Step {
+    #[default]
+    StartNewSlot,
+    PrepareVote,
+    ConfirmAck,
 }
 
 #[derive(Encode, Decode, Default)]
@@ -150,37 +215,6 @@ pub struct GenesisState {
     peer_pubkey: HashMap<String, ValidatorPublicKey>,
 }
 
-#[derive(Serialize, Deserialize, Encode, Decode, Default, Debug, Clone, PartialEq, Eq, Hash)]
-pub struct QuorumCertificate {
-    signature: Signature,
-    validators: Vec<ValidatorPublicKey>,
-}
-
-pub type Slot = u64;
-pub type View = u64;
-
-#[derive(Debug, Clone, Default, Serialize, Deserialize, Encode, Decode, PartialEq, Eq, Hash)]
-pub struct ConsensusProposal {
-    // These first few items are checked when receiving the proposal from the leader.
-    slot: Slot,
-    view: View,
-    round_leader: ValidatorPublicKey,
-    // Below items aren't.
-    cut: Cut,
-    new_validators_to_bond: Vec<NewValidatorCandidate>,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, PartialEq, Eq, Hash, Default)]
-pub struct ConsensusProposalHash(Vec<u8>);
-#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, PartialEq, Eq, Hash, Default)]
-pub struct QuorumCertificateHash(Vec<u8>);
-
-#[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode, PartialEq, Eq, Hash)]
-pub struct NewValidatorCandidate {
-    pubkey: ValidatorPublicKey, // TODO: possible optim: the pubkey is already present in the msg,
-    msg: SignedWithKey<ConsensusNetMessage>,
-}
-
 #[derive(Encode, Decode, Default)]
 pub struct ConsensusStore {
     bft_round_state: BFTRoundState,
@@ -198,31 +232,6 @@ pub struct Consensus {
     #[allow(dead_code)]
     config: SharedConf,
     crypto: SharedBlstCrypto,
-}
-
-#[derive(Clone)]
-pub struct QueryConsensusInfo {}
-
-#[derive(Clone, Serialize, Deserialize, Debug)]
-pub struct ConsensusInfo {
-    pub slot: Slot,
-    pub view: View,
-    pub round_leader: ValidatorPublicKey,
-    pub validators: Vec<ValidatorPublicKey>,
-}
-
-bus_client! {
-struct ConsensusBusClient {
-    sender(OutboundMessage),
-    sender(ConsensusEvent),
-    sender(ConsensusCommand),
-    sender(P2PCommand),
-    receiver(ConsensusCommand),
-    receiver(MempoolEvent),
-    receiver(SignedWithKey<ConsensusNetMessage>),
-    receiver(PeerEvent),
-    receiver(Query<QueryConsensusInfo, ConsensusInfo>),
-}
 }
 
 impl Consensus {
