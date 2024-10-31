@@ -20,12 +20,12 @@ use crate::{
     mempool::{Cut, MempoolEvent},
     model::{BlockHeight, Hashable, Transaction, TransactionData, ValidatorPublicKey},
     p2p::{
-        network::{OutboundMessage, PeerEvent, Signature, Signed, SignedWithKey},
+        network::{OutboundMessage, PeerEvent, Signed, SignedByValidator},
         P2PCommand,
     },
     utils::{
         conf::SharedConf,
-        crypto::{BlstCrypto, SharedBlstCrypto},
+        crypto::{AggregateSignature, BlstCrypto, SharedBlstCrypto, ValidatorSignature},
         logger::LogMe,
         modules::Module,
         static_type_map::Pick,
@@ -88,7 +88,7 @@ struct ConsensusBusClient {
     sender(P2PCommand),
     receiver(ConsensusCommand),
     receiver(MempoolEvent),
-    receiver(SignedWithKey<ConsensusNetMessage>),
+    receiver(SignedByValidator<ConsensusNetMessage>),
     receiver(PeerEvent),
     receiver(Query<QueryConsensusInfo, ConsensusInfo>),
 }
@@ -107,17 +107,13 @@ pub struct ValidatorCandidacy {
 #[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode, PartialEq, Eq, Hash)]
 pub struct NewValidatorCandidate {
     pubkey: ValidatorPublicKey, // TODO: possible optim: the pubkey is already present in the msg,
-    msg: SignedWithKey<ConsensusNetMessage>,
+    msg: SignedByValidator<ConsensusNetMessage>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, PartialEq, Eq, Hash, Default)]
 pub struct QuorumCertificateHash(Vec<u8>);
 
-#[derive(Serialize, Deserialize, Encode, Decode, Default, Debug, Clone, PartialEq, Eq, Hash)]
-pub struct QuorumCertificate {
-    signature: Signature,
-    validators: Vec<ValidatorPublicKey>,
-}
+type QuorumCertificate = AggregateSignature;
 
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, PartialEq, Eq, Hash)]
 pub struct TimeoutCertificate(Slot, View, QuorumCertificate);
@@ -194,8 +190,8 @@ enum Step {
 #[derive(Encode, Decode, Default)]
 pub struct LeaderState {
     step: Step,
-    prepare_votes: HashSet<Signed<ConsensusNetMessage, ValidatorPublicKey>>,
-    confirm_ack: HashSet<Signed<ConsensusNetMessage, ValidatorPublicKey>>,
+    prepare_votes: HashSet<SignedByValidator<ConsensusNetMessage>>,
+    confirm_ack: HashSet<SignedByValidator<ConsensusNetMessage>>,
     pending_ticket: Option<Ticket>,
 }
 
@@ -546,14 +542,16 @@ impl Consensus {
         quorum_certificate: &QuorumCertificate,
     ) -> Result<()> {
         // Construct the expected signed message
-        let expected_signed_message = SignedWithKey {
+        let expected_signed_message = Signed {
             msg: message,
-            signature: quorum_certificate.signature.clone(),
-            validators: quorum_certificate.validators.clone(),
+            signature: AggregateSignature {
+                signature: quorum_certificate.signature.clone(),
+                validators: quorum_certificate.validators.clone(),
+            },
         };
 
         match (
-            BlstCrypto::verify(&expected_signed_message),
+            BlstCrypto::verify_aggregate(&expected_signed_message),
             self.verify_quorum_signers_part_of_consensus(quorum_certificate),
         ) {
             (Ok(res), true) if !res => {
@@ -606,22 +604,27 @@ impl Consensus {
         Ok(())
     }
 
-    fn handle_net_message(&mut self, msg: SignedWithKey<ConsensusNetMessage>) -> Result<(), Error> {
+    fn handle_net_message(
+        &mut self,
+        msg: SignedByValidator<ConsensusNetMessage>,
+    ) -> Result<(), Error> {
         if !BlstCrypto::verify(&msg)? {
             self.metrics.signature_error("prepare");
             bail!("Invalid signature for message {:?}", &msg);
         }
 
         // TODO: reduce cloning here.
-        let SignedWithKey::<ConsensusNetMessage> {
+        let SignedByValidator::<ConsensusNetMessage> {
             msg: net_message,
-            validators,
+            signature: ValidatorSignature {
+                validator: sender, ..
+            },
             ..
         } = msg.clone();
 
         match net_message {
             ConsensusNetMessage::Prepare(consensus_proposal, ticket) => {
-                self.on_prepare(validators, consensus_proposal, ticket)
+                self.on_prepare(sender, consensus_proposal, ticket)
             }
             ConsensusNetMessage::PrepareVote(consensus_proposal_hash) => {
                 self.on_prepare_vote(msg, consensus_proposal_hash)
@@ -655,7 +658,7 @@ impl Consensus {
     /// Message received by follower after start_round
     fn on_prepare(
         &mut self,
-        signers: Vec<ValidatorPublicKey>,
+        sender: ValidatorPublicKey,
         consensus_proposal: ConsensusProposal,
         ticket: Ticket,
     ) -> Result<(), Error> {
@@ -722,7 +725,7 @@ impl Consensus {
         }
 
         // Validate message comes from the correct leader
-        if !signers.contains(&self.bft_round_state.consensus_proposal.round_leader) {
+        if sender != self.bft_round_state.consensus_proposal.round_leader {
             self.metrics.prepare_error("wrong_leader");
             bail!(
                 "Prepare consensus message does not come from current leader. I won't vote for it."
@@ -757,7 +760,7 @@ impl Consensus {
     /// Message received by leader.
     fn on_prepare_vote(
         &mut self,
-        msg: SignedWithKey<ConsensusNetMessage>,
+        msg: SignedByValidator<ConsensusNetMessage>,
         consensus_proposal_hash: ConsensusProposalHash,
     ) -> Result<()> {
         if !matches!(self.bft_round_state.state_tag, StateTag::Leader) {
@@ -787,7 +790,7 @@ impl Consensus {
             .leader
             .prepare_votes
             .iter()
-            .flat_map(|signed_message| signed_message.validators.clone())
+            .map(|signed_message| signed_message.signature.validator.clone())
             .collect::<Vec<ValidatorPublicKey>>();
 
         let votes_power = self.compute_voting_power(&validated_votes);
@@ -809,7 +812,7 @@ impl Consensus {
 
         if voting_power > 2 * f {
             // Get all received signatures
-            let aggregates: &Vec<&Signed<ConsensusNetMessage, ValidatorPublicKey>> =
+            let aggregates: &Vec<&SignedByValidator<ConsensusNetMessage>> =
                 &self.bft_round_state.leader.prepare_votes.iter().collect();
 
             // Aggregates them into a *Prepare* Quorum Certificate
@@ -831,10 +834,9 @@ impl Consensus {
                 "Slot {} PrepareVote message validated. Broadcasting Confirm",
                 self.bft_round_state.consensus_proposal.slot
             );
-            self.broadcast_net_message(ConsensusNetMessage::Confirm(QuorumCertificate {
-                signature: prepvote_signed_aggregation.signature,
-                validators: prepvote_signed_aggregation.validators,
-            }))?;
+            self.broadcast_net_message(ConsensusNetMessage::Confirm(
+                prepvote_signed_aggregation.signature,
+            ))?;
         }
         // TODO(?): Update behaviour when having more ?
         // else if validated_votes > 2 * f + 1 {}
@@ -880,7 +882,7 @@ impl Consensus {
     /// Message received by leader.
     fn on_confirm_ack(
         &mut self,
-        msg: SignedWithKey<ConsensusNetMessage>,
+        msg: SignedByValidator<ConsensusNetMessage>,
         consensus_proposal_hash: ConsensusProposalHash,
     ) -> Result<()> {
         if !matches!(self.bft_round_state.state_tag, StateTag::Leader) {
@@ -920,7 +922,7 @@ impl Consensus {
             .leader
             .confirm_ack
             .iter()
-            .flat_map(|signed_message| signed_message.validators.clone())
+            .map(|signed_message| signed_message.signature.validator.clone())
             .collect::<Vec<ValidatorPublicKey>>();
 
         let confirmed_power = self.compute_voting_power(&confirmed_ack_validators);
@@ -941,7 +943,7 @@ impl Consensus {
 
         if voting_power > 2 * f {
             // Get all signatures received and change ValidatorPublicKey for ValidatorPubKey
-            let aggregates: &Vec<&Signed<ConsensusNetMessage, ValidatorPublicKey>> =
+            let aggregates: &Vec<&SignedByValidator<ConsensusNetMessage>> =
                 &self.bft_round_state.leader.confirm_ack.iter().collect();
 
             // Aggregates them into a *Commit* Quorum Certificate
@@ -953,10 +955,7 @@ impl Consensus {
             self.metrics.confirm_ack_commit_aggregate();
 
             // Buffers the *Commit* Quorum Cerficiate
-            let commit_quorum_certificate = QuorumCertificate {
-                signature: commit_signed_aggregation.signature.clone(),
-                validators: commit_signed_aggregation.validators.clone(),
-            };
+            let commit_quorum_certificate = commit_signed_aggregation.signature;
 
             // Broadcast the *Commit* Quorum Certificate to all validators
             self.broadcast_net_message(ConsensusNetMessage::Commit(
@@ -1104,7 +1103,7 @@ impl Consensus {
     /// Message received by leader & follower.
     fn on_validator_candidacy(
         &mut self,
-        msg: SignedWithKey<ConsensusNetMessage>,
+        msg: SignedByValidator<ConsensusNetMessage>,
         candidacy: ValidatorCandidacy,
     ) -> Result<()> {
         info!("📝 Received candidacy message: {}", candidacy);
@@ -1436,7 +1435,7 @@ impl Consensus {
                     Err(e) => warn!("Error while handling mempool event: {:#}", e),
                 }
             }
-            listen<SignedWithKey<ConsensusNetMessage>> cmd => {
+            listen<SignedByValidator<ConsensusNetMessage>> cmd => {
                 match self.handle_net_message(cmd) {
                     Ok(_) => (),
                     Err(e) => warn!("Consensus message failed: {:#}", e),
@@ -1455,7 +1454,7 @@ impl Consensus {
     fn sign_net_message(
         &self,
         msg: ConsensusNetMessage,
-    ) -> Result<SignedWithKey<ConsensusNetMessage>> {
+    ) -> Result<SignedByValidator<ConsensusNetMessage>> {
         debug!("🔏 Signing message: {}", msg);
         self.crypto.sign(msg)
     }
@@ -1561,13 +1560,13 @@ mod test {
         }
 
         #[track_caller]
-        fn handle_msg(&mut self, msg: &SignedWithKey<ConsensusNetMessage>, err: &str) {
+        fn handle_msg(&mut self, msg: &SignedByValidator<ConsensusNetMessage>, err: &str) {
             debug!("📥 {} Handling message: {:?}", self.name, msg);
             self.consensus.handle_net_message(msg.clone()).expect(err);
         }
 
         #[track_caller]
-        fn handle_msg_err(&mut self, msg: &SignedWithKey<ConsensusNetMessage>) -> Error {
+        fn handle_msg_err(&mut self, msg: &SignedByValidator<ConsensusNetMessage>) -> Error {
             debug!("📥 {} Handling message expecting err: {:?}", self.name, msg);
             let err = self.consensus.handle_net_message(msg.clone()).unwrap_err();
             info!("Expected error: {:#}", err);
@@ -1576,7 +1575,7 @@ mod test {
 
         #[cfg(test)]
         #[track_caller]
-        fn handle_block(&mut self, msg: &SignedWithKey<ConsensusNetMessage>) {
+        fn handle_block(&mut self, msg: &SignedByValidator<ConsensusNetMessage>) {
             match &msg.msg {
                 ConsensusNetMessage::Prepare(_, _) => {}
                 _ => panic!("Block message is not a Prepare message"),
@@ -1618,10 +1617,7 @@ mod test {
         }
 
         #[track_caller]
-        fn assert_broadcast(
-            &mut self,
-            err: &str,
-        ) -> Signed<ConsensusNetMessage, ValidatorPublicKey> {
+        fn assert_broadcast(&mut self, err: &str) -> SignedByValidator<ConsensusNetMessage> {
             #[allow(clippy::expect_fun_call)]
             let rec = self
                 .out_receiver
@@ -1640,11 +1636,7 @@ mod test {
         }
 
         #[track_caller]
-        fn assert_send(
-            &mut self,
-            to: &Self,
-            err: &str,
-        ) -> Signed<ConsensusNetMessage, ValidatorPublicKey> {
+        fn assert_send(&mut self, to: &Self, err: &str) -> SignedByValidator<ConsensusNetMessage> {
             #[allow(clippy::expect_fun_call)]
             let rec = self
                 .out_receiver

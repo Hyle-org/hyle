@@ -7,7 +7,7 @@ use crate::{
     mempool::storage::{Car, CarProposal, InMemoryStorage},
     model::{Hashable, SharedRunContext, Transaction, TransactionData, ValidatorPublicKey},
     node_state::NodeState,
-    p2p::network::{OutboundMessage, SignedWithKey},
+    p2p::network::{OutboundMessage, SignedByValidator},
     rest::endpoints::RestApiMessage,
     utils::{
         crypto::{BlstCrypto, SharedBlstCrypto},
@@ -32,7 +32,7 @@ bus_client! {
 struct MempoolBusClient {
     sender(OutboundMessage),
     sender(MempoolEvent),
-    receiver(SignedWithKey<MempoolNetMessage>),
+    receiver(SignedByValidator<MempoolNetMessage>),
     receiver(RestApiMessage),
     receiver(ConsensusEvent),
 }
@@ -115,7 +115,7 @@ impl Mempool {
 
         handle_messages! {
             on_bus self.bus,
-            listen<SignedWithKey<MempoolNetMessage>> cmd => {
+            listen<SignedByValidator<MempoolNetMessage>> cmd => {
                 self.handle_net_message(cmd).await
             }
             listen<RestApiMessage> cmd => {
@@ -156,10 +156,10 @@ impl Mempool {
         }
     }
 
-    async fn handle_net_message(&mut self, msg: SignedWithKey<MempoolNetMessage>) {
+    async fn handle_net_message(&mut self, msg: SignedByValidator<MempoolNetMessage>) {
         match BlstCrypto::verify(&msg) {
             Ok(true) => {
-                let validator = msg.validators.first().unwrap();
+                let validator = &msg.signature.validator;
                 match msg.msg {
                     MempoolNetMessage::NewCut(cut) => {
                         self.send_new_cut(cut);
@@ -484,7 +484,10 @@ impl Mempool {
         Ok(())
     }
 
-    fn sign_net_message(&self, msg: MempoolNetMessage) -> Result<SignedWithKey<MempoolNetMessage>> {
+    fn sign_net_message(
+        &self,
+        msg: MempoolNetMessage,
+    ) -> Result<SignedByValidator<MempoolNetMessage>> {
         self.crypto.sign(msg)
     }
 }
