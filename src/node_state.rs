@@ -370,7 +370,7 @@ mod test {
         state.handle_register_contract_tx(&register_c2).unwrap();
         state.handle_blob_tx(&blob_tx).unwrap();
 
-        let verified_proof_c1 = ProofTransaction {
+        let proof_c1 = ProofTransaction {
             blobs_references: vec![BlobReference {
                 contract_name: c1.clone(),
                 blob_tx_hash: blob_tx_hash.clone(),
@@ -378,20 +378,27 @@ mod test {
                 blob_index: BlobIndex(0),
             }],
             proof: ProofData::Bytes(vec![]),
-        }
-        .verify(&state)
-        .unwrap();
+        };
 
-        let verified_proof_c2 = ProofTransaction {
+        let verified_proof_c1 = VerifiedProofTransaction {
+            hyle_outputs: state.verify_proof(&proof_c1).unwrap(),
+            proof_transaction: proof_c1,
+        };
+
+        let proof_c2 = ProofTransaction {
             blobs_references: vec![BlobReference {
-                contract_name: c2.clone(),
-                blob_tx_hash,
+                contract_name: c1.clone(),
+                blob_tx_hash: blob_tx_hash.clone(),
+
                 blob_index: BlobIndex(1),
             }],
             proof: ProofData::Bytes(vec![]),
-        }
-        .verify(&state)
-        .unwrap();
+        };
+
+        let verified_proof_c2 = VerifiedProofTransaction {
+            hyle_outputs: state.verify_proof(&proof_c2).unwrap(),
+            proof_transaction: proof_c2,
+        };
 
         state.handle_verified_proof_tx(&verified_proof_c1).unwrap();
         state.handle_verified_proof_tx(&verified_proof_c2).unwrap();
@@ -427,7 +434,7 @@ mod test {
         state.handle_blob_tx(&blob_tx_1).unwrap();
         state.handle_blob_tx(&blob_tx_2).unwrap();
 
-        let verified_proof_c1 = ProofTransaction {
+        let proof_c1 = ProofTransaction {
             blobs_references: vec![
                 BlobReference {
                     contract_name: c1.clone(),
@@ -451,9 +458,12 @@ mod test {
                 },
             ],
             proof: ProofData::Bytes(vec![]),
-        }
-        .verify(&state)
-        .unwrap();
+        };
+
+        let verified_proof_c1 = VerifiedProofTransaction {
+            hyle_outputs: state.verify_proof(&proof_c1).unwrap(),
+            proof_transaction: proof_c1,
+        };
 
         state.handle_verified_proof_tx(&verified_proof_c1).unwrap();
 
@@ -493,7 +503,7 @@ mod test {
         state.handle_blob_tx(&blob_tx_1).unwrap();
         state.handle_blob_tx(&blob_tx_2).unwrap();
 
-        let verified_proof_c1 = ProofTransaction {
+        let proof_c1 = ProofTransaction {
             blobs_references: vec![
                 BlobReference {
                     contract_name: c1.clone(),
@@ -517,9 +527,12 @@ mod test {
                 },
             ],
             proof: ProofData::Bytes(vec![]),
-        }
-        .verify(&state)
-        .unwrap();
+        };
+
+        let verified_proof_c1 = VerifiedProofTransaction {
+            hyle_outputs: state.verify_proof(&proof_c1).unwrap(),
+            proof_transaction: proof_c1,
+        };
 
         state.handle_verified_proof_tx(&verified_proof_c1).unwrap();
 
@@ -549,27 +562,33 @@ mod test {
         state.handle_register_contract_tx(&register_c2).unwrap();
         state.handle_blob_tx(&blob_tx).unwrap();
 
-        let verified_proof_c1 = ProofTransaction {
+        let proof_c1 = ProofTransaction {
             blobs_references: vec![BlobReference {
                 contract_name: c1.clone(),
                 blob_tx_hash: blob_tx_hash.clone(),
                 blob_index: BlobIndex(0),
             }],
             proof: ProofData::Bytes(vec![1]),
-        }
-        .verify(&state)
-        .unwrap();
+        };
 
-        let verified_proof_c1_bis = ProofTransaction {
+        let verified_proof_c1 = VerifiedProofTransaction {
+            hyle_outputs: state.verify_proof(&proof_c1).unwrap(),
+            proof_transaction: proof_c1,
+        };
+
+        let proof_c1_bis = ProofTransaction {
             blobs_references: vec![BlobReference {
                 contract_name: c1.clone(),
                 blob_tx_hash: blob_tx_hash.clone(),
                 blob_index: BlobIndex(0),
             }],
-            proof: ProofData::Bytes(vec![2]),
-        }
-        .verify(&state)
-        .unwrap();
+            proof: ProofData::Bytes(vec![1]),
+        };
+
+        let verified_proof_c1_bis = VerifiedProofTransaction {
+            hyle_outputs: state.verify_proof(&proof_c1_bis).unwrap(),
+            proof_transaction: proof_c1_bis.clone(),
+        };
 
         state.handle_verified_proof_tx(&verified_proof_c1).unwrap();
         state

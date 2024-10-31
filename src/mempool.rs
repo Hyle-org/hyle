@@ -5,7 +5,10 @@ use crate::{
     consensus::ConsensusEvent,
     handle_messages,
     mempool::storage::{Car, CarProposal, InMemoryStorage},
-    model::{Hashable, SharedRunContext, Transaction, TransactionData, ValidatorPublicKey},
+    model::{
+        Hashable, SharedRunContext, Transaction, TransactionData, ValidatorPublicKey,
+        VerifiedProofTransaction,
+    },
     node_state::NodeState,
     p2p::network::{OutboundMessage, SignedWithKey},
     rest::endpoints::RestApiMessage,
@@ -385,8 +388,11 @@ impl Mempool {
             TransactionData::Blob(ref _blob_transaction) => {}
             TransactionData::Proof(proof_transaction) => {
                 // Verify and extract proof
-                let verified_proof_tx = proof_transaction.verify(&self.node_state)?;
-                tx.transaction_data = TransactionData::VerifiedProof(verified_proof_tx);
+                let hyle_outputs = self.node_state.verify_proof(&proof_transaction)?;
+                tx.transaction_data = TransactionData::VerifiedProof(VerifiedProofTransaction {
+                    proof_transaction,
+                    hyle_outputs,
+                });
             }
             TransactionData::VerifiedProof(_) => {
                 bail!("Already verified ProofTransaction are not allowed to be received in the mempool");

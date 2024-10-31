@@ -1,6 +1,5 @@
 //! Various data structures
 
-use anyhow::Error;
 use axum::Router;
 use base64::prelude::*;
 use bincode::{Decode, Encode};
@@ -25,7 +24,6 @@ use tracing::debug;
 use crate::{
     bus::SharedMessageBus,
     consensus::{staking::Staker, utils::HASH_DISPLAY_SIZE},
-    node_state::NodeState,
     utils::{conf::SharedConf, crypto::SharedBlstCrypto},
 };
 
@@ -151,16 +149,6 @@ impl fmt::Debug for ProofTransaction {
                 &self.proof.to_bytes().unwrap_or_default().len(),
             )
             .finish()
-    }
-}
-
-impl ProofTransaction {
-    pub fn verify(self, node_state: &NodeState) -> Result<VerifiedProofTransaction, Error> {
-        let hyle_outputs = node_state.verify_proof(&self)?;
-        Ok(VerifiedProofTransaction {
-            proof_transaction: self,
-            hyle_outputs,
-        })
     }
 }
 
