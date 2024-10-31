@@ -172,9 +172,9 @@ impl InMemoryStorage {
                 }
                 TransactionData::VerifiedProof(proof_tx) => {
                     // Verifying the proof before voting
-                    match proof_tx.proof_transaction.clone().verify(node_state) {
-                        Ok(verified_proof_tx) => {
-                            if verified_proof_tx.hyle_outputs != proof_tx.hyle_outputs {
+                    match node_state.verify_proof(&proof_tx.proof_transaction) {
+                        Ok(hyle_outputs) => {
+                            if hyle_outputs != proof_tx.hyle_outputs {
                                 warn!("Refusing Car proposal: incorrect HyleOutput in proof transaction");
                                 return ProposalVerdict::Refuse;
                             }

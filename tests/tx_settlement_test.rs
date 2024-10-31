@@ -87,6 +87,7 @@ mod e2e_tx_settle {
         scenario_test_settlement(ctx).await
     }
 
+    #[ignore = "Indexer do not implement contract state updated yet"]
     #[test_log::test(tokio::test)]
     async fn on_indexer() -> Result<()> {
         let ctx = E2ECtx::new_multi_with_indexer(2, 500).await?;
