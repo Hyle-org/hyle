@@ -209,7 +209,8 @@ impl InMemoryStorage {
                     proof_tx.proof_transaction.proof = Default::default();
                 }
                 TransactionData::Proof(_) => {
-                    // This can never happen
+                    // This can never happen.
+                    // A car proposal that has been processed has turned all TransactionData::Proof into TransactionData::VerifiedProof
                     unreachable!();
                 }
                 TransactionData::Blob(_)

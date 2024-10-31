@@ -122,9 +122,8 @@ impl Mempool {
                 self.handle_net_message(cmd).await
             }
             listen<RestApiMessage> cmd => {
-                match self.handle_api_message(cmd).await {
-                    Ok(_) => (),
-                    Err(e) => warn!("Error while handling RestApi message: {:#}", e),
+                if let Err(e) = self.handle_api_message(cmd).await {
+                    warn!("Error while handling RestApi message: {:#}", e);
                 }
             }
             listen<ConsensusEvent> cmd => {
@@ -311,7 +310,9 @@ impl Mempool {
 
                 self.send_sync_request(validator, car_proposal, last_index)?;
             }
-            ProposalVerdict::Refuse => {}
+            ProposalVerdict::Refuse => {
+                debug!("Refuse vote for Car proposal");
+            }
         }
         Ok(())
     }
