@@ -402,11 +402,11 @@ impl DataAvailability {
         );
 
         // Process the block in node state
-        let new_stakers = self.node_state.handle_new_block(block.clone());
+        let handled_block_output = self.node_state.handle_new_block(block.clone());
 
         // FIXME: to remove when we have a real staking smart contract
         // Send message for each new staker.
-        for staker in new_stakers {
+        for staker in handled_block_output.stakers {
             if let Err(e) = self
                 .bus
                 .send(ConsensusCommand::NewStaker(staker))
