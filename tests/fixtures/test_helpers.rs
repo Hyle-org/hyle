@@ -85,7 +85,7 @@ impl TestProcess {
         let conf_file = tmpdir.path().join("config.ron");
         ron::ser::to_writer(std::fs::File::create(&conf_file).unwrap(), &conf).unwrap();
 
-        let console_port: u16 = conf.da_address.split(':').last().unwrap().parse().unwrap();
+        let console_port: u16 = conf.host.split(':').last().unwrap().parse().unwrap();
         cmd.env(
             "TOKIO_CONSOLE_BIND",
             format!("127.0.0.1:{}", console_port + 10000),

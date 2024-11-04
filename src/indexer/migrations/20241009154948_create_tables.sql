@@ -9,18 +9,16 @@ CREATE TABLE blocks (
     CHECK (height >= 0)             -- Ensure the height is positive
 );
 
-CREATE TYPE transaction_type AS ENUM ('blob_transaction', 'proof_transaction', 'register_contract_transaction');
-CREATE TYPE transaction_status AS ENUM ('success', 'failure', 'sequenced');
+CREATE TYPE transaction_type AS ENUM ('blob_transaction', 'proof_transaction', 'register_contract_transaction', 'stake');
+CREATE TYPE transaction_status AS ENUM ('success', 'failure', 'sequenced', 'timed_out');
 
 CREATE TABLE transactions (
     tx_hash TEXT PRIMARY KEY,
     block_hash TEXT NOT NULL REFERENCES blocks(hash) ON DELETE CASCADE,
-    tx_index INT NOT NULL,
     version INT NOT NULL,
     transaction_type transaction_type NOT NULL,      -- Field to identify the type of transaction (used for joins)
     transaction_status transaction_status NOT NULL   -- Field to identify the status of the transaction
-    CHECK (length(tx_hash) = 64),      -- Ensure the hash is exactly 64
-    CHECK (tx_index >= 0)              -- Ensure the index is positive
+    CHECK (length(tx_hash) = 64)                     -- Ensure the hash is exactly 64
 );
 
 CREATE TABLE blobs (
@@ -29,6 +27,7 @@ CREATE TABLE blobs (
     identity TEXT NOT NULL,            -- Identity field from the original BlobTransaction struct
     contract_name TEXT NOT NULL,       -- Contract name associated with the blob
     data BYTEA NOT NULL,               -- Actual blob data (stored as binary)
+    verified BOOLEAN NOT NULL,         -- Field to indicate if the blob is verified
     PRIMARY KEY (tx_hash, blob_index), -- Composite primary key (tx_hash + blob_index) to uniquely identify each blob
     CHECK (blob_index >= 0)            -- Ensure the index is positive
 );
@@ -42,6 +41,7 @@ CREATE TABLE blob_references (
     tx_hash TEXT NOT NULL REFERENCES proofs(tx_hash) ON DELETE CASCADE,   -- Foreign key linking to proof_transactions
     contract_name TEXT NOT NULL,                                 -- Contract name
     blob_tx_hash TEXT NOT NULL,                                  -- Blob transaction hash
+    hyle_output JSONB NOT NULL,                                  -- Additional metadata stored in JSONB format
     PRIMARY KEY (blob_index, tx_hash),                           -- Composite primary key (blob_index + tx_hash) to uniquely identify each blob reference
     CHECK (blob_index >= 0)                                      -- Ensure the index is positive
 );

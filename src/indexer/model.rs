@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::types::chrono::NaiveDateTime;
 use sqlx::{prelude::Type, Postgres};
 
-use crate::model::{Blob, BlockHash};
+use crate::model::{Blob, BlockHash, Transaction, TransactionData};
 use hyle_contract_sdk::TxHash;
 
 #[derive(Debug, sqlx::FromRow, Serialize, Deserialize)]
@@ -21,6 +21,19 @@ pub enum TransactionType {
     BlobTransaction,
     ProofTransaction,
     RegisterContractTransaction,
+    Stake,
+}
+
+impl TransactionType {
+    pub fn get_type_from_transaction(transaction: &Transaction) -> Self {
+        match transaction.transaction_data {
+            TransactionData::Blob(_) => TransactionType::BlobTransaction,
+            TransactionData::Proof(_) => TransactionType::ProofTransaction,
+            TransactionData::VerifiedProof(_) => TransactionType::ProofTransaction,
+            TransactionData::RegisterContract(_) => TransactionType::RegisterContractTransaction,
+            TransactionData::Stake(_) => TransactionType::Stake,
+        }
+    }
 }
 
 #[derive(Debug, sqlx::Type, Serialize, Deserialize, Clone, PartialEq)]
@@ -29,13 +42,13 @@ pub enum TransactionStatus {
     Success,
     Failure,
     Sequenced,
+    TimedOut,
 }
 #[derive(Debug, sqlx::FromRow, Serialize, Deserialize)]
 pub struct TransactionDb {
     // Struct for the transactions table
     pub tx_hash: TxHashDb,     // Transaction hash
     pub block_hash: BlockHash, // Corresponds to the block hash
-    pub tx_index: i32,         // Index of the transaction in the block
     #[sqlx(try_from = "i32")]
     pub version: u32, // Transaction version
     pub transaction_type: TransactionType, // Type of transaction
@@ -46,7 +59,6 @@ pub struct TransactionDb {
 pub struct TransactionWithBlobs {
     pub tx_hash: TxHashDb,
     pub block_hash: BlockHash,
-    pub tx_index: i32,
     pub version: i32,
     pub transaction_type: TransactionType,
     pub transaction_status: TransactionStatus,

@@ -5,7 +5,10 @@ use crate::{
     consensus::ConsensusEvent,
     handle_messages,
     mempool::storage::{Car, CarProposal, InMemoryStorage},
-    model::{Hashable, SharedRunContext, Transaction, TransactionData, ValidatorPublicKey},
+    model::{
+        Hashable, SharedRunContext, Transaction, TransactionData, ValidatorPublicKey,
+        VerifiedProofTransaction,
+    },
     node_state::NodeState,
     p2p::network::{OutboundMessage, SignedByValidator},
     rest::endpoints::RestApiMessage,
@@ -15,7 +18,7 @@ use crate::{
         modules::Module,
     },
 };
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Error, Result};
 use bincode::{Decode, Encode};
 use metrics::MempoolMetrics;
 use serde::{Deserialize, Serialize};
@@ -119,7 +122,9 @@ impl Mempool {
                 self.handle_net_message(cmd).await
             }
             listen<RestApiMessage> cmd => {
-                self.handle_api_message(cmd).await
+                if let Err(e) = self.handle_api_message(cmd).await {
+                    warn!("Error while handling RestApi message: {:#}", e);
+                }
             }
             listen<ConsensusEvent> cmd => {
                 self.handle_consensus_event(cmd).await
@@ -195,12 +200,15 @@ impl Mempool {
         }
     }
 
-    async fn handle_api_message(&mut self, command: RestApiMessage) {
+    async fn handle_api_message(&mut self, command: RestApiMessage) -> Result<(), Error> {
         match command {
             RestApiMessage::NewTx(tx) => {
-                self.on_new_tx(tx);
+                if let Err(e) = self.on_new_tx(tx) {
+                    bail!("Received invalid transaction: {:?}. Won't process it.", e);
+                }
             }
-        }
+        };
+        Ok(())
     }
 
     async fn on_sync_reply(
@@ -275,7 +283,10 @@ impl Mempool {
         validator: &ValidatorPublicKey,
         car_proposal: CarProposal,
     ) -> Result<()> {
-        match self.storage.new_car_proposal(validator, &car_proposal) {
+        match self
+            .storage
+            .new_car_proposal(validator, &car_proposal, &self.node_state)
+        {
             ProposalVerdict::Empty => {
                 warn!(
                     "received empty Car proposal from {}, ignoring...",
@@ -298,6 +309,9 @@ impl Mempool {
                 );
 
                 self.send_sync_request(validator, car_proposal, last_car_id)?;
+            }
+            ProposalVerdict::Refuse => {
+                debug!("Refuse vote for Car proposal");
             }
         }
         Ok(())
@@ -361,24 +375,28 @@ impl Mempool {
         }
     }
 
-    fn on_new_tx(&mut self, tx: Transaction) {
+    fn on_new_tx(&mut self, mut tx: Transaction) -> Result<(), Error> {
         debug!("Got new tx {}", tx.hash());
         // TODO: Verify fees ?
         // TODO: Verify identity ?
 
-        match &tx.transaction_data {
-            TransactionData::RegisterContract(register_contract_transaction) => {
-                if let Err(e) = self
-                    .node_state
-                    .handle_register_contract(register_contract_transaction)
-                {
-                    error!("Failed to handle register contract transaction: {:?}", e);
-                }
+        match tx.transaction_data {
+            TransactionData::RegisterContract(ref register_contract_transaction) => {
+                self.node_state
+                    .handle_register_contract_tx(register_contract_transaction)?;
             }
-            TransactionData::Stake(_staker) => {}
-            TransactionData::Blob(_blob_transaction) => {}
-            TransactionData::Proof(_proof_transaction) => {
-                // TODO: Verify and extract proof
+            TransactionData::Stake(ref _staker) => {}
+            TransactionData::Blob(ref _blob_transaction) => {}
+            TransactionData::Proof(proof_transaction) => {
+                // Verify and extract proof
+                let hyle_outputs = self.node_state.verify_proof(&proof_transaction)?;
+                tx.transaction_data = TransactionData::VerifiedProof(VerifiedProofTransaction {
+                    proof_transaction,
+                    hyle_outputs,
+                });
+            }
+            TransactionData::VerifiedProof(_) => {
+                bail!("Already verified ProofTransaction are not allowed to be received in the mempool");
             }
         }
 
@@ -390,6 +408,8 @@ impl Mempool {
         }
         self.metrics
             .snapshot_pending_tx(self.storage.pending_txs.len());
+
+        Ok(())
     }
 
     fn broadcast_car_proposal(&mut self, car_proposal: CarProposal) -> Result<()> {
