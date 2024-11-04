@@ -49,7 +49,12 @@ pub enum ConsensusCommand {
     NewStaker(Staker),
     NewBonded(ValidatorPublicKey),
     ProcessedBlock(BlockHeight),
+<<<<<<< HEAD
     // NOTE(AlexB): somehow I would expect this Command to be in sync with the NewCut event from mempool.
+||||||| parent of 5d06d8b (Lancelot)
+=======
+    // Devrait être un message interne?
+>>>>>>> 5d06d8b (Lancelot)
     StartNewSlot,
 }
 
@@ -157,7 +162,6 @@ pub struct ConsensusProposal {
 pub enum ConsensusNetMessage {
     Prepare(ConsensusProposal, Ticket),
     PrepareVote(ConsensusProposalHash),
-    // TODO: these should probably just be "SignedWithQuorumCertificate" to be consistent
     Confirm(QuorumCertificate),
     ConfirmAck(ConsensusProposalHash),
     Commit(QuorumCertificate, ConsensusProposalHash),
@@ -205,9 +209,14 @@ enum Step {
 #[derive(Encode, Decode, Default)]
 pub struct LeaderState {
     step: Step,
+<<<<<<< HEAD
     // Perf issue:
     // these hash sets are only growing, we never remove elements from them
     // the consensusStore object is then bigger and bigger
+||||||| parent of 5d06d8b (Lancelot)
+=======
+    // Techniquement pas besoin des deux
+>>>>>>> 5d06d8b (Lancelot)
     prepare_votes: HashSet<SignedByValidator<ConsensusNetMessage>>,
     confirm_ack: HashSet<SignedByValidator<ConsensusNetMessage>>,
     pending_ticket: Option<Ticket>,
@@ -215,6 +224,7 @@ pub struct LeaderState {
 
 #[derive(Encode, Decode, Default)]
 pub struct FollowerState {
+    // ajouter step?
     buffered_quorum_certificate: Option<QuorumCertificate>, // if we receive a commit before the next prepare
 }
 
@@ -235,7 +245,7 @@ pub struct ConsensusStore {
     /// Validators that asked to be part of consensus
     validator_candidates: Vec<NewValidatorCandidate>,
     pending_cut: Option<Cut>,
-    last_cut: Option<Cut>,
+    last_cut: Option<Cut>, // Last committed cut ?
 }
 
 pub struct Consensus {
@@ -253,6 +263,7 @@ impl Consensus {
     /// Add a validator with the default stake to our consensus.
     /// This is trusted because it's out of the usual consensus process,
     /// either at genesis or when fast-forwarding.
+    /// // Utilisé uniquement par les tests
     pub fn add_trusted_validator(
         &mut self,
         pubkey: &ValidatorPublicKey,
@@ -358,6 +369,7 @@ impl Consensus {
     }
 
     /// Verify that quorum certificate includes only validators that are part of the consensus
+    /// // A deplacer vers unique user
     fn verify_quorum_signers_part_of_consensus(
         &self,
         quorum_certificate: &QuorumCertificate,
@@ -373,6 +385,7 @@ impl Consensus {
 
     /// Verify that new validators have enough stake
     /// and have a valid signature so can be bonded.
+    /// A deplacer vers user ?
     fn verify_new_validators_to_bond(&mut self, proposal: &ConsensusProposal) -> Result<()> {
         for new_validator in &proposal.new_validators_to_bond {
             // Verify that the new validator has enough stake
@@ -532,6 +545,8 @@ impl Consensus {
         self.bft_round_state.staking.total_bond().div_ceil(3)
     }
 
+    // Méthode sur staking imo?
+    // Même redondant avec en dessous
     fn get_own_voting_power(&self) -> u64 {
         if self.is_part_of_consensus(self.crypto.validator_pubkey()) {
             if let Some(my_sake) = self
@@ -615,6 +630,7 @@ impl Consensus {
     }
 
     /// Connect to all validators & ask to be part of consensus
+    /// On essaie pas de se connecter j'ai l'impression
     fn send_candidacy(&mut self) -> Result<()> {
         let candidacy = ValidatorCandidacy {
             pubkey: self.crypto.validator_pubkey().clone(),
@@ -635,6 +651,7 @@ impl Consensus {
         &mut self,
         msg: SignedByValidator<ConsensusNetMessage>,
     ) -> Result<(), Error> {
+        // Maybe redondant avec d'autres checks inline ?
         if !BlstCrypto::verify(&msg)? {
             self.metrics.signature_error("prepare");
             bail!("Invalid signature for message {:?}", &msg);
@@ -649,6 +666,7 @@ impl Consensus {
             ..
         } = msg.clone();
 
+        // Probablement plus pertinent de passer toujours signature et message?
         match net_message {
             ConsensusNetMessage::Prepare(consensus_proposal, ticket) => {
                 self.on_prepare(sender, consensus_proposal, ticket)
@@ -723,8 +741,11 @@ impl Consensus {
             }
         }
 
+        // On vérifie pas qu'on a pas déjà voté tiens
+
         // Process the ticket
         match ticket {
+            // Can this be removed now
             Ticket::Genesis => {
                 if self.bft_round_state.consensus_proposal.slot != 1 {
                     bail!("Genesis ticket is only valid for the first slot.");
@@ -1003,6 +1024,7 @@ impl Consensus {
         commit_quorum_certificate: QuorumCertificate,
         proposal_hash_hint: ConsensusProposalHash,
     ) -> Result<()> {
+        // Pas assez obvious
         match self.bft_round_state.state_tag {
             StateTag::Follower => {
                 return self.try_commit_current_proposal(commit_quorum_certificate)
@@ -1074,6 +1096,7 @@ impl Consensus {
 
         self.metrics.commit();
 
+        // Probablement une bonne idée de balancer les side-effects à la fin plutôt.
         _ = self
             .bus
             .send(ConsensusEvent::CommitCut {
@@ -1173,7 +1196,12 @@ impl Consensus {
 
     fn handle_command(&mut self, msg: ConsensusCommand) -> Result<()> {
         match msg {
+<<<<<<< HEAD
             // NOTE(AlexB): this mode is for tests only. maybe we could revisit this mode.
+||||||| parent of 5d06d8b (Lancelot)
+=======
+            // Créer un module à part
+>>>>>>> 5d06d8b (Lancelot)
             ConsensusCommand::SingleNodeBlockGeneration => {
                 if let Some(cut) = self.pending_cut.take() {
                     self.bus
@@ -1204,7 +1232,12 @@ impl Consensus {
             ConsensusCommand::ProcessedBlock(block_height) => {
                 // this section is not covered by any unit test
                 match self.bft_round_state.state_tag {
+<<<<<<< HEAD
                     // NOTE(AlexB): can this happen after start_genesis is executed ?
+||||||| parent of 5d06d8b (Lancelot)
+=======
+                    // A retirer
+>>>>>>> 5d06d8b (Lancelot)
                     StateTag::Genesis => {
                         // ACHTUNG: this only works because Staking, Bonding and Processed messages
                         // are part of the same channel and so will be processed in order.
