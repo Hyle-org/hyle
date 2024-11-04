@@ -20,7 +20,7 @@ use bincode::{Decode, Encode};
 use metrics::MempoolMetrics;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashSet, fmt::Display, sync::Arc};
-use storage::ProposalVerdict;
+use storage::{CarId, ProposalVerdict};
 use strum_macros::IntoStaticStr;
 use tracing::{debug, error, info, warn};
 
@@ -52,7 +52,7 @@ pub enum MempoolNetMessage {
     NewCut(Cut),
     CarProposal(CarProposal),
     CarProposalVote(CarProposal),
-    SyncRequest(CarProposal, Option<usize>),
+    SyncRequest(CarProposal, Option<CarId>),
     SyncReply(Vec<Car>),
 }
 
@@ -172,8 +172,8 @@ impl Mempool {
                     MempoolNetMessage::CarProposalVote(car_proposal) => {
                         self.on_proposal_vote(validator, car_proposal).await;
                     }
-                    MempoolNetMessage::SyncRequest(car_proposal, last_index) => {
-                        self.on_sync_request(validator, car_proposal, last_index)
+                    MempoolNetMessage::SyncRequest(car_proposal, last_car_id) => {
+                        self.on_sync_request(validator, car_proposal, last_car_id)
                             .await;
                     }
                     MempoolNetMessage::SyncReply(cars) => {
@@ -232,14 +232,14 @@ impl Mempool {
         &mut self,
         validator: &ValidatorPublicKey,
         car_proposal: CarProposal,
-        last_index: Option<usize>,
+        last_car_id: Option<CarId>,
     ) {
         info!(
-            "{} SyncRequest received from validator {validator} for last_index {:?}",
-            self.storage.id, last_index
+            "{} SyncRequest received from validator {validator} for last_car_id {:?}",
+            self.storage.id, last_car_id
         );
 
-        let missing_cars = self.storage.get_missing_cars(last_index, &car_proposal);
+        let missing_cars = self.storage.get_missing_cars(last_car_id, &car_proposal);
 
         match missing_cars {
             None => info!("{} no missing cars", self.storage.id),
@@ -290,14 +290,14 @@ impl Mempool {
             ProposalVerdict::DidVote => {
                 error!("we already have voted for {}'s Car proposal", validator);
             }
-            ProposalVerdict::Wait(last_index) => {
+            ProposalVerdict::Wait(last_car_id) => {
                 //We dont have the parent, so we craft a sync demand
                 debug!(
                     "Emitting sync request with local state {} last_available_index {:?}",
-                    self.storage, last_index
+                    self.storage, last_car_id
                 );
 
-                self.send_sync_request(validator, car_proposal, last_index)?;
+                self.send_sync_request(validator, car_proposal, last_car_id)?;
             }
         }
         Ok(())
@@ -436,12 +436,12 @@ impl Mempool {
         &mut self,
         validator: &ValidatorPublicKey,
         car_proposal: CarProposal,
-        last_index: Option<usize>,
+        last_car_id: Option<CarId>,
     ) -> Result<()> {
         self.metrics.add_sent_sync_request("blob".to_string());
         self.send_net_message(
             validator.clone(),
-            MempoolNetMessage::SyncRequest(car_proposal, last_index),
+            MempoolNetMessage::SyncRequest(car_proposal, last_car_id),
         )?;
         Ok(())
     }
