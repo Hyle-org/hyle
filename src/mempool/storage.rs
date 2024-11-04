@@ -531,8 +531,8 @@ impl Display for Car {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "[{:?}/{:?}/{}v]",
-            self.id,
+            "[{}/{:?}/{}v]",
+            self.id.0,
             self.txs.first(),
             self.poa.len(),
         )
