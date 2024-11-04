@@ -1,5 +1,6 @@
 //! Various data structures
 
+use anyhow::{bail, Error};
 use axum::Router;
 use base64::prelude::*;
 use bincode::{Decode, Encode};
@@ -13,6 +14,7 @@ use sha3::{Digest, Sha3_256};
 use sqlx::{prelude::Type, Postgres};
 use std::{
     cmp::Ordering,
+    collections::HashMap,
     fmt,
     io::Write,
     ops::Add,
@@ -106,13 +108,36 @@ pub enum TransactionData {
     RegisterContract(RegisterContractTransaction),
 }
 
+impl TransactionData {
+    pub fn blob(&self) -> Result<BlobTransaction, Error> {
+        match self {
+            TransactionData::Blob(blob_tx) => Ok(blob_tx.clone()),
+            _ => bail!("Called blob() on non-Blob transaction data"),
+        }
+    }
+    pub fn verified_proof(&self) -> Result<VerifiedProofTransaction, Error> {
+        match self {
+            TransactionData::VerifiedProof(verified_proof_tx) => Ok(verified_proof_tx.clone()),
+            _ => bail!("Called blob() on non-VerifiedProof transaction data"),
+        }
+    }
+    pub fn register_contract(&self) -> Result<RegisterContractTransaction, Error> {
+        match self {
+            TransactionData::RegisterContract(register_contract_tx) => {
+                Ok(register_contract_tx.clone())
+            }
+            _ => bail!("Called blob() on non-RegisterContract transaction data"),
+        }
+    }
+}
+
 impl Default for TransactionData {
     fn default() -> Self {
         TransactionData::Blob(BlobTransaction::default())
     }
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Eq, Clone, Encode, Decode, Hash)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone, Encode, Decode, Hash)]
 #[serde(untagged)]
 pub enum ProofData {
     Base64(String),
@@ -194,6 +219,24 @@ impl Transaction {
             transaction_data: data,
         }
     }
+}
+
+#[derive(Debug)]
+pub struct HandledBlockOutput {
+    pub new_contract_txs: Vec<Transaction>,
+    pub new_blob_txs: Vec<Transaction>,
+    pub new_verified_proof_txs: Vec<Transaction>,
+    pub verified_blobs: Vec<(TxHash, BlobIndex)>,
+    pub failed_txs: Vec<Transaction>,
+    pub stakers: Vec<Staker>,
+    pub timed_out_tx_hashes: Vec<TxHash>,
+    pub settled_blob_tx_hashes: Vec<TxHash>,
+    pub updated_states: HashMap<ContractName, StateDigest>,
+}
+
+pub struct HandledProofTxOutput {
+    pub settled_blob_tx_hashes: Vec<TxHash>,
+    pub updated_states: HashMap<ContractName, StateDigest>,
 }
 
 #[derive(
