@@ -96,6 +96,9 @@ struct ConsensusBusClient {
 }
 }
 
+// I would like to move the model definitions in an other file, to reduce file size to be easier to
+// find what we are looking for.
+
 // -----------------------------
 // --- Consensus data model ----
 // -----------------------------
@@ -166,6 +169,14 @@ pub struct BFTRoundState {
     consensus_proposal: ConsensusProposal,
     staking: Staking,
 
+    // isn't it possible to have an enum ?
+    // enum State {
+    //    Leader(LeaderState),
+    //    Follower(FollowerState),
+    //    Joining(JoiningState),
+    //    Genesis(GenesisState),
+    // }
+    // this duplications with StateTag looks :weird:
     leader: LeaderState,
     follower: FollowerState,
     joining: JoiningState,
@@ -193,6 +204,9 @@ enum Step {
 #[derive(Encode, Decode, Default)]
 pub struct LeaderState {
     step: Step,
+    // Perf issue:
+    // these hash sets are only growing, we never remove elements from them
+    // the consensusStore object is then bigger and bigger
     prepare_votes: HashSet<SignedByValidator<ConsensusNetMessage>>,
     confirm_ack: HashSet<SignedByValidator<ConsensusNetMessage>>,
     pending_ticket: Option<Ticket>,
@@ -234,6 +248,7 @@ pub struct Consensus {
 }
 
 impl Consensus {
+    // Only used in tests, we should move it out of consensus impl IMHO
     /// Add a validator with the default stake to our consensus.
     /// This is trusted because it's out of the usual consensus process,
     /// either at genesis or when fast-forwarding.
@@ -605,6 +620,9 @@ impl Consensus {
             "📝 Sending candidacy message to be part of consensus.  {}",
             candidacy
         );
+        // We can do better there & send to next x leaders instead of broadcasting to everyone
+        // If at this stage we are connected to only 1 node, our candidacy will take a long time to
+        // be accepted, we need to wait that node to be leader
         self.broadcast_net_message(ConsensusNetMessage::ValidatorCandidacy(candidacy))?;
         Ok(())
     }
@@ -1095,7 +1113,9 @@ impl Consensus {
             .unwrap_or(0)
             > MIN_STAKE
         {
-            self.send_candidacy()
+            self.send_candidacy() // I made candidacy automatic for testing purposes, but maybe
+                                  // we want to move it to the API to be trigerred by the node
+                                  // maintainer when they want to
         } else {
             info!(
                 "😥 No stake on pubkey '{}'. Not sending candidacy.",
@@ -1177,6 +1197,7 @@ impl Consensus {
                 Ok(())
             }
             ConsensusCommand::ProcessedBlock(block_height) => {
+                // this section is not covered by any unit test
                 match self.bft_round_state.state_tag {
                     // NOTE(AlexB): can this happen after start_genesis is executed ?
                     StateTag::Genesis => {
@@ -1276,6 +1297,7 @@ impl Consensus {
         }
     }
 
+    // not covered by anu unit test
     /// Setup the state of the node at startup.
     fn setup_initial_state(&mut self) -> Result<()> {
         if self
@@ -1313,6 +1335,9 @@ impl Consensus {
 
         // hack to avoid another bus for a specific wip case
         let command_sender = Pick::<broadcast::Sender<ConsensusCommand>>::get(&self.bus).clone();
+
+        // The single node block generation could be in a separated module, there is no need to
+        // have it in consensus
         if config.id == "single-node" {
             info!(
                 "No peers configured, starting as master generating cuts every {} milliseconds",
@@ -1426,7 +1451,9 @@ impl Consensus {
     async fn start(&mut self) -> Result<()> {
         self.setup_initial_state()?;
         if matches!(self.bft_round_state.state_tag, StateTag::Genesis) {
-            self.start_genesis().await?;
+            self.start_genesis().await?; // Genesis could go in a separated module, that starts at
+                                         // the beginning of the node & start the consensus only when everything is ready
+                                         // keeping in consensus, only the autobah stuff
         }
 
         handle_messages! {
