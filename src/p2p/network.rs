@@ -2,6 +2,7 @@ use crate::bus::BusMessage;
 use crate::consensus::utils::HASH_DISPLAY_SIZE;
 use crate::data_availability::DataNetMessage;
 use crate::model::ValidatorPublicKey;
+use crate::utils::crypto::ValidatorSignature;
 use crate::{consensus::ConsensusNetMessage, mempool::MempoolNetMessage};
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
@@ -55,8 +56,7 @@ pub enum PeerEvent {
 impl BusMessage for PeerEvent {}
 impl BusMessage for OutboundMessage {}
 
-#[derive(Serialize, Deserialize, Clone, Encode, Decode, Default, PartialEq, Eq, Hash)]
-pub struct Signature(pub Vec<u8>);
+pub use crate::utils::crypto::Signature;
 
 impl std::fmt::Debug for Signature {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -86,46 +86,42 @@ impl Display for NetMessage {
             NetMessage::DataMessage(_) => {
                 write!(f, "{}", enum_variant)
             }
-            NetMessage::MempoolMessage(signed_msg) => {
+            NetMessage::MempoolMessage(msg) => {
                 _ = write!(f, "NetMessage::{} ", enum_variant);
-                write!(f, "{}", signed_msg)
+                write!(f, "{}", msg)
             }
-            NetMessage::ConsensusMessage(signed_msg) => {
+            NetMessage::ConsensusMessage(msg) => {
                 _ = write!(f, "NetMessage::{} ", enum_variant);
-                write!(f, "{}", signed_msg)
+                write!(f, "{}", msg)
             }
         }
     }
 }
 
-impl<T: Display + bincode::Encode> Display for Signed<T, ValidatorPublicKey> {
+impl<T: Display + bincode::Encode> Display for SignedByValidator<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         _ = write!(f, "{}", self.msg);
-        _ = write!(f, "\nSigned with {} and validators ", self.signature);
-        for v in self.validators.iter() {
-            _ = write!(f, "{},", v);
-        }
+        _ = write!(
+            f,
+            "\nSigned with {} and validator {}",
+            self.signature.signature, self.signature.validator
+        );
         write!(f, "")
     }
 }
 
-impl<T> BusMessage for SignedWithKey<T> where T: Encode + BusMessage {}
+impl<T> BusMessage for SignedByValidator<T> where T: Encode + BusMessage {}
 
-pub type SignedWithKey<T> = Signed<T, ValidatorPublicKey>;
+pub type SignedByValidator<T> = Signed<T, ValidatorSignature>;
 
-#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, PartialEq, Eq, Hash)]
-pub struct Signed<T: Encode, V> {
-    pub msg: T,
-    pub signature: Signature,
-    pub validators: Vec<V>,
-}
+pub use crate::utils::crypto::Signed;
 
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, Eq, PartialEq, IntoStaticStr)]
 pub enum NetMessage {
     HandshakeMessage(HandshakeNetMessage),
     DataMessage(DataNetMessage),
-    MempoolMessage(SignedWithKey<MempoolNetMessage>),
-    ConsensusMessage(SignedWithKey<ConsensusNetMessage>),
+    MempoolMessage(SignedByValidator<MempoolNetMessage>),
+    ConsensusMessage(SignedByValidator<ConsensusNetMessage>),
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, Eq, PartialEq)]
@@ -142,14 +138,14 @@ impl From<HandshakeNetMessage> for NetMessage {
     }
 }
 
-impl From<SignedWithKey<MempoolNetMessage>> for NetMessage {
-    fn from(msg: SignedWithKey<MempoolNetMessage>) -> Self {
+impl From<SignedByValidator<MempoolNetMessage>> for NetMessage {
+    fn from(msg: SignedByValidator<MempoolNetMessage>) -> Self {
         NetMessage::MempoolMessage(msg)
     }
 }
 
-impl From<SignedWithKey<ConsensusNetMessage>> for NetMessage {
-    fn from(msg: SignedWithKey<ConsensusNetMessage>) -> Self {
+impl From<SignedByValidator<ConsensusNetMessage>> for NetMessage {
+    fn from(msg: SignedByValidator<ConsensusNetMessage>) -> Self {
         NetMessage::ConsensusMessage(msg)
     }
 }

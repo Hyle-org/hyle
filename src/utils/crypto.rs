@@ -4,13 +4,15 @@ use std::sync::Arc;
 
 use anyhow::{anyhow, Error, Result};
 use blst::min_pk::{
-    AggregatePublicKey, AggregateSignature, PublicKey, SecretKey, Signature as BlstSignature,
+    AggregatePublicKey, AggregateSignature as BlstAggregateSignature, PublicKey, SecretKey,
+    Signature as BlstSignature,
 };
 use rand::Rng;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     model::ValidatorPublicKey,
-    p2p::network::{self, Signed, SignedWithKey},
+    p2p::network::{self, SignedByValidator},
 };
 
 #[derive(Clone)]
@@ -29,6 +31,35 @@ struct Aggregates {
 
 const DST: &[u8] = b"BLS_SIG_BLS12381G2_XMD:SHA-256_SSWU_RO_NUL_";
 pub const SIG_SIZE: usize = 48;
+
+#[derive(
+    Debug, Serialize, Deserialize, Clone, bincode::Encode, bincode::Decode, PartialEq, Eq, Hash,
+)]
+pub struct Signed<T: bincode::Encode, V: bincode::Encode> {
+    pub msg: T,
+    pub signature: V,
+}
+
+#[derive(
+    Serialize, Deserialize, Clone, bincode::Encode, bincode::Decode, Default, PartialEq, Eq, Hash,
+)]
+pub struct Signature(pub Vec<u8>);
+
+#[derive(
+    Debug, Serialize, Deserialize, Clone, bincode::Encode, bincode::Decode, PartialEq, Eq, Hash,
+)]
+pub struct ValidatorSignature {
+    pub signature: Signature,
+    pub validator: ValidatorPublicKey,
+}
+
+#[derive(
+    Debug, Serialize, Deserialize, Clone, bincode::Encode, bincode::Decode, PartialEq, Eq, Hash,
+)]
+pub struct AggregateSignature {
+    pub signature: Signature,
+    pub validators: Vec<ValidatorPublicKey>,
+}
 
 impl BlstCrypto {
     pub fn new(validator_name: String) -> Self {
@@ -60,24 +91,38 @@ impl BlstCrypto {
         &self.validator_pubkey
     }
 
-    pub fn sign<T>(&self, msg: T) -> Result<SignedWithKey<T>, Error>
+    pub fn sign<T>(&self, msg: T) -> Result<Signed<T, ValidatorSignature>, Error>
     where
         T: bincode::Encode,
     {
         let signature = self.sign_msg(&msg)?.into();
         Ok(Signed {
             msg,
-            signature,
-            validators: vec![self.validator_pubkey.clone()],
+            signature: ValidatorSignature {
+                signature,
+                validator: self.validator_pubkey.clone(),
+            },
         })
     }
 
-    pub fn verify<T>(msg: &SignedWithKey<T>) -> Result<bool, Error>
+    pub fn verify<T>(msg: &SignedByValidator<T>) -> Result<bool, Error>
     where
         T: bincode::Encode,
     {
-        let pk = Self::aggregate_validators_pk(&msg.validators)?;
-        let sig = BlstSignature::uncompress(&msg.signature.0)
+        let pk = PublicKey::uncompress(&msg.signature.validator.0)
+            .map_err(|e| anyhow!("Could not parse PublicKey: {:?}", e))?;
+        let sig = BlstSignature::uncompress(&msg.signature.signature.0)
+            .map_err(|e| anyhow!("Could not parse Signature: {:?}", e))?;
+        let encoded = bincode::encode_to_vec(&msg.msg, bincode::config::standard())?;
+        Ok(BlstCrypto::verify_bytes(encoded.as_slice(), &sig, &pk))
+    }
+
+    pub fn verify_aggregate<T>(msg: &Signed<T, AggregateSignature>) -> Result<bool, Error>
+    where
+        T: bincode::Encode,
+    {
+        let pk = Self::aggregate_validators_pk(&msg.signature.validators)?;
+        let sig = BlstSignature::uncompress(&msg.signature.signature.0)
             .map_err(|e| anyhow!("Could not parse Signature: {:?}", e))?;
         let encoded = bincode::encode_to_vec(&msg.msg, bincode::config::standard())?;
         Ok(BlstCrypto::verify_bytes(encoded.as_slice(), &sig, &pk))
@@ -86,8 +131,8 @@ impl BlstCrypto {
     pub fn sign_aggregate<T>(
         &self,
         msg: T,
-        aggregates: &[&SignedWithKey<T>],
-    ) -> Result<SignedWithKey<T>, Error>
+        aggregates: &[&SignedByValidator<T>],
+    ) -> Result<Signed<T, AggregateSignature>, Error>
     where
         T: bincode::Encode + Clone,
     {
@@ -106,13 +151,15 @@ impl BlstCrypto {
         let pk = AggregatePublicKey::aggregate(&pks_refs, true)
             .map_err(|e| anyhow!("could not aggregate public keys: {:?}", e))?;
 
-        let sig = AggregateSignature::aggregate(&sigs_refs, true)
+        let sig = BlstAggregateSignature::aggregate(&sigs_refs, true)
             .map_err(|e| anyhow!("could not aggregate signatures: {:?}", e))?;
 
-        let valid = Self::verify(&SignedWithKey {
+        let valid = Self::verify_aggregate(&Signed {
             msg: msg.clone(),
-            signature: sig.to_signature().into(),
-            validators: vec![pk.to_public_key().into()],
+            signature: AggregateSignature {
+                signature: sig.to_signature().into(),
+                validators: vec![pk.to_public_key().into()],
+            },
         })
         .map_err(|e| anyhow!("Failed for verify new aggregated signature! Reason: {e}"))?;
 
@@ -124,8 +171,10 @@ impl BlstCrypto {
 
         Ok(Signed {
             msg,
-            signature: sig.to_signature().into(),
-            validators: val,
+            signature: AggregateSignature {
+                signature: sig.to_signature().into(),
+                validators: val,
+            },
         })
     }
 
@@ -149,21 +198,22 @@ impl BlstCrypto {
 
     /// Given a list of signed messages, returns lists of signatures, public keys and
     /// validators.
-    fn extract_aggregates<T>(aggregates: &[&SignedWithKey<T>]) -> Result<Aggregates>
+    fn extract_aggregates<T>(aggregates: &[&SignedByValidator<T>]) -> Result<Aggregates>
     where
         T: bincode::Encode + Clone,
     {
         let mut accu = Aggregates::default();
 
         for s in aggregates {
-            let sig = BlstSignature::uncompress(&s.signature.0)
+            let sig = BlstSignature::uncompress(&s.signature.signature.0)
                 .map_err(|_| anyhow!("Could not parse Signature"))?;
-            let pk = Self::aggregate_validators_pk(&s.validators)?;
-            let mut val = s.validators.clone();
+            let pk = PublicKey::uncompress(&s.signature.validator.0)
+                .map_err(|_| anyhow!("Could not parse Public Key"))?;
+            let val = s.signature.validator.clone();
 
             accu.sigs.push(sig);
             accu.pks.push(pk);
-            accu.val.append(&mut val);
+            accu.val.push(val);
         }
 
         Ok(accu)
@@ -224,7 +274,9 @@ mod tests {
         assert!(valid);
     }
 
-    fn new_signed<T: bincode::Encode + Clone>(msg: T) -> (SignedWithKey<T>, ValidatorPublicKey) {
+    fn new_signed<T: bincode::Encode + Clone>(
+        msg: T,
+    ) -> (SignedByValidator<T>, ValidatorPublicKey) {
         let crypto = BlstCrypto::new_random();
         let pub_key = ValidatorPublicKey(crypto.sk.sk_to_pk().to_bytes().as_slice().to_vec());
         (crypto.sign(msg).unwrap(), crypto.validator_pubkey.clone())
@@ -244,7 +296,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(
-            signed.validators,
+            signed.signature.validators,
             vec![
                 pk1.clone(),
                 pk2.clone(),
@@ -252,35 +304,35 @@ mod tests {
                 crypto.validator_pubkey.clone(),
             ]
         );
-        assert!(BlstCrypto::verify(&signed).unwrap());
+        assert!(BlstCrypto::verify_aggregate(&signed).unwrap());
 
         // ordering should not matter
-        signed.validators = vec![
+        signed.signature.validators = vec![
             pk2.clone(),
             pk1.clone(),
             pk3.clone(),
             crypto.validator_pubkey.clone(),
         ];
-        assert!(BlstCrypto::verify(&signed).unwrap());
+        assert!(BlstCrypto::verify_aggregate(&signed).unwrap());
 
         // Wrong validators
-        signed.validators = vec![
+        signed.signature.validators = vec![
             pk1.clone(),
             pk2.clone(),
             pk4.clone(),
             crypto.validator_pubkey.clone(),
         ];
-        assert!(!BlstCrypto::verify(&signed).unwrap());
+        assert!(!BlstCrypto::verify_aggregate(&signed).unwrap());
 
         // Wrong duplicated validators
-        signed.validators = vec![
+        signed.signature.validators = vec![
             pk1.clone(),
             pk1.clone(),
             pk2.clone(),
             pk4.clone(),
             crypto.validator_pubkey.clone(),
         ];
-        assert!(!BlstCrypto::verify(&signed).unwrap());
+        assert!(!BlstCrypto::verify_aggregate(&signed).unwrap());
     }
 
     #[test]
@@ -306,39 +358,22 @@ mod tests {
         let (s3, pk3) = new_signed(HandshakeNetMessage::Ping);
         let (s4, pk4) = new_signed(HandshakeNetMessage::Ping);
 
-        let crypto1 = BlstCrypto::new_random();
-        let aggregates1 = vec![&s1, &s2, &s3];
-        let signed1 = crypto1
-            .sign_aggregate(HandshakeNetMessage::Ping, aggregates1.as_slice())
-            .unwrap();
-        assert!(BlstCrypto::verify(&signed1).unwrap());
-
-        let crypto2 = BlstCrypto::new_random();
-        let aggregates2 = vec![&s2, &s3, &s4];
-        let signed2 = crypto2
-            .sign_aggregate(HandshakeNetMessage::Ping, aggregates2.as_slice())
-            .unwrap();
-        assert!(BlstCrypto::verify(&signed2).unwrap());
-
         let crypto = BlstCrypto::new_random();
-        let aggregates = vec![&signed1, &signed2];
+        let aggregates = vec![&s1, &s2, &s3, &s2, &s3, &s4];
         let signed = crypto
             .sign_aggregate(HandshakeNetMessage::Ping, aggregates.as_slice())
             .unwrap();
-
-        assert!(BlstCrypto::verify(&signed).unwrap());
+        assert!(BlstCrypto::verify_aggregate(&signed).unwrap());
 
         assert_eq!(
-            signed.validators,
+            signed.signature.validators,
             vec![
                 pk1.clone(),
                 pk2.clone(),
                 pk3.clone(),
-                crypto1.validator_pubkey.clone(),
                 pk2.clone(),
                 pk3.clone(),
                 pk4.clone(),
-                crypto2.validator_pubkey.clone(),
                 crypto.validator_pubkey.clone(),
             ]
         )
