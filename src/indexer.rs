@@ -205,10 +205,10 @@ impl Indexer {
                         bail!("Failed to connect to {}: {}. Timeout reached.", target, e);
                     }
                     warn!(
-                        "Failed to connect to {}: {}. Retrying in 20 milliseconds...",
+                        "Failed to connect to {}: {}. Retrying in 1 second...",
                         target, e
                     );
-                    tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+                    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
                 }
             }
         };
