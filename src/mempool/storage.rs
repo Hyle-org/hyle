@@ -792,7 +792,7 @@ mod tests {
 
         let car_proposal = CarProposal {
             txs: vec![proof_tx.clone()],
-            id: 1,
+            id: CarId(1),
             parent: None,
             parent_poa: None,
         };
