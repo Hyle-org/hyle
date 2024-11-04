@@ -233,13 +233,12 @@ impl E2ECtx {
             .await
             .and_then(|response| response.error_for_status().context("sending tx"));
 
-        assert_ok!(blob_response);
+        let response = match blob_response {
+            Ok(response) => response,
+            Err(e) => panic!("Error sending blob tx: {:?}", e),
+        };
 
-        blob_response
-            .unwrap()
-            .json::<TxHash>()
-            .await
-            .map_err(|e| e.into())
+        response.json::<TxHash>().await.map_err(|e| e.into())
     }
 
     pub async fn send_proof(
@@ -250,8 +249,8 @@ impl E2ECtx {
         assert_ok!(self
             .client()
             .send_tx_proof(&ProofTransaction {
-                blobs_references,
-                proof
+                blobs_references: blobs_references.clone(),
+                proof: proof.clone()
             })
             .await
             .and_then(|response| response.error_for_status().context("sending tx")));
@@ -264,25 +263,33 @@ impl E2ECtx {
     }
 
     pub async fn get_contract(&self, name: &str) -> Result<Contract> {
-        let response = self
+        let contract_response = self
             .client()
             .get_contract(&name.into())
             .await
             .and_then(|response| response.error_for_status().context("Getting contract"));
-        assert_ok!(response);
 
-        let contract = response.unwrap().json::<Contract>().await?;
+        let response = match contract_response {
+            Ok(response) => response,
+            Err(e) => panic!("Error getting contract: {:?}", e),
+        };
+
+        let contract = response.json::<Contract>().await?;
         Ok(contract)
     }
 
     pub async fn get_indexer_contract(&self, name: &str) -> Result<ContractDb> {
-        let response = self.clients[self.indexer_client_index]
+        let indexer_contract_response = self.clients[self.indexer_client_index]
             .get_indexer_contract(&name.into())
             .await
             .and_then(|response| response.error_for_status().context("Getting contract"));
-        assert_ok!(response);
 
-        let contract = response.unwrap().json::<ContractDb>().await?;
+        let response = match indexer_contract_response {
+            Ok(response) => response,
+            Err(e) => panic!("Error getting contract: {:?}", e),
+        };
+
+        let contract = response.json::<ContractDb>().await?;
         Ok(contract)
     }
 }
