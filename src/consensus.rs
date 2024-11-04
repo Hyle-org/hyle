@@ -121,7 +121,7 @@ pub struct TimeoutCertificate(Slot, View, QuorumCertificate);
 // A Ticket is necessary to send a valid prepare
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, PartialEq, Eq, Hash)]
 pub enum Ticket {
-    // Special value for the initial Cut
+    // Special value for the initial Cut, needed because we don't have a quorum certificate for the genesis block.
     Genesis,
     CommitQC(QuorumCertificate),
     TC(TimeoutCertificate),
@@ -150,7 +150,6 @@ pub struct ConsensusProposal {
 pub enum ConsensusNetMessage {
     Prepare(ConsensusProposal, Ticket),
     PrepareVote(ConsensusProposalHash),
-    // TODO: these should probably just be "SignedWithQuorumCertificate" to be consistent
     Confirm(QuorumCertificate),
     ConfirmAck(ConsensusProposalHash),
     Commit(QuorumCertificate, ConsensusProposalHash),
@@ -231,29 +230,6 @@ pub struct Consensus {
 }
 
 impl Consensus {
-    /// Add a validator with the default stake to our consensus.
-    /// This is trusted because it's out of the usual consensus process,
-    /// either at genesis or when fast-forwarding.
-    pub fn add_trusted_validator(
-        &mut self,
-        pubkey: &ValidatorPublicKey,
-        stake: Stake,
-    ) -> Result<()> {
-        self.bft_round_state
-            .staking
-            .add_staker(Staker {
-                pubkey: pubkey.clone(),
-                stake,
-            })
-            .context("cannot add trusted staker")?;
-        self.bft_round_state
-            .staking
-            .bond(pubkey.clone())
-            .context("cannot bond trusted validator")?;
-        info!("🎉 Trusted validator added: {}", pubkey);
-        Ok(())
-    }
-
     // Reset bft_round_state for the next round of consensus.
     fn finish_round(&mut self, commit: Option<QuorumCertificate>) -> Result<(), Error> {
         match self.bft_round_state.state_tag {
@@ -600,6 +576,7 @@ impl Consensus {
             "📝 Sending candidacy message to be part of consensus.  {}",
             candidacy
         );
+        // TODO: it would be more optimal to send this to the next leaders only.
         self.broadcast_net_message(ConsensusNetMessage::ValidatorCandidacy(candidacy))?;
         Ok(())
     }
@@ -712,6 +689,8 @@ impl Consensus {
                 todo!()
             }
         }
+
+        // TODO: check we haven't voted for a proposal this slot/view already.
 
         // After processing the ticket, we should be in the right slot/view.
 
@@ -977,13 +956,19 @@ impl Consensus {
         proposal_hash_hint: ConsensusProposalHash,
     ) -> Result<()> {
         match self.bft_round_state.state_tag {
-            StateTag::Follower => {
-                return self.try_commit_current_proposal(commit_quorum_certificate)
+            StateTag::Follower => self.try_commit_current_proposal(commit_quorum_certificate),
+            StateTag::Joining => {
+                self.on_commit_while_joining(commit_quorum_certificate, proposal_hash_hint)
             }
-            StateTag::Joining => {}
             _ => bail!("Commit message received while not follower"),
-        };
+        }
+    }
 
+    fn on_commit_while_joining(
+        &mut self,
+        commit_quorum_certificate: QuorumCertificate,
+        proposal_hash_hint: ConsensusProposalHash,
+    ) -> Result<()> {
         // We are joining consensus, try to sync our state.
         // First find the prepare message to this commit.
         let Some(proposal_index) = self
@@ -1061,11 +1046,13 @@ impl Consensus {
                     .map(|v| v.pubkey.clone())
                     .collect(),
             })
-            .context("Failed to send ConsensusEvent::CommitCut on the bus");
+            .expect("Failed to send ConsensusEvent::CommitCut on the bus");
 
         // Save added cut TODO: remove ? (data availability)
         if let Some(file) = &self.file {
-            Self::save_on_disk(file.as_path(), &self.store)?;
+            if let Err(e) = Self::save_on_disk(file.as_path(), &self.store) {
+                warn!("Failed to save consensus state on disk: {}", e);
+            }
         }
 
         info!(
@@ -1173,23 +1160,9 @@ impl Consensus {
             ConsensusCommand::ProcessedBlock(block_height) => {
                 match self.bft_round_state.state_tag {
                     StateTag::Genesis => {
-                        // ACHTUNG: this only works because Staking, Bonding and Processed messages
-                        // are part of the same channel and so will be processed in order.
-                        if block_height == BlockHeight(0) {
-                            // Genesis logic: we rely on all peers connecting with each other
-                            // before the first round starts, or the validators list will mismatch.
-                            // TODO: this is hacky & duplicates logic in the module building.
-                            if self.config.consensus.genesis_leader == self.config.id {
-                                self.bft_round_state.state_tag = StateTag::Leader;
-                                self.bft_round_state.consensus_proposal.slot = 1;
-                                info!("👑 Starting consensus as leader");
-                                self.delay_start_new_round(Ticket::Genesis)?;
-                            } else {
-                                self.bft_round_state.state_tag = StateTag::Follower;
-                                self.bft_round_state.consensus_proposal.slot = 1;
-                                info!("👑 Starting consensus as follower");
-                            }
-                        }
+                        unreachable!(
+                            "Genesis handling should never happen here but in start_genesis"
+                        );
                     }
                     StateTag::Joining => {
                         info!(
@@ -1509,6 +1482,23 @@ mod test {
             }
         }
 
+        pub fn add_trusted_validator(&mut self, pubkey: &ValidatorPublicKey) {
+            self.consensus
+                .bft_round_state
+                .staking
+                .add_staker(Staker {
+                    pubkey: pubkey.clone(),
+                    stake: Stake { amount: 100 },
+                })
+                .expect("cannot add trusted staker");
+            self.consensus
+                .bft_round_state
+                .staking
+                .bond(pubkey.clone())
+                .expect("cannot bond trusted validator");
+            info!("🎉 Trusted validator added: {}", pubkey);
+        }
+
         async fn build() -> (Self, Self) {
             let crypto = crypto::BlstCrypto::new("node-1".into());
             info!("node 1: {}", crypto.validator_pubkey());
@@ -1517,18 +1507,10 @@ mod test {
             let mut node1 = Self::new("node-1", crypto.clone()).await;
             let mut node2 = Self::new("node-2", c_other.clone()).await;
 
-            _ = node1
-                .consensus
-                .add_trusted_validator(&crypto.validator_pubkey().clone(), Stake { amount: 100 });
-            _ = node1
-                .consensus
-                .add_trusted_validator(&c_other.validator_pubkey().clone(), Stake { amount: 100 });
-            _ = node2
-                .consensus
-                .add_trusted_validator(&crypto.validator_pubkey().clone(), Stake { amount: 100 });
-            _ = node2
-                .consensus
-                .add_trusted_validator(&c_other.validator_pubkey().clone(), Stake { amount: 100 });
+            node1.add_trusted_validator(crypto.validator_pubkey());
+            node1.add_trusted_validator(c_other.validator_pubkey());
+            node2.add_trusted_validator(crypto.validator_pubkey());
+            node2.add_trusted_validator(c_other.validator_pubkey());
 
             node1.consensus.bft_round_state.consensus_proposal.slot = 1;
             node1.consensus.bft_round_state.state_tag = StateTag::Leader;
