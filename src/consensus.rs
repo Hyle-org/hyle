@@ -1148,6 +1148,7 @@ impl Consensus {
 
     fn handle_command(&mut self, msg: ConsensusCommand) -> Result<()> {
         match msg {
+            // NOTE(AlexB): this mode is for tests only. maybe we could revisit this mode.
             ConsensusCommand::SingleNodeBlockGeneration => {
                 if let Some(cut) = self.pending_cut.take() {
                     self.bus
@@ -1177,6 +1178,7 @@ impl Consensus {
             }
             ConsensusCommand::ProcessedBlock(block_height) => {
                 match self.bft_round_state.state_tag {
+                    // NOTE(AlexB): can this happen after start_genesis is executed ?
                     StateTag::Genesis => {
                         // ACHTUNG: this only works because Staking, Bonding and Processed messages
                         // are part of the same channel and so will be processed in order.
@@ -1305,6 +1307,7 @@ impl Consensus {
         Ok(())
     }
 
+    // NOTE(AlexB): not sure we need the notion of master anymore.
     fn start_master(&mut self, config: SharedConf) -> Result<()> {
         let interval = config.consensus.slot_duration;
 
