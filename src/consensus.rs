@@ -150,6 +150,7 @@ pub struct ConsensusProposal {
     new_validators_to_bond: Vec<NewValidatorCandidate>,
 }
 
+// Possible to stringly type message types? To get typed certificates (preparevote, confirmack)
 #[derive(
     Debug, Serialize, Deserialize, Clone, Encode, Decode, PartialEq, Eq, Hash, IntoStaticStr,
 )]
@@ -406,6 +407,7 @@ impl Consensus {
 
                 self.validator_candidates
                     .retain(|v| v.pubkey != new_validator.pubkey);
+                // May be it is not about connecting, but registering the peer: pubkey + address (connect to seems tcp specific)
                 self.bus.send(P2PCommand::ConnectTo {
                     peer: peer_address.clone(),
                 })?;
@@ -453,7 +455,9 @@ impl Consensus {
         }
     }
 
+    // Specific to leader in state StartNewSlot with a ticket
     fn start_round(&mut self) -> Result<(), Error> {
+        // May be create a ready_to_start_round() function to gather validaiton logic
         if !matches!(self.bft_round_state.leader.step, Step::StartNewSlot) {
             bail!(
                 "Cannot start a new slot while in step {:?}",
@@ -1084,7 +1088,8 @@ impl Consensus {
                     .map(|v| v.pubkey.clone())
                     .collect(),
             })
-            .context("Failed to send ConsensusEvent::CommitCut on the bus");
+            // fail ?
+            .context("Failed to send ConsensusEvent::CommitCut on the bus")?;
 
         // Save added cut TODO: remove ? (data availability)
         if let Some(file) = &self.file {
