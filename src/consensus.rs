@@ -49,6 +49,7 @@ pub enum ConsensusCommand {
     NewStaker(Staker),
     NewBonded(ValidatorPublicKey),
     ProcessedBlock(BlockHeight),
+    // NOTE(AlexB): somehow I would expect this Command to be in sync with the NewCut event from mempool.
     StartNewSlot,
 }
 
@@ -82,6 +83,7 @@ impl BusMessage for ConsensusNetMessage {}
 
 bus_client! {
 struct ConsensusBusClient {
+    // NOTE(AlexB): to me it looks like a really "busy" module. Maybe we need to review the flow.
     sender(OutboundMessage),
     sender(ConsensusEvent),
     sender(ConsensusCommand),
@@ -122,6 +124,7 @@ pub struct TimeoutCertificate(Slot, View, QuorumCertificate);
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, PartialEq, Eq, Hash)]
 pub enum Ticket {
     // Special value for the initial Cut
+    // NOTE(AlexB): this seems odd here. but as Genesis is a special case, I guess it's ok.
     Genesis,
     CommitQC(QuorumCertificate),
     TC(TimeoutCertificate),
@@ -402,6 +405,7 @@ impl Consensus {
         self.bft_round_state.staking.is_bonded(pubkey)
     }
 
+    // NOTE(AlexB): maybe there is a way to get rid of this and start a slot more naturally.
     fn delay_start_new_round(&mut self, ticket: Ticket) -> Result<(), Error> {
         if !matches!(self.bft_round_state.state_tag, StateTag::Leader) {
             bail!(
@@ -473,6 +477,7 @@ impl Consensus {
         );
 
         // Creates ConsensusProposal
+        // NOTE(AlexB): is there really something to do if we have an empty cut (will prolly never happen on prod) ?
         let cut = self.pending_cut.take().unwrap_or_default();
 
         self.bft_round_state.leader.step = Step::PrepareVote;
