@@ -1,16 +1,17 @@
 use bincode::{BorrowDecode, Decode, Encode};
 use derive_more::derive::Display;
 use serde::{Deserialize, Serialize};
+use sha3::{Digest, Sha3_256};
 use std::{
     collections::{BTreeSet, HashMap, HashSet},
     fmt::Display,
-    hash::Hash,
+    io::Write,
     vec,
 };
 use tracing::{debug, error, warn};
 
 use crate::{
-    model::{Transaction, TransactionData, ValidatorPublicKey},
+    model::{Hashable, Transaction, TransactionData, ValidatorPublicKey},
     node_state::NodeState,
 };
 
@@ -122,11 +123,12 @@ impl InMemoryStorage {
         validator: &ValidatorPublicKey,
         car_proposal: &CarProposal,
     ) -> Option<()> {
+        let car_proposal_hash = car_proposal.hash();
         let car = self
             .lane
             .cars
             .iter_mut()
-            .find(|c| c.id == car_proposal.id && c.txs == car_proposal.txs);
+            .find(|c| c.hash() == car_proposal_hash);
 
         match car {
             None => {
@@ -260,7 +262,7 @@ impl InMemoryStorage {
             .or_default()
             .cars
             .iter()
-            .any(|c| c.id == car_proposal.id && c.txs == car_proposal.txs)
+            .any(|c| c.hash() == car_proposal.hash())
     }
 
     #[cfg(test)]
@@ -280,11 +282,11 @@ impl InMemoryStorage {
             .lane
             .cars
             .iter()
-            .find(|c| c.id == car_proposal.id && c.txs == car_proposal.txs);
+            .find(|c| c.hash() == car_proposal.hash());
 
         match car {
             None => {
-                error!("Car proposal does exist locally");
+                error!("Car proposal does not exist locally");
                 None
             }
             Some(c) => {
@@ -456,6 +458,19 @@ pub struct CarProposal {
     pub txs: Vec<Transaction>,
 }
 
+impl Hashable<Vec<u8>> for CarProposal {
+    fn hash(&self) -> Vec<u8> {
+        let mut hasher = Sha3_256::new();
+        _ = write!(hasher, "{}", self.id.0);
+        if let Some(parent) = self.parent {
+            _ = write!(hasher, "{}", parent);
+        }
+        for tx in self.txs.iter() {
+            hasher.update(tx.hash().0);
+        }
+        hasher.finalize().to_vec()
+    }
+}
 impl Display for CarProposal {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
@@ -516,6 +531,20 @@ pub struct Car {
     parent: Option<CarId>,
     txs: Vec<Transaction>,
     pub poa: Poa,
+}
+
+impl Hashable<Vec<u8>> for Car {
+    fn hash(&self) -> Vec<u8> {
+        let mut hasher = Sha3_256::new();
+        _ = write!(hasher, "{}", self.id.0);
+        if let Some(parent) = self.parent {
+            _ = write!(hasher, "{}", parent);
+        }
+        for tx in self.txs.iter() {
+            hasher.update(tx.hash().0);
+        }
+        hasher.finalize().to_vec()
+    }
 }
 
 #[derive(Clone, Default, Debug, Eq, PartialEq, Serialize, Deserialize)]
