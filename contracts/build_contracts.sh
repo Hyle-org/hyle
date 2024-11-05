@@ -24,11 +24,10 @@ build_contract() {
 }
 
 usage() {
-    echo "Usage: $0 [hyfi|hydentity|all]"
-    echo "  hyfi: Build only the Hyfi contract"
+    echo "Usage: $0 [hydentity|hyllar|all]"
     echo "  hydentity: Build only the Hydentity contract"
     echo "  hyllar: Build only the Hyllar contract"
-    echo "  all: Build both contracts (default if no parameter is provided)"
+    echo "  all: Build all contracts (default if no parameter is provided)"
     echo "  help: Show this help message"
 }
 
@@ -38,9 +37,6 @@ if [[ "$1" == "help" ]]; then
 fi
 
 case "$1" in
-    hyfi)
-        build_contract "Hyfi" "contracts/hyfi/guest/Cargo.toml" "./contracts/hyfi/hyfi.img" "./contracts/hyfi/hyfi.txt"
-        ;;
     hydentity)
         build_contract "Hydentity" "contracts/hydentity/guest/Cargo.toml" "./contracts/hydentity/hydentity.img" "./contracts/hydentity/hydentity.txt"
         ;;
@@ -48,7 +44,6 @@ case "$1" in
         build_contract "Hyllar" "contracts/hyllar/guest/Cargo.toml" "./contracts/hyllar/hyllar.img" "./contracts/hyllar/hyllar.txt"
         ;;
     "" | all)
-        build_contract "Hyfi" "contracts/hyfi/guest/Cargo.toml" "./contracts/hyfi/hyfi.img" "./contracts/hyfi/hyfi.txt"
         build_contract "Hydentity" "contracts/hydentity/guest/Cargo.toml" "./contracts/hydentity/hydentity.img" "./contracts/hydentity/hydentity.txt"
         build_contract "Hyllar" "contracts/hyllar/guest/Cargo.toml" "./contracts/hyllar/hyllar.img" "./contracts/hyllar/hyllar.txt"
         ;;

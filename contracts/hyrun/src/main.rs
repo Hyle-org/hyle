@@ -1,5 +1,6 @@
+use hydentity::Hydentity;
 use hyllar::HyllarToken;
-use sdk::{erc20::ERC20Action, BlobData, ContractInput};
+use sdk::{erc20::ERC20Action, identity_provider::IdentityAction, BlobData, ContractInput};
 use serde::Deserialize;
 
 use clap::{Parser, Subcommand};
@@ -8,6 +9,18 @@ mod contract;
 
 #[derive(Debug, Deserialize)]
 pub struct ContractName(pub String);
+
+impl From<String> for ContractName {
+    fn from(s: String) -> Self {
+        ContractName(s)
+    }
+}
+
+impl From<&str> for ContractName {
+    fn from(s: &str) -> Self {
+        ContractName(s.into())
+    }
+}
 
 #[derive(Deserialize, Debug)]
 pub struct Contract {
@@ -18,43 +31,17 @@ pub struct Contract {
 }
 
 #[derive(Subcommand, Clone)]
-pub enum HyfiArgs {
-    Init,
-    State,
-    Transfer {
-        from: String,
-        to: String,
-        amount: u64,
-    },
-    Mint {
-        to: String,
-        amount: u64,
-    },
-}
-impl From<HyfiArgs> for hyfi::model::ContractFunction {
-    fn from(cmd: HyfiArgs) -> Self {
-        match cmd {
-            HyfiArgs::Transfer { from, to, amount } => Self::Transfer { from, to, amount },
-            HyfiArgs::Mint { to, amount } => Self::Mint { to, amount },
-            HyfiArgs::Init => panic!("Init is not a valid contract function"),
-            HyfiArgs::State => panic!("State is not a valid contract function"),
-        }
-    }
-}
-
-#[derive(Subcommand, Clone)]
 pub enum HydentityArgs {
     Init,
-    Register { account: String, password: String },
-    CheckPassword { account: String, password: String },
+    Register { account: String, pub_key: String },
 }
-impl From<HydentityArgs> for hydentity::model::ContractFunction {
+impl From<HydentityArgs> for sdk::identity_provider::IdentityAction {
     fn from(cmd: HydentityArgs) -> Self {
         match cmd {
-            HydentityArgs::Register { account, password } => Self::Register { account, password },
-            HydentityArgs::CheckPassword { account, password } => {
-                Self::CheckPassword { account, password }
-            }
+            HydentityArgs::Register { account, pub_key } => Self::RegisterIdentity {
+                account,
+                identity_info: pub_key,
+            },
             HydentityArgs::Init => panic!("Init is not a valid contract function"),
         }
     }
@@ -68,17 +55,41 @@ impl From<HyllarArgs> for ERC20Action {
     fn from(cmd: HyllarArgs) -> Self {
         match cmd {
             HyllarArgs::Transfer { recipient, amount } => Self::Transfer { recipient, amount },
-            HyllarArgs::Init {..} => panic!("Init is not a valid contract function"),
+            HyllarArgs::Init { .. } => panic!("Init is not a valid contract function"),
         }
+    }
+}
+
+enum ContractFunctionEnum {
+    Hydentity(IdentityAction),
+    Hyllar(ERC20Action),
+}
+
+impl bincode::Encode for ContractFunctionEnum {
+    fn encode<E: bincode::enc::Encoder>(
+        &self,
+        encoder: &mut E,
+    ) -> Result<(), bincode::error::EncodeError> {
+        match self {
+            ContractFunctionEnum::Hydentity(f) => f.encode(encoder),
+            ContractFunctionEnum::Hyllar(f) => f.encode(encoder),
+        }
+    }
+}
+
+impl From<IdentityAction> for ContractFunctionEnum {
+    fn from(val: IdentityAction) -> Self {
+        ContractFunctionEnum::Hydentity(val)
+    }
+}
+impl From<ERC20Action> for ContractFunctionEnum {
+    fn from(val: ERC20Action) -> Self {
+        ContractFunctionEnum::Hyllar(val)
     }
 }
 
 #[derive(Subcommand, Clone)]
 enum ContractChoice {
-    Hyfi {
-        #[command(subcommand)]
-        command: HyfiArgs,
-    },
     Hydentity {
         #[command(subcommand)]
         command: HydentityArgs,
@@ -99,6 +110,9 @@ struct Cli {
     #[clap(long, short)]
     init: bool,
 
+    #[arg(long, default_value = "user")]
+    pub user: String,
+
     #[arg(long, default_value = "localhost")]
     pub host: String,
 
@@ -110,97 +124,88 @@ fn main() {
     let cli = Cli::parse();
 
     // TODO - get identity from user input
-    let identity = sdk::Identity("user".to_string());
+    let identity = sdk::Identity(cli.user.clone());
 
     match cli.command.clone() {
-        ContractChoice::Hyfi { command } => {
-            if matches!(command, HyfiArgs::Init) {
-                contract::init("hyfi", hyfi::model::Balances::default());
-                return;
-            }
-            if matches!(command, HyfiArgs::State) {
-                let state = contract::fetch_current_state::<hyfi::model::Balances>(&cli, "hyfi");
-                println!("Current state: {:?}", state);
-                return;
-            }
-            let cf: hyfi::model::ContractFunction = command.into();
-            contract::run(
-                &cli,
-                "hyfi",
-                cf.clone(),
-                |balances: hyfi::model::Balances| -> ContractInput<hyfi::model::Balances> {
-                    // TODO: Allow user to add real tx_hash
-                    let tx_hash = "".to_string();
-                    // TODO: Allow user to add multiple values in payload
-                    let blobs = vec![BlobData(
-                        bincode::encode_to_vec(cf.clone(), bincode::config::standard())
-                            .expect("failed to encode program inputs"),
-                    )];
-
-                    let index = 0;
-
-                    ContractInput::<hyfi::model::Balances> {
-                        initial_state: balances,
-                        identity: identity.clone(),
-                        tx_hash,
-                        blobs,
-                        index,
-                    }
-                },
-            );
-        }
         ContractChoice::Hydentity { command } => {
             if matches!(command, HydentityArgs::Init) {
-                contract::init("hydentity", hydentity::model::Identities::default());
+                contract::init("hydentity", Hydentity::new());
                 return;
             }
-            let cf: hydentity::model::ContractFunction = command.into();
+            let cf: IdentityAction = command.into();
+            contract::print_hyled_blob_tx(&identity, vec![("hydentity".into(), cf.clone().into())]);
+            let blobs = vec![BlobData(
+                bincode::encode_to_vec(cf, bincode::config::standard())
+                    .expect("failed to encode program inputs"),
+            )];
+
             contract::run(
                 &cli,
                 "hydentity",
-                cf.clone(),
-                |identities: hydentity::model::Identities| -> ContractInput::<hydentity::model::Identities> {
-                    // TODO: Allow user to add real tx_hash
-                    let tx_hash = "".to_string();
-                    // TODO: Allow user to add multiple values in payload
-                    let blobs = vec![BlobData(
-                        bincode::encode_to_vec(cf.clone(), bincode::config::standard())
-                            .expect("failed to encode program inputs"),
-                    )];
-
-                    let index = 0;
-
-                    ContractInput::<hydentity::model::Identities> {
+                |identities: Hydentity| -> ContractInput<Hydentity> {
+                    ContractInput::<Hydentity> {
                         initial_state: identities,
-                        
                         identity: identity.clone(),
-                        tx_hash,
-                        blobs,
-                        index,
+                        tx_hash: "".to_string(),
+                        blobs: blobs.clone(),
+                        index: 0,
                     }
                 },
             );
         }
         ContractChoice::Hyllar { command } => {
-            if let HyllarArgs::Init {initial_supply } = command {
+            if let HyllarArgs::Init { initial_supply } = command {
                 contract::init("hyllar", HyllarToken::new(initial_supply));
                 return;
             }
             let cf: ERC20Action = command.into();
+            let identity_cf: IdentityAction = IdentityAction::VerifyIdentity {
+                account: identity.0.clone(),
+                identity_info: "password".to_string(),
+                blobs_hash: vec!["".into()], // TODO: hash blob
+            };
+            contract::print_hyled_blob_tx(
+                &identity,
+                vec![
+                    ("hydentity".into(), identity_cf.clone().into()),
+                    ("hyllar".into(), cf.clone().into()),
+                ],
+            );
+
+            let blobs = vec![
+                BlobData(
+                    bincode::encode_to_vec(identity_cf, bincode::config::standard())
+                        .expect("failed to encode program inputs"),
+                ),
+                BlobData(
+                    bincode::encode_to_vec(cf, bincode::config::standard())
+                        .expect("failed to encode program inputs"),
+                ),
+            ];
+
+            contract::run(
+                &cli,
+                "hydentity",
+                |token: hydentity::Hydentity| -> ContractInput<hydentity::Hydentity> {
+                    ContractInput::<Hydentity> {
+                        initial_state: token,
+                        identity: identity.clone(),
+                        tx_hash: "".to_string(),
+                        blobs: blobs.clone(),
+                        index: 0,
+                    }
+                },
+            );
             contract::run(
                 &cli,
                 "hyllar",
-                cf.clone(),
                 |token: hyllar::HyllarToken| -> ContractInput<hyllar::HyllarToken> {
                     ContractInput::<HyllarToken> {
                         initial_state: token,
                         identity: identity.clone(),
                         tx_hash: "".to_string(),
-                        blobs: vec![BlobData(
-                            bincode::encode_to_vec(cf.clone(), bincode::config::standard())
-                                .expect("failed to encode program inputs"),
-                        )],
-                        index: 0,
+                        blobs: blobs.clone(),
+                        index: 1,
                     }
                 },
             );

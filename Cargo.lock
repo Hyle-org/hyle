@@ -1997,14 +1997,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "hyfi"
+name = "hydentity-guest"
 version = "0.1.0"
 dependencies = [
- "anyhow",
- "bincode 2.0.0-rc.2",
+ "hydentity",
  "hyle-contract-sdk",
- "serde",
- "sha3",
+ "risc0-zkvm",
 ]
 
 [[package]]
@@ -2222,7 +2220,6 @@ dependencies = [
  "env_logger",
  "hex",
  "hydentity",
- "hyfi",
  "hyle-contract-sdk",
  "hyllar",
  "reqwest",

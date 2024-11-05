@@ -1,9 +1,9 @@
 use anyhow::{bail, Error};
 use borsh::to_vec;
 use risc0_zkvm::sha::Digestible;
-use sdk::{Digestable, HyleOutput};
+use sdk::{Digestable, HyleOutput, Identity};
 
-use crate::{Cli, Contract};
+use crate::{Cli, Contract, ContractFunctionEnum, ContractName};
 
 pub fn init<State>(contract_name: &str, initial_state: State)
 where
@@ -24,13 +24,25 @@ where
     );
 }
 
-pub fn run<ContractFunction, State, ContractInput, Builder>(
+pub fn print_hyled_blob_tx(identity: &Identity, blobs: Vec<(ContractName, ContractFunctionEnum)>) {
+    println!("You can send the blob tx:");
+    print!("hyled blobs {} ", identity.0);
+    for (name, function) in blobs {
+        let hex_program_inputs = hex::encode(
+            bincode::encode_to_vec(&function, bincode::config::standard())
+                .expect("failed to encode program inputs"),
+        );
+        print!("{} {} ", name.0, hex_program_inputs);
+    }
+    println!();
+    println!("{}", "-".repeat(20));
+}
+
+pub fn run<State, ContractInput, Builder>(
     cli: &Cli,
     contract_name: &str,
-    program_inputs: ContractFunction,
     build_contract_input: Builder,
 ) where
-    ContractFunction: bincode::Encode + Clone,
     State: TryFrom<sdk::StateDigest, Error = Error>,
     ContractInput: serde::Serialize,
     State: Digestable,
@@ -44,11 +56,13 @@ pub fn run<ContractFunction, State, ContractInput, Builder>(
         }
     };
 
+    println!("{}", "-".repeat(20));
+    println!("Proving transition for {contract_name}...");
     let prove_info = prove(initial_state, build_contract_input, contract_name);
 
     let receipt = prove_info.receipt;
     let encoded_receipt = to_vec(&receipt).expect("Unable to encode receipt");
-    std::fs::write("risc0.proof", encoded_receipt).unwrap();
+    std::fs::write(format!("{contract_name}.risc0.proof"), encoded_receipt).unwrap();
 
     let claim = receipt.claim().unwrap().value().unwrap();
 
@@ -62,23 +76,14 @@ pub fn run<ContractFunction, State, ContractInput, Builder>(
     let initial_state = hex::encode(&hyle_output.initial_state.0);
     println!("Method ID: {:?} (hex)", method_id);
     println!(
-        "risc0.proof written, transition from {:?} to {:?}",
+        "{contract_name}.risc0.proof written, transition from {:?} to {:?}",
         initial_state,
         hex::encode(&hyle_output.next_state.0)
     );
     println!("{:?}", hyle_output);
 
-    let hex_program_inputs = hex::encode(
-        bincode::encode_to_vec(program_inputs.clone(), bincode::config::standard())
-            .expect("failed to encode program inputs"),
-    );
     println!("{}", "-".repeat(20));
 
-    println!("You can send the blob tx:");
-    println!(
-        "hyled blob IDENTITY {} {}",
-        contract_name, hex_program_inputs
-    );
     println!("You can send the proof tx:");
     println!("hyled proof BLOB_TX_HASH 0 {} risc0.proof", contract_name);
 

@@ -46,21 +46,25 @@ async fn send_proof(
     Ok(())
 }
 
-async fn send_blob(
-    client: &ApiHttpClient,
-    identity: Identity,
-    contract_name: ContractName,
-    blob_data: String,
-) -> Result<()> {
-    let data = BlobData(hex::decode(blob_data).expect("Data decoding failed"));
-    let res = client
-        .send_tx_blob(&BlobTransaction {
-            identity,
-            blobs: vec![Blob {
-                contract_name,
+async fn send_blobs(client: &ApiHttpClient, identity: Identity, blobs: Vec<String>) -> Result<()> {
+    if blobs.len() % 2 != 0 {
+        anyhow::bail!("Blob contract names and data should come in pairs.");
+    }
+
+    let blobs: Vec<Blob> = blobs
+        .chunks(2)
+        .map(|chunk| (chunk[0].clone(), chunk[1].clone()))
+        .map(|(contract_name, blob_data)| {
+            let data = BlobData(hex::decode(blob_data).expect("Data decoding failed"));
+            Blob {
+                contract_name: contract_name.into(),
                 data,
-            }],
+            }
         })
+        .collect();
+
+    let res = client
+        .send_tx_blob(&BlobTransaction { identity, blobs })
         .await?;
 
     assert!(res.status().is_success());
@@ -119,10 +123,12 @@ struct Args {
 enum SendCommands {
     /// Send blob transaction
     #[command(alias = "b")]
-    Blob {
+    Blobs {
         identity: String,
-        contract_name: String,
-        data: String,
+        #[arg(
+            help = "Pairs of blob contract name and data, e.g., contract_name_1 blob_data_1 contract_name_2 blob_data_2"
+        )]
+        blobs: Vec<String>,
     },
     /// Send proof transaction
     #[command(alias = "p")]
@@ -153,11 +159,9 @@ async fn handle_args(args: Args) -> Result<()> {
     };
 
     match args.command {
-        SendCommands::Blob {
-            identity,
-            contract_name,
-            data,
-        } => send_blob(&client, identity.into(), contract_name.into(), data).await,
+        SendCommands::Blobs { identity, blobs } => {
+            send_blobs(&client, identity.into(), blobs).await
+        }
         SendCommands::Proof {
             tx_hash,
             blob_index,

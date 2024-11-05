@@ -5,7 +5,6 @@ edition = "2021"
 
 [dependencies]
 sdk = { path = "../../contract-sdk", package="hyle-contract-sdk" }
-hyfi = { path = "../hyfi/contract" }
 hydentity = { path = "../hydentity/contract" }
 # hystake = { path = "../hystake/contract" }
 hyllar = { path = "../hyllar/contract" }

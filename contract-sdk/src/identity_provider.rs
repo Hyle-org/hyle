@@ -67,7 +67,7 @@ pub enum IdentityAction {
 
 pub fn execute_action<T: IdentityVerification>(
     state: &mut T,
-    identity: Identity,
+    caller: Identity,
     action: IdentityAction,
 ) -> RunResult {
     let (success, res) = match action {
@@ -106,7 +106,7 @@ pub fn execute_action<T: IdentityVerification>(
 
     RunResult {
         success,
-        identity,
+        identity: caller,
         program_outputs,
     }
 }

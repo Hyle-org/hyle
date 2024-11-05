@@ -3,17 +3,18 @@
 
 extern crate alloc;
 
-use hydentity::model::ContractFunction;
-use hydentity::model::Identities;
+use hydentity::Hydentity;
+use sdk::identity_provider::IdentityAction;
 
 risc0_zkvm::guest::entry!(main);
 
 fn main() {
-    let (input, parameters) = sdk::guest::init::<Identities, ContractFunction>();
+    let (input, parameters) = sdk::guest::init::<Hydentity, IdentityAction>();
 
     let mut state = input.initial_state.clone();
 
-    let res = hydentity::run(&mut state, parameters);
+    let res =
+        sdk::identity_provider::execute_action(&mut state, input.identity.clone(), parameters);
 
     sdk::guest::commit(input, state, res);
 }
