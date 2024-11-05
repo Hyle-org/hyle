@@ -9,6 +9,30 @@ use alloc::vec::Vec;
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 
+pub mod erc20;
+pub mod guest;
+pub mod identity_provider;
+
+pub trait HyleContract {
+    fn caller(&self) -> Identity;
+}
+
+pub trait Digestable {
+    fn as_digest(&self) -> StateDigest;
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct ContractInput<State>
+where
+    State: Digestable,
+{
+    pub initial_state: State,
+    pub identity: Identity,
+    pub tx_hash: String,
+    pub blobs: Vec<BlobData>,
+    pub index: usize,
+}
+
 #[derive(Default, Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash, Encode, Decode)]
 pub struct StateDigest(pub Vec<u8>);
 
@@ -20,6 +44,9 @@ pub struct TxHash(pub String);
 
 #[derive(Default, Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash, Encode, Decode)]
 pub struct BlobIndex(pub u32);
+
+#[derive(Default, Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash, Encode, Decode)]
+pub struct BlobData(pub Vec<u8>);
 
 #[derive(Default, Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash, Encode, Decode)]
 pub struct HyleOutput {
@@ -39,9 +66,19 @@ impl From<String> for Identity {
         Identity(s)
     }
 }
+impl From<&str> for Identity {
+    fn from(s: &str) -> Self {
+        Identity(s.into())
+    }
+}
 impl From<String> for TxHash {
     fn from(s: String) -> Self {
         Self(s)
+    }
+}
+impl From<&str> for TxHash {
+    fn from(s: &str) -> Self {
+        Self(s.into())
     }
 }
 
