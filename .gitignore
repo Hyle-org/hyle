@@ -2,6 +2,7 @@ target
 *.bin
 data_node*
 **/*Consensus.data.tmp
+*.proof
 # Added by cargo
 
 /target
