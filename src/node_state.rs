@@ -254,7 +254,7 @@ impl NodeState {
             .iter()
             .map(|blob_ref| self.unsettled_transactions.get(&blob_ref.blob_tx_hash))
             .collect::<Option<Vec<&UnsettledTransaction>>>()
-            .context("At lease 1 tx is either settled or does not exists")?;
+            .context("At least 1 tx is either settled or does not exists")?;
 
         // blob_hash verification
         let extracted_blobs_hash: Vec<BlobsHash> = blobs_metadata
@@ -342,7 +342,7 @@ impl NodeState {
                 return false; // No valid metadata found for this blob
             }
         }
-        true // All blobs have at lease one valid metadata
+        true // All blobs have at least one valid metadata
     }
 
     fn settle_tx(

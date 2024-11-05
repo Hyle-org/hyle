@@ -71,6 +71,12 @@ pub fn run<State, ContractInput, Builder>(
         .decode::<HyleOutput>()
         .expect("Failed to decode journal");
 
+    if !hyle_output.success {
+        let program_error = std::str::from_utf8(&hyle_output.program_outputs).unwrap();
+        println!("Execution failed ! Program output: {}", program_error);
+        return;
+    }
+
     println!("{}", "-".repeat(20));
     let method_id = claim.pre.digest();
     let initial_state = hex::encode(&hyle_output.initial_state.0);
@@ -85,7 +91,7 @@ pub fn run<State, ContractInput, Builder>(
     println!("{}", "-".repeat(20));
 
     println!("You can send the proof tx:");
-    println!("hyled proof BLOB_TX_HASH 0 {} risc0.proof", contract_name);
+    println!("hyled proof BLOB_TX_HASH 0 {contract_name} {contract_name}.risc0.proof");
 
     receipt
         .verify(claim.pre.digest())
@@ -103,6 +109,7 @@ where
     let body = resp.text()?;
 
     if let Ok(contract) = serde_json::from_str::<Contract>(&body) {
+        println!("{}", "-".repeat(20));
         println!("Fetched contract: {:?}", contract);
         Ok(contract.state.try_into()?)
     } else {

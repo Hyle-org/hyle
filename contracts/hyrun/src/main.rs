@@ -89,7 +89,10 @@ impl From<ERC20Action> for ContractFunctionEnum {
 }
 
 #[derive(Subcommand, Clone)]
-enum ContractChoice {
+enum CliCommand {
+    State {
+        contract: String,
+    },
     Hydentity {
         #[command(subcommand)]
         command: HydentityArgs,
@@ -105,7 +108,7 @@ enum ContractChoice {
 #[command(propagate_version = true)]
 struct Cli {
     #[command(subcommand)]
-    command: ContractChoice,
+    command: CliCommand,
 
     #[clap(long, short)]
     init: bool,
@@ -127,7 +130,20 @@ fn main() {
     let identity = sdk::Identity(cli.user.clone());
 
     match cli.command.clone() {
-        ContractChoice::Hydentity { command } => {
+        CliCommand::State { contract } => match contract.as_str() {
+            "hydentity" => {
+                let state = contract::fetch_current_state::<Hydentity>(&cli, &contract)
+                    .expect("failed to fetch state");
+                println!("State: {:?}", state);
+            }
+            "hyllar" => {
+                let state = contract::fetch_current_state::<HyllarToken>(&cli, &contract)
+                    .expect("failed to fetch state");
+                println!("State: {:?}", state);
+            }
+            _ => panic!("Unknown contract"),
+        },
+        CliCommand::Hydentity { command } => {
             if matches!(command, HydentityArgs::Init) {
                 contract::init("hydentity", Hydentity::new());
                 return;
@@ -153,7 +169,7 @@ fn main() {
                 },
             );
         }
-        ContractChoice::Hyllar { command } => {
+        CliCommand::Hyllar { command } => {
             if let HyllarArgs::Init { initial_supply } = command {
                 contract::init("hyllar", HyllarToken::new(initial_supply));
                 return;
@@ -185,19 +201,6 @@ fn main() {
 
             contract::run(
                 &cli,
-                "hydentity",
-                |token: hydentity::Hydentity| -> ContractInput<hydentity::Hydentity> {
-                    ContractInput::<Hydentity> {
-                        initial_state: token,
-                        identity: identity.clone(),
-                        tx_hash: "".to_string(),
-                        blobs: blobs.clone(),
-                        index: 0,
-                    }
-                },
-            );
-            contract::run(
-                &cli,
                 "hyllar",
                 |token: hyllar::HyllarToken| -> ContractInput<hyllar::HyllarToken> {
                     ContractInput::<HyllarToken> {
@@ -206,6 +209,19 @@ fn main() {
                         tx_hash: "".to_string(),
                         blobs: blobs.clone(),
                         index: 1,
+                    }
+                },
+            );
+            contract::run(
+                &cli,
+                "hydentity",
+                |token: hydentity::Hydentity| -> ContractInput<hydentity::Hydentity> {
+                    ContractInput::<Hydentity> {
+                        initial_state: token,
+                        identity: identity.clone(),
+                        tx_hash: "".to_string(),
+                        blobs: blobs.clone(),
+                        index: 0,
                     }
                 },
             );
