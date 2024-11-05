@@ -14,7 +14,7 @@ use tracing::{debug, info, trace, warn};
 use super::network::HandshakeNetMessage;
 use super::network::OutboundMessage;
 use super::network::PeerEvent;
-use super::network::SignedWithKey;
+use super::network::SignedByValidator;
 use super::network::{Hello, NetMessage};
 use super::stream::send_net_message;
 use crate::bus::bus_client;
@@ -30,8 +30,8 @@ use crate::utils::crypto::SharedBlstCrypto;
 
 bus_client! {
 struct PeerBusClient {
-    sender(SignedWithKey<MempoolNetMessage>),
-    sender(SignedWithKey<ConsensusNetMessage>),
+    sender(SignedByValidator<MempoolNetMessage>),
+    sender(SignedByValidator<ConsensusNetMessage>),
     sender(PeerEvent),
     sender(DataNetMessage),
     receiver(OutboundMessage),

@@ -71,11 +71,9 @@ async fn main() -> Result<()> {
         router: Mutex::new(Some(Router::new())),
     });
 
-    if config.run_indexer {
-        let mut indexer = Indexer::build(ctx.clone()).await?;
-        indexer.connect_to(&config.da_address).await?;
-        handler.add_module(indexer)?;
-    }
+    let mut indexer = Indexer::build(ctx.clone()).await?;
+    indexer.connect_to(&config.da_address).await?;
+    handler.add_module(indexer)?;
 
     // Should come last so the other modules have nested their own routes.
     let router = ctx

@@ -1,4 +1,5 @@
 use bincode::{BorrowDecode, Decode, Encode};
+use derive_more::derive::Display;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeSet, HashMap, HashSet},
@@ -8,37 +9,33 @@ use std::{
 };
 use tracing::{debug, error, warn};
 
-use crate::model::{Transaction, ValidatorPublicKey};
+use crate::{
+    model::{Transaction, TransactionData, ValidatorPublicKey},
+    node_state::NodeState,
+};
 
 #[derive(Debug, Clone, Encode, Decode, Default, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct TipInfo {
-    pub pos: usize,
-    pub parent: Option<usize>,
+    pub pos: CarId,
+    pub parent: Option<CarId>,
     pub poa: Vec<ValidatorPublicKey>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProposalVerdict {
     Empty,
-    Wait(Option<usize>),
+    Wait(Option<CarId>),
     Vote,
     DidVote,
+    Refuse,
 }
 
-pub type Cut = Vec<(ValidatorPublicKey, usize)>;
+pub type Cut = Vec<(ValidatorPublicKey, CarId)>;
 
 fn prepare_cut(cut: &mut Cut, validator: &ValidatorPublicKey, lane: &mut Lane) {
     if let Some(tip) = lane.cars.last() {
-        if !tip.used_in_cut {
-            cut.push((validator.clone(), tip.id));
-        }
+        cut.push((validator.clone(), tip.id));
     }
-    lane.cars
-        .iter_mut()
-        .filter(|car| !car.used_in_cut)
-        .for_each(|car| {
-            car.used_in_cut = true;
-        });
 }
 
 #[derive(Debug, Clone)]
@@ -104,17 +101,16 @@ impl InMemoryStorage {
     }
 
     // Called after receiving a transaction, before broadcasting a car proposal
-    pub fn add_new_car_to_lane(&mut self, txs: Vec<Transaction>) -> usize {
+    pub fn add_new_car_to_lane(&mut self, txs: Vec<Transaction>) -> CarId {
         let tip_id = self.lane.current().map(|car| car.id);
 
-        let current_id = tip_id.unwrap_or(0) + 1;
+        let current_id = tip_id.unwrap_or(CarId(0)) + 1;
 
         self.lane.cars.push(Car {
             id: current_id,
             parent: tip_id,
             txs,
             poa: Poa(BTreeSet::from([self.id.clone()])),
-            used_in_cut: false,
         });
 
         current_id
@@ -156,6 +152,7 @@ impl InMemoryStorage {
         &mut self,
         validator: &ValidatorPublicKey,
         car_proposal: &CarProposal,
+        node_state: &NodeState,
     ) -> ProposalVerdict {
         if car_proposal.txs.is_empty() {
             return ProposalVerdict::Empty;
@@ -166,6 +163,30 @@ impl InMemoryStorage {
         if !self.other_lane_has_parent_proposal(validator, car_proposal) {
             self.proposal_will_wait(validator, car_proposal.clone());
             return ProposalVerdict::Wait(car_proposal.parent);
+        }
+        for tx in car_proposal.txs.iter() {
+            match &tx.transaction_data {
+                TransactionData::Proof(_) => {
+                    warn!("Refusing Car Proposal: unverified proof transaction");
+                    return ProposalVerdict::Refuse;
+                }
+                TransactionData::VerifiedProof(proof_tx) => {
+                    // Verifying the proof before voting
+                    match node_state.verify_proof(&proof_tx.proof_transaction) {
+                        Ok(hyle_outputs) => {
+                            if hyle_outputs != proof_tx.hyle_outputs {
+                                warn!("Refusing Car proposal: incorrect HyleOutput in proof transaction");
+                                return ProposalVerdict::Refuse;
+                            }
+                        }
+                        Err(e) => {
+                            warn!("Refusing Car Proposal: invalid proof transaction: {}", e);
+                            return ProposalVerdict::Refuse;
+                        }
+                    }
+                }
+                _ => {}
+            }
         }
         if let (Some(parent), Some(parent_poa)) = (car_proposal.parent, &car_proposal.parent_poa) {
             self.update_other_lane_parent_poa(validator, parent, parent_poa)
@@ -181,12 +202,28 @@ impl InMemoryStorage {
     ) {
         let lane = self.other_lanes.entry(validator.clone()).or_default();
         let tip_id = lane.current().map(|car| car.id);
+        // Removing proofs from transactions
+        let mut txs_without_proofs = car_proposal.txs.clone();
+        txs_without_proofs.iter_mut().for_each(|tx| {
+            match &mut tx.transaction_data {
+                TransactionData::VerifiedProof(proof_tx) => {
+                    proof_tx.proof_transaction.proof = Default::default();
+                }
+                TransactionData::Proof(_) => {
+                    // This can never happen.
+                    // A car proposal that has been processed has turned all TransactionData::Proof into TransactionData::VerifiedProof
+                    unreachable!();
+                }
+                TransactionData::Blob(_)
+                | TransactionData::Stake(_)
+                | TransactionData::RegisterContract(_) => {}
+            }
+        });
         lane.cars.push(Car {
-            id: tip_id.unwrap_or(0) + 1,
+            id: tip_id.unwrap_or(CarId(0)) + 1,
             parent: tip_id,
-            txs: car_proposal.txs.clone(),
+            txs: txs_without_proofs,
             poa: Poa(BTreeSet::from([self.id.clone(), validator.clone()])),
-            used_in_cut: false,
         });
     }
 
@@ -202,7 +239,7 @@ impl InMemoryStorage {
     fn update_other_lane_parent_poa(
         &mut self,
         validator: &ValidatorPublicKey,
-        parent: usize,
+        parent: CarId,
         parent_poa: &[ValidatorPublicKey],
     ) {
         let lane = self.other_lanes.entry(validator.clone()).or_default();
@@ -227,7 +264,7 @@ impl InMemoryStorage {
     }
 
     #[cfg(test)]
-    fn other_lane_tip(&self, validator: &ValidatorPublicKey) -> Option<usize> {
+    fn other_lane_tip(&self, validator: &ValidatorPublicKey) -> Option<CarId> {
         self.other_lanes
             .get(validator)
             .and_then(|lane| lane.current())
@@ -236,7 +273,7 @@ impl InMemoryStorage {
 
     pub fn get_missing_cars(
         &self,
-        last_index: Option<usize>,
+        last_car_id: Option<CarId>,
         car_proposal: &CarProposal,
     ) -> Option<Vec<Car>> {
         let car = self
@@ -251,8 +288,8 @@ impl InMemoryStorage {
                 None
             }
             Some(c) => {
-                //Normally last_index must be < current_car since we are on the lane reference (that must have more Cars than others)
-                match last_index {
+                //Normally last_car_id must be < current_car since we are on the lane reference (that must have more Cars than others)
+                match last_car_id {
                     // Nothing on the lane, we send everything, up to the Car proposal id/pos
                     None => Some(
                         self.lane
@@ -265,15 +302,15 @@ impl InMemoryStorage {
                     // If there is an index, two cases
                     // - it matches the current tip, in this case we don't send any more Cars
                     // - it does not match, we send the diff
-                    Some(last_index) => {
-                        if last_index == c.id {
+                    Some(last_car_id) => {
+                        if last_car_id == c.id {
                             None
                         } else {
                             Some(
                                 self.lane
                                     .cars
                                     .iter()
-                                    .skip_while(|car| car.id <= last_index)
+                                    .skip_while(|car| car.id <= last_car_id)
                                     .take_while(|car| car.id < c.id)
                                     .cloned()
                                     .collect(),
@@ -362,7 +399,11 @@ impl InMemoryStorage {
         Some(CarProposal {
             txs: pending_txs,
             id: tip_id,
-            parent: if tip_id == 1 { None } else { Some(tip_id - 1) },
+            parent: if tip_id == CarId(1) {
+                None
+            } else {
+                Some(tip_id - 1)
+            },
             parent_poa,
         })
     }
@@ -375,7 +416,7 @@ impl InMemoryStorage {
         }
     }
 
-    fn collect_old_used_cars(cars: &mut Vec<Car>, tip: usize, txs: &mut Vec<Transaction>) {
+    fn collect_old_used_cars(cars: &mut Vec<Car>, tip: CarId, txs: &mut Vec<Transaction>) {
         if let Some(pos) = cars.iter().position(|car| car.id == tip) {
             let latest_txs = std::mem::take(&mut cars[pos].txs);
             // collect all cars but the last. we need it for future cuts.
@@ -384,7 +425,7 @@ impl InMemoryStorage {
             });
             Self::dedup_push_txs(txs, latest_txs);
         } else {
-            error!("Car {} not found !", tip);
+            error!("Car {:?} not found !", tip);
         }
     }
 
@@ -409,8 +450,8 @@ impl InMemoryStorage {
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize, Encode, Decode)]
 pub struct CarProposal {
-    pub id: usize,
-    pub parent: Option<usize>,
+    pub id: CarId,
+    pub parent: Option<CarId>,
     pub parent_poa: Option<Vec<ValidatorPublicKey>>,
     pub txs: Vec<Transaction>,
 }
@@ -419,7 +460,7 @@ impl Display for CarProposal {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "{{ {:?} <- [{}/{:?}] }}",
+            "{{ {:?} <- [{:?}/{:?}] }}",
             self.parent,
             self.id,
             self.txs.first()
@@ -427,13 +468,54 @@ impl Display for CarProposal {
     }
 }
 
+#[derive(
+    Clone,
+    Copy,
+    Default,
+    Display,
+    Debug,
+    Hash,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Serialize,
+    Deserialize,
+    Encode,
+    Decode,
+)]
+pub struct CarId(pub usize);
+
+impl std::ops::Add for CarId {
+    type Output = Self;
+
+    fn add(self, other: Self) -> Self {
+        CarId(self.0 + other.0)
+    }
+}
+
+impl std::ops::Add<usize> for CarId {
+    type Output = Self;
+
+    fn add(self, other: usize) -> Self {
+        CarId(self.0 + other)
+    }
+}
+
+impl std::ops::Sub<usize> for CarId {
+    type Output = Self;
+
+    fn sub(self, other: usize) -> Self {
+        CarId(self.0 - other)
+    }
+}
+
 #[derive(Clone, Default, Debug, Eq, PartialEq, Serialize, Deserialize, Encode, Decode)]
 pub struct Car {
-    id: usize,
-    parent: Option<usize>,
+    id: CarId,
+    parent: Option<CarId>,
     txs: Vec<Transaction>,
     pub poa: Poa,
-    used_in_cut: bool,
 }
 
 #[derive(Clone, Default, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -495,11 +577,10 @@ impl Display for Car {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "[{}/{:?}/{}v] (used:{})",
-            self.id,
+            "[{}/{:?}/{}v]",
+            self.id.0,
             self.txs.first(),
             self.poa.len(),
-            self.used_in_cut,
         )
     }
 }
@@ -547,11 +628,12 @@ mod tests {
     use std::collections::BTreeSet;
 
     use crate::{
-        mempool::storage::{Car, CarProposal, InMemoryStorage, Poa, ProposalVerdict},
+        mempool::storage::{Car, CarId, CarProposal, InMemoryStorage, Poa, ProposalVerdict},
         model::{
-            Blob, BlobData, BlobTransaction, ContractName, Transaction, TransactionData,
-            ValidatorPublicKey,
+            Blob, BlobData, BlobTransaction, ContractName, ProofData, ProofTransaction,
+            Transaction, TransactionData, ValidatorPublicKey,
         },
+        node_state::NodeState,
     };
     use hyle_contract_sdk::Identity;
 
@@ -577,7 +659,7 @@ mod tests {
         store.other_lane_add_proposal(
             &pubkey2,
             &CarProposal {
-                id: 1,
+                id: CarId(1),
                 parent: None,
                 txs: vec![make_tx("test1")],
                 parent_poa: None,
@@ -587,8 +669,8 @@ mod tests {
         store.other_lane_add_proposal(
             &pubkey2,
             &CarProposal {
-                id: 2,
-                parent: Some(1),
+                id: CarId(2),
+                parent: Some(CarId(1)),
                 txs: vec![make_tx("test2")],
                 parent_poa: None,
             },
@@ -597,8 +679,8 @@ mod tests {
         store.other_lane_add_proposal(
             &pubkey2,
             &CarProposal {
-                id: 3,
-                parent: Some(2),
+                id: CarId(3),
+                parent: Some(CarId(2)),
                 txs: vec![make_tx("test3")],
                 parent_poa: None,
             },
@@ -607,8 +689,8 @@ mod tests {
         store.other_lane_add_proposal(
             &pubkey2,
             &CarProposal {
-                id: 4,
-                parent: Some(3),
+                id: CarId(4),
+                parent: Some(CarId(3)),
                 txs: vec![make_tx("test4")],
                 parent_poa: None,
             },
@@ -626,19 +708,18 @@ mod tests {
                 .first()
                 .unwrap(),
             Car {
-                id: 1,
+                id: CarId(1),
                 parent: None,
                 txs: vec![make_tx("test1")],
                 poa: Poa(BTreeSet::from([pubkey3.clone(), pubkey2.clone()])),
-                used_in_cut: false,
             }
         );
 
         let missing = store.get_missing_cars(
-            Some(1),
+            Some(CarId(1)),
             &CarProposal {
-                id: 4,
-                parent: Some(3),
+                id: CarId(4),
+                parent: Some(CarId(3)),
                 txs: vec![make_tx("test4")],
                 parent_poa: None,
             },
@@ -664,17 +745,17 @@ mod tests {
 
         let car_proposal = CarProposal {
             txs,
-            id: 1,
+            id: CarId(1),
             parent: None,
             parent_poa: None,
         };
 
         store.other_lane_add_proposal(&pubkey2, &car_proposal);
         assert!(store.other_lane_has_proposal(&pubkey2, &car_proposal));
-        assert_eq!(store.other_lane_tip(&pubkey2), Some(1));
+        assert_eq!(store.other_lane_tip(&pubkey2), Some(CarId(1)));
         store.other_lane_add_proposal(&pubkey1, &car_proposal);
         assert!(store.other_lane_has_proposal(&pubkey1, &car_proposal));
-        assert_eq!(store.other_lane_tip(&pubkey1), Some(1));
+        assert_eq!(store.other_lane_tip(&pubkey1), Some(CarId(1)));
 
         let some_tip = store.tip_info();
         assert!(some_tip.is_some());
@@ -695,29 +776,59 @@ mod tests {
     }
 
     #[test]
+    fn test_update_lane_with_unverified_proof_transaction() {
+        let pubkey2 = ValidatorPublicKey(vec![2]);
+        let pubkey3 = ValidatorPublicKey(vec![3]);
+        let mut store = InMemoryStorage::new(pubkey3.clone());
+        let node_state = NodeState::default();
+
+        let proof_tx = Transaction {
+            version: 1,
+            transaction_data: TransactionData::Proof(ProofTransaction {
+                blobs_references: vec![],
+                proof: ProofData::default(),
+            }),
+        };
+
+        let car_proposal = CarProposal {
+            txs: vec![proof_tx.clone()],
+            id: CarId(1),
+            parent: None,
+            parent_poa: None,
+        };
+
+        let verdict = store.new_car_proposal(&pubkey2, &car_proposal, &node_state);
+        assert_eq!(verdict, ProposalVerdict::Refuse);
+
+        // Ensure the lane was not updated with the unverified proof transaction
+        assert!(!store.other_lane_has_proposal(&pubkey2, &car_proposal));
+    }
+
+    #[test]
     fn test_update_lanes_after_commit() {
         let pubkey2 = ValidatorPublicKey(vec![2]);
         let pubkey3 = ValidatorPublicKey(vec![3]);
         let mut store = InMemoryStorage::new(pubkey3.clone());
+        let node_state = NodeState::default();
 
         let car_proposal1 = CarProposal {
             txs: vec![make_tx("test1"), make_tx("test2"), make_tx("test3")],
-            id: 1,
+            id: CarId(1),
             parent: None,
             parent_poa: None,
         };
 
         let car_proposal2 = CarProposal {
             txs: vec![make_tx("test4"), make_tx("test5"), make_tx("test6")],
-            id: 1,
+            id: CarId(1),
             parent: None,
             parent_poa: None,
         };
 
         let car_proposal3 = CarProposal {
             txs: vec![make_tx("test7"), make_tx("test8"), make_tx("test9")],
-            id: 2,
-            parent: Some(1),
+            id: CarId(2),
+            parent: Some(CarId(1)),
             parent_poa: Some(vec![pubkey3.clone(), pubkey2.clone()]),
         };
 
@@ -725,12 +836,12 @@ mod tests {
         store.new_vote_for_proposal(&pubkey2, &car_proposal1);
 
         assert_eq!(
-            store.new_car_proposal(&pubkey2, &car_proposal2),
+            store.new_car_proposal(&pubkey2, &car_proposal2, &node_state),
             ProposalVerdict::Vote
         );
 
         assert_eq!(
-            store.new_car_proposal(&pubkey2, &car_proposal3),
+            store.new_car_proposal(&pubkey2, &car_proposal3, &node_state),
             ProposalVerdict::Vote
         );
 
@@ -745,23 +856,13 @@ mod tests {
         // should contain only the tip on all the lanes
         assert_eq!(store.lane.size(), 1);
         assert_eq!(store.other_lanes.get(&pubkey2).map(|l| l.size()), Some(1));
-        assert_eq!(store.lane.current().map(|c| c.id), Some(1));
+        assert_eq!(store.lane.current().map(|c| c.id), Some(CarId(1)));
         assert_eq!(
             store
                 .other_lanes
                 .get(&pubkey2)
                 .and_then(|l| l.current().map(|c| c.id)),
-            Some(2)
-        );
-        // the tips should be marked as used in a cut
-        assert_eq!(store.lane.current().map(|car| car.used_in_cut), Some(true));
-        assert_eq!(
-            store
-                .other_lanes
-                .get(&pubkey2)
-                .and_then(|lane| lane.cars.first())
-                .map(|car| car.used_in_cut),
-            Some(true)
+            Some(CarId(2))
         );
     }
 
@@ -776,7 +877,7 @@ mod tests {
             &pubkey2,
             vec![
                 Car {
-                    id: 1,
+                    id: CarId(1),
                     parent: None,
                     txs: vec![
                         make_tx("test1"),
@@ -785,19 +886,17 @@ mod tests {
                         make_tx("test4"),
                     ],
                     poa: Poa(BTreeSet::from([pubkey1.clone(), pubkey2.clone()])),
-                    used_in_cut: false,
                 },
                 Car {
-                    id: 2,
-                    parent: Some(1),
+                    id: CarId(2),
+                    parent: Some(CarId(1)),
                     txs: vec![make_tx("test5"), make_tx("test6"), make_tx("test7")],
                     poa: Poa(BTreeSet::from([pubkey1.clone(), pubkey2.clone()])),
-                    used_in_cut: false,
                 },
             ],
         );
 
-        assert_eq!(store.other_lane_tip(&pubkey2), Some(2));
+        assert_eq!(store.other_lane_tip(&pubkey2), Some(CarId(2)));
     }
 
     #[test]
@@ -812,10 +911,10 @@ mod tests {
         assert_eq!(store.lane.cars.len(), 4);
 
         let missing = store.get_missing_cars(
-            Some(1),
+            Some(CarId(1)),
             &CarProposal {
-                id: 4,
-                parent: Some(3),
+                id: CarId(4),
+                parent: Some(CarId(3)),
                 txs: vec![make_tx("test_local4")],
                 parent_poa: None,
             },
@@ -825,18 +924,16 @@ mod tests {
             missing,
             Some(vec![
                 Car {
-                    id: 2,
-                    parent: Some(1),
+                    id: CarId(2),
+                    parent: Some(CarId(1)),
                     txs: vec![make_tx("test_local2")],
                     poa: Poa(BTreeSet::from_iter(vec![pubkey3.clone()])),
-                    used_in_cut: false,
                 },
                 Car {
-                    id: 3,
-                    parent: Some(2),
+                    id: CarId(3),
+                    parent: Some(CarId(2)),
                     txs: vec![make_tx("test_local3")],
                     poa: Poa(BTreeSet::from_iter(vec![pubkey3.clone()])),
-                    used_in_cut: false,
                 }
             ])
         );
@@ -844,8 +941,8 @@ mod tests {
         let missing = store.get_missing_cars(
             None,
             &CarProposal {
-                id: 4,
-                parent: Some(3),
+                id: CarId(4),
+                parent: Some(CarId(3)),
                 txs: vec![make_tx("test_local4")],
                 parent_poa: None,
             },
@@ -855,25 +952,22 @@ mod tests {
             missing,
             Some(vec![
                 Car {
-                    id: 1,
+                    id: CarId(1),
                     parent: None,
                     txs: vec![make_tx("test_local")],
                     poa: Poa(BTreeSet::from_iter(vec![pubkey3.clone()])),
-                    used_in_cut: false,
                 },
                 Car {
-                    id: 2,
-                    parent: Some(1),
+                    id: CarId(2),
+                    parent: Some(CarId(1)),
                     txs: vec![make_tx("test_local2")],
                     poa: Poa(BTreeSet::from_iter(vec![pubkey3.clone()])),
-                    used_in_cut: false,
                 },
                 Car {
-                    id: 3,
-                    parent: Some(2),
+                    id: CarId(3),
+                    parent: Some(CarId(2)),
                     txs: vec![make_tx("test_local3")],
                     poa: Poa(BTreeSet::from_iter(vec![pubkey3.clone()])),
-                    used_in_cut: false,
                 }
             ])
         );

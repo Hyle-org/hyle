@@ -20,12 +20,12 @@ use crate::{
     mempool::{Cut, MempoolEvent},
     model::{BlockHeight, Hashable, Transaction, TransactionData, ValidatorPublicKey},
     p2p::{
-        network::{OutboundMessage, PeerEvent, Signature, Signed, SignedWithKey},
+        network::{OutboundMessage, PeerEvent, Signed, SignedByValidator},
         P2PCommand,
     },
     utils::{
         conf::SharedConf,
-        crypto::{BlstCrypto, SharedBlstCrypto},
+        crypto::{AggregateSignature, BlstCrypto, SharedBlstCrypto, ValidatorSignature},
         logger::LogMe,
         modules::Module,
         static_type_map::Pick,
@@ -39,26 +39,9 @@ pub mod module;
 pub mod staking;
 pub mod utils;
 
-#[derive(
-    Debug, Serialize, Deserialize, Clone, Encode, Decode, PartialEq, Eq, Hash, IntoStaticStr,
-)]
-pub enum ConsensusNetMessage {
-    Prepare(ConsensusProposal, Ticket),
-    PrepareVote(ConsensusProposalHash),
-    // TODO: these should probably just be "SignedWithQuorumCertificate" to be consistent
-    Confirm(QuorumCertificate),
-    ConfirmAck(ConsensusProposalHash),
-    Commit(QuorumCertificate, ConsensusProposalHash),
-    ValidatorCandidacy(ValidatorCandidacy),
-}
-
-#[derive(Encode, Decode, Default, Debug)]
-enum Step {
-    #[default]
-    StartNewSlot,
-    PrepareVote,
-    ConfirmAck,
-}
+// -----------------------------
+// ------ Consensus bus --------
+// -----------------------------
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub enum ConsensusCommand {
@@ -82,9 +65,38 @@ pub enum ConsensusEvent {
     },
 }
 
+#[derive(Clone)]
+pub struct QueryConsensusInfo {}
+
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub struct ConsensusInfo {
+    pub slot: Slot,
+    pub view: View,
+    pub round_leader: ValidatorPublicKey,
+    pub validators: Vec<ValidatorPublicKey>,
+}
+
 impl BusMessage for ConsensusCommand {}
 impl BusMessage for ConsensusEvent {}
 impl BusMessage for ConsensusNetMessage {}
+
+bus_client! {
+struct ConsensusBusClient {
+    sender(OutboundMessage),
+    sender(ConsensusEvent),
+    sender(ConsensusCommand),
+    sender(P2PCommand),
+    receiver(ConsensusCommand),
+    receiver(MempoolEvent),
+    receiver(SignedByValidator<ConsensusNetMessage>),
+    receiver(PeerEvent),
+    receiver(Query<QueryConsensusInfo, ConsensusInfo>),
+}
+}
+
+// -----------------------------
+// --- Consensus data model ----
+// -----------------------------
 
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, PartialEq, Eq, Hash)]
 pub struct ValidatorCandidacy {
@@ -92,16 +104,56 @@ pub struct ValidatorCandidacy {
     peer_address: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode, PartialEq, Eq, Hash)]
+pub struct NewValidatorCandidate {
+    pubkey: ValidatorPublicKey, // TODO: possible optim: the pubkey is already present in the msg,
+    msg: SignedByValidator<ConsensusNetMessage>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, PartialEq, Eq, Hash, Default)]
+pub struct QuorumCertificateHash(Vec<u8>);
+
+type QuorumCertificate = AggregateSignature;
+
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, PartialEq, Eq, Hash)]
 pub struct TimeoutCertificate(Slot, View, QuorumCertificate);
 
 // A Ticket is necessary to send a valid prepare
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, PartialEq, Eq, Hash)]
 pub enum Ticket {
-    // Special value for the initial Cut
+    // Special value for the initial Cut, needed because we don't have a quorum certificate for the genesis block.
     Genesis,
     CommitQC(QuorumCertificate),
     TC(TimeoutCertificate),
+}
+
+pub type Slot = u64;
+pub type View = u64;
+
+#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, PartialEq, Eq, Hash, Default)]
+pub struct ConsensusProposalHash(Vec<u8>);
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, Encode, Decode, PartialEq, Eq, Hash)]
+pub struct ConsensusProposal {
+    // These first few items are checked when receiving the proposal from the leader.
+    slot: Slot,
+    view: View,
+    round_leader: ValidatorPublicKey,
+    // Below items aren't.
+    cut: Cut,
+    new_validators_to_bond: Vec<NewValidatorCandidate>,
+}
+
+#[derive(
+    Debug, Serialize, Deserialize, Clone, Encode, Decode, PartialEq, Eq, Hash, IntoStaticStr,
+)]
+pub enum ConsensusNetMessage {
+    Prepare(ConsensusProposal, Ticket),
+    PrepareVote(ConsensusProposalHash),
+    Confirm(QuorumCertificate),
+    ConfirmAck(ConsensusProposalHash),
+    Commit(QuorumCertificate, ConsensusProposalHash),
+    ValidatorCandidacy(ValidatorCandidacy),
 }
 
 // TODO: move struct to model.rs ?
@@ -126,11 +178,19 @@ enum StateTag {
     Follower,
 }
 
+#[derive(Encode, Decode, Default, Debug)]
+enum Step {
+    #[default]
+    StartNewSlot,
+    PrepareVote,
+    ConfirmAck,
+}
+
 #[derive(Encode, Decode, Default)]
 pub struct LeaderState {
     step: Step,
-    prepare_votes: HashSet<Signed<ConsensusNetMessage, ValidatorPublicKey>>,
-    confirm_ack: HashSet<Signed<ConsensusNetMessage, ValidatorPublicKey>>,
+    prepare_votes: HashSet<SignedByValidator<ConsensusNetMessage>>,
+    confirm_ack: HashSet<SignedByValidator<ConsensusNetMessage>>,
     pending_ticket: Option<Ticket>,
 }
 
@@ -150,43 +210,13 @@ pub struct GenesisState {
     peer_pubkey: HashMap<String, ValidatorPublicKey>,
 }
 
-#[derive(Serialize, Deserialize, Encode, Decode, Default, Debug, Clone, PartialEq, Eq, Hash)]
-pub struct QuorumCertificate {
-    signature: Signature,
-    validators: Vec<ValidatorPublicKey>,
-}
-
-pub type Slot = u64;
-pub type View = u64;
-
-#[derive(Debug, Clone, Default, Serialize, Deserialize, Encode, Decode, PartialEq, Eq, Hash)]
-pub struct ConsensusProposal {
-    // These first few items are checked when receiving the proposal from the leader.
-    slot: Slot,
-    view: View,
-    round_leader: ValidatorPublicKey,
-    // Below items aren't.
-    cut: Cut,
-    new_validators_to_bond: Vec<NewValidatorCandidate>,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, PartialEq, Eq, Hash, Default)]
-pub struct ConsensusProposalHash(Vec<u8>);
-#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, PartialEq, Eq, Hash, Default)]
-pub struct QuorumCertificateHash(Vec<u8>);
-
-#[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode, PartialEq, Eq, Hash)]
-pub struct NewValidatorCandidate {
-    pubkey: ValidatorPublicKey, // TODO: possible optim: the pubkey is already present in the msg,
-    msg: SignedWithKey<ConsensusNetMessage>,
-}
-
 #[derive(Encode, Decode, Default)]
 pub struct ConsensusStore {
     bft_round_state: BFTRoundState,
     /// Validators that asked to be part of consensus
     validator_candidates: Vec<NewValidatorCandidate>,
     pending_cut: Option<Cut>,
+    last_cut: Option<Cut>,
 }
 
 pub struct Consensus {
@@ -199,55 +229,7 @@ pub struct Consensus {
     crypto: SharedBlstCrypto,
 }
 
-#[derive(Clone)]
-pub struct QueryConsensusInfo {}
-
-#[derive(Clone, Serialize, Deserialize, Debug)]
-pub struct ConsensusInfo {
-    pub slot: Slot,
-    pub view: View,
-    pub round_leader: ValidatorPublicKey,
-    pub validators: Vec<ValidatorPublicKey>,
-}
-
-bus_client! {
-struct ConsensusBusClient {
-    sender(OutboundMessage),
-    sender(ConsensusEvent),
-    sender(ConsensusCommand),
-    sender(P2PCommand),
-    receiver(ConsensusCommand),
-    receiver(MempoolEvent),
-    receiver(SignedWithKey<ConsensusNetMessage>),
-    receiver(PeerEvent),
-    receiver(Query<QueryConsensusInfo, ConsensusInfo>),
-}
-}
-
 impl Consensus {
-    /// Add a validator with the default stake to our consensus.
-    /// This is trusted because it's out of the usual consensus process,
-    /// either at genesis or when fast-forwarding.
-    pub fn add_trusted_validator(
-        &mut self,
-        pubkey: &ValidatorPublicKey,
-        stake: Stake,
-    ) -> Result<()> {
-        self.bft_round_state
-            .staking
-            .add_staker(Staker {
-                pubkey: pubkey.clone(),
-                stake,
-            })
-            .context("cannot add trusted staker")?;
-        self.bft_round_state
-            .staking
-            .bond(pubkey.clone())
-            .context("cannot bond trusted validator")?;
-        info!("🎉 Trusted validator added: {}", pubkey);
-        Ok(())
-    }
-
     // Reset bft_round_state for the next round of consensus.
     fn finish_round(&mut self, commit: Option<QuorumCertificate>) -> Result<(), Error> {
         match self.bft_round_state.state_tag {
@@ -536,14 +518,16 @@ impl Consensus {
         quorum_certificate: &QuorumCertificate,
     ) -> Result<()> {
         // Construct the expected signed message
-        let expected_signed_message = SignedWithKey {
+        let expected_signed_message = Signed {
             msg: message,
-            signature: quorum_certificate.signature.clone(),
-            validators: quorum_certificate.validators.clone(),
+            signature: AggregateSignature {
+                signature: quorum_certificate.signature.clone(),
+                validators: quorum_certificate.validators.clone(),
+            },
         };
 
         match (
-            BlstCrypto::verify(&expected_signed_message),
+            BlstCrypto::verify_aggregate(&expected_signed_message),
             self.verify_quorum_signers_part_of_consensus(quorum_certificate),
         ) {
             (Ok(res), true) if !res => {
@@ -592,26 +576,32 @@ impl Consensus {
             "📝 Sending candidacy message to be part of consensus.  {}",
             candidacy
         );
+        // TODO: it would be more optimal to send this to the next leaders only.
         self.broadcast_net_message(ConsensusNetMessage::ValidatorCandidacy(candidacy))?;
         Ok(())
     }
 
-    fn handle_net_message(&mut self, msg: SignedWithKey<ConsensusNetMessage>) -> Result<(), Error> {
+    fn handle_net_message(
+        &mut self,
+        msg: SignedByValidator<ConsensusNetMessage>,
+    ) -> Result<(), Error> {
         if !BlstCrypto::verify(&msg)? {
             self.metrics.signature_error("prepare");
             bail!("Invalid signature for message {:?}", &msg);
         }
 
         // TODO: reduce cloning here.
-        let SignedWithKey::<ConsensusNetMessage> {
+        let SignedByValidator::<ConsensusNetMessage> {
             msg: net_message,
-            validators,
+            signature: ValidatorSignature {
+                validator: sender, ..
+            },
             ..
         } = msg.clone();
 
         match net_message {
             ConsensusNetMessage::Prepare(consensus_proposal, ticket) => {
-                self.on_prepare(validators, consensus_proposal, ticket)
+                self.on_prepare(sender, consensus_proposal, ticket)
             }
             ConsensusNetMessage::PrepareVote(consensus_proposal_hash) => {
                 self.on_prepare_vote(msg, consensus_proposal_hash)
@@ -645,7 +635,7 @@ impl Consensus {
     /// Message received by follower after start_round
     fn on_prepare(
         &mut self,
-        signers: Vec<ValidatorPublicKey>,
+        sender: ValidatorPublicKey,
         consensus_proposal: ConsensusProposal,
         ticket: Ticket,
     ) -> Result<(), Error> {
@@ -700,6 +690,8 @@ impl Consensus {
             }
         }
 
+        // TODO: check we haven't voted for a proposal this slot/view already.
+
         // After processing the ticket, we should be in the right slot/view.
 
         if consensus_proposal.slot != self.bft_round_state.consensus_proposal.slot {
@@ -712,7 +704,7 @@ impl Consensus {
         }
 
         // Validate message comes from the correct leader
-        if !signers.contains(&self.bft_round_state.consensus_proposal.round_leader) {
+        if sender != self.bft_round_state.consensus_proposal.round_leader {
             self.metrics.prepare_error("wrong_leader");
             bail!(
                 "Prepare consensus message does not come from current leader. I won't vote for it."
@@ -747,7 +739,7 @@ impl Consensus {
     /// Message received by leader.
     fn on_prepare_vote(
         &mut self,
-        msg: SignedWithKey<ConsensusNetMessage>,
+        msg: SignedByValidator<ConsensusNetMessage>,
         consensus_proposal_hash: ConsensusProposalHash,
     ) -> Result<()> {
         if !matches!(self.bft_round_state.state_tag, StateTag::Leader) {
@@ -777,7 +769,7 @@ impl Consensus {
             .leader
             .prepare_votes
             .iter()
-            .flat_map(|signed_message| signed_message.validators.clone())
+            .map(|signed_message| signed_message.signature.validator.clone())
             .collect::<Vec<ValidatorPublicKey>>();
 
         let votes_power = self.compute_voting_power(&validated_votes);
@@ -799,7 +791,7 @@ impl Consensus {
 
         if voting_power > 2 * f {
             // Get all received signatures
-            let aggregates: &Vec<&Signed<ConsensusNetMessage, ValidatorPublicKey>> =
+            let aggregates: &Vec<&SignedByValidator<ConsensusNetMessage>> =
                 &self.bft_round_state.leader.prepare_votes.iter().collect();
 
             // Aggregates them into a *Prepare* Quorum Certificate
@@ -821,10 +813,9 @@ impl Consensus {
                 "Slot {} PrepareVote message validated. Broadcasting Confirm",
                 self.bft_round_state.consensus_proposal.slot
             );
-            self.broadcast_net_message(ConsensusNetMessage::Confirm(QuorumCertificate {
-                signature: prepvote_signed_aggregation.signature,
-                validators: prepvote_signed_aggregation.validators,
-            }))?;
+            self.broadcast_net_message(ConsensusNetMessage::Confirm(
+                prepvote_signed_aggregation.signature,
+            ))?;
         }
         // TODO(?): Update behaviour when having more ?
         // else if validated_votes > 2 * f + 1 {}
@@ -870,7 +861,7 @@ impl Consensus {
     /// Message received by leader.
     fn on_confirm_ack(
         &mut self,
-        msg: SignedWithKey<ConsensusNetMessage>,
+        msg: SignedByValidator<ConsensusNetMessage>,
         consensus_proposal_hash: ConsensusProposalHash,
     ) -> Result<()> {
         if !matches!(self.bft_round_state.state_tag, StateTag::Leader) {
@@ -910,7 +901,7 @@ impl Consensus {
             .leader
             .confirm_ack
             .iter()
-            .flat_map(|signed_message| signed_message.validators.clone())
+            .map(|signed_message| signed_message.signature.validator.clone())
             .collect::<Vec<ValidatorPublicKey>>();
 
         let confirmed_power = self.compute_voting_power(&confirmed_ack_validators);
@@ -931,7 +922,7 @@ impl Consensus {
 
         if voting_power > 2 * f {
             // Get all signatures received and change ValidatorPublicKey for ValidatorPubKey
-            let aggregates: &Vec<&Signed<ConsensusNetMessage, ValidatorPublicKey>> =
+            let aggregates: &Vec<&SignedByValidator<ConsensusNetMessage>> =
                 &self.bft_round_state.leader.confirm_ack.iter().collect();
 
             // Aggregates them into a *Commit* Quorum Certificate
@@ -943,10 +934,7 @@ impl Consensus {
             self.metrics.confirm_ack_commit_aggregate();
 
             // Buffers the *Commit* Quorum Cerficiate
-            let commit_quorum_certificate = QuorumCertificate {
-                signature: commit_signed_aggregation.signature.clone(),
-                validators: commit_signed_aggregation.validators.clone(),
-            };
+            let commit_quorum_certificate = commit_signed_aggregation.signature;
 
             // Broadcast the *Commit* Quorum Certificate to all validators
             self.broadcast_net_message(ConsensusNetMessage::Commit(
@@ -968,13 +956,19 @@ impl Consensus {
         proposal_hash_hint: ConsensusProposalHash,
     ) -> Result<()> {
         match self.bft_round_state.state_tag {
-            StateTag::Follower => {
-                return self.try_commit_current_proposal(commit_quorum_certificate)
+            StateTag::Follower => self.try_commit_current_proposal(commit_quorum_certificate),
+            StateTag::Joining => {
+                self.on_commit_while_joining(commit_quorum_certificate, proposal_hash_hint)
             }
-            StateTag::Joining => {}
             _ => bail!("Commit message received while not follower"),
-        };
+        }
+    }
 
+    fn on_commit_while_joining(
+        &mut self,
+        commit_quorum_certificate: QuorumCertificate,
+        proposal_hash_hint: ConsensusProposalHash,
+    ) -> Result<()> {
         // We are joining consensus, try to sync our state.
         // First find the prepare message to this commit.
         let Some(proposal_index) = self
@@ -1052,11 +1046,13 @@ impl Consensus {
                     .map(|v| v.pubkey.clone())
                     .collect(),
             })
-            .context("Failed to send ConsensusEvent::CommitCut on the bus");
+            .expect("Failed to send ConsensusEvent::CommitCut on the bus");
 
         // Save added cut TODO: remove ? (data availability)
         if let Some(file) = &self.file {
-            Self::save_on_disk(file.as_path(), &self.store)?;
+            if let Err(e) = Self::save_on_disk(file.as_path(), &self.store) {
+                warn!("Failed to save consensus state on disk: {}", e);
+            }
         }
 
         info!(
@@ -1094,7 +1090,7 @@ impl Consensus {
     /// Message received by leader & follower.
     fn on_validator_candidacy(
         &mut self,
-        msg: SignedWithKey<ConsensusNetMessage>,
+        msg: SignedByValidator<ConsensusNetMessage>,
         candidacy: ValidatorCandidacy,
     ) -> Result<()> {
         info!("📝 Received candidacy message: {}", candidacy);
@@ -1164,23 +1160,9 @@ impl Consensus {
             ConsensusCommand::ProcessedBlock(block_height) => {
                 match self.bft_round_state.state_tag {
                     StateTag::Genesis => {
-                        // ACHTUNG: this only works because Staking, Bonding and Processed messages
-                        // are part of the same channel and so will be processed in order.
-                        if block_height == BlockHeight(0) {
-                            // Genesis logic: we rely on all peers connecting with each other
-                            // before the first round starts, or the validators list will mismatch.
-                            // TODO: this is hacky & duplicates logic in the module building.
-                            if self.config.consensus.genesis_leader == self.config.id {
-                                self.bft_round_state.state_tag = StateTag::Leader;
-                                self.bft_round_state.consensus_proposal.slot = 1;
-                                info!("👑 Starting consensus as leader");
-                                self.delay_start_new_round(Ticket::Genesis)?;
-                            } else {
-                                self.bft_round_state.state_tag = StateTag::Follower;
-                                self.bft_round_state.consensus_proposal.slot = 1;
-                                info!("👑 Starting consensus as follower");
-                            }
-                        }
+                        unreachable!(
+                            "Genesis handling should never happen here but in start_genesis"
+                        );
                     }
                     StateTag::Joining => {
                         info!(
@@ -1244,8 +1226,17 @@ impl Consensus {
                         return Ok(());
                     }
                 }
+                if let Some(ref last) = self.last_cut {
+                    for (validator, tip) in cut.iter() {
+                        if let Some((_, last_tip)) = last.iter().find(|(v, _)| v == validator) {
+                            if last_tip >= tip {
+                                bail!("Tip of last Cut for {validator} was {last_tip} but new Cut says it is {tip}");
+                            }
+                        }
+                    }
+                }
                 debug!("✂️ Received a new Cut ({:?})", cut);
-                self.pending_cut.replace(cut);
+                self.last_cut = self.pending_cut.replace(cut);
                 Ok(())
             }
         }
@@ -1417,7 +1408,7 @@ impl Consensus {
                     Err(e) => warn!("Error while handling mempool event: {:#}", e),
                 }
             }
-            listen<SignedWithKey<ConsensusNetMessage>> cmd => {
+            listen<SignedByValidator<ConsensusNetMessage>> cmd => {
                 match self.handle_net_message(cmd) {
                     Ok(_) => (),
                     Err(e) => warn!("Consensus message failed: {:#}", e),
@@ -1436,7 +1427,7 @@ impl Consensus {
     fn sign_net_message(
         &self,
         msg: ConsensusNetMessage,
-    ) -> Result<SignedWithKey<ConsensusNetMessage>> {
+    ) -> Result<SignedByValidator<ConsensusNetMessage>> {
         debug!("🔏 Signing message: {}", msg);
         self.crypto.sign(msg)
     }
@@ -1491,6 +1482,23 @@ mod test {
             }
         }
 
+        pub fn add_trusted_validator(&mut self, pubkey: &ValidatorPublicKey) {
+            self.consensus
+                .bft_round_state
+                .staking
+                .add_staker(Staker {
+                    pubkey: pubkey.clone(),
+                    stake: Stake { amount: 100 },
+                })
+                .expect("cannot add trusted staker");
+            self.consensus
+                .bft_round_state
+                .staking
+                .bond(pubkey.clone())
+                .expect("cannot bond trusted validator");
+            info!("🎉 Trusted validator added: {}", pubkey);
+        }
+
         async fn build() -> (Self, Self) {
             let crypto = crypto::BlstCrypto::new("node-1".into());
             info!("node 1: {}", crypto.validator_pubkey());
@@ -1499,18 +1507,10 @@ mod test {
             let mut node1 = Self::new("node-1", crypto.clone()).await;
             let mut node2 = Self::new("node-2", c_other.clone()).await;
 
-            _ = node1
-                .consensus
-                .add_trusted_validator(&crypto.validator_pubkey().clone(), Stake { amount: 100 });
-            _ = node1
-                .consensus
-                .add_trusted_validator(&c_other.validator_pubkey().clone(), Stake { amount: 100 });
-            _ = node2
-                .consensus
-                .add_trusted_validator(&crypto.validator_pubkey().clone(), Stake { amount: 100 });
-            _ = node2
-                .consensus
-                .add_trusted_validator(&c_other.validator_pubkey().clone(), Stake { amount: 100 });
+            node1.add_trusted_validator(crypto.validator_pubkey());
+            node1.add_trusted_validator(c_other.validator_pubkey());
+            node2.add_trusted_validator(crypto.validator_pubkey());
+            node2.add_trusted_validator(c_other.validator_pubkey());
 
             node1.consensus.bft_round_state.consensus_proposal.slot = 1;
             node1.consensus.bft_round_state.state_tag = StateTag::Leader;
@@ -1542,13 +1542,13 @@ mod test {
         }
 
         #[track_caller]
-        fn handle_msg(&mut self, msg: &SignedWithKey<ConsensusNetMessage>, err: &str) {
+        fn handle_msg(&mut self, msg: &SignedByValidator<ConsensusNetMessage>, err: &str) {
             debug!("📥 {} Handling message: {:?}", self.name, msg);
             self.consensus.handle_net_message(msg.clone()).expect(err);
         }
 
         #[track_caller]
-        fn handle_msg_err(&mut self, msg: &SignedWithKey<ConsensusNetMessage>) -> Error {
+        fn handle_msg_err(&mut self, msg: &SignedByValidator<ConsensusNetMessage>) -> Error {
             debug!("📥 {} Handling message expecting err: {:?}", self.name, msg);
             let err = self.consensus.handle_net_message(msg.clone()).unwrap_err();
             info!("Expected error: {:#}", err);
@@ -1557,7 +1557,7 @@ mod test {
 
         #[cfg(test)]
         #[track_caller]
-        fn handle_block(&mut self, msg: &SignedWithKey<ConsensusNetMessage>) {
+        fn handle_block(&mut self, msg: &SignedByValidator<ConsensusNetMessage>) {
             match &msg.msg {
                 ConsensusNetMessage::Prepare(_, _) => {}
                 _ => panic!("Block message is not a Prepare message"),
@@ -1599,10 +1599,7 @@ mod test {
         }
 
         #[track_caller]
-        fn assert_broadcast(
-            &mut self,
-            err: &str,
-        ) -> Signed<ConsensusNetMessage, ValidatorPublicKey> {
+        fn assert_broadcast(&mut self, err: &str) -> SignedByValidator<ConsensusNetMessage> {
             #[allow(clippy::expect_fun_call)]
             let rec = self
                 .out_receiver
@@ -1621,11 +1618,7 @@ mod test {
         }
 
         #[track_caller]
-        fn assert_send(
-            &mut self,
-            to: &Self,
-            err: &str,
-        ) -> Signed<ConsensusNetMessage, ValidatorPublicKey> {
+        fn assert_send(&mut self, to: &Self, err: &str) -> SignedByValidator<ConsensusNetMessage> {
             #[allow(clippy::expect_fun_call)]
             let rec = self
                 .out_receiver

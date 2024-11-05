@@ -168,7 +168,6 @@ pub async fn get_blob_transactions_by_contract(
         SELECT
             t.tx_hash,
             t.block_hash,
-            t.tx_index,
             t.version,
             t.transaction_type,
             t.transaction_status,
@@ -183,7 +182,6 @@ pub async fn get_blob_transactions_by_contract(
         GROUP BY
             t.tx_hash,
             t.block_hash,
-            t.tx_index,
             t.version,
             t.transaction_type,
             t.transaction_status,
@@ -200,7 +198,6 @@ pub async fn get_blob_transactions_by_contract(
         .map(|row| {
             let tx_hash: TxHashDb = row.try_get("tx_hash").unwrap();
             let block_hash: BlockHash = row.try_get("block_hash").unwrap();
-            let tx_index: i32 = row.try_get("tx_index").unwrap();
             let version: i32 = row.try_get("version").unwrap();
             let transaction_type: TransactionType = row.try_get("transaction_type").unwrap();
             let transaction_status: TransactionStatus = row.try_get("transaction_status").unwrap();
@@ -218,7 +215,6 @@ pub async fn get_blob_transactions_by_contract(
             TransactionWithBlobs {
                 tx_hash,
                 block_hash,
-                tx_index,
                 version,
                 transaction_type,
                 transaction_status,
