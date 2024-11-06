@@ -149,13 +149,40 @@ pub fn risc0_proof_verifier(encoded_receipt: &[u8], image_id: &[u8]) -> Result<H
     Ok(hyle_output)
 }
 
+pub fn noir_proof_verifier(vk_buf: &[u8], proof_buf: &[u8]) -> Result<HyleOutput, Error> {
+    unsafe {
+        use bb_rs::barretenberg_api::*;
+
+        srs::init_srs(&[0], 0, &[0]);
+        let mut acir_ptr = acir::new_acir_composer(0);
+        acir::acir_load_verification_key(&mut acir_ptr, vk_buf);
+        println!("OK SO FAR");
+        println!("{:?} {:?}", vk_buf, proof_buf);
+        let result = acir::acir_verify_proof(&mut acir_ptr, proof_buf);
+        println!("OK SO FAR2 {}", result);
+        // TODO: compute this from the vkey, supposed to be bytes 16-24
+        let num_inner_public_inputs = 4;
+        let inputs = acir::acir_serialize_proof_into_fields(
+            &mut acir_ptr,
+            proof_buf,
+            num_inner_public_inputs,
+        );
+        println!("OK SO FAR4 {:?}", inputs);
+        acir::delete_acir_composer(acir_ptr);
+    }
+    bail!("toto");
+}
+
 #[cfg(test)]
 mod tests {
-    use std::{fs::File, io::Read};
+    use std::{
+        fs::{self, File},
+        io::Read,
+    };
 
     use hyle_contract_sdk::{BlobIndex, HyleOutput, Identity, StateDigest, TxHash};
 
-    use super::risc0_proof_verifier;
+    use super::{noir_proof_verifier, risc0_proof_verifier};
 
     fn load_encoded_receipt_from_file(path: &str) -> Vec<u8> {
         let mut file = File::open(path).expect("Failed to open proof file");
@@ -202,5 +229,17 @@ mod tests {
             }
             Err(e) => panic!("Risc0 verification failed: {:?}", e),
         }
+    }
+
+    #[test]
+    fn test_noir_proof_verifier() {
+        // Open vkey at /Users/lancelot/Programming/Hylé/vibe-check/noir-webauthn/target/vkey
+        let vk_buf =
+            fs::read("/Users/lancelot/Programming/Hylé/vibe-check/noir-webauthn/target/vkey")
+                .expect("Failed to read vkey file");
+        let proof_buf =
+            fs::read("/Users/lancelot/Programming/Hylé/vibe-check/noir-webauthn/target/proof")
+                .expect("Failed to read proof file");
+        noir_proof_verifier(&vk_buf, &proof_buf);
     }
 }
