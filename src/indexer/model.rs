@@ -74,6 +74,15 @@ pub struct BlobDb {
     pub identity: String,  // Identity of the blob
     pub contract_name: String, // Contract name associated with the blob
     pub data: Vec<u8>,     // Actual blob data
+    pub verified: bool,    // Verification status
+}
+
+#[derive(Debug, sqlx::FromRow, Serialize, Deserialize)]
+pub struct BlobDbWithStatus {
+    #[sqlx(flatten)]
+    #[serde(flatten)]
+    pub blob: BlobDb,
+    pub transaction_status: TransactionStatus,
 }
 
 #[derive(Debug, sqlx::FromRow, Serialize, Deserialize)]
