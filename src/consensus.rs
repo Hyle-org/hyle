@@ -156,7 +156,6 @@ pub enum ConsensusNetMessage {
     ValidatorCandidacy(ValidatorCandidacy),
 }
 
-// TODO: move struct to model.rs ?
 #[derive(Encode, Decode, Default)]
 pub struct BFTRoundState {
     consensus_proposal: ConsensusProposal,

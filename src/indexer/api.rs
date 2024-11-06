@@ -2,8 +2,8 @@ use crate::model::{Blob, BlobData, BlockHash, ContractName};
 
 use super::{
     model::{
-        BlobDb, BlockDb, ContractDb, ContractStateDb, TransactionDb, TransactionStatus,
-        TransactionType, TransactionWithBlobs, TxHashDb,
+        BlobDb, BlobDbWithStatus, BlockDb, ContractDb, ContractStateDb, TransactionDb,
+        TransactionStatus, TransactionType, TransactionWithBlobs, TxHashDb,
     },
     IndexerApiState,
 };
@@ -233,9 +233,9 @@ pub async fn get_blob_transactions_by_contract(
 pub async fn get_blobs_by_contract(
     Path(contract_name): Path<String>,
     State(state): State<IndexerApiState>,
-) -> Result<Json<Vec<BlobDb>>, StatusCode> {
+) -> Result<Json<Vec<BlobDbWithStatus>>, StatusCode> {
     // TODO: Order transactions ?
-    let blobs = sqlx::query_as::<_, BlobDb>(
+    let blobs = sqlx::query_as::<_, BlobDbWithStatus>(
         r#"
         SELECT b.*, t.transaction_status
         FROM blobs b
