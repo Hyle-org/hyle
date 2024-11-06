@@ -15,7 +15,7 @@ use tokio::{
     sync::broadcast,
     time::{interval, sleep},
 };
-use tracing::{debug, error, info, warn};
+use tracing::{debug, info, warn};
 
 use crate::{
     bus::{
@@ -132,7 +132,7 @@ pub enum Ticket {
     // Special value for the initial Cut, needed because we don't have a quorum certificate for the genesis block.
     Genesis,
     CommitQC(QuorumCertificate),
-    TC(TimeoutCertificate),
+    TimeoutQC(QuorumCertificate),
 }
 
 pub type Slot = u64;
@@ -374,9 +374,9 @@ impl Consensus {
                         .bond(new_v.pubkey.clone())?;
                 }
             }
-            Some(Ticket::TC(_)) => {
+            Some(Ticket::TimeoutQC(qc)) => {
                 self.bft_round_state.consensus_proposal.view += 1;
-                self.bft_round_state.follower.buffered_quorum_certificate = None;
+                self.bft_round_state.follower.buffered_quorum_certificate = Some(qc);
             }
             els => {
                 bail!("Invalid ticket here {:?}", els);
@@ -738,27 +738,36 @@ impl Consensus {
         if let Some(qc) = &self.bft_round_state.follower.buffered_quorum_certificate {
             return qc == &commit_qc;
         }
-        self.try_commit_current_proposal(commit_qc.clone()).is_ok()
+
+        self.try_commit_current_proposal(commit_qc.clone())
+            .log_error("Processing Commit Ticket")
+            .is_ok()
     }
 
-    fn verify_tc_ticket(
-        &mut self,
-        TimeoutCertificate(consensus_proposal_hash, certificate): TimeoutCertificate,
-        consensus_proposal: &ConsensusProposal,
-    ) -> bool {
-        let mut old_consensus_proposal = consensus_proposal.clone();
-        old_consensus_proposal.view -= 1;
-        if old_consensus_proposal.hash() != consensus_proposal_hash {
-            error!("Timeout ticket does not match the consensus proposal");
-            return false;
+    fn verify_timeout_ticket(&mut self, timeout_qc: QuorumCertificate) -> bool {
+        // Three options:
+        // - we have already received the commit message for this ticket, so we already processed the QC.
+        // - we haven't, so we process it right away
+        // - the CQC is invalid and we just ignore it.
+        if let Some(qc) = &self.bft_round_state.follower.buffered_quorum_certificate {
+            return qc == &timeout_qc;
         }
 
+        self.try_process_timeout_qc(timeout_qc)
+            .log_error("Processing Timeout ticket")
+            .is_ok()
+    }
+
+    fn try_process_timeout_qc(&mut self, timeout_qc: QuorumCertificate) -> Result<()> {
+        let mut matching_proposal = self.bft_round_state.consensus_proposal.clone();
+        matching_proposal.view -= 1;
         self.verify_quorum_certificate(
-            ConsensusNetMessage::Timeout(consensus_proposal_hash),
-            &certificate,
+            ConsensusNetMessage::Timeout(matching_proposal.hash()),
+            &timeout_qc,
         )
-        .log_error("Verifying TC Ticket")
-        .is_ok()
+        .context("Verifying Timeout Ticket")?;
+
+        self.carry_on_with_ticket(Ticket::TimeoutQC(timeout_qc.clone()))
     }
 
     /// Message received by follower after start_round
@@ -814,8 +823,8 @@ impl Consensus {
                     bail!("Invalid commit ticket");
                 }
             }
-            Ticket::TC(timeout_certificate) => {
-                if !self.verify_tc_ticket(timeout_certificate, &consensus_proposal) {
+            Ticket::TimeoutQC(timeout_qc) => {
+                if !self.verify_timeout_ticket(timeout_qc) {
                     bail!("Invalid timeout ticket");
                 }
             }
@@ -1172,7 +1181,6 @@ impl Consensus {
             );
         }
 
-        let current_slot = self.bft_round_state.consensus_proposal.slot;
         let current_view = self.bft_round_state.consensus_proposal.view;
 
         // In the paper, a replica returns a commit if present
@@ -1262,10 +1270,7 @@ impl Consensus {
 
             self.bft_round_state.timeout_state.cancel();
 
-            self.end_the_round_with_timeout_certificate(
-                &received_consensus_proposal_hash,
-                &timeout_certificate,
-            )?;
+            self.carry_on_with_ticket(Ticket::TimeoutQC(timeout_certificate))?;
         }
 
         Ok(())
@@ -1285,7 +1290,7 @@ impl Consensus {
         }
 
         info!(
-            "Verifying quorum certificate {:?}",
+            "Process quorum certificate {:?}",
             received_timeout_certificate
         );
 
@@ -1299,29 +1304,16 @@ impl Consensus {
             self.bft_round_state.consensus_proposal.view
         ))?;
 
-        self.end_the_round_with_timeout_certificate(
-            received_consensus_proposal_hash,
-            received_timeout_certificate,
-        )
+        self.carry_on_with_ticket(Ticket::TimeoutQC(received_timeout_certificate.clone()))
     }
 
-    fn end_the_round_with_timeout_certificate(
-        &mut self,
-        received_consensus_proposal_hash: &ConsensusProposalHash,
-        received_timeout_certificate: &AggregateSignature,
-    ) -> Result<()> {
-        self.finish_round(Some(Ticket::TC(TimeoutCertificate(
-            received_consensus_proposal_hash.clone(),
-            received_timeout_certificate.clone(),
-        ))))?;
+    fn carry_on_with_ticket(&mut self, ticket: Ticket) -> Result<()> {
+        self.finish_round(Some(ticket.clone()))?;
 
         if self.is_round_leader() {
             // Setup our ticket for the next round
             // Send Prepare message to all validators
-            self.delay_start_new_round(Ticket::TC(TimeoutCertificate(
-                received_consensus_proposal_hash.clone(),
-                received_timeout_certificate.clone(),
-            )))
+            self.delay_start_new_round(ticket)
         } else if self.is_part_of_consensus(self.crypto.validator_pubkey()) {
             Ok(())
         } else if self
@@ -1388,31 +1380,7 @@ impl Consensus {
             &self.bft_round_state.consensus_proposal.slot
         );
 
-        // Prepare our state for the next round.
-        self.finish_round(Some(Ticket::CommitQC(commit_quorum_certificate.clone())))?;
-
-        if self.is_round_leader() {
-            // Setup our ticket for the next round
-            // Send Prepare message to all validators
-            self.delay_start_new_round(Ticket::CommitQC(commit_quorum_certificate))
-        } else if self.is_part_of_consensus(self.crypto.validator_pubkey()) {
-            Ok(())
-        } else if self
-            .bft_round_state
-            .staking
-            .get_stake(self.crypto.validator_pubkey())
-            .map(|s| s.amount)
-            .unwrap_or(0)
-            > MIN_STAKE
-        {
-            self.send_candidacy()
-        } else {
-            info!(
-                "😥 No stake on pubkey '{}'. Not sending candidacy.",
-                self.crypto.validator_pubkey()
-            );
-            Ok(())
-        }
+        self.carry_on_with_ticket(Ticket::CommitQC(commit_quorum_certificate.clone()))
     }
 
     /// Message received by leader & follower.
