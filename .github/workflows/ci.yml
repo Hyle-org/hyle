@@ -22,6 +22,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: rustup update ${{ matrix.toolchain }} && rustup default ${{ matrix.toolchain }}
+
+      - name: Cache Docker layers
+        id: image-cache
+        uses: actions/cache@v1
+          with:
+              path: ~/image-cache
+              key: image-cache-${{ runner.os }}
+
+      - if: steps.image-cache.outputs.cache-hit != 'true'
+        run: |
+            docker pull postgres:11-alpine
+            docker save -o ~/image-cache/postgres.tar alpine
+
+      - if: steps.image-cache.outputs.cache-hit == 'true'
+        run: docker load -i ~/image-cache/postgres.tar
+
       - uses: taiki-e/install-action@nextest
       - uses: Swatinem/rust-cache@v2
         with:
@@ -56,6 +72,6 @@ jobs:
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v3
         with:
-          token: ${{ secrets.CODECOV_TOKEN }} 
+          token: ${{ secrets.CODECOV_TOKEN }}
           files: lcov.info
           fail_ci_if_error: true
