@@ -633,6 +633,7 @@ impl std::ops::Deref for Indexer {
 mod test {
     use axum_test::TestServer;
     use hyle_contract_sdk::{BlobIndex, HyleOutput, Identity, StateDigest, TxHash};
+    use model::{BlobDbWithStatus, ContractDb};
     use std::{
         future::IntoFuture,
         net::{Ipv4Addr, SocketAddr},
@@ -682,21 +683,31 @@ mod test {
         }
     }
 
-    fn new_blob_tx(contract_name: ContractName) -> Transaction {
+    fn new_blob_tx(
+        first_contract_name: ContractName,
+        second_contract_name: ContractName,
+    ) -> Transaction {
         Transaction {
             version: 1,
             transaction_data: TransactionData::Blob(BlobTransaction {
                 identity: Identity("test".to_owned()),
-                blobs: vec![Blob {
-                    contract_name,
-                    data: BlobData(vec![1, 2, 3]),
-                }],
+                blobs: vec![
+                    Blob {
+                        contract_name: first_contract_name,
+                        data: BlobData(vec![1, 2, 3]),
+                    },
+                    Blob {
+                        contract_name: second_contract_name,
+                        data: BlobData(vec![1, 2, 3]),
+                    },
+                ],
             }),
         }
     }
 
     fn new_proof_tx(
         contract_name: ContractName,
+        blob_index: BlobIndex,
         blob_tx_hash: TxHash,
         initial_state: StateDigest,
         next_state: StateDigest,
@@ -708,7 +719,7 @@ mod test {
                     blobs_references: vec![BlobReference {
                         contract_name: contract_name.clone(),
                         blob_tx_hash: blob_tx_hash.clone(),
-                        blob_index: BlobIndex(0),
+                        blob_index: blob_index.clone(),
                     }],
                     proof: ProofData::default(),
                 },
@@ -718,8 +729,8 @@ mod test {
                     next_state,
                     identity: Identity("test".to_owned()),
                     tx_hash: blob_tx_hash,
-                    index: BlobIndex(0),
-                    blobs: vec![1, 2, 3],
+                    index: blob_index,
+                    blobs: vec![1, 2, 3, 1, 2, 3],
                     success: true,
                     program_outputs: vec![],
                 }],
@@ -745,20 +756,39 @@ mod test {
 
         let initial_state = StateDigest(vec![1, 2, 3]);
         let next_state = StateDigest(vec![4, 5, 6]);
-        let contract_name = ContractName("c1".to_owned());
+        let first_contract_name = ContractName("c1".to_owned());
+        let second_contract_name = ContractName("c2".to_owned());
 
-        let register_tx = new_register_tx(contract_name.clone(), initial_state.clone());
+        let register_tx_1 = new_register_tx(first_contract_name.clone(), initial_state.clone());
+        let register_tx_2 = new_register_tx(second_contract_name.clone(), initial_state.clone());
 
-        let blob_transaction = new_blob_tx(contract_name.clone());
+        let blob_transaction =
+            new_blob_tx(first_contract_name.clone(), second_contract_name.clone());
+        let blob_transaction_hash = blob_transaction.hash();
 
-        let proof_tx = new_proof_tx(
-            contract_name.clone(),
-            blob_transaction.hash(),
+        let proof_tx_1 = new_proof_tx(
+            first_contract_name.clone(),
+            BlobIndex(0),
+            blob_transaction_hash.clone(),
             initial_state.clone(),
             next_state.clone(),
         );
 
-        let txs = vec![register_tx, blob_transaction, proof_tx];
+        let proof_tx_2 = new_proof_tx(
+            second_contract_name.clone(),
+            BlobIndex(1),
+            blob_transaction_hash,
+            initial_state.clone(),
+            next_state.clone(),
+        );
+
+        let txs = vec![
+            register_tx_1,
+            register_tx_2,
+            blob_transaction,
+            proof_tx_1,
+            proof_tx_2,
+        ];
 
         let block = Block {
             parent_hash: BlockHash::new(""),
@@ -772,7 +802,31 @@ mod test {
 
         let transactions_response = server.get("/contract/c1").await;
         transactions_response.assert_status_ok();
-        transactions_response.assert_text_contains(format!("{:?}", next_state.0).replace(" ", ""));
+        let json_response = transactions_response.json::<ContractDb>();
+        assert_eq!(json_response.state_digest, next_state.0);
+
+        let transactions_response = server.get("/contract/c2").await;
+        transactions_response.assert_status_ok();
+        let json_response = transactions_response.json::<ContractDb>();
+        assert_eq!(json_response.state_digest, next_state.0);
+
+        let blob_transactions_response = server.get("/blobs/contract/c1").await;
+        blob_transactions_response.assert_status_ok();
+        let json_response = blob_transactions_response.json::<Vec<BlobDbWithStatus>>();
+        assert!(json_response.first().unwrap().blob.verified);
+        assert_eq!(
+            json_response.first().unwrap().transaction_status,
+            TransactionStatus::Success
+        );
+
+        let blob_transactions_response = server.get("/blobs/contract/c1").await;
+        blob_transactions_response.assert_status_ok();
+        let json_response = blob_transactions_response.json::<Vec<BlobDbWithStatus>>();
+        assert!(json_response.first().unwrap().blob.verified);
+        assert_eq!(
+            json_response.first().unwrap().transaction_status,
+            TransactionStatus::Success
+        );
 
         Ok(())
     }
