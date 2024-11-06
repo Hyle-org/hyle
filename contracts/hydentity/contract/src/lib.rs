@@ -5,6 +5,7 @@ use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 
 use sdk::{identity_provider::IdentityVerification, Digestable, HyleContract};
+use sha3::{Digest, Sha3_256};
 
 #[derive(Encode, Decode, Serialize, Deserialize, Debug, Clone)]
 pub struct Hydentity {
@@ -35,10 +36,14 @@ impl IdentityVerification for Hydentity {
     fn register_identity(
         &mut self,
         account: &str,
-        identity_info: &str,
+        private_input: &str,
     ) -> Result<(), &'static str> {
+        let id = format!("{account}:{private_input}");
+        let mut hasher = Sha3_256::new();
+        hasher.update(id.as_bytes());
+        let hash_bytes = hasher.finalize();
         self.identities
-            .insert(account.to_string(), identity_info.to_string());
+            .insert(account.to_string(), hex::encode(hash_bytes));
         Ok(())
     }
 
@@ -46,11 +51,16 @@ impl IdentityVerification for Hydentity {
         &self,
         account: &str,
         blobs_hash: Vec<String>,
-        identity_info: &str,
+        private_input: &str,
     ) -> Result<bool, &'static str> {
         match self.identities.get(account) {
-            // TODO: instead of ==, we should do signature verification
-            Some(stored_info) => Ok(stored_info == identity_info && !blobs_hash.is_empty()),
+            Some(stored_info) => {
+                let id = format!("{account}:{private_input}");
+                let mut hasher = Sha3_256::new();
+                hasher.update(id.as_bytes());
+                let hashed = hex::encode(hasher.finalize());
+                Ok(*stored_info == hashed && !blobs_hash.is_empty())
+            }
             None => Err("Identity not found"),
         }
     }

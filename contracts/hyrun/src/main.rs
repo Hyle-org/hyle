@@ -33,15 +33,12 @@ pub struct Contract {
 #[derive(Subcommand, Clone)]
 pub enum HydentityArgs {
     Init,
-    Register { account: String, pub_key: String },
+    Register { account: String },
 }
 impl From<HydentityArgs> for sdk::identity_provider::IdentityAction {
     fn from(cmd: HydentityArgs) -> Self {
         match cmd {
-            HydentityArgs::Register { account, pub_key } => Self::RegisterIdentity {
-                account,
-                identity_info: pub_key,
-            },
+            HydentityArgs::Register { account } => Self::RegisterIdentity { account },
             HydentityArgs::Init => panic!("Init is not a valid contract function"),
         }
     }
@@ -116,6 +113,9 @@ struct Cli {
     #[arg(long, default_value = "user")]
     pub user: String,
 
+    #[arg(long, default_value = "password")]
+    pub password: String,
+
     #[arg(long, default_value = "localhost")]
     pub host: String,
 
@@ -163,6 +163,7 @@ fn main() {
                         initial_state: identities,
                         identity: identity.clone(),
                         tx_hash: "".to_string(),
+                        private_blob: BlobData(cli.password.as_bytes().to_vec()),
                         blobs: blobs.clone(),
                         index: 0,
                     }
@@ -177,7 +178,6 @@ fn main() {
             let cf: ERC20Action = command.into();
             let identity_cf: IdentityAction = IdentityAction::VerifyIdentity {
                 account: identity.0.clone(),
-                identity_info: "password".to_string(),
                 blobs_hash: vec!["".into()], // TODO: hash blob
             };
             contract::print_hyled_blob_tx(
@@ -207,6 +207,7 @@ fn main() {
                         initial_state: token,
                         identity: identity.clone(),
                         tx_hash: "".to_string(),
+                        private_blob: BlobData(vec![]),
                         blobs: blobs.clone(),
                         index: 1,
                     }
@@ -220,6 +221,7 @@ fn main() {
                         initial_state: token,
                         identity: identity.clone(),
                         tx_hash: "".to_string(),
+                        private_blob: BlobData(cli.password.as_bytes().to_vec()),
                         blobs: blobs.clone(),
                         index: 0,
                     }

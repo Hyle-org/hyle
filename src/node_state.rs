@@ -166,6 +166,7 @@ impl NodeState {
         &mut self,
         tx: &VerifiedProofTransaction,
     ) -> Result<HandledProofTxOutput, Error> {
+        debug!("Handle verified proof tx: {:?}", tx);
         // TODO: add diverse verifications ? (without the inital state checks!).
         self.verify_blobs_metadata(&tx.proof_transaction, &tx.hyle_outputs)?;
 
@@ -198,6 +199,8 @@ impl NodeState {
                 settled_blob_tx_hashes.push(unsettled_tx.hash.clone());
                 // We want to keep track of the updated states
                 updated_states.extend(state_update);
+            } else {
+                debug!("Tx: {} is not ready for settlement", unsettled_tx.hash);
             }
         }
         debug!("Done! Contract states: {:?}", self.contracts);
@@ -297,11 +300,21 @@ impl NodeState {
         tx: &ProofTransaction,
         blobs_metadata: &[HyleOutput],
     ) -> Result<(), Error> {
+        debug!(
+            "Save metadata for tx: {:?}. Metadata: {:?}",
+            tx, blobs_metadata
+        );
         for (proof_blob_key, blob_ref) in tx.blobs_references.iter().enumerate() {
+            debug!(
+                "Save metadata for blob: {:?}  --  {:?}",
+                blob_ref, proof_blob_key
+            );
             let unsettled_tx = self
                 .unsettled_transactions
                 .get_mut(&blob_ref.blob_tx_hash)
                 .context("Tx is either settled or does not exists.")?;
+
+            debug!("Unsettled tx: {:?}", unsettled_tx);
 
             unsettled_tx.blobs[blob_ref.blob_index.0 as usize]
                 .metadata
@@ -316,6 +329,10 @@ impl NodeState {
         // As tx is next to be settled, remove all metadata with incorrect initial state.
         for unsettled_blob in unsettled_tx.blobs.iter() {
             if unsettled_blob.metadata.is_empty() {
+                info!(
+                    "Tx: {}: No metadata found for blob '{}'",
+                    unsettled_tx.hash, unsettled_blob.contract_name
+                );
                 return false;
             }
             let contract = match self.contracts.get(&unsettled_blob.contract_name) {
@@ -334,6 +351,11 @@ impl NodeState {
                 .iter()
                 .any(|hyle_output| hyle_output.initial_state == contract.state);
 
+            debug!(
+                "Tx: {}: Blob '{}' has valid initial state: {}",
+                unsettled_tx.hash, unsettled_blob.contract_name, has_one_valid_initial_state
+            );
+
             if !has_one_valid_initial_state {
                 info!(
                     "Tx: {}: No initial state match current contract state for contract '{}'",
@@ -342,6 +364,10 @@ impl NodeState {
                 return false; // No valid metadata found for this blob
             }
         }
+        debug!(
+            "Tx: {}: All blobs have valid initial state",
+            unsettled_tx.hash
+        );
         true // All blobs have at least one valid metadata
     }
 

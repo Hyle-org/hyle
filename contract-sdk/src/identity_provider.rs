@@ -10,12 +10,12 @@ pub trait IdentityVerification {
     /// # Arguments
     ///
     /// * `account` - The address of the account as a string slice.
-    /// * `identity_info` - A string representing the identity information to be registered.
+    /// * `private_input` - A string representing the identity information to be registered.
     ///
     /// # Returns
     ///
     /// * `Result<(), &'static str>` - `Ok(())` if the registration was successful, or an error message on failure.
-    fn register_identity(&mut self, account: &str, identity_info: &str)
+    fn register_identity(&mut self, account: &str, private_input: &str)
         -> Result<(), &'static str>;
 
     /// Verifies if an account's identity matches the provided identity information.
@@ -24,7 +24,7 @@ pub trait IdentityVerification {
     ///
     /// * `account` - The address of the account as a string slice.
     /// * `blobs_hash` - The list of blobs hash the identity agrees to run
-    /// * `identity_info` - A string representing the identity information to verify against.
+    /// * `private_input` - A string representing the identity information to verify against.
     ///
     /// # Returns
     ///
@@ -33,7 +33,7 @@ pub trait IdentityVerification {
         &self,
         account: &str,
         blobs_hash: Vec<String>,
-        identity_info: &str,
+        private_input: &str,
     ) -> Result<bool, &'static str>;
 
     /// Retrieves the identity information associated with a given account.
@@ -53,12 +53,10 @@ pub trait IdentityVerification {
 pub enum IdentityAction {
     RegisterIdentity {
         account: String,
-        identity_info: String,
     },
     VerifyIdentity {
         account: String,
         blobs_hash: Vec<String>,
-        identity_info: String,
     },
     GetIdentityInfo {
         account: String,
@@ -69,23 +67,22 @@ pub fn execute_action<T: IdentityVerification>(
     state: &mut T,
     caller: Identity,
     action: IdentityAction,
+    private_input: &str,
 ) -> RunResult {
     let (success, res) = match action {
-        IdentityAction::RegisterIdentity {
-            account,
-            identity_info,
-        } => match state.register_identity(&account, &identity_info) {
-            Ok(()) => (
-                true,
-                format!("Successfully registered identity for account: {}", account),
-            ),
-            Err(err) => (false, format!("Failed to register identity: {}", err)),
-        },
+        IdentityAction::RegisterIdentity { account } => {
+            match state.register_identity(&account, private_input) {
+                Ok(()) => (
+                    true,
+                    format!("Successfully registered identity for account: {}", account),
+                ),
+                Err(err) => (false, format!("Failed to register identity: {}", err)),
+            }
+        }
         IdentityAction::VerifyIdentity {
             account,
             blobs_hash,
-            identity_info,
-        } => match state.verify_identity(&account, blobs_hash, &identity_info) {
+        } => match state.verify_identity(&account, blobs_hash, private_input) {
             Ok(true) => (true, format!("Identity verified for account: {}", account)),
             Ok(false) => (
                 false,

@@ -159,6 +159,7 @@ impl Prover {
             tx_hash: tx_hash.0.clone(),
             blobs,
             index: 0,
+            private_blob: hyle_contract_sdk::BlobData("password".as_bytes().to_vec()),
             identity: tx.identity.clone(),
         };
         Ok(contract_inputs)

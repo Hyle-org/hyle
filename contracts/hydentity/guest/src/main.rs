@@ -3,6 +3,8 @@
 
 extern crate alloc;
 
+use core::str::from_utf8;
+
 use hydentity::Hydentity;
 use sdk::identity_provider::IdentityAction;
 
@@ -13,8 +15,14 @@ fn main() {
 
     let mut state = input.initial_state.clone();
 
-    let res =
-        sdk::identity_provider::execute_action(&mut state, input.identity.clone(), parameters);
+    let password = from_utf8(&input.private_blob.0).unwrap();
+
+    let res = sdk::identity_provider::execute_action(
+        &mut state,
+        input.identity.clone(),
+        parameters,
+        password,
+    );
 
     sdk::guest::commit(input, state, res);
 }

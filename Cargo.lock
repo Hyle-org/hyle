@@ -1991,6 +1991,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "bincode 2.0.0-rc.2",
+ "hex",
  "hyle-contract-sdk",
  "serde",
  "sha3",
