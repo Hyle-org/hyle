@@ -188,3 +188,143 @@ pub fn execute_action<T: ERC20>(token: &mut T, action: ERC20Action) -> RunResult
         program_outputs,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::Identity;
+
+    use super::*;
+    use mockall::{
+        mock,
+        predicate::{self, *},
+    };
+    extern crate std;
+
+    mock! {
+        pub ERC20Contract {}
+        impl ERC20 for ERC20Contract {
+            fn total_supply(&self) -> Result<u128, String>;
+            fn balance_of(&self, account: &str) -> Result<u128, String>;
+            fn transfer(&mut self, recipient: &str, amount: u128) -> Result<(), String>;
+            fn transfer_from(&mut self, sender: &str, recipient: &str, amount: u128) -> Result<(), String>;
+            fn approve(&mut self, spender: &str, amount: u128) -> Result<(), String>;
+            fn allowance(&self, owner: &str, spender: &str) -> Result<u128, String>;
+        }
+        impl HyleContract for ERC20Contract {
+            fn caller(&self) -> Identity;
+        }
+    }
+
+    #[test]
+    fn test_total_supply() {
+        let mut mock = MockERC20Contract::new();
+        mock.expect_total_supply().returning(|| Ok(1000));
+        mock.expect_caller().return_const("caller");
+
+        let action = ERC20Action::TotalSupply;
+        let result = execute_action(&mut mock, action);
+
+        assert!(result.success);
+        assert_eq!(result.program_outputs, b"Total Supply: 1000");
+    }
+
+    #[test]
+    fn test_balance_of() {
+        let mut mock = MockERC20Contract::new();
+        mock.expect_balance_of()
+            .with(predicate::eq("account1"))
+            .returning(|_| Ok(500));
+        mock.expect_caller().return_const("caller");
+
+        let action = ERC20Action::BalanceOf {
+            account: "account1".to_string(),
+        };
+        let result = execute_action(&mut mock, action);
+
+        assert!(result.success);
+        assert_eq!(result.program_outputs, b"Balance of account1: 500");
+    }
+
+    #[test]
+    fn test_transfer() {
+        let mut mock = MockERC20Contract::new();
+        mock.expect_transfer()
+            .with(predicate::eq("recipient1"), predicate::eq(200))
+            .returning(|_, _| Ok(()));
+        mock.expect_caller().return_const("caller");
+
+        let action = ERC20Action::Transfer {
+            recipient: "recipient1".to_string(),
+            amount: 200,
+        };
+        let result = execute_action(&mut mock, action);
+
+        assert!(result.success);
+        assert_eq!(result.program_outputs, b"Transferred 200 to recipient1");
+    }
+
+    #[test]
+    fn test_transfer_from() {
+        let mut mock = MockERC20Contract::new();
+        mock.expect_transfer_from()
+            .with(
+                predicate::eq("sender1"),
+                predicate::eq("recipient1"),
+                predicate::eq(300),
+            )
+            .returning(|_, _, _| Ok(()));
+        mock.expect_caller().return_const("caller");
+
+        let action = ERC20Action::TransferFrom {
+            sender: "sender1".to_string(),
+            recipient: "recipient1".to_string(),
+            amount: 300,
+        };
+        let result = execute_action(&mut mock, action);
+
+        assert!(result.success);
+        assert_eq!(
+            result.program_outputs,
+            b"Transferred 300 from sender1 to recipient1"
+        );
+    }
+
+    #[test]
+    fn test_approve() {
+        let mut mock = MockERC20Contract::new();
+        mock.expect_approve()
+            .with(predicate::eq("spender1"), predicate::eq(400))
+            .returning(|_, _| Ok(()));
+        mock.expect_caller().return_const("caller");
+
+        let action = ERC20Action::Approve {
+            spender: "spender1".to_string(),
+            amount: 400,
+        };
+        let result = execute_action(&mut mock, action);
+
+        assert!(result.success);
+        assert_eq!(result.program_outputs, b"Approved 400 for spender1");
+    }
+
+    #[test]
+    fn test_allowance() {
+        let mut mock = MockERC20Contract::new();
+        mock.expect_allowance()
+            .with(predicate::eq("owner1"), predicate::eq("spender1"))
+            .returning(|_, _| Ok(500));
+        mock.expect_caller().return_const("caller");
+
+        let action = ERC20Action::Allowance {
+            owner: "owner1".to_string(),
+            spender: "spender1".to_string(),
+        };
+        let result = execute_action(&mut mock, action);
+
+        assert!(result.success);
+        assert_eq!(
+            result.program_outputs,
+            b"Allowance of spender1 by owner1: 500"
+        );
+    }
+}

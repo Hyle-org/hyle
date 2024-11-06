@@ -212,6 +212,7 @@ mod tests {
 
         assert!(contract.approve("spender", 300).is_ok());
         assert_eq!(contract.allowance("owner", "spender").unwrap(), 300);
+        assert_eq!(contract.allowance("owner", "other_spender").unwrap(), 0);
     }
 
     #[test]
@@ -230,5 +231,50 @@ mod tests {
         assert_eq!(contract.allowance("faucet", "spender").unwrap(), 100);
 
         assert!(contract.transfer_from("faucet", "recipient", 200).is_err());
+    }
+
+    #[test]
+    fn test_transfer_from_insufficient_balance() {
+        let initial_supply = 1000;
+        let token = HyllarToken::new(initial_supply);
+        let mut contract = HyllarTokenContract::init(token, Identity("faucet".to_string()));
+
+        // Approve an allowance for the spender
+        assert!(contract.approve("spender", 5000).is_ok());
+
+        // Attempt to transfer more than the sender's balance
+        let mut contract =
+            HyllarTokenContract::init(contract.state(), Identity("spender".to_string()));
+        let result = contract.transfer_from("faucet", "recipient", 1100);
+
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), "Insufficient balance".to_string());
+    }
+
+    #[test]
+    fn test_as_digest() {
+        let initial_supply = 1000;
+        let token = HyllarToken::new(initial_supply);
+        let digest = token.as_digest();
+
+        let encoded = bincode::encode_to_vec(&token, bincode::config::standard())
+            .expect("Failed to encode Balances");
+        assert_eq!(digest.0, encoded);
+    }
+
+    #[test]
+    fn test_try_from_state_digest() {
+        let initial_supply = 1000;
+        let token = HyllarToken::new(initial_supply);
+        let digest = token.as_digest();
+
+        let decoded_token: HyllarToken =
+            HyllarToken::try_from(digest.clone()).expect("Failed to decode state digest");
+        assert_eq!(decoded_token.total_supply, token.total_supply);
+        assert_eq!(decoded_token.balances, token.balances);
+
+        let invalid_digest = sdk::StateDigest(vec![0, 1, 2, 3]);
+        let result = HyllarToken::try_from(invalid_digest);
+        assert!(result.is_err());
     }
 }

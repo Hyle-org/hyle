@@ -28,7 +28,7 @@ impl Default for Hydentity {
 
 impl HyleContract for Hydentity {
     fn caller(&self) -> sdk::Identity {
-        todo!()
+        unreachable!()
     }
 }
 
@@ -149,5 +149,36 @@ mod tests {
 
         assert_eq!(hydentity.get_identity_info(account).unwrap(), expected_hash);
         assert!(hydentity.get_identity_info("nonexistent_account").is_err());
+    }
+
+    #[test]
+    fn test_as_digest() {
+        let mut hydentity = Hydentity::default();
+        hydentity
+            .register_identity("test_account", "test_input")
+            .unwrap();
+        let digest = hydentity.as_digest();
+
+        let encoded = bincode::encode_to_vec(&hydentity, bincode::config::standard())
+            .expect("Failed to encode Hydentity");
+        assert_eq!(digest.0, encoded);
+    }
+
+    #[test]
+    fn test_try_from_state_digest() {
+        let mut hydentity = Hydentity::default();
+        hydentity
+            .register_identity("test_account", "test_input")
+            .unwrap();
+
+        let digest = hydentity.as_digest();
+
+        let decoded_hydentity: Hydentity =
+            Hydentity::try_from(digest.clone()).expect("Failed to decode state digest");
+        assert_eq!(decoded_hydentity.identities, hydentity.identities);
+
+        let invalid_digest = sdk::StateDigest(vec![5, 5, 5]);
+        let result = Hydentity::try_from(invalid_digest);
+        assert!(result.is_err());
     }
 }

@@ -121,3 +121,81 @@ pub fn verify_identity(blobs: &[BlobData], blob_index: usize, identity: &Identit
         ));
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use mockall::{mock, predicate::*};
+
+    mock! {
+        IdentityVerification {}
+
+        impl IdentityVerification for IdentityVerification {
+            fn register_identity(&mut self, account: &str, private_input: &str) -> Result<(), &'static str>;
+            fn verify_identity(&self, account: &str, blobs_hash: Vec<String>, private_input: &str) -> Result<bool, &'static str>;
+            fn get_identity_info(&self, account: &str) -> Result<String, &'static str>;
+        }
+    }
+
+    #[test]
+    fn test_execute_action_register_identity() {
+        let mut mock = MockIdentityVerification::new();
+        let caller = Identity("caller_identity".to_string());
+        let action = IdentityAction::RegisterIdentity {
+            account: "test_account".to_string(),
+        };
+        let private_input = "test_identity";
+
+        mock.expect_register_identity()
+            .with(eq("test_account"), eq(private_input))
+            .times(1)
+            .returning(|_, _| Ok(()));
+
+        let result = execute_action(&mut mock, caller.clone(), action, private_input);
+        assert!(result.success);
+        assert_eq!(result.identity, caller);
+    }
+
+    #[test]
+    fn test_execute_action_verify_identity() {
+        let mut mock = MockIdentityVerification::new();
+        let caller = Identity("caller_identity".to_string());
+        let account = "test_account".to_string();
+        let private_input = "test_identity";
+
+        mock.expect_verify_identity()
+            .with(eq(account.clone()), eq(vec![]), eq(private_input))
+            .times(1)
+            .returning(|_, _, _| Ok(true));
+
+        let action = IdentityAction::VerifyIdentity {
+            account: account.clone(),
+            blobs_hash: vec![],
+        };
+
+        let result = execute_action(&mut mock, caller.clone(), action, private_input);
+        assert!(result.success);
+        assert_eq!(result.identity, caller);
+    }
+
+    #[test]
+    fn test_execute_action_get_identity_info() {
+        let mut mock = MockIdentityVerification::new();
+        let caller = Identity("caller_identity".to_string());
+        let account = "test_account".to_string();
+        let private_input = "test_identity";
+
+        mock.expect_get_identity_info()
+            .with(eq(account.clone()))
+            .times(1)
+            .returning(|_| Ok(private_input.to_string()));
+
+        let action = IdentityAction::GetIdentityInfo {
+            account: account.clone(),
+        };
+
+        let result = execute_action(&mut mock, caller.clone(), action, "");
+        assert!(result.success);
+        assert_eq!(result.identity, caller);
+    }
+}
