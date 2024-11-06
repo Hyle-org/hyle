@@ -643,9 +643,9 @@ dependencies = [
 
 [[package]]
 name = "bloomfilter"
-version = "1.0.15"
+version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7816eb2d70f5b74972da53075a3060ca363da702c03ccaa003e3ab32a76431a6"
+checksum = "c9ee97b815938a5cbb3a0d487d8006fec4859e46c3cd9d1edb1f81090dab14ac"
 dependencies = [
  "bit-vec 0.8.0",
  "getrandom",
