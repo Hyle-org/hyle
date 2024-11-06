@@ -234,6 +234,7 @@ pub struct HandledBlockOutput {
     pub updated_states: HashMap<ContractName, StateDigest>,
 }
 
+#[derive(Debug)]
 pub struct HandledProofTxOutput {
     pub settled_blob_tx_hashes: Vec<TxHash>,
     pub updated_states: HashMap<ContractName, StateDigest>,
