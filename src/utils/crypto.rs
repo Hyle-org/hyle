@@ -53,13 +53,32 @@ pub struct ValidatorSignature {
     pub validator: ValidatorPublicKey,
 }
 
-#[derive(
-    Debug, Serialize, Deserialize, Clone, bincode::Encode, bincode::Decode, PartialEq, Eq, Hash,
-)]
+#[derive(Debug, Serialize, Deserialize, Clone, bincode::Encode, bincode::Decode, Hash)]
 pub struct AggregateSignature {
     pub signature: Signature,
     pub validators: Vec<ValidatorPublicKey>,
 }
+
+impl PartialEq for AggregateSignature {
+    fn eq(&self, other: &Self) -> bool {
+        // Vérifie que les signatures sont égales
+        if self.signature != other.signature {
+            return false;
+        }
+
+        // Vérifie que les validateurs sont égaux, indépendamment de l'ordre
+        let mut self_validators = self.validators.clone();
+        let mut other_validators = other.validators.clone();
+
+        // Trie les vecteurs pour que l'ordre n'importe pas
+        self_validators.sort();
+        other_validators.sort();
+
+        self_validators == other_validators
+    }
+}
+
+impl Eq for AggregateSignature {}
 
 impl BlstCrypto {
     pub fn new(validator_name: String) -> Self {

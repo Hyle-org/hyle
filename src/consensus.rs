@@ -750,6 +750,12 @@ impl Consensus {
         // - we haven't, so we process it right away
         // - the CQC is invalid and we just ignore it.
         if let Some(qc) = &self.bft_round_state.follower.buffered_quorum_certificate {
+            // info!("Buffered qc: {:?}", qc);
+            // info!("Timeout qc: {:?}", timeout_qc.clone());
+            // if qc == &timeout_qc {
+            //     return true;
+            // }
+
             return qc == &timeout_qc;
         }
 
@@ -759,10 +765,14 @@ impl Consensus {
     }
 
     fn try_process_timeout_qc(&mut self, timeout_qc: QuorumCertificate) -> Result<()> {
-        let mut matching_proposal = self.bft_round_state.consensus_proposal.clone();
-        matching_proposal.view -= 1;
+        info!(
+            "Trying to process timeout Certificate against consensus proposal slot: {}, view: {}",
+            self.bft_round_state.consensus_proposal.slot,
+            self.bft_round_state.consensus_proposal.view
+        );
+
         self.verify_quorum_certificate(
-            ConsensusNetMessage::Timeout(matching_proposal.hash()),
+            ConsensusNetMessage::Timeout(self.bft_round_state.consensus_proposal.hash()),
             &timeout_qc,
         )
         .context("Verifying Timeout Ticket")?;
