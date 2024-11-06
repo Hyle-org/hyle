@@ -14,4 +14,4 @@ retries = 2
 
 # The number of threads to run tests with. Supported values are either an integer or
 # the string "num-cpus". Can be overridden through the `--test-threads` option.
-test-threads = 1
+test-threads = "num-cpus"
