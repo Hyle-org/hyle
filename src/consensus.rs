@@ -280,29 +280,6 @@ pub struct Consensus {
 }
 
 impl Consensus {
-    /// Add a validator with the default stake to our consensus.
-    /// This is trusted because it's out of the usual consensus process,
-    /// either at genesis or when fast-forwarding.
-    pub fn add_trusted_validator(
-        &mut self,
-        pubkey: &ValidatorPublicKey,
-        stake: Stake,
-    ) -> Result<()> {
-        self.bft_round_state
-            .staking
-            .add_staker(Staker {
-                pubkey: pubkey.clone(),
-                stake,
-            })
-            .context("cannot add trusted staker")?;
-        self.bft_round_state
-            .staking
-            .bond(pubkey.clone())
-            .context("cannot bond trusted validator")?;
-        info!("🎉 Trusted validator added: {}", pubkey);
-        Ok(())
-    }
-
     /// Reset bft_round_state for the next round of consensus.
     fn finish_round(&mut self, ticket: Option<Ticket>) -> Result<(), Error> {
         match self.bft_round_state.state_tag {
@@ -750,12 +727,6 @@ impl Consensus {
         // - we haven't, so we process it right away
         // - the CQC is invalid and we just ignore it.
         if let Some(qc) = &self.bft_round_state.follower.buffered_quorum_certificate {
-            // info!("Buffered qc: {:?}", qc);
-            // info!("Timeout qc: {:?}", timeout_qc.clone());
-            // if qc == &timeout_qc {
-            //     return true;
-            // }
-
             return qc == &timeout_qc;
         }
 
