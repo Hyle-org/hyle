@@ -465,7 +465,7 @@ mod test {
 
         let proof_c2 = ProofTransaction {
             blobs_references: vec![BlobReference {
-                contract_name: c1.clone(),
+                contract_name: c2.clone(),
                 blob_tx_hash: blob_tx_hash.clone(),
 
                 blob_index: BlobIndex(1),
