@@ -14,7 +14,7 @@ pub fn verify_proof(
 ) -> Result<HyleOutput, Error> {
     // TODO: remove test
     match verifier {
-        "test" | "noir" => {
+        "test" => {
             let tx_hash = tx.blobs_references.first().unwrap().blob_tx_hash.clone();
             let index = tx.blobs_references.first().unwrap().blob_index.clone();
             Ok(HyleOutput {

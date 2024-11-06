@@ -3,11 +3,10 @@
 use crate::{
     bus::{bus_client, BusMessage, SharedMessageBus},
     consensus::ConsensusEvent,
-    data_availability::DataEvent,
     handle_messages,
     mempool::storage::{Car, CarProposal, InMemoryStorage},
     model::{
-        Block, Hashable, SharedRunContext, Transaction, TransactionData, ValidatorPublicKey,
+        Hashable, SharedRunContext, Transaction, TransactionData, ValidatorPublicKey,
         VerifiedProofTransaction,
     },
     node_state::NodeState,
@@ -39,7 +38,6 @@ struct MempoolBusClient {
     receiver(SignedByValidator<MempoolNetMessage>),
     receiver(RestApiMessage),
     receiver(ConsensusEvent),
-    receiver(DataEvent),
 }
 }
 
@@ -49,6 +47,7 @@ pub struct Mempool {
     metrics: MempoolMetrics,
     storage: InMemoryStorage,
     validators: Vec<ValidatorPublicKey>,
+    node_state: NodeState,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, Eq, PartialEq, IntoStaticStr)]
@@ -87,7 +86,6 @@ impl Module for Mempool {
         let bus = MempoolBusClient::new_from_bus(ctx.common.bus.new_handle()).await;
         let metrics = MempoolMetrics::global(ctx.common.config.id.clone());
 
-        // node_state is only used for contract registration. It represent the current state of the last cut.
         let node_state = Self::load_from_disk_or_default::<NodeState>(
             ctx.common
                 .config
@@ -100,11 +98,9 @@ impl Module for Mempool {
             bus,
             metrics,
             crypto: Arc::clone(&ctx.node.crypto),
-            storage: InMemoryStorage::new(
-                ctx.node.crypto.validator_pubkey().clone(),
-                node_state.clone(),
-            ),
+            storage: InMemoryStorage::new(ctx.node.crypto.validator_pubkey().clone()),
             validators: vec![],
+            node_state,
         })
     }
 
@@ -133,35 +129,10 @@ impl Mempool {
             listen<ConsensusEvent> cmd => {
                 self.handle_consensus_event(cmd).await
             }
-            listen<DataEvent> cmd => {
-                if let Err(e) = self.handle_data_availability_event(cmd).await {
-                    error!("Error while handling data availability event: {:#}", e)
-                }
-            }
             _ = interval.tick() => {
                 self.time_to_cut().await
             }
         }
-    }
-
-    async fn handle_data_availability_event(&mut self, event: DataEvent) -> Result<()> {
-        match event {
-            DataEvent::NewBlock(block) => self.handle_block(block).await,
-        }
-    }
-
-    async fn handle_block(&mut self, block: Block) -> Result<(), Error> {
-        // Only register contract transactions are handled when Mempool receives a new block
-        for tx in block.txs {
-            if let TransactionData::RegisterContract(register_contract_transaction) =
-                &tx.transaction_data
-            {
-                self.storage
-                    .settled_node_state
-                    .handle_register_contract_tx(register_contract_transaction)?;
-            }
-        }
-        Ok(())
     }
 
     async fn handle_consensus_event(&mut self, event: ConsensusEvent) {
@@ -193,7 +164,7 @@ impl Mempool {
     async fn handle_net_message(&mut self, msg: SignedByValidator<MempoolNetMessage>) {
         match BlstCrypto::verify(&msg) {
             Ok(true) => {
-                let validator: &ValidatorPublicKey = &msg.signature.validator;
+                let validator = &msg.signature.validator;
                 match msg.msg {
                     MempoolNetMessage::NewCut(cut) => {
                         self.send_new_cut(cut);
@@ -312,7 +283,10 @@ impl Mempool {
         validator: &ValidatorPublicKey,
         car_proposal: CarProposal,
     ) -> Result<()> {
-        match self.storage.new_car_proposal(validator, &car_proposal) {
+        match self
+            .storage
+            .new_car_proposal(validator, &car_proposal, &self.node_state)
+        {
             ProposalVerdict::Empty => {
                 warn!(
                     "received empty Car proposal from {}, ignoring...",
@@ -328,7 +302,7 @@ impl Mempool {
                 error!("we already have voted for {}'s Car proposal", validator);
             }
             ProposalVerdict::Wait(last_car_id) => {
-                // We dont have the parent, so we craft a sync demand
+                //We dont have the parent, so we craft a sync demand
                 debug!(
                     "Emitting sync request with local state {} last_available_index {:?}",
                     self.storage, last_car_id
@@ -406,19 +380,16 @@ impl Mempool {
         // TODO: Verify fees ?
         // TODO: Verify identity ?
 
-        let own_lane_node_state = self.storage.lane.node_state_mut();
-
         match tx.transaction_data {
             TransactionData::RegisterContract(ref register_contract_transaction) => {
-                // The transaction is not yet committed in a cut.
-                // Hence we want to keep track of it but only in this node's lane.
-                own_lane_node_state.handle_register_contract_tx(register_contract_transaction)?;
+                self.node_state
+                    .handle_register_contract_tx(register_contract_transaction)?;
             }
             TransactionData::Stake(ref _staker) => {}
             TransactionData::Blob(ref _blob_transaction) => {}
             TransactionData::Proof(proof_transaction) => {
                 // Verify and extract proof
-                let hyle_outputs = own_lane_node_state.verify_proof(&proof_transaction)?;
+                let hyle_outputs = self.node_state.verify_proof(&proof_transaction)?;
                 tx.transaction_data = TransactionData::VerifiedProof(VerifiedProofTransaction {
                     proof_transaction,
                     hyle_outputs,

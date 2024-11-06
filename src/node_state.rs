@@ -20,7 +20,7 @@ pub mod model;
 mod ordered_tx_map;
 mod verifiers;
 
-#[derive(Default, Encode, Decode, Debug, Clone)]
+#[derive(Default, Encode, Decode, Debug)]
 pub struct NodeState {
     timeouts: Timeouts,
     current_height: BlockHeight,
@@ -121,7 +121,7 @@ impl NodeState {
         tx: &RegisterContractTransaction,
     ) -> Result<(), Error> {
         if self.contracts.contains_key(&tx.contract_name) {
-            bail!("Contract {} already exists", tx.contract_name)
+            bail!("Contract already exists")
         }
         self.contracts.insert(
             tx.contract_name.clone(),
