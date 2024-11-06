@@ -3,6 +3,10 @@ name = "hydentity-guest"
 version = "0.1.0"
 edition = "2021"
 
+[[bin]]
+name="hydentity-guest"
+test=false
+
 [dependencies]
 risc0-zkvm = { version = "1.1.1", default-features = false, features = ['std'] }
 sdk = { path = "../../../contract-sdk", package="hyle-contract-sdk" }
