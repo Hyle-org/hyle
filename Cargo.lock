@@ -1998,15 +1998,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "hydentity-guest"
-version = "0.1.0"
-dependencies = [
- "hydentity",
- "hyle-contract-sdk",
- "risc0-zkvm",
-]
-
-[[package]]
 name = "hyle"
 version = "0.1.0"
 dependencies = [
@@ -2083,15 +2074,6 @@ dependencies = [
  "hyle-contract-sdk",
  "serde",
  "sha3",
-]
-
-[[package]]
-name = "hyllar-guest"
-version = "0.1.0"
-dependencies = [
- "hyle-contract-sdk",
- "hyllar",
- "risc0-zkvm",
 ]
 
 [[package]]

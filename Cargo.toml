@@ -1,5 +1,5 @@
 [workspace]
-members = ["contracts/hyrun", "contracts/hyllar/guest", "contracts/hydentity/guest"]
+members = ["contracts/hyrun"]
 resolver = "2"
 
 [package]

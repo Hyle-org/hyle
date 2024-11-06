@@ -90,3 +90,64 @@ impl TryFrom<sdk::StateDigest> for Hydentity {
         Ok(balances)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sha3::{Digest, Sha3_256};
+
+    #[test]
+    fn test_register_identity() {
+        let mut hydentity = Hydentity::default();
+        let account = "test_account";
+        let private_input = "test_input";
+
+        assert!(hydentity.register_identity(account, private_input).is_ok());
+
+        let id = format!("{account}:{private_input}");
+        let mut hasher = Sha3_256::new();
+        hasher.update(id.as_bytes());
+        let hash_bytes = hasher.finalize();
+        let expected_hash = hex::encode(hash_bytes);
+
+        assert_eq!(hydentity.identities.get(account).unwrap(), &expected_hash);
+    }
+
+    #[test]
+    fn test_verify_identity() {
+        let mut hydentity = Hydentity::default();
+        let account = "test_account";
+        let private_input = "test_input";
+        let blobs_hash = vec!["blob1".to_string(), "blob2".to_string()];
+
+        hydentity.register_identity(account, private_input).unwrap();
+
+        assert!(hydentity
+            .verify_identity(account, blobs_hash.clone(), private_input)
+            .unwrap());
+        assert!(!hydentity
+            .verify_identity(account, vec![], private_input)
+            .unwrap());
+        assert!(hydentity
+            .verify_identity("nonexistent_account", blobs_hash, private_input)
+            .is_err());
+    }
+
+    #[test]
+    fn test_get_identity_info() {
+        let mut hydentity = Hydentity::default();
+        let account = "test_account";
+        let private_input = "test_input";
+
+        hydentity.register_identity(account, private_input).unwrap();
+
+        let id = format!("{account}:{private_input}");
+        let mut hasher = Sha3_256::new();
+        hasher.update(id.as_bytes());
+        let hash_bytes = hasher.finalize();
+        let expected_hash = hex::encode(hash_bytes);
+
+        assert_eq!(hydentity.get_identity_info(account).unwrap(), expected_hash);
+        assert!(hydentity.get_identity_info("nonexistent_account").is_err());
+    }
+}

@@ -150,3 +150,85 @@ impl TryFrom<sdk::StateDigest> for HyllarToken {
         Ok(balances)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sdk::Identity;
+
+    #[test]
+    fn test_new_hyllar_token() {
+        let initial_supply = 1000;
+        let token = HyllarToken::new(initial_supply);
+
+        assert_eq!(token.total_supply, initial_supply);
+        assert_eq!(
+            token.balances.get("faucet").cloned().unwrap_or(0),
+            initial_supply
+        );
+        assert!(token.allowances.is_empty());
+    }
+
+    #[test]
+    fn test_total_supply() {
+        let initial_supply = 1000;
+        let token = HyllarToken::new(initial_supply);
+        let contract = HyllarTokenContract::init(token, Identity("caller".to_string()));
+
+        assert_eq!(contract.total_supply().unwrap(), initial_supply);
+    }
+
+    #[test]
+    fn test_balance_of() {
+        let initial_supply = 1000;
+        let token = HyllarToken::new(initial_supply);
+        let contract = HyllarTokenContract::init(token, Identity("caller".to_string()));
+
+        assert_eq!(contract.balance_of("faucet").unwrap(), initial_supply);
+        assert_eq!(
+            contract.balance_of("nonexistent").unwrap_err(),
+            "Account not found".to_string()
+        );
+    }
+
+    #[test]
+    fn test_transfer() {
+        let initial_supply = 1000;
+        let token = HyllarToken::new(initial_supply);
+        let mut contract = HyllarTokenContract::init(token, Identity("faucet".to_string()));
+
+        assert!(contract.transfer("recipient", 500).is_ok());
+        assert_eq!(contract.balance_of("faucet").unwrap(), 500);
+        assert_eq!(contract.balance_of("recipient").unwrap(), 500);
+
+        assert!(contract.transfer("recipient", 600).is_err());
+    }
+
+    #[test]
+    fn test_approve_and_allowance() {
+        let initial_supply = 1000;
+        let token = HyllarToken::new(initial_supply);
+        let mut contract = HyllarTokenContract::init(token, Identity("owner".to_string()));
+
+        assert!(contract.approve("spender", 300).is_ok());
+        assert_eq!(contract.allowance("owner", "spender").unwrap(), 300);
+    }
+
+    #[test]
+    fn test_transfer_from() {
+        let initial_supply = 1000;
+        let token = HyllarToken::new(initial_supply);
+        let mut contract = HyllarTokenContract::init(token, Identity("faucet".to_string()));
+
+        assert!(contract.approve("spender", 300).is_ok());
+        let mut contract =
+            HyllarTokenContract::init(contract.state(), Identity("spender".to_string()));
+
+        assert!(contract.transfer_from("faucet", "recipient", 200).is_ok());
+        assert_eq!(contract.balance_of("faucet").unwrap(), 800);
+        assert_eq!(contract.balance_of("recipient").unwrap(), 200);
+        assert_eq!(contract.allowance("faucet", "spender").unwrap(), 100);
+
+        assert!(contract.transfer_from("faucet", "recipient", 200).is_err());
+    }
+}
