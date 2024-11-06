@@ -1,7 +1,7 @@
 use anyhow::{bail, Error};
 use borsh::to_vec;
 use risc0_zkvm::sha::Digestible;
-use sdk::{Digestable, HyleOutput, Identity};
+use sdk::{ContractInput, Digestable, HyleOutput, Identity};
 
 use crate::{Cli, Contract, ContractFunctionEnum, ContractName};
 
@@ -38,15 +38,11 @@ pub fn print_hyled_blob_tx(identity: &Identity, blobs: Vec<(ContractName, Contra
     println!("{}", "-".repeat(20));
 }
 
-pub fn run<State, ContractInput, Builder>(
-    cli: &Cli,
-    contract_name: &str,
-    build_contract_input: Builder,
-) where
+pub fn run<State, Builder>(cli: &Cli, contract_name: &str, build_contract_input: Builder)
+where
     State: TryFrom<sdk::StateDigest, Error = Error>,
-    ContractInput: serde::Serialize,
-    State: Digestable,
-    Builder: Fn(State) -> ContractInput,
+    State: Digestable + std::fmt::Debug + serde::Serialize,
+    Builder: Fn(State) -> ContractInput<State>,
 {
     let initial_state = match fetch_current_state(cli, contract_name) {
         Ok(s) => s,
@@ -55,10 +51,13 @@ pub fn run<State, ContractInput, Builder>(
             return;
         }
     };
+    println!("Fetched current state: {:?}", initial_state);
 
     println!("{}", "-".repeat(20));
     println!("Proving transition for {contract_name}...");
-    let prove_info = prove(initial_state, build_contract_input, contract_name);
+    let contract_input = build_contract_input(initial_state);
+    let blob_index = contract_input.index;
+    let prove_info = prove(contract_name, contract_input);
 
     let receipt = prove_info.receipt;
     let encoded_receipt = to_vec(&receipt).expect("Unable to encode receipt");
@@ -91,7 +90,7 @@ pub fn run<State, ContractInput, Builder>(
     println!("{}", "-".repeat(20));
 
     println!("You can send the proof tx:");
-    println!("hyled proof BLOB_TX_HASH 0 {contract_name} {contract_name}.risc0.proof");
+    println!("hyled proof $BLOB_TX_HASH {blob_index} {contract_name} {contract_name}.risc0.proof");
 
     receipt
         .verify(claim.pre.digest())
@@ -121,17 +120,10 @@ where
     }
 }
 
-fn prove<State, ContractInput, Builder>(
-    balances: State,
-    build_contract_input: Builder,
-    contract_name: &str,
-) -> risc0_zkvm::ProveInfo
+fn prove<State>(contract_name: &str, contract_input: ContractInput<State>) -> risc0_zkvm::ProveInfo
 where
-    ContractInput: serde::Serialize,
-    Builder: Fn(State) -> ContractInput,
+    State: Digestable + serde::Serialize,
 {
-    let contract_input = build_contract_input(balances);
-
     let env = risc0_zkvm::ExecutorEnv::builder()
         .write(&contract_input)
         .unwrap()
