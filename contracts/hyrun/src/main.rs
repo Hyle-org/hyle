@@ -150,10 +150,7 @@ fn main() {
             }
             let cf: IdentityAction = command.into();
             contract::print_hyled_blob_tx(&identity, vec![("hydentity".into(), cf.clone().into())]);
-            let blobs = vec![BlobData(
-                bincode::encode_to_vec(cf, bincode::config::standard())
-                    .expect("failed to encode program inputs"),
-            )];
+            let blobs = vec![cf.into()];
 
             contract::run(
                 &cli,
@@ -188,16 +185,7 @@ fn main() {
                 ],
             );
 
-            let blobs = vec![
-                BlobData(
-                    bincode::encode_to_vec(identity_cf, bincode::config::standard())
-                        .expect("failed to encode program inputs"),
-                ),
-                BlobData(
-                    bincode::encode_to_vec(cf, bincode::config::standard())
-                        .expect("failed to encode program inputs"),
-                ),
-            ];
+            let blobs = vec![identity_cf.into(), cf.into()];
 
             contract::run(
                 &cli,

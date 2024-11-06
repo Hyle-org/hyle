@@ -63,6 +63,15 @@ pub enum IdentityAction {
     },
 }
 
+impl From<IdentityAction> for BlobData {
+    fn from(val: IdentityAction) -> Self {
+        BlobData(
+            bincode::encode_to_vec(val, bincode::config::standard())
+                .expect("failed to encode program inputs"),
+        )
+    }
+}
+
 pub fn execute_action<T: IdentityVerification>(
     state: &mut T,
     caller: Identity,

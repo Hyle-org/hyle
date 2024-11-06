@@ -1,7 +1,7 @@
 use alloc::{format, string::String};
 use bincode::{Decode, Encode};
 
-use crate::{guest::RunResult, HyleContract};
+use crate::{guest::RunResult, BlobData, HyleContract};
 
 /// Trait representing the ERC-20 token standard interface.
 pub trait ERC20
@@ -100,6 +100,15 @@ pub enum ERC20Action {
         owner: String,
         spender: String,
     },
+}
+
+impl From<ERC20Action> for BlobData {
+    fn from(val: ERC20Action) -> Self {
+        BlobData(
+            bincode::encode_to_vec(val, bincode::config::standard())
+                .expect("failed to encode program inputs"),
+        )
+    }
 }
 
 /// Executes an action on an object that implements the ERC20 trait based on the ERC20Action enum.
