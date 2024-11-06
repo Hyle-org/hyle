@@ -20,7 +20,7 @@ pub mod model;
 mod ordered_tx_map;
 mod verifiers;
 
-#[derive(Default, Encode, Decode, Debug)]
+#[derive(Default, Encode, Decode, Debug, Clone)]
 pub struct NodeState {
     timeouts: Timeouts,
     current_height: BlockHeight,
