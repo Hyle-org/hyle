@@ -326,7 +326,7 @@ impl Consensus {
             consensus_proposal: ConsensusProposal {
                 slot: self.bft_round_state.consensus_proposal.slot,
                 view: self.bft_round_state.consensus_proposal.view,
-                round_leader: self.bft_round_state.consensus_proposal.round_leader.clone(),
+                round_leader: self.next_leader()?,
                 ..ConsensusProposal::default()
             },
             staking: std::mem::take(&mut self.bft_round_state.staking),
@@ -349,7 +349,7 @@ impl Consensus {
                 self.bft_round_state.follower.buffered_quorum_certificate = Some(qc);
                 // Any new validators are added to the consensus and removed from candidates.
                 for new_v in new_validators_to_bond {
-                    warn!("🎉 New validator bonded: {}", new_v.pubkey);
+                    debug!("🎉 New validator bonded: {}", new_v.pubkey);
                     self.store
                         .bft_round_state
                         .staking
@@ -358,7 +358,6 @@ impl Consensus {
             }
             Some(Ticket::TimeoutQC(qc)) => {
                 self.bft_round_state.consensus_proposal.view += 1;
-                self.bft_round_state.follower.buffered_quorum_certificate = Some(qc);
             }
             els => {
                 bail!("Invalid ticket here {:?}", els);
@@ -1283,7 +1282,7 @@ impl Consensus {
         }
 
         if &self.next_leader()? != self.crypto.validator_pubkey() {
-            bail!("not concerned")
+            return Ok(());
         }
 
         info!(
