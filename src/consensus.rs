@@ -152,6 +152,8 @@ pub struct ConsensusProposal {
     new_validators_to_bond: Vec<NewValidatorCandidate>,
 }
 
+type NextLeader = ValidatorPublicKey;
+
 #[derive(
     Debug, Serialize, Deserialize, Clone, Encode, Decode, PartialEq, Eq, Hash, IntoStaticStr,
 )]
@@ -161,7 +163,7 @@ pub enum ConsensusNetMessage {
     Confirm(QuorumCertificate),
     ConfirmAck(ConsensusProposalHash),
     Commit(QuorumCertificate, ConsensusProposalHash),
-    Timeout(ConsensusProposalHash),
+    Timeout(ConsensusProposalHash, NextLeader),
     TimeoutCertificate(QuorumCertificate, ConsensusProposalHash),
     ValidatorCandidacy(ValidatorCandidacy),
 }
@@ -279,6 +281,28 @@ pub struct Consensus {
 }
 
 impl Consensus {
+    fn next_leader(&self) -> Result<ValidatorPublicKey> {
+        // Find out who the next leader will be.
+        let leader_index = self
+            .bft_round_state
+            .staking
+            .bonded()
+            .iter()
+            .position(|v| v == &self.bft_round_state.consensus_proposal.round_leader)
+            .context(format!(
+                "Leader {} not found in validators",
+                &self.bft_round_state.consensus_proposal.round_leader,
+            ))?;
+
+        Ok(self
+            .bft_round_state
+            .staking
+            .bonded()
+            .get((leader_index + 1) % self.bft_round_state.staking.bonded().len())
+            .context("No next leader found")?
+            .clone())
+    }
+
     /// Reset bft_round_state for the next round of consensus.
     fn finish_round(&mut self, ticket: Option<Ticket>) -> Result<(), Error> {
         match self.bft_round_state.state_tag {
@@ -309,25 +333,7 @@ impl Consensus {
             ..BFTRoundState::default()
         };
 
-        // Find out who the next leader will be.
-        let leader_index = self
-            .bft_round_state
-            .staking
-            .bonded()
-            .iter()
-            .position(|v| v == &self.bft_round_state.consensus_proposal.round_leader)
-            .context(format!(
-                "Leader {} not found in validators",
-                &self.bft_round_state.consensus_proposal.round_leader,
-            ))?;
-
-        self.bft_round_state.consensus_proposal.round_leader = self
-            .bft_round_state
-            .staking
-            .bonded()
-            .get((leader_index + 1) % self.bft_round_state.staking.bonded().len())
-            .context("No next leader found")?
-            .clone();
+        self.bft_round_state.consensus_proposal.round_leader = self.next_leader()?;
 
         if self.bft_round_state.consensus_proposal.round_leader == *self.crypto.validator_pubkey() {
             self.bft_round_state.state_tag = StateTag::Leader;
@@ -693,8 +699,8 @@ impl Consensus {
             ConsensusNetMessage::Commit(commit_quorum_certificate, proposal_hash_hint) => {
                 self.on_commit(commit_quorum_certificate, proposal_hash_hint)
             }
-            ConsensusNetMessage::Timeout(consensus_proposal_hash) => {
-                self.on_timeout(msg, consensus_proposal_hash)
+            ConsensusNetMessage::Timeout(consensus_proposal_hash, next_leader) => {
+                self.on_timeout(msg, consensus_proposal_hash, next_leader)
             }
             ConsensusNetMessage::TimeoutCertificate(
                 timeout_certificate,
@@ -743,7 +749,10 @@ impl Consensus {
         );
 
         self.verify_quorum_certificate(
-            ConsensusNetMessage::Timeout(self.bft_round_state.consensus_proposal.hash()),
+            ConsensusNetMessage::Timeout(
+                self.bft_round_state.consensus_proposal.hash(),
+                self.next_leader()?,
+            ),
             &timeout_qc,
         )
         .context("Verifying Timeout Ticket")?;
@@ -1143,6 +1152,7 @@ impl Consensus {
         &mut self,
         received_msg: SignedByValidator<ConsensusNetMessage>,
         received_consensus_proposal_hash: ConsensusProposalHash,
+        next_leader: NextLeader,
     ) -> Result<()> {
         // Leader does not care about timeouts, his role is to rebroadcast messages to generate a commit
         if matches!(self.bft_round_state.state_tag, StateTag::Leader) {
@@ -1165,6 +1175,15 @@ impl Consensus {
                 self.bft_round_state.consensus_proposal.hash(),
                 received_consensus_proposal_hash
             );
+        }
+
+        // Validates received next leader will be the same as the locally computed one
+        if self.next_leader()? != next_leader {
+            bail!(
+                "Received next leader {} does not match the locally computed one {}",
+                next_leader,
+                self.next_leader()?
+            )
         }
 
         // In the paper, a replica returns a commit if present
@@ -1206,6 +1225,7 @@ impl Consensus {
             // Broadcast a timeout message
             self.broadcast_net_message(ConsensusNetMessage::Timeout(
                 received_consensus_proposal_hash.clone(),
+                next_leader.clone(),
             ))
             .context(format!(
                 "Sending timeout message for slot:{} view:{}",
@@ -1221,7 +1241,7 @@ impl Consensus {
 
         // Create TC if applicable
         if voting_power > 2 * f {
-            debug!("Creating a timeout certificate with {len} timeout requests and {voting_power} voting power");
+            debug!("⏲️⏲️  Creating a timeout certificate with {len} timeout requests and {voting_power} voting power");
             // Get all signatures received and change ValidatorId for ValidatorPubKey
             let aggregates: &Vec<&SignedByValidator<ConsensusNetMessage>> = &self
                 .bft_round_state
@@ -1232,7 +1252,7 @@ impl Consensus {
 
             // Aggregates them into a Timeout Certificate
             let timeout_signed_aggregation = self.crypto.sign_aggregate(
-                ConsensusNetMessage::Timeout(received_consensus_proposal_hash.clone()),
+                ConsensusNetMessage::Timeout(received_consensus_proposal_hash.clone(), next_leader),
                 aggregates.as_slice(),
             )?;
 
@@ -1248,7 +1268,7 @@ impl Consensus {
 
             self.bft_round_state.follower.timeout_state.cancel();
 
-            self.carry_on_with_ticket(Ticket::TimeoutQC(timeout_certificate))?;
+            // self.carry_on_with_ticket(Ticket::TimeoutQC(timeout_certificate))?;
         }
 
         Ok(())
@@ -1273,7 +1293,10 @@ impl Consensus {
         );
 
         self.verify_quorum_certificate(
-            ConsensusNetMessage::Timeout(received_consensus_proposal_hash.clone()),
+            ConsensusNetMessage::Timeout(
+                received_consensus_proposal_hash.clone(),
+                self.next_leader()?,
+            ),
             &received_timeout_certificate,
         )
         .context(format!(
@@ -1437,6 +1460,7 @@ impl Consensus {
                     );
                     self.broadcast_net_message(ConsensusNetMessage::Timeout(
                         self.bft_round_state.consensus_proposal.hash(),
+                        self.next_leader()?,
                     ))?;
 
                     self.bft_round_state.follower.timeout_state.cancel();

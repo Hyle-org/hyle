@@ -111,8 +111,12 @@ impl Display for ConsensusNetMessage {
             ConsensusNetMessage::ValidatorCandidacy(candidacy) => {
                 write!(f, "{} (CP hash {})", enum_variant, candidacy)
             }
-            ConsensusNetMessage::Timeout(hash) => {
-                write!(f, "{} - CP hash {}", enum_variant, hash)
+            ConsensusNetMessage::Timeout(hash, next_leader) => {
+                write!(
+                    f,
+                    "{} - CP hash {} - Next Leader {}",
+                    enum_variant, hash, next_leader
+                )
             }
             ConsensusNetMessage::TimeoutCertificate(cert, hash) => {
                 _ = writeln!(f, "{} - CP hash: {}", enum_variant, hash);
