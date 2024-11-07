@@ -44,7 +44,7 @@ jobs:
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: cargo build --verbose
-      - run: cargo nextest run --profile ci
+      - run: cargo nextest run --profile ci --workspace
       - name: Upload test results to Codecov
         if: ${{ !cancelled() }}
         uses: codecov/test-results-action@v1

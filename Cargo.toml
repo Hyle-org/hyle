@@ -1,3 +1,7 @@
+[workspace]
+members = ["contracts/hyrun", "contracts/hyllar/guest", "contracts/hydentity/guest"]
+resolver = "2"
+
 [package]
 name = "hyle"
 version = "0.1.0"
@@ -6,6 +10,8 @@ default-run = "node"
 
 [dependencies]
 hyle-contract-sdk = { path = "./contract-sdk"}
+hyllar = { path = "./contracts/hyllar/contract" }
+hydentity = { path = "./contracts/hydentity/contract" }
 config = "0.14.1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["json"] }
