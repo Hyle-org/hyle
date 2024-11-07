@@ -152,12 +152,11 @@ impl Mempool {
                 if let Err(e) = self
                     .bus
                     .send(MempoolEvent::CommitBlock(txs, new_bonded_validators))
-                    .context("Cannot send message over channel")
+                    .context("Cannot send commitBlock message over channel")
                 {
                     error!("{:?}", e);
                 };
             }
-            ConsensusEvent::GenesisBlock { .. } => {}
         }
     }
 

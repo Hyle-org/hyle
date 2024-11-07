@@ -4,7 +4,7 @@ use anyhow::{anyhow, bail, Context, Error, Result};
 use bincode::{Decode, Encode};
 use metrics::ConsensusMetrics;
 use serde::{Deserialize, Serialize};
-use staking::{Stake, Staker, Staking, MIN_STAKE};
+use staking::{Staker, Staking, MIN_STAKE};
 use std::{
     collections::{HashMap, HashSet},
     default::Default,
@@ -16,9 +16,10 @@ use tracing::{debug, info, warn};
 
 use crate::{
     bus::{bus_client, command_response::Query, BusMessage, SharedMessageBus},
+    genesis::GenesisEvent,
     handle_messages,
     mempool::{Cut, MempoolEvent},
-    model::{BlockHeight, Hashable, Transaction, TransactionData, ValidatorPublicKey},
+    model::{BlockHeight, Hashable, ValidatorPublicKey},
     p2p::{
         network::{OutboundMessage, PeerEvent, Signed, SignedByValidator},
         P2PCommand,
@@ -59,10 +60,6 @@ pub enum ConsensusEvent {
         new_bonded_validators: Vec<ValidatorPublicKey>,
         cut: Cut,
     },
-    GenesisBlock {
-        stake_txs: Vec<Transaction>,
-        initial_validators: Vec<ValidatorPublicKey>,
-    },
 }
 
 #[derive(Clone)]
@@ -88,6 +85,7 @@ struct ConsensusBusClient {
     sender(P2PCommand),
     receiver(ConsensusCommand),
     receiver(MempoolEvent),
+    receiver(GenesisEvent),
     receiver(SignedByValidator<ConsensusNetMessage>),
     receiver(PeerEvent),
     receiver(Query<QueryConsensusInfo, ConsensusInfo>),
@@ -171,7 +169,6 @@ pub struct BFTRoundState {
 #[derive(Encode, Decode, Default, Debug)]
 enum StateTag {
     #[default]
-    Genesis,
     Joining,
     Leader,
     Follower,
@@ -399,7 +396,7 @@ impl Consensus {
 
                 _ = command_sender
                     .send(ConsensusCommand::StartNewSlot)
-                    .log_error("Cannot send message over channel");
+                    .log_error("Cannot send StartNewSlot message over channel");
             });
             Ok(())
         }
@@ -1146,34 +1143,22 @@ impl Consensus {
                 Ok(())
             }
             ConsensusCommand::NewBonded(validator) => {
-                match self.bft_round_state.state_tag {
-                    StateTag::Joining | StateTag::Genesis => {
-                        self.store.bft_round_state.staking.bond(validator)?;
-                    }
-                    _ => {
-                        // Ignore, we are updating as part of consensus logic.
-                    }
+                if !self.store.bft_round_state.staking.is_bonded(&validator) {
+                    self.store.bft_round_state.staking.bond(validator)?;
                 }
+
                 Ok(())
             }
             ConsensusCommand::ProcessedBlock(block_height) => {
-                match self.bft_round_state.state_tag {
-                    StateTag::Genesis => {
-                        unreachable!(
-                            "Genesis handling should never happen here but in start_genesis"
-                        );
+                if let StateTag::Joining = self.bft_round_state.state_tag {
+                    info!(
+                        "🚪 Received {} {}",
+                        self.store.bft_round_state.joining.staking_updated_to, block_height.0
+                    );
+                    if self.store.bft_round_state.joining.staking_updated_to < block_height.0 {
+                        info!("🚪 Processed block {}", block_height.0);
+                        self.store.bft_round_state.joining.staking_updated_to = block_height.0;
                     }
-                    StateTag::Joining => {
-                        info!(
-                            "🚪 Received {} {}",
-                            self.store.bft_round_state.joining.staking_updated_to, block_height.0
-                        );
-                        if self.store.bft_round_state.joining.staking_updated_to < block_height.0 {
-                            info!("🚪 Processed block {}", block_height.0);
-                            self.store.bft_round_state.joining.staking_updated_to = block_height.0;
-                        }
-                    }
-                    _ => {}
                 }
                 Ok(())
             }
@@ -1241,47 +1226,13 @@ impl Consensus {
         }
     }
 
-    /// Setup the state of the node at startup.
-    fn setup_initial_state(&mut self) -> Result<()> {
-        if self
-            .config
-            .consensus
-            .genesis_stakers
-            .contains_key(&self.config.id)
-        {
-            if matches!(self.bft_round_state.state_tag, StateTag::Genesis) {
-                if self.config.id == self.config.consensus.genesis_leader {
-                    info!(
-                        "👑 Setting ourselves {}({}) as leader for genesis",
-                        &self.config.id,
-                        self.crypto.validator_pubkey()
-                    );
-                    self.store.bft_round_state.consensus_proposal.round_leader =
-                        self.crypto.validator_pubkey().clone();
-                }
-                // We will start from the genesis block.
-                self.store.bft_round_state.genesis.peer_pubkey.insert(
-                    self.config.id.clone(),
-                    self.crypto.validator_pubkey().clone(),
-                );
-            }
-        } else {
-            self.bft_round_state.state_tag = StateTag::Joining;
-        }
-
-        Ok(())
-    }
-
     fn start_master(&mut self, config: SharedConf) -> Result<()> {
         let interval = config.consensus.slot_duration;
 
         // hack to avoid another bus for a specific wip case
         let command_sender = Pick::<broadcast::Sender<ConsensusCommand>>::get(&self.bus).clone();
         if config.id == "single-node" {
-            info!(
-                "No peers configured, starting as master generating cuts every {} milliseconds",
-                interval
-            );
+            info!("Configured as single node, generating cuts every {interval} milliseconds",);
 
             tokio::spawn(async move {
                 loop {
@@ -1289,7 +1240,7 @@ impl Consensus {
 
                     _ = command_sender
                         .send(ConsensusCommand::SingleNodeBlockGeneration)
-                        .log_error("Cannot send message over channel");
+                        .log_error("Cannot send SingleNodeBlockGeneration message over channel");
                 }
             });
         }
@@ -1297,83 +1248,33 @@ impl Consensus {
         Ok(())
     }
 
-    async fn start_genesis(&mut self) -> Result<()> {
-        // Wait until we've connected with all other genesis peers.
+    async fn wait_genesis(&mut self) -> Result<()> {
+        if !self
+            .config
+            .consensus
+            .genesis_stakers
+            .contains_key(&self.config.id)
+        {
+            return self.start().await;
+        }
+
+        info!("🌱 Waiting for genesis event");
         handle_messages! {
             on_bus self.bus,
-            listen<PeerEvent> msg => {
-                match msg {
-                    PeerEvent::NewPeer { name, pubkey } => {
-                        info!("New peer {} added to genesis: {}", &name, &pubkey);
-                        self.bft_round_state
-                            .genesis
-                            .peer_pubkey
-                            .insert(name.clone(), pubkey.clone());
-
-                        if name == self.config.consensus.genesis_leader {
-                            info!("👑 Setting {}({}) as leader for genesis", &name, &pubkey);
-                            self.bft_round_state.consensus_proposal.round_leader = pubkey;
-                        }
-
-                        // Once we know everyone in the initial quorum, craft & process the genesis block.
-                        if self.bft_round_state.genesis.peer_pubkey.len()
-                            == self.config.consensus.genesis_stakers.len() {
-                            break
-                        }
-                    }
+            listen<GenesisEvent> cmd => {
+                if let GenesisEvent::Ready { first_round_leader}  = cmd {
+                    info!("🌱 Genesis event received, first round leader is {}", first_round_leader);
+                    self.store.bft_round_state.consensus_proposal.round_leader = first_round_leader;
+                    break;
                 }
             }
         }
-        // At this point, we can setup the genesis block.
-        _ = self.bus.send(ConsensusEvent::GenesisBlock {
-            initial_validators: self
-                .bft_round_state
-                .genesis
-                .peer_pubkey
-                .values()
-                .cloned()
-                .collect(),
-            stake_txs: self
-                .bft_round_state
-                .genesis
-                .peer_pubkey
-                .iter()
-                .map(|(k, v)| {
-                    Transaction::wrap(TransactionData::Stake(Staker {
-                        pubkey: v.clone(),
-                        stake: Stake {
-                            amount: *self.config.consensus.genesis_stakers.get(k).unwrap_or(&100),
-                        },
-                    }))
-                })
-                .collect(),
-        });
-        // Now wait until the genesis block is processed by DA.
-        // ACHTUNG: this only works because Staking, Bonding and Processed messages
-        // are part of the same channel and so will be processed in order.
-        handle_messages! {
-            on_bus self.bus,
-            listen<ConsensusCommand> msg => {
-                match msg {
-                    ConsensusCommand::NewStaker(staker) => {
-                        self.store.bft_round_state.staking.add_staker(staker)?;
-                    }
-                    ConsensusCommand::NewBonded(validator) => {
-                        self.store.bft_round_state.staking.bond(validator)?;
-                    }
-                    ConsensusCommand::ProcessedBlock(block_height) => {
-                        if block_height == BlockHeight(0) {
-                            // Done with genesis, break out of the loop.
-                            break;
-                        }
-                    }
-                    _ => {}
-                }
-            }
+
+        if self.config.id == "single-node" {
+            return self.start().await;
         }
-        // Genesis logic: we rely on all peers connecting with each other
-        // before the first round starts, or the validators list will mismatch.
-        // TODO: this is hacky & duplicates logic in the module building.
+
+        info!("🌱 Genesis done, starting rounds");
         if self.config.consensus.genesis_leader == self.config.id {
             self.bft_round_state.state_tag = StateTag::Leader;
             self.bft_round_state.consensus_proposal.slot = 1;
@@ -1384,14 +1285,11 @@ impl Consensus {
             self.bft_round_state.consensus_proposal.slot = 1;
             info!("👑 Starting consensus as follower");
         }
-        Ok(())
+        self.start().await
     }
 
     async fn start(&mut self) -> Result<()> {
-        self.setup_initial_state()?;
-        if matches!(self.bft_round_state.state_tag, StateTag::Genesis) {
-            self.start_genesis().await?;
-        }
+        info!("🚀 Starting consensus");
 
         handle_messages! {
             on_bus self.bus,

@@ -4,7 +4,8 @@ mod blocks;
 
 use crate::{
     bus::{bus_client, command_response::Query, BusMessage, SharedMessageBus},
-    consensus::{ConsensusCommand, ConsensusEvent},
+    consensus::ConsensusCommand,
+    genesis::GenesisEvent,
     handle_messages,
     mempool::MempoolEvent,
     model::{
@@ -76,7 +77,7 @@ struct DABusClient {
     receiver(PeerEvent),
     receiver(Query<QueryBlockHeight , BlockHeight>),
     receiver(MempoolEvent),
-    receiver(ConsensusEvent),
+    receiver(GenesisEvent),
 }
 }
 
@@ -181,8 +182,8 @@ impl DataAvailability {
                 }
             }
 
-            listen<ConsensusEvent> cmd => {
-                if let ConsensusEvent::GenesisBlock { initial_validators, stake_txs } = cmd {
+            listen<GenesisEvent> cmd => {
+                if let GenesisEvent::GenesisBlock { initial_validators, stake_txs } = cmd {
                     self.handle_block(Block {
                         parent_hash: BlockHash::new("0000000000000000"),
                         height: BlockHeight(0),
