@@ -4,7 +4,7 @@ use anyhow::{anyhow, bail, Context, Error, Result};
 use bincode::{Decode, Encode};
 use metrics::ConsensusMetrics;
 use serde::{Deserialize, Serialize};
-use staking::{Stake, Staker, Staking, MIN_STAKE};
+use staking::{Staker, Staking, MIN_STAKE};
 use std::{
     collections::{HashMap, HashSet},
     default::Default,
@@ -15,7 +15,7 @@ use tokio::{
     sync::broadcast,
     time::{interval, sleep},
 };
-use tracing::{debug, info, warn};
+use tracing::{debug, error, info, warn};
 
 use crate::{
     bus::{
@@ -1226,7 +1226,10 @@ impl Consensus {
             len += 1;
             voting_power += self.get_own_voting_power();
 
-            self.bft_round_state.follower.timeout_state.cancel();
+            self.bft_round_state
+                .follower
+                .timeout_state
+                .schedule_next(get_current_timestamp());
         }
 
         // Create TC if applicable
@@ -1256,7 +1259,10 @@ impl Consensus {
                 received_consensus_proposal_hash.clone(),
             ))?;
 
-            self.bft_round_state.follower.timeout_state.cancel();
+            self.bft_round_state
+                .follower
+                .timeout_state
+                .schedule_next(get_current_timestamp());
         }
 
         Ok(())
