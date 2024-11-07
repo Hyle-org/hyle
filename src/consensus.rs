@@ -211,9 +211,6 @@ pub struct BFTRoundState {
     consensus_proposal: ConsensusProposal,
     staking: Staking,
 
-    timeout_requests: HashMap<View, HashSet<SignedByValidator<ConsensusNetMessage>>>,
-    timeout_state: TimeoutState,
-
     leader: LeaderState,
     follower: FollowerState,
     joining: JoiningState,
@@ -247,6 +244,8 @@ pub struct LeaderState {
 
 #[derive(Encode, Decode, Default)]
 pub struct FollowerState {
+    timeout_requests: HashSet<SignedByValidator<ConsensusNetMessage>>,
+    timeout_state: TimeoutState,
     buffered_quorum_certificate: Option<QuorumCertificate>, // if we receive a commit before the next prepare
 }
 
@@ -366,12 +365,13 @@ impl Consensus {
             self.bft_round_state.consensus_proposal.view
         );
 
-        self.bft_round_state
-            .timeout_state
-            .schedule_next(get_current_timestamp());
-
         if self.is_round_leader() {
             info!("👑 I'm the new leader! 👑")
+        } else {
+            self.bft_round_state
+                .follower
+                .timeout_state
+                .schedule_next(get_current_timestamp());
         }
 
         Ok(())
@@ -1144,6 +1144,11 @@ impl Consensus {
         received_msg: SignedByValidator<ConsensusNetMessage>,
         received_consensus_proposal_hash: ConsensusProposalHash,
     ) -> Result<()> {
+        // Leader does not care about timeouts, his role is to rebroadcast messages to generate a commit
+        if matches!(self.bft_round_state.state_tag, StateTag::Leader) {
+            bail!("Leader does not process timeout messages")
+        }
+
         // Only timeout if it is in consensus
         if !self.is_part_of_consensus(self.crypto.validator_pubkey()) {
             info!(
@@ -1162,26 +1167,20 @@ impl Consensus {
             );
         }
 
-        let current_view = self.bft_round_state.consensus_proposal.view;
-
         // In the paper, a replica returns a commit if present
         // TODO ?
 
+        // Insert timeout request and if already present notify
+        if !self
+            .store
+            .bft_round_state
+            .follower
+            .timeout_requests
+            .insert(received_msg.clone())
         {
-            // Save Timeout. Ends if the message already has been processed
-            let timeout_requests_of_same_view = &mut self
-                .store
-                .bft_round_state
-                .timeout_requests
-                .entry(self.bft_round_state.consensus_proposal.view)
-                .or_default();
-
-            // Insert timeout request and if already present notify
-            if !timeout_requests_of_same_view.insert(received_msg.clone()) {
-                // self.metrics.timeout_request("already_processed");
-                info!("Timeout has already been processed");
-                return Ok(());
-            }
+            // self.metrics.timeout_request("already_processed");
+            info!("Timeout has already been processed");
+            return Ok(());
         }
 
         let f = self.compute_f();
@@ -1189,9 +1188,8 @@ impl Consensus {
         let timeout_validators = self
             .store
             .bft_round_state
+            .follower
             .timeout_requests
-            .entry(current_view)
-            .or_default()
             .iter()
             .map(|signed_message| signed_message.signature.validator.clone())
             .collect::<Vec<ValidatorPublicKey>>();
@@ -1218,7 +1216,7 @@ impl Consensus {
             len += 1;
             voting_power += self.get_own_voting_power();
 
-            self.bft_round_state.timeout_state.cancel();
+            self.bft_round_state.follower.timeout_state.cancel();
         }
 
         // Create TC if applicable
@@ -1227,9 +1225,8 @@ impl Consensus {
             // Get all signatures received and change ValidatorId for ValidatorPubKey
             let aggregates: &Vec<&SignedByValidator<ConsensusNetMessage>> = &self
                 .bft_round_state
+                .follower
                 .timeout_requests
-                .get(&current_view)
-                .unwrap()
                 .iter()
                 .collect();
 
@@ -1249,7 +1246,7 @@ impl Consensus {
                 received_consensus_proposal_hash.clone(),
             ))?;
 
-            self.bft_round_state.timeout_state.cancel();
+            self.bft_round_state.follower.timeout_state.cancel();
 
             self.carry_on_with_ticket(Ticket::TimeoutQC(timeout_certificate))?;
         }
@@ -1430,7 +1427,7 @@ impl Consensus {
                     .expect("Failed to send ConsensusEvent::CommitCut msg on the bus");
                 Ok(())
             }
-            ConsensusCommand::TimeoutTick => match &self.bft_round_state.timeout_state {
+            ConsensusCommand::TimeoutTick => match &self.bft_round_state.follower.timeout_state {
                 TimeoutState::Scheduled { timestamp } if get_current_timestamp() >= *timestamp => {
                     // Trigger state transition to mutiny
                     info!(
@@ -1442,7 +1439,7 @@ impl Consensus {
                         self.bft_round_state.consensus_proposal.hash(),
                     ))?;
 
-                    self.bft_round_state.timeout_state.cancel();
+                    self.bft_round_state.follower.timeout_state.cancel();
 
                     Ok(())
                 }
