@@ -1146,7 +1146,8 @@ impl Consensus {
     ) -> Result<()> {
         // Leader does not care about timeouts, his role is to rebroadcast messages to generate a commit
         if matches!(self.bft_round_state.state_tag, StateTag::Leader) {
-            bail!("Leader does not process timeout messages")
+            debug!("Leader does not process timeout messages");
+            return Ok(());
         }
 
         // Only timeout if it is in consensus
