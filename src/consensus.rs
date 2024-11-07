@@ -727,20 +727,6 @@ impl Consensus {
             .is_ok()
     }
 
-    fn verify_timeout_ticket(&mut self, timeout_qc: QuorumCertificate) -> bool {
-        // Three options:
-        // - we have already received the commit message for this ticket, so we already processed the QC.
-        // - we haven't, so we process it right away
-        // - the CQC is invalid and we just ignore it.
-        if let Some(qc) = &self.bft_round_state.follower.buffered_quorum_certificate {
-            return qc == &timeout_qc;
-        }
-
-        self.try_process_timeout_qc(timeout_qc)
-            .log_error("Processing Timeout ticket")
-            .is_ok()
-    }
-
     fn try_process_timeout_qc(&mut self, timeout_qc: QuorumCertificate) -> Result<()> {
         info!(
             "Trying to process timeout Certificate against consensus proposal slot: {}, view: {}",
@@ -795,9 +781,9 @@ impl Consensus {
                     .push(consensus_proposal);
                 return Ok(());
             }
-            StateTag::Follower => {}
+            StateTag::Follower | StateTag::Leader => {}
             _ => {
-                bail!("Prepare message received while not follower");
+                bail!("Prepare message received while not follower or leader");
             }
         }
 
@@ -814,7 +800,11 @@ impl Consensus {
                 }
             }
             Ticket::TimeoutQC(timeout_qc) => {
-                if !self.verify_timeout_ticket(timeout_qc) {
+                if !self
+                    .try_process_timeout_qc(timeout_qc)
+                    .log_error("Processing Timeout ticket")
+                    .is_ok()
+                {
                     bail!("Invalid timeout ticket");
                 }
             }
@@ -1241,7 +1231,7 @@ impl Consensus {
 
         // Create TC if applicable
         if voting_power > 2 * f {
-            debug!("⏲️⏲️  Creating a timeout certificate with {len} timeout requests and {voting_power} voting power");
+            debug!("⏲️ ⏲️ Creating a timeout certificate with {len} timeout requests and {voting_power} voting power");
             // Get all signatures received and change ValidatorId for ValidatorPubKey
             let aggregates: &Vec<&SignedByValidator<ConsensusNetMessage>> = &self
                 .bft_round_state
@@ -1267,8 +1257,6 @@ impl Consensus {
             ))?;
 
             self.bft_round_state.follower.timeout_state.cancel();
-
-            // self.carry_on_with_ticket(Ticket::TimeoutQC(timeout_certificate))?;
         }
 
         Ok(())
@@ -1285,6 +1273,10 @@ impl Consensus {
                 received_consensus_proposal_hash,
                 self.bft_round_state.consensus_proposal.view
             );
+        }
+
+        if &self.next_leader()? != self.crypto.validator_pubkey() {
+            bail!("not concerned")
         }
 
         info!(
