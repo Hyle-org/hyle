@@ -11,6 +11,7 @@ use hyle::{
     model::{CommonRunContext, NodeRunContext, SharedRunContext},
     p2p::P2P,
     rest::{NodeInfo, RestApi, RestApiRunContext},
+    single_node_consensus::SingleNodeConsensus,
     tools::mock_workflow::MockWorkflowHandler,
     utils::{
         conf,
@@ -95,7 +96,14 @@ async fn main() -> Result<()> {
 
     let mut handler = ModulesHandler::default();
     handler.build_module::<Mempool>(ctx.clone()).await?;
-    handler.build_module::<Consensus>(ctx.clone()).await?;
+
+    if config.single_node.unwrap_or(false) {
+        handler
+            .build_module::<SingleNodeConsensus>(ctx.clone())
+            .await?;
+    } else {
+        handler.build_module::<Consensus>(ctx.clone()).await?;
+    }
     handler.build_module::<P2P>(ctx.clone()).await?;
     handler
         .build_module::<MockWorkflowHandler>(ctx.clone())

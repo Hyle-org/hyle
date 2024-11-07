@@ -82,6 +82,7 @@ impl E2ECtx {
     pub async fn new_single(slot_duration: u64) -> Result<E2ECtx> {
         let mut conf_maker = ConfMaker::default();
         conf_maker.default.consensus.slot_duration = slot_duration;
+        conf_maker.default.single_node = Some(true);
 
         let node_conf = conf_maker.build("single-node");
         let node = test_helpers::TestProcess::new("node", node_conf)

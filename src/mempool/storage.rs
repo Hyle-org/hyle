@@ -606,6 +606,20 @@ impl Hashable<Vec<u8>> for Car {
     }
 }
 
+impl Car {
+    pub fn new(id: CarId, parent: Option<CarId>, txs: Vec<Transaction>, poa: Poa) -> Self {
+        Car {
+            id,
+            parent,
+            txs,
+            poa,
+        }
+    }
+
+    pub fn id(&self) -> CarId {
+        self.id
+    }
+}
 #[derive(Clone, Default, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Poa(pub BTreeSet<ValidatorPublicKey>);
 

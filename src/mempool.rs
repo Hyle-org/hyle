@@ -4,7 +4,7 @@ use crate::{
     bus::{bus_client, command_response::Query, BusMessage, SharedMessageBus},
     consensus::ConsensusEvent,
     handle_messages,
-    mempool::storage::{Car, CarProposal, InMemoryStorage},
+    mempool::storage::{CarProposal, InMemoryStorage},
     model::{
         Hashable, SharedRunContext, Transaction, TransactionData, ValidatorPublicKey,
         VerifiedProofTransaction,
@@ -23,13 +23,12 @@ use bincode::{Decode, Encode};
 use metrics::MempoolMetrics;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashSet, fmt::Display, sync::Arc};
-use storage::{CarId, ProposalVerdict};
+use storage::{Car, CarId, Cut, ProposalVerdict};
 use strum_macros::IntoStaticStr;
 use tracing::{debug, error, info, warn};
 
 mod metrics;
-mod storage;
-pub use storage::Cut;
+pub mod storage;
 #[derive(Debug, Clone)]
 pub struct QueryNewCut(pub Vec<ValidatorPublicKey>);
 
