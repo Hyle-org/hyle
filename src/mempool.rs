@@ -1,13 +1,12 @@
 //! Mempool logic & pending transaction management.
 
 use crate::{
-    bus::{bus_client, BusMessage, SharedMessageBus},
+    bus::{bus_client, command_response::Query, BusMessage, SharedMessageBus},
     consensus::ConsensusEvent,
-    data_availability::DataEvent,
     handle_messages,
     mempool::storage::{Car, CarProposal, InMemoryStorage},
     model::{
-        Block, Hashable, SharedRunContext, Transaction, TransactionData, ValidatorPublicKey,
+        Hashable, SharedRunContext, Transaction, TransactionData, ValidatorPublicKey,
         VerifiedProofTransaction,
     },
     node_state::NodeState,
@@ -32,6 +31,9 @@ mod metrics;
 mod storage;
 pub use storage::Cut;
 
+#[derive(Clone)]
+pub struct QueryNewCut {}
+
 bus_client! {
 struct MempoolBusClient {
     sender(OutboundMessage),
@@ -39,7 +41,7 @@ struct MempoolBusClient {
     receiver(SignedByValidator<MempoolNetMessage>),
     receiver(RestApiMessage),
     receiver(ConsensusEvent),
-    receiver(DataEvent),
+    receiver(Query<QueryNewCut, Cut>),
 }
 }
 
@@ -54,9 +56,9 @@ pub struct Mempool {
 
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, Eq, PartialEq, IntoStaticStr)]
 pub enum MempoolNetMessage {
-    NewCut(Cut),
     CarProposal(CarProposal),
     CarProposalVote(CarProposal),
+    // FIXME: Add a new message to receive a Car's PoA
     SyncRequest(CarProposal, Option<CarId>),
     SyncReply(Vec<Car>),
 }
@@ -72,7 +74,6 @@ impl BusMessage for MempoolNetMessage {}
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub enum MempoolEvent {
-    NewCut(Cut),
     CommitBlock(Vec<Transaction>, Vec<ValidatorPublicKey>),
 }
 impl BusMessage for MempoolEvent {}
@@ -131,30 +132,42 @@ impl Mempool {
             listen<ConsensusEvent> cmd => {
                 self.handle_consensus_event(cmd).await
             }
-            listen<DataEvent> cmd => {
-                self.handle_data_availability_event(cmd).await
+            command_response<QueryNewCut, Cut> _ => {
+                // TODO: metrics?
+                self.metrics.add_batch();
+                Ok(self.storage.make_new_cut(&self.validators))
             }
             _ = interval.tick() => {
-                self.time_to_cut().await
-            }
-        }
-    }
+                // This tick is responsible for CarProposal management
 
-    async fn handle_data_availability_event(&mut self, event: DataEvent) {
-        match event {
-            DataEvent::NewBlock(block) => self.handle_block(block).await,
-        }
-    }
+                // FIXME: Split this flow in three steps:
+                // 1: create new CarProposal with pending txs and broadcast it as a CarProposal.
+                // 2: Save CarProposal. It is not yet a Car (since PoA is not reached)
+                // 3: Go through all pending CarProposal (of own lane) that have not reach PoA, and send them to make them Cars
 
-    async fn handle_block(&mut self, block: Block) {
-        // Only register contract transactions are handled when Mempool receives a new block
-        for tx in block.txs {
-            if let TransactionData::RegisterContract(register_contract_transaction) =
-                &tx.transaction_data
-            {
-                let _ = self
-                    .node_state
-                    .handle_register_contract_tx(register_contract_transaction);
+                let poa = self.storage.tip_poa();
+                self.try_car_proposal(poa);
+                // FIXME: with current implem, we send CarProposal twice.
+                if let Some((tip, txs)) = self.storage.tip_info() {
+                    // No PoA means we rebroadcast the Car proposal for non present voters
+                    let only_for = HashSet::from_iter(
+                        self.validators
+                            .iter()
+                            .filter(|pubkey| !tip.poa.contains(pubkey))
+                            .cloned(),
+                    );
+                    if let Err(e) = self.broadcast_car_proposal_only_for(
+                        only_for,
+                        CarProposal {
+                            txs,
+                            id: tip.pos,
+                            parent: tip.parent,
+                            parent_poa: None, // TODO: fetch parent votes
+                        },
+                    ) {
+                        error!("{:?}", e);
+                    }
+                }
             }
         }
     }
@@ -190,15 +203,13 @@ impl Mempool {
             Ok(true) => {
                 let validator = &msg.signature.validator;
                 match msg.msg {
-                    MempoolNetMessage::NewCut(cut) => {
-                        self.send_new_cut(cut);
-                    }
                     MempoolNetMessage::CarProposal(car_proposal) => {
                         if let Err(e) = self.on_car_proposal(validator, car_proposal).await {
                             error!("{:?}", e);
                         }
                     }
                     MempoolNetMessage::CarProposalVote(car_proposal) => {
+                        // FIXME: We should extract the signature for that Vote in order to create a PoA
                         self.on_proposal_vote(validator, car_proposal).await;
                     }
                     MempoolNetMessage::SyncRequest(car_proposal, last_car_id) => {
@@ -349,51 +360,6 @@ impl Mempool {
                 car_proposal.txs.len()
             );
             if let Err(e) = self.broadcast_car_proposal(car_proposal) {
-                error!("{:?}", e);
-            }
-        }
-    }
-
-    fn send_new_cut(&mut self, cut: Cut) {
-        if let Err(e) = self
-            .bus
-            .send(MempoolEvent::NewCut(cut))
-            .context("Cannot send NewCut over channel")
-        {
-            error!("{:?}", e);
-        } else {
-            self.metrics.add_batch();
-        }
-    }
-
-    async fn time_to_cut(&mut self) {
-        if let Some(cut) = self.storage.try_new_cut(&self.validators) {
-            let poa = self.storage.tip_poa();
-            self.try_car_proposal(poa);
-            if let Err(e) = self
-                .broadcast_net_message(MempoolNetMessage::NewCut(cut.clone()))
-                .context("Cannot broadcast NewCut message")
-            {
-                error!("{:?}", e);
-            }
-            self.send_new_cut(cut);
-        } else if let Some((tip, txs)) = self.storage.tip_info() {
-            // No PoA means we rebroadcast the Car proposal for non present voters
-            let only_for = HashSet::from_iter(
-                self.validators
-                    .iter()
-                    .filter(|pubkey| !tip.poa.contains(pubkey))
-                    .cloned(),
-            );
-            if let Err(e) = self.broadcast_car_proposal_only_for(
-                only_for,
-                CarProposal {
-                    txs,
-                    id: tip.pos,
-                    parent: tip.parent,
-                    parent_poa: None, // TODO: fetch parent votes
-                },
-            ) {
                 error!("{:?}", e);
             }
         }

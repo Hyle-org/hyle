@@ -174,8 +174,8 @@ impl DataAvailability {
             }
             listen<MempoolEvent> cmd => {
                 match cmd {
-                    MempoolEvent::NewCut(_) => {}
                     MempoolEvent::CommitBlock(txs, new_bonded_validators) => {
+                        // TODO: investigate if we could listen to CommitCut directly.
                         self.handle_commit_block_event(txs, new_bonded_validators).await;
                     }
                 }
