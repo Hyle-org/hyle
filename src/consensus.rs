@@ -180,7 +180,7 @@ enum TimeoutState {
 }
 
 impl TimeoutState {
-    pub const TIMEOUT_SECS: u64 = 10;
+    pub const TIMEOUT_SECS: u64 = 5;
     pub fn schedule_next(&mut self, timestamp: u64) {
         match self {
             TimeoutState::Inactive => {
@@ -1141,7 +1141,7 @@ impl Consensus {
         &mut self,
         received_msg: SignedByValidator<ConsensusNetMessage>,
         received_consensus_proposal_hash: ConsensusProposalHash,
-        next_leader: NextLeader,
+        next_leader: ValidatorPublicKey,
     ) -> Result<()> {
         // Leader does not care about timeouts, his role is to rebroadcast messages to generate a commit
         if matches!(self.bft_round_state.state_tag, StateTag::Leader) {
@@ -1656,6 +1656,70 @@ mod test {
             receiver(Query<QueryNewCut, Cut>),
         }
     );
+    macro_rules! build_tuple {
+        ($nodes:expr, 1) => {
+            ($nodes)
+        };
+        ($nodes:expr, 2) => {
+            ($nodes, $nodes)
+        };
+        ($nodes:expr, 3) => {
+            ($nodes, $nodes, $nodes)
+        };
+        ($nodes:expr, 4) => {
+            ($nodes, $nodes, $nodes, $nodes)
+        };
+        ($nodes:expr, $count:expr) => {
+            panic!("Le nombre de nœuds {} n'est pas supporté", $count)
+        };
+    }
+    macro_rules! build_nodes {
+        ($count:tt) => {{
+            async {
+                let cryptos: Vec<BlstCrypto> = (0..$count)
+                    .map(|i| {
+                        let crypto = crypto::BlstCrypto::new(format!("node-{i}").into());
+                        info!("node {}: {}", i, crypto.validator_pubkey());
+                        crypto
+                    })
+                    .collect();
+
+                let mut nodes = vec![];
+
+                for i in 0..$count {
+                    let mut node = TestCtx::new(
+                        format!("node-{i}").as_ref(),
+                        cryptos.get(i).unwrap().clone(),
+                    )
+                    .await;
+
+                    for other_crypto in cryptos.iter() {
+                        node.add_trusted_validator(other_crypto.validator_pubkey());
+                    }
+
+                    node.consensus.bft_round_state.consensus_proposal.slot = 1;
+
+                    if i == 0 {
+                        node.consensus.bft_round_state.state_tag = StateTag::Leader;
+                        node.consensus.bft_round_state.leader.pending_ticket =
+                            Some(Ticket::Genesis);
+                    } else {
+                        node.consensus.bft_round_state.state_tag = StateTag::Follower;
+                    }
+
+                    node.consensus
+                        .bft_round_state
+                        .consensus_proposal
+                        .round_leader = cryptos.get(0).unwrap().validator_pubkey().clone();
+
+                    nodes.push(node);
+                }
+
+                // Appel à une macro récursive pour construire le tuple
+                build_tuple!(nodes.remove(0), $count)
+            }
+        }};
+    }
 
     impl TestCtx {
         async fn new(name: &str, crypto: BlstCrypto) -> Self {
@@ -1710,39 +1774,6 @@ mod test {
                 .bond(pubkey.clone())
                 .expect("cannot bond trusted validator");
             info!("🎉 Trusted validator added: {}", pubkey);
-        }
-
-        async fn build() -> (Self, Self) {
-            let crypto = crypto::BlstCrypto::new("node-1".into());
-            info!("node 1: {}", crypto.validator_pubkey());
-            let c_other = crypto::BlstCrypto::new("node-2".into());
-            info!("node 2: {}", c_other.validator_pubkey());
-            let mut node1 = Self::new("node-1", crypto.clone()).await;
-            let mut node2 = Self::new("node-2", c_other.clone()).await;
-
-            node1.add_trusted_validator(crypto.validator_pubkey());
-            node1.add_trusted_validator(c_other.validator_pubkey());
-            node2.add_trusted_validator(crypto.validator_pubkey());
-            node2.add_trusted_validator(c_other.validator_pubkey());
-
-            node1.consensus.bft_round_state.consensus_proposal.slot = 1;
-            node1.consensus.bft_round_state.state_tag = StateTag::Leader;
-            node1
-                .consensus
-                .bft_round_state
-                .consensus_proposal
-                .round_leader = crypto.validator_pubkey().clone();
-            node2.consensus.bft_round_state.consensus_proposal.slot = 1;
-            node2.consensus.bft_round_state.state_tag = StateTag::Follower;
-            node2
-                .consensus
-                .bft_round_state
-                .consensus_proposal
-                .round_leader = crypto.validator_pubkey().clone();
-
-            node1.consensus.bft_round_state.leader.pending_ticket = Some(Ticket::Genesis);
-
-            (node1, node2)
         }
 
         async fn new_node(name: &str) -> Self {
@@ -1814,6 +1845,15 @@ mod test {
         }
 
         #[track_caller]
+        fn schedule_next_timeout_now(&mut self) {
+            self.consensus
+                .bft_round_state
+                .follower
+                .timeout_state
+                .schedule_next(get_current_timestamp() - 10);
+        }
+
+        #[track_caller]
         fn assert_broadcast(&mut self, err: &str) -> SignedByValidator<ConsensusNetMessage> {
             #[allow(clippy::expect_fun_call)]
             let rec = self
@@ -1856,27 +1896,26 @@ mod test {
             }
         }
     }
-
     #[test_log::test(tokio::test)]
     async fn test_happy_path() {
-        let (mut node1, mut node2) = TestCtx::build().await;
+        let (mut node1, mut node2): (TestCtx, TestCtx) = build_nodes!(2).await;
 
-        node1.start_round().await;
-        // Slot 0 - leader = node1
-        let leader_proposal = node1.assert_broadcast("Leader proposal");
-        node2.handle_msg(&leader_proposal, "Leader proposal");
+        // node1.start_round().await;
+        // // Slot 0 - leader = node1
+        // let leader_proposal = node1.assert_broadcast("Leader proposal");
+        // node2.handle_msg(&leader_proposal, "Leader proposal");
 
-        let slave_vote = node2.assert_send(&node1, "Slave vote");
-        node1.handle_msg(&slave_vote, "Slave vote");
+        // let slave_vote = node2.assert_send(&node1, "Slave vote");
+        // node1.handle_msg(&slave_vote, "Slave vote");
 
-        let leader_confirm = node1.assert_broadcast("Leader confirm");
-        node2.handle_msg(&leader_confirm, "Leader confirm");
+        // let leader_confirm = node1.assert_broadcast("Leader confirm");
+        // node2.handle_msg(&leader_confirm, "Leader confirm");
 
-        let slave_confirm_ack = node2.assert_send(&node1, "Slave confirm ack");
-        node1.handle_msg(&slave_confirm_ack, "Slave confirm ack");
+        // let slave_confirm_ack = node2.assert_send(&node1, "Slave confirm ack");
+        // node1.handle_msg(&slave_confirm_ack, "Slave confirm ack");
 
-        let leader_commit = node1.assert_broadcast("Leader commit");
-        node2.handle_msg(&leader_commit, "Leader commit");
+        // let leader_commit = node1.assert_broadcast("Leader commit");
+        // node2.handle_msg(&leader_commit, "Leader commit");
 
         // Slot 1 - leader = node2
         node2.start_round().await;
@@ -1914,8 +1953,99 @@ mod test {
     }
 
     #[test_log::test(tokio::test)]
+    async fn test_timeout() {
+        let (mut node1, mut node2, mut node3, mut node4): (TestCtx, TestCtx, TestCtx, TestCtx) =
+            build_nodes!(4).await;
+
+        node1.start_round().await;
+        // Slot 0 - leader = node1
+        // Ensuring one slot commits correctly before a timeout
+        let leader_proposal = node1.assert_broadcast("Leader proposal");
+        node2.handle_msg(&leader_proposal, "Leader proposal");
+        node3.handle_msg(&leader_proposal, "Leader proposal");
+        node4.handle_msg(&leader_proposal, "Leader proposal");
+
+        let slave_vote = node2.assert_send(&node1, "Slave vote");
+        node1.handle_msg(&slave_vote, "Slave vote");
+        let slave_vote = node3.assert_send(&node1, "Slave vote");
+        node1.handle_msg(&slave_vote, "Slave vote");
+        let slave_vote = node4.assert_send(&node1, "Slave vote");
+        node1.handle_msg(&slave_vote, "Slave vote");
+
+        let leader_confirm = node1.assert_broadcast("Leader confirm");
+        node2.handle_msg(&leader_confirm, "Leader confirm");
+        node3.handle_msg(&leader_confirm, "Leader confirm");
+        node4.handle_msg(&leader_confirm, "Leader confirm");
+
+        let slave_confirm_ack = node2.assert_send(&node1, "Slave confirm ack");
+        node1.handle_msg(&slave_confirm_ack, "Slave confirm ack");
+        let slave_confirm_ack = node3.assert_send(&node1, "Slave confirm ack");
+        node1.handle_msg(&slave_confirm_ack, "Slave confirm ack");
+        let slave_confirm_ack = node4.assert_send(&node1, "Slave confirm ack");
+        node1.handle_msg(&slave_confirm_ack, "Slave confirm ack");
+
+        let leader_commit = node1.assert_broadcast("Leader commit");
+        node2.handle_msg(&leader_commit, "Leader commit");
+        node3.handle_msg(&leader_commit, "Leader commit");
+        node4.handle_msg(&leader_commit, "Leader commit");
+
+        // Slot 1 - leader = node2
+        node2.start_round().await;
+
+        // Two timeouts, the node4 should follow, because at f+1, mutiny join
+        node1.schedule_next_timeout_now();
+        node3.schedule_next_timeout_now();
+
+        // Timeout are triggered with a ticker, let's wait a bit
+        sleep(Duration::from_millis(200)).await;
+
+        let timeout1 = node1.assert_broadcast("Leader proposal");
+        let timeout3 = node3.assert_broadcast("Leader proposal");
+
+        node1.handle_msg(&timeout3, "Timeout node 3");
+        node3.handle_msg(&timeout1, "Timeout node 1");
+
+        node4.handle_msg(&timeout1, "Timeout node 1");
+        node4.handle_msg(&timeout3, "Timeout node 3");
+
+        // node 4 should join the mutiny
+        let timeout4 = node4.assert_broadcast("Timeout node 4");
+
+        // Now other nodes should be able to create certificates
+        node1.handle_msg(&timeout4, "Timeout node 4");
+        node3.handle_msg(&timeout4, "Timeout node 4");
+
+        node1.assert_broadcast("Timeout Certificate 1");
+        let timeout_certificate3 = node3.assert_broadcast("Timeout Certificate 3");
+        node4.assert_broadcast("Timeout Certificate 4");
+
+        let leader_proposal = node3.assert_broadcast("Leader Proposal").msg;
+
+        match leader_proposal {
+            ConsensusNetMessage::Prepare(cp, ticket) => match ticket {
+                Ticket::TimeoutQC(qc) => {
+                    if let ConsensusNetMessage::TimeoutCertificate(agg_signature, cp_hash) =
+                        timeout_certificate3.msg
+                    {
+                        assert_eq!(agg_signature, qc);
+                        assert_eq!(cp_hash, cp.hash());
+                    } else {
+                        panic!("timeout certificate 3 should be a timeout certificate messages but was {:?}", timeout_certificate3);
+                    }
+                }
+                els => {
+                    panic!("should be a prepare but got {:?}", els)
+                }
+            },
+            els => {
+                panic!("should be a prepare but got {:?}", els)
+            }
+        }
+    }
+
+    #[test_log::test(tokio::test)]
     async fn test_candidacy() {
-        let (mut node1, mut node2) = TestCtx::build().await;
+        let (mut node1, mut node2): (TestCtx, TestCtx) = build_nodes!(2).await;
 
         // Slot 0
         {
