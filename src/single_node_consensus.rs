@@ -6,10 +6,9 @@ use crate::bus::SharedMessageBus;
 use crate::consensus::{
     ConsensusCommand, ConsensusEvent, ConsensusInfo, ConsensusNetMessage, QueryConsensusInfo,
 };
-use crate::mempool::storage::{CarId, Cut};
+use crate::mempool::storage::Cut;
 use crate::mempool::MempoolNetMessage;
 use crate::p2p::network::{NetMessage, OutboundMessage, SignedByValidator};
-use crate::utils::conf::SharedConf;
 use crate::utils::crypto::{BlstCrypto, SharedBlstCrypto};
 use crate::{
     bus::bus_client, handle_messages, mempool::MempoolEvent, model::SharedRunContext,
@@ -33,7 +32,7 @@ struct SingleNodeConsensusBusClient {
 
 #[derive(Encode, Decode, Default)]
 struct SingleNodeConsensusStore {
-    latest_car_id: Option<CarId>,
+    has_done_genesis: bool,
 }
 
 pub struct SingleNodeConsensus {
@@ -42,7 +41,6 @@ pub struct SingleNodeConsensus {
     crypto: SharedBlstCrypto,
     store: SingleNodeConsensusStore,
     file: Option<PathBuf>,
-    config: SharedConf,
 }
 
 /// The `SingleNodeConsensus` module listens to and sends the same messages as the `Consensus` module.
@@ -77,7 +75,6 @@ impl Module for SingleNodeConsensus {
             crypto: ctx.node.crypto.clone(),
             store,
             file: Some(file),
-            config: ctx.common.config.clone(),
         })
     }
 
@@ -94,7 +91,8 @@ impl SingleNodeConsensus {
         ];
         let new_bonded_validators = vec![self.crypto.validator_pubkey().clone()];
 
-        if self.store.latest_car_id.is_none() {
+        // On peut Query DA pour récuperer le dernier block/cut ?
+        if !self.store.has_done_genesis {
             // This is the genesis
             // Send new cut with two validators. The Node itself and the 'car_proposal_signer' which is here just to Vote for new CarProposal.
             self.bus.send(ConsensusEvent::CommitCut {
@@ -102,11 +100,9 @@ impl SingleNodeConsensus {
                 new_bonded_validators,
                 cut: Cut::default(),
             })?;
+            self.store.has_done_genesis = true;
             tracing::info!("Waiting for a first transaction before creating blocks...");
         }
-        let mut interval = tokio::time::interval(tokio::time::Duration::from_millis(
-            self.config.consensus.slot_duration,
-        ));
 
         handle_messages! {
             on_bus self.bus,
@@ -137,22 +133,18 @@ impl SingleNodeConsensus {
                         }
                     }
 
-                    // Add CarProposal as a latest car received
-                    self.store.latest_car_id = Some(car_proposal.id);
-                }
-            }
-            _ = interval.tick() => {
-                tracing::error!("Tick... {:?}", self.store.latest_car_id);
-                if let Some(latest_car_id) = self.store.latest_car_id.take() {
-                    _ = self.bus
-                        .send(ConsensusEvent::CommitCut {
+                    // Wait for CarProposalVote to be processed
+                    // TODO: Once we implement the request/response from Consensus to Mempool for cuts, we can remove this
+                    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+
+                    _ = self.bus.send(ConsensusEvent::CommitCut {
                             validators: vec![
                                 self.car_proposal_signer.validator_pubkey().clone(),
                                 self.crypto.validator_pubkey().clone(),
                             ],
-                            cut: vec![(self.crypto.validator_pubkey().clone(), latest_car_id)],
+                            cut: vec![(self.crypto.validator_pubkey().clone(), car_proposal.id)],
                             new_bonded_validators: vec![],
-                        })?;
+                        })?
                 }
             }
         }
