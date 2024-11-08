@@ -3,6 +3,7 @@ use hyle::{
     rest::client::ApiHttpClient,
     utils::conf::{Conf, Consensus},
 };
+use rand::Rng;
 use std::{
     process::{Child, Command},
     time::Duration,
@@ -12,7 +13,8 @@ use tokio::time::timeout;
 use tracing::info;
 
 pub struct ConfMaker {
-    i: u16,
+    i: u32,
+    random_port: u32,
     pub default: Conf,
 }
 
@@ -25,22 +27,22 @@ impl ConfMaker {
             } else {
                 format!("{}-{}", prefix, self.i)
             },
-            host: format!("localhost:{}", 3000 + self.i),
-            da_address: format!("localhost:{}", 4000 + self.i),
-            rest: format!("localhost:{}", 5000 + self.i),
+            host: format!("localhost:{}", self.random_port + self.i),
+            da_address: format!("localhost:{}", self.random_port + 1000 + self.i),
+            rest: format!("localhost:{}", self.random_port + 2000 + self.i),
             ..self.default.clone()
         }
-    }
-    pub fn reset_default(&mut self) {
-        let i = self.i;
-        *self = ConfMaker::default();
-        self.i = i;
     }
 }
 
 impl Default for ConfMaker {
     fn default() -> Self {
         let mut default = Conf::new(None, None, None).unwrap();
+        let mut rng = rand::thread_rng();
+        let random_port: u32 = rng.gen_range(1024..(65536 - 3000));
+        default.host = format!("localhost:{}", random_port);
+        default.da_address = format!("localhost:{}", random_port + 1000);
+        default.rest = format!("localhost:{}", random_port + 2000);
         default.run_indexer = false; // disable indexer by default to avoid needed PG
         default.log_format = "node".to_string(); // Activate node name in logs for convenience in tests.
         info!("Default conf: {:?}", default);
@@ -55,7 +57,11 @@ impl Default for ConfMaker {
             },
         };
         info!("Default conf: {:?}", default);
-        Self { i: 0, default }
+        Self {
+            i: 0,
+            random_port,
+            default,
+        }
     }
 }
 

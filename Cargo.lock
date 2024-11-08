@@ -1421,6 +1421,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1aaf95b3e5c8f23aa320147307562d361db0ae0d51242340f558153b4eb2439b"
 
 [[package]]
+name = "downcast"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1435fa1053d8b2fbbe9be7e97eca7f33d37b28409959813daefc1446a14247f1"
+
+[[package]]
 name = "downcast-rs"
 version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1467,6 +1473,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4f2c92ceda6ceec50f43169f9ee8424fe2db276791afde7b2cd8bc084cb376ab"
 dependencies = [
  "log",
+ "regex",
 ]
 
 [[package]]
@@ -1478,6 +1485,7 @@ dependencies = [
  "anstream",
  "anstyle",
  "env_filter",
+ "humantime",
  "log",
 ]
 
@@ -1614,6 +1622,12 @@ checksum = "e13624c2627564efccf4934284bdd98cbaa14e79b0b5a141218e507b3a823456"
 dependencies = [
  "percent-encoding",
 ]
+
+[[package]]
+name = "fragile"
+version = "2.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6c2141d6d6c8512188a7891b4b01590a45f6dac67afb4f255c4124dbb86d4eaa"
 
 [[package]]
 name = "fs2"
@@ -1984,6 +1998,27 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9a3a5bfb195931eeb336b2a7b4d761daec841b97f947d34394601737a7bba5e4"
 
 [[package]]
+name = "hydentity"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bincode 2.0.0-rc.2",
+ "hex",
+ "hyle-contract-sdk",
+ "serde",
+ "sha3",
+]
+
+[[package]]
+name = "hydentity-guest"
+version = "0.1.0"
+dependencies = [
+ "hydentity",
+ "hyle-contract-sdk",
+ "risc0-zkvm",
+]
+
+[[package]]
 name = "hyle"
 version = "0.1.0"
 dependencies = [
@@ -2009,7 +2044,9 @@ dependencies = [
  "dhat",
  "futures",
  "hex",
+ "hydentity",
  "hyle-contract-sdk",
+ "hyllar",
  "opentelemetry",
  "paste",
  "proptest",
@@ -2045,7 +2082,29 @@ version = "0.1.0"
 dependencies = [
  "bincode 2.0.0-rc.2",
  "hex",
+ "mockall",
+ "risc0-zkvm",
  "serde",
+]
+
+[[package]]
+name = "hyllar"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bincode 2.0.0-rc.2",
+ "hyle-contract-sdk",
+ "serde",
+ "sha3",
+]
+
+[[package]]
+name = "hyllar-guest"
+version = "0.1.0"
+dependencies = [
+ "hyle-contract-sdk",
+ "hyllar",
+ "risc0-zkvm",
 ]
 
 [[package]]
@@ -2163,6 +2222,27 @@ dependencies = [
  "pin-project-lite",
  "tokio",
  "tower-service",
+]
+
+[[package]]
+name = "hyrun"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "base64 0.22.1",
+ "bincode 2.0.0-rc.2",
+ "borsh",
+ "clap",
+ "env_logger",
+ "hex",
+ "hydentity",
+ "hyle-contract-sdk",
+ "hyllar",
+ "reqwest",
+ "risc0-zkvm",
+ "serde",
+ "serde_json",
+ "tracing-subscriber 0.3.18",
 ]
 
 [[package]]
@@ -2540,6 +2620,32 @@ dependencies = [
  "libc",
  "wasi",
  "windows-sys 0.52.0",
+]
+
+[[package]]
+name = "mockall"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d4c28b3fb6d753d28c20e826cd46ee611fda1cf3cde03a443a974043247c065a"
+dependencies = [
+ "cfg-if",
+ "downcast",
+ "fragile",
+ "mockall_derive",
+ "predicates",
+ "predicates-tree",
+]
+
+[[package]]
+name = "mockall_derive"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "341014e7f530314e9a1fdbc7400b244efea7122662c96bfa248c31da5bfb2020"
+dependencies = [
+ "cfg-if",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.87",
 ]
 
 [[package]]
@@ -4817,9 +4923,9 @@ checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
 
 [[package]]
 name = "tokio"
-version = "1.41.0"
+version = "1.41.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "145f3413504347a2be84393cc8a7d2fb4d863b375909ea59f2158261aa258bbb"
+checksum = "22cfb5bee7a6a52939ca9224d6ac897bb669134078daa8735560897f69de4d33"
 dependencies = [
  "backtrace",
  "bytes",

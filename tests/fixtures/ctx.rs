@@ -1,14 +1,12 @@
 #![allow(unused)]
 
 use anyhow::{Context, Result};
-use assertables::{assert_any, assert_ok};
+use assertables::assert_ok;
 use reqwest::{Client, Url};
-use std::sync::LazyLock;
 use testcontainers_modules::{
     postgres::Postgres,
     testcontainers::{runners::AsyncRunner, ContainerAsync},
 };
-use tokio::sync::Mutex;
 use tracing::info;
 
 use hyle::{
@@ -23,8 +21,6 @@ use hyle::{
 use hyle_contract_sdk::{Identity, StateDigest, TxHash};
 
 use super::test_helpers::{self, wait_height, ConfMaker};
-
-static CONF_MAKER: LazyLock<Mutex<ConfMaker>> = LazyLock::new(|| Mutex::new(ConfMaker::default()));
 
 pub trait E2EContract {
     fn verifier() -> String;
@@ -84,8 +80,7 @@ impl E2ECtx {
     }
 
     pub async fn new_single(slot_duration: u64) -> Result<E2ECtx> {
-        let mut conf_maker = CONF_MAKER.lock().await;
-        conf_maker.reset_default();
+        let mut conf_maker = ConfMaker::default();
         conf_maker.default.consensus.slot_duration = slot_duration;
 
         let node_conf = conf_maker.build("single-node");
@@ -113,8 +108,7 @@ impl E2ECtx {
     }
 
     pub async fn new_multi(count: usize, slot_duration: u64) -> Result<E2ECtx> {
-        let mut conf_maker = CONF_MAKER.lock().await;
-        conf_maker.reset_default();
+        let mut conf_maker = ConfMaker::default();
         conf_maker.default.consensus.slot_duration = slot_duration;
 
         let (nodes, clients) = Self::build_nodes(count, &mut conf_maker);
@@ -131,9 +125,8 @@ impl E2ECtx {
     }
 
     pub async fn add_node(&mut self) -> Result<&ApiHttpClient> {
-        let mut conf_maker = CONF_MAKER.lock().await;
-        conf_maker.reset_default();
-        let mut node_conf = conf_maker.build("node");
+        let mut conf_maker = ConfMaker::default();
+        let mut node_conf = conf_maker.build("new-node");
         //node_conf.peers = vec![self.nodes[0].conf.host.clone()];
         node_conf.peers = self
             .nodes
@@ -157,8 +150,7 @@ impl E2ECtx {
     pub async fn new_multi_with_indexer(count: usize, slot_duration: u64) -> Result<E2ECtx> {
         let pg = Self::init().await;
 
-        let mut conf_maker = CONF_MAKER.lock().await;
-        conf_maker.reset_default();
+        let mut conf_maker = ConfMaker::default();
         conf_maker.default.consensus.slot_duration = slot_duration;
         conf_maker.default.database_url = format!(
             "postgres://postgres:postgres@localhost:{}/postgres",

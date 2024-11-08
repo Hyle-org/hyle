@@ -90,8 +90,7 @@ impl From<&str> for ContractName {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Default, Clone, PartialEq, Eq, Encode, Decode, Hash)]
-pub struct BlobData(pub Vec<u8>);
+pub use hyle_contract_sdk::BlobData;
 
 #[derive(Debug, Serialize, Deserialize, Default, Clone, PartialEq, Eq, Encode, Decode, Hash)]
 pub struct Transaction {
