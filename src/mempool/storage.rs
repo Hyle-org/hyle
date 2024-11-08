@@ -166,7 +166,9 @@ impl InMemoryStorage {
             self.proposal_will_wait(validator, car_proposal.clone());
             return ProposalVerdict::Wait(car_proposal.parent);
         }
-        let mut optimistic_node_state = node_state.clone();
+        // optimistic_node_state is here to handle the case where a contract is registered in a car that is not yet committed.
+        // For performance reasons, we only clone node_state in it for unregistered contracts that are potentially in those uncommitted cars.
+        let mut optimistic_node_state: Option<NodeState> = None;
         for tx in car_proposal.txs.iter() {
             match &tx.transaction_data {
                 TransactionData::Proof(_) => {
@@ -177,9 +179,9 @@ impl InMemoryStorage {
                     // Ensure all referenced contracts are registered
                     for blob_ref in &proof_tx.proof_transaction.blobs_references {
                         if !node_state.contracts.contains_key(&blob_ref.contract_name)
-                            && !optimistic_node_state
-                                .contracts
-                                .contains_key(&blob_ref.contract_name)
+                            && !optimistic_node_state.as_ref().map_or(false, |state| {
+                                state.contracts.contains_key(&blob_ref.contract_name)
+                            })
                         {
                             // Process previous cars to register the missing contract
                             if let Some(lane) = self.other_lanes.get_mut(validator) {
@@ -188,13 +190,21 @@ impl InMemoryStorage {
                                         if let TransactionData::RegisterContract(reg_tx) =
                                             &tx.transaction_data
                                         {
-                                            if optimistic_node_state
-                                                .handle_register_contract_tx(reg_tx)
-                                                .is_err()
-                                            {
-                                                // Register transactions in a validated car should never fail
-                                                // as car is accepted only if all transactions are valid
-                                                unreachable!();
+                                            if reg_tx.contract_name == blob_ref.contract_name {
+                                                if optimistic_node_state.is_none() {
+                                                    optimistic_node_state =
+                                                        Some(node_state.clone());
+                                                }
+                                                if optimistic_node_state
+                                                    .as_mut()
+                                                    .unwrap()
+                                                    .handle_register_contract_tx(reg_tx)
+                                                    .is_err()
+                                                {
+                                                    // Register transactions in a validated car should never fail
+                                                    // as car is accepted only if all transactions are valid
+                                                    unreachable!();
+                                                }
                                             }
                                         }
                                     }
@@ -204,7 +214,11 @@ impl InMemoryStorage {
                     }
 
                     // Verifying the proof before voting
-                    match optimistic_node_state.verify_proof(&proof_tx.proof_transaction) {
+                    match optimistic_node_state
+                        .as_ref()
+                        .unwrap_or(node_state)
+                        .verify_proof(&proof_tx.proof_transaction)
+                    {
                         Ok(hyle_outputs) => {
                             if hyle_outputs != proof_tx.hyle_outputs {
                                 warn!("Refusing Car proposal: incorrect HyleOutput in proof transaction");
@@ -218,7 +232,14 @@ impl InMemoryStorage {
                     }
                 }
                 TransactionData::RegisterContract(register_contract_tx) => {
-                    match optimistic_node_state.handle_register_contract_tx(register_contract_tx) {
+                    if optimistic_node_state.is_none() {
+                        optimistic_node_state = Some(node_state.clone());
+                    }
+                    match optimistic_node_state
+                        .as_mut()
+                        .unwrap()
+                        .handle_register_contract_tx(register_contract_tx)
+                    {
                         Ok(_) => (),
                         Err(e) => {
                             warn!("Refusing Car Proposal: {}", e);
