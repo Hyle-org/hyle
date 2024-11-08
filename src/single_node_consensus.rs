@@ -1,4 +1,3 @@
-use std::collections::BTreeSet;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -7,9 +6,10 @@ use crate::bus::SharedMessageBus;
 use crate::consensus::{
     ConsensusCommand, ConsensusEvent, ConsensusInfo, ConsensusNetMessage, QueryConsensusInfo,
 };
-use crate::mempool::storage::{Car, CarId, Cut, Poa};
+use crate::mempool::storage::{CarId, Cut};
 use crate::mempool::MempoolNetMessage;
 use crate::p2p::network::{NetMessage, OutboundMessage, SignedByValidator};
+use crate::utils::conf::SharedConf;
 use crate::utils::crypto::{BlstCrypto, SharedBlstCrypto};
 use crate::{
     bus::bus_client, handle_messages, mempool::MempoolEvent, model::SharedRunContext,
@@ -33,7 +33,7 @@ struct SingleNodeConsensusBusClient {
 
 #[derive(Encode, Decode, Default)]
 struct SingleNodeConsensusStore {
-    cars: Vec<Car>,
+    latest_car_id: Option<CarId>,
 }
 
 pub struct SingleNodeConsensus {
@@ -42,6 +42,7 @@ pub struct SingleNodeConsensus {
     crypto: SharedBlstCrypto,
     store: SingleNodeConsensusStore,
     file: Option<PathBuf>,
+    config: SharedConf,
 }
 
 /// The `SingleNodeConsensus` module listens to and sends the same messages as the `Consensus` module.
@@ -76,6 +77,7 @@ impl Module for SingleNodeConsensus {
             crypto: ctx.node.crypto.clone(),
             store,
             file: Some(file),
+            config: ctx.common.config.clone(),
         })
     }
 
@@ -92,41 +94,31 @@ impl SingleNodeConsensus {
         ];
         let new_bonded_validators = vec![self.crypto.validator_pubkey().clone()];
 
-        if self.store.cars.is_empty() {
+        if self.store.latest_car_id.is_none() {
+            // This is the genesis
             // Send new cut with two validators. The Node itself and the 'car_proposal_signer' which is here just to Vote for new CarProposal.
             self.bus.send(ConsensusEvent::CommitCut {
                 validators,
                 new_bonded_validators,
                 cut: Cut::default(),
             })?;
+            tracing::info!("Waiting for a first transaction before creating blocks...");
         }
+        let mut interval = tokio::time::interval(tokio::time::Duration::from_millis(
+            self.config.consensus.slot_duration,
+        ));
 
         handle_messages! {
             on_bus self.bus,
             listen<ConsensusCommand> _ => {}
             listen<SignedByValidator<ConsensusNetMessage>> _ => {}
+            listen<MempoolEvent> _ => {}
             command_response<QueryConsensusInfo, ConsensusInfo> _ => {
                 let slot = 0;
                 let view = 0;
                 let round_leader = self.crypto.validator_pubkey().clone();
                 let validators = vec![];
                 Ok(ConsensusInfo { slot, view, round_leader, validators })
-            }
-            listen<MempoolEvent> cmd => {
-                match cmd {
-                    MempoolEvent::NewCut(..) => {
-                        _ = self.bus
-                            .send(ConsensusEvent::CommitCut {
-                                validators: vec![
-                                    self.car_proposal_signer.validator_pubkey().clone(),
-                                    self.crypto.validator_pubkey().clone(),
-                                ],
-                                cut: vec![(self.crypto.validator_pubkey().clone(), self.store.cars.last().unwrap().id())],
-                                new_bonded_validators: vec![],
-                            })?;
-                    }
-                    MempoolEvent::CommitBlock(..) => {}
-                }
             }
             listen<OutboundMessage> cmd => {
                 // Receiving a car proposal and automatically voting for it.
@@ -145,16 +137,22 @@ impl SingleNodeConsensus {
                         }
                     }
 
-                    // Add CarProposal as a car
-                    let tip_id = self.store.cars.last().map(|car| car.id());
-                    let current_id = tip_id.unwrap_or(CarId(0)) + 1;
-
-                    self.store.cars.push(Car::new(
-                        current_id,
-                        tip_id,
-                        car_proposal.txs,
-                        Poa(BTreeSet::from([self.car_proposal_signer.validator_pubkey().clone()])),
-                    ));
+                    // Add CarProposal as a latest car received
+                    self.store.latest_car_id = Some(car_proposal.id);
+                }
+            }
+            _ = interval.tick() => {
+                tracing::error!("Tick... {:?}", self.store.latest_car_id);
+                if let Some(latest_car_id) = self.store.latest_car_id.take() {
+                    _ = self.bus
+                        .send(ConsensusEvent::CommitCut {
+                            validators: vec![
+                                self.car_proposal_signer.validator_pubkey().clone(),
+                                self.crypto.validator_pubkey().clone(),
+                            ],
+                            cut: vec![(self.crypto.validator_pubkey().clone(), latest_car_id)],
+                            new_bonded_validators: vec![],
+                        })?;
                 }
             }
         }

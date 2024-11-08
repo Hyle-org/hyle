@@ -51,7 +51,6 @@ pub mod utils;
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub enum ConsensusCommand {
-    // SingleNodeBlockGeneration,
     NewStaker(Staker),
     NewBonded(ValidatorPublicKey),
     ProcessedBlock(BlockHeight),
