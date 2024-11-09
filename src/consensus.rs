@@ -1263,7 +1263,9 @@ impl Consensus {
                 .timeout_state
                 .schedule_next(get_current_timestamp());
 
-            self.carry_on_with_ticket(Ticket::TimeoutQC(timeout_certificate.clone()))?;
+            if &self.next_leader()? == self.crypto.validator_pubkey() {
+                self.carry_on_with_ticket(Ticket::TimeoutQC(timeout_certificate))?;
+            }
         }
 
         Ok(())
@@ -1887,7 +1889,6 @@ mod test {
                 .out_receiver
                 .try_recv()
                 .expect(format!("{err}: No message sent").as_str());
-
             if let OutboundMessage::SendMessage {
                 validator_id: dest,
                 msg: net_msg,
@@ -1966,7 +1967,7 @@ mod test {
             build_nodes!(4).await;
 
         node1.start_round().await;
-        // Slot 0 - leader = node1
+        // Slot 1 - leader = node1
         // Ensuring one slot commits correctly before a timeout
         let leader_proposal = node1.assert_broadcast("Leader proposal");
         node2.handle_msg(&leader_proposal, "Leader proposal");
@@ -1997,10 +1998,15 @@ mod test {
         node3.handle_msg(&leader_commit, "Leader commit");
         node4.handle_msg(&leader_commit, "Leader commit");
 
-        // Slot 1 - leader = node2
+        // Timeout round
+
+        // Slot 2 - view 0 - leader = node2
         node2.start_round().await;
 
-        // Two timeouts, the node4 should follow, because at f+1, mutiny join
+        node2.assert_broadcast("Lost prepare");
+
+        // Make node1 and node3 timeout, node4 will not timeout but follow mutiny
+        // , because at f+1, mutiny join
         node1.schedule_next_timeout_now();
         node3.schedule_next_timeout_now();
 
@@ -2023,15 +2029,19 @@ mod test {
         node1.handle_msg(&timeout4, "Timeout node 4");
         node3.handle_msg(&timeout4, "Timeout node 4");
 
+        // Timeout message emitted after joining the mutiny
+        node1.assert_broadcast("Timeout Message 1");
         node1.assert_broadcast("Timeout Certificate 1");
+        // Timeout message emitted after joining the mutiny
         node3.assert_broadcast("Timeout Message 3");
         let timeout_certificate3 = node3.assert_broadcast("Timeout Certificate 3");
         node4.assert_broadcast("Timeout Certificate 4");
 
-        let _timeout_certificate4 = node4.assert_broadcast("Timeout Certificate 4");
+        node4.assert_broadcast("Timeout Certificate 4");
 
         node3.start_round().await;
 
+        // Slot 2 view 1 (following a timeout round)
         let leader_proposal = node3.assert_broadcast("Leader Proposal");
         match leader_proposal.msg.clone() {
             ConsensusNetMessage::Prepare(cp, ticket) => match ticket {
@@ -2040,7 +2050,8 @@ mod test {
                         timeout_certificate3.msg
                     {
                         assert_eq!(agg_signature, qc);
-
+                        // Make sure the ticket maches the consensus proposal held by the prepare
+                        // but in the previous view
                         let mut cloned_cp = cp.clone();
                         cloned_cp.view -= 1;
                         assert_eq!(cp_hash, cloned_cp.hash());
