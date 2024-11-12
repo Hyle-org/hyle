@@ -285,7 +285,7 @@ impl Mempool {
     ) -> Result<()> {
         match self
             .storage
-            .new_car_proposal(validator, &car_proposal, &self.node_state)
+            .new_car_proposal(validator, &car_proposal, &mut self.node_state)
         {
             ProposalVerdict::Empty => {
                 warn!(

@@ -91,10 +91,13 @@ impl TestProcess {
         let conf_file = tmpdir.path().join("config.ron");
         ron::ser::to_writer(std::fs::File::create(&conf_file).unwrap(), &conf).unwrap();
 
-        let console_port: u16 = conf.host.split(':').last().unwrap().parse().unwrap();
+        let console_port: u32 = conf.host.split(':').last().unwrap().parse().unwrap();
+        let tokio_console_port: u16 = ((console_port + 10000) % u16::MAX as u32)
+            .try_into()
+            .unwrap();
         cmd.env(
             "TOKIO_CONSOLE_BIND",
-            format!("127.0.0.1:{}", console_port + 10000),
+            format!("127.0.0.1:{}", tokio_console_port),
         );
         Self {
             conf,
@@ -138,18 +141,18 @@ impl Drop for TestProcess {
     }
 }
 
-pub async fn wait_height(client: &ApiHttpClient, slots: u64) -> anyhow::Result<()> {
+pub async fn wait_height(client: &ApiHttpClient, heights: u64) -> anyhow::Result<()> {
     timeout(Duration::from_secs(15), async {
         loop {
-            if let Ok(mut current_slot) = client.get_block_height().await {
-                let target_slot = current_slot + slots;
-                while current_slot.0 < target_slot.0 {
+            if let Ok(mut current_height) = client.get_block_height().await {
+                let target_height = current_height + heights;
+                while current_height.0 < target_height.0 {
                     info!(
-                        "⏰ Waiting for slot {} to be reached. Current is {}",
-                        target_slot, current_slot
+                        "⏰ Waiting for height {} to be reached. Current is {}",
+                        target_height, current_height
                     );
                     tokio::time::sleep(Duration::from_millis(250)).await;
-                    current_slot = client.get_block_height().await?;
+                    current_height = client.get_block_height().await?;
                 }
                 return anyhow::Ok(());
             } else {

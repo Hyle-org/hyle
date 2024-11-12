@@ -152,7 +152,7 @@ impl InMemoryStorage {
         &mut self,
         validator: &ValidatorPublicKey,
         car_proposal: &CarProposal,
-        node_state: &NodeState,
+        node_state: &mut NodeState,
     ) -> ProposalVerdict {
         if car_proposal.txs.is_empty() {
             return ProposalVerdict::Empty;
@@ -164,8 +164,21 @@ impl InMemoryStorage {
             self.proposal_will_wait(validator, car_proposal.clone());
             return ProposalVerdict::Wait(car_proposal.parent);
         }
+        debug!("Validating Car proposal: {:?}", car_proposal);
         for tx in car_proposal.txs.iter() {
             match &tx.transaction_data {
+                TransactionData::RegisterContract(tx) => {
+                    match node_state.handle_register_contract_tx(tx) {
+                        Ok(_) => {}
+                        Err(e) => {
+                            warn!(
+                                "Refusing Car Proposal: invalid RegisterContract transaction: {}",
+                                e
+                            );
+                            return ProposalVerdict::Refuse;
+                        }
+                    }
+                }
                 TransactionData::Proof(_) => {
                     warn!("Refusing Car Proposal: unverified proof transaction");
                     return ProposalVerdict::Refuse;
@@ -780,7 +793,7 @@ mod tests {
         let pubkey2 = ValidatorPublicKey(vec![2]);
         let pubkey3 = ValidatorPublicKey(vec![3]);
         let mut store = InMemoryStorage::new(pubkey3.clone());
-        let node_state = NodeState::default();
+        let mut node_state = NodeState::default();
 
         let proof_tx = Transaction {
             version: 1,
@@ -797,7 +810,7 @@ mod tests {
             parent_poa: None,
         };
 
-        let verdict = store.new_car_proposal(&pubkey2, &car_proposal, &node_state);
+        let verdict = store.new_car_proposal(&pubkey2, &car_proposal, &mut node_state);
         assert_eq!(verdict, ProposalVerdict::Refuse);
 
         // Ensure the lane was not updated with the unverified proof transaction
@@ -809,7 +822,7 @@ mod tests {
         let pubkey2 = ValidatorPublicKey(vec![2]);
         let pubkey3 = ValidatorPublicKey(vec![3]);
         let mut store = InMemoryStorage::new(pubkey3.clone());
-        let node_state = NodeState::default();
+        let mut node_state = NodeState::default();
 
         let car_proposal1 = CarProposal {
             txs: vec![make_tx("test1"), make_tx("test2"), make_tx("test3")],
@@ -836,12 +849,12 @@ mod tests {
         store.new_vote_for_proposal(&pubkey2, &car_proposal1);
 
         assert_eq!(
-            store.new_car_proposal(&pubkey2, &car_proposal2, &node_state),
+            store.new_car_proposal(&pubkey2, &car_proposal2, &mut node_state),
             ProposalVerdict::Vote
         );
 
         assert_eq!(
-            store.new_car_proposal(&pubkey2, &car_proposal3, &node_state),
+            store.new_car_proposal(&pubkey2, &car_proposal3, &mut node_state),
             ProposalVerdict::Vote
         );
 
