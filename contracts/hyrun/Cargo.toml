@@ -9,7 +9,7 @@ hydentity = { path = "../hydentity/contract" }
 # hystake = { path = "../hystake/contract" }
 hyllar = { path = "../hyllar/contract" }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-risc0-zkvm = { version = "1.1.1" }
+risc0-zkvm = { version = "1.1.3" }
 env_logger = "0.11.5"
 serde = { version = "1.0", default-features = false, features = [
     "derive",
@@ -19,7 +19,7 @@ clap = { version = "4.4.17", features = ["derive"] }
 base64 = "0.22.1"
 bincode = { version = "2.0.0-rc.2", tag = "v2.0.0-rc.2", git = "https://github.com/bincode-org/bincode.git" }
 hex = "0.4.3"
-borsh = "1.5.1"
+borsh = "1.5.2"
 reqwest = "0.12.8"
 anyhow = "1.0.89"
 serde_json = "1.0.128"

@@ -122,10 +122,7 @@ mod e2e_hyllar {
         let contract = ctx.get_contract("hyllar").await?;
         let state: hyllar::HyllarToken = contract.state.try_into()?;
         let state = hyllar::HyllarTokenContract::init(state, "caller".into());
-        assert_eq!(
-            state.balance_of("bob").expect("faucet identity not found"),
-            10
-        );
+        assert_eq!(state.balance_of("bob").expect("bob identity not found"), 10);
         assert_eq!(
             state
                 .balance_of("faucet")

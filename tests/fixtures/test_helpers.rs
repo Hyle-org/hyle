@@ -141,18 +141,18 @@ impl Drop for TestProcess {
     }
 }
 
-pub async fn wait_height(client: &ApiHttpClient, slots: u64) -> anyhow::Result<()> {
+pub async fn wait_height(client: &ApiHttpClient, heights: u64) -> anyhow::Result<()> {
     timeout(Duration::from_secs(15), async {
         loop {
-            if let Ok(mut current_slot) = client.get_block_height().await {
-                let target_slot = current_slot + slots;
-                while current_slot.0 < target_slot.0 {
+            if let Ok(mut current_height) = client.get_block_height().await {
+                let target_height = current_height + heights;
+                while current_height.0 < target_height.0 {
                     info!(
-                        "⏰ Waiting for slot {} to be reached. Current is {}",
-                        target_slot, current_slot
+                        "⏰ Waiting for height {} to be reached. Current is {}",
+                        target_height, current_height
                     );
                     tokio::time::sleep(Duration::from_millis(250)).await;
-                    current_slot = client.get_block_height().await?;
+                    current_height = client.get_block_height().await?;
                 }
                 return anyhow::Ok(());
             } else {

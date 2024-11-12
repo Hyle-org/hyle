@@ -727,19 +727,6 @@ mod tests {
     };
     use hyle_contract_sdk::{BlobIndex, HyleOutput, Identity, StateDigest, TxHash};
 
-    fn make_register_contract_tx(contract_name: ContractName) -> Transaction {
-        Transaction {
-            version: 1,
-            transaction_data: TransactionData::RegisterContract(RegisterContractTransaction {
-                owner: "test".to_owned(),
-                verifier: "test".to_owned(),
-                program_id: vec![],
-                state_digest: StateDigest(vec![]),
-                contract_name,
-            }),
-        }
-    }
-
     fn make_unverified_proof_tx() -> Transaction {
         Transaction {
             version: 1,
@@ -786,6 +773,19 @@ mod tests {
                     contract_name: ContractName("c1".to_string()),
                     data: BlobData(inner_tx.as_bytes().to_vec()),
                 }],
+            }),
+        }
+    }
+
+    fn make_register_contract_tx(name: ContractName) -> Transaction {
+        Transaction {
+            version: 1,
+            transaction_data: TransactionData::RegisterContract(RegisterContractTransaction {
+                owner: "test".to_string(),
+                verifier: "test".to_string(),
+                program_id: vec![],
+                state_digest: StateDigest(vec![0, 1, 2, 3]),
+                contract_name: name,
             }),
         }
     }
@@ -922,10 +922,13 @@ mod tests {
         let mut store = InMemoryStorage::new(pubkey3.clone());
         let node_state = NodeState::default();
 
+        let contract_name = ContractName("test".to_string());
+        let register_tx = make_register_contract_tx(contract_name.clone());
+
         let proof_tx = make_unverified_proof_tx();
 
         let car_proposal = CarProposal {
-            txs: vec![proof_tx.clone()],
+            txs: vec![register_tx, proof_tx],
             id: CarId(1),
             parent: None,
             parent_poa: None,
@@ -936,6 +939,38 @@ mod tests {
 
         // Ensure the lane was not updated with the unverified proof transaction
         assert!(!store.other_lane_has_proposal(&pubkey2, &car_proposal));
+    }
+
+    #[test_log::test]
+    fn test_update_lane_with_verified_proof_transaction() {
+        let pubkey2 = ValidatorPublicKey(vec![2]);
+        let pubkey3 = ValidatorPublicKey(vec![3]);
+        let mut store = InMemoryStorage::new(pubkey3.clone());
+        let node_state = NodeState::default();
+
+        let contract_name = ContractName("test".to_string());
+        let register_tx = make_register_contract_tx(contract_name.clone());
+
+        let proof_tx = make_verified_proof_tx(contract_name);
+
+        let car_proposal = CarProposal {
+            txs: vec![proof_tx.clone()],
+            id: CarId(1),
+            parent: None,
+            parent_poa: None,
+        };
+
+        let verdict = store.new_car_proposal(&pubkey2, &car_proposal, &node_state);
+        assert_eq!(verdict, ProposalVerdict::Refuse); // refused because contract not found
+
+        let car_proposal = CarProposal {
+            txs: vec![register_tx, proof_tx],
+            id: CarId(1),
+            parent: None,
+            parent_poa: None,
+        };
+        let verdict = store.new_car_proposal(&pubkey2, &car_proposal, &node_state);
+        assert_eq!(verdict, ProposalVerdict::Vote);
     }
 
     #[test_log::test]
