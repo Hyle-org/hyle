@@ -67,8 +67,11 @@ impl Genesis {
             .genesis_stakers
             .contains_key(&self.config.id)
         {
+            info!("📡 Not a genesis staker, need to catchup from peers.");
             return Ok(());
         }
+
+        info!("🌱 Building genesis block");
 
         // We will start from the genesis block.
         self.peer_pubkey.insert(

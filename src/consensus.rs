@@ -20,6 +20,7 @@ use crate::{
         command_response::{CmdRespClient, Query},
         BusMessage, SharedMessageBus,
     },
+    data_availability::DataEvent,
     genesis::GenesisEvent,
     handle_messages,
     mempool::{Cut, QueryNewCut},
@@ -90,6 +91,7 @@ struct ConsensusBusClient {
     sender(Query<QueryNewCut, Cut>),
     receiver(ConsensusCommand),
     receiver(GenesisEvent),
+    receiver(DataEvent),
     receiver(SignedByValidator<ConsensusNetMessage>),
     receiver(PeerEvent),
     receiver(Query<QueryConsensusInfo, ConsensusInfo>),
@@ -1257,17 +1259,8 @@ impl Consensus {
     }
 
     async fn wait_genesis(&mut self) -> Result<()> {
-        // TODO remove this if condition with new catchup flow
-        if !self
-            .config
-            .consensus
-            .genesis_stakers
-            .contains_key(&self.config.id)
-        {
-            return self.start().await;
-        }
+        let mut last_block_height = BlockHeight(0);
 
-        info!("🌱 Waiting for genesis block");
         handle_messages! {
             on_bus self.bus,
             listen<GenesisEvent> msg => {
@@ -1289,6 +1282,13 @@ impl Consensus {
                     break;
                 }
             }
+            listen<DataEvent> msg => {
+                if let DataEvent::CatchupDone(block_height) = msg {
+                    self.bft_round_state.joining.staking_updated_to = block_height.0;
+                    last_block_height = block_height;
+                    break;
+                }
+            }
         }
 
         //// Now wait until the genesis block is processed by DA.
@@ -1306,8 +1306,8 @@ impl Consensus {
                     }
                     ConsensusCommand::ProcessedBlock(block_height) => {
                         info!("🌱 Processed block {}", block_height.0);
-                        if block_height.0 == 0 {
-                            // Done with genesis, break out of the loop.
+                        if block_height == last_block_height {
+                            // Done with genesis/catchup, break out of the loop.
                             break;
                         }
                     }

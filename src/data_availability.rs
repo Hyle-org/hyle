@@ -52,6 +52,7 @@ pub enum DataNetMessage {
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, Eq, PartialEq)]
 pub enum DataEvent {
     NewBlock(Block),
+    CatchupDone(BlockHeight),
 }
 
 impl BusMessage for DataNetMessage {}
@@ -100,7 +101,7 @@ pub struct DataAvailability {
 
     buffered_blocks: BTreeSet<Block>,
     self_pubkey: ValidatorPublicKey,
-    asked_last_block: bool,
+    asked_last_block: Option<ValidatorPublicKey>,
 
     // Peers subscribed to block streaming
     stream_peer_metadata: HashMap<String, BlockStreamPeer>,
@@ -147,7 +148,7 @@ impl Module for DataAvailability {
             blocks: Blocks::new(&db)?,
             buffered_blocks,
             self_pubkey,
-            asked_last_block: false,
+            asked_last_block: None,
             stream_peer_metadata: HashMap::new(),
             node_state,
         })
@@ -201,10 +202,10 @@ impl DataAvailability {
             listen<PeerEvent> msg => {
                 match msg {
                     PeerEvent::NewPeer { pubkey, .. } => {
-                        if !self.asked_last_block {
+                        if self.asked_last_block.is_none() {
                             info!("📡  Asking for last block from new peer");
-                            self.query_last_block(pubkey);
-                            self.asked_last_block = true;
+                            self.asked_last_block = Some(pubkey);
+                            self.query_last_block();
                         }
                     }
                 }
@@ -351,6 +352,7 @@ impl DataAvailability {
                     block.height
                 );
                 self.query_block(block.parent_hash.clone());
+                debug!("Buffering block {}", block.hash());
                 self.buffered_blocks.insert(block);
                 return;
             }
@@ -361,6 +363,7 @@ impl DataAvailability {
                 block.height
             );
             self.query_block(block.parent_hash.clone());
+            debug!(" 2 Buffering block {}", block.hash());
             self.buffered_blocks.insert(block);
             return;
         }
@@ -372,6 +375,7 @@ impl DataAvailability {
     }
 
     async fn pop_buffer(&mut self, mut last_block_hash: BlockHash) {
+        let got_buffered = !self.buffered_blocks.is_empty();
         // Iterative loop to avoid stack overflows
         while let Some(first_buffered) = self.buffered_blocks.first() {
             if first_buffered.parent_hash != last_block_hash {
@@ -384,6 +388,17 @@ impl DataAvailability {
             self.add_block(first_buffered_hash.clone(), first_buffered)
                 .await;
             last_block_hash = first_buffered_hash;
+        }
+
+        if got_buffered {
+            info!("📡 Asking for last block from new peer in case new blocks were mined during catchup.");
+            self.query_last_block();
+        } else {
+            let height = self.blocks.last().map_or(BlockHeight(0), |b| b.height);
+            _ = self
+                .bus
+                .send(DataEvent::CatchupDone(height))
+                .log_error("Error sending DataEvent");
         }
     }
 
@@ -477,13 +492,15 @@ impl DataAvailability {
             }));
     }
 
-    fn query_last_block(&mut self, peer: ValidatorPublicKey) {
-        _ = self.bus.send(OutboundMessage::send(
-            peer,
-            DataNetMessage::QueryLastBlock {
-                respond_to: self.self_pubkey.clone(),
-            },
-        ));
+    fn query_last_block(&mut self) {
+        if let Some(pubkey) = &self.asked_last_block {
+            _ = self.bus.send(OutboundMessage::send(
+                pubkey.clone(),
+                DataNetMessage::QueryLastBlock {
+                    respond_to: self.self_pubkey.clone(),
+                },
+            ));
+        }
     }
 
     async fn start_streaming_to_peer(
