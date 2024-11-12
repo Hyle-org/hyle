@@ -83,7 +83,7 @@ test-log = { version = "0.2.16", features = [
 ], default-features = false }
 tokio-stream = "0.1.16"
 tempfile = "3.14.0"
-testcontainers-modules = { version = "0.11.3", features = ["postgres"] }
+testcontainers-modules = { version = "0.11.4", features = ["postgres"] }
 
 [features]
 dhat = ["dep:dhat"]
