@@ -354,7 +354,7 @@ impl Consensus {
                         .bond(new_v.pubkey.clone())?;
                 }
             }
-            Some(Ticket::TimeoutQC(qc)) => {
+            Some(Ticket::TimeoutQC(_)) => {
                 self.bft_round_state.consensus_proposal.view += 1;
             }
             els => {
@@ -797,10 +797,10 @@ impl Consensus {
                 }
             }
             Ticket::TimeoutQC(timeout_qc) => {
-                if !self
+                if self
                     .try_process_timeout_qc(timeout_qc)
                     .log_error("Processing Timeout ticket")
-                    .is_ok()
+                    .is_err()
                 {
                     bail!("Invalid timeout ticket");
                 }
@@ -1298,7 +1298,7 @@ impl Consensus {
                 received_consensus_proposal_hash.clone(),
                 self.next_leader()?,
             ),
-            &received_timeout_certificate,
+            received_timeout_certificate,
         )
         .context(format!(
             "Verifying timeout certificate for (slot: {}, view: {})",
