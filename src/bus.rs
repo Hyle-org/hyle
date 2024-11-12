@@ -84,6 +84,7 @@ pub trait BusClientReceiver<T> {
     fn recv(
         &mut self,
     ) -> impl std::future::Future<Output = Result<T, tokio::sync::broadcast::error::RecvError>> + Send;
+    fn try_recv(&mut self) -> Result<T, tokio::sync::broadcast::error::TryRecvError>;
 }
 
 /// Macro to create  a struct that registers sender/receiver using a shared bus.
@@ -153,5 +154,10 @@ where
     {
         Pick::<BusMetrics>::get_mut(self).receive::<Msg, Client>();
         Pick::<tokio::sync::broadcast::Receiver<Msg>>::get_mut(self).recv()
+    }
+
+    fn try_recv(&mut self) -> Result<Msg, tokio::sync::broadcast::error::TryRecvError> {
+        Pick::<BusMetrics>::get_mut(self).receive::<Msg, Client>();
+        Pick::<tokio::sync::broadcast::Receiver<Msg>>::get_mut(self).try_recv()
     }
 }

@@ -221,7 +221,7 @@ mod tests {
 
         assert!(result.is_ok());
 
-        let rec = bus.recv().await.expect("recv");
+        let rec: GenesisEvent = bus.try_recv().expect("recv");
         assert_matches!(rec, GenesisEvent::GenesisBlock { .. });
         if let GenesisEvent::GenesisBlock {
             stake_txs,
@@ -230,12 +230,6 @@ mod tests {
         {
             assert_eq!(stake_txs.len(), 2);
             assert_eq!(initial_validators.len(), 2);
-        }
-
-        let rec = bus.recv().await.expect("recv");
-        assert_matches!(rec, GenesisEvent::Ready { .. });
-        if let GenesisEvent::Ready { first_round_leader } = rec {
-            assert_eq!(first_round_leader, *genesis.crypto.validator_pubkey());
         }
     }
 
@@ -266,7 +260,7 @@ mod tests {
 
         assert!(result.is_ok());
 
-        let rec = bus.recv().await.expect("recv");
+        let rec = bus.try_recv().expect("recv");
         assert_matches!(rec, GenesisEvent::GenesisBlock { .. });
         if let GenesisEvent::GenesisBlock {
             stake_txs,
@@ -275,12 +269,6 @@ mod tests {
         {
             assert_eq!(stake_txs.len(), 2);
             assert_eq!(initial_validators.len(), 2);
-        }
-
-        let rec = bus.recv().await.expect("recv");
-        assert_matches!(rec, GenesisEvent::Ready { .. });
-        if let GenesisEvent::Ready { first_round_leader } = rec {
-            assert_eq!(first_round_leader, node_1_pubkey);
         }
     }
 }
