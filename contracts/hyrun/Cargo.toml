@@ -9,7 +9,7 @@ hydentity = { path = "../hydentity/contract" }
 # hystake = { path = "../hystake/contract" }
 hyllar = { path = "../hyllar/contract" }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-risc0-zkvm = { version = "1.1.1" }
+risc0-zkvm = { version = "1.1.3" }
 env_logger = "0.11.5"
 serde = { version = "1.0", default-features = false, features = [
     "derive",
