@@ -990,7 +990,7 @@ impl Consensus {
             < self.bft_round_state.consensus_proposal.slot
         {
             info!(
-                "🏃‍♀️ Ignoring commit message, we are only caught up to {} ({} needed).",
+                "🏃Ignoring commit message, we are only caught up to {} ({} needed).",
                 self.bft_round_state.joining.staking_updated_to,
                 self.bft_round_state.consensus_proposal.slot - 1
             );
@@ -1151,10 +1151,6 @@ impl Consensus {
             }
             ConsensusCommand::ProcessedBlock(block_height) => {
                 if let StateTag::Joining = self.bft_round_state.state_tag {
-                    info!(
-                        "🚪 Received {} {}",
-                        self.store.bft_round_state.joining.staking_updated_to, block_height.0
-                    );
                     if self.store.bft_round_state.joining.staking_updated_to < block_height.0 {
                         info!("🚪 Processed block {}", block_height.0);
                         self.store.bft_round_state.joining.staking_updated_to = block_height.0;
@@ -1249,23 +1245,51 @@ impl Consensus {
     }
 
     async fn wait_genesis(&mut self) -> Result<()> {
-        if !self
-            .config
-            .consensus
-            .genesis_stakers
-            .contains_key(&self.config.id)
-        {
-            return self.start().await;
-        }
-
-        info!("🌱 Waiting for genesis event");
+        info!("🌱 Waiting for genesis block");
         handle_messages! {
             on_bus self.bus,
-            listen<GenesisEvent> cmd => {
-                if let GenesisEvent::Ready { first_round_leader}  = cmd {
-                    info!("🌱 Genesis event received, first round leader is {}", first_round_leader);
-                    self.store.bft_round_state.consensus_proposal.round_leader = first_round_leader;
+            listen<GenesisEvent> msg => {
+                if let GenesisEvent::GenesisBlock { initial_validators, ..} = msg {
+                    self.bft_round_state.consensus_proposal.round_leader = initial_validators.first().unwrap().clone();
+
+                    if self.bft_round_state.consensus_proposal.round_leader == *self.crypto.validator_pubkey() {
+                        self.bft_round_state.state_tag = StateTag::Leader;
+                        self.bft_round_state.consensus_proposal.slot = 1;
+                        info!("👑 Starting consensus as leader");
+                    } else {
+                        self.bft_round_state.state_tag = StateTag::Follower;
+                        self.bft_round_state.consensus_proposal.slot = 1;
+                        info!(
+                            "👑 Starting consensus as follower of leader {}",
+                            self.bft_round_state.consensus_proposal.round_leader
+                        );
+                    }
                     break;
+                }
+            }
+        }
+
+        //// Now wait until the genesis block is processed by DA.
+        //// ACHTUNG: this only works because Staking, Bonding and Processed messages
+        //// are part of the same channel and so will be processed in order.
+        handle_messages! {
+            on_bus self.bus,
+            listen<ConsensusCommand> msg => {
+                match msg {
+                    ConsensusCommand::NewStaker(staker) => {
+                        self.store.bft_round_state.staking.add_staker(staker)?;
+                    }
+                    ConsensusCommand::NewBonded(validator) => {
+                        self.store.bft_round_state.staking.bond(validator)?;
+                    }
+                    ConsensusCommand::ProcessedBlock(block_height) => {
+                        info!("🌱 Processed block {}", block_height.0);
+                        if block_height.0 == 0 {
+                            // Done with genesis, break out of the loop.
+                            break;
+                        }
+                    }
+                    _ => {}
                 }
             }
         }
@@ -1274,16 +1298,8 @@ impl Consensus {
             return self.start().await;
         }
 
-        info!("🌱 Genesis done, starting rounds");
-        if self.config.consensus.genesis_leader == self.config.id {
-            self.bft_round_state.state_tag = StateTag::Leader;
-            self.bft_round_state.consensus_proposal.slot = 1;
-            info!("👑 Starting consensus as leader");
+        if self.is_round_leader() {
             self.delay_start_new_round(Ticket::Genesis)?;
-        } else {
-            self.bft_round_state.state_tag = StateTag::Follower;
-            self.bft_round_state.consensus_proposal.slot = 1;
-            info!("👑 Starting consensus as follower");
         }
         self.start().await
     }

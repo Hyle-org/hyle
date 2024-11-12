@@ -123,6 +123,7 @@ impl NodeState {
         if self.contracts.contains_key(&tx.contract_name) {
             bail!("Contract already exists")
         }
+        info!("📝Registering new contract {}", tx.contract_name);
         self.contracts.insert(
             tx.contract_name.clone(),
             Contract {

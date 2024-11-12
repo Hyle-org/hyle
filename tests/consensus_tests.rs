@@ -29,7 +29,7 @@ mod e2e_consensus {
 
     #[test_log::test(tokio::test)]
     async fn can_run_lot_of_nodes() -> Result<()> {
-        let ctx = E2ECtx::new_multi(10, 500).await?;
+        let ctx = E2ECtx::new_multi(10, 1000).await?;
 
         ctx.wait_height(2).await?;
 

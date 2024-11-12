@@ -34,7 +34,6 @@ struct GenesisBusClient {
 pub struct Genesis {
     config: SharedConf,
     bus: GenesisBusClient,
-    first_round_leader: Option<ValidatorPublicKey>,
     peer_pubkey: HashMap<String, ValidatorPublicKey>,
     crypto: SharedBlstCrypto,
 }
@@ -50,7 +49,6 @@ impl Module for Genesis {
         Ok(Genesis {
             config: ctx.common.config.clone(),
             bus,
-            first_round_leader: None,
             peer_pubkey: HashMap::new(),
             crypto: ctx.node.crypto.clone(),
         })
@@ -72,15 +70,6 @@ impl Genesis {
             return Ok(());
         }
 
-        info!("🌱 Starting genesis block creation {:?}", self.config);
-        if self.config.id == self.config.consensus.genesis_leader {
-            info!(
-                "👑 Setting ourselves {}({}) as leader for genesis",
-                &self.config.id,
-                self.crypto.validator_pubkey()
-            );
-            self.first_round_leader = Some(self.crypto.validator_pubkey().clone());
-        }
         // We will start from the genesis block.
         self.peer_pubkey.insert(
             self.config.id.clone(),
@@ -94,19 +83,16 @@ impl Genesis {
                 listen<PeerEvent> msg => {
                     match msg {
                         PeerEvent::NewPeer { name, pubkey } => {
-                            info!("🌱 New peer {} added to genesis: {}", &name, &pubkey);
+                            info!("🌱 New peer {}({}) added to genesis", &name, &pubkey);
                             self.peer_pubkey
                                 .insert(name.clone(), pubkey.clone());
-
-                            if name == self.config.consensus.genesis_leader {
-                                info!("👑 Setting {}({}) as leader for genesis", &name, &pubkey);
-                                self.first_round_leader = Some(pubkey);
-                            }
 
                             // Once we know everyone in the initial quorum, craft & process the genesis block.
                             if self.peer_pubkey.len()
                                 == self.config.consensus.genesis_stakers.len() {
                                 break
+                            } else {
+                                info!("🌱 Waiting for {} more peers to join genesis", self.config.consensus.genesis_stakers.len() - self.peer_pubkey.len());
                             }
                         }
                     }
@@ -114,9 +100,12 @@ impl Genesis {
             }
         }
 
+        let mut initial_validators = self.peer_pubkey.values().cloned().collect::<Vec<_>>();
+        initial_validators.sort();
+
         // At this point, we can setup the genesis block.
         _ = self.bus.send(GenesisEvent::GenesisBlock {
-            initial_validators: self.peer_pubkey.values().cloned().collect(),
+            initial_validators,
             stake_txs: self
                 .peer_pubkey
                 .iter()
@@ -129,10 +118,6 @@ impl Genesis {
                     }))
                 })
                 .collect(),
-        });
-
-        _ = self.bus.send(GenesisEvent::Ready {
-            first_round_leader: self.first_round_leader.clone().unwrap(),
         });
 
         Ok(())
@@ -166,7 +151,6 @@ mod tests {
             Genesis {
                 config: Arc::new(config),
                 bus,
-                first_round_leader: None,
                 peer_pubkey: HashMap::new(),
                 crypto,
             },
@@ -179,7 +163,6 @@ mod tests {
         let config = Conf {
             id: "node-4".to_string(),
             consensus: crate::utils::conf::Consensus {
-                genesis_leader: "node-1".into(),
                 genesis_stakers: vec![("node-1".into(), 100)].into_iter().collect(),
                 ..Default::default()
             },
@@ -199,7 +182,6 @@ mod tests {
         let config = Conf {
             id: "single-node".to_string(),
             consensus: crate::utils::conf::Consensus {
-                genesis_leader: "single-node".into(),
                 genesis_stakers: vec![("single-node".into(), 100)].into_iter().collect(),
                 ..Default::default()
             },
@@ -219,7 +201,6 @@ mod tests {
         let config = Conf {
             id: "node-1".to_string(),
             consensus: crate::utils::conf::Consensus {
-                genesis_leader: "node-1".into(),
                 genesis_stakers: vec![("node-1".into(), 100), ("node-2".into(), 100)]
                     .into_iter()
                     .collect(),
@@ -263,7 +244,6 @@ mod tests {
         let config = Conf {
             id: "node-2".to_string(),
             consensus: crate::utils::conf::Consensus {
-                genesis_leader: "node-1".into(),
                 genesis_stakers: vec![("node-1".into(), 100), ("node-2".into(), 100)]
                     .into_iter()
                     .collect(),
