@@ -3,10 +3,11 @@
 use crate::{
     bus::{bus_client, BusMessage, SharedMessageBus},
     consensus::ConsensusEvent,
+    data_availability::DataEvent,
     handle_messages,
     mempool::storage::{Car, CarProposal, InMemoryStorage},
     model::{
-        Hashable, SharedRunContext, Transaction, TransactionData, ValidatorPublicKey,
+        Block, Hashable, SharedRunContext, Transaction, TransactionData, ValidatorPublicKey,
         VerifiedProofTransaction,
     },
     node_state::NodeState,
@@ -38,6 +39,7 @@ struct MempoolBusClient {
     receiver(SignedByValidator<MempoolNetMessage>),
     receiver(RestApiMessage),
     receiver(ConsensusEvent),
+    receiver(DataEvent),
 }
 }
 
@@ -129,8 +131,30 @@ impl Mempool {
             listen<ConsensusEvent> cmd => {
                 self.handle_consensus_event(cmd).await
             }
+            listen<DataEvent> cmd => {
+                self.handle_data_availability_event(cmd).await
+            }
             _ = interval.tick() => {
                 self.time_to_cut().await
+            }
+        }
+    }
+
+    async fn handle_data_availability_event(&mut self, event: DataEvent) {
+        match event {
+            DataEvent::NewBlock(block) => self.handle_block(block).await,
+        }
+    }
+
+    async fn handle_block(&mut self, block: Block) {
+        // Only register contract transactions are handled when Mempool receives a new block
+        for tx in block.txs {
+            if let TransactionData::RegisterContract(register_contract_transaction) =
+                &tx.transaction_data
+            {
+                let _ = self
+                    .node_state
+                    .handle_register_contract_tx(register_contract_transaction);
             }
         }
     }
