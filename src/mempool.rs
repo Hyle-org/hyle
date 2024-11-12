@@ -31,7 +31,7 @@ mod metrics;
 mod storage;
 pub use storage::Cut;
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct QueryNewCut {}
 
 bus_client! {
@@ -139,35 +139,37 @@ impl Mempool {
             }
             _ = interval.tick() => {
                 // This tick is responsible for CarProposal management
+                self.handle_car_proposal_management();
+            }
+        }
+    }
 
-                // FIXME: Split this flow in three steps:
-                // 1: create new CarProposal with pending txs and broadcast it as a CarProposal.
-                // 2: Save CarProposal. It is not yet a Car (since PoA is not reached)
-                // 3: Go through all pending CarProposal (of own lane) that have not reach PoA, and send them to make them Cars
-
-                let poa = self.storage.tip_poa();
-                self.try_car_proposal(poa);
-                // FIXME: with current implem, we send CarProposal twice.
-                if let Some((tip, txs)) = self.storage.tip_info() {
-                    // No PoA means we rebroadcast the Car proposal for non present voters
-                    let only_for = HashSet::from_iter(
-                        self.validators
-                            .iter()
-                            .filter(|pubkey| !tip.poa.contains(pubkey))
-                            .cloned(),
-                    );
-                    if let Err(e) = self.broadcast_car_proposal_only_for(
-                        only_for,
-                        CarProposal {
-                            txs,
-                            id: tip.pos,
-                            parent: tip.parent,
-                            parent_poa: None, // TODO: fetch parent votes
-                        },
-                    ) {
-                        error!("{:?}", e);
-                    }
-                }
+    fn handle_car_proposal_management(&mut self) {
+        // FIXME: Split this flow in three steps:
+        // 1: create new CarProposal with pending txs and broadcast it as a CarProposal.
+        // 2: Save CarProposal. It is not yet a Car (since PoA is not reached)
+        // 3: Go through all pending CarProposal (of own lane) that have not reach PoA, and send them to make them Cars
+        let poa = self.storage.tip_poa();
+        self.try_car_proposal(poa);
+        // FIXME: with current implem, we send CarProposal twice.
+        if let Some((tip, txs)) = self.storage.tip_info() {
+            // No PoA means we rebroadcast the Car proposal for non present voters
+            let only_for = HashSet::from_iter(
+                self.validators
+                    .iter()
+                    .filter(|pubkey| !tip.poa.contains(pubkey))
+                    .cloned(),
+            );
+            if let Err(e) = self.broadcast_car_proposal_only_for(
+                only_for,
+                CarProposal {
+                    txs,
+                    id: tip.pos,
+                    parent: tip.parent,
+                    parent_poa: None, // TODO: fetch parent votes
+                },
+            ) {
+                error!("{:?}", e);
             }
         }
     }
@@ -484,6 +486,7 @@ impl Mempool {
     ) -> Result<()> {
         let signed_msg = self.sign_net_message(net_message)?;
         let enum_variant_name: &'static str = (&signed_msg.msg).into();
+        tracing::error!("sending message");
         _ = self
             .bus
             .send(OutboundMessage::send(to, signed_msg))
@@ -491,6 +494,7 @@ impl Mempool {
                 "Sending MempoolNetMessage::{} msg on the bus",
                 enum_variant_name
             ))?;
+        tracing::error!("message sent");
         Ok(())
     }
 
@@ -499,5 +503,313 @@ impl Mempool {
         msg: MempoolNetMessage,
     ) -> Result<SignedByValidator<MempoolNetMessage>> {
         self.crypto.sign(msg)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::bus::SharedMessageBus;
+    use crate::mempool::MempoolBusClient;
+    use crate::model::{ContractName, RegisterContractTransaction, Transaction};
+    use crate::p2p::network::NetMessage;
+    use anyhow::Result;
+    use hyle_contract_sdk::StateDigest;
+    use std::collections::BTreeSet;
+    use std::sync::Arc;
+    use storage::Poa;
+    use tokio::sync::broadcast::Receiver;
+
+    pub struct TestContext {
+        out_receiver: Receiver<OutboundMessage>,
+        mempool: Mempool,
+    }
+
+    impl TestContext {
+        pub async fn new(name: &str) -> Self {
+            let crypto = BlstCrypto::new(name.into());
+            let shared_bus = SharedMessageBus::new(BusMetrics::global("global".to_string()));
+            let storage = InMemoryStorage::new(crypto.validator_pubkey().clone());
+            let validators = vec![crypto.validator_pubkey().clone()];
+
+            let out_receiver = get_receiver::<OutboundMessage>(&shared_bus).await;
+            let bus = MempoolBusClient::new_from_bus(shared_bus.new_handle()).await;
+
+            // Initialize Mempool
+            let mempool = Mempool {
+                bus,
+                crypto: Arc::new(crypto),
+                metrics: MempoolMetrics::global("id".to_string()),
+                storage,
+                validators,
+                node_state: NodeState::default(),
+            };
+
+            TestContext {
+                out_receiver,
+                mempool,
+            }
+        }
+
+        #[track_caller]
+        fn assert_broadcast(&mut self, err: &str) -> MempoolNetMessage {
+            #[allow(clippy::expect_fun_call)]
+            let rec = self
+                .out_receiver
+                .try_recv()
+                .expect(format!("{err}: No message broadcasted").as_str());
+
+            match rec {
+                OutboundMessage::BroadcastMessage(net_msg) => {
+                    if let NetMessage::MempoolMessage(msg) = net_msg {
+                        msg.msg
+                    } else {
+                        panic!("{err}: Mempool OutboundMessage message is missing");
+                    }
+                }
+                OutboundMessage::SendMessage {
+                    validator_id: _,
+                    msg,
+                } => {
+                    if let NetMessage::MempoolMessage(msg) = msg {
+                        tracing::error!("recieved message: {:?}", msg);
+                        msg.msg
+                    } else {
+                        panic!("{err}: Mempool OutboundMessage message is missing");
+                    }
+                }
+                _ => panic!("{err}: Broadcast OutboundMessage message is missing"),
+            }
+        }
+    }
+
+    fn make_register_contract_tx(name: ContractName) -> Transaction {
+        Transaction {
+            version: 1,
+            transaction_data: TransactionData::RegisterContract(RegisterContractTransaction {
+                owner: "test".to_string(),
+                verifier: "test".to_string(),
+                program_id: vec![],
+                state_digest: StateDigest(vec![0, 1, 2, 3]),
+                contract_name: name,
+            }),
+        }
+    }
+
+    #[test_log::test(tokio::test)]
+    async fn test_receiving_new_tx() -> Result<()> {
+        let mut ctx = TestContext::new("mempool").await;
+
+        // Sending transaction to mempool as RestApiMessage
+        let register_tx = make_register_contract_tx(ContractName("test1".to_owned()));
+
+        ctx.mempool
+            .handle_api_message(RestApiMessage::NewTx(register_tx.clone()))
+            .await
+            .expect("fail to handle new transaction");
+
+        let car_proposal = match ctx.assert_broadcast("Car Proposal") {
+            MempoolNetMessage::CarProposal(car_proposal) => car_proposal,
+            _ => panic!("Expected CarProposal message"),
+        };
+        assert_eq!(car_proposal.txs, vec![register_tx]);
+
+        // Assert that pending_tx has been flushed
+        assert!(ctx.mempool.storage.pending_txs.is_empty());
+
+        Ok(())
+    }
+
+    #[test_log::test(tokio::test)]
+    async fn test_receiving_car_proposal() -> Result<()> {
+        let mut ctx = TestContext::new("mempool").await;
+
+        let car_proposal = CarProposal {
+            txs: vec![make_register_contract_tx(ContractName("test1".to_owned()))],
+            id: CarId(1),
+            parent: None,
+            parent_poa: None,
+        };
+
+        let signed_msg = ctx
+            .mempool
+            .crypto
+            .sign(MempoolNetMessage::CarProposal(car_proposal.clone()))?;
+        ctx.mempool
+            .handle_net_message(SignedByValidator {
+                msg: MempoolNetMessage::CarProposal(car_proposal.clone()),
+                signature: signed_msg.signature,
+            })
+            .await;
+
+        // Assert that we vote for that specific CarProposal
+        match ctx.assert_broadcast("Car Proposal Vote") {
+            MempoolNetMessage::CarProposalVote(car_proposal_vote) => {
+                assert_eq!(car_proposal_vote, car_proposal)
+            }
+            _ => panic!("Expected CarProposal message"),
+        };
+        Ok(())
+    }
+
+    #[test_log::test(tokio::test)]
+    async fn test_receiving_unexpect_car_proposal_vote() -> Result<()> {
+        let mut ctx = TestContext::new("mempool").await;
+
+        // Sending transaction to mempool as RestApiMessage
+        let register_tx = make_register_contract_tx(ContractName("test1".to_owned()));
+
+        ctx.mempool
+            .handle_api_message(RestApiMessage::NewTx(register_tx.clone()))
+            .await
+            .expect("fail to handle new transaction");
+
+        assert_eq!(
+            ctx.mempool.storage.lane.current().unwrap().poa,
+            Poa(BTreeSet::from([ctx
+                .mempool
+                .crypto
+                .validator_pubkey()
+                .clone()]))
+        );
+
+        let car_proposal = CarProposal {
+            txs: vec![make_register_contract_tx(ContractName("test1".to_owned()))],
+            id: CarId(10), // This value is incorrect
+            parent: None,
+            parent_poa: None,
+        };
+
+        let temp_crypto = BlstCrypto::new("temp_crypto".into());
+        let signed_msg =
+            temp_crypto.sign(MempoolNetMessage::CarProposalVote(car_proposal.clone()))?;
+        ctx.mempool
+            .handle_net_message(SignedByValidator {
+                msg: MempoolNetMessage::CarProposalVote(car_proposal.clone()),
+                signature: signed_msg.signature,
+            })
+            .await;
+
+        // Assert that we did not add the vote to the PoA
+        assert_eq!(
+            ctx.mempool.storage.lane.current().unwrap().poa,
+            Poa(BTreeSet::from([ctx
+                .mempool
+                .crypto
+                .validator_pubkey()
+                .clone(),]))
+        );
+        Ok(())
+    }
+
+    #[test_log::test(tokio::test)]
+    async fn test_receiving_car_proposal_vote() -> Result<()> {
+        let mut ctx = TestContext::new("mempool").await;
+
+        // Sending transaction to mempool as RestApiMessage
+        let register_tx = make_register_contract_tx(ContractName("test1".to_owned()));
+
+        ctx.mempool
+            .handle_api_message(RestApiMessage::NewTx(register_tx.clone()))
+            .await
+            .expect("fail to handle new transaction");
+
+        assert_eq!(
+            ctx.mempool.storage.lane.current().unwrap().poa,
+            Poa(BTreeSet::from([ctx
+                .mempool
+                .crypto
+                .validator_pubkey()
+                .clone()]))
+        );
+
+        let car_proposal = CarProposal {
+            txs: vec![make_register_contract_tx(ContractName("test1".to_owned()))],
+            id: CarId(1),
+            parent: None,
+            parent_poa: None,
+        };
+
+        let temp_crypto = BlstCrypto::new("temp_crypto".into());
+        let signed_msg =
+            temp_crypto.sign(MempoolNetMessage::CarProposalVote(car_proposal.clone()))?;
+        ctx.mempool
+            .handle_net_message(SignedByValidator {
+                msg: MempoolNetMessage::CarProposalVote(car_proposal.clone()),
+                signature: signed_msg.signature,
+            })
+            .await;
+
+        // Assert that we added the vote to the PoA
+        assert_eq!(
+            ctx.mempool.storage.lane.current().unwrap().poa,
+            Poa(BTreeSet::from([
+                ctx.mempool.crypto.validator_pubkey().clone(),
+                temp_crypto.validator_pubkey().clone()
+            ]))
+        );
+        Ok(())
+    }
+
+    #[test_log::test(tokio::test)]
+    async fn test_car_proposal_management() -> Result<()> {
+        // TODO: on veut rajouter ces Car à la main avec trop peu de PoA.
+
+        let mut ctx = TestContext::new("mempool").await;
+
+        let register_tx = make_register_contract_tx(ContractName("test1".to_owned()));
+        ctx.mempool.storage.pending_txs.push(register_tx.clone());
+
+        ctx.mempool.handle_car_proposal_management();
+
+        let car_proposal = CarProposal {
+            txs: vec![register_tx],
+            id: CarId(1),
+            parent: None,
+            parent_poa: None,
+        };
+
+        // Assert that we vote for that specific CarProposal
+        match ctx.assert_broadcast("Car Proposal Vote") {
+            MempoolNetMessage::CarProposal(received_car_proposal) => {
+                assert_eq!(received_car_proposal, car_proposal)
+            }
+            _ => panic!("Expected CarProposal message"),
+        };
+
+        Ok(())
+    }
+
+    #[ignore = "TODO"]
+    #[test_log::test(tokio::test)]
+    async fn test_receiving_sync_request() -> Result<()> {
+        Ok(())
+    }
+
+    #[ignore = "TODO"]
+    #[test_log::test(tokio::test)]
+    async fn test_receiving_sync_reply() -> Result<()> {
+        Ok(())
+    }
+
+    #[ignore = "TODO"]
+    #[test_log::test(tokio::test)]
+    async fn test_receiving_commit_cut() -> Result<()> {
+        let mut ctx = TestContext::new("mempool").await;
+        let car_id = CarId(1);
+        let cut: Cut = vec![(ctx.mempool.crypto.validator_pubkey().clone(), car_id)];
+
+        ctx.mempool
+            .handle_consensus_event(ConsensusEvent::CommitCut {
+                cut: cut.clone(),
+                new_bonded_validators: vec![],
+                validators: vec![ctx.mempool.crypto.validator_pubkey().clone()],
+            })
+            .await;
+
+        let (tip_info, _) = ctx.mempool.storage.tip_info().expect("No tip info");
+
+        assert_eq!(tip_info.pos, car_id);
+        Ok(())
     }
 }
