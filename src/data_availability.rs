@@ -461,12 +461,10 @@ impl DataAvailability {
             self.stream_peer_metadata.remove(&peer_id);
         }
 
-        if self.config.run_indexer {
-            _ = self
-                .bus
-                .send(DataEvent::NewBlock(block))
-                .log_error("Error sending DataEvent");
-        }
+        _ = self
+            .bus
+            .send(DataEvent::NewBlock(block))
+            .log_error("Error sending DataEvent");
     }
 
     fn query_block(&mut self, hash: BlockHash) {
