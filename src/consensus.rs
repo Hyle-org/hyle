@@ -1245,6 +1245,16 @@ impl Consensus {
     }
 
     async fn wait_genesis(&mut self) -> Result<()> {
+        // TODO remove this if condition with new catchup flow
+        if !self
+            .config
+            .consensus
+            .genesis_stakers
+            .contains_key(&self.config.id)
+        {
+            return self.start().await;
+        }
+
         info!("🌱 Waiting for genesis block");
         handle_messages! {
             on_bus self.bus,
