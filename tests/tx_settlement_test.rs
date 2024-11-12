@@ -121,8 +121,8 @@ mod e2e_tx_settle {
         )
         .await?;
 
-        info!("➡️  Waiting for height 2");
-        ctx.wait_height(2).await?;
+        info!("➡️  Waiting for height 5");
+        ctx.wait_height(5).await?;
 
         let contract = ctx.get_contract("erc20-risc0").await?;
         assert_eq!(
