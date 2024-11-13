@@ -7,8 +7,9 @@ use crate::consensus::{
     ConsensusCommand, ConsensusEvent, ConsensusInfo, ConsensusNetMessage, QueryConsensusInfo,
 };
 use crate::mempool::storage::Cut;
-use crate::mempool::MempoolNetMessage;
+use crate::mempool::{MempoolNetMessage, QueryNewCut};
 use crate::p2p::network::{NetMessage, OutboundMessage, SignedByValidator};
+use crate::utils::conf::SharedConf;
 use crate::utils::crypto::{BlstCrypto, SharedBlstCrypto};
 use crate::{
     bus::bus_client, handle_messages, mempool::MempoolEvent, model::SharedRunContext,
@@ -21,6 +22,7 @@ bus_client! {
 struct SingleNodeConsensusBusClient {
     sender(ConsensusEvent),
     sender(SignedByValidator<MempoolNetMessage>),
+    sender(Query<QueryNewCut, Cut>),
     receiver(ConsensusCommand),
     receiver(MempoolEvent),
     receiver(MempoolNetMessage),
@@ -33,12 +35,14 @@ struct SingleNodeConsensusBusClient {
 #[derive(Encode, Decode, Default)]
 struct SingleNodeConsensusStore {
     has_done_genesis: bool,
+    last_cut: Cut,
 }
 
 pub struct SingleNodeConsensus {
     bus: SingleNodeConsensusBusClient,
     car_proposal_signer: SharedBlstCrypto,
     crypto: SharedBlstCrypto,
+    config: SharedConf,
     store: SingleNodeConsensusStore,
     file: Option<PathBuf>,
 }
@@ -48,7 +52,7 @@ pub struct SingleNodeConsensus {
 /// - It does not perform any consensus.
 /// - It creates a fake validator that automatically votes for any `CarProposal` it receives.
 /// - For every CarProposal received, it saves it automatically as a `Car`.
-/// - When Mempool sends a new `Cut`, it is able to retrieve the associated `Car`s and create a new `CommitCut`
+/// - For every slot_duration tick, it is able to retrieve a `Car`s and create a new `CommitCut`
 impl Module for SingleNodeConsensus {
     fn name() -> &'static str {
         "SingleNodeConsensus"
@@ -73,6 +77,7 @@ impl Module for SingleNodeConsensus {
                 "single_node_car_proposal_signer".to_owned(),
             )),
             crypto: ctx.node.crypto.clone(),
+            config: ctx.common.config.clone(),
             store,
             file: Some(file),
         })
@@ -103,6 +108,9 @@ impl SingleNodeConsensus {
             self.store.has_done_genesis = true;
             tracing::info!("Waiting for a first transaction before creating blocks...");
         }
+        let mut interval = tokio::time::interval(tokio::time::Duration::from_millis(
+            self.config.consensus.slot_duration,
+        ));
 
         handle_messages! {
             on_bus self.bus,
@@ -132,20 +140,29 @@ impl SingleNodeConsensus {
                             tracing::warn!("Failed to save consensus state on disk: {}", e);
                         }
                     }
-
-                    // Wait for CarProposalVote to be processed
-                    // TODO: Once we implement the request/response from Consensus to Mempool for cuts, we can remove this
-                    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                }
+            }
+            _ = interval.tick() => {
+                    // Query a new cut to Mempool in order to create a new CommitCut
+                    let validators = vec![
+                        self.car_proposal_signer.validator_pubkey().clone(),
+                        self.crypto.validator_pubkey().clone(),
+                    ];
+                    match self.bus.request(QueryNewCut(validators.clone())).await {
+                        Ok(cut) => {
+                            self.store.last_cut = cut.clone();
+                        }
+                        Err(err) => {
+                            // In case of an error, we reuse the last cut to avoid being considered byzantine
+                            tracing::error!("Error while requesting new cut: {:?}", err);
+                        }
+                    };
 
                     _ = self.bus.send(ConsensusEvent::CommitCut {
-                            validators: vec![
-                                self.car_proposal_signer.validator_pubkey().clone(),
-                                self.crypto.validator_pubkey().clone(),
-                            ],
-                            cut: vec![(self.crypto.validator_pubkey().clone(), car_proposal.id)],
-                            new_bonded_validators: vec![],
-                        })?
-                }
+                        validators,
+                        cut: self.store.last_cut.clone(),
+                        new_bonded_validators: vec![],
+                    })?
             }
         }
     }
