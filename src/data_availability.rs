@@ -33,7 +33,7 @@ use tokio::{
     task::{JoinHandle, JoinSet},
 };
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info, trace, warn};
 
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, Eq, PartialEq)]
 pub enum DataNetMessage {
@@ -185,6 +185,7 @@ impl DataAvailability {
 
             listen<GenesisEvent> cmd => {
                 if let GenesisEvent::GenesisBlock { initial_validators, stake_txs } = cmd {
+                    debug!("🌱  Genesis block received");
                     self.handle_block(Block {
                         parent_hash: BlockHash::new("0000000000000000"),
                         height: BlockHeight(0),
@@ -337,6 +338,11 @@ impl DataAvailability {
     }
 
     async fn handle_block(&mut self, block: Block) {
+        // if new block is already handled, ignore it
+        if self.blocks.contains(&block) {
+            warn!("Block {:?} already exists !", block);
+            return;
+        }
         // if new block is not the next block in the chain, buffer
         if self.blocks.last().is_some() {
             if self
@@ -358,12 +364,12 @@ impl DataAvailability {
             }
         // if genesis block is missing, buffer
         } else if block.height != BlockHeight(0) {
-            debug!(
+            trace!(
                 "Received block with height {} but genesis block is missing",
                 block.height
             );
             self.query_block(block.parent_hash.clone());
-            debug!(" 2 Buffering block {}", block.hash());
+            trace!("Buffering block {}", block.hash());
             self.buffered_blocks.insert(block);
             return;
         }

@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 use crate::{
     bus::{bus_client, BusMessage, SharedMessageBus},
@@ -12,11 +12,9 @@ use anyhow::{Error, Result};
 use serde::{Deserialize, Serialize};
 use tracing::info;
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]
 pub enum GenesisEvent {
-    Ready {
-        first_round_leader: ValidatorPublicKey,
-    },
+    NoGenesis,
     GenesisBlock {
         stake_txs: Vec<Transaction>,
         initial_validators: Vec<ValidatorPublicKey>,
@@ -34,7 +32,7 @@ struct GenesisBusClient {
 pub struct Genesis {
     config: SharedConf,
     bus: GenesisBusClient,
-    peer_pubkey: HashMap<String, ValidatorPublicKey>,
+    peer_pubkey: BTreeMap<String, ValidatorPublicKey>,
     crypto: SharedBlstCrypto,
 }
 
@@ -49,7 +47,7 @@ impl Module for Genesis {
         Ok(Genesis {
             config: ctx.common.config.clone(),
             bus,
-            peer_pubkey: HashMap::new(),
+            peer_pubkey: BTreeMap::new(),
             crypto: ctx.node.crypto.clone(),
         })
     }
@@ -68,6 +66,7 @@ impl Genesis {
             .contains_key(&self.config.id)
         {
             info!("📡 Not a genesis staker, need to catchup from peers.");
+            _ = self.bus.send(GenesisEvent::NoGenesis {});
             return Ok(());
         }
 
@@ -135,7 +134,6 @@ mod tests {
     use crate::bus::SharedMessageBus;
     use crate::utils::conf::Conf;
     use crate::utils::crypto::BlstCrypto;
-    use std::collections::HashMap;
     use std::sync::Arc;
 
     bus_client! {
@@ -149,12 +147,12 @@ mod tests {
         let shared_bus = SharedMessageBus::default();
         let bus = GenesisBusClient::new_from_bus(shared_bus.new_handle()).await;
         let test_bus = TestGenesisBusClient::new_from_bus(shared_bus.new_handle()).await;
-        let crypto = Arc::new(BlstCrypto::new_random());
+        let crypto = Arc::new(BlstCrypto::new(config.id.clone()));
         (
             Genesis {
                 config: Arc::new(config),
                 bus,
-                peer_pubkey: HashMap::new(),
+                peer_pubkey: BTreeMap::new(),
                 crypto,
             },
             test_bus,
@@ -273,5 +271,67 @@ mod tests {
             assert_eq!(stake_txs.len(), 2);
             assert_eq!(initial_validators.len(), 2);
         }
+    }
+
+    // test that the order of nodes connecting doesn't matter on genesis block creation
+    #[test_log::test(tokio::test)]
+    async fn test_genesis_connect_order() {
+        let config = Conf {
+            id: "node-1".to_string(),
+            consensus: crate::utils::conf::Consensus {
+                genesis_stakers: vec![
+                    ("node-1".into(), 100),
+                    ("node-2".into(), 100),
+                    ("node-3".into(), 100),
+                    ("node-4".into(), 100),
+                ]
+                .into_iter()
+                .collect(),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let rec1 = {
+            let (mut genesis, mut bus) = new(config.clone()).await;
+            bus.send(PeerEvent::NewPeer {
+                name: "node-2".into(),
+                pubkey: ValidatorPublicKey("node-2".into()).clone(),
+            })
+            .expect("send");
+            bus.send(PeerEvent::NewPeer {
+                name: "node-3".into(),
+                pubkey: ValidatorPublicKey("node-3".into()).clone(),
+            })
+            .expect("send");
+            bus.send(PeerEvent::NewPeer {
+                name: "node-4".into(),
+                pubkey: ValidatorPublicKey("node-4".into()).clone(),
+            })
+            .expect("send");
+            let _ = genesis.start().await;
+            bus.try_recv().expect("recv")
+        };
+        let rec2 = {
+            let (mut genesis, mut bus) = new(config).await;
+            bus.send(PeerEvent::NewPeer {
+                name: "node-4".into(),
+                pubkey: ValidatorPublicKey("node-4".into()).clone(),
+            })
+            .expect("send");
+            bus.send(PeerEvent::NewPeer {
+                name: "node-2".into(),
+                pubkey: ValidatorPublicKey("node-2".into()).clone(),
+            })
+            .expect("send");
+            bus.send(PeerEvent::NewPeer {
+                name: "node-3".into(),
+                pubkey: ValidatorPublicKey("node-3".into()).clone(),
+            })
+            .expect("send");
+            let _ = genesis.start().await;
+            bus.try_recv().expect("recv")
+        };
+
+        assert_eq!(rec1, rec2);
     }
 }

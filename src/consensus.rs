@@ -1181,10 +1181,7 @@ impl Consensus {
                 Ok(())
             }
             ConsensusCommand::NewBonded(validator) => {
-                if !self.store.bft_round_state.staking.is_bonded(&validator) {
-                    self.store.bft_round_state.staking.bond(validator)?;
-                }
-
+                self.store.bft_round_state.staking.bond(validator)?;
                 Ok(())
             }
             ConsensusCommand::ProcessedBlock(block_height) => {
@@ -1259,59 +1256,32 @@ impl Consensus {
     }
 
     async fn wait_genesis(&mut self) -> Result<()> {
-        let mut last_block_height = BlockHeight(0);
-
         handle_messages! {
             on_bus self.bus,
             listen<GenesisEvent> msg => {
-                if let GenesisEvent::GenesisBlock { initial_validators, ..} = msg {
-                    self.bft_round_state.consensus_proposal.round_leader = initial_validators.first().unwrap().clone();
-
-                    if self.bft_round_state.consensus_proposal.round_leader == *self.crypto.validator_pubkey() {
-                        self.bft_round_state.state_tag = StateTag::Leader;
-                        self.bft_round_state.consensus_proposal.slot = 1;
-                        info!("👑 Starting consensus as leader");
-                    } else {
-                        self.bft_round_state.state_tag = StateTag::Follower;
-                        self.bft_round_state.consensus_proposal.slot = 1;
-                        info!(
-                            "👑 Starting consensus as follower of leader {}",
-                            self.bft_round_state.consensus_proposal.round_leader
-                        );
-                    }
-                    break;
-                }
-            }
-            listen<DataEvent> msg => {
-                if let DataEvent::CatchupDone(block_height) = msg {
-                    self.bft_round_state.joining.staking_updated_to = block_height.0;
-                    last_block_height = block_height;
-                    break;
-                }
-            }
-        }
-
-        //// Now wait until the genesis block is processed by DA.
-        //// ACHTUNG: this only works because Staking, Bonding and Processed messages
-        //// are part of the same channel and so will be processed in order.
-        handle_messages! {
-            on_bus self.bus,
-            listen<ConsensusCommand> msg => {
                 match msg {
-                    ConsensusCommand::NewStaker(staker) => {
-                        self.store.bft_round_state.staking.add_staker(staker)?;
-                    }
-                    ConsensusCommand::NewBonded(validator) => {
-                        self.store.bft_round_state.staking.bond(validator)?;
-                    }
-                    ConsensusCommand::ProcessedBlock(block_height) => {
-                        info!("🌱 Processed block {}", block_height.0);
-                        if block_height == last_block_height {
-                            // Done with genesis/catchup, break out of the loop.
-                            break;
+                    GenesisEvent::GenesisBlock { initial_validators, ..} => {
+                        self.bft_round_state.consensus_proposal.round_leader =
+                            initial_validators.first().unwrap().clone();
+
+                        if self.bft_round_state.consensus_proposal.round_leader == *self.crypto.validator_pubkey() {
+                            self.bft_round_state.state_tag = StateTag::Leader;
+                            self.bft_round_state.consensus_proposal.slot = 1;
+                            info!("👑 Starting consensus as leader");
+                        } else {
+                            self.bft_round_state.state_tag = StateTag::Follower;
+                            self.bft_round_state.consensus_proposal.slot = 1;
+                            info!(
+                                "👑 Starting consensus as follower of leader {}",
+                                self.bft_round_state.consensus_proposal.round_leader
+                            );
                         }
-                    }
-                    _ => {}
+                        break;
+                    },
+                    GenesisEvent::NoGenesis => {
+                        // We are in state Joining by default, DA will fetch blocks and we will move to Follower
+                        break;
+                    },
                 }
             }
         }
