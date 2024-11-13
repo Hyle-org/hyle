@@ -30,9 +30,8 @@ use tracing::{debug, error, info, warn};
 mod metrics;
 mod storage;
 pub use storage::Cut;
-
 #[derive(Debug, Clone)]
-pub struct QueryNewCut {}
+pub struct QueryNewCut(pub Vec<ValidatorPublicKey>);
 
 bus_client! {
 struct MempoolBusClient {
@@ -132,10 +131,10 @@ impl Mempool {
             listen<ConsensusEvent> cmd => {
                 self.handle_consensus_event(cmd).await
             }
-            command_response<QueryNewCut, Cut> _ => {
+            command_response<QueryNewCut, Cut> validators => {
                 // TODO: metrics?
                 self.metrics.add_batch();
-                Ok(self.storage.make_new_cut(&self.validators))
+                Ok(self.storage.make_new_cut(&validators.0))
             }
             _ = interval.tick() => {
                 // This tick is responsible for CarProposal management
@@ -151,7 +150,6 @@ impl Mempool {
         // 3: Go through all pending CarProposal (of own lane) that have not reach PoA, and send them to make them Cars
         let poa = self.storage.tip_poa();
         self.try_car_proposal(poa);
-        // FIXME: with current implem, we send CarProposal twice.
         if let Some((tip, txs)) = self.storage.tip_info() {
             // No PoA means we rebroadcast the Car proposal for non present voters
             let only_for = HashSet::from_iter(
@@ -160,6 +158,7 @@ impl Mempool {
                     .filter(|pubkey| !tip.poa.contains(pubkey))
                     .cloned(),
             );
+            // FIXME: with current implem, we send CarProposal twice.
             if let Err(e) = self.broadcast_car_proposal_only_for(
                 only_for,
                 CarProposal {
@@ -206,6 +205,10 @@ impl Mempool {
                 let validator = &msg.signature.validator;
                 match msg.msg {
                     MempoolNetMessage::CarProposal(car_proposal) => {
+                        debug!(
+                            "Received CarProposal {} from validator {}",
+                            car_proposal.id, validator
+                        );
                         if let Err(e) = self.on_car_proposal(validator, car_proposal).await {
                             error!("{:?}", e);
                         }
@@ -336,7 +339,10 @@ impl Mempool {
                 self.send_vote(validator, car_proposal)?;
             }
             ProposalVerdict::DidVote => {
-                error!("we already have voted for {}'s Car proposal", validator);
+                error!(
+                    "we already have voted for {}'s Car proposal {}",
+                    validator, car_proposal.id
+                );
             }
             ProposalVerdict::Wait(last_car_id) => {
                 //We dont have the parent, so we craft a sync demand
@@ -357,7 +363,8 @@ impl Mempool {
     fn try_car_proposal(&mut self, poa: Option<Vec<ValidatorPublicKey>>) {
         if let Some(car_proposal) = self.storage.try_car_proposal(poa) {
             debug!(
-                "🚗 Broadcast Car proposal ({} validators, {} txs)",
+                "🚗 Broadcast Car proposal {} ({} validators, {} txs)",
+                car_proposal.id,
                 self.validators.len(),
                 car_proposal.txs.len()
             );
@@ -486,7 +493,6 @@ impl Mempool {
     ) -> Result<()> {
         let signed_msg = self.sign_net_message(net_message)?;
         let enum_variant_name: &'static str = (&signed_msg.msg).into();
-        tracing::error!("sending message");
         _ = self
             .bus
             .send(OutboundMessage::send(to, signed_msg))
@@ -494,7 +500,6 @@ impl Mempool {
                 "Sending MempoolNetMessage::{} msg on the bus",
                 enum_variant_name
             ))?;
-        tracing::error!("message sent");
         Ok(())
     }
 

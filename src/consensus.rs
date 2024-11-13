@@ -247,6 +247,9 @@ impl Consensus {
                 .new_validators_to_bond,
         );
 
+        // Saving last cut
+        self.last_cut = self.bft_round_state.consensus_proposal.cut.clone();
+
         // Reset round state, carrying over staking and current proposal.
         self.bft_round_state = BFTRoundState {
             consensus_proposal: ConsensusProposal {
@@ -452,12 +455,13 @@ impl Consensus {
 
         // Creates ConsensusProposal
         // Query new cut to Mempool
-        match self.bus.request(QueryNewCut {}).await {
+        let validators = self.bft_round_state.staking.bonded().clone();
+        match self.bus.request(QueryNewCut(validators)).await {
             Ok(cut) => {
                 self.last_cut = cut;
             }
             Err(err) => {
-                // FIXME: What should we do here?
+                // In case of an error, we reuse the last cut to avoid being considered byzantine
                 error!(
                     "Could not get a new cut from Mempool {:?}. Reusing previous one... {:?}",
                     err, self.last_cut
@@ -1145,22 +1149,23 @@ impl Consensus {
     async fn handle_command(&mut self, msg: ConsensusCommand) -> Result<()> {
         match msg {
             ConsensusCommand::SingleNodeBlockGeneration => {
-                match self.bus.request(QueryNewCut {}).await {
+                let validators = vec![self.crypto.validator_pubkey().clone()];
+                match self.bus.request(QueryNewCut(validators)).await {
                     Ok(cut) => {
                         self.last_cut = cut;
                     }
                     Err(err) => {
-                        // FIXME: What should we do here?
+                        // In case of an error, we reuse the last cut to avoid being considered byzantine
                         error!(
-                            "Could not get a new cut from Mempool {:?}. Reusing previous one...",
-                            err
+                            "Could not get a new cut from Mempool {:?}. Reusing previous one... {:?}",
+                            err, self.last_cut
                         );
                     }
                 };
                 self.bus
                     .send(ConsensusEvent::CommitCut {
                         validators: vec![self.crypto.validator_pubkey().clone()],
-                        new_bonded_validators: vec![self.crypto.validator_pubkey().clone()],
+                        new_bonded_validators: vec![],
                         cut: self.last_cut.clone(),
                     })
                     .expect("Failed to send ConsensusEvent::CommitCut msg on the bus");
