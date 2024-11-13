@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use crate::bus::command_response::Query;
+use crate::bus::command_response::{CmdRespClient, Query};
 use crate::bus::SharedMessageBus;
 use crate::consensus::{
     ConsensusCommand, ConsensusEvent, ConsensusInfo, ConsensusNetMessage, QueryConsensusInfo,
@@ -125,46 +125,62 @@ impl SingleNodeConsensus {
                 Ok(ConsensusInfo { slot, view, round_leader, validators })
             }
             listen<OutboundMessage> cmd => {
-                // Receiving a car proposal and automatically voting for it.
-                // WARNING: No verification is done on it. This could be lead errors on CarProposal not being detected
-                if let OutboundMessage::BroadcastMessage(NetMessage::MempoolMessage(SignedByValidator { msg: MempoolNetMessage::CarProposal(car_proposal), .. })) = cmd {
-                    let signed_msg = self.sign_net_message(MempoolNetMessage::CarProposalVote(car_proposal.clone()))?;
-                    let msg: SignedByValidator<MempoolNetMessage> = SignedByValidator {
-                        msg: MempoolNetMessage::CarProposalVote(car_proposal.clone()),
-                        signature: signed_msg.signature,
-                    };
-                    _ = self.bus.send(msg)?;
-
-                    if let Some(file) = &self.file {
-                        if let Err(e) = Self::save_on_disk(file.as_path(), &self.store) {
-                            tracing::warn!("Failed to save consensus state on disk: {}", e);
-                        }
-                    }
-                }
+                self.handle_car_proposal_message(cmd)?;
             }
             _ = interval.tick() => {
-                    // Query a new cut to Mempool in order to create a new CommitCut
-                    let validators = vec![
-                        self.car_proposal_signer.validator_pubkey().clone(),
-                        self.crypto.validator_pubkey().clone(),
-                    ];
-                    match self.bus.request(QueryNewCut(validators.clone())).await {
-                        Ok(cut) => {
-                            self.store.last_cut = cut.clone();
-                        }
-                        Err(err) => {
-                            // In case of an error, we reuse the last cut to avoid being considered byzantine
-                            tracing::error!("Error while requesting new cut: {:?}", err);
-                        }
-                    };
-
-                    _ = self.bus.send(ConsensusEvent::CommitCut {
-                        validators,
-                        cut: self.store.last_cut.clone(),
-                        new_bonded_validators: vec![],
-                    })?
+                self.handle_new_slot_tick().await?;
             }
         }
+    }
+
+    fn handle_car_proposal_message(&mut self, cmd: OutboundMessage) -> Result<()> {
+        // Receiving a car proposal and automatically voting for it.
+        // WARNING: No verification is done on it. This could be lead errors on CarProposal not being detected
+        if let OutboundMessage::BroadcastMessage(NetMessage::MempoolMessage(SignedByValidator {
+            msg: MempoolNetMessage::CarProposal(car_proposal),
+            ..
+        })) = cmd
+        {
+            let signed_msg =
+                self.sign_net_message(MempoolNetMessage::CarProposalVote(car_proposal.clone()))?;
+            let msg: SignedByValidator<MempoolNetMessage> = SignedByValidator {
+                msg: MempoolNetMessage::CarProposalVote(car_proposal.clone()),
+                signature: signed_msg.signature,
+            };
+
+            _ = self.bus.send(msg)?;
+
+            if let Some(file) = &self.file {
+                if let Err(e) = Self::save_on_disk(file.as_path(), &self.store) {
+                    tracing::warn!("Failed to save consensus state on disk: {}", e);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    async fn handle_new_slot_tick(&mut self) -> Result<()> {
+        // Query a new cut to Mempool in order to create a new CommitCut
+        let validators = vec![
+            self.car_proposal_signer.validator_pubkey().clone(),
+            self.crypto.validator_pubkey().clone(),
+        ];
+        match self.bus.request(QueryNewCut(validators.clone())).await {
+            Ok(cut) => {
+                self.store.last_cut = cut.clone();
+            }
+            Err(err) => {
+                // In case of an error, we reuse the last cut to avoid being considered byzantine
+                tracing::error!("Error while requesting new cut: {:?}", err);
+            }
+        };
+
+        _ = self.bus.send(ConsensusEvent::CommitCut {
+            validators,
+            cut: self.store.last_cut.clone(),
+            new_bonded_validators: vec![],
+        })?;
+        Ok(())
     }
 
     fn sign_net_message(
@@ -172,5 +188,136 @@ impl SingleNodeConsensus {
         msg: MempoolNetMessage,
     ) -> Result<SignedByValidator<MempoolNetMessage>> {
         self.car_proposal_signer.sign(msg)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::bus::SharedMessageBus;
+    use crate::mempool::storage::{CarId, CarProposal};
+    use crate::model::ValidatorPublicKey;
+    use crate::p2p;
+    use crate::p2p::network::SignedByValidator;
+    use crate::utils::conf::Conf;
+    use anyhow::Result;
+    use std::sync::Arc;
+    use tokio::sync::broadcast::Receiver;
+
+    pub struct TestContext {
+        signed_mempool_net_message_receiver: Receiver<SignedByValidator<MempoolNetMessage>>,
+        consensus_event_receiver: Receiver<ConsensusEvent>,
+        single_node_consensus: SingleNodeConsensus,
+    }
+
+    bus_client!(
+        struct TestBusClient {
+            receiver(Query<QueryNewCut, Cut>),
+        }
+    );
+
+    impl TestContext {
+        pub async fn new(name: &str) -> Self {
+            let crypto = BlstCrypto::new(name.into());
+            let car_proposal_signer = BlstCrypto::new("car_proposal_signer".to_owned());
+            let shared_bus = SharedMessageBus::new(BusMetrics::global("global".to_string()));
+            let conf = Arc::new(Conf::default());
+            let store = SingleNodeConsensusStore::default();
+
+            let signed_mempool_net_message_receiver =
+                get_receiver::<SignedByValidator<MempoolNetMessage>>(&shared_bus).await;
+            let consensus_event_receiver = get_receiver::<ConsensusEvent>(&shared_bus).await;
+            let bus = SingleNodeConsensusBusClient::new_from_bus(shared_bus.new_handle()).await;
+
+            // Initialize Mempool
+            let single_node_consensus = SingleNodeConsensus {
+                bus,
+                crypto: Arc::new(crypto),
+                car_proposal_signer: Arc::new(car_proposal_signer),
+                config: conf,
+                store,
+                file: None,
+            };
+
+            let mut new_cut_query_receiver = TestBusClient::new_from_bus(shared_bus).await;
+            tokio::spawn(async move {
+                handle_messages! {
+                    on_bus new_cut_query_receiver,
+                    command_response<QueryNewCut, Cut> _ => {
+                        Ok(vec![(ValidatorPublicKey::default(), CarId::default())])
+                    }
+                }
+            });
+
+            TestContext {
+                signed_mempool_net_message_receiver,
+                consensus_event_receiver,
+                single_node_consensus,
+            }
+        }
+
+        #[track_caller]
+        fn assert_car_proposal_vote(&mut self, err: &str) -> CarProposal {
+            #[allow(clippy::expect_fun_call)]
+            let rec = self
+                .signed_mempool_net_message_receiver
+                .try_recv()
+                .expect(format!("{err}: No message broadcasted").as_str());
+
+            match rec.msg {
+                MempoolNetMessage::CarProposalVote(car_proposal) => car_proposal,
+                _ => panic!("{err}: CarProposalVote message is missing"),
+            }
+        }
+
+        #[track_caller]
+        fn assert_commit_cut(&mut self, err: &str) -> Cut {
+            #[allow(clippy::expect_fun_call)]
+            let rec = self
+                .consensus_event_receiver
+                .try_recv()
+                .expect(format!("{err}: No message broadcasted").as_str());
+
+            match rec {
+                ConsensusEvent::CommitCut {
+                    validators: _,
+                    new_bonded_validators: _,
+                    cut,
+                } => cut,
+                _ => panic!("{err}: CommitCut message is missing"),
+            }
+        }
+    }
+
+    #[test_log::test(tokio::test)]
+    async fn test_flow() -> Result<()> {
+        let mut ctx = TestContext::new("single_node_consensus").await;
+
+        let car_proposal = CarProposal {
+            txs: vec![],
+            id: CarId(1),
+            parent: None,
+            parent_poa: None,
+        };
+        let signed_msg = ctx
+            .single_node_consensus
+            .crypto
+            .sign(MempoolNetMessage::CarProposal(car_proposal.clone()))?;
+
+        // Sending new CarProposal to SingleNodeConsensus
+        ctx.single_node_consensus.handle_car_proposal_message(
+            OutboundMessage::BroadcastMessage(p2p::network::NetMessage::MempoolMessage(signed_msg)),
+        )?;
+
+        // We expect to receive a CarProposalVote for that CarProposal
+        let car_proposal_vote = ctx.assert_car_proposal_vote("CarProposalVote");
+        assert_eq!(car_proposal_vote.id, car_proposal.id);
+
+        ctx.single_node_consensus.handle_new_slot_tick().await?;
+
+        let cut = ctx.assert_commit_cut("CommitCut");
+        assert!(!cut.is_empty());
+
+        Ok(())
     }
 }
