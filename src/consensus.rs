@@ -1587,6 +1587,7 @@ mod test {
         p2p::network::NetMessage,
         utils::{conf::Conf, crypto},
     };
+    use assert_cmd::assert;
     use assertables::assert_contains;
     use staking::Stake;
     use tokio::sync::broadcast::Receiver;
@@ -1676,10 +1677,11 @@ mod test {
                 let message = $sender.assert_broadcast(format!("[broadcast from: {}] {}", stringify!($sender), $description).as_str());
 
                 $({
+                    let msg_variant_name: &'static str = message.msg.clone().into();
                     if let $pattern = &message.msg {
                         $($asserts)?
                     } else {
-                        panic!("[broadcast from: {}] {}: Message did not match {}", stringify!($sender), $description, stringify!($pattern));
+                        panic!("[broadcast from: {}] {}: Message {} did not match {}", stringify!($sender), $description, msg_variant_name, stringify!($pattern));
                     }
                 })?
 
@@ -1971,7 +1973,12 @@ mod test {
         // Ensuring one slot commits correctly before a timeout
         broadcast! {
             description: "Leader - Prepare",
-            from: node1, to: [node2, node3, node4]
+            from: node1, to: [node2, node3, node4],
+            message_matches: ConsensusNetMessage::Prepare(cp, ticket) => {
+                assert_eq!(cp.slot, 1);
+                assert_eq!(cp.view, 0);
+                assert_eq!(ticket, &Ticket::Genesis);
+            }
         };
 
         send! {
