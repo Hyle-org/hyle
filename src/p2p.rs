@@ -12,6 +12,7 @@ use anyhow::{bail, Error, Result};
 use tokio::{net::TcpListener, time::sleep};
 use tracing::{debug, error, info, warn};
 
+mod fifo_filter;
 pub mod network;
 mod peer;
 pub mod stream;
