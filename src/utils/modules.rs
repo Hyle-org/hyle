@@ -135,10 +135,14 @@ impl ModulesHandler {
         let abort = move || {
             tx.send(()).ok();
         };
-        tasks.push(tokio::spawn(async move {
-            rx.await.ok();
-            Ok(())
-        }));
+        tasks.push(
+            tokio::task::Builder::new()
+                .name("wait-abort-cmd")
+                .spawn(async move {
+                    rx.await.ok();
+                    Ok(())
+                })?,
+        );
         names.push("abort");
 
         // Return a future that waits for the first error or the abort command.

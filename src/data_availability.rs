@@ -498,12 +498,14 @@ impl DataAvailability {
         // We do the processing in the main select! loop to keep things synchronous.
         // This makes it easier to store data in the same struct without mutexing.
         let peer_ip_keepalive = peer_ip.to_string();
-        let keepalive_abort = tokio::spawn(async move {
-            loop {
-                receiver.next().await;
-                let _ = ping_sender.send(peer_ip_keepalive.clone()).await;
-            }
-        });
+        let keepalive_abort = tokio::task::Builder::new()
+            .name("da-keep-alive-abort")
+            .spawn(async move {
+                loop {
+                    receiver.next().await;
+                    let _ = ping_sender.send(peer_ip_keepalive.clone()).await;
+                }
+            })?;
 
         // Then store data so we can send new blocks as they come.
         self.stream_peer_metadata.insert(
