@@ -178,11 +178,7 @@ impl Mempool {
                 new_bonded_validators,
                 validators,
             } => {
-                debug!(
-                    "✂️ Received CommitCut ({:?} cut, {} pending txs)",
-                    cut,
-                    self.storage.pending_txs.len()
-                );
+                debug!("✂️ Received CommitCut ({:?} cut)", cut);
                 self.validators = validators;
                 let txs = self.storage.collect_lanes(cut);
                 if let Err(e) = self
