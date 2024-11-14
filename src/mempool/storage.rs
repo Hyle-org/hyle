@@ -3,7 +3,7 @@ use derive_more::derive::Display;
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Sha3_256};
 use std::{
-    collections::{BTreeSet, HashMap, HashSet},
+    collections::{BTreeSet, HashMap},
     fmt::Display,
     io::Write,
     vec,
@@ -66,7 +66,7 @@ impl Storage {
             pending_txs: vec![],
             lane: Lane {
                 cars: vec![],
-                waiting: HashSet::new(),
+                waiting: vec![],
             },
             other_lanes: HashMap::new(),
         }
@@ -149,7 +149,7 @@ impl Storage {
                 .entry(validator.clone())
                 .or_default()
                 .waiting
-                .insert(data_proposal.clone());
+                .push(data_proposal.clone());
             return DataProposalVerdict::Wait(data_proposal.parent);
         }
         // optimistic_node_state is here to handle the case where a contract is registered in a car that is not yet committed.
@@ -334,7 +334,7 @@ impl Storage {
     ) -> Vec<DataProposal> {
         match self.other_lanes.get_mut(validator) {
             Some(sl) => {
-                let mut wp = sl.waiting.drain().collect::<Vec<_>>();
+                let mut wp = sl.waiting.drain(0..).collect::<Vec<_>>();
                 wp.sort_by_key(|wp| wp.id);
                 wp
             }
@@ -607,7 +607,7 @@ impl Display for Car {
 #[derive(Default, Debug, Clone)]
 pub struct Lane {
     cars: Vec<Car>,
-    waiting: HashSet<DataProposal>,
+    waiting: Vec<DataProposal>,
 }
 
 impl Display for Lane {
