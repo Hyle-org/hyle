@@ -1587,7 +1587,6 @@ mod test {
         p2p::network::NetMessage,
         utils::{conf::Conf, crypto},
     };
-    use assert_cmd::assert;
     use assertables::assert_contains;
     use staking::Stake;
     use tokio::sync::broadcast::Receiver;
@@ -1596,7 +1595,7 @@ mod test {
         out_receiver: Receiver<OutboundMessage>,
         _event_receiver: Receiver<ConsensusEvent>,
         _p2p_receiver: Receiver<P2PCommand>,
-        consensus: Consensus,
+        pub consensus: Consensus,
         name: String,
     }
 
@@ -1694,27 +1693,92 @@ mod test {
             }
         };
     }
-
     macro_rules! send {
-        (description: $description:literal, from: [$($node:ident),+], to: $to:ident) => {
-            (
-                // Distribute the message to the target node from all nodes
-                $({
-                    let answer = $node.assert_send(&$to, format!("[send from: {} to: {}] {}", stringify!($node), stringify!($to), $description).as_str());
-                    $to.handle_msg(&answer, format!("[handling sent message from: {} to: {}] {}", stringify!($node), stringify!($to), $description).as_str());
-                    answer
-                }),+
+    (
+        description: $description:literal,
+        from: [$($node:ident),+],
+        to: $to:ident,
+        message_matches: $pattern:pat
+    ) => {
+        // Distribute the message to the target node from all specified nodes
+        $(
+            let answer = $node.assert_send(
+                &$to,
+                format!("[send from: {} to: {}] {}", stringify!($node), stringify!($to), $description).as_str()
+            );
 
-            )
-        };
-    }
+            // If `message_matches` is provided, perform the pattern match
+            if let $pattern = &answer.msg {
+                // Execute optional assertions if provided
+            } else {
+                let msg_variant_name: &'static str = answer.msg.clone().into();
+                panic!(
+                    "[send from: {}] {}: Message {} did not match {}",
+                    stringify!($node),
+                    $description,
+                    msg_variant_name,
+                    stringify!($pattern)
+                );
+            }
+
+            // Handle the message
+            $to.handle_msg(
+                &answer,
+                format!("[handling sent message from: {} to: {}] {}", stringify!($node), stringify!($to), $description).as_str()
+            );
+        )+
+    };
+
+    (
+        description: $description:literal,
+        from: [$($node:ident: $pattern:pat $(=> $asserts:block)?)+],
+        to: $to:ident
+    ) => {
+        // Distribute the message to the target node from all specified nodes
+        $(
+            let answer = $node.assert_send(
+                &$to,
+                format!("[send from: {} to: {}] {}", stringify!($node), stringify!($to), $description).as_str()
+            );
+
+            // If `message_matches` is provided, perform the pattern match
+            if let $pattern = &answer.msg {
+                // Execute optional assertions if provided
+                $($asserts)?
+            } else {
+                let msg_variant_name: &'static str = answer.msg.clone().into();
+                panic!(
+                    "[send from: {}] {}: Message {} did not match {}",
+                    stringify!($node),
+                    $description,
+                    msg_variant_name,
+                    stringify!($pattern)
+                );
+            }
+
+            // Handle the message
+            $to.handle_msg(
+                &answer,
+                format!("[handling sent message from: {} to: {}] {}", stringify!($node), stringify!($to), $description).as_str()
+            );
+        )+
+    };
+}
 
     macro_rules! timeout {
         ($($node:ident),+) => {
             // Make all nodes timeout (schedule timeout to now + tick timeout to trigger it)
             $(
-                $node.schedule_next_timeout_now();
-                $node.timeout_tick(format!("Timeout tick for node {}", stringify!($node)).as_str());
+                $node.consensus
+                    .bft_round_state
+                    .follower
+                    .timeout_state
+                    .schedule_next(get_current_timestamp() - 10);
+                $node.consensus
+                    .handle_command(ConsensusCommand::TimeoutTick)
+                    .await
+                    .expect(format!("Timeout tick for node {}", stringify!($node)).as_str());
+
             )+
         }
     }
@@ -1842,22 +1906,6 @@ mod test {
                 .expect("Failed to start slot");
         }
 
-        async fn timeout_tick(&mut self, err: &str) {
-            self.consensus
-                .handle_command(ConsensusCommand::TimeoutTick)
-                .await
-                .expect(err);
-        }
-
-        #[track_caller]
-        fn schedule_next_timeout_now(&mut self) {
-            self.consensus
-                .bft_round_state
-                .follower
-                .timeout_state
-                .schedule_next(get_current_timestamp() - 10);
-        }
-
         #[track_caller]
         fn assert_broadcast(
             &mut self,
@@ -1964,125 +2012,106 @@ mod test {
     }
 
     #[test_log::test(tokio::test)]
-    async fn test_timeout_scenario_1() {
+    async fn basic_commit_4() {
         let (mut node1, mut node2, mut node3, mut node4): (TestCtx, TestCtx, TestCtx, TestCtx) =
             build_nodes!(4).await;
 
         node1.start_round().await;
         // Slot 1 - leader = node1
         // Ensuring one slot commits correctly before a timeout
+        let cp_round;
         broadcast! {
             description: "Leader - Prepare",
             from: node1, to: [node2, node3, node4],
             message_matches: ConsensusNetMessage::Prepare(cp, ticket) => {
+                cp_round = Some(cp.clone());
                 assert_eq!(cp.slot, 1);
                 assert_eq!(cp.view, 0);
                 assert_eq!(ticket, &Ticket::Genesis);
             }
         };
 
+        let cp_round_hash = &cp_round.unwrap().hash();
+
         send! {
             description: "Follower - PrepareVote",
-            from: [node2, node3, node4], to: node1
+            from: [
+                node2: ConsensusNetMessage::PrepareVote(cp_hash) => { assert_eq!(cp_hash, cp_round_hash); }
+                node3: ConsensusNetMessage::PrepareVote(cp_hash) => { assert_eq!(cp_hash, cp_round_hash); }
+                node4: ConsensusNetMessage::PrepareVote(cp_hash) => { assert_eq!(cp_hash, cp_round_hash); }
+            ], to: node1
         };
 
         broadcast! {
             description: "Leader - Confirm",
-            from: node1, to: [node2, node3, node4]
+            from: node1, to: [node2, node3, node4],
+            message_matches: ConsensusNetMessage::Confirm(_)
         };
 
         send! {
             description: "Follower - Confirm Ack",
-            from: [node2, node3, node4], to: node1
+            from: [
+                node2: ConsensusNetMessage::ConfirmAck(cp_hash) => { assert_eq!(cp_hash, cp_round_hash); }
+                node3: ConsensusNetMessage::ConfirmAck(cp_hash) => { assert_eq!(cp_hash, cp_round_hash); }
+                node4: ConsensusNetMessage::ConfirmAck(cp_hash) => { assert_eq!(cp_hash, cp_round_hash); }
+            ], to: node1
         };
 
         broadcast! {
             description: "Leader - Commit",
-            from: node1, to: [node2, node3, node4]
-        };
-
-        // Timeout round
-
-        // Slot 2 - view 0 - leader = node2
-        node2.start_round().await;
-
-        node2.assert_broadcast("Lost prepare");
-
-        // Make node1 and node3 timeout, node4 will not timeout but follow mutiny
-        // , because at f+1, mutiny join
-        timeout!(node1, node3);
-
-        broadcast! {
-            description: "Follower - Timeout",
-            from: node1, to: [node3, node4]
-        };
-        broadcast! {
-            description: "Follower - Timeout",
-            from: node3, to: [node1, node4]
-        };
-
-        // node 4 should join the mutiny
-        broadcast! {
-            description: "Follower - Timeout",
-            from: node4, to: [node1, node3]
-        };
-        // After this broadcast, every node has 2f+1 timeouts and can create a timeout certificate
-
-        // Timeout message emitted after joining the mutiny
-        node1.assert_broadcast("Timeout Message 1");
-        node1.assert_broadcast("Timeout Certificate 1");
-        // Timeout message emitted after joining the mutiny
-        node3.assert_broadcast("Timeout Message 3");
-
-        // Node 3 is next leader, and emits a timeout certificate it will use to broadcast the next Prepare
-        let timeout_certificate3 = node3.assert_broadcast("Timeout Certificate 3");
-        node4.assert_broadcast("Timeout Certificate 4");
-
-        node3.start_round().await;
-
-        // Slot 2 view 1 (following a timeout round)
-        broadcast! {
-            description: "Leader - Prepare",
-            from: node3, to: [node1, node2, node4],
-            message_matches: ConsensusNetMessage::Prepare(cp, Ticket::TimeoutQC(qc)) => {
-                if let ConsensusNetMessage::TimeoutCertificate(agg_signature, cp_hash) =
-                    timeout_certificate3.msg
-                {
-                    assert_eq!(&agg_signature, qc);
-                    // Make sure the ticket maches the consensus proposal held by the prepare
-                    // but in the previous view
-                    let mut cloned_cp = cp.clone();
-                    cloned_cp.view -= 1;
-                    assert_eq!(cp_hash, cloned_cp.hash());
-                } else {
-                    panic!("timeout certificate 3 should be a timeout certificate messages but was {:?}", timeout_certificate3);
-                }
+            from: node1, to: [node2, node3, node4],
+            message_matches: ConsensusNetMessage::Commit(_, cp_hash) => {
+                assert_eq!(cp_hash, cp_round_hash);
             }
-        };
-
-        send! {
-            description: "Follower - PrepareVote",
-            from: [node1, node2, node4], to: node3
-        };
-
-        broadcast! {
-            description: "Leader - Confirm",
-            from: node3, to: [node1, node2, node4]
-        };
-
-        send! {
-            description: "Follower - Confirm Ack",
-            from: [node1, node2, node4], to: node3
-        };
-
-        broadcast! {
-            description: "Leader - Commit",
-            from: node3, to: [node1, node2, node4]
         };
     }
 
     #[test_log::test(tokio::test)]
-    async fn test_timeout_join_mutiny() {
+    async fn timeout_only_one_4() {
+        let (mut node1, mut node2, mut node3, mut node4): (TestCtx, TestCtx, TestCtx, TestCtx) =
+            build_nodes!(4).await;
+
+        node1.start_round();
+
+        timeout!(node2);
+
+        node2.assert_broadcast("Timeout message");
+
+        // Slot 1 - leader = node1
+        // Ensuring one slot commits correctly before a timeout
+        broadcast! {
+            description: "Leader - Prepare",
+            from: node1, to: [node2, node3, node4],
+            message_matches: ConsensusNetMessage::Prepare(_, _)
+        };
+
+        send! {
+            description: "Follower - PrepareVote",
+            from: [node2, node3, node4], to: node1,
+            message_matches: ConsensusNetMessage::PrepareVote(_)
+        };
+
+        broadcast! {
+            description: "Leader - Confirm",
+            from: node1, to: [node2, node3, node4],
+            message_matches: ConsensusNetMessage::Confirm(_)
+        };
+
+        send! {
+            description: "Follower - Confirm Ack",
+            from: [node2, node3, node4], to: node1,
+            message_matches: ConsensusNetMessage::ConfirmAck(_)
+        };
+
+        broadcast! {
+            description: "Leader - Commit",
+            from: node1, to: [node2, node3, node4],
+            message_matches: ConsensusNetMessage::Commit(_, _)
+        };
+    }
+
+    #[test_log::test(tokio::test)]
+    async fn test_timeout_join_mutiny_4() {
         let (mut node1, mut node2, mut node3, mut node4): (TestCtx, TestCtx, TestCtx, TestCtx) =
             build_nodes!(4).await;
 
@@ -2121,15 +2150,15 @@ mod test {
         // After this broadcast, every node has 2f+1 timeouts and can create a timeout certificate
 
         // Timeout message emitted after joining the mutiny
-        let _timeout_message2 = node2.assert_broadcast("Timeout Message 2");
+        node2.assert_broadcast("Timeout Message 2");
         // Node 2 is next leader, and emits a timeout certificate it will use to broadcast the next Prepare
         let timeout_certificate2 = node2.assert_broadcast("Timeout Certificate 2");
 
         // Timeout message emitted after joining the mutiny
-        let _timeout_message3 = node3.assert_broadcast("Timeout Message 3");
-        let _timeout_certificate3 = node3.assert_broadcast("Timeout Certificate 3");
+        node3.assert_broadcast("Timeout Message 3");
+        node3.assert_broadcast("Timeout Certificate 3");
 
-        let _timeout_certificate4 = node4.assert_broadcast("Timeout Certificate 4");
+        node4.assert_broadcast("Timeout Certificate 4");
 
         node2.start_round().await;
 
@@ -2142,6 +2171,8 @@ mod test {
                     timeout_certificate2.msg
                 {
                     assert_eq!(&agg_signature, qc);
+                    assert_eq!(cp.slot, 1);
+                    assert_eq!(cp.view, 1);
                     // Make sure the ticket maches the consensus proposal held by the prepare
                     // but in the previous view
                     let mut cloned_cp = cp.clone();
