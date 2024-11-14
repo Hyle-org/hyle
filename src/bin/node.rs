@@ -6,6 +6,7 @@ use hyle::{
     bus::{metrics::BusMetrics, SharedMessageBus},
     consensus::Consensus,
     data_availability::DataAvailability,
+    genesis::Genesis,
     indexer::Indexer,
     mempool::Mempool,
     model::{CommonRunContext, NodeRunContext, SharedRunContext},
@@ -16,7 +17,7 @@ use hyle::{
         conf,
         crypto::BlstCrypto,
         logger::{setup_tracing, TracingMode},
-        modules::{Module, ModulesHandler},
+        modules::ModulesHandler,
     },
 };
 use std::sync::{Arc, Mutex};
@@ -95,6 +96,7 @@ async fn main() -> Result<()> {
 
     let mut handler = ModulesHandler::default();
     handler.build_module::<Mempool>(ctx.clone()).await?;
+    handler.build_module::<Genesis>(ctx.clone()).await?;
     handler.build_module::<Consensus>(ctx.clone()).await?;
     handler.build_module::<P2P>(ctx.clone()).await?;
     handler
@@ -102,8 +104,7 @@ async fn main() -> Result<()> {
         .await?;
 
     if run_indexer {
-        let indexer = Indexer::build(ctx.common.clone()).await?;
-        handler.add_module(indexer)?;
+        handler.build_module::<Indexer>(ctx.common.clone()).await?;
     }
     handler
         .build_module::<DataAvailability>(ctx.clone())

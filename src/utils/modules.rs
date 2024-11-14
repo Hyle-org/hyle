@@ -3,7 +3,7 @@ use std::{fs, future::Future, path::Path, pin::Pin};
 use anyhow::{bail, Error, Result};
 use rand::{distributions::Alphanumeric, Rng};
 use tokio::task::JoinHandle;
-use tracing::{debug, info, warn};
+use tracing::{debug, error, info, warn};
 
 use crate::utils::logger::LogMe;
 
@@ -151,27 +151,33 @@ impl ModulesHandler {
     }
 
     async fn wait_for_first(
-        handles: Vec<JoinHandle<Result<(), Error>>>,
+        mut handles: Vec<JoinHandle<Result<(), Error>>>,
         names: Vec<&'static str>,
     ) -> Result<(), Error> {
-        let (first, pos, remaining) = futures::future::select_all(handles).await;
+        while !handles.is_empty() {
+            let (first, pos, remaining) = futures::future::select_all(handles).await;
+            handles = remaining;
 
-        match first {
-            Ok(result) => {
-                // Abort remaining tasks
-                for handle in remaining {
-                    handle.abort();
-                }
-                match result {
+            match first {
+                Ok(result) => match result {
                     Ok(_) => {
                         info!("Module {} stopped successfully", names[pos]);
-                        Ok(())
                     }
-                    Err(e) => bail!("Module {} stopped with error: {}", names[pos], e),
+                    Err(e) => {
+                        error!("Module {} stopped with error: {}", names[pos], e);
+                        // Abort remaining tasks
+                        for handle in handles {
+                            handle.abort();
+                        }
+                        bail!("Error in module {}", names[pos]);
+                    }
+                },
+                Err(e) => {
+                    bail!("Error while waiting for module {}: {}", names[pos], e)
                 }
             }
-            Err(e) => anyhow::bail!("Error while waiting for first module: {}", e),
         }
+        Ok(())
     }
 }
 
