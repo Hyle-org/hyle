@@ -162,8 +162,6 @@ impl Mempool {
                 only_for,
                 DataProposal {
                     txs: car.txs.clone(),
-                    id: car.id,
-                    parent: car.parent,
                     parent_hash: car.parent_hash.clone(),
                     parent_poa: None, // TODO: fetch parent votes
                 },
@@ -207,7 +205,8 @@ impl Mempool {
                     MempoolNetMessage::DataProposal(data_proposal) => {
                         debug!(
                             "Received DataProposal {} from validator {}",
-                            data_proposal.id, validator
+                            data_proposal.hash(),
+                            validator
                         );
                         if let Err(e) = self.on_data_proposal(validator, data_proposal).await {
                             error!("{:?}", e);
@@ -339,7 +338,8 @@ impl Mempool {
             DataProposalVerdict::DidVote => {
                 error!(
                     "we already have voted for {}'s DataProposal {}",
-                    validator, data_proposal.id
+                    validator,
+                    data_proposal.hash()
                 );
             }
             DataProposalVerdict::Wait(last_known_car_hash) => {
@@ -362,7 +362,7 @@ impl Mempool {
         if let Some(data_proposal) = self.storage.new_data_proposal() {
             debug!(
                 "🚗 Broadcast DataProposal {} ({} validators, {} txs)",
-                data_proposal.id,
+                data_proposal.hash(),
                 self.validators.len(),
                 data_proposal.txs.len()
             );
@@ -513,7 +513,7 @@ mod tests {
     use hyle_contract_sdk::StateDigest;
     use std::collections::BTreeSet;
     use std::sync::Arc;
-    use storage::{CarId, Poa};
+    use storage::Poa;
     use tokio::sync::broadcast::Receiver;
 
     pub struct TestContext {
@@ -621,10 +621,8 @@ mod tests {
         let mut ctx = TestContext::new("mempool").await;
 
         let data_proposal = DataProposal {
-            txs: vec![make_register_contract_tx(ContractName("test1".to_owned()))],
-            id: CarId(1),
-            parent: None,
             parent_hash: None,
+            txs: vec![make_register_contract_tx(ContractName("test1".to_owned()))],
             parent_poa: None,
         };
 
@@ -671,10 +669,8 @@ mod tests {
         );
 
         let data_proposal = DataProposal {
+            parent_hash: Some(CarHash("42".to_string())), // This value is incorrect
             txs: vec![make_register_contract_tx(ContractName("test1".to_owned()))],
-            id: CarId(10), // This value is incorrect
-            parent: None,
-            parent_hash: None,
             parent_poa: None,
         };
 
@@ -721,10 +717,8 @@ mod tests {
         );
 
         let data_proposal = DataProposal {
-            txs: vec![make_register_contract_tx(ContractName("test1".to_owned()))],
-            id: CarId(1),
-            parent: None,
             parent_hash: None,
+            txs: vec![make_register_contract_tx(ContractName("test1".to_owned()))],
             parent_poa: None,
         };
 
@@ -760,10 +754,8 @@ mod tests {
         ctx.mempool.handle_data_proposal_management();
 
         let data_proposal = DataProposal {
-            txs: vec![register_tx],
-            id: CarId(1),
-            parent: None,
             parent_hash: None,
+            txs: vec![register_tx],
             parent_poa: None,
         };
 
@@ -794,8 +786,11 @@ mod tests {
     #[test_log::test(tokio::test)]
     async fn test_receiving_commit_cut() -> Result<()> {
         let mut ctx = TestContext::new("mempool").await;
-        let car_id = CarId(1);
-        let cut: Cut = vec![(ctx.mempool.crypto.validator_pubkey().clone(), car_id)];
+        let car_hash = CarHash("42".to_string());
+        let cut: Cut = vec![(
+            ctx.mempool.crypto.validator_pubkey().clone(),
+            car_hash.clone(),
+        )];
 
         ctx.mempool
             .handle_consensus_event(ConsensusEvent::CommitCut {
@@ -807,7 +802,7 @@ mod tests {
 
         let car = ctx.mempool.storage.lane.current().expect("No tip info");
 
-        assert_eq!(car.id, car_id);
+        assert_eq!(car.hash(), car_hash);
         Ok(())
     }
 }
