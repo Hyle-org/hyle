@@ -15,14 +15,6 @@ use crate::{
     node_state::NodeState,
 };
 
-#[derive(Debug, Clone, Encode, Decode, Default, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct TipInfo {
-    pub pos: CarId,
-    pub parent: Option<CarId>,
-    pub parent_hash: Option<CarHash>,
-    pub poa: Vec<ValidatorPublicKey>,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DataProposalVerdict {
     Empty,
@@ -369,20 +361,6 @@ impl Storage {
         self.pending_txs.push(tx);
     }
 
-    pub fn tip_info(&self) -> Option<(TipInfo, Vec<Transaction>)> {
-        self.lane.current().map(|car| {
-            (
-                TipInfo {
-                    pos: car.id,
-                    parent: car.parent,
-                    parent_hash: car.parent_hash.clone(),
-                    poa: car.poa.0.clone().into_iter().collect(),
-                },
-                car.txs.clone(),
-            )
-        })
-    }
-
     pub fn genesis(&self) -> bool {
         self.lane.cars.is_empty()
     }
@@ -548,10 +526,10 @@ impl std::ops::Sub<usize> for CarId {
 
 #[derive(Clone, Default, Debug, Eq, PartialEq, Serialize, Deserialize, Encode, Decode)]
 pub struct Car {
-    id: CarId,
-    parent: Option<CarId>,
-    parent_hash: Option<CarHash>,
-    txs: Vec<Transaction>,
+    pub id: CarId,
+    pub parent: Option<CarId>,
+    pub parent_hash: Option<CarHash>,
+    pub txs: Vec<Transaction>,
     pub poa: Poa,
 }
 
@@ -924,22 +902,18 @@ mod tests {
         assert!(store.other_lane_has_data_proposal(&pubkey1, &data_proposal));
         assert_eq!(store.other_lane_tip(&pubkey1), Some(CarId(1)));
 
-        let some_tip = store.tip_info();
-        assert!(some_tip.is_some());
-        let (tip, txs) = some_tip.unwrap();
-        assert_eq!(tip.poa.len(), 1);
-        assert_eq!(txs.len(), 4);
+        let car = store.lane.current().expect("a car");
+        assert_eq!(car.poa.len(), 1);
+        assert_eq!(car.txs.len(), 4);
 
         store.on_data_vote(&pubkey2, &data_proposal.hash());
         store.on_data_vote(&pubkey1, &data_proposal.hash());
 
-        let some_tip = store.tip_info();
-        assert!(some_tip.is_some());
-        let tip = some_tip.unwrap().0;
-        assert_eq!(tip.poa.len(), 3);
-        assert!(&tip.poa.contains(&pubkey3));
-        assert!(&tip.poa.contains(&pubkey1));
-        assert!(&tip.poa.contains(&pubkey2));
+        let car = store.lane.current().expect("a car");
+        assert_eq!(car.poa.len(), 3);
+        assert!(&car.poa.contains(&pubkey3));
+        assert!(&car.poa.contains(&pubkey1));
+        assert!(&car.poa.contains(&pubkey2));
     }
 
     #[test_log::test]

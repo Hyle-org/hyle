@@ -150,22 +150,22 @@ impl Mempool {
         // 3: Go through all pending DataProposal (of own lane) that have not reach PoA, and send them to make them Cars
         let poa = self.storage.tip_poa();
         self.broadcast_data_proposal_if_any(poa);
-        if let Some((tip, txs)) = self.storage.tip_info() {
+        if let Some(car) = self.storage.lane.current() {
             // No PoA means we rebroadcast the DataProposal for non present voters
             let only_for = HashSet::from_iter(
                 self.validators
                     .iter()
-                    .filter(|pubkey| !tip.poa.contains(pubkey))
+                    .filter(|pubkey| !car.poa.contains(pubkey))
                     .cloned(),
             );
             // FIXME: with current implem, we send DataProposal twice.
             if let Err(e) = self.broadcast_data_proposal_only_for(
                 only_for,
                 DataProposal {
-                    txs,
-                    id: tip.pos,
-                    parent: tip.parent,
-                    parent_hash: tip.parent_hash,
+                    txs: car.txs.clone(),
+                    id: car.id,
+                    parent: car.parent,
+                    parent_hash: car.parent_hash.clone(),
                     parent_poa: None, // TODO: fetch parent votes
                 },
             ) {
@@ -806,9 +806,9 @@ mod tests {
             })
             .await;
 
-        let (tip_info, _) = ctx.mempool.storage.tip_info().expect("No tip info");
+        let car = ctx.mempool.storage.lane.current().expect("No tip info");
 
-        assert_eq!(tip_info.pos, car_id);
+        assert_eq!(car.id, car_id);
         Ok(())
     }
 }
