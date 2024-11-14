@@ -288,7 +288,6 @@ mod tests {
                     new_bonded_validators: _,
                     cut,
                 } => cut,
-                _ => panic!("{err}: CommitCut message is missing"),
             }
         }
     }

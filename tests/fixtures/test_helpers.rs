@@ -48,7 +48,6 @@ impl Default for ConfMaker {
         info!("Default conf: {:?}", default);
         default.consensus = Consensus {
             slot_duration: 1,
-            genesis_leader: "node-1".to_owned(),
             genesis_stakers: {
                 let mut stakers = std::collections::HashMap::new();
                 stakers.insert("node-1".to_owned(), 100);

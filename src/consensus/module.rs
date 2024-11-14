@@ -34,6 +34,6 @@ impl Module for Consensus {
     }
 
     fn run(&mut self) -> impl futures::Future<Output = Result<()>> + Send {
-        self.start()
+        self.wait_genesis()
     }
 }

@@ -11,7 +11,6 @@ pub struct Storage {
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct Consensus {
     pub slot_duration: u64,
-    pub genesis_leader: String,
     pub genesis_stakers: HashMap<String, u64>,
 }
 

@@ -15,6 +15,7 @@
 pub mod bus;
 pub mod consensus;
 pub mod data_availability;
+pub mod genesis;
 pub mod indexer;
 pub mod mempool;
 pub mod model;
