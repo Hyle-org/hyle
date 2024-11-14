@@ -110,7 +110,7 @@ impl Storage {
         data_proposal: &DataProposal,
         node_state: &NodeState,
     ) -> DataProposalVerdict {
-        if data_proposal.txs.is_empty() {
+        if data_proposal.car.txs.is_empty() {
             return DataProposalVerdict::Empty;
         }
         if self.other_lane_has_data_proposal(validator, data_proposal) {
@@ -122,12 +122,12 @@ impl Storage {
                 .or_default()
                 .waiting
                 .push(data_proposal.clone());
-            return DataProposalVerdict::Wait(data_proposal.parent_hash.clone());
+            return DataProposalVerdict::Wait(data_proposal.car.parent_hash.clone());
         }
         // optimistic_node_state is here to handle the case where a contract is registered in a car that is not yet committed.
         // For performance reasons, we only clone node_state in it for unregistered contracts that are potentially in those uncommitted cars.
         let mut optimistic_node_state: Option<NodeState> = None;
-        for tx in data_proposal.txs.iter() {
+        for tx in data_proposal.car.txs.iter() {
             match &tx.transaction_data {
                 TransactionData::Proof(_) => {
                     warn!("Refusing DataProposal: unverified proof transaction");
@@ -209,7 +209,7 @@ impl Storage {
             }
         }
         if let (Some(parent_hash), Some(parent_poa)) =
-            (&data_proposal.parent_hash, &data_proposal.parent_poa)
+            (&data_proposal.car.parent_hash, &data_proposal.parent_poa)
         {
             self.other_lane_update_parent_poa(validator, parent_hash, parent_poa)
         }
@@ -225,7 +225,7 @@ impl Storage {
         let lane = self.other_lanes.entry(validator.clone()).or_default();
         let parent_hash = lane.current_hash();
         // Removing proofs from transactions
-        let mut txs_without_proofs = data_proposal.txs.clone();
+        let mut txs_without_proofs = data_proposal.car.txs.clone();
         txs_without_proofs.iter_mut().for_each(|tx| {
             match &mut tx.transaction_data {
                 TransactionData::VerifiedProof(proof_tx) => {
@@ -253,7 +253,7 @@ impl Storage {
         data_proposal: &DataProposal,
     ) -> bool {
         let lane = self.other_lanes.entry(validator.clone()).or_default();
-        data_proposal.parent_hash == lane.current_hash()
+        data_proposal.car.parent_hash == lane.current_hash()
     }
 
     fn other_lane_update_parent_poa(
@@ -280,7 +280,7 @@ impl Storage {
             .or_default()
             .cars
             .iter()
-            .any(|car| car.hash() == data_proposal.hash())
+            .any(|car| car.hash() == data_proposal.car.hash())
     }
 
     pub fn get_missing_cars(
@@ -340,16 +340,13 @@ impl Storage {
         };
         let parent_hash = self.lane.current_hash();
         // FIXME: we should wait for DataProposals to have received enough votes to make them Cars
-        self.lane.cars.push(Car {
-            parent_hash: parent_hash.clone(),
-            txs: pending_txs.clone(),
-        });
-        self.lane.poa.insert(self.id.clone());
-        Some(DataProposal {
-            txs: pending_txs,
+        let car = Car {
             parent_hash,
-            parent_poa,
-        })
+            txs: pending_txs,
+        };
+        self.lane.cars.push(car.clone());
+        self.lane.poa.insert(self.id.clone());
+        Some(DataProposal { car, parent_poa })
     }
 
     pub fn collect_lanes(&mut self, lanes: Cut) -> Vec<Transaction> {
@@ -371,24 +368,10 @@ impl Storage {
     }
 }
 
-#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize, Encode, Decode)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, Encode, Decode)]
 pub struct DataProposal {
-    pub parent_hash: Option<CarHash>,
-    pub txs: Vec<Transaction>,
+    pub car: Car,
     pub parent_poa: Option<Vec<ValidatorPublicKey>>,
-}
-
-impl Hashable<CarHash> for DataProposal {
-    fn hash(&self) -> CarHash {
-        let mut hasher = Sha3_256::new();
-        if let Some(parent_hash) = &self.parent_hash {
-            _ = write!(hasher, "{}", parent_hash);
-        }
-        for tx in self.txs.iter() {
-            hasher.update(tx.hash().0);
-        }
-        CarHash(hex::encode(hasher.finalize()))
-    }
 }
 
 impl Display for DataProposal {
@@ -396,8 +379,8 @@ impl Display for DataProposal {
         write!(
             f,
             "{{ {:?} <- [{:?}] }}",
-            self.parent_hash,
-            self.txs.first()
+            self.car.parent_hash,
+            self.car.txs.first()
         )
     }
 }
@@ -704,29 +687,37 @@ mod tests {
         let mut store = Storage::new(pubkey3.clone());
 
         let data_proposal1 = DataProposal {
-            parent_hash: None,
-            txs: vec![make_blob_tx("test1")],
+            car: Car {
+                parent_hash: None,
+                txs: vec![make_blob_tx("test1")],
+            },
             parent_poa: None,
         };
         store.other_lane_add_data_proposal(&pubkey2, &data_proposal1);
 
         let data_proposal2 = DataProposal {
-            parent_hash: Some(data_proposal1.hash()),
-            txs: vec![make_blob_tx("test2")],
+            car: Car {
+                parent_hash: Some(data_proposal1.car.hash()),
+                txs: vec![make_blob_tx("test2")],
+            },
             parent_poa: None,
         };
         store.other_lane_add_data_proposal(&pubkey2, &data_proposal2);
 
         let data_proposal3 = DataProposal {
-            parent_hash: Some(data_proposal2.hash()),
-            txs: vec![make_blob_tx("test3")],
+            car: Car {
+                parent_hash: Some(data_proposal2.car.hash()),
+                txs: vec![make_blob_tx("test3")],
+            },
             parent_poa: None,
         };
         store.other_lane_add_data_proposal(&pubkey2, &data_proposal2);
 
         let data_proposal4 = DataProposal {
-            parent_hash: Some(data_proposal3.hash()),
-            txs: vec![make_blob_tx("test4")],
+            car: Car {
+                parent_hash: Some(data_proposal3.car.hash()),
+                txs: vec![make_blob_tx("test4")],
+            },
             parent_poa: None,
         };
         store.other_lane_add_data_proposal(&pubkey2, &data_proposal4);
@@ -748,7 +739,8 @@ mod tests {
             }
         );
 
-        let missing = store.get_missing_cars(Some(data_proposal1.hash()), &data_proposal3.hash());
+        let missing =
+            store.get_missing_cars(Some(data_proposal1.car.hash()), &data_proposal3.car.hash());
 
         assert_eq!(missing, None);
     }
@@ -771,13 +763,13 @@ mod tests {
         assert!(store.other_lane_has_data_proposal(&pubkey2, &data_proposal));
         assert_eq!(
             other_lane_current_hash(&store, &pubkey2),
-            Some(data_proposal.hash())
+            Some(data_proposal.car.hash())
         );
         store.other_lane_add_data_proposal(&pubkey1, &data_proposal);
         assert!(store.other_lane_has_data_proposal(&pubkey1, &data_proposal));
         assert_eq!(
             other_lane_current_hash(&store, &pubkey1),
-            Some(data_proposal.hash())
+            Some(data_proposal.car.hash())
         );
 
         let car = store.lane.current().expect("a car");
@@ -785,10 +777,10 @@ mod tests {
         assert_eq!(car.txs.len(), 4);
 
         store
-            .on_data_vote(&pubkey2, &data_proposal.hash())
+            .on_data_vote(&pubkey2, &data_proposal.car.hash())
             .expect("to vote");
         store
-            .on_data_vote(&pubkey1, &data_proposal.hash())
+            .on_data_vote(&pubkey1, &data_proposal.car.hash())
             .expect("to vote");
 
         assert_eq!(store.lane.poa.len(), 3);
@@ -810,8 +802,10 @@ mod tests {
         let proof_tx = make_unverified_proof_tx();
 
         let data_proposal = DataProposal {
-            txs: vec![register_tx, proof_tx],
-            parent_hash: None,
+            car: Car {
+                parent_hash: None,
+                txs: vec![register_tx, proof_tx],
+            },
             parent_poa: None,
         };
 
@@ -835,8 +829,10 @@ mod tests {
         let proof_tx = make_verified_proof_tx(contract_name);
 
         let data_proposal = DataProposal {
-            parent_hash: None,
-            txs: vec![proof_tx.clone()],
+            car: Car {
+                parent_hash: None,
+                txs: vec![proof_tx.clone()],
+            },
             parent_poa: None,
         };
 
@@ -844,8 +840,10 @@ mod tests {
         assert_eq!(verdict, DataProposalVerdict::Refuse); // refused because contract not found
 
         let data_proposal = DataProposal {
-            parent_hash: None,
-            txs: vec![register_tx, proof_tx],
+            car: Car {
+                parent_hash: None,
+                txs: vec![register_tx, proof_tx],
+            },
             parent_poa: None,
         };
         let verdict = store.on_data_proposal(&pubkey2, &data_proposal, &node_state);
@@ -865,15 +863,19 @@ mod tests {
         let proof_tx = make_verified_proof_tx(contract_name);
 
         let data_proposal1 = DataProposal {
-            parent_hash: None,
-            txs: vec![register_tx],
+            car: Car {
+                parent_hash: None,
+                txs: vec![register_tx],
+            },
             parent_poa: None,
         };
         store.other_lane_add_data_proposal(&pubkey2, &data_proposal1);
 
         let data_proposal = DataProposal {
-            parent_hash: Some(data_proposal1.hash()),
-            txs: vec![proof_tx.clone()],
+            car: Car {
+                parent_hash: Some(data_proposal1.car.hash()),
+                txs: vec![proof_tx.clone()],
+            },
             parent_poa: Some(vec![pubkey3.clone(), pubkey2.clone()]),
         };
 
@@ -896,8 +898,10 @@ mod tests {
         let proof_tx = make_verified_proof_tx(contract_name);
 
         let data_proposal = DataProposal {
-            parent_hash: None,
-            txs: vec![register_tx, proof_tx],
+            car: Car {
+                parent_hash: None,
+                txs: vec![register_tx, proof_tx],
+            },
             parent_poa: None,
         };
 
@@ -920,8 +924,10 @@ mod tests {
         let proof_tx = make_verified_proof_tx(contract_name);
 
         let data_proposal = DataProposal {
-            parent_hash: None,
-            txs: vec![proof_tx, register_tx],
+            car: Car {
+                parent_hash: None,
+                txs: vec![proof_tx, register_tx],
+            },
             parent_poa: None,
         };
 
@@ -948,7 +954,7 @@ mod tests {
             DataProposalVerdict::Vote
         );
         store3
-            .on_data_vote(&pubkey2, &data_proposal1.hash())
+            .on_data_vote(&pubkey2, &data_proposal1.car.hash())
             .expect("success");
 
         store3.on_new_tx(make_blob_tx("test2"));
@@ -958,7 +964,7 @@ mod tests {
             DataProposalVerdict::Vote
         );
         store3
-            .on_data_vote(&pubkey2, &data_proposal1.hash())
+            .on_data_vote(&pubkey2, &data_proposal1.car.hash())
             .expect("success");
 
         store2.on_new_tx(make_blob_tx("test3"));
@@ -968,7 +974,7 @@ mod tests {
             DataProposalVerdict::Vote
         );
         store2
-            .on_data_vote(&pubkey3, &data_proposal3.hash())
+            .on_data_vote(&pubkey3, &data_proposal3.car.hash())
             .expect("success");
 
         assert_eq!(store3.lane.cars.len(), 2);

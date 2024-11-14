@@ -161,8 +161,10 @@ impl Mempool {
             if let Err(e) = self.broadcast_data_proposal_only_for(
                 only_for,
                 DataProposal {
-                    txs: car.txs.clone(),
-                    parent_hash: car.parent_hash.clone(),
+                    car: Car {
+                        parent_hash: car.parent_hash.clone(),
+                        txs: car.txs.clone(),
+                    },
                     parent_poa: None, // TODO: fetch parent votes
                 },
             ) {
@@ -201,7 +203,7 @@ impl Mempool {
                     MempoolNetMessage::DataProposal(data_proposal) => {
                         debug!(
                             "Received DataProposal {} from validator {}",
-                            data_proposal.hash(),
+                            data_proposal.car.hash(),
                             validator
                         );
                         if let Err(e) = self.on_data_proposal(validator, data_proposal).await {
@@ -329,13 +331,13 @@ impl Mempool {
             DataProposalVerdict::Vote => {
                 // Normal case, we receive a proposal we already have the parent in store
                 debug!("Send vote for DataProposal");
-                self.send_vote(validator, data_proposal.hash())?;
+                self.send_vote(validator, data_proposal.car.hash())?;
             }
             DataProposalVerdict::DidVote => {
                 error!(
                     "we already have voted for {}'s DataProposal {}",
                     validator,
-                    data_proposal.hash()
+                    data_proposal.car.hash()
                 );
             }
             DataProposalVerdict::Wait(last_known_car_hash) => {
@@ -358,9 +360,9 @@ impl Mempool {
         if let Some(data_proposal) = self.storage.new_data_proposal() {
             debug!(
                 "🚗 Broadcast DataProposal {} ({} validators, {} txs)",
-                data_proposal.hash(),
+                data_proposal.car.hash(),
                 self.validators.len(),
-                data_proposal.txs.len()
+                data_proposal.car.txs.len()
             );
             if let Err(e) = self.broadcast_data_proposal(data_proposal) {
                 error!("{:?}", e);
@@ -447,7 +449,7 @@ impl Mempool {
         self.metrics.add_sent_sync_request("blob".to_string());
         self.send_net_message(
             validator.clone(),
-            MempoolNetMessage::SyncRequest(data_proposal.hash(), last_known_car_hash),
+            MempoolNetMessage::SyncRequest(data_proposal.car.hash(), last_known_car_hash),
         )?;
         Ok(())
     }
@@ -604,7 +606,7 @@ mod tests {
             MempoolNetMessage::DataProposal(data_proposal) => data_proposal,
             _ => panic!("Expected DataProposal message"),
         };
-        assert_eq!(data_proposal.txs, vec![register_tx]);
+        assert_eq!(data_proposal.car.txs, vec![register_tx]);
 
         // Assert that pending_tx has been flushed
         assert!(ctx.mempool.storage.pending_txs.is_empty());
@@ -617,8 +619,10 @@ mod tests {
         let mut ctx = TestContext::new("mempool").await;
 
         let data_proposal = DataProposal {
-            parent_hash: None,
-            txs: vec![make_register_contract_tx(ContractName("test1".to_owned()))],
+            car: Car {
+                parent_hash: None,
+                txs: vec![make_register_contract_tx(ContractName("test1".to_owned()))],
+            },
             parent_poa: None,
         };
 
@@ -636,7 +640,7 @@ mod tests {
         // Assert that we vote for that specific DataProposal
         match ctx.assert_broadcast("DataVote") {
             MempoolNetMessage::DataVote(data_vote) => {
-                assert_eq!(data_vote, data_proposal.hash())
+                assert_eq!(data_vote, data_proposal.car.hash())
             }
             _ => panic!("Expected DataProposal message"),
         };
@@ -665,16 +669,18 @@ mod tests {
         );
 
         let data_proposal = DataProposal {
-            parent_hash: Some(CarHash("42".to_string())), // This value is incorrect
-            txs: vec![make_register_contract_tx(ContractName("test1".to_owned()))],
+            car: Car {
+                parent_hash: Some(CarHash("42".to_string())), // This value is incorrect
+                txs: vec![make_register_contract_tx(ContractName("test1".to_owned()))],
+            },
             parent_poa: None,
         };
 
         let temp_crypto = BlstCrypto::new("temp_crypto".into());
-        let signed_msg = temp_crypto.sign(MempoolNetMessage::DataVote(data_proposal.hash()))?;
+        let signed_msg = temp_crypto.sign(MempoolNetMessage::DataVote(data_proposal.car.hash()))?;
         ctx.mempool
             .handle_net_message(SignedByValidator {
-                msg: MempoolNetMessage::DataVote(data_proposal.hash()),
+                msg: MempoolNetMessage::DataVote(data_proposal.car.hash()),
                 signature: signed_msg.signature,
             })
             .await;
@@ -713,16 +719,18 @@ mod tests {
         );
 
         let data_proposal = DataProposal {
-            parent_hash: None,
-            txs: vec![make_register_contract_tx(ContractName("test1".to_owned()))],
+            car: Car {
+                parent_hash: None,
+                txs: vec![make_register_contract_tx(ContractName("test1".to_owned()))],
+            },
             parent_poa: None,
         };
 
         let temp_crypto = BlstCrypto::new("temp_crypto".into());
-        let signed_msg = temp_crypto.sign(MempoolNetMessage::DataVote(data_proposal.hash()))?;
+        let signed_msg = temp_crypto.sign(MempoolNetMessage::DataVote(data_proposal.car.hash()))?;
         ctx.mempool
             .handle_net_message(SignedByValidator {
-                msg: MempoolNetMessage::DataVote(data_proposal.hash()),
+                msg: MempoolNetMessage::DataVote(data_proposal.car.hash()),
                 signature: signed_msg.signature,
             })
             .await;
@@ -750,8 +758,10 @@ mod tests {
         ctx.mempool.handle_data_proposal_management();
 
         let data_proposal = DataProposal {
-            parent_hash: None,
-            txs: vec![register_tx],
+            car: Car {
+                parent_hash: None,
+                txs: vec![register_tx],
+            },
             parent_poa: None,
         };
 
