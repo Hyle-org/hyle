@@ -2138,7 +2138,7 @@ mod test {
         node1.start_round().await;
         // Slot 1 - leader = node1
 
-        let _old_prepare = node1.assert_broadcast("Lost prepare");
+        node1.assert_broadcast("Lost prepare");
 
         // Make node2 and node3 timeout, node4 will not timeout but follow mutiny
         // , because at f+1, mutiny join
