@@ -1431,10 +1431,21 @@ impl Consensus {
                         self.bft_round_state.consensus_proposal.slot,
                         self.bft_round_state.consensus_proposal.view
                     );
-                    self.broadcast_net_message(ConsensusNetMessage::Timeout(
+                    let timeout_message = ConsensusNetMessage::Timeout(
                         self.bft_round_state.consensus_proposal.hash(),
                         self.next_leader()?,
-                    ))?;
+                    );
+
+                    let signed_timeout_message = self
+                        .sign_net_message(timeout_message.clone())
+                        .context("Signing timeout message")?;
+
+                    self.bft_round_state
+                        .follower
+                        .timeout_requests
+                        .insert(signed_timeout_message);
+
+                    self.broadcast_net_message(timeout_message)?;
 
                     self.bft_round_state.follower.timeout_state.cancel();
 
@@ -1616,6 +1627,15 @@ mod test {
         };
         ($nodes:expr, 4) => {
             ($nodes, $nodes, $nodes, $nodes)
+        };
+        ($nodes:expr, 5) => {
+            ($nodes, $nodes, $nodes, $nodes, $nodes)
+        };
+        ($nodes:expr, 6) => {
+            ($nodes, $nodes, $nodes, $nodes, $nodes, $nodes)
+        };
+        ($nodes:expr, 7) => {
+            ($nodes, $nodes, $nodes, $nodes, $nodes, $nodes, $nodes)
         };
         ($nodes:expr, $count:expr) => {
             panic!("Le nombre de nœuds {} n'est pas supporté", $count)
@@ -2147,17 +2167,12 @@ mod test {
                 assert_eq!(&node2.pubkey(), next_leader);
             }
         };
+
         // After this broadcast, every node has 2f+1 timeouts and can create a timeout certificate
 
-        // Timeout message emitted after joining the mutiny
-        node2.assert_broadcast("Timeout Message 2");
         // Node 2 is next leader, and emits a timeout certificate it will use to broadcast the next Prepare
         let timeout_certificate2 = node2.assert_broadcast("Timeout Certificate 2");
-
-        // Timeout message emitted after joining the mutiny
-        node3.assert_broadcast("Timeout Message 3");
         node3.assert_broadcast("Timeout Certificate 3");
-
         node4.assert_broadcast("Timeout Certificate 4");
 
         node2.start_round().await;
@@ -2182,6 +2197,117 @@ mod test {
                     panic!("timeout certificate 2 should be a timeout certificate messages but was {:?}", timeout_certificate2);
                 }
             }
+        };
+    }
+
+    #[test_log::test(tokio::test)]
+    async fn timeout_next_leader_receive_timeout_certificate_without_timeouting() {
+        let (mut node1, mut node2, mut node3, mut node4, mut node5, mut node6, mut node7): (
+            TestCtx,
+            TestCtx,
+            TestCtx,
+            TestCtx,
+            TestCtx,
+            TestCtx,
+            TestCtx,
+        ) = build_nodes!(7).await;
+
+        node1.start_round();
+
+        let lost_prepare = node1.assert_broadcast("Lost Prepare slot 1/view 0").msg;
+
+        // node2 is the next leader, let the others timeout and create a certificate and send it to node2.
+        // It should be able to build a prepare message with it
+
+        timeout!(node3, node4, node5, node6, node7);
+
+        broadcast! {
+            description: "Follower - Timeout",
+            from: node3, to: [node4, node5, node6, node7],
+            message_matches: ConsensusNetMessage::Timeout(_, next_leader) => {
+                assert_eq!(&node2.pubkey(), next_leader);
+            }
+        };
+        broadcast! {
+            description: "Follower - Timeout",
+            from: node4, to: [node3, node5, node6, node7],
+            message_matches: ConsensusNetMessage::Timeout(_, next_leader) => {
+                assert_eq!(&node2.pubkey(), next_leader);
+            }
+        };
+        broadcast! {
+            description: "Follower - Timeout",
+            from: node5, to: [node3, node4, node6, node7],
+            message_matches: ConsensusNetMessage::Timeout(_, next_leader) => {
+                assert_eq!(&node2.pubkey(), next_leader);
+            }
+        };
+        broadcast! {
+            description: "Follower - Timeout",
+            from: node6, to: [node3, node4, node5, node7],
+            message_matches: ConsensusNetMessage::Timeout(_, next_leader) => {
+                assert_eq!(&node2.pubkey(), next_leader);
+            }
+        };
+        broadcast! {
+            description: "Follower - Timeout",
+            from: node7, to: [node3, node4, node5, node6],
+            message_matches: ConsensusNetMessage::Timeout(_, next_leader) => {
+                assert_eq!(&node2.pubkey(), next_leader);
+            }
+        };
+
+        // Send node5 timeout certificate to node2
+        broadcast! {
+            description: "Follower - Timeout Certificate to next leader",
+            from: node5, to: [node2],
+            message_matches: ConsensusNetMessage::TimeoutCertificate(_, cp_hash) => {
+                if let ConsensusNetMessage::Prepare(cp, ticket) = lost_prepare {
+                    assert_eq!(&cp.hash(), cp_hash);
+                    assert_eq!(ticket, Ticket::Genesis);
+                }
+            }
+        };
+
+        // Clean timeout certificates
+        node3.assert_broadcast("Timeout certificate 3");
+        node4.assert_broadcast("Timeout certificate 4");
+        node6.assert_broadcast("Timeout certificate 6");
+        node7.assert_broadcast("Timeout certificate 7");
+
+        node2.start_round();
+
+        broadcast! {
+            description: "Next Leader - Prepare with Timeout ticket",
+            from: node2, to: [node1, node3, node4, node5, node6, node7],
+            message_matches: ConsensusNetMessage::Prepare(cp, Ticket::TimeoutQC(_)) => {
+                assert_eq!(cp.slot, 1);
+                assert_eq!(cp.view, 1);
+            }
+        };
+
+        send! {
+            description: "Follower - PrepareVote",
+            from: [node1, node3, node4, node5, node6, node7], to: node2,
+            message_matches: ConsensusNetMessage::PrepareVote(_)
+        };
+
+        broadcast! {
+            description: "Leader - Confirm",
+            from: node2, to: [node1, node3, node4, node5, node6, node7],
+            message_matches: ConsensusNetMessage::Confirm(_)
+        };
+
+        send! {
+            description: "Follower - Confirm Ack",
+            from: [node1, node3, node4, node5, node6, node7], to: node2,
+            message_matches: ConsensusNetMessage::ConfirmAck(_)
+        };
+
+        broadcast! {
+            description: "Leader - Commit",
+            from: node2, to: [node1, node3, node4, node5, node6, node7],
+            message_matches: ConsensusNetMessage::Commit(_, _)
         };
     }
 
