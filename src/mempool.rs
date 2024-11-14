@@ -134,6 +134,15 @@ impl Mempool {
             command_response<QueryNewCut, Cut> validators => {
                 // TODO: metrics?
                 self.metrics.add_batch();
+                // FIXME: use voting power
+                // self.validators.len() == 1 is for SingleNodeBlockGeneration
+                //   it makes sure the DataProposal is committed to the Lane without waiting for a DataVote
+                // self.storage.lane.poa.len() > f is for waiting for the appropriate number of votes
+                //   it makes sure we received enough DataVote before commiting the DataProposal to the Lane.
+                let f = self.validators.len() / 3;
+                if self.validators.len() == 1 || self.storage.lane.poa.len() > f {
+                    self.storage.commit_data_proposal();
+                }
                 Ok(self.storage.new_cut(&validators.0))
             }
             _ = interval.tick() => {
@@ -295,7 +304,6 @@ impl Mempool {
     }
 
     async fn on_data_vote(&mut self, validator: &ValidatorPublicKey, car_hash: CarHash) {
-        debug!("Vote received from validator {}", validator);
         if let Err(e) = self.storage.on_data_vote(validator, &car_hash) {
             error!("{:?}", e);
         } else {
@@ -390,10 +398,6 @@ impl Mempool {
 
         self.metrics.add_api_tx("blob".to_string());
         self.storage.on_new_tx(tx);
-        if self.storage.genesis() {
-            // Genesis create and broadcast a new DataProposal
-            self.broadcast_data_proposal_if_any();
-        }
         self.metrics
             .snapshot_pending_tx(self.storage.pending_txs.len());
 
@@ -595,6 +599,8 @@ mod tests {
             .await
             .expect("fail to handle new transaction");
 
+        ctx.mempool.broadcast_data_proposal_if_any();
+
         let data_proposal = match ctx.assert_broadcast("DataProposal") {
             MempoolNetMessage::DataProposal(data_proposal) => data_proposal,
             _ => panic!("Expected DataProposal message"),
@@ -718,6 +724,7 @@ mod tests {
             },
             parent_poa: None,
         };
+        ctx.mempool.broadcast_data_proposal_if_any();
 
         let temp_crypto = BlstCrypto::new("temp_crypto".into());
         let signed_msg = temp_crypto.sign(MempoolNetMessage::DataVote(data_proposal.car.hash()))?;

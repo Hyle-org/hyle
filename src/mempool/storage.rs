@@ -53,13 +53,13 @@ impl Storage {
         Storage {
             id,
             pending_txs: vec![],
+            data_proposal: None,
             lane: Lane {
                 cars: vec![],
                 poa: Poa(BTreeSet::from([lane_id])),
                 waiting: vec![],
             },
             other_lanes: HashMap::new(),
-            data_proposal: None,
         }
     }
 
@@ -328,10 +328,6 @@ impl Storage {
     /// Received a new transaction when the previous DataProposal had no PoA yet
     pub fn on_new_tx(&mut self, tx: Transaction) {
         self.pending_txs.push(tx);
-    }
-
-    pub fn genesis(&self) -> bool {
-        self.lane.cars.is_empty()
     }
 
     pub fn new_data_proposal(&mut self) -> Option<DataProposal> {
@@ -660,7 +656,7 @@ mod tests {
         let node_state3 = NodeState::default();
 
         store2.on_new_tx(make_blob_tx("test1"));
-        let data_proposal1 = store2.new_data_proposal().expect("a data proposal");
+        let data_proposal1 = store2.new_data_proposal().expect("a DataProposal");
         assert_eq!(
             store3.on_data_proposal(&pubkey2, &data_proposal1, &node_state3),
             DataProposalVerdict::Vote
@@ -673,7 +669,7 @@ mod tests {
         assert!(store2.data_proposal.is_none());
 
         store2.on_new_tx(make_blob_tx("test2"));
-        let data_proposal2 = store2.new_data_proposal().expect("a data proposal");
+        let data_proposal2 = store2.new_data_proposal().expect("a DataProposal");
         assert_eq!(
             store3.on_data_proposal(&pubkey2, &data_proposal2, &node_state3),
             DataProposalVerdict::Vote
@@ -686,7 +682,7 @@ mod tests {
         assert!(store2.data_proposal.is_none());
 
         store2.on_new_tx(make_blob_tx("test3"));
-        let data_proposal3 = store2.new_data_proposal().expect("a data proposal");
+        let data_proposal3 = store2.new_data_proposal().expect("a DataProposal");
         assert_eq!(
             store3.on_data_proposal(&pubkey2, &data_proposal3, &node_state3),
             DataProposalVerdict::Vote
@@ -699,7 +695,7 @@ mod tests {
         assert!(store2.data_proposal.is_none());
 
         store2.on_new_tx(make_blob_tx("test4"));
-        let data_proposal4 = store2.new_data_proposal().expect("a data proposal");
+        let data_proposal4 = store2.new_data_proposal().expect("a DataProposal");
         assert_eq!(
             store3.on_data_proposal(&pubkey2, &data_proposal4, &node_state3),
             DataProposalVerdict::Vote
@@ -942,7 +938,7 @@ mod tests {
         let node_state2 = NodeState::default();
 
         store3.on_new_tx(make_blob_tx("test1"));
-        let data_proposal1 = store3.new_data_proposal().expect("a data proposal");
+        let data_proposal1 = store3.new_data_proposal().expect("a DataProposal");
         assert_eq!(
             store2.on_data_proposal(&pubkey3, &data_proposal1, &node_state2),
             DataProposalVerdict::Vote
@@ -953,7 +949,7 @@ mod tests {
         store3.commit_data_proposal();
 
         store3.on_new_tx(make_blob_tx("test2"));
-        let data_proposal1 = store3.new_data_proposal().expect("a data proposal");
+        let data_proposal1 = store3.new_data_proposal().expect("a DataProposal");
         assert_eq!(
             store2.on_data_proposal(&pubkey3, &data_proposal1, &node_state2),
             DataProposalVerdict::Vote
@@ -964,7 +960,7 @@ mod tests {
         store3.commit_data_proposal();
 
         store2.on_new_tx(make_blob_tx("test3"));
-        let data_proposal3 = store2.new_data_proposal().expect("a data proposal");
+        let data_proposal3 = store2.new_data_proposal().expect("a DataProposal");
         assert_eq!(
             store3.on_data_proposal(&pubkey2, &data_proposal3, &node_state3),
             DataProposalVerdict::Vote
@@ -1032,7 +1028,7 @@ mod tests {
         let mut store = Storage::new(pubkey3.clone());
 
         store.on_new_tx(make_blob_tx("test_local1"));
-        let data_proposal = store.new_data_proposal().expect("a data proposal");
+        let data_proposal = store.new_data_proposal().expect("a DataProposal");
         store
             .on_data_vote(&pubkey2, &data_proposal.car.hash())
             .expect("vote success");
@@ -1040,21 +1036,21 @@ mod tests {
         let last_car_hash = store.lane.current_hash();
 
         store.on_new_tx(make_blob_tx("test_local2"));
-        let data_proposal = store.new_data_proposal().expect("a data proposal");
+        let data_proposal = store.new_data_proposal().expect("a DataProposal");
         store
             .on_data_vote(&pubkey2, &data_proposal.car.hash())
             .expect("vote success");
         store.commit_data_proposal();
 
         store.on_new_tx(make_blob_tx("test_local3"));
-        let data_proposal = store.new_data_proposal().expect("a data proposal");
+        let data_proposal = store.new_data_proposal().expect("a DataProposal");
         store
             .on_data_vote(&pubkey2, &data_proposal.car.hash())
             .expect("vote success");
         store.commit_data_proposal();
 
         store.on_new_tx(make_blob_tx("test_local4"));
-        let data_proposal = store.new_data_proposal().expect("a data proposal");
+        let data_proposal = store.new_data_proposal().expect("a DataProposal");
         store
             .on_data_vote(&pubkey2, &data_proposal.car.hash())
             .expect("vote success");
