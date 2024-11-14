@@ -12,6 +12,7 @@ use anyhow::{bail, Error, Result};
 use tokio::{net::TcpListener, time::sleep};
 use tracing::{debug, error, info, warn};
 
+mod fifo_filter;
 pub mod network;
 mod peer;
 pub mod stream;
@@ -66,38 +67,42 @@ impl P2P {
         let crypto = self.crypto.clone();
         let id = self.peer_id;
         self.peer_id += 1;
-        tokio::spawn(async move {
-            let mut retry_count = 20;
-            while retry_count > 0 {
-                info!("Connecting to peer #{}: {}", id, peer_address);
-                if let Ok(stream) = peer::Peer::connect(peer_address.as_str()).await {
-                    let mut peer = peer::Peer::new(
-                        id,
-                        stream,
-                        bus.new_handle(),
-                        crypto.clone(),
-                        config.clone(),
-                    )
-                    .await;
 
-                    if let Err(e) = peer.handshake().await {
-                        warn!("Error in handshake: {}", e);
+        tokio::task::Builder::new()
+            .name("connect-to-peer")
+            .spawn(async move {
+                let mut retry_count = 20;
+                while retry_count > 0 {
+                    info!("Connecting to peer #{}: {}", id, peer_address);
+                    if let Ok(stream) = peer::Peer::connect(peer_address.as_str()).await {
+                        let mut peer = peer::Peer::new(
+                            id,
+                            stream,
+                            bus.new_handle(),
+                            crypto.clone(),
+                            config.clone(),
+                        )
+                        .await;
+
+                        if let Err(e) = peer.handshake().await {
+                            warn!("Error in handshake: {}", e);
+                        }
+                        debug!("Handshake done !");
+                        match peer.start().await {
+                            Ok(_) => warn!("Peer #{} thread ended with success.", id),
+                            Err(_) => warn!(
+                                "Peer #{}: {} disconnected ! Retry connection",
+                                id, peer_address
+                            ),
+                        };
                     }
-                    debug!("Handshake done !");
-                    match peer.start().await {
-                        Ok(_) => warn!("Peer #{} thread ended with success.", id),
-                        Err(_) => warn!(
-                            "Peer #{}: {} disconnected ! Retry connection",
-                            id, peer_address
-                        ),
-                    };
-                }
 
-                retry_count -= 1;
-                sleep(Duration::from_secs(2)).await;
-            }
-            error!("Can't reach peer #{}: {}.", id, peer_address);
-        });
+                    retry_count -= 1;
+                    sleep(Duration::from_secs(2)).await;
+                }
+                error!("Can't reach peer #{}: {}.", id, peer_address);
+            })
+            .expect("Failed to spawn peer thread");
     }
 
     fn handle_command(&mut self, cmd: P2PCommand) {
@@ -131,7 +136,9 @@ impl P2P {
                     let crypto = self.crypto.clone();
                     let id = self.peer_id;
                     self.peer_id += 1;
-                    tokio::spawn(async move {
+        tokio::task::Builder::new()
+            .name(&format!("peer-{}", id))
+                            .spawn(async move {
                         info!(
                             "New peer #{}: {}",
                             id,
@@ -148,7 +155,7 @@ impl P2P {
                             Err(e) => info!("Peer thread exited: {}", e),
                         }
                         anyhow::Ok(())
-                    });
+                    })?;
                 }
                 Err(e) => {
                     bail!("Error while accepting connection: {}", e);

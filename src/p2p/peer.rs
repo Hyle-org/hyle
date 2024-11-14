@@ -3,7 +3,6 @@ use std::time::SystemTime;
 
 use anyhow::Context;
 use anyhow::{anyhow, Error, Result};
-use bloomfilter::Bloom;
 use tokio::net::TcpStream;
 use tokio::sync::mpsc;
 use tokio::time::sleep;
@@ -11,6 +10,7 @@ use tokio_util::codec::Framed;
 use tokio_util::codec::LengthDelimitedCodec;
 use tracing::{debug, info, trace, warn};
 
+use super::fifo_filter::FifoFilter;
 use super::network::HandshakeNetMessage;
 use super::network::OutboundMessage;
 use super::network::PeerEvent;
@@ -44,7 +44,7 @@ pub struct Peer {
     bus: PeerBusClient,
     last_pong: SystemTime,
     conf: SharedConf,
-    bloom_filter: Bloom<Vec<u8>>,
+    fifo_filter: FifoFilter<Vec<u8>>,
     self_pubkey: ValidatorPublicKey,
     peer_pubkey: Option<ValidatorPublicKey>,
     peer_name: Option<String>,
@@ -67,7 +67,7 @@ impl Peer {
         conf: SharedConf,
     ) -> Self {
         let (cmd_tx, cmd_rx) = mpsc::channel::<Cmd>(100);
-        let bloom_filter = Bloom::new_for_fp_rate(10_000, 0.01);
+        let fifo_filter = FifoFilter::new(1000);
         let self_validator = crypto.validator_pubkey().clone();
         let framed = Framed::new(stream, LengthDelimitedCodec::new());
 
@@ -77,7 +77,7 @@ impl Peer {
             bus: PeerBusClient::new_from_bus(bus).await,
             last_pong: SystemTime::now(),
             conf,
-            bloom_filter,
+            fifo_filter,
             self_pubkey: self_validator,
             peer_pubkey: None,
             internal_cmd_tx: cmd_tx,
@@ -103,8 +103,8 @@ impl Peer {
 
     async fn handle_broadcast_message(&mut self, msg: NetMessage) -> Result<(), Error> {
         let binary = msg.to_binary();
-        if !self.bloom_filter.check(&binary) {
-            self.bloom_filter.set(&binary);
+        if !self.fifo_filter.check(&binary) {
+            self.fifo_filter.set(binary);
             debug!("Broadcast message to #{}: {}", self.id, msg);
             send_net_message(&mut self.stream, msg).await
         } else {
@@ -176,12 +176,15 @@ impl Peer {
         let interval = self.conf.p2p.ping_interval;
         info!("Starting ping pong");
 
-        tokio::spawn(async move {
-            loop {
-                sleep(Duration::from_secs(interval)).await;
-                tx.send(Cmd::Ping).await.ok();
-            }
-        });
+        tokio::task::Builder::new()
+            .name(&format!("ping-peer-{}", self.id))
+            .spawn(async move {
+                loop {
+                    sleep(Duration::from_secs(interval)).await;
+                    tx.send(Cmd::Ping).await.ok();
+                }
+            })
+            .ok();
     }
 
     pub async fn start(&mut self) -> Result<(), Error> {

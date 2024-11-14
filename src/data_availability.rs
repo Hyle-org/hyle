@@ -174,8 +174,8 @@ impl DataAvailability {
             }
             listen<MempoolEvent> cmd => {
                 match cmd {
-                    MempoolEvent::NewCut(_) => {}
                     MempoolEvent::CommitBlock(txs, new_bonded_validators) => {
+                        // TODO: investigate if we could listen to CommitCut directly.
                         self.handle_commit_block_event(txs, new_bonded_validators).await;
                     }
                 }
@@ -461,12 +461,10 @@ impl DataAvailability {
             self.stream_peer_metadata.remove(&peer_id);
         }
 
-        if self.config.run_indexer {
-            _ = self
-                .bus
-                .send(DataEvent::NewBlock(block))
-                .log_error("Error sending DataEvent");
-        }
+        _ = self
+            .bus
+            .send(DataEvent::NewBlock(block))
+            .log_error("Error sending DataEvent");
     }
 
     fn query_block(&mut self, hash: BlockHash) {
@@ -500,12 +498,14 @@ impl DataAvailability {
         // We do the processing in the main select! loop to keep things synchronous.
         // This makes it easier to store data in the same struct without mutexing.
         let peer_ip_keepalive = peer_ip.to_string();
-        let keepalive_abort = tokio::spawn(async move {
-            loop {
-                receiver.next().await;
-                let _ = ping_sender.send(peer_ip_keepalive.clone()).await;
-            }
-        });
+        let keepalive_abort = tokio::task::Builder::new()
+            .name("da-keep-alive-abort")
+            .spawn(async move {
+                loop {
+                    receiver.next().await;
+                    let _ = ping_sender.send(peer_ip_keepalive.clone()).await;
+                }
+            })?;
 
         // Then store data so we can send new blocks as they come.
         self.stream_peer_metadata.insert(

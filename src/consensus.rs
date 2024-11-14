@@ -12,12 +12,16 @@ use std::{
     time::Duration,
 };
 use tokio::{sync::broadcast, time::sleep};
-use tracing::{debug, info, warn};
+use tracing::{debug, error, info, warn};
 
 use crate::{
-    bus::{bus_client, command_response::Query, BusMessage, SharedMessageBus},
+    bus::{
+        bus_client,
+        command_response::{CmdRespClient, Query},
+        BusMessage, SharedMessageBus,
+    },
     handle_messages,
-    mempool::{Cut, MempoolEvent},
+    mempool::{Cut, QueryNewCut},
     model::{BlockHeight, Hashable, Transaction, TransactionData, ValidatorPublicKey},
     p2p::{
         network::{OutboundMessage, PeerEvent, Signed, SignedByValidator},
@@ -86,8 +90,8 @@ struct ConsensusBusClient {
     sender(ConsensusEvent),
     sender(ConsensusCommand),
     sender(P2PCommand),
+    sender(Query<QueryNewCut, Cut>),
     receiver(ConsensusCommand),
-    receiver(MempoolEvent),
     receiver(SignedByValidator<ConsensusNetMessage>),
     receiver(PeerEvent),
     receiver(Query<QueryConsensusInfo, ConsensusInfo>),
@@ -214,8 +218,7 @@ pub struct ConsensusStore {
     bft_round_state: BFTRoundState,
     /// Validators that asked to be part of consensus
     validator_candidates: Vec<NewValidatorCandidate>,
-    pending_cut: Option<Cut>,
-    last_cut: Option<Cut>,
+    last_cut: Cut,
 }
 
 pub struct Consensus {
@@ -243,6 +246,9 @@ impl Consensus {
                 .consensus_proposal
                 .new_validators_to_bond,
         );
+
+        // Saving last cut
+        self.last_cut = self.bft_round_state.consensus_proposal.cut.clone();
 
         // Reset round state, carrying over staking and current proposal.
         self.bft_round_state = BFTRoundState {
@@ -390,17 +396,19 @@ impl Consensus {
             let command_sender =
                 Pick::<broadcast::Sender<ConsensusCommand>>::get(&self.bus).clone();
             let interval = self.config.consensus.slot_duration;
-            tokio::spawn(async move {
-                info!(
-                    "⏱️  Sleeping {} milliseconds before starting a new slot",
-                    interval
-                );
-                sleep(Duration::from_millis(interval)).await;
+            tokio::task::Builder::new()
+                .name("sleep-consensus")
+                .spawn(async move {
+                    info!(
+                        "⏱️  Sleeping {} milliseconds before starting a new slot",
+                        interval
+                    );
+                    sleep(Duration::from_millis(interval)).await;
 
-                _ = command_sender
-                    .send(ConsensusCommand::StartNewSlot)
-                    .log_error("Cannot send message over channel");
-            });
+                    _ = command_sender
+                        .send(ConsensusCommand::StartNewSlot)
+                        .log_error("Cannot send StartNewSlot message over channel");
+                })?;
             Ok(())
         }
         #[cfg(test)]
@@ -409,7 +417,7 @@ impl Consensus {
         }
     }
 
-    fn start_round(&mut self) -> Result<(), Error> {
+    async fn start_round(&mut self) -> Result<(), Error> {
         if !matches!(self.bft_round_state.leader.step, Step::StartNewSlot) {
             bail!(
                 "Cannot start a new slot while in step {:?}",
@@ -448,12 +456,25 @@ impl Consensus {
         );
 
         // Creates ConsensusProposal
-        let cut = self.pending_cut.take().unwrap_or_default();
+        // Query new cut to Mempool
+        let validators = self.bft_round_state.staking.bonded().clone();
+        match self.bus.request(QueryNewCut(validators)).await {
+            Ok(cut) => {
+                self.last_cut = cut;
+            }
+            Err(err) => {
+                // In case of an error, we reuse the last cut to avoid being considered byzantine
+                error!(
+                    "Could not get a new cut from Mempool {:?}. Reusing previous one... {:?}",
+                    err, self.last_cut
+                );
+            }
+        };
 
         self.bft_round_state.leader.step = Step::PrepareVote;
 
         // Start Consensus with following cut
-        self.bft_round_state.consensus_proposal.cut = cut;
+        self.bft_round_state.consensus_proposal.cut = self.last_cut.clone();
         self.bft_round_state
             .consensus_proposal
             .new_validators_to_bond = new_validators_to_bond;
@@ -1127,18 +1148,29 @@ impl Consensus {
         Ok(())
     }
 
-    fn handle_command(&mut self, msg: ConsensusCommand) -> Result<()> {
+    async fn handle_command(&mut self, msg: ConsensusCommand) -> Result<()> {
         match msg {
             ConsensusCommand::SingleNodeBlockGeneration => {
-                if let Some(cut) = self.pending_cut.take() {
-                    self.bus
-                        .send(ConsensusEvent::CommitCut {
-                            validators: vec![self.crypto.validator_pubkey().clone()],
-                            new_bonded_validators: vec![self.crypto.validator_pubkey().clone()],
-                            cut,
-                        })
-                        .expect("Failed to send ConsensusEvent::CommitCut msg on the bus");
-                }
+                let validators = vec![self.crypto.validator_pubkey().clone()];
+                match self.bus.request(QueryNewCut(validators)).await {
+                    Ok(cut) => {
+                        self.last_cut = cut;
+                    }
+                    Err(err) => {
+                        // In case of an error, we reuse the last cut to avoid being considered byzantine
+                        error!(
+                            "Could not get a new cut from Mempool {:?}. Reusing previous one... {:?}",
+                            err, self.last_cut
+                        );
+                    }
+                };
+                self.bus
+                    .send(ConsensusEvent::CommitCut {
+                        validators: vec![self.crypto.validator_pubkey().clone()],
+                        new_bonded_validators: vec![],
+                        cut: self.last_cut.clone(),
+                    })
+                    .expect("Failed to send ConsensusEvent::CommitCut msg on the bus");
                 Ok(())
             }
             ConsensusCommand::NewStaker(staker) => {
@@ -1178,7 +1210,7 @@ impl Consensus {
                 Ok(())
             }
             ConsensusCommand::StartNewSlot => {
-                self.start_round()?;
+                self.start_round().await?;
                 Ok(())
             }
         }
@@ -1214,31 +1246,6 @@ impl Consensus {
                 enum_variant_name
             ))?;
         Ok(())
-    }
-
-    async fn handle_mempool_event(&mut self, msg: MempoolEvent) -> Result<()> {
-        match msg {
-            MempoolEvent::CommitBlock(..) => Ok(()),
-            MempoolEvent::NewCut(cut) => {
-                if let Some(ref last_cut) = self.pending_cut {
-                    if last_cut == &cut || cut.is_empty() {
-                        return Ok(());
-                    }
-                }
-                if let Some(ref last) = self.last_cut {
-                    for (validator, tip) in cut.iter() {
-                        if let Some((_, last_tip)) = last.iter().find(|(v, _)| v == validator) {
-                            if last_tip >= tip {
-                                bail!("Tip of last Cut for {validator} was {last_tip} but new Cut says it is {tip}");
-                            }
-                        }
-                    }
-                }
-                debug!("✂️ Received a new Cut ({:?})", cut);
-                self.last_cut = self.pending_cut.replace(cut);
-                Ok(())
-            }
-        }
     }
 
     /// Setup the state of the node at startup.
@@ -1283,15 +1290,17 @@ impl Consensus {
                 interval
             );
 
-            tokio::spawn(async move {
-                loop {
-                    sleep(Duration::from_millis(interval)).await;
+            tokio::task::Builder::new()
+                .name("single-block-generator")
+                .spawn(async move {
+                    loop {
+                        sleep(Duration::from_millis(interval)).await;
 
-                    _ = command_sender
-                        .send(ConsensusCommand::SingleNodeBlockGeneration)
-                        .log_error("Cannot send message over channel");
-                }
-            });
+                        _ = command_sender
+                            .send(ConsensusCommand::SingleNodeBlockGeneration)
+                            .log_error("Cannot send message over channel");
+                    }
+                })?;
         }
 
         Ok(())
@@ -1396,15 +1405,9 @@ impl Consensus {
         handle_messages! {
             on_bus self.bus,
             listen<ConsensusCommand> cmd => {
-                match self.handle_command(cmd) {
+                match self.handle_command(cmd).await {
                     Ok(_) => (),
                     Err(e) => warn!("Error while handling consensus command: {:#}", e),
-                }
-            }
-            listen<MempoolEvent> cmd => {
-                match self.handle_mempool_event(cmd).await{
-                    Ok(_) => (),
-                    Err(e) => warn!("Error while handling mempool event: {:#}", e),
                 }
             }
             listen<SignedByValidator<ConsensusNetMessage>> cmd => {
@@ -1453,6 +1456,12 @@ mod test {
         name: String,
     }
 
+    bus_client!(
+        struct TestBusClient {
+            receiver(Query<QueryNewCut, Cut>),
+        }
+    );
+
     impl TestCtx {
         async fn new(name: &str, crypto: BlstCrypto) -> Self {
             let shared_bus = SharedMessageBus::new(BusMetrics::global("global".to_string()));
@@ -1460,6 +1469,16 @@ mod test {
             let event_receiver = get_receiver::<ConsensusEvent>(&shared_bus).await;
             let p2p_receiver = get_receiver::<P2PCommand>(&shared_bus).await;
             let bus = ConsensusBusClient::new_from_bus(shared_bus.new_handle()).await;
+
+            let mut new_cut_query_receiver = TestBusClient::new_from_bus(shared_bus).await;
+            tokio::spawn(async move {
+                handle_messages! {
+                    on_bus new_cut_query_receiver,
+                    command_response<QueryNewCut, Cut> _ => {
+                        Ok(Cut::default())
+                    }
+                }
+            });
 
             let store = ConsensusStore::default();
             let conf = Arc::new(Conf::default());
@@ -1563,38 +1582,40 @@ mod test {
             }
         }
 
-        #[track_caller]
-        fn add_staker(&mut self, staker: &Self, amount: u64, err: &str) {
+        async fn add_staker(&mut self, staker: &Self, amount: u64, err: &str) {
             info!("➕ {} Add staker: {:?}", self.name, staker.name);
             self.consensus
                 .handle_command(ConsensusCommand::NewStaker(Staker {
                     pubkey: staker.consensus.crypto.validator_pubkey().clone(),
                     stake: Stake { amount },
                 }))
+                .await
                 .expect(err)
         }
 
-        #[track_caller]
-        fn add_bonded_staker(&mut self, staker: &Self, amount: u64, err: &str) {
-            self.add_staker(staker, amount, err);
+        async fn add_bonded_staker(&mut self, staker: &Self, amount: u64, err: &str) {
+            self.add_staker(staker, amount, err).await;
             self.consensus
                 .handle_command(ConsensusCommand::NewBonded(staker.pubkey()))
+                .await
                 .expect(err);
         }
 
-        #[track_caller]
-        fn with_stake(&mut self, amount: u64, err: &str) {
+        async fn with_stake(&mut self, amount: u64, err: &str) {
             self.consensus
                 .handle_command(ConsensusCommand::NewStaker(Staker {
                     pubkey: self.consensus.crypto.validator_pubkey().clone(),
                     stake: Stake { amount },
                 }))
+                .await
                 .expect(err);
         }
 
-        #[track_caller]
-        fn start_round(&mut self) {
-            self.consensus.start_round().expect("Failed to start slot");
+        async fn start_round(&mut self) {
+            self.consensus
+                .start_round()
+                .await
+                .expect("Failed to start slot");
         }
 
         #[track_caller]
@@ -1645,7 +1666,7 @@ mod test {
     async fn test_happy_path() {
         let (mut node1, mut node2) = TestCtx::build().await;
 
-        node1.start_round();
+        node1.start_round().await;
         // Slot 0 - leader = node1
         let leader_proposal = node1.assert_broadcast("Leader proposal");
         node2.handle_msg(&leader_proposal, "Leader proposal");
@@ -1663,7 +1684,7 @@ mod test {
         node2.handle_msg(&leader_commit, "Leader commit");
 
         // Slot 1 - leader = node2
-        node2.start_round();
+        node2.start_round().await;
         let leader_proposal = node2.assert_broadcast("Leader proposal");
         node1.handle_msg(&leader_proposal, "Leader proposal");
 
@@ -1680,7 +1701,7 @@ mod test {
         node1.handle_msg(&leader_commit, "Leader commit");
 
         // Slot 2 - leader = node1
-        node1.start_round();
+        node1.start_round().await;
         let leader_proposal = node1.assert_broadcast("Leader proposal");
         node2.handle_msg(&leader_proposal, "Leader proposal");
 
@@ -1703,7 +1724,7 @@ mod test {
 
         // Slot 0
         {
-            node1.start_round();
+            node1.start_round().await;
             let leader_proposal = node1.assert_broadcast("Leader proposal");
             node2.handle_msg(&leader_proposal, "Leader proposal");
             let slave_vote = node2.assert_send(&node1, "Slave vote");
@@ -1723,13 +1744,13 @@ mod test {
         let mut node3 = TestCtx::new_node("node-3").await;
         node3.consensus.bft_round_state.state_tag = StateTag::Joining;
         node3.consensus.bft_round_state.joining.staking_updated_to = 1;
-        node3.add_bonded_staker(&node1, 100, "Add staker");
-        node3.add_bonded_staker(&node2, 100, "Add staker");
+        node3.add_bonded_staker(&node1, 100, "Add staker").await;
+        node3.add_bonded_staker(&node2, 100, "Add staker").await;
 
         // Slot 1: Node3 synchronizes its consensus to the others. - leader = node2
         {
             info!("➡️  Leader proposal");
-            node2.start_round();
+            node2.start_round().await;
             let leader_proposal = node2.assert_broadcast("Leader proposal");
             node1.handle_msg(&leader_proposal, "Leader proposal");
             node3.handle_msg(&leader_proposal, "Leader proposal");
@@ -1756,7 +1777,7 @@ mod test {
         // Slot 2: New slave candidates - leader = node1
         {
             info!("➡️  Leader proposal");
-            node1.start_round();
+            node1.start_round().await;
             let leader_proposal = node1.assert_broadcast("Leader proposal");
             node2.handle_msg(&leader_proposal, "Leader proposal");
             node3.handle_msg(&leader_proposal, "Leader proposal");
@@ -1775,7 +1796,7 @@ mod test {
             node2.handle_msg(&leader_commit, "Leader commit");
 
             info!("➡️  Slave 2 candidacy");
-            node3.with_stake(100, "Add stake");
+            node3.with_stake(100, "Add stake").await;
             // This should trigger send_candidacy as we now have stake.
             node3.handle_msg(&leader_commit, "Leader commit");
             let slave2_candidacy = node3.assert_broadcast("Slave 2 candidacy");
@@ -1783,9 +1804,9 @@ mod test {
                 node1.handle_msg_err(&slave2_candidacy).to_string(),
                 "validator is not staking"
             );
-            node1.add_staker(&node3, 100, "Add staker");
+            node1.add_staker(&node3, 100, "Add staker").await;
             node1.handle_msg(&slave2_candidacy, "Slave 2 candidacy");
-            node2.add_staker(&node3, 100, "Add staker");
+            node2.add_staker(&node3, 100, "Add staker").await;
             node2.handle_msg(&slave2_candidacy, "Slave 2 candidacy");
 
             info!("➡️  Handle block");
@@ -1797,7 +1818,7 @@ mod test {
         // Slot 3: Still a slot without slave 2 - leader = node 2
         {
             info!("➡️  Leader proposal - Slot 3");
-            node2.start_round();
+            node2.start_round().await;
             let leader_proposal = node2.assert_broadcast("Leader proposal");
             if let ConsensusNetMessage::Prepare(_, _) = &leader_proposal.msg {
                 assert_eq!(node2.consensus.bft_round_state.staking.bonded().len(), 2);
@@ -1830,7 +1851,7 @@ mod test {
         // Slot 4: Slave 2 joined consensus, leader = node-1
         {
             info!("➡️  Leader proposal");
-            node1.start_round();
+            node1.start_round().await;
             let leader_proposal = node1.assert_broadcast("Leader proposal");
             if let ConsensusNetMessage::Prepare(_, _) = &leader_proposal.msg {
                 assert_eq!(node2.consensus.bft_round_state.staking.bonded().len(), 3);

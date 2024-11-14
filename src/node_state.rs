@@ -20,7 +20,7 @@ pub mod model;
 mod ordered_tx_map;
 mod verifiers;
 
-#[derive(Default, Encode, Decode, Debug)]
+#[derive(Default, Encode, Decode, Debug, Clone)]
 pub struct NodeState {
     timeouts: Timeouts,
     current_height: BlockHeight,
@@ -123,6 +123,7 @@ impl NodeState {
         if self.contracts.contains_key(&tx.contract_name) {
             bail!("Contract already exists")
         }
+        debug!("New contract transaction: {:?}", tx);
         self.contracts.insert(
             tx.contract_name.clone(),
             Contract {
@@ -148,7 +149,7 @@ impl NodeState {
             })
             .collect();
 
-        debug!("Add transaction to state");
+        debug!("Add blob transaction to state {:?}", tx);
         self.unsettled_transactions.add(UnsettledTransaction {
             identity: tx.identity.clone(),
             hash: blob_tx_hash.clone(),
