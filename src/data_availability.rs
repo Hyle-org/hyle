@@ -397,7 +397,9 @@ impl DataAvailability {
         }
 
         if got_buffered {
-            info!("📡 Asking for last block from new peer in case new blocks were mined during catchup.");
+            info!(
+                "📡 Asking for last block from peer in case new blocks were mined during catchup."
+            );
             self.query_last_block();
         } else {
             let height = self.blocks.last().map_or(BlockHeight(0), |b| b.height);
