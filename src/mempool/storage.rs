@@ -1,5 +1,5 @@
 use anyhow::{bail, Result};
-use bincode::{BorrowDecode, Decode, Encode};
+use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Sha3_256};
 use std::{
@@ -426,6 +426,12 @@ impl Hashable<CarHash> for Car {
     }
 }
 
+impl Display for Car {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.hash(),)
+    }
+}
+
 #[derive(Clone, Default, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Poa(pub BTreeSet<ValidatorPublicKey>);
 
@@ -439,51 +445,6 @@ impl std::ops::Deref for Poa {
 impl std::ops::DerefMut for Poa {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
-    }
-}
-
-impl Encode for Poa {
-    fn encode<E: bincode::enc::Encoder>(
-        &self,
-        encoder: &mut E,
-    ) -> std::result::Result<(), bincode::error::EncodeError> {
-        self.len().encode(encoder)?;
-        for pubkey in self.iter() {
-            pubkey.encode(encoder)?;
-        }
-        Ok(())
-    }
-}
-
-impl<'de> BorrowDecode<'de> for Poa {
-    fn borrow_decode<D: bincode::de::BorrowDecoder<'de>>(
-        decoder: &mut D,
-    ) -> std::result::Result<Self, bincode::error::DecodeError> {
-        let len = usize::borrow_decode(decoder)?;
-        let mut bts = BTreeSet::new();
-        for _ in 0..len {
-            bts.insert(ValidatorPublicKey::borrow_decode(decoder)?);
-        }
-        Ok(Poa(bts))
-    }
-}
-
-impl Decode for Poa {
-    fn decode<D: bincode::de::Decoder>(
-        decoder: &mut D,
-    ) -> std::result::Result<Self, bincode::error::DecodeError> {
-        let len = usize::decode(decoder)?;
-        let mut bts = BTreeSet::new();
-        for _ in 0..len {
-            bts.insert(ValidatorPublicKey::decode(decoder)?);
-        }
-        Ok(Poa(bts))
-    }
-}
-
-impl Display for Car {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.hash(),)
     }
 }
 
