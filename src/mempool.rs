@@ -23,7 +23,7 @@ use bincode::{Decode, Encode};
 use metrics::MempoolMetrics;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashSet, fmt::Display, sync::Arc};
-use storage::{CarId, ProposalVerdict};
+use storage::{CarId, DataProposalVerdict};
 use strum_macros::IntoStaticStr;
 use tracing::{debug, error, info, warn};
 
@@ -134,7 +134,7 @@ impl Mempool {
             command_response<QueryNewCut, Cut> validators => {
                 // TODO: metrics?
                 self.metrics.add_batch();
-                Ok(self.storage.make_new_cut(&validators.0))
+                Ok(self.storage.new_cut(&validators.0))
             }
             _ = interval.tick() => {
                 // This tick is responsible for DataProposal management
@@ -149,7 +149,7 @@ impl Mempool {
         // 2: Save DataProposal. It is not yet a Car (since PoA is not reached)
         // 3: Go through all pending DataProposal (of own lane) that have not reach PoA, and send them to make them Cars
         let poa = self.storage.tip_poa();
-        self.try_data_proposal(poa);
+        self.broadcast_data_proposal_if_any(poa);
         if let Some((tip, txs)) = self.storage.tip_info() {
             // No PoA means we rebroadcast the DataProposal for non present voters
             let only_for = HashSet::from_iter(
@@ -186,7 +186,7 @@ impl Mempool {
                     self.storage.pending_txs.len()
                 );
                 self.validators = validators;
-                let txs = self.storage.update_lanes_after_commit(cut);
+                let txs = self.storage.collect_lanes(cut);
                 if let Err(e) = self
                     .bus
                     .send(MempoolEvent::CommitBlock(txs, new_bonded_validators))
@@ -267,7 +267,7 @@ impl Mempool {
         self.storage
             .other_lane_add_missing_cars(validator, missing_cars);
 
-        let waiting_proposals = self.storage.get_waiting_proposals(validator);
+        let waiting_proposals = self.storage.get_waiting_data_proposals(validator);
         for wp in waiting_proposals {
             if let Err(e) = self.on_data_proposal(validator, wp).await {
                 error!("{:?}", e);
@@ -309,7 +309,7 @@ impl Mempool {
         debug!("Vote received from validator {}", validator);
         if self
             .storage
-            .new_vote_for_proposal(validator, &data_proposal)
+            .on_data_vote(validator, &data_proposal)
             .is_some()
         {
             debug!("{} Vote from {}", self.storage.id, validator)
@@ -325,26 +325,26 @@ impl Mempool {
     ) -> Result<()> {
         match self
             .storage
-            .new_data_proposal(validator, &data_proposal, &self.node_state)
+            .on_data_proposal(validator, &data_proposal, &self.node_state)
         {
-            ProposalVerdict::Empty => {
+            DataProposalVerdict::Empty => {
                 warn!(
                     "received empty DataProposal from {}, ignoring...",
                     validator
                 );
             }
-            ProposalVerdict::Vote => {
+            DataProposalVerdict::Vote => {
                 // Normal case, we receive a proposal we already have the parent in store
                 debug!("Send vote for DataProposal");
                 self.send_vote(validator, data_proposal)?;
             }
-            ProposalVerdict::DidVote => {
+            DataProposalVerdict::DidVote => {
                 error!(
                     "we already have voted for {}'s DataProposal {}",
                     validator, data_proposal.id
                 );
             }
-            ProposalVerdict::Wait(last_car_id) => {
+            DataProposalVerdict::Wait(last_car_id) => {
                 //We dont have the parent, so we craft a sync demand
                 debug!(
                     "Emitting sync request with local state {} last_available_index {:?}",
@@ -353,15 +353,15 @@ impl Mempool {
 
                 self.send_sync_request(validator, data_proposal, last_car_id)?;
             }
-            ProposalVerdict::Refuse => {
+            DataProposalVerdict::Refuse => {
                 debug!("Refuse vote for DataProposal");
             }
         }
         Ok(())
     }
 
-    fn try_data_proposal(&mut self, poa: Option<Vec<ValidatorPublicKey>>) {
-        if let Some(data_proposal) = self.storage.try_data_proposal(poa) {
+    fn broadcast_data_proposal_if_any(&mut self, poa: Option<Vec<ValidatorPublicKey>>) {
+        if let Some(data_proposal) = self.storage.new_data_proposal(poa) {
             debug!(
                 "🚗 Broadcast DataProposal {} ({} validators, {} txs)",
                 data_proposal.id,
@@ -400,10 +400,10 @@ impl Mempool {
         }
 
         self.metrics.add_api_tx("blob".to_string());
-        self.storage.add_new_tx(tx);
+        self.storage.on_new_tx(tx);
         if self.storage.genesis() {
             // Genesis create and broadcast a new DataProposal
-            self.try_data_proposal(None);
+            self.broadcast_data_proposal_if_any(None);
         }
         self.metrics
             .snapshot_pending_tx(self.storage.pending_txs.len());
