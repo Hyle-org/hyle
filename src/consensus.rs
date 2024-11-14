@@ -1598,7 +1598,7 @@ mod test {
         p2p::network::NetMessage,
         utils::{conf::Conf, crypto},
     };
-    use assertables::{assert_contains, assert_fn_le_x_as_result, assert_is_match};
+    use assertables::assert_contains;
     use staking::Stake;
     use tokio::sync::broadcast::Receiver;
 
@@ -2117,7 +2117,7 @@ mod test {
         let (mut node1, mut node2, mut node3, mut node4): (TestCtx, TestCtx, TestCtx, TestCtx) =
             build_nodes!(4).await;
 
-        node1.start_round();
+        node1.start_round().await;
 
         timeout!(node2);
 
@@ -2130,6 +2130,10 @@ mod test {
             leader: node1,
             followers: [node2, node3, node4]
         };
+
+        assert_eq!(cp.slot, 1);
+        assert_eq!(cp.view, 0);
+        assert!(matches!(ticket, Ticket::Genesis));
     }
 
     #[test_log::test(tokio::test)]
@@ -2224,7 +2228,7 @@ mod test {
             TestCtx,
         ) = build_nodes!(7).await;
 
-        node1.start_round();
+        node1.start_round().await;
 
         let lost_prepare = node1.assert_broadcast("Lost Prepare slot 1/view 0").msg;
 
@@ -2287,7 +2291,7 @@ mod test {
         node6.assert_broadcast("Timeout certificate 6");
         node7.assert_broadcast("Timeout certificate 7");
 
-        node2.start_round();
+        node2.start_round().await;
 
         let (cp, ticket) = simple_commit_round! {
             leader: node2,
@@ -2323,7 +2327,6 @@ mod test {
         {
             info!("➡️  Leader proposal");
             node2.start_round().await;
-            node2.start_round();
 
             let (cp2, ticket2) = simple_commit_round! {
                 leader: node2,
