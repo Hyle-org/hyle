@@ -196,12 +196,12 @@ mod tests {
             "TestModule"
         }
 
-        fn build(_ctx: Self::Context) -> impl futures::Future<Output = Result<Self>> + Send {
-            async { Ok(TestModule) }
+        async fn build(_ctx: Self::Context) -> Result<Self> {
+            Ok(TestModule)
         }
 
-        fn run(&mut self) -> impl futures::Future<Output = Result<()>> + Send {
-            async { Ok(()) }
+        async fn run(&mut self) -> Result<()> {
+            Ok(())
         }
     }
 

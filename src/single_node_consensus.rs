@@ -151,7 +151,11 @@ impl SingleNodeConsensus {
             _ = self.bus.send(msg)?;
 
             if let Some(file) = &self.file {
-                if let Err(e) = Self::save_on_disk(file.as_path(), &self.store) {
+                if let Err(e) = Self::save_on_disk(
+                    self.config.data_directory.as_path(),
+                    file.as_path(),
+                    &self.store,
+                ) {
                     tracing::warn!("Failed to save consensus state on disk: {}", e);
                 }
             }
