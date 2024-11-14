@@ -45,11 +45,11 @@ impl MempoolMetrics {
     pub fn add_batch(&self) {
         self.batches.add(1, &[])
     }
-    pub fn add_broadcasted_car_proposal(&self, kind: String) {
+    pub fn add_broadcasted_data_proposal(&self, kind: String) {
         self.broadcasted_data_proposal
             .add(1, &[KeyValue::new("kind", kind)])
     }
-    pub fn add_broadcasted_car_proposal_only_for(&self, kind: String) {
+    pub fn add_broadcasted_data_proposal_only_for(&self, kind: String) {
         self.broadcasted_data_proposal_only_for
             .add(1, &[KeyValue::new("kind", kind)])
     }
