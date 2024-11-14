@@ -19,13 +19,14 @@ use crate::{
 pub struct TipInfo {
     pub pos: CarId,
     pub parent: Option<CarId>,
+    pub parent_hash: Option<CarHash>,
     pub poa: Vec<ValidatorPublicKey>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DataProposalVerdict {
     Empty,
-    Wait(Option<CarId>),
+    Wait(Option<CarHash>),
     Vote,
     DidVote,
     Refuse,
@@ -102,14 +103,13 @@ impl Storage {
     pub fn on_data_vote(
         &mut self,
         validator: &ValidatorPublicKey,
-        data_proposal: &DataProposal,
+        car_hash: &CarHash,
     ) -> Option<()> {
-        let data_proposal_hash = data_proposal.hash();
         let car = self
             .lane
             .cars
             .iter_mut()
-            .find(|c| c.hash() == data_proposal_hash);
+            .find(|car| &car.hash() == car_hash);
 
         match car {
             None => {
@@ -119,13 +119,13 @@ impl Storage {
                 );
                 None
             }
-            Some(c) => {
-                if c.poa.contains(validator) {
-                    warn!("{} already voted for Car proposal", validator);
+            Some(car) => {
+                if car.poa.contains(validator) {
+                    warn!("{} already voted for DataProposal", validator);
                     None
                 } else {
                     // FIXME: we should generate a real PoA when we gather enough signatures.
-                    c.poa.insert(validator.clone());
+                    car.poa.insert(validator.clone());
                     Some(())
                 }
             }
@@ -150,7 +150,7 @@ impl Storage {
                 .or_default()
                 .waiting
                 .push(data_proposal.clone());
-            return DataProposalVerdict::Wait(data_proposal.parent);
+            return DataProposalVerdict::Wait(data_proposal.parent_hash.clone());
         }
         // optimistic_node_state is here to handle the case where a contract is registered in a car that is not yet committed.
         // For performance reasons, we only clone node_state in it for unregistered contracts that are potentially in those uncommitted cars.
@@ -158,7 +158,7 @@ impl Storage {
         for tx in data_proposal.txs.iter() {
             match &tx.transaction_data {
                 TransactionData::Proof(_) => {
-                    warn!("Refusing Car Proposal: unverified proof transaction");
+                    warn!("Refusing DataProposal: unverified proof transaction");
                     return DataProposalVerdict::Refuse;
                 }
                 TransactionData::VerifiedProof(proof_tx) => {
@@ -207,12 +207,12 @@ impl Storage {
                     {
                         Ok(hyle_outputs) => {
                             if hyle_outputs != proof_tx.hyle_outputs {
-                                warn!("Refusing Car proposal: incorrect HyleOutput in proof transaction");
+                                warn!("Refusing DataProposal: incorrect HyleOutput in proof transaction");
                                 return DataProposalVerdict::Refuse;
                             }
                         }
                         Err(e) => {
-                            warn!("Refusing Car Proposal: invalid proof transaction: {}", e);
+                            warn!("Refusing DataProposal: invalid proof transaction: {}", e);
                             return DataProposalVerdict::Refuse;
                         }
                     }
@@ -228,7 +228,7 @@ impl Storage {
                     {
                         Ok(_) => (),
                         Err(e) => {
-                            warn!("Refusing Car Proposal: {}", e);
+                            warn!("Refusing DataProposal: {}", e);
                             return DataProposalVerdict::Refuse;
                         }
                     }
@@ -251,6 +251,7 @@ impl Storage {
     ) {
         let lane = self.other_lanes.entry(validator.clone()).or_default();
         let tip_id = lane.current().map(|car| car.id);
+        let parent_hash = lane.current_hash();
         // Removing proofs from transactions
         let mut txs_without_proofs = data_proposal.txs.clone();
         txs_without_proofs.iter_mut().for_each(|tx| {
@@ -271,6 +272,7 @@ impl Storage {
         lane.cars.push(Car {
             id: tip_id.unwrap_or(CarId(0)) + 1,
             parent: tip_id,
+            parent_hash,
             txs: txs_without_proofs,
             poa: Poa(BTreeSet::from([self.id.clone(), validator.clone()])),
         });
@@ -309,7 +311,7 @@ impl Storage {
             .or_default()
             .cars
             .iter()
-            .any(|c| c.hash() == data_proposal.hash())
+            .any(|car| car.hash() == data_proposal.hash())
     }
 
     #[cfg(test)]
@@ -317,15 +319,16 @@ impl Storage {
         self.other_lanes
             .get(validator)
             .and_then(|lane| lane.current())
-            .map(|c| c.id)
+            .map(|car| car.id)
     }
 
     pub fn get_missing_cars(
         &self,
-        last_car_id: Option<CarId>,
-        data_proposal: &DataProposal,
+        last_car_hash: Option<CarHash>,
+        data_proposal_tip_hash: &CarHash,
     ) -> Option<Vec<Car>> {
-        self.lane.get_missing_cars(last_car_id, data_proposal)
+        self.lane
+            .get_missing_cars(last_car_hash, data_proposal_tip_hash)
     }
 
     pub fn get_waiting_data_proposals(
@@ -354,14 +357,14 @@ impl Storage {
             lane, ordered_cars
         );
 
-        for c in ordered_cars.into_iter() {
-            if c.parent == lane.current().map(|l| l.id) {
-                lane.cars.push(c);
+        for car in ordered_cars.into_iter() {
+            if car.parent == lane.current().map(|l| l.id) {
+                lane.cars.push(car);
             }
         }
     }
 
-    /// Received a new transaction when the previous Car proposal had no PoA yet
+    /// Received a new transaction when the previous DataProposal had no PoA yet
     pub fn on_new_tx(&mut self, tx: Transaction) {
         self.pending_txs.push(tx);
     }
@@ -372,6 +375,7 @@ impl Storage {
                 TipInfo {
                     pos: car.id,
                     parent: car.parent,
+                    parent_hash: car.parent_hash.clone(),
                     poa: car.poa.0.clone().into_iter().collect(),
                 },
                 car.txs.clone(),
@@ -386,18 +390,19 @@ impl Storage {
     // Called after receiving a transaction, before broadcasting a DataProposal
     pub fn add_new_car_to_lane(&mut self, txs: Vec<Transaction>) -> CarId {
         let tip_id = self.lane.current().map(|car| car.id);
-
-        let current_id = tip_id.unwrap_or(CarId(0)) + 1;
+        let next_id = tip_id.unwrap_or(CarId(0)) + 1;
+        let parent_hash = self.lane.current_hash();
 
         // FIXME: we should wait for DataProposals to have received enough votes to make them Cars
         self.lane.cars.push(Car {
-            id: current_id,
+            id: next_id,
             parent: tip_id,
+            parent_hash,
             txs,
             poa: Poa(BTreeSet::from([self.id.clone()])),
         });
 
-        current_id
+        next_id
     }
 
     pub fn new_data_proposal(
@@ -408,6 +413,7 @@ impl Storage {
         if pending_txs.is_empty() {
             return None;
         }
+        let parent_hash = self.lane.current_hash();
         let tip_id = self.add_new_car_to_lane(pending_txs.clone());
         Some(DataProposal {
             txs: pending_txs,
@@ -417,6 +423,7 @@ impl Storage {
             } else {
                 Some(tip_id - 1)
             },
+            parent_hash,
             parent_poa,
         })
     }
@@ -444,23 +451,25 @@ impl Storage {
 pub struct DataProposal {
     pub id: CarId,
     pub parent: Option<CarId>,
+    pub parent_hash: Option<CarHash>,
     pub parent_poa: Option<Vec<ValidatorPublicKey>>,
     pub txs: Vec<Transaction>,
 }
 
-impl Hashable<Vec<u8>> for DataProposal {
-    fn hash(&self) -> Vec<u8> {
+impl Hashable<CarHash> for DataProposal {
+    fn hash(&self) -> CarHash {
         let mut hasher = Sha3_256::new();
         _ = write!(hasher, "{}", self.id.0);
-        if let Some(parent) = self.parent {
+        if let Some(parent) = &self.parent {
             _ = write!(hasher, "{}", parent);
         }
         for tx in self.txs.iter() {
             hasher.update(tx.hash().0);
         }
-        hasher.finalize().to_vec()
+        CarHash(hex::encode(hasher.finalize()))
     }
 }
+
 impl Display for DataProposal {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
@@ -470,6 +479,28 @@ impl Display for DataProposal {
             self.id,
             self.txs.first()
         )
+    }
+}
+
+#[derive(
+    Clone,
+    Debug,
+    Default,
+    PartialOrd,
+    Ord,
+    PartialEq,
+    Eq,
+    Serialize,
+    Deserialize,
+    Encode,
+    Decode,
+    Hash,
+)]
+pub struct CarHash(String);
+
+impl Display for CarHash {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
     }
 }
 
@@ -519,12 +550,13 @@ impl std::ops::Sub<usize> for CarId {
 pub struct Car {
     id: CarId,
     parent: Option<CarId>,
+    parent_hash: Option<CarHash>,
     txs: Vec<Transaction>,
     pub poa: Poa,
 }
 
-impl Hashable<Vec<u8>> for Car {
-    fn hash(&self) -> Vec<u8> {
+impl Hashable<CarHash> for Car {
+    fn hash(&self) -> CarHash {
         let mut hasher = Sha3_256::new();
         _ = write!(hasher, "{}", self.id.0);
         if let Some(parent) = self.parent {
@@ -533,7 +565,7 @@ impl Hashable<Vec<u8>> for Car {
         for tx in self.txs.iter() {
             hasher.update(tx.hash().0);
         }
-        hasher.finalize().to_vec()
+        CarHash(hex::encode(hasher.finalize()))
     }
 }
 
@@ -612,13 +644,13 @@ pub struct Lane {
 
 impl Display for Lane {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        for c in self.cars.iter() {
-            match c.parent {
+        for car in self.cars.iter() {
+            match car.parent {
                 None => {
-                    let _ = write!(f, "{}", c);
+                    let _ = write!(f, "{}", car);
                 }
                 Some(_p) => {
-                    let _ = write!(f, " <- {}", c);
+                    let _ = write!(f, " <- {}", car);
                 }
             }
         }
@@ -634,6 +666,10 @@ impl Lane {
 
     pub fn current(&self) -> Option<&Car> {
         self.cars.last()
+    }
+
+    pub fn current_hash(&self) -> Option<CarHash> {
+        self.current().map(|car| car.hash())
     }
 
     fn dedup_push_txs(txs: &mut Vec<Transaction>, car_txs: Vec<Transaction>) {
@@ -659,39 +695,43 @@ impl Lane {
 
     fn get_missing_cars(
         &self,
-        last_car_id: Option<CarId>,
-        data_proposal: &DataProposal,
+        last_car_hash: Option<CarHash>,
+        data_proposal_tip_hash: &CarHash,
     ) -> Option<Vec<Car>> {
-        let car = self.cars.iter().find(|c| c.hash() == data_proposal.hash());
+        let data_proposal_car = self
+            .cars
+            .iter()
+            .find(|car| &car.hash() == data_proposal_tip_hash);
 
-        match car {
+        match data_proposal_car {
             None => {
-                error!("Car proposal does not exist locally");
+                error!("DataProposal does not exist locally");
                 None
             }
-            Some(c) => {
+            Some(data_proposal_car) => {
                 //Normally last_car_id must be < current_car since we are on the lane reference (that must have more Cars than others)
-                match last_car_id {
-                    // Nothing on the lane, we send everything, up to the Car proposal id/pos
+                match last_car_hash {
+                    // Nothing on the lane, we send everything, up to the DataProposal id/pos
                     None => Some(
                         self.cars
                             .iter()
-                            .take_while(|car| car.id < c.id)
+                            .take_while(|car| &car.hash() != data_proposal_tip_hash)
                             .cloned()
                             .collect(),
                     ),
                     // If there is an index, two cases
                     // - it matches the current tip, in this case we don't send any more Cars
                     // - it does not match, we send the diff
-                    Some(last_car_id) => {
-                        if last_car_id == c.id {
+                    Some(last_car_hash) => {
+                        if last_car_hash == data_proposal_car.hash() {
                             None
                         } else {
                             Some(
                                 self.cars
                                     .iter()
-                                    .skip_while(|car| car.id <= last_car_id)
-                                    .take_while(|car| car.id < c.id)
+                                    .skip_while(|car| car.hash() != last_car_hash)
+                                    .skip(1)
+                                    .take_while(|car| car.hash() != data_proposal_car.hash())
                                     .cloned()
                                     .collect(),
                             )
@@ -715,7 +755,7 @@ mod tests {
     use crate::{
         mempool::storage::{Car, CarId, DataProposal, DataProposalVerdict, Poa, Storage},
         model::{
-            Blob, BlobData, BlobReference, BlobTransaction, ContractName, ProofData,
+            Blob, BlobData, BlobReference, BlobTransaction, ContractName, Hashable, ProofData,
             ProofTransaction, RegisterContractTransaction, Transaction, TransactionData,
             ValidatorPublicKey, VerifiedProofTransaction,
         },
@@ -792,45 +832,41 @@ mod tests {
         let pubkey3 = ValidatorPublicKey(vec![3]);
         let mut store = Storage::new(pubkey3.clone());
 
-        store.other_lane_add_data_proposal(
-            &pubkey2,
-            &DataProposal {
-                id: CarId(1),
-                parent: None,
-                txs: vec![make_blob_tx("test1")],
-                parent_poa: None,
-            },
-        );
+        let data_proposal1 = DataProposal {
+            id: CarId(1),
+            parent: None,
+            parent_hash: None,
+            txs: vec![make_blob_tx("test1")],
+            parent_poa: None,
+        };
+        store.other_lane_add_data_proposal(&pubkey2, &data_proposal1);
 
-        store.other_lane_add_data_proposal(
-            &pubkey2,
-            &DataProposal {
-                id: CarId(2),
-                parent: Some(CarId(1)),
-                txs: vec![make_blob_tx("test2")],
-                parent_poa: None,
-            },
-        );
+        let data_proposal2 = DataProposal {
+            id: CarId(2),
+            parent: Some(CarId(1)),
+            parent_hash: Some(data_proposal1.hash()),
+            txs: vec![make_blob_tx("test2")],
+            parent_poa: None,
+        };
+        store.other_lane_add_data_proposal(&pubkey2, &data_proposal2);
 
-        store.other_lane_add_data_proposal(
-            &pubkey2,
-            &DataProposal {
-                id: CarId(3),
-                parent: Some(CarId(2)),
-                txs: vec![make_blob_tx("test3")],
-                parent_poa: None,
-            },
-        );
+        let data_proposal3 = DataProposal {
+            id: CarId(3),
+            parent: Some(CarId(2)),
+            parent_hash: Some(data_proposal2.hash()),
+            txs: vec![make_blob_tx("test3")],
+            parent_poa: None,
+        };
+        store.other_lane_add_data_proposal(&pubkey2, &data_proposal2);
 
-        store.other_lane_add_data_proposal(
-            &pubkey2,
-            &DataProposal {
-                id: CarId(4),
-                parent: Some(CarId(3)),
-                txs: vec![make_blob_tx("test4")],
-                parent_poa: None,
-            },
-        );
+        let data_proposal4 = DataProposal {
+            id: CarId(4),
+            parent: Some(CarId(3)),
+            parent_hash: Some(data_proposal3.hash()),
+            txs: vec![make_blob_tx("test4")],
+            parent_poa: None,
+        };
+        store.other_lane_add_data_proposal(&pubkey2, &data_proposal4);
 
         assert_eq!(store.other_lanes.len(), 1);
         assert!(store.other_lanes.contains_key(&pubkey2));
@@ -846,20 +882,13 @@ mod tests {
             Car {
                 id: CarId(1),
                 parent: None,
+                parent_hash: None,
                 txs: vec![make_blob_tx("test1")],
                 poa: Poa(BTreeSet::from([pubkey3.clone(), pubkey2.clone()])),
             }
         );
 
-        let missing = store.lane.get_missing_cars(
-            Some(CarId(1)),
-            &DataProposal {
-                id: CarId(4),
-                parent: Some(CarId(3)),
-                txs: vec![make_blob_tx("test4")],
-                parent_poa: None,
-            },
-        );
+        let missing = store.get_missing_cars(Some(data_proposal1.hash()), &data_proposal3.hash());
 
         assert_eq!(missing, None);
     }
@@ -884,6 +913,7 @@ mod tests {
             txs,
             id: CarId(1),
             parent: None,
+            parent_hash: None,
             parent_poa: None,
         };
 
@@ -900,8 +930,8 @@ mod tests {
         assert_eq!(tip.poa.len(), 1);
         assert_eq!(txs.len(), 4);
 
-        store.on_data_vote(&pubkey2, &data_proposal);
-        store.on_data_vote(&pubkey1, &data_proposal);
+        store.on_data_vote(&pubkey2, &data_proposal.hash());
+        store.on_data_vote(&pubkey1, &data_proposal.hash());
 
         let some_tip = store.tip_info();
         assert!(some_tip.is_some());
@@ -928,6 +958,7 @@ mod tests {
             txs: vec![register_tx, proof_tx],
             id: CarId(1),
             parent: None,
+            parent_hash: None,
             parent_poa: None,
         };
 
@@ -954,6 +985,7 @@ mod tests {
             txs: vec![proof_tx.clone()],
             id: CarId(1),
             parent: None,
+            parent_hash: None,
             parent_poa: None,
         };
 
@@ -964,6 +996,7 @@ mod tests {
             txs: vec![register_tx, proof_tx],
             id: CarId(1),
             parent: None,
+            parent_hash: None,
             parent_poa: None,
         };
         let verdict = store.on_data_proposal(&pubkey2, &data_proposal, &node_state);
@@ -982,20 +1015,20 @@ mod tests {
 
         let proof_tx = make_verified_proof_tx(contract_name);
 
-        store.other_lane_add_data_proposal(
-            &pubkey2,
-            &DataProposal {
-                id: CarId(1),
-                parent: None,
-                txs: vec![register_tx],
-                parent_poa: None,
-            },
-        );
+        let data_proposal1 = DataProposal {
+            id: CarId(1),
+            parent: None,
+            parent_hash: None,
+            txs: vec![register_tx],
+            parent_poa: None,
+        };
+        store.other_lane_add_data_proposal(&pubkey2, &data_proposal1);
 
         let data_proposal = DataProposal {
             txs: vec![proof_tx.clone()],
             id: CarId(2),
             parent: Some(CarId(1)),
+            parent_hash: Some(data_proposal1.hash()),
             parent_poa: Some(vec![pubkey3.clone(), pubkey2.clone()]),
         };
 
@@ -1021,6 +1054,7 @@ mod tests {
             txs: vec![register_tx, proof_tx],
             id: CarId(1),
             parent: None,
+            parent_hash: None,
             parent_poa: None,
         };
 
@@ -1046,6 +1080,7 @@ mod tests {
             txs: vec![proof_tx, register_tx],
             id: CarId(1),
             parent: None,
+            parent_hash: None,
             parent_poa: None,
         };
 
@@ -1071,6 +1106,7 @@ mod tests {
             ],
             id: CarId(1),
             parent: None,
+            parent_hash: None,
             parent_poa: None,
         };
 
@@ -1082,6 +1118,7 @@ mod tests {
             ],
             id: CarId(1),
             parent: None,
+            parent_hash: None,
             parent_poa: None,
         };
 
@@ -1093,11 +1130,12 @@ mod tests {
             ],
             id: CarId(2),
             parent: Some(CarId(1)),
+            parent_hash: Some(data_proposal1.hash()),
             parent_poa: Some(vec![pubkey3.clone(), pubkey2.clone()]),
         };
 
         store.add_new_car_to_lane(data_proposal1.txs.clone());
-        store.on_data_vote(&pubkey2, &data_proposal1);
+        store.on_data_vote(&pubkey2, &data_proposal1.hash());
 
         assert_eq!(
             store.on_data_proposal(&pubkey2, &data_proposal2, &node_state),
@@ -1120,12 +1158,12 @@ mod tests {
         // should contain only the tip on all the lanes
         assert_eq!(store.lane.size(), 1);
         assert_eq!(store.other_lanes.get(&pubkey2).map(|l| l.size()), Some(1));
-        assert_eq!(store.lane.current().map(|c| c.id), Some(CarId(1)));
+        assert_eq!(store.lane.current().map(|car| car.id), Some(CarId(1)));
         assert_eq!(
             store
                 .other_lanes
                 .get(&pubkey2)
-                .and_then(|l| l.current().map(|c| c.id)),
+                .and_then(|l| l.current().map(|car| car.id)),
             Some(CarId(2))
         );
     }
@@ -1137,23 +1175,26 @@ mod tests {
         let pubkey3 = ValidatorPublicKey(vec![3]);
         let mut store = Storage::new(pubkey3.clone());
 
+        let car1 = Car {
+            id: CarId(1),
+            parent: None,
+            parent_hash: None,
+            txs: vec![
+                make_blob_tx("test1"),
+                make_blob_tx("test2"),
+                make_blob_tx("test3"),
+                make_blob_tx("test4"),
+            ],
+            poa: Poa(BTreeSet::from([pubkey1.clone(), pubkey2.clone()])),
+        };
         store.other_lane_add_missing_cars(
             &pubkey2,
             vec![
-                Car {
-                    id: CarId(1),
-                    parent: None,
-                    txs: vec![
-                        make_blob_tx("test1"),
-                        make_blob_tx("test2"),
-                        make_blob_tx("test3"),
-                        make_blob_tx("test4"),
-                    ],
-                    poa: Poa(BTreeSet::from([pubkey1.clone(), pubkey2.clone()])),
-                },
+                car1.clone(),
                 Car {
                     id: CarId(2),
                     parent: Some(CarId(1)),
+                    parent_hash: Some(car1.hash()),
                     txs: vec![
                         make_blob_tx("test5"),
                         make_blob_tx("test6"),
@@ -1172,72 +1213,29 @@ mod tests {
         let pubkey3 = ValidatorPublicKey(vec![3]);
         let mut store = Storage::new(pubkey3.clone());
 
-        store.add_new_car_to_lane(vec![make_blob_tx("test_local")]);
+        store.add_new_car_to_lane(vec![make_blob_tx("test_local1")]);
+        let last_know_car_hash = store.lane.current_hash();
         store.add_new_car_to_lane(vec![make_blob_tx("test_local2")]);
         store.add_new_car_to_lane(vec![make_blob_tx("test_local3")]);
         store.add_new_car_to_lane(vec![make_blob_tx("test_local4")]);
+        let data_proposal_tip_hash = store.lane.current_hash().unwrap();
         assert_eq!(store.lane.cars.len(), 4);
 
-        let missing = store.lane.get_missing_cars(
-            Some(CarId(1)),
-            &DataProposal {
-                id: CarId(4),
-                parent: Some(CarId(3)),
-                txs: vec![make_blob_tx("test_local4")],
-                parent_poa: None,
-            },
-        );
+        let missing = store
+            .get_missing_cars(last_know_car_hash.clone(), &data_proposal_tip_hash)
+            .expect("missing cars");
 
-        assert_eq!(
-            missing,
-            Some(vec![
-                Car {
-                    id: CarId(2),
-                    parent: Some(CarId(1)),
-                    txs: vec![make_blob_tx("test_local2")],
-                    poa: Poa(BTreeSet::from_iter(vec![pubkey3.clone()])),
-                },
-                Car {
-                    id: CarId(3),
-                    parent: Some(CarId(2)),
-                    txs: vec![make_blob_tx("test_local3")],
-                    poa: Poa(BTreeSet::from_iter(vec![pubkey3.clone()])),
-                }
-            ])
-        );
+        assert_eq!(missing.len(), 2);
+        assert_eq!(missing[0].txs[0], make_blob_tx("test_local2"));
+        assert_eq!(missing[1].txs[0], make_blob_tx("test_local3"));
 
-        let missing = store.lane.get_missing_cars(
-            None,
-            &DataProposal {
-                id: CarId(4),
-                parent: Some(CarId(3)),
-                txs: vec![make_blob_tx("test_local4")],
-                parent_poa: None,
-            },
-        );
+        let missing = store
+            .get_missing_cars(None, &data_proposal_tip_hash)
+            .expect("missing cars");
 
-        assert_eq!(
-            missing,
-            Some(vec![
-                Car {
-                    id: CarId(1),
-                    parent: None,
-                    txs: vec![make_blob_tx("test_local")],
-                    poa: Poa(BTreeSet::from_iter(vec![pubkey3.clone()])),
-                },
-                Car {
-                    id: CarId(2),
-                    parent: Some(CarId(1)),
-                    txs: vec![make_blob_tx("test_local2")],
-                    poa: Poa(BTreeSet::from_iter(vec![pubkey3.clone()])),
-                },
-                Car {
-                    id: CarId(3),
-                    parent: Some(CarId(2)),
-                    txs: vec![make_blob_tx("test_local3")],
-                    poa: Poa(BTreeSet::from_iter(vec![pubkey3.clone()])),
-                }
-            ])
-        );
+        assert_eq!(missing.len(), 3);
+        assert_eq!(missing[0].txs[0], make_blob_tx("test_local1"));
+        assert_eq!(missing[1].txs[0], make_blob_tx("test_local2"));
+        assert_eq!(missing[2].txs[0], make_blob_tx("test_local3"));
     }
 }
