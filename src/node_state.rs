@@ -315,7 +315,11 @@ impl NodeState {
                 .get_mut(&blob_ref.blob_tx_hash)
                 .context("Tx is either settled or does not exists.")?;
 
-            debug!("Unsettled tx: {:?}", unsettled_tx);
+            let expected_contract =
+                &unsettled_tx.blobs[blob_ref.blob_index.0 as usize].contract_name;
+            if *expected_contract != blob_ref.contract_name {
+                bail!("Blob reference from proof {blob_ref} does not match the blob transaction contract name {expected_contract}");
+            }
 
             unsettled_tx.blobs[blob_ref.blob_index.0 as usize]
                 .metadata
@@ -425,6 +429,7 @@ impl NodeState {
 mod test {
     use super::*;
     use crate::model::*;
+    use assertables::assert_err;
     use hyle_contract_sdk::{BlobIndex, Identity};
 
     async fn new_node_state() -> NodeState {
@@ -485,7 +490,7 @@ mod test {
 
         let proof_c2 = ProofTransaction {
             blobs_references: vec![BlobReference {
-                contract_name: c1.clone(),
+                contract_name: c2.clone(),
                 blob_tx_hash: blob_tx_hash.clone(),
 
                 blob_index: BlobIndex(1),
@@ -505,7 +510,6 @@ mod test {
         assert_eq!(state.contracts.get(&c2).unwrap().state.0, vec![4, 5, 6]);
     }
 
-    #[ignore] // As long as proof verification is mocked, we provide different blobs on same contract
     #[tokio::test]
     #[test_log::test]
     async fn one_proof_for_two_blobs() {
@@ -567,6 +571,50 @@ mod test {
 
         assert_eq!(state.contracts.get(&c1).unwrap().state.0, vec![4, 5, 6]);
         assert_eq!(state.contracts.get(&c2).unwrap().state.0, vec![4, 5, 6]);
+    }
+
+    #[tokio::test]
+    #[test_log::test]
+    async fn wrong_blob_index_for_contract() {
+        let mut state = new_node_state().await;
+        let c1 = ContractName("c1".to_string());
+        let c2 = ContractName("c2".to_string());
+
+        let register_c1 = new_register_contract(c1.clone());
+        let register_c2 = new_register_contract(c2.clone());
+
+        let blob_tx_1 = BlobTransaction {
+            identity: Identity("test".to_string()),
+            blobs: vec![new_blob(&c1), new_blob(&c2)],
+        };
+        let blob_tx_hash_1 = blob_tx_1.hash();
+
+        state.handle_register_contract_tx(&register_c1).unwrap();
+        state.handle_register_contract_tx(&register_c2).unwrap();
+        state.handle_blob_tx(&blob_tx_1).unwrap();
+
+        let proof_c1 = ProofTransaction {
+            blobs_references: vec![
+                BlobReference {
+                    contract_name: c1.clone(),
+                    blob_tx_hash: blob_tx_hash_1.clone(),
+                    blob_index: BlobIndex(0),
+                },
+                BlobReference {
+                    contract_name: c2.clone(),
+                    blob_tx_hash: blob_tx_hash_1.clone(),
+                    blob_index: BlobIndex(0), // Wrong index
+                },
+            ],
+            proof: ProofData::Bytes(vec![]),
+        };
+
+        let verified_proof_c1 = VerifiedProofTransaction {
+            hyle_outputs: state.verify_proof(&proof_c1).unwrap(),
+            proof_transaction: proof_c1,
+        };
+
+        assert_err!(state.handle_verified_proof_tx(&verified_proof_c1));
     }
 
     #[tokio::test]

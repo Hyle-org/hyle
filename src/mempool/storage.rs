@@ -33,7 +33,7 @@ pub enum ProposalVerdict {
 
 pub type Cut = Vec<(ValidatorPublicKey, CarId)>;
 
-fn prepare_cut(cut: &mut Cut, validator: &ValidatorPublicKey, lane: &mut Lane) {
+fn prepare_cut(cut: &mut Cut, validator: &ValidatorPublicKey, lane: &Lane) {
     if let Some(tip) = lane.cars.last() {
         cut.push((validator.clone(), tip.id));
     }
@@ -78,27 +78,24 @@ impl InMemoryStorage {
             .map(|car| car.poa.iter().cloned().collect())
     }
 
-    pub fn try_new_cut(&mut self, validators: &[ValidatorPublicKey]) -> Option<Cut> {
-        if let Some(car) = self.lane.current() {
-            if car.poa.len() > validators.len() / 3 {
-                let mut cut = Vec::new();
-                for validator in validators.iter() {
-                    if validator == &self.id {
-                        prepare_cut(&mut cut, validator, &mut self.lane);
-                    } else if let Some(lane) = self.other_lanes.get_mut(validator) {
-                        prepare_cut(&mut cut, validator, lane);
-                    } else {
-                        // can happen if validator does not have any car proposal yet
-                        debug!(
-                            "Validator {} not found in lane of {} (cutting)",
-                            validator, self.id
-                        );
-                    }
-                }
-                return Some(cut);
+    pub fn make_new_cut(&mut self, validators: &[ValidatorPublicKey]) -> Cut {
+        // For each validator, we get the last validated car and put it in the cut
+        let mut cut: Cut = vec![];
+        for validator in validators.iter() {
+            if validator == &self.id {
+                prepare_cut(&mut cut, validator, &self.lane);
+            } else if let Some(lane) = self.other_lanes.get(validator) {
+                prepare_cut(&mut cut, validator, lane);
+            } else {
+                // can happen if validator does not have any car proposal yet
+                debug!(
+                    "Validator {} not found in lane of {} (cutting)",
+                    validator, self.id
+                );
             }
         }
-        None
+
+        cut
     }
 
     // Called after receiving a transaction, before broadcasting a car proposal
@@ -107,6 +104,7 @@ impl InMemoryStorage {
 
         let current_id = tip_id.unwrap_or(CarId(0)) + 1;
 
+        // FIXME: we should wait for CarProposals to have received enough votes to make them Cars
         self.lane.cars.push(Car {
             id: current_id,
             parent: tip_id,
@@ -143,6 +141,7 @@ impl InMemoryStorage {
                     warn!("{} already voted for Car proposal", validator);
                     None
                 } else {
+                    // FIXME: we should generate a real PoA when we gather enough signatures.
                     c.poa.insert(validator.clone());
                     Some(())
                 }
@@ -1115,10 +1114,10 @@ mod tests {
         assert_eq!(store.lane.size(), 1);
         assert_eq!(store.other_lanes.get(&pubkey2).map(|l| l.size()), Some(2));
 
-        let cut = store.try_new_cut(&[pubkey3.clone(), pubkey2.clone()]);
-        assert!(cut.is_some());
+        let cut = store.make_new_cut(&[pubkey3.clone(), pubkey2.clone()]);
+        assert!(!cut.is_empty());
 
-        store.update_lanes_after_commit(cut.unwrap());
+        store.update_lanes_after_commit(cut);
 
         // should contain only the tip on all the lanes
         assert_eq!(store.lane.size(), 1);

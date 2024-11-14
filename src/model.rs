@@ -189,6 +189,16 @@ pub struct BlobReference {
     pub blob_index: BlobIndex,
 }
 
+impl Display for BlobReference {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{}:{}:{}",
+            self.blob_tx_hash, self.blob_index, self.contract_name
+        )
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize, Default, Clone, PartialEq, Eq, Encode, Decode, Hash)]
 pub struct RegisterContractTransaction {
     pub owner: String,
@@ -233,6 +243,7 @@ pub struct HandledBlockOutput {
     pub updated_states: HashMap<ContractName, StateDigest>,
 }
 
+#[derive(Debug)]
 pub struct HandledProofTxOutput {
     pub settled_blob_tx_hashes: Vec<TxHash>,
     pub updated_states: HashMap<ContractName, StateDigest>,
