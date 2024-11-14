@@ -4,7 +4,7 @@ use crate::{
     bus::{bus_client, command_response::Query, BusMessage, SharedMessageBus},
     consensus::ConsensusEvent,
     handle_messages,
-    mempool::storage::{Car, DataProposal, InMemoryStorage},
+    mempool::storage::{Car, DataProposal, Storage},
     model::{
         Hashable, SharedRunContext, Transaction, TransactionData, ValidatorPublicKey,
         VerifiedProofTransaction,
@@ -48,7 +48,7 @@ pub struct Mempool {
     bus: MempoolBusClient,
     crypto: SharedBlstCrypto,
     metrics: MempoolMetrics,
-    storage: InMemoryStorage,
+    storage: Storage,
     validators: Vec<ValidatorPublicKey>,
     node_state: NodeState,
 }
@@ -100,7 +100,7 @@ impl Module for Mempool {
             bus,
             metrics,
             crypto: Arc::clone(&ctx.node.crypto),
-            storage: InMemoryStorage::new(ctx.node.crypto.validator_pubkey().clone()),
+            storage: Storage::new(ctx.node.crypto.validator_pubkey().clone()),
             validators: vec![],
             node_state,
         })
@@ -534,7 +534,7 @@ mod tests {
         pub async fn new(name: &str) -> Self {
             let crypto = BlstCrypto::new(name.into());
             let shared_bus = SharedMessageBus::new(BusMetrics::global("global".to_string()));
-            let storage = InMemoryStorage::new(crypto.validator_pubkey().clone());
+            let storage = Storage::new(crypto.validator_pubkey().clone());
             let validators = vec![crypto.validator_pubkey().clone()];
 
             let out_receiver = get_receiver::<OutboundMessage>(&shared_bus).await;

@@ -40,14 +40,14 @@ fn prepare_cut(cut: &mut Cut, validator: &ValidatorPublicKey, lane: &Lane) {
 }
 
 #[derive(Debug, Clone)]
-pub struct InMemoryStorage {
+pub struct Storage {
     pub id: ValidatorPublicKey,
     pub pending_txs: Vec<Transaction>,
     pub lane: Lane,
     pub other_lanes: HashMap<ValidatorPublicKey, Lane>,
 }
 
-impl Display for InMemoryStorage {
+impl Display for Storage {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Replica {}", self.id)?;
         write!(f, "\nLane {}", self.lane)?;
@@ -59,9 +59,9 @@ impl Display for InMemoryStorage {
     }
 }
 
-impl InMemoryStorage {
-    pub fn new(id: ValidatorPublicKey) -> InMemoryStorage {
-        InMemoryStorage {
+impl Storage {
+    pub fn new(id: ValidatorPublicKey) -> Storage {
+        Storage {
             id,
             pending_txs: vec![],
             lane: Lane {
@@ -717,7 +717,7 @@ mod tests {
     use std::collections::BTreeSet;
 
     use crate::{
-        mempool::storage::{Car, CarId, DataProposal, InMemoryStorage, Poa, ProposalVerdict},
+        mempool::storage::{Car, CarId, DataProposal, Poa, ProposalVerdict, Storage},
         model::{
             Blob, BlobData, BlobReference, BlobTransaction, ContractName, ProofData,
             ProofTransaction, RegisterContractTransaction, Transaction, TransactionData,
@@ -794,7 +794,7 @@ mod tests {
     fn test_workflow() {
         let pubkey2 = ValidatorPublicKey(vec![2]);
         let pubkey3 = ValidatorPublicKey(vec![3]);
-        let mut store = InMemoryStorage::new(pubkey3.clone());
+        let mut store = Storage::new(pubkey3.clone());
 
         store.other_lane_add_proposal(
             &pubkey2,
@@ -873,7 +873,7 @@ mod tests {
         let pubkey1 = ValidatorPublicKey(vec![1]);
         let pubkey2 = ValidatorPublicKey(vec![2]);
         let pubkey3 = ValidatorPublicKey(vec![3]);
-        let mut store = InMemoryStorage::new(pubkey3.clone());
+        let mut store = Storage::new(pubkey3.clone());
 
         store.add_new_tx(make_blob_tx("test1"));
         store.add_new_tx(make_blob_tx("test2"));
@@ -919,7 +919,7 @@ mod tests {
     fn test_update_lane_with_unverified_proof_transaction() {
         let pubkey2 = ValidatorPublicKey(vec![2]);
         let pubkey3 = ValidatorPublicKey(vec![3]);
-        let mut store = InMemoryStorage::new(pubkey3.clone());
+        let mut store = Storage::new(pubkey3.clone());
         let node_state = NodeState::default();
 
         let contract_name = ContractName("test".to_string());
@@ -945,7 +945,7 @@ mod tests {
     fn test_update_lane_with_verified_proof_transaction() {
         let pubkey2 = ValidatorPublicKey(vec![2]);
         let pubkey3 = ValidatorPublicKey(vec![3]);
-        let mut store = InMemoryStorage::new(pubkey3.clone());
+        let mut store = Storage::new(pubkey3.clone());
         let node_state = NodeState::default();
 
         let contract_name = ContractName("test".to_string());
@@ -977,7 +977,7 @@ mod tests {
     fn test_new_data_proposal_with_register_tx_in_previous_uncommitted_car() {
         let pubkey2 = ValidatorPublicKey(vec![2]);
         let pubkey3 = ValidatorPublicKey(vec![3]);
-        let mut store = InMemoryStorage::new(pubkey3.clone());
+        let mut store = Storage::new(pubkey3.clone());
         let node_state = NodeState::default();
 
         let contract_name = ContractName("test".to_string());
@@ -1013,7 +1013,7 @@ mod tests {
     fn test_register_contract_and_proof_tx_in_same_car() {
         let pubkey2 = ValidatorPublicKey(vec![2]);
         let pubkey3 = ValidatorPublicKey(vec![3]);
-        let mut store = InMemoryStorage::new(pubkey3.clone());
+        let mut store = Storage::new(pubkey3.clone());
         let node_state = NodeState::default();
 
         let contract_name = ContractName("test".to_string());
@@ -1038,7 +1038,7 @@ mod tests {
     fn test_register_contract_and_proof_tx_in_same_car_wrong_order() {
         let pubkey2 = ValidatorPublicKey(vec![2]);
         let pubkey3 = ValidatorPublicKey(vec![3]);
-        let mut store = InMemoryStorage::new(pubkey3.clone());
+        let mut store = Storage::new(pubkey3.clone());
         let node_state = NodeState::default();
 
         let contract_name = ContractName("test".to_string());
@@ -1063,7 +1063,7 @@ mod tests {
     fn test_update_lanes_after_commit() {
         let pubkey2 = ValidatorPublicKey(vec![2]);
         let pubkey3 = ValidatorPublicKey(vec![3]);
-        let mut store = InMemoryStorage::new(pubkey3.clone());
+        let mut store = Storage::new(pubkey3.clone());
         let node_state = NodeState::default();
 
         let data_proposal1 = DataProposal {
@@ -1138,7 +1138,7 @@ mod tests {
         let pubkey1 = ValidatorPublicKey(vec![1]);
         let pubkey2 = ValidatorPublicKey(vec![2]);
         let pubkey3 = ValidatorPublicKey(vec![3]);
-        let mut store = InMemoryStorage::new(pubkey3.clone());
+        let mut store = Storage::new(pubkey3.clone());
 
         store.other_lane_add_missing_cars(
             &pubkey2,
@@ -1173,7 +1173,7 @@ mod tests {
     #[test_log::test]
     fn test_missing_cars() {
         let pubkey3 = ValidatorPublicKey(vec![3]);
-        let mut store = InMemoryStorage::new(pubkey3.clone());
+        let mut store = Storage::new(pubkey3.clone());
 
         store.add_new_car_to_lane(vec![make_blob_tx("test_local")]);
         store.add_new_car_to_lane(vec![make_blob_tx("test_local2")]);
