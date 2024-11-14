@@ -154,7 +154,7 @@ impl Mempool {
             let only_for = HashSet::from_iter(
                 self.validators
                     .iter()
-                    .filter(|pubkey| !car.poa.contains(pubkey))
+                    .filter(|pubkey| !self.storage.lane.poa.contains(pubkey))
                     .cloned(),
             );
             // FIXME: with current implem, we send DataProposal twice.
@@ -304,10 +304,10 @@ impl Mempool {
 
     async fn on_data_vote(&mut self, validator: &ValidatorPublicKey, car_hash: CarHash) {
         debug!("Vote received from validator {}", validator);
-        if self.storage.on_data_vote(validator, &car_hash).is_some() {
-            debug!("{} Vote from {}", self.storage.id, validator)
+        if let Err(e) = self.storage.on_data_vote(validator, &car_hash) {
+            error!("{:?}", e)
         } else {
-            error!("{} unexpected Vote from {}", self.storage.id, validator)
+            debug!("{} Vote from {}", self.storage.id, validator)
         }
     }
 
@@ -656,7 +656,7 @@ mod tests {
             .expect("fail to handle new transaction");
 
         assert_eq!(
-            ctx.mempool.storage.lane.current().unwrap().poa,
+            ctx.mempool.storage.lane.poa,
             Poa(BTreeSet::from([ctx
                 .mempool
                 .crypto
@@ -681,7 +681,7 @@ mod tests {
 
         // Assert that we did not add the vote to the PoA
         assert_eq!(
-            ctx.mempool.storage.lane.current().unwrap().poa,
+            ctx.mempool.storage.lane.poa,
             Poa(BTreeSet::from([ctx
                 .mempool
                 .crypto
@@ -704,7 +704,7 @@ mod tests {
             .expect("fail to handle new transaction");
 
         assert_eq!(
-            ctx.mempool.storage.lane.current().unwrap().poa,
+            ctx.mempool.storage.lane.poa,
             Poa(BTreeSet::from([ctx
                 .mempool
                 .crypto
@@ -729,7 +729,7 @@ mod tests {
 
         // Assert that we added the vote to the PoA
         assert_eq!(
-            ctx.mempool.storage.lane.current().unwrap().poa,
+            ctx.mempool.storage.lane.poa,
             Poa(BTreeSet::from([
                 ctx.mempool.crypto.validator_pubkey().clone(),
                 temp_crypto.validator_pubkey().clone()

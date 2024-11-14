@@ -1,3 +1,4 @@
+use anyhow::{bail, Result};
 use bincode::{BorrowDecode, Decode, Encode};
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Sha3_256};
@@ -53,11 +54,13 @@ impl Display for Storage {
 
 impl Storage {
     pub fn new(id: ValidatorPublicKey) -> Storage {
+        let lane_id = id.clone();
         Storage {
             id,
             pending_txs: vec![],
             lane: Lane {
                 cars: vec![],
+                poa: Poa(BTreeSet::from([lane_id])),
                 waiting: vec![],
             },
             other_lanes: HashMap::new(),
@@ -89,32 +92,16 @@ impl Storage {
         &mut self,
         validator: &ValidatorPublicKey,
         car_hash: &CarHash,
-    ) -> Option<()> {
-        let car = self
-            .lane
-            .cars
-            .iter_mut()
-            .find(|car| &car.hash() == car_hash);
-
-        match car {
-            None => {
-                warn!(
-                    "Vote for Car that does not exist! ({validator}) / lane: {}",
-                    self.lane
-                );
-                None
-            }
-            Some(car) => {
-                if car.poa.contains(validator) {
-                    warn!("{} already voted for DataProposal", validator);
-                    None
-                } else {
-                    // FIXME: we should generate a real PoA when we gather enough signatures.
-                    car.poa.insert(validator.clone());
-                    Some(())
-                }
+    ) -> Result<()> {
+        if self.lane.current_hash().as_ref() == Some(car_hash) {
+            if self.lane.poa.contains(validator) {
+                bail!("{validator} already voted for DataProposal");
+            } else {
+                self.lane.poa.insert(validator.clone());
+                return Ok(());
             }
         }
+        bail!("Vote for DataProposal that does not exist! ({validator})",);
     }
 
     pub fn on_data_proposal(
@@ -257,7 +244,6 @@ impl Storage {
         lane.cars.push(Car {
             parent_hash,
             txs: txs_without_proofs,
-            poa: Poa(BTreeSet::from([self.id.clone(), validator.clone()])),
         });
     }
 
@@ -279,7 +265,7 @@ impl Storage {
         let lane = self.other_lanes.entry(validator.clone()).or_default();
         if let Some(car) = lane.current_mut() {
             if &car.hash() == parent_hash {
-                car.poa.extend(parent_poa.iter().cloned());
+                lane.poa.extend(parent_poa.iter().cloned());
             }
         }
     }
@@ -346,17 +332,19 @@ impl Storage {
         if pending_txs.is_empty() {
             return None;
         }
-        let parent_poa = self
-            .lane
-            .current()
-            .map(|car| car.poa.0.clone().into_iter().collect());
+
+        let parent_poa = if self.lane.poa.len() == 1 {
+            None
+        } else {
+            Some(std::mem::take(&mut self.lane.poa).0.into_iter().collect())
+        };
         let parent_hash = self.lane.current_hash();
         // FIXME: we should wait for DataProposals to have received enough votes to make them Cars
         self.lane.cars.push(Car {
             parent_hash: parent_hash.clone(),
             txs: pending_txs.clone(),
-            poa: Poa(BTreeSet::from([self.id.clone()])),
         });
+        self.lane.poa.insert(self.id.clone());
         Some(DataProposal {
             txs: pending_txs,
             parent_hash,
@@ -440,7 +428,6 @@ impl Display for CarHash {
 pub struct Car {
     pub parent_hash: Option<CarHash>,
     pub txs: Vec<Transaction>,
-    pub poa: Poa,
 }
 
 impl Hashable<CarHash> for Car {
@@ -520,6 +507,7 @@ impl Display for Car {
 #[derive(Default, Debug, Clone)]
 pub struct Lane {
     cars: Vec<Car>,
+    pub poa: Poa,
     waiting: Vec<DataProposal>,
 }
 
@@ -626,10 +614,8 @@ impl Lane {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeSet;
-
     use crate::{
-        mempool::storage::{Car, DataProposal, DataProposalVerdict, Poa, Storage},
+        mempool::storage::{Car, DataProposal, DataProposalVerdict, Storage},
         model::{
             Blob, BlobData, BlobReference, BlobTransaction, ContractName, Hashable, ProofData,
             ProofTransaction, RegisterContractTransaction, Transaction, TransactionData,
@@ -759,7 +745,6 @@ mod tests {
             Car {
                 parent_hash: None,
                 txs: vec![make_blob_tx("test1")],
-                poa: Poa(BTreeSet::from([pubkey3.clone(), pubkey2.clone()])),
             }
         );
 
@@ -796,17 +781,20 @@ mod tests {
         );
 
         let car = store.lane.current().expect("a car");
-        assert_eq!(car.poa.len(), 1);
+        assert_eq!(store.lane.poa.len(), 1);
         assert_eq!(car.txs.len(), 4);
 
-        store.on_data_vote(&pubkey2, &data_proposal.hash());
-        store.on_data_vote(&pubkey1, &data_proposal.hash());
+        store
+            .on_data_vote(&pubkey2, &data_proposal.hash())
+            .expect("to vote");
+        store
+            .on_data_vote(&pubkey1, &data_proposal.hash())
+            .expect("to vote");
 
-        let car = store.lane.current().expect("a car");
-        assert_eq!(car.poa.len(), 3);
-        assert!(&car.poa.contains(&pubkey3));
-        assert!(&car.poa.contains(&pubkey1));
-        assert!(&car.poa.contains(&pubkey2));
+        assert_eq!(store.lane.poa.len(), 3);
+        assert!(&store.lane.poa.contains(&pubkey3));
+        assert!(&store.lane.poa.contains(&pubkey1));
+        assert!(&store.lane.poa.contains(&pubkey2));
     }
 
     #[test_log::test]
@@ -1009,7 +997,6 @@ mod tests {
 
     #[test_log::test]
     fn test_add_missing_cars() {
-        let pubkey1 = ValidatorPublicKey(vec![1]);
         let pubkey2 = ValidatorPublicKey(vec![2]);
         let pubkey3 = ValidatorPublicKey(vec![3]);
         let mut store = Storage::new(pubkey3.clone());
@@ -1017,7 +1004,6 @@ mod tests {
         let car1 = Car {
             parent_hash: None,
             txs: vec![make_blob_tx("test1")],
-            poa: Poa(BTreeSet::from([pubkey1.clone(), pubkey2.clone()])),
         };
         store.other_lane_add_missing_cars(
             &pubkey2,
@@ -1026,7 +1012,6 @@ mod tests {
                 Car {
                     parent_hash: Some(car1.hash()),
                     txs: vec![make_blob_tx("test2")],
-                    poa: Poa(BTreeSet::from([pubkey1.clone(), pubkey2.clone()])),
                 },
             ],
         );
