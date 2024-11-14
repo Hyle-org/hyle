@@ -1598,7 +1598,7 @@ mod test {
         p2p::network::NetMessage,
         utils::{conf::Conf, crypto},
     };
-    use assertables::assert_contains;
+    use assertables::{assert_contains, assert_fn_le_x_as_result, assert_is_match};
     use staking::Stake;
     use tokio::sync::broadcast::Receiver;
 
@@ -1803,6 +1803,47 @@ mod test {
         }
     }
 
+    macro_rules! simple_commit_round {
+        (leader: $leader:ident, followers: [$($follower:ident),+]) => {{
+            let round_consensus_proposal;
+            let round_ticket;
+            broadcast! {
+                description: "Leader - Prepare",
+                from: $leader, to: [$($follower),+],
+                message_matches: ConsensusNetMessage::Prepare(cp, ticket) => {
+                    round_consensus_proposal = cp.clone();
+                    round_ticket = ticket.clone();
+                }
+            };
+
+            send! {
+                description: "Follower - PrepareVote",
+                from: [$($follower),+], to: $leader,
+                message_matches: ConsensusNetMessage::PrepareVote(_)
+            };
+
+            broadcast! {
+                description: "Leader - Confirm",
+                from: $leader, to: [$($follower),+],
+                message_matches: ConsensusNetMessage::Confirm(_)
+            };
+
+            send! {
+                description: "Follower - Confirm Ack",
+                from: [$($follower),+], to: $leader,
+                message_matches: ConsensusNetMessage::ConfirmAck(_)
+            };
+
+            broadcast! {
+                description: "Leader - Commit",
+                from: $leader, to: [$($follower),+],
+                message_matches: ConsensusNetMessage::Commit(_, _)
+            };
+
+            (round_consensus_proposal, round_ticket)
+        }};
+    }
+
     impl TestCtx {
         async fn new(name: &str, crypto: BlstCrypto) -> Self {
             let shared_bus = SharedMessageBus::new(BusMetrics::global("global".to_string()));
@@ -1981,54 +2022,39 @@ mod test {
 
         node1.start_round().await;
         // Slot 0 - leader = node1
-        let leader_proposal = node1.assert_broadcast("Leader proposal");
-        node2.handle_msg(&leader_proposal, "Leader proposal");
 
-        let slave_vote = node2.assert_send(&node1, "Slave vote");
-        node1.handle_msg(&slave_vote, "Slave vote");
+        let (cp1, ticket1) = simple_commit_round! {
+            leader: node1,
+            followers: [node2]
+        };
 
-        let leader_confirm = node1.assert_broadcast("Leader confirm");
-        node2.handle_msg(&leader_confirm, "Leader confirm");
-
-        let slave_confirm_ack = node2.assert_send(&node1, "Slave confirm ack");
-        node1.handle_msg(&slave_confirm_ack, "Slave confirm ack");
-
-        let leader_commit = node1.assert_broadcast("Leader commit");
-        node2.handle_msg(&leader_commit, "Leader commit");
+        assert_eq!(cp1.slot, 1);
+        assert_eq!(cp1.view, 0);
+        assert_eq!(ticket1, Ticket::Genesis);
 
         // Slot 1 - leader = node2
         node2.start_round().await;
-        let leader_proposal = node2.assert_broadcast("Leader proposal");
-        node1.handle_msg(&leader_proposal, "Leader proposal");
 
-        let slave_vote = node1.assert_send(&node2, "Slave vote");
-        node2.handle_msg(&slave_vote, "Slave vote");
+        let (cp2, ticket2) = simple_commit_round! {
+            leader: node2,
+            followers: [node1]
+        };
 
-        let leader_confirm = node2.assert_broadcast("Leader confirm");
-        node1.handle_msg(&leader_confirm, "Leader confirm");
-
-        let slave_confirm_ack = node1.assert_send(&node2, "Slave confirm ack");
-        node2.handle_msg(&slave_confirm_ack, "Slave confirm ack");
-
-        let leader_commit = node2.assert_broadcast("Leader commit");
-        node1.handle_msg(&leader_commit, "Leader commit");
+        assert_eq!(cp2.slot, 2);
+        assert_eq!(cp2.view, 0);
+        assert!(matches!(ticket2, Ticket::CommitQC(_)));
 
         // Slot 2 - leader = node1
         node1.start_round().await;
-        let leader_proposal = node1.assert_broadcast("Leader proposal");
-        node2.handle_msg(&leader_proposal, "Leader proposal");
 
-        let slave_vote = node2.assert_send(&node1, "Slave vote");
-        node1.handle_msg(&slave_vote, "Slave vote");
+        let (cp3, ticket3) = simple_commit_round! {
+            leader: node1,
+            followers: [node2]
+        };
 
-        let leader_confirm = node1.assert_broadcast("Leader confirm");
-        node2.handle_msg(&leader_confirm, "Leader confirm");
-
-        let slave_confirm_ack = node2.assert_send(&node1, "Slave confirm ack");
-        node1.handle_msg(&slave_confirm_ack, "Slave confirm ack");
-
-        let leader_commit = node1.assert_broadcast("Leader commit");
-        node2.handle_msg(&leader_commit, "Leader commit");
+        assert_eq!(cp3.slot, 3);
+        assert_eq!(cp3.view, 0);
+        assert!(matches!(ticket3, Ticket::CommitQC(_)));
     }
 
     #[test_log::test(tokio::test)]
@@ -2099,34 +2125,10 @@ mod test {
 
         // Slot 1 - leader = node1
         // Ensuring one slot commits correctly before a timeout
-        broadcast! {
-            description: "Leader - Prepare",
-            from: node1, to: [node2, node3, node4],
-            message_matches: ConsensusNetMessage::Prepare(_, _)
-        };
 
-        send! {
-            description: "Follower - PrepareVote",
-            from: [node2, node3, node4], to: node1,
-            message_matches: ConsensusNetMessage::PrepareVote(_)
-        };
-
-        broadcast! {
-            description: "Leader - Confirm",
-            from: node1, to: [node2, node3, node4],
-            message_matches: ConsensusNetMessage::Confirm(_)
-        };
-
-        send! {
-            description: "Follower - Confirm Ack",
-            from: [node2, node3, node4], to: node1,
-            message_matches: ConsensusNetMessage::ConfirmAck(_)
-        };
-
-        broadcast! {
-            description: "Leader - Commit",
-            from: node1, to: [node2, node3, node4],
-            message_matches: ConsensusNetMessage::Commit(_, _)
+        let (cp, ticket) = simple_commit_round! {
+            leader: node1,
+            followers: [node2, node3, node4]
         };
     }
 
@@ -2178,26 +2180,36 @@ mod test {
         node2.start_round().await;
 
         // Slot 2 view 1 (following a timeout round)
-        broadcast! {
-            description: "Leader - Prepare",
-            from: node2, to: [node1, node3, node4],
-            message_matches: ConsensusNetMessage::Prepare(cp, Ticket::TimeoutQC(qc)) => {
-                if let ConsensusNetMessage::TimeoutCertificate(agg_signature, cp_hash) =
-                    timeout_certificate2.msg
-                {
-                    assert_eq!(&agg_signature, qc);
-                    assert_eq!(cp.slot, 1);
-                    assert_eq!(cp.view, 1);
-                    // Make sure the ticket maches the consensus proposal held by the prepare
-                    // but in the previous view
-                    let mut cloned_cp = cp.clone();
-                    cloned_cp.view -= 1;
-                    assert_eq!(cp_hash, cloned_cp.hash());
-                } else {
-                    panic!("timeout certificate 2 should be a timeout certificate messages but was {:?}", timeout_certificate2);
-                }
-            }
+        let (cp, ticket) = simple_commit_round! {
+          leader: node2,
+          followers: [node1, node3, node4]
         };
+
+        assert!(matches!(ticket, Ticket::TimeoutQC(_)));
+        assert!(matches!(
+            timeout_certificate2.msg,
+            ConsensusNetMessage::TimeoutCertificate(_, _)
+        ));
+
+        if let ConsensusNetMessage::TimeoutCertificate(agg_signature, cp_hash) =
+            timeout_certificate2.msg
+        {
+            if let Ticket::TimeoutQC(qc) = ticket {
+                assert_eq!(agg_signature, qc);
+            }
+            assert_eq!(cp.slot, 1);
+            assert_eq!(cp.view, 1);
+            // Make sure the ticket maches the consensus proposal held by the prepare
+            // but in the previous view
+            let mut cloned_cp = cp.clone();
+            cloned_cp.view -= 1;
+            assert_eq!(cp_hash, cloned_cp.hash());
+        } else {
+            panic!(
+                "timeout certificate 2 should be a timeout certificate messages but was {:?}",
+                timeout_certificate2
+            );
+        }
     }
 
     #[test_log::test(tokio::test)]
@@ -2277,38 +2289,14 @@ mod test {
 
         node2.start_round();
 
-        broadcast! {
-            description: "Next Leader - Prepare with Timeout ticket",
-            from: node2, to: [node1, node3, node4, node5, node6, node7],
-            message_matches: ConsensusNetMessage::Prepare(cp, Ticket::TimeoutQC(_)) => {
-                assert_eq!(cp.slot, 1);
-                assert_eq!(cp.view, 1);
-            }
+        let (cp, ticket) = simple_commit_round! {
+            leader: node2,
+            followers: [node1, node3, node4, node5, node6, node7]
         };
 
-        send! {
-            description: "Follower - PrepareVote",
-            from: [node1, node3, node4, node5, node6, node7], to: node2,
-            message_matches: ConsensusNetMessage::PrepareVote(_)
-        };
-
-        broadcast! {
-            description: "Leader - Confirm",
-            from: node2, to: [node1, node3, node4, node5, node6, node7],
-            message_matches: ConsensusNetMessage::Confirm(_)
-        };
-
-        send! {
-            description: "Follower - Confirm Ack",
-            from: [node1, node3, node4, node5, node6, node7], to: node2,
-            message_matches: ConsensusNetMessage::ConfirmAck(_)
-        };
-
-        broadcast! {
-            description: "Leader - Commit",
-            from: node2, to: [node1, node3, node4, node5, node6, node7],
-            message_matches: ConsensusNetMessage::Commit(_, _)
-        };
+        assert_eq!(cp.slot, 1);
+        assert_eq!(cp.view, 1);
+        assert!(matches!(ticket, Ticket::TimeoutQC(_)));
     }
 
     #[test_log::test(tokio::test)]
@@ -2318,20 +2306,11 @@ mod test {
         // Slot 0
         {
             node1.start_round().await;
-            let leader_proposal = node1.assert_broadcast("Leader proposal");
-            node2.handle_msg(&leader_proposal, "Leader proposal");
-            let slave_vote = node2.assert_send(&node1, "Slave vote");
-            node1.handle_msg(&slave_vote, "Slave vote");
-            let leader_confirm = node1.assert_broadcast("Leader confirm");
-            node2.handle_msg(&leader_confirm, "Leader confirm");
-            let slave_confirm_ack = node2.assert_send(&node1, "Slave confirm ack");
-            node1.handle_msg(&slave_confirm_ack, "Slave confirm ack");
-            let leader_commit = node1.assert_broadcast("Leader commit");
-            node2.handle_msg(&leader_commit, "Leader commit");
 
-            info!("➡️  Handle block");
-            node1.handle_block(&leader_proposal);
-            node2.handle_block(&leader_proposal);
+            let (cp, ticket) = simple_commit_round! {
+                leader: node1,
+                followers: [node2]
+            };
         }
 
         let mut node3 = TestCtx::new_node("node-3").await;
@@ -2344,27 +2323,12 @@ mod test {
         {
             info!("➡️  Leader proposal");
             node2.start_round().await;
-            let leader_proposal = node2.assert_broadcast("Leader proposal");
-            node1.handle_msg(&leader_proposal, "Leader proposal");
-            node3.handle_msg(&leader_proposal, "Leader proposal");
-            info!("➡️  Slave vote");
-            let slave_vote = node1.assert_send(&node2, "Slave vote");
-            node2.handle_msg(&slave_vote, "Slave vote");
-            info!("➡️  Leader confirm");
-            let leader_confirm = node2.assert_broadcast("Leader confirm");
-            node1.handle_msg(&leader_confirm, "Leader confirm");
-            node3.handle_msg(&leader_confirm, "Leader confirm");
-            info!("➡️  Slave confirm ack");
-            let slave_confirm_ack = node1.assert_send(&node2, "Slave confirm ack");
-            node2.handle_msg(&slave_confirm_ack, "Slave confirm ack");
-            info!("➡️  Leader commit");
-            let leader_commit = node2.assert_broadcast("Leader commit");
-            node1.handle_msg(&leader_commit, "Leader commit");
-            node3.handle_msg(&leader_commit, "Leader commit");
-            info!("➡️  Handle block");
-            node1.handle_block(&leader_proposal);
-            node2.handle_block(&leader_proposal);
-            node3.handle_block(&leader_proposal);
+            node2.start_round();
+
+            let (cp2, ticket2) = simple_commit_round! {
+                leader: node2,
+                followers: [node1, node3]
+            };
         }
 
         // Slot 2: New slave candidates - leader = node1
@@ -2401,11 +2365,6 @@ mod test {
             node1.handle_msg(&slave2_candidacy, "Slave 2 candidacy");
             node2.add_staker(&node3, 100, "Add staker").await;
             node2.handle_msg(&slave2_candidacy, "Slave 2 candidacy");
-
-            info!("➡️  Handle block");
-            node1.handle_block(&leader_proposal);
-            node2.handle_block(&leader_proposal);
-            node3.handle_block(&leader_proposal);
         }
 
         // Slot 3: Still a slot without slave 2 - leader = node 2
