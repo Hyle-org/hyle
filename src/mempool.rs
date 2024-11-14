@@ -4,7 +4,7 @@ use crate::{
     bus::{bus_client, command_response::Query, BusMessage, SharedMessageBus},
     consensus::ConsensusEvent,
     handle_messages,
-    mempool::storage::{Car, CarProposal, InMemoryStorage},
+    mempool::storage::{Car, DataProposal, Storage},
     model::{
         Hashable, SharedRunContext, Transaction, TransactionData, ValidatorPublicKey,
         VerifiedProofTransaction,
@@ -23,7 +23,7 @@ use bincode::{Decode, Encode};
 use metrics::MempoolMetrics;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashSet, fmt::Display, sync::Arc};
-use storage::{CarId, ProposalVerdict};
+use storage::{CarHash, DataProposalVerdict};
 use strum_macros::IntoStaticStr;
 use tracing::{debug, error, info, warn};
 
@@ -48,17 +48,17 @@ pub struct Mempool {
     bus: MempoolBusClient,
     crypto: SharedBlstCrypto,
     metrics: MempoolMetrics,
-    storage: InMemoryStorage,
+    storage: Storage,
     validators: Vec<ValidatorPublicKey>,
     node_state: NodeState,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, Eq, PartialEq, IntoStaticStr)]
 pub enum MempoolNetMessage {
-    CarProposal(CarProposal),
-    CarProposalVote(CarProposal),
+    DataProposal(DataProposal),
+    DataVote(CarHash),
     // FIXME: Add a new message to receive a Car's PoA
-    SyncRequest(CarProposal, Option<CarId>),
+    SyncRequest(CarHash, Option<CarHash>),
     SyncReply(Vec<Car>),
 }
 
@@ -100,7 +100,7 @@ impl Module for Mempool {
             bus,
             metrics,
             crypto: Arc::clone(&ctx.node.crypto),
-            storage: InMemoryStorage::new(ctx.node.crypto.validator_pubkey().clone()),
+            storage: Storage::new(ctx.node.crypto.validator_pubkey().clone()),
             validators: vec![],
             node_state,
         })
@@ -134,37 +134,37 @@ impl Mempool {
             command_response<QueryNewCut, Cut> validators => {
                 // TODO: metrics?
                 self.metrics.add_batch();
-                Ok(self.storage.make_new_cut(&validators.0))
+                Ok(self.storage.new_cut(&validators.0))
             }
             _ = interval.tick() => {
-                // This tick is responsible for CarProposal management
-                self.handle_car_proposal_management();
+                // This tick is responsible for DataProposal management
+                self.handle_data_proposal_management();
             }
         }
     }
 
-    fn handle_car_proposal_management(&mut self) {
+    fn handle_data_proposal_management(&mut self) {
         // FIXME: Split this flow in three steps:
-        // 1: create new CarProposal with pending txs and broadcast it as a CarProposal.
-        // 2: Save CarProposal. It is not yet a Car (since PoA is not reached)
-        // 3: Go through all pending CarProposal (of own lane) that have not reach PoA, and send them to make them Cars
-        let poa = self.storage.tip_poa();
-        self.try_car_proposal(poa);
-        if let Some((tip, txs)) = self.storage.tip_info() {
-            // No PoA means we rebroadcast the Car proposal for non present voters
+        // 1: create new DataProposal with pending txs and broadcast it as a DataProposal.
+        // 2: Save DataProposal. It is not yet a Car (since PoA is not reached)
+        // 3: Go through all pending DataProposal (of own lane) that have not reach PoA, and send them to make them Cars
+        self.broadcast_data_proposal_if_any();
+        if let Some(car) = self.storage.lane.current() {
+            // No PoA means we rebroadcast the DataProposal for non present voters
             let only_for = HashSet::from_iter(
                 self.validators
                     .iter()
-                    .filter(|pubkey| !tip.poa.contains(pubkey))
+                    .filter(|pubkey| !self.storage.lane.poa.contains(pubkey))
                     .cloned(),
             );
-            // FIXME: with current implem, we send CarProposal twice.
-            if let Err(e) = self.broadcast_car_proposal_only_for(
+            // FIXME: with current implem, we send DataProposal twice.
+            if let Err(e) = self.broadcast_data_proposal_only_for(
                 only_for,
-                CarProposal {
-                    txs,
-                    id: tip.pos,
-                    parent: tip.parent,
+                DataProposal {
+                    car: Car {
+                        parent_hash: car.parent_hash.clone(),
+                        txs: car.txs.clone(),
+                    },
                     parent_poa: None, // TODO: fetch parent votes
                 },
             ) {
@@ -180,13 +180,9 @@ impl Mempool {
                 new_bonded_validators,
                 validators,
             } => {
-                debug!(
-                    "✂️ Received CommitCut ({:?} cut, {} pending txs)",
-                    cut,
-                    self.storage.pending_txs.len()
-                );
+                debug!("✂️ Received CommitCut ({:?} cut)", cut);
                 self.validators = validators;
-                let txs = self.storage.update_lanes_after_commit(cut);
+                let txs = self.storage.collect_lanes(cut);
                 if let Err(e) = self
                     .bus
                     .send(MempoolEvent::CommitBlock(txs, new_bonded_validators))
@@ -203,22 +199,27 @@ impl Mempool {
             Ok(true) => {
                 let validator = &msg.signature.validator;
                 match msg.msg {
-                    MempoolNetMessage::CarProposal(car_proposal) => {
+                    MempoolNetMessage::DataProposal(data_proposal) => {
                         debug!(
-                            "Received CarProposal {} from validator {}",
-                            car_proposal.id, validator
+                            "Received DataProposal {} from validator {}",
+                            data_proposal.car.hash(),
+                            validator
                         );
-                        if let Err(e) = self.on_car_proposal(validator, car_proposal).await {
+                        if let Err(e) = self.on_data_proposal(validator, data_proposal).await {
                             error!("{:?}", e);
                         }
                     }
-                    MempoolNetMessage::CarProposalVote(car_proposal) => {
+                    MempoolNetMessage::DataVote(car_hash) => {
                         // FIXME: We should extract the signature for that Vote in order to create a PoA
-                        self.on_proposal_vote(validator, car_proposal).await;
+                        self.on_data_vote(validator, car_hash).await;
                     }
-                    MempoolNetMessage::SyncRequest(car_proposal, last_car_id) => {
-                        self.on_sync_request(validator, car_proposal, last_car_id)
-                            .await;
+                    MempoolNetMessage::SyncRequest(data_proposal_tip_hash, last_known_car_hash) => {
+                        self.on_sync_request(
+                            validator,
+                            &data_proposal_tip_hash,
+                            last_known_car_hash,
+                        )
+                        .await;
                     }
                     MempoolNetMessage::SyncReply(cars) => {
                         if let Err(e) = self
@@ -266,9 +267,9 @@ impl Mempool {
         self.storage
             .other_lane_add_missing_cars(validator, missing_cars);
 
-        let waiting_proposals = self.storage.get_waiting_proposals(validator);
+        let waiting_proposals = self.storage.get_waiting_data_proposals(validator);
         for wp in waiting_proposals {
-            if let Err(e) = self.on_car_proposal(validator, wp).await {
+            if let Err(e) = self.on_data_proposal(validator, wp).await {
                 error!("{:?}", e);
             }
         }
@@ -278,15 +279,17 @@ impl Mempool {
     async fn on_sync_request(
         &mut self,
         validator: &ValidatorPublicKey,
-        car_proposal: CarProposal,
-        last_car_id: Option<CarId>,
+        data_proposal_tip_hash: &CarHash,
+        last_known_car_hash: Option<CarHash>,
     ) {
         info!(
-            "{} SyncRequest received from validator {validator} for last_car_id {:?}",
-            self.storage.id, last_car_id
+            "{} SyncRequest received from validator {validator} for last_car_hash {:?}",
+            self.storage.id, last_known_car_hash
         );
 
-        let missing_cars = self.storage.get_missing_cars(last_car_id, &car_proposal);
+        let missing_cars = self
+            .storage
+            .get_missing_cars(last_known_car_hash, data_proposal_tip_hash);
 
         match missing_cars {
             None => info!("{} no missing cars", self.storage.id),
@@ -300,74 +303,67 @@ impl Mempool {
         }
     }
 
-    async fn on_proposal_vote(
-        &mut self,
-        validator: &ValidatorPublicKey,
-        car_proposal: CarProposal,
-    ) {
+    async fn on_data_vote(&mut self, validator: &ValidatorPublicKey, car_hash: CarHash) {
         debug!("Vote received from validator {}", validator);
-        if self
-            .storage
-            .new_vote_for_proposal(validator, &car_proposal)
-            .is_some()
-        {
-            debug!("{} Vote from {}", self.storage.id, validator)
+        if let Err(e) = self.storage.on_data_vote(validator, &car_hash) {
+            error!("{:?}", e)
         } else {
-            error!("{} unexpected Vote from {}", self.storage.id, validator)
+            debug!("{} Vote from {}", self.storage.id, validator)
         }
     }
 
-    async fn on_car_proposal(
+    async fn on_data_proposal(
         &mut self,
         validator: &ValidatorPublicKey,
-        car_proposal: CarProposal,
+        data_proposal: DataProposal,
     ) -> Result<()> {
         match self
             .storage
-            .new_car_proposal(validator, &car_proposal, &self.node_state)
+            .on_data_proposal(validator, &data_proposal, &self.node_state)
         {
-            ProposalVerdict::Empty => {
+            DataProposalVerdict::Empty => {
                 warn!(
-                    "received empty Car proposal from {}, ignoring...",
+                    "received empty DataProposal from {}, ignoring...",
                     validator
                 );
             }
-            ProposalVerdict::Vote => {
+            DataProposalVerdict::Vote => {
                 // Normal case, we receive a proposal we already have the parent in store
-                debug!("Send vote for Car proposal");
-                self.send_vote(validator, car_proposal)?;
+                debug!("Send vote for DataProposal");
+                self.send_vote(validator, data_proposal.car.hash())?;
             }
-            ProposalVerdict::DidVote => {
+            DataProposalVerdict::DidVote => {
                 error!(
-                    "we already have voted for {}'s Car proposal {}",
-                    validator, car_proposal.id
+                    "we already have voted for {}'s DataProposal {}",
+                    validator,
+                    data_proposal.car.hash()
                 );
             }
-            ProposalVerdict::Wait(last_car_id) => {
+            DataProposalVerdict::Wait(last_known_car_hash) => {
                 //We dont have the parent, so we craft a sync demand
                 debug!(
-                    "Emitting sync request with local state {} last_available_index {:?}",
-                    self.storage, last_car_id
+                    "Emitting sync request with local state {} last_known_car_hash {:?}",
+                    self.storage, last_known_car_hash
                 );
 
-                self.send_sync_request(validator, car_proposal, last_car_id)?;
+                self.send_sync_request(validator, data_proposal, last_known_car_hash)?;
             }
-            ProposalVerdict::Refuse => {
-                debug!("Refuse vote for Car proposal");
+            DataProposalVerdict::Refuse => {
+                debug!("Refuse vote for DataProposal");
             }
         }
         Ok(())
     }
 
-    fn try_car_proposal(&mut self, poa: Option<Vec<ValidatorPublicKey>>) {
-        if let Some(car_proposal) = self.storage.try_car_proposal(poa) {
+    fn broadcast_data_proposal_if_any(&mut self) {
+        if let Some(data_proposal) = self.storage.new_data_proposal() {
             debug!(
-                "🚗 Broadcast Car proposal {} ({} validators, {} txs)",
-                car_proposal.id,
+                "🚗 Broadcast DataProposal {} ({} validators, {} txs)",
+                data_proposal.car.hash(),
                 self.validators.len(),
-                car_proposal.txs.len()
+                data_proposal.car.txs.len()
             );
-            if let Err(e) = self.broadcast_car_proposal(car_proposal) {
+            if let Err(e) = self.broadcast_data_proposal(data_proposal) {
                 error!("{:?}", e);
             }
         }
@@ -399,10 +395,10 @@ impl Mempool {
         }
 
         self.metrics.add_api_tx("blob".to_string());
-        self.storage.add_new_tx(tx);
+        self.storage.on_new_tx(tx);
         if self.storage.genesis() {
-            // Genesis create and broadcast a new Car proposal
-            self.try_car_proposal(None);
+            // Genesis create and broadcast a new DataProposal
+            self.broadcast_data_proposal_if_any();
         }
         self.metrics
             .snapshot_pending_tx(self.storage.pending_txs.len());
@@ -410,56 +406,49 @@ impl Mempool {
         Ok(())
     }
 
-    fn broadcast_car_proposal(&mut self, car_proposal: CarProposal) -> Result<()> {
+    fn broadcast_data_proposal(&mut self, data_proposal: DataProposal) -> Result<()> {
         if self.validators.is_empty() {
             return Ok(());
         }
         self.metrics
-            .add_broadcasted_car_proposal("blob".to_string());
-        self.broadcast_net_message(MempoolNetMessage::CarProposal(car_proposal))?;
+            .add_broadcasted_data_proposal("blob".to_string());
+        self.broadcast_net_message(MempoolNetMessage::DataProposal(data_proposal))?;
         Ok(())
     }
 
-    fn broadcast_car_proposal_only_for(
+    fn broadcast_data_proposal_only_for(
         &mut self,
         only_for: HashSet<ValidatorPublicKey>,
-        car_proposal: CarProposal,
+        data_proposal: DataProposal,
     ) -> Result<()> {
         self.metrics
-            .add_broadcasted_car_proposal_only_for("blob".to_string());
+            .add_broadcasted_data_proposal_only_for("blob".to_string());
         _ = self
             .bus
             .send(OutboundMessage::broadcast_only_for(
                 only_for,
-                self.sign_net_message(MempoolNetMessage::CarProposal(car_proposal))?,
+                self.sign_net_message(MempoolNetMessage::DataProposal(data_proposal))?,
             ))
-            .log_error("broadcasting car_proposal_only_for");
+            .log_error("broadcasting data_proposal_only_for");
         Ok(())
     }
 
-    fn send_vote(
-        &mut self,
-        validator: &ValidatorPublicKey,
-        car_proposal: CarProposal,
-    ) -> Result<()> {
+    fn send_vote(&mut self, validator: &ValidatorPublicKey, car_hash: CarHash) -> Result<()> {
         self.metrics.add_sent_proposal_vote("blob".to_string());
-        self.send_net_message(
-            validator.clone(),
-            MempoolNetMessage::CarProposalVote(car_proposal),
-        )?;
+        self.send_net_message(validator.clone(), MempoolNetMessage::DataVote(car_hash))?;
         Ok(())
     }
 
     fn send_sync_request(
         &mut self,
         validator: &ValidatorPublicKey,
-        car_proposal: CarProposal,
-        last_car_id: Option<CarId>,
+        data_proposal: DataProposal,
+        last_known_car_hash: Option<CarHash>,
     ) -> Result<()> {
         self.metrics.add_sent_sync_request("blob".to_string());
         self.send_net_message(
             validator.clone(),
-            MempoolNetMessage::SyncRequest(car_proposal, last_car_id),
+            MempoolNetMessage::SyncRequest(data_proposal.car.hash(), last_known_car_hash),
         )?;
         Ok(())
     }
@@ -533,7 +522,7 @@ mod tests {
         pub async fn new(name: &str) -> Self {
             let crypto = BlstCrypto::new(name.into());
             let shared_bus = SharedMessageBus::new(BusMetrics::global("global".to_string()));
-            let storage = InMemoryStorage::new(crypto.validator_pubkey().clone());
+            let storage = Storage::new(crypto.validator_pubkey().clone());
             let validators = vec![crypto.validator_pubkey().clone()];
 
             let out_receiver = get_receiver::<OutboundMessage>(&shared_bus).await;
@@ -612,11 +601,11 @@ mod tests {
             .await
             .expect("fail to handle new transaction");
 
-        let car_proposal = match ctx.assert_broadcast("Car Proposal") {
-            MempoolNetMessage::CarProposal(car_proposal) => car_proposal,
-            _ => panic!("Expected CarProposal message"),
+        let data_proposal = match ctx.assert_broadcast("DataProposal") {
+            MempoolNetMessage::DataProposal(data_proposal) => data_proposal,
+            _ => panic!("Expected DataProposal message"),
         };
-        assert_eq!(car_proposal.txs, vec![register_tx]);
+        assert_eq!(data_proposal.car.txs, vec![register_tx]);
 
         // Assert that pending_tx has been flushed
         assert!(ctx.mempool.storage.pending_txs.is_empty());
@@ -625,39 +614,40 @@ mod tests {
     }
 
     #[test_log::test(tokio::test)]
-    async fn test_receiving_car_proposal() -> Result<()> {
+    async fn test_receiving_data_proposal() -> Result<()> {
         let mut ctx = TestContext::new("mempool").await;
 
-        let car_proposal = CarProposal {
-            txs: vec![make_register_contract_tx(ContractName("test1".to_owned()))],
-            id: CarId(1),
-            parent: None,
+        let data_proposal = DataProposal {
+            car: Car {
+                parent_hash: None,
+                txs: vec![make_register_contract_tx(ContractName("test1".to_owned()))],
+            },
             parent_poa: None,
         };
 
         let signed_msg = ctx
             .mempool
             .crypto
-            .sign(MempoolNetMessage::CarProposal(car_proposal.clone()))?;
+            .sign(MempoolNetMessage::DataProposal(data_proposal.clone()))?;
         ctx.mempool
             .handle_net_message(SignedByValidator {
-                msg: MempoolNetMessage::CarProposal(car_proposal.clone()),
+                msg: MempoolNetMessage::DataProposal(data_proposal.clone()),
                 signature: signed_msg.signature,
             })
             .await;
 
-        // Assert that we vote for that specific CarProposal
-        match ctx.assert_broadcast("Car Proposal Vote") {
-            MempoolNetMessage::CarProposalVote(car_proposal_vote) => {
-                assert_eq!(car_proposal_vote, car_proposal)
+        // Assert that we vote for that specific DataProposal
+        match ctx.assert_broadcast("DataVote") {
+            MempoolNetMessage::DataVote(data_vote) => {
+                assert_eq!(data_vote, data_proposal.car.hash())
             }
-            _ => panic!("Expected CarProposal message"),
+            _ => panic!("Expected DataProposal message"),
         };
         Ok(())
     }
 
     #[test_log::test(tokio::test)]
-    async fn test_receiving_unexpect_car_proposal_vote() -> Result<()> {
+    async fn test_receiving_unexpect_data_proposal_vote() -> Result<()> {
         let mut ctx = TestContext::new("mempool").await;
 
         // Sending transaction to mempool as RestApiMessage
@@ -669,7 +659,7 @@ mod tests {
             .expect("fail to handle new transaction");
 
         assert_eq!(
-            ctx.mempool.storage.lane.current().unwrap().poa,
+            ctx.mempool.storage.lane.poa,
             Poa(BTreeSet::from([ctx
                 .mempool
                 .crypto
@@ -677,26 +667,26 @@ mod tests {
                 .clone()]))
         );
 
-        let car_proposal = CarProposal {
-            txs: vec![make_register_contract_tx(ContractName("test1".to_owned()))],
-            id: CarId(10), // This value is incorrect
-            parent: None,
+        let data_proposal = DataProposal {
+            car: Car {
+                parent_hash: Some(CarHash("42".to_string())), // This value is incorrect
+                txs: vec![make_register_contract_tx(ContractName("test1".to_owned()))],
+            },
             parent_poa: None,
         };
 
         let temp_crypto = BlstCrypto::new("temp_crypto".into());
-        let signed_msg =
-            temp_crypto.sign(MempoolNetMessage::CarProposalVote(car_proposal.clone()))?;
+        let signed_msg = temp_crypto.sign(MempoolNetMessage::DataVote(data_proposal.car.hash()))?;
         ctx.mempool
             .handle_net_message(SignedByValidator {
-                msg: MempoolNetMessage::CarProposalVote(car_proposal.clone()),
+                msg: MempoolNetMessage::DataVote(data_proposal.car.hash()),
                 signature: signed_msg.signature,
             })
             .await;
 
         // Assert that we did not add the vote to the PoA
         assert_eq!(
-            ctx.mempool.storage.lane.current().unwrap().poa,
+            ctx.mempool.storage.lane.poa,
             Poa(BTreeSet::from([ctx
                 .mempool
                 .crypto
@@ -707,7 +697,7 @@ mod tests {
     }
 
     #[test_log::test(tokio::test)]
-    async fn test_receiving_car_proposal_vote() -> Result<()> {
+    async fn test_receiving_data_proposal_vote() -> Result<()> {
         let mut ctx = TestContext::new("mempool").await;
 
         // Sending transaction to mempool as RestApiMessage
@@ -719,7 +709,7 @@ mod tests {
             .expect("fail to handle new transaction");
 
         assert_eq!(
-            ctx.mempool.storage.lane.current().unwrap().poa,
+            ctx.mempool.storage.lane.poa,
             Poa(BTreeSet::from([ctx
                 .mempool
                 .crypto
@@ -727,26 +717,26 @@ mod tests {
                 .clone()]))
         );
 
-        let car_proposal = CarProposal {
-            txs: vec![make_register_contract_tx(ContractName("test1".to_owned()))],
-            id: CarId(1),
-            parent: None,
+        let data_proposal = DataProposal {
+            car: Car {
+                parent_hash: None,
+                txs: vec![make_register_contract_tx(ContractName("test1".to_owned()))],
+            },
             parent_poa: None,
         };
 
         let temp_crypto = BlstCrypto::new("temp_crypto".into());
-        let signed_msg =
-            temp_crypto.sign(MempoolNetMessage::CarProposalVote(car_proposal.clone()))?;
+        let signed_msg = temp_crypto.sign(MempoolNetMessage::DataVote(data_proposal.car.hash()))?;
         ctx.mempool
             .handle_net_message(SignedByValidator {
-                msg: MempoolNetMessage::CarProposalVote(car_proposal.clone()),
+                msg: MempoolNetMessage::DataVote(data_proposal.car.hash()),
                 signature: signed_msg.signature,
             })
             .await;
 
         // Assert that we added the vote to the PoA
         assert_eq!(
-            ctx.mempool.storage.lane.current().unwrap().poa,
+            ctx.mempool.storage.lane.poa,
             Poa(BTreeSet::from([
                 ctx.mempool.crypto.validator_pubkey().clone(),
                 temp_crypto.validator_pubkey().clone()
@@ -756,7 +746,7 @@ mod tests {
     }
 
     #[test_log::test(tokio::test)]
-    async fn test_car_proposal_management() -> Result<()> {
+    async fn test_data_proposal_management() -> Result<()> {
         // TODO: on veut rajouter ces Car à la main avec trop peu de PoA.
 
         let mut ctx = TestContext::new("mempool").await;
@@ -764,21 +754,22 @@ mod tests {
         let register_tx = make_register_contract_tx(ContractName("test1".to_owned()));
         ctx.mempool.storage.pending_txs.push(register_tx.clone());
 
-        ctx.mempool.handle_car_proposal_management();
+        ctx.mempool.handle_data_proposal_management();
 
-        let car_proposal = CarProposal {
-            txs: vec![register_tx],
-            id: CarId(1),
-            parent: None,
+        let data_proposal = DataProposal {
+            car: Car {
+                parent_hash: None,
+                txs: vec![register_tx],
+            },
             parent_poa: None,
         };
 
-        // Assert that we vote for that specific CarProposal
-        match ctx.assert_broadcast("Car Proposal Vote") {
-            MempoolNetMessage::CarProposal(received_car_proposal) => {
-                assert_eq!(received_car_proposal, car_proposal)
+        // Assert that we vote for that specific DataProposal
+        match ctx.assert_broadcast("DataVote") {
+            MempoolNetMessage::DataProposal(received_data_proposal) => {
+                assert_eq!(received_data_proposal, data_proposal)
             }
-            _ => panic!("Expected CarProposal message"),
+            _ => panic!("Expected DataProposal message"),
         };
 
         Ok(())
@@ -800,8 +791,11 @@ mod tests {
     #[test_log::test(tokio::test)]
     async fn test_receiving_commit_cut() -> Result<()> {
         let mut ctx = TestContext::new("mempool").await;
-        let car_id = CarId(1);
-        let cut: Cut = vec![(ctx.mempool.crypto.validator_pubkey().clone(), car_id)];
+        let car_hash = CarHash("42".to_string());
+        let cut: Cut = vec![(
+            ctx.mempool.crypto.validator_pubkey().clone(),
+            car_hash.clone(),
+        )];
 
         ctx.mempool
             .handle_consensus_event(ConsensusEvent::CommitCut {
@@ -811,9 +805,9 @@ mod tests {
             })
             .await;
 
-        let (tip_info, _) = ctx.mempool.storage.tip_info().expect("No tip info");
+        let car = ctx.mempool.storage.lane.current().expect("No tip info");
 
-        assert_eq!(tip_info.pos, car_id);
+        assert_eq!(car.hash(), car_hash);
         Ok(())
     }
 }
