@@ -176,12 +176,15 @@ impl Peer {
         let interval = self.conf.p2p.ping_interval;
         info!("Starting ping pong");
 
-        tokio::spawn(async move {
-            loop {
-                sleep(Duration::from_secs(interval)).await;
-                tx.send(Cmd::Ping).await.ok();
-            }
-        });
+        tokio::task::Builder::new()
+            .name(&format!("ping-peer-{}", self.id))
+            .spawn(async move {
+                loop {
+                    sleep(Duration::from_secs(interval)).await;
+                    tx.send(Cmd::Ping).await.ok();
+                }
+            })
+            .ok();
     }
 
     pub async fn start(&mut self) -> Result<(), Error> {

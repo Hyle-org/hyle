@@ -138,19 +138,20 @@ impl Indexer {
                         .or_default()
                         .push(tx);
 
-                    tokio::spawn(async move {
-                        while let Ok(transaction) = rx.recv().await {
-                            if let Ok(json) = serde_json::to_string(&transaction) {
-                                if socket.send(Message::Text(json)).await.is_err() {
-                                    break;
+                    tokio::task::Builder::new()
+                        .name("indexer-recv")
+                        .spawn(async move {
+                            while let Ok(transaction) = rx.recv().await {
+                                if let Ok(json) = serde_json::to_string(&transaction) {
+                                    if socket.send(Message::Text(json)).await.is_err() {
+                                        break;
+                                    }
+                                } else {
+                                    error!("Failed to serialize transaction to JSON");
                                 }
-                            } else {
-                                error!("Failed to serialize transaction to JSON");
                             }
-                        }
-                    });
+                        })?;
                 }
-
             }
         } else {
             handle_messages! {
@@ -182,17 +183,19 @@ impl Indexer {
                         .or_default()
                         .push(tx);
 
-                    tokio::spawn(async move {
-                        while let Ok(transaction) = rx.recv().await {
-                            if let Ok(json) = serde_json::to_string(&transaction) {
-                                if socket.send(Message::Text(json)).await.is_err() {
-                                    break;
+                    tokio::task::Builder::new()
+                        .name("indexer-recv")
+                        .spawn(async move {
+                            while let Ok(transaction) = rx.recv().await {
+                                if let Ok(json) = serde_json::to_string(&transaction) {
+                                    if socket.send(Message::Text(json)).await.is_err() {
+                                        break;
+                                    }
+                                } else {
+                                    error!("Failed to serialize transaction to JSON");
                                 }
-                            } else {
-                                error!("Failed to serialize transaction to JSON");
                             }
-                        }
-                    });
+                        })?;
                 }
             }
         }

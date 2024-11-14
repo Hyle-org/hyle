@@ -396,17 +396,19 @@ impl Consensus {
             let command_sender =
                 Pick::<broadcast::Sender<ConsensusCommand>>::get(&self.bus).clone();
             let interval = self.config.consensus.slot_duration;
-            tokio::spawn(async move {
-                info!(
-                    "⏱️  Sleeping {} milliseconds before starting a new slot",
-                    interval
-                );
-                sleep(Duration::from_millis(interval)).await;
+            tokio::task::Builder::new()
+                .name("sleep-consensus")
+                .spawn(async move {
+                    info!(
+                        "⏱️  Sleeping {} milliseconds before starting a new slot",
+                        interval
+                    );
+                    sleep(Duration::from_millis(interval)).await;
 
-                _ = command_sender
-                    .send(ConsensusCommand::StartNewSlot)
-                    .log_error("Cannot send message over channel");
-            });
+                    _ = command_sender
+                        .send(ConsensusCommand::StartNewSlot)
+                        .log_error("Cannot send StartNewSlot message over channel");
+                })?;
             Ok(())
         }
         #[cfg(test)]
@@ -1288,15 +1290,17 @@ impl Consensus {
                 interval
             );
 
-            tokio::spawn(async move {
-                loop {
-                    sleep(Duration::from_millis(interval)).await;
+            tokio::task::Builder::new()
+                .name("single-block-generator")
+                .spawn(async move {
+                    loop {
+                        sleep(Duration::from_millis(interval)).await;
 
-                    _ = command_sender
-                        .send(ConsensusCommand::SingleNodeBlockGeneration)
-                        .log_error("Cannot send message over channel");
-                }
-            });
+                        _ = command_sender
+                            .send(ConsensusCommand::SingleNodeBlockGeneration)
+                            .log_error("Cannot send message over channel");
+                    }
+                })?;
         }
 
         Ok(())
