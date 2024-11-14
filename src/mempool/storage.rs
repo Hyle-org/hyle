@@ -26,12 +26,6 @@ pub enum DataProposalVerdict {
 
 pub type Cut = Vec<(ValidatorPublicKey, CarHash)>;
 
-fn prepare_cut(cut: &mut Cut, validator: &ValidatorPublicKey, lane: &Lane) {
-    if let Some(car) = lane.cars.last() {
-        cut.push((validator.clone(), car.hash()));
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct Storage {
     pub id: ValidatorPublicKey,
@@ -74,9 +68,9 @@ impl Storage {
         let mut cut: Cut = vec![];
         for validator in validators.iter() {
             if validator == &self.id {
-                prepare_cut(&mut cut, validator, &self.lane);
+                self.lane.prepare_cut(&mut cut, validator);
             } else if let Some(lane) = self.other_lanes.get(validator) {
-                prepare_cut(&mut cut, validator, lane);
+                lane.prepare_cut(&mut cut, validator);
             } else {
                 // can happen if validator does not have any DataProposal yet
                 debug!(
@@ -500,6 +494,12 @@ impl Lane {
             if !txs.contains(&tx) {
                 txs.push(tx);
             }
+        }
+    }
+
+    fn prepare_cut(&self, cut: &mut Cut, validator: &ValidatorPublicKey) {
+        if let Some(car) = self.current() {
+            cut.push((validator.clone(), car.hash()));
         }
     }
 
