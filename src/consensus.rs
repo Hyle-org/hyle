@@ -2303,6 +2303,11 @@ mod test {
         assert!(matches!(ticket, Ticket::TimeoutQC(_)));
     }
 
+    // TODO:
+    // - fake Prepare
+    // - Wrong leader
+    // - Cut is valid
+
     #[test_log::test(tokio::test)]
     async fn test_candidacy() {
         let (mut node1, mut node2): (TestCtx, TestCtx) = build_nodes!(2).await;
