@@ -1070,7 +1070,11 @@ impl Consensus {
 
         // Save added cut TODO: remove ? (data availability)
         if let Some(file) = &self.file {
-            if let Err(e) = Self::save_on_disk(file.as_path(), &self.store) {
+            if let Err(e) = Self::save_on_disk(
+                self.config.data_directory.as_path(),
+                file.as_path(),
+                &self.store,
+            ) {
                 warn!("Failed to save consensus state on disk: {}", e);
             }
         }

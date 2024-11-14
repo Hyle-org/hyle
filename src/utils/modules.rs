@@ -38,7 +38,7 @@ where
             })
     }
 
-    fn save_on_disk<S>(file: &Path, store: &S) -> Result<()>
+    fn save_on_disk<S>(folder: &Path, file: &Path, store: &S) -> Result<()>
     where
         S: bincode::Encode,
     {
@@ -55,7 +55,8 @@ where
             .collect();
         let tmp = format!("{}.{}.data.tmp", salt, Self::name());
         debug!("Saving on disk in a tmp file {}", tmp.clone());
-        let mut writer = fs::File::create(tmp.clone()).log_error("Create file")?;
+        let tmp = folder.join(tmp.clone());
+        let mut writer = fs::File::create(tmp.as_path()).log_error("Create file")?;
         bincode::encode_into_std_write(store, &mut writer, bincode::config::standard())
             .log_error("Serializing Ctx chain")?;
         fs::rename(tmp, file).log_error("Rename file")?;
@@ -171,5 +172,106 @@ impl ModulesHandler {
             }
             Err(e) => anyhow::bail!("Error while waiting for first module: {}", e),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs::File;
+    use tempfile::tempdir;
+    use tokio::runtime::Runtime;
+
+    #[derive(Default, bincode::Encode, bincode::Decode)]
+    struct TestStruct {
+        value: u32,
+    }
+
+    struct TestModule;
+
+    impl Module for TestModule {
+        type Context = ();
+
+        fn name() -> &'static str {
+            "TestModule"
+        }
+
+        fn build(_ctx: Self::Context) -> impl futures::Future<Output = Result<Self>> + Send {
+            async { Ok(TestModule) }
+        }
+
+        fn run(&mut self) -> impl futures::Future<Output = Result<()>> + Send {
+            async { Ok(()) }
+        }
+    }
+
+    #[test]
+    fn test_load_from_disk_or_default() {
+        let dir = tempdir().unwrap();
+        let file_path = dir.path().join("test_file");
+
+        // Write a valid TestStruct to the file
+        let mut file = File::create(&file_path).unwrap();
+        let test_struct = TestStruct { value: 42 };
+        bincode::encode_into_std_write(&test_struct, &mut file, bincode::config::standard())
+            .unwrap();
+
+        // Load the struct from the file
+        let loaded_struct: TestStruct = TestModule::load_from_disk_or_default(&file_path);
+        assert_eq!(loaded_struct.value, 42);
+
+        // Load from a non-existent file
+        let non_existent_path = dir.path().join("non_existent_file");
+        let default_struct: TestStruct = TestModule::load_from_disk_or_default(&non_existent_path);
+        assert_eq!(default_struct.value, 0);
+    }
+
+    #[test]
+    fn test_save_on_disk() {
+        let dir = tempdir().unwrap();
+        let file_path = dir.path().join("test_file");
+
+        let test_struct = TestStruct { value: 42 };
+        TestModule::save_on_disk(dir.path(), &file_path, &test_struct).unwrap();
+
+        // Load the struct from the file to verify it was saved correctly
+        let loaded_struct: TestStruct = TestModule::load_from_disk_or_default(&file_path);
+        assert_eq!(loaded_struct.value, 42);
+    }
+
+    #[test]
+    fn test_build_module() {
+        let rt = Runtime::new().unwrap();
+        let mut handler = ModulesHandler::default();
+
+        rt.block_on(async {
+            handler.build_module::<TestModule>(()).await.unwrap();
+            assert_eq!(handler.modules.len(), 1);
+        });
+    }
+
+    #[test]
+    fn test_add_module() {
+        let mut handler = ModulesHandler::default();
+        let module = TestModule;
+
+        handler.add_module(module).unwrap();
+        assert_eq!(handler.modules.len(), 1);
+    }
+
+    #[test]
+    fn test_start_modules() {
+        let rt = Runtime::new().unwrap();
+        let mut handler = ModulesHandler::default();
+
+        rt.block_on(async {
+            handler.build_module::<TestModule>(()).await.unwrap();
+            let (future, abort) = handler.start_modules().unwrap();
+
+            // Start the modules and then abort
+            let handle = tokio::spawn(future);
+            abort();
+            handle.await.unwrap().unwrap();
+        });
     }
 }
