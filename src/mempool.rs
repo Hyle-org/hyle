@@ -148,8 +148,7 @@ impl Mempool {
         // 1: create new DataProposal with pending txs and broadcast it as a DataProposal.
         // 2: Save DataProposal. It is not yet a Car (since PoA is not reached)
         // 3: Go through all pending DataProposal (of own lane) that have not reach PoA, and send them to make them Cars
-        let poa = self.storage.tip_poa();
-        self.broadcast_data_proposal_if_any(poa);
+        self.broadcast_data_proposal_if_any();
         if let Some(car) = self.storage.lane.current() {
             // No PoA means we rebroadcast the DataProposal for non present voters
             let only_for = HashSet::from_iter(
@@ -359,8 +358,8 @@ impl Mempool {
         Ok(())
     }
 
-    fn broadcast_data_proposal_if_any(&mut self, poa: Option<Vec<ValidatorPublicKey>>) {
-        if let Some(data_proposal) = self.storage.new_data_proposal(poa) {
+    fn broadcast_data_proposal_if_any(&mut self) {
+        if let Some(data_proposal) = self.storage.new_data_proposal() {
             debug!(
                 "🚗 Broadcast DataProposal {} ({} validators, {} txs)",
                 data_proposal.id,
@@ -402,7 +401,7 @@ impl Mempool {
         self.storage.on_new_tx(tx);
         if self.storage.genesis() {
             // Genesis create and broadcast a new DataProposal
-            self.broadcast_data_proposal_if_any(None);
+            self.broadcast_data_proposal_if_any();
         }
         self.metrics
             .snapshot_pending_tx(self.storage.pending_txs.len());

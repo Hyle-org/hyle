@@ -65,12 +65,6 @@ impl Storage {
         }
     }
 
-    pub fn tip_poa(&self) -> Option<Vec<ValidatorPublicKey>> {
-        self.lane
-            .current()
-            .map(|car| car.poa.iter().cloned().collect())
-    }
-
     pub fn new_cut(&mut self, validators: &[ValidatorPublicKey]) -> Cut {
         // For each validator, we get the last validated car and put it in the cut
         let mut cut: Cut = vec![];
@@ -383,14 +377,15 @@ impl Storage {
         next_id
     }
 
-    pub fn new_data_proposal(
-        &mut self,
-        parent_poa: Option<Vec<ValidatorPublicKey>>,
-    ) -> Option<DataProposal> {
+    pub fn new_data_proposal(&mut self) -> Option<DataProposal> {
         let pending_txs = std::mem::take(&mut self.pending_txs);
         if pending_txs.is_empty() {
             return None;
         }
+        let parent_poa = self
+            .lane
+            .current()
+            .map(|car| car.poa.0.clone().into_iter().collect());
         let parent_hash = self.lane.current_hash();
         let tip_id = self.add_new_car_to_lane(pending_txs.clone());
         Some(DataProposal {
