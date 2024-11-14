@@ -149,7 +149,7 @@ impl Mempool {
         // 2: Save DataProposal. It is not yet a Car (since PoA is not reached)
         // 3: Go through all pending DataProposal (of own lane) that have not reach PoA, and send them to make them Cars
         self.broadcast_data_proposal_if_any();
-        if let Some(car) = self.storage.lane.current() {
+        if let Some(data_proposal) = &self.storage.data_proposal {
             // No PoA means we rebroadcast the DataProposal for non present voters
             let only_for = HashSet::from_iter(
                 self.validators
@@ -158,16 +158,7 @@ impl Mempool {
                     .cloned(),
             );
             // FIXME: with current implem, we send DataProposal twice.
-            if let Err(e) = self.broadcast_data_proposal_only_for(
-                only_for,
-                DataProposal {
-                    car: Car {
-                        parent_hash: car.parent_hash.clone(),
-                        txs: car.txs.clone(),
-                    },
-                    parent_poa: None, // TODO: fetch parent votes
-                },
-            ) {
+            if let Err(e) = self.broadcast_data_proposal_only_for(only_for, data_proposal.clone()) {
                 error!("{:?}", e);
             }
         }
@@ -306,9 +297,12 @@ impl Mempool {
     async fn on_data_vote(&mut self, validator: &ValidatorPublicKey, car_hash: CarHash) {
         debug!("Vote received from validator {}", validator);
         if let Err(e) = self.storage.on_data_vote(validator, &car_hash) {
-            error!("{:?}", e)
+            error!("{:?}", e);
         } else {
-            debug!("{} Vote from {}", self.storage.id, validator)
+            debug!("{} Vote from {}", self.storage.id, validator);
+            if self.storage.lane.poa.len() > self.validators.len() / 3 {
+                self.storage.commit_data_proposal();
+            }
         }
     }
 
