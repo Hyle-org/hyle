@@ -4,11 +4,15 @@ use crate::{
     bus::{bus_client, BusMessage, SharedMessageBus},
     consensus::staking::{Stake, Staker},
     handle_messages,
-    model::{SharedRunContext, Transaction, TransactionData, ValidatorPublicKey},
+    model::{
+        RegisterContractTransaction, SharedRunContext, Transaction, TransactionData,
+        ValidatorPublicKey,
+    },
     p2p::network::PeerEvent,
     utils::{conf::SharedConf, crypto::SharedBlstCrypto, modules::Module},
 };
 use anyhow::{Error, Result};
+use hyle_contract_sdk::Digestable;
 use serde::{Deserialize, Serialize};
 use tracing::info;
 
@@ -16,7 +20,7 @@ use tracing::info;
 pub enum GenesisEvent {
     NoGenesis,
     GenesisBlock {
-        stake_txs: Vec<Transaction>,
+        genesis_txs: Vec<Transaction>,
         initial_validators: Vec<ValidatorPublicKey>,
     },
 }
@@ -105,24 +109,63 @@ impl Genesis {
         let mut initial_validators = self.peer_pubkey.values().cloned().collect::<Vec<_>>();
         initial_validators.sort();
 
+        let stake_txs = self
+            .peer_pubkey
+            .iter()
+            .map(|(k, v)| {
+                Transaction::wrap(TransactionData::Stake(Staker {
+                    pubkey: v.clone(),
+                    stake: Stake {
+                        amount: *self.config.consensus.genesis_stakers.get(k).unwrap_or(&100),
+                    },
+                }))
+            })
+            .collect::<Vec<_>>();
+
+        let contracts_txs = Self::genesis_contracts_txs();
+
+        let genesis_txs = stake_txs
+            .into_iter()
+            .chain(contracts_txs.into_iter())
+            .collect();
+
         // At this point, we can setup the genesis block.
         _ = self.bus.send(GenesisEvent::GenesisBlock {
             initial_validators,
-            stake_txs: self
-                .peer_pubkey
-                .iter()
-                .map(|(k, v)| {
-                    Transaction::wrap(TransactionData::Stake(Staker {
-                        pubkey: v.clone(),
-                        stake: Stake {
-                            amount: *self.config.consensus.genesis_stakers.get(k).unwrap_or(&100),
-                        },
-                    }))
-                })
-                .collect(),
+            genesis_txs,
         });
 
         Ok(())
+    }
+
+    fn genesis_contracts_txs() -> Vec<Transaction> {
+        let hyllar_program_id = include_str!("../contracts/hyllar/hyllar.txt").trim();
+        let hyllar_program_id = hex::decode(hyllar_program_id).expect("Image id decoding failed");
+
+        let hydentity_program_id = include_str!("../contracts/hydentity/hydentity.txt").trim();
+        let hydentity_program_id =
+            hex::decode(hydentity_program_id).expect("Image id decoding failed");
+
+        vec![
+            Transaction::wrap(TransactionData::RegisterContract(
+                RegisterContractTransaction {
+                    owner: "hyle".into(),
+                    verifier: "risc0".into(),
+                    program_id: hyllar_program_id,
+                    state_digest: hyllar::HyllarToken::new(1000).as_digest(),
+                    contract_name: "hyllar".into(),
+                },
+            )),
+            Transaction::wrap(TransactionData::RegisterContract(
+                RegisterContractTransaction {
+                    owner: "hyle".into(),
+                    verifier: "risc0".into(),
+                    program_id: hydentity_program_id,
+                    state_digest: hydentity::Hydentity::new().as_digest(),
+                    contract_name: "hydentity".into(),
+                },
+            )),
+        ]
     }
 }
 
@@ -225,11 +268,11 @@ mod tests {
         let rec: GenesisEvent = bus.try_recv().expect("recv");
         assert_matches!(rec, GenesisEvent::GenesisBlock { .. });
         if let GenesisEvent::GenesisBlock {
-            stake_txs,
+            genesis_txs,
             initial_validators,
         } = rec
         {
-            assert_eq!(stake_txs.len(), 2);
+            assert_eq!(genesis_txs.len(), 4);
             assert_eq!(initial_validators.len(), 2);
         }
     }
@@ -264,11 +307,11 @@ mod tests {
         let rec = bus.try_recv().expect("recv");
         assert_matches!(rec, GenesisEvent::GenesisBlock { .. });
         if let GenesisEvent::GenesisBlock {
-            stake_txs,
+            genesis_txs,
             initial_validators,
         } = rec
         {
-            assert_eq!(stake_txs.len(), 2);
+            assert_eq!(genesis_txs.len(), 4);
             assert_eq!(initial_validators.len(), 2);
         }
     }

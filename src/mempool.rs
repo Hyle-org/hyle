@@ -3,6 +3,7 @@
 use crate::{
     bus::{bus_client, command_response::Query, BusMessage, SharedMessageBus},
     consensus::ConsensusEvent,
+    genesis::GenesisEvent,
     handle_messages,
     mempool::storage::{Car, DataProposal, Storage},
     model::{
@@ -40,6 +41,7 @@ struct MempoolBusClient {
     receiver(SignedByValidator<MempoolNetMessage>),
     receiver(RestApiMessage),
     receiver(ConsensusEvent),
+    receiver(GenesisEvent),
     receiver(Query<QueryNewCut, Cut>),
 }
 }
@@ -130,6 +132,15 @@ impl Mempool {
             }
             listen<ConsensusEvent> cmd => {
                 self.handle_consensus_event(cmd).await
+            }
+            listen<GenesisEvent> cmd => {
+                if let GenesisEvent::GenesisBlock { genesis_txs, .. } = cmd {
+                    for tx in genesis_txs {
+                        if let TransactionData::RegisterContract(tx) = tx.transaction_data {
+                            self.node_state.handle_register_contract_tx(&tx)?;
+                        }
+                    }
+                }
             }
             command_response<QueryNewCut, Cut> validators => {
                 // TODO: metrics?
