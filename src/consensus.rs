@@ -2037,8 +2037,6 @@ mod test {
         let timeout_certificate3 = node3.assert_broadcast("Timeout Certificate 3");
         node4.assert_broadcast("Timeout Certificate 4");
 
-        node4.assert_broadcast("Timeout Certificate 4");
-
         node3.start_round().await;
 
         // Slot 2 view 1 (following a timeout round)
