@@ -107,8 +107,24 @@ impl Display for ConsensusNetMessage {
                 }
                 write!(f, "")
             }
+
             ConsensusNetMessage::ValidatorCandidacy(candidacy) => {
                 write!(f, "{} (CP hash {})", enum_variant, candidacy)
+            }
+            ConsensusNetMessage::Timeout(hash, next_leader) => {
+                write!(
+                    f,
+                    "{} - CP hash {} - Next Leader {}",
+                    enum_variant, hash, next_leader
+                )
+            }
+            ConsensusNetMessage::TimeoutCertificate(cert, hash) => {
+                _ = writeln!(f, "{} - CP hash: {}", enum_variant, hash);
+                _ = write!(f, "Certificate {} with validators ", cert.signature);
+                for v in cert.validators.iter() {
+                    _ = write!(f, "{},", v);
+                }
+                write!(f, "")
             }
         }
     }
