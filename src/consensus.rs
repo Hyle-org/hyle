@@ -779,9 +779,6 @@ impl Consensus {
                 return Ok(());
             }
             StateTag::Follower | StateTag::Leader => {}
-            _ => {
-                bail!("Prepare message received while not follower or leader");
-            }
         }
 
         // Process the ticket
