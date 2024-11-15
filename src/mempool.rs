@@ -134,6 +134,15 @@ impl Mempool {
             command_response<QueryNewCut, Cut> validators => {
                 // TODO: metrics?
                 self.metrics.add_batch();
+                // FIXME: use voting power
+                // self.validators.len() == 1 is for SingleNodeBlockGeneration
+                //   it makes sure the DataProposal is committed to the Lane without waiting for a DataVote
+                // self.storage.lane.poa.len() > f is for waiting for the appropriate number of votes
+                //   it makes sure we received enough DataVote before commiting the DataProposal to the Lane.
+                let f = self.validators.len() / 3;
+                if self.validators.len() == 1 || self.storage.lane.poa.len() > f {
+                    self.storage.commit_data_proposal();
+                }
                 Ok(self.storage.new_cut(&validators.0))
             }
             _ = interval.tick() => {
@@ -149,7 +158,7 @@ impl Mempool {
         // 2: Save DataProposal. It is not yet a Car (since PoA is not reached)
         // 3: Go through all pending DataProposal (of own lane) that have not reach PoA, and send them to make them Cars
         self.broadcast_data_proposal_if_any();
-        if let Some(car) = self.storage.lane.current() {
+        if let Some(data_proposal) = &self.storage.data_proposal {
             // No PoA means we rebroadcast the DataProposal for non present voters
             let only_for = HashSet::from_iter(
                 self.validators
@@ -158,16 +167,7 @@ impl Mempool {
                     .cloned(),
             );
             // FIXME: with current implem, we send DataProposal twice.
-            if let Err(e) = self.broadcast_data_proposal_only_for(
-                only_for,
-                DataProposal {
-                    car: Car {
-                        parent_hash: car.parent_hash.clone(),
-                        txs: car.txs.clone(),
-                    },
-                    parent_poa: None, // TODO: fetch parent votes
-                },
-            ) {
+            if let Err(e) = self.broadcast_data_proposal_only_for(only_for, data_proposal.clone()) {
                 error!("{:?}", e);
             }
         }
@@ -265,9 +265,9 @@ impl Mempool {
         );
 
         self.storage
-            .other_lane_add_missing_cars(validator, missing_cars);
+            .other_lane_add_missing_cars(validator, missing_cars)?;
 
-        let waiting_proposals = self.storage.get_waiting_data_proposals(validator);
+        let waiting_proposals = self.storage.get_waiting_data_proposals(validator)?;
         for wp in waiting_proposals {
             if let Err(e) = self.on_data_proposal(validator, wp).await {
                 error!("{:?}", e);
@@ -304,11 +304,13 @@ impl Mempool {
     }
 
     async fn on_data_vote(&mut self, validator: &ValidatorPublicKey, car_hash: CarHash) {
-        debug!("Vote received from validator {}", validator);
         if let Err(e) = self.storage.on_data_vote(validator, &car_hash) {
-            error!("{:?}", e)
+            error!("{:?}", e);
         } else {
-            debug!("{} Vote from {}", self.storage.id, validator)
+            debug!("{} Vote from {}", self.storage.id, validator);
+            if self.storage.lane.poa.len() > self.validators.len() / 3 {
+                self.storage.commit_data_proposal();
+            }
         }
     }
 
@@ -396,10 +398,6 @@ impl Mempool {
 
         self.metrics.add_api_tx("blob".to_string());
         self.storage.on_new_tx(tx);
-        if self.storage.genesis() {
-            // Genesis create and broadcast a new DataProposal
-            self.broadcast_data_proposal_if_any();
-        }
         self.metrics
             .snapshot_pending_tx(self.storage.pending_txs.len());
 
@@ -601,6 +599,8 @@ mod tests {
             .await
             .expect("fail to handle new transaction");
 
+        ctx.mempool.broadcast_data_proposal_if_any();
+
         let data_proposal = match ctx.assert_broadcast("DataProposal") {
             MempoolNetMessage::DataProposal(data_proposal) => data_proposal,
             _ => panic!("Expected DataProposal message"),
@@ -724,6 +724,7 @@ mod tests {
             },
             parent_poa: None,
         };
+        ctx.mempool.broadcast_data_proposal_if_any();
 
         let temp_crypto = BlstCrypto::new("temp_crypto".into());
         let signed_msg = temp_crypto.sign(MempoolNetMessage::DataVote(data_proposal.car.hash()))?;
