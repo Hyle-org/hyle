@@ -34,6 +34,7 @@ pub struct Conf {
     pub run_indexer: bool,
     pub da_address: String,
     pub log_format: String,
+    pub single_node: Option<bool>,
 }
 
 impl Conf {

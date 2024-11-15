@@ -1,22 +1,8 @@
 //! Handles all consensus logic up to block commitment.
 
-use anyhow::{anyhow, bail, Context, Error, Result};
-use bincode::{Decode, Encode};
-use metrics::ConsensusMetrics;
-use serde::{Deserialize, Serialize};
-use staking::{Staker, Staking, MIN_STAKE};
-use std::{
-    collections::{HashMap, HashSet},
-    default::Default,
-    path::PathBuf,
-    time::Duration,
-};
-use tokio::{
-    sync::broadcast,
-    time::{interval, sleep},
-};
-use tracing::{debug, error, info, warn};
-
+use crate::utils::logger::LogMe;
+#[cfg(not(test))]
+use crate::utils::static_type_map::Pick;
 use crate::{
     bus::{
         bus_client,
@@ -26,7 +12,7 @@ use crate::{
     data_availability::DataEvent,
     genesis::GenesisEvent,
     handle_messages,
-    mempool::{Cut, QueryNewCut},
+    mempool::{storage::Cut, QueryNewCut},
     model::{get_current_timestamp, BlockHeight, Hashable, ValidatorPublicKey},
     p2p::{
         network::{OutboundMessage, PeerEvent, Signed, SignedByValidator},
@@ -35,11 +21,24 @@ use crate::{
     utils::{
         conf::SharedConf,
         crypto::{AggregateSignature, BlstCrypto, SharedBlstCrypto, ValidatorSignature},
-        logger::LogMe,
         modules::Module,
-        static_type_map::Pick,
     },
 };
+use anyhow::{anyhow, bail, Context, Error, Result};
+use bincode::{Decode, Encode};
+use metrics::ConsensusMetrics;
+use serde::{Deserialize, Serialize};
+use staking::{Staker, Staking, MIN_STAKE};
+use std::time::Duration;
+use std::{
+    collections::{HashMap, HashSet},
+    default::Default,
+    path::PathBuf,
+};
+use tokio::time::interval;
+#[cfg(not(test))]
+use tokio::{sync::broadcast, time::sleep};
+use tracing::{debug, error, info, warn};
 
 use strum_macros::IntoStaticStr;
 
@@ -54,7 +53,6 @@ pub mod utils;
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub enum ConsensusCommand {
-    SingleNodeBlockGeneration,
     TimeoutTick,
     NewStaker(Staker),
     NewBonded(ValidatorPublicKey),
@@ -1425,29 +1423,6 @@ impl Consensus {
 
     async fn handle_command(&mut self, msg: ConsensusCommand) -> Result<()> {
         match msg {
-            ConsensusCommand::SingleNodeBlockGeneration => {
-                let validators = vec![self.crypto.validator_pubkey().clone()];
-                match self.bus.request(QueryNewCut(validators)).await {
-                    Ok(cut) => {
-                        self.last_cut = cut;
-                    }
-                    Err(err) => {
-                        // In case of an error, we reuse the last cut to avoid being considered byzantine
-                        error!(
-                            "Could not get a new cut from Mempool {:?}. Reusing previous one... {:?}",
-                            err, self.last_cut
-                        );
-                    }
-                };
-                self.bus
-                    .send(ConsensusEvent::CommitCut {
-                        validators: vec![self.crypto.validator_pubkey().clone()],
-                        new_bonded_validators: vec![],
-                        cut: self.last_cut.clone(),
-                    })
-                    .expect("Failed to send ConsensusEvent::CommitCut msg on the bus");
-                Ok(())
-            }
             ConsensusCommand::TimeoutTick => match &self.bft_round_state.follower.timeout_state {
                 TimeoutState::Scheduled { timestamp } if get_current_timestamp() >= *timestamp => {
                     // Trigger state transition to mutiny
@@ -1523,29 +1498,6 @@ impl Consensus {
         Ok(())
     }
 
-    fn start_master(&mut self, config: SharedConf) -> Result<()> {
-        let interval = config.consensus.slot_duration;
-
-        // hack to avoid another bus for a specific wip case
-        let command_sender = Pick::<broadcast::Sender<ConsensusCommand>>::get(&self.bus).clone();
-        if config.id == "single-node" {
-            info!("Configured as single node, generating cuts every {interval} milliseconds",);
-
-            tokio::task::Builder::new()
-                .name("single-block-generator")
-                .spawn(async move {
-                    loop {
-                        sleep(Duration::from_millis(interval)).await;
-                        _ = command_sender
-                            .send(ConsensusCommand::SingleNodeBlockGeneration)
-                            .log_error("Cannot send message over channel");
-                    }
-                })?;
-        }
-
-        Ok(())
-    }
-
     async fn wait_genesis(&mut self) -> Result<()> {
         handle_messages! {
             on_bus self.bus,
@@ -1575,10 +1527,6 @@ impl Consensus {
                     },
                 }
             }
-        }
-
-        if self.config.id == "single-node" {
-            return self.start().await;
         }
 
         if self.is_round_leader() {

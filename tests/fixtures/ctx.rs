@@ -60,10 +60,9 @@ impl E2ECtx {
             confs.push(node_conf);
         }
 
-        for i in 0..count {
-            let mut node_conf = confs[i].clone();
+        for node_conf in confs.iter_mut() {
             node_conf.consensus.genesis_stakers = genesis_stakers.clone();
-            let node = test_helpers::TestProcess::new("node", node_conf)
+            let node = test_helpers::TestProcess::new("node", node_conf.clone())
                 //.log("hyle=info,tower_http=error")
                 .start();
 
@@ -81,6 +80,7 @@ impl E2ECtx {
     pub async fn new_single(slot_duration: u64) -> Result<E2ECtx> {
         let mut conf_maker = ConfMaker::default();
         conf_maker.default.consensus.slot_duration = slot_duration;
+        conf_maker.default.single_node = Some(true);
         conf_maker.default.consensus.genesis_stakers =
             vec![("single-node".to_string(), 100)].into_iter().collect();
 
