@@ -265,9 +265,9 @@ impl Mempool {
         );
 
         self.storage
-            .other_lane_add_missing_cars(validator, missing_cars);
+            .other_lane_add_missing_cars(validator, missing_cars)?;
 
-        let waiting_proposals = self.storage.get_waiting_data_proposals(validator);
+        let waiting_proposals = self.storage.get_waiting_data_proposals(validator)?;
         for wp in waiting_proposals {
             if let Err(e) = self.on_data_proposal(validator, wp).await {
                 error!("{:?}", e);

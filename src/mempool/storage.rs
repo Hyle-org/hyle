@@ -68,9 +68,9 @@ impl Storage {
         let mut cut: Cut = vec![];
         for validator in validators.iter() {
             if validator == &self.id {
-                self.lane.prepare_cut(&mut cut, validator);
+                self.lane.add_current_hash_to_cut(&mut cut, validator);
             } else if let Some(lane) = self.other_lanes.get(validator) {
-                lane.prepare_cut(&mut cut, validator);
+                lane.add_current_hash_to_cut(&mut cut, validator);
             } else {
                 // can happen if validator does not have any DataProposal yet
                 debug!(
@@ -98,15 +98,16 @@ impl Storage {
         if let Some(current_data_proposal) = &self.data_proposal {
             if &current_data_proposal.car.hash() == car_hash {
                 if self.lane.poa.contains(validator) {
-                    bail!("{validator} already voted for DataProposal");
+                    debug!("{validator} already voted for DataProposal");
                 } else {
                     self.lane.poa.insert(validator.clone());
                 }
             } else {
                 bail!("DataVote for wrong DataProposal ({validator})");
             }
+        } else {
+            debug!("Unexpected DataVote received from {validator} (no current DataProposal)");
         }
-        debug!("Unexpected DataVote received from {validator} (no current DataProposal)");
         Ok(())
     }
 
@@ -302,15 +303,19 @@ impl Storage {
     pub fn get_waiting_data_proposals(
         &mut self,
         validator: &ValidatorPublicKey,
-    ) -> Vec<DataProposal> {
+    ) -> Result<Vec<DataProposal>> {
         match self.other_lanes.get_mut(validator) {
-            Some(lane) => lane.waiting.drain(0..).collect::<Vec<_>>(),
-            None => vec![],
+            Some(lane) => lane.get_waiting_data_proposals(),
+            None => Ok(vec![]),
         }
     }
 
     // Updates local view other lane matching the validator with sent cars
-    pub fn other_lane_add_missing_cars(&mut self, validator: &ValidatorPublicKey, cars: Vec<Car>) {
+    pub fn other_lane_add_missing_cars(
+        &mut self,
+        validator: &ValidatorPublicKey,
+        cars: Vec<Car>,
+    ) -> Result<()> {
         let lane = self.other_lanes.entry(validator.clone()).or_default();
 
         debug!(
@@ -318,11 +323,7 @@ impl Storage {
             lane, cars
         );
 
-        for car in cars.into_iter() {
-            if car.parent_hash == lane.current_hash() {
-                lane.cars.push(car);
-            }
-        }
+        lane.add_missing_cars(cars)
     }
 
     /// Received a new transaction when the previous DataProposal had no PoA yet
@@ -339,6 +340,8 @@ impl Storage {
                 parent_hash: self.lane.current_hash(),
                 txs: std::mem::take(&mut self.pending_txs),
             },
+            // The very first time we create a DataProposal, lane.poa.len() will be 1 so this means we have no parent Poa.
+            // After that lane.poa will contain the parent Poa.
             parent_poa: if self.lane.poa.len() == 1 {
                 None
             } else {
@@ -376,12 +379,7 @@ pub struct DataProposal {
 
 impl Display for DataProposal {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{{ {:?} <- [{:?}] }}",
-            self.car.parent_hash,
-            self.car.txs.first()
-        )
+        write!(f, "{}", self.car.hash())
     }
 }
 
@@ -428,7 +426,7 @@ impl Hashable<CarHash> for Car {
 
 impl Display for Car {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.hash(),)
+        write!(f, "{}", self.hash())
     }
 }
 
@@ -493,7 +491,7 @@ impl Lane {
         }
     }
 
-    fn prepare_cut(&self, cut: &mut Cut, validator: &ValidatorPublicKey) {
+    fn add_current_hash_to_cut(&self, cut: &mut Cut, validator: &ValidatorPublicKey) {
         if let Some(car) = self.current() {
             cut.push((validator.clone(), car.hash()));
         }
@@ -559,6 +557,31 @@ impl Lane {
                 }
             }
         }
+    }
+
+    pub fn add_missing_cars(&mut self, cars: Vec<Car>) -> Result<()> {
+        let mut ordered_cars = cars;
+        ordered_cars.dedup();
+
+        for car in ordered_cars.into_iter() {
+            if car.parent_hash != self.current_hash() {
+                bail!("Hash mismatch while adding missing Cars");
+            }
+            self.cars.push(car);
+        }
+        Ok(())
+    }
+
+    fn get_waiting_data_proposals(&mut self) -> Result<Vec<DataProposal>> {
+        let wp = self.waiting.drain(0..).collect::<Vec<_>>();
+        if wp.len() > 1 {
+            for i in 0..wp.len() - 1 {
+                if Some(&wp[i].car.hash()) != wp[i + 1].car.parent_hash.as_ref() {
+                    bail!("unsorted DataProposal");
+                }
+            }
+        }
+        Ok(wp)
     }
 }
 
@@ -994,6 +1017,101 @@ mod tests {
         );
     }
 
+    #[test]
+    fn test_add_missing_cars_order_check() {
+        let pubkey2 = ValidatorPublicKey(vec![2]);
+        let pubkey3 = ValidatorPublicKey(vec![3]);
+        let mut store = Storage::new(pubkey3.clone());
+
+        let car1 = Car {
+            parent_hash: None,
+            txs: vec![make_blob_tx("test1")],
+        };
+        let car2 = Car {
+            parent_hash: Some(car1.hash()),
+            txs: vec![make_blob_tx("test2")],
+        };
+        let car3 = Car {
+            parent_hash: Some(car2.hash()),
+            txs: vec![make_blob_tx("test3")],
+        };
+        let car4 = Car {
+            parent_hash: Some(car3.hash()),
+            txs: vec![make_blob_tx("test4")],
+        };
+
+        store
+            .other_lane_add_missing_cars(
+                &pubkey2,
+                vec![car1.clone(), car2.clone(), car3.clone(), car4.clone()],
+            )
+            .expect("to add missing cars");
+
+        std::mem::take(&mut store.other_lanes.get_mut(&pubkey2).unwrap().cars);
+
+        // car1 repetition should not be a problem
+        store
+            .other_lane_add_missing_cars(
+                &pubkey2,
+                vec![
+                    car1.clone(),
+                    car1.clone(),
+                    car2.clone(),
+                    car3.clone(),
+                    car4.clone(),
+                ],
+            )
+            .expect("to add missing cars");
+
+        std::mem::take(&mut store.other_lanes.get_mut(&pubkey2).unwrap().cars);
+
+        // unordered cars should fail
+        assert!(store
+            .other_lane_add_missing_cars(
+                &pubkey2,
+                vec![car4.clone(), car1.clone(), car2.clone(), car3.clone()],
+            )
+            .is_err());
+
+        std::mem::take(&mut store.other_lanes.get_mut(&pubkey2).unwrap().cars);
+
+        let car_bad = Car {
+            parent_hash: Some(car3.hash()),
+            txs: vec![make_blob_tx("testX")],
+        };
+
+        // car_bad is a fork on car3
+        assert!(store
+            .other_lane_add_missing_cars(
+                &pubkey2,
+                vec![
+                    car4.clone(),
+                    car2.clone(),
+                    car_bad,
+                    car1.clone(),
+                    car3.clone(),
+                ],
+            )
+            .is_err());
+
+        std::mem::take(&mut store.other_lanes.get_mut(&pubkey2).unwrap().cars);
+
+        // car5 will not be part of the missing cars
+        let car5 = Car {
+            parent_hash: Some(car4.hash()),
+            txs: vec![make_blob_tx("test5")],
+        };
+        let car6 = Car {
+            parent_hash: Some(car5.hash()),
+            txs: vec![make_blob_tx("test6")],
+        };
+        assert!(store
+            .other_lane_add_missing_cars(&pubkey2, vec![car4, car2, car6, car1, car3])
+            .is_err());
+
+        std::mem::take(&mut store.other_lanes.get_mut(&pubkey2).unwrap().cars);
+    }
+
     #[test_log::test]
     fn test_add_missing_cars() {
         let pubkey2 = ValidatorPublicKey(vec![2]);
@@ -1004,16 +1122,18 @@ mod tests {
             parent_hash: None,
             txs: vec![make_blob_tx("test1")],
         };
-        store.other_lane_add_missing_cars(
-            &pubkey2,
-            vec![
-                car1.clone(),
-                Car {
-                    parent_hash: Some(car1.hash()),
-                    txs: vec![make_blob_tx("test2")],
-                },
-            ],
-        );
+        store
+            .other_lane_add_missing_cars(
+                &pubkey2,
+                vec![
+                    car1.clone(),
+                    Car {
+                        parent_hash: Some(car1.hash()),
+                        txs: vec![make_blob_tx("test2")],
+                    },
+                ],
+            )
+            .expect("add missing cars");
 
         assert_eq!(
             store.other_lanes.get(&pubkey2).map(|lane| lane.cars.len()),
@@ -1074,5 +1194,50 @@ mod tests {
         assert_eq!(missing[0].txs[0], make_blob_tx("test_local1"));
         assert_eq!(missing[1].txs[0], make_blob_tx("test_local2"));
         assert_eq!(missing[2].txs[0], make_blob_tx("test_local3"));
+    }
+
+    #[test]
+    fn test_lane_workflow() {
+        let pubkey2 = ValidatorPublicKey(vec![2]);
+        let pubkey3 = ValidatorPublicKey(vec![3]);
+        let mut store3 = Storage::new(pubkey3.clone());
+        let mut store2 = Storage::new(pubkey2.clone());
+        let node_state3 = NodeState::default();
+        let node_state2 = NodeState::default();
+
+        store3.on_new_tx(make_blob_tx("tx 1"));
+        let data_proposal3 = store3.new_data_proposal().expect("a DataProposal");
+
+        store2.on_new_tx(make_blob_tx("tx 2"));
+        let data_proposal2 = store2.new_data_proposal().expect("a DataProposal");
+
+        assert_eq!(
+            store3.on_data_proposal(&pubkey2, &data_proposal2, &node_state3),
+            DataProposalVerdict::Vote
+        );
+        assert_eq!(
+            store2.on_data_proposal(&pubkey3, &data_proposal3, &node_state2),
+            DataProposalVerdict::Vote
+        );
+
+        store3
+            .on_data_vote(&pubkey2, &data_proposal3.car.hash())
+            .expect("a vote");
+        store2
+            .on_data_vote(&pubkey3, &data_proposal2.car.hash())
+            .expect("a vote");
+
+        store3.commit_data_proposal();
+        store2.commit_data_proposal();
+
+        let cut3 = store3.new_cut(&[pubkey3.clone(), pubkey2.clone()]);
+        assert_eq!(cut3.len(), 2);
+        let cut2 = store2.new_cut(&[pubkey3.clone(), pubkey2.clone()]);
+        assert_eq!(cut2.len(), 2);
+
+        let txs3 = store3.collect_lanes(cut3.clone());
+        assert_eq!(txs3.len(), 2);
+        let txs2 = store2.collect_lanes(cut3.clone());
+        assert_eq!(txs2.len(), 2);
     }
 }
