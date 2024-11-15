@@ -8,6 +8,7 @@ use crate::consensus::{
 };
 use crate::mempool::storage::Cut;
 use crate::mempool::{MempoolNetMessage, QueryNewCut};
+use crate::model::Hashable;
 use crate::p2p::network::{NetMessage, OutboundMessage, SignedByValidator};
 use crate::utils::conf::SharedConf;
 use crate::utils::crypto::{BlstCrypto, SharedBlstCrypto};
@@ -40,7 +41,7 @@ struct SingleNodeConsensusStore {
 
 pub struct SingleNodeConsensus {
     bus: SingleNodeConsensusBusClient,
-    car_proposal_signer: SharedBlstCrypto,
+    data_proposal_signer: SharedBlstCrypto,
     crypto: SharedBlstCrypto,
     config: SharedConf,
     store: SingleNodeConsensusStore,
@@ -50,8 +51,8 @@ pub struct SingleNodeConsensus {
 /// The `SingleNodeConsensus` module listens to and sends the same messages as the `Consensus` module.
 /// However, there are differences in behavior:
 /// - It does not perform any consensus.
-/// - It creates a fake validator that automatically votes for any `CarProposal` it receives.
-/// - For every CarProposal received, it saves it automatically as a `Car`.
+/// - It creates a fake validator that automatically votes for any `DataProposal` it receives.
+/// - For every DataProposal received, it saves it automatically as a `Car`.
 /// - For every slot_duration tick, it is able to retrieve a `Car`s and create a new `CommitCut`
 impl Module for SingleNodeConsensus {
     fn name() -> &'static str {
@@ -73,8 +74,8 @@ impl Module for SingleNodeConsensus {
         let bus = SingleNodeConsensusBusClient::new_from_bus(ctx.common.bus.new_handle()).await;
         Ok(SingleNodeConsensus {
             bus,
-            car_proposal_signer: Arc::new(BlstCrypto::new(
-                "single_node_car_proposal_signer".to_owned(),
+            data_proposal_signer: Arc::new(BlstCrypto::new(
+                "single_node_data_proposal_signer".to_owned(),
             )),
             crypto: ctx.node.crypto.clone(),
             config: ctx.common.config.clone(),
@@ -91,7 +92,7 @@ impl Module for SingleNodeConsensus {
 impl SingleNodeConsensus {
     async fn start(&mut self) -> Result<()> {
         let validators = vec![
-            self.car_proposal_signer.validator_pubkey().clone(),
+            self.data_proposal_signer.validator_pubkey().clone(),
             self.crypto.validator_pubkey().clone(),
         ];
         let new_bonded_validators = vec![self.crypto.validator_pubkey().clone()];
@@ -99,7 +100,7 @@ impl SingleNodeConsensus {
         // On peut Query DA pour récuperer le dernier block/cut ?
         if !self.store.has_done_genesis {
             // This is the genesis
-            // Send new cut with two validators. The Node itself and the 'car_proposal_signer' which is here just to Vote for new CarProposal.
+            // Send new cut with two validators. The Node itself and the 'data_proposal_signer' which is here just to Vote for new DataProposal.
             self.bus.send(ConsensusEvent::CommitCut {
                 validators,
                 new_bonded_validators,
@@ -135,16 +136,16 @@ impl SingleNodeConsensus {
 
     fn handle_car_proposal_message(&mut self, cmd: OutboundMessage) -> Result<()> {
         // Receiving a car proposal and automatically voting for it.
-        // WARNING: No verification is done on it. This could be lead errors on CarProposal not being detected
+        // WARNING: No verification is done on it. This could be lead errors on DataProposal not being detected
         if let OutboundMessage::BroadcastMessage(NetMessage::MempoolMessage(SignedByValidator {
-            msg: MempoolNetMessage::CarProposal(car_proposal),
+            msg: MempoolNetMessage::DataProposal(data_proposal),
             ..
         })) = cmd
         {
             let signed_msg =
-                self.sign_net_message(MempoolNetMessage::CarProposalVote(car_proposal.clone()))?;
+                self.sign_net_message(MempoolNetMessage::DataVote(data_proposal.car.hash()))?;
             let msg: SignedByValidator<MempoolNetMessage> = SignedByValidator {
-                msg: MempoolNetMessage::CarProposalVote(car_proposal.clone()),
+                msg: MempoolNetMessage::DataVote(data_proposal.car.hash()),
                 signature: signed_msg.signature,
             };
 
@@ -166,7 +167,7 @@ impl SingleNodeConsensus {
     async fn handle_new_slot_tick(&mut self) -> Result<()> {
         // Query a new cut to Mempool in order to create a new CommitCut
         let validators = vec![
-            self.car_proposal_signer.validator_pubkey().clone(),
+            self.data_proposal_signer.validator_pubkey().clone(),
             self.crypto.validator_pubkey().clone(),
         ];
         match self.bus.request(QueryNewCut(validators.clone())).await {
@@ -191,7 +192,7 @@ impl SingleNodeConsensus {
         &self,
         msg: MempoolNetMessage,
     ) -> Result<SignedByValidator<MempoolNetMessage>> {
-        self.car_proposal_signer.sign(msg)
+        self.data_proposal_signer.sign(msg)
     }
 }
 
@@ -199,8 +200,8 @@ impl SingleNodeConsensus {
 mod tests {
     use super::*;
     use crate::bus::SharedMessageBus;
-    use crate::mempool::storage::{CarId, CarProposal};
-    use crate::model::ValidatorPublicKey;
+    use crate::mempool::storage::{Car, CarHash, DataProposal};
+    use crate::model::{Hashable, ValidatorPublicKey};
     use crate::p2p;
     use crate::p2p::network::SignedByValidator;
     use crate::utils::conf::Conf;
@@ -223,7 +224,7 @@ mod tests {
     impl TestContext {
         pub async fn new(name: &str) -> Self {
             let crypto = BlstCrypto::new(name.into());
-            let car_proposal_signer = BlstCrypto::new("car_proposal_signer".to_owned());
+            let data_proposal_signer = BlstCrypto::new("data_proposal_signer".to_owned());
             let shared_bus = SharedMessageBus::new(BusMetrics::global("global".to_string()));
             let conf = Arc::new(Conf::default());
             let store = SingleNodeConsensusStore::default();
@@ -237,7 +238,7 @@ mod tests {
             let single_node_consensus = SingleNodeConsensus {
                 bus,
                 crypto: Arc::new(crypto),
-                car_proposal_signer: Arc::new(car_proposal_signer),
+                data_proposal_signer: Arc::new(data_proposal_signer),
                 config: conf,
                 store,
                 file: None,
@@ -248,7 +249,7 @@ mod tests {
                 handle_messages! {
                     on_bus new_cut_query_receiver,
                     command_response<QueryNewCut, Cut> _ => {
-                        Ok(vec![(ValidatorPublicKey::default(), CarId::default())])
+                        Ok(vec![(ValidatorPublicKey::default(), CarHash::default())])
                     }
                 }
             });
@@ -261,7 +262,7 @@ mod tests {
         }
 
         #[track_caller]
-        fn assert_car_proposal_vote(&mut self, err: &str) -> CarProposal {
+        fn assert_data_vote(&mut self, err: &str) -> CarHash {
             #[allow(clippy::expect_fun_call)]
             let rec = self
                 .signed_mempool_net_message_receiver
@@ -269,8 +270,8 @@ mod tests {
                 .expect(format!("{err}: No message broadcasted").as_str());
 
             match rec.msg {
-                MempoolNetMessage::CarProposalVote(car_proposal) => car_proposal,
-                _ => panic!("{err}: CarProposalVote message is missing"),
+                MempoolNetMessage::DataVote(car_hash) => car_hash,
+                _ => panic!("{err}: DataVote message is missing"),
             }
         }
 
@@ -296,25 +297,26 @@ mod tests {
     async fn test_flow() -> Result<()> {
         let mut ctx = TestContext::new("single_node_consensus").await;
 
-        let car_proposal = CarProposal {
-            txs: vec![],
-            id: CarId(1),
-            parent: None,
+        let data_proposal = DataProposal {
             parent_poa: None,
+            car: Car {
+                txs: vec![],
+                parent_hash: None,
+            },
         };
         let signed_msg = ctx
             .single_node_consensus
             .crypto
-            .sign(MempoolNetMessage::CarProposal(car_proposal.clone()))?;
+            .sign(MempoolNetMessage::DataProposal(data_proposal.clone()))?;
 
-        // Sending new CarProposal to SingleNodeConsensus
+        // Sending new DataProposal to SingleNodeConsensus
         ctx.single_node_consensus.handle_car_proposal_message(
             OutboundMessage::BroadcastMessage(p2p::network::NetMessage::MempoolMessage(signed_msg)),
         )?;
 
-        // We expect to receive a CarProposalVote for that CarProposal
-        let car_proposal_vote = ctx.assert_car_proposal_vote("CarProposalVote");
-        assert_eq!(car_proposal_vote.id, car_proposal.id);
+        // We expect to receive a DataVote for that DataProposal
+        let car_hash = ctx.assert_data_vote("DataVote");
+        assert_eq!(car_hash, data_proposal.car.hash());
 
         ctx.single_node_consensus.handle_new_slot_tick().await?;
 
