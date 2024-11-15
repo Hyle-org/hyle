@@ -57,6 +57,10 @@ impl Blocks {
         self.db.alt_get(BlocksKey(block_hash))
     }
 
+    pub fn contains(&mut self, block: &Block) -> bool {
+        self.get(block.hash()).ok().flatten().is_some()
+    }
+
     pub fn last(&self) -> Option<Block> {
         match self.db.ord_last() {
             Ok(block) => block,
