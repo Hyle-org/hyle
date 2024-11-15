@@ -29,11 +29,25 @@ services:
     privileged: true
     environment:
       - HYLE_ID=hyle3
-      - HYLE_PEERS=localhost:1001
+      - HYLE_PEERS=localhost:1001,localhost:1002
       - HYLE_REST=localhost:4003
       - HYLE_HOST=localhost:1003
       - RUST_LOG=debug
       - HYLE_DA_ADDRESS=localhost:4143
+      - HYLE_CONSENSUS__SLOT_DURATION=3000
+    network_mode: host
+    depends_on:
+      - hyle1
+  hyle4:
+    build: ./..
+    privileged: true
+    environment:
+      - HYLE_ID=hyle4
+      - HYLE_PEERS=localhost:1001,localhost:1002,localhost:1003
+      - HYLE_REST=localhost:4004
+      - HYLE_HOST=localhost:1004
+      - RUST_LOG=debug
+      - HYLE_DA_ADDRESS=localhost:4144
       - HYLE_CONSENSUS__SLOT_DURATION=3000
     network_mode: host
     depends_on:
@@ -52,6 +66,7 @@ services:
       - hyle1
       - hyle2
       - hyle3
+      - hyle4
 
   grafana:
     image: grafana/grafana:latest
