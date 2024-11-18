@@ -2274,6 +2274,18 @@ mod test {
             }
         };
 
+        // TestCtx::broadcast(
+        //     "Follower - Timeout",
+        //     &mut node3,
+        //     &mut [&mut node2, &mut node4],
+        //     &mut Some(|m: &SignedByValidator<ConsensusNetMessage>| {
+        //         message_matches!(m, ConsensusNetMessage::Timeout(_, next_leader) => {
+        //             assert_eq!(&node2key, next_leader);
+        //         });
+        //     }),
+        // )
+        // .await
+
         // After this broadcast, every node has 2f+1 timeouts and can create a timeout certificate
 
         // Node 2 is next leader, and emits a timeout certificate it will use to broadcast the next Prepare
