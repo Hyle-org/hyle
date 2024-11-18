@@ -1,4 +1,4 @@
-use fixtures::{contracts::HyllarContract, ctx::E2ECtx};
+use fixtures::ctx::E2ECtx;
 use std::{fs::File, io::Read};
 use tracing::info;
 
@@ -17,7 +17,6 @@ pub fn load_encoded_receipt_from_file(path: &str) -> Vec<u8> {
 }
 
 mod e2e_hyllar {
-    use fixtures::contracts::HydentityContract;
     use hyle_contract_sdk::{
         erc20::{ERC20Action, ERC20},
         identity_provider::{IdentityAction, IdentityVerification},
@@ -26,11 +25,6 @@ mod e2e_hyllar {
     use super::*;
 
     async fn scenario_hyllar(ctx: E2ECtx) -> Result<()> {
-        info!("➡️  Registering contract hyllar");
-        ctx.register_contract::<HydentityContract>("hydentity")
-            .await?;
-        ctx.register_contract::<HyllarContract>("hyllar").await?;
-
         info!("➡️  Sending blob to register faucet identity");
         let blob_tx_hash = ctx
             .send_blob(vec![Blob {

@@ -184,14 +184,14 @@ impl DataAvailability {
             }
 
             listen<GenesisEvent> cmd => {
-                if let GenesisEvent::GenesisBlock { initial_validators, stake_txs } = cmd {
+                if let GenesisEvent::GenesisBlock { initial_validators, genesis_txs } = cmd {
                     debug!("🌱  Genesis block received");
                     self.handle_block(Block {
                         parent_hash: BlockHash::new("0000000000000000"),
                         height: BlockHeight(0),
                         timestamp: 420,
                         new_bonded_validators: initial_validators,
-                        txs: stake_txs,
+                        txs: genesis_txs,
                     }).await;
                 }
             }
