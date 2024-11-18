@@ -1595,6 +1595,7 @@ mod test {
     use super::*;
     use crate::{
         bus::SharedMessageBus,
+        mempool::storage::CarHash,
         p2p::network::NetMessage,
         utils::{conf::Conf, crypto},
     };
@@ -2110,6 +2111,118 @@ mod test {
                 assert_eq!(cp_hash, cp_round_hash);
             }
         };
+    }
+
+    #[test_log::test(tokio::test)]
+    async fn prepare_wrong_slot() {
+        let (mut node1, mut node2, mut node3, mut node4): (TestCtx, TestCtx, TestCtx, TestCtx) =
+            build_nodes!(4).await;
+
+        node1.start_round().await;
+
+        // Create wrong prepare
+        let prepare_msg = node1
+            .consensus
+            .sign_net_message(ConsensusNetMessage::Prepare(
+                ConsensusProposal {
+                    slot: 2,
+                    view: 0,
+                    round_leader: node1.pubkey(),
+                    cut: vec![(node2.pubkey(), CarHash("test".to_string()))],
+                    new_validators_to_bond: vec![],
+                },
+                Ticket::Genesis,
+            ))
+            .expect("Error while signing");
+
+        // Slot 1 - leader = node1
+        // Ensuring one slot commits correctly before a timeout
+
+        assert_contains!(node2.handle_msg_err(&prepare_msg).to_string(), "wrong slot");
+        assert_contains!(node3.handle_msg_err(&prepare_msg).to_string(), "wrong slot");
+        assert_contains!(node4.handle_msg_err(&prepare_msg).to_string(), "wrong slot");
+    }
+
+    #[test_log::test(tokio::test)]
+    async fn prepare_wrong_signature() {
+        let (mut node1, mut node2, mut node3, mut node4): (TestCtx, TestCtx, TestCtx, TestCtx) =
+            build_nodes!(4).await;
+
+        node1.start_round().await;
+
+        // Create wrong prepare signed by other node than leader
+        let prepare_msg = node2
+            .consensus
+            .sign_net_message(ConsensusNetMessage::Prepare(
+                ConsensusProposal {
+                    slot: 1,
+                    view: 0,
+                    round_leader: node1.pubkey(),
+                    cut: vec![(node2.pubkey(), CarHash("test".to_string()))],
+                    new_validators_to_bond: vec![],
+                },
+                Ticket::Genesis,
+            ))
+            .expect("Error while signing");
+
+        // Slot 1 - leader = node1
+        // Ensuring one slot commits correctly before a timeout
+
+        assert_contains!(
+            node2.handle_msg_err(&prepare_msg).to_string(),
+            "does not come from current leader"
+        );
+        assert_contains!(
+            node3.handle_msg_err(&prepare_msg).to_string(),
+            "does not come from current leader"
+        );
+        assert_contains!(
+            node4.handle_msg_err(&prepare_msg).to_string(),
+            "does not come from current leader"
+        );
+    }
+
+    #[test_log::test(tokio::test)]
+    async fn prepare_wrong_leader() {
+        let (mut node1, mut node2, mut node3, mut node4): (TestCtx, TestCtx, TestCtx, TestCtx) =
+            build_nodes!(4).await;
+
+        node1.start_round().await;
+
+        // Create prepare with wrong round leader (node3) and signed accordingly
+        let prepare_msg = node3
+            .consensus
+            .sign_net_message(ConsensusNetMessage::Prepare(
+                ConsensusProposal {
+                    slot: 1,
+                    view: 0,
+                    round_leader: node3.pubkey(),
+                    cut: vec![(node2.pubkey(), CarHash("test".to_string()))],
+                    new_validators_to_bond: vec![],
+                },
+                Ticket::Genesis,
+            ))
+            .expect("Error while signing");
+
+        // Slot 1 - leader = node1
+        // Ensuring one slot commits correctly before a timeout
+
+        assert_contains!(
+            node2.handle_msg_err(&prepare_msg).to_string(),
+            "does not come from current leader"
+        );
+        assert_contains!(
+            node1.handle_msg_err(&prepare_msg).to_string(),
+            "does not come from current leader"
+        );
+        assert_contains!(
+            node3.handle_msg_err(&prepare_msg).to_string(),
+            "does not come from current leader"
+        );
+        assert_contains!(
+            node4.handle_msg_err(&prepare_msg).to_string(),
+            "does not come from current leader"
+        );
     }
 
     #[test_log::test(tokio::test)]
