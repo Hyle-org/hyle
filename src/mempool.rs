@@ -149,8 +149,8 @@ impl Mempool {
                 //   it makes sure the DataProposal is committed to the Lane without waiting for a DataVote
                 // self.storage.lane.poa.len() > f is for waiting for the appropriate number of votes
                 //   it makes sure we received enough DataVote before commiting the DataProposal to the Lane.
-                let f = self.validators.len() / 3;
-                if self.validators.len() == 1 || self.storage.lane.poa.len() > f {
+                let f = validators.0.len() / 3;
+                if validators.0.len() == 1 || self.storage.lane.poa.len() > f {
                     self.storage.commit_data_proposal();
                 }
                 Ok(self.storage.new_cut(&validators.0))
