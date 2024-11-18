@@ -1786,24 +1786,6 @@ mod test {
     };
 }
 
-    macro_rules! timeout {
-        ($($node:ident),+) => {
-            // Make all nodes timeout (schedule timeout to now + tick timeout to trigger it)
-            $(
-                $node.consensus
-                    .bft_round_state
-                    .follower
-                    .timeout_state
-                    .schedule_next(get_current_timestamp() - 10);
-                $node.consensus
-                    .handle_command(ConsensusCommand::TimeoutTick)
-                    .await
-                    .expect(format!("Timeout tick for node {}", stringify!($node)).as_str());
-
-            )+
-        }
-    }
-
     macro_rules! simple_commit_round {
         (leader: $leader:ident, followers: [$($follower:ident),+]) => {{
             let round_consensus_proposal;
@@ -1883,6 +1865,20 @@ mod test {
             }
         }
 
+        pub async fn timeout(nodes: &mut [&mut TestCtx]) {
+            for n in nodes {
+                n.consensus
+                    .bft_round_state
+                    .follower
+                    .timeout_state
+                    .schedule_next(get_current_timestamp() - 10);
+                n.consensus
+                    .handle_command(ConsensusCommand::TimeoutTick)
+                    .await
+                    .expect(format!("Timeout tick for node {}", n.name).as_str());
+            }
+        }
+
         pub fn add_trusted_validator(&mut self, pubkey: &ValidatorPublicKey) {
             self.consensus
                 .bft_round_state
@@ -1921,15 +1917,6 @@ mod test {
             let err = self.consensus.handle_net_message(msg.clone()).unwrap_err();
             info!("Expected error: {:#}", err);
             err
-        }
-
-        #[cfg(test)]
-        #[track_caller]
-        fn handle_block(&mut self, msg: &SignedByValidator<ConsensusNetMessage>) {
-            match &msg.msg {
-                ConsensusNetMessage::Prepare(_, _) => {}
-                _ => panic!("Block message is not a Prepare message"),
-            }
         }
 
         async fn add_staker(&mut self, staker: &Self, amount: u64, err: &str) {
@@ -2232,7 +2219,7 @@ mod test {
 
         node1.start_round().await;
 
-        timeout!(node2);
+        TestCtx::timeout(&mut [&mut node2]).await;
 
         node2.assert_broadcast("Timeout message");
 
@@ -2261,7 +2248,7 @@ mod test {
 
         // Make node2 and node3 timeout, node4 will not timeout but follow mutiny
         // , because at f+1, mutiny join
-        timeout!(node2, node3);
+        TestCtx::timeout(&mut [&mut node2, &mut node3]).await;
 
         broadcast! {
             description: "Follower - Timeout",
@@ -2348,7 +2335,7 @@ mod test {
         // node2 is the next leader, let the others timeout and create a certificate and send it to node2.
         // It should be able to build a prepare message with it
 
-        timeout!(node3, node4, node5, node6, node7);
+        TestCtx::timeout(&mut [&mut node3, &mut node4, &mut node5, &mut node6, &mut node7]).await;
 
         broadcast! {
             description: "Follower - Timeout",
