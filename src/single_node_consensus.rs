@@ -6,6 +6,7 @@ use crate::bus::SharedMessageBus;
 use crate::consensus::{
     ConsensusCommand, ConsensusEvent, ConsensusInfo, ConsensusNetMessage, QueryConsensusInfo,
 };
+use crate::genesis::{Genesis, GenesisEvent};
 use crate::mempool::storage::Cut;
 use crate::mempool::{MempoolNetMessage, QueryNewCut};
 use crate::model::Hashable;
@@ -22,6 +23,7 @@ use bincode::{Decode, Encode};
 bus_client! {
 struct SingleNodeConsensusBusClient {
     sender(ConsensusEvent),
+    sender(GenesisEvent),
     sender(SignedByValidator<MempoolNetMessage>),
     sender(Query<QueryNewCut, Cut>),
     receiver(ConsensusCommand),
@@ -91,27 +93,22 @@ impl Module for SingleNodeConsensus {
 
 impl SingleNodeConsensus {
     async fn start(&mut self) -> Result<()> {
-        let validators = vec![
-            self.data_proposal_signer.validator_pubkey().clone(),
-            self.crypto.validator_pubkey().clone(),
-        ];
-        let new_bonded_validators = vec![self.crypto.validator_pubkey().clone()];
-
         // On peut Query DA pour récuperer le dernier block/cut ?
         if !self.store.has_done_genesis {
             // This is the genesis
-            // Send new cut with two validators. The Node itself and the 'data_proposal_signer' which is here just to Vote for new DataProposal.
-            self.bus.send(ConsensusEvent::CommitCut {
-                validators,
-                new_bonded_validators,
-                cut: Cut::default(),
-            })?;
+            let genesis_txs = Genesis::genesis_contracts_txs();
+
+            tracing::info!("Doing genesis");
+            _ = self.bus.send(GenesisEvent::GenesisBlock {
+                initial_validators: vec![],
+                genesis_txs,
+            });
             self.store.has_done_genesis = true;
-            tracing::info!("Waiting for a first transaction before creating blocks...");
         }
         let mut interval = tokio::time::interval(tokio::time::Duration::from_millis(
             self.config.consensus.slot_duration,
         ));
+        interval.tick().await; // First tick is immediate
 
         handle_messages! {
             on_bus self.bus,
