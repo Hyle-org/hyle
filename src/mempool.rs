@@ -153,7 +153,7 @@ impl Mempool {
                 if validators.0.len() == 1 || self.storage.lane.poa.len() > f {
                     self.storage.commit_data_proposal();
                 }
-                Ok(self.storage.new_cut(&validators.0))
+                self.storage.new_cut(Arc::clone(&self.crypto), &validators.0)
             }
             _ = interval.tick() => {
                 // This tick is responsible for DataProposal management
@@ -173,7 +173,7 @@ impl Mempool {
             let only_for = HashSet::from_iter(
                 self.validators
                     .iter()
-                    .filter(|pubkey| !self.storage.lane.poa.contains(pubkey))
+                    .filter(|pubkey| !self.storage.lane.poa.contains_key(pubkey))
                     .cloned(),
             );
             // FIXME: with current implem, we send DataProposal twice.
@@ -219,9 +219,10 @@ impl Mempool {
                             error!("{:?}", e);
                         }
                     }
-                    MempoolNetMessage::DataVote(car_hash) => {
+                    MempoolNetMessage::DataVote(ref car_hash) => {
                         // FIXME: We should extract the signature for that Vote in order to create a PoA
-                        self.on_data_vote(validator, car_hash).await;
+                        self.on_data_vote(validator, car_hash.clone(), msg.clone())
+                            .await;
                     }
                     MempoolNetMessage::SyncRequest(data_proposal_tip_hash, last_known_car_hash) => {
                         self.on_sync_request(
@@ -313,8 +314,13 @@ impl Mempool {
         }
     }
 
-    async fn on_data_vote(&mut self, validator: &ValidatorPublicKey, car_hash: CarHash) {
-        if let Err(e) = self.storage.on_data_vote(validator, &car_hash) {
+    async fn on_data_vote(
+        &mut self,
+        validator: &ValidatorPublicKey,
+        car_hash: CarHash,
+        message: SignedByValidator<MempoolNetMessage>,
+    ) {
+        if let Err(e) = self.storage.on_data_vote(validator, car_hash, message) {
             error!("{:?}", e);
         } else {
             debug!("{} Vote from {}", self.storage.id, validator);
@@ -329,9 +335,10 @@ impl Mempool {
         validator: &ValidatorPublicKey,
         data_proposal: DataProposal,
     ) -> Result<()> {
+        let crypto = Arc::clone(&self.crypto);
         match self
             .storage
-            .on_data_proposal(validator, &data_proposal, &self.node_state)
+            .on_data_proposal(crypto, validator, &data_proposal, &self.node_state)
         {
             DataProposalVerdict::Empty => {
                 warn!(
@@ -368,7 +375,7 @@ impl Mempool {
     }
 
     fn broadcast_data_proposal_if_any(&mut self) {
-        if let Some(data_proposal) = self.storage.new_data_proposal() {
+        if let Some(data_proposal) = self.storage.new_data_proposal(Arc::clone(&self.crypto)) {
             debug!(
                 "🚗 Broadcast DataProposal {} ({} validators, {} txs)",
                 data_proposal.car.hash(),
@@ -516,9 +523,7 @@ mod tests {
     use crate::p2p::network::NetMessage;
     use anyhow::Result;
     use hyle_contract_sdk::StateDigest;
-    use std::collections::BTreeSet;
     use std::sync::Arc;
-    use storage::Poa;
     use tokio::sync::broadcast::Receiver;
 
     pub struct TestContext {
@@ -627,12 +632,20 @@ mod tests {
     async fn test_receiving_data_proposal() -> Result<()> {
         let mut ctx = TestContext::new("mempool").await;
 
+        let car = Car {
+            parent_hash: None,
+            txs: vec![make_register_contract_tx(ContractName("test1".to_owned()))],
+        };
+        let data_vote_signature = ctx
+            .mempool
+            .crypto
+            .sign(MempoolNetMessage::DataVote(car.hash()))
+            .expect("a signed message")
+            .signature;
         let data_proposal = DataProposal {
-            car: Car {
-                parent_hash: None,
-                txs: vec![make_register_contract_tx(ContractName("test1".to_owned()))],
-            },
+            car,
             parent_poa: None,
+            data_vote_signature,
         };
 
         let signed_msg = ctx
@@ -668,21 +681,22 @@ mod tests {
             .await
             .expect("fail to handle new transaction");
 
-        assert_eq!(
-            ctx.mempool.storage.lane.poa,
-            Poa(BTreeSet::from([ctx
-                .mempool
-                .crypto
-                .validator_pubkey()
-                .clone()]))
-        );
+        assert_eq!(ctx.mempool.storage.lane.poa.len(), 0);
 
+        let car = Car {
+            parent_hash: Some(CarHash("42".to_string())), // This value is incorrect
+            txs: vec![make_register_contract_tx(ContractName("test1".to_owned()))],
+        };
+        let data_vote_signature = ctx
+            .mempool
+            .crypto
+            .sign(MempoolNetMessage::DataVote(car.hash()))
+            .expect("a signed message")
+            .signature;
         let data_proposal = DataProposal {
-            car: Car {
-                parent_hash: Some(CarHash("42".to_string())), // This value is incorrect
-                txs: vec![make_register_contract_tx(ContractName("test1".to_owned()))],
-            },
+            car,
             parent_poa: None,
+            data_vote_signature,
         };
 
         let temp_crypto = BlstCrypto::new("temp_crypto".into());
@@ -690,19 +704,12 @@ mod tests {
         ctx.mempool
             .handle_net_message(SignedByValidator {
                 msg: MempoolNetMessage::DataVote(data_proposal.car.hash()),
-                signature: signed_msg.signature,
+                signature: signed_msg.signature.clone(),
             })
             .await;
 
         // Assert that we did not add the vote to the PoA
-        assert_eq!(
-            ctx.mempool.storage.lane.poa,
-            Poa(BTreeSet::from([ctx
-                .mempool
-                .crypto
-                .validator_pubkey()
-                .clone(),]))
-        );
+        assert_eq!(ctx.mempool.storage.lane.poa.len(), 0);
         Ok(())
     }
 
@@ -718,22 +725,24 @@ mod tests {
             .await
             .expect("fail to handle new transaction");
 
-        assert_eq!(
-            ctx.mempool.storage.lane.poa,
-            Poa(BTreeSet::from([ctx
-                .mempool
-                .crypto
-                .validator_pubkey()
-                .clone()]))
-        );
+        assert_eq!(ctx.mempool.storage.lane.poa.len(), 0);
 
-        let data_proposal = DataProposal {
-            car: Car {
-                parent_hash: None,
-                txs: vec![make_register_contract_tx(ContractName("test1".to_owned()))],
-            },
-            parent_poa: None,
+        let car = Car {
+            parent_hash: None,
+            txs: vec![make_register_contract_tx(ContractName("test1".to_owned()))],
         };
+        let data_vote_signature = ctx
+            .mempool
+            .crypto
+            .sign(MempoolNetMessage::DataVote(car.hash()))
+            .expect("a signed message")
+            .signature;
+        let data_proposal = DataProposal {
+            car,
+            parent_poa: None,
+            data_vote_signature,
+        };
+
         ctx.mempool.broadcast_data_proposal_if_any();
 
         let temp_crypto = BlstCrypto::new("temp_crypto".into());
@@ -746,13 +755,7 @@ mod tests {
             .await;
 
         // Assert that we added the vote to the PoA
-        assert_eq!(
-            ctx.mempool.storage.lane.poa,
-            Poa(BTreeSet::from([
-                ctx.mempool.crypto.validator_pubkey().clone(),
-                temp_crypto.validator_pubkey().clone()
-            ]))
-        );
+        assert_eq!(ctx.mempool.storage.lane.poa.len(), 2);
         Ok(())
     }
 
@@ -767,12 +770,20 @@ mod tests {
 
         ctx.mempool.handle_data_proposal_management();
 
+        let car = Car {
+            parent_hash: None,
+            txs: vec![register_tx],
+        };
+        let data_vote_signature = ctx
+            .mempool
+            .crypto
+            .sign(MempoolNetMessage::DataVote(car.hash()))
+            .expect("a signed message")
+            .signature;
         let data_proposal = DataProposal {
-            car: Car {
-                parent_hash: None,
-                txs: vec![register_tx],
-            },
+            car,
             parent_poa: None,
+            data_vote_signature,
         };
 
         // Assert that we vote for that specific DataProposal
@@ -805,6 +816,7 @@ mod tests {
         let car_hash = CarHash("42".to_string());
         let cut: Cut = vec![(
             ctx.mempool.crypto.validator_pubkey().clone(),
+            None,
             car_hash.clone(),
         )];
 

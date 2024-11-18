@@ -8,7 +8,10 @@ use crate::{
     data_availability::DataEvent,
     genesis::GenesisEvent,
     handle_messages,
-    mempool::{storage::Cut, QueryNewCut},
+    mempool::{
+        storage::{verify_cut, Cut},
+        QueryNewCut,
+    },
     model::{get_current_timestamp, BlockHeight, Hashable, ValidatorPublicKey},
     p2p::{
         network::{OutboundMessage, PeerEvent, Signed, SignedByValidator},
@@ -527,6 +530,7 @@ impl Consensus {
 
         match net_message {
             ConsensusNetMessage::Prepare(consensus_proposal, ticket) => {
+                verify_cut(&consensus_proposal.cut)?;
                 self.on_prepare(sender, consensus_proposal, ticket)
             }
             ConsensusNetMessage::PrepareVote(consensus_proposal_hash) => {

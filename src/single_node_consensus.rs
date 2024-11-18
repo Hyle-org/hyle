@@ -246,7 +246,7 @@ mod tests {
                 handle_messages! {
                     on_bus new_cut_query_receiver,
                     command_response<QueryNewCut, Cut> _ => {
-                        Ok(vec![(ValidatorPublicKey::default(), CarHash::default())])
+                        Ok(vec![(ValidatorPublicKey::default(), None, CarHash::default())])
                     }
                 }
             });
@@ -294,12 +294,19 @@ mod tests {
     async fn test_flow() -> Result<()> {
         let mut ctx = TestContext::new("single_node_consensus").await;
 
+        let crypto = BlstCrypto::new("temp_crypto".into());
+        let car = Car {
+            txs: vec![],
+            parent_hash: None,
+        };
+        let data_vote_signature = crypto
+            .sign(MempoolNetMessage::DataVote(car.hash()))
+            .expect("a signed message")
+            .signature;
         let data_proposal = DataProposal {
             parent_poa: None,
-            car: Car {
-                txs: vec![],
-                parent_hash: None,
-            },
+            car,
+            data_vote_signature,
         };
         let signed_msg = ctx
             .single_node_consensus
