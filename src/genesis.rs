@@ -11,7 +11,7 @@ use crate::{
     p2p::network::PeerEvent,
     utils::{conf::SharedConf, crypto::SharedBlstCrypto, modules::Module},
 };
-use anyhow::{Error, Result};
+use anyhow::{bail, Error, Result};
 use hyle_contract_sdk::Digestable;
 use serde::{Deserialize, Serialize};
 use tracing::info;
@@ -63,6 +63,9 @@ impl Module for Genesis {
 
 impl Genesis {
     pub async fn start(&mut self) -> Result<(), Error> {
+        if self.config.single_node.unwrap_or(false) {
+            bail!("Single node mode, genesis module should not be enabled.");
+        }
         if !self
             .config
             .consensus
@@ -83,23 +86,21 @@ impl Genesis {
         );
 
         // Wait until we've connected with all other genesis peers.
-        if self.config.id != "single-node" {
-            handle_messages! {
-                on_bus self.bus,
-                listen<PeerEvent> msg => {
-                    match msg {
-                        PeerEvent::NewPeer { name, pubkey } => {
-                            info!("🌱 New peer {}({}) added to genesis", &name, &pubkey);
-                            self.peer_pubkey
-                                .insert(name.clone(), pubkey.clone());
+        handle_messages! {
+            on_bus self.bus,
+            listen<PeerEvent> msg => {
+                match msg {
+                    PeerEvent::NewPeer { name, pubkey } => {
+                        info!("🌱 New peer {}({}) added to genesis", &name, &pubkey);
+                        self.peer_pubkey
+                            .insert(name.clone(), pubkey.clone());
 
-                            // Once we know everyone in the initial quorum, craft & process the genesis block.
-                            if self.peer_pubkey.len()
-                                == self.config.consensus.genesis_stakers.len() {
-                                break
-                            } else {
-                                info!("🌱 Waiting for {} more peers to join genesis", self.config.consensus.genesis_stakers.len() - self.peer_pubkey.len());
-                            }
+                        // Once we know everyone in the initial quorum, craft & process the genesis block.
+                        if self.peer_pubkey.len()
+                            == self.config.consensus.genesis_stakers.len() {
+                            break
+                        } else {
+                            info!("🌱 Waiting for {} more peers to join genesis", self.config.consensus.genesis_stakers.len() - self.peer_pubkey.len());
                         }
                     }
                 }
@@ -138,7 +139,7 @@ impl Genesis {
         Ok(())
     }
 
-    fn genesis_contracts_txs() -> Vec<Transaction> {
+    pub fn genesis_contracts_txs() -> Vec<Transaction> {
         let hyllar_program_id = include_str!("../contracts/hyllar/hyllar.txt").trim();
         let hyllar_program_id = hex::decode(hyllar_program_id).expect("Image id decoding failed");
 
@@ -225,6 +226,7 @@ mod tests {
     async fn test_genesis_single() {
         let config = Conf {
             id: "single-node".to_string(),
+            single_node: Some(true),
             consensus: crate::utils::conf::Consensus {
                 genesis_stakers: vec![("single-node".into(), 100)].into_iter().collect(),
                 ..Default::default()
@@ -237,7 +239,7 @@ mod tests {
         let result = genesis.start().await;
 
         // Verify the start method executed correctly
-        assert!(result.is_ok());
+        assert!(result.is_err());
     }
 
     #[test_log::test(tokio::test)]

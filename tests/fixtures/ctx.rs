@@ -95,7 +95,6 @@ impl E2ECtx {
             reqwest_client: Client::new(),
         };
 
-        // TODO remove when the single node genesis is fixed
         tokio::time::sleep(std::time::Duration::from_secs(2)).await;
 
         info!("🚀 E2E test environment is ready!");
