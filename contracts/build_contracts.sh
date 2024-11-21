@@ -21,6 +21,7 @@ build_contract() {
     echo "$CONTRACT_NAME contract built successfully"
     echo "Image ID: $IMAGE"
     echo "Image path: $IMG_OUTPUT_PATH"
+    echo "Do not forget do regenerate the e2e proofs with tests/build_proofs.sh"
 }
 
 usage() {

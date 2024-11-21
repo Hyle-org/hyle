@@ -59,9 +59,9 @@ mod e2e_hyllar {
         let state: hydentity::Hydentity = contract.state.try_into()?;
         assert_eq!(
             state
-                .get_identity_info("faucet")
+                .get_identity_info("faucet.hydentity")
                 .expect("faucet identity not found"),
-            "6bcb9eabc039af650f4ea33f65e262649b838a3eb254207e033b4cf18cf01ba1" // hash for "faucet::password"
+            "7e247de0275f2ad068e9c9817df172b1d45a0803a7f34313af7790246d6de1ef" // hash for "faucet.hydentity::password"
         );
 
         info!("➡️  Sending blob to transfer 10 tokens from faucet to bob");
@@ -81,7 +81,7 @@ mod e2e_hyllar {
                         contract_name: "hyllar".into(),
                         data: ERC20Action::Transfer {
                             recipient: "bob.hydentity".to_string(),
-                            amount: 10,
+                            amount: 100,
                         }
                         .into(),
                     },
@@ -122,12 +122,17 @@ mod e2e_hyllar {
         let contract = ctx.get_contract("hyllar").await?;
         let state: hyllar::HyllarToken = contract.state.try_into()?;
         let state = hyllar::HyllarTokenContract::init(state, "caller".into());
-        assert_eq!(state.balance_of("bob").expect("bob identity not found"), 10);
         assert_eq!(
             state
-                .balance_of("faucet")
+                .balance_of("bob.hydentity")
+                .expect("bob identity not found"),
+            100
+        );
+        assert_eq!(
+            state
+                .balance_of("faucet.hydentity")
                 .expect("faucet identity not found"),
-            990
+            900
         );
         Ok(())
     }

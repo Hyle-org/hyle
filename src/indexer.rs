@@ -694,7 +694,7 @@ mod test {
         Transaction {
             version: 1,
             transaction_data: TransactionData::Blob(BlobTransaction {
-                identity: Identity("test".to_owned()),
+                identity: Identity("test.c1".to_owned()),
                 blobs: vec![
                     Blob {
                         contract_name: first_contract_name,
@@ -731,7 +731,7 @@ mod test {
                     version: 1,
                     initial_state,
                     next_state,
-                    identity: Identity("test".to_owned()),
+                    identity: Identity("test.c1".to_owned()),
                     tx_hash: blob_tx_hash,
                     index: blob_index,
                     blobs: vec![1, 2, 3, 1, 2, 3],
