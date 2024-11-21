@@ -30,6 +30,7 @@ where
     pub identity: Identity,
     pub tx_hash: String,
     pub private_blob: BlobData,
+    pub contract_name: ContractName,
     pub blobs: Vec<BlobData>,
     pub index: usize,
 }
@@ -39,6 +40,9 @@ pub struct StateDigest(pub Vec<u8>);
 
 #[derive(Default, Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash, Encode, Decode)]
 pub struct Identity(pub String);
+
+#[derive(Default, Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash, Encode, Decode)]
+pub struct ContractName(pub String);
 
 #[derive(Default, Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash, Encode, Decode)]
 pub struct TxHash(pub String);
@@ -72,6 +76,16 @@ impl From<&str> for Identity {
         Identity(s.into())
     }
 }
+impl From<String> for ContractName {
+    fn from(s: String) -> Self {
+        ContractName(s)
+    }
+}
+impl From<&str> for ContractName {
+    fn from(s: &str) -> Self {
+        ContractName(s.into())
+    }
+}
 impl From<String> for TxHash {
     fn from(s: String) -> Self {
         Self(s)
@@ -86,6 +100,16 @@ impl From<&str> for TxHash {
 impl TxHash {
     pub fn new(s: &str) -> TxHash {
         TxHash(s.into())
+    }
+}
+impl Display for Identity {
+    fn fmt(&self, f: &mut alloc::fmt::Formatter<'_>) -> alloc::fmt::Result {
+        write!(f, "{}", &self.0)
+    }
+}
+impl Display for ContractName {
+    fn fmt(&self, f: &mut alloc::fmt::Formatter<'_>) -> alloc::fmt::Result {
+        write!(f, "{}", &self.0)
     }
 }
 impl Display for TxHash {
