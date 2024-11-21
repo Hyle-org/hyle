@@ -512,7 +512,7 @@ mod test {
         let register_c2 = new_register_contract(c2.clone());
 
         let blob_tx = BlobTransaction {
-            identity: Identity("test".to_string()),
+            identity: Identity("test.c1".to_string()),
             blobs: vec![new_blob(&c1), new_blob(&c2)],
         };
         let blob_tx_hash = blob_tx.hash();

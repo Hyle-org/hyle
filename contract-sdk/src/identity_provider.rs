@@ -136,7 +136,6 @@ mod tests {
     fn test_execute_action_register_identity() {
         let mut mock = MockIdentityVerification::new();
         let caller = Identity("caller_identity".to_string());
-        let caller_identified = Identity("caller_identity.test_contract".to_string());
         let action = IdentityAction::RegisterIdentity {
             account: "test_account".to_string(),
         };
@@ -149,14 +148,13 @@ mod tests {
 
         let result = execute_action(&mut mock, caller.clone(), action, private_input);
         assert!(result.success);
-        assert_eq!(result.identity, caller_identified);
+        assert_eq!(result.identity, caller);
     }
 
     #[test]
     fn test_execute_action_verify_identity() {
         let mut mock = MockIdentityVerification::new();
         let caller = Identity("caller_identity".to_string());
-        let caller_identified = Identity("caller_identity.test_contract".to_string());
         let account = "test_account".to_string();
         let private_input = "test_identity";
 
@@ -172,14 +170,13 @@ mod tests {
 
         let result = execute_action(&mut mock, caller.clone(), action, private_input);
         assert!(result.success);
-        assert_eq!(result.identity, caller_identified);
+        assert_eq!(result.identity, caller);
     }
 
     #[test]
     fn test_execute_action_get_identity_info() {
         let mut mock = MockIdentityVerification::new();
         let caller = Identity("caller_identity".to_string());
-        let caller_identified = Identity("caller_identity.test_contract".to_string());
         let account = "test_account".to_string();
         let private_input = "test_identity";
 
@@ -194,6 +191,6 @@ mod tests {
 
         let result = execute_action(&mut mock, caller.clone(), action, "");
         assert!(result.success);
-        assert_eq!(result.identity, caller_identified);
+        assert_eq!(result.identity, caller);
     }
 }

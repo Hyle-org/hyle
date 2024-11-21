@@ -169,7 +169,10 @@ fn main() {
         }
         CliCommand::Hyllar { command } => {
             if let HyllarArgs::Init { initial_supply } = command {
-                contract::init("hyllar", HyllarToken::new(initial_supply));
+                contract::init(
+                    "hyllar",
+                    HyllarToken::new(initial_supply, "faucet.hydentity".to_string()),
+                );
                 return;
             }
             let cf: ERC20Action = command.into();
