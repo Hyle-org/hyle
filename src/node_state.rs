@@ -443,6 +443,32 @@ mod test {
         }
     }
 
+    fn make_hyle_output(blob_tx: BlobTransaction, blob_index: BlobIndex) -> HyleOutput {
+        HyleOutput {
+            version: 1,
+            tx_hash: blob_tx.hash(),
+            index: blob_index,
+            identity: blob_tx.identity.clone(),
+            blobs: flattened_blob(&blob_tx),
+            initial_state: StateDigest(vec![0, 1, 2, 3]),
+            next_state: StateDigest(vec![4, 5, 6]),
+            program_outputs: vec![],
+            success: true,
+        }
+    }
+
+    fn flattened_blob(blob_tx: &BlobTransaction) -> Vec<u8> {
+        blob_tx
+            .blobs
+            .iter()
+            .flat_map(|b| {
+                let mut combined = b.contract_name.0.clone().into_bytes();
+                combined.extend(b.data.0.clone());
+                combined
+            })
+            .collect()
+    }
+
     fn new_register_contract(name: ContractName) -> RegisterContractTransaction {
         RegisterContractTransaction {
             owner: "test".to_string(),
@@ -459,12 +485,13 @@ mod test {
         let mut state = new_node_state().await;
         let c1 = ContractName("c1".to_string());
         let c2 = ContractName("c2".to_string());
+        let identity = Identity("test".to_string());
 
         let register_c1 = new_register_contract(c1.clone());
         let register_c2 = new_register_contract(c2.clone());
 
         let blob_tx = BlobTransaction {
-            identity: Identity("test".to_string()),
+            identity: identity.clone(),
             blobs: vec![new_blob(&c1), new_blob(&c2)],
         };
         let blob_tx_hash = blob_tx.hash();
@@ -473,6 +500,8 @@ mod test {
         state.handle_register_contract_tx(&register_c2).unwrap();
         state.handle_blob_tx(&blob_tx).unwrap();
 
+        let hyle_output_c1 = make_hyle_output(blob_tx.clone(), BlobIndex(0));
+
         let proof_c1 = ProofTransaction {
             blobs_references: vec![BlobReference {
                 contract_name: c1.clone(),
@@ -480,13 +509,15 @@ mod test {
 
                 blob_index: BlobIndex(0),
             }],
-            proof: ProofData::Bytes(vec![]),
+            proof: ProofData::Bytes(serde_json::to_vec(&hyle_output_c1).unwrap()),
         };
 
         let verified_proof_c1 = VerifiedProofTransaction {
             hyle_outputs: state.verify_proof(&proof_c1).unwrap(),
             proof_transaction: proof_c1,
         };
+
+        let hyle_output_c2 = make_hyle_output(blob_tx.clone(), BlobIndex(0));
 
         let proof_c2 = ProofTransaction {
             blobs_references: vec![BlobReference {
@@ -495,7 +526,7 @@ mod test {
 
                 blob_index: BlobIndex(1),
             }],
-            proof: ProofData::Bytes(vec![]),
+            proof: ProofData::Bytes(serde_json::to_vec(&hyle_output_c2).unwrap()),
         };
 
         let verified_proof_c2 = VerifiedProofTransaction {
