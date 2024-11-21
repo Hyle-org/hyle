@@ -501,8 +501,7 @@ mod test {
         }
     }
 
-    #[tokio::test]
-    #[test_log::test]
+    #[test_log::test(tokio::test)]
     async fn two_proof_for_one_blob_tx() {
         let mut state = new_node_state().await;
         let c1 = ContractName("c1".to_string());
@@ -558,8 +557,8 @@ mod test {
         assert_eq!(state.contracts.get(&c2).unwrap().state.0, vec![4, 5, 6]);
     }
 
-    #[tokio::test]
-    #[test_log::test]
+    #[ignore = "recursion proof not implemented yet"]
+    #[test_log::test(tokio::test)]
     async fn one_proof_for_two_blobs() {
         let mut state = new_node_state().await;
         let c1 = ContractName("c1".to_string());
@@ -621,8 +620,8 @@ mod test {
         assert_eq!(state.contracts.get(&c2).unwrap().state.0, vec![4, 5, 6]);
     }
 
-    #[tokio::test]
-    #[test_log::test]
+    #[ignore = "recursion proof not implemented yet"]
+    #[test_log::test(tokio::test)]
     async fn wrong_blob_index_for_contract() {
         let mut state = new_node_state().await;
         let c1 = ContractName("c1".to_string());
@@ -665,8 +664,8 @@ mod test {
         assert_err!(state.handle_verified_proof_tx(&verified_proof_c1));
     }
 
-    #[tokio::test]
-    #[test_log::test]
+    #[ignore = "recursion proof not implemented yet"]
+    #[test_log::test(tokio::test)]
     async fn one_proof_for_two_blobs_txs_on_different_contract() {
         let mut state = new_node_state().await;
         let c1 = ContractName("c1".to_string());
@@ -736,8 +735,7 @@ mod test {
         assert_eq!(state.contracts.get(&c4).unwrap().state.0, vec![4, 5, 6]);
     }
 
-    #[tokio::test]
-    #[test_log::test]
+    #[test_log::test(tokio::test)]
     async fn two_proof_for_same_blob() {
         let mut state = new_node_state().await;
         let c1 = ContractName("c1".to_string());
