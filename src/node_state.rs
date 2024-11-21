@@ -194,6 +194,7 @@ impl NodeState {
 
         for unsettled_tx in unique_next_unsettled_txs {
             if self.is_settlement_ready(unsettled_tx) {
+                self.verify_identities(unsettled_tx)?;
                 let state_update = self.settle_tx(unsettled_tx)?;
                 // This unsettled blob transaction is now settled.
                 // We want to keep track of that hash
@@ -247,6 +248,58 @@ impl NodeState {
         Ok(blobs_metadata)
     }
 
+    fn verify_identities(&self, unsettled_tx: &UnsettledTransaction) -> Result<(), Error> {
+        let mut outputs: Vec<(&HyleOutput, &ContractName)> = vec![];
+        for blob in &unsettled_tx.blobs {
+            let contract = self.contracts.get(&blob.contract_name).context(format!(
+                "Contract {} not found when settling transaction",
+                &blob.contract_name
+            ))?;
+
+            let hyle_output = blob
+                .metadata
+                .iter()
+                .find(|hyle_output| hyle_output.initial_state == contract.state)
+                .context("No provided proofs are based on the correct initial state")?;
+
+            outputs.append(&mut vec![(hyle_output, &blob.contract_name)])
+        }
+
+        let (_, identity_contract_name) = outputs
+            .iter()
+            .find(|(out, contract_name)| out.identity.0.ends_with(&contract_name.0))
+            .context("No identity match the contract name")?;
+
+        let tx_identity_match_contract =
+            unsettled_tx.identity.0.ends_with(&identity_contract_name.0);
+
+        if !tx_identity_match_contract {
+            bail!(
+                "Tx identity '{}' does not match contract name: {}",
+                unsettled_tx.identity.0,
+                identity_contract_name
+            );
+        }
+
+        let all_identities_match = outputs
+            .iter()
+            .all(|(out, _)| out.identity.0 == unsettled_tx.identity.0);
+
+        if !all_identities_match {
+            let identities = outputs
+                .iter()
+                .map(|(out, _)| &out.identity.0)
+                .collect::<Vec<_>>();
+            bail!(
+                "Identities do not match {}: {:?}",
+                unsettled_tx.identity,
+                identities
+            );
+        }
+
+        Ok(())
+    }
+
     fn verify_blobs_metadata(
         &self,
         tx: &ProofTransaction,
@@ -286,11 +339,6 @@ impl NodeState {
                 if !hyle_output.success {
                     bail!("Contract execution is not a success");
                 }
-                // Identity verification
-                // TODO: uncomment when verifier are implemented
-                // if hyle_output.identity != unsettled_txs[index].identity {
-                //     bail!("Identity is incorrect");
-                // }
 
                 Ok(())
             })

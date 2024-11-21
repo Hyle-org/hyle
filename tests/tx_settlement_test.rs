@@ -29,16 +29,19 @@ mod e2e_tx_settle {
 
         info!("➡️  Sending blobs for c1 & c2");
         let blob_tx_hash = ctx
-            .send_blob(vec![
-                Blob {
-                    contract_name: "c1".into(),
-                    data: BlobData(vec![0, 1, 2, 3]),
-                },
-                Blob {
-                    contract_name: "c2".into(),
-                    data: BlobData(vec![0, 1, 2, 3]),
-                },
-            ])
+            .send_blob(
+                "test".into(),
+                vec![
+                    Blob {
+                        contract_name: "c1".into(),
+                        data: BlobData(vec![0, 1, 2, 3]),
+                    },
+                    Blob {
+                        contract_name: "c2".into(),
+                        data: BlobData(vec![0, 1, 2, 3]),
+                    },
+                ],
+            )
             .await?;
 
         info!("➡️  Sending proof for c1 & c2");
@@ -102,10 +105,13 @@ mod e2e_tx_settle {
 
         info!("➡️  Sending blobs for erc20-risc0");
         let blob_tx_hash = ctx
-            .send_blob(vec![Blob {
-                contract_name: "erc20-risc0".into(),
-                data: BlobData(vec![1, 3, 109, 97, 120, 27]),
-            }])
+            .send_blob(
+                "test".into(),
+                vec![Blob {
+                    contract_name: "erc20-risc0".into(),
+                    data: BlobData(vec![1, 3, 109, 97, 120, 27]),
+                }],
+            )
             .await?;
 
         let proof = load_encoded_receipt_from_file("./tests/proofs/erc20.risc0.proof");

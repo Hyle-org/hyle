@@ -27,13 +27,16 @@ mod e2e_hyllar {
     async fn scenario_hyllar(ctx: E2ECtx) -> Result<()> {
         info!("➡️  Sending blob to register faucet identity");
         let blob_tx_hash = ctx
-            .send_blob(vec![Blob {
-                contract_name: "hydentity".into(),
-                data: IdentityAction::RegisterIdentity {
-                    account: "faucet".to_string(),
-                }
-                .into(),
-            }])
+            .send_blob(
+                "faucet.hydentity".into(),
+                vec![Blob {
+                    contract_name: "hydentity".into(),
+                    data: IdentityAction::RegisterIdentity {
+                        account: "faucet.hydentity".to_string(),
+                    }
+                    .into(),
+                }],
+            )
             .await?;
 
         let proof = load_encoded_receipt_from_file("./tests/proofs/register.hydentity.risc0.proof");
@@ -63,24 +66,27 @@ mod e2e_hyllar {
 
         info!("➡️  Sending blob to transfer 10 tokens from faucet to bob");
         let blob_tx_hash = ctx
-            .send_blob(vec![
-                Blob {
-                    contract_name: "hydentity".into(),
-                    data: IdentityAction::VerifyIdentity {
-                        account: "faucet".to_string(),
-                        blobs_hash: vec!["".into()],
-                    }
-                    .into(),
-                },
-                Blob {
-                    contract_name: "hyllar".into(),
-                    data: ERC20Action::Transfer {
-                        recipient: "bob".to_string(),
-                        amount: 10,
-                    }
-                    .into(),
-                },
-            ])
+            .send_blob(
+                "faucet.hydentity".into(),
+                vec![
+                    Blob {
+                        contract_name: "hydentity".into(),
+                        data: IdentityAction::VerifyIdentity {
+                            account: "faucet.hydentity".to_string(),
+                            blobs_hash: vec!["".into()],
+                        }
+                        .into(),
+                    },
+                    Blob {
+                        contract_name: "hyllar".into(),
+                        data: ERC20Action::Transfer {
+                            recipient: "bob.hydentity".to_string(),
+                            amount: 10,
+                        }
+                        .into(),
+                    },
+                ],
+            )
             .await?;
 
         let hydentity_proof =
