@@ -23,7 +23,7 @@ bincode = { version = "2.0.0-rc.2", tag = "v2.0.0-rc.2", git = "https://github.c
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1"
 ron = "0.8.1"
-axum = { version = "0.7.7", features = ["ws"] }
+axum = { version = "0.7.9", features = ["ws"] }
 sha3 = "0.10.8"
 hex = "0.4.3"
 derive_more = { version = "1.0.0", features = ["display"] }
@@ -36,12 +36,12 @@ blst = "0.3.13"
 # opentelemetry and axum-otel-metrics must be updated together (so that there is only one opentelemetry version)
 opentelemetry = "0.24.0"
 axum-otel-metrics = "0.9.0-alpha.2"
-tower-http = { version = "0.6.1", features = ["trace", "cors"] }
+tower-http = { version = "0.6.2", features = ["trace", "cors"] }
 futures = "0.3.31"
 dhat = { version = "0.3.3", optional = true }
 reqwest = { version = "0.12", features = ["json"] }
 tokio-util = "0.7.12"
-assertables = "9.3.0"
+assertables = "9.4.0"
 risc0-zkvm = { version = "1.1.3" }
 borsh = "1.5.3"
 # tokio (no TLS)
@@ -52,7 +52,7 @@ sqlx = { version = "0.8.2", features = [
     "chrono",
 ] }
 chrono = { version = "0.4", features = ["serde"] }
-axum-test = "16.3.0"
+axum-test = "16.4.0"
 syn = "2.0.87"
 quote = "1.0.37"
 base64 = "0.22.1"
@@ -74,7 +74,7 @@ sled = { version = "0.34.7", features = [
 assert_cmd = "2.0.16"
 tokio-tungstenite = "0.24.0"
 reqwest = { version = "0.12", features = ["json", "blocking"] }
-serde_json = "1.0.132"
+serde_json = "1.0.133"
 proptest = "1.5.0"
 test-log = { version = "0.2.16", features = [
     "color",
