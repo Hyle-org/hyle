@@ -30,7 +30,6 @@ where
     pub identity: Identity,
     pub tx_hash: String,
     pub private_blob: BlobData,
-    pub contract_name: ContractName,
     pub blobs: Vec<BlobData>,
     pub index: usize,
 }

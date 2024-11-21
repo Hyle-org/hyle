@@ -30,7 +30,7 @@ impl HyllarToken {
     /// * `HyllarToken` - A new instance of the Hyllar token.
     pub fn new(initial_supply: u128) -> Self {
         let mut balances = HashMap::new();
-        balances.insert("faucet".to_string(), initial_supply); // Assign initial supply to faucet
+        balances.insert("faucet.hydentity".to_string(), initial_supply); // Assign initial supply to faucet
         HyllarToken {
             total_supply: initial_supply,
             balances,

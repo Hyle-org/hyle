@@ -1,7 +1,7 @@
 use alloc::{format, string::String, vec::Vec};
 use bincode::{Decode, Encode};
 
-use crate::{guest::RunResult, BlobData, ContractName, Identity};
+use crate::{guest::RunResult, BlobData, Identity};
 
 /// Trait representing an identity verification contract.
 pub trait IdentityVerification {
@@ -77,7 +77,6 @@ pub fn execute_action<T: IdentityVerification>(
     caller: Identity,
     action: IdentityAction,
     private_input: &str,
-    contract_name: &ContractName,
 ) -> RunResult {
     let (success, res) = match action {
         IdentityAction::RegisterIdentity { account } => {
@@ -113,22 +112,8 @@ pub fn execute_action<T: IdentityVerification>(
 
     RunResult {
         success,
-        identity: format!("{caller}.{contract_name}").into(),
+        identity: caller,
         program_outputs,
-    }
-}
-
-pub fn verify_identity(blobs: &[BlobData], blob_index: usize, identity: &Identity) {
-    let identity_action = crate::guest::parse_blob::<IdentityAction>(blobs, blob_index);
-
-    if let IdentityAction::VerifyIdentity { account, .. } = identity_action {
-        if account != identity.0 {
-            crate::guest::panic("Verify identity blob not match provided identity");
-        }
-    } else {
-        crate::guest::panic(&format!(
-            "Blob index {blob_index} must be a VerifyIdentity action"
-        ));
     }
 }
 
@@ -152,7 +137,6 @@ mod tests {
         let mut mock = MockIdentityVerification::new();
         let caller = Identity("caller_identity".to_string());
         let caller_identified = Identity("caller_identity.test_contract".to_string());
-        let contract_name = "test_contract".into();
         let action = IdentityAction::RegisterIdentity {
             account: "test_account".to_string(),
         };
@@ -163,13 +147,7 @@ mod tests {
             .times(1)
             .returning(|_, _| Ok(()));
 
-        let result = execute_action(
-            &mut mock,
-            caller.clone(),
-            action,
-            private_input,
-            &contract_name,
-        );
+        let result = execute_action(&mut mock, caller.clone(), action, private_input);
         assert!(result.success);
         assert_eq!(result.identity, caller_identified);
     }
@@ -179,7 +157,6 @@ mod tests {
         let mut mock = MockIdentityVerification::new();
         let caller = Identity("caller_identity".to_string());
         let caller_identified = Identity("caller_identity.test_contract".to_string());
-        let contract_name = "test_contract".into();
         let account = "test_account".to_string();
         let private_input = "test_identity";
 
@@ -193,13 +170,7 @@ mod tests {
             blobs_hash: vec![],
         };
 
-        let result = execute_action(
-            &mut mock,
-            caller.clone(),
-            action,
-            private_input,
-            &contract_name,
-        );
+        let result = execute_action(&mut mock, caller.clone(), action, private_input);
         assert!(result.success);
         assert_eq!(result.identity, caller_identified);
     }
@@ -209,7 +180,6 @@ mod tests {
         let mut mock = MockIdentityVerification::new();
         let caller = Identity("caller_identity".to_string());
         let caller_identified = Identity("caller_identity.test_contract".to_string());
-        let contract_name = "test_contract".into();
         let account = "test_account".to_string();
         let private_input = "test_identity";
 
@@ -222,7 +192,7 @@ mod tests {
             account: account.clone(),
         };
 
-        let result = execute_action(&mut mock, caller.clone(), action, "", &contract_name);
+        let result = execute_action(&mut mock, caller.clone(), action, "");
         assert!(result.success);
         assert_eq!(result.identity, caller_identified);
     }

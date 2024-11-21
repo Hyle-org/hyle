@@ -22,7 +22,6 @@ fn main() {
         input.identity.clone(),
         parameters,
         password,
-        &input.contract_name,
     );
 
     sdk::guest::commit(input, state, res);
