@@ -200,7 +200,6 @@ mod tests {
     use crate::mempool::storage::{Car, CarHash, DataProposal};
     use crate::model::{Hashable, ValidatorPublicKey};
     use crate::p2p;
-    use crate::p2p::network::SignedByValidator;
     use crate::utils::conf::Conf;
     use anyhow::Result;
     use std::sync::Arc;
@@ -294,19 +293,13 @@ mod tests {
     async fn test_flow() -> Result<()> {
         let mut ctx = TestContext::new("single_node_consensus").await;
 
-        let crypto = BlstCrypto::new("temp_crypto".into());
         let car = Car {
             txs: vec![],
             parent_hash: None,
         };
-        let data_vote_signature = crypto
-            .sign(MempoolNetMessage::DataVote(car.hash()))
-            .expect("a signed message")
-            .signature;
         let data_proposal = DataProposal {
             parent_poa: None,
             car,
-            data_vote_signature,
         };
         let signed_msg = ctx
             .single_node_consensus

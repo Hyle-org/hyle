@@ -14,7 +14,7 @@ use crate::{
     p2p::network::{OutboundMessage, SignedByValidator},
     rest::endpoints::RestApiMessage,
     utils::{
-        crypto::{BlstCrypto, SharedBlstCrypto},
+        crypto::{BlstCrypto, SharedBlstCrypto, ValidatorSignature},
         logger::LogMe,
         modules::Module,
     },
@@ -56,6 +56,7 @@ pub struct Mempool {
 
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, Eq, PartialEq, IntoStaticStr)]
 pub enum MempoolNetMessage {
+    Poa(CarHash, Vec<ValidatorSignature>),
     DataProposal(DataProposal),
     DataVote(CarHash),
     // FIXME: Add a new message to receive a Car's PoA
@@ -144,7 +145,7 @@ impl Mempool {
             command_response<QueryNewCut, Cut> validators => {
                 // TODO: metrics?
                 self.metrics.add_batch();
-                // FIXME: use voting power
+                // FIXME:
                 // self.validators.len() == 1 is for SingleNodeBlockGeneration
                 //   it makes sure the DataProposal is committed to the Lane without waiting for a DataVote
                 // self.storage.lane.poa.len() > f is for waiting for the appropriate number of votes
@@ -153,7 +154,7 @@ impl Mempool {
                 if validators.0.len() == 1 || self.storage.lane.poa.len() > f {
                     self.storage.commit_data_proposal();
                 }
-                self.storage.new_cut(Arc::clone(&self.crypto), &validators.0)
+                self.storage.new_cut(self.crypto.as_ref(), &validators.0)
             }
             _ = interval.tick() => {
                 // This tick is responsible for DataProposal management
@@ -173,7 +174,7 @@ impl Mempool {
             let only_for = HashSet::from_iter(
                 self.validators
                     .iter()
-                    .filter(|pubkey| !self.storage.lane.poa.contains_key(pubkey))
+                    .filter(|pubkey| !self.storage.lane.poa.contains(pubkey))
                     .cloned(),
             );
             // FIXME: with current implem, we send DataProposal twice.
@@ -209,6 +210,11 @@ impl Mempool {
             Ok(true) => {
                 let validator = &msg.signature.validator;
                 match msg.msg {
+                    MempoolNetMessage::Poa(car_hash, signatures) => {
+                        debug!("Updating Poa of Car {} for {validator}", car_hash);
+                        self.storage
+                            .other_lane_update_poa(validator, car_hash, signatures);
+                    }
                     MempoolNetMessage::DataProposal(data_proposal) => {
                         debug!(
                             "Received DataProposal {} from validator {}",
@@ -221,8 +227,7 @@ impl Mempool {
                     }
                     MempoolNetMessage::DataVote(ref car_hash) => {
                         // FIXME: We should extract the signature for that Vote in order to create a PoA
-                        self.on_data_vote(validator, car_hash.clone(), msg.clone())
-                            .await;
+                        self.on_data_vote(validator, car_hash.clone(), msg.signature.clone());
                     }
                     MempoolNetMessage::SyncRequest(data_proposal_tip_hash, last_known_car_hash) => {
                         self.on_sync_request(
@@ -314,18 +319,28 @@ impl Mempool {
         }
     }
 
-    async fn on_data_vote(
+    fn on_data_vote(
         &mut self,
         validator: &ValidatorPublicKey,
         car_hash: CarHash,
-        message: SignedByValidator<MempoolNetMessage>,
+        signature: ValidatorSignature,
     ) {
-        if let Err(e) = self.storage.on_data_vote(validator, car_hash, message) {
+        if let Err(e) = self
+            .storage
+            .on_data_vote(validator, car_hash.clone(), signature)
+        {
             error!("{:?}", e);
         } else {
-            debug!("{} Vote from {}", self.storage.id, validator);
+            debug!(
+                "{} Vote for {} from {}",
+                self.storage.id, car_hash, validator
+            );
             if self.storage.lane.poa.len() > self.validators.len() / 3 {
-                self.storage.commit_data_proposal();
+                if let Some(signatures) = self.storage.commit_data_proposal() {
+                    if let Err(e) = self.broadcast_poa(car_hash.clone(), signatures) {
+                        error!("Failed to broadcast Poa for Car {} {:?}", car_hash, e);
+                    }
+                }
             }
         }
     }
@@ -335,11 +350,12 @@ impl Mempool {
         validator: &ValidatorPublicKey,
         data_proposal: DataProposal,
     ) -> Result<()> {
-        let crypto = Arc::clone(&self.crypto);
-        match self
-            .storage
-            .on_data_proposal(crypto, validator, &data_proposal, &self.node_state)
-        {
+        match self.storage.on_data_proposal(
+            self.crypto.as_ref(),
+            validator,
+            &data_proposal,
+            &self.node_state,
+        ) {
             DataProposalVerdict::Empty => {
                 warn!(
                     "received empty DataProposal from {}, ignoring...",
@@ -349,7 +365,7 @@ impl Mempool {
             DataProposalVerdict::Vote => {
                 // Normal case, we receive a proposal we already have the parent in store
                 debug!("Send vote for DataProposal");
-                self.send_vote(validator, data_proposal.car.hash())?;
+                self.send_data_vote(validator, data_proposal.car.hash())?;
             }
             DataProposalVerdict::DidVote => {
                 error!(
@@ -374,8 +390,22 @@ impl Mempool {
         Ok(())
     }
 
+    fn broadcast_poa(
+        &mut self,
+        car_hash: CarHash,
+        signatures: Vec<ValidatorSignature>,
+    ) -> Result<()> {
+        if self.validators.is_empty() {
+            return Ok(());
+        }
+        debug!("🚗 Broadcast Poa for Car {}", car_hash);
+        self.metrics.add_broadcasted_poa("poa".to_string());
+        self.broadcast_net_message(MempoolNetMessage::Poa(car_hash, signatures))?;
+        Ok(())
+    }
+
     fn broadcast_data_proposal_if_any(&mut self) {
-        if let Some(data_proposal) = self.storage.new_data_proposal(Arc::clone(&self.crypto)) {
+        if let Some(data_proposal) = self.storage.new_data_proposal(self.crypto.as_ref()) {
             debug!(
                 "🚗 Broadcast DataProposal {} ({} validators, {} txs)",
                 data_proposal.car.hash(),
@@ -448,8 +478,8 @@ impl Mempool {
         Ok(())
     }
 
-    fn send_vote(&mut self, validator: &ValidatorPublicKey, car_hash: CarHash) -> Result<()> {
-        self.metrics.add_sent_proposal_vote("blob".to_string());
+    fn send_data_vote(&mut self, validator: &ValidatorPublicKey, car_hash: CarHash) -> Result<()> {
+        self.metrics.add_sent_data_vote("blob".to_string());
         self.send_net_message(validator.clone(), MempoolNetMessage::DataVote(car_hash))?;
         Ok(())
     }
@@ -636,16 +666,9 @@ mod tests {
             parent_hash: None,
             txs: vec![make_register_contract_tx(ContractName("test1".to_owned()))],
         };
-        let data_vote_signature = ctx
-            .mempool
-            .crypto
-            .sign(MempoolNetMessage::DataVote(car.hash()))
-            .expect("a signed message")
-            .signature;
         let data_proposal = DataProposal {
             car,
             parent_poa: None,
-            data_vote_signature,
         };
 
         let signed_msg = ctx
@@ -687,16 +710,9 @@ mod tests {
             parent_hash: Some(CarHash("42".to_string())), // This value is incorrect
             txs: vec![make_register_contract_tx(ContractName("test1".to_owned()))],
         };
-        let data_vote_signature = ctx
-            .mempool
-            .crypto
-            .sign(MempoolNetMessage::DataVote(car.hash()))
-            .expect("a signed message")
-            .signature;
         let data_proposal = DataProposal {
             car,
             parent_poa: None,
-            data_vote_signature,
         };
 
         let temp_crypto = BlstCrypto::new("temp_crypto".into());
@@ -731,16 +747,9 @@ mod tests {
             parent_hash: None,
             txs: vec![make_register_contract_tx(ContractName("test1".to_owned()))],
         };
-        let data_vote_signature = ctx
-            .mempool
-            .crypto
-            .sign(MempoolNetMessage::DataVote(car.hash()))
-            .expect("a signed message")
-            .signature;
         let data_proposal = DataProposal {
             car,
             parent_poa: None,
-            data_vote_signature,
         };
 
         ctx.mempool.broadcast_data_proposal_if_any();
@@ -755,7 +764,7 @@ mod tests {
             .await;
 
         // Assert that we added the vote to the PoA
-        assert_eq!(ctx.mempool.storage.lane.poa.len(), 2);
+        assert_eq!(ctx.mempool.storage.lane.poa.len(), 1);
         Ok(())
     }
 
@@ -774,16 +783,9 @@ mod tests {
             parent_hash: None,
             txs: vec![register_tx],
         };
-        let data_vote_signature = ctx
-            .mempool
-            .crypto
-            .sign(MempoolNetMessage::DataVote(car.hash()))
-            .expect("a signed message")
-            .signature;
         let data_proposal = DataProposal {
             car,
             parent_poa: None,
-            data_vote_signature,
         };
 
         // Assert that we vote for that specific DataProposal
@@ -814,9 +816,16 @@ mod tests {
     async fn test_receiving_commit_cut() -> Result<()> {
         let mut ctx = TestContext::new("mempool").await;
         let car_hash = CarHash("42".to_string());
+        let aggregate_signature = ctx
+            .mempool
+            .storage
+            .lane
+            .poa
+            .sign(&ctx.mempool.crypto, car_hash.clone())
+            .expect("a signed aggregate");
         let cut: Cut = vec![(
             ctx.mempool.crypto.validator_pubkey().clone(),
-            None,
+            Some(aggregate_signature),
             car_hash.clone(),
         )];
 

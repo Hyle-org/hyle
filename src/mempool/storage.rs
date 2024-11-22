@@ -2,13 +2,7 @@ use anyhow::{bail, Result};
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Sha3_256};
-use std::{
-    collections::{BTreeMap, HashMap},
-    fmt::Display,
-    io::Write,
-    sync::Arc,
-    vec,
-};
+use std::{collections::HashMap, fmt::Display, io::Write, vec};
 use tracing::{debug, error, warn};
 
 use crate::{
@@ -31,21 +25,25 @@ pub enum DataProposalVerdict {
 
 pub type Cut = Vec<(ValidatorPublicKey, Option<AggregateSignature>, CarHash)>;
 
-pub fn verify_cut(_cut: &Cut) -> Result<()> {
-    // FIXME: verify cut
-    // for (_validator, signature, car_hash) in cut {
-    //     let expected_signed_message = Signed {
-    //         msg: MempoolNetMessage::DataVote(car_hash.clone()),
-    //         signature: signature.clone().unwrap(),
-    //     };
+// fn verify_aggregate_signature(signature: &AggregateSignature, car_hash: CarHash) -> Result<()> {
+//     let expected_signed_message = Signed {
+//         msg: MempoolNetMessage::DataVote(car_hash),
+//         signature: signature.clone(),
+//     };
 
-    //     match BlstCrypto::verify_aggregate(&expected_signed_message) {
-    //         Ok(res) if !res => {
-    //             bail!("Cut received is invalid ({validator})")
-    //         }
-    //         Err(err) => bail!("Cut verification failed for {validator}", err),
-    //         _ => {}
-    //     };
+//     match BlstCrypto::verify_aggregate(&expected_signed_message) {
+//         Ok(res) if !res => bail!("Poa is invalid"),
+//         Err(err) => bail!("Poa verification failed {:?}", err),
+//         _ => Ok(()),
+//     }
+// }
+
+pub fn verify_cut(_cut: &Cut) -> Result<()> {
+    // FIXME: Error while requesting new cut: Failed to aggregate signatures into valid one. Messages might be different.
+    // for (validator, signature, car_hash) in cut {
+    //     if let Err(e) = verify_aggregate_signature(signature, car_hash.clone()) {
+    //         bail!("{:?} for {validator}", e)
+    //     }
     // }
     Ok(())
 }
@@ -77,28 +75,31 @@ impl Storage {
             id,
             pending_txs: vec![],
             data_proposal: None,
-            lane: Lane {
-                cars: vec![],
-                poa: Poa::default(),
-                waiting: vec![],
-            },
+            lane: Lane::default(),
             other_lanes: HashMap::new(),
         }
     }
 
     pub fn new_cut(
         &mut self,
-        crypto: Arc<BlstCrypto>,
+        crypto: &BlstCrypto,
         validators: &[ValidatorPublicKey],
     ) -> Result<Cut> {
         // For each validator, we get the last validated car and put it in the cut
         let mut cut: Cut = vec![];
         for validator in validators.iter() {
             if validator == &self.id {
+                // if let Some(data_proposal) = &self.data_proposal {
+                //     if let Some(poa) = &data_proposal.parent_poa {
+                //         self.lane
+                //             .add_current_hash_to_cut(crypto, poa, &mut cut, validator)?;
+                //     }
+                // } else {
                 self.lane
-                    .add_current_hash_to_cut(&crypto, &mut cut, validator)?;
+                    .add_current_hash_to_cut(crypto, &self.lane.poa, &mut cut, validator)?;
+                // }
             } else if let Some(lane) = self.other_lanes.get(validator) {
-                lane.add_current_hash_to_cut(&crypto, &mut cut, validator)?;
+                lane.add_current_hash_to_cut(crypto, &lane.poa, &mut cut, validator)?;
             } else {
                 // can happen if validator does not have any DataProposal yet
                 debug!(
@@ -111,9 +112,12 @@ impl Storage {
         Ok(cut)
     }
 
-    pub fn commit_data_proposal(&mut self) {
+    pub fn commit_data_proposal(&mut self) -> Option<Vec<ValidatorSignature>> {
         if let Some(data_proposal) = self.data_proposal.take() {
             self.lane.cars.push(data_proposal.car);
+            Some(self.lane.poa.signatures())
+        } else {
+            None
         }
     }
 
@@ -122,15 +126,11 @@ impl Storage {
         &mut self,
         validator: &ValidatorPublicKey,
         car_hash: CarHash,
-        message: SignedByValidator<MempoolNetMessage>,
+        signature: ValidatorSignature,
     ) -> Result<()> {
         if let Some(current_data_proposal) = &self.data_proposal {
             if current_data_proposal.car.hash() == car_hash {
-                if self.lane.poa.contains_key(validator) {
-                    debug!("{validator} already voted for DataProposal");
-                } else {
-                    self.lane.poa.insert(validator.clone(), message);
-                }
+                self.lane.poa.add_signature(signature);
             } else {
                 bail!("DataVote for wrong DataProposal ({validator})");
             }
@@ -142,7 +142,7 @@ impl Storage {
 
     pub fn on_data_proposal(
         &mut self,
-        crypto: Arc<BlstCrypto>,
+        _crypto: &BlstCrypto,
         validator: &ValidatorPublicKey,
         data_proposal: &DataProposal,
         node_state: &NodeState,
@@ -162,7 +162,17 @@ impl Storage {
             return DataProposalVerdict::Wait(data_proposal.car.parent_hash.clone());
         }
 
-        // FIXME: verify data_proposal.parent_poa
+        // if let (Some(parent_hash), Some(parent_poa)) =
+        //     (&data_proposal.car.parent_hash, &data_proposal.parent_poa)
+        // {
+        //     if let Err(e) = parent_poa.verify(crypto, parent_hash.clone()) {
+        //         error!(
+        //             "Refusing DataProposal: parent poa could not be verified ({:?})",
+        //             e
+        //         );
+        //         return DataProposalVerdict::Refuse;
+        //     }
+        // }
 
         // optimistic_node_state is here to handle the case where a contract is registered in a car that is not yet committed.
         // For performance reasons, we only clone node_state in it for unregistered contracts that are potentially in those uncommitted cars.
@@ -253,13 +263,12 @@ impl Storage {
         {
             self.other_lane_update_parent_poa(validator, parent_hash, parent_poa)
         }
-        self.other_lane_add_data_proposal(crypto, validator, data_proposal);
+        self.other_lane_add_data_proposal(validator, data_proposal);
         DataProposalVerdict::Vote
     }
 
     fn other_lane_add_data_proposal(
         &mut self,
-        crypto: Arc<BlstCrypto>,
         validator: &ValidatorPublicKey,
         data_proposal: &DataProposal,
     ) {
@@ -286,17 +295,6 @@ impl Storage {
             parent_hash,
             txs: txs_without_proofs,
         });
-
-        let msg = MempoolNetMessage::DataVote(data_proposal.car.hash());
-        let self_signed_msg = crypto.sign(msg.clone()).expect("signed message");
-        lane.poa.insert(self.id.clone(), self_signed_msg);
-        lane.poa.insert(
-            validator.clone(),
-            SignedByValidator {
-                msg,
-                signature: data_proposal.data_vote_signature.clone(),
-            },
-        );
     }
 
     fn other_lane_has_parent_data_proposal(
@@ -308,16 +306,32 @@ impl Storage {
         data_proposal.car.parent_hash == lane.current_hash()
     }
 
+    pub fn other_lane_update_poa(
+        &mut self,
+        validator: &ValidatorPublicKey,
+        car_hash: CarHash,
+        signatures: Vec<ValidatorSignature>,
+    ) {
+        let lane = self.other_lanes.entry(validator.clone()).or_default();
+        if let Some(tip_hash) = lane.current_hash() {
+            if tip_hash == car_hash {
+                lane.poa.add_signatures(signatures, car_hash);
+            }
+        }
+    }
+
     fn other_lane_update_parent_poa(
         &mut self,
         validator: &ValidatorPublicKey,
         parent_hash: &CarHash,
-        parent_poa: &BTreeMap<ValidatorPublicKey, SignedByValidator<MempoolNetMessage>>,
+        parent_poa: &Poa,
     ) {
         let lane = self.other_lanes.entry(validator.clone()).or_default();
+        lane.poa.take();
         if let Some(car) = lane.current_mut() {
-            if &car.hash() == parent_hash {
-                lane.poa.extend(parent_poa.clone());
+            let car_hash = car.hash();
+            if &car_hash == parent_hash {
+                lane.poa.add_signatures(parent_poa.signatures(), car_hash);
             }
         }
     }
@@ -375,7 +389,7 @@ impl Storage {
         self.pending_txs.push(tx);
     }
 
-    pub fn new_data_proposal(&mut self, crypto: Arc<BlstCrypto>) -> Option<DataProposal> {
+    pub fn new_data_proposal(&mut self, _crypto: &BlstCrypto) -> Option<DataProposal> {
         if self.pending_txs.is_empty() || self.data_proposal.is_some() {
             return None;
         }
@@ -383,21 +397,18 @@ impl Storage {
             parent_hash: self.lane.current_hash(),
             txs: std::mem::take(&mut self.pending_txs),
         };
-        let msg = MempoolNetMessage::DataVote(car.hash());
-        let signed_msg = crypto.sign(msg).expect("signed message");
         self.data_proposal.replace(DataProposal {
             car,
             // The very first time we create a DataProposal, lane.poa.len() will be 0 so this means we have no parent Poa.
             // After that lane.poa will contain the parent Poa.
-            parent_poa: if self.lane.poa.len() == 0 {
+            parent_poa: if self.lane.poa.is_empty() {
                 None
             } else {
-                Some(std::mem::take(&mut self.lane.poa).0)
+                Some(Poa(self.lane.poa.take()))
             },
-            data_vote_signature: signed_msg.signature.clone(),
         });
 
-        self.lane.poa.insert(self.id.clone(), signed_msg);
+        // self.lane.poa.add_signature(signature);
         self.data_proposal.clone()
     }
 
@@ -423,8 +434,7 @@ impl Storage {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, Encode, Decode)]
 pub struct DataProposal {
     pub car: Car,
-    pub parent_poa: Option<BTreeMap<ValidatorPublicKey, SignedByValidator<MempoolNetMessage>>>,
-    pub data_vote_signature: ValidatorSignature,
+    pub parent_poa: Option<Poa>,
 }
 
 impl Display for DataProposal {
@@ -480,19 +490,78 @@ impl Display for Car {
     }
 }
 
-#[derive(Clone, Default, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct Poa(pub BTreeMap<ValidatorPublicKey, SignedByValidator<MempoolNetMessage>>);
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize, Encode, Decode)]
+pub struct Poa(Vec<ValidatorSignature>);
 
-impl std::ops::Deref for Poa {
-    type Target = BTreeMap<ValidatorPublicKey, SignedByValidator<MempoolNetMessage>>;
-    fn deref(&self) -> &Self::Target {
-        &self.0
+impl Poa {
+    pub fn contains(&self, validator: &ValidatorPublicKey) -> bool {
+        self.0
+            .iter()
+            .any(|signature| &signature.validator == validator)
     }
-}
 
-impl std::ops::DerefMut for Poa {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
+    fn take(&mut self) -> Vec<ValidatorSignature> {
+        std::mem::take(&mut self.0)
+    }
+
+    fn signatures(&self) -> Vec<ValidatorSignature> {
+        self.0.clone()
+    }
+
+    pub fn sign(&self, crypto: &BlstCrypto, car_hash: CarHash) -> Result<AggregateSignature> {
+        let msg = MempoolNetMessage::DataVote(car_hash);
+        let aggregates: Vec<SignedByValidator<MempoolNetMessage>> = self
+            .0
+            .iter()
+            .map(|signature| SignedByValidator {
+                msg: msg.clone(),
+                signature: signature.clone(),
+            })
+            .collect();
+        // FIXME: coerce [T] to [&T]
+        let mut aggregates_ref: Vec<&SignedByValidator<MempoolNetMessage>> =
+            aggregates.iter().collect();
+        aggregates_ref.sort_by(|a, b| a.signature.validator.cmp(&b.signature.validator));
+        crypto
+            .sign_aggregate(msg, &aggregates_ref)
+            .map(|s| s.signature)
+    }
+
+    fn add_signatures(&mut self, signatures: Vec<ValidatorSignature>, _car_hash: CarHash) {
+        for signature in signatures {
+            // let msg = SignedByValidator {
+            //     msg: MempoolNetMessage::DataVote(car_hash.clone()),
+            //     signature: signature.clone(),
+            // };
+            // match BlstCrypto::verify(&msg) {
+            //     Ok(false) => {}
+            //     Err(e) => error!(
+            //         "Fail to verify {} signature for Car {}: {:?}",
+            //         signature.validator, car_hash, e
+            //     ),
+            //     _ => {}
+            // }
+            self.add_signature(signature);
+        }
+    }
+
+    fn add_signature(&mut self, signature: ValidatorSignature) {
+        if !self.contains(&signature.validator) {
+            self.0.push(signature);
+        }
+    }
+
+    // fn verify(&self, crypto: &BlstCrypto, car_hash: CarHash) -> Result<()> {
+    //     let aggregate_signature = self.sign(crypto, car_hash.clone())?;
+    //     verify_aggregate_signature(&aggregate_signature, car_hash)
+    // }
+
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
     }
 }
 
@@ -543,22 +612,15 @@ impl Lane {
 
     fn add_current_hash_to_cut(
         &self,
-        _crypto: &Arc<BlstCrypto>,
+        _crypto: &BlstCrypto,
+        _poa: &Poa,
         cut: &mut Cut,
         validator: &ValidatorPublicKey,
     ) -> Result<()> {
         if let Some(car) = self.current() {
-            // FIXME: Failed to aggregate signatures into valid one. Messages might be different
-            // let aggregates: Vec<&SignedByValidator<MempoolNetMessage>> =
-            //     self.poa.values().collect();
-            // let signed_aggregate =
-            //     crypto.sign_aggregate(MempoolNetMessage::DataVote(car.hash()), &aggregates)?;
-            cut.push((
-                validator.clone(),
-                None,
-                // Some(signed_aggregate.signature),
-                car.hash(),
-            ));
+            let car_hash = car.hash();
+            // let aggregate_signature = poa.sign(crypto, car_hash.clone())?;
+            cut.push((validator.clone(), None, car_hash));
         }
         Ok(())
     }
@@ -653,7 +715,7 @@ impl Lane {
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::BTreeMap, sync::Arc};
+    use std::sync::Arc;
 
     use crate::{
         mempool::{
@@ -666,12 +728,11 @@ mod tests {
             ValidatorPublicKey, VerifiedProofTransaction,
         },
         node_state::NodeState,
-        p2p::network::SignedByValidator,
-        utils::crypto::BlstCrypto,
+        utils::crypto::{BlstCrypto, ValidatorSignature},
     };
     use hyle_contract_sdk::{BlobIndex, HyleOutput, Identity, StateDigest, TxHash};
 
-    use super::{CarHash, Cut, Lane};
+    use super::{CarHash, Cut, Lane, Poa};
 
     fn make_unverified_proof_tx() -> Transaction {
         Transaction {
@@ -759,15 +820,14 @@ mod tests {
             self.crypto.validator_pubkey()
         }
 
-        fn sign_data_vote(&self, car_hash: CarHash) -> SignedByValidator<MempoolNetMessage> {
+        fn sign_data_vote(&self, car_hash: CarHash) -> ValidatorSignature {
             let msg = MempoolNetMessage::DataVote(car_hash);
-            self.crypto.sign(msg).expect("signed message")
+            self.crypto.sign(msg).expect("signed message").signature
         }
 
         fn other_lane_add_data_proposal(&mut self, from: &TestCtx, data_proposal: &DataProposal) {
-            let crypto = Arc::clone(&self.crypto);
             self.store
-                .other_lane_add_data_proposal(crypto, from.pubkey(), data_proposal);
+                .other_lane_add_data_proposal(from.pubkey(), data_proposal);
         }
 
         fn new_blob_tx(&mut self, tx_data: &'static str) {
@@ -778,9 +838,8 @@ mod tests {
         }
 
         fn new_data_proposal(&mut self) -> DataProposal {
-            let crypto = Arc::clone(&self.crypto);
             self.store
-                .new_data_proposal(crypto)
+                .new_data_proposal(self.crypto.as_ref())
                 .expect("a DataProposal")
         }
 
@@ -789,28 +848,22 @@ mod tests {
             from: &TestCtx,
             data_proposal: &DataProposal,
         ) -> DataProposalVerdict {
-            let crypto = Arc::clone(&self.crypto);
-            self.store
-                .on_data_proposal(crypto, from.pubkey(), data_proposal, &self.state)
+            self.store.on_data_proposal(
+                self.crypto.as_ref(),
+                from.pubkey(),
+                data_proposal,
+                &self.state,
+            )
         }
 
-        fn make_data_proposal(
-            &self,
-            car: Car,
-            parent_poa: Option<BTreeMap<ValidatorPublicKey, SignedByValidator<MempoolNetMessage>>>,
-        ) -> DataProposal {
-            let data_vote_signature = self.sign_data_vote(car.hash()).signature;
-            DataProposal {
-                car,
-                parent_poa,
-                data_vote_signature,
-            }
+        fn make_data_proposal(&self, car: Car, parent_poa: Option<Poa>) -> DataProposal {
+            DataProposal { car, parent_poa }
         }
 
         fn data_vote_from(&mut self, from: &TestCtx, data_proposal: &DataProposal) {
-            let signed_msg = from.sign_data_vote(data_proposal.car.hash());
+            let signature = from.sign_data_vote(data_proposal.car.hash());
             self.store
-                .on_data_vote(from.pubkey(), data_proposal.car.hash(), signed_msg)
+                .on_data_vote(from.pubkey(), data_proposal.car.hash(), signature)
                 .expect("a successful vote");
         }
 
@@ -848,7 +901,7 @@ mod tests {
         #[track_caller]
         fn new_cut(&mut self, validators: &[ValidatorPublicKey]) -> Cut {
             self.store
-                .new_cut(Arc::clone(&self.crypto), validators)
+                .new_cut(self.crypto.as_ref(), validators)
                 .expect("a Cut")
         }
     }
@@ -886,14 +939,12 @@ mod tests {
         assert!(ctx3.store.other_lanes.contains_key(ctx2.pubkey()));
 
         let lane2 = ctx3.lane_of(&ctx2);
-        let first_car = lane2.cars.first().expect("first car");
-        assert_eq!(first_car.parent_hash, None);
-        assert_eq!(first_car.txs, vec![make_blob_tx("test1")]);
-        assert!(lane2.poa.contains_key(ctx2.pubkey()));
-        assert!(lane2.poa.contains_key(ctx3.pubkey()));
+        let current_car = lane2.current().expect("current car");
+        assert_eq!(current_car.txs, vec![make_blob_tx("test4")]);
+        assert!(lane2.poa.contains(ctx3.pubkey()));
 
         let missing = ctx3.store.get_missing_cars(
-            Some(first_car.hash()),
+            Some(current_car.hash()),
             &ctx3
                 .store
                 .other_lanes
@@ -917,7 +968,7 @@ mod tests {
         ctx3.new_blob_tx("test4");
 
         let data_proposal = ctx3.new_data_proposal();
-        assert_eq!(ctx3.store.lane.poa.len(), 1);
+        assert_eq!(ctx3.store.lane.poa.len(), 0);
 
         ctx2.assert_can_vote_for(&ctx3, &data_proposal);
         assert_eq!(
@@ -928,15 +979,14 @@ mod tests {
 
         ctx3.data_vote_from(&ctx2, &data_proposal);
         assert!(ctx3.store.data_proposal.is_some());
-        assert_eq!(ctx3.store.lane.poa.len(), 2);
+        assert_eq!(ctx3.store.lane.poa.len(), 1);
 
         ctx3.data_vote_from(&ctx1, &data_proposal);
         ctx3.commit_data_proposal();
-        assert_eq!(ctx3.store.lane.poa.len(), 3);
+        assert_eq!(ctx3.store.lane.poa.len(), 2);
 
-        assert!(ctx3.store.lane.poa.contains_key(ctx3.pubkey()));
-        assert!(ctx3.store.lane.poa.contains_key(ctx1.pubkey()));
-        assert!(ctx3.store.lane.poa.contains_key(ctx2.pubkey()));
+        assert!(ctx3.store.lane.poa.contains(ctx1.pubkey()));
+        assert!(ctx3.store.lane.poa.contains(ctx2.pubkey()));
     }
 
     #[test_log::test]
@@ -1026,15 +1076,9 @@ mod tests {
                 parent_hash: Some(data_proposal1.car.hash()),
                 txs: vec![proof_tx.clone()],
             },
-            Some(BTreeMap::from([
-                (
-                    ctx3.pubkey().clone(),
-                    ctx3.sign_data_vote(data_proposal1.car.hash()),
-                ),
-                (
-                    ctx2.pubkey().clone(),
-                    ctx2.sign_data_vote(data_proposal1.car.hash()),
-                ),
+            Some(Poa(vec![
+                ctx3.sign_data_vote(data_proposal1.car.hash()),
+                ctx2.sign_data_vote(data_proposal1.car.hash()),
             ])),
         );
 

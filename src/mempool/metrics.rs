@@ -3,6 +3,7 @@ use opentelemetry::{metrics::Counter, KeyValue};
 pub struct MempoolMetrics {
     signature_error: Counter<u64>,
     api_tx: opentelemetry::metrics::Counter<u64>,
+    broadcasted_poa: opentelemetry::metrics::Counter<u64>,
     broadcasted_data_proposal: opentelemetry::metrics::Counter<u64>,
     broadcasted_data_proposal_only_for: opentelemetry::metrics::Counter<u64>,
     sent_data_vote: opentelemetry::metrics::Counter<u64>,
@@ -19,6 +20,7 @@ impl MempoolMetrics {
         MempoolMetrics {
             signature_error: my_meter.u64_counter("signature_error").init(),
             api_tx: my_meter.u64_counter("api_tx").init(),
+            broadcasted_poa: my_meter.u64_counter("broadcasted_poa").init(),
             broadcasted_data_proposal: my_meter.u64_counter("broadcasted_data_proposal").init(),
             broadcasted_data_proposal_only_for: my_meter
                 .u64_counter("broadcasted_data_proposal_only_for")
@@ -45,6 +47,9 @@ impl MempoolMetrics {
     pub fn add_batch(&self) {
         self.batches.add(1, &[])
     }
+    pub fn add_broadcasted_poa(&self, kind: String) {
+        self.broadcasted_poa.add(1, &[KeyValue::new("kind", kind)])
+    }
     pub fn add_broadcasted_data_proposal(&self, kind: String) {
         self.broadcasted_data_proposal
             .add(1, &[KeyValue::new("kind", kind)])
@@ -53,7 +58,7 @@ impl MempoolMetrics {
         self.broadcasted_data_proposal_only_for
             .add(1, &[KeyValue::new("kind", kind)])
     }
-    pub fn add_sent_proposal_vote(&self, kind: String) {
+    pub fn add_sent_data_vote(&self, kind: String) {
         self.sent_data_vote.add(1, &[KeyValue::new("kind", kind)])
     }
     pub fn add_sent_sync_request(&self, kind: String) {
