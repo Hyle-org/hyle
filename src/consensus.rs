@@ -175,6 +175,7 @@ enum TimeoutState {
     Scheduled {
         timestamp: u64,
     },
+    CertificateEmitted,
 }
 
 impl TimeoutState {
@@ -183,6 +184,9 @@ impl TimeoutState {
         match self {
             TimeoutState::Inactive => {
                 info!("⏲️ Scheduling timeout");
+            }
+            TimeoutState::CertificateEmitted => {
+                info!("⏲️ Rescheduling timeout after a certificate was emitted");
             }
             TimeoutState::Scheduled { .. } => {
                 info!("⏲️ Rescheduling timeout");
@@ -194,6 +198,9 @@ impl TimeoutState {
     }
     pub fn cancel(&mut self) {
         match self {
+            TimeoutState::CertificateEmitted => {
+                info!("⏲️ Cancelling timeout after it was emitted");
+            }
             TimeoutState::Scheduled { timestamp } => {
                 info!("⏲️ Cancelling timeout set to trigger to {}", timestamp);
             }
@@ -202,6 +209,24 @@ impl TimeoutState {
             }
         }
         *self = TimeoutState::Inactive;
+    }
+
+    pub fn certificate_emitted(&mut self) {
+        match self {
+            TimeoutState::CertificateEmitted => {
+                warn!("⏲️ Try to emit a certificate after it was already emitted");
+            }
+            TimeoutState::Scheduled { timestamp } => {
+                warn!(
+                    "⏲️ Mark TimeoutCertificate as emitted while scheduled {}",
+                    timestamp
+                );
+            }
+            TimeoutState::Inactive => {
+                info!("⏲️ Mark TimeoutCertificate as emitted");
+            }
+        }
+        *self = TimeoutState::CertificateEmitted;
     }
 }
 
@@ -1206,16 +1231,24 @@ impl Consensus {
         if voting_power > f && !timeout_validators.contains(self.crypto.validator_pubkey()) {
             info!("Joining timeout mutiny!");
 
-            // Broadcast a timeout message
-            self.broadcast_net_message(ConsensusNetMessage::Timeout(
+            let timeout_message = ConsensusNetMessage::Timeout(
                 received_consensus_proposal_hash.clone(),
                 next_leader.clone(),
-            ))
-            .context(format!(
-                "Sending timeout message for slot:{} view:{}",
-                self.bft_round_state.consensus_proposal.slot,
-                self.bft_round_state.consensus_proposal.view,
-            ))?;
+            );
+
+            self.store
+                .bft_round_state
+                .follower
+                .timeout_requests
+                .insert(self.sign_net_message(timeout_message.clone())?);
+
+            // Broadcast a timeout message
+            self.broadcast_net_message(timeout_message)
+                .context(format!(
+                    "Sending timeout message for slot:{} view:{}",
+                    self.bft_round_state.consensus_proposal.slot,
+                    self.bft_round_state.consensus_proposal.view,
+                ))?;
 
             len += 1;
             voting_power += self.get_own_voting_power();
@@ -1227,7 +1260,12 @@ impl Consensus {
         }
 
         // Create TC if applicable
-        if voting_power > 2 * f {
+        if voting_power > 2 * f
+            && !matches!(
+                self.bft_round_state.follower.timeout_state,
+                TimeoutState::CertificateEmitted
+            )
+        {
             debug!("⏲️ ⏲️ Creating a timeout certificate with {len} timeout requests and {voting_power} voting power");
             // Get all signatures received and change ValidatorId for ValidatorPubKey
             let aggregates: &Vec<&SignedByValidator<ConsensusNetMessage>> = &self
@@ -1247,12 +1285,6 @@ impl Consensus {
 
             let timeout_certificate = timeout_signed_aggregation.signature;
 
-            // Broadcast the Timeout Certificate to all validators
-            self.broadcast_net_message(ConsensusNetMessage::TimeoutCertificate(
-                timeout_certificate.clone(),
-                received_consensus_proposal_hash.clone(),
-            ))?;
-
             self.bft_round_state
                 .follower
                 .timeout_state
@@ -1260,6 +1292,16 @@ impl Consensus {
 
             if &self.next_leader()? == self.crypto.validator_pubkey() {
                 self.carry_on_with_ticket(Ticket::TimeoutQC(timeout_certificate))?;
+            } else {
+                // Broadcast the Timeout Certificate to all validators
+                self.broadcast_net_message(ConsensusNetMessage::TimeoutCertificate(
+                    timeout_certificate.clone(),
+                    received_consensus_proposal_hash.clone(),
+                ))?;
+                self.bft_round_state
+                    .follower
+                    .timeout_state
+                    .certificate_emitted();
             }
         }
 
@@ -1978,6 +2020,21 @@ mod test {
         }
 
         #[track_caller]
+        fn assert_no_broadcast(&mut self, description: &str) {
+            #[allow(clippy::expect_fun_call)]
+            let rec = self.out_receiver.try_recv();
+
+            match rec {
+                Ok(OutboundMessage::BroadcastMessage(net_msg)) => {
+                    panic!("{description}: Broadcast message found: {:?}", net_msg)
+                }
+                els => {
+                    info!("{description}: Got {:?}", els);
+                }
+            }
+        }
+
+        #[track_caller]
         fn assert_send(
             &mut self,
             to: &Self,
@@ -2288,8 +2345,9 @@ mod test {
 
         // After this broadcast, every node has 2f+1 timeouts and can create a timeout certificate
 
-        // Node 2 is next leader, and emits a timeout certificate it will use to broadcast the next Prepare
-        let timeout_certificate2 = node2.assert_broadcast("Timeout Certificate 2");
+        // Node 2 is next leader, and does not emits a timeout certificate since it will broadcast the next Prepare with it
+        node2.assert_no_broadcast("Timeout Certificate 2");
+
         node3.assert_broadcast("Timeout Certificate 3");
         node4.assert_broadcast("Timeout Certificate 4");
 
@@ -2302,30 +2360,86 @@ mod test {
         };
 
         assert!(matches!(ticket, Ticket::TimeoutQC(_)));
-        assert!(matches!(
-            timeout_certificate2.msg,
-            ConsensusNetMessage::TimeoutCertificate(_, _)
-        ));
+        assert_eq!(cp.slot, 1);
+        assert_eq!(cp.view, 1);
+    }
 
-        if let ConsensusNetMessage::TimeoutCertificate(agg_signature, cp_hash) =
-            timeout_certificate2.msg
-        {
-            if let Ticket::TimeoutQC(qc) = ticket {
-                assert_eq!(agg_signature, qc);
+    #[test_log::test(tokio::test)]
+    async fn timeout_only_emit_certificate_once() {
+        let (mut node1, mut node2, mut node3, mut node4, mut node5): (
+            TestCtx,
+            TestCtx,
+            TestCtx,
+            TestCtx,
+            TestCtx,
+        ) = build_nodes!(5).await;
+
+        node1.start_round().await;
+        // Slot 1 - leader = node1
+
+        node1.assert_broadcast("Lost prepare");
+
+        // Make node2 and node3 timeout, node4 will not timeout but follow mutiny,
+        // because at f+1, mutiny join
+        TestCtx::timeout(&mut [&mut node2, &mut node3]).await;
+
+        broadcast! {
+            description: "Follower - Timeout",
+            from: node2, to: [node3, node4, node5],
+            message_matches: ConsensusNetMessage::Timeout(_, next_leader) => {
+                assert_eq!(&node2.pubkey(), next_leader);
             }
-            assert_eq!(cp.slot, 1);
-            assert_eq!(cp.view, 1);
-            // Make sure the ticket maches the consensus proposal held by the prepare
-            // but in the previous view
-            let mut cloned_cp = cp.clone();
-            cloned_cp.view -= 1;
-            assert_eq!(cp_hash, cloned_cp.hash());
-        } else {
-            panic!(
-                "timeout certificate 2 should be a timeout certificate messages but was {:?}",
-                timeout_certificate2
-            );
-        }
+        };
+        broadcast! {
+            description: "Follower - Timeout",
+            from: node3, to: [node2, node4, node5],
+            message_matches: ConsensusNetMessage::Timeout(_, next_leader) => {
+                assert_eq!(&node2.pubkey(), next_leader);
+            }
+        };
+
+        // node 4 should join the mutiny
+        broadcast! {
+            description: "Follower - Timeout",
+            from: node4, to: [node2, node3, node5],
+            message_matches: ConsensusNetMessage::Timeout(_, next_leader) => {
+                assert_eq!(&node2.pubkey(), next_leader);
+            }
+        };
+
+        // By receiving this, other nodes should not produce another timeout certificate
+        broadcast! {
+            description: "Follower - Timeout",
+            from: node5, to: [node2, node3, node4],
+            message_matches: ConsensusNetMessage::Timeout(_, next_leader) => {
+                assert_eq!(&node2.pubkey(), next_leader);
+            }
+        };
+
+        // After this broadcast, every node has 2f+1 timeouts and can create a timeout certificate
+
+        // Node 2 is next leader, and emits a timeout certificate it will use to broadcast the next Prepare
+        node2.assert_no_broadcast("Timeout Certificate 2");
+        node3.assert_broadcast("Timeout Certificate 3");
+        node4.assert_broadcast("Timeout Certificate 4");
+        node5.assert_broadcast("Timeout Certificate 5");
+
+        // No
+        node2.assert_no_broadcast("Timeout certificate 2");
+        node3.assert_no_broadcast("Timeout certificate 3");
+        node4.assert_no_broadcast("Timeout certificate 4");
+
+        node2.start_round().await;
+
+        // Slot 2 view 1 (following a timeout round)
+        let (cp, ticket) = simple_commit_round! {
+          leader: node2,
+          followers: [node1, node3, node4, node5]
+        };
+
+        assert!(matches!(ticket, Ticket::TimeoutQC(_)));
+        assert_eq!(cp.slot, 1);
+        assert_eq!(cp.view, 1);
     }
 
     #[test_log::test(tokio::test)]
