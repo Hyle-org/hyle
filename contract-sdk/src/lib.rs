@@ -59,9 +59,12 @@ pub fn flatten_blobs(blobs: &[Blob]) -> Vec<u8> {
     blobs
         .iter()
         .flat_map(|b| {
-            let mut combined = b.contract_name.0.clone().into_bytes();
-            combined.extend(b.data.0.clone());
-            combined
+            b.contract_name
+                .0
+                .as_bytes()
+                .iter()
+                .chain(b.data.0.iter())
+                .copied()
         })
         .collect()
 }

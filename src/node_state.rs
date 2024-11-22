@@ -311,11 +311,6 @@ impl NodeState {
         if expected_contract != contract_name {
             bail!("Blob reference from proof for {unsettled_tx_hash} does not match the blob transaction contract name {expected_contract}");
         }
-        // Identity verification
-        // TODO: uncomment when verifier are implemented
-        // if hyle_output.identity != unsettled_txs[index].identity {
-        //     bail!("Identity is incorrect");
-        // }
 
         Ok(())
     }
@@ -544,6 +539,10 @@ mod test {
         };
 
         assert_err!(state.handle_verified_proof_tx(&verified_proof_c1));
+
+        // Check that we did not settled
+        assert_eq!(state.contracts.get(&c1).unwrap().state.0, vec![0, 1, 2, 3]);
+        assert_eq!(state.contracts.get(&c2).unwrap().state.0, vec![0, 1, 2, 3]);
     }
 
     #[test_log::test(tokio::test)]

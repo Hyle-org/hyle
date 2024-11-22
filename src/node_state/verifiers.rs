@@ -118,7 +118,7 @@ mod tests {
     use hyle_contract_sdk::{
         flatten_blobs,
         identity_provider::{IdentityAction, IdentityVerification},
-        Blob, BlobIndex, ContractName, Digestable, HyleOutput, Identity, TxHash,
+        BlobIndex, ContractName, Digestable, HyleOutput, Identity, TxHash,
     };
 
     use super::risc0_proof_verifier;
@@ -150,10 +150,7 @@ mod tests {
         let blob_data = IdentityAction::RegisterIdentity {
             account: "faucet.hydentity".to_string(),
         };
-        let blobs = vec![Blob {
-            contract_name: ContractName("hydentity".to_owned()),
-            data: blob_data.into(),
-        }];
+        let blobs = vec![(ContractName("hydentity".to_owned()), blob_data).into()];
 
         match result {
             Ok(outputs) => {

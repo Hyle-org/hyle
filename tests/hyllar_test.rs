@@ -2,7 +2,7 @@ use fixtures::ctx::E2ECtx;
 use std::{fs::File, io::Read};
 use tracing::info;
 
-use hyle::model::{Blob, ProofData};
+use hyle::model::ProofData;
 
 mod fixtures;
 
@@ -20,6 +20,7 @@ mod e2e_hyllar {
     use hyle_contract_sdk::{
         erc20::{ERC20Action, ERC20},
         identity_provider::{IdentityAction, IdentityVerification},
+        ContractName,
     };
 
     use super::*;
@@ -29,13 +30,13 @@ mod e2e_hyllar {
         let blob_tx_hash = ctx
             .send_blob(
                 "faucet.hydentity".into(),
-                vec![Blob {
-                    contract_name: "hydentity".into(),
-                    data: IdentityAction::RegisterIdentity {
+                vec![(
+                    ContractName("hydentity".to_owned()),
+                    IdentityAction::RegisterIdentity {
                         account: "faucet.hydentity".to_string(),
-                    }
-                    .into(),
-                }],
+                    },
+                )
+                    .into()],
             )
             .await?;
 
@@ -66,22 +67,22 @@ mod e2e_hyllar {
             .send_blob(
                 "faucet.hydentity".into(),
                 vec![
-                    Blob {
-                        contract_name: "hydentity".into(),
-                        data: IdentityAction::VerifyIdentity {
+                    (
+                        ContractName("hydentity".to_owned()),
+                        IdentityAction::VerifyIdentity {
                             account: "faucet.hydentity".to_string(),
                             blobs_hash: vec!["".into()],
-                        }
+                        },
+                    )
                         .into(),
-                    },
-                    Blob {
-                        contract_name: "hyllar".into(),
-                        data: ERC20Action::Transfer {
+                    (
+                        ContractName("hyllar".to_owned()),
+                        ERC20Action::Transfer {
                             recipient: "bob.hydentity".to_string(),
                             amount: 100,
-                        }
+                        },
+                    )
                         .into(),
-                    },
                 ],
             )
             .await?;

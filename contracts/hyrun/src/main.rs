@@ -1,8 +1,7 @@
 use hydentity::Hydentity;
 use hyllar::HyllarToken;
 use sdk::{
-    erc20::ERC20Action, identity_provider::IdentityAction, Blob, BlobData, ContractInput,
-    ContractName,
+    erc20::ERC20Action, identity_provider::IdentityAction, BlobData, ContractInput, ContractName,
 };
 use serde::Deserialize;
 
@@ -138,10 +137,7 @@ fn main() {
             }
             let cf: IdentityAction = command.into();
             contract::print_hyled_blob_tx(&identity, vec![("hydentity".into(), cf.clone().into())]);
-            let blobs = vec![Blob {
-                contract_name: ContractName("hydentity".to_owned()),
-                data: cf.into(),
-            }];
+            let blobs = vec![(ContractName("hydentity".to_owned()), cf).into()];
 
             contract::run(
                 &cli,
@@ -180,14 +176,8 @@ fn main() {
             );
 
             let blobs = vec![
-                Blob {
-                    contract_name: ContractName("hydentity".to_owned()),
-                    data: identity_cf.into(),
-                },
-                Blob {
-                    contract_name: ContractName("hyllar".to_owned()),
-                    data: cf.into(),
-                },
+                (ContractName("hydentity".to_owned()), identity_cf).into(),
+                (ContractName("hyllar".to_owned()), cf).into(),
             ];
 
             contract::run(
