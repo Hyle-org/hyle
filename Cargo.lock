@@ -146,7 +146,7 @@ dependencies = [
  "blake2",
  "derivative",
  "digest",
- "sha2",
+ "sha2 0.10.8",
 ]
 
 [[package]]
@@ -845,7 +845,7 @@ dependencies = [
  "rand",
  "serde",
  "serde_json",
- "sha2",
+ "sha2 0.10.8",
  "sha3",
  "starknet-crypto",
  "thiserror-no-std",
@@ -1988,7 +1988,7 @@ dependencies = [
  "hex",
  "hyle-contract-sdk",
  "serde",
- "sha3",
+ "sha2 0.10.6",
 ]
 
 [[package]]
@@ -2386,7 +2386,7 @@ source = "git+https://github.com/lambdaclass/lambdaworks.git?rev=e465d7c#e465d7c
 dependencies = [
  "lambdaworks-math",
  "serde",
- "sha2",
+ "sha2 0.10.8",
  "sha3",
 ]
 
@@ -3078,7 +3078,7 @@ checksum = "b75da2a70cf4d9cb76833c990ac9cd3923c9a8905a8929789ce347c84564d03d"
 dependencies = [
  "once_cell",
  "pest",
- "sha2",
+ "sha2 0.10.8",
 ]
 
 [[package]]
@@ -3728,7 +3728,7 @@ dependencies = [
  "risc0-core",
  "risc0-zkvm-platform",
  "serde",
- "sha2",
+ "sha2 0.10.8",
  "tracing",
 ]
 
@@ -3759,7 +3759,7 @@ dependencies = [
  "rrs-lib",
  "semver",
  "serde",
- "sha2",
+ "sha2 0.10.8",
  "stability",
  "tempfile",
  "tracing",
@@ -4147,6 +4147,16 @@ dependencies = [
 
 [[package]]
 name = "sha2"
+version = "0.10.6"
+source = "git+https://github.com/risc0/RustCrypto-hashes?tag=sha2-v0.10.6-risczero.0#7fd6900c4f637bd15ee2642dfa77110f8f1ad065"
+dependencies = [
+ "cfg-if",
+ "cpufeatures",
+ "digest",
+]
+
+[[package]]
+name = "sha2"
 version = "0.10.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "793db75ad2bcafc3ffa7c68b215fee268f537982cd901d132f89c6343f3a3dc8"
@@ -4318,7 +4328,7 @@ dependencies = [
  "percent-encoding",
  "serde",
  "serde_json",
- "sha2",
+ "sha2 0.10.8",
  "smallvec",
  "sqlformat",
  "thiserror",
@@ -4356,7 +4366,7 @@ dependencies = [
  "quote",
  "serde",
  "serde_json",
- "sha2",
+ "sha2 0.10.8",
  "sqlx-core",
  "sqlx-mysql",
  "sqlx-postgres",
@@ -4401,7 +4411,7 @@ dependencies = [
  "rsa",
  "serde",
  "sha1",
- "sha2",
+ "sha2 0.10.8",
  "smallvec",
  "sqlx-core",
  "stringprep",
@@ -4440,7 +4450,7 @@ dependencies = [
  "rand",
  "serde",
  "serde_json",
- "sha2",
+ "sha2 0.10.8",
  "smallvec",
  "sqlx-core",
  "stringprep",
@@ -4518,7 +4528,7 @@ dependencies = [
  "num-integer",
  "num-traits",
  "rfc6979",
- "sha2",
+ "sha2 0.10.8",
  "starknet-crypto-codegen",
  "starknet-curve",
  "starknet-ff",
