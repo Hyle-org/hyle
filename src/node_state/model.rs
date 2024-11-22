@@ -14,7 +14,7 @@ pub struct Contract {
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Eq, Hash, Encode, Decode)]
-pub struct UnsettledTransaction {
+pub struct UnsettledBlobTransaction {
     pub identity: Identity,
     pub hash: TxHash,
     pub blobs_hash: BlobsHash,
@@ -23,7 +23,9 @@ pub struct UnsettledTransaction {
 
 #[derive(Default, Debug, Clone, PartialEq, Eq, Hash, Encode, Decode)]
 pub struct UnsettledBlobMetadata {
+    // FIXME: Investigate what happens if there is multiple blob for same contract
     pub contract_name: ContractName,
+    // Each time we receive a proof, we add it to this list
     pub metadata: Vec<HyleOutput>,
 }
 

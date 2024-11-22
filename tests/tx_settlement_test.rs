@@ -1,11 +1,8 @@
-use fixtures::{
-    contracts::{ TestContract},
-    ctx::E2ECtx,
-};
+use fixtures::{contracts::TestContract, ctx::E2ECtx};
 use std::{fs::File, io::Read};
 use tracing::info;
 
-use hyle::model::{Blob, BlobData, BlobReference, ProofData};
+use hyle::model::{Blob, BlobData};
 
 mod fixtures;
 
@@ -20,6 +17,8 @@ pub fn load_encoded_receipt_from_file(path: &str) -> Vec<u8> {
 }
 
 mod e2e_tx_settle {
+    use hyle_contract_sdk::BlobIndex;
+
     use super::*;
 
     async fn scenario_test_settlement(ctx: E2ECtx) -> Result<()> {
@@ -28,39 +27,26 @@ mod e2e_tx_settle {
         ctx.register_contract::<TestContract>("c2").await?;
 
         info!("➡️  Sending blobs for c1 & c2");
-        let blob_tx_hash = ctx
-            .send_blob(
-                "test.c1".into(),
-                vec![
-                    Blob {
-                        contract_name: "c1".into(),
-                        data: BlobData(vec![0, 1, 2, 3]),
-                    },
-                    Blob {
-                        contract_name: "c2".into(),
-                        data: BlobData(vec![0, 1, 2, 3]),
-                    },
-                ],
-            )
-            .await?;
+        let blobs = vec![
+            Blob {
+                contract_name: "c1".into(),
+                data: BlobData(vec![0, 1, 2, 3]),
+            },
+            Blob {
+                contract_name: "c2".into(),
+                data: BlobData(vec![0, 1, 2, 3]),
+            },
+        ];
+        let blob_tx_hash = ctx.send_blob("test.c1".into(), blobs.clone()).await?;
 
         info!("➡️  Sending proof for c1 & c2");
-        ctx.send_proof(
-            vec![
-                BlobReference {
-                    contract_name: "c1".into(),
-                    blob_tx_hash: blob_tx_hash.clone(),
-                    blob_index: hyle_contract_sdk::BlobIndex(0),
-                },
-                BlobReference {
-                    contract_name: "c2".into(),
-                    blob_tx_hash,
-                    blob_index: hyle_contract_sdk::BlobIndex(1),
-                },
-            ],
-            ProofData::Bytes(vec![5, 5]),
-        )
-        .await?;
+        let proof_c1 =
+            ctx.make_proof::<TestContract>("test.c1".into(), blobs.clone(), BlobIndex(0));
+        let proof_c2 =
+            ctx.make_proof::<TestContract>("test.c1".into(), blobs.clone(), BlobIndex(1));
+        ctx.send_proof("c1".into(), proof_c1, blob_tx_hash.clone())
+            .await?;
+        ctx.send_proof("c2".into(), proof_c2, blob_tx_hash).await?;
 
         info!("➡️  Waiting for height 2");
         ctx.wait_height(2).await?;
@@ -90,7 +76,6 @@ mod e2e_tx_settle {
         scenario_test_settlement(ctx).await
     }
 
-    #[ignore = "Indexer do not implement contract state updated yet"]
     #[test_log::test(tokio::test)]
     async fn on_indexer() -> Result<()> {
         let ctx = E2ECtx::new_multi_with_indexer(2, 500).await?;

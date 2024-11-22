@@ -1,23 +1,24 @@
+use anyhow::{bail, Error};
 use bincode::{Decode, Encode};
 
-use super::model::UnsettledTransaction;
+use super::model::UnsettledBlobTransaction;
 use crate::model::ContractName;
-use hyle_contract_sdk::TxHash;
+use hyle_contract_sdk::{HyleOutput, TxHash};
 use std::collections::HashMap;
 
 // struct used to guarantee coherence between the 2 fields
 #[derive(Default, Debug, Clone, Encode, Decode)]
 pub struct OrderedTxMap {
-    map: HashMap<TxHash, UnsettledTransaction>,
+    map: HashMap<TxHash, UnsettledBlobTransaction>,
     tx_order: HashMap<ContractName, Vec<TxHash>>,
 }
 
 impl OrderedTxMap {
-    pub fn get(&self, hash: &TxHash) -> Option<&UnsettledTransaction> {
+    pub fn get(&self, hash: &TxHash) -> Option<&UnsettledBlobTransaction> {
         self.map.get(hash)
     }
 
-    pub fn get_mut(&mut self, hash: &TxHash) -> Option<&mut UnsettledTransaction> {
+    pub fn get_mut(&mut self, hash: &TxHash) -> Option<&mut UnsettledBlobTransaction> {
         self.map.get_mut(hash)
     }
 
@@ -26,7 +27,7 @@ impl OrderedTxMap {
         self.map.len()
     }
 
-    pub fn add(&mut self, tx: UnsettledTransaction) {
+    pub fn add(&mut self, tx: UnsettledBlobTransaction) {
         if self.map.contains_key(&tx.hash) {
             return;
         }
@@ -73,6 +74,18 @@ impl OrderedTxMap {
         }
         true
     }
+
+    pub fn add_metadata(&mut self, tx: &TxHash, hyle_output: &HyleOutput) -> Result<(), Error> {
+        match self.get_mut(tx) {
+            Some(unsettled_tx) => {
+                unsettled_tx.blobs[hyle_output.index.0 as usize]
+                    .metadata
+                    .push(hyle_output.clone());
+                Ok(())
+            }
+            None => bail!("Could not add metadata for tx {tx}"),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -82,8 +95,8 @@ mod tests {
 
     use super::*;
 
-    fn new_tx(hash: &str, contract: &str) -> UnsettledTransaction {
-        UnsettledTransaction {
+    fn new_tx(hash: &str, contract: &str) -> UnsettledBlobTransaction {
+        UnsettledBlobTransaction {
             identity: Identity("toto".to_string()),
             hash: TxHash::new(hash),
             blobs_hash: BlobsHash::new("blobs_hash"),

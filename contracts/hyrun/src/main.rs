@@ -2,27 +2,14 @@ use core::panic;
 
 use hydentity::Hydentity;
 use hyllar::HyllarToken;
-use sdk::{erc20::ERC20Action, identity_provider::IdentityAction, BlobData, ContractInput};
+use sdk::{
+    erc20::ERC20Action, identity_provider::IdentityAction, BlobData, ContractInput, ContractName,
+};
 use serde::Deserialize;
 
 use clap::{Parser, Subcommand};
 
 mod contract;
-
-#[derive(Debug, Deserialize)]
-pub struct ContractName(pub String);
-
-impl From<String> for ContractName {
-    fn from(s: String) -> Self {
-        ContractName(s)
-    }
-}
-
-impl From<&str> for ContractName {
-    fn from(s: &str) -> Self {
-        ContractName(s.into())
-    }
-}
 
 #[derive(Deserialize, Debug)]
 pub struct Contract {
@@ -163,7 +150,7 @@ fn main() {
                 .as_bytes()
                 .to_vec();
             contract::print_hyled_blob_tx(&identity, vec![("hydentity".into(), cf.clone().into())]);
-            let blobs = vec![cf.into()];
+            let blobs = vec![(ContractName("hydentity".to_owned()), cf).into()];
 
             contract::run(
                 &cli,
@@ -215,7 +202,10 @@ fn main() {
                 ],
             );
 
-            let blobs = vec![identity_cf.into(), cf.into()];
+            let blobs = vec![
+                (ContractName("hydentity".to_owned()), identity_cf).into(),
+                (ContractName("hyllar".to_owned()), cf).into(),
+            ];
 
             contract::run(
                 &cli,

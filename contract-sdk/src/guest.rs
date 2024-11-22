@@ -3,7 +3,7 @@ use bincode::Decode;
 use risc0_zkvm::guest::env;
 use serde::de::DeserializeOwned;
 
-use crate::{BlobData, ContractInput, Digestable, HyleOutput, Identity};
+use crate::{flatten_blobs, Blob, ContractInput, Digestable, HyleOutput, Identity};
 
 pub struct RunResult {
     pub success: bool,
@@ -17,7 +17,6 @@ where
 {
     env::log(message);
 
-    let flattened_blobs = input.blobs.into_iter().flat_map(|b| b.0).collect();
     env::commit(&HyleOutput {
         version: 1,
         initial_state: input.initial_state.as_digest(),
@@ -25,7 +24,7 @@ where
         identity: crate::Identity("".to_string()),
         tx_hash: crate::TxHash(input.tx_hash),
         index: crate::BlobIndex(input.index as u32),
-        blobs: flattened_blobs,
+        blobs: flatten_blobs(&input.blobs),
         success: false,
         program_outputs: message.to_string().into_bytes(),
     });
@@ -49,11 +48,11 @@ where
     (input, parameters)
 }
 
-pub fn parse_blob<Parameters>(blobs: &[BlobData], index: usize) -> Parameters
+pub fn parse_blob<Parameters>(blobs: &[Blob], index: usize) -> Parameters
 where
     Parameters: Decode,
 {
-    let payload = match blobs.get(index) {
+    let blob = match blobs.get(index) {
         Some(v) => v,
         None => {
             //fail(input, "Unable to find the payload");
@@ -61,7 +60,7 @@ where
         }
     };
     let (parameters, _) =
-        bincode::decode_from_slice(payload.0.as_slice(), bincode::config::standard())
+        bincode::decode_from_slice(blob.data.0.as_slice(), bincode::config::standard())
             .expect("Failed to decode payload");
     parameters
 }
@@ -70,7 +69,6 @@ pub fn commit<State>(input: ContractInput<State>, new_state: State, res: RunResu
 where
     State: Digestable,
 {
-    let flattened_blobs = input.blobs.into_iter().flat_map(|b| b.0).collect();
     env::commit(&HyleOutput {
         version: 1,
         initial_state: input.initial_state.as_digest(),
@@ -78,7 +76,7 @@ where
         identity: res.identity,
         tx_hash: crate::TxHash(input.tx_hash),
         index: crate::BlobIndex(input.index as u32),
-        blobs: flattened_blobs,
+        blobs: flatten_blobs(&input.blobs),
         success: res.success,
         program_outputs: res.program_outputs,
     });

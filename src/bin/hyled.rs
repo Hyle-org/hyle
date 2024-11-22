@@ -4,12 +4,12 @@ use anyhow::Result;
 use clap::{command, Parser, Subcommand};
 use hyle::{
     model::{
-        Blob, BlobData, BlobReference, BlobTransaction, ContractName, ProofData, ProofTransaction,
+        Blob, BlobData, BlobTransaction, ContractName, ProofData, ProofTransaction,
         RegisterContractTransaction,
     },
     rest::client::ApiHttpClient,
 };
-use hyle_contract_sdk::{BlobIndex, Identity, StateDigest, TxHash};
+use hyle_contract_sdk::{Identity, StateDigest, TxHash};
 use reqwest::{Client, Url};
 
 pub fn load_encoded_receipt_from_file(path: &str) -> Vec<u8> {
@@ -23,18 +23,14 @@ pub fn load_encoded_receipt_from_file(path: &str) -> Vec<u8> {
 async fn send_proof(
     client: &ApiHttpClient,
     blob_tx_hash: TxHash,
-    blob_index: BlobIndex,
     contract_name: ContractName,
     proof_file: String,
 ) -> Result<()> {
     let proof = load_encoded_receipt_from_file(proof_file.as_str());
     let res = client
         .send_tx_proof(&ProofTransaction {
-            blobs_references: vec![BlobReference {
-                contract_name,
-                blob_tx_hash,
-                blob_index,
-            }],
+            blob_tx_hash,
+            contract_name,
             proof: ProofData::Bytes(proof),
         })
         .await?;
@@ -134,7 +130,6 @@ enum SendCommands {
     #[command(alias = "p")]
     Proof {
         tx_hash: String,
-        blob_index: u32,
         contract_name: String,
         proof_file: String,
     },
@@ -164,19 +159,9 @@ async fn handle_args(args: Args) -> Result<()> {
         }
         SendCommands::Proof {
             tx_hash,
-            blob_index,
             contract_name,
             proof_file,
-        } => {
-            send_proof(
-                &client,
-                tx_hash.into(),
-                blob_index.into(),
-                contract_name.into(),
-                proof_file,
-            )
-            .await
-        }
+        } => send_proof(&client, tx_hash.into(), contract_name.into(), proof_file).await,
 
         SendCommands::Contract {
             verifier,

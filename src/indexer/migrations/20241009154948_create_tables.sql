@@ -34,16 +34,9 @@ CREATE TABLE blobs (
 
 CREATE TABLE proofs (
     tx_hash TEXT PRIMARY KEY REFERENCES transactions(tx_hash) ON DELETE CASCADE,
+    contract_name TEXT NOT NULL,       -- Contract name associated with the proof
+    hyle_output JSONB NOT NULL,        -- Additional metadata stored in JSONB format
     proof BYTEA NOT NULL
-);
-CREATE TABLE blob_references (
-    blob_index INTEGER NOT NULL,                                 -- Index of the blob
-    tx_hash TEXT NOT NULL REFERENCES proofs(tx_hash) ON DELETE CASCADE,   -- Foreign key linking to proof_transactions
-    contract_name TEXT NOT NULL,                                 -- Contract name
-    blob_tx_hash TEXT NOT NULL,                                  -- Blob transaction hash
-    hyle_output JSONB NOT NULL,                                  -- Additional metadata stored in JSONB format
-    PRIMARY KEY (blob_index, tx_hash),                           -- Composite primary key (blob_index + tx_hash) to uniquely identify each blob reference
-    CHECK (blob_index >= 0)                                      -- Ensure the index is positive
 );
 
 CREATE TABLE contracts (

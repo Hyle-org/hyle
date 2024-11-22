@@ -2,7 +2,7 @@ use fixtures::ctx::E2ECtx;
 use std::{fs::File, io::Read};
 use tracing::info;
 
-use hyle::model::{Blob, BlobReference, ProofData};
+use hyle::model::ProofData;
 
 mod fixtures;
 
@@ -20,6 +20,7 @@ mod e2e_hyllar {
     use hyle_contract_sdk::{
         erc20::{ERC20Action, ERC20},
         identity_provider::{IdentityAction, IdentityVerification},
+        ContractName,
     };
 
     use super::*;
@@ -29,13 +30,13 @@ mod e2e_hyllar {
         let blob_tx_hash = ctx
             .send_blob(
                 "faucet.hydentity".into(),
-                vec![Blob {
-                    contract_name: "hydentity".into(),
-                    data: IdentityAction::RegisterIdentity {
+                vec![(
+                    ContractName("hydentity".to_owned()),
+                    IdentityAction::RegisterIdentity {
                         account: "faucet.hydentity".to_string(),
-                    }
-                    .into(),
-                }],
+                    },
+                )
+                    .into()],
             )
             .await?;
 
@@ -43,12 +44,9 @@ mod e2e_hyllar {
 
         info!("➡️  Sending proof for register");
         ctx.send_proof(
-            vec![BlobReference {
-                contract_name: "hydentity".into(),
-                blob_tx_hash: blob_tx_hash.clone(),
-                blob_index: hyle_contract_sdk::BlobIndex(0),
-            }],
+            "hydentity".into(),
             ProofData::Bytes(proof),
+            blob_tx_hash.clone(),
         )
         .await?;
 
@@ -69,23 +67,23 @@ mod e2e_hyllar {
             .send_blob(
                 "faucet.hydentity".into(),
                 vec![
-                    Blob {
-                        contract_name: "hydentity".into(),
-                        data: IdentityAction::VerifyIdentity {
+                    (
+                        ContractName("hydentity".to_owned()),
+                        IdentityAction::VerifyIdentity {
                             account: "faucet.hydentity".to_string(),
                             nonce: 0,
                             blobs_hash: vec!["".into()],
-                        }
+                        },
+                    )
                         .into(),
-                    },
-                    Blob {
-                        contract_name: "hyllar".into(),
-                        data: ERC20Action::Transfer {
+                    (
+                        ContractName("hyllar".to_owned()),
+                        ERC20Action::Transfer {
                             recipient: "bob.hydentity".to_string(),
                             amount: 100,
-                        }
+                        },
+                    )
                         .into(),
-                    },
                 ],
             )
             .await?;
@@ -97,23 +95,17 @@ mod e2e_hyllar {
 
         info!("➡️  Sending proof for hydentity");
         ctx.send_proof(
-            vec![BlobReference {
-                contract_name: "hydentity".into(),
-                blob_tx_hash: blob_tx_hash.clone(),
-                blob_index: hyle_contract_sdk::BlobIndex(0),
-            }],
+            "hydentity".into(),
             ProofData::Bytes(hydentity_proof),
+            blob_tx_hash.clone(),
         )
         .await?;
 
         info!("➡️  Sending proof for hyllar");
         ctx.send_proof(
-            vec![BlobReference {
-                contract_name: "hyllar".into(),
-                blob_tx_hash: blob_tx_hash.clone(),
-                blob_index: hyle_contract_sdk::BlobIndex(1),
-            }],
+            "hyllar".into(),
             ProofData::Bytes(hyllar_proof),
+            blob_tx_hash,
         )
         .await?;
 

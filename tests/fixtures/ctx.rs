@@ -11,14 +11,13 @@ use tracing::info;
 
 use hyle::{
     indexer::model::ContractDb,
-    model::{
-        Blob, BlobReference, BlobTransaction, ProofData, ProofTransaction,
-        RegisterContractTransaction,
-    },
+    model::{Blob, BlobTransaction, ProofData, ProofTransaction, RegisterContractTransaction},
     node_state::model::Contract,
     rest::client::ApiHttpClient,
 };
-use hyle_contract_sdk::{Identity, StateDigest, TxHash};
+use hyle_contract_sdk::{
+    flatten_blobs, BlobIndex, ContractName, HyleOutput, Identity, StateDigest, TxHash,
+};
 
 use super::test_helpers::{self, wait_height, ConfMaker};
 
@@ -230,15 +229,40 @@ impl E2ECtx {
         response.json::<TxHash>().await.map_err(|e| e.into())
     }
 
+    pub fn make_proof<Contract>(
+        &self,
+        identity: Identity,
+        blobs: Vec<Blob>,
+        index: BlobIndex,
+    ) -> ProofData
+    where
+        Contract: E2EContract,
+    {
+        let hyle_output = HyleOutput {
+            version: 1,
+            initial_state: Contract::state_digest(),
+            next_state: StateDigest(vec![4, 5, 6]), // FIXME
+            identity,
+            tx_hash: TxHash("".to_owned()),
+            index,
+            blobs: flatten_blobs(&blobs),
+            success: true,
+            program_outputs: vec![],
+        };
+        ProofData::Bytes(serde_json::to_vec(&hyle_output).unwrap())
+    }
+
     pub async fn send_proof(
         &self,
-        blobs_references: Vec<BlobReference>,
+        contract_name: ContractName,
         proof: ProofData,
+        blob_tx_hash: TxHash,
     ) -> Result<()> {
         assert_ok!(self
             .client()
             .send_tx_proof(&ProofTransaction {
-                blobs_references: blobs_references.clone(),
+                blob_tx_hash: blob_tx_hash.clone(),
+                contract_name: contract_name.clone(),
                 proof: proof.clone()
             })
             .await

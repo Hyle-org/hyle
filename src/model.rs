@@ -5,7 +5,8 @@ use axum::Router;
 use base64::prelude::*;
 use bincode::{Decode, Encode};
 use derive_more::Display;
-use hyle_contract_sdk::{BlobIndex, HyleOutput, Identity, StateDigest, TxHash};
+use hyle_contract_sdk::{flatten_blobs, BlobIndex, HyleOutput, Identity, StateDigest, TxHash};
+pub use hyle_contract_sdk::{Blob, BlobData, ContractName};
 use serde::{
     de::{self, Visitor},
     Deserialize, Serialize,
@@ -41,11 +42,7 @@ impl BlobsHash {
 
     pub fn from_vec(vec: &Vec<Blob>) -> BlobsHash {
         debug!("From vec {:?}", vec);
-        let concatenated = vec
-            .iter()
-            .flat_map(|b| b.data.0.clone())
-            .collect::<Vec<u8>>();
-        Self::from_concatenated(&concatenated)
+        Self::from_concatenated(&flatten_blobs(vec))
     }
 
     pub fn from_concatenated(vec: &Vec<u8>) -> BlobsHash {
@@ -72,25 +69,6 @@ impl BlobsHash {
     Decode,
 )]
 pub struct BlockHeight(pub u64);
-
-#[derive(
-    Default, Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash, Display, Encode, Decode,
-)]
-pub struct ContractName(pub String);
-
-impl From<String> for ContractName {
-    fn from(s: String) -> Self {
-        ContractName(s)
-    }
-}
-
-impl From<&str> for ContractName {
-    fn from(s: &str) -> Self {
-        ContractName(s.into())
-    }
-}
-
-pub use hyle_contract_sdk::BlobData;
 
 #[derive(Debug, Serialize, Deserialize, Default, Clone, PartialEq, Eq, Encode, Decode, Hash)]
 pub struct Transaction {
@@ -159,14 +137,16 @@ impl ProofData {
 }
 #[derive(Serialize, Deserialize, Default, PartialEq, Eq, Clone, Encode, Decode, Hash)]
 pub struct ProofTransaction {
-    pub blobs_references: Vec<BlobReference>,
+    // TODO: investigate if we can remove blob_tx_hash. It can be reconstrustruced from HyleOutput attributes (blob + identity)
+    pub blob_tx_hash: TxHash,
     pub proof: ProofData,
+    pub contract_name: ContractName,
 }
 
 impl fmt::Debug for ProofTransaction {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ProofTransaction")
-            .field("blobs_references", &self.blobs_references)
+            .field("contract_name", &self.contract_name)
             .field("proof", &"[HIDDEN]")
             .field(
                 "proof_len",
@@ -179,24 +159,7 @@ impl fmt::Debug for ProofTransaction {
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Encode, Decode, Hash)]
 pub struct VerifiedProofTransaction {
     pub proof_transaction: ProofTransaction,
-    pub hyle_outputs: Vec<HyleOutput>,
-}
-
-#[derive(Debug, Serialize, Deserialize, Default, Clone, PartialEq, Eq, Encode, Decode, Hash)]
-pub struct BlobReference {
-    pub contract_name: ContractName,
-    pub blob_tx_hash: TxHash,
-    pub blob_index: BlobIndex,
-}
-
-impl Display for BlobReference {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "{}:{}:{}",
-            self.blob_tx_hash, self.blob_index, self.contract_name
-        )
-    }
+    pub hyle_output: HyleOutput,
 }
 
 #[derive(Debug, Serialize, Deserialize, Default, Clone, PartialEq, Eq, Encode, Decode, Hash)]
@@ -213,12 +176,6 @@ pub struct BlobTransaction {
     pub identity: Identity,
     pub blobs: Vec<Blob>,
     // FIXME: add a nonce or something to prevent BlobTransaction to share the same hash
-}
-
-#[derive(Debug, Serialize, Deserialize, Default, Clone, PartialEq, Eq, Encode, Decode, Hash)]
-pub struct Blob {
-    pub contract_name: ContractName,
-    pub data: BlobData,
 }
 
 impl Transaction {
@@ -376,11 +333,7 @@ impl Hashable<TxHash> for BlobTransaction {
 impl Hashable<TxHash> for ProofTransaction {
     fn hash(&self) -> TxHash {
         let mut hasher = Sha3_256::new();
-        for blob_ref in self.blobs_references.iter() {
-            _ = write!(hasher, "{}", blob_ref.contract_name);
-            _ = write!(hasher, "{}", blob_ref.blob_tx_hash);
-            _ = write!(hasher, "{}", blob_ref.blob_index);
-        }
+        _ = write!(hasher, "{}", self.contract_name);
         match self.proof.clone() {
             ProofData::Base64(v) => hasher.update(v),
             ProofData::Bytes(vec) => hasher.update(vec),
