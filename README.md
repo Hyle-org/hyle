@@ -1,5 +1,10 @@
 # Hylé
 
+[![Build Status][actions-badge]][actions-url]
+[![codecov][codecov-badge]][codecov-url]
+[![Twitter][twitter-badge]][twitter-url]
+
+
 _A sequencing and settlement layer to help you build provable apps that are minimally, yet sufficiently, onchain._
 
 Repository for the [Hylé](https://hyle.eu) chain. This repository is for the work-in-progress rust client.
@@ -87,3 +92,11 @@ Otherwise, we recommend (samply)[https://github.com/mstange/samply].
 
 Hylé has built-in support for the `dhat` crate, which uses the valgrind dhat viewer for memory profiling.
 This has a runtime performance cost, so should only be enabled when needed. The corresponding feature is `dhat`.
+
+
+[actions-badge]: https://img.shields.io/github/actions/workflow/status/Hyle-org/hyle/ci.yml?branch=main
+[actions-url]: https://github.com/Hyle-org/hyle/actions?query=workflow%3ATests+branch%3Amain
+[codecov-badge]: https://codecov.io/gh/Hyle-org/hyle/graph/badge.svg?token=S87GT99Q62
+[codecov-url]: https://codecov.io/gh/Hyle-org/hyle
+[twitter-badge]: https://img.shields.io/twitter/follow/hyle_org
+[twitter-url]: https://x.com/hyle_org
