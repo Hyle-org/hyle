@@ -22,6 +22,6 @@ hyled proof $BLOB_TX_HASH hydentity hydentity.risc0.proof
 mv hydentity.risc0.proof tests/proofs/register.hydentity.risc0.proof
 
 sleep 4
-hyrun --user faucet.hydentity --password password hyllar transfer bob.hydentity 100
+hyrun --user faucet.hydentity --password password --nonce 0 hyllar transfer bob.hydentity 100
 mv hyllar.risc0.proof tests/proofs/transfer.hyllar.risc0.proof
 mv hydentity.risc0.proof tests/proofs/transfer.hydentity.risc0.proof

@@ -1,3 +1,5 @@
+use core::panic;
+
 use hydentity::Hydentity;
 use hyllar::HyllarToken;
 use sdk::{
@@ -97,11 +99,14 @@ struct Cli {
     #[clap(long, short)]
     init: bool,
 
-    #[arg(long, default_value = "user")]
-    pub user: String,
+    #[arg(long, short)]
+    pub user: Option<String>,
 
-    #[arg(long, default_value = "password")]
-    pub password: String,
+    #[arg(long, short)]
+    pub password: Option<String>,
+
+    #[arg(long, short)]
+    pub nonce: Option<u32>,
 
     #[arg(long, default_value = "localhost")]
     pub host: String,
@@ -112,9 +117,6 @@ struct Cli {
 
 fn main() {
     let cli = Cli::parse();
-
-    // TODO - get identity from user input
-    let identity = sdk::Identity(cli.user.clone());
 
     match cli.command.clone() {
         CliCommand::State { contract } => match contract.as_str() {
@@ -136,6 +138,17 @@ fn main() {
                 return;
             }
             let cf: IdentityAction = command.into();
+            let identity = sdk::Identity(
+                cli.user
+                    .clone()
+                    .unwrap_or_else(|| panic!("Missing user argument")),
+            );
+            let password = cli
+                .password
+                .clone()
+                .unwrap_or_else(|| panic!("Missing password argument"))
+                .as_bytes()
+                .to_vec();
             contract::print_hyled_blob_tx(&identity, vec![("hydentity".into(), cf.clone().into())]);
             let blobs = vec![(ContractName("hydentity".to_owned()), cf).into()];
 
@@ -147,7 +160,7 @@ fn main() {
                         initial_state: identities,
                         identity: identity.clone(),
                         tx_hash: "".to_string(),
-                        private_blob: BlobData(cli.password.as_bytes().to_vec()),
+                        private_blob: BlobData(password.clone()),
                         blobs: blobs.clone(),
                         index: 0,
                     }
@@ -163,12 +176,26 @@ fn main() {
                 return;
             }
             let cf: ERC20Action = command.into();
+            let identity = cli
+                .user
+                .clone()
+                .unwrap_or_else(|| panic!("Missing user argument"));
+            let nonce = cli
+                .nonce
+                .unwrap_or_else(|| panic!("Missing nonce argument"));
+            let password = cli
+                .password
+                .clone()
+                .unwrap_or_else(|| panic!("Missing password argument"))
+                .as_bytes()
+                .to_vec();
             let identity_cf: IdentityAction = IdentityAction::VerifyIdentity {
-                account: identity.0.clone(),
+                account: identity.clone(),
+                nonce,
                 blobs_hash: vec!["".into()], // TODO: hash blob
             };
             contract::print_hyled_blob_tx(
-                &identity,
+                &identity.clone().into(),
                 vec![
                     ("hydentity".into(), identity_cf.clone().into()),
                     ("hyllar".into(), cf.clone().into()),
@@ -182,29 +209,29 @@ fn main() {
 
             contract::run(
                 &cli,
-                "hyllar",
-                |token: hyllar::HyllarToken| -> ContractInput<hyllar::HyllarToken> {
-                    ContractInput::<HyllarToken> {
+                "hydentity",
+                |token: hydentity::Hydentity| -> ContractInput<hydentity::Hydentity> {
+                    ContractInput::<Hydentity> {
                         initial_state: token,
-                        identity: identity.clone(),
+                        identity: identity.clone().into(),
                         tx_hash: "".to_string(),
-                        private_blob: BlobData(vec![]),
+                        private_blob: BlobData(password.clone()),
                         blobs: blobs.clone(),
-                        index: 1,
+                        index: 0,
                     }
                 },
             );
             contract::run(
                 &cli,
-                "hydentity",
-                |token: hydentity::Hydentity| -> ContractInput<hydentity::Hydentity> {
-                    ContractInput::<Hydentity> {
+                "hyllar",
+                |token: hyllar::HyllarToken| -> ContractInput<hyllar::HyllarToken> {
+                    ContractInput::<HyllarToken> {
                         initial_state: token,
-                        identity: identity.clone(),
+                        identity: identity.clone().into(),
                         tx_hash: "".to_string(),
-                        private_blob: BlobData(cli.password.as_bytes().to_vec()),
+                        private_blob: BlobData(vec![]),
                         blobs: blobs.clone(),
-                        index: 0,
+                        index: 1,
                     }
                 },
             );

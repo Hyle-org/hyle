@@ -7,9 +7,15 @@ use serde::{Deserialize, Serialize};
 use sdk::{identity_provider::IdentityVerification, Digestable, HyleContract};
 use sha2::{Digest, Sha256};
 
+#[derive(Encode, Decode, Serialize, Deserialize, Debug, Clone, Eq, PartialEq)]
+pub struct AccountInfo {
+    hash: String,
+    nonce: u32,
+}
+
 #[derive(Encode, Decode, Serialize, Deserialize, Debug, Clone)]
 pub struct Hydentity {
-    identities: BTreeMap<String, String>,
+    identities: BTreeMap<String, AccountInfo>,
 }
 
 impl Hydentity {
@@ -42,24 +48,36 @@ impl IdentityVerification for Hydentity {
         let mut hasher = Sha256::new();
         hasher.update(id.as_bytes());
         let hash_bytes = hasher.finalize();
-        self.identities
-            .insert(account.to_string(), hex::encode(hash_bytes));
+        let account_info = AccountInfo {
+            hash: hex::encode(hash_bytes),
+            nonce: 0,
+        };
+
+        self.identities.insert(account.to_string(), account_info);
         Ok(())
     }
 
     fn verify_identity(
-        &self,
+        &mut self,
         account: &str,
+        nonce: u32,
         blobs_hash: Vec<String>,
         private_input: &str,
     ) -> Result<bool, &'static str> {
-        match self.identities.get(account) {
+        match self.identities.get_mut(account) {
             Some(stored_info) => {
+                if nonce != stored_info.nonce {
+                    return Err("Invalid nonce");
+                }
                 let id = format!("{account}:{private_input}");
                 let mut hasher = Sha256::new();
                 hasher.update(id.as_bytes());
                 let hashed = hex::encode(hasher.finalize());
-                Ok(*stored_info == hashed && !blobs_hash.is_empty())
+                if *stored_info.hash != hashed {
+                    return Ok(false);
+                }
+                stored_info.nonce += 1;
+                Ok(!blobs_hash.is_empty())
             }
             None => Err("Identity not found"),
         }
@@ -67,7 +85,7 @@ impl IdentityVerification for Hydentity {
 
     fn get_identity_info(&self, account: &str) -> Result<String, &'static str> {
         match self.identities.get(account) {
-            Some(info) => Ok(info.clone()),
+            Some(info) => Ok(info.hash.clone()),
             None => Err("Identity not found"),
         }
     }
@@ -110,7 +128,9 @@ mod tests {
         let hash_bytes = hasher.finalize();
         let expected_hash = hex::encode(hash_bytes);
 
-        assert_eq!(hydentity.identities.get(account).unwrap(), &expected_hash);
+        let registered = hydentity.identities.get(account).unwrap();
+        assert_eq!(registered.hash, expected_hash);
+        assert_eq!(registered.nonce, 0);
     }
 
     #[test]
@@ -123,13 +143,22 @@ mod tests {
         hydentity.register_identity(account, private_input).unwrap();
 
         assert!(hydentity
-            .verify_identity(account, blobs_hash.clone(), private_input)
-            .unwrap());
-        assert!(!hydentity
-            .verify_identity(account, vec![], private_input)
+            .verify_identity(account, 1, blobs_hash.clone(), private_input)
+            .is_err());
+        assert!(hydentity
+            .verify_identity(account, 0, blobs_hash.clone(), private_input)
             .unwrap());
         assert!(hydentity
-            .verify_identity("nonexistent_account", blobs_hash, private_input)
+            .verify_identity(account, 0, blobs_hash.clone(), private_input)
+            .is_err()); // Same is wrong as nonce increased
+        assert!(hydentity
+            .verify_identity(account, 1, blobs_hash.clone(), private_input)
+            .unwrap());
+        assert!(!hydentity
+            .verify_identity(account, 2, vec![], private_input)
+            .unwrap()); // Empty blobs_hash result in false verification
+        assert!(hydentity
+            .verify_identity("nonexistent_account", 0, blobs_hash, private_input)
             .is_err());
     }
 
