@@ -104,10 +104,7 @@ impl MockWorkflowHandler {
             }],
         };
 
-        let tx_proof = ProofTransaction {
-            blobs_references: vec![],
-            proof: ProofData::Bytes(vec![]),
-        };
+        let tx_proof = ProofTransaction::default();
 
         let tx_contract = RegisterContractTransaction {
             owner: "owner".to_string(),

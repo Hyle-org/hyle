@@ -1213,7 +1213,7 @@ mod test {
                 n.consensus
                     .handle_command(ConsensusCommand::TimeoutTick)
                     .await
-                    .expect(format!("Timeout tick for node {}", n.name).as_str());
+                    .unwrap_or_else(|_| panic!("Timeout tick for node {}", n.name));
             }
         }
 

@@ -70,7 +70,6 @@ where
 
     println!("{}", "-".repeat(20));
     println!("Proving transition for {contract_name}...");
-    let blob_index = contract_input.index;
     let prove_info = prove(contract_name, &contract_input);
 
     let receipt = prove_info.receipt;
@@ -104,7 +103,9 @@ where
     println!("{}", "-".repeat(20));
 
     println!("You can send the proof tx:");
-    println!("\x1b[93mhyled proof $BLOB_TX_HASH {blob_index} {contract_name} {contract_name}.risc0.proof \x1b[0m");
+    println!(
+        "\x1b[93mhyled proof $BLOB_TX_HASH {contract_name} {contract_name}.risc0.proof \x1b[0m"
+    );
 
     receipt
         .verify(claim.pre.digest())
@@ -149,6 +150,7 @@ where
 
     let prover = risc0_zkvm::default_executor();
     let file_path = format!("contracts/{}/{}.img", contract_name, contract_name);
+    println!("file_path: {}", file_path);
     if let Ok(binary) = std::fs::read(file_path.as_str()) {
         prover.execute(env, &binary).unwrap()
     } else {

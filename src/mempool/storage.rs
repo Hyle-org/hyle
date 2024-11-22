@@ -141,35 +141,33 @@ impl Storage {
                     return DataProposalVerdict::Refuse;
                 }
                 TransactionData::VerifiedProof(proof_tx) => {
-                    // Ensure all referenced contracts are registered
-                    for blob_ref in &proof_tx.proof_transaction.blobs_references {
-                        if !node_state.contracts.contains_key(&blob_ref.contract_name)
-                            && !optimistic_node_state.as_ref().map_or(false, |state| {
-                                state.contracts.contains_key(&blob_ref.contract_name)
-                            })
-                        {
-                            // Process previous cars to register the missing contract
-                            if let Some(lane) = self.other_lanes.get_mut(validator) {
-                                for car in &lane.cars {
-                                    for tx in &car.txs {
-                                        if let TransactionData::RegisterContract(reg_tx) =
-                                            &tx.transaction_data
-                                        {
-                                            if reg_tx.contract_name == blob_ref.contract_name {
-                                                if optimistic_node_state.is_none() {
-                                                    optimistic_node_state =
-                                                        Some(node_state.clone());
-                                                }
-                                                if optimistic_node_state
-                                                    .as_mut()
-                                                    .unwrap()
-                                                    .handle_register_contract_tx(reg_tx)
-                                                    .is_err()
-                                                {
-                                                    // Register transactions in a validated car should never fail
-                                                    // as car is accepted only if all transactions are valid
-                                                    unreachable!();
-                                                }
+                    // Ensure contract is registered
+                    let contract_name = &proof_tx.proof_transaction.contract_name;
+                    if !node_state.contracts.contains_key(contract_name)
+                        && !optimistic_node_state
+                            .as_ref()
+                            .map_or(false, |state| state.contracts.contains_key(contract_name))
+                    {
+                        // Process previous cars to register the missing contract
+                        if let Some(lane) = self.other_lanes.get_mut(validator) {
+                            for car in &lane.cars {
+                                for tx in &car.txs {
+                                    if let TransactionData::RegisterContract(reg_tx) =
+                                        &tx.transaction_data
+                                    {
+                                        if reg_tx.contract_name == *contract_name {
+                                            if optimistic_node_state.is_none() {
+                                                optimistic_node_state = Some(node_state.clone());
+                                            }
+                                            if optimistic_node_state
+                                                .as_mut()
+                                                .unwrap()
+                                                .handle_register_contract_tx(reg_tx)
+                                                .is_err()
+                                            {
+                                                // Register transactions in a validated car should never fail
+                                                // as car is accepted only if all transactions are valid
+                                                unreachable!();
                                             }
                                         }
                                     }
@@ -184,8 +182,8 @@ impl Storage {
                         .unwrap_or(node_state)
                         .verify_proof(&proof_tx.proof_transaction)
                     {
-                        Ok(hyle_outputs) => {
-                            if hyle_outputs != proof_tx.hyle_outputs {
+                        Ok(hyle_output) => {
+                            if hyle_output != proof_tx.hyle_output {
                                 warn!("Refusing DataProposal: incorrect HyleOutput in proof transaction");
                                 return DataProposalVerdict::Refuse;
                             }
@@ -231,26 +229,9 @@ impl Storage {
     ) {
         let lane = self.other_lanes.entry(validator.clone()).or_default();
         let parent_hash = lane.current_hash();
-        // Removing proofs from transactions
-        let mut txs_without_proofs = data_proposal.car.txs.clone();
-        txs_without_proofs.iter_mut().for_each(|tx| {
-            match &mut tx.transaction_data {
-                TransactionData::VerifiedProof(proof_tx) => {
-                    proof_tx.proof_transaction.proof = Default::default();
-                }
-                TransactionData::Proof(_) => {
-                    // This can never happen.
-                    // A DataProposal that has been processed has turned all TransactionData::Proof into TransactionData::VerifiedProof
-                    unreachable!();
-                }
-                TransactionData::Blob(_)
-                | TransactionData::Stake(_)
-                | TransactionData::RegisterContract(_) => {}
-            }
-        });
         lane.cars.push(Car {
             parent_hash,
-            txs: txs_without_proofs,
+            txs: data_proposal.car.txs.clone(),
         });
         lane.poa.extend([self.id.clone(), validator.clone()]);
     }
@@ -590,9 +571,9 @@ mod tests {
     use crate::{
         mempool::storage::{Car, DataProposal, DataProposalVerdict, Storage},
         model::{
-            Blob, BlobData, BlobReference, BlobTransaction, ContractName, Hashable, ProofData,
-            ProofTransaction, RegisterContractTransaction, Transaction, TransactionData,
-            ValidatorPublicKey, VerifiedProofTransaction,
+            Blob, BlobData, BlobTransaction, ContractName, Hashable, ProofData, ProofTransaction,
+            RegisterContractTransaction, Transaction, TransactionData, ValidatorPublicKey,
+            VerifiedProofTransaction,
         },
         node_state::NodeState,
     };
@@ -607,39 +588,43 @@ mod tests {
             .and_then(|lane| lane.current_hash())
     }
 
-    fn make_unverified_proof_tx() -> Transaction {
+    fn get_hyle_output() -> HyleOutput {
+        HyleOutput {
+            version: 1,
+            initial_state: StateDigest(vec![0, 1, 2, 3]),
+            next_state: StateDigest(vec![4, 5, 6]),
+            identity: Identity("test".to_string()),
+            tx_hash: TxHash("".to_owned()),
+            index: BlobIndex(0),
+            blobs: vec![],
+            success: true,
+            program_outputs: vec![],
+        }
+    }
+
+    fn make_proof_tx(contract_name: ContractName) -> ProofTransaction {
+        let hyle_output = get_hyle_output();
+        ProofTransaction {
+            blob_tx_hash: TxHash::default(),
+            contract_name,
+            proof: ProofData::Bytes(serde_json::to_vec(&hyle_output).unwrap()),
+        }
+    }
+
+    fn make_unverified_proof_tx(contract_name: ContractName) -> Transaction {
         Transaction {
             version: 1,
-            transaction_data: TransactionData::Proof(ProofTransaction {
-                blobs_references: vec![],
-                proof: ProofData::default(),
-            }),
+            transaction_data: TransactionData::Proof(make_proof_tx(contract_name)),
         }
     }
 
     fn make_verified_proof_tx(contract_name: ContractName) -> Transaction {
+        let hyle_output = get_hyle_output();
         Transaction {
             version: 1,
             transaction_data: TransactionData::VerifiedProof(VerifiedProofTransaction {
-                proof_transaction: ProofTransaction {
-                    blobs_references: vec![BlobReference {
-                        contract_name,
-                        blob_tx_hash: TxHash("".to_owned()),
-                        blob_index: BlobIndex(0),
-                    }],
-                    proof: ProofData::default(),
-                },
-                hyle_outputs: vec![HyleOutput {
-                    version: 1,
-                    initial_state: StateDigest(vec![0, 1, 2, 3]),
-                    next_state: StateDigest(vec![4, 5, 6]),
-                    identity: Identity("test.c1".to_string()),
-                    tx_hash: TxHash("".to_owned()),
-                    index: BlobIndex(0),
-                    blobs: vec![0, 1, 2, 3, 0, 1, 2, 3],
-                    success: true,
-                    program_outputs: vec![],
-                }],
+                proof_transaction: make_proof_tx(contract_name),
+                hyle_output,
             }),
         }
     }
@@ -776,7 +761,7 @@ mod tests {
         assert_eq!(
             other_lane_current_hash(&store2, &pubkey3),
             Some(CarHash(
-                "84ffbeea5a3d9fe1e1f64b6af44447a5d42b2ba938e8b2f00e84161990d7a2a0".to_string()
+                "fcc7aea9bb88cce28d9c1055c86868d13d79878f2fcd5844fbfb24a3ec29d1d5".to_string()
             ))
         );
         assert_eq!(
@@ -812,7 +797,7 @@ mod tests {
         let contract_name = ContractName("test".to_string());
         let register_tx = make_register_contract_tx(contract_name.clone());
 
-        let proof_tx = make_unverified_proof_tx();
+        let proof_tx = make_unverified_proof_tx(contract_name.clone());
 
         let data_proposal = DataProposal {
             car: Car {
@@ -873,7 +858,7 @@ mod tests {
         let contract_name = ContractName("test".to_string());
         let register_tx = make_register_contract_tx(contract_name.clone());
 
-        let proof_tx = make_verified_proof_tx(contract_name);
+        let proof_tx = make_verified_proof_tx(contract_name.clone());
 
         let data_proposal1 = DataProposal {
             car: Car {

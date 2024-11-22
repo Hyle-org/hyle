@@ -312,7 +312,7 @@ impl Indexer {
             .await;
     }
 
-    async fn handle_data_availability_event(&mut self, event: DataEvent) -> Result<()> {
+    async fn handle_data_availability_event(&mut self, event: DataEvent) -> Result<(), Error> {
         match event {
             DataEvent::NewBlock(block) => self.handle_block(block).await,
             DataEvent::CatchupDone(_) => Ok(()),
@@ -473,41 +473,17 @@ impl Indexer {
             .await?;
 
             let proof = &verified_proof_tx.proof_transaction.proof.to_bytes()?;
-
-            sqlx::query("INSERT INTO proofs (tx_hash, proof) VALUES ($1, $2)")
-                .bind(tx_hash)
-                .bind(proof)
-                .execute(&mut *transaction)
-                .await?;
-
-            // Adding all blob_references
-            for (index, blob_ref) in verified_proof_tx
-                .proof_transaction
-                .blobs_references
-                .iter()
-                .enumerate()
-            {
-                let contract_name = &blob_ref.contract_name.0;
-                let blob_tx_hash = &blob_ref.blob_tx_hash.0;
-                let blob_index = i32::try_from(blob_ref.blob_index.0)
-                    .map_err(|_| anyhow::anyhow!("Blob index is too large to fit into an i32"))?;
-                let serialized_hyle_output =
-                    serde_json::to_string(&verified_proof_tx.hyle_outputs[index])?;
-
-                sqlx::query(
-                    "INSERT INTO blob_references (tx_hash, contract_name, blob_tx_hash, blob_index, hyle_output)
-                     VALUES ($1, $2, $3, $4, $5::jsonb)",
-                )
-                .bind(tx_hash)
-                .bind(contract_name)
-                .bind(blob_tx_hash)
-                .bind(blob_index)
-                .bind(serialized_hyle_output)
-                .execute(&mut *transaction)
-                .await?;
-            }
-            // TODO: if verification is correct, change the transaction status for associated blod
-            // TODO: if verification is correct, add HyleOutput
+            let serialized_hyle_output = serde_json::to_string(&verified_proof_tx.hyle_output)?;
+            let contract_name = &verified_proof_tx.proof_transaction.contract_name.0;
+            sqlx::query(
+                "INSERT INTO proofs (tx_hash, contract_name, proof, hyle_output) VALUES ($1, $2, $3, $4::jsonb)",
+            )
+            .bind(tx_hash)
+            .bind(contract_name)
+            .bind(proof)
+            .bind(serialized_hyle_output)
+            .execute(&mut *transaction)
+            .await?;
         }
 
         // Handling failed transactions
@@ -644,8 +620,8 @@ mod test {
     };
 
     use crate::model::{
-        Blob, BlobData, BlobReference, BlockHeight, ProofData, ProofTransaction,
-        RegisterContractTransaction, Transaction, TransactionData, VerifiedProofTransaction,
+        Blob, BlobData, BlockHeight, ProofData, ProofTransaction, RegisterContractTransaction,
+        Transaction, TransactionData, VerifiedProofTransaction,
     };
 
     use super::*;
@@ -720,24 +696,21 @@ mod test {
             version: 1,
             transaction_data: TransactionData::VerifiedProof(VerifiedProofTransaction {
                 proof_transaction: ProofTransaction {
-                    blobs_references: vec![BlobReference {
-                        contract_name: contract_name.clone(),
-                        blob_tx_hash: blob_tx_hash.clone(),
-                        blob_index: blob_index.clone(),
-                    }],
+                    blob_tx_hash: blob_tx_hash.clone(),
+                    contract_name: contract_name.clone(),
                     proof: ProofData::default(),
                 },
-                hyle_outputs: vec![HyleOutput {
+                hyle_output: HyleOutput {
                     version: 1,
                     initial_state,
                     next_state,
                     identity: Identity("test.c1".to_owned()),
                     tx_hash: blob_tx_hash,
                     index: blob_index,
-                    blobs: vec![1, 2, 3, 1, 2, 3],
+                    blobs: vec![99, 49, 1, 2, 3, 99, 50, 1, 2, 3],
                     success: true,
                     program_outputs: vec![],
-                }],
+                },
             }),
         }
     }
@@ -802,7 +775,10 @@ mod test {
             txs,
         };
 
-        _ = indexer.handle_block(block).await;
+        indexer
+            .handle_block(block)
+            .await
+            .expect("Failed to handle block");
 
         let transactions_response = server.get("/contract/c1").await;
         transactions_response.assert_status_ok();

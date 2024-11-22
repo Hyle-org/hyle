@@ -5,7 +5,7 @@ use risc0_zkvm::sha::Digest;
 use stark_platinum_prover::proof::options::{ProofOptions, SecurityLevel};
 
 use crate::model::ProofTransaction;
-use hyle_contract_sdk::{HyleOutput, Identity, StateDigest};
+use hyle_contract_sdk::HyleOutput;
 
 pub fn verify_proof(
     tx: &ProofTransaction,
@@ -14,49 +14,10 @@ pub fn verify_proof(
 ) -> Result<HyleOutput, Error> {
     // TODO: remove test
     match verifier {
-        "test" => {
-            let tx_hash = tx.blobs_references.first().unwrap().blob_tx_hash.clone();
-            let index = tx.blobs_references.first().unwrap().blob_index.clone();
-            Ok(HyleOutput {
-                version: 1,
-                initial_state: StateDigest(vec![0, 1, 2, 3]),
-                next_state: StateDigest(vec![4, 5, 6]),
-                identity: Identity("test.c1".to_string()),
-                tx_hash,
-                index,
-                blobs: vec![0, 1, 2, 3, 0, 1, 2, 3],
-                success: true,
-                program_outputs: vec![],
-            })
-        }
+        "test" => Ok(serde_json::from_slice(&tx.proof.to_bytes()?)?),
         "cairo" => cairo_proof_verifier(&tx.proof.to_bytes()?),
         "risc0" => risc0_proof_verifier(&tx.proof.to_bytes()?, program_id),
         _ => bail!("{} verifier not implemented yet", verifier),
-    }
-}
-
-pub fn verify_recursion_proof(
-    tx: &ProofTransaction,
-    verifier: &str,
-) -> Result<Vec<HyleOutput>, Error> {
-    // TODO: remove test
-    match verifier {
-        "test" => Ok(tx
-            .blobs_references
-            .iter()
-            .map(|blob_ref| HyleOutput {
-                version: 1,
-                initial_state: StateDigest(vec![0, 1, 2, 3]),
-                next_state: StateDigest(vec![4, 5, 6]),
-                identity: Identity("test.c1".to_string()),
-                tx_hash: blob_ref.blob_tx_hash.clone(),
-                index: blob_ref.blob_index.clone(),
-                blobs: vec![0, 1, 2, 3, 0, 1, 2, 3],
-                success: true,
-                program_outputs: vec![],
-            })
-            .collect()),
-        _ => bail!("{} recursion verifier not implemented yet", verifier),
     }
 }
 
@@ -155,8 +116,9 @@ mod tests {
 
     use hydentity::Hydentity;
     use hyle_contract_sdk::{
+        flatten_blobs,
         identity_provider::{IdentityAction, IdentityVerification},
-        BlobData, BlobIndex, Digestable, HyleOutput, Identity, TxHash,
+        Blob, BlobIndex, ContractName, Digestable, HyleOutput, Identity, TxHash,
     };
 
     use super::risc0_proof_verifier;
@@ -185,11 +147,13 @@ mod tests {
             .unwrap();
         let next_state = next_state.as_digest();
 
-        let blob = IdentityAction::RegisterIdentity {
+        let blob_data = IdentityAction::RegisterIdentity {
             account: "faucet.hydentity".to_string(),
         };
-        let blob: BlobData = blob.into();
-        let blobs = blob.0;
+        let blobs = vec![Blob {
+            contract_name: ContractName("hydentity".to_owned()),
+            data: blob_data.into(),
+        }];
 
         match result {
             Ok(outputs) => {
@@ -202,7 +166,7 @@ mod tests {
                         identity: Identity("faucet.hydentity".to_owned()),
                         tx_hash: TxHash("".to_owned()),
                         index: BlobIndex(0),
-                        blobs,
+                        blobs: flatten_blobs(&blobs),
                         success: true,
                         program_outputs:
                             "Successfully registered identity for account: faucet.hydentity"

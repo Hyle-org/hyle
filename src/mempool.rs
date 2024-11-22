@@ -395,10 +395,10 @@ impl Mempool {
             TransactionData::Blob(ref _blob_transaction) => {}
             TransactionData::Proof(proof_transaction) => {
                 // Verify and extract proof
-                let hyle_outputs = self.node_state.verify_proof(&proof_transaction)?;
+                let hyle_output = self.node_state.verify_proof(&proof_transaction)?;
                 tx.transaction_data = TransactionData::VerifiedProof(VerifiedProofTransaction {
                     proof_transaction,
-                    hyle_outputs,
+                    hyle_output,
                 });
             }
             TransactionData::VerifiedProof(_) => {

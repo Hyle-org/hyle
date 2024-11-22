@@ -88,20 +88,9 @@ pub struct BlobDbWithStatus {
 #[derive(Debug, sqlx::FromRow, Serialize, Deserialize)]
 pub struct ProofTransactionDb {
     // Struct for the proof_transactions table
-    pub tx_hash: TxHashDb, // Corresponds to the transaction hash
-    pub proof: Vec<u8>,    // Proof associated with the transaction
-}
-
-#[derive(Debug, sqlx::FromRow, Serialize, Deserialize)]
-pub struct BlobReferenceDb {
-    // Struct for the blob_references table
-    pub tx_hash: TxHashDb,      // Corresponds to the proof transaction hash
-    pub contract_name: String,  // Contract name
-    pub blob_tx_hash: TxHashDb, // Blob transaction hash
-    #[sqlx(try_from = "i32")]
-    pub blob_index: u32, // Index of the blob
-    // Optional field for extra data
-    pub hyle_output: Option<serde_json::Value>, // Optional data in JSON format
+    pub tx_hash: TxHashDb,     // Corresponds to the transaction hash
+    pub contract_name: String, // Contract name associated with the proof
+    pub proof: Vec<u8>,        // Proof associated with the transaction
 }
 
 #[derive(Debug, sqlx::FromRow, Serialize, Deserialize)]

@@ -2,7 +2,7 @@ use fixtures::ctx::E2ECtx;
 use std::{fs::File, io::Read};
 use tracing::info;
 
-use hyle::model::{Blob, BlobReference, ProofData};
+use hyle::model::{Blob, ProofData};
 
 mod fixtures;
 
@@ -43,12 +43,9 @@ mod e2e_hyllar {
 
         info!("➡️  Sending proof for register");
         ctx.send_proof(
-            vec![BlobReference {
-                contract_name: "hydentity".into(),
-                blob_tx_hash: blob_tx_hash.clone(),
-                blob_index: hyle_contract_sdk::BlobIndex(0),
-            }],
+            "hydentity".into(),
             ProofData::Bytes(proof),
+            blob_tx_hash.clone(),
         )
         .await?;
 
@@ -96,23 +93,17 @@ mod e2e_hyllar {
 
         info!("➡️  Sending proof for hydentity");
         ctx.send_proof(
-            vec![BlobReference {
-                contract_name: "hydentity".into(),
-                blob_tx_hash: blob_tx_hash.clone(),
-                blob_index: hyle_contract_sdk::BlobIndex(0),
-            }],
+            "hydentity".into(),
             ProofData::Bytes(hydentity_proof),
+            blob_tx_hash.clone(),
         )
         .await?;
 
         info!("➡️  Sending proof for hyllar");
         ctx.send_proof(
-            vec![BlobReference {
-                contract_name: "hyllar".into(),
-                blob_tx_hash: blob_tx_hash.clone(),
-                blob_index: hyle_contract_sdk::BlobIndex(1),
-            }],
+            "hyllar".into(),
             ProofData::Bytes(hyllar_proof),
+            blob_tx_hash,
         )
         .await?;
 

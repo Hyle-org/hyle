@@ -30,7 +30,7 @@ where
     pub identity: Identity,
     pub tx_hash: String,
     pub private_blob: BlobData,
-    pub blobs: Vec<BlobData>,
+    pub blobs: Vec<Blob>,
     pub index: usize,
 }
 
@@ -41,9 +41,6 @@ pub struct StateDigest(pub Vec<u8>);
 pub struct Identity(pub String);
 
 #[derive(Default, Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash, Encode, Decode)]
-pub struct ContractName(pub String);
-
-#[derive(Default, Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash, Encode, Decode)]
 pub struct TxHash(pub String);
 
 #[derive(Default, Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash, Encode, Decode)]
@@ -51,6 +48,26 @@ pub struct BlobIndex(pub u32);
 
 #[derive(Default, Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash, Encode, Decode)]
 pub struct BlobData(pub Vec<u8>);
+
+#[derive(Debug, Serialize, Deserialize, Default, Clone, PartialEq, Eq, Encode, Decode, Hash)]
+pub struct Blob {
+    pub contract_name: ContractName,
+    pub data: BlobData,
+}
+
+pub fn flatten_blobs(blobs: &[Blob]) -> Vec<u8> {
+    blobs
+        .iter()
+        .flat_map(|b| {
+            let mut combined = b.contract_name.0.clone().into_bytes();
+            combined.extend(b.data.0.clone());
+            combined
+        })
+        .collect()
+}
+
+#[derive(Default, Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash, Encode, Decode)]
+pub struct ContractName(pub String);
 
 #[derive(Default, Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash, Encode, Decode)]
 pub struct HyleOutput {
@@ -75,16 +92,6 @@ impl From<&str> for Identity {
         Identity(s.into())
     }
 }
-impl From<String> for ContractName {
-    fn from(s: String) -> Self {
-        ContractName(s)
-    }
-}
-impl From<&str> for ContractName {
-    fn from(s: &str) -> Self {
-        ContractName(s.into())
-    }
-}
 impl From<String> for TxHash {
     fn from(s: String) -> Self {
         Self(s)
@@ -95,13 +102,28 @@ impl From<&str> for TxHash {
         Self(s.into())
     }
 }
+impl From<&str> for ContractName {
+    fn from(s: &str) -> Self {
+        ContractName(s.into())
+    }
+}
+impl From<String> for ContractName {
+    fn from(s: String) -> Self {
+        ContractName(s)
+    }
+}
 
 impl TxHash {
     pub fn new(s: &str) -> TxHash {
         TxHash(s.into())
     }
 }
-impl Display for Identity {
+impl Display for TxHash {
+    fn fmt(&self, f: &mut alloc::fmt::Formatter<'_>) -> alloc::fmt::Result {
+        write!(f, "{}", &self.0)
+    }
+}
+impl Display for BlobIndex {
     fn fmt(&self, f: &mut alloc::fmt::Formatter<'_>) -> alloc::fmt::Result {
         write!(f, "{}", &self.0)
     }
@@ -111,12 +133,7 @@ impl Display for ContractName {
         write!(f, "{}", &self.0)
     }
 }
-impl Display for TxHash {
-    fn fmt(&self, f: &mut alloc::fmt::Formatter<'_>) -> alloc::fmt::Result {
-        write!(f, "{}", &self.0)
-    }
-}
-impl Display for BlobIndex {
+impl Display for Identity {
     fn fmt(&self, f: &mut alloc::fmt::Formatter<'_>) -> alloc::fmt::Result {
         write!(f, "{}", &self.0)
     }
