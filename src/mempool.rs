@@ -28,13 +28,13 @@ use storage::{CarHash, Cut, DataProposalVerdict};
 use strum_macros::IntoStaticStr;
 use tracing::{debug, error, info, warn};
 
-mod metrics;
+pub mod metrics;
 pub mod storage;
 #[derive(Debug, Clone)]
 pub struct QueryNewCut(pub Vec<ValidatorPublicKey>);
 
 bus_client! {
-struct MempoolBusClient {
+pub struct MempoolBusClient {
     sender(OutboundMessage),
     sender(MempoolEvent),
     receiver(SignedByValidator<MempoolNetMessage>),
@@ -46,12 +46,12 @@ struct MempoolBusClient {
 }
 
 pub struct Mempool {
-    bus: MempoolBusClient,
-    crypto: SharedBlstCrypto,
-    metrics: MempoolMetrics,
-    storage: Storage,
-    validators: Vec<ValidatorPublicKey>,
-    node_state: NodeState,
+    pub bus: MempoolBusClient,
+    pub crypto: SharedBlstCrypto,
+    pub metrics: MempoolMetrics,
+    pub storage: Storage,
+    pub validators: Vec<ValidatorPublicKey>,
+    pub node_state: NodeState,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, Eq, PartialEq, IntoStaticStr)]
@@ -508,7 +508,7 @@ impl Mempool {
 }
 
 #[cfg(test)]
-mod tests {
+pub mod test {
     use super::*;
     use crate::bus::SharedMessageBus;
     use crate::mempool::MempoolBusClient;
@@ -521,12 +521,12 @@ mod tests {
     use storage::Poa;
     use tokio::sync::broadcast::Receiver;
 
-    pub struct TestContext {
-        out_receiver: Receiver<OutboundMessage>,
-        mempool: Mempool,
+    pub struct MempoolTestCtx {
+        pub out_receiver: Receiver<OutboundMessage>,
+        pub mempool: Mempool,
     }
 
-    impl TestContext {
+    impl MempoolTestCtx {
         pub async fn new(name: &str) -> Self {
             let crypto = BlstCrypto::new(name.into());
             let shared_bus = SharedMessageBus::new(BusMetrics::global("global".to_string()));
@@ -546,7 +546,7 @@ mod tests {
                 node_state: NodeState::default(),
             };
 
-            TestContext {
+            MempoolTestCtx {
                 out_receiver,
                 mempool,
             }
@@ -599,7 +599,7 @@ mod tests {
 
     #[test_log::test(tokio::test)]
     async fn test_receiving_new_tx() -> Result<()> {
-        let mut ctx = TestContext::new("mempool").await;
+        let mut ctx = MempoolTestCtx::new("mempool").await;
 
         // Sending transaction to mempool as RestApiMessage
         let register_tx = make_register_contract_tx(ContractName("test1".to_owned()));
@@ -625,7 +625,7 @@ mod tests {
 
     #[test_log::test(tokio::test)]
     async fn test_receiving_data_proposal() -> Result<()> {
-        let mut ctx = TestContext::new("mempool").await;
+        let mut ctx = MempoolTestCtx::new("mempool").await;
 
         let data_proposal = DataProposal {
             car: Car {
@@ -658,7 +658,7 @@ mod tests {
 
     #[test_log::test(tokio::test)]
     async fn test_receiving_unexpect_data_proposal_vote() -> Result<()> {
-        let mut ctx = TestContext::new("mempool").await;
+        let mut ctx = MempoolTestCtx::new("mempool").await;
 
         // Sending transaction to mempool as RestApiMessage
         let register_tx = make_register_contract_tx(ContractName("test1".to_owned()));
@@ -708,7 +708,7 @@ mod tests {
 
     #[test_log::test(tokio::test)]
     async fn test_receiving_data_proposal_vote() -> Result<()> {
-        let mut ctx = TestContext::new("mempool").await;
+        let mut ctx = MempoolTestCtx::new("mempool").await;
 
         // Sending transaction to mempool as RestApiMessage
         let register_tx = make_register_contract_tx(ContractName("test1".to_owned()));
@@ -760,7 +760,7 @@ mod tests {
     async fn test_data_proposal_management() -> Result<()> {
         // TODO: on veut rajouter ces Car à la main avec trop peu de PoA.
 
-        let mut ctx = TestContext::new("mempool").await;
+        let mut ctx = MempoolTestCtx::new("mempool").await;
 
         let register_tx = make_register_contract_tx(ContractName("test1".to_owned()));
         ctx.mempool.storage.pending_txs.push(register_tx.clone());
@@ -801,7 +801,7 @@ mod tests {
     #[ignore = "TODO"]
     #[test_log::test(tokio::test)]
     async fn test_receiving_commit_cut() -> Result<()> {
-        let mut ctx = TestContext::new("mempool").await;
+        let mut ctx = MempoolTestCtx::new("mempool").await;
         let car_hash = CarHash("42".to_string());
         let cut: Cut = vec![(
             ctx.mempool.crypto.validator_pubkey().clone(),

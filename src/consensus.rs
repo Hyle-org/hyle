@@ -81,7 +81,7 @@ impl BusMessage for ConsensusEvent {}
 impl BusMessage for ConsensusNetMessage {}
 
 bus_client! {
-struct ConsensusBusClient {
+pub struct ConsensusBusClient {
     sender(OutboundMessage),
     sender(ConsensusEvent),
     sender(ConsensusCommand),
@@ -203,13 +203,13 @@ pub struct ConsensusStore {
 }
 
 pub struct Consensus {
-    metrics: ConsensusMetrics,
-    bus: ConsensusBusClient,
-    file: Option<PathBuf>,
-    store: ConsensusStore,
+    pub metrics: ConsensusMetrics,
+    pub bus: ConsensusBusClient,
+    pub file: Option<PathBuf>,
+    pub store: ConsensusStore,
     #[allow(dead_code)]
-    config: SharedConf,
-    crypto: SharedBlstCrypto,
+    pub config: SharedConf,
+    pub crypto: SharedBlstCrypto,
 }
 
 impl Consensus {
@@ -927,26 +927,29 @@ impl Consensus {
 }
 
 #[cfg(test)]
-mod test {
+pub mod test {
     use std::sync::Arc;
 
     use super::*;
     use crate::{
+        autobahn_testing::test::AutobahnTestCtx,
+        broadcast, build_tuple,
         bus::SharedMessageBus,
         mempool::storage::CarHash,
         p2p::network::NetMessage,
+        send,
         utils::{conf::Conf, crypto},
     };
     use assertables::assert_contains;
     use staking::Stake;
     use tokio::sync::broadcast::Receiver;
 
-    struct TestCtx {
-        out_receiver: Receiver<OutboundMessage>,
-        _event_receiver: Receiver<ConsensusEvent>,
-        _p2p_receiver: Receiver<P2PCommand>,
+    pub struct ConsensusTestCtx {
+        pub out_receiver: Receiver<OutboundMessage>,
+        pub _event_receiver: Receiver<ConsensusEvent>,
+        pub _p2p_receiver: Receiver<P2PCommand>,
         pub consensus: Consensus,
-        name: String,
+        pub name: String,
     }
 
     bus_client!(
@@ -954,175 +957,29 @@ mod test {
             receiver(Query<QueryNewCut, Cut>),
         }
     );
-    macro_rules! build_tuple {
-        ($nodes:expr, 1) => {
-            ($nodes)
-        };
-        ($nodes:expr, 2) => {
-            ($nodes, $nodes)
-        };
-        ($nodes:expr, 3) => {
-            ($nodes, $nodes, $nodes)
-        };
-        ($nodes:expr, 4) => {
-            ($nodes, $nodes, $nodes, $nodes)
-        };
-        ($nodes:expr, 5) => {
-            ($nodes, $nodes, $nodes, $nodes, $nodes)
-        };
-        ($nodes:expr, 6) => {
-            ($nodes, $nodes, $nodes, $nodes, $nodes, $nodes)
-        };
-        ($nodes:expr, 7) => {
-            ($nodes, $nodes, $nodes, $nodes, $nodes, $nodes, $nodes)
-        };
-        ($nodes:expr, $count:expr) => {
-            panic!("Le nombre de nœuds {} n'est pas supporté", $count)
-        };
-    }
     macro_rules! build_nodes {
         ($count:tt) => {{
             async {
-                let cryptos: Vec<BlstCrypto> = (0..$count)
-                    .map(|i| {
-                        let crypto = crypto::BlstCrypto::new(format!("node-{i}").into());
-                        info!("node {}: {}", i, crypto.validator_pubkey());
-                        crypto
-                    })
-                    .collect();
+                let cryptos: Vec<BlstCrypto> = AutobahnTestCtx::generate_cryptos($count);
 
                 let mut nodes = vec![];
 
                 for i in 0..$count {
-                    let mut node = TestCtx::new(
+                    let mut node = ConsensusTestCtx::new(
                         format!("node-{i}").as_ref(),
                         cryptos.get(i).unwrap().clone(),
                     )
                     .await;
 
-                    for other_crypto in cryptos.iter() {
-                        node.add_trusted_validator(other_crypto.validator_pubkey());
-                    }
-
-                    node.consensus.bft_round_state.consensus_proposal.slot = 1;
-
-                    if i == 0 {
-                        node.consensus.bft_round_state.state_tag = StateTag::Leader;
-                        node.consensus.bft_round_state.leader.pending_ticket =
-                            Some(Ticket::Genesis);
-                    } else {
-                        node.consensus.bft_round_state.state_tag = StateTag::Follower;
-                    }
-
-                    node.consensus
-                        .bft_round_state
-                        .consensus_proposal
-                        .round_leader = cryptos.get(0).unwrap().validator_pubkey().clone();
+                    node.setup_node(i, &cryptos);
 
                     nodes.push(node);
                 }
 
-                // Appel à une macro récursive pour construire le tuple
                 build_tuple!(nodes.remove(0), $count)
             }
         }};
     }
-
-    macro_rules! broadcast {
-        (description: $description:literal, from: $sender:ident, to: [$($node:ident),+]$(, message_matches: $pattern:pat $(=> $asserts:block)? )?) => {
-            {
-                // Construct the broadcast message with sender information
-                let message = $sender.assert_broadcast(format!("[broadcast from: {}] {}", stringify!($sender), $description).as_str());
-
-                $({
-                    let msg_variant_name: &'static str = message.msg.clone().into();
-                    if let $pattern = &message.msg {
-                        $($asserts)?
-                    } else {
-                        panic!("[broadcast from: {}] {}: Message {} did not match {}", stringify!($sender), $description, msg_variant_name, stringify!($pattern));
-                    }
-                })?
-
-                // Distribute the message to each specified node
-                $(
-                    $node.handle_msg(&message, (format!("[handling broadcast message from: {} at: {}] {}", stringify!($sender), stringify!($node), $description).as_str()));
-                )+
-
-                message
-            }
-        };
-    }
-    macro_rules! send {
-    (
-        description: $description:literal,
-        from: [$($node:ident),+],
-        to: $to:ident,
-        message_matches: $pattern:pat
-    ) => {
-        // Distribute the message to the target node from all specified nodes
-        $(
-            let answer = $node.assert_send(
-                &$to,
-                format!("[send from: {} to: {}] {}", stringify!($node), stringify!($to), $description).as_str()
-            );
-
-            // If `message_matches` is provided, perform the pattern match
-            if let $pattern = &answer.msg {
-                // Execute optional assertions if provided
-            } else {
-                let msg_variant_name: &'static str = answer.msg.clone().into();
-                panic!(
-                    "[send from: {}] {}: Message {} did not match {}",
-                    stringify!($node),
-                    $description,
-                    msg_variant_name,
-                    stringify!($pattern)
-                );
-            }
-
-            // Handle the message
-            $to.handle_msg(
-                &answer,
-                format!("[handling sent message from: {} to: {}] {}", stringify!($node), stringify!($to), $description).as_str()
-            );
-        )+
-    };
-
-    (
-        description: $description:literal,
-        from: [$($node:ident: $pattern:pat $(=> $asserts:block)?)+],
-        to: $to:ident
-    ) => {
-        // Distribute the message to the target node from all specified nodes
-        $(
-            let answer = $node.assert_send(
-                &$to,
-                format!("[send from: {} to: {}] {}", stringify!($node), stringify!($to), $description).as_str()
-            );
-
-            // If `message_matches` is provided, perform the pattern match
-            if let $pattern = &answer.msg {
-                // Execute optional assertions if provided
-                $($asserts)?
-            } else {
-                let msg_variant_name: &'static str = answer.msg.clone().into();
-                panic!(
-                    "[send from: {}] {}: Message {} did not match {}",
-                    stringify!($node),
-                    $description,
-                    msg_variant_name,
-                    stringify!($pattern)
-                );
-            }
-
-            // Handle the message
-            $to.handle_msg(
-                &answer,
-                format!("[handling sent message from: {} to: {}] {}", stringify!($node), stringify!($to), $description).as_str()
-            );
-        )+
-    };
-}
 
     macro_rules! simple_commit_round {
         (leader: $leader:ident, followers: [$($follower:ident),+]) => {{
@@ -1165,7 +1022,7 @@ mod test {
         }};
     }
 
-    impl TestCtx {
+    impl ConsensusTestCtx {
         async fn new(name: &str, crypto: BlstCrypto) -> Self {
             let shared_bus = SharedMessageBus::new(BusMetrics::global("global".to_string()));
             let out_receiver = get_receiver::<OutboundMessage>(&shared_bus).await;
@@ -1203,7 +1060,27 @@ mod test {
             }
         }
 
-        pub async fn timeout(nodes: &mut [&mut TestCtx]) {
+        pub fn setup_node(&mut self, index: usize, cryptos: &Vec<BlstCrypto>) {
+            for other_crypto in cryptos.iter() {
+                self.add_trusted_validator(other_crypto.validator_pubkey());
+            }
+
+            self.consensus.bft_round_state.consensus_proposal.slot = 1;
+
+            if index == 0 {
+                self.consensus.bft_round_state.state_tag = StateTag::Leader;
+                self.consensus.bft_round_state.leader.pending_ticket = Some(Ticket::Genesis);
+            } else {
+                self.consensus.bft_round_state.state_tag = StateTag::Follower;
+            }
+
+            self.consensus
+                .bft_round_state
+                .consensus_proposal
+                .round_leader = cryptos.get(0).unwrap().validator_pubkey().clone();
+        }
+
+        pub async fn timeout(nodes: &mut [&mut ConsensusTestCtx]) {
             for n in nodes {
                 n.consensus
                     .bft_round_state
@@ -1359,7 +1236,7 @@ mod test {
     }
     #[test_log::test(tokio::test)]
     async fn test_happy_path() {
-        let (mut node1, mut node2): (TestCtx, TestCtx) = build_nodes!(2).await;
+        let (mut node1, mut node2): (ConsensusTestCtx, ConsensusTestCtx) = build_nodes!(2).await;
 
         node1.start_round().await;
         // Slot 0 - leader = node1
@@ -1400,8 +1277,12 @@ mod test {
 
     #[test_log::test(tokio::test)]
     async fn basic_commit_4() {
-        let (mut node1, mut node2, mut node3, mut node4): (TestCtx, TestCtx, TestCtx, TestCtx) =
-            build_nodes!(4).await;
+        let (mut node1, mut node2, mut node3, mut node4): (
+            ConsensusTestCtx,
+            ConsensusTestCtx,
+            ConsensusTestCtx,
+            ConsensusTestCtx,
+        ) = build_nodes!(4).await;
 
         node1.start_round().await;
         // Slot 1 - leader = node1
@@ -1455,8 +1336,12 @@ mod test {
 
     #[test_log::test(tokio::test)]
     async fn prepare_wrong_slot() {
-        let (mut node1, mut node2, mut node3, mut node4): (TestCtx, TestCtx, TestCtx, TestCtx) =
-            build_nodes!(4).await;
+        let (mut node1, mut node2, mut node3, mut node4): (
+            ConsensusTestCtx,
+            ConsensusTestCtx,
+            ConsensusTestCtx,
+            ConsensusTestCtx,
+        ) = build_nodes!(4).await;
 
         node1.start_round().await;
 
@@ -1485,8 +1370,12 @@ mod test {
 
     #[test_log::test(tokio::test)]
     async fn prepare_wrong_signature() {
-        let (mut node1, mut node2, mut node3, mut node4): (TestCtx, TestCtx, TestCtx, TestCtx) =
-            build_nodes!(4).await;
+        let (mut node1, mut node2, mut node3, mut node4): (
+            ConsensusTestCtx,
+            ConsensusTestCtx,
+            ConsensusTestCtx,
+            ConsensusTestCtx,
+        ) = build_nodes!(4).await;
 
         node1.start_round().await;
 
@@ -1524,8 +1413,12 @@ mod test {
 
     #[test_log::test(tokio::test)]
     async fn prepare_wrong_leader() {
-        let (mut node1, mut node2, mut node3, mut node4): (TestCtx, TestCtx, TestCtx, TestCtx) =
-            build_nodes!(4).await;
+        let (mut node1, mut node2, mut node3, mut node4): (
+            ConsensusTestCtx,
+            ConsensusTestCtx,
+            ConsensusTestCtx,
+            ConsensusTestCtx,
+        ) = build_nodes!(4).await;
 
         node1.start_round().await;
 
@@ -1567,12 +1460,16 @@ mod test {
 
     #[test_log::test(tokio::test)]
     async fn timeout_only_one_4() {
-        let (mut node1, mut node2, mut node3, mut node4): (TestCtx, TestCtx, TestCtx, TestCtx) =
-            build_nodes!(4).await;
+        let (mut node1, mut node2, mut node3, mut node4): (
+            ConsensusTestCtx,
+            ConsensusTestCtx,
+            ConsensusTestCtx,
+            ConsensusTestCtx,
+        ) = build_nodes!(4).await;
 
         node1.start_round().await;
 
-        TestCtx::timeout(&mut [&mut node2]).await;
+        ConsensusTestCtx::timeout(&mut [&mut node2]).await;
 
         node2.assert_broadcast("Timeout message");
 
@@ -1591,8 +1488,12 @@ mod test {
 
     #[test_log::test(tokio::test)]
     async fn test_timeout_join_mutiny_4() {
-        let (mut node1, mut node2, mut node3, mut node4): (TestCtx, TestCtx, TestCtx, TestCtx) =
-            build_nodes!(4).await;
+        let (mut node1, mut node2, mut node3, mut node4): (
+            ConsensusTestCtx,
+            ConsensusTestCtx,
+            ConsensusTestCtx,
+            ConsensusTestCtx,
+        ) = build_nodes!(4).await;
 
         node1.start_round().await;
         // Slot 1 - leader = node1
@@ -1601,7 +1502,7 @@ mod test {
 
         // Make node2 and node3 timeout, node4 will not timeout but follow mutiny
         // , because at f+1, mutiny join
-        TestCtx::timeout(&mut [&mut node2, &mut node3]).await;
+        ConsensusTestCtx::timeout(&mut [&mut node2, &mut node3]).await;
 
         broadcast! {
             description: "Follower - Timeout",
@@ -1663,11 +1564,11 @@ mod test {
     #[test_log::test(tokio::test)]
     async fn timeout_only_emit_certificate_once() {
         let (mut node1, mut node2, mut node3, mut node4, mut node5): (
-            TestCtx,
-            TestCtx,
-            TestCtx,
-            TestCtx,
-            TestCtx,
+            ConsensusTestCtx,
+            ConsensusTestCtx,
+            ConsensusTestCtx,
+            ConsensusTestCtx,
+            ConsensusTestCtx,
         ) = build_nodes!(5).await;
 
         node1.start_round().await;
@@ -1677,7 +1578,7 @@ mod test {
 
         // Make node2 and node3 timeout, node4 will not timeout but follow mutiny,
         // because at f+1, mutiny join
-        TestCtx::timeout(&mut [&mut node2, &mut node3]).await;
+        ConsensusTestCtx::timeout(&mut [&mut node2, &mut node3]).await;
 
         broadcast! {
             description: "Follower - Timeout",
@@ -1741,13 +1642,13 @@ mod test {
     #[test_log::test(tokio::test)]
     async fn timeout_next_leader_receive_timeout_certificate_without_timeouting() {
         let (mut node1, mut node2, mut node3, mut node4, mut node5, mut node6, mut node7): (
-            TestCtx,
-            TestCtx,
-            TestCtx,
-            TestCtx,
-            TestCtx,
-            TestCtx,
-            TestCtx,
+            ConsensusTestCtx,
+            ConsensusTestCtx,
+            ConsensusTestCtx,
+            ConsensusTestCtx,
+            ConsensusTestCtx,
+            ConsensusTestCtx,
+            ConsensusTestCtx,
         ) = build_nodes!(7).await;
 
         node1.start_round().await;
@@ -1757,7 +1658,10 @@ mod test {
         // node2 is the next leader, let the others timeout and create a certificate and send it to node2.
         // It should be able to build a prepare message with it
 
-        TestCtx::timeout(&mut [&mut node3, &mut node4, &mut node5, &mut node6, &mut node7]).await;
+        ConsensusTestCtx::timeout(&mut [
+            &mut node3, &mut node4, &mut node5, &mut node6, &mut node7,
+        ])
+        .await;
 
         broadcast! {
             description: "Follower - Timeout",
@@ -1832,7 +1736,7 @@ mod test {
 
     #[test_log::test(tokio::test)]
     async fn test_candidacy() {
-        let (mut node1, mut node2): (TestCtx, TestCtx) = build_nodes!(2).await;
+        let (mut node1, mut node2): (ConsensusTestCtx, ConsensusTestCtx) = build_nodes!(2).await;
 
         // Slot 1
         {
@@ -1848,7 +1752,7 @@ mod test {
             assert!(matches!(ticket, Ticket::Genesis));
         }
 
-        let mut node3 = TestCtx::new_node("node-3").await;
+        let mut node3 = ConsensusTestCtx::new_node("node-3").await;
         node3.consensus.bft_round_state.state_tag = StateTag::Joining;
         node3.consensus.bft_round_state.joining.staking_updated_to = 1;
         node3.add_bonded_staker(&node1, 100, "Add staker").await;
