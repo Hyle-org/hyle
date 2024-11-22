@@ -61,7 +61,7 @@ mod e2e_hyllar {
             state
                 .get_identity_info("faucet.hydentity")
                 .expect("faucet identity not found"),
-            "7e247de0275f2ad068e9c9817df172b1d45a0803a7f34313af7790246d6de1ef" // hash for "faucet.hydentity::password"
+            "b6baa13a27c933bb9f7df812108407efdff1ec3c3ef8d803e20eed7d4177d596" // hash for "faucet.hydentity::password"
         );
 
         info!("➡️  Sending blob to transfer 10 tokens from faucet to bob");

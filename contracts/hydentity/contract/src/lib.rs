@@ -94,7 +94,7 @@ impl TryFrom<sdk::StateDigest> for Hydentity {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sha3::{Digest, Sha3_256};
+    use sha2::{Digest, Sha256};
 
     #[test]
     fn test_register_identity() {
@@ -105,7 +105,7 @@ mod tests {
         assert!(hydentity.register_identity(account, private_input).is_ok());
 
         let id = format!("{account}:{private_input}");
-        let mut hasher = Sha3_256::new();
+        let mut hasher = Sha256::new();
         hasher.update(id.as_bytes());
         let hash_bytes = hasher.finalize();
         let expected_hash = hex::encode(hash_bytes);
@@ -142,7 +142,7 @@ mod tests {
         hydentity.register_identity(account, private_input).unwrap();
 
         let id = format!("{account}:{private_input}");
-        let mut hasher = Sha3_256::new();
+        let mut hasher = Sha256::new();
         hasher.update(id.as_bytes());
         let hash_bytes = hasher.finalize();
         let expected_hash = hex::encode(hash_bytes);
