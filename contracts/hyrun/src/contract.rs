@@ -61,7 +61,10 @@ where
     let output = execute_info.journal.decode::<HyleOutput>().unwrap();
     if !output.success {
         let program_error = std::str::from_utf8(&output.program_outputs).unwrap();
-        println!("Execution failed ! Program output: {}", program_error);
+        println!(
+            "\x1b[91mExecution failed ! Program output: {}\x1b[0m",
+            program_error
+        );
         return;
     } else {
         let next_state: State = output.next_state.try_into().unwrap();
@@ -86,7 +89,10 @@ where
 
     if !hyle_output.success {
         let program_error = std::str::from_utf8(&hyle_output.program_outputs).unwrap();
-        println!("Execution failed ! Program output: {}", program_error);
+        println!(
+            "\x1b[91mExecution failed ! Program output: {}\x1b[0m",
+            program_error
+        );
         return;
     }
 
