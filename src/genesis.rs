@@ -153,7 +153,8 @@ impl Genesis {
                     owner: "hyle".into(),
                     verifier: "risc0".into(),
                     program_id: hyllar_program_id,
-                    state_digest: hyllar::HyllarToken::new(1000).as_digest(),
+                    state_digest: hyllar::HyllarToken::new(1000, "faucet.hydentity".to_string())
+                        .as_digest(),
                     contract_name: "hyllar".into(),
                 },
             )),

@@ -215,13 +215,10 @@ impl E2ECtx {
         Ok(())
     }
 
-    pub async fn send_blob(&self, blobs: Vec<Blob>) -> Result<TxHash> {
+    pub async fn send_blob(&self, identity: Identity, blobs: Vec<Blob>) -> Result<TxHash> {
         let blob_response = self
             .client()
-            .send_tx_blob(&BlobTransaction {
-                identity: Identity("client".to_string()),
-                blobs,
-            })
+            .send_tx_blob(&BlobTransaction { identity, blobs })
             .await
             .and_then(|response| response.error_for_status().context("sending tx"));
 

@@ -117,20 +117,6 @@ pub fn execute_action<T: IdentityVerification>(
     }
 }
 
-pub fn verify_identity(blobs: &[BlobData], blob_index: usize, identity: &Identity) {
-    let identity_action = crate::guest::parse_blob::<IdentityAction>(blobs, blob_index);
-
-    if let IdentityAction::VerifyIdentity { account, .. } = identity_action {
-        if account != identity.0 {
-            crate::guest::panic("Verify identity blob not match provided identity");
-        }
-    } else {
-        crate::guest::panic(&format!(
-            "Blob index {blob_index} must be a VerifyIdentity action"
-        ));
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -47,8 +47,8 @@ impl E2EContract for HydentityContract {
     }
 
     fn program_id() -> Vec<u8> {
-        hex::decode("93b8ef695a992389dc4a5b5ed220d6f11ce59c078fe43d47771615404c6312d6")
-            .expect("Image id decoding failed")
+        let hydentity_program_id = include_str!("../../contracts/hydentity/hydentity.txt").trim();
+        hex::decode(hydentity_program_id).expect("Image id decoding failed")
     }
 
     fn state_digest() -> StateDigest {
@@ -64,11 +64,11 @@ impl E2EContract for HyllarContract {
     }
 
     fn program_id() -> Vec<u8> {
-        hex::decode("1d6f7a21f27efef2755df380f6dee1ec5c46c55437d519fd6cbc07b926989562")
-            .expect("Image id decoding failed")
+        let hyllar_program_id = include_str!("../../contracts/hyllar/hyllar.txt").trim();
+        hex::decode(hyllar_program_id).expect("Image id decoding failed")
     }
 
     fn state_digest() -> StateDigest {
-        hyllar::HyllarToken::new(1000).as_digest()
+        hyllar::HyllarToken::new(1000, "faucet.hydentity".to_string()).as_digest()
     }
 }

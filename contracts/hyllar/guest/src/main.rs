@@ -13,9 +13,6 @@ fn main() {
 
     let state = input.initial_state.clone();
 
-    // TODO get identity blob index
-    sdk::identity_provider::verify_identity(&input.blobs, 0, &input.identity);
-
     let mut contract = HyllarTokenContract::init(state, input.identity.clone());
 
     let res = sdk::erc20::execute_action(&mut contract, parameters);

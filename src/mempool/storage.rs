@@ -633,7 +633,7 @@ mod tests {
                     version: 1,
                     initial_state: StateDigest(vec![0, 1, 2, 3]),
                     next_state: StateDigest(vec![4, 5, 6]),
-                    identity: Identity("test".to_string()),
+                    identity: Identity("test.c1".to_string()),
                     tx_hash: TxHash("".to_owned()),
                     index: BlobIndex(0),
                     blobs: vec![0, 1, 2, 3, 0, 1, 2, 3],
