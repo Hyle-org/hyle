@@ -932,12 +932,10 @@ pub mod test {
 
     use super::*;
     use crate::{
-        autobahn_testing::test::AutobahnTestCtx,
-        broadcast, build_tuple,
+        autobahn_testing::test::{broadcast, build_tuple, send, AutobahnTestCtx},
         bus::SharedMessageBus,
         mempool::storage::CarHash,
         p2p::network::NetMessage,
-        send,
         utils::{conf::Conf, crypto},
     };
     use assertables::assert_contains;

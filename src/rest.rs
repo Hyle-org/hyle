@@ -4,6 +4,7 @@ use crate::{
     bus::{bus_client, command_response::Query, SharedMessageBus},
     consensus::{ConsensusInfo, QueryConsensusInfo},
     data_availability::QueryBlockHeight,
+    mempool::MempoolCommand,
     model::{BlockHeight, ContractName, ValidatorPublicKey},
     node_state::model::Contract,
     tools::mock_workflow::RunScenario,
@@ -17,7 +18,6 @@ use axum::{
     Router,
 };
 use axum_otel_metrics::HttpMetricsLayer;
-use endpoints::RestApiMessage;
 use serde::{Deserialize, Serialize};
 use tower_http::trace::TraceLayer;
 use tracing::info;
@@ -27,7 +27,7 @@ pub mod endpoints;
 
 bus_client! {
 struct RestBusClient {
-    sender(RestApiMessage),
+    sender(MempoolCommand),
     sender(RunScenario),
     sender(Query<ContractName, Contract>),
     sender(Query<QueryBlockHeight, BlockHeight>),
@@ -128,7 +128,7 @@ impl Clone for RouterState {
         Self {
             bus: RestBusClient::new(
                 Pick::<BusMetrics>::get(&self.bus).clone(),
-                Pick::<tokio::sync::broadcast::Sender<RestApiMessage>>::get(&self.bus).clone(),
+                Pick::<tokio::sync::broadcast::Sender<MempoolCommand>>::get(&self.bus).clone(),
                 Pick::<tokio::sync::broadcast::Sender<RunScenario>>::get(&self.bus).clone(),
                 Pick::<tokio::sync::broadcast::Sender<Query<ContractName, Contract>>>::get(
                     &self.bus,

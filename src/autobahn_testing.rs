@@ -1,7 +1,6 @@
 #[cfg(test)]
 pub mod test {
 
-    #[macro_export]
     macro_rules! build_tuple {
         ($nodes:expr, 1) => {
             ($nodes)
@@ -29,9 +28,8 @@ pub mod test {
         };
     }
 
-    #[macro_export]
     macro_rules! broadcast {
-        (description: $description:literal, from: $sender:ident, to: [$($node:ident),+]$(, message_matches: $pattern:pat $(=> $asserts:block)? )?) => {
+        (description: $description:literal, from: $sender:expr, to: [$($node:expr),+]$(, message_matches: $pattern:pat $(=> $asserts:block)? )?) => {
             {
                 // Construct the broadcast message with sender information
                 let message = $sender.assert_broadcast(format!("[broadcast from: {}] {}", stringify!($sender), $description).as_str());
@@ -55,12 +53,11 @@ pub mod test {
         };
     }
 
-    #[macro_export]
     macro_rules! send {
         (
             description: $description:literal,
-            from: [$($node:ident),+],
-            to: $to:ident,
+            from: [$($node:expr),+],
+            to: $to:expr,
             message_matches: $pattern:pat
         ) => {
             // Distribute the message to the target node from all specified nodes
@@ -128,6 +125,10 @@ pub mod test {
         };
     }
 
+    pub(crate) use broadcast;
+    pub(crate) use build_tuple;
+    pub(crate) use send;
+
     macro_rules! build_nodes {
         ($count:tt) => {{
             async {
@@ -140,7 +141,8 @@ pub mod test {
                     let mut autobahn_node =
                         AutobahnTestCtx::new(format!("node-{i}").as_ref(), crypto).await;
 
-                    autobahn_node.consensus.setup_node(i, &cryptos);
+                    autobahn_node.consensus_ctx.setup_node(i, &cryptos);
+                    autobahn_node.mempool_ctx.setup_node(i, &cryptos);
                     nodes.push(autobahn_node);
                 }
 
@@ -160,8 +162,9 @@ pub mod test {
     use crate::consensus::test::ConsensusTestCtx;
     use crate::consensus::{Consensus, ConsensusBusClient, ConsensusEvent, ConsensusStore};
     use crate::mempool::metrics::MempoolMetrics;
-    use crate::mempool::test::MempoolTestCtx;
-    use crate::mempool::{Mempool, MempoolBusClient};
+    use crate::mempool::test::{make_register_contract_tx, MempoolTestCtx};
+    use crate::mempool::{Mempool, MempoolBusClient, MempoolNetMessage};
+    use crate::model::ContractName;
     use crate::node_state::NodeState;
     use crate::p2p::network::OutboundMessage;
     use crate::p2p::P2PCommand;
@@ -169,17 +172,19 @@ pub mod test {
     use crate::utils::crypto::{self, BlstCrypto};
 
     pub struct AutobahnTestCtx {
-        consensus: ConsensusTestCtx,
-        mempool: MempoolTestCtx,
+        consensus_ctx: ConsensusTestCtx,
+        mempool_ctx: MempoolTestCtx,
     }
 
     impl AutobahnTestCtx {
         async fn new(name: &str, crypto: BlstCrypto) -> Self {
             let shared_bus = SharedMessageBus::new(BusMetrics::global("global".to_string()));
-            let out_receiver = get_receiver::<OutboundMessage>(&shared_bus).await;
             let event_receiver = get_receiver::<ConsensusEvent>(&shared_bus).await;
             let p2p_receiver = get_receiver::<P2PCommand>(&shared_bus).await;
             let consensus_bus = ConsensusBusClient::new_from_bus(shared_bus.new_handle()).await;
+            let mempool_bus = MempoolBusClient::new_from_bus(shared_bus.new_handle()).await;
+            let consensus_out_receiver = get_receiver::<OutboundMessage>(&shared_bus).await;
+            let mempool_out_receiver = get_receiver::<OutboundMessage>(&shared_bus).await;
 
             let store = ConsensusStore::default();
             let conf = Arc::new(Conf::default());
@@ -192,8 +197,6 @@ pub mod test {
                 crypto: Arc::new(crypto.clone()),
             };
 
-            let mempool_bus = MempoolBusClient::new_from_bus(shared_bus.new_handle()).await;
-
             let mempool = Mempool {
                 metrics: MempoolMetrics::global("id".to_string()),
                 bus: mempool_bus,
@@ -204,15 +207,16 @@ pub mod test {
             };
 
             AutobahnTestCtx {
-                consensus: ConsensusTestCtx {
-                    out_receiver: out_receiver.resubscribe(),
+                consensus_ctx: ConsensusTestCtx {
+                    out_receiver: consensus_out_receiver,
                     _event_receiver: event_receiver,
                     _p2p_receiver: p2p_receiver,
                     consensus,
                     name: name.to_string(),
                 },
-                mempool: MempoolTestCtx {
-                    out_receiver: out_receiver.resubscribe(),
+                mempool_ctx: MempoolTestCtx {
+                    name: name.to_string(),
+                    out_receiver: mempool_out_receiver,
                     mempool,
                 },
             }
@@ -232,5 +236,42 @@ pub mod test {
     #[tokio::test]
     async fn autobahn_test() {
         let (mut node1, mut node2, mut node3, mut node4) = build_nodes!(4).await;
+
+        let register_tx = make_register_contract_tx(ContractName("test1".to_owned()));
+        let register_tx_2 = make_register_contract_tx(ContractName("test2".to_owned()));
+
+        node1
+            .mempool_ctx
+            .mempool
+            .handle_command(crate::mempool::MempoolCommand::NewTx(register_tx.clone()))
+            .expect("fail to handle new transaction");
+
+        node1
+            .mempool_ctx
+            .mempool
+            .handle_command(crate::mempool::MempoolCommand::NewTx(register_tx_2.clone()))
+            .expect("fail to handle new transaction");
+
+        node1
+            .mempool_ctx
+            .mempool
+            .handle_command(crate::mempool::MempoolCommand::ManagePendingDataProposal)
+            .expect("failed to manage data proposal");
+
+        // dbg!(node1.mempool_ctx.mempool.storage.clone());
+
+        broadcast! {
+            description: "Disseminate Tx",
+            from: node1.mempool_ctx, to: [node2.mempool_ctx, node3.mempool_ctx, node4.mempool_ctx],
+            message_matches: MempoolNetMessage::DataProposal(data) => {
+                assert_eq!(data.car.txs.len(), 2);
+            }
+        };
+
+        send! {
+            description: "Tx Vote",
+            from: [node2.mempool_ctx, node3.mempool_ctx, node4.mempool_ctx], to: node1.mempool_ctx,
+            message_matches: MempoolNetMessage::DataVote(_)
+        };
     }
 }
