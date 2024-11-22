@@ -229,9 +229,26 @@ impl Storage {
     ) {
         let lane = self.other_lanes.entry(validator.clone()).or_default();
         let parent_hash = lane.current_hash();
+        // Removing proofs from transactions
+        let mut txs_without_proofs = data_proposal.car.txs.clone();
+        txs_without_proofs.iter_mut().for_each(|tx| {
+            match &mut tx.transaction_data {
+                TransactionData::VerifiedProof(proof_tx) => {
+                    proof_tx.proof_transaction.proof = Default::default();
+                }
+                TransactionData::Proof(_) => {
+                    // This can never happen.
+                    // A DataProposal that has been processed has turned all TransactionData::Proof into TransactionData::VerifiedProof
+                    unreachable!();
+                }
+                TransactionData::Blob(_)
+                | TransactionData::Stake(_)
+                | TransactionData::RegisterContract(_) => {}
+            }
+        });
         lane.cars.push(Car {
             parent_hash,
-            txs: data_proposal.car.txs.clone(),
+            txs: txs_without_proofs,
         });
         lane.poa.extend([self.id.clone(), validator.clone()]);
     }
@@ -611,6 +628,14 @@ mod tests {
         }
     }
 
+    fn make_empty_proof_tx(contract_name: ContractName) -> ProofTransaction {
+        ProofTransaction {
+            blob_tx_hash: TxHash::default(),
+            contract_name,
+            proof: ProofData::default(),
+        }
+    }
+
     fn make_unverified_proof_tx(contract_name: ContractName) -> Transaction {
         Transaction {
             version: 1,
@@ -624,6 +649,17 @@ mod tests {
             version: 1,
             transaction_data: TransactionData::VerifiedProof(VerifiedProofTransaction {
                 proof_transaction: make_proof_tx(contract_name),
+                hyle_output,
+            }),
+        }
+    }
+
+    fn make_empty_verified_proof_tx(contract_name: ContractName) -> Transaction {
+        let hyle_output = get_hyle_output();
+        Transaction {
+            version: 1,
+            transaction_data: TransactionData::VerifiedProof(VerifiedProofTransaction {
+                proof_transaction: make_empty_proof_tx(contract_name),
                 hyle_output,
             }),
         }
@@ -881,7 +917,15 @@ mod tests {
         assert_eq!(verdict, DataProposalVerdict::Vote);
 
         // Ensure the lane was updated with the DataProposal
-        assert!(store.other_lane_has_data_proposal(&pubkey2, &data_proposal));
+        let empty_verified_proof_tx = make_empty_verified_proof_tx(contract_name.clone());
+        let saved_data_proposal = DataProposal {
+            car: Car {
+                parent_hash: Some(data_proposal1.car.hash()),
+                txs: vec![empty_verified_proof_tx.clone()],
+            },
+            parent_poa: Some(vec![pubkey3.clone(), pubkey2.clone()]),
+        };
+        assert!(store.other_lane_has_data_proposal(&pubkey2, &saved_data_proposal));
     }
 
     #[test_log::test]
@@ -893,12 +937,12 @@ mod tests {
 
         let contract_name = ContractName("test".to_string());
         let register_tx = make_register_contract_tx(contract_name.clone());
-        let proof_tx = make_verified_proof_tx(contract_name);
+        let proof_tx = make_verified_proof_tx(contract_name.clone());
 
         let data_proposal = DataProposal {
             car: Car {
                 parent_hash: None,
-                txs: vec![register_tx, proof_tx],
+                txs: vec![register_tx.clone(), proof_tx],
             },
             parent_poa: None,
         };
@@ -907,7 +951,15 @@ mod tests {
         assert_eq!(verdict, DataProposalVerdict::Vote);
 
         // Ensure the lane was updated with the DataProposal
-        assert!(store.other_lane_has_data_proposal(&pubkey2, &data_proposal));
+        let empty_verified_proof_tx = make_empty_verified_proof_tx(contract_name.clone());
+        let saved_data_proposal = DataProposal {
+            car: Car {
+                parent_hash: None,
+                txs: vec![register_tx, empty_verified_proof_tx.clone()],
+            },
+            parent_poa: None,
+        };
+        assert!(store.other_lane_has_data_proposal(&pubkey2, &saved_data_proposal));
     }
 
     #[test_log::test]
