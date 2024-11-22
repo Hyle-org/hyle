@@ -267,7 +267,7 @@ impl NodeState {
 
         let (_, identity_contract_name) = outputs
             .iter()
-            .find(|(out, contract_name)| out.identity.0.ends_with(&contract_name.0))
+            .find(|(out, contract_name)| out.identity.0.ends_with(&format!(".{}", contract_name.0)))
             .context("No identity match the contract name")?;
 
         let tx_identity_match_contract =
