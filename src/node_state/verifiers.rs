@@ -153,7 +153,11 @@ pub fn risc0_proof_verifier(encoded_receipt: &[u8], image_id: &[u8]) -> Result<H
 mod tests {
     use std::{fs::File, io::Read};
 
-    use hyle_contract_sdk::{BlobIndex, HyleOutput, Identity, StateDigest, TxHash};
+    use hydentity::Hydentity;
+    use hyle_contract_sdk::{
+        identity_provider::{IdentityAction, IdentityVerification},
+        BlobData, BlobIndex, Digestable, HyleOutput, Identity, TxHash,
+    };
 
     use super::risc0_proof_verifier;
 
@@ -167,13 +171,25 @@ mod tests {
 
     #[test]
     fn test_risc0_proof_verifier() {
-        let encoded_receipt = load_encoded_receipt_from_file("./tests/proofs/erc20.risc0.proof");
+        let encoded_receipt =
+            load_encoded_receipt_from_file("./tests/proofs/register.hydentity.risc0.proof");
 
-        let image_id =
-            hex::decode("0f0e89496853ab498a5eda2d06ced45909faf490776c8121063df9066bbb9ea4")
-                .expect("Image id decoding failed");
+        let hydentity_program_id = include_str!("../../contracts/hydentity/hydentity.txt").trim();
+        let image_id = hex::decode(hydentity_program_id).expect("Image id decoding failed");
 
         let result = risc0_proof_verifier(&encoded_receipt, &image_id);
+
+        let mut next_state = Hydentity::default();
+        next_state
+            .register_identity("faucet.hydentity", "password")
+            .unwrap();
+        let next_state = next_state.as_digest();
+
+        let blob = IdentityAction::RegisterIdentity {
+            account: "faucet.hydentity".to_string(),
+        };
+        let blob: BlobData = blob.into();
+        let blobs = blob.0;
 
         match result {
             Ok(outputs) => {
@@ -181,22 +197,18 @@ mod tests {
                     outputs,
                     HyleOutput {
                         version: 1,
-                        initial_state: StateDigest(vec![
-                            237, 40, 107, 60, 57, 178, 248, 111, 156, 232, 107, 188, 53, 69, 95,
-                            231, 232, 247, 179, 249, 104, 59, 167, 110, 11, 204, 99, 126, 181, 96,
-                            47, 61
-                        ]),
-                        next_state: StateDigest(vec![
-                            154, 65, 139, 95, 54, 114, 201, 168, 66, 153, 34, 153, 43, 237, 17,
-                            198, 0, 39, 64, 81, 204, 183, 209, 41, 84, 147, 193, 217, 48, 42, 213,
-                            57
-                        ]),
-                        identity: Identity("max".to_owned()),
-                        tx_hash: TxHash("01".to_owned()),
+                        initial_state: Hydentity::default().as_digest(),
+                        next_state,
+                        identity: Identity("faucet.hydentity".to_owned()),
+                        tx_hash: TxHash("".to_owned()),
                         index: BlobIndex(0),
-                        blobs: vec![1, 3, 109, 97, 120, 27],
+                        blobs,
                         success: true,
-                        program_outputs: "Minted 27 to max".to_owned().as_bytes().to_vec()
+                        program_outputs:
+                            "Successfully registered identity for account: faucet.hydentity"
+                                .to_owned()
+                                .as_bytes()
+                                .to_vec()
                     }
                 );
             }
