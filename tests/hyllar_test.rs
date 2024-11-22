@@ -73,6 +73,7 @@ mod e2e_hyllar {
                         contract_name: "hydentity".into(),
                         data: IdentityAction::VerifyIdentity {
                             account: "faucet.hydentity".to_string(),
+                            nonce: 0,
                             blobs_hash: vec!["".into()],
                         }
                         .into(),

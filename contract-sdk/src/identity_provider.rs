@@ -18,7 +18,8 @@ pub trait IdentityVerification {
     fn register_identity(&mut self, account: &str, private_input: &str)
         -> Result<(), &'static str>;
 
-    /// Verifies if an account's identity matches the provided identity information.
+    /// Verifies if an account's identity matches the provided identity information and increase
+    /// nonce by +1.
     ///
     /// # Arguments
     ///
@@ -30,8 +31,9 @@ pub trait IdentityVerification {
     ///
     /// * `Result<bool, &'static str>` - `Ok(true)` if the identity matches, `Ok(false)` if it does not, or an error message on failure.
     fn verify_identity(
-        &self,
+        &mut self,
         account: &str,
+        nonce: u32,
         blobs_hash: Vec<String>,
         private_input: &str,
     ) -> Result<bool, &'static str>;
@@ -56,6 +58,7 @@ pub enum IdentityAction {
     },
     VerifyIdentity {
         account: String,
+        nonce: u32,
         blobs_hash: Vec<String>,
     },
     GetIdentityInfo {
@@ -90,8 +93,9 @@ pub fn execute_action<T: IdentityVerification>(
         }
         IdentityAction::VerifyIdentity {
             account,
+            nonce,
             blobs_hash,
-        } => match state.verify_identity(&account, blobs_hash, private_input) {
+        } => match state.verify_identity(&account, nonce, blobs_hash, private_input) {
             Ok(true) => (true, format!("Identity verified for account: {}", account)),
             Ok(false) => (
                 false,
@@ -127,7 +131,7 @@ mod tests {
 
         impl IdentityVerification for IdentityVerification {
             fn register_identity(&mut self, account: &str, private_input: &str) -> Result<(), &'static str>;
-            fn verify_identity(&self, account: &str, blobs_hash: Vec<String>, private_input: &str) -> Result<bool, &'static str>;
+            fn verify_identity(&mut self, account: &str, nonce: u32, blobs_hash: Vec<String>, private_input: &str) -> Result<bool, &'static str>;
             fn get_identity_info(&self, account: &str) -> Result<String, &'static str>;
         }
     }
@@ -159,12 +163,13 @@ mod tests {
         let private_input = "test_identity";
 
         mock.expect_verify_identity()
-            .with(eq(account.clone()), eq(vec![]), eq(private_input))
+            .with(eq(account.clone()), eq(0), eq(vec![]), eq(private_input))
             .times(1)
-            .returning(|_, _, _| Ok(true));
+            .returning(|_, _, _, _| Ok(true));
 
         let action = IdentityAction::VerifyIdentity {
             account: account.clone(),
+            nonce: 0,
             blobs_hash: vec![],
         };
 
