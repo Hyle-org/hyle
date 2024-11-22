@@ -4,11 +4,7 @@ use crate::utils::logger::LogMe;
 #[cfg(not(test))]
 use crate::utils::static_type_map::Pick;
 use crate::{
-    bus::{
-        bus_client,
-        command_response::{CmdRespClient, Query},
-        BusMessage, SharedMessageBus,
-    },
+    bus::{bus_client, command_response::Query, BusMessage, SharedMessageBus},
     data_availability::DataEvent,
     genesis::GenesisEvent,
     handle_messages,
@@ -24,26 +20,26 @@ use crate::{
         modules::Module,
     },
 };
-use anyhow::{anyhow, bail, Context, Error, Result};
+use anyhow::{bail, Context, Error, Result};
 use bincode::{Decode, Encode};
 use metrics::ConsensusMetrics;
+use role_follower::{FollowerRole, FollowerState, TimeoutState};
+use role_leader::{LeaderRole, LeaderState};
 use serde::{Deserialize, Serialize};
 use staking::{Staker, Staking, MIN_STAKE};
 use std::time::Duration;
-use std::{
-    collections::{HashMap, HashSet},
-    default::Default,
-    path::PathBuf,
-};
+use std::{collections::HashMap, default::Default, path::PathBuf};
 use tokio::time::interval;
 #[cfg(not(test))]
 use tokio::{sync::broadcast, time::sleep};
-use tracing::{debug, error, info, warn};
+use tracing::{debug, info, warn};
 
 use strum_macros::IntoStaticStr;
 
 pub mod metrics;
 pub mod module;
+pub mod role_follower;
+pub mod role_leader;
 pub mod staking;
 pub mod utils;
 
@@ -166,70 +162,6 @@ pub enum ConsensusNetMessage {
     ValidatorCandidacy(ValidatorCandidacy),
 }
 
-#[derive(Debug, Encode, Decode, Default)]
-enum TimeoutState {
-    #[default]
-    // Initial state
-    Inactive,
-    // A new slot was created, and its timeout is scheduled
-    Scheduled {
-        timestamp: u64,
-    },
-    CertificateEmitted,
-}
-
-impl TimeoutState {
-    pub const TIMEOUT_SECS: u64 = 5;
-    pub fn schedule_next(&mut self, timestamp: u64) {
-        match self {
-            TimeoutState::Inactive => {
-                info!("⏲️ Scheduling timeout");
-            }
-            TimeoutState::CertificateEmitted => {
-                info!("⏲️ Rescheduling timeout after a certificate was emitted");
-            }
-            TimeoutState::Scheduled { .. } => {
-                info!("⏲️ Rescheduling timeout");
-            }
-        }
-        *self = TimeoutState::Scheduled {
-            timestamp: timestamp + TimeoutState::TIMEOUT_SECS,
-        };
-    }
-    pub fn cancel(&mut self) {
-        match self {
-            TimeoutState::CertificateEmitted => {
-                info!("⏲️ Cancelling timeout after it was emitted");
-            }
-            TimeoutState::Scheduled { timestamp } => {
-                info!("⏲️ Cancelling timeout set to trigger to {}", timestamp);
-            }
-            TimeoutState::Inactive => {
-                info!("⏲️ Cancelling inactive timeout");
-            }
-        }
-        *self = TimeoutState::Inactive;
-    }
-
-    pub fn certificate_emitted(&mut self) {
-        match self {
-            TimeoutState::CertificateEmitted => {
-                warn!("⏲️ Try to emit a certificate after it was already emitted");
-            }
-            TimeoutState::Scheduled { timestamp } => {
-                warn!(
-                    "⏲️ Mark TimeoutCertificate as emitted while scheduled {}",
-                    timestamp
-                );
-            }
-            TimeoutState::Inactive => {
-                info!("⏲️ Mark TimeoutCertificate as emitted");
-            }
-        }
-        *self = TimeoutState::CertificateEmitted;
-    }
-}
-
 // TODO: move struct to model.rs ?
 #[derive(Encode, Decode, Default)]
 pub struct BFTRoundState {
@@ -249,29 +181,6 @@ enum StateTag {
     Joining,
     Leader,
     Follower,
-}
-
-#[derive(Encode, Decode, Default, Debug)]
-enum Step {
-    #[default]
-    StartNewSlot,
-    PrepareVote,
-    ConfirmAck,
-}
-
-#[derive(Encode, Decode, Default)]
-pub struct LeaderState {
-    step: Step,
-    prepare_votes: HashSet<SignedByValidator<ConsensusNetMessage>>,
-    confirm_ack: HashSet<SignedByValidator<ConsensusNetMessage>>,
-    pending_ticket: Option<Ticket>,
-}
-
-#[derive(Encode, Decode, Default)]
-pub struct FollowerState {
-    timeout_requests: HashSet<SignedByValidator<ConsensusNetMessage>>,
-    timeout_state: TimeoutState,
-    buffered_quorum_certificate: Option<QuorumCertificate>, // if we receive a commit before the next prepare
 }
 
 #[derive(Encode, Decode, Default)]
@@ -356,12 +265,6 @@ impl Consensus {
             ..BFTRoundState::default()
         };
 
-        if self.bft_round_state.consensus_proposal.round_leader == *self.crypto.validator_pubkey() {
-            self.bft_round_state.state_tag = StateTag::Leader;
-        } else {
-            self.bft_round_state.state_tag = StateTag::Follower;
-        }
-
         // If we finish the round via a committed proposal, update some state
         match ticket {
             Some(Ticket::CommitQC(qc)) => {
@@ -391,9 +294,11 @@ impl Consensus {
             self.bft_round_state.consensus_proposal.view
         );
 
-        if self.is_round_leader() {
+        if self.bft_round_state.consensus_proposal.round_leader == *self.crypto.validator_pubkey() {
+            self.bft_round_state.state_tag = StateTag::Leader;
             info!("👑 I'm the new leader! 👑")
         } else {
+            self.bft_round_state.state_tag = StateTag::Follower;
             self.bft_round_state
                 .follower
                 .timeout_state
@@ -499,89 +404,6 @@ impl Consensus {
         {
             Ok(())
         }
-    }
-
-    async fn start_round(&mut self) -> Result<(), Error> {
-        if !matches!(self.bft_round_state.leader.step, Step::StartNewSlot) {
-            bail!(
-                "Cannot start a new slot while in step {:?}",
-                self.bft_round_state.leader.step
-            );
-        }
-
-        if !self.is_round_leader() {
-            bail!("I'm not the leader for this slot");
-        }
-
-        let ticket = self
-            .bft_round_state
-            .leader
-            .pending_ticket
-            .take()
-            .ok_or(anyhow!("No ticket available for this slot"))?;
-
-        // TODO: keep candidates around?
-        let mut new_validators_to_bond = std::mem::take(&mut self.validator_candidates);
-        new_validators_to_bond.retain(|v| {
-            self.bft_round_state
-                .staking
-                .get_stake(&v.pubkey)
-                .map(|s| s.amount)
-                .unwrap_or(0)
-                > MIN_STAKE
-                && !self.bft_round_state.staking.is_bonded(&v.pubkey)
-        });
-
-        info!(
-            "🚀 Starting new slot {} with {} existing validators and {} candidates",
-            self.bft_round_state.consensus_proposal.slot,
-            self.bft_round_state.staking.bonded().len(),
-            new_validators_to_bond.len()
-        );
-
-        // Creates ConsensusProposal
-        // Query new cut to Mempool
-        let validators = self.bft_round_state.staking.bonded().clone();
-        match self.bus.request(QueryNewCut(validators)).await {
-            Ok(cut) => {
-                self.last_cut = cut;
-            }
-            Err(err) => {
-                // In case of an error, we reuse the last cut to avoid being considered byzantine
-                error!(
-                    "Could not get a new cut from Mempool {:?}. Reusing previous one... {:?}",
-                    err, self.last_cut
-                );
-            }
-        };
-
-        self.bft_round_state.leader.step = Step::PrepareVote;
-
-        // Start Consensus with following cut
-        self.bft_round_state.consensus_proposal.cut = self.last_cut.clone();
-        self.bft_round_state
-            .consensus_proposal
-            .new_validators_to_bond = new_validators_to_bond;
-
-        self.metrics.start_new_round("consensus_proposal");
-
-        // Verifies that to-be-built block is large enough (?)
-
-        // Broadcasts Prepare message to all validators
-        debug!(
-            proposal_hash = %self.bft_round_state.consensus_proposal.hash(),
-            "🌐 Slot {} started. Broadcasting Prepare message", self.bft_round_state.consensus_proposal.slot,
-        );
-        self.broadcast_net_message(ConsensusNetMessage::Prepare(
-            self.bft_round_state.consensus_proposal.clone(),
-            ticket,
-        ))?;
-
-        Ok(())
-    }
-
-    fn is_round_leader(&self) -> bool {
-        matches!(self.bft_round_state.state_tag, StateTag::Leader)
     }
 
     fn compute_f(&self) -> u64 {
@@ -766,342 +588,6 @@ impl Consensus {
         self.carry_on_with_ticket(Ticket::TimeoutQC(timeout_qc.clone()))
     }
 
-    /// Message received by follower after start_round
-    fn on_prepare(
-        &mut self,
-        sender: ValidatorPublicKey,
-        consensus_proposal: ConsensusProposal,
-        ticket: Ticket,
-    ) -> Result<(), Error> {
-        debug!("Received Prepare message: {}", consensus_proposal);
-
-        match self.bft_round_state.state_tag {
-            StateTag::Joining => {
-                // Ignore obviously outdated messages.
-                // We'll be optimistic for ones in the future and hope that
-                // maybe we'll have caught up by the time the commit rolls around.
-                if consensus_proposal.slot <= self.bft_round_state.joining.staking_updated_to {
-                    info!(
-                        "🌑 Outdated Prepare message (Slot {} / view {} while at {}) received while joining. Ignoring.",
-                        consensus_proposal.slot, consensus_proposal.view, self.bft_round_state.joining.staking_updated_to
-                    );
-                    return Ok(());
-                }
-                info!(
-                    "🌕 Prepare message (Slot {} / view {}) received while joining. Storing.",
-                    consensus_proposal.slot, consensus_proposal.view
-                );
-                // Store the message until we receive a matching Commit.
-                // Because we may receive old or rogue proposals, we store all of them.
-                // TODO: it would be slightly DOS-safer to only save those from validators we know,
-                // but I'm not sure it's an actual problem in practice.
-                self.bft_round_state
-                    .joining
-                    .buffered_prepares
-                    .push(consensus_proposal);
-                return Ok(());
-            }
-            StateTag::Follower | StateTag::Leader => {}
-        }
-
-        // Process the ticket
-        match ticket {
-            Ticket::Genesis => {
-                if self.bft_round_state.consensus_proposal.slot != 1 {
-                    bail!("Genesis ticket is only valid for the first slot.");
-                }
-            }
-            Ticket::CommitQC(commit_qc) => {
-                if !self.verify_commit_ticket(commit_qc) {
-                    bail!("Invalid commit ticket");
-                }
-            }
-            Ticket::TimeoutQC(timeout_qc) => {
-                if self
-                    .try_process_timeout_qc(timeout_qc)
-                    .log_error("Processing Timeout ticket")
-                    .is_err()
-                {
-                    bail!("Invalid timeout ticket");
-                }
-            }
-        }
-
-        // TODO: check we haven't voted for a proposal this slot/view already.
-
-        // After processing the ticket, we should be in the right slot/view.
-
-        if consensus_proposal.slot != self.bft_round_state.consensus_proposal.slot {
-            self.metrics.prepare_error("wrong_slot");
-            bail!("Prepare message received for wrong slot");
-        }
-        if consensus_proposal.view != self.bft_round_state.consensus_proposal.view {
-            self.metrics.prepare_error("wrong_view");
-            bail!("Prepare message received for wrong view");
-        }
-
-        // Validate message comes from the correct leader
-        if sender != self.bft_round_state.consensus_proposal.round_leader {
-            self.metrics.prepare_error("wrong_leader");
-            bail!(
-                "Prepare consensus message does not come from current leader. I won't vote for it."
-            );
-        }
-
-        self.verify_new_validators_to_bond(&consensus_proposal)?;
-
-        // At this point we are OK with this new consensus proposal, update locally and vote.
-        self.bft_round_state.consensus_proposal = consensus_proposal.clone();
-
-        // Responds PrepareVote message to leader with validator's vote on this proposal
-        if self.is_part_of_consensus(self.crypto.validator_pubkey()) {
-            info!(
-                proposal_hash = %consensus_proposal.hash(),
-                "📤 Slot {} Prepare message validated. Sending PrepareVote to leader",
-                self.bft_round_state.consensus_proposal.slot
-            );
-            self.send_net_message(
-                self.bft_round_state.consensus_proposal.round_leader.clone(),
-                ConsensusNetMessage::PrepareVote(consensus_proposal.hash()),
-            )?;
-        } else {
-            info!("😥 Not part of consensus, not sending PrepareVote");
-        }
-
-        self.metrics.prepare();
-
-        Ok(())
-    }
-
-    /// Message received by leader.
-    fn on_prepare_vote(
-        &mut self,
-        msg: SignedByValidator<ConsensusNetMessage>,
-        consensus_proposal_hash: ConsensusProposalHash,
-    ) -> Result<()> {
-        if !matches!(self.bft_round_state.state_tag, StateTag::Leader) {
-            bail!("PrepareVote received while not leader");
-        }
-        if !matches!(self.bft_round_state.leader.step, Step::PrepareVote) {
-            debug!(
-                "PrepareVote received at wrong step (step = {:?})",
-                self.bft_round_state.leader.step
-            );
-            return Ok(());
-        }
-
-        // Verify that the PrepareVote is for the correct proposal.
-        // This also checks slot/view as those are part of the hash.
-        if consensus_proposal_hash != self.bft_round_state.consensus_proposal.hash() {
-            self.metrics.prepare_vote_error("invalid_proposal_hash");
-            bail!("PrepareVote has not received valid consensus proposal hash");
-        }
-
-        // Save vote message
-        self.store.bft_round_state.leader.prepare_votes.insert(msg);
-
-        // Get matching vote count
-        let validated_votes = self
-            .bft_round_state
-            .leader
-            .prepare_votes
-            .iter()
-            .map(|signed_message| signed_message.signature.validator.clone())
-            .collect::<Vec<ValidatorPublicKey>>();
-
-        let votes_power = self.compute_voting_power(&validated_votes);
-        let voting_power = votes_power + self.get_own_voting_power();
-
-        self.metrics.prepare_votes_gauge(voting_power);
-
-        // Waits for at least n-f = 2f+1 matching PrepareVote messages
-        let f = self.compute_f();
-
-        info!(
-            "📩 Slot {} validated votes: {} / {} ({} validators for a total bond = {})",
-            self.bft_round_state.consensus_proposal.slot,
-            voting_power,
-            2 * f + 1,
-            self.bft_round_state.staking.bonded().len(),
-            self.bft_round_state.staking.total_bond()
-        );
-
-        if voting_power > 2 * f {
-            // Get all received signatures
-            let aggregates: &Vec<&SignedByValidator<ConsensusNetMessage>> =
-                &self.bft_round_state.leader.prepare_votes.iter().collect();
-
-            // Aggregates them into a *Prepare* Quorum Certificate
-            let prepvote_signed_aggregation = self.crypto.sign_aggregate(
-                ConsensusNetMessage::PrepareVote(self.bft_round_state.consensus_proposal.hash()),
-                aggregates,
-            )?;
-
-            self.metrics.prepare_votes_aggregation();
-
-            // Process the Confirm message locally, then send it to peers.
-            self.bft_round_state.leader.step = Step::ConfirmAck;
-
-            // if fast-path ... TODO
-            // else send Confirm message to validators
-
-            // Broadcast the *Prepare* Quorum Certificate to all validators
-            debug!(
-                "Slot {} PrepareVote message validated. Broadcasting Confirm",
-                self.bft_round_state.consensus_proposal.slot
-            );
-            self.broadcast_net_message(ConsensusNetMessage::Confirm(
-                prepvote_signed_aggregation.signature,
-            ))?;
-        }
-        // TODO(?): Update behaviour when having more ?
-        // else if validated_votes > 2 * f + 1 {}
-        Ok(())
-    }
-
-    /// Message received by follower.
-    fn on_confirm(&mut self, prepare_quorum_certificate: QuorumCertificate) -> Result<()> {
-        match self.bft_round_state.state_tag {
-            StateTag::Follower => {}
-            StateTag::Joining => {
-                return Ok(());
-            }
-            _ => bail!("Confirm message received while not follower"),
-        }
-
-        // Check that this is a QC for PrepareVote for the expected proposal.
-        // This also checks slot/view as those are part of the hash.
-        // TODO: would probably be good to make that more explicit.
-        let consensus_proposal_hash = self.bft_round_state.consensus_proposal.hash();
-        self.verify_quorum_certificate(
-            ConsensusNetMessage::PrepareVote(consensus_proposal_hash.clone()),
-            &prepare_quorum_certificate,
-        )?;
-
-        // Responds ConfirmAck to leader
-        if self.is_part_of_consensus(self.crypto.validator_pubkey()) {
-            info!(
-                proposal_hash = %consensus_proposal_hash,
-                "📤 Slot {} Confirm message validated. Sending ConfirmAck to leader",
-                self.bft_round_state.consensus_proposal.slot
-            );
-            self.send_net_message(
-                self.bft_round_state.consensus_proposal.round_leader.clone(),
-                ConsensusNetMessage::ConfirmAck(consensus_proposal_hash.clone()),
-            )?;
-        } else {
-            info!("😥 Not part of consensus, not sending ConfirmAck");
-        }
-        Ok(())
-    }
-
-    /// Message received by leader.
-    fn on_confirm_ack(
-        &mut self,
-        msg: SignedByValidator<ConsensusNetMessage>,
-        consensus_proposal_hash: ConsensusProposalHash,
-    ) -> Result<()> {
-        if !matches!(self.bft_round_state.state_tag, StateTag::Leader) {
-            warn!("ConfirmAck received while not leader");
-            return Ok(());
-        }
-
-        if !matches!(self.bft_round_state.leader.step, Step::ConfirmAck) {
-            debug!(
-                "ConfirmAck received at wrong step (step ={:?})",
-                self.bft_round_state.leader.step
-            );
-            return Ok(());
-        }
-
-        // Verify that the ConfirmAck is for the correct proposal
-        if consensus_proposal_hash != self.bft_round_state.consensus_proposal.hash() {
-            self.metrics.confirm_ack_error("invalid_proposal_hash");
-            debug!(
-                "Got {} expected {}",
-                consensus_proposal_hash,
-                self.bft_round_state.consensus_proposal.hash()
-            );
-            bail!("ConfirmAck got invalid consensus proposal hash");
-        }
-
-        // Save ConfirmAck. Ends if the message already has been processed
-        if !self.store.bft_round_state.leader.confirm_ack.insert(msg) {
-            self.metrics.confirm_ack("already_processed");
-            info!("ConfirmAck has already been processed");
-
-            return Ok(());
-        }
-
-        // Compute voting power so far and hope for >= 2f+1
-        let confirmed_ack_validators = self
-            .bft_round_state
-            .leader
-            .confirm_ack
-            .iter()
-            .map(|signed_message| signed_message.signature.validator.clone())
-            .collect::<Vec<ValidatorPublicKey>>();
-
-        let confirmed_power = self.compute_voting_power(&confirmed_ack_validators);
-        let voting_power = confirmed_power + self.get_own_voting_power();
-
-        let f = self.compute_f();
-
-        info!(
-            "✅ Slot {} confirmed acks: {} / {} ({} validators for a total bond = {})",
-            self.bft_round_state.consensus_proposal.slot,
-            voting_power,
-            2 * f + 1,
-            self.bft_round_state.staking.bonded().len(),
-            self.bft_round_state.staking.total_bond()
-        );
-
-        self.metrics.confirmed_ack_gauge(voting_power);
-
-        if voting_power > 2 * f {
-            // Get all signatures received and change ValidatorPublicKey for ValidatorPubKey
-            let aggregates: &Vec<&SignedByValidator<ConsensusNetMessage>> =
-                &self.bft_round_state.leader.confirm_ack.iter().collect();
-
-            // Aggregates them into a *Commit* Quorum Certificate
-            let commit_signed_aggregation = self.crypto.sign_aggregate(
-                ConsensusNetMessage::ConfirmAck(self.bft_round_state.consensus_proposal.hash()),
-                aggregates,
-            )?;
-
-            self.metrics.confirm_ack_commit_aggregate();
-
-            // Buffers the *Commit* Quorum Cerficiate
-            let commit_quorum_certificate = commit_signed_aggregation.signature;
-
-            // Broadcast the *Commit* Quorum Certificate to all validators
-            self.broadcast_net_message(ConsensusNetMessage::Commit(
-                commit_quorum_certificate.clone(),
-                consensus_proposal_hash,
-            ))?;
-
-            // Process the same locally.
-            self.try_commit_current_proposal(commit_quorum_certificate)?;
-        }
-        // TODO(?): Update behaviour when having more ?
-        Ok(())
-    }
-
-    /// Message received by follower.
-    fn on_commit(
-        &mut self,
-        commit_quorum_certificate: QuorumCertificate,
-        proposal_hash_hint: ConsensusProposalHash,
-    ) -> Result<()> {
-        match self.bft_round_state.state_tag {
-            StateTag::Follower => self.try_commit_current_proposal(commit_quorum_certificate),
-            StateTag::Joining => {
-                self.on_commit_while_joining(commit_quorum_certificate, proposal_hash_hint)
-            }
-            _ => bail!("Commit message received while not follower"),
-        }
-    }
-
     fn on_commit_while_joining(
         &mut self,
         commit_quorum_certificate: QuorumCertificate,
@@ -1154,196 +640,6 @@ impl Consensus {
             bail!("⛑️ Failed to synchronize, retrying soon.");
         }
         Ok(())
-    }
-
-    fn on_timeout(
-        &mut self,
-        received_msg: SignedByValidator<ConsensusNetMessage>,
-        received_consensus_proposal_hash: ConsensusProposalHash,
-        next_leader: ValidatorPublicKey,
-    ) -> Result<()> {
-        // Leader does not care about timeouts, his role is to rebroadcast messages to generate a commit
-        if matches!(self.bft_round_state.state_tag, StateTag::Leader) {
-            debug!("Leader does not process timeout messages");
-            return Ok(());
-        }
-
-        // Only timeout if it is in consensus
-        if !self.is_part_of_consensus(self.crypto.validator_pubkey()) {
-            info!(
-                "Received timeout message while not being part of the consensus: {}",
-                self.crypto.validator_pubkey()
-            );
-        }
-
-        if received_consensus_proposal_hash != self.bft_round_state.consensus_proposal.hash() {
-            bail!(
-                "Consensus proposal (Slot: {}, view: {}) {} does not match {}",
-                self.bft_round_state.consensus_proposal.slot,
-                self.bft_round_state.consensus_proposal.view,
-                self.bft_round_state.consensus_proposal.hash(),
-                received_consensus_proposal_hash
-            );
-        }
-
-        // Validates received next leader will be the same as the locally computed one
-        if self.next_leader()? != next_leader {
-            bail!(
-                "Received next leader {} does not match the locally computed one {}",
-                next_leader,
-                self.next_leader()?
-            )
-        }
-
-        // In the paper, a replica returns a commit if present
-        // TODO ?
-
-        // Insert timeout request and if already present notify
-        if !self
-            .store
-            .bft_round_state
-            .follower
-            .timeout_requests
-            .insert(received_msg.clone())
-        {
-            // self.metrics.timeout_request("already_processed");
-            info!("Timeout has already been processed");
-            return Ok(());
-        }
-
-        let f = self.compute_f();
-
-        let timeout_validators = self
-            .store
-            .bft_round_state
-            .follower
-            .timeout_requests
-            .iter()
-            .map(|signed_message| signed_message.signature.validator.clone())
-            .collect::<Vec<ValidatorPublicKey>>();
-
-        let mut len = timeout_validators.len();
-        let mut voting_power = self.compute_voting_power(&timeout_validators);
-
-        info!("Got {voting_power} voting power with {len} timeout requests for the same view {}. f is {f}", self.store.bft_round_state.consensus_proposal.view);
-
-        // Count requests and if f+1 requests, and not already part of it, join the mutiny
-        if voting_power > f && !timeout_validators.contains(self.crypto.validator_pubkey()) {
-            info!("Joining timeout mutiny!");
-
-            let timeout_message = ConsensusNetMessage::Timeout(
-                received_consensus_proposal_hash.clone(),
-                next_leader.clone(),
-            );
-
-            self.store
-                .bft_round_state
-                .follower
-                .timeout_requests
-                .insert(self.sign_net_message(timeout_message.clone())?);
-
-            // Broadcast a timeout message
-            self.broadcast_net_message(timeout_message)
-                .context(format!(
-                    "Sending timeout message for slot:{} view:{}",
-                    self.bft_round_state.consensus_proposal.slot,
-                    self.bft_round_state.consensus_proposal.view,
-                ))?;
-
-            len += 1;
-            voting_power += self.get_own_voting_power();
-
-            self.bft_round_state
-                .follower
-                .timeout_state
-                .schedule_next(get_current_timestamp());
-        }
-
-        // Create TC if applicable
-        if voting_power > 2 * f
-            && !matches!(
-                self.bft_round_state.follower.timeout_state,
-                TimeoutState::CertificateEmitted
-            )
-        {
-            debug!("⏲️ ⏲️ Creating a timeout certificate with {len} timeout requests and {voting_power} voting power");
-            // Get all signatures received and change ValidatorId for ValidatorPubKey
-            let aggregates: &Vec<&SignedByValidator<ConsensusNetMessage>> = &self
-                .bft_round_state
-                .follower
-                .timeout_requests
-                .iter()
-                .collect();
-
-            // Aggregates them into a Timeout Certificate
-            let timeout_signed_aggregation = self.crypto.sign_aggregate(
-                ConsensusNetMessage::Timeout(received_consensus_proposal_hash.clone(), next_leader),
-                aggregates.as_slice(),
-            )?;
-
-            // self.metrics.timeout_certificate_aggregate();
-
-            let timeout_certificate = timeout_signed_aggregation.signature;
-
-            self.bft_round_state
-                .follower
-                .timeout_state
-                .schedule_next(get_current_timestamp());
-
-            if &self.next_leader()? == self.crypto.validator_pubkey() {
-                self.carry_on_with_ticket(Ticket::TimeoutQC(timeout_certificate))?;
-            } else {
-                // Broadcast the Timeout Certificate to all validators
-                self.broadcast_net_message(ConsensusNetMessage::TimeoutCertificate(
-                    timeout_certificate.clone(),
-                    received_consensus_proposal_hash.clone(),
-                ))?;
-                self.bft_round_state
-                    .follower
-                    .timeout_state
-                    .certificate_emitted();
-            }
-        }
-
-        Ok(())
-    }
-
-    fn on_timeout_certificate(
-        &mut self,
-        received_consensus_proposal_hash: &ConsensusProposalHash,
-        received_timeout_certificate: &AggregateSignature,
-    ) -> Result<()> {
-        if *received_consensus_proposal_hash != self.bft_round_state.consensus_proposal.hash() {
-            bail!(
-                "Wrong consensus proposal (CP hash: {}, view: {})",
-                received_consensus_proposal_hash,
-                self.bft_round_state.consensus_proposal.view
-            );
-        }
-
-        if &self.next_leader()? != self.crypto.validator_pubkey() {
-            return Ok(());
-        }
-
-        info!(
-            "Process quorum certificate {:?}",
-            received_timeout_certificate
-        );
-
-        self.verify_quorum_certificate(
-            ConsensusNetMessage::Timeout(
-                received_consensus_proposal_hash.clone(),
-                self.next_leader()?,
-            ),
-            received_timeout_certificate,
-        )
-        .context(format!(
-            "Verifying timeout certificate for (slot: {}, view: {})",
-            self.bft_round_state.consensus_proposal.slot,
-            self.bft_round_state.consensus_proposal.view
-        ))?;
-
-        self.carry_on_with_ticket(Ticket::TimeoutQC(received_timeout_certificate.clone()))
     }
 
     fn carry_on_with_ticket(&mut self, ticket: Ticket) -> Result<()> {
