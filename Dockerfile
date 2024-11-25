@@ -4,10 +4,13 @@ RUN apk add pkgconfig openssl-dev gcc musl-dev
 RUN apk add --no-cache openssl-libs-static
 
 WORKDIR /usr/src/hyle
+
 COPY Cargo.toml Cargo.lock .
+COPY .cargo/config.toml .cargo/config.toml
+
 COPY src ./src
 COPY contract-sdk ./contract-sdk
-COPY .cargo/config.toml .cargo/config.toml
+COPY contracts ./contracts
 
 RUN cargo build
 
