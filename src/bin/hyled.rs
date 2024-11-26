@@ -63,10 +63,8 @@ async fn send_blobs(client: &ApiHttpClient, identity: Identity, blobs: Vec<Strin
         .send_tx_blob(&BlobTransaction { identity, blobs })
         .await?;
 
-    assert!(res.status().is_success());
-
     println!("Blob sent successfully");
-    println!("Response: {}", res.text().await?);
+    println!("Response: {}", res);
 
     Ok(())
 }

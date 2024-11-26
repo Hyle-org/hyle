@@ -9,8 +9,8 @@ use sha2::{Digest, Sha256};
 
 #[derive(Encode, Decode, Serialize, Deserialize, Debug, Clone, Eq, PartialEq)]
 pub struct AccountInfo {
-    hash: String,
-    nonce: u32,
+    pub hash: String,
+    pub nonce: u32,
 }
 
 #[derive(Encode, Decode, Serialize, Deserialize, Debug, Clone)]
@@ -85,7 +85,7 @@ impl IdentityVerification for Hydentity {
 
     fn get_identity_info(&self, account: &str) -> Result<String, &'static str> {
         match self.identities.get(account) {
-            Some(info) => Ok(info.hash.clone()),
+            Some(info) => Ok(serde_json::to_string(&info).map_err(|_| "Failed to serialize")?),
             None => Err("Identity not found"),
         }
     }

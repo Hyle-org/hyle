@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use hyle_contract_sdk::TxHash;
 use reqwest::{Response, Url};
 
 use crate::{
@@ -6,6 +7,7 @@ use crate::{
     model::{
         BlobTransaction, BlockHeight, ContractName, ProofTransaction, RegisterContractTransaction,
     },
+    node_state::model::Contract,
     tools::mock_workflow::RunScenario,
 };
 
@@ -17,14 +19,17 @@ pub struct ApiHttpClient {
 }
 
 impl ApiHttpClient {
-    pub async fn send_tx_blob(&self, tx: &BlobTransaction) -> Result<Response> {
+    pub async fn send_tx_blob(&self, tx: &BlobTransaction) -> Result<TxHash> {
         self.reqwest_client
             .post(format!("{}v1/tx/send/blob", self.url))
             .body(serde_json::to_string(tx)?)
             .header("Content-Type", "application/json")
             .send()
             .await
-            .context("Sending tx blob")
+            .context("Sending tx blob")?
+            .json::<TxHash>()
+            .await
+            .context("reading tx hash response")
     }
 
     pub async fn send_tx_proof(&self, tx: &ProofTransaction) -> Result<Response> {
@@ -96,13 +101,16 @@ impl ApiHttpClient {
             .context("reading block height response")
     }
 
-    pub async fn get_contract(&self, contract_name: &ContractName) -> Result<Response> {
+    pub async fn get_contract(&self, contract_name: &ContractName) -> Result<Contract> {
         self.reqwest_client
             .get(format!("{}v1/contract/{}", self.url, contract_name))
             .header("Content-Type", "application/json")
             .send()
             .await
-            .context("getting Contract")
+            .context("getting Contract")?
+            .json::<Contract>()
+            .await
+            .context("reading contract response")
     }
 
     pub async fn get_indexer_contract(&self, contract_name: &ContractName) -> Result<Response> {
