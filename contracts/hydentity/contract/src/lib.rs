@@ -175,8 +175,15 @@ mod tests {
         hasher.update(id.as_bytes());
         let hash_bytes = hasher.finalize();
         let expected_hash = hex::encode(hash_bytes);
+        let expected_info = serde_json::to_string(&AccountInfo {
+            hash: expected_hash.clone(),
+            nonce: 0,
+        });
 
-        assert_eq!(hydentity.get_identity_info(account).unwrap(), expected_hash);
+        assert_eq!(
+            hydentity.get_identity_info(account).unwrap(),
+            expected_info.unwrap()
+        );
         assert!(hydentity.get_identity_info("nonexistent_account").is_err());
     }
 
