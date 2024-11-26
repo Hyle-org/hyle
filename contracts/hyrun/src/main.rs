@@ -3,7 +3,8 @@ use core::panic;
 use hydentity::Hydentity;
 use hyllar::HyllarToken;
 use sdk::{
-    erc20::ERC20Action, identity_provider::IdentityAction, BlobData, ContractInput, ContractName,
+    erc20::ERC20Action, identity_provider::IdentityAction, BlobData, BlobIndex, ContractInput,
+    ContractName, TxHash,
 };
 use serde::Deserialize;
 
@@ -159,10 +160,10 @@ fn main() {
                     ContractInput::<Hydentity> {
                         initial_state: identities,
                         identity: identity.clone(),
-                        tx_hash: "".to_string(),
+                        tx_hash: TxHash("".to_owned()),
                         private_blob: BlobData(password.clone()),
                         blobs: blobs.clone(),
-                        index: 0,
+                        index: BlobIndex(0),
                     }
                 },
             );
@@ -214,10 +215,10 @@ fn main() {
                     ContractInput::<Hydentity> {
                         initial_state: token,
                         identity: identity.clone().into(),
-                        tx_hash: "".to_string(),
+                        tx_hash: TxHash("".to_owned()),
                         private_blob: BlobData(password.clone()),
                         blobs: blobs.clone(),
-                        index: 0,
+                        index: BlobIndex(0),
                     }
                 },
             );
@@ -228,10 +229,10 @@ fn main() {
                     ContractInput::<HyllarToken> {
                         initial_state: token,
                         identity: identity.clone().into(),
-                        tx_hash: "".to_string(),
+                        tx_hash: TxHash("".to_owned()),
                         private_blob: BlobData(vec![]),
                         blobs: blobs.clone(),
-                        index: 1,
+                        index: BlobIndex(1),
                     }
                 },
             );

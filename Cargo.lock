@@ -45,6 +45,27 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5c6cb57a04249c6480766f7f7cef5467412af1490f8d1e243141daddada3264f"
 
 [[package]]
+name = "amm"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bincode 2.0.0-rc.2",
+ "hyle-contract-sdk",
+ "serde",
+ "sha3",
+]
+
+[[package]]
+name = "amm-guest"
+version = "0.1.0"
+dependencies = [
+ "amm",
+ "hyle-contract-sdk",
+ "risc0-zkvm",
+ "serde",
+]
+
+[[package]]
 name = "android-tzdata"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2061,6 +2082,7 @@ dependencies = [
 name = "hyle-contract-sdk"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "bincode 2.0.0-rc.2",
  "hex",
  "mockall",
@@ -2209,6 +2231,7 @@ dependencies = [
 name = "hyrun"
 version = "0.1.0"
 dependencies = [
+ "amm",
  "anyhow",
  "base64 0.22.1",
  "bincode 2.0.0-rc.2",
