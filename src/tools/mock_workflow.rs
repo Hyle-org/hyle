@@ -3,12 +3,11 @@ use std::time::Duration;
 use crate::{
     bus::{BusMessage, SharedMessageBus},
     handle_messages,
-    mempool::MempoolCommand,
     model::{
         Blob, BlobData, BlobTransaction, ContractName, ProofData, ProofTransaction,
         RegisterContractTransaction, SharedRunContext, Transaction,
     },
-    rest::client::ApiHttpClient,
+    rest::{client::ApiHttpClient, endpoints::RestApiMessage},
     utils::modules::Module,
 };
 use anyhow::Result;
@@ -22,7 +21,7 @@ use crate::bus::bus_client;
 
 bus_client! {
 struct MockWorkflowBusClient {
-    sender(MempoolCommand),
+    sender(RestApiMessage),
     receiver(RunScenario),
 }
 }
@@ -74,7 +73,7 @@ impl MockWorkflowHandler {
 
     async fn stress_test(&mut self) {
         warn!("Starting stress test");
-        let tx = MempoolCommand::NewTx(Transaction {
+        let tx = RestApiMessage::NewTx(Transaction {
             version: 1,
             transaction_data: crate::model::TransactionData::Blob(BlobTransaction {
                 identity: Identity("toto".to_string()),

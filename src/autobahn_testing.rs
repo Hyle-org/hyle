@@ -170,6 +170,7 @@ pub mod test {
     use crate::node_state::NodeState;
     use crate::p2p::network::OutboundMessage;
     use crate::p2p::P2PCommand;
+    use crate::rest::endpoints::RestApiMessage;
     use crate::utils::conf::Conf;
     use crate::utils::crypto::{self, BlstCrypto};
     use tracing::info;
@@ -285,13 +286,13 @@ pub mod test {
         node1
             .mempool_ctx
             .mempool
-            .handle_command(crate::mempool::MempoolCommand::NewTx(register_tx.clone()))
+            .handle_api_message(RestApiMessage::NewTx(register_tx.clone()))
             .expect("fail to handle new transaction");
 
         node1
             .mempool_ctx
             .mempool
-            .handle_command(crate::mempool::MempoolCommand::NewTx(register_tx_2.clone()))
+            .handle_api_message(RestApiMessage::NewTx(register_tx_2.clone()))
             .expect("fail to handle new transaction");
 
         node1.mempool_ctx.mempool.handle_data_proposal_management();

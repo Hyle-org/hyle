@@ -12,6 +12,7 @@ use crate::{
     },
     node_state::NodeState,
     p2p::network::{OutboundMessage, SignedByValidator},
+    rest::endpoints::RestApiMessage,
     utils::{
         crypto::{BlstCrypto, SharedBlstCrypto},
         logger::LogMe,
@@ -36,9 +37,8 @@ bus_client! {
 pub struct MempoolBusClient {
     sender(OutboundMessage),
     sender(MempoolEvent),
-    sender(MempoolCommand),
     receiver(SignedByValidator<MempoolNetMessage>),
-    receiver(MempoolCommand),
+    receiver(RestApiMessage),
     receiver(ConsensusEvent),
     receiver(GenesisEvent),
     receiver(Query<QueryNewCut, Cut>),
@@ -77,13 +77,6 @@ pub enum MempoolEvent {
     CommitBlock(Vec<Transaction>, Vec<ValidatorPublicKey>),
 }
 impl BusMessage for MempoolEvent {}
-impl BusMessage for MempoolCommand {}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub enum MempoolCommand {
-    NewTx(Transaction),
-    ManagePendingDataProposal,
-}
 
 impl Module for Mempool {
     fn name() -> &'static str {
@@ -131,9 +124,9 @@ impl Mempool {
             listen<SignedByValidator<MempoolNetMessage>> cmd => {
                 self.handle_net_message(cmd);
             }
-            listen<MempoolCommand> cmd => {
-                if let Err(e) = self.handle_command(cmd) {
-                    warn!("Error while handling command: {:#}", e);
+            listen<RestApiMessage> cmd => {
+                if let Err(e) = self.handle_api_message(cmd) {
+                    warn!("Error while handling RestApi message: {:#}", e);
                 }
             }
             listen<ConsensusEvent> cmd => {
@@ -152,9 +145,7 @@ impl Mempool {
                 self.handle_querynewcut(validators).await.log_error("Handling QueryNewCut")
             }
             _ = interval.tick() => {
-                self.bus.send(MempoolCommand::ManagePendingDataProposal)
-                    .log_error("Cannot send message over channel")?;
-
+                self.handle_data_proposal_management();
             }
         }
     }
@@ -174,17 +165,14 @@ impl Mempool {
         Ok(self.storage.new_cut(&validators.0))
     }
 
-    pub(crate) fn handle_command(&mut self, command: MempoolCommand) -> Result<()> {
+    pub(crate) fn handle_api_message(&mut self, command: RestApiMessage) -> Result<()> {
         match command {
-            MempoolCommand::ManagePendingDataProposal => {
-                self.handle_data_proposal_management();
-            }
-            MempoolCommand::NewTx(tx) => {
+            RestApiMessage::NewTx(tx) => {
                 if let Err(e) = self.on_new_tx(tx) {
                     bail!("Received invalid transaction: {:?}. Won't process it.", e);
                 }
             }
-        }
+        };
         Ok(())
     }
 
@@ -698,7 +686,7 @@ pub mod test {
         let register_tx = make_register_contract_tx(ContractName("test1".to_owned()));
 
         ctx.mempool
-            .handle_command(MempoolCommand::NewTx(register_tx.clone()))
+            .handle_api_message(RestApiMessage::NewTx(register_tx.clone()))
             .expect("fail to handle new transaction");
 
         ctx.mempool.broadcast_data_proposal_if_any();
@@ -757,7 +745,7 @@ pub mod test {
         let register_tx = make_register_contract_tx(ContractName("test1".to_owned()));
 
         ctx.mempool
-            .handle_command(MempoolCommand::NewTx(register_tx.clone()))
+            .handle_api_message(RestApiMessage::NewTx(register_tx.clone()))
             .expect("fail to handle new transaction");
 
         assert_eq!(
@@ -804,7 +792,7 @@ pub mod test {
         let register_tx = make_register_contract_tx(ContractName("test1".to_owned()));
 
         ctx.mempool
-            .handle_command(MempoolCommand::NewTx(register_tx.clone()))
+            .handle_api_message(RestApiMessage::NewTx(register_tx.clone()))
             .expect("fail to handle new transaction");
 
         assert_eq!(

@@ -1,9 +1,9 @@
 use crate::bus::command_response::CmdRespClient;
 use crate::bus::BusClientSender;
+use crate::bus::BusMessage;
 use crate::consensus::staking::Staker;
 use crate::consensus::QueryConsensusInfo;
 use crate::data_availability::QueryBlockHeight;
-use crate::mempool::MempoolCommand;
 use crate::model::ProofData;
 use crate::model::Transaction;
 use crate::model::{BlobTransaction, ContractName};
@@ -16,10 +16,20 @@ use axum::{
     response::IntoResponse,
     Json,
 };
+use bincode::Decode;
+use bincode::Encode;
 use hyle_contract_sdk::TxHash;
+use serde::Deserialize;
+use serde::Serialize;
 use tracing::error;
 
 use super::{AppError, RouterState};
+
+#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode)]
+pub enum RestApiMessage {
+    NewTx(Transaction),
+}
+impl BusMessage for RestApiMessage {}
 
 async fn handle_send(
     mut state: RouterState,
@@ -29,7 +39,7 @@ async fn handle_send(
     let tx_hash = tx.hash();
     state
         .bus
-        .send(MempoolCommand::NewTx(tx))
+        .send(RestApiMessage::NewTx(tx))
         .map(|_| tx_hash)
         .map(Json)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
