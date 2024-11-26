@@ -142,7 +142,7 @@ pub struct ConsensusProposal {
     view: View,
     round_leader: ValidatorPublicKey,
     // Below items aren't.
-    cut: Cut,
+    pub(crate) cut: Cut,
     new_validators_to_bond: Vec<NewValidatorCandidate>,
 }
 
@@ -213,6 +213,9 @@ pub struct Consensus {
 }
 
 impl Consensus {
+    pub fn validators(&self) -> Vec<ValidatorPublicKey> {
+        self.bft_round_state.staking.bonded().clone()
+    }
     fn next_leader(&self) -> Result<ValidatorPublicKey> {
         // Find out who the next leader will be.
         let leader_index = self
@@ -932,7 +935,9 @@ pub mod test {
 
     use super::*;
     use crate::{
-        autobahn_testing::test::{broadcast, build_tuple, send, AutobahnTestCtx},
+        autobahn_testing::test::{
+            broadcast, build_tuple, send, AutobahnBusClient, AutobahnTestCtx,
+        },
         bus::SharedMessageBus,
         mempool::storage::CarHash,
         p2p::network::NetMessage,
@@ -941,6 +946,7 @@ pub mod test {
     use assertables::assert_contains;
     use staking::Stake;
     use tokio::sync::broadcast::Receiver;
+    use tracing::error;
 
     pub struct ConsensusTestCtx {
         pub out_receiver: Receiver<OutboundMessage>,
@@ -949,12 +955,6 @@ pub mod test {
         pub consensus: Consensus,
         pub name: String,
     }
-
-    bus_client!(
-        struct TestBusClient {
-            receiver(Query<QueryNewCut, Cut>),
-        }
-    );
     macro_rules! build_nodes {
         ($count:tt) => {{
             async {
@@ -1028,7 +1028,7 @@ pub mod test {
             let p2p_receiver = get_receiver::<P2PCommand>(&shared_bus).await;
             let bus = ConsensusBusClient::new_from_bus(shared_bus.new_handle()).await;
 
-            let mut new_cut_query_receiver = TestBusClient::new_from_bus(shared_bus).await;
+            let mut new_cut_query_receiver = AutobahnBusClient::new_from_bus(shared_bus).await;
             tokio::spawn(async move {
                 handle_messages! {
                     on_bus new_cut_query_receiver,
@@ -1078,6 +1078,10 @@ pub mod test {
                 .round_leader = cryptos.get(0).unwrap().validator_pubkey().clone();
         }
 
+        pub(crate) fn validator_pubkey(&self) -> ValidatorPublicKey {
+            self.consensus.crypto.validator_pubkey().clone()
+        }
+
         pub async fn timeout(nodes: &mut [&mut ConsensusTestCtx]) {
             for n in nodes {
                 n.consensus
@@ -1114,18 +1118,25 @@ pub mod test {
             Self::new(name, crypto.clone()).await
         }
 
-        fn pubkey(&self) -> ValidatorPublicKey {
+        pub(crate) fn pubkey(&self) -> ValidatorPublicKey {
             self.consensus.crypto.validator_pubkey().clone()
         }
 
         #[track_caller]
-        fn handle_msg(&mut self, msg: &SignedByValidator<ConsensusNetMessage>, err: &str) {
+        pub(crate) fn handle_msg(
+            &mut self,
+            msg: &SignedByValidator<ConsensusNetMessage>,
+            err: &str,
+        ) {
             debug!("📥 {} Handling message: {:?}", self.name, msg);
             self.consensus.handle_net_message(msg.clone()).expect(err);
         }
 
         #[track_caller]
-        fn handle_msg_err(&mut self, msg: &SignedByValidator<ConsensusNetMessage>) -> Error {
+        pub(crate) fn handle_msg_err(
+            &mut self,
+            msg: &SignedByValidator<ConsensusNetMessage>,
+        ) -> Error {
             debug!("📥 {} Handling message expecting err: {:?}", self.name, msg);
             let err = self.consensus.handle_net_message(msg.clone()).unwrap_err();
             info!("Expected error: {:#}", err);
@@ -1161,7 +1172,7 @@ pub mod test {
                 .expect(err);
         }
 
-        async fn start_round(&mut self) {
+        pub(crate) async fn start_round(&mut self) {
             self.consensus
                 .start_round()
                 .await
@@ -1169,7 +1180,7 @@ pub mod test {
         }
 
         #[track_caller]
-        fn assert_broadcast(
+        pub(crate) fn assert_broadcast(
             &mut self,
             description: &str,
         ) -> SignedByValidator<ConsensusNetMessage> {
@@ -1183,15 +1194,23 @@ pub mod test {
                 if let NetMessage::ConsensusMessage(msg) = net_msg {
                     msg
                 } else {
-                    panic!("{description}: NetMessage::ConsensusMessage message is missing");
+                    error!(
+                        "{description}: NetMessage::ConsensusMessage message is missing, found {}",
+                        net_msg
+                    );
+                    self.assert_broadcast(description)
                 }
             } else {
-                panic!("{description}: OutboundMessage::BroadcastMessage message is missing");
+                error!(
+                    "{description}: OutboundMessage::BroadcastMessage message is missing, found {:?}",
+                    rec
+                );
+                self.assert_broadcast(description)
             }
         }
 
         #[track_caller]
-        fn assert_no_broadcast(&mut self, description: &str) {
+        pub(crate) fn assert_no_broadcast(&mut self, description: &str) {
             #[allow(clippy::expect_fun_call)]
             let rec = self.out_receiver.try_recv();
 
@@ -1206,9 +1225,9 @@ pub mod test {
         }
 
         #[track_caller]
-        fn assert_send(
+        pub(crate) fn assert_send(
             &mut self,
-            to: &Self,
+            to: &ValidatorPublicKey,
             description: &str,
         ) -> SignedByValidator<ConsensusNetMessage> {
             #[allow(clippy::expect_fun_call)]
@@ -1221,14 +1240,22 @@ pub mod test {
                 msg: net_msg,
             } = rec
             {
-                assert_eq!(to.pubkey(), dest);
+                assert_eq!(to, &dest);
                 if let NetMessage::ConsensusMessage(msg) = net_msg {
                     msg
                 } else {
-                    panic!("{description}: NetMessage::ConsensusMessage message is missing");
+                    error!(
+                        "{description}: NetMessage::ConsensusMessage message is missing, found {}",
+                        net_msg
+                    );
+                    self.assert_send(to, description)
                 }
             } else {
-                panic!("{description}: OutboundMessage::Send message is missing");
+                error!(
+                    "{description}: OutboundMessage::Send message is missing, found {:?}",
+                    rec
+                );
+                self.assert_send(to, description)
             }
         }
     }
@@ -1793,14 +1820,15 @@ pub mod test {
             node2.handle_msg(&leader_proposal, "Leader proposal");
             node3.handle_msg(&leader_proposal, "Leader proposal");
             info!("➡️  Slave vote");
-            let slave_vote = node2.assert_send(&node1, "Slave vote");
+            let slave_vote = node2.assert_send(&node1.validator_pubkey(), "Slave vote");
             node1.handle_msg(&slave_vote, "Slave vote");
             info!("➡️  Leader confirm");
             let leader_confirm = node1.assert_broadcast("Leader confirm");
             node2.handle_msg(&leader_confirm, "Leader confirm");
             node3.handle_msg(&leader_confirm, "Leader confirm");
             info!("➡️  Slave confirm ack");
-            let slave_confirm_ack = node2.assert_send(&node1, "Slave confirm ack");
+            let slave_confirm_ack =
+                node2.assert_send(&node1.validator_pubkey(), "Slave confirm ack");
             node1.handle_msg(&slave_confirm_ack, "Slave confirm ack");
             info!("➡️  Leader commit");
             let leader_commit = node1.assert_broadcast("Leader commit");

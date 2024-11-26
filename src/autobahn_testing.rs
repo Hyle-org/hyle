@@ -61,9 +61,9 @@ pub mod test {
             message_matches: $pattern:pat
         ) => {
             // Distribute the message to the target node from all specified nodes
-            $(
+            ($({
                 let answer = $node.assert_send(
-                    &$to,
+                    &$to.validator_pubkey(),
                     format!("[send from: {} to: {}] {}", stringify!($node), stringify!($to), $description).as_str()
                 );
 
@@ -86,7 +86,8 @@ pub mod test {
                     &answer,
                     format!("[handling sent message from: {} to: {}] {}", stringify!($node), stringify!($to), $description).as_str()
                 );
-            )+
+                answer
+            },)+)
         };
 
         (
@@ -95,9 +96,9 @@ pub mod test {
             to: $to:ident
         ) => {
             // Distribute the message to the target node from all specified nodes
-            $(
+            ($({
                 let answer = $node.assert_send(
-                    &$to,
+                    &$to.validator_pubkey(),
                     format!("[send from: {} to: {}] {}", stringify!($node), stringify!($to), $description).as_str()
                 );
 
@@ -121,7 +122,7 @@ pub mod test {
                     &answer,
                     format!("[handling sent message from: {} to: {}] {}", stringify!($node), stringify!($to), $description).as_str()
                 );
-            )+
+            },)+)
         };
     }
 
@@ -142,7 +143,7 @@ pub mod test {
                         AutobahnTestCtx::new(format!("node-{i}").as_ref(), crypto).await;
 
                     autobahn_node.consensus_ctx.setup_node(i, &cryptos);
-                    autobahn_node.mempool_ctx.setup_node(i, &cryptos);
+                    autobahn_node.mempool_ctx.setup_node(&cryptos);
                     nodes.push(autobahn_node);
                 }
 
@@ -153,25 +154,34 @@ pub mod test {
 
     use std::sync::Arc;
 
-    use tracing::info;
-
-    use crate::bus::dont_use_this::get_receiver;
-    use crate::bus::metrics::BusMetrics;
-    use crate::bus::SharedMessageBus;
+    use crate::bus::command_response::Query;
+    use crate::bus::{bus_client, SharedMessageBus};
     use crate::consensus::metrics::ConsensusMetrics;
     use crate::consensus::test::ConsensusTestCtx;
-    use crate::consensus::{Consensus, ConsensusBusClient, ConsensusEvent, ConsensusStore};
+    use crate::consensus::{
+        Consensus, ConsensusBusClient, ConsensusEvent, ConsensusNetMessage, ConsensusStore,
+    };
+    use crate::handle_messages;
     use crate::mempool::metrics::MempoolMetrics;
+    use crate::mempool::storage::Cut;
     use crate::mempool::test::{make_register_contract_tx, MempoolTestCtx};
-    use crate::mempool::{Mempool, MempoolBusClient, MempoolNetMessage};
-    use crate::model::ContractName;
+    use crate::mempool::{Mempool, MempoolBusClient, MempoolNetMessage, QueryNewCut};
+    use crate::model::{ContractName, Hashable};
     use crate::node_state::NodeState;
     use crate::p2p::network::OutboundMessage;
     use crate::p2p::P2PCommand;
     use crate::utils::conf::Conf;
     use crate::utils::crypto::{self, BlstCrypto};
+    use tracing::info;
+
+    bus_client!(
+        pub struct AutobahnBusClient {
+            receiver(Query<QueryNewCut, Cut>),
+        }
+    );
 
     pub struct AutobahnTestCtx {
+        shared_bus: SharedMessageBus,
         consensus_ctx: ConsensusTestCtx,
         mempool_ctx: MempoolTestCtx,
     }
@@ -207,6 +217,7 @@ pub mod test {
             };
 
             AutobahnTestCtx {
+                shared_bus,
                 consensus_ctx: ConsensusTestCtx {
                     out_receiver: consensus_out_receiver,
                     _event_receiver: event_receiver,
@@ -231,10 +242,41 @@ pub mod test {
                 })
                 .collect()
         }
+
+        pub async fn setup_query_cut_answer(&mut self) {
+            let mut validators = self.consensus_ctx.consensus.validators();
+            let latest_cut: Cut = self
+                .mempool_ctx
+                .mempool
+                .handle_querynewcut(&mut QueryNewCut(validators.clone()))
+                .await
+                .expect("latest cut");
+
+            let mut autobahn_client_bus =
+                AutobahnBusClient::new_from_bus(self.shared_bus.new_handle()).await;
+
+            use crate::bus::command_response::*;
+
+            tokio::spawn(async move {
+                handle_messages! {
+                    on_bus autobahn_client_bus,
+                    listen<Query<QueryNewCut, Cut>> qnc => {
+                        if let Ok(mut value) = qnc.take() {
+                            let QueryNewCut(data) = &mut value.data;
+                            dbg!(data.clone());
+                            assert_eq!(&mut validators, data);
+                            value.answer(latest_cut.clone()).expect("error when injecting cut");
+
+                            break;
+                        }
+                    }
+                }
+            });
+        }
     }
 
-    #[tokio::test]
-    async fn autobahn_test() {
+    #[test_log::test(tokio::test)]
+    async fn autobahn_basic_flow() {
         let (mut node1, mut node2, mut node3, mut node4) = build_nodes!(4).await;
 
         let register_tx = make_register_contract_tx(ContractName("test1".to_owned()));
@@ -252,13 +294,7 @@ pub mod test {
             .handle_command(crate::mempool::MempoolCommand::NewTx(register_tx_2.clone()))
             .expect("fail to handle new transaction");
 
-        node1
-            .mempool_ctx
-            .mempool
-            .handle_command(crate::mempool::MempoolCommand::ManagePendingDataProposal)
-            .expect("failed to manage data proposal");
-
-        // dbg!(node1.mempool_ctx.mempool.storage.clone());
+        node1.mempool_ctx.mempool.handle_data_proposal_management();
 
         broadcast! {
             description: "Disseminate Tx",
@@ -269,9 +305,90 @@ pub mod test {
         };
 
         send! {
-            description: "Tx Vote",
+            description: "Disseminated Tx Vote",
             from: [node2.mempool_ctx, node3.mempool_ctx, node4.mempool_ctx], to: node1.mempool_ctx,
             message_matches: MempoolNetMessage::DataVote(_)
+        };
+
+        let car_hash_node1 = node1
+            .mempool_ctx
+            .mempool
+            .storage
+            .lane
+            .current_hash()
+            .unwrap();
+
+        node1.setup_query_cut_answer().await;
+
+        node1.consensus_ctx.start_round().await;
+
+        let consensus_proposal;
+
+        broadcast! {
+            description: "Prepare",
+            from: node1.consensus_ctx, to: [node2.consensus_ctx, node3.consensus_ctx, node4.consensus_ctx],
+            message_matches: ConsensusNetMessage::Prepare(cp, _ticket) => {
+                consensus_proposal = cp.clone();
+                assert_eq!(
+                    cp
+                        .cut
+                        .iter()
+                        .find(|(validator, _hash)|
+                            validator == &node1.consensus_ctx.pubkey()
+                        ),
+                    Some((node1.consensus_ctx.pubkey(), car_hash_node1)).as_ref()
+                );
+            }
+        };
+
+        let (vote2, vote3, vote4) = send! {
+            description: "PrepareVote",
+            from: [node2.consensus_ctx, node3.consensus_ctx, node4.consensus_ctx], to: node1.consensus_ctx,
+            message_matches: ConsensusNetMessage::PrepareVote(_)
+        };
+
+        assert_eq!(
+            vote2.msg,
+            ConsensusNetMessage::PrepareVote(consensus_proposal.hash())
+        );
+        assert_eq!(
+            vote3.msg,
+            ConsensusNetMessage::PrepareVote(consensus_proposal.hash())
+        );
+        assert_eq!(
+            vote4.msg,
+            ConsensusNetMessage::PrepareVote(consensus_proposal.hash())
+        );
+
+        broadcast! {
+            description: "Confirm",
+            from: node1.consensus_ctx, to: [node2.consensus_ctx, node3.consensus_ctx, node4.consensus_ctx],
+            message_matches: ConsensusNetMessage::Confirm(_)
+        };
+
+        let (vote2, vote3, vote4) = send! {
+            description: "ConfirmAck",
+            from: [node2.consensus_ctx, node3.consensus_ctx, node4.consensus_ctx], to: node1.consensus_ctx,
+            message_matches: ConsensusNetMessage::ConfirmAck(_)
+        };
+
+        assert_eq!(
+            vote2.msg,
+            ConsensusNetMessage::ConfirmAck(consensus_proposal.hash())
+        );
+        assert_eq!(
+            vote3.msg,
+            ConsensusNetMessage::ConfirmAck(consensus_proposal.hash())
+        );
+        assert_eq!(
+            vote4.msg,
+            ConsensusNetMessage::ConfirmAck(consensus_proposal.hash())
+        );
+
+        broadcast! {
+            description: "Commit",
+            from: node1.consensus_ctx, to: [node2.consensus_ctx, node3.consensus_ctx, node4.consensus_ctx],
+            message_matches: ConsensusNetMessage::Commit(_, _)
         };
     }
 }

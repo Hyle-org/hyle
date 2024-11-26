@@ -149,18 +149,7 @@ impl Mempool {
                 }
             }
             command_response<QueryNewCut, Cut> validators => {
-                // TODO: metrics?
-                self.metrics.add_batch();
-                // FIXME: use voting power
-                // self.validators.len() == 1 is for SingleNodeBlockGeneration
-                //   it makes sure the DataProposal is committed to the Lane without waiting for a DataVote
-                // self.storage.lane.poa.len() > f is for waiting for the appropriate number of votes
-                //   it makes sure we received enough DataVote before commiting the DataProposal to the Lane.
-                let f = validators.0.len() / 3;
-                if validators.0.len() == 1 || self.storage.lane.poa.len() > f {
-                    self.storage.commit_data_proposal();
-                }
-                Ok(self.storage.new_cut(&validators.0))
+                self.handle_querynewcut(validators).await.log_error("Handling QueryNewCut")
             }
             _ = interval.tick() => {
                 self.bus.send(MempoolCommand::ManagePendingDataProposal)
@@ -168,6 +157,21 @@ impl Mempool {
 
             }
         }
+    }
+
+    pub(crate) async fn handle_querynewcut(&mut self, validators: &mut QueryNewCut) -> Result<Cut> {
+        // TODO: metrics?
+        self.metrics.add_batch();
+        // FIXME: use voting power
+        // self.validators.len() == 1 is for SingleNodeBlockGeneration
+        //   it makes sure the DataProposal is committed to the Lane without waiting for a DataVote
+        // self.storage.lane.poa.len() > f is for waiting for the appropriate number of votes
+        //   it makes sure we received enough DataVote before commiting the DataProposal to the Lane.
+        let f = validators.0.len() / 3;
+        if validators.0.len() == 1 || self.storage.lane.poa.len() > f {
+            self.storage.commit_data_proposal();
+        }
+        Ok(self.storage.new_cut(&validators.0))
     }
 
     pub(crate) fn handle_command(&mut self, command: MempoolCommand) -> Result<()> {
@@ -184,7 +188,7 @@ impl Mempool {
         Ok(())
     }
 
-    fn handle_data_proposal_management(&mut self) {
+    pub(crate) fn handle_data_proposal_management(&mut self) {
         // FIXME: Split this flow in three steps:
         // 1: create new DataProposal with pending txs and broadcast it as a DataProposal.
         // 2: Save DataProposal. It is not yet a Car (since PoA is not reached)
@@ -565,7 +569,7 @@ pub mod test {
             }
         }
 
-        pub fn setup_node(&mut self, index: usize, cryptos: &Vec<BlstCrypto>) {
+        pub fn setup_node(&mut self, cryptos: &Vec<BlstCrypto>) {
             for other_crypto in cryptos.iter() {
                 self.mempool
                     .validators
@@ -573,62 +577,90 @@ pub mod test {
             }
         }
 
+        pub(crate) fn validator_pubkey(&self) -> ValidatorPublicKey {
+            self.mempool.crypto.validator_pubkey().clone()
+        }
+
         #[track_caller]
         pub(crate) fn assert_broadcast(
             &mut self,
-            err: &str,
+            description: &str,
         ) -> SignedByValidator<MempoolNetMessage> {
             #[allow(clippy::expect_fun_call)]
             let rec = self
                 .out_receiver
                 .try_recv()
-                .expect(format!("{err}: No message broadcasted").as_str());
+                .expect(format!("{description}: No message broadcasted").as_str());
 
             match rec {
                 OutboundMessage::BroadcastMessage(net_msg) => {
                     if let NetMessage::MempoolMessage(msg) = net_msg {
                         msg
                     } else {
-                        panic!("{err}: Mempool OutboundMessage message is missing");
+                        println!(
+                            "{description}: Mempool OutboundMessage message is missing, {}",
+                            net_msg
+                        );
+                        self.assert_broadcast(description)
                     }
                 }
-                _ => panic!("{err}: Broadcast OutboundMessage message is missing"),
+                _ => {
+                    println!(
+                        "{description}: Broadcast OutboundMessage message is missing, {:?}",
+                        rec
+                    );
+                    self.assert_broadcast(description)
+                }
             }
         }
 
         #[track_caller]
         pub(crate) fn assert_send(
             &mut self,
-            to: &MempoolTestCtx,
-            err: &str,
+            to: &ValidatorPublicKey,
+            description: &str,
         ) -> SignedByValidator<MempoolNetMessage> {
             #[allow(clippy::expect_fun_call)]
             let rec = self
                 .out_receiver
                 .try_recv()
-                .expect(format!("{err}: No message broadcasted").as_str());
+                .expect(format!("{description}: No message broadcasted").as_str());
 
             match rec {
                 OutboundMessage::SendMessage { validator_id, msg } => {
-                    if &validator_id != to.mempool.crypto.validator_pubkey() {
+                    if &validator_id != to {
                         panic!(
-                            "{err}: Send message was sent to {validator_id} instead of {}",
-                            to.mempool.crypto.validator_pubkey()
+                            "{description}: Send message was sent to {validator_id} instead of {}",
+                            to
                         );
                     }
                     if let NetMessage::MempoolMessage(msg) = msg {
-                        tracing::error!("recieved message: {:?}", msg);
+                        info!("received message: {:?}", msg);
                         msg
                     } else {
-                        panic!("{err}: Mempool OutboundMessage message is missing");
+                        error!(
+                            "{description}: Mempool OutboundMessage message is missing, found {}",
+                            msg
+                        );
+                        self.assert_send(to, description)
                     }
                 }
-                _ => panic!("{err}: Broadcast OutboundMessage message is missing"),
+                _ => {
+                    error!(
+                        "{description}: Broadcast OutboundMessage message is missing, found {}",
+                        to
+                    );
+                    self.assert_send(to, description)
+                }
             }
         }
 
         #[track_caller]
-        pub(crate) fn handle_msg(&mut self, msg: &SignedByValidator<MempoolNetMessage>, err: &str) {
+        pub(crate) fn handle_msg(
+            &mut self,
+            msg: &SignedByValidator<MempoolNetMessage>,
+            _err: &str,
+        ) {
             debug!("📥 {} Handling message: {:?}", self.name, msg);
             self.mempool.handle_net_message(msg.clone());
         }
@@ -705,7 +737,10 @@ pub mod test {
         });
 
         // Assert that we vote for that specific DataProposal
-        match ctx.assert_broadcast("DataVote").msg {
+        match ctx
+            .assert_send(&ctx.mempool.crypto.validator_pubkey().clone(), "DataVote")
+            .msg
+        {
             MempoolNetMessage::DataVote(data_vote) => {
                 assert_eq!(data_vote, data_proposal.car.hash())
             }
