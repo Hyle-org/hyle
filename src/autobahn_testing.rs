@@ -163,7 +163,6 @@ pub mod test {
     use crate::model::{ContractName, Hashable};
     use crate::p2p::network::OutboundMessage;
     use crate::p2p::P2PCommand;
-    use crate::rest::endpoints::RestApiMessage;
     use crate::utils::crypto::{self, BlstCrypto};
     use tracing::info;
 
@@ -217,12 +216,11 @@ pub mod test {
                 .collect()
         }
 
-        pub async fn setup_query_cut_answer(&mut self) {
+        async fn start_round_with_cut_from_mempool(&mut self) {
             let mut validators = self.consensus_ctx.validators();
             let latest_cut: Cut = self
                 .mempool_ctx
-                .mempool
-                .handle_querynewcut(&mut QueryNewCut(validators.clone()))
+                .gen_cut(&validators)
                 .await
                 .expect("latest cut");
 
@@ -246,6 +244,8 @@ pub mod test {
                     }
                 }
             });
+
+            self.consensus_ctx.start_round().await;
         }
     }
 
@@ -256,19 +256,10 @@ pub mod test {
         let register_tx = make_register_contract_tx(ContractName("test1".to_owned()));
         let register_tx_2 = make_register_contract_tx(ContractName("test2".to_owned()));
 
-        node1
-            .mempool_ctx
-            .mempool
-            .handle_api_message(RestApiMessage::NewTx(register_tx.clone()))
-            .expect("fail to handle new transaction");
+        node1.mempool_ctx.submit_tx(&register_tx);
+        node1.mempool_ctx.submit_tx(&register_tx_2);
 
-        node1
-            .mempool_ctx
-            .mempool
-            .handle_api_message(RestApiMessage::NewTx(register_tx_2.clone()))
-            .expect("fail to handle new transaction");
-
-        node1.mempool_ctx.mempool.handle_data_proposal_management();
+        node1.mempool_ctx.make_data_proposal_with_pending_txs();
 
         broadcast! {
             description: "Disseminate Tx",
@@ -289,9 +280,7 @@ pub mod test {
             .current_hash()
             .expect("Current hash should be there");
 
-        node1.setup_query_cut_answer().await;
-
-        node1.consensus_ctx.start_round().await;
+        node1.start_round_with_cut_from_mempool().await;
 
         let consensus_proposal;
 

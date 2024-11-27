@@ -150,7 +150,8 @@ impl Mempool {
         }
     }
 
-    pub async fn handle_querynewcut(&mut self, validators: &mut QueryNewCut) -> Result<Cut> {
+    /// Creates a cut with local material on QueryNewCut message reception (from consensus)
+    async fn handle_querynewcut(&mut self, validators: &mut QueryNewCut) -> Result<Cut> {
         // TODO: metrics?
         self.metrics.add_batch();
         // FIXME: use voting power
@@ -176,7 +177,7 @@ impl Mempool {
         Ok(())
     }
 
-    pub fn handle_data_proposal_management(&mut self) {
+    fn handle_data_proposal_management(&mut self) {
         // FIXME: Split this flow in three steps:
         // 1: create new DataProposal with pending txs and broadcast it as a DataProposal.
         // 2: Save DataProposal. It is not yet a Car (since PoA is not reached)
@@ -370,7 +371,7 @@ impl Mempool {
         Ok(())
     }
 
-    pub(crate) fn broadcast_data_proposal_if_any(&mut self) {
+    fn broadcast_data_proposal_if_any(&mut self) {
         if let Some(data_proposal) = self.storage.new_data_proposal() {
             debug!(
                 "🚗 Broadcast DataProposal {} ({} validators, {} txs)",
@@ -570,6 +571,22 @@ pub mod test {
 
         pub fn validator_pubkey(&self) -> ValidatorPublicKey {
             self.mempool.crypto.validator_pubkey().clone()
+        }
+
+        pub async fn gen_cut(&mut self, validators: &Vec<ValidatorPublicKey>) -> Result<Cut> {
+            self.mempool
+                .handle_querynewcut(&mut QueryNewCut(validators.clone()))
+                .await
+        }
+
+        pub fn make_data_proposal_with_pending_txs(&mut self) {
+            self.mempool.handle_data_proposal_management();
+        }
+
+        pub fn submit_tx(&mut self, tx: &Transaction) {
+            self.mempool
+                .handle_api_message(RestApiMessage::NewTx(tx.clone()))
+                .expect("fail to handle new transaction");
         }
 
         #[track_caller]

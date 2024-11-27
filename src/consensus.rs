@@ -1192,7 +1192,7 @@ pub mod test {
                 .expect(err);
         }
 
-        pub(crate) async fn start_round(&mut self) {
+        pub async fn start_round(&mut self) {
             self.consensus
                 .start_round()
                 .await
