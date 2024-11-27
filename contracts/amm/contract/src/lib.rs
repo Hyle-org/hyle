@@ -96,28 +96,69 @@ impl AmmContract {
         };
         let blob_to = sdk::guest::parse_blob::<ERC20Action>(&callees_blobs, &blob_to_index);
 
-        // Check that blobs are Transfers
-        if !matches!(blob_from, ERC20Action::TransferFrom { .. })
-            || !matches!(blob_to, ERC20Action::TransferFrom { .. })
-        {
-            return RunResult {
-                success: false,
-                identity: self.caller.clone(),
-                program_outputs: "Transfer blobs do not call the correct function"
-                    .to_string()
-                    .into_bytes(),
-            };
-        }
+        let from_amount = match blob_from.data.parameters {
+            ERC20Action::TransferFrom {
+                sender,
+                amount,
+                recipient,
+            } => {
+                // Check that blob_from 'from' field matches the caller and that 'to' field is the AMM
+                if sender != from.0 || recipient != *"amm" {
+                    return RunResult {
+                        success: false,
+                        identity: self.caller.clone(),
+                        program_outputs:
+                            "Blob 'from' field is not the User or 'to' field is not the AMM"
+                                .to_string()
+                                .into_bytes(),
+                    };
+                }
+                amount
+            }
+            _ => {
+                // Check the blobs are TransferFrom
+                return RunResult {
+                    success: false,
+                    identity: self.caller.clone(),
+                    program_outputs: "Transfer blobs do not call the correct function"
+                        .to_string()
+                        .into_bytes(),
+                };
+            }
+        };
+
+        let to_amount = match blob_to.data.parameters {
+            ERC20Action::TransferFrom {
+                sender,
+                amount,
+                recipient,
+            } => {
+                // Check that blob_to 'from' field is the AMM and that 'to' field matches the caller
+                if sender != *"amm" || recipient != from.0 {
+                    return RunResult {
+                        success: false,
+                        identity: self.caller.clone(),
+                        program_outputs:
+                            "Blob 'from' field is not the AMM or 'to' field is not the caller"
+                                .to_string()
+                                .into_bytes(),
+                    };
+                }
+                amount
+            }
+            _ => {
+                // Check the blobs are TransferFrom
+                return RunResult {
+                    success: false,
+                    identity: self.caller.clone(),
+                    program_outputs: "Transfer blobs do not call the correct function"
+                        .to_string()
+                        .into_bytes(),
+                };
+            }
+        };
 
         // Compute x,y and check swap is legit (x*y=k)
-        let from_amount = match blob_from {
-            ERC20Action::TransferFrom { amount, .. } => amount,
-            _ => unreachable!(),
-        };
-        let to_amount = match blob_to {
-            ERC20Action::TransferFrom { amount, .. } => amount,
-            _ => unreachable!(),
-        };
         match self.state.pairs.get(&pair) {
             Some((prev_x, prev_y)) => {
                 if (prev_x + from_amount) * (prev_y - to_amount) != prev_x * prev_y {
@@ -186,13 +227,13 @@ mod tests {
     use sdk::{erc20::ERC20Action, Blob, ContractName, Identity};
     use std::collections::HashMap;
 
-    fn create_test_blob(contract_name: &str, amount: u128) -> Blob {
+    fn create_test_blob(contract_name: &str, sender: &str, recipient: &str, amount: u128) -> Blob {
         let cf = ERC20Action::TransferFrom {
-            sender: "test".to_owned(),
-            recipient: "test".to_owned(),
+            sender: sender.to_owned(),
+            recipient: recipient.to_owned(),
             amount,
         };
-        (ContractName(contract_name.to_owned()), cf).into()
+        cf.as_blob(ContractName(contract_name.to_owned()), None, None)
     }
 
     #[test]
@@ -200,12 +241,13 @@ mod tests {
         let state = AmmState {
             pairs: HashMap::from([(("token1".to_string(), "token2".to_string()), (20, 50))]),
         };
-        let caller = Identity::default();
+
+        let caller = Identity("test".to_owned());
         let mut contract = AmmContract::new(state, caller.clone());
 
         let blobs = vec![
-            create_test_blob("token1", 5),
-            create_test_blob("token2", 10),
+            create_test_blob("token1", "test", "amm", 5),
+            create_test_blob("token2", "amm", "test", 10),
         ];
 
         let result = contract.verify_swap(
@@ -221,12 +263,12 @@ mod tests {
         let state = AmmState {
             pairs: HashMap::from([(("token1".to_string(), "token2".to_string()), (20, 50))]),
         };
-        let caller = Identity::default();
+        let caller = Identity("test".to_owned());
         let mut contract = AmmContract::new(state, caller.clone());
 
         let blobs = vec![
-            create_test_blob("token1", 5),
-            create_test_blob("token2", 10),
+            create_test_blob("token1", "test", "amm", 5),
+            create_test_blob("token2", "amm", "test", 10),
         ];
 
         let other_caller = Identity("heehee".to_owned()); // Different identity
@@ -239,16 +281,105 @@ mod tests {
     }
 
     #[test]
+    fn test_verify_swap_invalid_sender() {
+        let state = AmmState {
+            pairs: HashMap::from([(("token1".to_string(), "token2".to_string()), (20, 50))]),
+        };
+
+        let caller = Identity("test".to_owned());
+        let mut contract = AmmContract::new(state, caller.clone());
+
+        let blobs = vec![
+            create_test_blob("token1", "test_hack", "amm", 5), // incorrect sender
+            create_test_blob("token2", "amm", "test", 10),
+        ];
+
+        let result = contract.verify_swap(
+            blobs,
+            caller.clone(),
+            ("token1".to_string(), "token2".to_string()),
+        );
+        assert!(!result.success);
+    }
+
+    #[test]
+    fn test_verify_swap_invalid_amm_sender() {
+        let state = AmmState {
+            pairs: HashMap::from([(("token1".to_string(), "token2".to_string()), (20, 50))]),
+        };
+
+        let caller = Identity("test".to_owned());
+        let mut contract = AmmContract::new(state, caller.clone());
+
+        let blobs = vec![
+            create_test_blob("token1", "test", "amm", 5),
+            create_test_blob("token2", "amm_hack", "test", 10), // incorrect sender
+        ];
+
+        let result = contract.verify_swap(
+            blobs,
+            caller.clone(),
+            ("token1".to_string(), "token2".to_string()),
+        );
+        assert!(!result.success);
+    }
+
+    #[test]
+    fn test_verify_swap_invalid_recipient() {
+        let state = AmmState {
+            pairs: HashMap::from([(("token1".to_string(), "token2".to_string()), (20, 50))]),
+        };
+
+        let caller = Identity("test".to_owned());
+        let mut contract = AmmContract::new(state, caller.clone());
+
+        let blobs = vec![
+            create_test_blob("token1", "test", "amm", 5),
+            create_test_blob("token2", "amm", "test_hack", 10), // incorrect recipient
+        ];
+
+        let result = contract.verify_swap(
+            blobs,
+            caller.clone(),
+            ("token1".to_string(), "token2".to_string()),
+        );
+        assert!(!result.success);
+    }
+
+    #[test]
+    fn test_verify_swap_invalid_amm_recipient() {
+        let state = AmmState {
+            pairs: HashMap::from([(("token1".to_string(), "token2".to_string()), (20, 50))]),
+        };
+
+        let caller = Identity("test".to_owned());
+        let mut contract = AmmContract::new(state, caller.clone());
+
+        let blobs = vec![
+            create_test_blob("token1", "test", "amm_hack", 5), // incorrect recipient
+            create_test_blob("token2", "amm", "test", 10),
+        ];
+
+        let result = contract.verify_swap(
+            blobs,
+            caller.clone(),
+            ("token1".to_string(), "token2".to_string()),
+        );
+        assert!(!result.success);
+    }
+
+    #[test]
     fn test_verify_swap_invalid_pair() {
         let state = AmmState {
             pairs: HashMap::from([(("token1".to_string(), "token2".to_string()), (20, 50))]),
         };
-        let caller = Identity::default();
+
+        let caller = Identity("test".to_owned());
         let mut contract = AmmContract::new(state, caller.clone());
 
         let blobs = vec![
-            create_test_blob("token1", 20),
-            create_test_blob("token2", 50),
+            create_test_blob("token1", "test", "amm", 5),
+            create_test_blob("token2", "amm", "test", 10),
         ];
 
         let result = contract.verify_swap(
@@ -264,12 +395,13 @@ mod tests {
         let state = AmmState {
             pairs: HashMap::from([(("token1".to_string(), "token2".to_string()), (20, 50))]),
         };
-        let caller = Identity::default();
+
+        let caller = Identity("test".to_owned());
         let mut contract = AmmContract::new(state, caller.clone());
 
         let blobs = vec![
-            create_test_blob("token1", 20),
-            create_test_blob("token1", 50), // Invalid pair, same token
+            create_test_blob("token1", "test", "amm", 5),
+            create_test_blob("token1", "amm", "test", 10), // Invalid pair, same token
         ];
 
         let result = contract.verify_swap(
@@ -285,10 +417,11 @@ mod tests {
         let state = AmmState {
             pairs: HashMap::from([(("token1".to_string(), "token2".to_string()), (20, 50))]),
         };
-        let caller = Identity::default();
+
+        let caller = Identity("test".to_owned());
         let mut contract = AmmContract::new(state, caller.clone());
 
-        let blobs = vec![create_test_blob("token1", 20)];
+        let blobs = vec![create_test_blob("token1", "test", "amm", 5)];
 
         let result = contract.verify_swap(
             blobs,
@@ -303,12 +436,13 @@ mod tests {
         let state = AmmState {
             pairs: HashMap::from([(("token1".to_string(), "token2".to_string()), (20, 50))]),
         };
-        let caller = Identity::default();
+
+        let caller = Identity("test".to_owned());
         let mut contract = AmmContract::new(state, caller.clone());
 
         let blobs = vec![
-            create_test_blob("token1", 25), // Invalid amount
-            create_test_blob("token2", 50),
+            create_test_blob("token1", "test", "amm", 5),
+            create_test_blob("token2", "test", "amm", 15), // Invalid amount
         ];
 
         let result = contract.verify_swap(

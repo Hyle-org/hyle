@@ -40,7 +40,7 @@ pub fn panic(message: &str) {
     panic!("{}", message);
 }
 
-pub fn init<State, Parameters>() -> (ContractInput<State>, Parameters)
+pub fn init<State, Parameters>() -> (ContractInput<State>, StructuredBlob<Parameters>)
 where
     State: Digestable + DeserializeOwned,
     Parameters: Decode,
@@ -52,21 +52,22 @@ where
     (input, parameters)
 }
 
-pub fn parse_blob<Parameters>(blobs: &[Blob], index: &BlobIndex) -> Parameters
+pub fn parse_blob<Parameters>(blobs: &[Blob], index: &BlobIndex) -> StructuredBlob<Parameters>
 where
     Parameters: Decode,
 {
     let blob = match blobs.get(index.0 as usize) {
         Some(v) => v,
         None => {
-            //fail(input, "Unable to find the payload");
             panic!("unable to find the payload");
         }
     };
-    let (parameters, _) =
-        bincode::decode_from_slice(blob.data.0.as_slice(), bincode::config::standard())
-            .expect("Failed to decode payload");
-    parameters
+    let parsed_blob: StructuredBlob<Parameters> = StructuredBlob::try_from(blob.clone())
+        .unwrap_or_else(|e| {
+            panic!("Failed to decode blob: {:?}", e);
+        });
+
+    parsed_blob
 }
 
 pub fn commit<State>(input: ContractInput<State>, new_state: State, res: RunResult)

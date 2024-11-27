@@ -5,12 +5,12 @@ extern crate alloc;
 
 use alloc::{format, vec::Vec};
 use amm::{AmmAction, AmmContract, AmmState};
-use sdk::{StructuredBlob, StructuredBlobData};
+use sdk::StructuredBlobData;
 
 risc0_zkvm::guest::entry!(main);
 
 fn main() {
-    let (input, parsed_blob) = sdk::guest::init::<AmmState, StructuredBlob<AmmAction>>();
+    let (input, parsed_blob) = sdk::guest::init::<AmmState, AmmAction>();
 
     let caller = match sdk::guest::check_caller_callees(&input, &parsed_blob) {
         Ok(caller) => caller,

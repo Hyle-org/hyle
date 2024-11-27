@@ -5,12 +5,12 @@ extern crate alloc;
 
 use alloc::format;
 use hyllar::{HyllarToken, HyllarTokenContract};
-use sdk::{erc20::ERC20Action, StructuredBlob};
+use sdk::erc20::ERC20Action;
 
 risc0_zkvm::guest::entry!(main);
 
 fn main() {
-    let (input, parsed_blob) = sdk::guest::init::<HyllarToken, StructuredBlob<ERC20Action>>();
+    let (input, parsed_blob) = sdk::guest::init::<HyllarToken, ERC20Action>();
 
     let caller = match sdk::guest::check_caller_callees(&input, &parsed_blob) {
         Ok(caller) => caller,

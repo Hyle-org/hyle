@@ -47,34 +47,6 @@ impl From<HyllarArgs> for ERC20Action {
     }
 }
 
-enum ContractFunctionEnum {
-    Hydentity(IdentityAction),
-    Hyllar(ERC20Action),
-}
-
-impl bincode::Encode for ContractFunctionEnum {
-    fn encode<E: bincode::enc::Encoder>(
-        &self,
-        encoder: &mut E,
-    ) -> Result<(), bincode::error::EncodeError> {
-        match self {
-            ContractFunctionEnum::Hydentity(f) => f.encode(encoder),
-            ContractFunctionEnum::Hyllar(f) => f.encode(encoder),
-        }
-    }
-}
-
-impl From<IdentityAction> for ContractFunctionEnum {
-    fn from(val: IdentityAction) -> Self {
-        ContractFunctionEnum::Hydentity(val)
-    }
-}
-impl From<ERC20Action> for ContractFunctionEnum {
-    fn from(val: ERC20Action) -> Self {
-        ContractFunctionEnum::Hyllar(val)
-    }
-}
-
 #[derive(Subcommand, Clone)]
 enum CliCommand {
     State {
@@ -150,8 +122,8 @@ fn main() {
                 .unwrap_or_else(|| panic!("Missing password argument"))
                 .as_bytes()
                 .to_vec();
-            contract::print_hyled_blob_tx(&identity, vec![("hydentity".into(), cf.clone().into())]);
-            let blobs = vec![(ContractName("hydentity".to_owned()), cf).into()];
+            let blobs = vec![cf.as_blob(ContractName("hydentity".to_owned()), None, None)];
+            contract::print_hyled_blob_tx(&identity, &blobs);
 
             contract::run(
                 &cli,
@@ -195,18 +167,12 @@ fn main() {
                 nonce,
                 blobs_hash: vec!["".into()], // TODO: hash blob
             };
-            contract::print_hyled_blob_tx(
-                &identity.clone().into(),
-                vec![
-                    ("hydentity".into(), identity_cf.clone().into()),
-                    ("hyllar".into(), cf.clone().into()),
-                ],
-            );
 
             let blobs = vec![
-                (ContractName("hydentity".to_owned()), identity_cf).into(),
-                (ContractName("hyllar".to_owned()), cf).into(),
+                identity_cf.as_blob(ContractName("hydentity".to_owned()), None, None),
+                cf.as_blob(ContractName("hyllar".to_owned()), None, None),
             ];
+            contract::print_hyled_blob_tx(&identity.clone().into(), &blobs);
 
             contract::run(
                 &cli,
