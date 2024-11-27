@@ -235,7 +235,6 @@ pub mod test {
                     listen<Query<QueryNewCut, Cut>> qnc => {
                         if let Ok(mut value) = qnc.take() {
                             let QueryNewCut(data) = &mut value.data;
-                            dbg!(data.clone());
                             assert_eq!(&mut validators, data);
                             value.answer(latest_cut.clone()).expect("error when injecting cut");
 
