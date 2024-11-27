@@ -4,10 +4,8 @@ on: [push, pull_request]
 
 env:
   IMAGE_NAME: 'hyle'
-  PROJECT_ID: 'hyle-413414'
-  AR_REPO_LOCATION: 'europe-west3'
-  AR_URL: 'europe-west3-docker.pkg.dev/hyle-413414/hyle-docker'
-  SERVICE_ACCOUNT: 'github-actions-service-account@hyle-413414.iam.gserviceaccount.com' 
+  AR_REPO_LOCATION: 'europe-west3-docker.pkg.dev'
+  AR_URL: 'hyle-413414/hyle-docker'
 
 jobs:
   build_and_push:
@@ -25,7 +23,17 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.AR_URL }}/${{ env.IMAGE_NAME }}
+          images: ${{env.AR_REPO_LOCATION}}/${{ env.AR_URL }}/${{ env.IMAGE_NAME }}
+# Will produces tags given this table : 
+# 
+# | Event               | Ref                           | Docker Tags                |
+# |---------------------|-------------------------------|----------------------------|
+# | `pull_request`      | `refs/pull/2/merge`           | `pr-2`                     |
+# | `push`              | `refs/heads/master`           | `master`                   |
+# | `push`              | `refs/heads/releases/v1`      | `releases-v1`              |
+# | `push tag`          | `refs/tags/v1.2.3`            | `v1.2.3`, `latest`         |
+# | `push tag`          | `refs/tags/v2.0.8-beta.67`    | `v2.0.8-beta.67`, `latest` |
+# | `workflow_dispatch` | `refs/heads/master`           | `master`                   |
 
       - name: Docker Auth
         id: docker-auth
@@ -33,7 +41,7 @@ jobs:
         with:
           username: _json_key
           password: ${{ secrets.GOOGLE_CREDENTIALS }}
-          registry: '${{ env.AR_REPO_LOCATION }}-docker.pkg.dev'
+          registry: ${{ env.AR_REPO_LOCATION }}
 
       - name: Build and push
         uses: docker/build-push-action@v6
