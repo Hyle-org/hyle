@@ -12,14 +12,15 @@ COPY src ./src
 COPY contract-sdk ./contract-sdk
 COPY contracts ./contracts
 
-RUN cargo build
+RUN cargo build --bin node --bin indexer --release
 
 # RUNNER
 FROM alpine:latest
 
 WORKDIR /hyle
 
-COPY --from=builder /usr/src/hyle/target/debug/node ./
+COPY --from=builder /usr/src/hyle/target/release/node ./
+COPY --from=builder /usr/src/hyle/target/release/indexer ./
 
 VOLUME /hyle/data
 
