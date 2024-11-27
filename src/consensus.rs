@@ -81,7 +81,7 @@ impl BusMessage for ConsensusEvent {}
 impl BusMessage for ConsensusNetMessage {}
 
 bus_client! {
-pub struct ConsensusBusClient {
+struct ConsensusBusClient {
     sender(OutboundMessage),
     sender(ConsensusEvent),
     sender(ConsensusCommand),
@@ -142,7 +142,7 @@ pub struct ConsensusProposal {
     view: View,
     round_leader: ValidatorPublicKey,
     // Below items aren't.
-    pub(crate) cut: Cut,
+    cut: Cut,
     new_validators_to_bond: Vec<NewValidatorCandidate>,
 }
 
@@ -203,19 +203,16 @@ pub struct ConsensusStore {
 }
 
 pub struct Consensus {
-    pub metrics: ConsensusMetrics,
-    pub bus: ConsensusBusClient,
-    pub file: Option<PathBuf>,
-    pub store: ConsensusStore,
+    metrics: ConsensusMetrics,
+    bus: ConsensusBusClient,
+    file: Option<PathBuf>,
+    store: ConsensusStore,
     #[allow(dead_code)]
-    pub config: SharedConf,
-    pub crypto: SharedBlstCrypto,
+    config: SharedConf,
+    crypto: SharedBlstCrypto,
 }
 
 impl Consensus {
-    pub fn validators(&self) -> Vec<ValidatorPublicKey> {
-        self.bft_round_state.staking.bonded().clone()
-    }
     fn next_leader(&self) -> Result<ValidatorPublicKey> {
         // Find out who the next leader will be.
         let leader_index = self
@@ -930,7 +927,18 @@ impl Consensus {
 }
 
 #[cfg(test)]
+impl Consensus {}
+
+#[cfg(test)]
+impl ConsensusProposal {
+    pub fn get_cut(&self) -> Cut {
+        self.cut.clone()
+    }
+}
+
+#[cfg(test)]
 pub mod test {
+
     use std::sync::Arc;
 
     use super::*;
@@ -1021,14 +1029,32 @@ pub mod test {
     }
 
     impl ConsensusTestCtx {
+        pub async fn build_consensus(
+            shared_bus: &SharedMessageBus,
+            crypto: BlstCrypto,
+        ) -> Consensus {
+            let store = ConsensusStore::default();
+            let conf = Arc::new(Conf::default());
+            let bus = ConsensusBusClient::new_from_bus(shared_bus.new_handle()).await;
+
+            Consensus {
+                metrics: ConsensusMetrics::global("id".to_string()),
+                bus,
+                file: None,
+                store,
+                config: conf,
+                crypto: Arc::new(crypto),
+            }
+        }
+
         async fn new(name: &str, crypto: BlstCrypto) -> Self {
             let shared_bus = SharedMessageBus::new(BusMetrics::global("global".to_string()));
             let out_receiver = get_receiver::<OutboundMessage>(&shared_bus).await;
             let event_receiver = get_receiver::<ConsensusEvent>(&shared_bus).await;
             let p2p_receiver = get_receiver::<P2PCommand>(&shared_bus).await;
-            let bus = ConsensusBusClient::new_from_bus(shared_bus.new_handle()).await;
 
-            let mut new_cut_query_receiver = AutobahnBusClient::new_from_bus(shared_bus).await;
+            let mut new_cut_query_receiver =
+                AutobahnBusClient::new_from_bus(shared_bus.new_handle()).await;
             tokio::spawn(async move {
                 handle_messages! {
                     on_bus new_cut_query_receiver,
@@ -1038,17 +1064,7 @@ pub mod test {
                 }
             });
 
-            let store = ConsensusStore::default();
-            let conf = Arc::new(Conf::default());
-            let consensus = Consensus {
-                metrics: ConsensusMetrics::global("id".to_string()),
-                bus,
-                file: None,
-                store,
-                config: conf,
-                crypto: Arc::new(crypto),
-            };
-
+            let consensus = Self::build_consensus(&shared_bus, crypto).await;
             Self {
                 out_receiver,
                 _event_receiver: event_receiver,
@@ -1078,8 +1094,12 @@ pub mod test {
                 .round_leader = cryptos.get(0).unwrap().validator_pubkey().clone();
         }
 
-        pub(crate) fn validator_pubkey(&self) -> ValidatorPublicKey {
+        pub fn validator_pubkey(&self) -> ValidatorPublicKey {
             self.consensus.crypto.validator_pubkey().clone()
+        }
+
+        pub fn validators(&self) -> Vec<ValidatorPublicKey> {
+            self.consensus.bft_round_state.staking.bonded().clone()
         }
 
         pub async fn timeout(nodes: &mut [&mut ConsensusTestCtx]) {

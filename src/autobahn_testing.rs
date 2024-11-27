@@ -152,26 +152,18 @@ pub mod test {
         }};
     }
 
-    use std::sync::Arc;
-
     use crate::bus::command_response::Query;
     use crate::bus::{bus_client, SharedMessageBus};
-    use crate::consensus::metrics::ConsensusMetrics;
     use crate::consensus::test::ConsensusTestCtx;
-    use crate::consensus::{
-        Consensus, ConsensusBusClient, ConsensusEvent, ConsensusNetMessage, ConsensusStore,
-    };
+    use crate::consensus::{ConsensusEvent, ConsensusNetMessage};
     use crate::handle_messages;
-    use crate::mempool::metrics::MempoolMetrics;
     use crate::mempool::storage::Cut;
     use crate::mempool::test::{make_register_contract_tx, MempoolTestCtx};
-    use crate::mempool::{Mempool, MempoolBusClient, MempoolNetMessage, QueryNewCut};
+    use crate::mempool::{MempoolNetMessage, QueryNewCut};
     use crate::model::{ContractName, Hashable};
-    use crate::node_state::NodeState;
     use crate::p2p::network::OutboundMessage;
     use crate::p2p::P2PCommand;
     use crate::rest::endpoints::RestApiMessage;
-    use crate::utils::conf::Conf;
     use crate::utils::crypto::{self, BlstCrypto};
     use tracing::info;
 
@@ -192,30 +184,11 @@ pub mod test {
             let shared_bus = SharedMessageBus::new(BusMetrics::global("global".to_string()));
             let event_receiver = get_receiver::<ConsensusEvent>(&shared_bus).await;
             let p2p_receiver = get_receiver::<P2PCommand>(&shared_bus).await;
-            let consensus_bus = ConsensusBusClient::new_from_bus(shared_bus.new_handle()).await;
-            let mempool_bus = MempoolBusClient::new_from_bus(shared_bus.new_handle()).await;
             let consensus_out_receiver = get_receiver::<OutboundMessage>(&shared_bus).await;
             let mempool_out_receiver = get_receiver::<OutboundMessage>(&shared_bus).await;
 
-            let store = ConsensusStore::default();
-            let conf = Arc::new(Conf::default());
-            let consensus = Consensus {
-                metrics: ConsensusMetrics::global("id".to_string()),
-                bus: consensus_bus,
-                file: None,
-                store,
-                config: conf,
-                crypto: Arc::new(crypto.clone()),
-            };
-
-            let mempool = Mempool {
-                metrics: MempoolMetrics::global("id".to_string()),
-                bus: mempool_bus,
-                crypto: Arc::new(crypto.clone()),
-                storage: crate::mempool::storage::Storage::new(crypto.validator_pubkey().clone()),
-                validators: vec![],
-                node_state: NodeState::default(),
-            };
+            let consensus = ConsensusTestCtx::build_consensus(&shared_bus, crypto.clone()).await;
+            let mempool = MempoolTestCtx::build_mempool(&shared_bus, crypto).await;
 
             AutobahnTestCtx {
                 shared_bus,
@@ -245,7 +218,7 @@ pub mod test {
         }
 
         pub async fn setup_query_cut_answer(&mut self) {
-            let mut validators = self.consensus_ctx.consensus.validators();
+            let mut validators = self.consensus_ctx.validators();
             let latest_cut: Cut = self
                 .mempool_ctx
                 .mempool
@@ -313,11 +286,8 @@ pub mod test {
 
         let car_hash_node1 = node1
             .mempool_ctx
-            .mempool
-            .storage
-            .lane
             .current_hash()
-            .unwrap();
+            .expect("Current hash should be there");
 
         node1.setup_query_cut_answer().await;
 
@@ -332,7 +302,7 @@ pub mod test {
                 consensus_proposal = cp.clone();
                 assert_eq!(
                     cp
-                        .cut
+                        .get_cut()
                         .iter()
                         .find(|(validator, _hash)|
                             validator == &node1.consensus_ctx.pubkey()

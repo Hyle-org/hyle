@@ -34,7 +34,7 @@ pub mod storage;
 pub struct QueryNewCut(pub Vec<ValidatorPublicKey>);
 
 bus_client! {
-pub struct MempoolBusClient {
+struct MempoolBusClient {
     sender(OutboundMessage),
     sender(MempoolEvent),
     receiver(SignedByValidator<MempoolNetMessage>),
@@ -46,12 +46,12 @@ pub struct MempoolBusClient {
 }
 
 pub struct Mempool {
-    pub bus: MempoolBusClient,
-    pub crypto: SharedBlstCrypto,
-    pub metrics: MempoolMetrics,
-    pub storage: Storage,
-    pub validators: Vec<ValidatorPublicKey>,
-    pub node_state: NodeState,
+    bus: MempoolBusClient,
+    crypto: SharedBlstCrypto,
+    metrics: MempoolMetrics,
+    storage: Storage,
+    validators: Vec<ValidatorPublicKey>,
+    node_state: NodeState,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, Eq, PartialEq, IntoStaticStr)]
@@ -150,7 +150,7 @@ impl Mempool {
         }
     }
 
-    pub(crate) async fn handle_querynewcut(&mut self, validators: &mut QueryNewCut) -> Result<Cut> {
+    pub async fn handle_querynewcut(&mut self, validators: &mut QueryNewCut) -> Result<Cut> {
         // TODO: metrics?
         self.metrics.add_batch();
         // FIXME: use voting power
@@ -165,7 +165,7 @@ impl Mempool {
         Ok(self.storage.new_cut(&validators.0))
     }
 
-    pub(crate) fn handle_api_message(&mut self, command: RestApiMessage) -> Result<()> {
+    pub fn handle_api_message(&mut self, command: RestApiMessage) -> Result<()> {
         match command {
             RestApiMessage::NewTx(tx) => {
                 if let Err(e) = self.on_new_tx(tx) {
@@ -176,7 +176,7 @@ impl Mempool {
         Ok(())
     }
 
-    pub(crate) fn handle_data_proposal_management(&mut self) {
+    pub fn handle_data_proposal_management(&mut self) {
         // FIXME: Split this flow in three steps:
         // 1: create new DataProposal with pending txs and broadcast it as a DataProposal.
         // 2: Save DataProposal. It is not yet a Car (since PoA is not reached)
@@ -514,13 +514,11 @@ impl Mempool {
 pub mod test {
     use super::*;
     use crate::bus::SharedMessageBus;
-    use crate::mempool::MempoolBusClient;
     use crate::model::{ContractName, RegisterContractTransaction, Transaction};
     use crate::p2p::network::NetMessage;
     use anyhow::Result;
     use hyle_contract_sdk::StateDigest;
     use std::collections::BTreeSet;
-    use std::sync::Arc;
     use storage::Poa;
     use tokio::sync::broadcast::Receiver;
 
@@ -531,24 +529,29 @@ pub mod test {
     }
 
     impl MempoolTestCtx {
-        pub async fn new(name: &str) -> Self {
-            let crypto = BlstCrypto::new(name.into());
-            let shared_bus = SharedMessageBus::new(BusMetrics::global("global".to_string()));
+        pub async fn build_mempool(shared_bus: &SharedMessageBus, crypto: BlstCrypto) -> Mempool {
             let storage = Storage::new(crypto.validator_pubkey().clone());
             let validators = vec![crypto.validator_pubkey().clone()];
-
-            let out_receiver = get_receiver::<OutboundMessage>(&shared_bus).await;
             let bus = MempoolBusClient::new_from_bus(shared_bus.new_handle()).await;
 
             // Initialize Mempool
-            let mempool = Mempool {
+            Mempool {
                 bus,
                 crypto: Arc::new(crypto),
                 metrics: MempoolMetrics::global("id".to_string()),
                 storage,
                 validators,
                 node_state: NodeState::default(),
-            };
+            }
+        }
+
+        pub async fn new(name: &str) -> Self {
+            let crypto = BlstCrypto::new(name.into());
+            let shared_bus = SharedMessageBus::new(BusMetrics::global("global".to_string()));
+
+            let out_receiver = get_receiver::<OutboundMessage>(&shared_bus).await;
+
+            let mempool = Self::build_mempool(&shared_bus, crypto).await;
 
             MempoolTestCtx {
                 name: name.to_string(),
@@ -565,12 +568,12 @@ pub mod test {
             }
         }
 
-        pub(crate) fn validator_pubkey(&self) -> ValidatorPublicKey {
+        pub fn validator_pubkey(&self) -> ValidatorPublicKey {
             self.mempool.crypto.validator_pubkey().clone()
         }
 
         #[track_caller]
-        pub(crate) fn assert_broadcast(
+        pub fn assert_broadcast(
             &mut self,
             description: &str,
         ) -> SignedByValidator<MempoolNetMessage> {
@@ -586,7 +589,7 @@ pub mod test {
                         msg
                     } else {
                         println!(
-                            "{description}: Mempool OutboundMessage message is missing, {}",
+                            "{description}: Mempool OutboundMessage message is missing, found {}",
                             net_msg
                         );
                         self.assert_broadcast(description)
@@ -594,7 +597,7 @@ pub mod test {
                 }
                 _ => {
                     println!(
-                        "{description}: Broadcast OutboundMessage message is missing, {:?}",
+                        "{description}: Broadcast OutboundMessage message is missing, found {:?}",
                         rec
                     );
                     self.assert_broadcast(description)
@@ -603,7 +606,7 @@ pub mod test {
         }
 
         #[track_caller]
-        pub(crate) fn assert_send(
+        pub fn assert_send(
             &mut self,
             to: &ValidatorPublicKey,
             description: &str,
@@ -644,25 +647,14 @@ pub mod test {
         }
 
         #[track_caller]
-        pub(crate) fn handle_msg(
-            &mut self,
-            msg: &SignedByValidator<MempoolNetMessage>,
-            _err: &str,
-        ) {
+        pub fn handle_msg(&mut self, msg: &SignedByValidator<MempoolNetMessage>, _err: &str) {
             debug!("📥 {} Handling message: {:?}", self.name, msg);
             self.mempool.handle_net_message(msg.clone());
         }
 
-        // #[track_caller]
-        // pub(crate) fn handle_msg_err(
-        //     &mut self,
-        //     msg: &SignedByValidator<MempoolNetMessage>,
-        // ) -> Error {
-        //     debug!("📥 {} Handling message expecting err: {:?}", self.name, msg);
-        //     let err = self.mempool.handle_net_message(msg.clone()).unwrap_err();
-        //     info!("Expected error: {:#}", err);
-        //     err
-        // }
+        pub fn current_hash(&self) -> Option<CarHash> {
+            self.mempool.storage.lane.current_hash()
+        }
     }
 
     pub fn make_register_contract_tx(name: ContractName) -> Transaction {
