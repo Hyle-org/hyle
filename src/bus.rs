@@ -93,7 +93,7 @@ pub trait BusClientReceiver<T> {
 macro_rules! bus_client {
     (
         $(#[$meta:meta])*
-        struct $name:ident {
+        $pub:vis struct $name:ident {
             $(sender($sender:ty),)*
             $(receiver($receiver:ty),)*
         }
@@ -108,7 +108,7 @@ macro_rules! bus_client {
         use $crate::utils::static_type_map::static_type_map;
         static_type_map! {
             $(#[$meta])*
-            struct $name (
+            $pub struct $name (
                 BusMetrics,
                 $(tokio::sync::broadcast::Sender<$sender>,)*
                 $(tokio::sync::broadcast::Receiver<$receiver>,)*

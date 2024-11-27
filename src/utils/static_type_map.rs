@@ -65,7 +65,7 @@ macro_rules! static_type_map {
         $index:ident: $pub:vis struct $name:ident ( ) { $($idx:ident: $t3:ty,)+ }
     ) => {
         $(#[$meta])*
-        pub(super) struct $name {
+        pub struct $name {
             $($idx: $t3,)+
         }
         impl $name {

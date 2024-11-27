@@ -12,6 +12,7 @@
 //! * [Hylé website](https://www.hyle.eu/)
 //! * [Hylé documentation](https://docs.hyle.eu)
 
+mod autobahn_testing;
 pub mod bus;
 pub mod consensus;
 pub mod data_availability;

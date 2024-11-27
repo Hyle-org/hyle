@@ -16,9 +16,11 @@ use axum::{
     response::IntoResponse,
     Json,
 };
-use bincode::{Decode, Encode};
+use bincode::Decode;
+use bincode::Encode;
 use hyle_contract_sdk::TxHash;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
+use serde::Serialize;
 use tracing::error;
 
 use super::{AppError, RouterState};
