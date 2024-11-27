@@ -3,24 +3,23 @@
 
 extern crate alloc;
 
-use alloc::format;
 use hyllar::{HyllarToken, HyllarTokenContract};
 use sdk::erc20::ERC20Action;
 
 risc0_zkvm::guest::entry!(main);
 
 fn main() {
-    let (input, parsed_blob) = sdk::guest::init::<HyllarToken, ERC20Action>();
-
-    let caller = match sdk::guest::check_caller_callees(&input, &parsed_blob) {
-        Ok(caller) => caller,
-        Err(err) => {
-            return sdk::guest::fail(
-                input,
-                &format!("Incorrect Caller/Callees for this blob: {err}"),
-            )
-        }
-    };
+    let (input, parsed_blob, caller) =
+        match sdk::guest::init_with_caller::<HyllarToken, ERC20Action>() {
+            Ok(res) => res,
+            Err(err) => {
+                panic!("Hyllar contract initialization failed {}", err);
+                // return sdk::guest::fail(
+                //     input,
+                //     &format!("Incorrect Caller/Callees for this blob: {err}"),
+                // )
+            }
+        };
 
     let state = input.initial_state.clone();
 

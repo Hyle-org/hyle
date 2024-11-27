@@ -40,16 +40,29 @@ pub fn panic(message: &str) {
     panic!("{}", message);
 }
 
-pub fn init<State, Parameters>() -> (ContractInput<State>, StructuredBlob<Parameters>)
+pub fn init_raw<State, Parameters>() -> (ContractInput<State>, StructuredBlob<Parameters>)
 where
     State: Digestable + DeserializeOwned,
     Parameters: Decode,
 {
     let input: ContractInput<State> = env::read();
 
-    let parameters = parse_blob::<Parameters>(&input.blobs, &input.index);
+    let parsed_blob = parse_blob::<Parameters>(&input.blobs, &input.index);
 
-    (input, parameters)
+    (input, parsed_blob)
+}
+
+pub fn init_with_caller<State, Parameters>(
+) -> Result<(ContractInput<State>, StructuredBlob<Parameters>, Identity)>
+where
+    State: Digestable + DeserializeOwned,
+    Parameters: Encode + Decode,
+{
+    let (input, parsed_blob) = init_raw::<State, Parameters>();
+
+    let caller = check_caller_callees::<State, Parameters>(&input, &parsed_blob)?;
+
+    Ok((input, parsed_blob, caller))
 }
 
 pub fn parse_blob<Parameters>(blobs: &[Blob], index: &BlobIndex) -> StructuredBlob<Parameters>
