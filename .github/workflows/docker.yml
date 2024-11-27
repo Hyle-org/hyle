@@ -25,7 +25,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.AR_URL }}/${{ env.IMAGE_NAME }}-${{ matrix.suffix }}
+          images: ${{ env.AR_URL }}/${{ env.IMAGE_NAME }}
 
       - name: Docker Auth
         id: docker-auth
