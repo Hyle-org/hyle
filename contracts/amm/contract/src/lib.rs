@@ -159,9 +159,9 @@ impl AmmContract {
         };
 
         // Compute x,y and check swap is legit (x*y=k)
-        match self.state.pairs.get(&pair) {
+        match self.state.pairs.get_mut(&pair) {
             Some((prev_x, prev_y)) => {
-                if (prev_x + from_amount) * (prev_y - to_amount) != prev_x * prev_y {
+                if (*prev_x + from_amount) * (*prev_y - to_amount) != *prev_x * *prev_y {
                     return RunResult {
                         success: false,
                         identity: self.caller.clone(),
@@ -172,6 +172,8 @@ impl AmmContract {
                         .into_bytes(),
                     };
                 }
+                *prev_x += from_amount;
+                *prev_y -= to_amount;
             }
             None => {
                 return RunResult {
@@ -256,6 +258,14 @@ mod tests {
             ("token1".to_string(), "token2".to_string()),
         );
         assert!(result.success);
+        // Assert that the amounts for the pair token1/token2 have been updated
+        assert!(
+            contract
+                .state
+                .pairs
+                .get(&("token1".to_string(), "token2".to_string()))
+                == Some(&(25, 40))
+        );
     }
 
     #[test]
