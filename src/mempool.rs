@@ -561,7 +561,7 @@ pub mod test {
             }
         }
 
-        pub fn setup_node(&mut self, cryptos: &Vec<BlstCrypto>) {
+        pub fn setup_node(&mut self, cryptos: &[BlstCrypto]) {
             for other_crypto in cryptos.iter() {
                 self.mempool
                     .validators
@@ -573,9 +573,9 @@ pub mod test {
             self.mempool.crypto.validator_pubkey().clone()
         }
 
-        pub async fn gen_cut(&mut self, validators: &Vec<ValidatorPublicKey>) -> Result<Cut> {
+        pub async fn gen_cut(&mut self, validators: &[ValidatorPublicKey]) -> Result<Cut> {
             self.mempool
-                .handle_querynewcut(&mut QueryNewCut(validators.clone()))
+                .handle_querynewcut(&mut QueryNewCut(validators.to_vec()))
                 .await
         }
 

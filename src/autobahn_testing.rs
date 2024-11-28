@@ -209,7 +209,7 @@ pub mod test {
         pub fn generate_cryptos(nb: usize) -> Vec<BlstCrypto> {
             (0..nb)
                 .map(|i| {
-                    let crypto = crypto::BlstCrypto::new(format!("node-{i}").into());
+                    let crypto = crypto::BlstCrypto::new(format!("node-{i}"));
                     info!("node {}: {}", i, crypto.validator_pubkey());
                     crypto
                 })
