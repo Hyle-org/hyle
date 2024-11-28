@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 sdk = { path = "../../../contract-sdk", package="hyle-contract-sdk" }
+serde_json = "1.0"
 serde = { version = "1.0", default-features = false, features = [
     "derive",
     "alloc",

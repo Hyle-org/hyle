@@ -215,18 +215,9 @@ impl E2ECtx {
     }
 
     pub async fn send_blob(&self, identity: Identity, blobs: Vec<Blob>) -> Result<TxHash> {
-        let blob_response = self
-            .client()
+        self.client()
             .send_tx_blob(&BlobTransaction { identity, blobs })
             .await
-            .and_then(|response| response.error_for_status().context("sending tx"));
-
-        let response = match blob_response {
-            Ok(response) => response,
-            Err(e) => panic!("Error sending blob tx: {:?}", e),
-        };
-
-        response.json::<TxHash>().await.map_err(|e| e.into())
     }
 
     pub fn make_proof<Contract>(
@@ -276,19 +267,7 @@ impl E2ECtx {
     }
 
     pub async fn get_contract(&self, name: &str) -> Result<Contract> {
-        let contract_response = self
-            .client()
-            .get_contract(&name.into())
-            .await
-            .and_then(|response| response.error_for_status().context("Getting contract"));
-
-        let response = match contract_response {
-            Ok(response) => response,
-            Err(e) => panic!("Error getting contract: {:?}", e),
-        };
-
-        let contract = response.json::<Contract>().await?;
-        Ok(contract)
+        self.client().get_contract(&name.into()).await
     }
 
     pub async fn get_indexer_contract(&self, name: &str) -> Result<ContractDb> {

@@ -17,6 +17,7 @@ pub fn load_encoded_receipt_from_file(path: &str) -> Vec<u8> {
 }
 
 mod e2e_hyllar {
+    use hydentity::AccountInfo;
     use hyle_contract_sdk::{
         erc20::{ERC20Action, ERC20},
         identity_provider::{IdentityAction, IdentityVerification},
@@ -55,11 +56,16 @@ mod e2e_hyllar {
 
         let contract = ctx.get_contract("hydentity").await?;
         let state: hydentity::Hydentity = contract.state.try_into()?;
+
+        let expected_info = serde_json::to_string(&AccountInfo {
+            hash: "b6baa13a27c933bb9f7df812108407efdff1ec3c3ef8d803e20eed7d4177d596".to_string(),
+            nonce: 0,
+        });
         assert_eq!(
             state
                 .get_identity_info("faucet.hydentity")
                 .expect("faucet identity not found"),
-            "b6baa13a27c933bb9f7df812108407efdff1ec3c3ef8d803e20eed7d4177d596" // hash for "faucet.hydentity::password"
+            expected_info.unwrap() // hash for "faucet.hydentity::password"
         );
 
         info!("➡️  Sending blob to transfer 10 tokens from faucet to bob");
