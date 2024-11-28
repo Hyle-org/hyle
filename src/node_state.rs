@@ -138,6 +138,18 @@ impl NodeState {
     }
 
     fn handle_blob_tx(&mut self, tx: &BlobTransaction) -> Result<(), Error> {
+        let identity_parts: Vec<&str> = tx.identity.0.split('.').collect();
+        if identity_parts.len() != 2 {
+            bail!("Transaction identity is not correctly formed. It should be in the form <id>.<contract_id_name>");
+        }
+        if identity_parts[1].is_empty() {
+            bail!("Transaction identity must include a contract name");
+        }
+
+        if tx.blobs.is_empty() {
+            bail!("Blob Transaction must have at least one blob");
+        }
+
         let (blob_tx_hash, blobs_hash) = (tx.hash(), tx.blobs_hash());
 
         let blobs: Vec<UnsettledBlobMetadata> = tx
@@ -176,7 +188,10 @@ impl NodeState {
         )?;
 
         // If we arrived here, HyleOutput provided is OK and can now be saved
-        debug!("Save metadata for tx: {:?}", tx);
+        debug!(
+            "Saving metadata for BlobTx {} for {}",
+            tx.hyle_output.tx_hash.0, tx.hyle_output.index
+        );
         self.unsettled_transactions
             .add_metadata(&tx.proof_transaction.blob_tx_hash, &tx.hyle_output)?;
 
@@ -190,7 +205,7 @@ impl NodeState {
             .clone();
 
         if self.is_settlement_ready(&unsettled_tx) {
-            self.verify_identities(&unsettled_tx)?;
+            self.verify_identity(&unsettled_tx)?;
             // This unsettled blob transaction can now be settled.
             // We want to keep track of tx hashes that have been settled and state updates associated
             (updated_states, settled_blob_tx_hashes) = self.settle_tx(&unsettled_tx)?;
@@ -230,55 +245,26 @@ impl NodeState {
         Ok(hyle_output)
     }
 
-    fn verify_identities(&self, unsettled_tx: &UnsettledBlobTransaction) -> Result<(), Error> {
-        let mut outputs: Vec<(&HyleOutput, &ContractName)> = vec![];
-        for blob in &unsettled_tx.blobs {
-            let contract = self.contracts.get(&blob.contract_name).context(format!(
-                "Contract {} not found when settling transaction",
-                &blob.contract_name
-            ))?;
+    fn verify_identity(&self, unsettled_tx: &UnsettledBlobTransaction) -> Result<(), Error> {
+        // Checks that there is a blob that proves the identity
+        let identity_contract_name = unsettled_tx
+            .identity
+            .0
+            .split('.')
+            .last()
+            .context("Transaction identity is not correctly formed. It should be in the form <id>.<contract_id_name>")?;
 
-            let hyle_output = blob
-                .metadata
-                .iter()
-                .find(|hyle_output| hyle_output.initial_state == contract.state)
-                .context("No provided proofs are based on the correct initial state")?;
-
-            outputs.append(&mut vec![(hyle_output, &blob.contract_name)])
-        }
-
-        let (_, identity_contract_name) = outputs
+        // Check that there is at least one blob that has identity_contract_name as contract name
+        if !unsettled_tx
+            .blobs
             .iter()
-            .find(|(out, contract_name)| out.identity.0.ends_with(&format!(".{}", contract_name.0)))
-            .context("No identity match the contract name")?;
-
-        let tx_identity_match_contract =
-            unsettled_tx.identity.0.ends_with(&identity_contract_name.0);
-
-        if !tx_identity_match_contract {
+            .any(|blob| blob.contract_name.0 == identity_contract_name)
+        {
             bail!(
-                "Tx identity '{}' does not match contract name: {}",
-                unsettled_tx.identity.0,
+                "Can't find blob that proves the identity on contract '{}'",
                 identity_contract_name
             );
         }
-
-        let all_identities_match = outputs
-            .iter()
-            .all(|(out, _)| out.identity.0 == unsettled_tx.identity.0);
-
-        if !all_identities_match {
-            let identities = outputs
-                .iter()
-                .map(|(out, _)| &out.identity.0)
-                .collect::<Vec<_>>();
-            bail!(
-                "Identities do not match {}: {:?}",
-                unsettled_tx.identity,
-                identities
-            );
-        }
-
         Ok(())
     }
 
@@ -296,6 +282,15 @@ impl NodeState {
             .unsettled_transactions
             .get(unsettled_tx_hash)
             .context("BlobTx that is been proved is either settled or does not exists")?;
+
+        // Identity verification
+        if unsettled_tx.identity != hyle_output.identity {
+            bail!(
+                "Proof identity '{:?}' does not correspond to transaction identity '{:?}'.",
+                hyle_output.identity,
+                unsettled_tx.identity
+            )
+        }
 
         // blob_hash verification
         let extracted_blobs_hash = BlobsHash::from_concatenated(&hyle_output.blobs);
@@ -451,6 +446,32 @@ mod test {
             program_outputs: vec![],
             success: true,
         }
+    }
+
+    #[test_log::test(tokio::test)]
+    async fn blob_tx_without_blobs() {
+        let mut state = new_node_state().await;
+        let identity = Identity("test.c1".to_string());
+
+        let blob_tx = BlobTransaction {
+            identity: identity.clone(),
+            blobs: vec![],
+        };
+
+        assert_err!(state.handle_blob_tx(&blob_tx));
+    }
+
+    #[test_log::test(tokio::test)]
+    async fn blob_tx_with_incorrect_identity() {
+        let mut state = new_node_state().await;
+        let identity = Identity("incorrect_id".to_string());
+
+        let blob_tx = BlobTransaction {
+            identity: identity.clone(),
+            blobs: vec![new_blob("test")],
+        };
+
+        assert_err!(state.handle_blob_tx(&blob_tx));
     }
 
     #[test_log::test(tokio::test)]
