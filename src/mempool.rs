@@ -156,7 +156,7 @@ impl Mempool {
     /// Creates a cut with local material on QueryNewCut message reception (from consensus)
     fn handle_querynewcut(&mut self, validators: &mut QueryNewCut) -> Result<Cut> {
         // TODO: metrics?
-        self.metrics.add_new_cut();
+        self.metrics.add_new_cut(validators);
         // FIXME: use voting power
         // self.validators.len() == 1 is for SingleNodeBlockGeneration
         //   it makes sure the DataProposal is committed to the Lane without waiting for a DataVote
@@ -193,7 +193,7 @@ impl Mempool {
             );
             // FIXME: with current implem, we send DataProposal twice.
             self.metrics.add_data_proposal(data_proposal);
-            _ = self.broadcast_only_for_net_message(
+            self.broadcast_only_for_net_message(
                 only_for,
                 MempoolNetMessage::DataProposal(data_proposal.clone()),
             )?;

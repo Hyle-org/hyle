@@ -5,7 +5,7 @@ use opentelemetry::{
 
 use crate::model::ValidatorPublicKey;
 
-use super::storage::DataProposal;
+use super::{storage::DataProposal, QueryNewCut};
 
 pub struct MempoolMetrics {
     signature_error: Counter<u64>,
@@ -57,8 +57,9 @@ impl MempoolMetrics {
         self.pending_tx
             .record(nb as u64, &[KeyValue::new("status", "pending")])
     }
-    pub fn add_new_cut(&self) {
-        self.new_cut.add(1, &[])
+    pub fn add_new_cut(&self, nc: &QueryNewCut) {
+        self.new_cut
+            .add(1, &[KeyValue::new("nb_validators", nc.0.len().to_string())])
     }
 
     pub fn add_proposed_txs(&self, dp: &DataProposal) {
