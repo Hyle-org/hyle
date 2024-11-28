@@ -56,6 +56,20 @@ impl AmmState {
     pub fn new(pairs: BTreeMap<UnorderedTokenPair, TokenPairAmount>) -> Self {
         AmmState { pairs }
     }
+
+    pub fn get_paired_amount(
+        &self,
+        token_a: String,
+        token_b: String,
+        amount_a: u128,
+    ) -> Option<u128> {
+        let pair = UnorderedTokenPair::new(token_a, token_b);
+        if let Some((k, x, y)) = self.pairs.get(&pair).map(|(x, y)| (x * y, *x, *y)) {
+            let amount_b = y - (k / (x + amount_a));
+            return Some(amount_b);
+        }
+        None
+    }
 }
 
 impl AmmContract {
@@ -263,13 +277,9 @@ impl AmmContract {
         };
 
         let to_amount = match blob_to.data.parameters {
-            ERC20Action::TransferFrom {
-                sender,
-                amount,
-                recipient,
-            } => {
+            ERC20Action::Transfer { amount, recipient } => {
                 // Check that blob_to 'from' field is the AMM and that 'to' field matches the caller
-                if sender != *"amm" || recipient != from.0 {
+                if recipient != from.0 {
                     return RunResult::failure(
                         self.caller.clone(),
                         "Blob 'from' field is not the AMM or 'to' field is not the caller",
@@ -292,7 +302,8 @@ impl AmmContract {
         match self.state.pairs.get_mut(&normalized_pair) {
             Some((prev_x, prev_y)) => {
                 if is_normalized_order {
-                    if (*prev_x + from_amount) * (*prev_y - to_amount) != *prev_x * *prev_y {
+                    let amount_b = *prev_y - (*prev_x * *prev_y / (*prev_x + from_amount));
+                    if amount_b != to_amount {
                         return RunResult::failure(
                             self.caller.clone(),
                             &format!(
@@ -300,14 +311,15 @@ impl AmmContract {
                                 (*prev_x + from_amount),
                                 (*prev_y - to_amount),
                                 prev_x,
-                                prev_y
+                                prev_y,
                             ),
                         );
                     }
                     *prev_x += from_amount;
                     *prev_y -= to_amount;
                 } else {
-                    if (*prev_y + from_amount) * (*prev_x - to_amount) != *prev_y * *prev_x {
+                    let amount_b = *prev_x - (*prev_y * *prev_x / (*prev_y + from_amount));
+                    if amount_b != to_amount {
                         return RunResult::failure(
                             self.caller.clone(),
                             &format!(
@@ -844,5 +856,58 @@ mod tests {
         );
 
         assert!(!result.success);
+    }
+
+    #[test]
+    fn test_get_paired_amount_existing_pair() {
+        let pair = UnorderedTokenPair::new("token1".into(), "token2".into());
+        let mut pairs = HashMap::new();
+        pairs.insert(pair.clone(), (10, 20));
+        let state = AmmState { pairs };
+
+        let result = state.get_paired_amount("token1".to_string(), "token2".to_string(), 5);
+
+        assert!(result.is_some());
+        let amount_b = result.unwrap();
+        assert_eq!(amount_b, 20 - (10 * 20 / (10 + 5)));
+    }
+
+    #[test]
+    fn test_get_paired_amount_non_existing_pair() {
+        let state = AmmState {
+            pairs: HashMap::new(),
+        };
+
+        let result = state.get_paired_amount("token1".to_string(), "token2".to_string(), 5);
+
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_get_paired_amount_zero_amount_a() {
+        let pair = UnorderedTokenPair::new("token1".into(), "token2".into());
+        let mut pairs = HashMap::new();
+        pairs.insert(pair.clone(), (10, 20));
+        let state = AmmState { pairs };
+
+        let result = state.get_paired_amount("token1".to_string(), "token2".to_string(), 0);
+
+        assert!(result.is_some());
+        let amount_b = result.unwrap();
+        assert_eq!(amount_b, 20 - (10 * 20 / 10));
+    }
+
+    #[test]
+    fn test_get_paired_amount_division_by_zero() {
+        let pair = UnorderedTokenPair::new("token1".into(), "token2".into());
+        let mut pairs = HashMap::new();
+        pairs.insert(pair.clone(), (0, 20));
+        let state = AmmState { pairs };
+
+        let result = state.get_paired_amount("token1".to_string(), "token2".to_string(), 5);
+
+        assert!(result.is_some());
+        let amount_b = result.unwrap();
+        assert_eq!(amount_b, 20);
     }
 }

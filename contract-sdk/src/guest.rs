@@ -173,7 +173,7 @@ where
         {
             bail!("Incorrect Caller for this blob");
         }
-        return Ok(parameters.contract_name.0.clone().into());
+        return Ok(caller_blob.contract_name.0.clone().into());
     }
 
     // No callers detected, use the identity

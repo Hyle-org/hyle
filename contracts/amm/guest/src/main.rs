@@ -24,11 +24,12 @@ fn main() {
 
     let mut callees_blob = Vec::new();
     for blob in input.blobs.clone().into_iter() {
-        let structured_blob: StructuredBlobData<Vec<u8>> =
-            blob.data.clone().try_into().expect("Failed to decode blob");
-        if structured_blob.caller == Some(input.index.clone()) {
-            callees_blob.push(blob);
-        }
+        if let Ok(structured_blob) = blob.data.clone().try_into() {
+            let structured_blob: StructuredBlobData<Vec<u8>> = structured_blob; // for compiler
+            if structured_blob.caller == Some(input.index.clone()) {
+                callees_blob.push(blob);
+            }
+        };
     }
 
     let res = match amm_action {

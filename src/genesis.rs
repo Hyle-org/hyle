@@ -158,10 +158,13 @@ impl Genesis {
             .unwrap();
 
         let mut hyllar_token = hyllar::HyllarTokenContract::init(
-            hyllar::HyllarToken::new(10000, "faucet.hydentity".to_string()),
+            hyllar::HyllarToken::new(100_000_000_000, "faucet.hydentity".to_string()),
             "faucet.hydentity".into(),
         );
-        hyllar_token.transfer("amm", 100).unwrap();
+        hyllar_token.transfer("amm", 1_000_000_000).unwrap();
+
+        hyllar_token.approve("amm", 1_000_000_000_000_000).unwrap(); // faucet qui approve amm pour
+                                                                     // déplacer ses fonds
         let hyllar_state = hyllar_token.state();
 
         vec![
@@ -190,7 +193,7 @@ impl Genesis {
                     program_id: amm_program_id,
                     state_digest: amm::AmmState::new(BTreeMap::from([(
                         amm::UnorderedTokenPair::new("hyllar".to_string(), "hyllar2".to_string()),
-                        (100, 100),
+                        (1_000_000_000, 1_000_000_000),
                     )]))
                     .as_digest(),
                     contract_name: "amm".into(),
