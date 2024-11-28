@@ -88,7 +88,7 @@ impl Module for RestApi {
                     .route("/v1/tx/send/proof", post(endpoints::send_proof_transaction))
                     .route("/v1/tools/run_scenario", post(endpoints::run_scenario))
                     .with_state(RouterState {
-                        bus: RestBusClient::new_from_bus(ctx.bus).await,
+                        bus: RestBusClient::new_from_bus(ctx.bus.new_handle()).await,
                         info: ctx.info,
                     })
                     .nest("/v1", ctx.metrics_layer.routes()),

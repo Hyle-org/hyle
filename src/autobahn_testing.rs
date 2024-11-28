@@ -219,11 +219,7 @@ pub mod test {
         /// Spawn a coroutine to answer the command response call of start_round, with the current current of mempool
         async fn start_round_with_cut_from_mempool(&mut self) {
             let mut validators = self.consensus_ctx.validators();
-            let latest_cut: Cut = self
-                .mempool_ctx
-                .gen_cut(&validators)
-                .await
-                .expect("latest cut");
+            let latest_cut: Cut = self.mempool_ctx.gen_cut(&validators).expect("latest cut");
 
             let mut autobahn_client_bus =
                 AutobahnBusClient::new_from_bus(self.shared_bus.new_handle()).await;
@@ -259,7 +255,10 @@ pub mod test {
         node1.mempool_ctx.submit_tx(&register_tx);
         node1.mempool_ctx.submit_tx(&register_tx_2);
 
-        node1.mempool_ctx.make_data_proposal_with_pending_txs();
+        node1
+            .mempool_ctx
+            .make_data_proposal_with_pending_txs()
+            .expect("Should create data proposal");
 
         broadcast! {
             description: "Disseminate Tx",
