@@ -1,7 +1,7 @@
 use alloc::{format, string::String, vec::Vec};
 use bincode::{Decode, Encode};
 
-use crate::{guest::RunResult, Blob, BlobData, ContractName, Identity};
+use crate::{guest::RunResult, Blob, BlobData, ContractName};
 
 /// Trait representing an identity verification contract.
 pub trait IdentityVerification {
@@ -80,7 +80,6 @@ impl IdentityAction {
 
 pub fn execute_action<T: IdentityVerification>(
     state: &mut T,
-    caller: Identity,
     action: IdentityAction,
     private_input: &str,
 ) -> RunResult {
@@ -119,7 +118,6 @@ pub fn execute_action<T: IdentityVerification>(
 
     RunResult {
         success,
-        identity: caller,
         program_outputs,
     }
 }
@@ -142,7 +140,6 @@ mod tests {
     #[test]
     fn test_execute_action_register_identity() {
         let mut mock = MockIdentityVerification::new();
-        let caller = Identity("caller_identity".to_string());
         let action = IdentityAction::RegisterIdentity {
             account: "test_account".to_string(),
         };
@@ -153,15 +150,13 @@ mod tests {
             .times(1)
             .returning(|_, _| Ok(()));
 
-        let result = execute_action(&mut mock, caller.clone(), action, private_input);
+        let result = execute_action(&mut mock, action, private_input);
         assert!(result.success);
-        assert_eq!(result.identity, caller);
     }
 
     #[test]
     fn test_execute_action_verify_identity() {
         let mut mock = MockIdentityVerification::new();
-        let caller = Identity("caller_identity".to_string());
         let account = "test_account".to_string();
         let private_input = "test_identity";
 
@@ -176,15 +171,13 @@ mod tests {
             blobs_hash: vec![],
         };
 
-        let result = execute_action(&mut mock, caller.clone(), action, private_input);
+        let result = execute_action(&mut mock, action, private_input);
         assert!(result.success);
-        assert_eq!(result.identity, caller);
     }
 
     #[test]
     fn test_execute_action_get_identity_info() {
         let mut mock = MockIdentityVerification::new();
-        let caller = Identity("caller_identity".to_string());
         let account = "test_account".to_string();
         let private_input = "test_identity";
 
@@ -197,8 +190,7 @@ mod tests {
             account: account.clone(),
         };
 
-        let result = execute_action(&mut mock, caller.clone(), action, "");
+        let result = execute_action(&mut mock, action, "");
         assert!(result.success);
-        assert_eq!(result.identity, caller);
     }
 }

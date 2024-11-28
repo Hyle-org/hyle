@@ -17,12 +17,7 @@ fn main() {
 
     let password = from_utf8(&input.private_blob.0).unwrap();
 
-    let res = sdk::identity_provider::execute_action(
-        &mut state,
-        input.identity.clone(),
-        parsed_blob,
-        password,
-    );
+    let res = sdk::identity_provider::execute_action(&mut state, parsed_blob, password);
 
     sdk::guest::commit(input, state, res);
 }
