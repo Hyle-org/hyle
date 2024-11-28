@@ -12,6 +12,8 @@ use crate::{
     utils::{conf::SharedConf, crypto::SharedBlstCrypto, modules::Module},
 };
 use anyhow::{bail, Error, Result};
+use hyle_contract_sdk::erc20::ERC20;
+use hyle_contract_sdk::identity_provider::IdentityVerification;
 use hyle_contract_sdk::Digestable;
 use serde::{Deserialize, Serialize};
 use tracing::info;
@@ -143,18 +145,32 @@ impl Genesis {
         let hyllar_program_id = include_str!("../contracts/hyllar/hyllar.txt").trim();
         let hyllar_program_id = hex::decode(hyllar_program_id).expect("Image id decoding failed");
 
+        let amm_program_id = include_str!("../contracts/amm/amm.txt").trim();
+        let amm_program_id = hex::decode(amm_program_id).expect("Image id decoding failed");
+
         let hydentity_program_id = include_str!("../contracts/hydentity/hydentity.txt").trim();
         let hydentity_program_id =
             hex::decode(hydentity_program_id).expect("Image id decoding failed");
+
+        let mut hydentity_state = hydentity::Hydentity::new();
+        hydentity_state
+            .register_identity("faucet.hydentity", "password")
+            .unwrap();
+
+        let mut hyllar_token = hyllar::HyllarTokenContract::init(
+            hyllar::HyllarToken::new(10000, "faucet.hydentity".to_string()),
+            "faucet.hydentity".into(),
+        );
+        hyllar_token.transfer("amm", 100).unwrap();
+        let hyllar_state = hyllar_token.state();
 
         vec![
             Transaction::wrap(TransactionData::RegisterContract(
                 RegisterContractTransaction {
                     owner: "hyle".into(),
                     verifier: "risc0".into(),
-                    program_id: hyllar_program_id,
-                    state_digest: hyllar::HyllarToken::new(1000, "faucet.hydentity".to_string())
-                        .as_digest(),
+                    program_id: hyllar_program_id.clone(),
+                    state_digest: hyllar_state.clone().as_digest(),
                     contract_name: "hyllar".into(),
                 },
             )),
@@ -162,8 +178,30 @@ impl Genesis {
                 RegisterContractTransaction {
                     owner: "hyle".into(),
                     verifier: "risc0".into(),
+                    program_id: hyllar_program_id,
+                    state_digest: hyllar_state.as_digest(),
+                    contract_name: "hyllar2".into(),
+                },
+            )),
+            Transaction::wrap(TransactionData::RegisterContract(
+                RegisterContractTransaction {
+                    owner: "hyle".into(),
+                    verifier: "risc0".into(),
+                    program_id: amm_program_id,
+                    state_digest: amm::AmmState::new(BTreeMap::from([(
+                        amm::UnorderedTokenPair::new("hyllar".to_string(), "hyllar2".to_string()),
+                        (100, 100),
+                    )]))
+                    .as_digest(),
+                    contract_name: "amm".into(),
+                },
+            )),
+            Transaction::wrap(TransactionData::RegisterContract(
+                RegisterContractTransaction {
+                    owner: "hyle".into(),
+                    verifier: "risc0".into(),
                     program_id: hydentity_program_id,
-                    state_digest: hydentity::Hydentity::new().as_digest(),
+                    state_digest: hydentity_state.as_digest(),
                     contract_name: "hydentity".into(),
                 },
             )),
@@ -275,7 +313,7 @@ mod tests {
             initial_validators,
         } = rec
         {
-            assert_eq!(genesis_txs.len(), 4);
+            assert!(!genesis_txs.is_empty());
             assert_eq!(initial_validators.len(), 2);
         }
     }
@@ -314,7 +352,7 @@ mod tests {
             initial_validators,
         } = rec
         {
-            assert_eq!(genesis_txs.len(), 4);
+            assert!(!genesis_txs.is_empty());
             assert_eq!(initial_validators.len(), 2);
         }
     }

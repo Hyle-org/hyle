@@ -1,23 +1,24 @@
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::hash::{Hash, Hasher};
 
 use anyhow::Error;
 use bincode::{Decode, Encode};
 use sdk::{erc20::ERC20Action, Identity};
 use sdk::{guest::RunResult, Blob, BlobIndex, Digestable};
-use serde::Deserialize;
+use sdk::{BlobData, ContractName, StructuredBlobData};
+use serde::{Deserialize, Serialize};
 
 type TokenPair = (String, String);
 type TokenPairAmount = (u128, u128);
 
-#[derive(Debug, Deserialize, Clone, Encode, Decode)]
-struct UnorderedTokenPair {
+#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, Ord, PartialOrd)]
+pub struct UnorderedTokenPair {
     a: String,
     b: String,
 }
 
 impl UnorderedTokenPair {
-    fn new(x: String, y: String) -> Self {
+    pub fn new(x: String, y: String) -> Self {
         if x <= y {
             UnorderedTokenPair { a: x, b: y }
         } else {
@@ -46,9 +47,15 @@ pub struct AmmContract {
     caller: Identity,
 }
 
-#[derive(Deserialize, Clone, Encode, Decode)]
+#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode)]
 pub struct AmmState {
-    pairs: HashMap<UnorderedTokenPair, TokenPairAmount>,
+    pairs: BTreeMap<UnorderedTokenPair, TokenPairAmount>,
+}
+
+impl AmmState {
+    pub fn new(pairs: BTreeMap<UnorderedTokenPair, TokenPairAmount>) -> Self {
+        AmmState { pairs }
+    }
 }
 
 impl AmmContract {
@@ -365,11 +372,29 @@ pub enum AmmAction {
     },
 }
 
+impl AmmAction {
+    pub fn as_blob(
+        self,
+        contract_name: ContractName,
+        caller: Option<BlobIndex>,
+        callees: Option<Vec<BlobIndex>>,
+    ) -> Blob {
+        Blob {
+            contract_name,
+            data: BlobData::from(StructuredBlobData {
+                caller,
+                callees,
+                parameters: self.clone(),
+            }),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use sdk::{erc20::ERC20Action, Blob, ContractName, Identity};
-    use std::collections::HashMap;
+    use std::collections::BTreeMap;
 
     fn create_test_blob(contract_name: &str, sender: &str, recipient: &str, amount: u128) -> Blob {
         let cf = ERC20Action::TransferFrom {
@@ -385,7 +410,7 @@ mod tests {
         let normalized_token_pair =
             UnorderedTokenPair::new("token1".to_string(), "token2".to_string());
         let state = AmmState {
-            pairs: HashMap::from([(normalized_token_pair.clone(), (20, 50))]),
+            pairs: BTreeMap::from([(normalized_token_pair.clone(), (20, 50))]),
         };
 
         let caller = Identity("test".to_owned());
@@ -411,7 +436,7 @@ mod tests {
         let normalized_token_pair =
             UnorderedTokenPair::new("token1".to_string(), "token2".to_string());
         let state = AmmState {
-            pairs: HashMap::from([(normalized_token_pair.clone(), (20, 50))]),
+            pairs: BTreeMap::from([(normalized_token_pair.clone(), (20, 50))]),
         };
 
         let caller = Identity("test".to_owned());
@@ -440,7 +465,7 @@ mod tests {
         let normalized_token_pair =
             UnorderedTokenPair::new("token1".to_string(), "token2".to_string());
         let state = AmmState {
-            pairs: HashMap::from([(normalized_token_pair.clone(), (20, 50))]),
+            pairs: BTreeMap::from([(normalized_token_pair.clone(), (20, 50))]),
         };
         let caller = Identity("test".to_owned());
         let mut contract = AmmContract::new(state, caller.clone());
@@ -464,7 +489,7 @@ mod tests {
         let normalized_token_pair =
             UnorderedTokenPair::new("token1".to_string(), "token2".to_string());
         let state = AmmState {
-            pairs: HashMap::from([(normalized_token_pair.clone(), (20, 50))]),
+            pairs: BTreeMap::from([(normalized_token_pair.clone(), (20, 50))]),
         };
 
         let caller = Identity("test".to_owned());
@@ -488,7 +513,7 @@ mod tests {
         let normalized_token_pair =
             UnorderedTokenPair::new("token1".to_string(), "token2".to_string());
         let state = AmmState {
-            pairs: HashMap::from([(normalized_token_pair.clone(), (20, 50))]),
+            pairs: BTreeMap::from([(normalized_token_pair.clone(), (20, 50))]),
         };
 
         let caller = Identity("test".to_owned());
@@ -512,7 +537,7 @@ mod tests {
         let normalized_token_pair =
             UnorderedTokenPair::new("token1".to_string(), "token2".to_string());
         let state = AmmState {
-            pairs: HashMap::from([(normalized_token_pair.clone(), (20, 50))]),
+            pairs: BTreeMap::from([(normalized_token_pair.clone(), (20, 50))]),
         };
 
         let caller = Identity("test".to_owned());
@@ -536,7 +561,7 @@ mod tests {
         let normalized_token_pair =
             UnorderedTokenPair::new("token1".to_string(), "token2".to_string());
         let state = AmmState {
-            pairs: HashMap::from([(normalized_token_pair.clone(), (20, 50))]),
+            pairs: BTreeMap::from([(normalized_token_pair.clone(), (20, 50))]),
         };
 
         let caller = Identity("test".to_owned());
@@ -560,7 +585,7 @@ mod tests {
         let normalized_token_pair =
             UnorderedTokenPair::new("token1".to_string(), "token2".to_string());
         let state = AmmState {
-            pairs: HashMap::from([(normalized_token_pair.clone(), (20, 50))]),
+            pairs: BTreeMap::from([(normalized_token_pair.clone(), (20, 50))]),
         };
 
         let caller = Identity("test".to_owned());
@@ -584,7 +609,7 @@ mod tests {
         let normalized_token_pair =
             UnorderedTokenPair::new("token1".to_string(), "token2".to_string());
         let state = AmmState {
-            pairs: HashMap::from([(normalized_token_pair.clone(), (20, 50))]),
+            pairs: BTreeMap::from([(normalized_token_pair.clone(), (20, 50))]),
         };
 
         let caller = Identity("test".to_owned());
@@ -608,7 +633,7 @@ mod tests {
         let normalized_token_pair =
             UnorderedTokenPair::new("token1".to_string(), "token2".to_string());
         let state = AmmState {
-            pairs: HashMap::from([(normalized_token_pair.clone(), (20, 50))]),
+            pairs: BTreeMap::from([(normalized_token_pair.clone(), (20, 50))]),
         };
 
         let caller = Identity("test".to_owned());
@@ -629,7 +654,7 @@ mod tests {
         let normalized_token_pair =
             UnorderedTokenPair::new("token1".to_string(), "token2".to_string());
         let state = AmmState {
-            pairs: HashMap::from([(normalized_token_pair.clone(), (20, 50))]),
+            pairs: BTreeMap::from([(normalized_token_pair.clone(), (20, 50))]),
         };
 
         let caller = Identity("test".to_owned());
@@ -651,7 +676,7 @@ mod tests {
     #[test]
     fn test_create_new_pair_success() {
         let state = AmmState {
-            pairs: HashMap::new(),
+            pairs: BTreeMap::new(),
         };
 
         let caller = Identity("test".to_owned());
@@ -680,7 +705,10 @@ mod tests {
         let normalized_token_pair =
             UnorderedTokenPair::new("token1".to_string(), "token2".to_string());
         let state = AmmState {
-            pairs: HashMap::from([(normalized_token_pair.clone(), (100, 200))]),
+            pairs: BTreeMap::from([(
+                UnorderedTokenPair::new("token1".to_string(), "token2".to_string()),
+                (100, 200),
+            )]),
         };
 
         let caller = Identity("test".to_owned());
@@ -704,7 +732,7 @@ mod tests {
     #[test]
     fn test_create_new_pair_invalid_sender() {
         let state = AmmState {
-            pairs: HashMap::new(),
+            pairs: BTreeMap::new(),
         };
 
         let caller = Identity("test".to_owned());
@@ -728,7 +756,7 @@ mod tests {
     #[test]
     fn test_create_new_pair_invalid_recipient() {
         let state = AmmState {
-            pairs: HashMap::new(),
+            pairs: BTreeMap::new(),
         };
 
         let caller = Identity("test".to_owned());
@@ -752,7 +780,7 @@ mod tests {
     #[test]
     fn test_create_new_pair_invalid_amounts() {
         let state = AmmState {
-            pairs: HashMap::new(),
+            pairs: BTreeMap::new(),
         };
 
         let caller = Identity("test".to_owned());
@@ -776,7 +804,7 @@ mod tests {
     #[test]
     fn test_create_new_pair_same_tokens() {
         let state = AmmState {
-            pairs: HashMap::new(),
+            pairs: BTreeMap::new(),
         };
 
         let caller = Identity("test".to_owned());
@@ -800,7 +828,7 @@ mod tests {
     #[test]
     fn test_create_new_pair_blob_not_found() {
         let state = AmmState {
-            pairs: HashMap::new(),
+            pairs: BTreeMap::new(),
         };
 
         let caller = Identity("test".to_owned());

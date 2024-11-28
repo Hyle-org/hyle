@@ -27,12 +27,12 @@ mod e2e_hyllar {
     use super::*;
 
     async fn scenario_hyllar(ctx: E2ECtx) -> Result<()> {
-        info!("➡️  Sending blob to register faucet identity");
+        info!("➡️  Sending blob to register bob identity");
         let blob_tx_hash = ctx
             .send_blob(
-                "faucet.hydentity".into(),
+                "bob.hydentity".into(),
                 vec![IdentityAction::RegisterIdentity {
-                    account: "faucet.hydentity".to_string(),
+                    account: "bob.hydentity".to_string(),
                 }
                 .as_blob(ContractName("hydentity".to_owned()))],
             )
@@ -122,7 +122,7 @@ mod e2e_hyllar {
             state
                 .balance_of("faucet.hydentity")
                 .expect("faucet identity not found"),
-            900
+            9800
         );
         Ok(())
     }
