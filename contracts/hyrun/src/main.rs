@@ -1,5 +1,6 @@
 use core::panic;
 
+use amm::AmmState;
 use hydentity::Hydentity;
 use hyllar::HyllarToken;
 use sdk::{
@@ -98,8 +99,13 @@ fn main() {
                     .expect("failed to fetch state");
                 println!("State: {:?}", state);
             }
-            "hyllar" => {
+            "hyllar" | "hyllar2" => {
                 let state = contract::fetch_current_state::<HyllarToken>(&cli, &contract)
+                    .expect("failed to fetch state");
+                println!("State: {:?}", state);
+            }
+            "amm" => {
+                let state = contract::fetch_current_state::<AmmState>(&cli, &contract)
                     .expect("failed to fetch state");
                 println!("State: {:?}", state);
             }

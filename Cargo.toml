@@ -15,6 +15,7 @@ default-run = "node"
 
 [dependencies]
 hyle-contract-sdk = { path = "./contract-sdk" }
+amm = { path = "./contracts/amm/contract" }
 hyllar = { path = "./contracts/hyllar/contract" }
 hydentity = { path = "./contracts/hydentity/contract" }
 config = "0.14.1"

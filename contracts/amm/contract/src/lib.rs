@@ -5,19 +5,20 @@ use anyhow::Error;
 use bincode::{Decode, Encode};
 use sdk::{erc20::ERC20Action, Identity};
 use sdk::{guest::RunResult, Blob, BlobIndex, Digestable};
-use serde::Deserialize;
+use sdk::{BlobData, ContractName, StructuredBlobData};
+use serde::{Deserialize, Serialize};
 
 type TokenPair = (String, String);
 type TokenPairAmount = (u128, u128);
 
-#[derive(Debug, Deserialize, Clone, Encode, Decode)]
-struct UnorderedTokenPair {
+#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode)]
+pub struct UnorderedTokenPair {
     a: String,
     b: String,
 }
 
 impl UnorderedTokenPair {
-    fn new(x: String, y: String) -> Self {
+    pub fn new(x: String, y: String) -> Self {
         if x <= y {
             UnorderedTokenPair { a: x, b: y }
         } else {
@@ -46,9 +47,15 @@ pub struct AmmContract {
     caller: Identity,
 }
 
-#[derive(Deserialize, Clone, Encode, Decode)]
+#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode)]
 pub struct AmmState {
     pairs: HashMap<UnorderedTokenPair, TokenPairAmount>,
+}
+
+impl AmmState {
+    pub fn new(pairs: HashMap<UnorderedTokenPair, TokenPairAmount>) -> Self {
+        AmmState { pairs }
+    }
 }
 
 impl AmmContract {
@@ -363,6 +370,24 @@ pub enum AmmAction {
         pair: TokenPair,
         amounts: TokenPairAmount,
     },
+}
+
+impl AmmAction {
+    pub fn as_blob(
+        self,
+        contract_name: ContractName,
+        caller: Option<BlobIndex>,
+        callees: Option<Vec<BlobIndex>>,
+    ) -> Blob {
+        Blob {
+            contract_name,
+            data: BlobData::from(StructuredBlobData {
+                caller,
+                callees,
+                parameters: self.clone(),
+            }),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -680,7 +705,10 @@ mod tests {
         let normalized_token_pair =
             UnorderedTokenPair::new("token1".to_string(), "token2".to_string());
         let state = AmmState {
-            pairs: HashMap::from([(normalized_token_pair.clone(), (100, 200))]),
+            pairs: HashMap::from([(
+                UnorderedTokenPair::new("token1".to_string(), "token2".to_string()),
+                (100, 200),
+            )]),
         };
 
         let caller = Identity("test".to_owned());
