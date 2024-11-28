@@ -20,7 +20,7 @@ fn main() {
     let res = sdk::identity_provider::execute_action(
         &mut state,
         input.identity.clone(),
-        parsed_blob.data.parameters,
+        parsed_blob,
         password,
     );
 

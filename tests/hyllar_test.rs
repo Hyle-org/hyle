@@ -34,7 +34,7 @@ mod e2e_hyllar {
                 vec![IdentityAction::RegisterIdentity {
                     account: "faucet.hydentity".to_string(),
                 }
-                .as_blob(ContractName("hydentity".to_owned()), None, None)],
+                .as_blob(ContractName("hydentity".to_owned()))],
             )
             .await?;
 
@@ -75,7 +75,7 @@ mod e2e_hyllar {
                         nonce: 0,
                         blobs_hash: vec!["".into()],
                     }
-                    .as_blob(ContractName("hydentity".to_owned()), None, None),
+                    .as_blob(ContractName("hydentity".to_owned())),
                     ERC20Action::Transfer {
                         recipient: "bob.hydentity".to_string(),
                         amount: 100,

@@ -40,7 +40,7 @@ pub fn panic(message: &str) {
     panic!("{}", message);
 }
 
-pub fn init_raw<State, Parameters>() -> (ContractInput<State>, StructuredBlob<Parameters>)
+pub fn init_raw<State, Parameters>() -> (ContractInput<State>, Parameters)
 where
     State: Digestable + DeserializeOwned,
     Parameters: Decode,
@@ -58,14 +58,16 @@ where
     State: Digestable + DeserializeOwned,
     Parameters: Encode + Decode,
 {
-    let (input, parsed_blob) = init_raw::<State, Parameters>();
+    let input: ContractInput<State> = env::read();
+
+    let parsed_blob = parse_structured_blob::<Parameters>(&input.blobs, &input.index);
 
     let caller = check_caller_callees::<State, Parameters>(&input, &parsed_blob)?;
 
     Ok((input, parsed_blob, caller))
 }
 
-pub fn parse_blob<Parameters>(blobs: &[Blob], index: &BlobIndex) -> StructuredBlob<Parameters>
+pub fn parse_blob<Parameters>(blobs: &[Blob], index: &BlobIndex) -> Parameters
 where
     Parameters: Decode,
 {
@@ -75,11 +77,31 @@ where
             panic!("unable to find the payload");
         }
     };
+
+    let (parameters, _) =
+        bincode::decode_from_slice(blob.data.0.as_slice(), bincode::config::standard())
+            .expect("Failed to decode payload");
+    parameters
+}
+
+pub fn parse_structured_blob<Parameters>(
+    blobs: &[Blob],
+    index: &BlobIndex,
+) -> StructuredBlob<Parameters>
+where
+    Parameters: Decode,
+{
+    let blob = match blobs.get(index.0 as usize) {
+        Some(v) => v,
+        None => {
+            panic!("unable to find the payload");
+        }
+    };
+
     let parsed_blob: StructuredBlob<Parameters> = StructuredBlob::try_from(blob.clone())
         .unwrap_or_else(|e| {
             panic!("Failed to decode blob: {:?}", e);
         });
-
     parsed_blob
 }
 

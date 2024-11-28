@@ -34,8 +34,14 @@ where
     pub index: BlobIndex,
 }
 
-#[derive(Default, Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash, Encode, Decode)]
+#[derive(Default, Serialize, Deserialize, Clone, PartialEq, Eq, Hash, Encode, Decode)]
 pub struct StateDigest(pub Vec<u8>);
+
+impl alloc::fmt::Debug for StateDigest {
+    fn fmt(&self, f: &mut alloc::fmt::Formatter) -> alloc::fmt::Result {
+        write!(f, "StateDigest({})", hex::encode(&self.0))
+    }
+}
 
 #[derive(Default, Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash, Encode, Decode)]
 pub struct Identity(pub String);
@@ -46,8 +52,14 @@ pub struct TxHash(pub String);
 #[derive(Default, Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash, Encode, Decode)]
 pub struct BlobIndex(pub u32);
 
-#[derive(Default, Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash, Encode, Decode)]
+#[derive(Default, Serialize, Deserialize, Clone, PartialEq, Eq, Hash, Encode, Decode)]
 pub struct BlobData(pub Vec<u8>);
+
+impl alloc::fmt::Debug for BlobData {
+    fn fmt(&self, f: &mut alloc::fmt::Formatter) -> alloc::fmt::Result {
+        write!(f, "StateDigest({})", hex::encode(&self.0))
+    }
+}
 
 #[derive(Debug, Encode, Decode)]
 pub struct StructuredBlobData<Parameters> {

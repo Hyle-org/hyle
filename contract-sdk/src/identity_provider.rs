@@ -1,9 +1,7 @@
 use alloc::{format, string::String, vec::Vec};
 use bincode::{Decode, Encode};
 
-use crate::{
-    guest::RunResult, Blob, BlobData, BlobIndex, ContractName, Identity, StructuredBlobData,
-};
+use crate::{guest::RunResult, Blob, BlobData, ContractName, Identity};
 
 /// Trait representing an identity verification contract.
 pub trait IdentityVerification {
@@ -69,19 +67,13 @@ pub enum IdentityAction {
 }
 
 impl IdentityAction {
-    pub fn as_blob(
-        &self,
-        contract_name: ContractName,
-        caller: Option<BlobIndex>,
-        callees: Option<Vec<BlobIndex>>,
-    ) -> Blob {
+    pub fn as_blob(self, contract_name: ContractName) -> Blob {
         Blob {
             contract_name,
-            data: BlobData::from(StructuredBlobData {
-                caller,
-                callees,
-                parameters: self.clone(),
-            }),
+            data: BlobData(
+                bincode::encode_to_vec(self, bincode::config::standard())
+                    .expect("failed to encode program inputs"),
+            ),
         }
     }
 }
