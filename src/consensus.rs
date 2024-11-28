@@ -1074,7 +1074,7 @@ pub mod test {
             }
         }
 
-        pub fn setup_node(&mut self, index: usize, cryptos: &Vec<BlstCrypto>) {
+        pub fn setup_node(&mut self, index: usize, cryptos: &[BlstCrypto]) {
             for other_crypto in cryptos.iter() {
                 self.add_trusted_validator(other_crypto.validator_pubkey());
             }
@@ -1091,7 +1091,7 @@ pub mod test {
             self.consensus
                 .bft_round_state
                 .consensus_proposal
-                .round_leader = cryptos.get(0).unwrap().validator_pubkey().clone();
+                .round_leader = cryptos.first().unwrap().validator_pubkey().clone();
         }
 
         pub fn validator_pubkey(&self) -> ValidatorPublicKey {
