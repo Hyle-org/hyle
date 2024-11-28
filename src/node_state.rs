@@ -347,9 +347,14 @@ impl NodeState {
             );
 
             if !has_one_valid_initial_state {
+                let got_states = unsettled_blob
+                    .metadata
+                    .iter()
+                    .map(|hyle_output| format!("{:?}", hyle_output.initial_state))
+                    .collect::<Vec<_>>();
                 info!(
-                    "Tx: {}: No initial state match current contract state for contract '{}'",
-                    unsettled_tx.hash, unsettled_blob.contract_name
+                    "Tx: {}: No initial state match current contract state for contract '{}'. Got states {got_states:?} exepected {:?}",
+                    unsettled_tx.hash, unsettled_blob.contract_name, contract.state
                 );
                 return false; // No valid metadata found for this blob
             }
