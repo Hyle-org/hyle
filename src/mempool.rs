@@ -552,7 +552,7 @@ pub mod test {
 
         pub fn gen_cut(&mut self, validators: &[ValidatorPublicKey]) -> Result<Cut> {
             self.mempool
-                .handle_querynewcut(&mut QueryNewCut(validators.clone()))
+                .handle_querynewcut(&mut QueryNewCut(validators.to_vec()))
         }
 
         pub fn make_data_proposal_with_pending_txs(&mut self) -> Result<()> {
