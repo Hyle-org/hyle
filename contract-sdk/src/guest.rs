@@ -15,6 +15,24 @@ pub struct RunResult {
     pub program_outputs: Vec<u8>,
 }
 
+impl RunResult {
+    pub fn success(identity: Identity, message: &str) -> Self {
+        RunResult {
+            success: true,
+            identity,
+            program_outputs: message.to_string().into_bytes(),
+        }
+    }
+
+    pub fn failure(identity: Identity, message: &str) -> Self {
+        RunResult {
+            success: false,
+            identity,
+            program_outputs: message.to_string().into_bytes(),
+        }
+    }
+}
+
 pub fn fail<State>(input: ContractInput<State>, message: &str)
 where
     State: Digestable,
