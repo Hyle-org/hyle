@@ -861,7 +861,7 @@ mod tests {
     #[test]
     fn test_get_paired_amount_existing_pair() {
         let pair = UnorderedTokenPair::new("token1".into(), "token2".into());
-        let mut pairs = HashMap::new();
+        let mut pairs = BTreeMap::new();
         pairs.insert(pair.clone(), (10, 20));
         let state = AmmState { pairs };
 
@@ -875,7 +875,7 @@ mod tests {
     #[test]
     fn test_get_paired_amount_non_existing_pair() {
         let state = AmmState {
-            pairs: HashMap::new(),
+            pairs: BTreeMap::new(),
         };
 
         let result = state.get_paired_amount("token1".to_string(), "token2".to_string(), 5);
@@ -886,7 +886,7 @@ mod tests {
     #[test]
     fn test_get_paired_amount_zero_amount_a() {
         let pair = UnorderedTokenPair::new("token1".into(), "token2".into());
-        let mut pairs = HashMap::new();
+        let mut pairs = BTreeMap::new();
         pairs.insert(pair.clone(), (10, 20));
         let state = AmmState { pairs };
 
@@ -900,7 +900,7 @@ mod tests {
     #[test]
     fn test_get_paired_amount_division_by_zero() {
         let pair = UnorderedTokenPair::new("token1".into(), "token2".into());
-        let mut pairs = HashMap::new();
+        let mut pairs = BTreeMap::new();
         pairs.insert(pair.clone(), (0, 20));
         let state = AmmState { pairs };
 
