@@ -122,7 +122,7 @@ fn main() {
                 .unwrap_or_else(|| panic!("Missing password argument"))
                 .as_bytes()
                 .to_vec();
-            let blobs = vec![cf.as_blob(ContractName("hydentity".to_owned()), None, None)];
+            let blobs = vec![cf.as_blob(ContractName("hydentity".to_owned()))];
             contract::print_hyled_blob_tx(&identity, &blobs);
 
             contract::run(
@@ -169,7 +169,7 @@ fn main() {
             };
 
             let blobs = vec![
-                identity_cf.as_blob(ContractName("hydentity".to_owned()), None, None),
+                identity_cf.as_blob(ContractName("hydentity".to_owned())),
                 cf.as_blob(ContractName("hyllar".to_owned()), None, None),
             ];
             contract::print_hyled_blob_tx(&identity.clone().into(), &blobs);

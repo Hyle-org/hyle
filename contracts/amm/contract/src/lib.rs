@@ -103,7 +103,8 @@ impl AmmContract {
 
         // For each blob:
         // Check that from is the caller
-        let first_blob = sdk::guest::parse_blob::<ERC20Action>(&callees_blobs, &first_blob_index);
+        let first_blob =
+            sdk::guest::parse_structured_blob::<ERC20Action>(&callees_blobs, &first_blob_index);
         match first_blob.data.parameters {
             ERC20Action::TransferFrom {
                 sender,
@@ -131,7 +132,8 @@ impl AmmContract {
             }
         };
 
-        let second_blob = sdk::guest::parse_blob::<ERC20Action>(&callees_blobs, &second_blob_index);
+        let second_blob =
+            sdk::guest::parse_structured_blob::<ERC20Action>(&callees_blobs, &second_blob_index);
         match second_blob.data.parameters {
             ERC20Action::TransferFrom {
                 sender,
@@ -210,7 +212,8 @@ impl AmmContract {
                 );
             }
         };
-        let blob_from = sdk::guest::parse_blob::<ERC20Action>(&callees_blobs, &blob_from_index);
+        let blob_from =
+            sdk::guest::parse_structured_blob::<ERC20Action>(&callees_blobs, &blob_from_index);
 
         // Extract "blob_to" out of the blobs. This is the blob that has the second token of the pair as contract name
         let blob_to_index = match callees_blobs
@@ -225,7 +228,8 @@ impl AmmContract {
                 );
             }
         };
-        let blob_to = sdk::guest::parse_blob::<ERC20Action>(&callees_blobs, &blob_to_index);
+        let blob_to =
+            sdk::guest::parse_structured_blob::<ERC20Action>(&callees_blobs, &blob_to_index);
 
         let from_amount = match blob_from.data.parameters {
             ERC20Action::TransferFrom {
