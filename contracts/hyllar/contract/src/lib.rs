@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 use anyhow::Error;
 use bincode::{Decode, Encode};
@@ -9,8 +9,8 @@ use serde::{Deserialize, Serialize};
 #[derive(Encode, Decode, Serialize, Deserialize, Debug, Clone)]
 pub struct HyllarToken {
     total_supply: u128,
-    balances: HashMap<String, u128>, // Balances for each account
-    allowances: HashMap<(String, String), u128>, // Allowances (owner, spender)
+    balances: BTreeMap<String, u128>, // Balances for each account
+    allowances: BTreeMap<(String, String), u128>, // Allowances (owner, spender)
 }
 
 pub struct HyllarTokenContract {
@@ -29,12 +29,12 @@ impl HyllarToken {
     ///
     /// * `HyllarToken` - A new instance of the Hyllar token.
     pub fn new(initial_supply: u128, faucet_id: String) -> Self {
-        let mut balances = HashMap::new();
+        let mut balances = BTreeMap::new();
         balances.insert(faucet_id, initial_supply); // Assign initial supply to faucet
         HyllarToken {
             total_supply: initial_supply,
             balances,
-            allowances: HashMap::new(),
+            allowances: BTreeMap::new(),
         }
     }
 }

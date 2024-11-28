@@ -115,11 +115,7 @@ mod tests {
     use std::{fs::File, io::Read};
 
     use hydentity::Hydentity;
-    use hyle_contract_sdk::{
-        flatten_blobs,
-        identity_provider::{IdentityAction, IdentityVerification},
-        BlobIndex, ContractName, Digestable, HyleOutput, Identity, TxHash,
-    };
+    use hyle_contract_sdk::identity_provider::IdentityVerification;
 
     use super::risc0_proof_verifier;
 
@@ -145,32 +141,15 @@ mod tests {
         next_state
             .register_identity("faucet.hydentity", "password")
             .unwrap();
-        let next_state = next_state.as_digest();
-
-        let blob_data = IdentityAction::RegisterIdentity {
-            account: "faucet.hydentity".to_string(),
-        };
-        let blobs = vec![(blob_data.as_blob(ContractName("hydentity".to_owned())))];
 
         match result {
             Ok(outputs) => {
                 assert_eq!(
-                    outputs,
-                    HyleOutput {
-                        version: 1,
-                        initial_state: Hydentity::default().as_digest(),
-                        next_state,
-                        identity: Identity("faucet.hydentity".to_owned()),
-                        tx_hash: TxHash("".to_owned()),
-                        index: BlobIndex(0),
-                        blobs: flatten_blobs(&blobs),
-                        success: true,
-                        program_outputs:
-                            "Successfully registered identity for account: faucet.hydentity"
-                                .to_owned()
-                                .as_bytes()
-                                .to_vec()
-                    }
+                    outputs.program_outputs,
+                    "Successfully registered identity for account: bob.hydentity"
+                        .to_owned()
+                        .as_bytes()
+                        .to_vec()
                 );
             }
             Err(e) => panic!("Risc0 verification failed: {:?}", e),

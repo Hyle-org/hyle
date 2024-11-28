@@ -15,7 +15,7 @@ hyled() {
   cargo run --bin hyled -- $@
 }
 
-hyrun --user faucet.hydentity --password password hydentity register faucet.hydentity
+hyrun --user bob.hydentity --password password hydentity register bob.hydentity
 
 BLOB_TX_HASH=$(hyled blobs bob.hydentity hydentity 000d626f622e687964656e74697479  | grep Response | awk -F' ' '{ print $2}')
 hyled proof $BLOB_TX_HASH hydentity hydentity.risc0.proof 
