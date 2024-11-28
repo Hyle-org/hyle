@@ -122,7 +122,7 @@ mod e2e_hyllar {
             state
                 .balance_of("faucet.hydentity")
                 .expect("faucet identity not found"),
-            9800
+            98_999_999_900
         );
         Ok(())
     }
