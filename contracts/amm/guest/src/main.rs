@@ -14,10 +14,6 @@ fn main() {
         Ok(res) => res,
         Err(err) => {
             panic!("Amm contract initialization failed {}", err);
-            // return sdk::guest::fail(
-            //     input,
-            //     &format!("Incorrect Caller/Callees for this blob: {err}"),
-            // )
         }
     };
 
