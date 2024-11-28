@@ -29,7 +29,7 @@ pub struct LeaderState {
     pub(super) pending_ticket: Option<Ticket>,
 }
 
-pub(super) trait LeaderRole {
+pub(crate) trait LeaderRole {
     fn is_round_leader(&self) -> bool;
     async fn start_round(&mut self) -> Result<()>;
     fn on_prepare_vote(

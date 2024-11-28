@@ -2009,6 +2009,7 @@ dependencies = [
  "hex",
  "hyle-contract-sdk",
  "serde",
+ "serde_json",
  "sha2 0.10.6",
 ]
 
