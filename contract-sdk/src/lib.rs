@@ -57,7 +57,7 @@ pub struct BlobData(pub Vec<u8>);
 
 impl alloc::fmt::Debug for BlobData {
     fn fmt(&self, f: &mut alloc::fmt::Formatter) -> alloc::fmt::Result {
-        write!(f, "StateDigest({})", hex::encode(&self.0))
+        write!(f, "BlobData({})", hex::encode(&self.0))
     }
 }
 
