@@ -9,13 +9,19 @@ use sdk::erc20::ERC20Action;
 risc0_zkvm::guest::entry!(main);
 
 fn main() {
-    let (input, parameters) = sdk::guest::init::<HyllarToken, ERC20Action>();
+    let (input, parsed_blob, caller) =
+        match sdk::guest::init_with_caller::<HyllarToken, ERC20Action>() {
+            Ok(res) => res,
+            Err(err) => {
+                panic!("Hyllar contract initialization failed {}", err);
+            }
+        };
 
     let state = input.initial_state.clone();
 
-    let mut contract = HyllarTokenContract::init(state, input.identity.clone());
+    let mut contract = HyllarTokenContract::init(state, caller);
 
-    let res = sdk::erc20::execute_action(&mut contract, parameters);
+    let res = sdk::erc20::execute_action(&mut contract, parsed_blob.data.parameters);
 
     sdk::guest::commit(input, contract.state(), res);
 }

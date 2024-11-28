@@ -1,9 +1,9 @@
 use anyhow::{bail, Error};
 use borsh::to_vec;
 use risc0_zkvm::sha::Digestible;
-use sdk::{ContractInput, Digestable, HyleOutput, Identity};
+use sdk::{Blob, ContractInput, Digestable, HyleOutput, Identity};
 
-use crate::{Cli, Contract, ContractFunctionEnum, ContractName};
+use crate::{Cli, Contract};
 
 pub fn init<State>(contract_name: &str, initial_state: State)
 where
@@ -24,15 +24,12 @@ where
     );
 }
 
-pub fn print_hyled_blob_tx(identity: &Identity, blobs: Vec<(ContractName, ContractFunctionEnum)>) {
+pub fn print_hyled_blob_tx(identity: &Identity, blobs: &Vec<Blob>) {
     println!("You can send the blob tx:");
     print!("\x1b[93mhyled blobs {} ", identity.0);
-    for (name, function) in blobs {
-        let hex_program_inputs = hex::encode(
-            bincode::encode_to_vec(&function, bincode::config::standard())
-                .expect("failed to encode program inputs"),
-        );
-        print!("{} {} ", name.0, hex_program_inputs);
+    for blob in blobs {
+        let hex_blob_data = hex::encode(&blob.data.0);
+        print!("{} {} ", blob.contract_name.0, hex_blob_data);
     }
     println!("\x1b[0m");
     println!("{}", "-".repeat(20));

@@ -44,9 +44,13 @@ case "$1" in
     hyllar)
         build_contract "Hyllar" "contracts/hyllar/guest/Cargo.toml" "./contracts/hyllar/hyllar.img" "./contracts/hyllar/hyllar.txt"
         ;;
+    amm)
+        build_contract "amm" "contracts/amm/guest/Cargo.toml" "./contracts/amm/amm.img" "./contracts/amm/amm.txt"
+        ;;
     "" | all)
         build_contract "Hydentity" "contracts/hydentity/guest/Cargo.toml" "./contracts/hydentity/hydentity.img" "./contracts/hydentity/hydentity.txt"
         build_contract "Hyllar" "contracts/hyllar/guest/Cargo.toml" "./contracts/hyllar/hyllar.img" "./contracts/hyllar/hyllar.txt"
+        build_contract "amm" "contracts/amm/guest/Cargo.toml" "./contracts/amm/amm.img" "./contracts/amm/amm.txt"
         ;;
     *)
         echo "Invalid option: $1"

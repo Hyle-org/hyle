@@ -66,12 +66,12 @@ pub enum IdentityAction {
     },
 }
 
-impl From<(ContractName, IdentityAction)> for Blob {
-    fn from((contract_name, val): (ContractName, IdentityAction)) -> Self {
+impl IdentityAction {
+    pub fn as_blob(self, contract_name: ContractName) -> Blob {
         Blob {
             contract_name,
             data: BlobData(
-                bincode::encode_to_vec(val, bincode::config::standard())
+                bincode::encode_to_vec(self, bincode::config::standard())
                     .expect("failed to encode program inputs"),
             ),
         }

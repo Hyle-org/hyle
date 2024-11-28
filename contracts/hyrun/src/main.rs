@@ -3,7 +3,8 @@ use core::panic;
 use hydentity::Hydentity;
 use hyllar::HyllarToken;
 use sdk::{
-    erc20::ERC20Action, identity_provider::IdentityAction, BlobData, ContractInput, ContractName,
+    erc20::ERC20Action, identity_provider::IdentityAction, BlobData, BlobIndex, ContractInput,
+    ContractName, TxHash,
 };
 use serde::Deserialize;
 
@@ -43,34 +44,6 @@ impl From<HyllarArgs> for ERC20Action {
             HyllarArgs::Transfer { recipient, amount } => Self::Transfer { recipient, amount },
             HyllarArgs::Init { .. } => panic!("Init is not a valid contract function"),
         }
-    }
-}
-
-enum ContractFunctionEnum {
-    Hydentity(IdentityAction),
-    Hyllar(ERC20Action),
-}
-
-impl bincode::Encode for ContractFunctionEnum {
-    fn encode<E: bincode::enc::Encoder>(
-        &self,
-        encoder: &mut E,
-    ) -> Result<(), bincode::error::EncodeError> {
-        match self {
-            ContractFunctionEnum::Hydentity(f) => f.encode(encoder),
-            ContractFunctionEnum::Hyllar(f) => f.encode(encoder),
-        }
-    }
-}
-
-impl From<IdentityAction> for ContractFunctionEnum {
-    fn from(val: IdentityAction) -> Self {
-        ContractFunctionEnum::Hydentity(val)
-    }
-}
-impl From<ERC20Action> for ContractFunctionEnum {
-    fn from(val: ERC20Action) -> Self {
-        ContractFunctionEnum::Hyllar(val)
     }
 }
 
@@ -149,8 +122,8 @@ fn main() {
                 .unwrap_or_else(|| panic!("Missing password argument"))
                 .as_bytes()
                 .to_vec();
-            contract::print_hyled_blob_tx(&identity, vec![("hydentity".into(), cf.clone().into())]);
-            let blobs = vec![(ContractName("hydentity".to_owned()), cf).into()];
+            let blobs = vec![cf.as_blob(ContractName("hydentity".to_owned()))];
+            contract::print_hyled_blob_tx(&identity, &blobs);
 
             contract::run(
                 &cli,
@@ -159,10 +132,10 @@ fn main() {
                     ContractInput::<Hydentity> {
                         initial_state: identities,
                         identity: identity.clone(),
-                        tx_hash: "".to_string(),
+                        tx_hash: TxHash("".to_owned()),
                         private_blob: BlobData(password.clone()),
                         blobs: blobs.clone(),
-                        index: 0,
+                        index: BlobIndex(0),
                     }
                 },
             );
@@ -194,18 +167,12 @@ fn main() {
                 nonce,
                 blobs_hash: vec!["".into()], // TODO: hash blob
             };
-            contract::print_hyled_blob_tx(
-                &identity.clone().into(),
-                vec![
-                    ("hydentity".into(), identity_cf.clone().into()),
-                    ("hyllar".into(), cf.clone().into()),
-                ],
-            );
 
             let blobs = vec![
-                (ContractName("hydentity".to_owned()), identity_cf).into(),
-                (ContractName("hyllar".to_owned()), cf).into(),
+                identity_cf.as_blob(ContractName("hydentity".to_owned())),
+                cf.as_blob(ContractName("hyllar".to_owned()), None, None),
             ];
+            contract::print_hyled_blob_tx(&identity.clone().into(), &blobs);
 
             contract::run(
                 &cli,
@@ -214,10 +181,10 @@ fn main() {
                     ContractInput::<Hydentity> {
                         initial_state: token,
                         identity: identity.clone().into(),
-                        tx_hash: "".to_string(),
+                        tx_hash: TxHash("".to_owned()),
                         private_blob: BlobData(password.clone()),
                         blobs: blobs.clone(),
-                        index: 0,
+                        index: BlobIndex(0),
                     }
                 },
             );
@@ -228,10 +195,10 @@ fn main() {
                     ContractInput::<HyllarToken> {
                         initial_state: token,
                         identity: identity.clone().into(),
-                        tx_hash: "".to_string(),
+                        tx_hash: TxHash("".to_owned()),
                         private_blob: BlobData(vec![]),
                         blobs: blobs.clone(),
-                        index: 1,
+                        index: BlobIndex(1),
                     }
                 },
             );

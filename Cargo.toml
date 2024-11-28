@@ -1,5 +1,10 @@
 [workspace]
-members = ["contracts/hyrun", "contracts/hyllar/guest", "contracts/hydentity/guest"]
+members = [
+    "contracts/hyrun",
+    "contracts/hyllar/guest",
+    "contracts/hydentity/guest",
+    "contracts/amm/guest",
+]
 resolver = "2"
 
 [package]
@@ -9,7 +14,7 @@ edition = "2021"
 default-run = "node"
 
 [dependencies]
-hyle-contract-sdk = { path = "./contract-sdk"}
+hyle-contract-sdk = { path = "./contract-sdk" }
 hyllar = { path = "./contracts/hyllar/contract" }
 hydentity = { path = "./contracts/hydentity/contract" }
 config = "0.14.1"

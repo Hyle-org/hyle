@@ -1,5 +1,5 @@
 #!/bin/bash
-set -e
+set -xe
 
 # check if script is ran from root directory
 if ! grep -q 'name = "hyle"' Cargo.toml 2>/dev/null; then

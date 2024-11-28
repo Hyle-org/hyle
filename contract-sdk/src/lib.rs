@@ -28,14 +28,20 @@ where
 {
     pub initial_state: State,
     pub identity: Identity,
-    pub tx_hash: String,
+    pub tx_hash: TxHash,
     pub private_blob: BlobData,
     pub blobs: Vec<Blob>,
-    pub index: usize,
+    pub index: BlobIndex,
 }
 
-#[derive(Default, Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash, Encode, Decode)]
+#[derive(Default, Serialize, Deserialize, Clone, PartialEq, Eq, Hash, Encode, Decode)]
 pub struct StateDigest(pub Vec<u8>);
+
+impl alloc::fmt::Debug for StateDigest {
+    fn fmt(&self, f: &mut alloc::fmt::Formatter) -> alloc::fmt::Result {
+        write!(f, "StateDigest({})", hex::encode(&self.0))
+    }
+}
 
 #[derive(Default, Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash, Encode, Decode)]
 pub struct Identity(pub String);
@@ -46,13 +52,70 @@ pub struct TxHash(pub String);
 #[derive(Default, Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash, Encode, Decode)]
 pub struct BlobIndex(pub u32);
 
-#[derive(Default, Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash, Encode, Decode)]
+#[derive(Default, Serialize, Deserialize, Clone, PartialEq, Eq, Hash, Encode, Decode)]
 pub struct BlobData(pub Vec<u8>);
+
+impl alloc::fmt::Debug for BlobData {
+    fn fmt(&self, f: &mut alloc::fmt::Formatter) -> alloc::fmt::Result {
+        write!(f, "BlobData({})", hex::encode(&self.0))
+    }
+}
+
+#[derive(Debug, Encode, Decode)]
+pub struct StructuredBlobData<Parameters> {
+    pub caller: Option<BlobIndex>,
+    pub callees: Option<Vec<BlobIndex>>,
+    pub parameters: Parameters,
+}
+
+impl<Parameters: Encode> From<StructuredBlobData<Parameters>> for BlobData {
+    fn from(val: StructuredBlobData<Parameters>) -> Self {
+        BlobData(
+            bincode::encode_to_vec(val, bincode::config::standard())
+                .expect("failed to encode BlobData"),
+        )
+    }
+}
+impl<Parameters: Decode> TryFrom<BlobData> for StructuredBlobData<Parameters> {
+    type Error = bincode::error::DecodeError;
+
+    fn try_from(val: BlobData) -> Result<StructuredBlobData<Parameters>, Self::Error> {
+        bincode::decode_from_slice(&val.0, bincode::config::standard()).map(|(data, _)| data)
+    }
+}
 
 #[derive(Debug, Serialize, Deserialize, Default, Clone, PartialEq, Eq, Encode, Decode, Hash)]
 pub struct Blob {
     pub contract_name: ContractName,
     pub data: BlobData,
+}
+
+#[derive(Debug, Encode, Decode)]
+pub struct StructuredBlob<Parameters> {
+    pub contract_name: ContractName,
+    pub data: StructuredBlobData<Parameters>,
+}
+
+impl<Parameters: Encode> From<StructuredBlob<Parameters>> for Blob {
+    fn from(val: StructuredBlob<Parameters>) -> Self {
+        Blob {
+            contract_name: val.contract_name,
+            data: BlobData::from(val.data),
+        }
+    }
+}
+
+impl<Parameters: Decode> TryFrom<Blob> for StructuredBlob<Parameters> {
+    type Error = bincode::error::DecodeError;
+
+    fn try_from(val: Blob) -> Result<StructuredBlob<Parameters>, Self::Error> {
+        let data = bincode::decode_from_slice(&val.data.0, bincode::config::standard())
+            .map(|(data, _)| data)?;
+        Ok(StructuredBlob {
+            contract_name: val.contract_name,
+            data,
+        })
+    }
 }
 
 pub fn flatten_blobs(blobs: &[Blob]) -> Vec<u8> {

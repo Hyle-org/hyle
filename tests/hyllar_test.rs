@@ -31,13 +31,10 @@ mod e2e_hyllar {
         let blob_tx_hash = ctx
             .send_blob(
                 "faucet.hydentity".into(),
-                vec![(
-                    ContractName("hydentity".to_owned()),
-                    IdentityAction::RegisterIdentity {
-                        account: "faucet.hydentity".to_string(),
-                    },
-                )
-                    .into()],
+                vec![IdentityAction::RegisterIdentity {
+                    account: "faucet.hydentity".to_string(),
+                }
+                .as_blob(ContractName("hydentity".to_owned()))],
             )
             .await?;
 
@@ -73,23 +70,17 @@ mod e2e_hyllar {
             .send_blob(
                 "faucet.hydentity".into(),
                 vec![
-                    (
-                        ContractName("hydentity".to_owned()),
-                        IdentityAction::VerifyIdentity {
-                            account: "faucet.hydentity".to_string(),
-                            nonce: 0,
-                            blobs_hash: vec!["".into()],
-                        },
-                    )
-                        .into(),
-                    (
-                        ContractName("hyllar".to_owned()),
-                        ERC20Action::Transfer {
-                            recipient: "bob.hydentity".to_string(),
-                            amount: 100,
-                        },
-                    )
-                        .into(),
+                    IdentityAction::VerifyIdentity {
+                        account: "faucet.hydentity".to_string(),
+                        nonce: 0,
+                        blobs_hash: vec!["".into()],
+                    }
+                    .as_blob(ContractName("hydentity".to_owned())),
+                    ERC20Action::Transfer {
+                        recipient: "bob.hydentity".to_string(),
+                        amount: 100,
+                    }
+                    .as_blob(ContractName("hyllar".to_owned()), None, None),
                 ],
             )
             .await?;

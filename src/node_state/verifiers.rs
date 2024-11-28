@@ -150,7 +150,7 @@ mod tests {
         let blob_data = IdentityAction::RegisterIdentity {
             account: "faucet.hydentity".to_string(),
         };
-        let blobs = vec![(ContractName("hydentity".to_owned()), blob_data).into()];
+        let blobs = vec![(blob_data.as_blob(ContractName("hydentity".to_owned())))];
 
         match result {
             Ok(outputs) => {
