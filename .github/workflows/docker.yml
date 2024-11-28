@@ -1,6 +1,11 @@
 name: Push to Artifact Registry
 
-on: [push, pull_request]
+on: 
+  push:
+    branches:
+      - 'main'
+      - 'releases/**'
+    tags:
 
 env:
   IMAGE_NAME: 'hyle'
