@@ -156,7 +156,7 @@ impl Mempool {
     /// Creates a cut with local material on QueryNewCut message reception (from consensus)
     fn handle_querynewcut(&mut self, validators: &mut QueryNewCut) -> Result<Cut> {
         // TODO: metrics?
-        self.metrics.add_batch();
+        self.metrics.add_new_cut();
         // FIXME: use voting power
         // self.validators.len() == 1 is for SingleNodeBlockGeneration
         //   it makes sure the DataProposal is committed to the Lane without waiting for a DataVote
@@ -169,15 +169,12 @@ impl Mempool {
         Ok(self.storage.new_cut(&validators.0))
     }
 
-    pub fn handle_api_message(&mut self, command: RestApiMessage) -> Result<()> {
+    fn handle_api_message(&mut self, command: RestApiMessage) -> Result<()> {
         match command {
-            RestApiMessage::NewTx(tx) => {
-                if let Err(e) = self.on_new_tx(tx) {
-                    bail!("Received invalid transaction: {:?}. Won't process it.", e);
-                }
-            }
-        };
-        Ok(())
+            RestApiMessage::NewTx(tx) => self
+                .on_new_tx(tx)
+                .context("Received invalid transaction. Won't process it."),
+        }
     }
 
     fn handle_data_proposal_management(&mut self) -> Result<()> {
@@ -195,7 +192,11 @@ impl Mempool {
                     .cloned(),
             );
             // FIXME: with current implem, we send DataProposal twice.
-            self.broadcast_data_proposal_only_for(only_for, data_proposal.clone())?;
+            self.metrics.add_data_proposal(data_proposal);
+            _ = self.broadcast_only_for_net_message(
+                only_for,
+                MempoolNetMessage::DataProposal(data_proposal.clone()),
+            )?;
         }
         Ok(())
     }
@@ -218,8 +219,6 @@ impl Mempool {
             }
         }
     }
-
-    // TODO return Result
 
     fn handle_net_message(&mut self, msg: SignedByValidator<MempoolNetMessage>) -> Result<()> {
         let result = BlstCrypto::verify(&msg)?;
@@ -268,9 +267,8 @@ impl Mempool {
 
         let waiting_proposals = self.storage.get_waiting_data_proposals(validator)?;
         for wp in waiting_proposals {
-            if let Err(e) = self.on_data_proposal(validator, wp) {
-                error!("{:?}", e);
-            }
+            self.on_data_proposal(validator, wp)
+                .context("Consuming waiting data proposal")?;
         }
         Ok(())
     }
@@ -361,7 +359,12 @@ impl Mempool {
                 self.validators.len(),
                 data_proposal.car.txs.len()
             );
-            self.broadcast_data_proposal(data_proposal)?;
+            if self.validators.is_empty() {
+                return Ok(());
+            }
+            self.metrics.add_data_proposal(&data_proposal);
+            self.metrics.add_proposed_txs(&data_proposal);
+            self.broadcast_net_message(MempoolNetMessage::DataProposal(data_proposal))?;
         }
         Ok(())
     }
@@ -391,7 +394,9 @@ impl Mempool {
             }
         }
 
-        self.metrics.add_api_tx("blob".to_string());
+        let tx_type: &'static str = (&tx.transaction_data).into();
+
+        self.metrics.add_api_tx(tx_type);
         self.storage.on_new_tx(tx);
         self.metrics
             .snapshot_pending_tx(self.storage.pending_txs.len());
@@ -399,35 +404,9 @@ impl Mempool {
         Ok(())
     }
 
-    fn broadcast_data_proposal(&mut self, data_proposal: DataProposal) -> Result<()> {
-        if self.validators.is_empty() {
-            return Ok(());
-        }
-        self.metrics
-            .add_broadcasted_data_proposal("blob".to_string());
-        self.broadcast_net_message(MempoolNetMessage::DataProposal(data_proposal))?;
-        Ok(())
-    }
-
-    fn broadcast_data_proposal_only_for(
-        &mut self,
-        only_for: HashSet<ValidatorPublicKey>,
-        data_proposal: DataProposal,
-    ) -> Result<()> {
-        self.metrics
-            .add_broadcasted_data_proposal_only_for("blob".to_string());
-        _ = self
-            .bus
-            .send(OutboundMessage::broadcast_only_for(
-                only_for,
-                self.sign_net_message(MempoolNetMessage::DataProposal(data_proposal))?,
-            ))
-            .context("broadcasting data_proposal_only_for");
-        Ok(())
-    }
-
     fn send_vote(&mut self, validator: &ValidatorPublicKey, car_hash: CarHash) -> Result<()> {
-        self.metrics.add_sent_proposal_vote("blob".to_string());
+        self.metrics
+            .add_proposal_vote(self.crypto.validator_pubkey(), validator);
         self.send_net_message(validator.clone(), MempoolNetMessage::DataVote(car_hash))?;
         Ok(())
     }
@@ -438,7 +417,8 @@ impl Mempool {
         data_proposal: DataProposal,
         last_known_car_hash: Option<CarHash>,
     ) -> Result<()> {
-        self.metrics.add_sent_sync_request("blob".to_string());
+        self.metrics
+            .add_sync_request(self.crypto.validator_pubkey(), validator);
         self.send_net_message(
             validator.clone(),
             MempoolNetMessage::SyncRequest(data_proposal.car.hash(), last_known_car_hash),
@@ -448,7 +428,8 @@ impl Mempool {
 
     fn send_sync_reply(&mut self, validator: &ValidatorPublicKey, cars: Vec<Car>) -> Result<()> {
         // cleanup previously tracked sent sync request
-        self.metrics.add_sent_sync_reply("blob".to_string());
+        self.metrics
+            .add_sync_reply(self.crypto.validator_pubkey(), validator, cars.len());
         self.send_net_message(validator.clone(), MempoolNetMessage::SyncReply(cars))?;
         Ok(())
     }
@@ -457,12 +438,29 @@ impl Mempool {
     fn broadcast_net_message(&mut self, net_message: MempoolNetMessage) -> Result<()> {
         let signed_msg = self.sign_net_message(net_message)?;
         let enum_variant_name: &'static str = (&signed_msg.msg).into();
+        let error_msg =
+            format!("Broadcasting MempoolNetMessage::{enum_variant_name} msg on the bus");
         self.bus
             .send(OutboundMessage::broadcast(signed_msg))
-            .context(format!(
-                "Broadcasting MempoolNetMessage::{} msg on the bus",
-                enum_variant_name
-            ))?;
+            .context(error_msg)?;
+        Ok(())
+    }
+
+    #[inline(always)]
+    fn broadcast_only_for_net_message(
+        &mut self,
+        only_for: HashSet<ValidatorPublicKey>,
+        net_message: MempoolNetMessage,
+    ) -> Result<()> {
+        let signed_msg = self.sign_net_message(net_message)?;
+        let enum_variant_name: &'static str = (&signed_msg.msg).into();
+        let error_msg = format!(
+            "Broadcasting MempoolNetMessage::{} msg only for: {:?} on the bus",
+            enum_variant_name, only_for
+        );
+        self.bus
+            .send(OutboundMessage::broadcast_only_for(only_for, signed_msg))
+            .context(error_msg)?;
         Ok(())
     }
 
@@ -474,13 +472,11 @@ impl Mempool {
     ) -> Result<()> {
         let signed_msg = self.sign_net_message(net_message)?;
         let enum_variant_name: &'static str = (&signed_msg.msg).into();
+        let error_msg = format!("Sending MempoolNetMessage::{enum_variant_name} msg on the bus");
         _ = self
             .bus
             .send(OutboundMessage::send(to, signed_msg))
-            .context(format!(
-                "Sending MempoolNetMessage::{} msg on the bus",
-                enum_variant_name
-            ))?;
+            .context(error_msg)?;
         Ok(())
     }
 

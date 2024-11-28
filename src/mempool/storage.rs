@@ -134,7 +134,7 @@ impl Storage {
         // optimistic_node_state is here to handle the case where a contract is registered in a car that is not yet committed.
         // For performance reasons, we only clone node_state in it for unregistered contracts that are potentially in those uncommitted cars.
         let mut optimistic_node_state: Option<NodeState> = None;
-        for tx in data_proposal.car.txs.iter() {
+        for tx in &data_proposal.car.txs {
             match &tx.transaction_data {
                 TransactionData::Proof(_) => {
                     warn!("Refusing DataProposal: unverified proof transaction");

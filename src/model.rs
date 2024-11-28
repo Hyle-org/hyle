@@ -22,6 +22,7 @@ use std::{
     sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
 };
+use strum_macros::IntoStaticStr;
 use tracing::debug;
 
 use crate::{
@@ -76,7 +77,9 @@ pub struct Transaction {
     pub transaction_data: TransactionData,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Encode, Decode, Hash)]
+#[derive(
+    Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Encode, Decode, Hash, IntoStaticStr,
+)]
 pub enum TransactionData {
     Stake(Staker), // FIXME: to remove, this is temporary waiting for real staking contract !!
     Blob(BlobTransaction),
