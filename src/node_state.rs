@@ -10,7 +10,7 @@ use crate::{
 };
 use anyhow::{bail, Context, Error, Result};
 use bincode::{Decode, Encode};
-use hyle_contract_sdk::{HyleOutput, StateDigest, TxHash};
+use hyle_contract_sdk::{BlobIndex, HyleOutput, StateDigest, TxHash};
 use model::{Contract, Timeouts, UnsettledBlobMetadata, UnsettledBlobTransaction};
 use ordered_tx_map::OrderedTxMap;
 use std::collections::HashMap;
@@ -315,39 +315,66 @@ impl NodeState {
             .unsettled_transactions
             .is_next_unsettled_tx(&unsettled_tx.hash)
         {
+            debug!(
+                "Tx: {} is not the next transaction to settle.",
+                unsettled_tx.hash
+            );
             return false;
+        }
+
+        // This mapping is here to keep track of the evolution of contract states for each contract involved in the tx
+        let mut valid_temp_contract_states: HashMap<ContractName, Vec<StateDigest>> =
+            HashMap::new();
+
+        // We initialize the mapping with the current state of each contract
+        for (contract_name, contract) in &self.contracts {
+            valid_temp_contract_states.insert(contract_name.clone(), vec![contract.state.clone()]);
         }
 
         // Check for each blob if initial state is correct.
         // As tx is next to be settled, remove all metadata with incorrect initial state.
-        for unsettled_blob in unsettled_tx.blobs.iter() {
-            let contract = match self.contracts.get(&unsettled_blob.contract_name) {
-                Some(contract) => contract,
-                None => {
-                    warn!(
-                        "Tx: {}: No contract '{}' found when checking for settlement",
-                        unsettled_tx.hash, unsettled_blob.contract_name
-                    );
-                    return false;
-                } // No contract found for this blob
-            };
-            let has_one_valid_initial_state = unsettled_blob
+        for (blob_index, unsettled_blob) in unsettled_tx.blobs.iter().enumerate() {
+            if unsettled_blob.metadata.is_empty() {
+                debug!(
+                    "Tx: {}: No metadata found for {} on contract '{}'",
+                    unsettled_tx.hash,
+                    BlobIndex(blob_index as u32),
+                    unsettled_blob.contract_name
+                );
+                return false; // No metadata found for this blob
+            }
+
+            // Gather all metadatas that have a valid initial state
+            // An initial state is considered valid if it is present in the potnetial contract states computed after all previous blobs
+            let metadatas_with_correct_initial_state: Vec<&HyleOutput> = unsettled_blob
                 .metadata
                 .iter()
-                .any(|hyle_output| hyle_output.initial_state == contract.state);
+                .filter(|hyle_output| {
+                    valid_temp_contract_states
+                        .get(&unsettled_blob.contract_name)
+                        .map_or(false, |states| states.contains(&hyle_output.initial_state))
+                })
+                .collect();
 
-            debug!(
-                "Tx: {}: Blob '{}' has valid initial state: {}",
-                unsettled_tx.hash, unsettled_blob.contract_name, has_one_valid_initial_state
-            );
+            let valid_potential_next_states: Vec<StateDigest> =
+                metadatas_with_correct_initial_state
+                    .iter()
+                    .map(|hyle_output| hyle_output.next_state.clone())
+                    .collect();
 
-            if !has_one_valid_initial_state {
-                info!(
-                    "Tx: {}: No initial state match current contract state for contract '{}'",
-                    unsettled_tx.hash, unsettled_blob.contract_name
+            if valid_potential_next_states.is_empty() {
+                warn!(
+                    "Tx: {}: Could not find any proof that has the correct initial state for contract '{}'. Potential initial states: {:?} but the ones given are {:?}",
+                    unsettled_tx.hash, unsettled_blob.contract_name, valid_temp_contract_states.get(&unsettled_blob.contract_name), unsettled_blob.metadata.iter().map(|h| &h.initial_state).collect::<Vec<_>>()
                 );
                 return false; // No valid metadata found for this blob
             }
+
+            // Removing all potential_next_state from previous proved blobs
+            valid_temp_contract_states.insert(
+                unsettled_blob.contract_name.clone(),
+                valid_potential_next_states,
+            );
         }
         debug!(
             "Tx: {}: All blobs have valid initial state",
@@ -614,5 +641,236 @@ mod test {
         // Check that we did not settled
         assert_eq!(state.contracts.get(&c1).unwrap().state.0, vec![0, 1, 2, 3]);
         assert_eq!(state.contracts.get(&c2).unwrap().state.0, vec![0, 1, 2, 3]);
+    }
+
+    #[test_log::test(tokio::test)]
+    async fn change_same_contract_state_multiple_times_in_same_tx() {
+        let mut state = new_node_state().await;
+        let c1 = ContractName("c1".to_string());
+
+        let register_c1 = new_register_contract(c1.clone());
+
+        let first_blob = new_blob(&c1.0);
+        let second_blob = new_blob(&c1.0);
+        let third_blob = new_blob(&c1.0);
+
+        let blob_tx = BlobTransaction {
+            identity: Identity("test.c1".to_string()),
+            blobs: vec![first_blob, second_blob, third_blob],
+        };
+        let blob_tx_hash = blob_tx.hash();
+
+        state.handle_register_contract_tx(&register_c1).unwrap();
+        state.handle_blob_tx(&blob_tx).unwrap();
+
+        let first_hyle_output = make_hyle_output(blob_tx.clone(), BlobIndex(0));
+
+        let first_proof = ProofTransaction {
+            contract_name: c1.clone(),
+            blob_tx_hash: blob_tx_hash.clone(),
+            proof: ProofData::Bytes(serde_json::to_vec(&first_hyle_output).unwrap()),
+        };
+
+        let verified_first_proof = VerifiedProofTransaction {
+            hyle_output: state.verify_proof(&first_proof).unwrap(),
+            proof_transaction: first_proof,
+        };
+
+        let mut second_hyle_output = make_hyle_output(blob_tx.clone(), BlobIndex(1));
+        second_hyle_output.initial_state = first_hyle_output.next_state.clone();
+        second_hyle_output.next_state = StateDigest(vec![7, 8, 9]);
+
+        let second_proof = ProofTransaction {
+            contract_name: c1.clone(),
+            blob_tx_hash: blob_tx_hash.clone(),
+            proof: ProofData::Bytes(serde_json::to_vec(&second_hyle_output).unwrap()),
+        };
+
+        let verified_second_proof = VerifiedProofTransaction {
+            hyle_output: state.verify_proof(&second_proof).unwrap(),
+            proof_transaction: second_proof,
+        };
+
+        let mut third_hyle_output = make_hyle_output(blob_tx.clone(), BlobIndex(2));
+        third_hyle_output.initial_state = second_hyle_output.next_state.clone();
+        third_hyle_output.next_state = StateDigest(vec![10, 11, 12]);
+
+        let third_proof = ProofTransaction {
+            contract_name: c1.clone(),
+            blob_tx_hash: blob_tx_hash.clone(),
+            proof: ProofData::Bytes(serde_json::to_vec(&third_hyle_output).unwrap()),
+        };
+
+        let verified_third_proof = VerifiedProofTransaction {
+            hyle_output: state.verify_proof(&third_proof).unwrap(),
+            proof_transaction: third_proof,
+        };
+
+        state
+            .handle_verified_proof_tx(&verified_first_proof)
+            .unwrap();
+        state
+            .handle_verified_proof_tx(&verified_second_proof)
+            .unwrap();
+        state
+            .handle_verified_proof_tx(&verified_third_proof)
+            .unwrap();
+
+        // Check that we did settled with the last state
+        assert_eq!(state.contracts.get(&c1).unwrap().state.0, vec![10, 11, 12]);
+    }
+
+    #[test_log::test(tokio::test)]
+    async fn duplicate_proof_with_inconsistent_state_should_never_settle() {
+        let mut state = new_node_state().await;
+        let c1 = ContractName("c1".to_string());
+
+        let register_c1 = new_register_contract(c1.clone());
+
+        let first_blob = new_blob(&c1.0);
+        let second_blob = new_blob(&c1.0);
+
+        let blob_tx = BlobTransaction {
+            identity: Identity("test.c1".to_string()),
+            blobs: vec![first_blob, second_blob],
+        };
+        let blob_tx_hash = blob_tx.hash();
+
+        state.handle_register_contract_tx(&register_c1).unwrap();
+        state.handle_blob_tx(&blob_tx).unwrap();
+
+        // Create legitimate proof for Blob1
+        let first_hyle_output = make_hyle_output(blob_tx.clone(), BlobIndex(0));
+        let first_proof = ProofTransaction {
+            contract_name: c1.clone(),
+            blob_tx_hash: blob_tx_hash.clone(),
+            proof: ProofData::Bytes(serde_json::to_vec(&first_hyle_output).unwrap()),
+        };
+
+        let verified_first_proof = VerifiedProofTransaction {
+            hyle_output: state.verify_proof(&first_proof).unwrap(),
+            proof_transaction: first_proof,
+        };
+
+        // Create hacky proof for Blob1
+        let mut another_first_hyle_output = make_hyle_output(blob_tx.clone(), BlobIndex(0));
+        another_first_hyle_output.initial_state = first_hyle_output.next_state.clone();
+        another_first_hyle_output.next_state = first_hyle_output.initial_state.clone();
+
+        let another_first_proof = ProofTransaction {
+            contract_name: c1.clone(),
+            blob_tx_hash: blob_tx_hash.clone(),
+            proof: ProofData::Bytes(serde_json::to_vec(&another_first_hyle_output).unwrap()),
+        };
+
+        let another_verified_first_proof = VerifiedProofTransaction {
+            hyle_output: state.verify_proof(&another_first_proof).unwrap(),
+            proof_transaction: another_first_proof,
+        };
+
+        let mut second_hyle_output = make_hyle_output(blob_tx.clone(), BlobIndex(1));
+        second_hyle_output.initial_state = another_first_hyle_output.next_state.clone();
+        second_hyle_output.next_state = StateDigest(vec![7, 8, 9]);
+
+        let second_proof = ProofTransaction {
+            contract_name: c1.clone(),
+            blob_tx_hash: blob_tx_hash.clone(),
+            proof: ProofData::Bytes(serde_json::to_vec(&second_hyle_output).unwrap()),
+        };
+
+        let verified_second_proof = VerifiedProofTransaction {
+            hyle_output: state.verify_proof(&second_proof).unwrap(),
+            proof_transaction: second_proof,
+        };
+
+        state
+            .handle_verified_proof_tx(&verified_first_proof)
+            .unwrap();
+        state
+            .handle_verified_proof_tx(&another_verified_first_proof)
+            .unwrap();
+        state
+            .handle_verified_proof_tx(&verified_second_proof)
+            .unwrap();
+
+        // Check that we did not settled
+        assert_eq!(state.contracts.get(&c1).unwrap().state.0, vec![0, 1, 2, 3]);
+    }
+
+    #[test_log::test(tokio::test)]
+    async fn duplicate_proof_with_inconsistent_state_should_never_settle_another() {
+        let mut state = new_node_state().await;
+        let c1 = ContractName("c1".to_string());
+
+        let register_c1 = new_register_contract(c1.clone());
+
+        let first_blob = new_blob(&c1.0);
+        let second_blob = new_blob(&c1.0);
+        let third_blob = new_blob(&c1.0);
+
+        let blob_tx = BlobTransaction {
+            identity: Identity("test.c1".to_string()),
+            blobs: vec![first_blob, second_blob, third_blob],
+        };
+        let blob_tx_hash = blob_tx.hash();
+
+        state.handle_register_contract_tx(&register_c1).unwrap();
+        state.handle_blob_tx(&blob_tx).unwrap();
+
+        // Create legitimate proof for Blob1
+        let first_hyle_output = make_hyle_output(blob_tx.clone(), BlobIndex(0));
+        let first_proof = ProofTransaction {
+            contract_name: c1.clone(),
+            blob_tx_hash: blob_tx_hash.clone(),
+            proof: ProofData::Bytes(serde_json::to_vec(&first_hyle_output).unwrap()),
+        };
+
+        let verified_first_proof = VerifiedProofTransaction {
+            hyle_output: state.verify_proof(&first_proof).unwrap(),
+            proof_transaction: first_proof,
+        };
+
+        let mut second_hyle_output = make_hyle_output(blob_tx.clone(), BlobIndex(1));
+        second_hyle_output.initial_state = first_hyle_output.next_state.clone();
+        second_hyle_output.next_state = StateDigest(vec![7, 8, 9]);
+
+        let second_proof = ProofTransaction {
+            contract_name: c1.clone(),
+            blob_tx_hash: blob_tx_hash.clone(),
+            proof: ProofData::Bytes(serde_json::to_vec(&second_hyle_output).unwrap()),
+        };
+
+        let verified_second_proof = VerifiedProofTransaction {
+            hyle_output: state.verify_proof(&second_proof).unwrap(),
+            proof_transaction: second_proof,
+        };
+
+        let mut third_hyle_output = make_hyle_output(blob_tx.clone(), BlobIndex(2));
+        third_hyle_output.initial_state = first_hyle_output.next_state.clone();
+        third_hyle_output.next_state = StateDigest(vec![10, 11, 12]);
+
+        let third_proof = ProofTransaction {
+            contract_name: c1.clone(),
+            blob_tx_hash: blob_tx_hash.clone(),
+            proof: ProofData::Bytes(serde_json::to_vec(&third_hyle_output).unwrap()),
+        };
+
+        let verified_third_proof = VerifiedProofTransaction {
+            hyle_output: state.verify_proof(&third_proof).unwrap(),
+            proof_transaction: third_proof,
+        };
+
+        state
+            .handle_verified_proof_tx(&verified_first_proof)
+            .unwrap();
+        state
+            .handle_verified_proof_tx(&verified_second_proof)
+            .unwrap();
+        state
+            .handle_verified_proof_tx(&verified_third_proof)
+            .unwrap();
+
+        // Check that we did not settled
+        assert_eq!(state.contracts.get(&c1).unwrap().state.0, vec![0, 1, 2, 3]);
     }
 }
