@@ -6,6 +6,7 @@ use risc0_zkvm::{compute_image_id, serde::to_vec, Receipt};
 use serde::Serialize;
 use tracing::info;
 
+#[allow(dead_code)]
 pub fn as_input_data<T: Serialize>(data: &T) -> Result<Vec<u8>> {
     let slice = to_vec(data)?;
     Ok(bytemuck::cast_slice(&slice).to_vec())
