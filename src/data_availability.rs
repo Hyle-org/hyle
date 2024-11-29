@@ -121,7 +121,7 @@ impl Module for DataAvailability {
 
         let db = sled::Config::new()
             .use_compression(true)
-            .compression_factor(15)
+            .compression_factor(3)
             .path(
                 ctx.common
                     .config

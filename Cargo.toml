@@ -4,7 +4,7 @@ members = [
     "contracts/hyllar/guest",
     "contracts/hydentity/guest",
     "contracts/amm/guest",
-    "crates/bonsai-runner"
+    "crates/bonsai-runner",
 ]
 resolver = "2"
 
@@ -93,6 +93,10 @@ testcontainers-modules = { version = "0.11.4", features = ["postgres"] }
 
 [features]
 dhat = ["dep:dhat"]
+
+[profile.fastdebug]
+inherits = "dev"
+opt-level = 1
 
 [profile.release]
 lto = "thin"

@@ -44,13 +44,18 @@ jobs:
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: cargo build --verbose
-      - run: cargo nextest run --profile ci --workspace
+      - run: cargo nextest run --profile ci --workspace --lib
       - name: Upload test results to Codecov
         if: ${{ !cancelled() }}
         uses: codecov/test-results-action@v1
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          files: target/nextest/ci/junit.xml
+      - run: cargo nextest run --profile ci --cargo-profile fastdebug --test consensus_tests --test hyllar_test --test tx_settlement_test
+      - name: Upload test results to Codecov
+        if: ${{ !cancelled() }}
+        uses: codecov/test-results-action@v1
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
   coverage:
     name: Unit tests coverage
     runs-on: ubuntu-latest
