@@ -23,7 +23,7 @@ use axum::{
 };
 use core::str;
 use futures::{SinkExt, StreamExt};
-use model::{TransactionStatus, TransactionType, TransactionWithBlobs, TxHashDb};
+use model::{BlobWithStatus, TransactionStatus, TransactionType, TransactionWithBlobs, TxHashDb};
 use sqlx::types::chrono::DateTime;
 use sqlx::{postgres::PgPoolOptions, PgPool, Pool, Postgres};
 use std::{collections::HashMap, sync::Arc};
@@ -268,18 +268,6 @@ impl Indexer {
                 get(Self::get_blob_transactions_by_contract_ws_handler),
             )
             // blob
-            .route(
-                "/blobs/contract/:contract_name",
-                get(api::get_blobs_by_contract),
-            )
-            .route(
-                "/blobs/settled/contract/:contract_name",
-                get(api::get_settled_blobs_by_contract),
-            )
-            .route(
-                "/blobs/unsettled/contract/:contract_name",
-                get(api::get_unsettled_blobs_by_contract),
-            )
             .route("/blobs/hash/:tx_hash", get(api::get_blobs_by_tx_hash))
             .route("/blob/hash/:tx_hash/index/:blob_index", get(api::get_blob))
             // contract
@@ -591,7 +579,15 @@ impl Indexer {
                     transaction_type: TransactionType::BlobTransaction,
                     transaction_status: TransactionStatus::Sequenced,
                     identity: tx.identity.0.clone(),
-                    blobs: tx.blobs.clone(),
+                    blobs: tx
+                        .blobs
+                        .iter()
+                        .map(|blob| BlobWithStatus {
+                            contract_name: blob.contract_name.0.clone(),
+                            data: blob.data.0.clone(),
+                            verified: false,
+                        })
+                        .collect(),
                 };
                 senders.iter().for_each(|sender| {
                     let _ = sender.send(enriched_tx.clone());
@@ -613,7 +609,7 @@ impl std::ops::Deref for Indexer {
 mod test {
     use axum_test::TestServer;
     use hyle_contract_sdk::{BlobIndex, HyleOutput, Identity, StateDigest, TxHash};
-    use model::{BlobDbWithStatus, ContractDb};
+    use model::{BlockDb, ContractDb};
     use std::{
         future::IntoFuture,
         net::{Ipv4Addr, SocketAddr},
@@ -790,23 +786,19 @@ mod test {
         let json_response = transactions_response.json::<ContractDb>();
         assert_eq!(json_response.state_digest, next_state.0);
 
-        let blob_transactions_response = server.get("/blobs/contract/c1").await;
+        let blob_transactions_response = server.get("/blob_transactions/contract/c1").await;
         blob_transactions_response.assert_status_ok();
-        let json_response = blob_transactions_response.json::<Vec<BlobDbWithStatus>>();
-        assert!(json_response.first().unwrap().blob.verified);
-        assert_eq!(
-            json_response.first().unwrap().transaction_status,
-            TransactionStatus::Success
-        );
+        let json_response = blob_transactions_response.json::<Vec<TransactionWithBlobs>>();
+        let tx = json_response.first().unwrap();
+        assert!(tx.blobs.first().unwrap().verified);
+        assert_eq!(tx.transaction_status, TransactionStatus::Success);
 
-        let blob_transactions_response = server.get("/blobs/contract/c1").await;
+        let blob_transactions_response = server.get("/blob_transactions/contract/c2").await;
         blob_transactions_response.assert_status_ok();
-        let json_response = blob_transactions_response.json::<Vec<BlobDbWithStatus>>();
-        assert!(json_response.first().unwrap().blob.verified);
-        assert_eq!(
-            json_response.first().unwrap().transaction_status,
-            TransactionStatus::Success
-        );
+        let json_response = blob_transactions_response.json::<Vec<TransactionWithBlobs>>();
+        let tx = json_response.first().unwrap();
+        assert!(tx.blobs.first().unwrap().verified);
+        assert_eq!(tx.transaction_status, TransactionStatus::Success);
 
         Ok(())
     }
@@ -835,6 +827,33 @@ mod test {
         let transactions_response = server.get("/blocks").await;
         transactions_response.assert_status_ok();
         assert!(!transactions_response.text().is_empty());
+
+        // Test pagination
+        let transactions_response = server.get("/blocks?nb_results=1").await;
+        transactions_response.assert_status_ok();
+        assert_eq!(transactions_response.json::<Vec<BlockDb>>().len(), 1);
+        assert_eq!(
+            transactions_response
+                .json::<Vec<BlockDb>>()
+                .first()
+                .unwrap()
+                .height,
+            2
+        );
+        let transactions_response = server.get("/blocks?nb_results=1&start_block=1").await;
+        transactions_response.assert_status_ok();
+        assert_eq!(transactions_response.json::<Vec<BlockDb>>().len(), 1);
+        assert_eq!(
+            transactions_response
+                .json::<Vec<BlockDb>>()
+                .first()
+                .unwrap()
+                .height,
+            1
+        );
+        // Test negative end of blocks
+        let transactions_response = server.get("/blocks?nb_results=10&start_block=4").await;
+        transactions_response.assert_status_ok();
 
         // Get the last block
         let transactions_response = server.get("/block/last").await;
@@ -887,21 +906,6 @@ mod test {
         // Blobs
         // Get all transactions for a specific contract name
         let transactions_response = server.get("/blob_transactions/contract/contract_1").await;
-        transactions_response.assert_status_ok();
-        assert!(!transactions_response.text().is_empty());
-
-        // Get all blobs for a specific contract name
-        let transactions_response = server.get("/blobs/contract/contract_1").await;
-        transactions_response.assert_status_ok();
-        assert!(!transactions_response.text().is_empty());
-
-        // Get all settled blobs by contract name
-        let transactions_response = server.get("/blobs/settled/contract/contract_1").await;
-        transactions_response.assert_status_ok();
-        assert!(!transactions_response.text().is_empty());
-
-        // Get all unsettled blobs by contract name
-        let transactions_response = server.get("/blobs/unsettled/contract/contract_1").await;
         transactions_response.assert_status_ok();
         assert!(!transactions_response.text().is_empty());
 

@@ -1,27 +1,43 @@
-use crate::model::{Blob, BlobData, BlockHash, ContractName};
+use crate::model::BlockHash;
 
 use super::{
     model::{
-        BlobDb, BlobDbWithStatus, BlockDb, ContractDb, ContractStateDb, TransactionDb,
+        BlobDb, BlobWithStatus, BlockDb, ContractDb, ContractStateDb, TransactionDb,
         TransactionStatus, TransactionType, TransactionWithBlobs, TxHashDb,
     },
     IndexerApiState,
 };
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     Json,
 };
 use sqlx::Row;
 
+#[derive(Debug, serde::Deserialize)]
+pub struct BlockPagination {
+    pub start_block: Option<i64>,
+    pub nb_results: Option<i64>,
+}
+
 // Blocks
 pub async fn get_blocks(
+    Query(pagination): Query<BlockPagination>,
     State(state): State<IndexerApiState>,
 ) -> Result<Json<Vec<BlockDb>>, StatusCode> {
-    let blocks = sqlx::query_as::<_, BlockDb>("SELECT * FROM blocks")
-        .fetch_all(&state.db)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let blocks = match pagination.start_block {
+        Some(start_block) => sqlx::query_as::<_, BlockDb>(
+            "SELECT * FROM blocks WHERE height <= $1 and height > $2 ORDER BY height DESC LIMIT $3",
+        )
+        .bind(start_block)
+        .bind(start_block - pagination.nb_results.unwrap_or(10)) // Fine if this goes negative
+        .bind(pagination.nb_results.unwrap_or(10)),
+        None => sqlx::query_as::<_, BlockDb>("SELECT * FROM blocks ORDER BY height DESC LIMIT $1")
+            .bind(pagination.nb_results.unwrap_or(10)),
+    }
+    .fetch_all(&state.db)
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     match blocks.len() {
         0 => Err(StatusCode::NOT_FOUND),
@@ -77,32 +93,34 @@ pub async fn get_block_by_hash(
 
 // Transactions
 pub async fn get_transactions(
+    Query(pagination): Query<BlockPagination>,
     State(state): State<IndexerApiState>,
 ) -> Result<Json<Vec<TransactionDb>>, StatusCode> {
-    let transactions = sqlx::query_as::<_, TransactionDb>("SELECT * FROM transactions")
-        .fetch_all(&state.db)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-    match transactions.len() {
-        0 => Err(StatusCode::NOT_FOUND),
-        _ => Ok(Json(transactions)),
+    let transactions = match pagination.start_block {
+        Some(start_block) => sqlx::query_as::<_, TransactionDb>(
+            r#"
+            SELECT t.*
+            FROM transactions t
+            JOIN blocks b ON t.block_hash = b.hash
+            WHERE b.height <= $1 and b.height > $2
+            ORDER BY b.height DESC
+            LIMIT $3
+            "#,
+        )
+        .bind(start_block)
+        .bind(start_block - pagination.nb_results.unwrap_or(10)) // Fine if this goes negative
+        .bind(pagination.nb_results.unwrap_or(10)),
+        None => sqlx::query_as::<_, TransactionDb>(
+            r#"
+            SELECT t.*
+            FROM transactions t
+            JOIN blocks b ON t.block_hash = b.hash
+            ORDER BY b.height DESC
+            LIMIT $1
+            "#,
+        )
+        .bind(pagination.nb_results.unwrap_or(10)),
     }
-}
-
-pub async fn get_transactions_by_contract(
-    Path(contract_name): Path<String>,
-    State(state): State<IndexerApiState>,
-) -> Result<Json<Vec<TransactionDb>>, StatusCode> {
-    let transactions = sqlx::query_as::<_, TransactionDb>(
-        r#"
-        SELECT t.*
-        FROM transactions t
-        JOIN blobs b ON t.tx_hash = b.tx_hash
-        WHERE b.contract_name = $1
-        "#,
-    )
-    .bind(contract_name)
     .fetch_all(&state.db)
     .await
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
@@ -113,6 +131,51 @@ pub async fn get_transactions_by_contract(
     }
 }
 
+pub async fn get_transactions_by_contract(
+    Path(contract_name): Path<String>,
+    Query(pagination): Query<BlockPagination>,
+    State(state): State<IndexerApiState>,
+) -> Result<Json<Vec<TransactionDb>>, StatusCode> {
+    let transactions = match pagination.start_block {
+        Some(start_block) => sqlx::query_as::<_, TransactionDb>(
+            r#"
+            SELECT t.*
+            FROM transactions t
+            JOIN blobs b ON t.tx_hash = b.tx_hash
+            JOIN blocks bl ON t.block_hash = bl.hash
+            WHERE b.contract_name = $1 AND bl.height <= $2 AND bl.height > $3
+            ORDER BY bl.height DESC
+            LIMIT $4
+            "#,
+        )
+        .bind(contract_name)
+        .bind(start_block)
+        .bind(start_block - pagination.nb_results.unwrap_or(10)) // Fine if this goes negative
+        .bind(pagination.nb_results.unwrap_or(10)),
+        None => sqlx::query_as::<_, TransactionDb>(
+            r#"
+            SELECT t.*
+            FROM transactions t
+            JOIN blobs b ON t.tx_hash = b.tx_hash
+            WHERE b.contract_name = $1
+            ORDER BY t.block_hash DESC
+            LIMIT $2
+            "#,
+        )
+        .bind(contract_name)
+        .bind(pagination.nb_results.unwrap_or(10)),
+    }
+    .fetch_all(&state.db)
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    match transactions.len() {
+        0 => Err(StatusCode::NOT_FOUND),
+        _ => Ok(Json(transactions)),
+    }
+}
+
+// TODO: pagination ?
 pub async fn get_transactions_by_height(
     Path(height): Path<i64>,
     State(state): State<IndexerApiState>,
@@ -172,7 +235,7 @@ pub async fn get_blob_transactions_by_contract(
             t.transaction_type,
             t.transaction_status,
             b.identity,
-            ARRAY_AGG(ROW(b.contract_name, b.data)) AS blobs
+            ARRAY_AGG(ROW(b.contract_name, b.data, b.verified)) AS blobs
         FROM transactions t
         JOIN blobs b ON t.tx_hash = b.tx_hash
         WHERE b.tx_hash IN (
@@ -202,13 +265,14 @@ pub async fn get_blob_transactions_by_contract(
             let transaction_type: TransactionType = row.try_get("transaction_type").unwrap();
             let transaction_status: TransactionStatus = row.try_get("transaction_status").unwrap();
             let identity: String = row.try_get("identity").unwrap();
-            let blobs: Vec<(String, Vec<u8>)> = row.try_get("blobs").unwrap();
+            let blobs: Vec<(String, Vec<u8>, bool)> = row.try_get("blobs").unwrap();
 
             let blobs = blobs
                 .into_iter()
-                .map(|(contract_name, data)| Blob {
-                    contract_name: ContractName(contract_name),
-                    data: BlobData(data),
+                .map(|(contract_name, data, verified)| BlobWithStatus {
+                    contract_name,
+                    data,
+                    verified,
                 })
                 .collect();
 
@@ -230,77 +294,6 @@ pub async fn get_blob_transactions_by_contract(
     }
 }
 
-pub async fn get_blobs_by_contract(
-    Path(contract_name): Path<String>,
-    State(state): State<IndexerApiState>,
-) -> Result<Json<Vec<BlobDbWithStatus>>, StatusCode> {
-    // TODO: Order transactions ?
-    let blobs = sqlx::query_as::<_, BlobDbWithStatus>(
-        r#"
-        SELECT b.*, t.transaction_status
-        FROM blobs b
-        JOIN transactions t ON b.tx_hash = t.tx_hash
-        WHERE b.contract_name = $1
-        "#,
-    )
-    .bind(contract_name)
-    .fetch_all(&state.db)
-    .await
-    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-    match blobs.len() {
-        0 => Err(StatusCode::NOT_FOUND),
-        _ => Ok(Json(blobs)),
-    }
-}
-
-pub async fn get_settled_blobs_by_contract(
-    Path(contract_name): Path<String>,
-    State(state): State<IndexerApiState>,
-) -> Result<Json<Vec<BlobDb>>, StatusCode> {
-    // TODO: Order transactions ?
-    let blobs = sqlx::query_as::<_, BlobDb>(
-        r#"
-        SELECT b.*
-        FROM blobs b
-        JOIN transactions t ON b.tx_hash = t.tx_hash
-        WHERE b.contract_name = $1 AND t.transaction_status = 'success'
-        "#,
-    )
-    .bind(contract_name)
-    .fetch_all(&state.db)
-    .await
-    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-    match blobs.len() {
-        0 => Err(StatusCode::NOT_FOUND),
-        _ => Ok(Json(blobs)),
-    }
-}
-
-pub async fn get_unsettled_blobs_by_contract(
-    Path(contract_name): Path<String>,
-    State(state): State<IndexerApiState>,
-) -> Result<Json<Vec<BlobDb>>, StatusCode> {
-    // TODO: Order transaction ?
-    let blobs = sqlx::query_as::<_, BlobDb>(
-        r#"
-        SELECT b.*
-        FROM blobs b
-        JOIN transactions t ON b.tx_hash = t.tx_hash
-        WHERE b.contract_name = $1 AND t.transaction_status = 'sequenced'
-        "#,
-    )
-    .bind(contract_name)
-    .fetch_all(&state.db)
-    .await
-    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-    match blobs.len() {
-        0 => Err(StatusCode::NOT_FOUND),
-        _ => Ok(Json(blobs)),
-    }
-}
 pub async fn get_blobs_by_tx_hash(
     Path(tx_hash): Path<String>,
     State(state): State<IndexerApiState>,

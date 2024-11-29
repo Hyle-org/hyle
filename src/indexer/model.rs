@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::types::chrono::NaiveDateTime;
 use sqlx::{prelude::Type, Postgres};
 
-use crate::model::{Blob, BlockHash, Transaction, TransactionData};
+use crate::model::{BlockHash, Transaction, TransactionData};
 use hyle_contract_sdk::TxHash;
 
 #[derive(Debug, sqlx::FromRow, Serialize, Deserialize)]
@@ -63,7 +63,14 @@ pub struct TransactionWithBlobs {
     pub transaction_type: TransactionType,
     pub transaction_status: TransactionStatus,
     pub identity: String,
-    pub blobs: Vec<Blob>,
+    pub blobs: Vec<BlobWithStatus>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct BlobWithStatus {
+    pub contract_name: String, // Contract name associated with the blob
+    pub data: Vec<u8>,         // Actual blob data
+    pub verified: bool,        // Verification status
 }
 
 #[derive(Debug, sqlx::FromRow, Serialize, Deserialize)]
@@ -75,14 +82,6 @@ pub struct BlobDb {
     pub contract_name: String, // Contract name associated with the blob
     pub data: Vec<u8>,     // Actual blob data
     pub verified: bool,    // Verification status
-}
-
-#[derive(Debug, sqlx::FromRow, Serialize, Deserialize)]
-pub struct BlobDbWithStatus {
-    #[sqlx(flatten)]
-    #[serde(flatten)]
-    pub blob: BlobDb,
-    pub transaction_status: TransactionStatus,
 }
 
 #[derive(Debug, sqlx::FromRow, Serialize, Deserialize)]
