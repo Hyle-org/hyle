@@ -33,12 +33,10 @@ fn main() {
     }
 
     let res = match amm_action {
-        AmmAction::Swap { from, pair } => amm_contract.verify_swap(callees_blob, from, pair),
-        AmmAction::NewPair {
-            from,
-            pair,
-            amounts,
-        } => amm_contract.create_new_pair(from, pair, amounts, callees_blob),
+        AmmAction::Swap { pair } => amm_contract.verify_swap(callees_blob, pair),
+        AmmAction::NewPair { pair, amounts } => {
+            amm_contract.create_new_pair(pair, amounts, callees_blob)
+        }
     };
 
     sdk::guest::commit(input, amm_contract.state(), res);

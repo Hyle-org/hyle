@@ -171,7 +171,6 @@ fn main() {
             let identity_cf: IdentityAction = IdentityAction::VerifyIdentity {
                 account: identity.clone(),
                 nonce,
-                blobs_hash: vec!["".into()], // TODO: hash blob
             };
 
             let blobs = vec![

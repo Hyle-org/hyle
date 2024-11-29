@@ -73,7 +73,6 @@ mod e2e_hyllar {
                     IdentityAction::VerifyIdentity {
                         account: "faucet.hydentity".to_string(),
                         nonce: 0,
-                        blobs_hash: vec!["".into()],
                     }
                     .as_blob(ContractName("hydentity".to_owned())),
                     ERC20Action::Transfer {
