@@ -76,10 +76,7 @@ impl AmmContract {
     ) -> RunResult {
         // Check that new pair is about two different tokens and that there is one blob for each
         if callees_blobs.len() != 2 || pair.0 == pair.1 {
-            return RunResult::failure(
-                self.caller.clone(),
-                "Swap can only happen between two different tokens",
-            );
+            return RunResult::failure("Swap can only happen between two different tokens");
         }
 
         let first_blob_index = match callees_blobs
@@ -88,10 +85,7 @@ impl AmmContract {
         {
             Some(index) => BlobIndex(index as u32),
             None => {
-                return RunResult::failure(
-                    self.caller.clone(),
-                    "Blob with contract name {} not found in callees",
-                );
+                return RunResult::failure("Blob with contract name {} not found in callees");
             }
         };
 
@@ -101,10 +95,7 @@ impl AmmContract {
         {
             Some(index) => BlobIndex(index as u32),
             None => {
-                return RunResult::failure(
-                    self.caller.clone(),
-                    "Blob with contract name {} not found in callees",
-                );
+                return RunResult::failure("Blob with contract name {} not found in callees");
             }
         };
 
@@ -120,22 +111,16 @@ impl AmmContract {
             } => {
                 // Check that sender is correct and the recipient is AMM
                 if sender != from.0 || recipient != *"amm" {
-                    return RunResult::failure(
-                        self.caller.clone(),
-                        "Transfer blob has incorrect sender or recipient",
-                    );
+                    return RunResult::failure("Transfer blob has incorrect sender or recipient");
                 }
                 // Check that the amount is the same as the one given
                 if amount != amounts.0 {
-                    return RunResult::failure(self.caller.clone(), "Amounts do not match");
+                    return RunResult::failure("Amounts do not match");
                 }
             }
             _ => {
                 // Check the blobs are TransferFrom
-                return RunResult::failure(
-                    self.caller.clone(),
-                    "Transfer blobs do not call the correct function",
-                );
+                return RunResult::failure("Transfer blobs do not call the correct function");
             }
         };
 
@@ -149,39 +134,30 @@ impl AmmContract {
             } => {
                 // Check that sender is correct and the recipient is AMM
                 if sender != from.0 || recipient != *"amm" {
-                    return RunResult::failure(
-                        self.caller.clone(),
-                        "Transfer blob has incorrect sender or recipient",
-                    );
+                    return RunResult::failure("Transfer blob has incorrect sender or recipient");
                 }
                 // Check that the amount is the same as the one given
                 if amount != amounts.1 {
-                    return RunResult::failure(self.caller.clone(), "Amounts do not match");
+                    return RunResult::failure("Amounts do not match");
                 }
             }
             _ => {
                 // Check the blobs are TransferFrom
-                return RunResult::failure(
-                    self.caller.clone(),
-                    "Transfer blobs do not call the correct function",
-                );
+                return RunResult::failure("Transfer blobs do not call the correct function");
             }
         };
 
         let normalized_pair = UnorderedTokenPair::new(pair.0, pair.1);
 
         if self.state.pairs.contains_key(&normalized_pair) {
-            return RunResult::failure(
-                self.caller.clone(),
-                &format!("Pair {:?} already exists", normalized_pair),
-            );
+            return RunResult::failure(&format!("Pair {:?} already exists", normalized_pair));
         }
 
         let program_outputs = format!("Pair {:?} created", normalized_pair);
 
         self.state.pairs.insert(normalized_pair, amounts);
 
-        RunResult::success(self.caller.clone(), &program_outputs)
+        RunResult::success(&program_outputs)
     }
 
     pub fn verify_swap(
@@ -192,18 +168,12 @@ impl AmmContract {
     ) -> RunResult {
         // Check that from field correspond to caller
         if from != self.caller {
-            return RunResult::failure(
-                self.caller.clone(),
-                "Caller is not the same as the 'from' field",
-            );
+            return RunResult::failure("Caller is not the same as the 'from' field");
         }
 
         // Check that swap is only about two different tokens and that there is one blob for each
         if callees_blobs.len() != 2 || pair.0 == pair.1 {
-            return RunResult::failure(
-                self.caller.clone(),
-                "Swap can only happen between two different tokens",
-            );
+            return RunResult::failure("Swap can only happen between two different tokens");
         }
 
         // Extract "blob_from" out of the blobs. This is the blob that has the first token of the pair as contract name
@@ -213,10 +183,10 @@ impl AmmContract {
         {
             Some(index) => BlobIndex(index as u32),
             None => {
-                return RunResult::failure(
-                    self.caller.clone(),
-                    &format!("Blob with contract name {} not found in callees", pair.0),
-                );
+                return RunResult::failure(&format!(
+                    "Blob with contract name {} not found in callees",
+                    pair.0
+                ));
             }
         };
         let blob_from =
@@ -229,10 +199,10 @@ impl AmmContract {
         {
             Some(index) => BlobIndex(index as u32),
             None => {
-                return RunResult::failure(
-                    self.caller.clone(),
-                    &format!("Blob with contract name {} not found in callees", pair.0),
-                );
+                return RunResult::failure(&format!(
+                    "Blob with contract name {} not found in callees",
+                    pair.0
+                ));
             }
         };
         let blob_to =
@@ -247,7 +217,6 @@ impl AmmContract {
                 // Check that blob_from 'from' field matches the caller and that 'to' field is the AMM
                 if sender != from.0 || recipient != *"amm" {
                     return RunResult::failure(
-                        self.caller.clone(),
                         "Blob 'from' field is not the User or 'to' field is not the AMM",
                     );
                 }
@@ -255,10 +224,7 @@ impl AmmContract {
             }
             _ => {
                 // Check the blobs are TransferFrom
-                return RunResult::failure(
-                    self.caller.clone(),
-                    "Transfer blobs do not call the correct function",
-                );
+                return RunResult::failure("Transfer blobs do not call the correct function");
             }
         };
 
@@ -271,7 +237,6 @@ impl AmmContract {
                 // Check that blob_to 'from' field is the AMM and that 'to' field matches the caller
                 if sender != *"amm" || recipient != from.0 {
                     return RunResult::failure(
-                        self.caller.clone(),
                         "Blob 'from' field is not the AMM or 'to' field is not the caller",
                     );
                 }
@@ -279,10 +244,7 @@ impl AmmContract {
             }
             _ => {
                 // Check the blobs are TransferFrom
-                return RunResult::failure(
-                    self.caller.clone(),
-                    "Transfer blobs do not call the correct function",
-                );
+                return RunResult::failure("Transfer blobs do not call the correct function");
             }
         };
 
@@ -293,50 +255,38 @@ impl AmmContract {
             Some((prev_x, prev_y)) => {
                 if is_normalized_order {
                     if (*prev_x + from_amount) * (*prev_y - to_amount) != *prev_x * *prev_y {
-                        return RunResult::failure(
-                            self.caller.clone(),
-                            &format!(
-                                "Swap formula is not respected: {} * {} != {} * {}",
-                                (*prev_x + from_amount),
-                                (*prev_y - to_amount),
-                                prev_x,
-                                prev_y
-                            ),
-                        );
+                        return RunResult::failure(&format!(
+                            "Swap formula is not respected: {} * {} != {} * {}",
+                            (*prev_x + from_amount),
+                            (*prev_y - to_amount),
+                            prev_x,
+                            prev_y
+                        ));
                     }
                     *prev_x += from_amount;
                     *prev_y -= to_amount;
                 } else {
                     if (*prev_y + from_amount) * (*prev_x - to_amount) != *prev_y * *prev_x {
-                        return RunResult::failure(
-                            self.caller.clone(),
-                            &format!(
-                                "Swap formula is not respected: {} * {} != {} * {}",
-                                (*prev_y + from_amount),
-                                (*prev_x - to_amount),
-                                prev_y,
-                                prev_x
-                            ),
-                        );
+                        return RunResult::failure(&format!(
+                            "Swap formula is not respected: {} * {} != {} * {}",
+                            (*prev_y + from_amount),
+                            (*prev_x - to_amount),
+                            prev_y,
+                            prev_x
+                        ));
                     }
                     *prev_y += from_amount;
                     *prev_x -= to_amount;
                 }
             }
             None => {
-                return RunResult::failure(
-                    self.caller.clone(),
-                    &format!("Pair {:?} not found in AMM state", pair),
-                );
+                return RunResult::failure(&format!("Pair {:?} not found in AMM state", pair));
             }
         };
-        RunResult::success(
-            self.caller.clone(),
-            &format!(
-                "Swap of {} {} for {} {} is valid",
-                from, pair.0, from, pair.1
-            ),
-        )
+        RunResult::success(&format!(
+            "Swap of {} {} for {} {} is valid",
+            from, pair.0, from, pair.1
+        ))
     }
 }
 
