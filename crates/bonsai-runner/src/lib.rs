@@ -12,7 +12,7 @@ pub fn as_input_data<T: Serialize>(data: &T) -> Result<Vec<u8>> {
 }
 
 #[allow(dead_code)]
-pub async fn run_bonsai(elf: &[u8], input_data: &[u8]) -> Result<Receipt> {
+pub async fn run_bonsai(elf: &[u8], input_data: Vec<u8>) -> Result<Receipt> {
     let client = Client::from_env(risc0_zkvm::VERSION)?;
 
     // Compute the image_id, then upload the ELF with the image_id as its key.
@@ -20,8 +20,6 @@ pub async fn run_bonsai(elf: &[u8], input_data: &[u8]) -> Result<Receipt> {
     client.upload_img(&image_id, elf.to_vec()).await?;
 
     // Prepare input data and upload it.
-    let input_data = to_vec(&input_data).unwrap();
-    let input_data = bytemuck::cast_slice(&input_data).to_vec();
     let input_id = client.upload_input(input_data).await?;
 
     // Add a list of assumptions
