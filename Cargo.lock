@@ -728,6 +728,7 @@ dependencies = [
  "bytemuck",
  "hex",
  "risc0-zkvm",
+ "serde",
  "tracing",
 ]
 

@@ -3,7 +3,13 @@ use std::time::Duration;
 use anyhow::{bail, Result};
 use bonsai_sdk::non_blocking::Client;
 use risc0_zkvm::{compute_image_id, serde::to_vec, Receipt};
+use serde::Serialize;
 use tracing::info;
+
+pub fn as_input_data<T: Serialize>(data: &T) -> Result<Vec<u8>> {
+    let slice = to_vec(data)?;
+    Ok(bytemuck::cast_slice(&slice).to_vec())
+}
 
 #[allow(dead_code)]
 pub async fn run_bonsai(elf: &[u8], input_data: &[u8]) -> Result<Receipt> {
