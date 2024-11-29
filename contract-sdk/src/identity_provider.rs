@@ -1,4 +1,5 @@
 use alloc::{format, string::String, vec::Vec};
+use anyhow::bail;
 use bincode::{Decode, Encode};
 
 use crate::{guest::RunResult, Blob, BlobData, ContractName};
@@ -83,14 +84,14 @@ pub fn execute_action<T: IdentityVerification>(
     action: IdentityAction,
     private_input: &str,
 ) -> RunResult {
-    let (success, res) = match action {
+    match action {
         IdentityAction::RegisterIdentity { account } => {
             match state.register_identity(&account, private_input) {
-                Ok(()) => (
-                    true,
-                    format!("Successfully registered identity for account: {}", account),
-                ),
-                Err(err) => (false, format!("Failed to register identity: {}", err)),
+                Ok(()) => Ok(format!(
+                    "Successfully registered identity for account: {}",
+                    account
+                )),
+                Err(err) => bail!("Failed to register identity: {}", err),
             }
         }
         IdentityAction::VerifyIdentity {
@@ -98,27 +99,17 @@ pub fn execute_action<T: IdentityVerification>(
             nonce,
             blobs_hash,
         } => match state.verify_identity(&account, nonce, blobs_hash, private_input) {
-            Ok(true) => (true, format!("Identity verified for account: {}", account)),
-            Ok(false) => (
-                false,
-                format!("Identity verification failed for account: {}", account),
-            ),
-            Err(err) => (false, format!("Error verifying identity: {}", err)),
+            Ok(true) => Ok(format!("Identity verified for account: {}", account)),
+            Ok(false) => bail!("Identity verification failed for account: {}", account),
+            Err(err) => bail!("Error verifying identity: {}", err),
         },
         IdentityAction::GetIdentityInfo { account } => match state.get_identity_info(&account) {
-            Ok(info) => (
-                true,
-                format!("Retrieved identity info for account: {}: {}", account, info),
-            ),
-            Err(err) => (false, format!("Failed to get identity info: {}", err)),
+            Ok(info) => Ok(format!(
+                "Retrieved identity info for account: {}: {}",
+                account, info
+            )),
+            Err(err) => bail!("Failed to get identity info: {}", err),
         },
-    };
-
-    let program_outputs = res.as_bytes().to_vec();
-
-    RunResult {
-        success,
-        program_outputs,
     }
 }
 
@@ -151,7 +142,7 @@ mod tests {
             .returning(|_, _| Ok(()));
 
         let result = execute_action(&mut mock, action, private_input);
-        assert!(result.success);
+        assert!(result.is_ok());
     }
 
     #[test]
@@ -172,7 +163,7 @@ mod tests {
         };
 
         let result = execute_action(&mut mock, action, private_input);
-        assert!(result.success);
+        assert!(result.is_ok());
     }
 
     #[test]
@@ -191,6 +182,6 @@ mod tests {
         };
 
         let result = execute_action(&mut mock, action, "");
-        assert!(result.success);
+        assert!(result.is_ok());
     }
 }
