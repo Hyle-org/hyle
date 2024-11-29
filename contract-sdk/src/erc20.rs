@@ -131,7 +131,6 @@ impl ERC20Action {
 pub fn execute_action<T: ERC20>(token: &mut T, action: ERC20Action) -> RunResult {
     let program_outputs;
     let success: bool;
-    let identity = token.caller().clone();
 
     match action {
         ERC20Action::TotalSupply => match token.total_supply() {
@@ -204,7 +203,6 @@ pub fn execute_action<T: ERC20>(token: &mut T, action: ERC20Action) -> RunResult
 
     RunResult {
         success,
-        identity,
         program_outputs,
     }
 }

@@ -11,23 +11,20 @@ use crate::{
 
 pub struct RunResult {
     pub success: bool,
-    pub identity: Identity,
     pub program_outputs: Vec<u8>,
 }
 
 impl RunResult {
-    pub fn success(identity: Identity, message: &str) -> Self {
+    pub fn success(message: &str) -> Self {
         RunResult {
             success: true,
-            identity,
             program_outputs: message.to_string().into_bytes(),
         }
     }
 
-    pub fn failure(identity: Identity, message: &str) -> Self {
+    pub fn failure(message: &str) -> Self {
         RunResult {
             success: false,
-            identity,
             program_outputs: message.to_string().into_bytes(),
         }
     }
@@ -131,7 +128,7 @@ where
         version: 1,
         initial_state: input.initial_state.as_digest(),
         next_state: new_state.as_digest(),
-        identity: res.identity,
+        identity: input.identity,
         tx_hash: input.tx_hash,
         index: input.index,
         blobs: flatten_blobs(&input.blobs),

@@ -4,8 +4,8 @@ use crate::{
     bus::{BusMessage, SharedMessageBus},
     handle_messages,
     model::{
-        Blob, BlobData, BlobTransaction, ContractName, ProofData, ProofTransaction,
-        RegisterContractTransaction, SharedRunContext, Transaction,
+        get_current_timestamp, Blob, BlobData, BlobTransaction, ContractName, ProofData,
+        ProofTransaction, RegisterContractTransaction, SharedRunContext, Transaction,
     },
     rest::{client::ApiHttpClient, endpoints::RestApiMessage},
     utils::modules::Module,
@@ -29,7 +29,10 @@ struct MockWorkflowBusClient {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum RunScenario {
     StressTest,
-    ApiTest,
+    ApiTest {
+        qps: u64,
+        injection_duration_seconds: u64,
+    },
 }
 impl BusMessage for RunScenario {}
 
@@ -63,8 +66,8 @@ impl MockWorkflowHandler {
                     RunScenario::StressTest => {
                         self.stress_test().await;
                     },
-                    RunScenario::ApiTest => {
-                        self.api_test().await;
+                    RunScenario::ApiTest { qps, injection_duration_seconds } => {
+                        self.api_test(qps, injection_duration_seconds).await;
                     }
                 }
             }
@@ -88,7 +91,7 @@ impl MockWorkflowHandler {
         }
     }
 
-    async fn api_test(&mut self) {
+    async fn api_test(&mut self, qps: u64, injection_duration_seconds: u64) {
         info!("Starting api test");
 
         let api_client = ApiHttpClient {
@@ -114,8 +117,16 @@ impl MockWorkflowHandler {
             contract_name: ContractName("contract".to_string()),
         };
 
+        let millis_interval = 1000_u64.div_ceil(qps);
+
+        let injection_stop_date = get_current_timestamp() + injection_duration_seconds;
+
         let mut i = 0;
         loop {
+            if get_current_timestamp() > injection_stop_date {
+                info!("Stopped injection");
+                break;
+            }
             i += 1;
             match (i % 3) + 1 {
                 1 => {
@@ -134,6 +145,8 @@ impl MockWorkflowHandler {
                     info!("Sending contract");
                     let mut new_tx_contract = tx_contract.clone();
                     new_tx_contract.verifier = i.to_string();
+                    new_tx_contract.contract_name =
+                        ContractName(format!("{}-{}", new_tx_contract.contract_name.0, i));
                     _ = api_client.send_tx_register_contract(&tx_contract).await;
                 }
                 _ => {
@@ -141,7 +154,7 @@ impl MockWorkflowHandler {
                 }
             }
 
-            sleep(Duration::from_millis(500)).await;
+            sleep(Duration::from_millis(millis_interval)).await;
         }
     }
 }
