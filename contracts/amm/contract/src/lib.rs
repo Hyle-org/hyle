@@ -43,6 +43,7 @@ impl Hash for UnorderedTokenPair {
 }
 
 pub struct AmmContract {
+    contract_name: ContractName,
     state: AmmState,
     caller: Identity,
 }
@@ -73,12 +74,20 @@ impl AmmState {
 }
 
 impl AmmContract {
-    pub fn new(state: AmmState, caller: Identity) -> Self {
-        AmmContract { state, caller }
+    pub fn new(contract_name: ContractName, state: AmmState, caller: Identity) -> Self {
+        AmmContract {
+            contract_name,
+            state,
+            caller,
+        }
     }
 
     pub fn state(self) -> AmmState {
         self.state
+    }
+
+    pub fn contract_name(self) -> ContractName {
+        self.contract_name
     }
 
     pub fn create_new_pair(
@@ -117,10 +126,12 @@ impl AmmContract {
         let first_blob =
             sdk::guest::parse_structured_blob::<ERC20Action>(&callees_blobs, &first_blob_index);
         match first_blob.data.parameters {
-            ERC20Action::Transfer { amount, recipient } => {
+            ERC20Action::TransferFrom {
+                amount, recipient, ..
+            } => {
                 // Check that recipient is AMM
-                if recipient != *"amm" {
-                    return RunResult::failure("Transfer blob has incorrect sender or recipient");
+                if recipient != self.contract_name.0 {
+                    return RunResult::failure("Transfer blob has incorrect recipient");
                 }
                 // Check that the amount is the same as the one given
                 if amount != amounts.0 {
@@ -136,10 +147,12 @@ impl AmmContract {
         let second_blob =
             sdk::guest::parse_structured_blob::<ERC20Action>(&callees_blobs, &second_blob_index);
         match second_blob.data.parameters {
-            ERC20Action::Transfer { amount, recipient } => {
+            ERC20Action::TransferFrom {
+                amount, recipient, ..
+            } => {
                 // Check that recipient is AMM
-                if recipient != *"amm" {
-                    return RunResult::failure("Transfer blob has incorrect sender or recipient");
+                if recipient != self.contract_name.0 {
+                    return RunResult::failure("Transfer blob has incorrect recipient");
                 }
                 // Check that the amount is the same as the one given
                 if amount != amounts.1 {
@@ -210,7 +223,7 @@ impl AmmContract {
                 recipient,
             } => {
                 // Check that blob_from 'from' field matches the caller and that 'to' field is the AMM
-                if sender != self.caller.0 || recipient != *"amm" {
+                if sender != self.caller.0 || recipient != self.contract_name.0 {
                     return RunResult::failure(
                         "Blob 'from' field is not the User or 'to' field is not the AMM",
                     );
@@ -365,9 +378,16 @@ mod tests {
         let state = AmmState {
             pairs: BTreeMap::from([(normalized_token_pair.clone(), (20, 50))]),
         };
+        println!(
+            "default state: {:?}",
+            AmmState {
+                pairs: BTreeMap::default(),
+            }
+            .as_digest()
+        );
 
         let caller = Identity("test".to_owned());
-        let mut contract = AmmContract::new(state, caller.clone());
+        let mut contract = AmmContract::new(ContractName("amm".to_owned()), state, caller.clone());
 
         let callees_blobs = vec![
             create_test_blob_from("token1", "test", "amm", 5),
@@ -377,6 +397,7 @@ mod tests {
         let result =
             contract.verify_swap(callees_blobs, ("token1".to_string(), "token2".to_string()));
         assert!(result.success);
+        println!("contract state: {:?}", contract.state.as_digest());
         // Assert that the amounts for the pair token1/token2 have been updated
         assert!(contract.state.pairs.get(&normalized_token_pair) == Some(&(25, 40)));
     }
@@ -390,7 +411,7 @@ mod tests {
         };
 
         let caller = Identity("test".to_owned());
-        let mut contract = AmmContract::new(state, caller.clone());
+        let mut contract = AmmContract::new(ContractName("amm".to_owned()), state, caller.clone());
 
         // Swaping from token2 to token1
         let callees_blobs = vec![
@@ -416,7 +437,7 @@ mod tests {
         };
 
         let caller = Identity("test".to_owned());
-        let mut contract = AmmContract::new(state, caller.clone());
+        let mut contract = AmmContract::new(ContractName("amm".to_owned()), state, caller.clone());
 
         let callees_blobs = vec![
             create_test_blob_from("token1", "test_hack", "amm", 5), // incorrect sender
@@ -437,7 +458,7 @@ mod tests {
         };
 
         let caller = Identity("test".to_owned());
-        let mut contract = AmmContract::new(state, caller.clone());
+        let mut contract = AmmContract::new(ContractName("amm".to_owned()), state, caller.clone());
 
         let callees_blobs = vec![
             create_test_blob_from("token1", "test", "amm", 5),
@@ -458,7 +479,7 @@ mod tests {
         };
 
         let caller = Identity("test".to_owned());
-        let mut contract = AmmContract::new(state, caller.clone());
+        let mut contract = AmmContract::new(ContractName("amm".to_owned()), state, caller.clone());
 
         let callees_blobs = vec![
             create_test_blob_from("token1", "test", "amm_hack", 5), // incorrect recipient
@@ -479,7 +500,7 @@ mod tests {
         };
 
         let caller = Identity("test".to_owned());
-        let mut contract = AmmContract::new(state, caller.clone());
+        let mut contract = AmmContract::new(ContractName("amm".to_owned()), state, caller.clone());
 
         let callees_blobs = vec![
             create_test_blob_from("token1", "test", "amm", 5),
@@ -502,7 +523,7 @@ mod tests {
         };
 
         let caller = Identity("test".to_owned());
-        let mut contract = AmmContract::new(state, caller.clone());
+        let mut contract = AmmContract::new(ContractName("amm".to_owned()), state, caller.clone());
 
         let callees_blobs = vec![
             create_test_blob_from("token1", "test", "amm", 5),
@@ -523,7 +544,7 @@ mod tests {
         };
 
         let caller = Identity("test".to_owned());
-        let mut contract = AmmContract::new(state, caller.clone());
+        let mut contract = AmmContract::new(ContractName("amm".to_owned()), state, caller.clone());
 
         let callees_blobs = vec![create_test_blob_from("token1", "test", "amm", 5)];
 
@@ -541,7 +562,7 @@ mod tests {
         };
 
         let caller = Identity("test".to_owned());
-        let mut contract = AmmContract::new(state, caller.clone());
+        let mut contract = AmmContract::new(ContractName("amm".to_owned()), state, caller.clone());
 
         let callees_blobs = vec![
             create_test_blob_from("token1", "test", "amm", 5),
@@ -560,7 +581,7 @@ mod tests {
         };
 
         let caller = Identity("test".to_owned());
-        let mut contract = AmmContract::new(state, caller.clone());
+        let mut contract = AmmContract::new(ContractName("amm".to_owned()), state, caller.clone());
 
         let callees_blobs = vec![
             create_test_blob("token1", "amm", 20),
@@ -591,7 +612,7 @@ mod tests {
         };
 
         let caller = Identity("test".to_owned());
-        let mut contract = AmmContract::new(state, caller.clone());
+        let mut contract = AmmContract::new(ContractName("amm".to_owned()), state, caller.clone());
 
         let callees_blobs = vec![
             create_test_blob_from("token1", "test", "amm", 20),
@@ -614,7 +635,7 @@ mod tests {
         };
 
         let caller = Identity("test".to_owned());
-        let mut contract = AmmContract::new(state, caller.clone());
+        let mut contract = AmmContract::new(ContractName("amm".to_owned()), state, caller.clone());
 
         let callees_blobs = vec![
             create_test_blob_from("token1", "invalid_sender", "amm", 20), // incorrect sender
@@ -637,7 +658,7 @@ mod tests {
         };
 
         let caller = Identity("test".to_owned());
-        let mut contract = AmmContract::new(state, caller.clone());
+        let mut contract = AmmContract::new(ContractName("amm".to_owned()), state, caller.clone());
 
         let callees_blobs = vec![
             create_test_blob_from("token1", "test", "invalid_recipient", 20), // incorrect recipient
@@ -660,7 +681,7 @@ mod tests {
         };
 
         let caller = Identity("test".to_owned());
-        let mut contract = AmmContract::new(state, caller.clone());
+        let mut contract = AmmContract::new(ContractName("amm".to_owned()), state, caller.clone());
 
         let callees_blobs = vec![
             create_test_blob_from("token1", "test", "amm", 10), // incorrect amount
@@ -683,7 +704,7 @@ mod tests {
         };
 
         let caller = Identity("test".to_owned());
-        let mut contract = AmmContract::new(state, caller.clone());
+        let mut contract = AmmContract::new(ContractName("amm".to_owned()), state, caller.clone());
 
         let callees_blobs = vec![
             create_test_blob_from("token1", "test", "amm", 20),
@@ -706,7 +727,7 @@ mod tests {
         };
 
         let caller = Identity("test".to_owned());
-        let mut contract = AmmContract::new(state, caller.clone());
+        let mut contract = AmmContract::new(ContractName("amm".to_owned()), state, caller.clone());
 
         let callees_blobs = vec![create_test_blob_from("token1", "test", "amm", 20)];
 

@@ -35,8 +35,12 @@ pub fn print_hyled_blob_tx(identity: &Identity, blobs: &Vec<Blob>) {
     println!("{}", "-".repeat(20));
 }
 
-pub fn run<State, Builder>(cli: &Cli, contract_name: &str, build_contract_input: Builder)
-where
+pub fn run<State, Builder>(
+    cli: &Cli,
+    contract_name: &str,
+    program_name: &str,
+    build_contract_input: Builder,
+) where
     State: TryFrom<sdk::StateDigest, Error = Error>,
     State: Digestable + std::fmt::Debug + serde::Serialize,
     Builder: Fn(State) -> ContractInput<State>,
@@ -54,7 +58,7 @@ where
 
     println!("{}", "-".repeat(20));
     println!("Checking transition for {contract_name}...");
-    let execute_info = execute(contract_name, &contract_input);
+    let execute_info = execute(program_name, &contract_input);
     let output = execute_info.journal.decode::<HyleOutput>().unwrap();
     if !output.success {
         let program_error = std::str::from_utf8(&output.program_outputs).unwrap();
@@ -70,11 +74,15 @@ where
 
     println!("{}", "-".repeat(20));
     println!("Proving transition for {contract_name}...");
-    let prove_info = prove(contract_name, &contract_input);
+    let prove_info = prove(program_name, &contract_input);
 
     let receipt = prove_info.receipt;
     let encoded_receipt = to_vec(&receipt).expect("Unable to encode receipt");
-    std::fs::write(format!("{contract_name}.risc0.proof"), encoded_receipt).unwrap();
+    std::fs::write(
+        format!("{}.risc0.proof", contract_input.index),
+        encoded_receipt,
+    )
+    .unwrap();
 
     let claim = receipt.claim().unwrap().value().unwrap();
 
@@ -97,7 +105,8 @@ where
     let initial_state = hex::encode(&hyle_output.initial_state.0);
     println!("Method ID: {:?} (hex)", method_id);
     println!(
-        "{contract_name}.risc0.proof written, transition from {:?} to {:?}",
+        "{}.risc0.proof written, transition from {:?} to {:?}",
+        contract_input.index,
         initial_state,
         hex::encode(&hyle_output.next_state.0)
     );
@@ -107,7 +116,8 @@ where
 
     println!("You can send the proof tx:");
     println!(
-        "\x1b[93mhyled proof $BLOB_TX_HASH {contract_name} {contract_name}.risc0.proof \x1b[0m"
+        "\x1b[93mhyled proof $BLOB_TX_HASH {contract_name} {}.risc0.proof \x1b[0m",
+        contract_input.index
     );
 
     receipt
@@ -139,7 +149,7 @@ where
 }
 
 fn execute<State>(
-    contract_name: &str,
+    program_name: &str,
     contract_input: &ContractInput<State>,
 ) -> risc0_zkvm::SessionInfo
 where
@@ -152,7 +162,7 @@ where
         .unwrap();
 
     let prover = risc0_zkvm::default_executor();
-    let file_path = format!("contracts/{}/{}.img", contract_name, contract_name);
+    let file_path = format!("contracts/{}/{}.img", program_name, program_name);
     println!("file_path: {}", file_path);
     if let Ok(binary) = std::fs::read(file_path.as_str()) {
         prover.execute(env, &binary).unwrap()
@@ -164,7 +174,7 @@ where
     }
 }
 
-fn prove<State>(contract_name: &str, contract_input: &ContractInput<State>) -> risc0_zkvm::ProveInfo
+fn prove<State>(program_name: &str, contract_input: &ContractInput<State>) -> risc0_zkvm::ProveInfo
 where
     State: Digestable + serde::Serialize,
 {
@@ -175,7 +185,7 @@ where
         .unwrap();
 
     let prover = risc0_zkvm::default_prover();
-    let file_path = format!("contracts/{}/{}.img", contract_name, contract_name);
+    let file_path = format!("contracts/{}/{}.img", program_name, program_name);
     if let Ok(binary) = std::fs::read(file_path.as_str()) {
         prover.prove(env, &binary).unwrap()
     } else {

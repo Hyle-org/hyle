@@ -77,7 +77,7 @@ mod e2e_hyllar {
                     .as_blob(ContractName("hydentity".to_owned())),
                     ERC20Action::Transfer {
                         recipient: "bob.hydentity".to_string(),
-                        amount: 100,
+                        amount: 25,
                     }
                     .as_blob(ContractName("hyllar".to_owned()), None, None),
                 ],
@@ -85,9 +85,9 @@ mod e2e_hyllar {
             .await?;
 
         let hydentity_proof =
-            load_encoded_receipt_from_file("./tests/proofs/transfer.hydentity.risc0.proof");
+            load_encoded_receipt_from_file("./tests/proofs/transfer.hydentity.0.risc0.proof");
         let hyllar_proof =
-            load_encoded_receipt_from_file("./tests/proofs/transfer.hyllar.risc0.proof");
+            load_encoded_receipt_from_file("./tests/proofs/transfer.25.hyllar.risc0.proof");
 
         info!("➡️  Sending proof for hydentity");
         ctx.send_proof(
@@ -115,13 +115,13 @@ mod e2e_hyllar {
             state
                 .balance_of("bob.hydentity")
                 .expect("bob identity not found"),
-            100
+            25
         );
         assert_eq!(
             state
                 .balance_of("faucet.hydentity")
                 .expect("faucet identity not found"),
-            98_999_999_900
+            98_999_999_975
         );
         Ok(())
     }

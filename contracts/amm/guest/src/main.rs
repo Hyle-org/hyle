@@ -18,7 +18,7 @@ fn main() {
     };
 
     let amm_state = input.initial_state.clone();
-    let mut amm_contract = AmmContract::new(amm_state, caller);
+    let mut amm_contract = AmmContract::new(parsed_blob.contract_name, amm_state, caller);
 
     let amm_action = parsed_blob.data.parameters;
 
