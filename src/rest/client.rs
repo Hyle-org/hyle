@@ -122,10 +122,17 @@ impl ApiHttpClient {
             .context("getting Contract")
     }
 
-    pub async fn run_scenario_api_test(&self, qps: u64) -> Result<Response> {
+    pub async fn run_scenario_api_test(
+        &self,
+        qps: u64,
+        injection_duration_seconds: u64,
+    ) -> Result<Response> {
         self.reqwest_client
             .post(format!("{}v1/tools/run_scenario", self.url))
-            .body(serde_json::to_string(&RunScenario::ApiTest { qps })?)
+            .body(serde_json::to_string(&RunScenario::ApiTest {
+                qps,
+                injection_duration_seconds,
+            })?)
             .header("Content-Type", "application/json")
             .send()
             .await
