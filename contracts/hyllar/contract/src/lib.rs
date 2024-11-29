@@ -91,7 +91,9 @@ impl ERC20 for HyllarTokenContract {
         let sender_balance = self.balance_of(sender)?;
 
         if allowance < amount {
-            return Err("Allowance exceeded".to_string());
+            return Err(format!(
+                "Allowance exceeded for sender={sender} caller={caller} allowance={allowance}"
+            ));
         }
         if sender_balance < amount {
             return Err("Insufficient balance".to_string());

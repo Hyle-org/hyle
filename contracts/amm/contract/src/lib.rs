@@ -56,6 +56,20 @@ impl AmmState {
     pub fn new(pairs: BTreeMap<UnorderedTokenPair, TokenPairAmount>) -> Self {
         AmmState { pairs }
     }
+
+    pub fn get_paired_amount(
+        &self,
+        token_a: String,
+        token_b: String,
+        amount_a: u128,
+    ) -> Option<u128> {
+        let pair = UnorderedTokenPair::new(token_a, token_b);
+        if let Some((k, x, y)) = self.pairs.get(&pair).map(|(x, y)| (x * y, *x, *y)) {
+            let amount_b = y - (k / (x + amount_a));
+            return Some(amount_b);
+        }
+        None
+    }
 }
 
 impl AmmContract {
@@ -229,13 +243,9 @@ impl AmmContract {
         };
 
         let to_amount = match blob_to.data.parameters {
-            ERC20Action::TransferFrom {
-                sender,
-                amount,
-                recipient,
-            } => {
+            ERC20Action::Transfer { amount, recipient } => {
                 // Check that blob_to 'from' field is the AMM and that 'to' field matches the caller
-                if sender != *"amm" || recipient != from.0 {
+                if recipient != from.0 {
                     return RunResult::failure(
                         "Blob 'from' field is not the AMM or 'to' field is not the caller",
                     );
@@ -254,19 +264,21 @@ impl AmmContract {
         match self.state.pairs.get_mut(&normalized_pair) {
             Some((prev_x, prev_y)) => {
                 if is_normalized_order {
-                    if (*prev_x + from_amount) * (*prev_y - to_amount) != *prev_x * *prev_y {
+                    let amount_b = *prev_y - (*prev_x * *prev_y / (*prev_x + from_amount));
+                    if amount_b != to_amount {
                         return RunResult::failure(&format!(
                             "Swap formula is not respected: {} * {} != {} * {}",
                             (*prev_x + from_amount),
                             (*prev_y - to_amount),
                             prev_x,
-                            prev_y
+                            prev_y,
                         ));
                     }
                     *prev_x += from_amount;
                     *prev_y -= to_amount;
                 } else {
-                    if (*prev_y + from_amount) * (*prev_x - to_amount) != *prev_y * *prev_x {
+                    let amount_b = *prev_x - (*prev_y * *prev_x / (*prev_y + from_amount));
+                    if amount_b != to_amount {
                         return RunResult::failure(&format!(
                             "Swap formula is not respected: {} * {} != {} * {}",
                             (*prev_y + from_amount),
@@ -344,11 +356,23 @@ impl AmmAction {
 mod tests {
     use super::*;
     use sdk::{erc20::ERC20Action, Blob, ContractName, Identity};
-    use std::collections::BTreeMap;
+    use std::{collections::BTreeMap, str::from_utf8};
 
-    fn create_test_blob(contract_name: &str, sender: &str, recipient: &str, amount: u128) -> Blob {
+    fn create_test_blob_from(
+        contract_name: &str,
+        sender: &str,
+        recipient: &str,
+        amount: u128,
+    ) -> Blob {
         let cf = ERC20Action::TransferFrom {
             sender: sender.to_owned(),
+            recipient: recipient.to_owned(),
+            amount,
+        };
+        cf.as_blob(ContractName(contract_name.to_owned()), None, None)
+    }
+    fn create_test_blob(contract_name: &str, recipient: &str, amount: u128) -> Blob {
+        let cf = ERC20Action::Transfer {
             recipient: recipient.to_owned(),
             amount,
         };
@@ -367,8 +391,8 @@ mod tests {
         let mut contract = AmmContract::new(state, caller.clone());
 
         let callees_blobs = vec![
-            create_test_blob("token1", "test", "amm", 5),
-            create_test_blob("token2", "amm", "test", 10),
+            create_test_blob_from("token1", "test", "amm", 5),
+            create_test_blob("token2", "test", 10),
         ];
 
         let result = contract.verify_swap(
@@ -376,6 +400,7 @@ mod tests {
             caller,
             ("token1".to_string(), "token2".to_string()),
         );
+        println!("{:?}", from_utf8(&result.program_outputs));
         assert!(result.success);
         // Assert that the amounts for the pair token1/token2 have been updated
         assert!(contract.state.pairs.get(&normalized_token_pair) == Some(&(25, 40)));
@@ -394,8 +419,8 @@ mod tests {
 
         // Swaping from token2 to token1
         let callees_blobs = vec![
-            create_test_blob("token2", "test", "amm", 50),
-            create_test_blob("token1", "amm", "test", 10),
+            create_test_blob_from("token2", "test", "amm", 50),
+            create_test_blob("token1", "test", 10),
         ];
 
         let result = contract.verify_swap(
@@ -421,8 +446,8 @@ mod tests {
         let mut contract = AmmContract::new(state, caller.clone());
 
         let callees_blobs = vec![
-            create_test_blob("token1", "test", "amm", 5),
-            create_test_blob("token2", "amm", "test", 10),
+            create_test_blob_from("token1", "test", "amm", 5),
+            create_test_blob("token2", "test", 10),
         ];
 
         let other_caller = Identity("heehee".to_owned()); // Different identity
@@ -446,32 +471,8 @@ mod tests {
         let mut contract = AmmContract::new(state, caller.clone());
 
         let callees_blobs = vec![
-            create_test_blob("token1", "test_hack", "amm", 5), // incorrect sender
-            create_test_blob("token2", "amm", "test", 10),
-        ];
-
-        let result = contract.verify_swap(
-            callees_blobs,
-            caller,
-            ("token1".to_string(), "token2".to_string()),
-        );
-        assert!(!result.success);
-    }
-
-    #[test]
-    fn test_verify_swap_invalid_amm_sender() {
-        let normalized_token_pair =
-            UnorderedTokenPair::new("token1".to_string(), "token2".to_string());
-        let state = AmmState {
-            pairs: BTreeMap::from([(normalized_token_pair.clone(), (20, 50))]),
-        };
-
-        let caller = Identity("test".to_owned());
-        let mut contract = AmmContract::new(state, caller.clone());
-
-        let callees_blobs = vec![
-            create_test_blob("token1", "test", "amm", 5),
-            create_test_blob("token2", "amm_hack", "test", 10), // incorrect sender
+            create_test_blob_from("token1", "test_hack", "amm", 5), // incorrect sender
+            create_test_blob("token2", "test", 10),
         ];
 
         let result = contract.verify_swap(
@@ -494,8 +495,8 @@ mod tests {
         let mut contract = AmmContract::new(state, caller.clone());
 
         let callees_blobs = vec![
-            create_test_blob("token1", "test", "amm", 5),
-            create_test_blob("token2", "amm", "test_hack", 10), // incorrect recipient
+            create_test_blob_from("token1", "test", "amm", 5),
+            create_test_blob("token2", "test_hack", 10), // incorrect recipient
         ];
 
         let result = contract.verify_swap(
@@ -518,8 +519,8 @@ mod tests {
         let mut contract = AmmContract::new(state, caller.clone());
 
         let callees_blobs = vec![
-            create_test_blob("token1", "test", "amm_hack", 5), // incorrect recipient
-            create_test_blob("token2", "amm", "test", 10),
+            create_test_blob_from("token1", "test", "amm_hack", 5), // incorrect recipient
+            create_test_blob("token2", "test", 10),
         ];
 
         let result = contract.verify_swap(
@@ -542,8 +543,8 @@ mod tests {
         let mut contract = AmmContract::new(state, caller.clone());
 
         let callees_blobs = vec![
-            create_test_blob("token1", "test", "amm", 5),
-            create_test_blob("token2", "amm", "test", 10),
+            create_test_blob_from("token1", "test", "amm", 5),
+            create_test_blob("token2", "test", 10),
         ];
 
         let result = contract.verify_swap(
@@ -566,8 +567,8 @@ mod tests {
         let mut contract = AmmContract::new(state, caller.clone());
 
         let callees_blobs = vec![
-            create_test_blob("token1", "test", "amm", 5),
-            create_test_blob("token1", "amm", "test", 10), // Invalid pair, same token
+            create_test_blob_from("token1", "test", "amm", 5),
+            create_test_blob("token1", "test", 10), // Invalid pair, same token
         ];
 
         let result = contract.verify_swap(
@@ -589,7 +590,7 @@ mod tests {
         let caller = Identity("test".to_owned());
         let mut contract = AmmContract::new(state, caller.clone());
 
-        let callees_blobs = vec![create_test_blob("token1", "test", "amm", 5)];
+        let callees_blobs = vec![create_test_blob_from("token1", "test", "amm", 5)];
 
         let result = contract.verify_swap(
             callees_blobs,
@@ -611,8 +612,8 @@ mod tests {
         let mut contract = AmmContract::new(state, caller.clone());
 
         let callees_blobs = vec![
-            create_test_blob("token1", "test", "amm", 5),
-            create_test_blob("token2", "test", "amm", 15), // Invalid amount
+            create_test_blob_from("token1", "test", "amm", 5),
+            create_test_blob_from("token2", "test", "amm", 15), // Invalid amount
         ];
 
         let result = contract.verify_swap(
@@ -633,8 +634,8 @@ mod tests {
         let mut contract = AmmContract::new(state, caller.clone());
 
         let callees_blobs = vec![
-            create_test_blob("token1", "test", "amm", 20),
-            create_test_blob("token2", "test", "amm", 50),
+            create_test_blob_from("token1", "test", "amm", 20),
+            create_test_blob_from("token2", "test", "amm", 50),
         ];
 
         let result = contract.create_new_pair(
@@ -665,8 +666,8 @@ mod tests {
         let mut contract = AmmContract::new(state, caller.clone());
 
         let callees_blobs = vec![
-            create_test_blob("token1", "test", "amm", 20),
-            create_test_blob("token2", "test", "amm", 50),
+            create_test_blob_from("token1", "test", "amm", 20),
+            create_test_blob_from("token2", "test", "amm", 50),
         ];
         let result = contract.create_new_pair(
             caller,
@@ -689,8 +690,8 @@ mod tests {
         let mut contract = AmmContract::new(state, caller.clone());
 
         let callees_blobs = vec![
-            create_test_blob("token1", "invalid_sender", "amm", 20), // incorrect sender
-            create_test_blob("token2", "test", "amm", 50),
+            create_test_blob_from("token1", "invalid_sender", "amm", 20), // incorrect sender
+            create_test_blob_from("token2", "test", "amm", 50),
         ];
 
         let result = contract.create_new_pair(
@@ -713,8 +714,8 @@ mod tests {
         let mut contract = AmmContract::new(state, caller.clone());
 
         let callees_blobs = vec![
-            create_test_blob("token1", "test", "invalid_recipient", 20), // incorrect recipient
-            create_test_blob("token2", "test", "amm", 50),
+            create_test_blob_from("token1", "test", "invalid_recipient", 20), // incorrect recipient
+            create_test_blob_from("token2", "test", "amm", 50),
         ];
 
         let result = contract.create_new_pair(
@@ -737,8 +738,8 @@ mod tests {
         let mut contract = AmmContract::new(state, caller.clone());
 
         let callees_blobs = vec![
-            create_test_blob("token1", "test", "amm", 10), // incorrect amount
-            create_test_blob("token2", "test", "amm", 50),
+            create_test_blob_from("token1", "test", "amm", 10), // incorrect amount
+            create_test_blob_from("token2", "test", "amm", 50),
         ];
 
         let result = contract.create_new_pair(
@@ -761,8 +762,8 @@ mod tests {
         let mut contract = AmmContract::new(state, caller.clone());
 
         let callees_blobs = vec![
-            create_test_blob("token1", "test", "amm", 20),
-            create_test_blob("token1", "test", "amm", 50),
+            create_test_blob_from("token1", "test", "amm", 20),
+            create_test_blob_from("token1", "test", "amm", 50),
         ];
 
         let result = contract.create_new_pair(
@@ -784,7 +785,7 @@ mod tests {
         let caller = Identity("test".to_owned());
         let mut contract = AmmContract::new(state, caller.clone());
 
-        let callees_blobs = vec![create_test_blob("token1", "test", "amm", 20)];
+        let callees_blobs = vec![create_test_blob_from("token1", "test", "amm", 20)];
 
         let result = contract.create_new_pair(
             caller,
@@ -794,5 +795,58 @@ mod tests {
         );
 
         assert!(!result.success);
+    }
+
+    #[test]
+    fn test_get_paired_amount_existing_pair() {
+        let pair = UnorderedTokenPair::new("token1".into(), "token2".into());
+        let mut pairs = BTreeMap::new();
+        pairs.insert(pair.clone(), (10, 20));
+        let state = AmmState { pairs };
+
+        let result = state.get_paired_amount("token1".to_string(), "token2".to_string(), 5);
+
+        assert!(result.is_some());
+        let amount_b = result.unwrap();
+        assert_eq!(amount_b, 20 - (10 * 20 / (10 + 5)));
+    }
+
+    #[test]
+    fn test_get_paired_amount_non_existing_pair() {
+        let state = AmmState {
+            pairs: BTreeMap::new(),
+        };
+
+        let result = state.get_paired_amount("token1".to_string(), "token2".to_string(), 5);
+
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_get_paired_amount_zero_amount_a() {
+        let pair = UnorderedTokenPair::new("token1".into(), "token2".into());
+        let mut pairs = BTreeMap::new();
+        pairs.insert(pair.clone(), (10, 20));
+        let state = AmmState { pairs };
+
+        let result = state.get_paired_amount("token1".to_string(), "token2".to_string(), 0);
+
+        assert!(result.is_some());
+        let amount_b = result.unwrap();
+        assert_eq!(amount_b, 20 - (10 * 20 / 10));
+    }
+
+    #[test]
+    fn test_get_paired_amount_division_by_zero() {
+        let pair = UnorderedTokenPair::new("token1".into(), "token2".into());
+        let mut pairs = BTreeMap::new();
+        pairs.insert(pair.clone(), (0, 20));
+        let state = AmmState { pairs };
+
+        let result = state.get_paired_amount("token1".to_string(), "token2".to_string(), 5);
+
+        assert!(result.is_some());
+        let amount_b = result.unwrap();
+        assert_eq!(amount_b, 20);
     }
 }
