@@ -180,7 +180,7 @@ async fn handle_args(args: Args) -> Result<()> {
         }
         SendCommands::Auto => {
             let _ = client
-                .run_scenario_api_test()
+                .run_scenario_api_test(1, 60)
                 .await
                 .map_err(|e| anyhow::anyhow!("Failed to run scenario test {}", e))?;
             Ok(())
