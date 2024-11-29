@@ -2,6 +2,9 @@ github_checks:
   # Disable annotations, too noisy.
   annotations: false
 
+ignore:
+  - "crates/bonsai-runner"
+
 coverage:
   status:
     patch:

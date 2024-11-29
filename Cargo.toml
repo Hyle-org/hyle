@@ -4,6 +4,7 @@ members = [
     "contracts/hyllar/guest",
     "contracts/hydentity/guest",
     "contracts/amm/guest",
+    "crates/bonsai-runner"
 ]
 resolver = "2"
 
