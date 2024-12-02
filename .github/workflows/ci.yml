@@ -43,7 +43,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      - run: cargo build --verbose
+      - run: cargo build --profile fastdebug --verbose
       - run: cargo nextest run --profile ci --cargo-profile fastdebug --workspace
       - name: Upload test results to Codecov
         if: ${{ !cancelled() }}
