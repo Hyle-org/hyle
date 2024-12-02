@@ -4,6 +4,7 @@
 extern crate alloc;
 
 use hyllar::{HyllarToken, HyllarTokenContract};
+use risc0_zkvm::guest::env;
 use sdk::erc20::ERC20Action;
 
 risc0_zkvm::guest::entry!(main);
@@ -19,9 +20,13 @@ fn main() {
 
     let state = input.initial_state.clone();
 
+    env::log("Init token contract");
     let mut contract = HyllarTokenContract::init(state, caller);
 
+    env::log("execute action");
     let res = sdk::erc20::execute_action(&mut contract, parsed_blob.data.parameters);
+
+    env::log(alloc::format!("commit {:?}", res).as_str());
 
     sdk::guest::commit(input, contract.state(), res);
 }

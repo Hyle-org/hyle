@@ -12,7 +12,7 @@ use crate::{
     StructuredBlob, StructuredBlobData,
 };
 
-pub type RunResult = Result<String, anyhow::Error>;
+pub type RunResult = Result<String, String>;
 
 pub fn fail<State>(input: ContractInput<State>, message: &str)
 where

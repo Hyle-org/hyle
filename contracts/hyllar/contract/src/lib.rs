@@ -1,6 +1,5 @@
 use std::collections::BTreeMap;
 
-use anyhow::Error;
 use bincode::{Decode, Encode};
 use sdk::{erc20::ERC20, Digestable, HyleContract, Identity};
 use serde::{Deserialize, Serialize};
@@ -144,7 +143,7 @@ impl Digestable for HyllarToken {
     }
 }
 impl TryFrom<sdk::StateDigest> for HyllarToken {
-    type Error = Error;
+    type Error = anyhow::Error;
 
     fn try_from(state: sdk::StateDigest) -> Result<Self, Self::Error> {
         let (balances, _) = bincode::decode_from_slice(&state.0, bincode::config::standard())
@@ -188,7 +187,7 @@ mod tests {
 
         assert_eq!(contract.balance_of("faucet").unwrap(), initial_supply);
         assert_eq!(
-            contract.balance_of("nonexistent").unwrap_err(),
+            contract.balance_of("nonexistent").unwrap_err().to_string(),
             "Account not found".to_string()
         );
     }
@@ -232,7 +231,28 @@ mod tests {
         assert_eq!(contract.balance_of("recipient").unwrap(), 200);
         assert_eq!(contract.allowance("faucet", "spender").unwrap(), 100);
 
-        assert!(contract.transfer_from("faucet", "recipient", 200).is_err());
+        assert_eq!(
+            contract
+                .transfer_from("faucet", "recipient", 200)
+                .unwrap_err()
+                .to_string(),
+            "Allowance exceeded for sender=faucet caller=spender allowance=100"
+        );
+    }
+
+    #[test]
+    fn test_transfer_from_unallowed() {
+        let initial_supply = 1000;
+        let token = HyllarToken::new(initial_supply, "faucet".to_string());
+        let mut contract = HyllarTokenContract::init(token, Identity("spender".to_string()));
+
+        assert_eq!(
+            contract
+                .transfer_from("faucet", "recipient", 200)
+                .unwrap_err()
+                .to_string(),
+            "Allowance exceeded for sender=faucet caller=spender allowance=0"
+        );
     }
 
     #[test]
@@ -250,7 +270,10 @@ mod tests {
         let result = contract.transfer_from("faucet", "recipient", 1100);
 
         assert!(result.is_err());
-        assert_eq!(result.unwrap_err(), "Insufficient balance".to_string());
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "Insufficient balance".to_string()
+        );
     }
 
     #[test]
