@@ -1,0 +1,30 @@
+name: Generate GitHub Release
+
+on:
+  push:
+    tags:
+      - '*'
+
+jobs:
+  generate-release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+
+      - name: Generate release notes
+        run: node .github/generateReleaseNotes.js
+
+      - name: Create GitHub Release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref_name }}  
+          release_name: Release ${{ github.ref_name }}
+          body_path: RELEASE_NOTES.md
+
