@@ -1,4 +1,7 @@
-use alloc::{string::ToString, vec::Vec};
+use alloc::{
+    string::{String, ToString},
+    vec::Vec,
+};
 use anyhow::{bail, Result};
 use bincode::{Decode, Encode};
 use risc0_zkvm::guest::env;
@@ -9,26 +12,7 @@ use crate::{
     StructuredBlob, StructuredBlobData,
 };
 
-pub struct RunResult {
-    pub success: bool,
-    pub program_outputs: Vec<u8>,
-}
-
-impl RunResult {
-    pub fn success(message: &str) -> Self {
-        RunResult {
-            success: true,
-            program_outputs: message.to_string().into_bytes(),
-        }
-    }
-
-    pub fn failure(message: &str) -> Self {
-        RunResult {
-            success: false,
-            program_outputs: message.to_string().into_bytes(),
-        }
-    }
-}
+pub type RunResult = Result<String, anyhow::Error>;
 
 pub fn fail<State>(input: ContractInput<State>, message: &str)
 where
@@ -132,8 +116,8 @@ where
         tx_hash: input.tx_hash,
         index: input.index,
         blobs: flatten_blobs(&input.blobs),
-        success: res.success,
-        program_outputs: res.program_outputs,
+        success: res.is_ok(),
+        program_outputs: res.unwrap_or_else(|e| e.to_string()).into_bytes(),
     });
 }
 

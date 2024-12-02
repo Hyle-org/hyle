@@ -1,4 +1,5 @@
 use alloc::{format, string::String, vec::Vec};
+use anyhow::anyhow;
 use bincode::{Decode, Encode};
 
 use crate::{
@@ -129,82 +130,31 @@ impl ERC20Action {
 /// * `token` - A mutable reference to an object implementing the ERC20 trait.
 /// * `action` - The action to execute, represented as an ERC20Action enum.
 pub fn execute_action<T: ERC20>(token: &mut T, action: ERC20Action) -> RunResult {
-    let program_outputs;
-    let success: bool;
-
     match action {
-        ERC20Action::TotalSupply => match token.total_supply() {
-            Ok(supply) => {
-                success = true;
-                program_outputs = format!("Total Supply: {}", supply).into_bytes();
-            }
-            Err(err) => {
-                success = false;
-                program_outputs = err.into_bytes();
-            }
-        },
-        ERC20Action::BalanceOf { account } => match token.balance_of(&account) {
-            Ok(balance) => {
-                success = true;
-                program_outputs = format!("Balance of {}: {}", account, balance).into_bytes();
-            }
-            Err(err) => {
-                success = false;
-                program_outputs = err.into_bytes();
-            }
-        },
-        ERC20Action::Transfer { recipient, amount } => match token.transfer(&recipient, amount) {
-            Ok(_) => {
-                success = true;
-                program_outputs = format!("Transferred {} to {}", amount, recipient).into_bytes();
-            }
-            Err(err) => {
-                success = false;
-                program_outputs = err.into_bytes();
-            }
-        },
+        ERC20Action::TotalSupply => token
+            .total_supply()
+            .map(|supply| format!("Total Supply: {}", supply)),
+        ERC20Action::BalanceOf { account } => token
+            .balance_of(&account)
+            .map(|balance| format!("Balance of {}: {}", account, balance)),
+        ERC20Action::Transfer { recipient, amount } => token
+            .transfer(&recipient, amount)
+            .map(|_| format!("Transferred {} to {}", amount, recipient)),
         ERC20Action::TransferFrom {
             sender,
             recipient,
             amount,
-        } => match token.transfer_from(&sender, &recipient, amount) {
-            Ok(_) => {
-                success = true;
-                program_outputs =
-                    format!("Transferred {} from {} to {}", amount, sender, recipient).into_bytes();
-            }
-            Err(err) => {
-                success = false;
-                program_outputs = err.into_bytes();
-            }
-        },
-        ERC20Action::Approve { spender, amount } => match token.approve(&spender, amount) {
-            Ok(_) => {
-                success = true;
-                program_outputs = format!("Approved {} for {}", amount, spender).into_bytes();
-            }
-            Err(err) => {
-                success = false;
-                program_outputs = err.into_bytes();
-            }
-        },
-        ERC20Action::Allowance { owner, spender } => match token.allowance(&owner, &spender) {
-            Ok(remaining) => {
-                success = true;
-                program_outputs =
-                    format!("Allowance of {} by {}: {}", spender, owner, remaining).into_bytes();
-            }
-            Err(err) => {
-                success = false;
-                program_outputs = err.into_bytes();
-            }
-        },
+        } => token
+            .transfer_from(&sender, &recipient, amount)
+            .map(|_| format!("Transferred {} from {} to {}", amount, sender, recipient)),
+        ERC20Action::Approve { spender, amount } => token
+            .approve(&spender, amount)
+            .map(|_| format!("Approved {} for {}", amount, spender,)),
+        ERC20Action::Allowance { owner, spender } => token
+            .allowance(&owner, &spender)
+            .map(|allowance| format!("Allowance of {} by {}: {}", spender, owner, allowance)),
     }
-
-    RunResult {
-        success,
-        program_outputs,
-    }
+    .map_err(|e| anyhow!(e))
 }
 
 #[cfg(test)]
@@ -242,8 +192,8 @@ mod tests {
         let action = ERC20Action::TotalSupply;
         let result = execute_action(&mut mock, action);
 
-        assert!(result.success);
-        assert_eq!(result.program_outputs, b"Total Supply: 1000");
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "Total Supply: 1000");
     }
 
     #[test]
@@ -259,8 +209,8 @@ mod tests {
         };
         let result = execute_action(&mut mock, action);
 
-        assert!(result.success);
-        assert_eq!(result.program_outputs, b"Balance of account1: 500");
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "Balance of account1: 500");
     }
 
     #[test]
@@ -277,8 +227,8 @@ mod tests {
         };
         let result = execute_action(&mut mock, action);
 
-        assert!(result.success);
-        assert_eq!(result.program_outputs, b"Transferred 200 to recipient1");
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "Transferred 200 to recipient1");
     }
 
     #[test]
@@ -300,10 +250,10 @@ mod tests {
         };
         let result = execute_action(&mut mock, action);
 
-        assert!(result.success);
+        assert!(result.is_ok());
         assert_eq!(
-            result.program_outputs,
-            b"Transferred 300 from sender1 to recipient1"
+            result.unwrap(),
+            "Transferred 300 from sender1 to recipient1"
         );
     }
 
@@ -321,8 +271,8 @@ mod tests {
         };
         let result = execute_action(&mut mock, action);
 
-        assert!(result.success);
-        assert_eq!(result.program_outputs, b"Approved 400 for spender1");
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "Approved 400 for spender1");
     }
 
     #[test]
@@ -339,10 +289,7 @@ mod tests {
         };
         let result = execute_action(&mut mock, action);
 
-        assert!(result.success);
-        assert_eq!(
-            result.program_outputs,
-            b"Allowance of spender1 by owner1: 500"
-        );
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "Allowance of spender1 by owner1: 500");
     }
 }
