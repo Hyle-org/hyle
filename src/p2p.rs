@@ -74,27 +74,32 @@ impl P2P {
                 let mut retry_count = 20;
                 while retry_count > 0 {
                     info!("Connecting to peer #{}: {}", id, peer_address);
-                    if let Ok(stream) = peer::Peer::connect(peer_address.as_str()).await {
-                        let mut peer = peer::Peer::new(
-                            id,
-                            stream,
-                            bus.new_handle(),
-                            crypto.clone(),
-                            config.clone(),
-                        )
-                        .await;
+                    match peer::Peer::connect(peer_address.as_str()).await {
+                        Ok(stream) => {
+                            let mut peer = peer::Peer::new(
+                                id,
+                                stream,
+                                bus.new_handle(),
+                                crypto.clone(),
+                                config.clone(),
+                            )
+                            .await;
 
-                        if let Err(e) = peer.handshake().await {
-                            warn!("Error in handshake: {}", e);
+                            if let Err(e) = peer.handshake().await {
+                                warn!("Error in handshake: {}", e);
+                            }
+                            debug!("Handshake done !");
+                            match peer.start().await {
+                                Ok(_) => warn!("Peer #{} thread ended with success.", id),
+                                Err(_) => warn!(
+                                    "Peer #{}: {} disconnected ! Retry connection",
+                                    id, peer_address
+                                ),
+                            };
                         }
-                        debug!("Handshake done !");
-                        match peer.start().await {
-                            Ok(_) => warn!("Peer #{} thread ended with success.", id),
-                            Err(_) => warn!(
-                                "Peer #{}: {} disconnected ! Retry connection",
-                                id, peer_address
-                            ),
-                        };
+                        Err(e) => {
+                            warn!("Error while connecting to peer #{}: {}", id, e);
+                        }
                     }
 
                     retry_count -= 1;
@@ -115,12 +120,16 @@ impl P2P {
         // Wait all other threads to start correctly
         sleep(Duration::from_secs(1)).await;
 
+        let listener = TcpListener::bind(&self.config.host).await?;
+        info!("p2p listening on {}", listener.local_addr()?);
+
+        // Wait some more so all peers (in tests) are listening.
+        #[cfg(test)]
+        sleep(Duration::from_secs(1)).await;
+
         for peer in self.config.peers.clone() {
             self.spawn_peer(peer);
         }
-
-        let listener = TcpListener::bind(&self.config.host).await?;
-        info!("p2p listening on {}", listener.local_addr()?);
 
         handle_messages! {
             on_bus self.bus_client,
