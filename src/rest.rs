@@ -1,6 +1,5 @@
 //! Public API for interacting with the node.
 
-use crate::{bus::SharedMessageBus, model::ValidatorPublicKey, utils::modules::Module};
 use anyhow::{Context, Result};
 use axum::{
     extract::State,
@@ -13,6 +12,8 @@ use axum_otel_metrics::HttpMetricsLayer;
 use serde::{Deserialize, Serialize};
 use tower_http::trace::TraceLayer;
 use tracing::info;
+
+use crate::{bus::SharedMessageBus, model::ValidatorPublicKey, utils::modules::Module};
 
 pub mod client;
 

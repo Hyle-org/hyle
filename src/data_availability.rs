@@ -4,7 +4,7 @@ mod api;
 mod blocks;
 
 use crate::{
-    bus::{bus_client, command_response::Query, BusMessage, SharedMessageBus},
+    bus::{bus_client, command_response::Query, BusMessage, SharedMessageBus, ShutdownSignal},
     consensus::ConsensusCommand,
     genesis::GenesisEvent,
     handle_messages,
@@ -74,6 +74,7 @@ struct DABusClient {
     sender(OutboundMessage),
     sender(DataEvent),
     sender(ConsensusCommand),
+    receiver(ShutdownSignal),
     receiver(Query<ContractName, Contract>),
     receiver(DataNetMessage),
     receiver(PeerEvent),

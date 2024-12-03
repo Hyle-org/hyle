@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use crate::{
-    bus::{BusMessage, SharedMessageBus},
+    bus::{BusMessage, SharedMessageBus, ShutdownSignal},
     handle_messages,
     mempool::api::RestApiMessage,
     model::{
@@ -23,6 +23,7 @@ use crate::bus::bus_client;
 bus_client! {
 struct MockWorkflowBusClient {
     sender(RestApiMessage),
+    receiver(ShutdownSignal),
     receiver(RunScenario),
 }
 }
@@ -123,6 +124,7 @@ impl MockWorkflowHandler {
     pub async fn start(&mut self) -> anyhow::Result<()> {
         handle_messages! {
             on_bus self.bus,
+            break_on<ShutdownSignal>
             listen<RunScenario> cmd => {
                 match cmd {
                     RunScenario::StressTest => {

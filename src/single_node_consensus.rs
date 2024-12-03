@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use crate::bus::command_response::{CmdRespClient, Query};
-use crate::bus::SharedMessageBus;
+use crate::bus::{SharedMessageBus, ShutdownSignal};
 use crate::consensus::{
     ConsensusCommand, ConsensusEvent, ConsensusInfo, ConsensusNetMessage, QueryConsensusInfo,
 };
@@ -19,6 +19,7 @@ use crate::{
 };
 use anyhow::Result;
 use bincode::{Decode, Encode};
+use tracing::warn;
 
 bus_client! {
 struct SingleNodeConsensusBusClient {
@@ -26,6 +27,7 @@ struct SingleNodeConsensusBusClient {
     sender(GenesisEvent),
     sender(SignedByValidator<MempoolNetMessage>),
     sender(Query<QueryNewCut, Cut>),
+    receiver(ShutdownSignal),
     receiver(ConsensusCommand),
     receiver(MempoolEvent),
     receiver(MempoolNetMessage),
@@ -120,6 +122,7 @@ impl SingleNodeConsensus {
 
         handle_messages! {
             on_bus self.bus,
+            break_on<ShutdownSignal>
             listen<ConsensusCommand> _ => {}
             listen<SignedByValidator<ConsensusNetMessage>> _ => {}
             listen<MempoolEvent> _ => {}

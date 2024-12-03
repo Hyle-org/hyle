@@ -19,6 +19,7 @@ use super::network::{Hello, NetMessage};
 use super::stream::send_net_message;
 use crate::bus::bus_client;
 use crate::bus::SharedMessageBus;
+use crate::bus::ShutdownSignal;
 use crate::consensus::ConsensusNetMessage;
 use crate::data_availability::DataNetMessage;
 use crate::handle_messages;
@@ -35,6 +36,7 @@ struct PeerBusClient {
     sender(PeerEvent),
     sender(DataNetMessage),
     receiver(OutboundMessage),
+    receiver(ShutdownSignal),
 }
 }
 
@@ -190,6 +192,7 @@ impl Peer {
     pub async fn start(&mut self) -> Result<()> {
         handle_messages! {
             on_bus self.bus,
+            break_on<ShutdownSignal>
             listen<OutboundMessage> res => {
                 match res {
                     OutboundMessage::SendMessage { validator_id, msg } => match self.handle_send_message(validator_id, msg).await {

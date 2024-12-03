@@ -3,7 +3,7 @@ use axum::Router;
 use axum_otel_metrics::HttpMetricsLayerBuilder;
 use clap::Parser;
 use hyle::{
-    bus::{metrics::BusMetrics, SharedMessageBus},
+    bus::{dont_use_this::get_sender, metrics::BusMetrics, SharedMessageBus, ShutdownSignal},
     consensus::Consensus,
     data_availability::DataAvailability,
     genesis::Genesis,
@@ -17,8 +17,9 @@ use hyle::{
     utils::{
         conf,
         crypto::BlstCrypto,
-        logger::{setup_tracing, TracingMode},
+        logger::{setup_tracing, LogMe, TracingMode},
         modules::ModulesHandler,
+        static_type_map::Pick,
     },
 };
 use std::sync::{Arc, Mutex};
@@ -78,6 +79,7 @@ async fn main() -> Result<()> {
         .build();
 
     let bus = SharedMessageBus::new(BusMetrics::global(config.id.clone()));
+    let shutdown_sender = get_sender::<ShutdownSignal>(&bus).await;
     let crypto = Arc::new(BlstCrypto::new(config.id.clone()));
     let pubkey = Some(crypto.validator_pubkey().clone());
 
@@ -152,11 +154,13 @@ async fn main() -> Result<()> {
             }
             _ = tokio::signal::ctrl_c() => {
                 info!("Ctrl-C received, shutting down");
-                abort();
+                shutdown_sender.send(ShutdownSignal).log_error("Sending shutdown signal");
+                // abort();
             }
             _ = terminate.recv() =>  {
                 info!("SIGTERM received, shutting down");
-                abort();
+                shutdown_sender.send(ShutdownSignal).log_error("Sending shutdown signal");
+                // abort();
             }
         }
     }

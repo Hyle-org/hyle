@@ -105,10 +105,12 @@ macro_rules! handle_messages {
     };
 
     (bus($bus:expr) index($index:ident) command_response<$command:ty, $response:ty> $res:pat => $handler:block $($rest:tt)*) => {
+        // Create a receiver with a unique variable $index
         let $index = unsafe { &mut *Pick::<tokio::sync::broadcast::Receiver<Query<$command, $response>>>::splitting_get_mut(&mut $bus) };
         paste! {
         handle_messages! {
             bus($bus) index([<$index a>]) $($rest)*
+            // Listen on receiver
             Ok(_raw_query) = #[allow(clippy::macro_metavars_in_unsafe)] $index.recv() => {
                 receive_bus_metrics::<Query<$command, $response>,_>(&mut $bus);
                 if let Ok(mut _value) = _raw_query.take() {
@@ -132,6 +134,8 @@ macro_rules! handle_messages {
             }
         }
         }
+        // When the loop breaks, there may be remaining messages to consume in channels
+        // That is the purpose of this try_recv loop, empty the topic
         while let Ok(_raw_query) = $index.try_recv() {
             receive_bus_metrics::<Query<$command, $response>,_>(&mut $bus);
             if let Ok(mut _value) = _raw_query.take() {
@@ -171,6 +175,22 @@ macro_rules! handle_messages {
             $handler;
         };
     };
+
+    // Shorthand to listen to topic, and break the loop
+    (bus($bus:expr) index($index:ident) break_on<$message:ty> $($rest:tt)*) => {
+        let $index = unsafe { &mut *Pick::<tokio::sync::broadcast::Receiver<$message>>::splitting_get_mut(&mut $bus) };
+        paste! {
+        handle_messages! {
+            bus($bus) index([<$index a>]) $($rest)*
+            Ok(_) = $index.recv()  => {
+                receive_bus_metrics::<$message, _>(&mut $bus);
+                warn!("Break signal received");
+                break;
+            }
+        }
+        }
+    };
+
 
     // Fallback to else case
     (bus($bus:expr) index($index:ident) else => $h:block $($rest:tt)*) => {

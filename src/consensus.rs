@@ -1,8 +1,8 @@
 //! Handles all consensus logic up to block commitment.
 
-use crate::utils::logger::LogMe;
 #[cfg(not(test))]
 use crate::utils::static_type_map::Pick;
+use crate::{bus::ShutdownSignal, utils::logger::LogMe};
 use crate::{
     bus::{bus_client, command_response::Query, BusMessage, SharedMessageBus},
     data_availability::DataEvent,
@@ -88,6 +88,7 @@ struct ConsensusBusClient {
     sender(ConsensusCommand),
     sender(P2PCommand),
     sender(Query<QueryNewCut, Cut>),
+    receiver(ShutdownSignal),
     receiver(ConsensusCommand),
     receiver(GenesisEvent),
     receiver(DataEvent),
@@ -851,6 +852,7 @@ impl Consensus {
     async fn wait_genesis(&mut self) -> Result<()> {
         handle_messages! {
             on_bus self.bus,
+            break_on<ShutdownSignal>
             listen<GenesisEvent> msg => {
                 match msg {
                     GenesisEvent::GenesisBlock { initial_validators, ..} => {
@@ -892,6 +894,7 @@ impl Consensus {
 
         handle_messages! {
             on_bus self.bus,
+            break_on<ShutdownSignal>
             listen<ConsensusCommand> cmd => {
                 match self.handle_command(cmd).await {
                     Ok(_) => (),

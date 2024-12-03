@@ -1,7 +1,7 @@
 //! Mempool logic & pending transaction management.
 
 use crate::{
-    bus::{bus_client, command_response::Query, BusMessage, SharedMessageBus},
+    bus::{bus_client, command_response::Query, BusMessage, SharedMessageBus, ShutdownSignal},
     consensus::ConsensusEvent,
     genesis::GenesisEvent,
     handle_messages,
@@ -39,6 +39,7 @@ bus_client! {
 struct MempoolBusClient {
     sender(OutboundMessage),
     sender(MempoolEvent),
+    receiver(ShutdownSignal),
     receiver(SignedByValidator<MempoolNetMessage>),
     receiver(RestApiMessage),
     receiver(ConsensusEvent),
@@ -130,6 +131,7 @@ impl Mempool {
 
         handle_messages! {
             on_bus self.bus,
+            break_on<ShutdownSignal>
             listen<SignedByValidator<MempoolNetMessage>> cmd => {
                 let _ = self.handle_net_message(cmd)
                     .log_error("Handling MempoolNetMessage in Mempool");

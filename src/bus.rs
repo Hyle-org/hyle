@@ -18,6 +18,11 @@ type AnyMap = Map<dyn Any + Send + Sync>;
 /// Types that implement BusMessage can be sent on the bus - this is mostly for documentation purposes.
 pub trait BusMessage {}
 
+#[derive(Clone, Copy, Debug)]
+pub struct ShutdownSignal;
+
+impl BusMessage for ShutdownSignal {}
+
 pub struct SharedMessageBus {
     channels: Arc<Mutex<AnyMap>>,
     pub metrics: BusMetrics,
