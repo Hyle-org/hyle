@@ -19,7 +19,7 @@ The older (but still maintained) Cosmos SDK based client can be found at [hyle-c
 
 ## Getting Started with Cargo
 
-Start a single-node devnet, consensus is disabled, usefull to build & debug smart contracts:
+To start a single-node devnet (with consensus disabled), which is useful to build & debug smart contracts:
 
 ```bash
 cargo build
