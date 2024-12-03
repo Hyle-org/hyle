@@ -1,9 +1,8 @@
-use anyhow::{bail, Error};
 use bincode::{Decode, Encode};
 
 use super::model::UnsettledBlobTransaction;
 use crate::model::ContractName;
-use hyle_contract_sdk::{HyleOutput, TxHash};
+use hyle_contract_sdk::TxHash;
 use std::collections::HashMap;
 
 // struct used to guarantee coherence between the 2 fields
@@ -14,12 +13,30 @@ pub struct OrderedTxMap {
 }
 
 impl OrderedTxMap {
+    #[allow(dead_code)]
     pub fn get(&self, hash: &TxHash) -> Option<&UnsettledBlobTransaction> {
         self.map.get(hash)
     }
 
-    pub fn get_mut(&mut self, hash: &TxHash) -> Option<&mut UnsettledBlobTransaction> {
-        self.map.get_mut(hash)
+    pub fn get_for_settlement(
+        &mut self,
+        hash: &TxHash,
+    ) -> Option<(&mut UnsettledBlobTransaction, bool)> {
+        let tx = self.map.get_mut(hash);
+        match tx {
+            Some(tx) => {
+                let is_next_unsettled_tx = tx.blobs.iter().all(|blob| {
+                    if let Some(order) = self.tx_order.get(&blob.contract_name) {
+                        if let Some(first) = order.first() {
+                            return first == &tx.hash;
+                        }
+                    }
+                    false
+                });
+                Some((tx, is_next_unsettled_tx))
+            }
+            None => None,
+        }
     }
 
     #[allow(dead_code)]
@@ -56,36 +73,6 @@ impl OrderedTxMap {
         }
         self.map.remove(hash);
     }
-
-    pub fn is_next_unsettled_tx(&self, tx: &TxHash) -> bool {
-        match self.get(tx) {
-            Some(unsettled_tx) => {
-                for blob in &unsettled_tx.blobs {
-                    if let Some(order) = self.tx_order.get(&blob.contract_name) {
-                        if let Some(first) = order.first() {
-                            if first != tx {
-                                return false;
-                            }
-                        }
-                    }
-                }
-            }
-            None => return false,
-        }
-        true
-    }
-
-    pub fn add_metadata(&mut self, tx: &TxHash, hyle_output: &HyleOutput) -> Result<(), Error> {
-        match self.get_mut(tx) {
-            Some(unsettled_tx) => {
-                unsettled_tx.blobs[hyle_output.index.0 as usize]
-                    .metadata
-                    .push(hyle_output.clone());
-                Ok(())
-            }
-            None => bail!("Could not add metadata for tx {tx}"),
-        }
-    }
 }
 
 #[cfg(test)]
@@ -105,6 +92,13 @@ mod tests {
                 metadata: vec![],
             }],
         }
+    }
+
+    fn is_next_unsettled_tx(map: &mut OrderedTxMap, hash: &TxHash) -> bool {
+        let Some((tx, is_next)) = map.get_for_settlement(hash) else {
+            return false;
+        };
+        is_next
     }
 
     #[test]
@@ -130,7 +124,7 @@ mod tests {
 
         assert_eq!(tx1, map.get(&tx1).unwrap().hash);
         assert_eq!(tx2, map.get(&tx2).unwrap().hash);
-        assert_eq!(tx3, map.get_mut(&tx3).unwrap().hash);
+        assert_eq!(tx3, map.get(&tx3).unwrap().hash);
 
         assert_eq!(map.map.len(), 3);
         assert_eq!(map.tx_order.len(), 2);
@@ -163,11 +157,11 @@ mod tests {
         map.add(new_tx("tx2", "c1"));
         map.add(new_tx("tx3", "c2"));
 
-        assert!(map.is_next_unsettled_tx(&tx1));
-        assert!(!map.is_next_unsettled_tx(&tx2));
-        assert!(map.is_next_unsettled_tx(&tx3));
+        assert!(is_next_unsettled_tx(&mut map, &tx1));
+        assert!(!is_next_unsettled_tx(&mut map, &tx2));
+        assert!(is_next_unsettled_tx(&mut map, &tx3));
         // tx doesn't even exit
-        assert!(!map.is_next_unsettled_tx(&tx4));
+        assert!(!is_next_unsettled_tx(&mut map, &tx4));
     }
 
     #[test]
@@ -183,9 +177,9 @@ mod tests {
         map.add(new_tx("tx3", "c2"));
         map.remove(&tx1);
 
-        assert!(!map.is_next_unsettled_tx(&tx1));
-        assert!(map.is_next_unsettled_tx(&tx2));
-        assert!(map.is_next_unsettled_tx(&tx3));
+        assert!(!is_next_unsettled_tx(&mut map, &tx1));
+        assert!(is_next_unsettled_tx(&mut map, &tx2));
+        assert!(is_next_unsettled_tx(&mut map, &tx3));
 
         assert_eq!(map.map.len(), 2);
         assert_eq!(map.tx_order.len(), 2);
