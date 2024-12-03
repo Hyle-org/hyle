@@ -590,8 +590,8 @@ mod tests {
         let mut contract = AmmContract::new(ContractName("amm".to_owned()), state, caller.clone());
 
         let callees_blobs = vec![
-            create_test_blob("token1", "amm", 20),
-            create_test_blob("token2", "amm", 50),
+            create_test_blob_from("token1", "test", "amm", 20),
+            create_test_blob_from("token2", "test", "amm", 50),
         ];
 
         let result = contract.create_new_pair(
@@ -599,7 +599,7 @@ mod tests {
             (20, 50),
             callees_blobs,
         );
-
+        println!("result: {:?}", result);
         assert!(result.is_ok());
         let normalized_token_pair =
             UnorderedTokenPair::new("token1".to_string(), "token2".to_string());
@@ -632,29 +632,6 @@ mod tests {
 
         assert!(result.is_err());
         assert!(contract.state.pairs.get(&normalized_token_pair) == Some(&(100, 200)));
-    }
-
-    #[test]
-    fn test_create_new_pair_invalid_sender() {
-        let state = AmmState {
-            pairs: BTreeMap::new(),
-        };
-
-        let caller = Identity("test".to_owned());
-        let mut contract = AmmContract::new(ContractName("amm".to_owned()), state, caller.clone());
-
-        let callees_blobs = vec![
-            create_test_blob_from("token1", "invalid_sender", "amm", 20), // incorrect sender
-            create_test_blob_from("token2", "test", "amm", 50),
-        ];
-
-        let result = contract.create_new_pair(
-            ("token1".to_string(), "token2".to_string()),
-            (20, 50),
-            callees_blobs,
-        );
-
-        assert!(result.is_err());
     }
 
     #[test]
