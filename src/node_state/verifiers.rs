@@ -100,11 +100,17 @@ pub fn risc0_proof_verifier(encoded_receipt: &[u8], image_id: &[u8]) -> Result<H
         Err(e) => bail!("Risc0 proof verification failed: {}", e),
     };
 
-    tracing::info!("🦄🦄 receipt.journal {:?} ", receipt.journal);
     let hyle_output = match receipt.journal.decode::<HyleOutput>() {
         Ok(v) => v,
         Err(e) => bail!("Failed to extract HyleOuput from Risc0's journal: {}", e),
     };
+
+    tracing::info!(
+        "✅ Risc0 proof verified. {}",
+        std::str::from_utf8(&hyle_output.program_outputs)
+            .map(|o| format!("Program outputs: {o}"))
+            .unwrap_or("Invalid UTF-8".to_string())
+    );
 
     // // TODO: allow multiple outputs when verifying
     Ok(hyle_output)
