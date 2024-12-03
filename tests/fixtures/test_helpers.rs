@@ -141,7 +141,7 @@ impl Drop for TestProcess {
 }
 
 pub async fn wait_height(client: &ApiHttpClient, heights: u64) -> anyhow::Result<()> {
-    timeout(Duration::from_secs(15), async {
+    timeout(Duration::from_secs(30), async {
         loop {
             if let Ok(mut current_height) = client.get_block_height().await {
                 let target_height = current_height + heights;

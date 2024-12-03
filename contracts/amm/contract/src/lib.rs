@@ -1,7 +1,6 @@
 use std::collections::BTreeMap;
 use std::hash::{Hash, Hasher};
 
-use anyhow::Error;
 use bincode::{Decode, Encode};
 use sdk::{erc20::ERC20Action, Identity};
 use sdk::{guest::RunResult, Blob, BlobIndex, Digestable};
@@ -98,7 +97,7 @@ impl AmmContract {
     ) -> RunResult {
         // Check that new pair is about two different tokens and that there is one blob for each
         if callees_blobs.len() != 2 || pair.0 == pair.1 {
-            return RunResult::failure("Swap can only happen between two different tokens");
+            return Err("Swap can only happen between two different tokens".to_string());
         }
 
         let first_blob_index = match callees_blobs
@@ -107,7 +106,10 @@ impl AmmContract {
         {
             Some(index) => BlobIndex(index as u32),
             None => {
-                return RunResult::failure("Blob with contract name {} not found in callees");
+                return Err(format!(
+                    "Blob with contract name {} not found in callees",
+                    pair.0
+                ));
             }
         };
 
@@ -117,7 +119,10 @@ impl AmmContract {
         {
             Some(index) => BlobIndex(index as u32),
             None => {
-                return RunResult::failure("Blob with contract name {} not found in callees");
+                return Err(format!(
+                    "Blob with contract name {} not found in callees",
+                    pair.1
+                ));
             }
         };
 
@@ -131,16 +136,16 @@ impl AmmContract {
             } => {
                 // Check that recipient is AMM
                 if recipient != self.contract_name.0 {
-                    return RunResult::failure("Transfer blob has incorrect recipient");
+                    return Err("Transfer blob has incorrect recipient".to_string());
                 }
                 // Check that the amount is the same as the one given
                 if amount != amounts.0 {
-                    return RunResult::failure("Amounts do not match");
+                    return Err("Amounts do not match".to_string());
                 }
             }
             _ => {
-                // Check the blobs are Transfer
-                return RunResult::failure("Transfer blobs do not call the correct function");
+                // Check the blobs are TransferFrom
+                return Err("Transfer blobs do not call the correct function".to_string());
             }
         };
 
@@ -150,38 +155,38 @@ impl AmmContract {
             ERC20Action::TransferFrom {
                 amount, recipient, ..
             } => {
-                // Check that recipient is AMM
+                // Check that sender is correct and the recipient is AMM
                 if recipient != self.contract_name.0 {
-                    return RunResult::failure("Transfer blob has incorrect recipient");
+                    return Err("Transfer blob has incorrect sender or recipient".to_string());
                 }
                 // Check that the amount is the same as the one given
                 if amount != amounts.1 {
-                    return RunResult::failure("Amounts do not match");
+                    return Err("Amounts do not match".to_string());
                 }
             }
             _ => {
-                // Check the blobs are Transfer
-                return RunResult::failure("Transfer blobs do not call the correct function");
+                // Check the blobs are TransferFrom
+                return Err("Transfer blobs do not call the correct function".to_string());
             }
         };
 
         let normalized_pair = UnorderedTokenPair::new(pair.0, pair.1);
 
         if self.state.pairs.contains_key(&normalized_pair) {
-            return RunResult::failure(&format!("Pair {:?} already exists", normalized_pair));
+            return Err(format!("Pair {:?} already exists", normalized_pair));
         }
 
         let program_outputs = format!("Pair {:?} created", normalized_pair);
 
         self.state.pairs.insert(normalized_pair, amounts);
 
-        RunResult::success(&program_outputs)
+        Ok(program_outputs)
     }
 
     pub fn verify_swap(&mut self, callees_blobs: Vec<Blob>, pair: TokenPair) -> RunResult {
         // Check that swap is only about two different tokens and that there is one blob for each
         if callees_blobs.len() != 2 || pair.0 == pair.1 {
-            return RunResult::failure("Swap can only happen between two different tokens");
+            return Err("Swap can only happen between two different tokens".to_string());
         }
 
         // Extract "blob_from" out of the blobs. This is the blob that has the first token of the pair as contract name
@@ -191,7 +196,7 @@ impl AmmContract {
         {
             Some(index) => BlobIndex(index as u32),
             None => {
-                return RunResult::failure(&format!(
+                return Err(format!(
                     "Blob with contract name {} not found in callees",
                     pair.0
                 ));
@@ -207,7 +212,7 @@ impl AmmContract {
         {
             Some(index) => BlobIndex(index as u32),
             None => {
-                return RunResult::failure(&format!(
+                return Err(format!(
                     "Blob with contract name {} not found in callees",
                     pair.0
                 ));
@@ -224,15 +229,16 @@ impl AmmContract {
             } => {
                 // Check that blob_from 'from' field matches the caller and that 'to' field is the AMM
                 if sender != self.caller.0 || recipient != self.contract_name.0 {
-                    return RunResult::failure(
-                        "Blob 'from' field is not the User or 'to' field is not the AMM",
+                    return Err(
+                        "Blob 'from' field is not the User or 'to' field is not the AMM"
+                            .to_string(),
                     );
                 }
                 amount
             }
             _ => {
                 // Check the blobs are TransferFrom
-                return RunResult::failure("Transfer blobs do not call the correct function");
+                return Err("Transfer blobs do not call the correct function".to_string());
             }
         };
 
@@ -240,15 +246,16 @@ impl AmmContract {
             ERC20Action::Transfer { amount, recipient } => {
                 // Check that blob_to 'from' field is the AMM and that 'to' field matches the caller
                 if recipient != self.caller.0 {
-                    return RunResult::failure(
-                        "Blob 'from' field is not the AMM or 'to' field is not the caller",
+                    return Err(
+                        "Blob 'from' field is not the AMM or 'to' field is not the caller"
+                            .to_string(),
                     );
                 }
                 amount
             }
             _ => {
                 // Check the blobs are TransferFrom
-                return RunResult::failure("Transfer blobs do not call the correct function");
+                return Err("Transfer blobs do not call the correct function".to_string());
             }
         };
 
@@ -260,7 +267,7 @@ impl AmmContract {
                 if is_normalized_order {
                     let amount_b = *prev_y - (*prev_x * *prev_y / (*prev_x + from_amount));
                     if amount_b != to_amount {
-                        return RunResult::failure(&format!(
+                        return Err(format!(
                             "Swap formula is not respected: {} * {} != {} * {}",
                             (*prev_x + from_amount),
                             (*prev_y - to_amount),
@@ -273,7 +280,7 @@ impl AmmContract {
                 } else {
                     let amount_b = *prev_x - (*prev_y * *prev_x / (*prev_y + from_amount));
                     if amount_b != to_amount {
-                        return RunResult::failure(&format!(
+                        return Err(format!(
                             "Swap formula is not respected: {} * {} != {} * {}",
                             (*prev_y + from_amount),
                             (*prev_x - to_amount),
@@ -286,10 +293,10 @@ impl AmmContract {
                 }
             }
             None => {
-                return RunResult::failure(&format!("Pair {:?} not found in AMM state", pair));
+                return Err(format!("Pair {:?} not found in AMM state", pair));
             }
         };
-        RunResult::success(&format!(
+        Ok(format!(
             "Swap of {} {} for {} {} is valid",
             self.caller, pair.0, self.caller, pair.1
         ))
@@ -305,7 +312,7 @@ impl Digestable for AmmState {
     }
 }
 impl TryFrom<sdk::StateDigest> for AmmState {
-    type Error = Error;
+    type Error = anyhow::Error;
 
     fn try_from(state: sdk::StateDigest) -> Result<Self, Self::Error> {
         let (amm_state, _) = bincode::decode_from_slice(&state.0, bincode::config::standard())
@@ -396,8 +403,7 @@ mod tests {
 
         let result =
             contract.verify_swap(callees_blobs, ("token1".to_string(), "token2".to_string()));
-        assert!(result.success);
-        println!("contract state: {:?}", contract.state.as_digest());
+        assert!(result.is_ok());
         // Assert that the amounts for the pair token1/token2 have been updated
         assert!(contract.state.pairs.get(&normalized_token_pair) == Some(&(25, 40)));
     }
@@ -422,7 +428,7 @@ mod tests {
         let result =
             contract.verify_swap(callees_blobs, ("token2".to_string(), "token1".to_string()));
 
-        assert!(result.success);
+        assert!(result.is_ok());
         // Assert that the amounts for the pair token1/token2 have been updated
         println!("{:?}", contract.state.pairs.get(&normalized_token_pair));
         assert!(contract.state.pairs.get(&normalized_token_pair) == Some(&(10, 100)));
@@ -446,7 +452,7 @@ mod tests {
 
         let result =
             contract.verify_swap(callees_blobs, ("token1".to_string(), "token2".to_string()));
-        assert!(!result.success);
+        assert!(result.is_err());
     }
 
     #[test]
@@ -467,7 +473,7 @@ mod tests {
 
         let result =
             contract.verify_swap(callees_blobs, ("token1".to_string(), "token2".to_string()));
-        assert!(!result.success);
+        assert!(result.is_err());
     }
 
     #[test]
@@ -488,7 +494,7 @@ mod tests {
 
         let result =
             contract.verify_swap(callees_blobs, ("token1".to_string(), "token2".to_string()));
-        assert!(!result.success);
+        assert!(result.is_err());
     }
 
     #[test]
@@ -511,7 +517,7 @@ mod tests {
             callees_blobs,
             ("token1".to_string(), "rubbish".to_string()), // Invalid pair
         );
-        assert!(!result.success);
+        assert!(result.is_err());
     }
 
     #[test]
@@ -532,7 +538,7 @@ mod tests {
 
         let result =
             contract.verify_swap(callees_blobs, ("token1".to_string(), "token2".to_string()));
-        assert!(!result.success);
+        assert!(result.is_err());
     }
 
     #[test]
@@ -550,7 +556,7 @@ mod tests {
 
         let result =
             contract.verify_swap(callees_blobs, ("token1".to_string(), "token2".to_string()));
-        assert!(!result.success);
+        assert!(result.is_err());
     }
 
     #[test]
@@ -571,7 +577,7 @@ mod tests {
 
         let result =
             contract.verify_swap(callees_blobs, ("token1".to_string(), "token2".to_string()));
-        assert!(!result.success);
+        assert!(result.is_err());
     }
 
     #[test]
@@ -594,7 +600,7 @@ mod tests {
             callees_blobs,
         );
 
-        assert!(result.success);
+        assert!(result.is_ok());
         let normalized_token_pair =
             UnorderedTokenPair::new("token1".to_string(), "token2".to_string());
         assert!(contract.state.pairs.get(&normalized_token_pair) == Some(&(20, 50)));
@@ -624,7 +630,7 @@ mod tests {
             callees_blobs,
         );
 
-        assert!(!result.success);
+        assert!(result.is_err());
         assert!(contract.state.pairs.get(&normalized_token_pair) == Some(&(100, 200)));
     }
 
@@ -648,7 +654,7 @@ mod tests {
             callees_blobs,
         );
 
-        assert!(!result.success);
+        assert!(result.is_err());
     }
 
     #[test]
@@ -671,7 +677,7 @@ mod tests {
             callees_blobs,
         );
 
-        assert!(!result.success);
+        assert!(result.is_err());
     }
 
     #[test]
@@ -694,7 +700,7 @@ mod tests {
             callees_blobs,
         );
 
-        assert!(!result.success);
+        assert!(result.is_err());
     }
 
     #[test]
@@ -717,7 +723,7 @@ mod tests {
             callees_blobs,
         );
 
-        assert!(!result.success);
+        assert!(result.is_err());
     }
 
     #[test]
@@ -737,7 +743,7 @@ mod tests {
             callees_blobs,
         );
 
-        assert!(!result.success);
+        assert!(result.is_err());
     }
 
     #[test]

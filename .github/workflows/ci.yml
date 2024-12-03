@@ -25,7 +25,7 @@ jobs:
 
       - name: Cache Docker layers
         id: image-cache
-        uses: actions/cache@v1
+        uses: actions/cache@v4
         with:
           path: ~/image-cache
           key: image-cache-${{ runner.os }}
@@ -33,7 +33,7 @@ jobs:
       - if: steps.image-cache.outputs.cache-hit != 'true'
         run: |
           mkdir -p ~/image-cache
-          docker pull postgres:11-alpine
+          docker pull postgres:17-alpine
           docker save -o ~/image-cache/postgres.tar alpine
 
       - if: steps.image-cache.outputs.cache-hit == 'true'
