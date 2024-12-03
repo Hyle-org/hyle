@@ -329,7 +329,7 @@ mod tests {
 
     struct TestKeyAlt<'a>(&'a str, usize);
 
-    impl<'b> KeyMaker for TestKeyAlt<'b> {
+    impl KeyMaker for TestKeyAlt<'_> {
         fn make_key<'a>(&self, writer: &'a mut String) -> &'a str {
             use std::fmt::Write;
             _ = write!(writer, "{}:{:08x}", self.0, self.1);

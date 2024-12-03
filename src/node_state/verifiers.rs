@@ -137,7 +137,7 @@ mod tests {
     fn test_risc0_proof_verifier() {
         std::env::set_var("RISC0_DEV_MODE", "1");
         let encoded_receipt =
-            load_encoded_receipt_from_file("./tests/proofs/register.hydentity.risc0.proof");
+            load_encoded_receipt_from_file("./tests/proofs/register.bob.hydentity.risc0.proof");
 
         let hydentity_program_id = include_str!("../../contracts/hydentity/hydentity.txt").trim();
         let image_id = hex::decode(hydentity_program_id).expect("Image id decoding failed");

@@ -1,4 +1,4 @@
-use alloc::{format, string::String, vec::Vec};
+use alloc::{format, string::String};
 use bincode::{Decode, Encode};
 
 use crate::{guest::RunResult, Blob, BlobData, ContractName};
@@ -24,7 +24,6 @@ pub trait IdentityVerification {
     /// # Arguments
     ///
     /// * `account` - The address of the account as a string slice.
-    /// * `blobs_hash` - The list of blobs hash the identity agrees to run
     /// * `private_input` - A string representing the identity information to verify against.
     ///
     /// # Returns
@@ -34,7 +33,6 @@ pub trait IdentityVerification {
         &mut self,
         account: &str,
         nonce: u32,
-        blobs_hash: Vec<String>,
         private_input: &str,
     ) -> Result<bool, &'static str>;
 
@@ -53,17 +51,9 @@ pub trait IdentityVerification {
 /// Enum representing the actions that can be performed by the IdentityVerification contract.
 #[derive(Encode, Decode, Debug, Clone)]
 pub enum IdentityAction {
-    RegisterIdentity {
-        account: String,
-    },
-    VerifyIdentity {
-        account: String,
-        nonce: u32,
-        blobs_hash: Vec<String>,
-    },
-    GetIdentityInfo {
-        account: String,
-    },
+    RegisterIdentity { account: String },
+    VerifyIdentity { account: String, nonce: u32 },
+    GetIdentityInfo { account: String },
 }
 
 impl IdentityAction {
@@ -93,18 +83,16 @@ pub fn execute_action<T: IdentityVerification>(
                 Err(err) => Err(format!("Failed to register identity: {}", err)),
             }
         }
-        IdentityAction::VerifyIdentity {
-            account,
-            nonce,
-            blobs_hash,
-        } => match state.verify_identity(&account, nonce, blobs_hash, private_input) {
-            Ok(true) => Ok(format!("Identity verified for account: {}", account)),
-            Ok(false) => Err(format!(
-                "Identity verification failed for account: {}",
-                account
-            )),
-            Err(err) => Err(format!("Error verifying identity: {}", err)),
-        },
+        IdentityAction::VerifyIdentity { account, nonce } => {
+            match state.verify_identity(&account, nonce, private_input) {
+                Ok(true) => Ok(format!("Identity verified for account: {}", account)),
+                Ok(false) => Err(format!(
+                    "Identity verification failed for account: {}",
+                    account
+                )),
+                Err(err) => Err(format!("Error verifying identity: {}", err)),
+            }
+        }
         IdentityAction::GetIdentityInfo { account } => match state.get_identity_info(&account) {
             Ok(info) => Ok(format!(
                 "Retrieved identity info for account: {}: {}",
@@ -125,7 +113,7 @@ mod tests {
 
         impl IdentityVerification for IdentityVerification {
             fn register_identity(&mut self, account: &str, private_input: &str) -> Result<(), &'static str>;
-            fn verify_identity(&mut self, account: &str, nonce: u32, blobs_hash: Vec<String>, private_input: &str) -> Result<bool, &'static str>;
+            fn verify_identity(&mut self, account: &str, nonce: u32, private_input: &str) -> Result<bool, &'static str>;
             fn get_identity_info(&self, account: &str) -> Result<String, &'static str>;
         }
     }
@@ -154,14 +142,13 @@ mod tests {
         let private_input = "test_identity";
 
         mock.expect_verify_identity()
-            .with(eq(account.clone()), eq(0), eq(vec![]), eq(private_input))
+            .with(eq(account.clone()), eq(0), eq(private_input))
             .times(1)
-            .returning(|_, _, _, _| Ok(true));
+            .returning(|_, _, _| Ok(true));
 
         let action = IdentityAction::VerifyIdentity {
             account: account.clone(),
             nonce: 0,
-            blobs_hash: vec![],
         };
 
         let result = execute_action(&mut mock, action, private_input);

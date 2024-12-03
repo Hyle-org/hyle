@@ -12,6 +12,7 @@ pub struct HyllarToken {
     allowances: BTreeMap<(String, String), u128>, // Allowances (owner, spender)
 }
 
+#[derive(Debug)]
 pub struct HyllarTokenContract {
     state: HyllarToken,
     caller: Identity,
@@ -61,7 +62,7 @@ impl ERC20 for HyllarTokenContract {
     fn balance_of(&self, account: &str) -> Result<u128, String> {
         match self.state.balances.get(account) {
             Some(&balance) => Ok(balance),
-            None => Err("Account not found".to_string()),
+            None => Err(format!("Account {account} not found")),
         }
     }
 
@@ -187,8 +188,8 @@ mod tests {
 
         assert_eq!(contract.balance_of("faucet").unwrap(), initial_supply);
         assert_eq!(
-            contract.balance_of("nonexistent").unwrap_err().to_string(),
-            "Account not found".to_string()
+            contract.balance_of("nonexistent").unwrap_err(),
+            "Account nonexistent not found".to_string()
         );
     }
 

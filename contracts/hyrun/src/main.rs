@@ -1,6 +1,6 @@
 use core::panic;
 
-use amm::AmmState;
+use amm::{AmmAction, AmmState};
 use hydentity::Hydentity;
 use hyllar::HyllarToken;
 use sdk::{
@@ -37,15 +37,32 @@ impl From<HydentityArgs> for sdk::identity_provider::IdentityAction {
 #[derive(Subcommand, Clone)]
 pub enum HyllarArgs {
     Init { initial_supply: u128 },
+    Approve { spender: String, amount: u128 },
     Transfer { recipient: String, amount: u128 },
 }
 impl From<HyllarArgs> for ERC20Action {
     fn from(cmd: HyllarArgs) -> Self {
         match cmd {
             HyllarArgs::Transfer { recipient, amount } => Self::Transfer { recipient, amount },
+            HyllarArgs::Approve { spender, amount } => Self::Approve { spender, amount },
             HyllarArgs::Init { .. } => panic!("Init is not a valid contract function"),
         }
     }
+}
+#[derive(Subcommand, Clone)]
+pub enum AmmArgs {
+    NewPair {
+        token_a: String,
+        token_b: String,
+        amount_a: u128,
+        amount_b: u128,
+    },
+    Swap {
+        token_a: String,
+        token_b: String,
+        amount_a: u128,
+        amount_b: u128,
+    },
 }
 
 #[derive(Subcommand, Clone)]
@@ -60,6 +77,12 @@ enum CliCommand {
     Hyllar {
         #[command(subcommand)]
         command: HyllarArgs,
+        hyllar_contract_name: String,
+    },
+    Amm {
+        #[command(subcommand)]
+        command: AmmArgs,
+        amm_contract_name: String,
     },
 }
 
@@ -104,7 +127,7 @@ fn main() {
                     .expect("failed to fetch state");
                 println!("State: {:?}", state);
             }
-            "amm" => {
+            "amm" | "amm2" => {
                 let state = contract::fetch_current_state::<AmmState>(&cli, &contract)
                     .expect("failed to fetch state");
                 println!("State: {:?}", state);
@@ -146,10 +169,13 @@ fn main() {
                 },
             );
         }
-        CliCommand::Hyllar { command } => {
+        CliCommand::Hyllar {
+            hyllar_contract_name,
+            command,
+        } => {
             if let HyllarArgs::Init { initial_supply } = command {
                 contract::init(
-                    "hyllar",
+                    &hyllar_contract_name,
                     HyllarToken::new(initial_supply, "faucet.hydentity".to_string()),
                 );
                 return;
@@ -171,12 +197,11 @@ fn main() {
             let identity_cf: IdentityAction = IdentityAction::VerifyIdentity {
                 account: identity.clone(),
                 nonce,
-                blobs_hash: vec!["".into()], // TODO: hash blob
             };
 
             let blobs = vec![
                 identity_cf.as_blob(ContractName("hydentity".to_owned())),
-                cf.as_blob(ContractName("hyllar".to_owned()), None, None),
+                cf.as_blob(ContractName(hyllar_contract_name.clone()), None, None),
             ];
             contract::print_hyled_blob_tx(&identity.clone().into(), &blobs);
 
@@ -196,7 +221,7 @@ fn main() {
             );
             contract::run(
                 &cli,
-                "hyllar",
+                &hyllar_contract_name,
                 |token: hyllar::HyllarToken| -> ContractInput<hyllar::HyllarToken> {
                     ContractInput::<HyllarToken> {
                         initial_state: token,
@@ -208,6 +233,250 @@ fn main() {
                     }
                 },
             );
+        }
+        CliCommand::Amm {
+            amm_contract_name,
+            command,
+        } => {
+            match command {
+                AmmArgs::NewPair {
+                    token_a,
+                    token_b,
+                    amount_a,
+                    amount_b,
+                } => {
+                    let identity = cli
+                        .user
+                        .clone()
+                        .unwrap_or_else(|| panic!("Missing user argument"));
+                    let nonce = cli
+                        .nonce
+                        .unwrap_or_else(|| panic!("Missing nonce argument"));
+                    let password = cli
+                        .password
+                        .clone()
+                        .unwrap_or_else(|| panic!("Missing password argument"))
+                        .as_bytes()
+                        .to_vec();
+                    let identity_cf: IdentityAction = IdentityAction::VerifyIdentity {
+                        account: identity.clone(),
+                        nonce,
+                    };
+
+                    let blobs = vec![
+                        identity_cf.as_blob(ContractName("hydentity".to_owned())),
+                        AmmAction::NewPair {
+                            pair: (token_a.clone(), token_b.clone()),
+                            amounts: (amount_a, amount_b),
+                        }
+                        .as_blob(
+                            ContractName(amm_contract_name.to_owned()),
+                            None,
+                            Some(vec![BlobIndex(2), BlobIndex(3)]),
+                        ),
+                        ERC20Action::TransferFrom {
+                            sender: identity.clone(),
+                            recipient: amm_contract_name.to_string(),
+                            amount: amount_a,
+                        }
+                        .as_blob(
+                            ContractName(token_a.to_owned()),
+                            Some(BlobIndex(1)),
+                            None,
+                        ),
+                        ERC20Action::TransferFrom {
+                            sender: identity.clone(),
+                            recipient: amm_contract_name.to_string(),
+                            amount: amount_b,
+                        }
+                        .as_blob(
+                            ContractName(token_b.to_owned()),
+                            Some(BlobIndex(1)),
+                            None,
+                        ),
+                    ];
+                    contract::print_hyled_blob_tx(&identity.clone().into(), &blobs);
+
+                    contract::run(
+                        &cli,
+                        "hydentity",
+                        |token: hydentity::Hydentity| -> ContractInput<hydentity::Hydentity> {
+                            ContractInput::<Hydentity> {
+                                initial_state: token,
+                                identity: identity.clone().into(),
+                                tx_hash: TxHash("".to_owned()),
+                                private_blob: BlobData(password.clone()),
+                                blobs: blobs.clone(),
+                                index: BlobIndex(0),
+                            }
+                        },
+                    );
+                    // Run to add new pair to Amm
+                    contract::run(
+                        &cli,
+                        &amm_contract_name,
+                        |amm: amm::AmmState| -> ContractInput<amm::AmmState> {
+                            ContractInput::<AmmState> {
+                                initial_state: amm,
+                                identity: identity.clone().into(),
+                                tx_hash: TxHash("".to_owned()),
+                                private_blob: BlobData(vec![]),
+                                blobs: blobs.clone(),
+                                index: BlobIndex(1),
+                            }
+                        },
+                    );
+                    // Run for transferring token_a
+                    contract::run(
+                        &cli,
+                        &token_a,
+                        |token: hyllar::HyllarToken| -> ContractInput<hyllar::HyllarToken> {
+                            ContractInput::<HyllarToken> {
+                                initial_state: token,
+                                identity: identity.clone().into(),
+                                tx_hash: TxHash("".to_owned()),
+                                private_blob: BlobData(vec![]),
+                                blobs: blobs.clone(),
+                                index: BlobIndex(2),
+                            }
+                        },
+                    );
+
+                    // Run for transferring token_b
+                    contract::run(
+                        &cli,
+                        &token_b,
+                        |token: hyllar::HyllarToken| -> ContractInput<hyllar::HyllarToken> {
+                            ContractInput::<HyllarToken> {
+                                initial_state: token,
+                                identity: identity.clone().into(),
+                                tx_hash: TxHash("".to_owned()),
+                                private_blob: BlobData(vec![]),
+                                blobs: blobs.clone(),
+                                index: BlobIndex(3),
+                            }
+                        },
+                    );
+                }
+                AmmArgs::Swap {
+                    token_a,
+                    token_b,
+                    amount_a,
+                    amount_b,
+                } => {
+                    let identity = cli
+                        .user
+                        .clone()
+                        .unwrap_or_else(|| panic!("Missing user argument"));
+                    let nonce = cli
+                        .nonce
+                        .unwrap_or_else(|| panic!("Missing nonce argument"));
+                    let password = cli
+                        .password
+                        .clone()
+                        .unwrap_or_else(|| panic!("Missing password argument"))
+                        .as_bytes()
+                        .to_vec();
+                    let identity_cf: IdentityAction = IdentityAction::VerifyIdentity {
+                        account: identity.clone(),
+                        nonce,
+                    };
+
+                    let blobs = vec![
+                        identity_cf.as_blob(ContractName("hydentity".to_owned())),
+                        AmmAction::Swap {
+                            pair: (token_a.to_string(), token_b.to_string()),
+                        }
+                        .as_blob(
+                            ContractName(amm_contract_name.to_owned()),
+                            None,
+                            Some(vec![BlobIndex(2), BlobIndex(3)]),
+                        ),
+                        ERC20Action::TransferFrom {
+                            sender: identity.clone(),
+                            recipient: amm_contract_name.to_string(),
+                            amount: amount_a,
+                        }
+                        .as_blob(
+                            ContractName(token_a.to_owned()),
+                            Some(BlobIndex(1)),
+                            None,
+                        ),
+                        ERC20Action::Transfer {
+                            recipient: identity.clone(),
+                            amount: amount_b,
+                        }
+                        .as_blob(
+                            ContractName(token_b.to_owned()),
+                            Some(BlobIndex(1)),
+                            None,
+                        ),
+                    ];
+
+                    contract::print_hyled_blob_tx(&identity.clone().into(), &blobs);
+
+                    contract::run(
+                        &cli,
+                        "hydentity",
+                        |token: hydentity::Hydentity| -> ContractInput<hydentity::Hydentity> {
+                            ContractInput::<Hydentity> {
+                                initial_state: token,
+                                identity: identity.clone().into(),
+                                tx_hash: TxHash("".to_owned()),
+                                private_blob: BlobData(password.clone()),
+                                blobs: blobs.clone(),
+                                index: BlobIndex(0),
+                            }
+                        },
+                    );
+                    // Run for swapping token_a for token_b
+                    contract::run(
+                        &cli,
+                        &amm_contract_name,
+                        |amm: amm::AmmState| -> ContractInput<amm::AmmState> {
+                            ContractInput::<AmmState> {
+                                initial_state: amm,
+                                identity: identity.clone().into(),
+                                tx_hash: TxHash("".to_owned()),
+                                private_blob: BlobData(vec![]),
+                                blobs: blobs.clone(),
+                                index: BlobIndex(1),
+                            }
+                        },
+                    );
+                    // Run for transferring token_a
+                    contract::run(
+                        &cli,
+                        &token_a,
+                        |token: hyllar::HyllarToken| -> ContractInput<hyllar::HyllarToken> {
+                            ContractInput::<HyllarToken> {
+                                initial_state: token,
+                                identity: identity.clone().into(),
+                                tx_hash: TxHash("".to_owned()),
+                                private_blob: BlobData(vec![]),
+                                blobs: blobs.clone(),
+                                index: BlobIndex(2),
+                            }
+                        },
+                    );
+
+                    // Run for transferring token_b
+                    contract::run(
+                        &cli,
+                        &token_b,
+                        |token: hyllar::HyllarToken| -> ContractInput<hyllar::HyllarToken> {
+                            ContractInput::<HyllarToken> {
+                                initial_state: token,
+                                identity: identity.clone().into(),
+                                tx_hash: TxHash("".to_owned()),
+                                private_blob: BlobData(vec![]),
+                                blobs: blobs.clone(),
+                                index: BlobIndex(3),
+                            }
+                        },
+                    );
+                }
+            }
         }
     };
 }

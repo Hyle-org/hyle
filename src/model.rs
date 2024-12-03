@@ -219,7 +219,7 @@ impl Type<Postgres> for BlockHash {
         <String as Type<Postgres>>::type_info()
     }
 }
-impl<'q> sqlx::Encode<'q, sqlx::Postgres> for BlockHash {
+impl sqlx::Encode<'_, sqlx::Postgres> for BlockHash {
     fn encode_by_ref(
         &self,
         buf: &mut sqlx::postgres::PgArgumentBuffer,
@@ -440,7 +440,7 @@ impl<'de> Deserialize<'de> for ValidatorPublicKey {
     {
         struct ValidatorPublicKeyVisitor;
 
-        impl<'de> Visitor<'de> for ValidatorPublicKeyVisitor {
+        impl Visitor<'_> for ValidatorPublicKeyVisitor {
             type Value = ValidatorPublicKey;
 
             fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
