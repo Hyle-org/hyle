@@ -1,5 +1,8 @@
 name: Generate GitHub Release
 
+permissions:
+  contents: write
+
 on:
   push:
     tags:
@@ -11,7 +14,12 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4 
+        with:
+          fetch-depth: 0
+
+      - name: Get tags
+        run: git fetch --tags origin
 
       - name: Set up Node.js
         uses: actions/setup-node@v3
@@ -20,11 +28,8 @@ jobs:
         run: node .github/generateReleaseNotes.js
 
       - name: Create GitHub Release
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name }}  
-          release_name: Release ${{ github.ref_name }}
           body_path: RELEASE_NOTES.md
+
 
