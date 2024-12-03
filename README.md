@@ -46,6 +46,20 @@ HYLE_RUN_INDEXER=false
 HYLE_CONSENSUS__SLOT_DURATION=100
 ```
 
+#### Interact with node 
+
+To interact with the node, you can use the cli `hyled`:
+
+```bash
+cargo run --bin hyled -- --help
+```
+
+You can install it for easy access: 
+```bash
+cargo install --path . --bin hyled
+hyled --help
+```
+
 ## Getting Started with Docker
 
 ### Build locally
@@ -69,20 +83,6 @@ If you have permission errors when accessing /hyle/data volume, use "--privilege
 
 ```bash
   docker compose -f tools/docker-compose.yml up -d
-```
-
-#### Interact with node 
-
-To interact with the node, you can use `hyled`:
-
-```bash
-cargo run --bin hyled -- --help
-```
-
-You can install it for easy access: 
-```bash
-cargo install --path . --bin hyled
-hyled --help
 ```
 
 #### Access Grafana
