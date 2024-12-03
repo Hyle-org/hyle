@@ -501,8 +501,9 @@ mod e2e_amm {
                         None,
                         Some(vec![BlobIndex(2), BlobIndex(3)]),
                     ),
-                    ERC20Action::Transfer {
-                        recipient: "bob.hydentity".to_string(),
+                    ERC20Action::TransferFrom {
+                        sender: "bob.hydentity".to_string(),
+                        recipient: AMM_CONTRACT_NAME.to_string(),
                         amount: 5,
                     }
                     .as_blob(
@@ -510,9 +511,8 @@ mod e2e_amm {
                         Some(BlobIndex(1)),
                         None,
                     ),
-                    ERC20Action::TransferFrom {
-                        sender: "bob.hydentity".to_string(),
-                        recipient: AMM_CONTRACT_NAME.to_string(),
+                    ERC20Action::Transfer {
+                        recipient: "bob.hydentity".to_string(),
                         amount: 10,
                     }
                     .as_blob(
@@ -577,11 +577,11 @@ mod e2e_amm {
             state
                 .balance_of("bob.hydentity")
                 .expect("bob identity not found"),
-            5
+            0
         );
         assert_eq!(
             state.balance_of("amm2").expect("amm identity not found"),
-            20
+            25
         );
         assert_eq!(
             state

@@ -57,7 +57,7 @@ pub enum AmmArgs {
         amount_a: u128,
         amount_b: u128,
     },
-    SwapFlow {
+    Swap {
         token_a: String,
         token_b: String,
         amount_a: u128,
@@ -365,7 +365,7 @@ fn main() {
                         },
                     );
                 }
-                AmmArgs::SwapFlow {
+                AmmArgs::Swap {
                     token_a,
                     token_b,
                     amount_a,

@@ -38,7 +38,8 @@ mod e2e_hyllar {
             )
             .await?;
 
-        let proof = load_encoded_receipt_from_file("./tests/proofs/register.hydentity.risc0.proof");
+        let proof =
+            load_encoded_receipt_from_file("./tests/proofs/register.bob.hydentity.risc0.proof");
 
         info!("➡️  Sending proof for register");
         ctx.send_proof(
@@ -65,7 +66,7 @@ mod e2e_hyllar {
             expected_info.unwrap() // hash for "faucet.hydentity::password"
         );
 
-        info!("➡️  Sending blob to transfer 10 tokens from faucet to bob");
+        info!("➡️  Sending blob to transfer 25 tokens from faucet to bob");
         let blob_tx_hash = ctx
             .send_blob(
                 "faucet.hydentity".into(),
@@ -84,10 +85,12 @@ mod e2e_hyllar {
             )
             .await?;
 
-        let hydentity_proof =
-            load_encoded_receipt_from_file("./tests/proofs/transfer.hydentity.0.risc0.proof");
-        let hyllar_proof =
-            load_encoded_receipt_from_file("./tests/proofs/transfer.25.hyllar.risc0.proof");
+        let hydentity_proof = load_encoded_receipt_from_file(
+            "./tests/proofs/transfer.25-hyllar-to-bob.hydentity.risc0.proof",
+        );
+        let hyllar_proof = load_encoded_receipt_from_file(
+            "./tests/proofs/transfer.25-hyllar-to-bob.hyllar.risc0.proof",
+        );
 
         info!("➡️  Sending proof for hydentity");
         ctx.send_proof(
