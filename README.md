@@ -1,121 +1,153 @@
 # Hylé
 
 [![Build Status][actions-badge]][actions-url]
-[![codecov][codecov-badge]][codecov-url]
+[![Code Coverage][codecov-badge]][codecov-url]
 [![Twitter][twitter-badge]][twitter-url]
 
+_A sequencing and settlement layer to help you build provable apps that are minimally, yet sufficiently, on-chain._
 
-_A sequencing and settlement layer to help you build provable apps that are minimally, yet sufficiently, onchain._
+This repository hosts the **work-in-progress Rust client** for the [Hylé](https://hyle.eu) chain.  
+The older, but still maintained, Cosmos SDK-based client can be found at [hyle-cosmos](https://github.com/Hyle-org/hyle-cosmos).
 
-Repository for the [Hylé](https://hyle.eu) chain. This repository is for the work-in-progress rust client.
-The older (but still maintained) Cosmos SDK based client can be found at [hyle-cosmos](https://github.com/Hyle-org/hyle-cosmos).
+**Current Status**: 🚧 Work in Progress (WIP)
 
-**Current status**: WIP
+---
 
-## Useful links
+## 📎 Useful Links
 
-- [Hylé website](https://www.hyle.eu/)
-- [Hylé documentation](https://docs.hyle.eu)
+- 🌐 [Hylé Website](https://www.hyle.eu/)  
+- 📚 [Hylé Documentation](https://docs.hyle.eu)
 
-## Getting Started with Cargo
+---
 
-To start a single-node devnet (with consensus disabled), which is useful to build & debug smart contracts:
+## 🚀 Getting Started
+
+### With Cargo
+
+#### Start a Single-Node Devnet
+
+To launch a single-node devnet (consensus disabled) for building and debugging smart contracts:
 
 ```bash
 cargo build
 HYLE_RUN_INDEXER=false cargo run --bin node
 ```
 
-If you want to run with indexer you will need a running postgres server in order to run the indexer
+#### Run with Indexer
+
+To enable the indexer, ensure you have a running PostgreSQL server:
+
 ```bash
-# For default conf:
+# Start PostgreSQL with default configuration:
 docker run -d --rm --name pg_hyle -p 5432:5432 -e POSTGRES_PASSWORD=postgres postgres
 ```
 
-### Configuration 
+### Configuration
 
-You can edit the configuration using env vars, or by a config file:
+You can configure Hylé using environment variables or a configuration file:
+
+#### Using a Configuration File
+
+Copy the default configuration file to the directory where the node will run:
+
 ```bash
-# Copy default config where you run the node. If file named "config.ron" is present, it will be loaded by node at startup.
 cp ./src/utils/conf_defaults.ron config.ron
 ```
 
-Examples of configuration by env var:
+If a file named `config.ron` is present, it will be automatically loaded at node startup.
+
+#### Using Environment Variables
+
+Examples of configuration via environment variables:
+
 ```bash
 HYLE_RUN_INDEXER=false 
 HYLE_CONSENSUS__SLOT_DURATION=100
 ```
 
-#### Interact with node 
+### Interact with the Node
 
-To interact with the node, you can use the cli `hyled`:
+You can interact with the node using the CLI tool `hyled`:
 
 ```bash
 cargo run --bin hyled -- --help
 ```
 
-You can install it for easy access: 
+To install it for easier access:
+
 ```bash
 cargo install --path . --bin hyled
 hyled --help
 ```
 
-## Getting Started with Docker
+---
 
-### Build locally
+## 🐳 Getting Started with Docker
 
-```bash
-  docker build . -t hyle
-
-```
-
-### Run locally with Docker
+### Build Locally
 
 ```bash
-  docker run -v ./db:/hyle/data -e HYLE_RUN_INDEXER=false -p 4321:4321 -p 1234:1234 hyle
+docker build . -t hyle
 ```
 
-If you have permission errors when accessing /hyle/data volume, use "--privileged" cli flag.
-
-### Run locally with grafana and prometheus
-
-#### Starting services
+### Run Locally with Docker
 
 ```bash
-  docker compose -f tools/docker-compose.yml up -d
+docker run -v ./db:/hyle/data -e HYLE_RUN_INDEXER=false -p 4321:4321 -p 1234:1234 hyle
 ```
 
-#### Access Grafana
+> 🛠️ **Note**: If you encounter permission issues with the `/hyle/data` volume, add the `--privileged` flag.
+
+---
+
+## 📊 Monitoring with Grafana and Prometheus
+
+### Starting Services
+
+To start the monitoring stack:
 
 ```bash
-  http://localhost:3000
+docker compose -f tools/docker-compose.yml up -d
 ```
 
-#### Stopping
+### Access Grafana
+
+Grafana is accessible at: [http://localhost:3000](http://localhost:3000)
+
+### Stopping Services
+
+To stop the monitoring stack:
 
 ```bash
-  docker compose -f tools/docker-compose.yml down
+docker compose -f tools/docker-compose.yml down
 ```
 
-### Profiling and debugging
+---
 
-Run `cargo run --profile profiling` to enable the profiling profile, which is optimised but retains debug information.
+## 🛠️ Profiling and Debugging
 
-#### CPU profiling
+### Profiling Build
 
-The `tokio-console` can be used for some simple debugging.
+Run the following command to enable the `profiling` profile, which is optimised but retains debug symbols:
 
-Otherwise, we recommend (samply)[https://github.com/mstange/samply].
+```bash
+cargo run --profile profiling
+```
 
-#### Memory profiling
+### CPU Profiling
 
-Hylé has built-in support for the `dhat` crate, which uses the valgrind dhat viewer for memory profiling.
-This has a runtime performance cost, so should only be enabled when needed. The corresponding feature is `dhat`.
+- Use `tokio-console` for basic debugging.
+- For advanced analysis, we recommend [Samply](https://github.com/mstange/samply).
 
+### Memory Profiling
 
-[actions-badge]: https://img.shields.io/github/actions/workflow/status/Hyle-org/hyle/ci.yml?branch=main
-[actions-url]: https://github.com/Hyle-org/hyle/actions?query=workflow%3ATests+branch%3Amain
-[codecov-badge]: https://codecov.io/gh/Hyle-org/hyle/graph/badge.svg?token=S87GT99Q62
-[codecov-url]: https://codecov.io/gh/Hyle-org/hyle
-[twitter-badge]: https://img.shields.io/twitter/follow/hyle_org
-[twitter-url]: https://x.com/hyle_org
+Hylé includes built-in support for the `dhat` crate, which uses the Valgrind DHAT viewer for memory profiling.  
+To enable this feature, add the `dhat` feature flag. Use it selectively, as it has a runtime performance cost.
+
+[actions-badge]: https://img.shields.io/github/actions/workflow/status/Hyle-org/hyle/ci.yml?branch=main  
+[actions-url]: https://github.com/Hyle-org/hyle/actions?query=workflow%3ATests+branch%3Amain  
+[codecov-badge]: https://codecov.io/gh/Hyle-org/hyle/graph/badge.svg?token=S87GT99Q62  
+[codecov-url]: https://codecov.io/gh/Hyle-org/hyle  
+[twitter-badge]: https://img.shields.io/twitter/follow/hyle_org  
+[twitter-url]: https://x.com/hyle_org  
+
