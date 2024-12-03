@@ -79,7 +79,7 @@ where
 }
 
 /// Enum representing possible calls to ERC-20 contract functions.
-#[derive(Encode, Decode, Debug, Clone)]
+#[derive(Encode, Decode, Debug, Clone, PartialEq)]
 pub enum ERC20Action {
     TotalSupply,
     BalanceOf {
