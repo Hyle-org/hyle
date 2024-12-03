@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Log Viewer</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 1rem;
+        }
+        textarea {
+            width: 100%;
+            height: 150px;
+            margin-bottom: 1rem;
+            font-family: monospace;
+            font-size: 14px;
+        }
+        p {
+            margin: 0;
+        }
+        button {
+            padding: 0.5rem 1rem;
+            font-size: 16px;
+            margin-bottom: 1rem;
+            cursor: pointer;
+        }
+        .log-container {
+            display: flex;
+            gap: 1rem;
+            padding: 1rem 0;
+        }
+        .log-column {
+            flex-basis: 100%;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            padding: 0.5rem;
+            min-width: 200px;
+            overflow-x: scroll;
+        }
+        .log-column.hidden {
+            min-width: 20px;
+            max-width: 20px;
+            overflow: hidden;
+        }
+        .log-column > div {
+            width: max-content;
+        }
+        .log-entry {
+            font-size: 0.8rem;
+            white-space: pre-wrap;
+            height: 1.1rem;
+            display: flex;
+            align-items: center;
+        }
+        .log-entry .error {
+            color: rgb(202, 16, 16);
+        }
+        .log-entry .warn {
+            color: rgb(245, 204, 21);
+        }
+        .log-entry .debug {
+            color: rgb(17, 17, 200);
+        }
+        .log-entry .info {
+            color: rgb(4, 168, 4);
+        }
+        .timestamp {
+            font-weight: bold;
+            color: #555;
+        }
+    </style>
+</head>
+<body>
+    <h1>Log Viewer</h1>
+    <textarea id="log-input" placeholder="Paste your logs here"></textarea>
+    <button onclick="processLogs()">Process Logs</button>
+    <div id="log-container" class="log-container"></div>
+
+    <script>
+        function parseLogs(log) {
+            const lines = log.trim().split("\n");
+            const nodeLogs = {};
+            const timestamps = new Set();
+
+            lines.forEach(line => {
+                // Extract line format matches `node-2 2024-12-03T17:05:25.324793Z  INFO ...`
+                const reg = line.match(/([a-zA-Z0-9-_]+) +(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{2,8}Z) +(INFO|ERROR|WARN|DEBUG) (.*)/);
+                try {
+                    const [all, node, timestamp, level, ...rest] = reg || [];
+                    if (!node || !timestamp || !level || !rest) return;
+                    if (!nodeLogs[node]) nodeLogs[node] = [];
+                    // Parse timestamp as a date
+                    const date = new Date(timestamp)
+                    timestamps.add(date);
+                    nodeLogs[node].push({ timestamp: date, level, message: rest.join(" ") });
+                } catch (e) {
+                    //console.error("Error parsing line", line, e);
+                }
+            });
+            return { nodeLogs, sortedTimestamps: Array.from(timestamps).sort() };
+        }
+
+        function renderLogs(nodeLogs, timestamps) {
+            const container = document.getElementById("log-container");
+            container.innerHTML = ""; // Clear previous logs
+
+            const timeColumn = document.createElement("div");
+            timeColumn.classList.add("log-column");
+            timeColumn.style = "flex-basis: 200px";
+            timeColumn.innerHTML = "<h3>Timestamp</h3>";
+            timestamps.forEach(timestamp => {
+                const entryDiv = document.createElement("div");
+                entryDiv.classList.add("log-entry");
+                entryDiv.textContent = new Date(timestamp).toISOString();
+                timeColumn.appendChild(entryDiv);
+            });
+
+            container.appendChild(timeColumn);
+
+            Object.entries(nodeLogs).forEach(([node, logs]) => {
+                const wrapperColumn = document.createElement("div");
+                wrapperColumn.classList.add("log-column");
+
+                // Add a small button to hide/show the column
+                const title = document.createElement("h3");
+                title.textContent = `${node}`;
+                title.style.cursor = "pointer";
+                title.onclick = () => {
+                    wrapperColumn.classList = wrapperColumn.classList.contains("hidden") ? "log-column" : "log-column hidden";
+                };
+
+                const column = document.createElement("div");
+                column.appendChild(title);
+
+                timestamps.forEach(timestamp => {
+                    const logEntry = logs.find(log => log.timestamp === timestamp);
+                    const entryDiv = document.createElement("p");
+                    entryDiv.classList.add("log-entry");
+                    entryDiv.innerHTML = logEntry
+                        ? `<span style="width:50px" class="${logEntry.level.toLowerCase()}">${logEntry.level}</span><span>${logEntry.message}</span>`
+                        : `-`;
+                    column.appendChild(entryDiv);
+                });
+
+                wrapperColumn.appendChild(column);
+                container.appendChild(wrapperColumn);
+            });
+        }
+
+        function processLogs() {
+            const rawLog = document.getElementById("log-input").value;
+            const { nodeLogs, sortedTimestamps } = parseLogs(rawLog);
+            renderLogs(nodeLogs, sortedTimestamps);
+        }
+    </script>
+</body>
+</html>

@@ -84,7 +84,25 @@ impl Storage {
     }
 
     pub fn commit_data_proposal(&mut self) {
-        if let Some(data_proposal) = self.data_proposal.take() {
+        if let Some(mut data_proposal) = self.data_proposal.take() {
+            // Removing proofs from transactions
+            let mut txs_without_proofs = data_proposal.car.txs.clone();
+            txs_without_proofs.iter_mut().for_each(|tx| {
+                match &mut tx.transaction_data {
+                    TransactionData::VerifiedProof(proof_tx) => {
+                        proof_tx.proof_transaction.proof = Default::default();
+                    }
+                    TransactionData::Proof(_) => {
+                        // This can never happen.
+                        // A DataProposal that has been processed has turned all TransactionData::Proof into TransactionData::VerifiedProof
+                        unreachable!();
+                    }
+                    TransactionData::Blob(_)
+                    | TransactionData::Stake(_)
+                    | TransactionData::RegisterContract(_) => {}
+                }
+            });
+            data_proposal.car.txs = txs_without_proofs;
             self.lane.cars.push(data_proposal.car);
         }
     }
@@ -216,8 +234,14 @@ impl Storage {
         if let (Some(parent_hash), Some(parent_poa)) =
             (&data_proposal.car.parent_hash, &data_proposal.parent_poa)
         {
+            debug!("TOTORO udpatin parent poa");
             self.other_lane_update_parent_poa(validator, parent_hash, parent_poa)
         }
+        debug!(
+            "TOTORO2 updating lane: {:?} {:?}",
+            validator,
+            data_proposal.car.hash()
+        );
         self.other_lane_add_data_proposal(validator, data_proposal);
         DataProposalVerdict::Vote
     }
@@ -496,10 +520,18 @@ impl Lane {
     }
 
     fn collect_cars(&mut self, car_hash: &CarHash, txs: &mut Vec<Transaction>) {
+        debug!("Cars: {:?}", self.cars);
         if let Some(pos) = self.cars.iter().position(|car| &car.hash() == car_hash) {
             let latest_txs = std::mem::take(&mut self.cars[pos].txs);
+            debug!(
+                "Collecting cars up to {:?}, pos: {}, txs: {}",
+                car_hash,
+                pos,
+                latest_txs.len()
+            );
             // collect all self.cars but the last. we need it for future cuts.
             self.cars.drain(..pos).for_each(|car| {
+                debug!("Collecting car {:?} with {} txs", car.hash(), car.txs.len());
                 Self::dedup_push_txs(txs, car.txs);
             });
             Self::dedup_push_txs(txs, latest_txs);
