@@ -297,6 +297,7 @@ impl DataAvailability {
                 }
             }
         }
+        Ok(())
     }
 
     async fn handle_data_message(&mut self, msg: DataNetMessage) -> Result<()> {

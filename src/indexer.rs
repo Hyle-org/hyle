@@ -154,6 +154,7 @@ impl Indexer {
                         })?;
                 }
             }
+            Ok(())
         } else {
             handle_messages! {
                 on_bus self.bus,
@@ -199,6 +200,7 @@ impl Indexer {
                         })?;
                 }
             }
+            Ok(())
         }
     }
 

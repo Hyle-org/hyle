@@ -137,6 +137,7 @@ impl SingleNodeConsensus {
                 self.handle_new_slot_tick().await?;
             }
         }
+        Ok(())
     }
 
     fn handle_car_proposal_message(&mut self, cmd: OutboundMessage) -> Result<()> {

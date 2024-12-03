@@ -160,6 +160,7 @@ impl Mempool {
                     .log_error("Creating Data Proposal on tick");
             }
         }
+        Ok(())
     }
 
     /// Creates a cut with local material on QueryNewCut message reception (from consensus)

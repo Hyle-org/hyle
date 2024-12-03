@@ -187,7 +187,7 @@ impl Peer {
             .ok();
     }
 
-    pub async fn start(&mut self) -> Result<(), Error> {
+    pub async fn start(&mut self) -> Result<()> {
         handle_messages! {
             on_bus self.bus,
             listen<OutboundMessage> res => {
@@ -256,6 +256,7 @@ impl Peer {
                 }
             }
         }
+        Ok(())
     }
 
     pub async fn connect(addr: &str) -> Result<TcpStream, Error> {

@@ -134,6 +134,7 @@ impl MockWorkflowHandler {
                 }
             }
         }
+        Ok(())
     }
 
     async fn stress_test(&mut self) {

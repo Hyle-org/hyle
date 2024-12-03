@@ -916,6 +916,8 @@ impl Consensus {
                     .log_error("Cannot send message over channel")?;
             }
         }
+
+        Ok(())
     }
 
     fn sign_net_message(
