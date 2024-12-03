@@ -145,9 +145,6 @@ impl Genesis {
         let hyllar_program_id = include_str!("../contracts/hyllar/hyllar.txt").trim();
         let hyllar_program_id = hex::decode(hyllar_program_id).expect("Image id decoding failed");
 
-        let amm_program_id = include_str!("../contracts/amm/amm.txt").trim();
-        let amm_program_id = hex::decode(amm_program_id).expect("Image id decoding failed");
-
         let hydentity_program_id = include_str!("../contracts/hydentity/hydentity.txt").trim();
         let hydentity_program_id =
             hex::decode(hydentity_program_id).expect("Image id decoding failed");
@@ -157,46 +154,18 @@ impl Genesis {
             .register_identity("faucet.hydentity", "password")
             .unwrap();
 
-        let mut hyllar_token = hyllar::HyllarTokenContract::init(
-            hyllar::HyllarToken::new(100_000_000_000, "faucet.hydentity".to_string()),
-            "faucet.hydentity".into(),
-        );
-        hyllar_token.transfer("amm", 1_000_000_000).unwrap();
-
-        hyllar_token.approve("amm", 1_000_000_000_000_000).unwrap(); // faucet qui approve amm pour
-                                                                     // déplacer ses fonds
-        let hyllar_state = hyllar_token.state();
-
         vec![
             Transaction::wrap(TransactionData::RegisterContract(
                 RegisterContractTransaction {
                     owner: "hyle".into(),
                     verifier: "risc0".into(),
                     program_id: hyllar_program_id.clone(),
-                    state_digest: hyllar_state.clone().as_digest(),
-                    contract_name: "hyllar".into(),
-                },
-            )),
-            Transaction::wrap(TransactionData::RegisterContract(
-                RegisterContractTransaction {
-                    owner: "hyle".into(),
-                    verifier: "risc0".into(),
-                    program_id: hyllar_program_id,
-                    state_digest: hyllar_state.as_digest(),
-                    contract_name: "hyllar2".into(),
-                },
-            )),
-            Transaction::wrap(TransactionData::RegisterContract(
-                RegisterContractTransaction {
-                    owner: "hyle".into(),
-                    verifier: "risc0".into(),
-                    program_id: amm_program_id,
-                    state_digest: amm::AmmState::new(BTreeMap::from([(
-                        amm::UnorderedTokenPair::new("hyllar".to_string(), "hyllar2".to_string()),
-                        (1_000_000_000, 1_000_000_000),
-                    )]))
+                    state_digest: hyllar::HyllarToken::new(
+                        100_000_000_000,
+                        "faucet.hydentity".to_string(),
+                    )
                     .as_digest(),
-                    contract_name: "amm".into(),
+                    contract_name: "hyllar".into(),
                 },
             )),
             Transaction::wrap(TransactionData::RegisterContract(
