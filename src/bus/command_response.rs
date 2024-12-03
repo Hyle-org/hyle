@@ -91,67 +91,60 @@ pub mod handle_messages_helpers {
 
 #[macro_export]
 macro_rules! handle_messages {
-    (on_bus $bus:expr, $($rest:tt)*) => {
+    (on_bus $bus:expr, $($rest:tt)*) => {{
 
-        handle_messages! {
-            bus($bus) $($rest)*
-        }
-    };
-
-    (bus($bus:expr) command_response<$command:ty, $response:ty> $res:pat => $handler:block $($rest:tt)*) => {{
+        #[allow(unused_imports)]
         use paste::paste;
-        use $crate::bus::command_response::*;
         #[allow(unused_imports)]
         use $crate::utils::static_type_map::Pick;
         #[allow(unused_imports)]
         use $crate::bus::command_response::handle_messages_helpers::receive_bus_metrics;
+        handle_messages! {
+            bus($bus) index(bus_receiver) $($rest)*
+        }
+    }};
+
+    (bus($bus:expr) index($index:ident) command_response<$command:ty, $response:ty> $res:pat => $handler:block $($rest:tt)*) => {
         paste! {
-            handle_messages! {
-                bus($bus) $($rest)*
-                Ok(_raw_query) = #[allow(clippy::macro_metavars_in_unsafe)] unsafe { &mut *Pick::<tokio::sync::broadcast::Receiver<Query<$command, $response>>>::splitting_get_mut(&mut $bus) }.recv() => {
-                    receive_bus_metrics::<Query<$command, $response>,_>(&mut $bus);
-                    if let Ok(mut _value) = _raw_query.take() {
-                        let $res = &mut _value.data;
-                        let res: Result<$response> = $handler;
-                        match res {
-                            Ok(res) => {
-                                if let Err(e) = _value.answer(res) {
-                                    tracing::error!("Error while answering query: {}", e);
-                                }
-                            }
-                            Err(e) => {
-                                if let Err(e) = _value.bail(e) {
-                                    tracing::error!("Error while answering query: {}", e);
-                                }
+        handle_messages! {
+            bus($bus) index([<$index a>]) $($rest)*
+            Ok(_raw_query) = #[allow(clippy::macro_metavars_in_unsafe)] unsafe { &mut *Pick::<tokio::sync::broadcast::Receiver<Query<$command, $response>>>::splitting_get_mut(&mut $bus) }.recv() => {
+                receive_bus_metrics::<Query<$command, $response>,_>(&mut $bus);
+                if let Ok(mut _value) = _raw_query.take() {
+                    let $res = &mut _value.data;
+                    let res: Result<$response> = $handler;
+                    match res {
+                        Ok(res) => {
+                            if let Err(e) = _value.answer(res) {
+                                tracing::error!("Error while answering query: {}", e);
                             }
                         }
-                    } else {
-                        tracing::error!("Query already answered");
+                        Err(e) => {
+                            if let Err(e) = _value.bail(e) {
+                                tracing::error!("Error while answering query: {}", e);
+                            }
+                        }
                     }
+                } else {
+                    tracing::error!("Query already answered");
                 }
             }
         }
     }};
 
-    (bus($bus:expr) listen<$message:ty> $res:pat => $handler:block $($rest:tt)*) => {{
-        use paste::paste;
-        #[allow(unused_imports)]
-        use $crate::utils::static_type_map::Pick;
-        #[allow(unused_imports)]
-        use $crate::bus::command_response::handle_messages_helpers::receive_bus_metrics;
+    (bus($bus:expr) index($index:ident) listen<$message:ty> $res:pat => $handler:block $($rest:tt)*) => {
         paste! {
-            handle_messages! {
-                bus($bus) $($rest)*
-                Ok($res) = unsafe { &mut *Pick::<tokio::sync::broadcast::Receiver<$message>>::splitting_get_mut(&mut $bus) }.recv()  => {
-                    receive_bus_metrics::<$message, _>(&mut $bus);
-                    $handler
-                }
+        handle_messages! {
+            bus($bus) index([<$index a>]) $($rest)*
+            Ok($res) = unsafe { &mut *Pick::<tokio::sync::broadcast::Receiver<$message>>::splitting_get_mut(&mut $bus) }.recv()  => {
+                receive_bus_metrics::<$message, _>(&mut $bus);
+                $handler
             }
         }
     }};
 
     // Fallback to else case
-    (bus($bus:expr) else => $h:block $($rest:tt)*) => {
+    (bus($bus:expr) index($index:ident) else => $h:block $($rest:tt)*) => {
         loop {
             tokio::select! {
                 $($rest)*
@@ -161,7 +154,7 @@ macro_rules! handle_messages {
     };
 
     // Fallback to normal select cases
-    (bus($bus:expr) $($rest:tt)+) => {
+    (bus($bus:expr) index($index:ident) $($rest:tt)+) => {
         loop {
             tokio::select! {
                 $($rest)+
