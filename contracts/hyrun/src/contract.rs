@@ -35,12 +35,8 @@ pub fn print_hyled_blob_tx(identity: &Identity, blobs: &Vec<Blob>) {
     println!("{}", "-".repeat(20));
 }
 
-pub fn run<State, Builder>(
-    cli: &Cli,
-    contract_name: &str,
-    program_name: &str,
-    build_contract_input: Builder,
-) where
+pub fn run<State, Builder>(cli: &Cli, contract_name: &str, build_contract_input: Builder)
+where
     State: TryFrom<sdk::StateDigest, Error = Error>,
     State: Digestable + std::fmt::Debug + serde::Serialize,
     Builder: Fn(State) -> ContractInput<State>,
@@ -58,7 +54,7 @@ pub fn run<State, Builder>(
 
     println!("{}", "-".repeat(20));
     println!("Checking transition for {contract_name}...");
-    let execute_info = execute(program_name, &contract_input);
+    let execute_info = execute(contract_name, &contract_input);
     let output = execute_info.journal.decode::<HyleOutput>().unwrap();
     if !output.success {
         let program_error = std::str::from_utf8(&output.program_outputs).unwrap();
@@ -74,7 +70,7 @@ pub fn run<State, Builder>(
 
     println!("{}", "-".repeat(20));
     println!("Proving transition for {contract_name}...");
-    let prove_info = prove(program_name, &contract_input);
+    let prove_info = prove(contract_name, &contract_input);
 
     let receipt = prove_info.receipt;
     let encoded_receipt = to_vec(&receipt).expect("Unable to encode receipt");
@@ -149,7 +145,7 @@ where
 }
 
 fn execute<State>(
-    program_name: &str,
+    contract_name: &str,
     contract_input: &ContractInput<State>,
 ) -> risc0_zkvm::SessionInfo
 where
@@ -162,6 +158,7 @@ where
         .unwrap();
 
     let prover = risc0_zkvm::default_executor();
+    let program_name = get_image(contract_name);
     let file_path = format!("contracts/{}/{}.img", program_name, program_name);
     println!("file_path: {}", file_path);
     if let Ok(binary) = std::fs::read(file_path.as_str()) {
@@ -174,7 +171,7 @@ where
     }
 }
 
-fn prove<State>(program_name: &str, contract_input: &ContractInput<State>) -> risc0_zkvm::ProveInfo
+fn prove<State>(contract_name: &str, contract_input: &ContractInput<State>) -> risc0_zkvm::ProveInfo
 where
     State: Digestable + serde::Serialize,
 {
@@ -185,6 +182,7 @@ where
         .unwrap();
 
     let prover = risc0_zkvm::default_prover();
+    let program_name = get_image(contract_name);
     let file_path = format!("contracts/{}/{}.img", program_name, program_name);
     if let Ok(binary) = std::fs::read(file_path.as_str()) {
         prover.prove(env, &binary).unwrap()
@@ -193,5 +191,14 @@ where
         println!("Please ensure that the ELF binary is built and located at the specified path.");
         println!("\x1b[93m--> Tip: Did you run build_contracts.sh ?\x1b[0m");
         panic!("Could not read ELF binary");
+    }
+}
+
+fn get_image(contract_name: &str) -> &str {
+    match contract_name {
+        "hydentity" => "hydentity",
+        "hyllar" | "hyllar2" => "hyllar",
+        "amm" | "amm2" => "amm",
+        _ => panic!("Unknown contract name"),
     }
 }

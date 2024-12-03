@@ -77,12 +77,12 @@ enum CliCommand {
     Hyllar {
         #[command(subcommand)]
         command: HyllarArgs,
-        contract_name: String,
+        hyllar_contract_name: String,
     },
     Amm {
         #[command(subcommand)]
         command: AmmArgs,
-        contract_name: String,
+        amm_contract_name: String,
     },
 }
 
@@ -157,7 +157,6 @@ fn main() {
             contract::run(
                 &cli,
                 "hydentity",
-                "hydentity",
                 |identities: Hydentity| -> ContractInput<Hydentity> {
                     ContractInput::<Hydentity> {
                         initial_state: identities,
@@ -171,12 +170,12 @@ fn main() {
             );
         }
         CliCommand::Hyllar {
-            contract_name,
+            hyllar_contract_name,
             command,
         } => {
             if let HyllarArgs::Init { initial_supply } = command {
                 contract::init(
-                    &contract_name,
+                    &hyllar_contract_name,
                     HyllarToken::new(initial_supply, "faucet.hydentity".to_string()),
                 );
                 return;
@@ -202,13 +201,12 @@ fn main() {
 
             let blobs = vec![
                 identity_cf.as_blob(ContractName("hydentity".to_owned())),
-                cf.as_blob(ContractName(contract_name.clone()), None, None),
+                cf.as_blob(ContractName(hyllar_contract_name.clone()), None, None),
             ];
             contract::print_hyled_blob_tx(&identity.clone().into(), &blobs);
 
             contract::run(
                 &cli,
-                "hydentity",
                 "hydentity",
                 |token: hydentity::Hydentity| -> ContractInput<hydentity::Hydentity> {
                     ContractInput::<Hydentity> {
@@ -223,8 +221,7 @@ fn main() {
             );
             contract::run(
                 &cli,
-                &contract_name,
-                "hyllar",
+                &hyllar_contract_name,
                 |token: hyllar::HyllarToken| -> ContractInput<hyllar::HyllarToken> {
                     ContractInput::<HyllarToken> {
                         initial_state: token,
@@ -238,7 +235,7 @@ fn main() {
             );
         }
         CliCommand::Amm {
-            contract_name,
+            amm_contract_name,
             command,
         } => {
             match command {
@@ -273,13 +270,13 @@ fn main() {
                             amounts: (amount_a, amount_b),
                         }
                         .as_blob(
-                            ContractName(contract_name.to_owned()),
+                            ContractName(amm_contract_name.to_owned()),
                             None,
                             Some(vec![BlobIndex(2), BlobIndex(3)]),
                         ),
                         ERC20Action::TransferFrom {
-                            sender: "bob.hydentity".to_string(),
-                            recipient: contract_name.to_string(),
+                            sender: identity.clone(),
+                            recipient: amm_contract_name.to_string(),
                             amount: amount_a,
                         }
                         .as_blob(
@@ -288,8 +285,8 @@ fn main() {
                             None,
                         ),
                         ERC20Action::TransferFrom {
-                            sender: "bob.hydentity".to_string(),
-                            recipient: contract_name.to_string(),
+                            sender: identity.clone(),
+                            recipient: amm_contract_name.to_string(),
                             amount: amount_b,
                         }
                         .as_blob(
@@ -302,7 +299,6 @@ fn main() {
 
                     contract::run(
                         &cli,
-                        "hydentity",
                         "hydentity",
                         |token: hydentity::Hydentity| -> ContractInput<hydentity::Hydentity> {
                             ContractInput::<Hydentity> {
@@ -318,8 +314,7 @@ fn main() {
                     // Run to add new pair to Amm
                     contract::run(
                         &cli,
-                        &contract_name,
-                        "amm",
+                        &amm_contract_name,
                         |amm: amm::AmmState| -> ContractInput<amm::AmmState> {
                             ContractInput::<AmmState> {
                                 initial_state: amm,
@@ -335,7 +330,6 @@ fn main() {
                     contract::run(
                         &cli,
                         &token_a,
-                        "hyllar",
                         |token: hyllar::HyllarToken| -> ContractInput<hyllar::HyllarToken> {
                             ContractInput::<HyllarToken> {
                                 initial_state: token,
@@ -352,7 +346,6 @@ fn main() {
                     contract::run(
                         &cli,
                         &token_b,
-                        "hyllar",
                         |token: hyllar::HyllarToken| -> ContractInput<hyllar::HyllarToken> {
                             ContractInput::<HyllarToken> {
                                 initial_state: token,
@@ -395,13 +388,13 @@ fn main() {
                             pair: (token_a.to_string(), token_b.to_string()),
                         }
                         .as_blob(
-                            ContractName(contract_name.to_owned()),
+                            ContractName(amm_contract_name.to_owned()),
                             None,
                             Some(vec![BlobIndex(2), BlobIndex(3)]),
                         ),
                         ERC20Action::TransferFrom {
-                            sender: "bob.hydentity".to_string(),
-                            recipient: contract_name.to_string(),
+                            sender: identity.clone(),
+                            recipient: amm_contract_name.to_string(),
                             amount: amount_a,
                         }
                         .as_blob(
@@ -410,7 +403,7 @@ fn main() {
                             None,
                         ),
                         ERC20Action::Transfer {
-                            recipient: "bob.hydentity".to_string(),
+                            recipient: identity.clone(),
                             amount: amount_b,
                         }
                         .as_blob(
@@ -424,7 +417,6 @@ fn main() {
 
                     contract::run(
                         &cli,
-                        "hydentity",
                         "hydentity",
                         |token: hydentity::Hydentity| -> ContractInput<hydentity::Hydentity> {
                             ContractInput::<Hydentity> {
@@ -440,8 +432,7 @@ fn main() {
                     // Run for swapping token_a for token_b
                     contract::run(
                         &cli,
-                        &contract_name,
-                        "amm",
+                        &amm_contract_name,
                         |amm: amm::AmmState| -> ContractInput<amm::AmmState> {
                             ContractInput::<AmmState> {
                                 initial_state: amm,
@@ -457,7 +448,6 @@ fn main() {
                     contract::run(
                         &cli,
                         &token_a,
-                        "hyllar",
                         |token: hyllar::HyllarToken| -> ContractInput<hyllar::HyllarToken> {
                             ContractInput::<HyllarToken> {
                                 initial_state: token,
@@ -474,7 +464,6 @@ fn main() {
                     contract::run(
                         &cli,
                         &token_b,
-                        "hyllar",
                         |token: hyllar::HyllarToken| -> ContractInput<hyllar::HyllarToken> {
                             ContractInput::<HyllarToken> {
                                 initial_state: token,

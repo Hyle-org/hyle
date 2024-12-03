@@ -9,6 +9,13 @@ mod e2e_consensus {
     use super::*;
 
     #[test_log::test(tokio::test)]
+    async fn single_node_generates_blocks() -> Result<()> {
+        let ctx = E2ECtx::new_single(50).await?;
+        ctx.wait_height(20).await?;
+        Ok(())
+    }
+
+    #[test_log::test(tokio::test)]
     async fn can_run_lot_of_nodes() -> Result<()> {
         let ctx = E2ECtx::new_multi(10, 1000).await?;
 

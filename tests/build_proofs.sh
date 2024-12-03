@@ -106,7 +106,7 @@ sleep 4
 # Bob swaps 5 hyllar for 10 hyllar2
 #    By sending 5 hyllar to amm
 #    By sending 10 hyllar2 to bob (from amm)
-hyrun --user bob.hydentity --password password --nonce 3 amm amm2 swap-flow hyllar hyllar2 5 10
+hyrun --user bob.hydentity --password password --nonce 3 amm amm2 swap hyllar hyllar2 5 10
 BLOB_TX_HASH=$(hyled blobs bob.hydentity hydentity 010d626f622e687964656e7469747903 amm2 0001020203000668796c6c61720768796c6c617232 hyllar 010100030d626f622e687964656e7469747904616d6d3205 hyllar2 010100020d626f622e687964656e746974790a | grep Response | awk -F' ' '{ print $2}')
 hyled proof $BLOB_TX_HASH hydentity 0.risc0.proof
 hyled proof $BLOB_TX_HASH amm2 1.risc0.proof
