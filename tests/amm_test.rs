@@ -28,6 +28,46 @@ mod e2e_amm {
 
     use super::*;
 
+    async fn assert_account_allowance(
+        ctx: &E2ECtx,
+        contract_name: &str,
+        owner: &str,
+        spender: &str,
+        expected_allowance: u128,
+    ) -> Result<()> {
+        let contract_hyllar = ctx.get_contract(contract_name).await?;
+        let state: hyllar::HyllarToken = contract_hyllar.state.try_into()?;
+        let state = hyllar::HyllarTokenContract::init(state, "caller".into());
+
+        assert_eq!(
+            state
+                .allowance(owner, spender)
+                .expect("bob identity not found"),
+            expected_allowance
+        );
+        Ok(())
+    }
+
+    async fn assert_multiple_balances(
+        ctx: &E2ECtx,
+        contract_name: &str,
+        balances: &[(&str, u128)],
+    ) -> Result<()> {
+        let contract_hyllar = ctx.get_contract(contract_name).await?;
+        let state: hyllar::HyllarToken = contract_hyllar.state.try_into()?;
+        let state = hyllar::HyllarTokenContract::init(state, "caller".into());
+
+        for (account, expected) in balances {
+            assert_eq!(
+                state.balance_of(account).expect("Account not found"),
+                *expected,
+                "Incorrect balance for {}",
+                account
+            );
+        }
+        Ok(())
+    }
+
     async fn scenario_amm(ctx: E2ECtx) -> Result<()> {
         // Here is the flow that we are going to test:
         // Register bob in hydentity
@@ -158,12 +198,15 @@ mod e2e_amm {
                 .expect("bob identity not found"),
             25
         );
-        assert_eq!(
-            state
-                .balance_of("faucet.hydentity")
-                .expect("faucet identity not found"),
-            hyllar_initial_total_amount - 25
-        );
+        assert_multiple_balances(
+            &ctx,
+            "hyllar",
+            &[
+                ("bob.hydentity", 25),
+                ("faucet.hydentity", hyllar_initial_total_amount - 25),
+            ],
+        )
+        .await?;
         /////////////////////////////////////////////////////////////////////
 
         ///////////////// sending hyllar2 from faucet to bob /////////////////
@@ -212,21 +255,15 @@ mod e2e_amm {
         info!("➡️  Waiting for height 5");
         ctx.wait_height(5).await?;
 
-        let contract_hyllar2 = ctx.get_contract("hyllar2").await?;
-        let state: hyllar::HyllarToken = contract_hyllar2.state.try_into()?;
-        let state = hyllar::HyllarTokenContract::init(state, "caller".into());
-        assert_eq!(
-            state
-                .balance_of("bob.hydentity")
-                .expect("bob identity not found"),
-            50
-        );
-        assert_eq!(
-            state
-                .balance_of("faucet.hydentity")
-                .expect("faucet identity not found"),
-            hyllar2_initial_total_amount - 50
-        );
+        assert_multiple_balances(
+            &ctx,
+            "hyllar2",
+            &[
+                ("bob.hydentity", 50),
+                ("faucet.hydentity", hyllar2_initial_total_amount - 50),
+            ],
+        )
+        .await?;
         /////////////////////////////////////////////////////////////////////
 
         ///////////////////// amm contract registration /////////////////////
@@ -281,15 +318,7 @@ mod e2e_amm {
         info!("➡️  Waiting for height 5");
         ctx.wait_height(5).await?;
 
-        let contract_hyllar = ctx.get_contract("hyllar").await?;
-        let state: hyllar::HyllarToken = contract_hyllar.state.try_into()?;
-        let state = hyllar::HyllarTokenContract::init(state, "caller".into());
-        assert_eq!(
-            state
-                .allowance("bob.hydentity", "amm2")
-                .expect("bob identity not found"),
-            100
-        );
+        assert_account_allowance(&ctx, "hyllar", "bob.hydentity", "amm2", 100).await?;
         /////////////////////////////////////////////////////////////////////
 
         //////////////////// Bob approves AMM on hyllar2 /////////////////////
@@ -338,15 +367,7 @@ mod e2e_amm {
         info!("➡️  Waiting for height 5");
         ctx.wait_height(5).await?;
 
-        let contract_hyllar2 = ctx.get_contract("hyllar2").await?;
-        let state: hyllar::HyllarToken = contract_hyllar2.state.try_into()?;
-        let state = hyllar::HyllarTokenContract::init(state, "caller".into());
-        assert_eq!(
-            state
-                .allowance("bob.hydentity", "amm2")
-                .expect("bob identity not found"),
-            100
-        );
+        assert_account_allowance(&ctx, "hyllar2", "bob.hydentity", "amm2", 100).await?;
         /////////////////////////////////////////////////////////////////////
 
         /////////////// Creating new pair hyllar/hyllar2 on amm ///////////////
@@ -441,45 +462,27 @@ mod e2e_amm {
         info!("➡️  Waiting for height 5");
         ctx.wait_height(5).await?;
 
-        let contract_hyllar = ctx.get_contract("hyllar").await?;
-        let state: hyllar::HyllarToken = contract_hyllar.state.try_into()?;
-        let state = hyllar::HyllarTokenContract::init(state, "caller".into());
-        assert_eq!(
-            state
-                .balance_of("bob.hydentity")
-                .expect("bob identity not found"),
-            5
-        );
-        assert_eq!(
-            state.balance_of("amm2").expect("amm2 identity not found"),
-            20
-        );
-        assert_eq!(
-            state
-                .balance_of("faucet.hydentity")
-                .expect("faucet identity not found"),
-            hyllar_initial_total_amount - 25
-        );
+        assert_multiple_balances(
+            &ctx,
+            "hyllar",
+            &[
+                ("bob.hydentity", 5),
+                ("amm2", 20),
+                ("faucet.hydentity", hyllar_initial_total_amount - 25),
+            ],
+        )
+        .await?;
 
-        let contract_hyllar2 = ctx.get_contract("hyllar2").await?;
-        let state: hyllar::HyllarToken = contract_hyllar2.state.try_into()?;
-        let state = hyllar::HyllarTokenContract::init(state, "caller".into());
-        assert_eq!(
-            state
-                .balance_of("bob.hydentity")
-                .expect("bob identity not found"),
-            0
-        );
-        assert_eq!(
-            state.balance_of("amm2").expect("amm2 identity not found"),
-            50
-        );
-        assert_eq!(
-            state
-                .balance_of("faucet.hydentity")
-                .expect("faucet identity not found"),
-            hyllar2_initial_total_amount - 50
-        );
+        assert_multiple_balances(
+            &ctx,
+            "hyllar2",
+            &[
+                ("bob.hydentity", 0),
+                ("amm2", 50),
+                ("faucet.hydentity", hyllar2_initial_total_amount - 50),
+            ],
+        )
+        .await?;
         //////////////////////////////////////////////////////////////////////
 
         /////////////////////// Bob actually swaps //////////////////////////
@@ -570,45 +573,27 @@ mod e2e_amm {
         info!("➡️  Waiting for height 5");
         ctx.wait_height(5).await?;
 
-        let contract_hyllar = ctx.get_contract("hyllar").await?;
-        let state: hyllar::HyllarToken = contract_hyllar.state.try_into()?;
-        let state = hyllar::HyllarTokenContract::init(state, "caller".into());
-        assert_eq!(
-            state
-                .balance_of("bob.hydentity")
-                .expect("bob identity not found"),
-            0
-        );
-        assert_eq!(
-            state.balance_of("amm2").expect("amm identity not found"),
-            25
-        );
-        assert_eq!(
-            state
-                .balance_of("faucet.hydentity")
-                .expect("faucet identity not found"),
-            hyllar_initial_total_amount - 25
-        );
+        assert_multiple_balances(
+            &ctx,
+            "hyllar",
+            &[
+                ("bob.hydentity", 0),
+                ("amm2", 25),
+                ("faucet.hydentity", hyllar_initial_total_amount - 25),
+            ],
+        )
+        .await?;
 
-        let contract_hyllar2 = ctx.get_contract("hyllar2").await?;
-        let state: hyllar::HyllarToken = contract_hyllar2.state.try_into()?;
-        let state = hyllar::HyllarTokenContract::init(state, "caller".into());
-        assert_eq!(
-            state
-                .balance_of("bob.hydentity")
-                .expect("bob identity not found"),
-            10
-        );
-        assert_eq!(
-            state.balance_of("amm2").expect("amm identity not found"),
-            40
-        );
-        assert_eq!(
-            state
-                .balance_of("faucet.hydentity")
-                .expect("faucet identity not found"),
-            hyllar2_initial_total_amount - 50
-        );
+        assert_multiple_balances(
+            &ctx,
+            "hyllar2",
+            &[
+                ("bob.hydentity", 10),
+                ("amm2", 40),
+                ("faucet.hydentity", hyllar2_initial_total_amount - 50),
+            ],
+        )
+        .await?;
         /////////////////////////////////////////////////////////////////////
         Ok(())
     }
