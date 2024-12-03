@@ -19,10 +19,31 @@ The older (but still maintained) Cosmos SDK based client can be found at [hyle-c
 
 ## Getting Started with Cargo
 
+To start a single-node devnet (with consensus disabled), which is useful to build & debug smart contracts:
+
 ```bash
 cargo build
-cargo run --bin node
+HYLE_RUN_INDEXER=false cargo run --bin node
+```
 
+If you want to run with indexer you will need a running postgres server in order to run the indexer
+```bash
+# For default conf:
+docker run -d --rm --name pg_hyle -p 5432:5432 -e POSTGRES_PASSWORD=postgres postgres
+```
+
+### Configuration 
+
+You can edit the configuration using env vars, or by a config file:
+```bash
+# Copy default config where you run the node. If file named "config.ron" is present, it will be loaded by node at startup.
+cp ./src/utils/conf_defaults.ron config.ron
+```
+
+Examples of configuration by env var:
+```bash
+HYLE_RUN_INDEXER=false 
+HYLE_CONSENSUS__SLOT_DURATION=100
 ```
 
 ## Getting Started with Docker
@@ -30,14 +51,14 @@ cargo run --bin node
 ### Build locally
 
 ```bash
-  docker build . -t hyle_image:v1
+  docker build . -t hyle
 
 ```
 
 ### Run locally with Docker
 
 ```bash
-  docker run -v ./db:/hyle/data -p 4321:4321 -p 1234:1234 hyle_image:v1
+  docker run -v ./db:/hyle/data -e HYLE_RUN_INDEXER=false -p 4321:4321 -p 1234:1234 hyle
 ```
 
 If you have permission errors when accessing /hyle/data volume, use "--privileged" cli flag.
@@ -50,20 +71,18 @@ If you have permission errors when accessing /hyle/data volume, use "--privilege
   docker compose -f tools/docker-compose.yml up -d
 ```
 
-#### Submit blob transaction
+#### Interact with node 
+
+To interact with the node, you can use `hyled`:
 
 ```bash
-  curl -X POST --location 'http://localhost:4321/v1/tx/send/blob' \
---header 'Content-Type: application/json' \
---data '{
-    "identity": "ident",
-    "blobs": [
-        {
-            "contract_name": "contrat de test",
-            "data": []
-        }
-    ]
-}'
+cargo run --bin hyled -- --help
+```
+
+You can install it for easy access: 
+```bash
+cargo install --path . --bin hyled
+hyled --help
 ```
 
 #### Access Grafana
