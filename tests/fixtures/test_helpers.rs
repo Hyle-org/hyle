@@ -98,6 +98,7 @@ impl TestProcess {
             "TOKIO_CONSOLE_BIND",
             format!("127.0.0.1:{}", tokio_console_port),
         );
+        cmd.env("RISC0_DEV_MODE", "1");
         Self {
             conf,
             dir: tmpdir,

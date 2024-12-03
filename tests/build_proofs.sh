@@ -1,6 +1,11 @@
 #!/bin/bash
 set -xe
 
+# To run this file, you need a node with an indexer 
+# The node needs to run in risc0 dev mode with env var "RISC0_DEV_MODE=1"
+
+export RISC0_DEV_MODE=1
+
 # check if script is ran from root directory
 if ! grep -q 'name = "hyle"' Cargo.toml 2>/dev/null; then
     echo "Error: This script must be run from the root directory containing the Cargo.toml with package name 'hyle'."
