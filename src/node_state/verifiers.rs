@@ -95,10 +95,16 @@ pub fn risc0_proof_verifier(encoded_receipt: &[u8], image_id: &[u8]) -> Result<H
 
     let image_bytes: Digest = image_id.try_into().expect("Invalid Risc0 image ID");
 
-    match receipt.verify(image_bytes) {
-        Ok(_) => (),
-        Err(e) => bail!("Risc0 proof verification failed: {}", e),
-    };
+    let dev_mode = std::env::var("RISC0_DEV_MODE").unwrap_or_else(|_| "0".to_string());
+
+    if dev_mode == "1" {
+        tracing::warn!("dev_mode is on, skipping proof verification");
+    } else {
+        match receipt.verify(image_bytes) {
+            Ok(_) => (),
+            Err(e) => bail!("Risc0 proof verification failed: {}", e),
+        };
+    }
 
     tracing::info!("🦄🦄 receipt.journal {:?} ", receipt.journal);
     let hyle_output = match receipt.journal.decode::<HyleOutput>() {
