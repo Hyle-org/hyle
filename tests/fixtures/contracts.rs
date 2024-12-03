@@ -72,3 +72,20 @@ impl E2EContract for HyllarContract {
         hyllar::HyllarToken::new(1000, "faucet.hydentity".to_string()).as_digest()
     }
 }
+
+pub struct AmmContract {}
+
+impl E2EContract for AmmContract {
+    fn verifier() -> String {
+        "risc0".into()
+    }
+
+    fn program_id() -> Vec<u8> {
+        let amm_program_id = include_str!("../../contracts/amm/amm.txt").trim();
+        hex::decode(amm_program_id).expect("Image id decoding failed")
+    }
+
+    fn state_digest() -> StateDigest {
+        amm::AmmState::default().as_digest()
+    }
+}

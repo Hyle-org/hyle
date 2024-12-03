@@ -163,8 +163,8 @@ impl Genesis {
         );
         hyllar_token.transfer("amm", 1_000_000_000).unwrap();
 
-        hyllar_token.approve("amm", 1_000_000_000_000_000).unwrap(); // faucet qui approve amm pour
-                                                                     // déplacer ses fonds
+        // faucet qui approve amm pour déplacer ses fonds
+        hyllar_token.approve("amm", 1_000_000_000_000_000).unwrap();
         let hyllar_state = hyllar_token.state();
 
         vec![
