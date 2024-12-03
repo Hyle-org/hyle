@@ -11,7 +11,8 @@ where
 {
     println!("Initial state: {:?}", initial_state);
     let initial_state = hex::encode(initial_state.as_digest().0);
-    let file_path = format!("contracts/{}/{}.txt", contract_name, contract_name);
+    let program_name = get_image(contract_name);
+    let file_path = format!("contracts/{}/{}.txt", program_name, program_name);
     let image_id = std::fs::read_to_string(file_path)
         .expect("Unable to read image id. Did you build contracts ?")
         .trim_end()

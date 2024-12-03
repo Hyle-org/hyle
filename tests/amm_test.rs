@@ -18,7 +18,7 @@ pub fn load_encoded_receipt_from_file(path: &str) -> Vec<u8> {
 
 mod e2e_amm {
     use amm::AmmAction;
-    use fixtures::contracts::AmmContract;
+    use fixtures::contracts::{AmmContract, HyllarContract};
     use hydentity::AccountInfo;
     use hyle_contract_sdk::{
         erc20::{ERC20Action, ERC20},
@@ -94,6 +94,13 @@ mod e2e_amm {
         let hyllar_initial_total_amount: u128 = state
             .balance_of("faucet.hydentity")
             .expect("faucet identity not found");
+
+        ///////////////////// hyllar2 contract registration /////////////////
+        info!("➡️  Registring hyllar2 contract");
+        const HYLLAR2_CONTRACT_NAME: &str = "hyllar2";
+        ctx.register_contract::<HyllarContract>(HYLLAR2_CONTRACT_NAME)
+            .await?;
+        /////////////////////////////////////////////////////////////////////
 
         let contract_hyllar2 = ctx.get_contract("hyllar2").await?;
         let state =
