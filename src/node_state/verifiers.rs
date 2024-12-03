@@ -135,6 +135,7 @@ mod tests {
 
     #[test]
     fn test_risc0_proof_verifier() {
+        std::env::set_var("RISC0_DEV_MODE", "1");
         let encoded_receipt =
             load_encoded_receipt_from_file("./tests/proofs/register.hydentity.risc0.proof");
 
