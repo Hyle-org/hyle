@@ -1,7 +1,6 @@
 use std::collections::BTreeMap;
 use std::hash::{Hash, Hasher};
 
-use anyhow::{bail, Error};
 use bincode::{Decode, Encode};
 use sdk::{erc20::ERC20Action, Identity};
 use sdk::{guest::RunResult, Blob, BlobIndex, Digestable};
@@ -90,7 +89,7 @@ impl AmmContract {
     ) -> RunResult {
         // Check that new pair is about two different tokens and that there is one blob for each
         if callees_blobs.len() != 2 || pair.0 == pair.1 {
-            bail!("Swap can only happen between two different tokens");
+            return Err("Swap can only happen between two different tokens".to_string());
         }
 
         let first_blob_index = match callees_blobs
@@ -99,7 +98,10 @@ impl AmmContract {
         {
             Some(index) => BlobIndex(index as u32),
             None => {
-                bail!("Blob with contract name {} not found in callees", pair.0);
+                return Err(format!(
+                    "Blob with contract name {} not found in callees",
+                    pair.0
+                ));
             }
         };
 
@@ -109,7 +111,10 @@ impl AmmContract {
         {
             Some(index) => BlobIndex(index as u32),
             None => {
-                bail!("Blob with contract name {} not found in callees", pair.1);
+                return Err(format!(
+                    "Blob with contract name {} not found in callees",
+                    pair.1
+                ));
             }
         };
 
@@ -125,16 +130,16 @@ impl AmmContract {
             } => {
                 // Check that sender is correct and the recipient is AMM
                 if sender != from.0 || recipient != *"amm" {
-                    bail!("Transfer blob has incorrect sender or recipient");
+                    return Err("Transfer blob has incorrect sender or recipient".to_string());
                 }
                 // Check that the amount is the same as the one given
                 if amount != amounts.0 {
-                    bail!("Amounts do not match");
+                    return Err("Amounts do not match".to_string());
                 }
             }
             _ => {
                 // Check the blobs are TransferFrom
-                bail!("Transfer blobs do not call the correct function");
+                return Err("Transfer blobs do not call the correct function".to_string());
             }
         };
 
@@ -148,23 +153,23 @@ impl AmmContract {
             } => {
                 // Check that sender is correct and the recipient is AMM
                 if sender != from.0 || recipient != *"amm" {
-                    bail!("Transfer blob has incorrect sender or recipient");
+                    return Err("Transfer blob has incorrect sender or recipient".to_string());
                 }
                 // Check that the amount is the same as the one given
                 if amount != amounts.1 {
-                    bail!("Amounts do not match");
+                    return Err("Amounts do not match".to_string());
                 }
             }
             _ => {
                 // Check the blobs are TransferFrom
-                bail!("Transfer blobs do not call the correct function");
+                return Err("Transfer blobs do not call the correct function".to_string());
             }
         };
 
         let normalized_pair = UnorderedTokenPair::new(pair.0, pair.1);
 
         if self.state.pairs.contains_key(&normalized_pair) {
-            bail!("Pair {:?} already exists", normalized_pair);
+            return Err(format!("Pair {:?} already exists", normalized_pair));
         }
 
         let program_outputs = format!("Pair {:?} created", normalized_pair);
@@ -182,12 +187,12 @@ impl AmmContract {
     ) -> RunResult {
         // Check that from field correspond to caller
         if from != self.caller {
-            bail!("Caller is not the same as the 'from' field");
+            return Err("Caller is not the same as the 'from' field".to_string());
         }
 
         // Check that swap is only about two different tokens and that there is one blob for each
         if callees_blobs.len() != 2 || pair.0 == pair.1 {
-            bail!("Swap can only happen between two different tokens");
+            return Err("Swap can only happen between two different tokens".to_string());
         }
 
         // Extract "blob_from" out of the blobs. This is the blob that has the first token of the pair as contract name
@@ -197,7 +202,10 @@ impl AmmContract {
         {
             Some(index) => BlobIndex(index as u32),
             None => {
-                bail!("Blob with contract name {} not found in callees", pair.0);
+                return Err(format!(
+                    "Blob with contract name {} not found in callees",
+                    pair.0
+                ));
             }
         };
         let blob_from =
@@ -210,7 +218,10 @@ impl AmmContract {
         {
             Some(index) => BlobIndex(index as u32),
             None => {
-                bail!("Blob with contract name {} not found in callees", pair.0);
+                return Err(format!(
+                    "Blob with contract name {} not found in callees",
+                    pair.0
+                ));
             }
         };
         let blob_to =
@@ -224,13 +235,16 @@ impl AmmContract {
             } => {
                 // Check that blob_from 'from' field matches the caller and that 'to' field is the AMM
                 if sender != from.0 || recipient != *"amm" {
-                    bail!("Blob 'from' field is not the User or 'to' field is not the AMM",);
+                    return Err(
+                        "Blob 'from' field is not the User or 'to' field is not the AMM"
+                            .to_string(),
+                    );
                 }
                 amount
             }
             _ => {
                 // Check the blobs are TransferFrom
-                bail!("Transfer blobs do not call the correct function");
+                return Err("Transfer blobs do not call the correct function".to_string());
             }
         };
 
@@ -238,13 +252,16 @@ impl AmmContract {
             ERC20Action::Transfer { amount, recipient } => {
                 // Check that blob_to 'from' field is the AMM and that 'to' field matches the caller
                 if recipient != from.0 {
-                    bail!("Blob 'from' field is not the AMM or 'to' field is not the caller",);
+                    return Err(
+                        "Blob 'from' field is not the AMM or 'to' field is not the caller"
+                            .to_string(),
+                    );
                 }
                 amount
             }
             _ => {
                 // Check the blobs are TransferFrom
-                bail!("Transfer blobs do not call the correct function");
+                return Err("Transfer blobs do not call the correct function".to_string());
             }
         };
 
@@ -256,33 +273,33 @@ impl AmmContract {
                 if is_normalized_order {
                     let amount_b = *prev_y - (*prev_x * *prev_y / (*prev_x + from_amount));
                     if amount_b != to_amount {
-                        bail!(
+                        return Err(format!(
                             "Swap formula is not respected: {} * {} != {} * {}",
                             (*prev_x + from_amount),
                             (*prev_y - to_amount),
                             prev_x,
                             prev_y,
-                        );
+                        ));
                     }
                     *prev_x += from_amount;
                     *prev_y -= to_amount;
                 } else {
                     let amount_b = *prev_x - (*prev_y * *prev_x / (*prev_y + from_amount));
                     if amount_b != to_amount {
-                        bail!(
+                        return Err(format!(
                             "Swap formula is not respected: {} * {} != {} * {}",
                             (*prev_y + from_amount),
                             (*prev_x - to_amount),
                             prev_y,
                             prev_x
-                        );
+                        ));
                     }
                     *prev_y += from_amount;
                     *prev_x -= to_amount;
                 }
             }
             None => {
-                bail!("Pair {:?} not found in AMM state", pair);
+                return Err(format!("Pair {:?} not found in AMM state", pair));
             }
         };
         Ok(format!(
@@ -301,7 +318,7 @@ impl Digestable for AmmState {
     }
 }
 impl TryFrom<sdk::StateDigest> for AmmState {
-    type Error = Error;
+    type Error = anyhow::Error;
 
     fn try_from(state: sdk::StateDigest) -> Result<Self, Self::Error> {
         let (amm_state, _) = bincode::decode_from_slice(&state.0, bincode::config::standard())

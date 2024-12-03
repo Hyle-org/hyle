@@ -1,5 +1,4 @@
 use alloc::{format, string::String, vec::Vec};
-use anyhow::anyhow;
 use bincode::{Decode, Encode};
 
 use crate::{
@@ -154,7 +153,6 @@ pub fn execute_action<T: ERC20>(token: &mut T, action: ERC20Action) -> RunResult
             .allowance(&owner, &spender)
             .map(|allowance| format!("Allowance of {} by {}: {}", spender, owner, allowance)),
     }
-    .map_err(|e| anyhow!(e))
 }
 
 #[cfg(test)]

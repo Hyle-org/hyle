@@ -1,5 +1,4 @@
 use alloc::{format, string::String, vec::Vec};
-use anyhow::bail;
 use bincode::{Decode, Encode};
 
 use crate::{guest::RunResult, Blob, BlobData, ContractName};
@@ -91,7 +90,7 @@ pub fn execute_action<T: IdentityVerification>(
                     "Successfully registered identity for account: {}",
                     account
                 )),
-                Err(err) => bail!("Failed to register identity: {}", err),
+                Err(err) => Err(format!("Failed to register identity: {}", err)),
             }
         }
         IdentityAction::VerifyIdentity {
@@ -100,15 +99,18 @@ pub fn execute_action<T: IdentityVerification>(
             blobs_hash,
         } => match state.verify_identity(&account, nonce, blobs_hash, private_input) {
             Ok(true) => Ok(format!("Identity verified for account: {}", account)),
-            Ok(false) => bail!("Identity verification failed for account: {}", account),
-            Err(err) => bail!("Error verifying identity: {}", err),
+            Ok(false) => Err(format!(
+                "Identity verification failed for account: {}",
+                account
+            )),
+            Err(err) => Err(format!("Error verifying identity: {}", err)),
         },
         IdentityAction::GetIdentityInfo { account } => match state.get_identity_info(&account) {
             Ok(info) => Ok(format!(
                 "Retrieved identity info for account: {}: {}",
                 account, info
             )),
-            Err(err) => bail!("Failed to get identity info: {}", err),
+            Err(err) => Err(format!("Failed to get identity info: {}", err)),
         },
     }
 }
