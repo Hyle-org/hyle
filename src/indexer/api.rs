@@ -1,4 +1,4 @@
-use crate::model::BlockHash;
+use crate::{model::BlockHash, utils::logger::LogMe};
 
 use super::{
     model::{
@@ -228,6 +228,13 @@ pub async fn get_blob_transactions_by_contract(
 ) -> Result<Json<Vec<TransactionWithBlobs>>, StatusCode> {
     let rows = sqlx::query(
         r#"
+        with blobs as (
+            SELECT blobs.*, array_remove(ARRAY_AGG(proofs.hyle_output), NULL) AS proof_outputs
+            FROM blobs
+            LEFT JOIN proofs ON blobs.tx_hash = proofs.blob_tx_hash AND blobs.blob_index = proofs.blob_index
+            WHERE blobs.contract_name = $1
+            GROUP BY blobs.tx_hash, blobs.blob_index, blobs.identity
+        )
         SELECT
             t.tx_hash,
             t.block_hash,
@@ -235,13 +242,9 @@ pub async fn get_blob_transactions_by_contract(
             t.transaction_type,
             t.transaction_status,
             b.identity,
-            ARRAY_AGG(ROW(b.contract_name, b.data, b.verified)) AS blobs
-        FROM transactions t
-        JOIN blobs b ON t.tx_hash = b.tx_hash
-        WHERE b.tx_hash IN (
-            SELECT tx_hash
-            FROM blobs
-            WHERE contract_name = $1)
+            array_agg(ROW(b.contract_name, b.data, b.proof_outputs)) AS blobs
+        FROM blobs b
+        JOIN transactions t on t.tx_hash = b.tx_hash
         GROUP BY
             t.tx_hash,
             t.block_hash,
@@ -251,9 +254,10 @@ pub async fn get_blob_transactions_by_contract(
             b.identity
         "#,
     )
-    .bind(contract_name)
+    .bind(contract_name.clone())
     .fetch_all(&state.db)
     .await
+    .log_error("Failed to fetch transactions with blobs")
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     let transactions: Vec<TransactionWithBlobs> = rows
@@ -265,14 +269,15 @@ pub async fn get_blob_transactions_by_contract(
             let transaction_type: TransactionType = row.try_get("transaction_type").unwrap();
             let transaction_status: TransactionStatus = row.try_get("transaction_status").unwrap();
             let identity: String = row.try_get("identity").unwrap();
-            let blobs: Vec<(String, Vec<u8>, bool)> = row.try_get("blobs").unwrap();
+            let blobs: Vec<(String, Vec<u8>, Vec<serde_json::Value>)> =
+                row.try_get("blobs").unwrap();
 
             let blobs = blobs
                 .into_iter()
-                .map(|(contract_name, data, verified)| BlobWithStatus {
+                .map(|(contract_name, data, proof_outputs)| BlobWithStatus {
                     contract_name,
                     data,
-                    verified,
+                    proof_outputs,
                 })
                 .collect();
 
