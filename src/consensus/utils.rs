@@ -17,7 +17,7 @@ impl Hashable<QuorumCertificateHash> for QuorumCertificate {
         let mut hasher = Sha3_256::new();
         _ = write!(hasher, "{:?}", self.signature);
         _ = write!(hasher, "{:?}", self.validators);
-        return QuorumCertificateHash(hasher.finalize().as_slice().to_owned());
+        QuorumCertificateHash(hasher.finalize().as_slice().to_owned())
     }
 }
 
@@ -28,7 +28,7 @@ impl Hashable<ConsensusProposalHash> for ConsensusProposal {
         _ = write!(hasher, "{}", self.view);
         _ = write!(hasher, "{:?}", self.cut);
         _ = write!(hasher, "{:?}", self.new_validators_to_bond);
-        return ConsensusProposalHash(hasher.finalize().as_slice().to_owned());
+        ConsensusProposalHash(hasher.finalize().as_slice().to_owned())
     }
 }
 impl Display for ValidatorCandidacy {

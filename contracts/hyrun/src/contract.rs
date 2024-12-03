@@ -74,7 +74,11 @@ where
 
     let receipt = prove_info.receipt;
     let encoded_receipt = to_vec(&receipt).expect("Unable to encode receipt");
-    std::fs::write(format!("{contract_name}.risc0.proof"), encoded_receipt).unwrap();
+    std::fs::write(
+        format!("{}.risc0.proof", contract_input.index),
+        encoded_receipt,
+    )
+    .unwrap();
 
     let claim = receipt.claim().unwrap().value().unwrap();
 
@@ -97,7 +101,8 @@ where
     let initial_state = hex::encode(&hyle_output.initial_state.0);
     println!("Method ID: {:?} (hex)", method_id);
     println!(
-        "{contract_name}.risc0.proof written, transition from {:?} to {:?}",
+        "{}.risc0.proof written, transition from {:?} to {:?}",
+        contract_input.index,
         initial_state,
         hex::encode(&hyle_output.next_state.0)
     );
@@ -107,7 +112,8 @@ where
 
     println!("You can send the proof tx:");
     println!(
-        "\x1b[93mhyled proof $BLOB_TX_HASH {contract_name} {contract_name}.risc0.proof \x1b[0m"
+        "\x1b[93mhyled proof $BLOB_TX_HASH {contract_name} {}.risc0.proof \x1b[0m",
+        contract_input.index
     );
 
     receipt
@@ -152,7 +158,8 @@ where
         .unwrap();
 
     let prover = risc0_zkvm::default_executor();
-    let file_path = format!("contracts/{}/{}.img", contract_name, contract_name);
+    let program_name = get_image(contract_name);
+    let file_path = format!("contracts/{}/{}.img", program_name, program_name);
     println!("file_path: {}", file_path);
     if let Ok(binary) = std::fs::read(file_path.as_str()) {
         prover.execute(env, &binary).unwrap()
@@ -175,7 +182,8 @@ where
         .unwrap();
 
     let prover = risc0_zkvm::default_prover();
-    let file_path = format!("contracts/{}/{}.img", contract_name, contract_name);
+    let program_name = get_image(contract_name);
+    let file_path = format!("contracts/{}/{}.img", program_name, program_name);
     if let Ok(binary) = std::fs::read(file_path.as_str()) {
         prover.prove(env, &binary).unwrap()
     } else {
@@ -183,5 +191,14 @@ where
         println!("Please ensure that the ELF binary is built and located at the specified path.");
         println!("\x1b[93m--> Tip: Did you run build_contracts.sh ?\x1b[0m");
         panic!("Could not read ELF binary");
+    }
+}
+
+fn get_image(contract_name: &str) -> &str {
+    match contract_name {
+        "hydentity" => "hydentity",
+        "hyllar" | "hyllar2" => "hyllar",
+        "amm" | "amm2" => "amm",
+        _ => panic!("Unknown contract name"),
     }
 }

@@ -125,7 +125,7 @@ impl Type<Postgres> for TxHashDb {
         <String as Type<Postgres>>::type_info()
     }
 }
-impl<'q> sqlx::Encode<'q, sqlx::Postgres> for TxHashDb {
+impl sqlx::Encode<'_, sqlx::Postgres> for TxHashDb {
     fn encode_by_ref(
         &self,
         buf: &mut sqlx::postgres::PgArgumentBuffer,

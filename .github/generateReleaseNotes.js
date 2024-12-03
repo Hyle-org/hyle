@@ -21,7 +21,7 @@ const GITMOJI_CATEGORIES = {
 };
 
 function generateReleaseNotes() {
-  const commits = execSync("git log --oneline $(git describe --tags --abbrev=0 @^)..@ --pretty=format:%s").toString().split("\n");
+  const commits = execSync("git log --oneline $(git describe --tags --abbrev=0 HEAD^)..HEAD --pretty=format:%s").toString().split("\n");
 
   const categoryCommits = {};
   Object.keys(GITMOJI_CATEGORIES).forEach((emoji) => {

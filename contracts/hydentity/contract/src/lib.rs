@@ -61,7 +61,6 @@ impl IdentityVerification for Hydentity {
         &mut self,
         account: &str,
         nonce: u32,
-        blobs_hash: Vec<String>,
         private_input: &str,
     ) -> Result<bool, &'static str> {
         match self.identities.get_mut(account) {
@@ -77,7 +76,7 @@ impl IdentityVerification for Hydentity {
                     return Ok(false);
                 }
                 stored_info.nonce += 1;
-                Ok(!blobs_hash.is_empty())
+                Ok(true)
             }
             None => Err("Identity not found"),
         }
@@ -138,27 +137,23 @@ mod tests {
         let mut hydentity = Hydentity::default();
         let account = "test_account";
         let private_input = "test_input";
-        let blobs_hash = vec!["blob1".to_string(), "blob2".to_string()];
 
         hydentity.register_identity(account, private_input).unwrap();
 
         assert!(hydentity
-            .verify_identity(account, 1, blobs_hash.clone(), private_input)
+            .verify_identity(account, 1, private_input)
             .is_err());
         assert!(hydentity
-            .verify_identity(account, 0, blobs_hash.clone(), private_input)
+            .verify_identity(account, 0, private_input)
             .unwrap());
         assert!(hydentity
-            .verify_identity(account, 0, blobs_hash.clone(), private_input)
+            .verify_identity(account, 0, private_input)
             .is_err()); // Same is wrong as nonce increased
         assert!(hydentity
-            .verify_identity(account, 1, blobs_hash.clone(), private_input)
+            .verify_identity(account, 1, private_input)
             .unwrap());
-        assert!(!hydentity
-            .verify_identity(account, 2, vec![], private_input)
-            .unwrap()); // Empty blobs_hash result in false verification
         assert!(hydentity
-            .verify_identity("nonexistent_account", 0, blobs_hash, private_input)
+            .verify_identity("nonexistent_account", 0, private_input)
             .is_err());
     }
 

@@ -38,7 +38,8 @@ mod e2e_hyllar {
             )
             .await?;
 
-        let proof = load_encoded_receipt_from_file("./tests/proofs/register.hydentity.risc0.proof");
+        let proof =
+            load_encoded_receipt_from_file("./tests/proofs/register.bob.hydentity.risc0.proof");
 
         info!("➡️  Sending proof for register");
         ctx.send_proof(
@@ -65,7 +66,7 @@ mod e2e_hyllar {
             expected_info.unwrap() // hash for "faucet.hydentity::password"
         );
 
-        info!("➡️  Sending blob to transfer 10 tokens from faucet to bob");
+        info!("➡️  Sending blob to transfer 25 tokens from faucet to bob");
         let blob_tx_hash = ctx
             .send_blob(
                 "faucet.hydentity".into(),
@@ -73,22 +74,23 @@ mod e2e_hyllar {
                     IdentityAction::VerifyIdentity {
                         account: "faucet.hydentity".to_string(),
                         nonce: 0,
-                        blobs_hash: vec!["".into()],
                     }
                     .as_blob(ContractName("hydentity".to_owned())),
                     ERC20Action::Transfer {
                         recipient: "bob.hydentity".to_string(),
-                        amount: 100,
+                        amount: 25,
                     }
                     .as_blob(ContractName("hyllar".to_owned()), None, None),
                 ],
             )
             .await?;
 
-        let hydentity_proof =
-            load_encoded_receipt_from_file("./tests/proofs/transfer.hydentity.risc0.proof");
-        let hyllar_proof =
-            load_encoded_receipt_from_file("./tests/proofs/transfer.hyllar.risc0.proof");
+        let hydentity_proof = load_encoded_receipt_from_file(
+            "./tests/proofs/transfer.25-hyllar-to-bob.hydentity.risc0.proof",
+        );
+        let hyllar_proof = load_encoded_receipt_from_file(
+            "./tests/proofs/transfer.25-hyllar-to-bob.hyllar.risc0.proof",
+        );
 
         info!("➡️  Sending proof for hydentity");
         ctx.send_proof(
@@ -116,13 +118,13 @@ mod e2e_hyllar {
             state
                 .balance_of("bob.hydentity")
                 .expect("bob identity not found"),
-            100
+            25
         );
         assert_eq!(
             state
                 .balance_of("faucet.hydentity")
                 .expect("faucet identity not found"),
-            98_999_999_900
+            98_999_999_975
         );
         Ok(())
     }
