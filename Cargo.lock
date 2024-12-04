@@ -2223,6 +2223,7 @@ dependencies = [
  "amm",
  "anyhow",
  "anymap",
+ "assert-json-diff",
  "assert_cmd",
  "assertables",
  "axum",
