@@ -4,6 +4,7 @@ use reqwest::{Response, Url};
 
 use crate::{
     consensus::{staking::Staker, ConsensusInfo},
+    indexer::model::ContractDb,
     model::{
         BlobTransaction, BlockHeight, ContractName, ProofTransaction, RegisterContractTransaction,
     },
@@ -113,9 +114,24 @@ impl ApiHttpClient {
             .context("reading contract response")
     }
 
+    pub async fn list_contracts(&self) -> Result<Vec<ContractDb>> {
+        self.reqwest_client
+            .get(format!("{}v1/indexer/contracts", self.url))
+            .header("Content-Type", "application/json")
+            .send()
+            .await
+            .context("getting Contract")?
+            .json::<Vec<ContractDb>>()
+            .await
+            .context("reading contract response")
+    }
+
     pub async fn get_indexer_contract(&self, contract_name: &ContractName) -> Result<Response> {
         self.reqwest_client
-            .get(format!("{}v1/indexer/contract/{}", self.url, contract_name))
+            .get(format!(
+                "{}v1/indexer/contracts/{}",
+                self.url, contract_name
+            ))
             .header("Content-Type", "application/json")
             .send()
             .await

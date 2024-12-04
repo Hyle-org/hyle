@@ -330,6 +330,17 @@ pub async fn get_blob(
 }
 
 // Contracts
+pub async fn list_contracts(
+    State(state): State<IndexerApiState>,
+) -> Result<Json<Vec<ContractDb>>, StatusCode> {
+    let contract = sqlx::query_as::<_, ContractDb>("SELECT * FROM contracts")
+        .fetch_all(&state.db)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    Ok(Json(contract))
+}
+
 pub async fn get_contract(
     Path(contract_name): Path<String>,
     State(state): State<IndexerApiState>,

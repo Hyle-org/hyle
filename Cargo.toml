@@ -2,6 +2,7 @@
 members = [
     "contracts/hyrun",
     "contracts/hyllar/guest",
+    "contracts/hyllar/indexer",
     "contracts/hydentity/guest",
     "contracts/amm/guest",
     "crates/bonsai-runner"

@@ -271,6 +271,7 @@ impl Indexer {
             .route("/blobs/hash/:tx_hash", get(api::get_blobs_by_tx_hash))
             .route("/blob/hash/:tx_hash/index/:blob_index", get(api::get_blob))
             // contract
+            .route("/contracts", get(api::list_contracts))
             .route("/contract/:contract_name", get(api::get_contract))
             .route(
                 "/state/contract/:contract_name/block/:height",
