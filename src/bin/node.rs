@@ -3,7 +3,7 @@ use axum::Router;
 use axum_otel_metrics::HttpMetricsLayerBuilder;
 use clap::Parser;
 use hyle::{
-    bus::{dont_use_this::get_sender, metrics::BusMetrics, SharedMessageBus, ShutdownSignal},
+    bus::{metrics::BusMetrics, SharedMessageBus},
     consensus::Consensus,
     data_availability::DataAvailability,
     genesis::Genesis,
@@ -17,9 +17,8 @@ use hyle::{
     utils::{
         conf,
         crypto::BlstCrypto,
-        logger::{setup_tracing, LogMe, TracingMode},
-        modules::ModulesHandler,
-        static_type_map::Pick,
+        logger::{setup_tracing, TracingMode},
+        modules::{ModulesHandler, ShutdownClient},
     },
 };
 use std::sync::{Arc, Mutex};
@@ -79,7 +78,6 @@ async fn main() -> Result<()> {
         .build();
 
     let bus = SharedMessageBus::new(BusMetrics::global(config.id.clone()));
-    let shutdown_sender = get_sender::<ShutdownSignal>(&bus).await;
     let crypto = Arc::new(BlstCrypto::new(config.id.clone()));
     let pubkey = Some(crypto.validator_pubkey().clone());
 
@@ -108,7 +106,6 @@ async fn main() -> Result<()> {
         handler.build_module::<Genesis>(ctx.clone()).await?;
         handler.build_module::<Consensus>(ctx.clone()).await?;
     }
-    handler.build_module::<P2P>(ctx.clone()).await?;
     handler
         .build_module::<MockWorkflowHandler>(ctx.clone())
         .await?;
@@ -119,6 +116,8 @@ async fn main() -> Result<()> {
     handler
         .build_module::<DataAvailability>(ctx.clone())
         .await?;
+
+    handler.build_module::<P2P>(ctx.clone()).await?;
 
     // Should come last so the other modules have nested their own routes.
     let router = ctx
@@ -142,37 +141,45 @@ async fn main() -> Result<()> {
         })
         .await?;
 
-    let (running_modules, abort) = handler.start_modules()?;
+    let (running_modules_names, running_modules) = handler.start_modules()?;
+
+    let mut shutdown_client: ShutdownClient = ShutdownClient::new_from_bus(bus.new_handle()).await;
+
+    let shutdown_gracefully = || async move {
+        for module_name in running_modules_names {
+            if !vec!["Genesis"].contains(&module_name) {
+                shutdown_client.shutdown_module(module_name).await;
+            }
+        }
+    };
 
     #[cfg(unix)]
     {
         use tokio::signal::unix;
         let mut terminate = unix::signal(unix::SignalKind::interrupt())?;
         tokio::select! {
-            Err(e) = running_modules => {
+            (Err(e),_, _) = running_modules => {
                 error!("Error running modules: {:?}", e);
             }
             _ = tokio::signal::ctrl_c() => {
                 info!("Ctrl-C received, shutting down");
-                shutdown_sender.send(ShutdownSignal).log_error("Sending shutdown signal");
-                // abort();
+                shutdown_gracefully().await;
             }
             _ = terminate.recv() =>  {
                 info!("SIGTERM received, shutting down");
-                shutdown_sender.send(ShutdownSignal).log_error("Sending shutdown signal");
-                // abort();
+                shutdown_gracefully().await;
             }
         }
     }
     #[cfg(not(unix))]
     {
         tokio::select! {
-            Err(e) = running_modules => {
+            Err(e) = all_modules => {
                 error!("Error running modules: {:?}", e);
             }
             _ = tokio::signal::ctrl_c() => {
                 info!("Ctrl-C received, shutting down");
-                abort();
+                shutdown_gracefully().await;
             }
         }
     }

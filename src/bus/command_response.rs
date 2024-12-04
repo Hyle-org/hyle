@@ -177,15 +177,17 @@ macro_rules! handle_messages {
     };
 
     // Shorthand to listen to topic, and break the loop
-    (bus($bus:expr) index($index:ident) break_on<$message:ty> $($rest:tt)*) => {
-        let $index = unsafe { &mut *Pick::<tokio::sync::broadcast::Receiver<$message>>::splitting_get_mut(&mut $bus) };
+    (bus($bus:expr) index($index:ident) break_on($module_name:expr) $($rest:tt)*) => {
+        let $index = unsafe { &mut *Pick::<tokio::sync::broadcast::Receiver<ShutdownModule>>::splitting_get_mut(&mut $bus) };
         paste! {
         handle_messages! {
             bus($bus) index([<$index a>]) $($rest)*
-            Ok(_) = $index.recv()  => {
-                receive_bus_metrics::<$message, _>(&mut $bus);
-                warn!("Break signal received");
-                break;
+            Ok(shutdown_event) = $index.recv() => {
+                if shutdown_event.module == $module_name {
+                    receive_bus_metrics::<ShutdownModule, _>(&mut $bus);
+                    warn!("Break signal received for module {}", $module_name);
+                    break;
+                }
             }
         }
         }

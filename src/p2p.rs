@@ -3,10 +3,17 @@
 use std::{sync::Arc, time::Duration};
 
 use crate::{
-    bus::{bus_client, BusMessage, SharedMessageBus, ShutdownSignal},
+    bus::{bus_client, BusMessage, SharedMessageBus},
     handle_messages,
     model::SharedRunContext,
-    utils::{conf::SharedConf, crypto::SharedBlstCrypto, modules::Module},
+    utils::{
+        conf::SharedConf,
+        crypto::SharedBlstCrypto,
+        modules::{
+            boot_signal::{ShutdownCompleted, ShutdownModule},
+            Module,
+        },
+    },
 };
 use anyhow::{bail, Result};
 use tokio::{net::TcpListener, time::sleep};
@@ -25,8 +32,9 @@ impl BusMessage for P2PCommand {}
 
 bus_client! {
 struct P2PBusClient {
+    sender(ShutdownCompleted),
     receiver(P2PCommand),
-    receiver(ShutdownSignal),
+    receiver(ShutdownModule),
 }
 }
 
@@ -134,7 +142,7 @@ impl P2P {
 
         handle_messages! {
             on_bus self.bus_client,
-            break_on<ShutdownSignal>
+            break_on(stringify!(P2P))
             listen<P2PCommand> cmd => {
                  self.handle_command(cmd)
             }
@@ -174,6 +182,9 @@ impl P2P {
                 }
             }
         }
+        _ = self.bus_client.send(ShutdownCompleted {
+            module: stringify!(P2P).to_string(),
+        });
         Ok(())
     }
 }

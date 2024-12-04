@@ -1,21 +1,38 @@
 //! Public API for interacting with the node.
 
-use anyhow::{Context, Result};
 use axum::{
     extract::State,
-    http::StatusCode,
     response::{IntoResponse, Response},
     routing::get,
     Json, Router,
 };
 use axum_otel_metrics::HttpMetricsLayer;
+use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 use tower_http::trace::TraceLayer;
 use tracing::info;
 
-use crate::{bus::SharedMessageBus, model::ValidatorPublicKey, utils::modules::Module};
+use crate::{
+    bus::{bus_client, SharedMessageBus},
+    model::ValidatorPublicKey,
+    utils::{
+        modules::{
+            boot_signal::{ShutdownCompleted, ShutdownModule},
+            Module,
+        },
+        static_type_map::Pick,
+    },
+};
+use anyhow::{Context, Result};
 
 pub mod client;
+
+bus_client! {
+    struct RestBusClient {
+        sender(ShutdownCompleted),
+        receiver(ShutdownModule),
+    }
+}
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct NodeInfo {
@@ -39,6 +56,7 @@ pub struct RouterState {
 pub struct RestApi {
     rest_addr: String,
     app: Option<Router>,
+    bus: RestBusClient,
 }
 impl Module for RestApi {
     fn name() -> &'static str {
@@ -63,6 +81,7 @@ impl Module for RestApi {
         Ok(RestApi {
             rest_addr: ctx.rest_addr.clone(),
             app: Some(app),
+            bus: RestBusClient::new_from_bus(ctx.bus.new_handle()).await,
         })
     }
 
@@ -77,15 +96,37 @@ pub async fn get_info(State(state): State<RouterState>) -> Result<impl IntoRespo
 
 impl RestApi {
     pub async fn serve(&mut self) -> Result<()> {
+        info!("rest listening on {}", self.rest_addr);
+
         let listener = tokio::net::TcpListener::bind(&self.rest_addr)
             .await
             .context("Starting rest server")?;
 
-        info!("rest listening on {}", self.rest_addr);
+        let receiver =
+            Pick::<tokio::sync::broadcast::Receiver<ShutdownModule>>::get_mut(&mut self.bus);
 
-        axum::serve(listener, self.app.take().expect("app is not set"))
-            .await
-            .context("Starting rest server")
+        let shutdown_event = async move {
+            loop {
+                if let Ok(msg) = receiver.recv().await {
+                    if msg.module == "RestApi" {
+                        break;
+                    }
+                }
+            }
+            Ok::<(), ()>(())
+        };
+
+        tokio::select! {
+            Ok(_) = shutdown_event => {}
+
+            _ = axum::serve(listener, self.app.take().expect("app is not set")) => {}
+        }
+
+        _ = self.bus.send(ShutdownCompleted {
+            module: stringify!(RestApi).to_string(),
+        });
+
+        Ok(())
     }
 }
 

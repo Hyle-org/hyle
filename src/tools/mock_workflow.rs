@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use crate::{
-    bus::{BusMessage, SharedMessageBus, ShutdownSignal},
+    bus::{BusMessage, SharedMessageBus},
     handle_messages,
     mempool::api::RestApiMessage,
     model::{
@@ -9,7 +9,10 @@ use crate::{
         ProofTransaction, RegisterContractTransaction, SharedRunContext, Transaction,
     },
     rest::client::ApiHttpClient,
-    utils::modules::Module,
+    utils::modules::{
+        boot_signal::{ShutdownCompleted, ShutdownModule},
+        Module,
+    },
 };
 use anyhow::Result;
 use hyle_contract_sdk::{Identity, StateDigest};
@@ -23,7 +26,8 @@ use crate::bus::bus_client;
 bus_client! {
 struct MockWorkflowBusClient {
     sender(RestApiMessage),
-    receiver(ShutdownSignal),
+    sender(ShutdownCompleted),
+    receiver(ShutdownModule),
     receiver(RunScenario),
 }
 }
@@ -124,7 +128,7 @@ impl MockWorkflowHandler {
     pub async fn start(&mut self) -> anyhow::Result<()> {
         handle_messages! {
             on_bus self.bus,
-            break_on<ShutdownSignal>
+            break_on(stringify!(MockWorkflowHandler))
             listen<RunScenario> cmd => {
                 match cmd {
                     RunScenario::StressTest => {
@@ -136,6 +140,10 @@ impl MockWorkflowHandler {
                 }
             }
         }
+
+        _ = self.bus.send(ShutdownCompleted {
+            module: stringify!(MockWorkflowHandler).to_string(),
+        });
         Ok(())
     }
 

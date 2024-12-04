@@ -4,7 +4,7 @@ mod api;
 mod blocks;
 
 use crate::{
-    bus::{bus_client, command_response::Query, BusMessage, SharedMessageBus, ShutdownSignal},
+    bus::{bus_client, command_response::Query, BusMessage, SharedMessageBus},
     consensus::ConsensusCommand,
     genesis::GenesisEvent,
     handle_messages,
@@ -15,7 +15,14 @@ use crate::{
     },
     node_state::{model::Contract, NodeState},
     p2p::network::{NetMessage, OutboundMessage, PeerEvent},
-    utils::{conf::SharedConf, logger::LogMe, modules::Module},
+    utils::{
+        conf::SharedConf,
+        logger::LogMe,
+        modules::{
+            boot_signal::{ShutdownCompleted, ShutdownModule},
+            Module,
+        },
+    },
 };
 use anyhow::{Context, Result};
 use bincode::{Decode, Encode};
@@ -74,7 +81,8 @@ struct DABusClient {
     sender(OutboundMessage),
     sender(DataEvent),
     sender(ConsensusCommand),
-    receiver(ShutdownSignal),
+    sender(ShutdownCompleted),
+    receiver(ShutdownModule),
     receiver(Query<ContractName, Contract>),
     receiver(DataNetMessage),
     receiver(PeerEvent),
@@ -191,6 +199,7 @@ impl DataAvailability {
 
         handle_messages! {
             on_bus self.bus,
+            break_on(stringify!(DataAvailability))
             command_response<ContractName, Contract> cmd => {
                 self.node_state.contracts.get(cmd).cloned().context("Contract not found")
             }
@@ -298,6 +307,10 @@ impl DataAvailability {
                 }
             }
         }
+        _ = self.bus.send(ShutdownCompleted {
+            module: stringify!(DataAvailability).to_string(),
+        });
+
         Ok(())
     }
 

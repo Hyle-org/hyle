@@ -1,7 +1,7 @@
 //! Mempool logic & pending transaction management.
 
 use crate::{
-    bus::{bus_client, command_response::Query, BusMessage, SharedMessageBus, ShutdownSignal},
+    bus::{bus_client, command_response::Query, BusMessage, SharedMessageBus},
     consensus::ConsensusEvent,
     genesis::GenesisEvent,
     handle_messages,
@@ -15,7 +15,10 @@ use crate::{
     utils::{
         crypto::{BlstCrypto, SharedBlstCrypto},
         logger::LogMe,
-        modules::Module,
+        modules::{
+            boot_signal::{ShutdownCompleted, ShutdownModule},
+            Module,
+        },
     },
 };
 use anyhow::{bail, Context, Result};
@@ -39,7 +42,8 @@ bus_client! {
 struct MempoolBusClient {
     sender(OutboundMessage),
     sender(MempoolEvent),
-    receiver(ShutdownSignal),
+    sender(ShutdownCompleted),
+    receiver(ShutdownModule),
     receiver(SignedByValidator<MempoolNetMessage>),
     receiver(RestApiMessage),
     receiver(ConsensusEvent),
@@ -131,7 +135,7 @@ impl Mempool {
 
         handle_messages! {
             on_bus self.bus,
-            break_on<ShutdownSignal>
+            break_on(stringify!(Mempool))
             listen<SignedByValidator<MempoolNetMessage>> cmd => {
                 let _ = self.handle_net_message(cmd)
                     .log_error("Handling MempoolNetMessage in Mempool");
@@ -162,6 +166,9 @@ impl Mempool {
                     .log_error("Creating Data Proposal on tick");
             }
         }
+        _ = self.bus.send(ShutdownCompleted {
+            module: stringify!(Mempool).to_string(),
+        });
         Ok(())
     }
 

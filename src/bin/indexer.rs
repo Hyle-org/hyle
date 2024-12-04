@@ -96,23 +96,23 @@ async fn main() -> Result<()> {
         })
         .await?;
 
-    let (running_modules, abort) = handler.start_modules()?;
+    let (_, running_modules) = handler.start_modules()?;
 
     #[cfg(unix)]
     {
         use tokio::signal::unix;
         let mut terminate = unix::signal(unix::SignalKind::interrupt())?;
         tokio::select! {
-            Err(e) = running_modules => {
+            (Err(e),_,_) = running_modules => {
                 error!("Error running modules: {:?}", e);
             }
             _ = tokio::signal::ctrl_c() => {
                 info!("Ctrl-C received, shutting down");
-                abort();
+                // abort();
             }
             _ = terminate.recv() =>  {
                 info!("SIGTERM received, shutting down");
-                abort();
+                // abort();
             }
         }
     }
@@ -124,7 +124,7 @@ async fn main() -> Result<()> {
             }
             _ = tokio::signal::ctrl_c() => {
                 info!("Ctrl-C received, shutting down");
-                abort();
+                // abort();
             }
         }
     }

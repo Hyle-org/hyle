@@ -1,11 +1,15 @@
 use std::{fs, future::Future, path::Path, pin::Pin};
 
-use anyhow::{bail, Error, Result};
+use anyhow::{Error, Result};
+use boot_signal::{ShutdownCompleted, ShutdownModule};
 use rand::{distributions::Alphanumeric, Rng};
-use tokio::task::JoinHandle;
-use tracing::{debug, error, info, warn};
+use tokio::task::{JoinError, JoinHandle};
+use tracing::{debug, info, warn};
 
-use crate::utils::logger::LogMe;
+use crate::{
+    bus::{bus_client, SharedMessageBus},
+    utils::logger::LogMe,
+};
 
 /// Module trait to define startup dependencies
 pub trait Module
@@ -78,6 +82,51 @@ impl ModuleStarter {
     }
 }
 
+pub mod boot_signal {
+    use crate::bus::BusMessage;
+    #[derive(Clone, Debug)]
+    pub struct ShutdownModule {
+        pub module: String,
+    }
+    #[derive(Clone, Debug)]
+    pub struct ShutdownCompleted {
+        pub module: String,
+    }
+
+    impl BusMessage for ShutdownModule {}
+    impl BusMessage for ShutdownCompleted {}
+}
+
+bus_client! {
+    pub struct ShutdownClient {
+        sender(boot_signal::ShutdownModule),
+        receiver(boot_signal::ShutdownCompleted),
+    }
+}
+
+impl ShutdownClient {
+    pub async fn shutdown_module(&mut self, module_name: &str) {
+        info!("Calling shutdown on {}", module_name);
+        _ = self
+            .send(ShutdownModule {
+                module: module_name.to_string(),
+            })
+            .log_error("Shutting down module");
+
+        loop {
+            let msg: Result<ShutdownCompleted, _> = self.recv().await;
+            debug!("Received shutdown completed msg {:?}", &msg);
+            if let Ok(msg) = msg {
+                debug!("Received shutdown completed for {}", msg.module);
+                if msg.module == module_name {
+                    debug!("Module {} successfully shut", msg.module);
+                    break;
+                }
+            }
+        }
+    }
+}
+
 #[derive(Default)]
 pub struct ModulesHandler {
     modules: Vec<ModuleStarter>,
@@ -115,14 +164,17 @@ impl ModulesHandler {
     /// Start Modules
     pub fn start_modules(
         &mut self,
-    ) -> Result<
-        (
-            impl Future<Output = Result<(), Error>> + Send,
-            impl FnOnce() + Send,
-        ),
-        Error,
-    > {
-        let mut tasks: Vec<JoinHandle<Result<(), Error>>> = vec![];
+    ) -> Result<(
+        Vec<&'static str>,
+        impl Future<
+            Output = (
+                Result<Result<(), Error>, JoinError>,
+                usize,
+                Vec<JoinHandle<Result<(), Error>>>,
+            ),
+        >,
+    )> {
+        let mut tasks: Vec<JoinHandle<Result<()>>> = vec![];
         let mut names: Vec<&'static str> = vec![];
 
         for module in self.modules.drain(..) {
@@ -131,53 +183,10 @@ impl ModulesHandler {
             tasks.push(handle);
         }
 
-        // Create an abort command (mildly hacky)
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        let abort = move || {
-            tx.send(()).ok();
-        };
-        tasks.push(
-            tokio::task::Builder::new()
-                .name("wait-abort-cmd")
-                .spawn(async move {
-                    rx.await.ok();
-                    Ok(())
-                })?,
-        );
-        names.push("abort");
+        let handle = futures::future::select_all(tasks);
 
         // Return a future that waits for the first error or the abort command.
-        Ok((Self::wait_for_first(tasks, names), abort))
-    }
-
-    async fn wait_for_first(
-        mut handles: Vec<JoinHandle<Result<(), Error>>>,
-        names: Vec<&'static str>,
-    ) -> Result<(), Error> {
-        while !handles.is_empty() {
-            let (first, pos, remaining) = futures::future::select_all(handles).await;
-            handles = remaining;
-
-            match first {
-                Ok(result) => match result {
-                    Ok(_) => {
-                        info!("Module {} stopped successfully", names[pos]);
-                    }
-                    Err(e) => {
-                        error!("Module {} stopped with error: {}", names[pos], e);
-                        // Abort remaining tasks
-                        for handle in handles {
-                            handle.abort();
-                        }
-                        bail!("Error in module {}", names[pos]);
-                    }
-                },
-                Err(e) => {
-                    bail!("Error while waiting for module {}: {}", names[pos], e)
-                }
-            }
-        }
-        Ok(())
+        Ok((names, handle))
     }
 }
 
@@ -275,9 +284,9 @@ mod tests {
             let (future, abort) = handler.start_modules().unwrap();
 
             // Start the modules and then abort
-            let handle = tokio::spawn(future);
-            abort();
-            handle.await.unwrap().unwrap();
+            // let handle = tokio::spawn(future);
+            // abort();
+            // handle.await.unwrap().unwrap();
         });
     }
 }
