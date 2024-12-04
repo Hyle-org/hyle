@@ -9,11 +9,11 @@ use crate::{
 };
 use anyhow::{bail, Context, Error, Result};
 use bincode::{Decode, Encode};
-use hyle_contract_sdk::{BlobIndex, HyleOutput, StateDigest, TxHash};
+use hyle_contract_sdk::{HyleOutput, StateDigest, TxHash};
 use model::{Contract, Timeouts, UnsettledBlobMetadata, UnsettledBlobTransaction};
 use ordered_tx_map::OrderedTxMap;
 use std::collections::HashMap;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info};
 
 pub mod model;
 mod ordered_tx_map;
@@ -191,6 +191,15 @@ impl NodeState {
             .get_for_settlement(&tx.proof_transaction.blob_tx_hash)
             .context("BlobTx that is been proved is either settled or does not exists")?;
 
+        // Sanity check: if some of the blob contracts are not registered, we can't proceed
+        if !unsettled_tx
+            .blobs
+            .iter()
+            .all(|blob| self.contracts.contains_key(&blob.contract_name))
+        {
+            bail!("Cannot settle TX: some blob contracts are not registered");
+        }
+
         // TODO: add diverse verifications ? (without the inital state checks!).
         // TODO: success to false is valid outcome and can be settled.
         Self::verify_hyle_output(
@@ -210,7 +219,7 @@ impl NodeState {
             .push(tx.hyle_output.clone());
 
         let mut settled_blob_tx_hashes = vec![];
-        let mut updated_states = HashMap::new();
+        let updated_states = HashMap::new();
 
         if !is_next_to_settle {
             debug!(
@@ -223,11 +232,12 @@ impl NodeState {
             });
         }
 
-        Self::verify_identity(&unsettled_tx)?;
+        Self::verify_identity(unsettled_tx)?;
 
-        let did_settle = Self::settle_blobs_recursively(
+        info!("Settling");
+        let (updated_states, did_settle) = Self::settle_blobs_recursively(
             &self.contracts,
-            &mut updated_states,
+            updated_states,
             unsettled_tx.blobs.iter(),
         );
 
@@ -243,6 +253,7 @@ impl NodeState {
 
         for (contract_name, next_state) in updated_states.iter() {
             debug!("Update {} contract state: {:?}", contract_name, next_state);
+            // Safe to unwrap - all contract names are validated to exist above.
             self.contracts.get_mut(contract_name).unwrap().state = next_state.clone();
         }
 
@@ -260,23 +271,29 @@ impl NodeState {
 
     fn settle_blobs_recursively<'a>(
         contracts: &HashMap<ContractName, Contract>,
-        updated_states: &mut HashMap<ContractName, StateDigest>,
-        mut blob_iter: impl Iterator<Item = &'a UnsettledBlobMetadata>,
-    ) -> bool {
+        current_states: HashMap<ContractName, StateDigest>,
+        mut blob_iter: impl Iterator<Item = &'a UnsettledBlobMetadata> + Clone,
+    ) -> (HashMap<ContractName, StateDigest>, bool) {
         let Some(current_blob) = blob_iter.next() else {
-            return true;
+            return (current_states, true);
         };
-        let cn = &current_blob.contract_name;
-        let ns = updated_states
-            .get(cn)
-            .unwrap_or(&contracts.get(cn).unwrap().state);
+        let contract_name = &current_blob.contract_name;
+        let known_initial_state = current_states
+            .get(contract_name)
+            .unwrap_or(&contracts.get(contract_name).unwrap().state); // Safe to unwrap - all contract names are validated to exist above.
         for proof_metadata in current_blob.metadata.iter() {
-            if proof_metadata.initial_state == *ns {
-                updated_states.insert(cn.clone(), proof_metadata.next_state.clone());
-                return Self::settle_blobs_recursively(contracts, updated_states, blob_iter);
+            if proof_metadata.initial_state == *known_initial_state {
+                // TODO: ideally make this CoW
+                let mut us = current_states.clone();
+                us.insert(contract_name.clone(), proof_metadata.next_state.clone());
+                if let (updated_states, true) =
+                    Self::settle_blobs_recursively(contracts, us, blob_iter.clone())
+                {
+                    return (updated_states, true);
+                }
             }
         }
-        false
+        (current_states, false)
     }
 
     // TODO: this should probably be done much earlier, proofs aren't involved
@@ -654,6 +671,103 @@ mod test {
 
         // Check that we did settled with the last state
         assert_eq!(state.contracts.get(&c1).unwrap().state.0, vec![10, 11, 12]);
+    }
+
+    fn new_verified_proof_tx(
+        state: &NodeState,
+        contract_name: &ContractName,
+        blob_tx_hash: &TxHash,
+        blob_tx: &BlobTransaction,
+        blob_index: BlobIndex,
+        initial_state: &[u8],
+        next_state: &[u8],
+    ) -> VerifiedProofTransaction {
+        let mut hyle_output = make_hyle_output(blob_tx.clone(), blob_index);
+        hyle_output.initial_state = StateDigest(initial_state.to_vec());
+        hyle_output.next_state = StateDigest(next_state.to_vec());
+
+        let proof = ProofTransaction {
+            contract_name: contract_name.clone(),
+            blob_tx_hash: blob_tx_hash.clone(),
+            proof: ProofData::Bytes(serde_json::to_vec(&hyle_output).unwrap()),
+        };
+
+        VerifiedProofTransaction {
+            hyle_output: state.verify_proof(&proof).unwrap(),
+            proof_transaction: proof,
+        }
+    }
+
+    #[test_log::test(tokio::test)]
+    async fn dead_end_in_proving_settles_still() {
+        let mut state = new_node_state().await;
+
+        let c1 = ContractName("c1".to_string());
+        let register_c1 = new_register_contract(c1.clone());
+
+        let first_blob = new_blob(&c1.0);
+        let second_blob = new_blob(&c1.0);
+        let third_blob = new_blob(&c1.0);
+        let blob_tx = BlobTransaction {
+            identity: Identity("test.c1".to_string()),
+            blobs: vec![first_blob, second_blob, third_blob],
+        };
+        let blob_tx_hash = blob_tx.hash();
+
+        state.handle_register_contract_tx(&register_c1).unwrap();
+        state.handle_blob_tx(&blob_tx).unwrap();
+
+        // The test is that we send a proof for the first blob, then a proof the second blob with next_state B,
+        // then a proof for the second blob with next_state C, then a proof for the third blob with initial_state C,
+        // and it should settle, ignoring the initial 'dead end'.
+
+        let first_proof_tx = new_verified_proof_tx(
+            &state,
+            &c1,
+            &blob_tx_hash,
+            &blob_tx,
+            BlobIndex(0),
+            &[0, 1, 2, 3],
+            &[2],
+        );
+
+        let second_proof_tx_b = new_verified_proof_tx(
+            &state,
+            &c1,
+            &blob_tx_hash,
+            &blob_tx,
+            BlobIndex(1),
+            &[2],
+            &[3],
+        );
+
+        let second_proof_tx_c = new_verified_proof_tx(
+            &state,
+            &c1,
+            &blob_tx_hash,
+            &blob_tx,
+            BlobIndex(1),
+            &[2],
+            &[4],
+        );
+
+        let third_proof_tx = new_verified_proof_tx(
+            &state,
+            &c1,
+            &blob_tx_hash,
+            &blob_tx,
+            BlobIndex(2),
+            &[4],
+            &[5],
+        );
+
+        state.handle_verified_proof_tx(&first_proof_tx).unwrap();
+        state.handle_verified_proof_tx(&second_proof_tx_b).unwrap();
+        state.handle_verified_proof_tx(&second_proof_tx_c).unwrap();
+        state.handle_verified_proof_tx(&third_proof_tx).unwrap();
+
+        // Check that we did settled with the last state
+        assert_eq!(state.contracts.get(&c1).unwrap().state.0, vec![5]);
     }
 
     #[test_log::test(tokio::test)]

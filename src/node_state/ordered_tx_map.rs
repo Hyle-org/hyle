@@ -95,7 +95,7 @@ mod tests {
     }
 
     fn is_next_unsettled_tx(map: &mut OrderedTxMap, hash: &TxHash) -> bool {
-        let Some((tx, is_next)) = map.get_for_settlement(hash) else {
+        let Some((_, is_next)) = map.get_for_settlement(hash) else {
             return false;
         };
         is_next
