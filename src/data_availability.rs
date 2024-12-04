@@ -119,6 +119,7 @@ impl Module for DataAvailability {
     async fn build(ctx: Self::Context) -> Result<Self> {
         let bus = DABusClient::new_from_bus(ctx.common.bus.new_handle()).await;
 
+        #[cfg(not(test))]
         let db = sled::Config::new()
             .use_compression(true)
             .compression_factor(3)
@@ -128,6 +129,12 @@ impl Module for DataAvailability {
                     .data_directory
                     .join("data_availability.db"),
             )
+            .open()
+            .context("opening the database")?;
+
+        #[cfg(test)]
+        let db = sled::Config::new()
+            .use_compression(false)
             .open()
             .context("opening the database")?;
 
@@ -162,6 +169,10 @@ impl Module for DataAvailability {
 impl DataAvailability {
     pub async fn start(&mut self) -> Result<()> {
         let stream_request_receiver = TcpListener::bind(&self.config.da_address).await?;
+        debug!(
+            "📡  Starting DataAvailability module, listening for stream requests on {}",
+            &self.config.da_address
+        );
 
         let mut pending_stream_requests = JoinSet::new();
 
@@ -226,7 +237,7 @@ impl DataAvailability {
                         Some(Ok(data)) => {
                             let (start_height, _) =
                                 bincode::decode_from_slice(&data, bincode::config::standard())
-                                    .map_err(|_| anyhow::anyhow!("Could not decode start height"))?;
+                                    .map_err(|e| anyhow::anyhow!("Could not decode start height: {:?}", e))?;
                             Ok((start_height, sender, receiver, addr.to_string()))
                         }
                         _ => Err(anyhow::anyhow!("no start height")),
@@ -241,6 +252,7 @@ impl DataAvailability {
                         if let Err(e) = self.start_streaming_to_peer(start_height, ping_sender.clone(), catchup_sender.clone(), sender, receiver, &peer_ip).await {
                             error!("Error while starting stream to peer {}: {:?}", &peer_ip, e)
                         }
+                        info!("📡 Started streaming to peer {}", &peer_ip);
                     }
                     Err(e) => {
                         error!("Error while handling stream request: {:?}", e);
@@ -254,6 +266,8 @@ impl DataAvailability {
                 let hash = block_hashes
                 .iter()
                 .next();
+
+                trace!("📡  Sending block {:?} to peer {}", &hash, &peer_ip);
                 if let Some(hash) = hash {
                     if let Some(Ok(Some(block))) = block_hashes.take(&hash.clone()).map(|hash| self.blocks.get(hash))
                     {
@@ -411,7 +425,6 @@ impl DataAvailability {
     }
 
     async fn add_block(&mut self, block_hash: BlockHash, block: Block) {
-        #[cfg(not(test))]
         // Don't run this in tests, takes forever.
         if let Err(e) = self.blocks.put(block.clone()) {
             error!("storing block: {}", e);
@@ -555,7 +568,8 @@ impl DataAvailability {
                 blocks::BlocksOrdKey(
                     self.blocks
                         .last()
-                        .map_or(BlockHeight(start_height), |block| block.height),
+                        .map_or(BlockHeight(start_height), |block| block.height)
+                        + 1,
                 ),
             )
             .filter_map(|block| {
@@ -573,13 +587,20 @@ impl DataAvailability {
 
 #[cfg(test)]
 mod tests {
-    use crate::model::{
-        Blob, BlobData, BlobTransaction, Block, BlockHash, BlockHeight, ContractName, Hashable,
-        Transaction, TransactionData,
+    use crate::{
+        mempool::MempoolEvent,
+        model::{
+            Blob, BlobData, BlobTransaction, Block, BlockHash, BlockHeight, ContractName, Hashable,
+            Transaction, TransactionData,
+        },
+        utils::conf::Conf,
     };
+    use futures::{SinkExt, StreamExt};
     use hyle_contract_sdk::Identity;
+    use tokio::io::AsyncWriteExt;
+    use tokio_util::codec::{Framed, LengthDelimitedCodec};
 
-    use super::blocks::Blocks;
+    use super::{blocks::Blocks, bus_client};
     use anyhow::Result;
 
     #[test]
@@ -651,5 +672,131 @@ mod tests {
         for block in blocks {
             da.handle_block(block).await;
         }
+    }
+
+    use crate::bus::SharedMessageBus;
+    bus_client! {
+    #[derive(Debug)]
+    struct TestBusClient {
+        sender(MempoolEvent),
+    }
+    }
+
+    #[test_log::test(tokio::test)]
+    async fn test_da_streaming() {
+        let tmpdir = tempfile::Builder::new()
+            .prefix("history-tests")
+            .tempdir()
+            .unwrap();
+        let db = sled::open(tmpdir.path().join("history")).unwrap();
+        let blocks = Blocks::new(&db).unwrap();
+
+        let global_bus = crate::bus::SharedMessageBus::new(
+            crate::bus::metrics::BusMetrics::global("global".to_string()),
+        );
+        let bus = super::DABusClient::new_from_bus(global_bus.new_handle()).await;
+        let mut block_sender = TestBusClient::new_from_bus(global_bus).await;
+
+        let config: Conf = Conf::new(None, None, None).unwrap();
+        let mut da = super::DataAvailability {
+            config: config.clone().into(),
+            bus,
+            blocks,
+            buffered_blocks: Default::default(),
+            self_pubkey: Default::default(),
+            asked_last_block: Default::default(),
+            stream_peer_metadata: Default::default(),
+            node_state: Default::default(),
+        };
+
+        let mut block = Block {
+            parent_hash: BlockHash::new("0000000000000000"),
+            height: BlockHeight(0),
+            timestamp: 420,
+            new_bonded_validators: vec![],
+            txs: vec![],
+        };
+        let mut blocks = vec![];
+        for i in 1..15 {
+            blocks.push(block.clone());
+            block.parent_hash = block.hash();
+            block.height = BlockHeight(i);
+        }
+        blocks.reverse();
+        for block in blocks {
+            da.handle_block(block).await;
+        }
+
+        tokio::spawn(async move {
+            da.start().await.unwrap();
+        });
+
+        // wait until it's up
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        let mut stream = tokio::net::TcpStream::connect(config.da_address.clone())
+            .await
+            .unwrap();
+
+        // TODO: figure out why writing doesn't work with da_stream.
+        stream.write_u32(8).await.unwrap();
+        stream.write_u64(0).await.unwrap();
+
+        let mut da_stream = Framed::new(stream, LengthDelimitedCodec::new());
+
+        let mut heights_received = vec![];
+        while let Some(Ok(cmd)) = da_stream.next().await {
+            let bytes = cmd;
+            let block: Block = bincode::decode_from_slice(&bytes, bincode::config::standard())
+                .unwrap()
+                .0;
+            heights_received.push(block.height.0);
+            if heights_received.len() == 14 {
+                break;
+            }
+        }
+        heights_received.sort();
+        assert_eq!(heights_received, (0..14).collect::<Vec<u64>>());
+
+        da_stream.close().await.unwrap();
+
+        block_sender
+            .send(MempoolEvent::CommitBlock(vec![], vec![]))
+            .unwrap();
+        block_sender
+            .send(MempoolEvent::CommitBlock(vec![], vec![]))
+            .unwrap();
+        block_sender
+            .send(MempoolEvent::CommitBlock(vec![], vec![]))
+            .unwrap();
+        block_sender
+            .send(MempoolEvent::CommitBlock(vec![], vec![]))
+            .unwrap();
+
+        // End of the first stream
+
+        let mut stream = tokio::net::TcpStream::connect(config.da_address.clone())
+            .await
+            .unwrap();
+
+        // TODO: figure out why writing doesn't work with da_stream.
+        stream.write_u32(8).await.unwrap();
+        stream.write_u64(0).await.unwrap();
+
+        let mut da_stream = Framed::new(stream, LengthDelimitedCodec::new());
+
+        let mut heights_received = vec![];
+        while let Some(Ok(cmd)) = da_stream.next().await {
+            let bytes = cmd;
+            let block: Block = bincode::decode_from_slice(&bytes, bincode::config::standard())
+                .unwrap()
+                .0;
+            heights_received.push(block.height.0);
+            if heights_received.len() == 18 {
+                break;
+            }
+        }
+        heights_received.sort();
+        assert_eq!(heights_received, (0..18).collect::<Vec<u64>>());
     }
 }
