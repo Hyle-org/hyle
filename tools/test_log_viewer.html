@@ -12,7 +12,7 @@
         }
         textarea {
             width: 100%;
-            height: 150px;
+            height: 100px;
             margin-bottom: 1rem;
             font-family: monospace;
             font-size: 14px;
@@ -70,11 +70,25 @@
             font-weight: bold;
             color: #555;
         }
+        .documentation {
+            background: #f9f9f9;
+            border: 1px solid #ddd;
+            padding: 1rem;
+            border-radius: 5px;
+            margin-bottom: 1rem;
+            font-size: 0.9rem;
+        }
     </style>
 </head>
 <body>
-    <h1>Log Viewer</h1>
-    <textarea id="log-input" placeholder="Paste your logs here"></textarea>
+    <div class="documentation">
+        <h1>Log Viewer</h1>
+        <p>Paste your logs below and click "Process Logs" to view them in a structured format.</p>
+        <p>Logs are categorized by node, timestamp, and level (INFO, ERROR, WARN, DEBUG).</p>
+        <p>Click on a node's header to toggle its visibility.</p>
+    </div>
+
+    <textarea id="log-input" placeholder="Paste your logs here" spellcheck="false" autocomplete="off"></textarea>
     <button onclick="processLogs()">Process Logs</button>
     <div id="log-container" class="log-container"></div>
 
@@ -150,8 +164,9 @@
         }
 
         function processLogs() {
-            const rawLog = document.getElementById("log-input").value;
-            const { nodeLogs, sortedTimestamps } = parseLogs(rawLog);
+            const rawLog = document.getElementById("log-input");
+            const { nodeLogs, sortedTimestamps } = parseLogs(rawLog.value);
+            rawLog.value = "";
             renderLogs(nodeLogs, sortedTimestamps);
         }
     </script>
