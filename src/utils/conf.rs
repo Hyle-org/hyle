@@ -24,6 +24,7 @@ pub type SharedConf = Arc<Conf>;
 pub struct Conf {
     pub id: String,
     pub host: String,
+    pub p2p_listen: bool,
     pub peers: Vec<String>,
     pub storage: Storage,
     pub consensus: Consensus,

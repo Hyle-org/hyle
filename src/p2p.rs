@@ -120,6 +120,19 @@ impl P2P {
         // Wait all other threads to start correctly
         sleep(Duration::from_secs(1)).await;
 
+        if !self.config.p2p_listen {
+            for peer in self.config.peers.clone() {
+                self.spawn_peer(peer);
+            }
+            handle_messages! {
+                on_bus self.bus_client,
+                listen<P2PCommand> cmd => {
+                     self.handle_command(cmd)
+                }
+            }
+            // unreachable!();
+        }
+
         let listener = TcpListener::bind(&self.config.host).await?;
         info!("p2p listening on {}", listener.local_addr()?);
 
