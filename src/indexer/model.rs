@@ -70,7 +70,7 @@ pub struct TransactionWithBlobs {
 pub struct BlobWithStatus {
     pub contract_name: String, // Contract name associated with the blob
     pub data: Vec<u8>,         // Actual blob data
-    pub verified: bool,        // Verification status
+    pub proof_outputs: Vec<serde_json::Value>, // outputs of proofs
 }
 
 #[derive(Debug, sqlx::FromRow, Serialize, Deserialize)]

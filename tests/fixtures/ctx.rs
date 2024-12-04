@@ -224,6 +224,7 @@ impl E2ECtx {
         &self,
         identity: Identity,
         blobs: Vec<Blob>,
+        blob_tx_hash: &TxHash,
         index: BlobIndex,
     ) -> ProofData
     where
@@ -234,7 +235,7 @@ impl E2ECtx {
             initial_state: Contract::state_digest(),
             next_state: StateDigest(vec![4, 5, 6]), // FIXME
             identity,
-            tx_hash: TxHash("".to_owned()),
+            tx_hash: blob_tx_hash.clone(),
             index,
             blobs: flatten_blobs(&blobs),
             success: true,

@@ -8,7 +8,7 @@ name = "bonsai-runner"
 required-features = ["bonsai-runner"]
 
 [dependencies]
-anyhow = "1.0.93"
+anyhow = "1.0.94"
 tracing = "0.1"
 hex = "0.4.3"
 
