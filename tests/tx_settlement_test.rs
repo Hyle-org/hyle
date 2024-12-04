@@ -40,10 +40,18 @@ mod e2e_tx_settle {
         let blob_tx_hash = ctx.send_blob("test.c1".into(), blobs.clone()).await?;
 
         info!("➡️  Sending proof for c1 & c2");
-        let proof_c1 =
-            ctx.make_proof::<TestContract>("test.c1".into(), blobs.clone(), BlobIndex(0));
-        let proof_c2 =
-            ctx.make_proof::<TestContract>("test.c1".into(), blobs.clone(), BlobIndex(1));
+        let proof_c1 = ctx.make_proof::<TestContract>(
+            "test.c1".into(),
+            blobs.clone(),
+            &blob_tx_hash,
+            BlobIndex(0),
+        );
+        let proof_c2 = ctx.make_proof::<TestContract>(
+            "test.c1".into(),
+            blobs.clone(),
+            &blob_tx_hash,
+            BlobIndex(1),
+        );
         ctx.send_proof("c1".into(), proof_c1, blob_tx_hash.clone())
             .await?;
         ctx.send_proof("c2".into(), proof_c2, blob_tx_hash).await?;

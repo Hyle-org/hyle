@@ -1,5 +1,6 @@
 Config(
-  id: "single-node",
+  id: "node",
+  single_node: true,
   host: "127.0.0.1:1231",
   peers: [],
   storage: Storage(
@@ -7,10 +8,10 @@ Config(
   ),
   log_format: "full",
   rest: "127.0.0.1:4321",
-  data_directory: "data_node1",
+  data_directory: "data_node",
   database_url: "postgres://postgres:postgres@localhost:5432/postgres",
   consensus: Consensus (
-    slot_duration: 500,
+    slot_duration: 1000,
     // Has to be empty as config is additive
     genesis_stakers: {}
   ),

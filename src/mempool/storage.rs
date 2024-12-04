@@ -84,7 +84,8 @@ impl Storage {
     }
 
     pub fn commit_data_proposal(&mut self) {
-        if let Some(data_proposal) = self.data_proposal.take() {
+        if let Some(mut data_proposal) = self.data_proposal.take() {
+            data_proposal.car.remove_proofs();
             self.lane.cars.push(data_proposal.car);
         }
     }
@@ -229,27 +230,13 @@ impl Storage {
     ) {
         let lane = self.other_lanes.entry(validator.clone()).or_default();
         let parent_hash = lane.current_hash();
-        // Removing proofs from transactions
-        let mut txs_without_proofs = data_proposal.car.txs.clone();
-        txs_without_proofs.iter_mut().for_each(|tx| {
-            match &mut tx.transaction_data {
-                TransactionData::VerifiedProof(proof_tx) => {
-                    proof_tx.proof_transaction.proof = Default::default();
-                }
-                TransactionData::Proof(_) => {
-                    // This can never happen.
-                    // A DataProposal that has been processed has turned all TransactionData::Proof into TransactionData::VerifiedProof
-                    unreachable!();
-                }
-                TransactionData::Blob(_)
-                | TransactionData::Stake(_)
-                | TransactionData::RegisterContract(_) => {}
-            }
-        });
-        lane.cars.push(Car {
+        // TODO: this sounds like we should mutate data_proposal instead.
+        let mut car = Car {
             parent_hash,
-            txs: txs_without_proofs,
-        });
+            txs: data_proposal.car.txs.clone(),
+        };
+        car.remove_proofs();
+        lane.cars.push(car);
         lane.poa.extend([self.id.clone(), validator.clone()]);
     }
 
@@ -407,6 +394,29 @@ impl Display for CarHash {
 pub struct Car {
     pub parent_hash: Option<CarHash>,
     pub txs: Vec<Transaction>,
+}
+
+impl Car {
+    /// Remove proofs from all transactions in the car
+    fn remove_proofs(&mut self) {
+        let mut txs_without_proofs = self.txs.clone();
+        txs_without_proofs.iter_mut().for_each(|tx| {
+            match &mut tx.transaction_data {
+                TransactionData::VerifiedProof(proof_tx) => {
+                    proof_tx.proof_transaction.proof = Default::default();
+                }
+                TransactionData::Proof(_) => {
+                    // This can never happen.
+                    // A DataProposal that has been processed has turned all TransactionData::Proof into TransactionData::VerifiedProof
+                    unreachable!();
+                }
+                TransactionData::Blob(_)
+                | TransactionData::Stake(_)
+                | TransactionData::RegisterContract(_) => {}
+            }
+        });
+        self.txs = txs_without_proofs;
+    }
 }
 
 impl Hashable<CarHash> for Car {
