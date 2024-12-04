@@ -128,10 +128,7 @@ impl ApiHttpClient {
 
     pub async fn get_indexer_contract(&self, contract_name: &ContractName) -> Result<Response> {
         self.reqwest_client
-            .get(format!(
-                "{}v1/indexer/contracts/{}",
-                self.url, contract_name
-            ))
+            .get(format!("{}v1/indexer/contract/{}", self.url, contract_name))
             .header("Content-Type", "application/json")
             .send()
             .await
