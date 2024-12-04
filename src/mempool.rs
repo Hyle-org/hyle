@@ -313,6 +313,11 @@ impl Mempool {
         validator: &ValidatorPublicKey,
         data_proposal: DataProposal,
     ) -> Result<()> {
+        debug!(
+            "Received DataProposal (car: {:?}) from {}",
+            data_proposal.car.hash(),
+            validator
+        );
         match self
             .storage
             .on_data_proposal(validator, &data_proposal, &self.node_state)
