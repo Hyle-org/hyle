@@ -1,22 +1,21 @@
-use std::collections::BTreeMap;
-
 use anyhow::{anyhow, bail, Error, Result};
 use futures::{SinkExt, StreamExt};
-use hyle::{
+use hyle_contract_sdk::{BlobIndex, ContractName, TxHash};
+use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
+use tokio::net::TcpStream;
+use tokio_util::codec::{Framed, LengthDelimitedCodec};
+use tracing::{debug, error, info, warn};
+
+use crate::{
     bus::BusMessage,
     model::{
         Blob, BlobTransaction, Block, BlockHeight, Hashable, RegisterContractTransaction,
-        SharedRunContext, Transaction, TransactionData,
+        Transaction, TransactionData,
     },
     node_state::NodeState,
     utils::modules::Module,
 };
-use hyllar::{HyllarToken, HyllarTokenContract};
-use sdk::{erc20::ERC20Action, ContractName, StructuredBlobData, TxHash};
-use serde::{Deserialize, Serialize};
-use tokio::net::TcpStream;
-use tokio_util::codec::{Framed, LengthDelimitedCodec};
-use tracing::{debug, error, info, warn};
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub enum ProverEvent {
@@ -24,28 +23,41 @@ pub enum ProverEvent {
 }
 impl BusMessage for ProverEvent {}
 
-pub struct Indexer {
+pub struct ContractStateIndexer<State> {
     da_stream: Framed<TcpStream, LengthDelimitedCodec>,
-    states: BTreeMap<ContractName, HyllarToken>,
+    states: BTreeMap<ContractName, State>,
     unsettled_blobs: BTreeMap<TxHash, BlobTransaction>,
     node_state: NodeState,
+    program_id: String,
+    handler: Box<dyn Fn(&BlobTransaction, BlobIndex, State) -> Result<State> + Send + Sync>,
 }
 
-impl Module for Indexer {
-    type Context = SharedRunContext;
+pub struct ContractStateIndexerCtx<State> {
+    pub da_address: String,
+    pub program_id: String,
+    pub handler: Box<dyn Fn(&BlobTransaction, BlobIndex, State) -> Result<State> + Send + Sync>,
+}
+
+impl<State> Module for ContractStateIndexer<State>
+where
+    State: TryFrom<hyle_contract_sdk::StateDigest, Error = Error> + Clone + Sync + Send,
+{
+    type Context = ContractStateIndexerCtx<State>;
     fn name() -> &'static str {
         "HyllarIndexer"
     }
 
     async fn build(ctx: Self::Context) -> Result<Self> {
         info!("Fetching current block height");
-        let da_stream = connect_to(&ctx.common.config.da_address, BlockHeight(0)).await?;
+        let da_stream = connect_to(&ctx.da_address, BlockHeight(0)).await?;
 
-        Ok(Indexer {
+        Ok(ContractStateIndexer {
             da_stream,
             states: BTreeMap::new(),
             unsettled_blobs: BTreeMap::new(),
             node_state: NodeState::default(),
+            program_id: ctx.program_id,
+            handler: ctx.handler,
         })
     }
 
@@ -53,9 +65,11 @@ impl Module for Indexer {
         self.start()
     }
 }
-pub static HYLLAR_ID: &str = include_str!("../../hyllar.txt");
 
-impl Indexer {
+impl<State> ContractStateIndexer<State>
+where
+    State: TryFrom<hyle_contract_sdk::StateDigest, Error = Error> + Clone,
+{
     pub async fn start(&mut self) -> Result<(), Error> {
         loop {
             let frame = self.da_stream.next().await;
@@ -104,7 +118,7 @@ impl Indexer {
 
     fn handle_register_contract(&mut self, tx: RegisterContractTransaction) -> Result<()> {
         let program_id = hex::encode(tx.program_id.as_slice());
-        if program_id != HYLLAR_ID.trim() {
+        if program_id != self.program_id {
             return Ok(());
         }
         info!("📝 Registering supported contract '{}'", tx.contract_name);
@@ -133,11 +147,7 @@ impl Indexer {
 
         debug!("🔨 Settling transaction: {}", tx.hash());
 
-        for Blob {
-            contract_name,
-            data,
-        } in tx.blobs.iter()
-        {
+        for (index, Blob { contract_name, .. }) in tx.blobs.iter().enumerate() {
             if !self.states.contains_key(contract_name) {
                 continue;
             }
@@ -148,26 +158,7 @@ impl Indexer {
                 .cloned()
                 .ok_or(anyhow!("No state found for {contract_name}"))?;
 
-            let data: StructuredBlobData<ERC20Action> = data.clone().try_into()?;
-
-            let caller: sdk::Identity = data
-                .caller
-                .map(|i| {
-                    tx.blobs
-                        .get(i.0 as usize)
-                        .unwrap()
-                        .contract_name
-                        .0
-                        .clone()
-                        .into()
-                })
-                .unwrap_or(tx.identity.clone());
-
-            let mut contract = HyllarTokenContract::init(state, caller);
-            let res = sdk::erc20::execute_action(&mut contract, data.parameters);
-            info!("🚀 Executed {contract_name}: {res:?}");
-
-            let new_state = contract.state();
+            let new_state = (self.handler)(tx, BlobIndex(index as u32), state)?;
 
             info!("📈 Updated state for {contract_name}");
 

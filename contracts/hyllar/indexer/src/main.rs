@@ -1,67 +1,75 @@
-use anyhow::{Context, Result};
-use axum::Router;
-use clap::Parser;
+use anyhow::Result;
 use hyle::{
-    bus::{metrics::BusMetrics, SharedMessageBus},
-    model::{CommonRunContext, NodeRunContext, SharedRunContext},
-    p2p::P2P,
+    model::BlobTransaction,
+    tools::contract_state_indexer::{ContractStateIndexer, ContractStateIndexerCtx},
     utils::{
-        conf,
-        crypto::BlstCrypto,
         logger::{setup_tracing, TracingMode},
         modules::ModulesHandler,
     },
 };
-use indexer::Indexer;
-use std::sync::{Arc, Mutex};
+use hyllar::{HyllarToken, HyllarTokenContract};
+use sdk::{erc20::ERC20Action, Blob, BlobIndex, StructuredBlobData};
+use std::env;
 use tracing::{error, info};
 
-mod indexer;
+fn handle_blob_data(
+    tx: &BlobTransaction,
+    index: BlobIndex,
+    state: HyllarToken,
+) -> Result<HyllarToken> {
+    let Blob {
+        contract_name,
+        data,
+    } = tx.blobs.get(index.0 as usize).unwrap();
 
-#[derive(Parser, Debug)]
-#[command(version, about, long_about = None)]
-pub struct Args {
-    #[arg(long, default_value = "config.ron")]
-    pub config_file: Option<String>,
+    let data: StructuredBlobData<ERC20Action> = data.clone().try_into()?;
+
+    let caller: sdk::Identity = data
+        .caller
+        .map(|i| {
+            tx.blobs
+                .get(i.0 as usize)
+                .unwrap()
+                .contract_name
+                .0
+                .clone()
+                .into()
+        })
+        .unwrap_or(tx.identity.clone());
+
+    let mut contract = HyllarTokenContract::init(state, caller);
+    let res = sdk::erc20::execute_action(&mut contract, data.parameters);
+    info!("🚀 Executed {contract_name}: {res:?}");
+    Ok(contract.state())
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let args = Args::parse();
-    let config = Arc::new(
-        conf::Conf::new(args.config_file, None, Some(true)).context("reading config file")?,
-    );
+    let da_url = env::var("DA_URL").unwrap_or_else(|_| "http://localhost:4321".to_string());
+    let log_format = env::var("LOG_FORMAT").unwrap_or_else(|_| "full".to_string());
+
+    let id = "hyllar_indexer".to_string();
 
     setup_tracing(
-        match config.log_format.as_str() {
+        match log_format.as_str() {
             "json" => TracingMode::Json,
             "node" => TracingMode::NodeName,
             _ => TracingMode::Full,
         },
-        config.id.clone(),
+        id.clone(),
     )?;
-
-    info!("Starting hyllar indexer with config: {:?}", &config);
-
-    let bus = SharedMessageBus::new(BusMetrics::global(config.id.clone()));
-    let crypto = Arc::new(BlstCrypto::new(config.id.clone()));
-
-    std::fs::create_dir_all(&config.data_directory).context("creating data directory")?;
 
     let mut handler = ModulesHandler::default();
 
-    let ctx = SharedRunContext {
-        common: CommonRunContext {
-            bus: bus.new_handle(),
-            config: config.clone(),
-            router: Mutex::new(Some(Router::new())),
-        }
-        .into(),
-        node: NodeRunContext { crypto }.into(),
+    let ctx2 = ContractStateIndexerCtx {
+        da_address: da_url.clone(),
+        program_id: "hyllar".to_string(),
+        handler: Box::new(handle_blob_data),
     };
 
-    handler.build_module::<P2P>(ctx.clone()).await?;
-    handler.build_module::<Indexer>(ctx.clone()).await?;
+    handler
+        .build_module::<ContractStateIndexer<HyllarToken>>(ctx2)
+        .await?;
 
     let (running_modules, abort) = handler.start_modules()?;
 

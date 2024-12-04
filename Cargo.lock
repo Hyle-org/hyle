@@ -2328,23 +2328,10 @@ name = "hyllar-indexer"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "axum",
- "bincode 2.0.0-rc.2",
- "borsh",
- "bytes",
- "clap",
- "futures",
- "hex",
  "hyle",
  "hyle-contract-sdk",
  "hyllar",
- "reqwest",
- "risc0-zkvm",
- "serde",
- "serde_json",
- "sha3",
  "tokio",
- "tokio-util",
  "tracing",
 ]
 
