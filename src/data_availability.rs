@@ -447,10 +447,12 @@ impl DataAvailability {
         }
 
         info!(
-            "new block {} with {} txs, last hash = {:?}",
+            "new block {} with {} txs, last hash = {}",
             block.height,
             block.txs.len(),
-            self.blocks.last_block_hash()
+            self.blocks
+                .last_block_hash()
+                .unwrap_or(BlockHash("".to_string()))
         );
 
         // Process the block in node state

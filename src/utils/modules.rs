@@ -1,6 +1,6 @@
 use std::{any::type_name, fs, future::Future, path::Path, pin::Pin, time::Duration};
 
-use anyhow::{anyhow, Context, Error, Result};
+use anyhow::{Context, Error, Result};
 use rand::{distributions::Alphanumeric, Rng};
 use signal::ShutdownCompleted;
 use tokio::task::JoinHandle;
