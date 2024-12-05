@@ -4,7 +4,7 @@ use anyhow::Error;
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 
-use sdk::{identity_provider::IdentityVerification, Digestable, HyleContract};
+use sdk::{identity_provider::IdentityVerification, Digestable};
 use sha2::{Digest, Sha256};
 
 #[derive(Encode, Decode, Serialize, Deserialize, Debug, Clone, Eq, PartialEq)]
@@ -29,12 +29,6 @@ impl Hydentity {
 impl Default for Hydentity {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-impl HyleContract for Hydentity {
-    fn caller(&self) -> sdk::Identity {
-        unreachable!()
     }
 }
 

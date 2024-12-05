@@ -4,8 +4,8 @@
 extern crate alloc;
 
 use alloc::vec::Vec;
-use amm::{AmmAction, AmmContract, AmmState, ExecutionState};
-use anyhow::anyhow;
+use amm::{AmmAction, AmmContract, AmmState};
+use sdk::caller::{CallerCallee, ExecutionState};
 use sdk::StructuredBlobData;
 
 risc0_zkvm::guest::entry!(main);
@@ -29,14 +29,12 @@ fn main() {
         };
     }
 
-    let execution_state = ExecutionState { callees_blobs };
-    let amm_state = input.initial_state.clone();
-    let mut amm_contract = AmmContract::new(
-        execution_state,
-        parsed_blob.contract_name,
-        amm_state,
+    let execution_state = ExecutionState {
+        callees_blobs: callees_blobs.into(),
         caller,
-    );
+    };
+    let amm_state = input.initial_state.clone();
+    let mut amm_contract = AmmContract::new(execution_state, parsed_blob.contract_name, amm_state);
 
     let amm_action = parsed_blob.data.parameters;
 
@@ -45,7 +43,7 @@ fn main() {
         AmmAction::NewPair { pair, amounts } => amm_contract.create_new_pair(pair, amounts),
     };
 
-    assert!(amm_contract.exec_state.borrow().callees_blobs.is_empty());
+    assert!(amm_contract.callees_blobs().is_empty());
 
     sdk::guest::commit(input, amm_contract.state(), res);
 }
