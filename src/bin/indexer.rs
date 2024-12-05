@@ -85,7 +85,6 @@ async fn main() -> Result<()> {
     handler
         .build_module::<RestApi>(RestApiRunContext {
             rest_addr: ctx.config.rest.clone(),
-            bus: ctx.bus.new_handle(),
             metrics_layer,
             router: router.clone(),
             info: hyle::rest::NodeInfo {
