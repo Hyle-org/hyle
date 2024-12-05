@@ -13,6 +13,7 @@ use crate::{
     node_state::NodeState,
     p2p::network::{OutboundMessage, SignedByValidator},
     utils::{
+        conf::SharedConf,
         crypto::{BlstCrypto, SharedBlstCrypto},
         logger::LogMe,
         modules::{
@@ -26,7 +27,7 @@ use api::RestApiMessage;
 use bincode::{Decode, Encode};
 use metrics::MempoolMetrics;
 use serde::{Deserialize, Serialize};
-use std::{collections::HashSet, fmt::Display, sync::Arc};
+use std::{collections::HashSet, fmt::Display, path::PathBuf, str::FromStr, sync::Arc};
 use storage::{CarHash, Cut, DataProposalVerdict};
 use strum_macros::IntoStaticStr;
 use tracing::{debug, error, info, warn};
@@ -54,6 +55,8 @@ struct MempoolBusClient {
 
 pub struct Mempool {
     bus: MempoolBusClient,
+    file: Option<PathBuf>,
+    conf: SharedConf,
     crypto: SharedBlstCrypto,
     metrics: MempoolMetrics,
     storage: Storage,
@@ -113,6 +116,8 @@ impl Module for Mempool {
 
         Ok(Mempool {
             bus,
+            file: Some(PathBuf::from_str("mempool_node_state.bin").unwrap()),
+            conf: ctx.common.config.clone(),
             metrics,
             crypto: Arc::clone(&ctx.node.crypto),
             storage: Storage::new(ctx.node.crypto.validator_pubkey().clone()),
@@ -166,6 +171,17 @@ impl Mempool {
                     .log_error("Creating Data Proposal on tick");
             }
         }
+
+        if let Some(file) = &self.file {
+            if let Err(e) = Self::save_on_disk(
+                self.conf.data_directory.as_path(),
+                file.as_path(),
+                &self.node_state,
+            ) {
+                warn!("Failed to save mempool node state on disk: {}", e);
+            }
+        }
+
         _ = self.bus.send(ShutdownCompleted {
             module: stringify!(Mempool).to_string(),
         });
@@ -539,6 +555,8 @@ pub mod test {
             // Initialize Mempool
             Mempool {
                 bus,
+                file: None,
+                conf: SharedConf::default(),
                 crypto: Arc::new(crypto),
                 metrics: MempoolMetrics::global("id".to_string()),
                 storage,
