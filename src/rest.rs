@@ -72,7 +72,6 @@ impl Module for RestApi {
             .merge(
                 Router::new()
                     .route("/v1/info", get(endpoints::get_info))
-                    .route("/v1/consensus/info", get(endpoints::get_consensus_state))
                     .route("/v1/da/block/height", get(endpoints::get_block_height))
                     // FIXME: we expose this endpoint for testing purposes. This should be removed or adapted
                     .route("/v1/contract/:name", get(endpoints::get_contract))
@@ -149,7 +148,7 @@ impl Clone for RouterState {
 }
 
 // Make our own error that wraps `anyhow::Error`.
-pub struct AppError(StatusCode, anyhow::Error);
+pub struct AppError(pub StatusCode, pub anyhow::Error);
 
 // Tell axum how to convert `AppError` into a response.
 impl IntoResponse for AppError {

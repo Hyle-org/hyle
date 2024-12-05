@@ -36,6 +36,7 @@ use tracing::{debug, info, warn};
 
 use strum_macros::IntoStaticStr;
 
+pub mod api;
 pub mod metrics;
 pub mod module;
 pub mod role_follower;
