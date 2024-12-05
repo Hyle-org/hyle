@@ -18,10 +18,13 @@ use hyle::{
         conf,
         crypto::BlstCrypto,
         logger::{setup_tracing, TracingMode},
-        modules::{ModulesHandler, ShutdownClient},
+        modules::ModulesHandler,
     },
 };
-use std::sync::{Arc, Mutex};
+use std::{
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 use tracing::{debug, error, info};
 
 #[derive(Parser, Debug)]
@@ -95,7 +98,7 @@ async fn main() -> Result<()> {
         node: NodeRunContext { crypto }.into(),
     };
 
-    let mut handler = ModulesHandler::default();
+    let mut handler = ModulesHandler::new(&bus).await;
     handler.build_module::<Mempool>(ctx.clone()).await?;
 
     if config.single_node.unwrap_or(false) {
@@ -141,45 +144,34 @@ async fn main() -> Result<()> {
         })
         .await?;
 
-    let (running_modules_names, running_modules) = handler.start_modules()?;
-
-    let mut shutdown_client: ShutdownClient = ShutdownClient::new_from_bus(bus.new_handle()).await;
-
-    let shutdown_gracefully = || async move {
-        for module_name in running_modules_names {
-            if !vec!["Genesis"].contains(&module_name) {
-                shutdown_client.shutdown_module(module_name).await;
-            }
-        }
-    };
-
     #[cfg(unix)]
     {
         use tokio::signal::unix;
         let mut terminate = unix::signal(unix::SignalKind::interrupt())?;
         tokio::select! {
-            (Err(e),_, _) = running_modules => {
+            Err(e) = handler.start_modules() => {
                 error!("Error running modules: {:?}", e);
+                _ = handler.shutdown_modules(Duration::from_secs(3)).await;
             }
             _ = tokio::signal::ctrl_c() => {
                 info!("Ctrl-C received, shutting down");
-                shutdown_gracefully().await;
+                _ = handler.shutdown_modules(Duration::from_secs(3)).await;
             }
             _ = terminate.recv() =>  {
                 info!("SIGTERM received, shutting down");
-                shutdown_gracefully().await;
+                _ = handler.shutdown_modules(Duration::from_secs(3)).await;
             }
         }
     }
     #[cfg(not(unix))]
     {
         tokio::select! {
-            Err(e) = all_modules => {
+            Err(e) = handler.start_modules() => {
                 error!("Error running modules: {:?}", e);
             }
             _ = tokio::signal::ctrl_c() => {
                 info!("Ctrl-C received, shutting down");
-                shutdown_gracefully().await;
+                _ = handler.shutdown_modules(Duration::from_secs(3)).await;
             }
         }
     }

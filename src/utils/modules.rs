@@ -1,9 +1,9 @@
-use std::{fs, future::Future, path::Path, pin::Pin};
+use std::{fs, future::Future, path::Path, pin::Pin, time::Duration};
 
-use anyhow::{Error, Result};
+use anyhow::{Context, Error, Result};
 use boot_signal::{ShutdownCompleted, ShutdownModule};
 use rand::{distributions::Alphanumeric, Rng};
-use tokio::task::{JoinError, JoinHandle};
+use tokio::task::JoinHandle;
 use tracing::{debug, info, warn};
 
 use crate::{
@@ -69,7 +69,7 @@ where
 }
 
 struct ModuleStarter {
-    name: &'static str,
+    pub name: &'static str,
     starter: Pin<Box<dyn Future<Output = Result<(), Error>> + Send + 'static>>,
 }
 
@@ -106,7 +106,6 @@ bus_client! {
 
 impl ShutdownClient {
     pub async fn shutdown_module(&mut self, module_name: &str) {
-        info!("Calling shutdown on {}", module_name);
         _ = self
             .send(ShutdownModule {
                 module: module_name.to_string(),
@@ -117,7 +116,6 @@ impl ShutdownClient {
             let msg: Result<ShutdownCompleted, _> = self.recv().await;
             debug!("Received shutdown completed msg {:?}", &msg);
             if let Ok(msg) = msg {
-                debug!("Received shutdown completed for {}", msg.module);
                 if msg.module == module_name {
                     debug!("Module {} successfully shut", msg.module);
                     break;
@@ -127,12 +125,52 @@ impl ShutdownClient {
     }
 }
 
-#[derive(Default)]
 pub struct ModulesHandler {
+    bus: ShutdownClient,
     modules: Vec<ModuleStarter>,
+    started_modules: Vec<&'static str>,
 }
 
 impl ModulesHandler {
+    pub async fn new(shared_bus: &SharedMessageBus) -> ModulesHandler {
+        let shutdown_client = ShutdownClient::new_from_bus(shared_bus.new_handle()).await;
+
+        ModulesHandler {
+            bus: shutdown_client,
+            modules: vec![],
+            started_modules: vec![],
+        }
+    }
+
+    pub async fn start_modules(&mut self) -> Result<()> {
+        let mut tasks: Vec<JoinHandle<Result<()>>> = vec![];
+
+        for module in self.modules.drain(..) {
+            self.started_modules.push(module.name);
+            let handle = module.start()?;
+            tasks.push(handle);
+        }
+
+        // Return a future that waits for the first error or the abort command.
+        futures::future::select_all(tasks)
+            .await
+            .0
+            .context("Joining error")?
+    }
+
+    /// Shutdown modules in reverse order (start A, B, C, shutdown C, B, A)
+    pub async fn shutdown_modules(&mut self, timeout: Duration) -> Result<()> {
+        for module_name in self.started_modules.drain(..).rev() {
+            if !vec!["Genesis"].contains(&module_name) {
+                _ = tokio::time::timeout(timeout, self.bus.shutdown_module(module_name))
+                    .await
+                    .log_error(format!("Shutting down module {module_name}"));
+            }
+        }
+
+        Ok(())
+    }
+
     async fn run_module<M>(mut module: M) -> Result<()>
     where
         M: Module,
@@ -159,34 +197,6 @@ impl ModulesHandler {
             starter: Box::pin(Self::run_module(module)),
         });
         Ok(())
-    }
-
-    /// Start Modules
-    pub fn start_modules(
-        &mut self,
-    ) -> Result<(
-        Vec<&'static str>,
-        impl Future<
-            Output = (
-                Result<Result<(), Error>, JoinError>,
-                usize,
-                Vec<JoinHandle<Result<(), Error>>>,
-            ),
-        >,
-    )> {
-        let mut tasks: Vec<JoinHandle<Result<()>>> = vec![];
-        let mut names: Vec<&'static str> = vec![];
-
-        for module in self.modules.drain(..) {
-            names.push(module.name);
-            let handle = module.start()?;
-            tasks.push(handle);
-        }
-
-        let handle = futures::future::select_all(tasks);
-
-        // Return a future that waits for the first error or the abort command.
-        Ok((names, handle))
     }
 }
 
@@ -254,10 +264,11 @@ mod tests {
         assert_eq!(loaded_struct.value, 42);
     }
 
-    #[test]
-    fn test_build_module() {
+    #[tokio::test]
+    async fn test_build_module() {
         let rt = Runtime::new().unwrap();
-        let mut handler = ModulesHandler::default();
+        let mut handler =
+            ModulesHandler::new(&SharedMessageBus::new(BusMetrics::global("id".to_string()))).await;
 
         rt.block_on(async {
             handler.build_module::<TestModule>(()).await.unwrap();
@@ -265,23 +276,25 @@ mod tests {
         });
     }
 
-    #[test]
-    fn test_add_module() {
-        let mut handler = ModulesHandler::default();
+    #[tokio::test]
+    async fn test_add_module() {
+        let mut handler =
+            ModulesHandler::new(&SharedMessageBus::new(BusMetrics::global("id".to_string()))).await;
         let module = TestModule;
 
         handler.add_module(module).unwrap();
         assert_eq!(handler.modules.len(), 1);
     }
 
-    #[test]
-    fn test_start_modules() {
+    #[tokio::test]
+    async fn test_start_modules() {
         let rt = Runtime::new().unwrap();
-        let mut handler = ModulesHandler::default();
+        let mut handler =
+            ModulesHandler::new(&SharedMessageBus::new(BusMetrics::global("id".to_string()))).await;
 
         rt.block_on(async {
             handler.build_module::<TestModule>(()).await.unwrap();
-            let (future, abort) = handler.start_modules().unwrap();
+            _ = handler.start_modules().await.unwrap();
 
             // Start the modules and then abort
             // let handle = tokio::spawn(future);
