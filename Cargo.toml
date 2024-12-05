@@ -23,7 +23,7 @@ hydentity = { path = "./contracts/hydentity/contract" }
 config = "0.14.1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["json"] }
-tokio = { version = "1.41.1", features = ["full", "tracing"] }
+tokio = { version = "1.42.0", features = ["full", "tracing"] }
 anyhow = "1.0.94"
 clap = { version = "4.5.22", features = ["derive"] }
 rand = "0.8.5"
