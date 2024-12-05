@@ -1,39 +1,20 @@
 //! Public API for interacting with the node.
 
-use crate::{
-    bus::{bus_client, command_response::Query, SharedMessageBus},
-    consensus::{ConsensusInfo, QueryConsensusInfo},
-    data_availability::QueryBlockHeight,
-    model::{BlockHeight, ContractName, ValidatorPublicKey},
-    node_state::model::Contract,
-    tools::mock_workflow::RunScenario,
-    utils::modules::Module,
-};
+use crate::{bus::SharedMessageBus, model::ValidatorPublicKey, utils::modules::Module};
 use anyhow::{Context, Result};
 use axum::{
+    extract::State,
     http::StatusCode,
     response::{IntoResponse, Response},
-    routing::{get, post},
-    Router,
+    routing::get,
+    Json, Router,
 };
 use axum_otel_metrics::HttpMetricsLayer;
-use endpoints::RestApiMessage;
 use serde::{Deserialize, Serialize};
 use tower_http::trace::TraceLayer;
 use tracing::info;
 
 pub mod client;
-pub mod endpoints;
-
-bus_client! {
-struct RestBusClient {
-    sender(RestApiMessage),
-    sender(RunScenario),
-    sender(Query<ContractName, Contract>),
-    sender(Query<QueryBlockHeight, BlockHeight>),
-    sender(Query<QueryConsensusInfo, ConsensusInfo>),
-}
-}
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct NodeInfo {
@@ -51,7 +32,6 @@ pub struct RestApiRunContext {
 }
 
 pub struct RouterState {
-    bus: RestBusClient,
     info: NodeInfo,
 }
 
@@ -71,26 +51,8 @@ impl Module for RestApi {
             .router
             .merge(
                 Router::new()
-                    .route("/v1/info", get(endpoints::get_info))
-                    .route("/v1/consensus/info", get(endpoints::get_consensus_state))
-                    .route("/v1/da/block/height", get(endpoints::get_block_height))
-                    // FIXME: we expose this endpoint for testing purposes. This should be removed or adapted
-                    .route("/v1/contract/:name", get(endpoints::get_contract))
-                    .route(
-                        "/v1/contract/register",
-                        post(endpoints::send_contract_transaction),
-                    )
-                    .route(
-                        "/v1/tx/send/stake",
-                        post(endpoints::send_staking_transaction),
-                    )
-                    .route("/v1/tx/send/blob", post(endpoints::send_blob_transaction))
-                    .route("/v1/tx/send/proof", post(endpoints::send_proof_transaction))
-                    .route("/v1/tools/run_scenario", post(endpoints::run_scenario))
-                    .with_state(RouterState {
-                        bus: RestBusClient::new_from_bus(ctx.bus.new_handle()).await,
-                        info: ctx.info,
-                    })
+                    .route("/v1/info", get(get_info))
+                    .with_state(RouterState { info: ctx.info })
                     .nest("/v1", ctx.metrics_layer.routes()),
             )
             .layer(ctx.metrics_layer)
@@ -106,6 +68,10 @@ impl Module for RestApi {
     fn run(&mut self) -> impl futures::Future<Output = Result<()>> + Send {
         self.serve()
     }
+}
+
+pub async fn get_info(State(state): State<RouterState>) -> Result<impl IntoResponse, AppError> {
+    Ok(Json(state.info))
 }
 
 impl RestApi {
@@ -124,32 +90,14 @@ impl RestApi {
 
 impl Clone for RouterState {
     fn clone(&self) -> Self {
-        use crate::utils::static_type_map::Pick;
         Self {
-            bus: RestBusClient::new(
-                Pick::<BusMetrics>::get(&self.bus).clone(),
-                Pick::<tokio::sync::broadcast::Sender<RestApiMessage>>::get(&self.bus).clone(),
-                Pick::<tokio::sync::broadcast::Sender<RunScenario>>::get(&self.bus).clone(),
-                Pick::<tokio::sync::broadcast::Sender<Query<ContractName, Contract>>>::get(
-                    &self.bus,
-                )
-                .clone(),
-                Pick::<tokio::sync::broadcast::Sender<Query<QueryBlockHeight, BlockHeight>>>::get(
-                    &self.bus,
-                )
-                .clone(),
-                Pick::<tokio::sync::broadcast::Sender<Query<QueryConsensusInfo, ConsensusInfo>>>::get(
-                    &self.bus,
-                )
-                .clone(),
-            ),
             info: self.info.clone(),
         }
     }
 }
 
 // Make our own error that wraps `anyhow::Error`.
-pub struct AppError(StatusCode, anyhow::Error);
+pub struct AppError(pub StatusCode, pub anyhow::Error);
 
 // Tell axum how to convert `AppError` into a response.
 impl IntoResponse for AppError {
