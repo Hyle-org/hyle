@@ -207,6 +207,8 @@ macro_rules! handle_messages {
     // Fallback to normal select cases
     (bus($bus:expr) index($index:ident) $($rest:tt)+) => {
         loop {
+            // if false is necessary here so rust understands the loop can be broken
+            // and avoid warnings like "unreachable code"
             if false {
                 break;
             }
