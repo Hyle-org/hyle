@@ -134,7 +134,6 @@ async fn main() -> Result<()> {
                 pubkey,
                 da_address: config.da_address.clone(),
             },
-            bus: ctx.common.bus.new_handle(),
             metrics_layer,
             router: router.clone(),
         })

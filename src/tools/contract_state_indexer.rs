@@ -1,9 +1,13 @@
 use anyhow::{anyhow, bail, Error, Result};
+use axum::Router;
 use futures::{SinkExt, StreamExt};
 use hyle_contract_sdk::{BlobIndex, ContractName, TxHash};
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
-use tokio::net::TcpStream;
+use std::{
+    collections::BTreeMap,
+    sync::{Arc, Mutex},
+};
+use tokio::{net::TcpStream, sync::RwLock};
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
 use tracing::{debug, error, info, warn};
 
@@ -23,16 +27,21 @@ pub enum ProverEvent {
 }
 impl BusMessage for ProverEvent {}
 
-pub struct ContractStateIndexer<State> {
-    da_stream: Framed<TcpStream, LengthDelimitedCodec>,
+pub struct Store<State> {
     states: BTreeMap<ContractName, State>,
     unsettled_blobs: BTreeMap<TxHash, BlobTransaction>,
     node_state: NodeState,
+}
+
+pub struct ContractStateIndexer<State> {
+    da_stream: Framed<TcpStream, LengthDelimitedCodec>,
+    store: Arc<RwLock<Store<State>>>,
     program_id: String,
     handler: Box<dyn Fn(&BlobTransaction, BlobIndex, State) -> Result<State> + Send + Sync>,
 }
 
 pub struct ContractStateIndexerCtx<State> {
+    pub router: Arc<Mutex<Option<Router>>>,
     pub da_address: String,
     pub program_id: String,
     pub handler: Box<dyn Fn(&BlobTransaction, BlobIndex, State) -> Result<State> + Send + Sync>,
@@ -40,7 +49,12 @@ pub struct ContractStateIndexerCtx<State> {
 
 impl<State> Module for ContractStateIndexer<State>
 where
-    State: TryFrom<hyle_contract_sdk::StateDigest, Error = Error> + Clone + Sync + Send,
+    State: Serialize
+        + TryFrom<hyle_contract_sdk::StateDigest, Error = Error>
+        + Clone
+        + Sync
+        + Send
+        + 'static,
 {
     type Context = ContractStateIndexerCtx<State>;
     fn name() -> &'static str {
@@ -51,11 +65,22 @@ where
         info!("Fetching current block height");
         let da_stream = connect_to(&ctx.da_address, BlockHeight(0)).await?;
 
-        Ok(ContractStateIndexer {
-            da_stream,
+        let store = Arc::new(RwLock::new(Store {
             states: BTreeMap::new(),
             unsettled_blobs: BTreeMap::new(),
             node_state: NodeState::default(),
+        }));
+
+        let api = api::api(Arc::clone(&store)).await;
+        if let Ok(mut guard) = ctx.router.lock() {
+            if let Some(router) = guard.take() {
+                guard.replace(router.nest("/v1/indexer/contract", api));
+            }
+        }
+
+        Ok(ContractStateIndexer {
+            da_stream,
+            store,
             program_id: ctx.program_id,
             handler: ctx.handler,
         })
@@ -63,6 +88,36 @@ where
 
     fn run(&mut self) -> impl futures::Future<Output = Result<()>> + Send {
         self.start()
+    }
+}
+
+mod api {
+    use axum::{extract::Path, routing::get, Router};
+
+    use super::*;
+    use crate::rest::AppError;
+    use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
+
+    pub(super) async fn api<State>(store: Arc<RwLock<Store<State>>>) -> Router<()>
+    where
+        State: Clone + Sync + Send + Serialize + 'static,
+    {
+        Router::new()
+            .route("/:name/state", get(get_state))
+            .with_state(store)
+    }
+
+    pub async fn get_state<S: Serialize + Clone + 'static>(
+        Path(name): Path<ContractName>,
+        State(state): State<Arc<RwLock<Store<S>>>>,
+    ) -> Result<impl IntoResponse, AppError> {
+        let s = state.read().await;
+        s.states.get(&name).cloned().map(Json).ok_or_else(|| {
+            AppError(
+                StatusCode::NOT_FOUND,
+                anyhow!("Contract '{}' not found", name),
+            )
+        })
     }
 }
 
@@ -77,7 +132,7 @@ where
                 let bytes = cmd;
                 let block: Block =
                     bincode::decode_from_slice(&bytes, bincode::config::standard())?.0;
-                if let Err(e) = self.handle_block(block) {
+                if let Err(e) = self.handle_block(block).await {
                     error!("Error while handling block: {:#}", e);
                 }
                 SinkExt::<bytes::Bytes>::send(&mut self.da_stream, "ok".into()).await?;
@@ -89,59 +144,80 @@ where
         }
     }
 
-    fn handle_block(&mut self, block: Block) -> Result<()> {
+    async fn handle_block(&mut self, block: Block) -> Result<()> {
         info!(
             "📦 Handling block #{} with {} txs",
             block.height,
             block.txs.len()
         );
-        let handled = self.node_state.handle_new_block(block);
+        let handled = self.store.write().await.node_state.handle_new_block(block);
         debug!("📦 Handled {:?}", handled);
 
         for c_tx in handled.new_contract_txs {
             if let TransactionData::RegisterContract(tx) = c_tx.transaction_data {
-                self.handle_register_contract(tx)?;
+                self.handle_register_contract(tx).await?;
             }
         }
 
         for b_tx in handled.new_blob_txs {
             if let TransactionData::Blob(tx) = b_tx.transaction_data {
-                self.handle_blob(tx)?;
+                self.handle_blob(tx).await?;
             }
         }
 
         for s_tx in handled.settled_blob_tx_hashes {
-            self.settle_tx(s_tx)?;
+            self.settle_tx(s_tx).await?;
         }
         Ok(())
     }
 
-    fn handle_register_contract(&mut self, tx: RegisterContractTransaction) -> Result<()> {
+    async fn handle_register_contract(&mut self, tx: RegisterContractTransaction) -> Result<()> {
         let program_id = hex::encode(tx.program_id.as_slice());
         if program_id != self.program_id {
             return Ok(());
         }
         info!("📝 Registering supported contract '{}'", tx.contract_name);
         let state = tx.state_digest.try_into()?;
-        self.states.insert(tx.contract_name.clone(), state);
+        self.store
+            .write()
+            .await
+            .states
+            .insert(tx.contract_name.clone(), state);
         Ok(())
     }
 
-    fn handle_blob(&mut self, tx: BlobTransaction) -> Result<()> {
+    async fn handle_blob(&mut self, tx: BlobTransaction) -> Result<()> {
         let tx_hash = tx.hash();
-        if tx
-            .blobs
-            .iter()
-            .any(|b| self.states.contains_key(&b.contract_name))
-        {
-            info!("⚒️  Found supported blob in transaction: {}", tx_hash);
-            self.unsettled_blobs.insert(tx_hash.clone(), tx);
+        let mut found_supported_blob = false;
+
+        for b in &tx.blobs {
+            if self
+                .store
+                .read()
+                .await
+                .states
+                .contains_key(&b.contract_name)
+            {
+                found_supported_blob = true;
+                break;
+            }
         }
+
+        if found_supported_blob {
+            info!("⚒️  Found supported blob in transaction: {}", tx_hash);
+            self.store
+                .write()
+                .await
+                .unsettled_blobs
+                .insert(tx_hash.clone(), tx);
+        }
+
         Ok(())
     }
 
-    fn settle_tx(&mut self, tx: TxHash) -> Result<()> {
-        let Some(tx) = self.unsettled_blobs.get(&tx) else {
+    async fn settle_tx(&mut self, tx: TxHash) -> Result<()> {
+        let mut store = self.store.write().await;
+        let Some(tx) = store.unsettled_blobs.get(&tx).cloned() else {
             debug!("🔨 No supported blobs found in transaction: {}", tx);
             return Ok(());
         };
@@ -149,21 +225,21 @@ where
         debug!("🔨 Settling transaction: {}", tx.hash());
 
         for (index, Blob { contract_name, .. }) in tx.blobs.iter().enumerate() {
-            if !self.states.contains_key(contract_name) {
+            if !store.states.contains_key(contract_name) {
                 continue;
             }
 
-            let state = self
+            let state = store
                 .states
                 .get(contract_name)
                 .cloned()
                 .ok_or(anyhow!("No state found for {contract_name}"))?;
 
-            let new_state = (self.handler)(tx, BlobIndex(index as u32), state)?;
+            let new_state = (self.handler)(&tx, BlobIndex(index as u32), state)?;
 
             info!("📈 Updated state for {contract_name}");
 
-            *self.states.get_mut(contract_name).unwrap() = new_state;
+            *store.states.get_mut(contract_name).unwrap() = new_state;
         }
         Ok(())
     }

@@ -1,15 +1,16 @@
 //! Public API for interacting with the node.
 
-use crate::{bus::SharedMessageBus, model::ValidatorPublicKey, utils::modules::Module};
+use crate::{model::ValidatorPublicKey, utils::modules::Module};
 use anyhow::{Context, Result};
+pub use axum::Router;
 use axum::{
     extract::State,
     http::StatusCode,
     response::{IntoResponse, Response},
     routing::get,
-    Json, Router,
+    Json,
 };
-use axum_otel_metrics::HttpMetricsLayer;
+use axum_otel_metrics::{HttpMetricsLayer, HttpMetricsLayerBuilder};
 use serde::{Deserialize, Serialize};
 use tower_http::trace::TraceLayer;
 use tracing::info;
@@ -26,9 +27,19 @@ pub struct NodeInfo {
 pub struct RestApiRunContext {
     pub rest_addr: String,
     pub info: NodeInfo,
-    pub bus: SharedMessageBus,
     pub router: Router,
     pub metrics_layer: HttpMetricsLayer,
+}
+
+impl RestApiRunContext {
+    pub fn new(id: String, rest_addr: String, info: NodeInfo, router: Router) -> Self {
+        Self {
+            rest_addr,
+            info,
+            router,
+            metrics_layer: HttpMetricsLayerBuilder::new().with_service_name(id).build(),
+        }
+    }
 }
 
 pub struct RouterState {
@@ -39,6 +50,7 @@ pub struct RestApi {
     rest_addr: String,
     app: Option<Router>,
 }
+
 impl Module for RestApi {
     fn name() -> &'static str {
         "RestApi"

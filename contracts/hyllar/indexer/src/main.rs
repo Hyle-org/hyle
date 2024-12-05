@@ -1,6 +1,7 @@
 use anyhow::Result;
 use hyle::{
     model::BlobTransaction,
+    rest::{NodeInfo, RestApi, RestApiRunContext, Router},
     tools::contract_state_indexer::{ContractStateIndexer, ContractStateIndexerCtx},
     utils::{
         logger::{setup_tracing, TracingMode},
@@ -9,7 +10,10 @@ use hyle::{
 };
 use hyllar::{HyllarToken, HyllarTokenContract};
 use sdk::{erc20::ERC20Action, Blob, BlobIndex, StructuredBlobData};
-use std::env;
+use std::{
+    env,
+    sync::{Arc, Mutex},
+};
 use tracing::{error, info};
 
 fn handle_blob_data(
@@ -47,6 +51,7 @@ fn handle_blob_data(
 async fn main() -> Result<()> {
     let da_url = env::var("DA_URL").unwrap_or_else(|_| "localhost:4141".to_string());
     let log_format = env::var("LOG_FORMAT").unwrap_or_else(|_| "full".to_string());
+    let rest_addr = env::var("HOST_URL").unwrap_or_else(|_| "127.0.0.1:8010".to_string());
 
     let id = "hyllar_indexer".to_string();
 
@@ -61,15 +66,30 @@ async fn main() -> Result<()> {
 
     let mut handler = ModulesHandler::default();
 
+    let router = Arc::new(Mutex::new(Some(Router::new())));
+
     let ctx2 = ContractStateIndexerCtx {
         da_address: da_url.clone(),
         program_id: include_str!("../../hyllar.txt").trim().to_string(),
         handler: Box::new(handle_blob_data),
+        router: Arc::clone(&router),
     };
 
     handler
         .build_module::<ContractStateIndexer<HyllarToken>>(ctx2)
         .await?;
+
+    let rest_ctx = RestApiRunContext::new(
+        id.clone(),
+        rest_addr,
+        NodeInfo {
+            id,
+            pubkey: None,
+            da_address: da_url,
+        },
+        router.lock().unwrap().take().unwrap(),
+    );
+    handler.build_module::<RestApi>(rest_ctx).await?;
 
     let (running_modules, abort) = handler.start_modules()?;
 
