@@ -103,7 +103,7 @@ impl Module for Mempool {
             ctx.common
                 .config
                 .data_directory
-                .join("mempool_node_state.bin")
+                .join("node_state.bin")
                 .as_path(),
         );
 
@@ -113,14 +113,22 @@ impl Module for Mempool {
                 guard.replace(router.nest("/v1/", api));
             }
         }
+        let storage = Self::load_from_disk::<Storage>(
+            ctx.common
+                .config
+                .data_directory
+                .join("mempool_storage.bin")
+                .as_path(),
+        )
+        .unwrap_or(Storage::new(ctx.node.crypto.validator_pubkey().clone()));
 
         Ok(Mempool {
             bus,
-            file: Some(PathBuf::from_str("mempool_node_state.bin").unwrap()),
+            file: Some(PathBuf::from_str("mempool_storage.bin").unwrap()),
             conf: ctx.common.config.clone(),
             metrics,
             crypto: Arc::clone(&ctx.node.crypto),
-            storage: Storage::new(ctx.node.crypto.validator_pubkey().clone()),
+            storage,
             validators: vec![],
             node_state,
         })
@@ -137,6 +145,8 @@ impl Mempool {
         info!("Mempool starting");
 
         let mut interval = tokio::time::interval(tokio::time::Duration::from_millis(100));
+
+        // Recompute optimistic node_state
 
         handle_messages! {
             on_bus self.bus,
@@ -176,9 +186,9 @@ impl Mempool {
             if let Err(e) = Self::save_on_disk(
                 self.conf.data_directory.as_path(),
                 file.as_path(),
-                &self.node_state,
+                &self.storage,
             ) {
-                warn!("Failed to save mempool node state on disk: {}", e);
+                warn!("Failed to save mempool storage on disk: {}", e);
             }
         }
 

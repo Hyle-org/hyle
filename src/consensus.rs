@@ -921,6 +921,17 @@ impl Consensus {
                     .log_error("Cannot send message over channel")?;
             }
         }
+
+        if let Some(file) = &self.file {
+            if let Err(e) = Self::save_on_disk(
+                self.config.data_directory.as_path(),
+                file.as_path(),
+                &self.store,
+            ) {
+                warn!("Failed to save consensus storage on disk: {}", e);
+            }
+        }
+
         _ = self.bus.send(ShutdownCompleted {
             module: stringify!(Consensus).to_string(),
         });

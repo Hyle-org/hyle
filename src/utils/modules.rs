@@ -1,6 +1,6 @@
 use std::{fs, future::Future, path::Path, pin::Pin, time::Duration};
 
-use anyhow::{Context, Error, Result};
+use anyhow::{anyhow, Context, Error, Result};
 use boot_signal::{ShutdownCompleted, ShutdownModule};
 use rand::{distributions::Alphanumeric, Rng};
 use tokio::task::JoinHandle;
@@ -22,24 +22,32 @@ where
     fn build(ctx: Self::Context) -> impl futures::Future<Output = Result<Self>> + Send;
     fn run(&mut self) -> impl futures::Future<Output = Result<()>> + Send;
 
-    fn load_from_disk_or_default<S>(file: &Path) -> S
+    fn load_from_disk<S>(file: &Path) -> Result<S>
     where
-        S: bincode::Decode + Default,
+        S: bincode::Decode,
     {
+        info!("Loading file {}", file.to_string_lossy());
         fs::File::open(file)
             .map_err(|e| e.to_string())
             .and_then(|mut reader| {
                 bincode::decode_from_std_read(&mut reader, bincode::config::standard())
                     .map_err(|e| e.to_string())
             })
-            .unwrap_or_else(|e| {
-                warn!(
-                    "{}: Failed to load data from disk ({}). Error was: {e}",
-                    Self::name(),
-                    file.display()
-                );
-                S::default()
-            })
+            .map_err(|e| anyhow!("Loading and decoding {}: {}", file.to_string_lossy(), e))
+    }
+
+    fn load_from_disk_or_default<S>(file: &Path) -> S
+    where
+        S: bincode::Decode + Default,
+    {
+        Self::load_from_disk(file).unwrap_or_else(|e| {
+            warn!(
+                "{}: Failed to load data from disk ({}). Error was: {e}",
+                Self::name(),
+                file.display()
+            );
+            S::default()
+        })
     }
 
     fn save_on_disk<S>(folder: &Path, file: &Path, store: &S) -> Result<()>

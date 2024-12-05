@@ -130,6 +130,18 @@ impl SingleNodeConsensus {
                 self.handle_new_slot_tick().await?;
             }
         }
+        if let Some(file) = &self.file {
+            if let Err(e) = Self::save_on_disk(
+                self.config.data_directory.as_path(),
+                file.as_path(),
+                &self.store,
+            ) {
+                warn!(
+                    "Failed to save consensus single node storage on disk: {}",
+                    e
+                );
+            }
+        }
 
         _ = self.bus.send(ShutdownCompleted {
             module: stringify!(SingleNodeConsensus).to_string(),
