@@ -1,13 +1,18 @@
 use alloc::{format, string::String, vec::Vec};
 use bincode::{Decode, Encode};
 
+<<<<<<< HEAD
 use crate::{Blob, BlobData, BlobIndex, ContractName, HyleContract, RunResult, StructuredBlobData};
+||||||| parent of 59b2129 (Refacto & separate into another file)
+use crate::{
+    guest::RunResult, Blob, BlobData, BlobIndex, ContractName, HyleContract, StructuredBlobData,
+};
+=======
+use crate::{guest::RunResult, Blob, BlobData, BlobIndex, ContractName, StructuredBlobData};
+>>>>>>> 59b2129 (Refacto & separate into another file)
 
 /// Trait representing the ERC-20 token standard interface.
-pub trait ERC20
-where
-    Self: HyleContract,
-{
+pub trait ERC20 {
     /// Returns the total supply of tokens in existence.
     ///
     /// # Returns
@@ -155,7 +160,6 @@ pub fn execute_action<T: ERC20>(token: &mut T, action: ERC20Action) -> RunResult
 
 #[cfg(test)]
 mod tests {
-    use crate::Identity;
 
     use super::*;
     use mockall::{
@@ -174,16 +178,12 @@ mod tests {
             fn approve(&mut self, spender: &str, amount: u128) -> Result<(), String>;
             fn allowance(&self, owner: &str, spender: &str) -> Result<u128, String>;
         }
-        impl HyleContract for ERC20Contract {
-            fn caller(&self) -> Identity;
-        }
     }
 
     #[test]
     fn test_total_supply() {
         let mut mock = MockERC20Contract::new();
         mock.expect_total_supply().returning(|| Ok(1000));
-        mock.expect_caller().return_const("caller");
 
         let action = ERC20Action::TotalSupply;
         let result = execute_action(&mut mock, action);
@@ -198,7 +198,6 @@ mod tests {
         mock.expect_balance_of()
             .with(predicate::eq("account1"))
             .returning(|_| Ok(500));
-        mock.expect_caller().return_const("caller");
 
         let action = ERC20Action::BalanceOf {
             account: "account1".to_string(),
@@ -215,7 +214,6 @@ mod tests {
         mock.expect_transfer()
             .with(predicate::eq("recipient1"), predicate::eq(200))
             .returning(|_, _| Ok(()));
-        mock.expect_caller().return_const("caller");
 
         let action = ERC20Action::Transfer {
             recipient: "recipient1".to_string(),
@@ -237,7 +235,6 @@ mod tests {
                 predicate::eq(300),
             )
             .returning(|_, _, _| Ok(()));
-        mock.expect_caller().return_const("caller");
 
         let action = ERC20Action::TransferFrom {
             sender: "sender1".to_string(),
@@ -259,7 +256,6 @@ mod tests {
         mock.expect_approve()
             .with(predicate::eq("spender1"), predicate::eq(400))
             .returning(|_, _| Ok(()));
-        mock.expect_caller().return_const("caller");
 
         let action = ERC20Action::Approve {
             spender: "spender1".to_string(),
@@ -277,7 +273,6 @@ mod tests {
         mock.expect_allowance()
             .with(predicate::eq("owner1"), predicate::eq("spender1"))
             .returning(|_, _| Ok(500));
-        mock.expect_caller().return_const("caller");
 
         let action = ERC20Action::Allowance {
             owner: "owner1".to_string(),

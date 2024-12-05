@@ -9,16 +9,25 @@ use alloc::vec::Vec;
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 
+pub mod caller;
 pub mod erc20;
 pub mod guest;
 pub mod identity_provider;
 
+<<<<<<< HEAD
 pub type RunResult = Result<String, String>;
 
 pub trait HyleContract {
     fn caller(&self) -> Identity;
 }
 
+||||||| parent of 59b2129 (Refacto & separate into another file)
+pub trait HyleContract {
+    fn caller(&self) -> Identity;
+}
+
+=======
+>>>>>>> 59b2129 (Refacto & separate into another file)
 pub trait Digestable {
     fn as_digest(&self) -> StateDigest;
 }
