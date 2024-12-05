@@ -202,7 +202,10 @@ impl ModulesHandler {
 
 #[cfg(test)]
 mod tests {
+    use crate::handle_messages;
+
     use super::*;
+    use crate::bus::SharedMessageBus;
     use std::fs::File;
     use tempfile::tempdir;
     use tokio::runtime::Runtime;
@@ -212,20 +215,37 @@ mod tests {
         value: u32,
     }
 
-    struct TestModule;
+    struct TestModule {
+        bus: TestBusClient,
+    }
+
+    bus_client! {
+        struct TestBusClient {
+            sender(ShutdownCompleted),
+            receiver(ShutdownModule),
+        }
+    }
 
     impl Module for TestModule {
-        type Context = ();
+        type Context = TestBusClient;
 
         fn name() -> &'static str {
             "TestModule"
         }
 
         async fn build(_ctx: Self::Context) -> Result<Self> {
-            Ok(TestModule)
+            Ok(TestModule { bus: _ctx })
         }
 
         async fn run(&mut self) -> Result<()> {
+            handle_messages! {
+                on_bus self.bus,
+                break_on(stringify!(TestModule))
+            }
+
+            _ = self.bus.send(ShutdownCompleted {
+                module: stringify!(TestModule).to_string(),
+            });
             Ok(())
         }
     }
@@ -267,39 +287,64 @@ mod tests {
     #[tokio::test]
     async fn test_build_module() {
         let rt = Runtime::new().unwrap();
-        let mut handler =
-            ModulesHandler::new(&SharedMessageBus::new(BusMetrics::global("id".to_string()))).await;
+
+        let shared_bus = SharedMessageBus::new(BusMetrics::global("id".to_string()));
+        let mut handler = ModulesHandler::new(&shared_bus).await;
 
         rt.block_on(async {
-            handler.build_module::<TestModule>(()).await.unwrap();
+            handler
+                .build_module::<TestModule>(
+                    TestBusClient::new_from_bus(shared_bus.new_handle()).await,
+                )
+                .await
+                .unwrap();
             assert_eq!(handler.modules.len(), 1);
         });
     }
 
     #[tokio::test]
     async fn test_add_module() {
-        let mut handler =
-            ModulesHandler::new(&SharedMessageBus::new(BusMetrics::global("id".to_string()))).await;
-        let module = TestModule;
+        let shared_bus = SharedMessageBus::new(BusMetrics::global("id".to_string()));
+        let mut handler = ModulesHandler::new(&shared_bus).await;
+        let module = TestModule {
+            bus: TestBusClient::new_from_bus(shared_bus.new_handle()).await,
+        };
 
         handler.add_module(module).unwrap();
         assert_eq!(handler.modules.len(), 1);
     }
 
+    async fn is_future_pending<F: Future>(future: F) -> bool {
+        tokio::select! {
+            _ = future => false, // La future est prête
+            _ = tokio::time::sleep(Duration::from_millis(1)) => true, // Timeout, donc la future est pending
+        }
+    }
+
     #[tokio::test]
     async fn test_start_modules() {
-        let rt = Runtime::new().unwrap();
-        let mut handler =
-            ModulesHandler::new(&SharedMessageBus::new(BusMetrics::global("id".to_string()))).await;
+        let shared_bus = SharedMessageBus::new(BusMetrics::global("id".to_string()));
+        let mut shutdown_receiver = get_receiver::<ShutdownModule>(&shared_bus).await;
+        let mut shutdown_completed_receiver = get_receiver::<ShutdownCompleted>(&shared_bus).await;
+        let mut handler = ModulesHandler::new(&shared_bus).await;
+        handler
+            .build_module::<TestModule>(TestBusClient::new_from_bus(shared_bus.new_handle()).await)
+            .await
+            .unwrap();
+        let handle = handler.start_modules();
 
-        rt.block_on(async {
-            handler.build_module::<TestModule>(()).await.unwrap();
-            _ = handler.start_modules().await.unwrap();
+        assert!(is_future_pending(handle).await);
 
-            // Start the modules and then abort
-            // let handle = tokio::spawn(future);
-            // abort();
-            // handle.await.unwrap().unwrap();
-        });
+        _ = handler.shutdown_modules(Duration::from_secs(1)).await;
+
+        assert_eq!(
+            shutdown_receiver.recv().await.unwrap().module,
+            "TestModule".to_string()
+        );
+
+        assert_eq!(
+            shutdown_completed_receiver.recv().await.unwrap().module,
+            "TestModule".to_string()
+        );
     }
 }
