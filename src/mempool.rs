@@ -12,7 +12,6 @@ use crate::{
     },
     node_state::NodeState,
     p2p::network::{OutboundMessage, SignedByValidator},
-    rest::endpoints::RestApiMessage,
     utils::{
         crypto::{BlstCrypto, SharedBlstCrypto},
         logger::LogMe,
@@ -20,6 +19,7 @@ use crate::{
     },
 };
 use anyhow::{bail, Context, Result};
+use api::RestApiMessage;
 use bincode::{Decode, Encode};
 use metrics::MempoolMetrics;
 use serde::{Deserialize, Serialize};
@@ -28,8 +28,10 @@ use storage::{CarHash, Cut, DataProposalVerdict};
 use strum_macros::IntoStaticStr;
 use tracing::{debug, error, info, warn};
 
+pub mod api;
 pub mod metrics;
 pub mod storage;
+
 #[derive(Debug, Clone)]
 pub struct QueryNewCut(pub Vec<ValidatorPublicKey>);
 
@@ -96,6 +98,13 @@ impl Module for Mempool {
                 .join("mempool_node_state.bin")
                 .as_path(),
         );
+
+        let api = api::api(&ctx.common).await;
+        if let Ok(mut guard) = ctx.common.router.lock() {
+            if let Some(router) = guard.take() {
+                guard.replace(router.nest("/v1/", api));
+            }
+        }
 
         Ok(Mempool {
             bus,

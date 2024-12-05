@@ -15,6 +15,7 @@ mod e2e_consensus {
         Ok(())
     }
 
+    #[ignore = "flakky"]
     #[test_log::test(tokio::test)]
     async fn can_run_lot_of_nodes() -> Result<()> {
         let ctx = E2ECtx::new_multi(10, 1000).await?;

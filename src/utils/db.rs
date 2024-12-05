@@ -51,12 +51,14 @@ impl<T: DeserializeOwned> DoubleEndedIterator for Iter<T> {
 }
 
 /// KeyMaker makes it easy to build keys without allocating each time.
+
 pub trait KeyMaker {
     fn make_key<'a>(&self, writer: &'a mut String) -> &'a str;
 }
 
 impl KeyMaker for &str {
     fn make_key<'a>(&self, writer: &'a mut String) -> &'a str {
+        writer.clear();
         _ = write!(writer, "{}", self);
         writer.as_str()
     }
@@ -65,6 +67,7 @@ impl KeyMaker for &str {
 impl KeyMaker for usize {
     fn make_key<'a>(&self, writer: &'a mut String) -> &'a str {
         let width = std::mem::size_of::<usize>();
+        writer.clear();
         _ = write!(writer, "{:0width$x}", self);
         writer.as_str()
     }
@@ -72,6 +75,7 @@ impl KeyMaker for usize {
 
 impl KeyMaker for u64 {
     fn make_key<'a>(&self, writer: &'a mut String) -> &'a str {
+        writer.clear();
         _ = write!(writer, "{:08x}", self);
         writer.as_str()
     }
@@ -79,6 +83,7 @@ impl KeyMaker for u64 {
 
 impl<T: KeyMaker> KeyMaker for &T {
     fn make_key<'a>(&self, writer: &'a mut String) -> &'a str {
+        writer.clear();
         KeyMaker::make_key(*self, writer)
     }
 }
@@ -156,7 +161,6 @@ impl Db {
     }
 
     fn get_raw<T: DeserializeOwned>(db: &mut DbTree, key: impl KeyMaker) -> Result<Option<T>> {
-        db.key.clear();
         let key = key.make_key(&mut db.key);
         let some_ivec = db
             .tree
@@ -207,15 +211,14 @@ impl Db {
         min: impl KeyMaker,
         max: impl KeyMaker,
     ) -> Iter<T> {
-        self.ord.key.clear();
         let min = min.make_key(&mut self.ord.key);
         let max = max.make_key(&mut self.ord.key_range);
+        debug!("{}..{}", min, max);
         Iter(self.ord.tree.range(min..max), PhantomData)
     }
 
     /// Create an iterator over tuples of keys and values, where the all the keys starts with the given prefix.
     pub fn ord_scan_prefix<T: DeserializeOwned>(&mut self, prefix: impl KeyMaker) -> Iter<T> {
-        self.ord.key.clear();
         let prefix = prefix.make_key(&mut self.ord.key);
         Iter(self.ord.tree.scan_prefix(prefix), PhantomData)
     }
@@ -239,7 +242,6 @@ impl Db {
         max: impl KeyMaker,
     ) -> Option<Iter<T>> {
         self.alt.as_mut().map(|alt| {
-            alt.key.clear();
             let min = min.make_key(&mut alt.key);
             let max = max.make_key(&mut alt.key_range);
             Iter(alt.tree.range(min..max), PhantomData)
@@ -253,7 +255,6 @@ impl Db {
         prefix: impl KeyMaker,
     ) -> Option<Iter<T>> {
         self.alt.as_mut().map(|alt| {
-            alt.key.clear();
             let prefix = prefix.make_key(&mut alt.key);
             Iter(alt.tree.scan_prefix(prefix), PhantomData)
         })
@@ -267,8 +268,6 @@ impl Db {
         data: &T,
     ) -> Result<()> {
         if let Some(alt) = self.alt.as_mut() {
-            self.ord.key.clear();
-            alt.key.clear();
             let ord_key = ord_key.make_key(&mut self.ord.key);
             let alt_key = alt_key.make_key(&mut alt.key);
             let serialized_data = ron::ser::to_string(data).with_context(|| {
@@ -293,7 +292,6 @@ impl Db {
                 .with_context(|| format!("fluhing {}", alt.name))?;
             debug!("{} written to {}", ord_key, self.ord.name);
         } else {
-            self.ord.key.clear();
             let key = ord_key.make_key(&mut self.ord.key);
             let serialized_data = ron::ser::to_string(data)
                 .with_context(|| format!("serializing data for {} in {}", key, self.ord.name))?;
@@ -316,12 +314,14 @@ mod tests {
     use super::{Db, KeyMaker};
     use anyhow::Result;
     use core::str;
+    
 
     struct TestKeyOrd(usize, usize);
 
     impl KeyMaker for TestKeyOrd {
         fn make_key<'a>(&self, writer: &'a mut String) -> &'a str {
             use std::fmt::Write;
+            writer.clear();
             _ = write!(writer, "{:08x}:{:08x}", self.0, self.1);
             writer.as_str()
         }
@@ -332,6 +332,7 @@ mod tests {
     impl KeyMaker for TestKeyAlt<'_> {
         fn make_key<'a>(&self, writer: &'a mut String) -> &'a str {
             use std::fmt::Write;
+            writer.clear();
             _ = write!(writer, "{}:{:08x}", self.0, self.1);
             writer.as_str()
         }
@@ -380,6 +381,7 @@ mod tests {
             "no alternate tree for db",
             "get (alt) should return the entry"
         );
+
         Ok(())
     }
 
@@ -418,10 +420,12 @@ mod tests {
             "get should return the entry requested"
         );
 
+        let items = 14;
+
         data = 0;
         let mut key = String::new();
-        for path1 in 1..=5 {
-            for path2 in 1..=5 {
+        for path1 in 1..=items {
+            for path2 in 1..=items {
                 data += 1;
                 let ord_key = TestKeyOrd(path1, path2);
                 let k1 = format!("test{}", data);
@@ -438,14 +442,12 @@ mod tests {
 
         assert_eq!(tree.len(), data, "invalid tree length");
 
-        key.clear();
         let min = TestKeyOrd(1, 1);
-        let max = TestKeyOrd(5, 5);
+        let max = TestKeyOrd(items, items);
         let iter = tree.ord_range::<TestDataType>(&min, &max);
         for (i, item) in iter.enumerate() {
             let elem = item?;
-            let ord_key = TestKeyOrd(i / 5 + 1, i % 5 + 1);
-            key.clear();
+            let ord_key = TestKeyOrd(i / items + 1, i % items + 1);
             assert_eq!(
                 elem.key(),
                 Some(ord_key.make_key(&mut key)),
@@ -458,8 +460,7 @@ mod tests {
                 elem.key().unwrap()
             );
             let k1 = format!("test{}", i + 1);
-            let alt_key = TestKeyAlt(k1.as_str(), i % 5 + 1);
-            key.clear();
+            let alt_key = TestKeyAlt(k1.as_str(), i % items + 1);
             let alt = tree.alt_get::<TestDataType>(alt_key)?;
             assert!(alt.is_some());
             let alt = alt.unwrap();
@@ -470,13 +471,11 @@ mod tests {
             );
         }
 
-        key.clear();
         let prefix = KeyMaker::make_key(&2usize, &mut key);
         let iter = tree.ord_scan_prefix::<TestDataType>(prefix);
         let mut found = false;
         for (i, item) in iter.enumerate() {
             let elem = item?;
-            key.clear();
             TestKeyOrd(2, i + 1).make_key(&mut key);
             assert_eq!(elem.key(), Some(key.as_str()), "key should match");
             found = true;
