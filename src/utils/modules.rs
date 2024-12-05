@@ -1,10 +1,10 @@
-use std::{fs, future::Future, path::Path, pin::Pin, time::Duration};
+use std::{any::type_name, fs, future::Future, path::Path, pin::Pin, time::Duration};
 
 use anyhow::{anyhow, Context, Error, Result};
 use rand::{distributions::Alphanumeric, Rng};
 use signal::ShutdownCompleted;
 use tokio::task::JoinHandle;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 use crate::{bus::SharedMessageBus, handle_messages, utils::logger::LogMe};
 
@@ -19,32 +19,34 @@ where
     fn build(ctx: Self::Context) -> impl futures::Future<Output = Result<Self>> + Send;
     fn run(&mut self) -> impl futures::Future<Output = Result<()>> + Send;
 
-    fn load_from_disk<S>(file: &Path) -> Result<S>
+    fn load_from_disk<S>(file: &Path) -> Option<S>
     where
         S: bincode::Decode,
     {
         info!("Loading file {}", file.to_string_lossy());
-        fs::File::open(file)
-            .map_err(|e| e.to_string())
-            .and_then(|mut reader| {
+        match fs::File::open(file) {
+            Ok(mut reader) => {
                 bincode::decode_from_std_read(&mut reader, bincode::config::standard())
-                    .map_err(|e| e.to_string())
-            })
-            .map_err(|e| anyhow!("Loading and decoding {}: {}", file.to_string_lossy(), e))
+                    .log_error(format!("Loading and decoding {}", file.to_string_lossy()))
+                    .ok()
+            }
+            Err(e) => {
+                info!(
+                    "File {} not found for module {} (using default): {:?}",
+                    file.to_string_lossy(),
+                    type_name::<S>(),
+                    e
+                );
+                None
+            }
+        }
     }
 
     fn load_from_disk_or_default<S>(file: &Path) -> S
     where
         S: bincode::Decode + Default,
     {
-        Self::load_from_disk(file).unwrap_or_else(|e| {
-            warn!(
-                "{}: Failed to load data from disk ({}). Error was: {e}",
-                Self::name(),
-                file.display()
-            );
-            S::default()
-        })
+        Self::load_from_disk(file).unwrap_or(S::default())
     }
 
     fn save_on_disk<S>(folder: &Path, file: &Path, store: &S) -> Result<()>
