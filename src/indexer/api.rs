@@ -1,4 +1,7 @@
-use crate::{model::BlockHash, utils::logger::LogMe};
+use crate::{
+    model::{BlockHash, BlockHeight},
+    utils::logger::LogMe,
+};
 
 use super::{
     model::{

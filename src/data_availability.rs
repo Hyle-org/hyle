@@ -27,8 +27,8 @@ use futures::{
     SinkExt, StreamExt,
 };
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeSet;
 use std::collections::HashMap;
-use std::collections::{BTreeSet, HashSet};
 use tokio::{
     net::{TcpListener, TcpStream},
     task::{JoinHandle, JoinSet},
@@ -177,7 +177,7 @@ impl Module for DataAvailability {
 impl DataAvailability {
     pub async fn start(&mut self) -> Result<()> {
         let stream_request_receiver = TcpListener::bind(&self.config.da_address).await?;
-        debug!(
+        info!(
             "📡  Starting DataAvailability module, listening for stream requests on {}",
             &self.config.da_address
         );

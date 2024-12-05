@@ -16,37 +16,6 @@ use std::{
 };
 use tracing::{error, info};
 
-fn handle_blob_data(
-    tx: &BlobTransaction,
-    index: BlobIndex,
-    state: HyllarToken,
-) -> Result<HyllarToken> {
-    let Blob {
-        contract_name,
-        data,
-    } = tx.blobs.get(index.0 as usize).unwrap();
-
-    let data: StructuredBlobData<ERC20Action> = data.clone().try_into()?;
-
-    let caller: sdk::Identity = data
-        .caller
-        .map(|i| {
-            tx.blobs
-                .get(i.0 as usize)
-                .unwrap()
-                .contract_name
-                .0
-                .clone()
-                .into()
-        })
-        .unwrap_or(tx.identity.clone());
-
-    let mut contract = HyllarTokenContract::init(state, caller);
-    let res = sdk::erc20::execute_action(&mut contract, data.parameters);
-    info!("🚀 Executed {contract_name}: {res:?}");
-    Ok(contract.state())
-}
-
 #[tokio::main]
 async fn main() -> Result<()> {
     let da_url = env::var("DA_URL").unwrap_or_else(|_| "localhost:4141".to_string());

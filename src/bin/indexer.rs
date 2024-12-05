@@ -4,8 +4,12 @@ use axum_otel_metrics::HttpMetricsLayerBuilder;
 use clap::Parser;
 use hyle::{
     bus::{metrics::BusMetrics, SharedMessageBus},
-    indexer::Indexer,
-    model::CommonRunContext,
+    indexer::{
+        contract_state_indexer::{ContractStateIndexer, ContractStateIndexerCtx},
+        da_listener::{DAListener, DAListenerCtx},
+        Indexer,
+    },
+    model::{BlockHeight, CommonRunContext},
     rest::{RestApi, RestApiRunContext},
     utils::{
         conf,
@@ -13,6 +17,7 @@ use hyle::{
         modules::{Module, ModulesHandler},
     },
 };
+use hyllar::HyllarToken;
 use std::sync::{Arc, Mutex};
 use tracing::{debug, error, info};
 
@@ -52,8 +57,6 @@ async fn main() -> Result<()> {
 
     info!("Starting indexer with config: {:?}", &config);
 
-    debug!("server mode");
-
     // Init global metrics meter we expose as an endpoint
     let metrics_layer = HttpMetricsLayerBuilder::new()
         .with_service_name(config.id.clone())
@@ -71,9 +74,28 @@ async fn main() -> Result<()> {
         router: Mutex::new(Some(Router::new())),
     });
 
-    let mut indexer = Indexer::build(ctx.clone()).await?;
-    indexer.connect_to(&config.da_address).await?;
+    let hyllar_ctx = ContractStateIndexerCtx {
+        program_id: include_str!("../../contracts/hyllar/hyllar.txt")
+            .trim()
+            .to_string(),
+        handler: Box::new(hyle::indexer::contract_handlers::handle_blob_data),
+        common: ctx.clone(),
+    };
+
+    handler
+        .build_module::<ContractStateIndexer<HyllarToken>>(hyllar_ctx)
+        .await?;
+
+    let indexer = Indexer::build(ctx.clone()).await?;
+    let last_block = indexer.get_last_block().await?;
     handler.add_module(indexer)?;
+
+    handler
+        .build_module::<DAListener>(DAListenerCtx {
+            common: ctx.clone(),
+            start_block: last_block.map(|b| b + 1).unwrap_or(BlockHeight(0)),
+        })
+        .await?;
 
     // Should come last so the other modules have nested their own routes.
     let router = ctx
@@ -82,6 +104,7 @@ async fn main() -> Result<()> {
         .expect("Context router should be available")
         .take()
         .expect("Context router should be available");
+
     handler
         .build_module::<RestApi>(RestApiRunContext {
             rest_addr: ctx.config.rest.clone(),
