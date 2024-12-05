@@ -248,7 +248,6 @@ mod tests {
     use signal::ShutdownModule;
     use std::fs::File;
     use tempfile::tempdir;
-    use tokio::runtime::Runtime;
 
     #[derive(Default, bincode::Encode, bincode::Decode)]
     struct TestStruct {
@@ -325,20 +324,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_build_module() {
-        let rt = Runtime::new().unwrap();
-
         let shared_bus = SharedMessageBus::new(BusMetrics::global("id".to_string()));
         let mut handler = ModulesHandler::new(&shared_bus).await;
-
-        rt.block_on(async {
-            handler
-                .build_module::<TestModule>(
-                    TestBusClient::new_from_bus(shared_bus.new_handle()).await,
-                )
-                .await
-                .unwrap();
-            assert_eq!(handler.modules.len(), 1);
-        });
+        handler
+            .build_module::<TestModule>(TestBusClient::new_from_bus(shared_bus.new_handle()).await)
+            .await
+            .unwrap();
+        assert_eq!(handler.modules.len(), 1);
     }
 
     #[tokio::test]
