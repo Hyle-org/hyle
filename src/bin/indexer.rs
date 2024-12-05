@@ -78,7 +78,7 @@ async fn main() -> Result<()> {
         program_id: include_str!("../../contracts/hyllar/hyllar.txt")
             .trim()
             .to_string(),
-        handler: Box::new(hyle::indexer::contract_handlers::handle_blob_data),
+        handler: Box::new(hyle::indexer::contract_handlers::handle_hyllar),
         common: ctx.clone(),
     };
 

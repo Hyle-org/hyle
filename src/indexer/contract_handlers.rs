@@ -8,7 +8,7 @@ use tracing::info;
 
 use crate::model::BlobTransaction;
 
-pub fn handle_blob_data(
+pub fn handle_hyllar(
     tx: &BlobTransaction,
     index: BlobIndex,
     state: HyllarToken,

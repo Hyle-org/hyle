@@ -1,19 +1,17 @@
-use anyhow::{anyhow, bail, Error, Result};
-use futures::{SinkExt, StreamExt};
+use anyhow::{anyhow, Error, Result};
 use hyle_contract_sdk::{BlobIndex, ContractName, TxHash};
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, sync::Arc};
-use tokio::{net::TcpStream, sync::RwLock};
-use tokio_util::codec::{Framed, LengthDelimitedCodec};
-use tracing::{debug, error, info, warn};
+use tokio::sync::RwLock;
+use tracing::{debug, error, info};
 
 use crate::{
     bus::BusMessage,
     data_availability::DataEvent,
     handle_messages,
     model::{
-        Blob, BlobTransaction, Block, BlockHeight, CommonRunContext, Hashable,
-        RegisterContractTransaction, Transaction, TransactionData,
+        Blob, BlobTransaction, Block, CommonRunContext, Hashable, RegisterContractTransaction,
+        Transaction, TransactionData,
     },
     node_state::NodeState,
     utils::modules::Module,
