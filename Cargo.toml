@@ -4,7 +4,7 @@ members = [
     "contracts/hyllar/guest",
     "contracts/hydentity/guest",
     "contracts/amm/guest",
-    "crates/bonsai-runner"
+    "crates/bonsai-runner",
 ]
 resolver = "2"
 
@@ -35,8 +35,6 @@ sha3 = "0.10.8"
 hex = "0.4.3"
 derive_more = { version = "1.0.0", features = ["display"] }
 anymap = "0.12.1"
-cairo-platinum-prover = { git = "https://github.com/lambdaclass/lambdaworks.git", rev = "e465d7c" }
-stark-platinum-prover = { git = "https://github.com/lambdaclass/lambdaworks.git", rev = "e465d7c" }
 console-subscriber = "0.4.1"
 paste = "1.0.15"
 blst = "0.3.13"
@@ -49,7 +47,7 @@ dhat = { version = "0.3.3", optional = true }
 reqwest = { version = "0.12", features = ["json"] }
 tokio-util = "0.7.13"
 assertables = "9.4.0"
-risc0-zkvm = { version = "1.1.3" }
+risc0-zkvm = { version = "1.2.0" }
 borsh = "1.5.3"
 # tokio (no TLS)
 sqlx = { version = "0.8.2", features = [

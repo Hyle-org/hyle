@@ -3,7 +3,7 @@ use core::str;
 use serde::{de::DeserializeOwned, Serialize};
 use sled::Transactional;
 use std::{fmt::Write, marker::PhantomData};
-use tracing::{debug, info};
+use tracing::debug;
 
 /// Tiny wrapper around sled's iterator item.
 pub struct Item<T: DeserializeOwned>(sled::IVec, sled::IVec, PhantomData<T>);
@@ -314,7 +314,7 @@ mod tests {
     use super::{Db, KeyMaker};
     use anyhow::Result;
     use core::str;
-    use tracing::info;
+    
 
     struct TestKeyOrd(usize, usize);
 
