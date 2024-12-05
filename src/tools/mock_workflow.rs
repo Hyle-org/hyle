@@ -9,7 +9,7 @@ use crate::{
         ProofTransaction, RegisterContractTransaction, SharedRunContext, Transaction,
     },
     rest::client::ApiHttpClient,
-    utils::modules::{module_bus_client, signal::ShutdownCompleted, Module},
+    utils::modules::{module_bus_client, Module},
 };
 use anyhow::Result;
 use hyle_contract_sdk::{Identity, StateDigest};
@@ -22,6 +22,7 @@ use tracing::{error, info, warn};
 
 module_bus_client! {
 struct MockWorkflowBusClient {
+    module: MockWorkflowHandler,
     sender(RestApiMessage),
     receiver(RunScenario),
 }
@@ -133,9 +134,7 @@ impl MockWorkflowHandler {
             }
         }
 
-        _ = self.bus.send(ShutdownCompleted {
-            module: stringify!(MockWorkflowHandler).to_string(),
-        });
+        _ = self.bus.shutdown_complete();
         Ok(())
     }
 

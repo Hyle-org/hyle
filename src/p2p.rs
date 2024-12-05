@@ -9,7 +9,7 @@ use crate::{
     utils::{
         conf::SharedConf,
         crypto::SharedBlstCrypto,
-        modules::{module_bus_client, signal::ShutdownCompleted, Module},
+        modules::{module_bus_client, Module},
     },
 };
 use anyhow::{bail, Result};
@@ -29,6 +29,7 @@ impl BusMessage for P2PCommand {}
 
 module_bus_client! {
 struct P2PBusClient {
+    module: P2P,
     receiver(P2PCommand),
 }
 }
@@ -177,9 +178,7 @@ impl P2P {
                 }
             }
         }
-        _ = self.bus_client.send(ShutdownCompleted {
-            module: stringify!(P2P).to_string(),
-        });
+        _ = self.bus_client.shutdown_complete();
         Ok(())
     }
 }

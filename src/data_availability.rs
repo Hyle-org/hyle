@@ -18,7 +18,7 @@ use crate::{
     utils::{
         conf::SharedConf,
         logger::LogMe,
-        modules::{module_bus_client, signal::ShutdownCompleted, Module},
+        modules::{module_bus_client, Module},
     },
 };
 use anyhow::{Context, Result};
@@ -75,6 +75,7 @@ pub struct QueryBlockHeight {}
 module_bus_client! {
 #[derive(Debug)]
 struct DABusClient {
+    module: DataAvailability,
     sender(OutboundMessage),
     sender(DataEvent),
     sender(ConsensusCommand),
@@ -302,9 +303,7 @@ impl DataAvailability {
                 }
             }
         }
-        _ = self.bus.send(ShutdownCompleted {
-            module: stringify!(DataAvailability).to_string(),
-        });
+        _ = self.bus.shutdown_complete();
 
         Ok(())
     }
