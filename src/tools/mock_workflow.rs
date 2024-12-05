@@ -50,11 +50,72 @@ impl Module for MockWorkflowHandler {
 
     async fn build(ctx: Self::Context) -> Result<Self> {
         let bus = MockWorkflowBusClient::new_from_bus(ctx.common.bus.new_handle()).await;
+
+        let api = api::api(&ctx.common).await;
+        if let Ok(mut guard) = ctx.common.router.lock() {
+            if let Some(router) = guard.take() {
+                guard.replace(router.nest("/v1/tools", api));
+            }
+        }
+
         Ok(MockWorkflowHandler { bus })
     }
 
     fn run(&mut self) -> impl futures::Future<Output = Result<()>> + Send {
         self.start()
+    }
+}
+
+mod api {
+    use axum::{routing::post, Router};
+
+    use crate::tools::mock_workflow::RunScenario;
+    use crate::{
+        bus::{bus_client, SharedMessageBus},
+        model::CommonRunContext,
+    };
+    use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
+
+    bus_client! {
+    struct RestBusClient {
+        sender(RunScenario),
+    }
+    }
+    pub struct RouterState {
+        bus: RestBusClient,
+    }
+
+    pub(super) async fn api(ctx: &CommonRunContext) -> Router<()> {
+        let state = RouterState {
+            bus: RestBusClient::new_from_bus(ctx.bus.new_handle()).await,
+        };
+
+        Router::new()
+            .route("/run_scenario", post(run_scenario))
+            .with_state(state)
+    }
+
+    pub async fn run_scenario(
+        State(mut state): State<RouterState>,
+        Json(scenario): Json<RunScenario>,
+    ) -> Result<impl IntoResponse, StatusCode> {
+        state
+            .bus
+            .send(scenario)
+            .map(|_| StatusCode::OK)
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
+    }
+
+    impl Clone for RouterState {
+        fn clone(&self) -> Self {
+            use crate::utils::static_type_map::Pick;
+            Self {
+                bus: RestBusClient::new(
+                    Pick::<BusMetrics>::get(&self.bus).clone(),
+                    Pick::<tokio::sync::broadcast::Sender<RunScenario>>::get(&self.bus).clone(),
+                ),
+            }
+        }
     }
 }
 
