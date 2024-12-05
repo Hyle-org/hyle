@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use crate::{
-    bus::{BusMessage, SharedMessageBus},
+    bus::BusMessage,
     handle_messages,
     mempool::api::RestApiMessage,
     model::{
@@ -9,10 +9,7 @@ use crate::{
         ProofTransaction, RegisterContractTransaction, SharedRunContext, Transaction,
     },
     rest::client::ApiHttpClient,
-    utils::modules::{
-        boot_signal::{ShutdownCompleted, ShutdownModule},
-        Module,
-    },
+    utils::modules::{module_bus_client, signal::ShutdownCompleted, Module},
 };
 use anyhow::Result;
 use hyle_contract_sdk::{Identity, StateDigest};
@@ -21,13 +18,11 @@ use serde::{Deserialize, Serialize};
 use tokio::time::sleep;
 use tracing::{error, info, warn};
 
-use crate::bus::bus_client;
+// use crate::bus::bus_client;
 
-bus_client! {
+module_bus_client! {
 struct MockWorkflowBusClient {
     sender(RestApiMessage),
-    sender(ShutdownCompleted),
-    receiver(ShutdownModule),
     receiver(RunScenario),
 }
 }
@@ -75,10 +70,7 @@ mod api {
     use axum::{routing::post, Router};
 
     use crate::tools::mock_workflow::RunScenario;
-    use crate::{
-        bus::{bus_client, SharedMessageBus},
-        model::CommonRunContext,
-    };
+    use crate::{bus::bus_client, model::CommonRunContext};
     use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
 
     bus_client! {

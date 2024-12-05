@@ -115,7 +115,7 @@ macro_rules! bus_client {
             );
         }
         impl $name {
-            pub async fn new_from_bus(bus: SharedMessageBus) -> $name {
+            pub async fn new_from_bus(bus: $crate::bus::SharedMessageBus) -> $name {
                 $name::new(
                     bus.metrics.clone(),
                     $(get_sender::<$sender>(&bus).await,)*

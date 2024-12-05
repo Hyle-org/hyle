@@ -4,12 +4,11 @@ mod api;
 pub mod model;
 
 use crate::{
-    bus::{bus_client, SharedMessageBus},
     data_availability::DataEvent,
     handle_messages,
     model::{BlobTransaction, Block, BlockHash, CommonRunContext, ContractName, Hashable},
     node_state::NodeState,
-    utils::modules::Module,
+    utils::modules::{module_bus_client, Module},
 };
 use anyhow::{bail, Context, Error, Result};
 use axum::{
@@ -34,7 +33,7 @@ use tokio::{
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
 use tracing::{debug, error, info, warn};
 
-bus_client! {
+module_bus_client! {
 #[derive(Debug)]
 struct IndexerBusClient {
     receiver(DataEvent),
@@ -625,9 +624,12 @@ mod test {
         net::{Ipv4Addr, SocketAddr},
     };
 
-    use crate::model::{
-        Blob, BlobData, BlockHeight, ProofData, ProofTransaction, RegisterContractTransaction,
-        Transaction, TransactionData, VerifiedProofTransaction,
+    use crate::{
+        bus::SharedMessageBus,
+        model::{
+            Blob, BlobData, BlockHeight, ProofData, ProofTransaction, RegisterContractTransaction,
+            Transaction, TransactionData, VerifiedProofTransaction,
+        },
     };
 
     use super::*;

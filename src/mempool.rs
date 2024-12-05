@@ -1,7 +1,7 @@
 //! Mempool logic & pending transaction management.
 
 use crate::{
-    bus::{bus_client, command_response::Query, BusMessage, SharedMessageBus},
+    bus::{command_response::Query, BusMessage},
     consensus::ConsensusEvent,
     genesis::GenesisEvent,
     handle_messages,
@@ -16,10 +16,7 @@ use crate::{
         conf::SharedConf,
         crypto::{BlstCrypto, SharedBlstCrypto},
         logger::LogMe,
-        modules::{
-            boot_signal::{ShutdownCompleted, ShutdownModule},
-            Module,
-        },
+        modules::{module_bus_client, Module},
     },
 };
 use anyhow::{bail, Context, Result};
@@ -39,12 +36,11 @@ pub mod storage;
 #[derive(Debug, Clone)]
 pub struct QueryNewCut(pub Vec<ValidatorPublicKey>);
 
-bus_client! {
+module_bus_client! {
 struct MempoolBusClient {
+    module: Mempool,
     sender(OutboundMessage),
     sender(MempoolEvent),
-    sender(ShutdownCompleted),
-    receiver(ShutdownModule),
     receiver(SignedByValidator<MempoolNetMessage>),
     receiver(RestApiMessage),
     receiver(ConsensusEvent),
@@ -121,7 +117,6 @@ impl Module for Mempool {
                 .as_path(),
         )
         .unwrap_or(Storage::new(ctx.node.crypto.validator_pubkey().clone()));
-
         Ok(Mempool {
             bus,
             file: Some(PathBuf::from_str("mempool_storage.bin").unwrap()),
@@ -192,9 +187,7 @@ impl Mempool {
             }
         }
 
-        _ = self.bus.send(ShutdownCompleted {
-            module: stringify!(Mempool).to_string(),
-        });
+        _ = self.bus.shutdown_complete();
         Ok(())
     }
 

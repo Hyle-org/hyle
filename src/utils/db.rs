@@ -313,7 +313,6 @@ mod tests {
     use super::{Db, KeyMaker};
     use anyhow::Result;
     use core::str;
-    
 
     struct TestKeyOrd(usize, usize);
 

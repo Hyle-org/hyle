@@ -2,7 +2,6 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use crate::bus::command_response::{CmdRespClient, Query};
-use crate::bus::SharedMessageBus;
 use crate::consensus::{ConsensusEvent, ConsensusInfo, QueryConsensusInfo};
 use crate::genesis::{Genesis, GenesisEvent};
 use crate::mempool::storage::Cut;
@@ -11,20 +10,19 @@ use crate::model::Hashable;
 use crate::p2p::network::{NetMessage, OutboundMessage, SignedByValidator};
 use crate::utils::conf::SharedConf;
 use crate::utils::crypto::{BlstCrypto, SharedBlstCrypto};
-use crate::utils::modules::boot_signal::{ShutdownCompleted, ShutdownModule};
-use crate::{bus::bus_client, handle_messages, model::SharedRunContext, utils::modules::Module};
+use crate::utils::modules::module_bus_client;
+use crate::{handle_messages, model::SharedRunContext, utils::modules::Module};
 use anyhow::Result;
 use bincode::{Decode, Encode};
 use tracing::warn;
 
-bus_client! {
+module_bus_client! {
 struct SingleNodeConsensusBusClient {
+    module: SingleNodeConsensus,
     sender(ConsensusEvent),
     sender(GenesisEvent),
     sender(SignedByValidator<MempoolNetMessage>),
     sender(Query<QueryNewCut, Cut>),
-    sender(ShutdownCompleted),
-    receiver(ShutdownModule),
     receiver(OutboundMessage),
     receiver(Query<QueryConsensusInfo, ConsensusInfo>),
 }
@@ -143,9 +141,7 @@ impl SingleNodeConsensus {
             }
         }
 
-        _ = self.bus.send(ShutdownCompleted {
-            module: stringify!(SingleNodeConsensus).to_string(),
-        });
+        _ = self.bus.shutdown_complete();
 
         Ok(())
     }
@@ -215,7 +211,7 @@ impl SingleNodeConsensus {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bus::SharedMessageBus;
+    use crate::bus::{bus_client, SharedMessageBus};
     use crate::mempool::storage::{Car, CarHash, DataProposal};
     use crate::model::{Hashable, ValidatorPublicKey};
     use crate::p2p;

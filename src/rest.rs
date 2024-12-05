@@ -13,24 +13,18 @@ use tower_http::trace::TraceLayer;
 use tracing::info;
 
 use crate::{
-    bus::{bus_client, SharedMessageBus},
+    bus::SharedMessageBus,
+    handle_messages,
     model::ValidatorPublicKey,
-    utils::{
-        modules::{
-            boot_signal::{ShutdownCompleted, ShutdownModule},
-            Module,
-        },
-        static_type_map::Pick,
-    },
+    utils::modules::{module_bus_client, Module},
 };
 use anyhow::{Context, Result};
 
 pub mod client;
 
-bus_client! {
+module_bus_client! {
     struct RestBusClient {
-        sender(ShutdownCompleted),
-        receiver(ShutdownModule),
+        module: RestApi,
     }
 }
 
@@ -98,33 +92,18 @@ impl RestApi {
     pub async fn serve(&mut self) -> Result<()> {
         info!("rest listening on {}", self.rest_addr);
 
-        let listener = tokio::net::TcpListener::bind(&self.rest_addr)
-            .await
-            .context("Starting rest server")?;
-
-        let receiver =
-            Pick::<tokio::sync::broadcast::Receiver<ShutdownModule>>::get_mut(&mut self.bus);
-
-        let shutdown_event = async move {
-            loop {
-                if let Ok(msg) = receiver.recv().await {
-                    if msg.module == "RestApi" {
-                        break;
-                    }
-                }
-            }
-            Ok::<(), ()>(())
-        };
-
-        tokio::select! {
-            Ok(_) = shutdown_event => {}
-
-            _ = axum::serve(listener, self.app.take().expect("app is not set")) => {}
+        handle_messages! {
+            on_bus self.bus,
+            break_on(stringify!(RestApi))
+            _ = axum::serve(
+                tokio::net::TcpListener::bind(&self.rest_addr)
+                    .await
+                    .context("Starting rest server")?,
+                self.app.take().expect("app is not set")
+            ) => { }
         }
 
-        _ = self.bus.send(ShutdownCompleted {
-            module: stringify!(RestApi).to_string(),
-        });
+        _ = self.bus.shutdown_complete();
 
         Ok(())
     }

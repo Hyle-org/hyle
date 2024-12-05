@@ -4,7 +4,7 @@ mod api;
 mod blocks;
 
 use crate::{
-    bus::{bus_client, command_response::Query, BusMessage, SharedMessageBus},
+    bus::{command_response::Query, BusMessage},
     consensus::ConsensusCommand,
     genesis::GenesisEvent,
     handle_messages,
@@ -18,10 +18,7 @@ use crate::{
     utils::{
         conf::SharedConf,
         logger::LogMe,
-        modules::{
-            boot_signal::{ShutdownCompleted, ShutdownModule},
-            Module,
-        },
+        modules::{module_bus_client, signal::ShutdownCompleted, Module},
     },
 };
 use anyhow::{Context, Result};
@@ -75,14 +72,12 @@ impl From<DataNetMessage> for NetMessage {
 #[derive(Clone)]
 pub struct QueryBlockHeight {}
 
-bus_client! {
+module_bus_client! {
 #[derive(Debug)]
 struct DABusClient {
     sender(OutboundMessage),
     sender(DataEvent),
     sender(ConsensusCommand),
-    sender(ShutdownCompleted),
-    receiver(ShutdownModule),
     receiver(Query<ContractName, Contract>),
     receiver(DataNetMessage),
     receiver(PeerEvent),
@@ -622,7 +617,7 @@ mod tests {
     use tokio::io::AsyncWriteExt;
     use tokio_util::codec::{Framed, LengthDelimitedCodec};
 
-    use super::{blocks::Blocks, bus_client};
+    use super::{blocks::Blocks, module_bus_client};
     use anyhow::Result;
 
     #[test]
@@ -696,8 +691,7 @@ mod tests {
         }
     }
 
-    use crate::bus::SharedMessageBus;
-    bus_client! {
+    module_bus_client! {
     #[derive(Debug)]
     struct TestBusClient {
         sender(MempoolEvent),

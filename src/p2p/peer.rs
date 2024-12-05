@@ -27,7 +27,7 @@ use crate::model::ValidatorPublicKey;
 use crate::p2p::stream::read_stream;
 use crate::utils::conf::SharedConf;
 use crate::utils::crypto::SharedBlstCrypto;
-use crate::utils::modules::boot_signal::ShutdownModule;
+use crate::utils::modules::signal::ShutdownModule;
 
 bus_client! {
 struct PeerBusClient {

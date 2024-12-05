@@ -1,15 +1,12 @@
 use std::{fs, future::Future, path::Path, pin::Pin, time::Duration};
 
 use anyhow::{anyhow, Context, Error, Result};
-use boot_signal::{ShutdownCompleted, ShutdownModule};
 use rand::{distributions::Alphanumeric, Rng};
+use signal::ShutdownCompleted;
 use tokio::task::JoinHandle;
 use tracing::{debug, info, warn};
 
-use crate::{
-    bus::{bus_client, SharedMessageBus},
-    utils::logger::LogMe,
-};
+use crate::{bus::SharedMessageBus, handle_messages, utils::logger::LogMe};
 
 /// Module trait to define startup dependencies
 pub trait Module
@@ -90,7 +87,7 @@ impl ModuleStarter {
     }
 }
 
-pub mod boot_signal {
+pub mod signal {
     use crate::bus::BusMessage;
     #[derive(Clone, Debug)]
     pub struct ShutdownModule {
@@ -105,27 +102,61 @@ pub mod boot_signal {
     impl BusMessage for ShutdownCompleted {}
 }
 
-bus_client! {
-    pub struct ShutdownClient {
-        sender(boot_signal::ShutdownModule),
-        receiver(boot_signal::ShutdownCompleted),
+macro_rules! module_bus_client {
+    (
+        $(#[$meta:meta])*
+        $pub:vis struct $name:ident {
+            $(module: $module:ty,)?
+            $(sender($sender:ty),)*
+            $(receiver($receiver:ty),)*
+        }
+    ) => {
+        $crate::bus::bus_client!{
+            $(#[$meta])*
+            $pub struct $name {
+                sender($crate::utils::modules::signal::ShutdownCompleted),
+                sender($crate::utils::modules::signal::ShutdownModule),
+                $(sender($sender),)*
+                $(receiver($receiver),)*
+                receiver($crate::utils::modules::signal::ShutdownCompleted),
+                receiver($crate::utils::modules::signal::ShutdownModule),
+            }
+        }
+
+        impl $name {
+            #[allow(unused)]
+             pub fn shutdown(&mut self, module_name: String) -> Result<()> {
+                _ = self.send($crate::utils::modules::signal::ShutdownModule { module: module_name })?;
+                Ok(())
+            }
+            $(
+            #[allow(unused)]
+             pub fn shutdown_complete(&mut self) -> Result<()> {
+                _ = self.send($crate::utils::modules::signal::ShutdownCompleted { module: stringify!($module).to_string() })?;
+                Ok(())
+            }
+            )?
+        }
     }
+}
+
+pub(crate) use module_bus_client;
+
+module_bus_client! {
+    pub struct ShutdownClient {}
 }
 
 impl ShutdownClient {
     pub async fn shutdown_module(&mut self, module_name: &str) {
         _ = self
-            .send(ShutdownModule {
-                module: module_name.to_string(),
-            })
+            .shutdown(module_name.to_string())
             .log_error("Shutting down module");
 
-        loop {
-            let msg: Result<ShutdownCompleted, _> = self.recv().await;
-            debug!("Received shutdown completed msg {:?}", &msg);
-            if let Ok(msg) = msg {
+        handle_messages! {
+            on_bus *self,
+            listen<ShutdownCompleted> msg => {
                 if msg.module == module_name {
-                    debug!("Module {} successfully shut", msg.module);
+                    info!("Module {} successfully shut", msg.module);
                     break;
                 }
             }
@@ -214,6 +245,7 @@ mod tests {
 
     use super::*;
     use crate::bus::SharedMessageBus;
+    use signal::ShutdownModule;
     use std::fs::File;
     use tempfile::tempdir;
     use tokio::runtime::Runtime;
@@ -227,10 +259,9 @@ mod tests {
         bus: TestBusClient,
     }
 
-    bus_client! {
+    module_bus_client! {
         struct TestBusClient {
-            sender(ShutdownCompleted),
-            receiver(ShutdownModule),
+            module: TestModule,
         }
     }
 

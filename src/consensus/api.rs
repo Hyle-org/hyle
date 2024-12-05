@@ -9,7 +9,6 @@ use crate::{
     bus::{
         bus_client,
         command_response::{CmdRespClient, Query},
-        SharedMessageBus,
     },
     model::CommonRunContext,
     rest::AppError,

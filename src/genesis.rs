@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use crate::{
-    bus::{bus_client, BusMessage, SharedMessageBus},
+    bus::{bus_client, BusMessage},
     consensus::staking::{Stake, Staker},
     handle_messages,
     model::{

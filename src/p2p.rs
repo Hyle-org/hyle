@@ -3,16 +3,13 @@
 use std::{sync::Arc, time::Duration};
 
 use crate::{
-    bus::{bus_client, BusMessage, SharedMessageBus},
+    bus::{BusMessage, SharedMessageBus},
     handle_messages,
     model::SharedRunContext,
     utils::{
         conf::SharedConf,
         crypto::SharedBlstCrypto,
-        modules::{
-            boot_signal::{ShutdownCompleted, ShutdownModule},
-            Module,
-        },
+        modules::{module_bus_client, signal::ShutdownCompleted, Module},
     },
 };
 use anyhow::{bail, Result};
@@ -30,11 +27,9 @@ pub enum P2PCommand {
 }
 impl BusMessage for P2PCommand {}
 
-bus_client! {
+module_bus_client! {
 struct P2PBusClient {
-    sender(ShutdownCompleted),
     receiver(P2PCommand),
-    receiver(ShutdownModule),
 }
 }
 

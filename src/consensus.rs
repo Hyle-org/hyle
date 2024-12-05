@@ -1,11 +1,11 @@
 //! Handles all consensus logic up to block commitment.
 
-use crate::utils::modules::boot_signal::ShutdownCompleted;
+use crate::utils::logger::LogMe;
+use crate::utils::modules::module_bus_client;
 #[cfg(not(test))]
 use crate::utils::static_type_map::Pick;
-use crate::utils::{logger::LogMe, modules::boot_signal::ShutdownModule};
 use crate::{
-    bus::{bus_client, command_response::Query, BusMessage, SharedMessageBus},
+    bus::{command_response::Query, BusMessage},
     data_availability::DataEvent,
     genesis::GenesisEvent,
     handle_messages,
@@ -82,15 +82,14 @@ impl BusMessage for ConsensusCommand {}
 impl BusMessage for ConsensusEvent {}
 impl BusMessage for ConsensusNetMessage {}
 
-bus_client! {
+module_bus_client! {
 struct ConsensusBusClient {
+    module: Consensus,
     sender(OutboundMessage),
     sender(ConsensusEvent),
     sender(ConsensusCommand),
     sender(P2PCommand),
     sender(Query<QueryNewCut, Cut>),
-    sender(ShutdownCompleted),
-    receiver(ShutdownModule),
     receiver(ConsensusCommand),
     receiver(GenesisEvent),
     receiver(DataEvent),
@@ -932,9 +931,7 @@ impl Consensus {
             }
         }
 
-        _ = self.bus.send(ShutdownCompleted {
-            module: stringify!(Consensus).to_string(),
-        });
+        _ = self.bus.shutdown_complete();
 
         Ok(())
     }
