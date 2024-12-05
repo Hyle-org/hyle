@@ -142,6 +142,7 @@ where
 
     fn settle_tx(&mut self, tx: TxHash) -> Result<()> {
         let Some(tx) = self.unsettled_blobs.get(&tx) else {
+            debug!("🔨 No supported blobs found in transaction: {}", tx);
             return Ok(());
         };
 

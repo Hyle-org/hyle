@@ -45,7 +45,7 @@ fn handle_blob_data(
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let da_url = env::var("DA_URL").unwrap_or_else(|_| "http://localhost:4321".to_string());
+    let da_url = env::var("DA_URL").unwrap_or_else(|_| "localhost:4141".to_string());
     let log_format = env::var("LOG_FORMAT").unwrap_or_else(|_| "full".to_string());
 
     let id = "hyllar_indexer".to_string();
@@ -63,7 +63,7 @@ async fn main() -> Result<()> {
 
     let ctx2 = ContractStateIndexerCtx {
         da_address: da_url.clone(),
-        program_id: "hyllar".to_string(),
+        program_id: include_str!("../../hyllar.txt").trim().to_string(),
         handler: Box::new(handle_blob_data),
     };
 

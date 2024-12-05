@@ -234,7 +234,6 @@ impl NodeState {
 
         Self::verify_identity(unsettled_tx)?;
 
-        info!("Settling");
         let (updated_states, did_settle) = Self::settle_blobs_recursively(
             &self.contracts,
             updated_states,
