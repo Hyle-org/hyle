@@ -1,5 +1,6 @@
 //! Minimal block storage layer for data availability.
 
+mod api;
 mod blocks;
 
 use crate::{
@@ -118,6 +119,13 @@ impl Module for DataAvailability {
 
     async fn build(ctx: Self::Context) -> Result<Self> {
         let bus = DABusClient::new_from_bus(ctx.common.bus.new_handle()).await;
+
+        let api = api::api(&ctx.common).await;
+        if let Ok(mut guard) = ctx.common.router.lock() {
+            if let Some(router) = guard.take() {
+                guard.replace(router.nest("/v1/", api));
+            }
+        }
 
         #[cfg(not(test))]
         let db = sled::Config::new()

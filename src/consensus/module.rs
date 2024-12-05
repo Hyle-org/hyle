@@ -3,7 +3,8 @@ use anyhow::Result;
 use crate::{model::SharedRunContext, utils::modules::Module};
 
 use super::{
-    consensus_bus_client::ConsensusBusClient, metrics::ConsensusMetrics, Consensus, ConsensusStore,
+    api, consensus_bus_client::ConsensusBusClient, metrics::ConsensusMetrics, Consensus,
+    ConsensusStore,
 };
 
 impl Module for Consensus {
@@ -23,6 +24,14 @@ impl Module for Consensus {
         let store: ConsensusStore = Self::load_from_disk_or_default(file.as_path());
         let metrics = ConsensusMetrics::global(ctx.common.config.id.clone());
         let bus = ConsensusBusClient::new_from_bus(ctx.common.bus.new_handle()).await;
+
+        let api = api::api(&ctx.common).await;
+        if let Ok(mut guard) = ctx.common.router.lock() {
+            if let Some(router) = guard.take() {
+                guard.replace(router.nest("/v1/consensus", api));
+            }
+        }
+
         Ok(Consensus {
             metrics,
             bus,

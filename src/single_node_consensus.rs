@@ -74,6 +74,14 @@ impl Module for SingleNodeConsensus {
         let store: SingleNodeConsensusStore = Self::load_from_disk_or_default(file.as_path());
 
         let bus = SingleNodeConsensusBusClient::new_from_bus(ctx.common.bus.new_handle()).await;
+
+        let api = super::consensus::api::api(&ctx.common).await;
+        if let Ok(mut guard) = ctx.common.router.lock() {
+            if let Some(router) = guard.take() {
+                guard.replace(router.nest("/v1/consensus", api));
+            }
+        }
+
         Ok(SingleNodeConsensus {
             bus,
             data_proposal_signer: Arc::new(BlstCrypto::new(
