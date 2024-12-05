@@ -10,6 +10,7 @@ pub struct BlocksOrdKey(pub BlockHeight);
 impl KeyMaker for BlocksKey {
     fn make_key<'a>(&self, writer: &'a mut String) -> &'a str {
         use std::fmt::Write;
+        writer.clear();
         _ = write!(writer, "{}", self.0);
         writer.as_str()
     }
@@ -19,6 +20,7 @@ impl KeyMaker for BlocksKey {
 impl KeyMaker for BlocksOrdKey {
     fn make_key<'a>(&self, writer: &'a mut String) -> &'a str {
         use std::fmt::Write;
+        writer.clear();
         _ = write!(writer, "{:08x}", self.0 .0);
         writer.as_str()
     }
