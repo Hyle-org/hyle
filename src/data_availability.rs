@@ -263,13 +263,11 @@ impl DataAvailability {
             // Send one block to a peer as part of "catchup",
             // once we have sent all blocks the peer is presumably synchronised.
             Some((mut block_hashes, peer_ip)) = catchup_receiver.recv() => {
-                let hash = block_hashes
-                .iter()
-                .next();
+                let hash = block_hashes.pop();
 
                 trace!("📡  Sending block {:?} to peer {}", &hash, &peer_ip);
                 if let Some(hash) = hash {
-                    if let Some(Ok(Some(block))) = block_hashes.take(&hash.clone()).map(|hash| self.blocks.get(hash))
+                    if let Ok(Some(block)) = self.blocks.get(hash)
                     {
                         let bytes: bytes::Bytes =
                             bincode::encode_to_vec(block, bincode::config::standard())?.into();
@@ -528,7 +526,7 @@ impl DataAvailability {
         &mut self,
         start_height: u64,
         ping_sender: tokio::sync::mpsc::Sender<String>,
-        catchup_sender: tokio::sync::mpsc::Sender<(HashSet<BlockHash>, String)>,
+        catchup_sender: tokio::sync::mpsc::Sender<(Vec<BlockHash>, String)>,
         sender: SplitSink<Framed<TcpStream, LengthDelimitedCodec>, Bytes>,
         mut receiver: SplitStream<Framed<TcpStream, LengthDelimitedCodec>>,
         peer_ip: &String,
@@ -561,7 +559,7 @@ impl DataAvailability {
         // We will safely stream everything as any new block will be sent
         // because we registered in the struct beforehand.
         // Like pings, this just sends a message processed in the main select! loop.
-        let block_hashes: HashSet<BlockHash> = self
+        let mut block_hashes: Vec<BlockHash> = self
             .blocks
             .range(
                 blocks::BlocksOrdKey(BlockHeight(start_height)),
@@ -578,6 +576,7 @@ impl DataAvailability {
                     .ok()
             })
             .collect();
+        block_hashes.reverse();
 
         catchup_sender.send((block_hashes, peer_ip.clone())).await?;
 
@@ -755,7 +754,6 @@ mod tests {
                 break;
             }
         }
-        heights_received.sort();
         assert_eq!(heights_received, (0..14).collect::<Vec<u64>>());
 
         da_stream.close().await.unwrap();
@@ -796,7 +794,6 @@ mod tests {
                 break;
             }
         }
-        heights_received.sort();
         assert_eq!(heights_received, (0..18).collect::<Vec<u64>>());
     }
 }
