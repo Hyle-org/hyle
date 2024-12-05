@@ -3,11 +3,12 @@ use std::time::Duration;
 use crate::{
     bus::{BusMessage, SharedMessageBus},
     handle_messages,
+    mempool::api::RestApiMessage,
     model::{
         get_current_timestamp, Blob, BlobData, BlobTransaction, ContractName, ProofData,
         ProofTransaction, RegisterContractTransaction, SharedRunContext, Transaction,
     },
-    rest::{client::ApiHttpClient, endpoints::RestApiMessage},
+    rest::client::ApiHttpClient,
     utils::modules::Module,
 };
 use anyhow::Result;

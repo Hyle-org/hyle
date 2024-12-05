@@ -2,7 +2,6 @@
 
 use crate::{
     bus::{bus_client, command_response::Query, SharedMessageBus},
-    consensus::{ConsensusInfo, QueryConsensusInfo},
     data_availability::QueryBlockHeight,
     model::{BlockHeight, ContractName, ValidatorPublicKey},
     node_state::model::Contract,
@@ -17,7 +16,6 @@ use axum::{
     Router,
 };
 use axum_otel_metrics::HttpMetricsLayer;
-use endpoints::RestApiMessage;
 use serde::{Deserialize, Serialize};
 use tower_http::trace::TraceLayer;
 use tracing::info;
@@ -27,11 +25,9 @@ pub mod endpoints;
 
 bus_client! {
 struct RestBusClient {
-    sender(RestApiMessage),
     sender(RunScenario),
     sender(Query<ContractName, Contract>),
     sender(Query<QueryBlockHeight, BlockHeight>),
-    sender(Query<QueryConsensusInfo, ConsensusInfo>),
 }
 }
 
@@ -75,16 +71,6 @@ impl Module for RestApi {
                     .route("/v1/da/block/height", get(endpoints::get_block_height))
                     // FIXME: we expose this endpoint for testing purposes. This should be removed or adapted
                     .route("/v1/contract/:name", get(endpoints::get_contract))
-                    .route(
-                        "/v1/contract/register",
-                        post(endpoints::send_contract_transaction),
-                    )
-                    .route(
-                        "/v1/tx/send/stake",
-                        post(endpoints::send_staking_transaction),
-                    )
-                    .route("/v1/tx/send/blob", post(endpoints::send_blob_transaction))
-                    .route("/v1/tx/send/proof", post(endpoints::send_proof_transaction))
                     .route("/v1/tools/run_scenario", post(endpoints::run_scenario))
                     .with_state(RouterState {
                         bus: RestBusClient::new_from_bus(ctx.bus.new_handle()).await,
@@ -127,17 +113,12 @@ impl Clone for RouterState {
         Self {
             bus: RestBusClient::new(
                 Pick::<BusMetrics>::get(&self.bus).clone(),
-                Pick::<tokio::sync::broadcast::Sender<RestApiMessage>>::get(&self.bus).clone(),
                 Pick::<tokio::sync::broadcast::Sender<RunScenario>>::get(&self.bus).clone(),
                 Pick::<tokio::sync::broadcast::Sender<Query<ContractName, Contract>>>::get(
                     &self.bus,
                 )
                 .clone(),
                 Pick::<tokio::sync::broadcast::Sender<Query<QueryBlockHeight, BlockHeight>>>::get(
-                    &self.bus,
-                )
-                .clone(),
-                Pick::<tokio::sync::broadcast::Sender<Query<QueryConsensusInfo, ConsensusInfo>>>::get(
                     &self.bus,
                 )
                 .clone(),
