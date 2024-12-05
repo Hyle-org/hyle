@@ -51,7 +51,6 @@ impl<T: DeserializeOwned> DoubleEndedIterator for Iter<T> {
 }
 
 /// KeyMaker makes it easy to build keys without allocating each time.
-
 pub trait KeyMaker {
     fn make_key<'a>(&self, writer: &'a mut String) -> &'a str;
 }

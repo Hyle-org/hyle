@@ -169,7 +169,7 @@ impl ModulesHandler {
     /// Shutdown modules in reverse order (start A, B, C, shutdown C, B, A)
     pub async fn shutdown_modules(&mut self, timeout: Duration) -> Result<()> {
         for module_name in self.started_modules.drain(..).rev() {
-            if !vec!["Genesis"].contains(&module_name) {
+            if !["Genesis"].contains(&module_name) {
                 _ = tokio::time::timeout(timeout, self.bus.shutdown_module(module_name))
                     .await
                     .log_error(format!("Shutting down module {module_name}"));
