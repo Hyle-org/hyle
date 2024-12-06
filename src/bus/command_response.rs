@@ -94,8 +94,6 @@ macro_rules! handle_messages {
     (on_bus $bus:expr, $($rest:tt)*) => {
 
         #[allow(unused_imports)]
-        use paste::paste;
-        #[allow(unused_imports)]
         use $crate::utils::static_type_map::Pick;
         #[allow(unused_imports)]
         use $crate::bus::command_response::handle_messages_helpers::receive_bus_metrics;
@@ -107,7 +105,7 @@ macro_rules! handle_messages {
     (bus($bus:expr) index($index:ident) command_response<$command:ty, $response:ty> $res:pat => $handler:block $($rest:tt)*) => {
         // Create a receiver with a unique variable $index
         let $index = unsafe { &mut *Pick::<tokio::sync::broadcast::Receiver<Query<$command, $response>>>::splitting_get_mut(&mut $bus) };
-        paste! {
+        paste::paste! {
         handle_messages! {
             bus($bus) index([<$index a>]) $($rest)*
             // Listen on receiver
@@ -161,7 +159,7 @@ macro_rules! handle_messages {
 
     (bus($bus:expr) index($index:ident) listen<$message:ty> $res:pat => $handler:block $($rest:tt)*) => {
         let $index = unsafe { &mut *Pick::<tokio::sync::broadcast::Receiver<$message>>::splitting_get_mut(&mut $bus) };
-        paste! {
+        paste::paste! {
         handle_messages! {
             bus($bus) index([<$index a>]) $($rest)*
             Ok($res) = $index.recv()  => {
@@ -177,18 +175,17 @@ macro_rules! handle_messages {
     };
 
     // Shorthand to listen to topic, and break the loop
-    (bus($bus:expr) index($index:ident) break_on($module_name:expr) $($rest:tt)*) => {
-        let $index = unsafe { &mut *Pick::<tokio::sync::broadcast::Receiver<$crate::utils::modules::signal::ShutdownModule>>::splitting_get_mut(&mut $bus) };
-        paste! {
+    (bus($bus:expr) index($index:ident) break_on<$module:ty> $($rest:tt)*) => {
+        paste::paste! {
         handle_messages! {
-            bus($bus) index([<$index a>]) $($rest)*
-            Ok(shutdown_event) = $index.recv() => {
-                if shutdown_event.module == $module_name {
-                    receive_bus_metrics::<$crate::utils::modules::signal::ShutdownModule, _>(&mut $bus);
-                    tracing::warn!("Break signal received for module {}", $module_name);
+            bus($bus) index($index)
+            listen<$crate::utils::modules::signal::ShutdownModule> shutdown_event => {
+                if shutdown_event.module == std::any::type_name::<$module>() {
+                    tracing::warn!("Break signal received for module {}", shutdown_event.module);
                     break;
                 }
             }
+            $($rest)*
         }
         }
     };
