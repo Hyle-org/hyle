@@ -18,7 +18,7 @@ serde = { version = "1.0", default-features = false, features = [
 ] }
 clap = { version = "4.5.23", features = ["derive"] }
 base64 = "0.22.1"
-bincode = { version = "2.0.0-rc.2", tag = "v2.0.0-rc.2", git = "https://github.com/bincode-org/bincode.git" }
+bincode = { version = "2.0.0-rc.3" }
 hex = "0.4.3"
 borsh = "1.5.3"
 reqwest = "0.12.8"

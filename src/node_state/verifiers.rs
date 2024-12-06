@@ -1,7 +1,5 @@
-use anyhow::{bail, Context, Error};
-use borsh::from_slice;
-use risc0_zkvm::sha::Digest;
-use sp1_sdk::{ProverClient, SP1ProofWithPublicValues, SP1VerifyingKey};
+use anyhow::{bail, Error};
+use hyle_rust_verifiers::{risc0_proof_verifier, sp1_proof_verifier};
 
 use crate::model::ProofTransaction;
 use hyle_contract_sdk::HyleOutput;
@@ -20,77 +18,13 @@ pub fn verify_proof(
     }
 }
 
-pub fn risc0_proof_verifier(encoded_receipt: &[u8], image_id: &[u8]) -> Result<HyleOutput, Error> {
-    let receipt = from_slice::<risc0_zkvm::Receipt>(encoded_receipt)
-        .context("Error while decoding Risc0 proof's receipt")?;
-
-    let image_bytes: Digest = image_id.try_into().context("Invalid Risc0 image ID")?;
-
-    receipt
-        .verify(image_bytes)
-        .context("Risc0 proof verification failed")?;
-
-    let hyle_output = receipt
-        .journal
-        .decode::<HyleOutput>()
-        .context("Failed to extract HyleOuput from Risc0's journal")?;
-
-    tracing::info!(
-        "✅ Risc0 proof verified. {}",
-        std::str::from_utf8(&hyle_output.program_outputs)
-            .map(|o| format!("Program outputs: {o}"))
-            .unwrap_or("Invalid UTF-8".to_string())
-    );
-
-    // // TODO: allow multiple outputs when verifying
-    Ok(hyle_output)
-}
-
-pub fn sp1_proof_verifier(proof_bin: &[u8], verification_key: &[u8]) -> Result<HyleOutput, Error> {
-    // Setup the prover client.
-    let client = ProverClient::new();
-
-    let (proof, _) =
-        bincode::decode_from_slice::<bincode::serde::Compat<SP1ProofWithPublicValues>, _>(
-            proof_bin,
-            bincode::config::legacy().with_fixed_int_encoding(),
-        )
-        .context("Error while decoding SP1 proof.")?;
-
-    // Deserialize verification key from JSON
-    let vk: SP1VerifyingKey =
-        serde_json::from_slice(verification_key).context("Invalid SP1 image ID")?;
-
-    // Verify the proof.
-    client
-        .verify(&proof.0, &vk)
-        .context("SP1 proof verification failed")?;
-
-    let (hyle_output, _) = bincode::decode_from_slice::<HyleOutput, _>(
-        proof.0.public_values.as_slice(),
-        bincode::config::legacy().with_fixed_int_encoding(),
-    )
-    .context("Failed to extract HyleOuput from SP1 proof")?;
-
-    tracing::info!(
-        "✅ SP1 proof verified. {}",
-        std::str::from_utf8(&hyle_output.program_outputs)
-            .map(|o| format!("Program outputs: {o}"))
-            .unwrap_or("Invalid UTF-8".to_string())
-    );
-
-    Ok(hyle_output)
-}
-
 #[cfg(test)]
 mod tests {
-    use std::{fs::File, io::Read};
-
     use hydentity::Hydentity;
     use hyle_contract_sdk::{identity_provider::IdentityVerification, StateDigest};
+    use hyle_rust_verifiers::{risc0_proof_verifier, sp1_proof_verifier};
     use serde_json::json;
-
-    use super::risc0_proof_verifier;
+    use std::{fs::File, io::Read};
 
     fn load_encoded_receipt_from_file(path: &str) -> Vec<u8> {
         let mut file = File::open(path).expect("Failed to open proof file");
@@ -144,8 +78,7 @@ mod tests {
             }
         })).unwrap();
 
-        let result =
-            super::sp1_proof_verifier(&encoded_proof, verification_key.as_bytes()).unwrap();
+        let result = sp1_proof_verifier(&encoded_proof, verification_key.as_bytes()).unwrap();
 
         assert_eq!(
             &result.initial_state,
