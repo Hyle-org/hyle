@@ -28,7 +28,8 @@ impl BusMessage for ProverEvent {}
 
 #[derive(Encode, Decode)]
 pub struct Store<State> {
-    pub states: BTreeMap<ContractName, State>,
+    pub state: Option<State>,
+    pub contract_name: ContractName,
     pub unsettled_blobs: BTreeMap<TxHash, BlobTransaction>,
     pub node_state: NodeState,
 }
@@ -36,7 +37,8 @@ pub struct Store<State> {
 impl<State> Default for Store<State> {
     fn default() -> Self {
         Store {
-            states: BTreeMap::new(),
+            state: None,
+            contract_name: Default::default(),
             unsettled_blobs: BTreeMap::new(),
             node_state: NodeState::default(),
         }
@@ -46,14 +48,14 @@ impl<State> Default for Store<State> {
 pub struct ContractStateIndexer<State> {
     bus: IndexerBusClient,
     store: Arc<RwLock<Store<State>>>,
-    program_id: String,
+    contract_name: ContractName,
     file: PathBuf,
     config: Arc<Conf>,
 }
 
 pub struct ContractStateIndexerCtx {
     pub common: Arc<CommonRunContext>,
-    pub program_id: String,
+    pub contract_name: ContractName,
 }
 
 impl<State> Module for ContractStateIndexer<State>
@@ -79,14 +81,19 @@ where
             .common
             .config
             .data_directory
-            .join(format!("state_indexer_{}.bin", ctx.program_id).as_str());
-        let store = Arc::new(RwLock::new(
-            Self::load_from_disk_or_default::<Store<State>>(file.as_path()),
-        ));
+            .join(format!("state_indexer_{}.bin", ctx.contract_name).as_str());
+
+        let mut store = Self::load_from_disk_or_default::<Store<State>>(file.as_path());
+        store.contract_name = ctx.contract_name.clone();
+        let store = Arc::new(RwLock::new(store));
+
         let api = State::api(Arc::clone(&store)).await;
         if let Ok(mut guard) = ctx.common.router.lock() {
             if let Some(router) = guard.take() {
-                guard.replace(router.nest("/v1/indexer/contract", api));
+                guard.replace(router.nest(
+                    format!("/v1/indexer/contract/{}", ctx.contract_name).as_str(),
+                    api,
+                ));
             }
         }
         let config = ctx.common.config.clone();
@@ -96,7 +103,7 @@ where
             config,
             file,
             store,
-            program_id: ctx.program_id,
+            contract_name: ctx.contract_name,
         })
     }
 
@@ -122,12 +129,15 @@ where
         on_bus self.bus,
         listen<DataEvent> cmd => {
             if let Err(e) = self.handle_data_availability_event(cmd).await {
-                error!("Error while handling data availability event: {:#}", e)
+                error!(cn = %self.contract_name, "Error while handling data availability event: {:#}", e)
             }
         }
         }
     }
 
+    /// Note: Each copy of the contract state indexer does the same handle_block on each data event
+    /// coming from data availability. In a future refacto, data availability will stream handled blocks instead
+    /// thus we could refacto this part too to avoid same processing in NodeState in each indexer
     async fn handle_data_availability_event(&mut self, event: DataEvent) -> Result<(), Error> {
         if let DataEvent::NewBlock(block) = event {
             self.handle_block(block).await?;
@@ -137,7 +147,7 @@ where
             self.file.as_path(),
             self.store.read().await.deref(),
         ) {
-            tracing::warn!("Failed to save consensus state on disk: {}", e);
+            tracing::warn!(cn = %self.contract_name, "Failed to save consensus state on disk: {}", e);
         }
 
         Ok(())
@@ -145,13 +155,13 @@ where
 
     async fn handle_block(&mut self, block: Block) -> Result<()> {
         info!(
-            "📦 Handling block #{} with {} txs",
+            cn = %self.contract_name, "📦 Handling block #{} with {} txs",
             block.height,
             block.txs.len()
         );
-        debug!("📦 Block: {:?}", block);
+        debug!(cn = %self.contract_name, "📦 Block: {:?}", block);
         let handled = self.store.write().await.node_state.handle_new_block(block);
-        debug!("📦 Handled {:?}", handled);
+        debug!(cn = %self.contract_name, "📦 Handled {:?}", handled);
 
         for c_tx in handled.new_contract_txs {
             if let TransactionData::RegisterContract(tx) = c_tx.transaction_data {
@@ -172,17 +182,12 @@ where
     }
 
     async fn handle_register_contract(&mut self, tx: RegisterContractTransaction) -> Result<()> {
-        let program_id = hex::encode(tx.program_id.as_slice());
-        if program_id != self.program_id {
+        if tx.contract_name != self.contract_name {
             return Ok(());
         }
-        info!("📝 Registering supported contract '{}'", tx.contract_name);
+        info!(cn = %self.contract_name, "📝 Registering supported contract '{}'", tx.contract_name);
         let state = tx.state_digest.try_into()?;
-        self.store
-            .write()
-            .await
-            .states
-            .insert(tx.contract_name.clone(), state);
+        self.store.write().await.state = Some(state);
         Ok(())
     }
 
@@ -191,20 +196,14 @@ where
         let mut found_supported_blob = false;
 
         for b in &tx.blobs {
-            if self
-                .store
-                .read()
-                .await
-                .states
-                .contains_key(&b.contract_name)
-            {
+            if self.contract_name == b.contract_name {
                 found_supported_blob = true;
                 break;
             }
         }
 
         if found_supported_blob {
-            info!("⚒️  Found supported blob in transaction: {}", tx_hash);
+            info!(cn = %self.contract_name, "⚒️  Found supported blob in transaction: {}", tx_hash);
             self.store
                 .write()
                 .await
@@ -218,28 +217,27 @@ where
     async fn settle_tx(&mut self, tx: TxHash) -> Result<()> {
         let mut store = self.store.write().await;
         let Some(tx) = store.unsettled_blobs.get(&tx).cloned() else {
-            debug!("🔨 No supported blobs found in transaction: {}", tx);
+            debug!(cn = %self.contract_name, "🔨 No supported blobs found in transaction: {}", tx);
             return Ok(());
         };
 
-        info!("🔨 Settling transaction: {}", tx.hash());
+        info!(cn = %self.contract_name, "🔨 Settling transaction: {}", tx.hash());
 
         for (index, Blob { contract_name, .. }) in tx.blobs.iter().enumerate() {
-            if !store.states.contains_key(contract_name) {
+            if self.contract_name != *contract_name {
                 continue;
             }
 
             let state = store
-                .states
-                .get(contract_name)
-                .cloned()
+                .state
+                .clone()
                 .ok_or(anyhow!("No state found for {contract_name}"))?;
 
             let new_state = State::handle(&tx, BlobIndex(index as u32), state)?;
 
-            info!("📈 Updated state for {contract_name}");
+            info!(cn = %self.contract_name, "📈 Updated state for {contract_name}");
 
-            *store.states.get_mut(contract_name).unwrap() = new_state;
+            store.state = Some(new_state);
         }
         Ok(())
     }

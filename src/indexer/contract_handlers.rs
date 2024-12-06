@@ -7,6 +7,8 @@ use anyhow::{anyhow, Result};
 use axum::Router;
 use axum::{extract::Path, routing::get};
 use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
+use hydentity::Hydentity;
+use hyle_contract_sdk::identity_provider::{self, IdentityAction};
 use hyle_contract_sdk::ContractName;
 use hyle_contract_sdk::{
     erc20::{self, ERC20Action, ERC20},
@@ -28,12 +30,35 @@ where
     fn handle(tx: &BlobTransaction, index: BlobIndex, state: Self) -> Result<Self>;
 }
 
+impl ContractHandler for Hydentity {
+    async fn api(store: Arc<RwLock<Store<Self>>>) -> Router<()> {
+        Router::new()
+            .route("/state", get(get_state))
+            .with_state(store)
+    }
+
+    fn handle(tx: &BlobTransaction, index: BlobIndex, mut state: Self) -> Result<Self> {
+        let Blob {
+            data,
+            contract_name,
+        } = tx.blobs.get(index.0 as usize).unwrap();
+
+        let (action, _): (IdentityAction, _) =
+            bincode::decode_from_slice(data.0.as_slice(), bincode::config::standard())
+                .expect("Failed to decode payload");
+
+        let res = identity_provider::execute_action(&mut state, action, "");
+        info!("🚀 Executed {contract_name}: {res:?}");
+        Ok(state)
+    }
+}
+
 impl ContractHandler for HyllarToken {
     async fn api(store: Arc<RwLock<Store<HyllarToken>>>) -> Router<()> {
         Router::new()
-            .route("/:name/state", get(get_state))
-            .route("/:name/balance/:account", get(get_balance))
-            .route("/:name/allowance/:account/:spender", get(get_allowance))
+            .route("/state", get(get_state))
+            .route("/balance/:account", get(get_balance))
+            .route("/allowance/:account/:spender", get(get_allowance))
             .with_state(store)
     }
 
@@ -66,20 +91,17 @@ impl ContractHandler for HyllarToken {
 }
 
 pub async fn get_state<S: Serialize + Clone + 'static>(
-    Path(name): Path<ContractName>,
     State(state): State<Arc<RwLock<Store<S>>>>,
 ) -> Result<impl IntoResponse, AppError> {
-    let s = state.read().await;
-    s.states.get(&name).cloned().map(Json).ok_or_else(|| {
-        AppError(
-            StatusCode::NOT_FOUND,
-            anyhow!("Contract '{}' not found", name),
-        )
-    })
+    let store = state.read().await;
+    store.state.clone().map(Json).ok_or(AppError(
+        StatusCode::NOT_FOUND,
+        anyhow!("No state found for contract '{}'", store.contract_name),
+    ))
 }
 
 pub async fn get_balance(
-    Path((name, account)): Path<(ContractName, Identity)>,
+    Path(account): Path<Identity>,
     State(state): State<Arc<RwLock<Store<HyllarToken>>>>,
 ) -> Result<impl IntoResponse, AppError> {
     #[derive(Serialize)]
@@ -87,19 +109,12 @@ pub async fn get_balance(
         account: String,
         balance: u128,
     }
+    let store = state.read().await;
+    let state = store.state.clone().ok_or(AppError(
+        StatusCode::NOT_FOUND,
+        anyhow!("Contract '{}' not found", store.contract_name),
+    ))?;
 
-    let state = state
-        .read()
-        .await
-        .states
-        .get(&name)
-        .cloned()
-        .ok_or_else(|| {
-            AppError(
-                StatusCode::NOT_FOUND,
-                anyhow!("Contract '{}' not found", name),
-            )
-        })?;
     let c = HyllarTokenContract::init(state, account.clone());
     c.balance_of(&account.0)
         .map(|balance| Response {
@@ -111,7 +126,7 @@ pub async fn get_balance(
 }
 
 pub async fn get_allowance(
-    Path((name, account, spender)): Path<(ContractName, Identity, Identity)>,
+    Path((account, spender)): Path<(Identity, Identity)>,
     State(state): State<Arc<RwLock<Store<HyllarToken>>>>,
 ) -> Result<impl IntoResponse, AppError> {
     #[derive(Serialize)]
@@ -121,18 +136,12 @@ pub async fn get_allowance(
         allowance: u128,
     }
 
-    let state = state
-        .read()
-        .await
-        .states
-        .get(&name)
-        .cloned()
-        .ok_or_else(|| {
-            AppError(
-                StatusCode::NOT_FOUND,
-                anyhow!("Contract '{}' not found", name),
-            )
-        })?;
+    let store = state.read().await;
+    let state = store.state.clone().ok_or(AppError(
+        StatusCode::NOT_FOUND,
+        anyhow!("Contract '{}' not found", store.contract_name),
+    ))?;
+
     let c = HyllarTokenContract::init(state, account.clone());
     c.allowance(&account.0, &spender.0)
         .map(|allowance| Response {

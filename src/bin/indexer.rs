@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 use axum::Router;
 use axum_otel_metrics::HttpMetricsLayerBuilder;
 use clap::Parser;
+use hydentity::Hydentity;
 use hyle::{
     bus::{metrics::BusMetrics, SharedMessageBus},
     indexer::{
@@ -19,7 +20,7 @@ use hyle::{
 };
 use hyllar::HyllarToken;
 use std::sync::{Arc, Mutex};
-use tracing::{debug, error, info};
+use tracing::{error, info};
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -74,15 +75,23 @@ async fn main() -> Result<()> {
         router: Mutex::new(Some(Router::new())),
     });
 
-    let hyllar_ctx = ContractStateIndexerCtx {
-        program_id: include_str!("../../contracts/hyllar/hyllar.txt")
-            .trim()
-            .to_string(),
-        common: ctx.clone(),
-    };
-
     handler
-        .build_module::<ContractStateIndexer<HyllarToken>>(hyllar_ctx)
+        .build_module::<ContractStateIndexer<HyllarToken>>(ContractStateIndexerCtx {
+            contract_name: "hyllar".into(),
+            common: ctx.clone(),
+        })
+        .await?;
+    handler
+        .build_module::<ContractStateIndexer<HyllarToken>>(ContractStateIndexerCtx {
+            contract_name: "hyllar2".into(),
+            common: ctx.clone(),
+        })
+        .await?;
+    handler
+        .build_module::<ContractStateIndexer<Hydentity>>(ContractStateIndexerCtx {
+            contract_name: "hydentity".into(),
+            common: ctx.clone(),
+        })
         .await?;
 
     let indexer = Indexer::build(ctx.clone()).await?;
