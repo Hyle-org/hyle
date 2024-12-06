@@ -5,10 +5,11 @@ edition = "2021"
 
 [dependencies]
 sdk = { path = "../../contract-sdk", package = "hyle-contract-sdk" }
-hydentity = { path = "../hydentity/contract" }
+hydentity = { path = "../../contracts/hydentity/contract" }
 # hystake = { path = "../hystake/contract" }
-hyllar = { path = "../hyllar/contract" }
-amm = { path = "../amm/contract" }
+hyllar = { path = "../../contracts/hyllar/contract" }
+amm = { path = "../../contracts/amm/contract" }
+
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 risc0-zkvm = { version = "1.2.0" }
 env_logger = "0.11.5"
