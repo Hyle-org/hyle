@@ -7,15 +7,17 @@ use tokio_util::codec::{Framed, LengthDelimitedCodec};
 use tracing::{debug, error, info, warn};
 
 use crate::{
-    bus::{bus_client, SharedMessageBus},
+    bus::BusClientSender,
     data_availability::DataEvent,
+    handle_messages,
     model::{Block, BlockHeight, CommonRunContext},
-    utils::modules::Module,
+    utils::modules::{module_bus_client, Module},
 };
 
-bus_client! {
+module_bus_client! {
 #[derive(Debug)]
 struct DAListenerBusClient {
+    module: DAListener,
     sender(DataEvent),
 }
 }
@@ -51,8 +53,11 @@ impl Module for DAListener {
 
 impl DAListener {
     pub async fn start(&mut self) -> Result<(), Error> {
-        loop {
-            let frame = self.da_stream.next().await;
+        handle_messages! {
+            on_bus self.bus,
+            break_on(stringify!(DAListener))
+
+            frame = self.da_stream.next() => {
             if let Some(Ok(cmd)) = frame {
                 let bytes = cmd;
                 let block: Block =
@@ -67,6 +72,9 @@ impl DAListener {
                 bail!("Error while reading DA stream: {}", e);
             }
         }
+        }
+        _ = self.bus.shutdown_complete();
+        Ok(())
     }
 
     async fn handle_block(&mut self, block: Block) -> Result<()> {

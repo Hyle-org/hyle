@@ -7,14 +7,14 @@ pub mod da_listener;
 pub mod model;
 
 use crate::{
-    bus::{bus_client, SharedMessageBus},
+    bus::BusClientSender,
     data_availability::DataEvent,
     handle_messages,
     model::{
         BlobTransaction, Block, BlockHash, BlockHeight, CommonRunContext, ContractName, Hashable,
     },
     node_state::NodeState,
-    utils::modules::Module,
+    utils::modules::{module_bus_client, Module},
 };
 use anyhow::{bail, Context, Error, Result};
 use axum::{
@@ -35,9 +35,10 @@ use std::{collections::HashMap, sync::Arc};
 use tokio::sync::{broadcast, mpsc};
 use tracing::{error, info};
 
-bus_client! {
+module_bus_client! {
 #[derive(Debug)]
 struct IndexerBusClient {
+    module: Indexer,
     receiver(DataEvent),
 }
 }
@@ -87,7 +88,8 @@ impl Module for Indexer {
         );
 
         info!("Checking for new DB migration...");
-        MIGRATOR.run(&pool).await?;
+        let _ =
+            tokio::time::timeout(tokio::time::Duration::from_secs(60), MIGRATOR.run(&pool)).await?;
 
         let (new_sub_sender, new_sub_receiver) = tokio::sync::mpsc::channel(100);
 
@@ -122,6 +124,7 @@ impl Indexer {
     pub async fn start(&mut self) -> Result<()> {
         handle_messages! {
             on_bus self.bus,
+            break_on(stringify!(Indexer))
             listen<DataEvent> cmd => {
                 if let Err(e) = self.handle_data_availability_event(cmd).await {
                     error!("Error while handling data availability event: {:#}", e)
@@ -151,6 +154,8 @@ impl Indexer {
                     })?;
             }
         }
+        _ = self.bus.shutdown_complete();
+        Ok(())
     }
 
     pub async fn get_last_block(&self) -> Result<Option<BlockHeight>> {
@@ -548,9 +553,12 @@ mod test {
         net::{Ipv4Addr, SocketAddr},
     };
 
-    use crate::model::{
-        Blob, BlobData, BlockHeight, ProofData, ProofTransaction, RegisterContractTransaction,
-        Transaction, TransactionData, VerifiedProofTransaction,
+    use crate::{
+        bus::SharedMessageBus,
+        model::{
+            Blob, BlobData, BlockHeight, ProofData, ProofTransaction, RegisterContractTransaction,
+            Transaction, TransactionData, VerifiedProofTransaction,
+        },
     };
 
     use super::*;

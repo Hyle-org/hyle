@@ -1,10 +1,11 @@
 //! Handles all consensus logic up to block commitment.
 
-use crate::utils::logger::LogMe;
+use crate::utils::modules::module_bus_client;
 #[cfg(not(test))]
 use crate::utils::static_type_map::Pick;
+use crate::{bus::BusClientSender, utils::logger::LogMe};
 use crate::{
-    bus::{bus_client, command_response::Query, BusMessage, SharedMessageBus},
+    bus::{command_response::Query, BusMessage},
     data_availability::DataEvent,
     genesis::GenesisEvent,
     handle_messages,
@@ -81,8 +82,9 @@ impl BusMessage for ConsensusCommand {}
 impl BusMessage for ConsensusEvent {}
 impl BusMessage for ConsensusNetMessage {}
 
-bus_client! {
+module_bus_client! {
 struct ConsensusBusClient {
+    module: Consensus,
     sender(OutboundMessage),
     sender(ConsensusEvent),
     sender(ConsensusCommand),
@@ -851,6 +853,7 @@ impl Consensus {
     async fn wait_genesis(&mut self) -> Result<()> {
         handle_messages! {
             on_bus self.bus,
+            break_on(stringify!(Genesis))
             listen<GenesisEvent> msg => {
                 match msg {
                     GenesisEvent::GenesisBlock { initial_validators, ..} => {
@@ -892,6 +895,7 @@ impl Consensus {
 
         handle_messages! {
             on_bus self.bus,
+            break_on(stringify!(Consensus))
             listen<ConsensusCommand> cmd => {
                 match self.handle_command(cmd).await {
                     Ok(_) => (),
@@ -916,6 +920,20 @@ impl Consensus {
                     .log_error("Cannot send message over channel")?;
             }
         }
+
+        if let Some(file) = &self.file {
+            if let Err(e) = Self::save_on_disk(
+                self.config.data_directory.as_path(),
+                file.as_path(),
+                &self.store,
+            ) {
+                warn!("Failed to save consensus storage on disk: {}", e);
+            }
+        }
+
+        _ = self.bus.shutdown_complete();
+
+        Ok(())
     }
 
     fn sign_net_message(
@@ -947,7 +965,7 @@ pub mod test {
         autobahn_testing::test::{
             broadcast, build_tuple, send, AutobahnBusClient, AutobahnTestCtx,
         },
-        bus::SharedMessageBus,
+        bus::{dont_use_this::get_receiver, metrics::BusMetrics, SharedMessageBus},
         mempool::storage::CarHash,
         p2p::network::NetMessage,
         utils::{conf::Conf, crypto},

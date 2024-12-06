@@ -72,7 +72,7 @@ where
 {
     type Context = ContractStateIndexerCtx;
     fn name() -> &'static str {
-        stringify!(ContractStateIndexer)
+        stringify!(Indexer)
     }
 
     async fn build(ctx: Self::Context) -> Result<Self> {
@@ -127,12 +127,23 @@ where
     pub async fn start(&mut self) -> Result<(), Error> {
         handle_messages! {
         on_bus self.bus,
+        break_on(stringify!(Indexer))
         listen<DataEvent> cmd => {
             if let Err(e) = self.handle_data_availability_event(cmd).await {
                 error!(cn = %self.contract_name, "Error while handling data availability event: {:#}", e)
             }
         }
         }
+
+        if let Err(e) = Self::save_on_disk::<Store<State>>(
+            self.config.data_directory.as_path(),
+            self.file.as_path(),
+            self.store.read().await.deref(),
+        ) {
+            tracing::warn!(cn = %self.contract_name, "Failed to save contract state indexer on disk: {}", e);
+        }
+        _ = self.bus.shutdown_complete();
+        Ok(())
     }
 
     /// Note: Each copy of the contract state indexer does the same handle_block on each data event
@@ -141,13 +152,6 @@ where
     async fn handle_data_availability_event(&mut self, event: DataEvent) -> Result<(), Error> {
         if let DataEvent::NewBlock(block) = event {
             self.handle_block(block).await?;
-        }
-        if let Err(e) = Self::save_on_disk::<Store<State>>(
-            self.config.data_directory.as_path(),
-            self.file.as_path(),
-            self.store.read().await.deref(),
-        ) {
-            tracing::warn!(cn = %self.contract_name, "Failed to save consensus state on disk: {}", e);
         }
 
         Ok(())

@@ -4,7 +4,7 @@ mod api;
 mod blocks;
 
 use crate::{
-    bus::{bus_client, command_response::Query, BusMessage, SharedMessageBus},
+    bus::{command_response::Query, BusClientSender, BusMessage},
     consensus::ConsensusCommand,
     genesis::GenesisEvent,
     handle_messages,
@@ -15,7 +15,11 @@ use crate::{
     },
     node_state::{model::Contract, NodeState},
     p2p::network::{NetMessage, OutboundMessage, PeerEvent},
-    utils::{conf::SharedConf, logger::LogMe, modules::Module},
+    utils::{
+        conf::SharedConf,
+        logger::LogMe,
+        modules::{module_bus_client, Module},
+    },
 };
 use anyhow::{Context, Result};
 use bincode::{Decode, Encode};
@@ -68,9 +72,10 @@ impl From<DataNetMessage> for NetMessage {
 #[derive(Clone)]
 pub struct QueryBlockHeight {}
 
-bus_client! {
+module_bus_client! {
 #[derive(Debug)]
 struct DABusClient {
+    module: DataAvailability,
     sender(OutboundMessage),
     sender(DataEvent),
     sender(ConsensusCommand),
@@ -190,6 +195,7 @@ impl DataAvailability {
 
         handle_messages! {
             on_bus self.bus,
+            break_on(stringify!(DataAvailability))
             command_response<ContractName, Contract> cmd => {
                 self.node_state.contracts.get(cmd).cloned().context("Contract not found")
             }
@@ -297,6 +303,9 @@ impl DataAvailability {
                 }
             }
         }
+        _ = self.bus.shutdown_complete();
+
+        Ok(())
     }
 
     async fn handle_data_message(&mut self, msg: DataNetMessage) -> Result<()> {
@@ -438,10 +447,12 @@ impl DataAvailability {
         }
 
         info!(
-            "new block {} with {} txs, last hash = {:?}",
+            "new block {} with {} txs, last hash = {}",
             block.height,
             block.txs.len(),
-            self.blocks.last_block_hash()
+            self.blocks
+                .last_block_hash()
+                .unwrap_or(BlockHash("".to_string()))
         );
 
         // Process the block in node state
@@ -595,6 +606,7 @@ impl DataAvailability {
 #[cfg(test)]
 mod tests {
     use crate::{
+        bus::BusClientSender,
         mempool::MempoolEvent,
         model::{
             Blob, BlobData, BlobTransaction, Block, BlockHash, BlockHeight, ContractName, Hashable,
@@ -607,7 +619,7 @@ mod tests {
     use tokio::io::AsyncWriteExt;
     use tokio_util::codec::{Framed, LengthDelimitedCodec};
 
-    use super::{blocks::Blocks, bus_client};
+    use super::{blocks::Blocks, module_bus_client};
     use anyhow::Result;
 
     #[test]
@@ -681,8 +693,7 @@ mod tests {
         }
     }
 
-    use crate::bus::SharedMessageBus;
-    bus_client! {
+    module_bus_client! {
     #[derive(Debug)]
     struct TestBusClient {
         sender(MempoolEvent),
