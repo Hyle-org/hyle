@@ -9,6 +9,7 @@ use crate::{
     bus::{
         bus_client,
         command_response::{CmdRespClient, Query},
+        metrics::BusMetrics,
     },
     model::CommonRunContext,
     rest::AppError,

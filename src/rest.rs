@@ -13,7 +13,7 @@ use tower_http::trace::TraceLayer;
 use tracing::info;
 
 use crate::{
-    bus::SharedMessageBus,
+    bus::{BusClientSender, SharedMessageBus},
     handle_messages,
     model::ValidatorPublicKey,
     utils::modules::{module_bus_client, Module},

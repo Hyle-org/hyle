@@ -4,7 +4,7 @@ mod api;
 mod blocks;
 
 use crate::{
-    bus::{command_response::Query, BusMessage},
+    bus::{command_response::Query, BusClientSender, BusMessage},
     consensus::ConsensusCommand,
     genesis::GenesisEvent,
     handle_messages,
@@ -606,6 +606,7 @@ impl DataAvailability {
 #[cfg(test)]
 mod tests {
     use crate::{
+        bus::BusClientSender,
         mempool::MempoolEvent,
         model::{
             Blob, BlobData, BlobTransaction, Block, BlockHash, BlockHeight, ContractName, Hashable,

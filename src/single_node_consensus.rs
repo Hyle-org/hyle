@@ -2,6 +2,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use crate::bus::command_response::{CmdRespClient, Query};
+use crate::bus::BusClientSender;
 use crate::consensus::{ConsensusEvent, ConsensusInfo, QueryConsensusInfo};
 use crate::genesis::{Genesis, GenesisEvent};
 use crate::mempool::storage::Cut;
@@ -211,6 +212,8 @@ impl SingleNodeConsensus {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::bus::dont_use_this::get_receiver;
+    use crate::bus::metrics::BusMetrics;
     use crate::bus::{bus_client, SharedMessageBus};
     use crate::mempool::storage::{Car, CarHash, DataProposal};
     use crate::model::{Hashable, ValidatorPublicKey};

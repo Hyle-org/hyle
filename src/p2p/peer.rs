@@ -18,6 +18,7 @@ use super::network::SignedByValidator;
 use super::network::{Hello, NetMessage};
 use super::stream::send_net_message;
 use crate::bus::bus_client;
+use crate::bus::BusClientSender;
 use crate::bus::SharedMessageBus;
 use crate::consensus::ConsensusNetMessage;
 use crate::data_availability::DataNetMessage;

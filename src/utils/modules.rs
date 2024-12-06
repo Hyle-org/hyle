@@ -1,12 +1,15 @@
 use std::{any::type_name, fs, future::Future, path::Path, pin::Pin, time::Duration};
 
+use crate::{
+    bus::{BusClientSender, SharedMessageBus},
+    handle_messages,
+    utils::logger::LogMe,
+};
 use anyhow::{Context, Error, Result};
 use rand::{distributions::Alphanumeric, Rng};
 use signal::ShutdownCompleted;
 use tokio::task::JoinHandle;
 use tracing::{debug, info};
-
-use crate::{bus::SharedMessageBus, handle_messages, utils::logger::LogMe};
 
 /// Module trait to define startup dependencies
 pub trait Module
@@ -243,9 +246,13 @@ impl ModulesHandler {
 
 #[cfg(test)]
 mod tests {
-    use crate::handle_messages;
+    use crate::{
+        bus::{dont_use_this::get_receiver, metrics::BusMetrics},
+        handle_messages,
+    };
 
     use super::*;
+    use crate::bus::BusClientSender;
     use crate::bus::SharedMessageBus;
     use signal::ShutdownModule;
     use std::fs::File;
@@ -283,9 +290,38 @@ mod tests {
                 break_on(stringify!(TestModule))
             }
 
-            _ = self.bus.send(ShutdownCompleted {
-                module: stringify!(TestModule).to_string(),
-            });
+            _ = self.bus.shutdown_complete();
+            Ok(())
+        }
+    }
+
+    struct TestModule2 {
+        bus: TestBusClient2,
+    }
+
+    module_bus_client! {
+        struct TestBusClient2 {
+            module: TestModule2,
+        }
+    }
+
+    impl Module for TestModule2 {
+        type Context = TestBusClient2;
+
+        fn name() -> &'static str {
+            "TestModule2"
+        }
+
+        async fn build(_ctx: Self::Context) -> Result<Self> {
+            Ok(TestModule2 { bus: _ctx })
+        }
+
+        async fn run(&mut self) -> Result<()> {
+            handle_messages! {
+                on_bus self.bus,
+                break_on(stringify!(TestModule2))
+            }
+            _ = self.bus.shutdown_complete();
             Ok(())
         }
     }
@@ -370,6 +406,52 @@ mod tests {
 
         _ = handler.shutdown_modules(Duration::from_secs(1)).await;
 
+        assert_eq!(
+            shutdown_receiver.recv().await.unwrap().module,
+            "TestModule".to_string()
+        );
+
+        assert_eq!(
+            shutdown_completed_receiver.recv().await.unwrap().module,
+            "TestModule".to_string()
+        );
+    }
+
+    #[tokio::test]
+    async fn test_start_stop_modules_in_order() {
+        let shared_bus = SharedMessageBus::new(BusMetrics::global("id".to_string()));
+        let mut shutdown_receiver = get_receiver::<ShutdownModule>(&shared_bus).await;
+        let mut shutdown_completed_receiver = get_receiver::<ShutdownCompleted>(&shared_bus).await;
+        let mut handler = ModulesHandler::new(&shared_bus).await;
+
+        handler
+            .build_module::<TestModule>(TestBusClient::new_from_bus(shared_bus.new_handle()).await)
+            .await
+            .unwrap();
+        handler
+            .build_module::<TestModule2>(
+                TestBusClient2::new_from_bus(shared_bus.new_handle()).await,
+            )
+            .await
+            .unwrap();
+        let handle = handler.start_modules();
+
+        assert!(is_future_pending(handle).await);
+
+        _ = handler.shutdown_modules(Duration::from_secs(1)).await;
+
+        // Shutdown last module first
+        assert_eq!(
+            shutdown_receiver.recv().await.unwrap().module,
+            "TestModule2".to_string()
+        );
+
+        assert_eq!(
+            shutdown_completed_receiver.recv().await.unwrap().module,
+            "TestModule2".to_string()
+        );
+
+        // Then first module at last
         assert_eq!(
             shutdown_receiver.recv().await.unwrap().module,
             "TestModule".to_string()

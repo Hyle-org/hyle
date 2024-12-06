@@ -1,7 +1,7 @@
 //! Mempool logic & pending transaction management.
 
 use crate::{
-    bus::{command_response::Query, BusMessage},
+    bus::{command_response::Query, BusClientSender, BusMessage},
     consensus::ConsensusEvent,
     genesis::GenesisEvent,
     handle_messages,
@@ -534,6 +534,8 @@ impl Mempool {
 #[cfg(test)]
 pub mod test {
     use super::*;
+    use crate::bus::dont_use_this::get_receiver;
+    use crate::bus::metrics::BusMetrics;
     use crate::bus::SharedMessageBus;
     use crate::model::{ContractName, RegisterContractTransaction, Transaction};
     use crate::p2p::network::NetMessage;

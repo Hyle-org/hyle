@@ -5,7 +5,7 @@ use hyle_contract_sdk::TxHash;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    bus::{bus_client, BusMessage},
+    bus::{bus_client, metrics::BusMetrics, BusClientSender, BusMessage},
     consensus::staking::Staker,
     model::{
         BlobTransaction, CommonRunContext, Hashable, ProofData, ProofTransaction,

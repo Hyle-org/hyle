@@ -98,18 +98,10 @@ macro_rules! bus_client {
             $(receiver($receiver:ty),)*
         }
     ) => {
-        use $crate::bus::metrics::BusMetrics;
-        #[allow(unused_imports)]
-        use $crate::bus::BusClientReceiver;
-        #[allow(unused_imports)]
-        use $crate::bus::BusClientSender;
-        #[allow(unused_imports)]
-        use $crate::bus::dont_use_this::{get_receiver, get_sender};
-        use $crate::utils::static_type_map::static_type_map;
-        static_type_map! {
+        $crate::utils::static_type_map::static_type_map! {
             $(#[$meta])*
             $pub struct $name (
-                BusMetrics,
+                $crate::bus::metrics::BusMetrics,
                 $(tokio::sync::broadcast::Sender<$sender>,)*
                 $(tokio::sync::broadcast::Receiver<$receiver>,)*
             );
@@ -118,8 +110,8 @@ macro_rules! bus_client {
             pub async fn new_from_bus(bus: $crate::bus::SharedMessageBus) -> $name {
                 $name::new(
                     bus.metrics.clone(),
-                    $(get_sender::<$sender>(&bus).await,)*
-                    $(get_receiver::<$receiver>(&bus).await,)*
+                    $($crate::bus::dont_use_this::get_sender::<$sender>(&bus).await,)*
+                    $($crate::bus::dont_use_this::get_receiver::<$receiver>(&bus).await,)*
                 )
             }
         }

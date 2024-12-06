@@ -4,6 +4,7 @@ mod api;
 pub mod model;
 
 use crate::{
+    bus::BusClientSender,
     data_availability::DataEvent,
     handle_messages,
     model::{BlobTransaction, Block, BlockHash, CommonRunContext, ContractName, Hashable},

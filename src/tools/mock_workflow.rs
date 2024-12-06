@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use crate::{
-    bus::BusMessage,
+    bus::{BusClientSender, BusMessage},
     handle_messages,
     mempool::api::RestApiMessage,
     model::{
@@ -70,6 +70,8 @@ impl Module for MockWorkflowHandler {
 mod api {
     use axum::{routing::post, Router};
 
+    use crate::bus::metrics::BusMetrics;
+    use crate::bus::BusClientSender;
     use crate::tools::mock_workflow::RunScenario;
     use crate::{bus::bus_client, model::CommonRunContext};
     use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
