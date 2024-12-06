@@ -53,6 +53,31 @@ pub mod test {
         };
     }
 
+    macro_rules! broadcast_only_for {
+        (description: $description:literal, from: $sender:expr, to: [$($node:expr),+]$(, message_matches: $pattern:pat $(=> $asserts:block)? )?) => {
+            {
+                // Construct the broadcast message with sender information
+                let message = $sender.assert_broadcast_only_for(format!("[broadcast from: {}] {}", stringify!($sender), $description).as_str());
+
+                $({
+                    let msg_variant_name: &'static str = message.msg.clone().into();
+                    if let $pattern = &message.msg {
+                        $($asserts)?
+                    } else {
+                        panic!("[broadcast from: {}] {}: Message {} did not match {}", stringify!($sender), $description, msg_variant_name, stringify!($pattern));
+                    }
+                })?
+
+                // Distribute the message to each specified node
+                $(
+                    $node.handle_msg(&message, (format!("[handling broadcast message from: {} at: {}] {}", stringify!($sender), stringify!($node), $description).as_str()));
+                )+
+
+                message
+            }
+        };
+    }
+
     macro_rules! send {
         (
             description: $description:literal,
@@ -161,7 +186,7 @@ pub mod test {
     use crate::handle_messages;
     use crate::mempool::storage::Cut;
     use crate::mempool::test::{make_register_contract_tx, MempoolTestCtx};
-    use crate::mempool::{MempoolNetMessage, QueryNewCut};
+    use crate::mempool::{MempoolEvent, MempoolNetMessage, QueryNewCut};
     use crate::model::{ContractName, Hashable};
     use crate::p2p::network::OutboundMessage;
     use crate::p2p::P2PCommand;
@@ -187,6 +212,7 @@ pub mod test {
             let p2p_receiver = get_receiver::<P2PCommand>(&shared_bus).await;
             let consensus_out_receiver = get_receiver::<OutboundMessage>(&shared_bus).await;
             let mempool_out_receiver = get_receiver::<OutboundMessage>(&shared_bus).await;
+            let mempool_event_receiver = get_receiver::<MempoolEvent>(&shared_bus).await;
 
             let consensus = ConsensusTestCtx::build_consensus(&shared_bus, crypto.clone()).await;
             let mempool = MempoolTestCtx::build_mempool(&shared_bus, crypto).await;
@@ -203,6 +229,7 @@ pub mod test {
                 mempool_ctx: MempoolTestCtx {
                     name: name.to_string(),
                     out_receiver: mempool_out_receiver,
+                    mempool_event_receiver,
                     mempool,
                 },
             }
@@ -262,11 +289,11 @@ pub mod test {
             .make_data_proposal_with_pending_txs()
             .expect("Should create data proposal");
 
-        broadcast! {
+        broadcast_only_for! {
             description: "Disseminate Tx",
             from: node1.mempool_ctx, to: [node2.mempool_ctx, node3.mempool_ctx, node4.mempool_ctx],
             message_matches: MempoolNetMessage::DataProposal(data) => {
-                assert_eq!(data.car.txs.len(), 2);
+                assert_eq!(data.txs.len(), 2);
             }
         };
 
@@ -276,7 +303,7 @@ pub mod test {
             message_matches: MempoolNetMessage::DataVote(_)
         };
 
-        let car_hash_node1 = node1
+        let data_proposal_hash_node1 = node1
             .mempool_ctx
             .current_hash()
             .expect("Current hash should be there");
@@ -297,7 +324,7 @@ pub mod test {
                         .find(|(validator, _hash)|
                             validator == &node1.consensus_ctx.pubkey()
                         ),
-                    Some((node1.consensus_ctx.pubkey(), car_hash_node1)).as_ref()
+                    Some((node1.consensus_ctx.pubkey(), data_proposal_hash_node1)).as_ref()
                 );
             }
         };
