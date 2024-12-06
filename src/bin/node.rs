@@ -151,17 +151,15 @@ async fn main() -> Result<()> {
         tokio::select! {
             Err(e) = handler.start_modules() => {
                 error!("Error running modules: {:?}", e);
-                _ = handler.shutdown_modules(Duration::from_secs(3)).await;
             }
             _ = tokio::signal::ctrl_c() => {
                 info!("Ctrl-C received, shutting down");
-                _ = handler.shutdown_modules(Duration::from_secs(3)).await;
             }
             _ = terminate.recv() =>  {
                 info!("SIGTERM received, shutting down");
-                _ = handler.shutdown_modules(Duration::from_secs(3)).await;
             }
         }
+        _ = handler.shutdown_modules(Duration::from_secs(3)).await;
     }
     #[cfg(not(unix))]
     {
@@ -171,9 +169,9 @@ async fn main() -> Result<()> {
             }
             _ = tokio::signal::ctrl_c() => {
                 info!("Ctrl-C received, shutting down");
-                _ = handler.shutdown_modules(Duration::from_secs(3)).await;
             }
         }
+        _ = handler.shutdown_modules(Duration::from_secs(3)).await;
     }
 
     Ok(())
