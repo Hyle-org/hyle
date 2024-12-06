@@ -1,10 +1,16 @@
 [workspace]
 members = [
-    "contracts/hyrun",
+    "contracts/hyllar/contract",
     "contracts/hyllar/guest",
+
+    "contracts/hydentity/contract",
     "contracts/hydentity/guest",
+
+    "contracts/amm/contract",
     "contracts/amm/guest",
+
     "crates/bonsai-runner",
+    "crates/hyrun",
 ]
 resolver = "2"
 
