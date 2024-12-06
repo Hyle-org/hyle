@@ -85,7 +85,7 @@ test-log = { version = "0.2.16", features = [
     "color",
     "trace",
 ], default-features = false }
-tokio-stream = "0.1.16"
+tokio-stream = "0.1.17"
 tempfile = "3.14.0"
 testcontainers-modules = { version = "0.11.4", features = ["postgres"] }
 assert-json-diff = "2.0.2"
