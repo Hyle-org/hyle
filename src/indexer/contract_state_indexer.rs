@@ -17,7 +17,7 @@ use crate::{
     utils::modules::Module,
 };
 
-use super::indexer_bus_client::IndexerBusClient;
+use super::{contract_handlers::ContractHandler, indexer_bus_client::IndexerBusClient};
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub enum ProverEvent {
@@ -26,25 +26,20 @@ pub enum ProverEvent {
 impl BusMessage for ProverEvent {}
 
 pub struct Store<State> {
-    states: BTreeMap<ContractName, State>,
-    unsettled_blobs: BTreeMap<TxHash, BlobTransaction>,
-    node_state: NodeState,
+    pub states: BTreeMap<ContractName, State>,
+    pub unsettled_blobs: BTreeMap<TxHash, BlobTransaction>,
+    pub node_state: NodeState,
 }
-
-type BlobTxHandler<State> =
-    Box<dyn Fn(&BlobTransaction, BlobIndex, State) -> Result<State> + Send + Sync>;
 
 pub struct ContractStateIndexer<State> {
     bus: IndexerBusClient,
     store: Arc<RwLock<Store<State>>>,
     program_id: String,
-    handler: BlobTxHandler<State>,
 }
 
-pub struct ContractStateIndexerCtx<State> {
+pub struct ContractStateIndexerCtx {
     pub common: Arc<CommonRunContext>,
     pub program_id: String,
-    pub handler: BlobTxHandler<State>,
 }
 
 impl<State> Module for ContractStateIndexer<State>
@@ -54,23 +49,24 @@ where
         + Clone
         + Sync
         + Send
+        + ContractHandler
         + 'static,
 {
-    type Context = ContractStateIndexerCtx<State>;
+    type Context = ContractStateIndexerCtx;
     fn name() -> &'static str {
-        "HyllarIndexer"
+        stringify!(ContractStateIndexer)
     }
 
     async fn build(ctx: Self::Context) -> Result<Self> {
         let bus = IndexerBusClient::new_from_bus(ctx.common.bus.new_handle()).await;
 
-        let store = Arc::new(RwLock::new(Store {
+        let store: Arc<RwLock<Store<State>>> = Arc::new(RwLock::new(Store {
             states: BTreeMap::new(),
             unsettled_blobs: BTreeMap::new(),
             node_state: NodeState::default(),
         }));
 
-        let api = api::api(Arc::clone(&store)).await;
+        let api = State::api(Arc::clone(&store)).await;
         if let Ok(mut guard) = ctx.common.router.lock() {
             if let Some(router) = guard.take() {
                 guard.replace(router.nest("/v1/indexer/contract", api));
@@ -81,7 +77,6 @@ where
             bus,
             store,
             program_id: ctx.program_id,
-            handler: ctx.handler,
         })
     }
 
@@ -90,39 +85,9 @@ where
     }
 }
 
-mod api {
-    use axum::{extract::Path, routing::get, Router};
-
-    use super::*;
-    use crate::rest::AppError;
-    use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
-
-    pub(super) async fn api<State>(store: Arc<RwLock<Store<State>>>) -> Router<()>
-    where
-        State: Clone + Sync + Send + Serialize + 'static,
-    {
-        Router::new()
-            .route("/:name/state", get(get_state))
-            .with_state(store)
-    }
-
-    pub async fn get_state<S: Serialize + Clone + 'static>(
-        Path(name): Path<ContractName>,
-        State(state): State<Arc<RwLock<Store<S>>>>,
-    ) -> Result<impl IntoResponse, AppError> {
-        let s = state.read().await;
-        s.states.get(&name).cloned().map(Json).ok_or_else(|| {
-            AppError(
-                StatusCode::NOT_FOUND,
-                anyhow!("Contract '{}' not found", name),
-            )
-        })
-    }
-}
-
 impl<State> ContractStateIndexer<State>
 where
-    State: TryFrom<hyle_contract_sdk::StateDigest, Error = Error> + Clone,
+    State: TryFrom<hyle_contract_sdk::StateDigest, Error = Error> + Clone + ContractHandler,
 {
     pub async fn start(&mut self) -> Result<(), Error> {
         handle_messages! {
@@ -148,6 +113,7 @@ where
             block.height,
             block.txs.len()
         );
+        debug!("📦 Block: {:?}", block);
         let handled = self.store.write().await.node_state.handle_new_block(block);
         debug!("📦 Handled {:?}", handled);
 
@@ -220,7 +186,7 @@ where
             return Ok(());
         };
 
-        debug!("🔨 Settling transaction: {}", tx.hash());
+        info!("🔨 Settling transaction: {}", tx.hash());
 
         for (index, Blob { contract_name, .. }) in tx.blobs.iter().enumerate() {
             if !store.states.contains_key(contract_name) {
@@ -233,7 +199,7 @@ where
                 .cloned()
                 .ok_or(anyhow!("No state found for {contract_name}"))?;
 
-            let new_state = (self.handler)(&tx, BlobIndex(index as u32), state)?;
+            let new_state = State::handle(&tx, BlobIndex(index as u32), state)?;
 
             info!("📈 Updated state for {contract_name}");
 
