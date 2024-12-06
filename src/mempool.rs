@@ -85,10 +85,6 @@ pub enum MempoolEvent {
 impl BusMessage for MempoolEvent {}
 
 impl Module for Mempool {
-    fn name() -> &'static str {
-        "Mempool"
-    }
-
     type Context = SharedRunContext;
 
     async fn build(ctx: Self::Context) -> Result<Self> {
@@ -145,7 +141,7 @@ impl Mempool {
 
         handle_messages! {
             on_bus self.bus,
-            break_on(stringify!(Mempool))
+            break_on<Mempool>
             listen<SignedByValidator<MempoolNetMessage>> cmd => {
                 let _ = self.handle_net_message(cmd)
                     .log_error("Handling MempoolNetMessage in Mempool");

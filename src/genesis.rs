@@ -44,10 +44,6 @@ pub struct Genesis {
 
 impl Module for Genesis {
     type Context = SharedRunContext;
-    fn name() -> &'static str {
-        "Genesis"
-    }
-
     async fn build(ctx: Self::Context) -> Result<Self> {
         let bus = GenesisBusClient::new_from_bus(ctx.common.bus.new_handle()).await;
         Ok(Genesis {

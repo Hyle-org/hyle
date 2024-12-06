@@ -1,5 +1,6 @@
 //! Handles all consensus logic up to block commitment.
 
+use crate::genesis::Genesis;
 use crate::utils::modules::module_bus_client;
 #[cfg(not(test))]
 use crate::utils::static_type_map::Pick;
@@ -853,7 +854,7 @@ impl Consensus {
     async fn wait_genesis(&mut self) -> Result<()> {
         handle_messages! {
             on_bus self.bus,
-            break_on(stringify!(Genesis))
+            break_on<Genesis>
             listen<GenesisEvent> msg => {
                 match msg {
                     GenesisEvent::GenesisBlock { initial_validators, ..} => {
@@ -895,7 +896,7 @@ impl Consensus {
 
         handle_messages! {
             on_bus self.bus,
-            break_on(stringify!(Consensus))
+            break_on<Consensus>
             listen<ConsensusCommand> cmd => {
                 match self.handle_command(cmd).await {
                     Ok(_) => (),
