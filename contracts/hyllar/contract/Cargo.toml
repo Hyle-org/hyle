@@ -4,7 +4,9 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-sdk = { path = "../../../contract-sdk", package="hyle-contract-sdk" }
+sdk = { path = "../../../contract-sdk", package = "hyle-contract-sdk", features = [
+    "risc0",
+] }
 serde = { version = "1.0", default-features = false, features = [
     "derive",
     "alloc",

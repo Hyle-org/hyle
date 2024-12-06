@@ -1,9 +1,7 @@
 use alloc::{format, string::String, vec::Vec};
 use bincode::{Decode, Encode};
 
-use crate::{
-    guest::RunResult, Blob, BlobData, BlobIndex, ContractName, HyleContract, StructuredBlobData,
-};
+use crate::{Blob, BlobData, BlobIndex, ContractName, HyleContract, RunResult, StructuredBlobData};
 
 /// Trait representing the ERC-20 token standard interface.
 pub trait ERC20

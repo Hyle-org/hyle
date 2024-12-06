@@ -1,10 +1,6 @@
-use alloc::{
-    string::{String, ToString},
-    vec::Vec,
-};
+use alloc::{string::ToString, vec::Vec};
 use anyhow::{bail, Result};
 use bincode::{Decode, Encode};
-use risc0_zkvm::guest::env;
 use serde::de::DeserializeOwned;
 
 use crate::{
@@ -12,15 +8,38 @@ use crate::{
     StructuredBlob, StructuredBlobData,
 };
 
-pub type RunResult = Result<String, String>;
+pub struct GuestEnv;
+
+impl GuestEnv {
+    pub fn log(message: &str) {
+        #[cfg(feature = "risc0")]
+        risc0_zkvm::guest::env::log(message);
+        #[cfg(not(feature = "risc0"))]
+        unimplemented!("logging: {}", message);
+    }
+
+    pub fn commit(output: &HyleOutput) {
+        #[cfg(feature = "risc0")]
+        risc0_zkvm::guest::env::commit(output);
+        #[cfg(not(feature = "risc0"))]
+        unimplemented!("committing: {:?}", output);
+    }
+
+    pub fn read<T: DeserializeOwned>() -> T {
+        #[cfg(feature = "risc0")]
+        return risc0_zkvm::guest::env::read();
+        #[cfg(not(feature = "risc0"))]
+        unimplemented!();
+    }
+}
 
 pub fn fail<State>(input: ContractInput<State>, message: &str)
 where
     State: Digestable,
 {
-    env::log(message);
+    GuestEnv::log(message);
 
-    env::commit(&HyleOutput {
+    GuestEnv::commit(&HyleOutput {
         version: 1,
         initial_state: input.initial_state.as_digest(),
         next_state: input.initial_state.as_digest(),
@@ -34,7 +53,7 @@ where
 }
 
 pub fn panic(message: &str) {
-    env::log(message);
+    GuestEnv::log(message);
     // should we env::commit ?
     panic!("{}", message);
 }
@@ -44,7 +63,7 @@ where
     State: Digestable + DeserializeOwned,
     Parameters: Decode,
 {
-    let input: ContractInput<State> = env::read();
+    let input: ContractInput<State> = GuestEnv::read();
 
     let parsed_blob = parse_blob::<Parameters>(&input.blobs, &input.index);
 
@@ -57,7 +76,7 @@ where
     State: Digestable + DeserializeOwned,
     Parameters: Encode + Decode,
 {
-    let input: ContractInput<State> = env::read();
+    let input: ContractInput<State> = GuestEnv::read();
 
     let parsed_blob = parse_structured_blob::<Parameters>(&input.blobs, &input.index);
 
@@ -104,11 +123,11 @@ where
     parsed_blob
 }
 
-pub fn commit<State>(input: ContractInput<State>, new_state: State, res: RunResult)
+pub fn commit<State>(input: ContractInput<State>, new_state: State, res: crate::RunResult)
 where
     State: Digestable,
 {
-    env::commit(&HyleOutput {
+    GuestEnv::commit(&HyleOutput {
         version: 1,
         initial_state: input.initial_state.as_digest(),
         next_state: new_state.as_digest(),
