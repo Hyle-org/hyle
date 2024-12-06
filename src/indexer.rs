@@ -87,7 +87,8 @@ impl Module for Indexer {
         );
 
         info!("Checking for new DB migration...");
-        MIGRATOR.run(&pool).await?;
+        let _ =
+            tokio::time::timeout(tokio::time::Duration::from_secs(60), MIGRATOR.run(&pool)).await?;
 
         let (new_sub_sender, new_sub_receiver) = tokio::sync::mpsc::channel(100);
 
