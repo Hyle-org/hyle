@@ -85,10 +85,10 @@ async fn main() -> Result<()> {
         .build_module::<ContractStateIndexer<HyllarToken>>(hyllar_ctx)
         .await?;
 
-    //let indexer = Indexer::build(ctx.clone()).await?;
-    let last_block: Option<BlockHeight> = None;
-    //let last_block = indexer.get_last_block().await?;
-    //handler.add_module(indexer)?;
+    let indexer = Indexer::build(ctx.clone()).await?;
+    //let last_block: Option<BlockHeight> = None;
+    let last_block = indexer.get_last_block().await?;
+    handler.add_module(indexer)?;
 
     handler
         .build_module::<DAListener>(DAListenerCtx {

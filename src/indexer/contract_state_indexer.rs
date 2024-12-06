@@ -1,7 +1,8 @@
 use anyhow::{anyhow, Error, Result};
+use bincode::{Decode, Encode};
 use hyle_contract_sdk::{BlobIndex, ContractName, TxHash};
 use serde::{Deserialize, Serialize};
-use std::{collections::BTreeMap, sync::Arc};
+use std::{collections::BTreeMap, ops::Deref, path::PathBuf, sync::Arc};
 use tokio::sync::RwLock;
 use tracing::{debug, error, info};
 
@@ -14,7 +15,7 @@ use crate::{
         Transaction, TransactionData,
     },
     node_state::NodeState,
-    utils::modules::Module,
+    utils::{conf::Conf, modules::Module},
 };
 
 use super::{contract_handlers::ContractHandler, indexer_bus_client::IndexerBusClient};
@@ -25,16 +26,29 @@ pub enum ProverEvent {
 }
 impl BusMessage for ProverEvent {}
 
+#[derive(Encode, Decode)]
 pub struct Store<State> {
     pub states: BTreeMap<ContractName, State>,
     pub unsettled_blobs: BTreeMap<TxHash, BlobTransaction>,
     pub node_state: NodeState,
 }
 
+impl<State> Default for Store<State> {
+    fn default() -> Self {
+        Store {
+            states: BTreeMap::new(),
+            unsettled_blobs: BTreeMap::new(),
+            node_state: NodeState::default(),
+        }
+    }
+}
+
 pub struct ContractStateIndexer<State> {
     bus: IndexerBusClient,
     store: Arc<RwLock<Store<State>>>,
     program_id: String,
+    file: PathBuf,
+    config: Arc<Conf>,
 }
 
 pub struct ContractStateIndexerCtx {
@@ -50,6 +64,8 @@ where
         + Sync
         + Send
         + ContractHandler
+        + Encode
+        + Decode
         + 'static,
 {
     type Context = ContractStateIndexerCtx;
@@ -59,22 +75,26 @@ where
 
     async fn build(ctx: Self::Context) -> Result<Self> {
         let bus = IndexerBusClient::new_from_bus(ctx.common.bus.new_handle()).await;
-
-        let store: Arc<RwLock<Store<State>>> = Arc::new(RwLock::new(Store {
-            states: BTreeMap::new(),
-            unsettled_blobs: BTreeMap::new(),
-            node_state: NodeState::default(),
-        }));
-
+        let file = ctx
+            .common
+            .config
+            .data_directory
+            .join(format!("state_indexer_{}.bin", ctx.program_id).as_str());
+        let store = Arc::new(RwLock::new(
+            Self::load_from_disk_or_default::<Store<State>>(file.as_path()),
+        ));
         let api = State::api(Arc::clone(&store)).await;
         if let Ok(mut guard) = ctx.common.router.lock() {
             if let Some(router) = guard.take() {
                 guard.replace(router.nest("/v1/indexer/contract", api));
             }
         }
+        let config = ctx.common.config.clone();
 
         Ok(ContractStateIndexer {
             bus,
+            config,
+            file,
             store,
             program_id: ctx.program_id,
         })
@@ -87,7 +107,15 @@ where
 
 impl<State> ContractStateIndexer<State>
 where
-    State: TryFrom<hyle_contract_sdk::StateDigest, Error = Error> + Clone + ContractHandler,
+    State: Serialize
+        + TryFrom<hyle_contract_sdk::StateDigest, Error = Error>
+        + Clone
+        + Sync
+        + Send
+        + ContractHandler
+        + Encode
+        + Decode
+        + 'static,
 {
     pub async fn start(&mut self) -> Result<(), Error> {
         handle_messages! {
@@ -104,6 +132,14 @@ where
         if let DataEvent::NewBlock(block) = event {
             self.handle_block(block).await?;
         }
+        if let Err(e) = Self::save_on_disk::<Store<State>>(
+            self.config.data_directory.as_path(),
+            self.file.as_path(),
+            self.store.read().await.deref(),
+        ) {
+            tracing::warn!("Failed to save consensus state on disk: {}", e);
+        }
+
         Ok(())
     }
 
