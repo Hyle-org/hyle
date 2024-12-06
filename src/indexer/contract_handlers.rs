@@ -7,9 +7,8 @@ use anyhow::{anyhow, Result};
 use axum::Router;
 use axum::{extract::Path, routing::get};
 use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
-use hydentity::Hydentity;
-use hyle_contract_sdk::identity_provider::{self, IdentityAction};
-use hyle_contract_sdk::ContractName;
+use hydentity::{AccountInfo, Hydentity};
+use hyle_contract_sdk::identity_provider::{self, IdentityAction, IdentityVerification};
 use hyle_contract_sdk::{
     erc20::{self, ERC20Action, ERC20},
     Blob, BlobIndex, Identity, StructuredBlobData,
@@ -34,6 +33,7 @@ impl ContractHandler for Hydentity {
     async fn api(store: Arc<RwLock<Store<Self>>>) -> Router<()> {
         Router::new()
             .route("/state", get(get_state))
+            .route("/nonce/:account", get(get_nonce))
             .with_state(store)
     }
 
@@ -98,6 +98,37 @@ pub async fn get_state<S: Serialize + Clone + 'static>(
         StatusCode::NOT_FOUND,
         anyhow!("No state found for contract '{}'", store.contract_name),
     ))
+}
+
+pub async fn get_nonce(
+    Path(account): Path<Identity>,
+    State(state): State<Arc<RwLock<Store<Hydentity>>>>,
+) -> Result<impl IntoResponse, AppError> {
+    #[derive(Serialize)]
+    struct Response {
+        account: String,
+        nonce: u32,
+    }
+    let store = state.read().await;
+    let state = store.state.clone().ok_or(AppError(
+        StatusCode::NOT_FOUND,
+        anyhow!("Contract '{}' not found", store.contract_name),
+    ))?;
+
+    let info = state
+        .get_identity_info(&account.0)
+        .map_err(|err| AppError(StatusCode::NOT_FOUND, anyhow::anyhow!(err)))?;
+    let state: AccountInfo = serde_json::from_str(&info).map_err(|_| {
+        AppError(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            anyhow::anyhow!("Failed to parse identity info"),
+        )
+    })?;
+
+    Ok(Json(Response {
+        account: account.0,
+        nonce: state.nonce,
+    }))
 }
 
 pub async fn get_balance(
