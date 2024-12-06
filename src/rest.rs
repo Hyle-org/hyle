@@ -1,10 +1,12 @@
 //! Public API for interacting with the node.
 
+use anyhow::{Context, Result};
+pub use axum::Router;
 use axum::{
     extract::State,
     response::{IntoResponse, Response},
     routing::get,
-    Json, Router,
+    Json,
 };
 use axum_otel_metrics::HttpMetricsLayer;
 use reqwest::StatusCode;
@@ -15,10 +17,9 @@ use tracing::info;
 use crate::{
     bus::{BusClientSender, SharedMessageBus},
     handle_messages,
-    model::ValidatorPublicKey,
-    utils::modules::{module_bus_client, Module},
+    utils::modules::module_bus_client,
 };
-use anyhow::{Context, Result};
+use crate::{model::ValidatorPublicKey, utils::modules::Module};
 
 pub mod client;
 
@@ -52,6 +53,7 @@ pub struct RestApi {
     app: Option<Router>,
     bus: RestBusClient,
 }
+
 impl Module for RestApi {
     fn name() -> &'static str {
         "RestApi"
