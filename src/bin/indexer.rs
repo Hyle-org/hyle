@@ -13,7 +13,10 @@ use hyle::{
         modules::{Module, ModulesHandler},
     },
 };
-use std::sync::{Arc, Mutex};
+use std::{
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 use tracing::{debug, error, info};
 
 #[derive(Parser, Debug)]
@@ -63,7 +66,7 @@ async fn main() -> Result<()> {
 
     std::fs::create_dir_all(&config.data_directory).context("creating data directory")?;
 
-    let mut handler = ModulesHandler::default();
+    let mut handler = ModulesHandler::new(&bus).await;
 
     let ctx = Arc::new(CommonRunContext {
         bus: bus.new_handle(),
@@ -96,37 +99,34 @@ async fn main() -> Result<()> {
         })
         .await?;
 
-    let (running_modules, abort) = handler.start_modules()?;
-
     #[cfg(unix)]
     {
         use tokio::signal::unix;
         let mut terminate = unix::signal(unix::SignalKind::interrupt())?;
         tokio::select! {
-            Err(e) = running_modules => {
+            Err(e) = handler.start_modules() => {
                 error!("Error running modules: {:?}", e);
             }
             _ = tokio::signal::ctrl_c() => {
                 info!("Ctrl-C received, shutting down");
-                abort();
             }
             _ = terminate.recv() =>  {
                 info!("SIGTERM received, shutting down");
-                abort();
             }
         }
+        _ = handler.shutdown_modules(Duration::from_secs(3)).await;
     }
     #[cfg(not(unix))]
     {
         tokio::select! {
-            Err(e) = running_modules => {
+            Err(e) = handler.start_modules() => {
                 error!("Error running modules: {:?}", e);
             }
             _ = tokio::signal::ctrl_c() => {
                 info!("Ctrl-C received, shutting down");
-                abort();
             }
         }
+        _ = handler.shutdown_modules(Duration::from_secs(3)).await;
     }
 
     Ok(())

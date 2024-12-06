@@ -1,11 +1,15 @@
-use std::{fs, future::Future, path::Path, pin::Pin};
+use std::{any::type_name, fs, future::Future, path::Path, pin::Pin, time::Duration};
 
-use anyhow::{bail, Error, Result};
+use crate::{
+    bus::{BusClientSender, SharedMessageBus},
+    handle_messages,
+    utils::logger::LogMe,
+};
+use anyhow::{Context, Error, Result};
 use rand::{distributions::Alphanumeric, Rng};
+use signal::ShutdownCompleted;
 use tokio::task::JoinHandle;
-use tracing::{debug, error, info, warn};
-
-use crate::utils::logger::LogMe;
+use tracing::{debug, info};
 
 /// Module trait to define startup dependencies
 pub trait Module
@@ -18,24 +22,34 @@ where
     fn build(ctx: Self::Context) -> impl futures::Future<Output = Result<Self>> + Send;
     fn run(&mut self) -> impl futures::Future<Output = Result<()>> + Send;
 
+    fn load_from_disk<S>(file: &Path) -> Option<S>
+    where
+        S: bincode::Decode,
+    {
+        info!("Loading file {}", file.to_string_lossy());
+        match fs::File::open(file) {
+            Ok(mut reader) => {
+                bincode::decode_from_std_read(&mut reader, bincode::config::standard())
+                    .log_error(format!("Loading and decoding {}", file.to_string_lossy()))
+                    .ok()
+            }
+            Err(e) => {
+                info!(
+                    "File {} not found for module {} (using default): {:?}",
+                    file.to_string_lossy(),
+                    type_name::<S>(),
+                    e
+                );
+                None
+            }
+        }
+    }
+
     fn load_from_disk_or_default<S>(file: &Path) -> S
     where
         S: bincode::Decode + Default,
     {
-        fs::File::open(file)
-            .map_err(|e| e.to_string())
-            .and_then(|mut reader| {
-                bincode::decode_from_std_read(&mut reader, bincode::config::standard())
-                    .map_err(|e| e.to_string())
-            })
-            .unwrap_or_else(|e| {
-                warn!(
-                    "{}: Failed to load data from disk ({}). Error was: {e}",
-                    Self::name(),
-                    file.display()
-                );
-                S::default()
-            })
+        Self::load_from_disk(file).unwrap_or(S::default())
     }
 
     fn save_on_disk<S>(folder: &Path, file: &Path, store: &S) -> Result<()>
@@ -65,7 +79,7 @@ where
 }
 
 struct ModuleStarter {
-    name: &'static str,
+    pub name: &'static str,
     starter: Pin<Box<dyn Future<Output = Result<(), Error>> + Send + 'static>>,
 }
 
@@ -78,12 +92,129 @@ impl ModuleStarter {
     }
 }
 
-#[derive(Default)]
+pub mod signal {
+    use crate::bus::BusMessage;
+    #[derive(Clone, Debug)]
+    pub struct ShutdownModule {
+        pub module: String,
+    }
+    #[derive(Clone, Debug)]
+    pub struct ShutdownCompleted {
+        pub module: String,
+    }
+
+    impl BusMessage for ShutdownModule {}
+    impl BusMessage for ShutdownCompleted {}
+}
+
+macro_rules! module_bus_client {
+    (
+        $(#[$meta:meta])*
+        $pub:vis struct $name:ident {
+            $(module: $module:ty,)?
+            $(sender($sender:ty),)*
+            $(receiver($receiver:ty),)*
+        }
+    ) => {
+        $crate::bus::bus_client!{
+            $(#[$meta])*
+            $pub struct $name {
+                sender($crate::utils::modules::signal::ShutdownCompleted),
+                sender($crate::utils::modules::signal::ShutdownModule),
+                $(sender($sender),)*
+                $(receiver($receiver),)*
+                receiver($crate::utils::modules::signal::ShutdownCompleted),
+                receiver($crate::utils::modules::signal::ShutdownModule),
+            }
+        }
+
+        impl $name {
+            #[allow(unused)]
+             pub fn shutdown(&mut self, module_name: String) -> Result<()> {
+                _ = self.send($crate::utils::modules::signal::ShutdownModule { module: module_name })?;
+                Ok(())
+            }
+            $(
+            #[allow(unused)]
+             pub fn shutdown_complete(&mut self) -> Result<()> {
+                _ = self.send($crate::utils::modules::signal::ShutdownCompleted { module: stringify!($module).to_string() })?;
+                Ok(())
+            }
+            )?
+        }
+    }
+}
+
+pub(crate) use module_bus_client;
+
+module_bus_client! {
+    pub struct ShutdownClient {}
+}
+
+impl ShutdownClient {
+    pub async fn shutdown_module(&mut self, module_name: &str) {
+        _ = self
+            .shutdown(module_name.to_string())
+            .log_error("Shutting down module");
+
+        handle_messages! {
+            on_bus *self,
+            listen<ShutdownCompleted> msg => {
+                if msg.module == module_name {
+                    info!("Module {} successfully shut", msg.module);
+                    break;
+                }
+            }
+        }
+    }
+}
+
 pub struct ModulesHandler {
+    bus: ShutdownClient,
     modules: Vec<ModuleStarter>,
+    started_modules: Vec<&'static str>,
 }
 
 impl ModulesHandler {
+    pub async fn new(shared_bus: &SharedMessageBus) -> ModulesHandler {
+        let shutdown_client = ShutdownClient::new_from_bus(shared_bus.new_handle()).await;
+
+        ModulesHandler {
+            bus: shutdown_client,
+            modules: vec![],
+            started_modules: vec![],
+        }
+    }
+
+    pub async fn start_modules(&mut self) -> Result<()> {
+        let mut tasks: Vec<JoinHandle<Result<()>>> = vec![];
+
+        for module in self.modules.drain(..) {
+            self.started_modules.push(module.name);
+            let handle = module.start()?;
+            tasks.push(handle);
+        }
+
+        // Return a future that waits for the first error or the abort command.
+        futures::future::select_all(tasks)
+            .await
+            .0
+            .context("Joining error")?
+    }
+
+    /// Shutdown modules in reverse order (start A, B, C, shutdown C, B, A)
+    pub async fn shutdown_modules(&mut self, timeout: Duration) -> Result<()> {
+        for module_name in self.started_modules.drain(..).rev() {
+            if !["Genesis"].contains(&module_name) {
+                _ = tokio::time::timeout(timeout, self.bus.shutdown_module(module_name))
+                    .await
+                    .log_error(format!("Shutting down module {module_name}"));
+            }
+        }
+
+        Ok(())
+    }
+
     async fn run_module<M>(mut module: M) -> Result<()>
     where
         M: Module,
@@ -111,102 +242,86 @@ impl ModulesHandler {
         });
         Ok(())
     }
-
-    /// Start Modules
-    pub fn start_modules(
-        &mut self,
-    ) -> Result<
-        (
-            impl Future<Output = Result<(), Error>> + Send,
-            impl FnOnce() + Send,
-        ),
-        Error,
-    > {
-        let mut tasks: Vec<JoinHandle<Result<(), Error>>> = vec![];
-        let mut names: Vec<&'static str> = vec![];
-
-        for module in self.modules.drain(..) {
-            names.push(module.name);
-            let handle = module.start()?;
-            tasks.push(handle);
-        }
-
-        // Create an abort command (mildly hacky)
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        let abort = move || {
-            tx.send(()).ok();
-        };
-        tasks.push(
-            tokio::task::Builder::new()
-                .name("wait-abort-cmd")
-                .spawn(async move {
-                    rx.await.ok();
-                    Ok(())
-                })?,
-        );
-        names.push("abort");
-
-        // Return a future that waits for the first error or the abort command.
-        Ok((Self::wait_for_first(tasks, names), abort))
-    }
-
-    async fn wait_for_first(
-        mut handles: Vec<JoinHandle<Result<(), Error>>>,
-        names: Vec<&'static str>,
-    ) -> Result<(), Error> {
-        while !handles.is_empty() {
-            let (first, pos, remaining) = futures::future::select_all(handles).await;
-            handles = remaining;
-
-            match first {
-                Ok(result) => match result {
-                    Ok(_) => {
-                        info!("Module {} stopped successfully", names[pos]);
-                    }
-                    Err(e) => {
-                        error!("Module {} stopped with error: {}", names[pos], e);
-                        // Abort remaining tasks
-                        for handle in handles {
-                            handle.abort();
-                        }
-                        bail!("Error in module {}", names[pos]);
-                    }
-                },
-                Err(e) => {
-                    bail!("Error while waiting for module {}: {}", names[pos], e)
-                }
-            }
-        }
-        Ok(())
-    }
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::{
+        bus::{dont_use_this::get_receiver, metrics::BusMetrics},
+        handle_messages,
+    };
+
     use super::*;
+    use crate::bus::BusClientSender;
+    use crate::bus::SharedMessageBus;
+    use signal::ShutdownModule;
     use std::fs::File;
     use tempfile::tempdir;
-    use tokio::runtime::Runtime;
 
     #[derive(Default, bincode::Encode, bincode::Decode)]
     struct TestStruct {
         value: u32,
     }
 
-    struct TestModule;
+    struct TestModule {
+        bus: TestBusClient,
+    }
+
+    module_bus_client! {
+        struct TestBusClient {
+            module: TestModule,
+        }
+    }
 
     impl Module for TestModule {
-        type Context = ();
+        type Context = TestBusClient;
 
         fn name() -> &'static str {
             "TestModule"
         }
 
         async fn build(_ctx: Self::Context) -> Result<Self> {
-            Ok(TestModule)
+            Ok(TestModule { bus: _ctx })
         }
 
         async fn run(&mut self) -> Result<()> {
+            handle_messages! {
+                on_bus self.bus,
+                break_on(stringify!(TestModule))
+            }
+
+            _ = self.bus.shutdown_complete();
+            Ok(())
+        }
+    }
+
+    struct TestModule2 {
+        bus: TestBusClient2,
+    }
+
+    module_bus_client! {
+        struct TestBusClient2 {
+            module: TestModule2,
+        }
+    }
+
+    impl Module for TestModule2 {
+        type Context = TestBusClient2;
+
+        fn name() -> &'static str {
+            "TestModule2"
+        }
+
+        async fn build(_ctx: Self::Context) -> Result<Self> {
+            Ok(TestModule2 { bus: _ctx })
+        }
+
+        async fn run(&mut self) -> Result<()> {
+            handle_messages! {
+                on_bus self.bus,
+                break_on(stringify!(TestModule2))
+            }
+            _ = self.bus.shutdown_complete();
             Ok(())
         }
     }
@@ -245,39 +360,106 @@ mod tests {
         assert_eq!(loaded_struct.value, 42);
     }
 
-    #[test]
-    fn test_build_module() {
-        let rt = Runtime::new().unwrap();
-        let mut handler = ModulesHandler::default();
-
-        rt.block_on(async {
-            handler.build_module::<TestModule>(()).await.unwrap();
-            assert_eq!(handler.modules.len(), 1);
-        });
+    #[tokio::test]
+    async fn test_build_module() {
+        let shared_bus = SharedMessageBus::new(BusMetrics::global("id".to_string()));
+        let mut handler = ModulesHandler::new(&shared_bus).await;
+        handler
+            .build_module::<TestModule>(TestBusClient::new_from_bus(shared_bus.new_handle()).await)
+            .await
+            .unwrap();
+        assert_eq!(handler.modules.len(), 1);
     }
 
-    #[test]
-    fn test_add_module() {
-        let mut handler = ModulesHandler::default();
-        let module = TestModule;
+    #[tokio::test]
+    async fn test_add_module() {
+        let shared_bus = SharedMessageBus::new(BusMetrics::global("id".to_string()));
+        let mut handler = ModulesHandler::new(&shared_bus).await;
+        let module = TestModule {
+            bus: TestBusClient::new_from_bus(shared_bus.new_handle()).await,
+        };
 
         handler.add_module(module).unwrap();
         assert_eq!(handler.modules.len(), 1);
     }
 
-    #[test]
-    fn test_start_modules() {
-        let rt = Runtime::new().unwrap();
-        let mut handler = ModulesHandler::default();
+    async fn is_future_pending<F: Future>(future: F) -> bool {
+        tokio::select! {
+            _ = future => false, // La future est prête
+            _ = tokio::time::sleep(Duration::from_millis(1)) => true, // Timeout, donc la future est pending
+        }
+    }
 
-        rt.block_on(async {
-            handler.build_module::<TestModule>(()).await.unwrap();
-            let (future, abort) = handler.start_modules().unwrap();
+    #[tokio::test]
+    async fn test_start_modules() {
+        let shared_bus = SharedMessageBus::new(BusMetrics::global("id".to_string()));
+        let mut shutdown_receiver = get_receiver::<ShutdownModule>(&shared_bus).await;
+        let mut shutdown_completed_receiver = get_receiver::<ShutdownCompleted>(&shared_bus).await;
+        let mut handler = ModulesHandler::new(&shared_bus).await;
+        handler
+            .build_module::<TestModule>(TestBusClient::new_from_bus(shared_bus.new_handle()).await)
+            .await
+            .unwrap();
+        let handle = handler.start_modules();
 
-            // Start the modules and then abort
-            let handle = tokio::spawn(future);
-            abort();
-            handle.await.unwrap().unwrap();
-        });
+        assert!(is_future_pending(handle).await);
+
+        _ = handler.shutdown_modules(Duration::from_secs(1)).await;
+
+        assert_eq!(
+            shutdown_receiver.recv().await.unwrap().module,
+            "TestModule".to_string()
+        );
+
+        assert_eq!(
+            shutdown_completed_receiver.recv().await.unwrap().module,
+            "TestModule".to_string()
+        );
+    }
+
+    #[tokio::test]
+    async fn test_start_stop_modules_in_order() {
+        let shared_bus = SharedMessageBus::new(BusMetrics::global("id".to_string()));
+        let mut shutdown_receiver = get_receiver::<ShutdownModule>(&shared_bus).await;
+        let mut shutdown_completed_receiver = get_receiver::<ShutdownCompleted>(&shared_bus).await;
+        let mut handler = ModulesHandler::new(&shared_bus).await;
+
+        handler
+            .build_module::<TestModule>(TestBusClient::new_from_bus(shared_bus.new_handle()).await)
+            .await
+            .unwrap();
+        handler
+            .build_module::<TestModule2>(
+                TestBusClient2::new_from_bus(shared_bus.new_handle()).await,
+            )
+            .await
+            .unwrap();
+        let handle = handler.start_modules();
+
+        assert!(is_future_pending(handle).await);
+
+        _ = handler.shutdown_modules(Duration::from_secs(1)).await;
+
+        // Shutdown last module first
+        assert_eq!(
+            shutdown_receiver.recv().await.unwrap().module,
+            "TestModule2".to_string()
+        );
+
+        assert_eq!(
+            shutdown_completed_receiver.recv().await.unwrap().module,
+            "TestModule2".to_string()
+        );
+
+        // Then first module at last
+        assert_eq!(
+            shutdown_receiver.recv().await.unwrap().module,
+            "TestModule".to_string()
+        );
+
+        assert_eq!(
+            shutdown_completed_receiver.recv().await.unwrap().module,
+            "TestModule".to_string()
+        );
     }
 }

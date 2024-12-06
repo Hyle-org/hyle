@@ -18,13 +18,13 @@ macro_rules! static_type_map {
         $(#[$meta:meta])*
         $pub:vis struct $name:ident ($($t1:ty,)+);
     ) => {
-        use paste::paste;
-        paste! {
+        paste::paste! {
             // Wrap it in a module to make the member names private
             mod [<$name:snake>] {
+                #[allow(unused)]
                 use super::*;
-                use paste::paste;
-                static_type_map! {
+
+                $crate::utils::static_type_map::static_type_map! {
                     $(#[$meta])*
                     ha: $pub struct $name ($($t1,)+) {}
                 }
@@ -38,8 +38,8 @@ macro_rules! static_type_map {
         $(#[$meta:meta])*
         $index:ident: $pub:vis struct $name:ident ($t1:ty, $($t2:ty,)*) { $($idx:ident: $t3:ty,)* }
     ) => {
-        paste! {
-            static_type_map! {
+        paste::paste! {
+            $crate::utils::static_type_map::static_type_map! {
                 $(#[$meta])*
                 [<ha $index>]: $pub struct $name ( $($t2,)* ) {
                     $($idx: $t3,)*

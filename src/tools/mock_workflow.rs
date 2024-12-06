@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use crate::{
-    bus::{BusMessage, SharedMessageBus},
+    bus::{BusClientSender, BusMessage},
     handle_messages,
     mempool::api::RestApiMessage,
     model::{
@@ -9,7 +9,7 @@ use crate::{
         ProofTransaction, RegisterContractTransaction, SharedRunContext, Transaction,
     },
     rest::client::ApiHttpClient,
-    utils::modules::Module,
+    utils::modules::{module_bus_client, Module},
 };
 use anyhow::Result;
 use hyle_contract_sdk::{Identity, StateDigest};
@@ -18,10 +18,11 @@ use serde::{Deserialize, Serialize};
 use tokio::time::sleep;
 use tracing::{error, info, warn};
 
-use crate::bus::bus_client;
+// use crate::bus::bus_client;
 
-bus_client! {
+module_bus_client! {
 struct MockWorkflowBusClient {
+    module: MockWorkflowHandler,
     sender(RestApiMessage),
     receiver(RunScenario),
 }
@@ -69,11 +70,10 @@ impl Module for MockWorkflowHandler {
 mod api {
     use axum::{routing::post, Router};
 
+    use crate::bus::metrics::BusMetrics;
+    use crate::bus::BusClientSender;
     use crate::tools::mock_workflow::RunScenario;
-    use crate::{
-        bus::{bus_client, SharedMessageBus},
-        model::CommonRunContext,
-    };
+    use crate::{bus::bus_client, model::CommonRunContext};
     use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
 
     bus_client! {
@@ -123,6 +123,7 @@ impl MockWorkflowHandler {
     pub async fn start(&mut self) -> anyhow::Result<()> {
         handle_messages! {
             on_bus self.bus,
+            break_on(stringify!(MockWorkflowHandler))
             listen<RunScenario> cmd => {
                 match cmd {
                     RunScenario::StressTest => {
@@ -134,6 +135,9 @@ impl MockWorkflowHandler {
                 }
             }
         }
+
+        _ = self.bus.shutdown_complete();
+        Ok(())
     }
 
     async fn stress_test(&mut self) {
