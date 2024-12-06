@@ -55,10 +55,6 @@ pub struct RestApi {
 }
 
 impl Module for RestApi {
-    fn name() -> &'static str {
-        "RestApi"
-    }
-
     type Context = RestApiRunContext;
 
     async fn build(ctx: Self::Context) -> Result<Self> {
@@ -96,7 +92,7 @@ impl RestApi {
 
         handle_messages! {
             on_bus self.bus,
-            break_on(stringify!(RestApi))
+            break_on<RestApi>
             _ = axum::serve(
                 tokio::net::TcpListener::bind(&self.rest_addr)
                     .await

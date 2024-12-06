@@ -64,10 +64,6 @@ pub struct Indexer {
 pub static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("./src/indexer/migrations");
 
 impl Module for Indexer {
-    fn name() -> &'static str {
-        "Indexer"
-    }
-
     type Context = Arc<CommonRunContext>;
 
     async fn build(ctx: Self::Context) -> Result<Self> {

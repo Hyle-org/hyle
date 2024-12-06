@@ -193,7 +193,7 @@ impl Peer {
     pub async fn start(&mut self) -> Result<()> {
         handle_messages! {
             on_bus self.bus,
-            break_on(stringify!(Peer))
+            break_on<Peer>
             listen<OutboundMessage> res => {
                 match res {
                     OutboundMessage::SendMessage { validator_id, msg } => match self.handle_send_message(validator_id, msg).await {

@@ -2,6 +2,7 @@ use std::{any::type_name, fs, future::Future, path::Path, pin::Pin, time::Durati
 
 use crate::{
     bus::{BusClientSender, SharedMessageBus},
+    genesis::Genesis,
     handle_messages,
     utils::logger::LogMe,
 };
@@ -18,7 +19,6 @@ where
 {
     type Context;
 
-    fn name() -> &'static str;
     fn build(ctx: Self::Context) -> impl futures::Future<Output = Result<Self>> + Send;
     fn run(&mut self) -> impl futures::Future<Output = Result<()>> + Send;
 
@@ -67,7 +67,7 @@ where
             .take(8)
             .map(char::from)
             .collect();
-        let tmp = format!("{}.{}.data.tmp", salt, Self::name());
+        let tmp = format!("{}.{}.data.tmp", salt, type_name::<Self>());
         debug!("Saving on disk in a tmp file {}", tmp.clone());
         let tmp = folder.join(tmp.clone());
         let mut writer = fs::File::create(tmp.as_path()).log_error("Create file")?;
@@ -111,7 +111,7 @@ macro_rules! module_bus_client {
     (
         $(#[$meta:meta])*
         $pub:vis struct $name:ident {
-            $(module: $module:ty,)?
+            $(module: $module_type:ty,)?
             $(sender($sender:ty),)*
             $(receiver($receiver:ty),)*
         }
@@ -137,7 +137,7 @@ macro_rules! module_bus_client {
             $(
             #[allow(unused)]
              pub fn shutdown_complete(&mut self) -> Result<()> {
-                _ = self.send($crate::utils::modules::signal::ShutdownCompleted { module: stringify!($module).to_string() })?;
+                _ = self.send($crate::utils::modules::signal::ShutdownCompleted { module: std::any::type_name::<$module_type>().to_string() })?;
                 Ok(())
             }
             )?
@@ -148,7 +148,7 @@ macro_rules! module_bus_client {
 pub(crate) use module_bus_client;
 
 module_bus_client! {
-    pub struct ShutdownClient {}
+    pub struct ShutdownClient { }
 }
 
 impl ShutdownClient {
@@ -205,7 +205,7 @@ impl ModulesHandler {
     /// Shutdown modules in reverse order (start A, B, C, shutdown C, B, A)
     pub async fn shutdown_modules(&mut self, timeout: Duration) -> Result<()> {
         for module_name in self.started_modules.drain(..).rev() {
-            if !["Genesis"].contains(&module_name) {
+            if ![std::any::type_name::<Genesis>()].contains(&module_name) {
                 _ = tokio::time::timeout(timeout, self.bus.shutdown_module(module_name))
                     .await
                     .log_error(format!("Shutting down module {module_name}"));
@@ -237,7 +237,7 @@ impl ModulesHandler {
         <M as Module>::Context: std::marker::Send,
     {
         self.modules.push(ModuleStarter {
-            name: M::name(),
+            name: type_name::<M>(),
             starter: Box::pin(Self::run_module(module)),
         });
         Ok(())
@@ -275,11 +275,6 @@ mod tests {
 
     impl Module for TestModule {
         type Context = TestBusClient;
-
-        fn name() -> &'static str {
-            "TestModule"
-        }
-
         async fn build(_ctx: Self::Context) -> Result<Self> {
             Ok(TestModule { bus: _ctx })
         }
@@ -287,7 +282,7 @@ mod tests {
         async fn run(&mut self) -> Result<()> {
             handle_messages! {
                 on_bus self.bus,
-                break_on(stringify!(TestModule))
+                break_on<TestModule>
             }
 
             _ = self.bus.shutdown_complete();
@@ -307,11 +302,6 @@ mod tests {
 
     impl Module for TestModule2 {
         type Context = TestBusClient2;
-
-        fn name() -> &'static str {
-            "TestModule2"
-        }
-
         async fn build(_ctx: Self::Context) -> Result<Self> {
             Ok(TestModule2 { bus: _ctx })
         }
@@ -319,7 +309,7 @@ mod tests {
         async fn run(&mut self) -> Result<()> {
             handle_messages! {
                 on_bus self.bus,
-                break_on(stringify!(TestModule2))
+                break_on<TestModule2>
             }
             _ = self.bus.shutdown_complete();
             Ok(())
@@ -408,12 +398,12 @@ mod tests {
 
         assert_eq!(
             shutdown_receiver.recv().await.unwrap().module,
-            "TestModule".to_string()
+            std::any::type_name::<TestModule>().to_string()
         );
 
         assert_eq!(
             shutdown_completed_receiver.recv().await.unwrap().module,
-            "TestModule".to_string()
+            std::any::type_name::<TestModule>().to_string()
         );
     }
 
@@ -443,23 +433,23 @@ mod tests {
         // Shutdown last module first
         assert_eq!(
             shutdown_receiver.recv().await.unwrap().module,
-            "TestModule2".to_string()
+            std::any::type_name::<TestModule2>().to_string()
         );
 
         assert_eq!(
             shutdown_completed_receiver.recv().await.unwrap().module,
-            "TestModule2".to_string()
+            std::any::type_name::<TestModule2>().to_string()
         );
 
         // Then first module at last
         assert_eq!(
             shutdown_receiver.recv().await.unwrap().module,
-            "TestModule".to_string()
+            std::any::type_name::<TestModule>().to_string()
         );
 
         assert_eq!(
             shutdown_completed_receiver.recv().await.unwrap().module,
-            "TestModule".to_string()
+            std::any::type_name::<TestModule>().to_string()
         );
     }
 }

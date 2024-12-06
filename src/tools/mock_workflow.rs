@@ -43,10 +43,6 @@ pub struct MockWorkflowHandler {
 }
 
 impl Module for MockWorkflowHandler {
-    fn name() -> &'static str {
-        "MockWorkflowHandler"
-    }
-
     type Context = SharedRunContext;
 
     async fn build(ctx: Self::Context) -> Result<Self> {
@@ -123,7 +119,7 @@ impl MockWorkflowHandler {
     pub async fn start(&mut self) -> anyhow::Result<()> {
         handle_messages! {
             on_bus self.bus,
-            break_on(stringify!(MockWorkflowHandler))
+            break_on<MockWorkflowHandler>
             listen<RunScenario> cmd => {
                 match cmd {
                     RunScenario::StressTest => {

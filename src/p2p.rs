@@ -43,10 +43,6 @@ pub struct P2P {
 }
 
 impl Module for P2P {
-    fn name() -> &'static str {
-        "P2P"
-    }
-
     type Context = SharedRunContext;
 
     async fn build(ctx: Self::Context) -> Result<Self> {
@@ -151,7 +147,7 @@ impl P2P {
 
         handle_messages! {
             on_bus self.bus_client,
-            break_on(stringify!(P2P))
+            break_on<P2P>
             listen<P2PCommand> cmd => {
                  self.handle_command(cmd)
             }

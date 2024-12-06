@@ -116,10 +116,6 @@ pub struct DataAvailability {
 }
 
 impl Module for DataAvailability {
-    fn name() -> &'static str {
-        "DataAvailability"
-    }
-
     type Context = SharedRunContext;
 
     async fn build(ctx: Self::Context) -> Result<Self> {
@@ -195,7 +191,7 @@ impl DataAvailability {
 
         handle_messages! {
             on_bus self.bus,
-            break_on(stringify!(DataAvailability))
+            break_on<DataAvailability>
             command_response<ContractName, Contract> cmd => {
                 self.node_state.contracts.get(cmd).cloned().context("Contract not found")
             }
@@ -303,6 +299,7 @@ impl DataAvailability {
                 }
             }
         }
+
         _ = self.bus.shutdown_complete();
 
         Ok(())
