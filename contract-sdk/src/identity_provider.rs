@@ -1,7 +1,7 @@
 use alloc::{format, string::String};
 use bincode::{Decode, Encode};
 
-use crate::{guest::RunResult, Blob, BlobData, ContractName};
+use crate::{Blob, BlobData, ContractName, RunResult};
 
 /// Trait representing an identity verification contract.
 pub trait IdentityVerification {

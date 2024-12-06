@@ -3,7 +3,7 @@ use std::hash::{Hash, Hasher};
 
 use bincode::{Decode, Encode};
 use sdk::{erc20::ERC20Action, Identity};
-use sdk::{guest::RunResult, Blob, BlobIndex, Digestable};
+use sdk::{Blob, BlobIndex, Digestable, RunResult};
 use sdk::{BlobData, ContractName, StructuredBlobData};
 use serde::{Deserialize, Serialize};
 

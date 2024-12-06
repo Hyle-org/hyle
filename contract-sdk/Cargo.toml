@@ -10,8 +10,14 @@ serde = { version = "1.0", default-features = false, features = [
 ] }
 bincode = { version = "2.0.0-rc.2", tag = "v2.0.0-rc.2", git = "https://github.com/bincode-org/bincode.git" }
 hex = "0.4.3"
-risc0-zkvm = { version = "1.1.1", default-features = false, features = ['std'] }
 anyhow = "1.0.89"
+
+risc0-zkvm = { version = "1.1.1", default-features = false, features = [
+    'std',
+], optional = true }
 
 [dev-dependencies]
 mockall = "0.13.0"
+
+[features]
+risc0 = ["risc0-zkvm"]
