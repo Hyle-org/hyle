@@ -21,20 +21,14 @@ pub fn verify_proof(
 }
 
 pub fn risc0_proof_verifier(encoded_receipt: &[u8], image_id: &[u8]) -> Result<HyleOutput, Error> {
-    let receipt = match from_slice::<risc0_zkvm::Receipt>(encoded_receipt) {
-        Ok(v) => v,
-        Err(e) => bail!(
-            "Error while decoding Risc0 proof's receipt. Decode error: {}",
-            e
-        ),
-    };
+    let receipt = from_slice::<risc0_zkvm::Receipt>(encoded_receipt)
+        .context("Error while decoding Risc0 proof's receipt")?;
 
-    let image_bytes: Digest = image_id.try_into().expect("Invalid Risc0 image ID");
+    let image_bytes: Digest = image_id.try_into().context("Invalid Risc0 image ID")?;
 
-    match receipt.verify(image_bytes) {
-        Ok(_) => (),
-        Err(e) => bail!("Risc0 proof verification failed: {}", e),
-    };
+    receipt
+        .verify(image_bytes)
+        .context("Risc0 proof verification failed")?;
 
     let hyle_output = receipt
         .journal
@@ -56,27 +50,34 @@ pub fn sp1_proof_verifier(proof_bin: &[u8], verification_key: &[u8]) -> Result<H
     // Setup the prover client.
     let client = ProverClient::new();
 
-    let (proof, _): (bincode::serde::Compat<SP1ProofWithPublicValues>, _) =
-        bincode::decode_from_slice(
+    let (proof, _) =
+        bincode::decode_from_slice::<bincode::serde::Compat<SP1ProofWithPublicValues>, _>(
             proof_bin,
             bincode::config::legacy().with_fixed_int_encoding(),
-        )?;
+        )
+        .context("Error while decoding SP1 proof.")?;
 
-    // json_deserialize verification key
-    let vk: SP1VerifyingKey = serde_json::from_slice(verification_key)?;
+    // Deserialize verification key from JSON
+    let vk: SP1VerifyingKey =
+        serde_json::from_slice(verification_key).context("Invalid SP1 image ID")?;
 
     // Verify the proof.
     client
         .verify(&proof.0, &vk)
-        .expect("failed to verify proof");
+        .context("SP1 proof verification failed")?;
 
-    let (hyle_output, _) = bincode::decode_from_slice(
+    let (hyle_output, _) = bincode::decode_from_slice::<HyleOutput, _>(
         proof.0.public_values.as_slice(),
         bincode::config::legacy().with_fixed_int_encoding(),
     )
     .context("Failed to extract HyleOuput from SP1 proof")?;
 
-    tracing::debug!("Successfully verified proof");
+    tracing::info!(
+        "✅ SP1 proof verified. {}",
+        std::str::from_utf8(&hyle_output.program_outputs)
+            .map(|o| format!("Program outputs: {o}"))
+            .unwrap_or("Invalid UTF-8".to_string())
+    );
 
     Ok(hyle_output)
 }

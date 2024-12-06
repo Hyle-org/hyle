@@ -8,9 +8,9 @@ use crate::{
     StructuredBlob, StructuredBlobData,
 };
 
-pub struct GuestEnv;
+mod env {
+    use super::*;
 
-impl GuestEnv {
     pub fn log(message: &str) {
         #[cfg(feature = "risc0")]
         risc0_zkvm::guest::env::log(message);
@@ -37,9 +37,9 @@ pub fn fail<State>(input: ContractInput<State>, message: &str)
 where
     State: Digestable,
 {
-    GuestEnv::log(message);
+    env::log(message);
 
-    GuestEnv::commit(&HyleOutput {
+    env::commit(&HyleOutput {
         version: 1,
         initial_state: input.initial_state.as_digest(),
         next_state: input.initial_state.as_digest(),
@@ -53,7 +53,7 @@ where
 }
 
 pub fn panic(message: &str) {
-    GuestEnv::log(message);
+    env::log(message);
     // should we env::commit ?
     panic!("{}", message);
 }
@@ -63,7 +63,7 @@ where
     State: Digestable + DeserializeOwned,
     Parameters: Decode,
 {
-    let input: ContractInput<State> = GuestEnv::read();
+    let input: ContractInput<State> = env::read();
 
     let parsed_blob = parse_blob::<Parameters>(&input.blobs, &input.index);
 
@@ -76,7 +76,7 @@ where
     State: Digestable + DeserializeOwned,
     Parameters: Encode + Decode,
 {
-    let input: ContractInput<State> = GuestEnv::read();
+    let input: ContractInput<State> = env::read();
 
     let parsed_blob = parse_structured_blob::<Parameters>(&input.blobs, &input.index);
 
@@ -127,7 +127,7 @@ pub fn commit<State>(input: ContractInput<State>, new_state: State, res: crate::
 where
     State: Digestable,
 {
-    GuestEnv::commit(&HyleOutput {
+    env::commit(&HyleOutput {
         version: 1,
         initial_state: input.initial_state.as_digest(),
         next_state: new_state.as_digest(),
