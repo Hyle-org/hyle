@@ -13,6 +13,8 @@ pub mod erc20;
 pub mod guest;
 pub mod identity_provider;
 
+pub type RunResult = Result<String, String>;
+
 pub trait HyleContract {
     fn caller(&self) -> Identity;
 }
