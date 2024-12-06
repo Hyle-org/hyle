@@ -220,7 +220,7 @@ where
 
     async fn settle_tx(&mut self, tx: TxHash) -> Result<()> {
         let mut store = self.store.write().await;
-        let Some(tx) = store.unsettled_blobs.get(&tx).cloned() else {
+        let Some(tx) = store.unsettled_blobs.remove(&tx) else {
             debug!(cn = %self.contract_name, "🔨 No supported blobs found in transaction: {}", tx);
             return Ok(());
         };
@@ -244,5 +244,151 @@ where
             store.state = Some(new_state);
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use hyle_contract_sdk::{BlobData, StateDigest};
+
+    use super::*;
+    use crate::bus::metrics::BusMetrics;
+    use crate::model::BlockHeight;
+    use crate::utils::conf::Conf;
+    use crate::{bus::SharedMessageBus, model::CommonRunContext};
+    use std::sync::Arc;
+
+    #[derive(Clone, Debug, Default, Encode, Decode, Serialize, Deserialize)]
+    struct MockState(Vec<u8>);
+
+    impl TryFrom<StateDigest> for MockState {
+        type Error = Error;
+
+        fn try_from(value: StateDigest) -> Result<Self> {
+            Ok(MockState(value.0))
+        }
+    }
+
+    impl ContractHandler for MockState {
+        fn handle(tx: &BlobTransaction, index: BlobIndex, mut state: Self) -> Result<Self> {
+            state.0 = tx.blobs.get(index.0 as usize).unwrap().data.0.clone();
+            Ok(state)
+        }
+
+        async fn api(_store: Arc<RwLock<Store<Self>>>) -> axum::Router<()> {
+            axum::Router::new()
+        }
+    }
+
+    async fn build_indexer(contract_name: ContractName) -> ContractStateIndexer<MockState> {
+        let common = Arc::new(CommonRunContext {
+            bus: SharedMessageBus::new(BusMetrics::global("global".to_string())),
+            config: Arc::new(Conf::default()),
+            router: Default::default(),
+        });
+
+        let ctx = ContractStateIndexerCtx {
+            common: common.clone(),
+            contract_name,
+        };
+
+        ContractStateIndexer::<MockState>::build(ctx).await.unwrap()
+    }
+
+    async fn register_contract(indexer: &mut ContractStateIndexer<MockState>) {
+        let state_digest = StateDigest(vec![]);
+        let tx = RegisterContractTransaction {
+            contract_name: indexer.contract_name.clone(),
+            state_digest,
+            owner: "onwer".into(),
+            verifier: "test".into(),
+            program_id: vec![],
+        };
+        indexer.handle_register_contract(tx).await.unwrap();
+    }
+
+    #[test_log::test(tokio::test)]
+    async fn test_handle_register_contract() {
+        let contract_name = ContractName::from("test_contract");
+        let mut indexer = build_indexer(contract_name.clone()).await;
+
+        let state_digest = StateDigest::default();
+        let tx = RegisterContractTransaction {
+            contract_name: contract_name.clone(),
+            state_digest,
+            owner: "onwer".into(),
+            verifier: "test".into(),
+            program_id: vec![],
+        };
+        indexer.handle_register_contract(tx).await.unwrap();
+
+        let store = indexer.store.read().await;
+        assert!(store.state.is_some());
+    }
+
+    #[test_log::test(tokio::test)]
+    async fn test_handle_blob() {
+        let contract_name = ContractName::from("test_contract");
+        let blob = Blob {
+            contract_name: contract_name.clone(),
+            data: BlobData(vec![1, 2, 3]),
+        };
+        let tx = BlobTransaction {
+            blobs: vec![blob],
+            identity: "test".into(),
+        };
+        let tx_hash = tx.hash();
+
+        let mut indexer = build_indexer(contract_name.clone()).await;
+        register_contract(&mut indexer).await;
+        indexer.handle_blob(tx).await.unwrap();
+
+        let store = indexer.store.read().await;
+        assert!(store.unsettled_blobs.contains_key(&tx_hash));
+        assert!(store.state.clone().unwrap().0.is_empty());
+    }
+
+    #[test_log::test(tokio::test)]
+    async fn test_settle_tx() {
+        let contract_name = ContractName::from("test_contract");
+        let blob = Blob {
+            contract_name: contract_name.clone(),
+            data: BlobData(vec![1, 2, 3]),
+        };
+        let tx = BlobTransaction {
+            blobs: vec![blob],
+            identity: "test".into(),
+        };
+        let tx_hash = tx.hash();
+
+        let mut indexer = build_indexer(contract_name.clone()).await;
+        register_contract(&mut indexer).await;
+        {
+            let mut store = indexer.store.write().await;
+            store.unsettled_blobs.insert(tx_hash.clone(), tx);
+        }
+
+        indexer.settle_tx(tx_hash.clone()).await.unwrap();
+
+        let store = indexer.store.read().await;
+        assert!(!store.unsettled_blobs.contains_key(&tx_hash));
+        assert_eq!(store.state.clone().unwrap().0, vec![1, 2, 3]);
+    }
+
+    #[tokio::test]
+    async fn test_handle_data_availability_event() {
+        let contract_name = ContractName::from("test_contract");
+        let mut indexer = build_indexer(contract_name.clone()).await;
+        register_contract(&mut indexer).await;
+
+        let block = Block {
+            height: BlockHeight(1),
+            txs: vec![],
+            ..Default::default()
+        };
+        let event = DataEvent::NewBlock(block);
+
+        indexer.handle_data_availability_event(event).await.unwrap();
+        // Add assertions based on the expected state changes
     }
 }
