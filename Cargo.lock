@@ -3258,6 +3258,7 @@ dependencies = [
  "hydentity",
  "hyle-contract-sdk",
  "hyllar",
+ "hyrun",
  "indexmap 2.7.0",
  "opentelemetry",
  "paste",
