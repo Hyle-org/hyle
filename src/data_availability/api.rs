@@ -13,7 +13,7 @@ use crate::{
     bus::{
         bus_client,
         command_response::{CmdRespClient, Query},
-        SharedMessageBus,
+        metrics::BusMetrics,
     },
     model::{BlockHeight, CommonRunContext},
     node_state::model::Contract,

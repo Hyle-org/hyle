@@ -1,20 +1,32 @@
 //! Public API for interacting with the node.
 
-use crate::{bus::SharedMessageBus, model::ValidatorPublicKey, utils::modules::Module};
-use anyhow::{Context, Result};
 use axum::{
     extract::State,
-    http::StatusCode,
     response::{IntoResponse, Response},
     routing::get,
     Json, Router,
 };
 use axum_otel_metrics::HttpMetricsLayer;
+use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 use tower_http::trace::TraceLayer;
 use tracing::info;
 
+use crate::{
+    bus::{BusClientSender, SharedMessageBus},
+    handle_messages,
+    model::ValidatorPublicKey,
+    utils::modules::{module_bus_client, Module},
+};
+use anyhow::{Context, Result};
+
 pub mod client;
+
+module_bus_client! {
+    struct RestBusClient {
+        module: RestApi,
+    }
+}
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct NodeInfo {
@@ -38,6 +50,7 @@ pub struct RouterState {
 pub struct RestApi {
     rest_addr: String,
     app: Option<Router>,
+    bus: RestBusClient,
 }
 impl Module for RestApi {
     fn name() -> &'static str {
@@ -62,6 +75,7 @@ impl Module for RestApi {
         Ok(RestApi {
             rest_addr: ctx.rest_addr.clone(),
             app: Some(app),
+            bus: RestBusClient::new_from_bus(ctx.bus.new_handle()).await,
         })
     }
 
@@ -76,15 +90,22 @@ pub async fn get_info(State(state): State<RouterState>) -> Result<impl IntoRespo
 
 impl RestApi {
     pub async fn serve(&mut self) -> Result<()> {
-        let listener = tokio::net::TcpListener::bind(&self.rest_addr)
-            .await
-            .context("Starting rest server")?;
-
         info!("rest listening on {}", self.rest_addr);
 
-        axum::serve(listener, self.app.take().expect("app is not set"))
-            .await
-            .context("Starting rest server")
+        handle_messages! {
+            on_bus self.bus,
+            break_on(stringify!(RestApi))
+            _ = axum::serve(
+                tokio::net::TcpListener::bind(&self.rest_addr)
+                    .await
+                    .context("Starting rest server")?,
+                self.app.take().expect("app is not set")
+            ) => { }
+        }
+
+        _ = self.bus.shutdown_complete();
+
+        Ok(())
     }
 }
 

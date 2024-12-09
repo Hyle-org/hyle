@@ -18,6 +18,7 @@ use super::network::SignedByValidator;
 use super::network::{Hello, NetMessage};
 use super::stream::send_net_message;
 use crate::bus::bus_client;
+use crate::bus::BusClientSender;
 use crate::bus::SharedMessageBus;
 use crate::consensus::ConsensusNetMessage;
 use crate::data_availability::DataNetMessage;
@@ -27,6 +28,7 @@ use crate::model::ValidatorPublicKey;
 use crate::p2p::stream::read_stream;
 use crate::utils::conf::SharedConf;
 use crate::utils::crypto::SharedBlstCrypto;
+use crate::utils::modules::signal::ShutdownModule;
 
 bus_client! {
 struct PeerBusClient {
@@ -35,6 +37,7 @@ struct PeerBusClient {
     sender(PeerEvent),
     sender(DataNetMessage),
     receiver(OutboundMessage),
+    receiver(ShutdownModule),
 }
 }
 
@@ -187,9 +190,10 @@ impl Peer {
             .ok();
     }
 
-    pub async fn start(&mut self) -> Result<(), Error> {
+    pub async fn start(&mut self) -> Result<()> {
         handle_messages! {
             on_bus self.bus,
+            break_on(stringify!(Peer))
             listen<OutboundMessage> res => {
                 match res {
                     OutboundMessage::SendMessage { validator_id, msg } => match self.handle_send_message(validator_id, msg).await {
@@ -256,6 +260,7 @@ impl Peer {
                 }
             }
         }
+        Ok(())
     }
 
     pub async fn connect(addr: &str) -> Result<TcpStream, Error> {

@@ -203,10 +203,18 @@ pub struct HandledBlockOutput {
     pub updated_states: HashMap<ContractName, StateDigest>,
 }
 
-#[derive(
-    Display, Debug, Serialize, Deserialize, Default, Clone, Encode, Decode, PartialEq, Eq, Hash,
-)]
+#[derive(Debug, Serialize, Deserialize, Default, Clone, Encode, Decode, PartialEq, Eq, Hash)]
 pub struct BlockHash(pub String);
+
+impl Display for BlockHash {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            self.0.get(..HASH_DISPLAY_SIZE * 2).unwrap_or(&self.0)
+        )
+    }
+}
 
 impl Type<Postgres> for BlockHash {
     fn type_info() -> sqlx::postgres::PgTypeInfo {

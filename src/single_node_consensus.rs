@@ -2,10 +2,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use crate::bus::command_response::{CmdRespClient, Query};
-use crate::bus::SharedMessageBus;
-use crate::consensus::{
-    ConsensusCommand, ConsensusEvent, ConsensusInfo, ConsensusNetMessage, QueryConsensusInfo,
-};
+use crate::bus::BusClientSender;
+use crate::consensus::{ConsensusEvent, ConsensusInfo, QueryConsensusInfo};
 use crate::genesis::{Genesis, GenesisEvent};
 use crate::mempool::storage::Cut;
 use crate::mempool::{MempoolNetMessage, QueryNewCut};
@@ -13,23 +11,19 @@ use crate::model::Hashable;
 use crate::p2p::network::{NetMessage, OutboundMessage, SignedByValidator};
 use crate::utils::conf::SharedConf;
 use crate::utils::crypto::{BlstCrypto, SharedBlstCrypto};
-use crate::{
-    bus::bus_client, handle_messages, mempool::MempoolEvent, model::SharedRunContext,
-    utils::modules::Module,
-};
+use crate::utils::modules::module_bus_client;
+use crate::{handle_messages, model::SharedRunContext, utils::modules::Module};
 use anyhow::Result;
 use bincode::{Decode, Encode};
+use tracing::warn;
 
-bus_client! {
+module_bus_client! {
 struct SingleNodeConsensusBusClient {
+    module: SingleNodeConsensus,
     sender(ConsensusEvent),
     sender(GenesisEvent),
     sender(SignedByValidator<MempoolNetMessage>),
     sender(Query<QueryNewCut, Cut>),
-    receiver(ConsensusCommand),
-    receiver(MempoolEvent),
-    receiver(MempoolNetMessage),
-    receiver(SignedByValidator<ConsensusNetMessage>),
     receiver(OutboundMessage),
     receiver(Query<QueryConsensusInfo, ConsensusInfo>),
 }
@@ -120,9 +114,7 @@ impl SingleNodeConsensus {
 
         handle_messages! {
             on_bus self.bus,
-            listen<ConsensusCommand> _ => {}
-            listen<SignedByValidator<ConsensusNetMessage>> _ => {}
-            listen<MempoolEvent> _ => {}
+            break_on(stringify!(SingleNodeConsensus))
             command_response<QueryConsensusInfo, ConsensusInfo> _ => {
                 let slot = 0;
                 let view = 0;
@@ -137,6 +129,22 @@ impl SingleNodeConsensus {
                 self.handle_new_slot_tick().await?;
             }
         }
+        if let Some(file) = &self.file {
+            if let Err(e) = Self::save_on_disk(
+                self.config.data_directory.as_path(),
+                file.as_path(),
+                &self.store,
+            ) {
+                warn!(
+                    "Failed to save consensus single node storage on disk: {}",
+                    e
+                );
+            }
+        }
+
+        _ = self.bus.shutdown_complete();
+
+        Ok(())
     }
 
     fn handle_car_proposal_message(&mut self, cmd: OutboundMessage) -> Result<()> {
@@ -204,7 +212,9 @@ impl SingleNodeConsensus {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bus::SharedMessageBus;
+    use crate::bus::dont_use_this::get_receiver;
+    use crate::bus::metrics::BusMetrics;
+    use crate::bus::{bus_client, SharedMessageBus};
     use crate::mempool::storage::{Car, CarHash, DataProposal};
     use crate::model::{Hashable, ValidatorPublicKey};
     use crate::p2p;

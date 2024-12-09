@@ -1,7 +1,7 @@
 //! Mempool logic & pending transaction management.
 
 use crate::{
-    bus::{bus_client, command_response::Query, BusMessage, SharedMessageBus},
+    bus::{command_response::Query, BusClientSender, BusMessage},
     consensus::ConsensusEvent,
     genesis::GenesisEvent,
     handle_messages,
@@ -13,9 +13,10 @@ use crate::{
     node_state::NodeState,
     p2p::network::{OutboundMessage, SignedByValidator},
     utils::{
+        conf::SharedConf,
         crypto::{BlstCrypto, SharedBlstCrypto},
         logger::LogMe,
-        modules::Module,
+        modules::{module_bus_client, Module},
     },
 };
 use anyhow::{bail, Context, Result};
@@ -23,7 +24,7 @@ use api::RestApiMessage;
 use bincode::{Decode, Encode};
 use metrics::MempoolMetrics;
 use serde::{Deserialize, Serialize};
-use std::{collections::HashSet, fmt::Display, sync::Arc};
+use std::{collections::HashSet, fmt::Display, path::PathBuf, str::FromStr, sync::Arc};
 use storage::{CarHash, Cut, DataProposalVerdict};
 use strum_macros::IntoStaticStr;
 use tracing::{debug, error, info, warn};
@@ -35,8 +36,9 @@ pub mod storage;
 #[derive(Debug, Clone)]
 pub struct QueryNewCut(pub Vec<ValidatorPublicKey>);
 
-bus_client! {
+module_bus_client! {
 struct MempoolBusClient {
+    module: Mempool,
     sender(OutboundMessage),
     sender(MempoolEvent),
     receiver(SignedByValidator<MempoolNetMessage>),
@@ -49,6 +51,8 @@ struct MempoolBusClient {
 
 pub struct Mempool {
     bus: MempoolBusClient,
+    file: Option<PathBuf>,
+    conf: SharedConf,
     crypto: SharedBlstCrypto,
     metrics: MempoolMetrics,
     storage: Storage,
@@ -95,7 +99,7 @@ impl Module for Mempool {
             ctx.common
                 .config
                 .data_directory
-                .join("mempool_node_state.bin")
+                .join("node_state.bin")
                 .as_path(),
         );
 
@@ -105,12 +109,21 @@ impl Module for Mempool {
                 guard.replace(router.nest("/v1/", api));
             }
         }
-
+        let storage = Self::load_from_disk::<Storage>(
+            ctx.common
+                .config
+                .data_directory
+                .join("mempool_storage.bin")
+                .as_path(),
+        )
+        .unwrap_or(Storage::new(ctx.node.crypto.validator_pubkey().clone()));
         Ok(Mempool {
             bus,
+            file: Some(PathBuf::from_str("mempool_storage.bin").unwrap()),
+            conf: ctx.common.config.clone(),
             metrics,
             crypto: Arc::clone(&ctx.node.crypto),
-            storage: Storage::new(ctx.node.crypto.validator_pubkey().clone()),
+            storage,
             validators: vec![],
             node_state,
         })
@@ -128,8 +141,11 @@ impl Mempool {
 
         let mut interval = tokio::time::interval(tokio::time::Duration::from_millis(100));
 
+        // Recompute optimistic node_state
+
         handle_messages! {
             on_bus self.bus,
+            break_on(stringify!(Mempool))
             listen<SignedByValidator<MempoolNetMessage>> cmd => {
                 let _ = self.handle_net_message(cmd)
                     .log_error("Handling MempoolNetMessage in Mempool");
@@ -160,6 +176,19 @@ impl Mempool {
                     .log_error("Creating Data Proposal on tick");
             }
         }
+
+        if let Some(file) = &self.file {
+            if let Err(e) = Self::save_on_disk(
+                self.conf.data_directory.as_path(),
+                file.as_path(),
+                &self.storage,
+            ) {
+                warn!("Failed to save mempool storage on disk: {}", e);
+            }
+        }
+
+        _ = self.bus.shutdown_complete();
+        Ok(())
     }
 
     /// Creates a cut with local material on QueryNewCut message reception (from consensus)
@@ -505,6 +534,8 @@ impl Mempool {
 #[cfg(test)]
 pub mod test {
     use super::*;
+    use crate::bus::dont_use_this::get_receiver;
+    use crate::bus::metrics::BusMetrics;
     use crate::bus::SharedMessageBus;
     use crate::model::{ContractName, RegisterContractTransaction, Transaction};
     use crate::p2p::network::NetMessage;
@@ -529,6 +560,8 @@ pub mod test {
             // Initialize Mempool
             Mempool {
                 bus,
+                file: None,
+                conf: SharedConf::default(),
                 crypto: Arc::new(crypto),
                 metrics: MempoolMetrics::global("id".to_string()),
                 storage,

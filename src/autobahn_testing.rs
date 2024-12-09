@@ -153,6 +153,8 @@ pub mod test {
     }
 
     use crate::bus::command_response::Query;
+    use crate::bus::dont_use_this::get_receiver;
+    use crate::bus::metrics::BusMetrics;
     use crate::bus::{bus_client, SharedMessageBus};
     use crate::consensus::test::ConsensusTestCtx;
     use crate::consensus::{ConsensusEvent, ConsensusNetMessage};

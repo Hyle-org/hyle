@@ -26,7 +26,7 @@ pub enum DataProposalVerdict {
 
 pub type Cut = Vec<(ValidatorPublicKey, CarHash)>;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Encode, Decode)]
 pub struct Storage {
     pub id: ValidatorPublicKey,
     pub pending_txs: Vec<Transaction>,
@@ -438,7 +438,7 @@ impl Display for Car {
     }
 }
 
-#[derive(Clone, Default, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Default, Debug, Eq, PartialEq, Serialize, Deserialize, Encode, Decode)]
 pub struct Poa(pub BTreeSet<ValidatorPublicKey>);
 
 impl std::ops::Deref for Poa {
@@ -454,7 +454,7 @@ impl std::ops::DerefMut for Poa {
     }
 }
 
-#[derive(Default, Debug, Clone)]
+#[derive(Default, Debug, Clone, Encode, Decode)]
 pub struct Lane {
     cars: Vec<Car>,
     pub poa: Poa,

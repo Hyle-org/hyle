@@ -3,12 +3,16 @@
 use std::{sync::Arc, time::Duration};
 
 use crate::{
-    bus::{bus_client, BusMessage, SharedMessageBus},
+    bus::{BusClientSender, BusMessage, SharedMessageBus},
     handle_messages,
     model::SharedRunContext,
-    utils::{conf::SharedConf, crypto::SharedBlstCrypto, modules::Module},
+    utils::{
+        conf::SharedConf,
+        crypto::SharedBlstCrypto,
+        modules::{module_bus_client, Module},
+    },
 };
-use anyhow::{bail, Error, Result};
+use anyhow::{bail, Result};
 use tokio::{net::TcpListener, time::sleep};
 use tracing::{debug, error, info, warn};
 
@@ -23,8 +27,9 @@ pub enum P2PCommand {
 }
 impl BusMessage for P2PCommand {}
 
-bus_client! {
+module_bus_client! {
 struct P2PBusClient {
+    module: P2P,
     receiver(P2PCommand),
 }
 }
@@ -116,7 +121,7 @@ impl P2P {
         }
     }
 
-    pub async fn p2p_server(&mut self) -> Result<(), Error> {
+    pub async fn p2p_server(&mut self) -> Result<()> {
         // Wait all other threads to start correctly
         sleep(Duration::from_secs(1)).await;
 
@@ -133,44 +138,47 @@ impl P2P {
 
         handle_messages! {
             on_bus self.bus_client,
+            break_on(stringify!(P2P))
             listen<P2PCommand> cmd => {
                  self.handle_command(cmd)
             }
 
             res = listener.accept() => {
                 match res {
-                Ok((socket, _)) => {
-                    let conf = Arc::clone(&self.config);
-                    let bus = self.bus.new_handle();
-                    let crypto = self.crypto.clone();
-                    let id = self.peer_id;
-                    self.peer_id += 1;
-        tokio::task::Builder::new()
-            .name(&format!("peer-{}", id))
+                    Ok((socket, _)) => {
+                        let conf = Arc::clone(&self.config);
+                        let bus = self.bus.new_handle();
+                        let crypto = self.crypto.clone();
+                        let id = self.peer_id;
+                        self.peer_id += 1;
+                        tokio::task::Builder::new()
+                            .name(&format!("peer-{}", id))
                             .spawn(async move {
-                        info!(
-                            "New peer #{}: {}",
-                            id,
-                            socket
-                    .peer_addr()
-                    .map(|a| a.to_string())
-                    .unwrap_or("no address".to_string())
-                        );
-                        let mut peer_server = peer::Peer::new(id, socket, bus, crypto, conf).await;
-                        _ = peer_server.handshake().await;
-                        debug!("Handshake done !");
-                        match peer_server.start().await {
-                            Ok(_) => info!("Peer thread exited"),
-                            Err(e) => info!("Peer thread exited: {}", e),
-                        }
-                        anyhow::Ok(())
-                    })?;
+                                info!(
+                                    "New peer #{}: {}",
+                                    id,
+                                    socket
+                                        .peer_addr()
+                                        .map(|a| a.to_string())
+                                        .unwrap_or("no address".to_string())
+                                    );
+                                let mut peer_server = peer::Peer::new(id, socket, bus, crypto, conf).await;
+                                _ = peer_server.handshake().await;
+                                debug!("Handshake done !");
+                                match peer_server.start().await {
+                                    Ok(_) => info!("Peer thread exited"),
+                                    Err(e) => info!("Peer thread exited: {}", e),
+                                }
+                                anyhow::Ok(())
+                            })?;
+                    }
+                    Err(e) => {
+                        bail!("Error while accepting connection: {}", e);
+                    }
                 }
-                Err(e) => {
-                    bail!("Error while accepting connection: {}", e);
-                }
-            }
             }
         }
+        _ = self.bus_client.shutdown_complete();
+        Ok(())
     }
 }

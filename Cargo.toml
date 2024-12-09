@@ -1,10 +1,16 @@
 [workspace]
 members = [
-    "contracts/hyrun",
+    "contracts/hyllar/contract",
     "contracts/hyllar/guest",
+
+    "contracts/hydentity/contract",
     "contracts/hydentity/guest",
+
+    "contracts/amm/contract",
     "contracts/amm/guest",
+
     "crates/bonsai-runner",
+    "crates/hyrun",
 ]
 resolver = "2"
 
@@ -24,7 +30,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["json"] }
 tokio = { version = "1.42.0", features = ["full", "tracing"] }
 anyhow = "1.0.94"
-clap = { version = "4.5.22", features = ["derive"] }
+clap = { version = "4.5.23", features = ["derive"] }
 rand = "0.8.5"
 bincode = { version = "2.0.0-rc.2", tag = "v2.0.0-rc.2", git = "https://github.com/bincode-org/bincode.git" }
 serde = { version = "1.0", features = ["derive"] }
@@ -85,7 +91,7 @@ test-log = { version = "0.2.16", features = [
     "color",
     "trace",
 ], default-features = false }
-tokio-stream = "0.1.16"
+tokio-stream = "0.1.17"
 tempfile = "3.14.0"
 testcontainers-modules = { version = "0.11.4", features = ["postgres"] }
 assert-json-diff = "2.0.2"

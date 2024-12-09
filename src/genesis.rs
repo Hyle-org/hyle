@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use crate::{
-    bus::{bus_client, BusMessage, SharedMessageBus},
+    bus::{bus_client, BusClientSender, BusMessage},
     consensus::staking::{Stake, Staker},
     handle_messages,
     model::{
@@ -186,7 +186,7 @@ mod tests {
     use assertables::assert_matches;
 
     use super::*;
-    use crate::bus::SharedMessageBus;
+    use crate::bus::{BusClientReceiver, SharedMessageBus};
     use crate::utils::conf::Conf;
     use crate::utils::crypto::BlstCrypto;
     use std::sync::Arc;
