@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use bincode::{Decode, Encode};
 use sdk::{
-    caller::{CalleeBlob, CallerCallee, MutCalleeBlob},
+    caller::{CalleeBlobs, CallerCallee, MutCalleeBlobs},
     erc20::ERC20,
     Digestable, Identity,
 };
@@ -56,10 +56,10 @@ impl CallerCallee for HyllarTokenContract {
     fn caller(&self) -> &Identity {
         &self.caller
     }
-    fn callees_blobs(&self) -> CalleeBlob<'static> {
+    fn callee_blobs(&self) -> CalleeBlobs<'static> {
         unimplemented!()
     }
-    fn mut_callees_blobs(&self) -> MutCalleeBlob<'static> {
+    fn mut_callee_blobs(&self) -> MutCalleeBlobs<'static> {
         unimplemented!()
     }
 }

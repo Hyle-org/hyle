@@ -1,6 +1,11 @@
-use alloc::{format, string::String, vec::Vec};
+use alloc::{
+    format,
+    string::{String, ToString},
+    vec::Vec,
+};
 use bincode::{Decode, Encode};
 
+<<<<<<< HEAD
 <<<<<<< HEAD
 use crate::{Blob, BlobData, BlobIndex, ContractName, HyleContract, RunResult, StructuredBlobData};
 ||||||| parent of 59b2129 (Refacto & separate into another file)
@@ -10,6 +15,15 @@ use crate::{
 =======
 use crate::{guest::RunResult, Blob, BlobData, BlobIndex, ContractName, StructuredBlobData};
 >>>>>>> 59b2129 (Refacto & separate into another file)
+||||||| parent of e333315 (Simplify further)
+use crate::{guest::RunResult, Blob, BlobData, BlobIndex, ContractName, StructuredBlobData};
+=======
+use crate::{
+    caller::{CallerCallee, CheckCalleeBlobs},
+    guest::RunResult,
+    Blob, BlobData, BlobIndex, ContractName, StructuredBlobData,
+};
+>>>>>>> e333315 (Simplify further)
 
 /// Trait representing the ERC-20 token standard interface.
 pub trait ERC20 {
@@ -155,6 +169,55 @@ pub fn execute_action<T: ERC20>(token: &mut T, action: ERC20Action) -> RunResult
         ERC20Action::Allowance { owner, spender } => token
             .allowance(&owner, &spender)
             .map(|allowance| format!("Allowance of {} by {}: {}", spender, owner, allowance)),
+    }
+}
+
+pub struct ERC20BlobChecker<'a, T>(&'a ContractName, &'a T);
+
+impl<'a, T> ERC20BlobChecker<'a, T> {
+    pub fn new(contract_name: &'a ContractName, contract: &'a T) -> Self {
+        Self(contract_name, contract)
+    }
+}
+
+// Had to implement this for &mut T or it can't be found when used in &mut self methods.
+impl<'a, T> ERC20 for ERC20BlobChecker<'a, &mut T>
+where
+    T: CallerCallee + CheckCalleeBlobs,
+{
+    fn total_supply(&self) -> Result<u128, String> {
+        unimplemented!()
+    }
+
+    fn balance_of(&self, _account: &str) -> Result<u128, String> {
+        unimplemented!()
+    }
+
+    fn transfer(&mut self, recipient: &str, amount: u128) -> Result<(), String> {
+        self.1.is_in_callee_blobs(
+            self.0,
+            ERC20Action::Transfer {
+                recipient: recipient.to_string(),
+                amount,
+            },
+        )
+    }
+
+    fn transfer_from(&mut self, sender: &str, recipient: &str, amount: u128) -> Result<(), String> {
+        self.1.is_in_callee_blobs(
+            self.0,
+            ERC20Action::TransferFrom {
+                sender: sender.to_string(),
+                recipient: recipient.to_string(),
+                amount,
+            },
+        )
+    }
+    fn approve(&mut self, _spender: &str, _amount: u128) -> Result<(), String> {
+        unimplemented!()
+    }
+    fn allowance(&self, _owner: &str, _spender: &str) -> Result<u128, String> {
+        unimplemented!()
     }
 }
 

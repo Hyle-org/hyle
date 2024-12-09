@@ -3,21 +3,24 @@ use alloc::vec::Vec;
 use core::cell::{Ref, RefCell, RefMut};
 use core::ops::{Deref, DerefMut};
 
-use crate::Identity;
 use crate::{Blob, StructuredBlob};
+use crate::{ContractName, Identity};
 use bincode::{Decode, Encode};
 
 use serde::{Deserialize, Serialize};
+
+/// ExecutionContext provides an implementation of data for the CallerCallee trait
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, Default)]
-pub struct ExecutionState {
+pub struct ExecutionContext {
     pub callees_blobs: RefCell<Vec<Blob>>,
     pub caller: Identity,
 }
 
-pub struct CalleeBlob<'a>(pub Ref<'a, Vec<Blob>>);
-pub struct MutCalleeBlob<'a>(pub RefMut<'a, Vec<Blob>>);
+// Used to hide the implementation of the callees blobs.
+pub struct CalleeBlobs<'a>(pub Ref<'a, Vec<Blob>>);
+pub struct MutCalleeBlobs<'a>(pub RefMut<'a, Vec<Blob>>);
 
-impl<'a> Deref for CalleeBlob<'a> {
+impl<'a> Deref for CalleeBlobs<'a> {
     type Target = Vec<Blob>;
 
     fn deref(&self) -> &Self::Target {
@@ -25,49 +28,44 @@ impl<'a> Deref for CalleeBlob<'a> {
     }
 }
 
-impl<'a> Deref for MutCalleeBlob<'a> {
+impl<'a> Deref for MutCalleeBlobs<'a> {
     type Target = Vec<Blob>;
 
     fn deref(&self) -> &Self::Target {
         &self.0
     }
 }
-impl<'a> DerefMut for MutCalleeBlob<'a> {
+impl<'a> DerefMut for MutCalleeBlobs<'a> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
     }
 }
 
+/// CallerCallee trait allows blobs to efficiently check
+/// the presence and data from other blobs they called,
+/// effectively implementing a call graph across blobs.
 pub trait CallerCallee {
     fn caller(&self) -> &Identity;
-    fn callees_blobs(&self) -> CalleeBlob;
-    fn mut_callees_blobs(&self) -> MutCalleeBlob;
+    fn callee_blobs(&self) -> CalleeBlobs;
+    fn mut_callee_blobs(&self) -> MutCalleeBlobs;
 }
 
-pub trait ConnectToContract<T> {
-    fn connect_to(&self, contract_name: String) -> Contract<T>;
-}
-pub struct Contract<'a, T> {
-    contract_name: String,
-    callees_blobs: &'a RefCell<Vec<Blob>>,
-    phantom: core::marker::PhantomData<T>,
+// Auto-implemented for all types implementing CallerCallee
+pub trait CheckCalleeBlobs: CallerCallee {
+    fn is_in_callee_blobs<U>(&self, contract_name: &ContractName, action: U) -> Result<(), String>
+    where
+        U: Decode + PartialEq,
+        StructuredBlob<U>: TryFrom<Blob>;
 }
 
-impl<'a, T: PartialEq + 'static> Contract<'a, T>
-where
-    StructuredBlob<T>: TryFrom<Blob>,
-{
-    pub fn new(callees_blobs: &'a RefCell<Vec<Blob>>, contract_name: String) -> Self {
-        Contract::<'a, T> {
-            contract_name,
-            callees_blobs,
-            phantom: core::marker::PhantomData,
-        }
-    }
-
-    pub fn call(&self, action: T) -> Result<(), String> {
-        let index = self.callees_blobs.borrow().iter().position(|blob| {
-            if blob.contract_name.0 != self.contract_name {
+impl<T: CallerCallee> CheckCalleeBlobs for T {
+    fn is_in_callee_blobs<U>(&self, contract_name: &ContractName, action: U) -> Result<(), String>
+    where
+        U: Decode + PartialEq,
+        StructuredBlob<U>: TryFrom<Blob>,
+    {
+        let index = self.callee_blobs().iter().position(|blob| {
+            if &blob.contract_name != contract_name {
                 return false;
             };
             let Ok(blob) = StructuredBlob::try_from(blob.clone()) else {
@@ -78,12 +76,12 @@ where
 
         match index {
             Some(index) => {
-                self.callees_blobs.borrow_mut().remove(index);
+                self.mut_callee_blobs().remove(index);
                 Ok(())
             }
             None => Err(alloc::format!(
                 "Blob with contract name {} not found in callees",
-                self.contract_name
+                contract_name
             )),
         }
     }

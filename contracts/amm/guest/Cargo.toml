@@ -15,4 +15,3 @@ serde = { version = "1.0", default-features = false, features = [
     "alloc",
 ] }
 amm = { path = "../contract" }
-anyhow = "1.0.89"

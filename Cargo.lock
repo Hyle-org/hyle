@@ -198,7 +198,6 @@ name = "amm-guest"
 version = "0.1.0"
 dependencies = [
  "amm",
- "anyhow",
  "hyle-contract-sdk",
  "risc0-zkvm",
  "serde",
