@@ -22,7 +22,7 @@ fn main() {
     let mut callees_blobs = Vec::new();
     for blob in input.blobs.clone().into_iter() {
         if let Ok(structured_blob) = blob.data.clone().try_into() {
-            let structured_blob: StructuredBlobData<Vec<u8>> = structured_blob; // for compiler
+            let structured_blob: StructuredBlobData<Vec<u8>> = structured_blob; // for type inference
             if structured_blob.caller == Some(input.index.clone()) {
                 callees_blobs.push(blob);
             }
@@ -39,7 +39,10 @@ fn main() {
     let amm_action = parsed_blob.data.parameters;
 
     let res = match amm_action {
-        AmmAction::Swap { pair } => amm_contract.verify_swap(pair),
+        AmmAction::Swap {
+            pair,
+            amounts: (from_amount, to_amount),
+        } => amm_contract.verify_swap(pair, from_amount, to_amount),
         AmmAction::NewPair { pair, amounts } => amm_contract.create_new_pair(pair, amounts),
     };
 

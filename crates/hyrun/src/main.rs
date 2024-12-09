@@ -386,6 +386,7 @@ fn main() {
                         identity_cf.as_blob(ContractName("hydentity".to_owned())),
                         AmmAction::Swap {
                             pair: (token_a.to_string(), token_b.to_string()),
+                            amounts: (amount_a, amount_b),
                         }
                         .as_blob(
                             ContractName(amm_contract_name.to_owned()),
