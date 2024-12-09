@@ -21,6 +21,8 @@ hyled() {
 }
 ######################################################
 # Here is the flow that this script is following:
+# Register new amm contract "hyllar2"
+
 # Register bob in hydentity
 
 # Send 25 hyllar from faucet to bob
@@ -39,6 +41,9 @@ hyled() {
 #    By sending 5 hyllar to amm
 #    By sending 10 hyllar2 to bob (from amm)
 ######################################################
+
+# Register new amm contract "hyllar2"
+hyled contract owner risc0 $(cat contracts/hyllar/hyllar.txt) hyllar2 fc00ca9a3b01106661756365742e687964656e74697479fc00ca9a3b00
 
 # Register bob in hydentity
 hyrun --user bob.hydentity --password password hydentity register bob.hydentity

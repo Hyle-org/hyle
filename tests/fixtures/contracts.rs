@@ -69,7 +69,7 @@ impl E2EContract for HyllarContract {
     }
 
     fn state_digest() -> StateDigest {
-        hyllar::HyllarToken::new(1000, "faucet.hydentity".to_string()).as_digest()
+        hyllar::HyllarToken::new(1_000_000_000, "faucet.hydentity".to_string()).as_digest()
     }
 }
 

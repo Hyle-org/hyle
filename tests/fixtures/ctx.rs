@@ -1,5 +1,7 @@
 #![allow(unused)]
 
+use std::time::Duration;
+
 use anyhow::{Context, Result};
 use assertables::assert_ok;
 use reqwest::{Client, Url};
@@ -211,6 +213,18 @@ impl E2ECtx {
             .await
             .and_then(|response| response.error_for_status().context("registering contract")));
 
+        tokio::time::timeout(Duration::from_secs(30), async {
+            loop {
+                let resp = self.client().get_contract(&name.into()).await;
+                if resp.is_err() || resp.is_err() {
+                    info!("⏰ Waiting for contract {name} state to be ready");
+                    tokio::time::sleep(Duration::from_millis(500)).await;
+                } else {
+                    return;
+                }
+            }
+        })
+        .await?;
         Ok(())
     }
 
