@@ -10,7 +10,6 @@ use crate::{
     model::{Hashable, Transaction, TransactionData, ValidatorPublicKey},
     node_state::NodeState,
     p2p::network::SignedByValidator,
-    utils::crypto::{AggregateSignature, BlstCrypto},
 };
 
 use super::MempoolNetMessage;
@@ -28,9 +27,6 @@ pub enum DataProposalVerdict {
 pub struct DataProposal {
     pub id: u32,
     pub parent_data_proposal_hash: Option<DataProposalHash>,
-    // Potentially duplicate value (present in previous DP's poa). Having that here allows for a node to vote for a DP without knowing parent Car
-    // This should not be used to get the Hash of the DataProposal
-    pub parent_data_proposal_poa: Option<AggregateSignature>,
     pub txs: Vec<Transaction>,
 }
 
@@ -334,8 +330,6 @@ impl Storage {
             }
         }
 
-        // TODO(maybe): Update parent signatures with the poa received (?)
-
         // Add DataProposal to validator's lane
         self.lane_add_data_proposal(validator, data_proposal);
 
@@ -418,9 +412,9 @@ impl Storage {
     }
 
     /// Creates and saves a new DataProposal if there are pending transactions
-    pub fn new_data_proposal(&mut self, crypto: &BlstCrypto) -> Result<()> {
+    pub fn new_data_proposal(&mut self) {
         if self.pending_txs.is_empty() {
-            return Ok(());
+            return;
         }
 
         // Take all pending transactions
@@ -429,27 +423,17 @@ impl Storage {
         // Get last DataProposal of own lane
         let mut data_proposal = if let Some(LaneEntry {
             data_proposal: parent_data_proposal,
-            signatures,
+            signatures: _,
         }) = self
             .lanes
             .entry(self.id.clone())
             .or_default()
             .get_last_proposal()
         {
-            // TODO(Max): We might not need to aggregate for every parent. Maybe suffisent to aggregate only the one in a cut?
-            // Create aggregation signature of the parent DataProposal
-            let aggregates: Vec<&SignedByValidator<MempoolNetMessage>> =
-                signatures.iter().collect();
-            let parent_data_proposal_poa = crypto.sign_aggregate(
-                MempoolNetMessage::DataVote(parent_data_proposal.hash()),
-                &aggregates,
-            )?;
-
             // Create new data proposal
             DataProposal {
                 id: parent_data_proposal.id + 1,
                 parent_data_proposal_hash: Some(parent_data_proposal.hash()),
-                parent_data_proposal_poa: Some(parent_data_proposal_poa.signature),
                 txs,
             }
         } else {
@@ -457,13 +441,11 @@ impl Storage {
             DataProposal {
                 id: 0,
                 parent_data_proposal_hash: None,
-                parent_data_proposal_poa: None,
                 txs,
             }
         };
 
         self.lane_add_data_proposal(&self.id.clone(), &mut data_proposal);
-        Ok(())
     }
 
     pub fn collect_txs_from_lanes(&mut self, cut: Cut) -> Vec<Transaction> {
@@ -788,7 +770,6 @@ mod tests {
         let data_proposal1 = DataProposal {
             id: 0,
             parent_data_proposal_hash: None,
-            parent_data_proposal_poa: None,
             txs: vec![],
         };
         let data_proposal1_hash = data_proposal1.hash();
@@ -796,7 +777,6 @@ mod tests {
         let data_proposal2 = DataProposal {
             id: 1,
             parent_data_proposal_hash: Some(data_proposal1_hash.clone()),
-            parent_data_proposal_poa: None,
             txs: vec![],
         };
         let data_proposal2_hash = data_proposal2.hash();
@@ -831,7 +811,6 @@ mod tests {
         let data_proposal3 = DataProposal {
             id: 0,
             parent_data_proposal_hash: Some(DataProposalHash("non_existent".to_string())),
-            parent_data_proposal_poa: None,
             txs: vec![],
         };
         let data_proposal3_hash = data_proposal3.hash();
@@ -858,14 +837,12 @@ mod tests {
         let data_proposal1 = DataProposal {
             id: 0,
             parent_data_proposal_hash: None,
-            parent_data_proposal_poa: None,
             txs: vec![],
         };
 
         let data_proposal2 = DataProposal {
             id: 1,
             parent_data_proposal_hash: Some(data_proposal1.hash()),
-            parent_data_proposal_poa: None,
             txs: vec![],
         };
 
@@ -900,7 +877,6 @@ mod tests {
         let data_proposal1 = DataProposal {
             id: 0,
             parent_data_proposal_hash: None,
-            parent_data_proposal_poa: None,
             txs: vec![],
         };
         let data_proposal1_hash = data_proposal1.hash();
@@ -908,7 +884,6 @@ mod tests {
         let data_proposal2 = DataProposal {
             id: 1,
             parent_data_proposal_hash: Some(data_proposal1_hash.clone()),
-            parent_data_proposal_poa: None,
             txs: vec![],
         };
         let data_proposal2_hash = data_proposal2.hash();
@@ -916,7 +891,6 @@ mod tests {
         let data_proposal3 = DataProposal {
             id: 2,
             parent_data_proposal_hash: Some(data_proposal2_hash.clone()),
-            parent_data_proposal_poa: None,
             txs: vec![],
         };
         let data_proposal3_hash = data_proposal3.hash();
@@ -995,7 +969,6 @@ mod tests {
         let mut data_proposal = DataProposal {
             id: 0,
             parent_data_proposal_hash: None,
-            parent_data_proposal_poa: None,
             txs: vec![],
         };
         let data_proposal_hash = data_proposal.hash();
@@ -1044,9 +1017,7 @@ mod tests {
         // First data proposal
         let tx1 = make_blob_tx("test1");
         store1.on_new_tx(tx1.clone());
-        store1
-            .new_data_proposal(&crypto)
-            .expect("Could not create DataProposal");
+        store1.new_data_proposal();
 
         let mut data_proposal1 = store1
             .get_lane_latest_entry(pubkey1)
@@ -1071,9 +1042,7 @@ mod tests {
         // Second data proposal
         let tx2 = make_blob_tx("test2");
         store1.on_new_tx(tx2.clone());
-        store1
-            .new_data_proposal(&crypto)
-            .expect("Could not create DataProposal");
+        store1.new_data_proposal();
 
         let mut data_proposal2 = store1
             .get_lane_latest_entry(pubkey1)
@@ -1097,9 +1066,7 @@ mod tests {
         // Third data proposal
         let tx3 = make_blob_tx("test3");
         store1.on_new_tx(tx3.clone());
-        store1
-            .new_data_proposal(&crypto)
-            .expect("Could not create DataProposal");
+        store1.new_data_proposal();
 
         let mut data_proposal3 = store1
             .get_lane_latest_entry(pubkey1)
@@ -1123,9 +1090,7 @@ mod tests {
         // Fourth data proposal
         let tx4 = make_blob_tx("test4");
         store1.on_new_tx(tx4.clone());
-        store1
-            .new_data_proposal(&crypto)
-            .expect("Could not create DataProposal");
+        store1.new_data_proposal();
 
         let mut data_proposal4 = store1
             .get_lane_latest_entry(pubkey1)
@@ -1213,7 +1178,7 @@ mod tests {
         store3.on_new_tx(make_blob_tx("test3"));
         store3.on_new_tx(make_blob_tx("test4"));
 
-        store3.new_data_proposal(&crypto3).expect("data proposal");
+        store3.new_data_proposal();
         let mut data_proposal = store3
             .get_lane_latest_entry(pubkey3)
             .unwrap()
@@ -1295,7 +1260,6 @@ mod tests {
         let mut data_proposal = DataProposal {
             id: 0,
             parent_data_proposal_hash: None,
-            parent_data_proposal_poa: None,
             txs: vec![register_tx, proof_tx],
         };
         let data_proposal_hash = data_proposal.hash();
@@ -1323,7 +1287,6 @@ mod tests {
         let mut data_proposal = DataProposal {
             id: 0,
             parent_data_proposal_hash: None,
-            parent_data_proposal_poa: None,
             txs: vec![proof_tx.clone()],
         };
 
@@ -1333,7 +1296,6 @@ mod tests {
         let mut data_proposal = DataProposal {
             id: 0,
             parent_data_proposal_hash: None,
-            parent_data_proposal_poa: None,
             txs: vec![register_tx, proof_tx],
         };
 
@@ -1358,7 +1320,6 @@ mod tests {
         let mut data_proposal1 = DataProposal {
             id: 0,
             parent_data_proposal_hash: None,
-            parent_data_proposal_poa: None,
             txs: vec![register_tx],
         };
         let data_proposal1_hash = data_proposal1.hash();
@@ -1368,7 +1329,6 @@ mod tests {
         let mut data_proposal = DataProposal {
             id: 1,
             parent_data_proposal_hash: Some(data_proposal1_hash.clone()),
-            parent_data_proposal_poa: None,
             txs: vec![proof_tx],
         };
 
@@ -1380,7 +1340,6 @@ mod tests {
         let saved_data_proposal = DataProposal {
             id: 0,
             parent_data_proposal_hash: Some(data_proposal1_hash),
-            parent_data_proposal_poa: None,
             txs: vec![empty_verified_proof_tx.clone()],
         };
         assert!(store1.lane_has_data_proposal(pubkey1, &saved_data_proposal.hash()));
@@ -1402,7 +1361,6 @@ mod tests {
         let mut data_proposal = DataProposal {
             id: 0,
             parent_data_proposal_hash: None,
-            parent_data_proposal_poa: None,
             txs: vec![register_tx.clone(), proof_tx],
         };
 
@@ -1414,7 +1372,6 @@ mod tests {
         let saved_data_proposal = DataProposal {
             parent_data_proposal_hash: None,
             id: 0,
-            parent_data_proposal_poa: None,
             txs: vec![register_tx, empty_verified_proof_tx.clone()],
         };
         assert!(store1.lane_has_data_proposal(pubkey1, &saved_data_proposal.hash()));
@@ -1437,7 +1394,6 @@ mod tests {
         let mut data_proposal = DataProposal {
             id: 0,
             parent_data_proposal_hash: None,
-            parent_data_proposal_poa: None,
             txs: vec![proof_tx, register_tx],
         };
         let data_proposal_hash = data_proposal.hash();
@@ -1462,8 +1418,7 @@ mod tests {
         let node_state2 = NodeState::default();
 
         store1.on_new_tx(make_blob_tx("tx1"));
-        store1.new_data_proposal(&crypto1).expect("a DataProposal");
-
+        store1.new_data_proposal();
         let mut data_proposal = store1
             .get_lane_latest_entry(pubkey1)
             .unwrap()
@@ -1476,8 +1431,7 @@ mod tests {
         );
 
         store2.on_new_tx(make_blob_tx("tx2"));
-        store2.new_data_proposal(&crypto2).expect("a DataProposal");
-
+        store2.new_data_proposal();
         let mut data_proposal = store2
             .get_lane_latest_entry(pubkey2)
             .unwrap()
@@ -1499,8 +1453,7 @@ mod tests {
         assert_eq!(txs1, txs2);
 
         store1.on_new_tx(make_blob_tx("tx3"));
-        store1.new_data_proposal(&crypto1).expect("a DataProposal");
-
+        store1.new_data_proposal();
         let mut data_proposal = store1
             .get_lane_latest_entry(pubkey1)
             .unwrap()

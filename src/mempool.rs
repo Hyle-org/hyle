@@ -210,7 +210,7 @@ impl Mempool {
 
     fn handle_data_proposal_management(&mut self) -> Result<()> {
         // Create new DataProposal with pending txs
-        self.storage.new_data_proposal(&self.crypto)?;
+        self.storage.new_data_proposal();
 
         // Check if latest DataProposal has enough signatures
         if let Some(lane_entry) = &self.storage.get_lane_latest_entry(&self.storage.id) {
@@ -923,7 +923,6 @@ pub mod test {
         let data_proposal = DataProposal {
             id: 0,
             parent_data_proposal_hash: None,
-            parent_data_proposal_poa: None,
             txs: vec![make_register_contract_tx(ContractName("test1".to_owned()))],
         };
 
@@ -965,7 +964,6 @@ pub mod test {
         let data_proposal = DataProposal {
             id: 0,
             parent_data_proposal_hash: None,
-            parent_data_proposal_poa: None,
             txs: vec![make_register_contract_tx(ContractName("test1".to_owned()))],
         };
 
@@ -996,7 +994,6 @@ pub mod test {
         let data_proposal = DataProposal {
             id: 0,
             parent_data_proposal_hash: None,
-            parent_data_proposal_poa: None,
             txs: vec![make_register_contract_tx(ContractName("test1".to_owned()))],
         };
         let data_proposal_hash = data_proposal.hash();
@@ -1173,7 +1170,6 @@ pub mod test {
         let data_proposal2 = DataProposal {
             id: 0,
             parent_data_proposal_hash: None,
-            parent_data_proposal_poa: None,
             txs: vec![register_tx2.clone()],
         };
 

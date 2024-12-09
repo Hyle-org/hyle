@@ -315,7 +315,6 @@ mod tests {
         let data_proposal = DataProposal {
             id: 0,
             parent_data_proposal_hash: None,
-            parent_data_proposal_poa: None,
             txs: vec![],
         };
         let signed_msg = ctx

@@ -71,18 +71,8 @@ impl MempoolMetrics {
 
     pub fn add_data_proposal(&self, dp: &DataProposal) {
         let tx_nb = dp.txs.len();
-        let has_parent_poa = if dp.parent_data_proposal_poa.is_some() {
-            1
-        } else {
-            0
-        };
-        self.data_proposal.add(
-            1,
-            &[
-                KeyValue::new("nb_txs", tx_nb.to_string()),
-                KeyValue::new("has_parent_poa", has_parent_poa.to_string()),
-            ],
-        )
+        self.data_proposal
+            .add(1, &[KeyValue::new("nb_txs", tx_nb.to_string())])
     }
     pub fn add_proposal_vote(&self, sender: &ValidatorPublicKey, dest: &ValidatorPublicKey) {
         self.data_vote.add(
