@@ -1,9 +1,12 @@
 target
-*.bin
 data_node*
 **/*Consensus.data.tmp
-*.proof
-# Added by cargo
 
-/target
+*.bin
+*.proof
+!tests/proofs/sp1_basic_proof.bin
+
 .sqlx
+
+# Added by cargo
+/target

@@ -9,13 +9,12 @@ use alloc::vec::Vec;
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 
+pub mod caller;
 pub mod erc20;
 pub mod guest;
 pub mod identity_provider;
 
-pub trait HyleContract {
-    fn caller(&self) -> Identity;
-}
+pub type RunResult = Result<String, String>;
 
 pub trait Digestable {
     fn as_digest(&self) -> StateDigest;
