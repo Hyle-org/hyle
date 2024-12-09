@@ -5,25 +5,10 @@ use alloc::{
 };
 use bincode::{Decode, Encode};
 
-<<<<<<< HEAD
-<<<<<<< HEAD
-use crate::{Blob, BlobData, BlobIndex, ContractName, HyleContract, RunResult, StructuredBlobData};
-||||||| parent of 59b2129 (Refacto & separate into another file)
-use crate::{
-    guest::RunResult, Blob, BlobData, BlobIndex, ContractName, HyleContract, StructuredBlobData,
-};
-=======
-use crate::{guest::RunResult, Blob, BlobData, BlobIndex, ContractName, StructuredBlobData};
->>>>>>> 59b2129 (Refacto & separate into another file)
-||||||| parent of e333315 (Simplify further)
-use crate::{guest::RunResult, Blob, BlobData, BlobIndex, ContractName, StructuredBlobData};
-=======
 use crate::{
     caller::{CallerCallee, CheckCalleeBlobs},
-    guest::RunResult,
-    Blob, BlobData, BlobIndex, ContractName, StructuredBlobData,
+    Blob, BlobData, BlobIndex, ContractName, RunResult, StructuredBlobData,
 };
->>>>>>> e333315 (Simplify further)
 
 /// Trait representing the ERC-20 token standard interface.
 pub trait ERC20 {
