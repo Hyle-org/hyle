@@ -300,8 +300,6 @@ impl DataAvailability {
             }
         }
 
-        _ = self.bus.shutdown_complete();
-
         Ok(())
     }
 

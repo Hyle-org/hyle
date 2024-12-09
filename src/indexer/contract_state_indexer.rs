@@ -139,9 +139,6 @@ where
         ) {
             tracing::warn!(cn = %self.contract_name, "Failed to save contract state indexer on disk: {}", e);
         }
-        _ = self
-            .bus
-            .shutdown_complete_for_module::<ContractStateIndexer<State>>();
         Ok(())
     }
 

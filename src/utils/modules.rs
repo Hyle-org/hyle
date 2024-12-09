@@ -83,15 +83,6 @@ struct ModuleStarter {
     starter: Pin<Box<dyn Future<Output = Result<(), Error>> + Send + 'static>>,
 }
 
-impl ModuleStarter {
-    fn start(self) -> Result<JoinHandle<Result<(), Error>>, std::io::Error> {
-        info!("Starting module {}", self.name);
-        tokio::task::Builder::new()
-            .name(self.name)
-            .spawn(self.starter)
-    }
-}
-
 pub mod signal {
     use crate::bus::BusMessage;
     #[derive(Clone, Debug)]
@@ -152,16 +143,10 @@ macro_rules! module_bus_client {
                 Ok(())
             }
             #[allow(unused)]
-             pub fn shutdown_complete_for_module<Module>(&mut self) -> Result<()> {
-                _ = self.send($crate::utils::modules::signal::ShutdownCompleted { module: std::any::type_name::<Module>().to_string() })?;
+             pub fn shutdown_completed(&mut self, module_name: String) -> Result<()> {
+                _ = self.send($crate::utils::modules::signal::ShutdownCompleted { module: module_name })?;
                 Ok(())
             }
-            $(
-            #[allow(unused)]
-             pub fn shutdown_complete(&mut self) -> Result<()> {
-                 self.shutdown_complete_for_module::<$module_type>()
-            }
-            )?
         }
     }
 }
@@ -191,17 +176,17 @@ impl ShutdownClient {
 }
 
 pub struct ModulesHandler {
-    bus: ShutdownClient,
+    bus: SharedMessageBus,
     modules: Vec<ModuleStarter>,
     started_modules: Vec<&'static str>,
 }
 
 impl ModulesHandler {
     pub async fn new(shared_bus: &SharedMessageBus) -> ModulesHandler {
-        let shutdown_client = ShutdownClient::new_from_bus(shared_bus.new_handle()).await;
+        let shared_message_bus = shared_bus.new_handle();
 
         ModulesHandler {
-            bus: shutdown_client,
+            bus: shared_message_bus,
             modules: vec![],
             started_modules: vec![],
         }
@@ -212,7 +197,16 @@ impl ModulesHandler {
 
         for module in self.modules.drain(..) {
             self.started_modules.push(module.name);
-            let handle = module.start()?;
+            let mut shutdown_client = ShutdownClient::new_from_bus(self.bus.new_handle()).await;
+
+            info!("Starting module {}", module.name);
+            let handle = tokio::task::Builder::new()
+                .name(module.name)
+                .spawn(async move {
+                    _ = module.starter.await;
+                    shutdown_client.shutdown_completed(module.name.to_string())
+                })?;
+
             tasks.push(handle);
         }
 
@@ -225,9 +219,11 @@ impl ModulesHandler {
 
     /// Shutdown modules in reverse order (start A, B, C, shutdown C, B, A)
     pub async fn shutdown_modules(&mut self, timeout: Duration) -> Result<()> {
+        let mut shutdown_client = ShutdownClient::new_from_bus(self.bus.new_handle()).await;
+
         for module_name in self.started_modules.drain(..).rev() {
             if ![std::any::type_name::<Genesis>()].contains(&module_name) {
-                _ = tokio::time::timeout(timeout, self.bus.shutdown_module(module_name))
+                _ = tokio::time::timeout(timeout, shutdown_client.shutdown_module(module_name))
                     .await
                     .log_error(format!("Shutting down module {module_name}"));
             }
@@ -309,7 +305,6 @@ mod tests {
                 on_bus self.bus,
             }
 
-            _ = self.bus.shutdown_complete();
             Ok(())
         }
     }
@@ -334,7 +329,6 @@ mod tests {
             module_handle_messages! {
                 on_bus self.bus,
             }
-            _ = self.bus.shutdown_complete();
             Ok(())
         }
     }

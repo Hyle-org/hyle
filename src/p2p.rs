@@ -187,7 +187,6 @@ impl P2P {
                 }
             }
         }
-        _ = self.bus_client.shutdown_complete();
         Ok(())
     }
 }

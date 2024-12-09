@@ -132,7 +132,6 @@ impl MockWorkflowHandler {
             }
         }
 
-        _ = self.bus.shutdown_complete();
         Ok(())
     }
 

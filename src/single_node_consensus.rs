@@ -138,8 +138,6 @@ impl SingleNodeConsensus {
             }
         }
 
-        _ = self.bus.shutdown_complete();
-
         Ok(())
     }
 

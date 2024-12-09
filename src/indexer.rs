@@ -149,7 +149,6 @@ impl Indexer {
                     })?;
             }
         }
-        _ = self.bus.shutdown_complete();
         Ok(())
     }
 

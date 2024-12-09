@@ -930,8 +930,6 @@ impl Consensus {
             }
         }
 
-        _ = self.bus.shutdown_complete();
-
         Ok(())
     }
 

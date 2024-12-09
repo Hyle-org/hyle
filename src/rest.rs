@@ -100,8 +100,6 @@ impl RestApi {
             ) => { }
         }
 
-        _ = self.bus.shutdown_complete();
-
         Ok(())
     }
 }
