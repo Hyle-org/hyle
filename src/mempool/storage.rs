@@ -42,25 +42,84 @@ pub struct Lane {
     pub waiting: Vec<DataProposal>,
 }
 
-// impl Encode for Lane {
-//     fn encode(&self) -> Vec<u8> {
-//         todo!()
-//         // bincode::encode_to_vec(bincode::config::standard()).expect("Failed to encode Lane")
-//     }
-// }
+impl Encode for Lane {
+    fn encode<E: bincode::enc::Encoder>(
+        &self,
+        encoder: &mut E,
+    ) -> Result<(), bincode::error::EncodeError> {
+        self.last_cut.encode(encoder)?;
 
-// impl Decode for Lane {
-//     fn decode() -> Result<Self, bincode::Error> {
-//         todo!()
-//         // bincode::deserialize_from(reader)
-//     }
-// }
+        let data_proposals_vec: Vec<(DataProposalHash, LaneEntry)> = self
+            .data_proposals
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+        data_proposals_vec.encode(encoder)?;
+
+        self.waiting.encode(encoder)?;
+
+        Ok(())
+    }
+}
+impl Decode for Lane {
+    fn decode<D: bincode::de::Decoder>(
+        decoder: &mut D,
+    ) -> Result<Self, bincode::error::DecodeError> {
+        let last_cut = Option::<DataProposalHash>::decode(decoder)?;
+
+        let proposals_vec: Vec<(DataProposalHash, LaneEntry)> = Vec::decode(decoder)?;
+        let data_proposals = proposals_vec.into_iter().collect();
+
+        let waiting = Vec::<DataProposal>::decode(decoder)?;
+
+        Ok(Self {
+            last_cut,
+            data_proposals,
+            waiting,
+        })
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct Storage {
     pub id: ValidatorPublicKey,
     pub pending_txs: Vec<Transaction>,
     pub lanes: HashMap<ValidatorPublicKey, Lane>,
+}
+
+impl Encode for Storage {
+    fn encode<E: bincode::enc::Encoder>(
+        &self,
+        encoder: &mut E,
+    ) -> Result<(), bincode::error::EncodeError> {
+        self.id.encode(encoder)?;
+        self.pending_txs.encode(encoder)?;
+
+        let lanes_vec: Vec<(ValidatorPublicKey, Lane)> = self
+            .lanes
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+        lanes_vec.encode(encoder)?;
+
+        Ok(())
+    }
+}
+impl Decode for Storage {
+    fn decode<D: bincode::de::Decoder>(
+        decoder: &mut D,
+    ) -> Result<Self, bincode::error::DecodeError> {
+        let id = ValidatorPublicKey::decode(decoder)?;
+        let pending_txs = Vec::<Transaction>::decode(decoder)?;
+        let lanes_vec = Vec::<(ValidatorPublicKey, Lane)>::decode(decoder)?;
+        let lanes = lanes_vec.into_iter().collect();
+
+        Ok(Self {
+            id,
+            pending_txs,
+            lanes,
+        })
+    }
 }
 
 // TODO: Add PoDA in cut

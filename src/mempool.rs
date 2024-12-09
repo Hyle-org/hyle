@@ -64,8 +64,6 @@ pub struct Mempool {
 pub enum MempoolNetMessage {
     DataProposal(DataProposal),
     DataVote(DataProposalHash),
-    // FIXME: We should send an aggregation of signatures
-    // TODO: Il se passe quoi si on cut avec pas assez de signature ?
     PoAUpdate(DataProposalHash, Vec<SignedByValidator<MempoolNetMessage>>),
     SyncRequest(Option<DataProposalHash>, DataProposalHash),
     SyncReply(Vec<LaneEntry>),
@@ -111,15 +109,14 @@ impl Module for Mempool {
                 guard.replace(router.nest("/v1/", api));
             }
         }
-        // let storage = Self::load_from_disk::<Storage>(
-        //     ctx.common
-        //         .config
-        //         .data_directory
-        //         .join("mempool_storage.bin")
-        //         .as_path(),
-        // )
-        // .unwrap_or(Storage::new(ctx.node.crypto.validator_pubkey().clone()));
-        let storage = Storage::new(ctx.node.crypto.validator_pubkey().clone());
+        let storage = Self::load_from_disk::<Storage>(
+            ctx.common
+                .config
+                .data_directory
+                .join("mempool_storage.bin")
+                .as_path(),
+        )
+        .unwrap_or(Storage::new(ctx.node.crypto.validator_pubkey().clone()));
         Ok(Mempool {
             bus,
             file: Some(PathBuf::from_str("mempool_storage.bin").unwrap()),
@@ -179,15 +176,15 @@ impl Mempool {
             }
         }
 
-        // if let Some(file) = &self.file {
-        //     if let Err(e) = Self::save_on_disk(
-        //         self.conf.data_directory.as_path(),
-        //         file.as_path(),
-        //         &self.storage,
-        //     ) {
-        //         warn!("Failed to save mempool storage on disk: {}", e);
-        //     }
-        // }
+        if let Some(file) = &self.file {
+            if let Err(e) = Self::save_on_disk(
+                self.conf.data_directory.as_path(),
+                file.as_path(),
+                &self.storage,
+            ) {
+                warn!("Failed to save mempool storage on disk: {}", e);
+            }
+        }
 
         _ = self.bus.shutdown_complete();
         Ok(())
