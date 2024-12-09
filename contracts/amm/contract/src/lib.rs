@@ -155,7 +155,7 @@ impl AmmContract {
             .iter()
             .position(|blob| blob.contract_name.0 == pair.0)
         {
-            Some(index) => BlobIndex(index as u32),
+            Some(index) => BlobIndex(index),
             None => {
                 return Err(format!(
                     "Blob with contract name {} not found in callees",
@@ -175,7 +175,7 @@ impl AmmContract {
             .iter()
             .position(|blob| blob.contract_name.0 == pair.1)
         {
-            Some(index) => BlobIndex(index as u32),
+            Some(index) => BlobIndex(index),
             None => {
                 return Err(format!(
                     "Blob with contract name {} not found in callees",

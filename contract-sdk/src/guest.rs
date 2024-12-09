@@ -89,7 +89,7 @@ pub fn parse_blob<Parameters>(blobs: &[Blob], index: &BlobIndex) -> Parameters
 where
     Parameters: Decode,
 {
-    let blob = match blobs.get(index.0 as usize) {
+    let blob = match blobs.get(index.0) {
         Some(v) => v,
         None => {
             panic!("unable to find the payload");
@@ -109,7 +109,7 @@ pub fn parse_structured_blob<Parameters>(
 where
     Parameters: Decode,
 {
-    let blob = match blobs.get(index.0 as usize) {
+    let blob = match blobs.get(index.0) {
         Some(v) => v,
         None => {
             panic!("unable to find the payload");
@@ -151,7 +151,7 @@ where
     // Check that callees has this blob as caller
     if let Some(callees) = parameters.data.callees.as_ref() {
         for callee_index in callees {
-            let callee_blob = input.blobs[callee_index.0 as usize].clone();
+            let callee_blob = input.blobs[callee_index.0].clone();
             let callee_structured_blob: StructuredBlobData<Vec<u8>> =
                 callee_blob.data.try_into().expect("Failed to decode blob");
             if callee_structured_blob.caller != Some(input.index.clone()) {
@@ -161,7 +161,7 @@ where
     }
     // Extract the correct caller
     if let Some(caller_index) = parameters.data.caller.as_ref() {
-        let caller_blob = input.blobs[caller_index.0 as usize].clone();
+        let caller_blob = input.blobs[caller_index.0].clone();
         let caller_structured_blob: StructuredBlobData<Vec<u8>> =
             caller_blob.data.try_into().expect("Failed to decode blob");
         // Check that caller has this blob as callee
