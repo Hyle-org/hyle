@@ -3258,6 +3258,7 @@ dependencies = [
  "hydentity",
  "hyle-contract-sdk",
  "hyllar",
+ "hyrun",
  "opentelemetry",
  "paste",
  "proptest",
