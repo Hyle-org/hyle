@@ -236,6 +236,7 @@ impl TryFrom<sdk::StateDigest> for AmmState {
 pub enum AmmAction {
     Swap {
         pair: TokenPair, // User swaps the first token of the pair for the second token
+        amounts: TokenPairAmount,
     },
     NewPair {
         pair: TokenPair,

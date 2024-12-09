@@ -9,7 +9,9 @@ test = false
 
 [dependencies]
 risc0-zkvm = { version = "1.2.0", default-features = false, features = ['std'] }
-sdk = { path = "../../../contract-sdk", package = "hyle-contract-sdk" }
+sdk = { path = "../../../contract-sdk", package = "hyle-contract-sdk", features = [
+    "risc0",
+] }
 serde = { version = "1.0", default-features = false, features = [
     "derive",
     "alloc",
