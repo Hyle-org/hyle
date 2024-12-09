@@ -27,7 +27,7 @@ use serde::{Deserialize, Serialize};
 use std::{collections::HashSet, fmt::Display, path::PathBuf, str::FromStr, sync::Arc};
 use storage::{Cut, DataProposalHash, DataProposalVerdict, LaneEntry};
 use strum_macros::IntoStaticStr;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, info, warn};
 
 pub mod api;
 pub mod metrics;
@@ -461,12 +461,6 @@ impl Mempool {
                 debug!("Send vote for DataProposal");
                 self.send_vote(validator, data_proposal_hash)?;
             }
-            DataProposalVerdict::DidVote => {
-                error!(
-                    "we already have voted for {}'s DataProposal {}",
-                    validator, data_proposal_hash
-                );
-            }
             DataProposalVerdict::Wait(last_known_data_proposal_hash) => {
                 //We dont have the parent, so we craft a sync demand
                 debug!(
@@ -800,7 +794,7 @@ pub mod test {
                         info!("received message: {:?}", msg);
                         msg
                     } else {
-                        error!(
+                        tracing::error!(
                             "{description}: Mempool OutboundMessage message is missing, found {}",
                             msg
                         );
@@ -808,7 +802,7 @@ pub mod test {
                     }
                 }
                 _ => {
-                    error!(
+                    tracing::error!(
                         "{description}: Broadcast OutboundMessage message is missing, found {}",
                         to
                     );

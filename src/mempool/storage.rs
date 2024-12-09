@@ -19,7 +19,6 @@ pub enum DataProposalVerdict {
     Empty,
     Wait(Option<DataProposalHash>),
     Vote,
-    DidVote,
     Refuse,
 }
 
@@ -210,10 +209,6 @@ impl Storage {
         if data_proposal.txs.is_empty() {
             return DataProposalVerdict::Empty;
         }
-        // Check that we did not already voted on that DataProposal
-        if self.lane_has_data_proposal(validator, &data_proposal.hash()) {
-            return DataProposalVerdict::DidVote;
-        }
 
         // Check that we are not locally forking
         let last_known_id = self
@@ -236,6 +231,12 @@ impl Storage {
             .entry(validator.clone())
             .or_default()
             .get_last_proposal_hash();
+
+        // Check if we already voted on that one
+        if last_known_parent_hash == Some(&data_proposal.hash()) {
+            return DataProposalVerdict::Vote;
+        }
+
         if last_known_parent_hash != data_proposal.parent_data_proposal_hash.as_ref() {
             // Get the last known parent hash in order to get all the next ones
             return DataProposalVerdict::Wait(last_known_parent_hash.cloned());
@@ -1184,7 +1185,7 @@ mod tests {
             .unwrap()
             .data_proposal
             .clone();
-        let mut data_proposal2 = data_proposal.clone();
+        let mut data_proposal_bis = data_proposal.clone();
         let data_proposal_hash = data_proposal.hash();
         assert_eq!(store3.lanes.get(pubkey3).unwrap().data_proposals.len(), 1);
 
@@ -1192,9 +1193,10 @@ mod tests {
             store2.on_data_proposal(pubkey3, &mut data_proposal, &node_state2),
             DataProposalVerdict::Vote
         );
+        // Assert we can vote multiple times
         assert_eq!(
-            store2.on_data_proposal(pubkey3, &mut data_proposal2, &node_state2),
-            DataProposalVerdict::DidVote
+            store2.on_data_proposal(pubkey3, &mut data_proposal_bis, &node_state2),
+            DataProposalVerdict::Vote
         );
 
         let msg1 = crypto1
