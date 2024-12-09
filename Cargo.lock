@@ -323,7 +323,7 @@ dependencies = [
  "blake2",
  "derivative",
  "digest 0.10.7",
- "sha2 0.10.8",
+ "sha2 0.10.8 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -1114,7 +1114,7 @@ version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bf88ba1141d185c399bee5288d850d63b8369520c1eafc32a0430b5b6c287bf4"
 dependencies = [
- "sha2 0.10.8",
+ "sha2 0.10.8 (registry+https://github.com/rust-lang/crates.io-index)",
  "tinyvec",
 ]
 
@@ -1334,7 +1334,7 @@ dependencies = [
  "hmac",
  "k256",
  "serde",
- "sha2 0.10.8",
+ "sha2 0.10.8 (registry+https://github.com/rust-lang/crates.io-index)",
  "thiserror 1.0.69",
 ]
 
@@ -1350,7 +1350,7 @@ dependencies = [
  "once_cell",
  "pbkdf2 0.12.2",
  "rand",
- "sha2 0.10.8",
+ "sha2 0.10.8 (registry+https://github.com/rust-lang/crates.io-index)",
  "thiserror 1.0.69",
 ]
 
@@ -1369,7 +1369,7 @@ dependencies = [
  "ripemd",
  "serde",
  "serde_derive",
- "sha2 0.10.8",
+ "sha2 0.10.8 (registry+https://github.com/rust-lang/crates.io-index)",
  "sha3",
  "thiserror 1.0.69",
 ]
@@ -2236,7 +2236,7 @@ dependencies = [
  "scrypt",
  "serde",
  "serde_json",
- "sha2 0.10.8",
+ "sha2 0.10.8 (registry+https://github.com/rust-lang/crates.io-index)",
  "sha3",
  "thiserror 1.0.69",
  "uuid",
@@ -2479,7 +2479,7 @@ dependencies = [
  "eth-keystore",
  "ethers-core",
  "rand",
- "sha2 0.10.8",
+ "sha2 0.10.8 (registry+https://github.com/rust-lang/crates.io-index)",
  "thiserror 1.0.69",
  "tracing",
 ]
@@ -3216,7 +3216,7 @@ dependencies = [
  "hyle-contract-sdk",
  "serde",
  "serde_json",
- "sha2 0.10.6",
+ "sha2 0.10.8 (git+https://github.com/risc0/RustCrypto-hashes?tag=sha2-v0.10.8)",
 ]
 
 [[package]]
@@ -3879,7 +3879,7 @@ dependencies = [
  "ecdsa",
  "elliptic-curve",
  "once_cell",
- "sha2 0.10.8",
+ "sha2 0.10.8 (registry+https://github.com/rust-lang/crates.io-index)",
  "signature",
 ]
 
@@ -5213,7 +5213,7 @@ checksum = "b75da2a70cf4d9cb76833c990ac9cd3923c9a8905a8929789ce347c84564d03d"
 dependencies = [
  "once_cell",
  "pest",
- "sha2 0.10.8",
+ "sha2 0.10.8 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -5963,7 +5963,7 @@ dependencies = [
  "glob",
  "hex",
  "rayon",
- "sha2 0.10.8",
+ "sha2 0.10.8 (registry+https://github.com/rust-lang/crates.io-index)",
  "tempfile",
  "which",
 ]
@@ -5988,7 +5988,7 @@ dependencies = [
  "risc0-sys",
  "risc0-zkp",
  "serde",
- "sha2 0.10.8",
+ "sha2 0.10.8 (registry+https://github.com/rust-lang/crates.io-index)",
  "tracing",
  "zip",
 ]
@@ -6033,7 +6033,7 @@ dependencies = [
  "risc0-zkp",
  "risc0-zkvm-platform",
  "serde",
- "sha2 0.10.8",
+ "sha2 0.10.8 (registry+https://github.com/rust-lang/crates.io-index)",
  "tracing",
 ]
 
@@ -6123,7 +6123,7 @@ dependencies = [
  "risc0-sys",
  "risc0-zkvm-platform",
  "serde",
- "sha2 0.10.8",
+ "sha2 0.10.8 (registry+https://github.com/rust-lang/crates.io-index)",
  "tracing",
 ]
 
@@ -6161,7 +6161,7 @@ dependencies = [
  "rustc-demangle",
  "semver 1.0.23",
  "serde",
- "sha2 0.10.8",
+ "sha2 0.10.8 (registry+https://github.com/rust-lang/crates.io-index)",
  "sha3",
  "stability",
  "tempfile",
@@ -6542,7 +6542,7 @@ dependencies = [
  "hmac",
  "pbkdf2 0.11.0",
  "salsa20",
- "sha2 0.10.8",
+ "sha2 0.10.8 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -6769,8 +6769,9 @@ dependencies = [
 
 [[package]]
 name = "sha2"
-version = "0.10.6"
-source = "git+https://github.com/risc0/RustCrypto-hashes?tag=sha2-v0.10.6-risczero.0#7fd6900c4f637bd15ee2642dfa77110f8f1ad065"
+version = "0.10.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "793db75ad2bcafc3ffa7c68b215fee268f537982cd901d132f89c6343f3a3dc8"
 dependencies = [
  "cfg-if",
  "cpufeatures",
@@ -6780,8 +6781,7 @@ dependencies = [
 [[package]]
 name = "sha2"
 version = "0.10.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "793db75ad2bcafc3ffa7c68b215fee268f537982cd901d132f89c6343f3a3dc8"
+source = "git+https://github.com/risc0/RustCrypto-hashes?tag=sha2-v0.10.8#28a7b0da94a581e71e85d264836e1c3f8343338e"
 dependencies = [
  "cfg-if",
  "cpufeatures",
@@ -7050,7 +7050,7 @@ dependencies = [
  "p3-poseidon2",
  "p3-symmetric",
  "serde",
- "sha2 0.10.8",
+ "sha2 0.10.8 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -7216,7 +7216,7 @@ dependencies = [
  "p3-symmetric",
  "serde",
  "serde_json",
- "sha2 0.10.8",
+ "sha2 0.10.8 (registry+https://github.com/rust-lang/crates.io-index)",
  "sp1-core-machine",
  "sp1-recursion-compiler",
  "sp1-stark",
@@ -7378,7 +7378,7 @@ dependencies = [
  "percent-encoding",
  "serde",
  "serde_json",
- "sha2 0.10.8",
+ "sha2 0.10.8 (registry+https://github.com/rust-lang/crates.io-index)",
  "smallvec",
  "sqlformat",
  "thiserror 1.0.69",
@@ -7416,7 +7416,7 @@ dependencies = [
  "quote",
  "serde",
  "serde_json",
- "sha2 0.10.8",
+ "sha2 0.10.8 (registry+https://github.com/rust-lang/crates.io-index)",
  "sqlx-core",
  "sqlx-mysql",
  "sqlx-postgres",
@@ -7461,7 +7461,7 @@ dependencies = [
  "rsa",
  "serde",
  "sha1",
- "sha2 0.10.8",
+ "sha2 0.10.8 (registry+https://github.com/rust-lang/crates.io-index)",
  "smallvec",
  "sqlx-core",
  "stringprep",
@@ -7500,7 +7500,7 @@ dependencies = [
  "rand",
  "serde",
  "serde_json",
- "sha2 0.10.8",
+ "sha2 0.10.8 (registry+https://github.com/rust-lang/crates.io-index)",
  "smallvec",
  "sqlx-core",
  "stringprep",
@@ -9245,7 +9245,7 @@ dependencies = [
  "pasta_curves 0.5.1",
  "rand",
  "serde",
- "sha2 0.10.8",
+ "sha2 0.10.8 (registry+https://github.com/rust-lang/crates.io-index)",
  "sha3",
  "subtle",
 ]
