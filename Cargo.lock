@@ -3306,6 +3306,7 @@ dependencies = [
  "bincode 2.0.0-rc.2",
  "hyle-contract-sdk",
  "serde",
+ "serde_with",
  "sha3",
 ]
 

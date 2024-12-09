@@ -45,7 +45,20 @@ impl alloc::fmt::Debug for StateDigest {
 #[derive(Default, Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash, Encode, Decode)]
 pub struct Identity(pub String);
 
-#[derive(Default, Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash, Encode, Decode)]
+#[derive(
+    Default,
+    Serialize,
+    Deserialize,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Hash,
+    Encode,
+    Decode,
+    Ord,
+    PartialOrd,
+)]
 pub struct TxHash(pub String);
 
 #[derive(Default, Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash, Encode, Decode)]
@@ -131,7 +144,20 @@ pub fn flatten_blobs(blobs: &[Blob]) -> Vec<u8> {
         .collect()
 }
 
-#[derive(Default, Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash, Encode, Decode)]
+#[derive(
+    Default,
+    Debug,
+    Clone,
+    Serialize,
+    Deserialize,
+    Eq,
+    PartialEq,
+    Hash,
+    Encode,
+    Decode,
+    Ord,
+    PartialOrd,
+)]
 pub struct ContractName(pub String);
 
 #[derive(Default, Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash, Encode, Decode)]

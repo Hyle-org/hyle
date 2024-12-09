@@ -7,12 +7,15 @@ use sdk::{
     Digestable, Identity,
 };
 use serde::{Deserialize, Serialize};
+use serde_with::serde_as;
 
 /// Struct representing the Hyllar token.
+#[serde_as]
 #[derive(Encode, Decode, Serialize, Deserialize, Debug, Clone)]
 pub struct HyllarToken {
     total_supply: u128,
     balances: BTreeMap<String, u128>, // Balances for each account
+    #[serde_as(as = "Vec<(_, _)>")]
     allowances: BTreeMap<(String, String), u128>, // Allowances (owner, spender)
 }
 
