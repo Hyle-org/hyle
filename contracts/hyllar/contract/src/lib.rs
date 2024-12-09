@@ -1,7 +1,11 @@
 use std::collections::BTreeMap;
 
 use bincode::{Decode, Encode};
-use sdk::{erc20::ERC20, Digestable, HyleContract, Identity};
+use sdk::{
+    caller::{CalleeBlobs, CallerCallee, MutCalleeBlobs},
+    erc20::ERC20,
+    Digestable, Identity,
+};
 use serde::{Deserialize, Serialize};
 
 /// Struct representing the Hyllar token.
@@ -48,9 +52,15 @@ impl HyllarTokenContract {
     }
 }
 
-impl HyleContract for HyllarTokenContract {
-    fn caller(&self) -> Identity {
-        self.caller.clone()
+impl CallerCallee for HyllarTokenContract {
+    fn caller(&self) -> &Identity {
+        &self.caller
+    }
+    fn callee_blobs(&self) -> CalleeBlobs<'static> {
+        unimplemented!()
+    }
+    fn mut_callee_blobs(&self) -> MutCalleeBlobs<'static> {
+        unimplemented!()
     }
 }
 
@@ -86,7 +96,7 @@ impl ERC20 for HyllarTokenContract {
     }
 
     fn transfer_from(&mut self, sender: &str, recipient: &str, amount: u128) -> Result<(), String> {
-        let caller = self.caller();
+        let caller = self.caller().clone();
         let allowance = self.allowance(sender, caller.0.as_str())?; // Assuming a fixed spender for simplicity
         let sender_balance = self.balance_of(sender)?;
 
@@ -116,7 +126,7 @@ impl ERC20 for HyllarTokenContract {
     }
 
     fn approve(&mut self, spender: &str, amount: u128) -> Result<(), String> {
-        let owner = self.caller().0;
+        let owner = self.caller().clone().0;
         self.state
             .allowances
             .insert((owner, spender.to_string()), amount);
