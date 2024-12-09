@@ -8,10 +8,6 @@ use super::{
 };
 
 impl Module for Consensus {
-    fn name() -> &'static str {
-        "Consensus"
-    }
-
     type Context = SharedRunContext;
 
     async fn build(ctx: Self::Context) -> Result<Self> {

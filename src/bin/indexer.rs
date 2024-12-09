@@ -8,14 +8,13 @@ use hyle::{
     indexer::{
         contract_state_indexer::{ContractStateIndexer, ContractStateIndexerCtx},
         da_listener::{DAListener, DAListenerCtx},
-        Indexer,
     },
     model::{BlockHeight, CommonRunContext},
     rest::{RestApi, RestApiRunContext},
     utils::{
         conf,
         logger::{setup_tracing, TracingMode},
-        modules::{Module, ModulesHandler},
+        modules::ModulesHandler,
     },
 };
 use hyllar::HyllarToken;
@@ -97,15 +96,15 @@ async fn main() -> Result<()> {
         })
         .await?;
 
-    let indexer = Indexer::build(ctx.clone()).await?;
-    //let last_block: Option<BlockHeight> = None;
-    let last_block = indexer.get_last_block().await?;
-    handler.add_module(indexer)?;
+    // let indexer = Indexer::build(ctx.clone()).await?;
+    // //let last_block: Option<BlockHeight> = None;
+    // let last_block = indexer.get_last_block().await?;
+    // handler.add_module(indexer)?;
 
     handler
         .build_module::<DAListener>(DAListenerCtx {
             common: ctx.clone(),
-            start_block: last_block.map(|b| b + 1).unwrap_or(BlockHeight(0)),
+            start_block: BlockHeight(0),
         })
         .await?;
 

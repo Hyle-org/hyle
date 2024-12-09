@@ -13,6 +13,7 @@ use crate::{
     model::{
         BlobTransaction, Block, BlockHash, BlockHeight, CommonRunContext, ContractName, Hashable,
     },
+    module_handle_messages,
     node_state::NodeState,
     utils::modules::{module_bus_client, Module},
 };
@@ -26,7 +27,6 @@ use axum::{
     routing::get,
     Router,
 };
-use core::str;
 use model::{BlobWithStatus, TransactionStatus, TransactionType, TransactionWithBlobs, TxHashDb};
 use sqlx::types::chrono::DateTime;
 use sqlx::Row;
@@ -38,7 +38,6 @@ use tracing::{error, info};
 module_bus_client! {
 #[derive(Debug)]
 struct IndexerBusClient {
-    module: Indexer,
     receiver(DataEvent),
 }
 }
@@ -64,10 +63,6 @@ pub struct Indexer {
 pub static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("./src/indexer/migrations");
 
 impl Module for Indexer {
-    fn name() -> &'static str {
-        "Indexer"
-    }
-
     type Context = Arc<CommonRunContext>;
 
     async fn build(ctx: Self::Context) -> Result<Self> {
@@ -122,9 +117,8 @@ impl Module for Indexer {
 
 impl Indexer {
     pub async fn start(&mut self) -> Result<()> {
-        handle_messages! {
+        module_handle_messages! {
             on_bus self.bus,
-            break_on(stringify!(Indexer))
             listen<DataEvent> cmd => {
                 if let Err(e) = self.handle_data_availability_event(cmd).await {
                     error!("Error while handling data availability event: {:#}", e)
@@ -154,7 +148,6 @@ impl Indexer {
                     })?;
             }
         }
-        _ = self.bus.shutdown_complete();
         Ok(())
     }
 
