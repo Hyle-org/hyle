@@ -8,6 +8,7 @@ use crate::genesis::{Genesis, GenesisEvent};
 use crate::mempool::storage::Cut;
 use crate::mempool::{MempoolNetMessage, QueryNewCut};
 use crate::model::Hashable;
+use crate::module_handle_messages;
 use crate::p2p::network::{NetMessage, OutboundMessage, SignedByValidator};
 use crate::utils::conf::SharedConf;
 use crate::utils::crypto::{BlstCrypto, SharedBlstCrypto};
@@ -108,9 +109,8 @@ impl SingleNodeConsensus {
         ));
         interval.tick().await; // First tick is immediate
 
-        handle_messages! {
+        module_handle_messages! {
             on_bus self.bus,
-            break_on<SingleNodeConsensus>
             command_response<QueryConsensusInfo, ConsensusInfo> _ => {
                 let slot = 0;
                 let view = 0;

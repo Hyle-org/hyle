@@ -13,6 +13,7 @@ use crate::{
     model::{
         BlobTransaction, Block, BlockHash, BlockHeight, CommonRunContext, ContractName, Hashable,
     },
+    module_handle_messages,
     node_state::NodeState,
     utils::modules::{module_bus_client, Module},
 };
@@ -26,7 +27,6 @@ use axum::{
     routing::get,
     Router,
 };
-use core::str;
 use model::{BlobWithStatus, TransactionStatus, TransactionType, TransactionWithBlobs, TxHashDb};
 use sqlx::types::chrono::DateTime;
 use sqlx::Row;
@@ -118,9 +118,8 @@ impl Module for Indexer {
 
 impl Indexer {
     pub async fn start(&mut self) -> Result<()> {
-        handle_messages! {
+        module_handle_messages! {
             on_bus self.bus,
-            break_on(stringify!(Indexer))
             listen<DataEvent> cmd => {
                 if let Err(e) = self.handle_data_availability_event(cmd).await {
                     error!("Error while handling data availability event: {:#}", e)

@@ -107,6 +107,23 @@ pub mod signal {
     impl BusMessage for ShutdownCompleted {}
 }
 
+#[macro_export]
+macro_rules! module_handle_messages {
+    (on_bus $bus:expr, $($rest:tt)*) => {
+
+        handle_messages! {
+            on_bus $bus,
+            listen<$crate::utils::modules::signal::ShutdownModule> shutdown_event => {
+                if shutdown_event.module == std::any::type_name::<Self>() {
+                    tracing::warn!("Break signal received for module {}", shutdown_event.module);
+                    break;
+                }
+            }
+            $($rest)*
+        }
+    };
+}
+
 macro_rules! module_bus_client {
     (
         $(#[$meta:meta])*
@@ -134,11 +151,15 @@ macro_rules! module_bus_client {
                 _ = self.send($crate::utils::modules::signal::ShutdownModule { module: module_name })?;
                 Ok(())
             }
+            #[allow(unused)]
+             pub fn shutdown_complete_for_module<Module>(&mut self) -> Result<()> {
+                _ = self.send($crate::utils::modules::signal::ShutdownCompleted { module: std::any::type_name::<Module>().to_string() })?;
+                Ok(())
+            }
             $(
             #[allow(unused)]
              pub fn shutdown_complete(&mut self) -> Result<()> {
-                _ = self.send($crate::utils::modules::signal::ShutdownCompleted { module: std::any::type_name::<$module_type>().to_string() })?;
-                Ok(())
+                 self.shutdown_complete_for_module::<$module_type>()
             }
             )?
         }
@@ -263,26 +284,29 @@ mod tests {
         value: u32,
     }
 
-    struct TestModule {
+    struct TestModule<T> {
         bus: TestBusClient,
+        field: T,
     }
 
     module_bus_client! {
         struct TestBusClient {
-            module: TestModule,
+            module: TestModule<usize>,
         }
     }
 
-    impl Module for TestModule {
+    impl Module for TestModule<usize> {
         type Context = TestBusClient;
         async fn build(_ctx: Self::Context) -> Result<Self> {
-            Ok(TestModule { bus: _ctx })
+            Ok(TestModule {
+                bus: _ctx,
+                field: 1,
+            })
         }
 
         async fn run(&mut self) -> Result<()> {
-            handle_messages! {
+            module_handle_messages! {
                 on_bus self.bus,
-                break_on<TestModule>
             }
 
             _ = self.bus.shutdown_complete();
@@ -307,9 +331,8 @@ mod tests {
         }
 
         async fn run(&mut self) -> Result<()> {
-            handle_messages! {
+            module_handle_messages! {
                 on_bus self.bus,
-                break_on<TestModule2>
             }
             _ = self.bus.shutdown_complete();
             Ok(())
@@ -355,7 +378,9 @@ mod tests {
         let shared_bus = SharedMessageBus::new(BusMetrics::global("id".to_string()));
         let mut handler = ModulesHandler::new(&shared_bus).await;
         handler
-            .build_module::<TestModule>(TestBusClient::new_from_bus(shared_bus.new_handle()).await)
+            .build_module::<TestModule2>(
+                TestBusClient2::new_from_bus(shared_bus.new_handle()).await,
+            )
             .await
             .unwrap();
         assert_eq!(handler.modules.len(), 1);
@@ -365,8 +390,8 @@ mod tests {
     async fn test_add_module() {
         let shared_bus = SharedMessageBus::new(BusMetrics::global("id".to_string()));
         let mut handler = ModulesHandler::new(&shared_bus).await;
-        let module = TestModule {
-            bus: TestBusClient::new_from_bus(shared_bus.new_handle()).await,
+        let module = TestModule2 {
+            bus: TestBusClient2::new_from_bus(shared_bus.new_handle()).await,
         };
 
         handler.add_module(module).unwrap();
@@ -387,7 +412,9 @@ mod tests {
         let mut shutdown_completed_receiver = get_receiver::<ShutdownCompleted>(&shared_bus).await;
         let mut handler = ModulesHandler::new(&shared_bus).await;
         handler
-            .build_module::<TestModule>(TestBusClient::new_from_bus(shared_bus.new_handle()).await)
+            .build_module::<TestModule<usize>>(
+                TestBusClient::new_from_bus(shared_bus.new_handle()).await,
+            )
             .await
             .unwrap();
         let handle = handler.start_modules();
@@ -398,12 +425,12 @@ mod tests {
 
         assert_eq!(
             shutdown_receiver.recv().await.unwrap().module,
-            std::any::type_name::<TestModule>().to_string()
+            std::any::type_name::<TestModule<usize>>().to_string()
         );
 
         assert_eq!(
             shutdown_completed_receiver.recv().await.unwrap().module,
-            std::any::type_name::<TestModule>().to_string()
+            std::any::type_name::<TestModule<usize>>().to_string()
         );
     }
 
@@ -415,7 +442,9 @@ mod tests {
         let mut handler = ModulesHandler::new(&shared_bus).await;
 
         handler
-            .build_module::<TestModule>(TestBusClient::new_from_bus(shared_bus.new_handle()).await)
+            .build_module::<TestModule<usize>>(
+                TestBusClient::new_from_bus(shared_bus.new_handle()).await,
+            )
             .await
             .unwrap();
         handler
@@ -444,12 +473,12 @@ mod tests {
         // Then first module at last
         assert_eq!(
             shutdown_receiver.recv().await.unwrap().module,
-            std::any::type_name::<TestModule>().to_string()
+            std::any::type_name::<TestModule<usize>>().to_string()
         );
 
         assert_eq!(
             shutdown_completed_receiver.recv().await.unwrap().module,
-            std::any::type_name::<TestModule>().to_string()
+            std::any::type_name::<TestModule<usize>>().to_string()
         );
     }
 }

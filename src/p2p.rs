@@ -6,6 +6,7 @@ use crate::{
     bus::{BusClientSender, BusMessage, SharedMessageBus},
     handle_messages,
     model::SharedRunContext,
+    module_handle_messages,
     utils::{
         conf::SharedConf,
         crypto::SharedBlstCrypto,
@@ -145,9 +146,8 @@ impl P2P {
             self.spawn_peer(peer);
         }
 
-        handle_messages! {
+        module_handle_messages! {
             on_bus self.bus_client,
-            break_on<P2P>
             listen<P2PCommand> cmd => {
                  self.handle_command(cmd)
             }

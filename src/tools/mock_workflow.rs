@@ -8,6 +8,7 @@ use crate::{
         get_current_timestamp, Blob, BlobData, BlobTransaction, ContractName, ProofData,
         ProofTransaction, RegisterContractTransaction, SharedRunContext, Transaction,
     },
+    module_handle_messages,
     rest::client::ApiHttpClient,
     utils::modules::{module_bus_client, Module},
 };
@@ -117,9 +118,8 @@ mod api {
 
 impl MockWorkflowHandler {
     pub async fn start(&mut self) -> anyhow::Result<()> {
-        handle_messages! {
+        module_handle_messages! {
             on_bus self.bus,
-            break_on<MockWorkflowHandler>
             listen<RunScenario> cmd => {
                 match cmd {
                     RunScenario::StressTest => {

@@ -11,6 +11,7 @@ use crate::{
     data_availability::DataEvent,
     handle_messages,
     model::{Block, BlockHeight, CommonRunContext},
+    module_handle_messages,
     utils::modules::{module_bus_client, Module},
 };
 
@@ -35,9 +36,6 @@ pub struct DAListenerCtx {
 
 impl Module for DAListener {
     type Context = DAListenerCtx;
-    fn name() -> &'static str {
-        "DAListener"
-    }
 
     async fn build(ctx: Self::Context) -> Result<Self> {
         let da_stream = connect_to(&ctx.common.config.da_address, ctx.start_block).await?;
@@ -53,10 +51,8 @@ impl Module for DAListener {
 
 impl DAListener {
     pub async fn start(&mut self) -> Result<(), Error> {
-        handle_messages! {
+        module_handle_messages! {
             on_bus self.bus,
-            break_on(stringify!(DAListener))
-
             frame = self.da_stream.next() => {
             if let Some(Ok(cmd)) = frame {
                 let bytes = cmd;
@@ -106,7 +102,7 @@ pub async fn connect_to(
                     "Failed to connect to {}: {}. Retrying in 1 second...",
                     target, e
                 );
-                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                tokio::time::sleep(std::time::Duration::from_secs(100)).await;
             }
         }
     };

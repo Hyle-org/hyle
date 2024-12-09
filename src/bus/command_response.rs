@@ -174,23 +174,6 @@ macro_rules! handle_messages {
         };
     };
 
-    // Shorthand to listen to topic, and break the loop
-    (bus($bus:expr) index($index:ident) break_on<$module:ty> $($rest:tt)*) => {
-        paste::paste! {
-        handle_messages! {
-            bus($bus) index($index)
-            listen<$crate::utils::modules::signal::ShutdownModule> shutdown_event => {
-                if shutdown_event.module == std::any::type_name::<$module>() {
-                    tracing::warn!("Break signal received for module {}", shutdown_event.module);
-                    break;
-                }
-            }
-            $($rest)*
-        }
-        }
-    };
-
-
     // Fallback to else case
     (bus($bus:expr) index($index:ident) else => $h:block $($rest:tt)*) => {
         loop {

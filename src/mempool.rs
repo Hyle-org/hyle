@@ -10,6 +10,7 @@ use crate::{
         Hashable, SharedRunContext, Transaction, TransactionData, ValidatorPublicKey,
         VerifiedProofTransaction,
     },
+    module_handle_messages,
     node_state::NodeState,
     p2p::network::{OutboundMessage, SignedByValidator},
     utils::{
@@ -139,9 +140,8 @@ impl Mempool {
 
         // Recompute optimistic node_state
 
-        handle_messages! {
+        module_handle_messages! {
             on_bus self.bus,
-            break_on<Mempool>
             listen<SignedByValidator<MempoolNetMessage>> cmd => {
                 let _ = self.handle_net_message(cmd)
                     .log_error("Handling MempoolNetMessage in Mempool");
