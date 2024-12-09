@@ -18,7 +18,6 @@ use crate::{
 module_bus_client! {
 #[derive(Debug)]
 struct DAListenerBusClient {
-    module: DAListener,
     sender(DataEvent),
 }
 }

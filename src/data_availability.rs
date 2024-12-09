@@ -76,7 +76,6 @@ pub struct QueryBlockHeight {}
 module_bus_client! {
 #[derive(Debug)]
 struct DABusClient {
-    module: DataAvailability,
     sender(OutboundMessage),
     sender(DataEvent),
     sender(ConsensusCommand),

@@ -39,7 +39,6 @@ pub struct QueryNewCut(pub Vec<ValidatorPublicKey>);
 
 module_bus_client! {
 struct MempoolBusClient {
-    module: Mempool,
     sender(OutboundMessage),
     sender(MempoolEvent),
     receiver(SignedByValidator<MempoolNetMessage>),

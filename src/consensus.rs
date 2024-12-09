@@ -85,7 +85,6 @@ impl BusMessage for ConsensusNetMessage {}
 
 module_bus_client! {
 struct ConsensusBusClient {
-    module: Consensus,
     sender(OutboundMessage),
     sender(ConsensusEvent),
     sender(ConsensusCommand),

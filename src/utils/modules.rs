@@ -119,7 +119,6 @@ macro_rules! module_bus_client {
     (
         $(#[$meta:meta])*
         $pub:vis struct $name:ident {
-            $(module: $module_type:ty,)?
             $(sender($sender:ty),)*
             $(receiver($receiver:ty),)*
         }
@@ -286,9 +285,7 @@ mod tests {
     }
 
     module_bus_client! {
-        struct TestBusClient {
-            module: TestModule<usize>,
-        }
+        struct TestBusClient { }
     }
 
     impl Module for TestModule<usize> {
@@ -314,9 +311,7 @@ mod tests {
     }
 
     module_bus_client! {
-        struct TestBusClient2 {
-            module: TestModule2,
-        }
+        struct TestBusClient2 { }
     }
 
     impl Module for TestModule2 {

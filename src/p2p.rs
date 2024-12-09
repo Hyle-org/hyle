@@ -30,7 +30,6 @@ impl BusMessage for P2PCommand {}
 
 module_bus_client! {
 struct P2PBusClient {
-    module: P2P,
     receiver(P2PCommand),
 }
 }

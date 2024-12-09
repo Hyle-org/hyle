@@ -25,7 +25,6 @@ pub mod client;
 
 module_bus_client! {
     struct RestBusClient {
-        module: RestApi,
     }
 }
 

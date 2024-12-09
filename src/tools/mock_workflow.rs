@@ -23,7 +23,6 @@ use tracing::{error, info, warn};
 
 module_bus_client! {
 struct MockWorkflowBusClient {
-    module: MockWorkflowHandler,
     sender(RestApiMessage),
     receiver(RunScenario),
 }

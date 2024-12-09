@@ -38,7 +38,6 @@ use tracing::{error, info};
 module_bus_client! {
 #[derive(Debug)]
 struct IndexerBusClient {
-    module: Indexer,
     receiver(DataEvent),
 }
 }

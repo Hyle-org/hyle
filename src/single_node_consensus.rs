@@ -20,7 +20,6 @@ use tracing::warn;
 
 module_bus_client! {
 struct SingleNodeConsensusBusClient {
-    module: SingleNodeConsensus,
     sender(ConsensusEvent),
     sender(GenesisEvent),
     sender(SignedByValidator<MempoolNetMessage>),
