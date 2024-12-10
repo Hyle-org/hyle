@@ -1,7 +1,7 @@
 use std::{any::type_name, fs, future::Future, path::Path, pin::Pin, time::Duration};
 
 use crate::{
-    bus::{BusClientSender, SharedMessageBus},
+    bus::{bus_client, BusClientSender, SharedMessageBus},
     genesis::Genesis,
     handle_messages,
     utils::logger::LogMe,
@@ -102,7 +102,7 @@ pub mod signal {
 macro_rules! module_handle_messages {
     (on_bus $bus:expr, $($rest:tt)*) => {
 
-        handle_messages! {
+        $crate::handle_messages! {
             on_bus $bus,
             listen<$crate::utils::modules::signal::ShutdownModule> shutdown_event => {
                 if shutdown_event.module == std::any::type_name::<Self>() {
@@ -126,25 +126,9 @@ macro_rules! module_bus_client {
         $crate::bus::bus_client!{
             $(#[$meta])*
             $pub struct $name {
-                sender($crate::utils::modules::signal::ShutdownCompleted),
-                sender($crate::utils::modules::signal::ShutdownModule),
                 $(sender($sender),)*
                 $(receiver($receiver),)*
-                receiver($crate::utils::modules::signal::ShutdownCompleted),
                 receiver($crate::utils::modules::signal::ShutdownModule),
-            }
-        }
-
-        impl $name {
-            #[allow(unused)]
-             pub fn shutdown(&mut self, module_name: String) -> Result<()> {
-                _ = self.send($crate::utils::modules::signal::ShutdownModule { module: module_name })?;
-                Ok(())
-            }
-            #[allow(unused)]
-             pub fn shutdown_completed(&mut self, module_name: String) -> Result<()> {
-                _ = self.send($crate::utils::modules::signal::ShutdownCompleted { module: module_name })?;
-                Ok(())
             }
         }
     }
@@ -152,14 +136,20 @@ macro_rules! module_bus_client {
 
 pub(crate) use module_bus_client;
 
-module_bus_client! {
-    pub struct ShutdownClient { }
+bus_client! {
+    pub struct ShutdownClient {
+        sender(signal::ShutdownModule),
+        sender(signal::ShutdownCompleted),
+        receiver(signal::ShutdownCompleted),
+    }
 }
 
 impl ShutdownClient {
     pub async fn shutdown_module(&mut self, module_name: &str) {
         _ = self
-            .shutdown(module_name.to_string())
+            .send(signal::ShutdownModule {
+                module: module_name.to_string(),
+            })
             .log_error("Shutting down module");
 
         handle_messages! {
@@ -203,7 +193,12 @@ impl ModulesHandler {
                 .name(module.name)
                 .spawn(async move {
                     _ = module.starter.await;
-                    shutdown_client.shutdown_completed(module.name.to_string())
+                    _ = shutdown_client
+                        .send(signal::ShutdownCompleted {
+                            module: module.name.to_string(),
+                        })
+                        .log_error("Sending ShutdownCompleted message");
+                    Ok(())
                 })?;
 
             tasks.push(handle);
@@ -262,13 +257,9 @@ impl ModulesHandler {
 
 #[cfg(test)]
 mod tests {
-    use crate::{
-        bus::{dont_use_this::get_receiver, metrics::BusMetrics},
-        handle_messages,
-    };
+    use crate::bus::{dont_use_this::get_receiver, metrics::BusMetrics};
 
     use super::*;
-    use crate::bus::BusClientSender;
     use crate::bus::SharedMessageBus;
     use signal::ShutdownModule;
     use std::fs::File;
@@ -281,7 +272,7 @@ mod tests {
 
     struct TestModule<T> {
         bus: TestBusClient,
-        field: T,
+        _field: T,
     }
 
     module_bus_client! {
@@ -293,7 +284,7 @@ mod tests {
         async fn build(_ctx: Self::Context) -> Result<Self> {
             Ok(TestModule {
                 bus: _ctx,
-                field: 1,
+                _field: 1,
             })
         }
 

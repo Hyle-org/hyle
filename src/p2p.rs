@@ -3,7 +3,7 @@
 use std::{sync::Arc, time::Duration};
 
 use crate::{
-    bus::{BusClientSender, BusMessage, SharedMessageBus},
+    bus::{BusMessage, SharedMessageBus},
     handle_messages,
     model::SharedRunContext,
     module_handle_messages,

@@ -14,11 +14,7 @@ use serde::{Deserialize, Serialize};
 use tower_http::trace::TraceLayer;
 use tracing::info;
 
-use crate::{
-    bus::{BusClientSender, SharedMessageBus},
-    handle_messages, module_handle_messages,
-    utils::modules::module_bus_client,
-};
+use crate::{bus::SharedMessageBus, module_handle_messages, utils::modules::module_bus_client};
 use crate::{model::ValidatorPublicKey, utils::modules::Module};
 
 pub mod client;

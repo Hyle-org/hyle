@@ -9,7 +9,6 @@ use tracing::{debug, error, info};
 use crate::{
     bus::BusMessage,
     data_availability::DataEvent,
-    handle_messages,
     model::{
         Blob, BlobTransaction, Block, CommonRunContext, Hashable, RegisterContractTransaction,
         Transaction, TransactionData,

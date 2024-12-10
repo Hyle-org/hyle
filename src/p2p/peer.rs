@@ -22,7 +22,6 @@ use crate::bus::BusClientSender;
 use crate::bus::SharedMessageBus;
 use crate::consensus::ConsensusNetMessage;
 use crate::data_availability::DataNetMessage;
-use crate::handle_messages;
 use crate::mempool::MempoolNetMessage;
 use crate::model::ValidatorPublicKey;
 use crate::module_handle_messages;

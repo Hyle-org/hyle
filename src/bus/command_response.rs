@@ -97,7 +97,7 @@ macro_rules! handle_messages {
         use $crate::utils::static_type_map::Pick;
         #[allow(unused_imports)]
         use $crate::bus::command_response::handle_messages_helpers::receive_bus_metrics;
-        handle_messages! {
+        $crate::handle_messages! {
             bus($bus) index(bus_receiver) $($rest)*
         }
     };
@@ -160,7 +160,7 @@ macro_rules! handle_messages {
     (bus($bus:expr) index($index:ident) listen<$message:ty> $res:pat => $handler:block $($rest:tt)*) => {
         let $index = unsafe { &mut *Pick::<tokio::sync::broadcast::Receiver<$message>>::splitting_get_mut(&mut $bus) };
         paste::paste! {
-        handle_messages! {
+        $crate::handle_messages! {
             bus($bus) index([<$index a>]) $($rest)*
             Ok($res) = $index.recv()  => {
                 receive_bus_metrics::<$message, _>(&mut $bus);
@@ -198,6 +198,8 @@ macro_rules! handle_messages {
         }
     };
 }
+
+pub use handle_messages;
 
 #[cfg(test)]
 mod test {

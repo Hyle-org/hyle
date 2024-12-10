@@ -7,9 +7,7 @@ pub mod da_listener;
 pub mod model;
 
 use crate::{
-    bus::BusClientSender,
     data_availability::DataEvent,
-    handle_messages,
     model::{
         BlobTransaction, Block, BlockHash, BlockHeight, CommonRunContext, ContractName, Hashable,
     },
