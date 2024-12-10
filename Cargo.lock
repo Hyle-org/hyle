@@ -198,6 +198,7 @@ name = "amm-guest"
 version = "0.1.0"
 dependencies = [
  "amm",
+ "bincode 2.0.0-rc.2",
  "hyle-contract-sdk",
  "risc0-zkvm",
  "serde",

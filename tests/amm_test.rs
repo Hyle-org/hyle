@@ -498,6 +498,7 @@ mod e2e_amm {
                     .as_blob(ContractName("hydentity".to_owned())),
                     AmmAction::Swap {
                         pair: ("hyllar".to_string(), "hyllar2".to_string()),
+                        amounts: (5, 10),
                     }
                     .as_blob(
                         ContractName(AMM_CONTRACT_NAME.to_owned()),
