@@ -1,13 +1,8 @@
 [workspace]
 members = [
-    "contracts/hyllar/contract",
-    "contracts/hyllar/guest",
-
-    "contracts/hydentity/contract",
-    "contracts/hydentity/guest",
-
-    "contracts/amm/contract",
-    "contracts/amm/guest",
+    "contracts/hyllar",
+    "contracts/hydentity",
+    "contracts/amm",
 
     "crates/bonsai-runner",
     "crates/hyrun",
@@ -22,9 +17,9 @@ default-run = "node"
 
 [dependencies]
 hyle-contract-sdk = { path = "./contract-sdk" }
-amm = { path = "./contracts/amm/contract" }
-hyllar = { path = "./contracts/hyllar/contract" }
-hydentity = { path = "./contracts/hydentity/contract" }
+amm = { path = "./contracts/amm" }
+hyllar = { path = "./contracts/hyllar" }
+hydentity = { path = "./contracts/hydentity" }
 config = "0.14.1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["json"] }
