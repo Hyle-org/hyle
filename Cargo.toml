@@ -55,7 +55,9 @@ dhat = { version = "0.3.3", optional = true }
 reqwest = { version = "0.12", features = ["json"] }
 tokio-util = "0.7.13"
 assertables = "9.5.0"
-risc0-zkvm = { version = "1.2.0" }
+risc0-zkvm = { version = "1.2.0", default-features = false, features = [
+    "client",
+] }
 borsh = "1.5.3"
 # tokio (no TLS)
 sqlx = { version = "0.8.2", features = [
@@ -73,7 +75,7 @@ bytes = "1.9.0"
 strum = "0.26.3"
 strum_macros = "0.26.4"
 indexmap = { version = "2.7.0", features = ["serde"] }
-sp1-sdk = "3.4.0"
+sp1-sdk = { version = "3.4.0", default-features = false }
 
 [target.'cfg(target_os="macos")'.dependencies]
 sled = { version = "0.34.7", features = ["compression", "lock_free_delays"] }
