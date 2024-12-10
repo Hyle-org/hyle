@@ -679,13 +679,13 @@ mod e2e_amm {
 
     #[test_log::test(tokio::test)]
     async fn amm_single_node() -> Result<()> {
-        let ctx = E2ECtx::new_single(500).await?;
+        let ctx = E2ECtx::new_single(300).await?;
         scenario_amm(ctx).await
     }
 
     #[test_log::test(tokio::test)]
     async fn amm_multi_nodes() -> Result<()> {
-        let ctx = E2ECtx::new_multi(2, 500).await?;
+        let ctx = E2ECtx::new_multi(2, 300).await?;
 
         scenario_amm(ctx).await
     }
