@@ -109,12 +109,17 @@ impl NodeState {
             }
         }
         HandledBlockOutput {
+            block_hash: block.hash(),
+            block_parent_hash: block.parent_hash,
+            block_height: block.height,
+            block_timestamp: block.timestamp,
             new_contract_txs,
             new_blob_txs,
             new_verified_proof_txs,
             verified_blobs,
             failed_txs,
             stakers,
+            new_bounded_validators: block.new_bonded_validators,
             timed_out_tx_hashes,
             settled_blob_tx_hashes,
             updated_states,

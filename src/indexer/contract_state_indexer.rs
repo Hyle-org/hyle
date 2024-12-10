@@ -10,8 +10,8 @@ use crate::{
     bus::BusMessage,
     data_availability::{node_state::NodeState, DataEvent},
     model::{
-        Blob, BlobTransaction, Block, CommonRunContext, Hashable, RegisterContractTransaction,
-        Transaction, TransactionData,
+        Blob, BlobTransaction, CommonRunContext, HandledBlockOutput, Hashable,
+        RegisterContractTransaction, Transaction, TransactionData,
     },
     module_handle_messages,
     utils::{conf::Conf, modules::Module},
@@ -144,36 +144,36 @@ where
     /// coming from data availability. In a future refacto, data availability will stream handled blocks instead
     /// thus we could refacto this part too to avoid same processing in NodeState in each indexer
     async fn handle_data_availability_event(&mut self, event: DataEvent) -> Result<(), Error> {
-        if let DataEvent::NewBlock(block) = event {
-            self.handle_block(block).await?;
+        if let DataEvent::ProcessedBlock(handled_block_output) = event {
+            self.handle_processed_block(*handled_block_output).await?;
         }
 
         Ok(())
     }
 
-    async fn handle_block(&mut self, block: Block) -> Result<()> {
+    async fn handle_processed_block(
+        &mut self,
+        handled_block_output: HandledBlockOutput,
+    ) -> Result<()> {
         info!(
-            cn = %self.contract_name, "📦 Handling block #{} with {} txs",
-            block.height,
-            block.txs.len()
+            cn = %self.contract_name, "📦 Handling block #{}",
+            handled_block_output.block_height,
         );
-        debug!(cn = %self.contract_name, "📦 Block: {:?}", block);
-        let handled = self.store.write().await.node_state.handle_new_block(block);
-        debug!(cn = %self.contract_name, "📦 Handled {:?}", handled);
+        debug!(cn = %self.contract_name, "📦 Handled block outputs: {:?}", handled_block_output);
 
-        for c_tx in handled.new_contract_txs {
+        for c_tx in handled_block_output.new_contract_txs {
             if let TransactionData::RegisterContract(tx) = c_tx.transaction_data {
                 self.handle_register_contract(tx).await?;
             }
         }
 
-        for b_tx in handled.new_blob_txs {
+        for b_tx in handled_block_output.new_blob_txs {
             if let TransactionData::Blob(tx) = b_tx.transaction_data {
                 self.handle_blob(tx).await?;
             }
         }
 
-        for s_tx in handled.settled_blob_tx_hashes {
+        for s_tx in handled_block_output.settled_blob_tx_hashes {
             self.settle_tx(s_tx).await?;
         }
         Ok(())
@@ -247,7 +247,7 @@ mod tests {
 
     use super::*;
     use crate::bus::metrics::BusMetrics;
-    use crate::model::BlockHeight;
+    use crate::model::{Block, BlockHeight};
     use crate::utils::conf::Conf;
     use crate::{bus::SharedMessageBus, model::CommonRunContext};
     use std::sync::Arc;
@@ -380,7 +380,10 @@ mod tests {
             txs: vec![],
             ..Default::default()
         };
-        let event = DataEvent::NewBlock(block);
+        let mut node_state = NodeState::default();
+        let handled_block_output = node_state.handle_new_block(block);
+
+        let event = DataEvent::ProcessedBlock(Box::new(handled_block_output));
 
         indexer.handle_data_availability_event(event).await.unwrap();
         // Add assertions based on the expected state changes

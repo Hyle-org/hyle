@@ -11,8 +11,8 @@ use crate::{
     handle_messages,
     mempool::MempoolEvent,
     model::{
-        get_current_timestamp, Block, BlockHash, BlockHeight, ContractName, Hashable,
-        SharedRunContext, Transaction, ValidatorPublicKey,
+        get_current_timestamp, Block, BlockHash, BlockHeight, ContractName, HandledBlockOutput,
+        Hashable, SharedRunContext, Transaction, ValidatorPublicKey,
     },
     module_handle_messages,
     p2p::network::{NetMessage, OutboundMessage, PeerEvent},
@@ -58,7 +58,7 @@ pub enum DataNetMessage {
 
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, Eq, PartialEq)]
 pub enum DataEvent {
-    NewBlock(Block),
+    ProcessedBlock(Box<HandledBlockOutput>),
     CatchupDone(BlockHeight),
 }
 
@@ -450,36 +450,11 @@ impl DataAvailability {
                 .unwrap_or(BlockHash("".to_string()))
         );
 
-        // Process the block in node state
-        let handled_block_output = self.node_state.handle_new_block(block.clone());
-
-        // FIXME: to remove when we have a real staking smart contract
-        // Send message for each new staker.
-        for staker in handled_block_output.stakers {
-            if let Err(e) = self
-                .bus
-                .send(ConsensusCommand::NewStaker(staker))
-                .context("Send new staker consensus command")
-            {
-                error!("Failed to send new staker consensus command: {:?}", e);
-            }
-        }
-
-        // Send message for new bounded validators
-        for validator in &block.new_bonded_validators {
-            if let Err(e) = self
-                .bus
-                .send(ConsensusCommand::NewBonded(validator.clone()))
-                .context("Send new bonded consensus command")
-            {
-                error!("Failed to send new bonded consensus command: {:?}", e);
-            }
-        }
-
-        if let Err(e) = self
-            .bus
-            .send(ConsensusCommand::ProcessedBlock(block.height))
-        {
+        // Process the block and send its side effects
+        let handled_block_output = self.node_state.handle_new_block(block);
+        if let Err(e) = self.bus.send(DataEvent::ProcessedBlock(Box::new(
+            handled_block_output.clone(),
+        ))) {
             error!("Failed to send processed block consensus command: {:?}", e);
         }
 
@@ -494,7 +469,10 @@ impl DataAvailability {
                 to_remove.push(peer_id.clone());
             } else {
                 info!("streaming block {} to peer {}", block_hash, &peer_id);
-                match bincode::encode_to_vec(block.clone(), bincode::config::standard()) {
+                match bincode::encode_to_vec(
+                    handled_block_output.clone(),
+                    bincode::config::standard(),
+                ) {
                     Ok(bytes) => {
                         if let Err(e) = peer.sender.send(bytes.into()).await {
                             warn!("failed to send block to peer {}: {}", &peer_id, e);
@@ -509,11 +487,6 @@ impl DataAvailability {
         for peer_id in to_remove {
             self.stream_peer_metadata.remove(&peer_id);
         }
-
-        _ = self
-            .bus
-            .send(DataEvent::NewBlock(block))
-            .log_error("Error sending DataEvent");
     }
 
     fn query_block(&mut self, hash: BlockHash) {

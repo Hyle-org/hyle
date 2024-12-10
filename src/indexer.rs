@@ -7,9 +7,10 @@ pub mod da_listener;
 pub mod model;
 
 use crate::{
-    data_availability::{node_state::NodeState, DataEvent},
+    data_availability::DataEvent,
     model::{
-        BlobTransaction, Block, BlockHash, BlockHeight, CommonRunContext, ContractName, Hashable,
+        BlobTransaction, BlockHash, BlockHeight, CommonRunContext, ContractName,
+        HandledBlockOutput, Hashable,
     },
     module_handle_messages,
     utils::modules::{module_bus_client, Module},
@@ -54,7 +55,6 @@ pub struct Indexer {
     state: IndexerApiState,
     new_sub_receiver: tokio::sync::mpsc::Receiver<(ContractName, WebSocket)>,
     subscribers: Subscribers,
-    node_state: NodeState,
 }
 
 pub static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("./src/indexer/migrations");
@@ -72,13 +72,6 @@ impl Module for Indexer {
             .await
             .context("Failed to connect to the database")?;
 
-        let node_state = Self::load_from_disk_or_default::<NodeState>(
-            ctx.config
-                .data_directory
-                .join("indexer_node_state.bin")
-                .as_path(),
-        );
-
         info!("Checking for new DB migration...");
         let _ =
             tokio::time::timeout(tokio::time::Duration::from_secs(60), MIGRATOR.run(&pool)).await?;
@@ -95,7 +88,6 @@ impl Module for Indexer {
             },
             new_sub_receiver,
             subscribers,
-            node_state,
         };
 
         if let Ok(mut guard) = ctx.router.lock() {
@@ -223,24 +215,27 @@ impl Indexer {
 
     async fn handle_data_availability_event(&mut self, event: DataEvent) -> Result<(), Error> {
         match event {
-            DataEvent::NewBlock(block) => self.handle_block(block).await,
-            DataEvent::CatchupDone(_) => Ok(()),
+            DataEvent::ProcessedBlock(handled_block_output) => {
+                self.handle_processed_block(*handled_block_output).await
+            }
+            _ => Ok(()),
         }
     }
 
-    async fn handle_block(&mut self, block: Block) -> Result<(), Error> {
-        info!("new block {} with {} txs", block.height, block.txs.len());
-
+    async fn handle_processed_block(
+        &mut self,
+        handled_block_output: HandledBlockOutput,
+    ) -> Result<(), Error> {
         let mut transaction = self.state.db.begin().await?;
 
         // Insert the block into the blocks table
-        let block_hash = &block.hash();
-        let block_parent_hash = &block.parent_hash;
-        let block_height = i64::try_from(block.height.0)
+        let block_hash = &handled_block_output.block_hash;
+        let block_parent_hash = &handled_block_output.block_parent_hash;
+        let block_height = i64::try_from(handled_block_output.block_height.0)
             .map_err(|_| anyhow::anyhow!("Block height is too large to fit into an i64"))?;
 
         let block_timestamp = match DateTime::from_timestamp(
-            i64::try_from(block.timestamp)
+            i64::try_from(handled_block_output.block_timestamp)
                 .map_err(|_| anyhow::anyhow!("Timestamp too large for i64"))?,
             0,
         ) {
@@ -257,8 +252,6 @@ impl Indexer {
         .bind(block_timestamp)
         .execute(&mut *transaction)
         .await?;
-
-        let handled_block_output = self.node_state.handle_new_block(block);
 
         // Handling Register Contract Transactions
         for tx in handled_block_output.new_contract_txs {
@@ -545,9 +538,10 @@ mod test {
 
     use crate::{
         bus::SharedMessageBus,
+        data_availability::node_state::NodeState,
         model::{
-            Blob, BlobData, BlockHeight, ProofData, ProofTransaction, RegisterContractTransaction,
-            Transaction, TransactionData, VerifiedProofTransaction,
+            Blob, BlobData, Block, BlockHeight, ProofData, ProofTransaction,
+            RegisterContractTransaction, Transaction, TransactionData, VerifiedProofTransaction,
         },
     };
 
@@ -572,7 +566,6 @@ mod test {
             },
             new_sub_receiver,
             subscribers: HashMap::new(),
-            node_state: NodeState::default(),
         }
     }
 
@@ -720,6 +713,7 @@ mod test {
             proof_tx_4,
         ];
 
+        let mut node_state = NodeState::default();
         let block = Block {
             parent_hash: BlockHash::new(""),
             height: BlockHeight(1),
@@ -727,11 +721,12 @@ mod test {
             new_bonded_validators: vec![],
             txs,
         };
+        let handled_block_output = node_state.handle_new_block(block);
 
         indexer
-            .handle_block(block)
+            .handle_processed_block(handled_block_output)
             .await
-            .expect("Failed to handle block");
+            .expect("Failed to handle processed block");
 
         let transactions_response = server.get("/contract/c1").await;
         transactions_response.assert_status_ok();

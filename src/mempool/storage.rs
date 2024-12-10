@@ -232,7 +232,6 @@ impl Storage {
         // For performance reasons, we only clone known_contracts in it for unregistered contracts that are potentially in those uncommitted cars.
         let mut optimistically_known_contracts: Option<KnownContracts> = None;
         for tx in &data_proposal.txs {
-            tracing::error!("tx : {:#?}", tx);
             match &tx.transaction_data {
                 TransactionData::Proof(_) => {
                     warn!("Refusing DataProposal: unverified proof transaction");
@@ -247,9 +246,7 @@ impl Storage {
                             .map_or(false, |kc| kc.0.contains_key(contract_name))
                     {
                         // Process previous cars to register the missing contract
-                        tracing::error!("self.lanes : {:#?}", self.lanes);
                         if let Some(lane) = self.lanes.get_mut(validator) {
-                            tracing::error!("lane : {:#?}", lane);
                             for (
                                 _,
                                 LaneEntry {
@@ -258,7 +255,6 @@ impl Storage {
                                 },
                             ) in lane.iter_reverse()
                             {
-                                tracing::error!("data_proposal : {:#?}", data_proposal);
                                 for tx in &data_proposal.txs {
                                     if let TransactionData::RegisterContract(reg_tx) =
                                         &tx.transaction_data
@@ -1407,8 +1403,7 @@ mod tests {
         };
         let data_proposal_hash = data_proposal.hash();
 
-        let verdict = store1.on_data_proposal(pubkey1, data_proposal, &node_state);
-        let verdict = store1.on_data_proposal(pubkey1, &mut data_proposal, &known_contracts);
+        let verdict = store1.on_data_proposal(pubkey1, data_proposal, &known_contracts);
         assert_eq!(verdict, DataProposalVerdict::Refuse);
 
         // Ensure the lane was not updated with the DataProposal
@@ -1436,8 +1431,7 @@ mod tests {
             .clone();
 
         assert_eq!(
-            store2.on_data_proposal(pubkey1, data_proposal, &node_state2),
-            store2.on_data_proposal(pubkey1, &mut data_proposal, &known_contracts2),
+            store2.on_data_proposal(pubkey1, data_proposal, &known_contracts2),
             DataProposalVerdict::Vote
         );
 
@@ -1450,8 +1444,7 @@ mod tests {
             .clone();
 
         assert_eq!(
-            store1.on_data_proposal(pubkey2, data_proposal, &node_state1),
-            store1.on_data_proposal(pubkey2, &mut data_proposal, &known_contracts1),
+            store1.on_data_proposal(pubkey2, data_proposal, &known_contracts1),
             DataProposalVerdict::Vote
         );
 
@@ -1473,7 +1466,7 @@ mod tests {
             .clone();
 
         assert_eq!(
-            store2.on_data_proposal(pubkey1, data_proposal, &node_state2),
+            store2.on_data_proposal(pubkey1, data_proposal, &known_contracts2),
             DataProposalVerdict::Vote
         );
 

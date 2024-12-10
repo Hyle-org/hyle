@@ -192,14 +192,19 @@ impl Transaction {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode, Eq, PartialEq)]
 pub struct HandledBlockOutput {
+    pub block_parent_hash: BlockHash,
+    pub block_height: BlockHeight,
+    pub block_hash: BlockHash,
+    pub block_timestamp: u64,
     pub new_contract_txs: Vec<Transaction>,
     pub new_blob_txs: Vec<Transaction>,
     pub new_verified_proof_txs: Vec<Transaction>,
     pub verified_blobs: Vec<(TxHash, BlobIndex)>,
     pub failed_txs: Vec<Transaction>,
     pub stakers: Vec<Staker>,
+    pub new_bounded_validators: Vec<ValidatorPublicKey>,
     pub timed_out_tx_hashes: Vec<TxHash>,
     pub settled_blob_tx_hashes: Vec<TxHash>,
     pub updated_states: HashMap<ContractName, StateDigest>,

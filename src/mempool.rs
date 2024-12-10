@@ -166,7 +166,7 @@ impl Mempool {
 
         let mut interval = tokio::time::interval(tokio::time::Duration::from_millis(100));
 
-        // Recompute optimistic node_state
+        // TODO: Recompute optimistic node_state
 
         module_handle_messages! {
             on_bus self.bus,
