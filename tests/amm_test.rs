@@ -122,7 +122,7 @@ mod e2e_amm {
             )
             .await;
 
-        let proof = std::fs::read("0.risc0.proof").unwrap();
+        let proof = proof_generator.read_proof(0);
 
         info!("➡️  Sending proof for register");
         ctx.send_proof(
@@ -186,8 +186,8 @@ mod e2e_amm {
             )
             .await;
 
-        let hydentity_proof = std::fs::read("0.risc0.proof").unwrap();
-        let bob_transfer_proof = std::fs::read("1.risc0.proof").unwrap();
+        let hydentity_proof = proof_generator.read_proof(0);
+        let bob_transfer_proof = proof_generator.read_proof(1);
 
         info!("➡️  Sending proof for hydentity");
         ctx.send_proof(
@@ -264,8 +264,8 @@ mod e2e_amm {
             )
             .await;
 
-        let hydentity_proof = std::fs::read("0.risc0.proof").unwrap();
-        let bob_transfer_proof = std::fs::read("1.risc0.proof").unwrap();
+        let hydentity_proof = proof_generator.read_proof(0);
+        let bob_transfer_proof = proof_generator.read_proof(1);
 
         info!("➡️  Sending proof for hydentity");
         ctx.send_proof(
@@ -340,8 +340,8 @@ mod e2e_amm {
             )
             .await;
 
-        let hydentity_proof = std::fs::read("0.risc0.proof").unwrap();
-        let bob_approve_hyllar_proof = std::fs::read("1.risc0.proof").unwrap();
+        let hydentity_proof = proof_generator.read_proof(0);
+        let bob_approve_hyllar_proof = proof_generator.read_proof(1);
 
         info!("➡️  Sending proof for hydentity");
         ctx.send_proof(
@@ -401,8 +401,8 @@ mod e2e_amm {
             )
             .await;
 
-        let hydentity_proof = std::fs::read("0.risc0.proof").unwrap();
-        let bob_approve_hyllar2_proof = std::fs::read("1.risc0.proof").unwrap();
+        let hydentity_proof = proof_generator.read_proof(0);
+        let bob_approve_hyllar2_proof = proof_generator.read_proof(1);
 
         info!("➡️  Sending proof for hydentity");
         ctx.send_proof(
@@ -488,10 +488,10 @@ mod e2e_amm {
             )
             .await;
 
-        let hydentity_proof = std::fs::read("0.risc0.proof").unwrap();
-        let bob_new_pair_proof = std::fs::read("1.risc0.proof").unwrap();
-        let bob_transfer_hyllar_proof = std::fs::read("2.risc0.proof").unwrap();
-        let bob_transfer_hyllar2_proof = std::fs::read("3.risc0.proof").unwrap();
+        let hydentity_proof = proof_generator.read_proof(0);
+        let bob_new_pair_proof = proof_generator.read_proof(1);
+        let bob_transfer_hyllar_proof = proof_generator.read_proof(2);
+        let bob_transfer_hyllar2_proof = proof_generator.read_proof(3);
 
         info!("➡️  Sending proof for hydentity");
         ctx.send_proof(
@@ -612,10 +612,10 @@ mod e2e_amm {
             )
             .await;
 
-        let hydentity_proof = std::fs::read("0.risc0.proof").unwrap();
-        let bob_swap_proof = std::fs::read("1.risc0.proof").unwrap();
-        let bob_transfer_proof = std::fs::read("2.risc0.proof").unwrap();
-        let amm_transfer_from_proof = std::fs::read("3.risc0.proof").unwrap();
+        let hydentity_proof = proof_generator.read_proof(0);
+        let bob_swap_proof = proof_generator.read_proof(1);
+        let bob_transfer_proof = proof_generator.read_proof(2);
+        let amm_transfer_from_proof = proof_generator.read_proof(3);
 
         info!("➡️  Sending proof for hydentity");
         ctx.send_proof(

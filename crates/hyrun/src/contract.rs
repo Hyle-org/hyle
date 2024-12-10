@@ -5,13 +5,16 @@ use sdk::{Blob, ContractInput, Digestable, HyleOutput, Identity};
 
 use crate::{Cli, Contract};
 
-pub fn init<State>(contract_name: &str, initial_state: State)
+pub fn init<State>(prefix: &str, contract_name: &str, initial_state: State)
 where
     State: Digestable + std::fmt::Debug,
 {
     println!("Initial state: {:?}", initial_state);
     let initial_state = hex::encode(initial_state.as_digest().0);
-    let file_path = format!("contracts/{}/{}.txt", contract_name, contract_name);
+    let file_path = format!(
+        "{}contracts/{}/{}.txt",
+        prefix, contract_name, contract_name
+    );
     let image_id = std::fs::read_to_string(file_path)
         .expect("Unable to read image id. Did you build contracts ?")
         .trim_end()
@@ -54,7 +57,7 @@ where
 
     println!("{}", "-".repeat(20));
     println!("Checking transition for {contract_name}...");
-    let execute_info = execute(contract_name, &contract_input);
+    let execute_info = execute(&cli.path_prefix, contract_name, &contract_input);
     let output = execute_info.journal.decode::<HyleOutput>().unwrap();
     if !output.success {
         let program_error = std::str::from_utf8(&output.program_outputs).unwrap();
@@ -70,12 +73,12 @@ where
 
     println!("{}", "-".repeat(20));
     println!("Proving transition for {contract_name}...");
-    let prove_info = prove(contract_name, &contract_input);
+    let prove_info = prove(&cli.path_prefix, contract_name, &contract_input);
 
     let receipt = prove_info.receipt;
     let encoded_receipt = to_vec(&receipt).expect("Unable to encode receipt");
     std::fs::write(
-        format!("{}.risc0.proof", contract_input.index),
+        format!("{}{}.risc0.proof", cli.path_prefix, contract_input.index),
         encoded_receipt,
     )
     .unwrap();
@@ -145,6 +148,7 @@ where
 }
 
 fn execute<State>(
+    prefix: &str,
     contract_name: &str,
     contract_input: &ContractInput<State>,
 ) -> risc0_zkvm::SessionInfo
@@ -159,7 +163,7 @@ where
 
     let prover = risc0_zkvm::default_executor();
     let program_name = get_image(contract_name);
-    let file_path = format!("contracts/{}/{}.img", program_name, program_name);
+    let file_path = format!("{}contracts/{}/{}.img", prefix, program_name, program_name);
     println!("file_path: {}", file_path);
     if let Ok(binary) = std::fs::read(file_path.as_str()) {
         prover.execute(env, &binary).unwrap()
@@ -171,7 +175,11 @@ where
     }
 }
 
-fn prove<State>(contract_name: &str, contract_input: &ContractInput<State>) -> risc0_zkvm::ProveInfo
+fn prove<State>(
+    prefix: &str,
+    contract_name: &str,
+    contract_input: &ContractInput<State>,
+) -> risc0_zkvm::ProveInfo
 where
     State: Digestable + serde::Serialize,
 {
@@ -183,7 +191,7 @@ where
 
     let prover = risc0_zkvm::default_prover();
     let program_name = get_image(contract_name);
-    let file_path = format!("contracts/{}/{}.img", program_name, program_name);
+    let file_path = format!("{}contracts/{}/{}.img", prefix, program_name, program_name);
     if let Ok(binary) = std::fs::read(file_path.as_str()) {
         prover.prove(env, &binary).unwrap()
     } else {
