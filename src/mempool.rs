@@ -319,8 +319,8 @@ impl Mempool {
         }
 
         match msg.msg {
-            MempoolNetMessage::DataProposal(mut data_proposal) => {
-                self.on_data_proposal(validator, &mut data_proposal)?;
+            MempoolNetMessage::DataProposal(data_proposal) => {
+                self.on_data_proposal(validator, data_proposal)?;
             }
             MempoolNetMessage::DataVote(ref data_proposal_hash) => {
                 self.on_data_vote(&msg, data_proposal_hash)?;
@@ -360,7 +360,7 @@ impl Mempool {
 
         let mut waiting_proposals = self.storage.get_waiting_data_proposals(validator)?;
         for wp in waiting_proposals.iter_mut() {
-            self.on_data_proposal(validator, wp)
+            self.on_data_proposal(validator, std::mem::take(wp))
                 .context("Consuming waiting data proposal")?;
         }
         Ok(())
@@ -428,7 +428,7 @@ impl Mempool {
     fn on_data_proposal(
         &mut self,
         validator: &ValidatorPublicKey,
-        data_proposal: &mut DataProposal,
+        data_proposal: DataProposal,
     ) -> Result<()> {
         debug!(
             "Received DataProposal {:?} from {} ({} txs)",
