@@ -171,15 +171,15 @@ impl AmmContract {
             return Err(format!("Pair {:?} not found in AMM state", pair));
         };
         let expected_to_amount = if is_normalized_order {
-            let k = *prev_y - (*prev_x * *prev_y / (*prev_x + from_amount));
+            let amount = *prev_y - (*prev_x * *prev_y / (*prev_x + from_amount));
             *prev_x += from_amount;
-            *prev_y -= k; // we need to remove the full amount to avoid slipping
-            k
+            *prev_y -= amount; // we need to remove the full amount to avoid slipping
+            amount
         } else {
-            let k = *prev_x - (*prev_y * *prev_x / (*prev_y + from_amount));
+            let amount = *prev_x - (*prev_y * *prev_x / (*prev_y + from_amount));
             *prev_y += from_amount;
-            *prev_x -= k; // we need to remove the full amount to avoid slipping
-            k
+            *prev_x -= amount; // we need to remove the full amount to avoid slipping
+            amount
         };
 
         // Assert that we transferred less than that, within 2%
