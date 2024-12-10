@@ -62,7 +62,7 @@ pub struct Identity(pub String);
 pub struct TxHash(pub String);
 
 #[derive(Default, Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash, Encode, Decode)]
-pub struct BlobIndex(pub u32);
+pub struct BlobIndex(pub usize);
 
 #[derive(Default, Serialize, Deserialize, Clone, PartialEq, Eq, Hash, Encode, Decode)]
 pub struct BlobData(pub Vec<u8>);
@@ -229,8 +229,8 @@ impl Display for Identity {
         write!(f, "{}", &self.0)
     }
 }
-impl From<u32> for BlobIndex {
-    fn from(i: u32) -> Self {
+impl From<usize> for BlobIndex {
+    fn from(i: usize) -> Self {
         BlobIndex(i)
     }
 }

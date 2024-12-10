@@ -232,7 +232,7 @@ where
                 .clone()
                 .ok_or(anyhow!("No state found for {contract_name}"))?;
 
-            let new_state = State::handle(&tx, BlobIndex(index as u32), state)?;
+            let new_state = State::handle(&tx, BlobIndex(index), state)?;
 
             info!(cn = %self.contract_name, "📈 Updated state for {contract_name}");
 
@@ -266,7 +266,7 @@ mod tests {
 
     impl ContractHandler for MockState {
         fn handle(tx: &BlobTransaction, index: BlobIndex, mut state: Self) -> Result<Self> {
-            state.0 = tx.blobs.get(index.0 as usize).unwrap().data.0.clone();
+            state.0 = tx.blobs.get(index.0).unwrap().data.0.clone();
             Ok(state)
         }
 

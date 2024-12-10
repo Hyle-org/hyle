@@ -41,7 +41,7 @@ impl ContractHandler for Hydentity {
         let Blob {
             data,
             contract_name,
-        } = tx.blobs.get(index.0 as usize).unwrap();
+        } = tx.blobs.get(index.0).unwrap();
 
         let (action, _): (IdentityAction, _) =
             bincode::decode_from_slice(data.0.as_slice(), bincode::config::standard())
@@ -66,7 +66,7 @@ impl ContractHandler for HyllarToken {
         let Blob {
             contract_name,
             data,
-        } = tx.blobs.get(index.0 as usize).unwrap();
+        } = tx.blobs.get(index.0).unwrap();
 
         let data: StructuredBlobData<ERC20Action> = data.clone().try_into()?;
 
@@ -74,7 +74,7 @@ impl ContractHandler for HyllarToken {
             .caller
             .map(|i| {
                 tx.blobs
-                    .get(i.0 as usize)
+                    .get(i.0)
                     .unwrap()
                     .contract_name
                     .0
