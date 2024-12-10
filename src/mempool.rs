@@ -10,6 +10,7 @@ use crate::{
         Hashable, SharedRunContext, Transaction, TransactionData, ValidatorPublicKey,
         VerifiedProofTransaction,
     },
+    module_handle_messages,
     node_state::NodeState,
     p2p::network::{OutboundMessage, SignedByValidator},
     utils::{
@@ -38,7 +39,6 @@ pub struct QueryNewCut(pub Vec<ValidatorPublicKey>);
 
 module_bus_client! {
 struct MempoolBusClient {
-    module: Mempool,
     sender(OutboundMessage),
     sender(MempoolEvent),
     receiver(SignedByValidator<MempoolNetMessage>),
@@ -85,10 +85,6 @@ pub enum MempoolEvent {
 impl BusMessage for MempoolEvent {}
 
 impl Module for Mempool {
-    fn name() -> &'static str {
-        "Mempool"
-    }
-
     type Context = SharedRunContext;
 
     async fn build(ctx: Self::Context) -> Result<Self> {
@@ -143,9 +139,8 @@ impl Mempool {
 
         // Recompute optimistic node_state
 
-        handle_messages! {
+        module_handle_messages! {
             on_bus self.bus,
-            break_on(stringify!(Mempool))
             listen<SignedByValidator<MempoolNetMessage>> cmd => {
                 let _ = self.handle_net_message(cmd)
                     .log_error("Handling MempoolNetMessage in Mempool");
@@ -187,7 +182,6 @@ impl Mempool {
             }
         }
 
-        _ = self.bus.shutdown_complete();
         Ok(())
     }
 
