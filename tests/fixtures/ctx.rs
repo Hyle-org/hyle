@@ -12,9 +12,9 @@ use testcontainers_modules::{
 use tracing::info;
 
 use hyle::{
+    data_availability::node_state::model::Contract,
     indexer::model::ContractDb,
     model::{Blob, BlobTransaction, ProofData, ProofTransaction, RegisterContractTransaction},
-    node_state::model::Contract,
     rest::client::ApiHttpClient,
 };
 use hyle_contract_sdk::{

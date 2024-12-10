@@ -2,6 +2,7 @@
 
 mod api;
 mod blocks;
+pub mod node_state;
 
 use crate::{
     bus::{command_response::Query, BusClientSender, BusMessage},
@@ -14,7 +15,6 @@ use crate::{
         SharedRunContext, Transaction, ValidatorPublicKey,
     },
     module_handle_messages,
-    node_state::{model::Contract, NodeState},
     p2p::network::{NetMessage, OutboundMessage, PeerEvent},
     utils::{
         conf::SharedConf,
@@ -31,6 +31,7 @@ use futures::{
     stream::{SplitSink, SplitStream},
     SinkExt, StreamExt,
 };
+use node_state::{model::Contract, NodeState};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use std::collections::HashMap;

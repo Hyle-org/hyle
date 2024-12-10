@@ -4,11 +4,11 @@ use reqwest::{Response, Url};
 
 use crate::{
     consensus::{staking::Staker, ConsensusInfo},
+    data_availability::node_state::model::Contract,
     indexer::model::ContractDb,
     model::{
         BlobTransaction, BlockHeight, ContractName, ProofTransaction, RegisterContractTransaction,
     },
-    node_state::model::Contract,
     tools::mock_workflow::RunScenario,
 };
 

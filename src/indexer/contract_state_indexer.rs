@@ -8,13 +8,12 @@ use tracing::{debug, error, info};
 
 use crate::{
     bus::BusMessage,
-    data_availability::DataEvent,
+    data_availability::{node_state::NodeState, DataEvent},
     model::{
         Blob, BlobTransaction, Block, CommonRunContext, Hashable, RegisterContractTransaction,
         Transaction, TransactionData,
     },
     module_handle_messages,
-    node_state::NodeState,
     utils::{conf::Conf, modules::Module},
 };
 

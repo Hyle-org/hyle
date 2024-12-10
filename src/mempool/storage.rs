@@ -7,6 +7,7 @@ use std::{collections::HashMap, fmt::Display, hash::Hash, vec};
 use tracing::{debug, error, warn};
 
 use crate::{
+    data_availability::node_state::verifiers::verify_proof,
     model::{Hashable, Transaction, TransactionData, ValidatorPublicKey},
     p2p::network::SignedByValidator,
 };
@@ -302,11 +303,7 @@ impl Storage {
                             }
                         };
 
-                    match crate::node_state::verifiers::verify_proof(
-                        &proof_tx.proof_transaction,
-                        verifier,
-                        program_id,
-                    ) {
+                    match verify_proof(&proof_tx.proof_transaction, verifier, program_id) {
                         Ok(hyle_output) => {
                             if hyle_output != proof_tx.hyle_output {
                                 warn!("Refusing DataProposal: incorrect HyleOutput in proof transaction");

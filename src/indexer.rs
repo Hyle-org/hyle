@@ -7,12 +7,11 @@ pub mod da_listener;
 pub mod model;
 
 use crate::{
-    data_availability::DataEvent,
+    data_availability::{node_state::NodeState, DataEvent},
     model::{
         BlobTransaction, Block, BlockHash, BlockHeight, CommonRunContext, ContractName, Hashable,
     },
     module_handle_messages,
-    node_state::NodeState,
     utils::modules::{module_bus_client, Module},
 };
 use anyhow::{bail, Context, Error, Result};

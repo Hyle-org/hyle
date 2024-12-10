@@ -3,6 +3,7 @@
 use crate::{
     bus::{command_response::Query, BusClientSender, BusMessage},
     consensus::ConsensusEvent,
+    data_availability::node_state::verifiers::verify_proof,
     genesis::GenesisEvent,
     handle_messages,
     mempool::storage::{DataProposal, Storage},
@@ -522,11 +523,7 @@ impl Mempool {
                     .0
                     .get(&proof_transaction.contract_name)
                     .context("Contract unknown")?;
-                let hyle_output = crate::node_state::verifiers::verify_proof(
-                    &proof_transaction,
-                    verifier,
-                    program_id,
-                )?;
+                let hyle_output = verify_proof(&proof_transaction, verifier, program_id)?;
                 tx.transaction_data = TransactionData::VerifiedProof(VerifiedProofTransaction {
                     proof_transaction,
                     hyle_output,
