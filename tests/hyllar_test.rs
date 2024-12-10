@@ -47,7 +47,7 @@ mod e2e_hyllar {
             )
             .await;
 
-        let proof = std::fs::read("0.risc0.proof").expect("Failed to read proof file");
+        let proof = proof_generator.read_proof(0);
 
         info!("➡️  Sending proof for register");
         ctx.send_proof(
@@ -109,8 +109,8 @@ mod e2e_hyllar {
             )
             .await;
 
-        let hydentity_proof = std::fs::read("0.risc0.proof").expect("Failed to read proof file");
-        let hyllar_proof = std::fs::read("1.risc0.proof").expect("Failed to read proof file");
+        let hydentity_proof = proof_generator.read_proof(0);
+        let hyllar_proof = proof_generator.read_proof(1);
 
         info!("➡️  Sending proof for hydentity");
         ctx.send_proof(

@@ -107,6 +107,9 @@ pub struct Cli {
 
     #[arg(long, default_value = "4321")]
     pub port: u32,
+
+    #[arg(long, default_value = "")]
+    pub path_prefix: String,
 }
 
 // Public because it's used in integration tests.
@@ -132,7 +135,7 @@ pub fn run_command(cli: Cli) {
         },
         CliCommand::Hydentity { command } => {
             if matches!(command, HydentityArgs::Init) {
-                contract::init("hydentity", Hydentity::new());
+                contract::init(&cli.path_prefix, "hydentity", Hydentity::new());
                 return;
             }
             let cf: IdentityAction = command.into();
@@ -171,6 +174,7 @@ pub fn run_command(cli: Cli) {
         } => {
             if let HyllarArgs::Init { initial_supply } = command {
                 contract::init(
+                    &cli.path_prefix,
                     &hyllar_contract_name,
                     HyllarToken::new(initial_supply, "faucet.hydentity".to_string()),
                 );
