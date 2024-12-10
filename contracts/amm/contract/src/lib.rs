@@ -183,7 +183,7 @@ impl AmmContract {
         };
 
         // Assert that we transferred less than that, within 2%
-        if to_amount < expected_to_amount * 100 / 102 {
+        if to_amount > expected_to_amount || to_amount < expected_to_amount * 98 / 100 {
             return Err(format!(
                 "Invalid swap: expected to receive between {} and {} {}",
                 expected_to_amount * 100 / 102,
@@ -532,8 +532,8 @@ mod tests {
         };
 
         let callees_blobs = vec![
-            create_test_blob_from("token1", "test", "amm", 5),
-            create_test_blob_from("token2", "test", "amm", 15), // Invalid amount
+            create_test_blob_from("token1", "test", "amm", 0), // Invalid amount
+            create_test_blob("token2", "test", 50),            // Invalid amount
         ];
 
         let exec_ctx = ExecutionContext {
@@ -542,9 +542,12 @@ mod tests {
         };
         let mut contract = AmmContract::new(exec_ctx, ContractName("amm".to_owned()), state);
 
-        let result = contract.verify_swap(("token1".to_string(), "token2".to_string()), 5, 15);
-
+        let result = contract.verify_swap(("token1".to_string(), "token2".to_string()), 0, 50);
         assert!(result.is_err());
+        assert!(result
+            .err()
+            .unwrap()
+            .contains("Invalid swap: expected to receive"));
     }
 
     #[test]
