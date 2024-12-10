@@ -99,7 +99,7 @@ pub async fn connect_to(
                     "Failed to connect to {}: {}. Retrying in 1 second...",
                     target, e
                 );
-                tokio::time::sleep(std::time::Duration::from_secs(100)).await;
+                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
             }
         }
     };
