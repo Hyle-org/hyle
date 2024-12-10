@@ -244,7 +244,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use hyle_contract_sdk::{BlobData, StateDigest};
+    use hyle_contract_sdk::{BlobData, ProgramId, StateDigest};
 
     use super::*;
     use crate::bus::metrics::BusMetrics;
@@ -297,7 +297,7 @@ mod tests {
             state_digest,
             owner: "onwer".into(),
             verifier: "test".into(),
-            program_id: vec![],
+            program_id: ProgramId(vec![]),
         };
         indexer.handle_register_contract(tx).await.unwrap();
     }
@@ -313,7 +313,7 @@ mod tests {
             state_digest,
             owner: "onwer".into(),
             verifier: "test".into(),
-            program_id: vec![],
+            program_id: ProgramId(vec![]),
         };
         indexer.handle_register_contract(tx).await.unwrap();
 

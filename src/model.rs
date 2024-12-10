@@ -5,7 +5,9 @@ use axum::Router;
 use base64::prelude::*;
 use bincode::{Decode, Encode};
 use derive_more::Display;
-use hyle_contract_sdk::{flatten_blobs, BlobIndex, HyleOutput, Identity, StateDigest, TxHash};
+use hyle_contract_sdk::{
+    flatten_blobs, BlobIndex, HyleOutput, Identity, ProgramId, StateDigest, TxHash, Verifier,
+};
 pub use hyle_contract_sdk::{Blob, BlobData, ContractName};
 use serde::{
     de::{self, Visitor},
@@ -168,8 +170,8 @@ pub struct VerifiedProofTransaction {
 #[derive(Debug, Serialize, Deserialize, Default, Clone, PartialEq, Eq, Encode, Decode, Hash)]
 pub struct RegisterContractTransaction {
     pub owner: String,
-    pub verifier: String,
-    pub program_id: Vec<u8>,
+    pub verifier: Verifier,
+    pub program_id: ProgramId,
     pub state_digest: StateDigest,
     pub contract_name: ContractName,
 }
@@ -355,11 +357,11 @@ impl Hashable<TxHash> for VerifiedProofTransaction {
 impl Hashable<TxHash> for RegisterContractTransaction {
     fn hash(&self) -> TxHash {
         let mut hasher = Sha3_256::new();
-        _ = write!(hasher, "{}", self.owner);
-        _ = write!(hasher, "{}", self.verifier);
-        hasher.update(self.program_id.clone());
+        hasher.update(self.owner.clone());
+        hasher.update(self.verifier.0.clone());
+        hasher.update(self.program_id.0.clone());
         hasher.update(self.state_digest.0.clone());
-        _ = write!(hasher, "{}", self.contract_name);
+        hasher.update(self.contract_name.0.clone());
         let hash_bytes = hasher.finalize();
         TxHash(hex::encode(hash_bytes))
     }

@@ -283,8 +283,8 @@ impl Indexer {
             .execute(&mut *transaction)
             .await?;
             let owner = &register_contract_tx.owner;
-            let verifier = &register_contract_tx.verifier;
-            let program_id = &register_contract_tx.program_id;
+            let verifier = &register_contract_tx.verifier.0;
+            let program_id = &register_contract_tx.program_id.0;
             let state_digest = &register_contract_tx.state_digest.0;
             let contract_name = &register_contract_tx.contract_name.0;
 
@@ -536,7 +536,7 @@ impl std::ops::Deref for Indexer {
 mod test {
     use assert_json_diff::assert_json_include;
     use axum_test::TestServer;
-    use hyle_contract_sdk::{BlobIndex, HyleOutput, Identity, StateDigest, TxHash};
+    use hyle_contract_sdk::{BlobIndex, HyleOutput, Identity, ProgramId, StateDigest, TxHash};
     use model::{BlockDb, ContractDb};
     use serde_json::json;
     use std::{
@@ -582,8 +582,8 @@ mod test {
             version: 1,
             transaction_data: TransactionData::RegisterContract(RegisterContractTransaction {
                 owner: "test".to_string(),
-                verifier: "test".to_string(),
-                program_id: vec![],
+                verifier: "test".into(),
+                program_id: ProgramId(vec![]),
                 state_digest,
                 contract_name,
             }),
