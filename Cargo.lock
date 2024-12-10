@@ -3271,6 +3271,7 @@ dependencies = [
  "sled",
  "sp1-sdk",
  "sqlx",
+ "staking",
  "strum",
  "strum_macros",
  "syn 2.0.90",
@@ -3296,6 +3297,7 @@ dependencies = [
  "mockall",
  "risc0-zkvm",
  "serde",
+ "tracing",
 ]
 
 [[package]]
@@ -7548,6 +7550,19 @@ name = "stable_deref_trait"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a8f112729512f8e442d81f95a8a7ddf2b7c6b8a1a6f509a95864142b30cab2d3"
+
+[[package]]
+name = "staking"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bincode 2.0.0-rc.2",
+ "hex",
+ "hyle-contract-sdk",
+ "serde",
+ "serde_json",
+ "sha2 0.10.8 (git+https://github.com/risc0/RustCrypto-hashes?tag=sha2-v0.10.8)",
+]
 
 [[package]]
 name = "static_assertions"

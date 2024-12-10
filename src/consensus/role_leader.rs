@@ -2,13 +2,14 @@ use std::collections::HashSet;
 
 use crate::{
     bus::command_response::CmdRespClient,
-    consensus::{staking::MIN_STAKE, StateTag},
+    consensus::StateTag,
     mempool::QueryNewCut,
     model::{Hashable, ValidatorPublicKey},
     p2p::network::SignedByValidator,
 };
 use anyhow::{anyhow, bail, Result};
 use bincode::{Decode, Encode};
+use staking::MIN_STAKE;
 use tracing::{debug, error, info, warn};
 
 use super::{Consensus, ConsensusNetMessage, ConsensusProposalHash, Ticket};

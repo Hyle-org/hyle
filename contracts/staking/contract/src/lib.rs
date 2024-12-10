@@ -1,10 +1,31 @@
-use anyhow::{bail, Result};
-use bincode::{Decode, Encode};
-use serde::{Deserialize, Serialize};
-use std::fmt::Display;
-use tracing::info;
+use core::fmt;
 
-use crate::model::ValidatorPublicKey;
+use anyhow::Result;
+use bincode::{Decode, Encode};
+use model::ValidatorPublicKey;
+use sdk::{info, Blob, BlobData, ContractName, Digestable};
+use serde::{Deserialize, Serialize};
+
+pub mod model;
+
+/// Enum representing the actions that can be performed by the IdentityVerification contract.
+#[derive(Encode, Decode, Debug, Clone)]
+pub enum StakingAction {
+    Stake { amount: u128 },
+    Delegate { validator: ValidatorPublicKey },
+}
+
+impl StakingAction {
+    pub fn as_blob(self, contract_name: ContractName) -> Blob {
+        Blob {
+            contract_name,
+            data: BlobData(
+                bincode::encode_to_vec(self, bincode::config::standard())
+                    .expect("failed to encode program inputs"),
+            ),
+        }
+    }
+}
 
 #[derive(Debug, Encode, Decode, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Staker {
@@ -12,7 +33,7 @@ pub struct Staker {
     pub stake: Stake,
 }
 
-impl Display for Staker {
+impl fmt::Display for Staker {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:?} with stake {:?}", self.pubkey, self.stake.amount)
     }
@@ -23,7 +44,7 @@ pub struct Stake {
     pub amount: u64,
 }
 
-#[derive(Debug, Default, Serialize, Deserialize, Clone, Encode, Decode, PartialEq, Eq, Hash)]
+#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, PartialEq, Eq, Hash)]
 pub struct Staking {
     stakers: Vec<Staker>,
     bonded: Vec<ValidatorPublicKey>,
@@ -43,9 +64,9 @@ impl Staking {
     }
 
     /// Add a staking validator
-    pub fn add_staker(&mut self, staker: Staker) -> Result<()> {
+    pub fn add_staker(&mut self, staker: Staker) -> Result<(), String> {
         if self.stakers.iter().any(|s| s.pubkey == staker.pubkey) {
-            bail!("Validator already staking")
+            return Err("Validator already staking".to_string());
         }
         info!("💰 New staker {}", staker);
         self.stakers.push(staker);
@@ -58,16 +79,16 @@ impl Staking {
     }
 
     /// Unbond a staking validator
-    pub fn unbond(&mut self, validator: &ValidatorPublicKey) -> Result<Stake> {
+    pub fn unbond(&mut self, validator: &ValidatorPublicKey) -> Result<Stake, String> {
         if let Some(staker) = self.stakers.iter().find(|s| &s.pubkey == validator) {
             if !self.bonded.contains(validator) {
-                bail!("Validator already unbonded")
+                return Err("Validator already unbonded".to_string());
             }
             self.bonded.retain(|v| v != validator);
             self.total_bond -= staker.stake.amount;
             Ok(staker.stake)
         } else {
-            bail!("Validator not staking")
+            Err("Validator not staking".to_string())
         }
     }
 
@@ -85,23 +106,48 @@ impl Staking {
     }
 
     /// Bond a staking validator
-    pub fn bond(&mut self, validator: ValidatorPublicKey) -> Result<Stake> {
+    pub fn bond(&mut self, validator: ValidatorPublicKey) -> Result<Stake, String> {
         info!("🔐 Bonded validator {}", validator);
         if let Some(staker) = self.stakers.iter().find(|s| s.pubkey == validator) {
             if self.bonded.contains(&validator) {
-                bail!("Validator already bonded")
+                return Err("Validator already bonded".to_string());
             }
             self.bonded.push(validator);
             self.bonded.sort(); // TODO insert in order?
             self.total_bond += staker.stake.amount;
             Ok(staker.stake)
         } else {
-            bail!("Validator not staking")
+            Err("Validator not staking".to_string())
         }
     }
 
     pub fn is_bonded(&self, pubkey: &ValidatorPublicKey) -> bool {
         self.bonded.iter().any(|v| v == pubkey)
+    }
+}
+
+impl Default for Staking {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Digestable for Staking {
+    fn as_digest(&self) -> sdk::StateDigest {
+        sdk::StateDigest(
+            bincode::encode_to_vec(self, bincode::config::standard())
+                .expect("Failed to encode Balances"),
+        )
+    }
+}
+
+impl TryFrom<sdk::StateDigest> for Staking {
+    type Error = anyhow::Error;
+
+    fn try_from(state: sdk::StateDigest) -> Result<Self, Self::Error> {
+        let (balances, _) = bincode::decode_from_slice(&state.0, bincode::config::standard())
+            .map_err(|_| anyhow::anyhow!("Could not decode start height"))?;
+        Ok(balances)
     }
 }
 

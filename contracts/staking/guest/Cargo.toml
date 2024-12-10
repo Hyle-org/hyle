@@ -1,0 +1,13 @@
+[package]
+name = "staking-guest"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name="staking-guest"
+test=false
+
+[dependencies]
+risc0-zkvm = { version = "1.2.0", default-features = false, features = ['std'] }
+sdk = { path = "../../../contract-sdk", package="hyle-contract-sdk" }
+staking = { path = "../contract" }

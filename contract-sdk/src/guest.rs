@@ -8,7 +8,28 @@ use crate::{
     StructuredBlob, StructuredBlobData,
 };
 
-mod env {
+#[cfg(feature = "tracing")]
+pub use tracing;
+
+// Si la feature "tracing" est activée, on redirige vers `tracing::info!`
+#[cfg(feature = "tracing")]
+#[macro_export]
+macro_rules! info {
+    ($($arg:tt)*) => {
+        sdk::guest::tracing::info!($($arg)*);
+    }
+}
+
+// Si la feature "tracing" n’est pas activée, on redirige vers la fonction env::log
+#[cfg(not(feature = "tracing"))]
+#[macro_export]
+macro_rules! info {
+    ($($arg:tt)*) => {
+        $crate::env::log(&format!($($arg)*));
+    }
+}
+
+pub mod env {
     use super::*;
 
     pub fn log(message: &str) {

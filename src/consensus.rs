@@ -42,7 +42,6 @@ pub mod metrics;
 pub mod module;
 pub mod role_follower;
 pub mod role_leader;
-pub mod staking;
 pub mod utils;
 
 // -----------------------------
@@ -280,7 +279,8 @@ impl Consensus {
                     self.store
                         .bft_round_state
                         .staking
-                        .bond(new_v.pubkey.clone())?;
+                        .bond(new_v.pubkey.clone())
+                        .map_err(|e| anyhow::anyhow!(e))?;
                 }
             }
             Some(Ticket::TimeoutQC(_)) => {
@@ -795,11 +795,19 @@ impl Consensus {
                 _ => Ok(()),
             },
             ConsensusCommand::NewStaker(staker) => {
-                self.store.bft_round_state.staking.add_staker(staker)?;
+                self.store
+                    .bft_round_state
+                    .staking
+                    .add_staker(staker)
+                    .map_err(|e| anyhow::anyhow!(e))?;
                 Ok(())
             }
             ConsensusCommand::NewBonded(validator) => {
-                self.store.bft_round_state.staking.bond(validator)?;
+                self.store
+                    .bft_round_state
+                    .staking
+                    .bond(validator)
+                    .map_err(|e| anyhow::anyhow!(e))?;
                 Ok(())
             }
             ConsensusCommand::ProcessedBlock(block_height) => {

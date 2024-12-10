@@ -42,7 +42,20 @@ impl alloc::fmt::Debug for StateDigest {
     }
 }
 
-#[derive(Default, Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash, Encode, Decode)]
+#[derive(
+    Default,
+    Serialize,
+    Deserialize,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Hash,
+    Encode,
+    Decode,
+    Ord,
+    PartialOrd,
+)]
 pub struct Identity(pub String);
 
 #[derive(
