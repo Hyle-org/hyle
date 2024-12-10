@@ -99,6 +99,7 @@ tokio-stream = "0.1.17"
 tempfile = "3.14.0"
 testcontainers-modules = { version = "0.11.4", features = ["postgres"] }
 assert-json-diff = "2.0.2"
+hyrun = { path = "./crates/hyrun" }
 
 [features]
 dhat = ["dep:dhat"]
@@ -111,3 +112,9 @@ incremental = true
 inherits = "release"
 debug = true         # Keep debug info for profiling
 strip = "none"
+
+# Optimize the following crates for development builds so tests are faster
+[profile.dev.package.risc0-binfmt]
+opt-level = 3
+[profile.dev.package.sha2]
+opt-level = 3

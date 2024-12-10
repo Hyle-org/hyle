@@ -1,5 +1,4 @@
 use fixtures::{contracts::TestContract, ctx::E2ECtx};
-use std::{fs::File, io::Read};
 use tracing::info;
 
 use hyle::model::{Blob, BlobData};
@@ -7,14 +6,6 @@ use hyle::model::{Blob, BlobData};
 mod fixtures;
 
 use anyhow::Result;
-
-pub fn load_encoded_receipt_from_file(path: &str) -> Vec<u8> {
-    let mut file = File::open(path).expect("Failed to open proof file");
-    let mut encoded_receipt = Vec::new();
-    file.read_to_end(&mut encoded_receipt)
-        .expect("Failed to read file content");
-    encoded_receipt
-}
 
 mod e2e_tx_settle {
     use hyle_contract_sdk::BlobIndex;
