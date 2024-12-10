@@ -2,7 +2,7 @@ use core::str;
 
 use hyllar::HyllarToken;
 use sdk::{erc20::ERC20Action, BlobData, BlobIndex, ContractInput, ContractName, HyleOutput};
-static HYLLAR_BIN: &[u8] = include_bytes!("../../hyllar.img");
+static HYLLAR_BIN: &[u8] = include_bytes!("../hyllar.img");
 
 fn execute(inputs: ContractInput<HyllarToken>) -> HyleOutput {
     let env = risc0_zkvm::ExecutorEnv::builder()
