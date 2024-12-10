@@ -3,7 +3,7 @@ use bincode::{Decode, Encode};
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Sha3_256};
-use std::{collections::HashMap, fmt::Display, hash::Hash, vec};
+use std::{collections::HashMap, fmt::Display, hash::Hash, io::Write, vec};
 use tracing::{debug, error, warn};
 
 use crate::{
@@ -135,7 +135,17 @@ impl Hashable<DataProposalHash> for DataProposal {
             hasher.update(parent_data_proposal_hash.0.as_bytes());
         }
         for tx in self.txs.iter() {
-            hasher.update(tx.hash().0);
+            match tx.transaction_data {
+                TransactionData::VerifiedProof(ref proof_tx) => {
+                    hasher.update(proof_tx.proof_transaction.blob_tx_hash.0.clone());
+                    hasher.update(proof_tx.proof_transaction.contract_name.0.clone());
+                    hasher.update(proof_tx.proof_hash.0.clone());
+                    _ = write!(hasher, "{:?}", proof_tx.hyle_output);
+                }
+                _ => {
+                    hasher.update(tx.hash().0);
+                }
+            }
         }
         DataProposalHash(hex::encode(hasher.finalize()))
     }
@@ -390,6 +400,9 @@ impl Storage {
             }
         }
 
+        // Remove proofs from transactions
+        data_proposal.remove_proofs();
+
         // Add DataProposal to validator's lane
         self.lane_add_data_proposal(validator, data_proposal);
 
@@ -401,10 +414,6 @@ impl Storage {
         validator: &ValidatorPublicKey,
         data_proposal: &mut DataProposal,
     ) {
-        // Remove proofs from data_proposal
-        // FIXME: if we remove proofs, we can't send the DataProposal to other nodes that want to Sync
-        // data_proposal.remove_proofs();
-
         self.lanes
             .entry(validator.clone())
             .or_default()
@@ -546,28 +555,28 @@ impl Storage {
     }
 }
 
-// impl DataProposal {
-//     /// Remove proofs from all transactions in the DataProposal
-//     fn remove_proofs(&mut self) {
-//         let mut txs_without_proofs = self.txs.clone();
-//         txs_without_proofs.iter_mut().for_each(|tx| {
-//             match &mut tx.transaction_data {
-//                 TransactionData::VerifiedProof(proof_tx) => {
-//                     proof_tx.proof_transaction.proof = Default::default();
-//                 }
-//                 TransactionData::Proof(_) => {
-//                     // This can never happen.
-//                     // A DataProposal that has been processed has turned all TransactionData::Proof into TransactionData::VerifiedProof
-//                     unreachable!();
-//                 }
-//                 TransactionData::Blob(_)
-//                 | TransactionData::Stake(_)
-//                 | TransactionData::RegisterContract(_) => {}
-//             }
-//         });
-//         self.txs = txs_without_proofs;
-//     }
-// }
+impl DataProposal {
+    /// Remove proofs from all transactions in the DataProposal
+    fn remove_proofs(&mut self) {
+        let mut txs_without_proofs = self.txs.clone();
+        txs_without_proofs.iter_mut().for_each(|tx| {
+            match &mut tx.transaction_data {
+                TransactionData::VerifiedProof(proof_tx) => {
+                    proof_tx.proof_transaction.proof = Default::default();
+                }
+                TransactionData::Proof(_) => {
+                    // This can never happen.
+                    // A DataProposal that has been processed has turned all TransactionData::Proof into TransactionData::VerifiedProof
+                    unreachable!();
+                }
+                TransactionData::Blob(_)
+                | TransactionData::Stake(_)
+                | TransactionData::RegisterContract(_) => {}
+            }
+        });
+        self.txs = txs_without_proofs;
+    }
+}
 
 impl Display for Lane {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -758,14 +767,6 @@ mod tests {
         }
     }
 
-    fn make_empty_proof_tx(contract_name: ContractName) -> ProofTransaction {
-        ProofTransaction {
-            blob_tx_hash: TxHash::default(),
-            contract_name,
-            proof: ProofData::default(),
-        }
-    }
-
     fn make_unverified_proof_tx(contract_name: ContractName) -> Transaction {
         Transaction {
             version: 1,
@@ -775,10 +776,12 @@ mod tests {
 
     fn make_verified_proof_tx(contract_name: ContractName) -> Transaction {
         let hyle_output = get_hyle_output();
+        let proof_transaction = make_proof_tx(contract_name);
         Transaction {
             version: 1,
             transaction_data: TransactionData::VerifiedProof(VerifiedProofTransaction {
-                proof_transaction: make_proof_tx(contract_name),
+                proof_hash: proof_transaction.proof.hash(),
+                proof_transaction,
                 hyle_output,
             }),
         }
@@ -786,10 +789,14 @@ mod tests {
 
     fn make_empty_verified_proof_tx(contract_name: ContractName) -> Transaction {
         let hyle_output = get_hyle_output();
+        let mut proof_transaction = make_proof_tx(contract_name);
+        let proof_hash = proof_transaction.proof.hash();
+        proof_transaction.proof = ProofData::Bytes(vec![]);
         Transaction {
             version: 1,
             transaction_data: TransactionData::VerifiedProof(VerifiedProofTransaction {
-                proof_transaction: make_empty_proof_tx(contract_name),
+                proof_hash,
+                proof_transaction,
                 hyle_output,
             }),
         }
@@ -819,6 +826,31 @@ mod tests {
                 contract_name: name,
             }),
         }
+    }
+
+    #[test_log::test]
+    fn test_data_proposal_hash_with_verified_proof() {
+        let contract_name = ContractName("test".to_string());
+
+        let proof_tx_with_proof = make_verified_proof_tx(contract_name.clone());
+        let proof_tx_without_proof = make_empty_verified_proof_tx(contract_name.clone());
+
+        let data_proposal_with_proof = DataProposal {
+            id: 0,
+            parent_data_proposal_hash: None,
+            txs: vec![proof_tx_with_proof],
+        };
+
+        let data_proposal_without_proof = DataProposal {
+            id: 0,
+            parent_data_proposal_hash: None,
+            txs: vec![proof_tx_without_proof],
+        };
+
+        let hash_with_proof = data_proposal_with_proof.hash();
+        let hash_without_proof = data_proposal_without_proof.hash();
+
+        assert_eq!(hash_with_proof, hash_without_proof);
     }
 
     #[test_log::test]
@@ -1364,7 +1396,6 @@ mod tests {
         assert_eq!(verdict, DataProposalVerdict::Vote);
     }
 
-    #[ignore = "Unignore when we have a way to handle removal of proofs in DataProposals"]
     #[test_log::test]
     fn test_new_data_proposal_with_register_tx_in_previous_uncommitted_car() {
         let crypto1 = crypto::BlstCrypto::new("1".to_owned());
@@ -1406,7 +1437,6 @@ mod tests {
         assert!(store1.lane_has_data_proposal(pubkey1, &saved_data_proposal.hash()));
     }
 
-    #[ignore = "Unignore when we have a way to handle removal of proofs in DataProposals"]
     #[test_log::test]
     fn test_register_contract_and_proof_tx_in_same_car() {
         let crypto1 = crypto::BlstCrypto::new("1".to_owned());
