@@ -9,11 +9,11 @@ use tracing::{debug, error, info};
 use crate::{
     bus::BusMessage,
     data_availability::DataEvent,
-    handle_messages,
     model::{
         Blob, BlobTransaction, Block, CommonRunContext, Hashable, RegisterContractTransaction,
         Transaction, TransactionData,
     },
+    module_handle_messages,
     node_state::NodeState,
     utils::{conf::Conf, modules::Module},
 };
@@ -71,9 +71,6 @@ where
         + 'static,
 {
     type Context = ContractStateIndexerCtx;
-    fn name() -> &'static str {
-        stringify!(Indexer)
-    }
 
     async fn build(ctx: Self::Context) -> Result<Self> {
         let bus = IndexerBusClient::new_from_bus(ctx.common.bus.new_handle()).await;
@@ -125,9 +122,8 @@ where
         + 'static,
 {
     pub async fn start(&mut self) -> Result<(), Error> {
-        handle_messages! {
+        module_handle_messages! {
         on_bus self.bus,
-        break_on(stringify!(Indexer))
         listen<DataEvent> cmd => {
             if let Err(e) = self.handle_data_availability_event(cmd).await {
                 error!(cn = %self.contract_name, "Error while handling data availability event: {:#}", e)
@@ -142,7 +138,6 @@ where
         ) {
             tracing::warn!(cn = %self.contract_name, "Failed to save contract state indexer on disk: {}", e);
         }
-        _ = self.bus.shutdown_complete();
         Ok(())
     }
 

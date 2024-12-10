@@ -14,18 +14,13 @@ use serde::{Deserialize, Serialize};
 use tower_http::trace::TraceLayer;
 use tracing::info;
 
-use crate::{
-    bus::{BusClientSender, SharedMessageBus},
-    handle_messages,
-    utils::modules::module_bus_client,
-};
+use crate::{bus::SharedMessageBus, module_handle_messages, utils::modules::module_bus_client};
 use crate::{model::ValidatorPublicKey, utils::modules::Module};
 
 pub mod client;
 
 module_bus_client! {
     struct RestBusClient {
-        module: RestApi,
     }
 }
 
@@ -55,10 +50,6 @@ pub struct RestApi {
 }
 
 impl Module for RestApi {
-    fn name() -> &'static str {
-        "RestApi"
-    }
-
     type Context = RestApiRunContext;
 
     async fn build(ctx: Self::Context) -> Result<Self> {
@@ -94,9 +85,8 @@ impl RestApi {
     pub async fn serve(&mut self) -> Result<()> {
         info!("rest listening on {}", self.rest_addr);
 
-        handle_messages! {
+        module_handle_messages! {
             on_bus self.bus,
-            break_on(stringify!(RestApi))
             _ = axum::serve(
                 tokio::net::TcpListener::bind(&self.rest_addr)
                     .await
@@ -104,8 +94,6 @@ impl RestApi {
                 self.app.take().expect("app is not set")
             ) => { }
         }
-
-        _ = self.bus.shutdown_complete();
 
         Ok(())
     }

@@ -8,6 +8,7 @@ use crate::genesis::{Genesis, GenesisEvent};
 use crate::mempool::storage::Cut;
 use crate::mempool::{MempoolNetMessage, QueryNewCut};
 use crate::model::Hashable;
+use crate::module_handle_messages;
 use crate::p2p::network::{NetMessage, OutboundMessage, SignedByValidator};
 use crate::utils::conf::SharedConf;
 use crate::utils::crypto::{BlstCrypto, SharedBlstCrypto};
@@ -19,7 +20,6 @@ use tracing::warn;
 
 module_bus_client! {
 struct SingleNodeConsensusBusClient {
-    module: SingleNodeConsensus,
     sender(ConsensusEvent),
     sender(GenesisEvent),
     sender(SignedByValidator<MempoolNetMessage>),
@@ -51,10 +51,6 @@ pub struct SingleNodeConsensus {
 /// - For every DataProposal received, it saves it automatically as a `Car`.
 /// - For every slot_duration tick, it is able to retrieve a `Car`s and create a new `CommitCut`
 impl Module for SingleNodeConsensus {
-    fn name() -> &'static str {
-        "SingleNodeConsensus"
-    }
-
     type Context = SharedRunContext;
 
     async fn build(ctx: Self::Context) -> Result<Self> {
@@ -112,9 +108,8 @@ impl SingleNodeConsensus {
         ));
         interval.tick().await; // First tick is immediate
 
-        handle_messages! {
+        module_handle_messages! {
             on_bus self.bus,
-            break_on(stringify!(SingleNodeConsensus))
             command_response<QueryConsensusInfo, ConsensusInfo> _ => {
                 let slot = 0;
                 let view = 0;
@@ -141,8 +136,6 @@ impl SingleNodeConsensus {
                 );
             }
         }
-
-        _ = self.bus.shutdown_complete();
 
         Ok(())
     }

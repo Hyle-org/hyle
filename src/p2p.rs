@@ -3,9 +3,10 @@
 use std::{sync::Arc, time::Duration};
 
 use crate::{
-    bus::{BusClientSender, BusMessage, SharedMessageBus},
+    bus::{BusMessage, SharedMessageBus},
     handle_messages,
     model::SharedRunContext,
+    module_handle_messages,
     utils::{
         conf::SharedConf,
         crypto::SharedBlstCrypto,
@@ -29,7 +30,6 @@ impl BusMessage for P2PCommand {}
 
 module_bus_client! {
 struct P2PBusClient {
-    module: P2P,
     receiver(P2PCommand),
 }
 }
@@ -43,10 +43,6 @@ pub struct P2P {
 }
 
 impl Module for P2P {
-    fn name() -> &'static str {
-        "P2P"
-    }
-
     type Context = SharedRunContext;
 
     async fn build(ctx: Self::Context) -> Result<Self> {
@@ -149,9 +145,8 @@ impl P2P {
             self.spawn_peer(peer);
         }
 
-        handle_messages! {
+        module_handle_messages! {
             on_bus self.bus_client,
-            break_on(stringify!(P2P))
             listen<P2PCommand> cmd => {
                  self.handle_command(cmd)
             }
@@ -191,7 +186,6 @@ impl P2P {
                 }
             }
         }
-        _ = self.bus_client.shutdown_complete();
         Ok(())
     }
 }

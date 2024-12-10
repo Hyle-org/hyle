@@ -1,7 +1,8 @@
 use std::{any::type_name, fs, future::Future, path::Path, pin::Pin, time::Duration};
 
 use crate::{
-    bus::{BusClientSender, SharedMessageBus},
+    bus::{bus_client, BusClientSender, SharedMessageBus},
+    genesis::Genesis,
     handle_messages,
     utils::logger::LogMe,
 };
@@ -18,7 +19,6 @@ where
 {
     type Context;
 
-    fn name() -> &'static str;
     fn build(ctx: Self::Context) -> impl futures::Future<Output = Result<Self>> + Send;
     fn run(&mut self) -> impl futures::Future<Output = Result<()>> + Send;
 
@@ -67,7 +67,7 @@ where
             .take(8)
             .map(char::from)
             .collect();
-        let tmp = format!("{}.{}.data.tmp", salt, Self::name());
+        let tmp = format!("{}.{}.data.tmp", salt, type_name::<Self>());
         debug!("Saving on disk in a tmp file {}", tmp.clone());
         let tmp = folder.join(tmp.clone());
         let mut writer = fs::File::create(tmp.as_path()).log_error("Create file")?;
@@ -81,15 +81,6 @@ where
 struct ModuleStarter {
     pub name: &'static str,
     starter: Pin<Box<dyn Future<Output = Result<(), Error>> + Send + 'static>>,
-}
-
-impl ModuleStarter {
-    fn start(self) -> Result<JoinHandle<Result<(), Error>>, std::io::Error> {
-        info!("Starting module {}", self.name);
-        tokio::task::Builder::new()
-            .name(self.name)
-            .spawn(self.starter)
-    }
 }
 
 pub mod signal {
@@ -107,11 +98,27 @@ pub mod signal {
     impl BusMessage for ShutdownCompleted {}
 }
 
+#[macro_export]
+macro_rules! module_handle_messages {
+    (on_bus $bus:expr, $($rest:tt)*) => {
+
+        $crate::handle_messages! {
+            on_bus $bus,
+            listen<$crate::utils::modules::signal::ShutdownModule> shutdown_event => {
+                if shutdown_event.module == std::any::type_name::<Self>() {
+                    tracing::warn!("Break signal received for module {}", shutdown_event.module);
+                    break;
+                }
+            }
+            $($rest)*
+        }
+    };
+}
+
 macro_rules! module_bus_client {
     (
         $(#[$meta:meta])*
         $pub:vis struct $name:ident {
-            $(module: $module:ty,)?
             $(sender($sender:ty),)*
             $(receiver($receiver:ty),)*
         }
@@ -119,42 +126,30 @@ macro_rules! module_bus_client {
         $crate::bus::bus_client!{
             $(#[$meta])*
             $pub struct $name {
-                sender($crate::utils::modules::signal::ShutdownCompleted),
-                sender($crate::utils::modules::signal::ShutdownModule),
                 $(sender($sender),)*
                 $(receiver($receiver),)*
-                receiver($crate::utils::modules::signal::ShutdownCompleted),
                 receiver($crate::utils::modules::signal::ShutdownModule),
             }
-        }
-
-        impl $name {
-            #[allow(unused)]
-             pub fn shutdown(&mut self, module_name: String) -> Result<()> {
-                _ = self.send($crate::utils::modules::signal::ShutdownModule { module: module_name })?;
-                Ok(())
-            }
-            $(
-            #[allow(unused)]
-             pub fn shutdown_complete(&mut self) -> Result<()> {
-                _ = self.send($crate::utils::modules::signal::ShutdownCompleted { module: stringify!($module).to_string() })?;
-                Ok(())
-            }
-            )?
         }
     }
 }
 
 pub(crate) use module_bus_client;
 
-module_bus_client! {
-    pub struct ShutdownClient {}
+bus_client! {
+    pub struct ShutdownClient {
+        sender(signal::ShutdownModule),
+        sender(signal::ShutdownCompleted),
+        receiver(signal::ShutdownCompleted),
+    }
 }
 
 impl ShutdownClient {
     pub async fn shutdown_module(&mut self, module_name: &str) {
         _ = self
-            .shutdown(module_name.to_string())
+            .send(signal::ShutdownModule {
+                module: module_name.to_string(),
+            })
             .log_error("Shutting down module");
 
         handle_messages! {
@@ -170,17 +165,17 @@ impl ShutdownClient {
 }
 
 pub struct ModulesHandler {
-    bus: ShutdownClient,
+    bus: SharedMessageBus,
     modules: Vec<ModuleStarter>,
     started_modules: Vec<&'static str>,
 }
 
 impl ModulesHandler {
     pub async fn new(shared_bus: &SharedMessageBus) -> ModulesHandler {
-        let shutdown_client = ShutdownClient::new_from_bus(shared_bus.new_handle()).await;
+        let shared_message_bus = shared_bus.new_handle();
 
         ModulesHandler {
-            bus: shutdown_client,
+            bus: shared_message_bus,
             modules: vec![],
             started_modules: vec![],
         }
@@ -191,7 +186,21 @@ impl ModulesHandler {
 
         for module in self.modules.drain(..) {
             self.started_modules.push(module.name);
-            let handle = module.start()?;
+            let mut shutdown_client = ShutdownClient::new_from_bus(self.bus.new_handle()).await;
+
+            info!("Starting module {}", module.name);
+            let handle = tokio::task::Builder::new()
+                .name(module.name)
+                .spawn(async move {
+                    _ = module.starter.await;
+                    _ = shutdown_client
+                        .send(signal::ShutdownCompleted {
+                            module: module.name.to_string(),
+                        })
+                        .log_error("Sending ShutdownCompleted message");
+                    Ok(())
+                })?;
+
             tasks.push(handle);
         }
 
@@ -204,9 +213,11 @@ impl ModulesHandler {
 
     /// Shutdown modules in reverse order (start A, B, C, shutdown C, B, A)
     pub async fn shutdown_modules(&mut self, timeout: Duration) -> Result<()> {
+        let mut shutdown_client = ShutdownClient::new_from_bus(self.bus.new_handle()).await;
+
         for module_name in self.started_modules.drain(..).rev() {
-            if !["Genesis"].contains(&module_name) {
-                _ = tokio::time::timeout(timeout, self.bus.shutdown_module(module_name))
+            if ![std::any::type_name::<Genesis>()].contains(&module_name) {
+                _ = tokio::time::timeout(timeout, shutdown_client.shutdown_module(module_name))
                     .await
                     .log_error(format!("Shutting down module {module_name}"));
             }
@@ -237,7 +248,7 @@ impl ModulesHandler {
         <M as Module>::Context: std::marker::Send,
     {
         self.modules.push(ModuleStarter {
-            name: M::name(),
+            name: type_name::<M>(),
             starter: Box::pin(Self::run_module(module)),
         });
         Ok(())
@@ -246,13 +257,9 @@ impl ModulesHandler {
 
 #[cfg(test)]
 mod tests {
-    use crate::{
-        bus::{dont_use_this::get_receiver, metrics::BusMetrics},
-        handle_messages,
-    };
+    use crate::bus::{dont_use_this::get_receiver, metrics::BusMetrics};
 
     use super::*;
-    use crate::bus::BusClientSender;
     use crate::bus::SharedMessageBus;
     use signal::ShutdownModule;
     use std::fs::File;
@@ -263,34 +270,29 @@ mod tests {
         value: u32,
     }
 
-    struct TestModule {
+    struct TestModule<T> {
         bus: TestBusClient,
+        _field: T,
     }
 
     module_bus_client! {
-        struct TestBusClient {
-            module: TestModule,
-        }
+        struct TestBusClient { }
     }
 
-    impl Module for TestModule {
+    impl Module for TestModule<usize> {
         type Context = TestBusClient;
-
-        fn name() -> &'static str {
-            "TestModule"
-        }
-
         async fn build(_ctx: Self::Context) -> Result<Self> {
-            Ok(TestModule { bus: _ctx })
+            Ok(TestModule {
+                bus: _ctx,
+                _field: 1,
+            })
         }
 
         async fn run(&mut self) -> Result<()> {
-            handle_messages! {
+            module_handle_messages! {
                 on_bus self.bus,
-                break_on(stringify!(TestModule))
             }
 
-            _ = self.bus.shutdown_complete();
             Ok(())
         }
     }
@@ -300,28 +302,19 @@ mod tests {
     }
 
     module_bus_client! {
-        struct TestBusClient2 {
-            module: TestModule2,
-        }
+        struct TestBusClient2 { }
     }
 
     impl Module for TestModule2 {
         type Context = TestBusClient2;
-
-        fn name() -> &'static str {
-            "TestModule2"
-        }
-
         async fn build(_ctx: Self::Context) -> Result<Self> {
             Ok(TestModule2 { bus: _ctx })
         }
 
         async fn run(&mut self) -> Result<()> {
-            handle_messages! {
+            module_handle_messages! {
                 on_bus self.bus,
-                break_on(stringify!(TestModule2))
             }
-            _ = self.bus.shutdown_complete();
             Ok(())
         }
     }
@@ -365,7 +358,9 @@ mod tests {
         let shared_bus = SharedMessageBus::new(BusMetrics::global("id".to_string()));
         let mut handler = ModulesHandler::new(&shared_bus).await;
         handler
-            .build_module::<TestModule>(TestBusClient::new_from_bus(shared_bus.new_handle()).await)
+            .build_module::<TestModule2>(
+                TestBusClient2::new_from_bus(shared_bus.new_handle()).await,
+            )
             .await
             .unwrap();
         assert_eq!(handler.modules.len(), 1);
@@ -375,8 +370,8 @@ mod tests {
     async fn test_add_module() {
         let shared_bus = SharedMessageBus::new(BusMetrics::global("id".to_string()));
         let mut handler = ModulesHandler::new(&shared_bus).await;
-        let module = TestModule {
-            bus: TestBusClient::new_from_bus(shared_bus.new_handle()).await,
+        let module = TestModule2 {
+            bus: TestBusClient2::new_from_bus(shared_bus.new_handle()).await,
         };
 
         handler.add_module(module).unwrap();
@@ -397,7 +392,9 @@ mod tests {
         let mut shutdown_completed_receiver = get_receiver::<ShutdownCompleted>(&shared_bus).await;
         let mut handler = ModulesHandler::new(&shared_bus).await;
         handler
-            .build_module::<TestModule>(TestBusClient::new_from_bus(shared_bus.new_handle()).await)
+            .build_module::<TestModule<usize>>(
+                TestBusClient::new_from_bus(shared_bus.new_handle()).await,
+            )
             .await
             .unwrap();
         let handle = handler.start_modules();
@@ -408,12 +405,12 @@ mod tests {
 
         assert_eq!(
             shutdown_receiver.recv().await.unwrap().module,
-            "TestModule".to_string()
+            std::any::type_name::<TestModule<usize>>().to_string()
         );
 
         assert_eq!(
             shutdown_completed_receiver.recv().await.unwrap().module,
-            "TestModule".to_string()
+            std::any::type_name::<TestModule<usize>>().to_string()
         );
     }
 
@@ -425,7 +422,9 @@ mod tests {
         let mut handler = ModulesHandler::new(&shared_bus).await;
 
         handler
-            .build_module::<TestModule>(TestBusClient::new_from_bus(shared_bus.new_handle()).await)
+            .build_module::<TestModule<usize>>(
+                TestBusClient::new_from_bus(shared_bus.new_handle()).await,
+            )
             .await
             .unwrap();
         handler
@@ -443,23 +442,23 @@ mod tests {
         // Shutdown last module first
         assert_eq!(
             shutdown_receiver.recv().await.unwrap().module,
-            "TestModule2".to_string()
+            std::any::type_name::<TestModule2>().to_string()
         );
 
         assert_eq!(
             shutdown_completed_receiver.recv().await.unwrap().module,
-            "TestModule2".to_string()
+            std::any::type_name::<TestModule2>().to_string()
         );
 
         // Then first module at last
         assert_eq!(
             shutdown_receiver.recv().await.unwrap().module,
-            "TestModule".to_string()
+            std::any::type_name::<TestModule<usize>>().to_string()
         );
 
         assert_eq!(
             shutdown_completed_receiver.recv().await.unwrap().module,
-            "TestModule".to_string()
+            std::any::type_name::<TestModule<usize>>().to_string()
         );
     }
 }
