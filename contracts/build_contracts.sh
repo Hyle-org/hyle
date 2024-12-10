@@ -14,7 +14,7 @@ build_contract() {
     local IMG_OUTPUT_PATH=$3
     local TXT_OUTPUT_PATH=$4
 
-    read IMAGE FILE_PATH <<< $(cargo risczero build --manifest-path $MANIFEST_PATH | grep ImageID | awk -F 'ImageID: | - ' '{gsub(/"/, "", $3); print $2, $3}')
+    read IMAGE FILE_PATH <<< $(cargo risczero build --features risc0 --manifest-path $MANIFEST_PATH | grep ImageID | awk -F 'ImageID: | - ' '{gsub(/"/, "", $3); print $2, $3}')
     cp $FILE_PATH $IMG_OUTPUT_PATH
     echo $IMAGE > $TXT_OUTPUT_PATH
 
@@ -39,18 +39,18 @@ fi
 
 case "$1" in
     hydentity)
-        build_contract "Hydentity" "contracts/hydentity/guest/Cargo.toml" "./contracts/hydentity/hydentity.img" "./contracts/hydentity/hydentity.txt"
+        build_contract "Hydentity" "contracts/hydentity/Cargo.toml" "./contracts/hydentity/hydentity.img" "./contracts/hydentity/hydentity.txt"
         ;;
     hyllar)
-        build_contract "Hyllar" "contracts/hyllar/guest/Cargo.toml" "./contracts/hyllar/hyllar.img" "./contracts/hyllar/hyllar.txt"
+        build_contract "Hyllar" "contracts/hyllar/Cargo.toml" "./contracts/hyllar/hyllar.img" "./contracts/hyllar/hyllar.txt"
         ;;
     amm)
-        build_contract "amm" "contracts/amm/guest/Cargo.toml" "./contracts/amm/amm.img" "./contracts/amm/amm.txt"
+        build_contract "amm" "contracts/amm/Cargo.toml" "./contracts/amm/amm.img" "./contracts/amm/amm.txt"
         ;;
     "" | all)
-        build_contract "Hydentity" "contracts/hydentity/guest/Cargo.toml" "./contracts/hydentity/hydentity.img" "./contracts/hydentity/hydentity.txt"
-        build_contract "Hyllar" "contracts/hyllar/guest/Cargo.toml" "./contracts/hyllar/hyllar.img" "./contracts/hyllar/hyllar.txt"
-        build_contract "amm" "contracts/amm/guest/Cargo.toml" "./contracts/amm/amm.img" "./contracts/amm/amm.txt"
+        build_contract "Hydentity" "contracts/hydentity/Cargo.toml" "./contracts/hydentity/hydentity.img" "./contracts/hydentity/hydentity.txt"
+        build_contract "Hyllar" "contracts/hyllar/Cargo.toml" "./contracts/hyllar/hyllar.img" "./contracts/hyllar/hyllar.txt"
+        build_contract "amm" "contracts/amm/Cargo.toml" "./contracts/amm/amm.img" "./contracts/amm/amm.txt"
         ;;
     *)
         echo "Invalid option: $1"
