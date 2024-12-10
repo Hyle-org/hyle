@@ -482,6 +482,7 @@ mod test {
         };
 
         let verified_proof_c1 = VerifiedProofTransaction {
+            proof_hash: proof_c1.proof.hash(),
             hyle_output: state.verify_proof(&proof_c1).unwrap(),
             proof_transaction: proof_c1,
         };
@@ -495,6 +496,7 @@ mod test {
         };
 
         let verified_proof_c2 = VerifiedProofTransaction {
+            proof_hash: proof_c2.proof.hash(),
             hyle_output: state.verify_proof(&proof_c2).unwrap(),
             proof_transaction: proof_c2,
         };
@@ -534,6 +536,7 @@ mod test {
         };
 
         let verified_proof_c1 = VerifiedProofTransaction {
+            proof_hash: proof_c1.proof.hash(),
             hyle_output: state.verify_proof(&proof_c1).unwrap(),
             proof_transaction: proof_c1,
         };
@@ -573,6 +576,7 @@ mod test {
         };
 
         let verified_proof_c1 = VerifiedProofTransaction {
+            proof_hash: proof_c1.proof.hash(),
             hyle_output: state.verify_proof(&proof_c1).unwrap(),
             proof_transaction: proof_c1,
         };
@@ -624,6 +628,7 @@ mod test {
         };
 
         let verified_first_proof = VerifiedProofTransaction {
+            proof_hash: first_proof.proof.hash(),
             hyle_output: state.verify_proof(&first_proof).unwrap(),
             proof_transaction: first_proof,
         };
@@ -639,6 +644,7 @@ mod test {
         };
 
         let verified_second_proof = VerifiedProofTransaction {
+            proof_hash: second_proof.proof.hash(),
             hyle_output: state.verify_proof(&second_proof).unwrap(),
             proof_transaction: second_proof,
         };
@@ -654,6 +660,7 @@ mod test {
         };
 
         let verified_third_proof = VerifiedProofTransaction {
+            proof_hash: third_proof.proof.hash(),
             hyle_output: state.verify_proof(&third_proof).unwrap(),
             proof_transaction: third_proof,
         };
@@ -692,6 +699,7 @@ mod test {
         };
 
         VerifiedProofTransaction {
+            proof_hash: proof.proof.hash(),
             hyle_output: state.verify_proof(&proof).unwrap(),
             proof_transaction: proof,
         }
@@ -797,6 +805,7 @@ mod test {
         };
 
         let verified_first_proof = VerifiedProofTransaction {
+            proof_hash: first_proof.proof.hash(),
             hyle_output: state.verify_proof(&first_proof).unwrap(),
             proof_transaction: first_proof,
         };
@@ -813,6 +822,7 @@ mod test {
         };
 
         let another_verified_first_proof = VerifiedProofTransaction {
+            proof_hash: another_first_proof.proof.hash(),
             hyle_output: state.verify_proof(&another_first_proof).unwrap(),
             proof_transaction: another_first_proof,
         };
@@ -828,6 +838,7 @@ mod test {
         };
 
         let verified_second_proof = VerifiedProofTransaction {
+            proof_hash: second_proof.proof.hash(),
             hyle_output: state.verify_proof(&second_proof).unwrap(),
             proof_transaction: second_proof,
         };
@@ -875,6 +886,7 @@ mod test {
         };
 
         let verified_first_proof = VerifiedProofTransaction {
+            proof_hash: first_proof.proof.hash(),
             hyle_output: state.verify_proof(&first_proof).unwrap(),
             proof_transaction: first_proof,
         };
@@ -890,6 +902,7 @@ mod test {
         };
 
         let verified_second_proof = VerifiedProofTransaction {
+            proof_hash: second_proof.proof.hash(),
             hyle_output: state.verify_proof(&second_proof).unwrap(),
             proof_transaction: second_proof,
         };
@@ -905,6 +918,7 @@ mod test {
         };
 
         let verified_third_proof = VerifiedProofTransaction {
+            proof_hash: third_proof.proof.hash(),
             hyle_output: state.verify_proof(&third_proof).unwrap(),
             proof_transaction: third_proof,
         };

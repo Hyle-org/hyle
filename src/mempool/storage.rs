@@ -67,6 +67,7 @@ impl Hashable<DataProposalHash> for DataProposal {
                 TransactionData::VerifiedProof(ref proof_tx) => {
                     hasher.update(proof_tx.proof_transaction.blob_tx_hash.0.clone());
                     hasher.update(proof_tx.proof_transaction.contract_name.0.clone());
+                    hasher.update(proof_tx.proof_hash.0.clone());
                     _ = write!(hasher, "{:?}", proof_tx.hyle_output);
                 }
                 _ => {
@@ -694,14 +695,6 @@ mod tests {
         }
     }
 
-    fn make_empty_proof_tx(contract_name: ContractName) -> ProofTransaction {
-        ProofTransaction {
-            blob_tx_hash: TxHash::default(),
-            contract_name,
-            proof: ProofData::default(),
-        }
-    }
-
     fn make_unverified_proof_tx(contract_name: ContractName) -> Transaction {
         Transaction {
             version: 1,
@@ -711,10 +704,12 @@ mod tests {
 
     fn make_verified_proof_tx(contract_name: ContractName) -> Transaction {
         let hyle_output = get_hyle_output();
+        let proof_transaction = make_proof_tx(contract_name);
         Transaction {
             version: 1,
             transaction_data: TransactionData::VerifiedProof(VerifiedProofTransaction {
-                proof_transaction: make_proof_tx(contract_name),
+                proof_hash: proof_transaction.proof.hash(),
+                proof_transaction,
                 hyle_output,
             }),
         }
@@ -722,10 +717,14 @@ mod tests {
 
     fn make_empty_verified_proof_tx(contract_name: ContractName) -> Transaction {
         let hyle_output = get_hyle_output();
+        let mut proof_transaction = make_proof_tx(contract_name);
+        let proof_hash = proof_transaction.proof.hash();
+        proof_transaction.proof = ProofData::Bytes(vec![]);
         Transaction {
             version: 1,
             transaction_data: TransactionData::VerifiedProof(VerifiedProofTransaction {
-                proof_transaction: make_empty_proof_tx(contract_name),
+                proof_hash,
+                proof_transaction,
                 hyle_output,
             }),
         }
