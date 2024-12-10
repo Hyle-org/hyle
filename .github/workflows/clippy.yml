@@ -25,4 +25,4 @@ jobs:
         with:
           deny: warnings
           token: ${{ secrets.GITHUB_TOKEN }}
-        options: ["--all-targets", "--all-features"]
+          options: "--all-targets --all-features"
