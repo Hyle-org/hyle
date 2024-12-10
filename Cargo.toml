@@ -104,10 +104,6 @@ hyrun = { path = "./crates/hyrun" }
 [features]
 dhat = ["dep:dhat"]
 
-[profile.fastdebug]
-inherits = "dev"
-opt-level = 1
-
 [profile.release]
 lto = "thin"
 incremental = true
