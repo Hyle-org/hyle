@@ -1,17 +1,15 @@
 //! State required for participation in consensus by the node.
 
-use crate::{
-    consensus::staking::Staker,
-    model::{
-        BlobTransaction, BlobsHash, Block, BlockHeight, ContractName, HandledBlockOutput, Hashable,
-        ProofTransaction, RegisterContractTransaction, TransactionData, VerifiedProofTransaction,
-    },
+use crate::model::{
+    BlobTransaction, BlobsHash, Block, BlockHeight, ContractName, HandledBlockOutput, Hashable,
+    ProofTransaction, RegisterContractTransaction, TransactionData, VerifiedProofTransaction,
 };
 use anyhow::{bail, Context, Error, Result};
 use bincode::{Decode, Encode};
 use hyle_contract_sdk::{HyleOutput, StateDigest, TxHash};
 use model::{Contract, Timeouts, UnsettledBlobMetadata, UnsettledBlobTransaction};
 use ordered_tx_map::OrderedTxMap;
+use staking::Staker;
 use std::collections::HashMap;
 use tracing::{debug, error, info};
 

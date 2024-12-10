@@ -6,13 +6,13 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     bus::{bus_client, metrics::BusMetrics, BusClientSender, BusMessage},
-    consensus::staking::Staker,
     model::{
         BlobTransaction, CommonRunContext, Hashable, ProofData, ProofTransaction,
         RegisterContractTransaction, Transaction, TransactionData,
     },
     rest::AppError,
 };
+use staking::Staker;
 
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode)]
 pub enum RestApiMessage {

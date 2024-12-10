@@ -4,7 +4,7 @@ use fixtures::ctx::E2ECtx;
 mod fixtures;
 
 mod e2e_consensus {
-    use hyle::consensus::staking::{Stake, Staker};
+    use staking::{Stake, Staker};
 
     use super::*;
 

@@ -1,9 +1,10 @@
 use anyhow::{Context, Result};
 use hyle_contract_sdk::TxHash;
 use reqwest::{Response, Url};
+use staking::Staker;
 
 use crate::{
-    consensus::{staking::Staker, ConsensusInfo},
+    consensus::ConsensusInfo,
     indexer::model::ContractDb,
     model::{
         BlobTransaction, BlockHeight, ContractName, ProofTransaction, RegisterContractTransaction,

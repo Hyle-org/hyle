@@ -2,7 +2,6 @@ use std::collections::BTreeMap;
 
 use crate::{
     bus::{bus_client, BusClientSender, BusMessage},
-    consensus::staking::{Stake, Staker},
     handle_messages,
     model::{
         RegisterContractTransaction, SharedRunContext, Transaction, TransactionData,
@@ -16,6 +15,7 @@ use hyle_contract_sdk::erc20::ERC20;
 use hyle_contract_sdk::identity_provider::IdentityVerification;
 use hyle_contract_sdk::Digestable;
 use serde::{Deserialize, Serialize};
+use staking::{Stake, Staker};
 use tracing::info;
 
 #[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]

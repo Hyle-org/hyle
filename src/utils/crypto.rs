@@ -71,7 +71,7 @@ impl BlstCrypto {
         ikm[..len].copy_from_slice(&validator_name_bytes[..len]);
 
         let sk = SecretKey::key_gen(&ikm, &[]).unwrap();
-        let validator_pubkey = sk.sk_to_pk().into();
+        let validator_pubkey = as_validator_pubkey(sk.sk_to_pk());
 
         BlstCrypto {
             sk,
@@ -158,7 +158,7 @@ impl BlstCrypto {
             msg: msg.clone(),
             signature: AggregateSignature {
                 signature: sig.to_signature().into(),
-                validators: vec![pk.to_public_key().into()],
+                validators: vec![as_validator_pubkey(pk.to_public_key())],
             },
         })
         .map_err(|e| anyhow!("Failed for verify new aggregated signature! Reason: {e}"))?;
@@ -243,10 +243,8 @@ impl From<BlstSignature> for network::Signature {
     }
 }
 
-impl From<PublicKey> for ValidatorPublicKey {
-    fn from(pk: PublicKey) -> Self {
-        ValidatorPublicKey(pk.compress().as_slice().to_vec())
-    }
+fn as_validator_pubkey(pk: PublicKey) -> ValidatorPublicKey {
+    ValidatorPublicKey(pk.compress().as_slice().to_vec())
 }
 
 #[cfg(test)]
