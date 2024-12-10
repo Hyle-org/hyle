@@ -128,25 +128,6 @@ impl Module for DataAvailability {
             }
         }
 
-        #[cfg(not(test))]
-        let db = sled::Config::new()
-            .use_compression(true)
-            .compression_factor(3)
-            .path(
-                ctx.common
-                    .config
-                    .data_directory
-                    .join("data_availability.db"),
-            )
-            .open()
-            .context("opening the database")?;
-
-        #[cfg(test)]
-        let db = sled::Config::new()
-            .use_compression(false)
-            .open()
-            .context("opening the database")?;
-
         let buffered_blocks = BTreeSet::new();
         let self_pubkey = ctx.node.crypto.validator_pubkey().clone();
 
@@ -161,7 +142,7 @@ impl Module for DataAvailability {
         Ok(DataAvailability {
             config: ctx.common.config.clone(),
             bus,
-            blocks: Blocks::new(&db)?,
+            blocks: Blocks::new(Some(&ctx.common.config.data_directory.join("blocks.bin")))?,
             buffered_blocks,
             self_pubkey,
             asked_last_block: None,
@@ -276,7 +257,7 @@ impl DataAvailability {
 
                 trace!("📡  Sending block {:?} to peer {}", &hash, &peer_ip);
                 if let Some(hash) = hash {
-                    if let Ok(Some(block)) = self.blocks.get(hash)
+                    if let Some(block) = self.blocks.get(hash)
                     {
                         let bytes: bytes::Bytes =
                             bincode::encode_to_vec(block, bincode::config::standard())?.into();
@@ -306,13 +287,11 @@ impl DataAvailability {
         match msg {
             DataNetMessage::QueryBlock { respond_to, hash } => {
                 self.blocks.get(hash).map(|block| {
-                    if let Some(block) = block {
-                        _ = self.bus.send(OutboundMessage::send(
-                            respond_to,
-                            DataNetMessage::QueryBlockResponse { block },
-                        ));
-                    }
-                })?;
+                    _ = self.bus.send(OutboundMessage::send(
+                        respond_to,
+                        DataNetMessage::QueryBlockResponse { block },
+                    ));
+                });
             }
             DataNetMessage::QueryBlockResponse { block } => {
                 debug!(
@@ -368,12 +347,7 @@ impl DataAvailability {
         }
         // if new block is not the next block in the chain, buffer
         if self.blocks.last().is_some() {
-            if self
-                .blocks
-                .get(block.parent_hash.clone())
-                .unwrap_or(None)
-                .is_none()
-            {
+            if self.blocks.get(block.parent_hash.clone()).is_none() {
                 debug!(
                     "Parent block '{}' not found for block hash='{}' height {}",
                     block.parent_hash,
@@ -575,21 +549,17 @@ impl DataAvailability {
         let mut block_hashes: Vec<BlockHash> = self
             .blocks
             .range(
-                blocks::BlocksOrdKey(BlockHeight(start_height)),
-                blocks::BlocksOrdKey(
-                    self.blocks
-                        .last()
-                        .map_or(BlockHeight(start_height), |block| block.height)
-                        + 1,
-                ),
-            )
-            .filter_map(|block| {
-                block
-                    .map(|b| b.value().map_or(BlockHash::new(""), |i| i.hash()))
-                    .ok()
-            })
+                BlockHeight(start_height),
+                self.blocks
+                    .last()
+                    .map_or(BlockHeight(start_height), |block| block.height)
+                    + 1,
+            )?
+            .map(|block| block.0)
+            .cloned()
             .collect();
         block_hashes.reverse();
+        info!("📡  Sending {:?} blocks to peer {}", block_hashes, &peer_ip);
 
         catchup_sender.send((block_hashes, peer_ip.clone())).await?;
 
@@ -612,6 +582,7 @@ mod tests {
     use hyle_contract_sdk::Identity;
     use tokio::io::AsyncWriteExt;
     use tokio_util::codec::{Framed, LengthDelimitedCodec};
+    use tracing::info;
 
     use super::{blocks::Blocks, module_bus_client};
     use anyhow::Result;
@@ -619,8 +590,7 @@ mod tests {
     #[test]
     fn test_blocks() -> Result<()> {
         let tmpdir = tempfile::Builder::new().prefix("history-tests").tempdir()?;
-        let db = sled::open(tmpdir.path().join("history"))?;
-        let mut blocks = Blocks::new(&db)?;
+        let mut blocks = Blocks::new(None)?;
         let block = Block {
             parent_hash: BlockHash::new("0123456789abcdef"),
             height: BlockHeight(1),
@@ -639,7 +609,7 @@ mod tests {
         };
         blocks.put(block.clone())?;
         assert!(blocks.last().unwrap().height == block.height);
-        let last = blocks.get(block.hash())?;
+        let last = blocks.get(block.hash());
         assert!(last.is_some());
         assert!(last.unwrap().height == BlockHeight(1));
         Ok(())
@@ -651,8 +621,7 @@ mod tests {
             .prefix("history-tests")
             .tempdir()
             .unwrap();
-        let db = sled::open(tmpdir.path().join("history")).unwrap();
-        let blocks = Blocks::new(&db).unwrap();
+        let blocks = Blocks::new(None).unwrap();
 
         let bus = super::DABusClient::new_from_bus(crate::bus::SharedMessageBus::new(
             crate::bus::metrics::BusMetrics::global("global".to_string()),
@@ -697,11 +666,11 @@ mod tests {
     #[test_log::test(tokio::test)]
     async fn test_da_streaming() {
         let tmpdir = tempfile::Builder::new()
-            .prefix("history-tests")
+            .prefix("streamtest")
             .tempdir()
             .unwrap();
-        let db = sled::open(tmpdir.path().join("history")).unwrap();
-        let blocks = Blocks::new(&db).unwrap();
+
+        let blocks = Blocks::new(None).unwrap();
 
         let global_bus = crate::bus::SharedMessageBus::new(
             crate::bus::metrics::BusMetrics::global("global".to_string()),
