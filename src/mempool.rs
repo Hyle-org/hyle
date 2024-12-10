@@ -488,6 +488,7 @@ impl Mempool {
                 // Verify and extract proof
                 let hyle_output = self.node_state.verify_proof(&proof_transaction)?;
                 tx.transaction_data = TransactionData::VerifiedProof(VerifiedProofTransaction {
+                    proof_hash: proof_transaction.proof.hash(),
                     proof_transaction,
                     hyle_output,
                 });

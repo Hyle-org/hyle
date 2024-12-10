@@ -547,8 +547,8 @@ mod test {
     use crate::{
         bus::SharedMessageBus,
         model::{
-            Blob, BlobData, BlockHeight, ProofData, ProofTransaction, RegisterContractTransaction,
-            Transaction, TransactionData, VerifiedProofTransaction,
+            Blob, BlobData, BlockHeight, ProofData, ProofDataHash, ProofTransaction,
+            RegisterContractTransaction, Transaction, TransactionData, VerifiedProofTransaction,
         },
     };
 
@@ -623,6 +623,7 @@ mod test {
         Transaction {
             version: 1,
             transaction_data: TransactionData::VerifiedProof(VerifiedProofTransaction {
+                proof_hash: ProofDataHash("".to_owned()),
                 proof_transaction: ProofTransaction {
                     blob_tx_hash: blob_tx_hash.clone(),
                     contract_name: contract_name.clone(),
