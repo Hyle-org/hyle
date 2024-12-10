@@ -149,9 +149,9 @@ impl SingleNodeConsensus {
         })) = cmd
         {
             let signed_msg =
-                self.sign_net_message(MempoolNetMessage::DataVote(data_proposal.car.hash()))?;
+                self.sign_net_message(MempoolNetMessage::DataVote(data_proposal.hash()))?;
             let msg: SignedByValidator<MempoolNetMessage> = SignedByValidator {
-                msg: MempoolNetMessage::DataVote(data_proposal.car.hash()),
+                msg: MempoolNetMessage::DataVote(data_proposal.hash()),
                 signature: signed_msg.signature,
             };
 
@@ -208,7 +208,7 @@ mod tests {
     use crate::bus::dont_use_this::get_receiver;
     use crate::bus::metrics::BusMetrics;
     use crate::bus::{bus_client, SharedMessageBus};
-    use crate::mempool::storage::{Car, CarHash, DataProposal};
+    use crate::mempool::storage::{DataProposal, DataProposalHash};
     use crate::model::{Hashable, ValidatorPublicKey};
     use crate::p2p;
     use crate::p2p::network::SignedByValidator;
@@ -257,7 +257,7 @@ mod tests {
                 handle_messages! {
                     on_bus new_cut_query_receiver,
                     command_response<QueryNewCut, Cut> _ => {
-                        Ok(vec![(ValidatorPublicKey::default(), CarHash::default())])
+                        Ok(vec![(ValidatorPublicKey::default(), DataProposalHash::default())])
                     }
                 }
             });
@@ -270,7 +270,7 @@ mod tests {
         }
 
         #[track_caller]
-        fn assert_data_vote(&mut self, err: &str) -> CarHash {
+        fn assert_data_vote(&mut self, err: &str) -> DataProposalHash {
             #[allow(clippy::expect_fun_call)]
             let rec = self
                 .signed_mempool_net_message_receiver
@@ -306,11 +306,9 @@ mod tests {
         let mut ctx = TestContext::new("single_node_consensus").await;
 
         let data_proposal = DataProposal {
-            parent_poa: None,
-            car: Car {
-                txs: vec![],
-                parent_hash: None,
-            },
+            id: 0,
+            parent_data_proposal_hash: None,
+            txs: vec![],
         };
         let signed_msg = ctx
             .single_node_consensus
@@ -324,7 +322,7 @@ mod tests {
 
         // We expect to receive a DataVote for that DataProposal
         let car_hash = ctx.assert_data_vote("DataVote");
-        assert_eq!(car_hash, data_proposal.car.hash());
+        assert_eq!(car_hash, data_proposal.hash());
 
         ctx.single_node_consensus.handle_new_slot_tick().await?;
 
