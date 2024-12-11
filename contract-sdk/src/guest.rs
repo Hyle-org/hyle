@@ -8,49 +8,20 @@ use crate::{
     StructuredBlob, StructuredBlobData,
 };
 
-#[cfg(feature = "tracing")]
-pub use tracing;
-
-// Si la feature "tracing" est activée, on redirige vers `tracing::info!`
-#[cfg(feature = "tracing")]
-#[macro_export]
-macro_rules! info {
-    ($($arg:tt)*) => {
-        sdk::guest::tracing::info!($($arg)*);
-    }
-}
-
-// Si la feature "tracing" n’est pas activée, on redirige vers la fonction env::log
-#[cfg(not(feature = "tracing"))]
-#[macro_export]
-macro_rules! info {
-    ($($arg:tt)*) => {
-        $crate::env::log(&format!($($arg)*));
-    }
-}
-
-pub mod env {
+#[cfg(feature = "risc0")]
+mod env {
     use super::*;
 
     pub fn log(message: &str) {
-        #[cfg(feature = "risc0")]
         risc0_zkvm::guest::env::log(message);
-        #[cfg(not(feature = "risc0"))]
-        unimplemented!("logging: {}", message);
     }
 
     pub fn commit(output: &HyleOutput) {
-        #[cfg(feature = "risc0")]
         risc0_zkvm::guest::env::commit(output);
-        #[cfg(not(feature = "risc0"))]
-        unimplemented!("committing: {:?}", output);
     }
 
     pub fn read<T: DeserializeOwned>() -> T {
-        #[cfg(feature = "risc0")]
-        return risc0_zkvm::guest::env::read();
-        #[cfg(not(feature = "risc0"))]
-        unimplemented!();
+        risc0_zkvm::guest::env::read()
     }
 }
 

@@ -1,6 +1,6 @@
 use opentelemetry::{
     metrics::{Counter, Gauge},
-    KeyValue,
+    InstrumentationScope, KeyValue,
 };
 
 use crate::model::ValidatorPublicKey;
@@ -21,28 +21,31 @@ pub struct MempoolMetrics {
 
 impl MempoolMetrics {
     pub fn global(node_name: String) -> MempoolMetrics {
-        let my_meter = opentelemetry::global::meter(node_name);
+        let scope = InstrumentationScope::builder(node_name).build();
+        let my_meter = opentelemetry::global::meter_with_scope(scope);
 
         let mempool = "mempool";
 
         MempoolMetrics {
             signature_error: my_meter
                 .u64_counter(format!("{mempool}_signature_error"))
-                .init(),
-            api_tx: my_meter.u64_counter(format!("{mempool}_api_tx")).init(),
+                .build(),
+            api_tx: my_meter.u64_counter(format!("{mempool}_api_tx")).build(),
             data_proposal: my_meter
                 .u64_counter(format!("{mempool}_data_proposal"))
-                .init(),
+                .build(),
             proposed_txs: my_meter
                 .u64_counter(format!("{mempool}_proposed_txs"))
-                .init(),
-            data_vote: my_meter.u64_counter(format!("{mempool}_data_vote")).init(),
+                .build(),
+            data_vote: my_meter.u64_counter(format!("{mempool}_data_vote")).build(),
             sync_request: my_meter
                 .u64_counter(format!("{mempool}_sync_request"))
-                .init(),
-            sync_reply: my_meter.u64_counter(format!("{mempool}_sync_reply")).init(),
-            pending_tx: my_meter.u64_gauge(format!("{mempool}_pending_tx")).init(),
-            new_cut: my_meter.u64_counter(format!("{mempool}_new_cut")).init(),
+                .build(),
+            sync_reply: my_meter
+                .u64_counter(format!("{mempool}_sync_reply"))
+                .build(),
+            pending_tx: my_meter.u64_gauge(format!("{mempool}_pending_tx")).build(),
+            new_cut: my_meter.u64_counter(format!("{mempool}_new_cut")).build(),
         }
     }
 
@@ -63,22 +66,16 @@ impl MempoolMetrics {
     }
 
     pub fn add_proposed_txs(&self, dp: &DataProposal) {
-        for tx in dp.car.txs.iter() {
+        for tx in dp.txs.iter() {
             let tx_type: &'static str = (&tx.transaction_data).into();
             self.proposed_txs.add(1, &[KeyValue::new("kind", tx_type)]);
         }
     }
 
     pub fn add_data_proposal(&self, dp: &DataProposal) {
-        let tx_nb = dp.car.txs.len();
-        let has_parent_poa = if dp.parent_poa.is_some() { 1 } else { 0 };
-        self.data_proposal.add(
-            1,
-            &[
-                KeyValue::new("nb_txs", tx_nb.to_string()),
-                KeyValue::new("has_parent_poa", has_parent_poa.to_string()),
-            ],
-        )
+        let tx_nb = dp.txs.len();
+        self.data_proposal
+            .add(1, &[KeyValue::new("nb_txs", tx_nb.to_string())])
     }
     pub fn add_proposal_vote(&self, sender: &ValidatorPublicKey, dest: &ValidatorPublicKey) {
         self.data_vote.add(
@@ -102,12 +99,12 @@ impl MempoolMetrics {
         &self,
         sender: &ValidatorPublicKey,
         dest: &ValidatorPublicKey,
-        nb_cars: usize,
+        lane_entries: usize,
     ) {
         self.sync_reply.add(
             1,
             &[
-                KeyValue::new("nb_cars", nb_cars.to_string()),
+                KeyValue::new("nb_lane_entries", lane_entries.to_string()),
                 KeyValue::new("sender", format!("{}", sender)),
                 KeyValue::new("dest", format!("{}", dest)),
             ],

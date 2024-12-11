@@ -1,25 +1,27 @@
 [package]
-name = "hyle-contract-sdk"
+name = "hydentity"
 version = "0.1.0"
 edition = "2021"
 
+[[bin]]
+name = "hydentity"
+required-features = ["risc0"]
+
 [dependencies]
+sdk = { path = "../../contract-sdk", package = "hyle-contract-sdk" }
+serde_json = "1.0"
 serde = { version = "1.0", default-features = false, features = [
     "derive",
     "alloc",
 ] }
+anyhow = "1.0.89"
+sha2 = { git = "https://github.com/risc0/RustCrypto-hashes", tag = "sha2-v0.10.8" }
 bincode = { version = "2.0.0-rc.3" }
 hex = "0.4.3"
-anyhow = "1.0.89"
 
 risc0-zkvm = { version = "1.2.0", default-features = false, features = [
     'std',
 ], optional = true }
-tracing = {version = "0.1", optional = true}
-
-[dev-dependencies]
-mockall = "0.13.0"
 
 [features]
-risc0 = ["risc0-zkvm"]
-tracing = ["dep:tracing"]
+risc0 = ["dep:risc0-zkvm", "sdk/risc0"]

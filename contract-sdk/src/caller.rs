@@ -20,7 +20,7 @@ pub struct ExecutionContext {
 pub struct CalleeBlobs<'a>(pub Ref<'a, Vec<Blob>>);
 pub struct MutCalleeBlobs<'a>(pub RefMut<'a, Vec<Blob>>);
 
-impl<'a> Deref for CalleeBlobs<'a> {
+impl Deref for CalleeBlobs<'_> {
     type Target = Vec<Blob>;
 
     fn deref(&self) -> &Self::Target {
@@ -28,14 +28,14 @@ impl<'a> Deref for CalleeBlobs<'a> {
     }
 }
 
-impl<'a> Deref for MutCalleeBlobs<'a> {
+impl Deref for MutCalleeBlobs<'_> {
     type Target = Vec<Blob>;
 
     fn deref(&self) -> &Self::Target {
         &self.0
     }
 }
-impl<'a> DerefMut for MutCalleeBlobs<'a> {
+impl DerefMut for MutCalleeBlobs<'_> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
     }

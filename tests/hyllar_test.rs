@@ -1,5 +1,5 @@
 use fixtures::ctx::E2ECtx;
-use std::{fs::File, io::Read};
+use fixtures::proofs::HyrunProofGen;
 use tracing::info;
 
 use hyle::model::ProofData;
@@ -8,14 +8,6 @@ mod fixtures;
 
 use anyhow::Result;
 
-pub fn load_encoded_receipt_from_file(path: &str) -> Vec<u8> {
-    let mut file = File::open(path).expect("Failed to open proof file");
-    let mut encoded_receipt = Vec::new();
-    file.read_to_end(&mut encoded_receipt)
-        .expect("Failed to read file content");
-    encoded_receipt
-}
-
 mod e2e_hyllar {
     use hydentity::AccountInfo;
     use hyle_contract_sdk::{
@@ -23,10 +15,13 @@ mod e2e_hyllar {
         identity_provider::{IdentityAction, IdentityVerification},
         ContractName,
     };
+    use hyrun::CliCommand;
 
     use super::*;
 
     async fn scenario_hyllar(ctx: E2ECtx) -> Result<()> {
+        let proof_generator = HyrunProofGen::setup_working_directory();
+
         info!("➡️  Sending blob to register bob identity");
         let blob_tx_hash = ctx
             .send_blob(
@@ -38,8 +33,21 @@ mod e2e_hyllar {
             )
             .await?;
 
-        let proof =
-            load_encoded_receipt_from_file("./tests/proofs/register.bob.hydentity.risc0.proof");
+        proof_generator
+            .generate_proof(
+                &ctx,
+                CliCommand::Hydentity {
+                    command: hyrun::HydentityArgs::Register {
+                        account: "bob.hydentity".to_owned(),
+                    },
+                },
+                "bob.hydentity",
+                "password",
+                None,
+            )
+            .await;
+
+        let proof = proof_generator.read_proof(0);
 
         info!("➡️  Sending proof for register");
         ctx.send_proof(
@@ -85,12 +93,24 @@ mod e2e_hyllar {
             )
             .await?;
 
-        let hydentity_proof = load_encoded_receipt_from_file(
-            "./tests/proofs/transfer.25-hyllar-to-bob.hydentity.risc0.proof",
-        );
-        let hyllar_proof = load_encoded_receipt_from_file(
-            "./tests/proofs/transfer.25-hyllar-to-bob.hyllar.risc0.proof",
-        );
+        proof_generator
+            .generate_proof(
+                &ctx,
+                CliCommand::Hyllar {
+                    command: hyrun::HyllarArgs::Transfer {
+                        recipient: "bob.hydentity".to_owned(),
+                        amount: 25,
+                    },
+                    hyllar_contract_name: "hyllar".to_owned(),
+                },
+                "faucet.hydentity",
+                "password",
+                Some(0),
+            )
+            .await;
+
+        let hydentity_proof = proof_generator.read_proof(0);
+        let hyllar_proof = proof_generator.read_proof(1);
 
         info!("➡️  Sending proof for hydentity");
         ctx.send_proof(
@@ -124,7 +144,7 @@ mod e2e_hyllar {
             state
                 .balance_of("faucet.hydentity")
                 .expect("faucet identity not found"),
-            98_999_999_975
+            99_999_999_975
         );
         Ok(())
     }

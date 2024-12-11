@@ -22,9 +22,9 @@ use crate::bus::BusClientSender;
 use crate::bus::SharedMessageBus;
 use crate::consensus::ConsensusNetMessage;
 use crate::data_availability::DataNetMessage;
-use crate::handle_messages;
 use crate::mempool::MempoolNetMessage;
 use crate::model::ValidatorPublicKey;
+use crate::module_handle_messages;
 use crate::p2p::stream::read_stream;
 use crate::utils::conf::SharedConf;
 use crate::utils::crypto::SharedBlstCrypto;
@@ -191,9 +191,8 @@ impl Peer {
     }
 
     pub async fn start(&mut self) -> Result<()> {
-        handle_messages! {
+        module_handle_messages! {
             on_bus self.bus,
-            break_on(stringify!(Peer))
             listen<OutboundMessage> res => {
                 match res {
                     OutboundMessage::SendMessage { validator_id, msg } => match self.handle_send_message(validator_id, msg).await {

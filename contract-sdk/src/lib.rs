@@ -11,8 +11,30 @@ use serde::{Deserialize, Serialize};
 
 pub mod caller;
 pub mod erc20;
+#[cfg(feature = "risc0")]
 pub mod guest;
 pub mod identity_provider;
+
+#[cfg(feature = "tracing")]
+pub use tracing;
+
+// Si la feature "tracing" est activée, on redirige vers `tracing::info!`
+#[cfg(feature = "tracing")]
+#[macro_export]
+macro_rules! info {
+    ($($arg:tt)*) => {
+        sdk::tracing::info!($($arg)*);
+    }
+}
+
+// Si la feature "tracing" n’est pas activée, on redirige vers la fonction env::log
+#[cfg(not(feature = "tracing"))]
+#[macro_export]
+macro_rules! info {
+    ($($arg:tt)*) => {
+        $crate::env::log(&format!($($arg)*));
+    }
+}
 
 pub type RunResult = Result<String, String>;
 

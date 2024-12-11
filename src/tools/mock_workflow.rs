@@ -2,12 +2,12 @@ use std::time::Duration;
 
 use crate::{
     bus::{BusClientSender, BusMessage},
-    handle_messages,
     mempool::api::RestApiMessage,
     model::{
         get_current_timestamp, Blob, BlobData, BlobTransaction, ContractName, ProofData,
         ProofTransaction, RegisterContractTransaction, SharedRunContext, Transaction,
     },
+    module_handle_messages,
     rest::client::ApiHttpClient,
     utils::modules::{module_bus_client, Module},
 };
@@ -22,7 +22,6 @@ use tracing::{error, info, warn};
 
 module_bus_client! {
 struct MockWorkflowBusClient {
-    module: MockWorkflowHandler,
     sender(RestApiMessage),
     receiver(RunScenario),
 }
@@ -43,10 +42,6 @@ pub struct MockWorkflowHandler {
 }
 
 impl Module for MockWorkflowHandler {
-    fn name() -> &'static str {
-        "MockWorkflowHandler"
-    }
-
     type Context = SharedRunContext;
 
     async fn build(ctx: Self::Context) -> Result<Self> {
@@ -121,9 +116,8 @@ mod api {
 
 impl MockWorkflowHandler {
     pub async fn start(&mut self) -> anyhow::Result<()> {
-        handle_messages! {
+        module_handle_messages! {
             on_bus self.bus,
-            break_on(stringify!(MockWorkflowHandler))
             listen<RunScenario> cmd => {
                 match cmd {
                     RunScenario::StressTest => {
@@ -136,7 +130,6 @@ impl MockWorkflowHandler {
             }
         }
 
-        _ = self.bus.shutdown_complete();
         Ok(())
     }
 

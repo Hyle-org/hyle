@@ -73,7 +73,7 @@ impl BlobsHash {
 )]
 pub struct BlockHeight(pub u64);
 
-#[derive(Debug, Serialize, Deserialize, Default, Clone, PartialEq, Eq, Encode, Decode, Hash)]
+#[derive(Debug, Serialize, Deserialize, Default, Clone, PartialEq, Eq, Encode, Decode)]
 pub struct Transaction {
     pub version: u32,
     pub transaction_data: TransactionData,

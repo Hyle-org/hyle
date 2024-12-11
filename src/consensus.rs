@@ -1,5 +1,6 @@
 //! Handles all consensus logic up to block commitment.
 
+use crate::module_handle_messages;
 use crate::utils::modules::module_bus_client;
 #[cfg(not(test))]
 use crate::utils::static_type_map::Pick;
@@ -83,7 +84,6 @@ impl BusMessage for ConsensusNetMessage {}
 
 module_bus_client! {
 struct ConsensusBusClient {
-    module: Consensus,
     sender(OutboundMessage),
     sender(ConsensusEvent),
     sender(ConsensusCommand),
@@ -861,7 +861,6 @@ impl Consensus {
     async fn wait_genesis(&mut self) -> Result<()> {
         handle_messages! {
             on_bus self.bus,
-            break_on(stringify!(Genesis))
             listen<GenesisEvent> msg => {
                 match msg {
                     GenesisEvent::GenesisBlock { initial_validators, ..} => {
@@ -901,9 +900,8 @@ impl Consensus {
 
         let mut timeout_ticker = interval(Duration::from_millis(100));
 
-        handle_messages! {
+        module_handle_messages! {
             on_bus self.bus,
-            break_on(stringify!(Consensus))
             listen<ConsensusCommand> cmd => {
                 match self.handle_command(cmd).await {
                     Ok(_) => (),
@@ -939,8 +937,6 @@ impl Consensus {
             }
         }
 
-        _ = self.bus.shutdown_complete();
-
         Ok(())
     }
 
@@ -974,7 +970,7 @@ pub mod test {
             broadcast, build_tuple, send, AutobahnBusClient, AutobahnTestCtx,
         },
         bus::{dont_use_this::get_receiver, metrics::BusMetrics, SharedMessageBus},
-        mempool::storage::CarHash,
+        mempool::storage::DataProposalHash,
         p2p::network::NetMessage,
         utils::{conf::Conf, crypto},
     };
@@ -1425,7 +1421,7 @@ pub mod test {
                     slot: 2,
                     view: 0,
                     round_leader: node1.pubkey(),
-                    cut: vec![(node2.pubkey(), CarHash("test".to_string()))],
+                    cut: vec![(node2.pubkey(), DataProposalHash("test".to_string()))],
                     new_validators_to_bond: vec![],
                 },
                 Ticket::Genesis,
@@ -1459,7 +1455,7 @@ pub mod test {
                     slot: 1,
                     view: 0,
                     round_leader: node1.pubkey(),
-                    cut: vec![(node2.pubkey(), CarHash("test".to_string()))],
+                    cut: vec![(node2.pubkey(), DataProposalHash("test".to_string()))],
                     new_validators_to_bond: vec![],
                 },
                 Ticket::Genesis,
@@ -1502,7 +1498,7 @@ pub mod test {
                     slot: 1,
                     view: 0,
                     round_leader: node3.pubkey(),
-                    cut: vec![(node2.pubkey(), CarHash("test".to_string()))],
+                    cut: vec![(node2.pubkey(), DataProposalHash("test".to_string()))],
                     new_validators_to_bond: vec![],
                 },
                 Ticket::Genesis,

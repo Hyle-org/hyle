@@ -9,23 +9,19 @@ use axum::{
     Json,
 };
 use axum_otel_metrics::HttpMetricsLayer;
+use prometheus::{Encoder, TextEncoder};
 use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 use tower_http::trace::TraceLayer;
 use tracing::info;
 
-use crate::{
-    bus::{BusClientSender, SharedMessageBus},
-    handle_messages,
-    utils::modules::module_bus_client,
-};
+use crate::{bus::SharedMessageBus, module_handle_messages, utils::modules::module_bus_client};
 use crate::{model::ValidatorPublicKey, utils::modules::Module};
 
 pub mod client;
 
 module_bus_client! {
     struct RestBusClient {
-        module: RestApi,
     }
 }
 
@@ -55,10 +51,6 @@ pub struct RestApi {
 }
 
 impl Module for RestApi {
-    fn name() -> &'static str {
-        "RestApi"
-    }
-
     type Context = RestApiRunContext;
 
     async fn build(ctx: Self::Context) -> Result<Self> {
@@ -67,8 +59,17 @@ impl Module for RestApi {
             .merge(
                 Router::new()
                     .route("/v1/info", get(get_info))
-                    .with_state(RouterState { info: ctx.info })
-                    .nest("/v1", ctx.metrics_layer.routes()),
+                    .route(
+                        "/v1/metrics",
+                        get(|| async {
+                            let mut buffer = Vec::new();
+                            let encoder = TextEncoder::new();
+                            encoder.encode(&prometheus::gather(), &mut buffer).unwrap();
+                            // return metrics
+                            String::from_utf8(buffer).unwrap()
+                        }),
+                    )
+                    .with_state(RouterState { info: ctx.info }),
             )
             .layer(ctx.metrics_layer)
             .layer(tower_http::cors::CorsLayer::permissive())
@@ -94,9 +95,8 @@ impl RestApi {
     pub async fn serve(&mut self) -> Result<()> {
         info!("rest listening on {}", self.rest_addr);
 
-        handle_messages! {
+        module_handle_messages! {
             on_bus self.bus,
-            break_on(stringify!(RestApi))
             _ = axum::serve(
                 tokio::net::TcpListener::bind(&self.rest_addr)
                     .await
@@ -104,8 +104,6 @@ impl RestApi {
                 self.app.take().expect("app is not set")
             ) => { }
         }
-
-        _ = self.bus.shutdown_complete();
 
         Ok(())
     }
