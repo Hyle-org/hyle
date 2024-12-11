@@ -890,7 +890,8 @@ mod test {
 
         // Get an unknown transaction by name
         let transactions_response = server.get("/transactions/contract/unknown_contract").await;
-        transactions_response.assert_status_not_found();
+        transactions_response.assert_status_ok();
+        assert_eq!(transactions_response.text(), "[]");
 
         // Get an existing transaction by hash
         let transactions_response = server
@@ -920,7 +921,8 @@ mod test {
         let transactions_response = server
             .get("/blobs/hash/test_tx_hash_1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
             .await;
-        transactions_response.assert_status_not_found();
+        transactions_response.assert_status_ok();
+        assert_eq!(transactions_response.text(), "[]");
 
         // Get blob by tx_hash and index
         let transactions_response = server
