@@ -125,6 +125,8 @@ pub enum ProofData {
     Base64(String),
     Bytes(Vec<u8>),
 }
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Encode, Decode, Hash)]
+pub struct ProofDataHash(pub String);
 
 impl Default for ProofData {
     fn default() -> Self {
@@ -163,8 +165,11 @@ impl fmt::Debug for ProofTransaction {
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Encode, Decode, Hash)]
 pub struct VerifiedProofTransaction {
-    pub proof_transaction: ProofTransaction,
+    pub blob_tx_hash: TxHash,
+    pub contract_name: ContractName,
+    pub proof_hash: ProofDataHash,
     pub hyle_output: HyleOutput,
+    pub proof: Option<ProofData>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Default, Clone, PartialEq, Eq, Encode, Decode, Hash)]
@@ -348,17 +353,31 @@ impl Hashable<TxHash> for ProofTransaction {
     fn hash(&self) -> TxHash {
         let mut hasher = Sha3_256::new();
         _ = write!(hasher, "{}", self.contract_name);
-        match self.proof.clone() {
-            ProofData::Base64(v) => hasher.update(v),
-            ProofData::Bytes(vec) => hasher.update(vec),
-        }
+        hasher.update(self.proof.hash().0);
         let hash_bytes = hasher.finalize();
         TxHash(hex::encode(hash_bytes))
     }
 }
+impl Hashable<ProofDataHash> for ProofData {
+    fn hash(&self) -> ProofDataHash {
+        let mut hasher = Sha3_256::new();
+        match self.clone() {
+            ProofData::Base64(v) => hasher.update(v),
+            ProofData::Bytes(vec) => hasher.update(vec),
+        }
+        let hash_bytes = hasher.finalize();
+        ProofDataHash(hex::encode(hash_bytes))
+    }
+}
 impl Hashable<TxHash> for VerifiedProofTransaction {
     fn hash(&self) -> TxHash {
-        self.proof_transaction.hash()
+        let mut hasher = Sha3_256::new();
+        _ = write!(hasher, "{}", self.blob_tx_hash);
+        _ = write!(hasher, "{}", self.contract_name);
+        _ = write!(hasher, "{:?}", self.proof_hash);
+        _ = write!(hasher, "{:?}", self.hyle_output);
+        let hash_bytes = hasher.finalize();
+        TxHash(hex::encode(hash_bytes))
     }
 }
 impl Hashable<TxHash> for RegisterContractTransaction {
