@@ -163,6 +163,8 @@ pub async fn get_transactions_by_contract(
     .await
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
+    // This could return 404 if the contract doesn't exist,
+    // but not done for now as it would take an extra query
     Ok(Json(transactions))
 }
 
@@ -298,6 +300,8 @@ pub async fn get_blobs_by_tx_hash(
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
+    // This could return 404 if the transaction doesn't exist,
+    // but not done for now as it would take an extra query
     Ok(Json(blobs))
 }
 
