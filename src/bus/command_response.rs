@@ -106,7 +106,7 @@ macro_rules! handle_messages {
         // Create a receiver with a unique variable $index
         let $index = unsafe { &mut *Pick::<tokio::sync::broadcast::Receiver<Query<$command, $response>>>::splitting_get_mut(&mut $bus) };
         paste::paste! {
-        handle_messages! {
+        $crate::handle_messages! {
             bus($bus) index([<$index a>]) $($rest)*
             // Listen on receiver
             Ok(_raw_query) = #[allow(clippy::macro_metavars_in_unsafe)] $index.recv() => {

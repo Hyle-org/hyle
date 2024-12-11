@@ -56,12 +56,14 @@ pub enum ConsensusCommand {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct CommittedConsensusProposal {
+    pub consensus_proposal: ConsensusProposal,
+    pub certificate: QuorumCertificate,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub enum ConsensusEvent {
-    CommitCut {
-        validators: Vec<ValidatorPublicKey>,
-        new_bonded_validators: Vec<ValidatorPublicKey>,
-        cut: Cut,
-    },
+    CommitConsensusProposal(CommittedConsensusProposal),
 }
 
 #[derive(Clone)]
@@ -107,7 +109,7 @@ pub struct ValidatorCandidacy {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode, PartialEq, Eq, Hash)]
 pub struct NewValidatorCandidate {
-    pubkey: ValidatorPublicKey, // TODO: possible optim: the pubkey is already present in the msg,
+    pub pubkey: ValidatorPublicKey, // TODO: possible optim: the pubkey is already present in the msg,
     msg: SignedByValidator<ConsensusNetMessage>,
 }
 
@@ -137,12 +139,12 @@ pub struct ConsensusProposalHash(Vec<u8>);
 #[derive(Debug, Clone, Default, Serialize, Deserialize, Encode, Decode, PartialEq, Eq, Hash)]
 pub struct ConsensusProposal {
     // These first few items are checked when receiving the proposal from the leader.
-    slot: Slot,
-    view: View,
-    round_leader: ValidatorPublicKey,
+    pub slot: Slot,
+    pub view: View,
+    pub round_leader: ValidatorPublicKey,
     // Below items aren't.
-    cut: Cut,
-    new_validators_to_bond: Vec<NewValidatorCandidate>,
+    pub cut: Cut,
+    pub new_validators_to_bond: Vec<NewValidatorCandidate>,
 }
 
 type NextLeader = ValidatorPublicKey;
@@ -685,30 +687,14 @@ impl Consensus {
 
         _ = self
             .bus
-            .send(ConsensusEvent::CommitCut {
-                // TODO: investigate if those are necessary here
-                validators: self.bft_round_state.staking.bonded().clone(),
-                cut: self.bft_round_state.consensus_proposal.cut.clone(),
-                new_bonded_validators: self
-                    .bft_round_state
-                    .consensus_proposal
-                    .new_validators_to_bond
-                    .iter()
-                    .map(|v| v.pubkey.clone())
-                    .collect(),
-            })
+            .send(ConsensusEvent::CommitConsensusProposal(
+                CommittedConsensusProposal {
+                    consensus_proposal: self.bft_round_state.consensus_proposal.clone(),
+                    certificate: commit_quorum_certificate.clone(),
+                },
+            ))
+            // TODO: investigate if those are necessary here
             .expect("Failed to send ConsensusEvent::CommitCut on the bus");
-
-        // Save added cut TODO: remove ? (data availability)
-        if let Some(file) = &self.file {
-            if let Err(e) = Self::save_on_disk(
-                self.config.data_directory.as_path(),
-                file.as_path(),
-                &self.store,
-            ) {
-                warn!("Failed to save consensus state on disk: {}", e);
-            }
-        }
 
         info!(
             "📈 Slot {} committed",
@@ -763,18 +749,18 @@ impl Consensus {
         match msg {
             DataEvent::NewBlock(block) => {
                 let block_total_tx = block.total_txs();
-                for staker in block.stakers {
+                for stake in block.stakers {
                     self.store
                         .bft_round_state
                         .staking
-                        .add_staker(staker)
+                        .add_staker(stake)
                         .map_err(|e| anyhow!(e))?;
                 }
-                for validator in block.new_bounded_validators {
+                for validator in block.new_bounded_validators.iter() {
                     self.store
                         .bft_round_state
                         .staking
-                        .bond(validator)
+                        .bond(validator.clone())
                         .map_err(|e| anyhow!(e))?;
                 }
 
