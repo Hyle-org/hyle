@@ -50,10 +50,7 @@ impl E2EContract for HydentityContract {
     }
 
     fn program_id() -> ProgramId {
-        let hydentity_program_id = include_str!("../../contracts/hydentity/hydentity.txt").trim();
-        hex::decode(hydentity_program_id)
-            .expect("Image id decoding failed")
-            .into()
+        hyle_contracts::HYDENTITY_ID.to_vec().into()
     }
 
     fn state_digest() -> StateDigest {
@@ -69,10 +66,7 @@ impl E2EContract for HyllarContract {
     }
 
     fn program_id() -> ProgramId {
-        let hyllar_program_id = include_str!("../../contracts/hyllar/hyllar.txt").trim();
-        hex::decode(hyllar_program_id)
-            .expect("Image id decoding failed")
-            .into()
+        hyle_contracts::HYLLAR_ID.to_vec().into()
     }
 
     fn state_digest() -> StateDigest {
@@ -88,10 +82,7 @@ impl E2EContract for AmmContract {
     }
 
     fn program_id() -> ProgramId {
-        let amm_program_id = include_str!("../../contracts/amm/amm.txt").trim();
-        hex::decode(amm_program_id)
-            .expect("Image id decoding failed")
-            .into()
+        hyle_contracts::AMM_ID.to_vec().into()
     }
 
     fn state_digest() -> StateDigest {
