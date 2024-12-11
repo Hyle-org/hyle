@@ -1,8 +1,8 @@
-//! Minimal processed block storage layer for data availability.
+//! Minimal block storage layer for data availability.
 
 mod api;
+mod blocks;
 pub mod node_state;
-mod processed_blocks;
 
 use crate::{
     bus::{command_response::Query, BusClientSender, BusMessage},
@@ -11,8 +11,8 @@ use crate::{
     handle_messages,
     mempool::MempoolEvent,
     model::{
-        get_current_timestamp, BlockHeight, ContractName, Hashable, ProcessedBlock,
-        ProcessedBlockHash, SharedRunContext, Transaction, ValidatorPublicKey,
+        get_current_timestamp, Block, BlockHash, BlockHeight, ContractName, Hashable,
+        SharedRunContext, Transaction, ValidatorPublicKey,
     },
     module_handle_messages,
     p2p::network::{NetMessage, OutboundMessage, PeerEvent},
@@ -24,6 +24,7 @@ use crate::{
 };
 use anyhow::{Context, Result};
 use bincode::{Decode, Encode};
+use blocks::Blocks;
 use bytes::Bytes;
 use core::str;
 use futures::{
@@ -31,7 +32,6 @@ use futures::{
     SinkExt, StreamExt,
 };
 use node_state::{model::Contract, NodeState};
-use processed_blocks::ProcessedBlocks;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use std::collections::HashMap;
@@ -46,19 +46,19 @@ use tracing::{debug, error, info, trace, warn};
 pub enum DataNetMessage {
     QueryProcessedBlock {
         respond_to: ValidatorPublicKey,
-        hash: ProcessedBlockHash,
+        hash: BlockHash,
     },
     QueryLastProcessedBlock {
         respond_to: ValidatorPublicKey,
     },
     QueryProcessedBlockResponse {
-        processed_block: Box<ProcessedBlock>,
+        block: Box<Block>,
     },
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, Eq, PartialEq)]
 pub enum DataEvent {
-    ProcessedBlock(Box<ProcessedBlock>),
+    NewBlock(Box<Block>),
     CatchupDone(BlockHeight),
 }
 
@@ -104,13 +104,13 @@ struct BlockStreamPeer {
 pub struct DataAvailability {
     config: SharedConf,
     bus: DABusClient,
-    pub processed_blocks: ProcessedBlocks,
+    pub blocks: Blocks,
 
-    buffered_processed_blocks: BTreeSet<ProcessedBlock>,
+    buffered_processed_blocks: BTreeSet<Block>,
     self_pubkey: ValidatorPublicKey,
     asked_last_processed_block: Option<ValidatorPublicKey>,
 
-    // Peers subscribed to processed block streaming
+    // Peers subscribed to block streaming
     stream_peer_metadata: HashMap<String, BlockStreamPeer>,
 
     node_state: NodeState,
@@ -162,7 +162,7 @@ impl Module for DataAvailability {
         Ok(DataAvailability {
             config: ctx.common.config.clone(),
             bus,
-            processed_blocks: ProcessedBlocks::new(&db)?,
+            blocks: Blocks::new(&db)?,
             buffered_processed_blocks: buffered_blocks,
             self_pubkey,
             asked_last_processed_block: None,
@@ -205,16 +205,16 @@ impl DataAvailability {
 
             listen<GenesisEvent> cmd => {
                 if let GenesisEvent::GenesisBlock { initial_validators, genesis_txs } = cmd {
-                    debug!("🌱  Genesis processed block received");
+                    debug!("🌱  Genesis block received");
 
-                    let processed_block = self.node_state.handle_new_cut(
+                    let block = self.node_state.handle_new_cut(
                         BlockHeight(0),
-                        ProcessedBlockHash::new("0000000000000000"),
+                        BlockHash::new("0000000000000000"),
                         get_current_timestamp(),
                         initial_validators,
                         genesis_txs,
                     );
-                    self.handle_processed_block(processed_block).await;
+                    self.handle_processed_block(block).await;
                 }
             }
 
@@ -226,7 +226,7 @@ impl DataAvailability {
                 match msg {
                     PeerEvent::NewPeer { pubkey, .. } => {
                         if self.asked_last_processed_block.is_none() {
-                            info!("📡  Asking for last processed block from new peer");
+                            info!("📡  Asking for last block from new peer");
                             self.asked_last_processed_block = Some(pubkey);
                             self.query_last_block();
                         }
@@ -234,7 +234,7 @@ impl DataAvailability {
                 }
             }
             command_response<QueryBlockHeight, BlockHeight> _ => {
-                Ok(self.processed_blocks.last().map(|processed_block| processed_block.block_height).unwrap_or(BlockHeight(0)))
+                Ok(self.blocks.last().map(|block| block.block_height).unwrap_or(BlockHeight(0)))
             }
 
             // Handle new TCP connections to stream data to peers
@@ -271,17 +271,17 @@ impl DataAvailability {
                 }
             }
 
-            // Send one processed block to a peer as part of "catchup",
+            // Send one block to a peer as part of "catchup",
             // once we have sent all blocks the peer is presumably synchronised.
             Some((mut block_hashes, peer_ip)) = catchup_receiver.recv() => {
                 let hash = block_hashes.pop();
 
-                trace!("📡  Sending processed block {:?} to peer {}", &hash, &peer_ip);
+                trace!("📡  Sending block {:?} to peer {}", &hash, &peer_ip);
                 if let Some(hash) = hash {
-                    if let Ok(Some(processed_block)) = self.processed_blocks.get(hash)
+                    if let Ok(Some(block)) = self.blocks.get(hash)
                     {
                         let bytes: bytes::Bytes =
-                            bincode::encode_to_vec(processed_block, bincode::config::standard())?.into();
+                            bincode::encode_to_vec(block, bincode::config::standard())?.into();
                         if self.stream_peer_metadata
                             .get_mut(&peer_ip)
                             .context("peer not found")?
@@ -307,30 +307,30 @@ impl DataAvailability {
     async fn handle_data_message(&mut self, msg: DataNetMessage) -> Result<()> {
         match msg {
             DataNetMessage::QueryProcessedBlock { respond_to, hash } => {
-                self.processed_blocks.get(hash).map(|processed_block| {
-                    if let Some(processed_block) = processed_block {
+                self.blocks.get(hash).map(|block| {
+                    if let Some(block) = block {
                         _ = self.bus.send(OutboundMessage::send(
                             respond_to,
                             DataNetMessage::QueryProcessedBlockResponse {
-                                processed_block: Box::new(processed_block),
+                                block: Box::new(block),
                             },
                         ));
                     }
                 })?;
             }
-            DataNetMessage::QueryProcessedBlockResponse { processed_block } => {
+            DataNetMessage::QueryProcessedBlockResponse { block } => {
                 debug!(
-                    block_hash = %processed_block.hash(),
-                    block_height = %processed_block.block_height,
-                    "⬇️  Received processed block data");
-                self.handle_processed_block(*processed_block).await;
+                    block_hash = %block.hash(),
+                    block_height = %block.block_height,
+                    "⬇️  Received block data");
+                self.handle_processed_block(*block).await;
             }
             DataNetMessage::QueryLastProcessedBlock { respond_to } => {
-                if let Some(processed_block) = self.processed_blocks.last() {
+                if let Some(block) = self.blocks.last() {
                     _ = self.bus.send(OutboundMessage::send(
                         respond_to,
                         DataNetMessage::QueryProcessedBlockResponse {
-                            processed_block: Box::new(processed_block.clone()),
+                            block: Box::new(block.clone()),
                         },
                     ));
                 }
@@ -345,19 +345,19 @@ impl DataAvailability {
         new_bounded_validators: Vec<ValidatorPublicKey>,
     ) {
         info!("🔒  Cut committed");
-        let last_processed_block = self.processed_blocks.last();
+        let last_processed_block = self.blocks.last();
         let block_parent_hash =
             last_processed_block
                 .as_ref()
                 .map(|b| b.hash())
-                .unwrap_or(ProcessedBlockHash::new(
+                .unwrap_or(BlockHash::new(
                     "46696174206c757820657420666163746120657374206c7578",
                 ));
         let next_height = last_processed_block
             .map(|b| b.block_height.0 + 1)
             .unwrap_or(0);
 
-        let processed_block = self.node_state.handle_new_cut(
+        let block = self.node_state.handle_new_cut(
             BlockHeight(next_height),
             block_parent_hash,
             get_current_timestamp(),
@@ -365,59 +365,57 @@ impl DataAvailability {
             txs,
         );
 
-        self.handle_processed_block(processed_block).await;
+        self.handle_processed_block(block).await;
     }
 
-    async fn handle_processed_block(&mut self, processed_block: ProcessedBlock) {
-        // if new processed_block is already handled, ignore it
-        if self.processed_blocks.contains(&processed_block) {
-            warn!("ProcessedBlock {:?} already exists !", processed_block);
+    async fn handle_processed_block(&mut self, block: Block) {
+        // if new block is already handled, ignore it
+        if self.blocks.contains(&block) {
+            warn!("Block {:?} already exists !", block);
             return;
         }
-        // if new processed block is not the next processed block in the chain, buffer
-        if self.processed_blocks.last().is_some() {
+        // if new block is not the next block in the chain, buffer
+        if self.blocks.last().is_some() {
             if self
-                .processed_blocks
-                .get(processed_block.block_parent_hash.clone())
+                .blocks
+                .get(block.block_parent_hash.clone())
                 .unwrap_or(None)
                 .is_none()
             {
                 debug!(
-                    "Parent processed block '{}' not found for processed block hash='{}' height {}",
-                    processed_block.block_parent_hash,
-                    processed_block.hash(),
-                    processed_block.block_height
+                    "Parent block '{}' not found for block hash='{}' height {}",
+                    block.block_parent_hash,
+                    block.hash(),
+                    block.block_height
                 );
-                self.query_block(processed_block.block_parent_hash.clone());
-                debug!("Buffering processed block {}", processed_block.hash());
-                self.buffered_processed_blocks.insert(processed_block);
+                self.query_block(block.block_parent_hash.clone());
+                debug!("Buffering block {}", block.hash());
+                self.buffered_processed_blocks.insert(block);
                 return;
             }
-        // if genesis processed block is missing, buffer
-        } else if processed_block.block_height != BlockHeight(0) {
+        // if genesis block is missing, buffer
+        } else if block.block_height != BlockHeight(0) {
             trace!(
-                "Received processed block with height {} but genesis processed block is missing",
-                processed_block.block_height
+                "Received block with height {} but genesis block is missing",
+                block.block_height
             );
-            self.query_block(processed_block.block_parent_hash.clone());
-            trace!("Buffering processed block {}", processed_block.hash());
-            self.buffered_processed_blocks.insert(processed_block);
+            self.query_block(block.block_parent_hash.clone());
+            trace!("Buffering block {}", block.hash());
+            self.buffered_processed_blocks.insert(block);
             return;
         }
 
-        // store processed block
-        self.add_processed_block(processed_block.clone()).await;
-        self.pop_buffer(processed_block.hash()).await;
+        // store block
+        self.add_processed_block(block.clone()).await;
+        self.pop_buffer(block.hash()).await;
     }
 
-    async fn pop_buffer(&mut self, mut last_block_hash: ProcessedBlockHash) {
+    async fn pop_buffer(&mut self, mut last_block_hash: BlockHash) {
         let got_buffered = !self.buffered_processed_blocks.is_empty();
         // Iterative loop to avoid stack overflows
         while let Some(first_buffered) = self.buffered_processed_blocks.first() {
             if first_buffered.block_parent_hash != last_block_hash {
-                error!(
-                    "Buffered processed block parent hash does not match last processed block hash"
-                );
+                error!("Buffered block parent hash does not match last block hash");
                 break;
             }
 
@@ -428,12 +426,12 @@ impl DataAvailability {
 
         if got_buffered {
             info!(
-                "📡 Asking for last processed block from peer in case new blocks were mined during catchup."
+                "📡 Asking for last block from peer in case new blocks were mined during catchup."
             );
             self.query_last_block();
         } else {
             let height = self
-                .processed_blocks
+                .blocks
                 .last()
                 .map_or(BlockHeight(0), |b| b.block_height);
             _ = self
@@ -443,33 +441,30 @@ impl DataAvailability {
         }
     }
 
-    async fn add_processed_block(&mut self, processed_block: ProcessedBlock) {
+    async fn add_processed_block(&mut self, block: Block) {
         // Don't run this in tests, takes forever.
-        if let Err(e) = self.processed_blocks.put(processed_block.clone()) {
-            error!("storing processed block: {}", e);
+        if let Err(e) = self.blocks.put(block.clone()) {
+            error!("storing block: {}", e);
             return;
         }
 
         info!(
-            "new processed block {} with {} txs, last hash = {}",
-            processed_block.block_height,
-            processed_block.new_contract_txs.len()
-                + processed_block.new_blob_txs.len()
-                + processed_block.new_verified_proof_txs.len(),
-            self.processed_blocks
+            "new block {} with {} txs, last hash = {}",
+            block.block_height,
+            block.new_contract_txs.len()
+                + block.new_blob_txs.len()
+                + block.new_verified_proof_txs.len(),
+            self.blocks
                 .last_block_hash()
-                .unwrap_or(ProcessedBlockHash("".to_string()))
+                .unwrap_or(BlockHash("".to_string()))
         );
 
-        // Send the processed block
-        if let Err(e) = self
-            .bus
-            .send(DataEvent::ProcessedBlock(Box::new(processed_block.clone())))
-        {
-            error!("Failed to send processed block consensus command: {:?}", e);
+        // Send the block
+        if let Err(e) = self.bus.send(DataEvent::NewBlock(Box::new(block.clone()))) {
+            error!("Failed to send block consensus command: {:?}", e);
         }
 
-        // Stream processed block to all peers
+        // Stream block to all peers
         // TODO: use retain once async closures are supported ?
         let mut to_remove = Vec::new();
         for (peer_id, peer) in self.stream_peer_metadata.iter_mut() {
@@ -479,20 +474,16 @@ impl DataAvailability {
                 peer.keepalive_abort.abort();
                 to_remove.push(peer_id.clone());
             } else {
-                info!(
-                    "streaming processed block {} to peer {}",
-                    processed_block.hash(),
-                    &peer_id
-                );
-                match bincode::encode_to_vec(processed_block.clone(), bincode::config::standard()) {
+                info!("streaming block {} to peer {}", block.hash(), &peer_id);
+                match bincode::encode_to_vec(block.clone(), bincode::config::standard()) {
                     Ok(bytes) => {
                         if let Err(e) = peer.sender.send(bytes.into()).await {
-                            warn!("failed to send processed block to peer {}: {}", &peer_id, e);
+                            warn!("failed to send block to peer {}: {}", &peer_id, e);
                             // TODO: retry?
                             to_remove.push(peer_id.clone());
                         }
                     }
-                    Err(e) => error!("encoding processed block: {}", e),
+                    Err(e) => error!("encoding block: {}", e),
                 }
             }
         }
@@ -501,7 +492,7 @@ impl DataAvailability {
         }
     }
 
-    fn query_block(&mut self, hash: ProcessedBlockHash) {
+    fn query_block(&mut self, hash: BlockHash) {
         _ = self.bus.send(OutboundMessage::broadcast(
             DataNetMessage::QueryProcessedBlock {
                 respond_to: self.self_pubkey.clone(),
@@ -525,7 +516,7 @@ impl DataAvailability {
         &mut self,
         start_height: u64,
         ping_sender: tokio::sync::mpsc::Sender<String>,
-        catchup_sender: tokio::sync::mpsc::Sender<(Vec<ProcessedBlockHash>, String)>,
+        catchup_sender: tokio::sync::mpsc::Sender<(Vec<BlockHash>, String)>,
         sender: SplitSink<Framed<TcpStream, LengthDelimitedCodec>, Bytes>,
         mut receiver: SplitStream<Framed<TcpStream, LengthDelimitedCodec>>,
         peer_ip: &String,
@@ -553,27 +544,25 @@ impl DataAvailability {
             },
         );
 
-        // Finally, stream past processed blocks as required.
+        // Finally, stream past blocks as required.
         // We'll create a copy of the range so we don't stream everything.
-        // We will safely stream everything as any new processed block will be sent
+        // We will safely stream everything as any new block will be sent
         // because we registered in the struct beforehand.
         // Like pings, this just sends a message processed in the main select! loop.
-        let mut processed_block_hashes: Vec<ProcessedBlockHash> = self
-            .processed_blocks
+        let mut processed_block_hashes: Vec<BlockHash> = self
+            .blocks
             .range(
-                processed_blocks::BlocksOrdKey(BlockHeight(start_height)),
-                processed_blocks::BlocksOrdKey(
-                    self.processed_blocks
+                blocks::BlocksOrdKey(BlockHeight(start_height)),
+                blocks::BlocksOrdKey(
+                    self.blocks
                         .last()
-                        .map_or(BlockHeight(start_height), |processed_block| {
-                            processed_block.block_height
-                        })
+                        .map_or(BlockHeight(start_height), |block| block.block_height)
                         + 1,
                 ),
             )
-            .filter_map(|processed_block| {
-                processed_block
-                    .map(|b| b.value().map_or(ProcessedBlockHash::new(""), |i| i.hash()))
+            .filter_map(|block| {
+                block
+                    .map(|b| b.value().map_or(BlockHash::new(""), |i| i.hash()))
                     .ok()
             })
             .collect();
@@ -592,25 +581,25 @@ mod tests {
     use crate::{
         bus::BusClientSender,
         mempool::MempoolEvent,
-        model::{BlockHeight, Hashable, ProcessedBlock},
+        model::{Block, BlockHeight, Hashable},
         utils::conf::Conf,
     };
     use futures::{SinkExt, StreamExt};
     use tokio::io::AsyncWriteExt;
     use tokio_util::codec::{Framed, LengthDelimitedCodec};
 
-    use super::{module_bus_client, processed_blocks::ProcessedBlocks};
+    use super::{blocks::Blocks, module_bus_client};
     use anyhow::Result;
 
     #[test]
     fn test_blocks() -> Result<()> {
         let tmpdir = tempfile::Builder::new().prefix("history-tests").tempdir()?;
         let db = sled::open(tmpdir.path().join("history"))?;
-        let mut processed_blocks = ProcessedBlocks::new(&db)?;
-        let processed_block = ProcessedBlock::default();
-        processed_blocks.put(processed_block.clone())?;
-        assert!(processed_blocks.last().unwrap().block_height == processed_block.block_height);
-        let last = processed_blocks.get(processed_block.hash())?;
+        let mut blocks = Blocks::new(&db)?;
+        let block = Block::default();
+        blocks.put(block.clone())?;
+        assert!(blocks.last().unwrap().block_height == block.block_height);
+        let last = blocks.get(block.hash())?;
         assert!(last.is_some());
         assert!(last.unwrap().block_height == BlockHeight(0));
         Ok(())
@@ -623,7 +612,7 @@ mod tests {
             .tempdir()
             .unwrap();
         let db = sled::open(tmpdir.path().join("history")).unwrap();
-        let processed_blocks = ProcessedBlocks::new(&db).unwrap();
+        let blocks = Blocks::new(&db).unwrap();
 
         let bus = super::DABusClient::new_from_bus(crate::bus::SharedMessageBus::new(
             crate::bus::metrics::BusMetrics::global("global".to_string()),
@@ -632,23 +621,23 @@ mod tests {
         let mut da = super::DataAvailability {
             config: Default::default(),
             bus,
-            processed_blocks,
+            blocks,
             buffered_processed_blocks: Default::default(),
             self_pubkey: Default::default(),
             asked_last_processed_block: Default::default(),
             stream_peer_metadata: Default::default(),
             node_state: Default::default(),
         };
-        let mut processed_block = ProcessedBlock::default();
-        let mut processed_blocks = vec![];
+        let mut block = Block::default();
+        let mut blocks = vec![];
         for i in 1..1000 {
-            processed_blocks.push(processed_block.clone());
-            processed_block.block_parent_hash = processed_block.hash();
-            processed_block.block_height = BlockHeight(i);
+            blocks.push(block.clone());
+            block.block_parent_hash = block.hash();
+            block.block_height = BlockHeight(i);
         }
-        processed_blocks.reverse();
-        for processed_block in processed_blocks {
-            da.handle_processed_block(processed_block).await;
+        blocks.reverse();
+        for block in blocks {
+            da.handle_processed_block(block).await;
         }
     }
 
@@ -666,7 +655,7 @@ mod tests {
             .tempdir()
             .unwrap();
         let db = sled::open(tmpdir.path().join("history")).unwrap();
-        let processed_blocks = ProcessedBlocks::new(&db).unwrap();
+        let blocks = Blocks::new(&db).unwrap();
 
         let global_bus = crate::bus::SharedMessageBus::new(
             crate::bus::metrics::BusMetrics::global("global".to_string()),
@@ -678,7 +667,7 @@ mod tests {
         let mut da = super::DataAvailability {
             config: config.clone().into(),
             bus,
-            processed_blocks,
+            blocks,
             buffered_processed_blocks: Default::default(),
             self_pubkey: Default::default(),
             asked_last_processed_block: Default::default(),
@@ -686,16 +675,16 @@ mod tests {
             node_state: Default::default(),
         };
 
-        let mut processed_block = ProcessedBlock::default();
-        let mut processed_blocks = vec![];
+        let mut block = Block::default();
+        let mut blocks = vec![];
         for i in 1..15 {
-            processed_blocks.push(processed_block.clone());
-            processed_block.block_parent_hash = processed_block.hash();
-            processed_block.block_height = BlockHeight(i);
+            blocks.push(block.clone());
+            block.block_parent_hash = block.hash();
+            block.block_height = BlockHeight(i);
         }
-        processed_blocks.reverse();
-        for processed_block in processed_blocks {
-            da.handle_processed_block(processed_block).await;
+        blocks.reverse();
+        for block in blocks {
+            da.handle_processed_block(block).await;
         }
 
         tokio::spawn(async move {
@@ -718,11 +707,10 @@ mod tests {
         let mut heights_received = vec![];
         while let Some(Ok(cmd)) = da_stream.next().await {
             let bytes = cmd;
-            let processed_block: ProcessedBlock =
-                bincode::decode_from_slice(&bytes, bincode::config::standard())
-                    .unwrap()
-                    .0;
-            heights_received.push(processed_block.block_height.0);
+            let block: Block = bincode::decode_from_slice(&bytes, bincode::config::standard())
+                .unwrap()
+                .0;
+            heights_received.push(block.block_height.0);
             if heights_received.len() == 14 {
                 break;
             }
@@ -759,11 +747,10 @@ mod tests {
         let mut heights_received = vec![];
         while let Some(Ok(cmd)) = da_stream.next().await {
             let bytes = cmd;
-            let processed_block: ProcessedBlock =
-                bincode::decode_from_slice(&bytes, bincode::config::standard())
-                    .unwrap()
-                    .0;
-            heights_received.push(processed_block.block_height.0);
+            let block: Block = bincode::decode_from_slice(&bytes, bincode::config::standard())
+                .unwrap()
+                .0;
+            heights_received.push(block.block_height.0);
             if heights_received.len() == 18 {
                 break;
             }

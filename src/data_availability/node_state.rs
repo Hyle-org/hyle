@@ -3,9 +3,9 @@
 use crate::{
     consensus::staking::Staker,
     model::{
-        BlobTransaction, BlobsHash, BlockHeight, ContractName, Hashable, ProcessedBlock,
-        ProcessedBlockHash, ProofTransaction, RegisterContractTransaction, Transaction,
-        TransactionData, ValidatorPublicKey, VerifiedProofTransaction,
+        BlobTransaction, BlobsHash, Block, BlockHash, BlockHeight, ContractName, Hashable,
+        ProofTransaction, RegisterContractTransaction, Transaction, TransactionData,
+        ValidatorPublicKey, VerifiedProofTransaction,
     },
 };
 use anyhow::{bail, Context, Error, Result};
@@ -39,11 +39,11 @@ impl NodeState {
     pub fn handle_new_cut(
         &mut self,
         block_height: BlockHeight,
-        block_parent_hash: ProcessedBlockHash,
+        block_parent_hash: BlockHash,
         block_timestamp: u64,
         new_bounded_validators: Vec<ValidatorPublicKey>,
         txs: Vec<Transaction>,
-    ) -> ProcessedBlock {
+    ) -> Block {
         let timed_out_tx_hashes = self.clear_timeouts(&block_height);
         self.current_height = block_height;
 
@@ -116,7 +116,7 @@ impl NodeState {
                 }
             }
         }
-        ProcessedBlock {
+        Block {
             block_parent_hash,
             block_height,
             block_timestamp,

@@ -193,8 +193,8 @@ impl Transaction {
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, Encode, Decode, Eq, PartialEq)]
-pub struct ProcessedBlock {
-    pub block_parent_hash: ProcessedBlockHash,
+pub struct Block {
+    pub block_parent_hash: BlockHash,
     pub block_height: BlockHeight,
     pub block_timestamp: u64,
     pub new_contract_txs: Vec<Transaction>,
@@ -209,20 +209,20 @@ pub struct ProcessedBlock {
     pub updated_states: HashMap<ContractName, StateDigest>,
 }
 
-impl Ord for ProcessedBlock {
+impl Ord for Block {
     fn cmp(&self, other: &Self) -> Ordering {
         self.block_height.0.cmp(&other.block_height.0)
     }
 }
 
-impl PartialOrd for ProcessedBlock {
+impl PartialOrd for Block {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl Hashable<ProcessedBlockHash> for ProcessedBlock {
-    fn hash(&self) -> ProcessedBlockHash {
+impl Hashable<BlockHash> for Block {
+    fn hash(&self) -> BlockHash {
         let mut hasher = Sha3_256::new();
 
         _ = write!(hasher, "{}", self.block_parent_hash);
@@ -258,14 +258,14 @@ impl Hashable<ProcessedBlockHash> for ProcessedBlock {
         }
         _ = write!(hasher, "{}", self.block_timestamp);
 
-        ProcessedBlockHash(hex::encode(hasher.finalize()))
+        BlockHash(hex::encode(hasher.finalize()))
     }
 }
 
 #[derive(Debug, Serialize, Deserialize, Default, Clone, Encode, Decode, PartialEq, Eq, Hash)]
-pub struct ProcessedBlockHash(pub String);
+pub struct BlockHash(pub String);
 
-impl Display for ProcessedBlockHash {
+impl Display for BlockHash {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
@@ -275,12 +275,12 @@ impl Display for ProcessedBlockHash {
     }
 }
 
-impl Type<Postgres> for ProcessedBlockHash {
+impl Type<Postgres> for BlockHash {
     fn type_info() -> sqlx::postgres::PgTypeInfo {
         <String as Type<Postgres>>::type_info()
     }
 }
-impl sqlx::Encode<'_, sqlx::Postgres> for ProcessedBlockHash {
+impl sqlx::Encode<'_, sqlx::Postgres> for BlockHash {
     fn encode_by_ref(
         &self,
         buf: &mut sqlx::postgres::PgArgumentBuffer,
@@ -292,21 +292,21 @@ impl sqlx::Encode<'_, sqlx::Postgres> for ProcessedBlockHash {
     }
 }
 
-impl<'r> sqlx::Decode<'r, sqlx::Postgres> for ProcessedBlockHash {
+impl<'r> sqlx::Decode<'r, sqlx::Postgres> for BlockHash {
     fn decode(
         value: sqlx::postgres::PgValueRef<'r>,
     ) -> std::result::Result<
-        ProcessedBlockHash,
+        BlockHash,
         std::boxed::Box<(dyn std::error::Error + std::marker::Send + std::marker::Sync + 'static)>,
     > {
         let inner = <String as sqlx::Decode<sqlx::Postgres>>::decode(value)?;
-        Ok(ProcessedBlockHash(inner))
+        Ok(BlockHash(inner))
     }
 }
 
-impl ProcessedBlockHash {
-    pub fn new(s: &str) -> ProcessedBlockHash {
-        ProcessedBlockHash(s.into())
+impl BlockHash {
+    pub fn new(s: &str) -> BlockHash {
+        BlockHash(s.into())
     }
 }
 

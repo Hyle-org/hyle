@@ -2,17 +2,17 @@ use serde::{Deserialize, Serialize};
 use sqlx::types::chrono::NaiveDateTime;
 use sqlx::{prelude::Type, Postgres};
 
-use crate::model::{ProcessedBlockHash, Transaction, TransactionData};
+use crate::model::{BlockHash, Transaction, TransactionData};
 use hyle_contract_sdk::TxHash;
 
 #[derive(Debug, sqlx::FromRow, Serialize, Deserialize)]
 pub struct BlockDb {
     // Struct for the blocks table
-    pub hash: ProcessedBlockHash,
-    pub parent_hash: ProcessedBlockHash, // Parent block hash
+    pub hash: BlockHash,
+    pub parent_hash: BlockHash, // Parent block hash
     #[sqlx(try_from = "i64")]
     pub height: u64, // Corresponds to BlockHeight
-    pub timestamp: NaiveDateTime,        // UNIX timestamp
+    pub timestamp: NaiveDateTime, // UNIX timestamp
 }
 
 #[derive(Debug, sqlx::Type, Serialize, Deserialize, Clone, PartialEq)]
@@ -47,8 +47,8 @@ pub enum TransactionStatus {
 #[derive(Debug, sqlx::FromRow, Serialize, Deserialize)]
 pub struct TransactionDb {
     // Struct for the transactions table
-    pub tx_hash: TxHashDb,              // Transaction hash
-    pub block_hash: ProcessedBlockHash, // Corresponds to the block hash
+    pub tx_hash: TxHashDb,     // Transaction hash
+    pub block_hash: BlockHash, // Corresponds to the block hash
     #[sqlx(try_from = "i32")]
     pub version: u32, // Transaction version
     pub transaction_type: TransactionType, // Type of transaction
@@ -58,7 +58,7 @@ pub struct TransactionDb {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct TransactionWithBlobs {
     pub tx_hash: TxHashDb,
-    pub block_hash: ProcessedBlockHash,
+    pub block_hash: BlockHash,
     pub version: i32,
     pub transaction_type: TransactionType,
     pub transaction_status: TransactionStatus,
@@ -106,9 +106,9 @@ pub struct ContractDb {
 #[derive(Debug, sqlx::FromRow, Serialize, Deserialize)]
 pub struct ContractStateDb {
     // Struct for the contract_state table
-    pub contract_name: String,          // Name of the contract
-    pub block_hash: ProcessedBlockHash, // Hash of the block where the state is captured
-    pub state_digest: Vec<u8>,          // The contract state stored in JSON format
+    pub contract_name: String, // Name of the contract
+    pub block_hash: BlockHash, // Hash of the block where the state is captured
+    pub state_digest: Vec<u8>, // The contract state stored in JSON format
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]

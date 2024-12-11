@@ -9,8 +9,7 @@ pub mod model;
 use crate::{
     data_availability::DataEvent,
     model::{
-        BlobTransaction, BlockHeight, CommonRunContext, ContractName, Hashable, ProcessedBlock,
-        ProcessedBlockHash,
+        BlobTransaction, Block, BlockHash, BlockHeight, CommonRunContext, ContractName, Hashable,
     },
     module_handle_messages,
     utils::modules::{module_bus_client, Module},
@@ -215,27 +214,22 @@ impl Indexer {
 
     async fn handle_data_availability_event(&mut self, event: DataEvent) -> Result<(), Error> {
         match event {
-            DataEvent::ProcessedBlock(processed_block) => {
-                self.handle_processed_block(*processed_block).await
-            }
+            DataEvent::NewBlock(block) => self.handle_processed_block(*block).await,
             _ => Ok(()),
         }
     }
 
-    async fn handle_processed_block(
-        &mut self,
-        processed_block: ProcessedBlock,
-    ) -> Result<(), Error> {
+    async fn handle_processed_block(&mut self, block: Block) -> Result<(), Error> {
         let mut transaction = self.state.db.begin().await?;
 
         // Insert the block into the blocks table
-        let block_hash = &processed_block.hash();
-        let block_parent_hash = &processed_block.block_parent_hash;
-        let block_height = i64::try_from(processed_block.block_height.0)
+        let block_hash = &block.hash();
+        let block_parent_hash = &block.block_parent_hash;
+        let block_height = i64::try_from(block.block_height.0)
             .map_err(|_| anyhow::anyhow!("Block height is too large to fit into an i64"))?;
 
         let block_timestamp = match DateTime::from_timestamp(
-            i64::try_from(processed_block.block_timestamp)
+            i64::try_from(block.block_timestamp)
                 .map_err(|_| anyhow::anyhow!("Timestamp too large for i64"))?,
             0,
         ) {
@@ -254,7 +248,7 @@ impl Indexer {
         .await?;
 
         // Handling Register Contract Transactions
-        for tx in processed_block.new_contract_txs {
+        for tx in block.new_contract_txs {
             let tx_hash: &TxHashDb = &tx.hash().into();
             let version = i32::try_from(tx.version)
                 .map_err(|_| anyhow::anyhow!("Tx version is too large to fit into an i32"))?;
@@ -306,7 +300,7 @@ impl Indexer {
         }
 
         // Handling Blob Transactions
-        for tx in processed_block.new_blob_txs {
+        for tx in block.new_blob_txs {
             let tx_hash: &TxHashDb = &tx.hash().into();
             let version = i32::try_from(tx.version)
                 .map_err(|_| anyhow::anyhow!("Tx version is too large to fit into an i32"))?;
@@ -353,7 +347,7 @@ impl Indexer {
         }
 
         // Handling Proof Transactions
-        for tx in processed_block.new_verified_proof_txs {
+        for tx in block.new_verified_proof_txs {
             let tx_hash: &TxHashDb = &tx.hash().into();
             let version = i32::try_from(tx.version)
                 .map_err(|_| anyhow::anyhow!("Tx version is too large to fit into an i32"))?;
@@ -394,7 +388,7 @@ impl Indexer {
         }
 
         // Handling failed transactions
-        for tx in processed_block.failed_txs {
+        for tx in block.failed_txs {
             let tx_hash: &TxHashDb = &tx.hash().into();
             let version = i32::try_from(tx.version)
                 .map_err(|_| anyhow::anyhow!("Tx version is too large to fit into an i32"))?;
@@ -415,12 +409,12 @@ impl Indexer {
         }
 
         // Handling new stakers
-        for _staker in processed_block.stakers {
+        for _staker in block.stakers {
             // TODO: add new table with stakers at a given height
         }
 
         // Handling timed out blob transactions
-        for timed_out_tx_hash in processed_block.timed_out_tx_hashes {
+        for timed_out_tx_hash in block.timed_out_tx_hashes {
             let tx_hash: &TxHashDb = &timed_out_tx_hash.into();
             sqlx::query("UPDATE transactions SET transaction_status = $1 WHERE tx_hash = $2")
                 .bind(TransactionStatus::TimedOut)
@@ -430,7 +424,7 @@ impl Indexer {
         }
 
         // Handling verified blob
-        for (blob_tx_hash, blob_index) in processed_block.verified_blobs {
+        for (blob_tx_hash, blob_index) in block.verified_blobs {
             let blob_tx_hash: &TxHashDb = &blob_tx_hash.into();
             let blob_index = i32::try_from(blob_index.0)
                 .map_err(|_| anyhow::anyhow!("Blob index is too large to fit into an i32"))?;
@@ -443,7 +437,7 @@ impl Indexer {
         }
 
         // Handling settled blob transactions
-        for settled_blob_tx_hash in processed_block.settled_blob_tx_hashes {
+        for settled_blob_tx_hash in block.settled_blob_tx_hashes {
             let tx_hash: &TxHashDb = &settled_blob_tx_hash.into();
             sqlx::query("UPDATE transactions SET transaction_status = $1 WHERE tx_hash = $2")
                 .bind(TransactionStatus::Success)
@@ -453,7 +447,7 @@ impl Indexer {
         }
 
         // Handling updated contract state
-        for (contract_name, state_digest) in processed_block.updated_states {
+        for (contract_name, state_digest) in block.updated_states {
             let contract_name = &contract_name.0;
             let state_digest = &state_digest.0;
             sqlx::query(
@@ -482,7 +476,7 @@ impl Indexer {
         &self,
         tx: &BlobTransaction,
         tx_hash: &TxHashDb,
-        block_hash: &ProcessedBlockHash,
+        block_hash: &BlockHash,
         version: &i32,
     ) {
         for (contrat_name, senders) in self.subscribers.iter() {
@@ -714,13 +708,12 @@ mod test {
         ];
 
         let mut node_state = NodeState::default();
-        let processed_block =
-            node_state.handle_new_cut(BlockHeight(1), ProcessedBlockHash::new(""), 1, vec![], txs);
+        let block = node_state.handle_new_cut(BlockHeight(1), BlockHash::new(""), 1, vec![], txs);
 
         indexer
-            .handle_processed_block(processed_block)
+            .handle_processed_block(block)
             .await
-            .expect("Failed to handle processed block");
+            .expect("Failed to handle block");
 
         let transactions_response = server.get("/contract/c1").await;
         transactions_response.assert_status_ok();
