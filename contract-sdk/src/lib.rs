@@ -28,11 +28,19 @@ macro_rules! info {
 }
 
 // Si la feature "tracing" n’est pas activée, on redirige vers la fonction env::log
-#[cfg(not(feature = "tracing"))]
+#[cfg(all(not(feature = "tracing"), feature = "risc0"))]
 #[macro_export]
 macro_rules! info {
     ($($arg:tt)*) => {
-        $crate::env::log(&format!($($arg)*));
+        $crate::guest::env::log(&format!($($arg)*));
+    }
+}
+
+#[cfg(all(not(feature = "tracing"), not(feature = "risc0")))]
+#[macro_export]
+macro_rules! info {
+    ($($arg:tt)*) => {
+        println!($($arg)*);
     }
 }
 

@@ -99,6 +99,10 @@ tempfile = "3.14.0"
 testcontainers-modules = { version = "0.11.4", features = ["postgres"] }
 assert-json-diff = "2.0.2"
 hyrun = { path = "./crates/hyrun" }
+# staking = { path = "./contracts/staking", features = ["risc0"] }
+# amm = { path = "./contracts/amm", features = ["risc0"]  }
+# hyllar = { path = "./contracts/hyllar", features = ["risc0"]  }
+# hydentity = { path = "./contracts/hydentity", features = ["risc0"]  }
 
 [features]
 dhat = ["dep:dhat"]
