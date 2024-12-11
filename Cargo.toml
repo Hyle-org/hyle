@@ -18,7 +18,7 @@ default-run = "node"
 
 [dependencies]
 hyle-contract-sdk = { path = "./contract-sdk", features = ["tracing"] }
-staking = { path = "./contracts/staking", default-features=false }
+staking = { path = "./contracts/staking", default-features = false }
 amm = { path = "./contracts/amm" }
 hyllar = { path = "./contracts/hyllar" }
 hydentity = { path = "./contracts/hydentity" }
@@ -75,7 +75,7 @@ strum_macros = "0.26.4"
 indexmap = { version = "2.7.0", features = ["serde"] }
 sp1-sdk = { version = "3.4.0", default-features = false }
 
-[target.'cfg(target_os="macos")'.dependencies]
+[target.'cfg(not(target_os="linux"))'.dependencies]
 sled = { version = "0.34.7", features = ["compression", "lock_free_delays"] }
 
 [target.'cfg(target_os="linux")'.dependencies]
