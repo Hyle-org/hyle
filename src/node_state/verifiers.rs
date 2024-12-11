@@ -2,19 +2,14 @@ use anyhow::{bail, Context, Error};
 use risc0_zkvm::sha::Digest;
 use sp1_sdk::{ProverClient, SP1ProofWithPublicValues, SP1VerifyingKey};
 
-use crate::model::ProofTransaction;
 use hyle_contract_sdk::HyleOutput;
 
-pub fn verify_proof(
-    tx: &ProofTransaction,
-    verifier: &str,
-    program_id: &[u8],
-) -> Result<HyleOutput, Error> {
+pub fn verify_proof(proof: &[u8], verifier: &str, program_id: &[u8]) -> Result<HyleOutput, Error> {
     // TODO: remove test
     match verifier {
-        "test" => Ok(serde_json::from_slice(&tx.proof.to_bytes()?)?),
-        "risc0" => risc0_proof_verifier(&tx.proof.to_bytes()?, program_id),
-        "sp1" => sp1_proof_verifier(&tx.proof.to_bytes()?, program_id),
+        "test" => Ok(serde_json::from_slice(proof)?),
+        "risc0" => risc0_proof_verifier(proof, program_id),
+        "sp1" => sp1_proof_verifier(proof, program_id),
         _ => bail!("{} verifier not implemented yet", verifier),
     }
 }

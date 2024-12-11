@@ -484,11 +484,17 @@ impl Mempool {
             }
             TransactionData::Stake(ref _staker) => {}
             TransactionData::Blob(ref _blob_transaction) => {}
-            TransactionData::Proof(proof_transaction) => {
+            TransactionData::Proof(mut proof_transaction) => {
                 // Verify and extract proof
-                let hyle_output = self.node_state.verify_proof(&proof_transaction)?;
+                let hyle_output = self.node_state.verify_proof(
+                    &proof_transaction.proof.to_bytes()?,
+                    &proof_transaction.contract_name,
+                )?;
                 tx.transaction_data = TransactionData::VerifiedProof(VerifiedProofTransaction {
-                    proof_transaction,
+                    proof_hash: proof_transaction.proof.hash(),
+                    contract_name: std::mem::take(&mut proof_transaction.contract_name),
+                    blob_tx_hash: std::mem::take(&mut proof_transaction.blob_tx_hash),
+                    proof: Some(std::mem::take(&mut proof_transaction.proof)),
                     hyle_output,
                 });
             }

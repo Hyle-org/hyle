@@ -4,7 +4,7 @@ use crate::{
     consensus::staking::Staker,
     model::{
         BlobTransaction, BlobsHash, Block, BlockHeight, ContractName, HandledBlockOutput, Hashable,
-        ProofTransaction, RegisterContractTransaction, TransactionData, VerifiedProofTransaction,
+        RegisterContractTransaction, TransactionData, VerifiedProofTransaction,
     },
 };
 use anyhow::{bail, Context, Error, Result};
@@ -188,7 +188,7 @@ impl NodeState {
 
         let (unsettled_tx, is_next_to_settle) = self
             .unsettled_transactions
-            .get_for_settlement(&tx.proof_transaction.blob_tx_hash)
+            .get_for_settlement(&tx.blob_tx_hash)
             .context("BlobTx that is been proved is either settled or does not exists")?;
 
         // Sanity check: if some of the blob contracts are not registered, we can't proceed
@@ -204,9 +204,9 @@ impl NodeState {
         // TODO: success to false is valid outcome and can be settled.
         Self::verify_hyle_output(
             unsettled_tx,
-            &tx.proof_transaction.contract_name,
+            &tx.contract_name,
             &tx.hyle_output,
-            &tx.proof_transaction.blob_tx_hash,
+            &tx.blob_tx_hash,
         )?;
 
         // If we arrived here, HyleOutput provided is OK and can now be saved
@@ -366,9 +366,12 @@ impl NodeState {
         dropped
     }
 
-    pub fn verify_proof(&self, tx: &ProofTransaction) -> Result<HyleOutput, Error> {
+    pub fn verify_proof(
+        &self,
+        proof: &[u8],
+        contract_name: &ContractName,
+    ) -> Result<HyleOutput, Error> {
         // Verify proof
-        let contract_name = &tx.contract_name;
         let contract = match self.contracts.get(contract_name) {
             Some(contract) => contract,
             None => {
@@ -380,7 +383,7 @@ impl NodeState {
         };
         let program_id = &contract.program_id;
         let verifier = &contract.verifier;
-        let hyle_output = verifiers::verify_proof(tx, verifier, program_id)?;
+        let hyle_output = verifiers::verify_proof(proof, verifier, program_id)?;
         Ok(hyle_output)
     }
 }
@@ -482,8 +485,13 @@ mod test {
         };
 
         let verified_proof_c1 = VerifiedProofTransaction {
-            hyle_output: state.verify_proof(&proof_c1).unwrap(),
-            proof_transaction: proof_c1,
+            proof_hash: proof_c1.proof.hash(),
+            hyle_output: state
+                .verify_proof(&proof_c1.proof.to_bytes().unwrap(), &proof_c1.contract_name)
+                .unwrap(),
+            contract_name: c1.clone(),
+            blob_tx_hash: blob_tx_hash.clone(),
+            proof: Some(proof_c1.proof),
         };
 
         let hyle_output_c2 = make_hyle_output(blob_tx.clone(), BlobIndex(1));
@@ -495,8 +503,13 @@ mod test {
         };
 
         let verified_proof_c2 = VerifiedProofTransaction {
-            hyle_output: state.verify_proof(&proof_c2).unwrap(),
-            proof_transaction: proof_c2,
+            proof_hash: proof_c2.proof.hash(),
+            hyle_output: state
+                .verify_proof(&proof_c2.proof.to_bytes().unwrap(), &proof_c2.contract_name)
+                .unwrap(),
+            contract_name: c2.clone(),
+            blob_tx_hash: blob_tx_hash.clone(),
+            proof: Some(proof_c2.proof),
         };
 
         state.handle_verified_proof_tx(&verified_proof_c1).unwrap();
@@ -534,8 +547,13 @@ mod test {
         };
 
         let verified_proof_c1 = VerifiedProofTransaction {
-            hyle_output: state.verify_proof(&proof_c1).unwrap(),
-            proof_transaction: proof_c1,
+            proof_hash: proof_c1.proof.hash(),
+            hyle_output: state
+                .verify_proof(&proof_c1.proof.to_bytes().unwrap(), &proof_c1.contract_name)
+                .unwrap(),
+            contract_name: c1.clone(),
+            blob_tx_hash: blob_tx_hash_1.clone(),
+            proof: Some(proof_c1.proof),
         };
 
         assert_err!(state.handle_verified_proof_tx(&verified_proof_c1));
@@ -573,8 +591,13 @@ mod test {
         };
 
         let verified_proof_c1 = VerifiedProofTransaction {
-            hyle_output: state.verify_proof(&proof_c1).unwrap(),
-            proof_transaction: proof_c1,
+            proof_hash: proof_c1.proof.hash(),
+            hyle_output: state
+                .verify_proof(&proof_c1.proof.to_bytes().unwrap(), &proof_c1.contract_name)
+                .unwrap(),
+            contract_name: c1.clone(),
+            blob_tx_hash: blob_tx_hash.clone(),
+            proof: Some(proof_c1.proof),
         };
 
         state.handle_verified_proof_tx(&verified_proof_c1).unwrap();
@@ -624,8 +647,16 @@ mod test {
         };
 
         let verified_first_proof = VerifiedProofTransaction {
-            hyle_output: state.verify_proof(&first_proof).unwrap(),
-            proof_transaction: first_proof,
+            proof_hash: first_proof.proof.hash(),
+            hyle_output: state
+                .verify_proof(
+                    &first_proof.proof.to_bytes().unwrap(),
+                    &first_proof.contract_name,
+                )
+                .unwrap(),
+            contract_name: c1.clone(),
+            blob_tx_hash: blob_tx_hash.clone(),
+            proof: Some(first_proof.proof),
         };
 
         let mut second_hyle_output = make_hyle_output(blob_tx.clone(), BlobIndex(1));
@@ -639,8 +670,16 @@ mod test {
         };
 
         let verified_second_proof = VerifiedProofTransaction {
-            hyle_output: state.verify_proof(&second_proof).unwrap(),
-            proof_transaction: second_proof,
+            proof_hash: second_proof.proof.hash(),
+            hyle_output: state
+                .verify_proof(
+                    &second_proof.proof.to_bytes().unwrap(),
+                    &second_proof.contract_name,
+                )
+                .unwrap(),
+            contract_name: c1.clone(),
+            blob_tx_hash: blob_tx_hash.clone(),
+            proof: Some(second_proof.proof),
         };
 
         let mut third_hyle_output = make_hyle_output(blob_tx.clone(), BlobIndex(2));
@@ -654,8 +693,16 @@ mod test {
         };
 
         let verified_third_proof = VerifiedProofTransaction {
-            hyle_output: state.verify_proof(&third_proof).unwrap(),
-            proof_transaction: third_proof,
+            proof_hash: third_proof.proof.hash(),
+            hyle_output: state
+                .verify_proof(
+                    &third_proof.proof.to_bytes().unwrap(),
+                    &third_proof.contract_name,
+                )
+                .unwrap(),
+            contract_name: c1.clone(),
+            blob_tx_hash: blob_tx_hash.clone(),
+            proof: Some(third_proof.proof),
         };
 
         state
@@ -692,8 +739,13 @@ mod test {
         };
 
         VerifiedProofTransaction {
-            hyle_output: state.verify_proof(&proof).unwrap(),
-            proof_transaction: proof,
+            proof_hash: proof.proof.hash(),
+            hyle_output: state
+                .verify_proof(&proof.proof.to_bytes().unwrap(), &proof.contract_name)
+                .unwrap(),
+            contract_name: contract_name.clone(),
+            blob_tx_hash: blob_tx_hash.clone(),
+            proof: Some(proof.proof),
         }
     }
 
@@ -797,8 +849,16 @@ mod test {
         };
 
         let verified_first_proof = VerifiedProofTransaction {
-            hyle_output: state.verify_proof(&first_proof).unwrap(),
-            proof_transaction: first_proof,
+            proof_hash: first_proof.proof.hash(),
+            hyle_output: state
+                .verify_proof(
+                    &first_proof.proof.to_bytes().unwrap(),
+                    &first_proof.contract_name,
+                )
+                .unwrap(),
+            contract_name: c1.clone(),
+            blob_tx_hash: blob_tx_hash.clone(),
+            proof: Some(first_proof.proof),
         };
 
         // Create hacky proof for Blob1
@@ -813,8 +873,16 @@ mod test {
         };
 
         let another_verified_first_proof = VerifiedProofTransaction {
-            hyle_output: state.verify_proof(&another_first_proof).unwrap(),
-            proof_transaction: another_first_proof,
+            proof_hash: another_first_proof.proof.hash(),
+            hyle_output: state
+                .verify_proof(
+                    &another_first_proof.proof.to_bytes().unwrap(),
+                    &another_first_proof.contract_name,
+                )
+                .unwrap(),
+            contract_name: c1.clone(),
+            blob_tx_hash: blob_tx_hash.clone(),
+            proof: Some(another_first_proof.proof),
         };
 
         let mut second_hyle_output = make_hyle_output(blob_tx.clone(), BlobIndex(1));
@@ -828,8 +896,16 @@ mod test {
         };
 
         let verified_second_proof = VerifiedProofTransaction {
-            hyle_output: state.verify_proof(&second_proof).unwrap(),
-            proof_transaction: second_proof,
+            proof_hash: second_proof.proof.hash(),
+            hyle_output: state
+                .verify_proof(
+                    &second_proof.proof.to_bytes().unwrap(),
+                    &second_proof.contract_name,
+                )
+                .unwrap(),
+            contract_name: c1.clone(),
+            blob_tx_hash: blob_tx_hash.clone(),
+            proof: Some(second_proof.proof),
         };
 
         state
@@ -875,8 +951,16 @@ mod test {
         };
 
         let verified_first_proof = VerifiedProofTransaction {
-            hyle_output: state.verify_proof(&first_proof).unwrap(),
-            proof_transaction: first_proof,
+            proof_hash: first_proof.proof.hash(),
+            hyle_output: state
+                .verify_proof(
+                    &first_proof.proof.to_bytes().unwrap(),
+                    &first_proof.contract_name,
+                )
+                .unwrap(),
+            contract_name: c1.clone(),
+            blob_tx_hash: blob_tx_hash.clone(),
+            proof: Some(first_proof.proof),
         };
 
         let mut second_hyle_output = make_hyle_output(blob_tx.clone(), BlobIndex(1));
@@ -890,8 +974,16 @@ mod test {
         };
 
         let verified_second_proof = VerifiedProofTransaction {
-            hyle_output: state.verify_proof(&second_proof).unwrap(),
-            proof_transaction: second_proof,
+            proof_hash: second_proof.proof.hash(),
+            hyle_output: state
+                .verify_proof(
+                    &second_proof.proof.to_bytes().unwrap(),
+                    &second_proof.contract_name,
+                )
+                .unwrap(),
+            contract_name: c1.clone(),
+            blob_tx_hash: blob_tx_hash.clone(),
+            proof: Some(second_proof.proof),
         };
 
         let mut third_hyle_output = make_hyle_output(blob_tx.clone(), BlobIndex(2));
@@ -905,8 +997,16 @@ mod test {
         };
 
         let verified_third_proof = VerifiedProofTransaction {
-            hyle_output: state.verify_proof(&third_proof).unwrap(),
-            proof_transaction: third_proof,
+            proof_hash: third_proof.proof.hash(),
+            hyle_output: state
+                .verify_proof(
+                    &third_proof.proof.to_bytes().unwrap(),
+                    &third_proof.contract_name,
+                )
+                .unwrap(),
+            contract_name: c1.clone(),
+            blob_tx_hash: blob_tx_hash.clone(),
+            proof: Some(third_proof.proof),
         };
 
         state
