@@ -163,9 +163,11 @@ impl fmt::Debug for ProofTransaction {
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Encode, Decode, Hash)]
 pub struct VerifiedProofTransaction {
-    pub proof_transaction: ProofTransaction,
+    pub blob_tx_hash: TxHash,
+    pub contract_name: ContractName,
     pub proof_hash: ProofDataHash,
     pub hyle_output: HyleOutput,
+    pub proof: Option<ProofData>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Default, Clone, PartialEq, Eq, Encode, Decode, Hash)]
@@ -360,7 +362,13 @@ impl Hashable<ProofDataHash> for ProofData {
 }
 impl Hashable<TxHash> for VerifiedProofTransaction {
     fn hash(&self) -> TxHash {
-        self.proof_transaction.hash()
+        let mut hasher = Sha3_256::new();
+        _ = write!(hasher, "{}", self.blob_tx_hash);
+        _ = write!(hasher, "{}", self.contract_name);
+        _ = write!(hasher, "{:?}", self.proof_hash);
+        _ = write!(hasher, "{:?}", self.hyle_output);
+        let hash_bytes = hasher.finalize();
+        TxHash(hex::encode(hash_bytes))
     }
 }
 impl Hashable<TxHash> for RegisterContractTransaction {

@@ -3,7 +3,7 @@ use bincode::{Decode, Encode};
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Sha3_256};
-use std::{collections::HashMap, fmt::Display, hash::Hash, io::Write, vec};
+use std::{collections::HashMap, fmt::Display, hash::Hash, vec};
 use tracing::{debug, error, warn};
 
 use crate::{
@@ -63,17 +63,7 @@ impl Hashable<DataProposalHash> for DataProposal {
             hasher.update(parent_data_proposal_hash.0.as_bytes());
         }
         for tx in self.txs.iter() {
-            match tx.transaction_data {
-                TransactionData::VerifiedProof(ref proof_tx) => {
-                    hasher.update(proof_tx.proof_transaction.blob_tx_hash.0.clone());
-                    hasher.update(proof_tx.proof_transaction.contract_name.0.clone());
-                    hasher.update(proof_tx.proof_hash.0.clone());
-                    _ = write!(hasher, "{:?}", proof_tx.hyle_output);
-                }
-                _ => {
-                    hasher.update(tx.hash().0);
-                }
-            }
+            hasher.update(tx.hash().0);
         }
         DataProposalHash(hex::encode(hasher.finalize()))
     }
@@ -249,7 +239,7 @@ impl Storage {
                 }
                 TransactionData::VerifiedProof(proof_tx) => {
                     // Ensure contract is registered
-                    let contract_name = &proof_tx.proof_transaction.contract_name;
+                    let contract_name = &proof_tx.contract_name;
                     if !node_state.contracts.contains_key(contract_name)
                         && !optimistic_node_state
                             .as_ref()
@@ -289,12 +279,25 @@ impl Storage {
                             }
                         }
                     }
-
+                    // Extract the proof
+                    let proof = match &proof_tx.proof {
+                        Some(proof) => match proof.to_bytes() {
+                            Ok(bytes) => bytes,
+                            Err(_) => {
+                                warn!("Refusing DataProposal: failed to convert proof to bytes");
+                                return DataProposalVerdict::Refuse;
+                            }
+                        },
+                        None => {
+                            warn!("Refusing DataProposal: proof is missing");
+                            return DataProposalVerdict::Refuse;
+                        }
+                    };
                     // Verifying the proof before voting
                     match optimistic_node_state
                         .as_ref()
                         .unwrap_or(node_state)
-                        .verify_proof(&proof_tx.proof_transaction)
+                        .verify_proof(&proof, &proof_tx.contract_name)
                     {
                         Ok(hyle_output) => {
                             if hyle_output != proof_tx.hyle_output {
@@ -475,11 +478,10 @@ impl Storage {
 impl DataProposal {
     /// Remove proofs from all transactions in the DataProposal
     fn remove_proofs(&mut self) {
-        let mut txs_without_proofs = std::mem::take(&mut self.txs);
-        txs_without_proofs.iter_mut().for_each(|tx| {
+        self.txs.iter_mut().for_each(|tx| {
             match &mut tx.transaction_data {
                 TransactionData::VerifiedProof(proof_tx) => {
-                    proof_tx.proof_transaction.proof = Default::default();
+                    proof_tx.proof = None;
                 }
                 TransactionData::Proof(_) => {
                     // This can never happen.
@@ -491,7 +493,6 @@ impl DataProposal {
                 | TransactionData::RegisterContract(_) => {}
             }
         });
-        self.txs = txs_without_proofs;
     }
 }
 
@@ -704,12 +705,14 @@ mod tests {
 
     fn make_verified_proof_tx(contract_name: ContractName) -> Transaction {
         let hyle_output = get_hyle_output();
-        let proof_transaction = make_proof_tx(contract_name);
+        let proof = ProofData::Bytes(serde_json::to_vec(&hyle_output).unwrap());
         Transaction {
             version: 1,
             transaction_data: TransactionData::VerifiedProof(VerifiedProofTransaction {
-                proof_hash: proof_transaction.proof.hash(),
-                proof_transaction,
+                proof_hash: proof.hash(),
+                contract_name: contract_name.clone(),
+                blob_tx_hash: TxHash::default(),
+                proof: Some(proof),
                 hyle_output,
             }),
         }
@@ -717,14 +720,14 @@ mod tests {
 
     fn make_empty_verified_proof_tx(contract_name: ContractName) -> Transaction {
         let hyle_output = get_hyle_output();
-        let mut proof_transaction = make_proof_tx(contract_name);
-        let proof_hash = proof_transaction.proof.hash();
-        proof_transaction.proof = ProofData::Bytes(vec![]);
+        let proof = ProofData::Bytes(serde_json::to_vec(&hyle_output).unwrap());
         Transaction {
             version: 1,
             transaction_data: TransactionData::VerifiedProof(VerifiedProofTransaction {
-                proof_hash,
-                proof_transaction,
+                proof_hash: proof.hash(),
+                contract_name: contract_name.clone(),
+                blob_tx_hash: TxHash::default(),
+                proof: None,
                 hyle_output,
             }),
         }

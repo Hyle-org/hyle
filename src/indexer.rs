@@ -382,12 +382,12 @@ impl Indexer {
             .execute(&mut *transaction)
             .await?;
 
-            let proof = &verified_proof_tx.proof_transaction.proof.to_bytes()?;
+            let proof = &verified_proof_tx.proof.unwrap_or_default().to_bytes()?;
             let serialized_hyle_output = serde_json::to_string(&verified_proof_tx.hyle_output)?;
             let blob_index: i32 = i32::try_from(verified_proof_tx.hyle_output.index.0)
                 .map_err(|_| anyhow::anyhow!("Proof blob index is too large to fit into an i32"))?;
             let blob_tx_hash: &TxHashDb = &verified_proof_tx.hyle_output.tx_hash.into();
-            let contract_name = &verified_proof_tx.proof_transaction.contract_name.0;
+            let contract_name = &verified_proof_tx.contract_name.0;
             sqlx::query(
                 "INSERT INTO proofs (tx_hash, blob_tx_hash, blob_index, contract_name, proof, hyle_output) VALUES ($1, $2, $3, $4, $5, $6::jsonb)",
             )
@@ -547,8 +547,8 @@ mod test {
     use crate::{
         bus::SharedMessageBus,
         model::{
-            Blob, BlobData, BlockHeight, ProofData, ProofDataHash, ProofTransaction,
-            RegisterContractTransaction, Transaction, TransactionData, VerifiedProofTransaction,
+            Blob, BlobData, BlockHeight, ProofData, RegisterContractTransaction, Transaction,
+            TransactionData, VerifiedProofTransaction,
         },
     };
 
@@ -620,15 +620,14 @@ mod test {
         next_state: StateDigest,
         blobs: Vec<u8>,
     ) -> Transaction {
+        let proof = ProofData::Bytes(initial_state.0.clone());
         Transaction {
             version: 1,
             transaction_data: TransactionData::VerifiedProof(VerifiedProofTransaction {
-                proof_hash: ProofDataHash("".to_owned()),
-                proof_transaction: ProofTransaction {
-                    blob_tx_hash: blob_tx_hash.clone(),
-                    contract_name: contract_name.clone(),
-                    proof: ProofData::Bytes(initial_state.0.clone()),
-                },
+                proof_hash: proof.hash(),
+                proof: Some(proof),
+                contract_name: contract_name.clone(),
+                blob_tx_hash: blob_tx_hash.clone(),
                 hyle_output: HyleOutput {
                     version: 1,
                     initial_state,
