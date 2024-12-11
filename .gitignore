@@ -1,10 +1,5 @@
-target
 data_node*
-**/*Consensus.data.tmp
-
 *.bin
-*.proof
-!tests/proofs/sp1_basic_proof.bin
 
 .sqlx
 

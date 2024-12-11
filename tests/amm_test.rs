@@ -1,5 +1,4 @@
 use fixtures::ctx::E2ECtx;
-use std::{fs::File, io::Read};
 use tracing::info;
 
 use hyle::model::ProofData;
@@ -8,23 +7,16 @@ mod fixtures;
 
 use anyhow::Result;
 
-pub fn load_encoded_receipt_from_file(path: &str) -> Vec<u8> {
-    let mut file = File::open(path).expect("Failed to open proof file");
-    let mut encoded_receipt = Vec::new();
-    file.read_to_end(&mut encoded_receipt)
-        .expect("Failed to read file content");
-    encoded_receipt
-}
-
 mod e2e_amm {
     use amm::AmmAction;
-    use fixtures::contracts::AmmContract;
+    use fixtures::{contracts::AmmContract, proofs::HyrunProofGen};
     use hydentity::AccountInfo;
     use hyle_contract_sdk::{
         erc20::{ERC20Action, ERC20},
         identity_provider::{IdentityAction, IdentityVerification},
         BlobIndex, ContractName,
     };
+    use hyrun::{CliCommand, HydentityArgs};
 
     use super::*;
 
@@ -88,6 +80,8 @@ mod e2e_amm {
         //    By sending 5 hyllar to amm
         //    By sending 10 hyllar2 to bob (from amm)
 
+        let proof_generator = HyrunProofGen::setup_working_directory();
+
         let contract_hyllar = ctx.get_contract("hyllar").await?;
         let state =
             hyllar::HyllarTokenContract::init(contract_hyllar.state.try_into()?, "caller".into());
@@ -114,8 +108,21 @@ mod e2e_amm {
             )
             .await?;
 
-        let proof =
-            load_encoded_receipt_from_file("./tests/proofs/register.bob.hydentity.risc0.proof");
+        proof_generator
+            .generate_proof(
+                &ctx,
+                CliCommand::Hydentity {
+                    command: HydentityArgs::Register {
+                        account: "bob.hydentity".to_string(),
+                    },
+                },
+                "bob.hydentity",
+                "password",
+                None,
+            )
+            .await;
+
+        let proof = proof_generator.read_proof(0);
 
         info!("➡️  Sending proof for register");
         ctx.send_proof(
@@ -163,12 +170,24 @@ mod e2e_amm {
             )
             .await?;
 
-        let hydentity_proof = load_encoded_receipt_from_file(
-            "./tests/proofs/transfer.25-hyllar-to-bob.hydentity.risc0.proof",
-        );
-        let bob_transfer_proof = load_encoded_receipt_from_file(
-            "./tests/proofs/transfer.25-hyllar-to-bob.hyllar.risc0.proof",
-        );
+        proof_generator
+            .generate_proof(
+                &ctx,
+                CliCommand::Hyllar {
+                    command: hyrun::HyllarArgs::Transfer {
+                        recipient: "bob.hydentity".to_string(),
+                        amount: 25,
+                    },
+                    hyllar_contract_name: "hyllar".to_string(),
+                },
+                "faucet.hydentity",
+                "password",
+                Some(0),
+            )
+            .await;
+
+        let hydentity_proof = proof_generator.read_proof(0);
+        let bob_transfer_proof = proof_generator.read_proof(1);
 
         info!("➡️  Sending proof for hydentity");
         ctx.send_proof(
@@ -229,12 +248,24 @@ mod e2e_amm {
             )
             .await?;
 
-        let hydentity_proof = load_encoded_receipt_from_file(
-            "./tests/proofs/transfer.50-hyllar2-to-bob.hydentity.risc0.proof",
-        );
-        let bob_transfer_proof = load_encoded_receipt_from_file(
-            "./tests/proofs/transfer.50-hyllar2-to-bob.hyllar2.risc0.proof",
-        );
+        proof_generator
+            .generate_proof(
+                &ctx,
+                CliCommand::Hyllar {
+                    command: hyrun::HyllarArgs::Transfer {
+                        recipient: "bob.hydentity".to_string(),
+                        amount: 50,
+                    },
+                    hyllar_contract_name: "hyllar2".to_string(),
+                },
+                "faucet.hydentity",
+                "password",
+                Some(1),
+            )
+            .await;
+
+        let hydentity_proof = proof_generator.read_proof(0);
+        let bob_transfer_proof = proof_generator.read_proof(1);
 
         info!("➡️  Sending proof for hydentity");
         ctx.send_proof(
@@ -293,11 +324,24 @@ mod e2e_amm {
             )
             .await?;
 
-        let hydentity_proof = load_encoded_receipt_from_file(
-            "./tests/proofs/approve.100-hyllar.hydentity.risc0.proof",
-        );
-        let bob_approve_hyllar_proof =
-            load_encoded_receipt_from_file("./tests/proofs/approve.100-hyllar.hyllar.risc0.proof");
+        proof_generator
+            .generate_proof(
+                &ctx,
+                CliCommand::Hyllar {
+                    command: hyrun::HyllarArgs::Approve {
+                        spender: "amm2".to_string(),
+                        amount: 100,
+                    },
+                    hyllar_contract_name: "hyllar".to_string(),
+                },
+                "bob.hydentity",
+                "password",
+                Some(0),
+            )
+            .await;
+
+        let hydentity_proof = proof_generator.read_proof(0);
+        let bob_approve_hyllar_proof = proof_generator.read_proof(1);
 
         info!("➡️  Sending proof for hydentity");
         ctx.send_proof(
@@ -341,12 +385,24 @@ mod e2e_amm {
             )
             .await?;
 
-        let hydentity_proof = load_encoded_receipt_from_file(
-            "./tests/proofs/approve.100-hyllar2.hydentity.risc0.proof",
-        );
-        let bob_approve_hyllar2_proof = load_encoded_receipt_from_file(
-            "./tests/proofs/approve.100-hyllar2.hyllar2.risc0.proof",
-        );
+        proof_generator
+            .generate_proof(
+                &ctx,
+                CliCommand::Hyllar {
+                    command: hyrun::HyllarArgs::Approve {
+                        spender: "amm2".to_string(),
+                        amount: 100,
+                    },
+                    hyllar_contract_name: "hyllar2".to_string(),
+                },
+                "bob.hydentity",
+                "password",
+                Some(1),
+            )
+            .await;
+
+        let hydentity_proof = proof_generator.read_proof(0);
+        let bob_approve_hyllar2_proof = proof_generator.read_proof(1);
 
         info!("➡️  Sending proof for hydentity");
         ctx.send_proof(
@@ -414,18 +470,28 @@ mod e2e_amm {
             )
             .await?;
 
-        let hydentity_proof = load_encoded_receipt_from_file(
-            "./tests/proofs/new-pair-hyllar-hyllar2.hydentity.risc0.proof",
-        );
-        let bob_new_pair_proof = load_encoded_receipt_from_file(
-            "./tests/proofs/new-pair-hyllar-hyllar2.amm.risc0.proof",
-        );
-        let bob_transfer_hyllar_proof = load_encoded_receipt_from_file(
-            "./tests/proofs/transfer.20-hyllar-to-amm.hyllar.risc0.proof",
-        );
-        let bob_transfer_hyllar2_proof = load_encoded_receipt_from_file(
-            "./tests/proofs/transfer.50-hyllar2-to-amm.hyllar2.risc0.proof",
-        );
+        proof_generator
+            .generate_proof(
+                &ctx,
+                CliCommand::Amm {
+                    command: hyrun::AmmArgs::NewPair {
+                        token_a: "hyllar".to_owned(),
+                        token_b: "hyllar2".to_owned(),
+                        amount_a: 20,
+                        amount_b: 50,
+                    },
+                    amm_contract_name: "amm2".to_string(),
+                },
+                "bob.hydentity",
+                "password",
+                Some(2),
+            )
+            .await;
+
+        let hydentity_proof = proof_generator.read_proof(0);
+        let bob_new_pair_proof = proof_generator.read_proof(1);
+        let bob_transfer_hyllar_proof = proof_generator.read_proof(2);
+        let bob_transfer_hyllar2_proof = proof_generator.read_proof(3);
 
         info!("➡️  Sending proof for hydentity");
         ctx.send_proof(
@@ -498,6 +564,7 @@ mod e2e_amm {
                     .as_blob(ContractName("hydentity".to_owned())),
                     AmmAction::Swap {
                         pair: ("hyllar".to_string(), "hyllar2".to_string()),
+                        amounts: (5, 10),
                     }
                     .as_blob(
                         ContractName(AMM_CONTRACT_NAME.to_owned()),
@@ -527,16 +594,28 @@ mod e2e_amm {
             )
             .await?;
 
-        let hydentity_proof =
-            load_encoded_receipt_from_file("./tests/proofs/swap.hydentity.risc0.proof");
-        let bob_swap_proof =
-            load_encoded_receipt_from_file("./tests/proofs/swap.hyllar.hyllar2.risc0.proof");
-        let bob_transfer_proof = load_encoded_receipt_from_file(
-            "./tests/proofs/transfer.5-hyllar-to-amm.hyllar.risc0.proof",
-        );
-        let amm_transfer_from_proof = load_encoded_receipt_from_file(
-            "./tests/proofs/transfer.10-hyllar2-to-bob.hyllar2.risc0.proof",
-        );
+        proof_generator
+            .generate_proof(
+                &ctx,
+                CliCommand::Amm {
+                    command: hyrun::AmmArgs::Swap {
+                        token_a: "hyllar".to_owned(),
+                        token_b: "hyllar2".to_owned(),
+                        amount_a: 5,
+                        amount_b: 10,
+                    },
+                    amm_contract_name: "amm2".to_string(),
+                },
+                "bob.hydentity",
+                "password",
+                Some(3),
+            )
+            .await;
+
+        let hydentity_proof = proof_generator.read_proof(0);
+        let bob_swap_proof = proof_generator.read_proof(1);
+        let bob_transfer_proof = proof_generator.read_proof(2);
+        let amm_transfer_from_proof = proof_generator.read_proof(3);
 
         info!("➡️  Sending proof for hydentity");
         ctx.send_proof(
@@ -600,13 +679,13 @@ mod e2e_amm {
 
     #[test_log::test(tokio::test)]
     async fn amm_single_node() -> Result<()> {
-        let ctx = E2ECtx::new_single(500).await?;
+        let ctx = E2ECtx::new_single(300).await?;
         scenario_amm(ctx).await
     }
 
     #[test_log::test(tokio::test)]
     async fn amm_multi_nodes() -> Result<()> {
-        let ctx = E2ECtx::new_multi(2, 500).await?;
+        let ctx = E2ECtx::new_multi(2, 300).await?;
 
         scenario_amm(ctx).await
     }

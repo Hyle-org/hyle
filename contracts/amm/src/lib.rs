@@ -143,125 +143,66 @@ impl AmmContract {
         Ok(program_outputs)
     }
 
-    pub fn verify_swap(&mut self, pair: TokenPair) -> RunResult {
-        // Check that swap is only about two different tokens and that there is one blob for each
-        if self.callee_blobs().len() != 2 || pair.0 == pair.1 {
+    pub fn verify_swap(
+        &mut self,
+        pair: TokenPair,
+        from_amount: u128,
+        to_amount: u128,
+    ) -> RunResult {
+        // Check that swap is only about two different tokens
+        if pair.0 == pair.1 {
             return Err("Swap can only happen between two different tokens".to_string());
         }
 
-        // Extract "blob_from" out of the blobs. This is the blob that has the first token of the pair as contract name
-        let blob_from_index = match self
-            .callee_blobs()
-            .iter()
-            .position(|blob| blob.contract_name.0 == pair.0)
-        {
-            Some(index) => BlobIndex(index),
-            None => {
-                return Err(format!(
-                    "Blob with contract name {} not found in callees",
-                    pair.0
-                ));
-            }
-        };
-        let blob_from = sdk::guest::parse_structured_blob::<ERC20Action>(
-            &self.callee_blobs(),
-            &blob_from_index,
-        );
-        self.mut_callee_blobs().remove(blob_from_index.0 as usize);
-
-        // Extract "blob_to" out of the blobs. This is the blob that has the second token of the pair as contract name
-        let blob_to_index = match self
-            .callee_blobs()
-            .iter()
-            .position(|blob| blob.contract_name.0 == pair.1)
-        {
-            Some(index) => BlobIndex(index),
-            None => {
-                return Err(format!(
-                    "Blob with contract name {} not found in callees",
-                    pair.0
-                ));
-            }
-        };
-        let blob_to =
-            sdk::guest::parse_structured_blob::<ERC20Action>(&self.callee_blobs(), &blob_to_index);
-        self.mut_callee_blobs().remove(blob_to_index.0 as usize);
-
-        let from_amount = match blob_from.data.parameters {
+        // Check that we were transferred the correct amount of tokens
+        self.is_in_callee_blobs(
+            &ContractName(pair.0.clone()),
             ERC20Action::TransferFrom {
-                sender,
-                amount,
-                recipient,
-            } => {
-                // Check that blob_from 'from' field matches the caller and that 'to' field is the AMM
-                if sender != self.caller().0 || recipient != self.contract_name.0 {
-                    return Err(
-                        "Blob 'from' field is not the User or 'to' field is not the AMM"
-                            .to_string(),
-                    );
-                }
-                amount
-            }
-            _ => {
-                // Check the blobs are TransferFrom
-                return Err("Transfer blobs do not call the correct function".to_string());
-            }
-        };
-
-        let to_amount = match blob_to.data.parameters {
-            ERC20Action::Transfer { amount, recipient } => {
-                // Check that blob_to 'from' field is the AMM and that 'to' field matches the caller
-                if recipient != self.caller().0 {
-                    return Err(
-                        "Blob 'from' field is not the AMM or 'to' field is not the caller"
-                            .to_string(),
-                    );
-                }
-                amount
-            }
-            _ => {
-                // Check the blobs are TransferFrom
-                return Err("Transfer blobs do not call the correct function".to_string());
-            }
-        };
+                sender: self.caller().0.clone(),
+                recipient: self.contract_name.0.clone(),
+                amount: from_amount,
+            },
+        )?;
 
         // Compute x,y and check swap is legit (x*y=k)
         let normalized_pair = UnorderedTokenPair::new(pair.0.clone(), pair.1.clone());
         let is_normalized_order = pair.0 <= pair.1;
-        match self.state.pairs.get_mut(&normalized_pair) {
-            Some((prev_x, prev_y)) => {
-                if is_normalized_order {
-                    let amount_b = *prev_y - (*prev_x * *prev_y / (*prev_x + from_amount));
-                    if amount_b != to_amount {
-                        return Err(format!(
-                            "Swap formula is not respected: {} * {} != {} * {}",
-                            (*prev_x + from_amount),
-                            (*prev_y - to_amount),
-                            prev_x,
-                            prev_y,
-                        ));
-                    }
-                    *prev_x += from_amount;
-                    *prev_y -= to_amount;
-                } else {
-                    let amount_b = *prev_x - (*prev_y * *prev_x / (*prev_y + from_amount));
-                    if amount_b != to_amount {
-                        return Err(format!(
-                            "Swap formula is not respected: {} * {} != {} * {}",
-                            (*prev_y + from_amount),
-                            (*prev_x - to_amount),
-                            prev_y,
-                            prev_x
-                        ));
-                    }
-                    *prev_y += from_amount;
-                    *prev_x -= to_amount;
-                }
-            }
-            None => {
-                return Err(format!("Pair {:?} not found in AMM state", pair));
-            }
+        let Some((prev_x, prev_y)) = self.state.pairs.get_mut(&normalized_pair) else {
+            return Err(format!("Pair {:?} not found in AMM state", pair));
         };
+        let expected_to_amount = if is_normalized_order {
+            let amount = *prev_y - (*prev_x * *prev_y / (*prev_x + from_amount));
+            *prev_x += from_amount;
+            *prev_y -= amount; // we need to remove the full amount to avoid slipping
+            amount
+        } else {
+            let amount = *prev_x - (*prev_y * *prev_x / (*prev_y + from_amount));
+            *prev_y += from_amount;
+            *prev_x -= amount; // we need to remove the full amount to avoid slipping
+            amount
+        };
+
+        // Assert that we transferred less than that, within 2%
+        if to_amount > expected_to_amount || to_amount < expected_to_amount * 98 / 100 {
+            return Err(format!(
+                "Invalid swap: expected to receive between {} and {} {}",
+                expected_to_amount * 100 / 102,
+                expected_to_amount,
+                pair.1
+            ));
+        }
+
+        // At this point the contract has effectively taken some fees but we don't actually count them.
+
+        // Check that we transferred the correct amount of tokens
+        self.is_in_callee_blobs(
+            &ContractName(pair.1.clone()),
+            ERC20Action::Transfer {
+                recipient: self.caller().0.clone(),
+                amount: to_amount,
+            },
+        )?;
+
         Ok(format!(
             "Swap of {} {} for {} {} is valid",
             self.caller(),
@@ -295,6 +236,7 @@ impl TryFrom<sdk::StateDigest> for AmmState {
 pub enum AmmAction {
     Swap {
         pair: TokenPair, // User swaps the first token of the pair for the second token
+        amounts: TokenPairAmount,
     },
     NewPair {
         pair: TokenPair,
@@ -372,10 +314,13 @@ mod tests {
         };
         let mut contract = AmmContract::new(exec_ctx, ContractName("amm".to_owned()), state);
 
-        let result = contract.verify_swap(("token1".to_string(), "token2".to_string()));
+        let result = contract.verify_swap(("token1".to_string(), "token2".to_string()), 5, 10);
         assert!(result.is_ok());
         // Assert that the amounts for the pair token1/token2 have been updated
-        assert!(contract.state.pairs.get(&normalized_token_pair) == Some(&(25, 40)));
+        assert_eq!(
+            contract.state.pairs.get(&normalized_token_pair),
+            Some(&(25, 40))
+        );
     }
 
     #[test]
@@ -398,12 +343,45 @@ mod tests {
         };
         let mut contract = AmmContract::new(exec_ctx, ContractName("amm".to_owned()), state);
 
-        let result = contract.verify_swap(("token2".to_string(), "token1".to_string()));
+        let result = contract.verify_swap(("token2".to_string(), "token1".to_string()), 50, 10);
 
         assert!(result.is_ok());
         // Assert that the amounts for the pair token1/token2 have been updated
         println!("{:?}", contract.state.pairs.get(&normalized_token_pair));
         assert!(contract.state.pairs.get(&normalized_token_pair) == Some(&(10, 100)));
+    }
+
+    #[test]
+    fn test_verify_swap_success_with_slippage() {
+        let normalized_token_pair =
+            UnorderedTokenPair::new("token1".to_string(), "token2".to_string());
+        let state = AmmState {
+            pairs: BTreeMap::from([(normalized_token_pair.clone(), (2000, 5000))]),
+        };
+        println!(
+            "default state: {:?}",
+            AmmState {
+                pairs: BTreeMap::default(),
+            }
+            .as_digest()
+        );
+
+        let callees_blobs = vec![
+            create_test_blob_from("token1", "test", "amm", 500),
+            create_test_blob("token2", "test", 980),
+        ];
+        let exec_ctx = ExecutionContext {
+            callees_blobs: callees_blobs.into(),
+            caller: Identity("test".to_owned()),
+        };
+        let mut contract = AmmContract::new(exec_ctx, ContractName("amm".to_owned()), state);
+
+        let result = contract.verify_swap(("token1".to_string(), "token2".to_string()), 500, 980);
+        assert!(result.is_ok());
+        assert_eq!(
+            contract.state.pairs.get(&normalized_token_pair),
+            Some(&(2500, 4000)) // 20 of token2 taken as 'fees'
+        );
     }
 
     #[test]
@@ -425,7 +403,7 @@ mod tests {
         };
         let mut contract = AmmContract::new(exec_ctx, ContractName("amm".to_owned()), state);
 
-        let result = contract.verify_swap(("token1".to_string(), "token2".to_string()));
+        let result = contract.verify_swap(("token1".to_string(), "token2".to_string()), 5, 10);
         assert!(result.is_err());
     }
 
@@ -448,7 +426,7 @@ mod tests {
         };
         let mut contract = AmmContract::new(exec_ctx, ContractName("amm".to_owned()), state);
 
-        let result = contract.verify_swap(("token1".to_string(), "token2".to_string()));
+        let result = contract.verify_swap(("token1".to_string(), "token2".to_string()), 5, 10);
         assert!(result.is_err());
     }
 
@@ -471,7 +449,7 @@ mod tests {
         };
         let mut contract = AmmContract::new(exec_ctx, ContractName("amm".to_owned()), state);
 
-        let result = contract.verify_swap(("token1".to_string(), "token2".to_string()));
+        let result = contract.verify_swap(("token1".to_string(), "token2".to_string()), 5, 10);
         assert!(result.is_err());
     }
 
@@ -496,6 +474,8 @@ mod tests {
 
         let result = contract.verify_swap(
             ("token1".to_string(), "rubbish".to_string()), // Invalid pair
+            5,
+            10,
         );
         assert!(result.is_err());
     }
@@ -519,7 +499,7 @@ mod tests {
         };
         let mut contract = AmmContract::new(exec_ctx, ContractName("amm".to_owned()), state);
 
-        let result = contract.verify_swap(("token1".to_string(), "token2".to_string()));
+        let result = contract.verify_swap(("token1".to_string(), "token2".to_string()), 5, 10);
         assert!(result.is_err());
     }
 
@@ -539,7 +519,7 @@ mod tests {
         };
         let mut contract = AmmContract::new(exec_ctx, ContractName("amm".to_owned()), state);
 
-        let result = contract.verify_swap(("token1".to_string(), "token2".to_string()));
+        let result = contract.verify_swap(("token1".to_string(), "token2".to_string()), 5, 10);
         assert!(result.is_err());
     }
 
@@ -552,8 +532,8 @@ mod tests {
         };
 
         let callees_blobs = vec![
-            create_test_blob_from("token1", "test", "amm", 5),
-            create_test_blob_from("token2", "test", "amm", 15), // Invalid amount
+            create_test_blob_from("token1", "test", "amm", 0), // Invalid amount
+            create_test_blob("token2", "test", 50),            // Invalid amount
         ];
 
         let exec_ctx = ExecutionContext {
@@ -562,10 +542,12 @@ mod tests {
         };
         let mut contract = AmmContract::new(exec_ctx, ContractName("amm".to_owned()), state);
 
-        let result = contract.verify_swap(("token1".to_string(), "token2".to_string()));
-
-        assert_eq!(contract.callee_blobs().len(), 0);
+        let result = contract.verify_swap(("token1".to_string(), "token2".to_string()), 0, 50);
         assert!(result.is_err());
+        assert!(result
+            .err()
+            .unwrap()
+            .contains("Invalid swap: expected to receive"));
     }
 
     #[test]

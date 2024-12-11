@@ -166,7 +166,7 @@ impl<'a, T> ERC20BlobChecker<'a, T> {
 }
 
 // Had to implement this for &mut T or it can't be found when used in &mut self methods.
-impl<'a, T> ERC20 for ERC20BlobChecker<'a, &mut T>
+impl<T> ERC20 for ERC20BlobChecker<'_, &mut T>
 where
     T: CallerCallee + CheckCalleeBlobs,
 {
