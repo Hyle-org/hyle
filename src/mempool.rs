@@ -109,7 +109,7 @@ impl BusMessage for MempoolNetMessage {}
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub enum MempoolEvent {
-    CommitBlock(Vec<Transaction>, Vec<ValidatorPublicKey>),
+    CommitCutWithTxs(Vec<Transaction>, Vec<ValidatorPublicKey>),
 }
 impl BusMessage for MempoolEvent {}
 
@@ -299,7 +299,7 @@ impl Mempool {
                 self.fetch_unknown_data_proposals(&cut)?;
                 let txs = self.storage.collect_txs_from_lanes(cut);
                 self.bus
-                    .send(MempoolEvent::CommitBlock(txs, new_bonded_validators))
+                    .send(MempoolEvent::CommitCutWithTxs(txs, new_bonded_validators))
                     .context("Cannot send commitBlock message over channel")?;
 
                 Ok(())
@@ -840,7 +840,9 @@ pub mod test {
         }
 
         #[track_caller]
-        pub fn assert_commit_block(&mut self) -> (Vec<Transaction>, Vec<ValidatorPublicKey>) {
+        pub fn assert_commit_cut_with_txs(
+            &mut self,
+        ) -> (Vec<Transaction>, Vec<ValidatorPublicKey>) {
             #[allow(clippy::expect_fun_call)]
             let rec = self
                 .mempool_event_receiver
@@ -848,7 +850,7 @@ pub mod test {
                 .expect("No CommitBlock event sent");
 
             match rec {
-                MempoolEvent::CommitBlock(txs, new_bounded_validators) => {
+                MempoolEvent::CommitCutWithTxs(txs, new_bounded_validators) => {
                     (txs, new_bounded_validators)
                 }
             }
@@ -1218,9 +1220,7 @@ pub mod test {
             .expect("should handle consensus event");
 
         // Assert that the transactions have been committed
-        // On veut assert commit block pour récuperer les txs
-        // Assert that we send a SyncReply
-        let (txs, new_bounded_validators) = ctx.assert_commit_block();
+        let (txs, new_bounded_validators) = ctx.assert_commit_cut_with_txs();
 
         assert_eq!(txs.len(), 2);
         assert!(txs.contains(&register_tx1));

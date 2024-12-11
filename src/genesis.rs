@@ -74,9 +74,9 @@ impl Genesis {
             return Ok(());
         }
 
-        info!("🌱 Building genesis block");
+        info!("🌱 Building genesis processed block");
 
-        // We will start from the genesis block.
+        // We will start from the genesis processed block.
         self.peer_pubkey.insert(
             self.config.id.clone(),
             self.crypto.validator_pubkey().clone(),
@@ -92,7 +92,7 @@ impl Genesis {
                         self.peer_pubkey
                             .insert(name.clone(), pubkey.clone());
 
-                        // Once we know everyone in the initial quorum, craft & process the genesis block.
+                        // Once we know everyone in the initial quorum, craft & process the genesis processed block.
                         if self.peer_pubkey.len()
                             == self.config.consensus.genesis_stakers.len() {
                             break
@@ -127,7 +127,7 @@ impl Genesis {
             .chain(contracts_txs.into_iter())
             .collect();
 
-        // At this point, we can setup the genesis block.
+        // At this point, we can setup the genesis processed block.
         _ = self.bus.send(GenesisEvent::GenesisBlock {
             initial_validators,
             genesis_txs,
@@ -324,7 +324,7 @@ mod tests {
         }
     }
 
-    // test that the order of nodes connecting doesn't matter on genesis block creation
+    // test that the order of nodes connecting doesn't matter on genesis processed block creation
     #[test_log::test(tokio::test)]
     async fn test_genesis_connect_order() {
         let config = Conf {

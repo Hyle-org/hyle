@@ -1,4 +1,4 @@
-//! Handles all consensus logic up to block commitment.
+//! Handles all consensus logic up to processed block commitment.
 
 use crate::module_handle_messages;
 use crate::utils::modules::module_bus_client;
@@ -123,7 +123,7 @@ pub struct TimeoutCertificate(ConsensusProposalHash, QuorumCertificate);
 // A Ticket is necessary to send a valid prepare
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, PartialEq, Eq, Hash)]
 pub enum Ticket {
-    // Special value for the initial Cut, needed because we don't have a quorum certificate for the genesis block.
+    // Special value for the initial Cut, needed because we don't have a quorum certificate for the genesis processed block.
     Genesis,
     CommitQC(QuorumCertificate),
     TimeoutQC(QuorumCertificate),
@@ -761,21 +761,21 @@ impl Consensus {
 
     async fn handle_data_event(&mut self, msg: DataEvent) -> Result<()> {
         match msg {
-            DataEvent::ProcessedBlock(handled_block_output) => {
-                for staker in handled_block_output.stakers {
+            DataEvent::ProcessedBlock(processed_block) => {
+                for staker in processed_block.stakers {
                     self.store.bft_round_state.staking.add_staker(staker)?;
                 }
-                for validator in handled_block_output.new_bounded_validators {
+                for validator in processed_block.new_bounded_validators {
                     self.store.bft_round_state.staking.bond(validator)?;
                 }
 
                 if let StateTag::Joining = self.bft_round_state.state_tag {
                     if self.store.bft_round_state.joining.staking_updated_to
-                        < handled_block_output.block_height.0
+                        < processed_block.block_height.0
                     {
-                        info!("🚪 Processed block {}", handled_block_output.block_height.0);
+                        info!("🚪 Processed block {}", processed_block.block_height.0);
                         self.store.bft_round_state.joining.staking_updated_to =
-                            handled_block_output.block_height.0;
+                            processed_block.block_height.0;
                     }
                 }
                 Ok(())
@@ -965,10 +965,7 @@ impl ConsensusProposal {
 #[cfg(test)]
 pub mod test {
 
-    use crate::{
-        consensus::staking::Staker,
-        model::{BlockHash, BlockHeight, HandledBlockOutput},
-    };
+    use crate::{consensus::staking::Staker, model::ProcessedBlock};
     use std::sync::Arc;
 
     use super::*;
@@ -1196,24 +1193,12 @@ pub mod test {
         async fn add_staker(&mut self, staker: &Self, amount: u64, err: &str) {
             info!("➕ {} Add staker: {:?}", self.name, staker.name);
             self.consensus
-                .handle_data_event(DataEvent::ProcessedBlock(Box::new(HandledBlockOutput {
-                    block_parent_hash: BlockHash::default(),
-                    block_hash: BlockHash::default(),
-                    block_height: BlockHeight(0),
-                    block_timestamp: 0,
-                    new_contract_txs: vec![],
-                    new_blob_txs: vec![],
-                    new_verified_proof_txs: vec![],
-                    verified_blobs: vec![],
-                    failed_txs: vec![],
+                .handle_data_event(DataEvent::ProcessedBlock(Box::new(ProcessedBlock {
                     stakers: vec![Staker {
                         pubkey: staker.pubkey(),
                         stake: Stake { amount },
                     }],
-                    new_bounded_validators: vec![],
-                    timed_out_tx_hashes: vec![],
-                    settled_blob_tx_hashes: vec![],
-                    updated_states: HashMap::default(),
+                    ..Default::default()
                 })))
                 .await
                 .expect(err)
@@ -1222,21 +1207,9 @@ pub mod test {
         async fn add_bonded_staker(&mut self, staker: &Self, amount: u64, err: &str) {
             self.add_staker(staker, amount, err).await;
             self.consensus
-                .handle_data_event(DataEvent::ProcessedBlock(Box::new(HandledBlockOutput {
-                    block_parent_hash: BlockHash::default(),
-                    block_hash: BlockHash::default(),
-                    block_height: BlockHeight(0),
-                    block_timestamp: 0,
-                    new_contract_txs: vec![],
-                    new_blob_txs: vec![],
-                    new_verified_proof_txs: vec![],
-                    verified_blobs: vec![],
-                    failed_txs: vec![],
-                    stakers: vec![],
+                .handle_data_event(DataEvent::ProcessedBlock(Box::new(ProcessedBlock {
                     new_bounded_validators: vec![staker.pubkey()],
-                    timed_out_tx_hashes: vec![],
-                    settled_blob_tx_hashes: vec![],
-                    updated_states: HashMap::default(),
+                    ..Default::default()
                 })))
                 .await
                 .expect(err)
@@ -1244,24 +1217,12 @@ pub mod test {
 
         async fn with_stake(&mut self, amount: u64, err: &str) {
             self.consensus
-                .handle_data_event(DataEvent::ProcessedBlock(Box::new(HandledBlockOutput {
-                    block_parent_hash: BlockHash::default(),
-                    block_hash: BlockHash::default(),
-                    block_height: BlockHeight(0),
-                    block_timestamp: 0,
-                    new_contract_txs: vec![],
-                    new_blob_txs: vec![],
-                    new_verified_proof_txs: vec![],
-                    verified_blobs: vec![],
-                    failed_txs: vec![],
+                .handle_data_event(DataEvent::ProcessedBlock(Box::new(ProcessedBlock {
                     stakers: vec![Staker {
                         pubkey: self.consensus.crypto.validator_pubkey().clone(),
                         stake: Stake { amount },
                     }],
-                    new_bounded_validators: vec![],
-                    timed_out_tx_hashes: vec![],
-                    settled_blob_tx_hashes: vec![],
-                    updated_states: HashMap::default(),
+                    ..Default::default()
                 })))
                 .await
                 .expect(err)

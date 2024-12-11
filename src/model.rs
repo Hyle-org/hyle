@@ -192,11 +192,10 @@ impl Transaction {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode, Eq, PartialEq)]
-pub struct HandledBlockOutput {
-    pub block_parent_hash: BlockHash,
+#[derive(Debug, Default, Clone, Serialize, Deserialize, Encode, Decode, Eq, PartialEq)]
+pub struct ProcessedBlock {
+    pub block_parent_hash: ProcessedBlockHash,
     pub block_height: BlockHeight,
-    pub block_hash: BlockHash,
     pub block_timestamp: u64,
     pub new_contract_txs: Vec<Transaction>,
     pub new_blob_txs: Vec<Transaction>,
@@ -210,10 +209,63 @@ pub struct HandledBlockOutput {
     pub updated_states: HashMap<ContractName, StateDigest>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Default, Clone, Encode, Decode, PartialEq, Eq, Hash)]
-pub struct BlockHash(pub String);
+impl Ord for ProcessedBlock {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.block_height.0.cmp(&other.block_height.0)
+    }
+}
 
-impl Display for BlockHash {
+impl PartialOrd for ProcessedBlock {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Hashable<ProcessedBlockHash> for ProcessedBlock {
+    fn hash(&self) -> ProcessedBlockHash {
+        let mut hasher = Sha3_256::new();
+
+        _ = write!(hasher, "{}", self.block_parent_hash);
+        _ = write!(hasher, "{}", self.block_height);
+        _ = write!(hasher, "{}", self.block_timestamp);
+        for tx in self
+            .new_contract_txs
+            .iter()
+            .chain(self.new_blob_txs.iter())
+            .chain(self.new_verified_proof_txs.iter())
+        {
+            hasher.update(tx.hash().0);
+        }
+        for (tx_hash, blob_v) in self.verified_blobs.iter() {
+            _ = write!(hasher, "{}", tx_hash);
+            _ = write!(hasher, "{}", blob_v);
+        }
+        for tx_f in self.failed_txs.iter() {
+            hasher.update(tx_f.hash().0);
+        }
+        for staker in self.stakers.iter() {
+            hasher.update(staker.hash().0);
+        }
+        for new_bounded_validator in self.new_bounded_validators.iter() {
+            hasher.update(new_bounded_validator.0.as_slice());
+        }
+        for settled_blob_tx_hash in self.settled_blob_tx_hashes.iter() {
+            _ = write!(hasher, "{}", settled_blob_tx_hash);
+        }
+        for (cn, sd) in self.updated_states.iter() {
+            _ = write!(hasher, "{}", cn);
+            _ = write!(hasher, "{:?}", sd);
+        }
+        _ = write!(hasher, "{}", self.block_timestamp);
+
+        ProcessedBlockHash(hex::encode(hasher.finalize()))
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Default, Clone, Encode, Decode, PartialEq, Eq, Hash)]
+pub struct ProcessedBlockHash(pub String);
+
+impl Display for ProcessedBlockHash {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
@@ -223,12 +275,12 @@ impl Display for BlockHash {
     }
 }
 
-impl Type<Postgres> for BlockHash {
+impl Type<Postgres> for ProcessedBlockHash {
     fn type_info() -> sqlx::postgres::PgTypeInfo {
         <String as Type<Postgres>>::type_info()
     }
 }
-impl sqlx::Encode<'_, sqlx::Postgres> for BlockHash {
+impl sqlx::Encode<'_, sqlx::Postgres> for ProcessedBlockHash {
     fn encode_by_ref(
         &self,
         buf: &mut sqlx::postgres::PgArgumentBuffer,
@@ -240,76 +292,26 @@ impl sqlx::Encode<'_, sqlx::Postgres> for BlockHash {
     }
 }
 
-impl<'r> sqlx::Decode<'r, sqlx::Postgres> for BlockHash {
+impl<'r> sqlx::Decode<'r, sqlx::Postgres> for ProcessedBlockHash {
     fn decode(
         value: sqlx::postgres::PgValueRef<'r>,
     ) -> std::result::Result<
-        BlockHash,
+        ProcessedBlockHash,
         std::boxed::Box<(dyn std::error::Error + std::marker::Send + std::marker::Sync + 'static)>,
     > {
         let inner = <String as sqlx::Decode<sqlx::Postgres>>::decode(value)?;
-        Ok(BlockHash(inner))
+        Ok(ProcessedBlockHash(inner))
     }
 }
 
-impl BlockHash {
-    pub fn new(s: &str) -> BlockHash {
-        BlockHash(s.into())
+impl ProcessedBlockHash {
+    pub fn new(s: &str) -> ProcessedBlockHash {
+        ProcessedBlockHash(s.into())
     }
 }
 
 pub trait Hashable<T> {
     fn hash(&self) -> T;
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, Display)]
-#[display("")]
-pub struct Block {
-    pub parent_hash: BlockHash,
-    pub height: BlockHeight,
-    pub timestamp: u64,
-    pub new_bonded_validators: Vec<ValidatorPublicKey>,
-    pub txs: Vec<Transaction>,
-}
-
-impl Ord for Block {
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.height.0.cmp(&other.height.0)
-    }
-}
-
-impl PartialOrd for Block {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl PartialEq for Block {
-    fn eq(&self, other: &Self) -> bool {
-        self.hash() == other.hash()
-    }
-}
-
-impl Eq for Block {}
-
-impl std::hash::Hash for Block {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        let h: BlockHash = Hashable::hash(self);
-        h.hash(state);
-    }
-}
-
-impl Hashable<BlockHash> for Block {
-    fn hash(&self) -> BlockHash {
-        let mut hasher = Sha3_256::new();
-        _ = write!(hasher, "{}", self.parent_hash);
-        _ = write!(hasher, "{}", self.height);
-        _ = write!(hasher, "{}", self.timestamp);
-        for tx in self.txs.iter() {
-            hasher.update(tx.hash().0);
-        }
-        BlockHash(hex::encode(hasher.finalize()))
-    }
 }
 
 impl Hashable<TxHash> for Transaction {
@@ -374,18 +376,6 @@ impl Hashable<TxHash> for RegisterContractTransaction {
 impl BlobTransaction {
     pub fn blobs_hash(&self) -> BlobsHash {
         BlobsHash::from_vec(&self.blobs)
-    }
-}
-
-impl std::default::Default for Block {
-    fn default() -> Self {
-        Block {
-            parent_hash: BlockHash::default(),
-            height: BlockHeight(0),
-            new_bonded_validators: vec![],
-            timestamp: get_current_timestamp(),
-            txs: vec![],
-        }
     }
 }
 

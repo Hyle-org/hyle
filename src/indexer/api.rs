@@ -1,4 +1,4 @@
-use crate::{model::BlockHash, utils::logger::LogMe};
+use crate::{model::ProcessedBlockHash, utils::logger::LogMe};
 
 use super::{
     model::{
@@ -257,7 +257,7 @@ pub async fn get_blob_transactions_by_contract(
         .into_iter()
         .map(|row| {
             let tx_hash: TxHashDb = row.try_get("tx_hash").unwrap();
-            let block_hash: BlockHash = row.try_get("block_hash").unwrap();
+            let block_hash: ProcessedBlockHash = row.try_get("block_hash").unwrap();
             let version: i32 = row.try_get("version").unwrap();
             let transaction_type: TransactionType = row.try_get("transaction_type").unwrap();
             let transaction_status: TransactionStatus = row.try_get("transaction_status").unwrap();

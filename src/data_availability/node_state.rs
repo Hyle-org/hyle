@@ -3,8 +3,9 @@
 use crate::{
     consensus::staking::Staker,
     model::{
-        BlobTransaction, BlobsHash, Block, BlockHeight, ContractName, HandledBlockOutput, Hashable,
-        ProofTransaction, RegisterContractTransaction, TransactionData, VerifiedProofTransaction,
+        BlobTransaction, BlobsHash, BlockHeight, ContractName, Hashable, ProcessedBlock,
+        ProcessedBlockHash, ProofTransaction, RegisterContractTransaction, Transaction,
+        TransactionData, ValidatorPublicKey, VerifiedProofTransaction,
     },
 };
 use anyhow::{bail, Context, Error, Result};
@@ -35,20 +36,27 @@ pub struct HandledProofTxOutput {
 }
 
 impl NodeState {
-    pub fn handle_new_block(&mut self, block: Block) -> HandledBlockOutput {
-        let timed_out_tx_hashes = self.clear_timeouts(&block.height);
-        self.current_height = block.height;
+    pub fn handle_new_cut(
+        &mut self,
+        block_height: BlockHeight,
+        block_parent_hash: ProcessedBlockHash,
+        block_timestamp: u64,
+        new_bounded_validators: Vec<ValidatorPublicKey>,
+        txs: Vec<Transaction>,
+    ) -> ProcessedBlock {
+        let timed_out_tx_hashes = self.clear_timeouts(&block_height);
+        self.current_height = block_height;
 
-        let mut new_contract_txs = vec![];
-        let mut new_blob_txs = vec![];
-        let mut new_verified_proof_txs = vec![];
-        let mut verified_blobs = vec![];
-        let mut failed_txs = vec![];
+        let mut new_contract_txs: Vec<Transaction> = vec![];
+        let mut new_blob_txs: Vec<Transaction> = vec![];
+        let mut new_verified_proof_txs: Vec<Transaction> = vec![];
+        let mut verified_blobs: Vec<(TxHash, hyle_contract_sdk::BlobIndex)> = vec![];
+        let mut failed_txs: Vec<Transaction> = vec![];
         let mut stakers: Vec<Staker> = vec![];
-        let mut settled_blob_tx_hashes = vec![];
-        let mut updated_states = HashMap::new();
+        let mut settled_blob_tx_hashes: Vec<TxHash> = vec![];
+        let mut updated_states: HashMap<ContractName, StateDigest> = HashMap::new();
         // Handle all transactions
-        for tx in block.txs.iter() {
+        for tx in txs.iter() {
             match &tx.transaction_data {
                 // FIXME: to remove when we have a real staking smart contract
                 TransactionData::Stake(staker) => {
@@ -108,18 +116,17 @@ impl NodeState {
                 }
             }
         }
-        HandledBlockOutput {
-            block_hash: block.hash(),
-            block_parent_hash: block.parent_hash,
-            block_height: block.height,
-            block_timestamp: block.timestamp,
+        ProcessedBlock {
+            block_parent_hash,
+            block_height,
+            block_timestamp,
             new_contract_txs,
             new_blob_txs,
             new_verified_proof_txs,
             verified_blobs,
             failed_txs,
             stakers,
-            new_bounded_validators: block.new_bonded_validators,
+            new_bounded_validators,
             timed_out_tx_hashes,
             settled_blob_tx_hashes,
             updated_states,

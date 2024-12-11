@@ -9,7 +9,7 @@ use tracing::{debug, error, info, warn};
 use crate::{
     bus::BusClientSender,
     data_availability::DataEvent,
-    model::{BlockHeight, CommonRunContext, HandledBlockOutput},
+    model::{BlockHeight, CommonRunContext, ProcessedBlock},
     module_handle_messages,
     utils::modules::{module_bus_client, Module},
 };
@@ -54,9 +54,9 @@ impl DAListener {
             frame = self.da_stream.next() => {
             if let Some(Ok(cmd)) = frame {
                 let bytes = cmd;
-                let handled_block_output: HandledBlockOutput =
+                let processed_block: ProcessedBlock =
                     bincode::decode_from_slice(&bytes, bincode::config::standard())?.0;
-                if let Err(e) = self.handle_processed_block(handled_block_output).await {
+                if let Err(e) = self.handle_processed_block(processed_block).await {
                     error!("Error while handling block: {:#}", e);
                 }
                 SinkExt::<bytes::Bytes>::send(&mut self.da_stream, "ok".into()).await?;
@@ -70,13 +70,9 @@ impl DAListener {
         Ok(())
     }
 
-    async fn handle_processed_block(
-        &mut self,
-        handled_block_output: HandledBlockOutput,
-    ) -> Result<()> {
-        self.bus.send(DataEvent::ProcessedBlock(Box::new(
-            handled_block_output.clone(),
-        )))?;
+    async fn handle_processed_block(&mut self, processed_block: ProcessedBlock) -> Result<()> {
+        self.bus
+            .send(DataEvent::ProcessedBlock(Box::new(processed_block.clone())))?;
         Ok(())
     }
 }
