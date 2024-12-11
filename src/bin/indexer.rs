@@ -64,6 +64,12 @@ async fn main() -> Result<()> {
     // Init global metrics meter we expose as an endpoint
     let metrics_layer = HttpMetricsLayerBuilder::new()
         .with_service_name(config.id.clone())
+        .with_metric_reader(
+            opentelemetry_prometheus::exporter()
+                .with_registry(prometheus::default_registry().clone())
+                .build()
+                .unwrap(),
+        )
         .build();
 
     let bus = SharedMessageBus::new(BusMetrics::global(config.id.clone()));
