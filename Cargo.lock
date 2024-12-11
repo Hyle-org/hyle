@@ -75,7 +75,7 @@ name = "amm"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "bincode 2.0.0-rc.2",
+ "bincode 2.0.0-rc.3",
  "hyle-contract-sdk",
  "risc0-zkvm",
  "serde",
@@ -638,8 +638,9 @@ dependencies = [
 
 [[package]]
 name = "bincode"
-version = "2.0.0-rc.2"
-source = "git+https://github.com/bincode-org/bincode.git?tag=v2.0.0-rc.2#6c219e9214bda2bdce1327db6ed7f66d2fa4bf02"
+version = "2.0.0-rc.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f11ea1a0346b94ef188834a65c068a03aec181c94896d481d7a0a40d85b0ce95"
 dependencies = [
  "bincode_derive",
  "serde",
@@ -647,8 +648,9 @@ dependencies = [
 
 [[package]]
 name = "bincode_derive"
-version = "2.0.0-rc.2"
-source = "git+https://github.com/bincode-org/bincode.git?tag=v2.0.0-rc.2#6c219e9214bda2bdce1327db6ed7f66d2fa4bf02"
+version = "2.0.0-rc.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7e30759b3b99a1b802a7a3aa21c85c3ded5c28e1c83170d82d70f08bbf7f3e4c"
 dependencies = [
  "virtue",
 ]
@@ -2533,7 +2535,7 @@ name = "hydentity"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "bincode 2.0.0-rc.2",
+ "bincode 2.0.0-rc.3",
  "hex",
  "hyle-contract-sdk",
  "risc0-zkvm",
@@ -2556,7 +2558,7 @@ dependencies = [
  "axum-otel-metrics",
  "axum-test",
  "base64 0.22.1",
- "bincode 2.0.0-rc.2",
+ "bincode 2.0.0-rc.3",
  "blst",
  "borsh",
  "bytes",
@@ -2607,7 +2609,7 @@ name = "hyle-contract-sdk"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "bincode 2.0.0-rc.2",
+ "bincode 2.0.0-rc.3",
  "hex",
  "mockall",
  "risc0-zkvm",
@@ -2619,7 +2621,7 @@ name = "hyllar"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "bincode 2.0.0-rc.2",
+ "bincode 2.0.0-rc.3",
  "hyle-contract-sdk",
  "risc0-zkvm",
  "serde",
@@ -2788,7 +2790,7 @@ dependencies = [
  "amm",
  "anyhow",
  "base64 0.22.1",
- "bincode 2.0.0-rc.2",
+ "bincode 2.0.0-rc.3",
  "borsh",
  "clap",
  "env_logger",
@@ -7467,9 +7469,9 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "virtue"
-version = "0.0.8"
+version = "0.0.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7b60dcd6a64dd45abf9bd426970c9843726da7fc08f44cd6fcebf68c21220a63"
+checksum = "9dcc60c0624df774c82a0ef104151231d37da4962957d691c011c852b2473314"
 
 [[package]]
 name = "wait-timeout"
