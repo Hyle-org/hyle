@@ -44,6 +44,8 @@ blst = "0.3.13"
 # opentelemetry and axum-otel-metrics must be updated together (so that there is only one opentelemetry version)
 opentelemetry = "0.27"
 axum-otel-metrics = "0.9.1"
+opentelemetry-prometheus = "0.27.0"
+prometheus = "0.13.4"
 tower-http = { version = "0.6.2", features = ["trace", "cors"] }
 futures = "0.3.31"
 dhat = { version = "0.3.3", optional = true }

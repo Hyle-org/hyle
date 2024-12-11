@@ -2573,7 +2573,9 @@ dependencies = [
  "hyrun",
  "indexmap 2.7.0",
  "opentelemetry",
+ "opentelemetry-prometheus",
  "paste",
+ "prometheus",
  "proptest",
  "quote",
  "rand",
@@ -3838,6 +3840,20 @@ dependencies = [
  "thiserror 1.0.69",
  "tokio",
  "tonic",
+ "tracing",
+]
+
+[[package]]
+name = "opentelemetry-prometheus"
+version = "0.27.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1b834e966ea5e2d03dfe5f2253f03d22cce21403ee940265070eeee96cee0bcc"
+dependencies = [
+ "once_cell",
+ "opentelemetry",
+ "opentelemetry_sdk",
+ "prometheus",
+ "protobuf",
  "tracing",
 ]
 
