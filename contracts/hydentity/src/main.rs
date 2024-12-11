@@ -8,7 +8,11 @@ use core::str::from_utf8;
 use hydentity::Hydentity;
 use sdk::identity_provider::IdentityAction;
 
+#[cfg(feature = "risc0")]
 risc0_zkvm::guest::entry!(main);
+
+#[cfg(feature = "sp1")]
+sp1_zkvm::entrypoint!(main);
 
 fn main() {
     let (input, parsed_blob) = sdk::guest::init_raw::<Hydentity, IdentityAction>();

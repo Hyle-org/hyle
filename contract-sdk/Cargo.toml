@@ -12,12 +12,14 @@ bincode = { version = "2.0.0-rc.3" }
 hex = "0.4.3"
 anyhow = "1.0.89"
 
-risc0-zkvm = { version = "1.1.1", default-features = false, features = [
-    'std',
-], optional = true }
+risc0-zkvm = { version = "1.2", default-features = false, optional = true }
+
+sp1-zkvm = { version = "3.4.0", optional = true }
+sp1-sdk = { version = "3.4.0", default-features = false, optional = true }
 
 [dev-dependencies]
 mockall = "0.13.0"
 
 [features]
 risc0 = ["risc0-zkvm"]
+sp1 = ["sp1-zkvm"]

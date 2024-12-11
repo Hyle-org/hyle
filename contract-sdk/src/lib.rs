@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 
 pub mod caller;
 pub mod erc20;
-#[cfg(feature = "risc0")]
+#[cfg(any(feature = "risc0", feature = "sp1"))]
 pub mod guest;
 pub mod identity_provider;
 

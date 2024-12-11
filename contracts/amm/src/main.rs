@@ -8,7 +8,11 @@ use amm::{AmmAction, AmmContract, AmmState};
 use sdk::caller::{CallerCallee, ExecutionContext};
 use sdk::StructuredBlobData;
 
+#[cfg(feature = "risc0")]
 risc0_zkvm::guest::entry!(main);
+
+#[cfg(feature = "sp1")]
+sp1_zkvm::entrypoint!(main);
 
 fn main() {
     let (input, parsed_blob, caller) = match sdk::guest::init_with_caller::<AmmState, AmmAction>() {

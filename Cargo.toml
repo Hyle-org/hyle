@@ -17,9 +17,9 @@ default-run = "node"
 
 [dependencies]
 hyle-contract-sdk = { path = "./contract-sdk" }
-amm = { path = "./contracts/amm" }
-hyllar = { path = "./contracts/hyllar" }
-hydentity = { path = "./contracts/hydentity" }
+amm = { path = "./contracts/amm", default-features = false }
+hyllar = { path = "./contracts/hyllar", default-features = false }
+hydentity = { path = "./contracts/hydentity", default-features = false }
 config = "0.14.1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["json"] }

@@ -7,7 +7,11 @@ use hyllar::{HyllarToken, HyllarTokenContract};
 use risc0_zkvm::guest::env;
 use sdk::erc20::ERC20Action;
 
+#[cfg(feature = "risc0")]
 risc0_zkvm::guest::entry!(main);
+
+#[cfg(feature = "sp1")]
+sp1_zkvm::entrypoint!(main);
 
 fn main() {
     let (input, parsed_blob, caller) =

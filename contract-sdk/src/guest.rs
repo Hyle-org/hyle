@@ -9,7 +9,7 @@ use crate::{
 };
 
 #[cfg(feature = "risc0")]
-mod env {
+pub mod env {
     use super::*;
 
     pub fn log(message: &str) {
@@ -22,6 +22,23 @@ mod env {
 
     pub fn read<T: DeserializeOwned>() -> T {
         risc0_zkvm::guest::env::read()
+    }
+}
+#[cfg(feature = "sp1")]
+pub mod env {
+    use super::*;
+
+    pub fn log(message: &str) {
+        // TODO: this does nothing actually
+        sp1_zkvm::io::hint(&message);
+    }
+
+    pub fn commit(output: &HyleOutput) {
+        sp1_zkvm::io::commit(output);
+    }
+
+    pub fn read<T: DeserializeOwned>() -> T {
+        sp1_zkvm::io::read()
     }
 }
 
