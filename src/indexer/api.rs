@@ -39,10 +39,7 @@ pub async fn get_blocks(
     .await
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    match blocks.len() {
-        0 => Err(StatusCode::NOT_FOUND),
-        _ => Ok(Json(blocks)),
-    }
+    Ok(Json(blocks))
 }
 
 pub async fn get_last_block(
@@ -125,10 +122,7 @@ pub async fn get_transactions(
     .await
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    match transactions.len() {
-        0 => Err(StatusCode::NOT_FOUND),
-        _ => Ok(Json(transactions)),
-    }
+    Ok(Json(transactions))
 }
 
 pub async fn get_transactions_by_contract(
@@ -169,10 +163,9 @@ pub async fn get_transactions_by_contract(
     .await
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    match transactions.len() {
-        0 => Err(StatusCode::NOT_FOUND),
-        _ => Ok(Json(transactions)),
-    }
+    // This could return 404 if the contract doesn't exist,
+    // but not done for now as it would take an extra query
+    Ok(Json(transactions))
 }
 
 // TODO: pagination ?
@@ -293,10 +286,7 @@ pub async fn get_blob_transactions_by_contract(
         })
         .collect();
 
-    match transactions.len() {
-        0 => Err(StatusCode::NOT_FOUND),
-        _ => Ok(Json(transactions)),
-    }
+    Ok(Json(transactions))
 }
 
 pub async fn get_blobs_by_tx_hash(
@@ -310,10 +300,9 @@ pub async fn get_blobs_by_tx_hash(
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    match blobs.len() {
-        0 => Err(StatusCode::NOT_FOUND),
-        _ => Ok(Json(blobs)),
-    }
+    // This could return 404 if the transaction doesn't exist,
+    // but not done for now as it would take an extra query
+    Ok(Json(blobs))
 }
 
 pub async fn get_blob(

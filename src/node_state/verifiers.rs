@@ -1,5 +1,4 @@
 use anyhow::{bail, Context, Error};
-use borsh::from_slice;
 use risc0_zkvm::sha::Digest;
 use sp1_sdk::{ProverClient, SP1ProofWithPublicValues, SP1VerifyingKey};
 
@@ -21,7 +20,7 @@ pub fn verify_proof(
 }
 
 pub fn risc0_proof_verifier(encoded_receipt: &[u8], image_id: &[u8]) -> Result<HyleOutput, Error> {
-    let receipt = from_slice::<risc0_zkvm::Receipt>(encoded_receipt)
+    let receipt = borsh::from_slice::<risc0_zkvm::Receipt>(encoded_receipt)
         .context("Error while decoding Risc0 proof's receipt")?;
 
     let image_bytes: Digest = image_id.try_into().context("Invalid Risc0 image ID")?;

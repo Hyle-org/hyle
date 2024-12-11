@@ -1,5 +1,4 @@
 use anyhow::{bail, Error};
-use borsh::to_vec;
 use risc0_zkvm::sha::Digestible;
 use sdk::{Blob, ContractInput, Digestable, HyleOutput, Identity};
 
@@ -76,7 +75,7 @@ where
     let prove_info = prove(&cli.path_prefix, contract_name, &contract_input);
 
     let receipt = prove_info.receipt;
-    let encoded_receipt = to_vec(&receipt).expect("Unable to encode receipt");
+    let encoded_receipt = borsh::to_vec(&receipt).expect("Unable to encode receipt");
     std::fs::write(
         format!("{}{}.risc0.proof", cli.path_prefix, contract_input.index),
         encoded_receipt,

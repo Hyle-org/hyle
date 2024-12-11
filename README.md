@@ -1,5 +1,6 @@
 # Hylé
 
+[![Telegram Chat][tg-badge]][tg-url]
 [![Build Status][actions-badge]][actions-url]
 [![Code Coverage][codecov-badge]][codecov-url]
 [![Twitter][twitter-badge]][twitter-url]
@@ -150,4 +151,5 @@ To enable this feature, add the `dhat` feature flag. Use it selectively, as it h
 [codecov-url]: https://codecov.io/gh/Hyle-org/hyle  
 [twitter-badge]: https://img.shields.io/twitter/follow/hyle_org  
 [twitter-url]: https://x.com/hyle_org  
-
+[tg-badge]: https://img.shields.io/endpoint?url=https%3A%2F%2Ftg.sumanjay.workers.dev%2Fhyle_org%2F&logo=telegram&label=chat&color=neon
+[tg-url]: https://t.me/hyle_org
