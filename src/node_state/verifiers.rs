@@ -1,3 +1,4 @@
+use std::fmt::Write;
 use std::io::Read;
 
 use anyhow::{bail, Context, Error};
@@ -49,10 +50,14 @@ pub fn risc0_proof_verifier(encoded_receipt: &[u8], image_id: &[u8]) -> Result<H
 pub fn noir_proof_verifier(proof: &[u8], image_id: &[u8]) -> Result<HyleOutput, Error> {
     let mut rng = rand::thread_rng();
     let salt: [u8; 16] = rng.gen();
+    let mut salt_hex = String::with_capacity(salt.len() * 2);
+    for b in &salt {
+        write!(salt_hex, "{:02x}", b).unwrap();
+    }
 
-    let proof_path = &format!("/tmp/noir-proof-{:?}", salt);
-    let vk_path = &format!("/tmp/noir-vk-{:?}", salt);
-    let output_path = &format!("/tmp/noir-output-{:?}", salt);
+    let proof_path = &format!("/tmp/noir-proof-{salt_hex}");
+    let vk_path = &format!("/tmp/noir-vk-{salt_hex}");
+    let output_path = &format!("/tmp/noir-output-{salt_hex}");
 
     // Write proof and publicKey to files
     std::fs::write(proof_path, proof)?;
@@ -101,6 +106,10 @@ pub fn noir_proof_verifier(proof: &[u8], image_id: &[u8]) -> Result<HyleOutput, 
     let mut public_outputs: Vec<String> = serde_json::from_str(&output_json)?;
     let hyle_output = crate::utils::noir_utils::parse_noir_output(&mut public_outputs)?;
 
+    // Delete proof_path, vk_path, output_path
+    let _ = std::fs::remove_file(proof_path);
+    let _ = std::fs::remove_file(vk_path);
+    let _ = std::fs::remove_file(output_path);
     Ok(hyle_output)
 }
 
