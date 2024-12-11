@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cargo Tree Viewer</title>
+    <style>
+        ul {
+            list-style-type: none;
+            padding-left: 20px;
+        }
+        li {
+            cursor: pointer;
+        }
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <h1>Cargo Tree Viewer</h1>
+    <div class="flex">
+    <div>
+        <p>Run with <span style="font-family: monospace; border: 1px solid blue; border-radius: 4px; padding: 2px 6px">cargo tree -e no-dev --charset ascii</span> to get the tree structure.</p>
+        <textarea id="treeInput" rows="10" cols="80" placeholder="Paste your tree structure here"></textarea>
+        <br>
+        <button onclick="renderTree()">Render Tree</button>
+    </div>
+    <div>
+        <p>Run with <span style="font-family: monospace; border: 1px solid blue; border-radius: 4px; padding: 2px 6px">cargo +nightly build --timings=json -Z unstable-options</span> to get the build times.</p>
+        <textarea id="buildTimes" rows="10" cols="80" placeholder="Paste your tree structure here"></textarea>
+        <br>
+        <button onclick="extractBuildTimes()">Extract build times</button>
+    </div>
+</div>
+    <ul id="cargoTree"></ul>
+    <script>
+        function parseTree(treeText) {
+            const lines = treeText.trim().split('\n');
+            const root = { name: lines[0].trim(), children: [], duration: 0 };
+            const stack = [root];
+
+            for (let i = 1; i < lines.length; i++) {
+                const line = lines[i].trim();
+                try {
+                    const node = { name: line.match(/^[\| `]*-- (.+ v[^ ]+).*/)[1], children: [] };
+
+                    let level = (lines[i].lastIndexOf('|') + 1) || (lines[i].lastIndexOf('`') + 1);
+                    level = (level - 1) / 4 + 1;
+                    while (stack.length > level) stack.pop();
+                    stack[stack.length - 1].children.push(node);
+                    stack.push(node);
+                } catch (e) {
+                    //console.error('Failed to parse line:', line);
+                }
+            }
+
+            return root;
+        }
+
+        function buildTree(node) {
+            const li = document.createElement('li');
+            
+            const totalRecursive = (node) => {
+                let total = 0;
+                node.children.forEach(child => total += totalRecursive(child));
+                return total + (node.duration || 0);
+            }
+            // Sort children in decreasing order of total items
+            node.children.sort((a, b) => totalRecursive(b) - totalRecursive(a));
+
+            li.textContent = `- (${totalRecursive(node)}) ${node.name} (${node.duration}ms)`;
+
+            if (node.children.length > 0) {
+                const ul = document.createElement('ul');
+                node.children.forEach(child => ul.appendChild(buildTree(child)));
+                li.appendChild(ul);
+                li.addEventListener('click', e => {
+                    e.stopPropagation();
+                    ul.classList.toggle('hidden');
+                });
+            }
+
+            return li;
+        }
+
+        function extractBuildTimes() {
+            const buildTimes = {};
+            const log = document.getElementById('buildTimes').value;
+            const lines = log.split('\n');
+            
+            for (let i = 0; i < lines.length; i++) {
+                const line = lines[i];
+                if (line.indexOf('timing-info') === -1) continue;
+                // parse as JSON
+                try {
+                    const pl = JSON.parse(line);
+                    const time = pl.duration;
+                    let name = pl.target.name;
+
+                    // Try to extract a more specific name
+                    const specname = pl.package_id.match(/^registry.+#(.+)@(.+)/);
+                    //if (name.indexOf("sp1") !== -1) console.log(name, specname);//specname[1], specname[2]);
+                    if (specname?.length === 3)
+                        name = `${specname[1]} v${specname[2]}`;
+                    if (buildTimes[name] === undefined)
+                        buildTimes[name] = time;
+                    else
+                        buildTimes[name] += time;
+                } catch (e) {
+                    console.error(line);
+                    console.error('Failed to parse JSON:', e);
+                }
+            }
+            // Update the parsedTree with build times
+            const updateBuildTimes = (node) => {
+                if (buildTimes[node.name] !== undefined) {
+                    node.duration = buildTimes[node.name];
+                } else if (buildTimes?.[node.name.split(" ")?.[0]] !== undefined) {
+                    node.duration = buildTimes?.[node.name.split(" ")?.[0]];
+            }
+                node.children.forEach(child => updateBuildTimes(child));
+            }
+            updateBuildTimes(parsedTree);
+            const treeContainer = document.getElementById('cargoTree');
+            treeContainer.innerHTML = '';
+            treeContainer.appendChild(buildTree(parsedTree));
+
+            
+            return buildTimes;
+        }
+
+        var parsedTree = null;
+
+        function renderTree() {
+            const treeText = document.getElementById('treeInput').value;
+            parsedTree = parseTree(treeText);
+            const treeContainer = document.getElementById('cargoTree');
+            treeContainer.innerHTML = '';
+            treeContainer.appendChild(buildTree(parsedTree));
+        }
+    </script>
+</body>
+</html>

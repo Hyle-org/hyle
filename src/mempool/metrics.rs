@@ -63,22 +63,16 @@ impl MempoolMetrics {
     }
 
     pub fn add_proposed_txs(&self, dp: &DataProposal) {
-        for tx in dp.car.txs.iter() {
+        for tx in dp.txs.iter() {
             let tx_type: &'static str = (&tx.transaction_data).into();
             self.proposed_txs.add(1, &[KeyValue::new("kind", tx_type)]);
         }
     }
 
     pub fn add_data_proposal(&self, dp: &DataProposal) {
-        let tx_nb = dp.car.txs.len();
-        let has_parent_poa = if dp.parent_poa.is_some() { 1 } else { 0 };
-        self.data_proposal.add(
-            1,
-            &[
-                KeyValue::new("nb_txs", tx_nb.to_string()),
-                KeyValue::new("has_parent_poa", has_parent_poa.to_string()),
-            ],
-        )
+        let tx_nb = dp.txs.len();
+        self.data_proposal
+            .add(1, &[KeyValue::new("nb_txs", tx_nb.to_string())])
     }
     pub fn add_proposal_vote(&self, sender: &ValidatorPublicKey, dest: &ValidatorPublicKey) {
         self.data_vote.add(
@@ -102,12 +96,12 @@ impl MempoolMetrics {
         &self,
         sender: &ValidatorPublicKey,
         dest: &ValidatorPublicKey,
-        nb_cars: usize,
+        lane_entries: usize,
     ) {
         self.sync_reply.add(
             1,
             &[
-                KeyValue::new("nb_cars", nb_cars.to_string()),
+                KeyValue::new("nb_lane_entries", lane_entries.to_string()),
                 KeyValue::new("sender", format!("{}", sender)),
                 KeyValue::new("dest", format!("{}", dest)),
             ],

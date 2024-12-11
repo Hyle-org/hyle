@@ -1,13 +1,17 @@
 //! Index system for historical data.
 
 mod api;
+pub mod contract_handlers;
+pub mod contract_state_indexer;
+pub mod da_listener;
 pub mod model;
 
 use crate::{
-    bus::BusClientSender,
     data_availability::DataEvent,
-    handle_messages,
-    model::{BlobTransaction, Block, BlockHash, CommonRunContext, ContractName, Hashable},
+    model::{
+        BlobTransaction, Block, BlockHash, BlockHeight, CommonRunContext, ContractName, Hashable,
+    },
+    module_handle_messages,
     node_state::NodeState,
     utils::modules::{module_bus_client, Module},
 };
@@ -21,18 +25,13 @@ use axum::{
     routing::get,
     Router,
 };
-use core::str;
-use futures::{SinkExt, StreamExt};
 use model::{BlobWithStatus, TransactionStatus, TransactionType, TransactionWithBlobs, TxHashDb};
 use sqlx::types::chrono::DateTime;
+use sqlx::Row;
 use sqlx::{postgres::PgPoolOptions, PgPool, Pool, Postgres};
 use std::{collections::HashMap, sync::Arc};
-use tokio::{
-    net::TcpStream,
-    sync::{broadcast, mpsc},
-};
-use tokio_util::codec::{Framed, LengthDelimitedCodec};
-use tracing::{debug, error, info, warn};
+use tokio::sync::{broadcast, mpsc};
+use tracing::{error, info};
 
 module_bus_client! {
 #[derive(Debug)]
@@ -53,7 +52,6 @@ pub struct IndexerApiState {
 #[derive(Debug)]
 pub struct Indexer {
     bus: IndexerBusClient,
-    da_stream: Option<Framed<TcpStream, LengthDelimitedCodec>>,
     state: IndexerApiState,
     new_sub_receiver: tokio::sync::mpsc::Receiver<(ContractName, WebSocket)>,
     subscribers: Subscribers,
@@ -63,10 +61,6 @@ pub struct Indexer {
 pub static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("./src/indexer/migrations");
 
 impl Module for Indexer {
-    fn name() -> &'static str {
-        "Indexer"
-    }
-
     type Context = Arc<CommonRunContext>;
 
     async fn build(ctx: Self::Context) -> Result<Self> {
@@ -100,7 +94,6 @@ impl Module for Indexer {
                 db: pool,
                 new_sub_sender,
             },
-            da_stream: None,
             new_sub_receiver,
             subscribers,
             node_state,
@@ -122,123 +115,48 @@ impl Module for Indexer {
 
 impl Indexer {
     pub async fn start(&mut self) -> Result<()> {
-        if self.da_stream.is_none() {
-            handle_messages! {
-                on_bus self.bus,
-                listen<DataEvent> cmd => {
-                    if let Err(e) = self.handle_data_availability_event(cmd).await {
-                        error!("Error while handling data availability event: {:#}", e)
-                    }
-                }
-
-                Some((contract_name, mut socket)) = self.new_sub_receiver.recv() => {
-
-                    let (tx, mut rx) = broadcast::channel(100);
-                    // Append tx to the list of subscribers for contract_name
-                    self.subscribers.entry(contract_name)
-                        .or_default()
-                        .push(tx);
-
-                    tokio::task::Builder::new()
-                        .name("indexer-recv")
-                        .spawn(async move {
-                            while let Ok(transaction) = rx.recv().await {
-                                if let Ok(json) = serde_json::to_string(&transaction) {
-                                    if socket.send(Message::Text(json)).await.is_err() {
-                                        break;
-                                    }
-                                } else {
-                                    error!("Failed to serialize transaction to JSON");
-                                }
-                            }
-                        })?;
+        module_handle_messages! {
+            on_bus self.bus,
+            listen<DataEvent> cmd => {
+                if let Err(e) = self.handle_data_availability_event(cmd).await {
+                    error!("Error while handling data availability event: {:#}", e)
                 }
             }
-            Ok(())
-        } else {
-            handle_messages! {
-                on_bus self.bus,
-                cmd = self.da_stream.as_mut().expect("da_stream must exist").next() => {
-                    if let Some(Ok(cmd)) = cmd {
-                        let bytes = cmd;
-                        let block: Block = bincode::decode_from_slice(&bytes, bincode::config::standard())?.0;
-                        if let Err(e) = self.handle_block(block).await {
-                            error!("Error while handling block: {:#}", e);
+
+            Some((contract_name, mut socket)) = self.new_sub_receiver.recv() => {
+
+                let (tx, mut rx) = broadcast::channel(100);
+                // Append tx to the list of subscribers for contract_name
+                self.subscribers.entry(contract_name)
+                    .or_default()
+                    .push(tx);
+
+                tokio::task::Builder::new()
+                    .name("indexer-recv")
+                    .spawn(async move {
+                        while let Ok(transaction) = rx.recv().await {
+                            if let Ok(json) = serde_json::to_string(&transaction) {
+                                if socket.send(Message::Text(json)).await.is_err() {
+                                    break;
+                                }
+                            } else {
+                                error!("Failed to serialize transaction to JSON");
+                            }
                         }
-                        SinkExt::<bytes::Bytes>::send(self.da_stream.as_mut().expect("da_stream must exist"), "ok".into()).await?;
-                    } else if cmd.is_none() {
-                        self.da_stream = None;
-                        // TODO: retry
-                        return Err(anyhow::anyhow!("DA stream closed"));
-                    } else if let Some(Err(e)) = cmd {
-                        self.da_stream = None;
-                        // TODO: retry
-                        return Err(anyhow::anyhow!("Error while reading DA stream: {}", e));
-                    }
-                }
-
-                Some((contract_name, mut socket)) = self.new_sub_receiver.recv() => {
-
-                    let (tx, mut rx) = broadcast::channel(100);
-                    // Append tx to the list of subscribers for contract_name
-                    self.subscribers.entry(contract_name)
-                        .or_default()
-                        .push(tx);
-
-                    tokio::task::Builder::new()
-                        .name("indexer-recv")
-                        .spawn(async move {
-                            while let Ok(transaction) = rx.recv().await {
-                                if let Ok(json) = serde_json::to_string(&transaction) {
-                                    if socket.send(Message::Text(json)).await.is_err() {
-                                        break;
-                                    }
-                                } else {
-                                    error!("Failed to serialize transaction to JSON");
-                                }
-                            }
-                        })?;
-                }
+                    })?;
             }
-            Ok(())
         }
+        Ok(())
     }
 
-    pub async fn connect_to(&mut self, target: &str) -> Result<()> {
-        info!(
-            "Connecting to node for data availability stream on {}",
-            &target
-        );
-        let timeout = std::time::Duration::from_secs(10);
-        let start = std::time::Instant::now();
-
-        let stream = loop {
-            debug!("Trying to connect to {}", target);
-            match TcpStream::connect(&target).await {
-                Ok(stream) => break stream,
-                Err(e) => {
-                    if start.elapsed() >= timeout {
-                        bail!("Failed to connect to {}: {}. Timeout reached.", target, e);
-                    }
-                    warn!(
-                        "Failed to connect to {}: {}. Retrying in 1 second...",
-                        target, e
-                    );
-                    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-                }
-            }
-        };
-        let addr = stream.local_addr()?;
-        self.da_stream = Some(Framed::new(stream, LengthDelimitedCodec::new()));
-        info!("Connected to data stream to {} on {}", &target, addr);
-        // Send the start height
-        let height_as_bytes: bytes::BytesMut = u64::to_be_bytes(0)[..].into();
-        self.da_stream
-            .as_mut()
-            .expect("da_stream must exist")
-            .send(height_as_bytes.into())
+    pub async fn get_last_block(&self) -> Result<Option<BlockHeight>> {
+        let rows = sqlx::query("SELECT max(height) as max FROM blocks")
+            .fetch_one(&self.state.db)
             .await?;
-        Ok(())
+        Ok(rows
+            .try_get("max")
+            .map(|m: i64| Some(BlockHeight(m as u64)))
+            .unwrap_or(None))
     }
 
     pub fn api(&self) -> Router<()> {
@@ -274,6 +192,7 @@ impl Indexer {
             .route("/blobs/hash/:tx_hash", get(api::get_blobs_by_tx_hash))
             .route("/blob/hash/:tx_hash/index/:blob_index", get(api::get_blob))
             // contract
+            .route("/contracts", get(api::list_contracts))
             .route("/contract/:contract_name", get(api::get_contract))
             .route(
                 "/state/contract/:contract_name/block/:height",
@@ -652,7 +571,6 @@ mod test {
                 db: pool,
                 new_sub_sender,
             },
-            da_stream: None,
             new_sub_receiver,
             subscribers: HashMap::new(),
             node_state: NodeState::default(),

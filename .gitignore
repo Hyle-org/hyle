@@ -1,9 +1,7 @@
-target
-*.bin
 data_node*
-**/*Consensus.data.tmp
-*.proof
-# Added by cargo
+*.bin
 
-/target
 .sqlx
+
+# Added by cargo
+/target

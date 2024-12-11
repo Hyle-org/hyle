@@ -1,6 +1,7 @@
 Config(
   id: "node",
   single_node: true,
+  p2p_listen: true,
   host: "127.0.0.1:1231",
   peers: [],
   storage: Storage(

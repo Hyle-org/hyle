@@ -12,7 +12,6 @@ use crate::{
     utils::{conf::SharedConf, crypto::SharedBlstCrypto, modules::Module},
 };
 use anyhow::{bail, Error, Result};
-use hyle_contract_sdk::erc20::ERC20;
 use hyle_contract_sdk::identity_provider::IdentityVerification;
 use hyle_contract_sdk::Digestable;
 use serde::{Deserialize, Serialize};
@@ -44,10 +43,6 @@ pub struct Genesis {
 
 impl Module for Genesis {
     type Context = SharedRunContext;
-    fn name() -> &'static str {
-        "Genesis"
-    }
-
     async fn build(ctx: Self::Context) -> Result<Self> {
         let bus = GenesisBusClient::new_from_bus(ctx.common.bus.new_handle()).await;
         Ok(Genesis {

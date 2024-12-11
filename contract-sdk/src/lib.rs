@@ -9,13 +9,13 @@ use alloc::vec::Vec;
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 
+pub mod caller;
 pub mod erc20;
+#[cfg(feature = "risc0")]
 pub mod guest;
 pub mod identity_provider;
 
-pub trait HyleContract {
-    fn caller(&self) -> Identity;
-}
+pub type RunResult = Result<String, String>;
 
 pub trait Digestable {
     fn as_digest(&self) -> StateDigest;
@@ -46,7 +46,20 @@ impl alloc::fmt::Debug for StateDigest {
 #[derive(Default, Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash, Encode, Decode)]
 pub struct Identity(pub String);
 
-#[derive(Default, Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash, Encode, Decode)]
+#[derive(
+    Default,
+    Serialize,
+    Deserialize,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Hash,
+    Encode,
+    Decode,
+    Ord,
+    PartialOrd,
+)]
 pub struct TxHash(pub String);
 
 #[derive(Default, Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash, Encode, Decode)]
@@ -132,7 +145,20 @@ pub fn flatten_blobs(blobs: &[Blob]) -> Vec<u8> {
         .collect()
 }
 
-#[derive(Default, Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash, Encode, Decode)]
+#[derive(
+    Default,
+    Debug,
+    Clone,
+    Serialize,
+    Deserialize,
+    Eq,
+    PartialEq,
+    Hash,
+    Encode,
+    Decode,
+    Ord,
+    PartialOrd,
+)]
 pub struct ContractName(pub String);
 
 #[derive(Default, Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash, Encode, Decode)]

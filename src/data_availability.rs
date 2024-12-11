@@ -13,6 +13,7 @@ use crate::{
         get_current_timestamp, Block, BlockHash, BlockHeight, ContractName, Hashable,
         SharedRunContext, Transaction, ValidatorPublicKey,
     },
+    module_handle_messages,
     node_state::{model::Contract, NodeState},
     p2p::network::{NetMessage, OutboundMessage, PeerEvent},
     utils::{
@@ -75,7 +76,6 @@ pub struct QueryBlockHeight {}
 module_bus_client! {
 #[derive(Debug)]
 struct DABusClient {
-    module: DataAvailability,
     sender(OutboundMessage),
     sender(DataEvent),
     sender(ConsensusCommand),
@@ -116,10 +116,6 @@ pub struct DataAvailability {
 }
 
 impl Module for DataAvailability {
-    fn name() -> &'static str {
-        "DataAvailability"
-    }
-
     type Context = SharedRunContext;
 
     async fn build(ctx: Self::Context) -> Result<Self> {
@@ -182,7 +178,7 @@ impl Module for DataAvailability {
 impl DataAvailability {
     pub async fn start(&mut self) -> Result<()> {
         let stream_request_receiver = TcpListener::bind(&self.config.da_address).await?;
-        debug!(
+        info!(
             "📡  Starting DataAvailability module, listening for stream requests on {}",
             &self.config.da_address
         );
@@ -193,9 +189,8 @@ impl DataAvailability {
         let (ping_sender, mut ping_receiver) = tokio::sync::mpsc::channel(100);
         let (catchup_sender, mut catchup_receiver) = tokio::sync::mpsc::channel(100);
 
-        handle_messages! {
+        module_handle_messages! {
             on_bus self.bus,
-            break_on(stringify!(DataAvailability))
             command_response<ContractName, Contract> cmd => {
                 self.node_state.contracts.get(cmd).cloned().context("Contract not found")
             }
@@ -303,7 +298,6 @@ impl DataAvailability {
                 }
             }
         }
-        _ = self.bus.shutdown_complete();
 
         Ok(())
     }

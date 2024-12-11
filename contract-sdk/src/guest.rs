@@ -1,10 +1,6 @@
-use alloc::{
-    string::{String, ToString},
-    vec::Vec,
-};
+use alloc::{string::ToString, vec::Vec};
 use anyhow::{bail, Result};
 use bincode::{Decode, Encode};
-use risc0_zkvm::guest::env;
 use serde::de::DeserializeOwned;
 
 use crate::{
@@ -12,7 +8,22 @@ use crate::{
     StructuredBlob, StructuredBlobData,
 };
 
-pub type RunResult = Result<String, String>;
+#[cfg(feature = "risc0")]
+mod env {
+    use super::*;
+
+    pub fn log(message: &str) {
+        risc0_zkvm::guest::env::log(message);
+    }
+
+    pub fn commit(output: &HyleOutput) {
+        risc0_zkvm::guest::env::commit(output);
+    }
+
+    pub fn read<T: DeserializeOwned>() -> T {
+        risc0_zkvm::guest::env::read()
+    }
+}
 
 pub fn fail<State>(input: ContractInput<State>, message: &str)
 where
@@ -104,7 +115,7 @@ where
     parsed_blob
 }
 
-pub fn commit<State>(input: ContractInput<State>, new_state: State, res: RunResult)
+pub fn commit<State>(input: ContractInput<State>, new_state: State, res: crate::RunResult)
 where
     State: Digestable,
 {
