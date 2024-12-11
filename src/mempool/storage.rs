@@ -199,7 +199,7 @@ impl Storage {
     pub fn on_data_proposal(
         &mut self,
         validator: &ValidatorPublicKey,
-        data_proposal: DataProposal,
+        mut data_proposal: DataProposal,
         node_state: &NodeState,
     ) -> DataProposalVerdict {
         // Check that data_proposal is not empty
@@ -475,7 +475,7 @@ impl Storage {
 impl DataProposal {
     /// Remove proofs from all transactions in the DataProposal
     fn remove_proofs(&mut self) {
-        let mut txs_without_proofs = self.txs.clone();
+        let mut txs_without_proofs = std::mem::take(&mut self.txs);
         txs_without_proofs.iter_mut().for_each(|tx| {
             match &mut tx.transaction_data {
                 TransactionData::VerifiedProof(proof_tx) => {
