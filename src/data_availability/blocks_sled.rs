@@ -1,10 +1,13 @@
+#![cfg_attr(test, allow(unused))]
+use std::path::Path;
+
 use crate::model::{Block, BlockHash, BlockHeight, Hashable};
 use crate::utils::db::{Db, Iter, KeyMaker};
-use anyhow::Result;
+use anyhow::{Context, Result};
 use tracing::{error, info};
 
-pub struct BlocksKey(pub BlockHash);
-pub struct BlocksOrdKey(pub BlockHeight);
+struct BlocksKey(pub BlockHash);
+struct BlocksOrdKey(pub BlockHeight);
 
 /// BlocksKey contains a `BlockHash`
 impl KeyMaker for BlocksKey {
@@ -32,8 +35,15 @@ pub struct Blocks {
 }
 
 impl Blocks {
-    pub fn new(db: &sled::Db) -> Result<Self> {
-        let db = Db::new(db, "blocks_ord", Some("blocks_alt"))?;
+    pub fn new(path: &Path) -> Result<Self> {
+        let db = sled::Config::new()
+            .use_compression(true)
+            .compression_factor(3)
+            .path(path)
+            .open()
+            .context("opening the database")?;
+
+        let db = Db::new(&db, "blocks_ord", Some("blocks_alt"))?;
         let blocks = Self { db };
 
         info!("{} block(s) available", blocks.db.len());
@@ -80,7 +90,7 @@ impl Blocks {
         self.last().map(|b| b.hash())
     }
 
-    pub fn range(&mut self, min: BlocksOrdKey, max: BlocksOrdKey) -> Iter<Block> {
-        self.db.ord_range(min, max)
+    pub fn range(&mut self, min: BlockHeight, max: BlockHeight) -> Iter<Block> {
+        self.db.ord_range(BlocksOrdKey(min), BlocksOrdKey(max))
     }
 }

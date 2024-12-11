@@ -1,8 +1,17 @@
 //! Minimal block storage layer for data availability.
 
 mod api;
-mod blocks;
 pub mod node_state;
+
+#[cfg(test)]
+mod blocks_memory;
+mod blocks_sled;
+
+// Alias one of the two to blocks for tests
+#[cfg(test)]
+use blocks_memory::Blocks;
+#[cfg(not(test))]
+use blocks_sled::Blocks;
 
 use crate::{
     bus::{command_response::Query, BusClientSender, BusMessage},
@@ -24,7 +33,6 @@ use crate::{
 };
 use anyhow::{Context, Result};
 use bincode::{Decode, Encode};
-use blocks::Blocks;
 use bytes::Bytes;
 use core::str;
 use futures::{
@@ -129,25 +137,6 @@ impl Module for DataAvailability {
             }
         }
 
-        #[cfg(not(test))]
-        let db = sled::Config::new()
-            .use_compression(true)
-            .compression_factor(3)
-            .path(
-                ctx.common
-                    .config
-                    .data_directory
-                    .join("data_availability.db"),
-            )
-            .open()
-            .context("opening the database")?;
-
-        #[cfg(test)]
-        let db = sled::Config::new()
-            .use_compression(false)
-            .open()
-            .context("opening the database")?;
-
         let buffered_blocks = BTreeSet::new();
         let self_pubkey = ctx.node.crypto.validator_pubkey().clone();
 
@@ -162,7 +151,12 @@ impl Module for DataAvailability {
         Ok(DataAvailability {
             config: ctx.common.config.clone(),
             bus,
-            blocks: Blocks::new(&db)?,
+            blocks: Blocks::new(
+                &ctx.common
+                    .config
+                    .data_directory
+                    .join("data_availability.db"),
+            )?,
             buffered_processed_blocks: buffered_blocks,
             self_pubkey,
             asked_last_processed_block: None,
@@ -552,13 +546,11 @@ impl DataAvailability {
         let mut processed_block_hashes: Vec<BlockHash> = self
             .blocks
             .range(
-                blocks::BlocksOrdKey(BlockHeight(start_height)),
-                blocks::BlocksOrdKey(
-                    self.blocks
-                        .last()
-                        .map_or(BlockHeight(start_height), |block| block.block_height)
-                        + 1,
-                ),
+                BlockHeight(start_height),
+                self.blocks
+                    .last()
+                    .map_or(BlockHeight(start_height), |block| block.block_height)
+                    + 1,
             )
             .filter_map(|block| {
                 block
@@ -588,14 +580,13 @@ mod tests {
     use tokio::io::AsyncWriteExt;
     use tokio_util::codec::{Framed, LengthDelimitedCodec};
 
-    use super::{blocks::Blocks, module_bus_client};
+    use super::{blocks_memory::Blocks, module_bus_client};
     use anyhow::Result;
 
     #[test]
     fn test_blocks() -> Result<()> {
         let tmpdir = tempfile::Builder::new().prefix("history-tests").tempdir()?;
-        let db = sled::open(tmpdir.path().join("history"))?;
-        let mut blocks = Blocks::new(&db)?;
+        let mut blocks = Blocks::new(tmpdir.path())?;
         let block = Block::default();
         blocks.put(block.clone())?;
         assert!(blocks.last().unwrap().block_height == block.block_height);
@@ -611,8 +602,7 @@ mod tests {
             .prefix("history-tests")
             .tempdir()
             .unwrap();
-        let db = sled::open(tmpdir.path().join("history")).unwrap();
-        let blocks = Blocks::new(&db).unwrap();
+        let blocks = Blocks::new(tmpdir.path()).unwrap();
 
         let bus = super::DABusClient::new_from_bus(crate::bus::SharedMessageBus::new(
             crate::bus::metrics::BusMetrics::global("global".to_string()),
@@ -651,11 +641,11 @@ mod tests {
     #[test_log::test(tokio::test)]
     async fn test_da_streaming() {
         let tmpdir = tempfile::Builder::new()
-            .prefix("history-tests")
+            .prefix("streamtest")
             .tempdir()
             .unwrap();
-        let db = sled::open(tmpdir.path().join("history")).unwrap();
-        let blocks = Blocks::new(&db).unwrap();
+
+        let blocks = Blocks::new(tmpdir.path()).unwrap();
 
         let global_bus = crate::bus::SharedMessageBus::new(
             crate::bus::metrics::BusMetrics::global("global".to_string()),
