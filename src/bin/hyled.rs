@@ -3,6 +3,7 @@ use std::{fs::File, io::Read};
 use anyhow::Result;
 use clap::{command, Parser, Subcommand};
 use hyle::{
+    indexer::model::ContractDb,
     model::{
         Blob, BlobData, BlobTransaction, ContractName, ProofData, ProofTransaction,
         RegisterContractTransaction,
@@ -142,6 +143,11 @@ enum SendCommands {
         contract_name: String,
         state_digest: String,
     },
+    /// Query contract state
+    #[command(alias = "s")]
+    State {
+        contract_name: String,
+    },
     Auto,
 }
 
@@ -187,6 +193,13 @@ async fn handle_args(args: Args) -> Result<()> {
                 .map_err(|e| anyhow::anyhow!("Failed to run scenario test {}", e))?;
             Ok(())
         }
+        SendCommands::State { contract_name } => client
+            .get_indexer_contract(&contract_name.into())
+            .await?
+            .json::<ContractDb>()
+            .await
+            .map(|contract| println!("State: {:?}", contract))
+            .map_err(|e| anyhow::anyhow!("Failed to get state: {}", e)),
     }
 }
 
