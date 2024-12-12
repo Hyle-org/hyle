@@ -10,10 +10,20 @@ members = [
 ]
 resolver = "2"
 
+[workspace.package]
+version = "0.3.0"
+edition = "2021"
+homepage = "https://hyle.eu/"
+repository = "https://github.com/Hyle-org/hyle/"
+# licence = ""
+
 [package]
 name = "hyle"
-version = "0.1.0"
-edition = "2021"
+version = { workspace = true }
+edition = { workspace = true }
+# license = { workspace = true }
+homepage = { workspace = true }
+repository = { workspace = true }
 default-run = "node"
 
 [dependencies]
