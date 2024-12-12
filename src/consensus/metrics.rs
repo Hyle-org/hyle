@@ -1,6 +1,6 @@
 use opentelemetry::{
     metrics::{Counter, Gauge},
-    KeyValue,
+    InstrumentationScope, KeyValue,
 };
 
 pub struct ConsensusMetrics {
@@ -25,28 +25,29 @@ pub struct ConsensusMetrics {
 
 impl ConsensusMetrics {
     pub fn global(id: String) -> ConsensusMetrics {
-        let my_meter = opentelemetry::global::meter(id);
+        let scope = InstrumentationScope::builder(id).build();
+        let my_meter = opentelemetry::global::meter_with_scope(scope);
 
         ConsensusMetrics {
-            signature_error: my_meter.u64_counter("signature_error").init(),
-            start_new_round: my_meter.u64_counter("start_new_round").init(),
-            start_new_round_error: my_meter.u64_counter("start_new_round_error").init(),
-            prepare: my_meter.u64_counter("prepare").init(),
-            prepare_error: my_meter.u64_counter("prepare_error").init(),
-            prepare_vote: my_meter.u64_counter("prepare_vote").init(),
-            prepare_vote_error: my_meter.u64_counter("prepare_vote_error").init(),
-            confirm: my_meter.u64_counter("confirm").init(),
-            confirm_error: my_meter.u64_counter("confirm_error").init(),
-            confirm_ack: my_meter.u64_counter("confirm_ack").init(),
-            confirm_ack_error: my_meter.u64_counter("confirm_ack_error").init(),
-            commit: my_meter.u64_counter("commit").init(),
-            commit_error: my_meter.u64_counter("commit_error").init(),
+            signature_error: my_meter.u64_counter("signature_error").build(),
+            start_new_round: my_meter.u64_counter("start_new_round").build(),
+            start_new_round_error: my_meter.u64_counter("start_new_round_error").build(),
+            prepare: my_meter.u64_counter("prepare").build(),
+            prepare_error: my_meter.u64_counter("prepare_error").build(),
+            prepare_vote: my_meter.u64_counter("prepare_vote").build(),
+            prepare_vote_error: my_meter.u64_counter("prepare_vote_error").build(),
+            confirm: my_meter.u64_counter("confirm").build(),
+            confirm_error: my_meter.u64_counter("confirm_error").build(),
+            confirm_ack: my_meter.u64_counter("confirm_ack").build(),
+            confirm_ack_error: my_meter.u64_counter("confirm_ack_error").build(),
+            commit: my_meter.u64_counter("commit").build(),
+            commit_error: my_meter.u64_counter("commit_error").build(),
             confirm_ack_commit_aggregate: my_meter
                 .u64_counter("confirm_ack_commit_aggregate")
-                .init(),
-            confirmed_ack_gauge: my_meter.u64_gauge("confirmed_ack_gauge").init(),
-            prepare_votes_gauge: my_meter.u64_gauge("prepare_votes_gauge").init(),
-            prepare_votes_aggregation: my_meter.u64_counter("prepare_votes_aggregation").init(),
+                .build(),
+            confirmed_ack_gauge: my_meter.u64_gauge("confirmed_ack_gauge").build(),
+            prepare_votes_gauge: my_meter.u64_gauge("prepare_votes_gauge").build(),
+            prepare_votes_aggregation: my_meter.u64_counter("prepare_votes_aggregation").build(),
         }
     }
 

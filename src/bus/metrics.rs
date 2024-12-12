@@ -3,7 +3,7 @@ use std::{
     collections::HashMap,
 };
 
-use opentelemetry::KeyValue;
+use opentelemetry::{InstrumentationScope, KeyValue};
 use quote::ToTokens;
 use syn::{parse_str, Type};
 
@@ -16,12 +16,13 @@ pub struct BusMetrics {
 
 impl BusMetrics {
     pub fn global(meter_id: String) -> BusMetrics {
-        let my_meter = opentelemetry::global::meter(meter_id);
+        let scope = InstrumentationScope::builder(meter_id).build();
+        let my_meter = opentelemetry::global::meter_with_scope(scope);
 
         BusMetrics {
             labels: HashMap::new(),
-            send: my_meter.u64_counter("send").init(),
-            receive: my_meter.u64_counter("receive").init(),
+            send: my_meter.u64_counter("send").build(),
+            receive: my_meter.u64_counter("receive").build(),
         }
     }
 

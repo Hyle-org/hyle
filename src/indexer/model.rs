@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use serde_with::serde_as;
 use sqlx::types::chrono::NaiveDateTime;
 use sqlx::{prelude::Type, Postgres};
 
@@ -66,13 +67,16 @@ pub struct TransactionWithBlobs {
     pub blobs: Vec<BlobWithStatus>,
 }
 
+#[serde_as]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct BlobWithStatus {
     pub contract_name: String, // Contract name associated with the blob
-    pub data: Vec<u8>,         // Actual blob data
+    #[serde_as(as = "serde_with::hex::Hex")]
+    pub data: Vec<u8>, // Actual blob data
     pub proof_outputs: Vec<serde_json::Value>, // outputs of proofs
 }
 
+#[serde_as]
 #[derive(Debug, sqlx::FromRow, Serialize, Deserialize)]
 pub struct BlobDb {
     pub tx_hash: TxHashDb, // Corresponds to the transaction hash
@@ -80,34 +84,42 @@ pub struct BlobDb {
     pub blob_index: u32, // Index of the blob within the transaction
     pub identity: String,  // Identity of the blob
     pub contract_name: String, // Contract name associated with the blob
-    pub data: Vec<u8>,     // Actual blob data
+    #[serde_as(as = "serde_with::hex::Hex")]
+    pub data: Vec<u8>, // Actual blob data
     pub verified: bool,    // Verification status
 }
 
+#[serde_as]
 #[derive(Debug, sqlx::FromRow, Serialize, Deserialize)]
 pub struct ProofTransactionDb {
     // Struct for the proof_transactions table
     pub tx_hash: TxHashDb,     // Corresponds to the transaction hash
     pub contract_name: String, // Contract name associated with the proof
-    pub proof: Vec<u8>,        // Proof associated with the transaction
+    #[serde_as(as = "serde_with::hex::Hex")]
+    pub proof: Vec<u8>, // Proof associated with the transaction
 }
 
+#[serde_as]
 #[derive(Debug, sqlx::FromRow, Serialize, Deserialize)]
 pub struct ContractDb {
     // Struct for the contracts table
-    pub tx_hash: TxHashDb,   // Corresponds to the registration transaction hash
-    pub owner: String,       // Owner of the contract
-    pub verifier: String,    // Verifier of the contract
+    pub tx_hash: TxHashDb, // Corresponds to the registration transaction hash
+    pub owner: String,     // Owner of the contract
+    pub verifier: String,  // Verifier of the contract
+    #[serde_as(as = "serde_with::hex::Hex")]
     pub program_id: Vec<u8>, // Program ID
+    #[serde_as(as = "serde_with::hex::Hex")]
     pub state_digest: Vec<u8>, // State digest of the contract
     pub contract_name: String, // Contract name
 }
 
+#[serde_as]
 #[derive(Debug, sqlx::FromRow, Serialize, Deserialize)]
 pub struct ContractStateDb {
     // Struct for the contract_state table
     pub contract_name: String, // Name of the contract
     pub block_hash: BlockHash, // Hash of the block where the state is captured
+    #[serde_as(as = "serde_with::hex::Hex")]
     pub state_digest: Vec<u8>, // The contract state stored in JSON format
 }
 

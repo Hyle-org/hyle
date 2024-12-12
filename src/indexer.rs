@@ -382,12 +382,12 @@ impl Indexer {
             .execute(&mut *transaction)
             .await?;
 
-            let proof = &verified_proof_tx.proof_transaction.proof.to_bytes()?;
+            let proof = &verified_proof_tx.proof.unwrap_or_default().to_bytes()?;
             let serialized_hyle_output = serde_json::to_string(&verified_proof_tx.hyle_output)?;
             let blob_index: i32 = i32::try_from(verified_proof_tx.hyle_output.index.0)
                 .map_err(|_| anyhow::anyhow!("Proof blob index is too large to fit into an i32"))?;
             let blob_tx_hash: &TxHashDb = &verified_proof_tx.hyle_output.tx_hash.into();
-            let contract_name = &verified_proof_tx.proof_transaction.contract_name.0;
+            let contract_name = &verified_proof_tx.contract_name.0;
             sqlx::query(
                 "INSERT INTO proofs (tx_hash, blob_tx_hash, blob_index, contract_name, proof, hyle_output) VALUES ($1, $2, $3, $4, $5, $6::jsonb)",
             )
@@ -547,8 +547,8 @@ mod test {
     use crate::{
         bus::SharedMessageBus,
         model::{
-            Blob, BlobData, BlockHeight, ProofData, ProofTransaction, RegisterContractTransaction,
-            Transaction, TransactionData, VerifiedProofTransaction,
+            Blob, BlobData, BlockHeight, ProofData, RegisterContractTransaction, Transaction,
+            TransactionData, VerifiedProofTransaction,
         },
     };
 
@@ -620,14 +620,14 @@ mod test {
         next_state: StateDigest,
         blobs: Vec<u8>,
     ) -> Transaction {
+        let proof = ProofData::Bytes(initial_state.0.clone());
         Transaction {
             version: 1,
             transaction_data: TransactionData::VerifiedProof(VerifiedProofTransaction {
-                proof_transaction: ProofTransaction {
-                    blob_tx_hash: blob_tx_hash.clone(),
-                    contract_name: contract_name.clone(),
-                    proof: ProofData::Bytes(initial_state.0.clone()),
-                },
+                proof_hash: proof.hash(),
+                proof: Some(proof),
+                contract_name: contract_name.clone(),
+                blob_tx_hash: blob_tx_hash.clone(),
                 hyle_output: HyleOutput {
                     version: 1,
                     initial_state,
@@ -752,7 +752,7 @@ mod test {
                 {
                     "blobs": [{
                         "contract_name": "c1",
-                        "data": [1,2,3],
+                        "data": hex::encode([1,2,3]),
                         "proof_outputs": [{}]
                     }],
                     "tx_hash": blob_transaction_hash.to_string(),
@@ -760,7 +760,7 @@ mod test {
                 {
                     "blobs": [{
                         "contract_name": "c1",
-                        "data": [1,2,3],
+                        "data": hex::encode([1,2,3]),
                         "proof_outputs": [
                             {
                                 "initial_state": [7,7,7],
@@ -784,7 +784,7 @@ mod test {
                 {
                     "blobs": [{
                         "contract_name": "c2",
-                        "data": [1,2,3],
+                        "data": hex::encode([1,2,3]),
                         "proof_outputs": [{}]
                     }],
                     "tx_hash": blob_transaction_hash.to_string(),
@@ -792,7 +792,7 @@ mod test {
                 {
                     "blobs": [{
                         "contract_name": "c2",
-                        "data": [1,2,3],
+                        "data": hex::encode([1,2,3]),
                         "proof_outputs": []
                     }],
                     "tx_hash": other_blob_transaction_hash.to_string(),
@@ -890,7 +890,8 @@ mod test {
 
         // Get an unknown transaction by name
         let transactions_response = server.get("/transactions/contract/unknown_contract").await;
-        transactions_response.assert_status_not_found();
+        transactions_response.assert_status_ok();
+        assert_eq!(transactions_response.text(), "[]");
 
         // Get an existing transaction by hash
         let transactions_response = server
@@ -920,7 +921,8 @@ mod test {
         let transactions_response = server
             .get("/blobs/hash/test_tx_hash_1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
             .await;
-        transactions_response.assert_status_not_found();
+        transactions_response.assert_status_ok();
+        assert_eq!(transactions_response.text(), "[]");
 
         // Get blob by tx_hash and index
         let transactions_response = server

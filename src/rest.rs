@@ -9,6 +9,7 @@ use axum::{
     Json,
 };
 use axum_otel_metrics::HttpMetricsLayer;
+use prometheus::{Encoder, TextEncoder};
 use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 use tower_http::trace::TraceLayer;
@@ -58,8 +59,17 @@ impl Module for RestApi {
             .merge(
                 Router::new()
                     .route("/v1/info", get(get_info))
-                    .with_state(RouterState { info: ctx.info })
-                    .nest("/v1", ctx.metrics_layer.routes()),
+                    .route(
+                        "/v1/metrics",
+                        get(|| async {
+                            let mut buffer = Vec::new();
+                            let encoder = TextEncoder::new();
+                            encoder.encode(&prometheus::gather(), &mut buffer).unwrap();
+                            // return metrics
+                            String::from_utf8(buffer).unwrap()
+                        }),
+                    )
+                    .with_state(RouterState { info: ctx.info }),
             )
             .layer(ctx.metrics_layer)
             .layer(tower_http::cors::CorsLayer::permissive())
