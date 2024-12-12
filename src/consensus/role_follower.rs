@@ -195,6 +195,8 @@ impl FollowerRole for Consensus {
             );
         }
 
+        self.verify_poda(&consensus_proposal)?;
+
         self.verify_new_validators_to_bond(&consensus_proposal)?;
 
         // At this point we are OK with this new consensus proposal, update locally and vote.

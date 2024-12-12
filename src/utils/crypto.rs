@@ -54,7 +54,16 @@ pub struct ValidatorSignature {
 }
 
 #[derive(
-    Debug, Serialize, Deserialize, Clone, bincode::Encode, bincode::Decode, PartialEq, Eq, Hash,
+    Debug,
+    Default,
+    Serialize,
+    Deserialize,
+    Clone,
+    bincode::Encode,
+    bincode::Decode,
+    PartialEq,
+    Eq,
+    Hash,
 )]
 pub struct AggregateSignature {
     pub signature: Signature,
@@ -173,6 +182,57 @@ impl BlstCrypto {
             msg,
             signature: AggregateSignature {
                 signature: sig.to_signature().into(),
+                validators: val,
+            },
+        })
+    }
+
+    pub fn aggregate<T>(
+        msg: T,
+        aggregates: &[&SignedByValidator<T>],
+    ) -> Result<Signed<T, AggregateSignature>, Error>
+    where
+        T: bincode::Encode + Clone,
+    {
+        if aggregates.len() == 1 {
+            return Ok(Signed {
+                msg,
+                signature: AggregateSignature {
+                    signature: aggregates[0].signature.signature.clone(),
+                    validators: vec![aggregates[0].signature.validator.clone()],
+                },
+            });
+        }
+        let Aggregates { sigs, pks, val } = Self::extract_aggregates(aggregates)?;
+
+        let pks_refs: Vec<&PublicKey> = pks.iter().collect();
+        let sigs_refs: Vec<&BlstSignature> = sigs.iter().collect();
+
+        let aggregated_pk = AggregatePublicKey::aggregate(&pks_refs, true)
+            .map_err(|e| anyhow!("could not aggregate public keys: {:?}", e))?;
+
+        let aggregated_sig = BlstAggregateSignature::aggregate(&sigs_refs, true)
+            .map_err(|e| anyhow!("could not aggregate signatures: {:?}", e))?;
+
+        let valid = Self::verify_aggregate(&Signed {
+            msg: msg.clone(),
+            signature: AggregateSignature {
+                signature: aggregated_sig.to_signature().into(),
+                validators: vec![as_validator_pubkey(aggregated_pk.to_public_key())],
+            },
+        })
+        .map_err(|e| anyhow!("Failed for verify new aggregated signature! Reason: {e}"))?;
+
+        if !valid {
+            return Err(anyhow!(
+                "Failed to aggregate signatures into valid one. Messages might be different."
+            ));
+        }
+
+        Ok(Signed {
+            msg,
+            signature: AggregateSignature {
+                signature: aggregated_sig.to_signature().into(),
                 validators: val,
             },
         })

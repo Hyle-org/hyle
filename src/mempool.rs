@@ -93,7 +93,7 @@ pub struct Mempool {
 pub enum MempoolNetMessage {
     DataProposal(DataProposal),
     DataVote(DataProposalHash),
-    PoAUpdate(DataProposalHash, Vec<SignedByValidator<MempoolNetMessage>>),
+    PoDAUpdate(DataProposalHash, Vec<SignedByValidator<MempoolNetMessage>>),
     SyncRequest(Option<DataProposalHash>, DataProposalHash),
     SyncReply(Vec<LaneEntry>),
 }
@@ -215,7 +215,6 @@ impl Mempool {
 
     /// Creates a cut with local material on QueryNewCut message reception (from consensus)
     fn handle_querynewcut(&mut self, validators: &mut QueryNewCut) -> Cut {
-        // TODO: Do we want to receive f as well and be responsible to select DataProposal that have enough signatures ?
         self.metrics.add_new_cut(validators);
         self.storage.new_cut(&validators.0)
     }
@@ -230,12 +229,12 @@ impl Mempool {
 
     fn handle_data_proposal_management(&mut self) -> Result<()> {
         // Create new DataProposal with pending txs
-        self.storage.new_data_proposal();
+        self.storage.new_data_proposal(&self.crypto);
 
         // Check if latest DataProposal has enough signatures
         if let Some(lane_entry) = &self.storage.get_lane_latest_entry(&self.storage.id) {
-            // If no signature, broadcast it to everyone
-            if lane_entry.signatures.is_empty() {
+            // If there's only 1 signature (=own signature), broadcast it to everyone
+            if lane_entry.signatures.len() == 1 {
                 debug!(
                     "🚗 Broadcast DataProposal {} ({} validators, {} txs)",
                     lane_entry.data_proposal.hash(),
@@ -309,7 +308,7 @@ impl Mempool {
 
     fn fetch_unknown_data_proposals(&mut self, cut: &Cut) -> Result<()> {
         // Detect all unknown data proposals
-        for (validator, data_proposal_hash) in cut.iter() {
+        for (validator, data_proposal_hash, _) in cut.iter() {
             if !self
                 .storage
                 .lane_has_data_proposal(validator, data_proposal_hash)
@@ -354,8 +353,8 @@ impl Mempool {
             MempoolNetMessage::DataVote(ref data_proposal_hash) => {
                 self.on_data_vote(&msg, data_proposal_hash)?;
             }
-            MempoolNetMessage::PoAUpdate(data_proposal_hash, mut signatures) => {
-                self.on_poa_update(validator, &data_proposal_hash, &mut signatures)?;
+            MempoolNetMessage::PoDAUpdate(data_proposal_hash, mut signatures) => {
+                self.on_poda_update(validator, &data_proposal_hash, &mut signatures)?;
             }
             MempoolNetMessage::SyncRequest(from_data_proposal_hash, to_data_proposal_hash) => {
                 self.on_sync_request(
@@ -437,7 +436,7 @@ impl Mempool {
         Ok(())
     }
 
-    fn on_poa_update(
+    fn on_poda_update(
         &mut self,
         validator: &ValidatorPublicKey,
         data_proposal_hash: &DataProposalHash,
@@ -450,7 +449,7 @@ impl Mempool {
             validator
         );
         self.storage
-            .on_poa_update(validator, data_proposal_hash, signatures)?;
+            .on_poda_update(validator, data_proposal_hash, signatures)?;
         Ok(())
     }
 
@@ -466,10 +465,12 @@ impl Mempool {
             data_proposal.txs.len()
         );
         let data_proposal_hash = data_proposal.hash();
-        match self
-            .storage
-            .on_data_proposal(validator, data_proposal, &self.known_contracts)
-        {
+        match self.storage.on_data_proposal(
+            &self.crypto,
+            validator,
+            data_proposal,
+            &self.known_contracts,
+        ) {
             DataProposalVerdict::Empty => {
                 warn!(
                     "received empty DataProposal from {}, ignoring...",
@@ -646,7 +647,7 @@ impl Mempool {
         Ok(())
     }
 
-    fn sign_net_message(
+    pub fn sign_net_message(
         &self,
         msg: MempoolNetMessage,
     ) -> Result<SignedByValidator<MempoolNetMessage>> {
@@ -894,7 +895,7 @@ pub mod test {
 
     #[test_log::test(tokio::test)]
     async fn test_receiving_new_tx() -> Result<()> {
-        let mut ctx = MempoolTestCtx::new("mempool").await;
+        let mut ctx: MempoolTestCtx = MempoolTestCtx::new("mempool").await;
 
         // Sending transaction to mempool as RestApiMessage
         let register_tx = make_register_contract_tx(ContractName("test1".to_owned()));
@@ -1051,7 +1052,7 @@ pub mod test {
                 .unwrap()
                 .signatures
                 .len(),
-            1
+            2
         );
         Ok(())
     }

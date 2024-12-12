@@ -287,6 +287,31 @@ pub mod test {
 
         let consensus_proposal;
 
+        let msg = MempoolNetMessage::DataVote(data_proposal_hash_node1.clone());
+        let aggregates = &[
+            &node1
+                .mempool_ctx
+                .mempool
+                .sign_net_message(msg.clone())
+                .unwrap(),
+            &node2
+                .mempool_ctx
+                .mempool
+                .sign_net_message(msg.clone())
+                .unwrap(),
+            &node3
+                .mempool_ctx
+                .mempool
+                .sign_net_message(msg.clone())
+                .unwrap(),
+            &node4
+                .mempool_ctx
+                .mempool
+                .sign_net_message(msg.clone())
+                .unwrap(),
+        ];
+        let poda = BlstCrypto::aggregate(msg, aggregates).unwrap();
+
         broadcast! {
             description: "Prepare",
             from: node1.consensus_ctx, to: [node2.consensus_ctx, node3.consensus_ctx, node4.consensus_ctx],
@@ -296,10 +321,10 @@ pub mod test {
                     cp
                         .get_cut()
                         .iter()
-                        .find(|(validator, _hash)|
+                        .find(|(validator, _hash, _poda)|
                             validator == &node1.consensus_ctx.pubkey()
                         ),
-                    Some((node1.consensus_ctx.pubkey(), data_proposal_hash_node1)).as_ref()
+                    Some((node1.consensus_ctx.pubkey(), data_proposal_hash_node1, poda.signature)).as_ref()
                 );
             }
         };

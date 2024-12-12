@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use crate::{
     bus::command_response::CmdRespClient,
     consensus::StateTag,
-    mempool::QueryNewCut,
+    mempool::{storage::Cut, QueryNewCut},
     model::{Hashable, ValidatorPublicKey},
     p2p::network::SignedByValidator,
 };
@@ -89,6 +89,17 @@ impl LeaderRole for Consensus {
         let validators = self.bft_round_state.staking.bonded().clone();
         match self.bus.request(QueryNewCut(validators)).await {
             Ok(cut) => {
+                let f = self.compute_f();
+                // Filtering the cut to only keep data proposals that received enough votes
+                let cut = cut
+                    .iter()
+                    .filter(|(_, _, poda)| {
+                        let voting_power = self.compute_voting_power(poda.validators.as_slice());
+                        voting_power > f + 1
+                    })
+                    .cloned()
+                    .collect::<Cut>();
+
                 self.last_cut = cut;
             }
             Err(err) => {
