@@ -19,7 +19,7 @@ pub fn parse_noir_output(vector: &mut Vec<String>) -> Result<HyleOutput, Error> 
         next_state: StateDigest(next_state),
         identity: identity.into(),
         tx_hash: TxHash(tx_hash),
-        index: BlobIndex(index),
+        index: BlobIndex(index as usize),
         blobs,
         success,
         program_outputs: vec![],
