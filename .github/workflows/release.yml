@@ -32,4 +32,28 @@ jobs:
         with:
           body_path: RELEASE_NOTES.md
 
+  bump-version:
+    runs-on: ubuntu-latest 
+    name: Bump version
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false 
+          fetch-depth: 0
 
+      - name: "Write cargo.toml"
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: |
+          # Strip 'v' from NEW_VERSION if it starts with it
+          CLEAN_VERSION=$(echo "$VERSION" | sed 's/^v//')
+          sed -i "s/^version = \".*\"$/version = \"$CLEAN_VERSION\"/" Cargo.toml
+          cargo update server
+          git config --global user.name "${GITHUB_ACTOR}"
+          git config --global user.email "${GITHUB_ACTOR}@users.noreply.github.com"
+          git add .
+          git commit -m "🔖 Bump version to ${VERSION}" 
+      - name: Push changes
+        uses: ad-m/github-push-action@master
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
