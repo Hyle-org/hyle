@@ -226,7 +226,7 @@ impl NodeState {
             "Saving metadata for BlobTx {} for {}",
             tx.hyle_output.tx_hash.0, tx.hyle_output.index
         );
-        unsettled_tx.blobs[tx.hyle_output.index.0 as usize]
+        unsettled_tx.blobs[tx.hyle_output.index.0]
             .metadata
             .push(tx.hyle_output.clone());
 
@@ -352,7 +352,7 @@ impl NodeState {
         }
 
         // Verify the contract name
-        let expected_contract = &unsettled_tx.blobs[hyle_output.index.0 as usize].contract_name;
+        let expected_contract = &unsettled_tx.blobs[hyle_output.index.0].contract_name;
         if expected_contract != contract_name {
             bail!("Blob reference from proof for {unsettled_tx_hash} does not match the BlobTx contract name {expected_contract}");
         }
