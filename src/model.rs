@@ -9,10 +9,7 @@ use hyle_contract_sdk::{
     flatten_blobs, BlobIndex, HyleOutput, Identity, ProgramId, StateDigest, TxHash, Verifier,
 };
 pub use hyle_contract_sdk::{Blob, BlobData, ContractName};
-use serde::{
-    de::{self, Visitor},
-    Deserialize, Serialize,
-};
+use serde::{Deserialize, Serialize};
 use sha3::{Digest, Sha3_256};
 use sqlx::{prelude::Type, Postgres};
 use std::{
@@ -29,9 +26,14 @@ use tracing::debug;
 
 use crate::{
     bus::SharedMessageBus,
-    consensus::{staking::Staker, utils::HASH_DISPLAY_SIZE},
+    consensus::utils::HASH_DISPLAY_SIZE,
     utils::{conf::SharedConf, crypto::SharedBlstCrypto},
 };
+
+use staking::Staker;
+
+// Re-export
+pub use staking::model::ValidatorPublicKey;
 
 #[derive(
     Debug, Display, Default, Clone, Serialize, Deserialize, Eq, PartialEq, Hash, Encode, Decode,
@@ -416,65 +418,6 @@ impl Add<BlockHeight> for BlockHeight {
     type Output = BlockHeight;
     fn add(self, other: BlockHeight) -> BlockHeight {
         BlockHeight(self.0 + other.0)
-    }
-}
-
-#[derive(Clone, Encode, Decode, Default, Eq, PartialEq, Hash, PartialOrd, Ord)]
-pub struct ValidatorPublicKey(pub Vec<u8>);
-
-impl std::fmt::Debug for ValidatorPublicKey {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_tuple("ValidatorPubK")
-            .field(&hex::encode(
-                self.0.get(..HASH_DISPLAY_SIZE).unwrap_or(&self.0),
-            ))
-            .finish()
-    }
-}
-
-impl Display for ValidatorPublicKey {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}",
-            &hex::encode(self.0.get(..HASH_DISPLAY_SIZE).unwrap_or(&self.0),)
-        )
-    }
-}
-
-impl Serialize for ValidatorPublicKey {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        serializer.serialize_str(hex::encode(&self.0).as_str())
-    }
-}
-
-impl<'de> Deserialize<'de> for ValidatorPublicKey {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        struct ValidatorPublicKeyVisitor;
-
-        impl Visitor<'_> for ValidatorPublicKeyVisitor {
-            type Value = ValidatorPublicKey;
-
-            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                formatter.write_str("a hex string representing a ValidatorPublicKey")
-            }
-
-            fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
-            where
-                E: de::Error,
-            {
-                let bytes = hex::decode(value).map_err(de::Error::custom)?;
-                Ok(ValidatorPublicKey(bytes))
-            }
-        }
-
-        deserializer.deserialize_str(ValidatorPublicKeyVisitor)
     }
 }
 

@@ -22,7 +22,7 @@ use crate::{
         modules::Module,
     },
 };
-use anyhow::{bail, Context, Error, Result};
+use anyhow::{anyhow, bail, Context, Error, Result};
 use bincode::{Decode, Encode};
 use metrics::ConsensusMetrics;
 use role_follower::{FollowerRole, FollowerState, TimeoutState};
@@ -43,7 +43,6 @@ pub mod metrics;
 pub mod module;
 pub mod role_follower;
 pub mod role_leader;
-pub mod staking;
 pub mod utils;
 
 // -----------------------------
@@ -277,7 +276,8 @@ impl Consensus {
                     self.store
                         .bft_round_state
                         .staking
-                        .bond(new_v.pubkey.clone())?;
+                        .bond(new_v.pubkey.clone())
+                        .map_err(|e| anyhow::anyhow!(e))?;
                 }
             }
             Some(Ticket::TimeoutQC(_)) => {
@@ -763,10 +763,18 @@ impl Consensus {
         match msg {
             DataEvent::NewBlock(block) => {
                 for staker in block.stakers {
-                    self.store.bft_round_state.staking.add_staker(staker)?;
+                    self.store
+                        .bft_round_state
+                        .staking
+                        .add_staker(staker)
+                        .map_err(|e| anyhow!(e))?;
                 }
                 for validator in block.new_bounded_validators {
-                    self.store.bft_round_state.staking.bond(validator)?;
+                    self.store
+                        .bft_round_state
+                        .staking
+                        .bond(validator)
+                        .map_err(|e| anyhow!(e))?;
                 }
 
                 if let StateTag::Joining = self.bft_round_state.state_tag {
@@ -964,7 +972,7 @@ impl ConsensusProposal {
 #[cfg(test)]
 pub mod test {
 
-    use crate::{consensus::staking::Staker, model::Block};
+    use crate::model::Block;
     use std::sync::Arc;
 
     use super::*;
@@ -979,6 +987,7 @@ pub mod test {
     };
     use assertables::assert_contains;
     use staking::Stake;
+    use staking::Staker;
     use tokio::sync::broadcast::Receiver;
     use tracing::error;
 

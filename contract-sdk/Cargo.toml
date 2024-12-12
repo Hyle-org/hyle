@@ -12,12 +12,14 @@ bincode = { version = "2.0.0-rc.3" }
 hex = "0.4.3"
 anyhow = "1.0.89"
 
-risc0-zkvm = { version = "1.1.1", default-features = false, features = [
+risc0-zkvm = { version = "1.2.0", default-features = false, features = [
     'std',
 ], optional = true }
+tracing = {version = "0.1", optional = true}
 
 [dev-dependencies]
 mockall = "0.13.0"
 
 [features]
 risc0 = ["risc0-zkvm"]
+tracing = ["dep:tracing"]

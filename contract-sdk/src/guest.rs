@@ -9,7 +9,7 @@ use crate::{
 };
 
 #[cfg(feature = "risc0")]
-mod env {
+pub mod env {
     use super::*;
 
     pub fn log(message: &str) {

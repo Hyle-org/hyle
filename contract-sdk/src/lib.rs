@@ -15,6 +15,35 @@ pub mod erc20;
 pub mod guest;
 pub mod identity_provider;
 
+#[cfg(feature = "tracing")]
+pub use tracing;
+
+// Si la feature "tracing" est activée, on redirige vers `tracing::info!`
+#[cfg(feature = "tracing")]
+#[macro_export]
+macro_rules! info {
+    ($($arg:tt)*) => {
+        sdk::tracing::info!($($arg)*);
+    }
+}
+
+// Si la feature "tracing" n’est pas activée, on redirige vers la fonction env::log
+#[cfg(all(not(feature = "tracing"), feature = "risc0"))]
+#[macro_export]
+macro_rules! info {
+    ($($arg:tt)*) => {
+        $crate::guest::env::log(&format!($($arg)*));
+    }
+}
+
+#[cfg(all(not(feature = "tracing"), not(feature = "risc0")))]
+#[macro_export]
+macro_rules! info {
+    ($($arg:tt)*) => {
+        println!($($arg)*);
+    }
+}
+
 pub type RunResult = Result<String, String>;
 
 pub trait Digestable {
@@ -43,7 +72,20 @@ impl alloc::fmt::Debug for StateDigest {
     }
 }
 
-#[derive(Default, Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash, Encode, Decode)]
+#[derive(
+    Default,
+    Serialize,
+    Deserialize,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Hash,
+    Encode,
+    Decode,
+    Ord,
+    PartialOrd,
+)]
 pub struct Identity(pub String);
 
 #[derive(

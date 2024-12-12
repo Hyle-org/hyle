@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "contracts/staking",
     "contracts/hyllar",
     "contracts/hydentity",
     "contracts/amm",
@@ -16,7 +17,8 @@ edition = "2021"
 default-run = "node"
 
 [dependencies]
-hyle-contract-sdk = { path = "./contract-sdk" }
+hyle-contract-sdk = { path = "./contract-sdk", features = ["tracing"] }
+staking = { path = "./contracts/staking", default-features=false }
 amm = { path = "./contracts/amm" }
 hyllar = { path = "./contracts/hyllar" }
 hydentity = { path = "./contracts/hydentity" }
