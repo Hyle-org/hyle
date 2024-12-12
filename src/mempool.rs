@@ -3,6 +3,7 @@
 use crate::{
     bus::{command_response::Query, BusClientSender, BusMessage},
     consensus::ConsensusEvent,
+    data_availability::node_state::verifiers::verify_proof,
     genesis::GenesisEvent,
     handle_messages,
     mempool::storage::{DataProposal, Storage},
@@ -11,7 +12,6 @@ use crate::{
         VerifiedProofTransaction,
     },
     module_handle_messages,
-    node_state::NodeState,
     p2p::network::{OutboundMessage, SignedByValidator},
     utils::{
         conf::SharedConf,
@@ -23,9 +23,16 @@ use crate::{
 use anyhow::{bail, Context, Result};
 use api::RestApiMessage;
 use bincode::{Decode, Encode};
+use hyle_contract_sdk::{ContractName, ProgramId, Verifier};
 use metrics::MempoolMetrics;
 use serde::{Deserialize, Serialize};
-use std::{collections::HashSet, fmt::Display, path::PathBuf, str::FromStr, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    fmt::Display,
+    path::PathBuf,
+    str::FromStr,
+    sync::Arc,
+};
 use storage::{Cut, DataProposalHash, DataProposalVerdict, LaneEntry};
 use strum_macros::IntoStaticStr;
 use tracing::{debug, info, warn};
@@ -36,6 +43,28 @@ pub mod storage;
 
 #[derive(Debug, Clone)]
 pub struct QueryNewCut(pub Vec<ValidatorPublicKey>);
+
+#[derive(Debug, Default, Clone, Encode, Decode)]
+pub struct KnownContracts(pub HashMap<ContractName, (Verifier, ProgramId)>);
+
+impl KnownContracts {
+    #[inline(always)]
+    fn register_contract(
+        &mut self,
+        contract_name: &ContractName,
+        verifier: &Verifier,
+        program_id: &ProgramId,
+    ) -> Result<()> {
+        if self.0.contains_key(contract_name) {
+            bail!("Contract already exists")
+        }
+        self.0.insert(
+            contract_name.clone(),
+            (verifier.clone(), program_id.clone()),
+        );
+        Ok(())
+    }
+}
 
 module_bus_client! {
 struct MempoolBusClient {
@@ -57,7 +86,7 @@ pub struct Mempool {
     metrics: MempoolMetrics,
     storage: Storage,
     validators: Vec<ValidatorPublicKey>,
-    node_state: NodeState,
+    known_contracts: KnownContracts,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, Eq, PartialEq, IntoStaticStr)]
@@ -80,7 +109,7 @@ impl BusMessage for MempoolNetMessage {}
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub enum MempoolEvent {
-    CommitBlock(Vec<Transaction>, Vec<ValidatorPublicKey>),
+    CommitCutWithTxs(Vec<Transaction>, Vec<ValidatorPublicKey>),
 }
 impl BusMessage for MempoolEvent {}
 
@@ -91,11 +120,11 @@ impl Module for Mempool {
         let bus = MempoolBusClient::new_from_bus(ctx.common.bus.new_handle()).await;
         let metrics = MempoolMetrics::global(ctx.common.config.id.clone());
 
-        let node_state = Self::load_from_disk_or_default::<NodeState>(
+        let known_contracts = Self::load_from_disk_or_default::<KnownContracts>(
             ctx.common
                 .config
                 .data_directory
-                .join("node_state.bin")
+                .join("mempool_known_contracts.bin")
                 .as_path(),
         );
 
@@ -121,7 +150,7 @@ impl Module for Mempool {
             crypto: Arc::clone(&ctx.node.crypto),
             storage,
             validators: vec![],
-            node_state,
+            known_contracts,
         })
     }
 
@@ -137,7 +166,7 @@ impl Mempool {
 
         let mut interval = tokio::time::interval(tokio::time::Duration::from_millis(100));
 
-        // Recompute optimistic node_state
+        // TODO: Recompute optimistic node_state
 
         module_handle_messages! {
             on_bus self.bus,
@@ -157,7 +186,7 @@ impl Mempool {
                 if let GenesisEvent::GenesisBlock { genesis_txs, .. } = cmd {
                     for tx in genesis_txs {
                         if let TransactionData::RegisterContract(tx) = tx.transaction_data {
-                            self.node_state.handle_register_contract_tx(&tx)?;
+                            self.known_contracts.register_contract(&tx.contract_name, &tx.verifier, &tx.program_id)?;
                         }
                     }
                 }
@@ -270,7 +299,7 @@ impl Mempool {
                 self.fetch_unknown_data_proposals(&cut)?;
                 let txs = self.storage.collect_txs_from_lanes(cut);
                 self.bus
-                    .send(MempoolEvent::CommitBlock(txs, new_bonded_validators))
+                    .send(MempoolEvent::CommitCutWithTxs(txs, new_bonded_validators))
                     .context("Cannot send commitBlock message over channel")?;
 
                 Ok(())
@@ -439,7 +468,7 @@ impl Mempool {
         let data_proposal_hash = data_proposal.hash();
         match self
             .storage
-            .on_data_proposal(validator, data_proposal, &self.node_state)
+            .on_data_proposal(validator, data_proposal, &self.known_contracts)
         {
             DataProposalVerdict::Empty => {
                 warn!(
@@ -479,17 +508,23 @@ impl Mempool {
 
         match tx.transaction_data {
             TransactionData::RegisterContract(ref register_contract_transaction) => {
-                self.node_state
-                    .handle_register_contract_tx(register_contract_transaction)?;
+                self.known_contracts.register_contract(
+                    &register_contract_transaction.contract_name,
+                    &register_contract_transaction.verifier,
+                    &register_contract_transaction.program_id,
+                )?;
             }
             TransactionData::Stake(ref _staker) => {}
             TransactionData::Blob(ref _blob_transaction) => {}
             TransactionData::Proof(mut proof_transaction) => {
                 // Verify and extract proof
-                let hyle_output = self.node_state.verify_proof(
-                    &proof_transaction.proof.to_bytes()?,
-                    &proof_transaction.contract_name,
-                )?;
+                let (verifier, program_id) = self
+                    .known_contracts
+                    .0
+                    .get(&proof_transaction.contract_name)
+                    .context("Contract unknown")?;
+                let hyle_output =
+                    verify_proof(&proof_transaction.proof.to_bytes()?, verifier, program_id)?;
                 tx.transaction_data = TransactionData::VerifiedProof(VerifiedProofTransaction {
                     proof_hash: proof_transaction.proof.hash(),
                     contract_name: std::mem::take(&mut proof_transaction.contract_name),
@@ -653,7 +688,7 @@ pub mod test {
                 metrics: MempoolMetrics::global("id".to_string()),
                 storage,
                 validators,
-                node_state: NodeState::default(),
+                known_contracts: KnownContracts::default(),
             }
         }
 
@@ -809,7 +844,9 @@ pub mod test {
         }
 
         #[track_caller]
-        pub fn assert_commit_block(&mut self) -> (Vec<Transaction>, Vec<ValidatorPublicKey>) {
+        pub fn assert_commit_cut_with_txs(
+            &mut self,
+        ) -> (Vec<Transaction>, Vec<ValidatorPublicKey>) {
             #[allow(clippy::expect_fun_call)]
             let rec = self
                 .mempool_event_receiver
@@ -817,7 +854,7 @@ pub mod test {
                 .expect("No CommitBlock event sent");
 
             match rec {
-                MempoolEvent::CommitBlock(txs, new_bounded_validators) => {
+                MempoolEvent::CommitCutWithTxs(txs, new_bounded_validators) => {
                     (txs, new_bounded_validators)
                 }
             }
@@ -847,8 +884,8 @@ pub mod test {
             version: 1,
             transaction_data: TransactionData::RegisterContract(RegisterContractTransaction {
                 owner: "test".to_string(),
-                verifier: "test".to_string(),
-                program_id: vec![],
+                verifier: "test".into(),
+                program_id: ProgramId(vec![]),
                 state_digest: StateDigest(vec![0, 1, 2, 3]),
                 contract_name: name,
             }),
@@ -1187,9 +1224,7 @@ pub mod test {
             .expect("should handle consensus event");
 
         // Assert that the transactions have been committed
-        // On veut assert commit block pour récuperer les txs
-        // Assert that we send a SyncReply
-        let (txs, new_bounded_validators) = ctx.assert_commit_block();
+        let (txs, new_bounded_validators) = ctx.assert_commit_cut_with_txs();
 
         assert_eq!(txs.len(), 2);
         assert!(txs.contains(&register_tx1));

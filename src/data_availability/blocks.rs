@@ -45,13 +45,16 @@ impl Blocks {
         self.db.len()
     }
 
-    pub fn put(&mut self, data: Block) -> Result<()> {
-        if self.get(data.hash())?.is_some() {
+    pub fn put(&mut self, block: Block) -> Result<()> {
+        if self.get(block.hash())?.is_some() {
             return Ok(());
         }
-        info!("📦 storing block {}", data.height);
-        self.db
-            .put(BlocksOrdKey(data.height), BlocksKey(data.hash()), &data)?;
+        info!("📦 storing block {}", block.block_height);
+        self.db.put(
+            BlocksOrdKey(block.block_height),
+            BlocksKey(block.hash()),
+            &block,
+        )?;
         Ok(())
     }
 

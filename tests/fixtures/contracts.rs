@@ -1,17 +1,19 @@
 use hyle_contract_sdk::Digestable;
+use hyle_contract_sdk::ProgramId;
 use hyle_contract_sdk::StateDigest;
+use hyle_contract_sdk::Verifier;
 
 use super::ctx::E2EContract;
 
 pub struct TestContract {}
 
 impl E2EContract for TestContract {
-    fn verifier() -> String {
+    fn verifier() -> Verifier {
         "test".into()
     }
 
-    fn program_id() -> Vec<u8> {
-        vec![1, 2, 3]
+    fn program_id() -> ProgramId {
+        vec![1, 2, 3].into()
     }
 
     fn state_digest() -> StateDigest {
@@ -22,13 +24,14 @@ impl E2EContract for TestContract {
 pub struct ERC20Contract {}
 
 impl E2EContract for ERC20Contract {
-    fn verifier() -> String {
+    fn verifier() -> Verifier {
         "risc0".into()
     }
 
-    fn program_id() -> Vec<u8> {
+    fn program_id() -> ProgramId {
         hex::decode("0f0e89496853ab498a5eda2d06ced45909faf490776c8121063df9066bbb9ea4")
             .expect("Image id decoding failed")
+            .into()
     }
 
     fn state_digest() -> StateDigest {
@@ -42,13 +45,15 @@ impl E2EContract for ERC20Contract {
 pub struct HydentityContract {}
 
 impl E2EContract for HydentityContract {
-    fn verifier() -> String {
+    fn verifier() -> Verifier {
         "risc0".into()
     }
 
-    fn program_id() -> Vec<u8> {
+    fn program_id() -> ProgramId {
         let hydentity_program_id = include_str!("../../contracts/hydentity/hydentity.txt").trim();
-        hex::decode(hydentity_program_id).expect("Image id decoding failed")
+        hex::decode(hydentity_program_id)
+            .expect("Image id decoding failed")
+            .into()
     }
 
     fn state_digest() -> StateDigest {
@@ -59,13 +64,15 @@ impl E2EContract for HydentityContract {
 pub struct HyllarContract {}
 
 impl E2EContract for HyllarContract {
-    fn verifier() -> String {
+    fn verifier() -> Verifier {
         "risc0".into()
     }
 
-    fn program_id() -> Vec<u8> {
+    fn program_id() -> ProgramId {
         let hyllar_program_id = include_str!("../../contracts/hyllar/hyllar.txt").trim();
-        hex::decode(hyllar_program_id).expect("Image id decoding failed")
+        hex::decode(hyllar_program_id)
+            .expect("Image id decoding failed")
+            .into()
     }
 
     fn state_digest() -> StateDigest {
@@ -76,13 +83,15 @@ impl E2EContract for HyllarContract {
 pub struct AmmContract {}
 
 impl E2EContract for AmmContract {
-    fn verifier() -> String {
+    fn verifier() -> Verifier {
         "risc0".into()
     }
 
-    fn program_id() -> Vec<u8> {
+    fn program_id() -> ProgramId {
         let amm_program_id = include_str!("../../contracts/amm/amm.txt").trim();
-        hex::decode(amm_program_id).expect("Image id decoding failed")
+        hex::decode(amm_program_id)
+            .expect("Image id decoding failed")
+            .into()
     }
 
     fn state_digest() -> StateDigest {

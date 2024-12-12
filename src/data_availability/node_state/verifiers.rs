@@ -6,15 +6,19 @@ use rand::Rng;
 use risc0_zkvm::sha::Digest;
 use sp1_sdk::{ProverClient, SP1ProofWithPublicValues, SP1VerifyingKey};
 
-use hyle_contract_sdk::HyleOutput;
+use hyle_contract_sdk::{HyleOutput, ProgramId, Verifier};
 
-pub fn verify_proof(proof: &[u8], verifier: &str, program_id: &[u8]) -> Result<HyleOutput, Error> {
+pub fn verify_proof(
+    proof: &[u8],
+    verifier: &Verifier,
+    program_id: &ProgramId,
+) -> Result<HyleOutput, Error> {
     // TODO: remove test
-    match verifier {
+    match verifier.0.as_str() {
         "test" => Ok(serde_json::from_slice(proof)?),
-        "risc0" => risc0_proof_verifier(proof, program_id),
-        "noir" => noir_proof_verifier(proof, program_id),
-        "sp1" => sp1_proof_verifier(proof, program_id),
+        "risc0" => risc0_proof_verifier(proof, &program_id.0),
+        "noir" => noir_proof_verifier(proof, &program_id.0),
+        "sp1" => sp1_proof_verifier(proof, &program_id.0),
         _ => bail!("{} verifier not implemented yet", verifier),
     }
 }
