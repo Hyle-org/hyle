@@ -7,12 +7,12 @@ use std::{collections::HashMap, fmt::Display, hash::Hash, vec};
 use tracing::{debug, error, warn};
 
 use crate::{
+    data_availability::node_state::verifiers::verify_proof,
     model::{Hashable, Transaction, TransactionData, ValidatorPublicKey},
-    node_state::NodeState,
     p2p::network::SignedByValidator,
 };
 
-use super::MempoolNetMessage;
+use super::{KnownContracts, MempoolNetMessage};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DataProposalVerdict {
@@ -190,7 +190,7 @@ impl Storage {
         &mut self,
         validator: &ValidatorPublicKey,
         mut data_proposal: DataProposal,
-        node_state: &NodeState,
+        known_contracts: &KnownContracts,
     ) -> DataProposalVerdict {
         // Check that data_proposal is not empty
         if data_proposal.txs.is_empty() {
@@ -228,9 +228,9 @@ impl Storage {
             // Get the last known parent hash in order to get all the next ones
             return DataProposalVerdict::Wait(last_known_parent_hash.cloned());
         }
-        // optimistic_node_state is here to handle the case where a contract is registered in a car that is not yet committed.
-        // For performance reasons, we only clone node_state in it for unregistered contracts that are potentially in those uncommitted cars.
-        let mut optimistic_node_state: Option<NodeState> = None;
+        // optimistic_known_contracts is here to handle the case where a contract is registered in a car that is not yet committed.
+        // For performance reasons, we only clone known_contracts in it for unregistered contracts that are potentially in those uncommitted cars.
+        let mut optimistically_known_contracts: Option<KnownContracts> = None;
         for tx in &data_proposal.txs {
             match &tx.transaction_data {
                 TransactionData::Proof(_) => {
@@ -240,10 +240,10 @@ impl Storage {
                 TransactionData::VerifiedProof(proof_tx) => {
                     // Ensure contract is registered
                     let contract_name = &proof_tx.contract_name;
-                    if !node_state.contracts.contains_key(contract_name)
-                        && !optimistic_node_state
+                    if !known_contracts.0.contains_key(contract_name)
+                        && !optimistically_known_contracts
                             .as_ref()
-                            .map_or(false, |state| state.contracts.contains_key(contract_name))
+                            .map_or(false, |kc| kc.0.contains_key(contract_name))
                     {
                         // Process previous cars to register the missing contract
                         if let Some(lane) = self.lanes.get_mut(validator) {
@@ -260,13 +260,18 @@ impl Storage {
                                         &tx.transaction_data
                                     {
                                         if reg_tx.contract_name == *contract_name {
-                                            if optimistic_node_state.is_none() {
-                                                optimistic_node_state = Some(node_state.clone());
+                                            if optimistically_known_contracts.is_none() {
+                                                optimistically_known_contracts =
+                                                    Some(known_contracts.clone());
                                             }
-                                            if optimistic_node_state
+                                            if optimistically_known_contracts
                                                 .as_mut()
                                                 .unwrap()
-                                                .handle_register_contract_tx(reg_tx)
+                                                .register_contract(
+                                                    &reg_tx.contract_name,
+                                                    &reg_tx.verifier,
+                                                    &reg_tx.program_id,
+                                                )
                                                 .is_err()
                                             {
                                                 // Register transactions in a validated car should never fail
@@ -294,11 +299,20 @@ impl Storage {
                         }
                     };
                     // Verifying the proof before voting
-                    match optimistic_node_state
-                        .as_ref()
-                        .unwrap_or(node_state)
-                        .verify_proof(&proof, &proof_tx.contract_name)
-                    {
+                    let (verifier, program_id) =
+                        match known_contracts.0.get(contract_name).or_else(|| {
+                            optimistically_known_contracts
+                                .as_ref()
+                                .and_then(|kc| kc.0.get(contract_name))
+                        }) {
+                            Some((verifier, program_id)) => (verifier, program_id),
+                            None => {
+                                warn!("Refusing DataProposal: contract not found");
+                                return DataProposalVerdict::Refuse;
+                            }
+                        };
+
+                    match verify_proof(&proof, verifier, program_id) {
                         Ok(hyle_output) => {
                             if hyle_output != proof_tx.hyle_output {
                                 warn!("Refusing DataProposal: incorrect HyleOutput in proof transaction");
@@ -312,14 +326,17 @@ impl Storage {
                     }
                 }
                 TransactionData::RegisterContract(register_contract_tx) => {
-                    if optimistic_node_state.is_none() {
-                        optimistic_node_state = Some(node_state.clone());
+                    if optimistically_known_contracts.is_none() {
+                        optimistically_known_contracts = Some(known_contracts.clone());
                     }
-                    match optimistic_node_state
+                    match optimistically_known_contracts
                         .as_mut()
                         .unwrap()
-                        .handle_register_contract_tx(register_contract_tx)
-                    {
+                        .register_contract(
+                            &register_contract_tx.contract_name,
+                            &register_contract_tx.verifier,
+                            &register_contract_tx.program_id,
+                        ) {
                         Ok(_) => (),
                         Err(e) => {
                             warn!("Refusing DataProposal: {}", e);
@@ -659,17 +676,16 @@ mod tests {
     use crate::{
         mempool::{
             storage::{DataProposalHash, DataProposalVerdict, LaneEntry, Storage},
-            MempoolNetMessage,
+            KnownContracts, MempoolNetMessage,
         },
         model::{
             Blob, BlobData, BlobTransaction, ContractName, Hashable, ProofData, ProofTransaction,
             RegisterContractTransaction, Transaction, TransactionData, ValidatorPublicKey,
             VerifiedProofTransaction,
         },
-        node_state::NodeState,
         utils::crypto,
     };
-    use hyle_contract_sdk::{BlobIndex, HyleOutput, Identity, StateDigest, TxHash};
+    use hyle_contract_sdk::{BlobIndex, HyleOutput, Identity, ProgramId, StateDigest, TxHash};
 
     use super::{DataProposal, Lane};
 
@@ -751,8 +767,8 @@ mod tests {
             version: 1,
             transaction_data: TransactionData::RegisterContract(RegisterContractTransaction {
                 owner: "test".to_string(),
-                verifier: "test".to_string(),
-                program_id: vec![],
+                verifier: "test".into(),
+                program_id: ProgramId(vec![]),
                 state_digest: StateDigest(vec![0, 1, 2, 3]),
                 contract_name: name,
             }),
@@ -1039,7 +1055,7 @@ mod tests {
         let pubkey2 = crypto2.validator_pubkey();
         let mut store1 = Storage::new(pubkey1.clone());
         let mut store2 = Storage::new(pubkey2.clone());
-        let node_state = NodeState::default();
+        let known_contracts = KnownContracts::default();
 
         // First data proposal
         let tx1 = make_blob_tx("test1");
@@ -1054,7 +1070,7 @@ mod tests {
         let data_proposal1_hash = data_proposal1.hash();
 
         assert_eq!(
-            store2.on_data_proposal(pubkey1, data_proposal1, &node_state),
+            store2.on_data_proposal(pubkey1, data_proposal1, &known_contracts),
             DataProposalVerdict::Vote
         );
 
@@ -1079,7 +1095,7 @@ mod tests {
         let data_proposal2_hash = data_proposal2.hash();
 
         assert_eq!(
-            store2.on_data_proposal(pubkey1, data_proposal2, &node_state),
+            store2.on_data_proposal(pubkey1, data_proposal2, &known_contracts),
             DataProposalVerdict::Vote
         );
         let msg2 = crypto2
@@ -1103,7 +1119,7 @@ mod tests {
         let data_proposal3_hash = data_proposal3.hash();
 
         assert_eq!(
-            store2.on_data_proposal(pubkey1, data_proposal3, &node_state),
+            store2.on_data_proposal(pubkey1, data_proposal3, &known_contracts),
             DataProposalVerdict::Vote
         );
         let msg3 = crypto2
@@ -1127,7 +1143,7 @@ mod tests {
         let data_proposal4_hash = data_proposal4.hash();
 
         assert_eq!(
-            store2.on_data_proposal(pubkey1, data_proposal4, &node_state),
+            store2.on_data_proposal(pubkey1, data_proposal4, &known_contracts),
             DataProposalVerdict::Vote
         );
         let msg4 = crypto2
@@ -1198,7 +1214,7 @@ mod tests {
         let pubkey3 = crypto3.validator_pubkey();
         let mut store2 = Storage::new(pubkey2.clone());
         let mut store3 = Storage::new(pubkey3.clone());
-        let node_state2 = NodeState::default();
+        let known_contracts2 = KnownContracts::default();
 
         store3.on_new_tx(make_blob_tx("test1"));
         store3.on_new_tx(make_blob_tx("test2"));
@@ -1216,12 +1232,12 @@ mod tests {
         assert_eq!(store3.lanes.get(pubkey3).unwrap().data_proposals.len(), 1);
 
         assert_eq!(
-            store2.on_data_proposal(pubkey3, data_proposal, &node_state2),
+            store2.on_data_proposal(pubkey3, data_proposal, &known_contracts2),
             DataProposalVerdict::Vote
         );
         // Assert we can vote multiple times
         assert_eq!(
-            store2.on_data_proposal(pubkey3, data_proposal_bis, &node_state2),
+            store2.on_data_proposal(pubkey3, data_proposal_bis, &known_contracts2),
             DataProposalVerdict::Vote
         );
 
@@ -1278,7 +1294,7 @@ mod tests {
         let pubkey2 = crypto2.validator_pubkey();
 
         let mut store1 = Storage::new(pubkey1.clone());
-        let node_state = NodeState::default();
+        let known_contracts = KnownContracts::default();
 
         let contract_name = ContractName("test".to_string());
         let register_tx = make_register_contract_tx(contract_name.clone());
@@ -1292,7 +1308,7 @@ mod tests {
         };
         let data_proposal_hash = data_proposal.hash();
 
-        let verdict = store1.on_data_proposal(pubkey2, data_proposal, &node_state);
+        let verdict = store1.on_data_proposal(pubkey2, data_proposal, &known_contracts);
         assert_eq!(verdict, DataProposalVerdict::Refuse);
 
         // Ensure the lane was not updated with the unverified proof transaction
@@ -1305,7 +1321,7 @@ mod tests {
         let pubkey1 = crypto1.validator_pubkey();
 
         let mut store1 = Storage::new(pubkey1.clone());
-        let node_state = NodeState::default();
+        let known_contracts = KnownContracts::default();
 
         let contract_name = ContractName("test".to_string());
         let register_tx = make_register_contract_tx(contract_name.clone());
@@ -1318,7 +1334,7 @@ mod tests {
             txs: vec![proof_tx.clone()],
         };
 
-        let verdict = store1.on_data_proposal(pubkey1, data_proposal, &node_state);
+        let verdict = store1.on_data_proposal(pubkey1, data_proposal, &known_contracts);
         assert_eq!(verdict, DataProposalVerdict::Refuse); // refused because contract not found
 
         let data_proposal = DataProposal {
@@ -1327,7 +1343,7 @@ mod tests {
             txs: vec![register_tx, proof_tx],
         };
 
-        let verdict = store1.on_data_proposal(pubkey1, data_proposal, &node_state);
+        let verdict = store1.on_data_proposal(pubkey1, data_proposal, &known_contracts);
         assert_eq!(verdict, DataProposalVerdict::Vote);
     }
 
@@ -1337,7 +1353,7 @@ mod tests {
         let pubkey1 = crypto1.validator_pubkey();
 
         let mut store1 = Storage::new(pubkey1.clone());
-        let node_state = NodeState::default();
+        let known_contracts = KnownContracts::default();
 
         let contract_name = ContractName("test".to_string());
         let register_tx = make_register_contract_tx(contract_name.clone());
@@ -1359,7 +1375,7 @@ mod tests {
             txs: vec![proof_tx],
         };
 
-        let verdict = store1.on_data_proposal(pubkey1, data_proposal, &node_state);
+        let verdict = store1.on_data_proposal(pubkey1, data_proposal, &known_contracts);
         assert_eq!(verdict, DataProposalVerdict::Vote);
 
         // Ensure the lane was updated with the DataProposal
@@ -1378,7 +1394,7 @@ mod tests {
         let pubkey1 = crypto1.validator_pubkey();
 
         let mut store1 = Storage::new(pubkey1.clone());
-        let node_state = NodeState::default();
+        let known_contracts = KnownContracts::default();
 
         let contract_name = ContractName("test".to_string());
         let register_tx = make_register_contract_tx(contract_name.clone());
@@ -1390,7 +1406,7 @@ mod tests {
             txs: vec![register_tx.clone(), proof_tx],
         };
 
-        let verdict = store1.on_data_proposal(pubkey1, data_proposal, &node_state);
+        let verdict = store1.on_data_proposal(pubkey1, data_proposal, &known_contracts);
         assert_eq!(verdict, DataProposalVerdict::Vote);
 
         // Ensure the lane was updated with the DataProposal
@@ -1411,7 +1427,7 @@ mod tests {
         let pubkey2 = crypto2.validator_pubkey();
 
         let mut store1 = Storage::new(pubkey2.clone());
-        let node_state = NodeState::default();
+        let known_contracts = KnownContracts::default();
 
         let contract_name = ContractName("test".to_string());
         let register_tx = make_register_contract_tx(contract_name.clone());
@@ -1424,7 +1440,7 @@ mod tests {
         };
         let data_proposal_hash = data_proposal.hash();
 
-        let verdict = store1.on_data_proposal(pubkey1, data_proposal, &node_state);
+        let verdict = store1.on_data_proposal(pubkey1, data_proposal, &known_contracts);
         assert_eq!(verdict, DataProposalVerdict::Refuse);
 
         // Ensure the lane was not updated with the DataProposal
@@ -1440,8 +1456,8 @@ mod tests {
 
         let mut store1 = Storage::new(pubkey1.clone());
         let mut store2 = Storage::new(pubkey2.clone());
-        let node_state1 = NodeState::default();
-        let node_state2 = NodeState::default();
+        let known_contracts1 = KnownContracts::default();
+        let known_contracts2 = KnownContracts::default();
 
         store1.on_new_tx(make_blob_tx("tx1"));
         store1.new_data_proposal();
@@ -1452,7 +1468,7 @@ mod tests {
             .clone();
 
         assert_eq!(
-            store2.on_data_proposal(pubkey1, data_proposal, &node_state2),
+            store2.on_data_proposal(pubkey1, data_proposal, &known_contracts2),
             DataProposalVerdict::Vote
         );
 
@@ -1465,7 +1481,7 @@ mod tests {
             .clone();
 
         assert_eq!(
-            store1.on_data_proposal(pubkey2, data_proposal, &node_state1),
+            store1.on_data_proposal(pubkey2, data_proposal, &known_contracts1),
             DataProposalVerdict::Vote
         );
 
@@ -1487,7 +1503,7 @@ mod tests {
             .clone();
 
         assert_eq!(
-            store2.on_data_proposal(pubkey1, data_proposal, &node_state2),
+            store2.on_data_proposal(pubkey1, data_proposal, &known_contracts2),
             DataProposalVerdict::Vote
         );
 

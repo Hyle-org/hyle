@@ -56,7 +56,7 @@ impl DAListener {
                 let bytes = cmd;
                 let block: Block =
                     bincode::decode_from_slice(&bytes, bincode::config::standard())?.0;
-                if let Err(e) = self.handle_block(block).await {
+                if let Err(e) = self.handle_processed_block(block).await {
                     error!("Error while handling block: {:#}", e);
                 }
                 SinkExt::<bytes::Bytes>::send(&mut self.da_stream, "ok".into()).await?;
@@ -70,8 +70,9 @@ impl DAListener {
         Ok(())
     }
 
-    async fn handle_block(&mut self, block: Block) -> Result<()> {
-        self.bus.send(DataEvent::NewBlock(block.clone()))?;
+    async fn handle_processed_block(&mut self, block: Block) -> Result<()> {
+        self.bus
+            .send(DataEvent::NewBlock(Box::new(block.clone())))?;
         Ok(())
     }
 }

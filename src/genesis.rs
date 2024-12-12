@@ -154,7 +154,7 @@ impl Genesis {
                 RegisterContractTransaction {
                     owner: "hyle".into(),
                     verifier: "risc0".into(),
-                    program_id: hyllar_program_id.clone(),
+                    program_id: hyllar_program_id.clone().into(),
                     state_digest: hyllar::HyllarToken::new(
                         100_000_000_000,
                         "faucet.hydentity".to_string(),
@@ -167,7 +167,7 @@ impl Genesis {
                 RegisterContractTransaction {
                     owner: "hyle".into(),
                     verifier: "risc0".into(),
-                    program_id: hydentity_program_id,
+                    program_id: hydentity_program_id.into(),
                     state_digest: hydentity_state.as_digest(),
                     contract_name: "hydentity".into(),
                 },

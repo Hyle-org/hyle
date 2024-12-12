@@ -5,7 +5,9 @@ use axum::Router;
 use base64::prelude::*;
 use bincode::{Decode, Encode};
 use derive_more::Display;
-use hyle_contract_sdk::{flatten_blobs, BlobIndex, HyleOutput, Identity, StateDigest, TxHash};
+use hyle_contract_sdk::{
+    flatten_blobs, BlobIndex, HyleOutput, Identity, ProgramId, StateDigest, TxHash, Verifier,
+};
 pub use hyle_contract_sdk::{Blob, BlobData, ContractName};
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Sha3_256};
@@ -175,8 +177,8 @@ pub struct VerifiedProofTransaction {
 #[derive(Debug, Serialize, Deserialize, Default, Clone, PartialEq, Eq, Encode, Decode, Hash)]
 pub struct RegisterContractTransaction {
     pub owner: String,
-    pub verifier: String,
-    pub program_id: Vec<u8>,
+    pub verifier: Verifier,
+    pub program_id: ProgramId,
     pub state_digest: StateDigest,
     pub contract_name: ContractName,
 }
@@ -197,17 +199,74 @@ impl Transaction {
     }
 }
 
-#[derive(Debug)]
-pub struct HandledBlockOutput {
+#[derive(Debug, Default, Clone, Serialize, Deserialize, Encode, Decode, Eq, PartialEq)]
+pub struct Block {
+    pub block_parent_hash: BlockHash,
+    pub block_height: BlockHeight,
+    pub block_timestamp: u64,
     pub new_contract_txs: Vec<Transaction>,
     pub new_blob_txs: Vec<Transaction>,
     pub new_verified_proof_txs: Vec<Transaction>,
     pub verified_blobs: Vec<(TxHash, BlobIndex)>,
     pub failed_txs: Vec<Transaction>,
     pub stakers: Vec<Staker>,
+    pub new_bounded_validators: Vec<ValidatorPublicKey>,
     pub timed_out_tx_hashes: Vec<TxHash>,
     pub settled_blob_tx_hashes: Vec<TxHash>,
     pub updated_states: HashMap<ContractName, StateDigest>,
+}
+
+impl Ord for Block {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.block_height.0.cmp(&other.block_height.0)
+    }
+}
+
+impl PartialOrd for Block {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Hashable<BlockHash> for Block {
+    fn hash(&self) -> BlockHash {
+        let mut hasher = Sha3_256::new();
+
+        _ = write!(hasher, "{}", self.block_parent_hash);
+        _ = write!(hasher, "{}", self.block_height);
+        _ = write!(hasher, "{}", self.block_timestamp);
+        for tx in self
+            .new_contract_txs
+            .iter()
+            .chain(self.new_blob_txs.iter())
+            .chain(self.new_verified_proof_txs.iter())
+        {
+            hasher.update(tx.hash().0);
+        }
+        for (tx_hash, blob_v) in self.verified_blobs.iter() {
+            _ = write!(hasher, "{}", tx_hash);
+            _ = write!(hasher, "{}", blob_v);
+        }
+        for tx_f in self.failed_txs.iter() {
+            hasher.update(tx_f.hash().0);
+        }
+        for staker in self.stakers.iter() {
+            hasher.update(staker.hash().0);
+        }
+        for new_bounded_validator in self.new_bounded_validators.iter() {
+            hasher.update(new_bounded_validator.0.as_slice());
+        }
+        for settled_blob_tx_hash in self.settled_blob_tx_hashes.iter() {
+            _ = write!(hasher, "{}", settled_blob_tx_hash);
+        }
+        for (cn, sd) in self.updated_states.iter() {
+            _ = write!(hasher, "{}", cn);
+            _ = write!(hasher, "{:?}", sd);
+        }
+        _ = write!(hasher, "{}", self.block_timestamp);
+
+        BlockHash(hex::encode(hasher.finalize()))
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Default, Clone, Encode, Decode, PartialEq, Eq, Hash)]
@@ -260,56 +319,6 @@ impl BlockHash {
 
 pub trait Hashable<T> {
     fn hash(&self) -> T;
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, Display)]
-#[display("")]
-pub struct Block {
-    pub parent_hash: BlockHash,
-    pub height: BlockHeight,
-    pub timestamp: u64,
-    pub new_bonded_validators: Vec<ValidatorPublicKey>,
-    pub txs: Vec<Transaction>,
-}
-
-impl Ord for Block {
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.height.0.cmp(&other.height.0)
-    }
-}
-
-impl PartialOrd for Block {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl PartialEq for Block {
-    fn eq(&self, other: &Self) -> bool {
-        self.hash() == other.hash()
-    }
-}
-
-impl Eq for Block {}
-
-impl std::hash::Hash for Block {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        let h: BlockHash = Hashable::hash(self);
-        h.hash(state);
-    }
-}
-
-impl Hashable<BlockHash> for Block {
-    fn hash(&self) -> BlockHash {
-        let mut hasher = Sha3_256::new();
-        _ = write!(hasher, "{}", self.parent_hash);
-        _ = write!(hasher, "{}", self.height);
-        _ = write!(hasher, "{}", self.timestamp);
-        for tx in self.txs.iter() {
-            hasher.update(tx.hash().0);
-        }
-        BlockHash(hex::encode(hasher.finalize()))
-    }
 }
 
 impl Hashable<TxHash> for Transaction {
@@ -376,11 +385,11 @@ impl Hashable<TxHash> for VerifiedProofTransaction {
 impl Hashable<TxHash> for RegisterContractTransaction {
     fn hash(&self) -> TxHash {
         let mut hasher = Sha3_256::new();
-        _ = write!(hasher, "{}", self.owner);
-        _ = write!(hasher, "{}", self.verifier);
-        hasher.update(self.program_id.clone());
+        hasher.update(self.owner.clone());
+        hasher.update(self.verifier.0.clone());
+        hasher.update(self.program_id.0.clone());
         hasher.update(self.state_digest.0.clone());
-        _ = write!(hasher, "{}", self.contract_name);
+        hasher.update(self.contract_name.0.clone());
         let hash_bytes = hasher.finalize();
         TxHash(hex::encode(hash_bytes))
     }
@@ -388,18 +397,6 @@ impl Hashable<TxHash> for RegisterContractTransaction {
 impl BlobTransaction {
     pub fn blobs_hash(&self) -> BlobsHash {
         BlobsHash::from_vec(&self.blobs)
-    }
-}
-
-impl std::default::Default for Block {
-    fn default() -> Self {
-        Block {
-            parent_hash: BlockHash::default(),
-            height: BlockHeight(0),
-            new_bonded_validators: vec![],
-            timestamp: get_current_timestamp(),
-            txs: vec![],
-        }
     }
 }
 

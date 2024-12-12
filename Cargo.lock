@@ -2586,6 +2586,7 @@ dependencies = [
  "ron",
  "serde",
  "serde_json",
+ "serde_with",
  "sha3",
  "sled",
  "sp1-sdk",

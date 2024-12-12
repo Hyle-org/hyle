@@ -3,13 +3,14 @@ use std::{fs::File, io::Read};
 use anyhow::Result;
 use clap::{command, Parser, Subcommand};
 use hyle::{
+    indexer::model::ContractDb,
     model::{
         Blob, BlobData, BlobTransaction, ContractName, ProofData, ProofTransaction,
         RegisterContractTransaction,
     },
     rest::client::ApiHttpClient,
 };
-use hyle_contract_sdk::{Identity, StateDigest, TxHash};
+use hyle_contract_sdk::{Identity, StateDigest, TxHash, Verifier};
 use reqwest::{Client, Url};
 
 pub fn load_encoded_receipt_from_file(path: &str) -> Vec<u8> {
@@ -72,12 +73,14 @@ async fn send_blobs(client: &ApiHttpClient, identity: Identity, blobs: Vec<Strin
 async fn register_contracts(
     client: &ApiHttpClient,
     owner: String,
-    verifier: String,
+    verifier: Verifier,
     program_hex_id: String,
     state_hex_digest: String,
     contract_name: ContractName,
 ) -> Result<()> {
-    let program_id = hex::decode(program_hex_id).expect("Image id decoding failed");
+    let program_id = hex::decode(program_hex_id)
+        .expect("Image id decoding failed")
+        .into();
     let state_digest =
         StateDigest(hex::decode(state_hex_digest).expect("State digest decoding failed"));
     let res = client
@@ -140,6 +143,11 @@ enum SendCommands {
         contract_name: String,
         state_digest: String,
     },
+    /// Query contract state
+    #[command(alias = "s")]
+    State {
+        contract_name: String,
+    },
     Auto,
 }
 
@@ -171,7 +179,7 @@ async fn handle_args(args: Args) -> Result<()> {
             register_contracts(
                 &client,
                 owner,
-                verifier,
+                verifier.into(),
                 program_id,
                 state_digest,
                 contract_name.into(),
@@ -185,6 +193,13 @@ async fn handle_args(args: Args) -> Result<()> {
                 .map_err(|e| anyhow::anyhow!("Failed to run scenario test {}", e))?;
             Ok(())
         }
+        SendCommands::State { contract_name } => client
+            .get_indexer_contract(&contract_name.into())
+            .await?
+            .json::<ContractDb>()
+            .await
+            .map(|contract| println!("State: {:?}", contract))
+            .map_err(|e| anyhow::anyhow!("Failed to get state: {}", e)),
     }
 }
 
