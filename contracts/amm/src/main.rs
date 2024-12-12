@@ -11,7 +11,7 @@ use sdk::StructuredBlobData;
 #[cfg(feature = "risc0")]
 risc0_zkvm::guest::entry!(main);
 
-#[cfg(feature = "sp1")]
+#[cfg(all(feature = "sp1", not(feature = "risc0")))]
 sp1_zkvm::entrypoint!(main);
 
 fn main() {

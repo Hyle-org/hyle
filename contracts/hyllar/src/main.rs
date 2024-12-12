@@ -10,7 +10,7 @@ use sdk::erc20::ERC20Action;
 #[cfg(feature = "risc0")]
 risc0_zkvm::guest::entry!(main);
 
-#[cfg(feature = "sp1")]
+#[cfg(all(feature = "sp1", not(feature = "risc0")))]
 sp1_zkvm::entrypoint!(main);
 
 fn main() {

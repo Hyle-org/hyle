@@ -24,7 +24,8 @@ pub mod env {
         risc0_zkvm::guest::env::read()
     }
 }
-#[cfg(feature = "sp1")]
+// For coverage tests, assume risc0 if both are active
+#[cfg(all(feature = "sp1", not(feature = "risc0")))]
 pub mod env {
     use super::*;
 
