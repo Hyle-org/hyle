@@ -11,7 +11,7 @@ use crate::{
     genesis::GenesisEvent,
     handle_messages,
     mempool::{storage::Cut, QueryNewCut},
-    model::{get_current_timestamp, BlockHeight, Hashable, ValidatorPublicKey},
+    model::{get_current_timestamp, Hashable, ValidatorPublicKey},
     p2p::{
         network::{OutboundMessage, PeerEvent, Signed, SignedByValidator},
         P2PCommand,
@@ -28,7 +28,7 @@ use metrics::ConsensusMetrics;
 use role_follower::{FollowerRole, FollowerState, TimeoutState};
 use role_leader::{LeaderRole, LeaderState};
 use serde::{Deserialize, Serialize};
-use staking::{Staker, Staking, MIN_STAKE};
+use staking::{Staking, MIN_STAKE};
 use std::time::Duration;
 use std::{collections::HashMap, default::Default, path::PathBuf};
 use tokio::time::interval;
@@ -53,9 +53,6 @@ pub mod utils;
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub enum ConsensusCommand {
     TimeoutTick,
-    NewStaker(Staker),
-    NewBonded(ValidatorPublicKey),
-    ProcessedBlock(BlockHeight),
     StartNewSlot,
 }
 
@@ -762,6 +759,30 @@ impl Consensus {
         Ok(())
     }
 
+    async fn handle_data_event(&mut self, msg: DataEvent) -> Result<()> {
+        match msg {
+            DataEvent::NewBlock(block) => {
+                for staker in block.stakers {
+                    self.store.bft_round_state.staking.add_staker(staker)?;
+                }
+                for validator in block.new_bounded_validators {
+                    self.store.bft_round_state.staking.bond(validator)?;
+                }
+
+                if let StateTag::Joining = self.bft_round_state.state_tag {
+                    if self.store.bft_round_state.joining.staking_updated_to < block.block_height.0
+                    {
+                        info!("🚪 Processed block {}", block.block_height.0);
+                        self.store.bft_round_state.joining.staking_updated_to =
+                            block.block_height.0;
+                    }
+                }
+                Ok(())
+            }
+            _ => Ok(()),
+        }
+    }
+
     async fn handle_command(&mut self, msg: ConsensusCommand) -> Result<()> {
         match msg {
             ConsensusCommand::TimeoutTick => match &self.bft_round_state.follower.timeout_state {
@@ -794,23 +815,6 @@ impl Consensus {
                 }
                 _ => Ok(()),
             },
-            ConsensusCommand::NewStaker(staker) => {
-                self.store.bft_round_state.staking.add_staker(staker)?;
-                Ok(())
-            }
-            ConsensusCommand::NewBonded(validator) => {
-                self.store.bft_round_state.staking.bond(validator)?;
-                Ok(())
-            }
-            ConsensusCommand::ProcessedBlock(block_height) => {
-                if let StateTag::Joining = self.bft_round_state.state_tag {
-                    if self.store.bft_round_state.joining.staking_updated_to < block_height.0 {
-                        info!("🚪 Processed block {}", block_height.0);
-                        self.store.bft_round_state.joining.staking_updated_to = block_height.0;
-                    }
-                }
-                Ok(())
-            }
             ConsensusCommand::StartNewSlot => {
                 self.start_round().await?;
                 Ok(())
@@ -894,6 +898,12 @@ impl Consensus {
 
         module_handle_messages! {
             on_bus self.bus,
+            listen<DataEvent> cmd => {
+                match self.handle_data_event(cmd).await {
+                    Ok(_) => (),
+                    Err(e) => warn!("Error while handling data event: {:#}", e),
+                }
+            }
             listen<ConsensusCommand> cmd => {
                 match self.handle_command(cmd).await {
                     Ok(_) => (),
@@ -954,6 +964,7 @@ impl ConsensusProposal {
 #[cfg(test)]
 pub mod test {
 
+    use crate::{consensus::staking::Staker, model::Block};
     use std::sync::Arc;
 
     use super::*;
@@ -1181,10 +1192,13 @@ pub mod test {
         async fn add_staker(&mut self, staker: &Self, amount: u64, err: &str) {
             info!("➕ {} Add staker: {:?}", self.name, staker.name);
             self.consensus
-                .handle_command(ConsensusCommand::NewStaker(Staker {
-                    pubkey: staker.consensus.crypto.validator_pubkey().clone(),
-                    stake: Stake { amount },
-                }))
+                .handle_data_event(DataEvent::NewBlock(Box::new(Block {
+                    stakers: vec![Staker {
+                        pubkey: staker.pubkey(),
+                        stake: Stake { amount },
+                    }],
+                    ..Default::default()
+                })))
                 .await
                 .expect(err)
         }
@@ -1192,19 +1206,25 @@ pub mod test {
         async fn add_bonded_staker(&mut self, staker: &Self, amount: u64, err: &str) {
             self.add_staker(staker, amount, err).await;
             self.consensus
-                .handle_command(ConsensusCommand::NewBonded(staker.pubkey()))
+                .handle_data_event(DataEvent::NewBlock(Box::new(Block {
+                    new_bounded_validators: vec![staker.pubkey()],
+                    ..Default::default()
+                })))
                 .await
-                .expect(err);
+                .expect(err)
         }
 
         async fn with_stake(&mut self, amount: u64, err: &str) {
             self.consensus
-                .handle_command(ConsensusCommand::NewStaker(Staker {
-                    pubkey: self.consensus.crypto.validator_pubkey().clone(),
-                    stake: Stake { amount },
-                }))
+                .handle_data_event(DataEvent::NewBlock(Box::new(Block {
+                    stakers: vec![Staker {
+                        pubkey: self.consensus.crypto.validator_pubkey().clone(),
+                        stake: Stake { amount },
+                    }],
+                    ..Default::default()
+                })))
                 .await
-                .expect(err);
+                .expect(err)
         }
 
         pub async fn start_round(&mut self) {

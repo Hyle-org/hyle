@@ -12,7 +12,7 @@ use crate::{
     utils::modules::{module_bus_client, Module},
 };
 use anyhow::Result;
-use hyle_contract_sdk::{Identity, StateDigest};
+use hyle_contract_sdk::{Identity, ProgramId, StateDigest};
 use reqwest::{Client, Url};
 use serde::{Deserialize, Serialize};
 use tokio::time::sleep;
@@ -170,8 +170,8 @@ impl MockWorkflowHandler {
 
         let tx_contract = RegisterContractTransaction {
             owner: "owner".to_string(),
-            verifier: "verifier".to_string(),
-            program_id: vec![],
+            verifier: "verifier".into(),
+            program_id: ProgramId(vec![]),
             state_digest: StateDigest(vec![]),
             contract_name: ContractName("contract".to_string()),
         };
@@ -203,7 +203,7 @@ impl MockWorkflowHandler {
                 3 => {
                     info!("Sending contract");
                     let mut new_tx_contract = tx_contract.clone();
-                    new_tx_contract.verifier = i.to_string();
+                    new_tx_contract.verifier = i.to_string().into();
                     new_tx_contract.contract_name =
                         ContractName(format!("{}-{}", new_tx_contract.contract_name.0, i));
                     _ = api_client.send_tx_register_contract(&tx_contract).await;

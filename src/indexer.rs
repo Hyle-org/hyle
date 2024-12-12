@@ -12,7 +12,6 @@ use crate::{
         BlobTransaction, Block, BlockHash, BlockHeight, CommonRunContext, ContractName, Hashable,
     },
     module_handle_messages,
-    node_state::NodeState,
     utils::modules::{module_bus_client, Module},
 };
 use anyhow::{bail, Context, Error, Result};
@@ -55,7 +54,6 @@ pub struct Indexer {
     state: IndexerApiState,
     new_sub_receiver: tokio::sync::mpsc::Receiver<(ContractName, WebSocket)>,
     subscribers: Subscribers,
-    node_state: NodeState,
 }
 
 pub static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("./src/indexer/migrations");
@@ -73,13 +71,6 @@ impl Module for Indexer {
             .await
             .context("Failed to connect to the database")?;
 
-        let node_state = Self::load_from_disk_or_default::<NodeState>(
-            ctx.config
-                .data_directory
-                .join("indexer_node_state.bin")
-                .as_path(),
-        );
-
         info!("Checking for new DB migration...");
         let _ =
             tokio::time::timeout(tokio::time::Duration::from_secs(60), MIGRATOR.run(&pool)).await?;
@@ -96,7 +87,6 @@ impl Module for Indexer {
             },
             new_sub_receiver,
             subscribers,
-            node_state,
         };
 
         if let Ok(mut guard) = ctx.router.lock() {
@@ -224,24 +214,22 @@ impl Indexer {
 
     async fn handle_data_availability_event(&mut self, event: DataEvent) -> Result<(), Error> {
         match event {
-            DataEvent::NewBlock(block) => self.handle_block(block).await,
-            DataEvent::CatchupDone(_) => Ok(()),
+            DataEvent::NewBlock(block) => self.handle_processed_block(*block).await,
+            _ => Ok(()),
         }
     }
 
-    async fn handle_block(&mut self, block: Block) -> Result<(), Error> {
-        info!("new block {} with {} txs", block.height, block.txs.len());
-
+    async fn handle_processed_block(&mut self, block: Block) -> Result<(), Error> {
         let mut transaction = self.state.db.begin().await?;
 
         // Insert the block into the blocks table
         let block_hash = &block.hash();
-        let block_parent_hash = &block.parent_hash;
-        let block_height = i64::try_from(block.height.0)
+        let block_parent_hash = &block.block_parent_hash;
+        let block_height = i64::try_from(block.block_height.0)
             .map_err(|_| anyhow::anyhow!("Block height is too large to fit into an i64"))?;
 
         let block_timestamp = match DateTime::from_timestamp(
-            i64::try_from(block.timestamp)
+            i64::try_from(block.block_timestamp)
                 .map_err(|_| anyhow::anyhow!("Timestamp too large for i64"))?,
             0,
         ) {
@@ -259,10 +247,8 @@ impl Indexer {
         .execute(&mut *transaction)
         .await?;
 
-        let handled_block_output = self.node_state.handle_new_block(block);
-
         // Handling Register Contract Transactions
-        for tx in handled_block_output.new_contract_txs {
+        for tx in block.new_contract_txs {
             let tx_hash: &TxHashDb = &tx.hash().into();
             let version = i32::try_from(tx.version)
                 .map_err(|_| anyhow::anyhow!("Tx version is too large to fit into an i32"))?;
@@ -283,8 +269,8 @@ impl Indexer {
             .execute(&mut *transaction)
             .await?;
             let owner = &register_contract_tx.owner;
-            let verifier = &register_contract_tx.verifier;
-            let program_id = &register_contract_tx.program_id;
+            let verifier = &register_contract_tx.verifier.0;
+            let program_id = &register_contract_tx.program_id.0;
             let state_digest = &register_contract_tx.state_digest.0;
             let contract_name = &register_contract_tx.contract_name.0;
 
@@ -314,7 +300,7 @@ impl Indexer {
         }
 
         // Handling Blob Transactions
-        for tx in handled_block_output.new_blob_txs {
+        for tx in block.new_blob_txs {
             let tx_hash: &TxHashDb = &tx.hash().into();
             let version = i32::try_from(tx.version)
                 .map_err(|_| anyhow::anyhow!("Tx version is too large to fit into an i32"))?;
@@ -361,7 +347,7 @@ impl Indexer {
         }
 
         // Handling Proof Transactions
-        for tx in handled_block_output.new_verified_proof_txs {
+        for tx in block.new_verified_proof_txs {
             let tx_hash: &TxHashDb = &tx.hash().into();
             let version = i32::try_from(tx.version)
                 .map_err(|_| anyhow::anyhow!("Tx version is too large to fit into an i32"))?;
@@ -402,7 +388,7 @@ impl Indexer {
         }
 
         // Handling failed transactions
-        for tx in handled_block_output.failed_txs {
+        for tx in block.failed_txs {
             let tx_hash: &TxHashDb = &tx.hash().into();
             let version = i32::try_from(tx.version)
                 .map_err(|_| anyhow::anyhow!("Tx version is too large to fit into an i32"))?;
@@ -423,12 +409,12 @@ impl Indexer {
         }
 
         // Handling new stakers
-        for _staker in handled_block_output.stakers {
+        for _staker in block.stakers {
             // TODO: add new table with stakers at a given height
         }
 
         // Handling timed out blob transactions
-        for timed_out_tx_hash in handled_block_output.timed_out_tx_hashes {
+        for timed_out_tx_hash in block.timed_out_tx_hashes {
             let tx_hash: &TxHashDb = &timed_out_tx_hash.into();
             sqlx::query("UPDATE transactions SET transaction_status = $1 WHERE tx_hash = $2")
                 .bind(TransactionStatus::TimedOut)
@@ -438,7 +424,7 @@ impl Indexer {
         }
 
         // Handling verified blob
-        for (blob_tx_hash, blob_index) in handled_block_output.verified_blobs {
+        for (blob_tx_hash, blob_index) in block.verified_blobs {
             let blob_tx_hash: &TxHashDb = &blob_tx_hash.into();
             let blob_index = i32::try_from(blob_index.0)
                 .map_err(|_| anyhow::anyhow!("Blob index is too large to fit into an i32"))?;
@@ -451,7 +437,7 @@ impl Indexer {
         }
 
         // Handling settled blob transactions
-        for settled_blob_tx_hash in handled_block_output.settled_blob_tx_hashes {
+        for settled_blob_tx_hash in block.settled_blob_tx_hashes {
             let tx_hash: &TxHashDb = &settled_blob_tx_hash.into();
             sqlx::query("UPDATE transactions SET transaction_status = $1 WHERE tx_hash = $2")
                 .bind(TransactionStatus::Success)
@@ -461,7 +447,7 @@ impl Indexer {
         }
 
         // Handling updated contract state
-        for (contract_name, state_digest) in handled_block_output.updated_states {
+        for (contract_name, state_digest) in block.updated_states {
             let contract_name = &contract_name.0;
             let state_digest = &state_digest.0;
             sqlx::query(
@@ -536,7 +522,7 @@ impl std::ops::Deref for Indexer {
 mod test {
     use assert_json_diff::assert_json_include;
     use axum_test::TestServer;
-    use hyle_contract_sdk::{BlobIndex, HyleOutput, Identity, StateDigest, TxHash};
+    use hyle_contract_sdk::{BlobIndex, HyleOutput, Identity, ProgramId, StateDigest, TxHash};
     use model::{BlockDb, ContractDb};
     use serde_json::json;
     use std::{
@@ -546,6 +532,7 @@ mod test {
 
     use crate::{
         bus::SharedMessageBus,
+        data_availability::node_state::NodeState,
         model::{
             Blob, BlobData, BlockHeight, ProofData, RegisterContractTransaction, Transaction,
             TransactionData, VerifiedProofTransaction,
@@ -573,7 +560,6 @@ mod test {
             },
             new_sub_receiver,
             subscribers: HashMap::new(),
-            node_state: NodeState::default(),
         }
     }
 
@@ -582,8 +568,8 @@ mod test {
             version: 1,
             transaction_data: TransactionData::RegisterContract(RegisterContractTransaction {
                 owner: "test".to_string(),
-                verifier: "test".to_string(),
-                program_id: vec![],
+                verifier: "test".into(),
+                program_id: ProgramId(vec![]),
                 state_digest,
                 contract_name,
             }),
@@ -721,16 +707,11 @@ mod test {
             proof_tx_4,
         ];
 
-        let block = Block {
-            parent_hash: BlockHash::new(""),
-            height: BlockHeight(1),
-            timestamp: 1,
-            new_bonded_validators: vec![],
-            txs,
-        };
+        let mut node_state = NodeState::default();
+        let block = node_state.handle_new_cut(BlockHeight(1), BlockHash::new(""), 1, vec![], txs);
 
         indexer
-            .handle_block(block)
+            .handle_processed_block(block)
             .await
             .expect("Failed to handle block");
 

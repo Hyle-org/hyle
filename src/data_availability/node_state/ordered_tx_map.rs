@@ -77,7 +77,7 @@ impl OrderedTxMap {
 
 #[cfg(test)]
 mod tests {
-    use crate::{model::BlobsHash, node_state::model::UnsettledBlobMetadata};
+    use crate::{data_availability::node_state::model::UnsettledBlobMetadata, model::BlobsHash};
     use hyle_contract_sdk::Identity;
 
     use super::*;

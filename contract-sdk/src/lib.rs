@@ -161,6 +161,12 @@ pub fn flatten_blobs(blobs: &[Blob]) -> Vec<u8> {
 )]
 pub struct ContractName(pub String);
 
+#[derive(Default, Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash, Encode, Decode)]
+pub struct Verifier(pub String);
+
+#[derive(Default, Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash, Encode, Decode)]
+pub struct ProgramId(pub Vec<u8>);
+
 #[derive(Default, Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash, Encode, Decode)]
 pub struct HyleOutput {
     pub version: u32,
@@ -204,6 +210,31 @@ impl From<String> for ContractName {
         ContractName(s)
     }
 }
+impl From<String> for Verifier {
+    fn from(s: String) -> Self {
+        Verifier(s)
+    }
+}
+impl From<&str> for Verifier {
+    fn from(s: &str) -> Self {
+        Verifier(s.into())
+    }
+}
+impl From<Vec<u8>> for ProgramId {
+    fn from(v: Vec<u8>) -> Self {
+        ProgramId(v.clone())
+    }
+}
+impl From<&Vec<u8>> for ProgramId {
+    fn from(v: &Vec<u8>) -> Self {
+        ProgramId(v.clone())
+    }
+}
+impl From<&[u8]> for ProgramId {
+    fn from(v: &[u8]) -> Self {
+        ProgramId(v.to_vec().clone())
+    }
+}
 
 impl TxHash {
     pub fn new(s: &str) -> TxHash {
@@ -226,6 +257,11 @@ impl Display for ContractName {
     }
 }
 impl Display for Identity {
+    fn fmt(&self, f: &mut alloc::fmt::Formatter<'_>) -> alloc::fmt::Result {
+        write!(f, "{}", &self.0)
+    }
+}
+impl Display for Verifier {
     fn fmt(&self, f: &mut alloc::fmt::Formatter<'_>) -> alloc::fmt::Result {
         write!(f, "{}", &self.0)
     }

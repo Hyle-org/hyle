@@ -3,8 +3,9 @@
 use crate::{
     consensus::staking::Staker,
     model::{
-        BlobTransaction, BlobsHash, Block, BlockHeight, ContractName, HandledBlockOutput, Hashable,
-        RegisterContractTransaction, TransactionData, VerifiedProofTransaction,
+        BlobTransaction, BlobsHash, Block, BlockHash, BlockHeight, ContractName, Hashable,
+        RegisterContractTransaction, Transaction, TransactionData, ValidatorPublicKey,
+        VerifiedProofTransaction,
     },
 };
 use anyhow::{bail, Context, Error, Result};
@@ -17,7 +18,7 @@ use tracing::{debug, error, info};
 
 pub mod model;
 mod ordered_tx_map;
-mod verifiers;
+pub mod verifiers;
 
 #[derive(Default, Encode, Decode, Debug, Clone)]
 pub struct NodeState {
@@ -35,20 +36,27 @@ pub struct HandledProofTxOutput {
 }
 
 impl NodeState {
-    pub fn handle_new_block(&mut self, block: Block) -> HandledBlockOutput {
-        let timed_out_tx_hashes = self.clear_timeouts(&block.height);
-        self.current_height = block.height;
+    pub fn handle_new_cut(
+        &mut self,
+        block_height: BlockHeight,
+        block_parent_hash: BlockHash,
+        block_timestamp: u64,
+        new_bounded_validators: Vec<ValidatorPublicKey>,
+        txs: Vec<Transaction>,
+    ) -> Block {
+        let timed_out_tx_hashes = self.clear_timeouts(&block_height);
+        self.current_height = block_height;
 
-        let mut new_contract_txs = vec![];
-        let mut new_blob_txs = vec![];
-        let mut new_verified_proof_txs = vec![];
-        let mut verified_blobs = vec![];
-        let mut failed_txs = vec![];
+        let mut new_contract_txs: Vec<Transaction> = vec![];
+        let mut new_blob_txs: Vec<Transaction> = vec![];
+        let mut new_verified_proof_txs: Vec<Transaction> = vec![];
+        let mut verified_blobs: Vec<(TxHash, hyle_contract_sdk::BlobIndex)> = vec![];
+        let mut failed_txs: Vec<Transaction> = vec![];
         let mut stakers: Vec<Staker> = vec![];
-        let mut settled_blob_tx_hashes = vec![];
-        let mut updated_states = HashMap::new();
+        let mut settled_blob_tx_hashes: Vec<TxHash> = vec![];
+        let mut updated_states: HashMap<ContractName, StateDigest> = HashMap::new();
         // Handle all transactions
-        for tx in block.txs.iter() {
+        for tx in txs.iter() {
             match &tx.transaction_data {
                 // FIXME: to remove when we have a real staking smart contract
                 TransactionData::Stake(staker) => {
@@ -108,13 +116,17 @@ impl NodeState {
                 }
             }
         }
-        HandledBlockOutput {
+        Block {
+            block_parent_hash,
+            block_height,
+            block_timestamp,
             new_contract_txs,
             new_blob_txs,
             new_verified_proof_txs,
             verified_blobs,
             failed_txs,
             stakers,
+            new_bounded_validators,
             timed_out_tx_hashes,
             settled_blob_tx_hashes,
             updated_states,
@@ -393,7 +405,7 @@ mod test {
     use super::*;
     use crate::model::*;
     use assertables::assert_err;
-    use hyle_contract_sdk::{flatten_blobs, BlobIndex, Identity};
+    use hyle_contract_sdk::{flatten_blobs, BlobIndex, Identity, ProgramId};
 
     async fn new_node_state() -> NodeState {
         NodeState::default()
@@ -409,8 +421,8 @@ mod test {
     fn new_register_contract(name: ContractName) -> RegisterContractTransaction {
         RegisterContractTransaction {
             owner: "test".to_string(),
-            verifier: "test".to_string(),
-            program_id: vec![],
+            verifier: "test".into(),
+            program_id: ProgramId(vec![]),
             state_digest: StateDigest(vec![0, 1, 2, 3]),
             contract_name: name,
         }

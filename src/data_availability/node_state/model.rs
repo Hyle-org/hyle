@@ -1,5 +1,5 @@
 use bincode::{Decode, Encode};
-use hyle_contract_sdk::{HyleOutput, Identity, StateDigest, TxHash};
+use hyle_contract_sdk::{HyleOutput, Identity, ProgramId, StateDigest, TxHash, Verifier};
 use serde::{Deserialize, Serialize};
 
 use crate::model::{BlobsHash, BlockHeight, ContractName};
@@ -8,9 +8,9 @@ use std::collections::HashMap;
 #[derive(Default, Debug, Clone, Serialize, Deserialize, Encode, Decode)]
 pub struct Contract {
     pub name: ContractName,
-    pub program_id: Vec<u8>,
+    pub program_id: ProgramId,
     pub state: StateDigest,
-    pub verifier: String,
+    pub verifier: Verifier,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Eq, Hash, Encode, Decode)]

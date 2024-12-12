@@ -12,20 +12,21 @@ use testcontainers_modules::{
 use tracing::info;
 
 use hyle::{
+    data_availability::node_state::model::Contract,
     indexer::model::ContractDb,
     model::{Blob, BlobTransaction, ProofData, ProofTransaction, RegisterContractTransaction},
-    node_state::model::Contract,
     rest::client::ApiHttpClient,
 };
 use hyle_contract_sdk::{
-    flatten_blobs, BlobIndex, ContractName, HyleOutput, Identity, StateDigest, TxHash,
+    flatten_blobs, BlobIndex, ContractName, HyleOutput, Identity, ProgramId, StateDigest, TxHash,
+    Verifier,
 };
 
 use super::test_helpers::{self, wait_height, ConfMaker};
 
 pub trait E2EContract {
-    fn verifier() -> String;
-    fn program_id() -> Vec<u8>;
+    fn verifier() -> Verifier;
+    fn program_id() -> ProgramId;
     fn state_digest() -> StateDigest;
 }
 
