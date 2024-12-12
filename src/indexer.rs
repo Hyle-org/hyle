@@ -752,7 +752,7 @@ mod test {
                 {
                     "blobs": [{
                         "contract_name": "c1",
-                        "data": [1,2,3],
+                        "data": hex::encode([1,2,3]),
                         "proof_outputs": [{}]
                     }],
                     "tx_hash": blob_transaction_hash.to_string(),
@@ -760,7 +760,7 @@ mod test {
                 {
                     "blobs": [{
                         "contract_name": "c1",
-                        "data": [1,2,3],
+                        "data": hex::encode([1,2,3]),
                         "proof_outputs": [
                             {
                                 "initial_state": [7,7,7],
@@ -784,7 +784,7 @@ mod test {
                 {
                     "blobs": [{
                         "contract_name": "c2",
-                        "data": [1,2,3],
+                        "data": hex::encode([1,2,3]),
                         "proof_outputs": [{}]
                     }],
                     "tx_hash": blob_transaction_hash.to_string(),
@@ -792,7 +792,7 @@ mod test {
                 {
                     "blobs": [{
                         "contract_name": "c2",
-                        "data": [1,2,3],
+                        "data": hex::encode([1,2,3]),
                         "proof_outputs": []
                     }],
                     "tx_hash": other_blob_transaction_hash.to_string(),
