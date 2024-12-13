@@ -762,6 +762,7 @@ impl Consensus {
     async fn handle_data_event(&mut self, msg: DataEvent) -> Result<()> {
         match msg {
             DataEvent::NewBlock(block) => {
+                let block_total_tx = block.total_txs();
                 for staker in block.stakers {
                     self.store
                         .bft_round_state
@@ -780,7 +781,10 @@ impl Consensus {
                 if let StateTag::Joining = self.bft_round_state.state_tag {
                     if self.store.bft_round_state.joining.staking_updated_to < block.block_height.0
                     {
-                        info!("🚪 Processed block {}", block.block_height.0);
+                        info!(
+                            "🚪 Processed block {} with {} txs",
+                            block.block_height.0, block_total_tx
+                        );
                         self.store.bft_round_state.joining.staking_updated_to =
                             block.block_height.0;
                     }

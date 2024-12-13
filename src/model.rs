@@ -216,6 +216,16 @@ pub struct Block {
     pub updated_states: HashMap<ContractName, StateDigest>,
 }
 
+impl Block {
+    pub fn total_txs(&self) -> usize {
+        self.new_contract_txs.len()
+            + self.new_blob_txs.len()
+            + self.new_verified_proof_txs.len()
+            + self.failed_txs.len()
+            + self.stakers.len()
+    }
+}
+
 impl Ord for Block {
     fn cmp(&self, other: &Self) -> Ordering {
         self.block_height.0.cmp(&other.block_height.0)
