@@ -1,7 +1,7 @@
-#[cfg(not(feature = "build"))]
+#[cfg(any(feature = "force_no_rebuild", not(feature = "build")))]
 fn main() {}
 
-#[cfg(feature = "build")]
+#[cfg(all(not(feature = "force_no_rebuild"), feature = "build"))]
 fn main() {
     // clippy in workspace mode sets this, which interferes with the guest VM. Clear it temporarily.
     let env_wrapper = std::env::var("RUSTC_WORKSPACE_WRAPPER");
