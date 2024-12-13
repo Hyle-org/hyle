@@ -153,6 +153,7 @@ impl NodeState {
     }
 
     fn handle_blob_tx(&mut self, tx: &BlobTransaction) -> Result<(), Error> {
+        debug!("Handle blob tx: {:?}", tx);
         let identity_parts: Vec<&str> = tx.identity.0.split('.').collect();
         if identity_parts.len() != 2 {
             bail!("Transaction identity is not correctly formed. It should be in the form <id>.<contract_id_name>");

@@ -338,7 +338,6 @@ impl DataAvailability {
         txs: Vec<Transaction>,
         new_bounded_validators: Vec<ValidatorPublicKey>,
     ) {
-        info!("🔒  Cut committed");
         let last_processed_block = self.blocks.last();
         let block_parent_hash =
             last_processed_block
@@ -351,6 +350,7 @@ impl DataAvailability {
             .map(|b| b.block_height.0 + 1)
             .unwrap_or(0);
 
+        info!("🔒  Cut committed. Building block {next_height}...");
         let block = self.node_state.handle_new_cut(
             BlockHeight(next_height),
             block_parent_hash,
@@ -409,7 +409,10 @@ impl DataAvailability {
         // Iterative loop to avoid stack overflows
         while let Some(first_buffered) = self.buffered_processed_blocks.first() {
             if first_buffered.block_parent_hash != last_block_hash {
-                error!("Buffered block parent hash does not match last block hash");
+                error!(
+                    "Buffered block parent hash does not match last block hash: {:?}",
+                    first_buffered
+                );
                 break;
             }
 

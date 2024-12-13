@@ -34,7 +34,7 @@ impl Blocks {
             return Ok(());
         }
         info!(
-            "📦 storing block {} with {} txs",
+            "📦 storing in memory block {} with {} txs",
             data.block_height,
             data.total_txs()
         );
