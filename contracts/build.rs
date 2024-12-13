@@ -1,7 +1,8 @@
-#[cfg(any(feature = "force_no_rebuild", not(feature = "build")))]
+// Deactivate in clippy, we don't really need to recompile and it breaks our CI.
+#[cfg(any(clippy, not(feature = "build")))]
 fn main() {}
 
-#[cfg(all(not(feature = "force_no_rebuild"), feature = "build"))]
+#[cfg(all(not(clippy), feature = "build"))]
 fn main() {
     // clippy in workspace mode sets this, which interferes with the guest VM. Clear it temporarily.
     let env_wrapper = std::env::var("RUSTC_WORKSPACE_WRAPPER");

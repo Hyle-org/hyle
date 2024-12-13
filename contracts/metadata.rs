@@ -1,11 +1,10 @@
 #[allow(unused)]
-
-#[cfg(feature = "build")]
+#[cfg(all(not(clippy), feature = "build"))]
 mod methods {
     include!(concat!(env!("OUT_DIR"), "/methods.rs"));
 }
 
-#[cfg(feature = "build")]
+#[cfg(all(not(clippy), feature = "build"))]
 mod metadata {
     pub const AMM_ELF: &[u8] = crate::methods::AMM_ELF;
     pub const AMM_ID: [u8; 32] = sdk::to_u8_array(&crate::methods::AMM_ID);
@@ -20,7 +19,7 @@ mod metadata {
     pub const STAKING_ID: [u8; 32] = sdk::to_u8_array(&crate::methods::STAKING_ID);
 }
 
-#[cfg(not(feature = "build"))]
+#[cfg(any(clippy, not(feature = "build")))]
 mod metadata {
     pub const AMM_ELF: &[u8] = include_bytes!("amm/amm.img");
     pub const AMM_ID: [u8; 32] = sdk::str_to_u8(include_str!("amm/amm.txt"));

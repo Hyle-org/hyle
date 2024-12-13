@@ -22,5 +22,3 @@ methods = ["amm", "hyllar", "hydentity", "staking"]
 [features]
 build = ["dep:risc0-build"]
 nonreproducible = ["build"]
-# Hack for the CI which uses --all-features but we don't want the risc0 toolchain there
-force_no_rebuild = ["build"]
