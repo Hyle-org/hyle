@@ -59,7 +59,11 @@ impl Blocks {
         if self.get(block.hash())?.is_some() {
             return Ok(());
         }
-        info!("📦 storing block {}", block.block_height);
+        info!(
+            "📦 storing block {} with {} txs",
+            block.block_height,
+            block.total_txs()
+        );
         self.db.put(
             BlocksOrdKey(block.block_height),
             BlocksKey(block.hash()),

@@ -445,9 +445,7 @@ impl DataAvailability {
         info!(
             "new block {} with {} txs, last hash = {}",
             block.block_height,
-            block.new_contract_txs.len()
-                + block.new_blob_txs.len()
-                + block.new_verified_proof_txs.len(),
+            block.total_txs().clone(),
             self.blocks
                 .last_block_hash()
                 .unwrap_or(BlockHash("".to_string()))

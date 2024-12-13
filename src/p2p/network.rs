@@ -100,12 +100,7 @@ impl Display for NetMessage {
 
 impl<T: Display + bincode::Encode> Display for SignedByValidator<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        _ = write!(f, "{}", self.msg);
-        _ = write!(
-            f,
-            "\nSigned with {} and validator {}",
-            self.signature.signature, self.signature.validator
-        );
+        _ = write!(f, " --> from validator {}", self.signature.validator);
         write!(f, "")
     }
 }

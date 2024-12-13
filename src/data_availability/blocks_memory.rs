@@ -33,7 +33,11 @@ impl Blocks {
         if self.contains(&data) {
             return Ok(());
         }
-        info!("📦 storing block {}", data.block_height);
+        info!(
+            "📦 storing block {} with {} txs",
+            data.block_height,
+            data.total_txs()
+        );
         self.data.insert(data.hash(), data);
         Ok(())
     }
