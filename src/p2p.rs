@@ -1,6 +1,6 @@
 //! Networking layer
 
-use std::{sync::Arc, time::Duration};
+use std::{collections::HashSet, sync::Arc, time::Duration};
 
 use crate::{
     bus::{BusMessage, SharedMessageBus},
@@ -40,6 +40,7 @@ pub struct P2P {
     bus_client: P2PBusClient,
     crypto: SharedBlstCrypto,
     peer_id: u64,
+    connected_peers: HashSet<String>,
 }
 
 impl Module for P2P {
@@ -53,6 +54,7 @@ impl Module for P2P {
             bus_client,
             crypto: ctx.node.crypto.clone(),
             peer_id: 1u64,
+            connected_peers: HashSet::default(),
         })
     }
 
@@ -63,11 +65,16 @@ impl Module for P2P {
 
 impl P2P {
     fn spawn_peer(&mut self, peer_address: String) {
+        if self.connected_peers.contains(&peer_address) || peer_address == self.config.host {
+            return;
+        }
+
         let config = self.config.clone();
         let bus = self.bus.new_handle();
         let crypto = self.crypto.clone();
         let id = self.peer_id;
         self.peer_id += 1;
+        self.connected_peers.insert(peer_address.clone());
 
         tokio::task::Builder::new()
             .name("connect-to-peer")
