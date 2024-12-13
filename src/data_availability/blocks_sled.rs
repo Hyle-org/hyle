@@ -60,7 +60,7 @@ impl Blocks {
             return Ok(());
         }
         info!(
-            "📦 storing block {} with {} txs",
+            "📦 storing in sled block {} with {} txs",
             block.block_height,
             block.total_txs()
         );
