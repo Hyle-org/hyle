@@ -9,6 +9,12 @@ use sdk::{
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 
+#[cfg(feature = "metadata")]
+pub mod metadata {
+    pub const HYLLAR_ELF: &[u8] = include_bytes!("../hyllar.img");
+    pub const PROGRAM_ID: [u8; 32] = sdk::str_to_u8(include_str!("../hyllar.txt"));
+}
+
 /// Struct representing the Hyllar token.
 #[serde_as]
 #[derive(Encode, Decode, Serialize, Deserialize, Debug, Clone)]

@@ -137,12 +137,8 @@ impl Genesis {
     }
 
     pub fn genesis_contracts_txs() -> Vec<Transaction> {
-        let hyllar_program_id = include_str!("../contracts/hyllar/hyllar.txt").trim();
-        let hyllar_program_id = hex::decode(hyllar_program_id).expect("Image id decoding failed");
-
-        let hydentity_program_id = include_str!("../contracts/hydentity/hydentity.txt").trim();
-        let hydentity_program_id =
-            hex::decode(hydentity_program_id).expect("Image id decoding failed");
+        let hyllar_program_id = hyle_contracts::HYLLAR_ID.to_vec();
+        let hydentity_program_id = hyle_contracts::HYDENTITY_ID.to_vec();
 
         let mut hydentity_state = hydentity::Hydentity::new();
         hydentity_state

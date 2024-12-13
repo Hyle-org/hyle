@@ -19,14 +19,21 @@ serde = { version = "1.0", default-features = false, features = [
     "alloc",
 ] }
 anyhow = "1.0.89"
-sha2 = {git = "https://github.com/risc0/RustCrypto-hashes", tag = "sha2-v0.10.8"}
+sha2 = { git = "https://github.com/risc0/RustCrypto-hashes", tag = "sha2-v0.10.8" }
 bincode = { version = "2.0.0-rc.3" }
 hex = "0.4.3"
 
+risc0-zkvm = { version = "1.2.0", default-features = false, optional = true, features = [
+    'std',
+] }
+
+[dev-dependencies]
 risc0-zkvm = { version = "1.2.0", default-features = false, features = [
     'std',
-], optional = true }
+    'prove',
+] }
 
 [features]
-default=["risc0"]
+default = ["metadata"]
+metadata = []
 risc0 = ["dep:risc0-zkvm", "sdk/risc0"]

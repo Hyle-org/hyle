@@ -2,7 +2,7 @@
 
 `hyrun` is a tool to run hyle offical smart contracts and generate proofs.
 
-You need to build the contracts guests with `build_contracts.sh` at the root dir of the repository.
+You need to build the contracts guests with `cargo build -p hyle-contracts --features build`.
 
 Example usage (from git repo root dir):
 
@@ -13,12 +13,14 @@ cargo run -p hyrun -- -i mint bob 100
 cargo run -p hyrun -- mint bob 100
 ```
 
-You can run `hyled` by using 
-```sh 
-cargo run --bin hyled 
+You can run `hyled` by using
+
+```sh
+cargo run --bin hyled
 ```
 
 Or you can install it:
+
 ```sh
 cargo install --git https://github.com/Hyle-org/hyle.git --bin hyled
 ```
