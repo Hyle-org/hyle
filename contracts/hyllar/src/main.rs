@@ -4,8 +4,8 @@
 extern crate alloc;
 
 use hyllar::{HyllarToken, HyllarTokenContract};
-use risc0_zkvm::guest::env;
 use sdk::erc20::ERC20Action;
+use sdk::guest::env;
 
 risc0_zkvm::guest::entry!(main);
 

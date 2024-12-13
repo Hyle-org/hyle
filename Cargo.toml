@@ -1,9 +1,10 @@
 [workspace]
 members = [
-    "contracts/staking",
-    "contracts/hyllar",
-    "contracts/hydentity",
+    "contracts",
     "contracts/amm",
+    "contracts/hydentity",
+    "contracts/hyllar",
+    "contracts/staking",
 
     "crates/bonsai-runner",
     "crates/hyrun",
@@ -28,10 +29,10 @@ default-run = "node"
 
 [dependencies]
 hyle-contract-sdk = { path = "./contract-sdk", features = ["tracing"] }
-staking = { path = "./contracts/staking", default-features = false }
-amm = { path = "./contracts/amm" }
-hyllar = { path = "./contracts/hyllar" }
+hyle-contracts = { path = "./contracts", package = "hyle-contracts" }
 hydentity = { path = "./contracts/hydentity" }
+hyllar = { path = "./contracts/hyllar" }
+staking = { path = "./contracts/staking" }
 config = "0.14.1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["json"] }
@@ -96,6 +97,7 @@ sled = { version = "0.34.7", features = [
 ] }
 
 [dev-dependencies]
+amm = { path = "./contracts/amm" }
 assert_cmd = "2.0.16"
 tokio-tungstenite = "0.24.0"
 reqwest = { version = "0.12", features = ["json", "blocking"] }
@@ -113,6 +115,8 @@ hyrun = { path = "./crates/hyrun" }
 
 [features]
 dhat = ["dep:dhat"]
+# Activate this feature to recompile contracts locally (mostly useful for iterating on tests)
+nonreproducible = ["hyle-contracts/nonreproducible"]
 
 [profile.release]
 lto = "thin"

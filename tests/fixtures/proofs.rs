@@ -3,9 +3,9 @@
 use super::ctx::E2ECtx;
 use hyrun::{Cli, CliCommand};
 
-const AMM_IMG: &[u8] = include_bytes!("../../contracts/amm/amm.img");
-const HYDENTITY_IMG: &[u8] = include_bytes!("../../contracts/hydentity/hydentity.img");
-const HYLLAR_IMG: &[u8] = include_bytes!("../../contracts/hyllar/hyllar.img");
+const AMM_IMG: &[u8] = hyle_contracts::AMM_ELF;
+const HYDENTITY_IMG: &[u8] = hyle_contracts::HYDENTITY_ELF;
+const HYLLAR_IMG: &[u8] = hyle_contracts::HYLLAR_ELF;
 
 pub struct HyrunProofGen {
     dir: tempfile::TempDir,
@@ -14,7 +14,7 @@ pub struct HyrunProofGen {
 impl HyrunProofGen {
     pub fn setup_working_directory() -> Self {
         // Setup: move to a temp directory, setup contracts, set env var.
-        let tempdir = tempfile::tempdir().unwrap();
+        let mut tempdir = tempfile::tempdir().unwrap();
 
         std::env::set_var("RISC0_DEV_MODE", "1");
 

@@ -1,0 +1,24 @@
+
+[package]
+name = "hyle-contracts"
+version = { workspace = true }
+edition = { workspace = true }
+# license = { workspace = true }
+homepage = { workspace = true }
+repository = { workspace = true }
+
+[lib]
+path = "metadata.rs"
+
+[dependencies]
+sdk = { path = "../contract-sdk", package = "hyle-contract-sdk" }
+
+[build-dependencies]
+risc0-build = { version = "1.2.0", optional = true }
+
+[package.metadata.risc0]
+methods = ["amm", "hyllar", "hydentity", "staking"]
+
+[features]
+build = ["dep:risc0-build"]
+nonreproducible = ["build"]

@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 
 pub mod caller;
 pub mod erc20;
-#[cfg(feature = "risc0")]
+#[cfg(any(feature = "risc0", feature = "sp1"))]
 pub mod guest;
 pub mod identity_provider;
 
@@ -312,6 +312,90 @@ impl From<usize> for BlobIndex {
     fn from(i: usize) -> Self {
         BlobIndex(i)
     }
+}
+
+pub const fn to_u8_array(val: &[u32; 8]) -> [u8; 32] {
+    [
+        (val[0] & 0xFF) as u8,
+        ((val[0] >> 8) & 0xFF) as u8,
+        ((val[0] >> 16) & 0xFF) as u8,
+        ((val[0] >> 24) & 0xFF) as u8,
+        (val[1] & 0xFF) as u8,
+        ((val[1] >> 8) & 0xFF) as u8,
+        ((val[1] >> 16) & 0xFF) as u8,
+        ((val[1] >> 24) & 0xFF) as u8,
+        (val[2] & 0xFF) as u8,
+        ((val[2] >> 8) & 0xFF) as u8,
+        ((val[2] >> 16) & 0xFF) as u8,
+        ((val[2] >> 24) & 0xFF) as u8,
+        (val[3] & 0xFF) as u8,
+        ((val[3] >> 8) & 0xFF) as u8,
+        ((val[3] >> 16) & 0xFF) as u8,
+        ((val[3] >> 24) & 0xFF) as u8,
+        (val[4] & 0xFF) as u8,
+        ((val[4] >> 8) & 0xFF) as u8,
+        ((val[4] >> 16) & 0xFF) as u8,
+        ((val[4] >> 24) & 0xFF) as u8,
+        (val[5] & 0xFF) as u8,
+        ((val[5] >> 8) & 0xFF) as u8,
+        ((val[5] >> 16) & 0xFF) as u8,
+        ((val[5] >> 24) & 0xFF) as u8,
+        (val[6] & 0xFF) as u8,
+        ((val[6] >> 8) & 0xFF) as u8,
+        ((val[6] >> 16) & 0xFF) as u8,
+        ((val[6] >> 24) & 0xFF) as u8,
+        (val[7] & 0xFF) as u8,
+        ((val[7] >> 8) & 0xFF) as u8,
+        ((val[7] >> 16) & 0xFF) as u8,
+        ((val[7] >> 24) & 0xFF) as u8,
+    ]
+}
+
+const fn byte_to_u8(byte: u8) -> u8 {
+    match byte {
+        b'0'..=b'9' => byte - b'0',
+        b'a'..=b'f' => byte - b'a' + 10,
+        b'A'..=b'F' => byte - b'A' + 10,
+        _ => 0,
+    }
+}
+
+pub const fn str_to_u8(s: &str) -> [u8; 32] {
+    let mut bytes = [0u8; 32];
+    let chrs = s.as_bytes();
+    bytes[0] = byte_to_u8(chrs[0]) << 4 | byte_to_u8(chrs[1]);
+    bytes[1] = byte_to_u8(chrs[2]) << 4 | byte_to_u8(chrs[3]);
+    bytes[2] = byte_to_u8(chrs[4]) << 4 | byte_to_u8(chrs[5]);
+    bytes[3] = byte_to_u8(chrs[6]) << 4 | byte_to_u8(chrs[7]);
+    bytes[4] = byte_to_u8(chrs[8]) << 4 | byte_to_u8(chrs[9]);
+    bytes[5] = byte_to_u8(chrs[10]) << 4 | byte_to_u8(chrs[11]);
+    bytes[6] = byte_to_u8(chrs[12]) << 4 | byte_to_u8(chrs[13]);
+    bytes[7] = byte_to_u8(chrs[14]) << 4 | byte_to_u8(chrs[15]);
+    bytes[8] = byte_to_u8(chrs[16]) << 4 | byte_to_u8(chrs[17]);
+    bytes[9] = byte_to_u8(chrs[18]) << 4 | byte_to_u8(chrs[19]);
+    bytes[10] = byte_to_u8(chrs[20]) << 4 | byte_to_u8(chrs[21]);
+    bytes[11] = byte_to_u8(chrs[22]) << 4 | byte_to_u8(chrs[23]);
+    bytes[12] = byte_to_u8(chrs[24]) << 4 | byte_to_u8(chrs[25]);
+    bytes[13] = byte_to_u8(chrs[26]) << 4 | byte_to_u8(chrs[27]);
+    bytes[14] = byte_to_u8(chrs[28]) << 4 | byte_to_u8(chrs[29]);
+    bytes[15] = byte_to_u8(chrs[30]) << 4 | byte_to_u8(chrs[31]);
+    bytes[16] = byte_to_u8(chrs[32]) << 4 | byte_to_u8(chrs[33]);
+    bytes[17] = byte_to_u8(chrs[34]) << 4 | byte_to_u8(chrs[35]);
+    bytes[18] = byte_to_u8(chrs[36]) << 4 | byte_to_u8(chrs[37]);
+    bytes[19] = byte_to_u8(chrs[38]) << 4 | byte_to_u8(chrs[39]);
+    bytes[20] = byte_to_u8(chrs[40]) << 4 | byte_to_u8(chrs[41]);
+    bytes[21] = byte_to_u8(chrs[42]) << 4 | byte_to_u8(chrs[43]);
+    bytes[22] = byte_to_u8(chrs[44]) << 4 | byte_to_u8(chrs[45]);
+    bytes[23] = byte_to_u8(chrs[46]) << 4 | byte_to_u8(chrs[47]);
+    bytes[24] = byte_to_u8(chrs[48]) << 4 | byte_to_u8(chrs[49]);
+    bytes[25] = byte_to_u8(chrs[50]) << 4 | byte_to_u8(chrs[51]);
+    bytes[26] = byte_to_u8(chrs[52]) << 4 | byte_to_u8(chrs[53]);
+    bytes[27] = byte_to_u8(chrs[54]) << 4 | byte_to_u8(chrs[55]);
+    bytes[28] = byte_to_u8(chrs[56]) << 4 | byte_to_u8(chrs[57]);
+    bytes[29] = byte_to_u8(chrs[58]) << 4 | byte_to_u8(chrs[59]);
+    bytes[30] = byte_to_u8(chrs[60]) << 4 | byte_to_u8(chrs[61]);
+    bytes[31] = byte_to_u8(chrs[62]) << 4 | byte_to_u8(chrs[63]);
+    bytes
 }
 
 #[cfg(test)]

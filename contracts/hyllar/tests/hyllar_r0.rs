@@ -2,7 +2,6 @@ use core::str;
 
 use hyllar::HyllarToken;
 use sdk::{erc20::ERC20Action, BlobData, BlobIndex, ContractInput, ContractName, HyleOutput};
-static HYLLAR_BIN: &[u8] = include_bytes!("../hyllar.img");
 
 fn execute(inputs: ContractInput<HyllarToken>) -> HyleOutput {
     let env = risc0_zkvm::ExecutorEnv::builder()
@@ -11,7 +10,7 @@ fn execute(inputs: ContractInput<HyllarToken>) -> HyleOutput {
         .build()
         .unwrap();
     let prover = risc0_zkvm::default_executor();
-    let execute_info = prover.execute(env, HYLLAR_BIN).unwrap();
+    let execute_info = prover.execute(env, hyllar::metadata::HYLLAR_ELF).unwrap();
 
     execute_info.journal.decode::<sdk::HyleOutput>().unwrap()
 }
