@@ -505,9 +505,7 @@ impl DataProposal {
                     // A DataProposal that has been processed has turned all TransactionData::Proof into TransactionData::VerifiedProof
                     unreachable!();
                 }
-                TransactionData::Blob(_)
-                | TransactionData::Stake(_)
-                | TransactionData::RegisterContract(_) => {}
+                TransactionData::Blob(_) | TransactionData::RegisterContract(_) => {}
             }
         });
     }

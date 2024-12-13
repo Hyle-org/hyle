@@ -9,7 +9,7 @@ use crate::{
 };
 use anyhow::{anyhow, bail, Result};
 use bincode::{Decode, Encode};
-use staking::MIN_STAKE;
+use staking::state::MIN_STAKE;
 use tracing::{debug, error, info, warn};
 
 use super::{Consensus, ConsensusNetMessage, ConsensusProposalHash, Ticket};
@@ -71,7 +71,6 @@ impl LeaderRole for Consensus {
             self.bft_round_state
                 .staking
                 .get_stake(&v.pubkey)
-                .map(|s| s.amount)
                 .unwrap_or(0)
                 > MIN_STAKE
                 && !self.bft_round_state.staking.is_bonded(&v.pubkey)
@@ -167,7 +166,7 @@ impl LeaderRole for Consensus {
         let votes_power = self.compute_voting_power(&validated_votes);
         let voting_power = votes_power + self.get_own_voting_power();
 
-        self.metrics.prepare_votes_gauge(voting_power);
+        self.metrics.prepare_votes_gauge(voting_power as u64); // TODO risky cast
 
         // Waits for at least n-f = 2f+1 matching PrepareVote messages
         let f = self.compute_f();
@@ -274,7 +273,7 @@ impl LeaderRole for Consensus {
             self.bft_round_state.staking.total_bond()
         );
 
-        self.metrics.confirmed_ack_gauge(voting_power);
+        self.metrics.confirmed_ack_gauge(voting_power as u64); // TODO risky cast
 
         if voting_power > 2 * f {
             // Get all signatures received and change ValidatorPublicKey for ValidatorPubKey

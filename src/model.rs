@@ -12,6 +12,7 @@ pub use hyle_contract_sdk::{Blob, BlobData, ContractName};
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Sha3_256};
 use sqlx::{prelude::Type, Postgres};
+use staking::StakingAction;
 use std::{
     cmp::Ordering,
     collections::HashMap,
@@ -29,8 +30,6 @@ use crate::{
     consensus::utils::HASH_DISPLAY_SIZE,
     utils::{conf::SharedConf, crypto::SharedBlstCrypto},
 };
-
-use staking::Staker;
 
 // Re-export
 pub use staking::model::ValidatorPublicKey;
@@ -85,7 +84,6 @@ pub struct Transaction {
     Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Encode, Decode, Hash, IntoStaticStr,
 )]
 pub enum TransactionData {
-    Stake(Staker), // FIXME: to remove, this is temporary waiting for real staking contract !!
     Blob(BlobTransaction),
     Proof(ProofTransaction),
     VerifiedProof(VerifiedProofTransaction),
@@ -209,8 +207,8 @@ pub struct Block {
     pub new_verified_proof_txs: Vec<Transaction>,
     pub verified_blobs: Vec<(TxHash, BlobIndex)>,
     pub failed_txs: Vec<Transaction>,
-    pub stakers: Vec<Staker>,
     pub new_bounded_validators: Vec<ValidatorPublicKey>,
+    pub staking_actions: Vec<(Identity, StakingAction)>,
     pub timed_out_tx_hashes: Vec<TxHash>,
     pub settled_blob_tx_hashes: Vec<TxHash>,
     pub updated_states: HashMap<ContractName, StateDigest>,
@@ -222,7 +220,6 @@ impl Block {
             + self.new_blob_txs.len()
             + self.new_verified_proof_txs.len()
             + self.failed_txs.len()
-            + self.stakers.len()
     }
 }
 
@@ -259,9 +256,6 @@ impl Hashable<BlockHash> for Block {
         }
         for tx_f in self.failed_txs.iter() {
             hasher.update(tx_f.hash().0);
-        }
-        for staker in self.stakers.iter() {
-            hasher.update(staker.hash().0);
         }
         for new_bounded_validator in self.new_bounded_validators.iter() {
             hasher.update(new_bounded_validator.0.as_slice());
@@ -334,21 +328,11 @@ pub trait Hashable<T> {
 impl Hashable<TxHash> for Transaction {
     fn hash(&self) -> TxHash {
         match &self.transaction_data {
-            TransactionData::Stake(staker) => staker.hash(),
             TransactionData::Blob(tx) => tx.hash(),
             TransactionData::Proof(tx) => tx.hash(),
             TransactionData::VerifiedProof(tx) => tx.hash(),
             TransactionData::RegisterContract(tx) => tx.hash(),
         }
-    }
-}
-impl Hashable<TxHash> for Staker {
-    fn hash(&self) -> TxHash {
-        let mut hasher = Sha3_256::new();
-        _ = write!(hasher, "{:?}", self.pubkey.0);
-        _ = write!(hasher, "{}", self.stake.amount);
-        let hash_bytes = hasher.finalize();
-        TxHash(hex::encode(hash_bytes))
     }
 }
 

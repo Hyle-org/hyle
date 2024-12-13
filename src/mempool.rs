@@ -514,7 +514,6 @@ impl Mempool {
                     &register_contract_transaction.program_id,
                 )?;
             }
-            TransactionData::Stake(ref _staker) => {}
             TransactionData::Blob(ref _blob_transaction) => {}
             TransactionData::Proof(mut proof_transaction) => {
                 // Verify and extract proof

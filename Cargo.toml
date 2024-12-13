@@ -33,6 +33,7 @@ hyle-contracts = { path = "./contracts", package = "hyle-contracts" }
 hydentity = { path = "./contracts/hydentity" }
 hyllar = { path = "./contracts/hyllar" }
 staking = { path = "./contracts/staking" }
+bonsai-runner = { path = "./crates/bonsai-runner" }
 config = "0.14.1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["json"] }

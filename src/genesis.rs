@@ -4,18 +4,18 @@ use crate::{
     bus::{bus_client, BusClientSender, BusMessage},
     handle_messages,
     model::{
-        RegisterContractTransaction, SharedRunContext, Transaction, TransactionData,
-        ValidatorPublicKey,
+        BlobTransaction, Hashable, ProofData, RegisterContractTransaction, SharedRunContext,
+        Transaction, TransactionData, ValidatorPublicKey, VerifiedProofTransaction,
     },
     p2p::network::PeerEvent,
+    tools::transactions_builder::{BuildResult, States, TransactionBuilder},
     utils::{conf::SharedConf, crypto::SharedBlstCrypto, modules::Module},
 };
 use anyhow::{bail, Error, Result};
-use hyle_contract_sdk::identity_provider::IdentityVerification;
 use hyle_contract_sdk::Digestable;
+use hyle_contract_sdk::{identity_provider::IdentityVerification, Identity};
 use serde::{Deserialize, Serialize};
-use staking::{Stake, Staker};
-use tracing::info;
+use tracing::{error, info};
 
 #[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]
 pub enum GenesisEvent {
@@ -107,25 +107,13 @@ impl Genesis {
         let mut initial_validators = self.peer_pubkey.values().cloned().collect::<Vec<_>>();
         initial_validators.sort();
 
-        let stake_txs = self
-            .peer_pubkey
-            .iter()
-            .map(|(k, v)| {
-                Transaction::wrap(TransactionData::Stake(Staker {
-                    pubkey: v.clone(),
-                    stake: Stake {
-                        amount: *self.config.consensus.genesis_stakers.get(k).unwrap_or(&100),
-                    },
-                }))
-            })
-            .collect::<Vec<_>>();
-
-        let contracts_txs = Self::genesis_contracts_txs();
-
-        let genesis_txs = stake_txs
-            .into_iter()
-            .chain(contracts_txs.into_iter())
-            .collect();
+        let genesis_txs = match self.generate_genesis_txs().await {
+            Ok(t) => t,
+            Err(e) => {
+                error!("🌱 Genesis block generation failed: {:?}", e);
+                return Err(e);
+            }
+        };
 
         // At this point, we can setup the genesis block.
         _ = self.bus.send(GenesisEvent::GenesisBlock {
@@ -136,7 +124,135 @@ impl Genesis {
         Ok(())
     }
 
-    pub fn genesis_contracts_txs() -> Vec<Transaction> {
+    async fn generate_genesis_txs(&self) -> Result<Vec<Transaction>> {
+        let (mut genesis_txs, mut states) = Self::genesis_contracts_txs();
+
+        let register_txs = self.generate_register_txs(&mut states).await?;
+        let faucet_txs = self.generate_faucet_txs(&mut states).await?;
+        let stake_txs = self.generate_stake_txs(&mut states).await?;
+        let delegate_txs = self.generate_delegate_txs(&mut states).await?;
+
+        let builders = register_txs
+            .into_iter()
+            .chain(faucet_txs.into_iter())
+            .chain(stake_txs.into_iter())
+            .chain(delegate_txs.into_iter())
+            .collect::<Vec<_>>();
+
+        for BuildResult {
+            identity,
+            blobs,
+            outputs,
+        } in builders
+        {
+            // On genesis we don't need an actual zkproof as the txs are not going through data
+            // dissemnitation. We can create the same VerifiedProofTransaction on each genesis
+            // validator, and assume it's the same.
+
+            let tx = BlobTransaction { identity, blobs };
+            let blob_tx_hash = tx.hash();
+
+            genesis_txs.push(Transaction::wrap(TransactionData::Blob(tx)));
+
+            for (contract_name, out) in outputs {
+                genesis_txs.push(Transaction::wrap(TransactionData::VerifiedProof(
+                    VerifiedProofTransaction {
+                        blob_tx_hash: blob_tx_hash.clone(),
+                        contract_name,
+                        proof_hash: ProofData::default().hash(),
+                        hyle_output: out,
+                        proof: None,
+                    },
+                )));
+            }
+        }
+
+        Ok(genesis_txs)
+    }
+
+    pub async fn generate_register_txs(&self, states: &mut States) -> Result<Vec<BuildResult>> {
+        // TODO: use an identity provider that checks BLST signature on a pubkey instead of
+        // hydentity that checks password
+        // The validator will send the signature for the register transaction in the handshake
+        // in order to let all genesis validators to create the genesis register
+
+        let mut txs = vec![];
+        for peer in self.peer_pubkey.values() {
+            info!("🌱  Registering identity {peer}");
+
+            let identity = Identity(format!("{peer}.hydentity"));
+            let mut transaction = TransactionBuilder::new(identity.clone());
+
+            transaction.register_identity("password".to_string());
+            txs.push(transaction.build(states).await?);
+        }
+
+        Ok(txs)
+    }
+
+    pub async fn generate_faucet_txs(&self, states: &mut States) -> Result<Vec<BuildResult>> {
+        let genesis_faucet = 100;
+
+        let mut txs = vec![];
+        for peer in self.peer_pubkey.values() {
+            info!("🌱  Fauceting {genesis_faucet} hyllar to {peer}");
+
+            let identity = Identity("faucet.hydentity".to_string());
+            let mut transaction = TransactionBuilder::new(identity.clone());
+
+            transaction
+                .verify_identity(&states.hydentity, "password".to_string())
+                .await?;
+            transaction.transfer("hyllar".into(), format!("{peer}.hydentity"), genesis_faucet);
+
+            txs.push(transaction.build(states).await?);
+        }
+
+        Ok(txs)
+    }
+
+    pub async fn generate_stake_txs(&self, states: &mut States) -> Result<Vec<BuildResult>> {
+        let genesis_stake = 100;
+
+        let mut txs = vec![];
+        for peer in self.peer_pubkey.values() {
+            info!("🌱  Staking {genesis_stake} hyllar from {peer}");
+
+            let identity = Identity(format!("{peer}.hydentity").to_string());
+            let mut transaction = TransactionBuilder::new(identity.clone());
+
+            transaction
+                .verify_identity(&states.hydentity, "password".to_string())
+                .await?;
+            transaction.stake("hyllar".into(), "staking".into(), genesis_stake)?;
+
+            txs.push(transaction.build(states).await?);
+        }
+
+        Ok(txs)
+    }
+
+    pub async fn generate_delegate_txs(&self, states: &mut States) -> Result<Vec<BuildResult>> {
+        let mut txs = vec![];
+        for peer in self.peer_pubkey.values().cloned() {
+            info!("🌱  Delegating to {peer}");
+
+            let identity = Identity(format!("{peer}.hydentity").to_string());
+            let mut transaction = TransactionBuilder::new(identity.clone());
+
+            transaction
+                .verify_identity(&states.hydentity, "password".to_string())
+                .await?;
+            transaction.delegate(peer)?;
+
+            txs.push(transaction.build(states).await?);
+        }
+
+        Ok(txs)
+    }
+
+    pub fn genesis_contracts_txs() -> (Vec<Transaction>, States) {
+        let staking_program_id = hyle_contracts::STAKING_ID.to_vec();
         let hyllar_program_id = hyle_contracts::HYLLAR_ID.to_vec();
         let hydentity_program_id = hyle_contracts::HYDENTITY_ID.to_vec();
 
@@ -145,30 +261,46 @@ impl Genesis {
             .register_identity("faucet.hydentity", "password")
             .unwrap();
 
-        vec![
-            Transaction::wrap(TransactionData::RegisterContract(
-                RegisterContractTransaction {
-                    owner: "hyle".into(),
-                    verifier: "risc0".into(),
-                    program_id: hyllar_program_id.clone().into(),
-                    state_digest: hyllar::HyllarToken::new(
-                        100_000_000_000,
-                        "faucet.hydentity".to_string(),
-                    )
-                    .as_digest(),
-                    contract_name: "hyllar".into(),
-                },
-            )),
-            Transaction::wrap(TransactionData::RegisterContract(
-                RegisterContractTransaction {
-                    owner: "hyle".into(),
-                    verifier: "risc0".into(),
-                    program_id: hydentity_program_id.into(),
-                    state_digest: hydentity_state.as_digest(),
-                    contract_name: "hydentity".into(),
-                },
-            )),
-        ]
+        let staking_state = staking::state::Staking::new();
+
+        let states = States {
+            hyllar: hyllar::HyllarToken::new(100_000_000_000, "faucet.hydentity".to_string()),
+            hydentity: hydentity_state,
+            staking: staking_state,
+        };
+
+        (
+            vec![
+                Transaction::wrap(TransactionData::RegisterContract(
+                    RegisterContractTransaction {
+                        owner: "hyle".into(),
+                        verifier: "risc0".into(),
+                        program_id: staking_program_id.into(),
+                        state_digest: states.staking.on_chain_state().as_digest(),
+                        contract_name: "staking".into(),
+                    },
+                )),
+                Transaction::wrap(TransactionData::RegisterContract(
+                    RegisterContractTransaction {
+                        owner: "hyle".into(),
+                        verifier: "risc0".into(),
+                        program_id: hyllar_program_id.into(),
+                        state_digest: states.hyllar.as_digest(),
+                        contract_name: "hyllar".into(),
+                    },
+                )),
+                Transaction::wrap(TransactionData::RegisterContract(
+                    RegisterContractTransaction {
+                        owner: "hyle".into(),
+                        verifier: "risc0".into(),
+                        program_id: hydentity_program_id.into(),
+                        state_digest: states.hydentity.as_digest(),
+                        contract_name: "hydentity".into(),
+                    },
+                )),
+            ],
+            states,
+        )
     }
 }
 

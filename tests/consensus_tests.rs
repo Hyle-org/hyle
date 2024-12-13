@@ -4,7 +4,6 @@ use fixtures::ctx::E2ECtx;
 mod fixtures;
 
 mod e2e_consensus {
-    use staking::{Stake, Staker};
 
     use super::*;
 
@@ -37,12 +36,14 @@ mod e2e_consensus {
 
         assert!(node_info.pubkey.is_some());
 
-        ctx.client()
-            .send_stake_tx(&Staker {
-                pubkey: node_info.pubkey.clone().unwrap(),
-                stake: Stake { amount: 100 },
-            })
-            .await?;
+        // TODO replace
+        //ctx.client()
+        //    .send_stake_tx(&Staker {
+        //        pubkey: node_info.pubkey.clone().unwrap(),
+        //        stake: Stake { amount: 100 },
+        //        identity: "test".into(),
+        //    })
+        //    .await?;
 
         // 2 slots to get the tx in a blocks
         // 1 slot to send the candidacy
