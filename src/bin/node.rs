@@ -62,13 +62,21 @@ async fn main() -> Result<()> {
             .context("reading config file")?,
     );
 
+    let bus = SharedMessageBus::new(BusMetrics::global(config.id.clone()));
+    let crypto = Arc::new(BlstCrypto::new(config.id.clone()));
+    let pubkey = Some(crypto.validator_pubkey().clone());
+
     setup_tracing(
         match config.log_format.as_str() {
             "json" => TracingMode::Json,
             "node" => TracingMode::NodeName,
             _ => TracingMode::Full,
         },
-        config.id.clone(),
+        format!(
+            "{}({})",
+            config.id.clone(),
+            pubkey.clone().unwrap_or_default()
+        ),
     )?;
 
     info!("Starting node with config: {:?}", &config);
@@ -85,10 +93,6 @@ async fn main() -> Result<()> {
                 .unwrap(),
         )
         .build();
-
-    let bus = SharedMessageBus::new(BusMetrics::global(config.id.clone()));
-    let crypto = Arc::new(BlstCrypto::new(config.id.clone()));
-    let pubkey = Some(crypto.validator_pubkey().clone());
 
     std::fs::create_dir_all(&config.data_directory).context("creating data directory")?;
 

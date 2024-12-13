@@ -72,15 +72,7 @@ impl ContractHandler for HyllarToken {
 
         let caller: Identity = data
             .caller
-            .map(|i| {
-                tx.blobs
-                    .get(i.0)
-                    .unwrap()
-                    .contract_name
-                    .0
-                    .clone()
-                    .into()
-            })
+            .map(|i| tx.blobs.get(i.0).unwrap().contract_name.0.clone().into())
             .unwrap_or(tx.identity.clone());
 
         let mut contract = HyllarTokenContract::init(state, caller);
