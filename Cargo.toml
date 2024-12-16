@@ -5,6 +5,7 @@ members = [
     "contracts/hydentity",
     "contracts/hyllar",
     "contracts/staking",
+    "contracts/risc0-recursion",
 
     "crates/bonsai-runner",
     "crates/hyrun",

@@ -5214,6 +5214,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "risc0-recursion"
+version = "0.3.0"
+dependencies = [
+ "bincode 2.0.0-rc.3",
+ "borsh",
+ "hex",
+ "hydentity",
+ "hyle-contract-sdk",
+ "hyle-contracts",
+ "hyrun",
+ "risc0-zkvm",
+ "serde",
+ "tempfile",
+ "test-log",
+]
+
+[[package]]
 name = "risc0-sys"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
