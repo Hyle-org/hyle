@@ -165,7 +165,29 @@ impl fmt::Debug for ProofTransaction {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Encode, Decode, Hash)]
+impl fmt::Debug for VerifiedProofTransaction {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("VerifiedProofTransaction")
+            .field("contract_name", &self.contract_name)
+            .field("blob_tx_hash", &self.blob_tx_hash)
+            .field("proof_hash", &self.proof_hash)
+            .field("hyle_output", &self.hyle_output)
+            .field("proof", &"[HIDDEN]")
+            .field(
+                "proof_len",
+                &self
+                    .proof
+                    .as_ref()
+                    .unwrap_or(&ProofData::default())
+                    .to_bytes()
+                    .unwrap_or_default()
+                    .len(),
+            )
+            .finish()
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Encode, Decode, Hash)]
 pub struct VerifiedProofTransaction {
     pub blob_tx_hash: TxHash,
     pub contract_name: ContractName,
@@ -269,7 +291,9 @@ impl Hashable<BlockHash> for Block {
         for settled_blob_tx_hash in self.settled_blob_tx_hashes.iter() {
             _ = write!(hasher, "{}", settled_blob_tx_hash);
         }
-        for (cn, sd) in self.updated_states.iter() {
+        let mut sorted_states: Vec<_> = self.updated_states.iter().collect();
+        sorted_states.sort_by(|a, b| a.0.cmp(b.0));
+        for (cn, sd) in sorted_states {
             _ = write!(hasher, "{}", cn);
             _ = write!(hasher, "{:?}", sd);
         }
