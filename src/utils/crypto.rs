@@ -145,46 +145,8 @@ impl BlstCrypto {
     where
         T: bincode::Encode + Clone,
     {
-        let Aggregates { sigs, pks, mut val } = Self::extract_aggregates(aggregates)?;
-
-        val.push(self.validator_pubkey.clone());
-
-        let mut sigs_refs: Vec<&BlstSignature> = sigs.iter().collect::<Vec<&BlstSignature>>();
-        let mut pks_refs: Vec<&PublicKey> = pks.iter().collect();
-
-        let self_signed = self.sign_msg(&msg)?;
-        let pk = self.sk.sk_to_pk();
-        sigs_refs.push(&self_signed);
-        pks_refs.push(&pk);
-
-        let pk = AggregatePublicKey::aggregate(&pks_refs, true)
-            .map_err(|e| anyhow!("could not aggregate public keys: {:?}", e))?;
-
-        let sig = BlstAggregateSignature::aggregate(&sigs_refs, true)
-            .map_err(|e| anyhow!("could not aggregate signatures: {:?}", e))?;
-
-        let valid = Self::verify_aggregate(&Signed {
-            msg: msg.clone(),
-            signature: AggregateSignature {
-                signature: sig.to_signature().into(),
-                validators: vec![as_validator_pubkey(pk.to_public_key())],
-            },
-        })
-        .map_err(|e| anyhow!("Failed for verify new aggregated signature! Reason: {e}"))?;
-
-        if !valid {
-            return Err(anyhow!(
-                "Failed to aggregate signatures into valid one. Messages might be different."
-            ));
-        }
-
-        Ok(Signed {
-            msg,
-            signature: AggregateSignature {
-                signature: sig.to_signature().into(),
-                validators: val,
-            },
-        })
+        let self_signed = self.sign(msg.clone())?;
+        Self::aggregate(msg, &[aggregates, &[&self_signed]].concat())
     }
 
     pub fn aggregate<T>(
