@@ -1,28 +1,22 @@
 use anyhow::{bail, Error};
 use risc0_zkvm::sha::Digestible;
-use sdk::{Blob, ContractInput, Digestable, HyleOutput, Identity};
+use sdk::{Blob, ContractInput, Digestable, HyleOutput, Identity, StateDigest};
 
-use crate::{Cli, Contract};
+use crate::{Context, Contract};
 
-pub fn init<State>(prefix: &str, contract_name: &str, initial_state: State)
+pub fn init<State>(context: &Context, contract_name: &str, initial_state: State)
 where
     State: Digestable + std::fmt::Debug,
 {
     println!("Initial state: {:?}", initial_state);
     let initial_state = hex::encode(initial_state.as_digest().0);
-    let file_path = format!(
-        "{}contracts/{}/{}.txt",
-        prefix, contract_name, contract_name
-    );
-    let image_id = std::fs::read_to_string(file_path)
-        .expect("Unable to read image id. Did you build contracts ?")
-        .trim_end()
-        .to_string();
 
     println!("You can register the contract by running:");
     println!(
         "\x1b[93mhyled contract default risc0 {} {} {} \x1b[0m",
-        image_id, contract_name, initial_state
+        hex::encode(get_image_id(context, contract_name)),
+        contract_name,
+        initial_state
     );
 }
 
@@ -37,26 +31,21 @@ pub fn print_hyled_blob_tx(identity: &Identity, blobs: &Vec<Blob>) {
     println!("{}", "-".repeat(20));
 }
 
-pub fn run<State, Builder>(cli: &Cli, contract_name: &str, build_contract_input: Builder)
+pub fn run<State, Builder>(context: &Context, contract_name: &str, build_contract_input: Builder)
 where
-    State: TryFrom<sdk::StateDigest, Error = Error>,
+    State: TryFrom<StateDigest, Error = Error>,
     State: Digestable + std::fmt::Debug + serde::Serialize,
     Builder: Fn(State) -> ContractInput<State>,
 {
-    let initial_state = match fetch_current_state(cli, contract_name) {
-        Ok(s) => s,
-        Err(e) => {
-            println!("fetch current state error: {}", e);
-            return;
-        }
-    };
+    let initial_state =
+        get_initial_state(context, contract_name).expect("Cannot get contract state");
     println!("Fetched current state: {:?}", initial_state);
 
     let contract_input = build_contract_input(initial_state);
 
     println!("{}", "-".repeat(20));
     println!("Checking transition for {contract_name}...");
-    let execute_info = execute(&cli.path_prefix, contract_name, &contract_input);
+    let execute_info = execute(context, contract_name, &contract_input);
     let output = execute_info.journal.decode::<HyleOutput>().unwrap();
     if !output.success {
         let program_error = std::str::from_utf8(&output.program_outputs).unwrap();
@@ -72,12 +61,15 @@ where
 
     println!("{}", "-".repeat(20));
     println!("Proving transition for {contract_name}...");
-    let prove_info = prove(&cli.path_prefix, contract_name, &contract_input);
+    let prove_info = prove(context, contract_name, &contract_input);
 
     let receipt = prove_info.receipt;
     let encoded_receipt = borsh::to_vec(&receipt).expect("Unable to encode receipt");
     std::fs::write(
-        format!("{}{}.risc0.proof", cli.path_prefix, contract_input.index),
+        format!(
+            "{}/{}.risc0.proof",
+            context.cli.proof_path, contract_input.index
+        ),
         encoded_receipt,
     )
     .unwrap();
@@ -123,11 +115,23 @@ where
         .expect("Verification 2 failed");
 }
 
-pub fn fetch_current_state<State>(cli: &Cli, contract_name: &str) -> Result<State, Error>
+pub fn get_initial_state<State>(context: &Context, contract_name: &str) -> Result<State, Error>
 where
-    State: TryFrom<sdk::StateDigest, Error = Error>,
+    State: TryFrom<StateDigest, Error = Error>,
 {
-    let url = format!("http://{}:{}", cli.host, cli.port);
+    context
+        .hardcoded_initial_states
+        .get(contract_name)
+        .cloned()
+        .unwrap_or_else(|| {
+            fetch_current_state(context, contract_name)
+                .expect("Cannot fetch current state from node")
+        })
+        .try_into()
+}
+
+pub fn fetch_current_state(context: &Context, contract_name: &str) -> Result<StateDigest, Error> {
+    let url = format!("http://{}:{}", context.cli.host, context.cli.port);
     let resp = reqwest::blocking::get(format!("{}/v1/contract/{}", url, contract_name))?;
 
     let status = resp.status();
@@ -136,7 +140,7 @@ where
     if let Ok(contract) = serde_json::from_str::<Contract>(&body) {
         println!("{}", "-".repeat(20));
         println!("Fetched contract: {:?}", contract);
-        Ok(contract.state.try_into()?)
+        Ok(contract.state)
     } else {
         bail!(
             "Failed to parse JSON response, status: {}, body: {}",
@@ -147,7 +151,7 @@ where
 }
 
 fn execute<State>(
-    prefix: &str,
+    context: &Context,
     contract_name: &str,
     contract_input: &ContractInput<State>,
 ) -> risc0_zkvm::SessionInfo
@@ -161,21 +165,13 @@ where
         .unwrap();
 
     let prover = risc0_zkvm::default_executor();
-    let program_name = get_image(contract_name);
-    let file_path = format!("{}contracts/{}/{}.img", prefix, program_name, program_name);
-    println!("file_path: {}", file_path);
-    if let Ok(binary) = std::fs::read(file_path.as_str()) {
-        prover.execute(env, &binary).unwrap()
-    } else {
-        println!("Could not read ELF binary at {}.", file_path);
-        println!("Please ensure that the ELF binary is built and located at the specified path.");
-        println!("\x1b[93m--> Tip: Did you run build_contracts.sh ?\x1b[0m");
-        panic!("Could not read ELF binary");
-    }
+    prover
+        .execute(env, get_elf(context, contract_name))
+        .unwrap()
 }
 
 fn prove<State>(
-    prefix: &str,
+    context: &Context,
     contract_name: &str,
     contract_input: &ContractInput<State>,
 ) -> risc0_zkvm::ProveInfo
@@ -189,23 +185,23 @@ where
         .unwrap();
 
     let prover = risc0_zkvm::default_prover();
-    let program_name = get_image(contract_name);
-    let file_path = format!("{}contracts/{}/{}.img", prefix, program_name, program_name);
-    if let Ok(binary) = std::fs::read(file_path.as_str()) {
-        prover.prove(env, &binary).unwrap()
-    } else {
-        println!("Could not read ELF binary at {}.", file_path);
-        println!("Please ensure that the ELF binary is built and located at the specified path.");
-        println!("\x1b[93m--> Tip: Did you run build_contracts.sh ?\x1b[0m");
-        panic!("Could not read ELF binary");
+    prover.prove(env, get_elf(context, contract_name)).unwrap()
+}
+
+fn get_elf<'a>(context: &'a Context, contract_name: &str) -> &'a Vec<u8> {
+    match contract_name {
+        "hydentity" => &context.contract_data.hydentity_elf,
+        "hyllar" | "hyllar2" => &context.contract_data.hyllar_elf,
+        "amm" | "amm2" => &context.contract_data.amm_elf,
+        _ => panic!("Unknown contract name"),
     }
 }
 
-fn get_image(contract_name: &str) -> &str {
+fn get_image_id<'a>(context: &'a Context, contract_name: &str) -> &'a Vec<u8> {
     match contract_name {
-        "hydentity" => "hydentity",
-        "hyllar" | "hyllar2" => "hyllar",
-        "amm" | "amm2" => "amm",
+        "hydentity" => &context.contract_data.hydentity_id,
+        "hyllar" | "hyllar2" => &context.contract_data.hyllar_id,
+        "amm" | "amm2" => &context.contract_data.amm_id,
         _ => panic!("Unknown contract name"),
     }
 }

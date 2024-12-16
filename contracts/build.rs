@@ -16,7 +16,8 @@ fn main() {
     let reproducible = cfg!(not(feature = "nonreproducible"));
 
     let mut options = HashMap::new();
-    ["amm", "hydentity", "hyllar", "staking"]
+
+    ["amm", "hydentity", "hyllar", "staking", "risc0-recursion"]
         .iter()
         .for_each(|name| {
             options.insert(
@@ -33,7 +34,10 @@ fn main() {
                 },
             );
         });
+
+    // Build the guests.
     let results = risc0_build::embed_methods_with_options(options);
+
     if reproducible {
         results.iter().for_each(|data| {
             std::fs::write(format!("{}/{}.img", data.name, data.name), &data.elf)
