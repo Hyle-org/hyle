@@ -14,11 +14,19 @@ path = "metadata.rs"
 sdk = { path = "../contract-sdk", package = "hyle-contract-sdk" }
 
 [build-dependencies]
+cargo-manifest = "0.17.0"
 risc0-build = { version = "1.2.0", optional = true }
+toml = "0.8.19"
 
 [package.metadata.risc0]
 methods = ["amm", "hyllar", "hydentity", "staking", "risc0-recursion"]
 
 [features]
+amm = ["build"]
+all_guests = ["amm", "hydentity", "hyllar", "risc0-recursion", "staking"]
 build = ["dep:risc0-build"]
-nonreproducible = ["build"]
+hydentity = ["build"]
+hyllar = ["build"]
+nonreproducible = ["build", "all_guests"]
+risc0-recursion = ["build"]
+staking = ["build"]
