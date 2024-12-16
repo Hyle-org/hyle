@@ -2583,6 +2583,7 @@ dependencies = [
  "quote",
  "rand",
  "reqwest 0.12.9",
+ "risc0-recursion",
  "risc0-zkvm",
  "ron",
  "serde",

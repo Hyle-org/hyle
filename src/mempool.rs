@@ -3,12 +3,12 @@
 use crate::{
     bus::{command_response::Query, BusClientSender, BusMessage},
     consensus::{CommittedConsensusProposal, ConsensusEvent},
-    data_availability::node_state::verifiers::verify_proof,
+    data_availability::node_state::verifiers::{verify_proof, verify_recursive_proof},
     genesis::GenesisEvent,
     mempool::storage::{DataProposal, Storage},
     model::{
-        Hashable, SharedRunContext, Transaction, TransactionData, ValidatorPublicKey,
-        VerifiedProofTransaction,
+        Hashable, ProofDataHash, SharedRunContext, Transaction, TransactionData,
+        ValidatorPublicKey, VerifiedProofTransaction, VerifiedRecursiveProofTransaction,
     },
     module_handle_messages,
     p2p::network::{OutboundMessage, SignedByValidator},
@@ -619,8 +619,39 @@ impl Mempool {
                     hyle_output,
                 });
             }
+            TransactionData::RecursiveProof(mut proof_transaction) => {
+                // Verify and extract proof
+                let (verifier, program_id) = self
+                    .known_contracts
+                    .0
+                    .get(&proof_transaction.via)
+                    .context("Contract unknown")?;
+                let hyle_outputs = verify_recursive_proof(
+                    &proof_transaction.proof.to_bytes()?,
+                    verifier,
+                    program_id,
+                )?;
+                tx.transaction_data =
+                    TransactionData::VerifiedRecursiveProof(VerifiedRecursiveProofTransaction {
+                        proof: Some(std::mem::take(&mut proof_transaction.proof)),
+                        proof_hash: proof_transaction.proof.hash(),
+                        via: std::mem::take(&mut proof_transaction.via),
+                        verifies: std::iter::zip(proof_transaction.verifies, hyle_outputs)
+                            .map(|(mut pt, ho)| VerifiedProofTransaction {
+                                proof_hash: ProofDataHash("todo?".to_owned()),
+                                contract_name: std::mem::take(&mut pt.1),
+                                blob_tx_hash: std::mem::take(&mut pt.0),
+                                proof: None,
+                                hyle_output: ho,
+                            })
+                            .collect(),
+                    });
+            }
             TransactionData::VerifiedProof(_) => {
                 bail!("Already verified ProofTransaction are not allowed to be received in the mempool");
+            }
+            TransactionData::VerifiedRecursiveProof(_) => {
+                bail!("Already verified RecursiveProofTransaction are not allowed to be received in the mempool");
             }
         }
 

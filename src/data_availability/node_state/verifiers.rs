@@ -4,6 +4,7 @@ use std::io::Read;
 use anyhow::{bail, Context, Error};
 use rand::Rng;
 use risc0_zkvm::sha::Digest;
+use serde::Deserialize;
 use sp1_sdk::{ProverClient, SP1ProofWithPublicValues, SP1VerifyingKey};
 
 use hyle_contract_sdk::{HyleOutput, ProgramId, Verifier};
@@ -23,7 +24,29 @@ pub fn verify_proof(
     }
 }
 
-pub fn risc0_proof_verifier(encoded_receipt: &[u8], image_id: &[u8]) -> Result<HyleOutput, Error> {
+pub fn verify_recursive_proof(
+    proof: &[u8],
+    verifier: &Verifier,
+    program_id: &ProgramId,
+) -> Result<Vec<HyleOutput>, Error> {
+    match verifier.0.as_str() {
+        "risc0" => {
+            let output: Vec<Vec<u8>> = risc0_proof_verifier(proof, &program_id.0)?;
+            // Doesn't actually work to just deserialize in one go.
+            output
+                .iter()
+                .map(|o| risc0_zkvm::serde::from_slice::<HyleOutput, _>(o))
+                .collect::<Result<Vec<_>, _>>()
+                .context("Failed to decode HyleOutput")
+        }
+        _ => bail!("{} recursive verifier not implemented yet", verifier),
+    }
+}
+
+pub fn risc0_proof_verifier<T: for<'a> Deserialize<'a>>(
+    encoded_receipt: &[u8],
+    image_id: &[u8],
+) -> Result<T, Error> {
     let receipt = borsh::from_slice::<risc0_zkvm::Receipt>(encoded_receipt)
         .context("Error while decoding Risc0 proof's receipt")?;
 
@@ -35,15 +58,10 @@ pub fn risc0_proof_verifier(encoded_receipt: &[u8], image_id: &[u8]) -> Result<H
 
     let hyle_output = receipt
         .journal
-        .decode::<HyleOutput>()
+        .decode::<T>()
         .context("Failed to extract HyleOuput from Risc0's journal")?;
 
-    tracing::info!(
-        "✅ Risc0 proof verified. {}",
-        std::str::from_utf8(&hyle_output.program_outputs)
-            .map(|o| format!("Program outputs: {o}"))
-            .unwrap_or("Invalid UTF-8".to_string())
-    );
+    tracing::info!("✅ Risc0 proof verified.");
 
     // // TODO: allow multiple outputs when verifying
     Ok(hyle_output)

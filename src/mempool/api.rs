@@ -8,7 +8,7 @@ use crate::{
     bus::{bus_client, metrics::BusMetrics, BusClientSender, BusMessage},
     model::{
         BlobTransaction, CommonRunContext, Hashable, ProofData, ProofTransaction,
-        RegisterContractTransaction, Transaction, TransactionData,
+        RecursiveProofTransaction, RegisterContractTransaction, Transaction, TransactionData,
     },
     rest::AppError,
 };
@@ -40,6 +40,10 @@ pub async fn api(ctx: &CommonRunContext) -> Router<()> {
         .route("/tx/send/stake", post(send_staking_transaction))
         .route("/tx/send/blob", post(send_blob_transaction))
         .route("/tx/send/proof", post(send_proof_transaction))
+        .route(
+            "/tx/send/recursive_proof",
+            post(send_recursive_proof_transaction),
+        )
         .with_state(state)
 }
 
@@ -81,6 +85,18 @@ pub async fn send_proof_transaction(
         .map_err(|err| AppError(StatusCode::BAD_REQUEST, anyhow!(err)))?;
     payload.proof = ProofData::Bytes(proof_bytes);
     handle_send(state, TransactionData::Proof(payload)).await
+}
+
+pub async fn send_recursive_proof_transaction(
+    State(state): State<RouterState>,
+    Json(mut payload): Json<RecursiveProofTransaction>,
+) -> Result<impl IntoResponse, AppError> {
+    let proof_bytes = payload
+        .proof
+        .to_bytes()
+        .map_err(|err| AppError(StatusCode::BAD_REQUEST, anyhow!(err)))?;
+    payload.proof = ProofData::Bytes(proof_bytes);
+    handle_send(state, TransactionData::RecursiveProof(payload)).await
 }
 
 pub async fn send_staking_transaction(

@@ -14,7 +14,10 @@ use tracing::info;
 use hyle::{
     data_availability::node_state::model::Contract,
     indexer::model::ContractDb,
-    model::{Blob, BlobTransaction, ProofData, ProofTransaction, RegisterContractTransaction},
+    model::{
+        Blob, BlobTransaction, ProofData, ProofTransaction, RecursiveProofTransaction,
+        RegisterContractTransaction,
+    },
     rest::client::ApiHttpClient,
 };
 use hyle_contract_sdk::{
@@ -271,6 +274,25 @@ impl E2ECtx {
                 blob_tx_hash: blob_tx_hash.clone(),
                 contract_name: contract_name.clone(),
                 proof: proof.clone()
+            })
+            .await
+            .and_then(|response| response.error_for_status().context("sending tx")));
+
+        Ok(())
+    }
+
+    pub async fn send_recursive_proof(
+        &self,
+        via: ContractName,
+        proof: ProofData,
+        verifies: Vec<(TxHash, ContractName)>,
+    ) -> Result<()> {
+        assert_ok!(self
+            .client()
+            .send_tx_recursive_proof(&RecursiveProofTransaction {
+                via: via.clone(),
+                proof: proof.clone(),
+                verifies: verifies.clone(),
             })
             .await
             .and_then(|response| response.error_for_status().context("sending tx")));

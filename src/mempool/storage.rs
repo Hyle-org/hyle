@@ -273,6 +273,10 @@ impl Storage {
                     warn!("Refusing DataProposal: unverified proof transaction");
                     return DataProposalVerdict::Refuse;
                 }
+                TransactionData::RecursiveProof(_) => {
+                    warn!("Refusing DataProposal: unverified recursive proof transaction");
+                    return DataProposalVerdict::Refuse;
+                }
                 TransactionData::VerifiedProof(proof_tx) => {
                     // Ensure contract is registered
                     let contract_name = &proof_tx.contract_name;
@@ -351,6 +355,44 @@ impl Storage {
                     match verify_proof(&proof, verifier, program_id) {
                         Ok(hyle_output) => {
                             if hyle_output != proof_tx.hyle_output {
+                                warn!("Refusing DataProposal: incorrect HyleOutput in proof transaction");
+                                return DataProposalVerdict::Refuse;
+                            }
+                        }
+                        Err(e) => {
+                            warn!("Refusing DataProposal: invalid proof transaction: {}", e);
+                            return DataProposalVerdict::Refuse;
+                        }
+                    }
+                }
+                TransactionData::VerifiedRecursiveProof(proof_tx) => {
+                    // TODO: figure out what we want to do with the contracts.
+                    // Extract the proof
+                    let proof = match &proof_tx.proof {
+                        Some(proof) => proof,
+                        None => {
+                            warn!("Refusing DataProposal: proof is missing");
+                            return DataProposalVerdict::Refuse;
+                        }
+                    };
+                    // Verifying the proof before voting
+                    let (verifier, program_id) = match known_contracts.0.get(&proof_tx.via) {
+                        Some((verifier, program_id)) => (verifier, program_id),
+                        None => {
+                            warn!("Refusing DataProposal: contract not found");
+                            return DataProposalVerdict::Refuse;
+                        }
+                    };
+                    let proof_bytes = match proof.to_bytes() {
+                        Ok(bytes) => bytes,
+                        Err(_) => {
+                            warn!("Refusing DataProposal: failed to convert proof to bytes");
+                            return DataProposalVerdict::Refuse;
+                        }
+                    };
+                    match verify_proof(&proof_bytes, verifier, program_id) {
+                        Ok(_) => {
+                            if proof.hash() != proof_tx.proof_hash {
                                 warn!("Refusing DataProposal: incorrect HyleOutput in proof transaction");
                                 return DataProposalVerdict::Refuse;
                             }
@@ -536,7 +578,10 @@ impl DataProposal {
                 TransactionData::VerifiedProof(proof_tx) => {
                     proof_tx.proof = None;
                 }
-                TransactionData::Proof(_) => {
+                TransactionData::VerifiedRecursiveProof(proof_tx) => {
+                    proof_tx.proof = None;
+                }
+                TransactionData::Proof(_) | TransactionData::RecursiveProof(_) => {
                     // This can never happen.
                     // A DataProposal that has been processed has turned all TransactionData::Proof into TransactionData::VerifiedProof
                     unreachable!();

@@ -17,7 +17,7 @@ mod e2e_amm {
     use hyle_contract_sdk::{
         erc20::{ERC20Action, ERC20},
         identity_provider::{IdentityAction, IdentityVerification},
-        BlobIndex, ContractName,
+        BlobIndex, ContractName, HyleOutput,
     };
     use hyrun::{CliCommand, HydentityArgs};
 
@@ -627,35 +627,33 @@ mod e2e_amm {
         let bob_transfer_proof = proof_generator.read_proof(2);
         let amm_transfer_from_proof = proof_generator.read_proof(3);
 
-        info!("➡️  Sending proof for hydentity");
-        ctx.send_proof(
-            "hydentity".into(),
-            ProofData::Bytes(hydentity_proof),
-            blob_tx_hash.clone(),
-        )
-        .await?;
+        let recursive_proof = proof_generator
+            .generate_recursive_proof(
+                &[
+                    hyle_contracts::HYDENTITY_ID,
+                    hyle_contracts::AMM_ID,
+                    hyle_contracts::HYLLAR_ID,
+                    hyle_contracts::HYLLAR_ID,
+                ],
+                &[
+                    &hydentity_proof,
+                    &bob_swap_proof,
+                    &bob_transfer_proof,
+                    &amm_transfer_from_proof,
+                ],
+            )
+            .await;
 
-        info!("➡️  Sending swap for amm");
-        ctx.send_proof(
-            AMM_CONTRACT_NAME.into(),
-            ProofData::Bytes(bob_swap_proof),
-            blob_tx_hash.clone(),
-        )
-        .await?;
-
-        info!("➡️  Sending transfer for hyllar");
-        ctx.send_proof(
-            "hyllar".into(),
-            ProofData::Bytes(bob_transfer_proof),
-            blob_tx_hash.clone(),
-        )
-        .await?;
-
-        info!("➡️  Sending swap for hyllar2");
-        ctx.send_proof(
-            "hyllar2".into(),
-            ProofData::Bytes(amm_transfer_from_proof),
-            blob_tx_hash.clone(),
+        info!("➡️  Sending recursive proof for hydentity, amm, hyllar and hyllar2");
+        ctx.send_recursive_proof(
+            "risc0-recursion".into(),
+            ProofData::Bytes(recursive_proof),
+            vec![
+                (blob_tx_hash.clone(), "hydentity".into()),
+                (blob_tx_hash.clone(), AMM_CONTRACT_NAME.into()),
+                (blob_tx_hash.clone(), "hyllar".into()),
+                (blob_tx_hash.clone(), "hyllar2".into()),
+            ],
         )
         .await?;
 
