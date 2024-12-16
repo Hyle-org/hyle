@@ -57,6 +57,7 @@ pub enum ConsensusCommand {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct CommittedConsensusProposal {
+    pub validators: Vec<ValidatorPublicKey>,
     pub consensus_proposal: ConsensusProposal,
     pub certificate: QuorumCertificate,
 }
@@ -103,14 +104,14 @@ struct ConsensusBusClient {
 
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, PartialEq, Eq, Hash)]
 pub struct ValidatorCandidacy {
-    pubkey: ValidatorPublicKey,
-    peer_address: String,
+    pub pubkey: ValidatorPublicKey,
+    pub peer_address: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode, PartialEq, Eq, Hash)]
 pub struct NewValidatorCandidate {
     pub pubkey: ValidatorPublicKey, // TODO: possible optim: the pubkey is already present in the msg,
-    msg: SignedByValidator<ConsensusNetMessage>,
+    pub msg: SignedByValidator<ConsensusNetMessage>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, PartialEq, Eq, Hash, Default)]
@@ -689,11 +690,12 @@ impl Consensus {
             .bus
             .send(ConsensusEvent::CommitConsensusProposal(
                 CommittedConsensusProposal {
+                    validators: self.bft_round_state.staking.bonded().clone(),
                     consensus_proposal: self.bft_round_state.consensus_proposal.clone(),
                     certificate: commit_quorum_certificate.clone(),
                 },
             ))
-            .expect("Failed to send ConsensusEvent::CommitCut on the bus");
+            .expect("Failed to send ConsensusEvent::CommittedConsensusProposal on the bus");
 
         info!(
             "📈 Slot {} committed",
@@ -857,6 +859,7 @@ impl Consensus {
             listen<GenesisEvent> msg => {
                 match msg {
                     GenesisEvent::GenesisBlock { initial_validators, ..} => {
+
                         self.bft_round_state.consensus_proposal.round_leader =
                             initial_validators.first().unwrap().clone();
 

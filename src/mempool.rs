@@ -23,7 +23,6 @@ use anyhow::{bail, Context, Result};
 use api::RestApiMessage;
 use bincode::{Decode, Encode};
 use hyle_contract_sdk::{ContractName, ProgramId, Verifier};
-use indexmap::IndexMap;
 use metrics::MempoolMetrics;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -107,9 +106,6 @@ impl Display for MempoolNetMessage {
 }
 
 impl BusMessage for MempoolNetMessage {}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-struct LightLane(DataProposalHash, IndexMap<DataProposalHash, DataProposal>);
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub enum MempoolEvent {
@@ -323,12 +319,21 @@ impl Mempool {
         let mut result: Vec<(ValidatorPublicKey, Vec<DataProposal>)> = vec![];
         // Try to return the asked data proposals
         for (validator, to_hash) in to {
-            let entries = self.storage.get_lane_entries_between_hashes(
-                validator,
-                // get start hash for validator
-                from.and_then(|f| f.iter().find(|el| &el.0 == validator).map(|el| &el.1)),
-                to_hash,
-            );
+            // FIXME: use from : &Cut instead of Option
+            let from_hash = from
+                .and_then(|f| f.iter().find(|el| &el.0 == validator))
+                .map(|el| &el.1);
+
+            let entries = self
+                .storage
+                .get_lane_entries_between_hashes(
+                    validator, // get start hash for validator
+                    from_hash, to_hash,
+                )
+                .context(format!(
+                    "Lane entries from {:?} to {:?} not available locally",
+                    from, to
+                ))?;
 
             result.push((
                 validator.clone(),
@@ -362,14 +367,18 @@ impl Mempool {
     fn handle_consensus_event(&mut self, event: ConsensusEvent) -> Result<()> {
         match event {
             ConsensusEvent::CommitConsensusProposal(CommittedConsensusProposal {
+                validators,
                 consensus_proposal,
-                certificate,
+                certificate: _,
             }) => {
                 debug!(
                     "✂️ Received CommittedConsensusProposal (slot {}, {:?} cut)",
                     consensus_proposal.slot, consensus_proposal.cut
                 );
-                self.validators = certificate.validators;
+
+                self.validators = validators;
+
+                // Fetch in advance data proposals
                 self.fetch_unknown_data_proposals(&consensus_proposal.cut)?;
 
                 Ok(())
@@ -410,13 +419,14 @@ impl Mempool {
         }
 
         let validator = &msg.signature.validator;
-        if !self.validators.contains(validator) {
-            bail!(
-                "Received {} message from unknown validator {validator}. Only accepting {:?}",
-                msg.msg,
-                self.validators
-            );
-        }
+        // TODO: adapt can_rejoin test to emit a stake tx before turning on the joining node
+        // if !self.validators.contains(validator) {
+        //     bail!(
+        //         "Received {} message from unknown validator {validator}. Only accepting {:?}",
+        //         msg.msg,
+        //         self.validators
+        //     );
+        // }
 
         match msg.msg {
             MempoolNetMessage::DataProposal(data_proposal) => {
@@ -488,9 +498,9 @@ impl Mempool {
         );
 
         match missing_lane_entries {
-            None => info!("Can't send sync reply as there are no missing data proposals found between {:?} and {:?} for {}", to_data_proposal_hash, from_data_proposal_hash, self.storage.id),
-            Some(lane_entries) if lane_entries.is_empty() => {}
-            Some(lane_entries) => {
+            Err(e) => info!("Can't send sync reply as there are no missing data proposals found between {:?} and {:?} for {}: {}", to_data_proposal_hash, from_data_proposal_hash, self.storage.id, e),
+            Ok(None) => {}
+            Ok(Some(lane_entries)) => {
                 debug!(
                     "Missing data proposals on {} are {:?}",
                     validator, lane_entries

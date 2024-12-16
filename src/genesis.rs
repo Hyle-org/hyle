@@ -107,6 +107,8 @@ impl Genesis {
         let mut initial_validators = self.peer_pubkey.values().cloned().collect::<Vec<_>>();
         initial_validators.sort();
 
+        info!("Genesis validators {:?}", initial_validators.clone());
+
         let stake_txs = self
             .peer_pubkey
             .iter()

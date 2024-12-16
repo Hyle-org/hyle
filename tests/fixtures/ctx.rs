@@ -135,9 +135,8 @@ impl E2ECtx {
             .iter()
             .map(|node| node.conf.host.clone())
             .collect();
-        let node = test_helpers::TestProcess::new("node", node_conf)
-            //.log("hyle=info,tower_http=error")
-            .start();
+        let node = test_helpers::TestProcess::new("node", node_conf);
+        //.log("hyle=info,tower_http=error")
         // Request something on node1 to be sure it's alive and working
         let client = ApiHttpClient {
             url: Url::parse(&format!("http://{}", &node.conf.rest)).unwrap(),

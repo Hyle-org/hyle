@@ -15,7 +15,10 @@ use blocks_sled::Blocks;
 
 use crate::{
     bus::{command_response::Query, BusClientSender, BusMessage},
-    consensus::{CommittedConsensusProposal, ConsensusCommand, ConsensusEvent, ConsensusProposal},
+    consensus::{
+        CommittedConsensusProposal, ConsensusCommand, ConsensusEvent, ConsensusProposal,
+        NewValidatorCandidate, ValidatorCandidacy,
+    },
     genesis::GenesisEvent,
     mempool::{
         storage::{Cut, DataProposal},
@@ -26,10 +29,10 @@ use crate::{
         SharedRunContext, SignedBlock, ValidatorPublicKey,
     },
     module_handle_messages,
-    p2p::network::{NetMessage, OutboundMessage, PeerEvent},
+    p2p::network::{NetMessage, OutboundMessage, PeerEvent, SignedByValidator},
     utils::{
         conf::SharedConf,
-        crypto::{AggregateSignature, Signature},
+        crypto::{AggregateSignature, Signature, ValidatorSignature},
         logger::LogMe,
         modules::{module_bus_client, Module},
     },
@@ -212,7 +215,7 @@ impl DataAvailability {
 
             listen<GenesisEvent> cmd => {
                 if let GenesisEvent::GenesisBlock { initial_validators, genesis_txs } = cmd {
-                    debug!("🌱  Genesis block received");
+                    debug!("🌱  Genesis block received with validators {:?}", initial_validators.clone());
 
                     let dp = DataProposal {
                         id:0,
@@ -230,7 +233,7 @@ impl DataAvailability {
                         )],
                         certificate: AggregateSignature {
                             signature: Signature("fake".into()),
-                            validators: initial_validators
+                            validators: initial_validators.clone()
                         },
                         consensus_proposal: ConsensusProposal {
                             slot: 0,
@@ -239,7 +242,20 @@ impl DataAvailability {
                             cut: vec![(
                                 round_leader.clone(), dp.hash()
                             )],
-                            new_validators_to_bond: vec![]
+                            new_validators_to_bond: initial_validators.iter().map(|v| NewValidatorCandidate {
+                                pubkey: v.clone(),
+                                msg: SignedByValidator {
+                                    msg: crate::consensus::ConsensusNetMessage::ValidatorCandidacy(ValidatorCandidacy{
+                                        pubkey: v.clone(),
+                                        peer_address: "".into()
+
+                                    }),
+                                    signature: ValidatorSignature {
+                                        signature: Signature("".into()),
+                                        validator: v.clone()
+                                    }
+                                }
+                            }).collect()
                         },
                     };
 
@@ -369,6 +385,8 @@ impl DataAvailability {
             "Handling Committed Consensus Proposal {:?}",
             &commit_consensus_proposal
         );
+
+        // FIXME: Make sure the block we get is the previous one wrt the committedConsensusProposal
         let to = commit_consensus_proposal.consensus_proposal.cut.clone();
         let from = self.blocks.last().map(|b| b.consensus_proposal.cut);
 
@@ -419,6 +437,7 @@ impl DataAvailability {
         &mut self,
         data_proposals: Vec<(ValidatorPublicKey, Vec<DataProposal>)>,
         CommittedConsensusProposal {
+            validators: _,
             certificate,
             consensus_proposal,
         }: CommittedConsensusProposal,
@@ -432,13 +451,14 @@ impl DataAvailability {
                 "46696174206c757820657420666163746120657374206c7578",
             ));
 
-        self.handle_processed_block(SignedBlock {
+        let signed_block = SignedBlock {
             parent_hash,
             data_proposals,
             certificate,
             consensus_proposal,
-        })
-        .await;
+        };
+
+        self.handle_processed_block(signed_block).await;
     }
 
     async fn handle_processed_block(&mut self, block: SignedBlock) {
@@ -801,6 +821,7 @@ mod tests {
         da_stream.close().await.unwrap();
 
         let mut ccp = CommittedConsensusProposal {
+            validators: vec![],
             consensus_proposal: ConsensusProposal::default(),
             certificate: AggregateSignature {
                 signature: crate::utils::crypto::Signature("signature".into()),

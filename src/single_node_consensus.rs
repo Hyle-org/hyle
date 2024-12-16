@@ -161,8 +161,11 @@ impl SingleNodeConsensus {
             &[],
         )?;
 
+        let pubkey = self.crypto.validator_pubkey().clone();
+
         _ = self.bus.send(ConsensusEvent::CommitConsensusProposal(
             CommittedConsensusProposal {
+                validators: vec![pubkey],
                 consensus_proposal,
                 certificate: certificate.signature,
             },
