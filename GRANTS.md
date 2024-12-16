@@ -42,4 +42,4 @@ Please contact us [through this form](https://docs.google.com/forms/d/e/1FAIpQLS
 
 ### Utilities
 
-- Proof of residency
+- [Proof of residency](https://github.com/rutefig/proof-of-residency)
