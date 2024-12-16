@@ -474,17 +474,17 @@ mod tests {
             let (mut genesis, mut bus) = new(config.clone()).await;
             bus.send(PeerEvent::NewPeer {
                 name: "node-2".into(),
-                pubkey: ValidatorPublicKey("node-2".into()).clone(),
+                pubkey: BlstCrypto::new("node-2".into()).validator_pubkey().clone(),
             })
             .expect("send");
             bus.send(PeerEvent::NewPeer {
                 name: "node-3".into(),
-                pubkey: ValidatorPublicKey("node-3".into()).clone(),
+                pubkey: BlstCrypto::new("node-3".into()).validator_pubkey().clone(),
             })
             .expect("send");
             bus.send(PeerEvent::NewPeer {
                 name: "node-4".into(),
-                pubkey: ValidatorPublicKey("node-4".into()).clone(),
+                pubkey: BlstCrypto::new("node-4".into()).validator_pubkey().clone(),
             })
             .expect("send");
             let _ = genesis.start().await;
@@ -494,17 +494,17 @@ mod tests {
             let (mut genesis, mut bus) = new(config).await;
             bus.send(PeerEvent::NewPeer {
                 name: "node-4".into(),
-                pubkey: ValidatorPublicKey("node-4".into()).clone(),
+                pubkey: BlstCrypto::new("node-4".into()).validator_pubkey().clone(),
             })
             .expect("send");
             bus.send(PeerEvent::NewPeer {
                 name: "node-2".into(),
-                pubkey: ValidatorPublicKey("node-2".into()).clone(),
+                pubkey: BlstCrypto::new("node-2".into()).validator_pubkey().clone(),
             })
             .expect("send");
             bus.send(PeerEvent::NewPeer {
                 name: "node-3".into(),
-                pubkey: ValidatorPublicKey("node-3".into()).clone(),
+                pubkey: BlstCrypto::new("node-3".into()).validator_pubkey().clone(),
             })
             .expect("send");
             let _ = genesis.start().await;
