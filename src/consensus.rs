@@ -1169,13 +1169,13 @@ pub mod test {
             self.consensus
                 .bft_round_state
                 .staking
-                .stake("trusted".into(), 100)
+                .stake(hex::encode(pubkey.0.clone()).into(), 100)
                 .unwrap();
 
             self.consensus
                 .bft_round_state
                 .staking
-                .delegate_to("trusted".into(), pubkey.clone())
+                .delegate_to(hex::encode(pubkey.0.clone()).into(), pubkey.clone())
                 .unwrap();
 
             self.consensus
@@ -1220,22 +1220,19 @@ pub mod test {
             info!("➕ {} Add staker: {:?}", self.name, staker.name);
             self.consensus
                 .handle_data_event(DataEvent::NewBlock(Box::new(Block {
-                    //stakers: vec![Staker {
-                    //    pubkey: staker.pubkey(),
-                    //    stake: Stake { amount },
-                    //}],
+                    staking_actions: vec![
+                        (staker.name.clone().into(), StakingAction::Stake { amount }),
+                        (
+                            staker.name.clone().into(),
+                            StakingAction::Delegate {
+                                validator: staker.pubkey(),
+                            },
+                        ),
+                    ],
                     ..Default::default()
                 })))
                 .await
                 .expect(err);
-            // TODO: delegate
-            //self.consensus
-            //    .handle_command(ConsensusCommand::NewStakingAction {
-            //        identity: "test".into(),
-            //        action: StakingAction::Delegate { "node-1".into() },
-            //    })
-            //    .await
-            //    .expect(err);
         }
 
         async fn add_bonded_staker(&mut self, staker: &Self, amount: u128, err: &str) {
@@ -1249,14 +1246,18 @@ pub mod test {
                 .expect(err)
         }
 
-        async fn with_stake(&mut self, amount: u64, err: &str) {
-            // TODO
+        async fn with_stake(&mut self, amount: u128, err: &str) {
             self.consensus
                 .handle_data_event(DataEvent::NewBlock(Box::new(Block {
-                    //stakers: vec![Staker {
-                    //    pubkey: self.consensus.crypto.validator_pubkey().clone(),
-                    //    stake: Stake { amount },
-                    //}],
+                    staking_actions: vec![
+                        (self.name.clone().into(), StakingAction::Stake { amount }),
+                        (
+                            self.name.clone().into(),
+                            StakingAction::Delegate {
+                                validator: self.consensus.crypto.validator_pubkey().clone(),
+                            },
+                        ),
+                    ],
                     ..Default::default()
                 })))
                 .await
