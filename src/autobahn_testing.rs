@@ -159,7 +159,7 @@ pub mod test {
     use crate::consensus::test::ConsensusTestCtx;
     use crate::consensus::{ConsensusEvent, ConsensusNetMessage};
     use crate::handle_messages;
-    use crate::mempool::storage::Cut;
+    use crate::mempool::storage::{Cut, DataProposalHash};
     use crate::mempool::test::{make_register_contract_tx, MempoolTestCtx};
     use crate::mempool::{MempoolEvent, MempoolNetMessage, QueryNewCut};
     use crate::model::{ContractName, Hashable};
@@ -249,6 +249,27 @@ pub mod test {
         }
     }
 
+    fn create_poda(
+        data_proposal_hash: DataProposalHash,
+        nodes: &[&AutobahnTestCtx],
+    ) -> crypto::Signed<MempoolNetMessage, crypto::AggregateSignature> {
+        let msg = MempoolNetMessage::DataVote(data_proposal_hash);
+        let signed_messages: Vec<crypto::Signed<MempoolNetMessage, crypto::ValidatorSignature>> =
+            nodes
+                .iter()
+                .map(|node| {
+                    node.mempool_ctx
+                        .mempool
+                        .sign_net_message(msg.clone())
+                        .unwrap()
+                })
+                .collect();
+
+        let aggregates: Vec<&crypto::Signed<MempoolNetMessage, crypto::ValidatorSignature>> =
+            signed_messages.iter().collect();
+        BlstCrypto::aggregate(msg, &aggregates).unwrap()
+    }
+
     #[test_log::test(tokio::test)]
     async fn autobahn_basic_flow() {
         let (mut node1, mut node2, mut node3, mut node4) = build_nodes!(4).await;
@@ -287,30 +308,10 @@ pub mod test {
 
         let consensus_proposal;
 
-        let msg = MempoolNetMessage::DataVote(data_proposal_hash_node1.clone());
-        let aggregates = &[
-            &node1
-                .mempool_ctx
-                .mempool
-                .sign_net_message(msg.clone())
-                .unwrap(),
-            &node2
-                .mempool_ctx
-                .mempool
-                .sign_net_message(msg.clone())
-                .unwrap(),
-            &node3
-                .mempool_ctx
-                .mempool
-                .sign_net_message(msg.clone())
-                .unwrap(),
-            &node4
-                .mempool_ctx
-                .mempool
-                .sign_net_message(msg.clone())
-                .unwrap(),
-        ];
-        let poda = BlstCrypto::aggregate(msg, aggregates).unwrap();
+        let poda = create_poda(
+            data_proposal_hash_node1.clone(),
+            &[&node1, &node2, &node3, &node4],
+        );
 
         broadcast! {
             description: "Prepare",

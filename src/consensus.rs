@@ -397,7 +397,7 @@ impl Consensus {
             // Verify that PoDA signature is valid
             let msg = MempoolNetMessage::DataVote(data_proposal_hash.clone());
             match BlstCrypto::verify_aggregate(&Signed {
-                msg: msg.clone(),
+                msg,
                 signature: poda_sig.clone(),
             }) {
                 Ok(valid) => {
