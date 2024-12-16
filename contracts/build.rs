@@ -2,6 +2,29 @@
 #[cfg(any(clippy, not(feature = "build")))]
 fn main() {}
 
+use cargo_manifest::Manifest;
+
+#[allow(unused)]
+fn retain_guests(manifest: &[u8], guests: &[&str]) -> Manifest {
+    let mut manifest = Manifest::from_slice(manifest).expect("failed to parse Cargo.toml");
+
+    manifest
+        .package
+        .as_mut()
+        .unwrap()
+        .metadata
+        .as_mut()
+        .unwrap()
+        .get_mut("risc0")
+        .unwrap()
+        .get_mut("methods")
+        .unwrap()
+        .as_array_mut()
+        .unwrap()
+        .retain(|method| guests.contains(&method.as_str().unwrap()));
+    manifest
+}
+
 #[cfg(all(not(clippy), feature = "build"))]
 fn main() {
     // clippy in workspace mode sets this, which interferes with the guest VM. Clear it temporarily.
@@ -17,25 +40,64 @@ fn main() {
 
     let mut options = HashMap::new();
 
-    ["amm", "hydentity", "hyllar", "staking", "risc0-recursion"]
-        .iter()
-        .for_each(|name| {
-            options.insert(
-                *name,
-                GuestOptions {
-                    features: vec!["risc0".to_owned()],
-                    use_docker: match reproducible {
-                        true => Some(DockerOptions {
-                            // Point to the workspace
-                            root_dir: Some("..".into()),
-                        }),
-                        false => None,
-                    },
+    let build = [
+        #[cfg(feature = "amm")]
+        "amm",
+        #[cfg(feature = "hydentity")]
+        "hydentity",
+        #[cfg(feature = "hyllar")]
+        "hyllar",
+        #[cfg(feature = "staking")]
+        "staking",
+        #[cfg(feature = "risc0-recursion")]
+        "risc0-recursion",
+    ];
+
+    build.iter().for_each(|name| {
+        options.insert(
+            *name,
+            GuestOptions {
+                features: vec!["risc0".to_owned()],
+                use_docker: match reproducible {
+                    true => Some(DockerOptions {
+                        // Point to the workspace
+                        root_dir: Some("..".into()),
+                    }),
+                    false => None,
                 },
-            );
-        });
+            },
+        );
+    });
+
+    #[cfg(not(feature = "all_guests"))]
+    let results = {
+        // HACK until risc0 supports this: ppen our own cargo.toml, tweak the risc0 methods, then save it back.
+        let cargo_toml = std::fs::read("Cargo.toml").expect("failed to read Cargo.toml");
+
+        // Retain only the guests we're building and save back to disk.
+        let manifest = retain_guests(&cargo_toml, &build);
+
+        std::fs::write(
+            "Cargo.toml",
+            toml::to_string(&manifest).expect("failed to serialize Cargo.toml"),
+        )
+        .expect("failed to write Cargo.toml");
+
+        // Build the guests.
+        let results = risc0_build::embed_methods_with_options(options);
+
+        // Revert the Cargo.toml back to its original state.
+        std::fs::write(
+            "Cargo.toml",
+            std::str::from_utf8(&cargo_toml).expect("failed to write Cargo.toml"),
+        )
+        .expect("failed to write Cargo.toml");
+
+        results
+    };
 
     // Build the guests.
+    #[cfg(feature = "all_guests")]
     let results = risc0_build::embed_methods_with_options(options);
 
     if reproducible {
