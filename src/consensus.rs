@@ -413,12 +413,12 @@ impl Consensus {
 
     fn get_own_voting_power(&self) -> u128 {
         if self.is_part_of_consensus(self.crypto.validator_pubkey()) {
-            if let Some(my_sake) = self
+            if let Some(my_stake) = self
                 .bft_round_state
                 .staking
                 .get_stake(self.crypto.validator_pubkey())
             {
-                my_sake
+                my_stake
             } else {
                 panic!("I'm not in my own staking registry !")
             }
