@@ -326,7 +326,7 @@ impl FollowerRole for Consensus {
             return Ok(());
         }
 
-        let f = self.compute_f();
+        let f = self.bft_round_state.staking.compute_f();
 
         let timeout_validators = self
             .store
@@ -338,7 +338,11 @@ impl FollowerRole for Consensus {
             .collect::<Vec<ValidatorPublicKey>>();
 
         let mut len = timeout_validators.len();
-        let mut voting_power = self.compute_voting_power(&timeout_validators);
+
+        let mut voting_power = self
+            .bft_round_state
+            .staking
+            .compute_voting_power(&timeout_validators);
 
         info!("Got {voting_power} voting power with {len} timeout requests for the same view {}. f is {f}", self.store.bft_round_state.consensus_proposal.view);
 

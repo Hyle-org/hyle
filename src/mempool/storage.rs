@@ -3,6 +3,7 @@ use bincode::{Decode, Encode};
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Sha3_256};
+use staking::Staking;
 use std::{collections::HashMap, fmt::Display, hash::Hash, vec};
 use tracing::{debug, error, warn};
 
@@ -101,10 +102,11 @@ impl Storage {
         }
     }
 
-    pub fn new_cut(&mut self, validators: &[ValidatorPublicKey]) -> Cut {
+    pub fn new_cut(&mut self, staking: &Staking) -> Cut {
         // For each validator, we get the last validated car and put it in the cut
         let mut cut: Cut = vec![];
-        for validator in validators.iter() {
+        let bonded_validators = staking.bonded();
+        for validator in bonded_validators.iter() {
             // Get lane of the validator. Create a new empty one is it does not exist
             let lane = self.lanes.entry(validator.clone()).or_default();
 
@@ -124,9 +126,25 @@ impl Storage {
                 // Filter signatures on DataProposal to only keep the ones from the current validators
                 let filtered_signatures: Vec<SignedByValidator<MempoolNetMessage>> = signatures
                     .iter()
-                    .filter(|signed_msg| validators.contains(&signed_msg.signature.validator))
+                    .filter(|signed_msg| {
+                        bonded_validators.contains(&signed_msg.signature.validator)
+                    })
                     .cloned()
                     .collect();
+
+                // Collect all filtered validators that signed the DataProposal
+                let filtered_validators: Vec<ValidatorPublicKey> = filtered_signatures
+                    .iter()
+                    .map(|s| s.signature.validator.clone())
+                    .collect();
+
+                // Compute their voting power to check if the DataProposal received enough votes
+                let voting_power = staking.compute_voting_power(filtered_validators.as_slice());
+                let f = staking.compute_f();
+                if voting_power < f + 1 {
+                    // Check if previous DataProposals received enough votes
+                    continue;
+                }
 
                 // Aggregate the signatures in a PoDA
                 let poda = match BlstCrypto::aggregate(
@@ -709,6 +727,7 @@ mod tests {
         utils::crypto,
     };
     use hyle_contract_sdk::{BlobIndex, HyleOutput, Identity, ProgramId, StateDigest, TxHash};
+    use staking::{Stake, Staker, Staking};
 
     use super::{DataProposal, Lane};
 
@@ -1481,6 +1500,25 @@ mod tests {
         let mut store2 = Storage::new(pubkey2.clone());
         let known_contracts1 = KnownContracts::default();
         let known_contracts2 = KnownContracts::default();
+        let mut staking = Staking::default();
+        staking
+            .add_staker(Staker {
+                pubkey: pubkey1.clone(),
+                stake: Stake { amount: 100 },
+            })
+            .expect("could not stake");
+        staking
+            .add_staker(Staker {
+                pubkey: pubkey2.clone(),
+                stake: Stake { amount: 100 },
+            })
+            .expect("could not stake");
+        staking
+            .bond(pubkey1.clone())
+            .expect("Could not bond pubkey1");
+        staking
+            .bond(pubkey2.clone())
+            .expect("Could not bond pubkey2");
 
         store1.on_new_tx(make_blob_tx("tx1"));
         store1.new_data_proposal(&crypto1);
@@ -1508,8 +1546,8 @@ mod tests {
             DataProposalVerdict::Vote
         );
 
-        let cut1 = store1.new_cut(&[pubkey1.clone(), pubkey2.clone()]);
-        let cut2 = store2.new_cut(&[pubkey1.clone(), pubkey2.clone()]);
+        let cut1 = store1.new_cut(&staking);
+        let cut2 = store2.new_cut(&staking);
         assert_eq!(cut1.len(), 2);
         let txs1 = store1.collect_txs_from_lanes(cut1);
         let txs2 = store2.collect_txs_from_lanes(cut2);
@@ -1529,15 +1567,15 @@ mod tests {
             DataProposalVerdict::Vote
         );
 
-        let cut1 = store1.new_cut(&[pubkey1.clone(), pubkey2.clone()]);
-        let cut2 = store2.new_cut(&[pubkey1.clone(), pubkey2.clone()]);
+        let cut1 = store1.new_cut(&staking);
+        let cut2 = store2.new_cut(&staking);
         assert_eq!(cut1.len(), 1);
         let txs1 = store1.collect_txs_from_lanes(cut1);
         let txs2 = store2.collect_txs_from_lanes(cut2);
         assert_eq!(txs1, vec![make_blob_tx("tx3")]);
         assert_eq!(txs1, txs2);
 
-        let cut2 = store1.new_cut(&[pubkey2.clone(), pubkey1.clone()]);
+        let cut2 = store1.new_cut(&staking);
         assert_eq!(cut2.len(), 0);
     }
 
@@ -1550,6 +1588,26 @@ mod tests {
         let pubkey2 = crypto2.validator_pubkey();
 
         let mut store1 = Storage::new(pubkey1.clone());
+        let mut staking = Staking::default();
+        staking
+            .add_staker(Staker {
+                pubkey: pubkey1.clone(),
+                stake: Stake { amount: 100 },
+            })
+            .expect("could not stake");
+        staking
+            .add_staker(Staker {
+                pubkey: pubkey2.clone(),
+                stake: Stake { amount: 100 },
+            })
+            .expect("could not stake");
+
+        staking
+            .bond(pubkey1.clone())
+            .expect("Could not bond pubkey1");
+        staking
+            .bond(pubkey2.clone())
+            .expect("Could not bond pubkey2");
 
         store1.on_new_tx(make_blob_tx("tx1"));
         store1.new_data_proposal(&crypto1);
@@ -1569,7 +1627,7 @@ mod tests {
             .on_data_vote(&msg2, &data_proposal_hash)
             .expect("Expect vote success");
 
-        let cut = store1.new_cut(&[pubkey1.clone(), pubkey2.clone()]);
+        let cut = store1.new_cut(&staking);
         let poda = cut[0].2.clone();
 
         assert!(poda.validators.contains(pubkey1));

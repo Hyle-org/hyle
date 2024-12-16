@@ -222,8 +222,8 @@ pub mod test {
 
         /// Spawn a coroutine to answer the command response call of start_round, with the current current of mempool
         async fn start_round_with_cut_from_mempool(&mut self) {
-            let mut validators = self.consensus_ctx.validators();
-            let latest_cut: Cut = self.mempool_ctx.gen_cut(&validators);
+            let staking = self.consensus_ctx.staking();
+            let latest_cut: Cut = self.mempool_ctx.gen_cut(&staking);
 
             let mut autobahn_client_bus =
                 AutobahnBusClient::new_from_bus(self.shared_bus.new_handle()).await;
@@ -234,9 +234,7 @@ pub mod test {
                 handle_messages! {
                     on_bus autobahn_client_bus,
                     listen<Query<QueryNewCut, Cut>> qnc => {
-                        if let Ok(mut value) = qnc.take() {
-                            let QueryNewCut(data) = &mut value.data;
-                            assert_eq!(&mut validators, data);
+                        if let Ok(value) = qnc.take() {
                             value.answer(latest_cut.clone()).expect("error when injecting cut");
 
                             break;

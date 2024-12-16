@@ -26,6 +26,7 @@ use bincode::{Decode, Encode};
 use hyle_contract_sdk::{ContractName, ProgramId, Verifier};
 use metrics::MempoolMetrics;
 use serde::{Deserialize, Serialize};
+use staking::Staking;
 use std::{
     collections::{HashMap, HashSet},
     fmt::Display,
@@ -42,7 +43,7 @@ pub mod metrics;
 pub mod storage;
 
 #[derive(Debug, Clone)]
-pub struct QueryNewCut(pub Vec<ValidatorPublicKey>);
+pub struct QueryNewCut(pub Staking);
 
 #[derive(Debug, Default, Clone, Encode, Decode)]
 pub struct KnownContracts(pub HashMap<ContractName, (Verifier, ProgramId)>);
@@ -214,9 +215,9 @@ impl Mempool {
     }
 
     /// Creates a cut with local material on QueryNewCut message reception (from consensus)
-    fn handle_querynewcut(&mut self, validators: &mut QueryNewCut) -> Cut {
-        self.metrics.add_new_cut(validators);
-        self.storage.new_cut(&validators.0)
+    fn handle_querynewcut(&mut self, staking: &mut QueryNewCut) -> Cut {
+        self.metrics.add_new_cut(staking);
+        self.storage.new_cut(&staking.0)
     }
 
     fn handle_api_message(&mut self, command: RestApiMessage) -> Result<()> {
@@ -665,6 +666,7 @@ pub mod test {
     use crate::p2p::network::NetMessage;
     use anyhow::Result;
     use hyle_contract_sdk::StateDigest;
+    use staking::{Stake, Staker};
     use tokio::sync::broadcast::Receiver;
 
     pub struct MempoolTestCtx {
@@ -722,9 +724,9 @@ pub mod test {
             self.mempool.crypto.validator_pubkey().clone()
         }
 
-        pub fn gen_cut(&mut self, validators: &[ValidatorPublicKey]) -> Cut {
+        pub fn gen_cut(&mut self, staking: &Staking) -> Cut {
             self.mempool
-                .handle_querynewcut(&mut QueryNewCut(validators.to_vec()))
+                .handle_querynewcut(&mut QueryNewCut(staking.clone()))
         }
 
         pub fn make_data_proposal_with_pending_txs(&mut self) -> Result<()> {
@@ -900,11 +902,9 @@ pub mod test {
         // Sending transaction to mempool as RestApiMessage
         let register_tx = make_register_contract_tx(ContractName("test1".to_owned()));
 
-        ctx.mempool
-            .handle_api_message(RestApiMessage::NewTx(register_tx.clone()))
-            .expect("fail to handle new transaction");
+        ctx.submit_tx(&register_tx);
 
-        ctx.mempool.handle_data_proposal_management()?;
+        ctx.make_data_proposal_with_pending_txs()?;
 
         let data_proposal = match ctx.assert_broadcast("DataProposal").msg {
             MempoolNetMessage::DataProposal(data_proposal) => data_proposal,
@@ -932,7 +932,7 @@ pub mod test {
             "validator2".to_owned().as_bytes().to_vec(),
         ));
 
-        ctx.mempool.handle_data_proposal_management()?;
+        ctx.make_data_proposal_with_pending_txs()?;
         let data_proposal = match ctx.assert_broadcast_only_for("DataProposal").msg {
             MempoolNetMessage::DataProposal(data_proposal) => data_proposal,
             _ => panic!("Expected DataProposal message"),
@@ -986,9 +986,7 @@ pub mod test {
         // Sending transaction to mempool as RestApiMessage
         let register_tx = make_register_contract_tx(ContractName("test1".to_owned()));
 
-        ctx.mempool
-            .handle_api_message(RestApiMessage::NewTx(register_tx.clone()))
-            .expect("fail to handle new transaction");
+        ctx.submit_tx(&register_tx);
 
         let data_proposal = DataProposal {
             id: 0,
@@ -1016,9 +1014,7 @@ pub mod test {
         // Sending transaction to mempool as RestApiMessage
         let register_tx = make_register_contract_tx(ContractName("test1".to_owned()));
 
-        ctx.mempool
-            .handle_api_message(RestApiMessage::NewTx(register_tx.clone()))
-            .expect("fail to handle new transaction");
+        ctx.submit_tx(&register_tx);
 
         let data_proposal = DataProposal {
             id: 0,
@@ -1027,7 +1023,7 @@ pub mod test {
         };
         let data_proposal_hash = data_proposal.hash();
 
-        ctx.mempool.handle_data_proposal_management()?;
+        ctx.make_data_proposal_with_pending_txs()?;
 
         // Add new validator
         let crypto2 = BlstCrypto::new("2".into());
@@ -1064,11 +1060,9 @@ pub mod test {
         // Sending transaction to mempool as RestApiMessage
         let register_tx = make_register_contract_tx(ContractName("test1".to_owned()));
 
-        ctx.mempool
-            .handle_api_message(RestApiMessage::NewTx(register_tx.clone()))
-            .expect("fail to handle new transaction");
+        ctx.submit_tx(&register_tx);
 
-        ctx.mempool.handle_data_proposal_management()?;
+        ctx.make_data_proposal_with_pending_txs()?;
 
         // Add new validator
         let crypto2 = BlstCrypto::new("2".into());
@@ -1091,11 +1085,9 @@ pub mod test {
         // Sending transaction to mempool as RestApiMessage
         let register_tx = make_register_contract_tx(ContractName("test1".to_owned()));
 
-        ctx.mempool
-            .handle_api_message(RestApiMessage::NewTx(register_tx.clone()))
-            .expect("fail to handle new transaction");
+        ctx.submit_tx(&register_tx);
 
-        ctx.mempool.handle_data_proposal_management()?;
+        ctx.make_data_proposal_with_pending_txs()?;
 
         let data_proposal = match ctx.assert_broadcast("DataProposal").msg {
             MempoolNetMessage::DataProposal(data_proposal) => data_proposal,
@@ -1133,11 +1125,9 @@ pub mod test {
         // Sending transaction to mempool as RestApiMessage
         let register_tx = make_register_contract_tx(ContractName("test1".to_owned()));
 
-        ctx.mempool
-            .handle_api_message(RestApiMessage::NewTx(register_tx.clone()))
-            .expect("fail to handle new transaction");
+        ctx.submit_tx(&register_tx);
 
-        ctx.mempool.handle_data_proposal_management()?;
+        ctx.make_data_proposal_with_pending_txs()?;
 
         let data_proposal = match ctx.assert_broadcast("DataProposal").msg {
             MempoolNetMessage::DataProposal(data_proposal) => data_proposal,
@@ -1183,11 +1173,8 @@ pub mod test {
         let register_tx1 = make_register_contract_tx(ContractName("test1".to_owned()));
         let register_tx2 = make_register_contract_tx(ContractName("test2".to_owned()));
 
-        ctx.mempool
-            .handle_api_message(RestApiMessage::NewTx(register_tx1.clone()))
-            .expect("fail to handle new transaction");
-
-        ctx.mempool.handle_data_proposal_management()?;
+        ctx.submit_tx(&register_tx1);
+        ctx.make_data_proposal_with_pending_txs()?;
 
         // Add new validator
         let crypto2 = BlstCrypto::new("2".into());
@@ -1208,11 +1195,27 @@ pub mod test {
             .handle_net_message(signed_msg)
             .expect("should handle net message");
 
-        let cut = ctx.mempool.handle_querynewcut(&mut QueryNewCut(vec![
-            ctx.mempool.crypto.validator_pubkey().clone(),
-            crypto2.validator_pubkey().clone(),
-        ]));
+        let mut staking = Staking::default();
+        staking
+            .add_staker(Staker {
+                pubkey: ctx.mempool.crypto.validator_pubkey().clone(),
+                stake: Stake { amount: 100 },
+            })
+            .expect("could not stake");
+        staking
+            .add_staker(Staker {
+                pubkey: crypto2.validator_pubkey().clone(),
+                stake: Stake { amount: 100 },
+            })
+            .expect("could not stake");
+        staking
+            .bond(ctx.mempool.crypto.validator_pubkey().clone())
+            .expect("Could not bond pubkey1");
+        staking
+            .bond(crypto2.validator_pubkey().clone())
+            .expect("Could not bond pubkey1");
 
+        let cut = ctx.gen_cut(&staking);
         ctx.mempool
             .handle_consensus_event(ConsensusEvent::CommitCut {
                 cut: cut.clone(),

@@ -375,11 +375,14 @@ impl Consensus {
     /// - Each DataProposal associated with a validator must have received sufficient signatures.
     /// - The aggregated signatures for each DataProposal must be valid.
     fn verify_poda(&mut self, consensus_proposal: &ConsensusProposal) -> Result<()> {
-        let f = self.compute_f();
+        let f = self.bft_round_state.staking.compute_f();
 
         let accepted_validators = self.bft_round_state.staking.bonded();
         for (validator, data_proposal_hash, poda_sig) in &consensus_proposal.cut {
-            let voting_power = self.compute_voting_power(poda_sig.validators.as_slice());
+            let voting_power = self
+                .bft_round_state
+                .staking
+                .compute_voting_power(poda_sig.validators.as_slice());
 
             // Verify that the validator is part of the consensus
             if !accepted_validators.contains(validator) {
@@ -449,10 +452,6 @@ impl Consensus {
         }
     }
 
-    fn compute_f(&self) -> u64 {
-        self.bft_round_state.staking.total_bond().div_ceil(3)
-    }
-
     fn get_own_voting_power(&self) -> u64 {
         if self.is_part_of_consensus(self.crypto.validator_pubkey()) {
             if let Some(my_sake) = self
@@ -467,13 +466,6 @@ impl Consensus {
         } else {
             0
         }
-    }
-
-    fn compute_voting_power(&self, validators: &[ValidatorPublicKey]) -> u64 {
-        validators
-            .iter()
-            .flat_map(|v| self.bft_round_state.staking.get_stake(v).map(|s| s.amount))
-            .sum::<u64>()
     }
 
     /// Verify that:
@@ -514,9 +506,12 @@ impl Consensus {
         // This helpfully ignores any signatures that would not be actually part of the consensus
         // since those would have voting power 0.
         // TODO: should we reject such messages?
-        let voting_power = self.compute_voting_power(quorum_certificate.validators.as_slice());
+        let voting_power = self
+            .bft_round_state
+            .staking
+            .compute_voting_power(quorum_certificate.validators.as_slice());
 
-        let f = self.compute_f();
+        let f = self.bft_round_state.staking.compute_f();
 
         info!(
             "📩 Slot {} validated votes: {} / {} ({} validators for a total bond = {})",
@@ -1180,8 +1175,8 @@ pub mod test {
             self.consensus.crypto.validator_pubkey().clone()
         }
 
-        pub fn validators(&self) -> Vec<ValidatorPublicKey> {
-            self.consensus.bft_round_state.staking.bonded().clone()
+        pub fn staking(&self) -> Staking {
+            self.consensus.bft_round_state.staking.clone()
         }
 
         pub async fn timeout(nodes: &mut [&mut ConsensusTestCtx]) {

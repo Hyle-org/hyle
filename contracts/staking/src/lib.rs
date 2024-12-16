@@ -102,6 +102,18 @@ impl Staking {
         self.total_bond
     }
 
+    /// Compute f value
+    pub fn compute_f(&self) -> u64 {
+        self.total_bond().div_ceil(3)
+    }
+
+    pub fn compute_voting_power(&self, validators: &[ValidatorPublicKey]) -> u64 {
+        validators
+            .iter()
+            .flat_map(|v| self.get_stake(v).map(|s| s.amount))
+            .sum::<u64>()
+    }
+
     /// Get the stake for a validator
     pub fn get_stake(&self, validator: &ValidatorPublicKey) -> Option<Stake> {
         self.stakers

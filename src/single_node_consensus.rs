@@ -16,6 +16,7 @@ use crate::utils::modules::module_bus_client;
 use crate::{handle_messages, model::SharedRunContext, utils::modules::Module};
 use anyhow::Result;
 use bincode::{Decode, Encode};
+use staking::{Stake, Staker, Staking};
 use tracing::warn;
 
 module_bus_client! {
@@ -31,6 +32,7 @@ struct SingleNodeConsensusBusClient {
 
 #[derive(Encode, Decode, Default)]
 struct SingleNodeConsensusStore {
+    staking: Staking,
     has_done_genesis: bool,
     last_cut: Cut,
 }
@@ -91,6 +93,14 @@ impl Module for SingleNodeConsensus {
 
 impl SingleNodeConsensus {
     async fn start(&mut self) -> Result<()> {
+        let pubkey = self.crypto.validator_pubkey();
+        if !self.store.staking.is_bonded(pubkey) {
+            let _ = self.store.staking.add_staker(Staker {
+                pubkey: pubkey.clone(),
+                stake: Stake { amount: 100 },
+            });
+            let _ = self.store.staking.bond(pubkey.clone());
+        }
         // On peut Query DA pour récuperer le dernier block/cut ?
         if !self.store.has_done_genesis {
             // This is the genesis
@@ -172,11 +182,11 @@ impl SingleNodeConsensus {
 
     async fn handle_new_slot_tick(&mut self) -> Result<()> {
         // Query a new cut to Mempool in order to create a new CommitCut
-        let validators = vec![
-            self.data_proposal_signer.validator_pubkey().clone(),
-            self.crypto.validator_pubkey().clone(),
-        ];
-        match self.bus.request(QueryNewCut(validators.clone())).await {
+        match self
+            .bus
+            .request(QueryNewCut(self.store.staking.clone()))
+            .await
+        {
             Ok(cut) => {
                 self.store.last_cut = cut.clone();
             }
@@ -186,6 +196,7 @@ impl SingleNodeConsensus {
             }
         };
 
+        let validators = vec![self.crypto.validator_pubkey().clone()];
         _ = self.bus.send(ConsensusEvent::CommitCut {
             validators,
             cut: self.store.last_cut.clone(),
