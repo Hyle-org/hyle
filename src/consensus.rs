@@ -693,7 +693,6 @@ impl Consensus {
                     certificate: commit_quorum_certificate.clone(),
                 },
             ))
-            // TODO: investigate if those are necessary here
             .expect("Failed to send ConsensusEvent::CommitCut on the bus");
 
         info!(
@@ -749,11 +748,11 @@ impl Consensus {
         match msg {
             DataEvent::NewBlock(block) => {
                 let block_total_tx = block.total_txs();
-                for stake in block.stakers {
+                for staker in block.stakers {
                     self.store
                         .bft_round_state
                         .staking
-                        .add_staker(stake)
+                        .add_staker(staker)
                         .map_err(|e| anyhow!(e))?;
                 }
                 for validator in block.new_bounded_validators.iter() {

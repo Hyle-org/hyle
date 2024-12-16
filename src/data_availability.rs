@@ -55,14 +55,14 @@ use tracing::{debug, error, info, trace, warn};
 
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, Eq, PartialEq)]
 pub enum DataNetMessage {
-    QueryProcessedBlock {
+    QuerySignedBlock {
         respond_to: ValidatorPublicKey,
         hash: BlockHash,
     },
-    QueryLastProcessedBlock {
+    QueryLastSignedBlock {
         respond_to: ValidatorPublicKey,
     },
-    QueryProcessedBlockResponse {
+    QuerySignedBlockResponse {
         block: Box<SignedBlock>,
     },
 }
@@ -121,7 +121,7 @@ pub struct DataAvailability {
     bus: DABusClient,
     pub blocks: Blocks,
 
-    buffered_processed_blocks: BTreeSet<SignedBlock>,
+    buffered_signed_blocks: BTreeSet<SignedBlock>,
     pending_cps: VecDeque<CommittedConsensusProposal>,
     pending_data_proposals: Vec<(Cut, PendingDataProposals)>,
     self_pubkey: ValidatorPublicKey,
@@ -166,7 +166,7 @@ impl Module for DataAvailability {
                     .data_directory
                     .join("data_availability.db"),
             )?,
-            buffered_processed_blocks: buffered_blocks,
+            buffered_signed_blocks: buffered_blocks,
 
             pending_cps: VecDeque::new(),
             pending_data_proposals: vec![],
@@ -382,30 +382,30 @@ impl DataAvailability {
 
     async fn handle_data_message(&mut self, msg: DataNetMessage) -> Result<()> {
         match msg {
-            DataNetMessage::QueryProcessedBlock { respond_to, hash } => {
+            DataNetMessage::QuerySignedBlock { respond_to, hash } => {
                 self.blocks.get(hash).map(|block| {
                     if let Some(block) = block {
                         _ = self.bus.send(OutboundMessage::send(
                             respond_to,
-                            DataNetMessage::QueryProcessedBlockResponse {
+                            DataNetMessage::QuerySignedBlockResponse {
                                 block: Box::new(block),
                             },
                         ));
                     }
                 })?;
             }
-            DataNetMessage::QueryProcessedBlockResponse { block } => {
+            DataNetMessage::QuerySignedBlockResponse { block } => {
                 debug!(
                     block_hash = %block.hash(),
                     block_height = %block.height(),
                     "⬇️  Received block data");
                 self.handle_processed_block(*block).await;
             }
-            DataNetMessage::QueryLastProcessedBlock { respond_to } => {
+            DataNetMessage::QueryLastSignedBlock { respond_to } => {
                 if let Some(block) = self.blocks.last() {
                     _ = self.bus.send(OutboundMessage::send(
                         respond_to,
-                        DataNetMessage::QueryProcessedBlockResponse {
+                        DataNetMessage::QuerySignedBlockResponse {
                             block: Box::new(block.clone()),
                         },
                     ));
@@ -463,7 +463,7 @@ impl DataAvailability {
                 );
                 self.query_block(block.parent_hash.clone());
                 debug!("Buffering block {}", block.hash());
-                self.buffered_processed_blocks.insert(block);
+                self.buffered_signed_blocks.insert(block);
                 return;
             }
         // if genesis block is missing, buffer
@@ -474,7 +474,7 @@ impl DataAvailability {
             );
             self.query_block(block.parent_hash.clone());
             trace!("Buffering block {}", block.hash());
-            self.buffered_processed_blocks.insert(block);
+            self.buffered_signed_blocks.insert(block);
             return;
         }
 
@@ -484,15 +484,15 @@ impl DataAvailability {
     }
 
     async fn pop_buffer(&mut self, mut last_block_hash: BlockHash) {
-        let got_buffered = !self.buffered_processed_blocks.is_empty();
+        let got_buffered = !self.buffered_signed_blocks.is_empty();
         // Iterative loop to avoid stack overflows
-        while let Some(first_buffered) = self.buffered_processed_blocks.first() {
+        while let Some(first_buffered) = self.buffered_signed_blocks.first() {
             if first_buffered.parent_hash != last_block_hash {
                 error!("Buffered block parent hash does not match last block hash");
                 break;
             }
 
-            let first_buffered = self.buffered_processed_blocks.pop_first().unwrap();
+            let first_buffered = self.buffered_signed_blocks.pop_first().unwrap();
             last_block_hash = first_buffered.hash();
             self.add_processed_block(first_buffered).await;
         }
@@ -569,7 +569,7 @@ impl DataAvailability {
 
     fn query_block(&mut self, hash: BlockHash) {
         _ = self.bus.send(OutboundMessage::broadcast(
-            DataNetMessage::QueryProcessedBlock {
+            DataNetMessage::QuerySignedBlock {
                 respond_to: self.self_pubkey.clone(),
                 hash,
             },
@@ -580,7 +580,7 @@ impl DataAvailability {
         if let Some(pubkey) = &self.asked_last_processed_block {
             _ = self.bus.send(OutboundMessage::send(
                 pubkey.clone(),
-                DataNetMessage::QueryLastProcessedBlock {
+                DataNetMessage::QueryLastSignedBlock {
                     respond_to: self.self_pubkey.clone(),
                 },
             ));
@@ -699,7 +699,7 @@ mod tests {
             blocks,
             pending_data_proposals: vec![],
             pending_cps: VecDeque::new(),
-            buffered_processed_blocks: Default::default(),
+            buffered_signed_blocks: Default::default(),
             self_pubkey: Default::default(),
             asked_last_processed_block: Default::default(),
             stream_peer_metadata: Default::default(),
@@ -749,7 +749,7 @@ mod tests {
             blocks,
             pending_data_proposals: vec![],
             pending_cps: VecDeque::new(),
-            buffered_processed_blocks: Default::default(),
+            buffered_signed_blocks: Default::default(),
             self_pubkey: Default::default(),
             asked_last_processed_block: Default::default(),
             stream_peer_metadata: Default::default(),
