@@ -5,6 +5,12 @@ mod fixtures;
 
 mod e2e_consensus {
 
+    use hydentity::Hydentity;
+    use hyle::tools::{
+        contract_runner::fetch_current_state, transactions_builder::TransactionBuilder,
+    };
+    use hyle_contract_sdk::Identity;
+
     use super::*;
 
     #[test_log::test(tokio::test)]
@@ -36,14 +42,31 @@ mod e2e_consensus {
 
         assert!(node_info.pubkey.is_some());
 
-        // TODO replace
-        //ctx.client()
-        //    .send_stake_tx(&Staker {
-        //        pubkey: node_info.pubkey.clone().unwrap(),
-        //        stake: Stake { amount: 100 },
-        //        identity: "test".into(),
-        //    })
-        //    .await?;
+        let hydentity_state = fetch_current_state::<Hydentity>(ctx.client(), &"hydentity".into())
+            .await
+            .unwrap();
+        let node_identity = Identity(format!("{}.hydentity", node_info.id));
+        {
+            let mut transaction = TransactionBuilder::new(node_identity.clone());
+            transaction.register_identity("password".to_string());
+        }
+        {
+            let mut transaction = TransactionBuilder::new("faucet.hydentity".into());
+
+            transaction
+                .verify_identity(&hydentity_state, "password".to_string())
+                .await?;
+            transaction.transfer("hyllar".into(), node_identity.0.clone(), 100);
+        }
+        {
+            let mut transaction = TransactionBuilder::new(node_identity.clone());
+
+            transaction
+                .verify_identity(&hydentity_state, "password".to_string())
+                .await?;
+            transaction.stake("hyllar".into(), "staking".into(), 100)?;
+            transaction.delegate(node_info.pubkey.clone().unwrap())?;
+        }
 
         // 2 slots to get the tx in a blocks
         // 1 slot to send the candidacy
