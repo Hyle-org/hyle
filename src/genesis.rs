@@ -278,6 +278,15 @@ impl Genesis {
                         contract_name: "hydentity".into(),
                     },
                 )),
+                Transaction::wrap(TransactionData::RegisterContract(
+                    RegisterContractTransaction {
+                        owner: "hyle".into(),
+                        verifier: "risc0".into(),
+                        program_id: hyle_contracts::RISC0_RECURSION_ID.to_vec().into(),
+                        state_digest: hyle_contract_sdk::StateDigest(vec![]),
+                        contract_name: "risc0-recursion".into(),
+                    },
+                )),
             ],
             states,
         )

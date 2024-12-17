@@ -6,12 +6,10 @@ use hyle::{
     utils::conf::{Conf, Consensus},
 };
 use rand::Rng;
-use std::{
-    process::{Child, Command},
-    time::Duration,
-};
+use std::time::Duration;
 use tempfile::TempDir;
-use tokio::time::timeout;
+use tokio::process::{Child, Command};
+use tokio::{io::AsyncBufReadExt, time::timeout};
 use tracing::info;
 
 pub struct ConfMaker {
@@ -77,16 +75,29 @@ pub struct TestProcess {
     #[allow(dead_code)]
     pub dir: TempDir,
     state: TestProcessState,
+
+    stdout: Option<tokio::task::JoinHandle<anyhow::Result<()>>>,
+    stderr: Option<tokio::task::JoinHandle<anyhow::Result<()>>>,
 }
 
+async fn stream_output<R: tokio::io::AsyncRead + Unpin>(output: R) -> anyhow::Result<()> {
+    let mut reader = tokio::io::BufReader::new(output).lines();
+    while let Some(line) = reader.next_line().await? {
+        println!("{}", line);
+    }
+    Ok(())
+}
 impl TestProcess {
     pub fn new(command: &str, mut conf: Conf) -> Self {
         info!("🚀 Starting process with conf: {:?}", conf);
-        let mut cargo_bin = Command::cargo_bin(command).unwrap();
+        let mut cargo_bin: Command = std::process::Command::cargo_bin(command).unwrap().into();
 
         // Create a temporary directory for the node
         let tmpdir = tempfile::Builder::new().prefix("hyle").tempdir().unwrap();
         let cmd = cargo_bin.current_dir(&tmpdir);
+        cmd.kill_on_drop(true);
+        cmd.stdout(std::process::Stdio::piped());
+        cmd.stderr(std::process::Stdio::piped());
 
         conf.data_directory = tmpdir.path().to_path_buf();
         // Serialize the configuration to a file
@@ -106,6 +117,8 @@ impl TestProcess {
             conf,
             dir: tmpdir,
             state: TestProcessState::Command(cargo_bin),
+            stdout: None,
+            stderr: None,
         }
     }
 
@@ -127,20 +140,14 @@ impl TestProcess {
                 panic!("Process already started: {:?}", child.id());
             }
         };
-        self
-    }
-}
+        if let TestProcessState::Child(child) = &mut self.state {
+            let stdout = child.stdout.take().expect("Failed to capture stdout");
+            let stderr = child.stderr.take().expect("Failed to capture stderr");
 
-// Drop implem to be sure that process is well stopped
-impl Drop for TestProcess {
-    fn drop(&mut self) {
-        match &mut self.state {
-            TestProcessState::Command(_) => (),
-            TestProcessState::Child(child) => {
-                child.kill().unwrap();
-                child.wait().unwrap();
-            }
+            self.stdout = Some(tokio::task::spawn(stream_output(stdout)));
+            self.stderr = Some(tokio::task::spawn(stream_output(stderr)));
         }
+        self
     }
 }
 

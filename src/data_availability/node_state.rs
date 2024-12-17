@@ -69,6 +69,9 @@ impl NodeState {
                 TransactionData::Proof(_) => {
                     error!("Unverified proof transaction should not be in a block");
                 }
+                TransactionData::RecursiveProof(_) => {
+                    error!("Unverified recursive proof transaction should not be in a block");
+                }
                 TransactionData::VerifiedProof(verified_proof_transaction) => {
                     match self.handle_verified_proof_tx(verified_proof_transaction) {
                         Ok(proof_tx_output) => {
@@ -96,6 +99,38 @@ impl NodeState {
                             failed_txs.push(tx.clone());
                         }
                     }
+                }
+                TransactionData::VerifiedRecursiveProof(rec_proof_tx) => {
+                    rec_proof_tx
+                        .verifies
+                        .iter()
+                        .for_each(|verified_proof_transaction| {
+                            match self.handle_verified_proof_tx(verified_proof_transaction) {
+                                Ok(proof_tx_output) => {
+                                    // When a proof tx is handled, three things happen:
+                                    // 1. Blobs get verified
+                                    // 2. Maybe: BlobTransactions get settled
+                                    // 3. Maybe: Contract state digests are updated
+
+                                    // Keep track of verified blobs
+                                    verified_blobs.push((
+                                        verified_proof_transaction.hyle_output.tx_hash.clone(),
+                                        verified_proof_transaction.hyle_output.index.clone(),
+                                    ));
+                                    // Keep track of settled txs
+                                    settled_blob_tx_hashes
+                                        .extend(proof_tx_output.settled_blob_tx_hashes);
+                                    // Update the contract's updated states
+                                    updated_states.extend(proof_tx_output.updated_states);
+                                    // Keep track of all verified proof txs
+                                    new_verified_proof_txs.push(tx.clone());
+                                }
+                                Err(e) => {
+                                    error!("Failed to handle proof transaction: {:?}", e);
+                                    failed_txs.push(tx.clone());
+                                }
+                            }
+                        });
                 }
                 TransactionData::RegisterContract(register_contract_transaction) => {
                     match self.handle_register_contract_tx(register_contract_transaction) {

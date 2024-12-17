@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use hyrun::{Cli, Context, ContractData};
 use risc0_recursion::ProofInput;
-use sdk::StateDigest;
+use sdk::{HyleOutput, StateDigest};
 
 #[test_log::test(test)]
 fn test_recursion() {
@@ -26,7 +26,7 @@ fn test_recursion() {
         cli: Cli {
             command: hyrun::CliCommand::Hydentity {
                 command: hyrun::HydentityArgs::Register {
-                    account: "toto".to_owned(),
+                    account: "toto1".to_owned(),
                 },
             },
             user: Some("bob".to_owned()),
@@ -36,7 +36,11 @@ fn test_recursion() {
             port: 0,
             proof_path: temp_dir.path().to_str().unwrap().to_owned(),
         },
-        contract_data: ContractData::default(),
+        contract_data: ContractData {
+            hydentity_elf: hyle_contracts::HYDENTITY_ELF.to_vec(),
+            hydentity_id: hyle_contracts::HYDENTITY_ID.to_vec(),
+            ..ContractData::default()
+        },
         hardcoded_initial_states: hardcoded_initial_states.clone(),
     });
     let first_proof = std::fs::read(format!(
@@ -48,7 +52,7 @@ fn test_recursion() {
         cli: Cli {
             command: hyrun::CliCommand::Hydentity {
                 command: hyrun::HydentityArgs::Register {
-                    account: "toto".to_owned(),
+                    account: "toto2".to_owned(),
                 },
             },
             user: Some("bob".to_owned()),
@@ -99,4 +103,21 @@ fn test_recursion() {
         .receipt;
 
     receipt.verify(hyle_contracts::RISC0_RECURSION_ID).unwrap();
+
+    let outputs: Vec<Vec<u8>> = receipt.journal.decode().expect("Failed to decode journal");
+    let hyle_outputs = outputs
+        .iter()
+        .map(|x| risc0_zkvm::serde::from_slice::<HyleOutput, _>(x).unwrap())
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        hyle_outputs.first().unwrap().program_outputs,
+        b"Successfully registered identity for account: toto1".to_vec()
+    );
+    assert_eq!(
+        hyle_outputs.last().unwrap().program_outputs,
+        b"Successfully registered identity for account: toto2".to_vec()
+    );
+
+    assert_eq!(outputs.len(), 2);
 }
