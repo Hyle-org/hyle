@@ -4,11 +4,6 @@ use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, fmt::Debug, path::PathBuf, sync::Arc};
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
-pub struct Storage {
-    pub interval: u64,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct Consensus {
     pub slot_duration: u64,
     pub genesis_stakers: HashMap<String, u64>,
@@ -26,7 +21,6 @@ pub struct Conf {
     pub host: String,
     pub p2p_listen: bool,
     pub peers: Vec<String>,
-    pub storage: Storage,
     pub consensus: Consensus,
     pub rest: String,
     pub database_url: String,

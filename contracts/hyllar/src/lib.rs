@@ -32,6 +32,18 @@ pub struct HyllarTokenContract {
 }
 
 impl HyllarToken {
+    pub fn init(
+        total_supply: u128,
+        balances: BTreeMap<String, u128>,
+        allowances: BTreeMap<(String, String), u128>,
+    ) -> Self {
+        HyllarToken {
+            total_supply,
+            balances,
+            allowances,
+        }
+    }
+
     /// Creates a new Hyllar token with the specified initial supply.
     ///
     /// # Arguments
