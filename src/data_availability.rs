@@ -326,7 +326,7 @@ impl DataAvailability {
                     if let Ok(Some(signed_block)) = self.blocks.get(hash)
                     {
                         // FIXME: we send unsigned blocks for now
-                        let block = self.node_state.handle_signed_block(&signed_block);
+                        let block: Block = self.node_state.handle_signed_block(&signed_block);
                         let bytes: bytes::Bytes =
                             bincode::encode_to_vec(block, bincode::config::standard())?.into();
                         if self.stream_peer_metadata
@@ -556,7 +556,7 @@ impl DataAvailability {
         let node_state_block = self.node_state.handle_signed_block(&block);
         _ = self
             .bus
-            .send(DataEvent::NewBlock(Box::new(node_state_block)))
+            .send(DataEvent::NewBlock(Box::new(node_state_block.clone())))
             .log_error("Sending DataEvent while processing SignedBlock");
 
         // Stream block to all peers
@@ -570,7 +570,8 @@ impl DataAvailability {
                 to_remove.push(peer_id.clone());
             } else {
                 info!("streaming block {} to peer {}", block.hash(), &peer_id);
-                match bincode::encode_to_vec(block.clone(), bincode::config::standard()) {
+                match bincode::encode_to_vec(node_state_block.clone(), bincode::config::standard())
+                {
                     Ok(bytes) => {
                         if let Err(e) = peer.sender.send(bytes.into()).await {
                             warn!("failed to send block to peer {}: {}", &peer_id, e);
