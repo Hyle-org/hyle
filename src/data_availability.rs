@@ -240,7 +240,10 @@ impl DataAvailability {
                             view: 0,
                             round_leader: round_leader.clone(),
                             cut: vec![(
-                                round_leader.clone(), dp.hash()
+                                round_leader.clone(), dp.hash(), AggregateSignature {
+                                    signature: Signature("fake".into()),
+                                    validators: initial_validators.clone()
+                                }
                             )],
                             new_validators_to_bond: initial_validators.iter().map(|v| NewValidatorCandidate {
                                 pubkey: v.clone(),

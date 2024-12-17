@@ -61,8 +61,13 @@ impl MempoolMetrics {
             .record(nb as u64, &[KeyValue::new("status", "pending")])
     }
     pub fn add_new_cut(&self, nc: &QueryNewCut) {
-        self.new_cut
-            .add(1, &[KeyValue::new("nb_validators", nc.0.len().to_string())])
+        self.new_cut.add(
+            1,
+            &[KeyValue::new(
+                "nb_validators",
+                nc.0.bonded().len().to_string(),
+            )],
+        )
     }
 
     pub fn add_proposed_txs(&self, dp: &DataProposal) {

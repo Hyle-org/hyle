@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use anyhow::{anyhow, Error, Result};
+use anyhow::{anyhow, bail, Error, Result};
 use blst::min_pk::{
     AggregatePublicKey, AggregateSignature as BlstAggregateSignature, PublicKey, SecretKey,
     Signature as BlstSignature,
@@ -54,7 +54,16 @@ pub struct ValidatorSignature {
 }
 
 #[derive(
-    Debug, Serialize, Deserialize, Clone, bincode::Encode, bincode::Decode, PartialEq, Eq, Hash,
+    Debug,
+    Default,
+    Serialize,
+    Deserialize,
+    Clone,
+    bincode::Encode,
+    bincode::Decode,
+    PartialEq,
+    Eq,
+    Hash,
 )]
 pub struct AggregateSignature {
     pub signature: Signature,
@@ -136,46 +145,62 @@ impl BlstCrypto {
     where
         T: bincode::Encode + Clone,
     {
-        let Aggregates { sigs, pks, mut val } = Self::extract_aggregates(aggregates)?;
+        let self_signed = self.sign(msg.clone())?;
+        Self::aggregate(msg, &[aggregates, &[&self_signed]].concat())
+    }
 
-        val.push(self.validator_pubkey.clone());
+    pub fn aggregate<T>(
+        msg: T,
+        aggregates: &[&SignedByValidator<T>],
+    ) -> Result<Signed<T, AggregateSignature>, Error>
+    where
+        T: bincode::Encode + Clone,
+    {
+        match aggregates.len() {
+            0 => bail!("No signatures to aggregate"),
+            1 => Ok(Signed {
+                msg,
+                signature: AggregateSignature {
+                    signature: aggregates[0].signature.signature.clone(),
+                    validators: vec![aggregates[0].signature.validator.clone()],
+                },
+            }),
+            _ => {
+                let Aggregates { sigs, pks, val } = Self::extract_aggregates(aggregates)?;
 
-        let mut sigs_refs: Vec<&BlstSignature> = sigs.iter().collect::<Vec<&BlstSignature>>();
-        let mut pks_refs: Vec<&PublicKey> = pks.iter().collect();
+                let pks_refs: Vec<&PublicKey> = pks.iter().collect();
+                let sigs_refs: Vec<&BlstSignature> = sigs.iter().collect();
 
-        let self_signed = self.sign_msg(&msg)?;
-        let pk = self.sk.sk_to_pk();
-        sigs_refs.push(&self_signed);
-        pks_refs.push(&pk);
+                let aggregated_pk = AggregatePublicKey::aggregate(&pks_refs, true)
+                    .map_err(|e| anyhow!("could not aggregate public keys: {:?}", e))?;
 
-        let pk = AggregatePublicKey::aggregate(&pks_refs, true)
-            .map_err(|e| anyhow!("could not aggregate public keys: {:?}", e))?;
+                let aggregated_sig = BlstAggregateSignature::aggregate(&sigs_refs, true)
+                    .map_err(|e| anyhow!("could not aggregate signatures: {:?}", e))?;
 
-        let sig = BlstAggregateSignature::aggregate(&sigs_refs, true)
-            .map_err(|e| anyhow!("could not aggregate signatures: {:?}", e))?;
+                let valid = Self::verify_aggregate(&Signed {
+                    msg: msg.clone(),
+                    signature: AggregateSignature {
+                        signature: aggregated_sig.to_signature().into(),
+                        validators: vec![as_validator_pubkey(aggregated_pk.to_public_key())],
+                    },
+                })
+                .map_err(|e| anyhow!("Failed for verify new aggregated signature! Reason: {e}"))?;
 
-        let valid = Self::verify_aggregate(&Signed {
-            msg: msg.clone(),
-            signature: AggregateSignature {
-                signature: sig.to_signature().into(),
-                validators: vec![as_validator_pubkey(pk.to_public_key())],
-            },
-        })
-        .map_err(|e| anyhow!("Failed for verify new aggregated signature! Reason: {e}"))?;
+                if !valid {
+                    return Err(anyhow!(
+                        "Failed to aggregate signatures into valid one. Messages might be different."
+                    ));
+                }
 
-        if !valid {
-            return Err(anyhow!(
-                "Failed to aggregate signatures into valid one. Messages might be different."
-            ));
+                Ok(Signed {
+                    msg,
+                    signature: AggregateSignature {
+                        signature: aggregated_sig.to_signature().into(),
+                        validators: val,
+                    },
+                })
+            }
         }
-
-        Ok(Signed {
-            msg,
-            signature: AggregateSignature {
-                signature: sig.to_signature().into(),
-                validators: val,
-            },
-        })
     }
 
     fn sign_msg<T>(&self, msg: &T) -> Result<BlstSignature>
