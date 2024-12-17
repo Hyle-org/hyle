@@ -29,7 +29,7 @@ async fn send_proof(
     let proof = load_encoded_receipt_from_file(proof_file.as_str());
     let res = client
         .send_tx_proof(&SingleProofTransaction {
-            tx_hash: blob_tx_hash,
+            blob_tx_hash,
             contract_name,
             proof: ProofData::Bytes(proof),
         })

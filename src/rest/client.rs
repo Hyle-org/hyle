@@ -20,7 +20,7 @@ use super::NodeInfo;
 pub struct SingleProofTransaction {
     pub contract_name: ContractName,
     pub proof: ProofData,
-    pub tx_hash: TxHash,
+    pub blob_tx_hash: TxHash,
 }
 
 pub struct ApiHttpClient {

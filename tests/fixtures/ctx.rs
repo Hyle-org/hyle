@@ -14,11 +14,8 @@ use tracing::info;
 use hyle::{
     data_availability::node_state::model::Contract,
     indexer::model::ContractDb,
-    model::{
-        Blob, BlobTransaction, MultiProofTransaction, ProofData, ProofTransaction,
-        RegisterContractTransaction,
-    },
-    rest::client::ApiHttpClient,
+    model::{Blob, BlobTransaction, MultiProofTransaction, ProofData, RegisterContractTransaction},
+    rest::client::{ApiHttpClient, SingleProofTransaction},
 };
 use hyle_contract_sdk::{
     flatten_blobs, BlobIndex, ContractName, HyleOutput, Identity, ProgramId, StateDigest, TxHash,
@@ -270,7 +267,7 @@ impl E2ECtx {
     ) -> Result<()> {
         assert_ok!(self
             .client()
-            .send_tx_proof(&ProofTransaction {
+            .send_tx_proof(&SingleProofTransaction {
                 blob_tx_hash: blob_tx_hash.clone(),
                 contract_name: contract_name.clone(),
                 proof: proof.clone()
@@ -289,7 +286,7 @@ impl E2ECtx {
     ) -> Result<()> {
         assert_ok!(self
             .client()
-            .send_tx_recursive_proof(&MultiProofTransaction {
+            .send_tx_multi_proof(&MultiProofTransaction {
                 contract_name: via.clone(),
                 proof: proof.clone(),
                 verifies: verifies.clone(),

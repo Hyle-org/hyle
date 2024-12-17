@@ -268,9 +268,6 @@ impl Storage {
             // Get the last known parent hash in order to get all the next ones
             return DataProposalVerdict::Wait(last_known_parent_hash.cloned());
         }
-        // optimistic_known_contracts is here to handle the case where a contract is registered in a car that is not yet committed.
-        // For performance reasons, we only clone known_contracts in it for unregistered contracts that are potentially in those uncommitted cars.
-        let mut optimistically_known_contracts: Option<KnownContracts> = None;
         for tx in &data_proposal.txs {
             match &tx.transaction_data {
                 TransactionData::MultiProof(_) => {
@@ -300,8 +297,56 @@ impl Storage {
                     let (verifier, program_id) = match known_contracts.0.get(&proof_tx.via) {
                         Some((verifier, program_id)) => (verifier, program_id),
                         None => {
-                            warn!("Refusing DataProposal: contract not found");
-                            return DataProposalVerdict::Refuse;
+                            // Check if it's in the same data proposal.
+                            // (kind of inefficient, but it's mostly to make our tests work)
+                            // TODO: make this better.
+                            let data = data_proposal
+                                .txs
+                                .get(
+                                    0..data_proposal
+                                        .txs
+                                        .iter()
+                                        .position(|tx2| std::ptr::eq(tx, tx2))
+                                        .unwrap(),
+                                )
+                                .unwrap()
+                                .iter()
+                                .find_map(|tx| match &tx.transaction_data {
+                                    TransactionData::RegisterContract(tx) => {
+                                        if tx.contract_name == proof_tx.via {
+                                            Some((&tx.verifier, &tx.program_id))
+                                        } else {
+                                            None
+                                        }
+                                    }
+                                    _ => None,
+                                })
+                                .or_else(|| {
+                                    // Lane exists - we know its parent
+                                    self.lanes.get(validator).unwrap().iter_reverse().find_map(
+                                        |(_, entry)| {
+                                            entry.data_proposal.txs.iter().find_map(|tx| match &tx
+                                                .transaction_data
+                                            {
+                                                TransactionData::RegisterContract(tx) => {
+                                                    if tx.contract_name == proof_tx.via {
+                                                        Some((&tx.verifier, &tx.program_id))
+                                                    } else {
+                                                        None
+                                                    }
+                                                }
+                                                _ => None,
+                                            })
+                                        },
+                                    )
+                                });
+                            match data {
+                                Some(data) => data,
+                                None => {
+                                    warn!("Refusing DataProposal: contract not found");
+                                    return DataProposalVerdict::Refuse;
+                                }
+                            }
                         }
                     };
                     let proof_bytes = match proof.to_bytes() {
@@ -320,25 +365,6 @@ impl Storage {
                         }
                         Err(e) => {
                             warn!("Refusing DataProposal: invalid proof transaction: {}", e);
-                            return DataProposalVerdict::Refuse;
-                        }
-                    }
-                }
-                TransactionData::RegisterContract(register_contract_tx) => {
-                    if optimistically_known_contracts.is_none() {
-                        optimistically_known_contracts = Some(known_contracts.clone());
-                    }
-                    match optimistically_known_contracts
-                        .as_mut()
-                        .unwrap()
-                        .register_contract(
-                            &register_contract_tx.contract_name,
-                            &register_contract_tx.verifier,
-                            &register_contract_tx.program_id,
-                        ) {
-                        Ok(_) => (),
-                        Err(e) => {
-                            warn!("Refusing DataProposal: {}", e);
                             return DataProposalVerdict::Refuse;
                         }
                     }

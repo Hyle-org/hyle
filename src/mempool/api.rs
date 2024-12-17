@@ -84,7 +84,7 @@ pub async fn send_proof_transaction(
     handle_send(
         state,
         TransactionData::MultiProof(MultiProofTransaction {
-            verifies: vec![(payload.tx_hash, payload.contract_name.clone())],
+            verifies: vec![(payload.blob_tx_hash, payload.contract_name.clone())],
             contract_name: payload.contract_name,
             proof: payload.proof,
         }),
