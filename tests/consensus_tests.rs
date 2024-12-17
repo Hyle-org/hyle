@@ -6,13 +6,9 @@ mod fixtures;
 mod e2e_consensus {
 
     use fixtures::test_helpers::send_transaction;
-    use hydentity::Hydentity;
-    use hyle::{
-        model::{BlobTransaction, ProofData},
-        tools::{
-            contract_runner::fetch_current_state,
-            transactions_builder::{BuildResult, States, TransactionBuilder},
-        },
+    use hyle::tools::{
+        contract_runner::fetch_current_state,
+        transactions_builder::{States, TransactionBuilder},
     };
     use hyle_contract_sdk::Identity;
 
@@ -39,7 +35,7 @@ mod e2e_consensus {
     async fn can_rejoin() -> Result<()> {
         let mut ctx = E2ECtx::new_multi_with_indexer(2, 500).await?;
 
-        ctx.wait_height(2).await?;
+        ctx.wait_height(4).await?;
 
         let joining_client = ctx.add_node().await?;
 

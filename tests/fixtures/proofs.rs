@@ -1,11 +1,9 @@
 #![allow(unused)]
 
-use super::ctx::E2ECtx;
-use hyrun::{Cli, CliCommand};
+use std::collections::HashMap;
 
-const AMM_IMG: &[u8] = hyle_contracts::AMM_ELF;
-const HYDENTITY_IMG: &[u8] = hyle_contracts::HYDENTITY_ELF;
-const HYLLAR_IMG: &[u8] = hyle_contracts::HYLLAR_ELF;
+use super::ctx::E2ECtx;
+use hyrun::{Cli, CliCommand, Context, ContractData};
 
 pub struct HyrunProofGen {
     dir: tempfile::TempDir,
@@ -18,22 +16,6 @@ impl HyrunProofGen {
 
         std::env::set_var("RISC0_DEV_MODE", "1");
 
-        // Write our binary contract there
-        // Make sure to create directory if it doesn't exist
-        std::fs::create_dir_all(tempdir.path().join("contracts/hydentity")).unwrap();
-        std::fs::create_dir_all(tempdir.path().join("contracts/amm")).unwrap();
-        std::fs::create_dir_all(tempdir.path().join("contracts/hyllar")).unwrap();
-        std::fs::write(
-            tempdir.path().join("contracts/hydentity/hydentity.img"),
-            HYDENTITY_IMG,
-        )
-        .unwrap();
-        std::fs::write(tempdir.path().join("contracts/amm/amm.img"), AMM_IMG).unwrap();
-        std::fs::write(
-            tempdir.path().join("contracts/hyllar/hyllar.img"),
-            HYLLAR_IMG,
-        )
-        .unwrap();
         Self { dir: tempdir }
     }
 
@@ -48,16 +30,27 @@ impl HyrunProofGen {
     ) {
         let host = ctx.client().url.host().unwrap().to_string();
         let port = ctx.client().url.port().unwrap().into();
-        let path_prefix = self.dir.path().to_str().unwrap().to_owned() + "/";
+        let proof_path = self.dir.path().to_str().unwrap().to_owned() + "/";
         let _ = tokio::task::spawn_blocking(move || {
-            hyrun::run_command(Cli {
-                command,
-                user: Some(user.to_owned()),
-                password: Some(password.to_owned()),
-                nonce,
-                host,
-                port,
-                path_prefix,
+            hyrun::run_command(&Context {
+                cli: Cli {
+                    command,
+                    user: Some(user.to_owned()),
+                    password: Some(password.to_owned()),
+                    nonce,
+                    host,
+                    port,
+                    proof_path,
+                },
+                contract_data: ContractData {
+                    amm_elf: hyle_contracts::AMM_ELF.to_vec(),
+                    amm_id: hyle_contracts::AMM_ID.to_vec(),
+                    hyllar_elf: hyle_contracts::HYLLAR_ELF.to_vec(),
+                    hyllar_id: hyle_contracts::HYLLAR_ID.to_vec(),
+                    hydentity_elf: hyle_contracts::HYDENTITY_ELF.to_vec(),
+                    hydentity_id: hyle_contracts::HYDENTITY_ID.to_vec(),
+                },
+                hardcoded_initial_states: HashMap::new(),
             });
         })
         .await;

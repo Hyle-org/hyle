@@ -1,11 +1,12 @@
 use core::panic;
+use std::collections::HashMap;
 
 use amm::{AmmAction, AmmState};
 use hydentity::Hydentity;
 use hyllar::HyllarToken;
 use sdk::{
     erc20::ERC20Action, identity_provider::IdentityAction, BlobData, BlobIndex, ContractInput,
-    ContractName, TxHash,
+    ContractName, StateDigest, TxHash,
 };
 use serde::Deserialize;
 
@@ -109,25 +110,53 @@ pub struct Cli {
     pub port: u32,
 
     #[arg(long, default_value = "")]
-    pub path_prefix: String,
+    pub proof_path: String,
+}
+
+pub struct Context {
+    pub cli: Cli,
+    pub contract_data: ContractData,
+    pub hardcoded_initial_states: HashMap<String, StateDigest>,
+}
+
+pub struct ContractData {
+    pub amm_elf: Vec<u8>,
+    pub amm_id: Vec<u8>,
+    pub hydentity_elf: Vec<u8>,
+    pub hydentity_id: Vec<u8>,
+    pub hyllar_elf: Vec<u8>,
+    pub hyllar_id: Vec<u8>,
+}
+
+impl Default for ContractData {
+    fn default() -> Self {
+        Self {
+            amm_elf: include_bytes!("../../../contracts/amm/amm.img").to_vec(),
+            amm_id: include_bytes!("../../../contracts/amm/amm.txt").to_vec(),
+            hydentity_elf: include_bytes!("../../../contracts/hydentity/hydentity.img").to_vec(),
+            hydentity_id: include_bytes!("../../../contracts/hydentity/hydentity.txt").to_vec(),
+            hyllar_elf: include_bytes!("../../../contracts/hyllar/hyllar.img").to_vec(),
+            hyllar_id: include_bytes!("../../../contracts/hyllar/hyllar.txt").to_vec(),
+        }
+    }
 }
 
 // Public because it's used in integration tests.
-pub fn run_command(cli: Cli) {
-    match cli.command.clone() {
+pub fn run_command(context: &Context) {
+    match context.cli.command.clone() {
         CliCommand::State { contract } => match contract.as_str() {
             "hydentity" => {
-                let state = contract::fetch_current_state::<Hydentity>(&cli, &contract)
+                let state = contract::get_initial_state::<Hydentity>(context, &contract)
                     .expect("failed to fetch state");
                 println!("State: {:?}", state);
             }
             "hyllar" | "hyllar2" => {
-                let state = contract::fetch_current_state::<HyllarToken>(&cli, &contract)
+                let state = contract::get_initial_state::<HyllarToken>(context, &contract)
                     .expect("failed to fetch state");
                 println!("State: {:?}", state);
             }
             "amm" | "amm2" => {
-                let state = contract::fetch_current_state::<AmmState>(&cli, &contract)
+                let state = contract::get_initial_state::<AmmState>(context, &contract)
                     .expect("failed to fetch state");
                 println!("State: {:?}", state);
             }
@@ -135,16 +164,19 @@ pub fn run_command(cli: Cli) {
         },
         CliCommand::Hydentity { command } => {
             if matches!(command, HydentityArgs::Init) {
-                contract::init(&cli.path_prefix, "hydentity", Hydentity::new());
+                contract::init(context, "hydentity", Hydentity::new());
                 return;
             }
             let cf: IdentityAction = command.into();
             let identity = sdk::Identity(
-                cli.user
+                context
+                    .cli
+                    .user
                     .clone()
                     .unwrap_or_else(|| panic!("Missing user argument")),
             );
-            let password = cli
+            let password = context
+                .cli
                 .password
                 .clone()
                 .unwrap_or_else(|| panic!("Missing password argument"))
@@ -154,7 +186,7 @@ pub fn run_command(cli: Cli) {
             contract::print_hyled_blob_tx(&identity, &blobs);
 
             contract::run(
-                &cli,
+                context,
                 "hydentity",
                 |identities: Hydentity| -> ContractInput<Hydentity> {
                     ContractInput::<Hydentity> {
@@ -174,21 +206,24 @@ pub fn run_command(cli: Cli) {
         } => {
             if let HyllarArgs::Init { initial_supply } = command {
                 contract::init(
-                    &cli.path_prefix,
+                    context,
                     &hyllar_contract_name,
                     HyllarToken::new(initial_supply, "faucet.hydentity".to_string()),
                 );
                 return;
             }
             let cf: ERC20Action = command.into();
-            let identity = cli
+            let identity = context
+                .cli
                 .user
                 .clone()
                 .unwrap_or_else(|| panic!("Missing user argument"));
-            let nonce = cli
+            let nonce = context
+                .cli
                 .nonce
                 .unwrap_or_else(|| panic!("Missing nonce argument"));
-            let password = cli
+            let password = context
+                .cli
                 .password
                 .clone()
                 .unwrap_or_else(|| panic!("Missing password argument"))
@@ -206,7 +241,7 @@ pub fn run_command(cli: Cli) {
             contract::print_hyled_blob_tx(&identity.clone().into(), &blobs);
 
             contract::run(
-                &cli,
+                context,
                 "hydentity",
                 |token: hydentity::Hydentity| -> ContractInput<hydentity::Hydentity> {
                     ContractInput::<Hydentity> {
@@ -220,7 +255,7 @@ pub fn run_command(cli: Cli) {
                 },
             );
             contract::run(
-                &cli,
+                context,
                 &hyllar_contract_name,
                 |token: hyllar::HyllarToken| -> ContractInput<hyllar::HyllarToken> {
                     ContractInput::<HyllarToken> {
@@ -245,14 +280,17 @@ pub fn run_command(cli: Cli) {
                     amount_a,
                     amount_b,
                 } => {
-                    let identity = cli
+                    let identity = context
+                        .cli
                         .user
                         .clone()
                         .unwrap_or_else(|| panic!("Missing user argument"));
-                    let nonce = cli
+                    let nonce = context
+                        .cli
                         .nonce
                         .unwrap_or_else(|| panic!("Missing nonce argument"));
-                    let password = cli
+                    let password = context
+                        .cli
                         .password
                         .clone()
                         .unwrap_or_else(|| panic!("Missing password argument"))
@@ -298,7 +336,7 @@ pub fn run_command(cli: Cli) {
                     contract::print_hyled_blob_tx(&identity.clone().into(), &blobs);
 
                     contract::run(
-                        &cli,
+                        context,
                         "hydentity",
                         |token: hydentity::Hydentity| -> ContractInput<hydentity::Hydentity> {
                             ContractInput::<Hydentity> {
@@ -313,7 +351,7 @@ pub fn run_command(cli: Cli) {
                     );
                     // Run to add new pair to Amm
                     contract::run(
-                        &cli,
+                        context,
                         &amm_contract_name,
                         |amm: amm::AmmState| -> ContractInput<amm::AmmState> {
                             ContractInput::<AmmState> {
@@ -328,7 +366,7 @@ pub fn run_command(cli: Cli) {
                     );
                     // Run for transferring token_a
                     contract::run(
-                        &cli,
+                        context,
                         &token_a,
                         |token: hyllar::HyllarToken| -> ContractInput<hyllar::HyllarToken> {
                             ContractInput::<HyllarToken> {
@@ -344,7 +382,7 @@ pub fn run_command(cli: Cli) {
 
                     // Run for transferring token_b
                     contract::run(
-                        &cli,
+                        context,
                         &token_b,
                         |token: hyllar::HyllarToken| -> ContractInput<hyllar::HyllarToken> {
                             ContractInput::<HyllarToken> {
@@ -364,14 +402,17 @@ pub fn run_command(cli: Cli) {
                     amount_a,
                     amount_b,
                 } => {
-                    let identity = cli
+                    let identity = context
+                        .cli
                         .user
                         .clone()
                         .unwrap_or_else(|| panic!("Missing user argument"));
-                    let nonce = cli
+                    let nonce = context
+                        .cli
                         .nonce
                         .unwrap_or_else(|| panic!("Missing nonce argument"));
-                    let password = cli
+                    let password = context
+                        .cli
                         .password
                         .clone()
                         .unwrap_or_else(|| panic!("Missing password argument"))
@@ -417,7 +458,7 @@ pub fn run_command(cli: Cli) {
                     contract::print_hyled_blob_tx(&identity.clone().into(), &blobs);
 
                     contract::run(
-                        &cli,
+                        context,
                         "hydentity",
                         |token: hydentity::Hydentity| -> ContractInput<hydentity::Hydentity> {
                             ContractInput::<Hydentity> {
@@ -432,7 +473,7 @@ pub fn run_command(cli: Cli) {
                     );
                     // Run for swapping token_a for token_b
                     contract::run(
-                        &cli,
+                        context,
                         &amm_contract_name,
                         |amm: amm::AmmState| -> ContractInput<amm::AmmState> {
                             ContractInput::<AmmState> {
@@ -447,7 +488,7 @@ pub fn run_command(cli: Cli) {
                     );
                     // Run for transferring token_a
                     contract::run(
-                        &cli,
+                        context,
                         &token_a,
                         |token: hyllar::HyllarToken| -> ContractInput<hyllar::HyllarToken> {
                             ContractInput::<HyllarToken> {
@@ -463,7 +504,7 @@ pub fn run_command(cli: Cli) {
 
                     // Run for transferring token_b
                     contract::run(
-                        &cli,
+                        context,
                         &token_b,
                         |token: hyllar::HyllarToken| -> ContractInput<hyllar::HyllarToken> {
                             ContractInput::<HyllarToken> {

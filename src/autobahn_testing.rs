@@ -159,7 +159,7 @@ pub mod test {
     use crate::consensus::test::ConsensusTestCtx;
     use crate::consensus::{ConsensusEvent, ConsensusNetMessage};
     use crate::handle_messages;
-    use crate::mempool::storage::Cut;
+    use crate::mempool::storage::{Cut, DataProposalHash};
     use crate::mempool::test::{make_register_contract_tx, MempoolTestCtx};
     use crate::mempool::{MempoolEvent, MempoolNetMessage, QueryNewCut};
     use crate::model::{ContractName, Hashable};
@@ -222,8 +222,8 @@ pub mod test {
 
         /// Spawn a coroutine to answer the command response call of start_round, with the current current of mempool
         async fn start_round_with_cut_from_mempool(&mut self) {
-            let mut validators = self.consensus_ctx.validators();
-            let latest_cut: Cut = self.mempool_ctx.gen_cut(&validators);
+            let staking = self.consensus_ctx.staking();
+            let latest_cut: Cut = self.mempool_ctx.gen_cut(&staking);
 
             let mut autobahn_client_bus =
                 AutobahnBusClient::new_from_bus(self.shared_bus.new_handle()).await;
@@ -234,9 +234,7 @@ pub mod test {
                 handle_messages! {
                     on_bus autobahn_client_bus,
                     listen<Query<QueryNewCut, Cut>> qnc => {
-                        if let Ok(mut value) = qnc.take() {
-                            let QueryNewCut(data) = &mut value.data;
-                            assert_eq!(&mut validators, data);
+                        if let Ok(value) = qnc.take() {
                             value.answer(latest_cut.clone()).expect("error when injecting cut");
 
                             break;
@@ -247,6 +245,27 @@ pub mod test {
 
             self.consensus_ctx.start_round().await;
         }
+    }
+
+    fn create_poda(
+        data_proposal_hash: DataProposalHash,
+        nodes: &[&AutobahnTestCtx],
+    ) -> crypto::Signed<MempoolNetMessage, crypto::AggregateSignature> {
+        let msg = MempoolNetMessage::DataVote(data_proposal_hash);
+        let signed_messages: Vec<crypto::Signed<MempoolNetMessage, crypto::ValidatorSignature>> =
+            nodes
+                .iter()
+                .map(|node| {
+                    node.mempool_ctx
+                        .mempool
+                        .sign_net_message(msg.clone())
+                        .unwrap()
+                })
+                .collect();
+
+        let aggregates: Vec<&crypto::Signed<MempoolNetMessage, crypto::ValidatorSignature>> =
+            signed_messages.iter().collect();
+        BlstCrypto::aggregate(msg, &aggregates).unwrap()
     }
 
     #[test_log::test(tokio::test)]
@@ -287,6 +306,11 @@ pub mod test {
 
         let consensus_proposal;
 
+        let poda = create_poda(
+            data_proposal_hash_node1.clone(),
+            &[&node1, &node2, &node3, &node4],
+        );
+
         broadcast! {
             description: "Prepare",
             from: node1.consensus_ctx, to: [node2.consensus_ctx, node3.consensus_ctx, node4.consensus_ctx],
@@ -296,10 +320,10 @@ pub mod test {
                     cp
                         .get_cut()
                         .iter()
-                        .find(|(validator, _hash)|
+                        .find(|(validator, _hash, _poda)|
                             validator == &node1.consensus_ctx.pubkey()
                         ),
-                    Some((node1.consensus_ctx.pubkey(), data_proposal_hash_node1)).as_ref()
+                    Some((node1.consensus_ctx.pubkey(), data_proposal_hash_node1, poda.signature)).as_ref()
                 );
             }
         };

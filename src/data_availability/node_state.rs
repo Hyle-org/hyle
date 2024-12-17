@@ -1,8 +1,8 @@
 //! State required for participation in consensus by the node.
 
 use crate::model::{
-    BlobTransaction, BlobsHash, Block, BlockHash, BlockHeight, ContractName, Hashable,
-    RegisterContractTransaction, Transaction, TransactionData, ValidatorPublicKey,
+    get_current_timestamp, BlobTransaction, BlobsHash, Block, BlockHeight, ContractName, Hashable,
+    RegisterContractTransaction, SignedBlock, Transaction, TransactionData,
     VerifiedProofTransaction,
 };
 use anyhow::{bail, Context, Error, Result};
@@ -13,7 +13,7 @@ use hyle_contract_sdk::{
 use model::{Contract, Timeouts, UnsettledBlobMetadata, UnsettledBlobTransaction};
 use ordered_tx_map::OrderedTxMap;
 use staking::StakingAction;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use tracing::{debug, error, info};
 
 pub mod model;
@@ -33,21 +33,14 @@ pub struct NodeState {
 #[derive(Debug)]
 pub struct HandledProofTxOutput {
     pub settled_blob_tx_hashes: Vec<TxHash>,
-    pub updated_states: HashMap<ContractName, StateDigest>,
+    pub updated_states: BTreeMap<ContractName, StateDigest>,
     pub staking_actions: Vec<(Identity, StakingAction)>,
 }
 
 impl NodeState {
-    pub fn handle_new_cut(
-        &mut self,
-        block_height: BlockHeight,
-        block_parent_hash: BlockHash,
-        block_timestamp: u64,
-        new_bounded_validators: Vec<ValidatorPublicKey>,
-        txs: Vec<Transaction>,
-    ) -> Block {
-        let timed_out_tx_hashes = self.clear_timeouts(&block_height);
-        self.current_height = block_height;
+    pub fn handle_signed_block(&mut self, signed_block: &SignedBlock) -> Block {
+        let timed_out_tx_hashes = self.clear_timeouts(&signed_block.height());
+        self.current_height = signed_block.height();
 
         let mut new_contract_txs: Vec<Transaction> = vec![];
         let mut new_blob_txs: Vec<Transaction> = vec![];
@@ -56,10 +49,10 @@ impl NodeState {
         let mut failed_txs: Vec<Transaction> = vec![];
         let mut staking_actions: Vec<(Identity, StakingAction)> = vec![];
         let mut settled_blob_tx_hashes: Vec<TxHash> = vec![];
-        let mut updated_states: HashMap<ContractName, StateDigest> = HashMap::new();
+        let mut updated_states: BTreeMap<ContractName, StateDigest> = BTreeMap::new();
 
         // Handle all transactions
-        for tx in txs.iter() {
+        for tx in signed_block.txs().iter() {
             match &tx.transaction_data {
                 TransactionData::Blob(blob_transaction) => {
                     match self.handle_blob_tx(blob_transaction) {
@@ -118,18 +111,22 @@ impl NodeState {
             }
         }
         Block {
-            block_parent_hash,
-            block_height,
-            block_timestamp,
-
+            block_parent_hash: signed_block.parent_hash.clone(),
+            block_height: self.current_height,
+            // TODO: put timestamp in consensus proposal
+            block_timestamp: get_current_timestamp(),
             new_contract_txs,
             new_blob_txs,
             new_verified_proof_txs,
             verified_blobs,
             failed_txs,
-            new_bounded_validators,
             staking_actions,
-
+            new_bounded_validators: signed_block
+                .consensus_proposal
+                .new_validators_to_bond
+                .iter()
+                .map(|v| v.pubkey.clone())
+                .collect(),
             timed_out_tx_hashes,
             settled_blob_tx_hashes,
             updated_states,
@@ -158,6 +155,7 @@ impl NodeState {
     }
 
     fn handle_blob_tx(&mut self, tx: &BlobTransaction) -> Result<(), Error> {
+        debug!("Handle blob tx: {:?}", tx);
         let identity_parts: Vec<&str> = tx.identity.0.split('.').collect();
         if identity_parts.len() != 2 {
             bail!("Transaction identity is not correctly formed. It should be in the form <id>.<contract_id_name>");
@@ -248,7 +246,7 @@ impl NodeState {
             .push(tx.hyle_output.clone());
 
         let mut settled_blob_tx_hashes = vec![];
-        let updated_states = HashMap::new();
+        let updated_states = BTreeMap::new();
 
         if !is_next_to_settle {
             debug!(
@@ -307,9 +305,9 @@ impl NodeState {
 
     fn settle_blobs_recursively<'a>(
         contracts: &HashMap<ContractName, Contract>,
-        current_states: HashMap<ContractName, StateDigest>,
+        current_states: BTreeMap<ContractName, StateDigest>,
         mut blob_iter: impl Iterator<Item = &'a UnsettledBlobMetadata> + Clone,
-    ) -> (HashMap<ContractName, StateDigest>, bool) {
+    ) -> (BTreeMap<ContractName, StateDigest>, bool) {
         let Some(current_blob) = blob_iter.next() else {
             return (current_states, true);
         };

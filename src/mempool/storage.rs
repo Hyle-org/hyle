@@ -3,6 +3,7 @@ use bincode::{Decode, Encode};
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Sha3_256};
+use staking::state::Staking;
 use std::{collections::HashMap, fmt::Display, hash::Hash, vec};
 use tracing::{debug, error, warn};
 
@@ -10,6 +11,7 @@ use crate::{
     data_availability::node_state::verifiers::verify_proof,
     model::{Hashable, Transaction, TransactionData, ValidatorPublicKey},
     p2p::network::SignedByValidator,
+    utils::crypto::{AggregateSignature, BlstCrypto},
 };
 
 use super::{KnownContracts, MempoolNetMessage};
@@ -50,8 +52,8 @@ pub struct Storage {
     pub lanes: HashMap<ValidatorPublicKey, Lane>,
 }
 
-// TODO: Add PoDA in cut
-pub type Cut = Vec<(ValidatorPublicKey, DataProposalHash)>;
+pub type PoDA = AggregateSignature;
+pub type Cut = Vec<(ValidatorPublicKey, DataProposalHash, PoDA)>;
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, Encode, Decode, PartialEq, Eq, Hash)]
 pub struct DataProposalHash(pub String);
@@ -100,13 +102,11 @@ impl Storage {
         }
     }
 
-    pub fn new_cut(&mut self, validators: &[ValidatorPublicKey]) -> Cut {
-        // FIXME: use voting power
-        let f = validators.len() / 3;
-
+    pub fn new_cut(&mut self, staking: &Staking) -> Cut {
         // For each validator, we get the last validated car and put it in the cut
         let mut cut: Cut = vec![];
-        for validator in validators.iter() {
+        let bonded_validators = staking.bonded();
+        for validator in bonded_validators.iter() {
             // Get lane of the validator. Create a new empty one is it does not exist
             let lane = self.lanes.entry(validator.clone()).or_default();
 
@@ -119,19 +119,54 @@ impl Storage {
                 },
             ) in lane.iter_reverse()
             {
+                // Only cut on DataProposal that have not been cutted yet
+                if lane.last_cut == Some(data_proposal_hash.clone()) {
+                    break;
+                }
                 // Filter signatures on DataProposal to only keep the ones from the current validators
                 let filtered_signatures: Vec<SignedByValidator<MempoolNetMessage>> = signatures
                     .iter()
-                    .filter(|signed_msg| validators.contains(&signed_msg.signature.validator))
+                    .filter(|signed_msg| {
+                        bonded_validators.contains(&signed_msg.signature.validator)
+                    })
                     .cloned()
                     .collect();
 
-                // Check that at least f validators have signed the DataProposal
-                if filtered_signatures.len() >= f {
-                    // Add the DataProposal to the cut for this validator
-                    cut.push((validator.clone(), data_proposal_hash.clone()));
-                    break;
+                // Collect all filtered validators that signed the DataProposal
+                let filtered_validators: Vec<ValidatorPublicKey> = filtered_signatures
+                    .iter()
+                    .map(|s| s.signature.validator.clone())
+                    .collect();
+
+                // Compute their voting power to check if the DataProposal received enough votes
+                let voting_power = staking.compute_voting_power(filtered_validators.as_slice());
+                let f = staking.compute_f();
+                if voting_power < f + 1 {
+                    // Check if previous DataProposals received enough votes
+                    continue;
                 }
+
+                // Aggregate the signatures in a PoDA
+                let poda = match BlstCrypto::aggregate(
+                    MempoolNetMessage::DataVote(data_proposal_hash.clone()),
+                    &filtered_signatures.iter().collect::<Vec<_>>(),
+                ) {
+                    Ok(poda) => poda,
+                    Err(e) => {
+                        error!(
+                                "Could not aggregate signatures for validator {} and data proposal hash {}: {}",
+                                validator, data_proposal_hash, e
+                            );
+                        break;
+                    }
+                };
+
+                // Add the DataProposal to the cut for this validator
+                cut.push((
+                    validator.clone(),
+                    data_proposal_hash.clone(),
+                    poda.signature,
+                ));
             }
         }
 
@@ -164,7 +199,7 @@ impl Storage {
         }
     }
 
-    pub fn on_poa_update(
+    pub fn on_poda_update(
         &mut self,
         validator: &ValidatorPublicKey,
         data_proposal_hash: &DataProposalHash,
@@ -188,6 +223,7 @@ impl Storage {
 
     pub fn on_data_proposal(
         &mut self,
+        crypto: &BlstCrypto,
         validator: &ValidatorPublicKey,
         mut data_proposal: DataProposal,
         known_contracts: &KnownContracts,
@@ -355,7 +391,7 @@ impl Storage {
         self.lanes
             .entry(validator.clone())
             .or_default()
-            .add_new_proposal(data_proposal);
+            .add_new_proposal(crypto, data_proposal);
 
         DataProposalVerdict::Vote
     }
@@ -375,12 +411,12 @@ impl Storage {
         validator: &ValidatorPublicKey,
         from_data_proposal_hash: Option<&DataProposalHash>,
         to_data_proposal_hash: &DataProposalHash,
-    ) -> Option<Vec<LaneEntry>> {
+    ) -> Result<Option<Vec<LaneEntry>>> {
         if let Some(lane) = self.lanes.get(validator) {
             return lane
                 .get_lane_entries_between_hashes(from_data_proposal_hash, to_data_proposal_hash);
         }
-        None
+        bail!("Validator not found");
     }
 
     pub fn get_waiting_data_proposals(
@@ -415,7 +451,7 @@ impl Storage {
     }
 
     /// Creates and saves a new DataProposal if there are pending transactions
-    pub fn new_data_proposal(&mut self) {
+    pub fn new_data_proposal(&mut self, crypto: &BlstCrypto) {
         if self.pending_txs.is_empty() {
             return;
         }
@@ -451,17 +487,17 @@ impl Storage {
         self.lanes
             .entry(self.id.clone())
             .or_default()
-            .add_new_proposal(data_proposal);
+            .add_new_proposal(crypto, data_proposal);
     }
 
-    pub fn collect_txs_from_lanes(&mut self, cut: Cut) -> Vec<Transaction> {
+    pub fn collect_data_proposals_from_lanes(&mut self, cut: Cut) -> Vec<Transaction> {
         let mut txs = Vec::new();
 
         // For each validator involved in the cut, extract all transactions from the last cut to the new one
-        for (validator, data_proposal_hash) in cut.iter() {
+        for (validator, data_proposal_hash, _) in cut.iter() {
             // FIXME: If data_proposal_hash is unknown, we should request the missing DataProposals
             if let Some(lane) = self.lanes.get_mut(validator) {
-                if let Some(lane_entries) =
+                if let Ok(Some(lane_entries)) =
                     lane.get_lane_entries_between_hashes(lane.last_cut.as_ref(), data_proposal_hash)
                 {
                     for lane_entry in lane_entries {
@@ -566,12 +602,18 @@ impl Lane {
             .map(|(data_proposal_hash, _)| data_proposal_hash)
     }
 
-    pub fn add_new_proposal(&mut self, data_proposal: DataProposal) {
+    pub fn add_new_proposal(&mut self, crypto: &BlstCrypto, data_proposal: DataProposal) {
+        let data_proposal_hash = data_proposal.hash();
+        let msg = MempoolNetMessage::DataVote(data_proposal_hash.clone());
+        let signatures = match crypto.sign(msg) {
+            Ok(s) => vec![s],
+            Err(_) => vec![],
+        };
         self.data_proposals.insert(
-            data_proposal.hash(),
+            data_proposal_hash.clone(),
             LaneEntry {
                 data_proposal,
-                signatures: vec![],
+                signatures,
             },
         );
     }
@@ -597,11 +639,10 @@ impl Lane {
         &self,
         from_data_proposal_hash: Option<&DataProposalHash>,
         to_data_proposal_hash: &DataProposalHash,
-    ) -> Option<Vec<LaneEntry>> {
+    ) -> Result<Option<Vec<LaneEntry>>> {
         let to_index = match self.data_proposals.get_index_of(to_data_proposal_hash) {
             None => {
-                error!("Won't return any LaneEntry as aimed DataProposal {to_data_proposal_hash} does not exist on Lane");
-                return None;
+                bail!("Won't return any LaneEntry as aimed DataProposal {to_data_proposal_hash} does not exist on Lane");
             }
             Some(to_index) => to_index,
         };
@@ -609,34 +650,33 @@ impl Lane {
         match from_data_proposal_hash {
             None => {
                 // We send all LaneEntries from the very first one up to the one asked
-                Some(
+                Ok(Some(
                     self.data_proposals
                         .values()
                         .take(to_index + 1)
                         .cloned()
                         .collect(),
-                )
+                ))
             }
             Some(from_data_proposal_hash) => {
                 match self.data_proposals.get_index_of(from_data_proposal_hash) {
                     None => {
-                        error!("Won't return any LaneEntry as starting DataProposal {from_data_proposal_hash} does not exist on Lane");
-                        None
+                        bail!("Won't return any LaneEntry as starting DataProposal {from_data_proposal_hash} does not exist on Lane");
                     }
                     Some(from_index) => {
                         // If there is an index, two cases
                         // - index is known: we send the diff
                         if to_index <= from_index {
-                            return None;
+                            return Ok(None);
                         }
-                        Some(
+                        Ok(Some(
                             self.data_proposals
                                 .values()
                                 .skip(from_index + 1)
                                 .take(to_index - from_index)
                                 .cloned()
                                 .collect(),
-                        )
+                        ))
                     }
                 }
             }
@@ -684,6 +724,7 @@ mod tests {
         utils::crypto,
     };
     use hyle_contract_sdk::{BlobIndex, HyleOutput, Identity, ProgramId, StateDigest, TxHash};
+    use staking::state::Staking;
 
     use super::{DataProposal, Lane};
 
@@ -963,6 +1004,7 @@ mod tests {
         // Test getting all entries from the beginning to the second proposal
         let entries = lane
             .get_lane_entries_between_hashes(None, &data_proposal2_hash)
+            .expect("Failed to get lane entries")
             .expect("Failed to get lane entries");
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0], lane_entry1);
@@ -971,6 +1013,7 @@ mod tests {
         // Test getting entries between the first and second proposal
         let entries = lane
             .get_lane_entries_between_hashes(Some(&data_proposal1_hash), &data_proposal2_hash)
+            .expect("Failed to get lane entries")
             .expect("Failed to get lane entries");
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0], lane_entry2);
@@ -978,21 +1021,28 @@ mod tests {
         // Test getting entries between the first, second and third proposals
         let entries = lane
             .get_lane_entries_between_hashes(Some(&data_proposal1_hash), &data_proposal3_hash)
+            .expect("Failed to get lane entries")
             .expect("Failed to get lane entries");
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0], lane_entry2);
         assert_eq!(entries[1], lane_entry3);
 
+        // Test getting entries between the first, and the first proposals (empty)
+        let entries = lane
+            .get_lane_entries_between_hashes(Some(&data_proposal1_hash), &data_proposal1_hash)
+            .expect("Failed to get lane entries");
+        assert!(entries.is_none());
+
         // Test getting entries with a non-existent starting hash
         let non_existent_hash = DataProposalHash("non_existent".to_string());
         let entries =
             lane.get_lane_entries_between_hashes(Some(&non_existent_hash), &data_proposal2_hash);
-        assert!(entries.is_none());
+        assert!(entries.is_err());
 
         // Test getting entries with a non-existent ending hash
         let entries =
             lane.get_lane_entries_between_hashes(Some(&data_proposal1_hash), &non_existent_hash);
-        assert!(entries.is_none());
+        assert!(entries.is_err());
     }
 
     fn lane<'a>(store: &'a mut Storage, id: &ValidatorPublicKey) -> &'a mut Lane {
@@ -1005,7 +1055,7 @@ mod tests {
         let crypto2 = crypto::BlstCrypto::new("2".to_owned());
         let pubkey1 = crypto1.validator_pubkey();
         let pubkey2 = crypto2.validator_pubkey();
-        let mut store = Storage::new(pubkey1.clone());
+        let mut store1 = Storage::new(pubkey1.clone());
 
         let data_proposal = DataProposal {
             id: 0,
@@ -1014,7 +1064,7 @@ mod tests {
         };
         let data_proposal_hash = data_proposal.hash();
 
-        lane(&mut store, pubkey1).add_new_proposal(data_proposal);
+        lane(&mut store1, pubkey1).add_new_proposal(&crypto1, data_proposal);
 
         let mut signatures = vec![
             crypto1
@@ -1025,11 +1075,11 @@ mod tests {
                 .expect("Failed to sign message"),
         ];
 
-        store
-            .on_poa_update(pubkey1, &data_proposal_hash, &mut signatures)
+        store1
+            .on_poda_update(pubkey1, &data_proposal_hash, &mut signatures)
             .expect("Failed to update PoA");
 
-        let lane = store.lanes.get(pubkey1).expect("Lane not found");
+        let lane = store1.lanes.get(pubkey1).expect("Lane not found");
         let lane_entry = lane
             .get_proposal(&data_proposal_hash)
             .expect("Data proposal not found");
@@ -1047,9 +1097,9 @@ mod tests {
 
     #[test_log::test]
     fn test_workflow() {
-        let crypto = crypto::BlstCrypto::new("1".to_owned());
+        let crypto1 = crypto::BlstCrypto::new("1".to_owned());
         let crypto2 = crypto::BlstCrypto::new("2".to_owned());
-        let pubkey1 = crypto.validator_pubkey();
+        let pubkey1 = crypto1.validator_pubkey();
         let pubkey2 = crypto2.validator_pubkey();
         let mut store1 = Storage::new(pubkey1.clone());
         let mut store2 = Storage::new(pubkey2.clone());
@@ -1058,7 +1108,7 @@ mod tests {
         // First data proposal
         let tx1 = make_blob_tx("test1");
         store1.on_new_tx(tx1.clone());
-        store1.new_data_proposal();
+        store1.new_data_proposal(&crypto1);
 
         let data_proposal1 = store1
             .get_lane_latest_entry(pubkey1)
@@ -1068,7 +1118,7 @@ mod tests {
         let data_proposal1_hash = data_proposal1.hash();
 
         assert_eq!(
-            store2.on_data_proposal(pubkey1, data_proposal1, &known_contracts),
+            store2.on_data_proposal(&crypto2, pubkey1, data_proposal1, &known_contracts),
             DataProposalVerdict::Vote
         );
 
@@ -1083,7 +1133,7 @@ mod tests {
         // Second data proposal
         let tx2 = make_blob_tx("test2");
         store1.on_new_tx(tx2.clone());
-        store1.new_data_proposal();
+        store1.new_data_proposal(&crypto1);
 
         let data_proposal2 = store1
             .get_lane_latest_entry(pubkey1)
@@ -1093,7 +1143,7 @@ mod tests {
         let data_proposal2_hash = data_proposal2.hash();
 
         assert_eq!(
-            store2.on_data_proposal(pubkey1, data_proposal2, &known_contracts),
+            store2.on_data_proposal(&crypto2, pubkey1, data_proposal2, &known_contracts),
             DataProposalVerdict::Vote
         );
         let msg2 = crypto2
@@ -1107,7 +1157,7 @@ mod tests {
         // Third data proposal
         let tx3 = make_blob_tx("test3");
         store1.on_new_tx(tx3.clone());
-        store1.new_data_proposal();
+        store1.new_data_proposal(&crypto1);
 
         let data_proposal3 = store1
             .get_lane_latest_entry(pubkey1)
@@ -1117,7 +1167,7 @@ mod tests {
         let data_proposal3_hash = data_proposal3.hash();
 
         assert_eq!(
-            store2.on_data_proposal(pubkey1, data_proposal3, &known_contracts),
+            store2.on_data_proposal(&crypto2, pubkey1, data_proposal3, &known_contracts),
             DataProposalVerdict::Vote
         );
         let msg3 = crypto2
@@ -1131,7 +1181,7 @@ mod tests {
         // Fourth data proposal
         let tx4 = make_blob_tx("test4");
         store1.on_new_tx(tx4.clone());
-        store1.new_data_proposal();
+        store1.new_data_proposal(&crypto1);
 
         let data_proposal4 = store1
             .get_lane_latest_entry(pubkey1)
@@ -1141,7 +1191,7 @@ mod tests {
         let data_proposal4_hash = data_proposal4.hash();
 
         assert_eq!(
-            store2.on_data_proposal(pubkey1, data_proposal4, &known_contracts),
+            store2.on_data_proposal(&crypto2, pubkey1, data_proposal4, &known_contracts),
             DataProposalVerdict::Vote
         );
         let msg4 = crypto2
@@ -1197,6 +1247,7 @@ mod tests {
 
         let lane2_entries = store2
             .get_lane_entries_between_hashes(pubkey1, None, &data_proposal4_hash)
+            .expect("Could not load own lane entries")
             .expect("Could not load own lane entries");
 
         assert_eq!(lane2_entries.len(), 4);
@@ -1219,7 +1270,8 @@ mod tests {
         store3.on_new_tx(make_blob_tx("test3"));
         store3.on_new_tx(make_blob_tx("test4"));
 
-        store3.new_data_proposal();
+        store3.new_data_proposal(&crypto3);
+        store3.new_data_proposal(&crypto3);
         let data_proposal = store3
             .get_lane_latest_entry(pubkey3)
             .unwrap()
@@ -1230,12 +1282,12 @@ mod tests {
         assert_eq!(store3.lanes.get(pubkey3).unwrap().data_proposals.len(), 1);
 
         assert_eq!(
-            store2.on_data_proposal(pubkey3, data_proposal, &known_contracts2),
+            store2.on_data_proposal(&crypto2, pubkey3, data_proposal, &known_contracts2),
             DataProposalVerdict::Vote
         );
         // Assert we can vote multiple times
         assert_eq!(
-            store2.on_data_proposal(pubkey3, data_proposal_bis, &known_contracts2),
+            store2.on_data_proposal(&crypto2, pubkey3, data_proposal_bis, &known_contracts2),
             DataProposalVerdict::Vote
         );
 
@@ -1265,7 +1317,7 @@ mod tests {
                 .unwrap()
                 .signatures
                 .len(),
-            2
+            3
         );
 
         let (_, first_data_proposal_entry) = store3
@@ -1306,7 +1358,7 @@ mod tests {
         };
         let data_proposal_hash = data_proposal.hash();
 
-        let verdict = store1.on_data_proposal(pubkey2, data_proposal, &known_contracts);
+        let verdict = store1.on_data_proposal(&crypto1, pubkey2, data_proposal, &known_contracts);
         assert_eq!(verdict, DataProposalVerdict::Refuse);
 
         // Ensure the lane was not updated with the unverified proof transaction
@@ -1332,7 +1384,7 @@ mod tests {
             txs: vec![proof_tx.clone()],
         };
 
-        let verdict = store1.on_data_proposal(pubkey1, data_proposal, &known_contracts);
+        let verdict = store1.on_data_proposal(&crypto1, pubkey1, data_proposal, &known_contracts);
         assert_eq!(verdict, DataProposalVerdict::Refuse); // refused because contract not found
 
         let data_proposal = DataProposal {
@@ -1341,7 +1393,7 @@ mod tests {
             txs: vec![register_tx, proof_tx],
         };
 
-        let verdict = store1.on_data_proposal(pubkey1, data_proposal, &known_contracts);
+        let verdict = store1.on_data_proposal(&crypto1, pubkey1, data_proposal, &known_contracts);
         assert_eq!(verdict, DataProposalVerdict::Vote);
     }
 
@@ -1365,7 +1417,7 @@ mod tests {
         };
         let data_proposal1_hash = data_proposal1.hash();
 
-        lane(&mut store1, pubkey1).add_new_proposal(data_proposal1);
+        lane(&mut store1, pubkey1).add_new_proposal(&crypto1, data_proposal1);
 
         let data_proposal = DataProposal {
             id: 1,
@@ -1373,7 +1425,7 @@ mod tests {
             txs: vec![proof_tx],
         };
 
-        let verdict = store1.on_data_proposal(pubkey1, data_proposal, &known_contracts);
+        let verdict = store1.on_data_proposal(&crypto1, pubkey1, data_proposal, &known_contracts);
         assert_eq!(verdict, DataProposalVerdict::Vote);
 
         // Ensure the lane was updated with the DataProposal
@@ -1404,7 +1456,7 @@ mod tests {
             txs: vec![register_tx.clone(), proof_tx],
         };
 
-        let verdict = store1.on_data_proposal(pubkey1, data_proposal, &known_contracts);
+        let verdict = store1.on_data_proposal(&crypto1, pubkey1, data_proposal, &known_contracts);
         assert_eq!(verdict, DataProposalVerdict::Vote);
 
         // Ensure the lane was updated with the DataProposal
@@ -1438,7 +1490,7 @@ mod tests {
         };
         let data_proposal_hash = data_proposal.hash();
 
-        let verdict = store1.on_data_proposal(pubkey1, data_proposal, &known_contracts);
+        let verdict = store1.on_data_proposal(&crypto1, pubkey1, data_proposal, &known_contracts);
         assert_eq!(verdict, DataProposalVerdict::Refuse);
 
         // Ensure the lane was not updated with the DataProposal
@@ -1456,9 +1508,25 @@ mod tests {
         let mut store2 = Storage::new(pubkey2.clone());
         let known_contracts1 = KnownContracts::default();
         let known_contracts2 = KnownContracts::default();
+        let mut staking = Staking::default();
+        staking.stake("pk1".into(), 100).expect("could not stake");
+        staking
+            .delegate_to("pk1".into(), pubkey1.clone())
+            .expect("could not delegate");
+        staking.stake("pk2".into(), 100).expect("could not stake");
+        staking
+            .delegate_to("pk2".into(), pubkey2.clone())
+            .expect("could not delegate");
+        staking
+            .bond(pubkey1.clone())
+            .expect("Could not bond pubkey1");
+        staking
+            .bond(pubkey2.clone())
+            .expect("Could not bond pubkey2");
 
         store1.on_new_tx(make_blob_tx("tx1"));
-        store1.new_data_proposal();
+        store1.new_data_proposal(&crypto1);
+        store1.new_data_proposal(&crypto1);
         let data_proposal = store1
             .get_lane_latest_entry(pubkey1)
             .unwrap()
@@ -1466,12 +1534,13 @@ mod tests {
             .clone();
 
         assert_eq!(
-            store2.on_data_proposal(pubkey1, data_proposal, &known_contracts2),
+            store2.on_data_proposal(&crypto2, pubkey1, data_proposal, &known_contracts2),
             DataProposalVerdict::Vote
         );
 
         store2.on_new_tx(make_blob_tx("tx2"));
-        store2.new_data_proposal();
+        store2.new_data_proposal(&crypto2);
+        store2.new_data_proposal(&crypto2);
         let data_proposal = store2
             .get_lane_latest_entry(pubkey2)
             .unwrap()
@@ -1479,21 +1548,21 @@ mod tests {
             .clone();
 
         assert_eq!(
-            store1.on_data_proposal(pubkey2, data_proposal, &known_contracts1),
+            store1.on_data_proposal(&crypto1, pubkey2, data_proposal, &known_contracts1),
             DataProposalVerdict::Vote
         );
 
-        let cut1 = store1.new_cut(&[pubkey1.clone(), pubkey2.clone()]);
-        let cut2 = store2.new_cut(&[pubkey1.clone(), pubkey2.clone()]);
-        assert_eq!(cut1, cut2);
+        let cut1 = store1.new_cut(&staking);
+        let cut2 = store2.new_cut(&staking);
         assert_eq!(cut1.len(), 2);
-        let txs1 = store1.collect_txs_from_lanes(cut1);
-        let txs2 = store2.collect_txs_from_lanes(cut2);
+        let txs1 = store1.collect_data_proposals_from_lanes(cut1);
+        let txs2 = store2.collect_data_proposals_from_lanes(cut2);
         assert_eq!(txs1, vec![make_blob_tx("tx1"), make_blob_tx("tx2")]);
         assert_eq!(txs1, txs2);
 
         store1.on_new_tx(make_blob_tx("tx3"));
-        store1.new_data_proposal();
+        store1.new_data_proposal(&crypto1);
+        store1.new_data_proposal(&crypto1);
         let data_proposal = store1
             .get_lane_latest_entry(pubkey1)
             .unwrap()
@@ -1501,20 +1570,75 @@ mod tests {
             .clone();
 
         assert_eq!(
-            store2.on_data_proposal(pubkey1, data_proposal, &known_contracts2),
+            store2.on_data_proposal(&crypto2, pubkey1, data_proposal, &known_contracts2),
             DataProposalVerdict::Vote
         );
 
-        let cut1 = store1.new_cut(&[pubkey1.clone(), pubkey2.clone()]);
-        let cut2 = store2.new_cut(&[pubkey1.clone(), pubkey2.clone()]);
-        assert_eq!(cut1, cut2);
-        assert_eq!(cut1.len(), 2);
-        let txs1 = store1.collect_txs_from_lanes(cut1);
-        let txs2 = store2.collect_txs_from_lanes(cut2);
+        let cut1 = store1.new_cut(&staking);
+        let cut2 = store2.new_cut(&staking);
+        assert_eq!(cut1.len(), 1);
+        let txs1 = store1.collect_data_proposals_from_lanes(cut1);
+        let txs2 = store2.collect_data_proposals_from_lanes(cut2);
         assert_eq!(txs1, vec![make_blob_tx("tx3")]);
         assert_eq!(txs1, txs2);
 
-        let cut2 = store1.new_cut(&[pubkey2.clone(), pubkey1.clone()]);
-        assert_eq!(cut2.len(), 2);
+        let cut2 = store1.new_cut(&staking);
+        assert_eq!(cut2.len(), 0);
+    }
+
+    #[test_log::test]
+    fn test_poda() {
+        let crypto1 = crypto::BlstCrypto::new("1".to_owned());
+        let crypto2 = crypto::BlstCrypto::new("2".to_owned());
+
+        let pubkey1 = crypto1.validator_pubkey();
+        let pubkey2 = crypto2.validator_pubkey();
+
+        let mut store1 = Storage::new(pubkey1.clone());
+        let mut staking = Staking::default();
+
+        staking.stake("pk1".into(), 100).expect("Staking failed");
+        staking
+            .delegate_to("pk1".into(), pubkey1.clone())
+            .expect("Delegation failed");
+        staking.stake("pk2".into(), 100).expect("Staking failed");
+        staking
+            .delegate_to("pk2".into(), pubkey2.clone())
+            .expect("Delegation failed");
+
+        staking
+            .bond(pubkey1.clone())
+            .expect("Could not bond pubkey1");
+        staking
+            .bond(pubkey2.clone())
+            .expect("Could not bond pubkey2");
+
+        store1.on_new_tx(make_blob_tx("tx1"));
+        store1.new_data_proposal(&crypto1);
+
+        let data_proposal = store1
+            .get_lane_latest_entry(pubkey1)
+            .unwrap()
+            .data_proposal
+            .clone();
+        let data_proposal_hash = data_proposal.hash();
+
+        let msg2 = crypto2
+            .sign(MempoolNetMessage::DataVote(data_proposal_hash.clone()))
+            .expect("Could not sign DataVote message");
+
+        store1
+            .on_data_vote(&msg2, &data_proposal_hash)
+            .expect("Expect vote success");
+
+        let cut = store1.new_cut(&staking);
+        let poda = cut[0].2.clone();
+
+        assert!(poda.validators.contains(pubkey1));
+        assert!(poda.validators.contains(pubkey2));
+        assert_eq!(cut.len(), 1);
+
+        let txs1 = store1.collect_data_proposals_from_lanes(cut);
+        assert_eq!(txs1, vec![make_blob_tx("tx1")]);
     }
 }

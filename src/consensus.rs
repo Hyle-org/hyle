@@ -57,12 +57,15 @@ pub enum ConsensusCommand {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct CommittedConsensusProposal {
+    pub validators: Vec<ValidatorPublicKey>,
+    pub consensus_proposal: ConsensusProposal,
+    pub certificate: QuorumCertificate,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub enum ConsensusEvent {
-    CommitCut {
-        validators: Vec<ValidatorPublicKey>,
-        new_bonded_validators: Vec<ValidatorPublicKey>,
-        cut: Cut,
-    },
+    CommitConsensusProposal(CommittedConsensusProposal),
 }
 
 #[derive(Clone)]
@@ -106,14 +109,14 @@ struct ConsensusBusClient {
 
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, PartialEq, Eq, Hash)]
 pub struct ValidatorCandidacy {
-    pubkey: ValidatorPublicKey,
-    peer_address: String,
+    pub pubkey: ValidatorPublicKey,
+    pub peer_address: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode, PartialEq, Eq, Hash)]
 pub struct NewValidatorCandidate {
-    pubkey: ValidatorPublicKey, // TODO: possible optim: the pubkey is already present in the msg,
-    msg: SignedByValidator<ConsensusNetMessage>,
+    pub pubkey: ValidatorPublicKey, // TODO: possible optim: the pubkey is already present in the msg,
+    pub msg: SignedByValidator<ConsensusNetMessage>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, PartialEq, Eq, Hash, Default)]
@@ -142,12 +145,12 @@ pub struct ConsensusProposalHash(Vec<u8>);
 #[derive(Debug, Clone, Default, Serialize, Deserialize, Encode, Decode, PartialEq, Eq, Hash)]
 pub struct ConsensusProposal {
     // These first few items are checked when receiving the proposal from the leader.
-    slot: Slot,
-    view: View,
-    round_leader: ValidatorPublicKey,
+    pub slot: Slot,
+    pub view: View,
+    pub round_leader: ValidatorPublicKey,
     // Below items aren't.
-    cut: Cut,
-    new_validators_to_bond: Vec<NewValidatorCandidate>,
+    pub cut: Cut,
+    pub new_validators_to_bond: Vec<NewValidatorCandidate>,
 }
 
 type NextLeader = ValidatorPublicKey;
@@ -262,7 +265,9 @@ impl Consensus {
             consensus_proposal: ConsensusProposal {
                 slot: self.bft_round_state.consensus_proposal.slot,
                 view: self.bft_round_state.consensus_proposal.view,
-                round_leader: self.next_leader()?,
+                round_leader: std::mem::take(
+                    &mut self.bft_round_state.consensus_proposal.round_leader,
+                ),
                 ..ConsensusProposal::default()
             },
             staking: std::mem::take(&mut self.bft_round_state.staking),
@@ -298,6 +303,8 @@ impl Consensus {
             self.bft_round_state.consensus_proposal.slot,
             self.bft_round_state.consensus_proposal.view
         );
+
+        self.bft_round_state.consensus_proposal.round_leader = self.next_leader()?;
 
         if self.bft_round_state.consensus_proposal.round_leader == *self.crypto.validator_pubkey() {
             self.bft_round_state.state_tag = StateTag::Leader;
@@ -411,10 +418,6 @@ impl Consensus {
         }
     }
 
-    fn compute_f(&self) -> u128 {
-        self.bft_round_state.staking.total_bond().div_ceil(3)
-    }
-
     fn get_own_voting_power(&self) -> u128 {
         if self.is_part_of_consensus(self.crypto.validator_pubkey()) {
             if let Some(my_stake) = self
@@ -429,13 +432,6 @@ impl Consensus {
         } else {
             0
         }
-    }
-
-    fn compute_voting_power(&self, validators: &[ValidatorPublicKey]) -> u128 {
-        validators
-            .iter()
-            .flat_map(|v| self.bft_round_state.staking.get_stake(v))
-            .sum::<u128>()
     }
 
     /// Verify that:
@@ -476,9 +472,12 @@ impl Consensus {
         // This helpfully ignores any signatures that would not be actually part of the consensus
         // since those would have voting power 0.
         // TODO: should we reject such messages?
-        let voting_power = self.compute_voting_power(quorum_certificate.validators.as_slice());
+        let voting_power = self
+            .bft_round_state
+            .staking
+            .compute_voting_power(quorum_certificate.validators.as_slice());
 
-        let f = self.compute_f();
+        let f = self.bft_round_state.staking.compute_f();
 
         info!(
             "📩 Slot {} validated votes: {} / {} ({} validators for a total bond = {})",
@@ -689,30 +688,14 @@ impl Consensus {
 
         _ = self
             .bus
-            .send(ConsensusEvent::CommitCut {
-                // TODO: investigate if those are necessary here
-                validators: self.bft_round_state.staking.bonded().clone(),
-                cut: self.bft_round_state.consensus_proposal.cut.clone(),
-                new_bonded_validators: self
-                    .bft_round_state
-                    .consensus_proposal
-                    .new_validators_to_bond
-                    .iter()
-                    .map(|v| v.pubkey.clone())
-                    .collect(),
-            })
-            .expect("Failed to send ConsensusEvent::CommitCut on the bus");
-
-        // Save added cut TODO: remove ? (data availability)
-        if let Some(file) = &self.file {
-            if let Err(e) = Self::save_on_disk(
-                self.config.data_directory.as_path(),
-                file.as_path(),
-                &self.store,
-            ) {
-                warn!("Failed to save consensus state on disk: {}", e);
-            }
-        }
+            .send(ConsensusEvent::CommitConsensusProposal(
+                CommittedConsensusProposal {
+                    validators: self.bft_round_state.staking.bonded().clone(),
+                    consensus_proposal: self.bft_round_state.consensus_proposal.clone(),
+                    certificate: commit_quorum_certificate.clone(),
+                },
+            ))
+            .expect("Failed to send ConsensusEvent::CommittedConsensusProposal on the bus");
 
         info!(
             "📈 Slot {} committed",
@@ -786,11 +769,11 @@ impl Consensus {
                         (_identity, StakingAction::Distribute { claim: _ }) => todo!(),
                     }
                 }
-                for validator in block.new_bounded_validators {
+                for validator in block.new_bounded_validators.iter() {
                     self.store
                         .bft_round_state
                         .staking
-                        .bond(validator)
+                        .bond(validator.clone())
                         .map_err(|e| anyhow!(e))?;
                 }
 
@@ -888,6 +871,7 @@ impl Consensus {
             listen<GenesisEvent> msg => {
                 match msg {
                     GenesisEvent::GenesisBlock { initial_validators, ..} => {
+
                         self.bft_round_state.consensus_proposal.round_leader =
                             initial_validators.first().unwrap().clone();
 
@@ -1154,8 +1138,8 @@ pub mod test {
             self.consensus.crypto.validator_pubkey().clone()
         }
 
-        pub fn validators(&self) -> Vec<ValidatorPublicKey> {
-            self.consensus.bft_round_state.staking.bonded().clone()
+        pub fn staking(&self) -> Staking {
+            self.consensus.bft_round_state.staking.clone()
         }
 
         pub async fn timeout(nodes: &mut [&mut ConsensusTestCtx]) {
@@ -1477,7 +1461,11 @@ pub mod test {
                     slot: 2,
                     view: 0,
                     round_leader: node1.pubkey(),
-                    cut: vec![(node2.pubkey(), DataProposalHash("test".to_string()))],
+                    cut: vec![(
+                        node2.pubkey(),
+                        DataProposalHash("test".to_string()),
+                        AggregateSignature::default(),
+                    )],
                     new_validators_to_bond: vec![],
                 },
                 Ticket::Genesis,
@@ -1511,7 +1499,11 @@ pub mod test {
                     slot: 1,
                     view: 0,
                     round_leader: node1.pubkey(),
-                    cut: vec![(node2.pubkey(), DataProposalHash("test".to_string()))],
+                    cut: vec![(
+                        node2.pubkey(),
+                        DataProposalHash("test".to_string()),
+                        AggregateSignature::default(),
+                    )],
                     new_validators_to_bond: vec![],
                 },
                 Ticket::Genesis,
@@ -1554,7 +1546,11 @@ pub mod test {
                     slot: 1,
                     view: 0,
                     round_leader: node3.pubkey(),
-                    cut: vec![(node2.pubkey(), DataProposalHash("test".to_string()))],
+                    cut: vec![(
+                        node2.pubkey(),
+                        DataProposalHash("test".to_string()),
+                        AggregateSignature::default(),
+                    )],
                     new_validators_to_bond: vec![],
                 },
                 Ticket::Genesis,
@@ -1980,14 +1976,14 @@ pub mod test {
             };
         }
 
-        // Slot 5: Slave 2 joined consensus, leader = node-1
+        // Slot 5: Slave 2 joined consensus, leader = node-3
         {
             info!("➡️  Leader proposal");
-            node1.start_round().await;
+            node3.start_round().await;
 
             let (cp, _) = simple_commit_round! {
-                leader: node1,
-                followers: [node2, node3]
+                leader: node3,
+                followers: [node1, node2]
             };
             assert_eq!(cp.slot, 5);
             assert_eq!(node2.consensus.bft_round_state.staking.bonded().len(), 3);

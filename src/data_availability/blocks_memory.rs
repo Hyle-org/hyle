@@ -1,19 +1,19 @@
 use std::path::Path;
 
-use crate::model::{Block, BlockHash, BlockHeight, Hashable};
+use crate::model::{BlockHash, BlockHeight, Hashable, SignedBlock};
 use anyhow::Result;
 use indexmap::IndexMap;
 use tracing::info;
 
 #[derive(Debug)]
 pub struct Blocks {
-    data: IndexMap<BlockHash, Block>,
+    data: IndexMap<BlockHash, SignedBlock>,
 }
 
-pub struct FakeSledItem<'a>(&'a Block);
+pub struct FakeSledItem<'a>(&'a SignedBlock);
 
 impl FakeSledItem<'_> {
-    pub fn value(&self) -> Option<&Block> {
+    pub fn value(&self) -> Option<&SignedBlock> {
         Some(self.0)
     }
 }
@@ -29,28 +29,24 @@ impl Blocks {
         self.data.len()
     }
 
-    pub fn put(&mut self, data: Block) -> Result<()> {
+    pub fn put(&mut self, data: SignedBlock) -> Result<()> {
         if self.contains(&data) {
             return Ok(());
         }
-        info!(
-            "📦 storing block {} with {} txs",
-            data.block_height,
-            data.total_txs()
-        );
+        info!("📦 storing block {}", data.height());
         self.data.insert(data.hash(), data);
         Ok(())
     }
 
-    pub fn get(&mut self, block_hash: BlockHash) -> Result<Option<Block>> {
+    pub fn get(&mut self, block_hash: BlockHash) -> Result<Option<SignedBlock>> {
         Ok(self.data.get(&block_hash).cloned())
     }
 
-    pub fn contains(&mut self, block: &Block) -> bool {
+    pub fn contains(&mut self, block: &SignedBlock) -> bool {
         self.get(block.hash()).unwrap_or(None).is_some()
     }
 
-    pub fn last(&self) -> Option<Block> {
+    pub fn last(&self) -> Option<SignedBlock> {
         self.data.last().map(|(_, block)| block.clone())
     }
 
@@ -66,13 +62,13 @@ impl Blocks {
         // Items are in order but we don't know wher they are. Binary search.
         let Ok(min) = self
             .data
-            .binary_search_by(|_, block| block.block_height.0.cmp(&min.0))
+            .binary_search_by(|_, block| block.height().0.cmp(&min.0))
         else {
             return Box::new(::std::iter::empty());
         };
         let Ok(max) = self
             .data
-            .binary_search_by(|_, block| block.block_height.0.cmp(&(max.0 - 1)))
+            .binary_search_by(|_, block| block.height().0.cmp(&(max.0 - 1)))
         else {
             return Box::new(::std::iter::empty());
         };

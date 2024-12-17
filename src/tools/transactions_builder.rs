@@ -1,14 +1,12 @@
-use std::{future::Future, pin::Pin, vec::IntoIter};
+use std::pin::Pin;
 
 use anyhow::{anyhow, bail, Error, Result};
-use futures::stream::Stream;
-use futures::StreamExt;
 use hydentity::{AccountInfo, Hydentity};
 use hyle_contract_sdk::{
     caller::ExecutionContext,
     erc20::ERC20Action,
     identity_provider::{IdentityAction, IdentityVerification},
-    Blob, BlobData, BlobIndex, ContractName, Digestable, HyleOutput, Identity, TxHash,
+    Blob, BlobData, BlobIndex, ContractName, Digestable, HyleOutput, Identity,
 };
 use hyllar::HyllarToken;
 use staking::{model::ValidatorPublicKey, state::Staking, StakingAction, StakingContract};

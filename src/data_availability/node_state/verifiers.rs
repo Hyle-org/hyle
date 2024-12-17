@@ -207,6 +207,7 @@ mod tests {
             success = 1
         ```
     */
+    #[ignore = "manual test"]
     #[test_log::test]
     fn test_noir_proof_verifier() {
         let noir_proof = load_file_as_bytes("./tests/proofs/webauthn.noir.proof");

@@ -85,8 +85,11 @@ impl LeaderRole for Consensus {
 
         // Creates ConsensusProposal
         // Query new cut to Mempool
-        let validators = self.bft_round_state.staking.bonded().clone();
-        match self.bus.request(QueryNewCut(validators)).await {
+        match self
+            .bus
+            .request(QueryNewCut(self.bft_round_state.staking.clone()))
+            .await
+        {
             Ok(cut) => {
                 self.last_cut = cut;
             }
@@ -163,13 +166,16 @@ impl LeaderRole for Consensus {
             .map(|signed_message| signed_message.signature.validator.clone())
             .collect::<Vec<ValidatorPublicKey>>();
 
-        let votes_power = self.compute_voting_power(&validated_votes);
+        let votes_power = self
+            .bft_round_state
+            .staking
+            .compute_voting_power(&validated_votes);
         let voting_power = votes_power + self.get_own_voting_power();
 
         self.metrics.prepare_votes_gauge(voting_power as u64); // TODO risky cast
 
         // Waits for at least n-f = 2f+1 matching PrepareVote messages
-        let f = self.compute_f();
+        let f = self.bft_round_state.staking.compute_f();
 
         info!(
             "📩 Slot {} validated votes: {} / {} ({} validators for a total bond = {})",
@@ -259,10 +265,13 @@ impl LeaderRole for Consensus {
             .map(|signed_message| signed_message.signature.validator.clone())
             .collect::<Vec<ValidatorPublicKey>>();
 
-        let confirmed_power = self.compute_voting_power(&confirmed_ack_validators);
+        let confirmed_power = self
+            .bft_round_state
+            .staking
+            .compute_voting_power(&confirmed_ack_validators);
         let voting_power = confirmed_power + self.get_own_voting_power();
 
-        let f = self.compute_f();
+        let f = self.bft_round_state.staking.compute_f();
 
         info!(
             "✅ Slot {} confirmed acks: {} / {} ({} validators for a total bond = {})",

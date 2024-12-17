@@ -67,12 +67,17 @@ where
             .take(8)
             .map(char::from)
             .collect();
-        let tmp = format!("{}.{}.data.tmp", salt, type_name::<Self>());
+        let tmp = format!(
+            "{}.{}.data.tmp",
+            salt,
+            file.file_name().unwrap().to_string_lossy()
+        );
         debug!("Saving on disk in a tmp file {}", tmp.clone());
         let tmp = folder.join(tmp.clone());
         let mut writer = fs::File::create(tmp.as_path()).log_error("Create file")?;
         bincode::encode_into_std_write(store, &mut writer, bincode::config::standard())
             .log_error("Serializing Ctx chain")?;
+        debug!("Renaming {:?} to {:?}", &tmp, &file);
         fs::rename(tmp, file).log_error("Rename file")?;
         Ok(())
     }

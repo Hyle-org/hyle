@@ -5,6 +5,7 @@ members = [
     "contracts/hydentity",
     "contracts/hyllar",
     "contracts/staking",
+    "contracts/risc0-recursion",
 
     "crates/bonsai-runner",
     "crates/hyrun",
@@ -77,7 +78,7 @@ sqlx = { version = "0.8.2", features = [
     "chrono",
 ] }
 chrono = { version = "0.4", features = ["serde"] }
-axum-test = "16.4.0"
+axum-test = "16.4.1"
 syn = "2.0.90"
 quote = "1.0.37"
 base64 = "0.22.1"
@@ -103,7 +104,7 @@ assert_cmd = "2.0.16"
 tokio-tungstenite = "0.24.0"
 reqwest = { version = "0.12", features = ["json", "blocking"] }
 serde_json = "1.0.133"
-proptest = "1.5.0"
+proptest = "1.6.0"
 test-log = { version = "0.2.16", features = [
     "color",
     "trace",

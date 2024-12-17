@@ -69,6 +69,18 @@ impl Staking {
         }
     }
 
+    /// Compute f value
+    pub fn compute_f(&self) -> u128 {
+        self.total_bond().div_ceil(3)
+    }
+
+    pub fn compute_voting_power(&self, validators: &[ValidatorPublicKey]) -> u128 {
+        validators
+            .iter()
+            .flat_map(|v| self.get_stake(v))
+            .sum::<u128>()
+    }
+
     pub fn get_stake(&self, validator: &ValidatorPublicKey) -> Option<u128> {
         self.delegations.get(validator).map(|delegations| {
             delegations
