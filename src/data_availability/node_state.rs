@@ -11,7 +11,7 @@ use hyle_contract_sdk::{HyleOutput, StateDigest, TxHash};
 use model::{Contract, Timeouts, UnsettledBlobMetadata, UnsettledBlobTransaction};
 use ordered_tx_map::OrderedTxMap;
 use staking::Staker;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use tracing::{debug, error, info};
 
 pub mod model;
@@ -30,7 +30,7 @@ pub struct NodeState {
 #[derive(Debug)]
 pub struct HandledProofTxOutput {
     pub settled_blob_tx_hashes: Vec<TxHash>,
-    pub updated_states: HashMap<ContractName, StateDigest>,
+    pub updated_states: BTreeMap<ContractName, StateDigest>,
 }
 
 impl NodeState {
@@ -45,7 +45,7 @@ impl NodeState {
         let mut failed_txs: Vec<Transaction> = vec![];
         let mut stakers: Vec<Staker> = vec![];
         let mut settled_blob_tx_hashes: Vec<TxHash> = vec![];
-        let mut updated_states: HashMap<ContractName, StateDigest> = HashMap::new();
+        let mut updated_states: BTreeMap<ContractName, StateDigest> = BTreeMap::new();
         // Handle all transactions
         for tx in signed_block.txs().iter() {
             match &tx.transaction_data {
@@ -229,7 +229,7 @@ impl NodeState {
             .push(tx.hyle_output.clone());
 
         let mut settled_blob_tx_hashes = vec![];
-        let updated_states = HashMap::new();
+        let updated_states = BTreeMap::new();
 
         if !is_next_to_settle {
             debug!(
@@ -280,9 +280,9 @@ impl NodeState {
 
     fn settle_blobs_recursively<'a>(
         contracts: &HashMap<ContractName, Contract>,
-        current_states: HashMap<ContractName, StateDigest>,
+        current_states: BTreeMap<ContractName, StateDigest>,
         mut blob_iter: impl Iterator<Item = &'a UnsettledBlobMetadata> + Clone,
-    ) -> (HashMap<ContractName, StateDigest>, bool) {
+    ) -> (BTreeMap<ContractName, StateDigest>, bool) {
         let Some(current_blob) = blob_iter.next() else {
             return (current_states, true);
         };
