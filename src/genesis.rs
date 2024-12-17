@@ -130,13 +130,11 @@ impl Genesis {
         let register_txs = self.generate_register_txs(&mut states).await?;
         let faucet_txs = self.generate_faucet_txs(&mut states).await?;
         let stake_txs = self.generate_stake_txs(&mut states).await?;
-        let delegate_txs = self.generate_delegate_txs(&mut states).await?;
 
         let builders = register_txs
             .into_iter()
             .chain(faucet_txs.into_iter())
             .chain(stake_txs.into_iter())
-            .chain(delegate_txs.into_iter())
             .collect::<Vec<_>>();
 
         for BuildResult {
@@ -215,7 +213,7 @@ impl Genesis {
         let genesis_stake = 100;
 
         let mut txs = vec![];
-        for peer in self.peer_pubkey.values() {
+        for peer in self.peer_pubkey.values().cloned() {
             info!("🌱  Staking {genesis_stake} hyllar from {peer}");
 
             let identity = Identity(format!("{peer}.hydentity").to_string());
@@ -225,24 +223,6 @@ impl Genesis {
                 .verify_identity(&states.hydentity, "password".to_string())
                 .await?;
             transaction.stake("hyllar".into(), "staking".into(), genesis_stake)?;
-
-            txs.push(transaction.build(states).await?);
-        }
-
-        Ok(txs)
-    }
-
-    pub async fn generate_delegate_txs(&self, states: &mut States) -> Result<Vec<BuildResult>> {
-        let mut txs = vec![];
-        for peer in self.peer_pubkey.values().cloned() {
-            info!("🌱  Delegating to {peer}");
-
-            let identity = Identity(format!("{peer}.hydentity").to_string());
-            let mut transaction = TransactionBuilder::new(identity.clone());
-
-            transaction
-                .verify_identity(&states.hydentity, "password".to_string())
-                .await?;
             transaction.delegate(peer)?;
 
             txs.push(transaction.build(states).await?);

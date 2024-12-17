@@ -1,14 +1,20 @@
+use std::{future::Future, pin::Pin, vec::IntoIter};
+
 use anyhow::{anyhow, bail, Error, Result};
+use futures::stream::Stream;
+use futures::StreamExt;
 use hydentity::{AccountInfo, Hydentity};
 use hyle_contract_sdk::{
     caller::ExecutionContext,
     erc20::ERC20Action,
     identity_provider::{IdentityAction, IdentityVerification},
-    Blob, BlobData, BlobIndex, ContractName, Digestable, HyleOutput, Identity,
+    Blob, BlobData, BlobIndex, ContractName, Digestable, HyleOutput, Identity, TxHash,
 };
 use hyllar::HyllarToken;
 use staking::{model::ValidatorPublicKey, state::Staking, StakingAction, StakingContract};
 use tracing::info;
+
+use crate::model::ProofData;
 
 use super::contract_runner::ContractRunner;
 
@@ -241,6 +247,38 @@ impl TransactionBuilder {
             identity: self.identity.clone(),
             blobs: self.blobs.clone(),
             outputs,
+        })
+    }
+
+    /// Returns an iterator over the proofs of the transactions
+    /// In order to send proofs when they are ready, without waiting for all of them to be ready
+    /// Example usage:
+    /// for (proof, contract_name) in transaction.iter_prove() {
+    ///    let proof: ProofData = proof.await.unwrap();
+    ///    ctx.client()
+    ///        .send_tx_proof(&hyle::model::ProofTransaction {
+    ///            blob_tx_hash: blob_tx_hash.clone(),
+    ///            proof,
+    ///            contract_name,
+    ///        })
+    ///        .await
+    ///        .unwrap();
+    ///}
+    pub fn iter_prove<'a>(
+        &'a self,
+    ) -> impl Iterator<
+        Item = (
+            Pin<Box<dyn std::future::Future<Output = Result<ProofData>> + Send + 'a>>,
+            ContractName,
+        ),
+    > + 'a {
+        self.runners.iter().map(|runner| {
+            let future = runner.prove();
+            (
+                Box::pin(future)
+                    as Pin<Box<dyn std::future::Future<Output = Result<ProofData>> + Send + 'a>>,
+                runner.contract_name.clone(),
+            )
         })
     }
 }

@@ -148,6 +148,7 @@ mod e2e_amm {
         let contract_hydentity = ctx.get_contract("hydentity").await?;
         let state: hydentity::Hydentity = contract_hydentity.state.try_into()?;
 
+        // faucet_start_nonce = 0 in single-mode, N in multi-node(N) mode
         let faucet_start_nonce = serde_json::from_str::<AccountInfo>(
             state
                 .get_identity_info("faucet.hydentity")

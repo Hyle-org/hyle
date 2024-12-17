@@ -220,7 +220,7 @@ impl DataAvailability {
                 match msg {
                     PeerEvent::NewPeer { pubkey, .. } => {
                         if self.asked_last_processed_block.is_none() {
-                            info!("📡  Asking for last block from new peer");
+                            info!("📡  Asking for last block from {pubkey}");
                             self.asked_last_processed_block = Some(pubkey);
                             self.query_last_block();
                         }

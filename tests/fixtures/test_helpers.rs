@@ -1,6 +1,8 @@
 use assert_cmd::prelude::*;
 use hyle::{
+    model::{BlobTransaction, ProofData},
     rest::client::ApiHttpClient,
+    tools::transactions_builder::{BuildResult, States, TransactionBuilder},
     utils::conf::{Conf, Consensus},
 };
 use rand::Rng;
@@ -165,4 +167,31 @@ pub async fn wait_height(client: &ApiHttpClient, heights: u64) -> anyhow::Result
     .await?
 
     //result.map_err(|_| anyhow::anyhow!("Timeout reached while waiting for height"))
+}
+
+pub async fn send_transaction(
+    client: &ApiHttpClient,
+    mut transaction: TransactionBuilder,
+    states: &mut States,
+) {
+    let BuildResult {
+        identity, blobs, ..
+    } = transaction.build(states).await.unwrap();
+
+    let blob_tx_hash = client
+        .send_tx_blob(&BlobTransaction { identity, blobs })
+        .await
+        .unwrap();
+
+    for (proof, contract_name) in transaction.iter_prove() {
+        let proof: ProofData = proof.await.unwrap();
+        client
+            .send_tx_proof(&hyle::model::ProofTransaction {
+                blob_tx_hash: blob_tx_hash.clone(),
+                proof,
+                contract_name,
+            })
+            .await
+            .unwrap();
+    }
 }

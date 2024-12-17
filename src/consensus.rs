@@ -68,6 +68,9 @@ pub enum ConsensusEvent {
 #[derive(Clone)]
 pub struct QueryConsensusInfo {}
 
+#[derive(Clone)]
+pub struct QueryConsensusStakingState {}
+
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct ConsensusInfo {
     pub slot: Slot,
@@ -93,6 +96,7 @@ struct ConsensusBusClient {
     receiver(SignedByValidator<ConsensusNetMessage>),
     receiver(PeerEvent),
     receiver(Query<QueryConsensusInfo, ConsensusInfo>),
+    receiver(Query<QueryConsensusStakingState, Staking>),
 }
 }
 
@@ -946,6 +950,9 @@ impl Consensus {
                 let round_leader = self.bft_round_state.consensus_proposal.round_leader.clone();
                 let validators = self.bft_round_state.staking.bonded().clone();
                 Ok(ConsensusInfo { slot, view, round_leader, validators })
+            }
+            command_response<QueryConsensusStakingState, Staking> _ => {
+                Ok(self.bft_round_state.staking.clone())
             }
             _ = timeout_ticker.tick() => {
                 self.bus.send(ConsensusCommand::TimeoutTick)

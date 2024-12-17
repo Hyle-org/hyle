@@ -5,9 +5,14 @@ mod fixtures;
 
 mod e2e_consensus {
 
+    use fixtures::test_helpers::send_transaction;
     use hydentity::Hydentity;
-    use hyle::tools::{
-        contract_runner::fetch_current_state, transactions_builder::TransactionBuilder,
+    use hyle::{
+        model::{BlobTransaction, ProofData},
+        tools::{
+            contract_runner::fetch_current_state,
+            transactions_builder::{BuildResult, States, TransactionBuilder},
+        },
     };
     use hyle_contract_sdk::Identity;
 
@@ -42,30 +47,46 @@ mod e2e_consensus {
 
         assert!(node_info.pubkey.is_some());
 
-        let hydentity_state = fetch_current_state::<Hydentity>(ctx.client(), &"hydentity".into())
+        let hyllar = fetch_current_state(ctx.client(), &"hyllar".into())
             .await
             .unwrap();
+        let hydentity = fetch_current_state(ctx.client(), &"hydentity".into())
+            .await
+            .unwrap();
+        let staking = ctx.client().get_consensus_staking_state().await.unwrap();
+        let mut states = States {
+            hyllar,
+            hydentity,
+            staking,
+        };
+
         let node_identity = Identity(format!("{}.hydentity", node_info.id));
         {
             let mut transaction = TransactionBuilder::new(node_identity.clone());
             transaction.register_identity("password".to_string());
+
+            send_transaction(ctx.client(), transaction, &mut states).await;
         }
         {
             let mut transaction = TransactionBuilder::new("faucet.hydentity".into());
 
             transaction
-                .verify_identity(&hydentity_state, "password".to_string())
+                .verify_identity(&states.hydentity, "password".to_string())
                 .await?;
             transaction.transfer("hyllar".into(), node_identity.0.clone(), 100);
+
+            send_transaction(ctx.client(), transaction, &mut states).await;
         }
         {
             let mut transaction = TransactionBuilder::new(node_identity.clone());
 
             transaction
-                .verify_identity(&hydentity_state, "password".to_string())
+                .verify_identity(&states.hydentity, "password".to_string())
                 .await?;
             transaction.stake("hyllar".into(), "staking".into(), 100)?;
             transaction.delegate(node_info.pubkey.clone().unwrap())?;
+
+            send_transaction(ctx.client(), transaction, &mut states).await;
         }
 
         // 2 slots to get the tx in a blocks
