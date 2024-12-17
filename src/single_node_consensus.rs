@@ -105,7 +105,7 @@ impl SingleNodeConsensus {
         // On peut Query DA pour récuperer le dernier block/cut ?
         if !self.store.has_done_genesis {
             // This is the genesis
-            let (genesis_txs, _) = Genesis::genesis_contracts_txs();
+            let (_, genesis_txs, _) = Genesis::genesis_contracts_txs();
 
             tracing::info!("Doing genesis");
             _ = self.bus.send(GenesisEvent::GenesisBlock {

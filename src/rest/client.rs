@@ -8,8 +8,7 @@ use crate::{
     data_availability::node_state::model::Contract,
     indexer::model::ContractDb,
     model::{
-        BlobTransaction, BlockHeight, ContractName, ProofTransaction, RecursiveProofTransaction,
-        RegisterContractTransaction,
+        BlobTransaction, BlockHeight, ContractName, ProofTransaction, RegisterContractTransaction,
     },
     tools::mock_workflow::RunScenario,
 };
@@ -38,19 +37,6 @@ impl ApiHttpClient {
     pub async fn send_tx_proof(&self, tx: &ProofTransaction) -> Result<Response> {
         self.reqwest_client
             .post(format!("{}v1/tx/send/proof", self.url))
-            .body(serde_json::to_string(&tx)?)
-            .header("Content-Type", "application/json")
-            .send()
-            .await
-            .context("Sending tx proof")
-    }
-
-    pub async fn send_tx_recursive_proof(
-        &self,
-        tx: &RecursiveProofTransaction,
-    ) -> Result<Response> {
-        self.reqwest_client
-            .post(format!("{}v1/tx/send/recursive_proof", self.url))
             .body(serde_json::to_string(&tx)?)
             .header("Content-Type", "application/json")
             .send()

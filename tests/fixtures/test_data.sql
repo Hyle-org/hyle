@@ -21,9 +21,14 @@ VALUES
     ('test_tx_hash_4aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 0, 'identity_1', 'contract_1', '{"data": "blob_data_4"}', false);  -- Blob Transaction 2
 
 -- Inserting test data for the proof_transactions table
-INSERT INTO proofs (tx_hash, blob_tx_hash, blob_index, contract_name, proof, hyle_output)
+INSERT INTO proofs (tx_hash, proof)
 VALUES
-    ('test_tx_hash_3aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'test_tx_hash_2aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 0, 'contract_1', convert_to('proof_data_2', 'UTF-8'), '{}');  -- Proof Transaction 3
+    ('test_tx_hash_3aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', convert_to('proof_data_2', 'UTF-8'));  -- Proof Transaction 3
+
+-- Inserting test data for the blob_proof_outputs table
+INSERT INTO blob_proof_outputs (proof_tx_hash, blob_tx_hash, blob_index, blob_proof_output_index, contract_name, hyle_output, settled)
+VALUES
+    ('test_tx_hash_3aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'test_tx_hash_2aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 0, 0, 'contract_1', '{}', true);  -- Proof Transaction 3
 
 -- Inserting test data for the contracts table
 INSERT INTO contracts (tx_hash, owner, verifier, program_id, state_digest, contract_name)

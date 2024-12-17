@@ -43,9 +43,10 @@ mod e2e_tx_settle {
             &blob_tx_hash,
             BlobIndex(1),
         );
-        ctx.send_proof("c1".into(), proof_c1, blob_tx_hash.clone())
+        ctx.send_proof_single("c1".into(), proof_c1, blob_tx_hash.clone())
             .await?;
-        ctx.send_proof("c2".into(), proof_c2, blob_tx_hash).await?;
+        ctx.send_proof_single("c2".into(), proof_c2, blob_tx_hash)
+            .await?;
 
         info!("➡️  Waiting for height 2");
         ctx.wait_height(2).await?;
