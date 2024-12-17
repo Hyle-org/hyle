@@ -163,7 +163,7 @@ pub struct RecursiveProofTransaction {
     pub verifies: Vec<(TxHash, ContractName)>,
 }
 
-#[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Encode, Decode, Hash)]
+#[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Encode, Decode)]
 pub struct VerifiedProofTransaction {
     pub blob_tx_hash: TxHash,
     pub contract_name: ContractName,
