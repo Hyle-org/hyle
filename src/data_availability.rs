@@ -1,6 +1,7 @@
 //! Minimal block storage layer for data availability.
 
 mod api;
+pub mod codec;
 pub mod node_state;
 
 #[cfg(test)]
@@ -12,7 +13,10 @@ mod blocks_sled;
 use blocks_memory::Blocks;
 #[cfg(not(test))]
 use blocks_sled::Blocks;
+use codec::DataAvailibilityServerRequest;
+use futures::StreamExt;
 
+use crate::data_availability::codec::DataAvailibilityServerCodec;
 use crate::{
     bus::{command_response::Query, BusClientSender, BusMessage},
     consensus::{
@@ -39,11 +43,10 @@ use crate::{
 };
 use anyhow::{Context, Result};
 use bincode::{Decode, Encode};
-use bytes::Bytes;
 use core::str;
 use futures::{
     stream::{SplitSink, SplitStream},
-    SinkExt, StreamExt,
+    SinkExt,
 };
 use node_state::{model::Contract, NodeState};
 use serde::{Deserialize, Serialize};
@@ -53,7 +56,7 @@ use tokio::{
     net::{TcpListener, TcpStream},
     task::{JoinHandle, JoinSet},
 };
-use tokio_util::codec::{Framed, LengthDelimitedCodec};
+use tokio_util::codec::Framed;
 use tracing::{debug, error, info, trace, warn};
 
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, Eq, PartialEq)]
@@ -111,7 +114,7 @@ struct BlockStreamPeer {
     /// Last timestamp we received a ping from the peer.
     last_ping: u64,
     /// Sender to stream blocks to the peer
-    sender: SplitSink<Framed<TcpStream, LengthDelimitedCodec>, Bytes>,
+    sender: SplitSink<Framed<TcpStream, DataAvailibilityServerCodec>, Block>,
     /// Handle to abort the receiving side of the stream
     keepalive_abort: JoinHandle<()>,
 }
@@ -262,7 +265,7 @@ impl DataAvailability {
                         },
                     };
 
-                    self.handle_processed_block(signed_block).await;
+                    self.handle_signed_block(signed_block).await;
                 }
             }
 
@@ -290,14 +293,15 @@ impl DataAvailability {
             Ok((stream, addr)) = stream_request_receiver.accept() => {
                 // This handler is defined inline so I don't have to give a type to pending_stream_requests
                 pending_stream_requests.spawn(async move {
-                    let (sender, mut receiver) = Framed::new(stream, LengthDelimitedCodec::new()).split();
+                    let (sender, mut receiver) = Framed::new(stream, DataAvailibilityServerCodec::default()).split();
                     // Read the start height from the peer.
                     match receiver.next().await {
                         Some(Ok(data)) => {
-                            let (start_height, _) =
-                                bincode::decode_from_slice(&data, bincode::config::standard())
-                                    .map_err(|e| anyhow::anyhow!("Could not decode start height: {:?}", e))?;
-                            Ok((start_height, sender, receiver, addr.to_string()))
+                            if let DataAvailibilityServerRequest::BlockHeight(start_height) = data {
+                                Ok((start_height, sender, receiver, addr.to_string()))
+                            } else {
+                                Err(anyhow::anyhow!("Got a ping instead of a block height"))
+                            }
                         }
                         _ => Err(anyhow::anyhow!("no start height")),
                     }
@@ -330,13 +334,11 @@ impl DataAvailability {
                     {
                         // FIXME: we send unsigned blocks for now
                         let block: Block = self.node_state.handle_signed_block(&signed_block);
-                        let bytes: bytes::Bytes =
-                            bincode::encode_to_vec(block, bincode::config::standard())?.into();
                         if self.stream_peer_metadata
                             .get_mut(&peer_ip)
                             .context("peer not found")?
                             .sender
-                            .send(bytes)
+                            .send(block)
                             .await.is_ok() {
                             let _ = catchup_sender.send((block_hashes, peer_ip)).await;
                         }
@@ -420,7 +422,7 @@ impl DataAvailability {
                     block_hash = %block.hash(),
                     block_height = %block.height(),
                     "⬇️  Received block data");
-                self.handle_processed_block(*block).await;
+                self.handle_signed_block(*block).await;
             }
             DataNetMessage::QueryLastSignedBlock { respond_to } => {
                 if let Some(block) = self.blocks.last() {
@@ -461,10 +463,10 @@ impl DataAvailability {
             consensus_proposal,
         };
 
-        self.handle_processed_block(signed_block).await;
+        self.handle_signed_block(signed_block).await;
     }
 
-    async fn handle_processed_block(&mut self, block: SignedBlock) {
+    async fn handle_signed_block(&mut self, block: SignedBlock) {
         // if new block is already handled, ignore it
         if self.blocks.contains(&block) {
             warn!("Block {:?} already exists !", block);
@@ -573,17 +575,11 @@ impl DataAvailability {
                 to_remove.push(peer_id.clone());
             } else {
                 info!("streaming block {} to peer {}", block.hash(), &peer_id);
-                match bincode::encode_to_vec(node_state_block.clone(), bincode::config::standard())
-                {
-                    Ok(bytes) => {
-                        if let Err(e) = peer.sender.send(bytes.into()).await {
-                            warn!("failed to send block to peer {}: {}", &peer_id, e);
-                            // TODO: retry?
-                            to_remove.push(peer_id.clone());
-                        }
-                    }
-                    Err(e) => error!("encoding block: {}", e),
-                }
+                _ = peer
+                    .sender
+                    .send(node_state_block.clone())
+                    .await
+                    .log_error("Sending block");
             }
         }
         for peer_id in to_remove {
@@ -613,11 +609,11 @@ impl DataAvailability {
 
     async fn start_streaming_to_peer(
         &mut self,
-        start_height: u64,
+        start_height: BlockHeight,
         ping_sender: tokio::sync::mpsc::Sender<String>,
         catchup_sender: tokio::sync::mpsc::Sender<(Vec<BlockHash>, String)>,
-        sender: SplitSink<Framed<TcpStream, LengthDelimitedCodec>, Bytes>,
-        mut receiver: SplitStream<Framed<TcpStream, LengthDelimitedCodec>>,
+        sender: SplitSink<Framed<TcpStream, DataAvailibilityServerCodec>, Block>,
+        mut receiver: SplitStream<Framed<TcpStream, DataAvailibilityServerCodec>>,
         peer_ip: &String,
     ) -> Result<()> {
         // Start a task to process pings from the peer.
@@ -651,10 +647,10 @@ impl DataAvailability {
         let mut processed_block_hashes: Vec<BlockHash> = self
             .blocks
             .range(
-                BlockHeight(start_height),
+                start_height,
                 self.blocks
                     .last()
-                    .map_or(BlockHeight(start_height), |block| block.height())
+                    .map_or(start_height, |block| block.height())
                     + 1,
             )
             .filter_map(|block| {
@@ -738,7 +734,7 @@ mod tests {
         }
         blocks.reverse();
         for block in blocks {
-            da.handle_processed_block(block).await;
+            da.handle_signed_block(block).await;
         }
     }
 
@@ -789,7 +785,7 @@ mod tests {
         }
         blocks.reverse();
         for block in blocks {
-            da.handle_processed_block(block).await;
+            da.handle_signed_block(block).await;
         }
 
         tokio::spawn(async move {

@@ -1,15 +1,17 @@
 use std::sync::Arc;
 
-use anyhow::{bail, Context, Error, Result};
-use bytes::BytesMut;
+use anyhow::{bail, Error, Result};
 use futures::{SinkExt, StreamExt};
 use tokio::net::TcpStream;
-use tokio_util::codec::{Framed, LengthDelimitedCodec};
-use tracing::{debug, error, info, warn};
+use tokio_util::codec::Framed;
+use tracing::{debug, info, warn};
 
 use crate::{
     bus::BusClientSender,
-    data_availability::DataEvent,
+    data_availability::{
+        codec::{DataAvailibilityClientCodec, DataAvailibilityServerRequest},
+        DataEvent,
+    },
     model::{Block, BlockHeight, CommonRunContext},
     module_handle_messages,
     utils::{
@@ -27,7 +29,7 @@ struct DAListenerBusClient {
 
 /// Module that listens to the data availability stream and sends the blocks to the bus
 pub struct DAListener {
-    da_stream: Framed<TcpStream, LengthDelimitedCodec>,
+    da_stream: Framed<TcpStream, DataAvailibilityClientCodec>,
     bus: DAListenerBusClient,
 }
 
@@ -68,23 +70,15 @@ impl DAListener {
         Ok(())
     }
 
-    async fn processing_next_frame(&mut self, bytes: BytesMut) -> Result<()> {
+    async fn processing_next_frame(&mut self, block: Block) -> Result<()> {
         // FIXME: Should be signed blocks
-        let block: Block = bincode::decode_from_slice(&bytes, bincode::config::standard())
-            .log_error("Decoding block")?
-            .0;
-        if let Err(e) = self.handle_processed_block(block) {
-            error!("Error while handling block: {:#}", e);
-        }
-        SinkExt::<bytes::Bytes>::send(&mut self.da_stream, "ok".into())
-            .await
-            .context("Sending ok answer on da stream")
-    }
-
-    fn handle_processed_block(&mut self, block: Block) -> Result<()> {
-        info!("Received block in DA listener");
         self.bus
             .send(DataEvent::NewBlock(Box::new(block.clone())))?;
+
+        self.da_stream
+            .send(DataAvailibilityServerRequest::Ping)
+            .await?;
+
         Ok(())
     }
 }
@@ -92,7 +86,7 @@ impl DAListener {
 pub async fn connect_to(
     target: &str,
     height: BlockHeight,
-) -> Result<Framed<TcpStream, LengthDelimitedCodec>> {
+) -> Result<Framed<TcpStream, DataAvailibilityClientCodec>> {
     info!(
         "Connecting to node for data availability stream on {}",
         &target
@@ -117,13 +111,14 @@ pub async fn connect_to(
         }
     };
     let addr = stream.local_addr()?;
-    let mut da_stream = Framed::new(stream, LengthDelimitedCodec::new());
+    let mut da_stream = Framed::new(stream, DataAvailibilityClientCodec::default());
     info!(
         "Connected to data stream to {} on {}. Starting stream from height {}",
         &target, addr, height
     );
     // Send the start height
-    let height = bincode::encode_to_vec(height.0, bincode::config::standard())?;
-    da_stream.send(height.into()).await?;
+    da_stream
+        .send(DataAvailibilityServerRequest::BlockHeight(height))
+        .await?;
     Ok(da_stream)
 }
