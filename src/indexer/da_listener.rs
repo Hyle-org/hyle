@@ -10,7 +10,7 @@ use tracing::{debug, error, info, warn};
 use crate::{
     bus::BusClientSender,
     data_availability::DataEvent,
-    model::{Block, BlockHeight, CommonRunContext, SignedBlock},
+    model::{Block, BlockHeight, CommonRunContext},
     module_handle_messages,
     utils::{
         logger::LogMe,
