@@ -193,6 +193,10 @@ impl E2ECtx {
         &self.clients[self.client_index]
     }
 
+    pub fn indexer_client(&self) -> &ApiHttpClient {
+        &self.clients[self.indexer_client_index]
+    }
+
     pub fn has_indexer(&self) -> bool {
         self.pg.is_some()
     }
@@ -287,7 +291,8 @@ impl E2ECtx {
     }
 
     pub async fn get_indexer_contract(&self, name: &str) -> Result<ContractDb> {
-        let indexer_contract_response = self.clients[self.indexer_client_index]
+        let indexer_contract_response = self
+            .indexer_client()
             .get_indexer_contract(&name.into())
             .await
             .and_then(|response| response.error_for_status().context("Getting contract"));

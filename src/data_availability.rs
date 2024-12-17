@@ -365,7 +365,11 @@ impl DataAvailability {
     async fn handle_processed_block(&mut self, block: Block) {
         // if new block is already handled, ignore it
         if self.blocks.contains(&block) {
-            warn!("Block {:?} already exists !", block);
+            warn!(
+                "Block {} {} already exists !",
+                block.block_height,
+                block.hash()
+            );
             return;
         }
         // if new block is not the next block in the chain, buffer
@@ -409,7 +413,10 @@ impl DataAvailability {
         // Iterative loop to avoid stack overflows
         while let Some(first_buffered) = self.buffered_processed_blocks.first() {
             if first_buffered.block_parent_hash != last_block_hash {
-                error!("Buffered block parent hash does not match last block hash");
+                error!(
+                    "Buffered block parent hash {} does not match last block hash {}",
+                    first_buffered.block_parent_hash, last_block_hash
+                );
                 break;
             }
 
@@ -441,10 +448,12 @@ impl DataAvailability {
             error!("storing block: {}", e);
             return;
         }
+        debug!("Block {} {}: {:?}", block.block_height, block.hash(), block);
 
         info!(
-            "new block {} with {} txs, last hash = {}",
+            "new block {} {} with {} txs, last hash = {}",
             block.block_height,
+            block.hash(),
             block.total_txs().clone(),
             self.blocks
                 .last_block_hash()

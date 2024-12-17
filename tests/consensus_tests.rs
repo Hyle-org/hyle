@@ -37,7 +37,7 @@ mod e2e_consensus {
 
     #[test_log::test(tokio::test)]
     async fn can_rejoin() -> Result<()> {
-        let mut ctx = E2ECtx::new_multi(2, 500).await?;
+        let mut ctx = E2ECtx::new_multi_with_indexer(2, 500).await?;
 
         ctx.wait_height(2).await?;
 
@@ -47,10 +47,10 @@ mod e2e_consensus {
 
         assert!(node_info.pubkey.is_some());
 
-        let hyllar = fetch_current_state(ctx.client(), &"hyllar".into())
+        let hyllar = fetch_current_state(ctx.indexer_client(), &"hyllar".into())
             .await
             .unwrap();
-        let hydentity = fetch_current_state(ctx.client(), &"hydentity".into())
+        let hydentity = fetch_current_state(ctx.indexer_client(), &"hydentity".into())
             .await
             .unwrap();
         let staking = ctx.client().get_consensus_staking_state().await.unwrap();
