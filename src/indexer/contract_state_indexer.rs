@@ -244,7 +244,7 @@ mod tests {
 
     use super::*;
     use crate::bus::metrics::BusMetrics;
-    use crate::model::{BlockHash, BlockHeight};
+    use crate::model::SignedBlock;
     use crate::utils::conf::Conf;
     use crate::{bus::SharedMessageBus, model::CommonRunContext};
     use std::sync::Arc;
@@ -373,13 +373,7 @@ mod tests {
         register_contract(&mut indexer).await;
 
         let mut node_state = NodeState::default();
-        let block = node_state.handle_new_cut(
-            BlockHeight(1),
-            BlockHash::new("0123456789abcdef"),
-            1,
-            vec![],
-            vec![],
-        );
+        let block = node_state.handle_signed_block(&SignedBlock::default());
 
         let event = DataEvent::NewBlock(Box::new(block));
 
