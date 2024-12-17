@@ -1,6 +1,5 @@
 //! Handles all consensus logic up to block commitment.
 
-use crate::mempool::MempoolNetMessage;
 use crate::module_handle_messages;
 use crate::utils::modules::module_bus_client;
 #[cfg(not(test))]
@@ -365,51 +364,6 @@ impl Consensus {
             } else {
                 bail!("New bonded validator forwarded signed message is not a candidacy message");
             }
-        }
-        Ok(())
-    }
-
-    /// Verifies that the proposed cut in the consensus proposal is valid.
-    ///
-    /// For the cut to be considered valid:
-    /// - Each DataProposal associated with a validator must have received sufficient signatures.
-    /// - The aggregated signatures for each DataProposal must be valid.
-    fn verify_poda(&mut self, consensus_proposal: &ConsensusProposal) -> Result<()> {
-        let f = self.bft_round_state.staking.compute_f();
-
-        let accepted_validators = self.bft_round_state.staking.bonded();
-        for (validator, data_proposal_hash, poda_sig) in &consensus_proposal.cut {
-            let voting_power = self
-                .bft_round_state
-                .staking
-                .compute_voting_power(poda_sig.validators.as_slice());
-
-            // Verify that the validator is part of the consensus
-            if !accepted_validators.contains(validator) {
-                bail!(
-                    "Validator {} is in cut but is not part of the consensus",
-                    validator
-                );
-            }
-
-            // Verify that DataProposal received enough votes
-            if voting_power < f + 1 {
-                bail!("PoDA for validator {validator} does not have enough validators that signed his DataProposal");
-            }
-
-            // Verify that PoDA signature is valid
-            let msg = MempoolNetMessage::DataVote(data_proposal_hash.clone());
-            match BlstCrypto::verify_aggregate(&Signed {
-                msg,
-                signature: poda_sig.clone(),
-            }) {
-                Ok(valid) => {
-                    if !valid {
-                        bail!("Failed to aggregate signatures into valid one. Messages might be different.");
-                    }
-                }
-                Err(err) => bail!("Failed to verify PoDA: {}", err),
-            };
         }
         Ok(())
     }
