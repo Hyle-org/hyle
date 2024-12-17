@@ -260,7 +260,9 @@ impl Consensus {
             consensus_proposal: ConsensusProposal {
                 slot: self.bft_round_state.consensus_proposal.slot,
                 view: self.bft_round_state.consensus_proposal.view,
-                round_leader: self.next_leader()?,
+                round_leader: std::mem::take(
+                    &mut self.bft_round_state.consensus_proposal.round_leader,
+                ),
                 ..ConsensusProposal::default()
             },
             staking: std::mem::take(&mut self.bft_round_state.staking),
@@ -296,6 +298,8 @@ impl Consensus {
             self.bft_round_state.consensus_proposal.slot,
             self.bft_round_state.consensus_proposal.view
         );
+
+        self.bft_round_state.consensus_proposal.round_leader = self.next_leader()?;
 
         if self.bft_round_state.consensus_proposal.round_leader == *self.crypto.validator_pubkey() {
             self.bft_round_state.state_tag = StateTag::Leader;
@@ -1937,14 +1941,14 @@ pub mod test {
             };
         }
 
-        // Slot 5: Slave 2 joined consensus, leader = node-1
+        // Slot 5: Slave 2 joined consensus, leader = node-3
         {
             info!("➡️  Leader proposal");
-            node1.start_round().await;
+            node3.start_round().await;
 
             let (cp, _) = simple_commit_round! {
-                leader: node1,
-                followers: [node2, node3]
+                leader: node3,
+                followers: [node1, node2]
             };
             assert_eq!(cp.slot, 5);
             assert_eq!(node2.consensus.bft_round_state.staking.bonded().len(), 3);
