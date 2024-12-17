@@ -602,7 +602,7 @@ impl Mempool {
             }
             TransactionData::Stake(ref _staker) => {}
             TransactionData::Blob(ref _blob_transaction) => {}
-            TransactionData::Proof(mut proof_transaction) => {
+            TransactionData::Proof(proof_transaction) => {
                 // Verify and extract proof
                 let (verifier, program_id) = self
                     .known_contracts
@@ -613,19 +613,28 @@ impl Mempool {
                     verify_proof(&proof_transaction.proof.to_bytes()?, verifier, program_id)?;
                 tx.transaction_data = TransactionData::VerifiedProof(VerifiedProofTransaction {
                     proof_hash: proof_transaction.proof.hash(),
-                    contract_name: std::mem::take(&mut proof_transaction.contract_name),
-                    blob_tx_hash: std::mem::take(&mut proof_transaction.blob_tx_hash),
-                    proof: Some(std::mem::take(&mut proof_transaction.proof)),
+                    contract_name: proof_transaction.contract_name,
+                    blob_tx_hash: proof_transaction.blob_tx_hash,
+                    proof: Some(proof_transaction.proof),
                     hyle_output,
                 });
             }
-            TransactionData::RecursiveProof(mut proof_transaction) => {
+            TransactionData::RecursiveProof(proof_transaction) => {
                 // Verify and extract proof
                 let (verifier, program_id) = self
                     .known_contracts
                     .0
                     .get(&proof_transaction.via)
                     .context("Contract unknown")?;
+                // TODO: figure out how to generalize this
+                if proof_transaction.via.0 != "risc0-recursion"
+                    && proof_transaction
+                        .verifies
+                        .iter()
+                        .any(|(_, contract_name)| contract_name != &proof_transaction.via)
+                {
+                    bail!("Only risc0-recursion can verify recursive proofs on behalf of other contracts.");
+                }
                 let hyle_outputs = verify_recursive_proof(
                     &proof_transaction.proof.to_bytes()?,
                     verifier,
@@ -633,16 +642,18 @@ impl Mempool {
                 )?;
                 tx.transaction_data =
                     TransactionData::VerifiedRecursiveProof(VerifiedRecursiveProofTransaction {
-                        proof: Some(std::mem::take(&mut proof_transaction.proof)),
                         proof_hash: proof_transaction.proof.hash(),
-                        via: std::mem::take(&mut proof_transaction.via),
+                        proof: Some(proof_transaction.proof),
+                        via: proof_transaction.via,
                         verifies: std::iter::zip(proof_transaction.verifies, hyle_outputs)
-                            .map(|(mut pt, ho)| VerifiedProofTransaction {
-                                proof_hash: ProofDataHash("todo?".to_owned()),
-                                contract_name: std::mem::take(&mut pt.1),
-                                blob_tx_hash: std::mem::take(&mut pt.0),
-                                proof: None,
-                                hyle_output: ho,
+                            .map(|((blob_tx_hash, contract_name), hyle_output)| {
+                                VerifiedProofTransaction {
+                                    proof_hash: ProofDataHash("todo?".to_owned()),
+                                    contract_name,
+                                    blob_tx_hash,
+                                    hyle_output,
+                                    proof: None,
+                                }
                             })
                             .collect(),
                     });

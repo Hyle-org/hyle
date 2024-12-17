@@ -15,13 +15,20 @@ pub fn verify_proof(
     program_id: &ProgramId,
 ) -> Result<HyleOutput, Error> {
     // TODO: remove test
-    match verifier.0.as_str() {
+    let hyle_output = match verifier.0.as_str() {
         "test" => Ok(serde_json::from_slice(proof)?),
         "risc0" => risc0_proof_verifier(proof, &program_id.0),
         "noir" => noir_proof_verifier(proof, &program_id.0),
         "sp1" => sp1_proof_verifier(proof, &program_id.0),
         _ => bail!("{} verifier not implemented yet", verifier),
-    }
+    }?;
+    tracing::info!(
+        "🔎 {}",
+        std::str::from_utf8(&hyle_output.program_outputs)
+            .map(|o| format!("Program outputs: {o}"))
+            .unwrap_or("Invalid UTF-8".to_string())
+    );
+    Ok(hyle_output)
 }
 
 pub fn verify_recursive_proof(
@@ -29,7 +36,7 @@ pub fn verify_recursive_proof(
     verifier: &Verifier,
     program_id: &ProgramId,
 ) -> Result<Vec<HyleOutput>, Error> {
-    match verifier.0.as_str() {
+    let hyle_outputs = match verifier.0.as_str() {
         "risc0" => {
             let output: Vec<Vec<u8>> = risc0_proof_verifier(proof, &program_id.0)?;
             // Doesn't actually work to just deserialize in one go.
@@ -40,7 +47,17 @@ pub fn verify_recursive_proof(
                 .context("Failed to decode HyleOutput")
         }
         _ => bail!("{} recursive verifier not implemented yet", verifier),
-    }
+    }?;
+    hyle_outputs.iter().for_each(|hyle_output| {
+        tracing::info!(
+            "🔎 {}",
+            std::str::from_utf8(&hyle_output.program_outputs)
+                .map(|o| format!("Program outputs: {o}"))
+                .unwrap_or("Invalid UTF-8".to_string())
+        );
+    });
+
+    Ok(hyle_outputs)
 }
 
 pub fn risc0_proof_verifier<T: for<'a> Deserialize<'a>>(
@@ -161,12 +178,7 @@ pub fn sp1_proof_verifier(proof_bin: &[u8], verification_key: &[u8]) -> Result<H
     )
     .context("Failed to extract HyleOuput from SP1 proof")?;
 
-    tracing::info!(
-        "✅ SP1 proof verified. {}",
-        std::str::from_utf8(&hyle_output.program_outputs)
-            .map(|o| format!("Program outputs: {o}"))
-            .unwrap_or("Invalid UTF-8".to_string())
-    );
+    tracing::info!("✅ SP1 proof verified.",);
 
     Ok(hyle_output)
 }

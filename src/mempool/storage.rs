@@ -9,7 +9,7 @@ use tracing::{debug, error, warn};
 
 use crate::{
     data_availability::node_state::verifiers::verify_proof,
-    model::{Hashable, Transaction, TransactionData, ValidatorPublicKey},
+    model::{Hashable, Transaction, TransactionData, ValidatorPublicKey, VerifiedProofTransaction},
     p2p::network::SignedByValidator,
     utils::crypto::{AggregateSignature, BlstCrypto},
 };
@@ -375,6 +375,17 @@ impl Storage {
                             return DataProposalVerdict::Refuse;
                         }
                     };
+                    // TODO: figure out how to generalize this
+                    if proof_tx.via.0 != "risc0-recursion"
+                        && proof_tx.verifies.iter().any(
+                            |VerifiedProofTransaction { contract_name, .. }| {
+                                contract_name != &proof_tx.via
+                            },
+                        )
+                    {
+                        warn!("Only risc0-recursion can verify recursive proofs on behalf of other contracts.");
+                        return DataProposalVerdict::Refuse;
+                    }
                     // Verifying the proof before voting
                     let (verifier, program_id) = match known_contracts.0.get(&proof_tx.via) {
                         Some((verifier, program_id)) => (verifier, program_id),
