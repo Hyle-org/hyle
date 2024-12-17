@@ -8,13 +8,20 @@ use crate::{
     data_availability::node_state::model::Contract,
     indexer::model::ContractDb,
     model::{
-        BlobTransaction, BlockHeight, ContractName, ProofTransaction, RecursiveProofTransaction,
+        BlobTransaction, BlockHeight, ContractName, MultiProofTransaction, ProofData,
         RegisterContractTransaction,
     },
     tools::mock_workflow::RunScenario,
 };
 
 use super::NodeInfo;
+
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
+pub struct SingleProofTransaction {
+    pub contract_name: ContractName,
+    pub proof: ProofData,
+    pub tx_hash: TxHash,
+}
 
 pub struct ApiHttpClient {
     pub url: Url,
@@ -35,7 +42,7 @@ impl ApiHttpClient {
             .context("reading tx hash response")
     }
 
-    pub async fn send_tx_proof(&self, tx: &ProofTransaction) -> Result<Response> {
+    pub async fn send_tx_proof(&self, tx: &SingleProofTransaction) -> Result<Response> {
         self.reqwest_client
             .post(format!("{}v1/tx/send/proof", self.url))
             .body(serde_json::to_string(&tx)?)
@@ -45,10 +52,7 @@ impl ApiHttpClient {
             .context("Sending tx proof")
     }
 
-    pub async fn send_tx_recursive_proof(
-        &self,
-        tx: &RecursiveProofTransaction,
-    ) -> Result<Response> {
+    pub async fn send_tx_multi_proof(&self, tx: &MultiProofTransaction) -> Result<Response> {
         self.reqwest_client
             .post(format!("{}v1/tx/send/recursive_proof", self.url))
             .body(serde_json::to_string(&tx)?)

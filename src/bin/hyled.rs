@@ -5,10 +5,9 @@ use clap::{command, Parser, Subcommand};
 use hyle::{
     indexer::model::ContractDb,
     model::{
-        Blob, BlobData, BlobTransaction, ContractName, ProofData, ProofTransaction,
-        RegisterContractTransaction,
+        Blob, BlobData, BlobTransaction, ContractName, ProofData, RegisterContractTransaction,
     },
-    rest::client::ApiHttpClient,
+    rest::client::{ApiHttpClient, SingleProofTransaction},
 };
 use hyle_contract_sdk::{Identity, StateDigest, TxHash, Verifier};
 use reqwest::{Client, Url};
@@ -29,8 +28,8 @@ async fn send_proof(
 ) -> Result<()> {
     let proof = load_encoded_receipt_from_file(proof_file.as_str());
     let res = client
-        .send_tx_proof(&ProofTransaction {
-            blob_tx_hash,
+        .send_tx_proof(&SingleProofTransaction {
+            tx_hash: blob_tx_hash,
             contract_name,
             proof: ProofData::Bytes(proof),
         })

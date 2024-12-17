@@ -3,12 +3,12 @@
 use crate::{
     bus::{command_response::Query, BusClientSender, BusMessage},
     consensus::{CommittedConsensusProposal, ConsensusEvent},
-    data_availability::node_state::verifiers::{verify_proof, verify_recursive_proof},
+    data_availability::node_state::verifiers::verify_recursive_proof,
     genesis::GenesisEvent,
     mempool::storage::{DataProposal, Storage},
     model::{
-        Hashable, ProofDataHash, SharedRunContext, Transaction, TransactionData,
-        ValidatorPublicKey, VerifiedProofTransaction, VerifiedRecursiveProofTransaction,
+        BlobProof, Hashable, ProofDataHash, SharedRunContext, Transaction, TransactionData,
+        ValidatorPublicKey, VerifiedMultiProofTransaction,
     },
     module_handle_messages,
     p2p::network::{OutboundMessage, SignedByValidator},
@@ -606,36 +606,19 @@ impl Mempool {
             }
             TransactionData::Stake(ref _staker) => {}
             TransactionData::Blob(ref _blob_transaction) => {}
-            TransactionData::Proof(proof_transaction) => {
+            TransactionData::MultiProof(proof_transaction) => {
                 // Verify and extract proof
                 let (verifier, program_id) = self
                     .known_contracts
                     .0
                     .get(&proof_transaction.contract_name)
                     .context("Contract unknown")?;
-                let hyle_output =
-                    verify_proof(&proof_transaction.proof.to_bytes()?, verifier, program_id)?;
-                tx.transaction_data = TransactionData::VerifiedProof(VerifiedProofTransaction {
-                    proof_hash: proof_transaction.proof.hash(),
-                    contract_name: proof_transaction.contract_name,
-                    blob_tx_hash: proof_transaction.blob_tx_hash,
-                    proof: Some(proof_transaction.proof),
-                    hyle_output,
-                });
-            }
-            TransactionData::RecursiveProof(proof_transaction) => {
-                // Verify and extract proof
-                let (verifier, program_id) = self
-                    .known_contracts
-                    .0
-                    .get(&proof_transaction.via)
-                    .context("Contract unknown")?;
                 // TODO: figure out how to generalize this
-                if proof_transaction.via.0 != "risc0-recursion"
+                if proof_transaction.contract_name.0 != "risc0-recursion"
                     && proof_transaction
                         .verifies
                         .iter()
-                        .any(|(_, contract_name)| contract_name != &proof_transaction.via)
+                        .any(|(_, contract_name)| contract_name != &proof_transaction.contract_name)
                 {
                     bail!("Only risc0-recursion can verify recursive proofs on behalf of other contracts.");
                 }
@@ -645,27 +628,21 @@ impl Mempool {
                     program_id,
                 )?;
                 tx.transaction_data =
-                    TransactionData::VerifiedRecursiveProof(VerifiedRecursiveProofTransaction {
+                    TransactionData::VerifiedMultiProof(VerifiedMultiProofTransaction {
                         proof_hash: proof_transaction.proof.hash(),
                         proof: Some(proof_transaction.proof),
-                        via: proof_transaction.via,
+                        via: proof_transaction.contract_name,
                         verifies: std::iter::zip(proof_transaction.verifies, hyle_outputs)
-                            .map(|((blob_tx_hash, contract_name), hyle_output)| {
-                                VerifiedProofTransaction {
-                                    proof_hash: ProofDataHash("todo?".to_owned()),
-                                    contract_name,
-                                    blob_tx_hash,
-                                    hyle_output,
-                                    proof: None,
-                                }
+                            .map(|((blob_tx_hash, contract_name), hyle_output)| BlobProof {
+                                proof_hash: ProofDataHash("todo?".to_owned()),
+                                contract_name,
+                                blob_tx_hash,
+                                hyle_output,
                             })
                             .collect(),
                     });
             }
-            TransactionData::VerifiedProof(_) => {
-                bail!("Already verified ProofTransaction are not allowed to be received in the mempool");
-            }
-            TransactionData::VerifiedRecursiveProof(_) => {
+            TransactionData::VerifiedMultiProof(_) => {
                 bail!("Already verified RecursiveProofTransaction are not allowed to be received in the mempool");
             }
         }

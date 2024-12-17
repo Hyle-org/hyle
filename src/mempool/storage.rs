@@ -9,7 +9,7 @@ use tracing::{debug, error, warn};
 
 use crate::{
     data_availability::node_state::verifiers::verify_proof,
-    model::{Hashable, Transaction, TransactionData, ValidatorPublicKey, VerifiedProofTransaction},
+    model::{BlobProof, Hashable, Transaction, TransactionData, ValidatorPublicKey},
     p2p::network::SignedByValidator,
     utils::crypto::{AggregateSignature, BlstCrypto},
 };
@@ -273,103 +273,11 @@ impl Storage {
         let mut optimistically_known_contracts: Option<KnownContracts> = None;
         for tx in &data_proposal.txs {
             match &tx.transaction_data {
-                TransactionData::Proof(_) => {
-                    warn!("Refusing DataProposal: unverified proof transaction");
-                    return DataProposalVerdict::Refuse;
-                }
-                TransactionData::RecursiveProof(_) => {
+                TransactionData::MultiProof(_) => {
                     warn!("Refusing DataProposal: unverified recursive proof transaction");
                     return DataProposalVerdict::Refuse;
                 }
-                TransactionData::VerifiedProof(proof_tx) => {
-                    // Ensure contract is registered
-                    let contract_name = &proof_tx.contract_name;
-                    if !known_contracts.0.contains_key(contract_name)
-                        && !optimistically_known_contracts
-                            .as_ref()
-                            .map_or(false, |kc| kc.0.contains_key(contract_name))
-                    {
-                        // Process previous cars to register the missing contract
-                        if let Some(lane) = self.lanes.get_mut(validator) {
-                            for (
-                                _,
-                                LaneEntry {
-                                    data_proposal,
-                                    signatures: _,
-                                },
-                            ) in lane.iter_reverse()
-                            {
-                                for tx in &data_proposal.txs {
-                                    if let TransactionData::RegisterContract(reg_tx) =
-                                        &tx.transaction_data
-                                    {
-                                        if reg_tx.contract_name == *contract_name {
-                                            if optimistically_known_contracts.is_none() {
-                                                optimistically_known_contracts =
-                                                    Some(known_contracts.clone());
-                                            }
-                                            if optimistically_known_contracts
-                                                .as_mut()
-                                                .unwrap()
-                                                .register_contract(
-                                                    &reg_tx.contract_name,
-                                                    &reg_tx.verifier,
-                                                    &reg_tx.program_id,
-                                                )
-                                                .is_err()
-                                            {
-                                                // Register transactions in a validated car should never fail
-                                                // as car is accepted only if all transactions are valid
-                                                unreachable!();
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    // Extract the proof
-                    let proof = match &proof_tx.proof {
-                        Some(proof) => match proof.to_bytes() {
-                            Ok(bytes) => bytes,
-                            Err(_) => {
-                                warn!("Refusing DataProposal: failed to convert proof to bytes");
-                                return DataProposalVerdict::Refuse;
-                            }
-                        },
-                        None => {
-                            warn!("Refusing DataProposal: proof is missing");
-                            return DataProposalVerdict::Refuse;
-                        }
-                    };
-                    // Verifying the proof before voting
-                    let (verifier, program_id) =
-                        match known_contracts.0.get(contract_name).or_else(|| {
-                            optimistically_known_contracts
-                                .as_ref()
-                                .and_then(|kc| kc.0.get(contract_name))
-                        }) {
-                            Some((verifier, program_id)) => (verifier, program_id),
-                            None => {
-                                warn!("Refusing DataProposal: contract not found");
-                                return DataProposalVerdict::Refuse;
-                            }
-                        };
-
-                    match verify_proof(&proof, verifier, program_id) {
-                        Ok(hyle_output) => {
-                            if hyle_output != proof_tx.hyle_output {
-                                warn!("Refusing DataProposal: incorrect HyleOutput in proof transaction");
-                                return DataProposalVerdict::Refuse;
-                            }
-                        }
-                        Err(e) => {
-                            warn!("Refusing DataProposal: invalid proof transaction: {}", e);
-                            return DataProposalVerdict::Refuse;
-                        }
-                    }
-                }
-                TransactionData::VerifiedRecursiveProof(proof_tx) => {
+                TransactionData::VerifiedMultiProof(proof_tx) => {
                     // TODO: figure out what we want to do with the contracts.
                     // Extract the proof
                     let proof = match &proof_tx.proof {
@@ -381,16 +289,14 @@ impl Storage {
                     };
                     // TODO: figure out how to generalize this
                     if proof_tx.via.0 != "risc0-recursion"
-                        && proof_tx.verifies.iter().any(
-                            |VerifiedProofTransaction { contract_name, .. }| {
-                                contract_name != &proof_tx.via
-                            },
-                        )
+                        && proof_tx
+                            .verifies
+                            .iter()
+                            .any(|BlobProof { contract_name, .. }| contract_name != &proof_tx.via)
                     {
                         warn!("Only risc0-recursion can verify recursive proofs on behalf of other contracts.");
                         return DataProposalVerdict::Refuse;
                     }
-                    // Verifying the proof before voting
                     let (verifier, program_id) = match known_contracts.0.get(&proof_tx.via) {
                         Some((verifier, program_id)) => (verifier, program_id),
                         None => {
@@ -601,13 +507,10 @@ impl DataProposal {
     fn remove_proofs(&mut self) {
         self.txs.iter_mut().for_each(|tx| {
             match &mut tx.transaction_data {
-                TransactionData::VerifiedProof(proof_tx) => {
+                TransactionData::VerifiedMultiProof(proof_tx) => {
                     proof_tx.proof = None;
                 }
-                TransactionData::VerifiedRecursiveProof(proof_tx) => {
-                    proof_tx.proof = None;
-                }
-                TransactionData::Proof(_) | TransactionData::RecursiveProof(_) => {
+                TransactionData::MultiProof(_) => {
                     // This can never happen.
                     // A DataProposal that has been processed has turned all TransactionData::Proof into TransactionData::VerifiedProof
                     unreachable!();
@@ -790,9 +693,9 @@ mod tests {
             KnownContracts, MempoolNetMessage,
         },
         model::{
-            Blob, BlobData, BlobTransaction, ContractName, Hashable, ProofData, ProofTransaction,
-            RegisterContractTransaction, Transaction, TransactionData, ValidatorPublicKey,
-            VerifiedProofTransaction,
+            Blob, BlobData, BlobProof, BlobTransaction, ContractName, Hashable,
+            MultiProofTransaction, ProofData, RegisterContractTransaction, Transaction,
+            TransactionData, ValidatorPublicKey, VerifiedMultiProofTransaction,
         },
         utils::crypto,
     };
@@ -815,19 +718,19 @@ mod tests {
         }
     }
 
-    fn make_proof_tx(contract_name: ContractName) -> ProofTransaction {
+    fn make_proof_tx(contract_name: ContractName) -> MultiProofTransaction {
         let hyle_output = get_hyle_output();
-        ProofTransaction {
-            blob_tx_hash: TxHash::default(),
-            contract_name,
+        MultiProofTransaction {
+            contract_name: contract_name.clone(),
             proof: ProofData::Bytes(serde_json::to_vec(&hyle_output).unwrap()),
+            verifies: vec![(TxHash::default(), contract_name)],
         }
     }
 
     fn make_unverified_proof_tx(contract_name: ContractName) -> Transaction {
         Transaction {
             version: 1,
-            transaction_data: TransactionData::Proof(make_proof_tx(contract_name)),
+            transaction_data: TransactionData::MultiProof(make_proof_tx(contract_name)),
         }
     }
 
@@ -836,12 +739,16 @@ mod tests {
         let proof = ProofData::Bytes(serde_json::to_vec(&hyle_output).unwrap());
         Transaction {
             version: 1,
-            transaction_data: TransactionData::VerifiedProof(VerifiedProofTransaction {
+            transaction_data: TransactionData::VerifiedMultiProof(VerifiedMultiProofTransaction {
+                via: contract_name.clone(),
                 proof_hash: proof.hash(),
-                contract_name: contract_name.clone(),
-                blob_tx_hash: TxHash::default(),
+                verifies: vec![BlobProof {
+                    contract_name,
+                    blob_tx_hash: TxHash::default(),
+                    hyle_output,
+                    proof_hash: proof.hash(),
+                }],
                 proof: Some(proof),
-                hyle_output,
             }),
         }
     }
@@ -851,12 +758,16 @@ mod tests {
         let proof = ProofData::Bytes(serde_json::to_vec(&hyle_output).unwrap());
         Transaction {
             version: 1,
-            transaction_data: TransactionData::VerifiedProof(VerifiedProofTransaction {
+            transaction_data: TransactionData::VerifiedMultiProof(VerifiedMultiProofTransaction {
+                via: contract_name.clone(),
                 proof_hash: proof.hash(),
-                contract_name: contract_name.clone(),
-                blob_tx_hash: TxHash::default(),
+                verifies: vec![BlobProof {
+                    contract_name,
+                    blob_tx_hash: TxHash::default(),
+                    hyle_output,
+                    proof_hash: proof.hash(),
+                }],
                 proof: None,
-                hyle_output,
             }),
         }
     }

@@ -15,7 +15,7 @@ use hyle::{
     data_availability::node_state::model::Contract,
     indexer::model::ContractDb,
     model::{
-        Blob, BlobTransaction, ProofData, ProofTransaction, RecursiveProofTransaction,
+        Blob, BlobTransaction, MultiProofTransaction, ProofData, ProofTransaction,
         RegisterContractTransaction,
     },
     rest::client::ApiHttpClient,
@@ -289,8 +289,8 @@ impl E2ECtx {
     ) -> Result<()> {
         assert_ok!(self
             .client()
-            .send_tx_recursive_proof(&RecursiveProofTransaction {
-                via: via.clone(),
+            .send_tx_recursive_proof(&MultiProofTransaction {
+                contract_name: via.clone(),
                 proof: proof.clone(),
                 verifies: verifies.clone(),
             })

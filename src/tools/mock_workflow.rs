@@ -5,10 +5,10 @@ use crate::{
     mempool::api::RestApiMessage,
     model::{
         get_current_timestamp, Blob, BlobData, BlobTransaction, ContractName, ProofData,
-        ProofTransaction, RegisterContractTransaction, SharedRunContext, Transaction,
+        RegisterContractTransaction, SharedRunContext, Transaction,
     },
     module_handle_messages,
-    rest::client::ApiHttpClient,
+    rest::client::{ApiHttpClient, SingleProofTransaction},
     utils::modules::{module_bus_client, Module},
 };
 use anyhow::Result;
@@ -166,7 +166,7 @@ impl MockWorkflowHandler {
             }],
         };
 
-        let tx_proof = ProofTransaction::default();
+        let tx_proof = SingleProofTransaction::default();
 
         let tx_contract = RegisterContractTransaction {
             owner: "owner".to_string(),

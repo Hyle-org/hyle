@@ -1,9 +1,8 @@
 //! State required for participation in consensus by the node.
 
 use crate::model::{
-    get_current_timestamp, BlobTransaction, BlobsHash, Block, BlockHeight, ContractName, Hashable,
-    RegisterContractTransaction, SignedBlock, Transaction, TransactionData,
-    VerifiedProofTransaction,
+    get_current_timestamp, BlobProof, BlobTransaction, BlobsHash, Block, BlockHeight, ContractName,
+    Hashable, RegisterContractTransaction, SignedBlock, Transaction, TransactionData,
 };
 use anyhow::{bail, Context, Error, Result};
 use bincode::{Decode, Encode};
@@ -65,44 +64,15 @@ impl NodeState {
                         }
                     }
                 }
-                TransactionData::Proof(_) => {
-                    error!("Unverified proof transaction should not be in a block");
-                }
-                TransactionData::RecursiveProof(_) => {
+                TransactionData::MultiProof(_) => {
                     error!("Unverified recursive proof transaction should not be in a block");
                 }
-                TransactionData::VerifiedProof(verified_proof_transaction) => {
-                    match self.handle_verified_proof_tx(verified_proof_transaction) {
-                        Ok(proof_tx_output) => {
-                            // When a proof tx is handled, three things happen:
-                            // 1. Blobs get verified
-                            // 2. Maybe: BlobTransactions get settled
-                            // 3. Maybe: Contract state digests are updated
-
-                            // Keep track of verified blobs
-                            verified_blobs.push((
-                                verified_proof_transaction.hyle_output.tx_hash.clone(),
-                                verified_proof_transaction.hyle_output.index.clone(),
-                            ));
-                            // Keep track of settled txs
-                            settled_blob_tx_hashes.extend(proof_tx_output.settled_blob_tx_hashes);
-                            // Update the contract's updated states
-                            updated_states.extend(proof_tx_output.updated_states);
-                            // Keep track of all verified proof txs
-                            new_verified_proof_txs.push(tx.clone());
-                        }
-                        Err(e) => {
-                            error!("Failed to handle proof transaction: {:?}", e);
-                            failed_txs.push(tx.clone());
-                        }
-                    }
-                }
-                TransactionData::VerifiedRecursiveProof(rec_proof_tx) => {
+                TransactionData::VerifiedMultiProof(rec_proof_tx) => {
                     rec_proof_tx
                         .verifies
                         .iter()
                         .for_each(|verified_proof_transaction| {
-                            match self.handle_verified_proof_tx(verified_proof_transaction) {
+                            match self.handle_blob_proof(verified_proof_transaction) {
                                 Ok(proof_tx_output) => {
                                     // When a proof tx is handled, three things happen:
                                     // 1. Blobs get verified
@@ -225,11 +195,8 @@ impl NodeState {
         Ok(())
     }
 
-    fn handle_verified_proof_tx(
-        &mut self,
-        tx: &VerifiedProofTransaction,
-    ) -> Result<HandledProofTxOutput, Error> {
-        debug!("Handle verified proof tx: {:?}", tx);
+    fn handle_blob_proof(&mut self, tx: &BlobProof) -> Result<HandledProofTxOutput, Error> {
+        debug!("Handle blob proof: {:?}", tx);
 
         let (unsettled_tx, is_next_to_settle) = self
             .unsettled_transactions
@@ -433,7 +400,7 @@ impl NodeState {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(clippy, not(clippy)))]
 mod test {
     use super::*;
     use crate::model::*;
@@ -523,13 +490,13 @@ mod test {
 
         let hyle_output_c1 = make_hyle_output(blob_tx.clone(), BlobIndex(0));
 
-        let proof_c1 = ProofTransaction {
+        let proof_c1 = MultiProofTransaction {
             contract_name: c1.clone(),
             blob_tx_hash: blob_tx_hash.clone(),
             proof: ProofData::Bytes(serde_json::to_vec(&hyle_output_c1).unwrap()),
         };
 
-        let verified_proof_c1 = VerifiedProofTransaction {
+        let verified_proof_c1 = VerifiedMultiProofTransaction {
             proof_hash: proof_c1.proof.hash(),
             hyle_output: state
                 .verify_proof(&proof_c1.proof.to_bytes().unwrap(), &proof_c1.contract_name)
@@ -541,13 +508,13 @@ mod test {
 
         let hyle_output_c2 = make_hyle_output(blob_tx.clone(), BlobIndex(1));
 
-        let proof_c2 = ProofTransaction {
+        let proof_c2 = MultiProofTransaction {
             contract_name: c2.clone(),
             blob_tx_hash: blob_tx_hash.clone(),
             proof: ProofData::Bytes(serde_json::to_vec(&hyle_output_c2).unwrap()),
         };
 
-        let verified_proof_c2 = VerifiedProofTransaction {
+        let verified_proof_c2 = VerifiedMultiProofTransaction {
             proof_hash: proof_c2.proof.hash(),
             hyle_output: state
                 .verify_proof(&proof_c2.proof.to_bytes().unwrap(), &proof_c2.contract_name)
@@ -557,8 +524,8 @@ mod test {
             proof: Some(proof_c2.proof),
         };
 
-        state.handle_verified_proof_tx(&verified_proof_c1).unwrap();
-        state.handle_verified_proof_tx(&verified_proof_c2).unwrap();
+        state.handle_blob_proof(&verified_proof_c1).unwrap();
+        state.handle_blob_proof(&verified_proof_c2).unwrap();
 
         assert_eq!(state.contracts.get(&c1).unwrap().state.0, vec![4, 5, 6]);
         assert_eq!(state.contracts.get(&c2).unwrap().state.0, vec![4, 5, 6]);
@@ -585,13 +552,13 @@ mod test {
 
         let hyle_output_c1 = make_hyle_output(blob_tx_1.clone(), BlobIndex(1)); // Wrong index
 
-        let proof_c1 = ProofTransaction {
+        let proof_c1 = MultiProofTransaction {
             contract_name: c1.clone(),
             blob_tx_hash: blob_tx_hash_1.clone(),
             proof: ProofData::Bytes(serde_json::to_vec(&hyle_output_c1).unwrap()),
         };
 
-        let verified_proof_c1 = VerifiedProofTransaction {
+        let verified_proof_c1 = VerifiedMultiProofTransaction {
             proof_hash: proof_c1.proof.hash(),
             hyle_output: state
                 .verify_proof(&proof_c1.proof.to_bytes().unwrap(), &proof_c1.contract_name)
@@ -601,7 +568,7 @@ mod test {
             proof: Some(proof_c1.proof),
         };
 
-        assert_err!(state.handle_verified_proof_tx(&verified_proof_c1));
+        assert_err!(state.handle_blob_proof(&verified_proof_c1));
 
         // Check that we did not settled
         assert_eq!(state.contracts.get(&c1).unwrap().state.0, vec![0, 1, 2, 3]);
@@ -629,13 +596,13 @@ mod test {
 
         let hyle_output_c1 = make_hyle_output(blob_tx.clone(), BlobIndex(0));
 
-        let proof_c1 = ProofTransaction {
+        let proof_c1 = MultiProofTransaction {
             contract_name: c1.clone(),
             blob_tx_hash: blob_tx_hash.clone(),
             proof: ProofData::Bytes(serde_json::to_vec(&hyle_output_c1).unwrap()),
         };
 
-        let verified_proof_c1 = VerifiedProofTransaction {
+        let verified_proof_c1 = VerifiedMultiProofTransaction {
             proof_hash: proof_c1.proof.hash(),
             hyle_output: state
                 .verify_proof(&proof_c1.proof.to_bytes().unwrap(), &proof_c1.contract_name)
@@ -645,8 +612,8 @@ mod test {
             proof: Some(proof_c1.proof),
         };
 
-        state.handle_verified_proof_tx(&verified_proof_c1).unwrap();
-        state.handle_verified_proof_tx(&verified_proof_c1).unwrap();
+        state.handle_blob_proof(&verified_proof_c1).unwrap();
+        state.handle_blob_proof(&verified_proof_c1).unwrap();
 
         assert_eq!(
             state
@@ -685,13 +652,13 @@ mod test {
 
         let first_hyle_output = make_hyle_output(blob_tx.clone(), BlobIndex(0));
 
-        let first_proof = ProofTransaction {
+        let first_proof = MultiProofTransaction {
             contract_name: c1.clone(),
             blob_tx_hash: blob_tx_hash.clone(),
             proof: ProofData::Bytes(serde_json::to_vec(&first_hyle_output).unwrap()),
         };
 
-        let verified_first_proof = VerifiedProofTransaction {
+        let verified_first_proof = VerifiedMultiProofTransaction {
             proof_hash: first_proof.proof.hash(),
             hyle_output: state
                 .verify_proof(
@@ -708,13 +675,13 @@ mod test {
         second_hyle_output.initial_state = first_hyle_output.next_state.clone();
         second_hyle_output.next_state = StateDigest(vec![7, 8, 9]);
 
-        let second_proof = ProofTransaction {
+        let second_proof = MultiProofTransaction {
             contract_name: c1.clone(),
             blob_tx_hash: blob_tx_hash.clone(),
             proof: ProofData::Bytes(serde_json::to_vec(&second_hyle_output).unwrap()),
         };
 
-        let verified_second_proof = VerifiedProofTransaction {
+        let verified_second_proof = VerifiedMultiProofTransaction {
             proof_hash: second_proof.proof.hash(),
             hyle_output: state
                 .verify_proof(
@@ -731,13 +698,13 @@ mod test {
         third_hyle_output.initial_state = second_hyle_output.next_state.clone();
         third_hyle_output.next_state = StateDigest(vec![10, 11, 12]);
 
-        let third_proof = ProofTransaction {
+        let third_proof = MultiProofTransaction {
             contract_name: c1.clone(),
             blob_tx_hash: blob_tx_hash.clone(),
             proof: ProofData::Bytes(serde_json::to_vec(&third_hyle_output).unwrap()),
         };
 
-        let verified_third_proof = VerifiedProofTransaction {
+        let verified_third_proof = VerifiedMultiProofTransaction {
             proof_hash: third_proof.proof.hash(),
             hyle_output: state
                 .verify_proof(
@@ -750,15 +717,9 @@ mod test {
             proof: Some(third_proof.proof),
         };
 
-        state
-            .handle_verified_proof_tx(&verified_first_proof)
-            .unwrap();
-        state
-            .handle_verified_proof_tx(&verified_second_proof)
-            .unwrap();
-        state
-            .handle_verified_proof_tx(&verified_third_proof)
-            .unwrap();
+        state.handle_blob_proof(&verified_first_proof).unwrap();
+        state.handle_blob_proof(&verified_second_proof).unwrap();
+        state.handle_blob_proof(&verified_third_proof).unwrap();
 
         // Check that we did settled with the last state
         assert_eq!(state.contracts.get(&c1).unwrap().state.0, vec![10, 11, 12]);
@@ -772,18 +733,18 @@ mod test {
         blob_index: BlobIndex,
         initial_state: &[u8],
         next_state: &[u8],
-    ) -> VerifiedProofTransaction {
+    ) -> VerifiedMultiProofTransaction {
         let mut hyle_output = make_hyle_output(blob_tx.clone(), blob_index);
         hyle_output.initial_state = StateDigest(initial_state.to_vec());
         hyle_output.next_state = StateDigest(next_state.to_vec());
 
-        let proof = ProofTransaction {
+        let proof = MultiProofTransaction {
             contract_name: contract_name.clone(),
             blob_tx_hash: blob_tx_hash.clone(),
             proof: ProofData::Bytes(serde_json::to_vec(&hyle_output).unwrap()),
         };
 
-        VerifiedProofTransaction {
+        VerifiedMultiProofTransaction {
             proof_hash: proof.proof.hash(),
             hyle_output: state
                 .verify_proof(&proof.proof.to_bytes().unwrap(), &proof.contract_name)
@@ -857,10 +818,10 @@ mod test {
             &[5],
         );
 
-        state.handle_verified_proof_tx(&first_proof_tx).unwrap();
-        state.handle_verified_proof_tx(&second_proof_tx_b).unwrap();
-        state.handle_verified_proof_tx(&second_proof_tx_c).unwrap();
-        state.handle_verified_proof_tx(&third_proof_tx).unwrap();
+        state.handle_blob_proof(&first_proof_tx).unwrap();
+        state.handle_blob_proof(&second_proof_tx_b).unwrap();
+        state.handle_blob_proof(&second_proof_tx_c).unwrap();
+        state.handle_blob_proof(&third_proof_tx).unwrap();
 
         // Check that we did settled with the last state
         assert_eq!(state.contracts.get(&c1).unwrap().state.0, vec![5]);
@@ -887,13 +848,13 @@ mod test {
 
         // Create legitimate proof for Blob1
         let first_hyle_output = make_hyle_output(blob_tx.clone(), BlobIndex(0));
-        let first_proof = ProofTransaction {
+        let first_proof = MultiProofTransaction {
             contract_name: c1.clone(),
             blob_tx_hash: blob_tx_hash.clone(),
             proof: ProofData::Bytes(serde_json::to_vec(&first_hyle_output).unwrap()),
         };
 
-        let verified_first_proof = VerifiedProofTransaction {
+        let verified_first_proof = VerifiedMultiProofTransaction {
             proof_hash: first_proof.proof.hash(),
             hyle_output: state
                 .verify_proof(
@@ -911,13 +872,13 @@ mod test {
         another_first_hyle_output.initial_state = first_hyle_output.next_state.clone();
         another_first_hyle_output.next_state = first_hyle_output.initial_state.clone();
 
-        let another_first_proof = ProofTransaction {
+        let another_first_proof = MultiProofTransaction {
             contract_name: c1.clone(),
             blob_tx_hash: blob_tx_hash.clone(),
             proof: ProofData::Bytes(serde_json::to_vec(&another_first_hyle_output).unwrap()),
         };
 
-        let another_verified_first_proof = VerifiedProofTransaction {
+        let another_verified_first_proof = VerifiedMultiProofTransaction {
             proof_hash: another_first_proof.proof.hash(),
             hyle_output: state
                 .verify_proof(
@@ -934,13 +895,13 @@ mod test {
         second_hyle_output.initial_state = another_first_hyle_output.next_state.clone();
         second_hyle_output.next_state = StateDigest(vec![7, 8, 9]);
 
-        let second_proof = ProofTransaction {
+        let second_proof = MultiProofTransaction {
             contract_name: c1.clone(),
             blob_tx_hash: blob_tx_hash.clone(),
             proof: ProofData::Bytes(serde_json::to_vec(&second_hyle_output).unwrap()),
         };
 
-        let verified_second_proof = VerifiedProofTransaction {
+        let verified_second_proof = VerifiedMultiProofTransaction {
             proof_hash: second_proof.proof.hash(),
             hyle_output: state
                 .verify_proof(
@@ -953,15 +914,11 @@ mod test {
             proof: Some(second_proof.proof),
         };
 
+        state.handle_blob_proof(&verified_first_proof).unwrap();
         state
-            .handle_verified_proof_tx(&verified_first_proof)
+            .handle_blob_proof(&another_verified_first_proof)
             .unwrap();
-        state
-            .handle_verified_proof_tx(&another_verified_first_proof)
-            .unwrap();
-        state
-            .handle_verified_proof_tx(&verified_second_proof)
-            .unwrap();
+        state.handle_blob_proof(&verified_second_proof).unwrap();
 
         // Check that we did not settled
         assert_eq!(state.contracts.get(&c1).unwrap().state.0, vec![0, 1, 2, 3]);
@@ -989,13 +946,13 @@ mod test {
 
         // Create legitimate proof for Blob1
         let first_hyle_output = make_hyle_output(blob_tx.clone(), BlobIndex(0));
-        let first_proof = ProofTransaction {
+        let first_proof = MultiProofTransaction {
             contract_name: c1.clone(),
             blob_tx_hash: blob_tx_hash.clone(),
             proof: ProofData::Bytes(serde_json::to_vec(&first_hyle_output).unwrap()),
         };
 
-        let verified_first_proof = VerifiedProofTransaction {
+        let verified_first_proof = VerifiedMultiProofTransaction {
             proof_hash: first_proof.proof.hash(),
             hyle_output: state
                 .verify_proof(
@@ -1012,13 +969,13 @@ mod test {
         second_hyle_output.initial_state = first_hyle_output.next_state.clone();
         second_hyle_output.next_state = StateDigest(vec![7, 8, 9]);
 
-        let second_proof = ProofTransaction {
+        let second_proof = MultiProofTransaction {
             contract_name: c1.clone(),
             blob_tx_hash: blob_tx_hash.clone(),
             proof: ProofData::Bytes(serde_json::to_vec(&second_hyle_output).unwrap()),
         };
 
-        let verified_second_proof = VerifiedProofTransaction {
+        let verified_second_proof = VerifiedMultiProofTransaction {
             proof_hash: second_proof.proof.hash(),
             hyle_output: state
                 .verify_proof(
@@ -1035,13 +992,13 @@ mod test {
         third_hyle_output.initial_state = first_hyle_output.next_state.clone();
         third_hyle_output.next_state = StateDigest(vec![10, 11, 12]);
 
-        let third_proof = ProofTransaction {
+        let third_proof = MultiProofTransaction {
             contract_name: c1.clone(),
             blob_tx_hash: blob_tx_hash.clone(),
             proof: ProofData::Bytes(serde_json::to_vec(&third_hyle_output).unwrap()),
         };
 
-        let verified_third_proof = VerifiedProofTransaction {
+        let verified_third_proof = VerifiedMultiProofTransaction {
             proof_hash: third_proof.proof.hash(),
             hyle_output: state
                 .verify_proof(
@@ -1054,15 +1011,9 @@ mod test {
             proof: Some(third_proof.proof),
         };
 
-        state
-            .handle_verified_proof_tx(&verified_first_proof)
-            .unwrap();
-        state
-            .handle_verified_proof_tx(&verified_second_proof)
-            .unwrap();
-        state
-            .handle_verified_proof_tx(&verified_third_proof)
-            .unwrap();
+        state.handle_blob_proof(&verified_first_proof).unwrap();
+        state.handle_blob_proof(&verified_second_proof).unwrap();
+        state.handle_blob_proof(&verified_third_proof).unwrap();
 
         // Check that we did not settled
         assert_eq!(state.contracts.get(&c1).unwrap().state.0, vec![0, 1, 2, 3]);

@@ -7,10 +7,10 @@ use serde::{Deserialize, Serialize};
 use crate::{
     bus::{bus_client, metrics::BusMetrics, BusClientSender, BusMessage},
     model::{
-        BlobTransaction, CommonRunContext, Hashable, ProofData, ProofTransaction,
-        RecursiveProofTransaction, RegisterContractTransaction, Transaction, TransactionData,
+        BlobTransaction, CommonRunContext, Hashable, MultiProofTransaction, ProofData,
+        RegisterContractTransaction, Transaction, TransactionData,
     },
-    rest::AppError,
+    rest::{client::SingleProofTransaction, AppError},
 };
 use staking::Staker;
 
@@ -40,10 +40,7 @@ pub async fn api(ctx: &CommonRunContext) -> Router<()> {
         .route("/tx/send/stake", post(send_staking_transaction))
         .route("/tx/send/blob", post(send_blob_transaction))
         .route("/tx/send/proof", post(send_proof_transaction))
-        .route(
-            "/tx/send/recursive_proof",
-            post(send_recursive_proof_transaction),
-        )
+        .route("/tx/send/multi_proof", post(send_multi_proof_transaction))
         .with_state(state)
 }
 
@@ -77,26 +74,34 @@ pub async fn send_blob_transaction(
 
 pub async fn send_proof_transaction(
     State(state): State<RouterState>,
-    Json(mut payload): Json<ProofTransaction>,
+    Json(mut payload): Json<SingleProofTransaction>,
 ) -> Result<impl IntoResponse, AppError> {
     let proof_bytes = payload
         .proof
         .to_bytes()
         .map_err(|err| AppError(StatusCode::BAD_REQUEST, anyhow!(err)))?;
     payload.proof = ProofData::Bytes(proof_bytes);
-    handle_send(state, TransactionData::Proof(payload)).await
+    handle_send(
+        state,
+        TransactionData::MultiProof(MultiProofTransaction {
+            verifies: vec![(payload.tx_hash, payload.contract_name.clone())],
+            contract_name: payload.contract_name,
+            proof: payload.proof,
+        }),
+    )
+    .await
 }
 
-pub async fn send_recursive_proof_transaction(
+pub async fn send_multi_proof_transaction(
     State(state): State<RouterState>,
-    Json(mut payload): Json<RecursiveProofTransaction>,
+    Json(mut payload): Json<MultiProofTransaction>,
 ) -> Result<impl IntoResponse, AppError> {
     let proof_bytes = payload
         .proof
         .to_bytes()
         .map_err(|err| AppError(StatusCode::BAD_REQUEST, anyhow!(err)))?;
     payload.proof = ProofData::Bytes(proof_bytes);
-    handle_send(state, TransactionData::RecursiveProof(payload)).await
+    handle_send(state, TransactionData::MultiProof(payload)).await
 }
 
 pub async fn send_staking_transaction(
