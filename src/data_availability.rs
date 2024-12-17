@@ -445,7 +445,6 @@ impl DataAvailability {
             consensus_proposal,
         }: CommittedConsensusProposal,
     ) {
-        info!("🔒  Cut committed");
         let last_block = self.blocks.last();
         let parent_hash = last_block
             .as_ref()
@@ -453,6 +452,14 @@ impl DataAvailability {
             .unwrap_or(BlockHash::new(
                 "46696174206c757820657420666163746120657374206c7578",
             ));
+
+        info!(
+            "🔒  Cut committed for slot {}",
+            last_block
+                .as_ref()
+                .map(|b| b.consensus_proposal.slot)
+                .unwrap_or(0)
+        );
 
         let signed_block = SignedBlock {
             parent_hash,
