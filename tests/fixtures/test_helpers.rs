@@ -193,7 +193,7 @@ pub async fn send_transaction(
         let proof: ProofData = proof.await.unwrap();
         client
             .send_tx_proof(&hyle::model::ProofTransaction {
-                blob_tx_hash: blob_tx_hash.clone(),
+                tx_hashes: vec![blob_tx_hash.clone()],
                 proof,
                 contract_name,
             })

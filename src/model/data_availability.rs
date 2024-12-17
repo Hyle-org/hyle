@@ -2,7 +2,7 @@ use bincode::{Decode, Encode};
 use std::collections::HashMap;
 
 use crate::model::{BlobsHash, BlockHeight, ContractName};
-use hyle_contract_sdk::{HyleOutput, Identity, ProgramId, StateDigest, TxHash, Verifier};
+use hyle_contract_sdk::{Blob, HyleOutput, Identity, ProgramId, StateDigest, TxHash, Verifier};
 use serde::{Deserialize, Serialize};
 
 #[derive(Default, Debug, Clone, Serialize, Deserialize, Encode, Decode)]
@@ -23,9 +23,9 @@ pub struct UnsettledBlobTransaction {
 
 #[derive(Default, Debug, Clone, PartialEq, Eq, Hash, Encode, Decode)]
 pub struct UnsettledBlobMetadata {
-    pub contract_name: ContractName,
+    pub blob: Blob,
     // Each time we receive a proof, we add it to this list
-    pub metadata: Vec<HyleOutput>,
+    pub possible_proofs: Vec<(ProgramId, HyleOutput)>,
 }
 
 #[derive(Default, Debug, Clone, Encode, Decode)]
