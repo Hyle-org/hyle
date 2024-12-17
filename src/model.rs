@@ -14,7 +14,7 @@ use sha3::{Digest, Sha3_256};
 use sqlx::{prelude::Type, Postgres};
 use std::{
     cmp::Ordering,
-    collections::HashMap,
+    collections::BTreeMap,
     fmt,
     io::Write,
     ops::Add,
@@ -239,7 +239,7 @@ pub struct Block {
     pub new_bounded_validators: Vec<ValidatorPublicKey>,
     pub timed_out_tx_hashes: Vec<TxHash>,
     pub settled_blob_tx_hashes: Vec<TxHash>,
-    pub updated_states: HashMap<ContractName, StateDigest>,
+    pub updated_states: BTreeMap<ContractName, StateDigest>,
 }
 
 impl Block {
