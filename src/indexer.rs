@@ -24,8 +24,8 @@ use axum::{
     routing::get,
     Router,
 };
+use chrono::DateTime;
 use model::{BlobWithStatus, TransactionStatus, TransactionType, TransactionWithBlobs, TxHashDb};
-use sqlx::types::chrono::DateTime;
 use sqlx::Row;
 use sqlx::{postgres::PgPoolOptions, PgPool, Pool, Postgres};
 use std::{collections::HashMap, sync::Arc};
@@ -525,6 +525,7 @@ mod test {
     use hyle_contract_sdk::{BlobIndex, HyleOutput, Identity, ProgramId, StateDigest, TxHash};
     use model::{BlockDb, ContractDb};
     use serde_json::json;
+    use staking::model::ValidatorPublicKey;
     use std::{
         future::IntoFuture,
         net::{Ipv4Addr, SocketAddr},
@@ -533,8 +534,9 @@ mod test {
     use crate::{
         bus::SharedMessageBus,
         data_availability::node_state::NodeState,
+        mempool::storage::DataProposal,
         model::{
-            Blob, BlobData, BlockHeight, ProofData, RegisterContractTransaction, Transaction,
+            Blob, BlobData, ProofData, RegisterContractTransaction, SignedBlock, Transaction,
             TransactionData, VerifiedProofTransaction,
         },
     };
@@ -708,7 +710,17 @@ mod test {
         ];
 
         let mut node_state = NodeState::default();
-        let block = node_state.handle_new_cut(BlockHeight(1), BlockHash::new(""), 1, vec![], txs);
+
+        let mut signed_block = SignedBlock::default();
+        signed_block.data_proposals.push((
+            ValidatorPublicKey("ttt".into()),
+            vec![DataProposal {
+                id: 1,
+                parent_data_proposal_hash: None,
+                txs,
+            }],
+        ));
+        let block = node_state.handle_signed_block(&signed_block);
 
         indexer
             .handle_processed_block(block)

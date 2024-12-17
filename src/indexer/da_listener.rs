@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
-use anyhow::{bail, Error, Result};
+use anyhow::{bail, Context, Error, Result};
+use bytes::BytesMut;
 use futures::{SinkExt, StreamExt};
 use tokio::net::TcpStream;
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
@@ -11,7 +12,10 @@ use crate::{
     data_availability::DataEvent,
     model::{Block, BlockHeight, CommonRunContext},
     module_handle_messages,
-    utils::modules::{module_bus_client, Module},
+    utils::{
+        logger::LogMe,
+        modules::{module_bus_client, Module},
+    },
 };
 
 module_bus_client! {
@@ -52,25 +56,33 @@ impl DAListener {
         module_handle_messages! {
             on_bus self.bus,
             frame = self.da_stream.next() => {
-            if let Some(Ok(cmd)) = frame {
-                let bytes = cmd;
-                let block: Block =
-                    bincode::decode_from_slice(&bytes, bincode::config::standard())?.0;
-                if let Err(e) = self.handle_processed_block(block).await {
-                    error!("Error while handling block: {:#}", e);
+                if let Some(Ok(bytes)) = frame {
+                    _ = self.processing_next_frame(bytes).await.log_error("Consuming da stream");
+                } else if frame.is_none() {
+                    bail!("DA stream closed");
+                } else if let Some(Err(e)) = frame {
+                    bail!("Error while reading DA stream: {}", e);
                 }
-                SinkExt::<bytes::Bytes>::send(&mut self.da_stream, "ok".into()).await?;
-            } else if frame.is_none() {
-                bail!("DA stream closed");
-            } else if let Some(Err(e)) = frame {
-                bail!("Error while reading DA stream: {}", e);
             }
-        }
         }
         Ok(())
     }
 
-    async fn handle_processed_block(&mut self, block: Block) -> Result<()> {
+    async fn processing_next_frame(&mut self, bytes: BytesMut) -> Result<()> {
+        // FIXME: Should be signed blocks
+        let block: Block = bincode::decode_from_slice(&bytes, bincode::config::standard())
+            .log_error("Decoding block")?
+            .0;
+        if let Err(e) = self.handle_processed_block(block) {
+            error!("Error while handling block: {:#}", e);
+        }
+        SinkExt::<bytes::Bytes>::send(&mut self.da_stream, "ok".into())
+            .await
+            .context("Sending ok answer on da stream")
+    }
+
+    fn handle_processed_block(&mut self, block: Block) -> Result<()> {
+        info!("Received block in DA listener");
         self.bus
             .send(DataEvent::NewBlock(Box::new(block.clone())))?;
         Ok(())

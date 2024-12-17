@@ -29,7 +29,7 @@ mod e2e_consensus {
     async fn can_rejoin() -> Result<()> {
         let mut ctx = E2ECtx::new_multi(2, 500).await?;
 
-        ctx.wait_height(2).await?;
+        ctx.wait_height(4).await?;
 
         let joining_client = ctx.add_node().await?;
 
