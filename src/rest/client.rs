@@ -54,7 +54,7 @@ impl ApiHttpClient {
 
     pub async fn send_tx_multi_proof(&self, tx: &MultiProofTransaction) -> Result<Response> {
         self.reqwest_client
-            .post(format!("{}v1/tx/send/recursive_proof", self.url))
+            .post(format!("{}v1/tx/send/multi_proof", self.url))
             .body(serde_json::to_string(&tx)?)
             .header("Content-Type", "application/json")
             .send()

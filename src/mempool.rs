@@ -3,7 +3,7 @@
 use crate::{
     bus::{command_response::Query, BusClientSender, BusMessage},
     consensus::{CommittedConsensusProposal, ConsensusEvent},
-    data_availability::node_state::verifiers::verify_recursive_proof,
+    data_availability::node_state::verifiers::verify_multi_proof,
     genesis::GenesisEvent,
     mempool::storage::{DataProposal, Storage},
     model::{
@@ -622,11 +622,8 @@ impl Mempool {
                 {
                     bail!("Only risc0-recursion can verify recursive proofs on behalf of other contracts.");
                 }
-                let hyle_outputs = verify_recursive_proof(
-                    &proof_transaction.proof.to_bytes()?,
-                    verifier,
-                    program_id,
-                )?;
+                let hyle_outputs =
+                    verify_multi_proof(&proof_transaction.proof.to_bytes()?, verifier, program_id)?;
                 tx.transaction_data =
                     TransactionData::VerifiedMultiProof(VerifiedMultiProofTransaction {
                         proof_hash: proof_transaction.proof.hash(),

@@ -31,11 +31,14 @@ pub fn verify_proof(
     Ok(hyle_output)
 }
 
-pub fn verify_recursive_proof(
+pub fn verify_multi_proof(
     proof: &[u8],
     verifier: &Verifier,
     program_id: &ProgramId,
 ) -> Result<Vec<HyleOutput>, Error> {
+    if let Ok(hyle_output) = verify_proof(proof, verifier, program_id) {
+        return Ok(vec![hyle_output]);
+    };
     let hyle_outputs = match verifier.0.as_str() {
         "risc0" => {
             let output: Vec<Vec<u8>> = risc0_proof_verifier(proof, &program_id.0)?;
