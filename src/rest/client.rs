@@ -109,7 +109,7 @@ impl ApiHttpClient {
             .header("Content-Type", "application/json")
             .send()
             .await
-            .context("getting Contract")?
+            .context(format!("getting Contract {}", contract_name))?
             .json::<Contract>()
             .await
             .context("reading contract response")
@@ -133,7 +133,7 @@ impl ApiHttpClient {
             .header("Content-Type", "application/json")
             .send()
             .await
-            .context("getting Contract")
+            .context(format!("getting Contract {}", contract_name))
     }
 
     pub async fn run_scenario_api_test(

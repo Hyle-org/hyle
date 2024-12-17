@@ -219,7 +219,10 @@ impl FollowerRole for Consensus {
                 ConsensusNetMessage::PrepareVote(consensus_proposal.hash()),
             )?;
         } else {
-            info!("😥 Not part of consensus, not sending PrepareVote");
+            info!(
+                "😥 Not part of consensus ({}), not sending PrepareVote",
+                self.crypto.validator_pubkey()
+            );
         }
 
         self.metrics.prepare();

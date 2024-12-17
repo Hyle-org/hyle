@@ -1,8 +1,8 @@
 //! State required for participation in consensus by the node.
 
 use crate::model::{
-    BlobTransaction, BlobsHash, Block, BlockHash, BlockHeight, ContractName, Hashable,
-    RegisterContractTransaction, Transaction, TransactionData, ValidatorPublicKey,
+    get_current_timestamp, BlobTransaction, BlobsHash, Block, BlockHeight, ContractName, Hashable,
+    RegisterContractTransaction, SignedBlock, Transaction, TransactionData,
     VerifiedProofTransaction,
 };
 use anyhow::{bail, Context, Error, Result};
@@ -34,16 +34,9 @@ pub struct HandledProofTxOutput {
 }
 
 impl NodeState {
-    pub fn handle_new_cut(
-        &mut self,
-        block_height: BlockHeight,
-        block_parent_hash: BlockHash,
-        block_timestamp: u64,
-        new_bounded_validators: Vec<ValidatorPublicKey>,
-        txs: Vec<Transaction>,
-    ) -> Block {
-        let timed_out_tx_hashes = self.clear_timeouts(&block_height);
-        self.current_height = block_height;
+    pub fn handle_signed_block(&mut self, signed_block: &SignedBlock) -> Block {
+        let timed_out_tx_hashes = self.clear_timeouts(&signed_block.height());
+        self.current_height = signed_block.height();
 
         let mut new_contract_txs: Vec<Transaction> = vec![];
         let mut new_blob_txs: Vec<Transaction> = vec![];
@@ -54,7 +47,7 @@ impl NodeState {
         let mut settled_blob_tx_hashes: Vec<TxHash> = vec![];
         let mut updated_states: HashMap<ContractName, StateDigest> = HashMap::new();
         // Handle all transactions
-        for tx in txs.iter() {
+        for tx in signed_block.txs().iter() {
             match &tx.transaction_data {
                 // FIXME: to remove when we have a real staking smart contract
                 TransactionData::Stake(staker) => {
@@ -115,16 +108,22 @@ impl NodeState {
             }
         }
         Block {
-            block_parent_hash,
-            block_height,
-            block_timestamp,
+            block_parent_hash: signed_block.parent_hash.clone(),
+            block_height: self.current_height,
+            // TODO: put timestamp in consensus proposal
+            block_timestamp: get_current_timestamp(),
             new_contract_txs,
             new_blob_txs,
             new_verified_proof_txs,
             verified_blobs,
             failed_txs,
             stakers,
-            new_bounded_validators,
+            new_bounded_validators: signed_block
+                .consensus_proposal
+                .new_validators_to_bond
+                .iter()
+                .map(|v| v.pubkey.clone())
+                .collect(),
             timed_out_tx_hashes,
             settled_blob_tx_hashes,
             updated_states,

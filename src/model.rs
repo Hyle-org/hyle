@@ -26,8 +26,12 @@ use tracing::debug;
 
 use crate::{
     bus::SharedMessageBus,
-    consensus::utils::HASH_DISPLAY_SIZE,
-    utils::{conf::SharedConf, crypto::SharedBlstCrypto},
+    consensus::{utils::HASH_DISPLAY_SIZE, ConsensusProposal},
+    mempool::storage::DataProposal,
+    utils::{
+        conf::SharedConf,
+        crypto::{AggregateSignature, SharedBlstCrypto},
+    },
 };
 
 use staking::Staker;
@@ -355,6 +359,68 @@ pub trait Hashable<T> {
     fn hash(&self) -> T;
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, Display)]
+#[display("")]
+pub struct SignedBlock {
+    pub parent_hash: BlockHash,
+    pub data_proposals: Vec<(ValidatorPublicKey, Vec<DataProposal>)>,
+    pub certificate: AggregateSignature,
+    pub consensus_proposal: ConsensusProposal,
+}
+
+impl SignedBlock {
+    pub fn height(&self) -> BlockHeight {
+        BlockHeight(self.consensus_proposal.slot)
+    }
+
+    pub fn txs(&self) -> Vec<Transaction> {
+        self.data_proposals
+            .iter()
+            .flat_map(|(_, dps)| dps)
+            .flat_map(|dp| dp.txs.clone())
+            .collect()
+    }
+}
+
+impl Ord for SignedBlock {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.height().0.cmp(&other.height().0)
+    }
+}
+
+impl PartialOrd for SignedBlock {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl PartialEq for SignedBlock {
+    fn eq(&self, other: &Self) -> bool {
+        self.hash() == other.hash()
+    }
+}
+
+impl Eq for SignedBlock {}
+
+impl std::hash::Hash for SignedBlock {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        let h: BlockHash = Hashable::hash(self);
+        h.hash(state);
+    }
+}
+
+// TODO: Return consensus proposal hash
+impl Hashable<BlockHash> for SignedBlock {
+    fn hash(&self) -> BlockHash {
+        let mut hasher = Sha3_256::new();
+        _ = write!(hasher, "{}", self.parent_hash);
+        _ = write!(hasher, "{}", self.height());
+        for tx in self.txs().iter() {
+            hasher.update(tx.hash().0);
+        }
+        BlockHash(hex::encode(hasher.finalize()))
+    }
+}
 impl Hashable<TxHash> for Transaction {
     fn hash(&self) -> TxHash {
         match &self.transaction_data {
@@ -431,6 +497,20 @@ impl Hashable<TxHash> for RegisterContractTransaction {
 impl BlobTransaction {
     pub fn blobs_hash(&self) -> BlobsHash {
         BlobsHash::from_vec(&self.blobs)
+    }
+}
+
+impl std::default::Default for SignedBlock {
+    fn default() -> Self {
+        SignedBlock {
+            parent_hash: BlockHash::default(),
+            consensus_proposal: ConsensusProposal::default(),
+            data_proposals: vec![],
+            certificate: AggregateSignature {
+                signature: crate::utils::crypto::Signature("signature".into()),
+                validators: vec![],
+            },
+        }
     }
 }
 

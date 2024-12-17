@@ -411,12 +411,12 @@ impl Storage {
         validator: &ValidatorPublicKey,
         from_data_proposal_hash: Option<&DataProposalHash>,
         to_data_proposal_hash: &DataProposalHash,
-    ) -> Option<Vec<LaneEntry>> {
+    ) -> Result<Option<Vec<LaneEntry>>> {
         if let Some(lane) = self.lanes.get(validator) {
             return lane
                 .get_lane_entries_between_hashes(from_data_proposal_hash, to_data_proposal_hash);
         }
-        None
+        bail!("Validator not found");
     }
 
     pub fn get_waiting_data_proposals(
@@ -490,14 +490,14 @@ impl Storage {
             .add_new_proposal(crypto, data_proposal);
     }
 
-    pub fn collect_txs_from_lanes(&mut self, cut: Cut) -> Vec<Transaction> {
+    pub fn collect_data_proposals_from_lanes(&mut self, cut: Cut) -> Vec<Transaction> {
         let mut txs = Vec::new();
 
         // For each validator involved in the cut, extract all transactions from the last cut to the new one
         for (validator, data_proposal_hash, _) in cut.iter() {
             // FIXME: If data_proposal_hash is unknown, we should request the missing DataProposals
             if let Some(lane) = self.lanes.get_mut(validator) {
-                if let Some(lane_entries) =
+                if let Ok(Some(lane_entries)) =
                     lane.get_lane_entries_between_hashes(lane.last_cut.as_ref(), data_proposal_hash)
                 {
                     for lane_entry in lane_entries {
@@ -605,13 +605,14 @@ impl Lane {
     }
 
     pub fn add_new_proposal(&mut self, crypto: &BlstCrypto, data_proposal: DataProposal) {
-        let msg = MempoolNetMessage::DataVote(data_proposal.hash());
+        let data_proposal_hash = data_proposal.hash();
+        let msg = MempoolNetMessage::DataVote(data_proposal_hash.clone());
         let signatures = match crypto.sign(msg) {
             Ok(s) => vec![s],
             Err(_) => vec![],
         };
         self.data_proposals.insert(
-            data_proposal.hash(),
+            data_proposal_hash.clone(),
             LaneEntry {
                 data_proposal,
                 signatures,
@@ -640,11 +641,10 @@ impl Lane {
         &self,
         from_data_proposal_hash: Option<&DataProposalHash>,
         to_data_proposal_hash: &DataProposalHash,
-    ) -> Option<Vec<LaneEntry>> {
+    ) -> Result<Option<Vec<LaneEntry>>> {
         let to_index = match self.data_proposals.get_index_of(to_data_proposal_hash) {
             None => {
-                error!("Won't return any LaneEntry as aimed DataProposal {to_data_proposal_hash} does not exist on Lane");
-                return None;
+                bail!("Won't return any LaneEntry as aimed DataProposal {to_data_proposal_hash} does not exist on Lane");
             }
             Some(to_index) => to_index,
         };
@@ -652,34 +652,33 @@ impl Lane {
         match from_data_proposal_hash {
             None => {
                 // We send all LaneEntries from the very first one up to the one asked
-                Some(
+                Ok(Some(
                     self.data_proposals
                         .values()
                         .take(to_index + 1)
                         .cloned()
                         .collect(),
-                )
+                ))
             }
             Some(from_data_proposal_hash) => {
                 match self.data_proposals.get_index_of(from_data_proposal_hash) {
                     None => {
-                        error!("Won't return any LaneEntry as starting DataProposal {from_data_proposal_hash} does not exist on Lane");
-                        None
+                        bail!("Won't return any LaneEntry as starting DataProposal {from_data_proposal_hash} does not exist on Lane");
                     }
                     Some(from_index) => {
                         // If there is an index, two cases
                         // - index is known: we send the diff
                         if to_index <= from_index {
-                            return None;
+                            return Ok(None);
                         }
-                        Some(
+                        Ok(Some(
                             self.data_proposals
                                 .values()
                                 .skip(from_index + 1)
                                 .take(to_index - from_index)
                                 .cloned()
                                 .collect(),
-                        )
+                        ))
                     }
                 }
             }
@@ -1007,6 +1006,7 @@ mod tests {
         // Test getting all entries from the beginning to the second proposal
         let entries = lane
             .get_lane_entries_between_hashes(None, &data_proposal2_hash)
+            .expect("Failed to get lane entries")
             .expect("Failed to get lane entries");
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0], lane_entry1);
@@ -1015,6 +1015,7 @@ mod tests {
         // Test getting entries between the first and second proposal
         let entries = lane
             .get_lane_entries_between_hashes(Some(&data_proposal1_hash), &data_proposal2_hash)
+            .expect("Failed to get lane entries")
             .expect("Failed to get lane entries");
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0], lane_entry2);
@@ -1022,21 +1023,28 @@ mod tests {
         // Test getting entries between the first, second and third proposals
         let entries = lane
             .get_lane_entries_between_hashes(Some(&data_proposal1_hash), &data_proposal3_hash)
+            .expect("Failed to get lane entries")
             .expect("Failed to get lane entries");
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0], lane_entry2);
         assert_eq!(entries[1], lane_entry3);
 
+        // Test getting entries between the first, and the first proposals (empty)
+        let entries = lane
+            .get_lane_entries_between_hashes(Some(&data_proposal1_hash), &data_proposal1_hash)
+            .expect("Failed to get lane entries");
+        assert!(entries.is_none());
+
         // Test getting entries with a non-existent starting hash
         let non_existent_hash = DataProposalHash("non_existent".to_string());
         let entries =
             lane.get_lane_entries_between_hashes(Some(&non_existent_hash), &data_proposal2_hash);
-        assert!(entries.is_none());
+        assert!(entries.is_err());
 
         // Test getting entries with a non-existent ending hash
         let entries =
             lane.get_lane_entries_between_hashes(Some(&data_proposal1_hash), &non_existent_hash);
-        assert!(entries.is_none());
+        assert!(entries.is_err());
     }
 
     fn lane<'a>(store: &'a mut Storage, id: &ValidatorPublicKey) -> &'a mut Lane {
@@ -1241,6 +1249,7 @@ mod tests {
 
         let lane2_entries = store2
             .get_lane_entries_between_hashes(pubkey1, None, &data_proposal4_hash)
+            .expect("Could not load own lane entries")
             .expect("Could not load own lane entries");
 
         assert_eq!(lane2_entries.len(), 4);
@@ -1263,6 +1272,7 @@ mod tests {
         store3.on_new_tx(make_blob_tx("test3"));
         store3.on_new_tx(make_blob_tx("test4"));
 
+        store3.new_data_proposal(&crypto3);
         store3.new_data_proposal(&crypto3);
         let data_proposal = store3
             .get_lane_latest_entry(pubkey3)
@@ -1522,6 +1532,7 @@ mod tests {
 
         store1.on_new_tx(make_blob_tx("tx1"));
         store1.new_data_proposal(&crypto1);
+        store1.new_data_proposal(&crypto1);
         let data_proposal = store1
             .get_lane_latest_entry(pubkey1)
             .unwrap()
@@ -1534,6 +1545,7 @@ mod tests {
         );
 
         store2.on_new_tx(make_blob_tx("tx2"));
+        store2.new_data_proposal(&crypto2);
         store2.new_data_proposal(&crypto2);
         let data_proposal = store2
             .get_lane_latest_entry(pubkey2)
@@ -1549,12 +1561,13 @@ mod tests {
         let cut1 = store1.new_cut(&staking);
         let cut2 = store2.new_cut(&staking);
         assert_eq!(cut1.len(), 2);
-        let txs1 = store1.collect_txs_from_lanes(cut1);
-        let txs2 = store2.collect_txs_from_lanes(cut2);
+        let txs1 = store1.collect_data_proposals_from_lanes(cut1);
+        let txs2 = store2.collect_data_proposals_from_lanes(cut2);
         assert_eq!(txs1, vec![make_blob_tx("tx1"), make_blob_tx("tx2")]);
         assert_eq!(txs1, txs2);
 
         store1.on_new_tx(make_blob_tx("tx3"));
+        store1.new_data_proposal(&crypto1);
         store1.new_data_proposal(&crypto1);
         let data_proposal = store1
             .get_lane_latest_entry(pubkey1)
@@ -1570,8 +1583,8 @@ mod tests {
         let cut1 = store1.new_cut(&staking);
         let cut2 = store2.new_cut(&staking);
         assert_eq!(cut1.len(), 1);
-        let txs1 = store1.collect_txs_from_lanes(cut1);
-        let txs2 = store2.collect_txs_from_lanes(cut2);
+        let txs1 = store1.collect_data_proposals_from_lanes(cut1);
+        let txs2 = store2.collect_data_proposals_from_lanes(cut2);
         assert_eq!(txs1, vec![make_blob_tx("tx3")]);
         assert_eq!(txs1, txs2);
 
@@ -1634,7 +1647,7 @@ mod tests {
         assert!(poda.validators.contains(pubkey2));
         assert_eq!(cut.len(), 1);
 
-        let txs1 = store1.collect_txs_from_lanes(cut);
+        let txs1 = store1.collect_data_proposals_from_lanes(cut);
         assert_eq!(txs1, vec![make_blob_tx("tx1")]);
     }
 }
