@@ -173,6 +173,15 @@ impl<Parameters: Decode> TryFrom<Blob> for StructuredBlob<Parameters> {
     }
 }
 
+pub trait ContractAction: Send {
+    fn as_blob(
+        &self,
+        contract_name: ContractName,
+        caller: Option<BlobIndex>,
+        callees: Option<Vec<BlobIndex>>,
+    ) -> Blob;
+}
+
 pub fn flatten_blobs(blobs: &[Blob]) -> Vec<u8> {
     blobs
         .iter()

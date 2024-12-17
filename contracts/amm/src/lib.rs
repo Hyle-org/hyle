@@ -5,7 +5,7 @@ use bincode::{Decode, Encode};
 use sdk::caller::{CalleeBlobs, CallerCallee, CheckCalleeBlobs, ExecutionContext, MutCalleeBlobs};
 use sdk::erc20::{ERC20BlobChecker, ERC20};
 use sdk::{erc20::ERC20Action, Identity};
-use sdk::{Blob, BlobIndex, Digestable, RunResult};
+use sdk::{Blob, BlobIndex, ContractAction, Digestable, RunResult};
 use sdk::{BlobData, ContractName, StructuredBlobData};
 use serde::{Deserialize, Serialize};
 
@@ -90,6 +90,14 @@ impl AmmState {
         }
         None
     }
+
+    pub fn create_new_pair(&mut self, pair: UnorderedTokenPair, amounts: TokenPairAmount) {
+        self.pairs.insert(pair, amounts);
+    }
+
+    pub fn update_pair(&mut self, pair: UnorderedTokenPair, amounts: TokenPairAmount) {
+        self.pairs.insert(pair, amounts);
+    }
 }
 
 impl AmmContract {
@@ -144,7 +152,7 @@ impl AmmContract {
 
         let program_outputs = format!("Pair {:?} created", normalized_pair);
 
-        self.state.pairs.insert(normalized_pair, amounts);
+        self.state.create_new_pair(normalized_pair, amounts);
 
         Ok(program_outputs)
     }
@@ -173,20 +181,21 @@ impl AmmContract {
         // Compute x,y and check swap is legit (x*y=k)
         let normalized_pair = UnorderedTokenPair::new(pair.0.clone(), pair.1.clone());
         let is_normalized_order = pair.0 <= pair.1;
-        let Some((prev_x, prev_y)) = self.state.pairs.get_mut(&normalized_pair) else {
+        let Some((prev_x, prev_y)) = self.state.pairs.get(&normalized_pair) else {
             return Err(format!("Pair {:?} not found in AMM state", pair));
         };
-        let expected_to_amount = if is_normalized_order {
+        let (expected_to_amount, new_x, new_y) = if is_normalized_order {
             let amount = *prev_y - (*prev_x * *prev_y / (*prev_x + from_amount));
-            *prev_x += from_amount;
-            *prev_y -= amount; // we need to remove the full amount to avoid slipping
-            amount
+            let new_x = prev_x + from_amount;
+            let new_y = prev_y - amount; // we need to remove the full amount to avoid slipping
+            (amount, new_x, new_y)
         } else {
             let amount = *prev_x - (*prev_y * *prev_x / (*prev_y + from_amount));
-            *prev_y += from_amount;
-            *prev_x -= amount; // we need to remove the full amount to avoid slipping
-            amount
+            let new_y = prev_y + from_amount;
+            let new_x = prev_x - amount; // we need to remove the full amount to avoid slipping
+            (amount, new_x, new_y)
         };
+        self.state.update_pair(normalized_pair, (new_x, new_y));
 
         // Assert that we transferred less than that, within 2%
         if to_amount > expected_to_amount || to_amount < expected_to_amount * 98 / 100 {
@@ -250,9 +259,9 @@ pub enum AmmAction {
     },
 }
 
-impl AmmAction {
-    pub fn as_blob(
-        self,
+impl ContractAction for AmmAction {
+    fn as_blob(
+        &self,
         contract_name: ContractName,
         caller: Option<BlobIndex>,
         callees: Option<Vec<BlobIndex>>,

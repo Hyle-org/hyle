@@ -2498,6 +2498,7 @@ dependencies = [
  "base64 0.22.1",
  "bincode 2.0.0-rc.3",
  "blst",
+ "bonsai-runner",
  "borsh",
  "bytes",
  "chrono",
@@ -2567,6 +2568,24 @@ version = "0.3.0"
 dependencies = [
  "hyle-contract-sdk",
  "risc0-build",
+]
+
+[[package]]
+name = "hyle-loadtest"
+version = "0.3.0"
+dependencies = [
+ "amm",
+ "anyhow",
+ "bincode 2.0.0-rc.3",
+ "clap",
+ "hydentity",
+ "hyle",
+ "hyle-contract-sdk",
+ "hyle-contracts",
+ "hyllar",
+ "reqwest 0.12.9",
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]

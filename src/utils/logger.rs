@@ -92,7 +92,7 @@ pub fn setup_tracing(mode: TracingMode, node_name: String) -> Result<()> {
     }
     if !var.contains("tower_http") {
         // API request/response debug tracing
-        filter = filter.add_directive("tower_http::trace=debug".parse()?);
+        filter = filter.add_directive("tower_http::trace=info".parse()?);
     }
 
     // Can't use match inline because these are different return types

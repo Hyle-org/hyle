@@ -5,8 +5,8 @@ use amm::{AmmAction, AmmState};
 use hydentity::Hydentity;
 use hyllar::HyllarToken;
 use sdk::{
-    erc20::ERC20Action, identity_provider::IdentityAction, BlobData, BlobIndex, ContractInput,
-    ContractName, StateDigest, TxHash,
+    erc20::ERC20Action, identity_provider::IdentityAction, BlobData, BlobIndex, ContractAction,
+    ContractInput, ContractName, StateDigest, TxHash,
 };
 use serde::Deserialize;
 
@@ -182,7 +182,7 @@ pub fn run_command(context: &Context) {
                 .unwrap_or_else(|| panic!("Missing password argument"))
                 .as_bytes()
                 .to_vec();
-            let blobs = vec![cf.as_blob(ContractName("hydentity".to_owned()))];
+            let blobs = vec![cf.as_blob(ContractName("hydentity".to_owned()), None, None)];
             contract::print_hyled_blob_tx(&identity, &blobs);
 
             contract::run(
@@ -235,7 +235,7 @@ pub fn run_command(context: &Context) {
             };
 
             let blobs = vec![
-                identity_cf.as_blob(ContractName("hydentity".to_owned())),
+                identity_cf.as_blob(ContractName("hydentity".to_owned()), None, None),
                 cf.as_blob(ContractName(hyllar_contract_name.clone()), None, None),
             ];
             contract::print_hyled_blob_tx(&identity.clone().into(), &blobs);
@@ -302,7 +302,7 @@ pub fn run_command(context: &Context) {
                     };
 
                     let blobs = vec![
-                        identity_cf.as_blob(ContractName("hydentity".to_owned())),
+                        identity_cf.as_blob(ContractName("hydentity".to_owned()), None, None),
                         AmmAction::NewPair {
                             pair: (token_a.clone(), token_b.clone()),
                             amounts: (amount_a, amount_b),
@@ -424,7 +424,7 @@ pub fn run_command(context: &Context) {
                     };
 
                     let blobs = vec![
-                        identity_cf.as_blob(ContractName("hydentity".to_owned())),
+                        identity_cf.as_blob(ContractName("hydentity".to_owned()), None, None),
                         AmmAction::Swap {
                             pair: (token_a.to_string(), token_b.to_string()),
                             amounts: (amount_a, amount_b),

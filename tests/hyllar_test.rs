@@ -13,7 +13,7 @@ mod e2e_hyllar {
     use hyle_contract_sdk::{
         erc20::{ERC20Action, ERC20},
         identity_provider::{IdentityAction, IdentityVerification},
-        ContractName,
+        ContractAction, ContractName,
     };
     use hyrun::CliCommand;
 
@@ -29,7 +29,7 @@ mod e2e_hyllar {
                 vec![IdentityAction::RegisterIdentity {
                     account: "bob.hydentity".to_string(),
                 }
-                .as_blob(ContractName("hydentity".to_owned()))],
+                .as_blob(ContractName("hydentity".to_owned()), None, None)],
             )
             .await?;
 
@@ -83,7 +83,7 @@ mod e2e_hyllar {
                         account: "faucet.hydentity".to_string(),
                         nonce: 0,
                     }
-                    .as_blob(ContractName("hydentity".to_owned())),
+                    .as_blob(ContractName("hydentity".to_owned()), None, None),
                     ERC20Action::Transfer {
                         recipient: "bob.hydentity".to_string(),
                         amount: 25,

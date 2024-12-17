@@ -17,7 +17,7 @@ mod e2e_amm {
     use hyle_contract_sdk::{
         erc20::{ERC20Action, ERC20},
         identity_provider::{IdentityAction, IdentityVerification},
-        BlobIndex, ContractName,
+        BlobIndex, ContractAction, ContractName,
     };
     use hyrun::{CliCommand, HydentityArgs};
 
@@ -114,7 +114,7 @@ mod e2e_amm {
                 vec![IdentityAction::RegisterIdentity {
                     account: "bob.hydentity".to_string(),
                 }
-                .as_blob(ContractName("hydentity".to_owned()))],
+                .as_blob(ContractName("hydentity".to_owned()), None, None)],
             )
             .await?;
 
@@ -170,7 +170,7 @@ mod e2e_amm {
                         account: "faucet.hydentity".to_string(),
                         nonce: 0,
                     }
-                    .as_blob(ContractName("hydentity".to_owned())),
+                    .as_blob(ContractName("hydentity".to_owned()), None, None),
                     ERC20Action::Transfer {
                         recipient: "bob.hydentity".to_string(),
                         amount: 25,
@@ -248,7 +248,7 @@ mod e2e_amm {
                         account: "faucet.hydentity".to_string(),
                         nonce: 1,
                     }
-                    .as_blob(ContractName("hydentity".to_owned())),
+                    .as_blob(ContractName("hydentity".to_owned()), None, None),
                     ERC20Action::Transfer {
                         recipient: "bob.hydentity".to_string(),
                         amount: 50,
@@ -324,7 +324,7 @@ mod e2e_amm {
                         account: "bob.hydentity".to_string(),
                         nonce: 0,
                     }
-                    .as_blob(ContractName("hydentity".to_owned())),
+                    .as_blob(ContractName("hydentity".to_owned()), None, None),
                     ERC20Action::Approve {
                         spender: AMM_CONTRACT_NAME.to_string(),
                         amount: 100,
@@ -385,7 +385,7 @@ mod e2e_amm {
                         account: "bob.hydentity".to_string(),
                         nonce: 1,
                     }
-                    .as_blob(ContractName("hydentity".to_owned())),
+                    .as_blob(ContractName("hydentity".to_owned()), None, None),
                     ERC20Action::Approve {
                         spender: AMM_CONTRACT_NAME.to_string(),
                         amount: 100,
@@ -446,7 +446,7 @@ mod e2e_amm {
                         account: "bob.hydentity".to_string(),
                         nonce: 2,
                     }
-                    .as_blob(ContractName("hydentity".to_owned())),
+                    .as_blob(ContractName("hydentity".to_owned()), None, None),
                     AmmAction::NewPair {
                         pair: ("hyllar".to_string(), "hyllar2".to_string()),
                         amounts: (20, 50),
@@ -571,7 +571,7 @@ mod e2e_amm {
                         account: "bob.hydentity".to_string(),
                         nonce: 3,
                     }
-                    .as_blob(ContractName("hydentity".to_owned())),
+                    .as_blob(ContractName("hydentity".to_owned()), None, None),
                     AmmAction::Swap {
                         pair: ("hyllar".to_string(), "hyllar2".to_string()),
                         amounts: (5, 10),

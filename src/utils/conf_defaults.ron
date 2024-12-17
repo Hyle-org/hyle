@@ -4,9 +4,6 @@ Config(
   p2p_listen: true,
   host: "127.0.0.1:1231",
   peers: [],
-  storage: Storage(
-    interval: 10
-  ),
   log_format: "full",
   rest: "127.0.0.1:4321",
   data_directory: "data_node",

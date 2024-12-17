@@ -22,7 +22,7 @@ pub fn verify_proof(
         "sp1" => sp1_proof_verifier(proof, &program_id.0),
         _ => bail!("{} verifier not implemented yet", verifier),
     }?;
-    tracing::info!(
+    tracing::debug!(
         "🔎 {}",
         std::str::from_utf8(&hyle_output.program_outputs)
             .map(|o| format!("Program outputs: {o}"))
@@ -49,7 +49,7 @@ pub fn verify_recursive_proof(
         _ => bail!("{} recursive verifier not implemented yet", verifier),
     }?;
     hyle_outputs.iter().for_each(|hyle_output| {
-        tracing::info!(
+        tracing::debug!(
             "🔎 {}",
             std::str::from_utf8(&hyle_output.program_outputs)
                 .map(|o| format!("Program outputs: {o}"))
