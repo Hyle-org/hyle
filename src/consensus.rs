@@ -261,6 +261,7 @@ impl Consensus {
             consensus_proposal: ConsensusProposal {
                 slot: self.bft_round_state.consensus_proposal.slot,
                 view: self.bft_round_state.consensus_proposal.view,
+                timestamp: self.bft_round_state.consensus_proposal.timestamp,
                 round_leader: std::mem::take(
                     &mut self.bft_round_state.consensus_proposal.round_leader,
                 ),
@@ -812,7 +813,7 @@ impl Consensus {
                 _ => Ok(()),
             },
             ConsensusCommand::StartNewSlot => {
-                self.start_round().await?;
+                self.start_round(get_current_timestamp()).await?;
                 Ok(())
             }
         }
@@ -1227,7 +1228,14 @@ pub mod test {
 
         pub async fn start_round(&mut self) {
             self.consensus
-                .start_round()
+                .start_round(get_current_timestamp())
+                .await
+                .expect("Failed to start slot");
+        }
+
+        pub async fn start_round_at(&mut self, current_timestamp: u64) {
+            self.consensus
+                .start_round(current_timestamp)
                 .await
                 .expect("Failed to start slot");
         }
@@ -1549,6 +1557,102 @@ pub mod test {
             node4.handle_msg_err(&prepare_msg).to_string(),
             "does not come from current leader"
         );
+    }
+
+    #[test_log::test(tokio::test)]
+    async fn prepare_wrong_timestamp_too_old() {
+        let (mut node1, mut node2, mut node3, mut node4): (
+            ConsensusTestCtx,
+            ConsensusTestCtx,
+            ConsensusTestCtx,
+            ConsensusTestCtx,
+        ) = build_nodes!(4).await;
+
+        node1.start_round_at(1000).await;
+
+        let (cp, _) = simple_commit_round! {
+            leader: node1,
+            followers: [node2, node3, node4]
+        };
+
+        node2.start_round_at(900).await;
+
+        if let ConsensusNetMessage::Prepare(next_cp, next_ticket) = broadcast! {
+            description: "Leader Node2 second round",
+            from: node2, to: [],
+            message_matches: ConsensusNetMessage::Prepare(_, _)
+        }
+        .msg
+        {
+            info!("Previous timestamp {}", cp.timestamp);
+            info!("Next timestamp {}", &next_cp.timestamp);
+
+            let prepare_msg = node2
+                .consensus
+                .sign_net_message(ConsensusNetMessage::Prepare(next_cp, next_ticket))
+                .unwrap();
+
+            assert_contains!(
+                format!("{:?}", node1.handle_msg_err(&prepare_msg)),
+                "too old"
+            );
+            assert_contains!(
+                format!("{:?}", node3.handle_msg_err(&prepare_msg)),
+                "too old"
+            );
+            assert_contains!(
+                format!("{:?}", node4.handle_msg_err(&prepare_msg)),
+                "too old"
+            );
+        }
+    }
+
+    #[test_log::test(tokio::test)]
+    async fn prepare_wrong_timestamp_too_late() {
+        let (mut node1, mut node2, mut node3, mut node4): (
+            ConsensusTestCtx,
+            ConsensusTestCtx,
+            ConsensusTestCtx,
+            ConsensusTestCtx,
+        ) = build_nodes!(4).await;
+
+        node1.start_round_at(1000).await;
+
+        let (cp, _) = simple_commit_round! {
+            leader: node1,
+            followers: [node2, node3, node4]
+        };
+
+        node2.start_round_at(1200).await;
+
+        if let ConsensusNetMessage::Prepare(next_cp, next_ticket) = broadcast! {
+            description: "Leader Node2 second round",
+            from: node2, to: [],
+            message_matches: ConsensusNetMessage::Prepare(_, _)
+        }
+        .msg
+        {
+            info!("Previous timestamp {}", cp.timestamp);
+            info!("Next timestamp {}", &next_cp.timestamp);
+
+            let prepare_msg = node2
+                .consensus
+                .sign_net_message(ConsensusNetMessage::Prepare(next_cp, next_ticket))
+                .unwrap();
+
+            assert_contains!(
+                format!("{:?}", node1.handle_msg_err(&prepare_msg)),
+                "too late"
+            );
+            assert_contains!(
+                format!("{:?}", node3.handle_msg_err(&prepare_msg)),
+                "too late"
+            );
+            assert_contains!(
+                format!("{:?}", node4.handle_msg_err(&prepare_msg)),
+                "too late"
+            );
+        }
     }
 
     #[test_log::test(tokio::test)]
