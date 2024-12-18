@@ -51,7 +51,6 @@ sha3 = "0.10.8"
 hex = "0.4.3"
 derive_more = { version = "1.0.0", features = ["display"] }
 anymap = "0.12.1"
-console-subscriber = "0.4.1"
 paste = "1.0.15"
 blst = "0.3.13"
 # opentelemetry and axum-otel-metrics must be updated together (so that there is only one opentelemetry version)

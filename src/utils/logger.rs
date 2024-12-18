@@ -68,7 +68,7 @@ where
 }
 
 pub enum TracingMode {
-    /// Default tracing + console, for running a node locally
+    /// Default tracing, for running a node locally
     Full,
     /// JSON tracing, for running a node in a container
     Json,
@@ -76,7 +76,7 @@ pub enum TracingMode {
     NodeName,
 }
 
-/// Setup tracing - stdout and tokio-console subscriber
+/// Setup tracing - stdout subscriber
 /// stdout defaults to INFO & sled to INFO even if RUST_LOG is set to e.g. debug (unless it contains "sled")
 pub fn setup_tracing(mode: TracingMode, node_name: String) -> Result<()> {
     let mut filter = EnvFilter::builder()
