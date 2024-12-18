@@ -9,8 +9,8 @@ use tracing::{debug, error, info, warn};
 
 use crate::{
     bus::BusClientSender,
-    data_availability::DataEvent,
-    model::{Block, BlockHeight, CommonRunContext},
+    data_availability::{node_state::NodeState, DataEvent},
+    model::{Block, BlockHeight, CommonRunContext, SignedBlock},
     module_handle_messages,
     utils::{
         logger::LogMe,
@@ -29,6 +29,7 @@ struct DAListenerBusClient {
 pub struct DAListener {
     da_stream: Framed<TcpStream, LengthDelimitedCodec>,
     bus: DAListenerBusClient,
+    node_state: NodeState,
 }
 
 pub struct DAListenerCtx {
@@ -43,7 +44,19 @@ impl Module for DAListener {
         let da_stream = connect_to(&ctx.common.config.da_address, ctx.start_block).await?;
         let bus = DAListenerBusClient::new_from_bus(ctx.common.bus.new_handle()).await;
 
-        Ok(DAListener { da_stream, bus })
+        let node_state = Self::load_from_disk_or_default::<NodeState>(
+            ctx.common
+                .config
+                .data_directory
+                .join("da_listener_node_state.bin")
+                .as_path(),
+        );
+
+        Ok(DAListener {
+            da_stream,
+            bus,
+            node_state,
+        })
     }
 
     fn run(&mut self) -> impl futures::Future<Output = Result<()>> + Send {
@@ -69,10 +82,12 @@ impl DAListener {
     }
 
     async fn processing_next_frame(&mut self, bytes: BytesMut) -> Result<()> {
-        // FIXME: Should be signed blocks
-        let block: Block = bincode::decode_from_slice(&bytes, bincode::config::standard())
-            .log_error("Decoding block")?
-            .0;
+        let signed_block: SignedBlock =
+            bincode::decode_from_slice(&bytes, bincode::config::standard())
+                .log_error("Decoding block")?
+                .0;
+
+        let block: Block = self.node_state.handle_signed_block(&signed_block);
         if let Err(e) = self.handle_processed_block(block) {
             error!("Error while handling block: {:#}", e);
         }

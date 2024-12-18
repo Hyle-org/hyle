@@ -328,10 +328,8 @@ impl DataAvailability {
                 if let Some(hash) = hash {
                     if let Ok(Some(signed_block)) = self.blocks.get(hash)
                     {
-                        // FIXME: we send unsigned blocks for now
-                        let block: Block = self.node_state.handle_signed_block(&signed_block);
                         let bytes: bytes::Bytes =
-                            bincode::encode_to_vec(block, bincode::config::standard())?.into();
+                            bincode::encode_to_vec(signed_block, bincode::config::standard())?.into();
                         if self.stream_peer_metadata
                             .get_mut(&peer_ip)
                             .context("peer not found")?
