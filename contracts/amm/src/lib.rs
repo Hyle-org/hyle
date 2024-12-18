@@ -5,7 +5,7 @@ use bincode::{Decode, Encode};
 use sdk::caller::{CalleeBlobs, CallerCallee, CheckCalleeBlobs, ExecutionContext, MutCalleeBlobs};
 use sdk::erc20::{ERC20BlobChecker, ERC20};
 use sdk::{erc20::ERC20Action, Identity};
-use sdk::{Blob, BlobIndex, Digestable, RunResult};
+use sdk::{Blob, BlobIndex, ContractAction, Digestable, RunResult};
 use sdk::{BlobData, ContractName, StructuredBlobData};
 use serde::{Deserialize, Serialize};
 
@@ -250,9 +250,9 @@ pub enum AmmAction {
     },
 }
 
-impl AmmAction {
-    pub fn as_blob(
-        self,
+impl ContractAction for AmmAction {
+    fn as_blob(
+        &self,
         contract_name: ContractName,
         caller: Option<BlobIndex>,
         callees: Option<Vec<BlobIndex>>,

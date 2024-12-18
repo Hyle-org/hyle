@@ -14,3 +14,4 @@ hyle = { path = "../../" }
 # amm = { path = "../../contracts/amm" }
 # hydentity = { path = "../../contracts/hydentity" }
 hyle-contract-sdk = { path = "../../contract-sdk", features = ["tracing"] }
+uuid = { version = "1.11.0", features = ["v4", "fast-rng"] }
