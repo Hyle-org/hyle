@@ -8,8 +8,8 @@ use std::{collections::HashMap, fmt::Display, hash::Hash, vec};
 use tracing::{debug, error, warn};
 
 use crate::{
-    data_availability::node_state::verifiers::verify_proof_single_output,
-    model::{BlobProof, Hashable, Transaction, TransactionData, ValidatorPublicKey},
+    data_availability::node_state::verifiers::{verify_proof, verify_recursive_proof},
+    model::{BlobProofOutput, Hashable, Transaction, TransactionData, ValidatorPublicKey},
     p2p::network::SignedByValidator,
     utils::crypto::{AggregateSignature, BlstCrypto},
 };
@@ -284,17 +284,12 @@ impl Storage {
                             return DataProposalVerdict::Refuse;
                         }
                     };
-                    // TODO: figure out how to generalize this
-                    if proof_tx.via.0 != "risc0-recursion"
-                        && proof_tx
-                            .verifies
-                            .iter()
-                            .any(|BlobProof { contract_name, .. }| contract_name != &proof_tx.via)
+                    // TODO: we could early-reject proofs where the blob
+                    // is not for the correct transaction.
+                    let (verifier, program_id) = match known_contracts
+                        .0
+                        .get(&proof_tx.contract_name)
                     {
-                        warn!("Only risc0-recursion can verify recursive proofs on behalf of other contracts.");
-                        return DataProposalVerdict::Refuse;
-                    }
-                    let (verifier, program_id) = match known_contracts.0.get(&proof_tx.via) {
                         Some((verifier, program_id)) => (verifier, program_id),
                         None => {
                             // Check if it's in the same data proposal.
@@ -313,7 +308,7 @@ impl Storage {
                                 .iter()
                                 .find_map(|tx| match &tx.transaction_data {
                                     TransactionData::RegisterContract(tx) => {
-                                        if tx.contract_name == proof_tx.via {
+                                        if tx.contract_name == proof_tx.contract_name {
                                             Some((&tx.verifier, &tx.program_id))
                                         } else {
                                             None
@@ -329,7 +324,7 @@ impl Storage {
                                                 .transaction_data
                                             {
                                                 TransactionData::RegisterContract(tx) => {
-                                                    if tx.contract_name == proof_tx.via {
+                                                    if tx.contract_name == proof_tx.contract_name {
                                                         Some((&tx.verifier, &tx.program_id))
                                                     } else {
                                                         None
@@ -356,9 +351,52 @@ impl Storage {
                             return DataProposalVerdict::Refuse;
                         }
                     };
-                    match verify_proof_single_output(&proof_bytes, verifier, program_id) {
-                        Ok(_) => {
-                            if proof.hash() != proof_tx.proof_hash {
+                    // TODO: figure out how to generalize this
+                    let is_recursive = proof_tx.contract_name.0 == "risc0-recursion";
+
+                    if is_recursive {
+                        let Some(recursive_metadata) = &proof_tx.recursive_metadata else {
+                            warn!("Refusing DataProposal: recursive proof transaction missing metadata");
+                            return DataProposalVerdict::Refuse;
+                        };
+                        match verify_recursive_proof(&proof_bytes, verifier, program_id) {
+                            Ok((program_ids, hyle_outputs)) => {
+                                let program_ids_match =
+                                    std::iter::zip(program_ids.iter(), recursive_metadata.iter())
+                                        .all(|(output, metadata)| output == metadata);
+                                let outputs_match = std::iter::zip(
+                                    hyle_outputs.iter(),
+                                    proof_tx.proven_blobs.iter(),
+                                )
+                                .all(
+                                    |(output, BlobProofOutput { hyle_output, .. })| {
+                                        output == hyle_output
+                                    },
+                                );
+                                if hyle_outputs.len() != proof_tx.proven_blobs.len()
+                                    || !outputs_match
+                                    || !program_ids_match
+                                {
+                                    warn!("Refusing DataProposal: incorrect HyleOutput in proof transaction");
+                                    return DataProposalVerdict::Refuse;
+                                }
+                            }
+                            Err(e) => {
+                                warn!("Refusing DataProposal: invalid proof transaction: {}", e);
+                                return DataProposalVerdict::Refuse;
+                            }
+                        }
+                    }
+                    match verify_proof(&proof_bytes, verifier, program_id) {
+                        Ok(outputs) => {
+                            // TODO: we could check the blob hash here too.
+                            if outputs.len() != proof_tx.proven_blobs.len()
+                                && std::iter::zip(outputs.iter(), proof_tx.proven_blobs.iter()).any(
+                                    |(output, BlobProofOutput { hyle_output, .. })| {
+                                        output != hyle_output
+                                    },
+                                )
+                            {
                                 warn!("Refusing DataProposal: incorrect HyleOutput in proof transaction");
                                 return DataProposalVerdict::Refuse;
                             }
@@ -719,7 +757,7 @@ mod tests {
             KnownContracts, MempoolNetMessage,
         },
         model::{
-            Blob, BlobData, BlobProof, BlobTransaction, ContractName, Hashable, ProofData,
+            Blob, BlobData, BlobProofOutput, BlobTransaction, ContractName, Hashable, ProofData,
             ProofTransaction, RegisterContractTransaction, Transaction, TransactionData,
             ValidatorPublicKey, VerifiedProofTransaction,
         },
@@ -749,7 +787,7 @@ mod tests {
         ProofTransaction {
             contract_name: contract_name.clone(),
             proof: ProofData::Bytes(serde_json::to_vec(&hyle_output).unwrap()),
-            verifies: vec![(TxHash::default(), contract_name)],
+            tx_hashes: vec![TxHash::default()],
         }
     }
 
@@ -766,15 +804,15 @@ mod tests {
         Transaction {
             version: 1,
             transaction_data: TransactionData::VerifiedProof(VerifiedProofTransaction {
-                via: contract_name.clone(),
+                contract_name: contract_name.clone(),
                 proof_hash: proof.hash(),
-                verifies: vec![BlobProof {
-                    contract_name,
+                proven_blobs: vec![BlobProofOutput {
                     blob_tx_hash: TxHash::default(),
                     hyle_output,
                     proof_hash: proof.hash(),
                 }],
                 proof: Some(proof),
+                recursive_metadata: None,
             }),
         }
     }
@@ -785,15 +823,15 @@ mod tests {
         Transaction {
             version: 1,
             transaction_data: TransactionData::VerifiedProof(VerifiedProofTransaction {
-                via: contract_name.clone(),
+                contract_name: contract_name.clone(),
                 proof_hash: proof.hash(),
-                verifies: vec![BlobProof {
-                    contract_name,
+                proven_blobs: vec![BlobProofOutput {
                     blob_tx_hash: TxHash::default(),
                     hyle_output,
                     proof_hash: proof.hash(),
                 }],
                 proof: None,
+                recursive_metadata: None,
             }),
         }
     }

@@ -1,8 +1,9 @@
 //! State required for participation in consensus by the node.
 
 use crate::model::{
-    get_current_timestamp, BlobProof, BlobTransaction, BlobsHash, Block, BlockHeight, ContractName,
-    Hashable, RegisterContractTransaction, SignedBlock, Transaction, TransactionData,
+    get_current_timestamp, BlobProofOutput, BlobTransaction, BlobsHash, Block, BlockHeight,
+    ContractName, Hashable, ProofData, RegisterContractTransaction, SignedBlock, Transaction,
+    TransactionData,
 };
 use anyhow::{bail, Context, Error, Result};
 use bincode::{Decode, Encode};
@@ -32,6 +33,19 @@ pub struct HandledProofTxOutput {
     pub updated_states: BTreeMap<ContractName, StateDigest>,
 }
 
+#[derive(
+    Debug, Default, Clone, serde::Serialize, serde::Deserialize, Encode, Decode, Eq, PartialEq,
+)]
+pub struct VerifiedBlobOutput {
+    pub tx_hash: TxHash,
+    pub version: u32,
+    pub proof_contract_name: ContractName,
+    pub proof: Option<ProofData>,
+    pub is_recursive: bool,
+    pub verified_proof_transaction: BlobProofOutput,
+    pub blob_contract_name: ContractName,
+}
+
 impl NodeState {
     pub fn handle_signed_block(&mut self, signed_block: &SignedBlock) -> Block {
         let timed_out_tx_hashes = self.clear_timeouts(&signed_block.height());
@@ -39,7 +53,7 @@ impl NodeState {
 
         let mut new_contract_txs: Vec<Transaction> = vec![];
         let mut new_blob_txs: Vec<Transaction> = vec![];
-        let mut new_verified_proof_txs: Vec<Transaction> = vec![];
+        let mut new_verified_proof_txs: Vec<VerifiedBlobOutput> = vec![];
         let mut verified_blobs: Vec<(TxHash, hyle_contract_sdk::BlobIndex)> = vec![];
         let mut failed_txs: Vec<Transaction> = vec![];
         let mut stakers: Vec<Staker> = vec![];
@@ -68,11 +82,53 @@ impl NodeState {
                     error!("Unverified recursive proof transaction should not be in a block");
                 }
                 TransactionData::VerifiedProof(rec_proof_tx) => {
+                    let mut rec_metadata_iter = if let Some(meta) = &rec_proof_tx.recursive_metadata
+                    {
+                        meta.iter()
+                    } else {
+                        std::slice::Iter::default()
+                    };
                     rec_proof_tx
-                        .verifies
+                        .proven_blobs
                         .iter()
                         .for_each(|verified_proof_transaction| {
-                            match self.handle_blob_proof(verified_proof_transaction) {
+                            let contract_name = &match self
+                                .unsettled_transactions
+                                .get(&verified_proof_transaction.blob_tx_hash)
+                                .map(|d| {
+                                    d.blobs
+                                        .get(verified_proof_transaction.hyle_output.index.0)
+                                        .map(|b| b.contract_name.clone())
+                                }) {
+                                Some(Some(contract_name)) => contract_name,
+                                _ => {
+                                    error!("BlobTx contract name not found");
+                                    failed_txs.push(tx.clone());
+                                    return;
+                                }
+                            };
+                            if rec_proof_tx.recursive_metadata.is_some() {
+                                let expected_program_id = rec_metadata_iter.next();
+                                let contract = self.contracts.get(contract_name);
+                                info!(
+                                    "Expected program id: {:?}, contract: {:?}",
+                                    expected_program_id, contract
+                                );
+                                if expected_program_id.is_none()
+                                    || contract.map_or(true, |c| {
+                                        &c.program_id != expected_program_id.unwrap()
+                                    })
+                                {
+                                    error!(
+                                        "Contract not found: {:?} {:?}",
+                                        contract_name, self.contracts
+                                    );
+                                    failed_txs.push(tx.clone());
+                                    return;
+                                }
+                            };
+                            match self.handle_blob_proof(verified_proof_transaction, contract_name)
+                            {
                                 Ok(proof_tx_output) => {
                                     // When a proof tx is handled, three things happen:
                                     // 1. Blobs get verified
@@ -90,7 +146,16 @@ impl NodeState {
                                     // Update the contract's updated states
                                     updated_states.extend(proof_tx_output.updated_states);
                                     // Keep track of all verified proof txs
-                                    new_verified_proof_txs.push(tx.clone());
+                                    new_verified_proof_txs.push(VerifiedBlobOutput {
+                                        tx_hash: tx.hash(),
+                                        version: tx.version,
+                                        proof_contract_name: rec_proof_tx.contract_name.clone(),
+                                        proof: rec_proof_tx.proof.clone(),
+                                        is_recursive: rec_proof_tx.recursive_metadata.is_some(),
+                                        verified_proof_transaction: verified_proof_transaction
+                                            .clone(),
+                                        blob_contract_name: contract_name.clone(),
+                                    });
                                 }
                                 Err(e) => {
                                     error!("Failed to handle proof transaction: {:?}", e);
@@ -195,7 +260,11 @@ impl NodeState {
         Ok(())
     }
 
-    fn handle_blob_proof(&mut self, tx: &BlobProof) -> Result<HandledProofTxOutput, Error> {
+    fn handle_blob_proof(
+        &mut self,
+        tx: &BlobProofOutput,
+        contract_name: &ContractName,
+    ) -> Result<HandledProofTxOutput, Error> {
         debug!("Handle blob proof: {:?}", tx);
 
         let (unsettled_tx, is_next_to_settle) = self
@@ -216,7 +285,7 @@ impl NodeState {
         // TODO: success to false is valid outcome and can be settled.
         Self::verify_hyle_output(
             unsettled_tx,
-            &tx.contract_name,
+            contract_name,
             &tx.hyle_output,
             &tx.blob_tx_hash,
         )?;
@@ -354,7 +423,7 @@ impl NodeState {
         // Verify the contract name
         let expected_contract = &unsettled_tx.blobs[hyle_output.index.0].contract_name;
         if expected_contract != contract_name {
-            bail!("Blob reference from proof for {unsettled_tx_hash} does not match the BlobTx contract name {expected_contract}");
+            bail!("Blob reference from proof for {unsettled_tx_hash} does not match the BlobTx contract name: {contract_name} vs {expected_contract}");
         }
 
         // blob_hash verification
@@ -378,7 +447,7 @@ impl NodeState {
         dropped
     }
 
-    pub fn verify_proof(
+    pub fn verify_proof_single_output(
         &self,
         proof: &[u8],
         contract_name: &ContractName,
@@ -447,7 +516,7 @@ mod test {
         proof: &VerifiedProofTransaction,
     ) -> Result<HandledProofTxOutput, Error> {
         // Small wrapper for the general case until we get a larger refactoring?
-        state.handle_blob_proof(proof.verifies.first().unwrap())
+        state.handle_blob_proof(proof.proven_blobs.first().unwrap(), &proof.contract_name)
     }
 
     #[test_log::test(tokio::test)]
@@ -501,21 +570,24 @@ mod test {
         let proof_c1 = ProofTransaction {
             contract_name: c1.clone(),
             proof: ProofData::Bytes(serde_json::to_vec(&hyle_output_c1).unwrap()),
-            verifies: vec![(blob_tx_hash.clone(), c1.clone())],
+            tx_hashes: vec![blob_tx_hash.clone()],
         };
 
         let verified_proof_c1 = VerifiedProofTransaction {
-            via: c1.clone(),
-            verifies: vec![BlobProof {
+            contract_name: c1.clone(),
+            proven_blobs: vec![BlobProofOutput {
                 hyle_output: state
-                    .verify_proof(&proof_c1.proof.to_bytes().unwrap(), &proof_c1.contract_name)
+                    .verify_proof_single_output(
+                        &proof_c1.proof.to_bytes().unwrap(),
+                        &proof_c1.contract_name,
+                    )
                     .unwrap(),
                 proof_hash: proof_c1.proof.hash(),
-                contract_name: c1.clone(),
                 blob_tx_hash: blob_tx_hash.clone(),
             }],
             proof_hash: proof_c1.proof.hash(),
             proof: Some(proof_c1.proof),
+            recursive_metadata: None,
         };
 
         let hyle_output_c2 = make_hyle_output(blob_tx.clone(), BlobIndex(1));
@@ -523,21 +595,24 @@ mod test {
         let proof_c2 = ProofTransaction {
             contract_name: c2.clone(),
             proof: ProofData::Bytes(serde_json::to_vec(&hyle_output_c2).unwrap()),
-            verifies: vec![(blob_tx_hash.clone(), c2.clone())],
+            tx_hashes: vec![blob_tx_hash.clone()],
         };
 
         let verified_proof_c2 = VerifiedProofTransaction {
-            via: c2.clone(),
-            verifies: vec![BlobProof {
+            contract_name: c2.clone(),
+            proven_blobs: vec![BlobProofOutput {
                 hyle_output: state
-                    .verify_proof(&proof_c2.proof.to_bytes().unwrap(), &proof_c2.contract_name)
+                    .verify_proof_single_output(
+                        &proof_c2.proof.to_bytes().unwrap(),
+                        &proof_c2.contract_name,
+                    )
                     .unwrap(),
-                contract_name: c2.clone(),
                 blob_tx_hash: blob_tx_hash.clone(),
                 proof_hash: proof_c2.proof.hash(),
             }],
             proof_hash: proof_c2.proof.hash(),
             proof: Some(proof_c2.proof),
+            recursive_metadata: None,
         };
 
         handle_verify_proof_transaction(&mut state, &verified_proof_c1).unwrap();
@@ -571,21 +646,24 @@ mod test {
         let proof_c1 = ProofTransaction {
             contract_name: c1.clone(),
             proof: ProofData::Bytes(serde_json::to_vec(&hyle_output_c1).unwrap()),
-            verifies: vec![(blob_tx_hash_1.clone(), c1.clone())],
+            tx_hashes: vec![blob_tx_hash_1.clone()],
         };
 
         let verified_proof_c1 = VerifiedProofTransaction {
-            via: c1.clone(),
-            verifies: vec![BlobProof {
+            contract_name: c1.clone(),
+            proven_blobs: vec![BlobProofOutput {
                 hyle_output: state
-                    .verify_proof(&proof_c1.proof.to_bytes().unwrap(), &proof_c1.contract_name)
+                    .verify_proof_single_output(
+                        &proof_c1.proof.to_bytes().unwrap(),
+                        &proof_c1.contract_name,
+                    )
                     .unwrap(),
-                contract_name: c1.clone(),
                 blob_tx_hash: blob_tx_hash_1.clone(),
                 proof_hash: proof_c1.proof.hash(),
             }],
             proof_hash: proof_c1.proof.hash(),
             proof: Some(proof_c1.proof),
+            recursive_metadata: None,
         };
 
         assert_err!(handle_verify_proof_transaction(
@@ -622,21 +700,24 @@ mod test {
         let proof_c1 = ProofTransaction {
             contract_name: c1.clone(),
             proof: ProofData::Bytes(serde_json::to_vec(&hyle_output_c1).unwrap()),
-            verifies: vec![(blob_tx_hash.clone(), c1.clone())],
+            tx_hashes: vec![blob_tx_hash.clone()],
         };
 
         let verified_proof_c1 = VerifiedProofTransaction {
-            via: c1.clone(),
-            verifies: vec![BlobProof {
+            contract_name: c1.clone(),
+            proven_blobs: vec![BlobProofOutput {
                 hyle_output: state
-                    .verify_proof(&proof_c1.proof.to_bytes().unwrap(), &proof_c1.contract_name)
+                    .verify_proof_single_output(
+                        &proof_c1.proof.to_bytes().unwrap(),
+                        &proof_c1.contract_name,
+                    )
                     .unwrap(),
-                contract_name: c1.clone(),
                 blob_tx_hash: blob_tx_hash.clone(),
                 proof_hash: proof_c1.proof.hash(),
             }],
             proof_hash: proof_c1.proof.hash(),
             proof: Some(proof_c1.proof),
+            recursive_metadata: None,
         };
 
         handle_verify_proof_transaction(&mut state, &verified_proof_c1).unwrap();
@@ -682,24 +763,24 @@ mod test {
         let first_proof = ProofTransaction {
             contract_name: c1.clone(),
             proof: ProofData::Bytes(serde_json::to_vec(&first_hyle_output).unwrap()),
-            verifies: vec![(blob_tx_hash.clone(), c1.clone())],
+            tx_hashes: vec![blob_tx_hash.clone()],
         };
 
         let verified_first_proof = VerifiedProofTransaction {
-            via: c1.clone(),
-            verifies: vec![BlobProof {
+            contract_name: c1.clone(),
+            proven_blobs: vec![BlobProofOutput {
                 hyle_output: state
-                    .verify_proof(
+                    .verify_proof_single_output(
                         &first_proof.proof.to_bytes().unwrap(),
                         &first_proof.contract_name,
                     )
                     .unwrap(),
-                contract_name: c1.clone(),
                 blob_tx_hash: blob_tx_hash.clone(),
                 proof_hash: first_proof.proof.hash(),
             }],
             proof_hash: first_proof.proof.hash(),
             proof: Some(first_proof.proof),
+            recursive_metadata: None,
         };
 
         let mut second_hyle_output = make_hyle_output(blob_tx.clone(), BlobIndex(1));
@@ -709,24 +790,24 @@ mod test {
         let second_proof = ProofTransaction {
             contract_name: c1.clone(),
             proof: ProofData::Bytes(serde_json::to_vec(&second_hyle_output).unwrap()),
-            verifies: vec![(blob_tx_hash.clone(), c1.clone())],
+            tx_hashes: vec![blob_tx_hash.clone()],
         };
 
         let verified_second_proof = VerifiedProofTransaction {
-            via: c1.clone(),
-            verifies: vec![BlobProof {
+            contract_name: c1.clone(),
+            proven_blobs: vec![BlobProofOutput {
                 hyle_output: state
-                    .verify_proof(
+                    .verify_proof_single_output(
                         &second_proof.proof.to_bytes().unwrap(),
                         &second_proof.contract_name,
                     )
                     .unwrap(),
-                contract_name: c1.clone(),
                 blob_tx_hash: blob_tx_hash.clone(),
                 proof_hash: second_proof.proof.hash(),
             }],
             proof_hash: second_proof.proof.hash(),
             proof: Some(second_proof.proof),
+            recursive_metadata: None,
         };
 
         let mut third_hyle_output = make_hyle_output(blob_tx.clone(), BlobIndex(2));
@@ -736,24 +817,24 @@ mod test {
         let third_proof = ProofTransaction {
             contract_name: c1.clone(),
             proof: ProofData::Bytes(serde_json::to_vec(&third_hyle_output).unwrap()),
-            verifies: vec![(blob_tx_hash.clone(), c1.clone())],
+            tx_hashes: vec![blob_tx_hash.clone()],
         };
 
         let verified_third_proof = VerifiedProofTransaction {
-            via: c1.clone(),
-            verifies: vec![BlobProof {
+            contract_name: c1.clone(),
+            proven_blobs: vec![BlobProofOutput {
                 hyle_output: state
-                    .verify_proof(
+                    .verify_proof_single_output(
                         &third_proof.proof.to_bytes().unwrap(),
                         &third_proof.contract_name,
                     )
                     .unwrap(),
-                contract_name: c1.clone(),
                 blob_tx_hash: blob_tx_hash.clone(),
                 proof_hash: third_proof.proof.hash(),
             }],
             proof_hash: third_proof.proof.hash(),
             proof: Some(third_proof.proof),
+            recursive_metadata: None,
         };
 
         handle_verify_proof_transaction(&mut state, &verified_first_proof).unwrap();
@@ -780,21 +861,24 @@ mod test {
         let proof = ProofTransaction {
             contract_name: contract_name.clone(),
             proof: ProofData::Bytes(serde_json::to_vec(&hyle_output).unwrap()),
-            verifies: vec![(blob_tx_hash.clone(), contract_name.clone())],
+            tx_hashes: vec![blob_tx_hash.clone()],
         };
 
         VerifiedProofTransaction {
-            via: contract_name.clone(),
-            verifies: vec![BlobProof {
+            contract_name: contract_name.clone(),
+            proven_blobs: vec![BlobProofOutput {
                 hyle_output: state
-                    .verify_proof(&proof.proof.to_bytes().unwrap(), &proof.contract_name)
+                    .verify_proof_single_output(
+                        &proof.proof.to_bytes().unwrap(),
+                        &proof.contract_name,
+                    )
                     .unwrap(),
-                contract_name: contract_name.clone(),
                 blob_tx_hash: blob_tx_hash.clone(),
                 proof_hash: proof.proof.hash(),
             }],
             proof_hash: proof.proof.hash(),
             proof: Some(proof.proof),
+            recursive_metadata: None,
         }
     }
 
@@ -894,24 +978,24 @@ mod test {
         let first_proof = ProofTransaction {
             contract_name: c1.clone(),
             proof: ProofData::Bytes(serde_json::to_vec(&first_hyle_output).unwrap()),
-            verifies: vec![(blob_tx_hash.clone(), c1.clone())],
+            tx_hashes: vec![blob_tx_hash.clone()],
         };
 
         let verified_first_proof = VerifiedProofTransaction {
-            via: c1.clone(),
-            verifies: vec![BlobProof {
+            contract_name: c1.clone(),
+            proven_blobs: vec![BlobProofOutput {
                 hyle_output: state
-                    .verify_proof(
+                    .verify_proof_single_output(
                         &first_proof.proof.to_bytes().unwrap(),
                         &first_proof.contract_name,
                     )
                     .unwrap(),
-                contract_name: c1.clone(),
                 blob_tx_hash: blob_tx_hash.clone(),
                 proof_hash: first_proof.proof.hash(),
             }],
             proof_hash: first_proof.proof.hash(),
             proof: Some(first_proof.proof),
+            recursive_metadata: None,
         };
 
         // Create hacky proof for Blob1
@@ -922,24 +1006,24 @@ mod test {
         let another_first_proof = ProofTransaction {
             contract_name: c1.clone(),
             proof: ProofData::Bytes(serde_json::to_vec(&another_first_hyle_output).unwrap()),
-            verifies: vec![(blob_tx_hash.clone(), c1.clone())],
+            tx_hashes: vec![blob_tx_hash.clone()],
         };
 
         let another_verified_first_proof = VerifiedProofTransaction {
-            via: c1.clone(),
-            verifies: vec![BlobProof {
+            contract_name: c1.clone(),
+            proven_blobs: vec![BlobProofOutput {
                 hyle_output: state
-                    .verify_proof(
+                    .verify_proof_single_output(
                         &another_first_proof.proof.to_bytes().unwrap(),
                         &another_first_proof.contract_name,
                     )
                     .unwrap(),
-                contract_name: c1.clone(),
                 blob_tx_hash: blob_tx_hash.clone(),
                 proof_hash: another_first_proof.proof.hash(),
             }],
             proof_hash: another_first_proof.proof.hash(),
             proof: Some(another_first_proof.proof),
+            recursive_metadata: None,
         };
 
         let mut second_hyle_output = make_hyle_output(blob_tx.clone(), BlobIndex(1));
@@ -949,24 +1033,24 @@ mod test {
         let second_proof = ProofTransaction {
             contract_name: c1.clone(),
             proof: ProofData::Bytes(serde_json::to_vec(&second_hyle_output).unwrap()),
-            verifies: vec![(blob_tx_hash.clone(), c1.clone())],
+            tx_hashes: vec![blob_tx_hash.clone()],
         };
 
         let verified_second_proof = VerifiedProofTransaction {
-            via: c1.clone(),
-            verifies: vec![BlobProof {
+            contract_name: c1.clone(),
+            proven_blobs: vec![BlobProofOutput {
                 hyle_output: state
-                    .verify_proof(
+                    .verify_proof_single_output(
                         &second_proof.proof.to_bytes().unwrap(),
                         &second_proof.contract_name,
                     )
                     .unwrap(),
-                contract_name: c1.clone(),
                 blob_tx_hash: blob_tx_hash.clone(),
                 proof_hash: second_proof.proof.hash(),
             }],
             proof_hash: second_proof.proof.hash(),
             proof: Some(second_proof.proof),
+            recursive_metadata: None,
         };
 
         handle_verify_proof_transaction(&mut state, &verified_first_proof).unwrap();
@@ -1002,24 +1086,24 @@ mod test {
         let first_proof = ProofTransaction {
             contract_name: c1.clone(),
             proof: ProofData::Bytes(serde_json::to_vec(&first_hyle_output).unwrap()),
-            verifies: vec![(blob_tx_hash.clone(), c1.clone())],
+            tx_hashes: vec![blob_tx_hash.clone()],
         };
 
         let verified_first_proof = VerifiedProofTransaction {
-            via: c1.clone(),
-            verifies: vec![BlobProof {
+            contract_name: c1.clone(),
+            proven_blobs: vec![BlobProofOutput {
                 hyle_output: state
-                    .verify_proof(
+                    .verify_proof_single_output(
                         &first_proof.proof.to_bytes().unwrap(),
                         &first_proof.contract_name,
                     )
                     .unwrap(),
-                contract_name: c1.clone(),
                 blob_tx_hash: blob_tx_hash.clone(),
                 proof_hash: first_proof.proof.hash(),
             }],
             proof_hash: first_proof.proof.hash(),
             proof: Some(first_proof.proof),
+            recursive_metadata: None,
         };
 
         let mut second_hyle_output = make_hyle_output(blob_tx.clone(), BlobIndex(1));
@@ -1029,24 +1113,24 @@ mod test {
         let second_proof = ProofTransaction {
             contract_name: c1.clone(),
             proof: ProofData::Bytes(serde_json::to_vec(&second_hyle_output).unwrap()),
-            verifies: vec![(blob_tx_hash.clone(), c1.clone())],
+            tx_hashes: vec![blob_tx_hash.clone()],
         };
 
         let verified_second_proof = VerifiedProofTransaction {
-            via: c1.clone(),
-            verifies: vec![BlobProof {
+            contract_name: c1.clone(),
+            proven_blobs: vec![BlobProofOutput {
                 hyle_output: state
-                    .verify_proof(
+                    .verify_proof_single_output(
                         &second_proof.proof.to_bytes().unwrap(),
                         &second_proof.contract_name,
                     )
                     .unwrap(),
-                contract_name: c1.clone(),
                 blob_tx_hash: blob_tx_hash.clone(),
                 proof_hash: second_proof.proof.hash(),
             }],
             proof_hash: second_proof.proof.hash(),
             proof: Some(second_proof.proof),
+            recursive_metadata: None,
         };
 
         let mut third_hyle_output = make_hyle_output(blob_tx.clone(), BlobIndex(2));
@@ -1056,24 +1140,24 @@ mod test {
         let third_proof = ProofTransaction {
             contract_name: c1.clone(),
             proof: ProofData::Bytes(serde_json::to_vec(&third_hyle_output).unwrap()),
-            verifies: vec![(blob_tx_hash.clone(), c1.clone())],
+            tx_hashes: vec![blob_tx_hash.clone()],
         };
 
         let verified_third_proof = VerifiedProofTransaction {
-            via: c1.clone(),
-            verifies: vec![BlobProof {
+            contract_name: c1.clone(),
+            proven_blobs: vec![BlobProofOutput {
                 hyle_output: state
-                    .verify_proof(
+                    .verify_proof_single_output(
                         &third_proof.proof.to_bytes().unwrap(),
                         &third_proof.contract_name,
                     )
                     .unwrap(),
-                contract_name: c1.clone(),
                 blob_tx_hash: blob_tx_hash.clone(),
                 proof_hash: third_proof.proof.hash(),
             }],
             proof_hash: third_proof.proof.hash(),
             proof: Some(third_proof.proof),
+            recursive_metadata: None,
         };
 
         handle_verify_proof_transaction(&mut state, &verified_first_proof).unwrap();

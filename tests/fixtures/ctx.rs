@@ -270,7 +270,7 @@ impl E2ECtx {
             .send_tx_proof(&ProofTransaction {
                 contract_name: contract_name.clone(),
                 proof: proof.clone(),
-                verifies: vec![(blob_tx_hash.clone(), contract_name.clone())],
+                tx_hashes: vec![blob_tx_hash.clone()],
             })
             .await
             .and_then(|response| response.error_for_status().context("sending tx")));
@@ -282,14 +282,14 @@ impl E2ECtx {
         &self,
         via: ContractName,
         proof: ProofData,
-        verifies: Vec<(TxHash, ContractName)>,
+        verifies: Vec<TxHash>,
     ) -> Result<()> {
         assert_ok!(self
             .client()
             .send_tx_proof(&ProofTransaction {
                 contract_name: via.clone(),
                 proof: proof.clone(),
-                verifies: verifies.clone(),
+                tx_hashes: verifies.clone(),
             })
             .await
             .and_then(|response| response.error_for_status().context("sending tx")));

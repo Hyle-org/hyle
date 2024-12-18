@@ -26,6 +26,7 @@ use tracing::debug;
 use crate::{
     bus::SharedMessageBus,
     consensus::{utils::HASH_DISPLAY_SIZE, ConsensusProposal},
+    data_availability::node_state::VerifiedBlobOutput,
     mempool::storage::DataProposal,
     utils::{
         conf::SharedConf,
@@ -105,7 +106,7 @@ pub enum ProofData {
     Base64(String),
     Bytes(Vec<u8>),
 }
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Encode, Decode)]
+#[derive(Debug, Default, Serialize, Deserialize, Clone, PartialEq, Eq, Encode, Decode)]
 pub struct ProofDataHash(pub String);
 
 impl Default for ProofData {
@@ -127,13 +128,14 @@ impl ProofData {
 pub struct ProofTransaction {
     pub contract_name: ContractName,
     pub proof: ProofData,
-    pub verifies: Vec<(TxHash, ContractName)>,
+    // TODO: this can technically be recovered from the hyle output
+    // It's currently in a "somewhat trusted" limbo.
+    pub tx_hashes: Vec<TxHash>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Encode, Decode)]
-pub struct BlobProof {
+#[derive(Debug, Default, Serialize, Deserialize, Clone, PartialEq, Eq, Encode, Decode)]
+pub struct BlobProofOutput {
     pub blob_tx_hash: TxHash,
-    pub contract_name: ContractName,
     // TODO: remove this?
     pub proof_hash: ProofDataHash,
     pub hyle_output: HyleOutput,
@@ -141,16 +143,17 @@ pub struct BlobProof {
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Encode, Decode)]
 pub struct VerifiedProofTransaction {
-    pub via: ContractName,
+    pub contract_name: ContractName,
     pub proof: Option<ProofData>,
     pub proof_hash: ProofDataHash,
-    pub verifies: Vec<BlobProof>,
+    pub proven_blobs: Vec<BlobProofOutput>,
+    pub recursive_metadata: Option<Vec<ProgramId>>,
 }
 
 impl fmt::Debug for VerifiedProofTransaction {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("VerifiedProofTransaction")
-            .field("via", &self.via)
+            .field("via", &self.contract_name)
             .field("proof_hash", &self.proof_hash)
             .field("proof", &"[HIDDEN]")
             .field(
@@ -161,7 +164,7 @@ impl fmt::Debug for VerifiedProofTransaction {
                     None => 0,
                 },
             )
-            .field("verifiers", &self.verifies)
+            .field("verifiers", &self.proven_blobs)
             .finish()
     }
 }
@@ -170,7 +173,7 @@ impl fmt::Debug for ProofTransaction {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("RecursiveProofTransaction")
             .field("via", &self.contract_name)
-            .field("verifies", &self.verifies)
+            .field("verifies", &self.tx_hashes)
             .field("proof", &"[HIDDEN]")
             .field(
                 "proof_len",
@@ -212,7 +215,7 @@ pub struct Block {
     pub block_timestamp: u64,
     pub new_contract_txs: Vec<Transaction>,
     pub new_blob_txs: Vec<Transaction>,
-    pub new_verified_proof_txs: Vec<Transaction>,
+    pub new_verified_proof_txs: Vec<VerifiedBlobOutput>,
     pub verified_blobs: Vec<(TxHash, BlobIndex)>,
     pub failed_txs: Vec<Transaction>,
     pub stakers: Vec<Staker>,
@@ -251,14 +254,16 @@ impl Hashable<BlockHash> for Block {
         _ = write!(hasher, "{}", self.block_parent_hash);
         _ = write!(hasher, "{}", self.block_height);
         _ = write!(hasher, "{}", self.block_timestamp);
-        for tx in self
-            .new_contract_txs
-            .iter()
-            .chain(self.new_blob_txs.iter())
-            .chain(self.new_verified_proof_txs.iter())
-        {
+        for tx in self.new_contract_txs.iter().chain(self.new_blob_txs.iter()) {
             hasher.update(tx.hash().0);
         }
+        /*
+        TODO: is this redundant?
+        for tx in self.new_verified_proof_txs.iter() {
+            _ = write!(hasher, "{}", tx.);
+            _ = write!(hasher, "{}", blob_v);
+        } */
+
         for (tx_hash, blob_v) in self.verified_blobs.iter() {
             _ = write!(hasher, "{}", tx_hash);
             _ = write!(hasher, "{}", blob_v);
@@ -454,9 +459,9 @@ impl Hashable<ProofDataHash> for ProofData {
 impl Hashable<TxHash> for VerifiedProofTransaction {
     fn hash(&self) -> TxHash {
         let mut hasher = Sha3_256::new();
-        _ = write!(hasher, "{}", self.via);
+        _ = write!(hasher, "{}", self.contract_name);
         _ = write!(hasher, "{:?}", self.proof_hash);
-        _ = write!(hasher, "{:?}", self.verifies);
+        _ = write!(hasher, "{:?}", self.proven_blobs);
         let hash_bytes = hasher.finalize();
         TxHash(hex::encode(hash_bytes))
     }

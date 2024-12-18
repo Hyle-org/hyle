@@ -63,6 +63,38 @@ pub fn verify_proof(
     Ok(hyle_outputs)
 }
 
+pub fn verify_recursive_proof(
+    proof: &[u8],
+    verifier: &Verifier,
+    program_id: &ProgramId,
+) -> Result<(Vec<ProgramId>, Vec<HyleOutput>), Error> {
+    let outputs = match verifier.0.as_str() {
+        "risc0" => {
+            let mut output: Vec<([u8; 32], Vec<u8>)> = risc0_proof_verifier(proof, &program_id.0)?;
+            // Doesn't actually work to just deserialize in one go.
+            output
+                .drain(..)
+                .map(|o| {
+                    risc0_zkvm::serde::from_slice::<HyleOutput, _>(&o.1)
+                        .map(|h| (ProgramId(o.0.to_vec()), h))
+                })
+                .collect::<Result<(Vec<_>, Vec<_>), _>>()
+                .context("Failed to decode HyleOutput")
+        }
+        _ => bail!("{} recursive verifier not implemented yet", verifier),
+    }?;
+    outputs.1.iter().for_each(|hyle_output| {
+        tracing::info!(
+            "🔎 {}",
+            std::str::from_utf8(&hyle_output.program_outputs)
+                .map(|o| format!("Program outputs: {o}"))
+                .unwrap_or("Invalid UTF-8".to_string())
+        );
+    });
+
+    Ok(outputs)
+}
+
 pub fn risc0_proof_verifier<T: for<'a> Deserialize<'a>>(
     encoded_receipt: &[u8],
     image_id: &[u8],

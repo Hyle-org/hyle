@@ -32,7 +32,7 @@ async fn send_proof(
         .send_tx_proof(&ProofTransaction {
             contract_name: contract_name.clone(),
             proof: ProofData::Bytes(proof),
-            verifies: vec![(blob_tx_hash, contract_name)],
+            tx_hashes: vec![blob_tx_hash],
         })
         .await?;
     assert!(res.status().is_success());
