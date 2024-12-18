@@ -123,6 +123,5 @@ where
 {
     tracing_subscriber::registry()
         .with(fmt_layer.with_filter(filter))
-        .with(console_subscriber::spawn())
         .init();
 }
