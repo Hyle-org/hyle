@@ -1,7 +1,7 @@
 use anyhow::Context;
 use tokio_util::codec::{Decoder, Encoder, LengthDelimitedCodec};
 
-use crate::model::{Block, BlockHeight};
+use crate::model::{BlockHeight, SignedBlock};
 
 // Server Side
 #[derive(Default, Debug)]
@@ -45,10 +45,10 @@ impl Decoder for DataAvailabilityServerCodec {
     }
 }
 
-impl Encoder<Block> for DataAvailabilityServerCodec {
+impl Encoder<SignedBlock> for DataAvailabilityServerCodec {
     type Error = anyhow::Error;
 
-    fn encode(&mut self, block: Block, dst: &mut bytes::BytesMut) -> Result<(), Self::Error> {
+    fn encode(&mut self, block: SignedBlock, dst: &mut bytes::BytesMut) -> Result<(), Self::Error> {
         let bytes: bytes::Bytes =
             bincode::encode_to_vec(block, bincode::config::standard())?.into();
 
@@ -65,13 +65,13 @@ pub struct DataAvailabilityClientCodec {
     ldc: LengthDelimitedCodec,
 }
 impl Decoder for DataAvailabilityClientCodec {
-    type Item = Block;
+    type Item = SignedBlock;
     type Error = anyhow::Error;
 
     fn decode(&mut self, src: &mut bytes::BytesMut) -> Result<Option<Self::Item>, Self::Error> {
         let decoded_bytes = self.ldc.decode(src)?;
         if let Some(decoded_bytes) = decoded_bytes {
-            let block: Block =
+            let block: Self::Item =
                 bincode::decode_from_slice(&decoded_bytes, bincode::config::standard())
                     .context(format!("Decoding block from {} bytes", decoded_bytes.len()))?
                     .0;
@@ -105,16 +105,16 @@ impl Encoder<DataAvailabilityServerRequest> for DataAvailabilityClientCodec {
 
 #[cfg(test)]
 mod test {
-    use std::collections::BTreeMap;
-
     use bytes::BytesMut;
     use tokio_util::codec::{Decoder, Encoder};
 
     use crate::{
+        consensus::ConsensusProposal,
         data_availability::codec::{
             DataAvailabilityClientCodec, DataAvailabilityServerCodec, DataAvailabilityServerRequest,
         },
-        model::{Block, BlockHash, BlockHeight},
+        model::{BlockHash, BlockHeight, SignedBlock},
+        utils::crypto::AggregateSignature,
     };
 
     #[tokio::test]
@@ -123,25 +123,16 @@ mod test {
         let mut client_codec = DataAvailabilityClientCodec::default();
         let mut buffer = BytesMut::new();
 
-        let block = Block {
-            block_parent_hash: BlockHash("hash".into()),
-            block_height: BlockHeight(3),
-            block_timestamp: 123,
-            new_contract_txs: vec![],
-            new_blob_txs: vec![],
-            new_verified_proof_txs: vec![],
-            verified_blobs: vec![],
-            failed_txs: vec![],
-            stakers: vec![],
-            new_bounded_validators: vec![],
-            timed_out_tx_hashes: vec![],
-            settled_blob_tx_hashes: vec![],
-            updated_states: BTreeMap::new(),
+        let block = SignedBlock {
+            parent_hash: BlockHash::new("hash"),
+            data_proposals: vec![],
+            certificate: AggregateSignature::default(),
+            consensus_proposal: ConsensusProposal::default(),
         };
 
         server_codec.encode(block.clone(), &mut buffer).unwrap();
 
-        let decoded_block: Block = client_codec.decode(&mut buffer).unwrap().unwrap();
+        let decoded_block: SignedBlock = client_codec.decode(&mut buffer).unwrap().unwrap();
 
         // Vérifiez si le buffer a été correctement consommé
         assert_eq!(block, decoded_block);
