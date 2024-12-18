@@ -9,7 +9,7 @@ use tracing::{debug, info, warn};
 use crate::{
     bus::BusClientSender,
     data_availability::{
-        codec::{DataAvailibilityClientCodec, DataAvailibilityServerRequest},
+        codec::{DataAvailabilityClientCodec, DataAvailabilityServerRequest},
         DataEvent,
     },
     model::{Block, BlockHeight, CommonRunContext},
@@ -29,7 +29,7 @@ struct DAListenerBusClient {
 
 /// Module that listens to the data availability stream and sends the blocks to the bus
 pub struct DAListener {
-    da_stream: Framed<TcpStream, DataAvailibilityClientCodec>,
+    da_stream: Framed<TcpStream, DataAvailabilityClientCodec>,
     bus: DAListenerBusClient,
 }
 
@@ -76,7 +76,7 @@ impl DAListener {
             .send(DataEvent::NewBlock(Box::new(block.clone())))?;
 
         self.da_stream
-            .send(DataAvailibilityServerRequest::Ping)
+            .send(DataAvailabilityServerRequest::Ping)
             .await?;
 
         Ok(())
@@ -86,7 +86,7 @@ impl DAListener {
 pub async fn connect_to(
     target: &str,
     height: BlockHeight,
-) -> Result<Framed<TcpStream, DataAvailibilityClientCodec>> {
+) -> Result<Framed<TcpStream, DataAvailabilityClientCodec>> {
     info!(
         "Connecting to node for data availability stream on {}",
         &target
@@ -111,14 +111,14 @@ pub async fn connect_to(
         }
     };
     let addr = stream.local_addr()?;
-    let mut da_stream = Framed::new(stream, DataAvailibilityClientCodec::default());
+    let mut da_stream = Framed::new(stream, DataAvailabilityClientCodec::default());
     info!(
         "Connected to data stream to {} on {}. Starting stream from height {}",
         &target, addr, height
     );
     // Send the start height
     da_stream
-        .send(DataAvailibilityServerRequest::BlockHeight(height))
+        .send(DataAvailabilityServerRequest::BlockHeight(height))
         .await?;
     Ok(da_stream)
 }

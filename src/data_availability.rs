@@ -13,10 +13,8 @@ mod blocks_sled;
 use blocks_memory::Blocks;
 #[cfg(not(test))]
 use blocks_sled::Blocks;
-use codec::DataAvailibilityServerRequest;
-use futures::StreamExt;
+use codec::{DataAvailabilityServerCodec, DataAvailabilityServerRequest};
 
-use crate::data_availability::codec::DataAvailibilityServerCodec;
 use crate::{
     bus::{command_response::Query, BusClientSender, BusMessage},
     consensus::{
@@ -46,7 +44,7 @@ use bincode::{Decode, Encode};
 use core::str;
 use futures::{
     stream::{SplitSink, SplitStream},
-    SinkExt,
+    SinkExt, StreamExt,
 };
 use node_state::{model::Contract, NodeState};
 use serde::{Deserialize, Serialize};
@@ -114,7 +112,7 @@ struct BlockStreamPeer {
     /// Last timestamp we received a ping from the peer.
     last_ping: u64,
     /// Sender to stream blocks to the peer
-    sender: SplitSink<Framed<TcpStream, DataAvailibilityServerCodec>, Block>,
+    sender: SplitSink<Framed<TcpStream, DataAvailabilityServerCodec>, Block>,
     /// Handle to abort the receiving side of the stream
     keepalive_abort: JoinHandle<()>,
 }
@@ -293,11 +291,11 @@ impl DataAvailability {
             Ok((stream, addr)) = stream_request_receiver.accept() => {
                 // This handler is defined inline so I don't have to give a type to pending_stream_requests
                 pending_stream_requests.spawn(async move {
-                    let (sender, mut receiver) = Framed::new(stream, DataAvailibilityServerCodec::default()).split();
+                    let (sender, mut receiver) = Framed::new(stream, DataAvailabilityServerCodec::default()).split();
                     // Read the start height from the peer.
                     match receiver.next().await {
                         Some(Ok(data)) => {
-                            if let DataAvailibilityServerRequest::BlockHeight(start_height) = data {
+                            if let DataAvailabilityServerRequest::BlockHeight(start_height) = data {
                                 Ok((start_height, sender, receiver, addr.to_string()))
                             } else {
                                 Err(anyhow::anyhow!("Got a ping instead of a block height"))
@@ -612,8 +610,8 @@ impl DataAvailability {
         start_height: BlockHeight,
         ping_sender: tokio::sync::mpsc::Sender<String>,
         catchup_sender: tokio::sync::mpsc::Sender<(Vec<BlockHash>, String)>,
-        sender: SplitSink<Framed<TcpStream, DataAvailibilityServerCodec>, Block>,
-        mut receiver: SplitStream<Framed<TcpStream, DataAvailibilityServerCodec>>,
+        sender: SplitSink<Framed<TcpStream, DataAvailabilityServerCodec>, Block>,
+        mut receiver: SplitStream<Framed<TcpStream, DataAvailabilityServerCodec>>,
         peer_ip: &String,
     ) -> Result<()> {
         // Start a task to process pings from the peer.
