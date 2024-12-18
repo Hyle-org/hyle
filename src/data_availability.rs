@@ -673,7 +673,7 @@ mod tests {
         bus::BusClientSender,
         consensus::{CommittedConsensusProposal, ConsensusEvent, ConsensusProposal},
         mempool::{MempoolCommand, MempoolEvent},
-        model::{Block, BlockHeight, Hashable, SignedBlock},
+        model::{BlockHeight, Hashable, SignedBlock},
         utils::{conf::Conf, crypto::AggregateSignature},
     };
     use futures::{SinkExt, StreamExt};

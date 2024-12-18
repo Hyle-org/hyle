@@ -1,7 +1,7 @@
 use anyhow::Context;
 use tokio_util::codec::{Decoder, Encoder, LengthDelimitedCodec};
 
-use crate::model::{Block, BlockHeight, SignedBlock};
+use crate::model::{BlockHeight, SignedBlock};
 
 // Server Side
 #[derive(Default, Debug)]

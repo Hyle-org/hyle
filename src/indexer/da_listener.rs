@@ -13,7 +13,7 @@ use crate::{
         node_state::NodeState,
         DataEvent,
     },
-    model::{Block, BlockHeight, CommonRunContext, SignedBlock},
+    model::{BlockHeight, CommonRunContext, SignedBlock},
     module_handle_messages,
     utils::{
         logger::LogMe,
