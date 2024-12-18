@@ -5,17 +5,18 @@ use crate::model::{Block, BlockHeight};
 
 // Server Side
 #[derive(Default, Debug)]
-pub struct DataAvailibilityServerCodec {
+pub struct DataAvailabilityServerCodec {
     ldc: LengthDelimitedCodec,
 }
 
-pub enum DataAvailibilityServerRequest {
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum DataAvailabilityServerRequest {
     BlockHeight(BlockHeight),
     Ping,
 }
 
-impl Decoder for DataAvailibilityServerCodec {
-    type Item = DataAvailibilityServerRequest;
+impl Decoder for DataAvailabilityServerCodec {
+    type Item = DataAvailabilityServerRequest;
     type Error = anyhow::Error;
 
     fn decode(&mut self, src: &mut bytes::BytesMut) -> Result<Option<Self::Item>, Self::Error> {
@@ -24,7 +25,7 @@ impl Decoder for DataAvailibilityServerCodec {
         // try decode ping
         if let Some(decoded_bytes) = decoded_bytes {
             if decoded_bytes == *"ok" {
-                return Ok(Some(DataAvailibilityServerRequest::Ping));
+                return Ok(Some(DataAvailabilityServerRequest::Ping));
             }
 
             let height: u64 =
@@ -35,7 +36,7 @@ impl Decoder for DataAvailibilityServerCodec {
                     ))?
                     .0;
 
-            return Ok(Some(DataAvailibilityServerRequest::BlockHeight(
+            return Ok(Some(DataAvailabilityServerRequest::BlockHeight(
                 BlockHeight(height),
             )));
         }
@@ -44,7 +45,7 @@ impl Decoder for DataAvailibilityServerCodec {
     }
 }
 
-impl Encoder<Block> for DataAvailibilityServerCodec {
+impl Encoder<Block> for DataAvailabilityServerCodec {
     type Error = anyhow::Error;
 
     fn encode(&mut self, block: Block, dst: &mut bytes::BytesMut) -> Result<(), Self::Error> {
@@ -60,10 +61,10 @@ impl Encoder<Block> for DataAvailibilityServerCodec {
 // Client Side
 
 #[derive(Default)]
-pub struct DataAvailibilityClientCodec {
+pub struct DataAvailabilityClientCodec {
     ldc: LengthDelimitedCodec,
 }
-impl Decoder for DataAvailibilityClientCodec {
+impl Decoder for DataAvailabilityClientCodec {
     type Item = Block;
     type Error = anyhow::Error;
 
@@ -81,23 +82,104 @@ impl Decoder for DataAvailibilityClientCodec {
     }
 }
 
-impl Encoder<DataAvailibilityServerRequest> for DataAvailibilityClientCodec {
+impl Encoder<DataAvailabilityServerRequest> for DataAvailabilityClientCodec {
     type Error = anyhow::Error;
 
     fn encode(
         &mut self,
-        request: DataAvailibilityServerRequest,
+        request: DataAvailabilityServerRequest,
         dst: &mut bytes::BytesMut,
     ) -> Result<(), Self::Error> {
         let bytes: bytes::Bytes = match request {
-            DataAvailibilityServerRequest::BlockHeight(height) => {
+            DataAvailabilityServerRequest::BlockHeight(height) => {
                 bincode::encode_to_vec(height, bincode::config::standard())?.into()
             }
-            DataAvailibilityServerRequest::Ping => bytes::Bytes::from("ok"),
+            DataAvailabilityServerRequest::Ping => bytes::Bytes::from("ok"),
         };
 
         self.ldc
             .encode(bytes, dst)
             .context("Encoding block height bytes as length delimited")
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use std::collections::BTreeMap;
+
+    use bytes::BytesMut;
+    use tokio_util::codec::{Decoder, Encoder};
+
+    use crate::{
+        data_availability::codec::{
+            DataAvailabilityClientCodec, DataAvailabilityServerCodec, DataAvailabilityServerRequest,
+        },
+        model::{Block, BlockHash, BlockHeight},
+    };
+
+    #[tokio::test]
+    async fn test_block_streaming() {
+        let mut server_codec = DataAvailabilityServerCodec::default();
+        let mut client_codec = DataAvailabilityClientCodec::default();
+        let mut buffer = BytesMut::new();
+
+        let block = Block {
+            block_parent_hash: BlockHash("hash".into()),
+            block_height: BlockHeight(3),
+            block_timestamp: 123,
+            new_contract_txs: vec![],
+            new_blob_txs: vec![],
+            new_verified_proof_txs: vec![],
+            verified_blobs: vec![],
+            failed_txs: vec![],
+            stakers: vec![],
+            new_bounded_validators: vec![],
+            timed_out_tx_hashes: vec![],
+            settled_blob_tx_hashes: vec![],
+            updated_states: BTreeMap::new(),
+        };
+
+        server_codec.encode(block.clone(), &mut buffer).unwrap();
+
+        let decoded_block: Block = client_codec.decode(&mut buffer).unwrap().unwrap();
+
+        // Vérifiez si le buffer a été correctement consommé
+        assert_eq!(block, decoded_block);
+    }
+
+    #[tokio::test]
+    async fn test_da_request_block_height() {
+        let mut server_codec = DataAvailabilityServerCodec::default(); // Votre implémentation du codec
+        let mut client_codec = DataAvailabilityClientCodec::default(); // Votre implémentation du codec
+        let mut buffer = BytesMut::new();
+
+        let block_height = DataAvailabilityServerRequest::BlockHeight(BlockHeight(1));
+
+        client_codec
+            .encode(block_height.clone(), &mut buffer)
+            .unwrap();
+
+        let decoded_block_height: DataAvailabilityServerRequest =
+            server_codec.decode(&mut buffer).unwrap().unwrap();
+
+        // Vérifiez si le buffer a été correctement consommé
+        assert_eq!(block_height, decoded_block_height);
+    }
+
+    #[tokio::test]
+    async fn test_da_request_ping() {
+        let mut server_codec = DataAvailabilityServerCodec::default(); // Votre implémentation du codec
+        let mut client_codec = DataAvailabilityClientCodec::default(); // Votre implémentation du codec
+        let mut buffer = BytesMut::new();
+
+        let ping = DataAvailabilityServerRequest::Ping;
+
+        client_codec.encode(ping.clone(), &mut buffer).unwrap();
+
+        let decoded_ping: DataAvailabilityServerRequest =
+            server_codec.decode(&mut buffer).unwrap().unwrap();
+
+        // Vérifiez si le buffer a été correctement consommé
+        assert_eq!(ping, decoded_ping);
     }
 }
