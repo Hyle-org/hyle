@@ -9,7 +9,7 @@ use crate::consensus::{
 use crate::genesis::{Genesis, GenesisEvent};
 use crate::mempool::storage::Cut;
 use crate::mempool::QueryNewCut;
-use crate::model::Hashable;
+use crate::model::{get_current_timestamp, Hashable};
 use crate::module_handle_messages;
 use crate::utils::conf::SharedConf;
 use crate::utils::crypto::SharedBlstCrypto;
@@ -161,6 +161,7 @@ impl SingleNodeConsensus {
         let consensus_proposal = crate::consensus::ConsensusProposal {
             slot: new_slot,
             view: 0,
+            timestamp: get_current_timestamp(),
             round_leader: self.crypto.validator_pubkey().clone(),
             cut: self.store.last_cut.clone(),
             new_validators_to_bond: vec![],

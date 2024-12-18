@@ -146,6 +146,7 @@ pub struct ConsensusProposal {
     // Below items aren't.
     pub cut: Cut,
     pub new_validators_to_bond: Vec<NewValidatorCandidate>,
+    pub timestamp: u64,
 }
 
 type NextLeader = ValidatorPublicKey;
@@ -1429,6 +1430,7 @@ pub mod test {
                 ConsensusProposal {
                     slot: 2,
                     view: 0,
+                    timestamp: get_current_timestamp(),
                     round_leader: node1.pubkey(),
                     cut: vec![(
                         node2.pubkey(),
@@ -1468,6 +1470,7 @@ pub mod test {
                     slot: 1,
                     view: 0,
                     round_leader: node1.pubkey(),
+                    timestamp: 123,
                     cut: vec![(
                         node2.pubkey(),
                         DataProposalHash("test".to_string()),
@@ -1514,6 +1517,7 @@ pub mod test {
                 ConsensusProposal {
                     slot: 1,
                     view: 0,
+                    timestamp: 123,
                     round_leader: node3.pubkey(),
                     cut: vec![(
                         node2.pubkey(),

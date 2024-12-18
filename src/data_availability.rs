@@ -240,6 +240,7 @@ impl DataAvailability {
                             slot: 0,
                             view: 0,
                             round_leader: round_leader.clone(),
+                            timestamp: get_current_timestamp(),
                             cut: vec![(
                                 round_leader.clone(), dp.hash(), AggregateSignature {
                                     signature: Signature("fake".into()),
