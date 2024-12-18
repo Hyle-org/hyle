@@ -9,7 +9,7 @@ use sp1_sdk::{ProverClient, SP1ProofWithPublicValues, SP1VerifyingKey};
 
 use hyle_contract_sdk::{HyleOutput, ProgramId, Verifier};
 
-pub fn verify_proof(
+pub fn verify_proof_single_output(
     proof: &[u8],
     verifier: &Verifier,
     program_id: &ProgramId,
@@ -31,12 +31,12 @@ pub fn verify_proof(
     Ok(hyle_output)
 }
 
-pub fn verify_multi_proof(
+pub fn verify_proof(
     proof: &[u8],
     verifier: &Verifier,
     program_id: &ProgramId,
 ) -> Result<Vec<HyleOutput>, Error> {
-    if let Ok(hyle_output) = verify_proof(proof, verifier, program_id) {
+    if let Ok(hyle_output) = verify_proof_single_output(proof, verifier, program_id) {
         return Ok(vec![hyle_output]);
     };
     let hyle_outputs = match verifier.0.as_str() {

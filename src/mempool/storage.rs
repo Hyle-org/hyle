@@ -8,7 +8,7 @@ use std::{collections::HashMap, fmt::Display, hash::Hash, vec};
 use tracing::{debug, error, warn};
 
 use crate::{
-    data_availability::node_state::verifiers::verify_proof,
+    data_availability::node_state::verifiers::verify_proof_single_output,
     model::{BlobProof, Hashable, Transaction, TransactionData, ValidatorPublicKey},
     p2p::network::SignedByValidator,
     utils::crypto::{AggregateSignature, BlstCrypto},
@@ -270,11 +270,11 @@ impl Storage {
         }
         for tx in &data_proposal.txs {
             match &tx.transaction_data {
-                TransactionData::MultiProof(_) => {
+                TransactionData::Proof(_) => {
                     warn!("Refusing DataProposal: unverified recursive proof transaction");
                     return DataProposalVerdict::Refuse;
                 }
-                TransactionData::VerifiedMultiProof(proof_tx) => {
+                TransactionData::VerifiedProof(proof_tx) => {
                     // TODO: figure out what we want to do with the contracts.
                     // Extract the proof
                     let proof = match &proof_tx.proof {
@@ -356,7 +356,7 @@ impl Storage {
                             return DataProposalVerdict::Refuse;
                         }
                     };
-                    match verify_proof(&proof_bytes, verifier, program_id) {
+                    match verify_proof_single_output(&proof_bytes, verifier, program_id) {
                         Ok(_) => {
                             if proof.hash() != proof_tx.proof_hash {
                                 warn!("Refusing DataProposal: incorrect HyleOutput in proof transaction");
@@ -533,10 +533,10 @@ impl DataProposal {
     fn remove_proofs(&mut self) {
         self.txs.iter_mut().for_each(|tx| {
             match &mut tx.transaction_data {
-                TransactionData::VerifiedMultiProof(proof_tx) => {
+                TransactionData::VerifiedProof(proof_tx) => {
                     proof_tx.proof = None;
                 }
-                TransactionData::MultiProof(_) => {
+                TransactionData::Proof(_) => {
                     // This can never happen.
                     // A DataProposal that has been processed has turned all TransactionData::Proof into TransactionData::VerifiedProof
                     unreachable!();
@@ -719,9 +719,9 @@ mod tests {
             KnownContracts, MempoolNetMessage,
         },
         model::{
-            Blob, BlobData, BlobProof, BlobTransaction, ContractName, Hashable,
-            MultiProofTransaction, ProofData, RegisterContractTransaction, Transaction,
-            TransactionData, ValidatorPublicKey, VerifiedMultiProofTransaction,
+            Blob, BlobData, BlobProof, BlobTransaction, ContractName, Hashable, ProofData,
+            ProofTransaction, RegisterContractTransaction, Transaction, TransactionData,
+            ValidatorPublicKey, VerifiedProofTransaction,
         },
         utils::crypto,
     };
@@ -744,9 +744,9 @@ mod tests {
         }
     }
 
-    fn make_proof_tx(contract_name: ContractName) -> MultiProofTransaction {
+    fn make_proof_tx(contract_name: ContractName) -> ProofTransaction {
         let hyle_output = get_hyle_output();
-        MultiProofTransaction {
+        ProofTransaction {
             contract_name: contract_name.clone(),
             proof: ProofData::Bytes(serde_json::to_vec(&hyle_output).unwrap()),
             verifies: vec![(TxHash::default(), contract_name)],
@@ -756,7 +756,7 @@ mod tests {
     fn make_unverified_proof_tx(contract_name: ContractName) -> Transaction {
         Transaction {
             version: 1,
-            transaction_data: TransactionData::MultiProof(make_proof_tx(contract_name)),
+            transaction_data: TransactionData::Proof(make_proof_tx(contract_name)),
         }
     }
 
@@ -765,7 +765,7 @@ mod tests {
         let proof = ProofData::Bytes(serde_json::to_vec(&hyle_output).unwrap());
         Transaction {
             version: 1,
-            transaction_data: TransactionData::VerifiedMultiProof(VerifiedMultiProofTransaction {
+            transaction_data: TransactionData::VerifiedProof(VerifiedProofTransaction {
                 via: contract_name.clone(),
                 proof_hash: proof.hash(),
                 verifies: vec![BlobProof {
@@ -784,7 +784,7 @@ mod tests {
         let proof = ProofData::Bytes(serde_json::to_vec(&hyle_output).unwrap());
         Transaction {
             version: 1,
-            transaction_data: TransactionData::VerifiedMultiProof(VerifiedMultiProofTransaction {
+            transaction_data: TransactionData::VerifiedProof(VerifiedProofTransaction {
                 via: contract_name.clone(),
                 proof_hash: proof.hash(),
                 verifies: vec![BlobProof {

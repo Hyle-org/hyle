@@ -8,20 +8,12 @@ use crate::{
     data_availability::node_state::model::Contract,
     indexer::model::ContractDb,
     model::{
-        BlobTransaction, BlockHeight, ContractName, MultiProofTransaction, ProofData,
-        RegisterContractTransaction,
+        BlobTransaction, BlockHeight, ContractName, ProofTransaction, RegisterContractTransaction,
     },
     tools::mock_workflow::RunScenario,
 };
 
 use super::NodeInfo;
-
-#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
-pub struct SingleProofTransaction {
-    pub contract_name: ContractName,
-    pub proof: ProofData,
-    pub blob_tx_hash: TxHash,
-}
 
 pub struct ApiHttpClient {
     pub url: Url,
@@ -42,19 +34,9 @@ impl ApiHttpClient {
             .context("reading tx hash response")
     }
 
-    pub async fn send_tx_proof(&self, tx: &SingleProofTransaction) -> Result<Response> {
+    pub async fn send_tx_proof(&self, tx: &ProofTransaction) -> Result<Response> {
         self.reqwest_client
             .post(format!("{}v1/tx/send/proof", self.url))
-            .body(serde_json::to_string(&tx)?)
-            .header("Content-Type", "application/json")
-            .send()
-            .await
-            .context("Sending tx proof")
-    }
-
-    pub async fn send_tx_multi_proof(&self, tx: &MultiProofTransaction) -> Result<Response> {
-        self.reqwest_client
-            .post(format!("{}v1/tx/send/multi_proof", self.url))
             .body(serde_json::to_string(&tx)?)
             .header("Content-Type", "application/json")
             .send()

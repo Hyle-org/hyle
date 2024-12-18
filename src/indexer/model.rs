@@ -29,8 +29,8 @@ impl TransactionType {
     pub fn get_type_from_transaction(transaction: &Transaction) -> Self {
         match transaction.transaction_data {
             TransactionData::Blob(_) => TransactionType::BlobTransaction,
-            TransactionData::MultiProof(_) => TransactionType::ProofTransaction,
-            TransactionData::VerifiedMultiProof(_) => TransactionType::ProofTransaction,
+            TransactionData::Proof(_) => TransactionType::ProofTransaction,
+            TransactionData::VerifiedProof(_) => TransactionType::ProofTransaction,
             TransactionData::RegisterContract(_) => TransactionType::RegisterContractTransaction,
             TransactionData::Stake(_) => TransactionType::Stake,
         }

@@ -88,8 +88,8 @@ pub struct Transaction {
 pub enum TransactionData {
     Stake(Staker), // FIXME: to remove, this is temporary waiting for real staking contract !!
     Blob(BlobTransaction),
-    MultiProof(MultiProofTransaction),
-    VerifiedMultiProof(VerifiedMultiProofTransaction),
+    Proof(ProofTransaction),
+    VerifiedProof(VerifiedProofTransaction),
     RegisterContract(RegisterContractTransaction),
 }
 
@@ -124,7 +124,7 @@ impl ProofData {
 }
 
 #[derive(Serialize, Deserialize, Default, PartialEq, Eq, Clone, Encode, Decode)]
-pub struct MultiProofTransaction {
+pub struct ProofTransaction {
     pub contract_name: ContractName,
     pub proof: ProofData,
     pub verifies: Vec<(TxHash, ContractName)>,
@@ -140,16 +140,16 @@ pub struct BlobProof {
 }
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Encode, Decode)]
-pub struct VerifiedMultiProofTransaction {
+pub struct VerifiedProofTransaction {
     pub via: ContractName,
     pub proof: Option<ProofData>,
     pub proof_hash: ProofDataHash,
     pub verifies: Vec<BlobProof>,
 }
 
-impl fmt::Debug for VerifiedMultiProofTransaction {
+impl fmt::Debug for VerifiedProofTransaction {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("VerifiedMultiProofTransaction")
+        f.debug_struct("VerifiedProofTransaction")
             .field("via", &self.via)
             .field("proof_hash", &self.proof_hash)
             .field("proof", &"[HIDDEN]")
@@ -166,7 +166,7 @@ impl fmt::Debug for VerifiedMultiProofTransaction {
     }
 }
 
-impl fmt::Debug for MultiProofTransaction {
+impl fmt::Debug for ProofTransaction {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("RecursiveProofTransaction")
             .field("via", &self.contract_name)
@@ -406,8 +406,8 @@ impl Hashable<TxHash> for Transaction {
         match &self.transaction_data {
             TransactionData::Stake(staker) => staker.hash(),
             TransactionData::Blob(tx) => tx.hash(),
-            TransactionData::MultiProof(tx) => tx.hash(),
-            TransactionData::VerifiedMultiProof(tx) => tx.hash(),
+            TransactionData::Proof(tx) => tx.hash(),
+            TransactionData::VerifiedProof(tx) => tx.hash(),
             TransactionData::RegisterContract(tx) => tx.hash(),
         }
     }
@@ -431,7 +431,7 @@ impl Hashable<TxHash> for BlobTransaction {
         TxHash(hex::encode(hash_bytes))
     }
 }
-impl Hashable<TxHash> for MultiProofTransaction {
+impl Hashable<TxHash> for ProofTransaction {
     fn hash(&self) -> TxHash {
         let mut hasher = Sha3_256::new();
         _ = write!(hasher, "{}", self.contract_name);
@@ -451,7 +451,7 @@ impl Hashable<ProofDataHash> for ProofData {
         ProofDataHash(hex::encode(hash_bytes))
     }
 }
-impl Hashable<TxHash> for VerifiedMultiProofTransaction {
+impl Hashable<TxHash> for VerifiedProofTransaction {
     fn hash(&self) -> TxHash {
         let mut hasher = Sha3_256::new();
         _ = write!(hasher, "{}", self.via);

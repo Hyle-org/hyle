@@ -14,8 +14,8 @@ use tracing::info;
 use hyle::{
     data_availability::node_state::model::Contract,
     indexer::model::ContractDb,
-    model::{Blob, BlobTransaction, MultiProofTransaction, ProofData, RegisterContractTransaction},
-    rest::client::{ApiHttpClient, SingleProofTransaction},
+    model::{Blob, BlobTransaction, ProofData, ProofTransaction, RegisterContractTransaction},
+    rest::client::ApiHttpClient,
 };
 use hyle_contract_sdk::{
     flatten_blobs, BlobIndex, ContractName, HyleOutput, Identity, ProgramId, StateDigest, TxHash,
@@ -259,7 +259,7 @@ impl E2ECtx {
         ProofData::Bytes(serde_json::to_vec(&hyle_output).unwrap())
     }
 
-    pub async fn send_proof(
+    pub async fn send_proof_single(
         &self,
         contract_name: ContractName,
         proof: ProofData,
@@ -267,10 +267,10 @@ impl E2ECtx {
     ) -> Result<()> {
         assert_ok!(self
             .client()
-            .send_tx_proof(&SingleProofTransaction {
-                blob_tx_hash: blob_tx_hash.clone(),
+            .send_tx_proof(&ProofTransaction {
                 contract_name: contract_name.clone(),
-                proof: proof.clone()
+                proof: proof.clone(),
+                verifies: vec![(blob_tx_hash.clone(), contract_name.clone())],
             })
             .await
             .and_then(|response| response.error_for_status().context("sending tx")));
@@ -278,7 +278,7 @@ impl E2ECtx {
         Ok(())
     }
 
-    pub async fn send_recursive_proof(
+    pub async fn send_proof(
         &self,
         via: ContractName,
         proof: ProofData,
@@ -286,7 +286,7 @@ impl E2ECtx {
     ) -> Result<()> {
         assert_ok!(self
             .client()
-            .send_tx_multi_proof(&MultiProofTransaction {
+            .send_tx_proof(&ProofTransaction {
                 contract_name: via.clone(),
                 proof: proof.clone(),
                 verifies: verifies.clone(),

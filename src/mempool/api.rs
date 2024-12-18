@@ -7,10 +7,10 @@ use serde::{Deserialize, Serialize};
 use crate::{
     bus::{bus_client, metrics::BusMetrics, BusClientSender, BusMessage},
     model::{
-        BlobTransaction, CommonRunContext, Hashable, MultiProofTransaction, ProofData,
+        BlobTransaction, CommonRunContext, Hashable, ProofData, ProofTransaction,
         RegisterContractTransaction, Transaction, TransactionData,
     },
-    rest::{client::SingleProofTransaction, AppError},
+    rest::AppError,
 };
 use staking::Staker;
 
@@ -40,7 +40,6 @@ pub async fn api(ctx: &CommonRunContext) -> Router<()> {
         .route("/tx/send/stake", post(send_staking_transaction))
         .route("/tx/send/blob", post(send_blob_transaction))
         .route("/tx/send/proof", post(send_proof_transaction))
-        .route("/tx/send/multi_proof", post(send_multi_proof_transaction))
         .with_state(state)
 }
 
@@ -74,34 +73,14 @@ pub async fn send_blob_transaction(
 
 pub async fn send_proof_transaction(
     State(state): State<RouterState>,
-    Json(mut payload): Json<SingleProofTransaction>,
+    Json(mut payload): Json<ProofTransaction>,
 ) -> Result<impl IntoResponse, AppError> {
     let proof_bytes = payload
         .proof
         .to_bytes()
         .map_err(|err| AppError(StatusCode::BAD_REQUEST, anyhow!(err)))?;
     payload.proof = ProofData::Bytes(proof_bytes);
-    handle_send(
-        state,
-        TransactionData::MultiProof(MultiProofTransaction {
-            verifies: vec![(payload.blob_tx_hash, payload.contract_name.clone())],
-            contract_name: payload.contract_name,
-            proof: payload.proof,
-        }),
-    )
-    .await
-}
-
-pub async fn send_multi_proof_transaction(
-    State(state): State<RouterState>,
-    Json(mut payload): Json<MultiProofTransaction>,
-) -> Result<impl IntoResponse, AppError> {
-    let proof_bytes = payload
-        .proof
-        .to_bytes()
-        .map_err(|err| AppError(StatusCode::BAD_REQUEST, anyhow!(err)))?;
-    payload.proof = ProofData::Bytes(proof_bytes);
-    handle_send(state, TransactionData::MultiProof(payload)).await
+    handle_send(state, TransactionData::Proof(payload)).await
 }
 
 pub async fn send_staking_transaction(

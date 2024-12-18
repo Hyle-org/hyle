@@ -365,9 +365,9 @@ impl Indexer {
             let version = i32::try_from(tx.version)
                 .map_err(|_| anyhow::anyhow!("Tx version is too large to fit into an i32"))?;
 
-            let TransactionData::VerifiedMultiProof(verified_proof_tx) = tx.transaction_data else {
+            let TransactionData::VerifiedProof(verified_proof_tx) = tx.transaction_data else {
                 bail!(
-                    "Expected TransactionData::VerifiedMultiProof, got {:?}",
+                    "Expected TransactionData::VerifiedProof, got {:?}",
                     tx.transaction_data
                 );
             };
@@ -564,7 +564,7 @@ mod test {
         mempool::storage::DataProposal,
         model::{
             Blob, BlobData, ProofData, RegisterContractTransaction, SignedBlock, Transaction,
-            TransactionData, VerifiedMultiProofTransaction,
+            TransactionData, VerifiedProofTransaction,
         },
     };
 
@@ -638,7 +638,7 @@ mod test {
         let proof = ProofData::Bytes(initial_state.0.clone());
         Transaction {
             version: 1,
-            transaction_data: TransactionData::VerifiedMultiProof(VerifiedMultiProofTransaction {
+            transaction_data: TransactionData::VerifiedProof(VerifiedProofTransaction {
                 via: contract_name.clone(),
                 proof_hash: proof.hash(),
                 verifies: vec![BlobProof {
