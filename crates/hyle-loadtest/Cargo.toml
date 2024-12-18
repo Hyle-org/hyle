@@ -1,0 +1,16 @@
+[package]
+name = "hyle-loadtest"
+version.workspace = true
+edition.workspace = true
+homepage.workspace = true
+repository.workspace = true
+
+[dependencies]
+goose = "^0.17"
+serde_json = "1.0.133"
+tokio = "^1.12"
+hyle = { path = "../../" }
+# hyllar = { path = "../../contracts/hyllar" }
+# amm = { path = "../../contracts/amm" }
+# hydentity = { path = "../../contracts/hydentity" }
+hyle-contract-sdk = { path = "../../contract-sdk", features = ["tracing"] }

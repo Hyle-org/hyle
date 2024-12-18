@@ -9,6 +9,7 @@ members = [
 
     "crates/bonsai-runner",
     "crates/hyrun",
+    "crates/hyle-loadtest",
 ]
 resolver = "2"
 
