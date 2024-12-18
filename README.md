@@ -137,7 +137,6 @@ cargo run --profile profiling
 
 ### CPU Profiling
 
-- Use `tokio-console` for basic debugging.
 - For advanced analysis, we recommend [Samply](https://github.com/mstange/samply).
 
 ### Memory Profiling

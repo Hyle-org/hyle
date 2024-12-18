@@ -380,6 +380,10 @@ impl Mempool {
                 // Fetch in advance data proposals
                 self.fetch_unknown_data_proposals(&consensus_proposal.cut)?;
 
+                // Update all lanes with the new cut
+                self.storage
+                    .update_lanes_with_commited_cut(&consensus_proposal.cut);
+
                 Ok(())
             }
         }

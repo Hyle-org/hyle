@@ -6,9 +6,12 @@ mod fixtures;
 mod e2e_consensus {
 
     use fixtures::test_helpers::send_transaction;
-    use hyle::tools::{
-        contract_runner::fetch_current_state,
-        transactions_builder::{States, TransactionBuilder},
+    use hyle::{
+        tools::{
+            contract_runner::fetch_current_state,
+            transactions_builder::{States, TransactionBuilder},
+        },
+        utils::logger::LogMe,
     };
     use hyle_contract_sdk::Identity;
 
@@ -45,6 +48,7 @@ mod e2e_consensus {
 
         let hyllar = fetch_current_state(ctx.indexer_client(), &"hyllar".into())
             .await
+            .log_error("fetch state failed")
             .unwrap();
         let hydentity = fetch_current_state(ctx.indexer_client(), &"hydentity".into())
             .await

@@ -39,7 +39,8 @@ pub struct LaneEntry {
 
 #[derive(Debug, Default, Clone, Encode, Decode)]
 pub struct Lane {
-    pub last_cut: Option<DataProposalHash>,
+    pub last_cutted_dp: Option<DataProposalHash>,
+    pub last_cutted_poda: Option<PoDA>,
     #[bincode(with_serde)]
     pub data_proposals: IndexMap<DataProposalHash, LaneEntry>,
     pub waiting: Vec<DataProposal>,
@@ -120,7 +121,9 @@ impl Storage {
             ) in lane.iter_reverse()
             {
                 // Only cut on DataProposal that have not been cutted yet
-                if lane.last_cut == Some(data_proposal_hash.clone()) {
+                if lane.last_cutted_dp == Some(data_proposal_hash.clone()) {
+                    let poda = lane.last_cutted_poda.clone().unwrap();
+                    cut.push((validator.clone(), data_proposal_hash.clone(), poda));
                     break;
                 }
                 // Filter signatures on DataProposal to only keep the ones from the current validators
@@ -167,6 +170,7 @@ impl Storage {
                     data_proposal_hash.clone(),
                     poda.signature,
                 ));
+                break;
             }
         }
 
@@ -547,19 +551,21 @@ impl Storage {
         let mut txs = Vec::new();
 
         // For each validator involved in the cut, extract all transactions from the last cut to the new one
-        for (validator, data_proposal_hash, _) in cut.iter() {
+        for (validator, data_proposal_hash, poda) in cut.iter() {
             // FIXME: If data_proposal_hash is unknown, we should request the missing DataProposals
             if let Some(lane) = self.lanes.get_mut(validator) {
-                if let Ok(Some(lane_entries)) =
-                    lane.get_lane_entries_between_hashes(lane.last_cut.as_ref(), data_proposal_hash)
-                {
+                if let Ok(Some(lane_entries)) = lane.get_lane_entries_between_hashes(
+                    lane.last_cutted_dp.as_ref(),
+                    data_proposal_hash,
+                ) {
                     for lane_entry in lane_entries {
                         txs.extend(lane_entry.data_proposal.txs);
                     }
                 }
 
-                // Update last cut index for all concerned lanes
-                lane.last_cut = Some(data_proposal_hash.clone());
+                // Update last cut index and poda for all concerned lanes
+                lane.last_cutted_dp = Some(data_proposal_hash.clone());
+                lane.last_cutted_poda = Some(poda.clone());
             }
         }
         txs
@@ -578,6 +584,15 @@ impl Storage {
         self.lanes
             .get(validator)
             .and_then(|lane| lane.get_last_proposal_hash())
+    }
+
+    pub fn update_lanes_with_commited_cut(&mut self, committed_cut: &Cut) {
+        for (validator, data_proposal_hash, poda) in committed_cut.iter() {
+            if let Some(lane) = self.lanes.get_mut(validator) {
+                lane.last_cutted_dp = Some(data_proposal_hash.clone());
+                lane.last_cutted_poda = Some(poda.clone());
+            }
+        }
     }
 }
 
@@ -1632,14 +1647,14 @@ mod tests {
 
         let cut1 = store1.new_cut(&staking);
         let cut2 = store2.new_cut(&staking);
-        assert_eq!(cut1.len(), 1);
+        assert_eq!(cut1.len(), 2);
         let txs1 = store1.collect_data_proposals_from_lanes(cut1);
         let txs2 = store2.collect_data_proposals_from_lanes(cut2);
         assert_eq!(txs1, vec![make_blob_tx("tx3")]);
         assert_eq!(txs1, txs2);
 
         let cut2 = store1.new_cut(&staking);
-        assert_eq!(cut2.len(), 0);
+        assert_eq!(cut2.len(), 2);
     }
 
     #[test_log::test]

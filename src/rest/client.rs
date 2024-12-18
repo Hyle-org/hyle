@@ -71,16 +71,6 @@ impl ApiHttpClient {
             .context("Sending tx register contract")
     }
 
-    //pub async fn send_stake_tx(&self, tx: &Staker) -> Result<Response> {
-    //    self.reqwest_client
-    //        .post(format!("{}v1/tx/send/stake", self.url))
-    //        .body(serde_json::to_string(&tx)?)
-    //        .header("Content-Type", "application/json")
-    //        .send()
-    //        .await
-    //        .context("Sending tx stake")
-    //}
-
     pub async fn get_consensus_info(&self) -> Result<ConsensusInfo> {
         self.reqwest_client
             .get(format!("{}v1/consensus/info", self.url))

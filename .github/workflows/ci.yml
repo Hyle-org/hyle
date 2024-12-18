@@ -44,15 +44,6 @@ jobs:
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
-      #! This installation is here for noir verification. This should be removed once we have a native verifier.
-      - name: Install bbup
-        run: |
-          curl -L https://raw.githubusercontent.com/AztecProtocol/aztec-packages/master/barretenberg/cpp/installation/install | bash
-          echo "/home/runner/.bb" >> $GITHUB_PATH
-      - name: Install bb
-        run: |
-          bbup -v 0.41.0
-
       - run: cargo build --verbose
       - run: cargo nextest run --profile ci --workspace
       - name: Upload test results to Codecov
@@ -78,16 +69,6 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
-
-      #! This installation is here for noir verification. This should be removed once we have a native verifier.
-      - name: Install bbup
-        run: |
-          curl -L https://raw.githubusercontent.com/AztecProtocol/aztec-packages/master/barretenberg/cpp/installation/install | bash
-          echo "/home/runner/.bb" >> $GITHUB_PATH
-      - name: Install bb
-        run: |
-          bbup -v 0.41.0
-
       - name: Generate code coverage
         run: cargo llvm-cov --workspace --lib --lcov --output-path lcov.info -- --test-threads=1
       - name: Upload coverage to Codecov

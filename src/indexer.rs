@@ -372,7 +372,7 @@ impl Indexer {
             let serialized_hyle_output = serde_json::to_string(&verified_proof_tx.hyle_output)?;
             let blob_index: i32 = i32::try_from(verified_proof_tx.hyle_output.index.0)
                 .map_err(|_| anyhow::anyhow!("Proof blob index is too large to fit into an i32"))?;
-            let blob_tx_hash: &TxHashDb = &verified_proof_tx.hyle_output.tx_hash.into();
+            let blob_tx_hash: &TxHashDb = &verified_proof_tx.blob_tx_hash.into();
             let contract_name = &verified_proof_tx.contract_name.0;
             sqlx::query(
                 "INSERT INTO proofs (tx_hash, blob_tx_hash, blob_index, contract_name, proof, hyle_output) VALUES ($1, $2, $3, $4, $5, $6::jsonb)",
