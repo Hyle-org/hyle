@@ -1,5 +1,6 @@
 //! Handles all consensus logic up to block commitment.
 
+use crate::model::get_current_timestamp_ms;
 use crate::module_handle_messages;
 use crate::utils::modules::module_bus_client;
 #[cfg(not(test))]
@@ -146,6 +147,7 @@ pub struct ConsensusProposal {
     // Below items aren't.
     pub cut: Cut,
     pub new_validators_to_bond: Vec<NewValidatorCandidate>,
+    pub timestamp: u64,
 }
 
 type NextLeader = ValidatorPublicKey;
@@ -260,6 +262,7 @@ impl Consensus {
             consensus_proposal: ConsensusProposal {
                 slot: self.bft_round_state.consensus_proposal.slot,
                 view: self.bft_round_state.consensus_proposal.view,
+                timestamp: self.bft_round_state.consensus_proposal.timestamp,
                 round_leader: std::mem::take(
                     &mut self.bft_round_state.consensus_proposal.round_leader,
                 ),
@@ -811,7 +814,7 @@ impl Consensus {
                 _ => Ok(()),
             },
             ConsensusCommand::StartNewSlot => {
-                self.start_round().await?;
+                self.start_round(get_current_timestamp_ms()).await?;
                 Ok(())
             }
         }
@@ -1057,7 +1060,8 @@ pub mod test {
             crypto: BlstCrypto,
         ) -> Consensus {
             let store = ConsensusStore::default();
-            let conf = Arc::new(Conf::default());
+            let mut conf = Conf::default();
+            conf.consensus.slot_duration = 1000;
             let bus = ConsensusBusClient::new_from_bus(shared_bus.new_handle()).await;
 
             Consensus {
@@ -1065,7 +1069,7 @@ pub mod test {
                 bus,
                 file: None,
                 store,
-                config: conf,
+                config: Arc::new(conf),
                 crypto: Arc::new(crypto),
             }
         }
@@ -1226,7 +1230,14 @@ pub mod test {
 
         pub async fn start_round(&mut self) {
             self.consensus
-                .start_round()
+                .start_round(get_current_timestamp_ms())
+                .await
+                .expect("Failed to start slot");
+        }
+
+        pub async fn start_round_at(&mut self, current_timestamp: u64) {
+            self.consensus
+                .start_round(current_timestamp)
                 .await
                 .expect("Failed to start slot");
         }
@@ -1429,6 +1440,7 @@ pub mod test {
                 ConsensusProposal {
                     slot: 2,
                     view: 0,
+                    timestamp: 123,
                     round_leader: node1.pubkey(),
                     cut: vec![(
                         node2.pubkey(),
@@ -1468,6 +1480,7 @@ pub mod test {
                     slot: 1,
                     view: 0,
                     round_leader: node1.pubkey(),
+                    timestamp: 123,
                     cut: vec![(
                         node2.pubkey(),
                         DataProposalHash("test".to_string()),
@@ -1514,6 +1527,7 @@ pub mod test {
                 ConsensusProposal {
                     slot: 1,
                     view: 0,
+                    timestamp: 123,
                     round_leader: node3.pubkey(),
                     cut: vec![(
                         node2.pubkey(),
@@ -1544,6 +1558,158 @@ pub mod test {
         assert_contains!(
             node4.handle_msg_err(&prepare_msg).to_string(),
             "does not come from current leader"
+        );
+    }
+
+    #[test_log::test(tokio::test)]
+    async fn prepare_wrong_timestamp_too_old() {
+        let (mut node1, mut node2, mut node3, mut node4): (
+            ConsensusTestCtx,
+            ConsensusTestCtx,
+            ConsensusTestCtx,
+            ConsensusTestCtx,
+        ) = build_nodes!(4).await;
+
+        node1.start_round_at(1000).await;
+
+        let (cp, _) = simple_commit_round! {
+            leader: node1,
+            followers: [node2, node3, node4]
+        };
+
+        assert_eq!(cp.timestamp, 1000);
+
+        node2.start_round_at(900).await;
+
+        broadcast! {
+            description: "Leader Node2 second round",
+            from: node2, to: [],
+            message_matches: ConsensusNetMessage::Prepare(next_cp, next_ticket) => {
+
+                assert_eq!(next_cp.timestamp, 900);
+
+                let prepare_msg = node2
+                    .consensus
+                    .sign_net_message(ConsensusNetMessage::Prepare(next_cp.clone(), next_ticket.clone()))
+                    .unwrap();
+
+                assert_contains!(
+                    format!("{:#}", node1.handle_msg_err(&prepare_msg)),
+                    "too old"
+                );
+                assert_contains!(
+                    format!("{:#}", node3.handle_msg_err(&prepare_msg)),
+                    "too old"
+                );
+                assert_contains!(
+                    format!("{:#}", node4.handle_msg_err(&prepare_msg)),
+                    "too old"
+                );
+            }
+        };
+    }
+
+    #[test_log::test(tokio::test)]
+    async fn prepare_wrong_timestamp_too_late() {
+        let (mut node1, mut node2, mut node3, mut node4): (
+            ConsensusTestCtx,
+            ConsensusTestCtx,
+            ConsensusTestCtx,
+            ConsensusTestCtx,
+        ) = build_nodes!(4).await;
+
+        node1.start_round_at(1000).await;
+
+        let (cp, _) = simple_commit_round! {
+            leader: node1,
+            followers: [node2, node3, node4]
+        };
+
+        assert_eq!(cp.timestamp, 1000);
+
+        node2.start_round_at(3001).await;
+
+        // Get broadcasted message and inject it, asserting errors
+        broadcast! {
+            description: "Leader Node2 second round",
+            from: node2, to: [],
+            message_matches: ConsensusNetMessage::Prepare(next_cp, next_ticket) => {
+
+                assert_eq!(next_cp.timestamp, 3001);
+
+                let prepare_msg = node2
+                    .consensus
+                    .sign_net_message(ConsensusNetMessage::Prepare(next_cp.clone(), next_ticket.clone()))
+                    .unwrap();
+
+                assert_contains!(
+                    format!("{:#}", node1.handle_msg_err(&prepare_msg)),
+                    "too late"
+                );
+                assert_contains!(
+                    format!("{:#}", node3.handle_msg_err(&prepare_msg)),
+                    "too late"
+                );
+                assert_contains!(
+                    format!("{:#}", node4.handle_msg_err(&prepare_msg)),
+                    "too late"
+                );
+            }
+        };
+    }
+
+    #[test_log::test(tokio::test)]
+    async fn prepare_valid_timestamp() {
+        let (mut node1, mut node2, mut node3, mut node4): (
+            ConsensusTestCtx,
+            ConsensusTestCtx,
+            ConsensusTestCtx,
+            ConsensusTestCtx,
+        ) = build_nodes!(4).await;
+
+        node1.start_round_at(1000).await;
+
+        let (cp, _) = simple_commit_round! {
+            leader: node1,
+            followers: [node2, node3, node4]
+        };
+
+        assert_eq!(cp.timestamp, 1000);
+
+        node2.start_round_at(3000).await;
+
+        assert_eq!(
+            node1.consensus.bft_round_state.consensus_proposal.timestamp,
+            1000
+        );
+        assert_eq!(
+            node3.consensus.bft_round_state.consensus_proposal.timestamp,
+            1000
+        );
+        assert_eq!(
+            node4.consensus.bft_round_state.consensus_proposal.timestamp,
+            1000
+        );
+
+        broadcast! {
+            description: "Leader Node2 second round",
+            from: node2, to: [node1, node3, node4],
+            message_matches: ConsensusNetMessage::Prepare(next_cp, _) => {
+                assert_eq!(next_cp.timestamp, 3000);
+            }
+        };
+
+        assert_eq!(
+            node1.consensus.bft_round_state.consensus_proposal.timestamp,
+            3000
+        );
+        assert_eq!(
+            node3.consensus.bft_round_state.consensus_proposal.timestamp,
+            3000
+        );
+        assert_eq!(
+            node4.consensus.bft_round_state.consensus_proposal.timestamp,
+            3000
         );
     }
 

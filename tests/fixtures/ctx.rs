@@ -39,6 +39,7 @@ pub struct E2ECtx {
     clients: Vec<ApiHttpClient>,
     client_index: usize,
     indexer_client_index: usize,
+    slot_duration: u64,
 }
 
 impl E2ECtx {
@@ -109,6 +110,7 @@ impl E2ECtx {
             clients: vec![client],
             client_index: 0,
             indexer_client_index: 0,
+            slot_duration,
         })
     }
 
@@ -126,12 +128,15 @@ impl E2ECtx {
             clients,
             client_index: 0,
             indexer_client_index: 0,
+            slot_duration,
         })
     }
 
     pub async fn add_node(&mut self) -> Result<&ApiHttpClient> {
         let mut conf_maker = ConfMaker::default();
         let mut node_conf = conf_maker.build("new-node");
+        node_conf.consensus.slot_duration = self.slot_duration;
+
         //node_conf.peers = vec![self.nodes[0].conf.host.clone()];
         node_conf.peers = self
             .nodes
@@ -189,6 +194,7 @@ impl E2ECtx {
             clients,
             client_index: 0,
             indexer_client_index,
+            slot_duration,
         })
     }
 
