@@ -1311,7 +1311,7 @@ pub mod test {
         }]))?;
 
         ctx.mempool
-            .handle_net_message(signed_msg)
+            .handle_net_message(signed_msg.clone())
             .expect("should handle net message");
 
         // Assert that the lane entry was added
@@ -1326,6 +1326,11 @@ pub mod test {
             lane.get_last_proposal().unwrap().data_proposal,
             data_proposal
         );
+
+        // Process it again
+        ctx.mempool
+            .handle_net_message(signed_msg)
+            .expect("should ignore duplicated message");
 
         Ok(())
     }
