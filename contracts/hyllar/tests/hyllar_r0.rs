@@ -1,7 +1,10 @@
 use core::str;
 
 use hyllar::HyllarToken;
-use sdk::{erc20::ERC20Action, BlobData, BlobIndex, ContractInput, ContractName, HyleOutput};
+use sdk::{
+    erc20::ERC20Action, BlobData, BlobIndex, ContractAction, ContractInput, ContractName,
+    HyleOutput,
+};
 
 fn execute(inputs: ContractInput<HyllarToken>) -> HyleOutput {
     let env = risc0_zkvm::ExecutorEnv::builder()

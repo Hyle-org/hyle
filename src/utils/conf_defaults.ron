@@ -4,15 +4,12 @@ Config(
   p2p_listen: true,
   host: "127.0.0.1:1231",
   peers: [],
-  storage: Storage(
-    interval: 10
-  ),
   log_format: "full",
   rest: "127.0.0.1:4321",
   data_directory: "data_node",
   database_url: "postgres://postgres:postgres@localhost:5432/postgres",
   consensus: Consensus (
-    slot_duration: 1000,
+    slot_duration: 10000,
     // Has to be empty as config is additive
     genesis_stakers: {}
   ),

@@ -385,7 +385,14 @@ impl NodeState {
         }
 
         // Verify the contract name
-        let expected_contract = &unsettled_tx.blobs[hyle_output.index.0].contract_name;
+        let expected_contract = &unsettled_tx
+            .blobs
+            .get(hyle_output.index.0)
+            .context(format!(
+                "Can't find BlobIndex {} in BlobTx {:?}",
+                hyle_output.index.0, unsettled_tx
+            ))?
+            .contract_name;
         if expected_contract != contract_name {
             bail!("Blob reference from proof for {unsettled_tx_hash} does not match the BlobTx contract name {expected_contract}");
         }
