@@ -1,7 +1,7 @@
 //! State required for participation in consensus by the node.
 
 use crate::model::{
-    get_current_timestamp, BlobTransaction, BlobsHash, Block, BlockHeight, ContractName, Hashable,
+    BlobTransaction, BlobsHash, Block, BlockHeight, ContractName, Hashable,
     RegisterContractTransaction, SignedBlock, Transaction, TransactionData,
     VerifiedProofTransaction,
 };
@@ -149,7 +149,7 @@ impl NodeState {
             block_parent_hash: signed_block.parent_hash.clone(),
             block_height: self.current_height,
             // TODO: put timestamp in consensus proposal
-            block_timestamp: get_current_timestamp(),
+            block_timestamp: signed_block.consensus_proposal.timestamp,
             new_contract_txs,
             new_blob_txs,
             new_verified_proof_txs,

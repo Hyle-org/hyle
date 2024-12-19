@@ -32,7 +32,7 @@ pub struct LeaderState {
 
 pub(crate) trait LeaderRole {
     fn is_round_leader(&self) -> bool;
-    async fn start_round(&mut self) -> Result<()>;
+    async fn start_round(&mut self, current_timestamp: u64) -> Result<()>;
     fn on_prepare_vote(
         &mut self,
         msg: SignedByValidator<ConsensusNetMessage>,
@@ -46,7 +46,7 @@ pub(crate) trait LeaderRole {
 }
 
 impl LeaderRole for Consensus {
-    async fn start_round(&mut self) -> Result<()> {
+    async fn start_round(&mut self, current_timestamp: u64) -> Result<()> {
         if !matches!(self.bft_round_state.leader.step, Step::StartNewSlot) {
             bail!(
                 "Cannot start a new slot while in step {:?}",
@@ -114,6 +114,7 @@ impl LeaderRole for Consensus {
         self.bft_round_state
             .consensus_proposal
             .new_validators_to_bond = new_validators_to_bond;
+        self.bft_round_state.consensus_proposal.timestamp = current_timestamp;
 
         self.metrics.start_new_round("consensus_proposal");
 

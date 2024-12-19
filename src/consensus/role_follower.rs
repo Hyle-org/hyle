@@ -116,6 +116,7 @@ pub(super) trait FollowerRole {
         next_leader: ValidatorPublicKey,
     ) -> Result<()>;
     fn verify_poda(&mut self, consensus_proposal: &ConsensusProposal) -> Result<()>;
+    fn verify_timestamp(&self, consensus_proposal: &ConsensusProposal) -> Result<()>;
 }
 
 impl FollowerRole for Consensus {
@@ -127,33 +128,30 @@ impl FollowerRole for Consensus {
     ) -> Result<()> {
         debug!("Received Prepare message: {}", consensus_proposal);
 
-        match self.bft_round_state.state_tag {
-            StateTag::Joining => {
-                // Ignore obviously outdated messages.
-                // We'll be optimistic for ones in the future and hope that
-                // maybe we'll have caught up by the time the commit rolls around.
-                if consensus_proposal.slot <= self.bft_round_state.joining.staking_updated_to {
-                    info!(
+        if matches!(self.bft_round_state.state_tag, StateTag::Joining) {
+            // Ignore obviously outdated messages.
+            // We'll be optimistic for ones in the future and hope that
+            // maybe we'll have caught up by the time the commit rolls around.
+            if consensus_proposal.slot <= self.bft_round_state.joining.staking_updated_to {
+                info!(
                         "🌑 Outdated Prepare message (Slot {} / view {} while at {}) received while joining. Ignoring.",
                         consensus_proposal.slot, consensus_proposal.view, self.bft_round_state.joining.staking_updated_to
                     );
-                    return Ok(());
-                }
-                info!(
-                    "🌕 Prepare message (Slot {} / view {}) received while joining. Storing.",
-                    consensus_proposal.slot, consensus_proposal.view
-                );
-                // Store the message until we receive a matching Commit.
-                // Because we may receive old or rogue proposals, we store all of them.
-                // TODO: it would be slightly DOS-safer to only save those from validators we know,
-                // but I'm not sure it's an actual problem in practice.
-                self.bft_round_state
-                    .joining
-                    .buffered_prepares
-                    .push(consensus_proposal);
                 return Ok(());
             }
-            StateTag::Follower | StateTag::Leader => {}
+            info!(
+                "🌕 Prepare message (Slot {} / view {}) received while joining. Storing.",
+                consensus_proposal.slot, consensus_proposal.view
+            );
+            // Store the message until we receive a matching Commit.
+            // Because we may receive old or rogue proposals, we store all of them.
+            // TODO: it would be slightly DOS-safer to only save those from validators we know,
+            // but I'm not sure it's an actual problem in practice.
+            self.bft_round_state
+                .joining
+                .buffered_prepares
+                .push(consensus_proposal);
+            return Ok(());
         }
 
         // Process the ticket
@@ -203,6 +201,8 @@ impl FollowerRole for Consensus {
         self.verify_poda(&consensus_proposal)?;
 
         self.verify_new_validators_to_bond(&consensus_proposal)?;
+
+        self.verify_timestamp(&consensus_proposal)?;
 
         // At this point we are OK with this new consensus proposal, update locally and vote.
         self.bft_round_state.consensus_proposal = consensus_proposal.clone();
@@ -523,6 +523,51 @@ impl FollowerRole for Consensus {
                 Err(err) => bail!("Failed to verify PoDA: {}", err),
             };
         }
+        Ok(())
+    }
+
+    fn verify_timestamp(
+        &self,
+        ConsensusProposal { timestamp, .. }: &ConsensusProposal,
+    ) -> Result<()> {
+        let previous_timestamp = self.bft_round_state.consensus_proposal.timestamp;
+
+        if previous_timestamp == 0 {
+            warn!(
+                "Previous timestamp is zero, accepting {} as next",
+                timestamp
+            );
+            return Ok(());
+        }
+
+        let next_max_timestamp = previous_timestamp + (2 * self.config.consensus.slot_duration);
+
+        if &previous_timestamp > timestamp {
+            bail!(
+                "Timestamp {} too old (should be > {}, {} ms too old)",
+                timestamp,
+                previous_timestamp,
+                previous_timestamp - timestamp
+            );
+        }
+
+        if &next_max_timestamp < timestamp {
+            dbg!(self.bft_round_state.consensus_proposal.clone());
+            bail!(
+                "Timestamp {} too late (should be < {}, exceeded by {} ms)",
+                timestamp,
+                next_max_timestamp,
+                timestamp - next_max_timestamp
+            );
+        }
+
+        info!(
+            "Consensus Proposal Timestamp verification ok {} -> {} ({} ms between the two rounds)",
+            previous_timestamp,
+            timestamp,
+            timestamp - previous_timestamp
+        );
+
         Ok(())
     }
 }
