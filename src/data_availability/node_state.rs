@@ -7,10 +7,12 @@ use crate::model::{
 };
 use anyhow::{bail, Context, Error, Result};
 use bincode::{Decode, Encode};
-use hyle_contract_sdk::{HyleOutput, StateDigest, TxHash};
+use hyle_contract_sdk::{
+    utils::parse_structured_blob, BlobIndex, HyleOutput, Identity, StateDigest, TxHash,
+};
 use model::{Contract, Timeouts, UnsettledBlobMetadata, UnsettledBlobTransaction};
 use ordered_tx_map::OrderedTxMap;
-use staking::Staker;
+use staking::StakingAction;
 use std::collections::{BTreeMap, HashMap};
 use tracing::{debug, error, info};
 
@@ -25,12 +27,14 @@ pub struct NodeState {
     // This field is public for testing purposes
     pub contracts: HashMap<ContractName, Contract>,
     unsettled_transactions: OrderedTxMap,
+    unsettled_staking_actions: HashMap<TxHash, Vec<(Identity, StakingAction)>>,
 }
 
 #[derive(Debug)]
 pub struct HandledProofTxOutput {
     pub settled_blob_tx_hashes: Vec<TxHash>,
     pub updated_states: BTreeMap<ContractName, StateDigest>,
+    pub staking_actions: Vec<(Identity, StakingAction)>,
 }
 
 impl NodeState {
@@ -43,16 +47,13 @@ impl NodeState {
         let mut new_verified_proof_txs: Vec<Transaction> = vec![];
         let mut verified_blobs: Vec<(TxHash, hyle_contract_sdk::BlobIndex)> = vec![];
         let mut failed_txs: Vec<Transaction> = vec![];
-        let mut stakers: Vec<Staker> = vec![];
+        let mut staking_actions: Vec<(Identity, StakingAction)> = vec![];
         let mut settled_blob_tx_hashes: Vec<TxHash> = vec![];
         let mut updated_states: BTreeMap<ContractName, StateDigest> = BTreeMap::new();
+
         // Handle all transactions
         for tx in signed_block.txs().iter() {
             match &tx.transaction_data {
-                // FIXME: to remove when we have a real staking smart contract
-                TransactionData::Stake(staker) => {
-                    stakers.push(staker.clone());
-                }
                 TransactionData::Blob(blob_transaction) => {
                     match self.handle_blob_tx(blob_transaction) {
                         Ok(_) => {
@@ -90,6 +91,8 @@ impl NodeState {
                             updated_states.extend(proof_tx_output.updated_states);
                             // Keep track of all verified proof txs
                             new_verified_proof_txs.push(tx.clone());
+                            // Keep track of all stakers
+                            staking_actions.extend(proof_tx_output.staking_actions);
                         }
                         Err(e) => {
                             error!("Failed to handle proof transaction: {:?}", e);
@@ -152,7 +155,7 @@ impl NodeState {
             new_verified_proof_txs,
             verified_blobs,
             failed_txs,
-            stakers,
+            staking_actions,
             new_bounded_validators: signed_block
                 .consensus_proposal
                 .new_validators_to_bond
@@ -211,13 +214,27 @@ impl NodeState {
             })
             .collect();
 
-        debug!("Add blob transaction to state {:?}", tx);
+        debug!("Add blob transaction {} to state {:?}", tx.hash(), tx);
         self.unsettled_transactions.add(UnsettledBlobTransaction {
             identity: tx.identity.clone(),
             hash: blob_tx_hash.clone(),
             blobs_hash,
             blobs,
         });
+
+        for blob in tx.blobs.clone() {
+            if blob.contract_name.0 != "staking" {
+                continue;
+            }
+
+            let staking_action: StakingAction = parse_structured_blob(&[blob], &BlobIndex(0))
+                .data
+                .parameters;
+            self.unsettled_staking_actions
+                .entry(blob_tx_hash.clone())
+                .or_default()
+                .push((tx.identity.clone(), staking_action));
+        }
 
         // Update timeouts
         self.timeouts.set(blob_tx_hash, self.current_height + 100); // TODO: Timeout after 100 blocks, make it configurable !
@@ -274,6 +291,7 @@ impl NodeState {
             return Ok(HandledProofTxOutput {
                 settled_blob_tx_hashes,
                 updated_states,
+                staking_actions: vec![],
             });
         }
 
@@ -290,6 +308,7 @@ impl NodeState {
             return Ok(HandledProofTxOutput {
                 settled_blob_tx_hashes,
                 updated_states,
+                staking_actions: vec![],
             });
         }
 
@@ -305,11 +324,17 @@ impl NodeState {
         // Clean the unsettled tx from the state
         self.unsettled_transactions.remove(&settled_blob_tx_hash);
 
-        settled_blob_tx_hashes.push(settled_blob_tx_hash);
+        settled_blob_tx_hashes.push(settled_blob_tx_hash.clone());
+
+        let staking_actions = self
+            .unsettled_staking_actions
+            .remove(&settled_blob_tx_hash)
+            .unwrap_or_default();
 
         Ok(HandledProofTxOutput {
             settled_blob_tx_hashes,
             updated_states,
+            staking_actions,
         })
     }
 
@@ -335,6 +360,11 @@ impl NodeState {
                 {
                     return (updated_states, true);
                 }
+            } else {
+                debug!(
+                    "Initial state mismatch for contract '{}'. Expected: {:?}, got: {:?}",
+                    contract_name, known_initial_state, proof_metadata.initial_state
+                );
             }
         }
         (current_states, false)
@@ -407,6 +437,7 @@ impl NodeState {
         let dropped = self.timeouts.drop(height);
         for tx in dropped.iter() {
             self.unsettled_transactions.remove(tx);
+            self.unsettled_staking_actions.remove(tx);
         }
         dropped
     }

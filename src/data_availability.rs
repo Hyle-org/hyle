@@ -4,15 +4,15 @@ mod api;
 pub mod codec;
 pub mod node_state;
 
-#[cfg(test)]
+//#[cfg(test)]
 mod blocks_memory;
-mod blocks_sled;
+//mod blocks_sled;
 
 // Alias one of the two to blocks for tests
-#[cfg(test)]
+//#[cfg(test)]
 use blocks_memory::Blocks;
-#[cfg(not(test))]
-use blocks_sled::Blocks;
+//#[cfg(not(test))]
+//use blocks_sled::Blocks;
 use codec::{DataAvailabilityServerCodec, DataAvailabilityServerRequest};
 
 use crate::{
@@ -275,7 +275,7 @@ impl DataAvailability {
                 match msg {
                     PeerEvent::NewPeer { pubkey, .. } => {
                         if self.asked_last_processed_block.is_none() {
-                            info!("📡  Asking for last block from new peer");
+                            info!("📡  Asking for last block from {pubkey}");
                             self.asked_last_processed_block = Some(pubkey);
                             self.query_last_block();
                         }
@@ -465,7 +465,7 @@ impl DataAvailability {
     async fn handle_signed_block(&mut self, block: SignedBlock) {
         // if new block is already handled, ignore it
         if self.blocks.contains(&block) {
-            warn!("Block {:?} already exists !", block);
+            warn!("Block {} {} already exists !", block.height(), block.hash());
             return;
         }
         // if new block is not the next block in the chain, buffer
@@ -509,7 +509,10 @@ impl DataAvailability {
         // Iterative loop to avoid stack overflows
         while let Some(first_buffered) = self.buffered_signed_blocks.first() {
             if first_buffered.parent_hash != last_block_hash {
-                error!("Buffered block parent hash does not match last block hash");
+                error!(
+                    "Buffered block parent hash {} does not match last block hash {}",
+                    first_buffered.parent_hash, last_block_hash
+                );
                 break;
             }
 
@@ -538,15 +541,14 @@ impl DataAvailability {
             error!("storing block: {}", e);
             return;
         }
-
-        debug!("{:?}", block.clone());
-
-        debug!("txs: {:?}", block.txs());
+        trace!("Block {} {}: {:#?}", block.height(), block.hash(), block);
 
         info!(
-            "new block {} with {} txs, last hash = {}",
+            "new block {} {} with {} txs: {:?}, last hash = {}",
             block.height(),
+            block.hash(),
             block.txs().len(),
+            block.txs().iter().map(|tx| tx.hash().0).collect::<Vec<_>>(),
             self.blocks
                 .last_block_hash()
                 .unwrap_or(BlockHash("".to_string()))

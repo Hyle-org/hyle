@@ -14,6 +14,7 @@ pub mod erc20;
 #[cfg(any(feature = "risc0", feature = "sp1"))]
 pub mod guest;
 pub mod identity_provider;
+pub mod utils;
 
 #[cfg(feature = "tracing")]
 pub use tracing;
