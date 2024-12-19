@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use hyle_contract_sdk::TxHash;
 use reqwest::{Response, Url};
-use staking::Staker;
+use staking::state::Staking;
 
 use crate::{
     consensus::ConsensusInfo,
@@ -71,16 +71,6 @@ impl ApiHttpClient {
             .context("Sending tx register contract")
     }
 
-    pub async fn send_stake_tx(&self, tx: &Staker) -> Result<Response> {
-        self.reqwest_client
-            .post(format!("{}v1/tx/send/stake", self.url))
-            .body(serde_json::to_string(&tx)?)
-            .header("Content-Type", "application/json")
-            .send()
-            .await
-            .context("Sending tx stake")
-    }
-
     pub async fn get_consensus_info(&self) -> Result<ConsensusInfo> {
         self.reqwest_client
             .get(format!("{}v1/consensus/info", self.url))
@@ -91,6 +81,18 @@ impl ApiHttpClient {
             .json::<ConsensusInfo>()
             .await
             .context("reading consensus info response")
+    }
+
+    pub async fn get_consensus_staking_state(&self) -> Result<Staking> {
+        self.reqwest_client
+            .get(format!("{}v1/consensus/staking_state", self.url))
+            .header("Content-Type", "application/json")
+            .send()
+            .await
+            .context("getting consensus staking state")?
+            .json::<Staking>()
+            .await
+            .context("reading consensus staking state response")
     }
 
     pub async fn get_node_info(&self) -> Result<NodeInfo> {

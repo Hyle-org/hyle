@@ -25,7 +25,7 @@ use std::{
     sync::{Arc, Mutex},
     time::Duration,
 };
-use tracing::{debug, error, info};
+use tracing::{error, info};
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -80,8 +80,6 @@ async fn main() -> Result<()> {
     )?;
 
     info!("Starting node with config: {:?}", &config);
-
-    debug!("server mode");
 
     // Init global metrics meter we expose as an endpoint
     let metrics_layer = HttpMetricsLayerBuilder::new()
