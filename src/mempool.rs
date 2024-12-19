@@ -463,9 +463,8 @@ impl Mempool {
         info!("{} SyncReply from validator {validator}", self.storage.id);
 
         // Discard any lane entry that wasn't signed by the validator.
-        missing_lane_entries.retain_mut(|lane_entry| {
-            let expected_message =
-                MempoolNetMessage::DataProposal(std::mem::take(&mut lane_entry.data_proposal));
+        missing_lane_entries.retain(|lane_entry| {
+            let expected_message = MempoolNetMessage::DataVote(lane_entry.data_proposal.hash());
             let keep = lane_entry
                 .signatures
                 .iter()
@@ -476,13 +475,6 @@ impl Mempool {
                     lane_entry.data_proposal.hash(),
                     validator
                 );
-            };
-            // Reset
-            match expected_message {
-                MempoolNetMessage::DataProposal(data_proposal) => {
-                    lane_entry.data_proposal = data_proposal;
-                }
-                _ => unreachable!(),
             };
             keep
         });
@@ -1346,7 +1338,7 @@ pub mod test {
         let signed_msg = crypto2.sign(MempoolNetMessage::SyncReply(vec![LaneEntry {
             data_proposal: data_proposal.clone(),
             signatures: vec![crypto3
-                .sign(MempoolNetMessage::DataProposal(data_proposal.clone()))
+                .sign(MempoolNetMessage::DataVote(data_proposal.hash()))
                 .expect("should sign")],
         }]))?;
 
@@ -1360,7 +1352,7 @@ pub mod test {
         let signed_msg = crypto3.sign(MempoolNetMessage::SyncReply(vec![LaneEntry {
             data_proposal: data_proposal.clone(),
             signatures: vec![crypto2
-                .sign(MempoolNetMessage::DataProposal(data_proposal.clone()))
+                .sign(MempoolNetMessage::DataVote(data_proposal.hash()))
                 .expect("should sign")],
         }]))?;
 
@@ -1375,7 +1367,9 @@ pub mod test {
         let signed_msg = crypto3.sign(MempoolNetMessage::SyncReply(vec![LaneEntry {
             data_proposal: data_proposal.clone(),
             signatures: vec![crypto2
-                .sign(MempoolNetMessage::DataProposal(DataProposal::default()))
+                .sign(MempoolNetMessage::DataVote(DataProposalHash(
+                    "non_existent".to_owned(),
+                )))
                 .expect("should sign")],
         }]))?;
 
@@ -1390,7 +1384,7 @@ pub mod test {
         let signed_msg = crypto2.sign(MempoolNetMessage::SyncReply(vec![LaneEntry {
             data_proposal: data_proposal.clone(),
             signatures: vec![crypto2
-                .sign(MempoolNetMessage::DataProposal(data_proposal.clone()))
+                .sign(MempoolNetMessage::DataVote(data_proposal.hash()))
                 .expect("should sign")],
         }]))?;
 
