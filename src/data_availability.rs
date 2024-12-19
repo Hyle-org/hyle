@@ -4,15 +4,15 @@ mod api;
 pub mod codec;
 pub mod node_state;
 
-//#[cfg(test)]
+#[cfg(test)]
 mod blocks_memory;
-//mod blocks_sled;
+mod blocks_sled;
 
 // Alias one of the two to blocks for tests
-//#[cfg(test)]
+#[cfg(test)]
 use blocks_memory::Blocks;
-//#[cfg(not(test))]
-//use blocks_sled::Blocks;
+#[cfg(not(test))]
+use blocks_sled::Blocks;
 use codec::{DataAvailabilityServerCodec, DataAvailabilityServerRequest};
 
 use crate::{
