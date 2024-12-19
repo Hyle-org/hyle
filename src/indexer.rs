@@ -10,6 +10,7 @@ use crate::{
     data_availability::DataEvent,
     model::{
         BlobTransaction, Block, BlockHash, BlockHeight, CommonRunContext, ContractName, Hashable,
+        TransactionData,
     },
     module_handle_messages,
     utils::modules::{module_bus_client, Module},
@@ -253,7 +254,13 @@ impl Indexer {
             let version = i32::try_from(tx.version)
                 .map_err(|_| anyhow::anyhow!("Tx version is too large to fit into an i32"))?;
 
-            let register_contract_tx = tx.transaction_data.register_contract()?;
+            let TransactionData::RegisterContract(register_contract_tx) = tx.transaction_data
+            else {
+                bail!(
+                    "Expected TransactionData::RegisterContract, got {:?}",
+                    tx.transaction_data
+                );
+            };
 
             // Insert the transaction into the transactions table
             let tx_type = TransactionType::RegisterContractTransaction;
@@ -304,7 +311,13 @@ impl Indexer {
             let tx_hash: &TxHashDb = &tx.hash().into();
             let version = i32::try_from(tx.version)
                 .map_err(|_| anyhow::anyhow!("Tx version is too large to fit into an i32"))?;
-            let blob_tx = tx.transaction_data.blob()?;
+
+            let TransactionData::Blob(blob_tx) = tx.transaction_data else {
+                bail!(
+                    "Expected TransactionData::Blob, got {:?}",
+                    tx.transaction_data
+                );
+            };
 
             // Send the transaction to all websocket subscribers
             self.send_blob_transaction_to_websocket_subscribers(
@@ -348,11 +361,11 @@ impl Indexer {
 
         // Handling Proof Transactions
         for tx in block.new_verified_proof_txs {
-            let tx_hash: &TxHashDb = &tx.hash().into();
+            let tx_hash: &TxHashDb = &tx.tx_hash.into();
             let version = i32::try_from(tx.version)
                 .map_err(|_| anyhow::anyhow!("Tx version is too large to fit into an i32"))?;
 
-            let verified_proof_tx = tx.transaction_data.verified_proof()?;
+            let proof = tx.proof.unwrap_or_default();
 
             // Insert the transaction into the transactions table
             let tx_type = TransactionType::ProofTransaction;
@@ -368,12 +381,13 @@ impl Indexer {
             .execute(&mut *transaction)
             .await?;
 
-            let proof = &verified_proof_tx.proof.unwrap_or_default().to_bytes()?;
-            let serialized_hyle_output = serde_json::to_string(&verified_proof_tx.hyle_output)?;
-            let blob_index: i32 = i32::try_from(verified_proof_tx.hyle_output.index.0)
+            let proof = &proof.to_bytes()?;
+            let serialized_hyle_output =
+                serde_json::to_string(&tx.verified_proof_transaction.hyle_output)?;
+            let blob_index: i32 = i32::try_from(tx.verified_proof_transaction.hyle_output.index.0)
                 .map_err(|_| anyhow::anyhow!("Proof blob index is too large to fit into an i32"))?;
-            let blob_tx_hash: &TxHashDb = &verified_proof_tx.hyle_output.tx_hash.into();
-            let contract_name = &verified_proof_tx.contract_name.0;
+            let blob_tx_hash: &TxHashDb = &tx.verified_proof_transaction.hyle_output.tx_hash.into();
+            let contract_name = &tx.blob_contract_name.0;
             sqlx::query(
                 "INSERT INTO proofs (tx_hash, blob_tx_hash, blob_index, contract_name, proof, hyle_output) VALUES ($1, $2, $3, $4, $5, $6::jsonb)",
             )
@@ -536,8 +550,8 @@ mod test {
         data_availability::node_state::NodeState,
         mempool::storage::DataProposal,
         model::{
-            Blob, BlobData, ProofData, RegisterContractTransaction, SignedBlock, Transaction,
-            TransactionData, VerifiedProofTransaction,
+            Blob, BlobData, BlobProofOutput, ProofData, RegisterContractTransaction, SignedBlock,
+            Transaction, TransactionData, VerifiedProofTransaction,
         },
     };
 
@@ -612,21 +626,25 @@ mod test {
         Transaction {
             version: 1,
             transaction_data: TransactionData::VerifiedProof(VerifiedProofTransaction {
-                proof_hash: proof.hash(),
-                proof: Some(proof),
                 contract_name: contract_name.clone(),
-                blob_tx_hash: blob_tx_hash.clone(),
-                hyle_output: HyleOutput {
-                    version: 1,
-                    initial_state,
-                    next_state,
-                    identity: Identity("test.c1".to_owned()),
-                    tx_hash: blob_tx_hash,
-                    index: blob_index,
-                    blobs,
-                    success: true,
-                    program_outputs: vec![],
-                },
+                proof_hash: proof.hash(),
+                proven_blobs: vec![BlobProofOutput {
+                    proof_hash: proof.hash(),
+                    blob_tx_hash: blob_tx_hash.clone(),
+                    hyle_output: HyleOutput {
+                        version: 1,
+                        initial_state,
+                        next_state,
+                        identity: Identity("test.c1".to_owned()),
+                        tx_hash: blob_tx_hash,
+                        index: blob_index,
+                        blobs,
+                        success: true,
+                        program_outputs: vec![],
+                    },
+                }],
+                recursive_metadata: None,
+                proof: Some(proof),
             }),
         }
     }
