@@ -147,7 +147,7 @@ pub struct ConsensusProposal {
     // Below items aren't.
     pub cut: Cut,
     pub new_validators_to_bond: Vec<NewValidatorCandidate>,
-    pub timestamp: u128,
+    pub timestamp: u64,
 }
 
 type NextLeader = ValidatorPublicKey;
@@ -1235,7 +1235,7 @@ pub mod test {
                 .expect("Failed to start slot");
         }
 
-        pub async fn start_round_at(&mut self, current_timestamp: u128) {
+        pub async fn start_round_at(&mut self, current_timestamp: u64) {
             self.consensus
                 .start_round(current_timestamp)
                 .await
@@ -1572,38 +1572,41 @@ pub mod test {
 
         node1.start_round_at(1000).await;
 
-        simple_commit_round! {
+        let (cp, _) = simple_commit_round! {
             leader: node1,
             followers: [node2, node3, node4]
         };
 
+        assert_eq!(cp.timestamp, 1000);
+
         node2.start_round_at(900).await;
 
-        if let ConsensusNetMessage::Prepare(next_cp, next_ticket) = broadcast! {
+        broadcast! {
             description: "Leader Node2 second round",
             from: node2, to: [],
-            message_matches: ConsensusNetMessage::Prepare(_, _)
-        }
-        .msg
-        {
-            let prepare_msg = node2
-                .consensus
-                .sign_net_message(ConsensusNetMessage::Prepare(next_cp, next_ticket))
-                .unwrap();
+            message_matches: ConsensusNetMessage::Prepare(next_cp, next_ticket) => {
 
-            assert_contains!(
-                format!("{:?}", node1.handle_msg_err(&prepare_msg)),
-                "too old"
-            );
-            assert_contains!(
-                format!("{:?}", node3.handle_msg_err(&prepare_msg)),
-                "too old"
-            );
-            assert_contains!(
-                format!("{:?}", node4.handle_msg_err(&prepare_msg)),
-                "too old"
-            );
-        }
+                assert_eq!(next_cp.timestamp, 900);
+
+                let prepare_msg = node2
+                    .consensus
+                    .sign_net_message(ConsensusNetMessage::Prepare(next_cp.clone(), next_ticket.clone()))
+                    .unwrap();
+
+                assert_contains!(
+                    format!("{:#}", node1.handle_msg_err(&prepare_msg)),
+                    "too old"
+                );
+                assert_contains!(
+                    format!("{:#}", node3.handle_msg_err(&prepare_msg)),
+                    "too old"
+                );
+                assert_contains!(
+                    format!("{:#}", node4.handle_msg_err(&prepare_msg)),
+                    "too old"
+                );
+            }
+        };
     }
 
     #[test_log::test(tokio::test)]
@@ -1617,38 +1620,42 @@ pub mod test {
 
         node1.start_round_at(1000).await;
 
-        simple_commit_round! {
+        let (cp, _) = simple_commit_round! {
             leader: node1,
             followers: [node2, node3, node4]
         };
 
-        node2.start_round_at(3200).await;
+        assert_eq!(cp.timestamp, 1000);
 
-        if let ConsensusNetMessage::Prepare(next_cp, next_ticket) = broadcast! {
+        node2.start_round_at(3001).await;
+
+        // Get broadcasted message and inject it, asserting errors
+        broadcast! {
             description: "Leader Node2 second round",
             from: node2, to: [],
-            message_matches: ConsensusNetMessage::Prepare(_, _)
-        }
-        .msg
-        {
-            let prepare_msg = node2
-                .consensus
-                .sign_net_message(ConsensusNetMessage::Prepare(next_cp, next_ticket))
-                .unwrap();
+            message_matches: ConsensusNetMessage::Prepare(next_cp, next_ticket) => {
 
-            assert_contains!(
-                format!("{:?}", node1.handle_msg_err(&prepare_msg)),
-                "too late"
-            );
-            assert_contains!(
-                format!("{:?}", node3.handle_msg_err(&prepare_msg)),
-                "too late"
-            );
-            assert_contains!(
-                format!("{:?}", node4.handle_msg_err(&prepare_msg)),
-                "too late"
-            );
-        }
+                assert_eq!(next_cp.timestamp, 3001);
+
+                let prepare_msg = node2
+                    .consensus
+                    .sign_net_message(ConsensusNetMessage::Prepare(next_cp.clone(), next_ticket.clone()))
+                    .unwrap();
+
+                assert_contains!(
+                    format!("{:#}", node1.handle_msg_err(&prepare_msg)),
+                    "too late"
+                );
+                assert_contains!(
+                    format!("{:#}", node3.handle_msg_err(&prepare_msg)),
+                    "too late"
+                );
+                assert_contains!(
+                    format!("{:#}", node4.handle_msg_err(&prepare_msg)),
+                    "too late"
+                );
+            }
+        };
     }
 
     #[test_log::test(tokio::test)]

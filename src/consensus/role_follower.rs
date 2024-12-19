@@ -524,9 +524,15 @@ impl FollowerRole for Consensus {
     ) -> Result<()> {
         let previous_timestamp = self.bft_round_state.consensus_proposal.timestamp;
 
-        //
-        let next_max_timestamp =
-            previous_timestamp + (2 * self.config.consensus.slot_duration as u128);
+        if previous_timestamp == 0 {
+            warn!(
+                "Previous timestamp is zero, accepting {} as next",
+                timestamp
+            );
+            return Ok(());
+        }
+
+        let next_max_timestamp = previous_timestamp + (2 * self.config.consensus.slot_duration);
 
         if &previous_timestamp > timestamp {
             bail!(
