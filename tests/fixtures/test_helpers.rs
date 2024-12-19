@@ -168,6 +168,7 @@ pub async fn wait_height(client: &ApiHttpClient, heights: u64) -> anyhow::Result
     //result.map_err(|_| anyhow::anyhow!("Timeout reached while waiting for height"))
 }
 
+#[allow(dead_code)]
 pub async fn send_transaction(
     client: &ApiHttpClient,
     mut transaction: TransactionBuilder,

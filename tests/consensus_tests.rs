@@ -15,7 +15,6 @@ mod e2e_consensus {
     };
     use hyle_contract_sdk::Identity;
     use staking::state::OnChainState;
-    use tracing::info;
 
     use super::*;
 
