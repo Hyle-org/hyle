@@ -27,8 +27,8 @@ use crate::{
         MempoolCommand, MempoolEvent,
     },
     model::{
-        get_current_timestamp, Block, BlockHash, BlockHeight, ContractName, Hashable,
-        SharedRunContext, SignedBlock, ValidatorPublicKey,
+        get_current_timestamp, get_current_timestamp_ms, Block, BlockHash, BlockHeight,
+        ContractName, Hashable, SharedRunContext, SignedBlock, ValidatorPublicKey,
     },
     module_handle_messages,
     p2p::network::{NetMessage, OutboundMessage, PeerEvent, SignedByValidator},
@@ -240,7 +240,7 @@ impl DataAvailability {
                             slot: 0,
                             view: 0,
                             round_leader: round_leader.clone(),
-                            timestamp: get_current_timestamp(),
+                            timestamp: get_current_timestamp_ms(),
                             cut: vec![(
                                 round_leader.clone(), dp.hash(), AggregateSignature {
                                     signature: Signature("fake".into()),

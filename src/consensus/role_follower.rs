@@ -202,8 +202,7 @@ impl FollowerRole for Consensus {
 
         self.verify_new_validators_to_bond(&consensus_proposal)?;
 
-        self.verify_timestamp(&consensus_proposal)
-            .log_error("Verifying timestamp")?;
+        self.verify_timestamp(&consensus_proposal)?;
 
         // At this point we are OK with this new consensus proposal, update locally and vote.
         self.bft_round_state.consensus_proposal = consensus_proposal.clone();
@@ -525,15 +524,9 @@ impl FollowerRole for Consensus {
     ) -> Result<()> {
         let previous_timestamp = self.bft_round_state.consensus_proposal.timestamp;
 
-        if previous_timestamp == 0 {
-            warn!(
-                "Previous timestamp is zero, accepting {} as next",
-                timestamp
-            );
-            return Ok(());
-        }
-
-        let next_max_timestamp = previous_timestamp + 2 * self.config.consensus.slot_duration;
+        //
+        let next_max_timestamp =
+            previous_timestamp + (2 * self.config.consensus.slot_duration as u128);
 
         if &previous_timestamp > timestamp {
             bail!(
@@ -552,8 +545,10 @@ impl FollowerRole for Consensus {
         }
 
         info!(
-            "Timestamp verification ok {} -> {}",
-            previous_timestamp, timestamp
+            "Consensus Proposal Timestamp verification ok {} -> {} ({} ms between the two rounds)",
+            previous_timestamp,
+            timestamp,
+            timestamp - previous_timestamp
         );
 
         Ok(())

@@ -1,5 +1,6 @@
 //! Handles all consensus logic up to block commitment.
 
+use crate::model::get_current_timestamp_ms;
 use crate::module_handle_messages;
 use crate::utils::modules::module_bus_client;
 #[cfg(not(test))]
@@ -146,7 +147,7 @@ pub struct ConsensusProposal {
     // Below items aren't.
     pub cut: Cut,
     pub new_validators_to_bond: Vec<NewValidatorCandidate>,
-    pub timestamp: u64,
+    pub timestamp: u128,
 }
 
 type NextLeader = ValidatorPublicKey;
@@ -813,7 +814,7 @@ impl Consensus {
                 _ => Ok(()),
             },
             ConsensusCommand::StartNewSlot => {
-                self.start_round(get_current_timestamp()).await?;
+                self.start_round(get_current_timestamp_ms()).await?;
                 Ok(())
             }
         }
@@ -1059,7 +1060,8 @@ pub mod test {
             crypto: BlstCrypto,
         ) -> Consensus {
             let store = ConsensusStore::default();
-            let conf = Arc::new(Conf::default());
+            let mut conf = Conf::default();
+            conf.consensus.slot_duration = 1000;
             let bus = ConsensusBusClient::new_from_bus(shared_bus.new_handle()).await;
 
             Consensus {
@@ -1067,7 +1069,7 @@ pub mod test {
                 bus,
                 file: None,
                 store,
-                config: conf,
+                config: Arc::new(conf),
                 crypto: Arc::new(crypto),
             }
         }
@@ -1228,12 +1230,12 @@ pub mod test {
 
         pub async fn start_round(&mut self) {
             self.consensus
-                .start_round(get_current_timestamp())
+                .start_round(get_current_timestamp_ms())
                 .await
                 .expect("Failed to start slot");
         }
 
-        pub async fn start_round_at(&mut self, current_timestamp: u64) {
+        pub async fn start_round_at(&mut self, current_timestamp: u128) {
             self.consensus
                 .start_round(current_timestamp)
                 .await
@@ -1438,7 +1440,7 @@ pub mod test {
                 ConsensusProposal {
                     slot: 2,
                     view: 0,
-                    timestamp: get_current_timestamp(),
+                    timestamp: get_current_timestamp_ms(),
                     round_leader: node1.pubkey(),
                     cut: vec![(
                         node2.pubkey(),
@@ -1570,7 +1572,7 @@ pub mod test {
 
         node1.start_round_at(1000).await;
 
-        let (cp, _) = simple_commit_round! {
+        simple_commit_round! {
             leader: node1,
             followers: [node2, node3, node4]
         };
@@ -1584,9 +1586,6 @@ pub mod test {
         }
         .msg
         {
-            info!("Previous timestamp {}", cp.timestamp);
-            info!("Next timestamp {}", &next_cp.timestamp);
-
             let prepare_msg = node2
                 .consensus
                 .sign_net_message(ConsensusNetMessage::Prepare(next_cp, next_ticket))
@@ -1618,12 +1617,12 @@ pub mod test {
 
         node1.start_round_at(1000).await;
 
-        let (cp, _) = simple_commit_round! {
+        simple_commit_round! {
             leader: node1,
             followers: [node2, node3, node4]
         };
 
-        node2.start_round_at(1200).await;
+        node2.start_round_at(3200).await;
 
         if let ConsensusNetMessage::Prepare(next_cp, next_ticket) = broadcast! {
             description: "Leader Node2 second round",
@@ -1632,9 +1631,6 @@ pub mod test {
         }
         .msg
         {
-            info!("Previous timestamp {}", cp.timestamp);
-            info!("Next timestamp {}", &next_cp.timestamp);
-
             let prepare_msg = node2
                 .consensus
                 .sign_net_message(ConsensusNetMessage::Prepare(next_cp, next_ticket))
@@ -1653,6 +1649,35 @@ pub mod test {
                 "too late"
             );
         }
+    }
+
+    #[test_log::test(tokio::test)]
+    async fn prepare_valid_timestamp() {
+        let (mut node1, mut node2, mut node3, mut node4): (
+            ConsensusTestCtx,
+            ConsensusTestCtx,
+            ConsensusTestCtx,
+            ConsensusTestCtx,
+        ) = build_nodes!(4).await;
+
+        node1.start_round_at(1000).await;
+
+        let (cp, _) = simple_commit_round! {
+            leader: node1,
+            followers: [node2, node3, node4]
+        };
+
+        assert_eq!(cp.timestamp, 1000);
+
+        node2.start_round_at(3000).await;
+
+        broadcast! {
+            description: "Leader Node2 second round",
+            from: node2, to: [node1, node3, node4],
+            message_matches: ConsensusNetMessage::Prepare(next_cp, _) => {
+                assert_eq!(next_cp.timestamp, 3000);
+            }
+        };
     }
 
     #[test_log::test(tokio::test)]
