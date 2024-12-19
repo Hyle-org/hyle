@@ -458,9 +458,31 @@ impl Mempool {
     fn on_sync_reply(
         &mut self,
         validator: &ValidatorPublicKey,
-        missing_lane_entries: Vec<LaneEntry>,
+        mut missing_lane_entries: Vec<LaneEntry>,
     ) -> Result<()> {
         info!("{} SyncReply from validator {validator}", self.storage.id);
+
+        // Discard any lane entry that wasn't signed by the validator.
+        missing_lane_entries.retain(|lane_entry| {
+            let expected_message = MempoolNetMessage::DataVote(lane_entry.data_proposal.hash());
+            let keep = lane_entry
+                .signatures
+                .iter()
+                .any(|s| &s.signature.validator == validator && s.msg == expected_message);
+            if !keep {
+                warn!(
+                    "Discarding lane entry {}, missing signature from {}",
+                    lane_entry.data_proposal.hash(),
+                    validator
+                );
+            };
+            keep
+        });
+
+        // If we end up with an empty list, return an error (for testing/logic)
+        if missing_lane_entries.is_empty() {
+            bail!("Empty lane entries after filtering out missing signatures");
+        }
 
         debug!(
             "{} adding {} missing lane entries to lane of {validator}",
@@ -798,6 +820,7 @@ pub mod test {
     use crate::p2p::network::NetMessage;
     use crate::utils::crypto::AggregateSignature;
     use anyhow::Result;
+    use assertables::assert_ok;
     use hyle_contract_sdk::StateDigest;
     use tokio::sync::broadcast::Receiver;
 
@@ -855,6 +878,10 @@ pub mod test {
 
         pub fn validator_pubkey(&self) -> ValidatorPublicKey {
             self.mempool.crypto.validator_pubkey().clone()
+        }
+
+        pub fn sign_data<T: bincode::Encode>(&self, data: T) -> Result<SignedByValidator<T>> {
+            self.mempool.crypto.sign(data)
         }
 
         pub fn gen_cut(&mut self, staking: &Staking) -> Cut {
@@ -1284,8 +1311,8 @@ pub mod test {
 
         ctx.make_data_proposal_with_pending_txs()?;
 
-        // Since mempool is alone, no broadcast
-
+        // Since mempool is alone, no broadcast.
+        // Take this as an example data proposal.
         let data_proposal = ctx
             .mempool
             .storage
@@ -1301,18 +1328,68 @@ pub mod test {
 
         // Add new validator
         let crypto2 = BlstCrypto::new("2".into());
+        let crypto3 = BlstCrypto::new("3".into());
+
         ctx.mempool
             .validators
             .push(crypto2.validator_pubkey().clone());
 
+        // First: the message is from crypto2, but the DP is not signed correctly
         let signed_msg = crypto2.sign(MempoolNetMessage::SyncReply(vec![LaneEntry {
             data_proposal: data_proposal.clone(),
-            signatures: vec![],
+            signatures: vec![crypto3
+                .sign(MempoolNetMessage::DataVote(data_proposal.hash()))
+                .expect("should sign")],
         }]))?;
 
-        ctx.mempool
-            .handle_net_message(signed_msg)
-            .expect("should handle net message");
+        let handle = ctx.mempool.handle_net_message(signed_msg.clone());
+        assert_eq!(
+            handle.expect_err("should fail").to_string(),
+            "Empty lane entries after filtering out missing signatures"
+        );
+
+        // Second: the message is NOT from crypto2, but the DP is signed by crypto2
+        let signed_msg = crypto3.sign(MempoolNetMessage::SyncReply(vec![LaneEntry {
+            data_proposal: data_proposal.clone(),
+            signatures: vec![crypto2
+                .sign(MempoolNetMessage::DataVote(data_proposal.hash()))
+                .expect("should sign")],
+        }]))?;
+
+        // This actually fails - we don't know how to handle it
+        let handle = ctx.mempool.handle_net_message(signed_msg.clone());
+        assert_eq!(
+            handle.expect_err("should fail").to_string(),
+            "Empty lane entries after filtering out missing signatures"
+        );
+
+        // Third: the message is from crypto2, the signature is from crypto2, but the message is wrong
+        let signed_msg = crypto3.sign(MempoolNetMessage::SyncReply(vec![LaneEntry {
+            data_proposal: data_proposal.clone(),
+            signatures: vec![crypto2
+                .sign(MempoolNetMessage::DataVote(DataProposalHash(
+                    "non_existent".to_owned(),
+                )))
+                .expect("should sign")],
+        }]))?;
+
+        // This actually fails - we don't know how to handle it
+        let handle = ctx.mempool.handle_net_message(signed_msg.clone());
+        assert_eq!(
+            handle.expect_err("should fail").to_string(),
+            "Empty lane entries after filtering out missing signatures"
+        );
+
+        // Final case: message is correct
+        let signed_msg = crypto2.sign(MempoolNetMessage::SyncReply(vec![LaneEntry {
+            data_proposal: data_proposal.clone(),
+            signatures: vec![crypto2
+                .sign(MempoolNetMessage::DataVote(data_proposal.hash()))
+                .expect("should sign")],
+        }]))?;
+
+        let handle = ctx.mempool.handle_net_message(signed_msg.clone());
+        assert_ok!(handle, "Should handle net message");
 
         // Assert that the lane entry was added
         let lane = ctx
@@ -1326,6 +1403,11 @@ pub mod test {
             lane.get_last_proposal().unwrap().data_proposal,
             data_proposal
         );
+
+        // Process it again
+        ctx.mempool
+            .handle_net_message(signed_msg)
+            .expect("should ignore duplicated message");
 
         Ok(())
     }

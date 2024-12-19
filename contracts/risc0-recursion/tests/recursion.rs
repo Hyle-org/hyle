@@ -2,7 +2,6 @@ use std::collections::HashMap;
 
 use hyrun::{Cli, Context, ContractData};
 use risc0_recursion::ProofInput;
-use risc0_zkvm::sha::Digestible;
 use sdk::{HyleOutput, StateDigest};
 
 #[test_log::test(test)]

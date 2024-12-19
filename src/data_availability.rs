@@ -27,8 +27,8 @@ use crate::{
         MempoolCommand, MempoolEvent,
     },
     model::{
-        get_current_timestamp, Block, BlockHash, BlockHeight, ContractName, Hashable,
-        SharedRunContext, SignedBlock, ValidatorPublicKey,
+        get_current_timestamp, get_current_timestamp_ms, Block, BlockHash, BlockHeight,
+        ContractName, Hashable, SharedRunContext, SignedBlock, ValidatorPublicKey,
     },
     module_handle_messages,
     p2p::network::{NetMessage, OutboundMessage, PeerEvent, SignedByValidator},
@@ -112,7 +112,7 @@ struct BlockStreamPeer {
     /// Last timestamp we received a ping from the peer.
     last_ping: u64,
     /// Sender to stream blocks to the peer
-    sender: SplitSink<Framed<TcpStream, DataAvailabilityServerCodec>, Block>,
+    sender: SplitSink<Framed<TcpStream, DataAvailabilityServerCodec>, SignedBlock>,
     /// Handle to abort the receiving side of the stream
     keepalive_abort: JoinHandle<()>,
 }
@@ -240,6 +240,7 @@ impl DataAvailability {
                             slot: 0,
                             view: 0,
                             round_leader: round_leader.clone(),
+                            timestamp: get_current_timestamp_ms(),
                             cut: vec![(
                                 round_leader.clone(), dp.hash(), AggregateSignature {
                                     signature: Signature("fake".into()),
@@ -330,13 +331,11 @@ impl DataAvailability {
                 if let Some(hash) = hash {
                     if let Ok(Some(signed_block)) = self.blocks.get(hash)
                     {
-                        // FIXME: we send unsigned blocks for now
-                        let block: Block = self.node_state.handle_signed_block(&signed_block);
                         if self.stream_peer_metadata
                             .get_mut(&peer_ip)
                             .context("peer not found")?
                             .sender
-                            .send(block)
+                            .send(signed_block)
                             .await.is_ok() {
                             let _ = catchup_sender.send((block_hashes, peer_ip)).await;
                         }
@@ -575,7 +574,7 @@ impl DataAvailability {
                 info!("streaming block {} to peer {}", block.hash(), &peer_id);
                 _ = peer
                     .sender
-                    .send(node_state_block.clone())
+                    .send(block.clone())
                     .await
                     .log_error("Sending block");
             }
@@ -610,7 +609,7 @@ impl DataAvailability {
         start_height: BlockHeight,
         ping_sender: tokio::sync::mpsc::Sender<String>,
         catchup_sender: tokio::sync::mpsc::Sender<(Vec<BlockHash>, String)>,
-        sender: SplitSink<Framed<TcpStream, DataAvailabilityServerCodec>, Block>,
+        sender: SplitSink<Framed<TcpStream, DataAvailabilityServerCodec>, SignedBlock>,
         mut receiver: SplitStream<Framed<TcpStream, DataAvailabilityServerCodec>>,
         peer_ip: &String,
     ) -> Result<()> {
@@ -675,7 +674,7 @@ mod tests {
         bus::BusClientSender,
         consensus::{CommittedConsensusProposal, ConsensusEvent, ConsensusProposal},
         mempool::{MempoolCommand, MempoolEvent},
-        model::{Block, BlockHeight, Hashable, SignedBlock},
+        model::{BlockHeight, Hashable, SignedBlock},
         utils::{conf::Conf, crypto::AggregateSignature},
     };
     use futures::{SinkExt, StreamExt};
@@ -806,10 +805,11 @@ mod tests {
         let mut heights_received = vec![];
         while let Some(Ok(cmd)) = da_stream.next().await {
             let bytes = cmd;
-            let block: Block = bincode::decode_from_slice(&bytes, bincode::config::standard())
-                .unwrap()
-                .0;
-            heights_received.push(block.block_height.0);
+            let block: SignedBlock =
+                bincode::decode_from_slice(&bytes, bincode::config::standard())
+                    .unwrap()
+                    .0;
+            heights_received.push(block.height().0);
             if heights_received.len() == 14 {
                 break;
             }
@@ -855,11 +855,12 @@ mod tests {
         let mut heights_received = vec![];
         while let Some(Ok(cmd)) = da_stream.next().await {
             let bytes = cmd;
-            let block: Block = bincode::decode_from_slice(&bytes, bincode::config::standard())
-                .unwrap()
-                .0;
+            let block: SignedBlock =
+                bincode::decode_from_slice(&bytes, bincode::config::standard())
+                    .unwrap()
+                    .0;
             dbg!(&block);
-            heights_received.push(block.block_height.0);
+            heights_received.push(block.height().0);
             if heights_received.len() == 18 {
                 break;
             }

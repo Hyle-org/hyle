@@ -29,7 +29,7 @@ pub mod test {
     }
 
     macro_rules! broadcast {
-        (description: $description:literal, from: $sender:expr, to: [$($node:expr),+]$(, message_matches: $pattern:pat $(=> $asserts:block)? )?) => {
+        (description: $description:literal, from: $sender:expr, to: [$($node:expr),*]$(, message_matches: $pattern:pat $(=> $asserts:block)? )?) => {
             {
                 // Construct the broadcast message with sender information
                 let message = $sender.assert_broadcast(format!("[broadcast from: {}] {}", stringify!($sender), $description).as_str());
@@ -46,7 +46,7 @@ pub mod test {
                 // Distribute the message to each specified node
                 $(
                     $node.handle_msg(&message, (format!("[handling broadcast message from: {} at: {}] {}", stringify!($sender), stringify!($node), $description).as_str()));
-                )+
+                )*
 
                 message
             }
