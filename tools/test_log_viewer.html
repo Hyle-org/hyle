@@ -66,6 +66,14 @@
         .log-entry .info {
             color: rgb(4, 168, 4);
         }
+        #log-line {
+            position: fixed;
+            bottom: 0;
+            width: 100%;
+            background: white;
+            padding: 1rem;
+            border-top: 1px solid #ddd;
+        }
         .timestamp {
             font-weight: bold;
             color: #555;
@@ -91,6 +99,8 @@
     <textarea id="log-input" placeholder="Paste your logs here" spellcheck="false" autocomplete="off"></textarea>
     <button onclick="processLogs()">Process Logs</button>
     <div id="log-container" class="log-container"></div>
+
+    <div id="log-line"></div>
 
     <script>
         function parseLogs(log) {
@@ -152,6 +162,10 @@
                     const logEntry = logs.find(log => log.timestamp === timestamp);
                     const entryDiv = document.createElement("p");
                     entryDiv.classList.add("log-entry");
+                    entryDiv.onclick = () => {
+                        const logLine = document.getElementById("log-line");
+                        logLine.textContent = logEntry ? logEntry.message : "-";
+                    };
                     entryDiv.innerHTML = logEntry
                         ? `<span style="width:50px" class="${logEntry.level.toLowerCase()}">${logEntry.level}</span><span>${logEntry.message}</span>`
                         : `-`;
