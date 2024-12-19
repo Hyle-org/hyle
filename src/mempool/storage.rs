@@ -761,8 +761,12 @@ impl Lane {
         ordered_lane_entries.dedup();
 
         for lane_entry in ordered_lane_entries.into_iter() {
+            if Some(&lane_entry.data_proposal.hash()) == self.current_hash() {
+                debug!("Skipping already known LaneEntry");
+                continue;
+            }
             if lane_entry.data_proposal.parent_data_proposal_hash != self.current_hash().cloned() {
-                bail!("Hash mismatch while adding missing LaneEntry");
+                bail!("Incorrect parent hash while adding missing LaneEntry");
             }
             self.add_proposal(lane_entry.data_proposal.hash(), lane_entry);
         }
