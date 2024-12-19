@@ -36,9 +36,27 @@ impl Staking {
             total_bond: 0,
         }
     }
+    /// On-chain state is a hash of parts of the state that are altered only
+    /// by BlobTransactions
+    /// Other parts of the states (handled by consensus) are not part of on-chain state
     pub fn on_chain_state(&self) -> OnChainState {
         let mut hasher = Sha256::new();
-        hasher.update(self.as_digest().0);
+        for s in self.stakes.iter() {
+            hasher.update(&s.0 .0);
+            hasher.update(s.1.to_le_bytes());
+        }
+        for d in self.delegations.iter() {
+            hasher.update(&d.0 .0);
+            for i in d.1 {
+                hasher.update(&i.0);
+            }
+        }
+        for r in self.rewarded.iter() {
+            hasher.update(&r.0 .0);
+            for i in r.1 {
+                hasher.update(i.0.to_le_bytes());
+            }
+        }
         OnChainState(format!("{:x}", hasher.finalize()))
     }
 
@@ -55,6 +73,10 @@ impl Staking {
 
     /// Bond a staking validator
     pub fn bond(&mut self, validator: ValidatorPublicKey) -> Result<(), String> {
+        if self.is_bonded(&validator) {
+            return Err("Validator already bonded".to_string());
+        }
+
         info!("🔐 Bonded validator {}", validator);
         if let Some(stake) = self.get_stake(&validator) {
             if stake < MIN_STAKE {
@@ -105,6 +127,7 @@ impl Staking {
         staker: Identity,
         validator: ValidatorPublicKey,
     ) -> Result<String, String> {
+        info!("🤝 New delegation from {} to {}", staker, validator);
         if self.delegations.values().flatten().any(|v| v == &staker) {
             return Err("Already delegated".to_string());
         }
@@ -141,12 +164,12 @@ impl Digestable for Staking {
     }
 }
 
-//impl TryFrom<sdk::StateDigest> for Staking {
-//    type Error = anyhow::Error;
-//
-//    fn try_from(state: sdk::StateDigest) -> Result<Self, Self::Error> {
-//        let (balances, _) = bincode::decode_from_slice(&state.0, bincode::config::standard())
-//            .map_err(|_| anyhow::anyhow!("Could not decode start height"))?;
-//        Ok(balances)
-//    }
-//}
+impl TryFrom<sdk::StateDigest> for OnChainState {
+    type Error = anyhow::Error;
+
+    fn try_from(state: sdk::StateDigest) -> Result<Self, Self::Error> {
+        let (state, _) = bincode::decode_from_slice(&state.0, bincode::config::standard())
+            .map_err(|_| anyhow::anyhow!("Could not decode start height"))?;
+        Ok(state)
+    }
+}

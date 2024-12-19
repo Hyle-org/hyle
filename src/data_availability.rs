@@ -541,17 +541,14 @@ impl DataAvailability {
             error!("storing block: {}", e);
             return;
         }
-        debug!("Block {} {}: {:?}", block.height(), block.hash(), block);
-
-        debug!("{:?}", block.clone());
-
-        debug!("txs: {:?}", block.txs());
+        trace!("Block {} {}: {:#?}", block.height(), block.hash(), block);
 
         info!(
-            "new block {} {} with {} txs, last hash = {}",
+            "new block {} {} with {} txs: {:?}, last hash = {}",
             block.height(),
             block.hash(),
             block.txs().len(),
+            block.txs().iter().map(|tx| tx.hash().0).collect::<Vec<_>>(),
             self.blocks
                 .last_block_hash()
                 .unwrap_or(BlockHash("".to_string()))

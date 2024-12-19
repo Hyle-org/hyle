@@ -14,6 +14,8 @@ mod e2e_consensus {
         utils::logger::LogMe,
     };
     use hyle_contract_sdk::Identity;
+    use staking::state::OnChainState;
+    use tracing::info;
 
     use super::*;
 
@@ -53,7 +55,15 @@ mod e2e_consensus {
         let hydentity = fetch_current_state(ctx.indexer_client(), &"hydentity".into())
             .await
             .unwrap();
+
+        let staking_state: OnChainState =
+            fetch_current_state(ctx.indexer_client(), &"staking".into())
+                .await
+                .unwrap();
+
         let staking = ctx.client().get_consensus_staking_state().await.unwrap();
+
+        assert_eq!(staking_state, staking.on_chain_state());
         let mut states = States {
             hyllar,
             hydentity,

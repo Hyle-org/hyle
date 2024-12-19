@@ -774,7 +774,7 @@ impl Consensus {
                         .bft_round_state
                         .staking
                         .bond(validator.clone())
-                        .map_err(|e| anyhow!(e))?;
+                        .ok();
                 }
 
                 if let StateTag::Joining = self.bft_round_state.state_tag {

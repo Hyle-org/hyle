@@ -18,9 +18,9 @@ use super::contract_runner::ContractRunner;
 
 pub struct Password(BlobData);
 
-pub static HYLLAR_BIN: &[u8] = include_bytes!("../../../hyle/contracts/hyllar/hyllar.img");
-pub static HYDENTITY_BIN: &[u8] = include_bytes!("../../../hyle/contracts/hydentity/hydentity.img");
-pub static STAKING_BIN: &[u8] = include_bytes!("../../../hyle/contracts/staking/staking.img");
+pub static HYLLAR_BIN: &[u8] = hyle_contracts::HYLLAR_ELF;
+pub static HYDENTITY_BIN: &[u8] = hyle_contracts::HYDENTITY_ELF;
+pub static STAKING_BIN: &[u8] = hyle_contracts::STAKING_ELF;
 
 pub fn get_binary(contract_name: ContractName) -> Result<&'static [u8]> {
     match contract_name.0.as_str() {

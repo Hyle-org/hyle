@@ -360,6 +360,11 @@ impl NodeState {
                 {
                     return (updated_states, true);
                 }
+            } else {
+                debug!(
+                    "Initial state mismatch for contract '{}'. Expected: {:?}, got: {:?}",
+                    contract_name, known_initial_state, proof_metadata.initial_state
+                );
             }
         }
         (current_states, false)

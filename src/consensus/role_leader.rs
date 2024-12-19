@@ -10,7 +10,7 @@ use crate::{
 use anyhow::{anyhow, bail, Result};
 use bincode::{Decode, Encode};
 use staking::state::MIN_STAKE;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info, trace, warn};
 
 use super::{Consensus, ConsensusNetMessage, ConsensusProposalHash, Ticket};
 
@@ -85,6 +85,11 @@ impl LeaderRole for Consensus {
 
         // Creates ConsensusProposal
         // Query new cut to Mempool
+        trace!(
+            "Querying Mempool for a new cut with Staking: {:#?}",
+            self.bft_round_state.staking
+        );
+
         match self
             .bus
             .request(QueryNewCut(self.bft_round_state.staking.clone()))
