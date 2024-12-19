@@ -1440,7 +1440,7 @@ pub mod test {
                 ConsensusProposal {
                     slot: 2,
                     view: 0,
-                    timestamp: get_current_timestamp_ms(),
+                    timestamp: 123,
                     round_leader: node1.pubkey(),
                     cut: vec![(
                         node2.pubkey(),
@@ -1678,6 +1678,19 @@ pub mod test {
 
         node2.start_round_at(3000).await;
 
+        assert_eq!(
+            node1.consensus.bft_round_state.consensus_proposal.timestamp,
+            1000
+        );
+        assert_eq!(
+            node3.consensus.bft_round_state.consensus_proposal.timestamp,
+            1000
+        );
+        assert_eq!(
+            node4.consensus.bft_round_state.consensus_proposal.timestamp,
+            1000
+        );
+
         broadcast! {
             description: "Leader Node2 second round",
             from: node2, to: [node1, node3, node4],
@@ -1685,6 +1698,19 @@ pub mod test {
                 assert_eq!(next_cp.timestamp, 3000);
             }
         };
+
+        assert_eq!(
+            node1.consensus.bft_round_state.consensus_proposal.timestamp,
+            3000
+        );
+        assert_eq!(
+            node3.consensus.bft_round_state.consensus_proposal.timestamp,
+            3000
+        );
+        assert_eq!(
+            node4.consensus.bft_round_state.consensus_proposal.timestamp,
+            3000
+        );
     }
 
     #[test_log::test(tokio::test)]
