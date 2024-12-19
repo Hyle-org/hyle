@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 use bincode::{Decode, Encode};
-use tracing::{debug, error, info, warn};
+use tracing::{debug, info, warn};
 
 use super::{
     Consensus, ConsensusNetMessage, ConsensusProposal, ConsensusProposalHash, QuorumCertificate,
@@ -532,7 +532,7 @@ impl FollowerRole for Consensus {
             return Ok(());
         }
 
-        let next_max_timestamp = previous_timestamp + (5 * self.config.consensus.slot_duration);
+        let next_max_timestamp = previous_timestamp + (2 * self.config.consensus.slot_duration);
 
         if &previous_timestamp > timestamp {
             bail!(
