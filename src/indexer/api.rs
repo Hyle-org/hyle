@@ -172,8 +172,8 @@ pub async fn get_transactions_by_contract(
 pub async fn get_transactions_by_height(
     Path(height): Path<i64>,
     State(state): State<IndexerApiState>,
-) -> Result<Json<TransactionDb>, StatusCode> {
-    let transaction = sqlx::query_as::<_, TransactionDb>(
+) -> Result<Json<Vec<TransactionDb>>, StatusCode> {
+    let transactions = sqlx::query_as::<_, TransactionDb>(
         r#"
         SELECT t.*
         FROM transactions t
@@ -182,14 +182,11 @@ pub async fn get_transactions_by_height(
         "#,
     )
     .bind(height)
-    .fetch_optional(&state.db)
+    .fetch_all(&state.db)
     .await
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    match transaction {
-        Some(tx) => Ok(Json(tx)),
-        None => Err(StatusCode::NOT_FOUND),
-    }
+    Ok(Json(transactions))
 }
 
 pub async fn get_transaction_with_hash(
