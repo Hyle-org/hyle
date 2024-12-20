@@ -1,6 +1,6 @@
 use crate::{
     indexer::model::ContractDb,
-    model::{ContractName, ProofData},
+    model::{BlobTransaction, ContractName, Hashable, ProofData},
     rest::client::ApiHttpClient,
 };
 use anyhow::{bail, Error, Result};
@@ -29,10 +29,14 @@ impl ContractRunner {
     where
         State: Digestable + Serialize,
     {
+        let blob_tx = BlobTransaction {
+            identity: identity.clone(),
+            blobs: blobs.clone(),
+        };
         let contract_input = ContractInput::<State> {
             initial_state,
             identity,
-            tx_hash: "".into(),
+            tx_hash: blob_tx.hash(),
             private_blob,
             blobs,
             index,

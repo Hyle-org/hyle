@@ -67,6 +67,7 @@ async fn main() -> Result<(), Error> {
         SendCommands::RegisterContracts => {
             register_contracts(
                 &client,
+                verifier.as_str(),
                 &hydentity_state,
                 &amm_state,
                 &token1_state,
@@ -107,6 +108,7 @@ async fn main() -> Result<(), Error> {
         SendCommands::LoadTest => {
             register_contracts(
                 &client,
+                verifier.as_str(),
                 &hydentity_state,
                 &amm_state,
                 &token1_state,

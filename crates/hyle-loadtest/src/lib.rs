@@ -69,6 +69,7 @@ pub fn setup_contract_states(
 
 pub async fn register_contracts(
     client: &ApiHttpClient,
+    verifier: &str,
     hydentity_state: &Hydentity,
     amm_state: &AmmState,
     token1_state: &HyllarToken,
@@ -77,28 +78,28 @@ pub async fn register_contracts(
     // Create RegisterContract transactions
     let register_hydentity = TransactionBuilder::register_contract(
         "loadtest",
-        "test",
+        verifier,
         &HYDENTITY_ID,
         hydentity_state.as_digest(),
         "hydentity-loadtest",
     );
     let register_amm = TransactionBuilder::register_contract(
         "loadtest",
-        "test",
+        verifier,
         &AMM_ID,
         amm_state.as_digest(),
         "amm-loadtest",
     );
     let register_token1 = TransactionBuilder::register_contract(
         "loadtest",
-        "test",
+        verifier,
         &HYLLAR_ID,
         token1_state.as_digest(),
         "token1-loadtest",
     );
     let register_token2 = TransactionBuilder::register_contract(
         "loadtest",
-        "test",
+        verifier,
         &HYLLAR_ID,
         token2_state.as_digest(),
         "token2-loadtest",
@@ -308,6 +309,7 @@ async fn generate_proofs(
         }
         "risc0" => {
             std::env::set_var("RISC0_DEV_MODE", "1");
+            println!("ok");
 
             let hydentity_runner = ContractRunner::new(
                 "hydentity-loadtest".into(),
