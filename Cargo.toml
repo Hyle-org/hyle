@@ -9,6 +9,7 @@ members = [
 
     "crates/bonsai-runner",
     "crates/hyrun",
+    "crates/hyle-loadtest",
 ]
 resolver = "2"
 
@@ -33,7 +34,9 @@ hyle-contract-sdk = { path = "./contract-sdk", features = ["tracing"] }
 hyle-contracts = { path = "./contracts", package = "hyle-contracts" }
 hydentity = { path = "./contracts/hydentity" }
 hyllar = { path = "./contracts/hyllar" }
+amm = { path = "./contracts/amm" }
 staking = { path = "./contracts/staking" }
+bonsai-runner = { path = "./crates/bonsai-runner" }
 config = "0.15.0"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["json"] }
@@ -128,9 +131,5 @@ incremental = true
 inherits = "release"
 debug = true         # Keep debug info for profiling
 strip = "none"
-
-# Optimize the following crates for development builds so tests are faster
-[profile.dev.package.risc0-binfmt]
-opt-level = 3
 [profile.dev.package.sha2]
 opt-level = 3
