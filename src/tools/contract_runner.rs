@@ -17,7 +17,7 @@ pub struct ContractRunner {
 }
 
 impl ContractRunner {
-    pub async fn new<State>(
+    pub fn new<State>(
         contract_name: ContractName,
         binary: &'static [u8],
         identity: Identity,

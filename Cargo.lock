@@ -2584,6 +2584,7 @@ dependencies = [
  "hyle-contracts",
  "hyllar",
  "reqwest 0.12.9",
+ "risc0-zkvm",
  "serde_json",
  "tokio",
 ]

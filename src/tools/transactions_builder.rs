@@ -265,7 +265,7 @@ impl TransactionBuilder {
     }
 
     // TODO: make it generic
-    pub async fn build(&mut self, states: &mut States) -> Result<BuildResult> {
+    pub fn build(&mut self, states: &mut States) -> Result<BuildResult> {
         let mut new_states = states.clone();
         let mut outputs = vec![];
 
@@ -284,8 +284,7 @@ impl TransactionBuilder {
                 blob_transaction.blobs.clone(),
                 blob_index,
                 new_states.for_token(&contract_name)?.clone(),
-            )
-            .await?;
+            )?;
             let out = runner.execute()?;
             new_states.hydentity = out.next_state.clone().try_into()?;
             outputs.push(("hydentity".into(), out));

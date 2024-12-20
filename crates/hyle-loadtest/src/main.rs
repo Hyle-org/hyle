@@ -26,6 +26,9 @@ struct Args {
 
     #[arg(long, default_value = "10")]
     pub users: u32,
+
+    #[arg(long, default_value = "test")]
+    pub verifier: String,
 }
 
 #[derive(Debug, Subcommand)]
@@ -53,10 +56,11 @@ async fn main() -> Result<(), Error> {
         url: Url::parse(&url).unwrap(),
         reqwest_client: Client::new(),
     };
+    let verifier = args.verifier;
 
     let pair = UnorderedTokenPair::new("token1-loadtest".to_owned(), "token2-loadtest".to_owned());
 
-    let (hydentity_state, amm_state, token1_state, token2_state) =
+    let (mut hydentity_state, mut amm_state, mut token1_state, mut token2_state) =
         setup_contract_states(&args.users, &pair);
 
     match args.command {
@@ -72,22 +76,25 @@ async fn main() -> Result<(), Error> {
         }
         SendCommands::GenerateTransactions => {
             let txs_to_send = create_transactions(
+                verifier.as_str(),
                 &pair,
-                hydentity_state,
-                amm_state,
-                token1_state,
-                token2_state,
+                &mut hydentity_state,
+                &mut amm_state,
+                &mut token1_state,
+                &mut token2_state,
                 args.users,
             )
             .await?;
 
             let encoded: Vec<u8> =
                 bincode::encode_to_vec(&txs_to_send, bincode::config::standard())?;
-            let mut file = File::create(format!("./txs_to_send.{}-users.bin", args.users))?;
+            let mut file =
+                File::create(format!("./txs_to_send.{verifier}.{}-users.bin", args.users))?;
             file.write_all(&encoded)?;
         }
         SendCommands::SendTransactions => {
-            let mut file = File::open(format!("./txs_to_send.{}-users.bin", args.users))?;
+            let mut file =
+                File::open(format!("./txs_to_send.{verifier}.{}-users.bin", args.users))?;
             let mut encoded = Vec::new();
             file.read_to_end(&mut encoded)?;
 
@@ -108,18 +115,20 @@ async fn main() -> Result<(), Error> {
             .await?;
 
             let txs_to_send = create_transactions(
+                verifier.as_str(),
                 &pair,
-                hydentity_state,
-                amm_state,
-                token1_state,
-                token2_state,
+                &mut hydentity_state,
+                &mut amm_state,
+                &mut token1_state,
+                &mut token2_state,
                 args.users,
             )
             .await?;
 
             let encoded: Vec<u8> =
                 bincode::encode_to_vec(&txs_to_send, bincode::config::standard())?;
-            let mut file = File::create(format!("./txs_to_send.{}-users.bin", args.users))?;
+            let mut file =
+                File::create(format!("./txs_to_send.{verifier}.{}-users.bin", args.users))?;
             file.write_all(&encoded)?;
 
             send_transactions(&client, txs_to_send).await?;
