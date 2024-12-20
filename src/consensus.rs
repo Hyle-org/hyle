@@ -243,6 +243,8 @@ impl Consensus {
 
     /// Reset bft_round_state for the next round of consensus.
     fn finish_round(&mut self, ticket: Option<Ticket>) -> Result<(), Error> {
+        let parent_hash = self.bft_round_state.consensus_proposal.hash();
+
         match self.bft_round_state.state_tag {
             StateTag::Follower => {}
             StateTag::Leader => {}
@@ -268,6 +270,7 @@ impl Consensus {
                 round_leader: std::mem::take(
                     &mut self.bft_round_state.consensus_proposal.round_leader,
                 ),
+                parent_hash,
                 ..ConsensusProposal::default()
             },
             staking: std::mem::take(&mut self.bft_round_state.staking),
@@ -855,10 +858,10 @@ impl Consensus {
     }
 
     pub fn genesis_block(
-        round_leader: &ValidatorPublicKey,
         initial_validators: Vec<ValidatorPublicKey>,
         genesis_txs: Vec<Transaction>,
     ) -> SignedBlock {
+        let round_leader = initial_validators.first().unwrap();
         let dp = DataProposal {
             id: 0,
             parent_data_proposal_hash: None,
@@ -914,8 +917,10 @@ impl Consensus {
                 match msg {
                     GenesisEvent::GenesisBlock { block } => {
 
-                        self.bft_round_state.consensus_proposal =
-                            block.consensus_proposal;
+                        let initial_parent_hash = block.consensus_proposal.hash();
+
+                        self.bft_round_state.consensus_proposal = block.consensus_proposal;
+                        self.bft_round_state.consensus_proposal.parent_hash = initial_parent_hash;
 
                         if self.bft_round_state.consensus_proposal.round_leader == *self.crypto.validator_pubkey() {
                             self.bft_round_state.state_tag = StateTag::Leader;

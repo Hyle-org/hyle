@@ -129,11 +129,7 @@ impl Genesis {
 
         // At this point, we can setup the genesis block.
         _ = self.bus.send(GenesisEvent::GenesisBlock {
-            block: Consensus::genesis_block(
-                self.crypto.validator_pubkey(),
-                initial_validators,
-                genesis_txs,
-            ),
+            block: Consensus::genesis_block(initial_validators, genesis_txs),
         });
 
         Ok(())

@@ -421,7 +421,7 @@ impl DataAvailability {
                 .unwrap_or(None)
                 .is_none()
             {
-                debug!(
+                warn!(
                     "Parent block '{}' not found for block hash='{}' height {}",
                     block.parent_hash(),
                     block.hash(),

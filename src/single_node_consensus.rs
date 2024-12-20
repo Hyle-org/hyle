@@ -105,11 +105,8 @@ impl SingleNodeConsensus {
 
             tracing::info!("Doing genesis");
 
-            let genesis_block = Consensus::genesis_block(
-                self.crypto.validator_pubkey(),
-                vec![self.crypto.validator_pubkey().clone()],
-                genesis_txs,
-            );
+            let genesis_block =
+                Consensus::genesis_block(vec![self.crypto.validator_pubkey().clone()], genesis_txs);
 
             _ = self.bus.send(GenesisEvent::GenesisBlock {
                 block: genesis_block.clone(),
