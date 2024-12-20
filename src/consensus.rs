@@ -29,7 +29,8 @@ use metrics::ConsensusMetrics;
 use role_follower::{FollowerRole, FollowerState, TimeoutState};
 use role_leader::{LeaderRole, LeaderState};
 use serde::{Deserialize, Serialize};
-use staking::{Staking, MIN_STAKE};
+use staking::state::{Staking, MIN_STAKE};
+use staking::StakingAction;
 use std::time::Duration;
 use std::{collections::HashMap, default::Default, path::PathBuf};
 use tokio::time::interval;
@@ -71,6 +72,9 @@ pub enum ConsensusEvent {
 #[derive(Clone)]
 pub struct QueryConsensusInfo {}
 
+#[derive(Clone)]
+pub struct QueryConsensusStakingState {}
+
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct ConsensusInfo {
     pub slot: Slot,
@@ -96,6 +100,7 @@ struct ConsensusBusClient {
     receiver(SignedByValidator<ConsensusNetMessage>),
     receiver(PeerEvent),
     receiver(Query<QueryConsensusInfo, ConsensusInfo>),
+    receiver(Query<QueryConsensusStakingState, Staking>),
 }
 }
 
@@ -342,7 +347,7 @@ impl Consensus {
                 .staking
                 .get_stake(&new_validator.pubkey)
             {
-                if stake.amount < staking::MIN_STAKE {
+                if stake < staking::state::MIN_STAKE {
                     bail!("New bonded validator has not enough stake to be bonded");
                 }
             } else {
@@ -416,14 +421,14 @@ impl Consensus {
         }
     }
 
-    fn get_own_voting_power(&self) -> u64 {
+    fn get_own_voting_power(&self) -> u128 {
         if self.is_part_of_consensus(self.crypto.validator_pubkey()) {
-            if let Some(my_sake) = self
+            if let Some(my_stake) = self
                 .bft_round_state
                 .staking
                 .get_stake(self.crypto.validator_pubkey())
             {
-                my_sake.amount
+                my_stake
             } else {
                 panic!("I'm not in my own staking registry !")
             }
@@ -657,7 +662,6 @@ impl Consensus {
             .bft_round_state
             .staking
             .get_stake(self.crypto.validator_pubkey())
-            .map(|s| s.amount)
             .unwrap_or(0)
             > MIN_STAKE
         {
@@ -730,7 +734,7 @@ impl Consensus {
 
         // Verify that the candidate has enough stake
         if let Some(stake) = self.bft_round_state.staking.get_stake(&candidacy.pubkey) {
-            if stake.amount < staking::MIN_STAKE {
+            if stake < staking::state::MIN_STAKE {
                 bail!("🛑 Candidate validator does not have enough stake to be part of consensus");
             }
         } else {
@@ -749,19 +753,31 @@ impl Consensus {
         match msg {
             DataEvent::NewBlock(block) => {
                 let block_total_tx = block.total_txs();
-                for staker in block.stakers {
-                    self.store
-                        .bft_round_state
-                        .staking
-                        .add_staker(staker)
-                        .map_err(|e| anyhow!(e))?;
+                for action in block.staking_actions {
+                    match action {
+                        (identity, StakingAction::Stake { amount }) => {
+                            self.store
+                                .bft_round_state
+                                .staking
+                                .stake(identity, amount)
+                                .map_err(|e| anyhow!(e))?;
+                        }
+                        (identity, StakingAction::Delegate { validator }) => {
+                            self.store
+                                .bft_round_state
+                                .staking
+                                .delegate_to(identity, validator)
+                                .map_err(|e| anyhow!(e))?;
+                        }
+                        (_identity, StakingAction::Distribute { claim: _ }) => todo!(),
+                    }
                 }
                 for validator in block.new_bounded_validators.iter() {
                     self.store
                         .bft_round_state
                         .staking
                         .bond(validator.clone())
-                        .map_err(|e| anyhow!(e))?;
+                        .ok();
                 }
 
                 if let StateTag::Joining = self.bft_round_state.state_tag {
@@ -922,6 +938,9 @@ impl Consensus {
                 let validators = self.bft_round_state.staking.bonded().clone();
                 Ok(ConsensusInfo { slot, view, round_leader, validators })
             }
+            command_response<QueryConsensusStakingState, Staking> _ => {
+                Ok(self.bft_round_state.staking.clone())
+            }
             _ = timeout_ticker.tick() => {
                 self.bus.send(ConsensusCommand::TimeoutTick)
                     .log_error("Cannot send message over channel")?;
@@ -977,8 +996,6 @@ pub mod test {
         utils::{conf::Conf, crypto},
     };
     use assertables::assert_contains;
-    use staking::Stake;
-    use staking::Staker;
     use tokio::sync::broadcast::Receiver;
     use tracing::error;
 
@@ -1147,11 +1164,15 @@ pub mod test {
             self.consensus
                 .bft_round_state
                 .staking
-                .add_staker(Staker {
-                    pubkey: pubkey.clone(),
-                    stake: Stake { amount: 100 },
-                })
-                .expect("cannot add trusted staker");
+                .stake(hex::encode(pubkey.0.clone()).into(), 100)
+                .unwrap();
+
+            self.consensus
+                .bft_round_state
+                .staking
+                .delegate_to(hex::encode(pubkey.0.clone()).into(), pubkey.clone())
+                .unwrap();
+
             self.consensus
                 .bft_round_state
                 .staking
@@ -1190,21 +1211,26 @@ pub mod test {
             err
         }
 
-        async fn add_staker(&mut self, staker: &Self, amount: u64, err: &str) {
+        async fn add_staker(&mut self, staker: &Self, amount: u128, err: &str) {
             info!("➕ {} Add staker: {:?}", self.name, staker.name);
             self.consensus
                 .handle_data_event(DataEvent::NewBlock(Box::new(Block {
-                    stakers: vec![Staker {
-                        pubkey: staker.pubkey(),
-                        stake: Stake { amount },
-                    }],
+                    staking_actions: vec![
+                        (staker.name.clone().into(), StakingAction::Stake { amount }),
+                        (
+                            staker.name.clone().into(),
+                            StakingAction::Delegate {
+                                validator: staker.pubkey(),
+                            },
+                        ),
+                    ],
                     ..Default::default()
                 })))
                 .await
-                .expect(err)
+                .expect(err);
         }
 
-        async fn add_bonded_staker(&mut self, staker: &Self, amount: u64, err: &str) {
+        async fn add_bonded_staker(&mut self, staker: &Self, amount: u128, err: &str) {
             self.add_staker(staker, amount, err).await;
             self.consensus
                 .handle_data_event(DataEvent::NewBlock(Box::new(Block {
@@ -1215,13 +1241,18 @@ pub mod test {
                 .expect(err)
         }
 
-        async fn with_stake(&mut self, amount: u64, err: &str) {
+        async fn with_stake(&mut self, amount: u128, err: &str) {
             self.consensus
                 .handle_data_event(DataEvent::NewBlock(Box::new(Block {
-                    stakers: vec![Staker {
-                        pubkey: self.consensus.crypto.validator_pubkey().clone(),
-                        stake: Stake { amount },
-                    }],
+                    staking_actions: vec![
+                        (self.name.clone().into(), StakingAction::Stake { amount }),
+                        (
+                            self.name.clone().into(),
+                            StakingAction::Delegate {
+                                validator: self.consensus.crypto.validator_pubkey().clone(),
+                            },
+                        ),
+                    ],
                     ..Default::default()
                 })))
                 .await

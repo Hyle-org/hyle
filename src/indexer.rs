@@ -409,7 +409,7 @@ impl Indexer {
         }
 
         // Handling new stakers
-        for _staker in block.stakers {
+        for _staker in block.staking_actions {
             // TODO: add new table with stakers at a given height
         }
 

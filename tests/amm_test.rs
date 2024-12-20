@@ -148,16 +148,16 @@ mod e2e_amm {
         let contract_hydentity = ctx.get_contract("hydentity").await?;
         let state: hydentity::Hydentity = contract_hydentity.state.try_into()?;
 
-        let expected_info = serde_json::to_string(&AccountInfo {
-            hash: "b6baa13a27c933bb9f7df812108407efdff1ec3c3ef8d803e20eed7d4177d596".to_string(),
-            nonce: 0,
-        });
-        assert_eq!(
+        // faucet_start_nonce = 0 in single-mode, N in multi-node(N) mode
+        let faucet_start_nonce = serde_json::from_str::<AccountInfo>(
             state
                 .get_identity_info("faucet.hydentity")
-                .expect("faucet identity not found"),
-            expected_info.unwrap() // hash for "faucet.hydentity::password"
-        );
+                .expect("faucet identity not found")
+                .as_str(),
+        )
+        .expect("Failed to parse faucet identity info")
+        .nonce;
+
         /////////////////////////////////////////////////////////////////////
 
         ///////////////// sending hyllar from faucet to bob /////////////////
@@ -168,7 +168,7 @@ mod e2e_amm {
                 vec![
                     IdentityAction::VerifyIdentity {
                         account: "faucet.hydentity".to_string(),
-                        nonce: 0,
+                        nonce: faucet_start_nonce,
                     }
                     .as_blob(ContractName("hydentity".to_owned())),
                     ERC20Action::Transfer {
@@ -192,7 +192,7 @@ mod e2e_amm {
                 },
                 "faucet.hydentity",
                 "password",
-                Some(0),
+                Some(faucet_start_nonce),
             )
             .await;
 
@@ -246,7 +246,7 @@ mod e2e_amm {
                 vec![
                     IdentityAction::VerifyIdentity {
                         account: "faucet.hydentity".to_string(),
-                        nonce: 1,
+                        nonce: faucet_start_nonce + 1,
                     }
                     .as_blob(ContractName("hydentity".to_owned())),
                     ERC20Action::Transfer {
@@ -270,7 +270,7 @@ mod e2e_amm {
                 },
                 "faucet.hydentity",
                 "password",
-                Some(1),
+                Some(faucet_start_nonce + 1),
             )
             .await;
 

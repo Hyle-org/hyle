@@ -3,7 +3,7 @@ use bincode::{Decode, Encode};
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Sha3_256};
-use staking::Staking;
+use staking::state::Staking;
 use std::{collections::HashMap, fmt::Display, hash::Hash, vec};
 use tracing::{debug, error, warn};
 
@@ -612,9 +612,7 @@ impl DataProposal {
                     // A DataProposal that has been processed has turned all TransactionData::Proof into TransactionData::VerifiedProof
                     unreachable!();
                 }
-                TransactionData::Blob(_)
-                | TransactionData::Stake(_)
-                | TransactionData::RegisterContract(_) => {}
+                TransactionData::Blob(_) | TransactionData::RegisterContract(_) => {}
             }
         });
     }
@@ -801,7 +799,7 @@ mod tests {
         utils::crypto,
     };
     use hyle_contract_sdk::{BlobIndex, HyleOutput, Identity, ProgramId, StateDigest, TxHash};
-    use staking::{Stake, Staker, Staking};
+    use staking::state::Staking;
 
     use super::{DataProposal, Lane};
 
@@ -1586,18 +1584,14 @@ mod tests {
         let known_contracts1 = KnownContracts::default();
         let known_contracts2 = KnownContracts::default();
         let mut staking = Staking::default();
+        staking.stake("pk1".into(), 100).expect("could not stake");
         staking
-            .add_staker(Staker {
-                pubkey: pubkey1.clone(),
-                stake: Stake { amount: 100 },
-            })
-            .expect("could not stake");
+            .delegate_to("pk1".into(), pubkey1.clone())
+            .expect("could not delegate");
+        staking.stake("pk2".into(), 100).expect("could not stake");
         staking
-            .add_staker(Staker {
-                pubkey: pubkey2.clone(),
-                stake: Stake { amount: 100 },
-            })
-            .expect("could not stake");
+            .delegate_to("pk2".into(), pubkey2.clone())
+            .expect("could not delegate");
         staking
             .bond(pubkey1.clone())
             .expect("Could not bond pubkey1");
@@ -1677,18 +1671,15 @@ mod tests {
 
         let mut store1 = Storage::new(pubkey1.clone());
         let mut staking = Staking::default();
+
+        staking.stake("pk1".into(), 100).expect("Staking failed");
         staking
-            .add_staker(Staker {
-                pubkey: pubkey1.clone(),
-                stake: Stake { amount: 100 },
-            })
-            .expect("could not stake");
+            .delegate_to("pk1".into(), pubkey1.clone())
+            .expect("Delegation failed");
+        staking.stake("pk2".into(), 100).expect("Staking failed");
         staking
-            .add_staker(Staker {
-                pubkey: pubkey2.clone(),
-                stake: Stake { amount: 100 },
-            })
-            .expect("could not stake");
+            .delegate_to("pk2".into(), pubkey2.clone())
+            .expect("Delegation failed");
 
         staking
             .bond(pubkey1.clone())
