@@ -135,19 +135,24 @@ pub struct ProofTransaction {
 
 #[derive(Debug, Default, Serialize, Deserialize, Clone, PartialEq, Eq, Encode, Decode)]
 pub struct BlobProofOutput {
+    // TODO: this can be recovered from the hyle output
     pub blob_tx_hash: TxHash,
     // TODO: remove this?
-    pub proof_hash: ProofDataHash,
+    pub original_proof_hash: ProofDataHash,
+
+    /// HyleOutput of the proof for this blob
     pub hyle_output: HyleOutput,
+    /// Program ID used to verify the proof.
+    pub program_id: ProgramId,
 }
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Encode, Decode)]
 pub struct VerifiedProofTransaction {
     pub contract_name: ContractName,
-    pub proof: Option<ProofData>,
+    pub proof: Option<ProofData>, // Kept only on the local lane for indexing purposes
     pub proof_hash: ProofDataHash,
     pub proven_blobs: Vec<BlobProofOutput>,
-    pub recursive_metadata: Option<Vec<ProgramId>>,
+    pub is_recursive: bool,
 }
 
 impl fmt::Debug for VerifiedProofTransaction {

@@ -89,7 +89,7 @@ mod tests {
             blobs_hash: BlobsHash::new("blobs_hash"),
             blobs: vec![UnsettledBlobMetadata {
                 contract_name: ContractName(contract.to_string()),
-                metadata: vec![],
+                possible_proofs: vec![],
             }],
         }
     }

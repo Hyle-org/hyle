@@ -629,7 +629,7 @@ mod test {
                 contract_name: contract_name.clone(),
                 proof_hash: proof.hash(),
                 proven_blobs: vec![BlobProofOutput {
-                    proof_hash: proof.hash(),
+                    original_proof_hash: proof.hash(),
                     blob_tx_hash: blob_tx_hash.clone(),
                     hyle_output: HyleOutput {
                         version: 1,

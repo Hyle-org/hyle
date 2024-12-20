@@ -656,7 +656,7 @@ impl Mempool {
                     recursive_metadata: program_ids,
                     proven_blobs: std::iter::zip(proof_transaction.tx_hashes, hyle_outputs)
                         .map(|(blob_tx_hash, hyle_output)| BlobProofOutput {
-                            proof_hash: ProofDataHash("todo?".to_owned()),
+                            original_proof_hash: ProofDataHash("todo?".to_owned()),
                             blob_tx_hash,
                             hyle_output,
                         })

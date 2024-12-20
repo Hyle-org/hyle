@@ -11,7 +11,7 @@ use hyle_contract_sdk::{HyleOutput, StateDigest, TxHash};
 use model::{Contract, Timeouts, UnsettledBlobMetadata, UnsettledBlobTransaction};
 use ordered_tx_map::OrderedTxMap;
 use staking::Staker;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use tracing::{debug, error, info};
 
 pub mod model;
@@ -42,8 +42,8 @@ pub struct VerifiedBlobOutput {
     pub proof_contract_name: ContractName,
     pub proof: Option<ProofData>,
     pub is_recursive: bool,
-    pub verified_proof_transaction: BlobProofOutput,
-    pub blob_contract_name: ContractName,
+    //pub verified_proof_transaction: BlobProofOutput,
+    //pub blob_contract_name: ContractName,
 }
 
 impl NodeState {
@@ -81,87 +81,124 @@ impl NodeState {
                 TransactionData::Proof(_) => {
                     error!("Unverified recursive proof transaction should not be in a block");
                 }
-                TransactionData::VerifiedProof(rec_proof_tx) => {
-                    let mut rec_metadata_iter = if let Some(meta) = &rec_proof_tx.recursive_metadata
-                    {
-                        meta.iter()
-                    } else {
-                        std::slice::Iter::default()
-                    };
-                    rec_proof_tx
+                TransactionData::VerifiedProof(proof_tx) => {
+                    let mut blob_tx_to_try_and_settle = proof_tx
                         .proven_blobs
                         .iter()
-                        .for_each(|verified_proof_transaction| {
-                            let contract_name = &match self
+                        .filter_map(|blob_proof_data| {
+                            // Find the blob being proven and whether we should try to settle the TX.
+                            let (unsettled_tx, should_settle_tx) = match self
                                 .unsettled_transactions
-                                .get(&verified_proof_transaction.blob_tx_hash)
-                                .map(|d| {
-                                    d.blobs
-                                        .get(verified_proof_transaction.hyle_output.index.0)
-                                        .map(|b| b.contract_name.clone())
-                                }) {
-                                Some(Some(contract_name)) => contract_name,
-                                _ => {
-                                    error!("BlobTx contract name not found");
-                                    failed_txs.push(tx.clone());
-                                    return;
-                                }
-                            };
-                            if rec_proof_tx.recursive_metadata.is_some() {
-                                let expected_program_id = rec_metadata_iter.next();
-                                let contract = self.contracts.get(contract_name);
-                                info!(
-                                    "Expected program id: {:?}, contract: {:?}",
-                                    expected_program_id, contract
-                                );
-                                if expected_program_id.is_none()
-                                    || contract.map_or(true, |c| {
-                                        &c.program_id != expected_program_id.unwrap()
-                                    })
-                                {
-                                    error!(
-                                        "Contract not found: {:?} {:?}",
-                                        contract_name, self.contracts
-                                    );
-                                    failed_txs.push(tx.clone());
-                                    return;
-                                }
-                            };
-                            match self.handle_blob_proof(verified_proof_transaction, contract_name)
+                                .get_for_settlement(&blob_proof_data.blob_tx_hash)
                             {
-                                Ok(proof_tx_output) => {
+                                Some(a) => a,
+                                _ => {
+                                    error!("BlobTx not found");
+                                    failed_txs.push(tx.clone());
+                                    return None;
+                                }
+                            };
+
+                            // TODO: add diverse verifications ? (without the inital state checks!).
+                            // TODO: success to false is valid outcome and can be settled.
+                            if let Err(e) =
+                                Self::verify_hyle_output(unsettled_tx, &blob_proof_data.hyle_output)
+                            {
+                                error!("Failed to validate blob proof: {:?}", e);
+                                failed_txs.push(tx.clone());
+                                return None;
+                            }
+
+                            let Some(blob) = unsettled_tx
+                                .blobs
+                                .get_mut(blob_proof_data.hyle_output.index.0)
+                            else {
+                                error!(
+                                    "blob at index {} not found in blob TX {}",
+                                    blob_proof_data.hyle_output.index.0,
+                                    blob_proof_data.blob_tx_hash
+                                );
+                                failed_txs.push(tx.clone());
+                                return None;
+                            };
+
+                            // If we arrived here, HyleOutput provided is OK and can now be saved
+                            debug!(
+                                "Saving metadata for BlobTx {} for {}",
+                                blob_proof_data.hyle_output.tx_hash.0,
+                                blob_proof_data.hyle_output.index
+                            );
+
+                            blob.possible_proofs.push((
+                                blob_proof_data.program_id.clone(),
+                                blob_proof_data.hyle_output.clone(),
+                            ));
+
+                            match should_settle_tx {
+                                true => Some(unsettled_tx.hash.clone())
+                                false => None,
+                            }
+                        })
+                        .collect::<HashSet<_>>();
+                    // Try to settle transactions now
+                    blob_tx_to_try_and_settle.retain(|unsettled_tx_hash| {
+                            match self.try_to_settle_blob_tx(unsettled_tx_hash) {
+                                Ok(tx_updated_states) => {
+                                    let settled_blob_tx_hash =
+                                        std::mem::take(&mut unsettled_tx.hash);
+
+                                    info!("Settle tx {:?}", unsettled_tx.hash);
+
+                                    for (contract_name, next_state) in tx_updated_states.iter() {
+                                        debug!(
+                                            "Update {} contract state: {:?}",
+                                            contract_name, next_state
+                                        );
+                                        // Safe to unwrap - all contract names are validated to exist above.
+                                        self.contracts.get_mut(contract_name).unwrap().state =
+                                            next_state.clone();
+                                    }
+                                    updated_states.extend(tx_updated_states);
+
                                     // When a proof tx is handled, three things happen:
                                     // 1. Blobs get verified
                                     // 2. Maybe: BlobTransactions get settled
                                     // 3. Maybe: Contract state digests are updated
 
                                     // Keep track of verified blobs
-                                    verified_blobs.push((
-                                        verified_proof_transaction.hyle_output.tx_hash.clone(),
-                                        verified_proof_transaction.hyle_output.index.clone(),
-                                    ));
+                                    unsettled_tx.blobs.iter().enumerate().for_each(|(i, blob)| {
+                                        verified_blobs.push((
+                                            unsettled_tx.hash.clone(),
+                                            hyle_contract_sdk::BlobIndex(i),
+                                        ));
+                                    });
                                     // Keep track of settled txs
-                                    settled_blob_tx_hashes
-                                        .extend(proof_tx_output.settled_blob_tx_hashes);
+                                    settled_blob_tx_hashes.push(unsettled_tx_hash.clone());
                                     // Update the contract's updated states
-                                    updated_states.extend(proof_tx_output.updated_states);
                                     // Keep track of all verified proof txs
                                     new_verified_proof_txs.push(VerifiedBlobOutput {
                                         tx_hash: tx.hash(),
                                         version: tx.version,
-                                        proof_contract_name: rec_proof_tx.contract_name.clone(),
-                                        proof: rec_proof_tx.proof.clone(),
-                                        is_recursive: rec_proof_tx.recursive_metadata.is_some(),
-                                        verified_proof_transaction: verified_proof_transaction
-                                            .clone(),
-                                        blob_contract_name: contract_name.clone(),
+                                        proof_contract_name: proof_tx.contract_name.clone(),
+                                        proof: proof_tx.proof.clone(),
+                                        is_recursive: proof_tx.is_recursive,
+                                        //verified_proof_transaction: verified_proof_transaction.clone(),
+                                        //blob_contract_name: contract_name.clone(),
                                     });
+                                    true
                                 }
                                 Err(e) => {
                                     error!("Failed to handle proof transaction: {:?}", e);
                                     failed_txs.push(tx.clone());
+                                    false
                                 }
                             }
+                    });
+                    // Clean the now settled blob tx from the state
+                    blob_tx_to_try_and_settle
+                        .iter()
+                        .for_each(|unsettled_blob_tx_hash| {
+                            self.unsettled_transactions.remove(unsettled_blob_tx_hash);
                         });
                 }
                 TransactionData::RegisterContract(register_contract_transaction) => {
@@ -242,7 +279,7 @@ impl NodeState {
             .iter()
             .map(|blob| UnsettledBlobMetadata {
                 contract_name: blob.contract_name.clone(),
-                metadata: vec![],
+                possible_proofs: vec![],
             })
             .collect();
 
@@ -260,17 +297,27 @@ impl NodeState {
         Ok(())
     }
 
-    fn handle_blob_proof(
+    fn try_to_settle_blob_tx(
         &mut self,
-        tx: &BlobProofOutput,
-        contract_name: &ContractName,
-    ) -> Result<HandledProofTxOutput, Error> {
-        debug!("Handle blob proof: {:?}", tx);
+        unsettled_tx_hash: &TxHash,
+    ) -> Result<BTreeMap<ContractName, StateDigest>, Error> {
+        let unsettled_tx = match self
+                            .unsettled_transactions
+                            .get_for_settlement(&unsettled_tx_hash) {
+                                Some((a, true)) => a,
+                                Some((_, false)) => {
+                                                                // This indicates a logic error above
+                            bail!("Trying to settle a TX that should not be settled");
 
-        let (unsettled_tx, is_next_to_settle) = self
-            .unsettled_transactions
-            .get_for_settlement(&tx.blob_tx_hash)
-            .context("BlobTx that is been proved is either settled or does not exists")?;
+                                }
+                                _ => {
+                                    bail!("BlobTx not found");
+                                }
+                            };
+        debug!("Trying to settle blob tx: {:?}", unsettled_tx);
+
+        // TODO: this should be done much earlier.
+        Self::verify_identity(unsettled_tx)?;
 
         // Sanity check: if some of the blob contracts are not registered, we can't proceed
         if !unsettled_tx
@@ -281,39 +328,7 @@ impl NodeState {
             bail!("Cannot settle TX: some blob contracts are not registered");
         }
 
-        // TODO: add diverse verifications ? (without the inital state checks!).
-        // TODO: success to false is valid outcome and can be settled.
-        Self::verify_hyle_output(
-            unsettled_tx,
-            contract_name,
-            &tx.hyle_output,
-            &tx.blob_tx_hash,
-        )?;
-
-        // If we arrived here, HyleOutput provided is OK and can now be saved
-        debug!(
-            "Saving metadata for BlobTx {} for {}",
-            tx.hyle_output.tx_hash.0, tx.hyle_output.index
-        );
-        unsettled_tx.blobs[tx.hyle_output.index.0]
-            .metadata
-            .push(tx.hyle_output.clone());
-
-        let mut settled_blob_tx_hashes = vec![];
         let updated_states = BTreeMap::new();
-
-        if !is_next_to_settle {
-            debug!(
-                "Tx: {} is not the next transaction to settle.",
-                unsettled_tx.hash
-            );
-            return Ok(HandledProofTxOutput {
-                settled_blob_tx_hashes,
-                updated_states,
-            });
-        }
-
-        Self::verify_identity(unsettled_tx)?;
 
         let (updated_states, did_settle) = Self::settle_blobs_recursively(
             &self.contracts,
@@ -322,31 +337,10 @@ impl NodeState {
         );
 
         if !did_settle {
-            debug!("Tx: {} is not ready to settle.", unsettled_tx.hash);
-            return Ok(HandledProofTxOutput {
-                settled_blob_tx_hashes,
-                updated_states,
-            });
+            bail!("Tx: {} is not ready to settle.", unsettled_tx.hash);
         }
 
-        info!("Settle tx {:?}", unsettled_tx.hash);
-
-        for (contract_name, next_state) in updated_states.iter() {
-            debug!("Update {} contract state: {:?}", contract_name, next_state);
-            // Safe to unwrap - all contract names are validated to exist above.
-            self.contracts.get_mut(contract_name).unwrap().state = next_state.clone();
-        }
-
-        let settled_blob_tx_hash = std::mem::take(&mut unsettled_tx.hash);
-        // Clean the unsettled tx from the state
-        self.unsettled_transactions.remove(&settled_blob_tx_hash);
-
-        settled_blob_tx_hashes.push(settled_blob_tx_hash);
-
-        Ok(HandledProofTxOutput {
-            settled_blob_tx_hashes,
-            updated_states,
-        })
+        Ok(updated_states)
     }
 
     fn settle_blobs_recursively<'a>(
@@ -361,7 +355,7 @@ impl NodeState {
         let known_initial_state = current_states
             .get(contract_name)
             .unwrap_or(&contracts.get(contract_name).unwrap().state); // Safe to unwrap - all contract names are validated to exist above.
-        for proof_metadata in current_blob.metadata.iter() {
+        for proof_metadata in current_blob.possible_proofs.iter() {
             if proof_metadata.initial_state == *known_initial_state {
                 // TODO: ideally make this CoW
                 let mut us = current_states.clone();
@@ -402,9 +396,7 @@ impl NodeState {
 
     fn verify_hyle_output(
         unsettled_tx: &mut UnsettledBlobTransaction,
-        contract_name: &ContractName,
         hyle_output: &HyleOutput,
-        unsettled_tx_hash: &TxHash,
     ) -> Result<(), Error> {
         // TODO: this is perfectly fine and can be settled, and should be removed.
         if !hyle_output.success {
@@ -418,12 +410,6 @@ impl NodeState {
                 hyle_output.identity,
                 unsettled_tx.identity
             )
-        }
-
-        // Verify the contract name
-        let expected_contract = &unsettled_tx.blobs[hyle_output.index.0].contract_name;
-        if expected_contract != contract_name {
-            bail!("Blob reference from proof for {unsettled_tx_hash} does not match the BlobTx contract name: {contract_name} vs {expected_contract}");
         }
 
         // blob_hash verification
@@ -582,7 +568,7 @@ mod test {
                         &proof_c1.contract_name,
                     )
                     .unwrap(),
-                proof_hash: proof_c1.proof.hash(),
+                original_proof_hash: proof_c1.proof.hash(),
                 blob_tx_hash: blob_tx_hash.clone(),
             }],
             proof_hash: proof_c1.proof.hash(),
@@ -608,7 +594,7 @@ mod test {
                     )
                     .unwrap(),
                 blob_tx_hash: blob_tx_hash.clone(),
-                proof_hash: proof_c2.proof.hash(),
+                original_proof_hash: proof_c2.proof.hash(),
             }],
             proof_hash: proof_c2.proof.hash(),
             proof: Some(proof_c2.proof),
@@ -659,7 +645,7 @@ mod test {
                     )
                     .unwrap(),
                 blob_tx_hash: blob_tx_hash_1.clone(),
-                proof_hash: proof_c1.proof.hash(),
+                original_proof_hash: proof_c1.proof.hash(),
             }],
             proof_hash: proof_c1.proof.hash(),
             proof: Some(proof_c1.proof),
@@ -713,7 +699,7 @@ mod test {
                     )
                     .unwrap(),
                 blob_tx_hash: blob_tx_hash.clone(),
-                proof_hash: proof_c1.proof.hash(),
+                original_proof_hash: proof_c1.proof.hash(),
             }],
             proof_hash: proof_c1.proof.hash(),
             proof: Some(proof_c1.proof),
@@ -729,7 +715,7 @@ mod test {
                 .get(&blob_tx_hash)
                 .unwrap()
                 .blobs[0]
-                .metadata
+                .possible_proofs
                 .len(),
             2
         );
@@ -776,7 +762,7 @@ mod test {
                     )
                     .unwrap(),
                 blob_tx_hash: blob_tx_hash.clone(),
-                proof_hash: first_proof.proof.hash(),
+                original_proof_hash: first_proof.proof.hash(),
             }],
             proof_hash: first_proof.proof.hash(),
             proof: Some(first_proof.proof),
@@ -803,7 +789,7 @@ mod test {
                     )
                     .unwrap(),
                 blob_tx_hash: blob_tx_hash.clone(),
-                proof_hash: second_proof.proof.hash(),
+                original_proof_hash: second_proof.proof.hash(),
             }],
             proof_hash: second_proof.proof.hash(),
             proof: Some(second_proof.proof),
@@ -830,7 +816,7 @@ mod test {
                     )
                     .unwrap(),
                 blob_tx_hash: blob_tx_hash.clone(),
-                proof_hash: third_proof.proof.hash(),
+                original_proof_hash: third_proof.proof.hash(),
             }],
             proof_hash: third_proof.proof.hash(),
             proof: Some(third_proof.proof),
@@ -874,7 +860,7 @@ mod test {
                     )
                     .unwrap(),
                 blob_tx_hash: blob_tx_hash.clone(),
-                proof_hash: proof.proof.hash(),
+                original_proof_hash: proof.proof.hash(),
             }],
             proof_hash: proof.proof.hash(),
             proof: Some(proof.proof),
@@ -991,7 +977,7 @@ mod test {
                     )
                     .unwrap(),
                 blob_tx_hash: blob_tx_hash.clone(),
-                proof_hash: first_proof.proof.hash(),
+                original_proof_hash: first_proof.proof.hash(),
             }],
             proof_hash: first_proof.proof.hash(),
             proof: Some(first_proof.proof),
@@ -1019,7 +1005,7 @@ mod test {
                     )
                     .unwrap(),
                 blob_tx_hash: blob_tx_hash.clone(),
-                proof_hash: another_first_proof.proof.hash(),
+                original_proof_hash: another_first_proof.proof.hash(),
             }],
             proof_hash: another_first_proof.proof.hash(),
             proof: Some(another_first_proof.proof),
@@ -1046,7 +1032,7 @@ mod test {
                     )
                     .unwrap(),
                 blob_tx_hash: blob_tx_hash.clone(),
-                proof_hash: second_proof.proof.hash(),
+                original_proof_hash: second_proof.proof.hash(),
             }],
             proof_hash: second_proof.proof.hash(),
             proof: Some(second_proof.proof),
@@ -1099,7 +1085,7 @@ mod test {
                     )
                     .unwrap(),
                 blob_tx_hash: blob_tx_hash.clone(),
-                proof_hash: first_proof.proof.hash(),
+                original_proof_hash: first_proof.proof.hash(),
             }],
             proof_hash: first_proof.proof.hash(),
             proof: Some(first_proof.proof),
@@ -1126,7 +1112,7 @@ mod test {
                     )
                     .unwrap(),
                 blob_tx_hash: blob_tx_hash.clone(),
-                proof_hash: second_proof.proof.hash(),
+                original_proof_hash: second_proof.proof.hash(),
             }],
             proof_hash: second_proof.proof.hash(),
             proof: Some(second_proof.proof),
@@ -1153,7 +1139,7 @@ mod test {
                     )
                     .unwrap(),
                 blob_tx_hash: blob_tx_hash.clone(),
-                proof_hash: third_proof.proof.hash(),
+                original_proof_hash: third_proof.proof.hash(),
             }],
             proof_hash: third_proof.proof.hash(),
             proof: Some(third_proof.proof),

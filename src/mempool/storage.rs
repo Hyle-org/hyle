@@ -813,7 +813,7 @@ mod tests {
                 proven_blobs: vec![BlobProofOutput {
                     blob_tx_hash: TxHash::default(),
                     hyle_output,
-                    proof_hash: proof.hash(),
+                    original_proof_hash: proof.hash(),
                 }],
                 proof: Some(proof),
                 recursive_metadata: None,
@@ -832,7 +832,7 @@ mod tests {
                 proven_blobs: vec![BlobProofOutput {
                     blob_tx_hash: TxHash::default(),
                     hyle_output,
-                    proof_hash: proof.hash(),
+                    original_proof_hash: proof.hash(),
                 }],
                 proof: None,
                 recursive_metadata: None,
