@@ -195,9 +195,9 @@ impl Mempool {
                     .log_error("Handling ConsensusEvent in Mempool");
             }
             listen<GenesisEvent> cmd => {
-                if let GenesisEvent::GenesisBlock { genesis_txs, .. } = cmd {
-                    for tx in genesis_txs {
-                        if let TransactionData::RegisterContract(tx) = tx.transaction_data {
+                if let GenesisEvent::GenesisBlock { block } = cmd {
+                    for tx in block.data_proposals.first().unwrap().1.first().unwrap().txs.iter() {
+                        if let TransactionData::RegisterContract(tx) = tx.transaction_data.clone() {
                             self.known_contracts.register_contract(&tx.contract_name, &tx.verifier, &tx.program_id)?;
                         }
                     }

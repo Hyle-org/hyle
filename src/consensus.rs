@@ -1,6 +1,7 @@
 //! Handles all consensus logic up to block commitment.
 
-use crate::model::get_current_timestamp_ms;
+use crate::mempool::storage::DataProposal;
+use crate::model::{get_current_timestamp_ms, SignedBlock, Transaction};
 use crate::module_handle_messages;
 use crate::utils::modules::module_bus_client;
 #[cfg(not(test))]
@@ -19,7 +20,7 @@ use crate::{
     },
     utils::{
         conf::SharedConf,
-        crypto::{AggregateSignature, BlstCrypto, SharedBlstCrypto, ValidatorSignature},
+        crypto::{AggregateSignature, BlstCrypto, SharedBlstCrypto, Signature, ValidatorSignature},
         modules::Module,
     },
 };
@@ -136,7 +137,7 @@ pub type Slot = u64;
 pub type View = u64;
 
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, PartialEq, Eq, Hash, Default)]
-pub struct ConsensusProposalHash(Vec<u8>);
+pub struct ConsensusProposalHash(pub Vec<u8>);
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, Encode, Decode, PartialEq, Eq, Hash)]
 pub struct ConsensusProposal {
@@ -148,6 +149,7 @@ pub struct ConsensusProposal {
     pub cut: Cut,
     pub new_validators_to_bond: Vec<NewValidatorCandidate>,
     pub timestamp: u64,
+    pub parent_hash: ConsensusProposalHash,
 }
 
 type NextLeader = ValidatorPublicKey;
@@ -241,6 +243,8 @@ impl Consensus {
 
     /// Reset bft_round_state for the next round of consensus.
     fn finish_round(&mut self, ticket: Option<Ticket>) -> Result<(), Error> {
+        let parent_hash = self.bft_round_state.consensus_proposal.hash();
+
         match self.bft_round_state.state_tag {
             StateTag::Follower => {}
             StateTag::Leader => {}
@@ -266,6 +270,7 @@ impl Consensus {
                 round_leader: std::mem::take(
                     &mut self.bft_round_state.consensus_proposal.round_leader,
                 ),
+                parent_hash,
                 ..ConsensusProposal::default()
             },
             staking: std::mem::take(&mut self.bft_round_state.staking),
@@ -852,15 +857,70 @@ impl Consensus {
         Ok(())
     }
 
+    pub fn genesis_block(
+        initial_validators: Vec<ValidatorPublicKey>,
+        genesis_txs: Vec<Transaction>,
+    ) -> SignedBlock {
+        let round_leader = initial_validators.first().unwrap();
+        let dp = DataProposal {
+            id: 0,
+            parent_data_proposal_hash: None,
+            txs: genesis_txs,
+        };
+
+        SignedBlock {
+            data_proposals: vec![(round_leader.clone(), vec![dp.clone()])],
+            certificate: AggregateSignature {
+                signature: Signature("fake".into()),
+                validators: initial_validators.clone(),
+            },
+            consensus_proposal: ConsensusProposal {
+                slot: 0,
+                view: 0,
+                round_leader: round_leader.clone(),
+                timestamp: get_current_timestamp_ms(),
+                cut: vec![(
+                    round_leader.clone(),
+                    dp.hash(),
+                    AggregateSignature {
+                        signature: Signature("fake".into()),
+                        validators: initial_validators.clone(),
+                    },
+                )],
+                new_validators_to_bond: initial_validators
+                    .iter()
+                    .map(|v| NewValidatorCandidate {
+                        pubkey: v.clone(),
+                        msg: SignedByValidator {
+                            msg: crate::consensus::ConsensusNetMessage::ValidatorCandidacy(
+                                ValidatorCandidacy {
+                                    pubkey: v.clone(),
+                                    peer_address: "".into(),
+                                },
+                            ),
+                            signature: ValidatorSignature {
+                                signature: Signature("".into()),
+                                validator: v.clone(),
+                            },
+                        },
+                    })
+                    .collect(),
+                parent_hash: ConsensusProposalHash("hash".into()),
+            },
+        }
+    }
+
     async fn wait_genesis(&mut self) -> Result<()> {
         handle_messages! {
             on_bus self.bus,
             listen<GenesisEvent> msg => {
                 match msg {
-                    GenesisEvent::GenesisBlock { initial_validators, ..} => {
+                    GenesisEvent::GenesisBlock { block } => {
 
-                        self.bft_round_state.consensus_proposal.round_leader =
-                            initial_validators.first().unwrap().clone();
+                        let initial_parent_hash = block.consensus_proposal.hash();
+
+                        self.bft_round_state.consensus_proposal = block.consensus_proposal;
+                        self.bft_round_state.consensus_proposal.parent_hash = initial_parent_hash;
 
                         if self.bft_round_state.consensus_proposal.round_leader == *self.crypto.validator_pubkey() {
                             self.bft_round_state.state_tag = StateTag::Leader;
@@ -1448,6 +1508,7 @@ pub mod test {
                         AggregateSignature::default(),
                     )],
                     new_validators_to_bond: vec![],
+                    parent_hash: ConsensusProposalHash("hash".into()),
                 },
                 Ticket::Genesis,
             ))
@@ -1487,6 +1548,7 @@ pub mod test {
                         AggregateSignature::default(),
                     )],
                     new_validators_to_bond: vec![],
+                    parent_hash: ConsensusProposalHash("hash".into()),
                 },
                 Ticket::Genesis,
             ))
@@ -1535,6 +1597,7 @@ pub mod test {
                         AggregateSignature::default(),
                     )],
                     new_validators_to_bond: vec![],
+                    parent_hash: ConsensusProposalHash("hash".into()),
                 },
                 Ticket::Genesis,
             ))

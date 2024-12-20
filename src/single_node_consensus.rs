@@ -3,8 +3,8 @@ use std::path::PathBuf;
 use crate::bus::command_response::{CmdRespClient, Query};
 use crate::bus::BusClientSender;
 use crate::consensus::{
-    CommittedConsensusProposal, ConsensusEvent, ConsensusInfo, ConsensusNetMessage,
-    QueryConsensusInfo,
+    CommittedConsensusProposal, Consensus, ConsensusEvent, ConsensusInfo, ConsensusNetMessage,
+    ConsensusProposal, QueryConsensusInfo,
 };
 use crate::genesis::{Genesis, GenesisEvent};
 use crate::mempool::storage::Cut;
@@ -33,6 +33,7 @@ struct SingleNodeConsensusBusClient {
 struct SingleNodeConsensusStore {
     staking: Staking,
     has_done_genesis: bool,
+    consensus_proposal: ConsensusProposal,
     last_slot: u64,
     last_cut: Cut,
 }
@@ -103,10 +104,15 @@ impl SingleNodeConsensus {
             let genesis_txs = Genesis::genesis_contracts_txs();
 
             tracing::info!("Doing genesis");
+
+            let genesis_block =
+                Consensus::genesis_block(vec![self.crypto.validator_pubkey().clone()], genesis_txs);
+
             _ = self.bus.send(GenesisEvent::GenesisBlock {
-                initial_validators: vec![],
-                genesis_txs,
+                block: genesis_block.clone(),
             });
+
+            self.store.consensus_proposal = genesis_block.consensus_proposal;
             self.store.has_done_genesis = true;
         }
         let mut interval = tokio::time::interval(tokio::time::Duration::from_millis(
@@ -143,6 +149,8 @@ impl SingleNodeConsensus {
         Ok(())
     }
     async fn handle_new_slot_tick(&mut self) -> Result<()> {
+        let parent_hash = self.store.consensus_proposal.hash();
+
         // Query a new cut to Mempool in order to create a new CommitCut
         match self
             .bus
@@ -158,31 +166,34 @@ impl SingleNodeConsensus {
             }
         };
         let new_slot = self.store.last_slot + 1;
-        let consensus_proposal = crate::consensus::ConsensusProposal {
+        let current_consensus_proposal = crate::consensus::ConsensusProposal {
             slot: new_slot,
             view: 0,
             timestamp: get_current_timestamp_ms(),
             round_leader: self.crypto.validator_pubkey().clone(),
             cut: self.store.last_cut.clone(),
             new_validators_to_bond: vec![],
+            parent_hash,
         };
 
-        let certificate = self.crypto.sign_aggregate(
-            ConsensusNetMessage::ConfirmAck(consensus_proposal.hash()),
-            &[],
-        )?;
+        let current_hash = current_consensus_proposal.hash();
+
+        let certificate = self
+            .crypto
+            .sign_aggregate(ConsensusNetMessage::ConfirmAck(current_hash), &[])?;
 
         let pubkey = self.crypto.validator_pubkey().clone();
 
         _ = self.bus.send(ConsensusEvent::CommitConsensusProposal(
             CommittedConsensusProposal {
                 validators: vec![pubkey],
-                consensus_proposal,
+                consensus_proposal: current_consensus_proposal.clone(),
                 certificate: certificate.signature,
             },
         ))?;
 
         self.store.last_slot = new_slot;
+        self.store.consensus_proposal = current_consensus_proposal;
 
         Ok(())
     }

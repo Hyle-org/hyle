@@ -1,13 +1,16 @@
 use std::path::Path;
 
-use crate::model::{BlockHash, BlockHeight, Hashable, SignedBlock};
+use crate::{
+    consensus::ConsensusProposalHash,
+    model::{BlockHeight, Hashable, SignedBlock},
+};
 use anyhow::Result;
 use indexmap::IndexMap;
 use tracing::info;
 
 #[derive(Debug)]
 pub struct Blocks {
-    data: IndexMap<BlockHash, SignedBlock>,
+    data: IndexMap<ConsensusProposalHash, SignedBlock>,
 }
 
 pub struct FakeSledItem<'a>(&'a SignedBlock);
@@ -38,19 +41,19 @@ impl Blocks {
         Ok(())
     }
 
-    pub fn get(&mut self, block_hash: BlockHash) -> Result<Option<SignedBlock>> {
-        Ok(self.data.get(&block_hash).cloned())
+    pub fn get(&mut self, block_hash: &ConsensusProposalHash) -> Result<Option<SignedBlock>> {
+        Ok(self.data.get(block_hash).cloned())
     }
 
     pub fn contains(&mut self, block: &SignedBlock) -> bool {
-        self.get(block.hash()).unwrap_or(None).is_some()
+        self.get(&block.hash()).unwrap_or(None).is_some()
     }
 
     pub fn last(&self) -> Option<SignedBlock> {
         self.data.last().map(|(_, block)| block.clone())
     }
 
-    pub fn last_block_hash(&self) -> Option<BlockHash> {
+    pub fn last_block_hash(&self) -> Option<ConsensusProposalHash> {
         self.last().map(|b| b.hash())
     }
 

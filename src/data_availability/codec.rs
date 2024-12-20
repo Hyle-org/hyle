@@ -113,7 +113,7 @@ mod test {
         data_availability::codec::{
             DataAvailabilityClientCodec, DataAvailabilityServerCodec, DataAvailabilityServerRequest,
         },
-        model::{BlockHash, BlockHeight, SignedBlock},
+        model::{BlockHeight, SignedBlock},
         utils::crypto::AggregateSignature,
     };
 
@@ -124,7 +124,6 @@ mod test {
         let mut buffer = BytesMut::new();
 
         let block = SignedBlock {
-            parent_hash: BlockHash::new("hash"),
             data_proposals: vec![],
             certificate: AggregateSignature::default(),
             consensus_proposal: ConsensusProposal::default(),
