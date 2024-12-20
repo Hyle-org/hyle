@@ -657,7 +657,7 @@ impl DataAvailability {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::VecDeque;
+    use std::{collections::VecDeque, time::Duration};
 
     use crate::{
         bus::BusClientSender,
@@ -668,7 +668,7 @@ mod tests {
     };
     use futures::{SinkExt, StreamExt};
     use staking::model::ValidatorPublicKey;
-    use tokio::io::AsyncWriteExt;
+    use tokio::{io::AsyncWriteExt, time::timeout};
     use tokio_util::codec::{Framed, LengthDelimitedCodec};
 
     use super::{blocks_memory::Blocks, module_bus_client};
@@ -817,6 +817,7 @@ mod tests {
         };
 
         for i in 14..18 {
+            ccp.consensus_proposal.parent_hash = ccp.consensus_proposal.hash();
             ccp.consensus_proposal.slot = i;
             block_sender
                 .send(ConsensusEvent::CommitConsensusProposal(ccp.clone()))
@@ -842,13 +843,12 @@ mod tests {
         let mut da_stream = Framed::new(stream, LengthDelimitedCodec::new());
 
         let mut heights_received = vec![];
-        while let Some(Ok(cmd)) = da_stream.next().await {
+        while let Ok(Some(Ok(cmd))) = timeout(Duration::from_millis(100), da_stream.next()).await {
             let bytes = cmd;
             let block: SignedBlock =
                 bincode::decode_from_slice(&bytes, bincode::config::standard())
                     .unwrap()
                     .0;
-            dbg!(&block);
             heights_received.push(block.height().0);
             if heights_received.len() == 18 {
                 break;
