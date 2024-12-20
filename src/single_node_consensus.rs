@@ -4,7 +4,7 @@ use crate::bus::command_response::{CmdRespClient, Query};
 use crate::bus::BusClientSender;
 use crate::consensus::{
     CommittedConsensusProposal, ConsensusEvent, ConsensusInfo, ConsensusNetMessage,
-    QueryConsensusInfo,
+    ConsensusProposal, QueryConsensusInfo,
 };
 use crate::genesis::{Genesis, GenesisEvent};
 use crate::mempool::storage::Cut;
@@ -33,6 +33,7 @@ struct SingleNodeConsensusBusClient {
 struct SingleNodeConsensusStore {
     staking: Staking,
     has_done_genesis: bool,
+    consensus_proposal: ConsensusProposal,
     last_slot: u64,
     last_cut: Cut,
 }
@@ -158,26 +159,29 @@ impl SingleNodeConsensus {
             }
         };
         let new_slot = self.store.last_slot + 1;
-        let consensus_proposal = crate::consensus::ConsensusProposal {
+        let parent_hash = self.store.consensus_proposal.hash();
+        self.store.consensus_proposal = crate::consensus::ConsensusProposal {
             slot: new_slot,
             view: 0,
             timestamp: get_current_timestamp_ms(),
             round_leader: self.crypto.validator_pubkey().clone(),
             cut: self.store.last_cut.clone(),
             new_validators_to_bond: vec![],
+            parent_hash,
         };
 
-        let certificate = self.crypto.sign_aggregate(
-            ConsensusNetMessage::ConfirmAck(consensus_proposal.hash()),
-            &[],
-        )?;
+        let hash = self.store.consensus_proposal.hash();
+
+        let certificate = self
+            .crypto
+            .sign_aggregate(ConsensusNetMessage::ConfirmAck(hash), &[])?;
 
         let pubkey = self.crypto.validator_pubkey().clone();
 
         _ = self.bus.send(ConsensusEvent::CommitConsensusProposal(
             CommittedConsensusProposal {
                 validators: vec![pubkey],
-                consensus_proposal,
+                consensus_proposal: self.store.consensus_proposal.clone(),
                 certificate: certificate.signature,
             },
         ))?;

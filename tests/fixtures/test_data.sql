@@ -3,16 +3,16 @@
 -- Inserting test data for the blocks table
 INSERT INTO blocks (hash, parent_hash, height, timestamp)
 VALUES
-    ('block1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'block0aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 1, to_timestamp(1632938400)),  -- Block 1
-    ('block2aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'block1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 2, to_timestamp(1632938460));  -- Block 2
+    ('block1aaaaaaaaaaaaaaaaaaaaaaaaaa', 'block0aaaaaaaaaaaaaaaaaaaaaaaaaa', 1, to_timestamp(1632938400)),  -- Block 1
+    ('block2aaaaaaaaaaaaaaaaaaaaaaaaaa', 'block1aaaaaaaaaaaaaaaaaaaaaaaaaa', 2, to_timestamp(1632938460));  -- Block 2
 
 -- Inserting test data for the transactions table
 INSERT INTO transactions (tx_hash, block_hash, version, transaction_type, transaction_status)
 VALUES
-    ('test_tx_hash_1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'block2aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 1, 'register_contract_transaction', 'success'),  -- Transaction 1 (contract_registration)
-    ('test_tx_hash_2aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'block2aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 1, 'blob_transaction', 'success'),               -- Transaction 2 (blob)
-    ('test_tx_hash_3aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'block2aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 1, 'proof_transaction', 'success'),              -- Transaction 3 (proof)
-    ('test_tx_hash_4aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'block2aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 1, 'blob_transaction', 'sequenced');             -- Transaction 4 (blob)
+    ('test_tx_hash_1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'block2aaaaaaaaaaaaaaaaaaaaaaaaaa', 1, 'register_contract_transaction', 'success'),  -- Transaction 1 (contract_registration)
+    ('test_tx_hash_2aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'block2aaaaaaaaaaaaaaaaaaaaaaaaaa', 1, 'blob_transaction', 'success'),               -- Transaction 2 (blob)
+    ('test_tx_hash_3aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'block2aaaaaaaaaaaaaaaaaaaaaaaaaa', 1, 'proof_transaction', 'success'),              -- Transaction 3 (proof)
+    ('test_tx_hash_4aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'block2aaaaaaaaaaaaaaaaaaaaaaaaaa', 1, 'blob_transaction', 'sequenced');             -- Transaction 4 (blob)
 
 -- Inserting test data for the blob_transactions table
 INSERT INTO blobs (tx_hash, blob_index, identity, contract_name, data, verified)
@@ -33,5 +33,5 @@ VALUES
 -- Inserting test data for the contract_state table
 INSERT INTO contract_state (contract_name, block_hash, state_digest)
 VALUES
-    ('contract_1', 'block1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', convert_to('state_digest_1', 'UTF-8')),     -- State for Contract 1
-    ('contract_1', 'block2aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', convert_to('state_digest_1Bis', 'UTF-8'));  -- State for Contract 2
+    ('contract_1', 'block1aaaaaaaaaaaaaaaaaaaaaaaaaa', convert_to('state_digest_1', 'UTF-8')),     -- State for Contract 1
+    ('contract_1', 'block2aaaaaaaaaaaaaaaaaaaaaaaaaa', convert_to('state_digest_1Bis', 'UTF-8'));  -- State for Contract 2

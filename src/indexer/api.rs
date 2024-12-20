@@ -1,4 +1,4 @@
-use crate::{model::BlockHash, utils::logger::LogMe};
+use crate::{consensus::ConsensusProposalHash, utils::logger::LogMe};
 
 use super::{
     model::{
@@ -37,6 +37,7 @@ pub async fn get_blocks(
     }
     .fetch_all(&state.db)
     .await
+    .log_error("Indexer Get Blocks")
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     Ok(Json(blocks))
@@ -48,6 +49,7 @@ pub async fn get_last_block(
     let block = sqlx::query_as::<_, BlockDb>("SELECT * FROM blocks ORDER BY height DESC LIMIT 1")
         .fetch_optional(&state.db)
         .await
+        .log_error("Indexer Get Last Block")
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     match block {
@@ -64,6 +66,7 @@ pub async fn get_block(
         .bind(height)
         .fetch_optional(&state.db)
         .await
+        .log_error("Indexer Get Block")
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     match block {
@@ -77,9 +80,10 @@ pub async fn get_block_by_hash(
     State(state): State<IndexerApiState>,
 ) -> Result<Json<BlockDb>, StatusCode> {
     let block = sqlx::query_as::<_, BlockDb>("SELECT * FROM blocks WHERE hash = $1")
-        .bind(hash)
+        .bind(hash.into_bytes())
         .fetch_optional(&state.db)
         .await
+        .log_error("Indexer Get Block By Hash")
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     match block {
@@ -120,6 +124,7 @@ pub async fn get_transactions(
     }
     .fetch_all(&state.db)
     .await
+    .log_error("Indexer Get Transactions")
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     Ok(Json(transactions))
@@ -161,6 +166,7 @@ pub async fn get_transactions_by_contract(
     }
     .fetch_all(&state.db)
     .await
+    .log_error("Indexer Get Transactions By Contract")
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     // This could return 404 if the contract doesn't exist,
@@ -184,6 +190,7 @@ pub async fn get_transactions_by_height(
     .bind(height)
     .fetch_all(&state.db)
     .await
+    .log_error("Indexer Get Transactions By Height")
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     Ok(Json(transactions))
@@ -203,6 +210,7 @@ pub async fn get_transaction_with_hash(
     .bind(tx_hash)
     .fetch_optional(&state.db)
     .await
+    .log_error("Indexer Get Transaction With Hash")
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     match transaction {
@@ -247,14 +255,14 @@ pub async fn get_blob_transactions_by_contract(
     .bind(contract_name.clone())
     .fetch_all(&state.db)
     .await
-    .log_error("Failed to fetch transactions with blobs")
+    .log_error("Indexer Get Blob Transactions By Contract")
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     let transactions: Vec<TransactionWithBlobs> = rows
         .into_iter()
         .map(|row| {
             let tx_hash: TxHashDb = row.try_get("tx_hash").unwrap();
-            let block_hash: BlockHash = row.try_get("block_hash").unwrap();
+            let block_hash: ConsensusProposalHash = row.try_get("block_hash").unwrap();
             let version: i32 = row.try_get("version").unwrap();
             let transaction_type: TransactionType = row.try_get("transaction_type").unwrap();
             let transaction_status: TransactionStatus = row.try_get("transaction_status").unwrap();
@@ -295,6 +303,7 @@ pub async fn get_blobs_by_tx_hash(
         .bind(tx_hash)
         .fetch_all(&state.db)
         .await
+        .log_error("Indexer Get Blobs By TxHash")
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     // This could return 404 if the transaction doesn't exist,
@@ -312,6 +321,7 @@ pub async fn get_blob(
             .bind(blob_index)
             .fetch_optional(&state.db)
             .await
+            .log_error("Indexer Get Blob")
             .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     match blob {
@@ -327,6 +337,7 @@ pub async fn list_contracts(
     let contract = sqlx::query_as::<_, ContractDb>("SELECT * FROM contracts")
         .fetch_all(&state.db)
         .await
+        .log_error("Indexer List Contracts")
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     Ok(Json(contract))
@@ -341,6 +352,7 @@ pub async fn get_contract(
             .bind(contract_name)
             .fetch_optional(&state.db)
             .await
+            .log_error("Indexer Get Contract")
             .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     match contract {
@@ -364,6 +376,7 @@ pub async fn get_contract_state_by_height(
     .bind(height)
     .fetch_optional(&state.db)
     .await
+    .log_error("Indexer Get Contract State By Height")
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     match contract {
