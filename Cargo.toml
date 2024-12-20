@@ -34,7 +34,7 @@ hyle-contracts = { path = "./contracts", package = "hyle-contracts" }
 hydentity = { path = "./contracts/hydentity" }
 hyllar = { path = "./contracts/hyllar" }
 staking = { path = "./contracts/staking" }
-config = "0.15.0"
+config = "0.15.3"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["json"] }
 tokio = { version = "1.42.0", features = ["full", "tracing"] }
