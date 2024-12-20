@@ -154,8 +154,6 @@ impl SingleNodeConsensus {
     async fn handle_new_slot_tick(&mut self) -> Result<()> {
         let parent_hash = self.store.consensus_proposal.hash();
 
-        warn!("CP {:?}", self.store.consensus_proposal);
-        warn!("Parent hash {}", parent_hash);
         // Query a new cut to Mempool in order to create a new CommitCut
         match self
             .bus
@@ -183,7 +181,6 @@ impl SingleNodeConsensus {
 
         let current_hash = current_consensus_proposal.hash();
 
-        warn!("Current hash {}", current_hash);
         let certificate = self
             .crypto
             .sign_aggregate(ConsensusNetMessage::ConfirmAck(current_hash), &[])?;
