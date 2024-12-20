@@ -11,7 +11,6 @@ use hyle_contract_sdk::{
 pub use hyle_contract_sdk::{Blob, BlobData, ContractName};
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Sha3_256};
-use sqlx::{prelude::Type, Postgres};
 use std::{
     cmp::Ordering,
     collections::BTreeMap,
