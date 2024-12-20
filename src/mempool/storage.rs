@@ -355,27 +355,27 @@ impl Storage {
                     let is_recursive = proof_tx.contract_name.0 == "risc0-recursion";
 
                     if is_recursive {
-                        let Some(recursive_metadata) = &proof_tx.recursive_metadata else {
-                            warn!("Refusing DataProposal: recursive proof transaction missing metadata");
-                            return DataProposalVerdict::Refuse;
-                        };
                         match verify_recursive_proof(&proof_bytes, verifier, program_id) {
-                            Ok((program_ids, hyle_outputs)) => {
-                                let program_ids_match =
-                                    std::iter::zip(program_ids.iter(), recursive_metadata.iter())
-                                        .all(|(output, metadata)| output == metadata);
-                                let outputs_match = std::iter::zip(
-                                    hyle_outputs.iter(),
-                                    proof_tx.proven_blobs.iter(),
-                                )
-                                .all(
-                                    |(output, BlobProofOutput { hyle_output, .. })| {
-                                        output == hyle_output
-                                    },
-                                );
-                                if hyle_outputs.len() != proof_tx.proven_blobs.len()
-                                    || !outputs_match
-                                    || !program_ids_match
+                            Ok((local_program_ids, local_hyle_outputs)) => {
+                                let data_matches = local_program_ids
+                                    .iter()
+                                    .zip(local_hyle_outputs.iter())
+                                    .zip(proof_tx.proven_blobs.iter())
+                                    .all(
+                                        |(
+                                            (local_program_id, local_hyle_output),
+                                            BlobProofOutput {
+                                                program_id,
+                                                hyle_output,
+                                                ..
+                                            },
+                                        )| {
+                                            local_hyle_output == hyle_output
+                                                && local_program_id == program_id
+                                        },
+                                    );
+                                if local_program_ids.len() != proof_tx.proven_blobs.len()
+                                    || !data_matches
                                 {
                                     warn!("Refusing DataProposal: incorrect HyleOutput in proof transaction");
                                     return DataProposalVerdict::Refuse;
@@ -386,24 +386,24 @@ impl Storage {
                                 return DataProposalVerdict::Refuse;
                             }
                         }
-                    }
-                    match verify_proof(&proof_bytes, verifier, program_id) {
-                        Ok(outputs) => {
-                            // TODO: we could check the blob hash here too.
-                            if outputs.len() != proof_tx.proven_blobs.len()
-                                && std::iter::zip(outputs.iter(), proof_tx.proven_blobs.iter()).any(
-                                    |(output, BlobProofOutput { hyle_output, .. })| {
-                                        output != hyle_output
-                                    },
-                                )
-                            {
-                                warn!("Refusing DataProposal: incorrect HyleOutput in proof transaction");
+                    } else {
+                        match verify_proof(&proof_bytes, verifier, program_id) {
+                            Ok(outputs) => {
+                                // TODO: we could check the blob hash here too.
+                                if outputs.len() != proof_tx.proven_blobs.len()
+                                    && std::iter::zip(outputs.iter(), proof_tx.proven_blobs.iter())
+                                        .any(|(output, BlobProofOutput { hyle_output, .. })| {
+                                            output != hyle_output
+                                        })
+                                {
+                                    warn!("Refusing DataProposal: incorrect HyleOutput in proof transaction");
+                                    return DataProposalVerdict::Refuse;
+                                }
+                            }
+                            Err(e) => {
+                                warn!("Refusing DataProposal: invalid proof transaction: {}", e);
                                 return DataProposalVerdict::Refuse;
                             }
-                        }
-                        Err(e) => {
-                            warn!("Refusing DataProposal: invalid proof transaction: {}", e);
-                            return DataProposalVerdict::Refuse;
                         }
                     }
                 }
@@ -811,12 +811,13 @@ mod tests {
                 contract_name: contract_name.clone(),
                 proof_hash: proof.hash(),
                 proven_blobs: vec![BlobProofOutput {
+                    program_id: ProgramId(vec![]),
                     blob_tx_hash: TxHash::default(),
                     hyle_output,
                     original_proof_hash: proof.hash(),
                 }],
                 proof: Some(proof),
-                recursive_metadata: None,
+                is_recursive: false,
             }),
         }
     }
@@ -830,12 +831,13 @@ mod tests {
                 contract_name: contract_name.clone(),
                 proof_hash: proof.hash(),
                 proven_blobs: vec![BlobProofOutput {
+                    program_id: ProgramId(vec![]),
                     blob_tx_hash: TxHash::default(),
                     hyle_output,
                     original_proof_hash: proof.hash(),
                 }],
                 proof: None,
-                recursive_metadata: None,
+                is_recursive: false,
             }),
         }
     }

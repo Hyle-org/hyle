@@ -26,7 +26,7 @@ use tracing::debug;
 use crate::{
     bus::SharedMessageBus,
     consensus::{utils::HASH_DISPLAY_SIZE, ConsensusProposal},
-    data_availability::node_state::VerifiedBlobOutput,
+    data_availability::node_state::HandledBlobProofOutput,
     mempool::storage::DataProposal,
     utils::{
         conf::SharedConf,
@@ -220,8 +220,9 @@ pub struct Block {
     pub block_timestamp: u64,
     pub new_contract_txs: Vec<Transaction>,
     pub new_blob_txs: Vec<Transaction>,
-    pub new_verified_proof_txs: Vec<VerifiedBlobOutput>,
-    pub verified_blobs: Vec<(TxHash, BlobIndex)>,
+    pub new_verified_proof_txs: Vec<Transaction>,
+    pub blob_proof_outputs: Vec<HandledBlobProofOutput>,
+    pub verified_blobs: Vec<(TxHash, BlobIndex, usize)>,
     pub failed_txs: Vec<Transaction>,
     pub stakers: Vec<Staker>,
     pub new_bounded_validators: Vec<ValidatorPublicKey>,
@@ -269,9 +270,10 @@ impl Hashable<BlockHash> for Block {
             _ = write!(hasher, "{}", blob_v);
         } */
 
-        for (tx_hash, blob_v) in self.verified_blobs.iter() {
+        for (tx_hash, blob_v, blob_po_i) in self.verified_blobs.iter() {
             _ = write!(hasher, "{}", tx_hash);
             _ = write!(hasher, "{}", blob_v);
+            _ = write!(hasher, "{}", blob_po_i);
         }
         for tx_f in self.failed_txs.iter() {
             hasher.update(tx_f.hash().0);

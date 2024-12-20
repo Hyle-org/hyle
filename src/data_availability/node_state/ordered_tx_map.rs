@@ -63,7 +63,7 @@ impl OrderedTxMap {
         self.map.insert(tx.hash.clone(), tx);
     }
 
-    pub fn remove(&mut self, hash: &TxHash) {
+    pub fn remove(&mut self, hash: &TxHash) -> Option<UnsettledBlobTransaction> {
         if let Some(tx) = self.map.get(hash) {
             for blob in &tx.blobs {
                 if let Some(c) = self.tx_order.get_mut(&blob.contract_name) {
@@ -71,7 +71,7 @@ impl OrderedTxMap {
                 }
             }
         }
-        self.map.remove(hash);
+        self.map.remove(hash)
     }
 }
 

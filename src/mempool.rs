@@ -635,32 +635,37 @@ impl Mempool {
                     .0
                     .get(&proof_transaction.contract_name)
                     .context("Contract unknown")?;
-                let (hyle_outputs, program_ids) = if proof_transaction.contract_name.0
-                    == "risc0-recursion"
-                {
+                let is_recursive = proof_transaction.contract_name.0 == "risc0-recursion";
+                let (hyle_outputs, program_ids) = if is_recursive {
                     let (program_ids, hyle_outputs) = verify_recursive_proof(
                         &proof_transaction.proof.to_bytes()?,
                         verifier,
                         program_id,
                     )?;
-                    (hyle_outputs, Some(program_ids))
+                    (hyle_outputs, program_ids)
                 } else {
                     let hyle_outputs =
                         verify_proof(&proof_transaction.proof.to_bytes()?, verifier, program_id)?;
-                    (hyle_outputs, None)
+                    (hyle_outputs, vec![program_id.clone()])
                 };
                 tx.transaction_data = TransactionData::VerifiedProof(VerifiedProofTransaction {
                     proof_hash: proof_transaction.proof.hash(),
                     proof: Some(proof_transaction.proof),
                     contract_name: proof_transaction.contract_name,
-                    recursive_metadata: program_ids,
-                    proven_blobs: std::iter::zip(proof_transaction.tx_hashes, hyle_outputs)
-                        .map(|(blob_tx_hash, hyle_output)| BlobProofOutput {
+                    is_recursive,
+                    proven_blobs: std::iter::zip(
+                        proof_transaction.tx_hashes,
+                        std::iter::zip(hyle_outputs, program_ids),
+                    )
+                    .map(
+                        |(blob_tx_hash, (hyle_output, program_id))| BlobProofOutput {
                             original_proof_hash: ProofDataHash("todo?".to_owned()),
                             blob_tx_hash,
                             hyle_output,
-                        })
-                        .collect(),
+                            program_id,
+                        },
+                    )
+                    .collect(),
                 });
             }
             TransactionData::VerifiedProof(_) => {
