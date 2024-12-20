@@ -2,9 +2,10 @@ use std::collections::BTreeMap;
 
 use crate::{
     bus::{bus_client, BusClientSender, BusMessage},
+    consensus::Consensus,
     handle_messages,
     model::{
-        RegisterContractTransaction, SharedRunContext, Transaction, TransactionData,
+        RegisterContractTransaction, SharedRunContext, SignedBlock, Transaction, TransactionData,
         ValidatorPublicKey,
     },
     p2p::network::PeerEvent,
@@ -20,10 +21,7 @@ use tracing::info;
 #[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]
 pub enum GenesisEvent {
     NoGenesis,
-    GenesisBlock {
-        genesis_txs: Vec<Transaction>,
-        initial_validators: Vec<ValidatorPublicKey>,
-    },
+    GenesisBlock { block: SignedBlock },
 }
 impl BusMessage for GenesisEvent {}
 
@@ -131,8 +129,11 @@ impl Genesis {
 
         // At this point, we can setup the genesis block.
         _ = self.bus.send(GenesisEvent::GenesisBlock {
-            initial_validators,
-            genesis_txs,
+            block: Consensus::genesis_block(
+                self.crypto.validator_pubkey(),
+                initial_validators,
+                genesis_txs,
+            ),
         });
 
         Ok(())
@@ -282,13 +283,10 @@ mod tests {
 
         let rec: GenesisEvent = bus.try_recv().expect("recv");
         assert_matches!(rec, GenesisEvent::GenesisBlock { .. });
-        if let GenesisEvent::GenesisBlock {
-            genesis_txs,
-            initial_validators,
-        } = rec
-        {
-            assert!(!genesis_txs.is_empty());
-            assert_eq!(initial_validators.len(), 2);
+        if let GenesisEvent::GenesisBlock { block } = rec {
+            assert!(!block.data_proposals.is_empty());
+            assert_eq!(block.certificate.validators.len(), 2);
+            assert_eq!(block.consensus_proposal.new_validators_to_bond.len(), 2);
         }
     }
 
@@ -321,13 +319,10 @@ mod tests {
 
         let rec = bus.try_recv().expect("recv");
         assert_matches!(rec, GenesisEvent::GenesisBlock { .. });
-        if let GenesisEvent::GenesisBlock {
-            genesis_txs,
-            initial_validators,
-        } = rec
-        {
-            assert!(!genesis_txs.is_empty());
-            assert_eq!(initial_validators.len(), 2);
+        if let GenesisEvent::GenesisBlock { block } = rec {
+            assert!(!block.data_proposals.is_empty());
+            assert_eq!(block.certificate.validators.len(), 2);
+            assert_eq!(block.consensus_proposal.new_validators_to_bond.len(), 2);
         }
     }
 

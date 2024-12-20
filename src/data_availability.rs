@@ -18,8 +18,7 @@ use codec::{DataAvailabilityServerCodec, DataAvailabilityServerRequest};
 use crate::{
     bus::{command_response::Query, BusClientSender, BusMessage},
     consensus::{
-        CommittedConsensusProposal, ConsensusCommand, ConsensusEvent, ConsensusProposal,
-        ConsensusProposalHash, NewValidatorCandidate, ValidatorCandidacy,
+        CommittedConsensusProposal, ConsensusCommand, ConsensusEvent, ConsensusProposalHash,
     },
     genesis::GenesisEvent,
     mempool::{
@@ -27,14 +26,13 @@ use crate::{
         MempoolCommand, MempoolEvent,
     },
     model::{
-        get_current_timestamp, get_current_timestamp_ms, Block, BlockHeight, ContractName,
-        Hashable, SharedRunContext, SignedBlock, ValidatorPublicKey,
+        get_current_timestamp, Block, BlockHeight, ContractName, Hashable, SharedRunContext,
+        SignedBlock, ValidatorPublicKey,
     },
     module_handle_messages,
-    p2p::network::{NetMessage, OutboundMessage, PeerEvent, SignedByValidator},
+    p2p::network::{NetMessage, OutboundMessage, PeerEvent},
     utils::{
         conf::SharedConf,
-        crypto::{AggregateSignature, Signature, ValidatorSignature},
         logger::LogMe,
         modules::{module_bus_client, Module},
     },
@@ -215,54 +213,9 @@ impl DataAvailability {
             }
 
             listen<GenesisEvent> cmd => {
-                if let GenesisEvent::GenesisBlock { initial_validators, genesis_txs } = cmd {
-                    debug!("🌱  Genesis block received with validators {:?}", initial_validators.clone());
+                if let GenesisEvent::GenesisBlock { block: signed_block } = cmd {
+                    debug!("🌱  Genesis block received with validators {:?}", signed_block.consensus_proposal.clone());
 
-                    let dp = DataProposal {
-                        id:0,
-                        parent_data_proposal_hash: None,
-                        txs: genesis_txs
-                    };
-
-                    let round_leader = self.self_pubkey.clone();
-
-                    let signed_block = SignedBlock {
-                        data_proposals: vec![(
-                            round_leader.clone(),
-                            vec![dp.clone()]
-                        )],
-                        certificate: AggregateSignature {
-                            signature: Signature("fake".into()),
-                            validators: initial_validators.clone()
-                        },
-                        consensus_proposal: ConsensusProposal {
-                            slot: 0,
-                            view: 0,
-                            round_leader: round_leader.clone(),
-                            timestamp: get_current_timestamp_ms(),
-                            cut: vec![(
-                                round_leader.clone(), dp.hash(), AggregateSignature {
-                                    signature: Signature("fake".into()),
-                                    validators: initial_validators.clone()
-                                }
-                            )],
-                            new_validators_to_bond: initial_validators.iter().map(|v| NewValidatorCandidate {
-                                pubkey: v.clone(),
-                                msg: SignedByValidator {
-                                    msg: crate::consensus::ConsensusNetMessage::ValidatorCandidacy(ValidatorCandidacy{
-                                        pubkey: v.clone(),
-                                        peer_address: "".into()
-
-                                    }),
-                                    signature: ValidatorSignature {
-                                        signature: Signature("".into()),
-                                        validator: v.clone()
-                                    }
-                                },
-                            }).collect(),
-                            parent_hash: ConsensusProposalHash("hash".into())
-                        },
-                    };
 
                     self.handle_signed_block(signed_block).await;
                 }

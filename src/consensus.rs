@@ -1,6 +1,7 @@
 //! Handles all consensus logic up to block commitment.
 
-use crate::model::get_current_timestamp_ms;
+use crate::mempool::storage::DataProposal;
+use crate::model::{get_current_timestamp_ms, SignedBlock, Transaction};
 use crate::module_handle_messages;
 use crate::utils::modules::module_bus_client;
 #[cfg(not(test))]
@@ -19,7 +20,7 @@ use crate::{
     },
     utils::{
         conf::SharedConf,
-        crypto::{AggregateSignature, BlstCrypto, SharedBlstCrypto, ValidatorSignature},
+        crypto::{AggregateSignature, BlstCrypto, SharedBlstCrypto, Signature, ValidatorSignature},
         modules::Module,
     },
 };
@@ -853,15 +854,68 @@ impl Consensus {
         Ok(())
     }
 
+    pub fn genesis_block(
+        round_leader: &ValidatorPublicKey,
+        initial_validators: Vec<ValidatorPublicKey>,
+        genesis_txs: Vec<Transaction>,
+    ) -> SignedBlock {
+        let dp = DataProposal {
+            id: 0,
+            parent_data_proposal_hash: None,
+            txs: genesis_txs,
+        };
+
+        SignedBlock {
+            data_proposals: vec![(round_leader.clone(), vec![dp.clone()])],
+            certificate: AggregateSignature {
+                signature: Signature("fake".into()),
+                validators: initial_validators.clone(),
+            },
+            consensus_proposal: ConsensusProposal {
+                slot: 0,
+                view: 0,
+                round_leader: round_leader.clone(),
+                timestamp: get_current_timestamp_ms(),
+                cut: vec![(
+                    round_leader.clone(),
+                    dp.hash(),
+                    AggregateSignature {
+                        signature: Signature("fake".into()),
+                        validators: initial_validators.clone(),
+                    },
+                )],
+                new_validators_to_bond: initial_validators
+                    .iter()
+                    .map(|v| NewValidatorCandidate {
+                        pubkey: v.clone(),
+                        msg: SignedByValidator {
+                            msg: crate::consensus::ConsensusNetMessage::ValidatorCandidacy(
+                                ValidatorCandidacy {
+                                    pubkey: v.clone(),
+                                    peer_address: "".into(),
+                                },
+                            ),
+                            signature: ValidatorSignature {
+                                signature: Signature("".into()),
+                                validator: v.clone(),
+                            },
+                        },
+                    })
+                    .collect(),
+                parent_hash: ConsensusProposalHash("hash".into()),
+            },
+        }
+    }
+
     async fn wait_genesis(&mut self) -> Result<()> {
         handle_messages! {
             on_bus self.bus,
             listen<GenesisEvent> msg => {
                 match msg {
-                    GenesisEvent::GenesisBlock { initial_validators, ..} => {
+                    GenesisEvent::GenesisBlock { block } => {
 
-                        self.bft_round_state.consensus_proposal.round_leader =
-                            initial_validators.first().unwrap().clone();
+                        self.bft_round_state.consensus_proposal =
+                            block.consensus_proposal;
 
                         if self.bft_round_state.consensus_proposal.round_leader == *self.crypto.validator_pubkey() {
                             self.bft_round_state.state_tag = StateTag::Leader;
