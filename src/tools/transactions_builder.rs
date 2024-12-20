@@ -230,8 +230,8 @@ impl TransactionBuilder {
     ) {
         let latest_blob_index = self.actions.len();
         let callees = Some(vec![
+            BlobIndex(latest_blob_index + 1),
             BlobIndex(latest_blob_index + 2),
-            BlobIndex(latest_blob_index + 3),
         ]);
         self.add_action(
             Box::new(AmmAction::Swap {
@@ -250,7 +250,7 @@ impl TransactionBuilder {
             sender.clone(),
             amm_contract.0.clone(),
             amounts.0,
-            Some(BlobIndex(latest_blob_index + 1)),
+            Some(BlobIndex(latest_blob_index)),
             None,
         );
 
@@ -259,7 +259,7 @@ impl TransactionBuilder {
             pair.1.into(),
             sender,
             amounts.1,
-            Some(BlobIndex(latest_blob_index + 1)),
+            Some(BlobIndex(latest_blob_index)),
             None,
         );
     }

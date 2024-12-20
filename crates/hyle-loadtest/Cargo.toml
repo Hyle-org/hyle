@@ -14,7 +14,7 @@ hyllar = { path = "../../contracts/hyllar" }
 amm = { path = "../../contracts/amm" }
 hydentity = { path = "../../contracts/hydentity" }
 hyle-contracts = { path = "../../contracts", package = "hyle-contracts" }
-hyle-contract-sdk = { path = "../../contract-sdk", features = ["tracing"] }
+hyle-contract-sdk = { path = "../../contract-sdk" }
 reqwest = "0.12.9"
 anyhow = "1.0.94"
 bincode = { version = "2.0.0-rc.3" }
