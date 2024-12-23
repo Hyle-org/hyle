@@ -17,7 +17,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 risc0-zkvm = { version = "1.2.0", default-features = false, features = [
     "client",
 ] }
-env_logger = "0.11.5"
+env_logger = "0.11.6"
 serde = { version = "1.0", default-features = false, features = [
     "derive",
     "alloc",
