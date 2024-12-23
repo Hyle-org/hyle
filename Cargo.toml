@@ -76,7 +76,7 @@ sqlx = { version = "0.8.2", features = [
 ] }
 chrono = { version = "0.4", features = ["serde"] }
 axum-test = "16.4.1"
-syn = "2.0.90"
+syn = "2.0.91"
 quote = "1.0.37"
 base64 = "0.22.1"
 bytes = "1.9.0"
