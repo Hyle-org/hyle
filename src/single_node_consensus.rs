@@ -17,7 +17,7 @@ use crate::utils::modules::module_bus_client;
 use crate::{model::SharedRunContext, utils::modules::Module};
 use anyhow::Result;
 use bincode::{Decode, Encode};
-use staking::{Stake, Staker, Staking};
+use staking::state::Staking;
 use tracing::warn;
 
 module_bus_client! {
@@ -91,16 +91,21 @@ impl SingleNodeConsensus {
     async fn start(&mut self) -> Result<()> {
         let pubkey = self.crypto.validator_pubkey();
         if !self.store.staking.is_bonded(pubkey) {
-            let _ = self.store.staking.add_staker(Staker {
-                pubkey: pubkey.clone(),
-                stake: Stake { amount: 100 },
-            });
+            self.store
+                .staking
+                .stake("single".into(), 100)
+                .expect("Staking failed");
+            self.store
+                .staking
+                .delegate_to("single".into(), pubkey.clone())
+                .expect("Delegation failed");
+
             let _ = self.store.staking.bond(pubkey.clone());
         }
         // On peut Query DA pour récuperer le dernier block/cut ?
         if !self.store.has_done_genesis {
             // This is the genesis
-            let genesis_txs = Genesis::genesis_contracts_txs();
+            let (genesis_txs, _) = Genesis::genesis_contracts_txs();
 
             tracing::info!("Doing genesis");
             _ = self.bus.send(GenesisEvent::GenesisBlock {

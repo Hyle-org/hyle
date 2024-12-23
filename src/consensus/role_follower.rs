@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 use bincode::{Decode, Encode};
-use tracing::{debug, info, warn};
+use tracing::{debug, info, trace, warn};
 
 use super::{
     Consensus, ConsensusNetMessage, ConsensusProposal, ConsensusProposalHash, QuorumCertificate,
@@ -481,6 +481,11 @@ impl FollowerRole for Consensus {
     fn verify_poda(&mut self, consensus_proposal: &ConsensusProposal) -> Result<()> {
         let f = self.bft_round_state.staking.compute_f();
 
+        trace!(
+            "verify poda with staking: {:#?}",
+            self.bft_round_state.staking
+        );
+
         let accepted_validators = self.bft_round_state.staking.bonded();
         for (validator, data_proposal_hash, poda_sig) in &consensus_proposal.cut {
             let voting_power = self
@@ -495,6 +500,9 @@ impl FollowerRole for Consensus {
                     validator
                 );
             }
+
+            trace!("consensus_proposal: {:#?}", consensus_proposal);
+            trace!("voting_power: {voting_power} < {f} + 1");
 
             // Verify that DataProposal received enough votes
             if voting_power < f + 1 {

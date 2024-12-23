@@ -12,7 +12,6 @@ use crate::{
     },
     rest::AppError,
 };
-use staking::Staker;
 
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode)]
 pub enum RestApiMessage {
@@ -37,7 +36,6 @@ pub async fn api(ctx: &CommonRunContext) -> Router<()> {
 
     Router::new()
         .route("/contract/register", post(send_contract_transaction))
-        .route("/tx/send/stake", post(send_staking_transaction))
         .route("/tx/send/blob", post(send_blob_transaction))
         .route("/tx/send/proof", post(send_proof_transaction))
         .route(
@@ -97,13 +95,6 @@ pub async fn send_recursive_proof_transaction(
         .map_err(|err| AppError(StatusCode::BAD_REQUEST, anyhow!(err)))?;
     payload.proof = ProofData::Bytes(proof_bytes);
     handle_send(state, TransactionData::RecursiveProof(payload)).await
-}
-
-pub async fn send_staking_transaction(
-    State(state): State<RouterState>,
-    Json(payload): Json<Staker>,
-) -> Result<impl IntoResponse, AppError> {
-    handle_send(state, TransactionData::Stake(payload)).await
 }
 
 impl Clone for RouterState {

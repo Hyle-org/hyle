@@ -2498,6 +2498,7 @@ dependencies = [
  "base64 0.22.1",
  "bincode 2.0.0-rc.3",
  "blst",
+ "bonsai-runner",
  "borsh",
  "bytes",
  "chrono",

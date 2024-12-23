@@ -29,12 +29,12 @@ fn main() {
         };
     }
 
-    let execution_state = ExecutionContext {
+    let execution_ctx = ExecutionContext {
         callees_blobs: callees_blobs.into(),
         caller,
     };
     let amm_state = input.initial_state.clone();
-    let mut amm_contract = AmmContract::new(execution_state, parsed_blob.contract_name, amm_state);
+    let mut amm_contract = AmmContract::new(execution_ctx, parsed_blob.contract_name, amm_state);
 
     let amm_action = parsed_blob.data.parameters;
 

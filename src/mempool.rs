@@ -3,7 +3,10 @@
 use crate::{
     bus::{command_response::Query, BusClientSender, BusMessage},
     consensus::{CommittedConsensusProposal, ConsensusEvent},
-    data_availability::node_state::verifiers::{verify_proof, verify_recursive_proof},
+    data_availability::{
+        node_state::verifiers::{verify_proof, verify_recursive_proof},
+        DataEvent,
+    },
     genesis::GenesisEvent,
     mempool::storage::{DataProposal, Storage},
     model::{
@@ -25,7 +28,7 @@ use bincode::{Decode, Encode};
 use hyle_contract_sdk::{ContractName, ProgramId, Verifier};
 use metrics::MempoolMetrics;
 use serde::{Deserialize, Serialize};
-use staking::Staking;
+use staking::state::Staking;
 use std::{
     collections::{HashMap, HashSet, VecDeque},
     fmt::Display,
@@ -74,6 +77,7 @@ struct MempoolBusClient {
     receiver(MempoolCommand),
     receiver(ConsensusEvent),
     receiver(GenesisEvent),
+    receiver(DataEvent),
     receiver(Query<QueryNewCut, Cut>),
 }
 }
@@ -200,6 +204,20 @@ impl Mempool {
                         if let TransactionData::RegisterContract(tx) = tx.transaction_data {
                             self.known_contracts.register_contract(&tx.contract_name, &tx.verifier, &tx.program_id)?;
                         }
+                    }
+                }
+            }
+            listen<DataEvent> cmd => {
+                 if let DataEvent::NewBlock(block) = cmd {
+                    for contract in block.new_contract_txs {
+                        let TransactionData::RegisterContract(register_contract_transaction) = contract.transaction_data else {
+                            continue;
+                        };
+                        self.known_contracts.register_contract(
+                            &register_contract_transaction.contract_name,
+                            &register_contract_transaction.verifier,
+                            &register_contract_transaction.program_id,
+                        ).ok();
                     }
                 }
             }
@@ -614,20 +632,22 @@ impl Mempool {
     }
 
     fn on_new_tx(&mut self, mut tx: Transaction) -> Result<()> {
-        debug!("Got new tx {}", tx.hash());
         // TODO: Verify fees ?
         // TODO: Verify identity ?
 
         match tx.transaction_data {
             TransactionData::RegisterContract(ref register_contract_transaction) => {
+                debug!("Got new register contract tx {}", tx.hash());
+
                 self.known_contracts.register_contract(
                     &register_contract_transaction.contract_name,
                     &register_contract_transaction.verifier,
                     &register_contract_transaction.program_id,
                 )?;
             }
-            TransactionData::Stake(ref _staker) => {}
-            TransactionData::Blob(ref _blob_transaction) => {}
+            TransactionData::Blob(ref _blob_transaction) => {
+                debug!("Got new blob tx {}", tx.hash());
+            }
             TransactionData::Proof(proof_transaction) => {
                 // Verify and extract proof
                 let (verifier, program_id) = self
@@ -639,11 +659,17 @@ impl Mempool {
                     verify_proof(&proof_transaction.proof.to_bytes()?, verifier, program_id)?;
                 tx.transaction_data = TransactionData::VerifiedProof(VerifiedProofTransaction {
                     proof_hash: proof_transaction.proof.hash(),
-                    contract_name: proof_transaction.contract_name,
-                    blob_tx_hash: proof_transaction.blob_tx_hash,
+                    contract_name: proof_transaction.contract_name.clone(),
+                    blob_tx_hash: proof_transaction.blob_tx_hash.clone(),
                     proof: Some(proof_transaction.proof),
                     hyle_output,
                 });
+                debug!(
+                    "Got new proof tx {} for blob tx {}:{}",
+                    tx.hash(),
+                    proof_transaction.blob_tx_hash,
+                    proof_transaction.contract_name
+                );
             }
             TransactionData::RecursiveProof(proof_transaction) => {
                 // Verify and extract proof
@@ -683,6 +709,7 @@ impl Mempool {
                             })
                             .collect(),
                     });
+                debug!("Got new recursive proof tx {}", tx.hash());
             }
             TransactionData::VerifiedProof(_) => {
                 bail!("Already verified ProofTransaction are not allowed to be received in the mempool");

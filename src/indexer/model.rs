@@ -34,7 +34,6 @@ impl TransactionType {
             TransactionData::VerifiedProof(_) => TransactionType::ProofTransaction,
             TransactionData::VerifiedRecursiveProof(_) => TransactionType::ProofTransaction,
             TransactionData::RegisterContract(_) => TransactionType::RegisterContractTransaction,
-            TransactionData::Stake(_) => TransactionType::Stake,
         }
     }
 }

@@ -84,6 +84,8 @@ impl E2ECtx {
     }
 
     pub async fn new_single(slot_duration: u64) -> Result<E2ECtx> {
+        std::env::set_var("RISC0_DEV_MODE", "1");
+
         let mut conf_maker = ConfMaker::default();
         conf_maker.default.consensus.slot_duration = slot_duration;
         conf_maker.default.single_node = Some(true);
@@ -115,6 +117,8 @@ impl E2ECtx {
     }
 
     pub async fn new_multi(count: usize, slot_duration: u64) -> Result<E2ECtx> {
+        std::env::set_var("RISC0_DEV_MODE", "1");
+
         let mut conf_maker = ConfMaker::default();
         conf_maker.default.consensus.slot_duration = slot_duration;
 
@@ -158,6 +162,8 @@ impl E2ECtx {
     }
 
     pub async fn new_multi_with_indexer(count: usize, slot_duration: u64) -> Result<E2ECtx> {
+        std::env::set_var("RISC0_DEV_MODE", "1");
+
         let pg = Self::init().await;
 
         let mut conf_maker = ConfMaker::default();
@@ -200,6 +206,10 @@ impl E2ECtx {
 
     pub fn client(&self) -> &ApiHttpClient {
         &self.clients[self.client_index]
+    }
+
+    pub fn indexer_client(&self) -> &ApiHttpClient {
+        &self.clients[self.indexer_client_index]
     }
 
     pub fn has_indexer(&self) -> bool {
@@ -315,7 +325,8 @@ impl E2ECtx {
     }
 
     pub async fn get_indexer_contract(&self, name: &str) -> Result<ContractDb> {
-        let indexer_contract_response = self.clients[self.indexer_client_index]
+        let indexer_contract_response = self
+            .indexer_client()
             .get_indexer_contract(&name.into())
             .await
             .and_then(|response| response.error_for_status().context("Getting contract"));

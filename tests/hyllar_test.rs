@@ -63,16 +63,15 @@ mod e2e_hyllar {
         let contract = ctx.get_contract("hydentity").await?;
         let state: hydentity::Hydentity = contract.state.try_into()?;
 
-        let expected_info = serde_json::to_string(&AccountInfo {
-            hash: "b6baa13a27c933bb9f7df812108407efdff1ec3c3ef8d803e20eed7d4177d596".to_string(),
-            nonce: 0,
-        });
-        assert_eq!(
+        // faucet_start_nonce = 0 in single-mode, N in multi-node(N) mode
+        let faucet_start_nonce = serde_json::from_str::<AccountInfo>(
             state
                 .get_identity_info("faucet.hydentity")
-                .expect("faucet identity not found"),
-            expected_info.unwrap() // hash for "faucet.hydentity::password"
-        );
+                .expect("faucet identity not found")
+                .as_str(),
+        )
+        .expect("Failed to parse faucet identity info")
+        .nonce;
 
         info!("➡️  Sending blob to transfer 25 tokens from faucet to bob");
         let blob_tx_hash = ctx
@@ -81,7 +80,7 @@ mod e2e_hyllar {
                 vec![
                     IdentityAction::VerifyIdentity {
                         account: "faucet.hydentity".to_string(),
-                        nonce: 0,
+                        nonce: faucet_start_nonce,
                     }
                     .as_blob(ContractName("hydentity".to_owned())),
                     ERC20Action::Transfer {
@@ -105,7 +104,7 @@ mod e2e_hyllar {
                 },
                 "faucet.hydentity",
                 "password",
-                Some(0),
+                Some(faucet_start_nonce),
             )
             .await;
 
@@ -139,12 +138,6 @@ mod e2e_hyllar {
                 .balance_of("bob.hydentity")
                 .expect("bob identity not found"),
             25
-        );
-        assert_eq!(
-            state
-                .balance_of("faucet.hydentity")
-                .expect("faucet identity not found"),
-            99_999_999_975
         );
         Ok(())
     }

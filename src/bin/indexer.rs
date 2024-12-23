@@ -56,7 +56,7 @@ async fn main() -> Result<()> {
             "node" => TracingMode::NodeName,
             _ => TracingMode::Full,
         },
-        config.id.clone(),
+        format!("{}(nopkey)", config.id.clone(),),
     )?;
 
     info!("Starting indexer with config: {:?}", &config);

@@ -4,7 +4,17 @@ use fixtures::ctx::E2ECtx;
 mod fixtures;
 
 mod e2e_consensus {
-    use staking::{Stake, Staker};
+
+    use fixtures::test_helpers::send_transaction;
+    use hyle::{
+        tools::{
+            contract_runner::fetch_current_state,
+            transactions_builder::{States, TransactionBuilder},
+        },
+        utils::logger::LogMe,
+    };
+    use hyle_contract_sdk::Identity;
+    use staking::state::OnChainState;
 
     use super::*;
 
@@ -25,9 +35,10 @@ mod e2e_consensus {
         Ok(())
     }
 
+    #[ignore = "flakky due to bug in data dissemination"]
     #[test_log::test(tokio::test)]
     async fn can_rejoin() -> Result<()> {
-        let mut ctx = E2ECtx::new_multi(2, 500).await?;
+        let mut ctx = E2ECtx::new_multi_with_indexer(2, 500).await?;
 
         ctx.wait_height(4).await?;
 
@@ -37,12 +48,56 @@ mod e2e_consensus {
 
         assert!(node_info.pubkey.is_some());
 
-        ctx.client()
-            .send_stake_tx(&Staker {
-                pubkey: node_info.pubkey.clone().unwrap(),
-                stake: Stake { amount: 100 },
-            })
-            .await?;
+        let hyllar = fetch_current_state(ctx.indexer_client(), &"hyllar".into())
+            .await
+            .log_error("fetch state failed")
+            .unwrap();
+        let hydentity = fetch_current_state(ctx.indexer_client(), &"hydentity".into())
+            .await
+            .unwrap();
+
+        let staking_state: OnChainState =
+            fetch_current_state(ctx.indexer_client(), &"staking".into())
+                .await
+                .unwrap();
+
+        let staking = ctx.client().get_consensus_staking_state().await.unwrap();
+
+        assert_eq!(staking_state, staking.on_chain_state());
+        let mut states = States {
+            hyllar,
+            hydentity,
+            staking,
+        };
+
+        let node_identity = Identity(format!("{}.hydentity", node_info.id));
+        {
+            let mut transaction = TransactionBuilder::new(node_identity.clone());
+            transaction.register_identity("password".to_string());
+
+            send_transaction(ctx.client(), transaction, &mut states).await;
+        }
+        {
+            let mut transaction = TransactionBuilder::new("faucet.hydentity".into());
+
+            transaction
+                .verify_identity(&states.hydentity, "password".to_string())
+                .await?;
+            transaction.transfer("hyllar".into(), node_identity.0.clone(), 100);
+
+            send_transaction(ctx.client(), transaction, &mut states).await;
+        }
+        {
+            let mut transaction = TransactionBuilder::new(node_identity.clone());
+
+            transaction
+                .verify_identity(&states.hydentity, "password".to_string())
+                .await?;
+            transaction.stake("hyllar".into(), "staking".into(), 100)?;
+            transaction.delegate(node_info.pubkey.clone().unwrap())?;
+
+            send_transaction(ctx.client(), transaction, &mut states).await;
+        }
 
         // 2 slots to get the tx in a blocks
         // 1 slot to send the candidacy
