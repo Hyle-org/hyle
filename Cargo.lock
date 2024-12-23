@@ -72,7 +72,7 @@ checksum = "683d7910e743518b0e34f1186f92494becacb047c7b6bf616c96772180fef923"
 
 [[package]]
 name = "amm"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "bincode 2.0.0-rc.3",
@@ -841,7 +841,7 @@ dependencies = [
 
 [[package]]
 name = "bonsai-runner"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -2470,7 +2470,7 @@ checksum = "9a3a5bfb195931eeb336b2a7b4d761daec841b97f947d34394601737a7bba5e4"
 
 [[package]]
 name = "hydentity"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "bincode 2.0.0-rc.3",
@@ -2484,7 +2484,7 @@ dependencies = [
 
 [[package]]
 name = "hyle"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "amm",
  "anyhow",
@@ -2550,7 +2550,7 @@ dependencies = [
 
 [[package]]
 name = "hyle-contract-sdk"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "bincode 2.0.0-rc.3",
@@ -2564,7 +2564,7 @@ dependencies = [
 
 [[package]]
 name = "hyle-contracts"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "hyle-contract-sdk",
  "risc0-build",
@@ -2572,7 +2572,7 @@ dependencies = [
 
 [[package]]
 name = "hyllar"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "bincode 2.0.0-rc.3",
@@ -2739,7 +2739,7 @@ dependencies = [
 
 [[package]]
 name = "hyrun"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "amm",
  "anyhow",
@@ -5146,7 +5146,7 @@ dependencies = [
 
 [[package]]
 name = "risc0-recursion"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "bincode 2.0.0-rc.3",
  "borsh",
@@ -6490,7 +6490,7 @@ checksum = "a8f112729512f8e442d81f95a8a7ddf2b7c6b8a1a6f509a95864142b30cab2d3"
 
 [[package]]
 name = "staking"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "bincode 2.0.0-rc.3",
