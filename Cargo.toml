@@ -100,7 +100,7 @@ amm = { path = "./contracts/amm" }
 assert_cmd = "2.0.16"
 tokio-tungstenite = "0.24.0"
 reqwest = { version = "0.12", features = ["json", "blocking"] }
-serde_json = "1.0.133"
+serde_json = "1.0.134"
 proptest = "1.6.0"
 test-log = { version = "0.2.16", features = [
     "color",
