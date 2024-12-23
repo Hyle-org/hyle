@@ -30,9 +30,7 @@ impl TransactionType {
         match transaction.transaction_data {
             TransactionData::Blob(_) => TransactionType::BlobTransaction,
             TransactionData::Proof(_) => TransactionType::ProofTransaction,
-            TransactionData::RecursiveProof(_) => TransactionType::ProofTransaction,
             TransactionData::VerifiedProof(_) => TransactionType::ProofTransaction,
-            TransactionData::VerifiedRecursiveProof(_) => TransactionType::ProofTransaction,
             TransactionData::RegisterContract(_) => TransactionType::RegisterContractTransaction,
         }
     }

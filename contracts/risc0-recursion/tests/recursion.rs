@@ -104,18 +104,26 @@ fn test_recursion() {
 
     receipt.verify(hyle_contracts::RISC0_RECURSION_ID).unwrap();
 
-    let outputs: Vec<Vec<u8>> = receipt.journal.decode().expect("Failed to decode journal");
-    let hyle_outputs = outputs
+    let outputs: Vec<([u8; 32], Vec<u8>)> =
+        receipt.journal.decode().expect("Failed to decode journal");
+    let outputs = outputs
         .iter()
-        .map(|x| risc0_zkvm::serde::from_slice::<HyleOutput, _>(x).unwrap())
+        .map(|x| {
+            (
+                x.0,
+                risc0_zkvm::serde::from_slice::<HyleOutput, _>(&x.1).unwrap(),
+            )
+        })
         .collect::<Vec<_>>();
 
+    assert_eq!(outputs.first().unwrap().0, hyle_contracts::HYDENTITY_ID,);
     assert_eq!(
-        hyle_outputs.first().unwrap().program_outputs,
+        outputs.first().unwrap().1.program_outputs,
         b"Successfully registered identity for account: toto1".to_vec()
     );
+    assert_eq!(outputs.last().unwrap().0, hyle_contracts::HYDENTITY_ID,);
     assert_eq!(
-        hyle_outputs.last().unwrap().program_outputs,
+        outputs.last().unwrap().1.program_outputs,
         b"Successfully registered identity for account: toto2".to_vec()
     );
 
