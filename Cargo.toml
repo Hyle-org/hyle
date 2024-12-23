@@ -35,7 +35,7 @@ hydentity = { path = "./contracts/hydentity" }
 hyllar = { path = "./contracts/hyllar" }
 staking = { path = "./contracts/staking" }
 bonsai-runner = { path = "./crates/bonsai-runner" }
-config = "0.15.0"
+config = "0.15.4"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["json"] }
 tokio = { version = "1.42.0", features = ["full", "tracing"] }
