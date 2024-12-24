@@ -1,5 +1,4 @@
 //! Utilities.
-
 pub mod conf;
 pub mod crypto;
 pub mod db;

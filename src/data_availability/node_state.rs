@@ -1,5 +1,8 @@
 //! State required for participation in consensus by the node.
 
+use crate::model::data_availability::{
+    Contract, Timeouts, UnsettledBlobMetadata, UnsettledBlobTransaction,
+};
 use crate::model::{
     BlobTransaction, BlobsHash, Block, BlockHeight, ContractName, Hashable,
     RegisterContractTransaction, SignedBlock, Transaction, TransactionData,
@@ -10,13 +13,11 @@ use bincode::{Decode, Encode};
 use hyle_contract_sdk::{
     utils::parse_structured_blob, BlobIndex, HyleOutput, Identity, StateDigest, TxHash,
 };
-use model::{Contract, Timeouts, UnsettledBlobMetadata, UnsettledBlobTransaction};
 use ordered_tx_map::OrderedTxMap;
 use staking::StakingAction;
 use std::collections::{BTreeMap, HashMap};
 use tracing::{debug, error, info};
 
-pub mod model;
 mod ordered_tx_map;
 pub mod verifiers;
 

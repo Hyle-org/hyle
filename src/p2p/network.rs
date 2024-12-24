@@ -1,8 +1,7 @@
 use crate::bus::BusMessage;
-use crate::consensus::utils::HASH_DISPLAY_SIZE;
 use crate::data_availability::DataNetMessage;
 use crate::model::ValidatorPublicKey;
-use crate::utils::crypto::ValidatorSignature;
+use crate::utils::crypto::SignedByValidator;
 use crate::{consensus::ConsensusNetMessage, mempool::MempoolNetMessage};
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
@@ -56,26 +55,6 @@ pub enum PeerEvent {
 impl BusMessage for PeerEvent {}
 impl BusMessage for OutboundMessage {}
 
-pub use crate::utils::crypto::Signature;
-
-impl std::fmt::Debug for Signature {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_tuple("Signature")
-            .field(&hex::encode(&self.0))
-            .finish()
-    }
-}
-
-impl Display for Signature {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "{}",
-            &hex::encode(self.0.get(..HASH_DISPLAY_SIZE).unwrap_or(&self.0))
-        )
-    }
-}
-
 impl Display for NetMessage {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let enum_variant: &'static str = self.into();
@@ -97,19 +76,6 @@ impl Display for NetMessage {
         }
     }
 }
-
-impl<T: Display + bincode::Encode> Display for SignedByValidator<T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        _ = write!(f, " --> from validator {}", self.signature.validator);
-        write!(f, "")
-    }
-}
-
-impl<T> BusMessage for SignedByValidator<T> where T: Encode + BusMessage {}
-
-pub type SignedByValidator<T> = Signed<T, ValidatorSignature>;
-
-pub use crate::utils::crypto::Signed;
 
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, Eq, PartialEq, IntoStaticStr)]
 pub enum NetMessage {

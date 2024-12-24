@@ -14,7 +14,6 @@ use super::fifo_filter::FifoFilter;
 use super::network::HandshakeNetMessage;
 use super::network::OutboundMessage;
 use super::network::PeerEvent;
-use super::network::SignedByValidator;
 use super::network::{Hello, NetMessage};
 use super::stream::send_net_message;
 use crate::bus::bus_client;
@@ -28,6 +27,7 @@ use crate::module_handle_messages;
 use crate::p2p::stream::read_stream;
 use crate::utils::conf::SharedConf;
 use crate::utils::crypto::SharedBlstCrypto;
+use crate::utils::crypto::SignedByValidator;
 use crate::utils::modules::signal::ShutdownModule;
 
 bus_client! {

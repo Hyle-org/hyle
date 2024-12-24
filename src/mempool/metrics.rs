@@ -3,9 +3,9 @@ use opentelemetry::{
     InstrumentationScope, KeyValue,
 };
 
-use crate::model::ValidatorPublicKey;
+use crate::model::{mempool::DataProposal, ValidatorPublicKey};
 
-use super::{storage::DataProposal, QueryNewCut};
+use super::QueryNewCut;
 
 pub struct MempoolMetrics {
     signature_error: Counter<u64>,

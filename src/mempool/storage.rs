@@ -2,19 +2,20 @@ use anyhow::{bail, Result};
 use bincode::{Decode, Encode};
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
-use sha3::{Digest, Sha3_256};
 use staking::state::Staking;
-use std::{collections::HashMap, fmt::Display, hash::Hash, vec};
+use std::{collections::HashMap, fmt::Display, vec};
 use tracing::{debug, error, warn};
 
 use crate::{
     data_availability::node_state::verifiers::verify_proof,
-    model::{Hashable, Transaction, TransactionData, ValidatorPublicKey, VerifiedProofTransaction},
-    p2p::network::SignedByValidator,
-    utils::crypto::{AggregateSignature, BlstCrypto},
+    model::{
+        mempool::{DataProposal, DataProposalHash, PoDA},
+        Hashable, Transaction, TransactionData, ValidatorPublicKey, VerifiedProofTransaction,
+    },
+    utils::crypto::{BlstCrypto, SignedByValidator},
 };
 
-use super::{KnownContracts, MempoolNetMessage};
+use super::{Cut, KnownContracts, MempoolNetMessage};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DataProposalVerdict {
@@ -22,13 +23,6 @@ pub enum DataProposalVerdict {
     Wait(Option<DataProposalHash>),
     Vote,
     Refuse,
-}
-
-#[derive(Clone, Debug, Default, Serialize, Deserialize, Encode, Decode, Eq, PartialEq)]
-pub struct DataProposal {
-    pub id: u32,
-    pub parent_data_proposal_hash: Option<DataProposalHash>,
-    pub txs: Vec<Transaction>,
 }
 
 #[derive(Debug, Clone, Encode, Decode, PartialEq, Eq, Serialize, Deserialize)]
@@ -51,30 +45,6 @@ pub struct Storage {
     pub id: ValidatorPublicKey,
     pub pending_txs: Vec<Transaction>,
     pub lanes: HashMap<ValidatorPublicKey, Lane>,
-}
-
-pub type PoDA = AggregateSignature;
-pub type Cut = Vec<(ValidatorPublicKey, DataProposalHash, PoDA)>;
-
-#[derive(Clone, Debug, Default, Serialize, Deserialize, Encode, Decode, PartialEq, Eq, Hash)]
-pub struct DataProposalHash(pub String);
-
-impl Hashable<DataProposalHash> for DataProposal {
-    fn hash(&self) -> DataProposalHash {
-        let mut hasher = Sha3_256::new();
-        if let Some(ref parent_data_proposal_hash) = self.parent_data_proposal_hash {
-            hasher.update(parent_data_proposal_hash.0.as_bytes());
-        }
-        for tx in self.txs.iter() {
-            hasher.update(tx.hash().0);
-        }
-        DataProposalHash(hex::encode(hasher.finalize()))
-    }
-}
-impl Display for DataProposalHash {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
-    }
 }
 
 impl Display for DataProposal {

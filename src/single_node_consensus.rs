@@ -7,7 +7,7 @@ use crate::consensus::{
     QueryConsensusInfo,
 };
 use crate::genesis::{Genesis, GenesisEvent};
-use crate::mempool::storage::Cut;
+use crate::mempool::Cut;
 use crate::mempool::QueryNewCut;
 use crate::model::{get_current_timestamp_ms, Hashable};
 use crate::module_handle_messages;
@@ -200,7 +200,7 @@ mod tests {
     use crate::bus::metrics::BusMetrics;
     use crate::bus::{bus_client, SharedMessageBus};
     use crate::handle_messages;
-    use crate::mempool::storage::DataProposalHash;
+    use crate::mempool::DataProposalHash;
     use crate::model::ValidatorPublicKey;
     use crate::utils::conf::Conf;
     use crate::utils::crypto::{AggregateSignature, BlstCrypto};

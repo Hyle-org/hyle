@@ -1,18 +1,14 @@
 use crate::{model::BlockHash, utils::logger::LogMe};
 
-use super::{
-    model::{
-        BlobDb, BlobWithStatus, BlockDb, ContractDb, ContractStateDb, TransactionDb,
-        TransactionStatus, TransactionType, TransactionWithBlobs, TxHashDb,
-    },
-    IndexerApiState,
-};
+use super::IndexerApiState;
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
     Json,
 };
 use sqlx::Row;
+
+use crate::model::indexer::*;
 
 #[derive(Debug, serde::Deserialize)]
 pub struct BlockPagination {

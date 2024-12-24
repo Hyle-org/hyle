@@ -8,12 +8,9 @@ use blst::min_pk::{
     Signature as BlstSignature,
 };
 use rand::Rng;
-use serde::{Deserialize, Serialize};
 
-use crate::{
-    model::ValidatorPublicKey,
-    p2p::network::{self, SignedByValidator},
-};
+pub use crate::model::crypto::*;
+use crate::model::ValidatorPublicKey;
 
 #[derive(Clone)]
 pub struct BlstCrypto {
@@ -31,44 +28,6 @@ struct Aggregates {
 
 const DST: &[u8] = b"BLS_SIG_BLS12381G2_XMD:SHA-256_SSWU_RO_NUL_";
 pub const SIG_SIZE: usize = 48;
-
-#[derive(
-    Debug, Serialize, Deserialize, Clone, bincode::Encode, bincode::Decode, PartialEq, Eq, Hash,
-)]
-pub struct Signed<T: bincode::Encode, V: bincode::Encode> {
-    pub msg: T,
-    pub signature: V,
-}
-
-#[derive(
-    Serialize, Deserialize, Clone, bincode::Encode, bincode::Decode, Default, PartialEq, Eq, Hash,
-)]
-pub struct Signature(pub Vec<u8>);
-
-#[derive(
-    Debug, Serialize, Deserialize, Clone, bincode::Encode, bincode::Decode, PartialEq, Eq, Hash,
-)]
-pub struct ValidatorSignature {
-    pub signature: Signature,
-    pub validator: ValidatorPublicKey,
-}
-
-#[derive(
-    Debug,
-    Default,
-    Serialize,
-    Deserialize,
-    Clone,
-    bincode::Encode,
-    bincode::Decode,
-    PartialEq,
-    Eq,
-    Hash,
-)]
-pub struct AggregateSignature {
-    pub signature: Signature,
-    pub validators: Vec<ValidatorPublicKey>,
-}
 
 impl BlstCrypto {
     pub fn new(validator_name: String) -> Self {
@@ -262,16 +221,11 @@ impl BlstCrypto {
     }
 }
 
-impl From<BlstSignature> for network::Signature {
-    fn from(sig: BlstSignature) -> Self {
-        network::Signature(sig.compress().as_slice().to_vec())
-    }
-}
-
 fn as_validator_pubkey(pk: PublicKey) -> ValidatorPublicKey {
     ValidatorPublicKey(pk.compress().as_slice().to_vec())
 }
 
+#[cfg(feature = "node")]
 #[cfg(test)]
 mod tests {
 

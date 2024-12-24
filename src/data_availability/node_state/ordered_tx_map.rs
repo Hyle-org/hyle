@@ -1,6 +1,6 @@
 use bincode::{Decode, Encode};
 
-use super::model::UnsettledBlobTransaction;
+use crate::model::data_availability::UnsettledBlobTransaction;
 use crate::model::ContractName;
 use hyle_contract_sdk::TxHash;
 use std::collections::HashMap;
@@ -77,7 +77,7 @@ impl OrderedTxMap {
 
 #[cfg(test)]
 mod tests {
-    use crate::{data_availability::node_state::model::UnsettledBlobMetadata, model::BlobsHash};
+    use crate::model::{data_availability::UnsettledBlobMetadata, BlobsHash};
     use hyle_contract_sdk::Identity;
 
     use super::*;

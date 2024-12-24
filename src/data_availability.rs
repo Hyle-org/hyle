@@ -22,19 +22,19 @@ use crate::{
         NewValidatorCandidate, ValidatorCandidacy,
     },
     genesis::GenesisEvent,
-    mempool::{
-        storage::{Cut, DataProposal},
-        MempoolCommand, MempoolEvent,
-    },
+    mempool::{MempoolCommand, MempoolEvent},
     model::{
-        get_current_timestamp, get_current_timestamp_ms, Block, BlockHash, BlockHeight,
-        ContractName, Hashable, SharedRunContext, SignedBlock, ValidatorPublicKey,
+        data_availability::Contract,
+        get_current_timestamp, get_current_timestamp_ms,
+        mempool::{Cut, DataProposal},
+        Block, BlockHash, BlockHeight, ContractName, Hashable, SharedRunContext, SignedBlock,
+        ValidatorPublicKey,
     },
     module_handle_messages,
-    p2p::network::{NetMessage, OutboundMessage, PeerEvent, SignedByValidator},
+    p2p::network::{NetMessage, OutboundMessage, PeerEvent},
     utils::{
         conf::SharedConf,
-        crypto::{AggregateSignature, Signature, ValidatorSignature},
+        crypto::{AggregateSignature, Signature, SignedByValidator, ValidatorSignature},
         logger::LogMe,
         modules::{module_bus_client, Module},
     },
@@ -46,7 +46,7 @@ use futures::{
     stream::{SplitSink, SplitStream},
     SinkExt, StreamExt,
 };
-use node_state::{model::Contract, NodeState};
+use node_state::NodeState;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::collections::{BTreeSet, VecDeque};

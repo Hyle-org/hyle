@@ -5,7 +5,7 @@ use crate::{
     consensus::StateTag,
     mempool::QueryNewCut,
     model::{Hashable, ValidatorPublicKey},
-    p2p::network::SignedByValidator,
+    utils::crypto::SignedByValidator,
 };
 use anyhow::{anyhow, bail, Result};
 use bincode::{Decode, Encode};

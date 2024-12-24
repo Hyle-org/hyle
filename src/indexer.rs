@@ -4,7 +4,6 @@ mod api;
 pub mod contract_handlers;
 pub mod contract_state_indexer;
 pub mod da_listener;
-pub mod model;
 
 use crate::{
     data_availability::DataEvent,
@@ -25,12 +24,13 @@ use axum::{
     Router,
 };
 use chrono::DateTime;
-use model::{BlobWithStatus, TransactionStatus, TransactionType, TransactionWithBlobs, TxHashDb};
 use sqlx::Row;
 use sqlx::{postgres::PgPoolOptions, PgPool, Pool, Postgres};
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::{broadcast, mpsc};
 use tracing::{error, info};
+
+use crate::model::indexer::*;
 
 module_bus_client! {
 #[derive(Debug)]
@@ -520,10 +520,13 @@ impl std::ops::Deref for Indexer {
 
 #[cfg(test)]
 mod test {
+    use crate::{
+        mempool::DataProposal,
+        model::indexer::{BlockDb, ContractDb},
+    };
     use assert_json_diff::assert_json_include;
     use axum_test::TestServer;
     use hyle_contract_sdk::{BlobIndex, HyleOutput, Identity, ProgramId, StateDigest, TxHash};
-    use model::{BlockDb, ContractDb};
     use serde_json::json;
     use staking::model::ValidatorPublicKey;
     use std::{
@@ -534,7 +537,6 @@ mod test {
     use crate::{
         bus::SharedMessageBus,
         data_availability::node_state::NodeState,
-        mempool::storage::DataProposal,
         model::{
             Blob, BlobData, ProofData, RegisterContractTransaction, SignedBlock, Transaction,
             TransactionData, VerifiedProofTransaction,
