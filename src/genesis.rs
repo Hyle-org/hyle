@@ -8,13 +8,16 @@ use crate::{
         Transaction, TransactionData, ValidatorPublicKey, VerifiedProofTransaction,
     },
     p2p::network::PeerEvent,
-    tools::transactions_builder::{BuildResult, States, TransactionBuilder},
     utils::{conf::SharedConf, crypto::SharedBlstCrypto, modules::Module},
 };
 use anyhow::{bail, Error, Result};
+use client_sdk::transaction_builder::{BuildResult, StateUpdater, TransactionBuilder};
+use hydentity::Hydentity;
 use hyle_contract_sdk::Digestable;
 use hyle_contract_sdk::{identity_provider::IdentityVerification, Identity};
+use hyllar::HyllarToken;
 use serde::{Deserialize, Serialize};
+use staking::state::Staking;
 use tracing::{error, info};
 
 #[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]
@@ -55,6 +58,52 @@ impl Module for Genesis {
 
     fn run(&mut self) -> impl futures::Future<Output = Result<()>> + Send {
         self.start()
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct States {
+    pub hyllar: HyllarToken,
+    pub hydentity: Hydentity,
+    pub staking: Staking,
+}
+
+impl States {
+    pub fn build_hydentity<'a, 'b: 'a>(
+        &'a self,
+        builder: &'b mut TransactionBuilder,
+    ) -> hydentity::client::Builder {
+        self.hydentity.builder("hydentity".into(), builder)
+    }
+
+    pub fn build_hyllar<'a, 'b: 'a>(
+        &'a self,
+        builder: &'b mut TransactionBuilder,
+    ) -> hyllar::client::Builder {
+        self.hyllar.builder("hyllar".into(), builder)
+    }
+
+    pub fn build_staking<'a, 'b: 'a>(
+        &'a self,
+        builder: &'b mut TransactionBuilder,
+    ) -> staking::client::Builder {
+        self.staking.builder("staking".into(), builder)
+    }
+}
+
+impl StateUpdater for States {
+    fn update(
+        &mut self,
+        contract_name: &hyle_contract_sdk::ContractName,
+        new_state: hyle_contract_sdk::StateDigest,
+    ) -> Result<()> {
+        match contract_name.0.as_str() {
+            "hyllar" => self.hyllar = new_state.try_into()?,
+            "hydentity" => self.hydentity = new_state.try_into()?,
+            "staking" => self.staking = new_state.try_into()?,
+            _ => bail!("Unknown contract name"),
+        }
+        Ok(())
     }
 }
 
@@ -181,8 +230,11 @@ impl Genesis {
             let identity = Identity(format!("{peer}.hydentity"));
             let mut transaction = TransactionBuilder::new(identity.clone());
 
-            transaction.register_identity("password".to_string());
-            txs.push(transaction.build(states).await?);
+            states
+                .build_hydentity(&mut transaction)
+                .register_identity("password".to_string())?;
+
+            txs.push(transaction.build(states)?);
         }
 
         Ok(txs)
@@ -198,12 +250,14 @@ impl Genesis {
             let identity = Identity("faucet.hydentity".to_string());
             let mut transaction = TransactionBuilder::new(identity.clone());
 
-            transaction
-                .verify_identity(&states.hydentity, "password".to_string())
-                .await?;
-            transaction.transfer("hyllar".into(), format!("{peer}.hydentity"), genesis_faucet);
+            states
+                .build_hydentity(&mut transaction)
+                .verify_identity("password".to_string())?;
+            states
+                .build_hyllar(&mut transaction)
+                .transfer(format!("{peer}.hydentity"), genesis_faucet)?;
 
-            txs.push(transaction.build(states).await?);
+            txs.push(transaction.build(states)?);
         }
 
         Ok(txs)
@@ -219,13 +273,19 @@ impl Genesis {
             let identity = Identity(format!("{peer}.hydentity").to_string());
             let mut transaction = TransactionBuilder::new(identity.clone());
 
-            transaction
-                .verify_identity(&states.hydentity, "password".to_string())
-                .await?;
-            transaction.stake("hyllar".into(), "staking".into(), genesis_stake)?;
-            transaction.delegate(peer)?;
+            states
+                .build_hydentity(&mut transaction)
+                .verify_identity("password".to_string())?;
 
-            txs.push(transaction.build(states).await?);
+            states
+                .build_staking(&mut transaction)
+                .stake(genesis_stake)?;
+            states
+                .build_hyllar(&mut transaction)
+                .transfer("staking".to_string(), genesis_stake)?;
+            states.build_staking(&mut transaction).delegate(peer)?;
+
+            txs.push(transaction.build(states)?);
         }
 
         Ok(txs)

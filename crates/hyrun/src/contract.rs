@@ -35,7 +35,7 @@ pub fn run<State, Builder>(context: &Context, contract_name: &str, build_contrac
 where
     State: TryFrom<StateDigest, Error = Error>,
     State: Digestable + std::fmt::Debug + serde::Serialize,
-    Builder: Fn(State) -> ContractInput<State>,
+    Builder: Fn(State) -> ContractInput,
 {
     let initial_state =
         get_initial_state(context, contract_name).expect("Cannot get contract state");
@@ -150,14 +150,11 @@ pub fn fetch_current_state(context: &Context, contract_name: &str) -> Result<Sta
     }
 }
 
-fn execute<State>(
+fn execute(
     context: &Context,
     contract_name: &str,
-    contract_input: &ContractInput<State>,
-) -> risc0_zkvm::SessionInfo
-where
-    State: Digestable + serde::Serialize,
-{
+    contract_input: &ContractInput,
+) -> risc0_zkvm::SessionInfo {
     let env = risc0_zkvm::ExecutorEnv::builder()
         .write(contract_input)
         .unwrap()
@@ -170,14 +167,11 @@ where
         .unwrap()
 }
 
-fn prove<State>(
+fn prove(
     context: &Context,
     contract_name: &str,
-    contract_input: &ContractInput<State>,
-) -> risc0_zkvm::ProveInfo
-where
-    State: Digestable + serde::Serialize,
-{
+    contract_input: &ContractInput,
+) -> risc0_zkvm::ProveInfo {
     let env = risc0_zkvm::ExecutorEnv::builder()
         .write(contract_input)
         .unwrap()

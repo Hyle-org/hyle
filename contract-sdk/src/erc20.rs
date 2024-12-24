@@ -7,7 +7,7 @@ use bincode::{Decode, Encode};
 
 use crate::{
     caller::{CallerCallee, CheckCalleeBlobs},
-    Blob, BlobData, BlobIndex, ContractName, RunResult, StructuredBlobData,
+    Blob, BlobData, BlobIndex, ContractAction, ContractName, RunResult, StructuredBlobData,
 };
 
 /// Trait representing the ERC-20 token standard interface.
@@ -106,8 +106,8 @@ pub enum ERC20Action {
     },
 }
 
-impl ERC20Action {
-    pub fn as_blob(
+impl ContractAction for ERC20Action {
+    fn as_blob(
         &self,
         contract_name: ContractName,
         caller: Option<BlobIndex>,

@@ -52,11 +52,8 @@ pub trait Digestable {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct ContractInput<State>
-where
-    State: Digestable,
-{
-    pub initial_state: State,
+pub struct ContractInput {
+    pub initial_state: StateDigest,
     pub identity: Identity,
     pub tx_hash: TxHash,
     pub private_blob: BlobData,
@@ -172,6 +169,15 @@ impl<Parameters: Decode> TryFrom<Blob> for StructuredBlob<Parameters> {
             data,
         })
     }
+}
+
+pub trait ContractAction: Send {
+    fn as_blob(
+        &self,
+        contract_name: ContractName,
+        caller: Option<BlobIndex>,
+        callees: Option<Vec<BlobIndex>>,
+    ) -> Blob;
 }
 
 pub fn flatten_blobs(blobs: &[Blob]) -> Vec<u8> {

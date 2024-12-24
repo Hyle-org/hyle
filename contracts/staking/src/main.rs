@@ -7,18 +7,16 @@ use alloc::format;
 use alloc::vec::Vec;
 use sdk::caller::{CallerCallee, ExecutionContext};
 use sdk::{info, StructuredBlobData};
-use staking::state::OnChainState;
 use staking::{state::Staking, StakingAction, StakingContract};
 risc0_zkvm::guest::entry!(main);
 
 fn main() {
-    let (input, parsed_blob, caller) =
-        match sdk::guest::init_with_caller::<OnChainState, StakingAction>() {
-            Ok(res) => res,
-            Err(err) => {
-                panic!("Staking contract initialization failed {}", err);
-            }
-        };
+    let (input, parsed_blob, caller) = match sdk::guest::init_with_caller::<StakingAction>() {
+        Ok(res) => res,
+        Err(err) => {
+            panic!("Staking contract initialization failed {}", err);
+        }
+    };
 
     // TODO: refactor this into ExecutionContext
     let mut callees_blobs = Vec::new();
@@ -35,10 +33,16 @@ fn main() {
         bincode::decode_from_slice(input.private_blob.0.as_slice(), bincode::config::standard())
             .expect("Failed to decode payload");
 
+    let input_initial_state = input
+        .initial_state
+        .clone()
+        .try_into()
+        .expect("Failed to decode state");
+
     info!("state: {:?}", state);
     info!("computed:: {:?}", state.on_chain_state());
-    info!("given: {:?}", input.initial_state);
-    if state.on_chain_state() != input.initial_state {
+    info!("given: {:?}", input_initial_state);
+    if state.on_chain_state() != input_initial_state {
         panic!("State mismatch");
     }
 
