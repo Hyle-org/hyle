@@ -6,6 +6,7 @@ on:
       - 'main'
       - 'releases/**'
       - 'publish_ghcr'
+      - 'docker_build_cache'
     tags:
       - '*'
 
@@ -66,6 +67,8 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           push: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
           context: .
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
