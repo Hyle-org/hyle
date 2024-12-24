@@ -1,4 +1,3 @@
-#![cfg(feature = "node")]
 //! Public API for interacting with the node.
 
 use anyhow::{Context, Result};
