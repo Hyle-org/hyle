@@ -3,22 +3,25 @@
 
 extern crate alloc;
 
-use hyllar::{HyllarToken, HyllarTokenContract};
+use hyllar::HyllarTokenContract;
 use sdk::erc20::ERC20Action;
 use sdk::guest::env;
 
 risc0_zkvm::guest::entry!(main);
 
 fn main() {
-    let (input, parsed_blob, caller) =
-        match sdk::guest::init_with_caller::<HyllarToken, ERC20Action>() {
-            Ok(res) => res,
-            Err(err) => {
-                panic!("Hyllar contract initialization failed {}", err);
-            }
-        };
+    let (input, parsed_blob, caller) = match sdk::guest::init_with_caller::<ERC20Action>() {
+        Ok(res) => res,
+        Err(err) => {
+            panic!("Hyllar contract initialization failed {}", err);
+        }
+    };
 
-    let state = input.initial_state.clone();
+    let state = input
+        .initial_state
+        .clone()
+        .try_into()
+        .expect("Failed to decode state");
 
     env::log("Init token contract");
     let mut contract = HyllarTokenContract::init(state, caller);

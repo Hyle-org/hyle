@@ -2,8 +2,8 @@
 
 use anyhow::{bail, Error};
 use axum::Router;
-use base64::prelude::*;
 use bincode::{Decode, Encode};
+pub use client_sdk::{ProofData, ProofDataHash};
 use derive_more::Display;
 use hyle_contract_sdk::{
     flatten_blobs, BlobIndex, HyleOutput, Identity, ProgramId, StateDigest, TxHash, Verifier,
@@ -123,29 +123,6 @@ impl Default for TransactionData {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone, Encode, Decode)]
-#[serde(untagged)]
-pub enum ProofData {
-    Base64(String),
-    Bytes(Vec<u8>),
-}
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Encode, Decode)]
-pub struct ProofDataHash(pub String);
-
-impl Default for ProofData {
-    fn default() -> Self {
-        ProofData::Bytes(Vec::new())
-    }
-}
-
-impl ProofData {
-    pub fn to_bytes(&self) -> Result<Vec<u8>, base64::DecodeError> {
-        match self {
-            ProofData::Base64(s) => BASE64_STANDARD.decode(s),
-            ProofData::Bytes(b) => Ok(b.clone()),
-        }
-    }
-}
 #[derive(Serialize, Deserialize, Default, PartialEq, Eq, Clone, Encode, Decode)]
 pub struct ProofTransaction {
     // TODO: investigate if we can remove blob_tx_hash. It can be reconstrustruced from HyleOutput attributes (blob + identity)

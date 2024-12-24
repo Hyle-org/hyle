@@ -13,7 +13,7 @@ mod e2e_hyllar {
     use hyle_contract_sdk::{
         erc20::{ERC20Action, ERC20},
         identity_provider::{IdentityAction, IdentityVerification},
-        ContractName,
+        ContractAction, ContractName,
     };
     use hyrun::CliCommand;
 

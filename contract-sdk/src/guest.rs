@@ -44,16 +44,13 @@ pub mod env {
     }
 }
 
-pub fn fail<State>(input: ContractInput<State>, message: &str)
-where
-    State: Digestable,
-{
+pub fn fail(input: ContractInput, message: &str) {
     env::log(message);
 
     env::commit(&HyleOutput {
         version: 1,
-        initial_state: input.initial_state.as_digest(),
-        next_state: input.initial_state.as_digest(),
+        initial_state: input.initial_state.clone(),
+        next_state: input.initial_state,
         identity: input.identity,
         tx_hash: input.tx_hash,
         index: input.index,
@@ -69,40 +66,38 @@ pub fn panic(message: &str) {
     panic!("{}", message);
 }
 
-pub fn init_raw<State, Parameters>() -> (ContractInput<State>, Parameters)
+pub fn init_raw<Parameters>() -> (ContractInput, Parameters)
 where
-    State: Digestable + DeserializeOwned,
     Parameters: Decode,
 {
-    let input: ContractInput<State> = env::read();
+    let input: ContractInput = env::read();
 
     let parsed_blob = parse_blob::<Parameters>(&input.blobs, &input.index);
 
     (input, parsed_blob)
 }
 
-pub fn init_with_caller<State, Parameters>(
-) -> Result<(ContractInput<State>, StructuredBlob<Parameters>, Identity)>
+pub fn init_with_caller<Parameters>(
+) -> Result<(ContractInput, StructuredBlob<Parameters>, Identity)>
 where
-    State: Digestable + DeserializeOwned,
     Parameters: Encode + Decode,
 {
-    let input: ContractInput<State> = env::read();
+    let input: ContractInput = env::read();
 
     let parsed_blob = parse_structured_blob::<Parameters>(&input.blobs, &input.index);
 
-    let caller = check_caller_callees::<State, Parameters>(&input, &parsed_blob)?;
+    let caller = check_caller_callees::<Parameters>(&input, &parsed_blob)?;
 
     Ok((input, parsed_blob, caller))
 }
 
-pub fn commit<State>(input: ContractInput<State>, new_state: State, res: crate::RunResult)
+pub fn commit<State>(input: ContractInput, new_state: State, res: crate::RunResult)
 where
     State: Digestable,
 {
     env::commit(&HyleOutput {
         version: 1,
-        initial_state: input.initial_state.as_digest(),
+        initial_state: input.initial_state,
         next_state: new_state.as_digest(),
         identity: input.identity,
         tx_hash: input.tx_hash,
@@ -113,12 +108,11 @@ where
     });
 }
 
-pub fn check_caller_callees<State, Paramaters>(
-    input: &ContractInput<State>,
+pub fn check_caller_callees<Paramaters>(
+    input: &ContractInput,
     parameters: &StructuredBlob<Paramaters>,
 ) -> Result<Identity>
 where
-    State: Digestable,
     Paramaters: Encode + Decode,
 {
     // Check that callees has this blob as caller

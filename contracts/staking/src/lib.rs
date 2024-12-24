@@ -3,10 +3,13 @@ use bincode::{Decode, Encode};
 use model::{BlockHeight, ValidatorPublicKey};
 use sdk::{
     caller::{CalleeBlobs, CallerCallee, ExecutionContext, MutCalleeBlobs},
-    Blob, BlobData, BlobIndex, ContractName, Identity, StructuredBlobData,
+    Blob, BlobData, BlobIndex, ContractAction, ContractName, Identity, StructuredBlobData,
 };
 use serde::{Deserialize, Serialize};
 use state::OnChainState;
+
+#[cfg(feature = "client")]
+pub mod client;
 
 pub mod model;
 pub mod state;
@@ -30,9 +33,9 @@ pub enum StakingAction {
     Distribute { claim: RewardsClaim },
 }
 
-impl StakingAction {
-    pub fn as_blob(
-        self,
+impl ContractAction for StakingAction {
+    fn as_blob(
+        &self,
         contract_name: ContractName,
         caller: Option<BlobIndex>,
         callees: Option<Vec<BlobIndex>>,

@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use hyle_contract_sdk::TxHash;
+use hyle_contract_sdk::{StateDigest, TxHash};
 use reqwest::{Response, Url};
 use staking::state::Staking;
 
@@ -150,6 +150,19 @@ impl ApiHttpClient {
             .send()
             .await
             .context(format!("getting Contract {}", contract_name))
+    }
+
+    pub async fn fetch_current_state<State>(&self, contract_name: &ContractName) -> Result<State>
+    where
+        State: TryFrom<hyle_contract_sdk::StateDigest, Error = anyhow::Error>,
+    {
+        let resp = self
+            .get_indexer_contract(contract_name)
+            .await?
+            .json::<ContractDb>()
+            .await?;
+
+        StateDigest(resp.state_digest).try_into()
     }
 
     pub async fn run_scenario_api_test(

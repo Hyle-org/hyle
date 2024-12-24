@@ -169,7 +169,17 @@ impl TryFrom<sdk::StateDigest> for OnChainState {
 
     fn try_from(state: sdk::StateDigest) -> Result<Self, Self::Error> {
         let (state, _) = bincode::decode_from_slice(&state.0, bincode::config::standard())
-            .map_err(|_| anyhow::anyhow!("Could not decode start height"))?;
+            .map_err(|_| anyhow::anyhow!("Could not decode staking on chain state"))?;
+        Ok(state)
+    }
+}
+
+impl TryFrom<sdk::StateDigest> for Staking {
+    type Error = anyhow::Error;
+
+    fn try_from(state: sdk::StateDigest) -> Result<Self, Self::Error> {
+        let (state, _) = bincode::decode_from_slice(&state.0, bincode::config::standard())
+            .map_err(|_| anyhow::anyhow!("Could not decode staking state"))?;
         Ok(state)
     }
 }

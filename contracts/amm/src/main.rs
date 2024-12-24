@@ -4,14 +4,14 @@
 extern crate alloc;
 
 use alloc::vec::Vec;
-use amm::{AmmAction, AmmContract, AmmState};
+use amm::{AmmAction, AmmContract};
 use sdk::caller::{CallerCallee, ExecutionContext};
 use sdk::StructuredBlobData;
 
 risc0_zkvm::guest::entry!(main);
 
 fn main() {
-    let (input, parsed_blob, caller) = match sdk::guest::init_with_caller::<AmmState, AmmAction>() {
+    let (input, parsed_blob, caller) = match sdk::guest::init_with_caller::<AmmAction>() {
         Ok(res) => res,
         Err(err) => {
             panic!("Amm contract initialization failed {}", err);
@@ -33,7 +33,12 @@ fn main() {
         callees_blobs: callees_blobs.into(),
         caller,
     };
-    let amm_state = input.initial_state.clone();
+
+    let amm_state = input
+        .initial_state
+        .clone()
+        .try_into()
+        .expect("Failed to decode state");
     let mut amm_contract = AmmContract::new(execution_ctx, parsed_blob.contract_name, amm_state);
 
     let amm_action = parsed_blob.data.parameters;

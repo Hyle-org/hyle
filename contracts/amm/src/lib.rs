@@ -232,7 +232,7 @@ impl TryFrom<sdk::StateDigest> for AmmState {
 
     fn try_from(state: sdk::StateDigest) -> Result<Self, Self::Error> {
         let (amm_state, _) = bincode::decode_from_slice(&state.0, bincode::config::standard())
-            .map_err(|_| anyhow::anyhow!("Could not decode start height"))?;
+            .map_err(|_| anyhow::anyhow!("Could not decode amm state"))?;
         Ok(amm_state)
     }
 }
@@ -271,7 +271,7 @@ impl AmmAction {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sdk::{erc20::ERC20Action, Blob, ContractName, Identity};
+    use sdk::{erc20::ERC20Action, Blob, ContractAction, ContractName, Identity};
     use std::collections::BTreeMap;
 
     fn create_test_blob_from(

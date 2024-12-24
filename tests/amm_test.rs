@@ -17,7 +17,7 @@ mod e2e_amm {
     use hyle_contract_sdk::{
         erc20::{ERC20Action, ERC20},
         identity_provider::{IdentityAction, IdentityVerification},
-        BlobIndex, ContractName,
+        BlobIndex, ContractAction, ContractName,
     };
     use hyrun::{CliCommand, HydentityArgs};
 

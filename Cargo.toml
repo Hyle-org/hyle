@@ -9,6 +9,7 @@ members = [
 
     "crates/bonsai-runner",
     "crates/hyrun",
+    "crates/client-sdk",
 ]
 resolver = "2"
 
@@ -30,10 +31,11 @@ default-run = "node"
 
 [dependencies]
 hyle-contract-sdk = { path = "./contract-sdk", features = ["tracing"] }
+client-sdk = { path = "./crates/client-sdk" }
 hyle-contracts = { path = "./contracts", package = "hyle-contracts" }
-hydentity = { path = "./contracts/hydentity" }
-hyllar = { path = "./contracts/hyllar" }
-staking = { path = "./contracts/staking" }
+hydentity = { path = "./contracts/hydentity", features = ["client"] }
+hyllar = { path = "./contracts/hyllar", features = ["client"] }
+staking = { path = "./contracts/staking", features = ["client"] }
 bonsai-runner = { path = "./crates/bonsai-runner" }
 config = "0.15.0"
 tracing = "0.1"
