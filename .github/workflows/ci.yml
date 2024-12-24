@@ -34,7 +34,7 @@ jobs:
         run: |
           mkdir -p ~/image-cache
           docker pull postgres:17-alpine
-          docker save -o ~/image-cache/postgres.tar alpine
+          docker save -o ~/image-cache/postgres.tar postgres:17-alpine
 
       - if: steps.image-cache.outputs.cache-hit == 'true'
         run: docker load -i ~/image-cache/postgres.tar
