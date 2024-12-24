@@ -2,6 +2,7 @@ name: Generate GitHub Release
 
 permissions:
   contents: write
+  packages: write
 
 on:
   push:
