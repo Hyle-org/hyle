@@ -5,7 +5,9 @@ on:
     branches:
       - 'main'
       - 'releases/**'
+      - 'publish_ghcr'
     tags:
+      - '*'
 
 env:
   IMAGE_NAME: 'hyle'
@@ -57,3 +59,17 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
 
+      - name: 'Login to GitHub Container Registry'
+        uses: docker/login-action@v1
+        with:
+          registry: ghcr.io
+          username: ${{github.actor}}
+          password: ${{secrets.GITHUB_TOKEN}}
+
+      - name: Push to ghcr
+        uses: docker/build-push-action@v6
+        with:
+          push: true
+          context: .
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
