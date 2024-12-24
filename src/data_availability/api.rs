@@ -15,7 +15,7 @@ use crate::{
         command_response::{CmdRespClient, Query},
         metrics::BusMetrics,
     },
-    data_availability::node_state::model::Contract,
+    model::data_availability::Contract,
     model::{BlockHeight, CommonRunContext},
     rest::AppError,
 };

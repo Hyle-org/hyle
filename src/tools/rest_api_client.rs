@@ -1,20 +1,20 @@
 use anyhow::{Context, Result};
-use hyle_contract_sdk::TxHash;
 use reqwest::{Response, Url};
-use staking::state::Staking;
 
+#[cfg(feature = "node")]
+use crate::tools::mock_workflow::RunScenario;
 use crate::{
-    consensus::ConsensusInfo,
-    data_availability::node_state::model::Contract,
-    indexer::model::ContractDb,
+    model::consensus::ConsensusInfo,
+    model::data_availability::Contract,
+    model::indexer::ContractDb,
+    model::rest::NodeInfo,
     model::{
         BlobTransaction, BlockHeight, ContractName, ProofTransaction, RecursiveProofTransaction,
         RegisterContractTransaction,
     },
-    tools::mock_workflow::RunScenario,
 };
-
-use super::NodeInfo;
+use hyle_contract_sdk::TxHash;
+use staking::state::Staking;
 
 pub struct ApiHttpClient {
     pub url: Url,
@@ -152,6 +152,7 @@ impl ApiHttpClient {
             .context(format!("getting Contract {}", contract_name))
     }
 
+    #[cfg(feature = "node")]
     pub async fn run_scenario_api_test(
         &self,
         qps: u64,

@@ -1,6 +1,9 @@
-use std::pin::Pin;
-
 use anyhow::{anyhow, bail, Error, Result};
+use std::pin::Pin;
+use tracing::info;
+
+use super::contract_runner::ContractRunner;
+use crate::model::ProofData;
 use hydentity::{AccountInfo, Hydentity};
 use hyle_contract_sdk::{
     caller::ExecutionContext,
@@ -10,11 +13,6 @@ use hyle_contract_sdk::{
 };
 use hyllar::HyllarToken;
 use staking::{model::ValidatorPublicKey, state::Staking, StakingAction, StakingContract};
-use tracing::info;
-
-use crate::model::ProofData;
-
-use super::contract_runner::ContractRunner;
 
 pub struct Password(BlobData);
 

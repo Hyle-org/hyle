@@ -157,12 +157,12 @@ pub mod test {
     use crate::bus::metrics::BusMetrics;
     use crate::bus::{bus_client, SharedMessageBus};
     use crate::consensus::test::ConsensusTestCtx;
-    use crate::consensus::{ConsensusEvent, ConsensusNetMessage};
+    use crate::consensus::ConsensusEvent;
     use crate::handle_messages;
-    use crate::mempool::storage::{Cut, DataProposalHash};
     use crate::mempool::test::{make_register_contract_tx, MempoolTestCtx};
     use crate::mempool::{MempoolEvent, MempoolNetMessage, QueryNewCut};
-    use crate::model::{ContractName, Hashable};
+    use crate::model::mempool::{Cut, DataProposalHash};
+    use crate::model::{consensus::ConsensusNetMessage, ContractName, Hashable};
     use crate::p2p::network::OutboundMessage;
     use crate::p2p::P2PCommand;
     use crate::utils::crypto::{self, BlstCrypto};

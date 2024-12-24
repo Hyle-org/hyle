@@ -1,3 +1,4 @@
+#![cfg(feature = "node")]
 //! Public API for interacting with the node.
 
 use anyhow::{Context, Result};
@@ -11,25 +12,17 @@ use axum::{
 use axum_otel_metrics::HttpMetricsLayer;
 use prometheus::{Encoder, TextEncoder};
 use reqwest::StatusCode;
-use serde::{Deserialize, Serialize};
 use tower_http::trace::TraceLayer;
 use tracing::info;
 
 use crate::{bus::SharedMessageBus, module_handle_messages, utils::modules::module_bus_client};
-use crate::{model::ValidatorPublicKey, utils::modules::Module};
+use crate::{model::rest::NodeInfo, utils::modules::Module};
 
-pub mod client;
+pub use crate::tools::rest_api_client as client;
 
 module_bus_client! {
     struct RestBusClient {
     }
-}
-
-#[derive(Clone, Serialize, Deserialize)]
-pub struct NodeInfo {
-    pub id: String,
-    pub pubkey: Option<ValidatorPublicKey>,
-    pub da_address: String,
 }
 
 pub struct RestApiRunContext {

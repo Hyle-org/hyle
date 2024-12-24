@@ -8,6 +8,7 @@ use tracing_subscriber::{
     registry::LookupSpan,
     EnvFilter,
 };
+
 // A simple way to log without interrupting fluency
 pub trait LogMe<T> {
     fn log_warn<C: Display + Send + Sync + 'static>(self, context_msg: C) -> anyhow::Result<T>;

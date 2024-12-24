@@ -9,9 +9,9 @@ use hyle::{
     genesis::Genesis,
     indexer::Indexer,
     mempool::Mempool,
-    model::{CommonRunContext, NodeRunContext, SharedRunContext},
+    model::{rest::NodeInfo, CommonRunContext, NodeRunContext, SharedRunContext},
     p2p::P2P,
-    rest::{NodeInfo, RestApi, RestApiRunContext},
+    rest::{RestApi, RestApiRunContext},
     single_node_consensus::SingleNodeConsensus,
     tools::mock_workflow::MockWorkflowHandler,
     utils::{

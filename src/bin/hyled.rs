@@ -3,10 +3,9 @@ use std::{fs::File, io::Read};
 use anyhow::Result;
 use clap::{command, Parser, Subcommand};
 use hyle::{
-    indexer::model::ContractDb,
     model::{
-        Blob, BlobData, BlobTransaction, ContractName, ProofData, ProofTransaction,
-        RegisterContractTransaction,
+        indexer::ContractDb, Blob, BlobData, BlobTransaction, ContractName, ProofData,
+        ProofTransaction, RegisterContractTransaction,
     },
     rest::client::ApiHttpClient,
 };

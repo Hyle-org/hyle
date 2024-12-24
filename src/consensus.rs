@@ -2,6 +2,7 @@
 
 use crate::model::get_current_timestamp_ms;
 use crate::module_handle_messages;
+use crate::utils::crypto::{AggregateSignature, Signed, SignedByValidator, ValidatorSignature};
 use crate::utils::modules::module_bus_client;
 #[cfg(not(test))]
 use crate::utils::static_type_map::Pick;
@@ -11,15 +12,16 @@ use crate::{
     data_availability::DataEvent,
     genesis::GenesisEvent,
     handle_messages,
-    mempool::{storage::Cut, QueryNewCut},
+    mempool::QueryNewCut,
+    model::mempool::Cut,
     model::{get_current_timestamp, Hashable, ValidatorPublicKey},
     p2p::{
-        network::{OutboundMessage, PeerEvent, Signed, SignedByValidator},
+        network::{OutboundMessage, PeerEvent},
         P2PCommand,
     },
     utils::{
         conf::SharedConf,
-        crypto::{AggregateSignature, BlstCrypto, SharedBlstCrypto, ValidatorSignature},
+        crypto::{BlstCrypto, SharedBlstCrypto},
         modules::Module,
     },
 };
@@ -38,14 +40,14 @@ use tokio::time::interval;
 use tokio::{sync::broadcast, time::sleep};
 use tracing::{debug, info, warn};
 
-use strum_macros::IntoStaticStr;
-
 pub mod api;
 pub mod metrics;
 pub mod module;
 pub mod role_follower;
 pub mod role_leader;
 pub mod utils;
+
+pub use crate::model::consensus::*;
 
 // -----------------------------
 // ------ Consensus bus --------
@@ -75,17 +77,10 @@ pub struct QueryConsensusInfo {}
 #[derive(Clone)]
 pub struct QueryConsensusStakingState {}
 
-#[derive(Clone, Serialize, Deserialize, Debug)]
-pub struct ConsensusInfo {
-    pub slot: Slot,
-    pub view: View,
-    pub round_leader: ValidatorPublicKey,
-    pub validators: Vec<ValidatorPublicKey>,
-}
-
 impl BusMessage for ConsensusCommand {}
 impl BusMessage for ConsensusEvent {}
 impl BusMessage for ConsensusNetMessage {}
+impl<T> BusMessage for SignedByValidator<T> where T: Encode + BusMessage {}
 
 module_bus_client! {
 struct ConsensusBusClient {
@@ -102,73 +97,6 @@ struct ConsensusBusClient {
     receiver(Query<QueryConsensusInfo, ConsensusInfo>),
     receiver(Query<QueryConsensusStakingState, Staking>),
 }
-}
-
-// -----------------------------
-// --- Consensus data model ----
-// -----------------------------
-
-#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, PartialEq, Eq, Hash)]
-pub struct ValidatorCandidacy {
-    pub pubkey: ValidatorPublicKey,
-    pub peer_address: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode, PartialEq, Eq, Hash)]
-pub struct NewValidatorCandidate {
-    pub pubkey: ValidatorPublicKey, // TODO: possible optim: the pubkey is already present in the msg,
-    pub msg: SignedByValidator<ConsensusNetMessage>,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, PartialEq, Eq, Hash, Default)]
-pub struct QuorumCertificateHash(Vec<u8>);
-
-type QuorumCertificate = AggregateSignature;
-
-#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, PartialEq, Eq, Hash)]
-pub struct TimeoutCertificate(ConsensusProposalHash, QuorumCertificate);
-
-// A Ticket is necessary to send a valid prepare
-#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, PartialEq, Eq, Hash)]
-pub enum Ticket {
-    // Special value for the initial Cut, needed because we don't have a quorum certificate for the genesis block.
-    Genesis,
-    CommitQC(QuorumCertificate),
-    TimeoutQC(QuorumCertificate),
-}
-
-pub type Slot = u64;
-pub type View = u64;
-
-#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, PartialEq, Eq, Hash, Default)]
-pub struct ConsensusProposalHash(Vec<u8>);
-
-#[derive(Debug, Clone, Default, Serialize, Deserialize, Encode, Decode, PartialEq, Eq, Hash)]
-pub struct ConsensusProposal {
-    // These first few items are checked when receiving the proposal from the leader.
-    pub slot: Slot,
-    pub view: View,
-    pub round_leader: ValidatorPublicKey,
-    // Below items aren't.
-    pub cut: Cut,
-    pub new_validators_to_bond: Vec<NewValidatorCandidate>,
-    pub timestamp: u64,
-}
-
-type NextLeader = ValidatorPublicKey;
-
-#[derive(
-    Debug, Serialize, Deserialize, Clone, Encode, Decode, PartialEq, Eq, Hash, IntoStaticStr,
-)]
-pub enum ConsensusNetMessage {
-    Prepare(ConsensusProposal, Ticket),
-    PrepareVote(ConsensusProposalHash),
-    Confirm(QuorumCertificate),
-    ConfirmAck(ConsensusProposalHash),
-    Commit(QuorumCertificate, ConsensusProposalHash),
-    Timeout(ConsensusProposalHash, NextLeader),
-    TimeoutCertificate(QuorumCertificate, ConsensusProposalHash),
-    ValidatorCandidacy(ValidatorCandidacy),
 }
 
 // TODO: move struct to model.rs ?
@@ -991,7 +919,7 @@ pub mod test {
             broadcast, build_tuple, send, AutobahnBusClient, AutobahnTestCtx,
         },
         bus::{dont_use_this::get_receiver, metrics::BusMetrics, SharedMessageBus},
-        mempool::storage::DataProposalHash,
+        model::mempool::DataProposalHash,
         p2p::network::NetMessage,
         utils::{conf::Conf, crypto},
     };

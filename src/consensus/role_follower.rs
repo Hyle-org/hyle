@@ -11,9 +11,8 @@ use crate::{
     consensus::StateTag,
     mempool::MempoolNetMessage,
     model::{get_current_timestamp, Hashable, ValidatorPublicKey},
-    p2p::network::{Signed, SignedByValidator},
     utils::{
-        crypto::{AggregateSignature, BlstCrypto},
+        crypto::{AggregateSignature, BlstCrypto, Signed, SignedByValidator},
         logger::LogMe,
     },
 };
