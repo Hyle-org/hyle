@@ -22,9 +22,9 @@ pub struct ApiHttpClient {
 }
 
 impl ApiHttpClient {
-    pub fn new(url: Url) -> Self {
+    pub fn new(url: String) -> Self {
         Self {
-            url,
+            url: Url::parse(&url).expect("Invalid url"),
             reqwest_client: reqwest::Client::new(),
         }
     }
