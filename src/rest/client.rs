@@ -22,6 +22,13 @@ pub struct ApiHttpClient {
 }
 
 impl ApiHttpClient {
+    pub fn new(url: Url) -> Self {
+        Self {
+            url,
+            reqwest_client: reqwest::Client::new(),
+        }
+    }
+
     pub async fn send_tx_blob(&self, tx: &BlobTransaction) -> Result<TxHash> {
         self.reqwest_client
             .post(format!("{}v1/tx/send/blob", self.url))
