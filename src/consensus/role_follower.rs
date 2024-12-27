@@ -552,8 +552,7 @@ impl FollowerRole for Consensus {
         }
 
         if &next_max_timestamp < timestamp {
-            dbg!(self.bft_round_state.consensus_proposal.clone());
-            bail!(
+            warn!(
                 "Timestamp {} too late (should be < {}, exceeded by {} ms)",
                 timestamp,
                 next_max_timestamp,
