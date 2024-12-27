@@ -45,7 +45,7 @@ required-features = ["node"]
 hyle-contract-sdk = { path = "./contract-sdk", features = ["tracing"] }
 staking = { path = "./contracts/staking" }
 
-anyhow = "1.0.94"
+anyhow = "1.0.95"
 base64 = "0.22.1"
 bincode = { version = "2.0.0-rc.3", features = ["serde"] }
 blst = { version = "0.3.13" }
@@ -55,7 +55,7 @@ hex = { version = "0.4.3" }
 reqwest = { version = "0.12", features = ["json"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1" }
-serde_with = { version = "3.11.0", features = ["hex"] }
+serde_with = { version = "3.12.0", features = ["hex"] }
 sha3 = "0.10.8"
 sqlx = { version = "0.8.2", features = [
     "runtime-tokio",
