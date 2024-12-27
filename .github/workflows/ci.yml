@@ -8,6 +8,7 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  RISC0_EXECUTOR: ipc
 
 jobs:
   test:
@@ -44,6 +45,7 @@ jobs:
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
+      - run: cargo install risc0-r0vm
       - run: cargo build --verbose
       - run: cargo nextest run --profile ci --workspace
       - name: Upload test results to Codecov
@@ -69,6 +71,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
+      - run: cargo install risc0-r0vm
       - name: Generate code coverage
         run: cargo llvm-cov --workspace --lib --lcov --output-path lcov.info -- --test-threads=1
       - name: Upload coverage to Codecov
