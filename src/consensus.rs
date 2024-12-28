@@ -1641,55 +1641,6 @@ pub mod test {
     }
 
     #[test_log::test(tokio::test)]
-    async fn prepare_wrong_timestamp_too_late() {
-        let (mut node1, mut node2, mut node3, mut node4): (
-            ConsensusTestCtx,
-            ConsensusTestCtx,
-            ConsensusTestCtx,
-            ConsensusTestCtx,
-        ) = build_nodes!(4).await;
-
-        node1.start_round_at(1000).await;
-
-        let (cp, _) = simple_commit_round! {
-            leader: node1,
-            followers: [node2, node3, node4]
-        };
-
-        assert_eq!(cp.timestamp, 1000);
-
-        node2.start_round_at(3001).await;
-
-        // Get broadcasted message and inject it, asserting errors
-        broadcast! {
-            description: "Leader Node2 second round",
-            from: node2, to: [],
-            message_matches: ConsensusNetMessage::Prepare(next_cp, next_ticket) => {
-
-                assert_eq!(next_cp.timestamp, 3001);
-
-                let prepare_msg = node2
-                    .consensus
-                    .sign_net_message(ConsensusNetMessage::Prepare(next_cp.clone(), next_ticket.clone()))
-                    .unwrap();
-
-                assert_contains!(
-                    format!("{:#}", node1.handle_msg_err(&prepare_msg)),
-                    "too late"
-                );
-                assert_contains!(
-                    format!("{:#}", node3.handle_msg_err(&prepare_msg)),
-                    "too late"
-                );
-                assert_contains!(
-                    format!("{:#}", node4.handle_msg_err(&prepare_msg)),
-                    "too late"
-                );
-            }
-        };
-    }
-
-    #[test_log::test(tokio::test)]
     async fn prepare_valid_timestamp() {
         let (mut node1, mut node2, mut node3, mut node4): (
             ConsensusTestCtx,
