@@ -23,6 +23,8 @@ use hyle_contract_sdk::{
     Verifier,
 };
 
+use crate::fixtures::test_helpers::wait_height_timeout;
+
 use super::test_helpers::{self, wait_height, ConfMaker};
 
 pub trait E2EContract {
@@ -121,7 +123,7 @@ impl E2ECtx {
         conf_maker.default.consensus.slot_duration = slot_duration;
 
         let (nodes, clients) = Self::build_nodes(count, &mut conf_maker);
-        wait_height(clients.first().unwrap(), 1).await?;
+        wait_height_timeout(clients.first().unwrap(), 1, 120).await?;
 
         info!("🚀 E2E test environment is ready!");
         Ok(E2ECtx {
