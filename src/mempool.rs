@@ -179,7 +179,8 @@ impl Mempool {
     pub async fn start(&mut self) -> Result<()> {
         info!("Mempool starting");
 
-        let mut interval = tokio::time::interval(tokio::time::Duration::from_millis(500));
+        let tick_time = std::cmp::min(self.conf.consensus.slot_duration / 2, 500);
+        let mut interval = tokio::time::interval(tokio::time::Duration::from_millis(tick_time));
 
         // TODO: Recompute optimistic node_state
 

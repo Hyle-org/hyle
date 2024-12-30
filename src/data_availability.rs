@@ -235,7 +235,6 @@ impl DataAvailability {
                 }
             }
             command_response<QueryBlockHeight, BlockHeight> _ => {
-                //println!("got block height: {:?}", serde_json::to_string(&self.blocks.last()));
                 Ok(self.blocks.last().map(|block| block.height()).unwrap_or(BlockHeight(0)))
             }
 
