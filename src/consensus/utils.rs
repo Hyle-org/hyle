@@ -5,7 +5,7 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
-use crate::model::Hashable;
+use crate::model::{Hashable, HASH_DISPLAY_SIZE};
 
 use super::{
     Consensus, ConsensusNetMessage, ConsensusProposal, ConsensusProposalHash, ConsensusStore,
@@ -57,7 +57,6 @@ impl Display for ConsensusProposal {
     }
 }
 
-pub const HASH_DISPLAY_SIZE: usize = 3;
 impl Display for ConsensusProposalHash {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(

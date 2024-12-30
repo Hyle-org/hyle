@@ -12,11 +12,9 @@ use testcontainers_modules::{
 use tracing::info;
 
 use hyle::{
-    data_availability::node_state::model::Contract,
-    indexer::model::ContractDb,
     model::{
-        Blob, BlobTransaction, ProofData, ProofTransaction, RecursiveProofTransaction,
-        RegisterContractTransaction,
+        data_availability::Contract, indexer::ContractDb, Blob, BlobTransaction, ProofData,
+        ProofTransaction, RecursiveProofTransaction, RegisterContractTransaction,
     },
     rest::client::ApiHttpClient,
 };
@@ -24,6 +22,8 @@ use hyle_contract_sdk::{
     flatten_blobs, BlobIndex, ContractName, HyleOutput, Identity, ProgramId, StateDigest, TxHash,
     Verifier,
 };
+
+use crate::fixtures::test_helpers::wait_height_timeout;
 
 use super::test_helpers::{self, wait_height, ConfMaker};
 
@@ -123,7 +123,7 @@ impl E2ECtx {
         conf_maker.default.consensus.slot_duration = slot_duration;
 
         let (nodes, clients) = Self::build_nodes(count, &mut conf_maker);
-        wait_height(clients.first().unwrap(), 1).await?;
+        wait_height_timeout(clients.first().unwrap(), 1, 120).await?;
 
         info!("🚀 E2E test environment is ready!");
         Ok(E2ECtx {

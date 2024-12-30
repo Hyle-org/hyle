@@ -1,15 +1,15 @@
-use crate::{
-    indexer::model::ContractDb,
-    model::{ContractName, ProofData},
-    rest::client::ApiHttpClient,
-};
 use anyhow::{bail, Error, Result};
-use hyle_contract_sdk::{
-    Blob, BlobData, BlobIndex, ContractInput, Digestable, HyleOutput, Identity, StateDigest,
-};
 use serde::Serialize;
 use tracing::info;
 
+use crate::{
+    model::indexer::ContractDb,
+    model::{ContractName, ProofData},
+    tools::rest_api_client::ApiHttpClient,
+};
+use hyle_contract_sdk::{
+    Blob, BlobData, BlobIndex, ContractInput, Digestable, HyleOutput, Identity, StateDigest,
+};
 pub struct ContractRunner {
     pub contract_name: ContractName,
     binary: &'static [u8],
