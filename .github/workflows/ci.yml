@@ -88,7 +88,6 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: lcov.info
           fail_ci_if_error: true
- 
   no_default_features:
     name: Build with no default features 
     runs-on: ubuntu-latest
@@ -106,8 +105,7 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Build
         run: cargo build --no-default-features
-
-  unused dependencies:
+  unused_dependencies:
     name: Check unused dependencies
     if: github.event.pull_request.draft == false
     runs-on: ubuntu-latest
