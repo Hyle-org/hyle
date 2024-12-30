@@ -6,10 +6,10 @@ use crate::bus::SharedMessageBus;
 use crate::utils::{conf::SharedConf, crypto::SharedBlstCrypto};
 #[cfg(feature = "node")]
 use axum::Router;
+use data_availability::HandledBlobProofOutput;
 #[cfg(feature = "node")]
 use std::sync::Arc;
 
-use anyhow::{bail, Error};
 use base64::prelude::*;
 use bincode::{Decode, Encode};
 use derive_more::Display;
@@ -99,32 +99,7 @@ pub enum TransactionData {
     Blob(BlobTransaction),
     Proof(ProofTransaction),
     VerifiedProof(VerifiedProofTransaction),
-    RecursiveProof(RecursiveProofTransaction),
-    VerifiedRecursiveProof(VerifiedRecursiveProofTransaction),
     RegisterContract(RegisterContractTransaction),
-}
-
-impl TransactionData {
-    pub fn blob(&self) -> Result<BlobTransaction, Error> {
-        match self {
-            TransactionData::Blob(blob_tx) => Ok(blob_tx.clone()),
-            _ => bail!("Called blob() on non-Blob transaction data"),
-        }
-    }
-    pub fn verified_proof(&self) -> Result<VerifiedProofTransaction, Error> {
-        match self {
-            TransactionData::VerifiedProof(verified_proof_tx) => Ok(verified_proof_tx.clone()),
-            _ => bail!("Called blob() on non-VerifiedProof transaction data"),
-        }
-    }
-    pub fn register_contract(&self) -> Result<RegisterContractTransaction, Error> {
-        match self {
-            TransactionData::RegisterContract(register_contract_tx) => {
-                Ok(register_contract_tx.clone())
-            }
-            _ => bail!("Called blob() on non-RegisterContract transaction data"),
-        }
-    }
 }
 
 impl Default for TransactionData {
@@ -139,7 +114,7 @@ pub enum ProofData {
     Base64(String),
     Bytes(Vec<u8>),
 }
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Encode, Decode)]
+#[derive(Debug, Default, Serialize, Deserialize, Clone, PartialEq, Eq, Encode, Decode)]
 pub struct ProofDataHash(pub String);
 
 impl Default for ProofData {
@@ -156,78 +131,62 @@ impl ProofData {
         }
     }
 }
-#[derive(Serialize, Deserialize, Default, PartialEq, Eq, Clone, Encode, Decode)]
-pub struct ProofTransaction {
-    // TODO: investigate if we can remove blob_tx_hash. It can be reconstrustruced from HyleOutput attributes (blob + identity)
-    pub blob_tx_hash: TxHash,
-    pub proof: ProofData,
-    pub contract_name: ContractName,
-}
 
 #[derive(Serialize, Deserialize, Default, PartialEq, Eq, Clone, Encode, Decode)]
-pub struct RecursiveProofTransaction {
-    pub via: ContractName,
+pub struct ProofTransaction {
+    pub contract_name: ContractName,
     pub proof: ProofData,
-    pub verifies: Vec<(TxHash, ContractName)>,
+    // TODO: this can technically be recovered from the hyle output
+    // It's currently in a "somewhat trusted" limbo.
+    pub tx_hashes: Vec<TxHash>,
+}
+
+#[derive(Debug, Default, Serialize, Deserialize, Clone, PartialEq, Eq, Encode, Decode)]
+pub struct BlobProofOutput {
+    // TODO: this can be recovered from the hyle output
+    pub blob_tx_hash: TxHash,
+    // TODO: remove this?
+    pub original_proof_hash: ProofDataHash,
+
+    /// HyleOutput of the proof for this blob
+    pub hyle_output: HyleOutput,
+    /// Program ID used to verify the proof.
+    pub program_id: ProgramId,
 }
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Encode, Decode)]
 pub struct VerifiedProofTransaction {
-    pub blob_tx_hash: TxHash,
     pub contract_name: ContractName,
+    pub proof: Option<ProofData>, // Kept only on the local lane for indexing purposes
     pub proof_hash: ProofDataHash,
-    pub hyle_output: HyleOutput,
-    pub proof: Option<ProofData>,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Encode, Decode)]
-pub struct VerifiedRecursiveProofTransaction {
-    pub via: ContractName,
-    pub proof: Option<ProofData>,
-    pub proof_hash: ProofDataHash,
-    pub verifies: Vec<VerifiedProofTransaction>,
-}
-
-impl fmt::Debug for ProofTransaction {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("ProofTransaction")
-            .field("contract_name", &self.contract_name)
-            .field("proof", &"[HIDDEN]")
-            .field(
-                "proof_len",
-                &self.proof.to_bytes().unwrap_or_default().len(),
-            )
-            .finish()
-    }
+    pub proven_blobs: Vec<BlobProofOutput>,
+    pub is_recursive: bool,
 }
 
 impl fmt::Debug for VerifiedProofTransaction {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("VerifiedProofTransaction")
             .field("contract_name", &self.contract_name)
-            .field("blob_tx_hash", &self.blob_tx_hash)
             .field("proof_hash", &self.proof_hash)
-            .field("hyle_output", &self.hyle_output)
             .field("proof", &"[HIDDEN]")
             .field(
                 "proof_len",
-                &self
-                    .proof
-                    .as_ref()
-                    .unwrap_or(&ProofData::default())
-                    .to_bytes()
-                    .unwrap_or_default()
-                    .len(),
+                &match &self.proof {
+                    Some(ProofData::Base64(v)) => v.len(),
+                    Some(ProofData::Bytes(v)) => v.len(),
+                    None => 0,
+                },
             )
+            .field("proven_blobs", &self.proven_blobs)
             .finish()
     }
 }
 
-impl fmt::Debug for RecursiveProofTransaction {
+impl fmt::Debug for ProofTransaction {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("RecursiveProofTransaction")
-            .field("via", &self.via)
-            .field("verifies", &self.verifies)
+        f.debug_struct("ProofTransaction")
+            .field("contract_name", &self.contract_name)
+            .field("tx_hashes", &self.tx_hashes)
             .field("proof", &"[HIDDEN]")
             .field(
                 "proof_len",
@@ -270,7 +229,8 @@ pub struct Block {
     pub new_contract_txs: Vec<Transaction>,
     pub new_blob_txs: Vec<Transaction>,
     pub new_verified_proof_txs: Vec<Transaction>,
-    pub verified_blobs: Vec<(TxHash, BlobIndex)>,
+    pub blob_proof_outputs: Vec<HandledBlobProofOutput>,
+    pub verified_blobs: Vec<(TxHash, BlobIndex, usize)>,
     pub failed_txs: Vec<Transaction>,
     pub new_bounded_validators: Vec<ValidatorPublicKey>,
     pub staking_actions: Vec<(Identity, StakingAction)>,
@@ -307,17 +267,20 @@ impl Hashable<BlockHash> for Block {
         _ = write!(hasher, "{}", self.block_parent_hash);
         _ = write!(hasher, "{}", self.block_height);
         _ = write!(hasher, "{}", self.block_timestamp);
-        for tx in self
-            .new_contract_txs
-            .iter()
-            .chain(self.new_blob_txs.iter())
-            .chain(self.new_verified_proof_txs.iter())
-        {
+        for tx in self.new_contract_txs.iter().chain(self.new_blob_txs.iter()) {
             hasher.update(tx.hash().0);
         }
-        for (tx_hash, blob_v) in self.verified_blobs.iter() {
+        /*
+        TODO: is this redundant?
+        for tx in self.new_verified_proof_txs.iter() {
+            _ = write!(hasher, "{}", tx.);
+            _ = write!(hasher, "{}", blob_v);
+        } */
+
+        for (tx_hash, blob_v, blob_po_i) in self.verified_blobs.iter() {
             _ = write!(hasher, "{}", tx_hash);
             _ = write!(hasher, "{}", blob_v);
+            _ = write!(hasher, "{}", blob_po_i);
         }
         for tx_f in self.failed_txs.iter() {
             hasher.update(tx_f.hash().0);
@@ -459,9 +422,7 @@ impl Hashable<TxHash> for Transaction {
         match &self.transaction_data {
             TransactionData::Blob(tx) => tx.hash(),
             TransactionData::Proof(tx) => tx.hash(),
-            TransactionData::RecursiveProof(tx) => tx.hash(),
             TransactionData::VerifiedProof(tx) => tx.hash(),
-            TransactionData::VerifiedRecursiveProof(tx) => tx.hash(),
             TransactionData::RegisterContract(tx) => tx.hash(),
         }
     }
@@ -485,15 +446,6 @@ impl Hashable<TxHash> for ProofTransaction {
         TxHash(hex::encode(hash_bytes))
     }
 }
-impl Hashable<TxHash> for RecursiveProofTransaction {
-    fn hash(&self) -> TxHash {
-        let mut hasher = Sha3_256::new();
-        _ = write!(hasher, "{}", self.via);
-        hasher.update(self.proof.hash().0);
-        let hash_bytes = hasher.finalize();
-        TxHash(hex::encode(hash_bytes))
-    }
-}
 impl Hashable<ProofDataHash> for ProofData {
     fn hash(&self) -> ProofDataHash {
         let mut hasher = Sha3_256::new();
@@ -508,20 +460,9 @@ impl Hashable<ProofDataHash> for ProofData {
 impl Hashable<TxHash> for VerifiedProofTransaction {
     fn hash(&self) -> TxHash {
         let mut hasher = Sha3_256::new();
-        _ = write!(hasher, "{}", self.blob_tx_hash);
         _ = write!(hasher, "{}", self.contract_name);
         _ = write!(hasher, "{:?}", self.proof_hash);
-        _ = write!(hasher, "{:?}", self.hyle_output);
-        let hash_bytes = hasher.finalize();
-        TxHash(hex::encode(hash_bytes))
-    }
-}
-impl Hashable<TxHash> for VerifiedRecursiveProofTransaction {
-    fn hash(&self) -> TxHash {
-        let mut hasher = Sha3_256::new();
-        _ = write!(hasher, "{}", self.via);
-        _ = write!(hasher, "{:?}", self.proof_hash);
-        _ = write!(hasher, "{:?}", self.verifies);
+        _ = write!(hasher, "{:?}", self.proven_blobs);
         let hash_bytes = hasher.finalize();
         TxHash(hex::encode(hash_bytes))
     }
