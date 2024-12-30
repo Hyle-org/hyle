@@ -26,11 +26,3 @@ jobs:
           deny: warnings
           token: ${{ secrets.GITHUB_TOKEN }}
           options: "--all-targets --all-features"
-  unused dependencies:
-    name: Check unused dependencies
-    if: github.event.pull_request.draft == false
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Machete
-        uses: bnjbvr/cargo-machete@main
