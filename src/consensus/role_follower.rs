@@ -11,9 +11,8 @@ use crate::{
     consensus::StateTag,
     mempool::MempoolNetMessage,
     model::{get_current_timestamp, Hashable, ValidatorPublicKey},
-    p2p::network::{Signed, SignedByValidator},
     utils::{
-        crypto::{AggregateSignature, BlstCrypto},
+        crypto::{AggregateSignature, BlstCrypto, Signed, SignedByValidator},
         logger::LogMe,
     },
 };
@@ -552,8 +551,7 @@ impl FollowerRole for Consensus {
         }
 
         if &next_max_timestamp < timestamp {
-            dbg!(self.bft_round_state.consensus_proposal.clone());
-            bail!(
+            warn!(
                 "Timestamp {} too late (should be < {}, exceeded by {} ms)",
                 timestamp,
                 next_max_timestamp,

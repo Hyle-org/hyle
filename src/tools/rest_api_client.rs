@@ -1,20 +1,20 @@
 use anyhow::{Context, Result};
-use hyle_contract_sdk::{StateDigest, TxHash};
 use reqwest::{Response, Url};
-use staking::state::Staking;
 
+#[cfg(feature = "node")]
+use crate::tools::mock_workflow::RunScenario;
 use crate::{
-    consensus::ConsensusInfo,
-    data_availability::node_state::model::Contract,
-    indexer::model::ContractDb,
+    model::consensus::ConsensusInfo,
+    model::data_availability::Contract,
+    model::indexer::ContractDb,
+    model::rest::NodeInfo,
     model::{
         BlobTransaction, BlockHeight, ContractName, ProofTransaction, RecursiveProofTransaction,
         RegisterContractTransaction,
     },
-    tools::mock_workflow::RunScenario,
 };
-
-use super::NodeInfo;
+use hyle_contract_sdk::{StateDigest, TxHash};
+use staking::state::Staking;
 
 pub struct ApiHttpClient {
     pub url: Url,
@@ -22,9 +22,9 @@ pub struct ApiHttpClient {
 }
 
 impl ApiHttpClient {
-    pub fn new(url: Url) -> Self {
+    pub fn new(url: String) -> Self {
         Self {
-            url,
+            url: Url::parse(&url).expect("Invalid url"),
             reqwest_client: reqwest::Client::new(),
         }
     }
@@ -172,6 +172,7 @@ impl ApiHttpClient {
         StateDigest(resp.state_digest).try_into()
     }
 
+    #[cfg(feature = "node")]
     pub async fn run_scenario_api_test(
         &self,
         qps: u64,

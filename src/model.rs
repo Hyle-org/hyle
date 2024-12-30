@@ -1,42 +1,52 @@
 //! Various data structures
 
-use anyhow::{bail, Error};
+#[cfg(feature = "node")]
+use crate::bus::SharedMessageBus;
+#[cfg(feature = "node")]
+use crate::utils::{conf::SharedConf, crypto::SharedBlstCrypto};
+#[cfg(feature = "node")]
 use axum::Router;
+#[cfg(feature = "node")]
+use std::sync::Arc;
+
+use anyhow::{bail, Error};
 use bincode::{Decode, Encode};
 pub use client_sdk::{ProofData, ProofDataHash};
 use derive_more::Display;
-use hyle_contract_sdk::{
-    flatten_blobs, BlobIndex, HyleOutput, Identity, ProgramId, StateDigest, TxHash, Verifier,
-};
-pub use hyle_contract_sdk::{Blob, BlobData, ContractName};
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Sha3_256};
 use sqlx::{prelude::Type, Postgres};
-use staking::StakingAction;
 use std::{
     cmp::Ordering,
     collections::BTreeMap,
     fmt,
     io::Write,
     ops::Add,
-    sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
 };
 use strum_macros::IntoStaticStr;
+
+use consensus::ConsensusProposal;
+use crypto::AggregateSignature;
+use hyle_contract_sdk::{
+    flatten_blobs, BlobIndex, HyleOutput, Identity, ProgramId, StateDigest, TxHash, Verifier,
+};
+use mempool::DataProposal;
+use staking::StakingAction;
 use tracing::debug;
 
-use crate::{
-    bus::SharedMessageBus,
-    consensus::{utils::HASH_DISPLAY_SIZE, ConsensusProposal},
-    mempool::storage::DataProposal,
-    utils::{
-        conf::SharedConf,
-        crypto::{AggregateSignature, SharedBlstCrypto},
-    },
-};
-
 // Re-export
+pub use hyle_contract_sdk::{Blob, BlobData, ContractName};
 pub use staking::model::ValidatorPublicKey;
+
+pub mod consensus;
+pub mod crypto;
+pub mod data_availability;
+pub mod indexer;
+pub mod mempool;
+pub mod rest;
+
+pub const HASH_DISPLAY_SIZE: usize = 3;
 
 #[derive(
     Debug, Display, Default, Clone, Serialize, Deserialize, Eq, PartialEq, Hash, Encode, Decode,
@@ -518,7 +528,7 @@ impl std::default::Default for SignedBlock {
             consensus_proposal: ConsensusProposal::default(),
             data_proposals: vec![],
             certificate: AggregateSignature {
-                signature: crate::utils::crypto::Signature("signature".into()),
+                signature: crypto::Signature("signature".into()),
                 validators: vec![],
             },
         }
@@ -560,15 +570,19 @@ pub fn get_current_timestamp_ms() -> u64 {
         .as_millis() as u64
 }
 
+#[cfg(feature = "node")]
 pub struct CommonRunContext {
     pub config: SharedConf,
     pub bus: SharedMessageBus,
     pub router: std::sync::Mutex<Option<Router>>,
 }
+
+#[cfg(feature = "node")]
 pub struct NodeRunContext {
     pub crypto: SharedBlstCrypto,
 }
 
+#[cfg(feature = "node")]
 #[derive(Clone)]
 pub struct SharedRunContext {
     pub common: Arc<CommonRunContext>,
