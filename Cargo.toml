@@ -94,7 +94,7 @@ rand = { version = "0.8.5", optional = true }
 risc0-zkvm = { version = "1.2.0", default-features = false, features = ["std"], optional = true }
 ron = { version = "0.8.1", optional = true }
 sp1-sdk = { version = "3.4.0", default-features = false, optional = true }
-syn = { version = "2.0.91", optional = true }
+syn = { version = "2.0.92", optional = true }
 tokio = { version = "1.42.0", features = ["full", "tracing"], optional = true }
 tokio-util = { version = "0.7.13", optional = true }
 tower-http = { version = "0.6.2", features = ["trace", "cors"], optional = true }
