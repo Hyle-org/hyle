@@ -275,7 +275,7 @@ impl E2ECtx {
             success: true,
             program_outputs: vec![],
         };
-        ProofData::Bytes(serde_json::to_vec(&hyle_output).unwrap())
+        ProofData::Bytes(serde_json::to_vec(&vec![hyle_output]).unwrap())
     }
 
     pub async fn send_proof_single(
@@ -299,14 +299,14 @@ impl E2ECtx {
 
     pub async fn send_proof(
         &self,
-        via: ContractName,
+        contract_name: ContractName,
         proof: ProofData,
         verifies: Vec<TxHash>,
     ) -> Result<()> {
         assert_ok!(self
             .client()
             .send_tx_proof(&ProofTransaction {
-                contract_name: via.clone(),
+                contract_name: contract_name.clone(),
                 proof: proof.clone(),
                 tx_hashes: verifies.clone(),
             })

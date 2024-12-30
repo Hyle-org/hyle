@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 
 use crate::{
     bus::{bus_client, BusClientSender, BusMessage},
@@ -169,7 +169,7 @@ impl Genesis {
                             hyle_output: out,
                         })
                         .collect(),
-                    is_recursive: false,
+                    is_recursive: true,
                     proof_hash: ProofData::default().hash(),
                     proof: None,
                 },
@@ -242,7 +242,8 @@ impl Genesis {
         Ok(txs)
     }
 
-    pub fn genesis_contracts_txs() -> (HashMap<ContractName, ProgramId>, Vec<Transaction>, States) {
+    pub fn genesis_contracts_txs() -> (BTreeMap<ContractName, ProgramId>, Vec<Transaction>, States)
+    {
         let staking_program_id = hyle_contracts::STAKING_ID.to_vec();
         let hyllar_program_id = hyle_contracts::HYLLAR_ID.to_vec();
         let hydentity_program_id = hyle_contracts::HYDENTITY_ID.to_vec();
@@ -260,7 +261,7 @@ impl Genesis {
             staking: staking_state,
         };
 
-        let mut map = HashMap::default();
+        let mut map = BTreeMap::default();
         map.insert("hyllar".into(), ProgramId(hyllar_program_id.clone()));
         map.insert("hydentity".into(), ProgramId(hydentity_program_id.clone()));
         map.insert("staking".into(), ProgramId(staking_program_id.clone()));

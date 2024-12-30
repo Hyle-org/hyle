@@ -166,7 +166,7 @@ pub struct VerifiedProofTransaction {
 impl fmt::Debug for VerifiedProofTransaction {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("VerifiedProofTransaction")
-            .field("via", &self.contract_name)
+            .field("contract_name", &self.contract_name)
             .field("proof_hash", &self.proof_hash)
             .field("proof", &"[HIDDEN]")
             .field(
@@ -177,16 +177,16 @@ impl fmt::Debug for VerifiedProofTransaction {
                     None => 0,
                 },
             )
-            .field("verifiers", &self.proven_blobs)
+            .field("proven_blobs", &self.proven_blobs)
             .finish()
     }
 }
 
 impl fmt::Debug for ProofTransaction {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("RecursiveProofTransaction")
-            .field("via", &self.contract_name)
-            .field("verifies", &self.tx_hashes)
+        f.debug_struct("ProofTransaction")
+            .field("contract_name", &self.contract_name)
+            .field("tx_hashes", &self.tx_hashes)
             .field("proof", &"[HIDDEN]")
             .field(
                 "proof_len",

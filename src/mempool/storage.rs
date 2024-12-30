@@ -352,7 +352,7 @@ impl Storage {
                                 }
                             }
                             Err(e) => {
-                                warn!("Refusing DataProposal: invalid proof transaction: {}", e);
+                                warn!("Refusing DataProposal: invalid recursive proof transaction: {}", e);
                                 return DataProposalVerdict::Refuse;
                             }
                         }
@@ -758,7 +758,7 @@ mod tests {
         let hyle_output = get_hyle_output();
         ProofTransaction {
             contract_name: contract_name.clone(),
-            proof: ProofData::Bytes(serde_json::to_vec(&hyle_output).unwrap()),
+            proof: ProofData::Bytes(serde_json::to_vec(&vec![hyle_output]).unwrap()),
             tx_hashes: vec![TxHash::default()],
         }
     }
@@ -772,7 +772,7 @@ mod tests {
 
     fn make_verified_proof_tx(contract_name: ContractName) -> Transaction {
         let hyle_output = get_hyle_output();
-        let proof = ProofData::Bytes(serde_json::to_vec(&hyle_output).unwrap());
+        let proof = ProofData::Bytes(serde_json::to_vec(&vec![&hyle_output]).unwrap());
         Transaction {
             version: 1,
             transaction_data: TransactionData::VerifiedProof(VerifiedProofTransaction {
@@ -792,7 +792,7 @@ mod tests {
 
     fn make_empty_verified_proof_tx(contract_name: ContractName) -> Transaction {
         let hyle_output = get_hyle_output();
-        let proof = ProofData::Bytes(serde_json::to_vec(&hyle_output).unwrap());
+        let proof = ProofData::Bytes(serde_json::to_vec(&vec![&hyle_output]).unwrap());
         Transaction {
             version: 1,
             transaction_data: TransactionData::VerifiedProof(VerifiedProofTransaction {

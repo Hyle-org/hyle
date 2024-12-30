@@ -83,6 +83,7 @@ futures = { version = "0.3.31", optional = true }
 hyle-contracts = { path = "./contracts", package = "hyle-contracts", optional = true }
 hydentity = { path = "./contracts/hydentity", optional = true }
 hyllar = { path = "./contracts/hyllar", optional = true }
+risc0-recursion = { path = "./contracts/risc0-recursion", optional = true }
 indexmap = { version = "2.7.0", features = ["serde"], optional = true }
 # opentelemetry and axum-otel-metrics must be updated together (so that there is only one opentelemetry version)
 opentelemetry = { version = "0.27", optional = true }
@@ -91,13 +92,18 @@ paste = { version = "1.0.15", optional = true }
 prometheus = { version = "0.13.4", optional = true }
 quote = { version = "1.0.38", optional = true }
 rand = { version = "0.8.5", optional = true }
-risc0-zkvm = { version = "1.2.0", default-features = false, features = ["std"], optional = true }
+risc0-zkvm = { version = "1.2.0", default-features = false, features = [
+    "std",
+], optional = true }
 ron = { version = "0.8.1", optional = true }
 sp1-sdk = { version = "3.4.0", default-features = false, optional = true }
 syn = { version = "2.0.92", optional = true }
 tokio = { version = "1.42.0", features = ["full", "tracing"], optional = true }
 tokio-util = { version = "0.7.13", optional = true }
-tower-http = { version = "0.6.2", features = ["trace", "cors"], optional = true }
+tower-http = { version = "0.6.2", features = [
+    "trace",
+    "cors",
+], optional = true }
 tracing-subscriber = { version = "0.3", features = ["json"], optional = true }
 
 [target.'cfg(not(target_os="linux"))'.dependencies]
@@ -136,7 +142,13 @@ default = ["tx_builder", "node"]
 dhat = ["dep:dhat"]
 # Activate this feature to recompile contracts locally (mostly useful for iterating on tests)
 nonreproducible = ["hyle-contracts/nonreproducible"]
-tx_builder = ["dep:bonsai-runner", "dep:hyllar", "dep:hydentity", "dep:hyle-contracts", "dep:risc0-zkvm"]
+tx_builder = [
+    "dep:bonsai-runner",
+    "dep:hyllar",
+    "dep:hydentity",
+    "dep:hyle-contracts",
+    "dep:risc0-zkvm",
+]
 node = [
     "dep:anymap",
     "dep:assertables",
@@ -153,6 +165,7 @@ node = [
     "dep:hyle-contracts",
     "dep:hydentity",
     "dep:hyllar",
+    "dep:risc0-recursion",
     "dep:indexmap",
     "dep:opentelemetry",
     "dep:opentelemetry-prometheus",
@@ -167,7 +180,7 @@ node = [
     "dep:tokio",
     "dep:tokio-util",
     "dep:tower-http",
-    "dep:tracing-subscriber"
+    "dep:tracing-subscriber",
 ]
 
 [profile.release]

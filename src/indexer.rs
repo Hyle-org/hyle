@@ -395,7 +395,10 @@ impl Indexer {
             let proof = tx_data.proof.unwrap();
 
             let Ok(proof) = &proof.to_bytes() else {
-                error!("Verified proof TX {:?} does not contain a proof", &tx_hash);
+                error!(
+                    "Verified proof TX {:?} could not be decoded to bytes",
+                    &tx_hash
+                );
                 continue;
             };
 

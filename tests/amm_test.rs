@@ -649,10 +649,10 @@ mod e2e_amm {
             "risc0-recursion".into(),
             ProofData::Bytes(recursive_proof),
             vec![
-                blob_tx_hash.clone(), // "hydentity".into()),
-                blob_tx_hash.clone(), // AMM_CONTRACT_NAME.into()),
-                blob_tx_hash.clone(), // "hyllar".into()),
-                blob_tx_hash.clone(), // "hyllar2".into()),
+                blob_tx_hash.clone(),
+                blob_tx_hash.clone(),
+                blob_tx_hash.clone(),
+                blob_tx_hash.clone(),
             ],
         )
         .await?;
