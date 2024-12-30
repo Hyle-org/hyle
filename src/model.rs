@@ -2,11 +2,11 @@
 
 #[cfg(feature = "node")]
 use crate::bus::SharedMessageBus;
-use crate::data_availability::node_state::HandledBlobProofOutput;
 #[cfg(feature = "node")]
 use crate::utils::{conf::SharedConf, crypto::SharedBlstCrypto};
 #[cfg(feature = "node")]
 use axum::Router;
+use data_availability::HandledBlobProofOutput;
 #[cfg(feature = "node")]
 use std::sync::Arc;
 

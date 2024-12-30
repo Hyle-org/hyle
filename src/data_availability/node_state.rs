@@ -1,7 +1,7 @@
 //! State required for participation in consensus by the node.
 
 use crate::model::data_availability::{
-    Contract, Timeouts, UnsettledBlobMetadata, UnsettledBlobTransaction,
+    Contract, HandledBlobProofOutput, Timeouts, UnsettledBlobMetadata, UnsettledBlobTransaction,
 };
 use crate::model::{
     BlobProofOutput, BlobTransaction, BlobsHash, Block, BlockHeight, ContractName, Hashable,
@@ -27,18 +27,6 @@ pub struct NodeState {
     // This field is public for testing purposes
     pub contracts: HashMap<ContractName, Contract>,
     unsettled_transactions: OrderedTxMap,
-}
-
-#[derive(
-    Debug, Default, Clone, serde::Serialize, serde::Deserialize, Encode, Decode, Eq, PartialEq,
-)]
-pub struct HandledBlobProofOutput {
-    pub proof_tx_hash: TxHash,
-    pub blob_tx_hash: TxHash,
-    pub blob_index: BlobIndex,
-    pub contract_name: ContractName,
-    pub hyle_output: HyleOutput,
-    pub blob_proof_output_index: usize,
 }
 
 pub struct SettledTxOutput {
