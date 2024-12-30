@@ -7,7 +7,6 @@ mod fixtures;
 
 mod e2e_indexer {
     use hyle::model::indexer::BlockDb;
-    use serde_json::Value;
 
     use super::*;
 
@@ -28,15 +27,6 @@ mod e2e_indexer {
 
         while block.height != 0 {
             info!("➡️  Querying block by hash at height {}", block.height - 1);
-            let parent_block = ctx
-                .indexer_client()
-                .query_indexer(&format!("indexer/block/hash/{}", block.parent_hash.0))
-                .await?;
-
-            println!(
-                "TOTORO {:?}",
-                parent_block.json::<serde_json::Value>().await?
-            );
 
             let parent_block = ctx
                 .indexer_client()
@@ -53,12 +43,6 @@ mod e2e_indexer {
 
         Ok(())
     }
-
-    /*#[test_log::test(tokio::test)]
-    async fn indexer_single_node() -> Result<()> {
-        let ctx = E2ECtx::new_single(500).await?;
-        scenario_indexer(ctx).await
-    }*/
 
     #[test_log::test(tokio::test)]
     async fn indexer_multi_nodes() -> Result<()> {

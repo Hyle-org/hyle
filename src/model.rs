@@ -310,10 +310,14 @@ impl PartialEq for SignedBlock {
 
 impl Eq for SignedBlock {}
 
-impl std::hash::Hash for SignedBlock {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        let h: ConsensusProposalHash = Hashable::hash(self);
-        h.hash(state);
+impl Hashable<ConsensusProposalHash> for ConsensusProposal {
+    fn hash(&self) -> ConsensusProposalHash {
+        let mut hasher = Sha3_256::new();
+        _ = write!(hasher, "{}", self.slot);
+        _ = write!(hasher, "{}", self.view);
+        _ = write!(hasher, "{:?}", self.cut);
+        _ = write!(hasher, "{:?}", self.new_validators_to_bond);
+        ConsensusProposalHash(hex::encode(hasher.finalize()))
     }
 }
 

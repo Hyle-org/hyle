@@ -19,7 +19,7 @@ use crate::{model::SharedRunContext, utils::modules::Module};
 use anyhow::Result;
 use bincode::{Decode, Encode};
 use staking::state::Staking;
-use tracing::warn;
+use tracing::{info, warn};
 
 module_bus_client! {
 struct SingleNodeConsensusBusClient {
@@ -157,6 +157,7 @@ impl SingleNodeConsensus {
         Ok(())
     }
     async fn handle_new_slot_tick(&mut self) -> Result<()> {
+        info!("New slot tick");
         // Query a new cut to Mempool in order to create a new CommitCut
         match self
             .bus

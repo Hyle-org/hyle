@@ -274,6 +274,7 @@ impl Mempool {
     }
 
     fn handle_data_proposal_management(&mut self) -> Result<()> {
+        debug!("🌝 Handling DataProposal management");
         // Create new DataProposal with pending txs
         self.storage.new_data_proposal(&self.crypto); // TODO: copy crypto in storage
 
