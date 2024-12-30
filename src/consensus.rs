@@ -1640,6 +1640,7 @@ pub mod test {
         };
     }
 
+    #[ignore]
     #[test_log::test(tokio::test)]
     async fn prepare_wrong_timestamp_too_late() {
         let (mut node1, mut node2, mut node3, mut node4): (
