@@ -28,7 +28,7 @@ impl Hashable<ConsensusProposalHash> for ConsensusProposal {
         _ = write!(hasher, "{}", self.view);
         _ = write!(hasher, "{:?}", self.cut);
         _ = write!(hasher, "{:?}", self.new_validators_to_bond);
-        ConsensusProposalHash(hasher.finalize().as_slice().to_owned())
+        ConsensusProposalHash(hex::encode(hasher.finalize()))
     }
 }
 impl Display for ValidatorCandidacy {

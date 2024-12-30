@@ -15,7 +15,6 @@ use bincode::{Decode, Encode};
 use derive_more::Display;
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Sha3_256};
-use sqlx::{prelude::Type, Postgres};
 use std::{
     cmp::Ordering,
     collections::BTreeMap,
@@ -26,7 +25,7 @@ use std::{
 };
 use strum_macros::IntoStaticStr;
 
-use consensus::ConsensusProposal;
+use consensus::{ConsensusProposal, ConsensusProposalHash};
 use crypto::AggregateSignature;
 use hyle_contract_sdk::{
     flatten_blobs, BlobIndex, HyleOutput, Identity, ProgramId, StateDigest, TxHash, Verifier,
@@ -223,7 +222,8 @@ impl Transaction {
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, Encode, Decode, Eq, PartialEq)]
 pub struct Block {
-    pub block_parent_hash: BlockHash,
+    pub parent_hash: ConsensusProposalHash,
+    pub hash: ConsensusProposalHash,
     pub block_height: BlockHeight,
     pub block_timestamp: u64,
     pub new_contract_txs: Vec<Transaction>,
@@ -260,97 +260,6 @@ impl PartialOrd for Block {
     }
 }
 
-impl Hashable<BlockHash> for Block {
-    fn hash(&self) -> BlockHash {
-        let mut hasher = Sha3_256::new();
-
-        _ = write!(hasher, "{}", self.block_parent_hash);
-        _ = write!(hasher, "{}", self.block_height);
-        _ = write!(hasher, "{}", self.block_timestamp);
-        for tx in self.new_contract_txs.iter().chain(self.new_blob_txs.iter()) {
-            hasher.update(tx.hash().0);
-        }
-        /*
-        TODO: is this redundant?
-        for tx in self.new_verified_proof_txs.iter() {
-            _ = write!(hasher, "{}", tx.);
-            _ = write!(hasher, "{}", blob_v);
-        } */
-
-        for (tx_hash, blob_v, blob_po_i) in self.verified_blobs.iter() {
-            _ = write!(hasher, "{}", tx_hash);
-            _ = write!(hasher, "{}", blob_v);
-            _ = write!(hasher, "{}", blob_po_i);
-        }
-        for tx_f in self.failed_txs.iter() {
-            hasher.update(tx_f.hash().0);
-        }
-        for new_bounded_validator in self.new_bounded_validators.iter() {
-            hasher.update(new_bounded_validator.0.as_slice());
-        }
-        for settled_blob_tx_hash in self.settled_blob_tx_hashes.iter() {
-            _ = write!(hasher, "{}", settled_blob_tx_hash);
-        }
-        let mut sorted_states: Vec<_> = self.updated_states.iter().collect();
-        sorted_states.sort_by(|a, b| a.0.cmp(b.0));
-        for (cn, sd) in sorted_states {
-            _ = write!(hasher, "{}", cn);
-            _ = write!(hasher, "{:?}", sd);
-        }
-        _ = write!(hasher, "{}", self.block_timestamp);
-
-        BlockHash(hex::encode(hasher.finalize()))
-    }
-}
-
-#[derive(Debug, Serialize, Deserialize, Default, Clone, Encode, Decode, PartialEq, Eq, Hash)]
-pub struct BlockHash(pub String);
-
-impl Display for BlockHash {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}",
-            self.0.get(..HASH_DISPLAY_SIZE * 2).unwrap_or(&self.0)
-        )
-    }
-}
-
-impl Type<Postgres> for BlockHash {
-    fn type_info() -> sqlx::postgres::PgTypeInfo {
-        <String as Type<Postgres>>::type_info()
-    }
-}
-impl sqlx::Encode<'_, sqlx::Postgres> for BlockHash {
-    fn encode_by_ref(
-        &self,
-        buf: &mut sqlx::postgres::PgArgumentBuffer,
-    ) -> std::result::Result<
-        sqlx::encode::IsNull,
-        std::boxed::Box<(dyn std::error::Error + std::marker::Send + std::marker::Sync + 'static)>,
-    > {
-        <String as sqlx::Encode<sqlx::Postgres>>::encode_by_ref(&self.0, buf)
-    }
-}
-
-impl<'r> sqlx::Decode<'r, sqlx::Postgres> for BlockHash {
-    fn decode(
-        value: sqlx::postgres::PgValueRef<'r>,
-    ) -> std::result::Result<
-        BlockHash,
-        std::boxed::Box<(dyn std::error::Error + std::marker::Send + std::marker::Sync + 'static)>,
-    > {
-        let inner = <String as sqlx::Decode<sqlx::Postgres>>::decode(value)?;
-        Ok(BlockHash(inner))
-    }
-}
-
-impl BlockHash {
-    pub fn new(s: &str) -> BlockHash {
-        BlockHash(s.into())
-    }
-}
-
 pub trait Hashable<T> {
     fn hash(&self) -> T;
 }
@@ -358,13 +267,16 @@ pub trait Hashable<T> {
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, Display)]
 #[display("")]
 pub struct SignedBlock {
-    pub parent_hash: BlockHash,
     pub data_proposals: Vec<(ValidatorPublicKey, Vec<DataProposal>)>,
     pub certificate: AggregateSignature,
     pub consensus_proposal: ConsensusProposal,
 }
 
 impl SignedBlock {
+    pub fn parent_hash(&self) -> &ConsensusProposalHash {
+        &self.consensus_proposal.parent_hash
+    }
+
     pub fn height(&self) -> BlockHeight {
         BlockHeight(self.consensus_proposal.slot)
     }
@@ -400,23 +312,18 @@ impl Eq for SignedBlock {}
 
 impl std::hash::Hash for SignedBlock {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        let h: BlockHash = Hashable::hash(self);
+        let h: ConsensusProposalHash = Hashable::hash(self);
         h.hash(state);
     }
 }
 
 // TODO: Return consensus proposal hash
-impl Hashable<BlockHash> for SignedBlock {
-    fn hash(&self) -> BlockHash {
-        let mut hasher = Sha3_256::new();
-        _ = write!(hasher, "{}", self.parent_hash);
-        _ = write!(hasher, "{}", self.height());
-        for tx in self.txs().iter() {
-            hasher.update(tx.hash().0);
-        }
-        BlockHash(hex::encode(hasher.finalize()))
+impl Hashable<ConsensusProposalHash> for SignedBlock {
+    fn hash(&self) -> ConsensusProposalHash {
+        self.consensus_proposal.hash()
     }
 }
+
 impl Hashable<TxHash> for Transaction {
     fn hash(&self) -> TxHash {
         match &self.transaction_data {
@@ -488,7 +395,6 @@ impl BlobTransaction {
 impl std::default::Default for SignedBlock {
     fn default() -> Self {
         SignedBlock {
-            parent_hash: BlockHash::default(),
             consensus_proposal: ConsensusProposal::default(),
             data_proposals: vec![],
             certificate: AggregateSignature {

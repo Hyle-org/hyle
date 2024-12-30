@@ -181,8 +181,9 @@ impl NodeState {
             }
         }
         Block {
-            block_parent_hash: signed_block.parent_hash.clone(),
-            block_height: self.current_height,
+            parent_hash: signed_block.parent_hash().clone(),
+            hash: signed_block.hash(),
+            block_height: signed_block.height(),
             // TODO: put timestamp in consensus proposal
             block_timestamp: signed_block.consensus_proposal.timestamp,
             new_contract_txs,

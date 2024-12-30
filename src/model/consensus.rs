@@ -51,7 +51,7 @@ pub enum Ticket {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, PartialEq, Eq, Hash, Default)]
-pub struct ConsensusProposalHash(pub Vec<u8>);
+pub struct ConsensusProposalHash(pub String);
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, Encode, Decode, PartialEq, Eq, Hash)]
 pub struct ConsensusProposal {
@@ -63,6 +63,7 @@ pub struct ConsensusProposal {
     pub cut: Cut,
     pub new_validators_to_bond: Vec<NewValidatorCandidate>,
     pub timestamp: u64,
+    pub parent_hash: ConsensusProposalHash,
 }
 
 type NextLeader = ValidatorPublicKey;
