@@ -29,9 +29,9 @@ async fn send_proof(
     let proof = load_encoded_receipt_from_file(proof_file.as_str());
     let res = client
         .send_tx_proof(&ProofTransaction {
-            blob_tx_hash,
-            contract_name,
+            contract_name: contract_name.clone(),
             proof: ProofData::Bytes(proof),
+            tx_hashes: vec![blob_tx_hash],
         })
         .await?;
     assert!(res.status().is_success());

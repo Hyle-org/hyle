@@ -4,16 +4,17 @@ use crate::{
     bus::{bus_client, BusClientSender, BusMessage},
     handle_messages,
     model::{
-        BlobTransaction, Hashable, ProofData, RegisterContractTransaction, SharedRunContext,
-        Transaction, TransactionData, ValidatorPublicKey, VerifiedProofTransaction,
+        BlobProofOutput, BlobTransaction, Hashable, ProofData, RegisterContractTransaction,
+        SharedRunContext, Transaction, TransactionData, ValidatorPublicKey,
+        VerifiedProofTransaction,
     },
     p2p::network::PeerEvent,
     tools::transactions_builder::{BuildResult, States, TransactionBuilder},
     utils::{conf::SharedConf, crypto::SharedBlstCrypto, modules::Module},
 };
 use anyhow::{bail, Error, Result};
-use hyle_contract_sdk::Digestable;
 use hyle_contract_sdk::{identity_provider::IdentityVerification, Identity};
+use hyle_contract_sdk::{ContractName, Digestable, ProgramId};
 use serde::{Deserialize, Serialize};
 use tracing::{error, info};
 
@@ -125,7 +126,7 @@ impl Genesis {
     }
 
     async fn generate_genesis_txs(&self) -> Result<Vec<Transaction>> {
-        let (mut genesis_txs, mut states) = Self::genesis_contracts_txs();
+        let (contract_program_ids, mut genesis_txs, mut states) = Self::genesis_contracts_txs();
 
         let register_txs = self.generate_register_txs(&mut states).await?;
         let faucet_txs = self.generate_faucet_txs(&mut states).await?;
@@ -140,11 +141,11 @@ impl Genesis {
         for BuildResult {
             identity,
             blobs,
-            outputs,
+            mut outputs,
         } in builders
         {
             // On genesis we don't need an actual zkproof as the txs are not going through data
-            // dissemnitation. We can create the same VerifiedProofTransaction on each genesis
+            // dissemination. We can create the same VerifiedProofTransaction on each genesis
             // validator, and assume it's the same.
 
             let tx = BlobTransaction { identity, blobs };
@@ -152,17 +153,27 @@ impl Genesis {
 
             genesis_txs.push(Transaction::wrap(TransactionData::Blob(tx)));
 
-            for (contract_name, out) in outputs {
-                genesis_txs.push(Transaction::wrap(TransactionData::VerifiedProof(
-                    VerifiedProofTransaction {
-                        blob_tx_hash: blob_tx_hash.clone(),
-                        contract_name,
-                        proof_hash: ProofData::default().hash(),
-                        hyle_output: out,
-                        proof: None,
-                    },
-                )));
-            }
+            // Pretend we're verifying a recursive proof
+            genesis_txs.push(Transaction::wrap(TransactionData::VerifiedProof(
+                VerifiedProofTransaction {
+                    contract_name: "risc0-recursion".into(),
+                    proven_blobs: outputs
+                        .drain(..)
+                        .map(|(contract_name, out)| BlobProofOutput {
+                            original_proof_hash: ProofData::default().hash(),
+                            program_id: contract_program_ids
+                                .get(&contract_name)
+                                .expect("Genesis TXes on unregistered contracts")
+                                .clone(),
+                            blob_tx_hash: blob_tx_hash.clone(),
+                            hyle_output: out,
+                        })
+                        .collect(),
+                    is_recursive: true,
+                    proof_hash: ProofData::default().hash(),
+                    proof: None,
+                },
+            )));
         }
 
         Ok(genesis_txs)
@@ -231,7 +242,8 @@ impl Genesis {
         Ok(txs)
     }
 
-    pub fn genesis_contracts_txs() -> (Vec<Transaction>, States) {
+    pub fn genesis_contracts_txs() -> (BTreeMap<ContractName, ProgramId>, Vec<Transaction>, States)
+    {
         let staking_program_id = hyle_contracts::STAKING_ID.to_vec();
         let hyllar_program_id = hyle_contracts::HYLLAR_ID.to_vec();
         let hydentity_program_id = hyle_contracts::HYDENTITY_ID.to_vec();
@@ -249,7 +261,17 @@ impl Genesis {
             staking: staking_state,
         };
 
+        let mut map = BTreeMap::default();
+        map.insert("hyllar".into(), ProgramId(hyllar_program_id.clone()));
+        map.insert("hydentity".into(), ProgramId(hydentity_program_id.clone()));
+        map.insert("staking".into(), ProgramId(staking_program_id.clone()));
+        map.insert(
+            "risc0-recursion".into(),
+            ProgramId(hyle_contracts::RISC0_RECURSION_ID.to_vec()),
+        );
+
         (
+            map,
             vec![
                 Transaction::wrap(TransactionData::RegisterContract(
                     RegisterContractTransaction {

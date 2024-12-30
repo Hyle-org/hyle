@@ -7,10 +7,10 @@ use std::{collections::HashMap, fmt::Display, vec};
 use tracing::{debug, error, warn};
 
 use crate::{
-    data_availability::node_state::verifiers::verify_proof,
+    data_availability::node_state::verifiers::{verify_proof, verify_recursive_proof},
     model::{
         mempool::{DataProposal, DataProposalHash, PoDA},
-        Hashable, Transaction, TransactionData, ValidatorPublicKey, VerifiedProofTransaction,
+        BlobProofOutput, Hashable, Transaction, TransactionData, ValidatorPublicKey,
     },
     utils::crypto::{BlstCrypto, SignedByValidator},
 };
@@ -238,108 +238,13 @@ impl Storage {
             // Get the last known parent hash in order to get all the next ones
             return DataProposalVerdict::Wait(last_known_parent_hash.cloned());
         }
-        // optimistic_known_contracts is here to handle the case where a contract is registered in a car that is not yet committed.
-        // For performance reasons, we only clone known_contracts in it for unregistered contracts that are potentially in those uncommitted cars.
-        let mut optimistically_known_contracts: Option<KnownContracts> = None;
         for tx in &data_proposal.txs {
             match &tx.transaction_data {
                 TransactionData::Proof(_) => {
-                    warn!("Refusing DataProposal: unverified proof transaction");
-                    return DataProposalVerdict::Refuse;
-                }
-                TransactionData::RecursiveProof(_) => {
                     warn!("Refusing DataProposal: unverified recursive proof transaction");
                     return DataProposalVerdict::Refuse;
                 }
                 TransactionData::VerifiedProof(proof_tx) => {
-                    // Ensure contract is registered
-                    let contract_name = &proof_tx.contract_name;
-                    if !known_contracts.0.contains_key(contract_name)
-                        && !optimistically_known_contracts
-                            .as_ref()
-                            .map_or(false, |kc| kc.0.contains_key(contract_name))
-                    {
-                        // Process previous cars to register the missing contract
-                        if let Some(lane) = self.lanes.get_mut(validator) {
-                            for (
-                                _,
-                                LaneEntry {
-                                    data_proposal,
-                                    signatures: _,
-                                },
-                            ) in lane.iter_reverse()
-                            {
-                                for tx in &data_proposal.txs {
-                                    if let TransactionData::RegisterContract(reg_tx) =
-                                        &tx.transaction_data
-                                    {
-                                        if reg_tx.contract_name == *contract_name {
-                                            if optimistically_known_contracts.is_none() {
-                                                optimistically_known_contracts =
-                                                    Some(known_contracts.clone());
-                                            }
-                                            if optimistically_known_contracts
-                                                .as_mut()
-                                                .unwrap()
-                                                .register_contract(
-                                                    &reg_tx.contract_name,
-                                                    &reg_tx.verifier,
-                                                    &reg_tx.program_id,
-                                                )
-                                                .is_err()
-                                            {
-                                                // Register transactions in a validated car should never fail
-                                                // as car is accepted only if all transactions are valid
-                                                unreachable!();
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    // Extract the proof
-                    let proof = match &proof_tx.proof {
-                        Some(proof) => match proof.to_bytes() {
-                            Ok(bytes) => bytes,
-                            Err(_) => {
-                                warn!("Refusing DataProposal: failed to convert proof to bytes");
-                                return DataProposalVerdict::Refuse;
-                            }
-                        },
-                        None => {
-                            warn!("Refusing DataProposal: proof is missing");
-                            return DataProposalVerdict::Refuse;
-                        }
-                    };
-                    // Verifying the proof before voting
-                    let (verifier, program_id) =
-                        match known_contracts.0.get(contract_name).or_else(|| {
-                            optimistically_known_contracts
-                                .as_ref()
-                                .and_then(|kc| kc.0.get(contract_name))
-                        }) {
-                            Some((verifier, program_id)) => (verifier, program_id),
-                            None => {
-                                warn!("Refusing DataProposal: contract not found");
-                                return DataProposalVerdict::Refuse;
-                            }
-                        };
-
-                    match verify_proof(&proof, verifier, program_id) {
-                        Ok(hyle_output) => {
-                            if hyle_output != proof_tx.hyle_output {
-                                warn!("Refusing DataProposal: incorrect HyleOutput in proof transaction");
-                                return DataProposalVerdict::Refuse;
-                            }
-                        }
-                        Err(e) => {
-                            warn!("Refusing DataProposal: invalid proof transaction: {}", e);
-                            return DataProposalVerdict::Refuse;
-                        }
-                    }
-                }
-                TransactionData::VerifiedRecursiveProof(proof_tx) => {
                     // TODO: figure out what we want to do with the contracts.
                     // Extract the proof
                     let proof = match &proof_tx.proof {
@@ -349,23 +254,64 @@ impl Storage {
                             return DataProposalVerdict::Refuse;
                         }
                     };
-                    // TODO: figure out how to generalize this
-                    if proof_tx.via.0 != "risc0-recursion"
-                        && proof_tx.verifies.iter().any(
-                            |VerifiedProofTransaction { contract_name, .. }| {
-                                contract_name != &proof_tx.via
-                            },
-                        )
+                    // TODO: we could early-reject proofs where the blob
+                    // is not for the correct transaction.
+                    let (verifier, program_id) = match known_contracts
+                        .0
+                        .get(&proof_tx.contract_name)
                     {
-                        warn!("Only risc0-recursion can verify recursive proofs on behalf of other contracts.");
-                        return DataProposalVerdict::Refuse;
-                    }
-                    // Verifying the proof before voting
-                    let (verifier, program_id) = match known_contracts.0.get(&proof_tx.via) {
                         Some((verifier, program_id)) => (verifier, program_id),
                         None => {
-                            warn!("Refusing DataProposal: contract not found");
-                            return DataProposalVerdict::Refuse;
+                            // Check if it's in the same data proposal.
+                            // (kind of inefficient, but it's mostly to make our tests work)
+                            // TODO: make this better.
+                            let data = data_proposal
+                                .txs
+                                .get(
+                                    0..data_proposal
+                                        .txs
+                                        .iter()
+                                        .position(|tx2| std::ptr::eq(tx, tx2))
+                                        .unwrap(),
+                                )
+                                .unwrap()
+                                .iter()
+                                .find_map(|tx| match &tx.transaction_data {
+                                    TransactionData::RegisterContract(tx) => {
+                                        if tx.contract_name == proof_tx.contract_name {
+                                            Some((&tx.verifier, &tx.program_id))
+                                        } else {
+                                            None
+                                        }
+                                    }
+                                    _ => None,
+                                })
+                                .or_else(|| {
+                                    // Lane exists - we know its parent
+                                    self.lanes.get(validator).unwrap().iter_reverse().find_map(
+                                        |(_, entry)| {
+                                            entry.data_proposal.txs.iter().find_map(|tx| match &tx
+                                                .transaction_data
+                                            {
+                                                TransactionData::RegisterContract(tx) => {
+                                                    if tx.contract_name == proof_tx.contract_name {
+                                                        Some((&tx.verifier, &tx.program_id))
+                                                    } else {
+                                                        None
+                                                    }
+                                                }
+                                                _ => None,
+                                            })
+                                        },
+                                    )
+                                });
+                            match data {
+                                Some(data) => data,
+                                None => {
+                                    warn!("Refusing DataProposal: contract not found");
+                                    return DataProposalVerdict::Refuse;
+                                }
+                            }
                         }
                     };
                     let proof_bytes = match proof.to_bytes() {
@@ -375,35 +321,59 @@ impl Storage {
                             return DataProposalVerdict::Refuse;
                         }
                     };
-                    match verify_proof(&proof_bytes, verifier, program_id) {
-                        Ok(_) => {
-                            if proof.hash() != proof_tx.proof_hash {
-                                warn!("Refusing DataProposal: incorrect HyleOutput in proof transaction");
+                    // TODO: figure out how to generalize this
+                    let is_recursive = proof_tx.contract_name.0 == "risc0-recursion";
+
+                    if is_recursive {
+                        match verify_recursive_proof(&proof_bytes, verifier, program_id) {
+                            Ok((local_program_ids, local_hyle_outputs)) => {
+                                let data_matches = local_program_ids
+                                    .iter()
+                                    .zip(local_hyle_outputs.iter())
+                                    .zip(proof_tx.proven_blobs.iter())
+                                    .all(
+                                        |(
+                                            (local_program_id, local_hyle_output),
+                                            BlobProofOutput {
+                                                program_id,
+                                                hyle_output,
+                                                ..
+                                            },
+                                        )| {
+                                            local_hyle_output == hyle_output
+                                                && local_program_id == program_id
+                                        },
+                                    );
+                                if local_program_ids.len() != proof_tx.proven_blobs.len()
+                                    || !data_matches
+                                {
+                                    warn!("Refusing DataProposal: incorrect HyleOutput in proof transaction");
+                                    return DataProposalVerdict::Refuse;
+                                }
+                            }
+                            Err(e) => {
+                                warn!("Refusing DataProposal: invalid recursive proof transaction: {}", e);
                                 return DataProposalVerdict::Refuse;
                             }
                         }
-                        Err(e) => {
-                            warn!("Refusing DataProposal: invalid proof transaction: {}", e);
-                            return DataProposalVerdict::Refuse;
-                        }
-                    }
-                }
-                TransactionData::RegisterContract(register_contract_tx) => {
-                    if optimistically_known_contracts.is_none() {
-                        optimistically_known_contracts = Some(known_contracts.clone());
-                    }
-                    match optimistically_known_contracts
-                        .as_mut()
-                        .unwrap()
-                        .register_contract(
-                            &register_contract_tx.contract_name,
-                            &register_contract_tx.verifier,
-                            &register_contract_tx.program_id,
-                        ) {
-                        Ok(_) => (),
-                        Err(e) => {
-                            warn!("Refusing DataProposal: {}", e);
-                            return DataProposalVerdict::Refuse;
+                    } else {
+                        match verify_proof(&proof_bytes, verifier, program_id) {
+                            Ok(outputs) => {
+                                // TODO: we could check the blob hash here too.
+                                if outputs.len() != proof_tx.proven_blobs.len()
+                                    && std::iter::zip(outputs.iter(), proof_tx.proven_blobs.iter())
+                                        .any(|(output, BlobProofOutput { hyle_output, .. })| {
+                                            output != hyle_output
+                                        })
+                                {
+                                    warn!("Refusing DataProposal: incorrect HyleOutput in proof transaction");
+                                    return DataProposalVerdict::Refuse;
+                                }
+                            }
+                            Err(e) => {
+                                warn!("Refusing DataProposal: invalid proof transaction: {}", e);
+                                return DataProposalVerdict::Refuse;
+                            }
                         }
                     }
                 }
@@ -574,10 +544,7 @@ impl DataProposal {
                 TransactionData::VerifiedProof(proof_tx) => {
                     proof_tx.proof = None;
                 }
-                TransactionData::VerifiedRecursiveProof(proof_tx) => {
-                    proof_tx.proof = None;
-                }
-                TransactionData::Proof(_) | TransactionData::RecursiveProof(_) => {
+                TransactionData::Proof(_) => {
                     // This can never happen.
                     // A DataProposal that has been processed has turned all TransactionData::Proof into TransactionData::VerifiedProof
                     unreachable!();
@@ -762,9 +729,9 @@ mod tests {
             KnownContracts, MempoolNetMessage,
         },
         model::{
-            Blob, BlobData, BlobTransaction, ContractName, Hashable, ProofData, ProofTransaction,
-            RegisterContractTransaction, Transaction, TransactionData, ValidatorPublicKey,
-            VerifiedProofTransaction,
+            Blob, BlobData, BlobProofOutput, BlobTransaction, ContractName, Hashable, ProofData,
+            ProofTransaction, RegisterContractTransaction, Transaction, TransactionData,
+            ValidatorPublicKey, VerifiedProofTransaction,
         },
         utils::crypto,
     };
@@ -790,9 +757,9 @@ mod tests {
     fn make_proof_tx(contract_name: ContractName) -> ProofTransaction {
         let hyle_output = get_hyle_output();
         ProofTransaction {
-            blob_tx_hash: TxHash::default(),
-            contract_name,
-            proof: ProofData::Bytes(serde_json::to_vec(&hyle_output).unwrap()),
+            contract_name: contract_name.clone(),
+            proof: ProofData::Bytes(serde_json::to_vec(&vec![hyle_output]).unwrap()),
+            tx_hashes: vec![TxHash::default()],
         }
     }
 
@@ -805,30 +772,40 @@ mod tests {
 
     fn make_verified_proof_tx(contract_name: ContractName) -> Transaction {
         let hyle_output = get_hyle_output();
-        let proof = ProofData::Bytes(serde_json::to_vec(&hyle_output).unwrap());
+        let proof = ProofData::Bytes(serde_json::to_vec(&vec![&hyle_output]).unwrap());
         Transaction {
             version: 1,
             transaction_data: TransactionData::VerifiedProof(VerifiedProofTransaction {
-                proof_hash: proof.hash(),
                 contract_name: contract_name.clone(),
-                blob_tx_hash: TxHash::default(),
+                proof_hash: proof.hash(),
+                proven_blobs: vec![BlobProofOutput {
+                    program_id: ProgramId(vec![]),
+                    blob_tx_hash: TxHash::default(),
+                    hyle_output,
+                    original_proof_hash: proof.hash(),
+                }],
                 proof: Some(proof),
-                hyle_output,
+                is_recursive: false,
             }),
         }
     }
 
     fn make_empty_verified_proof_tx(contract_name: ContractName) -> Transaction {
         let hyle_output = get_hyle_output();
-        let proof = ProofData::Bytes(serde_json::to_vec(&hyle_output).unwrap());
+        let proof = ProofData::Bytes(serde_json::to_vec(&vec![&hyle_output]).unwrap());
         Transaction {
             version: 1,
             transaction_data: TransactionData::VerifiedProof(VerifiedProofTransaction {
-                proof_hash: proof.hash(),
                 contract_name: contract_name.clone(),
-                blob_tx_hash: TxHash::default(),
+                proof_hash: proof.hash(),
+                proven_blobs: vec![BlobProofOutput {
+                    program_id: ProgramId(vec![]),
+                    blob_tx_hash: TxHash::default(),
+                    hyle_output,
+                    original_proof_hash: proof.hash(),
+                }],
                 proof: None,
-                hyle_output,
+                is_recursive: false,
             }),
         }
     }
