@@ -649,8 +649,11 @@ impl Mempool {
                     &register_contract_transaction.program_id,
                 )?;
             }
-            TransactionData::Blob(ref _blob_transaction) => {
+            TransactionData::Blob(ref blob_tx) => {
                 debug!("Got new blob tx {}", tx.hash());
+                if let Err(e) = blob_tx.validate_identity() {
+                    bail!("Invalid identity for blob tx {}: {}", tx.hash(), e);
+                }
             }
             TransactionData::Proof(proof_transaction) => {
                 // Verify and extract proof

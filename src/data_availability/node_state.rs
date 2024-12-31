@@ -7,7 +7,7 @@ use crate::model::{
     BlobProofOutput, BlobTransaction, BlobsHash, Block, BlockHeight, ContractName, Hashable,
     RegisterContractTransaction, SignedBlock, Transaction, TransactionData,
 };
-use anyhow::{bail, Context, Error, Result};
+use anyhow::{bail, Error, Result};
 use bincode::{Decode, Encode};
 use hyle_contract_sdk::{
     utils::parse_structured_blob, BlobIndex, HyleOutput, Identity, StateDigest, TxHash,
@@ -345,9 +345,6 @@ impl NodeState {
                     unsettled_tx_hash
                 ))?;
 
-        // TODO: this should be done much earlier.
-        Self::verify_identity(unsettled_tx)?;
-
         // Sanity check: if some of the blob contracts are not registered, we can't proceed
         if !unsettled_tx.blobs.iter().all(|blob_metadata| {
             self.contracts
@@ -435,30 +432,6 @@ impl NodeState {
             }
         }
         (current_contracts, blob_proof_output_indices, false)
-    }
-
-    // TODO: this should probably be done much earlier, proofs aren't involved
-    fn verify_identity(unsettled_tx: &UnsettledBlobTransaction) -> Result<(), Error> {
-        // Checks that there is a blob that proves the identity
-        let identity_contract_name = unsettled_tx
-            .identity
-            .0
-            .split('.')
-            .last()
-            .context("Transaction identity is not correctly formed. It should be in the form <id>.<contract_id_name>")?;
-
-        // Check that there is at least one blob that has identity_contract_name as contract name
-        if !unsettled_tx
-            .blobs
-            .iter()
-            .any(|blob_metadata| blob_metadata.blob.contract_name.0 == identity_contract_name)
-        {
-            bail!(
-                "Can't find blob that proves the identity on contract '{}'",
-                identity_contract_name
-            );
-        }
-        Ok(())
     }
 
     fn verify_hyle_output(
