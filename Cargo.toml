@@ -182,6 +182,8 @@ node = [
     "dep:tracing-subscriber",
 ]
 
+node_local_proving = ["node", "risc0-zkvm/prove"]
+
 [profile.release]
 lto = "thin"
 incremental = true

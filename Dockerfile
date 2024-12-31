@@ -14,7 +14,7 @@ COPY contract-sdk ./contract-sdk
 COPY contracts ./contracts
 COPY crates ./crates
 
-RUN cargo build --bin node --bin indexer --release
+RUN cargo build --bin node --bin indexer --release --features node_local_proving
 
 # RUNNER
 FROM alpine:latest
