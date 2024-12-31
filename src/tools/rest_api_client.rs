@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use anyhow::{Context, Result};
 use reqwest::{Response, Url};
 
@@ -143,6 +145,15 @@ impl ApiHttpClient {
             .send()
             .await
             .context(format!("getting Contract {}", contract_name))
+    }
+
+    pub async fn query_indexer<U: Display>(&self, route: U) -> Result<Response> {
+        self.reqwest_client
+            .get(format!("{}v1/{}", self.url, route))
+            .header("Content-Type", "application/json")
+            .send()
+            .await
+            .context("Running custom query to {route}")
     }
 
     #[cfg(feature = "node")]

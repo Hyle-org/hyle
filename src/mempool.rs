@@ -179,7 +179,8 @@ impl Mempool {
     pub async fn start(&mut self) -> Result<()> {
         info!("Mempool starting");
 
-        let mut interval = tokio::time::interval(tokio::time::Duration::from_millis(500));
+        let tick_time = std::cmp::min(self.conf.consensus.slot_duration / 2, 500);
+        let mut interval = tokio::time::interval(tokio::time::Duration::from_millis(tick_time));
 
         // TODO: Recompute optimistic node_state
 
@@ -201,8 +202,8 @@ impl Mempool {
                     .log_error("Handling ConsensusEvent in Mempool");
             }
             listen<GenesisEvent> cmd => {
-                if let GenesisEvent::GenesisBlock { genesis_txs, .. } = cmd {
-                    for tx in genesis_txs {
+                if let GenesisEvent::GenesisBlock { signed_block } = cmd {
+                    for tx in signed_block.txs() {
                         if let TransactionData::RegisterContract(tx) = tx.transaction_data {
                             self.known_contracts.register_contract(&tx.contract_name, &tx.verifier, &tx.program_id)?;
                         }
@@ -274,6 +275,7 @@ impl Mempool {
     }
 
     fn handle_data_proposal_management(&mut self) -> Result<()> {
+        debug!("🌝 Handling DataProposal management");
         // Create new DataProposal with pending txs
         self.storage.new_data_proposal(&self.crypto); // TODO: copy crypto in storage
 

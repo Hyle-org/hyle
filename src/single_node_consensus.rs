@@ -4,9 +4,10 @@ use crate::bus::command_response::{CmdRespClient, Query};
 use crate::bus::BusClientSender;
 use crate::consensus::{
     CommittedConsensusProposal, ConsensusEvent, ConsensusInfo, ConsensusNetMessage,
-    QueryConsensusInfo,
+    ConsensusProposalHash, QueryConsensusInfo,
 };
-use crate::genesis::{Genesis, GenesisEvent};
+use crate::data_availability::DataEvent;
+use crate::genesis::GenesisEvent;
 use crate::mempool::Cut;
 use crate::mempool::QueryNewCut;
 use crate::model::{get_current_timestamp_ms, Hashable};
@@ -18,14 +19,15 @@ use crate::{model::SharedRunContext, utils::modules::Module};
 use anyhow::Result;
 use bincode::{Decode, Encode};
 use staking::state::Staking;
-use tracing::warn;
+use tracing::{info, warn};
 
 module_bus_client! {
 struct SingleNodeConsensusBusClient {
     sender(ConsensusEvent),
-    sender(GenesisEvent),
     sender(Query<QueryNewCut, Cut>),
     receiver(Query<QueryConsensusInfo, ConsensusInfo>),
+    receiver(DataEvent),
+    receiver(GenesisEvent),
 }
 }
 
@@ -33,6 +35,7 @@ struct SingleNodeConsensusBusClient {
 struct SingleNodeConsensusStore {
     staking: Staking,
     has_done_genesis: bool,
+    last_consensus_proposal_hash: ConsensusProposalHash,
     last_slot: u64,
     last_cut: Cut,
 }
@@ -89,31 +92,37 @@ impl Module for SingleNodeConsensus {
 
 impl SingleNodeConsensus {
     async fn start(&mut self) -> Result<()> {
-        let pubkey = self.crypto.validator_pubkey();
-        if !self.store.staking.is_bonded(pubkey) {
-            self.store
-                .staking
-                .stake("single".into(), 100)
-                .expect("Staking failed");
-            self.store
-                .staking
-                .delegate_to("single".into(), pubkey.clone())
-                .expect("Delegation failed");
-
-            let _ = self.store.staking.bond(pubkey.clone());
-        }
-        // On peut Query DA pour récuperer le dernier block/cut ?
         if !self.store.has_done_genesis {
-            // This is the genesis
-            let (_, genesis_txs, _) = Genesis::genesis_contracts_txs();
-
+            // We're starting fresh, need to generate a genesis block.
             tracing::info!("Doing genesis");
-            _ = self.bus.send(GenesisEvent::GenesisBlock {
-                initial_validators: vec![],
-                genesis_txs,
-            });
+
+            module_handle_messages! {
+                on_bus self.bus,
+                listen<GenesisEvent> msg => {
+                    match msg {
+                        GenesisEvent::GenesisBlock { signed_block } => {
+                            self.store.last_consensus_proposal_hash = signed_block.hash();
+                            // TODO: handle this from the block?
+                            self.store
+                                .staking
+                                .stake("single".into(), 100)
+                                .expect("Staking failed");
+                            self.store
+                                .staking
+                                .delegate_to("single".into(), self.crypto.validator_pubkey().clone())
+                                .expect("Delegation failed");
+                            let _ = self.store.staking.bond(self.crypto.validator_pubkey().clone());
+
+                            break;
+                        },
+                        GenesisEvent::NoGenesis => unreachable!("Single genesis mode should never go through this path")
+                    }
+                }
+            }
             self.store.has_done_genesis = true;
+            tracing::info!("Genesis block done");
         }
+
         let mut interval = tokio::time::interval(tokio::time::Duration::from_millis(
             self.config.consensus.slot_duration,
         ));
@@ -148,6 +157,7 @@ impl SingleNodeConsensus {
         Ok(())
     }
     async fn handle_new_slot_tick(&mut self) -> Result<()> {
+        info!("New slot tick");
         // Query a new cut to Mempool in order to create a new CommitCut
         match self
             .bus
@@ -170,7 +180,10 @@ impl SingleNodeConsensus {
             round_leader: self.crypto.validator_pubkey().clone(),
             cut: self.store.last_cut.clone(),
             new_validators_to_bond: vec![],
+            parent_hash: std::mem::take(&mut self.store.last_consensus_proposal_hash),
         };
+
+        self.store.last_consensus_proposal_hash = consensus_proposal.hash();
 
         let certificate = self.crypto.sign_aggregate(
             ConsensusNetMessage::ConfirmAck(consensus_proposal.hash()),

@@ -6,9 +6,10 @@ pub mod contract_state_indexer;
 pub mod da_listener;
 
 use crate::{
+    consensus::ConsensusProposalHash,
     data_availability::DataEvent,
     model::{
-        BlobTransaction, Block, BlockHash, BlockHeight, CommonRunContext, ContractName, Hashable,
+        BlobTransaction, Block, BlockHeight, CommonRunContext, ContractName, Hashable,
         TransactionData,
     },
     module_handle_messages,
@@ -221,11 +222,11 @@ impl Indexer {
     }
 
     async fn handle_processed_block(&mut self, block: Block) -> Result<(), Error> {
+        info!("Indexing block at height {:?}", block.block_height);
         let mut transaction = self.state.db.begin().await?;
 
         // Insert the block into the blocks table
-        let block_hash = &block.hash();
-        let block_parent_hash = &block.block_parent_hash;
+        let block_hash = &block.hash;
         let block_height = i64::try_from(block.block_height.0)
             .map_err(|_| anyhow::anyhow!("Block height is too large to fit into an i64"))?;
 
@@ -242,7 +243,7 @@ impl Indexer {
             "INSERT INTO blocks (hash, parent_hash, height, timestamp) VALUES ($1, $2, $3, $4)",
         )
         .bind(block_hash)
-        .bind(block_parent_hash)
+        .bind(block.parent_hash)
         .bind(block_height)
         .bind(block_timestamp)
         .execute(&mut *transaction)
@@ -526,6 +527,8 @@ impl Indexer {
         // Commit the transaction
         transaction.commit().await?;
 
+        tracing::debug!("Indexed block at height {:?}", block.block_height);
+
         Ok(())
     }
 
@@ -533,7 +536,7 @@ impl Indexer {
         &self,
         tx: &BlobTransaction,
         tx_hash: &TxHashDb,
-        block_hash: &BlockHash,
+        block_hash: &ConsensusProposalHash,
         version: &i32,
     ) {
         for (contrat_name, senders) in self.subscribers.iter() {

@@ -66,6 +66,9 @@
         .log-entry .info {
             color: rgb(4, 168, 4);
         }
+        .log-entry .trace {
+            color: rgb(148, 8, 164);
+        }
         #log-line {
             position: fixed;
             bottom: 0;
@@ -110,7 +113,7 @@
 
             lines.forEach(line => {
                 // Extract line format matches `node-2(pubId) 2024-12-03T17:05:25.324793Z  INFO ...`
-                const reg = line.match(/([a-zA-Z0-9-_]+\([a-zA-Z0-9]+\)) +(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{2,8}Z) +(INFO|ERROR|WARN|DEBUG) (.*)/);
+                const reg = line.match(/([a-zA-Z0-9-_]+\([a-zA-Z0-9]+\)) +(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{2,8}Z) +(INFO|ERROR|WARN|DEBUG|TRACE) (.*)/);
                 try {
                     const [all, node, timestamp, level, ...rest] = reg || [];
                     if (!node || !timestamp || !level || !rest) return;

@@ -180,6 +180,8 @@ impl Consensus {
             _ => bail!("Cannot finish_round unless synchronized to the consensus."),
         }
 
+        let parent_hash = self.bft_round_state.consensus_proposal.hash();
+
         let new_validators_to_bond = std::mem::take(
             &mut self
                 .bft_round_state
@@ -199,6 +201,7 @@ impl Consensus {
                 round_leader: std::mem::take(
                     &mut self.bft_round_state.consensus_proposal.round_leader,
                 ),
+                parent_hash,
                 ..ConsensusProposal::default()
             },
             staking: std::mem::take(&mut self.bft_round_state.staking),
@@ -801,10 +804,9 @@ impl Consensus {
             on_bus self.bus,
             listen<GenesisEvent> msg => {
                 match msg {
-                    GenesisEvent::GenesisBlock { initial_validators, ..} => {
-
-                        self.bft_round_state.consensus_proposal.round_leader =
-                            initial_validators.first().unwrap().clone();
+                    GenesisEvent::GenesisBlock { signed_block } => {
+                        self.bft_round_state.consensus_proposal.parent_hash = signed_block.hash();
+                        self.bft_round_state.consensus_proposal.round_leader = signed_block.consensus_proposal.round_leader.clone();
 
                         if self.bft_round_state.consensus_proposal.round_leader == *self.crypto.validator_pubkey() {
                             self.bft_round_state.state_tag = StateTag::Leader;
@@ -814,7 +816,7 @@ impl Consensus {
                             self.bft_round_state.state_tag = StateTag::Follower;
                             self.bft_round_state.consensus_proposal.slot = 1;
                             info!(
-                                "👑 Starting consensus as follower of leader {}",
+                                "💂‍♂️ Starting consensus as follower of leader {}",
                                 self.bft_round_state.consensus_proposal.round_leader
                             );
                         }
@@ -1407,6 +1409,7 @@ pub mod test {
                         AggregateSignature::default(),
                     )],
                     new_validators_to_bond: vec![],
+                    parent_hash: ConsensusProposalHash("hash".into()),
                 },
                 Ticket::Genesis,
             ))
@@ -1446,6 +1449,7 @@ pub mod test {
                         AggregateSignature::default(),
                     )],
                     new_validators_to_bond: vec![],
+                    parent_hash: ConsensusProposalHash("hash".into()),
                 },
                 Ticket::Genesis,
             ))
@@ -1494,6 +1498,7 @@ pub mod test {
                         AggregateSignature::default(),
                     )],
                     new_validators_to_bond: vec![],
+                    parent_hash: ConsensusProposalHash("hash".into()),
                 },
                 Ticket::Genesis,
             ))

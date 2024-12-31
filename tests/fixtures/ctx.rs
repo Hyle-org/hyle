@@ -7,7 +7,7 @@ use assertables::assert_ok;
 use reqwest::{Client, Url};
 use testcontainers_modules::{
     postgres::Postgres,
-    testcontainers::{runners::AsyncRunner, ContainerAsync},
+    testcontainers::{runners::AsyncRunner, ContainerAsync, ImageExt},
 };
 use tracing::info;
 
@@ -45,7 +45,11 @@ pub struct E2ECtx {
 impl E2ECtx {
     async fn init() -> ContainerAsync<Postgres> {
         // Start postgres DB with default settings for the indexer.
-        Postgres::default().start().await.unwrap()
+        Postgres::default()
+            .with_cmd(["postgres", "-c", "log_statement=all"])
+            .start()
+            .await
+            .unwrap()
     }
 
     fn build_nodes(
@@ -103,7 +107,7 @@ impl E2ECtx {
             reqwest_client: Client::new(),
         };
 
-        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+        tokio::time::sleep(std::time::Duration::from_secs(3)).await;
 
         info!("🚀 E2E test environment is ready!");
         Ok(E2ECtx {

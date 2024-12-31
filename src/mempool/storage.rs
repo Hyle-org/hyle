@@ -481,6 +481,12 @@ impl Storage {
             }
         };
 
+        debug!(
+            "Creating new DataProposal in local lane ({}) with {} transactions",
+            self.id,
+            data_proposal.txs.len()
+        );
+
         self.lanes
             .entry(self.id.clone())
             .or_default()

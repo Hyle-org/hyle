@@ -40,13 +40,14 @@ CREATE TABLE proofs (
 
 -- This table stores one line for each hyle output in a VerifiedProof
 CREATE TABLE blob_proof_outputs (
-    proof_tx_hash TEXT PRIMARY KEY REFERENCES transactions(tx_hash) ON DELETE CASCADE,
+    proof_tx_hash TEXT REFERENCES transactions(tx_hash) ON DELETE CASCADE,
     blob_tx_hash TEXT NOT NULL,         -- Foreign key linking to the BlobTransactions
     blob_index INT NOT NULL,            -- Index of the blob within the transaction
     blob_proof_output_index INT NOT NULL, -- Index of the blob proof output within the proof
     contract_name TEXT NOT NULL,       -- Contract name associated with the blob
     hyle_output JSONB NOT NULL,        -- Additional metadata stored in JSONB format
     settled BOOLEAN NOT NULL,       -- Was this blob proof output used in settlement ? 
+    PRIMARY KEY (proof_tx_hash, blob_tx_hash, blob_index, blob_proof_output_index),
     FOREIGN KEY (blob_tx_hash) REFERENCES transactions(tx_hash) ON DELETE CASCADE,
     FOREIGN KEY (blob_tx_hash, blob_index) REFERENCES blobs(tx_hash, blob_index) ON DELETE CASCADE,
     UNIQUE (blob_tx_hash, blob_index, blob_proof_output_index)
