@@ -1,5 +1,5 @@
 use client_sdk::transaction_builder::{TransactionBuilder, TxBuilder};
-use sdk::{erc20::ERC20Action, BlobData, ContractName};
+use sdk::{erc20::ERC20Action, ContractName};
 
 use crate::HyllarToken;
 
@@ -23,12 +23,10 @@ impl<'a, 'b> Builder<'a, 'b> {
         self.0.builder.add_action(
             self.0.contract_name.clone(),
             crate::metadata::HYLLAR_ELF,
-            self.0.state.clone(),
             ERC20Action::Transfer { recipient, amount },
-            BlobData::default(),
             None,
             None,
-            None,
-        )
+        )?;
+        Ok(())
     }
 }

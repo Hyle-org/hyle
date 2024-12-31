@@ -1,11 +1,10 @@
 use std::pin::Pin;
 
 use anyhow::{bail, Result};
-use serde::Serialize;
 
 use sdk::{
-    info, Blob, BlobData, BlobIndex, ContractAction, ContractInput, ContractName, Digestable,
-    HyleOutput, Identity, StateDigest,
+    info, Blob, BlobData, BlobIndex, ContractAction, ContractInput, ContractName, HyleOutput,
+    Identity, StateDigest,
 };
 
 use crate::ProofData;
@@ -31,6 +30,10 @@ pub struct TransactionBuilder {
 
 pub trait StateUpdater {
     fn update(&mut self, contract_name: &ContractName, new_state: StateDigest) -> Result<()>;
+    fn get_state(&self, contract_name: &ContractName) -> Result<StateDigest>;
+    fn get_onchain_state(&self, contract_name: &ContractName) -> Result<StateDigest> {
+        self.get_state(contract_name)
+    }
 }
 
 impl TransactionBuilder {
@@ -43,41 +46,41 @@ impl TransactionBuilder {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn add_action<CF: ContractAction, State: Digestable + Serialize>(
+    pub fn add_action<CF: ContractAction>(
         &mut self,
         contract_name: ContractName,
         binary: &'static [u8],
-        initial_state: State,
         action: CF,
-        private_blob: BlobData,
         caller: Option<BlobIndex>,
         callees: Option<Vec<BlobIndex>>,
-        off_chain_new_state: Option<StateDigest>,
-    ) -> Result<()> {
+    ) -> Result<&'_ mut ContractRunner> {
         let runner = ContractRunner::new(
             contract_name.clone(),
             binary,
             self.identity.clone(),
-            private_blob,
             BlobIndex(self.blobs.len()),
-            initial_state.as_digest(),
-            off_chain_new_state,
         )?;
         self.runners.push(runner);
         self.blobs
             .push(action.as_blob(contract_name, caller, callees));
-        Ok(())
+        Ok(self.runners.last_mut().unwrap())
     }
 
     pub fn build<S: StateUpdater>(&mut self, new_states: &mut S) -> Result<BuildResult> {
         let mut outputs = vec![];
         for runner in self.runners.iter_mut() {
-            runner.set_blobs(self.blobs.clone());
+            let state = new_states.get_state(&runner.contract_name)?;
+
+            runner.contract_input.blobs = self.blobs.clone();
+            runner.contract_input.private_blob = runner.private_blob(state.clone())?;
+            runner.contract_input.initial_state =
+                new_states.get_onchain_state(&runner.contract_name)?;
+
+            let off_chain_new_state: Option<StateDigest> = runner.callback(state)?;
             let out = runner.execute()?;
             new_states.update(
                 &runner.contract_name,
-                runner
-                    .off_chain_new_state
+                off_chain_new_state
                     .clone()
                     .unwrap_or(out.next_state.clone()),
             )?;
@@ -128,24 +131,22 @@ pub struct ContractRunner {
     pub contract_name: ContractName,
     binary: &'static [u8],
     contract_input: ContractInput,
-    off_chain_new_state: Option<StateDigest>,
+    offchain_cb: Option<Box<dyn Fn(StateDigest) -> Result<StateDigest> + Send + Sync>>,
+    private_blob_cb: Option<Box<dyn Fn(StateDigest) -> Result<BlobData> + Send + Sync>>,
 }
 
 impl ContractRunner {
-    pub fn new(
+    fn new(
         contract_name: ContractName,
         binary: &'static [u8],
         identity: Identity,
-        private_blob: BlobData,
         index: BlobIndex,
-        initial_state: StateDigest,
-        off_chain_new_state: Option<StateDigest>,
     ) -> Result<Self> {
         let contract_input = ContractInput {
-            initial_state,
+            initial_state: StateDigest::default(),
             identity,
             tx_hash: "".into(),
-            private_blob,
+            private_blob: BlobData::default(),
             blobs: vec![],
             index,
         };
@@ -154,15 +155,42 @@ impl ContractRunner {
             contract_name,
             binary,
             contract_input,
-            off_chain_new_state,
+            offchain_cb: None,
+            private_blob_cb: None,
         })
     }
 
-    pub fn set_blobs(&mut self, blobs: Vec<Blob>) {
-        self.contract_input.blobs = blobs;
+    pub fn build_offchain_state<F>(&mut self, f: F) -> &mut Self
+    where
+        F: Fn(StateDigest) -> Result<StateDigest> + Send + Sync + 'static,
+    {
+        self.offchain_cb = Some(Box::new(f));
+        self
     }
 
-    pub fn execute(&self) -> Result<HyleOutput> {
+    pub fn with_private_blob<F>(&mut self, f: F) -> &mut Self
+    where
+        F: Fn(StateDigest) -> Result<BlobData> + Send + Sync + 'static,
+    {
+        self.private_blob_cb = Some(Box::new(f));
+        self
+    }
+
+    fn callback(&self, state: StateDigest) -> Result<Option<StateDigest>> {
+        self.offchain_cb
+            .as_ref()
+            .map(|cb| cb(state))
+            .map_or(Ok(None), |v| v.map(Some))
+    }
+
+    fn private_blob(&self, state: StateDigest) -> Result<BlobData> {
+        self.private_blob_cb
+            .as_ref()
+            .map(|cb| cb(state))
+            .map_or(Ok(BlobData::default()), |v| v)
+    }
+
+    fn execute(&self) -> Result<HyleOutput> {
         info!("Checking transition for {}...", self.contract_name);
 
         let contract_input = bonsai_runner::as_input_data(&self.contract_input)?;
@@ -178,7 +206,7 @@ impl ContractRunner {
         Ok(output)
     }
 
-    pub async fn prove(&self) -> Result<ProofData> {
+    async fn prove(&self) -> Result<ProofData> {
         info!("Proving transition for {}...", self.contract_name);
 
         let contract_input = bonsai_runner::as_input_data(&self.contract_input)?;

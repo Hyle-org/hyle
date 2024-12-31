@@ -105,6 +105,28 @@ impl StateUpdater for States {
         }
         Ok(())
     }
+
+    fn get_state(
+        &self,
+        contract_name: &hyle_contract_sdk::ContractName,
+    ) -> Result<hyle_contract_sdk::StateDigest> {
+        match contract_name.0.as_str() {
+            "staking" => Ok(self.staking.as_digest()),
+            _ => self.get_onchain_state(contract_name),
+        }
+    }
+
+    fn get_onchain_state(
+        &self,
+        contract_name: &hyle_contract_sdk::ContractName,
+    ) -> Result<hyle_contract_sdk::StateDigest> {
+        match contract_name.0.as_str() {
+            "hyllar" => Ok(self.hyllar.as_digest()),
+            "hydentity" => Ok(self.hydentity.as_digest()),
+            "staking" => Ok(self.staking.on_chain_state().as_digest()),
+            _ => bail!("Unknown contract name"),
+        }
+    }
 }
 
 impl Genesis {

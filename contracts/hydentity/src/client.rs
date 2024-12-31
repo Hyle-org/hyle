@@ -28,36 +28,38 @@ impl<'a, 'b> Builder<'a, 'b> {
         let nonce = self.get_nonce(&self.0.builder.identity.0)?;
         let password = BlobData(password.into_bytes().to_vec());
 
-        self.0.builder.add_action(
-            self.0.contract_name.clone(),
-            crate::metadata::HYDENTITY_ELF,
-            self.0.state.clone(),
-            IdentityAction::VerifyIdentity {
-                account: self.0.builder.identity.0.clone(),
-                nonce,
-            },
-            password,
-            None,
-            None,
-            None,
-        )
+        self.0
+            .builder
+            .add_action(
+                self.0.contract_name.clone(),
+                crate::metadata::HYDENTITY_ELF,
+                IdentityAction::VerifyIdentity {
+                    account: self.0.builder.identity.0.clone(),
+                    nonce,
+                },
+                None,
+                None,
+            )?
+            .with_private_blob(move |_| Ok(password.clone()));
+        Ok(())
     }
 
     pub fn register_identity(&mut self, password: String) -> anyhow::Result<()> {
         let password = BlobData(password.into_bytes().to_vec());
 
-        self.0.builder.add_action(
-            self.0.contract_name.clone(),
-            crate::metadata::HYDENTITY_ELF,
-            self.0.state.clone(),
-            IdentityAction::RegisterIdentity {
-                account: self.0.builder.identity.0.clone(),
-            },
-            password,
-            None,
-            None,
-            None,
-        )
+        self.0
+            .builder
+            .add_action(
+                self.0.contract_name.clone(),
+                crate::metadata::HYDENTITY_ELF,
+                IdentityAction::RegisterIdentity {
+                    account: self.0.builder.identity.0.clone(),
+                },
+                None,
+                None,
+            )?
+            .with_private_blob(move |_| Ok(password.clone()));
+        Ok(())
     }
 
     fn get_nonce(&self, username: &str) -> anyhow::Result<u32> {
