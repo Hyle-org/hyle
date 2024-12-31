@@ -7,14 +7,14 @@ use assertables::assert_ok;
 use reqwest::{Client, Url};
 use testcontainers_modules::{
     postgres::Postgres,
-    testcontainers::{runners::AsyncRunner, ContainerAsync},
+    testcontainers::{runners::AsyncRunner, ContainerAsync, ImageExt},
 };
 use tracing::info;
 
 use hyle::{
     model::{
         data_availability::Contract, indexer::ContractDb, Blob, BlobTransaction, ProofData,
-        ProofTransaction, RecursiveProofTransaction, RegisterContractTransaction,
+        ProofTransaction, RegisterContractTransaction,
     },
     rest::client::ApiHttpClient,
 };
@@ -45,7 +45,11 @@ pub struct E2ECtx {
 impl E2ECtx {
     async fn init() -> ContainerAsync<Postgres> {
         // Start postgres DB with default settings for the indexer.
-        Postgres::default().start().await.unwrap()
+        Postgres::default()
+            .with_cmd(["postgres", "-c", "log_statement=all"])
+            .start()
+            .await
+            .unwrap()
     }
 
     fn build_nodes(
@@ -103,7 +107,7 @@ impl E2ECtx {
             reqwest_client: Client::new(),
         };
 
-        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+        tokio::time::sleep(std::time::Duration::from_secs(3)).await;
 
         info!("🚀 E2E test environment is ready!");
         Ok(E2ECtx {
@@ -275,10 +279,10 @@ impl E2ECtx {
             success: true,
             program_outputs: vec![],
         };
-        ProofData::Bytes(serde_json::to_vec(&hyle_output).unwrap())
+        ProofData::Bytes(serde_json::to_vec(&vec![hyle_output]).unwrap())
     }
 
-    pub async fn send_proof(
+    pub async fn send_proof_single(
         &self,
         contract_name: ContractName,
         proof: ProofData,
@@ -287,9 +291,9 @@ impl E2ECtx {
         assert_ok!(self
             .client()
             .send_tx_proof(&ProofTransaction {
-                blob_tx_hash: blob_tx_hash.clone(),
                 contract_name: contract_name.clone(),
-                proof: proof.clone()
+                proof: proof.clone(),
+                tx_hashes: vec![blob_tx_hash.clone()],
             })
             .await
             .and_then(|response| response.error_for_status().context("sending tx")));
@@ -297,18 +301,18 @@ impl E2ECtx {
         Ok(())
     }
 
-    pub async fn send_recursive_proof(
+    pub async fn send_proof(
         &self,
-        via: ContractName,
+        contract_name: ContractName,
         proof: ProofData,
-        verifies: Vec<(TxHash, ContractName)>,
+        verifies: Vec<TxHash>,
     ) -> Result<()> {
         assert_ok!(self
             .client()
-            .send_tx_recursive_proof(&RecursiveProofTransaction {
-                via: via.clone(),
+            .send_tx_proof(&ProofTransaction {
+                contract_name: contract_name.clone(),
                 proof: proof.clone(),
-                verifies: verifies.clone(),
+                tx_hashes: verifies.clone(),
             })
             .await
             .and_then(|response| response.error_for_status().context("sending tx")));

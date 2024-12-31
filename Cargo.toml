@@ -65,13 +65,13 @@ sqlx = { version = "0.8.2", features = [
     "migrate",
     "chrono",
 ] }
-strum = { version = "0.26.3" }
 strum_macros = "0.26.4"
 tracing = "0.1"
 
 # Node dependencies
 hydentity = { path = "./contracts/hydentity", features = ["client"], optional = true }
 hyllar = { path = "./contracts/hyllar", features = ["client"], optional = true }
+risc0-recursion = { path = "./contracts/risc0-recursion", optional = true }
 
 anymap = { version = "0.12.1", optional = true }
 assertables = { version = "9.5.0", optional = true }
@@ -94,13 +94,18 @@ paste = { version = "1.0.15", optional = true }
 prometheus = { version = "0.13.4", optional = true }
 quote = { version = "1.0.38", optional = true }
 rand = { version = "0.8.5", optional = true }
-risc0-zkvm = { version = "1.2.0", default-features = false, features = ["std"], optional = true }
+risc0-zkvm = { version = "1.2.0", default-features = false, features = [
+    "std",
+], optional = true }
 ron = { version = "0.8.1", optional = true }
 sp1-sdk = { version = "3.4.0", default-features = false, optional = true }
-syn = { version = "2.0.92", optional = true }
+syn = { version = "2.0.93", optional = true }
 tokio = { version = "1.42.0", features = ["full", "tracing"], optional = true }
 tokio-util = { version = "0.7.13", optional = true }
-tower-http = { version = "0.6.2", features = ["trace", "cors"], optional = true }
+tower-http = { version = "0.6.2", features = [
+    "trace",
+    "cors",
+], optional = true }
 tracing-subscriber = { version = "0.3", features = ["json"], optional = true }
 
 [target.'cfg(not(target_os="linux"))'.dependencies]
@@ -139,7 +144,13 @@ default = ["tx_builder", "node"]
 dhat = ["dep:dhat"]
 # Activate this feature to recompile contracts locally (mostly useful for iterating on tests)
 nonreproducible = ["hyle-contracts/nonreproducible"]
-tx_builder = ["dep:bonsai-runner", "dep:hyllar", "dep:hydentity", "dep:hyle-contracts", "dep:risc0-zkvm"]
+tx_builder = [
+    "dep:bonsai-runner",
+    "dep:hyllar",
+    "dep:hydentity",
+    "dep:hyle-contracts",
+    "dep:risc0-zkvm",
+]
 node = [
     "dep:anymap",
     "dep:assertables",
@@ -156,6 +167,7 @@ node = [
     "dep:hyle-contracts",
     "dep:hydentity",
     "dep:hyllar",
+    "dep:risc0-recursion",
     "dep:indexmap",
     "dep:opentelemetry",
     "dep:opentelemetry-prometheus",
@@ -170,8 +182,10 @@ node = [
     "dep:tokio",
     "dep:tokio-util",
     "dep:tower-http",
-    "dep:tracing-subscriber"
+    "dep:tracing-subscriber",
 ]
+
+node_local_proving = ["node", "risc0-zkvm/client"]
 
 [profile.release]
 lto = "thin"

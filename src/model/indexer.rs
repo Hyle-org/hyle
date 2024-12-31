@@ -3,14 +3,16 @@ use serde_with::serde_as;
 use sqlx::types::chrono::NaiveDateTime;
 use sqlx::{prelude::Type, Postgres};
 
-use crate::model::{BlockHash, Transaction, TransactionData};
+use crate::model::{Transaction, TransactionData};
 use hyle_contract_sdk::TxHash;
+
+use super::consensus::ConsensusProposalHash;
 
 #[derive(Debug, sqlx::FromRow, Serialize, Deserialize)]
 pub struct BlockDb {
     // Struct for the blocks table
-    pub hash: BlockHash,
-    pub parent_hash: BlockHash, // Parent block hash
+    pub hash: ConsensusProposalHash,
+    pub parent_hash: ConsensusProposalHash,
     #[sqlx(try_from = "i64")]
     pub height: u64, // Corresponds to BlockHeight
     pub timestamp: NaiveDateTime, // UNIX timestamp
@@ -30,9 +32,7 @@ impl TransactionType {
         match transaction.transaction_data {
             TransactionData::Blob(_) => TransactionType::BlobTransaction,
             TransactionData::Proof(_) => TransactionType::ProofTransaction,
-            TransactionData::RecursiveProof(_) => TransactionType::ProofTransaction,
             TransactionData::VerifiedProof(_) => TransactionType::ProofTransaction,
-            TransactionData::VerifiedRecursiveProof(_) => TransactionType::ProofTransaction,
             TransactionData::RegisterContract(_) => TransactionType::RegisterContractTransaction,
         }
     }
@@ -49,8 +49,8 @@ pub enum TransactionStatus {
 #[derive(Debug, sqlx::FromRow, Serialize, Deserialize)]
 pub struct TransactionDb {
     // Struct for the transactions table
-    pub tx_hash: TxHashDb,     // Transaction hash
-    pub block_hash: BlockHash, // Corresponds to the block hash
+    pub tx_hash: TxHashDb,                 // Transaction hash
+    pub block_hash: ConsensusProposalHash, // Corresponds to the block hash
     #[sqlx(try_from = "i32")]
     pub version: u32, // Transaction version
     pub transaction_type: TransactionType, // Type of transaction
@@ -60,7 +60,7 @@ pub struct TransactionDb {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct TransactionWithBlobs {
     pub tx_hash: TxHashDb,
-    pub block_hash: BlockHash,
+    pub block_hash: ConsensusProposalHash,
     pub version: i32,
     pub transaction_type: TransactionType,
     pub transaction_status: TransactionStatus,
@@ -118,8 +118,8 @@ pub struct ContractDb {
 #[derive(Debug, sqlx::FromRow, Serialize, Deserialize)]
 pub struct ContractStateDb {
     // Struct for the contract_state table
-    pub contract_name: String, // Name of the contract
-    pub block_hash: BlockHash, // Hash of the block where the state is captured
+    pub contract_name: String,             // Name of the contract
+    pub block_hash: ConsensusProposalHash, // Hash of the block where the state is captured
     #[serde_as(as = "serde_with::hex::Hex")]
     pub state_digest: Vec<u8>, // The contract state stored in JSON format
 }
@@ -159,5 +159,35 @@ impl<'r> sqlx::Decode<'r, sqlx::Postgres> for TxHashDb {
     > {
         let inner = <String as sqlx::Decode<sqlx::Postgres>>::decode(value)?;
         Ok(TxHashDb(TxHash(inner)))
+    }
+}
+
+impl Type<Postgres> for ConsensusProposalHash {
+    fn type_info() -> sqlx::postgres::PgTypeInfo {
+        <String as Type<Postgres>>::type_info()
+    }
+}
+
+impl sqlx::Encode<'_, sqlx::Postgres> for ConsensusProposalHash {
+    fn encode_by_ref(
+        &self,
+        buf: &mut sqlx::postgres::PgArgumentBuffer,
+    ) -> std::result::Result<
+        sqlx::encode::IsNull,
+        std::boxed::Box<(dyn std::error::Error + std::marker::Send + std::marker::Sync + 'static)>,
+    > {
+        <String as sqlx::Encode<sqlx::Postgres>>::encode_by_ref(&self.0, buf)
+    }
+}
+
+impl<'r> sqlx::Decode<'r, sqlx::Postgres> for ConsensusProposalHash {
+    fn decode(
+        value: sqlx::postgres::PgValueRef<'r>,
+    ) -> std::result::Result<
+        ConsensusProposalHash,
+        std::boxed::Box<(dyn std::error::Error + std::marker::Send + std::marker::Sync + 'static)>,
+    > {
+        let inner = <String as sqlx::Decode<sqlx::Postgres>>::decode(value)?;
+        Ok(ConsensusProposalHash(inner))
     }
 }

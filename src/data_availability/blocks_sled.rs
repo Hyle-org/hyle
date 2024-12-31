@@ -1,15 +1,16 @@
 #![cfg_attr(test, allow(unused))]
 use std::path::Path;
 
-use crate::model::{BlockHash, BlockHeight, Hashable, SignedBlock};
+use crate::consensus::ConsensusProposalHash;
+use crate::model::{BlockHeight, Hashable, SignedBlock};
 use crate::utils::db::{Db, Iter, KeyMaker};
 use anyhow::{Context, Result};
 use tracing::{error, info};
 
-struct BlocksKey(pub BlockHash);
+struct BlocksKey(pub ConsensusProposalHash);
 struct BlocksOrdKey(pub BlockHeight);
 
-/// BlocksKey contains a `BlockHash`
+/// BlocksKey contains a `ConsensusProposalHash`
 impl KeyMaker for BlocksKey {
     fn make_key<'a>(&self, writer: &'a mut String) -> &'a str {
         use std::fmt::Write;
@@ -56,7 +57,7 @@ impl Blocks {
     }
 
     pub fn put(&mut self, block: SignedBlock) -> Result<()> {
-        if self.get(block.hash())?.is_some() {
+        if self.get(&block.hash())?.is_some() {
             return Ok(());
         }
         info!("📦 storing block in sled {}", block.height());
@@ -68,12 +69,12 @@ impl Blocks {
         Ok(())
     }
 
-    pub fn get(&mut self, block_hash: BlockHash) -> Result<Option<SignedBlock>> {
-        self.db.alt_get(BlocksKey(block_hash))
+    pub fn get(&mut self, block_hash: &ConsensusProposalHash) -> Result<Option<SignedBlock>> {
+        self.db.alt_get(BlocksKey(block_hash.clone()))
     }
 
     pub fn contains(&mut self, block: &SignedBlock) -> bool {
-        self.get(block.hash()).ok().flatten().is_some()
+        self.get(&block.hash()).ok().flatten().is_some()
     }
 
     pub fn last(&self) -> Option<SignedBlock> {
@@ -86,7 +87,7 @@ impl Blocks {
         }
     }
 
-    pub fn last_block_hash(&self) -> Option<BlockHash> {
+    pub fn last_block_hash(&self) -> Option<ConsensusProposalHash> {
         self.last().map(|b| b.hash())
     }
 

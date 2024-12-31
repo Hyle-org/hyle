@@ -10,8 +10,8 @@ use crate::{
     genesis::GenesisEvent,
     mempool::storage::Storage,
     model::{
-        Hashable, ProofDataHash, SharedRunContext, Transaction, TransactionData,
-        ValidatorPublicKey, VerifiedProofTransaction, VerifiedRecursiveProofTransaction,
+        BlobProofOutput, Hashable, ProofDataHash, SharedRunContext, Transaction, TransactionData,
+        ValidatorPublicKey, VerifiedProofTransaction,
     },
     module_handle_messages,
     p2p::network::OutboundMessage,
@@ -179,7 +179,8 @@ impl Mempool {
     pub async fn start(&mut self) -> Result<()> {
         info!("Mempool starting");
 
-        let mut interval = tokio::time::interval(tokio::time::Duration::from_millis(500));
+        let tick_time = std::cmp::min(self.conf.consensus.slot_duration / 2, 500);
+        let mut interval = tokio::time::interval(tokio::time::Duration::from_millis(tick_time));
 
         // TODO: Recompute optimistic node_state
 
@@ -201,8 +202,8 @@ impl Mempool {
                     .log_error("Handling ConsensusEvent in Mempool");
             }
             listen<GenesisEvent> cmd => {
-                if let GenesisEvent::GenesisBlock { genesis_txs, .. } = cmd {
-                    for tx in genesis_txs {
+                if let GenesisEvent::GenesisBlock { signed_block } = cmd {
+                    for tx in signed_block.txs() {
                         if let TransactionData::RegisterContract(tx) = tx.transaction_data {
                             self.known_contracts.register_contract(&tx.contract_name, &tx.verifier, &tx.program_id)?;
                         }
@@ -274,6 +275,7 @@ impl Mempool {
     }
 
     fn handle_data_proposal_management(&mut self) -> Result<()> {
+        debug!("🌝 Handling DataProposal management");
         // Create new DataProposal with pending txs
         self.storage.new_data_proposal(&self.crypto); // TODO: copy crypto in storage
 
@@ -657,67 +659,65 @@ impl Mempool {
                     .0
                     .get(&proof_transaction.contract_name)
                     .context("Contract unknown")?;
-                let hyle_output =
-                    verify_proof(&proof_transaction.proof.to_bytes()?, verifier, program_id)?;
+
+                let is_recursive = proof_transaction.contract_name.0 == "risc0-recursion";
+
+                let (hyle_outputs, program_ids) = if is_recursive {
+                    let (program_ids, hyle_outputs) = verify_recursive_proof(
+                        &proof_transaction.proof.to_bytes()?,
+                        verifier,
+                        program_id,
+                    )?;
+                    (hyle_outputs, program_ids)
+                } else {
+                    let hyle_outputs =
+                        verify_proof(&proof_transaction.proof.to_bytes()?, verifier, program_id)?;
+                    (hyle_outputs, vec![program_id.clone()])
+                };
+
+                std::iter::zip(
+                    &proof_transaction.tx_hashes,
+                    std::iter::zip(&hyle_outputs, &program_ids),
+                )
+                .for_each(|(blob_tx_hash, (hyle_output, program_id))| {
+                    debug!(
+                        "Blob tx hash {} verified with hyle output {:?} and program id {}",
+                        blob_tx_hash,
+                        hyle_output,
+                        hex::encode(&program_id.0)
+                    );
+                });
+
                 tx.transaction_data = TransactionData::VerifiedProof(VerifiedProofTransaction {
                     proof_hash: proof_transaction.proof.hash(),
-                    contract_name: proof_transaction.contract_name.clone(),
-                    blob_tx_hash: proof_transaction.blob_tx_hash.clone(),
                     proof: Some(proof_transaction.proof),
-                    hyle_output,
+                    contract_name: proof_transaction.contract_name.clone(),
+                    is_recursive,
+                    proven_blobs: std::iter::zip(
+                        proof_transaction.tx_hashes,
+                        std::iter::zip(hyle_outputs, program_ids),
+                    )
+                    .map(
+                        |(blob_tx_hash, (hyle_output, program_id))| BlobProofOutput {
+                            original_proof_hash: ProofDataHash("todo?".to_owned()),
+                            blob_tx_hash,
+                            hyle_output,
+                            program_id,
+                        },
+                    )
+                    .collect(),
                 });
+
                 debug!(
-                    "Got new proof tx {} for blob tx {}:{}",
+                    "Got new proof tx {} for {}",
                     tx.hash(),
-                    proof_transaction.blob_tx_hash,
                     proof_transaction.contract_name
                 );
             }
-            TransactionData::RecursiveProof(proof_transaction) => {
-                // Verify and extract proof
-                let (verifier, program_id) = self
-                    .known_contracts
-                    .0
-                    .get(&proof_transaction.via)
-                    .context("Contract unknown")?;
-                // TODO: figure out how to generalize this
-                if proof_transaction.via.0 != "risc0-recursion"
-                    && proof_transaction
-                        .verifies
-                        .iter()
-                        .any(|(_, contract_name)| contract_name != &proof_transaction.via)
-                {
-                    bail!("Only risc0-recursion can verify recursive proofs on behalf of other contracts.");
-                }
-                let hyle_outputs = verify_recursive_proof(
-                    &proof_transaction.proof.to_bytes()?,
-                    verifier,
-                    program_id,
-                )?;
-                tx.transaction_data =
-                    TransactionData::VerifiedRecursiveProof(VerifiedRecursiveProofTransaction {
-                        proof_hash: proof_transaction.proof.hash(),
-                        proof: Some(proof_transaction.proof),
-                        via: proof_transaction.via,
-                        verifies: std::iter::zip(proof_transaction.verifies, hyle_outputs)
-                            .map(|((blob_tx_hash, contract_name), hyle_output)| {
-                                VerifiedProofTransaction {
-                                    proof_hash: ProofDataHash("todo?".to_owned()),
-                                    contract_name,
-                                    blob_tx_hash,
-                                    hyle_output,
-                                    proof: None,
-                                }
-                            })
-                            .collect(),
-                    });
-                debug!("Got new recursive proof tx {}", tx.hash());
-            }
             TransactionData::VerifiedProof(_) => {
-                bail!("Already verified ProofTransaction are not allowed to be received in the mempool");
-            }
-            TransactionData::VerifiedRecursiveProof(_) => {
-                bail!("Already verified RecursiveProofTransaction are not allowed to be received in the mempool");
+                bail!(
+                    "Already verified VerifiedProof are not allowed to be received in the mempool"
+                );
             }
         }
 

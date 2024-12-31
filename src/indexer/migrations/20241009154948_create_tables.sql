@@ -32,14 +32,25 @@ CREATE TABLE blobs (
     CHECK (blob_index >= 0)            -- Ensure the index is positive
 );
 
+-- This table stores actual proofs, which may not be present in all indexers
 CREATE TABLE proofs (
     tx_hash TEXT PRIMARY KEY REFERENCES transactions(tx_hash) ON DELETE CASCADE,
+    proof BYTEA NOT NULL
+);
+
+-- This table stores one line for each hyle output in a VerifiedProof
+CREATE TABLE blob_proof_outputs (
+    proof_tx_hash TEXT REFERENCES transactions(tx_hash) ON DELETE CASCADE,
     blob_tx_hash TEXT NOT NULL,         -- Foreign key linking to the BlobTransactions
     blob_index INT NOT NULL,            -- Index of the blob within the transaction
-    contract_name TEXT NOT NULL,       -- Contract name associated with the proof
+    blob_proof_output_index INT NOT NULL, -- Index of the blob proof output within the proof
+    contract_name TEXT NOT NULL,       -- Contract name associated with the blob
     hyle_output JSONB NOT NULL,        -- Additional metadata stored in JSONB format
-    proof BYTEA NOT NULL,
-    FOREIGN KEY (blob_tx_hash, blob_index) REFERENCES blobs(tx_hash, blob_index) ON DELETE CASCADE
+    settled BOOLEAN NOT NULL,       -- Was this blob proof output used in settlement ? 
+    PRIMARY KEY (proof_tx_hash, blob_tx_hash, blob_index, blob_proof_output_index),
+    FOREIGN KEY (blob_tx_hash) REFERENCES transactions(tx_hash) ON DELETE CASCADE,
+    FOREIGN KEY (blob_tx_hash, blob_index) REFERENCES blobs(tx_hash, blob_index) ON DELETE CASCADE,
+    UNIQUE (blob_tx_hash, blob_index, blob_proof_output_index)
 );
 
 CREATE TABLE contracts (

@@ -6,16 +6,15 @@ use crate::bus::SharedMessageBus;
 use crate::utils::{conf::SharedConf, crypto::SharedBlstCrypto};
 #[cfg(feature = "node")]
 use axum::Router;
+use data_availability::HandledBlobProofOutput;
 #[cfg(feature = "node")]
 use std::sync::Arc;
 
-use anyhow::{bail, Error};
 use bincode::{Decode, Encode};
 pub use client_sdk::{ProofData, ProofDataHash};
 use derive_more::Display;
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Sha3_256};
-use sqlx::{prelude::Type, Postgres};
 use std::{
     cmp::Ordering,
     collections::BTreeMap,
@@ -26,7 +25,7 @@ use std::{
 };
 use strum_macros::IntoStaticStr;
 
-use consensus::ConsensusProposal;
+use consensus::{ConsensusProposal, ConsensusProposalHash};
 use crypto::AggregateSignature;
 use hyle_contract_sdk::{
     flatten_blobs, BlobIndex, HyleOutput, Identity, ProgramId, StateDigest, TxHash, Verifier,
@@ -99,32 +98,7 @@ pub enum TransactionData {
     Blob(BlobTransaction),
     Proof(ProofTransaction),
     VerifiedProof(VerifiedProofTransaction),
-    RecursiveProof(RecursiveProofTransaction),
-    VerifiedRecursiveProof(VerifiedRecursiveProofTransaction),
     RegisterContract(RegisterContractTransaction),
-}
-
-impl TransactionData {
-    pub fn blob(&self) -> Result<BlobTransaction, Error> {
-        match self {
-            TransactionData::Blob(blob_tx) => Ok(blob_tx.clone()),
-            _ => bail!("Called blob() on non-Blob transaction data"),
-        }
-    }
-    pub fn verified_proof(&self) -> Result<VerifiedProofTransaction, Error> {
-        match self {
-            TransactionData::VerifiedProof(verified_proof_tx) => Ok(verified_proof_tx.clone()),
-            _ => bail!("Called blob() on non-VerifiedProof transaction data"),
-        }
-    }
-    pub fn register_contract(&self) -> Result<RegisterContractTransaction, Error> {
-        match self {
-            TransactionData::RegisterContract(register_contract_tx) => {
-                Ok(register_contract_tx.clone())
-            }
-            _ => bail!("Called blob() on non-RegisterContract transaction data"),
-        }
-    }
 }
 
 impl Default for TransactionData {
@@ -135,76 +109,59 @@ impl Default for TransactionData {
 
 #[derive(Serialize, Deserialize, Default, PartialEq, Eq, Clone, Encode, Decode)]
 pub struct ProofTransaction {
-    // TODO: investigate if we can remove blob_tx_hash. It can be reconstrustruced from HyleOutput attributes (blob + identity)
-    pub blob_tx_hash: TxHash,
-    pub proof: ProofData,
     pub contract_name: ContractName,
+    pub proof: ProofData,
+    // TODO: this can technically be recovered from the hyle output
+    // It's currently in a "somewhat trusted" limbo.
+    pub tx_hashes: Vec<TxHash>,
 }
 
-#[derive(Serialize, Deserialize, Default, PartialEq, Eq, Clone, Encode, Decode)]
-pub struct RecursiveProofTransaction {
-    pub via: ContractName,
-    pub proof: ProofData,
-    pub verifies: Vec<(TxHash, ContractName)>,
+#[derive(Debug, Default, Serialize, Deserialize, Clone, PartialEq, Eq, Encode, Decode)]
+pub struct BlobProofOutput {
+    // TODO: this can be recovered from the hyle output
+    pub blob_tx_hash: TxHash,
+    // TODO: remove this?
+    pub original_proof_hash: ProofDataHash,
+
+    /// HyleOutput of the proof for this blob
+    pub hyle_output: HyleOutput,
+    /// Program ID used to verify the proof.
+    pub program_id: ProgramId,
 }
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Encode, Decode)]
 pub struct VerifiedProofTransaction {
-    pub blob_tx_hash: TxHash,
     pub contract_name: ContractName,
+    pub proof: Option<ProofData>, // Kept only on the local lane for indexing purposes
     pub proof_hash: ProofDataHash,
-    pub hyle_output: HyleOutput,
-    pub proof: Option<ProofData>,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Encode, Decode)]
-pub struct VerifiedRecursiveProofTransaction {
-    pub via: ContractName,
-    pub proof: Option<ProofData>,
-    pub proof_hash: ProofDataHash,
-    pub verifies: Vec<VerifiedProofTransaction>,
-}
-
-impl fmt::Debug for ProofTransaction {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("ProofTransaction")
-            .field("contract_name", &self.contract_name)
-            .field("proof", &"[HIDDEN]")
-            .field(
-                "proof_len",
-                &self.proof.to_bytes().unwrap_or_default().len(),
-            )
-            .finish()
-    }
+    pub proven_blobs: Vec<BlobProofOutput>,
+    pub is_recursive: bool,
 }
 
 impl fmt::Debug for VerifiedProofTransaction {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("VerifiedProofTransaction")
             .field("contract_name", &self.contract_name)
-            .field("blob_tx_hash", &self.blob_tx_hash)
             .field("proof_hash", &self.proof_hash)
-            .field("hyle_output", &self.hyle_output)
             .field("proof", &"[HIDDEN]")
             .field(
                 "proof_len",
-                &self
-                    .proof
-                    .as_ref()
-                    .unwrap_or(&ProofData::default())
-                    .to_bytes()
-                    .unwrap_or_default()
-                    .len(),
+                &match &self.proof {
+                    Some(ProofData::Base64(v)) => v.len(),
+                    Some(ProofData::Bytes(v)) => v.len(),
+                    None => 0,
+                },
             )
+            .field("proven_blobs", &self.proven_blobs)
             .finish()
     }
 }
 
-impl fmt::Debug for RecursiveProofTransaction {
+impl fmt::Debug for ProofTransaction {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("RecursiveProofTransaction")
-            .field("via", &self.via)
-            .field("verifies", &self.verifies)
+        f.debug_struct("ProofTransaction")
+            .field("contract_name", &self.contract_name)
+            .field("tx_hashes", &self.tx_hashes)
             .field("proof", &"[HIDDEN]")
             .field(
                 "proof_len",
@@ -241,13 +198,15 @@ impl Transaction {
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, Encode, Decode, Eq, PartialEq)]
 pub struct Block {
-    pub block_parent_hash: BlockHash,
+    pub parent_hash: ConsensusProposalHash,
+    pub hash: ConsensusProposalHash,
     pub block_height: BlockHeight,
     pub block_timestamp: u64,
     pub new_contract_txs: Vec<Transaction>,
     pub new_blob_txs: Vec<Transaction>,
     pub new_verified_proof_txs: Vec<Transaction>,
-    pub verified_blobs: Vec<(TxHash, BlobIndex)>,
+    pub blob_proof_outputs: Vec<HandledBlobProofOutput>,
+    pub verified_blobs: Vec<(TxHash, BlobIndex, usize)>,
     pub failed_txs: Vec<Transaction>,
     pub new_bounded_validators: Vec<ValidatorPublicKey>,
     pub staking_actions: Vec<(Identity, StakingAction)>,
@@ -277,94 +236,6 @@ impl PartialOrd for Block {
     }
 }
 
-impl Hashable<BlockHash> for Block {
-    fn hash(&self) -> BlockHash {
-        let mut hasher = Sha3_256::new();
-
-        _ = write!(hasher, "{}", self.block_parent_hash);
-        _ = write!(hasher, "{}", self.block_height);
-        _ = write!(hasher, "{}", self.block_timestamp);
-        for tx in self
-            .new_contract_txs
-            .iter()
-            .chain(self.new_blob_txs.iter())
-            .chain(self.new_verified_proof_txs.iter())
-        {
-            hasher.update(tx.hash().0);
-        }
-        for (tx_hash, blob_v) in self.verified_blobs.iter() {
-            _ = write!(hasher, "{}", tx_hash);
-            _ = write!(hasher, "{}", blob_v);
-        }
-        for tx_f in self.failed_txs.iter() {
-            hasher.update(tx_f.hash().0);
-        }
-        for new_bounded_validator in self.new_bounded_validators.iter() {
-            hasher.update(new_bounded_validator.0.as_slice());
-        }
-        for settled_blob_tx_hash in self.settled_blob_tx_hashes.iter() {
-            _ = write!(hasher, "{}", settled_blob_tx_hash);
-        }
-        let mut sorted_states: Vec<_> = self.updated_states.iter().collect();
-        sorted_states.sort_by(|a, b| a.0.cmp(b.0));
-        for (cn, sd) in sorted_states {
-            _ = write!(hasher, "{}", cn);
-            _ = write!(hasher, "{:?}", sd);
-        }
-        _ = write!(hasher, "{}", self.block_timestamp);
-
-        BlockHash(hex::encode(hasher.finalize()))
-    }
-}
-
-#[derive(Debug, Serialize, Deserialize, Default, Clone, Encode, Decode, PartialEq, Eq, Hash)]
-pub struct BlockHash(pub String);
-
-impl Display for BlockHash {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}",
-            self.0.get(..HASH_DISPLAY_SIZE * 2).unwrap_or(&self.0)
-        )
-    }
-}
-
-impl Type<Postgres> for BlockHash {
-    fn type_info() -> sqlx::postgres::PgTypeInfo {
-        <String as Type<Postgres>>::type_info()
-    }
-}
-impl sqlx::Encode<'_, sqlx::Postgres> for BlockHash {
-    fn encode_by_ref(
-        &self,
-        buf: &mut sqlx::postgres::PgArgumentBuffer,
-    ) -> std::result::Result<
-        sqlx::encode::IsNull,
-        std::boxed::Box<(dyn std::error::Error + std::marker::Send + std::marker::Sync + 'static)>,
-    > {
-        <String as sqlx::Encode<sqlx::Postgres>>::encode_by_ref(&self.0, buf)
-    }
-}
-
-impl<'r> sqlx::Decode<'r, sqlx::Postgres> for BlockHash {
-    fn decode(
-        value: sqlx::postgres::PgValueRef<'r>,
-    ) -> std::result::Result<
-        BlockHash,
-        std::boxed::Box<(dyn std::error::Error + std::marker::Send + std::marker::Sync + 'static)>,
-    > {
-        let inner = <String as sqlx::Decode<sqlx::Postgres>>::decode(value)?;
-        Ok(BlockHash(inner))
-    }
-}
-
-impl BlockHash {
-    pub fn new(s: &str) -> BlockHash {
-        BlockHash(s.into())
-    }
-}
-
 pub trait Hashable<T> {
     fn hash(&self) -> T;
 }
@@ -372,13 +243,16 @@ pub trait Hashable<T> {
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, Display)]
 #[display("")]
 pub struct SignedBlock {
-    pub parent_hash: BlockHash,
     pub data_proposals: Vec<(ValidatorPublicKey, Vec<DataProposal>)>,
     pub certificate: AggregateSignature,
     pub consensus_proposal: ConsensusProposal,
 }
 
 impl SignedBlock {
+    pub fn parent_hash(&self) -> &ConsensusProposalHash {
+        &self.consensus_proposal.parent_hash
+    }
+
     pub fn height(&self) -> BlockHeight {
         BlockHeight(self.consensus_proposal.slot)
     }
@@ -412,33 +286,30 @@ impl PartialEq for SignedBlock {
 
 impl Eq for SignedBlock {}
 
-impl std::hash::Hash for SignedBlock {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        let h: BlockHash = Hashable::hash(self);
-        h.hash(state);
+impl Hashable<ConsensusProposalHash> for ConsensusProposal {
+    fn hash(&self) -> ConsensusProposalHash {
+        let mut hasher = Sha3_256::new();
+        _ = write!(hasher, "{}", self.slot);
+        _ = write!(hasher, "{}", self.view);
+        _ = write!(hasher, "{:?}", self.cut);
+        _ = write!(hasher, "{:?}", self.new_validators_to_bond);
+        ConsensusProposalHash(hex::encode(hasher.finalize()))
     }
 }
 
 // TODO: Return consensus proposal hash
-impl Hashable<BlockHash> for SignedBlock {
-    fn hash(&self) -> BlockHash {
-        let mut hasher = Sha3_256::new();
-        _ = write!(hasher, "{}", self.parent_hash);
-        _ = write!(hasher, "{}", self.height());
-        for tx in self.txs().iter() {
-            hasher.update(tx.hash().0);
-        }
-        BlockHash(hex::encode(hasher.finalize()))
+impl Hashable<ConsensusProposalHash> for SignedBlock {
+    fn hash(&self) -> ConsensusProposalHash {
+        self.consensus_proposal.hash()
     }
 }
+
 impl Hashable<TxHash> for Transaction {
     fn hash(&self) -> TxHash {
         match &self.transaction_data {
             TransactionData::Blob(tx) => tx.hash(),
             TransactionData::Proof(tx) => tx.hash(),
-            TransactionData::RecursiveProof(tx) => tx.hash(),
             TransactionData::VerifiedProof(tx) => tx.hash(),
-            TransactionData::VerifiedRecursiveProof(tx) => tx.hash(),
             TransactionData::RegisterContract(tx) => tx.hash(),
         }
     }
@@ -462,15 +333,6 @@ impl Hashable<TxHash> for ProofTransaction {
         TxHash(hex::encode(hash_bytes))
     }
 }
-impl Hashable<TxHash> for RecursiveProofTransaction {
-    fn hash(&self) -> TxHash {
-        let mut hasher = Sha3_256::new();
-        _ = write!(hasher, "{}", self.via);
-        hasher.update(self.proof.hash().0);
-        let hash_bytes = hasher.finalize();
-        TxHash(hex::encode(hash_bytes))
-    }
-}
 impl Hashable<ProofDataHash> for ProofData {
     fn hash(&self) -> ProofDataHash {
         let mut hasher = Sha3_256::new();
@@ -485,20 +347,9 @@ impl Hashable<ProofDataHash> for ProofData {
 impl Hashable<TxHash> for VerifiedProofTransaction {
     fn hash(&self) -> TxHash {
         let mut hasher = Sha3_256::new();
-        _ = write!(hasher, "{}", self.blob_tx_hash);
         _ = write!(hasher, "{}", self.contract_name);
         _ = write!(hasher, "{:?}", self.proof_hash);
-        _ = write!(hasher, "{:?}", self.hyle_output);
-        let hash_bytes = hasher.finalize();
-        TxHash(hex::encode(hash_bytes))
-    }
-}
-impl Hashable<TxHash> for VerifiedRecursiveProofTransaction {
-    fn hash(&self) -> TxHash {
-        let mut hasher = Sha3_256::new();
-        _ = write!(hasher, "{}", self.via);
-        _ = write!(hasher, "{:?}", self.proof_hash);
-        _ = write!(hasher, "{:?}", self.verifies);
+        _ = write!(hasher, "{:?}", self.proven_blobs);
         let hash_bytes = hasher.finalize();
         TxHash(hex::encode(hash_bytes))
     }
@@ -524,7 +375,6 @@ impl BlobTransaction {
 impl std::default::Default for SignedBlock {
     fn default() -> Self {
         SignedBlock {
-            parent_hash: BlockHash::default(),
             consensus_proposal: ConsensusProposal::default(),
             data_proposals: vec![],
             certificate: AggregateSignature {

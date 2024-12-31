@@ -21,16 +21,6 @@ impl Hashable<QuorumCertificateHash> for QuorumCertificate {
     }
 }
 
-impl Hashable<ConsensusProposalHash> for ConsensusProposal {
-    fn hash(&self) -> ConsensusProposalHash {
-        let mut hasher = Sha3_256::new();
-        _ = write!(hasher, "{}", self.slot);
-        _ = write!(hasher, "{}", self.view);
-        _ = write!(hasher, "{:?}", self.cut);
-        _ = write!(hasher, "{:?}", self.new_validators_to_bond);
-        ConsensusProposalHash(hasher.finalize().as_slice().to_owned())
-    }
-}
 impl Display for ValidatorCandidacy {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Pubkey: {}", self.pubkey)

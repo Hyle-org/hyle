@@ -10,7 +10,7 @@ pub enum ProofData {
     Base64(String),
     Bytes(Vec<u8>),
 }
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Encode, Decode)]
+#[derive(Debug, Default, Serialize, Deserialize, Clone, PartialEq, Eq, Encode, Decode)]
 pub struct ProofDataHash(pub String);
 
 impl Default for ProofData {

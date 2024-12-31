@@ -18,7 +18,7 @@ path = "examples/host.rs"
 
 [dependencies]
 sdk = { path = "../../contract-sdk", package = "hyle-contract-sdk" }
-serde = { version = "1.0.216", features = ["derive"] }
+serde = { version = "1.0.217", features = ["derive"] }
 
 risc0-zkvm = { version = "1.2.0", default-features = false, optional = true, features = [
     'std',

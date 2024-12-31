@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use anyhow::{Context, Result};
 use reqwest::{Response, Url};
 
@@ -9,8 +11,7 @@ use crate::{
     model::indexer::ContractDb,
     model::rest::NodeInfo,
     model::{
-        BlobTransaction, BlockHeight, ContractName, ProofTransaction, RecursiveProofTransaction,
-        RegisterContractTransaction,
+        BlobTransaction, BlockHeight, ContractName, ProofTransaction, RegisterContractTransaction,
     },
 };
 use hyle_contract_sdk::{StateDigest, TxHash};
@@ -45,19 +46,6 @@ impl ApiHttpClient {
     pub async fn send_tx_proof(&self, tx: &ProofTransaction) -> Result<Response> {
         self.reqwest_client
             .post(format!("{}v1/tx/send/proof", self.url))
-            .body(serde_json::to_string(&tx)?)
-            .header("Content-Type", "application/json")
-            .send()
-            .await
-            .context("Sending tx proof")
-    }
-
-    pub async fn send_tx_recursive_proof(
-        &self,
-        tx: &RecursiveProofTransaction,
-    ) -> Result<Response> {
-        self.reqwest_client
-            .post(format!("{}v1/tx/send/recursive_proof", self.url))
             .body(serde_json::to_string(&tx)?)
             .header("Content-Type", "application/json")
             .send()
@@ -170,6 +158,15 @@ impl ApiHttpClient {
             .await?;
 
         StateDigest(resp.state_digest).try_into()
+    }
+
+    pub async fn query_indexer<U: Display>(&self, route: U) -> Result<Response> {
+        self.reqwest_client
+            .get(format!("{}v1/{}", self.url, route))
+            .header("Content-Type", "application/json")
+            .send()
+            .await
+            .context("Running custom query to {route}")
     }
 
     #[cfg(feature = "node")]

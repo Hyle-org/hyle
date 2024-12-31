@@ -50,7 +50,7 @@ mod e2e_hyllar {
         let proof = proof_generator.read_proof(0);
 
         info!("➡️  Sending proof for register");
-        ctx.send_proof(
+        ctx.send_proof_single(
             "hydentity".into(),
             ProofData::Bytes(proof),
             blob_tx_hash.clone(),
@@ -112,7 +112,7 @@ mod e2e_hyllar {
         let hyllar_proof = proof_generator.read_proof(1);
 
         info!("➡️  Sending proof for hydentity");
-        ctx.send_proof(
+        ctx.send_proof_single(
             "hydentity".into(),
             ProofData::Bytes(hydentity_proof),
             blob_tx_hash.clone(),
@@ -120,7 +120,7 @@ mod e2e_hyllar {
         .await?;
 
         info!("➡️  Sending proof for hyllar");
-        ctx.send_proof(
+        ctx.send_proof_single(
             "hyllar".into(),
             ProofData::Bytes(hyllar_proof),
             blob_tx_hash,
