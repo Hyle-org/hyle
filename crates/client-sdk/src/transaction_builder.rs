@@ -223,37 +223,10 @@ impl ContractRunner {
     async fn prove(&self) -> Result<ProofData> {
         info!("Proving transition for {}...", self.contract_name);
 
-        let contract_input = bonsai_runner::as_input_data(self.contract_input.get().unwrap())?;
-        let explicit = std::env::var("RISC0_PROVER").unwrap_or_default();
-        let receipt = match explicit.to_lowercase().as_str() {
-            "bonsai" => bonsai_runner::run_bonsai(self.binary, contract_input.clone()).await?,
-            _ => {
-                let env = risc0_zkvm::ExecutorEnv::builder()
-                    .write_slice(&contract_input)
-                    .build()
-                    .unwrap();
+        let (proof, _) =
+            crate::helpers::prove(self.binary, self.contract_input.get().unwrap()).await?;
 
-                let prover = risc0_zkvm::default_prover();
-                let prove_info = prover.prove(env, self.binary)?;
-                prove_info.receipt
-            }
-        };
-
-        let hyle_output = receipt
-            .journal
-            .decode::<HyleOutput>()
-            .expect("Failed to decode journal");
-
-        if !hyle_output.success {
-            let program_error = std::str::from_utf8(&hyle_output.program_outputs).unwrap();
-            bail!(
-                "\x1b[91mExecution failed ! Program output: {}\x1b[0m",
-                program_error
-            );
-        }
-
-        let encoded_receipt = borsh::to_vec(&receipt).expect("Unable to encode receipt");
-        Ok(ProofData::Bytes(encoded_receipt))
+        Ok(proof)
     }
 }
 
