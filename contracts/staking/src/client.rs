@@ -1,36 +1,30 @@
-use client_sdk::transaction_builder::{TransactionBuilder, TxBuilder};
+use client_sdk::transaction_builder::TransactionBuilder;
 use sdk::{BlobData, ContractName, Digestable, StateDigest};
 
 use crate::{model::ValidatorPublicKey, state::Staking, StakingAction};
 
-pub struct Builder<'a, 'b>(TxBuilder<'a, 'b, Staking>);
+pub struct Builder<'b> {
+    pub contract_name: ContractName,
+    pub builder: &'b mut TransactionBuilder,
+}
 
 impl Staking {
-    pub fn builder<'a, 'b: 'a>(
-        &'a self,
-        contract_name: ContractName,
-        builder: &'b mut TransactionBuilder,
-    ) -> Builder {
-        Builder(TxBuilder {
-            state: self,
-            contract_name,
+    pub fn builder<'b>(&self, builder: &'b mut TransactionBuilder) -> Builder<'b> {
+        builder.init_with("staking".into(), self.on_chain_state().as_digest());
+        Builder {
+            contract_name: "staking".into(),
             builder,
-        })
+        }
     }
 }
 
-impl<'a, 'b> Builder<'a, 'b> {
-    pub fn stake(&mut self, amount: u128) -> anyhow::Result<Staking> {
-        let identity = self.0.builder.identity.clone();
-        let mut new_state = self.0.state.clone();
-        new_state
-            .stake(self.0.builder.identity.clone(), amount)
-            .map_err(|e| anyhow::anyhow!(e))?;
+impl<'b> Builder<'b> {
+    pub fn stake(&mut self, amount: u128) -> anyhow::Result<()> {
+        let identity = self.builder.identity.clone();
 
-        self.0
-            .builder
+        self.builder
             .add_action(
-                self.0.contract_name.clone(),
+                self.contract_name.clone(),
                 crate::metadata::STAKING_ELF,
                 StakingAction::Stake { amount },
                 None,
@@ -47,16 +41,15 @@ impl<'a, 'b> Builder<'a, 'b> {
                 Ok(state.as_digest())
             });
 
-        Ok(new_state)
+        Ok(())
     }
 
     pub fn delegate(&mut self, validator: ValidatorPublicKey) -> anyhow::Result<()> {
-        let identity = self.0.builder.identity.clone();
+        let identity = self.builder.identity.clone();
 
-        self.0
-            .builder
+        self.builder
             .add_action(
-                self.0.contract_name.clone(),
+                self.contract_name.clone(),
                 crate::metadata::STAKING_ELF,
                 StakingAction::Delegate {
                     validator: validator.clone(),

@@ -1,4 +1,4 @@
-use std::pin::Pin;
+use std::{collections::BTreeMap, pin::Pin};
 
 use anyhow::{bail, Result};
 
@@ -8,13 +8,6 @@ use sdk::{
 };
 
 use crate::ProofData;
-
-// TO be implemented by each contract
-pub struct TxBuilder<'a, 'b, State> {
-    pub state: &'a State,
-    pub contract_name: ContractName,
-    pub builder: &'b mut TransactionBuilder,
-}
 
 pub struct BuildResult {
     pub identity: Identity,
@@ -26,14 +19,12 @@ pub struct TransactionBuilder {
     pub identity: Identity,
     runners: Vec<ContractRunner>,
     pub blobs: Vec<Blob>,
+    on_chain_states: BTreeMap<ContractName, StateDigest>,
 }
 
 pub trait StateUpdater {
     fn update(&mut self, contract_name: &ContractName, new_state: StateDigest) -> Result<()>;
-    fn get_state(&self, contract_name: &ContractName) -> Result<StateDigest>;
-    fn get_onchain_state(&self, contract_name: &ContractName) -> Result<StateDigest> {
-        self.get_state(contract_name)
-    }
+    fn get(&self, contract_name: &ContractName) -> Result<StateDigest>;
 }
 
 impl TransactionBuilder {
@@ -42,7 +33,12 @@ impl TransactionBuilder {
             identity,
             runners: vec![],
             blobs: vec![],
+            on_chain_states: BTreeMap::new(),
         }
+    }
+
+    pub fn init_with(&mut self, contract_name: ContractName, state: StateDigest) {
+        self.on_chain_states.entry(contract_name).or_insert(state);
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -66,24 +62,31 @@ impl TransactionBuilder {
         Ok(self.runners.last_mut().unwrap())
     }
 
-    pub fn build<S: StateUpdater>(&mut self, new_states: &mut S) -> Result<BuildResult> {
+    pub fn build<S: StateUpdater>(&mut self, full_states: &mut S) -> Result<BuildResult> {
         let mut outputs = vec![];
         for runner in self.runners.iter_mut() {
-            let state = new_states.get_state(&runner.contract_name)?;
+            let on_chain_state = self
+                .on_chain_states
+                .get(&runner.contract_name)
+                .cloned()
+                .ok_or(anyhow::anyhow!("State not found"))?;
+            let full_state = full_states.get(&runner.contract_name)?.clone();
 
             runner.contract_input.blobs = self.blobs.clone();
-            runner.contract_input.private_blob = runner.private_blob(state.clone())?;
-            runner.contract_input.initial_state =
-                new_states.get_onchain_state(&runner.contract_name)?;
+            runner.contract_input.private_blob = runner.private_blob(full_state.clone())?;
+            runner.contract_input.initial_state = on_chain_state.clone();
 
-            let off_chain_new_state: Option<StateDigest> = runner.callback(state)?;
             let out = runner.execute()?;
-            new_states.update(
-                &runner.contract_name,
-                off_chain_new_state
-                    .clone()
-                    .unwrap_or(out.next_state.clone()),
-            )?;
+            self.on_chain_states
+                .entry(runner.contract_name.clone())
+                .and_modify(|v| *v = out.next_state.clone());
+
+            if let Some(off_chain_new_state) = runner.callback(full_state)? {
+                full_states.update(&runner.contract_name, off_chain_new_state)?;
+            } else {
+                full_states.update(&runner.contract_name, out.next_state.clone())?;
+            }
+
             outputs.push((runner.contract_name.clone(), out));
         }
 

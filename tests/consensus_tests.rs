@@ -7,9 +7,11 @@ mod e2e_consensus {
 
     use client_sdk::transaction_builder::TransactionBuilder;
     use fixtures::test_helpers::send_transaction;
+    use hydentity::Hydentity;
     use hyle::{genesis::States, utils::logger::LogMe};
     use hyle_contract_sdk::Identity;
-    use staking::state::OnChainState;
+    use hyllar::HyllarToken;
+    use staking::state::{OnChainState, Staking};
 
     use super::*;
 
@@ -75,7 +77,8 @@ mod e2e_consensus {
             let mut transaction = TransactionBuilder::new(node_identity.clone());
 
             states
-                .build_hydentity(&mut transaction)
+                .hydentity
+                .default_builder(&mut transaction)
                 .register_identity("password".to_string())?;
 
             send_transaction(ctx.client(), transaction, &mut states).await;
@@ -84,10 +87,12 @@ mod e2e_consensus {
             let mut transaction = TransactionBuilder::new("faucet.hydentity".into());
 
             states
-                .build_hydentity(&mut transaction)
-                .verify_identity("password".to_string())?;
+                .hydentity
+                .default_builder(&mut transaction)
+                .verify_identity(&states.hydentity, "password".to_string())?;
             states
-                .build_hyllar(&mut transaction)
+                .hyllar
+                .default_builder(&mut transaction)
                 .transfer(node_identity.0.clone(), 100)?;
 
             send_transaction(ctx.client(), transaction, &mut states).await;
@@ -96,14 +101,17 @@ mod e2e_consensus {
             let mut transaction = TransactionBuilder::new(node_identity.clone());
 
             states
-                .build_hydentity(&mut transaction)
-                .verify_identity("password".to_string())?;
-            states.build_staking(&mut transaction).stake(100)?;
+                .hydentity
+                .default_builder(&mut transaction)
+                .verify_identity(&states.hydentity, "password".to_string())?;
+            states.staking.builder(&mut transaction).stake(100)?;
             states
-                .build_hyllar(&mut transaction)
+                .hyllar
+                .default_builder(&mut transaction)
                 .transfer("staking".to_string(), 100)?;
             states
-                .build_staking(&mut transaction)
+                .staking
+                .builder(&mut transaction)
                 .delegate(node_info.pubkey.clone().unwrap())?;
 
             send_transaction(ctx.client(), transaction, &mut states).await;

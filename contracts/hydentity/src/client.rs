@@ -1,40 +1,37 @@
-use anyhow::anyhow;
-use client_sdk::transaction_builder::{TransactionBuilder, TxBuilder};
-use sdk::{
-    identity_provider::{IdentityAction, IdentityVerification},
-    BlobData, ContractName,
-};
+use client_sdk::transaction_builder::TransactionBuilder;
+use sdk::{identity_provider::IdentityAction, BlobData, ContractName, Digestable};
 
-use crate::{AccountInfo, Hydentity};
+use crate::Hydentity;
 
-pub struct Builder<'a, 'b>(TxBuilder<'a, 'b, Hydentity>);
+pub struct Builder<'b> {
+    pub contract_name: ContractName,
+    pub builder: &'b mut TransactionBuilder,
+}
 
 impl Hydentity {
-    pub fn builder<'a, 'b: 'a>(
-        &'a self,
-        contract_name: ContractName,
-        builder: &'b mut TransactionBuilder,
-    ) -> Builder {
-        Builder(TxBuilder {
-            state: self,
-            contract_name,
+    pub fn default_builder<'b>(&self, builder: &'b mut TransactionBuilder) -> Builder<'b> {
+        builder.init_with("hydentity".into(), self.as_digest());
+        Builder {
+            contract_name: "hydentity".into(),
             builder,
-        })
+        }
     }
 }
 
-impl<'a, 'b> Builder<'a, 'b> {
-    pub fn verify_identity(&mut self, password: String) -> anyhow::Result<()> {
-        let nonce = self.get_nonce(&self.0.builder.identity.0)?;
+impl<'b> Builder<'b> {
+    pub fn verify_identity(&mut self, state: &Hydentity, password: String) -> anyhow::Result<()> {
+        let nonce = state
+            .get_nonce(self.builder.identity.0.as_str())
+            .map_err(|e| anyhow::anyhow!(e))?;
+
         let password = BlobData(password.into_bytes().to_vec());
 
-        self.0
-            .builder
+        self.builder
             .add_action(
-                self.0.contract_name.clone(),
+                self.contract_name.clone(),
                 crate::metadata::HYDENTITY_ELF,
                 IdentityAction::VerifyIdentity {
-                    account: self.0.builder.identity.0.clone(),
+                    account: self.builder.identity.0.clone(),
                     nonce,
                 },
                 None,
@@ -47,28 +44,17 @@ impl<'a, 'b> Builder<'a, 'b> {
     pub fn register_identity(&mut self, password: String) -> anyhow::Result<()> {
         let password = BlobData(password.into_bytes().to_vec());
 
-        self.0
-            .builder
+        self.builder
             .add_action(
-                self.0.contract_name.clone(),
+                self.contract_name.clone(),
                 crate::metadata::HYDENTITY_ELF,
                 IdentityAction::RegisterIdentity {
-                    account: self.0.builder.identity.0.clone(),
+                    account: self.builder.identity.0.clone(),
                 },
                 None,
                 None,
             )?
             .with_private_blob(move |_| Ok(password.clone()));
         Ok(())
-    }
-
-    fn get_nonce(&self, username: &str) -> anyhow::Result<u32> {
-        let info = self
-            .0
-            .state
-            .get_identity_info(username)
-            .map_err(|e| anyhow!(e))?;
-        let state: AccountInfo = serde_json::from_str(&info)?;
-        Ok(state.nonce)
     }
 }
