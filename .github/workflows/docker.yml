@@ -5,6 +5,7 @@ on:
     branches:
       - 'main'
       - 'releases/**'
+      - 'faster_link'
     tags:
       - '*'
 
@@ -78,7 +79,7 @@ jobs:
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
-          push: true
+          push: false
           file: ${{ matrix.mode.file }} 
           context: .
           build-args: |
