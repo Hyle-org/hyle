@@ -197,7 +197,12 @@ impl ModulesHandler {
             let handle = tokio::task::Builder::new()
                 .name(module.name)
                 .spawn(async move {
-                    _ = module.starter.await;
+                    match module.starter.await {
+                        Ok(_) => tracing::warn!("Module {} exited with no error.", module.name),
+                        Err(e) => {
+                            tracing::error!("Module {} exited with error: {:?}", module.name, e);
+                        }
+                    }
                     _ = shutdown_client
                         .send(signal::ShutdownCompleted {
                             module: module.name.to_string(),
