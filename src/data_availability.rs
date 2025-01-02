@@ -18,10 +18,10 @@ use codec::{DataAvailabilityServerCodec, DataAvailabilityServerRequest};
 use crate::{
     bus::{command_response::Query, BusClientSender, BusMessage},
     consensus::{
-        CommittedConsensusProposal, ConsensusCatchupBlock, ConsensusCommand, ConsensusEvent,
-        ConsensusProposalHash,
+        CommittedConsensusProposal, ConsensusCommand, ConsensusEvent, ConsensusProposalHash,
     },
     genesis::GenesisEvent,
+    indexer::da_listener::RawDAListener,
     mempool::{MempoolCommand, MempoolEvent},
     model::{
         data_availability::Contract,
@@ -31,14 +31,14 @@ use crate::{
         ValidatorPublicKey,
     },
     module_handle_messages,
-    p2p::network::OutboundMessage,
+    p2p::network::{OutboundMessage, PeerEvent},
     utils::{
         conf::SharedConf,
         logger::LogMe,
         modules::{module_bus_client, Module},
     },
 };
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Error, Result};
 use bincode::{Decode, Encode};
 use core::str;
 use futures::{
@@ -78,7 +78,7 @@ struct DABusClient {
     receiver(ConsensusEvent),
     receiver(MempoolEvent),
     receiver(GenesisEvent),
-    receiver(ConsensusCatchupBlock),
+    receiver(PeerEvent),
 }
 }
 
@@ -107,6 +107,9 @@ pub struct DataAvailability {
 
     // Peers subscribed to block streaming
     stream_peer_metadata: HashMap<String, BlockStreamPeer>,
+
+    need_catchup: bool,
+    catchup_task: Option<tokio::task::JoinHandle<()>>,
 
     node_state: NodeState,
 }
@@ -146,6 +149,8 @@ impl Module for DataAvailability {
             pending_data_proposals: vec![],
             stream_peer_metadata: HashMap::new(),
             node_state,
+            need_catchup: false,
+            catchup_task: None,
         })
     }
 
@@ -164,19 +169,28 @@ impl DataAvailability {
 
         let mut pending_stream_requests = JoinSet::new();
 
+        let (catchup_block_sender, mut catchup_block_receiver) = tokio::sync::mpsc::channel(100);
+
         // TODO: this is a soft cap on the number of peers we can stream to.
         let (ping_sender, mut ping_receiver) = tokio::sync::mpsc::channel(100);
         let (catchup_sender, mut catchup_receiver) = tokio::sync::mpsc::channel(100);
 
         module_handle_messages! {
             on_bus self.bus,
+            command_response<QueryBlockHeight, BlockHeight> _ => {
+                Ok(self.blocks.last().map(|block| block.height()).unwrap_or(BlockHeight(0)))
+            }
             command_response<ContractName, Contract> cmd => {
                 self.node_state.contracts.get(cmd).cloned().context("Contract not found")
             }
             listen<ConsensusEvent> ConsensusEvent::CommitConsensusProposal( consensus_proposal )  => {
                 _ = self.handle_commit_consensus_proposal(consensus_proposal)
                     .await.log_error("Handling Committed Consensus Proposal");
-
+                if let Some(handle) = self.catchup_task.take() {
+                    info!("🏁 Stopped streaming blocks.");
+                    handle.abort();
+                    self.need_catchup = false;
+                }
             }
             listen<MempoolEvent> evt => {
                 _ = self.handle_mempool_event(evt).await.log_error("Handling Mempool Event");
@@ -186,15 +200,24 @@ impl DataAvailability {
                 if let GenesisEvent::GenesisBlock { signed_block } = cmd {
                     debug!("🌱  Genesis block received with validators {:?}", signed_block.consensus_proposal.new_validators_to_bond.clone());
                     self.handle_signed_block(signed_block).await;
+                } else {
+                    // TODO: I think this is technically a data race with p2p ?
+                    self.need_catchup = true;
+                    // This also triggers when restarting from serialized state, which seems fine.
                 }
             }
-            listen<ConsensusCatchupBlock> ConsensusCatchupBlock(block) => {
-                info!("📡  Received catchup block {}", block.hash());
-                self.handle_signed_block(block).await;
+            listen<PeerEvent> msg => {
+                if !self.need_catchup || self.catchup_task.is_some() {
+                    continue;
+                }
+                match msg {
+                    PeerEvent::NewPeer { da_ip, .. } => {
+                        self.ask_for_catchup_blocks(da_ip, catchup_block_sender.clone()).await?;
+                    }
+                }
             }
-
-            command_response<QueryBlockHeight, BlockHeight> _ => {
-                Ok(self.blocks.last().map(|block| block.height()).unwrap_or(BlockHeight(0)))
+            Some(block) = catchup_block_receiver.recv() => {
+                self.handle_signed_block(block).await;
             }
 
             // Handle new TCP connections to stream data to peers
@@ -495,6 +518,42 @@ impl DataAvailability {
 
         Ok(())
     }
+
+    async fn ask_for_catchup_blocks(
+        &mut self,
+        ip: String,
+        sender: tokio::sync::mpsc::Sender<SignedBlock>,
+    ) -> Result<(), Error> {
+        info!("📡 Streaming data from {ip}");
+        let Ok(mut stream) = RawDAListener::new(&ip, crate::model::BlockHeight(0)).await else {
+            bail!("Error occured setting up the DA listener");
+        };
+        self.catchup_task = Some(tokio::spawn(async move {
+            loop {
+                match stream.next().await {
+                    None => {
+                        warn!("End of stream");
+                        break;
+                    }
+                    Some(Err(e)) => {
+                        warn!("Error while streaming data from peer: {:#}", e);
+                        break;
+                    }
+                    Some(Ok(block)) => {
+                        info!(
+                            "📦 Received block (height {}) from stream",
+                            block.consensus_proposal.slot
+                        );
+                        if let Err(e) = sender.send(block).await {
+                            tracing::error!("Error while sending block over channel: {:#}", e);
+                            break;
+                        }
+                    }
+                }
+            }
+        }));
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -536,6 +595,8 @@ pub mod tests {
                 buffered_signed_blocks: Default::default(),
                 stream_peer_metadata: Default::default(),
                 node_state: Default::default(),
+                need_catchup: false,
+                catchup_task: None,
             };
 
             DataAvailabilityTestCtx { da }
@@ -580,6 +641,8 @@ pub mod tests {
             buffered_signed_blocks: Default::default(),
             stream_peer_metadata: Default::default(),
             node_state: Default::default(),
+            need_catchup: false,
+            catchup_task: None,
         };
         let mut block = SignedBlock::default();
         let mut blocks = vec![];
@@ -628,6 +691,8 @@ pub mod tests {
             buffered_signed_blocks: Default::default(),
             stream_peer_metadata: Default::default(),
             node_state: Default::default(),
+            need_catchup: false,
+            catchup_task: None,
         };
 
         let mut block = SignedBlock::default();
