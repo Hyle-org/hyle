@@ -19,4 +19,5 @@ FROM chef
 COPY --from=planner /usr/src/hyle/recipe.json recipe.json
 
 # Build dependencies 
+RUN apk add lld
 RUN cargo chef cook --release --recipe-path recipe.json
