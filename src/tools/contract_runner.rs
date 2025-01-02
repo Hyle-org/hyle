@@ -5,7 +5,7 @@ use tracing::info;
 use crate::{
     model::indexer::ContractDb,
     model::{ContractName, ProofData},
-    tools::rest_api_client::ApiHttpClient,
+    tools::rest_api_client::IndexerApiHttpClient,
 };
 use hyle_contract_sdk::{
     Blob, BlobData, BlobIndex, ContractInput, Digestable, HyleOutput, Identity, StateDigest,
@@ -98,7 +98,7 @@ impl ContractRunner {
 }
 
 pub async fn fetch_current_state<State>(
-    indexer_client: &ApiHttpClient,
+    indexer_client: &IndexerApiHttpClient,
     contract_name: &ContractName,
 ) -> Result<State, Error>
 where

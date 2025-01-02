@@ -13,7 +13,6 @@ use crate::{
 };
 use anyhow::Result;
 use hyle_contract_sdk::{Identity, ProgramId, StateDigest};
-use reqwest::{Client, Url};
 use serde::{Deserialize, Serialize};
 use tokio::time::sleep;
 use tracing::{error, info, warn};
