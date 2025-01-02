@@ -1,7 +1,7 @@
 use assert_cmd::prelude::*;
 use hyle::{
     model::{BlobTransaction, ProofData},
-    rest::client::ApiHttpClient,
+    rest::client::NodeApiHttpClient,
     tools::transactions_builder::{BuildResult, States, TransactionBuilder},
     utils::conf::{Conf, Consensus},
 };
@@ -142,12 +142,12 @@ impl TestProcess {
         self
     }
 }
-pub async fn wait_height(client: &ApiHttpClient, heights: u64) -> anyhow::Result<()> {
+pub async fn wait_height(client: &NodeApiHttpClient, heights: u64) -> anyhow::Result<()> {
     wait_height_timeout(client, heights, 30).await
 }
 
 pub async fn wait_height_timeout(
-    client: &ApiHttpClient,
+    client: &NodeApiHttpClient,
     heights: u64,
     timeout_duration: u64,
 ) -> anyhow::Result<()> {
@@ -176,7 +176,7 @@ pub async fn wait_height_timeout(
 
 #[allow(dead_code)]
 pub async fn send_transaction(
-    client: &ApiHttpClient,
+    client: &NodeApiHttpClient,
     mut transaction: TransactionBuilder,
     states: &mut States,
 ) {

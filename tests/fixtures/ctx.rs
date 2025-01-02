@@ -16,7 +16,7 @@ use hyle::{
         data_availability::Contract, indexer::ContractDb, Blob, BlobTransaction, ProofData,
         ProofTransaction, RegisterContractTransaction,
     },
-    rest::client::ApiHttpClient,
+    rest::client::{IndexerApiHttpClient, NodeApiHttpClient},
 };
 use hyle_contract_sdk::{
     flatten_blobs, BlobIndex, ContractName, HyleOutput, Identity, ProgramId, StateDigest, TxHash,
@@ -36,9 +36,9 @@ pub trait E2EContract {
 pub struct E2ECtx {
     pg: Option<ContainerAsync<Postgres>>,
     nodes: Vec<test_helpers::TestProcess>,
-    clients: Vec<ApiHttpClient>,
+    clients: Vec<NodeApiHttpClient>,
     client_index: usize,
-    indexer_client_index: usize,
+    indexer_client: Option<IndexerApiHttpClient>,
     slot_duration: u64,
 }
 
@@ -55,7 +55,7 @@ impl E2ECtx {
     fn build_nodes(
         count: usize,
         conf_maker: &mut ConfMaker,
-    ) -> (Vec<test_helpers::TestProcess>, Vec<ApiHttpClient>) {
+    ) -> (Vec<test_helpers::TestProcess>, Vec<NodeApiHttpClient>) {
         let mut nodes = Vec::new();
         let mut clients = Vec::new();
         let mut peers = Vec::new();
@@ -77,7 +77,7 @@ impl E2ECtx {
                 .start();
 
             // Request something on node1 to be sure it's alive and working
-            let client = ApiHttpClient {
+            let client = NodeApiHttpClient {
                 url: Url::parse(&format!("http://{}", &node.conf.rest)).unwrap(),
                 reqwest_client: Client::new(),
             };
@@ -102,7 +102,7 @@ impl E2ECtx {
             .start();
 
         // Request something on node1 to be sure it's alive and working
-        let client = ApiHttpClient {
+        let client = NodeApiHttpClient {
             url: Url::parse(&format!("http://{}", &node.conf.rest)).unwrap(),
             reqwest_client: Client::new(),
         };
@@ -115,7 +115,7 @@ impl E2ECtx {
             nodes: vec![node],
             clients: vec![client],
             client_index: 0,
-            indexer_client_index: 0,
+            indexer_client: None,
             slot_duration,
         })
     }
@@ -135,12 +135,12 @@ impl E2ECtx {
             nodes,
             clients,
             client_index: 0,
-            indexer_client_index: 0,
+            indexer_client: None,
             slot_duration,
         })
     }
 
-    pub async fn add_node(&mut self) -> Result<&ApiHttpClient> {
+    pub async fn add_node(&mut self) -> Result<&NodeApiHttpClient> {
         let mut conf_maker = ConfMaker::default();
         let mut node_conf = conf_maker.build("new-node");
         node_conf.consensus.slot_duration = self.slot_duration;
@@ -155,7 +155,7 @@ impl E2ECtx {
             //.log("hyle=info,tower_http=error")
             .start();
         // Request something on node1 to be sure it's alive and working
-        let client = ApiHttpClient {
+        let client = NodeApiHttpClient {
             url: Url::parse(&format!("http://{}", &node.conf.rest)).unwrap(),
             reqwest_client: Client::new(),
         };
@@ -185,11 +185,9 @@ impl E2ECtx {
         let indexer = test_helpers::TestProcess::new("indexer", indexer_conf.clone()).start();
 
         nodes.push(indexer);
-        clients.push(ApiHttpClient {
-            url: Url::parse(&format!("http://{}", &indexer_conf.rest)).unwrap(),
-            reqwest_client: Client::new(),
-        });
-        let indexer_client_index = clients.len() - 1;
+        let url = format!("http://{}", &indexer_conf.rest);
+        clients.push(NodeApiHttpClient::new(url.clone()));
+        let indexer_client = Some(IndexerApiHttpClient::new(url));
 
         // Wait for node2 to properly spin up
         let client = clients.first().unwrap();
@@ -203,17 +201,17 @@ impl E2ECtx {
             nodes,
             clients,
             client_index: 0,
-            indexer_client_index,
+            indexer_client,
             slot_duration,
         })
     }
 
-    pub fn client(&self) -> &ApiHttpClient {
+    pub fn client(&self) -> &NodeApiHttpClient {
         &self.clients[self.client_index]
     }
 
-    pub fn indexer_client(&self) -> &ApiHttpClient {
-        &self.clients[self.indexer_client_index]
+    pub fn indexer_client(&self) -> &IndexerApiHttpClient {
+        self.indexer_client.as_ref().unwrap()
     }
 
     pub fn has_indexer(&self) -> bool {
