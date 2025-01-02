@@ -5,12 +5,11 @@ on:
     branches:
       - 'main'
       - 'releases/**'
-      - 'publish_ghcr'
+      - 'docker_build_cache'
     tags:
       - '*'
 
 env:
-  IMAGE_NAME: 'hyle'
   AR_REPO_LOCATION: 'europe-west3-docker.pkg.dev'
   AR_URL: 'hyle-413414/hyle-docker'
 
@@ -23,6 +22,16 @@ jobs:
       packages: 'write'
 
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        mode:
+          - file: Dockerfile 
+            name: hyle
+            push_ar: true
+        mode:
+          - file: Dockerfile.dependencies
+            name: hyle-dependencies
+            push_ar: false
 
     steps:
       - name: Checkout
@@ -33,8 +42,8 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: |
-            ${{env.AR_REPO_LOCATION}}/${{ env.AR_URL }}/${{ env.IMAGE_NAME }}
-            ghcr.io/hyle-org/${{ env.IMAGE_NAME }}
+            ${{env.AR_REPO_LOCATION}}/${{ env.AR_URL }}/${{ matrix.mode.name }}
+            ghcr.io/hyle-org/${{ matrix.mode.name }}
 
 # Will produces tags given this table : 
 # 
@@ -50,6 +59,7 @@ jobs:
       - name: Docker Auth
         id: docker-auth
         uses: 'docker/login-action@v3'
+        if: ${{ matrix.mode.push_ar }}
         with:
           username: _json_key
           password: ${{ secrets.GOOGLE_CREDENTIALS }}
@@ -66,8 +76,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           push: true
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          file: ${{ matrix.mode.file }} 
           context: .
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
