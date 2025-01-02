@@ -28,7 +28,6 @@ jobs:
           - file: Dockerfile 
             name: hyle
             push_ar: true
-        mode:
           - file: Dockerfile.dependencies
             name: hyle-dependencies
             push_ar: false
