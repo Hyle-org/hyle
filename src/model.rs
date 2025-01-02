@@ -33,7 +33,6 @@ use hyle_contract_sdk::{
 };
 use mempool::DataProposal;
 use staking::StakingAction;
-use tracing::debug;
 
 // Re-export
 pub use hyle_contract_sdk::{Blob, BlobData, ContractName};
@@ -59,12 +58,12 @@ impl BlobsHash {
     }
 
     pub fn from_vec(vec: &Vec<Blob>) -> BlobsHash {
-        debug!("From vec {:?}", vec);
+        tracing::trace!("From vec {:?}", vec);
         Self::from_concatenated(&flatten_blobs(vec))
     }
 
     pub fn from_concatenated(vec: &Vec<u8>) -> BlobsHash {
-        debug!("From concatenated {:?}", vec);
+        tracing::trace!("From concatenated {:?}", vec);
         let mut hasher = Sha3_256::new();
         hasher.update(vec.as_slice());
         let hash_bytes = hasher.finalize();
