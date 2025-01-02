@@ -7,23 +7,23 @@ use assertables::assert_ok;
 use reqwest::{Client, Url};
 use testcontainers_modules::{
     postgres::Postgres,
-    testcontainers::{runners::AsyncRunner, ContainerAsync},
+    testcontainers::{runners::AsyncRunner, ContainerAsync, ImageExt},
 };
 use tracing::info;
 
 use hyle::{
-    data_availability::node_state::model::Contract,
-    indexer::model::ContractDb,
     model::{
-        Blob, BlobTransaction, ProofData, ProofTransaction, RecursiveProofTransaction,
-        RegisterContractTransaction,
+        data_availability::Contract, indexer::ContractDb, Blob, BlobTransaction, ProofData,
+        ProofTransaction, RegisterContractTransaction,
     },
-    rest::client::ApiHttpClient,
+    rest::client::{IndexerApiHttpClient, NodeApiHttpClient},
 };
 use hyle_contract_sdk::{
     flatten_blobs, BlobIndex, ContractName, HyleOutput, Identity, ProgramId, StateDigest, TxHash,
     Verifier,
 };
+
+use crate::fixtures::test_helpers::wait_height_timeout;
 
 use super::test_helpers::{self, wait_height, ConfMaker};
 
@@ -36,22 +36,26 @@ pub trait E2EContract {
 pub struct E2ECtx {
     pg: Option<ContainerAsync<Postgres>>,
     nodes: Vec<test_helpers::TestProcess>,
-    clients: Vec<ApiHttpClient>,
+    clients: Vec<NodeApiHttpClient>,
     client_index: usize,
-    indexer_client_index: usize,
+    indexer_client: Option<IndexerApiHttpClient>,
     slot_duration: u64,
 }
 
 impl E2ECtx {
     async fn init() -> ContainerAsync<Postgres> {
         // Start postgres DB with default settings for the indexer.
-        Postgres::default().start().await.unwrap()
+        Postgres::default()
+            .with_cmd(["postgres", "-c", "log_statement=all"])
+            .start()
+            .await
+            .unwrap()
     }
 
     fn build_nodes(
         count: usize,
         conf_maker: &mut ConfMaker,
-    ) -> (Vec<test_helpers::TestProcess>, Vec<ApiHttpClient>) {
+    ) -> (Vec<test_helpers::TestProcess>, Vec<NodeApiHttpClient>) {
         let mut nodes = Vec::new();
         let mut clients = Vec::new();
         let mut peers = Vec::new();
@@ -73,7 +77,7 @@ impl E2ECtx {
                 .start();
 
             // Request something on node1 to be sure it's alive and working
-            let client = ApiHttpClient {
+            let client = NodeApiHttpClient {
                 url: Url::parse(&format!("http://{}", &node.conf.rest)).unwrap(),
                 reqwest_client: Client::new(),
             };
@@ -98,12 +102,12 @@ impl E2ECtx {
             .start();
 
         // Request something on node1 to be sure it's alive and working
-        let client = ApiHttpClient {
+        let client = NodeApiHttpClient {
             url: Url::parse(&format!("http://{}", &node.conf.rest)).unwrap(),
             reqwest_client: Client::new(),
         };
 
-        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+        tokio::time::sleep(std::time::Duration::from_secs(3)).await;
 
         info!("🚀 E2E test environment is ready!");
         Ok(E2ECtx {
@@ -111,7 +115,7 @@ impl E2ECtx {
             nodes: vec![node],
             clients: vec![client],
             client_index: 0,
-            indexer_client_index: 0,
+            indexer_client: None,
             slot_duration,
         })
     }
@@ -123,7 +127,7 @@ impl E2ECtx {
         conf_maker.default.consensus.slot_duration = slot_duration;
 
         let (nodes, clients) = Self::build_nodes(count, &mut conf_maker);
-        wait_height(clients.first().unwrap(), 1).await?;
+        wait_height_timeout(clients.first().unwrap(), 1, 120).await?;
 
         info!("🚀 E2E test environment is ready!");
         Ok(E2ECtx {
@@ -131,12 +135,12 @@ impl E2ECtx {
             nodes,
             clients,
             client_index: 0,
-            indexer_client_index: 0,
+            indexer_client: None,
             slot_duration,
         })
     }
 
-    pub async fn add_node(&mut self) -> Result<&ApiHttpClient> {
+    pub async fn add_node(&mut self) -> Result<&NodeApiHttpClient> {
         let mut conf_maker = ConfMaker::default();
         let mut node_conf = conf_maker.build("new-node");
         node_conf.consensus.slot_duration = self.slot_duration;
@@ -151,7 +155,7 @@ impl E2ECtx {
             //.log("hyle=info,tower_http=error")
             .start();
         // Request something on node1 to be sure it's alive and working
-        let client = ApiHttpClient {
+        let client = NodeApiHttpClient {
             url: Url::parse(&format!("http://{}", &node.conf.rest)).unwrap(),
             reqwest_client: Client::new(),
         };
@@ -181,11 +185,9 @@ impl E2ECtx {
         let indexer = test_helpers::TestProcess::new("indexer", indexer_conf.clone()).start();
 
         nodes.push(indexer);
-        clients.push(ApiHttpClient {
-            url: Url::parse(&format!("http://{}", &indexer_conf.rest)).unwrap(),
-            reqwest_client: Client::new(),
-        });
-        let indexer_client_index = clients.len() - 1;
+        let url = format!("http://{}", &indexer_conf.rest);
+        clients.push(NodeApiHttpClient::new(url.clone()));
+        let indexer_client = Some(IndexerApiHttpClient::new(url));
 
         // Wait for node2 to properly spin up
         let client = clients.first().unwrap();
@@ -199,17 +201,17 @@ impl E2ECtx {
             nodes,
             clients,
             client_index: 0,
-            indexer_client_index,
+            indexer_client,
             slot_duration,
         })
     }
 
-    pub fn client(&self) -> &ApiHttpClient {
+    pub fn client(&self) -> &NodeApiHttpClient {
         &self.clients[self.client_index]
     }
 
-    pub fn indexer_client(&self) -> &ApiHttpClient {
-        &self.clients[self.indexer_client_index]
+    pub fn indexer_client(&self) -> &IndexerApiHttpClient {
+        self.indexer_client.as_ref().unwrap()
     }
 
     pub fn has_indexer(&self) -> bool {
@@ -275,10 +277,10 @@ impl E2ECtx {
             success: true,
             program_outputs: vec![],
         };
-        ProofData::Bytes(serde_json::to_vec(&hyle_output).unwrap())
+        ProofData::Bytes(serde_json::to_vec(&vec![hyle_output]).unwrap())
     }
 
-    pub async fn send_proof(
+    pub async fn send_proof_single(
         &self,
         contract_name: ContractName,
         proof: ProofData,
@@ -287,9 +289,9 @@ impl E2ECtx {
         assert_ok!(self
             .client()
             .send_tx_proof(&ProofTransaction {
-                blob_tx_hash: blob_tx_hash.clone(),
                 contract_name: contract_name.clone(),
-                proof: proof.clone()
+                proof: proof.clone(),
+                tx_hashes: vec![blob_tx_hash.clone()],
             })
             .await
             .and_then(|response| response.error_for_status().context("sending tx")));
@@ -297,18 +299,18 @@ impl E2ECtx {
         Ok(())
     }
 
-    pub async fn send_recursive_proof(
+    pub async fn send_proof(
         &self,
-        via: ContractName,
+        contract_name: ContractName,
         proof: ProofData,
-        verifies: Vec<(TxHash, ContractName)>,
+        verifies: Vec<TxHash>,
     ) -> Result<()> {
         assert_ok!(self
             .client()
-            .send_tx_recursive_proof(&RecursiveProofTransaction {
-                via: via.clone(),
+            .send_tx_proof(&ProofTransaction {
+                contract_name: contract_name.clone(),
                 proof: proof.clone(),
-                verifies: verifies.clone(),
+                tx_hashes: verifies.clone(),
             })
             .await
             .and_then(|response| response.error_for_status().context("sending tx")));

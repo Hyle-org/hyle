@@ -5,8 +5,8 @@ use amm::{AmmAction, AmmState};
 use hydentity::Hydentity;
 use hyllar::HyllarToken;
 use sdk::{
-    erc20::ERC20Action, identity_provider::IdentityAction, BlobData, BlobIndex, ContractInput,
-    ContractName, StateDigest, TxHash,
+    erc20::ERC20Action, identity_provider::IdentityAction, BlobData, BlobIndex, ContractAction,
+    ContractInput, ContractName, Digestable, StateDigest, TxHash,
 };
 use serde::Deserialize;
 
@@ -188,9 +188,9 @@ pub fn run_command(context: &Context) {
             contract::run(
                 context,
                 "hydentity",
-                |identities: Hydentity| -> ContractInput<Hydentity> {
-                    ContractInput::<Hydentity> {
-                        initial_state: identities,
+                |identities: Hydentity| -> ContractInput {
+                    ContractInput {
+                        initial_state: identities.as_digest(),
                         identity: identity.clone(),
                         tx_hash: TxHash("".to_owned()),
                         private_blob: BlobData(password.clone()),
@@ -243,9 +243,9 @@ pub fn run_command(context: &Context) {
             contract::run(
                 context,
                 "hydentity",
-                |token: hydentity::Hydentity| -> ContractInput<hydentity::Hydentity> {
-                    ContractInput::<Hydentity> {
-                        initial_state: token,
+                |token: hydentity::Hydentity| -> ContractInput {
+                    ContractInput {
+                        initial_state: token.as_digest(),
                         identity: identity.clone().into(),
                         tx_hash: TxHash("".to_owned()),
                         private_blob: BlobData(password.clone()),
@@ -257,9 +257,9 @@ pub fn run_command(context: &Context) {
             contract::run(
                 context,
                 &hyllar_contract_name,
-                |token: hyllar::HyllarToken| -> ContractInput<hyllar::HyllarToken> {
-                    ContractInput::<HyllarToken> {
-                        initial_state: token,
+                |token: hyllar::HyllarToken| -> ContractInput {
+                    ContractInput {
+                        initial_state: token.as_digest(),
                         identity: identity.clone().into(),
                         tx_hash: TxHash("".to_owned()),
                         private_blob: BlobData(vec![]),
@@ -338,9 +338,9 @@ pub fn run_command(context: &Context) {
                     contract::run(
                         context,
                         "hydentity",
-                        |token: hydentity::Hydentity| -> ContractInput<hydentity::Hydentity> {
-                            ContractInput::<Hydentity> {
-                                initial_state: token,
+                        |token: hydentity::Hydentity| -> ContractInput {
+                            ContractInput {
+                                initial_state: token.as_digest(),
                                 identity: identity.clone().into(),
                                 tx_hash: TxHash("".to_owned()),
                                 private_blob: BlobData(password.clone()),
@@ -353,9 +353,9 @@ pub fn run_command(context: &Context) {
                     contract::run(
                         context,
                         &amm_contract_name,
-                        |amm: amm::AmmState| -> ContractInput<amm::AmmState> {
-                            ContractInput::<AmmState> {
-                                initial_state: amm,
+                        |amm: amm::AmmState| -> ContractInput {
+                            ContractInput {
+                                initial_state: amm.as_digest(),
                                 identity: identity.clone().into(),
                                 tx_hash: TxHash("".to_owned()),
                                 private_blob: BlobData(vec![]),
@@ -368,9 +368,9 @@ pub fn run_command(context: &Context) {
                     contract::run(
                         context,
                         &token_a,
-                        |token: hyllar::HyllarToken| -> ContractInput<hyllar::HyllarToken> {
-                            ContractInput::<HyllarToken> {
-                                initial_state: token,
+                        |token: hyllar::HyllarToken| -> ContractInput {
+                            ContractInput {
+                                initial_state: token.as_digest(),
                                 identity: identity.clone().into(),
                                 tx_hash: TxHash("".to_owned()),
                                 private_blob: BlobData(vec![]),
@@ -384,9 +384,9 @@ pub fn run_command(context: &Context) {
                     contract::run(
                         context,
                         &token_b,
-                        |token: hyllar::HyllarToken| -> ContractInput<hyllar::HyllarToken> {
-                            ContractInput::<HyllarToken> {
-                                initial_state: token,
+                        |token: hyllar::HyllarToken| -> ContractInput {
+                            ContractInput {
+                                initial_state: token.as_digest(),
                                 identity: identity.clone().into(),
                                 tx_hash: TxHash("".to_owned()),
                                 private_blob: BlobData(vec![]),
@@ -460,9 +460,9 @@ pub fn run_command(context: &Context) {
                     contract::run(
                         context,
                         "hydentity",
-                        |token: hydentity::Hydentity| -> ContractInput<hydentity::Hydentity> {
-                            ContractInput::<Hydentity> {
-                                initial_state: token,
+                        |token: hydentity::Hydentity| -> ContractInput {
+                            ContractInput {
+                                initial_state: token.as_digest(),
                                 identity: identity.clone().into(),
                                 tx_hash: TxHash("".to_owned()),
                                 private_blob: BlobData(password.clone()),
@@ -475,9 +475,9 @@ pub fn run_command(context: &Context) {
                     contract::run(
                         context,
                         &amm_contract_name,
-                        |amm: amm::AmmState| -> ContractInput<amm::AmmState> {
-                            ContractInput::<AmmState> {
-                                initial_state: amm,
+                        |amm: amm::AmmState| -> ContractInput {
+                            ContractInput {
+                                initial_state: amm.as_digest(),
                                 identity: identity.clone().into(),
                                 tx_hash: TxHash("".to_owned()),
                                 private_blob: BlobData(vec![]),
@@ -490,9 +490,9 @@ pub fn run_command(context: &Context) {
                     contract::run(
                         context,
                         &token_a,
-                        |token: hyllar::HyllarToken| -> ContractInput<hyllar::HyllarToken> {
-                            ContractInput::<HyllarToken> {
-                                initial_state: token,
+                        |token: hyllar::HyllarToken| -> ContractInput {
+                            ContractInput {
+                                initial_state: token.as_digest(),
                                 identity: identity.clone().into(),
                                 tx_hash: TxHash("".to_owned()),
                                 private_blob: BlobData(vec![]),
@@ -506,9 +506,9 @@ pub fn run_command(context: &Context) {
                     contract::run(
                         context,
                         &token_b,
-                        |token: hyllar::HyllarToken| -> ContractInput<hyllar::HyllarToken> {
-                            ContractInput::<HyllarToken> {
-                                initial_state: token,
+                        |token: hyllar::HyllarToken| -> ContractInput {
+                            ContractInput {
+                                initial_state: token.as_digest(),
                                 identity: identity.clone().into(),
                                 tx_hash: TxHash("".to_owned()),
                                 private_blob: BlobData(vec![]),

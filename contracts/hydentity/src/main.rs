@@ -11,9 +11,13 @@ use sdk::identity_provider::IdentityAction;
 risc0_zkvm::guest::entry!(main);
 
 fn main() {
-    let (input, parsed_blob) = sdk::guest::init_raw::<Hydentity, IdentityAction>();
+    let (input, parsed_blob) = sdk::guest::init_raw::<IdentityAction>();
 
-    let mut state = input.initial_state.clone();
+    let mut state: Hydentity = input
+        .initial_state
+        .clone()
+        .try_into()
+        .expect("Failed to decode state");
 
     let password = from_utf8(&input.private_blob.0).unwrap();
 

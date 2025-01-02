@@ -12,16 +12,28 @@
 //! * [Hylé website](https://www.hyle.eu/)
 //! * [Hylé documentation](https://docs.hyle.eu)
 
+#[cfg(feature = "node")]
 mod autobahn_testing;
+#[cfg(feature = "node")]
 pub mod bus;
+#[cfg(feature = "node")]
 pub mod consensus;
+#[cfg(feature = "node")]
 pub mod data_availability;
+#[cfg(feature = "node")]
 pub mod genesis;
+#[cfg(feature = "node")]
 pub mod indexer;
+#[cfg(feature = "node")]
 pub mod mempool;
-pub mod model;
+#[cfg(feature = "node")]
 pub mod p2p;
+#[cfg(feature = "node")]
 pub mod rest;
+#[cfg(feature = "node")]
 pub mod single_node_consensus;
-pub mod tools;
+#[cfg(feature = "node")]
 pub mod utils;
+
+pub mod model;
+pub mod tools;

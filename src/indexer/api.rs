@@ -1,18 +1,14 @@
-use crate::{model::BlockHash, utils::logger::LogMe};
+use crate::{consensus::ConsensusProposalHash, utils::logger::LogMe};
 
-use super::{
-    model::{
-        BlobDb, BlobWithStatus, BlockDb, ContractDb, ContractStateDb, TransactionDb,
-        TransactionStatus, TransactionType, TransactionWithBlobs, TxHashDb,
-    },
-    IndexerApiState,
-};
+use super::IndexerApiState;
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
     Json,
 };
 use sqlx::Row;
+
+use crate::model::indexer::*;
 
 #[derive(Debug, serde::Deserialize)]
 pub struct BlockPagination {
@@ -219,9 +215,9 @@ pub async fn get_blob_transactions_by_contract(
     let rows = sqlx::query(
         r#"
         with blobs as (
-            SELECT blobs.*, array_remove(ARRAY_AGG(proofs.hyle_output), NULL) AS proof_outputs
+            SELECT blobs.*, array_remove(ARRAY_AGG(blob_proof_outputs.hyle_output), NULL) AS proof_outputs
             FROM blobs
-            LEFT JOIN proofs ON blobs.tx_hash = proofs.blob_tx_hash AND blobs.blob_index = proofs.blob_index
+            LEFT JOIN blob_proof_outputs ON blobs.tx_hash = blob_proof_outputs.blob_tx_hash AND blobs.blob_index = blob_proof_outputs.blob_index
             WHERE blobs.contract_name = $1
             GROUP BY blobs.tx_hash, blobs.blob_index, blobs.identity
         )
@@ -254,7 +250,7 @@ pub async fn get_blob_transactions_by_contract(
         .into_iter()
         .map(|row| {
             let tx_hash: TxHashDb = row.try_get("tx_hash").unwrap();
-            let block_hash: BlockHash = row.try_get("block_hash").unwrap();
+            let block_hash: ConsensusProposalHash = row.try_get("block_hash").unwrap();
             let version: i32 = row.try_get("version").unwrap();
             let transaction_type: TransactionType = row.try_get("transaction_type").unwrap();
             let transaction_status: TransactionStatus = row.try_get("transaction_status").unwrap();

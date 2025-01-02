@@ -17,7 +17,7 @@ mod e2e_amm {
     use hyle_contract_sdk::{
         erc20::{ERC20Action, ERC20},
         identity_provider::{IdentityAction, IdentityVerification},
-        BlobIndex, ContractName,
+        BlobIndex, ContractAction, ContractName,
     };
     use hyrun::{CliCommand, HydentityArgs};
 
@@ -135,7 +135,7 @@ mod e2e_amm {
         let proof = proof_generator.read_proof(0);
 
         info!("➡️  Sending proof for register");
-        ctx.send_proof(
+        ctx.send_proof_single(
             "hydentity".into(),
             ProofData::Bytes(proof),
             blob_tx_hash.clone(),
@@ -200,7 +200,7 @@ mod e2e_amm {
         let bob_transfer_proof = proof_generator.read_proof(1);
 
         info!("➡️  Sending proof for hydentity");
-        ctx.send_proof(
+        ctx.send_proof_single(
             "hydentity".into(),
             ProofData::Bytes(hydentity_proof),
             blob_tx_hash.clone(),
@@ -208,7 +208,7 @@ mod e2e_amm {
         .await?;
 
         info!("➡️  Sending proof for hyllar");
-        ctx.send_proof(
+        ctx.send_proof_single(
             "hyllar".into(),
             ProofData::Bytes(bob_transfer_proof),
             blob_tx_hash,
@@ -278,7 +278,7 @@ mod e2e_amm {
         let bob_transfer_proof = proof_generator.read_proof(1);
 
         info!("➡️  Sending proof for hydentity");
-        ctx.send_proof(
+        ctx.send_proof_single(
             "hydentity".into(),
             ProofData::Bytes(hydentity_proof),
             blob_tx_hash.clone(),
@@ -286,7 +286,7 @@ mod e2e_amm {
         .await?;
 
         info!("➡️  Sending proof for hyllar");
-        ctx.send_proof(
+        ctx.send_proof_single(
             "hyllar2".into(),
             ProofData::Bytes(bob_transfer_proof),
             blob_tx_hash,
@@ -354,7 +354,7 @@ mod e2e_amm {
         let bob_approve_hyllar_proof = proof_generator.read_proof(1);
 
         info!("➡️  Sending proof for hydentity");
-        ctx.send_proof(
+        ctx.send_proof_single(
             "hydentity".into(),
             ProofData::Bytes(hydentity_proof),
             blob_tx_hash.clone(),
@@ -362,7 +362,7 @@ mod e2e_amm {
         .await?;
 
         info!("➡️  Sending proof for approve hyllar");
-        ctx.send_proof(
+        ctx.send_proof_single(
             "hyllar".into(),
             ProofData::Bytes(bob_approve_hyllar_proof),
             blob_tx_hash.clone(),
@@ -415,7 +415,7 @@ mod e2e_amm {
         let bob_approve_hyllar2_proof = proof_generator.read_proof(1);
 
         info!("➡️  Sending proof for hydentity");
-        ctx.send_proof(
+        ctx.send_proof_single(
             "hydentity".into(),
             ProofData::Bytes(hydentity_proof),
             blob_tx_hash.clone(),
@@ -423,7 +423,7 @@ mod e2e_amm {
         .await?;
 
         info!("➡️  Sending proof for approve hyllar2");
-        ctx.send_proof(
+        ctx.send_proof_single(
             "hyllar2".into(),
             ProofData::Bytes(bob_approve_hyllar2_proof),
             blob_tx_hash.clone(),
@@ -504,7 +504,7 @@ mod e2e_amm {
         let bob_transfer_hyllar2_proof = proof_generator.read_proof(3);
 
         info!("➡️  Sending proof for hydentity");
-        ctx.send_proof(
+        ctx.send_proof_single(
             "hydentity".into(),
             ProofData::Bytes(hydentity_proof),
             blob_tx_hash.clone(),
@@ -512,7 +512,7 @@ mod e2e_amm {
         .await?;
 
         info!("➡️  Sending proof for new pair");
-        ctx.send_proof(
+        ctx.send_proof_single(
             AMM_CONTRACT_NAME.into(),
             ProofData::Bytes(bob_new_pair_proof),
             blob_tx_hash.clone(),
@@ -520,7 +520,7 @@ mod e2e_amm {
         .await?;
 
         info!("➡️  Sending proof for hyllar");
-        ctx.send_proof(
+        ctx.send_proof_single(
             "hyllar".into(),
             ProofData::Bytes(bob_transfer_hyllar_proof),
             blob_tx_hash.clone(),
@@ -528,7 +528,7 @@ mod e2e_amm {
         .await?;
 
         info!("➡️  Sending proof for hyllar2");
-        ctx.send_proof(
+        ctx.send_proof_single(
             "hyllar2".into(),
             ProofData::Bytes(bob_transfer_hyllar2_proof),
             blob_tx_hash,
@@ -645,14 +645,14 @@ mod e2e_amm {
             .await;
 
         info!("➡️  Sending recursive proof for hydentity, amm, hyllar and hyllar2");
-        ctx.send_recursive_proof(
+        ctx.send_proof(
             "risc0-recursion".into(),
             ProofData::Bytes(recursive_proof),
             vec![
-                (blob_tx_hash.clone(), "hydentity".into()),
-                (blob_tx_hash.clone(), AMM_CONTRACT_NAME.into()),
-                (blob_tx_hash.clone(), "hyllar".into()),
-                (blob_tx_hash.clone(), "hyllar2".into()),
+                blob_tx_hash.clone(),
+                blob_tx_hash.clone(),
+                blob_tx_hash.clone(),
+                blob_tx_hash.clone(),
             ],
         )
         .await?;

@@ -3,8 +3,8 @@ use std::io::Read;
 
 use anyhow::{bail, Context, Error};
 use rand::Rng;
+use risc0_recursion::{Risc0Journal, Risc0ProgramId};
 use risc0_zkvm::sha::Digest;
-use serde::Deserialize;
 use sp1_sdk::{ProverClient, SP1ProofWithPublicValues, SP1VerifyingKey};
 
 use hyle_contract_sdk::{HyleOutput, ProgramId, Verifier};
@@ -13,39 +13,31 @@ pub fn verify_proof(
     proof: &[u8],
     verifier: &Verifier,
     program_id: &ProgramId,
-) -> Result<HyleOutput, Error> {
+) -> Result<Vec<HyleOutput>, Error> {
     // TODO: remove test
-    let hyle_output = match verifier.0.as_str() {
+    let hyle_outputs = match verifier.0.as_str() {
         "test" => Ok(serde_json::from_slice(proof)?),
-        "risc0" => risc0_proof_verifier(proof, &program_id.0),
+        "risc0" => {
+            let journal = risc0_proof_verifier(proof, &program_id.0)?;
+            // First try to decode it as a single HyleOutput
+            Ok(match journal.decode::<HyleOutput>() {
+                Ok(ho) => vec![ho],
+                Err(_) => {
+                    let hyle_output = journal
+                        .decode::<Vec<Vec<u8>>>()
+                        .context("Failed to extract HyleOuput from Risc0's journal")?;
+
+                    // Doesn't actually work to just deserialize in one go.
+                    hyle_output
+                        .iter()
+                        .map(|o| risc0_zkvm::serde::from_slice::<HyleOutput, _>(o))
+                        .collect::<Result<Vec<_>, _>>()
+                        .context("Failed to decode HyleOutput")?
+                }
+            })
+        }
         "noir" => noir_proof_verifier(proof, &program_id.0),
         "sp1" => sp1_proof_verifier(proof, &program_id.0),
-        _ => bail!("{} verifier not implemented yet", verifier),
-    }?;
-    tracing::info!(
-        "🔎 {}",
-        std::str::from_utf8(&hyle_output.program_outputs)
-            .map(|o| format!("Program outputs: {o}"))
-            .unwrap_or("Invalid UTF-8".to_string())
-    );
-    Ok(hyle_output)
-}
-
-pub fn verify_recursive_proof(
-    proof: &[u8],
-    verifier: &Verifier,
-    program_id: &ProgramId,
-) -> Result<Vec<HyleOutput>, Error> {
-    let hyle_outputs = match verifier.0.as_str() {
-        "risc0" => {
-            let output: Vec<Vec<u8>> = risc0_proof_verifier(proof, &program_id.0)?;
-            // Doesn't actually work to just deserialize in one go.
-            output
-                .iter()
-                .map(|o| risc0_zkvm::serde::from_slice::<HyleOutput, _>(o))
-                .collect::<Result<Vec<_>, _>>()
-                .context("Failed to decode HyleOutput")
-        }
         _ => bail!("{} recursive verifier not implemented yet", verifier),
     }?;
     hyle_outputs.iter().for_each(|hyle_output| {
@@ -60,10 +52,46 @@ pub fn verify_recursive_proof(
     Ok(hyle_outputs)
 }
 
-pub fn risc0_proof_verifier<T: for<'a> Deserialize<'a>>(
+pub fn verify_recursive_proof(
+    proof: &[u8],
+    verifier: &Verifier,
+    program_id: &ProgramId,
+) -> Result<(Vec<ProgramId>, Vec<HyleOutput>), Error> {
+    let outputs = match verifier.0.as_str() {
+        "risc0" => {
+            let journal = risc0_proof_verifier(proof, &program_id.0)?;
+            let mut output = journal
+                .decode::<Vec<(Risc0ProgramId, Risc0Journal)>>()
+                .context("Failed to extract HyleOuput from Risc0's journal")?;
+
+            // Doesn't actually work to just deserialize in one go.
+            output
+                .drain(..)
+                .map(|o| {
+                    risc0_zkvm::serde::from_slice::<HyleOutput, _>(&o.1)
+                        .map(|h| (ProgramId(o.0.to_vec()), h))
+                })
+                .collect::<Result<(Vec<_>, Vec<_>), _>>()
+                .context("Failed to decode HyleOutput")
+        }
+        _ => bail!("{} recursive verifier not implemented yet", verifier),
+    }?;
+    outputs.1.iter().for_each(|hyle_output| {
+        tracing::info!(
+            "🔎 {}",
+            std::str::from_utf8(&hyle_output.program_outputs)
+                .map(|o| format!("Program outputs: {o}"))
+                .unwrap_or("Invalid UTF-8".to_string())
+        );
+    });
+
+    Ok(outputs)
+}
+
+pub fn risc0_proof_verifier(
     encoded_receipt: &[u8],
     image_id: &[u8],
-) -> Result<T, Error> {
+) -> Result<risc0_zkvm::Journal, Error> {
     let receipt = borsh::from_slice::<risc0_zkvm::Receipt>(encoded_receipt)
         .context("Error while decoding Risc0 proof's receipt")?;
 
@@ -73,20 +101,14 @@ pub fn risc0_proof_verifier<T: for<'a> Deserialize<'a>>(
         .verify(image_bytes)
         .context("Risc0 proof verification failed")?;
 
-    let hyle_output = receipt
-        .journal
-        .decode::<T>()
-        .context("Failed to extract HyleOuput from Risc0's journal")?;
-
     tracing::info!("✅ Risc0 proof verified.");
 
-    // // TODO: allow multiple outputs when verifying
-    Ok(hyle_output)
+    Ok(receipt.journal)
 }
 
 /// At present, we are using binary to facilitate the integration of the Noir verifier.
 /// This is not meant to be a permanent solution.
-pub fn noir_proof_verifier(proof: &[u8], image_id: &[u8]) -> Result<HyleOutput, Error> {
+pub fn noir_proof_verifier(proof: &[u8], image_id: &[u8]) -> Result<Vec<HyleOutput>, Error> {
     let mut rng = rand::thread_rng();
     let salt: [u8; 16] = rng.gen();
     let mut salt_hex = String::with_capacity(salt.len() * 2);
@@ -143,16 +165,20 @@ pub fn noir_proof_verifier(proof: &[u8], image_id: &[u8]) -> Result<HyleOutput, 
         .expect("Failed to read output file content");
 
     let mut public_outputs: Vec<String> = serde_json::from_str(&output_json)?;
+    // TODO: support multi-output proofs.
     let hyle_output = crate::utils::noir_utils::parse_noir_output(&mut public_outputs)?;
 
     // Delete proof_path, vk_path, output_path
     let _ = std::fs::remove_file(proof_path);
     let _ = std::fs::remove_file(vk_path);
     let _ = std::fs::remove_file(output_path);
-    Ok(hyle_output)
+    Ok(vec![hyle_output])
 }
 
-pub fn sp1_proof_verifier(proof_bin: &[u8], verification_key: &[u8]) -> Result<HyleOutput, Error> {
+pub fn sp1_proof_verifier(
+    proof_bin: &[u8],
+    verification_key: &[u8],
+) -> Result<Vec<HyleOutput>, Error> {
     // Setup the prover client.
     let client = ProverClient::new();
 
@@ -172,6 +198,7 @@ pub fn sp1_proof_verifier(proof_bin: &[u8], verification_key: &[u8]) -> Result<H
         .verify(&proof.0, &vk)
         .context("SP1 proof verification failed")?;
 
+    // TODO: support multi-output proofs.
     let (hyle_output, _) = bincode::decode_from_slice::<HyleOutput, _>(
         proof.0.public_values.as_slice(),
         bincode::config::legacy().with_fixed_int_encoding(),
@@ -180,7 +207,7 @@ pub fn sp1_proof_verifier(proof_bin: &[u8], verification_key: &[u8]) -> Result<H
 
     tracing::info!("✅ SP1 proof verified.",);
 
-    Ok(hyle_output)
+    Ok(vec![hyle_output])
 }
 
 #[cfg(test)]
@@ -248,7 +275,7 @@ mod tests {
             Ok(outputs) => {
                 assert_eq!(
                     outputs,
-                    HyleOutput {
+                    vec![HyleOutput {
                         version: 1,
                         initial_state: StateDigest(vec![0, 0, 0, 0]),
                         next_state: StateDigest(vec![0, 0, 0, 0]),
@@ -260,7 +287,7 @@ mod tests {
                         blobs: vec![1, 1, 1, 1, 1],
                         success: true,
                         program_outputs: vec![]
-                    }
+                    }]
                 );
             }
             Err(e) => panic!("Noir verification failed: {:?}", e),

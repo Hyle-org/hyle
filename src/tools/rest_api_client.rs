@@ -1,27 +1,40 @@
+use std::fmt::Display;
+
 use anyhow::{Context, Result};
-use hyle_contract_sdk::TxHash;
 use reqwest::{Response, Url};
+
+#[cfg(feature = "node")]
+use crate::tools::mock_workflow::RunScenario;
+use crate::{
+    model::consensus::ConsensusInfo,
+    model::data_availability::Contract,
+    model::indexer::ContractDb,
+    model::rest::NodeInfo,
+    model::{
+        BlobTransaction, BlockHeight, ContractName, ProofTransaction, RegisterContractTransaction,
+    },
+};
+use hyle_contract_sdk::{StateDigest, TxHash};
 use staking::state::Staking;
 
-use crate::{
-    consensus::ConsensusInfo,
-    data_availability::node_state::model::Contract,
-    indexer::model::ContractDb,
-    model::{
-        BlobTransaction, BlockHeight, ContractName, ProofTransaction, RecursiveProofTransaction,
-        RegisterContractTransaction,
-    },
-    tools::mock_workflow::RunScenario,
-};
-
-use super::NodeInfo;
-
-pub struct ApiHttpClient {
+pub struct NodeApiHttpClient {
     pub url: Url,
     pub reqwest_client: reqwest::Client,
 }
 
-impl ApiHttpClient {
+pub struct IndexerApiHttpClient {
+    pub url: Url,
+    pub reqwest_client: reqwest::Client,
+}
+
+impl NodeApiHttpClient {
+    pub fn new(url: String) -> Self {
+        Self {
+            url: Url::parse(&url).expect("Invalid url"),
+            reqwest_client: reqwest::Client::new(),
+        }
+    }
+
     pub async fn send_tx_blob(&self, tx: &BlobTransaction) -> Result<TxHash> {
         self.reqwest_client
             .post(format!("{}v1/tx/send/blob", self.url))
@@ -38,19 +51,6 @@ impl ApiHttpClient {
     pub async fn send_tx_proof(&self, tx: &ProofTransaction) -> Result<Response> {
         self.reqwest_client
             .post(format!("{}v1/tx/send/proof", self.url))
-            .body(serde_json::to_string(&tx)?)
-            .header("Content-Type", "application/json")
-            .send()
-            .await
-            .context("Sending tx proof")
-    }
-
-    pub async fn send_tx_recursive_proof(
-        &self,
-        tx: &RecursiveProofTransaction,
-    ) -> Result<Response> {
-        self.reqwest_client
-            .post(format!("{}v1/tx/send/recursive_proof", self.url))
             .body(serde_json::to_string(&tx)?)
             .header("Content-Type", "application/json")
             .send()
@@ -131,6 +131,33 @@ impl ApiHttpClient {
             .context("reading contract response")
     }
 
+    #[cfg(feature = "node")]
+    pub async fn run_scenario_api_test(
+        &self,
+        qps: u64,
+        injection_duration_seconds: u64,
+    ) -> Result<Response> {
+        self.reqwest_client
+            .post(format!("{}v1/tools/run_scenario", self.url))
+            .body(serde_json::to_string(&RunScenario::ApiTest {
+                qps,
+                injection_duration_seconds,
+            })?)
+            .header("Content-Type", "application/json")
+            .send()
+            .await
+            .context("Starting api test scenario")
+    }
+}
+
+impl IndexerApiHttpClient {
+    pub fn new(url: String) -> Self {
+        Self {
+            url: Url::parse(&url).expect("Invalid url"),
+            reqwest_client: reqwest::Client::new(),
+        }
+    }
+
     pub async fn list_contracts(&self) -> Result<Vec<ContractDb>> {
         self.reqwest_client
             .get(format!("{}v1/indexer/contracts", self.url))
@@ -152,20 +179,37 @@ impl ApiHttpClient {
             .context(format!("getting Contract {}", contract_name))
     }
 
-    pub async fn run_scenario_api_test(
-        &self,
-        qps: u64,
-        injection_duration_seconds: u64,
-    ) -> Result<Response> {
+    pub async fn fetch_current_state<State>(&self, contract_name: &ContractName) -> Result<State>
+    where
+        State: TryFrom<hyle_contract_sdk::StateDigest, Error = anyhow::Error>,
+    {
+        let resp = self
+            .get_indexer_contract(contract_name)
+            .await?
+            .json::<ContractDb>()
+            .await?;
+
+        StateDigest(resp.state_digest).try_into()
+    }
+
+    pub async fn query_indexer<U: Display>(&self, route: U) -> Result<Response> {
         self.reqwest_client
-            .post(format!("{}v1/tools/run_scenario", self.url))
-            .body(serde_json::to_string(&RunScenario::ApiTest {
-                qps,
-                injection_duration_seconds,
-            })?)
+            .get(format!("{}v1/{}", self.url, route))
             .header("Content-Type", "application/json")
             .send()
             .await
-            .context("Starting api test scenario")
+            .context("Running custom query to {route}")
+    }
+
+    pub async fn get_node_info(&self) -> Result<NodeInfo> {
+        self.reqwest_client
+            .get(format!("{}v1/info", self.url))
+            .header("Content-Type", "application/json")
+            .send()
+            .await
+            .context("getting node info")?
+            .json::<NodeInfo>()
+            .await
+            .context("reading node info response")
     }
 }

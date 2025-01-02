@@ -15,3 +15,6 @@ pub struct ProofInput {
     pub image_id: [u8; 32],
     pub journal: Vec<u8>, // Should be a serde::to_vec<sdk::HyleOutput>,
 }
+
+pub type Risc0ProgramId = [u8; 32];
+pub type Risc0Journal = Vec<u8>;

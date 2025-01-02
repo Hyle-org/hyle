@@ -3,15 +3,13 @@ use std::{fs::File, io::Read};
 use anyhow::Result;
 use clap::{command, Parser, Subcommand};
 use hyle::{
-    indexer::model::ContractDb,
     model::{
         Blob, BlobData, BlobTransaction, ContractName, ProofData, ProofTransaction,
         RegisterContractTransaction,
     },
-    rest::client::ApiHttpClient,
+    rest::client::NodeApiHttpClient,
 };
 use hyle_contract_sdk::{Identity, StateDigest, TxHash, Verifier};
-use reqwest::{Client, Url};
 
 pub fn load_encoded_receipt_from_file(path: &str) -> Vec<u8> {
     let mut file = File::open(path).expect("Failed to open proof file");
@@ -22,7 +20,7 @@ pub fn load_encoded_receipt_from_file(path: &str) -> Vec<u8> {
 }
 
 async fn send_proof(
-    client: &ApiHttpClient,
+    client: &NodeApiHttpClient,
     blob_tx_hash: TxHash,
     contract_name: ContractName,
     proof_file: String,
@@ -30,9 +28,9 @@ async fn send_proof(
     let proof = load_encoded_receipt_from_file(proof_file.as_str());
     let res = client
         .send_tx_proof(&ProofTransaction {
-            blob_tx_hash,
-            contract_name,
+            contract_name: contract_name.clone(),
             proof: ProofData::Bytes(proof),
+            tx_hashes: vec![blob_tx_hash],
         })
         .await?;
     assert!(res.status().is_success());
@@ -43,7 +41,11 @@ async fn send_proof(
     Ok(())
 }
 
-async fn send_blobs(client: &ApiHttpClient, identity: Identity, blobs: Vec<String>) -> Result<()> {
+async fn send_blobs(
+    client: &NodeApiHttpClient,
+    identity: Identity,
+    blobs: Vec<String>,
+) -> Result<()> {
     if blobs.len() % 2 != 0 {
         anyhow::bail!("Blob contract names and data should come in pairs.");
     }
@@ -71,7 +73,7 @@ async fn send_blobs(client: &ApiHttpClient, identity: Identity, blobs: Vec<Strin
 }
 
 async fn register_contracts(
-    client: &ApiHttpClient,
+    client: &NodeApiHttpClient,
     owner: String,
     verifier: Verifier,
     program_hex_id: String,
@@ -154,10 +156,7 @@ enum SendCommands {
 async fn handle_args(args: Args) -> Result<()> {
     let url = format!("http://{}:{}", args.host, args.port);
 
-    let client = ApiHttpClient {
-        url: Url::parse(url.as_str()).unwrap(),
-        reqwest_client: Client::new(),
-    };
+    let client = NodeApiHttpClient::new(url);
 
     match args.command {
         SendCommands::Blobs { identity, blobs } => {
@@ -194,11 +193,9 @@ async fn handle_args(args: Args) -> Result<()> {
             Ok(())
         }
         SendCommands::State { contract_name } => client
-            .get_indexer_contract(&contract_name.into())
-            .await?
-            .json::<ContractDb>()
+            .get_contract(&contract_name.into())
             .await
-            .map(|contract| println!("State: {:?}", contract))
+            .map(|contract| println!("State: {:?}", contract.state))
             .map_err(|e| anyhow::anyhow!("Failed to get state: {}", e)),
     }
 }

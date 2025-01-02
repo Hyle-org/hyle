@@ -10,7 +10,7 @@ use hyle::{
         da_listener::{DAListener, DAListenerCtx},
         Indexer,
     },
-    model::{BlockHeight, CommonRunContext},
+    model::{rest::NodeInfo, BlockHeight, CommonRunContext},
     rest::{RestApi, RestApiRunContext},
     utils::{
         conf,
@@ -129,7 +129,7 @@ async fn main() -> Result<()> {
             bus: ctx.bus.new_handle(),
             metrics_layer,
             router: router.clone(),
-            info: hyle::rest::NodeInfo {
+            info: NodeInfo {
                 id: ctx.config.id.clone(),
                 da_address: ctx.config.da_address.clone(),
                 pubkey: None,

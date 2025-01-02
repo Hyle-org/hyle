@@ -1,8 +1,9 @@
 use assert_cmd::prelude::*;
+use client_sdk::transaction_builder::{BuildResult, TransactionBuilder};
 use hyle::{
+    genesis::States,
     model::{BlobTransaction, ProofData},
-    rest::client::ApiHttpClient,
-    tools::transactions_builder::{BuildResult, States, TransactionBuilder},
+    rest::client::NodeApiHttpClient,
     utils::conf::{Conf, Consensus},
 };
 use rand::Rng;
@@ -142,9 +143,16 @@ impl TestProcess {
         self
     }
 }
+pub async fn wait_height(client: &NodeApiHttpClient, heights: u64) -> anyhow::Result<()> {
+    wait_height_timeout(client, heights, 30).await
+}
 
-pub async fn wait_height(client: &ApiHttpClient, heights: u64) -> anyhow::Result<()> {
-    timeout(Duration::from_secs(30), async {
+pub async fn wait_height_timeout(
+    client: &NodeApiHttpClient,
+    heights: u64,
+    timeout_duration: u64,
+) -> anyhow::Result<()> {
+    timeout(Duration::from_secs(timeout_duration), async {
         loop {
             if let Ok(mut current_height) = client.get_block_height().await {
                 let target_height = current_height + heights;
@@ -163,20 +171,19 @@ pub async fn wait_height(client: &ApiHttpClient, heights: u64) -> anyhow::Result
             }
         }
     })
-    .await?
-
-    //result.map_err(|_| anyhow::anyhow!("Timeout reached while waiting for height"))
+    .await
+    .map_err(|e| anyhow::anyhow!("Timeout reached while waiting for height: {e}"))?
 }
 
 #[allow(dead_code)]
 pub async fn send_transaction(
-    client: &ApiHttpClient,
+    client: &NodeApiHttpClient,
     mut transaction: TransactionBuilder,
     states: &mut States,
 ) {
     let BuildResult {
         identity, blobs, ..
-    } = transaction.build(states).await.unwrap();
+    } = transaction.build(states).unwrap();
 
     let blob_tx_hash = client
         .send_tx_blob(&BlobTransaction { identity, blobs })
@@ -187,7 +194,7 @@ pub async fn send_transaction(
         let proof: ProofData = proof.await.unwrap();
         client
             .send_tx_proof(&hyle::model::ProofTransaction {
-                blob_tx_hash: blob_tx_hash.clone(),
+                tx_hashes: vec![blob_tx_hash.clone()],
                 proof,
                 contract_name,
             })

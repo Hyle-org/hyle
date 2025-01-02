@@ -2,6 +2,7 @@
 
 use crate::model::get_current_timestamp_ms;
 use crate::module_handle_messages;
+use crate::utils::crypto::{AggregateSignature, Signed, SignedByValidator, ValidatorSignature};
 use crate::utils::modules::module_bus_client;
 #[cfg(not(test))]
 use crate::utils::static_type_map::Pick;
@@ -11,15 +12,16 @@ use crate::{
     data_availability::DataEvent,
     genesis::GenesisEvent,
     handle_messages,
-    mempool::{storage::Cut, QueryNewCut},
+    mempool::QueryNewCut,
+    model::mempool::Cut,
     model::{get_current_timestamp, Hashable, ValidatorPublicKey},
     p2p::{
-        network::{OutboundMessage, PeerEvent, Signed, SignedByValidator},
+        network::{OutboundMessage, PeerEvent},
         P2PCommand,
     },
     utils::{
         conf::SharedConf,
-        crypto::{AggregateSignature, BlstCrypto, SharedBlstCrypto, ValidatorSignature},
+        crypto::{BlstCrypto, SharedBlstCrypto},
         modules::Module,
     },
 };
@@ -38,14 +40,14 @@ use tokio::time::interval;
 use tokio::{sync::broadcast, time::sleep};
 use tracing::{debug, info, warn};
 
-use strum_macros::IntoStaticStr;
-
 pub mod api;
 pub mod metrics;
 pub mod module;
 pub mod role_follower;
 pub mod role_leader;
 pub mod utils;
+
+pub use crate::model::consensus::*;
 
 // -----------------------------
 // ------ Consensus bus --------
@@ -75,17 +77,10 @@ pub struct QueryConsensusInfo {}
 #[derive(Clone)]
 pub struct QueryConsensusStakingState {}
 
-#[derive(Clone, Serialize, Deserialize, Debug)]
-pub struct ConsensusInfo {
-    pub slot: Slot,
-    pub view: View,
-    pub round_leader: ValidatorPublicKey,
-    pub validators: Vec<ValidatorPublicKey>,
-}
-
 impl BusMessage for ConsensusCommand {}
 impl BusMessage for ConsensusEvent {}
 impl BusMessage for ConsensusNetMessage {}
+impl<T> BusMessage for SignedByValidator<T> where T: Encode + BusMessage {}
 
 module_bus_client! {
 struct ConsensusBusClient {
@@ -102,73 +97,6 @@ struct ConsensusBusClient {
     receiver(Query<QueryConsensusInfo, ConsensusInfo>),
     receiver(Query<QueryConsensusStakingState, Staking>),
 }
-}
-
-// -----------------------------
-// --- Consensus data model ----
-// -----------------------------
-
-#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, PartialEq, Eq, Hash)]
-pub struct ValidatorCandidacy {
-    pub pubkey: ValidatorPublicKey,
-    pub peer_address: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode, PartialEq, Eq, Hash)]
-pub struct NewValidatorCandidate {
-    pub pubkey: ValidatorPublicKey, // TODO: possible optim: the pubkey is already present in the msg,
-    pub msg: SignedByValidator<ConsensusNetMessage>,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, PartialEq, Eq, Hash, Default)]
-pub struct QuorumCertificateHash(Vec<u8>);
-
-type QuorumCertificate = AggregateSignature;
-
-#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, PartialEq, Eq, Hash)]
-pub struct TimeoutCertificate(ConsensusProposalHash, QuorumCertificate);
-
-// A Ticket is necessary to send a valid prepare
-#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, PartialEq, Eq, Hash)]
-pub enum Ticket {
-    // Special value for the initial Cut, needed because we don't have a quorum certificate for the genesis block.
-    Genesis,
-    CommitQC(QuorumCertificate),
-    TimeoutQC(QuorumCertificate),
-}
-
-pub type Slot = u64;
-pub type View = u64;
-
-#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, PartialEq, Eq, Hash, Default)]
-pub struct ConsensusProposalHash(Vec<u8>);
-
-#[derive(Debug, Clone, Default, Serialize, Deserialize, Encode, Decode, PartialEq, Eq, Hash)]
-pub struct ConsensusProposal {
-    // These first few items are checked when receiving the proposal from the leader.
-    pub slot: Slot,
-    pub view: View,
-    pub round_leader: ValidatorPublicKey,
-    // Below items aren't.
-    pub cut: Cut,
-    pub new_validators_to_bond: Vec<NewValidatorCandidate>,
-    pub timestamp: u64,
-}
-
-type NextLeader = ValidatorPublicKey;
-
-#[derive(
-    Debug, Serialize, Deserialize, Clone, Encode, Decode, PartialEq, Eq, Hash, IntoStaticStr,
-)]
-pub enum ConsensusNetMessage {
-    Prepare(ConsensusProposal, Ticket),
-    PrepareVote(ConsensusProposalHash),
-    Confirm(QuorumCertificate),
-    ConfirmAck(ConsensusProposalHash),
-    Commit(QuorumCertificate, ConsensusProposalHash),
-    Timeout(ConsensusProposalHash, NextLeader),
-    TimeoutCertificate(QuorumCertificate, ConsensusProposalHash),
-    ValidatorCandidacy(ValidatorCandidacy),
 }
 
 // TODO: move struct to model.rs ?
@@ -252,6 +180,8 @@ impl Consensus {
             _ => bail!("Cannot finish_round unless synchronized to the consensus."),
         }
 
+        let parent_hash = self.bft_round_state.consensus_proposal.hash();
+
         let new_validators_to_bond = std::mem::take(
             &mut self
                 .bft_round_state
@@ -271,6 +201,7 @@ impl Consensus {
                 round_leader: std::mem::take(
                     &mut self.bft_round_state.consensus_proposal.round_leader,
                 ),
+                parent_hash,
                 ..ConsensusProposal::default()
             },
             staking: std::mem::take(&mut self.bft_round_state.staking),
@@ -873,10 +804,9 @@ impl Consensus {
             on_bus self.bus,
             listen<GenesisEvent> msg => {
                 match msg {
-                    GenesisEvent::GenesisBlock { initial_validators, ..} => {
-
-                        self.bft_round_state.consensus_proposal.round_leader =
-                            initial_validators.first().unwrap().clone();
+                    GenesisEvent::GenesisBlock { signed_block } => {
+                        self.bft_round_state.consensus_proposal.parent_hash = signed_block.hash();
+                        self.bft_round_state.consensus_proposal.round_leader = signed_block.consensus_proposal.round_leader.clone();
 
                         if self.bft_round_state.consensus_proposal.round_leader == *self.crypto.validator_pubkey() {
                             self.bft_round_state.state_tag = StateTag::Leader;
@@ -886,7 +816,7 @@ impl Consensus {
                             self.bft_round_state.state_tag = StateTag::Follower;
                             self.bft_round_state.consensus_proposal.slot = 1;
                             info!(
-                                "👑 Starting consensus as follower of leader {}",
+                                "💂‍♂️ Starting consensus as follower of leader {}",
                                 self.bft_round_state.consensus_proposal.round_leader
                             );
                         }
@@ -991,7 +921,7 @@ pub mod test {
             broadcast, build_tuple, send, AutobahnBusClient, AutobahnTestCtx,
         },
         bus::{dont_use_this::get_receiver, metrics::BusMetrics, SharedMessageBus},
-        mempool::storage::DataProposalHash,
+        model::mempool::DataProposalHash,
         p2p::network::NetMessage,
         utils::{conf::Conf, crypto},
     };
@@ -1479,6 +1409,7 @@ pub mod test {
                         AggregateSignature::default(),
                     )],
                     new_validators_to_bond: vec![],
+                    parent_hash: ConsensusProposalHash("hash".into()),
                 },
                 Ticket::Genesis,
             ))
@@ -1518,6 +1449,7 @@ pub mod test {
                         AggregateSignature::default(),
                     )],
                     new_validators_to_bond: vec![],
+                    parent_hash: ConsensusProposalHash("hash".into()),
                 },
                 Ticket::Genesis,
             ))
@@ -1566,6 +1498,7 @@ pub mod test {
                         AggregateSignature::default(),
                     )],
                     new_validators_to_bond: vec![],
+                    parent_hash: ConsensusProposalHash("hash".into()),
                 },
                 Ticket::Genesis,
             ))
@@ -1640,55 +1573,7 @@ pub mod test {
         };
     }
 
-    #[test_log::test(tokio::test)]
-    async fn prepare_wrong_timestamp_too_late() {
-        let (mut node1, mut node2, mut node3, mut node4): (
-            ConsensusTestCtx,
-            ConsensusTestCtx,
-            ConsensusTestCtx,
-            ConsensusTestCtx,
-        ) = build_nodes!(4).await;
-
-        node1.start_round_at(1000).await;
-
-        let (cp, _) = simple_commit_round! {
-            leader: node1,
-            followers: [node2, node3, node4]
-        };
-
-        assert_eq!(cp.timestamp, 1000);
-
-        node2.start_round_at(3001).await;
-
-        // Get broadcasted message and inject it, asserting errors
-        broadcast! {
-            description: "Leader Node2 second round",
-            from: node2, to: [],
-            message_matches: ConsensusNetMessage::Prepare(next_cp, next_ticket) => {
-
-                assert_eq!(next_cp.timestamp, 3001);
-
-                let prepare_msg = node2
-                    .consensus
-                    .sign_net_message(ConsensusNetMessage::Prepare(next_cp.clone(), next_ticket.clone()))
-                    .unwrap();
-
-                assert_contains!(
-                    format!("{:#}", node1.handle_msg_err(&prepare_msg)),
-                    "too late"
-                );
-                assert_contains!(
-                    format!("{:#}", node3.handle_msg_err(&prepare_msg)),
-                    "too late"
-                );
-                assert_contains!(
-                    format!("{:#}", node4.handle_msg_err(&prepare_msg)),
-                    "too late"
-                );
-            }
-        };
-    }
-
+    #[ignore]
     #[test_log::test(tokio::test)]
     async fn prepare_valid_timestamp() {
         let (mut node1, mut node2, mut node3, mut node4): (

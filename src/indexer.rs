@@ -4,12 +4,13 @@ mod api;
 pub mod contract_handlers;
 pub mod contract_state_indexer;
 pub mod da_listener;
-pub mod model;
 
 use crate::{
+    consensus::ConsensusProposalHash,
     data_availability::DataEvent,
     model::{
-        BlobTransaction, Block, BlockHash, BlockHeight, CommonRunContext, ContractName, Hashable,
+        BlobTransaction, Block, BlockHeight, CommonRunContext, ContractName, Hashable,
+        TransactionData,
     },
     module_handle_messages,
     utils::modules::{module_bus_client, Module},
@@ -25,12 +26,13 @@ use axum::{
     Router,
 };
 use chrono::DateTime;
-use model::{BlobWithStatus, TransactionStatus, TransactionType, TransactionWithBlobs, TxHashDb};
 use sqlx::Row;
 use sqlx::{postgres::PgPoolOptions, PgPool, Pool, Postgres};
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::{broadcast, mpsc};
 use tracing::{error, info};
+
+use crate::model::indexer::*;
 
 module_bus_client! {
 #[derive(Debug)]
@@ -220,11 +222,11 @@ impl Indexer {
     }
 
     async fn handle_processed_block(&mut self, block: Block) -> Result<(), Error> {
+        info!("Indexing block at height {:?}", block.block_height);
         let mut transaction = self.state.db.begin().await?;
 
         // Insert the block into the blocks table
-        let block_hash = &block.hash();
-        let block_parent_hash = &block.block_parent_hash;
+        let block_hash = &block.hash;
         let block_height = i64::try_from(block.block_height.0)
             .map_err(|_| anyhow::anyhow!("Block height is too large to fit into an i64"))?;
 
@@ -241,7 +243,7 @@ impl Indexer {
             "INSERT INTO blocks (hash, parent_hash, height, timestamp) VALUES ($1, $2, $3, $4)",
         )
         .bind(block_hash)
-        .bind(block_parent_hash)
+        .bind(block.parent_hash)
         .bind(block_height)
         .bind(block_timestamp)
         .execute(&mut *transaction)
@@ -253,7 +255,13 @@ impl Indexer {
             let version = i32::try_from(tx.version)
                 .map_err(|_| anyhow::anyhow!("Tx version is too large to fit into an i32"))?;
 
-            let register_contract_tx = tx.transaction_data.register_contract()?;
+            let TransactionData::RegisterContract(register_contract_tx) = tx.transaction_data
+            else {
+                bail!(
+                    "Expected TransactionData::RegisterContract, got {:?}",
+                    tx.transaction_data
+                );
+            };
 
             // Insert the transaction into the transactions table
             let tx_type = TransactionType::RegisterContractTransaction;
@@ -304,7 +312,13 @@ impl Indexer {
             let tx_hash: &TxHashDb = &tx.hash().into();
             let version = i32::try_from(tx.version)
                 .map_err(|_| anyhow::anyhow!("Tx version is too large to fit into an i32"))?;
-            let blob_tx = tx.transaction_data.blob()?;
+
+            let TransactionData::Blob(blob_tx) = tx.transaction_data else {
+                bail!(
+                    "Expected TransactionData::Blob, got {:?}",
+                    tx.transaction_data
+                );
+            };
 
             // Send the transaction to all websocket subscribers
             self.send_blob_transaction_to_websocket_subscribers(
@@ -352,39 +366,48 @@ impl Indexer {
             let version = i32::try_from(tx.version)
                 .map_err(|_| anyhow::anyhow!("Tx version is too large to fit into an i32"))?;
 
-            let verified_proof_tx = tx.transaction_data.verified_proof()?;
+            let TransactionData::VerifiedProof(tx_data) = tx.transaction_data else {
+                error!(
+                    "Verified proof TX {:?} does not contain VerifiedProof data",
+                    &tx_hash
+                );
+                continue;
+            };
 
             // Insert the transaction into the transactions table
             let tx_type = TransactionType::ProofTransaction;
             let tx_status = TransactionStatus::Success;
             sqlx::query(
-                "INSERT INTO transactions (tx_hash, block_hash, version, transaction_type, transaction_status)
-                VALUES ($1, $2, $3, $4, $5)")
-            .bind(tx_hash)
-            .bind(block_hash)
-            .bind(version)
-            .bind(tx_type)
-            .bind(tx_status)
-            .execute(&mut *transaction)
-            .await?;
+                    "INSERT INTO transactions (tx_hash, block_hash, version, transaction_type, transaction_status)
+                    VALUES ($1, $2, $3, $4, $5)")
+                .bind(tx_hash)
+                .bind(block_hash)
+                .bind(version)
+                .bind(tx_type)
+                .bind(tx_status)
+                .execute(&mut *transaction)
+                .await?;
 
-            let proof = &verified_proof_tx.proof.unwrap_or_default().to_bytes()?;
-            let serialized_hyle_output = serde_json::to_string(&verified_proof_tx.hyle_output)?;
-            let blob_index: i32 = i32::try_from(verified_proof_tx.hyle_output.index.0)
-                .map_err(|_| anyhow::anyhow!("Proof blob index is too large to fit into an i32"))?;
-            let blob_tx_hash: &TxHashDb = &verified_proof_tx.blob_tx_hash.into();
-            let contract_name = &verified_proof_tx.contract_name.0;
-            sqlx::query(
-                "INSERT INTO proofs (tx_hash, blob_tx_hash, blob_index, contract_name, proof, hyle_output) VALUES ($1, $2, $3, $4, $5, $6::jsonb)",
-            )
-            .bind(tx_hash)
-            .bind(blob_tx_hash)
-            .bind(blob_index)
-            .bind(contract_name)
-            .bind(proof)
-            .bind(serialized_hyle_output)
-            .execute(&mut *transaction)
-            .await?;
+            // Then insert the proof in to the proof table.
+            if tx_data.proof.is_none() {
+                tracing::trace!("Verified proof TX {:?} does not contain a proof", &tx_hash);
+                continue;
+            }
+            let proof = tx_data.proof.unwrap();
+
+            let Ok(proof) = &proof.to_bytes() else {
+                error!(
+                    "Verified proof TX {:?} could not be decoded to bytes",
+                    &tx_hash
+                );
+                continue;
+            };
+
+            sqlx::query("INSERT INTO proofs (tx_hash, proof) VALUES ($1, $2)")
+                .bind(tx_hash)
+                .bind(proof)
+                .execute(&mut *transaction)
+                .await?;
         }
 
         // Handling failed transactions
@@ -423,15 +446,50 @@ impl Indexer {
                 .await?;
         }
 
-        // Handling verified blob
-        for (blob_tx_hash, blob_index) in block.verified_blobs {
+        for handled_blob_proof_output in block.blob_proof_outputs {
+            let proof_tx_hash: &TxHashDb = &handled_blob_proof_output.proof_tx_hash.into();
+            let blob_tx_hash: &TxHashDb = &handled_blob_proof_output.blob_tx_hash.into();
+            let blob_index = i32::try_from(handled_blob_proof_output.blob_index.0)
+                .map_err(|_| anyhow::anyhow!("Blob index is too large to fit into an i32"))?;
+            let blob_proof_output_index =
+                i32::try_from(handled_blob_proof_output.blob_proof_output_index).map_err(|_| {
+                    anyhow::anyhow!("Blob proof output index is too large to fit into an i32")
+                })?;
+            let serialized_hyle_output =
+                serde_json::to_string(&handled_blob_proof_output.hyle_output)?;
+            sqlx::query(
+                "INSERT INTO blob_proof_outputs (proof_tx_hash, blob_tx_hash, blob_index, blob_proof_output_index, contract_name, hyle_output, settled)
+                    VALUES ($1, $2, $3, $4, $5, $6::jsonb, false)",
+            )
+            .bind(proof_tx_hash)
+            .bind(blob_tx_hash)
+            .bind(blob_index)
+            .bind(blob_proof_output_index)
+            .bind(handled_blob_proof_output.contract_name.0)
+            .bind(serialized_hyle_output)
+            .execute(&mut *transaction)
+            .await?;
+        }
+
+        // Handling verified blob (! must come after blob proof output, as it updates that)
+        for (blob_tx_hash, blob_index, blob_proof_output_index) in block.verified_blobs {
             let blob_tx_hash: &TxHashDb = &blob_tx_hash.into();
             let blob_index = i32::try_from(blob_index.0)
                 .map_err(|_| anyhow::anyhow!("Blob index is too large to fit into an i32"))?;
+            let blob_proof_output_index = i32::try_from(blob_proof_output_index).map_err(|_| {
+                anyhow::anyhow!("Blob proof output index is too large to fit into an i32")
+            })?;
 
             sqlx::query("UPDATE blobs SET verified = true WHERE tx_hash = $1 AND blob_index = $2")
                 .bind(blob_tx_hash)
                 .bind(blob_index)
+                .execute(&mut *transaction)
+                .await?;
+
+            sqlx::query("UPDATE blob_proof_outputs SET settled = true WHERE blob_tx_hash = $1 AND blob_index = $2 AND blob_proof_output_index = $3")
+                .bind(blob_tx_hash)
+                .bind(blob_index)
+                .bind(blob_proof_output_index)
                 .execute(&mut *transaction)
                 .await?;
         }
@@ -469,6 +527,8 @@ impl Indexer {
         // Commit the transaction
         transaction.commit().await?;
 
+        tracing::debug!("Indexed block at height {:?}", block.block_height);
+
         Ok(())
     }
 
@@ -476,7 +536,7 @@ impl Indexer {
         &self,
         tx: &BlobTransaction,
         tx_hash: &TxHashDb,
-        block_hash: &BlockHash,
+        block_hash: &ConsensusProposalHash,
         version: &i32,
     ) {
         for (contrat_name, senders) in self.subscribers.iter() {
@@ -520,10 +580,13 @@ impl std::ops::Deref for Indexer {
 
 #[cfg(test)]
 mod test {
+    use crate::{
+        mempool::DataProposal,
+        model::indexer::{BlockDb, ContractDb},
+    };
     use assert_json_diff::assert_json_include;
     use axum_test::TestServer;
     use hyle_contract_sdk::{BlobIndex, HyleOutput, Identity, ProgramId, StateDigest, TxHash};
-    use model::{BlockDb, ContractDb};
     use serde_json::json;
     use staking::model::ValidatorPublicKey;
     use std::{
@@ -534,10 +597,9 @@ mod test {
     use crate::{
         bus::SharedMessageBus,
         data_availability::node_state::NodeState,
-        mempool::storage::DataProposal,
         model::{
-            Blob, BlobData, ProofData, RegisterContractTransaction, SignedBlock, Transaction,
-            TransactionData, VerifiedProofTransaction,
+            Blob, BlobData, BlobProofOutput, ProofData, RegisterContractTransaction, SignedBlock,
+            Transaction, TransactionData, VerifiedProofTransaction,
         },
     };
 
@@ -571,7 +633,7 @@ mod test {
             transaction_data: TransactionData::RegisterContract(RegisterContractTransaction {
                 owner: "test".to_string(),
                 verifier: "test".into(),
-                program_id: ProgramId(vec![]),
+                program_id: ProgramId(vec![3, 2, 1]),
                 state_digest,
                 contract_name,
             }),
@@ -612,21 +674,26 @@ mod test {
         Transaction {
             version: 1,
             transaction_data: TransactionData::VerifiedProof(VerifiedProofTransaction {
-                proof_hash: proof.hash(),
-                proof: Some(proof),
                 contract_name: contract_name.clone(),
-                blob_tx_hash: blob_tx_hash.clone(),
-                hyle_output: HyleOutput {
-                    version: 1,
-                    initial_state,
-                    next_state,
-                    identity: Identity("test.c1".to_owned()),
-                    tx_hash: blob_tx_hash,
-                    index: blob_index,
-                    blobs,
-                    success: true,
-                    program_outputs: vec![],
-                },
+                proof_hash: proof.hash(),
+                proven_blobs: vec![BlobProofOutput {
+                    original_proof_hash: proof.hash(),
+                    program_id: ProgramId(vec![3, 2, 1]),
+                    blob_tx_hash: blob_tx_hash.clone(),
+                    hyle_output: HyleOutput {
+                        version: 1,
+                        initial_state,
+                        next_state,
+                        identity: Identity("test.c1".to_owned()),
+                        tx_hash: blob_tx_hash,
+                        index: blob_index,
+                        blobs,
+                        success: true,
+                        program_outputs: vec![],
+                    },
+                }],
+                is_recursive: false,
+                proof: Some(proof),
             }),
         }
     }

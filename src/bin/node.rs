@@ -9,9 +9,9 @@ use hyle::{
     genesis::Genesis,
     indexer::Indexer,
     mempool::Mempool,
-    model::{CommonRunContext, NodeRunContext, SharedRunContext},
+    model::{rest::NodeInfo, CommonRunContext, NodeRunContext, SharedRunContext},
     p2p::P2P,
-    rest::{NodeInfo, RestApi, RestApiRunContext},
+    rest::{RestApi, RestApiRunContext},
     single_node_consensus::SingleNodeConsensus,
     tools::mock_workflow::MockWorkflowHandler,
     utils::{
@@ -109,12 +109,12 @@ async fn main() -> Result<()> {
     let mut handler = ModulesHandler::new(&bus).await;
     handler.build_module::<Mempool>(ctx.clone()).await?;
 
+    handler.build_module::<Genesis>(ctx.clone()).await?;
     if config.single_node.unwrap_or(false) {
         handler
             .build_module::<SingleNodeConsensus>(ctx.clone())
             .await?;
     } else {
-        handler.build_module::<Genesis>(ctx.clone()).await?;
         handler.build_module::<Consensus>(ctx.clone()).await?;
     }
     handler

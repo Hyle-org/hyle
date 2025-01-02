@@ -1,6 +1,6 @@
 use bincode::{Decode, Encode};
 
-use super::model::UnsettledBlobTransaction;
+use crate::model::data_availability::UnsettledBlobTransaction;
 use crate::model::ContractName;
 use hyle_contract_sdk::TxHash;
 use std::collections::HashMap;
@@ -25,8 +25,8 @@ impl OrderedTxMap {
         let tx = self.map.get_mut(hash);
         match tx {
             Some(tx) => {
-                let is_next_unsettled_tx = tx.blobs.iter().all(|blob| {
-                    if let Some(order) = self.tx_order.get(&blob.contract_name) {
+                let is_next_unsettled_tx = tx.blobs.iter().all(|blob_metadata| {
+                    if let Some(order) = self.tx_order.get(&blob_metadata.blob.contract_name) {
                         if let Some(first) = order.first() {
                             return first == &tx.hash;
                         }
@@ -48,14 +48,16 @@ impl OrderedTxMap {
         if self.map.contains_key(&tx.hash) {
             return;
         }
-        for blob in &tx.blobs {
-            match self.tx_order.get_mut(&blob.contract_name) {
+        for blob_metadata in &tx.blobs {
+            match self.tx_order.get_mut(&blob_metadata.blob.contract_name) {
                 Some(vec) => {
                     vec.push(tx.hash.clone());
                 }
                 None => {
-                    self.tx_order
-                        .insert(blob.contract_name.clone(), vec![tx.hash.clone()]);
+                    self.tx_order.insert(
+                        blob_metadata.blob.contract_name.clone(),
+                        vec![tx.hash.clone()],
+                    );
                 }
             }
         }
@@ -63,22 +65,22 @@ impl OrderedTxMap {
         self.map.insert(tx.hash.clone(), tx);
     }
 
-    pub fn remove(&mut self, hash: &TxHash) {
+    pub fn remove(&mut self, hash: &TxHash) -> Option<UnsettledBlobTransaction> {
         if let Some(tx) = self.map.get(hash) {
-            for blob in &tx.blobs {
-                if let Some(c) = self.tx_order.get_mut(&blob.contract_name) {
+            for blob_metadata in &tx.blobs {
+                if let Some(c) = self.tx_order.get_mut(&blob_metadata.blob.contract_name) {
                     c.retain(|h| !h.eq(hash));
                 }
             }
         }
-        self.map.remove(hash);
+        self.map.remove(hash)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::{data_availability::node_state::model::UnsettledBlobMetadata, model::BlobsHash};
-    use hyle_contract_sdk::Identity;
+    use crate::model::{data_availability::UnsettledBlobMetadata, BlobsHash};
+    use hyle_contract_sdk::{Blob, BlobData, Identity};
 
     use super::*;
 
@@ -88,8 +90,11 @@ mod tests {
             hash: TxHash::new(hash),
             blobs_hash: BlobsHash::new("blobs_hash"),
             blobs: vec![UnsettledBlobMetadata {
-                contract_name: ContractName(contract.to_string()),
-                metadata: vec![],
+                blob: Blob {
+                    contract_name: ContractName(contract.to_string()),
+                    data: BlobData::default(),
+                },
+                possible_proofs: vec![],
             }],
         }
     }

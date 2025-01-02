@@ -11,7 +11,7 @@ name = "bonsai-runner"
 required-features = ["bonsai-runner"]
 
 [dependencies]
-anyhow = "1.0.94"
+anyhow = "1.0.95"
 tracing = "0.1"
 hex = "0.4.3"
 
@@ -20,7 +20,7 @@ risc0-zkvm = { version = "1.2.0" }
 bytemuck = "1.21.0"
 # Has to be compatible with whatever bonsai-sdk returns, which is not really documented...
 bincode = "1.3.3"
-serde = { version = "1.0.216", features = ["derive"] }
+serde = { version = "1.0.217", features = ["derive"] }
 
 # For server only
 axum = { version = "0.7", features = ["macros"], optional = true }

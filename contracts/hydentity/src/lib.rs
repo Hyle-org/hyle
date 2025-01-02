@@ -13,6 +13,9 @@ pub mod metadata {
     pub const PROGRAM_ID: [u8; 32] = sdk::str_to_u8(include_str!("../hydentity.txt"));
 }
 
+#[cfg(feature = "client")]
+pub mod client;
+
 #[derive(Encode, Decode, Serialize, Deserialize, Debug, Clone, Eq, PartialEq)]
 pub struct AccountInfo {
     pub hash: String,
@@ -29,6 +32,13 @@ impl Hydentity {
         Hydentity {
             identities: BTreeMap::new(),
         }
+    }
+
+    pub fn get_nonce(&self, username: &str) -> Result<u32, &'static str> {
+        let info = self.get_identity_info(username)?;
+        let state: AccountInfo =
+            serde_json::from_str(&info).map_err(|_| "Failed to parse accounf info")?;
+        Ok(state.nonce)
     }
 }
 
@@ -103,7 +113,7 @@ impl TryFrom<sdk::StateDigest> for Hydentity {
 
     fn try_from(state: sdk::StateDigest) -> Result<Self, Self::Error> {
         let (balances, _) = bincode::decode_from_slice(&state.0, bincode::config::standard())
-            .map_err(|_| anyhow::anyhow!("Could not decode start height"))?;
+            .map_err(|_| anyhow::anyhow!("Could not decode hydentity state"))?;
         Ok(balances)
     }
 }

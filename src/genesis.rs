@@ -2,28 +2,39 @@ use std::collections::BTreeMap;
 
 use crate::{
     bus::{bus_client, BusClientSender, BusMessage},
+    consensus::{
+        ConsensusProposal, ConsensusProposalHash, NewValidatorCandidate, ValidatorCandidacy,
+    },
     handle_messages,
+    mempool::DataProposal,
     model::{
-        BlobTransaction, Hashable, ProofData, RegisterContractTransaction, SharedRunContext,
-        Transaction, TransactionData, ValidatorPublicKey, VerifiedProofTransaction,
+        get_current_timestamp_ms, BlobProofOutput, BlobTransaction, Hashable, ProofData,
+        RegisterContractTransaction, SharedRunContext, SignedBlock, Transaction, TransactionData,
+        ValidatorPublicKey, VerifiedProofTransaction,
     },
     p2p::network::PeerEvent,
-    tools::transactions_builder::{BuildResult, States, TransactionBuilder},
-    utils::{conf::SharedConf, crypto::SharedBlstCrypto, modules::Module},
+    utils::{
+        conf::SharedConf,
+        crypto::{
+            AggregateSignature, SharedBlstCrypto, Signature, SignedByValidator, ValidatorSignature,
+        },
+        modules::Module,
+    },
 };
 use anyhow::{bail, Error, Result};
-use hyle_contract_sdk::Digestable;
+use client_sdk::transaction_builder::{BuildResult, StateUpdater, TransactionBuilder};
+use hydentity::Hydentity;
 use hyle_contract_sdk::{identity_provider::IdentityVerification, Identity};
+use hyle_contract_sdk::{ContractName, Digestable, ProgramId};
+use hyllar::HyllarToken;
 use serde::{Deserialize, Serialize};
+use staking::state::Staking;
 use tracing::{error, info};
 
 #[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]
 pub enum GenesisEvent {
     NoGenesis,
-    GenesisBlock {
-        genesis_txs: Vec<Transaction>,
-        initial_validators: Vec<ValidatorPublicKey>,
-    },
+    GenesisBlock { signed_block: SignedBlock },
 }
 impl BusMessage for GenesisEvent {}
 
@@ -34,10 +45,12 @@ struct GenesisBusClient {
 }
 }
 
+type PeerPublicKeyMap = BTreeMap<String, ValidatorPublicKey>;
+
 pub struct Genesis {
     config: SharedConf,
     bus: GenesisBusClient,
-    peer_pubkey: BTreeMap<String, ValidatorPublicKey>,
+    peer_pubkey: PeerPublicKeyMap,
     crypto: SharedBlstCrypto,
 }
 
@@ -58,16 +71,48 @@ impl Module for Genesis {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct States {
+    pub hyllar: HyllarToken,
+    pub hydentity: Hydentity,
+    pub staking: Staking,
+}
+
+impl StateUpdater for States {
+    fn update(
+        &mut self,
+        contract_name: &hyle_contract_sdk::ContractName,
+        new_state: hyle_contract_sdk::StateDigest,
+    ) -> Result<()> {
+        match contract_name.0.as_str() {
+            "hyllar" => self.hyllar = new_state.try_into()?,
+            "hydentity" => self.hydentity = new_state.try_into()?,
+            "staking" => self.staking = new_state.try_into()?,
+            _ => bail!("Unknown contract name"),
+        }
+        Ok(())
+    }
+
+    fn get(&self, contract_name: &ContractName) -> Result<hyle_contract_sdk::StateDigest> {
+        Ok(match contract_name.0.as_str() {
+            "hyllar" => self.hyllar.as_digest(),
+            "hydentity" => self.hydentity.as_digest(),
+            "staking" => self.staking.as_digest(),
+            _ => bail!("Unknown contract name"),
+        })
+    }
+}
+
 impl Genesis {
     pub async fn start(&mut self) -> Result<(), Error> {
-        if self.config.single_node.unwrap_or(false) {
-            bail!("Single node mode, genesis module should not be enabled.");
-        }
-        if !self
-            .config
-            .consensus
-            .genesis_stakers
-            .contains_key(&self.config.id)
+        let single_node = self.config.single_node.unwrap_or(false);
+        // Unless we're in single node mode, we must be a genesis staker to start the network.
+        if !single_node
+            && !self
+                .config
+                .consensus
+                .genesis_stakers
+                .contains_key(&self.config.id)
         {
             info!("📡 Not a genesis staker, need to catchup from peers.");
             _ = self.bus.send(GenesisEvent::NoGenesis {});
@@ -83,21 +128,24 @@ impl Genesis {
         );
 
         // Wait until we've connected with all other genesis peers.
-        handle_messages! {
-            on_bus self.bus,
-            listen<PeerEvent> msg => {
-                match msg {
-                    PeerEvent::NewPeer { name, pubkey } => {
-                        info!("🌱 New peer {}({}) added to genesis", &name, &pubkey);
-                        self.peer_pubkey
-                            .insert(name.clone(), pubkey.clone());
+        if !single_node {
+            info!("🌱 Waiting on other genesis peers to join");
+            handle_messages! {
+                on_bus self.bus,
+                listen<PeerEvent> msg => {
+                    match msg {
+                        PeerEvent::NewPeer { name, pubkey } => {
+                            info!("🌱 New peer {}({}) added to genesis", &name, &pubkey);
+                            self.peer_pubkey
+                                .insert(name.clone(), pubkey.clone());
 
-                        // Once we know everyone in the initial quorum, craft & process the genesis block.
-                        if self.peer_pubkey.len()
-                            == self.config.consensus.genesis_stakers.len() {
-                            break
-                        } else {
-                            info!("🌱 Waiting for {} more peers to join genesis", self.config.consensus.genesis_stakers.len() - self.peer_pubkey.len());
+                            // Once we know everyone in the initial quorum, craft & process the genesis block.
+                            if self.peer_pubkey.len()
+                                == self.config.consensus.genesis_stakers.len() {
+                                break
+                            } else {
+                                info!("🌱 Waiting for {} more peers to join genesis", self.config.consensus.genesis_stakers.len() - self.peer_pubkey.len());
+                            }
                         }
                     }
                 }
@@ -107,7 +155,7 @@ impl Genesis {
         let mut initial_validators = self.peer_pubkey.values().cloned().collect::<Vec<_>>();
         initial_validators.sort();
 
-        let genesis_txs = match self.generate_genesis_txs().await {
+        let genesis_txs = match Self::generate_genesis_txs(&self.peer_pubkey).await {
             Ok(t) => t,
             Err(e) => {
                 error!("🌱 Genesis block generation failed: {:?}", e);
@@ -115,21 +163,20 @@ impl Genesis {
             }
         };
 
+        let signed_block = self.make_genesis_block(genesis_txs, initial_validators);
+
         // At this point, we can setup the genesis block.
-        _ = self.bus.send(GenesisEvent::GenesisBlock {
-            initial_validators,
-            genesis_txs,
-        });
+        _ = self.bus.send(GenesisEvent::GenesisBlock { signed_block });
 
         Ok(())
     }
 
-    async fn generate_genesis_txs(&self) -> Result<Vec<Transaction>> {
-        let (mut genesis_txs, mut states) = Self::genesis_contracts_txs();
+    pub async fn generate_genesis_txs(peer_pubkey: &PeerPublicKeyMap) -> Result<Vec<Transaction>> {
+        let (contract_program_ids, mut genesis_txs, mut states) = Self::genesis_contracts_txs();
 
-        let register_txs = self.generate_register_txs(&mut states).await?;
-        let faucet_txs = self.generate_faucet_txs(&mut states).await?;
-        let stake_txs = self.generate_stake_txs(&mut states).await?;
+        let register_txs = Self::generate_register_txs(peer_pubkey, &mut states).await?;
+        let faucet_txs = Self::generate_faucet_txs(peer_pubkey, &mut states).await?;
+        let stake_txs = Self::generate_stake_txs(peer_pubkey, &mut states).await?;
 
         let builders = register_txs
             .into_iter()
@@ -140,11 +187,11 @@ impl Genesis {
         for BuildResult {
             identity,
             blobs,
-            outputs,
+            mut outputs,
         } in builders
         {
             // On genesis we don't need an actual zkproof as the txs are not going through data
-            // dissemnitation. We can create the same VerifiedProofTransaction on each genesis
+            // dissemination. We can create the same VerifiedProofTransaction on each genesis
             // validator, and assume it's the same.
 
             let tx = BlobTransaction { identity, blobs };
@@ -152,86 +199,132 @@ impl Genesis {
 
             genesis_txs.push(Transaction::wrap(TransactionData::Blob(tx)));
 
-            for (contract_name, out) in outputs {
-                genesis_txs.push(Transaction::wrap(TransactionData::VerifiedProof(
-                    VerifiedProofTransaction {
-                        blob_tx_hash: blob_tx_hash.clone(),
-                        contract_name,
-                        proof_hash: ProofData::default().hash(),
-                        hyle_output: out,
-                        proof: None,
-                    },
-                )));
-            }
+            // Pretend we're verifying a recursive proof
+            genesis_txs.push(Transaction::wrap(TransactionData::VerifiedProof(
+                VerifiedProofTransaction {
+                    contract_name: "risc0-recursion".into(),
+                    proven_blobs: outputs
+                        .drain(..)
+                        .map(|(contract_name, out)| BlobProofOutput {
+                            original_proof_hash: ProofData::default().hash(),
+                            program_id: contract_program_ids
+                                .get(&contract_name)
+                                .expect("Genesis TXes on unregistered contracts")
+                                .clone(),
+                            blob_tx_hash: blob_tx_hash.clone(),
+                            hyle_output: out,
+                        })
+                        .collect(),
+                    is_recursive: true,
+                    proof_hash: ProofData::default().hash(),
+                    proof: None,
+                },
+            )));
         }
 
         Ok(genesis_txs)
     }
 
-    pub async fn generate_register_txs(&self, states: &mut States) -> Result<Vec<BuildResult>> {
+    async fn generate_register_txs(
+        peer_pubkey: &PeerPublicKeyMap,
+        states: &mut States,
+    ) -> Result<Vec<BuildResult>> {
         // TODO: use an identity provider that checks BLST signature on a pubkey instead of
         // hydentity that checks password
         // The validator will send the signature for the register transaction in the handshake
         // in order to let all genesis validators to create the genesis register
 
         let mut txs = vec![];
-        for peer in self.peer_pubkey.values() {
+        for peer in peer_pubkey.values() {
             info!("🌱  Registering identity {peer}");
 
             let identity = Identity(format!("{peer}.hydentity"));
             let mut transaction = TransactionBuilder::new(identity.clone());
 
-            transaction.register_identity("password".to_string());
-            txs.push(transaction.build(states).await?);
+            // Register
+            states
+                .hydentity
+                .default_builder(&mut transaction)
+                .register_identity("password".to_string())?;
+
+            txs.push(transaction.build(states)?);
         }
 
         Ok(txs)
     }
 
-    pub async fn generate_faucet_txs(&self, states: &mut States) -> Result<Vec<BuildResult>> {
+    async fn generate_faucet_txs(
+        peer_pubkey: &PeerPublicKeyMap,
+        states: &mut States,
+    ) -> Result<Vec<BuildResult>> {
         let genesis_faucet = 100;
 
         let mut txs = vec![];
-        for peer in self.peer_pubkey.values() {
+        for peer in peer_pubkey.values() {
             info!("🌱  Fauceting {genesis_faucet} hyllar to {peer}");
 
             let identity = Identity("faucet.hydentity".to_string());
             let mut transaction = TransactionBuilder::new(identity.clone());
 
-            transaction
-                .verify_identity(&states.hydentity, "password".to_string())
-                .await?;
-            transaction.transfer("hyllar".into(), format!("{peer}.hydentity"), genesis_faucet);
+            // Verify identity
+            states
+                .hydentity
+                .default_builder(&mut transaction)
+                .verify_identity(&states.hydentity, "password".to_string())?;
 
-            txs.push(transaction.build(states).await?);
+            // Transfer
+            states
+                .hyllar
+                .default_builder(&mut transaction)
+                .transfer(format!("{peer}.hydentity"), genesis_faucet)?;
+
+            txs.push(transaction.build(states)?);
         }
 
         Ok(txs)
     }
 
-    pub async fn generate_stake_txs(&self, states: &mut States) -> Result<Vec<BuildResult>> {
+    async fn generate_stake_txs(
+        peer_pubkey: &PeerPublicKeyMap,
+        states: &mut States,
+    ) -> Result<Vec<BuildResult>> {
         let genesis_stake = 100;
 
         let mut txs = vec![];
-        for peer in self.peer_pubkey.values().cloned() {
+        for peer in peer_pubkey.values().cloned() {
             info!("🌱  Staking {genesis_stake} hyllar from {peer}");
 
             let identity = Identity(format!("{peer}.hydentity").to_string());
             let mut transaction = TransactionBuilder::new(identity.clone());
 
-            transaction
-                .verify_identity(&states.hydentity, "password".to_string())
-                .await?;
-            transaction.stake("hyllar".into(), "staking".into(), genesis_stake)?;
-            transaction.delegate(peer)?;
+            // Verify identity
+            states
+                .hydentity
+                .default_builder(&mut transaction)
+                .verify_identity(&states.hydentity, "password".to_string())?;
 
-            txs.push(transaction.build(states).await?);
+            // Stake
+            states
+                .staking
+                .builder(&mut transaction)
+                .stake(genesis_stake)?;
+
+            // Transfer
+            states
+                .hyllar
+                .default_builder(&mut transaction)
+                .transfer("staking".to_string(), genesis_stake)?;
+
+            // Delegate
+            states.staking.builder(&mut transaction).delegate(peer)?;
+
+            txs.push(transaction.build(states)?);
         }
 
         Ok(txs)
     }
 
-    pub fn genesis_contracts_txs() -> (Vec<Transaction>, States) {
+    fn genesis_contracts_txs() -> (BTreeMap<ContractName, ProgramId>, Vec<Transaction>, States) {
         let staking_program_id = hyle_contracts::STAKING_ID.to_vec();
         let hyllar_program_id = hyle_contracts::HYLLAR_ID.to_vec();
         let hydentity_program_id = hyle_contracts::HYDENTITY_ID.to_vec();
@@ -249,7 +342,17 @@ impl Genesis {
             staking: staking_state,
         };
 
+        let mut map = BTreeMap::default();
+        map.insert("hyllar".into(), ProgramId(hyllar_program_id.clone()));
+        map.insert("hydentity".into(), ProgramId(hydentity_program_id.clone()));
+        map.insert("staking".into(), ProgramId(staking_program_id.clone()));
+        map.insert(
+            "risc0-recursion".into(),
+            ProgramId(hyle_contracts::RISC0_RECURSION_ID.to_vec()),
+        );
+
         (
+            map,
             vec![
                 Transaction::wrap(TransactionData::RegisterContract(
                     RegisterContractTransaction {
@@ -290,6 +393,64 @@ impl Genesis {
             ],
             states,
         )
+    }
+
+    fn make_genesis_block(
+        &self,
+        genesis_txs: Vec<Transaction>,
+        initial_validators: Vec<ValidatorPublicKey>,
+    ) -> SignedBlock {
+        let dp = DataProposal {
+            id: 0,
+            parent_data_proposal_hash: None,
+            txs: genesis_txs,
+        };
+
+        // TODO: do something better?
+        let round_leader = initial_validators.first().unwrap().clone();
+
+        SignedBlock {
+            data_proposals: vec![(round_leader.clone(), vec![dp.clone()])],
+            certificate: AggregateSignature {
+                signature: Signature("fake".into()),
+                validators: initial_validators.clone(),
+            },
+            consensus_proposal: ConsensusProposal {
+                slot: 0,
+                view: 0,
+                round_leader: round_leader.clone(),
+                // TODO: genesis block should have a consistent timestamp
+                timestamp: get_current_timestamp_ms(),
+                // TODO: We aren't actually storing the data proposal above, so we cannot store it here,
+                // or we might mistakenly request data from that cut, but mempool hasn't seen it.
+                // This should be fixed by storing the data proposal in mempool or handling this whole thing differently.
+                cut: vec![/*(
+                    round_leader.clone(), dp.hash(), AggregateSignature {
+                        signature: Signature("fake".into()),
+                        validators: initial_validators.clone()
+                    }
+                )*/],
+                new_validators_to_bond: initial_validators
+                    .iter()
+                    .map(|v| NewValidatorCandidate {
+                        pubkey: v.clone(),
+                        msg: SignedByValidator {
+                            msg: crate::consensus::ConsensusNetMessage::ValidatorCandidacy(
+                                ValidatorCandidacy {
+                                    pubkey: v.clone(),
+                                    peer_address: "".into(),
+                                },
+                            ),
+                            signature: ValidatorSignature {
+                                signature: Signature("".into()),
+                                validator: v.clone(),
+                            },
+                        },
+                    })
+                    .collect(),
+                parent_hash: ConsensusProposalHash("genesis".into()),
+            },
+        }
     }
 }
 
@@ -356,13 +517,23 @@ mod tests {
             },
             ..Default::default()
         };
-        let (mut genesis, _) = new(config).await;
+        let (mut genesis, mut bus) = new(config).await;
 
         // Start the Genesis module
         let result = genesis.start().await;
 
-        // Verify the start method executed correctly
-        assert!(result.is_err());
+        assert!(result.is_ok());
+
+        // Check it ran the genesis block
+        let rec: GenesisEvent = bus.try_recv().expect("recv");
+        assert_matches!(rec, GenesisEvent::GenesisBlock { .. });
+        if let GenesisEvent::GenesisBlock { signed_block } = rec {
+            assert!(!signed_block.txs().is_empty());
+            assert_eq!(
+                signed_block.consensus_proposal.new_validators_to_bond.len(),
+                1
+            );
+        }
     }
 
     #[test_log::test(tokio::test)]
@@ -392,13 +563,12 @@ mod tests {
 
         let rec: GenesisEvent = bus.try_recv().expect("recv");
         assert_matches!(rec, GenesisEvent::GenesisBlock { .. });
-        if let GenesisEvent::GenesisBlock {
-            genesis_txs,
-            initial_validators,
-        } = rec
-        {
-            assert!(!genesis_txs.is_empty());
-            assert_eq!(initial_validators.len(), 2);
+        if let GenesisEvent::GenesisBlock { signed_block } = rec {
+            assert!(!signed_block.txs().is_empty());
+            assert_eq!(
+                signed_block.consensus_proposal.new_validators_to_bond.len(),
+                2
+            );
         }
     }
 
@@ -431,13 +601,12 @@ mod tests {
 
         let rec = bus.try_recv().expect("recv");
         assert_matches!(rec, GenesisEvent::GenesisBlock { .. });
-        if let GenesisEvent::GenesisBlock {
-            genesis_txs,
-            initial_validators,
-        } = rec
-        {
-            assert!(!genesis_txs.is_empty());
-            assert_eq!(initial_validators.len(), 2);
+        if let GenesisEvent::GenesisBlock { signed_block } = rec {
+            assert!(!signed_block.txs().is_empty());
+            assert_eq!(
+                signed_block.consensus_proposal.new_validators_to_bond.len(),
+                2
+            );
         }
     }
 

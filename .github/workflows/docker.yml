@@ -6,7 +6,6 @@ on:
       - 'main'
       - 'releases/**'
       - 'publish_ghcr'
-      - 'docker_build_cache'
     tags:
       - '*'
 

@@ -9,6 +9,7 @@ members = [
 
     "crates/bonsai-runner",
     "crates/hyrun",
+    "crates/client-sdk",
 ]
 resolver = "2"
 
@@ -28,62 +29,83 @@ homepage = { workspace = true }
 repository = { workspace = true }
 default-run = "node"
 
+[[bin]]
+name = "node"
+required-features = ["node"]
+
+[[bin]]
+name = "hyled"
+required-features = ["node"]
+
+[[bin]]
+name = "indexer"
+required-features = ["node"]
+
 [dependencies]
+# Public dependencies
 hyle-contract-sdk = { path = "./contract-sdk", features = ["tracing"] }
-hyle-contracts = { path = "./contracts", package = "hyle-contracts" }
-hydentity = { path = "./contracts/hydentity" }
-hyllar = { path = "./contracts/hyllar" }
-staking = { path = "./contracts/staking" }
-bonsai-runner = { path = "./crates/bonsai-runner" }
-config = "0.15.0"
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["json"] }
-tokio = { version = "1.42.0", features = ["full", "tracing"] }
-anyhow = "1.0.94"
-clap = { version = "4.5.23", features = ["derive"] }
-rand = "0.8.5"
+staking = { path = "./contracts/staking", features = ["client"] }
+client-sdk = { path = "./crates/client-sdk" }
+
+anyhow = "1.0.95"
 bincode = { version = "2.0.0-rc.3", features = ["serde"] }
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1"
-serde_with = { version = "3.11.0", features = ["hex"] }
-ron = "0.8.1"
-axum = { version = "0.7.9", features = ["ws", "macros"] }
-sha3 = "0.10.8"
-hex = "0.4.3"
+blst = { version = "0.3.13" }
+chrono = { version = "0.4", features = ["serde"] }
 derive_more = { version = "1.0.0", features = ["display"] }
-anymap = "0.12.1"
-paste = "1.0.15"
-blst = "0.3.13"
-# opentelemetry and axum-otel-metrics must be updated together (so that there is only one opentelemetry version)
-opentelemetry = "0.27"
-axum-otel-metrics = "0.9.1"
-opentelemetry-prometheus = "0.27.0"
-prometheus = "0.13.4"
-tower-http = { version = "0.6.2", features = ["trace", "cors"] }
-futures = "0.3.31"
-dhat = { version = "0.3.3", optional = true }
+hex = { version = "0.4.3" }
 reqwest = { version = "0.12", features = ["json"] }
-tokio-util = "0.7.13"
-assertables = "9.5.0"
-risc0-zkvm = { version = "1.2.0", default-features = false, features = ["std"] }
-borsh = "1.5.3"
-# tokio (no TLS)
+serde = { version = "1.0", features = ["derive"] }
+serde_json = { version = "1" }
+serde_with = { version = "3.12.0", features = ["hex"] }
+sha3 = "0.10.8"
 sqlx = { version = "0.8.2", features = [
     "runtime-tokio",
     "postgres",
     "migrate",
     "chrono",
 ] }
-chrono = { version = "0.4", features = ["serde"] }
-axum-test = "16.4.1"
-syn = "2.0.91"
-quote = "1.0.37"
-base64 = "0.22.1"
-bytes = "1.9.0"
-strum = "0.26.3"
 strum_macros = "0.26.4"
-indexmap = { version = "2.7.0", features = ["serde"] }
-sp1-sdk = { version = "3.4.0", default-features = false }
+tracing = "0.1"
+
+# Node dependencies
+hydentity = { path = "./contracts/hydentity", features = ["client"], optional = true }
+hyllar = { path = "./contracts/hyllar", features = ["client"], optional = true }
+risc0-recursion = { path = "./contracts/risc0-recursion", optional = true }
+
+anymap = { version = "0.12.1", optional = true }
+assertables = { version = "9.5.0", optional = true }
+axum = { version = "0.7.9", features = ["ws", "macros"], optional = true }
+axum-otel-metrics = { version = "0.9.1", optional = true }
+axum-test = { version = "16.4.1", optional = true }
+bonsai-runner = { path = "./crates/bonsai-runner", optional = true }
+borsh = { version = "1.5.3", optional = true }
+bytes = { version = "1.9.0", optional = true }
+clap = { version = "4.5.23", features = ["derive"], optional = true }
+config = { version = "0.15.0", optional = true }
+dhat = { version = "0.3.3", optional = true }
+futures = { version = "0.3.31", optional = true }
+hyle-contracts = { path = "./contracts", package = "hyle-contracts", optional = true }
+indexmap = { version = "2.7.0", features = ["serde"], optional = true }
+# opentelemetry and axum-otel-metrics must be updated together (so that there is only one opentelemetry version)
+opentelemetry = { version = "0.27", optional = true }
+opentelemetry-prometheus = { version = "0.27.0", optional = true }
+paste = { version = "1.0.15", optional = true }
+prometheus = { version = "0.13.4", optional = true }
+quote = { version = "1.0.38", optional = true }
+rand = { version = "0.8.5", optional = true }
+risc0-zkvm = { version = "1.2.0", default-features = false, features = [
+    "std",
+], optional = true }
+ron = { version = "0.8.1", optional = true }
+sp1-sdk = { version = "3.4.0", default-features = false, optional = true }
+syn = { version = "2.0.93", optional = true }
+tokio = { version = "1.42.0", features = ["full", "tracing"], optional = true }
+tokio-util = { version = "0.7.13", optional = true }
+tower-http = { version = "0.6.2", features = [
+    "trace",
+    "cors",
+], optional = true }
+tracing-subscriber = { version = "0.3", features = ["json"], optional = true }
 
 [target.'cfg(not(target_os="linux"))'.dependencies]
 sled = { version = "0.34.7", features = ["compression", "lock_free_delays"] }
@@ -117,9 +139,52 @@ risc0-zkvm = { version = "1.2.0", default-features = false, features = [
 ] }
 
 [features]
+default = ["tx_builder", "node"]
 dhat = ["dep:dhat"]
 # Activate this feature to recompile contracts locally (mostly useful for iterating on tests)
 nonreproducible = ["hyle-contracts/nonreproducible"]
+tx_builder = [
+    "dep:bonsai-runner",
+    "dep:hyllar",
+    "dep:hydentity",
+    "dep:hyle-contracts",
+    "dep:risc0-zkvm",
+]
+node = [
+    "dep:anymap",
+    "dep:assertables",
+    "dep:axum",
+    "dep:axum-otel-metrics",
+    "dep:axum-test",
+    "dep:bonsai-runner",
+    "dep:borsh",
+    "dep:bytes",
+    "dep:clap",
+    "dep:config",
+    "dep:dhat",
+    "dep:futures",
+    "dep:hyle-contracts",
+    "dep:hydentity",
+    "dep:hyllar",
+    "dep:risc0-recursion",
+    "dep:indexmap",
+    "dep:opentelemetry",
+    "dep:opentelemetry-prometheus",
+    "dep:paste",
+    "dep:prometheus",
+    "dep:quote",
+    "dep:rand",
+    "dep:risc0-zkvm",
+    "dep:ron",
+    "dep:sp1-sdk",
+    "dep:syn",
+    "dep:tokio",
+    "dep:tokio-util",
+    "dep:tower-http",
+    "dep:tracing-subscriber",
+]
+
+node_local_proving = ["node", "risc0-zkvm/client"]
 
 [profile.release]
 lto = "thin"
