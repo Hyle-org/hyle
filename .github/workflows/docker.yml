@@ -46,7 +46,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ matrix.model.images }}
+          images: ${{ matrix.mode.images }}
 
 
 # Will produces tags given this table : 
