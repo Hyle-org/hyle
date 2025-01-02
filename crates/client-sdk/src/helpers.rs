@@ -3,7 +3,6 @@ use sdk::{ContractInput, HyleOutput};
 
 use crate::ProofData;
 
-#[allow(dead_code)]
 pub async fn prove(
     binary: &[u8],
     contract_input: &ContractInput,
