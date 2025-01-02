@@ -1,8 +1,9 @@
 use assert_cmd::prelude::*;
+use client_sdk::transaction_builder::{BuildResult, TransactionBuilder};
 use hyle::{
+    genesis::States,
     model::{BlobTransaction, ProofData},
     rest::client::NodeApiHttpClient,
-    tools::transactions_builder::{BuildResult, States, TransactionBuilder},
     utils::conf::{Conf, Consensus},
 };
 use rand::Rng;
@@ -182,7 +183,7 @@ pub async fn send_transaction(
 ) {
     let BuildResult {
         identity, blobs, ..
-    } = transaction.build(states).await.unwrap();
+    } = transaction.build(states).unwrap();
 
     let blob_tx_hash = client
         .send_tx_blob(&BlobTransaction { identity, blobs })

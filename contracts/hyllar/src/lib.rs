@@ -15,6 +15,9 @@ pub mod metadata {
     pub const PROGRAM_ID: [u8; 32] = sdk::str_to_u8(include_str!("../hyllar.txt"));
 }
 
+#[cfg(feature = "client")]
+pub mod client;
+
 /// Struct representing the Hyllar token.
 #[serde_as]
 #[derive(Encode, Decode, Serialize, Deserialize, Debug, Clone)]
@@ -167,7 +170,7 @@ impl TryFrom<sdk::StateDigest> for HyllarToken {
 
     fn try_from(state: sdk::StateDigest) -> Result<Self, Self::Error> {
         let (balances, _) = bincode::decode_from_slice(&state.0, bincode::config::standard())
-            .map_err(|_| anyhow::anyhow!("Could not decode start height"))?;
+            .map_err(|_| anyhow::anyhow!("Could not decode hyllar state"))?;
         Ok(balances)
     }
 }

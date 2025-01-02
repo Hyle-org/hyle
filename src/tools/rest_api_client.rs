@@ -14,7 +14,7 @@ use crate::{
         BlobTransaction, BlockHeight, ContractName, ProofTransaction, RegisterContractTransaction,
     },
 };
-use hyle_contract_sdk::TxHash;
+use hyle_contract_sdk::{StateDigest, TxHash};
 use staking::state::Staking;
 
 pub struct NodeApiHttpClient {
@@ -177,6 +177,19 @@ impl IndexerApiHttpClient {
             .send()
             .await
             .context(format!("getting Contract {}", contract_name))
+    }
+
+    pub async fn fetch_current_state<State>(&self, contract_name: &ContractName) -> Result<State>
+    where
+        State: TryFrom<hyle_contract_sdk::StateDigest, Error = anyhow::Error>,
+    {
+        let resp = self
+            .get_indexer_contract(contract_name)
+            .await?
+            .json::<ContractDb>()
+            .await?;
+
+        StateDigest(resp.state_digest).try_into()
     }
 
     pub async fn query_indexer<U: Display>(&self, route: U) -> Result<Response> {

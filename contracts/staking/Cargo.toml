@@ -25,6 +25,7 @@ hex = "0.4.3"
 risc0-zkvm = { version = "1.2.0", default-features = false, optional = true, features = [
     'std',
 ] }
+client_sdk = { path = "../../crates/client-sdk", package = "client-sdk", optional = true }
 
 [dev-dependencies]
 risc0-zkvm = { version = "1.2.0", default-features = false, features = [
@@ -35,4 +36,5 @@ risc0-zkvm = { version = "1.2.0", default-features = false, features = [
 [features]
 default = ["metadata"]
 metadata = []
+client = ["metadata", "dep:client_sdk"]
 risc0 = ["dep:risc0-zkvm", "sdk/risc0"]

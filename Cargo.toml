@@ -9,6 +9,7 @@ members = [
 
     "crates/bonsai-runner",
     "crates/hyrun",
+    "crates/client-sdk",
 ]
 resolver = "2"
 
@@ -43,10 +44,10 @@ required-features = ["node"]
 [dependencies]
 # Public dependencies
 hyle-contract-sdk = { path = "./contract-sdk", features = ["tracing"] }
-staking = { path = "./contracts/staking" }
+staking = { path = "./contracts/staking", features = ["client"] }
+client-sdk = { path = "./crates/client-sdk" }
 
 anyhow = "1.0.95"
-base64 = "0.22.1"
 bincode = { version = "2.0.0-rc.3", features = ["serde"] }
 blst = { version = "0.3.13" }
 chrono = { version = "0.4", features = ["serde"] }
@@ -67,6 +68,10 @@ strum_macros = "0.26.4"
 tracing = "0.1"
 
 # Node dependencies
+hydentity = { path = "./contracts/hydentity", features = ["client"], optional = true }
+hyllar = { path = "./contracts/hyllar", features = ["client"], optional = true }
+risc0-recursion = { path = "./contracts/risc0-recursion", optional = true }
+
 anymap = { version = "0.12.1", optional = true }
 assertables = { version = "9.5.0", optional = true }
 axum = { version = "0.7.9", features = ["ws", "macros"], optional = true }
@@ -80,9 +85,6 @@ config = { version = "0.15.0", optional = true }
 dhat = { version = "0.3.3", optional = true }
 futures = { version = "0.3.31", optional = true }
 hyle-contracts = { path = "./contracts", package = "hyle-contracts", optional = true }
-hydentity = { path = "./contracts/hydentity", optional = true }
-hyllar = { path = "./contracts/hyllar", optional = true }
-risc0-recursion = { path = "./contracts/risc0-recursion", optional = true }
 indexmap = { version = "2.7.0", features = ["serde"], optional = true }
 # opentelemetry and axum-otel-metrics must be updated together (so that there is only one opentelemetry version)
 opentelemetry = { version = "0.27", optional = true }
