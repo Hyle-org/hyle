@@ -211,17 +211,16 @@ impl Mempool {
                 }
             }
             listen<DataEvent> cmd => {
-                 if let DataEvent::NewBlock(block) = cmd {
-                    for contract in block.new_contract_txs {
-                        let TransactionData::RegisterContract(register_contract_transaction) = contract.transaction_data else {
-                            continue;
-                        };
-                        self.known_contracts.register_contract(
-                            &register_contract_transaction.contract_name,
-                            &register_contract_transaction.verifier,
-                            &register_contract_transaction.program_id,
-                        ).ok();
-                    }
+                let DataEvent::NewBlock(block) = cmd;
+                for contract in block.new_contract_txs {
+                    let TransactionData::RegisterContract(register_contract_transaction) = contract.transaction_data else {
+                        continue;
+                    };
+                    self.known_contracts.register_contract(
+                        &register_contract_transaction.contract_name,
+                        &register_contract_transaction.verifier,
+                        &register_contract_transaction.program_id,
+                    ).ok();
                 }
             }
             command_response<QueryNewCut, Cut> validators => {
