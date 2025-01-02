@@ -544,6 +544,7 @@ impl DataAvailability {
                             "📦 Received block (height {}) from stream",
                             block.consensus_proposal.slot
                         );
+                        // TODO: we should wait if the stream is full.
                         if let Err(e) = sender.send(block).await {
                             tracing::error!("Error while sending block over channel: {:#}", e);
                             break;

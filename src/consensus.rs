@@ -1,6 +1,6 @@
 //! Handles all consensus logic up to block commitment.
 
-use crate::model::{get_current_timestamp_ms, SignedBlock};
+use crate::model::get_current_timestamp_ms;
 use crate::module_handle_messages;
 use crate::utils::crypto::{AggregateSignature, Signed, SignedByValidator, ValidatorSignature};
 use crate::utils::modules::module_bus_client;
@@ -75,10 +75,6 @@ pub struct QueryConsensusStakingState {}
 impl BusMessage for ConsensusCommand {}
 impl BusMessage for ConsensusEvent {}
 impl BusMessage for ConsensusNetMessage {}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct ConsensusCatchupBlock(pub SignedBlock);
-impl BusMessage for ConsensusCatchupBlock {}
 
 impl<T> BusMessage for SignedByValidator<T> where T: Encode + BusMessage {}
 
