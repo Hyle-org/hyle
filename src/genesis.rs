@@ -21,7 +21,7 @@ use crate::{
         modules::Module,
     },
 };
-use anyhow::{anyhow, bail, Error, Result};
+use anyhow::{bail, Error, Result};
 use client_sdk::transaction_builder::{BuildResult, StateUpdater, TransactionBuilder};
 use hydentity::Hydentity;
 use hyle_contract_sdk::{identity_provider::IdentityVerification, Identity};

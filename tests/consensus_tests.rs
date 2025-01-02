@@ -7,11 +7,9 @@ mod e2e_consensus {
 
     use client_sdk::transaction_builder::TransactionBuilder;
     use fixtures::test_helpers::send_transaction;
-    use hydentity::Hydentity;
     use hyle::{genesis::States, utils::logger::LogMe};
     use hyle_contract_sdk::Identity;
-    use hyllar::HyllarToken;
-    use staking::state::{OnChainState, Staking};
+    use staking::state::OnChainState;
 
     use super::*;
 
