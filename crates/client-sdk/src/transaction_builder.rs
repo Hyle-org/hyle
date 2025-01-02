@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, pin::Pin};
+use std::{collections::BTreeMap, pin::Pin, sync::OnceLock};
 
 use anyhow::{bail, Result};
 
@@ -72,9 +72,9 @@ impl TransactionBuilder {
                 .ok_or(anyhow::anyhow!("State not found"))?;
             let full_state = full_states.get(&runner.contract_name)?.clone();
 
-            runner.contract_input.blobs = self.blobs.clone();
-            runner.contract_input.private_blob = runner.private_blob(full_state.clone())?;
-            runner.contract_input.initial_state = on_chain_state.clone();
+            let private_blob = runner.private_blob(full_state.clone())?;
+
+            runner.build_input(self.blobs.clone(), private_blob, on_chain_state.clone());
 
             let out = runner.execute()?;
             self.on_chain_states
@@ -132,8 +132,10 @@ impl TransactionBuilder {
 
 pub struct ContractRunner {
     pub contract_name: ContractName,
+    identity: Identity,
+    index: BlobIndex,
     binary: &'static [u8],
-    contract_input: ContractInput,
+    contract_input: OnceLock<ContractInput>,
     offchain_cb: Option<Box<dyn Fn(StateDigest) -> Result<StateDigest> + Send + Sync>>,
     private_blob_cb: Option<Box<dyn Fn(StateDigest) -> Result<BlobData> + Send + Sync>>,
 }
@@ -145,19 +147,12 @@ impl ContractRunner {
         identity: Identity,
         index: BlobIndex,
     ) -> Result<Self> {
-        let contract_input = ContractInput {
-            initial_state: StateDigest::default(),
-            identity,
-            tx_hash: "".into(),
-            private_blob: BlobData::default(),
-            blobs: vec![],
-            index,
-        };
-
         Ok(Self {
             contract_name,
             binary,
-            contract_input,
+            identity,
+            index,
+            contract_input: OnceLock::new(),
             offchain_cb: None,
             private_blob_cb: None,
         })
@@ -193,10 +188,26 @@ impl ContractRunner {
             .map_or(Ok(BlobData::default()), |v| v)
     }
 
+    fn build_input(
+        &mut self,
+        blobs: Vec<Blob>,
+        private_blob: BlobData,
+        initial_state: StateDigest,
+    ) {
+        self.contract_input.get_or_init(|| ContractInput {
+            identity: self.identity.clone(),
+            tx_hash: "".into(),
+            blobs,
+            private_blob,
+            index: self.index.clone(),
+            initial_state,
+        });
+    }
+
     fn execute(&self) -> Result<HyleOutput> {
         info!("Checking transition for {}...", self.contract_name);
 
-        let contract_input = bonsai_runner::as_input_data(&self.contract_input)?;
+        let contract_input = bonsai_runner::as_input_data(self.contract_input.get().unwrap())?;
         let execute_info = execute(self.binary, &contract_input)?;
         let output = execute_info.journal.decode::<HyleOutput>().unwrap();
         if !output.success {
@@ -212,7 +223,7 @@ impl ContractRunner {
     async fn prove(&self) -> Result<ProofData> {
         info!("Proving transition for {}...", self.contract_name);
 
-        let contract_input = bonsai_runner::as_input_data(&self.contract_input)?;
+        let contract_input = bonsai_runner::as_input_data(self.contract_input.get().unwrap())?;
         let explicit = std::env::var("RISC0_PROVER").unwrap_or_default();
         let receipt = match explicit.to_lowercase().as_str() {
             "bonsai" => bonsai_runner::run_bonsai(self.binary, contract_input.clone()).await?,
