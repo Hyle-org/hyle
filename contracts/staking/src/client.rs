@@ -18,7 +18,7 @@ impl Staking {
     }
 }
 
-impl<'b> Builder<'b> {
+impl Builder<'_> {
     pub fn stake(&mut self, amount: u128) -> anyhow::Result<()> {
         let identity = self.builder.identity.clone();
 
