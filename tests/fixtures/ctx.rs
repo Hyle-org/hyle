@@ -211,7 +211,7 @@ impl E2ECtx {
     }
 
     pub fn indexer_client(&self) -> &IndexerApiHttpClient {
-        &self.indexer_client.as_ref().unwrap()
+        self.indexer_client.as_ref().unwrap()
     }
 
     pub fn has_indexer(&self) -> bool {
