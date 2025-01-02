@@ -29,9 +29,14 @@ jobs:
           - file: Dockerfile 
             name: hyle
             push_ghcr: true
+            images: |
+              ${{env.AR_REPO_LOCATION}}/${{ env.AR_URL }}/hyle
+              ghcr.io/hyle-org/hyle
           - file: Dockerfile.dependencies
-            name: hyle-dependencies
+            name: hyle dependencies
             push_ghcr: false
+            images: |
+              ${{env.AR_REPO_LOCATION}}/${{ env.AR_URL }}/hyle-dependencies
 
     name: ${{ matrix.mode.name }}
     steps:
@@ -40,20 +45,10 @@ jobs:
 
       - name: Docker meta
         id: meta
-        if: ${{ matrix.mode.push_ghcr }}
         uses: docker/metadata-action@v5
         with:
-          images: |
-            ${{env.AR_REPO_LOCATION}}/${{ env.AR_URL }}/${{ matrix.mode.name }}
-            ghcr.io/hyle-org/${{ matrix.mode.name }}
+          images: ${{ matrix.model.images }}
 
-      - name: Docker meta
-        id: meta
-        if: ${{ !matrix.mode.push_ghcr }}
-        uses: docker/metadata-action@v5
-        with:
-          images: |
-            ${{env.AR_REPO_LOCATION}}/${{ env.AR_URL }}/${{ matrix.mode.name }}
 
 # Will produces tags given this table : 
 # 
