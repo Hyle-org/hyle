@@ -13,7 +13,7 @@ COPY src ./src
 COPY contract-sdk ./contract-sdk
 COPY contracts ./contracts
 COPY crates ./crates
-RUN cargo chef prepare  --recipe-path recipe.json
+RUN cargo chef prepare --recipe-path recipe.json
 
 FROM chef 
 COPY --from=planner /usr/src/hyle/recipe.json recipe.json

@@ -5,7 +5,6 @@ on:
     branches:
       - 'main'
       - 'releases/**'
-      - 'docker_build_cache'
     tags:
       - '*'
 
@@ -83,7 +82,7 @@ jobs:
           file: ${{ matrix.mode.file }} 
           context: .
           build-args: |
-            DEP_IMAGE=europe-west3-docker.pkg.dev/hyle-413414/hyle-docker/hyle-dependencies:docker_build_cache
+            DEP_IMAGE=europe-west3-docker.pkg.dev/hyle-413414/hyle-docker/hyle-dependencies:main
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
 
