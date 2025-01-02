@@ -11,7 +11,6 @@ on:
 
 env:
   AR_REPO_LOCATION: 'europe-west3-docker.pkg.dev'
-  AR_URL: 'hyle-413414/hyle-docker'
 
 jobs:
   build_and_push:
@@ -30,13 +29,13 @@ jobs:
             name: hyle
             push_ghcr: true
             images: |
-              ${{env.AR_REPO_LOCATION}}/${{ env.AR_URL }}/hyle
+              europe-west3-docker.pkg.dev/hyle-413414/hyle-docker/hyle
               ghcr.io/hyle-org/hyle
           - file: Dockerfile.dependencies
             name: hyle dependencies
             push_ghcr: false
             images: |
-              ${{env.AR_REPO_LOCATION}}/${{ env.AR_URL }}/hyle-dependencies
+              europe-west3-docker.pkg.dev/hyle-413414/hyle-docker/hyle
 
     name: ${{ matrix.mode.name }}
     steps:
@@ -84,7 +83,7 @@ jobs:
           file: ${{ matrix.mode.file }} 
           context: .
           build-args: |
-            DEP_IMAGE=${{ env.AR_REPO_LOCATION }}/${{ env.AR_URL }}/hyle-dependencies:docker_build_cache
+            DEP_IMAGE=europe-west3-docker.pkg.dev/hyle-413414/hyle-docker/hyle-dependencies:docker_build_cache
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
 
