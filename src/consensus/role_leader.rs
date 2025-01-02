@@ -90,27 +90,26 @@ impl LeaderRole for Consensus {
             self.bft_round_state.staking
         );
 
-        match self
+        let cut = match self
             .bus
             .request(QueryNewCut(self.bft_round_state.staking.clone()))
             .await
         {
-            Ok(cut) => {
-                self.last_cut = cut;
-            }
+            Ok(cut) => cut,
             Err(err) => {
                 // In case of an error, we reuse the last cut to avoid being considered byzantine
                 error!(
-                    "Could not get a new cut from Mempool {:?}. Reusing previous one... {:?}",
-                    err, self.last_cut
+                    "Could not get a new cut from Mempool {:?}. Reusing previous one...",
+                    err
                 );
+                self.bft_round_state.last_cut.clone()
             }
         };
 
         self.bft_round_state.leader.step = Step::PrepareVote;
 
         // Start Consensus with following cut
-        self.bft_round_state.consensus_proposal.cut = self.last_cut.clone();
+        self.bft_round_state.consensus_proposal.cut = cut;
         self.bft_round_state
             .consensus_proposal
             .new_validators_to_bond = new_validators_to_bond;

@@ -103,6 +103,7 @@ struct ConsensusBusClient {
 #[derive(Encode, Decode, Default)]
 pub struct BFTRoundState {
     consensus_proposal: ConsensusProposal,
+    last_cut: Cut,
     staking: Staking,
 
     leader: LeaderState,
@@ -136,7 +137,6 @@ pub struct ConsensusStore {
     bft_round_state: BFTRoundState,
     /// Validators that asked to be part of consensus
     validator_candidates: Vec<NewValidatorCandidate>,
-    last_cut: Cut,
 }
 
 pub struct Consensus {
@@ -189,11 +189,9 @@ impl Consensus {
                 .new_validators_to_bond,
         );
 
-        // Saving last cut
-        self.last_cut = self.bft_round_state.consensus_proposal.cut.clone();
-
         // Reset round state, carrying over staking and current proposal.
         self.bft_round_state = BFTRoundState {
+            last_cut: std::mem::take(&mut self.bft_round_state.consensus_proposal.cut),
             consensus_proposal: ConsensusProposal {
                 slot: self.bft_round_state.consensus_proposal.slot,
                 view: self.bft_round_state.consensus_proposal.view,
