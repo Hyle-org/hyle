@@ -463,15 +463,13 @@ impl DataAvailability {
             let first_buffered = self.buffered_signed_blocks.pop_first().unwrap();
             last_block_hash = first_buffered.hash();
             self.add_processed_block(first_buffered).await;
-            // Sleep
-            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
         }
 
-        if false { //got_buffered {
-             //info!(
-             //    "📡 Asking for last block from peer in case new blocks were mined during catchup."
-             //);
-             //self.query_last_block();
+        if got_buffered {
+            info!(
+                "📡 Asking for last block from peer in case new blocks were mined during catchup."
+            );
+            self.query_last_block();
         } else {
             let height = self.blocks.last().map_or(BlockHeight(0), |b| b.height());
             _ = self
