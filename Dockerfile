@@ -1,19 +1,13 @@
-FROM rust:alpine AS builder
+ARG DEP_IMAGE=hyle-dep
+FROM $DEP_IMAGE AS builder
 
-RUN apk add pkgconfig openssl-dev gcc musl-dev
-RUN apk add --no-cache openssl-libs-static
-RUN apk add curl bash
-
-WORKDIR /usr/src/hyle
-
+# Build application
 COPY Cargo.toml Cargo.lock ./
 COPY .cargo/config.toml .cargo/config.toml
-
 COPY src ./src
 COPY contract-sdk ./contract-sdk
 COPY contracts ./contracts
 COPY crates ./crates
-
 RUN cargo build --bin node --bin indexer --release --features node_local_proving
 
 # RUNNER

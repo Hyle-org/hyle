@@ -1,18 +1,15 @@
-name: Push to Artifact Registry
+name: Docker image
 
 on: 
   push:
     branches:
       - 'main'
       - 'releases/**'
-      - 'publish_ghcr'
     tags:
       - '*'
 
 env:
-  IMAGE_NAME: 'hyle'
   AR_REPO_LOCATION: 'europe-west3-docker.pkg.dev'
-  AR_URL: 'hyle-413414/hyle-docker'
 
 jobs:
   build_and_push:
@@ -23,7 +20,23 @@ jobs:
       packages: 'write'
 
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        mode:
+          - file: Dockerfile 
+            name: hyle
+            push_ghcr: true
+            images: |
+              europe-west3-docker.pkg.dev/hyle-413414/hyle-docker/hyle
+              ghcr.io/hyle-org/hyle
+          - file: Dockerfile.dependencies
+            name: hyle dependencies
+            push_ghcr: false
+            images: |
+              europe-west3-docker.pkg.dev/hyle-413414/hyle-docker/hyle
 
+    name: ${{ matrix.mode.name }}
     steps:
       - name: Checkout
         uses: actions/checkout@v2
@@ -32,9 +45,8 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: |
-            ${{env.AR_REPO_LOCATION}}/${{ env.AR_URL }}/${{ env.IMAGE_NAME }}
-            ghcr.io/hyle-org/${{ env.IMAGE_NAME }}
+          images: ${{ matrix.mode.images }}
+
 
 # Will produces tags given this table : 
 # 
@@ -57,6 +69,7 @@ jobs:
 
       - name: 'Login to GitHub Container Registry'
         uses: docker/login-action@v1
+        if: ${{ matrix.mode.push_ghcr }}
         with:
           registry: ghcr.io
           username: ${{github.actor}}
@@ -66,7 +79,10 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           push: true
+          file: ${{ matrix.mode.file }} 
           context: .
+          build-args: |
+            DEP_IMAGE=europe-west3-docker.pkg.dev/hyle-413414/hyle-docker/hyle-dependencies:main
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
 
