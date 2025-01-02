@@ -8,7 +8,7 @@ use crate::{
         ProofTransaction, RegisterContractTransaction, SharedRunContext, Transaction,
     },
     module_handle_messages,
-    rest::client::ApiHttpClient,
+    rest::client::NodeApiHttpClient,
     utils::modules::{module_bus_client, Module},
 };
 use anyhow::Result;
@@ -153,10 +153,7 @@ impl MockWorkflowHandler {
     async fn api_test(&mut self, qps: u64, injection_duration_seconds: u64) {
         info!("Starting api test");
 
-        let api_client = ApiHttpClient {
-            url: Url::parse("http://localhost:4321").unwrap(),
-            reqwest_client: Client::new(),
-        };
+        let api_client = NodeApiHttpClient::new("http://localhost:4321".to_string());
 
         let tx_blob = BlobTransaction {
             identity: Identity("id".to_string()),

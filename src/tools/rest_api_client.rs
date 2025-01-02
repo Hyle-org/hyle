@@ -17,12 +17,17 @@ use crate::{
 use hyle_contract_sdk::TxHash;
 use staking::state::Staking;
 
-pub struct ApiHttpClient {
+pub struct NodeApiHttpClient {
     pub url: Url,
     pub reqwest_client: reqwest::Client,
 }
 
-impl ApiHttpClient {
+pub struct IndexerApiHttpClient {
+    pub url: Url,
+    pub reqwest_client: reqwest::Client,
+}
+
+impl NodeApiHttpClient {
     pub fn new(url: String) -> Self {
         Self {
             url: Url::parse(&url).expect("Invalid url"),
@@ -126,6 +131,33 @@ impl ApiHttpClient {
             .context("reading contract response")
     }
 
+    #[cfg(feature = "node")]
+    pub async fn run_scenario_api_test(
+        &self,
+        qps: u64,
+        injection_duration_seconds: u64,
+    ) -> Result<Response> {
+        self.reqwest_client
+            .post(format!("{}v1/tools/run_scenario", self.url))
+            .body(serde_json::to_string(&RunScenario::ApiTest {
+                qps,
+                injection_duration_seconds,
+            })?)
+            .header("Content-Type", "application/json")
+            .send()
+            .await
+            .context("Starting api test scenario")
+    }
+}
+
+impl IndexerApiHttpClient {
+    pub fn new(url: String) -> Self {
+        Self {
+            url: Url::parse(&url).expect("Invalid url"),
+            reqwest_client: reqwest::Client::new(),
+        }
+    }
+
     pub async fn list_contracts(&self) -> Result<Vec<ContractDb>> {
         self.reqwest_client
             .get(format!("{}v1/indexer/contracts", self.url))
@@ -156,21 +188,15 @@ impl ApiHttpClient {
             .context("Running custom query to {route}")
     }
 
-    #[cfg(feature = "node")]
-    pub async fn run_scenario_api_test(
-        &self,
-        qps: u64,
-        injection_duration_seconds: u64,
-    ) -> Result<Response> {
+    pub async fn get_node_info(&self) -> Result<NodeInfo> {
         self.reqwest_client
-            .post(format!("{}v1/tools/run_scenario", self.url))
-            .body(serde_json::to_string(&RunScenario::ApiTest {
-                qps,
-                injection_duration_seconds,
-            })?)
+            .get(format!("{}v1/info", self.url))
             .header("Content-Type", "application/json")
             .send()
             .await
-            .context("Starting api test scenario")
+            .context("getting node info")?
+            .json::<NodeInfo>()
+            .await
+            .context("reading node info response")
     }
 }
