@@ -1,5 +1,4 @@
 use crate::bus::BusMessage;
-use crate::data_availability::DataNetMessage;
 use crate::model::ValidatorPublicKey;
 use crate::utils::crypto::SignedByValidator;
 use crate::{consensus::ConsensusNetMessage, mempool::MempoolNetMessage};
@@ -14,6 +13,7 @@ pub struct Hello {
     pub version: u16,
     pub validator_pubkey: ValidatorPublicKey,
     pub name: String,
+    pub da_ip: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -49,6 +49,7 @@ pub enum PeerEvent {
     NewPeer {
         name: String,
         pubkey: ValidatorPublicKey,
+        da_ip: String,
     },
 }
 
@@ -60,9 +61,6 @@ impl Display for NetMessage {
         let enum_variant: &'static str = self.into();
         match self {
             NetMessage::HandshakeMessage(_) => {
-                write!(f, "{}", enum_variant)
-            }
-            NetMessage::DataMessage(_) => {
                 write!(f, "{}", enum_variant)
             }
             NetMessage::MempoolMessage(msg) => {
@@ -80,7 +78,6 @@ impl Display for NetMessage {
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, Eq, PartialEq, IntoStaticStr)]
 pub enum NetMessage {
     HandshakeMessage(HandshakeNetMessage),
-    DataMessage(DataNetMessage),
     MempoolMessage(SignedByValidator<MempoolNetMessage>),
     ConsensusMessage(SignedByValidator<ConsensusNetMessage>),
 }

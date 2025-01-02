@@ -1,10 +1,10 @@
 //! Handles all consensus logic up to block commitment.
 
-use crate::model::get_current_timestamp_ms;
+use crate::indexer::da_listener::RawDAListener;
+use crate::model::{get_current_timestamp_ms, SignedBlock};
 use crate::module_handle_messages;
 use crate::utils::crypto::{AggregateSignature, Signed, SignedByValidator, ValidatorSignature};
 use crate::utils::modules::module_bus_client;
-#[cfg(not(test))]
 use crate::utils::static_type_map::Pick;
 use crate::{bus::BusClientSender, utils::logger::LogMe};
 use crate::{
@@ -27,6 +27,7 @@ use crate::{
 };
 use anyhow::{anyhow, bail, Context, Error, Result};
 use bincode::{Decode, Encode};
+use futures::StreamExt;
 use metrics::ConsensusMetrics;
 use role_follower::{FollowerRole, FollowerState, TimeoutState};
 use role_leader::{LeaderRole, LeaderState};
@@ -80,6 +81,11 @@ pub struct QueryConsensusStakingState {}
 impl BusMessage for ConsensusCommand {}
 impl BusMessage for ConsensusEvent {}
 impl BusMessage for ConsensusNetMessage {}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct ConsensusCatchupBlock(pub SignedBlock);
+impl BusMessage for ConsensusCatchupBlock {}
+
 impl<T> BusMessage for SignedByValidator<T> where T: Encode + BusMessage {}
 
 module_bus_client! {
@@ -89,6 +95,7 @@ struct ConsensusBusClient {
     sender(ConsensusCommand),
     sender(P2PCommand),
     sender(Query<QueryNewCut, Cut>),
+    sender(ConsensusCatchupBlock),
     receiver(ConsensusCommand),
     receiver(GenesisEvent),
     receiver(DataEvent),
@@ -121,10 +128,34 @@ enum StateTag {
     Follower,
 }
 
-#[derive(Encode, Decode, Default)]
+#[derive(Default)]
 pub struct JoiningState {
     staking_updated_to: Slot,
     buffered_prepares: Vec<ConsensusProposal>,
+    streaming: Option<tokio::task::JoinHandle<()>>,
+}
+// Empty implementations - we don't actually want to serialize this.
+impl bincode::Encode for JoiningState {
+    fn encode<E: bincode::enc::Encoder>(
+        &self,
+        _encoder: &mut E,
+    ) -> core::result::Result<(), bincode::error::EncodeError> {
+        Ok(())
+    }
+}
+impl bincode::Decode for JoiningState {
+    fn decode<D: bincode::de::Decoder>(
+        _decoder: &mut D,
+    ) -> core::result::Result<Self, bincode::error::DecodeError> {
+        Ok(Self::default())
+    }
+}
+impl<'de> bincode::BorrowDecode<'de> for JoiningState {
+    fn borrow_decode<D: bincode::de::BorrowDecoder<'de>>(
+        _decoder: &mut D,
+    ) -> core::result::Result<Self, bincode::error::DecodeError> {
+        Ok(Self::default())
+    }
 }
 
 #[derive(Encode, Decode, Default)]
@@ -567,14 +598,61 @@ impl Consensus {
         );
 
         // Try to commit the proposal
+        let stream = self.bft_round_state.joining.streaming.take();
         self.bft_round_state.state_tag = StateTag::Follower;
         if self
             .try_commit_current_proposal(commit_quorum_certificate)
             .is_err()
         {
+            self.bft_round_state.joining.streaming = stream;
             self.bft_round_state.state_tag = StateTag::Joining;
             bail!("⛑️ Failed to synchronize, retrying soon.");
         }
+        // We sucessfully joined the consensus
+        info!(
+            "🏁 Synchronized to slot {}",
+            self.bft_round_state.consensus_proposal.slot
+        );
+        // If we successfully joined, we can stop streaming blocks.
+        if let Some(handle) = stream {
+            info!("🏁 Stopped streaming blocks.");
+            handle.abort();
+        }
+        Ok(())
+    }
+
+    async fn ask_for_catchup_blocks(&mut self, ip: String) -> Result<(), Error> {
+        info!("📡 Streaming data from {ip}");
+        let sender =
+            Pick::<tokio::sync::broadcast::Sender<ConsensusCatchupBlock>>::get(&self.bus).clone();
+        self.bft_round_state.joining.streaming = Some(tokio::spawn(async move {
+            let Ok(mut stream) = RawDAListener::new(&ip, crate::model::BlockHeight(0)).await else {
+                warn!("Error occured setting up the DA listener");
+                return;
+            };
+            loop {
+                match stream.next().await {
+                    None => {
+                        warn!("End of stream");
+                        break;
+                    }
+                    Some(Err(e)) => {
+                        warn!("Error while streaming data from peer: {:#}", e);
+                        break;
+                    }
+                    Some(Ok(block)) => {
+                        info!(
+                            "📦 Received block (height {}) from stream",
+                            block.consensus_proposal.slot
+                        );
+                        if let Err(e) = sender.send(ConsensusCatchupBlock(block)) {
+                            tracing::error!("Error while sending block over channel: {:#}", e);
+                            break;
+                        }
+                    }
+                }
+            }
+        }));
         Ok(())
     }
 
@@ -856,6 +934,20 @@ impl Consensus {
                 match self.handle_net_message(cmd) {
                     Ok(_) => (),
                     Err(e) => warn!("Consensus message failed: {:#}", e),
+                }
+            }
+            // Only useful when joining
+            listen<PeerEvent> msg => {
+                if !matches!(self.bft_round_state.state_tag, StateTag::Joining) {
+                    continue;
+                }
+                if self.bft_round_state.joining.streaming.is_some() {
+                    continue;
+                }
+                match msg {
+                    PeerEvent::NewPeer { da_ip, .. } => {
+                        self.ask_for_catchup_blocks(da_ip).await?;
+                    }
                 }
             }
             command_response<QueryConsensusInfo, ConsensusInfo> _ => {

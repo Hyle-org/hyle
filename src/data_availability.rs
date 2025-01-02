@@ -18,7 +18,8 @@ use codec::{DataAvailabilityServerCodec, DataAvailabilityServerRequest};
 use crate::{
     bus::{command_response::Query, BusClientSender, BusMessage},
     consensus::{
-        CommittedConsensusProposal, ConsensusCommand, ConsensusEvent, ConsensusProposalHash,
+        CommittedConsensusProposal, ConsensusCatchupBlock, ConsensusCommand, ConsensusEvent,
+        ConsensusProposalHash,
     },
     genesis::GenesisEvent,
     mempool::{MempoolCommand, MempoolEvent},
@@ -30,7 +31,7 @@ use crate::{
         ValidatorPublicKey,
     },
     module_handle_messages,
-    p2p::network::{NetMessage, OutboundMessage, PeerEvent},
+    p2p::network::OutboundMessage,
     utils::{
         conf::SharedConf,
         logger::LogMe,
@@ -56,32 +57,11 @@ use tokio_util::codec::Framed;
 use tracing::{debug, error, info, trace, warn};
 
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, Eq, PartialEq)]
-pub enum DataNetMessage {
-    QuerySignedBlock {
-        respond_to: ValidatorPublicKey,
-        hash: ConsensusProposalHash,
-    },
-    QueryLastSignedBlock {
-        respond_to: ValidatorPublicKey,
-    },
-    QuerySignedBlockResponse {
-        block: Box<SignedBlock>,
-    },
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, Eq, PartialEq)]
 pub enum DataEvent {
     NewBlock(Box<Block>),
 }
 
-impl BusMessage for DataNetMessage {}
 impl BusMessage for DataEvent {}
-
-impl From<DataNetMessage> for NetMessage {
-    fn from(msg: DataNetMessage) -> Self {
-        NetMessage::DataMessage(msg)
-    }
-}
 
 #[derive(Clone)]
 pub struct QueryBlockHeight {}
@@ -94,12 +74,11 @@ struct DABusClient {
     sender(ConsensusCommand),
     sender(MempoolCommand),
     receiver(Query<ContractName, Contract>),
-    receiver(DataNetMessage),
-    receiver(PeerEvent),
     receiver(Query<QueryBlockHeight , BlockHeight>),
     receiver(ConsensusEvent),
     receiver(MempoolEvent),
     receiver(GenesisEvent),
+    receiver(ConsensusCatchupBlock),
 }
 }
 
@@ -125,8 +104,6 @@ pub struct DataAvailability {
     buffered_signed_blocks: BTreeSet<SignedBlock>,
     pending_cps: VecDeque<CommittedConsensusProposal>,
     pending_data_proposals: Vec<(Cut, PendingDataProposals)>,
-    self_pubkey: ValidatorPublicKey,
-    asked_last_processed_block: Option<ValidatorPublicKey>,
 
     // Peers subscribed to block streaming
     stream_peer_metadata: HashMap<String, BlockStreamPeer>,
@@ -147,9 +124,6 @@ impl Module for DataAvailability {
             }
         }
 
-        let buffered_blocks = BTreeSet::new();
-        let self_pubkey = ctx.node.crypto.validator_pubkey().clone();
-
         let node_state = Self::load_from_disk_or_default::<NodeState>(
             ctx.common
                 .config
@@ -167,12 +141,9 @@ impl Module for DataAvailability {
                     .data_directory
                     .join("data_availability.db"),
             )?,
-            buffered_signed_blocks: buffered_blocks,
-
+            buffered_signed_blocks: BTreeSet::new(),
             pending_cps: VecDeque::new(),
             pending_data_proposals: vec![],
-            self_pubkey,
-            asked_last_processed_block: None,
             stream_peer_metadata: HashMap::new(),
             node_state,
         })
@@ -217,22 +188,11 @@ impl DataAvailability {
                     self.handle_signed_block(signed_block).await;
                 }
             }
+            listen<ConsensusCatchupBlock> ConsensusCatchupBlock(block) => {
+                info!("📡  Received catchup block {}", block.hash());
+                self.handle_signed_block(block).await;
+            }
 
-            listen<DataNetMessage> msg => {
-                _ = self.handle_data_message(msg).await
-                    .log_error("NodeState: Error while handling data message");
-            }
-            listen<PeerEvent> msg => {
-                match msg {
-                    PeerEvent::NewPeer { pubkey, .. } => {
-                        if self.asked_last_processed_block.is_none() {
-                            info!("📡  Asking for last block from {pubkey}");
-                            self.asked_last_processed_block = Some(pubkey);
-                            self.query_last_block();
-                        }
-                    }
-                }
-            }
             command_response<QueryBlockHeight, BlockHeight> _ => {
                 Ok(self.blocks.last().map(|block| block.height()).unwrap_or(BlockHeight(0)))
             }
@@ -350,41 +310,6 @@ impl DataAvailability {
         Ok(())
     }
 
-    async fn handle_data_message(&mut self, msg: DataNetMessage) -> Result<()> {
-        match msg {
-            DataNetMessage::QuerySignedBlock { respond_to, hash } => {
-                self.blocks.get(&hash).map(|block| {
-                    if let Some(block) = block {
-                        _ = self.bus.send(OutboundMessage::send(
-                            respond_to,
-                            DataNetMessage::QuerySignedBlockResponse {
-                                block: Box::new(block),
-                            },
-                        ));
-                    }
-                })?;
-            }
-            DataNetMessage::QuerySignedBlockResponse { block } => {
-                debug!(
-                    block_hash = %block.hash(),
-                    block_height = %block.height(),
-                    "⬇️  Received block data");
-                self.handle_signed_block(*block).await;
-            }
-            DataNetMessage::QueryLastSignedBlock { respond_to } => {
-                if let Some(block) = self.blocks.last() {
-                    _ = self.bus.send(OutboundMessage::send(
-                        respond_to,
-                        DataNetMessage::QuerySignedBlockResponse {
-                            block: Box::new(block.clone()),
-                        },
-                    ));
-                }
-            }
-        }
-        Ok(())
-    }
-
     async fn handle_commit_block_event(
         &mut self,
         data_proposals: Vec<(ValidatorPublicKey, Vec<DataProposal>)>,
@@ -424,7 +349,6 @@ impl DataAvailability {
                     block.hash(),
                     block.height()
                 );
-                self.query_block(block.parent_hash());
                 debug!("Buffering block {}", block.hash());
                 self.buffered_signed_blocks.insert(block);
                 return;
@@ -435,7 +359,6 @@ impl DataAvailability {
                 "Received block with height {} but genesis block is missing",
                 block.height()
             );
-            self.query_block(block.parent_hash());
             trace!("Buffering block {}", block.hash());
             self.buffered_signed_blocks.insert(block);
             return;
@@ -447,7 +370,6 @@ impl DataAvailability {
     }
 
     async fn pop_buffer(&mut self, mut last_block_hash: ConsensusProposalHash) {
-        let got_buffered = !self.buffered_signed_blocks.is_empty();
         // Iterative loop to avoid stack overflows
         while let Some(first_buffered) = self.buffered_signed_blocks.first() {
             if first_buffered.parent_hash() != &last_block_hash {
@@ -462,13 +384,6 @@ impl DataAvailability {
             let first_buffered = self.buffered_signed_blocks.pop_first().unwrap();
             last_block_hash = first_buffered.hash();
             self.add_processed_block(first_buffered).await;
-        }
-
-        if got_buffered {
-            info!(
-                "📡 Asking for last block from peer in case new blocks were mined during catchup."
-            );
-            self.query_last_block();
         }
     }
 
@@ -517,26 +432,6 @@ impl DataAvailability {
         }
         for peer_id in to_remove {
             self.stream_peer_metadata.remove(&peer_id);
-        }
-    }
-
-    fn query_block(&mut self, hash: &ConsensusProposalHash) {
-        _ = self.bus.send(OutboundMessage::broadcast(
-            DataNetMessage::QuerySignedBlock {
-                respond_to: self.self_pubkey.clone(),
-                hash: hash.clone(),
-            },
-        ));
-    }
-
-    fn query_last_block(&mut self) {
-        if let Some(pubkey) = &self.asked_last_processed_block {
-            _ = self.bus.send(OutboundMessage::send(
-                pubkey.clone(),
-                DataNetMessage::QueryLastSignedBlock {
-                    respond_to: self.self_pubkey.clone(),
-                },
-            ));
         }
     }
 
@@ -639,8 +534,6 @@ pub mod tests {
                 pending_data_proposals: vec![],
                 pending_cps: VecDeque::new(),
                 buffered_signed_blocks: Default::default(),
-                self_pubkey: Default::default(),
-                asked_last_processed_block: Default::default(),
                 stream_peer_metadata: Default::default(),
                 node_state: Default::default(),
             };
@@ -685,8 +578,6 @@ pub mod tests {
             pending_data_proposals: vec![],
             pending_cps: VecDeque::new(),
             buffered_signed_blocks: Default::default(),
-            self_pubkey: Default::default(),
-            asked_last_processed_block: Default::default(),
             stream_peer_metadata: Default::default(),
             node_state: Default::default(),
         };
@@ -735,8 +626,6 @@ pub mod tests {
             pending_data_proposals: vec![],
             pending_cps: VecDeque::new(),
             buffered_signed_blocks: Default::default(),
-            self_pubkey: Default::default(),
-            asked_last_processed_block: Default::default(),
             stream_peer_metadata: Default::default(),
             node_state: Default::default(),
         };
