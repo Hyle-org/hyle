@@ -217,7 +217,6 @@ impl Indexer {
     async fn handle_data_availability_event(&mut self, event: DataEvent) -> Result<(), Error> {
         match event {
             DataEvent::NewBlock(block) => self.handle_processed_block(*block).await,
-            _ => Ok(()),
         }
     }
 

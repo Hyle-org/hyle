@@ -72,7 +72,6 @@ pub enum DataNetMessage {
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, Eq, PartialEq)]
 pub enum DataEvent {
     NewBlock(Box<Block>),
-    CatchupDone(BlockHeight),
 }
 
 impl BusMessage for DataNetMessage {}
@@ -470,12 +469,6 @@ impl DataAvailability {
                 "📡 Asking for last block from peer in case new blocks were mined during catchup."
             );
             self.query_last_block();
-        } else {
-            let height = self.blocks.last().map_or(BlockHeight(0), |b| b.height());
-            _ = self
-                .bus
-                .send(DataEvent::CatchupDone(height))
-                .log_error("Error sending DataEvent");
         }
     }
 
@@ -610,8 +603,8 @@ impl DataAvailability {
 }
 
 #[cfg(test)]
-mod tests {
-    use std::collections::VecDeque;
+pub mod tests {
+    use std::{collections::VecDeque, path::Path};
 
     use crate::{
         bus::BusClientSender,
@@ -627,6 +620,38 @@ mod tests {
 
     use super::{blocks_memory::Blocks, module_bus_client};
     use anyhow::Result;
+
+    /// For use in integration tests
+    pub struct DataAvailabilityTestCtx {
+        pub da: super::DataAvailability,
+    }
+
+    impl DataAvailabilityTestCtx {
+        pub async fn new(shared_bus: crate::bus::SharedMessageBus) -> Self {
+            let blocks = Blocks::new(Path::new("")).unwrap();
+
+            let bus = super::DABusClient::new_from_bus(shared_bus).await;
+
+            let da = super::DataAvailability {
+                config: Default::default(),
+                bus,
+                blocks,
+                pending_data_proposals: vec![],
+                pending_cps: VecDeque::new(),
+                buffered_signed_blocks: Default::default(),
+                self_pubkey: Default::default(),
+                asked_last_processed_block: Default::default(),
+                stream_peer_metadata: Default::default(),
+                node_state: Default::default(),
+            };
+
+            DataAvailabilityTestCtx { da }
+        }
+
+        pub async fn handle_signed_block(&mut self, block: SignedBlock) {
+            self.da.handle_signed_block(block).await;
+        }
+    }
 
     #[test]
     fn test_blocks() -> Result<()> {
