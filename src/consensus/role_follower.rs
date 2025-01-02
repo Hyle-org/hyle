@@ -500,6 +500,20 @@ impl FollowerRole for Consensus {
                 );
             }
 
+            // If this same data proposal was in the last cut, ignore.
+            if self
+                .bft_round_state
+                .last_cut
+                .iter()
+                .any(|(v, h, _)| v == validator && h == data_proposal_hash)
+            {
+                debug!(
+                    "DataProposal {} from validator {} was already in the last cut, not checking PoDA",
+                    data_proposal_hash, validator
+                );
+                continue;
+            }
+
             trace!("consensus_proposal: {:#?}", consensus_proposal);
             trace!("voting_power: {voting_power} < {f} + 1");
 
