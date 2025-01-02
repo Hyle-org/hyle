@@ -25,7 +25,7 @@ macro_rules! build_tuple {
         ($nodes, $nodes, $nodes, $nodes, $nodes, $nodes, $nodes)
     };
     ($nodes:expr, $count:expr) => {
-        panic!("Le nombre de nœuds {} n'est pas supporté", $count)
+        panic!("More than {} nodes isn't supported", $count)
     };
 }
 
@@ -158,15 +158,17 @@ use crate::bus::dont_use_this::get_receiver;
 use crate::bus::metrics::BusMetrics;
 use crate::bus::{bus_client, SharedMessageBus};
 use crate::consensus::test::ConsensusTestCtx;
-use crate::consensus::ConsensusEvent;
+use crate::consensus::{ConsensusEvent, ConsensusProposal};
+use crate::data_availability::DataEvent;
 use crate::handle_messages;
 use crate::mempool::test::{make_register_contract_tx, MempoolTestCtx};
 use crate::mempool::{MempoolEvent, MempoolNetMessage, QueryNewCut};
 use crate::model::mempool::{Cut, DataProposalHash};
+use crate::model::SignedBlock;
 use crate::model::{consensus::ConsensusNetMessage, ContractName, Hashable};
 use crate::p2p::network::OutboundMessage;
 use crate::p2p::P2PCommand;
-use crate::utils::crypto::{self, BlstCrypto};
+use crate::utils::crypto::{self, AggregateSignature, BlstCrypto};
 use tracing::info;
 
 bus_client!(
@@ -377,4 +379,208 @@ async fn autobahn_basic_flow() {
         from: node1.consensus_ctx, to: [node2.consensus_ctx, node3.consensus_ctx, node4.consensus_ctx],
         message_matches: ConsensusNetMessage::Commit(_, _)
     };
+}
+
+#[test_log::test(tokio::test)]
+async fn autobahn_rejoin_flow() {
+    let (mut node1, mut node2) = build_nodes!(2).await;
+
+    // Let's setup the consensus so our joining node has some blocks to catch up.
+    ConsensusTestCtx::setup_for_round(
+        &mut [&mut node1.consensus_ctx, &mut node2.consensus_ctx],
+        0,
+        3,
+        0,
+    );
+
+    let crypto = crypto::BlstCrypto::new("node-3".to_owned());
+    let mut joining_node = AutobahnTestCtx::new("node-3", crypto).await;
+    joining_node
+        .consensus_ctx
+        .setup_for_joining(&[&node1.consensus_ctx, &node2.consensus_ctx]);
+
+    // Let's setup a DataAvailability on this bus
+    let mut da = crate::data_availability::tests::DataAvailabilityTestCtx::new(
+        joining_node.shared_bus.new_handle(),
+    )
+    .await;
+
+    let mut blocks = vec![SignedBlock {
+        data_proposals: vec![],
+        certificate: AggregateSignature::default(),
+        consensus_proposal: ConsensusProposal {
+            slot: 0,
+            ..ConsensusProposal::default()
+        },
+    }];
+
+    for _ in 0..2 {
+        blocks.push(SignedBlock {
+            data_proposals: vec![],
+            certificate: AggregateSignature::default(),
+            consensus_proposal: ConsensusProposal {
+                slot: blocks.len() as u64,
+                parent_hash: blocks[blocks.len() - 1].hash(),
+                ..ConsensusProposal::default()
+            },
+        });
+    }
+
+    let mut data_event_receiver = get_receiver::<DataEvent>(&joining_node.shared_bus).await;
+
+    // Catchup up to the last block, but don't actually process the last block message yet.
+    for block in blocks.get(0..blocks.len() - 1).unwrap() {
+        da.handle_signed_block(block.clone()).await;
+    }
+    while let Ok(event) = data_event_receiver.try_recv() {
+        info!("{:?}", event);
+        joining_node
+            .consensus_ctx
+            .handle_data_event(event)
+            .await
+            .expect("should handle data event");
+    }
+
+    // Do a few rounds of consensus-with-lag and note that we don't actually catch up.
+    // (this is expected because DA stopped receiving new blocks, as it did indeed catch up)
+    for _ in 0..3 {
+        node1.start_round_with_cut_from_mempool().await;
+
+        broadcast! {
+            description: "Prepare",
+            from: node1.consensus_ctx, to: [node2.consensus_ctx, joining_node.consensus_ctx]
+        };
+
+        send! {
+            description: "PrepareVote",
+            from: [node2.consensus_ctx], to: node1.consensus_ctx,
+            message_matches: ConsensusNetMessage::PrepareVote(_)
+        };
+
+        broadcast! {
+            description: "Confirm",
+            from: node1.consensus_ctx, to: [node2.consensus_ctx, joining_node.consensus_ctx], // joining_node doesn't need it but sending for consistency
+            message_matches: ConsensusNetMessage::Confirm(_)
+        };
+
+        send! {
+            description: "ConfirmAck",
+            from: [node2.consensus_ctx], to: node1.consensus_ctx,
+            message_matches: ConsensusNetMessage::ConfirmAck(_)
+        };
+
+        broadcast! {
+            description: "Commit",
+            from: node1.consensus_ctx, to: [node2.consensus_ctx, joining_node.consensus_ctx],
+            message_matches: ConsensusNetMessage::Commit(_, _)
+        };
+
+        // Swap so we handle leader changes correctly
+        std::mem::swap(&mut node1, &mut node2);
+    }
+
+    // Now process block 2
+    da.handle_signed_block(blocks.get(2).unwrap().clone()).await;
+    while let Ok(event) = data_event_receiver.try_recv() {
+        info!("{:?}", event);
+        joining_node
+            .consensus_ctx
+            .handle_data_event(event)
+            .await
+            .expect("should handle data event");
+    }
+
+    // Process round
+    node1.start_round_with_cut_from_mempool().await;
+
+    broadcast! {
+        description: "Prepare",
+        from: node1.consensus_ctx, to: [node2.consensus_ctx, joining_node.consensus_ctx]
+    };
+
+    send! {
+        description: "PrepareVote",
+        from: [node2.consensus_ctx], to: node1.consensus_ctx,
+        message_matches: ConsensusNetMessage::PrepareVote(_)
+    };
+
+    broadcast! {
+        description: "Confirm",
+        from: node1.consensus_ctx, to: [node2.consensus_ctx, joining_node.consensus_ctx], // joining_node doesn't need it but sending for consistency
+        message_matches: ConsensusNetMessage::Confirm(_)
+    };
+
+    send! {
+        description: "ConfirmAck",
+        from: [node2.consensus_ctx], to: node1.consensus_ctx,
+        message_matches: ConsensusNetMessage::ConfirmAck(_)
+    };
+
+    broadcast! {
+        description: "Commit",
+        from: node1.consensus_ctx, to: [node2.consensus_ctx, joining_node.consensus_ctx],
+        message_matches: ConsensusNetMessage::Commit(_, _)
+    };
+    std::mem::swap(&mut node1, &mut node2);
+
+    // We still aren't caught up
+    assert!(joining_node.consensus_ctx.is_joining());
+
+    // Catch up
+    for _ in 0..4 {
+        let block = SignedBlock {
+            data_proposals: vec![],
+            certificate: AggregateSignature::default(),
+            consensus_proposal: ConsensusProposal {
+                slot: blocks.len() as u64,
+                parent_hash: blocks[blocks.len() - 1].hash(),
+                ..ConsensusProposal::default()
+            },
+        };
+        da.handle_signed_block(block.clone()).await;
+        blocks.push(block);
+        while let Ok(event) = data_event_receiver.try_recv() {
+            info!("{:?}", event);
+            joining_node
+                .consensus_ctx
+                .handle_data_event(event)
+                .await
+                .expect("should handle data event");
+        }
+    }
+
+    // Process round
+    node1.start_round_with_cut_from_mempool().await;
+
+    broadcast! {
+        description: "Prepare",
+        from: node1.consensus_ctx, to: [node2.consensus_ctx, joining_node.consensus_ctx]
+    };
+
+    send! {
+        description: "PrepareVote",
+        from: [node2.consensus_ctx], to: node1.consensus_ctx,
+        message_matches: ConsensusNetMessage::PrepareVote(_)
+    };
+
+    broadcast! {
+        description: "Confirm",
+        from: node1.consensus_ctx, to: [node2.consensus_ctx, joining_node.consensus_ctx], // joining_node doesn't need it but sending for consistency
+        message_matches: ConsensusNetMessage::Confirm(_)
+    };
+
+    send! {
+        description: "ConfirmAck",
+        from: [node2.consensus_ctx], to: node1.consensus_ctx,
+        message_matches: ConsensusNetMessage::ConfirmAck(_)
+    };
+
+    broadcast! {
+        description: "Commit",
+        from: node1.consensus_ctx, to: [node2.consensus_ctx, joining_node.consensus_ctx],
+        message_matches: ConsensusNetMessage::Commit(_, _)
+    };
+
+    // We are caught up
+    assert!(!joining_node.consensus_ctx.is_joining());
 }

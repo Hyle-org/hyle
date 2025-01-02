@@ -724,7 +724,6 @@ impl Consensus {
                 }
                 Ok(())
             }
-            _ => Ok(()),
         }
     }
 
@@ -1066,6 +1065,14 @@ pub mod test {
                 .round_leader = cryptos.first().unwrap().validator_pubkey().clone();
         }
 
+        pub fn setup_for_joining(&mut self, nodes: &[&ConsensusTestCtx]) {
+            for other_node in nodes.iter() {
+                self.add_trusted_validator(other_node.consensus.crypto.validator_pubkey());
+            }
+
+            self.consensus.bft_round_state.state_tag = StateTag::Joining;
+        }
+
         pub fn validator_pubkey(&self) -> ValidatorPublicKey {
             self.consensus.crypto.validator_pubkey().clone()
         }
@@ -1118,6 +1125,45 @@ pub mod test {
             self.consensus.crypto.validator_pubkey().clone()
         }
 
+        pub(crate) fn is_joining(&self) -> bool {
+            matches!(self.consensus.bft_round_state.state_tag, StateTag::Joining)
+        }
+
+        pub fn setup_for_round(
+            nodes: &mut [&mut ConsensusTestCtx],
+            leader: usize,
+            slot: u64,
+            view: u64,
+        ) {
+            let leader_pubkey = nodes[leader].consensus.crypto.validator_pubkey().clone();
+
+            // TODO: write a real one?
+            let commit_qc = AggregateSignature::default();
+
+            for (index, node) in nodes.iter_mut().enumerate() {
+                node.consensus.bft_round_state.consensus_proposal.slot = slot;
+                node.consensus.bft_round_state.consensus_proposal.view = view;
+
+                node.consensus
+                    .bft_round_state
+                    .follower
+                    .buffered_quorum_certificate = Some(commit_qc.clone());
+
+                if index == leader {
+                    node.consensus.bft_round_state.state_tag = StateTag::Leader;
+                    node.consensus.bft_round_state.leader.pending_ticket =
+                        Some(Ticket::CommitQC(commit_qc.clone()));
+                } else {
+                    node.consensus.bft_round_state.state_tag = StateTag::Follower;
+                }
+
+                node.consensus
+                    .bft_round_state
+                    .consensus_proposal
+                    .round_leader = leader_pubkey.clone();
+            }
+        }
+
         #[track_caller]
         pub(crate) fn handle_msg(
             &mut self,
@@ -1137,6 +1183,10 @@ pub mod test {
             let err = self.consensus.handle_net_message(msg.clone()).unwrap_err();
             info!("Expected error: {:#}", err);
             err
+        }
+
+        pub(crate) async fn handle_data_event(&mut self, msg: DataEvent) -> Result<()> {
+            self.consensus.handle_data_event(msg).await
         }
 
         async fn add_staker(&mut self, staker: &Self, amount: u128, err: &str) {

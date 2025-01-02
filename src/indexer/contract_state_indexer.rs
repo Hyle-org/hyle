@@ -144,9 +144,8 @@ where
     /// coming from data availability. In a future refacto, data availability will stream handled blocks instead
     /// thus we could refacto this part too to avoid same processing in NodeState in each indexer
     async fn handle_data_availability_event(&mut self, event: DataEvent) -> Result<(), Error> {
-        if let DataEvent::NewBlock(block) = event {
-            self.handle_processed_block(*block).await?;
-        }
+        let DataEvent::NewBlock(block) = event;
+        self.handle_processed_block(*block).await?;
 
         Ok(())
     }
