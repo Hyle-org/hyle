@@ -88,6 +88,9 @@ hyled --help
 ### Build Locally
 
 ```bash
+# Build the dependency image, this is a cache layer for faster iteration builds
+docker build . -t hyle-dep -f Dockerfile.dependencies
+# Build the node image 
 docker build . -t hyle
 ```
 

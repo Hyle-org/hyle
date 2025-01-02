@@ -1,4 +1,5 @@
-FROM ghcr.io/hyle-org/hyle-dep:docker_build_cache AS builder
+ARG DEP_IMAGE=hyle-dep
+FROM $DEP_IMAGE AS builder
 
 # Build application
 COPY Cargo.toml Cargo.lock ./
