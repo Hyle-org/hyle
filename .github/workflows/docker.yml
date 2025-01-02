@@ -1,4 +1,4 @@
-name: Push to Artifact Registry
+name: Docker image
 
 on: 
   push:
@@ -40,11 +40,20 @@ jobs:
 
       - name: Docker meta
         id: meta
+        if: ${{ matrix.mode.push_ghcr }}
         uses: docker/metadata-action@v5
         with:
           images: |
             ${{env.AR_REPO_LOCATION}}/${{ env.AR_URL }}/${{ matrix.mode.name }}
             ghcr.io/hyle-org/${{ matrix.mode.name }}
+
+      - name: Docker meta
+        id: meta
+        if: !${{ matrix.mode.push_ghcr }}
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            ${{env.AR_REPO_LOCATION}}/${{ env.AR_URL }}/${{ matrix.mode.name }}
 
 # Will produces tags given this table : 
 # 
@@ -80,7 +89,7 @@ jobs:
           file: ${{ matrix.mode.file }} 
           context: .
           build-args: |
-            DEP_IMAGE=ghcr.io/hyle-org/hyle-dep:docker_build_cache
+            DEP_IMAGE=${{ env.AR_REPO_LOCATION }}/${{ env.AR_URL }}/hyle-dependencies:docker_build_cache
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
 
