@@ -917,9 +917,7 @@ pub mod test {
 
     use super::*;
     use crate::{
-        autobahn_testing::test::{
-            broadcast, build_tuple, send, AutobahnBusClient, AutobahnTestCtx,
-        },
+        autobahn_testing::{broadcast, build_tuple, send, AutobahnBusClient, AutobahnTestCtx},
         bus::{dont_use_this::get_receiver, metrics::BusMetrics, SharedMessageBus},
         model::mempool::DataProposalHash,
         p2p::network::NetMessage,
