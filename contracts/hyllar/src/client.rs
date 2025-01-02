@@ -18,7 +18,7 @@ impl HyllarToken {
     }
 }
 
-impl<'b> Builder<'b> {
+impl Builder<'_> {
     pub fn transfer(&mut self, recipient: String, amount: u128) -> anyhow::Result<()> {
         self.builder.add_action(
             self.contract_name.clone(),

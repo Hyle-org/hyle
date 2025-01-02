@@ -18,7 +18,7 @@ impl Hydentity {
     }
 }
 
-impl<'b> Builder<'b> {
+impl Builder<'_> {
     pub fn verify_identity(&mut self, state: &Hydentity, password: String) -> anyhow::Result<()> {
         let nonce = state
             .get_nonce(self.builder.identity.0.as_str())
