@@ -30,12 +30,13 @@ mod e2e_consensus {
         Ok(())
     }
 
-    #[ignore = "flakky due to bug in data dissemination"]
     #[test_log::test(tokio::test)]
     async fn can_rejoin() -> Result<()> {
         let mut ctx = E2ECtx::new_multi_with_indexer(2, 500).await?;
 
         ctx.wait_height(4).await?;
+
+        tracing::info!("➡️  Joining a new node");
 
         let joining_client = ctx.add_node().await?;
 
@@ -115,10 +116,14 @@ mod e2e_consensus {
             send_transaction(ctx.client(), transaction, &mut states).await;
         }
 
+        tracing::info!("➡️  Waiting for TX to be processed");
+
         // 2 slots to get the tx in a blocks
         // 1 slot to send the candidacy
         // 1 slot to add the validator to consensus
         ctx.wait_height(4).await?;
+
+        tracing::info!("➡️  Checking data");
 
         let consensus = ctx.client().get_consensus_info().await?;
 

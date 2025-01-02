@@ -124,6 +124,7 @@ enum StateTag {
 pub struct JoiningState {
     staking_updated_to: Slot,
     buffered_prepares: Vec<ConsensusProposal>,
+    buffered_commits: Vec<(QuorumCertificate, ConsensusProposalHash)>,
 }
 
 #[derive(Encode, Decode, Default)]
@@ -548,19 +549,96 @@ impl Consensus {
             .bft_round_state
             .joining
             .buffered_prepares
-            .swap_remove(proposal_index);
-        self.bft_round_state.joining.buffered_prepares.clear();
+            .get(proposal_index)
+            .unwrap()
+            .clone();
+        //.swap_remove(proposal_index);
+        //self.bft_round_state.joining.buffered_prepares.clear();
 
         // At this point check that we're caught up enough that it's realistic to verify the QC.
         if self.bft_round_state.joining.staking_updated_to + 1
             < self.bft_round_state.consensus_proposal.slot
         {
-            info!(
-                "🏃Ignoring commit message, we are only caught up to {} ({} needed).",
-                self.bft_round_state.joining.staking_updated_to,
-                self.bft_round_state.consensus_proposal.slot - 1
-            );
-            return Ok(());
+            let target_slot = self.bft_round_state.consensus_proposal.slot;
+            self.bft_round_state.consensus_proposal.slot =
+                self.bft_round_state.joining.staking_updated_to + 1;
+
+            if self
+                .bft_round_state
+                .joining
+                .buffered_prepares
+                .iter()
+                .any(|p| p.slot == self.bft_round_state.consensus_proposal.slot)
+            {
+                info!(
+                    "Attempting to fast-forward from {} to slot {}",
+                    self.bft_round_state.consensus_proposal.slot, target_slot
+                );
+                // Try to fast-forward
+                let buffered_prepares =
+                    std::mem::take(&mut self.bft_round_state.joining.buffered_prepares);
+                let buffered_commits =
+                    std::mem::take(&mut self.bft_round_state.joining.buffered_commits);
+                self.bft_round_state.state_tag = StateTag::Follower;
+                while self.bft_round_state.consensus_proposal.slot < target_slot {
+                    info!(
+                        "Processing buffered prepare for slot {}",
+                        self.bft_round_state.consensus_proposal.slot
+                    );
+                    match buffered_prepares
+                        .iter()
+                        .find(|p| p.slot == self.bft_round_state.consensus_proposal.slot)
+                    {
+                        Some(p) => {
+                            self.bft_round_state.consensus_proposal = p.clone();
+                        }
+                        None => {
+                            warn!("Missing prepare for slot");
+                            todo!();
+                        }
+                    }
+                    let Some((sig, _)) = buffered_commits
+                        .iter()
+                        .find(|(_, hash)| hash == &self.bft_round_state.consensus_proposal.hash())
+                    else {
+                        warn!("Missing commit for proposal, cannot fast-forward");
+                        todo!();
+                    };
+                    match self.try_commit_current_proposal(sig.clone()) {
+                        Ok(_) => {
+                            info!(
+                                "🏃 Fast-forwarded to slot {}",
+                                self.bft_round_state.consensus_proposal.slot
+                            );
+                        }
+                        Err(e) => {
+                            warn!("Failed to fast-forward: {}", e);
+                            todo!();
+                        }
+                    }
+                }
+                // We fast-forwarded, so we can now process the commit.
+                info!(
+                    "🏃 Fast-forwarded to slot {}",
+                    self.bft_round_state.consensus_proposal.slot
+                );
+                self.bft_round_state.state_tag = StateTag::Joining;
+                self.bft_round_state.joining.staking_updated_to = target_slot;
+                self.bft_round_state.joining.buffered_prepares = buffered_prepares;
+                return self.on_commit_while_joining(commit_quorum_certificate, proposal_hash_hint);
+            } else {
+                // Buffer it
+                self.bft_round_state.joining.buffered_commits.push((
+                    commit_quorum_certificate.clone(),
+                    proposal_hash_hint.clone(),
+                ));
+                info!(
+                    "🏃Ignoring commit message, we are only caught up to {} ({} needed).",
+                    self.bft_round_state.joining.staking_updated_to,
+                    self.bft_round_state.consensus_proposal.slot - 1
+                );
+                return Ok(());
+            }
         }
 
         info!(
