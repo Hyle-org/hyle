@@ -2,6 +2,7 @@ use base64::prelude::*;
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 
+pub mod helpers;
 pub mod transaction_builder;
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone, Encode, Decode)]
