@@ -23,6 +23,7 @@ jobs:
 
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         mode:
           - file: Dockerfile 
@@ -32,6 +33,7 @@ jobs:
             name: hyle-dependencies
             push_ar: false
 
+    name: ${{ matrix.mode.name }}
     steps:
       - name: Checkout
         uses: actions/checkout@v2
