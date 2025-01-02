@@ -240,6 +240,15 @@ impl Storage {
         }
         for tx in &data_proposal.txs {
             match &tx.transaction_data {
+                TransactionData::Blob(blob_tx) => {
+                    if let Err(e) = blob_tx.validate_identity() {
+                        warn!(
+                            "Refusing DataProposal: invalid identity in blob transaction: {}",
+                            e
+                        );
+                        return DataProposalVerdict::Refuse;
+                    }
+                }
                 TransactionData::Proof(_) => {
                     warn!("Refusing DataProposal: unverified recursive proof transaction");
                     return DataProposalVerdict::Refuse;
@@ -820,7 +829,7 @@ mod tests {
         Transaction {
             version: 1,
             transaction_data: TransactionData::Blob(BlobTransaction {
-                identity: Identity("id".to_string()),
+                identity: Identity("id.c1".to_string()),
                 blobs: vec![Blob {
                     contract_name: ContractName("c1".to_string()),
                     data: BlobData(inner_tx.as_bytes().to_vec()),

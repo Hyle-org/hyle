@@ -4,6 +4,7 @@
 use crate::bus::SharedMessageBus;
 #[cfg(feature = "node")]
 use crate::utils::{conf::SharedConf, crypto::SharedBlstCrypto};
+use anyhow::Context;
 #[cfg(feature = "node")]
 use axum::Router;
 use data_availability::HandledBlobProofOutput;
@@ -185,6 +186,31 @@ pub struct BlobTransaction {
     pub identity: Identity,
     pub blobs: Vec<Blob>,
     // FIXME: add a nonce or something to prevent BlobTransaction to share the same hash
+}
+
+impl BlobTransaction {
+    pub fn validate_identity(&self) -> Result<(), anyhow::Error> {
+        // Checks that there is a blob that proves the identity
+        let identity_contract_name = self
+                .identity
+                .0
+                .split('.')
+                .last()
+                .context("Transaction identity is not correctly formed. It should be in the form <id>.<contract_id_name>")?;
+
+        // Check that there is at least one blob that has identity_contract_name as contract name
+        if !self
+            .blobs
+            .iter()
+            .any(|blob| blob.contract_name.0 == identity_contract_name)
+        {
+            anyhow::bail!(
+                "Can't find blob that proves the identity on contract '{}'",
+                identity_contract_name
+            );
+        }
+        Ok(())
+    }
 }
 
 impl Transaction {
