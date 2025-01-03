@@ -1,3 +1,4 @@
+use anyhow::Context;
 use assert_cmd::prelude::*;
 use client_sdk::transaction_builder::{BuildResult, TransactionBuilder};
 use hyle::{
@@ -7,6 +8,7 @@ use hyle::{
     utils::conf::{Conf, Consensus},
 };
 use rand::Rng;
+use signal_child::signal;
 use std::time::Duration;
 use tempfile::TempDir;
 use tokio::process::{Child, Command};
@@ -66,16 +68,13 @@ impl Default for ConfMaker {
     }
 }
 
-enum TestProcessState {
-    Command(Command),
-    Child(Child),
-}
-
 pub struct TestProcess {
     pub conf: Conf,
     #[allow(dead_code)]
     pub dir: TempDir,
-    state: TestProcessState,
+
+    cmd: Command,
+    process: Option<Child>,
 
     stdout: Option<tokio::task::JoinHandle<anyhow::Result<()>>>,
     stderr: Option<tokio::task::JoinHandle<anyhow::Result<()>>>,
@@ -109,7 +108,8 @@ impl TestProcess {
         Self {
             conf,
             dir: tmpdir,
-            state: TestProcessState::Command(cargo_bin),
+            cmd: cargo_bin,
+            process: None,
             stdout: None,
             stderr: None,
         }
@@ -117,30 +117,39 @@ impl TestProcess {
 
     #[allow(dead_code)]
     pub fn log(mut self, level: &str) -> Self {
-        if let TestProcessState::Command(cmd) = &mut self.state {
-            cmd.env("RUST_LOG", level);
-        };
+        self.cmd.env("RUST_LOG", level);
         self
     }
 
     pub fn start(mut self) -> Self {
-        self.state = match &mut self.state {
-            TestProcessState::Command(cmd) => {
-                println!("Starting process: {:?}", cmd);
-                TestProcessState::Child(cmd.spawn().unwrap())
-            }
-            TestProcessState::Child(child) => {
-                panic!("Process already started: {:?}", child.id());
-            }
-        };
-        if let TestProcessState::Child(child) = &mut self.state {
-            let stdout = child.stdout.take().expect("Failed to capture stdout");
-            let stderr = child.stderr.take().expect("Failed to capture stderr");
+        if let Some(process) = &self.process {
+            panic!("Process already started: {:?}", process.id());
+        }
+        info!("Starting process: {:?}", self.cmd);
+        self.process = Some({
+            let mut process = self.cmd.spawn().unwrap();
+            let stdout = process.stdout.take().expect("Failed to capture stdout");
+            let stderr = process.stderr.take().expect("Failed to capture stderr");
 
             self.stdout = Some(tokio::task::spawn(stream_output(stdout)));
             self.stderr = Some(tokio::task::spawn(stream_output(stderr)));
-        }
+
+            process
+        });
+
         self
+    }
+
+    pub async fn stop(&mut self) -> anyhow::Result<()> {
+        if let Some(mut process) = self.process.take() {
+            // TODO: support windows?
+            signal(process.id().unwrap().try_into().unwrap(), signal::SIGQUIT)
+                .context("Failed to stop child")?;
+            process.wait().await.context("Failed to wait for process")?;
+            Ok(())
+        } else {
+            anyhow::bail!("Process not started")
+        }
     }
 }
 pub async fn wait_height(client: &NodeApiHttpClient, heights: u64) -> anyhow::Result<()> {
