@@ -4,8 +4,6 @@ use crate::model::get_current_timestamp_ms;
 use crate::module_handle_messages;
 use crate::utils::crypto::{AggregateSignature, Signed, SignedByValidator, ValidatorSignature};
 use crate::utils::modules::module_bus_client;
-#[cfg(not(test))]
-use crate::utils::static_type_map::Pick;
 use crate::{bus::BusClientSender, utils::logger::LogMe};
 use crate::{
     bus::{command_response::Query, BusMessage},
@@ -15,10 +13,7 @@ use crate::{
     mempool::QueryNewCut,
     model::mempool::Cut,
     model::{get_current_timestamp, Hashable, ValidatorPublicKey},
-    p2p::{
-        network::{OutboundMessage, PeerEvent},
-        P2PCommand,
-    },
+    p2p::{network::OutboundMessage, P2PCommand},
     utils::{
         conf::SharedConf,
         crypto::{BlstCrypto, SharedBlstCrypto},
@@ -80,6 +75,7 @@ pub struct QueryConsensusStakingState {}
 impl BusMessage for ConsensusCommand {}
 impl BusMessage for ConsensusEvent {}
 impl BusMessage for ConsensusNetMessage {}
+
 impl<T> BusMessage for SignedByValidator<T> where T: Encode + BusMessage {}
 
 module_bus_client! {
@@ -93,7 +89,6 @@ struct ConsensusBusClient {
     receiver(GenesisEvent),
     receiver(DataEvent),
     receiver(SignedByValidator<ConsensusNetMessage>),
-    receiver(PeerEvent),
     receiver(Query<QueryConsensusInfo, ConsensusInfo>),
     receiver(Query<QueryConsensusStakingState, Staking>),
 }
@@ -126,7 +121,6 @@ pub struct JoiningState {
     staking_updated_to: Slot,
     buffered_prepares: Vec<ConsensusProposal>,
 }
-
 #[derive(Encode, Decode, Default)]
 pub struct GenesisState {
     peer_pubkey: HashMap<String, ValidatorPublicKey>,
@@ -326,8 +320,10 @@ impl Consensus {
         self.bft_round_state.leader.pending_ticket = Some(ticket);
         #[cfg(not(test))]
         {
-            let command_sender =
-                Pick::<broadcast::Sender<ConsensusCommand>>::get(&self.bus).clone();
+            let command_sender = crate::utils::static_type_map::Pick::<
+                broadcast::Sender<ConsensusCommand>,
+            >::get(&self.bus)
+            .clone();
             let interval = self.config.consensus.slot_duration;
             tokio::task::Builder::new()
                 .name("sleep-consensus")
@@ -575,6 +571,11 @@ impl Consensus {
             self.bft_round_state.state_tag = StateTag::Joining;
             bail!("⛑️ Failed to synchronize, retrying soon.");
         }
+        // We sucessfully joined the consensus
+        info!(
+            "🏁 Synchronized to slot {}",
+            self.bft_round_state.consensus_proposal.slot
+        );
         Ok(())
     }
 

@@ -21,6 +21,7 @@ use crate::{
         CommittedConsensusProposal, ConsensusCommand, ConsensusEvent, ConsensusProposalHash,
     },
     genesis::GenesisEvent,
+    indexer::da_listener::RawDAListener,
     mempool::{MempoolCommand, MempoolEvent},
     model::{
         data_availability::Contract,
@@ -30,14 +31,14 @@ use crate::{
         ValidatorPublicKey,
     },
     module_handle_messages,
-    p2p::network::{NetMessage, OutboundMessage, PeerEvent},
+    p2p::network::{OutboundMessage, PeerEvent},
     utils::{
         conf::SharedConf,
         logger::LogMe,
         modules::{module_bus_client, Module},
     },
 };
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Error, Result};
 use bincode::{Decode, Encode};
 use core::str;
 use futures::{
@@ -56,32 +57,11 @@ use tokio_util::codec::Framed;
 use tracing::{debug, error, info, trace, warn};
 
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, Eq, PartialEq)]
-pub enum DataNetMessage {
-    QuerySignedBlock {
-        respond_to: ValidatorPublicKey,
-        hash: ConsensusProposalHash,
-    },
-    QueryLastSignedBlock {
-        respond_to: ValidatorPublicKey,
-    },
-    QuerySignedBlockResponse {
-        block: Box<SignedBlock>,
-    },
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, Eq, PartialEq)]
 pub enum DataEvent {
     NewBlock(Box<Block>),
 }
 
-impl BusMessage for DataNetMessage {}
 impl BusMessage for DataEvent {}
-
-impl From<DataNetMessage> for NetMessage {
-    fn from(msg: DataNetMessage) -> Self {
-        NetMessage::DataMessage(msg)
-    }
-}
 
 #[derive(Clone)]
 pub struct QueryBlockHeight {}
@@ -94,12 +74,11 @@ struct DABusClient {
     sender(ConsensusCommand),
     sender(MempoolCommand),
     receiver(Query<ContractName, Contract>),
-    receiver(DataNetMessage),
-    receiver(PeerEvent),
     receiver(Query<QueryBlockHeight , BlockHeight>),
     receiver(ConsensusEvent),
     receiver(MempoolEvent),
     receiver(GenesisEvent),
+    receiver(PeerEvent),
 }
 }
 
@@ -125,11 +104,12 @@ pub struct DataAvailability {
     buffered_signed_blocks: BTreeSet<SignedBlock>,
     pending_cps: VecDeque<CommittedConsensusProposal>,
     pending_data_proposals: Vec<(Cut, PendingDataProposals)>,
-    self_pubkey: ValidatorPublicKey,
-    asked_last_processed_block: Option<ValidatorPublicKey>,
 
     // Peers subscribed to block streaming
     stream_peer_metadata: HashMap<String, BlockStreamPeer>,
+
+    need_catchup: bool,
+    catchup_task: Option<tokio::task::JoinHandle<()>>,
 
     node_state: NodeState,
 }
@@ -146,9 +126,6 @@ impl Module for DataAvailability {
                 guard.replace(router.nest("/v1/", api));
             }
         }
-
-        let buffered_blocks = BTreeSet::new();
-        let self_pubkey = ctx.node.crypto.validator_pubkey().clone();
 
         let node_state = Self::load_from_disk_or_default::<NodeState>(
             ctx.common
@@ -167,14 +144,13 @@ impl Module for DataAvailability {
                     .data_directory
                     .join("data_availability.db"),
             )?,
-            buffered_signed_blocks: buffered_blocks,
-
+            buffered_signed_blocks: BTreeSet::new(),
             pending_cps: VecDeque::new(),
             pending_data_proposals: vec![],
-            self_pubkey,
-            asked_last_processed_block: None,
             stream_peer_metadata: HashMap::new(),
             node_state,
+            need_catchup: false,
+            catchup_task: None,
         })
     }
 
@@ -193,19 +169,28 @@ impl DataAvailability {
 
         let mut pending_stream_requests = JoinSet::new();
 
+        let (catchup_block_sender, mut catchup_block_receiver) = tokio::sync::mpsc::channel(100);
+
         // TODO: this is a soft cap on the number of peers we can stream to.
         let (ping_sender, mut ping_receiver) = tokio::sync::mpsc::channel(100);
         let (catchup_sender, mut catchup_receiver) = tokio::sync::mpsc::channel(100);
 
         module_handle_messages! {
             on_bus self.bus,
+            command_response<QueryBlockHeight, BlockHeight> _ => {
+                Ok(self.blocks.last().map(|block| block.height()).unwrap_or(BlockHeight(0)))
+            }
             command_response<ContractName, Contract> cmd => {
                 self.node_state.contracts.get(cmd).cloned().context("Contract not found")
             }
             listen<ConsensusEvent> ConsensusEvent::CommitConsensusProposal( consensus_proposal )  => {
                 _ = self.handle_commit_consensus_proposal(consensus_proposal)
                     .await.log_error("Handling Committed Consensus Proposal");
-
+                if let Some(handle) = self.catchup_task.take() {
+                    info!("🏁 Stopped streaming blocks.");
+                    handle.abort();
+                    self.need_catchup = false;
+                }
             }
             listen<MempoolEvent> evt => {
                 _ = self.handle_mempool_event(evt).await.log_error("Handling Mempool Event");
@@ -215,26 +200,24 @@ impl DataAvailability {
                 if let GenesisEvent::GenesisBlock { signed_block } = cmd {
                     debug!("🌱  Genesis block received with validators {:?}", signed_block.consensus_proposal.new_validators_to_bond.clone());
                     self.handle_signed_block(signed_block).await;
+                } else {
+                    // TODO: I think this is technically a data race with p2p ?
+                    self.need_catchup = true;
+                    // This also triggers when restarting from serialized state, which seems fine.
                 }
             }
-
-            listen<DataNetMessage> msg => {
-                _ = self.handle_data_message(msg).await
-                    .log_error("NodeState: Error while handling data message");
-            }
             listen<PeerEvent> msg => {
+                if !self.need_catchup || self.catchup_task.is_some() {
+                    continue;
+                }
                 match msg {
-                    PeerEvent::NewPeer { pubkey, .. } => {
-                        if self.asked_last_processed_block.is_none() {
-                            info!("📡  Asking for last block from {pubkey}");
-                            self.asked_last_processed_block = Some(pubkey);
-                            self.query_last_block();
-                        }
+                    PeerEvent::NewPeer { da_address, .. } => {
+                        self.ask_for_catchup_blocks(da_address, catchup_block_sender.clone()).await?;
                     }
                 }
             }
-            command_response<QueryBlockHeight, BlockHeight> _ => {
-                Ok(self.blocks.last().map(|block| block.height()).unwrap_or(BlockHeight(0)))
+            Some(block) = catchup_block_receiver.recv() => {
+                self.handle_signed_block(block).await;
             }
 
             // Handle new TCP connections to stream data to peers
@@ -281,6 +264,7 @@ impl DataAvailability {
                 if let Some(hash) = hash {
                     if let Ok(Some(signed_block)) = self.blocks.get(&hash)
                     {
+                        // Errors will be handled when sending new blocks, ignore here.
                         if self.stream_peer_metadata
                             .get_mut(&peer_ip)
                             .context("peer not found")?
@@ -350,41 +334,6 @@ impl DataAvailability {
         Ok(())
     }
 
-    async fn handle_data_message(&mut self, msg: DataNetMessage) -> Result<()> {
-        match msg {
-            DataNetMessage::QuerySignedBlock { respond_to, hash } => {
-                self.blocks.get(&hash).map(|block| {
-                    if let Some(block) = block {
-                        _ = self.bus.send(OutboundMessage::send(
-                            respond_to,
-                            DataNetMessage::QuerySignedBlockResponse {
-                                block: Box::new(block),
-                            },
-                        ));
-                    }
-                })?;
-            }
-            DataNetMessage::QuerySignedBlockResponse { block } => {
-                debug!(
-                    block_hash = %block.hash(),
-                    block_height = %block.height(),
-                    "⬇️  Received block data");
-                self.handle_signed_block(*block).await;
-            }
-            DataNetMessage::QueryLastSignedBlock { respond_to } => {
-                if let Some(block) = self.blocks.last() {
-                    _ = self.bus.send(OutboundMessage::send(
-                        respond_to,
-                        DataNetMessage::QuerySignedBlockResponse {
-                            block: Box::new(block.clone()),
-                        },
-                    ));
-                }
-            }
-        }
-        Ok(())
-    }
-
     async fn handle_commit_block_event(
         &mut self,
         data_proposals: Vec<(ValidatorPublicKey, Vec<DataProposal>)>,
@@ -424,7 +373,6 @@ impl DataAvailability {
                     block.hash(),
                     block.height()
                 );
-                self.query_block(block.parent_hash());
                 debug!("Buffering block {}", block.hash());
                 self.buffered_signed_blocks.insert(block);
                 return;
@@ -435,7 +383,6 @@ impl DataAvailability {
                 "Received block with height {} but genesis block is missing",
                 block.height()
             );
-            self.query_block(block.parent_hash());
             trace!("Buffering block {}", block.hash());
             self.buffered_signed_blocks.insert(block);
             return;
@@ -447,7 +394,6 @@ impl DataAvailability {
     }
 
     async fn pop_buffer(&mut self, mut last_block_hash: ConsensusProposalHash) {
-        let got_buffered = !self.buffered_signed_blocks.is_empty();
         // Iterative loop to avoid stack overflows
         while let Some(first_buffered) = self.buffered_signed_blocks.first() {
             if first_buffered.parent_hash() != &last_block_hash {
@@ -462,13 +408,6 @@ impl DataAvailability {
             let first_buffered = self.buffered_signed_blocks.pop_first().unwrap();
             last_block_hash = first_buffered.hash();
             self.add_processed_block(first_buffered).await;
-        }
-
-        if got_buffered {
-            info!(
-                "📡 Asking for last block from peer in case new blocks were mined during catchup."
-            );
-            self.query_last_block();
         }
     }
 
@@ -508,35 +447,21 @@ impl DataAvailability {
                 to_remove.push(peer_id.clone());
             } else {
                 info!("streaming block {} to peer {}", block.hash(), &peer_id);
-                _ = peer
-                    .sender
-                    .send(block.clone())
-                    .await
-                    .log_error("Sending block");
+                match peer.sender.send(block.clone()).await {
+                    Ok(_) => {}
+                    Err(e) => {
+                        debug!(
+                            "Couldn't send new block to peer {}, stopping streaming  : {:?}",
+                            &peer_id, e
+                        );
+                        peer.keepalive_abort.abort();
+                        to_remove.push(peer_id.clone());
+                    }
+                }
             }
         }
         for peer_id in to_remove {
             self.stream_peer_metadata.remove(&peer_id);
-        }
-    }
-
-    fn query_block(&mut self, hash: &ConsensusProposalHash) {
-        _ = self.bus.send(OutboundMessage::broadcast(
-            DataNetMessage::QuerySignedBlock {
-                respond_to: self.self_pubkey.clone(),
-                hash: hash.clone(),
-            },
-        ));
-    }
-
-    fn query_last_block(&mut self) {
-        if let Some(pubkey) = &self.asked_last_processed_block {
-            _ = self.bus.send(OutboundMessage::send(
-                pubkey.clone(),
-                DataNetMessage::QueryLastSignedBlock {
-                    respond_to: self.self_pubkey.clone(),
-                },
-            ));
         }
     }
 
@@ -600,6 +525,48 @@ impl DataAvailability {
 
         Ok(())
     }
+
+    async fn ask_for_catchup_blocks(
+        &mut self,
+        ip: String,
+        sender: tokio::sync::mpsc::Sender<SignedBlock>,
+    ) -> Result<(), Error> {
+        info!("📡 Streaming data from {ip}");
+        let start = self
+            .blocks
+            .last()
+            .map(|block| block.height() + 1)
+            .unwrap_or(BlockHeight(0));
+        let Ok(mut stream) = RawDAListener::new(&ip, start).await else {
+            bail!("Error occured setting up the DA listener");
+        };
+        self.catchup_task = Some(tokio::spawn(async move {
+            loop {
+                match stream.next().await {
+                    None => {
+                        warn!("End of stream");
+                        break;
+                    }
+                    Some(Err(e)) => {
+                        warn!("Error while streaming data from peer: {:#}", e);
+                        break;
+                    }
+                    Some(Ok(block)) => {
+                        info!(
+                            "📦 Received block (height {}) from stream",
+                            block.consensus_proposal.slot
+                        );
+                        // TODO: we should wait if the stream is full.
+                        if let Err(e) = sender.send(block).await {
+                            tracing::error!("Error while sending block over channel: {:#}", e);
+                            break;
+                        }
+                    }
+                }
+            }
+        }));
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -633,16 +600,16 @@ pub mod tests {
             let bus = super::DABusClient::new_from_bus(shared_bus).await;
 
             let da = super::DataAvailability {
-                config: Default::default(),
+                config: Conf::new(None, None, None).unwrap().into(),
                 bus,
                 blocks,
                 pending_data_proposals: vec![],
                 pending_cps: VecDeque::new(),
                 buffered_signed_blocks: Default::default(),
-                self_pubkey: Default::default(),
-                asked_last_processed_block: Default::default(),
                 stream_peer_metadata: Default::default(),
                 node_state: Default::default(),
+                need_catchup: false,
+                catchup_task: None,
             };
 
             DataAvailabilityTestCtx { da }
@@ -655,8 +622,7 @@ pub mod tests {
 
     #[test]
     fn test_blocks() -> Result<()> {
-        let tmpdir = tempfile::Builder::new().prefix("history-tests").tempdir()?;
-        let mut blocks = Blocks::new(tmpdir.path())?;
+        let mut blocks = Blocks::new(Path::new("")).unwrap();
         let block = SignedBlock::default();
         blocks.put(block.clone())?;
         assert!(blocks.last().unwrap().height() == block.height());
@@ -668,11 +634,7 @@ pub mod tests {
 
     #[tokio::test]
     async fn test_pop_buffer_large() {
-        let tmpdir = tempfile::Builder::new()
-            .prefix("history-tests")
-            .tempdir()
-            .unwrap();
-        let blocks = Blocks::new(tmpdir.path()).unwrap();
+        let blocks = Blocks::new(Path::new("")).unwrap();
 
         let bus = super::DABusClient::new_from_bus(crate::bus::SharedMessageBus::new(
             crate::bus::metrics::BusMetrics::global("global".to_string()),
@@ -685,10 +647,10 @@ pub mod tests {
             pending_data_proposals: vec![],
             pending_cps: VecDeque::new(),
             buffered_signed_blocks: Default::default(),
-            self_pubkey: Default::default(),
-            asked_last_processed_block: Default::default(),
             stream_peer_metadata: Default::default(),
             node_state: Default::default(),
+            need_catchup: false,
+            catchup_task: None,
         };
         let mut block = SignedBlock::default();
         let mut blocks = vec![];
@@ -714,12 +676,7 @@ pub mod tests {
 
     #[test_log::test(tokio::test)]
     async fn test_da_streaming() {
-        let tmpdir = tempfile::Builder::new()
-            .prefix("streamtest")
-            .tempdir()
-            .unwrap();
-
-        let blocks = Blocks::new(tmpdir.path()).unwrap();
+        let blocks = Blocks::new(Path::new("")).unwrap();
 
         let global_bus = crate::bus::SharedMessageBus::new(
             crate::bus::metrics::BusMetrics::global("global".to_string()),
@@ -735,10 +692,10 @@ pub mod tests {
             pending_data_proposals: vec![],
             pending_cps: VecDeque::new(),
             buffered_signed_blocks: Default::default(),
-            self_pubkey: Default::default(),
-            asked_last_processed_block: Default::default(),
             stream_peer_metadata: Default::default(),
             node_state: Default::default(),
+            need_catchup: false,
+            catchup_task: None,
         };
 
         let mut block = SignedBlock::default();
@@ -836,5 +793,135 @@ pub mod tests {
         }
 
         assert_eq!(heights_received, (0..18).collect::<Vec<u64>>());
+    }
+    #[test_log::test(tokio::test)]
+    async fn test_da_catchup() {
+        let sender_global_bus = crate::bus::SharedMessageBus::new(
+            crate::bus::metrics::BusMetrics::global("global".to_string()),
+        );
+        let mut block_sender = TestBusClient::new_from_bus(sender_global_bus.new_handle()).await;
+        let mut da_sender = DataAvailabilityTestCtx::new(sender_global_bus).await;
+
+        let receiver_global_bus = crate::bus::SharedMessageBus::new(
+            crate::bus::metrics::BusMetrics::global("global".to_string()),
+        );
+        let mut da_receiver = DataAvailabilityTestCtx::new(receiver_global_bus).await;
+
+        // Push some blocks to the sender
+        let mut block = SignedBlock::default();
+        let mut blocks = vec![];
+        for i in 1..11 {
+            blocks.push(block.clone());
+            block.consensus_proposal.parent_hash = block.hash();
+            block.consensus_proposal.slot = i;
+        }
+        blocks.reverse();
+        for block in blocks {
+            da_sender.handle_signed_block(block).await;
+        }
+
+        let da_sender_address = da_sender.da.config.da_address.clone();
+
+        tokio::spawn(async move {
+            da_sender.da.start().await.unwrap();
+        });
+
+        // wait until it's up
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+
+        // Setup done
+        let (tx, mut rx) = tokio::sync::mpsc::channel(200);
+        da_receiver
+            .da
+            .ask_for_catchup_blocks(da_sender_address.clone(), tx.clone())
+            .await
+            .expect("Error while asking for catchup blocks");
+
+        let mut received_blocks = vec![];
+        while let Some(block) = rx.recv().await {
+            da_receiver.handle_signed_block(block.clone()).await;
+            received_blocks.push(block);
+            if received_blocks.len() == 10 {
+                break;
+            }
+        }
+        assert_eq!(received_blocks.len(), 10);
+        assert_eq!(received_blocks[0].height(), BlockHeight(0));
+        assert_eq!(received_blocks[9].height(), BlockHeight(9));
+
+        // Add a few blocks (via bus to avoid mutex)
+        let mut ccp = CommittedConsensusProposal {
+            validators: vec![],
+            consensus_proposal: ConsensusProposal::default(),
+            certificate: AggregateSignature::default(),
+        };
+
+        for i in 10..15 {
+            ccp.consensus_proposal.parent_hash = ccp.consensus_proposal.hash();
+            ccp.consensus_proposal.slot = i;
+            block_sender
+                .send(ConsensusEvent::CommitConsensusProposal(ccp.clone()))
+                .unwrap();
+            block_sender
+                .send(MempoolEvent::DataProposals(
+                    ccp.clone().consensus_proposal.cut,
+                    vec![(ValidatorPublicKey("".into()), vec![])],
+                ))
+                .unwrap();
+        }
+
+        // We should still be subscribed
+        while let Some(block) = rx.recv().await {
+            da_receiver.handle_signed_block(block.clone()).await;
+            received_blocks.push(block);
+            if received_blocks.len() == 15 {
+                break;
+            }
+        }
+        assert_eq!(received_blocks.len(), 15);
+        assert_eq!(received_blocks[14].height(), BlockHeight(14));
+
+        // Unsub
+        // TODO: ideally via processing the correct message
+        da_receiver.da.catchup_task.take().unwrap().abort();
+
+        // Add a few blocks (via bus to avoid mutex)
+        let mut ccp = CommittedConsensusProposal {
+            validators: vec![],
+            consensus_proposal: ConsensusProposal::default(),
+            certificate: AggregateSignature::default(),
+        };
+
+        for i in 15..20 {
+            ccp.consensus_proposal.parent_hash = ccp.consensus_proposal.hash();
+            ccp.consensus_proposal.slot = i;
+            block_sender
+                .send(ConsensusEvent::CommitConsensusProposal(ccp.clone()))
+                .unwrap();
+            block_sender
+                .send(MempoolEvent::DataProposals(
+                    ccp.clone().consensus_proposal.cut,
+                    vec![(ValidatorPublicKey("".into()), vec![])],
+                ))
+                .unwrap();
+        }
+
+        // Resubscribe - we should only receive the new ones.
+        da_receiver
+            .da
+            .ask_for_catchup_blocks(da_sender_address, tx)
+            .await
+            .expect("Error while asking for catchup blocks");
+
+        let mut received_blocks = vec![];
+        while let Some(block) = rx.recv().await {
+            received_blocks.push(block);
+            if received_blocks.len() == 5 {
+                break;
+            }
+        }
+        assert_eq!(received_blocks.len(), 5);
+        assert_eq!(received_blocks[0].height(), BlockHeight(15));
+        assert_eq!(received_blocks[4].height(), BlockHeight(19));
     }
 }
