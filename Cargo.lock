@@ -2576,6 +2576,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "hyle-loadtest"
+version = "0.4.0"
+dependencies = [
+ "amm",
+ "anyhow",
+ "bincode 2.0.0-rc.3",
+ "clap",
+ "client-sdk",
+ "hydentity",
+ "hyle",
+ "hyle-contract-sdk",
+ "hyle-contracts",
+ "hyllar",
+ "reqwest 0.12.12",
+ "risc0-zkvm",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "tracing-subscriber 0.3.19",
+]
+
+[[package]]
 name = "hyllar"
 version = "0.4.0"
 dependencies = [

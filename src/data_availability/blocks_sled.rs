@@ -57,15 +57,13 @@ impl Blocks {
     }
 
     pub fn put(&mut self, block: SignedBlock) -> Result<()> {
-        if self.get(&block.hash())?.is_some() {
+        let block_hash = block.hash();
+        if self.contains(&block_hash) {
             return Ok(());
         }
         info!("📦 storing block in sled {}", block.height());
-        self.db.put(
-            BlocksOrdKey(block.height()),
-            BlocksKey(block.hash()),
-            &block,
-        )?;
+        self.db
+            .put(BlocksOrdKey(block.height()), BlocksKey(block_hash), &block)?;
         Ok(())
     }
 
@@ -73,8 +71,8 @@ impl Blocks {
         self.db.alt_get(BlocksKey(block_hash.clone()))
     }
 
-    pub fn contains(&mut self, block: &SignedBlock) -> bool {
-        self.get(&block.hash()).ok().flatten().is_some()
+    pub fn contains(&mut self, block: &ConsensusProposalHash) -> bool {
+        self.get(block).ok().flatten().is_some()
     }
 
     pub fn last(&self) -> Option<SignedBlock> {
