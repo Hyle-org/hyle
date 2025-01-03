@@ -824,7 +824,13 @@ impl Consensus {
                         break;
                     },
                     GenesisEvent::NoGenesis => {
-                        // We are in state Joining by default, DA will fetch blocks and we will move to Follower
+                        // If we deserialized, we might be a follower or a leader.
+                        // There's a few possibilities: maybe we're restarting quick enough that we're still synched,
+                        // maybe we actually would block consensus by having a large stake
+                        // maybe we were about to be the leader and got byzantined out.
+                        // Regardless, we should probably assume that we need to catch up.
+                        // TODO: this logic can be improved.
+                        self.bft_round_state.state_tag = StateTag::Joining;
                         break;
                     },
                 }

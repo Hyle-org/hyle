@@ -206,6 +206,17 @@ impl E2ECtx {
         })
     }
 
+    pub async fn stop_node(&mut self, index: usize) -> Result<()> {
+        self.nodes[index].stop().await
+    }
+
+    pub fn restart_node(&mut self, index: usize) -> Result<()> {
+        // Stupid but it works
+        let node = self.nodes.remove(index).start();
+        self.nodes.insert(index, node);
+        Ok(())
+    }
+
     pub fn client(&self) -> &NodeApiHttpClient {
         &self.clients[self.client_index]
     }
