@@ -49,6 +49,7 @@ pub struct ContractStateIndexer<State> {
     store: Arc<RwLock<Store<State>>>,
     contract_name: ContractName,
     file: PathBuf,
+    #[allow(dead_code)]
     config: Arc<Conf>,
 }
 
@@ -130,11 +131,9 @@ where
         }
         }
 
-        if let Err(e) = Self::save_on_disk::<Store<State>>(
-            self.config.data_directory.as_path(),
-            self.file.as_path(),
-            self.store.read().await.deref(),
-        ) {
+        if let Err(e) =
+            Self::save_on_disk::<Store<State>>(self.file.as_path(), self.store.read().await.deref())
+        {
             tracing::warn!(cn = %self.contract_name, "Failed to save contract state indexer on disk: {}", e);
         }
         Ok(())
