@@ -10,6 +10,7 @@ members = [
     "crates/bonsai-runner",
     "crates/hyrun",
     "crates/client-sdk",
+    "crates/hyle-loadtest",
 ]
 resolver = "2"
 
@@ -68,7 +69,9 @@ strum_macros = "0.26.4"
 tracing = "0.1"
 
 # Node dependencies
-hydentity = { path = "./contracts/hydentity", features = ["client"], optional = true }
+hydentity = { path = "./contracts/hydentity", features = [
+    "client",
+], optional = true }
 hyllar = { path = "./contracts/hyllar", features = ["client"], optional = true }
 risc0-recursion = { path = "./contracts/risc0-recursion", optional = true }
 
