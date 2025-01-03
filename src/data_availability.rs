@@ -264,6 +264,7 @@ impl DataAvailability {
                 if let Some(hash) = hash {
                     if let Ok(Some(signed_block)) = self.blocks.get(&hash)
                     {
+                        // Errors will be handled when sending new blocks, ignore here.
                         if self.stream_peer_metadata
                             .get_mut(&peer_ip)
                             .context("peer not found")?
@@ -446,11 +447,17 @@ impl DataAvailability {
                 to_remove.push(peer_id.clone());
             } else {
                 info!("streaming block {} to peer {}", block.hash(), &peer_id);
-                _ = peer
-                    .sender
-                    .send(block.clone())
-                    .await
-                    .log_error("Sending block");
+                match peer.sender.send(block.clone()).await {
+                    Ok(_) => {}
+                    Err(e) => {
+                        debug!(
+                            "Couldn't send new block to peer {}, stopping streaming  : {:?}",
+                            &peer_id, e
+                        );
+                        peer.keepalive_abort.abort();
+                        to_remove.push(peer_id.clone());
+                    }
+                }
             }
         }
         for peer_id in to_remove {
@@ -525,7 +532,12 @@ impl DataAvailability {
         sender: tokio::sync::mpsc::Sender<SignedBlock>,
     ) -> Result<(), Error> {
         info!("📡 Streaming data from {ip}");
-        let Ok(mut stream) = RawDAListener::new(&ip, crate::model::BlockHeight(0)).await else {
+        let start = self
+            .blocks
+            .last()
+            .map(|block| block.height() + 1)
+            .unwrap_or(BlockHeight(0));
+        let Ok(mut stream) = RawDAListener::new(&ip, start).await else {
             bail!("Error occured setting up the DA listener");
         };
         self.catchup_task = Some(tokio::spawn(async move {
@@ -588,7 +600,7 @@ pub mod tests {
             let bus = super::DABusClient::new_from_bus(shared_bus).await;
 
             let da = super::DataAvailability {
-                config: Default::default(),
+                config: Conf::new(None, None, None).unwrap().into(),
                 bus,
                 blocks,
                 pending_data_proposals: vec![],
@@ -610,8 +622,7 @@ pub mod tests {
 
     #[test]
     fn test_blocks() -> Result<()> {
-        let tmpdir = tempfile::Builder::new().prefix("history-tests").tempdir()?;
-        let mut blocks = Blocks::new(tmpdir.path())?;
+        let mut blocks = Blocks::new(Path::new("")).unwrap();
         let block = SignedBlock::default();
         blocks.put(block.clone())?;
         assert!(blocks.last().unwrap().height() == block.height());
@@ -623,11 +634,7 @@ pub mod tests {
 
     #[tokio::test]
     async fn test_pop_buffer_large() {
-        let tmpdir = tempfile::Builder::new()
-            .prefix("history-tests")
-            .tempdir()
-            .unwrap();
-        let blocks = Blocks::new(tmpdir.path()).unwrap();
+        let blocks = Blocks::new(Path::new("")).unwrap();
 
         let bus = super::DABusClient::new_from_bus(crate::bus::SharedMessageBus::new(
             crate::bus::metrics::BusMetrics::global("global".to_string()),
@@ -669,12 +676,7 @@ pub mod tests {
 
     #[test_log::test(tokio::test)]
     async fn test_da_streaming() {
-        let tmpdir = tempfile::Builder::new()
-            .prefix("streamtest")
-            .tempdir()
-            .unwrap();
-
-        let blocks = Blocks::new(tmpdir.path()).unwrap();
+        let blocks = Blocks::new(Path::new("")).unwrap();
 
         let global_bus = crate::bus::SharedMessageBus::new(
             crate::bus::metrics::BusMetrics::global("global".to_string()),
@@ -791,5 +793,135 @@ pub mod tests {
         }
 
         assert_eq!(heights_received, (0..18).collect::<Vec<u64>>());
+    }
+    #[test_log::test(tokio::test)]
+    async fn test_da_catchup() {
+        let sender_global_bus = crate::bus::SharedMessageBus::new(
+            crate::bus::metrics::BusMetrics::global("global".to_string()),
+        );
+        let mut block_sender = TestBusClient::new_from_bus(sender_global_bus.new_handle()).await;
+        let mut da_sender = DataAvailabilityTestCtx::new(sender_global_bus).await;
+
+        let receiver_global_bus = crate::bus::SharedMessageBus::new(
+            crate::bus::metrics::BusMetrics::global("global".to_string()),
+        );
+        let mut da_receiver = DataAvailabilityTestCtx::new(receiver_global_bus).await;
+
+        // Push some blocks to the sender
+        let mut block = SignedBlock::default();
+        let mut blocks = vec![];
+        for i in 1..11 {
+            blocks.push(block.clone());
+            block.consensus_proposal.parent_hash = block.hash();
+            block.consensus_proposal.slot = i;
+        }
+        blocks.reverse();
+        for block in blocks {
+            da_sender.handle_signed_block(block).await;
+        }
+
+        let da_sender_address = da_sender.da.config.da_address.clone();
+
+        tokio::spawn(async move {
+            da_sender.da.start().await.unwrap();
+        });
+
+        // wait until it's up
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+
+        // Setup done
+        let (tx, mut rx) = tokio::sync::mpsc::channel(200);
+        da_receiver
+            .da
+            .ask_for_catchup_blocks(da_sender_address.clone(), tx.clone())
+            .await
+            .expect("Error while asking for catchup blocks");
+
+        let mut received_blocks = vec![];
+        while let Some(block) = rx.recv().await {
+            da_receiver.handle_signed_block(block.clone()).await;
+            received_blocks.push(block);
+            if received_blocks.len() == 10 {
+                break;
+            }
+        }
+        assert_eq!(received_blocks.len(), 10);
+        assert_eq!(received_blocks[0].height(), BlockHeight(0));
+        assert_eq!(received_blocks[9].height(), BlockHeight(9));
+
+        // Add a few blocks (via bus to avoid mutex)
+        let mut ccp = CommittedConsensusProposal {
+            validators: vec![],
+            consensus_proposal: ConsensusProposal::default(),
+            certificate: AggregateSignature::default(),
+        };
+
+        for i in 10..15 {
+            ccp.consensus_proposal.parent_hash = ccp.consensus_proposal.hash();
+            ccp.consensus_proposal.slot = i;
+            block_sender
+                .send(ConsensusEvent::CommitConsensusProposal(ccp.clone()))
+                .unwrap();
+            block_sender
+                .send(MempoolEvent::DataProposals(
+                    ccp.clone().consensus_proposal.cut,
+                    vec![(ValidatorPublicKey("".into()), vec![])],
+                ))
+                .unwrap();
+        }
+
+        // We should still be subscribed
+        while let Some(block) = rx.recv().await {
+            da_receiver.handle_signed_block(block.clone()).await;
+            received_blocks.push(block);
+            if received_blocks.len() == 15 {
+                break;
+            }
+        }
+        assert_eq!(received_blocks.len(), 15);
+        assert_eq!(received_blocks[14].height(), BlockHeight(14));
+
+        // Unsub
+        // TODO: ideally via processing the correct message
+        da_receiver.da.catchup_task.take().unwrap().abort();
+
+        // Add a few blocks (via bus to avoid mutex)
+        let mut ccp = CommittedConsensusProposal {
+            validators: vec![],
+            consensus_proposal: ConsensusProposal::default(),
+            certificate: AggregateSignature::default(),
+        };
+
+        for i in 15..20 {
+            ccp.consensus_proposal.parent_hash = ccp.consensus_proposal.hash();
+            ccp.consensus_proposal.slot = i;
+            block_sender
+                .send(ConsensusEvent::CommitConsensusProposal(ccp.clone()))
+                .unwrap();
+            block_sender
+                .send(MempoolEvent::DataProposals(
+                    ccp.clone().consensus_proposal.cut,
+                    vec![(ValidatorPublicKey("".into()), vec![])],
+                ))
+                .unwrap();
+        }
+
+        // Resubscribe - we should only receive the new ones.
+        da_receiver
+            .da
+            .ask_for_catchup_blocks(da_sender_address, tx)
+            .await
+            .expect("Error while asking for catchup blocks");
+
+        let mut received_blocks = vec![];
+        while let Some(block) = rx.recv().await {
+            received_blocks.push(block);
+            if received_blocks.len() == 5 {
+                break;
+            }
+        }
+        assert_eq!(received_blocks.len(), 5);
+        assert_eq!(received_blocks[0].height(), BlockHeight(15));
+        assert_eq!(received_blocks[4].height(), BlockHeight(19));
     }
 }
