@@ -33,11 +33,12 @@ impl Blocks {
     }
 
     pub fn put(&mut self, data: SignedBlock) -> Result<()> {
-        if self.contains(&data) {
+        let block_hash = data.hash();
+        if self.contains(&block_hash) {
             return Ok(());
         }
         info!("📦 storing block {}", data.height());
-        self.data.insert(data.hash(), data);
+        self.data.insert(block_hash, data);
         Ok(())
     }
 
@@ -45,8 +46,8 @@ impl Blocks {
         Ok(self.data.get(block_hash).cloned())
     }
 
-    pub fn contains(&mut self, block: &SignedBlock) -> bool {
-        self.get(&block.hash()).unwrap_or(None).is_some()
+    pub fn contains(&mut self, block_hash: &ConsensusProposalHash) -> bool {
+        self.data.contains_key(block_hash)
     }
 
     pub fn last(&self) -> Option<SignedBlock> {
