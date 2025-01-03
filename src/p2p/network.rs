@@ -13,7 +13,7 @@ pub struct Hello {
     pub version: u16,
     pub validator_pubkey: ValidatorPublicKey,
     pub name: String,
-    pub da_ip: String,
+    pub da_address: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -49,7 +49,7 @@ pub enum PeerEvent {
     NewPeer {
         name: String,
         pubkey: ValidatorPublicKey,
-        da_ip: String,
+        da_address: String,
     },
 }
 

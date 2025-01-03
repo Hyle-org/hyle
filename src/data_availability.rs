@@ -211,8 +211,8 @@ impl DataAvailability {
                     continue;
                 }
                 match msg {
-                    PeerEvent::NewPeer { da_ip, .. } => {
-                        self.ask_for_catchup_blocks(da_ip, catchup_block_sender.clone()).await?;
+                    PeerEvent::NewPeer { da_address, .. } => {
+                        self.ask_for_catchup_blocks(da_address, catchup_block_sender.clone()).await?;
                     }
                 }
             }

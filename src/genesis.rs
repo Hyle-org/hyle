@@ -553,7 +553,7 @@ mod tests {
         bus.send(PeerEvent::NewPeer {
             name: "node-2".into(),
             pubkey: ValidatorPublicKey("aaa".into()),
-            da_ip: "".into(),
+            da_address: "".into(),
         })
         .expect("send");
 
@@ -592,7 +592,7 @@ mod tests {
         bus.send(PeerEvent::NewPeer {
             name: "node-1".into(),
             pubkey: node_1_pubkey.clone(),
-            da_ip: "".into(),
+            da_address: "".into(),
         })
         .expect("send");
 
@@ -635,19 +635,19 @@ mod tests {
             bus.send(PeerEvent::NewPeer {
                 name: "node-2".into(),
                 pubkey: BlstCrypto::new("node-2".into()).validator_pubkey().clone(),
-                da_ip: "".into(),
+                da_address: "".into(),
             })
             .expect("send");
             bus.send(PeerEvent::NewPeer {
                 name: "node-3".into(),
                 pubkey: BlstCrypto::new("node-3".into()).validator_pubkey().clone(),
-                da_ip: "".into(),
+                da_address: "".into(),
             })
             .expect("send");
             bus.send(PeerEvent::NewPeer {
                 name: "node-4".into(),
                 pubkey: BlstCrypto::new("node-4".into()).validator_pubkey().clone(),
-                da_ip: "".into(),
+                da_address: "".into(),
             })
             .expect("send");
             let _ = genesis.start().await;
@@ -658,19 +658,19 @@ mod tests {
             bus.send(PeerEvent::NewPeer {
                 name: "node-4".into(),
                 pubkey: BlstCrypto::new("node-4".into()).validator_pubkey().clone(),
-                da_ip: "".into(),
+                da_address: "".into(),
             })
             .expect("send");
             bus.send(PeerEvent::NewPeer {
                 name: "node-2".into(),
                 pubkey: BlstCrypto::new("node-2".into()).validator_pubkey().clone(),
-                da_ip: "".into(),
+                da_address: "".into(),
             })
             .expect("send");
             bus.send(PeerEvent::NewPeer {
                 name: "node-3".into(),
                 pubkey: BlstCrypto::new("node-3".into()).validator_pubkey().clone(),
-                da_ip: "".into(),
+                da_address: "".into(),
             })
             .expect("send");
             let _ = genesis.start().await;
