@@ -174,7 +174,9 @@ impl Consensus {
             _ => bail!("Cannot finish_round unless synchronized to the consensus."),
         }
 
-        let parent_hash = self.bft_round_state.consensus_proposal.hash();
+        let round_proposal_hash = self.bft_round_state.consensus_proposal.hash();
+        let round_parent_hash =
+            std::mem::take(&mut self.bft_round_state.consensus_proposal.parent_hash);
 
         let new_validators_to_bond = std::mem::take(
             &mut self
@@ -193,7 +195,6 @@ impl Consensus {
                 round_leader: std::mem::take(
                     &mut self.bft_round_state.consensus_proposal.round_leader,
                 ),
-                parent_hash,
                 ..ConsensusProposal::default()
             },
             staking: std::mem::take(&mut self.bft_round_state.staking),
@@ -203,6 +204,7 @@ impl Consensus {
         // If we finish the round via a committed proposal, update some state
         match ticket {
             Some(Ticket::CommitQC(qc)) => {
+                self.bft_round_state.consensus_proposal.parent_hash = round_proposal_hash;
                 self.bft_round_state.consensus_proposal.slot += 1;
                 self.bft_round_state.consensus_proposal.view = 0;
                 self.bft_round_state.follower.buffered_quorum_certificate = Some(qc);
@@ -217,6 +219,7 @@ impl Consensus {
                 }
             }
             Some(Ticket::TimeoutQC(_)) => {
+                self.bft_round_state.consensus_proposal.parent_hash = round_parent_hash;
                 self.bft_round_state.consensus_proposal.view += 1;
             }
             els => {
@@ -1050,6 +1053,10 @@ pub mod test {
             }
 
             self.consensus.bft_round_state.consensus_proposal.slot = 1;
+            self.consensus
+                .bft_round_state
+                .consensus_proposal
+                .parent_hash = ConsensusProposalHash("genesis".to_string());
 
             if index == 0 {
                 self.consensus.bft_round_state.state_tag = StateTag::Leader;
@@ -1344,6 +1351,10 @@ pub mod test {
 
         assert_eq!(cp1.slot, 1);
         assert_eq!(cp1.view, 0);
+        assert_eq!(
+            cp1.parent_hash,
+            ConsensusProposalHash("genesis".to_string())
+        );
         assert_eq!(ticket1, Ticket::Genesis);
 
         // Slot 1 - leader = node2
@@ -1356,6 +1367,7 @@ pub mod test {
 
         assert_eq!(cp2.slot, 2);
         assert_eq!(cp2.view, 0);
+        assert_eq!(cp2.parent_hash, cp1.hash());
         assert!(matches!(ticket2, Ticket::CommitQC(_)));
 
         // Slot 2 - leader = node1
@@ -1777,6 +1789,7 @@ pub mod test {
         assert!(matches!(ticket, Ticket::TimeoutQC(_)));
         assert_eq!(cp.slot, 1);
         assert_eq!(cp.view, 1);
+        assert_eq!(cp.parent_hash, ConsensusProposalHash("genesis".into()));
     }
 
     #[test_log::test(tokio::test)]
@@ -1855,6 +1868,7 @@ pub mod test {
         assert!(matches!(ticket, Ticket::TimeoutQC(_)));
         assert_eq!(cp.slot, 1);
         assert_eq!(cp.view, 1);
+        assert_eq!(cp.parent_hash, ConsensusProposalHash("genesis".into()));
     }
 
     #[test_log::test(tokio::test)]
@@ -1945,6 +1959,7 @@ pub mod test {
         assert_eq!(cp.slot, 1);
         assert_eq!(cp.view, 1);
         assert!(matches!(ticket, Ticket::TimeoutQC(_)));
+        assert_eq!(cp.parent_hash, ConsensusProposalHash("genesis".into()));
     }
 
     // TODO:
