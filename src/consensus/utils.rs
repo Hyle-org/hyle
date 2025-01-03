@@ -37,8 +37,9 @@ impl Display for ConsensusProposal {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "Hash: {}, Slot: {}, View: {}, Cut: {:?}, new_validators_to_bond: {:?}",
+            "Hash: {}, Parent Hash: {}, Slot: {}, View: {}, Cut: {:?}, new_validators_to_bond: {:?}",
             self.hash(),
+            self.parent_hash,
             self.slot,
             self.view,
             self.cut,
