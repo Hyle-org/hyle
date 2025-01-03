@@ -35,7 +35,7 @@ risc0-zkvm = { version = "1.2.0", default-features = false, features = [
     'std',
     'prove',
 ] }
-tempfile = "3.14.0"
+tempfile = "3.15.0"
 test-log = { version = "0.2.16", features = [
     "color",
     "trace",
