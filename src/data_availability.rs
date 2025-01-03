@@ -354,19 +354,15 @@ impl DataAvailability {
     }
 
     async fn handle_signed_block(&mut self, block: SignedBlock) {
+        let hash = block.hash();
         // if new block is already handled, ignore it
-        if self.blocks.contains(&block) {
+        if self.blocks.contains(&hash) {
             warn!("Block {} {} already exists !", block.height(), block.hash());
             return;
         }
         // if new block is not the next block in the chain, buffer
-        if self.blocks.last().is_some() {
-            if self
-                .blocks
-                .get(block.parent_hash())
-                .unwrap_or(None)
-                .is_none()
-            {
+        if self.blocks.len() > 0 {
+            if !self.blocks.contains(block.parent_hash()) {
                 debug!(
                     "Parent block '{}' not found for block hash='{}' height {}",
                     block.parent_hash(),
@@ -389,8 +385,8 @@ impl DataAvailability {
         }
 
         // store block
-        self.add_processed_block(block.clone()).await;
-        self.pop_buffer(block.hash()).await;
+        self.add_processed_block(block).await;
+        self.pop_buffer(hash).await;
     }
 
     async fn pop_buffer(&mut self, mut last_block_hash: ConsensusProposalHash) {
@@ -412,7 +408,8 @@ impl DataAvailability {
     }
 
     async fn add_processed_block(&mut self, block: SignedBlock) {
-        // Don't run this in tests, takes forever.
+        // TODO: if we don't have streaming peers, we could just pass the block here
+        // and avoid a clone + drop cost (which can be substantial for large blocks).
         if let Err(e) = self.blocks.put(block.clone()) {
             error!("storing block: {}", e);
             return;
@@ -420,12 +417,15 @@ impl DataAvailability {
         trace!("Block {} {}: {:#?}", block.height(), block.hash(), block);
 
         info!(
-            "new block {} {} with {} txs: {:?}, last hash = {}",
+            "new block {} {} with {} txs, last hash = {}",
             block.height(),
             block.hash(),
             block.txs().len(),
-            block.txs().iter().map(|tx| tx.hash().0).collect::<Vec<_>>(),
             self.blocks.last_block_hash().unwrap_or_default()
+        );
+        debug!(
+            "Transactions: {:#?}",
+            block.txs().iter().map(|tx| tx.hash().0).collect::<Vec<_>>()
         );
 
         // Send the block
@@ -433,7 +433,7 @@ impl DataAvailability {
         let node_state_block = self.node_state.handle_signed_block(&block);
         _ = self
             .bus
-            .send(DataEvent::NewBlock(Box::new(node_state_block.clone())))
+            .send(DataEvent::NewBlock(Box::new(node_state_block)))
             .log_error("Sending DataEvent while processing SignedBlock");
 
         // Stream block to all peers
