@@ -599,8 +599,10 @@ pub mod tests {
 
             let bus = super::DABusClient::new_from_bus(shared_bus).await;
 
+            let mut config: Conf = Conf::new(None, None, None).unwrap();
+            config.da_address = format!("127.0.0.1:{}", find_available_port().await);
             let da = super::DataAvailability {
-                config: Conf::new(None, None, None).unwrap().into(),
+                config: config.into(),
                 bus,
                 blocks,
                 pending_data_proposals: vec![],
@@ -618,6 +620,13 @@ pub mod tests {
         pub async fn handle_signed_block(&mut self, block: SignedBlock) {
             self.da.handle_signed_block(block).await;
         }
+    }
+
+    // Assume that we can reuse the OS-provided port.
+    async fn find_available_port() -> u16 {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        addr.port()
     }
 
     #[test]
@@ -684,7 +693,8 @@ pub mod tests {
         let bus = super::DABusClient::new_from_bus(global_bus.new_handle()).await;
         let mut block_sender = TestBusClient::new_from_bus(global_bus).await;
 
-        let config: Conf = Conf::new(None, None, None).unwrap();
+        let mut config: Conf = Conf::new(None, None, None).unwrap();
+        config.da_address = format!("127.0.0.1:{}", find_available_port().await);
         let mut da = super::DataAvailability {
             config: config.clone().into(),
             bus,
