@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 use crate::{
     bus::{bus_client, BusClientSender, BusMessage},
@@ -155,7 +155,12 @@ impl Genesis {
         let mut initial_validators = self.peer_pubkey.values().cloned().collect::<Vec<_>>();
         initial_validators.sort();
 
-        let genesis_txs = match Self::generate_genesis_txs(&self.peer_pubkey).await {
+        let genesis_txs = match Self::generate_genesis_txs(
+            &self.peer_pubkey,
+            &self.config.consensus.genesis_stakers,
+        )
+        .await
+        {
             Ok(t) => t,
             Err(e) => {
                 error!("🌱 Genesis block generation failed: {:?}", e);
@@ -171,12 +176,15 @@ impl Genesis {
         Ok(())
     }
 
-    pub async fn generate_genesis_txs(peer_pubkey: &PeerPublicKeyMap) -> Result<Vec<Transaction>> {
+    pub async fn generate_genesis_txs(
+        peer_pubkey: &PeerPublicKeyMap,
+        genesis_stake: &HashMap<String, u64>,
+    ) -> Result<Vec<Transaction>> {
         let (contract_program_ids, mut genesis_txs, mut states) = Self::genesis_contracts_txs();
 
         let register_txs = Self::generate_register_txs(peer_pubkey, &mut states).await?;
         let faucet_txs = Self::generate_faucet_txs(peer_pubkey, &mut states).await?;
-        let stake_txs = Self::generate_stake_txs(peer_pubkey, &mut states).await?;
+        let stake_txs = Self::generate_stake_txs(peer_pubkey, &mut states, genesis_stake).await?;
 
         let builders = register_txs
             .into_iter()
@@ -287,11 +295,15 @@ impl Genesis {
     async fn generate_stake_txs(
         peer_pubkey: &PeerPublicKeyMap,
         states: &mut States,
+        genesis_stakers: &HashMap<String, u64>,
     ) -> Result<Vec<BuildResult>> {
-        let genesis_stake = 100;
-
         let mut txs = vec![];
-        for peer in peer_pubkey.values().cloned() {
+        for (id, peer) in peer_pubkey.iter() {
+            let genesis_stake = *genesis_stakers
+                .get(id)
+                .expect("Genesis stakers should be in the peer map")
+                as u128;
+
             info!("🌱  Staking {genesis_stake} hyllar from {peer}");
 
             let identity = Identity(format!("{peer}.hydentity").to_string());
@@ -316,7 +328,10 @@ impl Genesis {
                 .transfer("staking".to_string(), genesis_stake)?;
 
             // Delegate
-            states.staking.builder(&mut transaction).delegate(peer)?;
+            states
+                .staking
+                .builder(&mut transaction)
+                .delegate(peer.clone())?;
 
             txs.push(transaction.build(states)?);
         }
