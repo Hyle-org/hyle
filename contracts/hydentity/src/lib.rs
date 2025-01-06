@@ -63,7 +63,13 @@ impl IdentityVerification for Hydentity {
             nonce: 0,
         };
 
-        self.identities.insert(account.to_string(), account_info);
+        if self
+            .identities
+            .insert(account.to_string(), account_info)
+            .is_some()
+        {
+            return Err("Identity already exists");
+        }
         Ok(())
     }
 
@@ -140,6 +146,16 @@ mod tests {
         let registered = hydentity.identities.get(account).unwrap();
         assert_eq!(registered.hash, expected_hash);
         assert_eq!(registered.nonce, 0);
+    }
+
+    #[test]
+    fn test_register_identity_that_already_exists() {
+        let mut hydentity = Hydentity::default();
+        let account = "test_account";
+        let private_input = "test_input";
+
+        assert!(hydentity.register_identity(account, private_input).is_ok());
+        assert!(hydentity.register_identity(account, private_input).is_err());
     }
 
     #[test]
