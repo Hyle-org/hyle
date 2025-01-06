@@ -96,7 +96,7 @@ pub async fn get_transactions(
             FROM transactions t
             JOIN blocks b ON t.block_hash = b.hash
             WHERE b.height <= $1 and b.height > $2
-            ORDER BY b.height DESC
+            ORDER BY b.height DESC, t.index ASC
             LIMIT $3
             "#,
         )
@@ -108,7 +108,7 @@ pub async fn get_transactions(
             SELECT t.*
             FROM transactions t
             JOIN blocks b ON t.block_hash = b.hash
-            ORDER BY b.height DESC
+            ORDER BY b.height DESC, t.index ASC
             LIMIT $1
             "#,
         )
@@ -134,7 +134,7 @@ pub async fn get_transactions_by_contract(
             JOIN blobs b ON t.tx_hash = b.tx_hash
             JOIN blocks bl ON t.block_hash = bl.hash
             WHERE b.contract_name = $1 AND bl.height <= $2 AND bl.height > $3
-            ORDER BY bl.height DESC
+            ORDER BY bl.height DESC, t.index ASC
             LIMIT $4
             "#,
         )
@@ -148,7 +148,7 @@ pub async fn get_transactions_by_contract(
             FROM transactions t
             JOIN blobs b ON t.tx_hash = b.tx_hash
             WHERE b.contract_name = $1
-            ORDER BY t.block_hash DESC
+            ORDER BY t.block_hash DESC, t.index ASC
             LIMIT $2
             "#,
         )
@@ -175,6 +175,7 @@ pub async fn get_transactions_by_height(
         FROM transactions t
         JOIN blocks b ON t.block_hash = b.hash
         WHERE b.height = $1
+        ORDER BY t.index ASC
         "#,
     )
     .bind(height)
@@ -194,6 +195,7 @@ pub async fn get_transaction_with_hash(
         SELECT *
         FROM transactions
         WHERE tx_hash = $1
+        ORDER BY index ASC
         "#,
     )
     .bind(tx_hash)
@@ -224,6 +226,7 @@ pub async fn get_blob_transactions_by_contract(
         SELECT
             t.tx_hash,
             t.block_hash,
+            t.index,
             t.version,
             t.transaction_type,
             t.transaction_status,
@@ -234,6 +237,7 @@ pub async fn get_blob_transactions_by_contract(
         GROUP BY
             t.tx_hash,
             t.block_hash,
+            t.index,
             t.version,
             t.transaction_type,
             t.transaction_status,
@@ -246,17 +250,20 @@ pub async fn get_blob_transactions_by_contract(
     .log_error("Failed to fetch transactions with blobs")
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    let transactions: Vec<TransactionWithBlobs> = rows
+    let transactions: Result<Vec<TransactionWithBlobs>, anyhow::Error> = rows
         .into_iter()
         .map(|row| {
-            let tx_hash: TxHashDb = row.try_get("tx_hash").unwrap();
-            let block_hash: ConsensusProposalHash = row.try_get("block_hash").unwrap();
-            let version: i32 = row.try_get("version").unwrap();
-            let transaction_type: TransactionType = row.try_get("transaction_type").unwrap();
-            let transaction_status: TransactionStatus = row.try_get("transaction_status").unwrap();
-            let identity: String = row.try_get("identity").unwrap();
-            let blobs: Vec<(String, Vec<u8>, Vec<serde_json::Value>)> =
-                row.try_get("blobs").unwrap();
+            let tx_hash: TxHashDb = row.try_get("tx_hash")?;
+            let block_hash: ConsensusProposalHash = row.try_get("block_hash")?;
+            let index: i32 = row.try_get("index")?;
+            let version: i32 = row.try_get("version")?;
+            let transaction_type: TransactionType = row.try_get("transaction_type")?;
+            let transaction_status: TransactionStatus = row.try_get("transaction_status")?;
+            let identity: String = row.try_get("identity")?;
+            let blobs: Vec<(String, Vec<u8>, Vec<serde_json::Value>)> = row.try_get("blobs")?;
+
+            let index: u32 = index.try_into()?;
+            let version: u32 = version.try_into()?;
 
             let blobs = blobs
                 .into_iter()
@@ -267,19 +274,25 @@ pub async fn get_blob_transactions_by_contract(
                 })
                 .collect();
 
-            TransactionWithBlobs {
+            Ok(TransactionWithBlobs {
                 tx_hash,
                 block_hash,
+                index,
                 version,
                 transaction_type,
                 transaction_status,
                 identity,
                 blobs,
-            }
+            })
         })
         .collect();
-
-    Ok(Json(transactions))
+    match transactions {
+        Ok(transactions) => Ok(Json(transactions)),
+        Err(e) => {
+            tracing::warn!("Failed to parse transactions with blobs: {:?}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
 }
 
 pub async fn get_blobs_by_tx_hash(

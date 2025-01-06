@@ -26,6 +26,7 @@ use axum::{
     Router,
 };
 use chrono::DateTime;
+use hyle_contract_sdk::TxHash;
 use sqlx::Row;
 use sqlx::{postgres::PgPoolOptions, PgPool, Pool, Postgres};
 use std::{collections::HashMap, sync::Arc};
@@ -248,186 +249,134 @@ impl Indexer {
         .execute(&mut *transaction)
         .await?;
 
-        // Handling Register Contract Transactions
-        for tx in block.new_contract_txs {
-            let tx_hash: &TxHashDb = &tx.hash().into();
-            let version = i32::try_from(tx.version)
-                .map_err(|_| anyhow::anyhow!("Tx version is too large to fit into an i32"))?;
-
-            let TransactionData::RegisterContract(register_contract_tx) = tx.transaction_data
-            else {
-                bail!(
-                    "Expected TransactionData::RegisterContract, got {:?}",
-                    tx.transaction_data
-                );
-            };
-
-            // Insert the transaction into the transactions table
-            let tx_type = TransactionType::RegisterContractTransaction;
-            let tx_status = TransactionStatus::Success;
-            sqlx::query(
-                "INSERT INTO transactions (tx_hash, block_hash, version, transaction_type, transaction_status)
-                VALUES ($1, $2, $3, $4, $5)")
-            .bind(tx_hash)
-            .bind(block_hash)
-            .bind(version)
-            .bind(tx_type)
-            .bind(tx_status)
-            .execute(&mut *transaction)
-            .await?;
-            let owner = &register_contract_tx.owner;
-            let verifier = &register_contract_tx.verifier.0;
-            let program_id = &register_contract_tx.program_id.0;
-            let state_digest = &register_contract_tx.state_digest.0;
-            let contract_name = &register_contract_tx.contract_name.0;
-
-            // Adding to Contract table
-            sqlx::query(
-                "INSERT INTO contracts (tx_hash, owner, verifier, program_id, state_digest, contract_name)
-                VALUES ($1, $2, $3, $4, $5, $6)")
-            .bind(tx_hash)
-            .bind(owner)
-            .bind(verifier)
-            .bind(program_id)
-            .bind(state_digest)
-            .bind(contract_name)
-            .execute(&mut *transaction)
-            .await?;
-
-            // Adding to ContractState table
-            sqlx::query(
-                "INSERT INTO contract_state (contract_name, block_hash, state_digest)
-                VALUES ($1, $2, $3)",
-            )
-            .bind(contract_name)
-            .bind(block_hash)
-            .bind(state_digest)
-            .execute(&mut *transaction)
-            .await?;
-        }
-
-        // Handling Blob Transactions
-        for tx in block.new_blob_txs {
-            let tx_hash: &TxHashDb = &tx.hash().into();
-            let version = i32::try_from(tx.version)
-                .map_err(|_| anyhow::anyhow!("Tx version is too large to fit into an i32"))?;
-
-            let TransactionData::Blob(blob_tx) = tx.transaction_data else {
-                bail!(
-                    "Expected TransactionData::Blob, got {:?}",
-                    tx.transaction_data
-                );
-            };
-
-            // Send the transaction to all websocket subscribers
-            self.send_blob_transaction_to_websocket_subscribers(
-                &blob_tx, tx_hash, block_hash, &version,
-            );
-
-            // Insert the transaction into the transactions table
-            let tx_type = TransactionType::BlobTransaction;
-            let tx_status = TransactionStatus::Sequenced;
-            sqlx::query(
-                "INSERT INTO transactions (tx_hash, block_hash, version, transaction_type, transaction_status)
-                VALUES ($1, $2, $3, $4, $5)")
-            .bind(tx_hash)
-            .bind(block_hash)
-            .bind(version)
-            .bind(tx_type)
-            .bind(tx_status)
-            .execute(&mut *transaction)
-            .await?;
-
-            for (blob_index, blob) in blob_tx.blobs.iter().enumerate() {
-                let blob_index = i32::try_from(blob_index)
-                    .map_err(|_| anyhow::anyhow!("Blob index is too large to fit into an i32"))?;
-                let identity = &blob_tx.identity.0;
-                let contract_name = &blob.contract_name.0;
-                let blob = &blob.data.0;
-                sqlx::query(
-                    "INSERT INTO blobs (tx_hash, blob_index, identity, contract_name, data, verified)
-                     VALUES ($1, $2, $3, $4, $5, $6)",
-                )
-                .bind(tx_hash)
-                .bind(blob_index)
-                .bind(identity)
-                .bind(contract_name)
-                .bind(blob)
-                .bind(false)
-                .execute(&mut *transaction)
-                .await?;
-            }
-        }
-
-        // Handling Proof Transactions
-        for tx in block.new_verified_proof_txs {
-            let tx_hash: &TxHashDb = &tx.hash().into();
-            let version = i32::try_from(tx.version)
-                .map_err(|_| anyhow::anyhow!("Tx version is too large to fit into an i32"))?;
-
-            let TransactionData::VerifiedProof(tx_data) = tx.transaction_data else {
-                error!(
-                    "Verified proof TX {:?} does not contain VerifiedProof data",
-                    &tx_hash
-                );
-                continue;
-            };
-
-            // Insert the transaction into the transactions table
-            let tx_type = TransactionType::ProofTransaction;
-            let tx_status = TransactionStatus::Success;
-            sqlx::query(
-                    "INSERT INTO transactions (tx_hash, block_hash, version, transaction_type, transaction_status)
-                    VALUES ($1, $2, $3, $4, $5)")
-                .bind(tx_hash)
-                .bind(block_hash)
-                .bind(version)
-                .bind(tx_type)
-                .bind(tx_status)
-                .execute(&mut *transaction)
-                .await?;
-
-            // Then insert the proof in to the proof table.
-            if tx_data.proof.is_none() {
-                tracing::trace!("Verified proof TX {:?} does not contain a proof", &tx_hash);
-                continue;
-            }
-            let proof = tx_data.proof.unwrap();
-
-            let Ok(proof) = &proof.to_bytes() else {
-                error!(
-                    "Verified proof TX {:?} could not be decoded to bytes",
-                    &tx_hash
-                );
-                continue;
-            };
-
-            sqlx::query("INSERT INTO proofs (tx_hash, proof) VALUES ($1, $2)")
-                .bind(tx_hash)
-                .bind(proof)
-                .execute(&mut *transaction)
-                .await?;
-        }
-
-        // Handling failed transactions
-        for tx in block.failed_txs {
-            let tx_hash: &TxHashDb = &tx.hash().into();
+        let mut i: i32 = 0;
+        #[allow(clippy::explicit_counter_loop)]
+        for tx in block.txs {
+            let tx_hash: TxHash = tx.hash();
             let version = i32::try_from(tx.version)
                 .map_err(|_| anyhow::anyhow!("Tx version is too large to fit into an i32"))?;
 
             // Insert the transaction into the transactions table
             let tx_type = TransactionType::get_type_from_transaction(&tx);
-            let tx_status = TransactionStatus::Failure;
+            let tx_status = if block.failed_txs.contains(&tx_hash) {
+                TransactionStatus::Failure
+            } else {
+                match tx.transaction_data {
+                    TransactionData::Blob(_) => TransactionStatus::Sequenced,
+                    TransactionData::RegisterContract(_) => TransactionStatus::Success,
+                    TransactionData::Proof(_) => TransactionStatus::Success,
+                    TransactionData::VerifiedProof(_) => TransactionStatus::Success,
+                }
+            };
+
+            let tx_hash: &TxHashDb = &tx_hash.into();
+
             sqlx::query(
-                "INSERT INTO transactions (tx_hash, block_hash, version, transaction_type, transaction_status)
-                VALUES ($1, $2, $3, $4, $5)")
+                "INSERT INTO transactions (tx_hash, block_hash, index, version, transaction_type, transaction_status)
+                VALUES ($1, $2, $3, $4, $5, $6)")
             .bind(tx_hash)
             .bind(block_hash)
+            .bind(i)
             .bind(version)
             .bind(tx_type)
             .bind(tx_status)
             .execute(&mut *transaction)
             .await?;
+
+            i += 1;
+
+            match tx.transaction_data {
+                TransactionData::RegisterContract(register_contract_tx) => {
+                    let owner = &register_contract_tx.owner;
+                    let verifier = &register_contract_tx.verifier.0;
+                    let program_id = &register_contract_tx.program_id.0;
+                    let state_digest = &register_contract_tx.state_digest.0;
+                    let contract_name = &register_contract_tx.contract_name.0;
+
+                    // Adding to Contract table
+                    sqlx::query(
+                        "INSERT INTO contracts (tx_hash, owner, verifier, program_id, state_digest, contract_name)
+                        VALUES ($1, $2, $3, $4, $5, $6)")
+                    .bind(tx_hash)
+                    .bind(owner)
+                    .bind(verifier)
+                    .bind(program_id)
+                    .bind(state_digest)
+                    .bind(contract_name)
+                    .execute(&mut *transaction)
+                    .await?;
+
+                    // Adding to ContractState table
+                    sqlx::query(
+                        "INSERT INTO contract_state (contract_name, block_hash, state_digest)
+                        VALUES ($1, $2, $3)",
+                    )
+                    .bind(contract_name)
+                    .bind(block_hash)
+                    .bind(state_digest)
+                    .execute(&mut *transaction)
+                    .await?;
+                }
+                TransactionData::Blob(blob_tx) => {
+                    for (blob_index, blob) in blob_tx.blobs.iter().enumerate() {
+                        let blob_index = i32::try_from(blob_index).map_err(|_| {
+                            anyhow::anyhow!("Blob index is too large to fit into an i32")
+                        })?;
+                        // Send the transaction to all websocket subscribers
+                        self.send_blob_transaction_to_websocket_subscribers(
+                            &blob_tx,
+                            tx_hash,
+                            block_hash,
+                            i as u32,
+                            version as u32,
+                        );
+
+                        let identity = &blob_tx.identity.0;
+                        let contract_name = &blob.contract_name.0;
+                        let blob = &blob.data.0;
+                        sqlx::query(
+                            "INSERT INTO blobs (tx_hash, blob_index, identity, contract_name, data, verified)
+                             VALUES ($1, $2, $3, $4, $5, $6)",
+                        )
+                        .bind(tx_hash)
+                        .bind(blob_index)
+                        .bind(identity)
+                        .bind(contract_name)
+                        .bind(blob)
+                        .bind(false)
+                        .execute(&mut *transaction)
+                        .await?;
+                    }
+                }
+                TransactionData::VerifiedProof(tx_data) => {
+                    // Then insert the proof in to the proof table.
+                    if tx_data.proof.is_none() {
+                        tracing::trace!(
+                            "Verified proof TX {:?} does not contain a proof",
+                            &tx_hash
+                        );
+                        continue;
+                    }
+                    let proof = tx_data.proof.unwrap();
+
+                    let Ok(proof) = &proof.to_bytes() else {
+                        error!(
+                            "Verified proof TX {:?} could not be decoded to bytes",
+                            &tx_hash
+                        );
+                        continue;
+                    };
+
+                    sqlx::query("INSERT INTO proofs (tx_hash, proof) VALUES ($1, $2)")
+                        .bind(tx_hash)
+                        .bind(proof)
+                        .execute(&mut *transaction)
+                        .await?;
+                }
+                _ => {
+                    bail!("Unsupported transaction type");
+                }
+            }
         }
 
         // Handling new stakers
@@ -536,7 +485,8 @@ impl Indexer {
         tx: &BlobTransaction,
         tx_hash: &TxHashDb,
         block_hash: &ConsensusProposalHash,
-        version: &i32,
+        index: u32,
+        version: u32,
     ) {
         for (contrat_name, senders) in self.subscribers.iter() {
             if tx
@@ -547,7 +497,8 @@ impl Indexer {
                 let enriched_tx = TransactionWithBlobs {
                     tx_hash: tx_hash.clone(),
                     block_hash: block_hash.clone(),
-                    version: *version,
+                    index,
+                    version,
                     transaction_type: TransactionType::BlobTransaction,
                     transaction_status: TransactionStatus::Sequenced,
                     identity: tx.identity.0.clone(),
@@ -815,6 +766,7 @@ mod test {
                         "proof_outputs": [{}]
                     }],
                     "tx_hash": blob_transaction_hash.to_string(),
+                    "index": 2,
                 },
                 {
                     "blobs": [{
@@ -831,7 +783,24 @@ mod test {
                     }],
                     "transaction_status": "Sequenced",
                     "tx_hash": other_blob_transaction_hash.to_string(),
+                    "index": 5,
                 }
+            ])
+        );
+
+        let all_txs = server.get("/transactions/block/0").await;
+        all_txs.assert_status_ok();
+        assert_json_include!(
+            actual: all_txs.json::<serde_json::Value>(),
+            expected: json!([
+                { "index": 0, "transaction_type": "RegisterContractTransaction", "transaction_status": "Success" },
+                { "index": 1, "transaction_type": "RegisterContractTransaction", "transaction_status": "Success" },
+                { "index": 2, "transaction_type": "BlobTransaction", "transaction_status": "Success" },
+                { "index": 3, "transaction_type": "ProofTransaction", "transaction_status": "Success" },
+                { "index": 4, "transaction_type": "ProofTransaction", "transaction_status": "Success" },
+                { "index": 5, "transaction_type": "BlobTransaction", "transaction_status": "Sequenced" },
+                { "index": 6, "transaction_type": "ProofTransaction", "transaction_status": "Success" },
+                { "index": 7, "transaction_type": "ProofTransaction", "transaction_status": "Success" },
             ])
         );
 
