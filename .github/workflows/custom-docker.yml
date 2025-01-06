@@ -48,7 +48,6 @@ jobs:
 
       - name: 'Login to GitHub Container Registry'
         uses: docker/login-action@v1
-        if: ${{ matrix.mode.push_ghcr }}
         with:
           registry: ghcr.io
           username: ${{github.actor}}
