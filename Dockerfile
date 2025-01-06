@@ -1,5 +1,5 @@
 ARG DEP_IMAGE=hyle-dep
-ARG ALPINE_IMAGE=ghcr.io/hyle-org/alpine
+ARG ALPINE_IMAGE=ghcr.io/hyle-org/alpine:main
 
 FROM $DEP_IMAGE AS builder
 
