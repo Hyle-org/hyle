@@ -23,8 +23,9 @@ use crate::{
 use anyhow::{anyhow, bail, Context, Error, Result};
 use bincode::{Decode, Encode};
 use metrics::ConsensusMetrics;
-use role_follower::{FollowerRole, FollowerState, TimeoutState};
+use role_follower::{FollowerRole, FollowerState};
 use role_leader::{LeaderRole, LeaderState};
+use role_timeout::{TimeoutRole, TimeoutRoleState, TimeoutState};
 use serde::{Deserialize, Serialize};
 use staking::state::{Staking, MIN_STAKE};
 use staking::StakingAction;
@@ -40,6 +41,7 @@ pub mod metrics;
 pub mod module;
 pub mod role_follower;
 pub mod role_leader;
+pub mod role_timeout;
 pub mod utils;
 
 pub use crate::model::consensus::*;
@@ -103,6 +105,7 @@ pub struct BFTRoundState {
 
     leader: LeaderState,
     follower: FollowerState,
+    timeout: TimeoutRoleState,
     joining: JoiningState,
     genesis: GenesisState,
     state_tag: StateTag,
@@ -241,8 +244,8 @@ impl Consensus {
         } else {
             self.bft_round_state.state_tag = StateTag::Follower;
             self.bft_round_state
-                .follower
-                .timeout_state
+                .timeout
+                .state
                 .schedule_next(get_current_timestamp());
         }
 
@@ -731,7 +734,7 @@ impl Consensus {
 
     async fn handle_command(&mut self, msg: ConsensusCommand) -> Result<()> {
         match msg {
-            ConsensusCommand::TimeoutTick => match &self.bft_round_state.follower.timeout_state {
+            ConsensusCommand::TimeoutTick => match &self.bft_round_state.timeout.state {
                 TimeoutState::Scheduled { timestamp } if get_current_timestamp() >= *timestamp => {
                     // Trigger state transition to mutiny
                     info!(
@@ -749,13 +752,13 @@ impl Consensus {
                         .context("Signing timeout message")?;
 
                     self.bft_round_state
-                        .follower
-                        .timeout_requests
+                        .timeout
+                        .requests
                         .insert(signed_timeout_message);
 
                     self.broadcast_net_message(timeout_message)?;
 
-                    self.bft_round_state.follower.timeout_state.cancel();
+                    self.bft_round_state.timeout.state.cancel();
 
                     Ok(())
                 }
@@ -1054,8 +1057,8 @@ pub mod test {
             for n in nodes {
                 n.consensus
                     .bft_round_state
-                    .follower
-                    .timeout_state
+                    .timeout
+                    .state
                     .schedule_next(get_current_timestamp() - 10);
                 n.consensus
                     .handle_command(ConsensusCommand::TimeoutTick)
