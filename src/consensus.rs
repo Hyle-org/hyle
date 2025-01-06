@@ -824,7 +824,13 @@ impl Consensus {
                         break;
                     },
                     GenesisEvent::NoGenesis => {
-                        // We are in state Joining by default, DA will fetch blocks and we will move to Follower
+                        // If we deserialized, we might be a follower or a leader.
+                        // There's a few possibilities: maybe we're restarting quick enough that we're still synched,
+                        // maybe we actually would block consensus by having a large stake
+                        // maybe we were about to be the leader and got byzantined out.
+                        // Regardless, we should probably assume that we need to catch up.
+                        // TODO: this logic can be improved.
+                        self.bft_round_state.state_tag = StateTag::Joining;
                         break;
                     },
                 }
@@ -879,11 +885,7 @@ impl Consensus {
         }
 
         if let Some(file) = &self.file {
-            if let Err(e) = Self::save_on_disk(
-                self.config.data_directory.as_path(),
-                file.as_path(),
-                &self.store,
-            ) {
+            if let Err(e) = Self::save_on_disk(file.as_path(), &self.store) {
                 warn!("Failed to save consensus storage on disk: {}", e);
             }
         }
@@ -918,7 +920,9 @@ pub mod test {
 
     use super::*;
     use crate::{
-        autobahn_testing::{broadcast, build_tuple, send, AutobahnBusClient, AutobahnTestCtx},
+        autobahn_testing::{
+            broadcast, build_tuple, send, simple_commit_round, AutobahnBusClient, AutobahnTestCtx,
+        },
         bus::{dont_use_this::get_receiver, metrics::BusMetrics, SharedMessageBus},
         model::mempool::DataProposalHash,
         p2p::network::NetMessage,
@@ -956,47 +960,6 @@ pub mod test {
 
                 build_tuple!(nodes.remove(0), $count)
             }
-        }};
-    }
-
-    macro_rules! simple_commit_round {
-        (leader: $leader:ident, followers: [$($follower:ident),+]) => {{
-            let round_consensus_proposal;
-            let round_ticket;
-            broadcast! {
-                description: "Leader - Prepare",
-                from: $leader, to: [$($follower),+],
-                message_matches: ConsensusNetMessage::Prepare(cp, ticket) => {
-                    round_consensus_proposal = cp.clone();
-                    round_ticket = ticket.clone();
-                }
-            };
-
-            send! {
-                description: "Follower - PrepareVote",
-                from: [$($follower),+], to: $leader,
-                message_matches: ConsensusNetMessage::PrepareVote(_)
-            };
-
-            broadcast! {
-                description: "Leader - Confirm",
-                from: $leader, to: [$($follower),+],
-                message_matches: ConsensusNetMessage::Confirm(_)
-            };
-
-            send! {
-                description: "Follower - Confirm Ack",
-                from: [$($follower),+], to: $leader,
-                message_matches: ConsensusNetMessage::ConfirmAck(_)
-            };
-
-            broadcast! {
-                description: "Leader - Commit",
-                from: $leader, to: [$($follower),+],
-                message_matches: ConsensusNetMessage::Commit(_, _)
-            };
-
-            (round_consensus_proposal, round_ticket)
         }};
     }
 

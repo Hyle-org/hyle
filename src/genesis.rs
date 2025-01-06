@@ -105,6 +105,25 @@ impl StateUpdater for States {
 
 impl Genesis {
     pub async fn start(&mut self) -> Result<(), Error> {
+        let file = self.config.data_directory.clone().join("genesis.bin");
+        let already_handled_genesis: bool = Self::load_from_disk_or_default(&file);
+        if already_handled_genesis {
+            info!("🌿 Genesis block already handled, skipping");
+            // TODO: do we need a different message?
+            _ = self.bus.send(GenesisEvent::NoGenesis {})?;
+            return Ok(());
+        }
+
+        self.do_genesis().await?;
+
+        // TODO: ideally we'd wait until everyone has processed it, as there's technically a data race.
+
+        Self::save_on_disk(&file, &true)?;
+
+        Ok(())
+    }
+
+    pub async fn do_genesis(&mut self) -> Result<()> {
         let single_node = self.config.single_node.unwrap_or(false);
         // Unless we're in single node mode, we must be a genesis staker to start the network.
         if !single_node
@@ -504,8 +523,10 @@ mod tests {
 
     #[test_log::test(tokio::test)]
     async fn test_not_part_of_genesis() {
+        let tmpdir = tempfile::Builder::new().tempdir().unwrap();
         let config = Conf {
             id: "node-4".to_string(),
+            data_directory: tmpdir.path().to_path_buf(),
             consensus: crate::utils::conf::Consensus {
                 genesis_stakers: vec![("node-1".into(), 100)].into_iter().collect(),
                 ..Default::default()
@@ -523,9 +544,11 @@ mod tests {
 
     #[test_log::test(tokio::test)]
     async fn test_genesis_single() {
+        let tmpdir = tempfile::Builder::new().tempdir().unwrap();
         let config = Conf {
             id: "single-node".to_string(),
             single_node: Some(true),
+            data_directory: tmpdir.path().to_path_buf(),
             consensus: crate::utils::conf::Consensus {
                 genesis_stakers: vec![("single-node".into(), 100)].into_iter().collect(),
                 ..Default::default()
@@ -553,8 +576,10 @@ mod tests {
 
     #[test_log::test(tokio::test)]
     async fn test_genesis_as_leader() {
+        let tmpdir = tempfile::Builder::new().tempdir().unwrap();
         let config = Conf {
             id: "node-1".to_string(),
+            data_directory: tmpdir.path().to_path_buf(),
             consensus: crate::utils::conf::Consensus {
                 genesis_stakers: vec![("node-1".into(), 100), ("node-2".into(), 100)]
                     .into_iter()
@@ -590,8 +615,10 @@ mod tests {
 
     #[test_log::test(tokio::test)]
     async fn test_genesis_as_follower() {
+        let tmpdir = tempfile::Builder::new().tempdir().unwrap();
         let config = Conf {
             id: "node-2".to_string(),
+            data_directory: tmpdir.path().to_path_buf(),
             consensus: crate::utils::conf::Consensus {
                 genesis_stakers: vec![("node-1".into(), 100), ("node-2".into(), 100)]
                     .into_iter()
@@ -630,8 +657,10 @@ mod tests {
     // test that the order of nodes connecting doesn't matter on genesis block creation
     #[test_log::test(tokio::test)]
     async fn test_genesis_connect_order() {
-        let config = Conf {
+        let tmpdir = tempfile::Builder::new().tempdir().unwrap();
+        let mut config = Conf {
             id: "node-1".to_string(),
+            data_directory: tmpdir.path().to_path_buf(),
             consensus: crate::utils::conf::Consensus {
                 genesis_stakers: vec![
                     ("node-1".into(), 100),
@@ -668,6 +697,8 @@ mod tests {
             let _ = genesis.start().await;
             bus.try_recv().expect("recv")
         };
+        let tmpdir = tempfile::Builder::new().tempdir().unwrap();
+        config.data_directory = tmpdir.path().to_path_buf();
         let rec2 = {
             let (mut genesis, mut bus) = new(config).await;
             bus.send(PeerEvent::NewPeer {

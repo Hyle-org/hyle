@@ -233,11 +233,7 @@ impl Mempool {
         }
 
         if let Some(file) = &self.file {
-            if let Err(e) = Self::save_on_disk(
-                self.conf.data_directory.as_path(),
-                file.as_path(),
-                &self.storage,
-            ) {
+            if let Err(e) = Self::save_on_disk(file.as_path(), &self.storage) {
                 warn!("Failed to save mempool storage on disk: {}", e);
             }
         }
