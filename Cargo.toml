@@ -58,7 +58,7 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1" }
 serde_with = { version = "3.12.0", features = ["hex"] }
 sha3 = "0.10.8"
-sqlx = { version = "0.8.2", features = [
+sqlx = { version = "0.8.3", features = [
     "runtime-tokio",
     "postgres",
     "migrate",
@@ -98,7 +98,7 @@ risc0-zkvm = { version = "1.2.0", default-features = false, features = [
 ], optional = true }
 ron = { version = "0.8.1", optional = true }
 sp1-sdk = { version = "3.4.0", default-features = false, optional = true }
-syn = { version = "2.0.93", optional = true }
+syn = { version = "2.0.95", optional = true }
 tokio = { version = "1.42.0", features = ["full", "tracing"], optional = true }
 tokio-util = { version = "0.7.13", optional = true }
 tower-http = { version = "0.6.2", features = [
