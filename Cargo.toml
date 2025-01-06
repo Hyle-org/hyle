@@ -81,7 +81,7 @@ bonsai-runner = { path = "./crates/bonsai-runner", optional = true }
 borsh = { version = "1.5.3", optional = true }
 bytes = { version = "1.9.0", optional = true }
 clap = { version = "4.5.23", features = ["derive"], optional = true }
-config = { version = "0.15.0", optional = true }
+config = { version = "0.15.4", optional = true }
 dhat = { version = "0.3.3", optional = true }
 futures = { version = "0.3.31", optional = true }
 hyle-contracts = { path = "./contracts", package = "hyle-contracts", optional = true }
