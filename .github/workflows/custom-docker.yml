@@ -1,0 +1,65 @@
+name: Custom Docker images
+
+on: 
+  push:
+    paths: [".github/docker/Dockerfile.alpine"]
+
+jobs:
+  build_and_push:
+    if: ${{ github.actor != 'dependabot[bot]' }}
+    permissions:
+      contents: 'read'
+      id-token: 'write'
+      packages: 'write'
+
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        mode:
+          - file: .github/docker/Dockerfile.alpine 
+            name: alpine
+            context: .github/docker
+            images: |
+              ghcr.io/hyle-org/alpine
+
+    name: ${{ matrix.mode.name }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ matrix.mode.images }}
+
+
+# Will produces tags given this table : 
+# 
+# | Event               | Ref                           | Docker Tags                |
+# |---------------------|-------------------------------|----------------------------|
+# | `pull_request`      | `refs/pull/2/merge`           | `pr-2`                     |
+# | `push`              | `refs/heads/master`           | `master`                   |
+# | `push`              | `refs/heads/releases/v1`      | `releases-v1`              |
+# | `push tag`          | `refs/tags/v1.2.3`            | `v1.2.3`, `latest`         |
+# | `push tag`          | `refs/tags/v2.0.8-beta.67`    | `v2.0.8-beta.67`, `latest` |
+# | `workflow_dispatch` | `refs/heads/master`           | `master`                   |
+
+      - name: 'Login to GitHub Container Registry'
+        uses: docker/login-action@v1
+        if: ${{ matrix.mode.push_ghcr }}
+        with:
+          registry: ghcr.io
+          username: ${{github.actor}}
+          password: ${{secrets.GITHUB_TOKEN}}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          push: true
+          file: ${{ matrix.mode.file }} 
+          context: ${{ matrix.mode.context }} 
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
