@@ -5,7 +5,7 @@ use crate::model::data_availability::{
 };
 use crate::model::{
     BlobProofOutput, BlobTransaction, BlobsHash, Block, BlockHeight, ContractName, Hashable,
-    RegisterContractTransaction, SignedBlock, Transaction, TransactionData,
+    RegisterContractTransaction, SignedBlock, TransactionData,
 };
 use anyhow::{bail, Error, Result};
 use bincode::{Decode, Encode};
@@ -43,28 +43,24 @@ impl NodeState {
         let timed_out_tx_hashes = self.clear_timeouts(&signed_block.height());
         self.current_height = signed_block.height();
 
-        let mut new_contract_txs: Vec<Transaction> = vec![];
-        let mut new_blob_txs: Vec<Transaction> = vec![];
-        let mut new_verified_proof_txs: Vec<Transaction> = vec![];
+        let txs = signed_block.txs();
+        let mut failed_txs: HashSet<TxHash> = HashSet::new();
         let mut blob_proof_outputs: Vec<HandledBlobProofOutput> = vec![];
-        let mut verified_blobs: Vec<(TxHash, BlobIndex, usize)> = vec![];
-        let mut failed_txs: Vec<Transaction> = vec![];
         let mut staking_actions: Vec<(Identity, StakingAction)> = vec![];
         let mut settled_blob_tx_hashes: Vec<TxHash> = vec![];
+        let mut verified_blobs: Vec<(TxHash, BlobIndex, usize)> = vec![];
+
         let mut updated_states: BTreeMap<ContractName, StateDigest> = BTreeMap::new();
 
         // Handle all transactions
-        for tx in signed_block.txs().iter() {
+        for tx in txs.iter() {
             match &tx.transaction_data {
                 TransactionData::Blob(blob_transaction) => {
                     match self.handle_blob_tx(blob_transaction) {
-                        Ok(_) => {
-                            // Keep track of all blob txs
-                            new_blob_txs.push(tx.clone());
-                        }
+                        Ok(_) => {}
                         Err(e) => {
                             error!("Failed to handle blob transaction: {:?}", e);
-                            failed_txs.push(tx.clone());
+                            failed_txs.insert(tx.hash());
                         }
                     }
                 }
@@ -92,16 +88,13 @@ impl NodeState {
                         })
                         .collect::<HashSet<_>>();
                     match did_verify {
-                        true => {
-                            // Keep track of all verified proof txs
-                            new_verified_proof_txs.push(tx.clone());
-                        }
+                        true => {}
                         false => {
                             error!(
                                 "Failed to handle verified proof transaction {:?}",
                                 proof_tx.hash()
                             );
-                            failed_txs.push(tx.clone());
+                            failed_txs.insert(tx.hash());
                         }
                     }
                     // Then try to settle transactions when we can.
@@ -169,12 +162,10 @@ impl NodeState {
                 }
                 TransactionData::RegisterContract(register_contract_transaction) => {
                     match self.handle_register_contract_tx(register_contract_transaction) {
-                        Ok(_) => {
-                            new_contract_txs.push(tx.clone());
-                        }
+                        Ok(_) => {}
                         Err(e) => {
                             error!("Failed to handle register contract transaction: {:?}", e);
-                            failed_txs.push(tx.clone());
+                            failed_txs.insert(tx.hash());
                         }
                     }
                 }
@@ -184,14 +175,12 @@ impl NodeState {
             parent_hash: signed_block.parent_hash().clone(),
             hash: signed_block.hash(),
             block_height: signed_block.height(),
-            // TODO: put timestamp in consensus proposal
             block_timestamp: signed_block.consensus_proposal.timestamp,
-            new_contract_txs,
-            new_blob_txs,
-            new_verified_proof_txs,
-            blob_proof_outputs,
-            verified_blobs,
+            txs,
             failed_txs,
+            blob_proof_outputs,
+            settled_blob_tx_hashes,
+            verified_blobs,
             staking_actions,
             new_bounded_validators: signed_block
                 .consensus_proposal
@@ -200,7 +189,6 @@ impl NodeState {
                 .map(|v| v.pubkey.clone())
                 .collect(),
             timed_out_tx_hashes,
-            settled_blob_tx_hashes,
             updated_states,
         }
     }

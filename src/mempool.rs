@@ -212,8 +212,8 @@ impl Mempool {
             }
             listen<DataEvent> cmd => {
                 let DataEvent::NewBlock(block) = cmd;
-                for contract in block.new_contract_txs {
-                    let TransactionData::RegisterContract(register_contract_transaction) = contract.transaction_data else {
+                for tx in block.txs {
+                    let TransactionData::RegisterContract(register_contract_transaction) = tx.transaction_data else {
                         continue;
                     };
                     self.known_contracts.register_contract(

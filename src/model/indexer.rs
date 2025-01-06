@@ -52,6 +52,8 @@ pub struct TransactionDb {
     pub tx_hash: TxHashDb,                 // Transaction hash
     pub block_hash: ConsensusProposalHash, // Corresponds to the block hash
     #[sqlx(try_from = "i32")]
+    pub index: u32, // Index of the transaction within the block
+    #[sqlx(try_from = "i32")]
     pub version: u32, // Transaction version
     pub transaction_type: TransactionType, // Type of transaction
     pub transaction_status: TransactionStatus, // Status of the transaction
@@ -61,7 +63,8 @@ pub struct TransactionDb {
 pub struct TransactionWithBlobs {
     pub tx_hash: TxHashDb,
     pub block_hash: ConsensusProposalHash,
-    pub version: i32,
+    pub index: u32,
+    pub version: u32,
     pub transaction_type: TransactionType,
     pub transaction_status: TransactionStatus,
     pub identity: String,
