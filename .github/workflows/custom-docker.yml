@@ -5,7 +5,6 @@ on:
     paths: [".github/docker/Dockerfile.alpine"]
     branches: 
       - main
-      - fix_docker_r0vm
 
 jobs:
   build_and_push:
