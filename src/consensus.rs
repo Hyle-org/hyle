@@ -915,7 +915,7 @@ impl ConsensusProposal {
 #[cfg(test)]
 pub mod test {
 
-    use crate::model::Block;
+    use crate::{autobahn_testing::simple_commit_round, model::Block};
     use std::sync::Arc;
 
     use super::*;
@@ -958,47 +958,6 @@ pub mod test {
 
                 build_tuple!(nodes.remove(0), $count)
             }
-        }};
-    }
-
-    macro_rules! simple_commit_round {
-        (leader: $leader:ident, followers: [$($follower:ident),+]) => {{
-            let round_consensus_proposal;
-            let round_ticket;
-            broadcast! {
-                description: "Leader - Prepare",
-                from: $leader, to: [$($follower),+],
-                message_matches: ConsensusNetMessage::Prepare(cp, ticket) => {
-                    round_consensus_proposal = cp.clone();
-                    round_ticket = ticket.clone();
-                }
-            };
-
-            send! {
-                description: "Follower - PrepareVote",
-                from: [$($follower),+], to: $leader,
-                message_matches: ConsensusNetMessage::PrepareVote(_)
-            };
-
-            broadcast! {
-                description: "Leader - Confirm",
-                from: $leader, to: [$($follower),+],
-                message_matches: ConsensusNetMessage::Confirm(_)
-            };
-
-            send! {
-                description: "Follower - Confirm Ack",
-                from: [$($follower),+], to: $leader,
-                message_matches: ConsensusNetMessage::ConfirmAck(_)
-            };
-
-            broadcast! {
-                description: "Leader - Commit",
-                from: $leader, to: [$($follower),+],
-                message_matches: ConsensusNetMessage::Commit(_, _)
-            };
-
-            (round_consensus_proposal, round_ticket)
         }};
     }
 
