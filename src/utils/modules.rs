@@ -52,7 +52,7 @@ where
         Self::load_from_disk(file).unwrap_or(S::default())
     }
 
-    fn save_on_disk<S>(folder: &Path, file: &Path, store: &S) -> Result<()>
+    fn save_on_disk<S>(file: &Path, store: &S) -> Result<()>
     where
         S: bincode::Encode,
     {
@@ -67,13 +67,8 @@ where
             .take(8)
             .map(char::from)
             .collect();
-        let tmp = format!(
-            "{}.{}.data.tmp",
-            salt,
-            file.file_name().unwrap().to_string_lossy()
-        );
-        debug!("Saving on disk in a tmp file {}", tmp.clone());
-        let tmp = folder.join(tmp.clone());
+        let tmp = file.with_extension(format!("{}.tmp", salt));
+        debug!("Saving on disk in a tmp file {:?}", tmp.clone());
         let mut writer = fs::File::create(tmp.as_path()).log_error("Create file")?;
         bincode::encode_into_std_write(store, &mut writer, bincode::config::standard())
             .log_error("Serializing Ctx chain")?;
@@ -350,13 +345,13 @@ mod tests {
         assert_eq!(default_struct.value, 0);
     }
 
-    #[test]
+    #[test_log::test]
     fn test_save_on_disk() {
         let dir = tempdir().unwrap();
-        let file_path = dir.path().join("test_file");
+        let file_path = dir.path().join("test_file.data");
 
         let test_struct = TestStruct { value: 42 };
-        TestModule::save_on_disk(dir.path(), &file_path, &test_struct).unwrap();
+        TestModule::save_on_disk(&file_path, &test_struct).unwrap();
 
         // Load the struct from the file to verify it was saved correctly
         let loaded_struct: TestStruct = TestModule::load_from_disk_or_default(&file_path);
