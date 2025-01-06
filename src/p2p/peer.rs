@@ -20,7 +20,6 @@ use crate::bus::bus_client;
 use crate::bus::BusClientSender;
 use crate::bus::SharedMessageBus;
 use crate::consensus::ConsensusNetMessage;
-use crate::data_availability::DataNetMessage;
 use crate::mempool::MempoolNetMessage;
 use crate::model::ValidatorPublicKey;
 use crate::module_handle_messages;
@@ -35,7 +34,6 @@ struct PeerBusClient {
     sender(SignedByValidator<MempoolNetMessage>),
     sender(SignedByValidator<ConsensusNetMessage>),
     sender(PeerEvent),
-    sender(DataNetMessage),
     receiver(OutboundMessage),
     receiver(ShutdownModule),
 }
@@ -51,6 +49,7 @@ pub struct Peer {
     self_pubkey: ValidatorPublicKey,
     peer_pubkey: Option<ValidatorPublicKey>,
     peer_name: Option<String>,
+    peer_da_address: Option<String>,
 
     // peer internal channel
     internal_cmd_tx: mpsc::Sender<Cmd>,
@@ -86,6 +85,7 @@ impl Peer {
             internal_cmd_tx: cmd_tx,
             internal_cmd_rx: cmd_rx,
             peer_name: None,
+            peer_da_address: None,
         }
     }
 
@@ -122,6 +122,7 @@ impl Peer {
                 info!("👋 Got peer hello message {:?}", v);
                 self.peer_pubkey = Some(v.validator_pubkey);
                 self.peer_name = Some(v.name);
+                self.peer_da_address = Some(v.da_address);
                 send_net_message(&mut self.stream, HandshakeNetMessage::Verack.into()).await
             }
             HandshakeNetMessage::Verack => {
@@ -130,6 +131,7 @@ impl Peer {
                     self.bus.send(PeerEvent::NewPeer {
                         name: self.peer_name.clone().unwrap_or("unknown".to_string()),
                         pubkey: pubkey.clone(),
+                        da_address: self.peer_da_address.clone().unwrap(),
                     })?;
                 }
                 self.ping_pong();
@@ -163,12 +165,6 @@ impl Peer {
                 self.bus
                     .send(consensus_msg)
                     .context("Receiving consensus net message")?;
-            }
-            NetMessage::DataMessage(data_msg) => {
-                debug!("Received new data net message {:?}", data_msg);
-                self.bus
-                    .send(data_msg)
-                    .context("Receiving data net message")?;
             }
         }
         Ok(())
@@ -279,6 +275,7 @@ impl Peer {
                 version: 1,
                 validator_pubkey: self.self_pubkey.clone(),
                 name: self.conf.id.clone(),
+                da_address: self.conf.da_address.clone(),
             })
             .into(),
         )

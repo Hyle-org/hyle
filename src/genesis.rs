@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 use crate::{
     bus::{bus_client, BusClientSender, BusMessage},
@@ -134,7 +134,7 @@ impl Genesis {
                 on_bus self.bus,
                 listen<PeerEvent> msg => {
                     match msg {
-                        PeerEvent::NewPeer { name, pubkey } => {
+                        PeerEvent::NewPeer { name, pubkey, .. } => {
                             info!("🌱 New peer {}({}) added to genesis", &name, &pubkey);
                             self.peer_pubkey
                                 .insert(name.clone(), pubkey.clone());
@@ -155,7 +155,12 @@ impl Genesis {
         let mut initial_validators = self.peer_pubkey.values().cloned().collect::<Vec<_>>();
         initial_validators.sort();
 
-        let genesis_txs = match Self::generate_genesis_txs(&self.peer_pubkey).await {
+        let genesis_txs = match Self::generate_genesis_txs(
+            &self.peer_pubkey,
+            &self.config.consensus.genesis_stakers,
+        )
+        .await
+        {
             Ok(t) => t,
             Err(e) => {
                 error!("🌱 Genesis block generation failed: {:?}", e);
@@ -171,12 +176,15 @@ impl Genesis {
         Ok(())
     }
 
-    pub async fn generate_genesis_txs(peer_pubkey: &PeerPublicKeyMap) -> Result<Vec<Transaction>> {
+    pub async fn generate_genesis_txs(
+        peer_pubkey: &PeerPublicKeyMap,
+        genesis_stake: &HashMap<String, u64>,
+    ) -> Result<Vec<Transaction>> {
         let (contract_program_ids, mut genesis_txs, mut states) = Self::genesis_contracts_txs();
 
         let register_txs = Self::generate_register_txs(peer_pubkey, &mut states).await?;
         let faucet_txs = Self::generate_faucet_txs(peer_pubkey, &mut states).await?;
-        let stake_txs = Self::generate_stake_txs(peer_pubkey, &mut states).await?;
+        let stake_txs = Self::generate_stake_txs(peer_pubkey, &mut states, genesis_stake).await?;
 
         let builders = register_txs
             .into_iter()
@@ -287,11 +295,15 @@ impl Genesis {
     async fn generate_stake_txs(
         peer_pubkey: &PeerPublicKeyMap,
         states: &mut States,
+        genesis_stakers: &HashMap<String, u64>,
     ) -> Result<Vec<BuildResult>> {
-        let genesis_stake = 100;
-
         let mut txs = vec![];
-        for peer in peer_pubkey.values().cloned() {
+        for (id, peer) in peer_pubkey.iter() {
+            let genesis_stake = *genesis_stakers
+                .get(id)
+                .expect("Genesis stakers should be in the peer map")
+                as u128;
+
             info!("🌱  Staking {genesis_stake} hyllar from {peer}");
 
             let identity = Identity(format!("{peer}.hydentity").to_string());
@@ -316,7 +328,10 @@ impl Genesis {
                 .transfer("staking".to_string(), genesis_stake)?;
 
             // Delegate
-            states.staking.builder(&mut transaction).delegate(peer)?;
+            states
+                .staking
+                .builder(&mut transaction)
+                .delegate(peer.clone())?;
 
             txs.push(transaction.build(states)?);
         }
@@ -553,6 +568,7 @@ mod tests {
         bus.send(PeerEvent::NewPeer {
             name: "node-2".into(),
             pubkey: ValidatorPublicKey("aaa".into()),
+            da_address: "".into(),
         })
         .expect("send");
 
@@ -591,6 +607,7 @@ mod tests {
         bus.send(PeerEvent::NewPeer {
             name: "node-1".into(),
             pubkey: node_1_pubkey.clone(),
+            da_address: "".into(),
         })
         .expect("send");
 
@@ -633,16 +650,19 @@ mod tests {
             bus.send(PeerEvent::NewPeer {
                 name: "node-2".into(),
                 pubkey: BlstCrypto::new("node-2".into()).validator_pubkey().clone(),
+                da_address: "".into(),
             })
             .expect("send");
             bus.send(PeerEvent::NewPeer {
                 name: "node-3".into(),
                 pubkey: BlstCrypto::new("node-3".into()).validator_pubkey().clone(),
+                da_address: "".into(),
             })
             .expect("send");
             bus.send(PeerEvent::NewPeer {
                 name: "node-4".into(),
                 pubkey: BlstCrypto::new("node-4".into()).validator_pubkey().clone(),
+                da_address: "".into(),
             })
             .expect("send");
             let _ = genesis.start().await;
@@ -653,16 +673,19 @@ mod tests {
             bus.send(PeerEvent::NewPeer {
                 name: "node-4".into(),
                 pubkey: BlstCrypto::new("node-4".into()).validator_pubkey().clone(),
+                da_address: "".into(),
             })
             .expect("send");
             bus.send(PeerEvent::NewPeer {
                 name: "node-2".into(),
                 pubkey: BlstCrypto::new("node-2".into()).validator_pubkey().clone(),
+                da_address: "".into(),
             })
             .expect("send");
             bus.send(PeerEvent::NewPeer {
                 name: "node-3".into(),
                 pubkey: BlstCrypto::new("node-3".into()).validator_pubkey().clone(),
+                da_address: "".into(),
             })
             .expect("send");
             let _ = genesis.start().await;
