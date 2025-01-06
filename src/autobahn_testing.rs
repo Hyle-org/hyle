@@ -128,12 +128,12 @@ macro_rules! send {
 }
 
 macro_rules! simple_commit_round {
-    (leader: $leader:ident, followers: [$($follower:ident),+]) => {{
+    (leader: $leader:expr, followers: [$($follower:expr),+]$(, joining: $joining:expr)?) => {{
         let round_consensus_proposal;
         let round_ticket;
         broadcast! {
             description: "Leader - Prepare",
-            from: $leader, to: [$($follower),+],
+            from: $leader, to: [$($follower),+$(,$joining)?],
             message_matches: ConsensusNetMessage::Prepare(cp, ticket) => {
                 round_consensus_proposal = cp.clone();
                 round_ticket = ticket.clone();
@@ -148,7 +148,7 @@ macro_rules! simple_commit_round {
 
         broadcast! {
             description: "Leader - Confirm",
-            from: $leader, to: [$($follower),+],
+            from: $leader, to: [$($follower),+$(,$joining)?],
             message_matches: ConsensusNetMessage::Confirm(_)
         };
 
@@ -160,7 +160,7 @@ macro_rules! simple_commit_round {
 
         broadcast! {
             description: "Leader - Commit",
-            from: $leader, to: [$($follower),+],
+            from: $leader, to: [$($follower),+$(,$joining)?],
             message_matches: ConsensusNetMessage::Commit(_, _)
         };
 
@@ -488,33 +488,10 @@ async fn autobahn_rejoin_flow() {
     for _ in 0..3 {
         node1.start_round_with_cut_from_mempool().await;
 
-        broadcast! {
-            description: "Prepare",
-            from: node1.consensus_ctx, to: [node2.consensus_ctx, joining_node.consensus_ctx]
-        };
-
-        send! {
-            description: "PrepareVote",
-            from: [node2.consensus_ctx], to: node1.consensus_ctx,
-            message_matches: ConsensusNetMessage::PrepareVote(_)
-        };
-
-        broadcast! {
-            description: "Confirm",
-            from: node1.consensus_ctx, to: [node2.consensus_ctx, joining_node.consensus_ctx], // joining_node doesn't need it but sending for consistency
-            message_matches: ConsensusNetMessage::Confirm(_)
-        };
-
-        send! {
-            description: "ConfirmAck",
-            from: [node2.consensus_ctx], to: node1.consensus_ctx,
-            message_matches: ConsensusNetMessage::ConfirmAck(_)
-        };
-
-        broadcast! {
-            description: "Commit",
-            from: node1.consensus_ctx, to: [node2.consensus_ctx, joining_node.consensus_ctx],
-            message_matches: ConsensusNetMessage::Commit(_, _)
+        simple_commit_round! {
+            leader: node1.consensus_ctx,
+            followers: [node2.consensus_ctx],
+            joining: joining_node.consensus_ctx
         };
 
         // Swap so we handle leader changes correctly
@@ -535,34 +512,12 @@ async fn autobahn_rejoin_flow() {
     // Process round
     node1.start_round_with_cut_from_mempool().await;
 
-    broadcast! {
-        description: "Prepare",
-        from: node1.consensus_ctx, to: [node2.consensus_ctx, joining_node.consensus_ctx]
+    simple_commit_round! {
+        leader: node1.consensus_ctx,
+        followers: [node2.consensus_ctx],
+        joining: joining_node.consensus_ctx
     };
 
-    send! {
-        description: "PrepareVote",
-        from: [node2.consensus_ctx], to: node1.consensus_ctx,
-        message_matches: ConsensusNetMessage::PrepareVote(_)
-    };
-
-    broadcast! {
-        description: "Confirm",
-        from: node1.consensus_ctx, to: [node2.consensus_ctx, joining_node.consensus_ctx], // joining_node doesn't need it but sending for consistency
-        message_matches: ConsensusNetMessage::Confirm(_)
-    };
-
-    send! {
-        description: "ConfirmAck",
-        from: [node2.consensus_ctx], to: node1.consensus_ctx,
-        message_matches: ConsensusNetMessage::ConfirmAck(_)
-    };
-
-    broadcast! {
-        description: "Commit",
-        from: node1.consensus_ctx, to: [node2.consensus_ctx, joining_node.consensus_ctx],
-        message_matches: ConsensusNetMessage::Commit(_, _)
-    };
     std::mem::swap(&mut node1, &mut node2);
 
     // We still aren't caught up
@@ -594,33 +549,10 @@ async fn autobahn_rejoin_flow() {
     // Process round
     node1.start_round_with_cut_from_mempool().await;
 
-    broadcast! {
-        description: "Prepare",
-        from: node1.consensus_ctx, to: [node2.consensus_ctx, joining_node.consensus_ctx]
-    };
-
-    send! {
-        description: "PrepareVote",
-        from: [node2.consensus_ctx], to: node1.consensus_ctx,
-        message_matches: ConsensusNetMessage::PrepareVote(_)
-    };
-
-    broadcast! {
-        description: "Confirm",
-        from: node1.consensus_ctx, to: [node2.consensus_ctx, joining_node.consensus_ctx], // joining_node doesn't need it but sending for consistency
-        message_matches: ConsensusNetMessage::Confirm(_)
-    };
-
-    send! {
-        description: "ConfirmAck",
-        from: [node2.consensus_ctx], to: node1.consensus_ctx,
-        message_matches: ConsensusNetMessage::ConfirmAck(_)
-    };
-
-    broadcast! {
-        description: "Commit",
-        from: node1.consensus_ctx, to: [node2.consensus_ctx, joining_node.consensus_ctx],
-        message_matches: ConsensusNetMessage::Commit(_, _)
+    simple_commit_round! {
+        leader: node1.consensus_ctx,
+        followers: [node2.consensus_ctx],
+        joining: joining_node.consensus_ctx
     };
 
     // We are caught up
