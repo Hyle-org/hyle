@@ -11,3 +11,5 @@ ENV SHELL=/bin/bash
 RUN curl -L https://raw.githubusercontent.com/AztecProtocol/aztec-packages/master/barretenberg/cpp/installation/install | bash
 ENV PATH="/root/.bb:$PATH"
 RUN bbup -v 0.41.0
+
+
