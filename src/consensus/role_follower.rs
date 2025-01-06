@@ -284,12 +284,6 @@ impl FollowerRole for Consensus {
         received_consensus_proposal_hash: ConsensusProposalHash,
         next_leader: ValidatorPublicKey,
     ) -> Result<()> {
-        // Leader does not care about timeouts, his role is to rebroadcast messages to generate a commit
-        if matches!(self.bft_round_state.state_tag, StateTag::Leader) {
-            debug!("Leader does not process timeout messages");
-            return Ok(());
-        }
-
         // Only timeout if it is in consensus
         if !self.is_part_of_consensus(self.crypto.validator_pubkey()) {
             info!(

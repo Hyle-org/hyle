@@ -1691,6 +1691,7 @@ pub mod test {
         node1.start_round().await;
         // Slot 1 - leader = node1
 
+        // Broadcasted prepare is ignored
         node1.assert_broadcast("Lost prepare");
 
         // Make node2 and node3 timeout, node4 will not timeout but follow mutiny
@@ -1721,22 +1722,82 @@ pub mod test {
             }
         };
 
-        // TestCtx::broadcast(
-        //     "Follower - Timeout",
-        //     &mut node3,
-        //     &mut [&mut node2, &mut node4],
-        //     &mut Some(|m: &SignedByValidator<ConsensusNetMessage>| {
-        //         message_matches!(m, ConsensusNetMessage::Timeout(_, next_leader) => {
-        //             assert_eq!(&node2key, next_leader);
-        //         });
-        //     }),
-        // )
-        // .await
-
         // After this broadcast, every node has 2f+1 timeouts and can create a timeout certificate
 
         // Node 2 is next leader, and does not emits a timeout certificate since it will broadcast the next Prepare with it
         node2.assert_no_broadcast("Timeout Certificate 2");
+
+        node3.assert_broadcast("Timeout Certificate 3");
+        node4.assert_broadcast("Timeout Certificate 4");
+
+        node2.start_round().await;
+
+        // Slot 2 view 1 (following a timeout round)
+        let (cp, ticket) = simple_commit_round! {
+          leader: node2,
+          followers: [node1, node3, node4]
+        };
+
+        assert!(matches!(ticket, Ticket::TimeoutQC(_)));
+        assert_eq!(cp.slot, 1);
+        assert_eq!(cp.view, 1);
+        assert_eq!(cp.parent_hash, ConsensusProposalHash("genesis".into()));
+    }
+
+    #[test_log::test(tokio::test)]
+    async fn test_timeout_join_mutiny_leader_4() {
+        let (mut node1, mut node2, mut node3, mut node4): (
+            ConsensusTestCtx,
+            ConsensusTestCtx,
+            ConsensusTestCtx,
+            ConsensusTestCtx,
+        ) = build_nodes!(4).await;
+
+        node1.start_round().await;
+        // Slot 1 - leader = node1
+
+        // Broadcasted prepare is ignored
+        node1.assert_broadcast("Lost prepare");
+
+        ConsensusTestCtx::timeout(&mut [&mut node3]).await;
+
+        broadcast! {
+            description: "Follower - Timeout",
+            from: node3, to: [node1, node4],
+            message_matches: ConsensusNetMessage::Timeout(_, next_leader) => {
+                assert_eq!(&node2.pubkey(), next_leader);
+            }
+        };
+
+        ConsensusTestCtx::timeout(&mut [&mut node2]).await;
+
+        broadcast! {
+            description: "Follower - Timeout",
+            from: node2, to: [node1, node3],
+            message_matches: ConsensusNetMessage::Timeout(_, next_leader) => {
+                assert_eq!(&node2.pubkey(), next_leader);
+            }
+        };
+
+        // node 1:leader should join the mutiny
+        broadcast! {
+            description: "Follower - Timeout",
+            from: node1, to: [node2, node3, node4],
+            message_matches: ConsensusNetMessage::Timeout(_, next_leader) => {
+                assert_eq!(&node2.pubkey(), next_leader);
+            }
+        };
+
+        // After this broadcast, every node has 2f+1 timeouts and can create a timeout certificate
+
+        // Node 2 is next leader, and does not emits a timeout certificate since it will use it for its next Prepare
+        node2.assert_no_broadcast("Timeout Certificate 2");
+
+        broadcast! {
+            description: "Leader - timeout certificate",
+            from: node1, to: [node2, node3, node4],
+            message_matches: ConsensusNetMessage::TimeoutCertificate(_, _)
+        };
 
         node3.assert_broadcast("Timeout Certificate 3");
         node4.assert_broadcast("Timeout Certificate 4");
