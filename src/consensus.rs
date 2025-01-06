@@ -915,12 +915,14 @@ impl ConsensusProposal {
 #[cfg(test)]
 pub mod test {
 
-    use crate::{autobahn_testing::simple_commit_round, model::Block};
+    use crate::model::Block;
     use std::sync::Arc;
 
     use super::*;
     use crate::{
-        autobahn_testing::{broadcast, build_tuple, send, AutobahnBusClient, AutobahnTestCtx},
+        autobahn_testing::{
+            broadcast, build_tuple, send, simple_commit_round, AutobahnBusClient, AutobahnTestCtx,
+        },
         bus::{dont_use_this::get_receiver, metrics::BusMetrics, SharedMessageBus},
         model::mempool::DataProposalHash,
         p2p::network::NetMessage,
