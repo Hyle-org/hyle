@@ -920,7 +920,9 @@ pub mod test {
 
     use super::*;
     use crate::{
-        autobahn_testing::{broadcast, build_tuple, send, AutobahnBusClient, AutobahnTestCtx},
+        autobahn_testing::{
+            broadcast, build_tuple, send, simple_commit_round, AutobahnBusClient, AutobahnTestCtx,
+        },
         bus::{dont_use_this::get_receiver, metrics::BusMetrics, SharedMessageBus},
         model::mempool::DataProposalHash,
         p2p::network::NetMessage,
@@ -958,47 +960,6 @@ pub mod test {
 
                 build_tuple!(nodes.remove(0), $count)
             }
-        }};
-    }
-
-    macro_rules! simple_commit_round {
-        (leader: $leader:ident, followers: [$($follower:ident),+]) => {{
-            let round_consensus_proposal;
-            let round_ticket;
-            broadcast! {
-                description: "Leader - Prepare",
-                from: $leader, to: [$($follower),+],
-                message_matches: ConsensusNetMessage::Prepare(cp, ticket) => {
-                    round_consensus_proposal = cp.clone();
-                    round_ticket = ticket.clone();
-                }
-            };
-
-            send! {
-                description: "Follower - PrepareVote",
-                from: [$($follower),+], to: $leader,
-                message_matches: ConsensusNetMessage::PrepareVote(_)
-            };
-
-            broadcast! {
-                description: "Leader - Confirm",
-                from: $leader, to: [$($follower),+],
-                message_matches: ConsensusNetMessage::Confirm(_)
-            };
-
-            send! {
-                description: "Follower - Confirm Ack",
-                from: [$($follower),+], to: $leader,
-                message_matches: ConsensusNetMessage::ConfirmAck(_)
-            };
-
-            broadcast! {
-                description: "Leader - Commit",
-                from: $leader, to: [$($follower),+],
-                message_matches: ConsensusNetMessage::Commit(_, _)
-            };
-
-            (round_consensus_proposal, round_ticket)
         }};
     }
 
