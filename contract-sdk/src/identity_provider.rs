@@ -1,5 +1,6 @@
 use alloc::{format, string::String, vec::Vec};
 use bincode::{Decode, Encode};
+use serde::{Deserialize, Serialize};
 
 use crate::{Blob, BlobData, BlobIndex, ContractAction, ContractName, RunResult};
 
@@ -49,7 +50,7 @@ pub trait IdentityVerification {
 }
 
 /// Enum representing the actions that can be performed by the IdentityVerification contract.
-#[derive(Encode, Decode, Debug, Clone)]
+#[derive(Serialize, Deserialize, Encode, Decode, Debug, Clone)]
 pub enum IdentityAction {
     RegisterIdentity { account: String },
     VerifyIdentity { account: String, nonce: u32 },

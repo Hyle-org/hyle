@@ -29,6 +29,7 @@ pub struct Conf {
     pub storage: Storage,
     pub consensus: Consensus,
     pub rest: String,
+    pub rest_max_body_size: usize,
     pub database_url: String,
     pub p2p: P2pConf,
     pub data_directory: PathBuf,

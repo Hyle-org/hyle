@@ -284,6 +284,15 @@ impl DataAvailability {
             }
         }
 
+        let _ = Self::save_on_disk::<NodeState>(
+            self.config
+                .data_directory
+                .join("da_node_state.bin")
+                .as_path(),
+            &self.node_state,
+        )
+        .log_error("Saving node state");
+
         Ok(())
     }
 

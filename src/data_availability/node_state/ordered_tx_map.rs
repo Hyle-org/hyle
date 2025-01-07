@@ -18,6 +18,10 @@ impl OrderedTxMap {
         self.map.get(hash)
     }
 
+    pub fn get_next_unsettled_tx(&self, contract: &ContractName) -> Option<&TxHash> {
+        self.tx_order.get(contract).and_then(|v| v.first())
+    }
+
     pub fn get_for_settlement(
         &mut self,
         hash: &TxHash,
@@ -72,8 +76,10 @@ impl OrderedTxMap {
                     c.retain(|h| !h.eq(hash));
                 }
             }
+            self.map.remove(hash)
+        } else {
+            None
         }
-        self.map.remove(hash)
     }
 }
 
