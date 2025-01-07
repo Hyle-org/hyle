@@ -51,14 +51,15 @@ async fn main() -> Result<(), Error> {
 
     let url = format!("http://{}:{}", args.host, args.port);
     let users = args.users;
+    let verifier = args.verifier;
 
     match args.command {
-        SendCommands::Setup => setup(url).await?,
-        SendCommands::GenerateTransactions => generate(url, users).await?,
+        SendCommands::Setup => setup(url, users, verifier).await?,
+        SendCommands::GenerateTransactions => generate(url, users, verifier).await?,
         SendCommands::SendTransactions => send(url).await?,
         SendCommands::LoadTest => {
-            setup(url.clone()).await?;
-            generate(url.clone(), users).await?;
+            setup(url.clone(), users, verifier.clone()).await?;
+            generate(url.clone(), users, verifier).await?;
             send(url).await?;
         }
         SendCommands::TimeoutScenario => {

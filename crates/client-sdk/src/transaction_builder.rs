@@ -113,6 +113,7 @@ impl TransactionBuilder {
     ///}
     pub fn iter_prove<'a>(
         &'a self,
+        verifier: &'a sdk::Verifier,
     ) -> impl Iterator<
         Item = (
             Pin<Box<dyn std::future::Future<Output = Result<ProofData>> + Send + 'a>>,
@@ -120,7 +121,7 @@ impl TransactionBuilder {
         ),
     > + 'a {
         self.runners.iter().map(|runner| {
-            let future = runner.prove();
+            let future = runner.prove(verifier);
             (
                 Box::pin(future)
                     as Pin<Box<dyn std::future::Future<Output = Result<ProofData>> + Send + 'a>>,
@@ -220,11 +221,12 @@ impl ContractRunner {
         Ok(output)
     }
 
-    async fn prove(&self) -> Result<ProofData> {
+    async fn prove(&self, verifier: &sdk::Verifier) -> Result<ProofData> {
         info!("Proving transition for {}...", self.contract_name);
 
         let (proof, _) =
-            crate::helpers::prove(self.binary, self.contract_input.get().unwrap()).await?;
+            crate::helpers::prove(self.binary, self.contract_input.get().unwrap(), verifier)
+                .await?;
 
         Ok(proof)
     }

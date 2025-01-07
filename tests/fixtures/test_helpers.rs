@@ -199,7 +199,7 @@ pub async fn send_transaction(
         .await
         .unwrap();
 
-    for (proof, contract_name) in transaction.iter_prove() {
+    for (proof, contract_name) in transaction.iter_prove(&"risc0".into()) {
         let proof: ProofData = proof.await.unwrap();
         client
             .send_tx_proof(&hyle::model::ProofTransaction {

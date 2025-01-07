@@ -1099,6 +1099,7 @@ dependencies = [
  "hyle-contract-sdk",
  "risc0-zkvm",
  "serde",
+ "serde_json",
 ]
 
 [[package]]

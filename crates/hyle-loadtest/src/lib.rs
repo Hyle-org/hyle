@@ -2,11 +2,13 @@ use anyhow::{bail, Result};
 use client_sdk::transaction_builder::{BuildResult, StateUpdater, TransactionBuilder};
 use client_sdk::ProofData;
 use hydentity::Hydentity;
-use hyle::model::{BlobTransaction, Hashable, ProofTransaction};
+use hyle::model::{BlobTransaction, Hashable, ProofTransaction, RegisterContractTransaction};
 use hyle::rest::client::{IndexerApiHttpClient, NodeApiHttpClient};
+use hyle_contract_sdk::erc20::ERC20;
 use hyle_contract_sdk::Digestable;
 use hyle_contract_sdk::{ContractName, Identity};
-use hyllar::HyllarToken;
+use hyllar::{HyllarToken, HyllarTokenContract};
+use tokio::task::JoinSet;
 use tracing::info;
 
 #[derive(Debug, Clone)]
@@ -22,7 +24,7 @@ impl StateUpdater for States {
         new_state: hyle_contract_sdk::StateDigest,
     ) -> Result<()> {
         match contract_name.0.as_str() {
-            "hyllar" => self.hyllar = new_state.try_into()?,
+            "hyllar-test" => self.hyllar = new_state.try_into()?,
             "hydentity" => self.hydentity = new_state.try_into()?,
             _ => bail!("Unknown contract name: {contract_name}"),
         }
@@ -31,101 +33,113 @@ impl StateUpdater for States {
 
     fn get(&self, contract_name: &ContractName) -> Result<hyle_contract_sdk::StateDigest> {
         Ok(match contract_name.0.as_str() {
-            "hyllar" => self.hyllar.as_digest(),
+            "hyllar-test" => self.hyllar.as_digest(),
             "hydentity" => self.hydentity.as_digest(),
-            _ => bail!("Unknown contract name {contract_name}"),
+            _ => bail!("Unknown contract name: {contract_name}"),
         })
     }
 }
 
-/// Setup hyllar contract by sending a tx to "test" from faucet, in order to create an entry for that user.
-pub async fn setup(url: String) -> Result<()> {
+/// Create a new contract "hyllar-test" that already contains entries for each users
+pub async fn setup(url: String, users: u32, verifier: String) -> Result<()> {
     let node_client = NodeApiHttpClient::new(url.clone());
-    let indexer_client = IndexerApiHttpClient::new(url.clone());
 
-    let hyllar = indexer_client.fetch_current_state(&"hyllar".into()).await?;
-    let hydentity = indexer_client
-        .fetch_current_state(&"hydentity".into())
-        .await?;
+    let hyllar_token = HyllarToken::new(0, "faucet.hyllar-test".into());
+    let mut hyllar_contract =
+        HyllarTokenContract::init(hyllar_token.clone(), "faucet.hyllar-test".into());
 
-    let mut states = States { hyllar, hydentity };
-    let identity = Identity("faucet.hydentity".to_string());
-    let mut transaction = TransactionBuilder::new(identity.clone());
-
-    // Verify faucet identity
-    states
-        .hydentity
-        .default_builder(&mut transaction)
-        .verify_identity(&states.hydentity, "password".to_string())?;
-
-    // Transfer to test
-    states
-        .hyllar
-        .default_builder(&mut transaction)
-        .transfer("test.hyllar".to_string(), 0)?;
-
-    let BuildResult {
-        identity, blobs, ..
-    } = transaction.build(&mut states).unwrap();
-
-    let blob_tx = BlobTransaction { identity, blobs };
-    node_client.send_tx_blob(&blob_tx).await.unwrap();
-
-    for (proof, contract_name) in transaction.iter_prove() {
-        let proof: ProofData = proof.await.unwrap();
-        let proof_tx = ProofTransaction {
-            contract_name,
-            proof,
-            tx_hashes: vec![blob_tx.hash()],
-        };
-        node_client.send_tx_proof(&proof_tx).await.unwrap();
+    // Create an entry for each users
+    for n in 0..users {
+        let ident = &format!("{n}.hyllar-test");
+        hyllar_contract
+            .transfer(ident, 0)
+            .map_err(|e| anyhow::anyhow!(e))?;
     }
+
+    let tx = RegisterContractTransaction {
+        contract_name: "hyllar-test".into(),
+        owner: "hyle".into(),
+        verifier: verifier.into(),
+        program_id: hyle_contracts::HYLLAR_ID.to_vec().into(),
+        state_digest: hyllar_contract.state().as_digest(),
+    };
+    node_client.send_tx_register_contract(&tx).await?;
 
     Ok(())
 }
 
-pub async fn generate(url: String, users: u32) -> Result<()> {
+pub async fn generate(url: String, users: u32, verifier: String) -> Result<()> {
     let indexer_client = IndexerApiHttpClient::new(url.clone());
 
-    let hyllar = indexer_client.fetch_current_state(&"hyllar".into()).await?;
+    let hyllar = indexer_client
+        .fetch_current_state(&"hyllar-test".into())
+        .await?;
     let hydentity = indexer_client
         .fetch_current_state(&"hydentity".into())
         .await?;
 
-    let mut states = States { hyllar, hydentity };
+    let states = States { hyllar, hydentity };
 
     let mut blob_txs = vec![];
     let mut proof_txs = vec![];
 
-    let ident = Identity("test.hyllar".to_string());
+    ////////
+    // Blob Transaction creation
+    ////////
+    let mut tasks = JoinSet::new();
+    let number_of_tasks = 20;
+    let chunk_size: usize = users.div_ceil(number_of_tasks).try_into().unwrap();
 
-    let mut transaction = TransactionBuilder::new(ident.clone());
-    states
-        .hyllar
-        .default_builder(&mut transaction)
-        .transfer(ident.clone().to_string(), 0)?;
+    let user_chunks: Vec<_> = (0..users).collect();
+    let user_chunks = user_chunks
+        .chunks(chunk_size)
+        .map(|chunk| chunk.to_vec())
+        .collect::<Vec<_>>();
+    for chunk in user_chunks {
+        let mut states = states.clone();
+        let verifier = verifier.clone();
 
-    let BuildResult {
-        identity, blobs, ..
-    } = transaction.build(&mut states).unwrap();
+        tasks.spawn(async move {
+            let mut local_blob_txs = vec![];
+            let mut local_proof_txs = vec![];
 
-    let blob_tx = BlobTransaction { identity, blobs };
-    blob_txs.push(blob_tx.clone());
+            for n in chunk {
+                info!("Building transactions for user: {:?}", n);
+                let ident = Identity(format!("{n}.hyllar-test").to_string());
+                let mut transaction = TransactionBuilder::new(ident.clone());
+                states
+                    .hyllar
+                    .default_builder("hyllar-test".into(), &mut transaction)
+                    .transfer(ident.clone().to_string(), 0)?;
 
-    for (proof, contract_name) in transaction.iter_prove() {
-        let proof: ProofData = proof.await.unwrap();
-        proof_txs.push(ProofTransaction {
-            contract_name,
-            proof,
-            tx_hashes: vec![blob_tx.hash()],
+                let BuildResult {
+                    identity, blobs, ..
+                } = transaction.build(&mut states).unwrap();
+
+                let blob_tx = BlobTransaction { identity, blobs };
+                local_blob_txs.push(blob_tx.clone());
+
+                ////////
+                // Proof Transactions creation
+                ////////
+                for (proof, contract_name) in transaction.iter_prove(&verifier.clone().into()) {
+                    let proof: ProofData = proof.await.unwrap();
+                    local_proof_txs.push(ProofTransaction {
+                        contract_name,
+                        proof,
+                        tx_hashes: vec![blob_tx.hash()],
+                    });
+                }
+            }
+
+            Ok::<_, anyhow::Error>((local_blob_txs, local_proof_txs))
         });
     }
 
-    // We now have 1 blobTx and 1 proofTx. We want to duplicate it for each user
-    // This is a hacky. Correct behaviour should be to iterate over users when creating the transactions.
-    for _ in 0..users - 1 {
-        blob_txs.push(blob_tx.clone());
-        proof_txs.extend(proof_txs.first().cloned());
+    while let Some(result) = tasks.join_next().await {
+        let (local_blob_txs, local_proof_txs) = result??;
+        blob_txs.extend(local_blob_txs);
+        proof_txs.extend(local_proof_txs);
     }
 
     // serialize to json and write to file
