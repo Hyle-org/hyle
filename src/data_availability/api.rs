@@ -41,7 +41,7 @@ pub async fn api(ctx: &CommonRunContext) -> Router<()> {
     Router::new()
         .route("/da/block/height", get(get_block_height))
         // FIXME: we expose this endpoint for testing purposes. This should be removed or adapted
-        .route("/contract/:name", get(get_contract))
+        .route("/contract/{name}", get(get_contract))
         .with_state(state)
 }
 
