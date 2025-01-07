@@ -4,6 +4,7 @@ use alloc::{
     vec::Vec,
 };
 use bincode::{Decode, Encode};
+use serde::{Deserialize, Serialize};
 
 use crate::{
     caller::{CallerCallee, CheckCalleeBlobs},
@@ -81,7 +82,7 @@ pub trait ERC20 {
 }
 
 /// Enum representing possible calls to ERC-20 contract functions.
-#[derive(Encode, Decode, Debug, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Encode, Decode, Debug, Clone, PartialEq)]
 pub enum ERC20Action {
     TotalSupply,
     BalanceOf {
