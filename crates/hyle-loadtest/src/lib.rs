@@ -43,7 +43,6 @@ pub async fn setup(url: String) -> Result<()> {
     let node_client = NodeApiHttpClient::new(url.clone());
     let indexer_client = IndexerApiHttpClient::new(url.clone());
 
-    println!("ok");
     let hyllar = indexer_client.fetch_current_state(&"hyllar".into()).await?;
     let hydentity = indexer_client
         .fetch_current_state(&"hydentity".into())

@@ -68,7 +68,6 @@ impl NodeState {
                     error!("Unverified recursive proof transaction should not be in a block");
                 }
                 TransactionData::VerifiedProof(proof_tx) => {
-                    let mut did_verify = true;
                     // First, store the proofs and check if we can settle the transaction
                     let blob_tx_to_try_and_settle = proof_tx
                         .proven_blobs
@@ -80,23 +79,17 @@ impl NodeState {
                                 blob_proof_data,
                             ) {
                                 Ok(maybe_tx_hash) => maybe_tx_hash,
-                                Err(_) => {
-                                    did_verify = false;
+                                Err(err) => {
+                                    error!(
+                                        "Failed to handle verified proof transaction {:?}: {err}",
+                                        proof_tx.hash()
+                                    );
+                                    failed_txs.insert(tx.hash());
                                     None
                                 }
                             }
                         })
                         .collect::<HashSet<_>>();
-                    match did_verify {
-                        true => {}
-                        false => {
-                            error!(
-                                "Failed to handle verified proof transaction {:?}",
-                                proof_tx.hash()
-                            );
-                            failed_txs.insert(tx.hash());
-                        }
-                    }
                     // Then try to settle transactions when we can.
                     for bth in blob_tx_to_try_and_settle {
                         match self.try_to_settle_blob_tx(&bth) {
