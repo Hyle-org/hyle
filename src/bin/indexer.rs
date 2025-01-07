@@ -126,6 +126,7 @@ async fn main() -> Result<()> {
     handler
         .build_module::<RestApi>(RestApiRunContext {
             rest_addr: ctx.config.rest.clone(),
+            max_body_size: ctx.config.rest_max_body_size,
             bus: ctx.bus.new_handle(),
             metrics_layer,
             router: router.clone(),

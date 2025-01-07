@@ -141,6 +141,7 @@ async fn main() -> Result<()> {
     handler
         .build_module::<RestApi>(RestApiRunContext {
             rest_addr: ctx.common.config.rest.clone(),
+            max_body_size: ctx.common.config.rest_max_body_size,
             info: NodeInfo {
                 id: config.id.clone(),
                 pubkey,
