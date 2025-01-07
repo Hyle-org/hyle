@@ -9,12 +9,10 @@ use crate::model::{
 };
 use anyhow::{bail, Error, Result};
 use bincode::{Decode, Encode};
-use hyle_contract_sdk::{
-    utils::parse_structured_blob, BlobIndex, HyleOutput, Identity, StateDigest, TxHash,
-};
+use hyle_contract_sdk::{utils::parse_structured_blob, BlobIndex, HyleOutput, TxHash};
 use ordered_tx_map::OrderedTxMap;
 use staking::StakingAction;
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use timeouts::Timeouts;
 use tracing::{debug, error, info};
 
@@ -42,18 +40,32 @@ pub struct SettledTxOutput {
 
 impl NodeState {
     pub fn handle_signed_block(&mut self, signed_block: &SignedBlock) -> Block {
-        let timed_out_tx_hashes = self.clear_timeouts(&signed_block.height());
         self.current_height = signed_block.height();
 
+        let mut block_under_construction = Block {
+            parent_hash: signed_block.parent_hash().clone(),
+            hash: signed_block.hash(),
+            block_height: signed_block.height(),
+            block_timestamp: signed_block.consensus_proposal.timestamp,
+            txs: vec![], // To avoid a double borrow, we'll add the transactions later
+            failed_txs: HashSet::new(),
+            blob_proof_outputs: vec![],
+            settled_blob_tx_hashes: vec![],
+            verified_blobs: vec![],
+            staking_actions: vec![],
+            new_bounded_validators: signed_block
+                .consensus_proposal
+                .new_validators_to_bond
+                .iter()
+                .map(|v| v.pubkey.clone())
+                .collect(),
+            timed_out_tx_hashes: vec![], // Added below as it needs the block
+            updated_states: BTreeMap::new(),
+        };
+
+        self.clear_timeouts(&mut block_under_construction);
+
         let txs = signed_block.txs();
-        let mut failed_txs: HashSet<TxHash> = HashSet::new();
-        let mut blob_proof_outputs: Vec<HandledBlobProofOutput> = vec![];
-        let mut staking_actions: Vec<(Identity, StakingAction)> = vec![];
-        let mut settled_blob_tx_hashes: Vec<TxHash> = vec![];
-        let mut verified_blobs: Vec<(TxHash, BlobIndex, usize)> = vec![];
-
-        let mut updated_states: BTreeMap<ContractName, StateDigest> = BTreeMap::new();
-
         // Handle all transactions
         for tx in txs.iter() {
             match &tx.transaction_data {
@@ -62,7 +74,7 @@ impl NodeState {
                         Ok(_) => {}
                         Err(e) => {
                             error!("Failed to handle blob transaction: {:?}", e);
-                            failed_txs.insert(tx.hash());
+                            block_under_construction.failed_txs.insert(tx.hash());
                         }
                     }
                 }
@@ -78,7 +90,7 @@ impl NodeState {
                         .filter_map(|blob_proof_data| {
                             match self.handle_blob_proof(
                                 proof_tx.hash(),
-                                &mut blob_proof_outputs,
+                                &mut block_under_construction.blob_proof_outputs,
                                 blob_proof_data,
                             ) {
                                 Ok(maybe_tx_hash) => maybe_tx_hash,
@@ -88,7 +100,7 @@ impl NodeState {
                                 }
                             }
                         })
-                        .collect::<HashSet<_>>();
+                        .collect::<BTreeSet<_>>();
                     match did_verify {
                         true => {}
                         false => {
@@ -96,103 +108,28 @@ impl NodeState {
                                 "Failed to handle verified proof transaction {:?}",
                                 proof_tx.hash()
                             );
-                            failed_txs.insert(tx.hash());
+                            block_under_construction.failed_txs.insert(tx.hash());
                         }
                     }
                     // Then try to settle transactions when we can.
-                    for bth in blob_tx_to_try_and_settle {
-                        match self.try_to_settle_blob_tx(&bth) {
-                            Ok(SettledTxOutput {
-                                tx: mut settled_tx,
-                                blob_proof_output_indices,
-                                updated_contracts: tx_updated_contracts,
-                            }) => {
-                                // Transaction was settled, update our state.
-                                info!("Settled tx {:?}", &bth);
-
-                                // When a proof tx is handled, three things happen:
-                                // 1. Blobs get verified
-                                // 2. Maybe: BlobTransactions get settled
-                                // 3. Maybe: Contract state digests are updated
-
-                                // Keep track of verified blobs
-                                std::mem::take(&mut settled_tx.blobs)
-                                    .iter_mut()
-                                    .enumerate()
-                                    .for_each(|(i, blob_metadata)| {
-                                        // Keep track of all stakers
-                                        if blob_metadata.blob.contract_name.0 == "staking" {
-                                            let blob = std::mem::take(&mut blob_metadata.blob);
-                                            let staking_action: StakingAction =
-                                                parse_structured_blob(&[blob], &BlobIndex(0))
-                                                    .data
-                                                    .parameters;
-                                            staking_actions.push((
-                                                settled_tx.identity.clone(),
-                                                staking_action,
-                                            ));
-                                        }
-
-                                        // Everything must exist by construction
-                                        verified_blobs.push((
-                                            bth.clone(),
-                                            hyle_contract_sdk::BlobIndex(i),
-                                            blob_proof_output_indices[i],
-                                        ));
-                                    });
-
-                                // Keep track of settled txs
-                                settled_blob_tx_hashes.push(bth);
-
-                                // Update states
-                                for (contract_name, next_state) in tx_updated_contracts.iter() {
-                                    debug!(
-                                        "Update {} contract state: {:?}",
-                                        contract_name, next_state
-                                    );
-                                    // Safe to unwrap - all contract names are validated to exist above.
-                                    self.contracts.get_mut(contract_name).unwrap().state =
-                                        next_state.state.clone();
-                                    // TODO: would be nice to have a drain-like API here.
-                                    updated_states
-                                        .insert(contract_name.clone(), next_state.state.clone());
-                                }
-                            }
-                            Err(e) => debug!("Tx {:?} not ready to settle: {:?}", &bth, e),
-                        }
-                    }
+                    self.settle_txs_until_done(
+                        &mut block_under_construction,
+                        blob_tx_to_try_and_settle,
+                    );
                 }
                 TransactionData::RegisterContract(register_contract_transaction) => {
                     match self.handle_register_contract_tx(register_contract_transaction) {
                         Ok(_) => {}
                         Err(e) => {
                             error!("Failed to handle register contract transaction: {:?}", e);
-                            failed_txs.insert(tx.hash());
+                            block_under_construction.failed_txs.insert(tx.hash());
                         }
                     }
                 }
             }
         }
-        Block {
-            parent_hash: signed_block.parent_hash().clone(),
-            hash: signed_block.hash(),
-            block_height: signed_block.height(),
-            block_timestamp: signed_block.consensus_proposal.timestamp,
-            txs,
-            failed_txs,
-            blob_proof_outputs,
-            settled_blob_tx_hashes,
-            verified_blobs,
-            staking_actions,
-            new_bounded_validators: signed_block
-                .consensus_proposal
-                .new_validators_to_bond
-                .iter()
-                .map(|v| v.pubkey.clone())
-                .collect(),
-            timed_out_tx_hashes,
-            updated_states,
-        }
+        block_under_construction.txs = txs;
+        block_under_construction
     }
 
     pub fn handle_register_contract_tx(
@@ -321,6 +258,37 @@ impl NodeState {
         })
     }
 
+    fn settle_txs_until_done(
+        &mut self,
+        block_under_construction: &mut Block,
+        mut blob_tx_to_try_and_settle: BTreeSet<TxHash>,
+    ) {
+        loop {
+            // TODO: investigate most performant order;
+            let Some(bth) = blob_tx_to_try_and_settle.pop_first() else {
+                break;
+            };
+
+            match self.try_to_settle_blob_tx(&bth) {
+                Ok(SettledTxOutput {
+                    tx: settled_tx,
+                    blob_proof_output_indices,
+                    updated_contracts: tx_updated_contracts,
+                }) => {
+                    // Settle the TX and add any new TXs to try and settle next.
+                    blob_tx_to_try_and_settle.append(&mut self.on_settled_blob_tx(
+                        block_under_construction,
+                        bth,
+                        settled_tx,
+                        blob_proof_output_indices,
+                        tx_updated_contracts,
+                    ));
+                }
+                Err(e) => debug!("Tx {:?} not ready to settle: {:?}", &bth, e),
+            }
+        }
+    }
+
     fn try_to_settle_blob_tx(
         &mut self,
         unsettled_tx_hash: &TxHash,
@@ -424,6 +392,74 @@ impl NodeState {
         (current_contracts, blob_proof_output_indices, false)
     }
 
+    /// Handle a settled blob transaction.
+    /// This returns the list of new TXs to try and settle next,
+    /// i.e. the "next" TXs for each contract.
+    fn on_settled_blob_tx(
+        &mut self,
+        block_under_construction: &mut Block,
+        bth: TxHash,
+        mut settled_tx: UnsettledBlobTransaction,
+        blob_proof_output_indices: Vec<usize>,
+        tx_updated_contracts: BTreeMap<ContractName, Contract>,
+    ) -> BTreeSet<TxHash> {
+        // Transaction was settled, update our state.
+        info!("Settled tx {:?}", &bth);
+
+        // When a proof tx is handled, three things happen:
+        // 1. Blobs get verified
+        // 2. Maybe: BlobTransactions get settled
+        // 3. Maybe: Contract state digests are updated
+
+        // Keep track of verified blobs
+        std::mem::take(&mut settled_tx.blobs)
+            .iter_mut()
+            .enumerate()
+            .for_each(|(i, blob_metadata)| {
+                // Keep track of all stakers
+                if blob_metadata.blob.contract_name.0 == "staking" {
+                    let blob = std::mem::take(&mut blob_metadata.blob);
+                    let staking_action: StakingAction =
+                        parse_structured_blob(&[blob], &BlobIndex(0))
+                            .data
+                            .parameters;
+                    block_under_construction
+                        .staking_actions
+                        .push((settled_tx.identity.clone(), staking_action));
+                }
+
+                // Everything must exist by construction
+                block_under_construction.verified_blobs.push((
+                    bth.clone(),
+                    hyle_contract_sdk::BlobIndex(i),
+                    blob_proof_output_indices[i],
+                ));
+            });
+
+        // Keep track of settled txs
+        block_under_construction.settled_blob_tx_hashes.push(bth);
+
+        // Update states
+        let mut next_txs_to_try_and_settle = BTreeSet::new();
+        for (contract_name, next_state) in tx_updated_contracts.iter() {
+            debug!("Update {} contract state: {:?}", contract_name, next_state);
+            // Safe to unwrap - all contract names are validated to exist above.
+            self.contracts.get_mut(contract_name).unwrap().state = next_state.state.clone();
+            if let Some(tx) = self
+                .unsettled_transactions
+                .get_next_unsettled_tx(contract_name)
+            {
+                next_txs_to_try_and_settle.insert(tx.clone());
+            }
+            // TODO: would be nice to have a drain-like API here.
+            block_under_construction
+                .updated_states
+                .insert(contract_name.clone(), next_state.state.clone());
+        }
+
+        next_txs_to_try_and_settle
+    }
+
     fn verify_hyle_output(
         unsettled_tx: &UnsettledBlobTransaction,
         hyle_output: &HyleOutput,
@@ -455,10 +491,32 @@ impl NodeState {
         Ok(())
     }
 
-    fn clear_timeouts(&mut self, height: &BlockHeight) -> Vec<TxHash> {
-        let mut txs_at_timeout = self.timeouts.drop(height);
-        txs_at_timeout.retain(|tx| self.unsettled_transactions.remove(tx).is_some());
-        txs_at_timeout
+    fn clear_timeouts(&mut self, block_under_construction: &mut Block) {
+        let mut txs_at_timeout = self.timeouts.drop(&block_under_construction.block_height);
+        txs_at_timeout.retain(|tx| {
+            if let Some(mut tx) = self.unsettled_transactions.remove(tx) {
+                debug!("Blob tx timeout: {}", &tx.hash);
+
+                // Attempt to settle following transactions
+                let mut blob_tx_to_try_and_settle = BTreeSet::new();
+                tx.blobs.drain(..).for_each(|b| {
+                    if let Some(tx) = self
+                        .unsettled_transactions
+                        .get_next_unsettled_tx(&b.blob.contract_name)
+                    {
+                        blob_tx_to_try_and_settle.insert(tx.clone());
+                    }
+                });
+                // Then try to settle transactions when we can.
+                self.settle_txs_until_done(block_under_construction, blob_tx_to_try_and_settle);
+
+                true
+            } else {
+                false
+            }
+        });
+
+        block_under_construction.timed_out_tx_hashes = txs_at_timeout;
     }
 
     pub fn verify_proof_single_output(
@@ -494,7 +552,7 @@ mod test {
     use assertables::assert_err;
     use consensus::ConsensusProposal;
     use crypto::AggregateSignature;
-    use hyle_contract_sdk::{flatten_blobs, BlobIndex, Identity, ProgramId};
+    use hyle_contract_sdk::{flatten_blobs, BlobIndex, Identity, ProgramId, StateDigest};
     use mempool::DataProposal;
 
     async fn new_node_state() -> NodeState {
@@ -967,6 +1025,100 @@ mod test {
     }
 
     #[test_log::test(tokio::test)]
+    async fn test_auto_settle_next_txs_after_settle() {
+        let mut state = new_node_state().await;
+
+        let c1 = ContractName("c1".to_string());
+        let c2 = ContractName("c2".to_string());
+        let register_c1 = new_register_contract(c1.clone());
+        let register_c2 = new_register_contract(c2.clone());
+
+        // Add four transactions - A blocks B/C, B blocks D.
+        // Send proofs for B, C, D before A.
+        let blocking_tx = BlobTransaction {
+            identity: Identity("test.c1".to_string()),
+            blobs: vec![new_blob(&c1.0), new_blob(&c2.0)],
+        };
+        let ready_same_block = BlobTransaction {
+            identity: Identity("test.c1".to_string()),
+            blobs: vec![new_blob(&c1.0)],
+        };
+        let ready_later_block = BlobTransaction {
+            identity: Identity("test.c2".to_string()),
+            blobs: vec![new_blob(&c2.0)],
+        };
+        let ready_last_block = BlobTransaction {
+            identity: Identity("test2.c1".to_string()),
+            blobs: vec![new_blob(&c1.0)],
+        };
+        let blocking_tx_hash = blocking_tx.hash();
+        let hyle_output =
+            make_hyle_output_with_state(blocking_tx.clone(), BlobIndex(0), &[0, 1, 2, 3], &[12]);
+        let blocking_tx_verified_proof_1 = new_proof_tx(&c1, &hyle_output, &blocking_tx_hash);
+        let hyle_output =
+            make_hyle_output_with_state(blocking_tx.clone(), BlobIndex(1), &[0, 1, 2, 3], &[22]);
+        let blocking_tx_verified_proof_2 = new_proof_tx(&c2, &hyle_output, &blocking_tx_hash);
+
+        let ready_same_block_hash = ready_same_block.hash();
+        let hyle_output =
+            make_hyle_output_with_state(ready_same_block.clone(), BlobIndex(0), &[12], &[13]);
+        let ready_same_block_verified_proof =
+            new_proof_tx(&c1, &hyle_output, &ready_same_block_hash);
+
+        let ready_later_block_hash = ready_later_block.hash();
+        let hyle_output =
+            make_hyle_output_with_state(ready_later_block.clone(), BlobIndex(0), &[22], &[23]);
+        let ready_later_block_verified_proof =
+            new_proof_tx(&c1, &hyle_output, &ready_later_block_hash);
+
+        let ready_last_block_hash = ready_last_block.hash();
+        let hyle_output =
+            make_hyle_output_with_state(ready_last_block.clone(), BlobIndex(0), &[13], &[14]);
+        let ready_last_block_verified_proof =
+            new_proof_tx(&c1, &hyle_output, &ready_last_block_hash);
+
+        state.handle_signed_block(&craft_signed_block(
+            104,
+            vec![
+                register_c1.into(),
+                register_c2.into(),
+                blocking_tx.into(),
+                ready_same_block.into(),
+                ready_same_block_verified_proof.into(),
+                ready_last_block.into(),
+                ready_last_block_verified_proof.into(),
+            ],
+        ));
+
+        state.handle_signed_block(&craft_signed_block(
+            108,
+            vec![
+                ready_later_block.into(),
+                ready_later_block_verified_proof.into(),
+            ],
+        ));
+
+        // Now settle the first, which should auto-settle the pending ones, then the ones waiting for these.
+        assert_eq!(
+            state
+                .handle_signed_block(&craft_signed_block(
+                    110,
+                    vec![
+                        blocking_tx_verified_proof_1.into(),
+                        blocking_tx_verified_proof_2.into(),
+                    ]
+                ))
+                .settled_blob_tx_hashes,
+            vec![
+                blocking_tx_hash,
+                ready_same_block_hash,
+                ready_later_block_hash,
+                ready_last_block_hash
+            ]
+        );
+    }
+
+    #[test_log::test(tokio::test)]
     async fn test_tx_timeout_simple() {
         let mut state = new_node_state().await;
         let c1 = ContractName("c1".to_string());
@@ -1045,7 +1197,6 @@ mod test {
     }
 
     #[test_log::test(tokio::test)]
-    #[should_panic]
     async fn test_tx_on_timeout_settle_next_txs() {
         let mut state = new_node_state().await;
         let c1 = ContractName("c1".to_string());
@@ -1058,6 +1209,7 @@ mod test {
             identity: Identity("test.c1".to_string()),
             blobs: vec![new_blob(&c1.0), new_blob(&c2.0)],
         };
+        let blocking_tx_hash = blocking_tx.hash();
         let ready_same_block = BlobTransaction {
             identity: Identity("test.c1".to_string()),
             blobs: vec![new_blob(&c1.0)],
@@ -1074,7 +1226,7 @@ mod test {
         let ready_later_block_hash = ready_later_block.hash();
         let hyle_output = make_hyle_output(ready_later_block.clone(), BlobIndex(0));
         let ready_later_block_verified_proof =
-            new_proof_tx(&c1, &hyle_output, &ready_later_block_hash);
+            new_proof_tx(&c2, &hyle_output, &ready_later_block_hash);
 
         state.handle_signed_block(&craft_signed_block(
             104,
@@ -1098,13 +1250,15 @@ mod test {
         // Time out
         let block = state.handle_signed_block(&craft_signed_block(204, vec![]));
 
-        // Check that the transaction remains settled and cleared from the timeout map
+        // Only the blocking TX should be timed out
+        assert_eq!(block.timed_out_tx_hashes, vec![blocking_tx_hash]);
+
+        // The others have been settled
         [ready_same_block_hash, ready_later_block_hash]
             .iter()
             .for_each(|tx_hash| {
                 assert!(!block.timed_out_tx_hashes.contains(tx_hash));
                 assert!(state.unsettled_transactions.get(tx_hash).is_none());
-                assert_eq!(timeouts::tests::get(&state.timeouts, tx_hash), None);
                 assert!(block.settled_blob_tx_hashes.contains(tx_hash));
             });
     }
