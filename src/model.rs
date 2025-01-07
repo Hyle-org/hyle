@@ -8,6 +8,7 @@ use anyhow::Context;
 #[cfg(feature = "node")]
 use axum::Router;
 use data_availability::HandledBlobProofOutput;
+use std::collections::HashSet;
 #[cfg(feature = "node")]
 use std::sync::Arc;
 
@@ -227,25 +228,20 @@ pub struct Block {
     pub hash: ConsensusProposalHash,
     pub block_height: BlockHeight,
     pub block_timestamp: u64,
-    pub new_contract_txs: Vec<Transaction>,
-    pub new_blob_txs: Vec<Transaction>,
-    pub new_verified_proof_txs: Vec<Transaction>,
+    pub txs: Vec<Transaction>,
+    pub failed_txs: HashSet<TxHash>,
     pub blob_proof_outputs: Vec<HandledBlobProofOutput>,
+    pub settled_blob_tx_hashes: Vec<TxHash>,
     pub verified_blobs: Vec<(TxHash, BlobIndex, usize)>,
-    pub failed_txs: Vec<Transaction>,
     pub new_bounded_validators: Vec<ValidatorPublicKey>,
     pub staking_actions: Vec<(Identity, StakingAction)>,
     pub timed_out_tx_hashes: Vec<TxHash>,
-    pub settled_blob_tx_hashes: Vec<TxHash>,
     pub updated_states: BTreeMap<ContractName, StateDigest>,
 }
 
 impl Block {
     pub fn total_txs(&self) -> usize {
-        self.new_contract_txs.len()
-            + self.new_blob_txs.len()
-            + self.new_verified_proof_txs.len()
-            + self.failed_txs.len()
+        self.txs.len()
     }
 }
 
