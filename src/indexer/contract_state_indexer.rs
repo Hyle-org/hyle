@@ -156,15 +156,15 @@ where
         );
         debug!(cn = %self.contract_name, "📦 Handled block outputs: {:?}", block);
 
-        for c_tx in block.new_contract_txs {
-            if let TransactionData::RegisterContract(tx) = c_tx.transaction_data {
-                self.handle_register_contract(tx).await?;
-            }
-        }
-
-        for b_tx in block.new_blob_txs {
-            if let TransactionData::Blob(tx) = b_tx.transaction_data {
-                self.handle_blob(tx).await?;
+        for tx in block.txs {
+            match tx.transaction_data {
+                TransactionData::RegisterContract(tx) => {
+                    self.handle_register_contract(tx).await?;
+                }
+                TransactionData::Blob(tx) => {
+                    self.handle_blob(tx).await?;
+                }
+                _ => {}
             }
         }
 

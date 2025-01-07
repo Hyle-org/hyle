@@ -15,6 +15,7 @@ CREATE TYPE transaction_status AS ENUM ('success', 'failure', 'sequenced', 'time
 CREATE TABLE transactions (
     tx_hash TEXT PRIMARY KEY,
     block_hash TEXT NOT NULL REFERENCES blocks(hash) ON DELETE CASCADE,
+    index INT NOT NULL,                              -- Index of the transaction within the block
     version INT NOT NULL,
     transaction_type transaction_type NOT NULL,      -- Field to identify the type of transaction (used for joins)
     transaction_status transaction_status NOT NULL   -- Field to identify the status of the transaction

@@ -8,6 +8,7 @@ use anyhow::Context;
 #[cfg(feature = "node")]
 use axum::Router;
 use data_availability::HandledBlobProofOutput;
+use std::collections::HashSet;
 #[cfg(feature = "node")]
 use std::sync::Arc;
 
@@ -221,31 +222,50 @@ impl Transaction {
     }
 }
 
+impl From<BlobTransaction> for Transaction {
+    fn from(tx: BlobTransaction) -> Self {
+        Transaction::wrap(TransactionData::Blob(tx))
+    }
+}
+
+impl From<ProofTransaction> for Transaction {
+    fn from(tx: ProofTransaction) -> Self {
+        Transaction::wrap(TransactionData::Proof(tx))
+    }
+}
+
+impl From<VerifiedProofTransaction> for Transaction {
+    fn from(tx: VerifiedProofTransaction) -> Self {
+        Transaction::wrap(TransactionData::VerifiedProof(tx))
+    }
+}
+
+impl From<RegisterContractTransaction> for Transaction {
+    fn from(tx: RegisterContractTransaction) -> Self {
+        Transaction::wrap(TransactionData::RegisterContract(tx))
+    }
+}
+
 #[derive(Debug, Default, Clone, Serialize, Deserialize, Encode, Decode, Eq, PartialEq)]
 pub struct Block {
     pub parent_hash: ConsensusProposalHash,
     pub hash: ConsensusProposalHash,
     pub block_height: BlockHeight,
     pub block_timestamp: u64,
-    pub new_contract_txs: Vec<Transaction>,
-    pub new_blob_txs: Vec<Transaction>,
-    pub new_verified_proof_txs: Vec<Transaction>,
+    pub txs: Vec<Transaction>,
+    pub failed_txs: HashSet<TxHash>,
     pub blob_proof_outputs: Vec<HandledBlobProofOutput>,
+    pub settled_blob_tx_hashes: Vec<TxHash>,
     pub verified_blobs: Vec<(TxHash, BlobIndex, usize)>,
-    pub failed_txs: Vec<Transaction>,
     pub new_bounded_validators: Vec<ValidatorPublicKey>,
     pub staking_actions: Vec<(Identity, StakingAction)>,
     pub timed_out_tx_hashes: Vec<TxHash>,
-    pub settled_blob_tx_hashes: Vec<TxHash>,
     pub updated_states: BTreeMap<ContractName, StateDigest>,
 }
 
 impl Block {
     pub fn total_txs(&self) -> usize {
-        self.new_contract_txs.len()
-            + self.new_blob_txs.len()
-            + self.new_verified_proof_txs.len()
-            + self.failed_txs.len()
+        self.txs.len()
     }
 }
 
