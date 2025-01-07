@@ -222,6 +222,30 @@ impl Transaction {
     }
 }
 
+impl From<BlobTransaction> for Transaction {
+    fn from(tx: BlobTransaction) -> Self {
+        Transaction::wrap(TransactionData::Blob(tx))
+    }
+}
+
+impl From<ProofTransaction> for Transaction {
+    fn from(tx: ProofTransaction) -> Self {
+        Transaction::wrap(TransactionData::Proof(tx))
+    }
+}
+
+impl From<VerifiedProofTransaction> for Transaction {
+    fn from(tx: VerifiedProofTransaction) -> Self {
+        Transaction::wrap(TransactionData::VerifiedProof(tx))
+    }
+}
+
+impl From<RegisterContractTransaction> for Transaction {
+    fn from(tx: RegisterContractTransaction) -> Self {
+        Transaction::wrap(TransactionData::RegisterContract(tx))
+    }
+}
+
 #[derive(Debug, Default, Clone, Serialize, Deserialize, Encode, Decode, Eq, PartialEq)]
 pub struct Block {
     pub parent_hash: ConsensusProposalHash,
