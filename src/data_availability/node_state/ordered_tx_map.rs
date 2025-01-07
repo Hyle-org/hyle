@@ -72,8 +72,10 @@ impl OrderedTxMap {
                     c.retain(|h| !h.eq(hash));
                 }
             }
+            self.map.remove(hash)
+        } else {
+            None
         }
-        self.map.remove(hash)
     }
 }
 
