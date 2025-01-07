@@ -68,15 +68,17 @@ strum_macros = "0.26.4"
 tracing = "0.1"
 
 # Node dependencies
-hydentity = { path = "./contracts/hydentity", features = ["client"], optional = true }
+hydentity = { path = "./contracts/hydentity", features = [
+    "client",
+], optional = true }
 hyllar = { path = "./contracts/hyllar", features = ["client"], optional = true }
 risc0-recursion = { path = "./contracts/risc0-recursion", optional = true }
 
 anymap = { version = "0.12.1", optional = true }
 assertables = { version = "9.5.0", optional = true }
-axum = { version = "0.7.9", features = ["ws", "macros"], optional = true }
+axum = { version = "0.8.1", features = ["ws", "macros"], optional = true }
 axum-otel-metrics = { version = "0.9.1", optional = true }
-axum-test = { version = "16.4.1", optional = true }
+axum-test = { version = "17.0.1", optional = true }
 bonsai-runner = { path = "./crates/bonsai-runner", optional = true }
 borsh = { version = "1.5.3", optional = true }
 bytes = { version = "1.9.0", optional = true }
