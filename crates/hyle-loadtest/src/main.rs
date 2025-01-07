@@ -1,6 +1,7 @@
 use anyhow::Error;
 use clap::{Parser, Subcommand};
 use hyle_loadtest::{generate, send, setup};
+use tracing::Level;
 
 /// A cli to interact with hyle node
 #[derive(Debug, Parser)] // requires `derive` feature
@@ -44,7 +45,7 @@ enum SendCommands {
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
-    tracing_subscriber::fmt::init();
+    tracing_subscriber::fmt().with_max_level(Level::INFO).init();
 
     let args = Args::parse();
 

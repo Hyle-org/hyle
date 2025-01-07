@@ -158,7 +158,7 @@ pub async fn send_blob_txs(url: String) -> Result<()> {
             for blob_tx in chunk.iter() {
                 client.send_tx_blob(blob_tx).await.unwrap();
             }
-            info!("Transactions sent: {:?}", chunk.len());
+            info!("Blob transactions sent: {:?}", chunk.len());
         });
     }
     tasks.join_all().await;
@@ -191,7 +191,7 @@ pub async fn send_proof_txs(url: String) -> Result<()> {
     }
     tasks.join_all().await;
 
-    info!("Transactions sent: {:?} total", proof_txs.len());
+    info!("Proof transactions sent: {:?} total", proof_txs.len());
 
     Ok(())
 }
