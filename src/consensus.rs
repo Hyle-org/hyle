@@ -1821,7 +1821,7 @@ pub mod test {
 
     #[test_log::test(tokio::test)]
     async fn test_timeout_join_mutiny_when_triggering_timeout_4() {
-        let (mut node1, mut node2, mut node3, mut node4): (
+        let (mut node1, node2, mut node3, mut node4): (
             ConsensusTestCtx,
             ConsensusTestCtx,
             ConsensusTestCtx,
