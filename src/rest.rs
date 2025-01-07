@@ -3,7 +3,7 @@
 use anyhow::{Context, Result};
 pub use axum::Router;
 use axum::{
-    extract::State,
+    extract::{DefaultBodyLimit, State},
     response::{IntoResponse, Response},
     routing::get,
     Json,
@@ -30,6 +30,7 @@ pub struct RestApiRunContext {
     pub bus: SharedMessageBus,
     pub router: Router,
     pub metrics_layer: HttpMetricsLayer,
+    pub max_body_size: usize,
 }
 
 pub struct RouterState {
@@ -64,6 +65,7 @@ impl Module for RestApi {
                     .with_state(RouterState { info: ctx.info }),
             )
             .layer(ctx.metrics_layer)
+            .layer(DefaultBodyLimit::max(ctx.max_body_size)) // 10 MB
             .layer(tower_http::cors::CorsLayer::permissive())
             // TODO: Tracelayer should be added only in "dev mode"
             .layer(TraceLayer::new_for_http());

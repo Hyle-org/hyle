@@ -9,6 +9,7 @@ Config(
   ),
   log_format: "full",
   rest: "127.0.0.1:4321",
+  rest_max_body_size: 10_485_760, // 10 MB
   data_directory: "data_node",
   database_url: "postgres://postgres:postgres@localhost:5432/postgres",
   consensus: Consensus (
