@@ -53,18 +53,28 @@ impl Conf {
         if let Some(config_file) = config_file {
             s = s.add_source(File::with_name(&config_file).required(false));
         }
-        s.add_source(
-            Environment::with_prefix("hyle")
-                .separator("__")
-                .prefix_separator("_")
-                .list_separator(",")
-                .with_list_parse_key("peers") // Parse this key into Vec<String>
-                .try_parsing(true),
-        )
-        .set_override_option("data_directory", data_directory)?
-        .set_override_option("run_indexer", run_indexer)?
-        .build()?
-        .try_deserialize()
+        let mut conf: Self = s
+            .add_source(
+                Environment::with_prefix("hyle")
+                    .separator("__")
+                    .prefix_separator("_")
+                    .list_separator(",")
+                    .with_list_parse_key("peers") // Parse this key into Vec<String>
+                    .try_parsing(true),
+            )
+            .set_override_option("data_directory", data_directory)?
+            .set_override_option("run_indexer", run_indexer)?
+            .build()?
+            .try_deserialize()?;
+        if let Some(true) = conf.single_node {
+            conf.consensus.genesis_stakers.insert(
+                conf.id.clone(),
+                std::env::var("HYLE_SINGLE_NODE_STAKE")
+                    .map(|s| s.parse().unwrap())
+                    .unwrap_or(1000),
+            );
+        }
+        Ok(conf)
     }
 }
 

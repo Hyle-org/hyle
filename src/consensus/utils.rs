@@ -1,7 +1,6 @@
 use sha3::{Digest, Sha3_256};
 use std::{
     fmt::Display,
-    io::Write,
     ops::{Deref, DerefMut},
 };
 
@@ -15,8 +14,11 @@ use super::{
 impl Hashable<QuorumCertificateHash> for QuorumCertificate {
     fn hash(&self) -> QuorumCertificateHash {
         let mut hasher = Sha3_256::new();
-        _ = write!(hasher, "{:?}", self.signature);
-        _ = write!(hasher, "{:?}", self.validators);
+        hasher.update(self.signature.0.clone());
+        hasher.update(self.validators.len().to_le_bytes());
+        for validator in self.validators.iter() {
+            hasher.update(validator.0.clone());
+        }
         QuorumCertificateHash(hasher.finalize().as_slice().to_owned())
     }
 }
