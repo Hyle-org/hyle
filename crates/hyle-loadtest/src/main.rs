@@ -1,6 +1,8 @@
 use anyhow::Error;
 use clap::{Parser, Subcommand};
-use hyle_loadtest::{generate, send, setup};
+use hyle_loadtest::{
+    generate, generate_blobs_txs, generate_proof_txs, send, send_blob_txs, send_proof_txs, setup,
+};
 use tracing::Level;
 
 /// A cli to interact with hyle node
@@ -29,18 +31,27 @@ enum SendCommands {
     /// Register Contracts
     #[command(alias = "s")]
     Setup,
+    /// Generates Blob transactions for the load test
+    #[command(alias = "gbt")]
+    GenerateBlobTransactions,
+    /// Generates Proof transactions for the load test
+    #[command(alias = "gpt")]
+    GenerateProofTransactions,
     /// Generates Blob and Proof transactions for the load test
     #[command(alias = "gt")]
     GenerateTransactions,
+    /// Load the Blob transactions and send them
+    #[command(alias = "sbt")]
+    SendBlobTransactions,
+    /// Load the Proof transactions and send them
+    #[command(alias = "spt")]
+    SendProofTransactions,
     /// Load the transactions and send them
     #[command(alias = "st")]
     SendTransactions,
     /// Run the entire flow
     #[command(alias = "l")]
     LoadTest,
-    /// Generate 100k blob transactions and send them to timeout
-    #[command(alias = "to")]
-    TimeoutScenario,
 }
 
 #[tokio::main]
@@ -55,15 +66,20 @@ async fn main() -> Result<(), Error> {
 
     match args.command {
         SendCommands::Setup => setup(url, users, verifier).await?,
+        SendCommands::GenerateBlobTransactions => {
+            generate_blobs_txs(url, users).await?;
+        }
+        SendCommands::GenerateProofTransactions => {
+            generate_proof_txs(url, users, verifier).await?;
+        }
         SendCommands::GenerateTransactions => generate(url, users, verifier).await?,
+        SendCommands::SendBlobTransactions => send_blob_txs(url).await?,
+        SendCommands::SendProofTransactions => send_proof_txs(url).await?,
         SendCommands::SendTransactions => send(url).await?,
         SendCommands::LoadTest => {
             setup(url.clone(), users, verifier.clone()).await?;
             generate(url.clone(), users, verifier).await?;
             send(url).await?;
-        }
-        SendCommands::TimeoutScenario => {
-            todo!()
         }
     }
 

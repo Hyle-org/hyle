@@ -69,6 +69,13 @@ pub async fn setup(url: String, users: u32, verifier: String) -> Result<()> {
 }
 
 pub async fn generate(url: String, users: u32, verifier: String) -> Result<()> {
+    generate_blobs_txs(url.clone(), users).await?;
+    generate_proof_txs(url, users, verifier).await?;
+
+    Ok(())
+}
+
+pub async fn generate_blobs_txs(url: String, users: u32) -> Result<()> {
     let indexer_client = IndexerApiHttpClient::new(url.clone());
 
     let hyllar = indexer_client
@@ -81,13 +88,8 @@ pub async fn generate(url: String, users: u32, verifier: String) -> Result<()> {
     let states = States { hyllar, hydentity };
 
     let mut blob_txs = vec![];
-    let mut proof_txs = vec![];
-
-    ////////
-    // Blob Transaction creation
-    ////////
     let mut tasks = JoinSet::new();
-    let number_of_tasks = 100;
+    let number_of_tasks = 1000;
     let chunk_size: usize = users.div_ceil(number_of_tasks).try_into().unwrap();
 
     let user_chunks: Vec<_> = (0..users).collect();
@@ -95,16 +97,18 @@ pub async fn generate(url: String, users: u32, verifier: String) -> Result<()> {
         .chunks(chunk_size)
         .map(|chunk| chunk.to_vec())
         .collect::<Vec<_>>();
+
     for chunk in user_chunks {
-        let mut states = states.clone();
-        let verifier = verifier.clone();
+        let states = states.clone();
 
         tasks.spawn(async move {
             let mut local_blob_txs = vec![];
-            let mut local_proof_txs = vec![];
 
-            for n in chunk {
-                info!("Building transactions for user: {:?}", n);
+            for n in &chunk {
+                info!(
+                    "Building transactions for user: {n}/{:?}",
+                    chunk.last().unwrap()
+                );
                 let ident = Identity(format!("{n}.hyllar-test").to_string());
                 let mut transaction = TransactionBuilder::new(ident.clone());
                 states
@@ -114,14 +118,70 @@ pub async fn generate(url: String, users: u32, verifier: String) -> Result<()> {
 
                 let BuildResult {
                     identity, blobs, ..
-                } = transaction.build(&mut states).unwrap();
+                } = transaction.stateless_build()?;
+
+                local_blob_txs.push(BlobTransaction { identity, blobs });
+            }
+
+            Ok::<_, anyhow::Error>(local_blob_txs)
+        });
+    }
+
+    while let Some(result) = tasks.join_next().await {
+        blob_txs.extend(result??);
+    }
+
+    std::fs::write("blob_txs.json", serde_json::to_string(&blob_txs).unwrap()).unwrap();
+    Ok(())
+}
+
+pub async fn generate_proof_txs(url: String, users: u32, verifier: String) -> Result<()> {
+    let indexer_client = IndexerApiHttpClient::new(url.clone());
+
+    let hyllar = indexer_client
+        .fetch_current_state(&"hyllar-test".into())
+        .await?;
+    let hydentity = indexer_client
+        .fetch_current_state(&"hydentity".into())
+        .await?;
+
+    let states = States { hyllar, hydentity };
+
+    let mut proof_txs = vec![];
+    let mut tasks = JoinSet::new();
+    let number_of_tasks = 1000;
+    let chunk_size: usize = users.div_ceil(number_of_tasks).try_into().unwrap();
+
+    let user_chunks: Vec<_> = (0..users).collect();
+    let user_chunks = user_chunks
+        .chunks(chunk_size)
+        .map(|chunk| chunk.to_vec())
+        .collect::<Vec<_>>();
+    for chunk in user_chunks {
+        let states = states.clone();
+        let verifier = verifier.clone();
+
+        tasks.spawn(async move {
+            let mut local_proof_txs = vec![];
+
+            for n in &chunk {
+                info!(
+                    "Building transactions for user: {n}/{:?}",
+                    chunk.last().unwrap()
+                );
+                let ident = Identity(format!("{n}.hyllar-test").to_string());
+                let mut transaction = TransactionBuilder::new(ident.clone());
+                states
+                    .hyllar
+                    .builder("hyllar-test".into(), &mut transaction)
+                    .transfer(ident.clone().to_string(), 0)?;
+
+                let BuildResult {
+                    identity, blobs, ..
+                } = transaction.stateless_build()?;
 
                 let blob_tx = BlobTransaction { identity, blobs };
-                local_blob_txs.push(blob_tx.clone());
 
-                ////////
-                // Proof Transactions creation
-                ////////
                 for (proof, contract_name) in transaction.iter_prove(&verifier.clone().into()) {
                     let proof: ProofData = proof.await.unwrap();
                     local_proof_txs.push(ProofTransaction {
@@ -132,19 +192,17 @@ pub async fn generate(url: String, users: u32, verifier: String) -> Result<()> {
                 }
             }
 
-            Ok::<_, anyhow::Error>((local_blob_txs, local_proof_txs))
+            Ok::<_, anyhow::Error>(local_proof_txs)
         });
     }
 
     while let Some(result) = tasks.join_next().await {
-        let (local_blob_txs, local_proof_txs) = result??;
-        blob_txs.extend(local_blob_txs);
-        proof_txs.extend(local_proof_txs);
+        proof_txs.extend(result??);
     }
 
     // serialize to json and write to file
-    std::fs::write("blob_txs.json", serde_json::to_string(&blob_txs).unwrap()).unwrap();
     std::fs::write("proof_txs.json", serde_json::to_string(&proof_txs).unwrap()).unwrap();
+
     Ok(())
 }
 
