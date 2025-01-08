@@ -4,11 +4,13 @@ mod api;
 pub mod codec;
 pub mod node_state;
 
+mod blocks_fjall;
 mod blocks_memory;
-mod blocks_sled;
 
-// Alias one of the two to blocks for tests
-use blocks_memory::Blocks;
+// Pick one of the two implementations
+use blocks_fjall::Blocks;
+//use blocks_memory::Blocks;
+
 use codec::{DataAvailabilityServerCodec, DataAvailabilityServerRequest};
 
 use crate::{
@@ -366,7 +368,7 @@ impl DataAvailability {
             return;
         }
         // if new block is not the next block in the chain, buffer
-        if self.blocks.len() > 0 {
+        if !self.blocks.is_empty() {
             if !self.blocks.contains(block.parent_hash()) {
                 debug!(
                     "Parent block '{}' not found for block hash='{}' height {}",
@@ -392,6 +394,7 @@ impl DataAvailability {
         // store block
         self.add_processed_block(block).await;
         self.pop_buffer(hash).await;
+        _ = self.blocks.persist().log_error("Persisting blocks");
     }
 
     async fn pop_buffer(&mut self, mut last_block_hash: ConsensusProposalHash) {
@@ -516,11 +519,7 @@ impl DataAvailability {
                     .map_or(start_height, |block| block.height())
                     + 1,
             )
-            .filter_map(|block| {
-                block
-                    .map(|b| b.value().map(|i| i.hash()).unwrap_or_default())
-                    .ok()
-            })
+            .filter_map(|block| block.map(|b| b.hash()).ok())
             .collect();
         processed_block_hashes.reverse();
 
@@ -576,7 +575,7 @@ impl DataAvailability {
 
 #[cfg(test)]
 pub mod tests {
-    use std::{collections::VecDeque, path::Path};
+    use std::collections::VecDeque;
 
     use crate::{
         bus::BusClientSender,
@@ -590,7 +589,8 @@ pub mod tests {
     use tokio::io::AsyncWriteExt;
     use tokio_util::codec::{Framed, LengthDelimitedCodec};
 
-    use super::{blocks_memory::Blocks, module_bus_client};
+    use super::module_bus_client;
+    use super::Blocks;
     use anyhow::Result;
 
     /// For use in integration tests
@@ -600,7 +600,8 @@ pub mod tests {
 
     impl DataAvailabilityTestCtx {
         pub async fn new(shared_bus: crate::bus::SharedMessageBus) -> Self {
-            let blocks = Blocks::new(Path::new("")).unwrap();
+            let tmpdir = tempfile::tempdir().unwrap().into_path();
+            let blocks = Blocks::new(&tmpdir).unwrap();
 
             let bus = super::DABusClient::new_from_bus(shared_bus).await;
 
@@ -634,9 +635,10 @@ pub mod tests {
         addr.port()
     }
 
-    #[test]
+    #[test_log::test]
     fn test_blocks() -> Result<()> {
-        let mut blocks = Blocks::new(Path::new("")).unwrap();
+        let tmpdir = tempfile::tempdir().unwrap().into_path();
+        let mut blocks = Blocks::new(&tmpdir).unwrap();
         let block = SignedBlock::default();
         blocks.put(block.clone())?;
         assert!(blocks.last().unwrap().height() == block.height());
@@ -648,7 +650,8 @@ pub mod tests {
 
     #[tokio::test]
     async fn test_pop_buffer_large() {
-        let blocks = Blocks::new(Path::new("")).unwrap();
+        let tmpdir = tempfile::tempdir().unwrap().into_path();
+        let blocks = Blocks::new(&tmpdir).unwrap();
 
         let bus = super::DABusClient::new_from_bus(crate::bus::SharedMessageBus::new(
             crate::bus::metrics::BusMetrics::global("global".to_string()),
@@ -668,7 +671,7 @@ pub mod tests {
         };
         let mut block = SignedBlock::default();
         let mut blocks = vec![];
-        for i in 1..1000 {
+        for i in 1..10000 {
             blocks.push(block.clone());
             block.consensus_proposal.parent_hash = block.hash();
             block.consensus_proposal.slot = i;
@@ -690,7 +693,8 @@ pub mod tests {
 
     #[test_log::test(tokio::test)]
     async fn test_da_streaming() {
-        let blocks = Blocks::new(Path::new("")).unwrap();
+        let tmpdir = tempfile::tempdir().unwrap().into_path();
+        let blocks = Blocks::new(&tmpdir).unwrap();
 
         let global_bus = crate::bus::SharedMessageBus::new(
             crate::bus::metrics::BusMetrics::global("global".to_string()),
