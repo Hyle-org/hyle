@@ -223,8 +223,15 @@ impl ContractRunner {
     async fn prove(&self) -> Result<ProofData> {
         info!("Proving transition for {}...", self.contract_name);
 
+        // TODO: call right prover
+
+        #[cfg(feature = "risc0")]
         let (proof, _) =
-            crate::helpers::prove(self.binary, self.contract_input.get().unwrap()).await?;
+            crate::helpers::risc0::prove(self.binary, self.contract_input.get().unwrap()).await?;
+
+        #[cfg(feature = "sp1")]
+        let (proof, _) =
+            crate::helpers::risc0::prove(self.binary, self.contract_input.get().unwrap()).await?;
 
         Ok(proof)
     }
