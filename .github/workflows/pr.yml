@@ -1,0 +1,24 @@
+name: PR 
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+jobs:
+  check-pr-title:
+    name: Check Title for Gitmoji or Emoji
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v3
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '16'
+
+      - name: Verify PR title
+        run: node .github/scripts/check-pr-title.js
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+
