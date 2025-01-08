@@ -280,7 +280,7 @@ impl Mempool {
             if lane_entry.signatures.len() == 1 && self.validators.len() > 1 {
                 debug!(
                     "🚗 Broadcast DataProposal {} ({} validators, {} txs)",
-                    lane_entry.data_proposal.hash(),
+                    lane_entry.data_proposal.id,
                     self.validators.len(),
                     lane_entry.data_proposal.txs.len()
                 );
@@ -316,7 +316,7 @@ impl Mempool {
                 self.metrics.add_proposed_txs(&lane_entry.data_proposal);
                 debug!(
                     "🚗 Broadcast DataProposal {} (only for {} validators, {} txs)",
-                    &lane_entry.data_proposal.hash(),
+                    &lane_entry.data_proposal.id,
                     only_for.len(),
                     &lane_entry.data_proposal.txs.len()
                 );

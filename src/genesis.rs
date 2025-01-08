@@ -202,7 +202,7 @@ impl Genesis {
         let (contract_program_ids, mut genesis_txs, mut states) = Self::genesis_contracts_txs();
 
         let register_txs = Self::generate_register_txs(peer_pubkey, &mut states).await?;
-        let faucet_txs = Self::generate_faucet_txs(peer_pubkey, &mut states).await?;
+        let faucet_txs = Self::generate_faucet_txs(peer_pubkey, &mut states, genesis_stake).await?;
         let stake_txs = Self::generate_stake_txs(peer_pubkey, &mut states, genesis_stake).await?;
 
         let builders = register_txs
@@ -283,11 +283,15 @@ impl Genesis {
     async fn generate_faucet_txs(
         peer_pubkey: &PeerPublicKeyMap,
         states: &mut States,
+        genesis_stakers: &HashMap<String, u64>,
     ) -> Result<Vec<BuildResult>> {
-        let genesis_faucet = 100;
-
         let mut txs = vec![];
-        for peer in peer_pubkey.values() {
+        for (id, peer) in peer_pubkey.iter() {
+            let genesis_faucet = *genesis_stakers
+                .get(id)
+                .expect("Genesis stakers should be in the peer map")
+                as u128;
+
             info!("🌱  Fauceting {genesis_faucet} hyllar to {peer}");
 
             let identity = Identity("faucet.hydentity".to_string());
