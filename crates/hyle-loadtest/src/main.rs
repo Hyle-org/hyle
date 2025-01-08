@@ -78,6 +78,7 @@ async fn main() -> Result<(), Error> {
         SendCommands::SendTransactions => send(url).await?,
         SendCommands::LoadTest => {
             setup(url.clone(), users, verifier.clone()).await?;
+            tokio::time::sleep(std::time::Duration::from_secs(3)).await;
             generate(url.clone(), users, verifier).await?;
             send(url).await?;
         }
