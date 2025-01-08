@@ -122,7 +122,7 @@ sled = { version = "0.34.7", features = [
 [dev-dependencies]
 amm = { path = "./contracts/amm" }
 assert_cmd = "2.0.16"
-tokio-tungstenite = "0.24.0"
+tokio-tungstenite = "0.26.1"
 reqwest = { version = "0.12", features = ["json", "blocking"] }
 serde_json = "1.0.135"
 proptest = "1.6.0"
