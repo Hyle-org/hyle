@@ -45,7 +45,7 @@ required-features = ["node"]
 # Public dependencies
 hyle-contract-sdk = { path = "./contract-sdk", features = ["tracing"] }
 staking = { path = "./contracts/staking", features = ["client"] }
-client-sdk = { path = "./crates/client-sdk", features = ["risc0"] }
+client-sdk = { path = "./crates/client-sdk" }
 
 anyhow = "1.0.95"
 bincode = { version = "2.0.0-rc.3", features = ["serde"] }
@@ -154,6 +154,7 @@ tx_builder = [
     "dep:risc0-zkvm",
 ]
 node = [
+    "client-sdk/risc0",
     "dep:anymap",
     "dep:assertables",
     "dep:axum",
