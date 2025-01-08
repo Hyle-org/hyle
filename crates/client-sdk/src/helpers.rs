@@ -1,8 +1,61 @@
+use crate::ProofData;
+use anyhow::{bail, Result};
+use sdk::{ContractInput, HyleOutput};
+
+pub enum Prover {
+    #[cfg(feature = "risc0")]
+    Risc0Prover,
+    #[cfg(feature = "sp1")]
+    SP1Prover,
+}
+
+impl Prover {
+    pub async fn prove(
+        &self,
+        binary: &[u8],
+        contract_input: &ContractInput,
+    ) -> Result<(ProofData, HyleOutput)> {
+        match self {
+            #[cfg(feature = "risc0")]
+            Prover::Risc0Prover => risc0::prove(binary, contract_input).await,
+            #[cfg(feature = "sp1")]
+            Prover::SP1Prover => sp1::prove(binary, contract_input),
+        }
+    }
+
+    pub fn execute(&self, binary: &[u8], contract_input: &ContractInput) -> Result<HyleOutput> {
+        match self {
+            #[cfg(feature = "risc0")]
+            Prover::Risc0Prover => risc0::execute(binary, contract_input),
+            #[cfg(feature = "sp1")]
+            Prover::SP1Prover => sp1::execute(binary, contract_input),
+        }
+    }
+}
+
 #[cfg(feature = "risc0")]
 pub mod risc0 {
-    use crate::ProofData;
-    use anyhow::{bail, Result};
-    use sdk::{ContractInput, HyleOutput};
+    use super::*;
+
+    pub fn execute(binary: &[u8], contract_input: &ContractInput) -> Result<HyleOutput> {
+        let contract_input = bonsai_runner::as_input_data(contract_input)?;
+        let env = risc0_zkvm::ExecutorEnv::builder()
+            .write_slice(&contract_input)
+            .build()
+            .unwrap();
+
+        let prover = risc0_zkvm::default_executor();
+        let execute_info = prover.execute(env, binary)?;
+        let output = execute_info.journal.decode::<HyleOutput>().unwrap();
+        if !output.success {
+            let program_error = std::str::from_utf8(&output.program_outputs).unwrap();
+            bail!(
+                "\x1b[91mExecution failed ! Program output: {}\x1b[0m",
+                program_error
+            );
+        }
+        Ok(output)
+    }
 
     pub async fn prove(
         binary: &[u8],
@@ -48,11 +101,35 @@ pub mod sp1 {
     use anyhow::Context;
     use sp1_sdk::{ProverClient, SP1Stdin};
 
-    use crate::ProofData;
-    use anyhow::{bail, Result};
-    use sdk::{ContractInput, HyleOutput};
+    use super::*;
 
-    pub async fn prove(
+    pub fn execute(binary: &[u8], contract_input: &ContractInput) -> Result<HyleOutput> {
+        let client = ProverClient::new();
+        let mut stdin = SP1Stdin::new();
+        stdin.write(&contract_input);
+
+        let (public_values, _) = client
+            .execute(binary, stdin)
+            .run()
+            .expect("failed to generate proof");
+
+        let (hyle_output, _) = bincode::decode_from_slice::<HyleOutput, _>(
+            public_values.as_slice(),
+            bincode::config::legacy().with_fixed_int_encoding(),
+        )
+        .context("Failed to extract HyleOuput from SP1 proof")?;
+
+        if !hyle_output.success {
+            let program_error = std::str::from_utf8(&hyle_output.program_outputs).unwrap();
+            bail!(
+                "\x1b[91mExecution failed ! Program output: {}\x1b[0m",
+                program_error
+            );
+        }
+        Ok(hyle_output)
+    }
+
+    pub fn prove(
         binary: &[u8],
         contract_input: &ContractInput,
     ) -> anyhow::Result<(ProofData, HyleOutput)> {
