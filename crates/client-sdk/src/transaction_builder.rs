@@ -207,42 +207,54 @@ impl ContractRunner {
     fn execute(&self) -> Result<HyleOutput> {
         info!("Checking transition for {}...", self.contract_name);
 
-        let contract_input = bonsai_runner::as_input_data(self.contract_input.get().unwrap())?;
-        let execute_info = execute(self.binary, &contract_input)?;
-        let output = execute_info.journal.decode::<HyleOutput>().unwrap();
-        if !output.success {
-            let program_error = std::str::from_utf8(&output.program_outputs).unwrap();
-            bail!(
-                "\x1b[91mExecution failed ! Program output: {}\x1b[0m",
-                program_error
-            );
+        #[cfg(feature = "risc0")]
+        {
+            let contract_input = bonsai_runner::as_input_data(self.contract_input.get().unwrap())?;
+            let output = risc0_execute(self.binary, &contract_input)?;
+            Ok(output)
         }
-        Ok(output)
+        #[cfg(feature = "sp1")]
+        bail!("SP1 not implemented yet");
+
+        #[cfg(not(any(feature = "risc0", feature = "sp1")))]
+        bail!("No executor available");
     }
 
     async fn prove(&self) -> Result<ProofData> {
         info!("Proving transition for {}...", self.contract_name);
 
-        // TODO: call right prover
-
         #[cfg(feature = "risc0")]
-        let (proof, _) =
-            crate::helpers::risc0::prove(self.binary, self.contract_input.get().unwrap()).await?;
+        {
+            let (proof, _) =
+                crate::helpers::risc0::prove(self.binary, self.contract_input.get().unwrap())
+                    .await?;
+            Ok(proof)
+        }
 
         #[cfg(feature = "sp1")]
-        let (proof, _) =
-            crate::helpers::risc0::prove(self.binary, self.contract_input.get().unwrap()).await?;
+        bail!("SP1 not implemented yet");
 
-        Ok(proof)
+        #[cfg(not(any(feature = "risc0", feature = "sp1")))]
+        bail!("No executor available");
     }
 }
 
-fn execute(binary: &'static [u8], contract_input: &[u8]) -> Result<risc0_zkvm::SessionInfo> {
+#[cfg(feature = "risc0")]
+fn risc0_execute(binary: &'static [u8], contract_input: &[u8]) -> Result<HyleOutput> {
     let env = risc0_zkvm::ExecutorEnv::builder()
         .write_slice(contract_input)
         .build()
         .unwrap();
 
     let prover = risc0_zkvm::default_executor();
-    prover.execute(env, binary)
+    let execute_info = prover.execute(env, binary)?;
+    let output = execute_info.journal.decode::<HyleOutput>().unwrap();
+    if !output.success {
+        let program_error = std::str::from_utf8(&output.program_outputs).unwrap();
+        bail!(
+            "\x1b[91mExecution failed ! Program output: {}\x1b[0m",
+            program_error
+        );
+    }
+    Ok(output)
 }

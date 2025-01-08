@@ -1,11 +1,8 @@
-use anyhow::{bail, Result};
-use sdk::{ContractInput, HyleOutput};
-
-use crate::ProofData;
-
 #[cfg(feature = "risc0")]
 pub mod risc0 {
-    use super::*;
+    use crate::ProofData;
+    use anyhow::{bail, Result};
+    use sdk::{ContractInput, HyleOutput};
 
     pub async fn prove(
         binary: &[u8],
@@ -51,7 +48,9 @@ pub mod sp1 {
     use anyhow::Context;
     use sp1_sdk::{ProverClient, SP1Stdin};
 
-    use super::*;
+    use crate::ProofData;
+    use anyhow::{bail, Result};
+    use sdk::{ContractInput, HyleOutput};
 
     pub async fn prove(
         binary: &[u8],
