@@ -19,7 +19,7 @@ hyle_modules=(
   "sqlx::query"
   "risc0_zkvm"
   "tower_http"
-  "sled")
+)
 
 # Fonction pour extraire le niveau de log d'un module depuis RUST_LOG
 get_level_for_module() {
