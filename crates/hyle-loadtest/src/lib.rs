@@ -109,7 +109,7 @@ pub async fn generate(url: String, users: u32, verifier: String) -> Result<()> {
                 let mut transaction = TransactionBuilder::new(ident.clone());
                 states
                     .hyllar
-                    .default_builder("hyllar-test".into(), &mut transaction)
+                    .builder("hyllar-test".into(), &mut transaction)
                     .transfer(ident.clone().to_string(), 0)?;
 
                 let BuildResult {

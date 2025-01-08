@@ -302,7 +302,7 @@ impl Genesis {
             // Transfer
             states
                 .hyllar
-                .default_builder("hyllar".into(), &mut transaction)
+                .default_builder(&mut transaction)
                 .transfer(format!("{peer}.hydentity"), genesis_faucet)?;
 
             txs.push(transaction.build(states)?);
@@ -343,7 +343,7 @@ impl Genesis {
             // Transfer
             states
                 .hyllar
-                .default_builder("hyllar".into(), &mut transaction)
+                .default_builder(&mut transaction)
                 .transfer("staking".to_string(), genesis_stake)?;
 
             // Delegate

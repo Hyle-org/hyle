@@ -9,7 +9,15 @@ pub struct Builder<'b> {
 }
 
 impl HyllarToken {
-    pub fn default_builder<'b>(
+    pub fn default_builder<'b>(&self, builder: &'b mut TransactionBuilder) -> Builder<'b> {
+        builder.init_with("hyllar".into(), self.as_digest());
+        Builder {
+            contract_name: "hyllar".into(),
+            builder,
+        }
+    }
+
+    pub fn builder<'b>(
         &self,
         contract_name: ContractName,
         builder: &'b mut TransactionBuilder,

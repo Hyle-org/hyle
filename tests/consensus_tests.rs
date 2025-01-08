@@ -90,7 +90,7 @@ mod e2e_consensus {
                 .verify_identity(&states.hydentity, "password".to_string())?;
             states
                 .hyllar
-                .default_builder("hyllar".into(), &mut transaction)
+                .default_builder(&mut transaction)
                 .transfer(node_identity.0.clone(), 100)?;
 
             send_transaction(ctx.client(), transaction, &mut states).await;
@@ -105,7 +105,7 @@ mod e2e_consensus {
             states.staking.builder(&mut transaction).stake(100)?;
             states
                 .hyllar
-                .default_builder("hyllar".into(), &mut transaction)
+                .default_builder(&mut transaction)
                 .transfer("staking".to_string(), 100)?;
             states
                 .staking
@@ -210,7 +210,7 @@ mod e2e_consensus {
                 .verify_identity(&states.hydentity, "password".to_string())?;
             states
                 .hyllar
-                .default_builder("hyllar".into(), &mut transaction)
+                .default_builder(&mut transaction)
                 .transfer(node_identity.0.clone(), 100)?;
 
             send_transaction(ctx.client(), transaction, &mut states).await;
@@ -225,7 +225,7 @@ mod e2e_consensus {
             states.staking.builder(&mut transaction).stake(50)?;
             states
                 .hyllar
-                .default_builder("hyllar".into(), &mut transaction)
+                .default_builder(&mut transaction)
                 .transfer("staking".to_string(), 50)?;
             states
                 .staking
