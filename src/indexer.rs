@@ -128,8 +128,8 @@ impl Indexer {
                     .name("indexer-recv")
                     .spawn(async move {
                         while let Ok(transaction) = rx.recv().await {
-                            if let Ok(json) = serde_json::to_string(&transaction) {
-                                if socket.send(Message::Text(json)).await.is_err() {
+                            if let Ok(json) = serde_json::to_vec(&transaction) {
+                                if socket.send(Message::Binary(json.into())).await.is_err() {
                                     break;
                                 }
                             } else {
@@ -157,38 +157,41 @@ impl Indexer {
             // block
             .route("/blocks", get(api::get_blocks))
             .route("/block/last", get(api::get_last_block))
-            .route("/block/height/:height", get(api::get_block))
-            .route("/block/hash/:hash", get(api::get_block_by_hash))
+            .route("/block/height/{height}", get(api::get_block))
+            .route("/block/hash/{hash}", get(api::get_block_by_hash))
             // transaction
             .route("/transactions", get(api::get_transactions))
             .route(
-                "/transactions/block/:height",
+                "/transactions/block/{height}",
                 get(api::get_transactions_by_height),
             )
             .route(
-                "/transactions/contract/:contract_name",
+                "/transactions/contract/{contract_name}",
                 get(api::get_transactions_by_contract),
             )
             .route(
-                "/transaction/hash/:tx_hash",
+                "/transaction/hash/{tx_hash}",
                 get(api::get_transaction_with_hash),
             )
             .route(
-                "/blob_transactions/contract/:contract_name",
+                "/blob_transactions/contract/{contract_name}",
                 get(api::get_blob_transactions_by_contract),
             )
             .route(
-                "/blob_transactions/contract/:contract_name/ws",
+                "/blob_transactions/contract/{contract_name}/ws",
                 get(Self::get_blob_transactions_by_contract_ws_handler),
             )
             // blob
-            .route("/blobs/hash/:tx_hash", get(api::get_blobs_by_tx_hash))
-            .route("/blob/hash/:tx_hash/index/:blob_index", get(api::get_blob))
+            .route("/blobs/hash/{tx_hash}", get(api::get_blobs_by_tx_hash))
+            .route(
+                "/blob/hash/{tx_hash}/index/{blob_index}",
+                get(api::get_blob),
+            )
             // contract
             .route("/contracts", get(api::list_contracts))
-            .route("/contract/:contract_name", get(api::get_contract))
+            .route("/contract/{contract_name}", get(api::get_contract))
             .route(
-                "/state/contract/:contract_name/block/:height",
+                "/state/contract/{contract_name}/block/{height}",
                 get(api::get_contract_state_by_height),
             )
             .with_state(self.state.clone())

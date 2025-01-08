@@ -33,7 +33,7 @@ impl ContractHandler for Hydentity {
     async fn api(store: Arc<RwLock<Store<Self>>>) -> Router<()> {
         Router::new()
             .route("/state", get(get_state))
-            .route("/nonce/:account", get(get_nonce))
+            .route("/nonce/{account}", get(get_nonce))
             .with_state(store)
     }
 
@@ -57,8 +57,8 @@ impl ContractHandler for HyllarToken {
     async fn api(store: Arc<RwLock<Store<HyllarToken>>>) -> Router<()> {
         Router::new()
             .route("/state", get(get_state))
-            .route("/balance/:account", get(get_balance))
-            .route("/allowance/:account/:spender", get(get_allowance))
+            .route("/balance/{account}", get(get_balance))
+            .route("/allowance/{account}/{spender}", get(get_allowance))
             .with_state(store)
     }
 
