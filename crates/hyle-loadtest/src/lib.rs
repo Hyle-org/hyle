@@ -3,7 +3,7 @@ use client_sdk::transaction_builder::{BuildResult, StateUpdater, TransactionBuil
 use client_sdk::ProofData;
 use hydentity::Hydentity;
 use hyle::model::{BlobTransaction, Hashable, ProofTransaction, RegisterContractTransaction};
-use hyle::rest::client::{IndexerApiHttpClient, NodeApiHttpClient};
+use hyle::rest::client::NodeApiHttpClient;
 use hyle_contract_sdk::erc20::ERC20;
 use hyle_contract_sdk::Digestable;
 use hyle_contract_sdk::{ContractName, Identity};
@@ -40,10 +40,7 @@ impl StateUpdater for States {
     }
 }
 
-/// Create a new contract "hyllar-test" that already contains entries for each users
-pub async fn setup(url: String, users: u32, verifier: String) -> Result<()> {
-    let node_client = NodeApiHttpClient::new(url.clone());
-
+pub fn setup_hyllar(users: u32) -> Result<HyllarTokenContract> {
     let hyllar_token = HyllarToken::new(0, "faucet.hyllar-test".into());
     let mut hyllar_contract =
         HyllarTokenContract::init(hyllar_token.clone(), "faucet.hyllar-test".into());
@@ -55,6 +52,14 @@ pub async fn setup(url: String, users: u32, verifier: String) -> Result<()> {
             .transfer(ident, 0)
             .map_err(|e| anyhow::anyhow!(e))?;
     }
+    Ok(hyllar_contract)
+}
+
+/// Create a new contract "hyllar-test" that already contains entries for each users
+pub async fn setup(url: String, users: u32, verifier: String) -> Result<()> {
+    let node_client = NodeApiHttpClient::new(url.clone());
+
+    let hyllar_contract = setup_hyllar(users)?;
 
     let tx = RegisterContractTransaction {
         contract_name: "hyllar-test".into(),
@@ -68,25 +73,14 @@ pub async fn setup(url: String, users: u32, verifier: String) -> Result<()> {
     Ok(())
 }
 
-pub async fn generate(url: String, users: u32, verifier: String) -> Result<()> {
-    generate_blobs_txs(url.clone(), users).await?;
-    generate_proof_txs(url, users, verifier).await?;
+pub async fn generate(users: u32, verifier: String, states: States) -> Result<()> {
+    generate_blobs_txs(users, states.clone()).await?;
+    generate_proof_txs(users, verifier, states).await?;
 
     Ok(())
 }
 
-pub async fn generate_blobs_txs(url: String, users: u32) -> Result<()> {
-    let indexer_client = IndexerApiHttpClient::new(url.clone());
-
-    let hyllar = indexer_client
-        .fetch_current_state(&"hyllar-test".into())
-        .await?;
-    let hydentity = indexer_client
-        .fetch_current_state(&"hydentity".into())
-        .await?;
-
-    let states = States { hyllar, hydentity };
-
+pub async fn generate_blobs_txs(users: u32, states: States) -> Result<()> {
     let mut blob_txs = vec![];
     let mut tasks = JoinSet::new();
     let number_of_tasks = 100;
@@ -135,18 +129,7 @@ pub async fn generate_blobs_txs(url: String, users: u32) -> Result<()> {
     Ok(())
 }
 
-pub async fn generate_proof_txs(url: String, users: u32, verifier: String) -> Result<()> {
-    let indexer_client = IndexerApiHttpClient::new(url.clone());
-
-    let hyllar = indexer_client
-        .fetch_current_state(&"hyllar-test".into())
-        .await?;
-    let hydentity = indexer_client
-        .fetch_current_state(&"hydentity".into())
-        .await?;
-
-    let states = States { hyllar, hydentity };
-
+pub async fn generate_proof_txs(users: u32, verifier: String, states: States) -> Result<()> {
     let mut proof_txs = vec![];
     let mut tasks = JoinSet::new();
     let number_of_tasks = 100;

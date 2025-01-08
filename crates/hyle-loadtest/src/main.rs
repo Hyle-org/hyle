@@ -1,7 +1,9 @@
 use anyhow::Error;
 use clap::{Parser, Subcommand};
+use hydentity::Hydentity;
 use hyle_loadtest::{
     generate, generate_blobs_txs, generate_proof_txs, send, send_blob_txs, send_proof_txs, setup,
+    setup_hyllar, States,
 };
 use tracing::Level;
 
@@ -64,22 +66,27 @@ async fn main() -> Result<(), Error> {
     let users = args.users;
     let verifier = args.verifier;
 
+    let states = States {
+        hyllar: setup_hyllar(users)?.state(),
+        hydentity: Hydentity::default(),
+    };
+
     match args.command {
         SendCommands::Setup => setup(url, users, verifier).await?,
         SendCommands::GenerateBlobTransactions => {
-            generate_blobs_txs(url, users).await?;
+            generate_blobs_txs(users, states).await?;
         }
         SendCommands::GenerateProofTransactions => {
-            generate_proof_txs(url, users, verifier).await?;
+            generate_proof_txs(users, verifier, states).await?;
         }
-        SendCommands::GenerateTransactions => generate(url, users, verifier).await?,
+        SendCommands::GenerateTransactions => generate(users, verifier, states).await?,
         SendCommands::SendBlobTransactions => send_blob_txs(url).await?,
         SendCommands::SendProofTransactions => send_proof_txs(url).await?,
         SendCommands::SendTransactions => send(url).await?,
         SendCommands::LoadTest => {
             setup(url.clone(), users, verifier.clone()).await?;
             tokio::time::sleep(std::time::Duration::from_secs(3)).await;
-            generate(url.clone(), users, verifier).await?;
+            generate(users, verifier, states).await?;
             send(url).await?;
         }
     }
