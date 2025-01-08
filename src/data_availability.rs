@@ -364,7 +364,11 @@ impl DataAvailability {
         let hash = block.hash();
         // if new block is already handled, ignore it
         if self.blocks.contains(&hash) {
-            warn!("Block {} {} already exists !", block.height(), block.hash());
+            warn!(
+                "Block {} {} already exists !",
+                block.height(),
+                block.hash()
+            );
             return;
         }
         // if new block is not the next block in the chain, buffer
@@ -422,7 +426,12 @@ impl DataAvailability {
             error!("storing block: {}", e);
             return;
         }
-        trace!("Block {} {}: {:#?}", block.height(), block.hash(), block);
+        trace!(
+            "Block {} {}: {:#?}",
+            block.height(),
+            block.hash(),
+            block
+        );
 
         info!(
             "new block {} {} with {} txs, last hash = {}",
@@ -433,7 +442,11 @@ impl DataAvailability {
         );
         debug!(
             "Transactions: {:#?}",
-            block.txs().iter().map(|tx| tx.hash().0).collect::<Vec<_>>()
+            block
+                .txs()
+                .iter()
+                .map(|tx| tx.hash().0)
+                .collect::<Vec<_>>()
         );
 
         // Send the block
