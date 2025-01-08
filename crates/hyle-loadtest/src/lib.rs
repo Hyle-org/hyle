@@ -89,7 +89,7 @@ pub async fn generate_blobs_txs(url: String, users: u32) -> Result<()> {
 
     let mut blob_txs = vec![];
     let mut tasks = JoinSet::new();
-    let number_of_tasks = 1000;
+    let number_of_tasks = 100;
     let chunk_size: usize = users.div_ceil(number_of_tasks).try_into().unwrap();
 
     let user_chunks: Vec<_> = (0..users).collect();
@@ -106,7 +106,7 @@ pub async fn generate_blobs_txs(url: String, users: u32) -> Result<()> {
 
             for n in &chunk {
                 info!(
-                    "Building transactions for user: {n}/{:?}",
+                    "Building blob transaction for user: {n}/{:?}",
                     chunk.last().unwrap()
                 );
                 let ident = Identity(format!("{n}.hyllar-test").to_string());
@@ -149,7 +149,7 @@ pub async fn generate_proof_txs(url: String, users: u32, verifier: String) -> Re
 
     let mut proof_txs = vec![];
     let mut tasks = JoinSet::new();
-    let number_of_tasks = 1000;
+    let number_of_tasks = 100;
     let chunk_size: usize = users.div_ceil(number_of_tasks).try_into().unwrap();
 
     let user_chunks: Vec<_> = (0..users).collect();
@@ -158,7 +158,7 @@ pub async fn generate_proof_txs(url: String, users: u32, verifier: String) -> Re
         .map(|chunk| chunk.to_vec())
         .collect::<Vec<_>>();
     for chunk in user_chunks {
-        let states = states.clone();
+        let mut states = states.clone();
         let verifier = verifier.clone();
 
         tasks.spawn(async move {
@@ -166,7 +166,7 @@ pub async fn generate_proof_txs(url: String, users: u32, verifier: String) -> Re
 
             for n in &chunk {
                 info!(
-                    "Building transactions for user: {n}/{:?}",
+                    "Building proof transaction for user: {n}/{:?}",
                     chunk.last().unwrap()
                 );
                 let ident = Identity(format!("{n}.hyllar-test").to_string());
@@ -178,7 +178,7 @@ pub async fn generate_proof_txs(url: String, users: u32, verifier: String) -> Re
 
                 let BuildResult {
                     identity, blobs, ..
-                } = transaction.stateless_build()?;
+                } = transaction.build(&mut states)?;
 
                 let blob_tx = BlobTransaction { identity, blobs };
 
