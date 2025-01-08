@@ -8,9 +8,9 @@ use crate::{
     handle_messages,
     mempool::DataProposal,
     model::{
-        get_current_timestamp_ms, BlobProofOutput, BlobTransaction, Hashable, ProofData,
-        RegisterContractTransaction, SharedRunContext, SignedBlock, Transaction, TransactionData,
-        ValidatorPublicKey, VerifiedProofTransaction,
+        BlobProofOutput, BlobTransaction, Hashable, ProofData, RegisterContractTransaction,
+        SharedRunContext, SignedBlock, Transaction, TransactionData, ValidatorPublicKey,
+        VerifiedProofTransaction,
     },
     p2p::network::PeerEvent,
     utils::{
@@ -457,8 +457,8 @@ impl Genesis {
                 slot: 0,
                 view: 0,
                 round_leader: round_leader.clone(),
-                // TODO: genesis block should have a consistent timestamp
-                timestamp: get_current_timestamp_ms(),
+                // TODO: genesis block should have a consistent, up-to-date timestamp
+                timestamp: 1735689600000, // 1st of Jan 25 for now
                 // TODO: We aren't actually storing the data proposal above, so we cannot store it here,
                 // or we might mistakenly request data from that cut, but mempool hasn't seen it.
                 // This should be fixed by storing the data proposal in mempool or handling this whole thing differently.
