@@ -10,7 +10,7 @@ pub async fn prove(
 ) -> Result<(ProofData, HyleOutput)> {
     match verifier.0.as_str() {
         "test" => {
-            // TODO: this is a hack to make the test pass
+            // FIXME: this is a hack to make the test pass
             let next_state = contract_input.initial_state.clone();
             let hyle_output = HyleOutput {
                 version: 1,
@@ -24,7 +24,7 @@ pub async fn prove(
                 program_outputs: vec![],
             };
             Ok((
-                ProofData::Bytes(serde_json::to_vec(&hyle_output)?),
+                ProofData::Bytes(serde_json::to_vec(&vec![&hyle_output])?),
                 hyle_output,
             ))
         }

@@ -87,7 +87,7 @@ pub async fn generate(url: String, users: u32, verifier: String) -> Result<()> {
     // Blob Transaction creation
     ////////
     let mut tasks = JoinSet::new();
-    let number_of_tasks = 20;
+    let number_of_tasks = 100;
     let chunk_size: usize = users.div_ceil(number_of_tasks).try_into().unwrap();
 
     let user_chunks: Vec<_> = (0..users).collect();
