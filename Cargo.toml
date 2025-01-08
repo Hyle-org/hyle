@@ -108,16 +108,7 @@ tower-http = { version = "0.6.2", features = [
     "cors",
 ], optional = true }
 tracing-subscriber = { version = "0.3", features = ["json"], optional = true }
-
-[target.'cfg(not(target_os="linux"))'.dependencies]
-sled = { version = "0.34.7", features = ["compression", "lock_free_delays"] }
-
-[target.'cfg(target_os="linux")'.dependencies]
-sled = { version = "0.34.7", features = [
-    "compression",
-    "io_uring",
-    "lock_free_delays",
-] }
+fjall = { version = "2.4.4", optional = true }
 
 [dev-dependencies]
 amm = { path = "./contracts/amm" }
@@ -165,6 +156,7 @@ node = [
     "dep:clap",
     "dep:config",
     "dep:dhat",
+    "dep:fjall",
     "dep:futures",
     "dep:hyle-contracts",
     "dep:hydentity",

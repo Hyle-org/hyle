@@ -1,3 +1,4 @@
+#![allow(unused)]
 use std::path::Path;
 
 use crate::{
@@ -13,14 +14,6 @@ pub struct Blocks {
     data: IndexMap<ConsensusProposalHash, SignedBlock>,
 }
 
-pub struct FakeSledItem<'a>(&'a SignedBlock);
-
-impl FakeSledItem<'_> {
-    pub fn value(&self) -> Option<&SignedBlock> {
-        Some(self.0)
-    }
-}
-
 impl Blocks {
     pub fn new(_: &Path) -> Result<Self> {
         Ok(Self {
@@ -28,8 +21,12 @@ impl Blocks {
         })
     }
 
-    pub fn len(&self) -> usize {
-        self.data.len()
+    pub fn is_empty(&self) -> bool {
+        self.data.is_empty()
+    }
+
+    pub fn persist(&self) -> Result<()> {
+        Ok(())
     }
 
     pub fn put(&mut self, data: SignedBlock) -> Result<()> {
@@ -62,7 +59,7 @@ impl Blocks {
         &self,
         min: BlockHeight,
         max: BlockHeight,
-    ) -> Box<dyn Iterator<Item = Result<FakeSledItem>> + '_> {
+    ) -> Box<dyn Iterator<Item = Result<SignedBlock>> + '_> {
         // Items are in order but we don't know wher they are. Binary search.
         let Ok(min) = self
             .data
@@ -79,6 +76,6 @@ impl Blocks {
         let Some(iter) = self.data.get_range(min..max + 1) else {
             return Box::new(::std::iter::empty());
         };
-        Box::new(iter.values().map(|block| Ok(FakeSledItem(block))))
+        Box::new(iter.values().map(|block| Ok(block.clone())))
     }
 }
