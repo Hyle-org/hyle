@@ -1,25 +1,45 @@
 Config(
+  /// Node identifier in the consensus. Usage subject to change in future releases.
   id: "node",
+  /// Whether the network runs as a single node or with a multi-node consensus.
   single_node: true,
+  /// The node should listen to new peers. Mandatory (true) if multi-node consensus.
   p2p_listen: true,
+  /// Host & port to listen for the P2P protocol.
   host: "127.0.0.1:1231",
+  /// List of peers to connect to at startup to follow a running consensus.
   peers: [],
+  /// Unused 
   storage: Storage(
     interval: 10
   ),
+  /// “json” or “full”
   log_format: "full",
+  /// Host & port for the REST API endpoint.
   rest: "127.0.0.1:4321",
+  /// Max body size of a request in bytes accepted by the rest api
   rest_max_body_size: 10_485_760, // 10 MB
+  /// Wether to run the indexer or not
+  run_indexer: true,
+  /// Host & port of the data availability module, which streams historical & new blocks. It might be used by indexers.
+  da_address: "127.0.0.1:4141",
+  /// Directory name to store node state.
   data_directory: "data_node",
+  /// If running the indexer, the postgres address
   database_url: "postgres://postgres:postgres@localhost:5432/postgres",
+
   consensus: Consensus (
+    /// Duration between blocks.
     slot_duration: 1000,
-    // Has to be empty as config is additive
+    /// Default conf has to be empty as config is additive
+    /// but if you copy the file you can add values like (e.g.):
+    /// genesis_stakers: { "node1": 1000, "node2": 1000 }
+    /// All genesis node requires the same config here
+    /// Keys are all nodes “id”, and values are the stake amount for each one of them.
     genesis_stakers: {}
   ),
   p2p: (
+    /// Interval the p2p layer does a ping to check aliveness of other peers.
     ping_interval: 10
-  ),
-  run_indexer: true,
-  da_address: "127.0.0.1:4141"
+  )
 )
