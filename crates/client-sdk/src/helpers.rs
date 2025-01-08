@@ -44,16 +44,15 @@ pub mod risc0 {
             .build()
             .unwrap();
 
-        let prover = risc0_zkvm::default_executor();
-        let execute_info = prover.execute(env, binary)?;
-        let output = execute_info.journal.decode::<HyleOutput>().unwrap();
-        if !output.success {
-            let program_error = std::str::from_utf8(&output.program_outputs).unwrap();
-            bail!(
-                "\x1b[91mExecution failed ! Program output: {}\x1b[0m",
-                program_error
-            );
-        }
+        let executor = risc0_zkvm::default_executor();
+        let execute_info = executor.execute(env, binary)?;
+        let output = execute_info
+            .journal
+            .decode::<HyleOutput>()
+            .expect("Failed to decode journal");
+
+        check_output(&output)?;
+
         Ok(output)
     }
 
@@ -78,21 +77,15 @@ pub mod risc0 {
             }
         };
 
-        let hyle_output = receipt
+        let output = receipt
             .journal
             .decode::<HyleOutput>()
             .expect("Failed to decode journal");
 
-        if !hyle_output.success {
-            let program_error = std::str::from_utf8(&hyle_output.program_outputs).unwrap();
-            bail!(
-                "\x1b[91mExecution failed ! Program output: {}\x1b[0m",
-                program_error
-            );
-        }
+        check_output(&output)?;
 
         let encoded_receipt = borsh::to_vec(&receipt).expect("Unable to encode receipt");
-        Ok((ProofData::Bytes(encoded_receipt), hyle_output))
+        Ok((ProofData::Bytes(encoded_receipt), output))
     }
 }
 
@@ -119,13 +112,8 @@ pub mod sp1 {
         )
         .context("Failed to extract HyleOuput from SP1 proof")?;
 
-        if !hyle_output.success {
-            let program_error = std::str::from_utf8(&hyle_output.program_outputs).unwrap();
-            bail!(
-                "\x1b[91mExecution failed ! Program output: {}\x1b[0m",
-                program_error
-            );
-        }
+        check_output(&hyle_output)?;
+
         Ok(hyle_output)
     }
 
@@ -155,13 +143,7 @@ pub mod sp1 {
         )
         .context("Failed to extract HyleOuput from SP1 proof")?;
 
-        if !hyle_output.success {
-            let program_error = std::str::from_utf8(&hyle_output.program_outputs).unwrap();
-            anyhow::bail!(
-                "\x1b[91mExecution failed ! Program output: {}\x1b[0m",
-                program_error
-            );
-        }
+        check_output(&hyle_output)?;
 
         let encoded_receipt = bincode::serde::encode_to_vec(
             &proof,
@@ -169,4 +151,15 @@ pub mod sp1 {
         )?;
         Ok((ProofData::Bytes(encoded_receipt), hyle_output))
     }
+}
+
+fn check_output(output: &HyleOutput) -> Result<()> {
+    if !output.success {
+        let program_error = std::str::from_utf8(&output.program_outputs).unwrap();
+        bail!(
+            "\x1b[91mExecution failed ! Program output: {}\x1b[0m",
+            program_error
+        );
+    }
+    Ok(())
 }
