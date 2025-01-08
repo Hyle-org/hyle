@@ -15,7 +15,9 @@ Config(
   consensus: Consensus (
     slot_duration: 1000,
     // Has to be empty as config is additive
-    genesis_stakers: {}
+    genesis_stakers: {
+            "node": 100
+    }
   ),
   p2p: (
     ping_interval: 10
