@@ -30,6 +30,7 @@ impl Builder<'_> {
             .add_action(
                 self.contract_name.clone(),
                 crate::metadata::HYDENTITY_ELF,
+                client_sdk::helpers::Prover::Risc0Prover,
                 IdentityAction::VerifyIdentity {
                     account: self.builder.identity.0.clone(),
                     nonce,
@@ -48,6 +49,7 @@ impl Builder<'_> {
             .add_action(
                 self.contract_name.clone(),
                 crate::metadata::HYDENTITY_ELF,
+                client_sdk::helpers::Prover::Risc0Prover,
                 IdentityAction::RegisterIdentity {
                     account: self.builder.identity.0.clone(),
                 },

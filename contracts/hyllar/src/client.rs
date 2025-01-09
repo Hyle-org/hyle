@@ -35,6 +35,7 @@ impl Builder<'_> {
         self.builder.add_action(
             self.contract_name.clone(),
             crate::metadata::HYLLAR_ELF,
+            client_sdk::helpers::Prover::Risc0Prover,
             ERC20Action::Transfer { recipient, amount },
             None,
             None,
