@@ -16,6 +16,7 @@ COPY crates ./crates
 RUN cargo chef prepare --recipe-path recipe.json
 
 FROM chef 
+RUN apk add g++ 
 COPY --from=planner /usr/src/hyle/recipe.json recipe.json
 
 # Build dependencies 
