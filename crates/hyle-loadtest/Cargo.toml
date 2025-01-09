@@ -7,8 +7,8 @@ repository.workspace = true
 
 
 [dependencies]
-serde_json = "1.0.133"
-tokio = "^1.12"
+serde_json = "1.0.135"
+tokio = "1.42"
 hyle = { path = "../../", features = ["tx_builder"] }
 hyllar = { path = "../../contracts/hyllar" }
 hydentity = { path = "../../contracts/hydentity" }
@@ -16,7 +16,7 @@ hyle-contracts = { path = "../../contracts", package = "hyle-contracts" }
 hyle-contract-sdk = { path = "../../contract-sdk" }
 client-sdk = { path = "../client-sdk" }
 
-anyhow = "1.0.94"
-clap = "4.5.23"
-tracing = "0.1.41"
-tracing-subscriber = "0.3.19"
+anyhow = "1.0.95"
+clap = "4.5.24"
+tracing = "0.1"
+tracing-subscriber = "0.3"
