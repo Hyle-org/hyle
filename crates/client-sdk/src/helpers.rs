@@ -20,6 +20,8 @@ impl Prover {
             Prover::Risc0Prover => risc0::prove(binary, contract_input).await,
             #[cfg(feature = "sp1")]
             Prover::SP1Prover => sp1::prove(binary, contract_input),
+            #[cfg(not(any(feature = "risc0", feature = "sp1")))]
+            _ => bail!("Prover not available"),
         }
     }
 
@@ -29,6 +31,8 @@ impl Prover {
             Prover::Risc0Prover => risc0::execute(binary, contract_input),
             #[cfg(feature = "sp1")]
             Prover::SP1Prover => sp1::execute(binary, contract_input),
+            #[cfg(not(any(feature = "risc0", feature = "sp1")))]
+            _ => bail!("Prover not available"),
         }
     }
 }
@@ -97,12 +101,12 @@ pub mod sp1 {
     use super::*;
 
     pub fn execute(binary: &[u8], contract_input: &ContractInput) -> Result<HyleOutput> {
-        let client = ProverClient::new();
+        let client = ProverClient::from_env();
         let mut stdin = SP1Stdin::new();
         stdin.write(&contract_input);
 
         let (public_values, _) = client
-            .execute(binary, stdin)
+            .execute(binary, &stdin)
             .run()
             .expect("failed to generate proof");
 
@@ -121,7 +125,7 @@ pub mod sp1 {
         binary: &[u8],
         contract_input: &ContractInput,
     ) -> anyhow::Result<(ProofData, HyleOutput)> {
-        let client = ProverClient::new();
+        let client = ProverClient::from_env();
 
         // Setup the inputs.
         let mut stdin = SP1Stdin::new();
@@ -132,7 +136,7 @@ pub mod sp1 {
 
         // Generate the proof
         let proof = client
-            .prove(&pk, stdin)
+            .prove(&pk, &stdin)
             //.compressed()
             .run()
             .expect("failed to generate proof");
