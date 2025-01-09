@@ -94,11 +94,13 @@ impl Blocks {
             return Ok(());
         }
         info!("📦 storing block in fjall {}", block.height());
-        self.by_hash
-            .insert(FjallHashKey(block_hash), FjallValue::new(&block)?)?;
+        self.by_hash.insert(
+            FjallHashKey(block_hash).as_ref(),
+            FjallValue::new(&block)?.as_ref(),
+        )?;
         self.by_height.insert(
-            FjallHeightKey::new(block.height()),
-            FjallValue::new(&block)?,
+            FjallHeightKey::new(block.height()).as_ref(),
+            FjallValue::new(&block)?.as_ref(),
         )?;
         Ok(())
     }
