@@ -16,6 +16,18 @@ impl HyllarToken {
             builder,
         }
     }
+
+    pub fn builder<'b>(
+        &self,
+        contract_name: ContractName,
+        builder: &'b mut TransactionBuilder,
+    ) -> Builder<'b> {
+        builder.init_with(contract_name.clone(), self.as_digest());
+        Builder {
+            contract_name,
+            builder,
+        }
+    }
 }
 
 impl Builder<'_> {
@@ -24,6 +36,18 @@ impl Builder<'_> {
             self.contract_name.clone(),
             crate::metadata::HYLLAR_ELF,
             client_sdk::helpers::Prover::Risc0Prover,
+            ERC20Action::Transfer { recipient, amount },
+            None,
+            None,
+        )?;
+        Ok(())
+    }
+
+    pub fn transfer_test(&mut self, recipient: String, amount: u128) -> anyhow::Result<()> {
+        self.builder.add_action(
+            self.contract_name.clone(),
+            crate::metadata::HYLLAR_ELF,
+            client_sdk::helpers::Prover::TestProver,
             ERC20Action::Transfer { recipient, amount },
             None,
             None,
