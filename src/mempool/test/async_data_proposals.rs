@@ -12,7 +12,7 @@ use crate::bus::command_response::Query;
 use crate::bus::{bus_client, BusClientReceiver, BusClientSender};
 use crate::consensus::{ConsensusEvent, ConsensusProposal};
 use crate::data_availability::DataEvent;
-use crate::genesis::GenesisEvent;
+use crate::genesis::{Genesis, GenesisEvent};
 use crate::mempool::QueryNewCut;
 use crate::mempool::{DataProposal, RestApiMessage};
 use crate::model::mempool::Cut;
@@ -33,7 +33,7 @@ bus_client! {
 
 // Need at least two worker threads for this test, as we want parallel execution.
 #[test_log::test(tokio::test(flavor = "multi_thread", worker_threads = 2))]
-#[should_panic = "Should have more than 8 commits"]
+#[should_panic = "Should have more than "]
 async fn test_mempool_isnt_blocked_by_proof_verification() {
     assert_ok!(impl_test_mempool_isnt_blocked_by_proof_verification().await);
 }
@@ -41,7 +41,8 @@ async fn test_mempool_isnt_blocked_by_proof_verification() {
 async fn impl_test_mempool_isnt_blocked_by_proof_verification() -> Result<()> {
     let mut node_modules = NodeIntegrationCtxBuilder::new().await;
     node_modules.conf.consensus.slot_duration = 200;
-    let node_modules = node_modules.build().await?;
+
+    let mut node_modules = node_modules.skip::<Genesis>().build().await?;
 
     let mut node_client = Client::new_from_bus(node_modules.bus.new_handle()).await;
 
@@ -68,28 +69,14 @@ async fn impl_test_mempool_isnt_blocked_by_proof_verification() -> Result<()> {
     }))?;
 
     // Wait until we process the genesis block
-    loop {
-        let cut: DataEvent = node_client.recv().await?;
-        match cut {
-            DataEvent::NewBlock(block) => {
-                if block.txs.iter().any(|tx| {
-                    if let TransactionData::RegisterContract(data) = &tx.transaction_data {
-                        data.contract_name == contract_name
-                    } else {
-                        false
-                    }
-                }) {
-                    break;
-                }
-            }
-        }
-    }
+    node_modules.wait_for_processed_genesis().await?;
 
     info!("Processed genesis block");
 
     // Test setup: count the number of commits during the slow proof verification
     // if we're blocking the consensus, this will be lower than expected.
     //let staking = node1.consensus_ctx.staking();
+    let start_time = std::time::Instant::now();
     let mut counting_client = Client::new_from_bus(node_modules.bus.new_handle()).await;
     let count = Arc::new(AtomicI32::new(0));
     let count2 = count.clone();
@@ -154,9 +141,13 @@ async fn impl_test_mempool_isnt_blocked_by_proof_verification() -> Result<()> {
         "Counted {} commits",
         count.load(std::sync::atomic::Ordering::SeqCst)
     );
-    if count.load(std::sync::atomic::Ordering::SeqCst) < 8 {
+    let expected_commits = (start_time.elapsed().as_millis()
+        / node_modules.conf.consensus.slot_duration as u128) as i32;
+
+    if count.load(std::sync::atomic::Ordering::SeqCst) < expected_commits {
         bail!(
-            "Should have more than 8 commits, have {}",
+            "Should have more than {} commits, have {}",
+            expected_commits,
             count.load(std::sync::atomic::Ordering::SeqCst)
         );
     }
