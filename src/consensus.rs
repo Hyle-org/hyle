@@ -927,7 +927,7 @@ pub mod test {
         },
         bus::{dont_use_this::get_receiver, metrics::BusMetrics, SharedMessageBus},
         model::mempool::DataProposalHash,
-        p2p::network::NetMessage,
+        p2p::network::PeerNetMessage,
         utils::{conf::Conf, crypto},
     };
     use assertables::assert_contains;
@@ -1234,7 +1234,7 @@ pub mod test {
                 .expect(format!("{description}: No message broadcasted").as_str());
 
             if let OutboundMessage::BroadcastMessage(net_msg) = rec {
-                if let NetMessage::ConsensusMessage(msg) = net_msg {
+                if let PeerNetMessage::ConsensusMessage(msg) = net_msg {
                     msg
                 } else {
                     error!(
@@ -1284,7 +1284,7 @@ pub mod test {
             } = rec
             {
                 assert_eq!(to, &dest);
-                if let NetMessage::ConsensusMessage(msg) = net_msg {
+                if let PeerNetMessage::ConsensusMessage(msg) = net_msg {
                     msg
                 } else {
                     error!(

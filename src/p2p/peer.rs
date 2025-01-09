@@ -14,7 +14,7 @@ use super::fifo_filter::FifoFilter;
 use super::network::HandshakeNetMessage;
 use super::network::OutboundMessage;
 use super::network::PeerEvent;
-use super::network::{Hello, NetMessage};
+use super::network::{Hello, PeerNetMessage};
 use super::stream::send_net_message;
 use crate::bus::bus_client;
 use crate::bus::BusClientSender;
@@ -23,7 +23,7 @@ use crate::consensus::ConsensusNetMessage;
 use crate::mempool::MempoolNetMessage;
 use crate::model::ValidatorPublicKey;
 use crate::module_handle_messages;
-use crate::p2p::stream::read_stream;
+use crate::p2p::stream::read_peer_stream;
 use crate::utils::conf::SharedConf;
 use crate::utils::crypto::SharedBlstCrypto;
 use crate::utils::crypto::SignedByValidator;
@@ -92,7 +92,7 @@ impl Peer {
     async fn handle_send_message(
         &mut self,
         validator_id: ValidatorPublicKey,
-        msg: NetMessage,
+        msg: PeerNetMessage,
     ) -> Result<(), Error> {
         if let Some(peer_validator) = &self.peer_pubkey {
             if *peer_validator == validator_id {
@@ -104,7 +104,7 @@ impl Peer {
         Ok(())
     }
 
-    async fn handle_broadcast_message(&mut self, msg: NetMessage) -> Result<(), Error> {
+    async fn handle_broadcast_message(&mut self, msg: PeerNetMessage) -> Result<(), Error> {
         let binary = msg.to_binary();
         if !self.fifo_filter.check(&binary) {
             self.fifo_filter.set(binary);
@@ -147,20 +147,20 @@ impl Peer {
         }
     }
 
-    async fn handle_stream_message(&mut self, msg: NetMessage) -> Result<(), Error> {
+    async fn handle_peer_stream_message(&mut self, msg: PeerNetMessage) -> Result<(), Error> {
         trace!("RECV: {:?}", msg);
         match msg {
-            NetMessage::HandshakeMessage(handshake_msg) => {
+            PeerNetMessage::HandshakeMessage(handshake_msg) => {
                 debug!("Received new handshake net message {:?}", handshake_msg);
                 self.handle_handshake_message(handshake_msg).await?;
             }
-            NetMessage::MempoolMessage(mempool_msg) => {
+            PeerNetMessage::MempoolMessage(mempool_msg) => {
                 debug!("Received new mempool net message {}", mempool_msg);
                 self.bus
                     .send(mempool_msg)
                     .context("Receiving mempool net message")?;
             }
-            NetMessage::ConsensusMessage(consensus_msg) => {
+            PeerNetMessage::ConsensusMessage(consensus_msg) => {
                 debug!("Received new consensus net message {}", consensus_msg);
                 self.bus
                     .send(consensus_msg)
@@ -218,8 +218,8 @@ impl Peer {
                 }
             }
 
-            res = read_stream(&mut self.stream) => match res {
-                Ok(message) => match self.handle_stream_message(message).await {
+            res = read_peer_stream(&mut self.stream) => match res {
+                Ok(message) => match self.handle_peer_stream_message(message).await {
                     Ok(_) => continue,
                     Err(e) => {
                         warn!("Error while handling net message: {:#}", e);

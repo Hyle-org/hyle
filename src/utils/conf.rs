@@ -35,6 +35,7 @@ pub struct Conf {
     pub data_directory: PathBuf,
     pub run_indexer: bool,
     pub da_address: String,
+    pub tcp_server_address: String,
     pub log_format: String,
     pub single_node: Option<bool>,
 }

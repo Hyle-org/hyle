@@ -23,6 +23,7 @@ Config(
   run_indexer: true,
   /// Host & port of the data availability module, which streams historical & new blocks. It might be used by indexers.
   da_address: "127.0.0.1:4141",
+  tcp_server_address: "127.0.0.1:1414",
   /// Directory name to store node state.
   data_directory: "data_node",
   /// If running the indexer, the postgres address

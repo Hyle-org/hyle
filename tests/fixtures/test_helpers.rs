@@ -35,6 +35,7 @@ impl ConfMaker {
             },
             host: format!("localhost:{}", self.random_port + self.i),
             da_address: format!("localhost:{}", self.random_port + 1000 + self.i),
+            tcp_server_address: format!("localhost:{}", self.random_port + 1000 - self.i),
             rest: format!("localhost:{}", self.random_port + 2000 + self.i),
             ..self.default.clone()
         }
@@ -49,6 +50,7 @@ impl Default for ConfMaker {
         default.single_node = Some(false);
         default.host = format!("localhost:{}", random_port);
         default.da_address = format!("localhost:{}", random_port + 1000);
+        default.tcp_server_address = format!("localhost:{}", random_port - 1000);
         default.rest = format!("localhost:{}", random_port + 2000);
         default.run_indexer = false; // disable indexer by default to avoid needed PG
         default.log_format = "node".to_string(); // Activate node name in logs for convenience in tests.

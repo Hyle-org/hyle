@@ -13,6 +13,7 @@ use hyle::{
     p2p::P2P,
     rest::{RestApi, RestApiRunContext},
     single_node_consensus::SingleNodeConsensus,
+    tcp_server::TcpServer,
     tools::mock_workflow::MockWorkflowHandler,
     utils::{
         conf,
@@ -152,6 +153,8 @@ async fn main() -> Result<()> {
             router: router.clone(),
         })
         .await?;
+
+    handler.build_module::<TcpServer>(ctx.clone()).await?;
 
     #[cfg(unix)]
     {

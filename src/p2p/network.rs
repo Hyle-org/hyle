@@ -1,5 +1,5 @@
 use crate::bus::BusMessage;
-use crate::model::ValidatorPublicKey;
+use crate::model::{Transaction, ValidatorPublicKey};
 use crate::utils::crypto::SignedByValidator;
 use crate::{consensus::ConsensusNetMessage, mempool::MempoolNetMessage};
 use bincode::{Decode, Encode};
@@ -20,23 +20,23 @@ pub struct Hello {
 pub enum OutboundMessage {
     SendMessage {
         validator_id: ValidatorPublicKey,
-        msg: NetMessage,
+        msg: PeerNetMessage,
     },
-    BroadcastMessage(NetMessage),
-    BroadcastMessageOnlyFor(HashSet<ValidatorPublicKey>, NetMessage),
+    BroadcastMessage(PeerNetMessage),
+    BroadcastMessageOnlyFor(HashSet<ValidatorPublicKey>, PeerNetMessage),
 }
 
 impl OutboundMessage {
-    pub fn broadcast<T: Into<NetMessage>>(msg: T) -> Self {
+    pub fn broadcast<T: Into<PeerNetMessage>>(msg: T) -> Self {
         OutboundMessage::BroadcastMessage(msg.into())
     }
-    pub fn broadcast_only_for<T: Into<NetMessage>>(
+    pub fn broadcast_only_for<T: Into<PeerNetMessage>>(
         only_for: HashSet<ValidatorPublicKey>,
         msg: T,
     ) -> Self {
         OutboundMessage::BroadcastMessageOnlyFor(only_for, msg.into())
     }
-    pub fn send<T: Into<NetMessage>>(validator_id: ValidatorPublicKey, msg: T) -> Self {
+    pub fn send<T: Into<PeerNetMessage>>(validator_id: ValidatorPublicKey, msg: T) -> Self {
         OutboundMessage::SendMessage {
             validator_id,
             msg: msg.into(),
@@ -56,18 +56,18 @@ pub enum PeerEvent {
 impl BusMessage for PeerEvent {}
 impl BusMessage for OutboundMessage {}
 
-impl Display for NetMessage {
+impl Display for PeerNetMessage {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let enum_variant: &'static str = self.into();
         match self {
-            NetMessage::HandshakeMessage(_) => {
+            PeerNetMessage::HandshakeMessage(_) => {
                 write!(f, "{}", enum_variant)
             }
-            NetMessage::MempoolMessage(msg) => {
+            PeerNetMessage::MempoolMessage(msg) => {
                 _ = write!(f, "NetMessage::{} ", enum_variant);
                 write!(f, "{}", msg)
             }
-            NetMessage::ConsensusMessage(msg) => {
+            PeerNetMessage::ConsensusMessage(msg) => {
                 _ = write!(f, "NetMessage::{} ", enum_variant);
                 write!(f, "{}", msg)
             }
@@ -75,11 +75,28 @@ impl Display for NetMessage {
     }
 }
 
+impl Display for NetMessage {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let enum_variant: &'static str = self.into();
+        match self {
+            NetMessage::NewTx(msg) => {
+                _ = write!(f, "NetMessage::{} ", enum_variant);
+                write!(f, "{:?}", msg)
+            }
+        }
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, Eq, PartialEq, IntoStaticStr)]
-pub enum NetMessage {
+pub enum PeerNetMessage {
     HandshakeMessage(HandshakeNetMessage),
     MempoolMessage(SignedByValidator<MempoolNetMessage>),
     ConsensusMessage(SignedByValidator<ConsensusNetMessage>),
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, Eq, PartialEq, IntoStaticStr)]
+pub enum NetMessage {
+    NewTx(Transaction),
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, Eq, PartialEq)]
@@ -90,25 +107,25 @@ pub enum HandshakeNetMessage {
     Pong,
 }
 
-impl From<HandshakeNetMessage> for NetMessage {
+impl From<HandshakeNetMessage> for PeerNetMessage {
     fn from(msg: HandshakeNetMessage) -> Self {
-        NetMessage::HandshakeMessage(msg)
+        PeerNetMessage::HandshakeMessage(msg)
     }
 }
 
-impl From<SignedByValidator<MempoolNetMessage>> for NetMessage {
+impl From<SignedByValidator<MempoolNetMessage>> for PeerNetMessage {
     fn from(msg: SignedByValidator<MempoolNetMessage>) -> Self {
-        NetMessage::MempoolMessage(msg)
+        PeerNetMessage::MempoolMessage(msg)
     }
 }
 
-impl From<SignedByValidator<ConsensusNetMessage>> for NetMessage {
+impl From<SignedByValidator<ConsensusNetMessage>> for PeerNetMessage {
     fn from(msg: SignedByValidator<ConsensusNetMessage>) -> Self {
-        NetMessage::ConsensusMessage(msg)
+        PeerNetMessage::ConsensusMessage(msg)
     }
 }
 
-impl NetMessage {
+impl PeerNetMessage {
     pub fn to_binary(&self) -> Vec<u8> {
         bincode::encode_to_vec(self, bincode::config::standard())
             .expect("Could not serialize NetMessage")
