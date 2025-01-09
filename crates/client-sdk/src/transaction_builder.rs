@@ -1,13 +1,13 @@
 use std::{collections::BTreeMap, pin::Pin, sync::OnceLock};
 
-use anyhow::{bail, Result};
+use anyhow::Result;
 
 use sdk::{
     info, Blob, BlobData, BlobIndex, ContractAction, ContractInput, ContractName, HyleOutput,
     Identity, StateDigest,
 };
 
-use crate::ProofData;
+use crate::{helpers, ProofData};
 
 pub struct BuildResult {
     pub identity: Identity,
@@ -46,6 +46,7 @@ impl TransactionBuilder {
         &mut self,
         contract_name: ContractName,
         binary: &'static [u8],
+        prover: helpers::Prover,
         action: CF,
         caller: Option<BlobIndex>,
         callees: Option<Vec<BlobIndex>>,
@@ -53,6 +54,7 @@ impl TransactionBuilder {
         let runner = ContractRunner::new(
             contract_name.clone(),
             binary,
+            prover,
             self.identity.clone(),
             BlobIndex(self.blobs.len()),
         )?;
@@ -135,6 +137,7 @@ pub struct ContractRunner {
     identity: Identity,
     index: BlobIndex,
     binary: &'static [u8],
+    prover: helpers::Prover,
     contract_input: OnceLock<ContractInput>,
     offchain_cb: Option<Box<dyn Fn(StateDigest) -> Result<StateDigest> + Send + Sync>>,
     private_blob_cb: Option<Box<dyn Fn(StateDigest) -> Result<BlobData> + Send + Sync>>,
@@ -144,12 +147,14 @@ impl ContractRunner {
     fn new(
         contract_name: ContractName,
         binary: &'static [u8],
+        prover: helpers::Prover,
         identity: Identity,
         index: BlobIndex,
     ) -> Result<Self> {
         Ok(Self {
             contract_name,
             binary,
+            prover,
             identity,
             index,
             contract_input: OnceLock::new(),
@@ -207,35 +212,17 @@ impl ContractRunner {
     fn execute(&self) -> Result<HyleOutput> {
         info!("Checking transition for {}...", self.contract_name);
 
-        let contract_input = bonsai_runner::as_input_data(self.contract_input.get().unwrap())?;
-        let execute_info = execute(self.binary, &contract_input)?;
-        let output = execute_info.journal.decode::<HyleOutput>().unwrap();
-        if !output.success {
-            let program_error = std::str::from_utf8(&output.program_outputs).unwrap();
-            bail!(
-                "\x1b[91mExecution failed ! Program output: {}\x1b[0m",
-                program_error
-            );
-        }
-        Ok(output)
+        self.prover
+            .execute(self.binary, self.contract_input.get().unwrap())
     }
 
     async fn prove(&self) -> Result<ProofData> {
         info!("Proving transition for {}...", self.contract_name);
 
-        let (proof, _) =
-            crate::helpers::prove(self.binary, self.contract_input.get().unwrap()).await?;
-
+        let (proof, _) = self
+            .prover
+            .prove(self.binary, self.contract_input.get().unwrap())
+            .await?;
         Ok(proof)
     }
-}
-
-fn execute(binary: &'static [u8], contract_input: &[u8]) -> Result<risc0_zkvm::SessionInfo> {
-    let env = risc0_zkvm::ExecutorEnv::builder()
-        .write_slice(contract_input)
-        .build()
-        .unwrap();
-
-    let prover = risc0_zkvm::default_executor();
-    prover.execute(env, binary)
 }
