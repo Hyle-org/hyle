@@ -4,13 +4,9 @@ use bincode::{Decode, Encode};
 use staking::model::ValidatorPublicKey;
 use tracing::{debug, info, warn};
 
-use crate::{
-    consensus::Ticket,
-    model::{get_current_timestamp, Hashable},
-    utils::crypto::{AggregateSignature, SignedByValidator},
-};
+use crate::{consensus::Ticket, model::get_current_timestamp, utils::crypto::SignedByValidator};
 
-use super::{Consensus, ConsensusNetMessage, ConsensusProposalHash};
+use super::{Consensus, ConsensusNetMessage, QuorumCertificate, Slot, View};
 use anyhow::{bail, Context, Result};
 
 #[derive(Debug, Encode, Decode, Default)]
@@ -86,31 +82,36 @@ pub(super) struct TimeoutRoleState {
 pub(super) trait TimeoutRole {
     fn on_timeout_certificate(
         &mut self,
-        received_consensus_proposal_hash: &ConsensusProposalHash,
-        received_timeout_certificate: &AggregateSignature,
+        received_timeout_certificate: &QuorumCertificate,
+        received_slot: Slot,
+        received_view: View,
     ) -> Result<()>;
     fn on_timeout(
         &mut self,
         received_msg: SignedByValidator<ConsensusNetMessage>,
-        received_consensus_proposal_hash: ConsensusProposalHash,
-        next_leader: ValidatorPublicKey,
+        received_slot: Slot,
+        received_view: View,
     ) -> Result<()>;
 }
 
 impl TimeoutRole for Consensus {
     fn on_timeout_certificate(
         &mut self,
-        received_consensus_proposal_hash: &ConsensusProposalHash,
-        received_timeout_certificate: &AggregateSignature,
+        received_timeout_certificate: &QuorumCertificate,
+        received_slot: Slot,
+        received_view: View,
     ) -> Result<()> {
-        if *received_consensus_proposal_hash != self.bft_round_state.consensus_proposal.hash() {
+        if received_slot != self.bft_round_state.consensus_proposal.slot
+            || received_view != self.bft_round_state.consensus_proposal.view
+        {
             bail!(
-                "Wrong consensus proposal (CP hash: {}, view: {})",
-                received_consensus_proposal_hash,
-                self.bft_round_state.consensus_proposal.view
+                "Timeout Certificate (Slot: {}, view: {}) does not match expected (Slot: {}, view: {})",
+                received_slot,
+                received_view,
+                self.bft_round_state.consensus_proposal.slot,
+                self.bft_round_state.consensus_proposal.view,
             );
         }
-
         if &self.next_leader()? != self.crypto.validator_pubkey() {
             return Ok(());
         }
@@ -121,10 +122,7 @@ impl TimeoutRole for Consensus {
         );
 
         self.verify_quorum_certificate(
-            ConsensusNetMessage::Timeout(
-                received_consensus_proposal_hash.clone(),
-                self.next_leader()?,
-            ),
+            ConsensusNetMessage::Timeout(received_slot, received_view),
             received_timeout_certificate,
         )
         .context(format!(
@@ -139,8 +137,8 @@ impl TimeoutRole for Consensus {
     fn on_timeout(
         &mut self,
         received_msg: SignedByValidator<ConsensusNetMessage>,
-        received_consensus_proposal_hash: ConsensusProposalHash,
-        next_leader: ValidatorPublicKey,
+        received_slot: Slot,
+        received_view: View,
     ) -> Result<()> {
         // Only timeout if it is in consensus
         if !self.is_part_of_consensus(self.crypto.validator_pubkey()) {
@@ -150,23 +148,16 @@ impl TimeoutRole for Consensus {
             );
         }
 
-        if received_consensus_proposal_hash != self.bft_round_state.consensus_proposal.hash() {
+        if received_slot != self.bft_round_state.consensus_proposal.slot
+            || received_view != self.bft_round_state.consensus_proposal.view
+        {
             bail!(
-                "Consensus proposal (Slot: {}, view: {}) {} does not match {}",
+                "Timeout (Slot: {}, view: {}) does not match expected (Slot: {}, view: {})",
+                received_slot,
+                received_view,
                 self.bft_round_state.consensus_proposal.slot,
                 self.bft_round_state.consensus_proposal.view,
-                self.bft_round_state.consensus_proposal.hash(),
-                received_consensus_proposal_hash
             );
-        }
-
-        // Validates received next leader will be the same as the locally computed one
-        if self.next_leader()? != next_leader {
-            bail!(
-                "Received next leader {} does not match the locally computed one {}",
-                next_leader,
-                self.next_leader()?
-            )
         }
 
         // In the paper, a replica returns a commit if present
@@ -209,10 +200,7 @@ impl TimeoutRole for Consensus {
         if voting_power > f && !timeout_validators.contains(self.crypto.validator_pubkey()) {
             info!("Joining timeout mutiny!");
 
-            let timeout_message = ConsensusNetMessage::Timeout(
-                received_consensus_proposal_hash.clone(),
-                next_leader.clone(),
-            );
+            let timeout_message = ConsensusNetMessage::Timeout(received_slot, received_view);
 
             self.store
                 .bft_round_state
@@ -251,7 +239,7 @@ impl TimeoutRole for Consensus {
 
             // Aggregates them into a Timeout Certificate
             let timeout_signed_aggregation = self.crypto.sign_aggregate(
-                ConsensusNetMessage::Timeout(received_consensus_proposal_hash.clone(), next_leader),
+                ConsensusNetMessage::Timeout(received_slot, received_view),
                 aggregates.as_slice(),
             )?;
 
@@ -270,7 +258,8 @@ impl TimeoutRole for Consensus {
                 // Broadcast the Timeout Certificate to all validators
                 self.broadcast_net_message(ConsensusNetMessage::TimeoutCertificate(
                     timeout_certificate.clone(),
-                    received_consensus_proposal_hash.clone(),
+                    received_slot,
+                    received_view,
                 ))?;
                 self.bft_round_state.timeout.state.certificate_emitted();
             }

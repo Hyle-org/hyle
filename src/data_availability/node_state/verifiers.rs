@@ -175,12 +175,14 @@ pub fn noir_proof_verifier(proof: &[u8], image_id: &[u8]) -> Result<Vec<HyleOutp
     Ok(vec![hyle_output])
 }
 
+/// The following environment variables are used to configure the prover:
+/// - `SP1_PROVER`: The type of prover to use. Must be one of `mock`, `local`, `cuda`, or `network`.
 pub fn sp1_proof_verifier(
     proof_bin: &[u8],
     verification_key: &[u8],
 ) -> Result<Vec<HyleOutput>, Error> {
     // Setup the prover client.
-    let client = ProverClient::new();
+    let client = ProverClient::from_env();
 
     let (proof, _) =
         bincode::decode_from_slice::<bincode::serde::Compat<SP1ProofWithPublicValues>, _>(

@@ -198,7 +198,9 @@ impl LeaderRole for Consensus {
 
             // Aggregates them into a *Prepare* Quorum Certificate
             let prepvote_signed_aggregation = self.crypto.sign_aggregate(
-                ConsensusNetMessage::PrepareVote(self.bft_round_state.consensus_proposal.hash()),
+                ConsensusNetMessage::PrepareVote(
+                    self.bft_round_state.consensus_proposal.hash(),
+                ),
                 aggregates,
             )?;
 

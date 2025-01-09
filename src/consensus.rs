@@ -479,13 +479,10 @@ impl Consensus {
             ConsensusNetMessage::Commit(commit_quorum_certificate, proposal_hash_hint) => {
                 self.on_commit(commit_quorum_certificate, proposal_hash_hint)
             }
-            ConsensusNetMessage::Timeout(consensus_proposal_hash, next_leader) => {
-                self.on_timeout(msg, consensus_proposal_hash, next_leader)
+            ConsensusNetMessage::Timeout(slot, view) => self.on_timeout(msg, slot, view),
+            ConsensusNetMessage::TimeoutCertificate(timeout_certificate, slot, view) => {
+                self.on_timeout_certificate(&timeout_certificate, slot, view)
             }
-            ConsensusNetMessage::TimeoutCertificate(
-                timeout_certificate,
-                consensus_proposal_hash,
-            ) => self.on_timeout_certificate(&consensus_proposal_hash, &timeout_certificate),
 
             ConsensusNetMessage::ValidatorCandidacy(candidacy) => {
                 self.on_validator_candidacy(msg, candidacy)
@@ -511,13 +508,13 @@ impl Consensus {
         info!(
             "Trying to process timeout Certificate against consensus proposal slot: {}, view: {}",
             self.bft_round_state.consensus_proposal.slot,
-            self.bft_round_state.consensus_proposal.view
+            self.bft_round_state.consensus_proposal.view,
         );
 
         self.verify_quorum_certificate(
             ConsensusNetMessage::Timeout(
-                self.bft_round_state.consensus_proposal.hash(),
-                self.next_leader()?,
+                self.bft_round_state.consensus_proposal.slot,
+                self.bft_round_state.consensus_proposal.view,
             ),
             &timeout_qc,
         )
@@ -742,17 +739,21 @@ impl Consensus {
                         self.bft_round_state.consensus_proposal.slot,
                         self.bft_round_state.consensus_proposal.view
                     );
-                    let cp_hash = self.bft_round_state.consensus_proposal.hash();
-                    let next_leader = self.next_leader()?;
 
-                    let timeout_message =
-                        ConsensusNetMessage::Timeout(cp_hash.clone(), next_leader.clone());
+                    let timeout_message = ConsensusNetMessage::Timeout(
+                        self.bft_round_state.consensus_proposal.slot,
+                        self.bft_round_state.consensus_proposal.view,
+                    );
 
                     let signed_timeout_message = self
                         .sign_net_message(timeout_message.clone())
                         .context("Signing timeout message")?;
 
-                    self.on_timeout(signed_timeout_message, cp_hash, next_leader)?;
+                    self.on_timeout(
+                        signed_timeout_message,
+                        self.bft_round_state.consensus_proposal.slot,
+                        self.bft_round_state.consensus_proposal.view,
+                    )?;
 
                     self.broadcast_net_message(timeout_message)?;
 
@@ -1061,7 +1062,7 @@ pub mod test {
                 n.consensus
                     .handle_command(ConsensusCommand::TimeoutTick)
                     .await
-                    .unwrap_or_else(|_| panic!("Timeout tick for node {}", n.name));
+                    .unwrap_or_else(|err| panic!("Timeout tick for node {}: {:?}", n.name, err));
             }
         }
 
@@ -1702,25 +1703,19 @@ pub mod test {
         broadcast! {
             description: "Follower - Timeout",
             from: node2, to: [node3, node4],
-            message_matches: ConsensusNetMessage::Timeout(_, next_leader) => {
-                assert_eq!(&node2.pubkey(), next_leader);
-            }
+            message_matches: ConsensusNetMessage::Timeout(..)
         };
         broadcast! {
             description: "Follower - Timeout",
             from: node3, to: [node2, node4],
-            message_matches: ConsensusNetMessage::Timeout(_, next_leader) => {
-                assert_eq!(&node2.pubkey(), next_leader);
-            }
+            message_matches: ConsensusNetMessage::Timeout(..)
         };
 
         // node 4 should join the mutiny
         broadcast! {
             description: "Follower - Timeout",
             from: node4, to: [node2, node3],
-            message_matches: ConsensusNetMessage::Timeout(_, next_leader) => {
-                assert_eq!(&node2.pubkey(), next_leader);
-            }
+            message_matches: ConsensusNetMessage::Timeout(..)
         };
 
         // After this broadcast, every node has 2f+1 timeouts and can create a timeout certificate
@@ -1765,9 +1760,7 @@ pub mod test {
         broadcast! {
             description: "Follower - Timeout",
             from: node3, to: [node1, node4],
-            message_matches: ConsensusNetMessage::Timeout(_, next_leader) => {
-                assert_eq!(&node2.pubkey(), next_leader);
-            }
+            message_matches: ConsensusNetMessage::Timeout(..)
         };
 
         ConsensusTestCtx::timeout(&mut [&mut node2]).await;
@@ -1775,18 +1768,14 @@ pub mod test {
         broadcast! {
             description: "Follower - Timeout",
             from: node2, to: [node1, node3],
-            message_matches: ConsensusNetMessage::Timeout(_, next_leader) => {
-                assert_eq!(&node2.pubkey(), next_leader);
-            }
+            message_matches: ConsensusNetMessage::Timeout(..)
         };
 
         // node 1:leader should join the mutiny
         broadcast! {
             description: "Follower - Timeout",
             from: node1, to: [node2, node3, node4],
-            message_matches: ConsensusNetMessage::Timeout(_, next_leader) => {
-                assert_eq!(&node2.pubkey(), next_leader);
-            }
+            message_matches: ConsensusNetMessage::Timeout(..)
         };
 
         // After this broadcast, every node has 2f+1 timeouts and can create a timeout certificate
@@ -1797,7 +1786,7 @@ pub mod test {
         broadcast! {
             description: "Leader - timeout certificate",
             from: node1, to: [node2, node3, node4],
-            message_matches: ConsensusNetMessage::TimeoutCertificate(_, _)
+            message_matches: ConsensusNetMessage::TimeoutCertificate(_, _, _)
         };
 
         // Node2 will use node1's timeout certificate
@@ -1821,7 +1810,7 @@ pub mod test {
 
     #[test_log::test(tokio::test)]
     async fn test_timeout_join_mutiny_when_triggering_timeout_4() {
-        let (mut node1, node2, mut node3, mut node4): (
+        let (mut node1, _node2, mut node3, mut node4): (
             ConsensusTestCtx,
             ConsensusTestCtx,
             ConsensusTestCtx,
@@ -1839,8 +1828,9 @@ pub mod test {
         broadcast! {
             description: "Follower - Timeout",
             from: node3, to: [node4],
-            message_matches: ConsensusNetMessage::Timeout(_, next_leader) => {
-                assert_eq!(&node2.pubkey(), next_leader);
+            message_matches: ConsensusNetMessage::Timeout(slot, view) => {
+                assert_eq!(slot, &1);
+                assert_eq!(view, &0);
             }
         };
 
@@ -1870,8 +1860,9 @@ pub mod test {
         broadcast! {
             description: "Follower - Timeout",
             from: node3, to: [node1, node2],
-            message_matches: ConsensusNetMessage::Timeout(_, next_leader) => {
-                assert_eq!(&node2.pubkey(), next_leader);
+            message_matches: ConsensusNetMessage::Timeout(slot, view) => {
+                assert_eq!(slot, &1);
+                assert_eq!(view, &0);
             }
         };
 
@@ -1881,8 +1872,9 @@ pub mod test {
         broadcast! {
             description: "Follower - Timeout",
             from: node4, to: [node1],
-            message_matches: ConsensusNetMessage::Timeout(_, next_leader) => {
-                assert_eq!(&node2.pubkey(), next_leader);
+            message_matches: ConsensusNetMessage::Timeout(slot, view) => {
+                assert_eq!(slot, &1);
+                assert_eq!(view, &0);
             }
         };
 
@@ -1891,8 +1883,9 @@ pub mod test {
         broadcast! {
             description: "Follower - Timeout",
             from: node1, to: [node2],
-            message_matches: ConsensusNetMessage::Timeout(_, next_leader) => {
-                assert_eq!(&node2.pubkey(), next_leader);
+            message_matches: ConsensusNetMessage::Timeout(slot, view) => {
+                assert_eq!(slot, &1);
+                assert_eq!(view, &0);
             }
         };
 
@@ -1938,24 +1931,21 @@ pub mod test {
         broadcast! {
             description: "Follower - Timeout",
             from: node2, to: [node3, node4, node5],
-            message_matches: ConsensusNetMessage::Timeout(_, next_leader) => {
-                assert_eq!(&node2.pubkey(), next_leader);
-            }
+            message_matches: ConsensusNetMessage::Timeout(..)
         };
         broadcast! {
             description: "Follower - Timeout",
             from: node3, to: [node2, node4, node5],
-            message_matches: ConsensusNetMessage::Timeout(_, next_leader) => {
-                assert_eq!(&node2.pubkey(), next_leader);
-            }
+            message_matches: ConsensusNetMessage::Timeout(..)
         };
 
         // node 4 should join the mutiny
         broadcast! {
             description: "Follower - Timeout",
             from: node4, to: [node2, node3, node5],
-            message_matches: ConsensusNetMessage::Timeout(_, next_leader) => {
-                assert_eq!(&node2.pubkey(), next_leader);
+            message_matches: ConsensusNetMessage::Timeout(slot, view) => {
+                assert_eq!(slot, &1);
+                assert_eq!(view, &0);
             }
         };
 
@@ -1963,9 +1953,7 @@ pub mod test {
         broadcast! {
             description: "Follower - Timeout",
             from: node5, to: [node2, node3, node4],
-            message_matches: ConsensusNetMessage::Timeout(_, next_leader) => {
-                assert_eq!(&node2.pubkey(), next_leader);
-            }
+            message_matches: ConsensusNetMessage::Timeout(..)
         };
 
         // After this broadcast, every node has 2f+1 timeouts and can create a timeout certificate
@@ -2022,46 +2010,40 @@ pub mod test {
         broadcast! {
             description: "Follower - Timeout",
             from: node3, to: [node4, node5, node6, node7],
-            message_matches: ConsensusNetMessage::Timeout(_, next_leader) => {
-                assert_eq!(&node2.pubkey(), next_leader);
+            message_matches: ConsensusNetMessage::Timeout(slot, view) => {
+                assert_eq!(slot, &1);
+                assert_eq!(view, &0);
             }
         };
         broadcast! {
             description: "Follower - Timeout",
             from: node4, to: [node3, node5, node6, node7],
-            message_matches: ConsensusNetMessage::Timeout(_, next_leader) => {
-                assert_eq!(&node2.pubkey(), next_leader);
-            }
+            message_matches: ConsensusNetMessage::Timeout(..)
         };
         broadcast! {
             description: "Follower - Timeout",
             from: node5, to: [node3, node4, node6, node7],
-            message_matches: ConsensusNetMessage::Timeout(_, next_leader) => {
-                assert_eq!(&node2.pubkey(), next_leader);
-            }
+            message_matches: ConsensusNetMessage::Timeout(..)
         };
         broadcast! {
             description: "Follower - Timeout",
             from: node6, to: [node3, node4, node5, node7],
-            message_matches: ConsensusNetMessage::Timeout(_, next_leader) => {
-                assert_eq!(&node2.pubkey(), next_leader);
-            }
+            message_matches: ConsensusNetMessage::Timeout(..)
         };
         broadcast! {
             description: "Follower - Timeout",
             from: node7, to: [node3, node4, node5, node6],
-            message_matches: ConsensusNetMessage::Timeout(_, next_leader) => {
-                assert_eq!(&node2.pubkey(), next_leader);
-            }
+            message_matches: ConsensusNetMessage::Timeout(..)
         };
 
         // Send node5 timeout certificate to node2
         broadcast! {
             description: "Follower - Timeout Certificate to next leader",
             from: node5, to: [node2],
-            message_matches: ConsensusNetMessage::TimeoutCertificate(_, cp_hash) => {
+            message_matches: ConsensusNetMessage::TimeoutCertificate(_, slot, view) => {
                 if let ConsensusNetMessage::Prepare(cp, ticket) = lost_prepare {
-                    assert_eq!(&cp.hash(), cp_hash);
+                    assert_eq!(&cp.slot, slot);
+                    assert_eq!(&cp.view, view);
                     assert_eq!(ticket, Ticket::Genesis);
                 }
             }

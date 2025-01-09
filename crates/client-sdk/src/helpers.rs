@@ -100,12 +100,12 @@ pub mod sp1 {
     use super::*;
 
     pub fn execute(binary: &[u8], contract_input: &ContractInput) -> Result<HyleOutput> {
-        let client = ProverClient::new();
+        let client = ProverClient::from_env();
         let mut stdin = SP1Stdin::new();
         stdin.write(&contract_input);
 
         let (public_values, _) = client
-            .execute(binary, stdin)
+            .execute(binary, &stdin)
             .run()
             .expect("failed to generate proof");
 
@@ -124,7 +124,7 @@ pub mod sp1 {
         binary: &[u8],
         contract_input: &ContractInput,
     ) -> anyhow::Result<(ProofData, HyleOutput)> {
-        let client = ProverClient::new();
+        let client = ProverClient::from_env();
 
         // Setup the inputs.
         let mut stdin = SP1Stdin::new();
@@ -135,7 +135,7 @@ pub mod sp1 {
 
         // Generate the proof
         let proof = client
-            .prove(&pk, stdin)
+            .prove(&pk, &stdin)
             //.compressed()
             .run()
             .expect("failed to generate proof");
