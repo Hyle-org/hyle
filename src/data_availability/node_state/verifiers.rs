@@ -14,9 +14,16 @@ pub fn verify_proof(
     verifier: &Verifier,
     program_id: &ProgramId,
 ) -> Result<Vec<HyleOutput>, Error> {
-    // TODO: remove test
     let hyle_outputs = match verifier.0.as_str() {
+        // TODO: add #[cfg(test)]
         "test" => Ok(serde_json::from_slice(proof)?),
+        #[cfg(test)]
+        "test-slow" => {
+            tracing::info!("Sleeping for 2 seconds to simulate a slow verifier");
+            std::thread::sleep(std::time::Duration::from_secs(2));
+            tracing::info!("Woke up from sleep");
+            Ok(serde_json::from_slice(proof)?)
+        }
         "risc0" => {
             let journal = risc0_proof_verifier(proof, &program_id.0)?;
             // First try to decode it as a single HyleOutput
