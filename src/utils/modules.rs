@@ -1,4 +1,12 @@
-use std::{any::type_name, fs, future::Future, path::Path, pin::Pin, time::Duration};
+use std::{
+    any::type_name,
+    fs,
+    future::Future,
+    io::{BufWriter, Write},
+    path::Path,
+    pin::Pin,
+    time::Duration,
+};
 
 use crate::{
     bus::{bus_client, BusClientSender, SharedMessageBus},
@@ -69,9 +77,15 @@ where
             .collect();
         let tmp = file.with_extension(format!("{}.tmp", salt));
         debug!("Saving on disk in a tmp file {:?}", tmp.clone());
-        let mut writer = fs::File::create(tmp.as_path()).log_error("Create file")?;
-        bincode::encode_into_std_write(store, &mut writer, bincode::config::standard())
+        let mut buf_writer =
+            BufWriter::new(fs::File::create(tmp.as_path()).log_error("Create file")?);
+        bincode::encode_into_std_write(store, &mut buf_writer, bincode::config::standard())
             .log_error("Serializing Ctx chain")?;
+
+        buf_writer.flush().log_error(format!(
+            "Flushing Buffer writer for store {}",
+            type_name::<S>()
+        ))?;
         debug!("Renaming {:?} to {:?}", &tmp, &file);
         fs::rename(tmp, file).log_error("Rename file")?;
         Ok(())

@@ -1,6 +1,11 @@
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
+
+#[cfg(not(feature = "node"))]
+use chrono::NaiveDateTime;
+#[cfg(feature = "node")]
 use sqlx::types::chrono::NaiveDateTime;
+#[cfg(feature = "node")]
 use sqlx::{prelude::Type, Postgres};
 
 use crate::model::{Transaction, TransactionData};
@@ -8,18 +13,23 @@ use hyle_contract_sdk::TxHash;
 
 use super::consensus::ConsensusProposalHash;
 
-#[derive(Debug, sqlx::FromRow, Serialize, Deserialize)]
+#[cfg_attr(feature = "node", derive(sqlx::FromRow))]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct BlockDb {
     // Struct for the blocks table
     pub hash: ConsensusProposalHash,
     pub parent_hash: ConsensusProposalHash,
-    #[sqlx(try_from = "i64")]
+    #[cfg_attr(feature = "node", sqlx(try_from = "i64"))]
     pub height: u64, // Corresponds to BlockHeight
     pub timestamp: NaiveDateTime, // UNIX timestamp
 }
 
-#[derive(Debug, sqlx::Type, Serialize, Deserialize, Clone, PartialEq)]
-#[sqlx(type_name = "transaction_type", rename_all = "snake_case")]
+#[cfg_attr(feature = "node", derive(sqlx::Type))]
+#[cfg_attr(
+    feature = "node",
+    sqlx(type_name = "transaction_type", rename_all = "snake_case")
+)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub enum TransactionType {
     BlobTransaction,
     ProofTransaction,
@@ -38,22 +48,28 @@ impl TransactionType {
     }
 }
 
-#[derive(Debug, sqlx::Type, Serialize, Deserialize, Clone, PartialEq)]
-#[sqlx(type_name = "transaction_status", rename_all = "snake_case")]
+#[cfg_attr(feature = "node", derive(sqlx::Type))]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+#[cfg_attr(
+    feature = "node",
+    sqlx(type_name = "transaction_status", rename_all = "snake_case")
+)]
 pub enum TransactionStatus {
     Success,
     Failure,
     Sequenced,
     TimedOut,
 }
-#[derive(Debug, sqlx::FromRow, Serialize, Deserialize)]
+
+#[cfg_attr(feature = "node", derive(sqlx::FromRow))]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct TransactionDb {
     // Struct for the transactions table
     pub tx_hash: TxHashDb,                 // Transaction hash
     pub block_hash: ConsensusProposalHash, // Corresponds to the block hash
-    #[sqlx(try_from = "i32")]
+    #[cfg_attr(feature = "node", sqlx(try_from = "i32"))]
     pub index: u32, // Index of the transaction within the block
-    #[sqlx(try_from = "i32")]
+    #[cfg_attr(feature = "node", sqlx(try_from = "i32"))]
     pub version: u32, // Transaction version
     pub transaction_type: TransactionType, // Type of transaction
     pub transaction_status: TransactionStatus, // Status of the transaction
@@ -81,10 +97,11 @@ pub struct BlobWithStatus {
 }
 
 #[serde_as]
-#[derive(Debug, sqlx::FromRow, Serialize, Deserialize)]
+#[cfg_attr(feature = "node", derive(sqlx::FromRow))]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct BlobDb {
     pub tx_hash: TxHashDb, // Corresponds to the transaction hash
-    #[sqlx(try_from = "i32")]
+    #[cfg_attr(feature = "node", sqlx(try_from = "i32"))]
     pub blob_index: u32, // Index of the blob within the transaction
     pub identity: String,  // Identity of the blob
     pub contract_name: String, // Contract name associated with the blob
@@ -94,7 +111,8 @@ pub struct BlobDb {
 }
 
 #[serde_as]
-#[derive(Debug, sqlx::FromRow, Serialize, Deserialize)]
+#[cfg_attr(feature = "node", derive(sqlx::FromRow))]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ProofTransactionDb {
     // Struct for the proof_transactions table
     pub tx_hash: TxHashDb,     // Corresponds to the transaction hash
@@ -104,7 +122,8 @@ pub struct ProofTransactionDb {
 }
 
 #[serde_as]
-#[derive(Debug, sqlx::FromRow, Serialize, Deserialize)]
+#[cfg_attr(feature = "node", derive(sqlx::FromRow))]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ContractDb {
     // Struct for the contracts table
     pub tx_hash: TxHashDb, // Corresponds to the registration transaction hash
@@ -118,7 +137,8 @@ pub struct ContractDb {
 }
 
 #[serde_as]
-#[derive(Debug, sqlx::FromRow, Serialize, Deserialize)]
+#[cfg_attr(feature = "node", derive(sqlx::FromRow))]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ContractStateDb {
     // Struct for the contract_state table
     pub contract_name: String,             // Name of the contract
@@ -136,11 +156,13 @@ impl From<TxHash> for TxHashDb {
     }
 }
 
+#[cfg(feature = "node")]
 impl Type<Postgres> for TxHashDb {
     fn type_info() -> sqlx::postgres::PgTypeInfo {
         <String as Type<Postgres>>::type_info()
     }
 }
+#[cfg(feature = "node")]
 impl sqlx::Encode<'_, sqlx::Postgres> for TxHashDb {
     fn encode_by_ref(
         &self,
@@ -153,6 +175,7 @@ impl sqlx::Encode<'_, sqlx::Postgres> for TxHashDb {
     }
 }
 
+#[cfg(feature = "node")]
 impl<'r> sqlx::Decode<'r, sqlx::Postgres> for TxHashDb {
     fn decode(
         value: sqlx::postgres::PgValueRef<'r>,
@@ -165,12 +188,14 @@ impl<'r> sqlx::Decode<'r, sqlx::Postgres> for TxHashDb {
     }
 }
 
+#[cfg(feature = "node")]
 impl Type<Postgres> for ConsensusProposalHash {
     fn type_info() -> sqlx::postgres::PgTypeInfo {
         <String as Type<Postgres>>::type_info()
     }
 }
 
+#[cfg(feature = "node")]
 impl sqlx::Encode<'_, sqlx::Postgres> for ConsensusProposalHash {
     fn encode_by_ref(
         &self,
@@ -183,6 +208,7 @@ impl sqlx::Encode<'_, sqlx::Postgres> for ConsensusProposalHash {
     }
 }
 
+#[cfg(feature = "node")]
 impl<'r> sqlx::Decode<'r, sqlx::Postgres> for ConsensusProposalHash {
     fn decode(
         value: sqlx::postgres::PgValueRef<'r>,

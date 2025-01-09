@@ -78,16 +78,13 @@ pub enum TracingMode {
 }
 
 /// Setup tracing - stdout subscriber
-/// stdout defaults to INFO & sled to INFO even if RUST_LOG is set to e.g. debug (unless it contains "sled")
+/// stdout defaults to INFO to INFO even if RUST_LOG is set to e.g. debug
 pub fn setup_tracing(mode: TracingMode, node_name: String) -> Result<()> {
     let mut filter = EnvFilter::builder()
         .with_default_directive(LevelFilter::INFO.into())
         .from_env()?;
 
     let var = std::env::var("RUST_LOG").unwrap_or("".to_string());
-    if !var.contains("sled") {
-        filter = filter.add_directive("sled=info".parse()?);
-    }
     if !var.contains("risc0_zkvm") {
         filter = filter.add_directive("risc0_zkvm=info".parse()?);
     }

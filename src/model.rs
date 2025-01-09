@@ -21,18 +21,17 @@ use std::{
     cmp::Ordering,
     collections::BTreeMap,
     fmt,
-    io::Write,
     ops::Add,
     time::{SystemTime, UNIX_EPOCH},
 };
 use strum_macros::IntoStaticStr;
 
-use consensus::{ConsensusProposal, ConsensusProposalHash};
+use consensus::{ConsensusProposal, ConsensusProposalHash, NewValidatorCandidate};
 use crypto::AggregateSignature;
 use hyle_contract_sdk::{
     flatten_blobs, BlobIndex, HyleOutput, Identity, ProgramId, StateDigest, TxHash, Verifier,
 };
-use mempool::DataProposal;
+use mempool::{Cut, DataProposal};
 use staking::StakingAction;
 
 // Re-export
@@ -331,13 +330,73 @@ impl PartialEq for SignedBlock {
 
 impl Eq for SignedBlock {}
 
+pub struct HyleOutputHash(pub Vec<u8>);
+pub struct BlobProofOutputHash(pub Vec<u8>);
+pub struct CutHash(pub Vec<u8>);
+pub struct NewValidatorCandidateHash(pub Vec<u8>);
+
+impl Hashable<HyleOutputHash> for HyleOutput {
+    fn hash(&self) -> HyleOutputHash {
+        let mut hasher = Sha3_256::new();
+        hasher.update(self.version.to_le_bytes());
+        hasher.update(self.initial_state.0.clone());
+        hasher.update(self.next_state.0.clone());
+        hasher.update(self.identity.0.as_bytes());
+        hasher.update(self.tx_hash.0.as_bytes());
+        hasher.update(self.index.0.to_le_bytes());
+        hasher.update(&self.blobs);
+        hasher.update([self.success as u8]);
+        hasher.update(&self.program_outputs);
+        HyleOutputHash(hasher.finalize().to_vec())
+    }
+}
+
+impl Hashable<BlobProofOutputHash> for BlobProofOutput {
+    fn hash(&self) -> BlobProofOutputHash {
+        let mut hasher = Sha3_256::new();
+        hasher.update(self.blob_tx_hash.0.as_bytes());
+        hasher.update(self.original_proof_hash.0.as_bytes());
+        hasher.update(self.program_id.0.clone());
+        hasher.update(self.hyle_output.hash().0);
+        BlobProofOutputHash(hasher.finalize().to_vec())
+    }
+}
+
+impl Hashable<CutHash> for Cut {
+    fn hash(&self) -> CutHash {
+        let mut hasher = Sha3_256::new();
+        hasher.update(self.len().to_le_bytes());
+        for (v, dp, poda) in self {
+            hasher.update(v.0.clone());
+            hasher.update(dp.0.as_bytes());
+            hasher.update(poda.signature.0.clone());
+            hasher.update(poda.validators.len().to_le_bytes());
+            for validator in poda.validators.iter() {
+                hasher.update(validator.0.clone());
+            }
+        }
+        CutHash(hasher.finalize().to_vec())
+    }
+}
+
+impl Hashable<NewValidatorCandidateHash> for NewValidatorCandidate {
+    fn hash(&self) -> NewValidatorCandidateHash {
+        let mut hasher = Sha3_256::new();
+        bincode::encode_into_std_write(self, &mut hasher, bincode::config::standard()).unwrap();
+        NewValidatorCandidateHash(hasher.finalize().to_vec())
+    }
+}
+
 impl Hashable<ConsensusProposalHash> for ConsensusProposal {
     fn hash(&self) -> ConsensusProposalHash {
         let mut hasher = Sha3_256::new();
-        _ = write!(hasher, "{}", self.slot);
-        _ = write!(hasher, "{}", self.view);
-        _ = write!(hasher, "{:?}", self.cut);
-        _ = write!(hasher, "{:?}", self.new_validators_to_bond);
+        hasher.update(self.slot.to_le_bytes());
+        hasher.update(self.view.to_le_bytes());
+        hasher.update(self.cut.hash().0);
+        hasher.update(self.new_validators_to_bond.len().to_le_bytes());
+        for vc in &self.new_validators_to_bond {
+            hasher.update(vc.hash().0);
+        }
         ConsensusProposalHash(hex::encode(hasher.finalize()))
     }
 }
@@ -363,7 +422,7 @@ impl Hashable<TxHash> for Transaction {
 impl Hashable<TxHash> for BlobTransaction {
     fn hash(&self) -> TxHash {
         let mut hasher = Sha3_256::new();
-        _ = write!(hasher, "{}", self.identity.0);
+        hasher.update(self.identity.0.as_bytes());
         hasher.update(self.blobs_hash().0);
         let hash_bytes = hasher.finalize();
         TxHash(hex::encode(hash_bytes))
@@ -372,7 +431,7 @@ impl Hashable<TxHash> for BlobTransaction {
 impl Hashable<TxHash> for ProofTransaction {
     fn hash(&self) -> TxHash {
         let mut hasher = Sha3_256::new();
-        _ = write!(hasher, "{}", self.contract_name);
+        hasher.update(self.contract_name.0.as_bytes());
         hasher.update(self.proof.hash().0);
         let hash_bytes = hasher.finalize();
         TxHash(hex::encode(hash_bytes))
@@ -392,9 +451,12 @@ impl Hashable<ProofDataHash> for ProofData {
 impl Hashable<TxHash> for VerifiedProofTransaction {
     fn hash(&self) -> TxHash {
         let mut hasher = Sha3_256::new();
-        _ = write!(hasher, "{}", self.contract_name);
-        _ = write!(hasher, "{:?}", self.proof_hash);
-        _ = write!(hasher, "{:?}", self.proven_blobs);
+        hasher.update(self.contract_name.0.as_bytes());
+        hasher.update(self.proof_hash.0.as_bytes());
+        hasher.update(self.proven_blobs.len().to_le_bytes());
+        for proven_blob in self.proven_blobs.iter() {
+            hasher.update(proven_blob.hash().0);
+        }
         let hash_bytes = hasher.finalize();
         TxHash(hex::encode(hash_bytes))
     }
