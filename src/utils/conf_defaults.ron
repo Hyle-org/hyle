@@ -36,7 +36,7 @@ Config(
     /// genesis_stakers: { "node1": 1000, "node2": 1000 }
     /// All genesis node requires the same config here
     /// Keys are all nodes “id”, and values are the stake amount for each one of them.
-    genesis_stakers: {}
+    genesis_stakers: {"node": 100}
   ),
   p2p: (
     /// Interval the p2p layer does a ping to check aliveness of other peers.
