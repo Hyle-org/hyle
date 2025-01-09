@@ -43,9 +43,9 @@ required-features = ["node"]
 
 [dependencies]
 # Public dependencies
-hyle-contract-sdk = { path = "./contract-sdk", features = ["tracing"] }
-staking = { path = "./contracts/staking", features = ["client"] }
-client-sdk = { path = "./crates/client-sdk" }
+hyle-contract-sdk = { path = "./contract-sdk", default-features = false }
+staking = { path = "./contracts/staking", default-features = false }
+client-sdk = { path = "./crates/client-sdk", default-features = false }
 
 anyhow = "1.0.95"
 bincode = { version = "2.0.0-rc.3", features = ["serde"] }
@@ -146,6 +146,8 @@ tx_builder = [
 ]
 node = [
     "client-sdk/risc0",
+    "hyle-contract-sdk/tracing",
+    "staking/client",
     "dep:anymap",
     "dep:assertables",
     "dep:axum",
