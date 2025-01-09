@@ -409,7 +409,7 @@ impl Storage {
     ) -> bool {
         self.lanes
             .get(validator)
-            .map_or(false, |lane| lane.has_proposal(data_proposal_hash))
+            .is_some_and(|lane| lane.has_proposal(data_proposal_hash))
     }
 
     pub fn get_lane_entries_between_hashes(
