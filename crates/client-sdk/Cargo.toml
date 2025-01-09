@@ -7,7 +7,7 @@ homepage = { workspace = true }
 repository = { workspace = true }
 
 [dependencies]
-sdk = { path = "../../contract-sdk", package = "hyle-contract-sdk" }
+sdk = { path = "../contract-sdk", package = "hyle-contract-sdk" }
 
 anyhow = "1.0.94"
 serde = { version = "1.0.216", features = ["derive"] }

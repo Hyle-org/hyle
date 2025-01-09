@@ -131,12 +131,12 @@ pub struct ContractData {
 impl Default for ContractData {
     fn default() -> Self {
         Self {
-            amm_elf: include_bytes!("../../../contracts/amm/amm.img").to_vec(),
-            amm_id: include_bytes!("../../../contracts/amm/amm.txt").to_vec(),
-            hydentity_elf: include_bytes!("../../../contracts/hydentity/hydentity.img").to_vec(),
-            hydentity_id: include_bytes!("../../../contracts/hydentity/hydentity.txt").to_vec(),
-            hyllar_elf: include_bytes!("../../../contracts/hyllar/hyllar.img").to_vec(),
-            hyllar_id: include_bytes!("../../../contracts/hyllar/hyllar.txt").to_vec(),
+            amm_elf: amm::metadata::AMM_ELF.to_vec(),
+            amm_id: amm::metadata::PROGRAM_ID.to_vec(),
+            hydentity_elf: hydentity::metadata::HYDENTITY_ELF.to_vec(),
+            hydentity_id: hydentity::metadata::PROGRAM_ID.to_vec(),
+            hyllar_elf: hyllar::metadata::HYLLAR_ELF.to_vec(),
+            hyllar_id: hyllar::metadata::PROGRAM_ID.to_vec(),
         }
     }
 }
