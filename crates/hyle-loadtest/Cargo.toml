@@ -9,20 +9,14 @@ repository.workspace = true
 [dependencies]
 serde_json = "1.0.133"
 tokio = "^1.12"
-hyle = { path = "../../" }
+hyle = { path = "../../", features = ["tx_builder"] }
 hyllar = { path = "../../contracts/hyllar" }
-amm = { path = "../../contracts/amm" }
 hydentity = { path = "../../contracts/hydentity" }
 hyle-contracts = { path = "../../contracts", package = "hyle-contracts" }
 hyle-contract-sdk = { path = "../../contract-sdk" }
 client-sdk = { path = "../client-sdk" }
 
-reqwest = "0.12.9"
 anyhow = "1.0.94"
-bincode = { version = "2.0.0-rc.3" }
 clap = "4.5.23"
-risc0-zkvm = { version = "1.2.0", default-features = false, features = [
-    "client",
-] }
 tracing = "0.1.41"
 tracing-subscriber = "0.3.19"
