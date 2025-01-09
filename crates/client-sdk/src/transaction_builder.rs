@@ -99,14 +99,6 @@ impl TransactionBuilder {
         })
     }
 
-    pub fn stateless_build(&mut self) -> Result<BuildResult> {
-        Ok(BuildResult {
-            identity: self.identity.clone(),
-            blobs: self.blobs.clone(),
-            outputs: vec![],
-        })
-    }
-
     /// Returns an iterator over the proofs of the transactions
     /// In order to send proofs when they are ready, without waiting for all of them to be ready
     /// Example usage:

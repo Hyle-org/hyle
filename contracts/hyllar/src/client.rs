@@ -42,4 +42,16 @@ impl Builder<'_> {
         )?;
         Ok(())
     }
+
+    pub fn transfer_test(&mut self, recipient: String, amount: u128) -> anyhow::Result<()> {
+        self.builder.add_action(
+            self.contract_name.clone(),
+            crate::metadata::HYLLAR_ELF,
+            client_sdk::helpers::Prover::TestProver,
+            ERC20Action::Transfer { recipient, amount },
+            None,
+            None,
+        )?;
+        Ok(())
+    }
 }

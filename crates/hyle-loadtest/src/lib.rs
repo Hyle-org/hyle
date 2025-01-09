@@ -73,9 +73,9 @@ pub async fn setup(url: String, users: u32, verifier: String) -> Result<()> {
     Ok(())
 }
 
-pub async fn generate(users: u32, verifier: String, states: States) -> Result<()> {
+pub async fn generate(users: u32, states: States) -> Result<()> {
     generate_blobs_txs(users, states.clone()).await?;
-    generate_proof_txs(users, verifier, states).await?;
+    generate_proof_txs(users, states).await?;
 
     Ok(())
 }
@@ -110,9 +110,9 @@ pub async fn generate_blobs_txs(users: u32, states: States) -> Result<()> {
                     .builder("hyllar-test".into(), &mut transaction)
                     .transfer(ident.clone().to_string(), 0)?;
 
-                let BuildResult {
-                    identity, blobs, ..
-                } = transaction.stateless_build()?;
+                // Extract the identity and blobs from the transaction without building it to prevent loading r0vm
+                let identity = transaction.identity.clone();
+                let blobs = transaction.blobs.clone();
 
                 local_blob_txs.push(BlobTransaction { identity, blobs });
             }
@@ -129,7 +129,7 @@ pub async fn generate_blobs_txs(users: u32, states: States) -> Result<()> {
     Ok(())
 }
 
-pub async fn generate_proof_txs(users: u32, verifier: String, states: States) -> Result<()> {
+pub async fn generate_proof_txs(users: u32, states: States) -> Result<()> {
     let mut proof_txs = vec![];
     let mut tasks = JoinSet::new();
     let number_of_tasks = 100;
@@ -142,7 +142,6 @@ pub async fn generate_proof_txs(users: u32, verifier: String, states: States) ->
         .collect::<Vec<_>>();
     for chunk in user_chunks {
         let mut states = states.clone();
-        let verifier = verifier.clone();
 
         tasks.spawn(async move {
             let mut local_proof_txs = vec![];
@@ -157,7 +156,7 @@ pub async fn generate_proof_txs(users: u32, verifier: String, states: States) ->
                 states
                     .hyllar
                     .builder("hyllar-test".into(), &mut transaction)
-                    .transfer(ident.clone().to_string(), 0)?;
+                    .transfer_test(ident.clone().to_string(), 0)?;
 
                 let BuildResult {
                     identity, blobs, ..
@@ -165,7 +164,7 @@ pub async fn generate_proof_txs(users: u32, verifier: String, states: States) ->
 
                 let blob_tx = BlobTransaction { identity, blobs };
 
-                for (proof, contract_name) in transaction.iter_prove(&verifier.clone().into()) {
+                for (proof, contract_name) in transaction.iter_prove() {
                     let proof: ProofData = proof.await.unwrap();
                     local_proof_txs.push(ProofTransaction {
                         contract_name,

@@ -77,16 +77,16 @@ async fn main() -> Result<(), Error> {
             generate_blobs_txs(users, states).await?;
         }
         SendCommands::GenerateProofTransactions => {
-            generate_proof_txs(users, verifier, states).await?;
+            generate_proof_txs(users, states).await?;
         }
-        SendCommands::GenerateTransactions => generate(users, verifier, states).await?,
+        SendCommands::GenerateTransactions => generate(users, states).await?,
         SendCommands::SendBlobTransactions => send_blob_txs(url).await?,
         SendCommands::SendProofTransactions => send_proof_txs(url).await?,
         SendCommands::SendTransactions => send(url).await?,
         SendCommands::LoadTest => {
             setup(url.clone(), users, verifier.clone()).await?;
             tokio::time::sleep(std::time::Duration::from_secs(3)).await;
-            generate(users, verifier, states).await?;
+            generate(users, states).await?;
             send(url).await?;
         }
     }
