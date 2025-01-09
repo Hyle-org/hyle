@@ -8,12 +8,19 @@ repository = { workspace = true }
 
 [dependencies]
 sdk = { path = "../../contract-sdk", package = "hyle-contract-sdk" }
-bonsai-runner = { path = "../bonsai-runner" }
 
 anyhow = "1.0.94"
-risc0-zkvm = { version = "1.2.0" }
 serde = { version = "1.0.216", features = ["derive"] }
 bincode = { version = "2.0.0-rc.3", features = ["serde"] }
 borsh = "1.5.3"
 base64 = "0.22.1"
+
+bonsai-runner = { path = "../bonsai-runner", optional = true }
+risc0-zkvm = { version = "1.2", default-features = false, optional = true }
+sp1-sdk = { version = "3.4.0", default-features = false, optional = true }
+
+[features]
+default = ["risc0", "sp1"]
+risc0 = ["dep:risc0-zkvm", "dep:bonsai-runner"]
+sp1 = ["dep:sp1-sdk"]
 

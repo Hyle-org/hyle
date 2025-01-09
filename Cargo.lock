@@ -1165,6 +1165,7 @@ dependencies = [
  "hyle-contract-sdk",
  "risc0-zkvm",
  "serde",
+ "sp1-sdk",
 ]
 
 [[package]]

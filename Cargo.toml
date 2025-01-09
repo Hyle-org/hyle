@@ -145,6 +145,7 @@ tx_builder = [
     "dep:risc0-zkvm",
 ]
 node = [
+    "client-sdk/risc0",
     "dep:anymap",
     "dep:assertables",
     "dep:axum",

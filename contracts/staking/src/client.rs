@@ -26,6 +26,7 @@ impl Builder<'_> {
             .add_action(
                 self.contract_name.clone(),
                 crate::metadata::STAKING_ELF,
+                client_sdk::helpers::Prover::Risc0Prover,
                 StakingAction::Stake { amount },
                 None,
                 None,
@@ -51,6 +52,7 @@ impl Builder<'_> {
             .add_action(
                 self.contract_name.clone(),
                 crate::metadata::STAKING_ELF,
+                client_sdk::helpers::Prover::Risc0Prover,
                 StakingAction::Delegate {
                     validator: validator.clone(),
                 },
