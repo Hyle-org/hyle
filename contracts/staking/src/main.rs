@@ -3,6 +3,8 @@
 
 extern crate alloc;
 
+#[allow(unused_imports)]
+use alloc::format;
 use alloc::vec::Vec;
 use sdk::caller::{CallerCallee, ExecutionContext};
 use sdk::{info, StructuredBlobData};
