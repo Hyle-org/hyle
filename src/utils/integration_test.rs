@@ -22,7 +22,6 @@ use crate::p2p::P2P;
 use crate::single_node_consensus::SingleNodeConsensus;
 use crate::utils::conf::Conf;
 use crate::utils::crypto::BlstCrypto;
-use crate::utils::logger::LogMe;
 use crate::utils::modules::signal::ShutdownModule;
 use crate::utils::modules::ModulesHandler;
 
@@ -34,14 +33,6 @@ type MockBuilder = Box<
         &'a SharedRunContext,
     ) -> Pin<Box<dyn std::future::Future<Output = Result<()>> + 'a>>,
 >;
-
-pub struct NodeIntegrationCtxBuilder {
-    tmpdir: tempfile::TempDir,
-    pub conf: Conf,
-    pub bus: SharedMessageBus,
-    pub crypto: BlstCrypto,
-    mocks: HashMap<TypeId, MockBuilder>,
-}
 
 module_bus_client! {
 struct MockModuleBusClient {
@@ -85,6 +76,14 @@ impl<T: Send> Module for MockModule<T> {
     fn run(&mut self) -> impl futures::Future<Output = Result<()>> + Send {
         self.start()
     }
+}
+
+pub struct NodeIntegrationCtxBuilder {
+    tmpdir: tempfile::TempDir,
+    pub conf: Conf,
+    pub bus: SharedMessageBus,
+    pub crypto: BlstCrypto,
+    mocks: HashMap<TypeId, MockBuilder>,
 }
 
 impl NodeIntegrationCtxBuilder {
@@ -134,14 +133,14 @@ impl NodeIntegrationCtxBuilder {
         )
         .await?;
 
-        let (tx, mut rx) = tokio::sync::mpsc::channel::<()>(1);
+        let (tx, rx) = tokio::sync::oneshot::channel::<()>();
 
         let node_task = Some(tokio::spawn(async move {
             tokio::select! {
                 res = node_modules.start_modules() => {
                     res
                 }
-                Some(_) = rx.recv() => {
+                Ok(_) = rx => {
                     info!("Node shutdown requested");
                     let _ = node_modules.shutdown_modules(std::time::Duration::from_secs(2)).await;
                     Ok(())
@@ -158,7 +157,7 @@ impl NodeIntegrationCtxBuilder {
             bus: self.bus.new_handle(),
             crypto: self.crypto,
             node_task,
-            shutdown_tx: tx,
+            shutdown_tx: Some(tx),
             bus_client: IntegrationBusClient::new_from_bus(self.bus).await,
         })
     }
@@ -178,7 +177,7 @@ pub struct NodeIntegrationCtx {
     pub bus: SharedMessageBus,
     pub crypto: BlstCrypto,
     node_task: Option<tokio::task::JoinHandle<Result<()>>>,
-    shutdown_tx: tokio::sync::mpsc::Sender<()>,
+    shutdown_tx: Option<tokio::sync::oneshot::Sender<()>>,
     bus_client: IntegrationBusClient,
 }
 
@@ -186,24 +185,17 @@ pub struct NodeIntegrationCtx {
 /// Note that in tests, this requires a multi-threaded tokio runtime.
 impl Drop for NodeIntegrationCtx {
     fn drop(&mut self) {
-        let NodeIntegrationCtx {
-            shutdown_tx,
-            node_task,
-            ..
-        } = unsafe { Self::lifetime_transmute(self) };
-        let shutdown_task = tokio::spawn(async move {
-            info!("Shutting down node");
-            let _ = shutdown_tx.send(()).await;
-            if let Some(task) = node_task.take() {
-                let _ = task
-                    .await
-                    .expect("Should finish node task")
-                    .log_error("Node task failed");
-            };
-        });
+        info!("Shutting down node");
+        let Some(node_task) = self.node_task.take() else {
+            return;
+        };
+        let Some(shutdown_tx) = self.shutdown_tx.take() else {
+            return;
+        };
+        let _ = shutdown_tx.send(());
         let start_time = std::time::Instant::now();
         loop {
-            if shutdown_task.is_finished() {
+            if node_task.is_finished() {
                 break;
             }
             if start_time.elapsed().as_secs() > 5 {
@@ -281,11 +273,6 @@ impl NodeIntegrationCtx {
         }
 
         Ok(handler)
-    }
-
-    // Used to bypass lifetime restrictions when sending stuff in tokio tasks that we know is safe to send.
-    unsafe fn lifetime_transmute<'b, T>(t: &'_ mut T) -> &'b mut T {
-        std::mem::transmute(t)
     }
 
     pub async fn wait_for_processed_genesis(&mut self) -> Result<()> {
