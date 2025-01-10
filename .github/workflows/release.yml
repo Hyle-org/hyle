@@ -56,4 +56,4 @@ jobs:
           commit-message: "🔖 Bump version to ${{ github.ref_name }}"
           title: "🔖 Bump version to ${{ github.ref_name }}"
       - name: Enable Pull Request Automerge
-        run: gh pr merge --squash --auto "${{ steps.cpr.outputs.pull-request-number }}"
+        run: gh pr merge --squash --auto
