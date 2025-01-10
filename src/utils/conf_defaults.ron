@@ -21,6 +21,8 @@ Config(
   rest_max_body_size: 10_485_760, // 10 MB
   /// Wether to run the indexer or not
   run_indexer: true,
+  /// Wether to run the TCP server or not
+  run_tcp_server: true,
   /// Host & port of the data availability module, which streams historical & new blocks. It might be used by indexers.
   da_address: "127.0.0.1:4141",
   tcp_server_address: "127.0.0.1:1414",

@@ -1,17 +1,20 @@
+use std::fmt::{self, Display};
+
 use crate::{
     bus::{BusClientSender, BusMessage},
     model::{Hashable, SharedRunContext, Transaction},
     module_handle_messages,
-    p2p::{network::NetMessage, stream::read_stream},
+    p2p::stream::read_stream,
     utils::{
         conf::SharedConf,
         modules::{module_bus_client, Module},
     },
 };
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
+use strum_macros::IntoStaticStr;
 use tokio::{io::AsyncWriteExt, net::TcpListener};
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
 use tracing::{info, warn};
@@ -27,6 +30,41 @@ module_bus_client! {
 struct TcpServerBusClient {
     sender(TcpServerMessage),
 }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, Eq, PartialEq, IntoStaticStr)]
+pub enum TcpServerNetMessage {
+    Ping,
+    NewTx(Transaction),
+}
+
+impl Display for TcpServerNetMessage {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let enum_variant: &'static str = self.into();
+        match self {
+            TcpServerNetMessage::NewTx(msg) => {
+                _ = write!(f, "TcpServerMessage::{} ", enum_variant);
+                write!(f, "{:?}", msg)
+            }
+            TcpServerNetMessage::Ping => {
+                _ = write!(f, "TcpServerMessage::{} ", enum_variant);
+                write!(f, "{}", enum_variant)
+            }
+        }
+    }
+}
+
+impl From<Transaction> for TcpServerNetMessage {
+    fn from(msg: Transaction) -> Self {
+        TcpServerNetMessage::NewTx(msg)
+    }
+}
+
+impl TcpServerNetMessage {
+    pub fn to_binary(&self) -> Vec<u8> {
+        bincode::encode_to_vec(self, bincode::config::standard())
+            .expect("Could not serialize NetMessage")
+    }
 }
 
 #[derive(Debug)]
@@ -54,11 +92,17 @@ impl Module for TcpServer {
 
 impl TcpServer {
     pub async fn start(&mut self) -> Result<()> {
-        let tcp_listener = TcpListener::bind(&self.config.tcp_server_address).await?;
+        let tcp_server_address = self
+            .config
+            .tcp_server_address
+            .as_ref()
+            .context("tcp_server_address not specified in conf file. Not Starting module.")?;
+
+        let tcp_listener = TcpListener::bind(tcp_server_address).await?;
 
         info!(
             "📡  Starting TcpServer module, listening for stream requests on {}",
-            &self.config.tcp_server_address
+            tcp_server_address
         );
 
         module_handle_messages! {
@@ -67,12 +111,12 @@ impl TcpServer {
             Ok((tcp_stream, _)) = tcp_listener.accept() => {
                 let mut framed = Framed::new(tcp_stream, LengthDelimitedCodec::new());
                 match read_stream(&mut framed).await {
-                    Ok(NetMessage::NewTx(tx)) => {
+                    Ok(TcpServerNetMessage::NewTx(tx)) => {
                         let tx_hash = tx.hash();
                         self.bus.send(TcpServerMessage::NewTx(tx))?;
                         framed.get_mut().write_all(tx_hash.0.as_bytes()).await?;
                     },
-                    Ok(NetMessage::Ping) => {
+                    Ok(TcpServerNetMessage::Ping) => {
                         framed.get_mut().write_all(b"Pong").await?;
                     },
                     Err(e) => { warn!("Error reading stream: {}", e) }
@@ -88,6 +132,7 @@ impl TcpServer {
 mod tests {
     use bincode::encode_to_vec;
     use futures::SinkExt;
+    use rand::Rng;
     use std::{sync::Arc, time::Duration};
     use tokio::{io::AsyncReadExt, net::TcpStream, sync::broadcast::Receiver, time::timeout};
     use tokio_util::codec::FramedWrite;
@@ -107,8 +152,12 @@ mod tests {
 
         let tcp_server_message_receiver = get_receiver::<TcpServerMessage>(&shared_bus).await;
 
+        let mut rng = rand::thread_rng();
+        let random_port: u32 = rng.gen_range(1024..65536);
+
         let config = Conf {
-            tcp_server_address: "127.0.0.1:12345".to_string(),
+            run_tcp_server: true,
+            tcp_server_address: Some(format!("127.0.0.1:{random_port}").to_string()),
             ..Default::default()
         };
 
@@ -180,7 +229,7 @@ mod tests {
     async fn test_tcp_server() -> Result<()> {
         let (mut tcp_server, _) = build().await;
 
-        let addr = tcp_server.config.tcp_server_address.clone();
+        let addr = tcp_server.config.tcp_server_address.clone().unwrap();
 
         // Starts server
         tokio::spawn(async move {
@@ -196,7 +245,7 @@ mod tests {
     async fn test_ping() -> Result<()> {
         let (mut tcp_server, _) = build().await;
 
-        let addr = tcp_server.config.tcp_server_address.clone();
+        let addr = tcp_server.config.tcp_server_address.clone().unwrap();
 
         // Starts server
         tokio::spawn(async move {
@@ -209,7 +258,7 @@ mod tests {
         let stream = TcpStream::connect(addr).await?;
         let mut framed = FramedWrite::new(stream, LengthDelimitedCodec::new());
 
-        let encoded_msg = encode_to_vec(&NetMessage::Ping, bincode::config::standard())?;
+        let encoded_msg = encode_to_vec(&TcpServerNetMessage::Ping, bincode::config::standard())?;
 
         framed.send(encoded_msg.into()).await?;
 
@@ -225,7 +274,7 @@ mod tests {
     async fn test_send_transaction() -> Result<()> {
         let (mut tcp_server, tcp_message_receiver) = build().await;
 
-        let addr = tcp_server.config.tcp_server_address.clone();
+        let addr = tcp_server.config.tcp_server_address.clone().unwrap();
 
         // Starts server
         tokio::spawn(async move {
@@ -237,7 +286,7 @@ mod tests {
             RegisterContractTransaction::default(),
         ));
 
-        let net_msg = NetMessage::NewTx(tx.clone());
+        let net_msg = TcpServerNetMessage::NewTx(tx.clone());
         let encoded_msg = encode_to_vec(&net_msg, bincode::config::standard())?;
 
         // wait until it's up

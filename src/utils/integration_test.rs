@@ -20,6 +20,7 @@ use crate::mempool::Mempool;
 use crate::model::{CommonRunContext, NodeRunContext, SharedRunContext};
 use crate::p2p::P2P;
 use crate::single_node_consensus::SingleNodeConsensus;
+use crate::tcp_server::TcpServer;
 use crate::utils::conf::Conf;
 use crate::utils::crypto::BlstCrypto;
 use crate::utils::modules::signal::ShutdownModule;
@@ -236,6 +237,7 @@ impl NodeIntegrationCtx {
         std::fs::create_dir_all(&config.data_directory).context("creating data directory")?;
 
         let run_indexer = config.run_indexer;
+        let run_tcp_server = config.run_tcp_server;
 
         let ctx = SharedRunContext {
             common: CommonRunContext {
@@ -266,6 +268,10 @@ impl NodeIntegrationCtx {
         Self::build_module::<DataAvailability>(&mut handler, &ctx, &ctx, &mut mocks).await?;
 
         Self::build_module::<P2P>(&mut handler, &ctx, &ctx, &mut mocks).await?;
+
+        if run_tcp_server {
+            Self::build_module::<TcpServer>(&mut handler, &ctx, &ctx, &mut mocks).await?;
+        }
 
         // Ensure we didn't pass a Mock we didn't use
         if !mocks.is_empty() {

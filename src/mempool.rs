@@ -963,7 +963,7 @@ pub mod test {
     use crate::bus::metrics::BusMetrics;
     use crate::bus::SharedMessageBus;
     use crate::model::{ContractName, RegisterContractTransaction, Transaction};
-    use crate::p2p::network::PeerNetMessage;
+    use crate::p2p::network::NetMessage;
     use crate::utils::crypto::AggregateSignature;
     use anyhow::Result;
     use assertables::assert_ok;
@@ -1073,7 +1073,7 @@ pub mod test {
 
             match rec {
                 OutboundMessage::BroadcastMessage(net_msg) => {
-                    if let PeerNetMessage::MempoolMessage(msg) = net_msg {
+                    if let NetMessage::MempoolMessage(msg) = net_msg {
                         msg
                     } else {
                         println!(
@@ -1106,7 +1106,7 @@ pub mod test {
 
             match rec {
                 OutboundMessage::BroadcastMessageOnlyFor(_, net_msg) => {
-                    if let PeerNetMessage::MempoolMessage(msg) = net_msg {
+                    if let NetMessage::MempoolMessage(msg) = net_msg {
                         msg
                     } else {
                         println!(
@@ -1146,7 +1146,7 @@ pub mod test {
                             to
                         );
                     }
-                    if let PeerNetMessage::MempoolMessage(msg) = msg {
+                    if let NetMessage::MempoolMessage(msg) = msg {
                         info!("received message: {:?}", msg);
                         msg
                     } else {
