@@ -7,11 +7,11 @@ homepage = { workspace = true }
 repository = { workspace = true }
 
 [dependencies]
-sdk = { path = "../../contract-sdk", package = "hyle-contract-sdk" }
-hydentity = { path = "../../contracts/hydentity" }
+sdk = { path = "../contract-sdk", package = "hyle-contract-sdk" }
+hydentity = { path = "../contracts/hydentity" }
 # hystake = { path = "../hystake/contract" }
-hyllar = { path = "../../contracts/hyllar" }
-amm = { path = "../../contracts/amm" }
+hyllar = { path = "../contracts/hyllar" }
+amm = { path = "../contracts/amm" }
 
 risc0-zkvm = { version = "1.2.0", default-features = false, features = [
     "client",
