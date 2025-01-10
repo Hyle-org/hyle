@@ -1168,10 +1168,13 @@ dependencies = [
  "bincode 2.0.0-rc.3",
  "bonsai-runner",
  "borsh",
+ "derive_more 1.0.0",
+ "hex",
  "hyle-contract-sdk",
  "risc0-zkvm",
  "serde",
  "serde_json",
+ "sha3",
  "sp1-sdk",
 ]
 
@@ -2841,6 +2844,7 @@ dependencies = [
  "anyhow",
  "borsh",
  "clap",
+ "client-sdk",
  "hex",
  "hydentity",
  "hyle-contract-sdk",

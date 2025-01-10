@@ -104,11 +104,11 @@ async fn impl_test_mempool_isnt_blocked_by_proof_verification() -> Result<()> {
                     success: true,
                     identity: blob_tx.identity.clone(),
                     blobs: flatten_blobs(&blob_tx.blobs),
+                    tx_hash: blob_tx.hash(),
                     ..HyleOutput::default()
                 }])
                 .unwrap(),
             ),
-            tx_hashes: vec![blob_tx.hash()],
         }
         .into(),
     ))?;

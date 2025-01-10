@@ -673,18 +673,21 @@ impl Mempool {
                     (hyle_outputs, vec![program_id.clone()])
                 };
 
-                std::iter::zip(
-                    &proof_transaction.tx_hashes,
-                    std::iter::zip(&hyle_outputs, &program_ids),
-                )
-                .for_each(|(blob_tx_hash, (hyle_output, program_id))| {
-                    debug!(
-                        "Blob tx hash {} verified with hyle output {:?} and program id {}",
-                        blob_tx_hash,
-                        hyle_output,
-                        hex::encode(&program_id.0)
-                    );
-                });
+                let tx_hashes = hyle_outputs
+                    .iter()
+                    .map(|ho| ho.tx_hash.clone())
+                    .collect::<Vec<_>>();
+
+                std::iter::zip(&tx_hashes, std::iter::zip(&hyle_outputs, &program_ids)).for_each(
+                    |(blob_tx_hash, (hyle_output, program_id))| {
+                        debug!(
+                            "Blob tx hash {} verified with hyle output {:?} and program id {}",
+                            blob_tx_hash,
+                            hyle_output,
+                            hex::encode(&program_id.0)
+                        );
+                    },
+                );
 
                 tx.transaction_data = TransactionData::VerifiedProof(VerifiedProofTransaction {
                     proof_hash: proof_transaction.proof.hash(),
@@ -692,7 +695,7 @@ impl Mempool {
                     contract_name: proof_transaction.contract_name.clone(),
                     is_recursive,
                     proven_blobs: std::iter::zip(
-                        proof_transaction.tx_hashes,
+                        tx_hashes,
                         std::iter::zip(hyle_outputs, program_ids),
                     )
                     .map(

@@ -158,18 +158,13 @@ pub async fn generate_proof_txs(users: u32, states: States) -> Result<()> {
                     .builder("hyllar-test".into(), &mut transaction)
                     .transfer_test(ident.clone().to_string(), 0)?;
 
-                let BuildResult {
-                    identity, blobs, ..
-                } = transaction.build(&mut states)?;
-
-                let blob_tx = BlobTransaction { identity, blobs };
+                transaction.build(&mut states)?;
 
                 for (proof, contract_name) in transaction.iter_prove() {
                     let proof: ProofData = proof.await.unwrap();
                     local_proof_txs.push(ProofTransaction {
                         contract_name,
                         proof,
-                        tx_hashes: vec![blob_tx.hash()],
                     });
                 }
             }
