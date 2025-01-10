@@ -9,7 +9,7 @@ use hyle::{
     },
     rest::client::NodeApiHttpClient,
 };
-use hyle_contract_sdk::{Identity, StateDigest, TxHash, Verifier};
+use hyle_contract_sdk::{Identity, StateDigest, Verifier};
 
 pub fn load_encoded_receipt_from_file(path: &str) -> Vec<u8> {
     let mut file = File::open(path).expect("Failed to open proof file");

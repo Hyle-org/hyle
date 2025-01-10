@@ -1,8 +1,8 @@
 use anyhow::{bail, Result};
-use client_sdk::transaction_builder::{BuildResult, StateUpdater, TransactionBuilder};
+use client_sdk::transaction_builder::{StateUpdater, TransactionBuilder};
 use client_sdk::ProofData;
 use hydentity::Hydentity;
-use hyle::model::{BlobTransaction, Hashable, ProofTransaction, RegisterContractTransaction};
+use hyle::model::{BlobTransaction, ProofTransaction, RegisterContractTransaction};
 use hyle::rest::client::NodeApiHttpClient;
 use hyle_contract_sdk::erc20::ERC20;
 use hyle_contract_sdk::Digestable;
