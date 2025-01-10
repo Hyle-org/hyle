@@ -1,9 +1,12 @@
 use anyhow::Context;
 use assert_cmd::prelude::*;
-use client_sdk::transaction_builder::{BuildResult, TransactionBuilder};
+use client_sdk::{
+    transaction_builder::{BuildResult, TransactionBuilder},
+    BlobTransaction,
+};
 use hyle::{
     genesis::States,
-    model::{BlobTransaction, ProofData},
+    model::ProofData,
     rest::client::NodeApiHttpClient,
     utils::conf::{Conf, Consensus},
 };
@@ -194,7 +197,7 @@ pub async fn send_transaction(
         identity, blobs, ..
     } = transaction.build(states).unwrap();
 
-    let blob_tx_hash = client
+    client
         .send_tx_blob(&BlobTransaction { identity, blobs })
         .await
         .unwrap();
@@ -203,7 +206,6 @@ pub async fn send_transaction(
         let proof: ProofData = proof.await.unwrap();
         client
             .send_tx_proof(&hyle::model::ProofTransaction {
-                tx_hashes: vec![blob_tx_hash.clone()],
                 proof,
                 contract_name,
             })

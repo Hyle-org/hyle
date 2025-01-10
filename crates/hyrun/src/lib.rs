@@ -2,11 +2,12 @@ use core::panic;
 use std::collections::HashMap;
 
 use amm::{AmmAction, AmmState};
+use client_sdk::{BlobTransaction, Hashable};
 use hydentity::Hydentity;
 use hyllar::HyllarToken;
 use sdk::{
     erc20::ERC20Action, identity_provider::IdentityAction, BlobData, BlobIndex, ContractAction,
-    ContractInput, ContractName, Digestable, StateDigest, TxHash,
+    ContractInput, ContractName, Digestable, StateDigest,
 };
 use serde::Deserialize;
 
@@ -185,6 +186,12 @@ pub fn run_command(context: &Context) {
             let blobs = vec![cf.as_blob(ContractName("hydentity".to_owned()))];
             contract::print_hyled_blob_tx(&identity, &blobs);
 
+            let tx_hash = BlobTransaction {
+                identity: identity.clone(),
+                blobs: blobs.clone(),
+            }
+            .hash();
+
             contract::run(
                 context,
                 "hydentity",
@@ -192,7 +199,7 @@ pub fn run_command(context: &Context) {
                     ContractInput {
                         initial_state: identities.as_digest(),
                         identity: identity.clone(),
-                        tx_hash: TxHash("".to_owned()),
+                        tx_hash: tx_hash.clone(),
                         private_blob: BlobData(password.clone()),
                         blobs: blobs.clone(),
                         index: BlobIndex(0),
@@ -240,6 +247,12 @@ pub fn run_command(context: &Context) {
             ];
             contract::print_hyled_blob_tx(&identity.clone().into(), &blobs);
 
+            let tx_hash = BlobTransaction {
+                identity: identity.clone().into(),
+                blobs: blobs.clone(),
+            }
+            .hash();
+
             contract::run(
                 context,
                 "hydentity",
@@ -247,7 +260,7 @@ pub fn run_command(context: &Context) {
                     ContractInput {
                         initial_state: token.as_digest(),
                         identity: identity.clone().into(),
-                        tx_hash: TxHash("".to_owned()),
+                        tx_hash: tx_hash.clone(),
                         private_blob: BlobData(password.clone()),
                         blobs: blobs.clone(),
                         index: BlobIndex(0),
@@ -261,7 +274,7 @@ pub fn run_command(context: &Context) {
                     ContractInput {
                         initial_state: token.as_digest(),
                         identity: identity.clone().into(),
-                        tx_hash: TxHash("".to_owned()),
+                        tx_hash: tx_hash.clone(),
                         private_blob: BlobData(vec![]),
                         blobs: blobs.clone(),
                         index: BlobIndex(1),
@@ -335,6 +348,12 @@ pub fn run_command(context: &Context) {
                     ];
                     contract::print_hyled_blob_tx(&identity.clone().into(), &blobs);
 
+                    let tx_hash = BlobTransaction {
+                        identity: identity.clone().into(),
+                        blobs: blobs.clone(),
+                    }
+                    .hash();
+
                     contract::run(
                         context,
                         "hydentity",
@@ -342,7 +361,7 @@ pub fn run_command(context: &Context) {
                             ContractInput {
                                 initial_state: token.as_digest(),
                                 identity: identity.clone().into(),
-                                tx_hash: TxHash("".to_owned()),
+                                tx_hash: tx_hash.clone(),
                                 private_blob: BlobData(password.clone()),
                                 blobs: blobs.clone(),
                                 index: BlobIndex(0),
@@ -357,7 +376,7 @@ pub fn run_command(context: &Context) {
                             ContractInput {
                                 initial_state: amm.as_digest(),
                                 identity: identity.clone().into(),
-                                tx_hash: TxHash("".to_owned()),
+                                tx_hash: tx_hash.clone(),
                                 private_blob: BlobData(vec![]),
                                 blobs: blobs.clone(),
                                 index: BlobIndex(1),
@@ -372,7 +391,7 @@ pub fn run_command(context: &Context) {
                             ContractInput {
                                 initial_state: token.as_digest(),
                                 identity: identity.clone().into(),
-                                tx_hash: TxHash("".to_owned()),
+                                tx_hash: tx_hash.clone(),
                                 private_blob: BlobData(vec![]),
                                 blobs: blobs.clone(),
                                 index: BlobIndex(2),
@@ -388,7 +407,7 @@ pub fn run_command(context: &Context) {
                             ContractInput {
                                 initial_state: token.as_digest(),
                                 identity: identity.clone().into(),
-                                tx_hash: TxHash("".to_owned()),
+                                tx_hash: tx_hash.clone(),
                                 private_blob: BlobData(vec![]),
                                 blobs: blobs.clone(),
                                 index: BlobIndex(3),
@@ -457,6 +476,12 @@ pub fn run_command(context: &Context) {
 
                     contract::print_hyled_blob_tx(&identity.clone().into(), &blobs);
 
+                    let tx_hash = BlobTransaction {
+                        identity: identity.clone().into(),
+                        blobs: blobs.clone(),
+                    }
+                    .hash();
+
                     contract::run(
                         context,
                         "hydentity",
@@ -464,7 +489,7 @@ pub fn run_command(context: &Context) {
                             ContractInput {
                                 initial_state: token.as_digest(),
                                 identity: identity.clone().into(),
-                                tx_hash: TxHash("".to_owned()),
+                                tx_hash: tx_hash.clone(),
                                 private_blob: BlobData(password.clone()),
                                 blobs: blobs.clone(),
                                 index: BlobIndex(0),
@@ -479,7 +504,7 @@ pub fn run_command(context: &Context) {
                             ContractInput {
                                 initial_state: amm.as_digest(),
                                 identity: identity.clone().into(),
-                                tx_hash: TxHash("".to_owned()),
+                                tx_hash: tx_hash.clone(),
                                 private_blob: BlobData(vec![]),
                                 blobs: blobs.clone(),
                                 index: BlobIndex(1),
@@ -494,7 +519,7 @@ pub fn run_command(context: &Context) {
                             ContractInput {
                                 initial_state: token.as_digest(),
                                 identity: identity.clone().into(),
-                                tx_hash: TxHash("".to_owned()),
+                                tx_hash: tx_hash.clone(),
                                 private_blob: BlobData(vec![]),
                                 blobs: blobs.clone(),
                                 index: BlobIndex(2),
@@ -510,7 +535,7 @@ pub fn run_command(context: &Context) {
                             ContractInput {
                                 initial_state: token.as_digest(),
                                 identity: identity.clone().into(),
-                                tx_hash: TxHash("".to_owned()),
+                                tx_hash: tx_hash.clone(),
                                 private_blob: BlobData(vec![]),
                                 blobs: blobs.clone(),
                                 index: BlobIndex(3),

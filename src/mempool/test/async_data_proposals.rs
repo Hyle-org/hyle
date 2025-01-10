@@ -95,6 +95,7 @@ async fn impl_test_mempool_isnt_blocked_by_proof_verification() -> Result<()> {
         }],
     };
     node_client.send(RestApiMessage::NewTx(blob_tx.clone().into()))?;
+
     // Send as many TXs as needed to hung all the workers if we were calling spawn
     for _ in 0..tokio::runtime::Handle::current().metrics().num_workers() {
         node_client.send(RestApiMessage::NewTx(
@@ -105,11 +106,11 @@ async fn impl_test_mempool_isnt_blocked_by_proof_verification() -> Result<()> {
                         success: true,
                         identity: blob_tx.identity.clone(),
                         blobs: flatten_blobs(&blob_tx.blobs),
+                        tx_hash: blob_tx.hash(),
                         ..HyleOutput::default()
                     }])
                     .unwrap(),
                 ),
-                tx_hashes: vec![blob_tx.hash()],
             }
             .into(),
         ))?;

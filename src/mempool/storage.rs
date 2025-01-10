@@ -779,7 +779,6 @@ mod tests {
         ProofTransaction {
             contract_name: contract_name.clone(),
             proof: ProofData::Bytes(serde_json::to_vec(&vec![hyle_output]).unwrap()),
-            tx_hashes: vec![TxHash::default()],
         }
     }
 

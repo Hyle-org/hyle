@@ -9,7 +9,7 @@ use hyle::{
     },
     rest::client::NodeApiHttpClient,
 };
-use hyle_contract_sdk::{Identity, StateDigest, TxHash, Verifier};
+use hyle_contract_sdk::{Identity, StateDigest, Verifier};
 
 pub fn load_encoded_receipt_from_file(path: &str) -> Vec<u8> {
     let mut file = File::open(path).expect("Failed to open proof file");
@@ -21,7 +21,6 @@ pub fn load_encoded_receipt_from_file(path: &str) -> Vec<u8> {
 
 async fn send_proof(
     client: &NodeApiHttpClient,
-    blob_tx_hash: TxHash,
     contract_name: ContractName,
     proof_file: String,
 ) -> Result<()> {
@@ -30,7 +29,6 @@ async fn send_proof(
         .send_tx_proof(&ProofTransaction {
             contract_name: contract_name.clone(),
             proof: ProofData::Bytes(proof),
-            tx_hashes: vec![blob_tx_hash],
         })
         .await?;
     assert!(res.status().is_success());
@@ -132,7 +130,6 @@ enum SendCommands {
     /// Send proof transaction
     #[command(alias = "p")]
     Proof {
-        tx_hash: String,
         contract_name: String,
         proof_file: String,
     },
@@ -163,10 +160,9 @@ async fn handle_args(args: Args) -> Result<()> {
             send_blobs(&client, identity.into(), blobs).await
         }
         SendCommands::Proof {
-            tx_hash,
             contract_name,
             proof_file,
-        } => send_proof(&client, tx_hash.into(), contract_name.into(), proof_file).await,
+        } => send_proof(&client, contract_name.into(), proof_file).await,
 
         SendCommands::Contract {
             verifier,

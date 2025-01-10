@@ -7,7 +7,7 @@ use sdk::{
     Identity, StateDigest,
 };
 
-use crate::{helpers, ProofData};
+use crate::{helpers, BlobTransaction, Hashable, ProofData};
 
 pub struct BuildResult {
     pub identity: Identity,
@@ -199,9 +199,15 @@ impl ContractRunner {
         private_blob: BlobData,
         initial_state: StateDigest,
     ) {
+        let tx_hash = BlobTransaction {
+            identity: self.identity.clone(),
+            blobs: blobs.clone(),
+        }
+        .hash();
+
         self.contract_input.get_or_init(|| ContractInput {
             identity: self.identity.clone(),
-            tx_hash: "".into(),
+            tx_hash,
             blobs,
             private_blob,
             index: self.index.clone(),
