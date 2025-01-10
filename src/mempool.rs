@@ -132,7 +132,7 @@ impl BusMessage for MempoolCommand {}
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub enum InternalMempoolEvent {
     OnProcessedNewTx(Transaction),
-    OnProcessedDataProposal(DataProposal),
+    OnProcessedDataProposal((ValidatorPublicKey, DataProposalVerdict, DataProposal)),
 }
 impl BusMessage for InternalMempoolEvent {}
 
@@ -289,8 +289,9 @@ impl Mempool {
             InternalMempoolEvent::OnProcessedNewTx(tx) => {
                 self.on_new_tx(tx).context("Processing new tx")
             }
-            InternalMempoolEvent::OnProcessedDataProposal(_data_proposal) => {
-                todo!()
+            InternalMempoolEvent::OnProcessedDataProposal((validator, verdict, data_proposal)) => {
+                self.on_processed_data_proposal(validator, verdict, data_proposal)
+                    .context("Processing data proposal")
             }
         }
     }
@@ -610,7 +611,7 @@ impl Mempool {
     fn on_data_proposal(
         &mut self,
         validator: &ValidatorPublicKey,
-        data_proposal: DataProposal,
+        mut data_proposal: DataProposal,
     ) -> Result<()> {
         debug!(
             "Received DataProposal {:?} from {} ({} txs)",
@@ -619,12 +620,7 @@ impl Mempool {
             data_proposal.txs.len()
         );
         let data_proposal_hash = data_proposal.hash();
-        match self.storage.on_data_proposal(
-            &self.crypto,
-            validator,
-            data_proposal,
-            self.known_contracts.clone(),
-        ) {
+        match self.storage.on_data_proposal(validator, &data_proposal) {
             DataProposalVerdict::Empty => {
                 warn!(
                     "received empty DataProposal from {}, ignoring...",
@@ -635,6 +631,21 @@ impl Mempool {
                 // Normal case, we receive a proposal we already have the parent in store
                 debug!("Send vote for DataProposal");
                 self.send_vote(validator, data_proposal_hash)?;
+            }
+            DataProposalVerdict::Process => {
+                debug!("Further processing for DataProposal");
+                let kc = self.known_contracts.clone();
+                let sender: &tokio::sync::broadcast::Sender<InternalMempoolEvent> = self.bus.get();
+                let sender = sender.clone();
+                let validator = validator.clone();
+                tokio::task::spawn_blocking(move || {
+                    let decision = Storage::process_data_proposal(&mut data_proposal, kc);
+                    sender.send(InternalMempoolEvent::OnProcessedDataProposal((
+                        validator,
+                        decision,
+                        data_proposal,
+                    )))
+                });
             }
             DataProposalVerdict::Wait(last_known_data_proposal_hash) => {
                 //We dont have the parent, so we craft a sync demand
@@ -648,6 +659,42 @@ impl Mempool {
                     last_known_data_proposal_hash.as_ref(),
                     data_proposal_hash,
                 )?;
+            }
+            DataProposalVerdict::Refuse => {
+                debug!("Refuse vote for DataProposal");
+            }
+        }
+        Ok(())
+    }
+
+    fn on_processed_data_proposal(
+        &mut self,
+        validator: ValidatorPublicKey,
+        verdict: DataProposalVerdict,
+        data_proposal: DataProposal,
+    ) -> Result<()> {
+        debug!(
+            "Handling processed DataProposal {:?} from {} ({} txs)",
+            data_proposal.hash(),
+            validator,
+            data_proposal.txs.len()
+        );
+        let data_proposal_hash = data_proposal.hash();
+        match verdict {
+            DataProposalVerdict::Empty => {
+                unreachable!("Empty DataProposal should never be processed");
+            }
+            DataProposalVerdict::Process => {
+                unreachable!("DataProposal has already been processed");
+            }
+            DataProposalVerdict::Wait(_) => {
+                unreachable!("DataProposal has already been processed");
+            }
+            DataProposalVerdict::Vote => {
+                debug!("Send vote for DataProposal");
+                self.storage
+                    .store_data_proposal(&self.crypto, &validator, data_proposal);
+                self.send_vote(&validator, data_proposal_hash)?;
             }
             DataProposalVerdict::Refuse => {
                 debug!("Refuse vote for DataProposal");
@@ -913,6 +960,7 @@ pub mod test {
         pub name: String,
         pub out_receiver: Receiver<OutboundMessage>,
         pub mempool_event_receiver: Receiver<MempoolEvent>,
+        pub mempool_internal_event_receiver: Receiver<InternalMempoolEvent>,
         pub mempool: Mempool,
     }
 
@@ -942,6 +990,8 @@ pub mod test {
 
             let out_receiver = get_receiver::<OutboundMessage>(&shared_bus).await;
             let mempool_event_receiver = get_receiver::<MempoolEvent>(&shared_bus).await;
+            let mempool_internal_event_receiver =
+                get_receiver::<InternalMempoolEvent>(&shared_bus).await;
 
             let mempool = Self::build_mempool(&shared_bus, crypto).await;
 
@@ -949,6 +999,7 @@ pub mod test {
                 name: name.to_string(),
                 out_receiver,
                 mempool_event_receiver,
+                mempool_internal_event_receiver,
                 mempool,
             }
         }
@@ -982,6 +1033,17 @@ pub mod test {
             self.mempool
                 .handle_api_message(RestApiMessage::NewTx(tx.clone()))
                 .expect("fail to handle new transaction");
+        }
+
+        pub async fn handle_processed_data_proposals(&mut self) {
+            let event = self
+                .mempool_internal_event_receiver
+                .recv()
+                .await
+                .expect("No event received");
+            self.mempool
+                .handle_internal_event(event)
+                .expect("fail to handle event");
         }
 
         #[track_caller]
@@ -1216,12 +1278,15 @@ pub mod test {
             .mempool
             .crypto
             .sign(MempoolNetMessage::DataProposal(data_proposal.clone()))?;
+
         ctx.mempool
             .handle_net_message(SignedByValidator {
                 msg: MempoolNetMessage::DataProposal(data_proposal.clone()),
                 signature: signed_msg.signature,
             })
             .expect("should handle net message");
+
+        ctx.handle_processed_data_proposals().await;
 
         // Assert that we vote for that specific DataProposal
         match ctx

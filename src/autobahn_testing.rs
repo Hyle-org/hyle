@@ -170,6 +170,7 @@ macro_rules! simple_commit_round {
 
 pub(crate) use broadcast;
 pub(crate) use build_tuple;
+use futures::future::join_all;
 pub(crate) use send;
 pub(crate) use simple_commit_round;
 
@@ -204,7 +205,7 @@ use crate::consensus::{ConsensusEvent, ConsensusProposal};
 use crate::data_availability::DataEvent;
 use crate::handle_messages;
 use crate::mempool::test::{make_register_contract_tx, MempoolTestCtx};
-use crate::mempool::{MempoolEvent, MempoolNetMessage, QueryNewCut};
+use crate::mempool::{InternalMempoolEvent, MempoolEvent, MempoolNetMessage, QueryNewCut};
 use crate::model::mempool::{Cut, DataProposalHash};
 use crate::model::SignedBlock;
 use crate::model::{consensus::ConsensusNetMessage, ContractName, Hashable};
@@ -233,6 +234,8 @@ impl AutobahnTestCtx {
         let consensus_out_receiver = get_receiver::<OutboundMessage>(&shared_bus).await;
         let mempool_out_receiver = get_receiver::<OutboundMessage>(&shared_bus).await;
         let mempool_event_receiver = get_receiver::<MempoolEvent>(&shared_bus).await;
+        let mempool_internal_event_receiver =
+            get_receiver::<InternalMempoolEvent>(&shared_bus).await;
 
         let consensus = ConsensusTestCtx::build_consensus(&shared_bus, crypto.clone()).await;
         let mempool = MempoolTestCtx::build_mempool(&shared_bus, crypto).await;
@@ -250,6 +253,7 @@ impl AutobahnTestCtx {
                 name: name.to_string(),
                 out_receiver: mempool_out_receiver,
                 mempool_event_receiver,
+                mempool_internal_event_receiver,
                 mempool,
             },
         }
@@ -334,6 +338,17 @@ async fn autobahn_basic_flow() {
             assert_eq!(data.txs.len(), 2);
         }
     };
+
+    join_all(
+        [
+            &mut node2.mempool_ctx,
+            &mut node3.mempool_ctx,
+            &mut node4.mempool_ctx,
+        ]
+        .iter_mut()
+        .map(|ctx| ctx.handle_processed_data_proposals()),
+    )
+    .await;
 
     send! {
         description: "Disseminated Tx Vote",
