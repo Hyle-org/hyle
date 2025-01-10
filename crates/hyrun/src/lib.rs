@@ -7,7 +7,7 @@ use hydentity::Hydentity;
 use hyllar::HyllarToken;
 use sdk::{
     erc20::ERC20Action, identity_provider::IdentityAction, BlobData, BlobIndex, ContractAction,
-    ContractInput, ContractName, Digestable, StateDigest, TxHash,
+    ContractInput, ContractName, Digestable, StateDigest,
 };
 use serde::Deserialize;
 
