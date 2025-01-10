@@ -3,7 +3,7 @@ use bincode::{Decode, Encode};
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use staking::state::Staking;
-use std::{collections::HashMap, fmt::Display, vec};
+use std::{collections::HashMap, fmt::Display, sync::Arc, vec};
 use tracing::{debug, error, warn};
 
 use crate::{
@@ -200,7 +200,7 @@ impl Storage {
         crypto: &BlstCrypto,
         validator: &ValidatorPublicKey,
         mut data_proposal: DataProposal,
-        known_contracts: &KnownContracts,
+        known_contracts: Arc<std::sync::RwLock<KnownContracts>>,
     ) -> DataProposalVerdict {
         // Check that data_proposal is not empty
         if data_proposal.txs.is_empty() {
@@ -266,8 +266,11 @@ impl Storage {
                     // TODO: we could early-reject proofs where the blob
                     // is not for the correct transaction.
                     let (verifier, program_id) = match known_contracts
+                        .read()
+                        .expect("logic error")
                         .0
                         .get(&proof_tx.contract_name)
+                        .cloned()
                     {
                         Some((verifier, program_id)) => (verifier, program_id),
                         None => {
@@ -315,7 +318,7 @@ impl Storage {
                                     )
                                 });
                             match data {
-                                Some(data) => data,
+                                Some((v, p)) => (v.clone(), p.clone()),
                                 None => {
                                     warn!("Refusing DataProposal: contract not found");
                                     return DataProposalVerdict::Refuse;
@@ -334,7 +337,7 @@ impl Storage {
                     let is_recursive = proof_tx.contract_name.0 == "risc0-recursion";
 
                     if is_recursive {
-                        match verify_recursive_proof(&proof_bytes, verifier, program_id) {
+                        match verify_recursive_proof(&proof_bytes, &verifier, &program_id) {
                             Ok((local_program_ids, local_hyle_outputs)) => {
                                 let data_matches = local_program_ids
                                     .iter()
@@ -366,7 +369,7 @@ impl Storage {
                             }
                         }
                     } else {
-                        match verify_proof(&proof_bytes, verifier, program_id) {
+                        match verify_proof(&proof_bytes, &verifier, &program_id) {
                             Ok(outputs) => {
                                 // TODO: we could check the blob hash here too.
                                 if outputs.len() != proof_tx.proven_blobs.len()
@@ -738,6 +741,8 @@ impl Lane {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::{Arc, RwLock};
+
     use crate::{
         mempool::{
             storage::{DataProposalHash, DataProposalVerdict, LaneEntry, Storage},
@@ -1140,7 +1145,7 @@ mod tests {
         let pubkey2 = crypto2.validator_pubkey();
         let mut store1 = Storage::new(pubkey1.clone());
         let mut store2 = Storage::new(pubkey2.clone());
-        let known_contracts = KnownContracts::default();
+        let known_contracts = Arc::new(RwLock::new(KnownContracts::default()));
 
         // First data proposal
         let tx1 = make_blob_tx("test1");
@@ -1155,7 +1160,7 @@ mod tests {
         let data_proposal1_hash = data_proposal1.hash();
 
         assert_eq!(
-            store2.on_data_proposal(&crypto2, pubkey1, data_proposal1, &known_contracts),
+            store2.on_data_proposal(&crypto2, pubkey1, data_proposal1, known_contracts.clone()),
             DataProposalVerdict::Vote
         );
 
@@ -1180,7 +1185,7 @@ mod tests {
         let data_proposal2_hash = data_proposal2.hash();
 
         assert_eq!(
-            store2.on_data_proposal(&crypto2, pubkey1, data_proposal2, &known_contracts),
+            store2.on_data_proposal(&crypto2, pubkey1, data_proposal2, known_contracts.clone()),
             DataProposalVerdict::Vote
         );
         let msg2 = crypto2
@@ -1204,7 +1209,7 @@ mod tests {
         let data_proposal3_hash = data_proposal3.hash();
 
         assert_eq!(
-            store2.on_data_proposal(&crypto2, pubkey1, data_proposal3, &known_contracts),
+            store2.on_data_proposal(&crypto2, pubkey1, data_proposal3, known_contracts.clone()),
             DataProposalVerdict::Vote
         );
         let msg3 = crypto2
@@ -1228,7 +1233,7 @@ mod tests {
         let data_proposal4_hash = data_proposal4.hash();
 
         assert_eq!(
-            store2.on_data_proposal(&crypto2, pubkey1, data_proposal4, &known_contracts),
+            store2.on_data_proposal(&crypto2, pubkey1, data_proposal4, known_contracts.clone()),
             DataProposalVerdict::Vote
         );
         let msg4 = crypto2
@@ -1300,7 +1305,7 @@ mod tests {
         let pubkey3 = crypto3.validator_pubkey();
         let mut store2 = Storage::new(pubkey2.clone());
         let mut store3 = Storage::new(pubkey3.clone());
-        let known_contracts2 = KnownContracts::default();
+        let known_contracts2 = Arc::new(RwLock::new(KnownContracts::default()));
 
         store3.on_new_tx(make_blob_tx("test1"));
         store3.on_new_tx(make_blob_tx("test2"));
@@ -1319,12 +1324,12 @@ mod tests {
         assert_eq!(store3.lanes.get(pubkey3).unwrap().data_proposals.len(), 1);
 
         assert_eq!(
-            store2.on_data_proposal(&crypto2, pubkey3, data_proposal, &known_contracts2),
+            store2.on_data_proposal(&crypto2, pubkey3, data_proposal, known_contracts2.clone()),
             DataProposalVerdict::Vote
         );
         // Assert we can vote multiple times
         assert_eq!(
-            store2.on_data_proposal(&crypto2, pubkey3, data_proposal_bis, &known_contracts2),
+            store2.on_data_proposal(&crypto2, pubkey3, data_proposal_bis, known_contracts2),
             DataProposalVerdict::Vote
         );
 
@@ -1381,7 +1386,7 @@ mod tests {
         let pubkey2 = crypto2.validator_pubkey();
 
         let mut store1 = Storage::new(pubkey1.clone());
-        let known_contracts = KnownContracts::default();
+        let known_contracts = Arc::new(RwLock::new(KnownContracts::default()));
 
         let contract_name = ContractName("test".to_string());
         let register_tx = make_register_contract_tx(contract_name.clone());
@@ -1395,7 +1400,7 @@ mod tests {
         };
         let data_proposal_hash = data_proposal.hash();
 
-        let verdict = store1.on_data_proposal(&crypto1, pubkey2, data_proposal, &known_contracts);
+        let verdict = store1.on_data_proposal(&crypto1, pubkey2, data_proposal, known_contracts);
         assert_eq!(verdict, DataProposalVerdict::Refuse);
 
         // Ensure the lane was not updated with the unverified proof transaction
@@ -1408,7 +1413,7 @@ mod tests {
         let pubkey1 = crypto1.validator_pubkey();
 
         let mut store1 = Storage::new(pubkey1.clone());
-        let known_contracts = KnownContracts::default();
+        let known_contracts = Arc::new(RwLock::new(KnownContracts::default()));
 
         let contract_name = ContractName("test".to_string());
         let register_tx = make_register_contract_tx(contract_name.clone());
@@ -1421,7 +1426,8 @@ mod tests {
             txs: vec![proof_tx.clone()],
         };
 
-        let verdict = store1.on_data_proposal(&crypto1, pubkey1, data_proposal, &known_contracts);
+        let verdict =
+            store1.on_data_proposal(&crypto1, pubkey1, data_proposal, known_contracts.clone());
         assert_eq!(verdict, DataProposalVerdict::Refuse); // refused because contract not found
 
         let data_proposal = DataProposal {
@@ -1430,7 +1436,7 @@ mod tests {
             txs: vec![register_tx, proof_tx],
         };
 
-        let verdict = store1.on_data_proposal(&crypto1, pubkey1, data_proposal, &known_contracts);
+        let verdict = store1.on_data_proposal(&crypto1, pubkey1, data_proposal, known_contracts);
         assert_eq!(verdict, DataProposalVerdict::Vote);
     }
 
@@ -1440,7 +1446,7 @@ mod tests {
         let pubkey1 = crypto1.validator_pubkey();
 
         let mut store1 = Storage::new(pubkey1.clone());
-        let known_contracts = KnownContracts::default();
+        let known_contracts = Arc::new(RwLock::new(KnownContracts::default()));
 
         let contract_name = ContractName("test".to_string());
         let register_tx = make_register_contract_tx(contract_name.clone());
@@ -1462,7 +1468,7 @@ mod tests {
             txs: vec![proof_tx],
         };
 
-        let verdict = store1.on_data_proposal(&crypto1, pubkey1, data_proposal, &known_contracts);
+        let verdict = store1.on_data_proposal(&crypto1, pubkey1, data_proposal, known_contracts);
         assert_eq!(verdict, DataProposalVerdict::Vote);
 
         // Ensure the lane was updated with the DataProposal
@@ -1481,7 +1487,7 @@ mod tests {
         let pubkey1 = crypto1.validator_pubkey();
 
         let mut store1 = Storage::new(pubkey1.clone());
-        let known_contracts = KnownContracts::default();
+        let known_contracts = Arc::new(RwLock::new(KnownContracts::default()));
 
         let contract_name = ContractName("test".to_string());
         let register_tx = make_register_contract_tx(contract_name.clone());
@@ -1493,7 +1499,7 @@ mod tests {
             txs: vec![register_tx.clone(), proof_tx],
         };
 
-        let verdict = store1.on_data_proposal(&crypto1, pubkey1, data_proposal, &known_contracts);
+        let verdict = store1.on_data_proposal(&crypto1, pubkey1, data_proposal, known_contracts);
         assert_eq!(verdict, DataProposalVerdict::Vote);
 
         // Ensure the lane was updated with the DataProposal
@@ -1514,7 +1520,7 @@ mod tests {
         let pubkey2 = crypto2.validator_pubkey();
 
         let mut store1 = Storage::new(pubkey2.clone());
-        let known_contracts = KnownContracts::default();
+        let known_contracts = Arc::new(RwLock::new(KnownContracts::default()));
 
         let contract_name = ContractName("test".to_string());
         let register_tx = make_register_contract_tx(contract_name.clone());
@@ -1527,7 +1533,7 @@ mod tests {
         };
         let data_proposal_hash = data_proposal.hash();
 
-        let verdict = store1.on_data_proposal(&crypto1, pubkey1, data_proposal, &known_contracts);
+        let verdict = store1.on_data_proposal(&crypto1, pubkey1, data_proposal, known_contracts);
         assert_eq!(verdict, DataProposalVerdict::Refuse);
 
         // Ensure the lane was not updated with the DataProposal
@@ -1543,8 +1549,8 @@ mod tests {
 
         let mut store1 = Storage::new(pubkey1.clone());
         let mut store2 = Storage::new(pubkey2.clone());
-        let known_contracts1 = KnownContracts::default();
-        let known_contracts2 = KnownContracts::default();
+        let known_contracts1 = Arc::new(RwLock::new(KnownContracts::default()));
+        let known_contracts2 = Arc::new(RwLock::new(KnownContracts::default()));
         let mut staking = Staking::default();
         staking.stake("pk1".into(), 100).expect("could not stake");
         staking
@@ -1571,7 +1577,7 @@ mod tests {
             .clone();
 
         assert_eq!(
-            store2.on_data_proposal(&crypto2, pubkey1, data_proposal, &known_contracts2),
+            store2.on_data_proposal(&crypto2, pubkey1, data_proposal, known_contracts2.clone()),
             DataProposalVerdict::Vote
         );
 
@@ -1585,7 +1591,7 @@ mod tests {
             .clone();
 
         assert_eq!(
-            store1.on_data_proposal(&crypto1, pubkey2, data_proposal, &known_contracts1),
+            store1.on_data_proposal(&crypto1, pubkey2, data_proposal, known_contracts1),
             DataProposalVerdict::Vote
         );
 
@@ -1607,7 +1613,7 @@ mod tests {
             .clone();
 
         assert_eq!(
-            store2.on_data_proposal(&crypto2, pubkey1, data_proposal, &known_contracts2),
+            store2.on_data_proposal(&crypto2, pubkey1, data_proposal, known_contracts2),
             DataProposalVerdict::Vote
         );
 

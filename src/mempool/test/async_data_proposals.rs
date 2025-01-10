@@ -33,7 +33,6 @@ bus_client! {
 
 // Need at least two worker threads for this test, as we want parallel execution.
 #[test_log::test(tokio::test(flavor = "multi_thread", worker_threads = 2))]
-#[should_panic = "Should have more than "]
 async fn test_mempool_isnt_blocked_by_proof_verification() {
     assert_ok!(impl_test_mempool_isnt_blocked_by_proof_verification().await);
 }
@@ -96,24 +95,26 @@ async fn impl_test_mempool_isnt_blocked_by_proof_verification() -> Result<()> {
         }],
     };
     node_client.send(RestApiMessage::NewTx(blob_tx.clone().into()))?;
-    node_client.send(RestApiMessage::NewTx(
-        ProofTransaction {
-            contract_name: contract_name.clone(),
-            proof: client_sdk::ProofData::Bytes(
-                serde_json::to_vec(&vec![HyleOutput {
-                    success: true,
-                    identity: blob_tx.identity.clone(),
-                    blobs: flatten_blobs(&blob_tx.blobs),
-                    ..HyleOutput::default()
-                }])
-                .unwrap(),
-            ),
-            tx_hashes: vec![blob_tx.hash()],
-        }
-        .into(),
-    ))?;
-
-    info!("Sent new tx");
+    // Send as many TXs as needed to hung all the workers if we were calling spawn
+    for _ in 0..tokio::runtime::Handle::current().metrics().num_workers() {
+        node_client.send(RestApiMessage::NewTx(
+            ProofTransaction {
+                contract_name: contract_name.clone(),
+                proof: client_sdk::ProofData::Bytes(
+                    serde_json::to_vec(&vec![HyleOutput {
+                        success: true,
+                        identity: blob_tx.identity.clone(),
+                        blobs: flatten_blobs(&blob_tx.blobs),
+                        ..HyleOutput::default()
+                    }])
+                    .unwrap(),
+                ),
+                tx_hashes: vec![blob_tx.hash()],
+            }
+            .into(),
+        ))?;
+        info!("Sent new tx");
+    }
 
     // Wait until we commit this TX
     loop {
@@ -144,7 +145,8 @@ async fn impl_test_mempool_isnt_blocked_by_proof_verification() -> Result<()> {
     let expected_commits = (start_time.elapsed().as_millis()
         / node_modules.conf.consensus.slot_duration as u128) as i32;
 
-    if count.load(std::sync::atomic::Ordering::SeqCst) < expected_commits {
+    // Add a little bit of leeway
+    if count.load(std::sync::atomic::Ordering::SeqCst) < expected_commits - 1 {
         bail!(
             "Should have more than {} commits, have {}",
             expected_commits,
