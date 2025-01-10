@@ -683,7 +683,7 @@ impl Mempool {
                 let kc = self.known_contracts.clone();
                 let sender: &tokio::sync::broadcast::Sender<InternalMempoolEvent> = self.bus.get();
                 let sender = sender.clone();
-                tokio::spawn(async move {
+                tokio::task::spawn_blocking(move || {
                     let tx = match Self::process_proof_tx(kc, tx) {
                         Ok(tx) => tx,
                         Err(e) => bail!("Error processing proof tx: {}", e),

@@ -95,24 +95,26 @@ async fn impl_test_mempool_isnt_blocked_by_proof_verification() -> Result<()> {
         }],
     };
     node_client.send(RestApiMessage::NewTx(blob_tx.clone().into()))?;
-    node_client.send(RestApiMessage::NewTx(
-        ProofTransaction {
-            contract_name: contract_name.clone(),
-            proof: client_sdk::ProofData::Bytes(
-                serde_json::to_vec(&vec![HyleOutput {
-                    success: true,
-                    identity: blob_tx.identity.clone(),
-                    blobs: flatten_blobs(&blob_tx.blobs),
-                    ..HyleOutput::default()
-                }])
-                .unwrap(),
-            ),
-            tx_hashes: vec![blob_tx.hash()],
-        }
-        .into(),
-    ))?;
-
-    info!("Sent new tx");
+    // Send as many TXs as needed to hung all the workers if we were calling spawn
+    for _ in 0..tokio::runtime::Handle::current().metrics().num_workers() {
+        node_client.send(RestApiMessage::NewTx(
+            ProofTransaction {
+                contract_name: contract_name.clone(),
+                proof: client_sdk::ProofData::Bytes(
+                    serde_json::to_vec(&vec![HyleOutput {
+                        success: true,
+                        identity: blob_tx.identity.clone(),
+                        blobs: flatten_blobs(&blob_tx.blobs),
+                        ..HyleOutput::default()
+                    }])
+                    .unwrap(),
+                ),
+                tx_hashes: vec![blob_tx.hash()],
+            }
+            .into(),
+        ))?;
+        info!("Sent new tx");
+    }
 
     // Wait until we commit this TX
     loop {
