@@ -1,7 +1,7 @@
 use std::fmt::{self, Display};
 
 use crate::{
-    bus::{BusClientSender, BusMessage},
+    bus::BusMessage,
     model::{Hashable, SharedRunContext, Transaction},
     module_handle_messages,
     p2p::stream::read_stream,
@@ -11,13 +11,13 @@ use crate::{
     },
 };
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 use strum_macros::IntoStaticStr;
 use tokio::{io::AsyncWriteExt, net::TcpListener};
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
-use tracing::{info, warn};
+use tracing::info;
 
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, Eq, PartialEq)]
 pub enum TcpServerMessage {
@@ -105,24 +105,35 @@ impl TcpServer {
             tcp_server_address
         );
 
+        let mut readers: tokio::task::JoinSet<Result<()>> = tokio::task::JoinSet::new();
+
         module_handle_messages! {
             on_bus self.bus,
 
             Ok((tcp_stream, _)) = tcp_listener.accept() => {
-                let mut framed = Framed::new(tcp_stream, LengthDelimitedCodec::new());
-                match read_stream(&mut framed).await {
-                    Ok(TcpServerNetMessage::NewTx(tx)) => {
-                        let tx_hash = tx.hash();
-                        self.bus.send(TcpServerMessage::NewTx(tx))?;
-                        framed.get_mut().write_all(tx_hash.0.as_bytes()).await?;
-                    },
-                    Ok(TcpServerNetMessage::Ping) => {
-                        framed.get_mut().write_all(b"Pong").await?;
-                    },
-                    Err(e) => { warn!("Error reading stream: {}", e) }
-                };
+                let sender: &tokio::sync::broadcast::Sender<TcpServerMessage> = self.bus.get();
+                let sender = sender.clone();
+                readers.spawn(async move {
+                    let mut framed = Framed::new(tcp_stream, LengthDelimitedCodec::new());
+                    loop {
+                        match read_stream(&mut framed).await {
+                            Ok(TcpServerNetMessage::NewTx(tx)) => {
+                                let tx_hash = tx.hash();
+                                sender.send(TcpServerMessage::NewTx(tx))?;
+                                // TODO: Wrap resp in a TcpServerMessageResponse enum ?
+                                framed.get_mut().write_all(tx_hash.0.as_bytes()).await?;
+                            },
+                            Ok(TcpServerNetMessage::Ping) => {
+                                framed.get_mut().write_all(b"Pong").await?;
+                            },
+                            Err(e) => { bail!("Error reading stream: {}", e); }
+                        };
+                    }
+                });
             }
         }
+
+        readers.abort_all();
 
         Ok(())
     }
