@@ -3,13 +3,13 @@ use bincode::{Decode, Encode};
 use crate::model::data_availability::UnsettledBlobTransaction;
 use crate::model::ContractName;
 use hyle_contract_sdk::TxHash;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 
 // struct used to guarantee coherence between the 2 fields
 #[derive(Default, Debug, Clone, Encode, Decode)]
 pub struct OrderedTxMap {
     map: HashMap<TxHash, UnsettledBlobTransaction>,
-    tx_order: HashMap<ContractName, Vec<TxHash>>,
+    tx_order: HashMap<ContractName, VecDeque<TxHash>>,
 }
 
 impl OrderedTxMap {
@@ -19,7 +19,7 @@ impl OrderedTxMap {
     }
 
     pub fn get_next_unsettled_tx(&self, contract: &ContractName) -> Option<&TxHash> {
-        self.tx_order.get(contract).and_then(|v| v.first())
+        self.tx_order.get(contract).and_then(|v| v.front())
     }
 
     pub fn get_for_settlement(
@@ -31,7 +31,7 @@ impl OrderedTxMap {
             Some(tx) => {
                 let is_next_unsettled_tx = tx.blobs.iter().all(|blob_metadata| {
                     if let Some(order) = self.tx_order.get(&blob_metadata.blob.contract_name) {
-                        if let Some(first) = order.first() {
+                        if let Some(first) = order.front() {
                             return first == &tx.hash;
                         }
                     }
@@ -55,13 +55,15 @@ impl OrderedTxMap {
         for blob_metadata in &tx.blobs {
             match self.tx_order.get_mut(&blob_metadata.blob.contract_name) {
                 Some(vec) => {
-                    vec.push(tx.hash.clone());
+                    vec.push_back(tx.hash.clone());
                 }
                 None => {
-                    self.tx_order.insert(
-                        blob_metadata.blob.contract_name.clone(),
-                        vec![tx.hash.clone()],
-                    );
+                    self.tx_order
+                        .insert(blob_metadata.blob.contract_name.clone(), {
+                            let mut vec = VecDeque::new();
+                            vec.push_back(tx.hash.clone());
+                            vec
+                        });
                 }
             }
         }
@@ -73,7 +75,14 @@ impl OrderedTxMap {
         if let Some(tx) = self.map.get(hash) {
             for blob_metadata in &tx.blobs {
                 if let Some(c) = self.tx_order.get_mut(&blob_metadata.blob.contract_name) {
-                    c.retain(|h| !h.eq(hash));
+                    if let Some(t) = c.front() {
+                        if t.eq(hash) {
+                            c.pop_front();
+                        } else {
+                            // Panic - this indicates a logic error in the code
+                            panic!("Trying to remove a tx that is not the first in the queue");
+                        }
+                    }
                 }
             }
             self.map.remove(hash)
