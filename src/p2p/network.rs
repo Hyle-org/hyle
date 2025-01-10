@@ -83,6 +83,10 @@ impl Display for NetMessage {
                 _ = write!(f, "NetMessage::{} ", enum_variant);
                 write!(f, "{:?}", msg)
             }
+            NetMessage::Ping => {
+                _ = write!(f, "NetMessage::{} ", enum_variant);
+                write!(f, "{}", enum_variant)
+            }
         }
     }
 }
@@ -96,6 +100,7 @@ pub enum PeerNetMessage {
 
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, Eq, PartialEq, IntoStaticStr)]
 pub enum NetMessage {
+    Ping,
     NewTx(Transaction),
 }
 

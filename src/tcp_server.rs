@@ -72,6 +72,9 @@ impl TcpServer {
                         self.bus.send(TcpServerMessage::NewTx(tx))?;
                         framed.get_mut().write_all(tx_hash.0.as_bytes()).await?;
                     },
+                    Ok(NetMessage::Ping) => {
+                        framed.get_mut().write_all(b"Pong").await?;
+                    },
                     Err(e) => { warn!("Error reading stream: {}", e) }
                 };
             }
@@ -85,8 +88,8 @@ impl TcpServer {
 mod tests {
     use bincode::encode_to_vec;
     use futures::SinkExt;
-    use std::sync::Arc;
-    use tokio::{net::TcpStream, sync::broadcast::Receiver};
+    use std::{sync::Arc, time::Duration};
+    use tokio::{io::AsyncReadExt, net::TcpStream, sync::broadcast::Receiver, time::timeout};
     use tokio_util::codec::FramedWrite;
 
     use crate::{
@@ -118,20 +121,104 @@ mod tests {
         )
     }
 
-    pub fn assert_new_tx(mut receiver: Receiver<TcpServerMessage>, tx: Transaction) -> Transaction {
-        #[allow(clippy::expect_fun_call)]
-        let rec = receiver.try_recv().expect("No message sent");
+    pub async fn assert_server_up(addr: &str, timeout_duration: u64) -> Result<()> {
+        let mut connected = false;
 
-        match rec {
-            TcpServerMessage::NewTx(received_tx) => {
-                if tx == received_tx {
-                    tx
-                } else {
-                    println!("Expected NewTx({:?}), found NewTx({:?})", tx, received_tx);
-                    assert_new_tx(receiver, tx)
+        timeout(Duration::from_millis(timeout_duration), async {
+            loop {
+                match TcpStream::connect(addr).await {
+                    Ok(_) => {
+                        connected = true;
+                        break;
+                    }
+                    _ => {
+                        info!("⏰ Waiting for server to be ready");
+                        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                    }
                 }
             }
-        }
+        })
+        .await
+        .map_err(|e| anyhow::anyhow!("Timeout reached while waiting for height: {e}"))?;
+
+        assert!(
+            connected,
+            "Could not connect after {timeout_duration} seconds"
+        );
+
+        info!("✅ Server is ready");
+        Ok(())
+    }
+
+    pub async fn assert_new_tx(
+        mut receiver: Receiver<TcpServerMessage>,
+        tx: Transaction,
+        timeout_duration: u64,
+    ) -> Result<Transaction> {
+        timeout(Duration::from_millis(timeout_duration), async {
+            loop {
+                match receiver.try_recv() {
+                    Ok(TcpServerMessage::NewTx(received_tx)) => {
+                        if tx == received_tx {
+                            return Ok(tx);
+                        } else {
+                            println!("Expected NewTx({:?}), found NewTx({:?})", tx, received_tx);
+                        }
+                    }
+                    Err(_) => {
+                        info!("⏰ Waiting for server to be send transaction message");
+                        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                    }
+                }
+            }
+        })
+        .await
+        .map_err(|e| anyhow::anyhow!("Timeout reached while waiting for new transaction: {e}"))?
+    }
+
+    #[test_log::test(tokio::test)]
+    async fn test_tcp_server() -> Result<()> {
+        let (mut tcp_server, _) = build().await;
+
+        let addr = tcp_server.config.tcp_server_address.clone();
+
+        // Starts server
+        tokio::spawn(async move {
+            let result = tcp_server.start().await;
+            assert!(result.is_ok(), "{}", result.unwrap_err().to_string());
+        });
+
+        assert_server_up(&addr, 500).await?;
+        Ok(())
+    }
+
+    #[test_log::test(tokio::test)]
+    async fn test_ping() -> Result<()> {
+        let (mut tcp_server, _) = build().await;
+
+        let addr = tcp_server.config.tcp_server_address.clone();
+
+        // Starts server
+        tokio::spawn(async move {
+            let result = tcp_server.start().await;
+            assert!(result.is_ok(), "{}", result.unwrap_err().to_string());
+        });
+
+        assert_server_up(&addr, 500).await?;
+
+        let stream = TcpStream::connect(addr).await?;
+        let mut framed = FramedWrite::new(stream, LengthDelimitedCodec::new());
+
+        let encoded_msg = encode_to_vec(&NetMessage::Ping, bincode::config::standard())?;
+
+        framed.send(encoded_msg.into()).await?;
+
+        // Reading the pong response
+        let mut buf = vec![0; 4];
+        framed.get_mut().read_exact(&mut buf).await?;
+        assert_eq!(&buf, b"Pong");
+
+        Ok(())
     }
 
     #[test_log::test(tokio::test)]
@@ -154,16 +241,15 @@ mod tests {
         let encoded_msg = encode_to_vec(&net_msg, bincode::config::standard())?;
 
         // wait until it's up
-        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        assert_server_up(&addr, 500).await?;
 
         // Sending the transaction
         let stream = TcpStream::connect(addr).await?;
         let mut framed = FramedWrite::new(stream, LengthDelimitedCodec::new());
+
         framed.send(encoded_msg.into()).await?;
 
-        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-
-        assert_new_tx(tcp_message_receiver, tx);
+        assert_new_tx(tcp_message_receiver, tx, 500).await?;
 
         Ok(())
     }
