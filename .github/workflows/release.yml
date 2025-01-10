@@ -3,6 +3,7 @@ name: Generate GitHub Release
 permissions:
   contents: write
   packages: write
+  pull-requests: write
 
 on:
   push:
@@ -43,18 +44,16 @@ jobs:
           fetch-depth: 0
 
       - name: "Write cargo.toml"
-        env:
-          VERSION: ${{ github.ref_name }}
         run: |
           # Strip 'v' from NEW_VERSION if it starts with it
           CLEAN_VERSION=$(echo "$VERSION" | sed 's/^v//')
           sed -i "s/^version = \".*\"$/version = \"$CLEAN_VERSION\"/" Cargo.toml
           cargo update hyle
-          git config --global user.name "${GITHUB_ACTOR}"
-          git config --global user.email "${GITHUB_ACTOR}@users.noreply.github.com"
-          git add .
-          git commit -m "🔖 Bump version to ${VERSION}" 
-      - name: Push changes
-        uses: ad-m/github-push-action@master
+      - name: Create Pull Request
+        id: cpr
+        uses: peter-evans/create-pull-request@v7
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "🔖 Bump version to ${{ github.ref_name }}"
+          title: "🔖 Bump version to ${{ github.ref_name }}"
+      - name: Enable Pull Request Automerge
+        run: gh pr merge --squash --auto "${{ steps.cpr.outputs.pull-request-number }}"
