@@ -44,6 +44,8 @@ jobs:
           fetch-depth: 0
 
       - name: "Write cargo.toml"
+        env:
+          VERSION: ${{ github.ref_name }}
         run: |
           # Strip 'v' from NEW_VERSION if it starts with it
           CLEAN_VERSION=$(echo "$VERSION" | sed 's/^v//')
