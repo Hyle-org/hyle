@@ -7,8 +7,6 @@ FROM $DEP_IMAGE AS builder
 COPY Cargo.toml Cargo.lock ./
 COPY .cargo/config.toml .cargo/config.toml
 COPY src ./src
-COPY contract-sdk ./contract-sdk
-COPY contracts ./contracts
 COPY crates ./crates
 RUN cargo build --bin node --bin indexer --release --features node_local_proving
 

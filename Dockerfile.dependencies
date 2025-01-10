@@ -10,8 +10,6 @@ FROM chef AS planner
 COPY Cargo.toml Cargo.lock ./
 COPY .cargo/config.toml .cargo/config.toml
 COPY src ./src
-COPY contract-sdk ./contract-sdk
-COPY contracts ./contracts
 COPY crates ./crates
 RUN cargo chef prepare --recipe-path recipe.json
 
