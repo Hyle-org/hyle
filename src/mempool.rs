@@ -202,7 +202,7 @@ impl Mempool {
                     .log_error("Handling ConsensusEvent in Mempool");
             }
             listen<GenesisEvent> cmd => {
-                if let GenesisEvent::GenesisBlock { signed_block } = cmd {
+                if let GenesisEvent::GenesisBlock(signed_block) = cmd {
                     for tx in signed_block.txs() {
                         if let TransactionData::RegisterContract(tx) = tx.transaction_data {
                             self.known_contracts.register_contract(&tx.contract_name, &tx.verifier, &tx.program_id)?;
@@ -837,6 +837,9 @@ impl Mempool {
 
 #[cfg(test)]
 pub mod test {
+
+    mod async_data_proposals;
+
     use core::panic;
 
     use super::*;

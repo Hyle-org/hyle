@@ -100,7 +100,7 @@ impl SingleNodeConsensus {
                 on_bus self.bus,
                 listen<GenesisEvent> msg => {
                     match msg {
-                        GenesisEvent::GenesisBlock { signed_block } => {
+                        GenesisEvent::GenesisBlock (signed_block) => {
                             self.store.last_consensus_proposal_hash = signed_block.hash();
                             // TODO: handle this from the block?
                             self.store

@@ -34,7 +34,7 @@ use tracing::{error, info};
 #[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]
 pub enum GenesisEvent {
     NoGenesis,
-    GenesisBlock { signed_block: SignedBlock },
+    GenesisBlock(SignedBlock),
 }
 impl BusMessage for GenesisEvent {}
 
@@ -190,7 +190,7 @@ impl Genesis {
         let signed_block = self.make_genesis_block(genesis_txs, initial_validators);
 
         // At this point, we can setup the genesis block.
-        _ = self.bus.send(GenesisEvent::GenesisBlock { signed_block });
+        _ = self.bus.send(GenesisEvent::GenesisBlock(signed_block));
 
         Ok(())
     }
@@ -568,8 +568,8 @@ mod tests {
 
         // Check it ran the genesis block
         let rec: GenesisEvent = bus.try_recv().expect("recv");
-        assert_matches!(rec, GenesisEvent::GenesisBlock { .. });
-        if let GenesisEvent::GenesisBlock { signed_block } = rec {
+        assert_matches!(rec, GenesisEvent::GenesisBlock(..));
+        if let GenesisEvent::GenesisBlock(signed_block) = rec {
             assert!(!signed_block.txs().is_empty());
             assert_eq!(
                 signed_block.consensus_proposal.new_validators_to_bond.len(),
@@ -607,8 +607,8 @@ mod tests {
         assert!(result.is_ok());
 
         let rec: GenesisEvent = bus.try_recv().expect("recv");
-        assert_matches!(rec, GenesisEvent::GenesisBlock { .. });
-        if let GenesisEvent::GenesisBlock { signed_block } = rec {
+        assert_matches!(rec, GenesisEvent::GenesisBlock(..));
+        if let GenesisEvent::GenesisBlock(signed_block) = rec {
             assert!(!signed_block.txs().is_empty());
             assert_eq!(
                 signed_block.consensus_proposal.new_validators_to_bond.len(),
@@ -648,8 +648,8 @@ mod tests {
         assert!(result.is_ok());
 
         let rec = bus.try_recv().expect("recv");
-        assert_matches!(rec, GenesisEvent::GenesisBlock { .. });
-        if let GenesisEvent::GenesisBlock { signed_block } = rec {
+        assert_matches!(rec, GenesisEvent::GenesisBlock(..));
+        if let GenesisEvent::GenesisBlock(signed_block) = rec {
             assert!(!signed_block.txs().is_empty());
             assert_eq!(
                 signed_block.consensus_proposal.new_validators_to_bond.len(),
