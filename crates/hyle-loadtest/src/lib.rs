@@ -2,8 +2,11 @@ use anyhow::{bail, Result};
 use client_sdk::transaction_builder::{StateUpdater, TransactionBuilder};
 use client_sdk::ProofData;
 use hydentity::Hydentity;
-use hyle::model::{BlobTransaction, ProofTransaction, RegisterContractTransaction};
-use hyle::rest::client::NodeApiHttpClient;
+use hyle::model::{
+    BlobTransaction, ProofTransaction, RegisterContractTransaction, Transaction, TransactionData,
+};
+use hyle::rest::client::{NodeApiHttpClient, NodeTcpClient};
+use hyle::tcp_server::TcpServerNetMessage;
 use hyle_contract_sdk::erc20::ERC20;
 use hyle_contract_sdk::Digestable;
 use hyle_contract_sdk::{ContractName, Identity};
@@ -114,7 +117,10 @@ pub async fn generate_blobs_txs(users: u32, states: States) -> Result<()> {
                 let identity = transaction.identity.clone();
                 let blobs = transaction.blobs.clone();
 
-                local_blob_txs.push(BlobTransaction { identity, blobs });
+                let msg = TcpServerNetMessage::NewTx(Transaction::wrap(TransactionData::Blob(
+                    BlobTransaction { identity, blobs },
+                )));
+                local_blob_txs.push(msg.to_binary());
             }
 
             Ok::<_, anyhow::Error>(local_blob_txs)
@@ -125,7 +131,11 @@ pub async fn generate_blobs_txs(users: u32, states: States) -> Result<()> {
         blob_txs.extend(result??);
     }
 
-    std::fs::write("blob_txs.json", serde_json::to_string(&blob_txs).unwrap()).unwrap();
+    std::fs::write(
+        "blob_txs.bin",
+        bincode::encode_to_vec(blob_txs, bincode::config::standard())
+            .expect("failed to encode blob_txs"),
+    )?;
     Ok(())
 }
 
@@ -162,10 +172,13 @@ pub async fn generate_proof_txs(users: u32, states: States) -> Result<()> {
 
                 for (proof, contract_name) in transaction.iter_prove() {
                     let proof: ProofData = proof.await.unwrap();
-                    local_proof_txs.push(ProofTransaction {
-                        contract_name,
-                        proof,
-                    });
+                    let msg = TcpServerNetMessage::NewTx(Transaction::wrap(
+                        TransactionData::Proof(ProofTransaction {
+                            contract_name,
+                            proof,
+                        }),
+                    ));
+                    local_proof_txs.push(msg.to_binary());
                 }
             }
 
@@ -177,8 +190,12 @@ pub async fn generate_proof_txs(users: u32, states: States) -> Result<()> {
         proof_txs.extend(result??);
     }
 
-    // serialize to json and write to file
-    std::fs::write("proof_txs.json", serde_json::to_string(&proof_txs).unwrap()).unwrap();
+    // serialize to bincode and write to file
+    std::fs::write(
+        "proof_txs.bin",
+        bincode::encode_to_vec(proof_txs, bincode::config::standard())
+            .expect("failed to encode proof_txs"),
+    )?;
 
     Ok(())
 }
@@ -191,9 +208,9 @@ pub async fn send(url: String) -> Result<()> {
 
 pub async fn send_blob_txs(url: String) -> Result<()> {
     info!("Sending blob transactions");
-
-    let blob_txs: Vec<BlobTransaction> =
-        serde_json::from_str(&std::fs::read_to_string("blob_txs.json")?)?;
+    let (blob_txs, _): (Vec<Vec<u8>>, _) =
+        bincode::decode_from_slice(&std::fs::read("blob_txs.bin")?, bincode::config::standard())
+            .expect("failed to decode blob_txs.bin");
 
     // Spin out a few tasks to send the transactions in parallel
     let mut tasks = tokio::task::JoinSet::new();
@@ -203,10 +220,14 @@ pub async fn send_blob_txs(url: String) -> Result<()> {
         let chunk = chunk.to_vec();
         let url = url.clone();
         tasks.spawn(async move {
-            let client = NodeApiHttpClient::new(url);
-            for blob_tx in chunk.iter() {
-                client.send_tx_blob(blob_tx).await.unwrap();
+            let mut client = NodeTcpClient::new(url).await.unwrap();
+            for encoded_blob_tx in chunk.iter() {
+                client
+                    .send_encoded_message_no_response(encoded_blob_tx.to_vec())
+                    .await
+                    .unwrap();
             }
+            tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
             info!("Blob transactions sent: {:?}", chunk.len());
         });
     }
@@ -219,9 +240,11 @@ pub async fn send_blob_txs(url: String) -> Result<()> {
 
 pub async fn send_proof_txs(url: String) -> Result<()> {
     info!("Sending proof transactions");
-
-    let proof_txs: Vec<ProofTransaction> =
-        serde_json::from_str(&std::fs::read_to_string("proof_txs.json")?)?;
+    let (proof_txs, _): (Vec<Vec<u8>>, _) = bincode::decode_from_slice(
+        &std::fs::read("proof_txs.bin")?,
+        bincode::config::standard(),
+    )
+    .expect("failed to decode proof_txs.bin");
 
     // Spin out a few tasks to send the transactions in parallel
     let mut tasks = tokio::task::JoinSet::new();
@@ -231,9 +254,12 @@ pub async fn send_proof_txs(url: String) -> Result<()> {
         let chunk = chunk.to_vec();
         let url = url.clone();
         tasks.spawn(async move {
-            let client = NodeApiHttpClient::new(url);
-            for proof_tx in chunk.iter() {
-                client.send_tx_proof(proof_tx).await.unwrap();
+            let mut client = NodeTcpClient::new(url).await.unwrap();
+            for encoded_proof_tx in chunk.iter() {
+                client
+                    .send_encoded_message_no_response(encoded_proof_tx.to_vec())
+                    .await
+                    .unwrap();
             }
             info!("Transactions sent: {:?}", chunk.len());
         });

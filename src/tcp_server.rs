@@ -293,13 +293,6 @@ mod tests {
             assert!(result.is_ok(), "{}", result.unwrap_err().to_string());
         });
 
-        let tx = Transaction::wrap(TransactionData::RegisterContract(
-            RegisterContractTransaction::default(),
-        ));
-
-        let net_msg = TcpServerNetMessage::NewTx(tx.clone());
-        let encoded_msg = encode_to_vec(&net_msg, bincode::config::standard())?;
-
         // wait until it's up
         assert_server_up(&addr, 500).await?;
 
@@ -307,7 +300,11 @@ mod tests {
         let stream = TcpStream::connect(addr).await?;
         let mut framed = FramedWrite::new(stream, LengthDelimitedCodec::new());
 
-        framed.send(encoded_msg.into()).await?;
+        let tx = Transaction::wrap(TransactionData::RegisterContract(
+            RegisterContractTransaction::default(),
+        ));
+        let net_msg = TcpServerNetMessage::NewTx(tx.clone());
+        framed.send(net_msg.to_binary().into()).await?;
 
         assert_new_tx(tcp_message_receiver, tx, 500).await?;
 
