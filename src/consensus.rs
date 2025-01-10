@@ -807,7 +807,7 @@ impl Consensus {
             on_bus self.bus,
             listen<GenesisEvent> msg => {
                 match msg {
-                    GenesisEvent::GenesisBlock { signed_block } => {
+                    GenesisEvent::GenesisBlock(signed_block) => {
                         self.bft_round_state.consensus_proposal.parent_hash = signed_block.hash();
                         self.bft_round_state.consensus_proposal.round_leader = signed_block.consensus_proposal.round_leader.clone();
 

@@ -195,7 +195,7 @@ impl DataAvailability {
             }
 
             listen<GenesisEvent> cmd => {
-                if let GenesisEvent::GenesisBlock { signed_block } = cmd {
+                if let GenesisEvent::GenesisBlock(signed_block) = cmd {
                     debug!("🌱  Genesis block received with validators {:?}", signed_block.consensus_proposal.new_validators_to_bond.clone());
                     self.handle_signed_block(signed_block).await;
                 } else {
