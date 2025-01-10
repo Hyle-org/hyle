@@ -101,7 +101,7 @@ sqlx = { version = "0.8.3", features = [
     "migrate",
     "chrono",
 ], optional = true }
-syn = { version = "2.0.95", optional = true }
+syn = { version = "2.0.96", optional = true }
 tokio = { version = "1.42.0", features = ["full", "tracing"], optional = true }
 tokio-util = { version = "0.7.13", optional = true }
 tower-http = { version = "0.6.2", features = [
