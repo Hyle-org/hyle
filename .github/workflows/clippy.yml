@@ -21,6 +21,8 @@ jobs:
           toolchain: stable
           components: clippy
           override: true
+      - name: Run cargo check
+        run: cargo check
       - uses: LoliGothick/clippy-check@master
         with:
           deny: warnings
