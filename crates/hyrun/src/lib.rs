@@ -109,7 +109,7 @@ pub struct Cli {
     #[arg(long, default_value = "4321")]
     pub port: u32,
 
-    #[arg(long, default_value = "")]
+    #[arg(long, default_value = ".")]
     pub proof_path: String,
 }
 
