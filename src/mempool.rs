@@ -20,6 +20,7 @@ use crate::{
         crypto::{BlstCrypto, SharedBlstCrypto, SignedByValidator},
         logger::LogMe,
         modules::{module_bus_client, Module},
+        static_type_map::Pick,
     },
 };
 use anyhow::{bail, Context, Result};
@@ -74,6 +75,8 @@ module_bus_client! {
 struct MempoolBusClient {
     sender(OutboundMessage),
     sender(MempoolEvent),
+    sender(InternalMempoolEvent),
+    receiver(InternalMempoolEvent),
     receiver(SignedByValidator<MempoolNetMessage>),
     receiver(RestApiMessage),
     receiver(MempoolCommand),
@@ -93,7 +96,7 @@ pub struct Mempool {
     storage: Storage,
     da_latest_pending_cuts: VecDeque<(Option<Cut>, Cut)>,
     validators: Vec<ValidatorPublicKey>,
-    known_contracts: KnownContracts,
+    known_contracts: Arc<std::sync::RwLock<KnownContracts>>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, Eq, PartialEq, IntoStaticStr)]
@@ -124,8 +127,14 @@ impl BusMessage for MempoolEvent {}
 pub enum MempoolCommand {
     FetchDataProposals { from: Option<Cut>, to: Cut },
 }
-
 impl BusMessage for MempoolCommand {}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub enum InternalMempoolEvent {
+    OnProcessedNewTx(Transaction),
+    OnProcessedDataProposal(DataProposal),
+}
+impl BusMessage for InternalMempoolEvent {}
 
 impl Module for Mempool {
     type Context = SharedRunContext;
@@ -134,13 +143,15 @@ impl Module for Mempool {
         let bus = MempoolBusClient::new_from_bus(ctx.common.bus.new_handle()).await;
         let metrics = MempoolMetrics::global(ctx.common.config.id.clone());
 
-        let known_contracts = Self::load_from_disk_or_default::<KnownContracts>(
+        let known_contracts = Arc::new(std::sync::RwLock::new(Self::load_from_disk_or_default::<
+            KnownContracts,
+        >(
             ctx.common
                 .config
                 .data_directory
                 .join("mempool_known_contracts.bin")
                 .as_path(),
-        );
+        )));
 
         let api = api::api(&ctx.common).await;
         if let Ok(mut guard) = ctx.common.router.lock() {
@@ -197,6 +208,10 @@ impl Mempool {
             listen<MempoolCommand> cmd => {
                 let _ = self.handle_command(cmd).log_error("Handling Mempool Command");
             }
+            listen<InternalMempoolEvent> event => {
+                let _ = self.handle_internal_event(event)
+                    .log_error("Handling InternalMempoolEvent in Mempool");
+            }
             listen<ConsensusEvent> cmd => {
                 let _ = self.handle_consensus_event(cmd)
                     .log_error("Handling ConsensusEvent in Mempool");
@@ -205,7 +220,7 @@ impl Mempool {
                 if let GenesisEvent::GenesisBlock(signed_block) = cmd {
                     for tx in signed_block.txs() {
                         if let TransactionData::RegisterContract(tx) = tx.transaction_data {
-                            self.known_contracts.register_contract(&tx.contract_name, &tx.verifier, &tx.program_id)?;
+                            self.known_contracts.write().expect("logic issue").register_contract(&tx.contract_name, &tx.verifier, &tx.program_id)?;
                         }
                     }
                 }
@@ -216,7 +231,7 @@ impl Mempool {
                     let TransactionData::RegisterContract(register_contract_transaction) = tx.transaction_data else {
                         continue;
                     };
-                    self.known_contracts.register_contract(
+                    self.known_contracts.write().expect("logic issue").register_contract(
                         &register_contract_transaction.contract_name,
                         &register_contract_transaction.verifier,
                         &register_contract_transaction.program_id,
@@ -266,6 +281,17 @@ impl Mempool {
             RestApiMessage::NewTx(tx) => self
                 .on_new_tx(tx)
                 .context("Received invalid transaction. Won't process it."),
+        }
+    }
+
+    fn handle_internal_event(&mut self, event: InternalMempoolEvent) -> Result<()> {
+        match event {
+            InternalMempoolEvent::OnProcessedNewTx(tx) => {
+                self.on_new_tx(tx).context("Processing new tx")
+            }
+            InternalMempoolEvent::OnProcessedDataProposal(_data_proposal) => {
+                todo!()
+            }
         }
     }
 
@@ -597,7 +623,7 @@ impl Mempool {
             &self.crypto,
             validator,
             data_proposal,
-            &self.known_contracts,
+            self.known_contracts.clone(),
         ) {
             DataProposalVerdict::Empty => {
                 warn!(
@@ -630,7 +656,7 @@ impl Mempool {
         Ok(())
     }
 
-    fn on_new_tx(&mut self, mut tx: Transaction) -> Result<()> {
+    fn on_new_tx(&mut self, tx: Transaction) -> Result<()> {
         // TODO: Verify fees ?
         // TODO: Verify identity ?
 
@@ -638,11 +664,14 @@ impl Mempool {
             TransactionData::RegisterContract(ref register_contract_transaction) => {
                 debug!("Got new register contract tx {}", tx.hash());
 
-                self.known_contracts.register_contract(
-                    &register_contract_transaction.contract_name,
-                    &register_contract_transaction.verifier,
-                    &register_contract_transaction.program_id,
-                )?;
+                self.known_contracts
+                    .write()
+                    .expect("logic issue")
+                    .register_contract(
+                        &register_contract_transaction.contract_name,
+                        &register_contract_transaction.verifier,
+                        &register_contract_transaction.program_id,
+                    )?;
             }
             TransactionData::Blob(ref blob_tx) => {
                 debug!("Got new blob tx {}", tx.hash());
@@ -650,71 +679,26 @@ impl Mempool {
                     bail!("Invalid identity for blob tx {}: {}", tx.hash(), e);
                 }
             }
-            TransactionData::Proof(proof_transaction) => {
-                // Verify and extract proof
-                let (verifier, program_id) = self
-                    .known_contracts
-                    .0
-                    .get(&proof_transaction.contract_name)
-                    .context("Contract unknown")?;
-
-                let is_recursive = proof_transaction.contract_name.0 == "risc0-recursion";
-
-                let (hyle_outputs, program_ids) = if is_recursive {
-                    let (program_ids, hyle_outputs) = verify_recursive_proof(
-                        &proof_transaction.proof.to_bytes()?,
-                        verifier,
-                        program_id,
-                    )?;
-                    (hyle_outputs, program_ids)
-                } else {
-                    let hyle_outputs =
-                        verify_proof(&proof_transaction.proof.to_bytes()?, verifier, program_id)?;
-                    (hyle_outputs, vec![program_id.clone()])
-                };
-
-                std::iter::zip(
-                    &proof_transaction.tx_hashes,
-                    std::iter::zip(&hyle_outputs, &program_ids),
-                )
-                .for_each(|(blob_tx_hash, (hyle_output, program_id))| {
-                    debug!(
-                        "Blob tx hash {} verified with hyle output {:?} and program id {}",
-                        blob_tx_hash,
-                        hyle_output,
-                        hex::encode(&program_id.0)
-                    );
+            TransactionData::Proof(_) => {
+                let kc = self.known_contracts.clone();
+                let sender: &tokio::sync::broadcast::Sender<InternalMempoolEvent> = self.bus.get();
+                let sender = sender.clone();
+                tokio::spawn(async move {
+                    let tx = match Self::process_proof_tx(kc, tx) {
+                        Ok(tx) => tx,
+                        Err(e) => bail!("Error processing proof tx: {}", e),
+                    };
+                    sender
+                        .send(InternalMempoolEvent::OnProcessedNewTx(tx))
+                        .log_warn("sending processed TX")
                 });
-
-                tx.transaction_data = TransactionData::VerifiedProof(VerifiedProofTransaction {
-                    proof_hash: proof_transaction.proof.hash(),
-                    proof: Some(proof_transaction.proof),
-                    contract_name: proof_transaction.contract_name.clone(),
-                    is_recursive,
-                    proven_blobs: std::iter::zip(
-                        proof_transaction.tx_hashes,
-                        std::iter::zip(hyle_outputs, program_ids),
-                    )
-                    .map(
-                        |(blob_tx_hash, (hyle_output, program_id))| BlobProofOutput {
-                            original_proof_hash: ProofDataHash("todo?".to_owned()),
-                            blob_tx_hash,
-                            hyle_output,
-                            program_id,
-                        },
-                    )
-                    .collect(),
-                });
-
-                debug!(
-                    "Got new proof tx {} for {}",
-                    tx.hash(),
-                    proof_transaction.contract_name
-                );
+                return Ok(());
             }
-            TransactionData::VerifiedProof(_) => {
-                bail!(
-                    "Already verified VerifiedProof are not allowed to be received in the mempool"
+            TransactionData::VerifiedProof(ref proof_tx) => {
+                debug!(
+                    "Got verified proof tx {} for {}",
+                    tx.hash(),
+                    proof_tx.contract_name
                 );
             }
         }
@@ -727,6 +711,77 @@ impl Mempool {
             .snapshot_pending_tx(self.storage.pending_txs.len());
 
         Ok(())
+    }
+
+    fn process_proof_tx(
+        known_contracts: Arc<std::sync::RwLock<KnownContracts>>,
+        mut tx: Transaction,
+    ) -> Result<Transaction> {
+        let TransactionData::Proof(proof_transaction) = tx.transaction_data else {
+            bail!("Can only process ProofTx");
+        };
+        // Verify and extract proof
+        let (verifier, program_id) = known_contracts
+            .read()
+            .expect("logic error")
+            .0
+            .get(&proof_transaction.contract_name)
+            .context("Contract unknown")?
+            .clone();
+
+        let is_recursive = proof_transaction.contract_name.0 == "risc0-recursion";
+
+        let (hyle_outputs, program_ids) = if is_recursive {
+            let (program_ids, hyle_outputs) = verify_recursive_proof(
+                &proof_transaction.proof.to_bytes()?,
+                &verifier,
+                &program_id,
+            )?;
+            (hyle_outputs, program_ids)
+        } else {
+            let hyle_outputs =
+                verify_proof(&proof_transaction.proof.to_bytes()?, &verifier, &program_id)?;
+            (hyle_outputs, vec![program_id.clone()])
+        };
+
+        std::iter::zip(
+            &proof_transaction.tx_hashes,
+            std::iter::zip(&hyle_outputs, &program_ids),
+        )
+        .for_each(|(blob_tx_hash, (hyle_output, program_id))| {
+            debug!(
+                "Blob tx hash {} verified with hyle output {:?} and program id {}",
+                blob_tx_hash,
+                hyle_output,
+                hex::encode(&program_id.0)
+            );
+        });
+
+        tx.transaction_data = TransactionData::VerifiedProof(VerifiedProofTransaction {
+            proof_hash: proof_transaction.proof.hash(),
+            proof: Some(proof_transaction.proof),
+            contract_name: proof_transaction.contract_name.clone(),
+            is_recursive,
+            proven_blobs: std::iter::zip(
+                proof_transaction.tx_hashes,
+                std::iter::zip(hyle_outputs, program_ids),
+            )
+            .map(
+                |(blob_tx_hash, (hyle_output, program_id))| BlobProofOutput {
+                    original_proof_hash: ProofDataHash("todo?".to_owned()),
+                    blob_tx_hash,
+                    hyle_output,
+                    program_id,
+                },
+            )
+            .collect(),
+        });
+        debug!(
+            "Got new proof tx {} for {}",
+            tx.hash(),
+            proof_transaction.contract_name
+        );
+        Ok(tx)
     }
 
     fn send_vote(
@@ -877,7 +932,7 @@ pub mod test {
                 storage,
                 da_latest_pending_cuts: VecDeque::new(),
                 validators,
-                known_contracts: KnownContracts::default(),
+                known_contracts: Arc::new(std::sync::RwLock::new(KnownContracts::default())),
             }
         }
 

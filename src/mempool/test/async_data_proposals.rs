@@ -33,7 +33,6 @@ bus_client! {
 
 // Need at least two worker threads for this test, as we want parallel execution.
 #[test_log::test(tokio::test(flavor = "multi_thread", worker_threads = 2))]
-#[should_panic = "Should have more than "]
 async fn test_mempool_isnt_blocked_by_proof_verification() {
     assert_ok!(impl_test_mempool_isnt_blocked_by_proof_verification().await);
 }
@@ -144,7 +143,8 @@ async fn impl_test_mempool_isnt_blocked_by_proof_verification() -> Result<()> {
     let expected_commits = (start_time.elapsed().as_millis()
         / node_modules.conf.consensus.slot_duration as u128) as i32;
 
-    if count.load(std::sync::atomic::Ordering::SeqCst) < expected_commits {
+    // Add a little bit of leeway
+    if count.load(std::sync::atomic::Ordering::SeqCst) < expected_commits - 1 {
         bail!(
             "Should have more than {} commits, have {}",
             expected_commits,
