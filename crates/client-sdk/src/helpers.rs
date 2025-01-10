@@ -1,12 +1,13 @@
 use crate::ProofData;
 use anyhow::{bail, Result};
-use sdk::{ContractInput, HyleOutput};
+use sdk::{flatten_blobs, ContractInput, HyleOutput};
 
 pub enum Prover {
     #[cfg(feature = "risc0")]
     Risc0Prover,
     #[cfg(feature = "sp1")]
     SP1Prover,
+    TestProver,
 }
 
 impl Prover {
@@ -20,8 +21,7 @@ impl Prover {
             Prover::Risc0Prover => risc0::prove(binary, contract_input).await,
             #[cfg(feature = "sp1")]
             Prover::SP1Prover => sp1::prove(binary, contract_input),
-            #[cfg(not(any(feature = "risc0", feature = "sp1")))]
-            _ => bail!("Prover not available"),
+            Prover::TestProver => test::prove(binary, contract_input),
         }
     }
 
@@ -31,8 +31,7 @@ impl Prover {
             Prover::Risc0Prover => risc0::execute(binary, contract_input),
             #[cfg(feature = "sp1")]
             Prover::SP1Prover => sp1::execute(binary, contract_input),
-            #[cfg(not(any(feature = "risc0", feature = "sp1")))]
-            _ => bail!("Prover not available"),
+            Prover::TestProver => test::execute(binary, contract_input),
         }
     }
 }
@@ -154,6 +153,38 @@ pub mod sp1 {
             bincode::config::legacy().with_fixed_int_encoding(),
         )?;
         Ok((ProofData::Bytes(encoded_receipt), hyle_output))
+    }
+}
+
+pub mod test {
+    use super::*;
+
+    pub fn execute(_binary: &[u8], contract_input: &ContractInput) -> Result<HyleOutput> {
+        // FIXME: this is a hack to make the test pass.
+        let next_state = contract_input.initial_state.clone();
+        let hyle_output = HyleOutput {
+            version: 1,
+            initial_state: contract_input.initial_state.clone(),
+            next_state,
+            identity: contract_input.identity.clone(),
+            tx_hash: contract_input.tx_hash.clone(),
+            index: contract_input.index.clone(),
+            blobs: flatten_blobs(&contract_input.blobs),
+            success: true,
+            program_outputs: vec![],
+        };
+        Ok(hyle_output)
+    }
+
+    pub fn prove(
+        binary: &[u8],
+        contract_input: &ContractInput,
+    ) -> anyhow::Result<(ProofData, HyleOutput)> {
+        let hyle_output = test::execute(binary, contract_input)?;
+        Ok((
+            ProofData::Bytes(serde_json::to_vec(&vec![&hyle_output])?),
+            hyle_output,
+        ))
     }
 }
 

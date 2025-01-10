@@ -26,12 +26,12 @@ use std::{
 };
 use strum_macros::IntoStaticStr;
 
-use consensus::{ConsensusProposal, ConsensusProposalHash, NewValidatorCandidate};
+use consensus::{ConsensusProposal, ConsensusProposalHash};
 use crypto::AggregateSignature;
 use hyle_contract_sdk::{
     flatten_blobs, BlobIndex, HyleOutput, Identity, ProgramId, StateDigest, TxHash, Verifier,
 };
-use mempool::{Cut, DataProposal};
+use mempool::DataProposal;
 use staking::StakingAction;
 
 // Re-export
@@ -332,8 +332,6 @@ impl Eq for SignedBlock {}
 
 pub struct HyleOutputHash(pub Vec<u8>);
 pub struct BlobProofOutputHash(pub Vec<u8>);
-pub struct CutHash(pub Vec<u8>);
-pub struct NewValidatorCandidateHash(pub Vec<u8>);
 
 impl Hashable<HyleOutputHash> for HyleOutput {
     fn hash(&self) -> HyleOutputHash {
@@ -359,45 +357,6 @@ impl Hashable<BlobProofOutputHash> for BlobProofOutput {
         hasher.update(self.program_id.0.clone());
         hasher.update(self.hyle_output.hash().0);
         BlobProofOutputHash(hasher.finalize().to_vec())
-    }
-}
-
-impl Hashable<CutHash> for Cut {
-    fn hash(&self) -> CutHash {
-        let mut hasher = Sha3_256::new();
-        hasher.update(self.len().to_le_bytes());
-        for (v, dp, poda) in self {
-            hasher.update(v.0.clone());
-            hasher.update(dp.0.as_bytes());
-            hasher.update(poda.signature.0.clone());
-            hasher.update(poda.validators.len().to_le_bytes());
-            for validator in poda.validators.iter() {
-                hasher.update(validator.0.clone());
-            }
-        }
-        CutHash(hasher.finalize().to_vec())
-    }
-}
-
-impl Hashable<NewValidatorCandidateHash> for NewValidatorCandidate {
-    fn hash(&self) -> NewValidatorCandidateHash {
-        let mut hasher = Sha3_256::new();
-        bincode::encode_into_std_write(self, &mut hasher, bincode::config::standard()).unwrap();
-        NewValidatorCandidateHash(hasher.finalize().to_vec())
-    }
-}
-
-impl Hashable<ConsensusProposalHash> for ConsensusProposal {
-    fn hash(&self) -> ConsensusProposalHash {
-        let mut hasher = Sha3_256::new();
-        hasher.update(self.slot.to_le_bytes());
-        hasher.update(self.view.to_le_bytes());
-        hasher.update(self.cut.hash().0);
-        hasher.update(self.new_validators_to_bond.len().to_le_bytes());
-        for vc in &self.new_validators_to_bond {
-            hasher.update(vc.hash().0);
-        }
-        ConsensusProposalHash(hex::encode(hasher.finalize()))
     }
 }
 

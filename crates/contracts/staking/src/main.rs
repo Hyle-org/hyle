@@ -3,7 +3,6 @@
 
 extern crate alloc;
 
-use alloc::format;
 use alloc::vec::Vec;
 use sdk::caller::{CallerCallee, ExecutionContext};
 use sdk::{info, StructuredBlobData};
