@@ -85,9 +85,9 @@ impl From<RegisterContractTransaction> for TcpServerNetMessage {
 }
 
 impl TcpServerNetMessage {
-    pub fn to_binary(&self) -> Vec<u8> {
+    pub fn to_binary(&self) -> Result<Vec<u8>> {
         bincode::encode_to_vec(self, bincode::config::standard())
-            .expect("Could not serialize NetMessage")
+            .context("Could not serialize NetMessage")
     }
 }
 
@@ -328,7 +328,7 @@ mod tests {
             RegisterContractTransaction::default(),
         ));
         let net_msg = TcpServerNetMessage::NewTx(tx.clone());
-        framed.send(net_msg.to_binary().into()).await?;
+        framed.send(net_msg.to_binary().unwrap().into()).await?;
 
         assert_new_tx(tcp_message_receiver, tx, 500).await?;
 

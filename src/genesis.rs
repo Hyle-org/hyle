@@ -103,6 +103,7 @@ impl StateUpdater for States {
     }
 }
 
+#[allow(clippy::expect_used, reason = "genesis should panic if incorrect")]
 impl Genesis {
     pub async fn start(&mut self) -> Result<(), Error> {
         let file = self.config.data_directory.clone().join("genesis.bin");
@@ -370,7 +371,7 @@ impl Genesis {
         let mut hydentity_state = hydentity::Hydentity::new();
         hydentity_state
             .register_identity("faucet.hydentity", "password")
-            .unwrap();
+            .expect("faucet must register");
 
         let staking_state = staking::state::Staking::new();
 
@@ -445,7 +446,10 @@ impl Genesis {
         };
 
         // TODO: do something better?
-        let round_leader = initial_validators.first().unwrap().clone();
+        let round_leader = initial_validators
+            .first()
+            .expect("must have round leader")
+            .clone();
 
         SignedBlock {
             data_proposals: vec![(round_leader.clone(), vec![dp.clone()])],
@@ -513,7 +517,7 @@ mod tests {
         let shared_bus = SharedMessageBus::default();
         let bus = GenesisBusClient::new_from_bus(shared_bus.new_handle()).await;
         let test_bus = TestGenesisBusClient::new_from_bus(shared_bus.new_handle()).await;
-        let crypto = Arc::new(BlstCrypto::new(config.id.clone()));
+        let crypto = Arc::new(BlstCrypto::new(config.id.clone()).unwrap());
         (
             Genesis {
                 config: Arc::new(config),
@@ -682,19 +686,28 @@ mod tests {
             let (mut genesis, mut bus) = new(config.clone()).await;
             bus.send(PeerEvent::NewPeer {
                 name: "node-2".into(),
-                pubkey: BlstCrypto::new("node-2".into()).validator_pubkey().clone(),
+                pubkey: BlstCrypto::new("node-2".into())
+                    .unwrap()
+                    .validator_pubkey()
+                    .clone(),
                 da_address: "".into(),
             })
             .expect("send");
             bus.send(PeerEvent::NewPeer {
                 name: "node-3".into(),
-                pubkey: BlstCrypto::new("node-3".into()).validator_pubkey().clone(),
+                pubkey: BlstCrypto::new("node-3".into())
+                    .unwrap()
+                    .validator_pubkey()
+                    .clone(),
                 da_address: "".into(),
             })
             .expect("send");
             bus.send(PeerEvent::NewPeer {
                 name: "node-4".into(),
-                pubkey: BlstCrypto::new("node-4".into()).validator_pubkey().clone(),
+                pubkey: BlstCrypto::new("node-4".into())
+                    .unwrap()
+                    .validator_pubkey()
+                    .clone(),
                 da_address: "".into(),
             })
             .expect("send");
@@ -707,19 +720,28 @@ mod tests {
             let (mut genesis, mut bus) = new(config).await;
             bus.send(PeerEvent::NewPeer {
                 name: "node-4".into(),
-                pubkey: BlstCrypto::new("node-4".into()).validator_pubkey().clone(),
+                pubkey: BlstCrypto::new("node-4".into())
+                    .unwrap()
+                    .validator_pubkey()
+                    .clone(),
                 da_address: "".into(),
             })
             .expect("send");
             bus.send(PeerEvent::NewPeer {
                 name: "node-2".into(),
-                pubkey: BlstCrypto::new("node-2".into()).validator_pubkey().clone(),
+                pubkey: BlstCrypto::new("node-2".into())
+                    .unwrap()
+                    .validator_pubkey()
+                    .clone(),
                 da_address: "".into(),
             })
             .expect("send");
             bus.send(PeerEvent::NewPeer {
                 name: "node-3".into(),
-                pubkey: BlstCrypto::new("node-3".into()).validator_pubkey().clone(),
+                pubkey: BlstCrypto::new("node-3".into())
+                    .unwrap()
+                    .validator_pubkey()
+                    .clone(),
                 da_address: "".into(),
             })
             .expect("send");

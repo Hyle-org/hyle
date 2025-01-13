@@ -166,10 +166,10 @@ pub fn noir_proof_verifier(proof: &[u8], image_id: &[u8]) -> Result<Vec<HyleOutp
     }
 
     // Reading output
-    let mut file = std::fs::File::open(output_path).expect("Failed to open output file");
+    let mut file = std::fs::File::open(output_path).context("Failed to open output file")?;
     let mut output_json = String::new();
     file.read_to_string(&mut output_json)
-        .expect("Failed to read output file content");
+        .context("Failed to read output file content")?;
 
     let mut public_outputs: Vec<String> = serde_json::from_str(&output_json)?;
     // TODO: support multi-output proofs.

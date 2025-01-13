@@ -65,7 +65,7 @@ async fn main() -> Result<()> {
     );
 
     let bus = SharedMessageBus::new(BusMetrics::global(config.id.clone()));
-    let crypto = Arc::new(BlstCrypto::new(config.id.clone()));
+    let crypto = Arc::new(BlstCrypto::new(config.id.clone()).context("Could not create crypto")?);
     let pubkey = Some(crypto.validator_pubkey().clone());
 
     setup_tracing(
@@ -90,7 +90,7 @@ async fn main() -> Result<()> {
             opentelemetry_prometheus::exporter()
                 .with_registry(prometheus::default_registry().clone())
                 .build()
-                .unwrap(),
+                .context("starting prometheus exporter")?,
         )
         .build();
 
@@ -137,6 +137,7 @@ async fn main() -> Result<()> {
     handler.build_module::<P2P>(ctx.clone()).await?;
 
     // Should come last so the other modules have nested their own routes.
+    #[allow(clippy::expect_used, reason = "Fail on misconfiguration")]
     let router = ctx
         .common
         .router

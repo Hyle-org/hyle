@@ -10,6 +10,10 @@ pub mod arc_rwlock_serde {
         S: Serializer,
         T: Serialize,
     {
+        #[allow(
+            clippy::unwrap_used,
+            reason = "Cannot panic in sync code unless poisoned where panic is OK"
+        )]
         T::serialize(&*val.read().unwrap(), s)
     }
 

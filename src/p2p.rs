@@ -1,7 +1,6 @@
 //! Networking layer
 
-use std::{collections::HashSet, sync::Arc, time::Duration};
-
+use crate::utils::logger::LogMe;
 use crate::{
     bus::{BusMessage, SharedMessageBus},
     handle_messages,
@@ -14,6 +13,7 @@ use crate::{
     },
 };
 use anyhow::{bail, Result};
+use std::{collections::HashSet, sync::Arc, time::Duration};
 use tokio::{net::TcpListener, time::sleep};
 use tracing::{debug, error, info, warn};
 
@@ -76,7 +76,7 @@ impl P2P {
         self.peer_id += 1;
         self.connected_peers.insert(peer_address.clone());
 
-        tokio::task::Builder::new()
+        let _ = tokio::task::Builder::new()
             .name("connect-to-peer")
             .spawn(async move {
                 let mut retry_count = 20;
@@ -115,7 +115,7 @@ impl P2P {
                 }
                 error!("Can't reach peer #{}: {}.", id, peer_address);
             })
-            .expect("Failed to spawn peer thread");
+            .log_error("Failed to spawn peer thread");
     }
 
     fn handle_command(&mut self, cmd: P2PCommand) {

@@ -30,24 +30,26 @@ const DST: &[u8] = b"BLS_SIG_BLS12381G2_XMD:SHA-256_SSWU_RO_NUL_";
 pub const SIG_SIZE: usize = 48;
 
 impl BlstCrypto {
-    pub fn new(validator_name: String) -> Self {
+    pub fn new(validator_name: String) -> Result<Self> {
         // TODO load secret key from keyring or other
         // here basically secret_key <=> validator_id which is very badly secure !
         let validator_name_bytes = validator_name.as_bytes();
         let mut ikm = [0u8; 32];
         let len = std::cmp::min(validator_name_bytes.len(), 32);
+        #[allow(clippy::indexing_slicing, reason = "len checked")]
         ikm[..len].copy_from_slice(&validator_name_bytes[..len]);
 
-        let sk = SecretKey::key_gen(&ikm, &[]).unwrap();
+        let sk = SecretKey::key_gen(&ikm, &[])
+            .map_err(|e| anyhow!("Could not generate key: {:?}", e))?;
         let validator_pubkey = as_validator_pubkey(sk.sk_to_pk());
 
-        BlstCrypto {
+        Ok(BlstCrypto {
             sk,
             validator_pubkey,
-        }
+        })
     }
 
-    pub fn new_random() -> Self {
+    pub fn new_random() -> Result<Self> {
         let mut rng = rand::thread_rng();
         let id: String = (0..32)
             .map(|_| rng.gen_range(33..127) as u8 as char) // Caractères imprimables ASCII
@@ -119,6 +121,7 @@ impl BlstCrypto {
             0 => bail!("No signatures to aggregate"),
             1 => Ok(Signed {
                 msg,
+                #[allow(clippy::indexing_slicing, reason = "len checked")]
                 signature: AggregateSignature {
                     signature: aggregates[0].signature.signature.clone(),
                     validators: vec![aggregates[0].signature.validator.clone()],
@@ -234,7 +237,7 @@ mod tests {
     use super::*;
     #[test]
     fn test_sign_bytes() {
-        let crypto = BlstCrypto::new_random();
+        let crypto = BlstCrypto::new_random().unwrap();
         let msg = b"hello";
         let sig = crypto.sign_bytes(msg);
         let valid = BlstCrypto::verify_bytes(msg, &sig, &crypto.sk.sk_to_pk());
@@ -243,7 +246,7 @@ mod tests {
 
     #[test]
     fn test_sign() {
-        let crypto = BlstCrypto::new_random();
+        let crypto = BlstCrypto::new_random().unwrap();
         let pub_key = ValidatorPublicKey(crypto.sk.sk_to_pk().to_bytes().as_slice().to_vec());
         let msg = HandshakeNetMessage::Ping;
         let signed = crypto.sign(&msg).unwrap();
@@ -254,7 +257,7 @@ mod tests {
     fn new_signed<T: bincode::Encode + Clone>(
         msg: T,
     ) -> (SignedByValidator<T>, ValidatorPublicKey) {
-        let crypto = BlstCrypto::new_random();
+        let crypto = BlstCrypto::new_random().unwrap();
         let pub_key = ValidatorPublicKey(crypto.sk.sk_to_pk().to_bytes().as_slice().to_vec());
         (crypto.sign(msg).unwrap(), crypto.validator_pubkey.clone())
     }
@@ -266,7 +269,7 @@ mod tests {
         let (s3, pk3) = new_signed(HandshakeNetMessage::Ping);
         let (_, pk4) = new_signed(HandshakeNetMessage::Ping);
 
-        let crypto = BlstCrypto::new_random();
+        let crypto = BlstCrypto::new_random().unwrap();
         let aggregates = vec![&s1, &s2, &s3];
         let mut signed = crypto
             .sign_aggregate(HandshakeNetMessage::Ping, aggregates.as_slice())
@@ -318,7 +321,7 @@ mod tests {
         let (s2, pk2) = new_signed(HandshakeNetMessage::Ping);
         let (s3, pk3) = new_signed(HandshakeNetMessage::Pong); // different message
 
-        let crypto = BlstCrypto::new_random();
+        let crypto = BlstCrypto::new_random().unwrap();
         let aggregates = vec![&s1, &s2, &s3];
         let signed = crypto.sign_aggregate(HandshakeNetMessage::Ping, aggregates.as_slice());
 
@@ -335,7 +338,7 @@ mod tests {
         let (s3, pk3) = new_signed(HandshakeNetMessage::Ping);
         let (s4, pk4) = new_signed(HandshakeNetMessage::Ping);
 
-        let crypto = BlstCrypto::new_random();
+        let crypto = BlstCrypto::new_random().unwrap();
         let aggregates = vec![&s1, &s2, &s3, &s2, &s3, &s4];
         let signed = crypto
             .sign_aggregate(HandshakeNetMessage::Ping, aggregates.as_slice())

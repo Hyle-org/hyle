@@ -1,4 +1,5 @@
 #![cfg(test)]
+#![allow(clippy::indexing_slicing)]
 
 //! This module is intended for "integration" testing of the consensus and other modules.
 
@@ -262,7 +263,7 @@ impl AutobahnTestCtx {
     pub fn generate_cryptos(nb: usize) -> Vec<BlstCrypto> {
         (0..nb)
             .map(|i| {
-                let crypto = crypto::BlstCrypto::new(format!("node-{i}"));
+                let crypto = crypto::BlstCrypto::new(format!("node-{i}")).unwrap();
                 info!("node {}: {}", i, crypto.validator_pubkey());
                 crypto
             })
@@ -450,7 +451,7 @@ async fn autobahn_rejoin_flow() {
         0,
     );
 
-    let crypto = crypto::BlstCrypto::new("node-3".to_owned());
+    let crypto = crypto::BlstCrypto::new("node-3".to_owned()).unwrap();
     let mut joining_node = AutobahnTestCtx::new("node-3", crypto).await;
     joining_node
         .consensus_ctx

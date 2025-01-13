@@ -105,7 +105,7 @@ impl Peer {
     }
 
     async fn handle_broadcast_message(&mut self, msg: NetMessage) -> Result<(), Error> {
-        let binary = msg.to_binary();
+        let binary = msg.to_binary()?;
         if !self.fifo_filter.check(&binary) {
             self.fifo_filter.set(binary);
             debug!("Broadcast message to #{}: {}", self.id, msg);
@@ -131,7 +131,10 @@ impl Peer {
                     self.bus.send(PeerEvent::NewPeer {
                         name: self.peer_name.clone().unwrap_or("unknown".to_string()),
                         pubkey: pubkey.clone(),
-                        da_address: self.peer_da_address.clone().unwrap(),
+                        da_address: self
+                            .peer_da_address
+                            .clone()
+                            .unwrap_or("unknown".to_string()),
                     })?;
                 }
                 self.ping_pong();
@@ -175,15 +178,14 @@ impl Peer {
         let interval = self.conf.p2p.ping_interval;
         info!("Starting ping pong");
 
-        tokio::task::Builder::new()
+        let _ = tokio::task::Builder::new()
             .name(&format!("ping-peer-{}", self.id))
             .spawn(async move {
                 loop {
                     sleep(Duration::from_secs(interval)).await;
-                    tx.send(Cmd::Ping).await.ok();
+                    let _ = tx.send(Cmd::Ping).await;
                 }
-            })
-            .ok();
+            });
     }
 
     pub async fn start(&mut self) -> Result<()> {

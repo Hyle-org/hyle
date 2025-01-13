@@ -158,6 +158,7 @@ impl NodeState {
         if identity_parts.len() != 2 {
             bail!("Transaction identity is not correctly formed. It should be in the form <id>.<contract_id_name>");
         }
+        #[allow(clippy::indexing_slicing, reason = "checked above")]
         if identity_parts[1].is_empty() {
             bail!("Transaction identity must include a contract name");
         }
@@ -243,7 +244,7 @@ impl NodeState {
             blob_tx_hash: unsettled_tx_hash.clone(),
             blob_index: blob_proof_data.hyle_output.index.clone(),
             blob_proof_output_index: blob.possible_proofs.len() - 1,
-            // Guaranteed to exist by the above
+            #[allow(clippy::indexing_slicing, reason = "Guaranteed to exist by the above")]
             contract_name: unsettled_tx.blobs[blob_proof_data.hyle_output.index.0]
                 .blob
                 .contract_name
@@ -324,7 +325,7 @@ impl NodeState {
             bail!("Tx: {} is not ready to settle.", unsettled_tx.hash);
         }
 
-        // Safe to unwrap - we must exist.
+        #[allow(clippy::unwrap_used, reason = "must exist because of above checks")]
         let unsettled_tx = self
             .unsettled_transactions
             .remove(unsettled_tx_hash)
@@ -347,9 +348,13 @@ impl NodeState {
             return (current_contracts, blob_proof_output_indices, true);
         };
         let contract_name = &current_blob.blob.contract_name;
+        #[allow(
+            clippy::unwrap_used,
+            reason = "all contract names are validated to exist above"
+        )]
         let known_contract_state = current_contracts
             .get(contract_name)
-            .unwrap_or(contracts.get(contract_name).unwrap()); // Safe to unwrap - all contract names are validated to exist above.
+            .unwrap_or(contracts.get(contract_name).unwrap());
         for (i, proof_metadata) in current_blob.possible_proofs.iter().enumerate() {
             if proof_metadata.1.initial_state == known_contract_state.state
                 && proof_metadata.0 == known_contract_state.program_id
@@ -427,7 +432,10 @@ impl NodeState {
                         .push((settled_tx.identity.clone(), staking_action));
                 }
 
-                // Everything must exist by construction
+                #[allow(
+                    clippy::indexing_slicing,
+                    reason = "Everything must exist by construction"
+                )]
                 block_under_construction.verified_blobs.push((
                     bth.clone(),
                     hyle_contract_sdk::BlobIndex(i),
@@ -440,10 +448,14 @@ impl NodeState {
 
         // Update states
         let mut next_txs_to_try_and_settle = BTreeSet::new();
+        // Have to put the clippy here because it's experimental on expressions
+        #[allow(
+            clippy::unwrap_used,
+            reason = "all contract names are validated to exist above"
+        )]
         for (contract_name, next_state) in tx_updated_contracts.iter() {
             debug!("Update {} contract state: {:?}", contract_name, next_state);
-            // Safe to unwrap - all contract names are validated to exist above.
-            self.contracts.get_mut(contract_name).unwrap().state = next_state.state.clone();
+            self.contracts.get_mut(contract_name).unwrap().state = next_state.state.clone(); // unwrap, see above ^
             if let Some(tx) = self
                 .unsettled_transactions
                 .get_next_unsettled_tx(contract_name)
@@ -516,29 +528,6 @@ impl NodeState {
         });
 
         block_under_construction.timed_out_tx_hashes = txs_at_timeout;
-    }
-
-    pub fn verify_proof_single_output(
-        &self,
-        proof: &[u8],
-        contract_name: &ContractName,
-    ) -> Result<HyleOutput, Error> {
-        // Verify proof
-        let contract = match self.contracts.get(contract_name) {
-            Some(contract) => contract,
-            None => {
-                bail!(
-                    "No contract '{}' found when checking for proof verification",
-                    contract_name
-                );
-            }
-        };
-        let program_id = &contract.program_id;
-        let verifier = &contract.verifier;
-        let hyle_output = verifiers::verify_proof(proof, verifier, program_id)?
-            .pop()
-            .unwrap();
-        Ok(hyle_output)
     }
 }
 
@@ -805,7 +794,9 @@ pub mod test {
                 .unsettled_transactions
                 .get(&blob_tx_hash)
                 .unwrap()
-                .blobs[0]
+                .blobs
+                .first()
+                .unwrap()
                 .possible_proofs
                 .len(),
             2
