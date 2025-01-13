@@ -1,5 +1,6 @@
 //! State required for participation in consensus by the node.
 
+use crate::data_availability::QueryBlockHeight;
 use crate::model::data_availability::{
     Contract, HandledBlobProofOutput, UnsettledBlobMetadata, UnsettledBlobTransaction,
 };
@@ -16,18 +17,11 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use timeouts::Timeouts;
 use tracing::{debug, error, info};
 
+mod api;
+pub mod module;
 mod ordered_tx_map;
 mod timeouts;
 pub mod verifiers;
-
-#[derive(Default, Encode, Decode, Debug, Clone)]
-pub struct NodeState {
-    timeouts: Timeouts,
-    current_height: BlockHeight,
-    // This field is public for testing purposes
-    pub contracts: HashMap<ContractName, Contract>,
-    unsettled_transactions: OrderedTxMap,
-}
 
 pub struct SettledTxOutput {
     // Original blob transaction, now settled.
@@ -36,6 +30,18 @@ pub struct SettledTxOutput {
     pub blob_proof_output_indices: Vec<usize>,
     /// New data for contracts modified by the settled TX.
     pub updated_contracts: BTreeMap<ContractName, Contract>,
+}
+
+/// NodeState manages the flattened, up-to-date state of the chain.
+/// It processes raw transactions and outputs more structured data for indexers.
+/// See also: NodeStateModule for the actual module implementation.
+#[derive(Default, Encode, Decode, Debug, Clone)]
+pub struct NodeState {
+    timeouts: Timeouts,
+    current_height: BlockHeight,
+    // This field is public for testing purposes
+    pub contracts: HashMap<ContractName, Contract>,
+    unsettled_transactions: OrderedTxMap,
 }
 
 impl NodeState {
@@ -537,7 +543,7 @@ impl NodeState {
 }
 
 #[cfg(test)]
-mod test {
+pub mod test {
     use core::panic;
 
     use super::*;

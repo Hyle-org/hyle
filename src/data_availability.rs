@@ -1,8 +1,6 @@
 //! Minimal block storage layer for data availability.
 
-mod api;
 pub mod codec;
-pub mod node_state;
 
 mod blocks_fjall;
 mod blocks_memory;
@@ -14,7 +12,7 @@ use blocks_fjall::Blocks;
 use codec::{DataAvailabilityServerCodec, DataAvailabilityServerRequest};
 
 use crate::{
-    bus::{command_response::Query, BusClientSender, BusMessage},
+    bus::{BusClientSender, BusMessage},
     consensus::{
         CommittedConsensusProposal, ConsensusCommand, ConsensusEvent, ConsensusProposalHash,
     },
@@ -22,11 +20,9 @@ use crate::{
     indexer::da_listener::RawDAListener,
     mempool::{MempoolCommand, MempoolEvent},
     model::{
-        data_availability::Contract,
         get_current_timestamp,
         mempool::{Cut, DataProposal},
-        Block, BlockHeight, ContractName, Hashable, SharedRunContext, SignedBlock,
-        ValidatorPublicKey,
+        BlockHeight, Hashable, SharedRunContext, SignedBlock, ValidatorPublicKey,
     },
     module_handle_messages,
     p2p::network::{OutboundMessage, PeerEvent},
@@ -43,7 +39,6 @@ use futures::{
     stream::{SplitSink, SplitStream},
     SinkExt, StreamExt,
 };
-use node_state::NodeState;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::collections::{BTreeSet, VecDeque};
@@ -56,7 +51,7 @@ use tracing::{debug, error, info, trace, warn};
 
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, Eq, PartialEq)]
 pub enum DataEvent {
-    NewBlock(Box<Block>),
+    OrderedSignedBlock(SignedBlock),
 }
 
 impl BusMessage for DataEvent {}
@@ -71,8 +66,6 @@ struct DABusClient {
     sender(DataEvent),
     sender(ConsensusCommand),
     sender(MempoolCommand),
-    receiver(Query<ContractName, Contract>),
-    receiver(Query<QueryBlockHeight , BlockHeight>),
     receiver(ConsensusEvent),
     receiver(MempoolEvent),
     receiver(GenesisEvent),
@@ -108,8 +101,6 @@ pub struct DataAvailability {
 
     need_catchup: bool,
     catchup_task: Option<tokio::task::JoinHandle<()>>,
-
-    node_state: NodeState,
 }
 
 impl Module for DataAvailability {
@@ -117,21 +108,6 @@ impl Module for DataAvailability {
 
     async fn build(ctx: Self::Context) -> Result<Self> {
         let bus = DABusClient::new_from_bus(ctx.common.bus.new_handle()).await;
-
-        let api = api::api(&ctx.common).await;
-        if let Ok(mut guard) = ctx.common.router.lock() {
-            if let Some(router) = guard.take() {
-                guard.replace(router.nest("/v1/", api));
-            }
-        }
-
-        let node_state = Self::load_from_disk_or_default::<NodeState>(
-            ctx.common
-                .config
-                .data_directory
-                .join("da_node_state.bin")
-                .as_path(),
-        );
 
         Ok(DataAvailability {
             config: ctx.common.config.clone(),
@@ -146,7 +122,6 @@ impl Module for DataAvailability {
             pending_cps: VecDeque::new(),
             pending_data_proposals: vec![],
             stream_peer_metadata: HashMap::new(),
-            node_state,
             need_catchup: false,
             catchup_task: None,
         })
@@ -175,12 +150,6 @@ impl DataAvailability {
 
         module_handle_messages! {
             on_bus self.bus,
-            command_response<QueryBlockHeight, BlockHeight> _ => {
-                Ok(self.blocks.last().map(|block| block.height()).unwrap_or(BlockHeight(0)))
-            }
-            command_response<ContractName, Contract> cmd => {
-                self.node_state.contracts.get(cmd).cloned().context("Contract not found")
-            }
             listen<ConsensusEvent> ConsensusEvent::CommitConsensusProposal( consensus_proposal )  => {
                 _ = self.handle_commit_consensus_proposal(consensus_proposal)
                     .await.log_error("Handling Committed Consensus Proposal");
@@ -281,15 +250,6 @@ impl DataAvailability {
                 }
             }
         }
-
-        let _ = Self::save_on_disk::<NodeState>(
-            self.config
-                .data_directory
-                .join("da_node_state.bin")
-                .as_path(),
-            &self.node_state,
-        )
-        .log_error("Saving node state");
 
         Ok(())
     }
@@ -436,14 +396,6 @@ impl DataAvailability {
             block.txs().iter().map(|tx| tx.hash().0).collect::<Vec<_>>()
         );
 
-        // Send the block
-
-        let node_state_block = self.node_state.handle_signed_block(&block);
-        _ = self
-            .bus
-            .send(DataEvent::NewBlock(Box::new(node_state_block)))
-            .log_error("Sending DataEvent while processing SignedBlock");
-
         // Stream block to all peers
         // TODO: use retain once async closures are supported ?
         let mut to_remove = Vec::new();
@@ -471,6 +423,12 @@ impl DataAvailability {
         for peer_id in to_remove {
             self.stream_peer_metadata.remove(&peer_id);
         }
+
+        // Send the block to NodeState for processing
+        _ = self
+            .bus
+            .send(DataEvent::OrderedSignedBlock(block))
+            .log_error("Sending OrderedSignedBlock");
     }
 
     async fn start_streaming_to_peer(
@@ -582,6 +540,8 @@ pub mod tests {
         consensus::{CommittedConsensusProposal, ConsensusEvent, ConsensusProposal},
         mempool::{MempoolCommand, MempoolEvent},
         model::{BlockHeight, Hashable, SignedBlock},
+        node_state::module::{NodeStateBusClient, NodeStateEvent},
+        node_state::NodeState,
         utils::{conf::Conf, crypto::AggregateSignature},
     };
     use futures::{SinkExt, StreamExt};
@@ -595,7 +555,9 @@ pub mod tests {
 
     /// For use in integration tests
     pub struct DataAvailabilityTestCtx {
+        pub node_state_bus: NodeStateBusClient,
         pub da: super::DataAvailability,
+        pub node_state: NodeState,
     }
 
     impl DataAvailabilityTestCtx {
@@ -603,7 +565,8 @@ pub mod tests {
             let tmpdir = tempfile::tempdir().unwrap().into_path();
             let blocks = Blocks::new(&tmpdir).unwrap();
 
-            let bus = super::DABusClient::new_from_bus(shared_bus).await;
+            let bus = super::DABusClient::new_from_bus(shared_bus.new_handle()).await;
+            let node_state_bus = NodeStateBusClient::new_from_bus(shared_bus).await;
 
             let mut config: Conf = Conf::new(None, None, None).unwrap();
             config.da_address = format!("127.0.0.1:{}", find_available_port().await);
@@ -615,16 +578,25 @@ pub mod tests {
                 pending_cps: VecDeque::new(),
                 buffered_signed_blocks: Default::default(),
                 stream_peer_metadata: Default::default(),
-                node_state: Default::default(),
                 need_catchup: false,
                 catchup_task: None,
             };
 
-            DataAvailabilityTestCtx { da }
+            let node_state = NodeState::default();
+
+            DataAvailabilityTestCtx {
+                node_state_bus,
+                da,
+                node_state,
+            }
         }
 
         pub async fn handle_signed_block(&mut self, block: SignedBlock) {
-            self.da.handle_signed_block(block).await;
+            self.da.handle_signed_block(block.clone()).await;
+            let full_block = self.node_state.handle_signed_block(&block);
+            self.node_state_bus
+                .send(NodeStateEvent::NewBlock(Box::new(full_block)))
+                .unwrap();
         }
     }
 
@@ -665,7 +637,6 @@ pub mod tests {
             pending_cps: VecDeque::new(),
             buffered_signed_blocks: Default::default(),
             stream_peer_metadata: Default::default(),
-            node_state: Default::default(),
             need_catchup: false,
             catchup_task: None,
         };
@@ -712,7 +683,6 @@ pub mod tests {
             pending_cps: VecDeque::new(),
             buffered_signed_blocks: Default::default(),
             stream_peer_metadata: Default::default(),
-            node_state: Default::default(),
             need_catchup: false,
             catchup_task: None,
         };

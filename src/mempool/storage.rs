@@ -7,7 +7,7 @@ use std::{collections::HashMap, fmt::Display, sync::Arc, vec};
 use tracing::{debug, error, warn};
 
 use crate::{
-    data_availability::node_state::verifiers::{verify_proof, verify_recursive_proof},
+    node_state::verifiers::{verify_proof, verify_recursive_proof},
     model::{
         mempool::{DataProposal, DataProposalHash, PoDA},
         BlobProofOutput, Hashable, Transaction, TransactionData, ValidatorPublicKey,
