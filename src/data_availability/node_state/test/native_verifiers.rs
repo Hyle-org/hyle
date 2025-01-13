@@ -43,7 +43,7 @@ async fn impl_test_native_verifier() -> Result<()> {
     let crypto = BlstCrypto::new_random();
 
     let identity: Identity = "bob.blst".into();
-    let data = vec![];
+    let data = vec![1, 2, 3, 4, 5, 6];
 
     let signature = crypto.sign([data.clone(), identity.0.as_bytes().to_vec()].concat())?;
 
