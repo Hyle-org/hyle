@@ -3,17 +3,15 @@ use std::fmt::Display;
 use anyhow::{Context, Result};
 use reqwest::{Response, Url};
 
+use crate::model::{
+    consensus::ConsensusInfo,
+    data_availability::Contract,
+    indexer::{ContractDb, TransactionDb},
+    rest::NodeInfo,
+    BlobTransaction, BlockHeight, ContractName, ProofTransaction, RegisterContractTransaction,
+};
 #[cfg(feature = "node")]
 use crate::tools::mock_workflow::RunScenario;
-use crate::{
-    model::consensus::ConsensusInfo,
-    model::data_availability::Contract,
-    model::indexer::ContractDb,
-    model::rest::NodeInfo,
-    model::{
-        BlobTransaction, BlockHeight, ContractName, ProofTransaction, RegisterContractTransaction,
-    },
-};
 use hyle_contract_sdk::{StateDigest, TxHash};
 use staking::state::Staking;
 
@@ -211,5 +209,17 @@ impl IndexerApiHttpClient {
             .json::<NodeInfo>()
             .await
             .context("reading node info response")
+    }
+
+    pub async fn get_transaction_by_hash(&self, tx_hash: &TxHash) -> Result<TransactionDb> {
+        self.reqwest_client
+            .get(format!("{}v1/indexer/transaction/hash/{tx_hash}", self.url))
+            .header("Content-Type", "application/json")
+            .send()
+            .await
+            .context("getting transaction by hash")?
+            .json::<TransactionDb>()
+            .await
+            .context("reading transaction response")
     }
 }

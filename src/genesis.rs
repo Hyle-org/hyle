@@ -24,7 +24,7 @@ use crate::{
 use anyhow::{bail, Error, Result};
 use client_sdk::transaction_builder::{BuildResult, StateUpdater, TransactionBuilder};
 use hydentity::Hydentity;
-use hyle_contract_sdk::{identity_provider::IdentityVerification, Identity};
+use hyle_contract_sdk::{identity_provider::IdentityVerification, Identity, StateDigest};
 use hyle_contract_sdk::{ContractName, Digestable, ProgramId};
 use hyllar::HyllarToken;
 use serde::{Deserialize, Serialize};
@@ -381,6 +381,8 @@ impl Genesis {
         };
 
         let mut map = BTreeMap::default();
+        map.insert("blst".into(), ProgramId("blst".as_bytes().to_vec()));
+        map.insert("sha3_256".into(), ProgramId("sha3_256".as_bytes().to_vec()));
         map.insert("hyllar".into(), ProgramId(hyllar_program_id.clone()));
         map.insert("hydentity".into(), ProgramId(hydentity_program_id.clone()));
         map.insert("staking".into(), ProgramId(staking_program_id.clone()));
@@ -392,6 +394,24 @@ impl Genesis {
         (
             map,
             vec![
+                Transaction::wrap(TransactionData::RegisterContract(
+                    RegisterContractTransaction {
+                        owner: "hyle".into(),
+                        verifier: "native".into(),
+                        program_id: ProgramId("blst".as_bytes().to_vec()),
+                        state_digest: StateDigest(vec![]),
+                        contract_name: "blst".into(),
+                    },
+                )),
+                Transaction::wrap(TransactionData::RegisterContract(
+                    RegisterContractTransaction {
+                        owner: "hyle".into(),
+                        verifier: "native".into(),
+                        program_id: ProgramId("sha3_256".as_bytes().to_vec()),
+                        state_digest: StateDigest(vec![]),
+                        contract_name: "sha3_256".into(),
+                    },
+                )),
                 Transaction::wrap(TransactionData::RegisterContract(
                     RegisterContractTransaction {
                         owner: "hyle".into(),
