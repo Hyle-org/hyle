@@ -236,9 +236,7 @@ pub fn native_verifier(proof_bin: &[u8], program_id: &ProgramId) -> Result<Vec<H
         index,
         blobs,
     } = proof;
-    let blob = blobs
-        .get(index.0)
-        .ok_or(anyhow::anyhow!("Invalid blob index"))?;
+    let blob = blobs.get(index.0).context("Invalid blob index")?;
     let blobs = hyle_contract_sdk::flatten_blobs(&blobs);
 
     let (identity, success) = match program.as_str() {

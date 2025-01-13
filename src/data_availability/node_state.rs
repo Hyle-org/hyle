@@ -540,6 +540,8 @@ impl NodeState {
 mod test {
     use core::panic;
 
+    mod native_verifiers;
+
     use super::*;
     use crate::model::*;
     use assertables::assert_err;
