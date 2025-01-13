@@ -4,7 +4,7 @@ use std::io::Read;
 use anyhow::{bail, Context, Error};
 use rand::Rng;
 use risc0_recursion::{Risc0Journal, Risc0ProgramId};
-use risc0_zkvm::sha::Digest;
+use sha3::Digest;
 use sp1_sdk::{ProverClient, SP1ProofWithPublicValues, SP1VerifyingKey};
 
 use hyle_contract_sdk::{HyleOutput, Identity, ProgramId, StateDigest, Verifier};
@@ -105,7 +105,8 @@ pub fn risc0_proof_verifier(
     let receipt = borsh::from_slice::<risc0_zkvm::Receipt>(encoded_receipt)
         .context("Error while decoding Risc0 proof's receipt")?;
 
-    let image_bytes: Digest = image_id.try_into().context("Invalid Risc0 image ID")?;
+    let image_bytes: risc0_zkvm::sha::Digest =
+        image_id.try_into().context("Invalid Risc0 image ID")?;
 
     receipt
         .verify(image_bytes)
@@ -238,6 +239,13 @@ struct BlstSignatureBlob {
     pub public_key: Vec<u8>,
 }
 
+#[derive(Debug, bincode::Encode, bincode::Decode)]
+struct ShaBlob {
+    pub identity: Identity,
+    pub data: Vec<u8>,
+    pub sha: Vec<u8>,
+}
+
 pub fn native_verifier(proof_bin: &[u8], program_id: &ProgramId) -> Result<Vec<HyleOutput>, Error> {
     let program = String::from_utf8(program_id.0.clone())?;
     let (proof, _) =
@@ -261,6 +269,7 @@ pub fn native_verifier(proof_bin: &[u8], program_id: &ProgramId) -> Result<Vec<H
             )?;
 
             let msg = vec![blob.data, blob.identity.0.as_bytes().to_vec()].concat();
+            // TODO: refacto BlstCrypto to avoid using ValidatorPublicKey here
             let msg = Signed {
                 msg,
                 signature: ValidatorSignature {
@@ -269,6 +278,20 @@ pub fn native_verifier(proof_bin: &[u8], program_id: &ProgramId) -> Result<Vec<H
                 },
             };
             let success = BlstCrypto::verify(&msg)?;
+
+            (blob.identity, success)
+        }
+        "sha3_256" => {
+            let (blob, _) = bincode::decode_from_slice::<ShaBlob, _>(
+                &blob.data.0,
+                bincode::config::standard(),
+            )?;
+
+            let mut hasher = sha3::Sha3_256::new();
+            hasher.update(blob.data);
+            let res = hasher.finalize().to_vec();
+
+            let success = res == blob.sha;
 
             (blob.identity, success)
         }
