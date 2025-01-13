@@ -2,7 +2,9 @@ use std::fmt::{self, Display};
 
 use crate::{
     bus::BusMessage,
-    model::{Hashable, SharedRunContext, Transaction},
+    model::{
+        Hashable, ProofTransaction, RegisterContractTransaction, SharedRunContext, Transaction,
+    },
     module_handle_messages,
     p2p::stream::read_stream,
     utils::{
@@ -13,6 +15,7 @@ use crate::{
 
 use anyhow::{bail, Context, Result};
 use bincode::{Decode, Encode};
+use client_sdk::BlobTransaction;
 use serde::{Deserialize, Serialize};
 use strum_macros::IntoStaticStr;
 use tokio::{io::AsyncWriteExt, net::TcpListener};
@@ -57,6 +60,27 @@ impl Display for TcpServerNetMessage {
 impl From<Transaction> for TcpServerNetMessage {
     fn from(msg: Transaction) -> Self {
         TcpServerNetMessage::NewTx(msg)
+    }
+}
+
+impl From<BlobTransaction> for TcpServerNetMessage {
+    fn from(msg: BlobTransaction) -> Self {
+        let tx: Transaction = msg.into();
+        tx.into()
+    }
+}
+
+impl From<ProofTransaction> for TcpServerNetMessage {
+    fn from(msg: ProofTransaction) -> Self {
+        let tx: Transaction = msg.into();
+        tx.into()
+    }
+}
+
+impl From<RegisterContractTransaction> for TcpServerNetMessage {
+    fn from(msg: RegisterContractTransaction) -> Self {
+        let tx: Transaction = msg.into();
+        tx.into()
     }
 }
 
@@ -293,13 +317,6 @@ mod tests {
             assert!(result.is_ok(), "{}", result.unwrap_err().to_string());
         });
 
-        let tx = Transaction::wrap(TransactionData::RegisterContract(
-            RegisterContractTransaction::default(),
-        ));
-
-        let net_msg = TcpServerNetMessage::NewTx(tx.clone());
-        let encoded_msg = encode_to_vec(&net_msg, bincode::config::standard())?;
-
         // wait until it's up
         assert_server_up(&addr, 500).await?;
 
@@ -307,7 +324,11 @@ mod tests {
         let stream = TcpStream::connect(addr).await?;
         let mut framed = FramedWrite::new(stream, LengthDelimitedCodec::new());
 
-        framed.send(encoded_msg.into()).await?;
+        let tx = Transaction::wrap(TransactionData::RegisterContract(
+            RegisterContractTransaction::default(),
+        ));
+        let net_msg = TcpServerNetMessage::NewTx(tx.clone());
+        framed.send(net_msg.to_binary().into()).await?;
 
         assert_new_tx(tcp_message_receiver, tx, 500).await?;
 

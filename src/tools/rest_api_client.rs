@@ -9,17 +9,12 @@ use tokio::net::TcpStream;
 #[cfg(feature = "node")]
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
 
+use crate::model::{
+    consensus::ConsensusInfo, data_availability::Contract, indexer::ContractDb, rest::NodeInfo,
+    BlobTransaction, BlockHeight, ContractName, ProofTransaction, RegisterContractTransaction,
+};
 #[cfg(feature = "node")]
 use crate::tools::mock_workflow::RunScenario;
-use crate::{
-    model::consensus::ConsensusInfo,
-    model::data_availability::Contract,
-    model::indexer::ContractDb,
-    model::rest::NodeInfo,
-    model::{
-        BlobTransaction, BlockHeight, ContractName, ProofTransaction, RegisterContractTransaction,
-    },
-};
 use hyle_contract_sdk::{StateDigest, TxHash};
 use staking::state::Staking;
 
@@ -32,6 +27,7 @@ pub struct NodeApiHttpClient {
 pub struct NodeTcpClient {
     pub framed: Framed<TcpStream, LengthDelimitedCodec>,
 }
+
 pub struct IndexerApiHttpClient {
     pub url: Url,
     pub reqwest_client: reqwest::Client,
