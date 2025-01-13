@@ -1,33 +1,33 @@
 //! State required for participation in consensus by the node.
 
+use crate::bus::{command_response::Query, BusClientSender, BusMessage};
+use crate::data_availability::{DataEvent, QueryBlockHeight};
 use crate::model::data_availability::{
     Contract, HandledBlobProofOutput, UnsettledBlobMetadata, UnsettledBlobTransaction,
 };
 use crate::model::{
-    BlobProofOutput, BlobTransaction, BlobsHash, Block, BlockHeight, ContractName, Hashable,
-    RegisterContractTransaction, SignedBlock, TransactionData,
+    BlobProofOutput, BlobTransaction, BlobsHash, Block, BlockHeight, CommonRunContext,
+    ContractName, Hashable, RegisterContractTransaction, SignedBlock, TransactionData,
 };
-use anyhow::{bail, Error, Result};
+use crate::module_handle_messages;
+use crate::utils::conf::SharedConf;
+use crate::utils::logger::LogMe;
+use crate::utils::modules::{module_bus_client, Module};
+use anyhow::{bail, Context, Error, Result};
 use bincode::{Decode, Encode};
 use hyle_contract_sdk::{utils::parse_structured_blob, BlobIndex, HyleOutput, TxHash};
 use ordered_tx_map::OrderedTxMap;
+use serde::{Deserialize, Serialize};
 use staking::StakingAction;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::sync::Arc;
 use timeouts::Timeouts;
 use tracing::{debug, error, info};
 
+mod api;
 mod ordered_tx_map;
 mod timeouts;
 pub mod verifiers;
-
-#[derive(Default, Encode, Decode, Debug, Clone)]
-pub struct NodeState {
-    timeouts: Timeouts,
-    current_height: BlockHeight,
-    // This field is public for testing purposes
-    pub contracts: HashMap<ContractName, Contract>,
-    unsettled_transactions: OrderedTxMap,
-}
 
 pub struct SettledTxOutput {
     // Original blob transaction, now settled.
@@ -38,7 +38,94 @@ pub struct SettledTxOutput {
     pub updated_contracts: BTreeMap<ContractName, Contract>,
 }
 
-impl NodeState {
+#[derive(Default, Encode, Decode, Debug, Clone)]
+pub struct NodeStateStorage {
+    timeouts: Timeouts,
+    current_height: BlockHeight,
+    // This field is public for testing purposes
+    pub contracts: HashMap<ContractName, Contract>,
+    unsettled_transactions: OrderedTxMap,
+}
+
+pub struct NodeState {
+    config: SharedConf,
+    bus: NodeStateBusClient,
+    storage: NodeStateStorage,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode)]
+pub enum NodeStateEvent {
+    NewBlock(Box<Block>),
+}
+impl BusMessage for NodeStateEvent {}
+
+module_bus_client! {
+#[derive(Debug)]
+pub struct NodeStateBusClient {
+    sender(NodeStateEvent),
+    receiver(DataEvent),
+    receiver(Query<ContractName, Contract>),
+    receiver(Query<QueryBlockHeight , BlockHeight>),
+}
+}
+
+impl Module for NodeState {
+    type Context = Arc<CommonRunContext>;
+
+    async fn build(ctx: Self::Context) -> Result<Self> {
+        let bus = NodeStateBusClient::new_from_bus(ctx.bus.new_handle()).await;
+
+        let api = api::api(&ctx).await;
+        if let Ok(mut guard) = ctx.router.lock() {
+            if let Some(router) = guard.take() {
+                guard.replace(router.nest("/v1/", api));
+            }
+        }
+
+        let storage = Self::load_from_disk_or_default::<NodeStateStorage>(
+            ctx.config.data_directory.join("node_state.bin").as_path(),
+        );
+
+        Ok(Self {
+            config: ctx.config.clone(),
+            bus,
+            storage,
+        })
+    }
+
+    async fn run(&mut self) -> Result<()> {
+        module_handle_messages! {
+            on_bus self.bus,
+            command_response<QueryBlockHeight, BlockHeight> _ => {
+                Ok(self.storage.current_height)
+            }
+            command_response<ContractName, Contract> cmd => {
+                self.storage.contracts.get(cmd).cloned().context("Contract not found")
+            }
+            listen<DataEvent> block => {
+                match block {
+                    DataEvent::OrderedSignedBlock(block) => {
+                        let node_state_block = self.storage.handle_signed_block(&block);
+                        _ = self
+                            .bus
+                            .send(NodeStateEvent::NewBlock(Box::new(node_state_block)))
+                            .log_error("Sending DataEvent while processing SignedBlock");
+                    }
+                }
+            }
+        }
+
+        let _ = Self::save_on_disk::<NodeStateStorage>(
+            self.config.data_directory.join("node_state.bin").as_path(),
+            &self.storage,
+        )
+        .log_error("Saving node state");
+
+        Ok(())
+    }
+}
+
+impl NodeStateStorage {
     pub fn handle_signed_block(&mut self, signed_block: &SignedBlock) -> Block {
         self.current_height = signed_block.height();
 
@@ -537,7 +624,7 @@ impl NodeState {
 }
 
 #[cfg(test)]
-mod test {
+pub mod test {
     use core::panic;
 
     use super::*;
@@ -548,8 +635,8 @@ mod test {
     use hyle_contract_sdk::{flatten_blobs, BlobIndex, Identity, ProgramId, StateDigest};
     use mempool::DataProposal;
 
-    async fn new_node_state() -> NodeState {
-        NodeState::default()
+    async fn new_node_state() -> NodeStateStorage {
+        NodeStateStorage::default()
     }
 
     fn new_blob(contract: &str) -> Blob {
@@ -645,7 +732,7 @@ mod test {
 
     // Small wrapper for the general case until we get a larger refactoring?
     fn handle_verify_proof_transaction(
-        state: &mut NodeState,
+        state: &mut NodeStateStorage,
         proof: &VerifiedProofTransaction,
     ) -> Result<(), Error> {
         let mut bhpo = vec![];
