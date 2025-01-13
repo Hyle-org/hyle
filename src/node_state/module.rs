@@ -24,6 +24,10 @@ pub struct SettledTxOutput {
     pub updated_contracts: BTreeMap<ContractName, Contract>,
 }
 
+/// NodeStateModule maintains a NodeState,
+/// listens to DA, and sends events when it has processed blocks.
+/// Node state module is separate from DataAvailabiliity
+/// mostly to run asynchronously.
 pub struct NodeStateModule {
     config: SharedConf,
     bus: NodeStateBusClient,
