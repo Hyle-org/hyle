@@ -13,6 +13,7 @@ use hyle::{
     p2p::P2P,
     rest::{RestApi, RestApiRunContext},
     single_node_consensus::SingleNodeConsensus,
+    tcp_server::TcpServer,
     tools::mock_workflow::MockWorkflowHandler,
     utils::{
         conf,
@@ -95,6 +96,7 @@ async fn main() -> Result<()> {
     std::fs::create_dir_all(&config.data_directory).context("creating data directory")?;
 
     let run_indexer = config.run_indexer;
+    let run_tcp_server = config.run_tcp_server;
 
     let ctx = SharedRunContext {
         common: CommonRunContext {
@@ -152,6 +154,10 @@ async fn main() -> Result<()> {
             router: router.clone(),
         })
         .await?;
+
+    if run_tcp_server {
+        handler.build_module::<TcpServer>(ctx.clone()).await?;
+    }
 
     #[cfg(unix)]
     {
