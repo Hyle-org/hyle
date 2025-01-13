@@ -2,12 +2,12 @@
 
 use crate::model::get_current_timestamp_ms;
 use crate::module_handle_messages;
+use crate::node_state::module::NodeStateEvent;
 use crate::utils::crypto::{AggregateSignature, Signed, SignedByValidator, ValidatorSignature};
 use crate::utils::modules::module_bus_client;
 use crate::{bus::BusClientSender, utils::logger::LogMe};
 use crate::{
     bus::{command_response::Query, BusMessage},
-    data_availability::DataEvent,
     genesis::GenesisEvent,
     handle_messages,
     mempool::QueryNewCut,
@@ -89,7 +89,7 @@ struct ConsensusBusClient {
     sender(Query<QueryNewCut, Cut>),
     receiver(ConsensusCommand),
     receiver(GenesisEvent),
-    receiver(DataEvent),
+    receiver(NodeStateEvent),
     receiver(SignedByValidator<ConsensusNetMessage>),
     receiver(Query<QueryConsensusInfo, ConsensusInfo>),
     receiver(Query<QueryConsensusStakingState, Staking>),
@@ -682,9 +682,9 @@ impl Consensus {
         Ok(())
     }
 
-    async fn handle_data_event(&mut self, msg: DataEvent) -> Result<()> {
+    async fn handle_node_state_event(&mut self, msg: NodeStateEvent) -> Result<()> {
         match msg {
-            DataEvent::NewBlock(block) => {
+            NodeStateEvent::NewBlock(block) => {
                 let block_total_tx = block.total_txs();
                 for action in block.staking_actions {
                     match action {
@@ -852,8 +852,8 @@ impl Consensus {
 
         module_handle_messages! {
             on_bus self.bus,
-            listen<DataEvent> cmd => {
-                match self.handle_data_event(cmd).await {
+            listen<NodeStateEvent> event => {
+                match self.handle_node_state_event(event).await {
                     Ok(_) => (),
                     Err(e) => warn!("Error while handling data event: {:#}", e),
                 }
@@ -1156,14 +1156,14 @@ pub mod test {
             err
         }
 
-        pub(crate) async fn handle_data_event(&mut self, msg: DataEvent) -> Result<()> {
-            self.consensus.handle_data_event(msg).await
+        pub(crate) async fn handle_node_state_event(&mut self, msg: NodeStateEvent) -> Result<()> {
+            self.consensus.handle_node_state_event(msg).await
         }
 
         async fn add_staker(&mut self, staker: &Self, amount: u128, err: &str) {
             info!("➕ {} Add staker: {:?}", self.name, staker.name);
             self.consensus
-                .handle_data_event(DataEvent::NewBlock(Box::new(Block {
+                .handle_node_state_event(NodeStateEvent::NewBlock(Box::new(Block {
                     staking_actions: vec![
                         (staker.name.clone().into(), StakingAction::Stake { amount }),
                         (
@@ -1182,7 +1182,7 @@ pub mod test {
         async fn add_bonded_staker(&mut self, staker: &Self, amount: u128, err: &str) {
             self.add_staker(staker, amount, err).await;
             self.consensus
-                .handle_data_event(DataEvent::NewBlock(Box::new(Block {
+                .handle_node_state_event(NodeStateEvent::NewBlock(Box::new(Block {
                     new_bounded_validators: vec![staker.pubkey()],
                     ..Default::default()
                 })))
@@ -1192,7 +1192,7 @@ pub mod test {
 
         async fn with_stake(&mut self, amount: u128, err: &str) {
             self.consensus
-                .handle_data_event(DataEvent::NewBlock(Box::new(Block {
+                .handle_node_state_event(NodeStateEvent::NewBlock(Box::new(Block {
                     staking_actions: vec![
                         (self.name.clone().into(), StakingAction::Stake { amount }),
                         (

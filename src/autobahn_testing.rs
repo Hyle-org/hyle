@@ -202,13 +202,13 @@ use crate::bus::metrics::BusMetrics;
 use crate::bus::{bus_client, SharedMessageBus};
 use crate::consensus::test::ConsensusTestCtx;
 use crate::consensus::{ConsensusEvent, ConsensusProposal};
-use crate::data_availability::DataEvent;
 use crate::handle_messages;
 use crate::mempool::test::{make_register_contract_tx, MempoolTestCtx};
 use crate::mempool::{InternalMempoolEvent, MempoolEvent, MempoolNetMessage, QueryNewCut};
 use crate::model::mempool::{Cut, DataProposalHash};
 use crate::model::SignedBlock;
 use crate::model::{consensus::ConsensusNetMessage, ContractName, Hashable};
+use crate::node_state::module::NodeStateEvent;
 use crate::p2p::network::OutboundMessage;
 use crate::p2p::P2PCommand;
 use crate::utils::crypto::{self, AggregateSignature, BlstCrypto};
@@ -483,17 +483,17 @@ async fn autobahn_rejoin_flow() {
         });
     }
 
-    let mut data_event_receiver = get_receiver::<DataEvent>(&joining_node.shared_bus).await;
+    let mut ns_event_receiver = get_receiver::<NodeStateEvent>(&joining_node.shared_bus).await;
 
     // Catchup up to the last block, but don't actually process the last block message yet.
     for block in blocks.get(0..blocks.len() - 1).unwrap() {
         da.handle_signed_block(block.clone()).await;
     }
-    while let Ok(event) = data_event_receiver.try_recv() {
+    while let Ok(event) = ns_event_receiver.try_recv() {
         info!("{:?}", event);
         joining_node
             .consensus_ctx
-            .handle_data_event(event)
+            .handle_node_state_event(event)
             .await
             .expect("should handle data event");
     }
@@ -515,11 +515,11 @@ async fn autobahn_rejoin_flow() {
 
     // Now process block 2
     da.handle_signed_block(blocks.get(2).unwrap().clone()).await;
-    while let Ok(event) = data_event_receiver.try_recv() {
+    while let Ok(event) = ns_event_receiver.try_recv() {
         info!("{:?}", event);
         joining_node
             .consensus_ctx
-            .handle_data_event(event)
+            .handle_node_state_event(event)
             .await
             .expect("should handle data event");
     }
@@ -551,11 +551,11 @@ async fn autobahn_rejoin_flow() {
         };
         da.handle_signed_block(block.clone()).await;
         blocks.push(block);
-        while let Ok(event) = data_event_receiver.try_recv() {
+        while let Ok(event) = ns_event_receiver.try_recv() {
             info!("{:?}", event);
             joining_node
                 .consensus_ctx
-                .handle_data_event(event)
+                .handle_node_state_event(event)
                 .await
                 .expect("should handle data event");
         }
