@@ -2693,6 +2693,7 @@ name = "hyle-loadtest"
 version = "0.6.0"
 dependencies = [
  "anyhow",
+ "bincode 2.0.0-rc.3",
  "clap",
  "client-sdk",
  "hydentity",
@@ -2700,7 +2701,6 @@ dependencies = [
  "hyle-contract-sdk",
  "hyle-contracts",
  "hyllar",
- "serde_json",
  "tokio",
  "tracing",
  "tracing-subscriber 0.3.19",
