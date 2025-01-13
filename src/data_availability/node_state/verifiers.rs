@@ -276,7 +276,11 @@ pub fn native_verifier(proof_bin: &[u8], program_id: &ProgramId) -> Result<Vec<H
         _ => bail!("Native verifier not implemented for program {}", program),
     };
 
-    tracing::info!("✅ Native proof verified.");
+    if success {
+        tracing::info!("✅ Native proof verified.");
+    } else {
+        tracing::info!("❌ Native proof verification failed.");
+    }
 
     let output = HyleOutput {
         version: 1,

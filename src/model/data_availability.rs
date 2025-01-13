@@ -87,3 +87,26 @@ pub struct ShaBlob {
     pub data: Vec<u8>,
     pub sha: Vec<u8>,
 }
+
+impl ShaBlob {
+    pub fn as_blob(&self, contract_name: ContractName) -> Blob {
+        <Self as ContractAction>::as_blob(self, contract_name, None, None)
+    }
+}
+
+impl ContractAction for ShaBlob {
+    fn as_blob(
+        &self,
+        contract_name: ContractName,
+        _caller: Option<BlobIndex>,
+        _callees: Option<Vec<BlobIndex>>,
+    ) -> Blob {
+        Blob {
+            contract_name,
+            data: BlobData(
+                bincode::encode_to_vec(self, bincode::config::standard())
+                    .expect("failed to encode program inputs"),
+            ),
+        }
+    }
+}
