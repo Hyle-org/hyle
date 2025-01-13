@@ -7,7 +7,9 @@ use risc0_recursion::{Risc0Journal, Risc0ProgramId};
 use risc0_zkvm::sha::Digest;
 use sp1_sdk::{ProverClient, SP1ProofWithPublicValues, SP1VerifyingKey};
 
-use hyle_contract_sdk::{HyleOutput, ProgramId, Verifier};
+use hyle_contract_sdk::{HyleOutput, Identity, ProgramId, StateDigest, Verifier};
+
+use crate::utils::crypto::{BlstCrypto, Signed, ValidatorSignature};
 
 pub fn verify_proof(
     proof: &[u8],
@@ -45,6 +47,7 @@ pub fn verify_proof(
         }
         "noir" => noir_proof_verifier(proof, &program_id.0),
         "sp1" => sp1_proof_verifier(proof, &program_id.0),
+        "native" => native_verifier(proof, &program_id),
         _ => bail!("{} recursive verifier not implemented yet", verifier),
     }?;
     hyle_outputs.iter().for_each(|hyle_output| {
@@ -217,6 +220,73 @@ pub fn sp1_proof_verifier(
     tracing::info!("✅ SP1 proof verified.",);
 
     Ok(vec![hyle_output])
+}
+
+#[derive(Debug, bincode::Encode, bincode::Decode)]
+struct NativeProof {
+    tx_hash: hyle_contract_sdk::TxHash,
+    index: hyle_contract_sdk::BlobIndex,
+    blobs: Vec<hyle_contract_sdk::Blob>,
+}
+
+#[derive(Debug, bincode::Encode, bincode::Decode)]
+struct BlstSignatureBlob {
+    pub identity: Identity,
+    pub data: Vec<u8>,
+    /// Signature for contatenated data + identity.as_bytes()
+    pub signature: Vec<u8>,
+    pub public_key: Vec<u8>,
+}
+
+pub fn native_verifier(proof_bin: &[u8], program_id: &ProgramId) -> Result<Vec<HyleOutput>, Error> {
+    let program = String::from_utf8(program_id.0.clone())?;
+    let (proof, _) =
+        bincode::decode_from_slice::<NativeProof, _>(proof_bin, bincode::config::standard())?;
+
+    let NativeProof {
+        tx_hash,
+        index,
+        blobs,
+    } = proof;
+    let blob = blobs
+        .get(index.0)
+        .ok_or(anyhow::anyhow!("Invalid blob index"))?;
+    let blobs = hyle_contract_sdk::flatten_blobs(&blobs);
+
+    let (identity, success) = match program.as_str() {
+        "blst" => {
+            let (blob, _) = bincode::decode_from_slice::<BlstSignatureBlob, _>(
+                &blob.data.0,
+                bincode::config::standard(),
+            )?;
+
+            let msg = vec![blob.data, blob.identity.0.as_bytes().to_vec()].concat();
+            let msg = Signed {
+                msg,
+                signature: ValidatorSignature {
+                    signature: crate::utils::crypto::Signature(blob.signature),
+                    validator: staking::model::ValidatorPublicKey(blob.public_key),
+                },
+            };
+            let success = BlstCrypto::verify(&msg)?;
+
+            (blob.identity, success)
+        }
+        _ => bail!("Native verifier not implemented for program {}", program),
+    };
+
+    let output = HyleOutput {
+        version: 1,
+        initial_state: StateDigest::default(),
+        next_state: StateDigest::default(),
+        identity,
+        tx_hash,
+        index,
+        blobs,
+        success,
+        program_outputs: vec![],
+    };
+    Ok(vec![output])
 }
 
 #[cfg(test)]
