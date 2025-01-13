@@ -89,13 +89,15 @@ impl RestApi {
     pub async fn serve(&mut self) -> Result<()> {
         info!("rest listening on {}", self.rest_addr);
 
+        let app = self.app.take().context("app is not set")?;
+
         module_handle_messages! {
             on_bus self.bus,
             _ = axum::serve(
                 tokio::net::TcpListener::bind(&self.rest_addr)
                     .await
                     .context("Starting rest server")?,
-                self.app.take().expect("app is not set")
+                app.clone()
             ) => { }
         }
 
