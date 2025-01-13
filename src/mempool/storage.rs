@@ -764,8 +764,8 @@ mod tests {
             version: 1,
             initial_state: StateDigest(vec![0, 1, 2, 3]),
             next_state: StateDigest(vec![4, 5, 6]),
-            identity: Identity("test".to_string()),
-            tx_hash: TxHash("".to_owned()),
+            identity: Identity::new("test"),
+            tx_hash: TxHash::new(""),
             index: BlobIndex(0),
             blobs: vec![],
             success: true,
@@ -832,9 +832,9 @@ mod tests {
         Transaction {
             version: 1,
             transaction_data: TransactionData::Blob(BlobTransaction {
-                identity: Identity("id.c1".to_string()),
+                identity: Identity::new("id.c1"),
                 blobs: vec![Blob {
-                    contract_name: ContractName("c1".to_string()),
+                    contract_name: ContractName::new("c1"),
                     data: BlobData(inner_tx.as_bytes().to_vec()),
                 }],
             }),
@@ -878,7 +878,7 @@ mod tests {
 
     #[test_log::test]
     fn test_data_proposal_hash_with_verified_proof() {
-        let contract_name = ContractName("test".to_string());
+        let contract_name = ContractName::new("test");
 
         let proof_tx_with_proof = make_verified_proof_tx(contract_name.clone());
         let proof_tx_without_proof = make_empty_verified_proof_tx(contract_name.clone());
@@ -1444,7 +1444,7 @@ mod tests {
         let mut store1 = Storage::new(pubkey1.clone());
         let known_contracts = Arc::new(RwLock::new(KnownContracts::default()));
 
-        let contract_name = ContractName("test".to_string());
+        let contract_name = ContractName::new("test");
         let register_tx = make_register_contract_tx(contract_name.clone());
 
         let proof_tx = make_unverified_proof_tx(contract_name.clone());
@@ -1477,7 +1477,7 @@ mod tests {
         let mut store1 = Storage::new(pubkey1.clone());
         let known_contracts = Arc::new(RwLock::new(KnownContracts::default()));
 
-        let contract_name = ContractName("test".to_string());
+        let contract_name = ContractName::new("test");
         let register_tx = make_register_contract_tx(contract_name.clone());
 
         let proof_tx = make_verified_proof_tx(contract_name);
@@ -1523,7 +1523,7 @@ mod tests {
         let mut store1 = Storage::new(pubkey1.clone());
         let known_contracts = Arc::new(RwLock::new(KnownContracts::default()));
 
-        let contract_name = ContractName("test".to_string());
+        let contract_name = ContractName::new("test");
         let register_tx = make_register_contract_tx(contract_name.clone());
 
         let proof_tx = make_verified_proof_tx(contract_name.clone());
@@ -1570,7 +1570,7 @@ mod tests {
         let mut store1 = Storage::new(pubkey1.clone());
         let known_contracts = Arc::new(RwLock::new(KnownContracts::default()));
 
-        let contract_name = ContractName("test".to_string());
+        let contract_name = ContractName::new("test");
         let register_tx = make_register_contract_tx(contract_name.clone());
         let proof_tx = make_verified_proof_tx(contract_name.clone());
 
@@ -1609,7 +1609,7 @@ mod tests {
         let mut store1 = Storage::new(pubkey2.clone());
         let known_contracts = Arc::new(RwLock::new(KnownContracts::default()));
 
-        let contract_name = ContractName("test".to_string());
+        let contract_name = ContractName::new("test");
         let register_tx = make_register_contract_tx(contract_name.clone());
         let proof_tx = make_verified_proof_tx(contract_name);
 

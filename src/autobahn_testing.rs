@@ -321,8 +321,8 @@ fn create_poda(
 async fn autobahn_basic_flow() {
     let (mut node1, mut node2, mut node3, mut node4) = build_nodes!(4).await;
 
-    let register_tx = make_register_contract_tx(ContractName("test1".to_owned()));
-    let register_tx_2 = make_register_contract_tx(ContractName("test2".to_owned()));
+    let register_tx = make_register_contract_tx(ContractName::new("test1"));
+    let register_tx_2 = make_register_contract_tx(ContractName::new("test2"));
 
     node1.mempool_ctx.submit_tx(&register_tx);
     node1.mempool_ctx.submit_tx(&register_tx_2);

@@ -102,7 +102,7 @@ mod tests {
 
     fn new_tx(hash: &str, contract: &str) -> UnsettledBlobTransaction {
         UnsettledBlobTransaction {
-            identity: Identity("toto".to_string()),
+            identity: Identity::new("toto"),
             hash: TxHash::new(hash),
             blobs_hash: BlobsHash::new("blobs_hash"),
             blobs: vec![UnsettledBlobMetadata {
@@ -163,7 +163,7 @@ mod tests {
 
         assert_eq!(map.map.len(), 1);
         assert_eq!(map.tx_order.len(), 1);
-        assert_eq!(map.tx_order[&ContractName("c1".to_string())].len(), 1);
+        assert_eq!(map.tx_order[&ContractName::new("c1")].len(), 1);
     }
 
     #[test]
@@ -191,7 +191,7 @@ mod tests {
         let tx1 = TxHash::new("tx1");
         let tx2 = TxHash::new("tx2");
         let tx3 = TxHash::new("tx3");
-        let c1 = ContractName("c1".to_string());
+        let c1 = ContractName::new("c1");
 
         map.add(new_tx("tx1", "c1"));
         map.add(new_tx("tx2", "c1"));

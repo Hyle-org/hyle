@@ -1208,7 +1208,7 @@ pub mod test {
         let mut ctx = MempoolTestCtx::new("mempool").await;
 
         // Sending transaction to mempool as RestApiMessage
-        let register_tx = make_register_contract_tx(ContractName("test1".to_owned()));
+        let register_tx = make_register_contract_tx(ContractName::new("test1"));
 
         ctx.submit_tx(&register_tx);
 
@@ -1245,7 +1245,7 @@ pub mod test {
             .push(temp_crypto.validator_pubkey().clone());
 
         // Sending transaction to mempool as RestApiMessage
-        let register_tx = make_register_contract_tx(ContractName("test1".to_owned()));
+        let register_tx = make_register_contract_tx(ContractName::new("test1"));
 
         ctx.mempool
             .handle_api_message(RestApiMessage::NewTx(register_tx.clone()))
@@ -1289,7 +1289,7 @@ pub mod test {
         let data_proposal = DataProposal {
             id: 0,
             parent_data_proposal_hash: None,
-            txs: vec![make_register_contract_tx(ContractName("test1".to_owned()))],
+            txs: vec![make_register_contract_tx(ContractName::new("test1"))],
         };
 
         let signed_msg = ctx
@@ -1324,14 +1324,14 @@ pub mod test {
         let mut ctx = MempoolTestCtx::new("mempool").await;
 
         // Sending transaction to mempool as RestApiMessage
-        let register_tx = make_register_contract_tx(ContractName("test1".to_owned()));
+        let register_tx = make_register_contract_tx(ContractName::new("test1"));
 
         ctx.submit_tx(&register_tx);
 
         let data_proposal = DataProposal {
             id: 0,
             parent_data_proposal_hash: None,
-            txs: vec![make_register_contract_tx(ContractName("test1".to_owned()))],
+            txs: vec![make_register_contract_tx(ContractName::new("test1"))],
         };
 
         let temp_crypto = BlstCrypto::new("temp_crypto".into()).unwrap();
@@ -1352,14 +1352,14 @@ pub mod test {
         let mut ctx = MempoolTestCtx::new("mempool").await;
 
         // Sending transaction to mempool as RestApiMessage
-        let register_tx = make_register_contract_tx(ContractName("test1".to_owned()));
+        let register_tx = make_register_contract_tx(ContractName::new("test1"));
 
         ctx.submit_tx(&register_tx);
 
         let data_proposal = DataProposal {
             id: 0,
             parent_data_proposal_hash: None,
-            txs: vec![make_register_contract_tx(ContractName("test1".to_owned()))],
+            txs: vec![make_register_contract_tx(ContractName::new("test1"))],
         };
         let data_proposal_hash = data_proposal.hash();
 
@@ -1398,7 +1398,7 @@ pub mod test {
         let mut ctx = MempoolTestCtx::new("mempool").await;
 
         // Sending transaction to mempool as RestApiMessage
-        let register_tx = make_register_contract_tx(ContractName("test1".to_owned()));
+        let register_tx = make_register_contract_tx(ContractName::new("test1"));
 
         ctx.submit_tx(&register_tx);
 
@@ -1423,7 +1423,7 @@ pub mod test {
         let mut ctx = MempoolTestCtx::new("mempool").await;
 
         // Sending transaction to mempool as RestApiMessage
-        let register_tx = make_register_contract_tx(ContractName("test1".to_owned()));
+        let register_tx = make_register_contract_tx(ContractName::new("test1"));
 
         ctx.submit_tx(&register_tx);
 
@@ -1473,7 +1473,7 @@ pub mod test {
         let mut ctx = MempoolTestCtx::new("mempool").await;
 
         // Sending transaction to mempool as RestApiMessage
-        let register_tx = make_register_contract_tx(ContractName("test1".to_owned()));
+        let register_tx = make_register_contract_tx(ContractName::new("test1"));
 
         ctx.submit_tx(&register_tx);
 
@@ -1585,7 +1585,7 @@ pub mod test {
         let mut ctx = MempoolTestCtx::new("mempool").await;
 
         // Sending transaction to mempool as RestApiMessage
-        let register_tx = make_register_contract_tx(ContractName("test1".to_owned()));
+        let register_tx = make_register_contract_tx(ContractName::new("test1"));
 
         ctx.mempool
             .handle_api_message(RestApiMessage::NewTx(register_tx.clone()))
@@ -1643,7 +1643,7 @@ pub mod test {
         let mut ctx = MempoolTestCtx::new("mempool").await;
 
         // Sending transaction to mempool as RestApiMessage
-        let register_tx = make_register_contract_tx(ContractName("test1".to_owned()));
+        let register_tx = make_register_contract_tx(ContractName::new("test1"));
 
         ctx.mempool
             .handle_api_message(RestApiMessage::NewTx(register_tx.clone()))
@@ -1651,13 +1651,13 @@ pub mod test {
 
         ctx.mempool.handle_data_proposal_management()?;
 
-        let register_tx = make_register_contract_tx(ContractName("test2".to_owned()));
+        let register_tx = make_register_contract_tx(ContractName::new("test2"));
 
         ctx.mempool
             .handle_api_message(RestApiMessage::NewTx(register_tx.clone()))
             .expect("fail to handle new transaction");
 
-        let register_tx = make_register_contract_tx(ContractName("test3".to_owned()));
+        let register_tx = make_register_contract_tx(ContractName::new("test3"));
         ctx.mempool
             .handle_api_message(RestApiMessage::NewTx(register_tx.clone()))
             .expect("fail to handle new transaction");
