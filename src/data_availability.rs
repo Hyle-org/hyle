@@ -10,17 +10,15 @@ use blocks_fjall::Blocks;
 //use blocks_memory::Blocks;
 
 use codec::{DataAvailabilityServerCodec, DataAvailabilityServerRequest};
+use utils::get_current_timestamp;
 
 use crate::{
     bus::{BusClientSender, BusMessage},
-    consensus::{CommittedConsensusProposal, ConsensusCommand, ConsensusEvent},
+    consensus::{ConsensusCommand, ConsensusEvent},
     genesis::GenesisEvent,
     indexer::da_listener::RawDAListener,
-    mempool::{MempoolCommand, MempoolEvent},
-    model::{
-        utils::get_current_timestamp, BlockHeight, ConsensusProposalHash, Cut, DataProposal,
-        Hashable, SharedRunContext, SignedBlock, ValidatorPublicKey,
-    },
+    mempool::MempoolEvent,
+    model::*,
     module_handle_messages,
     p2p::network::{OutboundMessage, PeerEvent},
     utils::{
@@ -37,8 +35,8 @@ use futures::{
     SinkExt, StreamExt,
 };
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeSet;
 use std::collections::HashMap;
-use std::collections::{BTreeSet, VecDeque};
 use tokio::{
     net::{TcpListener, TcpStream},
     task::{JoinHandle, JoinSet},
@@ -62,7 +60,6 @@ struct DABusClient {
     sender(OutboundMessage),
     sender(DataEvent),
     sender(ConsensusCommand),
-    sender(MempoolCommand),
     receiver(ConsensusEvent),
     receiver(MempoolEvent),
     receiver(GenesisEvent),
@@ -81,8 +78,6 @@ struct BlockStreamPeer {
     keepalive_abort: JoinHandle<()>,
 }
 
-type PendingDataProposals = Vec<(ValidatorPublicKey, Vec<DataProposal>)>;
-
 #[derive(Debug)]
 pub struct DataAvailability {
     config: SharedConf,
@@ -90,8 +85,6 @@ pub struct DataAvailability {
     pub blocks: Blocks,
 
     buffered_signed_blocks: BTreeSet<SignedBlock>,
-    pending_cps: VecDeque<CommittedConsensusProposal>,
-    pending_data_proposals: Vec<(Cut, PendingDataProposals)>,
 
     // Peers subscribed to block streaming
     stream_peer_metadata: HashMap<String, BlockStreamPeer>,
@@ -116,8 +109,6 @@ impl Module for DataAvailability {
                     .join("data_availability.db"),
             )?,
             buffered_signed_blocks: BTreeSet::new(),
-            pending_cps: VecDeque::new(),
-            pending_data_proposals: vec![],
             stream_peer_metadata: HashMap::new(),
             need_catchup: false,
             catchup_task: None,
@@ -139,7 +130,8 @@ impl DataAvailability {
 
         let mut pending_stream_requests = JoinSet::new();
 
-        let (catchup_block_sender, mut catchup_block_receiver) = tokio::sync::mpsc::channel(100);
+        let (catchup_block_sender, mut catchup_block_receiver) =
+            tokio::sync::mpsc::channel::<SignedBlock>(100);
 
         // TODO: this is a soft cap on the number of peers we can stream to.
         let (ping_sender, mut ping_receiver) = tokio::sync::mpsc::channel(100);
@@ -147,15 +139,6 @@ impl DataAvailability {
 
         module_handle_messages! {
             on_bus self.bus,
-            listen<ConsensusEvent> ConsensusEvent::CommitConsensusProposal( consensus_proposal )  => {
-                _ = self.handle_commit_consensus_proposal(consensus_proposal)
-                    .await.log_error("Handling Committed Consensus Proposal");
-                if let Some(handle) = self.catchup_task.take() {
-                    info!("🏁 Stopped streaming blocks.");
-                    handle.abort();
-                    self.need_catchup = false;
-                }
-            }
             listen<MempoolEvent> evt => {
                 _ = self.handle_mempool_event(evt).await.log_error("Handling Mempool Event");
             }
@@ -180,8 +163,8 @@ impl DataAvailability {
                     }
                 }
             }
-            Some(block) = catchup_block_receiver.recv() => {
-                self.handle_signed_block(block).await;
+            Some(streamed_block) = catchup_block_receiver.recv() => {
+                self.handle_signed_block(streamed_block).await;
             }
 
             // Handle new TCP connections to stream data to peers
@@ -253,68 +236,19 @@ impl DataAvailability {
 
     async fn handle_mempool_event(&mut self, evt: MempoolEvent) -> Result<()> {
         match evt {
-            MempoolEvent::DataProposals(cut, data_proposals) => {
-                self.pending_data_proposals.push((cut, data_proposals));
-
-                while let Some(oldest_cut_to_process) = self.pending_cps.pop_front() {
-                    if let Some(dps) = self
-                        .pending_data_proposals
-                        .iter()
-                        .position(|(cut, _)| cut == &oldest_cut_to_process.consensus_proposal.cut)
-                    {
-                        let (_, dps) = self.pending_data_proposals.remove(dps);
-
-                        self.handle_commit_block_event(dps, oldest_cut_to_process)
-                            .await;
-                    } else {
-                        self.pending_cps.push_front(oldest_cut_to_process);
-                        break;
-                    }
+            MempoolEvent::BuiltSignedBlock(signed_block) => {
+                self.handle_signed_block(signed_block).await;
+            }
+            MempoolEvent::StartedBuildingBlocks(height) => {
+                if let Some(handle) = self.catchup_task.take() {
+                    info!("🏁 Stopped streaming blocks until height {}.", height);
+                    handle.abort();
+                    self.need_catchup = false;
                 }
             }
         }
 
         Ok(())
-    }
-
-    async fn handle_commit_consensus_proposal(
-        &mut self,
-        commit_consensus_proposal: CommittedConsensusProposal,
-    ) -> Result<()> {
-        debug!(
-            "Handling Committed Consensus Proposal {:?}",
-            &commit_consensus_proposal
-        );
-
-        // FIXME: Make sure the block we get is the previous one wrt the committedConsensusProposal
-        let to = commit_consensus_proposal.consensus_proposal.cut.clone();
-        let from = self.blocks.last().map(|b| b.consensus_proposal.cut);
-
-        self.pending_cps.push_back(commit_consensus_proposal);
-        self.bus
-            .send(MempoolCommand::FetchDataProposals { from, to })
-            .context("Handling commit consensus proposal")?;
-
-        Ok(())
-    }
-
-    async fn handle_commit_block_event(
-        &mut self,
-        data_proposals: Vec<(ValidatorPublicKey, Vec<DataProposal>)>,
-        CommittedConsensusProposal {
-            validators: _,
-            certificate,
-            consensus_proposal,
-        }: CommittedConsensusProposal,
-    ) {
-        trace!("🔒  Cut committed");
-        let signed_block = SignedBlock {
-            data_proposals,
-            certificate,
-            consensus_proposal,
-        };
-
-        self.handle_signed_block(signed_block).await;
     }
 
     async fn handle_signed_block(&mut self, block: SignedBlock) {
@@ -512,13 +446,13 @@ impl DataAvailability {
                         warn!("Error while streaming data from peer: {:#}", e);
                         break;
                     }
-                    Some(Ok(block)) => {
+                    Some(Ok(streamed_block)) => {
                         info!(
                             "📦 Received block (height {}) from stream",
-                            block.consensus_proposal.slot
+                            streamed_block.consensus_proposal.slot
                         );
                         // TODO: we should wait if the stream is full.
-                        if let Err(e) = sender.send(block).await {
+                        if let Err(e) = sender.send(streamed_block).await {
                             tracing::error!("Error while sending block over channel: {:#}", e);
                             break;
                         }
@@ -534,13 +468,11 @@ impl DataAvailability {
 pub mod tests {
     #![allow(clippy::indexing_slicing)]
 
-    use std::collections::VecDeque;
-
     use crate::model::ValidatorPublicKey;
     use crate::{
         bus::BusClientSender,
-        consensus::{CommittedConsensusProposal, ConsensusEvent},
-        mempool::{MempoolCommand, MempoolEvent},
+        consensus::CommittedConsensusProposal,
+        mempool::MempoolEvent,
         model::*,
         node_state::{
             module::{NodeStateBusClient, NodeStateEvent},
@@ -577,8 +509,6 @@ pub mod tests {
                 config: config.into(),
                 bus,
                 blocks,
-                pending_data_proposals: vec![],
-                pending_cps: VecDeque::new(),
                 buffered_signed_blocks: Default::default(),
                 stream_peer_metadata: Default::default(),
                 need_catchup: false,
@@ -629,8 +559,6 @@ pub mod tests {
             config: Default::default(),
             bus,
             blocks,
-            pending_data_proposals: vec![],
-            pending_cps: VecDeque::new(),
             buffered_signed_blocks: Default::default(),
             stream_peer_metadata: Default::default(),
             need_catchup: false,
@@ -652,9 +580,7 @@ pub mod tests {
     module_bus_client! {
     #[derive(Debug)]
     struct TestBusClient {
-        sender(ConsensusEvent),
         sender(MempoolEvent),
-        receiver(MempoolCommand),
     }
     }
 
@@ -675,8 +601,6 @@ pub mod tests {
             config: config.clone().into(),
             bus,
             blocks,
-            pending_data_proposals: vec![],
-            pending_cps: VecDeque::new(),
             buffered_signed_blocks: Default::default(),
             stream_peer_metadata: Default::default(),
             need_catchup: false,
@@ -741,13 +665,11 @@ pub mod tests {
             ccp.consensus_proposal.parent_hash = ccp.consensus_proposal.hash();
             ccp.consensus_proposal.slot = i;
             block_sender
-                .send(ConsensusEvent::CommitConsensusProposal(ccp.clone()))
-                .unwrap();
-            block_sender
-                .send(MempoolEvent::DataProposals(
-                    ccp.clone().consensus_proposal.cut,
-                    vec![(ValidatorPublicKey("".into()), vec![])],
-                ))
+                .send(MempoolEvent::BuiltSignedBlock(SignedBlock {
+                    data_proposals: vec![(ValidatorPublicKey("".into()), vec![])],
+                    certificate: ccp.certificate.clone(),
+                    consensus_proposal: ccp.consensus_proposal.clone(),
+                }))
                 .unwrap();
         }
 
@@ -823,9 +745,11 @@ pub mod tests {
             .expect("Error while asking for catchup blocks");
 
         let mut received_blocks = vec![];
-        while let Some(block) = rx.recv().await {
-            da_receiver.handle_signed_block(block.clone()).await;
-            received_blocks.push(block);
+        while let Some(streamed_block) = rx.recv().await {
+            da_receiver
+                .handle_signed_block(streamed_block.clone())
+                .await;
+            received_blocks.push(streamed_block);
             if received_blocks.len() == 10 {
                 break;
             }
@@ -845,20 +769,20 @@ pub mod tests {
             ccp.consensus_proposal.parent_hash = ccp.consensus_proposal.hash();
             ccp.consensus_proposal.slot = i;
             block_sender
-                .send(ConsensusEvent::CommitConsensusProposal(ccp.clone()))
-                .unwrap();
-            block_sender
-                .send(MempoolEvent::DataProposals(
-                    ccp.clone().consensus_proposal.cut,
-                    vec![(ValidatorPublicKey("".into()), vec![])],
-                ))
+                .send(MempoolEvent::BuiltSignedBlock(SignedBlock {
+                    data_proposals: vec![(ValidatorPublicKey("".into()), vec![])],
+                    certificate: ccp.certificate.clone(),
+                    consensus_proposal: ccp.consensus_proposal.clone(),
+                }))
                 .unwrap();
         }
 
         // We should still be subscribed
-        while let Some(block) = rx.recv().await {
-            da_receiver.handle_signed_block(block.clone()).await;
-            received_blocks.push(block);
+        while let Some(streamed_block) = rx.recv().await {
+            da_receiver
+                .handle_signed_block(streamed_block.clone())
+                .await;
+            received_blocks.push(streamed_block);
             if received_blocks.len() == 15 {
                 break;
             }
@@ -881,13 +805,11 @@ pub mod tests {
             ccp.consensus_proposal.parent_hash = ccp.consensus_proposal.hash();
             ccp.consensus_proposal.slot = i;
             block_sender
-                .send(ConsensusEvent::CommitConsensusProposal(ccp.clone()))
-                .unwrap();
-            block_sender
-                .send(MempoolEvent::DataProposals(
-                    ccp.clone().consensus_proposal.cut,
-                    vec![(ValidatorPublicKey("".into()), vec![])],
-                ))
+                .send(MempoolEvent::BuiltSignedBlock(SignedBlock {
+                    data_proposals: vec![(ValidatorPublicKey("".into()), vec![])],
+                    certificate: ccp.certificate.clone(),
+                    consensus_proposal: ccp.consensus_proposal.clone(),
+                }))
                 .unwrap();
         }
 

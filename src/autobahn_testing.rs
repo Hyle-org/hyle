@@ -169,6 +169,18 @@ macro_rules! simple_commit_round {
     }};
 }
 
+macro_rules! assert_chanmsg_matches {
+    ($chan: expr, $pat:pat => $block:block) => {{
+        let var = $chan.try_recv().unwrap();
+        if let $pat = var {
+            $block
+        } else {
+            panic!("Var {:?} should match {}", var, stringify!($pat));
+        }
+    }};
+}
+
+pub(crate) use assert_chanmsg_matches;
 pub(crate) use broadcast;
 pub(crate) use build_tuple;
 use futures::future::join_all;
