@@ -3,10 +3,6 @@
 use crate::{
     bus::{command_response::Query, BusClientSender, BusMessage},
     consensus::{CommittedConsensusProposal, ConsensusEvent},
-    node_state::{
-        verifiers::{verify_proof, verify_recursive_proof},
-        NodeStateEvent,
-    },
     genesis::GenesisEvent,
     mempool::storage::Storage,
     model::{
@@ -14,6 +10,10 @@ use crate::{
         ValidatorPublicKey, VerifiedProofTransaction,
     },
     module_handle_messages,
+    node_state::{
+        module::NodeStateEvent,
+        verifiers::{verify_proof, verify_recursive_proof},
+    },
     p2p::network::OutboundMessage,
     utils::{
         conf::SharedConf,

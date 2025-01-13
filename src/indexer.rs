@@ -12,7 +12,7 @@ use crate::{
         TransactionData,
     },
     module_handle_messages,
-    node_state::NodeStateEvent,
+    node_state::module::NodeStateEvent,
     utils::modules::{module_bus_client, Module},
 };
 use anyhow::{bail, Context, Error, Result};
@@ -553,7 +553,7 @@ mod test {
             Blob, BlobData, BlobProofOutput, ProofData, RegisterContractTransaction, SignedBlock,
             Transaction, TransactionData, VerifiedProofTransaction,
         },
-        node_state::NodeStateStorage,
+        node_state::NodeState,
     };
 
     use super::*;
@@ -729,7 +729,7 @@ mod test {
             proof_tx_4,
         ];
 
-        let mut node_state = NodeStateStorage::default();
+        let mut node_state = NodeState::default();
 
         let mut signed_block = SignedBlock::default();
         signed_block.data_proposals.push((

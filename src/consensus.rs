@@ -2,7 +2,7 @@
 
 use crate::model::get_current_timestamp_ms;
 use crate::module_handle_messages;
-use crate::node_state::NodeStateEvent;
+use crate::node_state::module::NodeStateEvent;
 use crate::utils::crypto::{AggregateSignature, Signed, SignedByValidator, ValidatorSignature};
 use crate::utils::modules::module_bus_client;
 use crate::{bus::BusClientSender, utils::logger::LogMe};

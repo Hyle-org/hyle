@@ -10,7 +10,7 @@ use hyle::{
     indexer::Indexer,
     mempool::Mempool,
     model::{rest::NodeInfo, CommonRunContext, NodeRunContext, SharedRunContext},
-    node_state::NodeState,
+    node_state::module::NodeStateModule,
     p2p::P2P,
     rest::{RestApi, RestApiRunContext},
     single_node_consensus::SingleNodeConsensus,
@@ -129,7 +129,7 @@ async fn main() -> Result<()> {
         .build_module::<DataAvailability>(ctx.clone())
         .await?;
     handler
-        .build_module::<NodeState>(ctx.common.clone())
+        .build_module::<NodeStateModule>(ctx.common.clone())
         .await?;
 
     handler.build_module::<P2P>(ctx.clone()).await?;

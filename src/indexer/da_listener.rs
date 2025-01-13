@@ -11,12 +11,10 @@ use tracing::{debug, info, warn};
 
 use crate::{
     bus::BusClientSender,
-    data_availability::{
-        codec::{DataAvailabilityClientCodec, DataAvailabilityServerRequest},
-        DataEvent,
-    },
+    data_availability::codec::{DataAvailabilityClientCodec, DataAvailabilityServerRequest},
     model::{BlockHeight, CommonRunContext, SignedBlock},
     module_handle_messages,
+    node_state::{module::NodeStateEvent, NodeState},
     utils::{
         logger::LogMe,
         modules::{module_bus_client, Module},
@@ -26,14 +24,14 @@ use crate::{
 module_bus_client! {
 #[derive(Debug)]
 struct DAListenerBusClient {
-    sender(DataEvent),
+    sender(NodeStateEvent),
 }
 }
 
 /// Module that listens to the data availability stream and sends the blocks to the bus
-/// These will then get picked up by NodeState and sent to indexers
 pub struct DAListener {
     bus: DAListenerBusClient,
+    node_state: NodeState,
     listener: RawDAListener,
 }
 
@@ -66,7 +64,19 @@ impl Module for DAListener {
         let listener = RawDAListener::new(&ctx.common.config.da_address, ctx.start_block).await?;
         let bus = DAListenerBusClient::new_from_bus(ctx.common.bus.new_handle()).await;
 
-        Ok(DAListener { listener, bus })
+        let node_state = Self::load_from_disk_or_default::<NodeState>(
+            ctx.common
+                .config
+                .data_directory
+                .join("da_listener_node_state.bin")
+                .as_path(),
+        );
+
+        Ok(DAListener {
+            listener,
+            bus,
+            node_state,
+        })
     }
 
     fn run(&mut self) -> impl futures::Future<Output = Result<()>> + Send {
@@ -92,7 +102,8 @@ impl DAListener {
     }
 
     async fn processing_next_frame(&mut self, block: SignedBlock) -> Result<()> {
-        self.bus.send(DataEvent::OrderedSignedBlock(block))?;
+        let block = self.node_state.handle_signed_block(&block);
+        self.bus.send(NodeStateEvent::NewBlock(Box::new(block)))?;
 
         self.listener.ping().await?;
 
