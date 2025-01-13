@@ -2,7 +2,9 @@ use std::fmt::{self, Display};
 
 use crate::{
     bus::BusMessage,
-    model::{Hashable, SharedRunContext, Transaction},
+    model::{
+        Hashable, ProofTransaction, RegisterContractTransaction, SharedRunContext, Transaction,
+    },
     module_handle_messages,
     p2p::stream::read_stream,
     utils::{
@@ -13,6 +15,7 @@ use crate::{
 
 use anyhow::{bail, Context, Result};
 use bincode::{Decode, Encode};
+use client_sdk::BlobTransaction;
 use serde::{Deserialize, Serialize};
 use strum_macros::IntoStaticStr;
 use tokio::{io::AsyncWriteExt, net::TcpListener};
@@ -57,6 +60,27 @@ impl Display for TcpServerNetMessage {
 impl From<Transaction> for TcpServerNetMessage {
     fn from(msg: Transaction) -> Self {
         TcpServerNetMessage::NewTx(msg)
+    }
+}
+
+impl From<BlobTransaction> for TcpServerNetMessage {
+    fn from(msg: BlobTransaction) -> Self {
+        let tx: Transaction = msg.into();
+        tx.into()
+    }
+}
+
+impl From<ProofTransaction> for TcpServerNetMessage {
+    fn from(msg: ProofTransaction) -> Self {
+        let tx: Transaction = msg.into();
+        tx.into()
+    }
+}
+
+impl From<RegisterContractTransaction> for TcpServerNetMessage {
+    fn from(msg: RegisterContractTransaction) -> Self {
+        let tx: Transaction = msg.into();
+        tx.into()
     }
 }
 

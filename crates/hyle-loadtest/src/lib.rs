@@ -1,10 +1,7 @@
 use anyhow::{bail, Result};
 use client_sdk::transaction_builder::{StateUpdater, TransactionBuilder};
-use client_sdk::ProofData;
 use hydentity::Hydentity;
-use hyle::model::{
-    BlobTransaction, ProofTransaction, RegisterContractTransaction, Transaction, TransactionData,
-};
+use hyle::model::{BlobTransaction, ProofTransaction, RegisterContractTransaction};
 use hyle::rest::client::{NodeApiHttpClient, NodeTcpClient};
 use hyle::tcp_server::TcpServerNetMessage;
 use hyle_contract_sdk::erc20::ERC20;
@@ -117,9 +114,7 @@ pub async fn generate_blobs_txs(users: u32, states: States) -> Result<()> {
                 let identity = transaction.identity.clone();
                 let blobs = transaction.blobs.clone();
 
-                let msg = TcpServerNetMessage::NewTx(Transaction::wrap(TransactionData::Blob(
-                    BlobTransaction { identity, blobs },
-                )));
+                let msg: TcpServerNetMessage = BlobTransaction { identity, blobs }.into();
                 local_blob_txs.push(msg.to_binary());
             }
 
@@ -171,13 +166,11 @@ pub async fn generate_proof_txs(users: u32, states: States) -> Result<()> {
                 transaction.build(&mut states)?;
 
                 for (proof, contract_name) in transaction.iter_prove() {
-                    let proof: ProofData = proof.await.unwrap();
-                    let msg = TcpServerNetMessage::NewTx(Transaction::wrap(
-                        TransactionData::Proof(ProofTransaction {
-                            contract_name,
-                            proof,
-                        }),
-                    ));
+                    let msg: TcpServerNetMessage = ProofTransaction {
+                        contract_name,
+                        proof: proof.await.unwrap(),
+                    }
+                    .into();
                     local_proof_txs.push(msg.to_binary());
                 }
             }
