@@ -11,7 +11,6 @@ use hyle::{
         Indexer,
     },
     model::{rest::NodeInfo, BlockHeight, CommonRunContext},
-    node_state::NodeState,
     rest::{RestApi, RestApiRunContext},
     utils::{
         conf,
@@ -115,7 +114,6 @@ async fn main() -> Result<()> {
             start_block: last_block.map(|b| b + 1).unwrap_or(BlockHeight(0)),
         })
         .await?;
-    handler.build_module::<NodeState>(ctx.clone()).await?;
 
     // Should come last so the other modules have nested their own routes.
     let router = ctx

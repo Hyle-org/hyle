@@ -8,12 +8,12 @@ use tracing::{debug, error, info};
 
 use crate::{
     bus::BusMessage,
-    node_state::NodeStateEvent,
     model::{
         Blob, BlobTransaction, Block, CommonRunContext, Hashable, RegisterContractTransaction,
         Transaction, TransactionData,
     },
     module_handle_messages,
+    node_state::module::NodeStateEvent,
     utils::{conf::Conf, modules::Module},
 };
 
@@ -239,8 +239,8 @@ mod tests {
 
     use super::*;
     use crate::bus::metrics::BusMetrics;
-    use crate::node_state::NodeStateStorage;
     use crate::model::SignedBlock;
+    use crate::node_state::NodeState;
     use crate::utils::conf::Conf;
     use crate::{bus::SharedMessageBus, model::CommonRunContext};
     use std::sync::Arc;
@@ -368,7 +368,7 @@ mod tests {
         let mut indexer = build_indexer(contract_name.clone()).await;
         register_contract(&mut indexer).await;
 
-        let mut node_state = NodeStateStorage::default();
+        let mut node_state = NodeState::default();
         let block = node_state.handle_signed_block(&SignedBlock::default());
 
         let event = NodeStateEvent::NewBlock(Box::new(block));

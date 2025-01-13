@@ -540,7 +540,8 @@ pub mod tests {
         consensus::{CommittedConsensusProposal, ConsensusEvent, ConsensusProposal},
         mempool::{MempoolCommand, MempoolEvent},
         model::{BlockHeight, Hashable, SignedBlock},
-        node_state::{NodeStateBusClient, NodeStateEvent, NodeStateStorage},
+        node_state::module::{NodeStateBusClient, NodeStateEvent},
+        node_state::NodeState,
         utils::{conf::Conf, crypto::AggregateSignature},
     };
     use futures::{SinkExt, StreamExt};
@@ -556,7 +557,7 @@ pub mod tests {
     pub struct DataAvailabilityTestCtx {
         pub node_state_bus: NodeStateBusClient,
         pub da: super::DataAvailability,
-        pub node_state: NodeStateStorage,
+        pub node_state: NodeState,
     }
 
     impl DataAvailabilityTestCtx {
@@ -581,7 +582,7 @@ pub mod tests {
                 catchup_task: None,
             };
 
-            let node_state = NodeStateStorage::default();
+            let node_state = NodeState::default();
 
             DataAvailabilityTestCtx {
                 node_state_bus,
