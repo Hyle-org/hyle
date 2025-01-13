@@ -13,7 +13,6 @@ use crate::{
     bus::BusClientSender,
     data_availability::{
         codec::{DataAvailabilityClientCodec, DataAvailabilityServerRequest},
-        node_state::NodeState,
         DataEvent,
     },
     model::{BlockHeight, CommonRunContext, SignedBlock},
@@ -32,9 +31,9 @@ struct DAListenerBusClient {
 }
 
 /// Module that listens to the data availability stream and sends the blocks to the bus
+/// These will then get picked up by NodeState and sent to indexers
 pub struct DAListener {
     bus: DAListenerBusClient,
-    node_state: NodeState,
     listener: RawDAListener,
 }
 
@@ -67,19 +66,7 @@ impl Module for DAListener {
         let listener = RawDAListener::new(&ctx.common.config.da_address, ctx.start_block).await?;
         let bus = DAListenerBusClient::new_from_bus(ctx.common.bus.new_handle()).await;
 
-        let node_state = Self::load_from_disk_or_default::<NodeState>(
-            ctx.common
-                .config
-                .data_directory
-                .join("da_listener_node_state.bin")
-                .as_path(),
-        );
-
-        Ok(DAListener {
-            listener,
-            bus,
-            node_state,
-        })
+        Ok(DAListener { listener, bus })
     }
 
     fn run(&mut self) -> impl futures::Future<Output = Result<()>> + Send {
@@ -105,8 +92,7 @@ impl DAListener {
     }
 
     async fn processing_next_frame(&mut self, block: SignedBlock) -> Result<()> {
-        let block = self.node_state.handle_signed_block(&block);
-        self.bus.send(DataEvent::NewBlock(Box::new(block)))?;
+        self.bus.send(DataEvent::OrderedSignedBlock(block))?;
 
         self.listener.ping().await?;
 

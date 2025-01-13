@@ -8,7 +8,7 @@ use tracing::{debug, error, info};
 
 use crate::{
     bus::BusMessage,
-    data_availability::{node_state::NodeState, DataEvent},
+    node_state::NodeStateEvent,
     model::{
         Blob, BlobTransaction, Block, CommonRunContext, Hashable, RegisterContractTransaction,
         Transaction, TransactionData,
@@ -30,7 +30,6 @@ pub struct Store<State> {
     pub state: Option<State>,
     pub contract_name: ContractName,
     pub unsettled_blobs: BTreeMap<TxHash, BlobTransaction>,
-    pub node_state: NodeState,
 }
 
 impl<State> Default for Store<State> {
@@ -39,7 +38,6 @@ impl<State> Default for Store<State> {
             state: None,
             contract_name: Default::default(),
             unsettled_blobs: BTreeMap::new(),
-            node_state: NodeState::default(),
         }
     }
 }
@@ -123,12 +121,12 @@ where
 {
     pub async fn start(&mut self) -> Result<(), Error> {
         module_handle_messages! {
-        on_bus self.bus,
-        listen<DataEvent> cmd => {
-            if let Err(e) = self.handle_data_availability_event(cmd).await {
-                error!(cn = %self.contract_name, "Error while handling data availability event: {:#}", e)
+            on_bus self.bus,
+            listen<NodeStateEvent> event => {
+                if let Err(e) = self.handle_node_state_event(event).await {
+                    error!(cn = %self.contract_name, "Error while handling node state event: {:#}", e)
+                }
             }
-        }
         }
 
         if let Err(e) =
@@ -140,10 +138,9 @@ where
     }
 
     /// Note: Each copy of the contract state indexer does the same handle_block on each data event
-    /// coming from data availability. In a future refacto, data availability will stream handled blocks instead
-    /// thus we could refacto this part too to avoid same processing in NodeState in each indexer
-    async fn handle_data_availability_event(&mut self, event: DataEvent) -> Result<(), Error> {
-        let DataEvent::NewBlock(block) = event;
+    /// coming from node state.
+    async fn handle_node_state_event(&mut self, event: NodeStateEvent) -> Result<(), Error> {
+        let NodeStateEvent::NewBlock(block) = event;
         self.handle_processed_block(*block).await?;
 
         Ok(())
@@ -242,6 +239,7 @@ mod tests {
 
     use super::*;
     use crate::bus::metrics::BusMetrics;
+    use crate::node_state::NodeStateStorage;
     use crate::model::SignedBlock;
     use crate::utils::conf::Conf;
     use crate::{bus::SharedMessageBus, model::CommonRunContext};
@@ -365,17 +363,17 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_handle_data_availability_event() {
+    async fn test_handle_node_state_event() {
         let contract_name = ContractName::from("test_contract");
         let mut indexer = build_indexer(contract_name.clone()).await;
         register_contract(&mut indexer).await;
 
-        let mut node_state = NodeState::default();
+        let mut node_state = NodeStateStorage::default();
         let block = node_state.handle_signed_block(&SignedBlock::default());
 
-        let event = DataEvent::NewBlock(Box::new(block));
+        let event = NodeStateEvent::NewBlock(Box::new(block));
 
-        indexer.handle_data_availability_event(event).await.unwrap();
+        indexer.handle_node_state_event(event).await.unwrap();
         // Add assertions based on the expected state changes
     }
 }

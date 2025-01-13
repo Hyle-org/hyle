@@ -3,9 +3,9 @@
 use crate::{
     bus::{command_response::Query, BusClientSender, BusMessage},
     consensus::{CommittedConsensusProposal, ConsensusEvent},
-    data_availability::{
-        node_state::verifiers::{verify_proof, verify_recursive_proof},
-        DataEvent,
+    node_state::{
+        verifiers::{verify_proof, verify_recursive_proof},
+        NodeStateEvent,
     },
     genesis::GenesisEvent,
     mempool::storage::Storage,
@@ -82,7 +82,7 @@ struct MempoolBusClient {
     receiver(MempoolCommand),
     receiver(ConsensusEvent),
     receiver(GenesisEvent),
-    receiver(DataEvent),
+    receiver(NodeStateEvent),
     receiver(Query<QueryNewCut, Cut>),
 }
 }
@@ -225,8 +225,8 @@ impl Mempool {
                     }
                 }
             }
-            listen<DataEvent> cmd => {
-                let DataEvent::NewBlock(block) = cmd;
+            listen<NodeStateEvent> cmd => {
+                let NodeStateEvent::NewBlock(block) = cmd;
                 for tx in block.txs {
                     let TransactionData::RegisterContract(register_contract_transaction) = tx.transaction_data else {
                         continue;

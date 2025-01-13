@@ -18,6 +18,7 @@ use crate::handle_messages;
 use crate::indexer::Indexer;
 use crate::mempool::Mempool;
 use crate::model::{CommonRunContext, NodeRunContext, SharedRunContext};
+use crate::node_state::NodeState;
 use crate::p2p::P2P;
 use crate::single_node_consensus::SingleNodeConsensus;
 use crate::utils::conf::Conf;
@@ -264,6 +265,7 @@ impl NodeIntegrationCtx {
         }
 
         Self::build_module::<DataAvailability>(&mut handler, &ctx, &ctx, &mut mocks).await?;
+        Self::build_module::<NodeState>(&mut handler, &ctx.common, &ctx, &mut mocks).await?;
 
         Self::build_module::<P2P>(&mut handler, &ctx, &ctx, &mut mocks).await?;
 

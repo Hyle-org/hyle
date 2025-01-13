@@ -7,12 +7,12 @@ pub mod da_listener;
 
 use crate::{
     consensus::ConsensusProposalHash,
-    data_availability::DataEvent,
     model::{
         BlobTransaction, Block, BlockHeight, CommonRunContext, ContractName, Hashable,
         TransactionData,
     },
     module_handle_messages,
+    node_state::NodeStateEvent,
     utils::modules::{module_bus_client, Module},
 };
 use anyhow::{bail, Context, Error, Result};
@@ -38,7 +38,7 @@ use crate::model::indexer::*;
 module_bus_client! {
 #[derive(Debug)]
 struct IndexerBusClient {
-    receiver(DataEvent),
+    receiver(NodeStateEvent),
 }
 }
 
@@ -110,9 +110,9 @@ impl Indexer {
     pub async fn start(&mut self) -> Result<()> {
         module_handle_messages! {
             on_bus self.bus,
-            listen<DataEvent> cmd => {
-                if let Err(e) = self.handle_data_availability_event(cmd).await {
-                    error!("Error while handling data availability event: {:#}", e)
+            listen<NodeStateEvent> event => {
+                if let Err(e) = self.handle_node_state_event(event).await {
+                    error!("Error while handling node state event: {:#}", e)
                 }
             }
 
@@ -218,9 +218,9 @@ impl Indexer {
             .await;
     }
 
-    async fn handle_data_availability_event(&mut self, event: DataEvent) -> Result<(), Error> {
+    async fn handle_node_state_event(&mut self, event: NodeStateEvent) -> Result<(), Error> {
         match event {
-            DataEvent::NewBlock(block) => self.handle_processed_block(*block).await,
+            NodeStateEvent::NewBlock(block) => self.handle_processed_block(*block).await,
         }
     }
 
@@ -549,11 +549,11 @@ mod test {
 
     use crate::{
         bus::SharedMessageBus,
-        data_availability::node_state::NodeState,
         model::{
             Blob, BlobData, BlobProofOutput, ProofData, RegisterContractTransaction, SignedBlock,
             Transaction, TransactionData, VerifiedProofTransaction,
         },
+        node_state::NodeStateStorage,
     };
 
     use super::*;
@@ -729,7 +729,7 @@ mod test {
             proof_tx_4,
         ];
 
-        let mut node_state = NodeState::default();
+        let mut node_state = NodeStateStorage::default();
 
         let mut signed_block = SignedBlock::default();
         signed_block.data_proposals.push((
