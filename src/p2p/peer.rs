@@ -147,7 +147,7 @@ impl Peer {
         }
     }
 
-    async fn handle_stream_message(&mut self, msg: NetMessage) -> Result<(), Error> {
+    async fn handle_peer_stream_message(&mut self, msg: NetMessage) -> Result<(), Error> {
         trace!("RECV: {:?}", msg);
         match msg {
             NetMessage::HandshakeMessage(handshake_msg) => {
@@ -219,7 +219,7 @@ impl Peer {
             }
 
             res = read_stream(&mut self.stream) => match res {
-                Ok(message) => match self.handle_stream_message(message).await {
+                Ok(message) => match self.handle_peer_stream_message(message).await {
                     Ok(_) => continue,
                     Err(e) => {
                         warn!("Error while handling net message: {:#}", e);

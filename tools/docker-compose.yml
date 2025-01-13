@@ -8,6 +8,7 @@ services:
       - HYLE_REST=localhost:4001
       - HYLE_HOST=localhost:1001
       - HYLE_DA_ADDRESS=localhost:4141
+      - HYLE_TCP_SERVER_ADDRESS=localhost:1414
       - RUST_LOG=debug
       - HYLE_CONSENSUS__SLOT_DURATION=3000
   hyle2:
@@ -19,6 +20,7 @@ services:
       - HYLE_REST=localhost:4002
       - HYLE_HOST=localhost:1002
       - HYLE_DA_ADDRESS=localhost:4142
+      - HYLE_TCP_SERVER_ADDRESS=localhost:2414
       - RUST_LOG=debug
       - HYLE_CONSENSUS__SLOT_DURATION=3000
     network_mode: host
@@ -34,6 +36,7 @@ services:
       - HYLE_HOST=localhost:1003
       - RUST_LOG=debug
       - HYLE_DA_ADDRESS=localhost:4143
+      - HYLE_TCP_SERVER_ADDRESS=localhost:3414
       - HYLE_CONSENSUS__SLOT_DURATION=3000
     network_mode: host
     depends_on:
