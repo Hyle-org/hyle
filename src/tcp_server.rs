@@ -324,9 +324,7 @@ mod tests {
         let stream = TcpStream::connect(addr).await?;
         let mut framed = FramedWrite::new(stream, LengthDelimitedCodec::new());
 
-        let tx = Transaction::wrap(TransactionData::RegisterContract(
-            RegisterContractTransaction::default(),
-        ));
+        let tx: Transaction = RegisterContractTransaction::default().into();
         let net_msg = TcpServerNetMessage::NewTx(tx.clone());
         framed.send(net_msg.to_binary().into()).await?;
 
