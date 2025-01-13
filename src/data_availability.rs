@@ -161,7 +161,7 @@ impl DataAvailability {
     pub async fn start(&mut self) -> Result<()> {
         let stream_request_receiver = TcpListener::bind(&self.config.da_address).await?;
         info!(
-            "📡  Starting DataAvailability module, listening for stream requests on {}",
+            "📬  Starting DataAvailability module, listening for stream requests on {}",
             &self.config.da_address
         );
 

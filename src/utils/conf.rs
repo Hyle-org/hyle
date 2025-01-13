@@ -34,7 +34,9 @@ pub struct Conf {
     pub p2p: P2pConf,
     pub data_directory: PathBuf,
     pub run_indexer: bool,
+    pub run_tcp_server: bool,
     pub da_address: String,
+    pub tcp_server_address: Option<String>,
     pub log_format: String,
     pub single_node: Option<bool>,
 }

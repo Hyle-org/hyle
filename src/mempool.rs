@@ -15,6 +15,7 @@ use crate::{
     },
     module_handle_messages,
     p2p::network::OutboundMessage,
+    tcp_server::TcpServerMessage,
     utils::{
         conf::SharedConf,
         crypto::{BlstCrypto, SharedBlstCrypto, SignedByValidator},
@@ -79,6 +80,7 @@ struct MempoolBusClient {
     receiver(InternalMempoolEvent),
     receiver(SignedByValidator<MempoolNetMessage>),
     receiver(RestApiMessage),
+    receiver(TcpServerMessage),
     receiver(MempoolCommand),
     receiver(ConsensusEvent),
     receiver(GenesisEvent),
@@ -205,6 +207,10 @@ impl Mempool {
                 let _ = self.handle_api_message(cmd)
                     .log_error("Handling RestApiMessage in Mempool");
             }
+            listen<TcpServerMessage> cmd => {
+                let _ = self.handle_tcp_server_message(cmd)
+                    .log_error("Handling TcpServerNetMessage in Mempool");
+            }
             listen<MempoolCommand> cmd => {
                 let _ = self.handle_command(cmd).log_error("Handling Mempool Command");
             }
@@ -279,6 +285,14 @@ impl Mempool {
     fn handle_api_message(&mut self, command: RestApiMessage) -> Result<()> {
         match command {
             RestApiMessage::NewTx(tx) => self
+                .on_new_tx(tx)
+                .context("Received invalid transaction. Won't process it."),
+        }
+    }
+
+    fn handle_tcp_server_message(&mut self, command: TcpServerMessage) -> Result<()> {
+        match command {
+            TcpServerMessage::NewTx(tx) => self
                 .on_new_tx(tx)
                 .context("Received invalid transaction. Won't process it."),
         }

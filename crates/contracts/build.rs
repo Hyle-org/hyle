@@ -27,7 +27,7 @@ fn main() {
                     use_docker: match reproducible {
                         true => Some(DockerOptions {
                             // Point to the workspace
-                            root_dir: Some("..".into()),
+                            root_dir: Some("../..".into()),
                         }),
                         false => None,
                     },

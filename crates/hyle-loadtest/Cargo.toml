@@ -7,7 +7,6 @@ repository.workspace = true
 
 
 [dependencies]
-serde_json = "1.0.135"
 tokio = "1.42"
 hyle = { path = "../../", features = ["tx_builder"] }
 hyllar = { path = "../contracts/hyllar" }
@@ -17,6 +16,7 @@ hyle-contract-sdk = { path = "../contract-sdk" }
 client-sdk = { path = "../client-sdk" }
 
 anyhow = "1.0.95"
+bincode = { version = "2.0.0-rc.3", features = ["serde"] }
 clap = "4.5.26"
 tracing = "0.1"
 tracing-subscriber = "0.3"

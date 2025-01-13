@@ -1,7 +1,13 @@
 use std::fmt::Display;
 
 use anyhow::{Context, Result};
+#[cfg(feature = "node")]
+use futures::SinkExt;
 use reqwest::{Response, Url};
+#[cfg(feature = "node")]
+use tokio::net::TcpStream;
+#[cfg(feature = "node")]
+use tokio_util::codec::{Framed, LengthDelimitedCodec};
 
 use crate::model::{
     consensus::ConsensusInfo,
@@ -18,6 +24,11 @@ use staking::state::Staking;
 pub struct NodeApiHttpClient {
     pub url: Url,
     pub reqwest_client: reqwest::Client,
+}
+
+#[cfg(feature = "node")]
+pub struct NodeTcpClient {
+    pub framed: Framed<TcpStream, LengthDelimitedCodec>,
 }
 
 pub struct IndexerApiHttpClient {
@@ -145,6 +156,23 @@ impl NodeApiHttpClient {
             .send()
             .await
             .context("Starting api test scenario")
+    }
+}
+
+#[cfg(feature = "node")]
+impl NodeTcpClient {
+    pub async fn new(url: String) -> Result<Self> {
+        let stream = TcpStream::connect(url).await?;
+        let framed = Framed::new(stream, LengthDelimitedCodec::new());
+        Ok(Self { framed })
+    }
+
+    pub async fn send_encoded_message_no_response(&mut self, encoded_msg: Vec<u8>) -> Result<()> {
+        self.framed
+            .send(encoded_msg.into())
+            .await
+            .context("Failed to send NetMessage")?;
+        Ok(())
     }
 }
 

@@ -21,6 +21,9 @@ struct Args {
     #[arg(long, default_value = "4321")]
     pub port: u32,
 
+    #[arg(long, default_value = "1414")]
+    pub tcp_port: u32,
+
     #[arg(long, default_value = "10")]
     pub users: u32,
 
@@ -62,7 +65,8 @@ async fn main() -> Result<(), Error> {
 
     let args = Args::parse();
 
-    let url = format!("http://{}:{}", args.host, args.port);
+    let http_url = format!("http://{}:{}", args.host, args.port);
+    let tcp_url = format!("{}:{}", args.host, args.tcp_port);
     let users = args.users;
     let verifier = args.verifier;
 
@@ -72,7 +76,7 @@ async fn main() -> Result<(), Error> {
     };
 
     match args.command {
-        SendCommands::Setup => setup(url, users, verifier).await?,
+        SendCommands::Setup => setup(http_url, users, verifier).await?,
         SendCommands::GenerateBlobTransactions => {
             generate_blobs_txs(users, states).await?;
         }
@@ -80,14 +84,14 @@ async fn main() -> Result<(), Error> {
             generate_proof_txs(users, states).await?;
         }
         SendCommands::GenerateTransactions => generate(users, states).await?,
-        SendCommands::SendBlobTransactions => send_blob_txs(url).await?,
-        SendCommands::SendProofTransactions => send_proof_txs(url).await?,
-        SendCommands::SendTransactions => send(url).await?,
+        SendCommands::SendBlobTransactions => send_blob_txs(tcp_url).await?,
+        SendCommands::SendProofTransactions => send_proof_txs(tcp_url).await?,
+        SendCommands::SendTransactions => send(tcp_url).await?,
         SendCommands::LoadTest => {
-            setup(url.clone(), users, verifier.clone()).await?;
+            setup(http_url, users, verifier).await?;
             tokio::time::sleep(std::time::Duration::from_secs(3)).await;
             generate(users, states).await?;
-            send(url).await?;
+            send(tcp_url).await?;
         }
     }
 

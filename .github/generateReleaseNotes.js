@@ -4,36 +4,43 @@ const { execSync } = require("child_process");
 const OUTPUT_FILE = "RELEASE_NOTES.md";
 
 const GITMOJI_CATEGORIES = {
-  "✨": { alias: ":sparkles:", category: "Features" },
-  "🐛": { alias: ":bug:", category: "Bug Fixes" },
-  "📝": { alias: ":books:", category: "Documentation" },
-  "🔧": { alias: ":wrench:", category: "Configuration" },
-  "✅": { alias: ":white_check_mark:", category: "Tests" },
-  "⚡": { alias: ":zap:", category: "Performance" },
-  "♻": { alias: ":recycle:", category: "Refactoring" },
-  "🚀": { alias: ":rocket:", category: "Deployments" },
-  "🚧": { alias: ":construction:", category: "Work in Progress" },
-  "🔒": { alias: ":lock:", category: "Security" },
-  "🌍": { alias: ":earth_africa:", category: "Localization" },
-  "⬆️": { alias: ":arrow_up:", category: "Dependencies" },
-  "⬇️": { alias: ":arrow_down:", category: "Dependencies" },
-  "💥": { alias: ":boom:", category: "Breaking changes" },
+  "Breaking changes": ["💥", ":boom:"],
+  "Features": ["✨", ":sparkles:"],
+  "Bug Fixes": ["🐛", ":bug:"],
+  "Documentation": ["📝", ":books:"],
+  "Genesis": ["🌱", ":seedling:"],
+  "Configuration": ["🔧", ":wrench:"],
+  "Tests": ["✅", ":white_check_mark:"],
+  "Performance": ["⚡", ":zap:"],
+  "Refactoring": ["♻", ":recycle:"],
+  "Logging": ["🔊", ":loud_sound:", "🔇", ":mute:"],
+  "Deployments": ["🚀", ":rocket:"],
+  "Work in Progress": ["🚧", ":construction:"],
+  "Security": ["🔒", ":lock:"],
+  "Localization": ["🌍", ":earth_africa:"],
+  "Devtools / CI": ["💚", ":green_heart:", "👷", ":construction_worker:", "🔨", ":hammer:"],
+  "Removed": ["🔥", ":fire:"],
+  "Dependencies": ["📌", ":pushpin:", "➕", ":heavy_plus_sign:", "➖", ":heavy_minus_sign:", "⬆️", ":arrow_up:", "⬇️", ":arrow_down:"],
 };
 
 function generateReleaseNotes() {
-  const commits = execSync("git log --oneline $(git describe --tags --abbrev=0 HEAD^)..HEAD --pretty=format:%s").toString().split("\n");
+  const commits = execSync(
+    "git log --oneline $(git describe --tags --abbrev=0 HEAD^)..HEAD --pretty=format:%s"
+  )
+    .toString()
+    .split("\n");
 
   const categoryCommits = {};
-  Object.keys(GITMOJI_CATEGORIES).forEach((emoji) => {
-    categoryCommits[emoji] = [];
+  Object.keys(GITMOJI_CATEGORIES).forEach((category) => {
+    categoryCommits[category] = [];
   });
   let uncategorized = [];
 
   commits.forEach((commit) => {
     let categorized = false;
-    for (const [emoji, { alias, category }] of Object.entries(GITMOJI_CATEGORIES)) {
-      if (commit.startsWith(emoji) || commit.startsWith(alias)) {
-        categoryCommits[emoji].push(commit.replace(alias, emoji).trim());
+    for (const [category, emojis] of Object.entries(GITMOJI_CATEGORIES)) {
+      if (emojis.some((emoji) => commit.startsWith(emoji))) {
+        categoryCommits[category].push(commit.trim());
         categorized = true;
         break;
       }
@@ -45,10 +52,10 @@ function generateReleaseNotes() {
 
   let releaseNotes = "";
 
-  for (const [emoji, { category }] of Object.entries(GITMOJI_CATEGORIES)) {
-    if (categoryCommits[emoji].length > 0) {
+  for (const [category, commits] of Object.entries(categoryCommits)) {
+    if (commits.length > 0) {
       releaseNotes += `## ${category}\n\n`;
-      categoryCommits[emoji].forEach((commit) => {
+      commits.forEach((commit) => {
         releaseNotes += `- ${commit}\n`;
       });
       releaseNotes += "\n";

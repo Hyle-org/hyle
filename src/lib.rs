@@ -33,6 +33,8 @@ pub mod rest;
 #[cfg(feature = "node")]
 pub mod single_node_consensus;
 #[cfg(feature = "node")]
+pub mod tcp_server;
+#[cfg(feature = "node")]
 pub mod utils;
 
 pub mod model;
