@@ -9,8 +9,7 @@ use crate::{
     mempool::DataProposal,
     model::{
         BlobProofOutput, BlobTransaction, Hashable, ProofData, RegisterContractTransaction,
-        SharedRunContext, SignedBlock, Transaction, TransactionData, ValidatorPublicKey,
-        VerifiedProofTransaction,
+        SharedRunContext, SignedBlock, Transaction, ValidatorPublicKey, VerifiedProofTransaction,
     },
     p2p::network::PeerEvent,
     utils::{

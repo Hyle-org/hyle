@@ -174,7 +174,7 @@ mod tests {
 
     use crate::{
         bus::{dont_use_this::get_receiver, SharedMessageBus},
-        model::{RegisterContractTransaction, TransactionData},
+        model::RegisterContractTransaction,
         utils::conf::Conf,
     };
 
