@@ -32,6 +32,9 @@ pub struct SettledTxOutput {
     pub updated_contracts: BTreeMap<ContractName, Contract>,
 }
 
+/// NodeState manages the flattened, up-to-date state of the chain.
+/// It processes raw transactions and outputs more structured data for indexers.
+/// See also: NodeStateModule for the actual module implementation.
 #[derive(Default, Encode, Decode, Debug, Clone)]
 pub struct NodeState {
     timeouts: Timeouts,

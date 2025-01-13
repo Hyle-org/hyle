@@ -15,15 +15,10 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-pub struct SettledTxOutput {
-    // Original blob transaction, now settled.
-    pub tx: UnsettledBlobTransaction,
-    /// This is the index of the blob proof output used in the blob settlement, for each blob.
-    pub blob_proof_output_indices: Vec<usize>,
-    /// New data for contracts modified by the settled TX.
-    pub updated_contracts: BTreeMap<ContractName, Contract>,
-}
-
+/// NodeStateModule maintains a NodeState,
+/// listens to DA, and sends events when it has processed blocks.
+/// Node state module is separate from DataAvailabiliity
+/// mostly to run asynchronously.
 pub struct NodeStateModule {
     config: SharedConf,
     bus: NodeStateBusClient,

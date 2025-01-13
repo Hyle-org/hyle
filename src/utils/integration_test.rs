@@ -267,7 +267,7 @@ impl NodeIntegrationCtx {
         }
 
         Self::build_module::<DataAvailability>(&mut handler, &ctx, &ctx, &mut mocks).await?;
-        Self::build_module::<NodeStateModule>(&mut handler, &ctx.common, &ctx, &mut mocks).await?;
+        Self::build_module::<NodeStateModule>(&mut handler, &ctx, &ctx.common, &mut mocks).await?;
 
         Self::build_module::<P2P>(&mut handler, &ctx, &ctx, &mut mocks).await?;
 
