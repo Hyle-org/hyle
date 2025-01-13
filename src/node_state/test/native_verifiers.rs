@@ -7,7 +7,6 @@ use tracing::info;
 
 use crate::{
     bus::{bus_client, BusClientReceiver, BusClientSender},
-    data_availability::DataEvent,
     mempool::api::RestApiMessage,
     model::data_availability::ShaBlob,
     utils::{crypto::BlstCrypto, integration_test::NodeIntegrationCtxBuilder},
@@ -15,13 +14,14 @@ use crate::{
 
 use super::{
     data_availability::{BlstSignatureBlob, NativeProof},
+    module::NodeStateEvent,
     ProofTransaction,
 };
 
 bus_client! {
     struct Client {
         sender(RestApiMessage),
-        receiver(DataEvent),
+        receiver(NodeStateEvent),
     }
 }
 
@@ -103,9 +103,9 @@ async fn scenario(contract_name: ContractName, identity: Identity, blob: Blob) -
 
     // Wait until we commit this TX
     loop {
-        let evt: DataEvent = node_client.recv().await?;
+        let evt: NodeStateEvent = node_client.recv().await?;
         match evt {
-            DataEvent::NewBlock(block) => {
+            NodeStateEvent::NewBlock(block) => {
                 info!("Got Block");
                 if block
                     .settled_blob_tx_hashes
