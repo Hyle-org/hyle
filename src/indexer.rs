@@ -353,14 +353,16 @@ impl Indexer {
                 }
                 TransactionData::VerifiedProof(tx_data) => {
                     // Then insert the proof in to the proof table.
-                    if tx_data.proof.is_none() {
-                        tracing::trace!(
-                            "Verified proof TX {:?} does not contain a proof",
-                            &tx_hash
-                        );
-                        continue;
-                    }
-                    let proof = tx_data.proof.unwrap();
+                    let proof = match tx_data.proof {
+                        Some(proof) => proof,
+                        None => {
+                            tracing::trace!(
+                                "Verified proof TX {:?} does not contain a proof",
+                                &tx_hash
+                            );
+                            continue;
+                        }
+                    };
 
                     let Ok(proof) = &proof.to_bytes() else {
                         error!(

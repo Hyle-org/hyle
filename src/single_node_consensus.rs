@@ -99,6 +99,7 @@ impl SingleNodeConsensus {
             module_handle_messages! {
                 on_bus self.bus,
                 listen<GenesisEvent> msg => {
+                    #[allow(clippy::expect_used, reason="We want to fail to start with misconfigured genesis block")]
                     match msg {
                         GenesisEvent::GenesisBlock (signed_block) => {
                             self.store.last_consensus_proposal_hash = signed_block.hash();
@@ -230,7 +231,7 @@ mod tests {
 
     impl TestContext {
         pub async fn new(name: &str) -> Self {
-            let crypto = BlstCrypto::new(name.into());
+            let crypto = BlstCrypto::new(name.into()).unwrap();
             let shared_bus = SharedMessageBus::new(BusMetrics::global("global".to_string()));
             let conf = Arc::new(Conf::default());
             let store = SingleNodeConsensusStore::default();

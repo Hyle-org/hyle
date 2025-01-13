@@ -14,6 +14,7 @@ pub struct BusMetrics {
     receive: opentelemetry::metrics::Counter<u64>,
 }
 
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 impl BusMetrics {
     pub fn global(meter_id: String) -> BusMetrics {
         let scope = InstrumentationScope::builder(meter_id).build();

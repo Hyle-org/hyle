@@ -34,8 +34,7 @@ pub struct LaneEntry {
 
 #[derive(Debug, Default, Clone, Encode, Decode)]
 pub struct Lane {
-    pub last_cutted_dp: Option<DataProposalHash>,
-    pub last_cutted_poda: Option<PoDA>,
+    pub last_cut: Option<(PoDA, DataProposalHash)>,
     #[bincode(with_serde)]
     pub data_proposals: IndexMap<DataProposalHash, LaneEntry>,
     pub waiting: Vec<DataProposal>,
@@ -92,8 +91,9 @@ impl Storage {
             ) in lane.iter_reverse()
             {
                 // Only cut on DataProposal that have not been cutted yet
-                if lane.last_cutted_dp == Some(data_proposal_hash.clone()) {
-                    let poda = lane.last_cutted_poda.clone().unwrap();
+                if lane.last_cut.as_ref().map(|lc| &lc.1) == Some(data_proposal_hash) {
+                    #[allow(clippy::unwrap_used, reason = "we know the value is Some")]
+                    let poda = lane.last_cut.as_ref().map(|lc| lc.0.clone()).unwrap();
                     cut.push((validator.clone(), data_proposal_hash.clone(), poda));
                     break;
                 }
@@ -271,6 +271,7 @@ impl Storage {
                     };
                     // TODO: we could early-reject proofs where the blob
                     // is not for the correct transaction.
+                    #[allow(clippy::expect_used, reason = "not held across await")]
                     let (verifier, program_id) = match known_contracts
                         .read()
                         .expect("logic error")
@@ -283,6 +284,10 @@ impl Storage {
                             // Check if it's in the same data proposal.
                             // (kind of inefficient, but it's mostly to make our tests work)
                             // TODO: improve on this logic, possibly look into other data proposals / lanes.
+                            #[allow(
+                                clippy::unwrap_used,
+                                reason = "we know position will return a valid range"
+                            )]
                             let data = data_proposal
                                 .txs
                                 .get(
@@ -507,7 +512,7 @@ impl Storage {
             // FIXME: If data_proposal_hash is unknown, we should request the missing DataProposals
             if let Some(lane) = self.lanes.get_mut(validator) {
                 if let Ok(Some(lane_entries)) = lane.get_lane_entries_between_hashes(
-                    lane.last_cutted_dp.as_ref(),
+                    lane.last_cut.as_ref().map(|lc| &lc.1),
                     data_proposal_hash,
                 ) {
                     for lane_entry in lane_entries {
@@ -516,8 +521,7 @@ impl Storage {
                 }
 
                 // Update last cut index and poda for all concerned lanes
-                lane.last_cutted_dp = Some(data_proposal_hash.clone());
-                lane.last_cutted_poda = Some(poda.clone());
+                lane.last_cut = Some((poda.clone(), data_proposal_hash.clone()));
             }
         }
         txs
@@ -541,8 +545,7 @@ impl Storage {
     pub fn update_lanes_with_commited_cut(&mut self, committed_cut: &Cut) {
         for (validator, data_proposal_hash, poda) in committed_cut.iter() {
             if let Some(lane) = self.lanes.get_mut(validator) {
-                lane.last_cutted_dp = Some(data_proposal_hash.clone());
-                lane.last_cutted_poda = Some(poda.clone());
+                lane.last_cut = Some((poda.clone(), data_proposal_hash.clone()));
             }
         }
     }
@@ -724,6 +727,7 @@ impl Lane {
         let wp = self.waiting.drain(0..).collect::<Vec<DataProposal>>();
         if wp.len() > 1 {
             for i in 0..wp.len() - 1 {
+                #[allow(clippy::indexing_slicing, reason = "checked by range")]
                 if Some(&wp[i].hash()) != wp[i + 1].parent_data_proposal_hash.as_ref() {
                     bail!("unsorted DataProposal");
                 }
@@ -735,6 +739,7 @@ impl Lane {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::indexing_slicing)]
     use std::sync::{Arc, RwLock};
 
     use crate::{
@@ -898,7 +903,7 @@ mod tests {
 
     #[test_log::test]
     fn test_add_missing_lane_entries() {
-        let crypto1 = crypto::BlstCrypto::new("1".to_owned());
+        let crypto1 = crypto::BlstCrypto::new("1".to_owned()).unwrap();
         let pubkey1 = crypto1.validator_pubkey();
         let mut store = Storage::new(pubkey1.clone());
 
@@ -965,7 +970,7 @@ mod tests {
 
     #[test_log::test]
     fn test_get_waiting_data_proposals() {
-        let crypto1 = crypto::BlstCrypto::new("1".to_owned());
+        let crypto1 = crypto::BlstCrypto::new("1".to_owned()).unwrap();
         let pubkey1 = crypto1.validator_pubkey();
         let mut store = Storage::new(pubkey1.clone());
 
@@ -1005,7 +1010,7 @@ mod tests {
 
     #[test_log::test]
     fn test_get_lane_entries_between_hashes() {
-        let crypto1 = crypto::BlstCrypto::new("1".to_owned());
+        let crypto1 = crypto::BlstCrypto::new("1".to_owned()).unwrap();
         let pubkey1 = crypto1.validator_pubkey();
         let mut store = Storage::new(pubkey1.clone());
 
@@ -1108,8 +1113,8 @@ mod tests {
 
     #[test_log::test]
     fn test_on_poa_update() {
-        let crypto1 = crypto::BlstCrypto::new("1".to_owned());
-        let crypto2 = crypto::BlstCrypto::new("2".to_owned());
+        let crypto1 = crypto::BlstCrypto::new("1".to_owned()).unwrap();
+        let crypto2 = crypto::BlstCrypto::new("2".to_owned()).unwrap();
         let pubkey1 = crypto1.validator_pubkey();
         let pubkey2 = crypto2.validator_pubkey();
         let mut store1 = Storage::new(pubkey1.clone());
@@ -1154,8 +1159,8 @@ mod tests {
 
     #[test_log::test]
     fn test_workflow() {
-        let crypto1 = crypto::BlstCrypto::new("1".to_owned());
-        let crypto2 = crypto::BlstCrypto::new("2".to_owned());
+        let crypto1 = crypto::BlstCrypto::new("1".to_owned()).unwrap();
+        let crypto2 = crypto::BlstCrypto::new("2".to_owned()).unwrap();
         let pubkey1 = crypto1.validator_pubkey();
         let pubkey2 = crypto2.validator_pubkey();
         let mut store1 = Storage::new(pubkey1.clone());
@@ -1336,9 +1341,9 @@ mod tests {
 
     #[test_log::test]
     fn test_vote() {
-        let crypto1 = crypto::BlstCrypto::new("1".to_owned());
-        let crypto2 = crypto::BlstCrypto::new("2".to_owned());
-        let crypto3 = crypto::BlstCrypto::new("3".to_owned());
+        let crypto1 = crypto::BlstCrypto::new("1".to_owned()).unwrap();
+        let crypto2 = crypto::BlstCrypto::new("2".to_owned()).unwrap();
+        let crypto3 = crypto::BlstCrypto::new("3".to_owned()).unwrap();
         let pubkey1 = crypto1.validator_pubkey();
         let pubkey2 = crypto2.validator_pubkey();
         let pubkey3 = crypto3.validator_pubkey();
@@ -1431,8 +1436,8 @@ mod tests {
 
     #[test_log::test]
     fn test_update_lane_with_unverified_proof_transaction() {
-        let crypto1 = crypto::BlstCrypto::new("1".to_owned());
-        let crypto2 = crypto::BlstCrypto::new("2".to_owned());
+        let crypto1 = crypto::BlstCrypto::new("1".to_owned()).unwrap();
+        let crypto2 = crypto::BlstCrypto::new("2".to_owned()).unwrap();
         let pubkey1 = crypto1.validator_pubkey();
         let pubkey2 = crypto2.validator_pubkey();
 
@@ -1466,7 +1471,7 @@ mod tests {
 
     #[test_log::test]
     fn test_update_lane_with_verified_proof_transaction() {
-        let crypto1 = crypto::BlstCrypto::new("1".to_owned());
+        let crypto1 = crypto::BlstCrypto::new("1".to_owned()).unwrap();
         let pubkey1 = crypto1.validator_pubkey();
 
         let mut store1 = Storage::new(pubkey1.clone());
@@ -1512,7 +1517,7 @@ mod tests {
     // This test currently panics as we no longer optimistically register contracts
     #[should_panic]
     fn test_new_data_proposal_with_register_tx_in_previous_uncommitted_car() {
-        let crypto1 = crypto::BlstCrypto::new("1".to_owned());
+        let crypto1 = crypto::BlstCrypto::new("1".to_owned()).unwrap();
         let pubkey1 = crypto1.validator_pubkey();
 
         let mut store1 = Storage::new(pubkey1.clone());
@@ -1559,7 +1564,7 @@ mod tests {
 
     #[test_log::test]
     fn test_register_contract_and_proof_tx_in_same_car() {
-        let crypto1 = crypto::BlstCrypto::new("1".to_owned());
+        let crypto1 = crypto::BlstCrypto::new("1".to_owned()).unwrap();
         let pubkey1 = crypto1.validator_pubkey();
 
         let mut store1 = Storage::new(pubkey1.clone());
@@ -1596,8 +1601,8 @@ mod tests {
 
     #[test_log::test]
     fn test_register_contract_and_proof_tx_in_same_car_wrong_order() {
-        let crypto1 = crypto::BlstCrypto::new("1".to_owned());
-        let crypto2 = crypto::BlstCrypto::new("2".to_owned());
+        let crypto1 = crypto::BlstCrypto::new("1".to_owned()).unwrap();
+        let crypto2 = crypto::BlstCrypto::new("2".to_owned()).unwrap();
         let pubkey1 = crypto1.validator_pubkey();
         let pubkey2 = crypto2.validator_pubkey();
 
@@ -1630,8 +1635,8 @@ mod tests {
 
     #[test_log::test]
     fn test_new_cut() {
-        let crypto1 = crypto::BlstCrypto::new("1".to_owned());
-        let crypto2 = crypto::BlstCrypto::new("2".to_owned());
+        let crypto1 = crypto::BlstCrypto::new("1".to_owned()).unwrap();
+        let crypto2 = crypto::BlstCrypto::new("2".to_owned()).unwrap();
         let pubkey1 = crypto1.validator_pubkey();
         let pubkey2 = crypto2.validator_pubkey();
 
@@ -1737,8 +1742,8 @@ mod tests {
 
     #[test_log::test]
     fn test_poda() {
-        let crypto1 = crypto::BlstCrypto::new("1".to_owned());
-        let crypto2 = crypto::BlstCrypto::new("2".to_owned());
+        let crypto1 = crypto::BlstCrypto::new("1".to_owned()).unwrap();
+        let crypto2 = crypto::BlstCrypto::new("2".to_owned()).unwrap();
 
         let pubkey1 = crypto1.validator_pubkey();
         let pubkey2 = crypto2.validator_pubkey();

@@ -57,7 +57,7 @@ pub fn setup_hyllar(users: u32) -> Result<HyllarTokenContract> {
 
 /// Create a new contract "hyllar-test" that already contains entries for each users
 pub async fn setup(url: String, users: u32, verifier: String) -> Result<()> {
-    let node_client = NodeApiHttpClient::new(url.clone());
+    let node_client = NodeApiHttpClient::new(url.clone())?;
 
     let hyllar_contract = setup_hyllar(users)?;
 
@@ -115,7 +115,7 @@ pub async fn generate_blobs_txs(users: u32, states: States) -> Result<()> {
                 let blobs = transaction.blobs.clone();
 
                 let msg: TcpServerNetMessage = BlobTransaction { identity, blobs }.into();
-                local_blob_txs.push(msg.to_binary());
+                local_blob_txs.push(msg.to_binary()?);
             }
 
             Ok::<_, anyhow::Error>(local_blob_txs)
@@ -171,7 +171,7 @@ pub async fn generate_proof_txs(users: u32, states: States) -> Result<()> {
                         proof: proof.await.unwrap(),
                     }
                     .into();
-                    local_proof_txs.push(msg.to_binary());
+                    local_proof_txs.push(msg.to_binary()?);
                 }
             }
 

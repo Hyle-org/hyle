@@ -123,7 +123,7 @@ impl MockWorkflowHandler {
                         self.stress_test().await;
                     },
                     RunScenario::ApiTest { qps, injection_duration_seconds } => {
-                        self.api_test(qps, injection_duration_seconds).await;
+                        self.api_test(qps, injection_duration_seconds).await?;
                     }
                 }
             }
@@ -149,10 +149,10 @@ impl MockWorkflowHandler {
         }
     }
 
-    async fn api_test(&mut self, qps: u64, injection_duration_seconds: u64) {
+    async fn api_test(&mut self, qps: u64, injection_duration_seconds: u64) -> Result<()> {
         info!("Starting api test");
 
-        let api_client = NodeApiHttpClient::new("http://localhost:4321".to_string());
+        let api_client = NodeApiHttpClient::new("http://localhost:4321".to_string())?;
 
         let tx_blob = BlobTransaction {
             identity: Identity("id".to_string()),
@@ -180,7 +180,7 @@ impl MockWorkflowHandler {
         loop {
             if get_current_timestamp() > injection_stop_date {
                 info!("Stopped injection");
-                break;
+                break Ok(());
             }
             i += 1;
             match (i % 3) + 1 {

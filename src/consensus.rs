@@ -631,7 +631,7 @@ impl Consensus {
                     certificate: commit_quorum_certificate.clone(),
                 },
             ))
-            .expect("Failed to send ConsensusEvent::CommittedConsensusProposal on the bus");
+            .log_error("Failed to send ConsensusEvent::CommittedConsensusProposal on the bus");
 
         info!(
             "📈 Slot {} committed",
@@ -710,7 +710,7 @@ impl Consensus {
                         .bft_round_state
                         .staking
                         .bond(validator.clone())
-                        .ok();
+                        .map_err(|e| anyhow!(e))?;
                 }
 
                 if let StateTag::Joining = self.bft_round_state.state_tag {
@@ -1088,7 +1088,7 @@ pub mod test {
         }
 
         async fn new_node(name: &str) -> Self {
-            let crypto = crypto::BlstCrypto::new(name.into());
+            let crypto = crypto::BlstCrypto::new(name.into()).unwrap();
             Self::new(name, crypto.clone()).await
         }
 
@@ -1106,7 +1106,13 @@ pub mod test {
             slot: u64,
             view: u64,
         ) {
-            let leader_pubkey = nodes[leader].consensus.crypto.validator_pubkey().clone();
+            let leader_pubkey = nodes
+                .get(leader)
+                .unwrap()
+                .consensus
+                .crypto
+                .validator_pubkey()
+                .clone();
 
             // TODO: write a real one?
             let commit_qc = AggregateSignature::default();

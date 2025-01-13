@@ -92,7 +92,7 @@ impl NodeIntegrationCtxBuilder {
     pub async fn new() -> Self {
         let tmpdir = tempfile::tempdir().unwrap();
         let bus = SharedMessageBus::new(BusMetrics::global("default".to_string()));
-        let crypto = BlstCrypto::new("test".to_owned());
+        let crypto = BlstCrypto::new("test".to_owned()).unwrap();
         let conf = Conf::new(
             None,
             tmpdir.path().to_str().map(|s| s.to_owned()),
