@@ -3,7 +3,7 @@
 use super::NodeState;
 use crate::bus::{command_response::Query, BusClientSender, BusMessage};
 use crate::data_availability::{DataEvent, QueryBlockHeight};
-use crate::model::data_availability::{Contract, UnsettledBlobTransaction};
+use crate::model::data_availability::Contract;
 use crate::model::{Block, BlockHeight, CommonRunContext, ContractName};
 use crate::module_handle_messages;
 use crate::utils::conf::SharedConf;
@@ -12,7 +12,6 @@ use crate::utils::modules::{module_bus_client, Module};
 use anyhow::{Context, Result};
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
 use std::sync::Arc;
 
 /// NodeStateModule maintains a NodeState,
