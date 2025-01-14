@@ -174,7 +174,7 @@ mod tests {
 
     use crate::{
         bus::{dont_use_this::get_receiver, SharedMessageBus},
-        model::{RegisterContractTransaction, TransactionData},
+        model::RegisterContractTransaction,
         utils::conf::Conf,
     };
 
@@ -324,9 +324,7 @@ mod tests {
         let stream = TcpStream::connect(addr).await?;
         let mut framed = FramedWrite::new(stream, LengthDelimitedCodec::new());
 
-        let tx = Transaction::wrap(TransactionData::RegisterContract(
-            RegisterContractTransaction::default(),
-        ));
+        let tx: Transaction = RegisterContractTransaction::default().into();
         let net_msg = TcpServerNetMessage::NewTx(tx.clone());
         framed.send(net_msg.to_binary().unwrap().into()).await?;
 

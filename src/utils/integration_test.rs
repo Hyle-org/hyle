@@ -14,20 +14,26 @@ use crate::bus::{bus_client, BusClientReceiver, SharedMessageBus};
 use crate::consensus::Consensus;
 use crate::data_availability::{DataAvailability, DataEvent};
 use crate::genesis::Genesis;
-use crate::handle_messages;
 use crate::indexer::Indexer;
 use crate::mempool::Mempool;
 use crate::model::{CommonRunContext, NodeRunContext, SharedRunContext};
+use crate::module_handle_messages;
 use crate::node_state::module::NodeStateModule;
 use crate::p2p::P2P;
 use crate::single_node_consensus::SingleNodeConsensus;
 use crate::tcp_server::TcpServer;
 use crate::utils::conf::Conf;
 use crate::utils::crypto::BlstCrypto;
-use crate::utils::modules::signal::ShutdownModule;
 use crate::utils::modules::ModulesHandler;
 
 use super::modules::{module_bus_client, Module};
+
+// Assume that we can reuse the OS-provided port.
+pub async fn find_available_port() -> u16 {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    addr.port()
+}
 
 type MockBuilder = Box<
     dyn for<'a> FnOnce(
@@ -53,19 +59,8 @@ impl<T> MockModule<T> {
         })
     }
     async fn start(&mut self) -> Result<()> {
-        // Have to wait forever as the module handler doesn't like exiting modules
-        // TODO: fix this?
-        handle_messages! {
+        module_handle_messages! {
             on_bus self.bus,
-            listen<ShutdownModule> shutdown_event => {
-                if shutdown_event.module == std::any::type_name::<Self>() {
-                    info!("MockModule received shutdown event");
-                    break;
-                }
-            }
-            else => {
-                tokio::time::sleep(std::time::Duration::from_secs(1)).await
-            }
         }
         Ok(())
     }
@@ -93,12 +88,16 @@ impl NodeIntegrationCtxBuilder {
         let tmpdir = tempfile::tempdir().unwrap();
         let bus = SharedMessageBus::new(BusMetrics::global("default".to_string()));
         let crypto = BlstCrypto::new("test".to_owned()).unwrap();
-        let conf = Conf::new(
+        let mut conf = Conf::new(
             None,
             tmpdir.path().to_str().map(|s| s.to_owned()),
             Some(false),
         )
         .expect("conf ok");
+        conf.host = format!("localhost:{}", find_available_port().await);
+        conf.da_address = format!("localhost:{}", find_available_port().await);
+        conf.tcp_server_address = Some(format!("localhost:{}", find_available_port().await));
+        conf.rest = format!("localhost:{}", find_available_port().await);
 
         Self {
             tmpdir,
