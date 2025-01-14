@@ -182,7 +182,10 @@ pub mod test {
     ) -> anyhow::Result<(ProofData, HyleOutput)> {
         let hyle_output = test::execute(binary, contract_input)?;
         Ok((
-            ProofData::Bytes(serde_json::to_vec(&vec![&hyle_output])?),
+            ProofData::Bytes(bincode::encode_to_vec(
+                vec![hyle_output.clone()],
+                bincode::config::standard(),
+            )?),
             hyle_output,
         ))
     }

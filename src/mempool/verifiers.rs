@@ -16,7 +16,13 @@ pub fn verify_proof(
 ) -> Result<Vec<HyleOutput>, Error> {
     let hyle_outputs = match verifier.0.as_str() {
         // TODO: add #[cfg(test)]
-        "test" => Ok(serde_json::from_slice(proof)?),
+        "test" => {
+            let (output, _) = bincode::decode_from_slice::<Vec<HyleOutput>, _>(
+                proof,
+                bincode::config::standard(),
+            )?;
+            Ok(output)
+        }
         #[cfg(test)]
         "test-slow" => {
             tracing::info!("Sleeping for 2 seconds to simulate a slow verifier");

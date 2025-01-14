@@ -289,7 +289,9 @@ impl E2ECtx {
             success: true,
             program_outputs: vec![],
         };
-        ProofData::Bytes(serde_json::to_vec(&vec![hyle_output]).unwrap())
+        ProofData::Bytes(
+            bincode::encode_to_vec(vec![hyle_output.clone()], bincode::config::standard()).unwrap(),
+        )
     }
 
     pub async fn send_proof_single(
