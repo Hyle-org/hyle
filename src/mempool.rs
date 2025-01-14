@@ -10,10 +10,7 @@ use crate::{
         ValidatorPublicKey, VerifiedProofTransaction,
     },
     module_handle_messages,
-    node_state::{
-        module::NodeStateEvent,
-        verifiers::{verify_proof, verify_recursive_proof},
-    },
+    node_state::module::NodeStateEvent,
     p2p::network::OutboundMessage,
     tcp_server::TcpServerMessage,
     utils::{
@@ -24,6 +21,7 @@ use crate::{
         static_type_map::Pick,
     },
 };
+
 use anyhow::{bail, Context, Result};
 use api::RestApiMessage;
 use bincode::{Decode, Encode};
@@ -41,11 +39,14 @@ use storage::{DataProposalVerdict, LaneEntry};
 use strum_macros::IntoStaticStr;
 use tracing::{debug, error, info, warn};
 
+use verifiers::{verify_proof, verify_recursive_proof};
+
 pub use crate::model::mempool::*;
 
 pub mod api;
 pub mod metrics;
 pub mod storage;
+pub mod verifiers;
 
 #[derive(Debug, Clone)]
 pub struct QueryNewCut(pub Staking);

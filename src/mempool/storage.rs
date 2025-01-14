@@ -7,7 +7,6 @@ use std::{collections::HashMap, fmt::Display, sync::Arc, vec};
 use tracing::{debug, error, warn};
 
 use crate::{
-    node_state::verifiers::{verify_proof, verify_recursive_proof},
     model::{
         mempool::{DataProposal, DataProposalHash, PoDA},
         BlobProofOutput, Hashable, Transaction, TransactionData, ValidatorPublicKey,
@@ -15,6 +14,7 @@ use crate::{
     utils::crypto::{BlstCrypto, SignedByValidator},
 };
 
+use super::verifiers::{verify_proof, verify_recursive_proof};
 use super::{Cut, KnownContracts, MempoolNetMessage};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
