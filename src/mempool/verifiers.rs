@@ -4,10 +4,15 @@ use std::io::Read;
 use anyhow::{bail, Context, Error};
 use rand::Rng;
 use risc0_recursion::{Risc0Journal, Risc0ProgramId};
-use risc0_zkvm::sha::Digest;
+use sha3::Digest;
 use sp1_sdk::{ProverClient, SP1ProofWithPublicValues, SP1VerifyingKey};
 
-use hyle_contract_sdk::{HyleOutput, ProgramId, Verifier};
+use hyle_contract_sdk::{Blob, BlobIndex, HyleOutput, ProgramId, StateDigest, TxHash, Verifier};
+
+use crate::{
+    model::verifiers::{BlstSignatureBlob, NativeVerifiers, ShaBlob},
+    utils::crypto::{BlstCrypto, Signed, ValidatorSignature},
+};
 
 pub fn verify_proof(
     proof: &[u8],
@@ -108,7 +113,8 @@ pub fn risc0_proof_verifier(
     let receipt = borsh::from_slice::<risc0_zkvm::Receipt>(encoded_receipt)
         .context("Error while decoding Risc0 proof's receipt")?;
 
-    let image_bytes: Digest = image_id.try_into().context("Invalid Risc0 image ID")?;
+    let image_bytes: risc0_zkvm::sha::Digest =
+        image_id.try_into().context("Invalid Risc0 image ID")?;
 
     receipt
         .verify(image_bytes)
@@ -223,6 +229,71 @@ pub fn sp1_proof_verifier(
     tracing::info!("✅ SP1 proof verified.",);
 
     Ok(vec![hyle_output])
+}
+
+pub fn verify_native(
+    tx_hash: TxHash,
+    index: BlobIndex,
+    blobs: &[Blob],
+    verifier: NativeVerifiers,
+) -> Result<HyleOutput, Error> {
+    let blob = blobs.get(index.0).context("Invalid blob index")?;
+    let blobs = hyle_contract_sdk::flatten_blobs(blobs);
+
+    let (identity, success) = match verifier {
+        NativeVerifiers::Blst => {
+            let (blob, _) = bincode::decode_from_slice::<BlstSignatureBlob, _>(
+                &blob.data.0,
+                bincode::config::standard(),
+            )?;
+
+            let msg = [blob.data, blob.identity.0.as_bytes().to_vec()].concat();
+            // TODO: refacto BlstCrypto to avoid using ValidatorPublicKey here
+            let msg = Signed {
+                msg,
+                signature: ValidatorSignature {
+                    signature: crate::utils::crypto::Signature(blob.signature),
+                    validator: staking::model::ValidatorPublicKey(blob.public_key),
+                },
+            };
+            let success = BlstCrypto::verify(&msg)?;
+
+            (blob.identity, success)
+        }
+        NativeVerifiers::Sha3_256 => {
+            let (blob, _) = bincode::decode_from_slice::<ShaBlob, _>(
+                &blob.data.0,
+                bincode::config::standard(),
+            )?;
+
+            let mut hasher = sha3::Sha3_256::new();
+            hasher.update(blob.data);
+            let res = hasher.finalize().to_vec();
+
+            let success = res == blob.sha;
+
+            (blob.identity, success)
+        }
+    };
+
+    if success {
+        tracing::info!("✅ Native blob verified on {tx_hash}:{index}");
+    } else {
+        tracing::info!("❌ Native blob verification failed on {tx_hash}:{index}.");
+    }
+
+    let output = HyleOutput {
+        version: 1,
+        initial_state: StateDigest::default(),
+        next_state: StateDigest::default(),
+        identity,
+        tx_hash,
+        index,
+        blobs,
+        success,
+        program_outputs: vec![],
+    };
+    Ok(output)
 }
 
 #[cfg(test)]
