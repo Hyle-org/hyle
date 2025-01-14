@@ -110,29 +110,39 @@ pub mod signal {
 
     impl BusMessage for ShutdownModule {}
     impl BusMessage for ShutdownCompleted {}
+
+    pub async fn async_receive_shutdown<T>(
+        should_shutdown: &mut bool,
+        shutdown_receiver: &mut tokio::sync::broadcast::Receiver<
+            crate::utils::modules::signal::ShutdownModule,
+        >,
+    ) -> anyhow::Result<()> {
+        if *should_shutdown {
+            return Ok(());
+        }
+        while let Ok(shutdown_event) = shutdown_receiver.recv().await {
+            if shutdown_event.module == std::any::type_name::<T>() {
+                *should_shutdown = true;
+                return Ok(());
+            }
+        }
+        anyhow::bail!(
+            "Error while shutting down module {}",
+            std::any::type_name::<T>()
+        );
+    }
 }
 
 #[macro_export]
 macro_rules! module_handle_messages {
     (on_bus $bus:expr, $($rest:tt)*) => {
 
-        let shutdown_receiver = unsafe { &mut *Pick::<tokio::sync::broadcast::Receiver<$crate::utils::modules::signal::ShutdownModule>>::splitting_get_mut(&mut $bus) };
+        let mut shutdown_receiver = unsafe { &mut *Pick::<tokio::sync::broadcast::Receiver<$crate::utils::modules::signal::ShutdownModule>>::splitting_get_mut(&mut $bus) };
         let mut should_shutdown = false;
         $crate::handle_messages! {
             on_bus $bus,
             $($rest)*
-            Ok(_) = async {
-                if should_shutdown {
-                    return Ok(());
-                }
-                while let Ok(shutdown_event) = shutdown_receiver.recv().await {
-                    if shutdown_event.module == std::any::type_name::<Self>() {
-                        should_shutdown = true;
-                        return Ok(());
-                    }
-                };
-                anyhow::bail!("Error while shutting down module {}", std::any::type_name::<Self>());
-            } => {
+            Ok(_) = $crate::utils::modules::signal::async_receive_shutdown::<Self>(&mut should_shutdown, &mut shutdown_receiver) => {
                 tracing::warn!("Break signal received for module {}", std::any::type_name::<Self>());
                 break;
             }
