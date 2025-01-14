@@ -14,17 +14,16 @@ use crate::bus::{bus_client, BusClientReceiver, SharedMessageBus};
 use crate::consensus::Consensus;
 use crate::data_availability::{DataAvailability, DataEvent};
 use crate::genesis::Genesis;
-use crate::handle_messages;
 use crate::indexer::Indexer;
 use crate::mempool::Mempool;
 use crate::model::{CommonRunContext, NodeRunContext, SharedRunContext};
+use crate::module_handle_messages;
 use crate::node_state::module::NodeStateModule;
 use crate::p2p::P2P;
 use crate::single_node_consensus::SingleNodeConsensus;
 use crate::tcp_server::TcpServer;
 use crate::utils::conf::Conf;
 use crate::utils::crypto::BlstCrypto;
-use crate::utils::modules::signal::ShutdownModule;
 use crate::utils::modules::ModulesHandler;
 
 use super::modules::{module_bus_client, Module};
@@ -53,19 +52,8 @@ impl<T> MockModule<T> {
         })
     }
     async fn start(&mut self) -> Result<()> {
-        // Have to wait forever as the module handler doesn't like exiting modules
-        // TODO: fix this?
-        handle_messages! {
+        module_handle_messages! {
             on_bus self.bus,
-            listen<ShutdownModule> shutdown_event => {
-                if shutdown_event.module == std::any::type_name::<Self>() {
-                    info!("MockModule received shutdown event");
-                    break;
-                }
-            }
-            else => {
-                tokio::time::sleep(std::time::Duration::from_secs(1)).await
-            }
         }
         Ok(())
     }
