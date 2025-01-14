@@ -4,7 +4,10 @@ use anyhow::Error;
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 
-use sdk::{identity_provider::IdentityVerification, Digestable};
+use sdk::{
+    identity_provider::IdentityVerification, utils::as_hyle_output, ContractInput, Digestable,
+    HyleOutput,
+};
 use sha2::{Digest, Sha256};
 
 #[cfg(feature = "metadata")]
@@ -122,6 +125,25 @@ impl TryFrom<sdk::StateDigest> for Hydentity {
             .map_err(|_| anyhow::anyhow!("Could not decode hydentity state"))?;
         Ok(balances)
     }
+}
+
+use core::str::from_utf8;
+use sdk::identity_provider::IdentityAction;
+
+pub fn execute(input: ContractInput) -> HyleOutput {
+    let (input, parsed_blob) = sdk::guest::init_raw::<IdentityAction>(input);
+
+    let mut state: Hydentity = input
+        .initial_state
+        .clone()
+        .try_into()
+        .expect("Failed to decode state");
+
+    let password = from_utf8(&input.private_blob.0).unwrap();
+
+    let res = sdk::identity_provider::execute_action(&mut state, parsed_blob, password);
+
+    as_hyle_output(input, state, res)
 }
 
 #[cfg(test)]

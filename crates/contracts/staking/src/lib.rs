@@ -1,9 +1,11 @@
 use anyhow::Result;
 use sdk::{
     caller::{CalleeBlobs, CallerCallee, ExecutionContext, MutCalleeBlobs},
-    Identity, StakingAction,
+    info,
+    utils::as_hyle_output,
+    ContractInput, HyleOutput, Identity, StakingAction, StructuredBlobData,
 };
-use state::OnChainState;
+use state::{OnChainState, Staking};
 
 #[cfg(feature = "client")]
 pub mod client;
@@ -55,4 +57,58 @@ impl StakingContract {
     pub fn state(self) -> state::Staking {
         self.state
     }
+}
+
+pub fn execute(contract_input: ContractInput) -> HyleOutput {
+    let (input, parsed_blob, caller) =
+        match sdk::guest::init_with_caller::<StakingAction>(contract_input) {
+            Ok(res) => res,
+            Err(err) => {
+                panic!("Staking contract initialization failed {}", err);
+            }
+        };
+
+    // TODO: refactor this into ExecutionContext
+    let mut callees_blobs = Vec::new();
+    for blob in input.blobs.clone().into_iter() {
+        if let Ok(structured_blob) = blob.data.clone().try_into() {
+            let structured_blob: StructuredBlobData<Vec<u8>> = structured_blob; // for type inference
+            if structured_blob.caller == Some(input.index.clone()) {
+                callees_blobs.push(blob);
+            }
+        };
+    }
+
+    let (state, _): (Staking, _) =
+        bincode::decode_from_slice(input.private_blob.0.as_slice(), bincode::config::standard())
+            .expect("Failed to decode payload");
+
+    let input_initial_state = input
+        .initial_state
+        .clone()
+        .try_into()
+        .expect("Failed to decode state");
+
+    info!("state: {:?}", state);
+    info!("computed:: {:?}", state.on_chain_state());
+    info!("given: {:?}", input_initial_state);
+    if state.on_chain_state() != input_initial_state {
+        panic!("State mismatch");
+    }
+
+    let ctx = ExecutionContext {
+        callees_blobs: callees_blobs.into(),
+        caller,
+    };
+    let mut contract = StakingContract::new(ctx, state);
+
+    let action = parsed_blob.data.parameters;
+
+    let res = contract.execute_action(action);
+
+    assert!(contract.callee_blobs().is_empty());
+
+    let ocs = contract.on_chain_state();
+    info!("state: {:?}", contract.state());
+    as_hyle_output(input, ocs, res)
 }

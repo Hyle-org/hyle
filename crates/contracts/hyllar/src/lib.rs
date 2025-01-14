@@ -1,13 +1,17 @@
 use std::collections::BTreeMap;
 
 use bincode::{Decode, Encode};
+use sdk::erc20::ERC20Action;
 use sdk::{
     caller::{CalleeBlobs, CallerCallee, MutCalleeBlobs},
     erc20::ERC20,
-    Digestable, Identity,
+    utils::as_hyle_output,
+    ContractInput, Digestable, HyleOutput, Identity,
 };
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
+
+extern crate alloc;
 
 #[cfg(feature = "metadata")]
 pub mod metadata {
@@ -173,6 +177,32 @@ impl TryFrom<sdk::StateDigest> for HyllarToken {
             .map_err(|_| anyhow::anyhow!("Could not decode hyllar state"))?;
         Ok(balances)
     }
+}
+
+pub fn execute(stdout: &mut impl std::fmt::Write, contract_input: ContractInput) -> HyleOutput {
+    let (input, parsed_blob, caller) =
+        match sdk::guest::init_with_caller::<ERC20Action>(contract_input) {
+            Ok(res) => res,
+            Err(err) => {
+                panic!("Hyllar contract initialization failed {}", err);
+            }
+        };
+
+    let state = input
+        .initial_state
+        .clone()
+        .try_into()
+        .expect("Failed to decode state");
+
+    let _ = stdout.write_str("Init token contract");
+    let mut contract = HyllarTokenContract::init(state, caller);
+
+    let _ = stdout.write_str("execute action");
+    let res = sdk::erc20::execute_action(&mut contract, parsed_blob.data.parameters);
+
+    let _ = writeln!(stdout, "commit {:?}", res);
+
+    as_hyle_output(input, contract.state(), res)
 }
 
 #[cfg(test)]

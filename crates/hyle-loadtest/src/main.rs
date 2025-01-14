@@ -78,7 +78,7 @@ async fn main() -> Result<(), Error> {
     match args.command {
         SendCommands::Setup => setup(url, users, verifier).await?,
         SendCommands::GenerateBlobTransactions => {
-            generate_blobs_txs(users, states).await?;
+            generate_blobs_txs(users).await?;
         }
         SendCommands::GenerateProofTransactions => {
             generate_proof_txs(users, states).await?;

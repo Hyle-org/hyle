@@ -6,10 +6,13 @@ mod fixtures;
 
 mod e2e_consensus {
 
-    use client_sdk::transaction_builder::TransactionBuilder;
+    use client_sdk::transaction_builder::{ProvableBlobTx, TxExecutorBuilder};
     use fixtures::test_helpers::send_transaction;
+    use hydentity::client::{register_identity, verify_identity};
     use hyle::{genesis::States, utils::logger::LogMe};
     use hyle_contract_sdk::Identity;
+    use hyllar::client::transfer;
+    use staking::client::{delegate, stake};
     use staking::state::{OnChainState, Staking};
     use tracing::info;
 
@@ -32,10 +35,7 @@ mod e2e_consensus {
         Ok(())
     }
 
-    #[test_log::test(tokio::test)]
-    async fn can_rejoin_blocking_consensus() -> Result<()> {
-        let mut ctx = E2ECtx::new_multi_with_indexer(2, 500).await?;
-
+    async fn scenario_rejoin_common(ctx: &mut E2ECtx) -> Result<()> {
         ctx.wait_height(2).await?;
 
         let joining_client = ctx.add_node().await?;
@@ -70,55 +70,67 @@ mod e2e_consensus {
             .into();
 
         assert_eq!(staking_state, staking.on_chain_state());
-        let mut states = States {
+        let states = States {
             hyllar,
             hydentity,
             staking,
         };
 
+        let mut tx_ctx = TxExecutorBuilder::default().with_state(states);
+
         let node_identity = Identity(format!("{}.hydentity", node_info.id));
         {
-            let mut transaction = TransactionBuilder::new(node_identity.clone());
+            let mut transaction = ProvableBlobTx::new(node_identity.clone());
 
-            states
-                .hydentity
-                .default_builder(&mut transaction)
-                .register_identity("password".to_owned())?;
+            register_identity(&mut transaction, "hydentity".into(), "password".to_owned())?;
 
-            send_transaction(ctx.client(), transaction, &mut states).await;
+            send_transaction(ctx.client(), transaction, &mut tx_ctx).await;
         }
         {
-            let mut transaction = TransactionBuilder::new("faucet.hydentity".into());
+            let mut transaction = ProvableBlobTx::new("faucet.hydentity".into());
 
-            states
-                .hydentity
-                .default_builder(&mut transaction)
-                .verify_identity(&states.hydentity, "password".to_string())?;
-            states
-                .hyllar
-                .default_builder(&mut transaction)
-                .transfer(node_identity.0.clone(), 100)?;
+            verify_identity(
+                &mut transaction,
+                "hydentity".into(),
+                &tx_ctx.hydentity,
+                "password".to_string(),
+            )?;
 
-            send_transaction(ctx.client(), transaction, &mut states).await;
+            transfer(
+                &mut transaction,
+                "hyllar".into(),
+                node_identity.0.clone(),
+                100,
+            )?;
+
+            send_transaction(ctx.client(), transaction, &mut tx_ctx).await;
         }
         {
-            let mut transaction = TransactionBuilder::new(node_identity.clone());
+            let mut transaction = ProvableBlobTx::new(node_identity.clone());
 
-            states
-                .hydentity
-                .default_builder(&mut transaction)
-                .verify_identity(&states.hydentity, "password".to_string())?;
-            states.staking.builder(&mut transaction).stake(100)?;
-            states
-                .hyllar
-                .default_builder(&mut transaction)
-                .transfer("staking".to_string(), 100)?;
-            states
-                .staking
-                .builder(&mut transaction)
-                .delegate(node_info.pubkey.clone().unwrap())?;
+            verify_identity(
+                &mut transaction,
+                "hydentity".into(),
+                &tx_ctx.hydentity,
+                "password".to_string(),
+            )?;
 
-            send_transaction(ctx.client(), transaction, &mut states).await;
+            stake(&mut transaction, "staking".into(), 100)?;
+
+            transfer(
+                &mut transaction,
+                "hyllar".into(),
+                "staking".to_string(),
+                100,
+            )?;
+
+            delegate(
+                &mut transaction,
+                "staking".into(),
+                node_info.pubkey.clone().unwrap(),
+            )?;
+
+            send_transaction(ctx.client(), transaction, &mut tx_ctx).await;
         }
 
         // 2 slots to get the tx in a blocks
@@ -136,6 +148,14 @@ mod e2e_consensus {
         );
 
         ctx.wait_height(1).await?;
+        Ok(())
+    }
+
+    #[test_log::test(tokio::test)]
+    async fn can_rejoin_blocking_consensus() -> Result<()> {
+        let mut ctx = E2ECtx::new_multi_with_indexer(2, 500).await?;
+
+        scenario_rejoin_common(&mut ctx).await?;
 
         // TODO: we should be able to exit the consensus and rejoin it again, but this doesn't work when we block it for now.
         /*
@@ -161,106 +181,7 @@ mod e2e_consensus {
     async fn can_rejoin_not_blocking_consensus() -> Result<()> {
         let mut ctx = E2ECtx::new_multi_with_indexer(2, 500).await?;
 
-        ctx.wait_height(1).await?;
-
-        let joining_client = ctx.add_node().await?;
-
-        let node_info = joining_client.get_node_info().await?;
-
-        assert!(node_info.pubkey.is_some());
-
-        let hyllar = ctx
-            .indexer_client()
-            .fetch_current_state(&"hyllar".into())
-            .await
-            .log_error("fetch state failed")
-            .unwrap();
-        let hydentity = ctx
-            .indexer_client()
-            .fetch_current_state(&"hydentity".into())
-            .await
-            .unwrap();
-
-        let staking_state: OnChainState = ctx
-            .indexer_client()
-            .fetch_current_state(&"staking".into())
-            .await
-            .unwrap();
-
-        let staking: Staking = ctx
-            .client()
-            .get_consensus_staking_state()
-            .await
-            .unwrap()
-            .into();
-
-        assert_eq!(staking_state, staking.on_chain_state());
-        let mut states = States {
-            hyllar,
-            hydentity,
-            staking,
-        };
-
-        let node_identity = Identity(format!("{}.hydentity", node_info.id));
-        {
-            let mut transaction = TransactionBuilder::new(node_identity.clone());
-
-            states
-                .hydentity
-                .default_builder(&mut transaction)
-                .register_identity("password".to_owned())?;
-
-            send_transaction(ctx.client(), transaction, &mut states).await;
-        }
-        {
-            let mut transaction = TransactionBuilder::new("faucet.hydentity".into());
-
-            states
-                .hydentity
-                .default_builder(&mut transaction)
-                .verify_identity(&states.hydentity, "password".to_string())?;
-            states
-                .hyllar
-                .default_builder(&mut transaction)
-                .transfer(node_identity.0.clone(), 100)?;
-
-            send_transaction(ctx.client(), transaction, &mut states).await;
-        }
-        {
-            let mut transaction = TransactionBuilder::new(node_identity.clone());
-
-            states
-                .hydentity
-                .default_builder(&mut transaction)
-                .verify_identity(&states.hydentity, "password".to_string())?;
-            states.staking.builder(&mut transaction).stake(50)?;
-            states
-                .hyllar
-                .default_builder(&mut transaction)
-                .transfer("staking".to_string(), 50)?;
-            states
-                .staking
-                .builder(&mut transaction)
-                .delegate(node_info.pubkey.clone().unwrap())?;
-
-            send_transaction(ctx.client(), transaction, &mut states).await;
-        }
-
-        // 2 slots to get the tx in a blocks
-        // 1 slot to send the candidacy
-        // 1 slot to add the validator to consensus
-        ctx.wait_height(4).await?;
-
-        let consensus = ctx.client().get_consensus_info().await?;
-
-        assert_eq!(consensus.validators.len(), 3, "expected 3 validators");
-
-        assert!(
-            consensus.validators.contains(&node_info.pubkey.unwrap()),
-            "node pubkey not found in validators",
-        );
-
-        ctx.wait_height(1).await?;
+        scenario_rejoin_common(&mut ctx).await?;
 
         info!("Stopping node");
         ctx.stop_node(3).await?;
