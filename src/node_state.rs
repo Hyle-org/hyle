@@ -15,7 +15,7 @@ use ordered_tx_map::OrderedTxMap;
 use staking::StakingAction;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use timeouts::Timeouts;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, trace};
 
 mod api;
 pub mod module;
@@ -177,7 +177,6 @@ impl NodeState {
             })
             .collect();
 
-        debug!("Add blob transaction {} to state {:?}", tx.hash(), tx);
         self.unsettled_transactions.add(UnsettledBlobTransaction {
             identity: tx.identity.clone(),
             hash: blob_tx_hash.clone(),
@@ -226,9 +225,10 @@ impl NodeState {
         };
 
         // If we arrived here, HyleOutput provided is OK and can now be saved
-        debug!(
-            "Saving metadata for BlobTx {} for {}",
-            blob_proof_data.hyle_output.tx_hash.0, blob_proof_data.hyle_output.index
+        trace!(
+            "Saving hyle_output for BlobTx {} index {}",
+            blob_proof_data.hyle_output.tx_hash.0,
+            blob_proof_data.hyle_output.index
         );
 
         blob.possible_proofs.push((
@@ -292,7 +292,7 @@ impl NodeState {
         &mut self,
         unsettled_tx_hash: &TxHash,
     ) -> Result<SettledTxOutput, Error> {
-        debug!("Trying to settle blob tx: {:?}", unsettled_tx_hash);
+        trace!("Trying to settle blob tx: {:?}", unsettled_tx_hash);
 
         let unsettled_tx =
             self.unsettled_transactions
@@ -407,7 +407,7 @@ impl NodeState {
         tx_updated_contracts: BTreeMap<ContractName, Contract>,
     ) -> BTreeSet<TxHash> {
         // Transaction was settled, update our state.
-        info!("Settled tx {:?}", &bth);
+        info!("✨ Settled tx {:?}", &bth);
 
         // When a proof tx is handled, three things happen:
         // 1. Blobs get verified
@@ -453,7 +453,10 @@ impl NodeState {
             reason = "all contract names are validated to exist above"
         )]
         for (contract_name, next_state) in tx_updated_contracts.iter() {
-            debug!("Update {} contract state: {:?}", contract_name, next_state);
+            debug!(
+                "Update {} contract state: {:?}",
+                contract_name, next_state.state
+            );
             self.contracts.get_mut(contract_name).unwrap().state = next_state.state.clone(); // unwrap, see above ^
             if let Some(tx) = self
                 .unsettled_transactions

@@ -1,7 +1,7 @@
 use anyhow::Result;
 use fjall::{Config, Keyspace, PartitionCreateOptions, PartitionHandle, Slice};
 use std::{fmt::Debug, path::Path};
-use tracing::{error, info};
+use tracing::{debug, error, info, trace};
 
 use crate::{
     consensus::ConsensusProposalHash,
@@ -93,7 +93,7 @@ impl Blocks {
         if self.contains(&block_hash) {
             return Ok(());
         }
-        info!("📦 storing block in fjall {}", block.height());
+        trace!("📦 storing block in fjall {}", block.height());
         self.by_hash.insert(
             FjallHashKey(block_hash).as_ref(),
             FjallValue::new(&block)?.as_ref(),

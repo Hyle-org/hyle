@@ -34,7 +34,7 @@ use std::{collections::HashMap, default::Default, path::PathBuf};
 use tokio::time::interval;
 #[cfg(not(test))]
 use tokio::{sync::broadcast, time::sleep};
-use tracing::{debug, info, warn};
+use tracing::{debug, info, trace, warn};
 
 pub mod api;
 pub mod metrics;
@@ -230,7 +230,7 @@ impl Consensus {
             }
         }
 
-        info!(
+        debug!(
             "🥋 Ready for slot {}, view {}",
             self.bft_round_state.consensus_proposal.slot,
             self.bft_round_state.consensus_proposal.view
@@ -240,7 +240,7 @@ impl Consensus {
 
         if self.bft_round_state.consensus_proposal.round_leader == *self.crypto.validator_pubkey() {
             self.bft_round_state.state_tag = StateTag::Leader;
-            info!("👑 I'm the new leader! 👑")
+            debug!("👑 I'm the new leader! 👑")
         } else {
             self.bft_round_state.state_tag = StateTag::Follower;
             self.bft_round_state
@@ -334,7 +334,7 @@ impl Consensus {
             tokio::task::Builder::new()
                 .name("sleep-consensus")
                 .spawn(async move {
-                    info!(
+                    debug!(
                         "⏱️  Sleeping {} milliseconds before starting a new slot",
                         interval
                     );
@@ -413,7 +413,7 @@ impl Consensus {
 
         let f = self.bft_round_state.staking.compute_f();
 
-        info!(
+        trace!(
             "📩 Slot {} validated votes: {} / {} ({} validators for a total bond = {})",
             self.bft_round_state.consensus_proposal.slot,
             voting_power,
@@ -505,7 +505,7 @@ impl Consensus {
     }
 
     fn try_process_timeout_qc(&mut self, timeout_qc: QuorumCertificate) -> Result<()> {
-        info!(
+        debug!(
             "Trying to process timeout Certificate against consensus proposal slot: {}, view: {}",
             self.bft_round_state.consensus_proposal.slot,
             self.bft_round_state.consensus_proposal.view,
@@ -633,7 +633,7 @@ impl Consensus {
             ))
             .log_error("Failed to send ConsensusEvent::CommittedConsensusProposal on the bus");
 
-        info!(
+        debug!(
             "📈 Slot {} committed",
             &self.bft_round_state.consensus_proposal.slot
         );
@@ -899,7 +899,7 @@ impl Consensus {
         &self,
         msg: ConsensusNetMessage,
     ) -> Result<SignedByValidator<ConsensusNetMessage>> {
-        debug!("🔏 Signing message: {}", msg);
+        trace!("🔏 Signing message: {}", msg);
         self.crypto.sign(msg)
     }
 }

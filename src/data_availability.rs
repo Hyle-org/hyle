@@ -136,7 +136,7 @@ impl DataAvailability {
     pub async fn start(&mut self) -> Result<()> {
         let stream_request_receiver = TcpListener::bind(&self.config.da_address).await?;
         info!(
-            "📬  Starting DataAvailability module, listening for stream requests on {}",
+            "📡  Starting DataAvailability module, listening for stream requests on {}",
             &self.config.da_address
         );
 
@@ -284,7 +284,7 @@ impl DataAvailability {
         &mut self,
         commit_consensus_proposal: CommittedConsensusProposal,
     ) -> Result<()> {
-        info!(
+        debug!(
             "Handling Committed Consensus Proposal {:?}",
             &commit_consensus_proposal
         );
@@ -310,7 +310,7 @@ impl DataAvailability {
             consensus_proposal,
         }: CommittedConsensusProposal,
     ) {
-        info!("🔒  Cut committed");
+        trace!("🔒  Cut committed");
         let signed_block = SignedBlock {
             data_proposals,
             certificate,
@@ -387,12 +387,17 @@ impl DataAvailability {
         }
         trace!("Block {} {}: {:#?}", block.height(), block.hash(), block);
 
+        //println!(
+        //    "new block {} {} with {} txs",
+        //    block.height(),
+        //    block.hash(),
+        //    block.txs().len(),
+        //);
         info!(
-            "new block {} {} with {} txs, last hash = {}",
+            "new block {} {} with {} txs",
             block.height(),
             block.hash(),
             block.txs().len(),
-            self.blocks.last_block_hash().unwrap_or_default()
         );
         debug!(
             "Transactions: {:#?}",

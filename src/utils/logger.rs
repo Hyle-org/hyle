@@ -88,9 +88,23 @@ pub fn setup_tracing(mode: TracingMode, node_name: String) -> Result<()> {
     if !var.contains("risc0_zkvm") {
         filter = filter.add_directive("risc0_zkvm=info".parse()?);
     }
-    if !var.contains("tower_http") {
-        // API request/response debug tracing
-        filter = filter.add_directive("tower_http::trace=debug".parse()?);
+    if !var.contains("tokio") {
+        filter = filter.add_directive("tokio=info".parse()?);
+        filter = filter.add_directive("runtime=info".parse()?);
+    }
+    if !var.contains("fjall") {
+        filter = filter.add_directive("fjall=warn".parse()?);
+    }
+    if !var.contains("opentelemetry") {
+        filter = filter.add_directive("opentelemetry=warn".parse()?);
+        filter = filter.add_directive("opentelemetry_sdk=warn".parse()?);
+    }
+    if !var.contains("risc0_zkvm") {
+        std::env::set_var(
+            "RUST_LOG",
+            format!("{var},risc0_zkvm=warn,risc0_circuit_rv32im=warn,risc0_binfmt=warn"),
+        );
+        filter = filter.add_directive("risc0_zkvm=warn".parse()?);
     }
 
     // Can't use match inline because these are different return types

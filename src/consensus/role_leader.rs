@@ -76,7 +76,7 @@ impl LeaderRole for Consensus {
                 && !self.bft_round_state.staking.is_bonded(&v.pubkey)
         });
 
-        info!(
+        debug!(
             "🚀 Starting new slot {} with {} existing validators and {} candidates",
             self.bft_round_state.consensus_proposal.slot,
             self.bft_round_state.staking.bonded().len(),
@@ -182,7 +182,7 @@ impl LeaderRole for Consensus {
         // Waits for at least n-f = 2f+1 matching PrepareVote messages
         let f = self.bft_round_state.staking.compute_f();
 
-        info!(
+        trace!(
             "📩 Slot {} validated votes: {} / {} ({} validators for a total bond = {})",
             self.bft_round_state.consensus_proposal.slot,
             voting_power,
@@ -230,7 +230,7 @@ impl LeaderRole for Consensus {
         consensus_proposal_hash: ConsensusProposalHash,
     ) -> Result<()> {
         if !matches!(self.bft_round_state.state_tag, StateTag::Leader) {
-            warn!("ConfirmAck received while not leader");
+            debug!("ConfirmAck received while not leader");
             return Ok(());
         }
 
@@ -256,7 +256,7 @@ impl LeaderRole for Consensus {
         // Save ConfirmAck. Ends if the message already has been processed
         if !self.store.bft_round_state.leader.confirm_ack.insert(msg) {
             self.metrics.confirm_ack("already_processed");
-            info!("ConfirmAck has already been processed");
+            trace!("ConfirmAck has already been processed");
 
             return Ok(());
         }
@@ -278,7 +278,7 @@ impl LeaderRole for Consensus {
 
         let f = self.bft_round_state.staking.compute_f();
 
-        info!(
+        debug!(
             "✅ Slot {} confirmed acks: {} / {} ({} validators for a total bond = {})",
             self.bft_round_state.consensus_proposal.slot,
             voting_power,

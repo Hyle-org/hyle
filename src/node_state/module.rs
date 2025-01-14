@@ -13,6 +13,7 @@ use anyhow::{Context, Result};
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use tracing::info;
 
 /// NodeStateModule maintains a NodeState,
 /// listens to DA, and sends events when it has processed blocks.
@@ -56,6 +57,12 @@ impl Module for NodeStateModule {
         let storage = Self::load_from_disk_or_default::<NodeState>(
             ctx.config.data_directory.join("node_state.bin").as_path(),
         );
+
+        if !storage.contracts.is_empty() {
+            for name in storage.contracts.keys() {
+                info!("📝 Loaded contract state for {}", name);
+            }
+        }
 
         Ok(Self {
             config: ctx.config.clone(),

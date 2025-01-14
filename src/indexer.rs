@@ -31,7 +31,7 @@ use sqlx::Row;
 use sqlx::{postgres::PgPoolOptions, PgPool, Pool, Postgres};
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::{broadcast, mpsc};
-use tracing::{error, info};
+use tracing::{error, info, trace};
 
 use crate::model::indexer::*;
 
@@ -74,7 +74,6 @@ impl Module for Indexer {
             .await
             .context("Failed to connect to the database")?;
 
-        info!("Checking for new DB migration...");
         let _ =
             tokio::time::timeout(tokio::time::Duration::from_secs(60), MIGRATOR.run(&pool)).await?;
 
@@ -225,7 +224,7 @@ impl Indexer {
     }
 
     async fn handle_processed_block(&mut self, block: Block) -> Result<(), Error> {
-        info!("Indexing block at height {:?}", block.block_height);
+        trace!("Indexing block at height {:?}", block.block_height);
         let mut transaction = self.state.db.begin().await?;
 
         // Insert the block into the blocks table

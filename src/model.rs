@@ -301,7 +301,6 @@ impl Hashable<BlobProofOutputHash> for BlobProofOutput {
     }
 }
 
-// TODO: Return consensus proposal hash
 impl Hashable<ConsensusProposalHash> for SignedBlock {
     fn hash(&self) -> ConsensusProposalHash {
         self.consensus_proposal.hash()

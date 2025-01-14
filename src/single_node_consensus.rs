@@ -19,7 +19,7 @@ use crate::{model::SharedRunContext, utils::modules::Module};
 use anyhow::Result;
 use bincode::{Decode, Encode};
 use staking::state::Staking;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 module_bus_client! {
 struct SingleNodeConsensusBusClient {
@@ -94,7 +94,7 @@ impl SingleNodeConsensus {
     async fn start(&mut self) -> Result<()> {
         if !self.store.has_done_genesis {
             // We're starting fresh, need to generate a genesis block.
-            tracing::info!("Doing genesis");
+            tracing::trace!("Doing genesis");
 
             module_handle_messages! {
                 on_bus self.bus,
@@ -121,7 +121,7 @@ impl SingleNodeConsensus {
                 }
             }
             self.store.has_done_genesis = true;
-            tracing::info!("Genesis block done");
+            tracing::trace!("Genesis block done");
         }
 
         let mut interval = tokio::time::interval(tokio::time::Duration::from_millis(
@@ -154,7 +154,7 @@ impl SingleNodeConsensus {
         Ok(())
     }
     async fn handle_new_slot_tick(&mut self) -> Result<()> {
-        info!("New slot tick");
+        debug!("New slot tick");
         // Query a new cut to Mempool in order to create a new CommitCut
         match self
             .bus

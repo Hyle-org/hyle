@@ -15,7 +15,7 @@ use crate::{
 use anyhow::{bail, Result};
 use std::{collections::HashSet, sync::Arc, time::Duration};
 use tokio::{net::TcpListener, time::sleep};
-use tracing::{debug, error, info, warn};
+use tracing::{error, info, trace, warn};
 
 mod fifo_filter;
 pub mod network;
@@ -96,7 +96,7 @@ impl P2P {
                             if let Err(e) = peer.handshake().await {
                                 warn!("Error in handshake: {}", e);
                             }
-                            debug!("Handshake done !");
+                            trace!("Handshake done !");
                             match peer.start().await {
                                 Ok(_) => warn!("Peer #{} thread ended with success.", id),
                                 Err(_) => warn!(
@@ -142,7 +142,10 @@ impl P2P {
         }
 
         let listener = TcpListener::bind(&self.config.host).await?;
-        info!("p2p listening on {}", listener.local_addr()?);
+        info!(
+            "📡  Starting P2P module, listening on {}",
+            listener.local_addr()?
+        );
 
         // Wait some more so all peers (in tests) are listening.
         #[cfg(test)]
@@ -179,7 +182,7 @@ impl P2P {
                                     );
                                 let mut peer_server = peer::Peer::new(id, socket, bus, crypto, conf).await;
                                 _ = peer_server.handshake().await;
-                                debug!("Handshake done !");
+                                trace!("Handshake done !");
                                 match peer_server.start().await {
                                     Ok(_) => info!("Peer thread exited"),
                                     Err(e) => info!("Peer thread exited: {}", e),

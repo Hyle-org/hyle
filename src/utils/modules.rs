@@ -34,19 +34,18 @@ where
     where
         S: bincode::Decode,
     {
-        info!("Loading file {}", file.to_string_lossy());
         match fs::File::open(file) {
             Ok(mut reader) => {
+                info!("Loaded data from disk {}", file.to_string_lossy());
                 bincode::decode_from_std_read(&mut reader, bincode::config::standard())
                     .log_error(format!("Loading and decoding {}", file.to_string_lossy()))
                     .ok()
             }
-            Err(e) => {
+            Err(_) => {
                 info!(
-                    "File {} not found for module {} (using default): {:?}",
+                    "File {} not found for module {} (using default)",
                     file.to_string_lossy(),
                     type_name::<S>(),
-                    e
                 );
                 None
             }
@@ -143,7 +142,7 @@ macro_rules! module_handle_messages {
             on_bus $bus,
             $($rest)*
             Ok(_) = $crate::utils::modules::signal::async_receive_shutdown::<Self>(&mut should_shutdown, &mut shutdown_receiver) => {
-                tracing::warn!("Break signal received for module {}", std::any::type_name::<Self>());
+                tracing::debug!("Break signal received for module {}", std::any::type_name::<Self>());
                 break;
             }
         }
@@ -191,7 +190,7 @@ impl ShutdownClient {
             on_bus *self,
             listen<ShutdownCompleted> msg => {
                 if msg.module == module_name {
-                    info!("Module {} successfully shut", msg.module);
+                    debug!("Module {} successfully shut", msg.module);
                     break;
                 }
             }
@@ -223,12 +222,12 @@ impl ModulesHandler {
             self.started_modules.push(module.name);
             let mut shutdown_client = ShutdownClient::new_from_bus(self.bus.new_handle()).await;
 
-            info!("Starting module {}", module.name);
+            debug!("Starting module {}", module.name);
             let handle = tokio::task::Builder::new()
                 .name(module.name)
                 .spawn(async move {
                     match module.starter.await {
-                        Ok(_) => tracing::warn!("Module {} exited with no error.", module.name),
+                        Ok(_) => tracing::debug!("Module {} exited with no error.", module.name),
                         Err(e) => {
                             tracing::error!("Module {} exited with error: {:?}", module.name, e);
                         }
