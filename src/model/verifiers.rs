@@ -51,11 +51,12 @@ impl ContractAction for BlstSignatureBlob {
         _caller: Option<BlobIndex>,
         _callees: Option<Vec<BlobIndex>>,
     ) -> Blob {
+        #[allow(clippy::expect_used)]
         Blob {
             contract_name,
             data: BlobData(
                 bincode::encode_to_vec(self, bincode::config::standard())
-                    .expect("failed to encode program inputs"),
+                    .expect("failed to encode BlstSignatureBlob"),
             ),
         }
     }
@@ -82,11 +83,12 @@ impl ContractAction for ShaBlob {
         _caller: Option<BlobIndex>,
         _callees: Option<Vec<BlobIndex>>,
     ) -> Blob {
+        #[allow(clippy::expect_used)]
         Blob {
             contract_name,
             data: BlobData(
                 bincode::encode_to_vec(self, bincode::config::standard())
-                    .expect("failed to encode program inputs"),
+                    .expect("failed to encode ShaBlob"),
             ),
         }
     }

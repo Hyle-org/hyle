@@ -206,7 +206,7 @@ impl NodeState {
                             };
                         }
                         Err(e) => {
-                            error!("Failed to verify native proof: {e}");
+                            error!("Failed to verify native blob on {blob_tx_hash}:{index} with error: {e}");
                         }
                     }
                 } else {

@@ -271,9 +271,9 @@ pub fn verify_native(
     };
 
     if success {
-        tracing::info!("✅ Native proof verified.");
+        tracing::info!("✅ Native blob verified on {tx_hash}:{index}");
     } else {
-        tracing::info!("❌ Native proof verification failed.");
+        tracing::info!("❌ Native blob verification failed on {tx_hash}:{index}.");
     }
 
     let output = HyleOutput {
