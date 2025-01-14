@@ -127,7 +127,7 @@ where
                     error!(cn = %self.contract_name, "Error while handling node state event: {:#}", e)
                 }
             }
-        }
+        };
 
         if let Err(e) =
             Self::save_on_disk::<Store<State>>(self.file.as_path(), self.store.read().await.deref())

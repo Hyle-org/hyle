@@ -267,24 +267,7 @@ impl PartialEq for SignedBlock {
 
 impl Eq for SignedBlock {}
 
-pub struct HyleOutputHash(pub Vec<u8>);
 pub struct BlobProofOutputHash(pub Vec<u8>);
-
-impl Hashable<HyleOutputHash> for HyleOutput {
-    fn hash(&self) -> HyleOutputHash {
-        let mut hasher = Sha3_256::new();
-        hasher.update(self.version.to_le_bytes());
-        hasher.update(self.initial_state.0.clone());
-        hasher.update(self.next_state.0.clone());
-        hasher.update(self.identity.0.as_bytes());
-        hasher.update(self.tx_hash.0.as_bytes());
-        hasher.update(self.index.0.to_le_bytes());
-        hasher.update(&self.blobs);
-        hasher.update([self.success as u8]);
-        hasher.update(&self.program_outputs);
-        HyleOutputHash(hasher.finalize().to_vec())
-    }
-}
 
 impl Hashable<BlobProofOutputHash> for BlobProofOutput {
     fn hash(&self) -> BlobProofOutputHash {

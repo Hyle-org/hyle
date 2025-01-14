@@ -1,7 +1,7 @@
 use anyhow::Context;
 use bincode::{Decode, Encode};
 use derive_more::derive::Display;
-use sdk::{flatten_blobs, Blob, Identity, TxHash};
+use sdk::{flatten_blobs, Blob, HyleOutput, Identity, TxHash};
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Sha3_256};
 
@@ -10,6 +10,24 @@ pub mod transaction_builder;
 
 pub trait Hashable<T> {
     fn hash(&self) -> T;
+}
+
+pub struct HyleOutputHash(pub Vec<u8>);
+
+impl Hashable<HyleOutputHash> for HyleOutput {
+    fn hash(&self) -> HyleOutputHash {
+        let mut hasher = Sha3_256::new();
+        hasher.update(self.version.to_le_bytes());
+        hasher.update(self.initial_state.0.clone());
+        hasher.update(self.next_state.0.clone());
+        hasher.update(self.identity.0.as_bytes());
+        hasher.update(self.tx_hash.0.as_bytes());
+        hasher.update(self.index.0.to_le_bytes());
+        hasher.update(&self.blobs);
+        hasher.update([self.success as u8]);
+        hasher.update(&self.program_outputs);
+        HyleOutputHash(hasher.finalize().to_vec())
+    }
 }
 
 #[derive(Debug, Default, Serialize, Deserialize, PartialEq, Eq, Clone, Encode, Decode)]

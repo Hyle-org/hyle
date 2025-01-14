@@ -155,7 +155,7 @@ impl TcpServer {
                     }
                 });
             }
-        }
+        };
 
         readers.abort_all();
 
