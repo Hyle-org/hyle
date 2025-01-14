@@ -7,7 +7,6 @@ use std::sync::{Arc, Mutex};
 
 use anyhow::{bail, Context, Result};
 use axum::Router;
-use rand::Rng;
 use tracing::info;
 
 use crate::bus::metrics::BusMetrics;
@@ -28,6 +27,13 @@ use crate::utils::crypto::BlstCrypto;
 use crate::utils::modules::ModulesHandler;
 
 use super::modules::{module_bus_client, Module};
+
+// Assume that we can reuse the OS-provided port.
+pub async fn find_available_port() -> u16 {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    addr.port()
+}
 
 type MockBuilder = Box<
     dyn for<'a> FnOnce(
@@ -88,12 +94,10 @@ impl NodeIntegrationCtxBuilder {
             Some(false),
         )
         .expect("conf ok");
-        let mut rng = rand::thread_rng();
-        let random_port: u32 = rng.gen_range(1024..(65536 - 4000));
-        conf.host = format!("localhost:{}", random_port);
-        conf.da_address = format!("localhost:{}", random_port + 1000);
-        conf.tcp_server_address = Some(format!("localhost:{}", random_port + 2000));
-        conf.rest = format!("localhost:{}", random_port + 3000);
+        conf.host = format!("localhost:{}", find_available_port().await);
+        conf.da_address = format!("localhost:{}", find_available_port().await);
+        conf.tcp_server_address = Some(format!("localhost:{}", find_available_port().await));
+        conf.rest = format!("localhost:{}", find_available_port().await);
 
         Self {
             tmpdir,
