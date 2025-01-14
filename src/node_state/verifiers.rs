@@ -50,7 +50,6 @@ pub fn verify_proof(
         }
         "noir" => noir_proof_verifier(proof, &program_id.0),
         "sp1" => sp1_proof_verifier(proof, &program_id.0),
-        //"native" => native_verifier(proof, program_id),
         _ => bail!("{} recursive verifier not implemented yet", verifier),
     }?;
     hyle_outputs.iter().for_each(|hyle_output| {
