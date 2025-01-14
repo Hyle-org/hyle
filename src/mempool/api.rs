@@ -45,7 +45,7 @@ async fn handle_send(
     mut state: RouterState,
     payload: TransactionData,
 ) -> Result<Json<TxHash>, AppError> {
-    let tx = Transaction::wrap(payload);
+    let tx: Transaction = payload.into();
     let tx_hash = tx.hash();
     state
         .bus
