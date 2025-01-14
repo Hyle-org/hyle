@@ -11,7 +11,6 @@ use crate::{
         mempool::{DataProposal, DataProposalHash, PoDA},
         BlobProofOutput, Hashable, Transaction, TransactionData, ValidatorPublicKey,
     },
-    node_state::verifiers::{verify_proof, verify_recursive_proof},
     utils::crypto::{BlstCrypto, SignedByValidator},
 };
 

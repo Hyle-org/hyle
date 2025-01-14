@@ -18,9 +18,6 @@ struct Args {
     #[arg(long, default_value = "127.0.0.1")]
     pub host: String,
 
-    #[arg(long, default_value = "4321")]
-    pub port: u32,
-
     #[arg(long, default_value = "1414")]
     pub tcp_port: u32,
 
@@ -65,8 +62,8 @@ async fn main() -> Result<(), Error> {
 
     let args = Args::parse();
 
-    let http_url = format!("http://{}:{}", args.host, args.port);
-    let tcp_url = format!("{}:{}", args.host, args.tcp_port);
+    let url = format!("{}:{}", args.host, args.tcp_port);
+
     let users = args.users;
     let verifier = args.verifier;
 
@@ -76,7 +73,7 @@ async fn main() -> Result<(), Error> {
     };
 
     match args.command {
-        SendCommands::Setup => setup(http_url, users, verifier).await?,
+        SendCommands::Setup => setup(url, users, verifier).await?,
         SendCommands::GenerateBlobTransactions => {
             generate_blobs_txs(users, states).await?;
         }
@@ -88,22 +85,22 @@ async fn main() -> Result<(), Error> {
         }
         SendCommands::SendBlobTransactions => {
             let blob_txs = load_blob_txs(users)?;
-            send_blob_txs(tcp_url, blob_txs).await?
+            send_blob_txs(url, blob_txs).await?
         }
         SendCommands::SendProofTransactions => {
             let proof_txs = load_proof_txs(users)?;
-            send_proof_txs(tcp_url, proof_txs).await?
+            send_proof_txs(url, proof_txs).await?
         }
         SendCommands::SendTransactions => {
             let blob_txs = load_blob_txs(users)?;
             let proof_txs = load_proof_txs(users)?;
-            send(tcp_url, blob_txs, proof_txs).await?
+            send(url, blob_txs, proof_txs).await?
         }
         SendCommands::LoadTest => {
-            setup(http_url, users, verifier).await?;
+            setup(url.clone(), users, verifier).await?;
             tokio::time::sleep(std::time::Duration::from_secs(3)).await;
             let (blob_txs, proof_txs) = generate(users, states).await?;
-            send(tcp_url, blob_txs, proof_txs).await?;
+            send(url, blob_txs, proof_txs).await?;
         }
     }
 
