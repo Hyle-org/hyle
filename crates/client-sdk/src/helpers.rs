@@ -181,6 +181,8 @@ pub mod test {
         contract_input: &ContractInput,
     ) -> anyhow::Result<(ProofData, HyleOutput)> {
         let hyle_output = test::execute(binary, contract_input)?;
+
+        check_output(&hyle_output)?;
         Ok((
             ProofData::Bytes(bincode::encode_to_vec(
                 vec![hyle_output.clone()],

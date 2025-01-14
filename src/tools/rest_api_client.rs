@@ -10,15 +10,15 @@ use tokio::net::TcpStream;
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
 
 #[cfg(feature = "node")]
-use crate::tools::mock_workflow::RunScenario;
-use crate::{
-    model::{
-        consensus::ConsensusInfo, data_availability::Contract, indexer::ContractDb, rest::NodeInfo,
-        BlobTransaction, BlockHeight, ContractName, ProofTransaction, RegisterContractTransaction,
-        Transaction,
-    },
-    tcp_server::TcpServerNetMessage,
+use crate::model::Transaction;
+use crate::model::{
+    consensus::ConsensusInfo, data_availability::Contract, indexer::ContractDb, rest::NodeInfo,
+    BlobTransaction, BlockHeight, ContractName, ProofTransaction, RegisterContractTransaction,
 };
+#[cfg(feature = "node")]
+use crate::tcp_server::TcpServerNetMessage;
+#[cfg(feature = "node")]
+use crate::tools::mock_workflow::RunScenario;
 use hyle_contract_sdk::{StateDigest, TxHash};
 use staking::state::Staking;
 
