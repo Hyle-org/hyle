@@ -152,11 +152,17 @@ pub struct RegisterContractTransaction {
 }
 
 impl Transaction {
-    pub fn wrap(data: TransactionData) -> Self {
+    fn wrap(data: TransactionData) -> Self {
         Transaction {
             version: 1,
             transaction_data: data,
         }
+    }
+}
+
+impl From<TransactionData> for Transaction {
+    fn from(value: TransactionData) -> Self {
+        Transaction::wrap(value)
     }
 }
 

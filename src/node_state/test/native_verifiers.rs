@@ -26,7 +26,7 @@ async fn test_blst_native_verifier() {
     let contract_name: ContractName = "blst".into();
     let identity: Identity = format!("bob.{contract_name}").into();
 
-    let crypto = BlstCrypto::new_random();
+    let crypto = BlstCrypto::new_random().expect("crypto");
 
     let data = vec![1, 2, 3, 4, 5, 6];
 
