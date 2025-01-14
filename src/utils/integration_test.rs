@@ -7,6 +7,7 @@ use std::sync::{Arc, Mutex};
 
 use anyhow::{bail, Context, Result};
 use axum::Router;
+use rand::Rng;
 use tracing::info;
 
 use crate::bus::metrics::BusMetrics;
@@ -81,12 +82,18 @@ impl NodeIntegrationCtxBuilder {
         let tmpdir = tempfile::tempdir().unwrap();
         let bus = SharedMessageBus::new(BusMetrics::global("default".to_string()));
         let crypto = BlstCrypto::new("test".to_owned()).unwrap();
-        let conf = Conf::new(
+        let mut conf = Conf::new(
             None,
             tmpdir.path().to_str().map(|s| s.to_owned()),
             Some(false),
         )
         .expect("conf ok");
+        let mut rng = rand::thread_rng();
+        let random_port: u32 = rng.gen_range(1024..(65536 - 4000));
+        conf.host = format!("localhost:{}", random_port);
+        conf.da_address = format!("localhost:{}", random_port + 1000);
+        conf.tcp_server_address = Some(format!("localhost:{}", random_port + 2000));
+        conf.rest = format!("localhost:{}", random_port + 3000);
 
         Self {
             tmpdir,
