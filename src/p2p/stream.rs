@@ -29,7 +29,7 @@ pub async fn send_net_message(
     msg: NetMessage,
 ) -> Result<(), Error> {
     stream
-        .send(msg.to_binary().into())
+        .send(msg.to_binary()?.into())
         .await
         .context("Failed to send NetMessage")?;
 

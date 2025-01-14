@@ -12,8 +12,8 @@ use tracing::info;
 use crate::bus::command_response::Query;
 use crate::bus::{bus_client, BusClientReceiver, BusClientSender};
 use crate::consensus::{ConsensusEvent, ConsensusProposal};
-use crate::data_availability::DataEvent;
 use crate::genesis::{Genesis, GenesisEvent};
+use crate::mempool::test::NodeStateEvent;
 use crate::mempool::{DataProposal, DataProposalHash, RestApiMessage};
 use crate::mempool::{MempoolNetMessage, QueryNewCut};
 use crate::model::mempool::Cut;
@@ -33,7 +33,7 @@ bus_client! {
         sender(RestApiMessage),
         sender(SignedByValidator<MempoolNetMessage>),
         sender(Query<QueryNewCut, Cut>),
-        receiver(DataEvent),
+        receiver(NodeStateEvent),
         receiver(ConsensusEvent),
     }
 }
@@ -52,7 +52,7 @@ async fn impl_test_mempool_isnt_blocked_by_proof_verification() -> Result<()> {
 
     let mut node_client = Client::new_from_bus(node_modules.bus.new_handle()).await;
 
-    let contract_name = ContractName("test1".to_owned());
+    let contract_name = ContractName::new("test1");
 
     node_client.send(GenesisEvent::GenesisBlock(SignedBlock {
         data_proposals: vec![(
@@ -137,9 +137,9 @@ async fn impl_test_mempool_isnt_blocked_by_proof_verification() -> Result<()> {
                 }
             }
         }
-        let evt: DataEvent = node_client.recv().await?;
+        let evt: NodeStateEvent = node_client.recv().await?;
         match evt {
-            DataEvent::NewBlock(block) => {
+            NodeStateEvent::NewBlock(block) => {
                 info!("Got Block");
                 if block.txs.iter().any(|tx| {
                     if let TransactionData::VerifiedProof(data) = &tx.transaction_data {
@@ -231,9 +231,9 @@ async fn impl_test_mempool_isnt_blocked_by_proof_verification() -> Result<()> {
 
     // Wait until we commit this TX
     loop {
-        let cut: DataEvent = node_client.recv().await?;
+        let cut: NodeStateEvent = node_client.recv().await?;
         match cut {
-            DataEvent::NewBlock(block) => {
+            NodeStateEvent::NewBlock(block) => {
                 info!("Got block");
                 if block.txs.iter().any(|tx| {
                     if let TransactionData::VerifiedProof(data) = &tx.transaction_data {

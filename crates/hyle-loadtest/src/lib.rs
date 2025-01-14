@@ -57,7 +57,7 @@ pub fn setup_hyllar(users: u32) -> Result<HyllarTokenContract> {
 
 /// Create a new contract "hyllar-test" that already contains entries for each users
 pub async fn setup(url: String, users: u32, verifier: String) -> Result<()> {
-    let node_client = NodeApiHttpClient::new(url.clone());
+    let node_client = NodeApiHttpClient::new(url.clone())?;
 
     let hyllar_contract = setup_hyllar(users)?;
 
@@ -73,14 +73,14 @@ pub async fn setup(url: String, users: u32, verifier: String) -> Result<()> {
     Ok(())
 }
 
-pub async fn generate(users: u32, states: States) -> Result<()> {
-    generate_blobs_txs(users, states.clone()).await?;
-    generate_proof_txs(users, states).await?;
+pub async fn generate(users: u32, states: States) -> Result<(Vec<Vec<u8>>, Vec<Vec<u8>>)> {
+    let blob_txs = generate_blobs_txs(users, states.clone()).await?;
+    let proof_txs = generate_proof_txs(users, states).await?;
 
-    Ok(())
+    Ok((blob_txs, proof_txs))
 }
 
-pub async fn generate_blobs_txs(users: u32, states: States) -> Result<()> {
+pub async fn generate_blobs_txs(users: u32, states: States) -> Result<Vec<Vec<u8>>> {
     let mut blob_txs = vec![];
     let mut tasks = JoinSet::new();
     let number_of_tasks = 100;
@@ -115,7 +115,7 @@ pub async fn generate_blobs_txs(users: u32, states: States) -> Result<()> {
                 let blobs = transaction.blobs.clone();
 
                 let msg: TcpServerNetMessage = BlobTransaction { identity, blobs }.into();
-                local_blob_txs.push(msg.to_binary());
+                local_blob_txs.push(msg.to_binary()?);
             }
 
             Ok::<_, anyhow::Error>(local_blob_txs)
@@ -127,14 +127,14 @@ pub async fn generate_blobs_txs(users: u32, states: States) -> Result<()> {
     }
 
     std::fs::write(
-        "blob_txs.bin",
-        bincode::encode_to_vec(blob_txs, bincode::config::standard())
+        format!("blob_txs.{users}.bin"),
+        bincode::encode_to_vec(blob_txs.clone(), bincode::config::standard())
             .expect("failed to encode blob_txs"),
     )?;
-    Ok(())
+    Ok(blob_txs)
 }
 
-pub async fn generate_proof_txs(users: u32, states: States) -> Result<()> {
+pub async fn generate_proof_txs(users: u32, states: States) -> Result<Vec<Vec<u8>>> {
     let mut proof_txs = vec![];
     let mut tasks = JoinSet::new();
     let number_of_tasks = 100;
@@ -171,7 +171,7 @@ pub async fn generate_proof_txs(users: u32, states: States) -> Result<()> {
                         proof: proof.await.unwrap(),
                     }
                     .into();
-                    local_proof_txs.push(msg.to_binary());
+                    local_proof_txs.push(msg.to_binary()?);
                 }
             }
 
@@ -185,25 +185,44 @@ pub async fn generate_proof_txs(users: u32, states: States) -> Result<()> {
 
     // serialize to bincode and write to file
     std::fs::write(
-        "proof_txs.bin",
-        bincode::encode_to_vec(proof_txs, bincode::config::standard())
+        format!("proof_txs.{users}.bin"),
+        bincode::encode_to_vec(proof_txs.clone(), bincode::config::standard())
             .expect("failed to encode proof_txs"),
     )?;
 
+    Ok(proof_txs)
+}
+
+pub async fn send(url: String, blob_txs: Vec<Vec<u8>>, proof_txs: Vec<Vec<u8>>) -> Result<()> {
+    send_blob_txs(url.clone(), blob_txs).await?;
+    send_proof_txs(url, proof_txs).await?;
     Ok(())
 }
 
-pub async fn send(url: String) -> Result<()> {
-    send_blob_txs(url.clone()).await?;
-    send_proof_txs(url).await?;
-    Ok(())
+pub fn load_blob_txs(users: u32) -> Result<Vec<Vec<u8>>> {
+    info!("Loading blob transactions");
+    let (blob_txs, _): (Vec<Vec<u8>>, _) = bincode::decode_from_slice(
+        &std::fs::read(format!("blob_txs.{users}.bin"))?,
+        bincode::config::standard(),
+    )
+    .expect("failed to decode blob_txs.bin");
+
+    Ok(blob_txs)
 }
 
-pub async fn send_blob_txs(url: String) -> Result<()> {
+pub fn load_proof_txs(users: u32) -> Result<Vec<Vec<u8>>> {
+    info!("Loading proof transactions");
+    let (proof_txs, _): (Vec<Vec<u8>>, _) = bincode::decode_from_slice(
+        &std::fs::read(format!("proof_txs.{users}.bin"))?,
+        bincode::config::standard(),
+    )
+    .expect("failed to decode proof_txs.bin");
+
+    Ok(proof_txs)
+}
+
+pub async fn send_blob_txs(url: String, blob_txs: Vec<Vec<u8>>) -> Result<()> {
     info!("Sending blob transactions");
-    let (blob_txs, _): (Vec<Vec<u8>>, _) =
-        bincode::decode_from_slice(&std::fs::read("blob_txs.bin")?, bincode::config::standard())
-            .expect("failed to decode blob_txs.bin");
 
     // Spin out a few tasks to send the transactions in parallel
     let mut tasks = tokio::task::JoinSet::new();
@@ -231,13 +250,8 @@ pub async fn send_blob_txs(url: String) -> Result<()> {
     Ok(())
 }
 
-pub async fn send_proof_txs(url: String) -> Result<()> {
+pub async fn send_proof_txs(url: String, proof_txs: Vec<Vec<u8>>) -> Result<()> {
     info!("Sending proof transactions");
-    let (proof_txs, _): (Vec<Vec<u8>>, _) = bincode::decode_from_slice(
-        &std::fs::read("proof_txs.bin")?,
-        bincode::config::standard(),
-    )
-    .expect("failed to decode proof_txs.bin");
 
     // Spin out a few tasks to send the transactions in parallel
     let mut tasks = tokio::task::JoinSet::new();
@@ -254,6 +268,7 @@ pub async fn send_proof_txs(url: String) -> Result<()> {
                     .await
                     .unwrap();
             }
+            tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
             info!("Transactions sent: {:?}", chunk.len());
         });
     }

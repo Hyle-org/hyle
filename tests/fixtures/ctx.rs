@@ -1,4 +1,5 @@
 #![allow(unused)]
+#![allow(clippy::indexing_slicing)]
 
 use std::time::Duration;
 
@@ -186,8 +187,8 @@ impl E2ECtx {
 
         nodes.push(indexer);
         let url = format!("http://{}", &indexer_conf.rest);
-        clients.push(NodeApiHttpClient::new(url.clone()));
-        let indexer_client = Some(IndexerApiHttpClient::new(url));
+        clients.push(NodeApiHttpClient::new(url.clone()).unwrap());
+        let indexer_client = Some(IndexerApiHttpClient::new(url).unwrap());
 
         // Wait for node2 to properly spin up
         let client = clients.first().unwrap();
