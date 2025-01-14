@@ -78,7 +78,7 @@ impl NodeState {
             match &tx.transaction_data {
                 TransactionData::Blob(blob_transaction) => {
                     match self.handle_blob_tx(blob_transaction) {
-                        Ok(tx_hash) => {
+                        Ok(Some(tx_hash)) => {
                             let mut blob_tx_to_try_and_settle = BTreeSet::new();
                             blob_tx_to_try_and_settle.insert(tx_hash);
                             // In case of a BlobTransaction with only native verifies, we need to trigger the
@@ -88,6 +88,7 @@ impl NodeState {
                                 blob_tx_to_try_and_settle,
                             );
                         }
+                        Ok(None) => {}
                         Err(e) => {
                             error!("Failed to handle blob transaction: {:?}", e);
                             block_under_construction.failed_txs.insert(tx.hash());
@@ -162,7 +163,9 @@ impl NodeState {
         Ok(())
     }
 
-    fn handle_blob_tx(&mut self, tx: &BlobTransaction) -> Result<TxHash, Error> {
+    /// Returns a TxHash only if the blob transaction calls only native verifiers and thus can be
+    /// settled directly.
+    fn handle_blob_tx(&mut self, tx: &BlobTransaction) -> Result<Option<TxHash>, Error> {
         debug!("Handle blob tx: {:?}", tx);
         let identity_parts: Vec<&str> = tx.identity.0.split('.').collect();
         if identity_parts.len() != 2 {
@@ -178,6 +181,8 @@ impl NodeState {
 
         let (blob_tx_hash, blobs_hash) = (tx.hash(), tx.blobs_hash());
 
+        let mut natively_settlable = true;
+
         let blobs: Vec<UnsettledBlobMetadata> = tx
             .blobs
             .iter()
@@ -188,17 +193,24 @@ impl NodeState {
                     .get(&blob.contract_name)
                     .map(|b| TryInto::<NativeVerifiers>::try_into(&b.verifier))
                 {
-                    if let Ok(hyle_output) = verifiers::verify_native(
+                    match verifiers::verify_native(
                         blob_tx_hash.clone(),
                         BlobIndex(index),
                         &tx.blobs,
                         verifier,
                     ) {
-                        return UnsettledBlobMetadata {
-                            blob: blob.clone(),
-                            possible_proofs: vec![(verifier.into(), hyle_output)],
-                        };
+                        Ok(hyle_output) => {
+                            return UnsettledBlobMetadata {
+                                blob: blob.clone(),
+                                possible_proofs: vec![(verifier.into(), hyle_output)],
+                            };
+                        }
+                        Err(e) => {
+                            error!("Failed to verify native proof: {e}");
+                        }
                     }
+                } else {
+                    natively_settlable = false;
                 }
                 UnsettledBlobMetadata {
                     blob: blob.clone(),
@@ -219,7 +231,11 @@ impl NodeState {
         self.timeouts
             .set(blob_tx_hash.clone(), self.current_height + 100); // TODO: Timeout after 100 blocks, make it configurable !
 
-        Ok(blob_tx_hash)
+        if natively_settlable {
+            Ok(Some(blob_tx_hash))
+        } else {
+            Ok(None)
+        }
     }
 
     fn handle_blob_proof(
