@@ -777,7 +777,10 @@ mod tests {
         let hyle_output = get_hyle_output();
         ProofTransaction {
             contract_name: contract_name.clone(),
-            proof: ProofData::Bytes(serde_json::to_vec(&vec![hyle_output]).unwrap()),
+            proof: ProofData::Bytes(
+                bincode::encode_to_vec(vec![hyle_output.clone()], bincode::config::standard())
+                    .unwrap(),
+            ),
         }
     }
 
@@ -790,7 +793,9 @@ mod tests {
 
     fn make_verified_proof_tx(contract_name: ContractName) -> Transaction {
         let hyle_output = get_hyle_output();
-        let proof = ProofData::Bytes(serde_json::to_vec(&vec![&hyle_output]).unwrap());
+        let proof = ProofData::Bytes(
+            bincode::encode_to_vec(vec![hyle_output.clone()], bincode::config::standard()).unwrap(),
+        );
         Transaction {
             version: 1,
             transaction_data: TransactionData::VerifiedProof(VerifiedProofTransaction {
@@ -810,7 +815,9 @@ mod tests {
 
     fn make_empty_verified_proof_tx(contract_name: ContractName) -> Transaction {
         let hyle_output = get_hyle_output();
-        let proof = ProofData::Bytes(serde_json::to_vec(&vec![&hyle_output]).unwrap());
+        let proof = ProofData::Bytes(
+            bincode::encode_to_vec(vec![hyle_output.clone()], bincode::config::standard()).unwrap(),
+        );
         Transaction {
             version: 1,
             transaction_data: TransactionData::VerifiedProof(VerifiedProofTransaction {

@@ -619,7 +619,10 @@ pub mod test {
     ) -> VerifiedProofTransaction {
         let proof = ProofTransaction {
             contract_name: contract.clone(),
-            proof: ProofData::Bytes(serde_json::to_vec(&vec![hyle_output]).unwrap()),
+            proof: ProofData::Bytes(
+                bincode::encode_to_vec(vec![hyle_output.clone()], bincode::config::standard())
+                    .unwrap(),
+            ),
         };
         VerifiedProofTransaction {
             contract_name: contract.clone(),

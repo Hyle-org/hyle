@@ -2,7 +2,7 @@ use anyhow::{bail, Result};
 use client_sdk::transaction_builder::{StateUpdater, TransactionBuilder};
 use hydentity::Hydentity;
 use hyle::model::{BlobTransaction, ProofTransaction, RegisterContractTransaction};
-use hyle::rest::client::{NodeApiHttpClient, NodeTcpClient};
+use hyle::rest::client::NodeTcpClient;
 use hyle::tcp_server::TcpServerNetMessage;
 use hyle_contract_sdk::erc20::ERC20;
 use hyle_contract_sdk::Digestable;
@@ -57,8 +57,6 @@ pub fn setup_hyllar(users: u32) -> Result<HyllarTokenContract> {
 
 /// Create a new contract "hyllar-test" that already contains entries for each users
 pub async fn setup(url: String, users: u32, verifier: String) -> Result<()> {
-    let node_client = NodeApiHttpClient::new(url.clone())?;
-
     let hyllar_contract = setup_hyllar(users)?;
 
     let tx = RegisterContractTransaction {
@@ -68,7 +66,9 @@ pub async fn setup(url: String, users: u32, verifier: String) -> Result<()> {
         program_id: hyle_contracts::HYLLAR_ID.to_vec().into(),
         state_digest: hyllar_contract.state().as_digest(),
     };
-    node_client.send_tx_register_contract(&tx).await?;
+
+    let mut client = NodeTcpClient::new(url).await.unwrap();
+    client.send_transaction(tx.into()).await.unwrap();
 
     Ok(())
 }
