@@ -16,7 +16,8 @@ use crate::model::{
     data_availability::Contract,
     indexer::{ContractDb, TransactionDb},
     rest::NodeInfo,
-    BlobTransaction, BlockHeight, ContractName, ProofTransaction, RegisterContractTransaction,
+    BlobTransaction, BlockHeight, ContractName, ProofTransaction, ProofTransactionB64,
+    RegisterContractTransaction,
 };
 #[cfg(feature = "node")]
 use crate::tcp_server::TcpServerNetMessage;
@@ -62,6 +63,7 @@ impl NodeApiHttpClient {
     }
 
     pub async fn send_tx_proof(&self, tx: &ProofTransaction) -> Result<Response> {
+        let tx: ProofTransactionB64 = tx.clone().into();
         self.reqwest_client
             .post(format!("{}v1/tx/send/proof", self.url))
             .body(serde_json::to_string(&tx)?)

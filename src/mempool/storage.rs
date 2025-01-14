@@ -318,18 +318,11 @@ impl Storage {
                             }
                         }
                     };
-                    let proof_bytes = match proof.to_bytes() {
-                        Ok(bytes) => bytes,
-                        Err(_) => {
-                            warn!("Refusing DataProposal: failed to convert proof to bytes");
-                            return DataProposalVerdict::Refuse;
-                        }
-                    };
                     // TODO: figure out how to generalize this
                     let is_recursive = proof_tx.contract_name.0 == "risc0-recursion";
 
                     if is_recursive {
-                        match verify_recursive_proof(&proof_bytes, &verifier, &program_id) {
+                        match verify_recursive_proof(proof, &verifier, &program_id) {
                             Ok((local_program_ids, local_hyle_outputs)) => {
                                 let data_matches = local_program_ids
                                     .iter()
@@ -361,7 +354,7 @@ impl Storage {
                             }
                         }
                     } else {
-                        match verify_proof(&proof_bytes, &verifier, &program_id) {
+                        match verify_proof(proof, &verifier, &program_id) {
                             Ok(outputs) => {
                                 // TODO: we could check the blob hash here too.
                                 if outputs.len() != proof_tx.proven_blobs.len()
@@ -777,7 +770,7 @@ mod tests {
         let hyle_output = get_hyle_output();
         ProofTransaction {
             contract_name: contract_name.clone(),
-            proof: ProofData::Bytes(
+            proof: ProofData(
                 bincode::encode_to_vec(vec![hyle_output.clone()], bincode::config::standard())
                     .unwrap(),
             ),
@@ -793,7 +786,7 @@ mod tests {
 
     fn make_verified_proof_tx(contract_name: ContractName) -> Transaction {
         let hyle_output = get_hyle_output();
-        let proof = ProofData::Bytes(
+        let proof = ProofData(
             bincode::encode_to_vec(vec![hyle_output.clone()], bincode::config::standard()).unwrap(),
         );
         Transaction {
@@ -815,7 +808,7 @@ mod tests {
 
     fn make_empty_verified_proof_tx(contract_name: ContractName) -> Transaction {
         let hyle_output = get_hyle_output();
-        let proof = ProofData::Bytes(
+        let proof = ProofData(
             bincode::encode_to_vec(vec![hyle_output.clone()], bincode::config::standard()).unwrap(),
         );
         Transaction {

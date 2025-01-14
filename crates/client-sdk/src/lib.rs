@@ -1,5 +1,4 @@
 use anyhow::Context;
-use base64::prelude::*;
 use bincode::{Decode, Encode};
 use derive_more::derive::Display;
 use sdk::{flatten_blobs, Blob, Identity, TxHash};
@@ -13,36 +12,16 @@ pub trait Hashable<T> {
     fn hash(&self) -> T;
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone, Encode, Decode)]
-#[serde(untagged)]
-pub enum ProofData {
-    Base64(String),
-    Bytes(Vec<u8>),
-}
+#[derive(Debug, Default, Serialize, Deserialize, PartialEq, Eq, Clone, Encode, Decode)]
+pub struct ProofData(pub Vec<u8>);
+
 #[derive(Debug, Default, Serialize, Deserialize, Clone, PartialEq, Eq, Encode, Decode)]
 pub struct ProofDataHash(pub String);
 
-impl Default for ProofData {
-    fn default() -> Self {
-        ProofData::Bytes(Vec::new())
-    }
-}
-
-impl ProofData {
-    pub fn to_bytes(&self) -> Result<Vec<u8>, base64::DecodeError> {
-        match self {
-            ProofData::Base64(s) => BASE64_STANDARD.decode(s),
-            ProofData::Bytes(b) => Ok(b.clone()),
-        }
-    }
-}
 impl Hashable<ProofDataHash> for ProofData {
     fn hash(&self) -> ProofDataHash {
         let mut hasher = Sha3_256::new();
-        match self.clone() {
-            ProofData::Base64(v) => hasher.update(v),
-            ProofData::Bytes(vec) => hasher.update(vec),
-        }
+        hasher.update(self.0.as_slice());
         let hash_bytes = hasher.finalize();
         ProofDataHash(hex::encode(hash_bytes))
     }

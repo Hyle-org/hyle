@@ -353,7 +353,7 @@ impl Indexer {
                 TransactionData::VerifiedProof(tx_data) => {
                     // Then insert the proof in to the proof table.
                     let proof = match tx_data.proof {
-                        Some(proof) => proof,
+                        Some(proof_data) => proof_data.0,
                         None => {
                             tracing::trace!(
                                 "Verified proof TX {:?} does not contain a proof",
@@ -361,14 +361,6 @@ impl Indexer {
                             );
                             continue;
                         }
-                    };
-
-                    let Ok(proof) = &proof.to_bytes() else {
-                        error!(
-                            "Verified proof TX {:?} could not be decoded to bytes",
-                            &tx_hash
-                        );
-                        continue;
                     };
 
                     sqlx::query("INSERT INTO proofs (tx_hash, proof) VALUES ($1, $2)")
@@ -624,7 +616,7 @@ mod test {
         next_state: StateDigest,
         blobs: Vec<u8>,
     ) -> Transaction {
-        let proof = ProofData::Bytes(initial_state.0.clone());
+        let proof = ProofData(initial_state.0.clone());
         Transaction {
             version: 1,
             transaction_data: TransactionData::VerifiedProof(VerifiedProofTransaction {

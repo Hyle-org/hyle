@@ -1153,7 +1153,6 @@ name = "client-sdk"
 version = "0.6.0"
 dependencies = [
  "anyhow",
- "base64 0.22.1",
  "bincode 2.0.0-rc.3",
  "bonsai-runner",
  "borsh",
@@ -2601,6 +2600,7 @@ dependencies = [
  "axum 0.8.1",
  "axum-otel-metrics",
  "axum-test",
+ "base64 0.22.1",
  "bincode 2.0.0-rc.3",
  "blst",
  "bonsai-runner",

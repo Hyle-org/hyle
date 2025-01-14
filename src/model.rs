@@ -4,18 +4,19 @@
 use crate::bus::SharedMessageBus;
 #[cfg(feature = "node")]
 use crate::utils::{conf::SharedConf, crypto::SharedBlstCrypto};
+use anyhow::anyhow;
 #[cfg(feature = "node")]
 use axum::Router;
-use data_availability::HandledBlobProofOutput;
-use std::collections::HashSet;
-#[cfg(feature = "node")]
-use std::sync::Arc;
-
+use base64::prelude::*;
 use bincode::{Decode, Encode};
 pub use client_sdk::{BlobTransaction, BlobsHash, Hashable, ProofData, ProofDataHash};
+use data_availability::HandledBlobProofOutput;
 use derive_more::Display;
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Sha3_256};
+use std::collections::HashSet;
+#[cfg(feature = "node")]
+use std::sync::Arc;
 use std::{
     cmp::Ordering,
     collections::BTreeMap,
@@ -83,6 +84,36 @@ impl Default for TransactionData {
     }
 }
 
+/// This struct should only be used for API purposes
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ProofTransactionB64 {
+    pub contract_name: ContractName,
+    pub proof: String,
+}
+
+impl TryFrom<ProofTransactionB64> for ProofTransaction {
+    type Error = anyhow::Error;
+
+    fn try_from(proof: ProofTransactionB64) -> Result<Self, Self::Error> {
+        let decoded_proof = BASE64_STANDARD
+            .decode(proof.proof)
+            .map_err(|_| anyhow!("Invalid base64 proof"))?;
+        Ok(ProofTransaction {
+            contract_name: proof.contract_name,
+            proof: ProofData(decoded_proof),
+        })
+    }
+}
+
+impl From<ProofTransaction> for ProofTransactionB64 {
+    fn from(proof: ProofTransaction) -> Self {
+        ProofTransactionB64 {
+            contract_name: proof.contract_name,
+            proof: BASE64_STANDARD.encode(proof.proof.0),
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Default, PartialEq, Eq, Clone, Encode, Decode)]
 pub struct ProofTransaction {
     pub contract_name: ContractName,
@@ -120,8 +151,7 @@ impl fmt::Debug for VerifiedProofTransaction {
             .field(
                 "proof_len",
                 &match &self.proof {
-                    Some(ProofData::Base64(v)) => v.len(),
-                    Some(ProofData::Bytes(v)) => v.len(),
+                    Some(v) => v.0.len(),
                     None => 0,
                 },
             )
@@ -135,10 +165,7 @@ impl fmt::Debug for ProofTransaction {
         f.debug_struct("ProofTransaction")
             .field("contract_name", &self.contract_name)
             .field("proof", &"[HIDDEN]")
-            .field(
-                "proof_len",
-                &self.proof.to_bytes().unwrap_or_default().len(),
-            )
+            .field("proof_len", &self.proof.0.len())
             .finish()
     }
 }

@@ -621,7 +621,7 @@ pub mod test {
     ) -> VerifiedProofTransaction {
         let proof = ProofTransaction {
             contract_name: contract.clone(),
-            proof: ProofData::Bytes(
+            proof: ProofData(
                 bincode::encode_to_vec(vec![hyle_output.clone()], bincode::config::standard())
                     .unwrap(),
             ),
