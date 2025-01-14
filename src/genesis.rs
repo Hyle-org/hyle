@@ -154,6 +154,9 @@ impl Genesis {
                 listen<PeerEvent> msg => {
                     match msg {
                         PeerEvent::NewPeer { name, pubkey, .. } => {
+                            if !self.config.consensus.genesis_stakers.contains_key(&name) {
+                                continue;
+                            }
                             info!("🌱 New peer {}({}) added to genesis", &name, &pubkey);
                             self.peer_pubkey
                                 .insert(name.clone(), pubkey.clone());
