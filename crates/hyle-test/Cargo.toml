@@ -1,0 +1,18 @@
+[package]
+name = "hyle-test"
+version.workspace = true
+edition.workspace = true
+homepage.workspace = true
+repository.workspace = true
+
+[dependencies]
+tokio = "1.42"
+hyle = { path = "../../", default-features = false }
+
+tempfile = "3.15.0"
+signal-child = "1.0.6"
+assert_cmd = "2.0.16"
+ron = { version = "0.8.1" }
+
+anyhow = "1.0.95"
+tracing = "0.1"

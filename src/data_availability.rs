@@ -505,9 +505,10 @@ pub mod tests {
             module::{NodeStateBusClient, NodeStateEvent},
             NodeState,
         },
-        utils::{conf::Conf, integration_test::find_available_port},
+        utils::conf::Conf,
     };
     use futures::{SinkExt, StreamExt};
+    use hyle_test::find_available_port;
     use staking::state::Staking;
     use tokio::io::AsyncWriteExt;
     use tokio_util::codec::{Framed, LengthDelimitedCodec};
@@ -532,7 +533,7 @@ pub mod tests {
             let node_state_bus = NodeStateBusClient::new_from_bus(shared_bus).await;
 
             let mut config: Conf = Conf::new(None, None, None).unwrap();
-            config.da_address = format!("127.0.0.1:{}", find_available_port().await);
+            config.da_address = format!("127.0.0.1:{}", find_available_port());
             let da = super::DataAvailability {
                 config: config.into(),
                 bus,
@@ -626,7 +627,7 @@ pub mod tests {
         let mut block_sender = TestBusClient::new_from_bus(global_bus).await;
 
         let mut config: Conf = Conf::new(None, None, None).unwrap();
-        config.da_address = format!("127.0.0.1:{}", find_available_port().await);
+        config.da_address = format!("127.0.0.1:{}", find_available_port());
         let mut da = super::DataAvailability {
             config: config.clone().into(),
             bus,

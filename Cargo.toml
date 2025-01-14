@@ -12,6 +12,7 @@ members = [
     "crates/client-sdk",
     "crates/hyle-loadtest",
     "crates/hyle-model",
+    "crates/hyle-test",
 ]
 resolver = "2"
 
@@ -116,8 +117,11 @@ tracing-subscriber = { version = "0.3", features = ["json"] }
 fjall = { version = "2.4.4" }
 
 dhat = { version = "0.3.3", optional = true }
+
 [dev-dependencies]
+hyle-test = { path = "./crates/hyle-test" }
 amm = { path = "./crates/contracts/amm", features = ["client"] }
+
 assert_cmd = "2.0.16"
 tokio-tungstenite = "0.26.1"
 reqwest = { version = "0.12", features = ["json", "blocking"] }

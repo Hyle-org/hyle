@@ -1,159 +1,16 @@
-use anyhow::Context;
-use assert_cmd::prelude::*;
 use client_sdk::transaction_builder::{ProvableBlobTx, StateUpdater, TxExecutor};
 
 use hyle::{
     model::{BlobTransaction, ProofData},
     rest::client::NodeApiHttpClient,
-    utils::conf::{Conf, Consensus},
 };
-use rand::Rng;
-use signal_child::signal;
 use std::time::Duration;
-use tempfile::TempDir;
-use tokio::process::{Child, Command};
-use tokio::{io::AsyncBufReadExt, time::timeout};
+use tokio::time::timeout;
 use tracing::info;
 
-pub struct ConfMaker {
-    i: u32,
-    random_port: u32,
-    pub default: Conf,
-}
+pub use hyle_test::conf_maker::ConfMaker;
+pub use hyle_test::node_process::TestProcess;
 
-impl ConfMaker {
-    pub fn build(&mut self, prefix: &str) -> Conf {
-        self.i += 1;
-        Conf {
-            id: if prefix == "single-node" {
-                prefix.into()
-            } else {
-                format!("{}-{}", prefix, self.i)
-            },
-            host: format!("localhost:{}", self.random_port + self.i),
-            da_address: format!("localhost:{}", self.random_port + 1000 + self.i),
-            tcp_server_address: Some(format!("localhost:{}", self.random_port + 2000 + self.i)),
-            rest: format!("localhost:{}", self.random_port + 3000 + self.i),
-            ..self.default.clone()
-        }
-    }
-}
-
-impl Default for ConfMaker {
-    fn default() -> Self {
-        let mut default = Conf::new(None, None, None).unwrap();
-        let mut rng = rand::thread_rng();
-        let random_port: u32 = rng.gen_range(1024..(65536 - 4000));
-        default.single_node = Some(false);
-        default.host = format!("localhost:{}", random_port);
-        default.da_address = format!("localhost:{}", random_port + 1000);
-        default.tcp_server_address = Some(format!("localhost:{}", random_port + 2000));
-        default.rest = format!("localhost:{}", random_port + 3000);
-        default.run_indexer = false; // disable indexer by default to avoid needed PG
-        default.log_format = "node".to_string(); // Activate node name in logs for convenience in tests.
-        info!("Default conf: {:?}", default);
-        default.consensus = Consensus {
-            slot_duration: 1,
-            genesis_stakers: {
-                let mut stakers = std::collections::HashMap::new();
-                stakers.insert("node-1".to_owned(), 100);
-                stakers.insert("node-2".to_owned(), 100);
-                stakers
-            },
-        };
-        info!("Default conf: {:?}", default);
-        Self {
-            i: 0,
-            random_port,
-            default,
-        }
-    }
-}
-
-pub struct TestProcess {
-    pub conf: Conf,
-    #[allow(dead_code)]
-    pub dir: TempDir,
-
-    cmd: Command,
-    process: Option<Child>,
-
-    stdout: Option<tokio::task::JoinHandle<anyhow::Result<()>>>,
-    stderr: Option<tokio::task::JoinHandle<anyhow::Result<()>>>,
-}
-
-async fn stream_output<R: tokio::io::AsyncRead + Unpin>(output: R) -> anyhow::Result<()> {
-    let mut reader = tokio::io::BufReader::new(output).lines();
-    while let Some(line) = reader.next_line().await? {
-        println!("{}", line);
-    }
-    Ok(())
-}
-impl TestProcess {
-    pub fn new(command: &str, mut conf: Conf) -> Self {
-        info!("🚀 Starting process with conf: {:?}", conf);
-        let mut cargo_bin: Command = std::process::Command::cargo_bin(command).unwrap().into();
-
-        // Create a temporary directory for the node
-        let tmpdir = tempfile::Builder::new().prefix("hyle").tempdir().unwrap();
-        let cmd = cargo_bin.current_dir(&tmpdir);
-        cmd.kill_on_drop(true);
-        cmd.stdout(std::process::Stdio::piped());
-        cmd.stderr(std::process::Stdio::piped());
-
-        conf.data_directory = tmpdir.path().to_path_buf();
-        // Serialize the configuration to a file
-        let conf_file = tmpdir.path().join("config.ron");
-        ron::ser::to_writer(std::fs::File::create(&conf_file).unwrap(), &conf).unwrap();
-
-        cmd.env("RISC0_DEV_MODE", "1");
-        Self {
-            conf,
-            dir: tmpdir,
-            cmd: cargo_bin,
-            process: None,
-            stdout: None,
-            stderr: None,
-        }
-    }
-
-    #[allow(dead_code)]
-    pub fn log(mut self, level: &str) -> Self {
-        self.cmd.env("RUST_LOG", level);
-        self
-    }
-
-    pub fn start(mut self) -> Self {
-        if let Some(process) = &self.process {
-            panic!("Process already started: {:?}", process.id());
-        }
-        info!("Starting process: {:?}", self.cmd);
-        self.process = Some({
-            let mut process = self.cmd.spawn().unwrap();
-            let stdout = process.stdout.take().expect("Failed to capture stdout");
-            let stderr = process.stderr.take().expect("Failed to capture stderr");
-
-            self.stdout = Some(tokio::task::spawn(stream_output(stdout)));
-            self.stderr = Some(tokio::task::spawn(stream_output(stderr)));
-
-            process
-        });
-
-        self
-    }
-
-    pub async fn stop(&mut self) -> anyhow::Result<()> {
-        if let Some(mut process) = self.process.take() {
-            // TODO: support windows?
-            signal(process.id().unwrap().try_into().unwrap(), signal::SIGQUIT)
-                .context("Failed to stop child")?;
-            process.wait().await.context("Failed to wait for process")?;
-            Ok(())
-        } else {
-            anyhow::bail!("Process not started")
-        }
-    }
-}
 pub async fn wait_height(client: &NodeApiHttpClient, heights: u64) -> anyhow::Result<()> {
     wait_height_timeout(client, heights, 30).await
 }

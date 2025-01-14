@@ -19,3 +19,6 @@ bincode = { version = "2.0.0-rc.3", features = ["serde"] }
 clap = { version = "4.5.26", features = ["derive"]}
 tracing = "0.1"
 tracing-subscriber = "0.3"
+
+hyle-test = { path = "../hyle-test" }
+testcontainers-modules = { version = "0.11.5", features = ["postgres"] }
