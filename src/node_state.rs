@@ -407,7 +407,7 @@ impl NodeState {
         tx_updated_contracts: BTreeMap<ContractName, Contract>,
     ) -> BTreeSet<TxHash> {
         // Transaction was settled, update our state.
-        info!("✨ Settled tx {:?}", &bth);
+        info!("✨ Settled tx {}", &bth);
 
         // When a proof tx is handled, three things happen:
         // 1. Blobs get verified
