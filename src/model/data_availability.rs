@@ -57,9 +57,9 @@ impl From<NativeVerifiers> for ProgramId {
     }
 }
 
-impl TryFrom<&ContractName> for NativeVerifiers {
+impl TryFrom<&Verifier> for NativeVerifiers {
     type Error = String;
-    fn try_from(value: &ContractName) -> Result<Self, Self::Error> {
+    fn try_from(value: &Verifier) -> Result<Self, Self::Error> {
         match value.0.as_str() {
             "blst" => Ok(Self::Blst),
             "sha3_256" => Ok(Self::Sha3_256),

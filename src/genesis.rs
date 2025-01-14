@@ -8,9 +8,9 @@ use crate::{
     handle_messages,
     mempool::DataProposal,
     model::{
-        BlobProofOutput, BlobTransaction, Hashable, ProofData, RegisterContractTransaction,
-        SharedRunContext, SignedBlock, Transaction, TransactionData, ValidatorPublicKey,
-        VerifiedProofTransaction,
+        data_availability::NativeVerifiers, BlobProofOutput, BlobTransaction, Hashable, ProofData,
+        RegisterContractTransaction, SharedRunContext, SignedBlock, Transaction, TransactionData,
+        ValidatorPublicKey, VerifiedProofTransaction,
     },
     p2p::network::PeerEvent,
     utils::{
@@ -381,8 +381,8 @@ impl Genesis {
         };
 
         let mut map = BTreeMap::default();
-        map.insert("blst".into(), ProgramId("blst".as_bytes().to_vec()));
-        map.insert("sha3_256".into(), ProgramId("sha3_256".as_bytes().to_vec()));
+        map.insert("blst".into(), NativeVerifiers::Blst.into());
+        map.insert("sha3_256".into(), NativeVerifiers::Sha3_256.into());
         map.insert("hyllar".into(), ProgramId(hyllar_program_id.clone()));
         map.insert("hydentity".into(), ProgramId(hydentity_program_id.clone()));
         map.insert("staking".into(), ProgramId(staking_program_id.clone()));
@@ -397,8 +397,8 @@ impl Genesis {
                 Transaction::wrap(TransactionData::RegisterContract(
                     RegisterContractTransaction {
                         owner: "hyle".into(),
-                        verifier: "native".into(),
-                        program_id: ProgramId("blst".as_bytes().to_vec()),
+                        verifier: "blst".into(),
+                        program_id: NativeVerifiers::Blst.into(),
                         state_digest: StateDigest(vec![]),
                         contract_name: "blst".into(),
                     },
@@ -406,8 +406,8 @@ impl Genesis {
                 Transaction::wrap(TransactionData::RegisterContract(
                     RegisterContractTransaction {
                         owner: "hyle".into(),
-                        verifier: "native".into(),
-                        program_id: ProgramId("sha3_256".as_bytes().to_vec()),
+                        verifier: "sha3_256".into(),
+                        program_id: NativeVerifiers::Sha3_256.into(),
                         state_digest: StateDigest(vec![]),
                         contract_name: "sha3_256".into(),
                     },

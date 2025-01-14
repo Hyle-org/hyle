@@ -2,7 +2,8 @@
 
 use crate::data_availability::QueryBlockHeight;
 use crate::model::data_availability::{
-    Contract, HandledBlobProofOutput, UnsettledBlobMetadata, UnsettledBlobTransaction,
+    Contract, HandledBlobProofOutput, NativeVerifiers, UnsettledBlobMetadata,
+    UnsettledBlobTransaction,
 };
 use crate::model::{
     BlobProofOutput, BlobTransaction, BlobsHash, Block, BlockHeight, ContractName, Hashable,
@@ -182,7 +183,11 @@ impl NodeState {
             .iter()
             .enumerate()
             .map(|(index, blob)| {
-                if let Ok(verifier) = (&blob.contract_name).try_into() {
+                if let Some(Ok(verifier)) = self
+                    .contracts
+                    .get(&blob.contract_name)
+                    .map(|b| TryInto::<NativeVerifiers>::try_into(&b.verifier))
+                {
                     if let Ok(hyle_output) = verifiers::verify_native(
                         blob_tx_hash.clone(),
                         BlobIndex(index),
