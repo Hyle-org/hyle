@@ -387,12 +387,6 @@ impl DataAvailability {
         }
         trace!("Block {} {}: {:#?}", block.height(), block.hash(), block);
 
-        //println!(
-        //    "new block {} {} with {} txs",
-        //    block.height(),
-        //    block.hash(),
-        //    block.txs().len(),
-        //);
         info!(
             "new block {} {} with {} txs",
             block.height(),

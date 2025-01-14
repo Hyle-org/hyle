@@ -58,10 +58,8 @@ impl Module for NodeStateModule {
             ctx.config.data_directory.join("node_state.bin").as_path(),
         );
 
-        if !storage.contracts.is_empty() {
-            for name in storage.contracts.keys() {
-                info!("📝 Loaded contract state for {}", name);
-            }
+        for name in storage.contracts.keys() {
+            info!("📝 Loaded contract state for {}", name);
         }
 
         Ok(Self {
