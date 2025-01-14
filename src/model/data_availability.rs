@@ -42,13 +42,33 @@ pub struct HandledBlobProofOutput {
     pub blob_proof_output_index: usize,
 }
 
-#[derive(Debug, bincode::Encode, bincode::Decode)]
-pub struct NativeProof {
-    pub tx_hash: TxHash,
-    pub index: BlobIndex,
-    pub blobs: Vec<Blob>,
+#[derive(Debug, Copy, Clone)]
+pub enum NativeVerifiers {
+    Blst,
+    Sha3_256,
 }
 
+impl From<NativeVerifiers> for ProgramId {
+    fn from(value: NativeVerifiers) -> Self {
+        match value {
+            NativeVerifiers::Blst => ProgramId("blst".as_bytes().to_vec()),
+            NativeVerifiers::Sha3_256 => ProgramId("sha3_256".as_bytes().to_vec()),
+        }
+    }
+}
+
+impl TryFrom<&ContractName> for NativeVerifiers {
+    type Error = String;
+    fn try_from(value: &ContractName) -> Result<Self, Self::Error> {
+        match value.0.as_str() {
+            "blst" => Ok(Self::Blst),
+            "sha3_256" => Ok(Self::Sha3_256),
+            _ => Err(format!("Unknown native verifier: {}", value)),
+        }
+    }
+}
+
+/// Format of the BlobData for native contract "blst"
 #[derive(Debug, bincode::Encode, bincode::Decode)]
 pub struct BlstSignatureBlob {
     pub identity: Identity,
@@ -81,6 +101,7 @@ impl ContractAction for BlstSignatureBlob {
     }
 }
 
+/// Format of the BlobData for native hash contract like "sha3_256"
 #[derive(Debug, bincode::Encode, bincode::Decode)]
 pub struct ShaBlob {
     pub identity: Identity,

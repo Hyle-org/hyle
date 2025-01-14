@@ -7,10 +7,10 @@ use risc0_recursion::{Risc0Journal, Risc0ProgramId};
 use sha3::Digest;
 use sp1_sdk::{ProverClient, SP1ProofWithPublicValues, SP1VerifyingKey};
 
-use hyle_contract_sdk::{HyleOutput, ProgramId, StateDigest, Verifier};
+use hyle_contract_sdk::{Blob, BlobIndex, HyleOutput, ProgramId, StateDigest, TxHash, Verifier};
 
 use crate::{
-    model::data_availability::{BlstSignatureBlob, NativeProof, ShaBlob},
+    model::data_availability::{BlstSignatureBlob, NativeVerifiers, ShaBlob},
     utils::crypto::{BlstCrypto, Signed, ValidatorSignature},
 };
 
@@ -50,7 +50,7 @@ pub fn verify_proof(
         }
         "noir" => noir_proof_verifier(proof, &program_id.0),
         "sp1" => sp1_proof_verifier(proof, &program_id.0),
-        "native" => native_verifier(proof, program_id),
+        //"native" => native_verifier(proof, program_id),
         _ => bail!("{} recursive verifier not implemented yet", verifier),
     }?;
     hyle_outputs.iter().for_each(|hyle_output| {
@@ -226,21 +226,17 @@ pub fn sp1_proof_verifier(
     Ok(vec![hyle_output])
 }
 
-pub fn native_verifier(proof_bin: &[u8], program_id: &ProgramId) -> Result<Vec<HyleOutput>, Error> {
-    let program = String::from_utf8(program_id.0.clone())?;
-    let (proof, _) =
-        bincode::decode_from_slice::<NativeProof, _>(proof_bin, bincode::config::standard())?;
-
-    let NativeProof {
-        tx_hash,
-        index,
-        blobs,
-    } = proof;
+pub fn verify_native(
+    tx_hash: TxHash,
+    index: BlobIndex,
+    blobs: &[Blob],
+    verifier: NativeVerifiers,
+) -> Result<HyleOutput, Error> {
     let blob = blobs.get(index.0).context("Invalid blob index")?;
-    let blobs = hyle_contract_sdk::flatten_blobs(&blobs);
+    let blobs = hyle_contract_sdk::flatten_blobs(blobs);
 
-    let (identity, success) = match program.as_str() {
-        "blst" => {
+    let (identity, success) = match verifier {
+        NativeVerifiers::Blst => {
             let (blob, _) = bincode::decode_from_slice::<BlstSignatureBlob, _>(
                 &blob.data.0,
                 bincode::config::standard(),
@@ -259,7 +255,7 @@ pub fn native_verifier(proof_bin: &[u8], program_id: &ProgramId) -> Result<Vec<H
 
             (blob.identity, success)
         }
-        "sha3_256" => {
+        NativeVerifiers::Sha3_256 => {
             let (blob, _) = bincode::decode_from_slice::<ShaBlob, _>(
                 &blob.data.0,
                 bincode::config::standard(),
@@ -273,7 +269,6 @@ pub fn native_verifier(proof_bin: &[u8], program_id: &ProgramId) -> Result<Vec<H
 
             (blob.identity, success)
         }
-        _ => bail!("Native verifier not implemented for program {}", program),
     };
 
     if success {
@@ -293,7 +288,7 @@ pub fn native_verifier(proof_bin: &[u8], program_id: &ProgramId) -> Result<Vec<H
         success,
         program_outputs: vec![],
     };
-    Ok(vec![output])
+    Ok(output)
 }
 
 #[cfg(test)]

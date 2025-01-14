@@ -1,7 +1,7 @@
 use anyhow::Result;
 use assertables::assert_ok;
-use client_sdk::{BlobTransaction, Hashable, ProofData};
-use hyle_contract_sdk::{Blob, BlobIndex, ContractName, Identity};
+use client_sdk::{BlobTransaction, Hashable};
+use hyle_contract_sdk::{Blob, ContractName, Identity};
 use sha3::Digest;
 use tracing::info;
 
@@ -12,11 +12,7 @@ use crate::{
     utils::{crypto::BlstCrypto, integration_test::NodeIntegrationCtxBuilder},
 };
 
-use super::{
-    data_availability::{BlstSignatureBlob, NativeProof},
-    module::NodeStateEvent,
-    ProofTransaction,
-};
+use super::{data_availability::BlstSignatureBlob, module::NodeStateEvent};
 
 bus_client! {
     struct Client {
@@ -45,7 +41,7 @@ async fn test_blst_native_verifier() {
         public_key: crypto.validator_pubkey().0.clone(),
     };
 
-    let res = scenario("blst".into(), identity, blob.as_blob()).await;
+    let res = scenario(identity, blob.as_blob()).await;
     assert_ok!(res);
 }
 
@@ -66,11 +62,11 @@ async fn test_sha3_256_native_verifier() {
         sha,
     };
 
-    let res = scenario(contract_name.clone(), identity, blob.as_blob(contract_name)).await;
+    let res = scenario(identity, blob.as_blob(contract_name)).await;
     assert_ok!(res);
 }
 
-async fn scenario(contract_name: ContractName, identity: Identity, blob: Blob) -> Result<()> {
+async fn scenario(identity: Identity, blob: Blob) -> Result<()> {
     let mut node_modules = NodeIntegrationCtxBuilder::new().await;
     node_modules.conf.consensus.slot_duration = 200;
     let mut node_modules = node_modules.build().await?;
@@ -86,20 +82,6 @@ async fn scenario(contract_name: ContractName, identity: Identity, blob: Blob) -
     };
     let blob_tx_hash = blob_tx.hash();
     node_client.send(RestApiMessage::NewTx(blob_tx.clone().into()))?;
-
-    let proof = NativeProof {
-        tx_hash: blob_tx.hash(),
-        index: BlobIndex(0),
-        blobs: vec![blob],
-    };
-    let proof = bincode::encode_to_vec(proof, bincode::config::standard())?;
-
-    node_client.send(RestApiMessage::NewTx(super::Transaction::from(
-        ProofTransaction {
-            contract_name: contract_name.clone(),
-            proof: ProofData::Bytes(proof),
-        },
-    )))?;
 
     // Wait until we commit this TX
     loop {
