@@ -1,7 +1,7 @@
 use anyhow::Result;
 use fjall::{Config, Keyspace, PartitionCreateOptions, PartitionHandle, Slice};
 use std::{fmt::Debug, path::Path};
-use tracing::{debug, error, info, trace};
+use tracing::{error, info, trace};
 
 use crate::{
     consensus::ConsensusProposalHash,

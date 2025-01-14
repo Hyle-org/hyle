@@ -19,7 +19,7 @@ use crate::{model::SharedRunContext, utils::modules::Module};
 use anyhow::Result;
 use bincode::{Decode, Encode};
 use staking::state::Staking;
-use tracing::{debug, info, warn};
+use tracing::{debug, warn};
 
 module_bus_client! {
 struct SingleNodeConsensusBusClient {

@@ -15,7 +15,6 @@ use axum_otel_metrics::HttpMetricsLayer;
 use prometheus::{Encoder, TextEncoder};
 use reqwest::StatusCode;
 use tokio::time::Instant;
-use tower_http::trace::TraceLayer;
 use tracing::info;
 
 use crate::{bus::SharedMessageBus, module_handle_messages, utils::modules::module_bus_client};

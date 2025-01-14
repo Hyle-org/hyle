@@ -31,7 +31,7 @@ use sqlx::Row;
 use sqlx::{postgres::PgPoolOptions, PgPool, Pool, Postgres};
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::{broadcast, mpsc};
-use tracing::{error, info, trace};
+use tracing::{error, trace};
 
 use crate::model::indexer::*;
 
