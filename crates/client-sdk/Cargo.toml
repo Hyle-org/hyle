@@ -20,7 +20,7 @@ sha3 = "0.10.8"
 
 bonsai-runner = { path = "../bonsai-runner", optional = true }
 risc0-zkvm = { version = "1.2", default-features = false, optional = true }
-sp1-sdk = { version = "4.0.0-rc.10", default-features = false, optional = true }
+sp1-sdk = { version = "4.0.0-rc.11", default-features = false, optional = true }
 
 [features]
 default = ["risc0", "sp1"]
