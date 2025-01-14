@@ -1,4 +1,5 @@
 #![cfg(test)]
+#![allow(clippy::indexing_slicing)]
 
 //! This module is intended for "integration" testing of the consensus and other modules.
 
@@ -262,7 +263,7 @@ impl AutobahnTestCtx {
     pub fn generate_cryptos(nb: usize) -> Vec<BlstCrypto> {
         (0..nb)
             .map(|i| {
-                let crypto = crypto::BlstCrypto::new(format!("node-{i}"));
+                let crypto = crypto::BlstCrypto::new(format!("node-{i}")).unwrap();
                 info!("node {}: {}", i, crypto.validator_pubkey());
                 crypto
             })
@@ -320,8 +321,8 @@ fn create_poda(
 async fn autobahn_basic_flow() {
     let (mut node1, mut node2, mut node3, mut node4) = build_nodes!(4).await;
 
-    let register_tx = make_register_contract_tx(ContractName("test1".to_owned()));
-    let register_tx_2 = make_register_contract_tx(ContractName("test2".to_owned()));
+    let register_tx = make_register_contract_tx(ContractName::new("test1"));
+    let register_tx_2 = make_register_contract_tx(ContractName::new("test2"));
 
     node1.mempool_ctx.submit_tx(&register_tx);
     node1.mempool_ctx.submit_tx(&register_tx_2);
@@ -450,7 +451,7 @@ async fn autobahn_rejoin_flow() {
         0,
     );
 
-    let crypto = crypto::BlstCrypto::new("node-3".to_owned());
+    let crypto = crypto::BlstCrypto::new("node-3".to_owned()).unwrap();
     let mut joining_node = AutobahnTestCtx::new("node-3", crypto).await;
     joining_node
         .consensus_ctx

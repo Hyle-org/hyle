@@ -1,3 +1,4 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
 use fixtures::{contracts::TestContract, ctx::E2ECtx};
 use tracing::info;
 

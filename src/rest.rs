@@ -52,16 +52,7 @@ impl Module for RestApi {
             .merge(
                 Router::new()
                     .route("/v1/info", get(get_info))
-                    .route(
-                        "/v1/metrics",
-                        get(|| async {
-                            let mut buffer = Vec::new();
-                            let encoder = TextEncoder::new();
-                            encoder.encode(&prometheus::gather(), &mut buffer).unwrap();
-                            // return metrics
-                            String::from_utf8(buffer).unwrap()
-                        }),
-                    )
+                    .route("/v1/metrics", get(get_metrics))
                     .with_state(RouterState { info: ctx.info }),
             )
             .layer(ctx.metrics_layer)
@@ -85,6 +76,13 @@ pub async fn get_info(State(state): State<RouterState>) -> Result<impl IntoRespo
     Ok(Json(state.info))
 }
 
+pub async fn get_metrics(State(_): State<RouterState>) -> Result<impl IntoResponse, AppError> {
+    let mut buffer = Vec::new();
+    let encoder = TextEncoder::new();
+    encoder.encode(&prometheus::gather(), &mut buffer)?;
+    String::from_utf8(buffer).map_err(Into::into)
+}
+
 impl RestApi {
     pub async fn serve(&mut self) -> Result<()> {
         info!("rest listening on {}", self.rest_addr);
@@ -95,6 +93,7 @@ impl RestApi {
                 tokio::net::TcpListener::bind(&self.rest_addr)
                     .await
                     .context("Starting rest server")?,
+                #[allow(clippy::expect_used, reason="incorrect setup logic")]
                 self.app.take().expect("app is not set")
             ) => { }
         }

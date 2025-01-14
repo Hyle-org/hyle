@@ -368,7 +368,10 @@ impl DataAvailability {
                 );
                 break;
             }
-
+            #[allow(
+                clippy::unwrap_used,
+                reason = "Must exist as checked in the while above"
+            )]
             let first_buffered = self.buffered_signed_blocks.pop_first().unwrap();
             last_block_hash = first_buffered.hash();
             self.add_processed_block(first_buffered).await;
@@ -533,6 +536,8 @@ impl DataAvailability {
 
 #[cfg(test)]
 pub mod tests {
+    #![allow(clippy::indexing_slicing)]
+
     use std::collections::VecDeque;
 
     use crate::{

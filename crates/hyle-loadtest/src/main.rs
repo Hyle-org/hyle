@@ -2,8 +2,8 @@ use anyhow::Error;
 use clap::{Parser, Subcommand};
 use hydentity::Hydentity;
 use hyle_loadtest::{
-    generate, generate_blobs_txs, generate_proof_txs, send, send_blob_txs, send_proof_txs, setup,
-    setup_hyllar, States,
+    generate, generate_blobs_txs, generate_proof_txs, load_blob_txs, load_proof_txs, send,
+    send_blob_txs, send_proof_txs, setup, setup_hyllar, States,
 };
 use tracing::Level;
 
@@ -83,15 +83,27 @@ async fn main() -> Result<(), Error> {
         SendCommands::GenerateProofTransactions => {
             generate_proof_txs(users, states).await?;
         }
-        SendCommands::GenerateTransactions => generate(users, states).await?,
-        SendCommands::SendBlobTransactions => send_blob_txs(tcp_url).await?,
-        SendCommands::SendProofTransactions => send_proof_txs(tcp_url).await?,
-        SendCommands::SendTransactions => send(tcp_url).await?,
+        SendCommands::GenerateTransactions => {
+            generate(users, states).await?;
+        }
+        SendCommands::SendBlobTransactions => {
+            let blob_txs = load_blob_txs(users)?;
+            send_blob_txs(tcp_url, blob_txs).await?
+        }
+        SendCommands::SendProofTransactions => {
+            let proof_txs = load_proof_txs(users)?;
+            send_proof_txs(tcp_url, proof_txs).await?
+        }
+        SendCommands::SendTransactions => {
+            let blob_txs = load_blob_txs(users)?;
+            let proof_txs = load_proof_txs(users)?;
+            send(tcp_url, blob_txs, proof_txs).await?
+        }
         SendCommands::LoadTest => {
             setup(http_url, users, verifier).await?;
             tokio::time::sleep(std::time::Duration::from_secs(3)).await;
-            generate(users, states).await?;
-            send(tcp_url).await?;
+            let (blob_txs, proof_txs) = generate(users, states).await?;
+            send(tcp_url, blob_txs, proof_txs).await?;
         }
     }
 

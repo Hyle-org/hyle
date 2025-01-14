@@ -382,6 +382,7 @@ impl Add<BlockHeight> for BlockHeight {
     }
 }
 
+#[allow(clippy::expect_used)]
 pub fn get_current_timestamp() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -389,6 +390,7 @@ pub fn get_current_timestamp() -> u64 {
         .as_secs()
 }
 
+#[allow(clippy::expect_used)]
 pub fn get_current_timestamp_ms() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)

@@ -37,11 +37,11 @@ pub struct IndexerApiHttpClient {
 }
 
 impl NodeApiHttpClient {
-    pub fn new(url: String) -> Self {
-        Self {
-            url: Url::parse(&url).expect("Invalid url"),
+    pub fn new(url: String) -> Result<Self> {
+        Ok(Self {
+            url: Url::parse(&url)?,
             reqwest_client: reqwest::Client::new(),
-        }
+        })
     }
 
     pub async fn send_tx_blob(&self, tx: &BlobTransaction) -> Result<TxHash> {
@@ -177,11 +177,11 @@ impl NodeTcpClient {
 }
 
 impl IndexerApiHttpClient {
-    pub fn new(url: String) -> Self {
-        Self {
-            url: Url::parse(&url).expect("Invalid url"),
+    pub fn new(url: String) -> Result<Self> {
+        Ok(Self {
+            url: Url::parse(&url)?,
             reqwest_client: reqwest::Client::new(),
-        }
+        })
     }
 
     pub async fn list_contracts(&self) -> Result<Vec<ContractDb>> {

@@ -1,3 +1,4 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
 use fixtures::ctx::E2ECtx;
 use fixtures::proofs::HyrunProofGen;
 use tracing::info;
@@ -29,7 +30,7 @@ mod e2e_hyllar {
                 vec![IdentityAction::RegisterIdentity {
                     account: "bob.hydentity".to_string(),
                 }
-                .as_blob(ContractName("hydentity".to_owned()))],
+                .as_blob(ContractName::new("hydentity"))],
             )
             .await?;
 
@@ -82,12 +83,12 @@ mod e2e_hyllar {
                         account: "faucet.hydentity".to_string(),
                         nonce: faucet_start_nonce,
                     }
-                    .as_blob(ContractName("hydentity".to_owned())),
+                    .as_blob(ContractName::new("hydentity")),
                     ERC20Action::Transfer {
                         recipient: "bob.hydentity".to_string(),
                         amount: 25,
                     }
-                    .as_blob(ContractName("hyllar".to_owned()), None, None),
+                    .as_blob(ContractName::new("hyllar"), None, None),
                 ],
             )
             .await?;

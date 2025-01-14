@@ -353,14 +353,16 @@ impl Indexer {
                 }
                 TransactionData::VerifiedProof(tx_data) => {
                     // Then insert the proof in to the proof table.
-                    if tx_data.proof.is_none() {
-                        tracing::trace!(
-                            "Verified proof TX {:?} does not contain a proof",
-                            &tx_hash
-                        );
-                        continue;
-                    }
-                    let proof = tx_data.proof.unwrap();
+                    let proof = match tx_data.proof {
+                        Some(proof) => proof,
+                        None => {
+                            tracing::trace!(
+                                "Verified proof TX {:?} does not contain a proof",
+                                &tx_hash
+                            );
+                            continue;
+                        }
+                    };
 
                     let Ok(proof) = &proof.to_bytes() else {
                         error!(
@@ -600,7 +602,7 @@ mod test {
         Transaction {
             version: 1,
             transaction_data: TransactionData::Blob(BlobTransaction {
-                identity: Identity("test.c1".to_owned()),
+                identity: Identity::new("test.c1"),
                 blobs: vec![
                     Blob {
                         contract_name: first_contract_name,
@@ -637,7 +639,7 @@ mod test {
                         version: 1,
                         initial_state,
                         next_state,
-                        identity: Identity("test.c1".to_owned()),
+                        identity: Identity::new("test.c1"),
                         tx_hash: blob_tx_hash,
                         index: blob_index,
                         blobs,
@@ -669,8 +671,8 @@ mod test {
 
         let initial_state = StateDigest(vec![1, 2, 3]);
         let next_state = StateDigest(vec![4, 5, 6]);
-        let first_contract_name = ContractName("c1".to_owned());
-        let second_contract_name = ContractName("c2".to_owned());
+        let first_contract_name = ContractName::new("c1");
+        let second_contract_name = ContractName::new("c2");
 
         let register_tx_1 = new_register_tx(first_contract_name.clone(), initial_state.clone());
         let register_tx_2 = new_register_tx(second_contract_name.clone(), initial_state.clone());
@@ -995,7 +997,7 @@ mod test {
 
         if let Some(tx) = indexer.new_sub_receiver.recv().await {
             let (contract_name, _) = tx;
-            assert_eq!(contract_name, ContractName("contract_1".to_string()));
+            assert_eq!(contract_name, ContractName::new("contract_1"));
         }
 
         Ok(())

@@ -42,6 +42,12 @@ required-features = ["node"]
 name = "indexer"
 required-features = ["node"]
 
+[lints.clippy]
+unwrap_used = "warn"
+expect_used = "warn"
+unused_result_ok = "warn"
+indexing_slicing = "warn"
+
 [dependencies]
 # Public dependencies
 hyle-contract-sdk = { path = "./crates/contract-sdk", default-features = false }
@@ -66,7 +72,9 @@ tracing = "0.1"
 hydentity = { path = "./crates/contracts/hydentity", features = [
     "client",
 ], optional = true }
-hyllar = { path = "./crates/contracts/hyllar", features = ["client"], optional = true }
+hyllar = { path = "./crates/contracts/hyllar", features = [
+    "client",
+], optional = true }
 risc0-recursion = { path = "./crates/contracts/risc0-recursion", optional = true }
 
 anymap = { version = "0.12.1", optional = true }

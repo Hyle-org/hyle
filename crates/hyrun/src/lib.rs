@@ -183,7 +183,7 @@ pub fn run_command(context: &Context) {
                 .unwrap_or_else(|| panic!("Missing password argument"))
                 .as_bytes()
                 .to_vec();
-            let blobs = vec![cf.as_blob(ContractName("hydentity".to_owned()))];
+            let blobs = vec![cf.as_blob(ContractName::new("hydentity"))];
             contract::print_hyled_blob_tx(&identity, &blobs);
 
             let tx_hash = BlobTransaction {
@@ -242,7 +242,7 @@ pub fn run_command(context: &Context) {
             };
 
             let blobs = vec![
-                identity_cf.as_blob(ContractName("hydentity".to_owned())),
+                identity_cf.as_blob(ContractName::new("hydentity")),
                 cf.as_blob(ContractName(hyllar_contract_name.clone()), None, None),
             ];
             contract::print_hyled_blob_tx(&identity.clone().into(), &blobs);
@@ -315,13 +315,13 @@ pub fn run_command(context: &Context) {
                     };
 
                     let blobs = vec![
-                        identity_cf.as_blob(ContractName("hydentity".to_owned())),
+                        identity_cf.as_blob(ContractName::new("hydentity")),
                         AmmAction::NewPair {
                             pair: (token_a.clone(), token_b.clone()),
                             amounts: (amount_a, amount_b),
                         }
                         .as_blob(
-                            ContractName(amm_contract_name.to_owned()),
+                            ContractName::new(amm_contract_name.clone()),
                             None,
                             Some(vec![BlobIndex(2), BlobIndex(3)]),
                         ),
@@ -331,7 +331,7 @@ pub fn run_command(context: &Context) {
                             amount: amount_a,
                         }
                         .as_blob(
-                            ContractName(token_a.to_owned()),
+                            ContractName::new(token_a.clone()),
                             Some(BlobIndex(1)),
                             None,
                         ),
@@ -341,7 +341,7 @@ pub fn run_command(context: &Context) {
                             amount: amount_b,
                         }
                         .as_blob(
-                            ContractName(token_b.to_owned()),
+                            ContractName::new(token_b.clone()),
                             Some(BlobIndex(1)),
                             None,
                         ),
@@ -443,13 +443,13 @@ pub fn run_command(context: &Context) {
                     };
 
                     let blobs = vec![
-                        identity_cf.as_blob(ContractName("hydentity".to_owned())),
+                        identity_cf.as_blob(ContractName::new("hydentity")),
                         AmmAction::Swap {
                             pair: (token_a.to_string(), token_b.to_string()),
                             amounts: (amount_a, amount_b),
                         }
                         .as_blob(
-                            ContractName(amm_contract_name.to_owned()),
+                            ContractName::new(amm_contract_name.clone()),
                             None,
                             Some(vec![BlobIndex(2), BlobIndex(3)]),
                         ),
@@ -459,7 +459,7 @@ pub fn run_command(context: &Context) {
                             amount: amount_a,
                         }
                         .as_blob(
-                            ContractName(token_a.to_owned()),
+                            ContractName::new(token_a.clone()),
                             Some(BlobIndex(1)),
                             None,
                         ),
@@ -468,7 +468,7 @@ pub fn run_command(context: &Context) {
                             amount: amount_b,
                         }
                         .as_blob(
-                            ContractName(token_b.to_owned()),
+                            ContractName::new(token_b.clone()),
                             Some(BlobIndex(1)),
                             None,
                         ),

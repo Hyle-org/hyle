@@ -171,6 +171,7 @@ impl NodeState {
         if identity_parts.len() != 2 {
             bail!("Transaction identity is not correctly formed. It should be in the form <id>.<contract_id_name>");
         }
+        #[allow(clippy::indexing_slicing, reason = "checked above")]
         if identity_parts[1].is_empty() {
             bail!("Transaction identity must include a contract name");
         }
@@ -290,7 +291,7 @@ impl NodeState {
             blob_tx_hash: unsettled_tx_hash.clone(),
             blob_index: blob_proof_data.hyle_output.index.clone(),
             blob_proof_output_index: blob.possible_proofs.len() - 1,
-            // Guaranteed to exist by the above
+            #[allow(clippy::indexing_slicing, reason = "Guaranteed to exist by the above")]
             contract_name: unsettled_tx.blobs[blob_proof_data.hyle_output.index.0]
                 .blob
                 .contract_name
@@ -371,7 +372,7 @@ impl NodeState {
             bail!("Tx: {} is not ready to settle.", unsettled_tx.hash);
         }
 
-        // Safe to unwrap - we must exist.
+        #[allow(clippy::unwrap_used, reason = "must exist because of above checks")]
         let unsettled_tx = self
             .unsettled_transactions
             .remove(unsettled_tx_hash)
@@ -394,9 +395,13 @@ impl NodeState {
             return (current_contracts, blob_proof_output_indices, true);
         };
         let contract_name = &current_blob.blob.contract_name;
+        #[allow(
+            clippy::unwrap_used,
+            reason = "all contract names are validated to exist above"
+        )]
         let known_contract_state = current_contracts
             .get(contract_name)
-            .unwrap_or(contracts.get(contract_name).unwrap()); // Safe to unwrap - all contract names are validated to exist above.
+            .unwrap_or(contracts.get(contract_name).unwrap());
         for (i, proof_metadata) in current_blob.possible_proofs.iter().enumerate() {
             if proof_metadata.1.initial_state == known_contract_state.state
                 && proof_metadata.0 == known_contract_state.program_id
@@ -474,7 +479,10 @@ impl NodeState {
                         .push((settled_tx.identity.clone(), staking_action));
                 }
 
-                // Everything must exist by construction
+                #[allow(
+                    clippy::indexing_slicing,
+                    reason = "Everything must exist by construction"
+                )]
                 block_under_construction.verified_blobs.push((
                     bth.clone(),
                     hyle_contract_sdk::BlobIndex(i),
@@ -487,10 +495,14 @@ impl NodeState {
 
         // Update states
         let mut next_txs_to_try_and_settle = BTreeSet::new();
+        // Have to put the clippy here because it's experimental on expressions
+        #[allow(
+            clippy::unwrap_used,
+            reason = "all contract names are validated to exist above"
+        )]
         for (contract_name, next_state) in tx_updated_contracts.iter() {
             debug!("Update {} contract state: {:?}", contract_name, next_state);
-            // Safe to unwrap - all contract names are validated to exist above.
-            self.contracts.get_mut(contract_name).unwrap().state = next_state.state.clone();
+            self.contracts.get_mut(contract_name).unwrap().state = next_state.state.clone(); // unwrap, see above ^
             if let Some(tx) = self
                 .unsettled_transactions
                 .get_next_unsettled_tx(contract_name)
@@ -564,29 +576,6 @@ impl NodeState {
 
         block_under_construction.timed_out_tx_hashes = txs_at_timeout;
     }
-
-    pub fn verify_proof_single_output(
-        &self,
-        proof: &[u8],
-        contract_name: &ContractName,
-    ) -> Result<HyleOutput, Error> {
-        // Verify proof
-        let contract = match self.contracts.get(contract_name) {
-            Some(contract) => contract,
-            None => {
-                bail!(
-                    "No contract '{}' found when checking for proof verification",
-                    contract_name
-                );
-            }
-        };
-        let program_id = &contract.program_id;
-        let verifier = &contract.verifier;
-        let hyle_output = verifiers::verify_proof(proof, verifier, program_id)?
-            .pop()
-            .unwrap();
-        Ok(hyle_output)
-    }
 }
 
 #[cfg(test)]
@@ -609,7 +598,7 @@ pub mod test {
 
     fn new_blob(contract: &str) -> Blob {
         Blob {
-            contract_name: ContractName(contract.to_owned()),
+            contract_name: ContractName::new(contract),
             data: BlobData(vec![0, 1, 2, 3]),
         }
     }
@@ -709,7 +698,7 @@ pub mod test {
             .iter()
             .filter_map(|blob_proof_data| {
                 state
-                    .handle_blob_proof(TxHash("".to_owned()), &mut bhpo, blob_proof_data)
+                    .handle_blob_proof(TxHash::new(""), &mut bhpo, blob_proof_data)
                     .unwrap_or_default()
             })
             .collect::<Vec<_>>();
@@ -732,7 +721,7 @@ pub mod test {
     #[test_log::test(tokio::test)]
     async fn blob_tx_without_blobs() {
         let mut state = new_node_state().await;
-        let identity = Identity("test.c1".to_string());
+        let identity = Identity::new("test.c1");
 
         let blob_tx = BlobTransaction {
             identity: identity.clone(),
@@ -745,7 +734,7 @@ pub mod test {
     #[test_log::test(tokio::test)]
     async fn blob_tx_with_incorrect_identity() {
         let mut state = new_node_state().await;
-        let identity = Identity("incorrect_id".to_string());
+        let identity = Identity::new("incorrect_id");
 
         let blob_tx = BlobTransaction {
             identity: identity.clone(),
@@ -758,9 +747,9 @@ pub mod test {
     #[test_log::test(tokio::test)]
     async fn two_proof_for_one_blob_tx() {
         let mut state = new_node_state().await;
-        let c1 = ContractName("c1".to_string());
-        let c2 = ContractName("c2".to_string());
-        let identity = Identity("test.c1".to_string());
+        let c1 = ContractName::new("c1");
+        let c2 = ContractName::new("c2");
+        let identity = Identity::new("test.c1");
 
         let register_c1 = new_register_contract(c1.clone());
         let register_c2 = new_register_contract(c2.clone());
@@ -793,14 +782,14 @@ pub mod test {
     #[test_log::test(tokio::test)]
     async fn wrong_blob_index_for_contract() {
         let mut state = new_node_state().await;
-        let c1 = ContractName("c1".to_string());
-        let c2 = ContractName("c2".to_string());
+        let c1 = ContractName::new("c1");
+        let c2 = ContractName::new("c2");
 
         let register_c1 = new_register_contract(c1.clone());
         let register_c2 = new_register_contract(c2.clone());
 
         let blob_tx_1 = BlobTransaction {
-            identity: Identity("test.c1".to_string()),
+            identity: Identity::new("test.c1"),
             blobs: vec![new_blob(&c1.0), new_blob(&c2.0)],
         };
         let blob_tx_hash_1 = blob_tx_1.hash();
@@ -826,14 +815,14 @@ pub mod test {
     #[test_log::test(tokio::test)]
     async fn two_proof_for_same_blob() {
         let mut state = new_node_state().await;
-        let c1 = ContractName("c1".to_string());
-        let c2 = ContractName("c2".to_string());
+        let c1 = ContractName::new("c1");
+        let c2 = ContractName::new("c2");
 
         let register_c1 = new_register_contract(c1.clone());
         let register_c2 = new_register_contract(c2.clone());
 
         let blob_tx = BlobTransaction {
-            identity: Identity("test.c1".to_string()),
+            identity: Identity::new("test.c1"),
             blobs: vec![new_blob(&c1.0), new_blob(&c2.0)],
         };
         let blob_tx_hash = blob_tx.hash();
@@ -854,7 +843,9 @@ pub mod test {
                 .unsettled_transactions
                 .get(&blob_tx_hash)
                 .unwrap()
-                .blobs[0]
+                .blobs
+                .first()
+                .unwrap()
                 .possible_proofs
                 .len(),
             2
@@ -867,7 +858,7 @@ pub mod test {
     #[test_log::test(tokio::test)]
     async fn change_same_contract_state_multiple_times_in_same_tx() {
         let mut state = new_node_state().await;
-        let c1 = ContractName("c1".to_string());
+        let c1 = ContractName::new("c1");
 
         let register_c1 = new_register_contract(c1.clone());
 
@@ -876,7 +867,7 @@ pub mod test {
         let third_blob = new_blob(&c1.0);
 
         let blob_tx = BlobTransaction {
-            identity: Identity("test.c1".to_string()),
+            identity: Identity::new("test.c1"),
             blobs: vec![first_blob, second_blob, third_blob],
         };
         let blob_tx_hash = blob_tx.hash();
@@ -912,14 +903,14 @@ pub mod test {
     async fn dead_end_in_proving_settles_still() {
         let mut state = new_node_state().await;
 
-        let c1 = ContractName("c1".to_string());
+        let c1 = ContractName::new("c1");
         let register_c1 = new_register_contract(c1.clone());
 
         let first_blob = new_blob(&c1.0);
         let second_blob = new_blob(&c1.0);
         let third_blob = new_blob(&c1.0);
         let blob_tx = BlobTransaction {
-            identity: Identity("test.c1".to_string()),
+            identity: Identity::new("test.c1"),
             blobs: vec![first_blob, second_blob, third_blob],
         };
         let blob_tx_hash = blob_tx.hash();
@@ -967,7 +958,7 @@ pub mod test {
     #[test_log::test(tokio::test)]
     async fn duplicate_proof_with_inconsistent_state_should_never_settle() {
         let mut state = new_node_state().await;
-        let c1 = ContractName("c1".to_string());
+        let c1 = ContractName::new("c1");
 
         let register_c1 = new_register_contract(c1.clone());
 
@@ -975,7 +966,7 @@ pub mod test {
         let second_blob = new_blob(&c1.0);
 
         let blob_tx = BlobTransaction {
-            identity: Identity("test.c1".to_string()),
+            identity: Identity::new("test.c1"),
             blobs: vec![first_blob, second_blob],
         };
         let blob_tx_hash = blob_tx.hash();
@@ -1021,7 +1012,7 @@ pub mod test {
     #[test_log::test(tokio::test)]
     async fn duplicate_proof_with_inconsistent_state_should_never_settle_another() {
         let mut state = new_node_state().await;
-        let c1 = ContractName("c1".to_string());
+        let c1 = ContractName::new("c1");
 
         let register_c1 = new_register_contract(c1.clone());
 
@@ -1030,7 +1021,7 @@ pub mod test {
         let third_blob = new_blob(&c1.0);
 
         let blob_tx = BlobTransaction {
-            identity: Identity("test.c1".to_string()),
+            identity: Identity::new("test.c1"),
             blobs: vec![first_blob, second_blob, third_blob],
         };
         let blob_tx_hash = blob_tx.hash();
@@ -1075,27 +1066,27 @@ pub mod test {
     async fn test_auto_settle_next_txs_after_settle() {
         let mut state = new_node_state().await;
 
-        let c1 = ContractName("c1".to_string());
-        let c2 = ContractName("c2".to_string());
+        let c1 = ContractName::new("c1");
+        let c2 = ContractName::new("c2");
         let register_c1 = new_register_contract(c1.clone());
         let register_c2 = new_register_contract(c2.clone());
 
         // Add four transactions - A blocks B/C, B blocks D.
         // Send proofs for B, C, D before A.
         let blocking_tx = BlobTransaction {
-            identity: Identity("test.c1".to_string()),
+            identity: Identity::new("test.c1"),
             blobs: vec![new_blob(&c1.0), new_blob(&c2.0)],
         };
         let ready_same_block = BlobTransaction {
-            identity: Identity("test.c1".to_string()),
+            identity: Identity::new("test.c1"),
             blobs: vec![new_blob(&c1.0)],
         };
         let ready_later_block = BlobTransaction {
-            identity: Identity("test.c2".to_string()),
+            identity: Identity::new("test.c2"),
             blobs: vec![new_blob(&c2.0)],
         };
         let ready_last_block = BlobTransaction {
-            identity: Identity("test2.c1".to_string()),
+            identity: Identity::new("test2.c1"),
             blobs: vec![new_blob(&c1.0)],
         };
         let blocking_tx_hash = blocking_tx.hash();
@@ -1168,12 +1159,12 @@ pub mod test {
     #[test_log::test(tokio::test)]
     async fn test_tx_timeout_simple() {
         let mut state = new_node_state().await;
-        let c1 = ContractName("c1".to_string());
+        let c1 = ContractName::new("c1");
         let register_c1 = new_register_contract(c1.clone());
 
         // First basic test - Time out a TX.
         let blob_tx = BlobTransaction {
-            identity: Identity("test.c1".to_string()),
+            identity: Identity::new("test.c1"),
             blobs: vec![new_blob(&c1.0), new_blob(&c1.0)],
         };
         let blob_tx_hash = blob_tx.hash();
@@ -1196,12 +1187,12 @@ pub mod test {
     #[test_log::test(tokio::test)]
     async fn test_tx_no_timeout_once_settled() {
         let mut state = new_node_state().await;
-        let c1 = ContractName("c1".to_string());
+        let c1 = ContractName::new("c1");
         let register_c1 = new_register_contract(c1.clone());
 
         // Add a new transaction and settle it.
         let blob_tx = BlobTransaction {
-            identity: Identity("test.c1".to_string()),
+            identity: Identity::new("test.c1"),
             blobs: vec![new_blob(&c1.0)],
         };
         let blob_tx_hash = blob_tx.hash();
@@ -1246,23 +1237,23 @@ pub mod test {
     #[test_log::test(tokio::test)]
     async fn test_tx_on_timeout_settle_next_txs() {
         let mut state = new_node_state().await;
-        let c1 = ContractName("c1".to_string());
-        let c2 = ContractName("c2".to_string());
+        let c1 = ContractName::new("c1");
+        let c2 = ContractName::new("c2");
         let register_c1 = new_register_contract(c1.clone());
         let register_c2 = new_register_contract(c2.clone());
 
         // Add Three transactions - the first blocks the next two, but the next two are ready to settle.
         let blocking_tx = BlobTransaction {
-            identity: Identity("test.c1".to_string()),
+            identity: Identity::new("test.c1"),
             blobs: vec![new_blob(&c1.0), new_blob(&c2.0)],
         };
         let blocking_tx_hash = blocking_tx.hash();
         let ready_same_block = BlobTransaction {
-            identity: Identity("test.c1".to_string()),
+            identity: Identity::new("test.c1"),
             blobs: vec![new_blob(&c1.0)],
         };
         let ready_later_block = BlobTransaction {
-            identity: Identity("test.c2".to_string()),
+            identity: Identity::new("test.c2"),
             blobs: vec![new_blob(&c2.0)],
         };
         let ready_same_block_hash = ready_same_block.hash();

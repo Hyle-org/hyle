@@ -1,3 +1,4 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
 use fixtures::ctx::E2ECtx;
 use tracing::info;
 
@@ -114,7 +115,7 @@ mod e2e_amm {
                 vec![IdentityAction::RegisterIdentity {
                     account: "bob.hydentity".to_string(),
                 }
-                .as_blob(ContractName("hydentity".to_owned()))],
+                .as_blob(ContractName::new("hydentity"))],
             )
             .await?;
 
@@ -170,12 +171,12 @@ mod e2e_amm {
                         account: "faucet.hydentity".to_string(),
                         nonce: faucet_start_nonce,
                     }
-                    .as_blob(ContractName("hydentity".to_owned())),
+                    .as_blob(ContractName::new("hydentity")),
                     ERC20Action::Transfer {
                         recipient: "bob.hydentity".to_string(),
                         amount: 25,
                     }
-                    .as_blob(ContractName("hyllar".to_owned()), None, None),
+                    .as_blob(ContractName::new("hyllar"), None, None),
                 ],
             )
             .await?;
@@ -248,12 +249,12 @@ mod e2e_amm {
                         account: "faucet.hydentity".to_string(),
                         nonce: faucet_start_nonce + 1,
                     }
-                    .as_blob(ContractName("hydentity".to_owned())),
+                    .as_blob(ContractName::new("hydentity")),
                     ERC20Action::Transfer {
                         recipient: "bob.hydentity".to_string(),
                         amount: 50,
                     }
-                    .as_blob(ContractName("hyllar2".to_owned()), None, None),
+                    .as_blob(ContractName::new("hyllar2"), None, None),
                 ],
             )
             .await?;
@@ -324,12 +325,12 @@ mod e2e_amm {
                         account: "bob.hydentity".to_string(),
                         nonce: 0,
                     }
-                    .as_blob(ContractName("hydentity".to_owned())),
+                    .as_blob(ContractName::new("hydentity")),
                     ERC20Action::Approve {
                         spender: AMM_CONTRACT_NAME.to_string(),
                         amount: 100,
                     }
-                    .as_blob(ContractName("hyllar".to_owned()), None, None),
+                    .as_blob(ContractName::new("hyllar"), None, None),
                 ],
             )
             .await?;
@@ -385,12 +386,12 @@ mod e2e_amm {
                         account: "bob.hydentity".to_string(),
                         nonce: 1,
                     }
-                    .as_blob(ContractName("hydentity".to_owned())),
+                    .as_blob(ContractName::new("hydentity")),
                     ERC20Action::Approve {
                         spender: AMM_CONTRACT_NAME.to_string(),
                         amount: 100,
                     }
-                    .as_blob(ContractName("hyllar2".to_owned()), None, None),
+                    .as_blob(ContractName::new("hyllar2"), None, None),
                 ],
             )
             .await?;
@@ -446,13 +447,13 @@ mod e2e_amm {
                         account: "bob.hydentity".to_string(),
                         nonce: 2,
                     }
-                    .as_blob(ContractName("hydentity".to_owned())),
+                    .as_blob(ContractName::new("hydentity")),
                     AmmAction::NewPair {
                         pair: ("hyllar".to_string(), "hyllar2".to_string()),
                         amounts: (20, 50),
                     }
                     .as_blob(
-                        ContractName(AMM_CONTRACT_NAME.to_owned()),
+                        ContractName::new(AMM_CONTRACT_NAME),
                         None,
                         Some(vec![BlobIndex(2), BlobIndex(3)]),
                     ),
@@ -462,7 +463,7 @@ mod e2e_amm {
                         amount: 20,
                     }
                     .as_blob(
-                        ContractName("hyllar".to_owned()),
+                        ContractName::new("hyllar"),
                         Some(BlobIndex(1)),
                         None,
                     ),
@@ -472,7 +473,7 @@ mod e2e_amm {
                         amount: 50,
                     }
                     .as_blob(
-                        ContractName("hyllar2".to_owned()),
+                        ContractName::new("hyllar2"),
                         Some(BlobIndex(1)),
                         None,
                     ),
@@ -571,13 +572,13 @@ mod e2e_amm {
                         account: "bob.hydentity".to_string(),
                         nonce: 3,
                     }
-                    .as_blob(ContractName("hydentity".to_owned())),
+                    .as_blob(ContractName::new("hydentity")),
                     AmmAction::Swap {
                         pair: ("hyllar".to_string(), "hyllar2".to_string()),
                         amounts: (5, 10),
                     }
                     .as_blob(
-                        ContractName(AMM_CONTRACT_NAME.to_owned()),
+                        ContractName::new(AMM_CONTRACT_NAME),
                         None,
                         Some(vec![BlobIndex(2), BlobIndex(3)]),
                     ),
@@ -587,7 +588,7 @@ mod e2e_amm {
                         amount: 5,
                     }
                     .as_blob(
-                        ContractName("hyllar".to_owned()),
+                        ContractName::new("hyllar"),
                         Some(BlobIndex(1)),
                         None,
                     ),
@@ -596,7 +597,7 @@ mod e2e_amm {
                         amount: 10,
                     }
                     .as_blob(
-                        ContractName("hyllar2".to_owned()),
+                        ContractName::new("hyllar2"),
                         Some(BlobIndex(1)),
                         None,
                     ),
