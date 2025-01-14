@@ -342,13 +342,14 @@ impl Mempool {
         Ok(())
     }
 
-    /// Emits a DataProposals event containing data proposals between the two cuts provided.
+    /// Emits a SignedBlock event matching.
     /// If data is not available locally, fails and do nothing
     fn handle_last_ccp(&mut self, to: &CommittedConsensusProposal) -> Result<()> {
+        info!("Handling last ccp {:?}", to.clone());
         let from: Option<&Cut> = self.last_processed_cut.as_ref();
 
         let mut result: Vec<(ValidatorPublicKey, Vec<DataProposal>)> = vec![];
-        // Try to return the asked data proposals
+        // Try to return the asked data proposals between the last_processed_cut and the one being handled
         for (validator, to_hash, _) in to.consensus_proposal.cut.iter() {
             // FIXME: use from : &Cut instead of Option
             let from_hash = from
@@ -409,30 +410,28 @@ impl Mempool {
 
     fn handle_consensus_event(&mut self, event: ConsensusEvent) -> Result<()> {
         match event {
-            ConsensusEvent::CommitConsensusProposal(CommittedConsensusProposal {
-                validators,
-                consensus_proposal,
-                certificate: _,
-            }) => {
+            ConsensusEvent::CommitConsensusProposal(cpp) => {
                 debug!(
                     "✂️ Received CommittedConsensusProposal (slot {}, {:?} cut)",
-                    consensus_proposal.slot, consensus_proposal.cut
+                    cpp.consensus_proposal.slot, cpp.consensus_proposal.cut
                 );
 
-                self.validators = validators;
+                self.validators = cpp.validators.clone();
+
+                let cut = cpp.consensus_proposal.cut.clone();
+
+                self.latest_ccp.push_back(cpp);
 
                 if self
                     .try_process_queued_committed_consensus_proposals()
                     .is_err()
                 {
                     // Fetch in advance data proposals
-                    self.fetch_unknown_data_proposals(&consensus_proposal.cut)?;
+                    self.fetch_unknown_data_proposals(&cut)?;
+                } else {
+                    // Update all lanes with the new cut
+                    self.storage.update_lanes_with_commited_cut(&cut);
                 }
-
-                // Update all lanes with the new cut
-                self.storage
-                    .update_lanes_with_commited_cut(&consensus_proposal.cut);
-
                 Ok(())
             }
         }
@@ -1177,6 +1176,61 @@ pub mod test {
                 .expect("Could not get own lane");
             lane.current_hash().cloned()
         }
+
+        pub fn data_proposal(&self, height: usize) -> (DataProposal, DataProposalHash) {
+            let dp_orig = self
+                .mempool
+                .storage
+                .lanes
+                .get(&self.validator_pubkey())
+                .unwrap()
+                .data_proposals
+                .get_index(height)
+                .unwrap()
+                .1
+                .data_proposal
+                .clone();
+
+            (dp_orig.clone(), dp_orig.hash())
+        }
+        pub fn pop_data_proposal(&mut self) -> (DataProposal, DataProposalHash) {
+            let dp_orig = self
+                .mempool
+                .storage
+                .lanes
+                .get_mut(&self.validator_pubkey())
+                .unwrap()
+                .data_proposals
+                .pop()
+                .unwrap()
+                .1
+                .data_proposal
+                .clone();
+
+            (dp_orig.clone(), dp_orig.hash())
+        }
+        pub fn push_data_proposal(&mut self, dp: DataProposal) {
+            self.mempool
+                .storage
+                .lanes
+                .get_mut(&self.validator_pubkey())
+                .unwrap()
+                .data_proposals
+                .insert(
+                    dp.hash(),
+                    LaneEntry {
+                        data_proposal: dp,
+                        signatures: vec![],
+                    },
+                );
+        }
+
+        pub fn submit_contract_tx(&mut self, contract_name: &'static str) {
+            let tx = make_register_contract_tx(ContractName(contract_name.to_string()));
+            self.mempool
+                .handle_api_message(RestApiMessage::NewTx(tx))
+                .expect("Error while handling contract tx");
+        }
     }
 
     pub fn make_register_contract_tx(name: ContractName) -> Transaction {
@@ -1569,7 +1623,7 @@ pub mod test {
         Ok(())
     }
 
-    #[tokio::test]
+    #[test_log::test(tokio::test)]
     async fn test_basic_signed_block() -> Result<()> {
         let mut ctx = MempoolTestCtx::new("mempool").await;
 
@@ -1582,19 +1636,7 @@ pub mod test {
 
         ctx.mempool.handle_data_proposal_management()?;
 
-        let dp_orig = ctx
-            .mempool
-            .storage
-            .lanes
-            .get(&ctx.validator_pubkey())
-            .unwrap()
-            .data_proposals
-            .first()
-            .unwrap()
-            .1
-            .data_proposal
-            .clone();
-        let dp_hash = dp_orig.hash();
+        let (dp_orig, dp_hash) = ctx.data_proposal(0);
 
         let key = ctx.validator_pubkey();
         let cut = vec![(key.clone(), dp_hash.clone(), AggregateSignature::default())];
@@ -1608,7 +1650,7 @@ pub mod test {
                         slot: 1,
                         view: 0,
                         round_leader: key,
-                        cut,
+                        cut: cut.clone(),
                         new_validators_to_bond: vec![],
                         timestamp: 777,
                         parent_hash: ConsensusProposalHash("test".to_string()),
@@ -1621,14 +1663,7 @@ pub mod test {
 
         match received_dp {
             MempoolEvent::SignedBlock(sb) => {
-                assert_eq!(
-                    sb.consensus_proposal.cut,
-                    vec![(
-                        ctx.validator_pubkey(),
-                        dp_hash,
-                        AggregateSignature::default()
-                    )]
-                );
+                assert_eq!(sb.consensus_proposal.cut, cut);
                 assert_eq!(
                     sb.data_proposals,
                     vec![(ctx.validator_pubkey(), vec![dp_orig])]
@@ -1640,6 +1675,131 @@ pub mod test {
         Ok(())
     }
 
+    #[test_log::test(tokio::test)]
+    async fn test_signed_block_buffer_ccp() -> Result<()> {
+        let mut ctx = MempoolTestCtx::new("mempool").await;
+
+        // Sending transaction to mempool as RestApiMessage
+        ctx.submit_contract_tx("test1");
+
+        ctx.mempool.handle_data_proposal_management()?;
+
+        let (dp_orig, dp_hash) = ctx.data_proposal(0);
+
+        let key = ctx.validator_pubkey();
+        let cut = vec![(key.clone(), dp_hash.clone(), AggregateSignature::default())];
+
+        let _ = ctx
+            .mempool
+            .handle_consensus_event(ConsensusEvent::CommitConsensusProposal(
+                CommittedConsensusProposal {
+                    validators: vec![ctx.validator_pubkey()],
+                    consensus_proposal: crate::consensus::ConsensusProposal {
+                        slot: 1,
+                        view: 0,
+                        round_leader: key.clone(),
+                        cut: cut.clone(),
+                        new_validators_to_bond: vec![],
+                        timestamp: 777,
+                        parent_hash: ConsensusProposalHash("test".to_string()),
+                    },
+                    certificate: AggregateSignature::default(),
+                },
+            ));
+
+        let received_dp = ctx.mempool_event_receiver.try_recv().unwrap();
+
+        let parent_hash: ConsensusProposalHash = match received_dp {
+            MempoolEvent::SignedBlock(sb) => {
+                assert_eq!(sb.consensus_proposal.cut, cut);
+                assert_eq!(
+                    sb.data_proposals,
+                    vec![(ctx.validator_pubkey(), vec![dp_orig])]
+                );
+                sb.consensus_proposal.hash()
+            }
+        };
+
+        assert!(ctx.mempool.storage.pending_txs.is_empty());
+
+        // Second round - register a tx
+        ctx.submit_contract_tx("test2");
+
+        ctx.mempool.handle_data_proposal_management()?;
+
+        let (dp_orig2, dp_hash2) = ctx.pop_data_proposal();
+
+        let cut2 = vec![(key.clone(), dp_hash2.clone(), AggregateSignature::default())];
+
+        let _ = ctx
+            .mempool
+            .handle_consensus_event(ConsensusEvent::CommitConsensusProposal(
+                CommittedConsensusProposal {
+                    validators: vec![ctx.validator_pubkey()],
+                    consensus_proposal: crate::consensus::ConsensusProposal {
+                        slot: 2,
+                        view: 0,
+                        round_leader: key.clone(),
+                        cut: cut2.clone(),
+                        new_validators_to_bond: vec![],
+                        timestamp: 777,
+                        parent_hash: parent_hash.clone(),
+                    },
+                    certificate: AggregateSignature::default(),
+                },
+            ));
+
+        // No data is available to process correctly the ccp, so no signed block
+        assert!(ctx.mempool_event_receiver.try_recv().is_err());
+
+        // ccp should be buffered now, let's push back the same dp we popped previously
+        ctx.push_data_proposal(dp_orig2.clone());
+
+        ctx.submit_contract_tx("test3");
+
+        ctx.mempool.handle_data_proposal_management()?;
+
+        let (dp_orig3, dp_hash3) = ctx.data_proposal(2);
+
+        let cut3 = vec![(key.clone(), dp_hash3.clone(), AggregateSignature::default())];
+
+        let _ = ctx
+            .mempool
+            .handle_consensus_event(ConsensusEvent::CommitConsensusProposal(
+                CommittedConsensusProposal {
+                    validators: vec![ctx.validator_pubkey()],
+                    consensus_proposal: crate::consensus::ConsensusProposal {
+                        slot: 3,
+                        view: 0,
+                        round_leader: key.clone(),
+                        cut: cut3.clone(),
+                        new_validators_to_bond: vec![],
+                        timestamp: 777,
+                        parent_hash,
+                    },
+                    certificate: AggregateSignature::default(),
+                },
+            ));
+
+        match ctx.mempool_event_receiver.try_recv().unwrap() {
+            MempoolEvent::SignedBlock(sb) => {
+                assert_eq!(sb.consensus_proposal.cut, cut2);
+                assert_eq!(sb.data_proposals, vec![(key.clone(), vec![dp_orig2])]);
+                sb.consensus_proposal.hash()
+            }
+        };
+        match ctx.mempool_event_receiver.try_recv().unwrap() {
+            MempoolEvent::SignedBlock(sb) => {
+                assert_eq!(sb.consensus_proposal.cut, cut3);
+                assert_eq!(sb.data_proposals, vec![(key.clone(), vec![dp_orig3])]);
+                sb.consensus_proposal.hash()
+            }
+        };
+
+        assert!(ctx.mempool_event_receiver.try_recv().is_err());
+
+        Ok(())
+    }
     // #[tokio::test]
     // async fn test_complex_fetch_data_proposals() -> Result<()> {
     //     let mut ctx = MempoolTestCtx::new("mempool").await;
