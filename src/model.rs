@@ -43,6 +43,7 @@ pub mod data_availability;
 pub mod indexer;
 pub mod mempool;
 pub mod rest;
+pub mod verifiers;
 
 pub const HASH_DISPLAY_SIZE: usize = 3;
 

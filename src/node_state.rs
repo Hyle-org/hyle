@@ -1,13 +1,13 @@
 //! State required for participation in consensus by the node.
 
 use crate::data_availability::QueryBlockHeight;
+use crate::mempool::verifiers;
 use crate::model::data_availability::{
-    Contract, HandledBlobProofOutput, NativeVerifiers, UnsettledBlobMetadata,
-    UnsettledBlobTransaction,
+    Contract, HandledBlobProofOutput, UnsettledBlobMetadata, UnsettledBlobTransaction,
 };
 use crate::model::{
-    BlobProofOutput, BlobTransaction, BlobsHash, Block, BlockHeight, ContractName, Hashable,
-    RegisterContractTransaction, SignedBlock, TransactionData,
+    verifiers::NativeVerifiers, BlobProofOutput, BlobTransaction, BlobsHash, Block, BlockHeight,
+    ContractName, Hashable, RegisterContractTransaction, SignedBlock, TransactionData,
 };
 use anyhow::{bail, Error, Result};
 use bincode::{Decode, Encode};

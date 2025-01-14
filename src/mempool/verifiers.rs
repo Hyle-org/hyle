@@ -10,7 +10,7 @@ use sp1_sdk::{ProverClient, SP1ProofWithPublicValues, SP1VerifyingKey};
 use hyle_contract_sdk::{Blob, BlobIndex, HyleOutput, ProgramId, StateDigest, TxHash, Verifier};
 
 use crate::{
-    model::data_availability::{BlstSignatureBlob, NativeVerifiers, ShaBlob},
+    model::verifiers::{BlstSignatureBlob, NativeVerifiers, ShaBlob},
     utils::crypto::{BlstCrypto, Signed, ValidatorSignature},
 };
 

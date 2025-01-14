@@ -8,11 +8,11 @@ use tracing::info;
 use crate::{
     bus::{bus_client, BusClientReceiver, BusClientSender},
     mempool::api::RestApiMessage,
-    model::data_availability::ShaBlob,
+    model::verifiers::{BlstSignatureBlob, ShaBlob},
     utils::{crypto::BlstCrypto, integration_test::NodeIntegrationCtxBuilder},
 };
 
-use super::{data_availability::BlstSignatureBlob, module::NodeStateEvent};
+use super::module::NodeStateEvent;
 
 bus_client! {
     struct Client {

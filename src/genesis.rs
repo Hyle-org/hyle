@@ -8,7 +8,7 @@ use crate::{
     handle_messages,
     mempool::DataProposal,
     model::{
-        data_availability::NativeVerifiers, BlobProofOutput, BlobTransaction, Hashable, ProofData,
+        verifiers::NativeVerifiers, BlobProofOutput, BlobTransaction, Hashable, ProofData,
         RegisterContractTransaction, SharedRunContext, SignedBlock, Transaction,
         ValidatorPublicKey, VerifiedProofTransaction,
     },
