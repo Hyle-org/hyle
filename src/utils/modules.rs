@@ -313,120 +313,42 @@ mod tests {
         struct TestBusClient { sender(usize), }
     }
 
-    impl Module for TestModule<usize> {
-        type Context = TestBusClient;
-        async fn build(_ctx: Self::Context) -> Result<Self> {
-            Ok(TestModule {
-                bus: _ctx,
-                _field: 1,
-            })
-        }
+    macro_rules! test_module {
+        ($bus_client:ty, $tag:ty) => {
+            impl Module for TestModule<$tag> {
+                type Context = $bus_client;
+                async fn build(_ctx: Self::Context) -> Result<Self> {
+                    Ok(TestModule {
+                        bus: _ctx,
+                        _field: Default::default(),
+                    })
+                }
 
-        async fn run(&mut self) -> Result<()> {
-            let nb_shutdowns: Arc<Mutex<usize>> = Arc::new(Mutex::new(0));
-            let cloned = Arc::clone(&nb_shutdowns);
-            module_handle_messages! {
-                on_bus self.bus,
-                _ = async {
-                    let mut guard = cloned.lock().await;
-                    (*guard) += 1;
-                    std::future::pending::<()>().await
-                } => {
+                async fn run(&mut self) -> Result<()> {
+                    let nb_shutdowns: Arc<Mutex<usize>> = Arc::new(Mutex::new(0));
+                    let cloned = Arc::clone(&nb_shutdowns);
+                    module_handle_messages! {
+                        on_bus self.bus,
+                        _ = async {
+                            let mut guard = cloned.lock().await;
+                            (*guard) += 1;
+                            std::future::pending::<()>().await
+                        } => { }
+                    }
 
+                    self.bus.send(*cloned.lock().await).expect(
+                        "Error while sending the number of loop cancellations while shutting down",
+                    );
+
+                    Ok(())
                 }
             }
-
-            self.bus
-                .send(*cloned.lock().await)
-                .expect("Error while sending the number of loop cancellations while shutting down");
-
-            Ok(())
-        }
+        };
     }
 
-    impl Module for TestModule<String> {
-        type Context = TestBusClient;
-        async fn build(_ctx: Self::Context) -> Result<Self> {
-            Ok(TestModule {
-                bus: _ctx,
-                _field: "".to_string(),
-            })
-        }
-
-        async fn run(&mut self) -> Result<()> {
-            let nb_shutdowns: Arc<Mutex<usize>> = Arc::new(Mutex::new(0));
-            let cloned = Arc::clone(&nb_shutdowns);
-            module_handle_messages! {
-                on_bus self.bus,
-                _ = async {
-                    let mut guard = cloned.lock().await;
-                    (*guard) += 1;
-                    std::future::pending::<()>().await
-                } => {
-
-                }
-            }
-
-            self.bus
-                .send(*cloned.lock().await)
-                .expect("Error while sending the number of loop cancellations while shutting down");
-
-            Ok(())
-        }
-    }
-
-    impl Module for TestModule<bool> {
-        type Context = TestBusClient;
-        async fn build(_ctx: Self::Context) -> Result<Self> {
-            Ok(TestModule {
-                bus: _ctx,
-                _field: false,
-            })
-        }
-
-        async fn run(&mut self) -> Result<()> {
-            let nb_shutdowns: Arc<Mutex<usize>> = Arc::new(Mutex::new(0));
-            let cloned = Arc::clone(&nb_shutdowns);
-            module_handle_messages! {
-                on_bus self.bus,
-                _ = async {
-                    let mut guard = cloned.lock().await;
-                    (*guard) += 1;
-                    std::future::pending::<()>().await
-                } => {
-
-                }
-            }
-
-            self.bus
-                .send(*cloned.lock().await)
-                .expect("Error while sending the number of loop cancellations while shutting down");
-
-            Ok(())
-        }
-    }
-
-    struct TestModule2 {
-        bus: TestBusClient2,
-    }
-
-    module_bus_client! {
-        struct TestBusClient2 { }
-    }
-
-    impl Module for TestModule2 {
-        type Context = TestBusClient2;
-        async fn build(_ctx: Self::Context) -> Result<Self> {
-            Ok(TestModule2 { bus: _ctx })
-        }
-
-        async fn run(&mut self) -> Result<()> {
-            module_handle_messages! {
-                on_bus self.bus,
-            }
-            Ok(())
-        }
-    }
+    test_module!(TestBusClient, String);
+    test_module!(TestBusClient, usize);
+    test_module!(TestBusClient, bool);
 
     #[test]
     fn test_load_from_disk_or_default() {
@@ -468,8 +390,8 @@ mod tests {
         let shared_bus = SharedMessageBus::new(BusMetrics::global("id".to_string()));
         let mut handler = ModulesHandler::new(&shared_bus).await;
         handler
-            .build_module::<TestModule2>(
-                TestBusClient2::new_from_bus(shared_bus.new_handle()).await,
+            .build_module::<TestModule<usize>>(
+                TestBusClient::new_from_bus(shared_bus.new_handle()).await,
             )
             .await
             .unwrap();
@@ -480,8 +402,9 @@ mod tests {
     async fn test_add_module() {
         let shared_bus = SharedMessageBus::new(BusMetrics::global("id".to_string()));
         let mut handler = ModulesHandler::new(&shared_bus).await;
-        let module = TestModule2 {
-            bus: TestBusClient2::new_from_bus(shared_bus.new_handle()).await,
+        let module = TestModule {
+            bus: TestBusClient::new_from_bus(shared_bus.new_handle()).await,
+            _field: 2,
         };
 
         handler.add_module(module).unwrap();
@@ -538,8 +461,8 @@ mod tests {
             .await
             .unwrap();
         handler
-            .build_module::<TestModule2>(
-                TestBusClient2::new_from_bus(shared_bus.new_handle()).await,
+            .build_module::<TestModule<String>>(
+                TestBusClient::new_from_bus(shared_bus.new_handle()).await,
             )
             .await
             .unwrap();
@@ -552,12 +475,12 @@ mod tests {
         // Shutdown last module first
         assert_eq!(
             shutdown_receiver.recv().await.unwrap().module,
-            std::any::type_name::<TestModule2>().to_string()
+            std::any::type_name::<TestModule<String>>().to_string()
         );
 
         assert_eq!(
             shutdown_completed_receiver.recv().await.unwrap().module,
-            std::any::type_name::<TestModule2>().to_string()
+            std::any::type_name::<TestModule<String>>().to_string()
         );
 
         // Then first module at last
