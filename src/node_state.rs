@@ -21,7 +21,6 @@ mod api;
 pub mod module;
 mod ordered_tx_map;
 mod timeouts;
-pub mod verifiers;
 
 pub struct SettledTxOutput {
     // Original blob transaction, now settled.
