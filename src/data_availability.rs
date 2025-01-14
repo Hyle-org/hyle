@@ -545,9 +545,11 @@ pub mod tests {
         consensus::{CommittedConsensusProposal, ConsensusEvent, ConsensusProposal},
         mempool::{MempoolCommand, MempoolEvent},
         model::{BlockHeight, Hashable, SignedBlock},
-        node_state::module::{NodeStateBusClient, NodeStateEvent},
-        node_state::NodeState,
-        utils::{conf::Conf, crypto::AggregateSignature},
+        node_state::{
+            module::{NodeStateBusClient, NodeStateEvent},
+            NodeState,
+        },
+        utils::{conf::Conf, crypto::AggregateSignature, integration_test::find_available_port},
     };
     use futures::{SinkExt, StreamExt};
     use staking::model::ValidatorPublicKey;
@@ -603,13 +605,6 @@ pub mod tests {
                 .send(NodeStateEvent::NewBlock(Box::new(full_block)))
                 .unwrap();
         }
-    }
-
-    // Assume that we can reuse the OS-provided port.
-    async fn find_available_port() -> u16 {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
-        addr.port()
     }
 
     #[test_log::test]

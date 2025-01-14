@@ -28,6 +28,13 @@ use crate::utils::modules::ModulesHandler;
 
 use super::modules::{module_bus_client, Module};
 
+// Assume that we can reuse the OS-provided port.
+pub async fn find_available_port() -> u16 {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    addr.port()
+}
+
 type MockBuilder = Box<
     dyn for<'a> FnOnce(
         &'a mut ModulesHandler,
@@ -81,12 +88,16 @@ impl NodeIntegrationCtxBuilder {
         let tmpdir = tempfile::tempdir().unwrap();
         let bus = SharedMessageBus::new(BusMetrics::global("default".to_string()));
         let crypto = BlstCrypto::new("test".to_owned()).unwrap();
-        let conf = Conf::new(
+        let mut conf = Conf::new(
             None,
             tmpdir.path().to_str().map(|s| s.to_owned()),
             Some(false),
         )
         .expect("conf ok");
+        conf.host = format!("localhost:{}", find_available_port().await);
+        conf.da_address = format!("localhost:{}", find_available_port().await);
+        conf.tcp_server_address = Some(format!("localhost:{}", find_available_port().await));
+        conf.rest = format!("localhost:{}", find_available_port().await);
 
         Self {
             tmpdir,
