@@ -291,7 +291,7 @@ mod tests {
                         identity: Identity(
                             "3f368bf90c71946fc7b0cde9161ace42985d235f.ecdsa_secp256r1".to_owned()
                         ),
-                        tx_hash: TxHash("".to_owned()),
+                        tx_hash: TxHash::new(""),
                         index: BlobIndex(0),
                         blobs: vec![1, 1, 1, 1, 1],
                         success: true,

@@ -52,7 +52,7 @@ async fn impl_test_mempool_isnt_blocked_by_proof_verification() -> Result<()> {
 
     let mut node_client = Client::new_from_bus(node_modules.bus.new_handle()).await;
 
-    let contract_name = ContractName("test1".to_owned());
+    let contract_name = ContractName::new("test1");
 
     node_client.send(GenesisEvent::GenesisBlock(SignedBlock {
         data_proposals: vec![(

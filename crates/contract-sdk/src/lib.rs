@@ -229,46 +229,50 @@ pub struct HyleOutput {
     pub program_outputs: Vec<u8>,
 }
 
-impl From<String> for Identity {
-    fn from(s: String) -> Self {
-        Identity(s)
+impl Identity {
+    pub fn new<S: Into<Self>>(s: S) -> Self {
+        s.into()
     }
 }
-impl From<&str> for Identity {
-    fn from(s: &str) -> Self {
+impl<S: Into<String>> From<S> for Identity {
+    fn from(s: S) -> Self {
         Identity(s.into())
     }
 }
-impl From<String> for TxHash {
-    fn from(s: String) -> Self {
-        Self(s)
+
+impl TxHash {
+    pub fn new<S: Into<Self>>(s: S) -> Self {
+        s.into()
     }
 }
-impl From<&str> for TxHash {
-    fn from(s: &str) -> Self {
-        Self(s.into())
+impl<S: Into<String>> From<S> for TxHash {
+    fn from(s: S) -> Self {
+        TxHash(s.into())
     }
 }
-impl From<&str> for ContractName {
-    fn from(s: &str) -> Self {
+
+impl ContractName {
+    pub fn new<S: Into<Self>>(s: S) -> Self {
+        s.into()
+    }
+}
+impl<S: Into<String>> From<S> for ContractName {
+    fn from(s: S) -> Self {
         ContractName(s.into())
     }
 }
-impl From<String> for ContractName {
-    fn from(s: String) -> Self {
-        ContractName(s)
+
+impl Verifier {
+    pub fn new<S: Into<Self>>(s: S) -> Self {
+        s.into()
     }
 }
-impl From<String> for Verifier {
-    fn from(s: String) -> Self {
-        Verifier(s)
-    }
-}
-impl From<&str> for Verifier {
-    fn from(s: &str) -> Self {
+impl<S: Into<String>> From<S> for Verifier {
+    fn from(s: S) -> Self {
         Verifier(s.into())
     }
 }
+
 impl From<Vec<u8>> for ProgramId {
     fn from(v: Vec<u8>) -> Self {
         ProgramId(v.clone())
@@ -285,11 +289,6 @@ impl From<&[u8]> for ProgramId {
     }
 }
 
-impl TxHash {
-    pub fn new(s: &str) -> TxHash {
-        TxHash(s.into())
-    }
-}
 impl Display for TxHash {
     fn fmt(&self, f: &mut alloc::fmt::Formatter<'_>) -> alloc::fmt::Result {
         write!(f, "{}", &self.0)
@@ -480,7 +479,7 @@ mod tests {
 
     #[test]
     fn test_identity_encoding() {
-        let identity = Identity("test_identity".to_string());
+        let identity = Identity::new("test_identity");
         let encoded = bincode::encode_to_vec(&identity, bincode::config::standard())
             .expect("Failed to encode Identity");
         let decoded: Identity = bincode::decode_from_slice(&encoded, bincode::config::standard())
@@ -491,7 +490,7 @@ mod tests {
 
     #[test]
     fn test_txhash_encoding() {
-        let txhash = TxHash("test_txhash".to_string());
+        let txhash = TxHash::new("test_txhash");
         let encoded = bincode::encode_to_vec(&txhash, bincode::config::standard())
             .expect("Failed to encode TxHash");
         let decoded: TxHash = bincode::decode_from_slice(&encoded, bincode::config::standard())

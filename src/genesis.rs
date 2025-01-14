@@ -273,7 +273,7 @@ impl Genesis {
             states
                 .hydentity
                 .default_builder(&mut transaction)
-                .register_identity("password".to_string())?;
+                .register_identity("password".to_owned())?;
 
             txs.push(transaction.build(states)?);
         }
@@ -295,7 +295,7 @@ impl Genesis {
 
             info!("🌱  Fauceting {genesis_faucet} hyllar to {peer}");
 
-            let identity = Identity("faucet.hydentity".to_string());
+            let identity = Identity::new("faucet.hydentity");
             let mut transaction = TransactionBuilder::new(identity.clone());
 
             // Verify identity
