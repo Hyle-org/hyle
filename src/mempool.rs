@@ -172,7 +172,7 @@ impl Module for Mempool {
         .unwrap_or(Storage::new(ctx.node.crypto.validator_pubkey().clone()));
         Ok(Mempool {
             bus,
-            file: Some(ctx.common.config.data_directory.join("mempool_storage.bin")),
+            file: Some(ctx.common.config.data_directory.clone()),
             conf: ctx.common.config.clone(),
             metrics,
             crypto: Arc::clone(&ctx.node.crypto),
@@ -253,10 +253,17 @@ impl Mempool {
                     .log_error("Creating Data Proposal on tick");
             }
         }
-
         if let Some(file) = &self.file {
-            if let Err(e) = Self::save_on_disk(file.as_path(), &self.storage) {
+            if let Err(e) =
+                Self::save_on_disk(file.join("mempool_storage.bin").as_path(), &self.storage)
+            {
                 warn!("Failed to save mempool storage on disk: {}", e);
+            }
+            if let Err(e) = Self::save_on_disk(
+                file.join("mempool_known_contracts.bin").as_path(),
+                &self.known_contracts,
+            ) {
+                warn!("Failed to save mempool known contracts on disk: {}", e);
             }
         }
 
@@ -287,7 +294,7 @@ impl Mempool {
         match command {
             RestApiMessage::NewTx(tx) => self
                 .on_new_tx(tx)
-                .context("Received invalid transaction. Won't process it."),
+                .context("Received invalid transaction. Won't process it"),
         }
     }
 
@@ -295,7 +302,7 @@ impl Mempool {
         match command {
             TcpServerMessage::NewTx(tx) => self
                 .on_new_tx(tx)
-                .context("Received invalid transaction. Won't process it."),
+                .context("Received invalid transaction. Won't process it"),
         }
     }
 
@@ -720,7 +727,6 @@ impl Mempool {
 
     fn on_new_tx(&mut self, tx: Transaction) -> Result<()> {
         // TODO: Verify fees ?
-        // TODO: Verify identity ?
 
         match tx.transaction_data {
             TransactionData::RegisterContract(ref register_contract_transaction) => {
@@ -747,10 +753,8 @@ impl Mempool {
                 let sender: &tokio::sync::broadcast::Sender<InternalMempoolEvent> = self.bus.get();
                 let sender = sender.clone();
                 tokio::task::spawn_blocking(move || {
-                    let tx = match Self::process_proof_tx(kc, tx) {
-                        Ok(tx) => tx,
-                        Err(e) => bail!("Error processing proof tx: {}", e),
-                    };
+                    let tx =
+                        Self::process_proof_tx(kc, tx).log_error("Error processing proof tx")?;
                     sender
                         .send(InternalMempoolEvent::OnProcessedNewTx(tx))
                         .log_warn("sending processed TX")
@@ -796,15 +800,11 @@ impl Mempool {
         let is_recursive = proof_transaction.contract_name.0 == "risc0-recursion";
 
         let (hyle_outputs, program_ids) = if is_recursive {
-            let (program_ids, hyle_outputs) = verify_recursive_proof(
-                &proof_transaction.proof.to_bytes()?,
-                &verifier,
-                &program_id,
-            )?;
+            let (program_ids, hyle_outputs) =
+                verify_recursive_proof(&proof_transaction.proof, &verifier, &program_id)?;
             (hyle_outputs, program_ids)
         } else {
-            let hyle_outputs =
-                verify_proof(&proof_transaction.proof.to_bytes()?, &verifier, &program_id)?;
+            let hyle_outputs = verify_proof(&proof_transaction.proof, &verifier, &program_id)?;
             (hyle_outputs, vec![program_id.clone()])
         };
 

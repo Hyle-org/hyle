@@ -6,16 +6,15 @@ use crate::bus::SharedMessageBus;
 use crate::utils::{conf::SharedConf, crypto::SharedBlstCrypto};
 #[cfg(feature = "node")]
 use axum::Router;
-use data_availability::HandledBlobProofOutput;
-use std::collections::HashSet;
-#[cfg(feature = "node")]
-use std::sync::Arc;
-
 use bincode::{Decode, Encode};
 pub use client_sdk::{BlobTransaction, BlobsHash, Hashable, ProofData, ProofDataHash};
+use data_availability::HandledBlobProofOutput;
 use derive_more::Display;
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Sha3_256};
+use std::collections::HashSet;
+#[cfg(feature = "node")]
+use std::sync::Arc;
 use std::{
     cmp::Ordering,
     collections::BTreeMap,
@@ -120,8 +119,7 @@ impl fmt::Debug for VerifiedProofTransaction {
             .field(
                 "proof_len",
                 &match &self.proof {
-                    Some(ProofData::Base64(v)) => v.len(),
-                    Some(ProofData::Bytes(v)) => v.len(),
+                    Some(v) => v.0.len(),
                     None => 0,
                 },
             )
@@ -135,10 +133,7 @@ impl fmt::Debug for ProofTransaction {
         f.debug_struct("ProofTransaction")
             .field("contract_name", &self.contract_name)
             .field("proof", &"[HIDDEN]")
-            .field(
-                "proof_len",
-                &self.proof.to_bytes().unwrap_or_default().len(),
-            )
+            .field("proof_len", &self.proof.0.len())
             .finish()
     }
 }

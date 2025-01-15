@@ -2,6 +2,7 @@ use std::fmt::Write;
 use std::io::Read;
 
 use anyhow::{bail, Context, Error};
+use client_sdk::ProofData;
 use rand::Rng;
 use risc0_recursion::{Risc0Journal, Risc0ProgramId};
 use sha3::Digest;
@@ -15,7 +16,7 @@ use crate::{
 };
 
 pub fn verify_proof(
-    proof: &[u8],
+    proof: &ProofData,
     verifier: &Verifier,
     program_id: &ProgramId,
 ) -> Result<Vec<HyleOutput>, Error> {
@@ -23,7 +24,7 @@ pub fn verify_proof(
         // TODO: add #[cfg(test)]
         "test" => {
             let (output, _) = bincode::decode_from_slice::<Vec<HyleOutput>, _>(
-                proof,
+                &proof.0,
                 bincode::config::standard(),
             )?;
             Ok(output)
@@ -33,10 +34,10 @@ pub fn verify_proof(
             tracing::info!("Sleeping for 2 seconds to simulate a slow verifier");
             std::thread::sleep(std::time::Duration::from_secs(2));
             tracing::info!("Woke up from sleep");
-            Ok(serde_json::from_slice(proof)?)
+            Ok(serde_json::from_slice(&proof.0)?)
         }
         "risc0" => {
-            let journal = risc0_proof_verifier(proof, &program_id.0)?;
+            let journal = risc0_proof_verifier(&proof.0, &program_id.0)?;
             // First try to decode it as a single HyleOutput
             Ok(match journal.decode::<HyleOutput>() {
                 Ok(ho) => vec![ho],
@@ -54,8 +55,8 @@ pub fn verify_proof(
                 }
             })
         }
-        "noir" => noir_proof_verifier(proof, &program_id.0),
-        "sp1" => sp1_proof_verifier(proof, &program_id.0),
+        "noir" => noir_proof_verifier(&proof.0, &program_id.0),
+        "sp1" => sp1_proof_verifier(&proof.0, &program_id.0),
         _ => bail!("{} recursive verifier not implemented yet", verifier),
     }?;
     hyle_outputs.iter().for_each(|hyle_output| {
@@ -71,13 +72,13 @@ pub fn verify_proof(
 }
 
 pub fn verify_recursive_proof(
-    proof: &[u8],
+    proof: &ProofData,
     verifier: &Verifier,
     program_id: &ProgramId,
 ) -> Result<(Vec<ProgramId>, Vec<HyleOutput>), Error> {
     let outputs = match verifier.0.as_str() {
         "risc0" => {
-            let journal = risc0_proof_verifier(proof, &program_id.0)?;
+            let journal = risc0_proof_verifier(&proof.0, &program_id.0)?;
             let mut output = journal
                 .decode::<Vec<(Risc0ProgramId, Risc0Journal)>>()
                 .context("Failed to extract HyleOuput from Risc0's journal")?;

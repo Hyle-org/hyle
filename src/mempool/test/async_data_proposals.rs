@@ -3,7 +3,6 @@ use std::sync::Arc;
 
 use anyhow::{bail, Result};
 use assertables::assert_ok;
-use client_sdk::ProofDataHash;
 use hyle_contract_sdk::{
     flatten_blobs, Blob, BlobData, HyleOutput, Identity, ProgramId, StateDigest,
 };
@@ -101,6 +100,22 @@ async fn impl_test_mempool_isnt_blocked_by_proof_verification() -> Result<()> {
             data: BlobData(vec![]),
         }],
     };
+    let blob_tx_hash = blob_tx.hash();
+    let proof = client_sdk::ProofData(
+        serde_json::to_vec(
+            &vec![HyleOutput {
+                success: true,
+                identity: blob_tx.identity.clone(),
+                blobs: flatten_blobs(&blob_tx.blobs),
+                tx_hash: blob_tx_hash.clone(),
+                ..HyleOutput::default()
+            }],
+            // bincode::config::standard(),
+        )
+        .unwrap(),
+    );
+    let proof_hash = proof.hash();
+
     node_client.send(RestApiMessage::NewTx(blob_tx.clone().into()))?;
 
     // Send as many TXs as needed to hung all the workers if we were calling spawn
@@ -108,16 +123,7 @@ async fn impl_test_mempool_isnt_blocked_by_proof_verification() -> Result<()> {
         node_client.send(RestApiMessage::NewTx(
             ProofTransaction {
                 contract_name: contract_name.clone(),
-                proof: client_sdk::ProofData::Bytes(
-                    serde_json::to_vec(&vec![HyleOutput {
-                        success: true,
-                        identity: blob_tx.identity.clone(),
-                        blobs: flatten_blobs(&blob_tx.blobs),
-                        tx_hash: blob_tx.hash(),
-                        ..HyleOutput::default()
-                    }])
-                    .unwrap(),
-                ),
+                proof: proof.clone(),
             }
             .into(),
         ))?;
@@ -187,19 +193,11 @@ async fn impl_test_mempool_isnt_blocked_by_proof_verification() -> Result<()> {
         data_proposal.txs.push(
             VerifiedProofTransaction {
                 contract_name: contract_name.clone(),
-                proof: Some(client_sdk::ProofData::Bytes(
-                    serde_json::to_vec(&vec![HyleOutput {
-                        success: true,
-                        identity: blob_tx.identity.clone(),
-                        blobs: flatten_blobs(&blob_tx.blobs),
-                        ..HyleOutput::default()
-                    }])
-                    .unwrap(),
-                )),
-                proof_hash: ProofDataHash::default(),
+                proof: Some(proof.clone()),
+                proof_hash: proof_hash.clone(),
                 proven_blobs: vec![BlobProofOutput {
-                    original_proof_hash: ProofDataHash::default(),
-                    blob_tx_hash: blob_tx.hash(),
+                    original_proof_hash: proof_hash.clone(),
+                    blob_tx_hash: blob_tx_hash.clone(),
                     program_id: ProgramId(vec![]),
                     hyle_output: HyleOutput::default(),
                 }],

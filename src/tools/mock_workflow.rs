@@ -193,7 +193,7 @@ impl MockWorkflowHandler {
                 2 => {
                     info!("Sending tx proof");
                     let mut new_tx_proof = tx_proof.clone();
-                    new_tx_proof.proof = ProofData::Bytes(vec![i]);
+                    new_tx_proof.proof = ProofData(vec![i]);
                     _ = api_client.send_tx_proof(&tx_proof).await;
                 }
                 3 => {

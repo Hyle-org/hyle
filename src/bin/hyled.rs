@@ -30,7 +30,7 @@ async fn send_proof(
     let res = client
         .send_tx_proof(&ProofTransaction {
             contract_name: contract_name.clone(),
-            proof: ProofData::Bytes(proof),
+            proof: ProofData(proof),
         })
         .await?;
     assert!(res.status().is_success());

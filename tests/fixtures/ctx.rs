@@ -289,7 +289,7 @@ impl E2ECtx {
             success: true,
             program_outputs: vec![],
         };
-        ProofData::Bytes(
+        ProofData(
             bincode::encode_to_vec(vec![hyle_output.clone()], bincode::config::standard()).unwrap(),
         )
     }

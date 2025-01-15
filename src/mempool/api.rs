@@ -8,8 +8,8 @@ use tracing::info;
 use crate::{
     bus::{bus_client, metrics::BusMetrics, BusClientSender, BusMessage},
     model::{
-        BlobTransaction, CommonRunContext, Hashable, ProofData, ProofTransaction,
-        RegisterContractTransaction, Transaction, TransactionData,
+        BlobTransaction, CommonRunContext, Hashable, ProofTransaction, RegisterContractTransaction,
+        Transaction, TransactionData,
     },
     rest::AppError,
 };
@@ -73,14 +73,9 @@ pub async fn send_blob_transaction(
 
 pub async fn send_proof_transaction(
     State(state): State<RouterState>,
-    Json(mut payload): Json<ProofTransaction>,
+    Json(payload): Json<ProofTransaction>,
 ) -> Result<impl IntoResponse, AppError> {
     info!("Got proof transaction {}", payload.hash());
-    let proof_bytes = payload
-        .proof
-        .to_bytes()
-        .map_err(|err| AppError(StatusCode::BAD_REQUEST, anyhow!(err)))?;
-    payload.proof = ProofData::Bytes(proof_bytes);
     handle_send(state, TransactionData::Proof(payload)).await
 }
 

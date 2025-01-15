@@ -51,12 +51,8 @@ mod e2e_hyllar {
         let proof = proof_generator.read_proof(0);
 
         info!("➡️  Sending proof for register");
-        ctx.send_proof_single(
-            "hydentity".into(),
-            ProofData::Bytes(proof),
-            blob_tx_hash.clone(),
-        )
-        .await?;
+        ctx.send_proof_single("hydentity".into(), ProofData(proof), blob_tx_hash.clone())
+            .await?;
 
         info!("➡️  Waiting for height 2");
         ctx.wait_height(2).await?;
@@ -115,18 +111,14 @@ mod e2e_hyllar {
         info!("➡️  Sending proof for hydentity");
         ctx.send_proof_single(
             "hydentity".into(),
-            ProofData::Bytes(hydentity_proof),
+            ProofData(hydentity_proof),
             blob_tx_hash.clone(),
         )
         .await?;
 
         info!("➡️  Sending proof for hyllar");
-        ctx.send_proof_single(
-            "hyllar".into(),
-            ProofData::Bytes(hyllar_proof),
-            blob_tx_hash,
-        )
-        .await?;
+        ctx.send_proof_single("hyllar".into(), ProofData(hyllar_proof), blob_tx_hash)
+            .await?;
 
         info!("➡️  Waiting for height 5");
         ctx.wait_height(5).await?;
