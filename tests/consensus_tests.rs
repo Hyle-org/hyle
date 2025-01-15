@@ -35,7 +35,7 @@ mod e2e_consensus {
         Ok(())
     }
 
-    async fn scenario_rejoin_common(ctx: &mut E2ECtx) -> Result<()> {
+    async fn scenario_rejoin_common(ctx: &mut E2ECtx, stake_amount: u128) -> Result<()> {
         ctx.wait_height(2).await?;
 
         let joining_client = ctx.add_node().await?;
@@ -115,7 +115,7 @@ mod e2e_consensus {
                 "password".to_string(),
             )?;
 
-            stake(&mut transaction, "staking".into(), 100)?;
+            stake(&mut transaction, "staking".into(), stake_amount)?;
 
             transfer(
                 &mut transaction,
@@ -155,7 +155,7 @@ mod e2e_consensus {
     async fn can_rejoin_blocking_consensus() -> Result<()> {
         let mut ctx = E2ECtx::new_multi_with_indexer(2, 500).await?;
 
-        scenario_rejoin_common(&mut ctx).await?;
+        scenario_rejoin_common(&mut ctx, 100).await?;
 
         // TODO: we should be able to exit the consensus and rejoin it again, but this doesn't work when we block it for now.
         /*
@@ -181,7 +181,7 @@ mod e2e_consensus {
     async fn can_rejoin_not_blocking_consensus() -> Result<()> {
         let mut ctx = E2ECtx::new_multi_with_indexer(2, 500).await?;
 
-        scenario_rejoin_common(&mut ctx).await?;
+        scenario_rejoin_common(&mut ctx, 50).await?;
 
         info!("Stopping node");
         ctx.stop_node(3).await?;
