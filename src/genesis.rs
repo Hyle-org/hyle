@@ -8,8 +8,9 @@ use crate::{
     handle_messages,
     mempool::DataProposal,
     model::{
-        BlobProofOutput, BlobTransaction, Hashable, ProofData, RegisterContractTransaction,
-        SharedRunContext, SignedBlock, Transaction, ValidatorPublicKey, VerifiedProofTransaction,
+        verifiers::NativeVerifiers, BlobProofOutput, BlobTransaction, Hashable, ProofData,
+        RegisterContractTransaction, SharedRunContext, SignedBlock, Transaction,
+        ValidatorPublicKey, VerifiedProofTransaction,
     },
     p2p::network::PeerEvent,
     utils::{
@@ -23,7 +24,7 @@ use crate::{
 use anyhow::{bail, Error, Result};
 use client_sdk::transaction_builder::{BuildResult, StateUpdater, TransactionBuilder};
 use hydentity::Hydentity;
-use hyle_contract_sdk::{identity_provider::IdentityVerification, Identity};
+use hyle_contract_sdk::{identity_provider::IdentityVerification, Identity, StateDigest};
 use hyle_contract_sdk::{ContractName, Digestable, ProgramId};
 use hyllar::HyllarToken;
 use serde::{Deserialize, Serialize};
@@ -385,6 +386,8 @@ impl Genesis {
         };
 
         let mut map = BTreeMap::default();
+        map.insert("blst".into(), NativeVerifiers::Blst.into());
+        map.insert("sha3_256".into(), NativeVerifiers::Sha3_256.into());
         map.insert("hyllar".into(), ProgramId(hyllar_program_id.clone()));
         map.insert("hydentity".into(), ProgramId(hydentity_program_id.clone()));
         map.insert("staking".into(), ProgramId(staking_program_id.clone()));
@@ -396,6 +399,22 @@ impl Genesis {
         (
             map,
             vec![
+                RegisterContractTransaction {
+                    owner: "hyle".into(),
+                    verifier: "blst".into(),
+                    program_id: NativeVerifiers::Blst.into(),
+                    state_digest: StateDigest(vec![]),
+                    contract_name: "blst".into(),
+                }
+                .into(),
+                RegisterContractTransaction {
+                    owner: "hyle".into(),
+                    verifier: "sha3_256".into(),
+                    program_id: NativeVerifiers::Sha3_256.into(),
+                    state_digest: StateDigest(vec![]),
+                    contract_name: "sha3_256".into(),
+                }
+                .into(),
                 RegisterContractTransaction {
                     owner: "hyle".into(),
                     verifier: "risc0".into(),

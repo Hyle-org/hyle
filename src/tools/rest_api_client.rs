@@ -12,7 +12,10 @@ use tokio_util::codec::{Framed, LengthDelimitedCodec};
 #[cfg(feature = "node")]
 use crate::model::Transaction;
 use crate::model::{
-    consensus::ConsensusInfo, data_availability::Contract, indexer::ContractDb, rest::NodeInfo,
+    consensus::ConsensusInfo,
+    data_availability::Contract,
+    indexer::{ContractDb, TransactionDb},
+    rest::NodeInfo,
     BlobTransaction, BlockHeight, ContractName, ProofTransaction, RegisterContractTransaction,
 };
 #[cfg(feature = "node")]
@@ -248,5 +251,17 @@ impl IndexerApiHttpClient {
             .json::<NodeInfo>()
             .await
             .context("reading node info response")
+    }
+
+    pub async fn get_transaction_by_hash(&self, tx_hash: &TxHash) -> Result<TransactionDb> {
+        self.reqwest_client
+            .get(format!("{}v1/indexer/transaction/hash/{tx_hash}", self.url))
+            .header("Content-Type", "application/json")
+            .send()
+            .await
+            .context("getting transaction by hash")?
+            .json::<TransactionDb>()
+            .await
+            .context("reading transaction response")
     }
 }

@@ -63,7 +63,7 @@ impl KnownContracts {
         program_id: &ProgramId,
     ) -> Result<()> {
         if self.0.contains_key(contract_name) {
-            bail!("Contract already exists")
+            bail!("Contract {contract_name} already exists")
         }
         self.0.insert(
             contract_name.clone(),

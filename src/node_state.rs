@@ -1,12 +1,13 @@
 //! State required for participation in consensus by the node.
 
 use crate::data_availability::QueryBlockHeight;
+use crate::mempool::verifiers;
 use crate::model::data_availability::{
     Contract, HandledBlobProofOutput, UnsettledBlobMetadata, UnsettledBlobTransaction,
 };
 use crate::model::{
-    BlobProofOutput, BlobTransaction, BlobsHash, Block, BlockHeight, ContractName, Hashable,
-    RegisterContractTransaction, SignedBlock, TransactionData,
+    verifiers::NativeVerifiers, BlobProofOutput, BlobTransaction, BlobsHash, Block, BlockHeight,
+    ContractName, Hashable, RegisterContractTransaction, SignedBlock, TransactionData,
 };
 use anyhow::{bail, Error, Result};
 use bincode::{Decode, Encode};
@@ -76,7 +77,17 @@ impl NodeState {
             match &tx.transaction_data {
                 TransactionData::Blob(blob_transaction) => {
                     match self.handle_blob_tx(blob_transaction) {
-                        Ok(_) => {}
+                        Ok(Some(tx_hash)) => {
+                            let mut blob_tx_to_try_and_settle = BTreeSet::new();
+                            blob_tx_to_try_and_settle.insert(tx_hash);
+                            // In case of a BlobTransaction with only native verifies, we need to trigger the
+                            // settlement here as we will never get a ProofTransaction
+                            self.settle_txs_until_done(
+                                &mut block_under_construction,
+                                blob_tx_to_try_and_settle,
+                            );
+                        }
+                        Ok(None) => {}
                         Err(e) => {
                             error!("Failed to handle blob transaction: {:?}", e);
                             block_under_construction.failed_txs.insert(tx.hash());
@@ -151,7 +162,9 @@ impl NodeState {
         Ok(())
     }
 
-    fn handle_blob_tx(&mut self, tx: &BlobTransaction) -> Result<(), Error> {
+    /// Returns a TxHash only if the blob transaction calls only native verifiers and thus can be
+    /// settled directly.
+    fn handle_blob_tx(&mut self, tx: &BlobTransaction) -> Result<Option<TxHash>, Error> {
         debug!("Handle blob tx: {:?}", tx);
         let identity_parts: Vec<&str> = tx.identity.0.split('.').collect();
         if identity_parts.len() != 2 {
@@ -168,12 +181,41 @@ impl NodeState {
 
         let (blob_tx_hash, blobs_hash) = (tx.hash(), tx.blobs_hash());
 
+        let mut natively_settlable = true;
+
         let blobs: Vec<UnsettledBlobMetadata> = tx
             .blobs
             .iter()
-            .map(|blob| UnsettledBlobMetadata {
-                blob: blob.clone(),
-                possible_proofs: vec![],
+            .enumerate()
+            .map(|(index, blob)| {
+                if let Some(Ok(verifier)) = self
+                    .contracts
+                    .get(&blob.contract_name)
+                    .map(|b| TryInto::<NativeVerifiers>::try_into(&b.verifier))
+                {
+                    match verifiers::verify_native(
+                        blob_tx_hash.clone(),
+                        BlobIndex(index),
+                        &tx.blobs,
+                        verifier,
+                    ) {
+                        Ok(hyle_output) => {
+                            return UnsettledBlobMetadata {
+                                blob: blob.clone(),
+                                possible_proofs: vec![(verifier.into(), hyle_output)],
+                            };
+                        }
+                        Err(e) => {
+                            error!("Failed to verify native blob on {blob_tx_hash}:{index} with error: {e}");
+                        }
+                    }
+                } else {
+                    natively_settlable = false;
+                }
+                UnsettledBlobMetadata {
+                    blob: blob.clone(),
+                    possible_proofs: vec![],
+                }
             })
             .collect();
 
@@ -185,9 +227,14 @@ impl NodeState {
         });
 
         // Update timeouts
-        self.timeouts.set(blob_tx_hash, self.current_height + 100); // TODO: Timeout after 100 blocks, make it configurable !
+        self.timeouts
+            .set(blob_tx_hash.clone(), self.current_height + 100); // TODO: Timeout after 100 blocks, make it configurable !
 
-        Ok(())
+        if natively_settlable {
+            Ok(Some(blob_tx_hash))
+        } else {
+            Ok(None)
+        }
     }
 
     fn handle_blob_proof(
@@ -535,6 +582,8 @@ impl NodeState {
 #[cfg(test)]
 pub mod test {
     use core::panic;
+
+    mod native_verifiers;
 
     use super::*;
     use crate::model::*;
