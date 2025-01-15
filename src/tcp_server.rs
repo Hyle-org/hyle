@@ -1,6 +1,6 @@
 use crate::{
     bus::BusMessage,
-    model::{Hashable, SharedRunContext, Transaction},
+    model::{SharedRunContext, Transaction},
     module_handle_messages,
     p2p::stream::read_stream,
     utils::{
@@ -81,10 +81,7 @@ impl TcpServer {
                     loop {
                         match read_stream(&mut framed).await {
                             Ok(TcpServerNetMessage::NewTx(tx)) => {
-                                let tx_hash = tx.hash();
                                 sender.send(TcpServerMessage::NewTx(tx))?;
-                                // TODO: Wrap resp in a TcpServerMessageResponse enum ?
-                                framed.get_mut().write_all(tx_hash.0.as_bytes()).await?;
                             },
                             Ok(TcpServerNetMessage::Ping) => {
                                 framed.get_mut().write_all(b"Pong").await?;

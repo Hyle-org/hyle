@@ -74,8 +74,21 @@ pub async fn setup(url: String, users: u32, verifier: String) -> Result<()> {
 }
 
 pub async fn generate(users: u32, states: States) -> Result<(Vec<Vec<u8>>, Vec<Vec<u8>>)> {
-    let blob_txs = generate_blobs_txs(users, states.clone()).await?;
-    let proof_txs = generate_proof_txs(users, states).await?;
+    let blob_txs = match load_blob_txs(users) {
+        Ok(txs) => txs,
+        Err(_) => {
+            info!("Couldn't find blob transactions, generating new ones");
+            generate_blobs_txs(users, states.clone()).await?
+        }
+    };
+
+    let proof_txs = match load_proof_txs(users) {
+        Ok(txs) => txs,
+        Err(_) => {
+            info!("Couldn't find proof transactions, generating new ones");
+            generate_proof_txs(users, states).await?
+        }
+    };
 
     Ok((blob_txs, proof_txs))
 }
@@ -126,6 +139,7 @@ pub async fn generate_blobs_txs(users: u32, states: States) -> Result<Vec<Vec<u8
         blob_txs.extend(result??);
     }
 
+    info!("Saving blob transactions");
     std::fs::write(
         format!("blob_txs.{users}.bin"),
         bincode::encode_to_vec(blob_txs.clone(), bincode::config::standard())
@@ -184,6 +198,7 @@ pub async fn generate_proof_txs(users: u32, states: States) -> Result<Vec<Vec<u8
     }
 
     // serialize to bincode and write to file
+    info!("Saving proof transactions");
     std::fs::write(
         format!("proof_txs.{users}.bin"),
         bincode::encode_to_vec(proof_txs.clone(), bincode::config::standard())
@@ -280,7 +295,7 @@ pub async fn send_proof_txs(url: String, proof_txs: Vec<Vec<u8>>) -> Result<()> 
 }
 
 pub async fn send_massive_blob(url: String) -> Result<()> {
-    let ident = Identity(format!("test.hydentity").to_string());
+    let ident = Identity("test.hydentity".to_string());
 
     let mut data = vec![];
 
