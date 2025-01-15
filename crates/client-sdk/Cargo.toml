@@ -10,6 +10,7 @@ repository = { workspace = true }
 sdk = { path = "../contract-sdk", package = "hyle-contract-sdk" }
 
 anyhow = "1.0.94"
+base64 = { version = "0.22.1" }
 serde = { version = "1.0.216", features = ["derive"] }
 bincode = { version = "2.0.0-rc.3", features = ["serde"] }
 borsh = "1.5.3"

@@ -13,7 +13,7 @@ pub trait Hashable<T> {
 }
 
 #[derive(Debug, Default, Serialize, Deserialize, PartialEq, Eq, Clone, Encode, Decode)]
-pub struct ProofData(pub Vec<u8>);
+pub struct ProofData(#[serde(with = "base64_field")] pub Vec<u8>);
 
 #[derive(Debug, Default, Serialize, Deserialize, Clone, PartialEq, Eq, Encode, Decode)]
 pub struct ProofDataHash(pub String);
@@ -91,5 +91,26 @@ impl BlobsHash {
         hasher.update(vec.as_slice());
         let hash_bytes = hasher.finalize();
         BlobsHash(hex::encode(hash_bytes))
+    }
+}
+
+pub mod base64_field {
+    use base64::prelude::*;
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    pub fn serialize<S>(bytes: &Vec<u8>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let encoded = BASE64_STANDARD.encode(bytes);
+        serializer.serialize_str(&encoded)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Vec<u8>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        BASE64_STANDARD.decode(&s).map_err(serde::de::Error::custom)
     }
 }

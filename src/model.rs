@@ -4,10 +4,8 @@
 use crate::bus::SharedMessageBus;
 #[cfg(feature = "node")]
 use crate::utils::{conf::SharedConf, crypto::SharedBlstCrypto};
-use anyhow::anyhow;
 #[cfg(feature = "node")]
 use axum::Router;
-use base64::prelude::*;
 use bincode::{Decode, Encode};
 pub use client_sdk::{BlobTransaction, BlobsHash, Hashable, ProofData, ProofDataHash};
 use data_availability::HandledBlobProofOutput;
@@ -81,36 +79,6 @@ pub enum TransactionData {
 impl Default for TransactionData {
     fn default() -> Self {
         TransactionData::Blob(BlobTransaction::default())
-    }
-}
-
-/// This struct should only be used for API purposes
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct ProofTransactionB64 {
-    pub contract_name: ContractName,
-    pub proof: String,
-}
-
-impl TryFrom<ProofTransactionB64> for ProofTransaction {
-    type Error = anyhow::Error;
-
-    fn try_from(proof: ProofTransactionB64) -> Result<Self, Self::Error> {
-        let decoded_proof = BASE64_STANDARD
-            .decode(proof.proof)
-            .map_err(|_| anyhow!("Invalid base64 proof"))?;
-        Ok(ProofTransaction {
-            contract_name: proof.contract_name,
-            proof: ProofData(decoded_proof),
-        })
-    }
-}
-
-impl From<ProofTransaction> for ProofTransactionB64 {
-    fn from(proof: ProofTransaction) -> Self {
-        ProofTransactionB64 {
-            contract_name: proof.contract_name,
-            proof: BASE64_STANDARD.encode(proof.proof.0),
-        }
     }
 }
 

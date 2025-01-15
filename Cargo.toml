@@ -55,7 +55,6 @@ staking = { path = "./crates/contracts/staking", default-features = false }
 client-sdk = { path = "./crates/client-sdk", default-features = false }
 
 anyhow = "1.0.95"
-base64 = { version = "0.22.1" }
 bincode = { version = "2.0.0-rc.3", features = ["serde"] }
 blst = { version = "0.3.13" }
 chrono = { version = "0.4", features = ["serde"] }
