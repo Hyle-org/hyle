@@ -60,7 +60,6 @@ anyhow = "1.0.95"
 bincode = { version = "2.0.0-rc.3", features = ["serde"] }
 blst = { version = "0.3.13" }
 chrono = { version = "0.4", features = ["serde"] }
-derive_more = { version = "1.0.0", features = ["display"] }
 hex = { version = "0.4.3" }
 reqwest = { version = "0.12", features = ["json"] }
 serde = { version = "1.0", features = ["derive"] }

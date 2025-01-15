@@ -1153,16 +1153,11 @@ name = "client-sdk"
 version = "0.6.0"
 dependencies = [
  "anyhow",
- "base64 0.22.1",
  "bincode 2.0.0-rc.3",
  "bonsai-runner",
  "borsh",
- "derive_more 1.0.0",
- "hex",
  "hyle-contract-sdk",
  "risc0-zkvm",
- "serde",
- "sha3",
  "sp1-sdk",
 ]
 
@@ -2610,7 +2605,6 @@ dependencies = [
  "clap",
  "client-sdk",
  "config",
- "derive_more 1.0.0",
  "dhat",
  "fjall",
  "futures",
@@ -2661,7 +2655,6 @@ version = "0.6.0"
 dependencies = [
  "anyhow",
  "bincode 2.0.0-rc.3",
- "hex",
  "hyle-model",
  "mockall",
  "risc0-zkvm",
@@ -2850,7 +2843,6 @@ dependencies = [
  "anyhow",
  "borsh",
  "clap",
- "client-sdk",
  "hex",
  "hydentity",
  "hyle-contract-sdk",
@@ -6624,7 +6616,6 @@ dependencies = [
  "anyhow",
  "bincode 2.0.0-rc.3",
  "client-sdk",
- "hex",
  "hyle-contract-sdk",
  "risc0-zkvm",
  "serde",

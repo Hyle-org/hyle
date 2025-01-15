@@ -8,7 +8,6 @@ repository = { workspace = true }
 
 [dependencies]
 sdk = { path = "../contract-sdk", package = "hyle-contract-sdk" }
-client_sdk = { path = "../client-sdk", package = "client-sdk" }
 hydentity = { path = "../contracts/hydentity" }
 # hystake = { path = "../hystake/contract" }
 hyllar = { path = "../contracts/hyllar" }
