@@ -1,7 +1,7 @@
 use bincode::{Decode, Encode};
 
-use crate::model::data_availability::UnsettledBlobTransaction;
 use crate::model::ContractName;
+use crate::model::UnsettledBlobTransaction;
 use hyle_contract_sdk::TxHash;
 use std::collections::{HashMap, VecDeque};
 
@@ -95,7 +95,7 @@ impl OrderedTxMap {
 #[cfg(test)]
 mod tests {
     #![allow(clippy::indexing_slicing)]
-    use crate::model::{data_availability::UnsettledBlobMetadata, BlobsHash};
+    use crate::model::{BlobsHash, UnsettledBlobMetadata};
     use hyle_contract_sdk::{Blob, BlobData, Identity};
 
     use super::*;

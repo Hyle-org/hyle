@@ -2,7 +2,7 @@ use std::fmt::Write;
 use std::io::Read;
 
 use anyhow::{bail, Context, Error};
-use client_sdk::ProofData;
+use hyle_model::{ProofData, Signed, ValidatorSignature};
 use rand::Rng;
 use risc0_recursion::{Risc0Journal, Risc0ProgramId};
 use sha3::Digest;
@@ -12,7 +12,7 @@ use hyle_contract_sdk::{Blob, BlobIndex, HyleOutput, ProgramId, StateDigest, TxH
 
 use crate::{
     model::verifiers::{BlstSignatureBlob, NativeVerifiers, ShaBlob},
-    utils::crypto::{BlstCrypto, Signed, ValidatorSignature},
+    utils::crypto::BlstCrypto,
 };
 
 pub fn verify_proof(
@@ -253,8 +253,8 @@ pub fn verify_native(
             let msg = Signed {
                 msg,
                 signature: ValidatorSignature {
-                    signature: crate::utils::crypto::Signature(blob.signature),
-                    validator: staking::model::ValidatorPublicKey(blob.public_key),
+                    signature: crate::model::Signature(blob.signature),
+                    validator: crate::model::ValidatorPublicKey(blob.public_key),
                 },
             };
             let success = BlstCrypto::verify(&msg)?;

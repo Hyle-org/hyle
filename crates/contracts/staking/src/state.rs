@@ -1,9 +1,8 @@
 use std::collections::BTreeMap;
 
-use super::model::{BlockHeight, ValidatorPublicKey};
 use anyhow::Result;
 use bincode::{Decode, Encode};
-use sdk::{info, Digestable, Identity};
+use sdk::{info, BlockHeight, Digestable, Identity, ValidatorPublicKey};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 

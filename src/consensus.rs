@@ -1,17 +1,15 @@
 //! Handles all consensus logic up to block commitment.
 
-use crate::model::get_current_timestamp_ms;
+use crate::model::*;
 use crate::module_handle_messages;
 use crate::node_state::module::NodeStateEvent;
-use crate::utils::crypto::{AggregateSignature, Signed, SignedByValidator, ValidatorSignature};
 use crate::utils::modules::module_bus_client;
 use crate::{bus::BusClientSender, utils::logger::LogMe};
 use crate::{
     bus::{command_response::Query, BusMessage},
     genesis::GenesisEvent,
     mempool::QueryNewCut,
-    model::mempool::Cut,
-    model::{get_current_timestamp, Hashable, ValidatorPublicKey},
+    model::{Cut, Hashable, StakingAction, ValidatorPublicKey},
     p2p::{network::OutboundMessage, P2PCommand},
     utils::{
         conf::SharedConf,
@@ -21,13 +19,16 @@ use crate::{
 };
 use anyhow::{anyhow, bail, Context, Error, Result};
 use bincode::{Decode, Encode};
+use hyle_model::utils::get_current_timestamp;
+use hyle_model::utils::get_current_timestamp_ms;
 use metrics::ConsensusMetrics;
 use role_follower::{FollowerRole, FollowerState};
 use role_leader::{LeaderRole, LeaderState};
 use role_timeout::{TimeoutRole, TimeoutRoleState, TimeoutState};
 use serde::{Deserialize, Serialize};
 use staking::state::{Staking, MIN_STAKE};
-use staking::StakingAction;
+use std::ops::Deref;
+use std::ops::DerefMut;
 use std::time::Duration;
 use std::{collections::HashMap, default::Default, path::PathBuf};
 use tokio::time::interval;
@@ -41,9 +42,6 @@ pub mod module;
 pub mod role_follower;
 pub mod role_leader;
 pub mod role_timeout;
-pub mod utils;
-
-pub use crate::model::consensus::*;
 
 // -----------------------------
 // ------ Consensus bus --------
@@ -81,17 +79,17 @@ impl<T> BusMessage for SignedByValidator<T> where T: Encode + BusMessage {}
 
 module_bus_client! {
 struct ConsensusBusClient {
-    sender(OutboundMessage),
-    sender(ConsensusEvent),
-    sender(ConsensusCommand),
-    sender(P2PCommand),
-    sender(Query<QueryNewCut, Cut>),
-    receiver(ConsensusCommand),
-    receiver(GenesisEvent),
-    receiver(NodeStateEvent),
-    receiver(SignedByValidator<ConsensusNetMessage>),
-    receiver(Query<QueryConsensusInfo, ConsensusInfo>),
-    receiver(Query<QueryConsensusStakingState, Staking>),
+sender(OutboundMessage),
+sender(ConsensusEvent),
+sender(ConsensusCommand),
+sender(P2PCommand),
+sender(Query<QueryNewCut, Cut>),
+receiver(ConsensusCommand),
+receiver(GenesisEvent),
+receiver(NodeStateEvent),
+receiver(SignedByValidator<ConsensusNetMessage>),
+receiver(Query<QueryConsensusInfo, ConsensusInfo>),
+receiver(Query<QueryConsensusStakingState, Staking>),
 }
 }
 
@@ -143,6 +141,18 @@ pub struct Consensus {
     #[allow(dead_code)]
     config: SharedConf,
     crypto: SharedBlstCrypto,
+}
+
+impl Deref for Consensus {
+    type Target = ConsensusStore;
+    fn deref(&self) -> &Self::Target {
+        &self.store
+    }
+}
+impl DerefMut for Consensus {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.store
+    }
 }
 
 impl Consensus {
@@ -924,13 +934,6 @@ impl Consensus {
 impl Consensus {}
 
 #[cfg(test)]
-impl ConsensusProposal {
-    pub fn get_cut(&self) -> Cut {
-        self.cut.clone()
-    }
-}
-
-#[cfg(test)]
 pub mod test {
 
     use crate::{
@@ -948,7 +951,7 @@ pub mod test {
             broadcast, build_tuple, send, simple_commit_round, AutobahnBusClient, AutobahnTestCtx,
         },
         bus::{dont_use_this::get_receiver, metrics::BusMetrics, SharedMessageBus},
-        model::mempool::DataProposalHash,
+        model::DataProposalHash,
         p2p::network::NetMessage,
         utils::{conf::Conf, crypto},
     };

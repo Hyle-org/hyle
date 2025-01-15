@@ -1,11 +1,10 @@
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Sha3_256};
+use staking::ValidatorPublicKey;
 use std::fmt::Display;
 
-use super::crypto::AggregateSignature;
-use crate::model::{Hashable, Transaction};
-use staking::model::ValidatorPublicKey;
+use crate::*;
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, Encode, Decode, Eq, PartialEq)]
 pub struct DataProposal {
@@ -32,6 +31,11 @@ impl Hashable<DataProposalHash> for DataProposal {
 impl Display for DataProposalHash {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0)
+    }
+}
+impl Display for DataProposal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.hash())
     }
 }
 

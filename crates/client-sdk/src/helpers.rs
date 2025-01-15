@@ -1,6 +1,5 @@
-use crate::ProofData;
 use anyhow::{bail, Result};
-use sdk::{flatten_blobs, ContractInput, HyleOutput};
+use sdk::{flatten_blobs, ContractInput, HyleOutput, ProofData};
 
 pub enum Prover {
     #[cfg(feature = "risc0")]

@@ -5,17 +5,14 @@ use crate::{
     consensus::{CommittedConsensusProposal, ConsensusEvent},
     genesis::GenesisEvent,
     mempool::storage::Storage,
-    model::{
-        BlobProofOutput, Hashable, ProofDataHash, SharedRunContext, Transaction, TransactionData,
-        ValidatorPublicKey, VerifiedProofTransaction,
-    },
+    model::*,
     module_handle_messages,
     node_state::module::NodeStateEvent,
     p2p::network::OutboundMessage,
     tcp_server::TcpServerMessage,
     utils::{
         conf::SharedConf,
-        crypto::{BlstCrypto, SharedBlstCrypto, SignedByValidator},
+        crypto::{BlstCrypto, SharedBlstCrypto},
         logger::LogMe,
         modules::{module_bus_client, Module},
         static_type_map::Pick,
@@ -40,8 +37,6 @@ use strum_macros::IntoStaticStr;
 use tracing::{debug, error, info, trace, warn};
 
 use verifiers::{verify_proof, verify_recursive_proof};
-
-pub use crate::model::mempool::*;
 
 pub mod api;
 pub mod metrics;
@@ -966,9 +961,10 @@ pub mod test {
     use crate::bus::dont_use_this::get_receiver;
     use crate::bus::metrics::BusMetrics;
     use crate::bus::SharedMessageBus;
-    use crate::model::{ContractName, RegisterContractTransaction, Transaction};
+    use crate::model::{
+        AggregateSignature, ContractName, RegisterContractTransaction, Transaction,
+    };
     use crate::p2p::network::NetMessage;
-    use crate::utils::crypto::AggregateSignature;
     use anyhow::Result;
     use assertables::assert_ok;
     use hyle_contract_sdk::StateDigest;

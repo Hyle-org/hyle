@@ -10,18 +10,11 @@ use tracing::info;
 
 use crate::bus::command_response::Query;
 use crate::bus::{bus_client, BusClientReceiver, BusClientSender};
-use crate::consensus::{ConsensusEvent, ConsensusProposal};
+use crate::consensus::ConsensusEvent;
 use crate::genesis::{Genesis, GenesisEvent};
 use crate::mempool::test::NodeStateEvent;
-use crate::mempool::{DataProposal, DataProposalHash, RestApiMessage};
-use crate::mempool::{MempoolNetMessage, QueryNewCut};
-use crate::model::mempool::Cut;
-use crate::model::{
-    BlobProofOutput, BlobTransaction, ContractName, Hashable, SignedBlock, TransactionData,
-    VerifiedProofTransaction,
-};
-use crate::model::{ProofTransaction, RegisterContractTransaction};
-use crate::utils::crypto::AggregateSignature;
+use crate::mempool::{MempoolNetMessage, QueryNewCut, RestApiMessage};
+use crate::model::*;
 use crate::utils::integration_test::NodeIntegrationCtxBuilder;
 
 use super::SignedByValidator;
@@ -101,7 +94,7 @@ async fn impl_test_mempool_isnt_blocked_by_proof_verification() -> Result<()> {
         }],
     };
     let blob_tx_hash = blob_tx.hash();
-    let proof = client_sdk::ProofData(
+    let proof = ProofData(
         serde_json::to_vec(
             &vec![HyleOutput {
                 success: true,

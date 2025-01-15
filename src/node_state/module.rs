@@ -3,7 +3,7 @@
 use super::NodeState;
 use crate::bus::{command_response::Query, BusClientSender, BusMessage};
 use crate::data_availability::{DataEvent, QueryBlockHeight};
-use crate::model::data_availability::Contract;
+use crate::model::Contract;
 use crate::model::{Block, BlockHeight, CommonRunContext, ContractName};
 use crate::module_handle_messages;
 use crate::utils::conf::SharedConf;

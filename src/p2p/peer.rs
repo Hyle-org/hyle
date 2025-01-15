@@ -19,14 +19,14 @@ use super::stream::send_net_message;
 use crate::bus::bus_client;
 use crate::bus::BusClientSender;
 use crate::bus::SharedMessageBus;
-use crate::consensus::ConsensusNetMessage;
 use crate::mempool::MempoolNetMessage;
+use crate::model::ConsensusNetMessage;
+use crate::model::SignedByValidator;
 use crate::model::ValidatorPublicKey;
 use crate::module_handle_messages;
 use crate::p2p::stream::read_stream;
 use crate::utils::conf::SharedConf;
 use crate::utils::crypto::SharedBlstCrypto;
-use crate::utils::crypto::SignedByValidator;
 use crate::utils::modules::signal::ShutdownModule;
 
 bus_client! {

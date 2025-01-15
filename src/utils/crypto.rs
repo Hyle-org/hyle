@@ -7,9 +7,9 @@ use blst::min_pk::{
     AggregatePublicKey, AggregateSignature as BlstAggregateSignature, PublicKey, SecretKey,
     Signature as BlstSignature,
 };
+pub use hyle_model::{AggregateSignature, Signed, SignedByValidator, ValidatorSignature};
 use rand::Rng;
 
-pub use crate::model::crypto::*;
 use crate::model::ValidatorPublicKey;
 
 #[derive(Clone)]

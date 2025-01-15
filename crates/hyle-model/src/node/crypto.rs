@@ -2,7 +2,7 @@ use blst::min_pk::Signature as BlstSignature;
 use serde::{Deserialize, Serialize};
 use std::fmt::{self, Display};
 
-use crate::model::{ValidatorPublicKey, HASH_DISPLAY_SIZE};
+use crate::{staking::*, *};
 
 #[derive(
     Debug, Serialize, Deserialize, Clone, bincode::Encode, bincode::Decode, PartialEq, Eq, Hash,

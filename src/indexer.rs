@@ -5,12 +5,8 @@ pub mod contract_handlers;
 pub mod contract_state_indexer;
 pub mod da_listener;
 
+use crate::model::*;
 use crate::{
-    consensus::ConsensusProposalHash,
-    model::{
-        BlobTransaction, Block, BlockHeight, CommonRunContext, ContractName, Hashable,
-        TransactionData,
-    },
     module_handle_messages,
     node_state::module::NodeStateEvent,
     utils::modules::{module_bus_client, Module},
@@ -32,8 +28,6 @@ use sqlx::{postgres::PgPoolOptions, PgPool, Pool, Postgres};
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::{broadcast, mpsc};
 use tracing::{error, trace};
-
-use crate::model::indexer::*;
 
 module_bus_client! {
 #[derive(Debug)]
@@ -526,15 +520,10 @@ impl std::ops::Deref for Indexer {
 
 #[cfg(test)]
 mod test {
-    use crate::{
-        mempool::DataProposal,
-        model::indexer::{BlockDb, ContractDb},
-    };
     use assert_json_diff::assert_json_include;
     use axum_test::TestServer;
     use hyle_contract_sdk::{BlobIndex, HyleOutput, Identity, ProgramId, StateDigest, TxHash};
     use serde_json::json;
-    use staking::model::ValidatorPublicKey;
     use std::{
         future::IntoFuture,
         net::{Ipv4Addr, SocketAddr},

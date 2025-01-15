@@ -1,12 +1,9 @@
 use anyhow::Context;
 use assert_cmd::prelude::*;
-use client_sdk::{
-    transaction_builder::{BuildResult, TransactionBuilder},
-    BlobTransaction,
-};
+use client_sdk::transaction_builder::{BuildResult, TransactionBuilder};
 use hyle::{
     genesis::States,
-    model::ProofData,
+    model::{BlobTransaction, ProofData},
     rest::client::NodeApiHttpClient,
     utils::conf::{Conf, Consensus},
 };

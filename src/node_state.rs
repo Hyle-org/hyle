@@ -2,18 +2,12 @@
 
 use crate::data_availability::QueryBlockHeight;
 use crate::mempool::verifiers;
-use crate::model::data_availability::{
-    Contract, HandledBlobProofOutput, UnsettledBlobMetadata, UnsettledBlobTransaction,
-};
-use crate::model::{
-    verifiers::NativeVerifiers, BlobProofOutput, BlobTransaction, BlobsHash, Block, BlockHeight,
-    ContractName, Hashable, RegisterContractTransaction, SignedBlock, TransactionData,
-};
+use crate::model::verifiers::NativeVerifiers;
+use crate::model::*;
 use anyhow::{bail, Error, Result};
 use bincode::{Decode, Encode};
 use hyle_contract_sdk::{utils::parse_structured_blob, BlobIndex, HyleOutput, TxHash};
 use ordered_tx_map::OrderedTxMap;
-use staking::StakingAction;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use timeouts::Timeouts;
 use tracing::{debug, error, info, trace};
@@ -586,12 +580,8 @@ pub mod test {
     mod native_verifiers;
 
     use super::*;
-    use crate::model::*;
     use assertables::assert_err;
-    use consensus::ConsensusProposal;
-    use crypto::AggregateSignature;
-    use hyle_contract_sdk::{flatten_blobs, BlobIndex, Identity, ProgramId, StateDigest};
-    use mempool::DataProposal;
+    use hyle_contract_sdk::flatten_blobs;
 
     async fn new_node_state() -> NodeState {
         NodeState::default()

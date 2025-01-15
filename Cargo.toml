@@ -11,6 +11,7 @@ members = [
     "crates/hyrun",
     "crates/client-sdk",
     "crates/hyle-loadtest",
+    "crates/hyle-model",
 ]
 resolver = "2"
 
@@ -53,12 +54,12 @@ indexing_slicing = "warn"
 hyle-contract-sdk = { path = "./crates/contract-sdk", default-features = false }
 staking = { path = "./crates/contracts/staking", default-features = false }
 client-sdk = { path = "./crates/client-sdk", default-features = false }
+hyle-model = { path = "./crates/hyle-model", default-features = false, features = ["full", "sqlx"] }
 
 anyhow = "1.0.95"
 bincode = { version = "2.0.0-rc.3", features = ["serde"] }
 blst = { version = "0.3.13" }
 chrono = { version = "0.4", features = ["serde"] }
-derive_more = { version = "1.0.0", features = ["display"] }
 hex = { version = "0.4.3" }
 reqwest = { version = "0.12", features = ["json"] }
 serde = { version = "1.0", features = ["derive"] }

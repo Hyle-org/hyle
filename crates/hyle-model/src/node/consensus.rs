@@ -1,12 +1,11 @@
+use std::fmt::Display;
+
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Sha3_256};
 use strum_macros::IntoStaticStr;
 
-use super::crypto::{AggregateSignature, SignedByValidator};
-use super::mempool::Cut;
-use super::Hashable;
-use staking::model::ValidatorPublicKey;
+use crate::{staking::*, *};
 
 pub type Slot = u64;
 pub type View = u64;
@@ -54,6 +53,39 @@ pub enum Ticket {
 
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, PartialEq, Eq, Default)]
 pub struct ConsensusProposalHash(pub String);
+
+#[cfg(feature = "sqlx")]
+impl sqlx::Type<sqlx::Postgres> for ConsensusProposalHash {
+    fn type_info() -> sqlx::postgres::PgTypeInfo {
+        <String as sqlx::Type<sqlx::Postgres>>::type_info()
+    }
+}
+
+#[cfg(feature = "sqlx")]
+impl sqlx::Encode<'_, sqlx::Postgres> for ConsensusProposalHash {
+    fn encode_by_ref(
+        &self,
+        buf: &mut sqlx::postgres::PgArgumentBuffer,
+    ) -> std::result::Result<
+        sqlx::encode::IsNull,
+        std::boxed::Box<(dyn std::error::Error + std::marker::Send + std::marker::Sync + 'static)>,
+    > {
+        <String as sqlx::Encode<sqlx::Postgres>>::encode_by_ref(&self.0, buf)
+    }
+}
+
+#[cfg(feature = "sqlx")]
+impl<'r> sqlx::Decode<'r, sqlx::Postgres> for ConsensusProposalHash {
+    fn decode(
+        value: sqlx::postgres::PgValueRef<'r>,
+    ) -> std::result::Result<
+        ConsensusProposalHash,
+        std::boxed::Box<(dyn std::error::Error + std::marker::Send + std::marker::Sync + 'static)>,
+    > {
+        let inner = <String as sqlx::Decode<sqlx::Postgres>>::decode(value)?;
+        Ok(ConsensusProposalHash(inner))
+    }
+}
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, Encode, Decode, PartialEq, Eq)]
 pub struct ConsensusProposal {
@@ -119,12 +151,111 @@ pub enum ConsensusNetMessage {
     ValidatorCandidacy(ValidatorCandidacy),
 }
 
+impl Hashable<QuorumCertificateHash> for QuorumCertificate {
+    fn hash(&self) -> QuorumCertificateHash {
+        let mut hasher = Sha3_256::new();
+        hasher.update(self.signature.0.clone());
+        hasher.update(self.validators.len().to_le_bytes());
+        for validator in self.validators.iter() {
+            hasher.update(validator.0.clone());
+        }
+        QuorumCertificateHash(hasher.finalize().as_slice().to_owned())
+    }
+}
+
+impl Display for ValidatorCandidacy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Pubkey: {}", self.pubkey)
+    }
+}
+
+impl Display for Ticket {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Ticket: {:?}", self)
+    }
+}
+
+impl Display for ConsensusProposal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Hash: {}, Parent Hash: {}, Slot: {}, View: {}, Cut: {:?}, new_validators_to_bond: {:?}",
+            self.hash(),
+            self.parent_hash,
+            self.slot,
+            self.view,
+            self.cut,
+            self.new_validators_to_bond,
+        )
+    }
+}
+
+impl Display for ConsensusProposalHash {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", &self.0)
+    }
+}
+impl Display for QuorumCertificateHash {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "0x{}",
+            hex::encode(self.0.get(..HASH_DISPLAY_SIZE).unwrap_or(&self.0))
+        )
+    }
+}
+
+impl Display for ConsensusNetMessage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let enum_variant: &'static str = self.into();
+
+        match self {
+            ConsensusNetMessage::Prepare(cp, ticket) => {
+                write!(f, "{} CP: {}, ticket: {}", enum_variant, cp, ticket)
+            }
+            ConsensusNetMessage::PrepareVote(cphash) => {
+                write!(f, "{} (CP hash: {})", enum_variant, cphash)
+            }
+            ConsensusNetMessage::Confirm(cert) => {
+                _ = writeln!(f, "{}", enum_variant);
+                _ = write!(f, "Certificate {} with validators ", cert.signature);
+                for v in cert.validators.iter() {
+                    _ = write!(f, "{},", v);
+                }
+                write!(f, "")
+            }
+            ConsensusNetMessage::ConfirmAck(cphash) => {
+                write!(f, "{} (CP hash: {})", enum_variant, cphash)
+            }
+            ConsensusNetMessage::Commit(cert, cphash) => {
+                _ = writeln!(f, "{} (CP hash: {})", enum_variant, cphash);
+                _ = write!(f, "Certificate {} with validators ", cert.signature);
+                for v in cert.validators.iter() {
+                    _ = write!(f, "{},", v);
+                }
+                write!(f, "")
+            }
+
+            ConsensusNetMessage::ValidatorCandidacy(candidacy) => {
+                write!(f, "{} (CP hash {})", enum_variant, candidacy)
+            }
+            ConsensusNetMessage::Timeout(slot, view) => {
+                write!(f, "{} - Slot: {} View: {}", enum_variant, slot, view)
+            }
+            ConsensusNetMessage::TimeoutCertificate(cert, slot, view) => {
+                _ = writeln!(f, "{} - Slot: {} View: {}", enum_variant, slot, view);
+                _ = write!(f, "Certificate {} with validators ", cert.signature);
+                for v in cert.validators.iter() {
+                    _ = write!(f, "{},", v);
+                }
+                write!(f, "")
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use crate::{
-        mempool::DataProposalHash,
-        model::crypto::{Signature, ValidatorSignature},
-    };
 
     #[test]
     fn test_consensus_proposal_hash() {

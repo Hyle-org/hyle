@@ -15,7 +15,7 @@ use crate::{
 
 use anyhow::{bail, Context, Result};
 use bincode::{Decode, Encode};
-use client_sdk::BlobTransaction;
+use hyle_model::BlobTransaction;
 use serde::{Deserialize, Serialize};
 use strum_macros::IntoStaticStr;
 use tokio::{io::AsyncWriteExt, net::TcpListener};

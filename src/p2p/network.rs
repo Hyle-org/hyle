@@ -1,9 +1,9 @@
 use crate::bus::BusMessage;
+use crate::mempool::MempoolNetMessage;
 use crate::model::ValidatorPublicKey;
-use crate::utils::crypto::SignedByValidator;
-use crate::{consensus::ConsensusNetMessage, mempool::MempoolNetMessage};
 use anyhow::Context;
 use bincode::{Decode, Encode};
+use hyle_model::{ConsensusNetMessage, SignedByValidator};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::fmt::{self, Display};

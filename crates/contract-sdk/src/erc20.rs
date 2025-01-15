@@ -6,10 +6,10 @@ use alloc::{
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    caller::{CallerCallee, CheckCalleeBlobs},
-    Blob, BlobData, BlobIndex, ContractAction, ContractName, RunResult, StructuredBlobData,
-};
+use hyle_model::{Blob, BlobData, BlobIndex, ContractAction, ContractName, StructuredBlobData};
+
+use crate::caller::{CallerCallee, CheckCalleeBlobs};
+use crate::RunResult;
 
 /// Trait representing the ERC-20 token standard interface.
 pub trait ERC20 {

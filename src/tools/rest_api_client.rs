@@ -3,20 +3,16 @@ use std::fmt::Display;
 use anyhow::{Context, Result};
 #[cfg(feature = "node")]
 use futures::SinkExt;
+use hyle_model::Transaction;
 use reqwest::{Response, Url};
 #[cfg(feature = "node")]
 use tokio::net::TcpStream;
 #[cfg(feature = "node")]
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
 
-#[cfg(feature = "node")]
-use crate::model::Transaction;
 use crate::model::{
-    consensus::ConsensusInfo,
-    data_availability::Contract,
-    indexer::{ContractDb, TransactionDb},
-    rest::NodeInfo,
-    BlobTransaction, BlockHeight, ContractName, ProofTransaction, RegisterContractTransaction,
+    BlobTransaction, BlockHeight, ConsensusInfo, Contract, ContractDb, ContractName, NodeInfo,
+    ProofTransaction, RegisterContractTransaction, TransactionDb,
 };
 #[cfg(feature = "node")]
 use crate::tcp_server::TcpServerNetMessage;
