@@ -202,7 +202,7 @@ use crate::bus::dont_use_this::get_receiver;
 use crate::bus::metrics::BusMetrics;
 use crate::bus::{bus_client, SharedMessageBus};
 use crate::consensus::test::ConsensusTestCtx;
-use crate::consensus::{ConsensusEvent, ConsensusProposal};
+use crate::consensus::ConsensusEvent;
 use crate::handle_messages;
 use crate::mempool::test::{make_register_contract_tx, MempoolTestCtx};
 use crate::mempool::{InternalMempoolEvent, MempoolEvent, MempoolNetMessage, QueryNewCut};
@@ -376,7 +376,8 @@ async fn autobahn_basic_flow() {
             consensus_proposal = cp.clone();
             assert_eq!(
                 cp
-                    .get_cut()
+                    .cut
+                    .clone()
                     .iter()
                     .find(|(validator, _hash, _poda)|
                         validator == &node1.consensus_ctx.pubkey()

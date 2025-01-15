@@ -256,7 +256,6 @@ impl Display for ConsensusNetMessage {
 
 #[cfg(test)]
 mod tests {
-    use crate::*;
 
     #[test]
     fn test_consensus_proposal_hash() {

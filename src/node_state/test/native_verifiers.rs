@@ -1,7 +1,6 @@
 use anyhow::Result;
 use assertables::assert_ok;
-use client_sdk::{BlobTransaction, Hashable};
-use hyle_contract_sdk::{Blob, ContractName, Identity};
+use hyle_model::{Blob, BlobTransaction, ContractName, Hashable, Identity};
 use sha3::Digest;
 use tracing::info;
 

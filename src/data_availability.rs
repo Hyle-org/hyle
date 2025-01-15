@@ -536,19 +536,19 @@ pub mod tests {
 
     use std::collections::VecDeque;
 
+    use crate::model::ValidatorPublicKey;
     use crate::{
         bus::BusClientSender,
-        consensus::{CommittedConsensusProposal, ConsensusEvent, ConsensusProposal},
+        consensus::{CommittedConsensusProposal, ConsensusEvent},
         mempool::{MempoolCommand, MempoolEvent},
-        model::{BlockHeight, Hashable, SignedBlock},
+        model::*,
         node_state::{
             module::{NodeStateBusClient, NodeStateEvent},
             NodeState,
         },
-        utils::{conf::Conf, crypto::AggregateSignature, integration_test::find_available_port},
+        utils::{conf::Conf, integration_test::find_available_port},
     };
     use futures::{SinkExt, StreamExt};
-    use staking::model::ValidatorPublicKey;
     use tokio::io::AsyncWriteExt;
     use tokio_util::codec::{Framed, LengthDelimitedCodec};
 
@@ -732,7 +732,7 @@ pub mod tests {
             validators: vec![],
             consensus_proposal: ConsensusProposal::default(),
             certificate: AggregateSignature {
-                signature: crate::utils::crypto::Signature("signature".into()),
+                signature: crate::model::Signature("signature".into()),
                 validators: vec![],
             },
         };

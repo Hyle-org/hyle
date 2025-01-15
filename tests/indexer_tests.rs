@@ -7,7 +7,7 @@ use anyhow::Result;
 mod fixtures;
 
 mod e2e_indexer {
-    use hyle::model::indexer::BlockDb;
+    use hyle::model::BlockDb;
 
     use super::*;
 

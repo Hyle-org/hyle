@@ -520,15 +520,10 @@ impl std::ops::Deref for Indexer {
 
 #[cfg(test)]
 mod test {
-    use crate::{
-        mempool::DataProposal,
-        model::indexer::{BlockDb, ContractDb},
-    };
     use assert_json_diff::assert_json_include;
     use axum_test::TestServer;
     use hyle_contract_sdk::{BlobIndex, HyleOutput, Identity, ProgramId, StateDigest, TxHash};
     use serde_json::json;
-    use staking::model::ValidatorPublicKey;
     use std::{
         future::IntoFuture,
         net::{Ipv4Addr, SocketAddr},

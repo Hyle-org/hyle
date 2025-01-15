@@ -209,10 +209,8 @@ mod tests {
     use crate::bus::metrics::BusMetrics;
     use crate::bus::{bus_client, SharedMessageBus};
     use crate::handle_messages;
-    use crate::mempool::DataProposalHash;
-    use crate::model::ValidatorPublicKey;
     use crate::utils::conf::Conf;
-    use crate::utils::crypto::{AggregateSignature, BlstCrypto};
+    use crate::utils::crypto::BlstCrypto;
     use anyhow::Result;
     use std::sync::Arc;
     use tokio::sync::broadcast::Receiver;

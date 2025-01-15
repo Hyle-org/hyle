@@ -934,13 +934,6 @@ impl Consensus {
 impl Consensus {}
 
 #[cfg(test)]
-impl ConsensusProposal {
-    pub fn get_cut(&self) -> Cut {
-        self.cut.clone()
-    }
-}
-
-#[cfg(test)]
 pub mod test {
 
     use crate::{
@@ -958,7 +951,7 @@ pub mod test {
             broadcast, build_tuple, send, simple_commit_round, AutobahnBusClient, AutobahnTestCtx,
         },
         bus::{dont_use_this::get_receiver, metrics::BusMetrics, SharedMessageBus},
-        model::mempool::DataProposalHash,
+        model::DataProposalHash,
         p2p::network::NetMessage,
         utils::{conf::Conf, crypto},
     };

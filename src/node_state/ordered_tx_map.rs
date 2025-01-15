@@ -95,7 +95,7 @@ impl OrderedTxMap {
 #[cfg(test)]
 mod tests {
     #![allow(clippy::indexing_slicing)]
-    use crate::model::{data_availability::UnsettledBlobMetadata, BlobsHash};
+    use crate::model::{BlobsHash, UnsettledBlobMetadata};
     use hyle_contract_sdk::{Blob, BlobData, Identity};
 
     use super::*;

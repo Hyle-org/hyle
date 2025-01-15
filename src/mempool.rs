@@ -961,9 +961,10 @@ pub mod test {
     use crate::bus::dont_use_this::get_receiver;
     use crate::bus::metrics::BusMetrics;
     use crate::bus::SharedMessageBus;
-    use crate::model::{ContractName, RegisterContractTransaction, Transaction};
+    use crate::model::{
+        AggregateSignature, ContractName, RegisterContractTransaction, Transaction,
+    };
     use crate::p2p::network::NetMessage;
-    use crate::utils::crypto::AggregateSignature;
     use anyhow::Result;
     use assertables::assert_ok;
     use hyle_contract_sdk::StateDigest;

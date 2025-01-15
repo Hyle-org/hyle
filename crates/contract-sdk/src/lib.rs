@@ -133,7 +133,6 @@ pub const fn str_to_u8(s: &str) -> [u8; 32] {
 mod tests {
     use super::*;
     use alloc::{format, string::ToString, vec};
-    use hyle_model::*;
 
     #[test]
     fn test_identity_from_string() {

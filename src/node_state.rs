@@ -580,12 +580,8 @@ pub mod test {
     mod native_verifiers;
 
     use super::*;
-    use crate::model::*;
     use assertables::assert_err;
-    use consensus::ConsensusProposal;
-    use crypto::AggregateSignature;
-    use hyle_contract_sdk::{flatten_blobs, BlobIndex, Identity, ProgramId, StateDigest};
-    use mempool::DataProposal;
+    use hyle_contract_sdk::flatten_blobs;
 
     async fn new_node_state() -> NodeState {
         NodeState::default()
