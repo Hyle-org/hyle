@@ -11,15 +11,15 @@ pub struct OnChainState(pub String);
 
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, PartialEq, Eq)]
 pub struct Staking {
-    stakes: BTreeMap<Identity, u128>,
-    delegations: BTreeMap<ValidatorPublicKey, Vec<Identity>>,
+    pub(crate) stakes: BTreeMap<Identity, u128>,
+    pub(crate) delegations: BTreeMap<ValidatorPublicKey, Vec<Identity>>,
     /// When a validator distribute rewards, it is added in this list to
     /// avoid distributing twice the rewards for a same block
-    rewarded: BTreeMap<ValidatorPublicKey, Vec<BlockHeight>>,
+    pub(crate) rewarded: BTreeMap<ValidatorPublicKey, Vec<BlockHeight>>,
 
     /// List of validators that are part of consensus
-    bonded: Vec<ValidatorPublicKey>,
-    total_bond: u128,
+    pub(crate) bonded: Vec<ValidatorPublicKey>,
+    pub(crate) total_bond: u128,
 }
 
 /// Minimal stake necessary to be part of consensus

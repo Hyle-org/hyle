@@ -53,7 +53,7 @@ indexing_slicing = "warn"
 # Public dependencies
 hyle-contract-sdk = { path = "./crates/contract-sdk", default-features = false }
 staking = { path = "./crates/contracts/staking", default-features = false }
-client-sdk = { path = "./crates/client-sdk", default-features = false }
+client-sdk = { path = "./crates/client-sdk", default-features = false, features = ["rest", "tcp"] }
 hyle-model = { path = "./crates/hyle-model", default-features = false, features = ["full", "sqlx"] }
 
 anyhow = "1.0.95"
@@ -64,7 +64,6 @@ hex = { version = "0.4.3" }
 reqwest = { version = "0.12", features = ["json"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1" }
-serde_with = { version = "3.12.0", features = ["hex"] }
 sha3 = "0.10.8"
 strum_macros = "0.26.4"
 tracing = "0.1"

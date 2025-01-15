@@ -9,7 +9,7 @@ use hyle::{
     genesis::Genesis,
     indexer::Indexer,
     mempool::Mempool,
-    model::{CommonRunContext, NodeInfo, NodeRunContext, SharedRunContext},
+    model::{api::NodeInfo, CommonRunContext, NodeRunContext, SharedRunContext},
     node_state::module::NodeStateModule,
     p2p::P2P,
     rest::{RestApi, RestApiRunContext},

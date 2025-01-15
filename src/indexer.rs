@@ -23,6 +23,7 @@ use axum::{
 };
 use chrono::DateTime;
 use hyle_contract_sdk::TxHash;
+use hyle_model::api::{BlobWithStatus, TransactionStatus, TransactionType, TransactionWithBlobs};
 use sqlx::Row;
 use sqlx::{postgres::PgPoolOptions, PgPool, Pool, Postgres};
 use std::{collections::HashMap, sync::Arc};
@@ -485,7 +486,7 @@ impl Indexer {
                 .any(|blob| &blob.contract_name == contrat_name)
             {
                 let enriched_tx = TransactionWithBlobs {
-                    tx_hash: tx_hash.clone(),
+                    tx_hash: tx_hash.0.clone(),
                     block_hash: block_hash.clone(),
                     index,
                     version,
@@ -523,6 +524,7 @@ mod test {
     use assert_json_diff::assert_json_include;
     use axum_test::TestServer;
     use hyle_contract_sdk::{BlobIndex, HyleOutput, Identity, ProgramId, StateDigest, TxHash};
+    use hyle_model::api::{APIBlock, APIContract};
     use serde_json::json;
     use std::{
         future::IntoFuture,
@@ -731,12 +733,12 @@ mod test {
 
         let transactions_response = server.get("/contract/c1").await;
         transactions_response.assert_status_ok();
-        let json_response = transactions_response.json::<ContractDb>();
+        let json_response = transactions_response.json::<APIContract>();
         assert_eq!(json_response.state_digest, next_state.0);
 
         let transactions_response = server.get("/contract/c2").await;
         transactions_response.assert_status_ok();
-        let json_response = transactions_response.json::<ContractDb>();
+        let json_response = transactions_response.json::<APIContract>();
         assert_eq!(json_response.state_digest, next_state.0);
 
         let blob_transactions_response = server.get("/blob_transactions/contract/c1").await;
@@ -844,10 +846,10 @@ mod test {
         // Test pagination
         let transactions_response = server.get("/blocks?nb_results=1").await;
         transactions_response.assert_status_ok();
-        assert_eq!(transactions_response.json::<Vec<BlockDb>>().len(), 1);
+        assert_eq!(transactions_response.json::<Vec<APIBlock>>().len(), 1);
         assert_eq!(
             transactions_response
-                .json::<Vec<BlockDb>>()
+                .json::<Vec<APIBlock>>()
                 .first()
                 .unwrap()
                 .height,
@@ -855,10 +857,10 @@ mod test {
         );
         let transactions_response = server.get("/blocks?nb_results=1&start_block=1").await;
         transactions_response.assert_status_ok();
-        assert_eq!(transactions_response.json::<Vec<BlockDb>>().len(), 1);
+        assert_eq!(transactions_response.json::<Vec<APIBlock>>().len(), 1);
         assert_eq!(
             transactions_response
-                .json::<Vec<BlockDb>>()
+                .json::<Vec<APIBlock>>()
                 .first()
                 .unwrap()
                 .height,

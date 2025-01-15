@@ -4,6 +4,7 @@
 use std::time::Duration;
 
 use anyhow::{Context, Result};
+use api::APIContract;
 use assertables::assert_ok;
 use reqwest::{Client, Url};
 use testcontainers_modules::{
@@ -333,21 +334,5 @@ impl E2ECtx {
 
     pub async fn get_contract(&self, name: &str) -> Result<Contract> {
         self.client().get_contract(&name.into()).await
-    }
-
-    pub async fn get_indexer_contract(&self, name: &str) -> Result<ContractDb> {
-        let indexer_contract_response = self
-            .indexer_client()
-            .get_indexer_contract(&name.into())
-            .await
-            .and_then(|response| response.error_for_status().context("Getting contract"));
-
-        let response = match indexer_contract_response {
-            Ok(response) => response,
-            Err(e) => panic!("Error getting contract: {:?}", e),
-        };
-
-        let contract = response.json::<ContractDb>().await?;
-        Ok(contract)
     }
 }

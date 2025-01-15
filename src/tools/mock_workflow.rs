@@ -8,10 +8,10 @@ use crate::{
         ProofTransaction, RegisterContractTransaction, SharedRunContext, Transaction,
     },
     module_handle_messages,
-    rest::client::NodeApiHttpClient,
     utils::modules::{module_bus_client, Module},
 };
 use anyhow::Result;
+use client_sdk::rest_client::NodeApiHttpClient;
 use hyle_contract_sdk::{Identity, ProgramId, StateDigest};
 use serde::{Deserialize, Serialize};
 use tokio::time::sleep;

@@ -1,10 +1,6 @@
-use std::fmt::{self, Display};
-
 use crate::{
     bus::BusMessage,
-    model::{
-        Hashable, ProofTransaction, RegisterContractTransaction, SharedRunContext, Transaction,
-    },
+    model::{Hashable, SharedRunContext, Transaction},
     module_handle_messages,
     p2p::stream::read_stream,
     utils::{
@@ -15,9 +11,8 @@ use crate::{
 
 use anyhow::{bail, Context, Result};
 use bincode::{Decode, Encode};
-use hyle_model::BlobTransaction;
+use hyle_model::TcpServerNetMessage;
 use serde::{Deserialize, Serialize};
-use strum_macros::IntoStaticStr;
 use tokio::{io::AsyncWriteExt, net::TcpListener};
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
 use tracing::info;
@@ -33,62 +28,6 @@ module_bus_client! {
 struct TcpServerBusClient {
     sender(TcpServerMessage),
 }
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, Eq, PartialEq, IntoStaticStr)]
-pub enum TcpServerNetMessage {
-    Ping,
-    NewTx(Transaction),
-}
-
-impl Display for TcpServerNetMessage {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let enum_variant: &'static str = self.into();
-        match self {
-            TcpServerNetMessage::NewTx(msg) => {
-                _ = write!(f, "TcpServerMessage::{} ", enum_variant);
-                write!(f, "{:?}", msg)
-            }
-            TcpServerNetMessage::Ping => {
-                _ = write!(f, "TcpServerMessage::{} ", enum_variant);
-                write!(f, "{}", enum_variant)
-            }
-        }
-    }
-}
-
-impl From<Transaction> for TcpServerNetMessage {
-    fn from(msg: Transaction) -> Self {
-        TcpServerNetMessage::NewTx(msg)
-    }
-}
-
-impl From<BlobTransaction> for TcpServerNetMessage {
-    fn from(msg: BlobTransaction) -> Self {
-        let tx: Transaction = msg.into();
-        tx.into()
-    }
-}
-
-impl From<ProofTransaction> for TcpServerNetMessage {
-    fn from(msg: ProofTransaction) -> Self {
-        let tx: Transaction = msg.into();
-        tx.into()
-    }
-}
-
-impl From<RegisterContractTransaction> for TcpServerNetMessage {
-    fn from(msg: RegisterContractTransaction) -> Self {
-        let tx: Transaction = msg.into();
-        tx.into()
-    }
-}
-
-impl TcpServerNetMessage {
-    pub fn to_binary(&self) -> Result<Vec<u8>> {
-        bincode::encode_to_vec(self, bincode::config::standard())
-            .context("Could not serialize NetMessage")
-    }
 }
 
 #[derive(Debug)]

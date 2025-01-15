@@ -1,6 +1,9 @@
+use hyle_model::api::{
+    APIBlob, APIBlock, APIContract, APIContractState, APITransaction, TransactionStatus,
+    TransactionType,
+};
 use hyle_model::ConsensusProposalHash;
 use serde::{Deserialize, Serialize};
-use serde_with::serde_as;
 
 #[cfg(not(feature = "node"))]
 use chrono::NaiveDateTime;
@@ -9,11 +12,10 @@ use sqlx::types::chrono::NaiveDateTime;
 #[cfg(feature = "node")]
 use sqlx::{prelude::Type, Postgres};
 
-use crate::model::{Transaction, TransactionData};
 use hyle_contract_sdk::TxHash;
 
 #[cfg_attr(feature = "node", derive(sqlx::FromRow))]
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug)]
 pub struct BlockDb {
     // Struct for the blocks table
     pub hash: ConsensusProposalHash,
@@ -23,45 +25,19 @@ pub struct BlockDb {
     pub timestamp: NaiveDateTime, // UNIX timestamp
 }
 
-#[cfg_attr(feature = "node", derive(sqlx::Type))]
-#[cfg_attr(
-    feature = "node",
-    sqlx(type_name = "transaction_type", rename_all = "snake_case")
-)]
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
-pub enum TransactionType {
-    BlobTransaction,
-    ProofTransaction,
-    RegisterContractTransaction,
-    Stake,
-}
-
-impl TransactionType {
-    pub fn get_type_from_transaction(transaction: &Transaction) -> Self {
-        match transaction.transaction_data {
-            TransactionData::Blob(_) => TransactionType::BlobTransaction,
-            TransactionData::Proof(_) => TransactionType::ProofTransaction,
-            TransactionData::VerifiedProof(_) => TransactionType::ProofTransaction,
-            TransactionData::RegisterContract(_) => TransactionType::RegisterContractTransaction,
+impl From<BlockDb> for APIBlock {
+    fn from(value: BlockDb) -> Self {
+        APIBlock {
+            hash: value.hash,
+            parent_hash: value.parent_hash,
+            height: value.height,
+            timestamp: value.timestamp.and_utc().timestamp(),
         }
     }
 }
 
-#[cfg_attr(feature = "node", derive(sqlx::Type))]
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
-#[cfg_attr(
-    feature = "node",
-    sqlx(type_name = "transaction_status", rename_all = "snake_case")
-)]
-pub enum TransactionStatus {
-    Success,
-    Failure,
-    Sequenced,
-    TimedOut,
-}
-
 #[cfg_attr(feature = "node", derive(sqlx::FromRow))]
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug)]
 pub struct TransactionDb {
     // Struct for the transactions table
     pub tx_hash: TxHashDb,                 // Transaction hash
@@ -74,76 +50,95 @@ pub struct TransactionDb {
     pub transaction_status: TransactionStatus, // Status of the transaction
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
-pub struct TransactionWithBlobs {
-    pub tx_hash: TxHashDb,
-    pub block_hash: ConsensusProposalHash,
-    pub index: u32,
-    pub version: u32,
-    pub transaction_type: TransactionType,
-    pub transaction_status: TransactionStatus,
-    pub identity: String,
-    pub blobs: Vec<BlobWithStatus>,
+impl From<TransactionDb> for APITransaction {
+    fn from(val: TransactionDb) -> Self {
+        APITransaction {
+            tx_hash: val.tx_hash.0,
+            block_hash: val.block_hash,
+            index: val.index,
+            version: val.version,
+            transaction_type: val.transaction_type,
+            transaction_status: val.transaction_status,
+        }
+    }
 }
 
-#[serde_as]
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct BlobWithStatus {
-    pub contract_name: String, // Contract name associated with the blob
-    #[serde_as(as = "serde_with::hex::Hex")]
-    pub data: Vec<u8>, // Actual blob data
-    pub proof_outputs: Vec<serde_json::Value>, // outputs of proofs
-}
-
-#[serde_as]
 #[cfg_attr(feature = "node", derive(sqlx::FromRow))]
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug)]
 pub struct BlobDb {
     pub tx_hash: TxHashDb, // Corresponds to the transaction hash
     #[cfg_attr(feature = "node", sqlx(try_from = "i32"))]
     pub blob_index: u32, // Index of the blob within the transaction
     pub identity: String,  // Identity of the blob
     pub contract_name: String, // Contract name associated with the blob
-    #[serde_as(as = "serde_with::hex::Hex")]
-    pub data: Vec<u8>, // Actual blob data
+    pub data: Vec<u8>,     // Actual blob data
     pub verified: bool,    // Verification status
 }
 
-#[serde_as]
+impl From<BlobDb> for APIBlob {
+    fn from(value: BlobDb) -> Self {
+        APIBlob {
+            tx_hash: value.tx_hash.0,
+            blob_index: value.blob_index,
+            identity: value.identity,
+            contract_name: value.contract_name,
+            data: value.data,
+            verified: value.verified,
+        }
+    }
+}
+
 #[cfg_attr(feature = "node", derive(sqlx::FromRow))]
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug)]
 pub struct ProofTransactionDb {
     // Struct for the proof_transactions table
     pub tx_hash: TxHashDb,     // Corresponds to the transaction hash
     pub contract_name: String, // Contract name associated with the proof
-    #[serde_as(as = "serde_with::hex::Hex")]
-    pub proof: Vec<u8>, // Proof associated with the transaction
+    pub proof: Vec<u8>,        // Proof associated with the transaction
 }
 
-#[serde_as]
 #[cfg_attr(feature = "node", derive(sqlx::FromRow))]
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug)]
 pub struct ContractDb {
     // Struct for the contracts table
-    pub tx_hash: TxHashDb, // Corresponds to the registration transaction hash
-    pub owner: String,     // Owner of the contract
-    pub verifier: String,  // Verifier of the contract
-    #[serde_as(as = "serde_with::hex::Hex")]
+    pub tx_hash: TxHashDb,   // Corresponds to the registration transaction hash
+    pub owner: String,       // Owner of the contract
+    pub verifier: String,    // Verifier of the contract
     pub program_id: Vec<u8>, // Program ID
-    #[serde_as(as = "serde_with::hex::Hex")]
     pub state_digest: Vec<u8>, // State digest of the contract
     pub contract_name: String, // Contract name
 }
 
-#[serde_as]
+impl From<ContractDb> for APIContract {
+    fn from(val: ContractDb) -> Self {
+        APIContract {
+            tx_hash: val.tx_hash.0,
+            owner: val.owner,
+            verifier: val.verifier,
+            program_id: val.program_id,
+            state_digest: val.state_digest,
+            contract_name: val.contract_name,
+        }
+    }
+}
+
 #[cfg_attr(feature = "node", derive(sqlx::FromRow))]
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug)]
 pub struct ContractStateDb {
     // Struct for the contract_state table
     pub contract_name: String,             // Name of the contract
     pub block_hash: ConsensusProposalHash, // Hash of the block where the state is captured
-    #[serde_as(as = "serde_with::hex::Hex")]
-    pub state_digest: Vec<u8>, // The contract state stored in JSON format
+    pub state_digest: Vec<u8>,             // The contract state stored in JSON format
+}
+
+impl From<ContractStateDb> for APIContractState {
+    fn from(value: ContractStateDb) -> Self {
+        APIContractState {
+            contract_name: value.contract_name,
+            block_hash: value.block_hash,
+            state_digest: value.state_digest,
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]

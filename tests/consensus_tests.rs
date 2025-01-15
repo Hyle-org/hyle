@@ -10,7 +10,7 @@ mod e2e_consensus {
     use fixtures::test_helpers::send_transaction;
     use hyle::{genesis::States, utils::logger::LogMe};
     use hyle_contract_sdk::Identity;
-    use staking::state::OnChainState;
+    use staking::state::{OnChainState, Staking};
     use tracing::info;
 
     use super::*;
@@ -62,7 +62,12 @@ mod e2e_consensus {
             .await
             .unwrap();
 
-        let staking = ctx.client().get_consensus_staking_state().await.unwrap();
+        let staking: Staking = ctx
+            .client()
+            .get_consensus_staking_state()
+            .await
+            .unwrap()
+            .into();
 
         assert_eq!(staking_state, staking.on_chain_state());
         let mut states = States {
@@ -182,7 +187,12 @@ mod e2e_consensus {
             .await
             .unwrap();
 
-        let staking = ctx.client().get_consensus_staking_state().await.unwrap();
+        let staking: Staking = ctx
+            .client()
+            .get_consensus_staking_state()
+            .await
+            .unwrap()
+            .into();
 
         assert_eq!(staking_state, staking.on_chain_state());
         let mut states = States {

@@ -151,10 +151,8 @@ enum SendCommands {
     },
     /// Query contract state
     #[command(alias = "s")]
-    State {
-        contract_name: String,
-    },
-    Auto,
+    State { contract_name: String },
+    //Auto,
 }
 
 async fn handle_args(args: Args) -> Result<()> {
@@ -188,13 +186,13 @@ async fn handle_args(args: Args) -> Result<()> {
             )
             .await
         }
-        SendCommands::Auto => {
-            let _ = client
-                .run_scenario_api_test(1, 60)
-                .await
-                .map_err(|e| anyhow::anyhow!("Failed to run scenario test {}", e))?;
-            Ok(())
-        }
+        //SendCommands::Auto => {
+        //    let _ = client
+        //        .run_scenario_api_test(1, 60)
+        //        .await
+        //        .map_err(|e| anyhow::anyhow!("Failed to run scenario test {}", e))?;
+        //    Ok(())
+        //}
         SendCommands::State { contract_name } => client
             .get_contract(&contract_name.into())
             .await

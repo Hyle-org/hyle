@@ -1156,9 +1156,15 @@ dependencies = [
  "bincode 2.0.0-rc.3",
  "bonsai-runner",
  "borsh",
+ "futures",
  "hyle-contract-sdk",
+ "hyle-model",
+ "reqwest",
  "risc0-zkvm",
+ "serde_json",
  "sp1-sdk",
+ "tokio",
+ "tokio-util",
 ]
 
 [[package]]
@@ -2629,7 +2635,6 @@ dependencies = [
  "ron",
  "serde",
  "serde_json",
- "serde_with",
  "sha3",
  "signal-child",
  "sp1-sdk",
@@ -2700,6 +2705,8 @@ dependencies = [
  "derive_more 1.0.0",
  "hex",
  "serde",
+ "serde_json",
+ "serde_with",
  "sha3",
  "sqlx",
  "strum_macros",
