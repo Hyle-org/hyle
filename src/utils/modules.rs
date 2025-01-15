@@ -135,16 +135,18 @@ pub mod signal {
 #[macro_export]
 macro_rules! module_handle_messages {
     (on_bus $bus:expr, $($rest:tt)*) => {
-
-        let mut shutdown_receiver = unsafe { &mut *Pick::<tokio::sync::broadcast::Receiver<$crate::utils::modules::signal::ShutdownModule>>::splitting_get_mut(&mut $bus) };
-        let mut should_shutdown = false;
-        $crate::handle_messages! {
-            on_bus $bus,
-            $($rest)*
-            Ok(_) = $crate::utils::modules::signal::async_receive_shutdown::<Self>(&mut should_shutdown, &mut shutdown_receiver) => {
-                tracing::debug!("Break signal received for module {}", std::any::type_name::<Self>());
-                break;
+        {
+            let mut shutdown_receiver = unsafe { &mut *Pick::<tokio::sync::broadcast::Receiver<$crate::utils::modules::signal::ShutdownModule>>::splitting_get_mut(&mut $bus) };
+            let mut should_shutdown = false;
+            $crate::handle_messages! {
+                on_bus $bus,
+                $($rest)*
+                Ok(_) = $crate::utils::modules::signal::async_receive_shutdown::<Self>(&mut should_shutdown, &mut shutdown_receiver) => {
+                    tracing::debug!("Break signal received for module {}", std::any::type_name::<Self>());
+                    break;
+                }
             }
+            should_shutdown
         }
     };
 }
@@ -343,7 +345,7 @@ mod tests {
                             (*guard) += 1;
                             std::future::pending::<()>().await
                         } => { }
-                    }
+                    };
 
                     self.bus.send(*cloned.lock().await).expect(
                         "Error while sending the number of loop cancellations while shutting down",

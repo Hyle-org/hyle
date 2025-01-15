@@ -12,13 +12,13 @@ use tracing::info;
 use crate::bus::metrics::BusMetrics;
 use crate::bus::{bus_client, BusClientReceiver, SharedMessageBus};
 use crate::consensus::Consensus;
-use crate::data_availability::{DataAvailability, DataEvent};
-use crate::genesis::Genesis;
+use crate::data_availability::DataAvailability;
+use crate::genesis::{Genesis, GenesisEvent};
 use crate::indexer::Indexer;
 use crate::mempool::Mempool;
 use crate::model::{CommonRunContext, NodeRunContext, SharedRunContext};
 use crate::module_handle_messages;
-use crate::node_state::module::NodeStateModule;
+use crate::node_state::module::{NodeStateEvent, NodeStateModule};
 use crate::p2p::P2P;
 use crate::single_node_consensus::SingleNodeConsensus;
 use crate::tcp_server::TcpServer;
@@ -61,7 +61,7 @@ impl<T> MockModule<T> {
     async fn start(&mut self) -> Result<()> {
         module_handle_messages! {
             on_bus self.bus,
-        }
+        };
         Ok(())
     }
 }
@@ -134,6 +134,8 @@ impl NodeIntegrationCtxBuilder {
         )
         .await?;
 
+        let bus_client = IntegrationBusClient::new_from_bus(self.bus.new_handle()).await;
+
         let (tx, rx) = tokio::sync::oneshot::channel::<()>();
 
         let node_task = Some(tokio::spawn(async move {
@@ -155,18 +157,19 @@ impl NodeIntegrationCtxBuilder {
         Ok(NodeIntegrationCtx {
             tmpdir: self.tmpdir,
             conf,
-            bus: self.bus.new_handle(),
+            bus: self.bus,
             crypto: self.crypto,
             node_task,
             shutdown_tx: Some(tx),
-            bus_client: IntegrationBusClient::new_from_bus(self.bus).await,
+            bus_client,
         })
     }
 }
 
 bus_client! {
 struct IntegrationBusClient {
-    receiver(DataEvent),
+    receiver(GenesisEvent),
+    receiver(NodeStateEvent),
 }
 }
 
@@ -282,8 +285,12 @@ impl NodeIntegrationCtx {
         Ok(handler)
     }
 
+    pub async fn wait_for_genesis_event(&mut self) -> Result<()> {
+        let _: GenesisEvent = self.bus_client.recv().await?;
+        Ok(())
+    }
     pub async fn wait_for_processed_genesis(&mut self) -> Result<()> {
-        let _: DataEvent = self.bus_client.recv().await?;
+        let _: NodeStateEvent = self.bus_client.recv().await?;
         Ok(())
     }
 }

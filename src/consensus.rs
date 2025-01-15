@@ -9,7 +9,6 @@ use crate::{bus::BusClientSender, utils::logger::LogMe};
 use crate::{
     bus::{command_response::Query, BusMessage},
     genesis::GenesisEvent,
-    handle_messages,
     mempool::QueryNewCut,
     model::mempool::Cut,
     model::{get_current_timestamp, Hashable, ValidatorPublicKey},
@@ -803,7 +802,7 @@ impl Consensus {
     }
 
     async fn wait_genesis(&mut self) -> Result<()> {
-        handle_messages! {
+        let should_shutdown = module_handle_messages! {
             on_bus self.bus,
             listen<GenesisEvent> msg => {
                 match msg {
@@ -823,6 +822,20 @@ impl Consensus {
                                 self.bft_round_state.consensus_proposal.round_leader
                             );
                         }
+                        // Now wait until we have processed the genesis block to update our Staking.
+                        module_handle_messages! {
+                            on_bus self.bus,
+                            listen<NodeStateEvent> event => {
+                                let NodeStateEvent::NewBlock(block) = &event;
+                                if block.block_height.0 != 0 {
+                                    bail!("Non-genesis block received during consensus genesis");
+                                }
+                                match self.handle_node_state_event(event).await {
+                                    Ok(_) => break,
+                                    Err(e) => bail!("Error while handling Genesis block: {:#}", e),
+                                }
+                            }
+                        };
                         break;
                     },
                     GenesisEvent::NoGenesis => {
@@ -837,6 +850,9 @@ impl Consensus {
                     },
                 }
             }
+        };
+        if should_shutdown {
+            return Ok(());
         }
 
         if self.is_round_leader() {
@@ -884,7 +900,7 @@ impl Consensus {
                 self.bus.send(ConsensusCommand::TimeoutTick)
                     .log_error("Cannot send message over channel")?;
             }
-        }
+        };
 
         if let Some(file) = &self.file {
             if let Err(e) = Self::save_on_disk(file.as_path(), &self.store) {
@@ -917,7 +933,13 @@ impl ConsensusProposal {
 #[cfg(test)]
 pub mod test {
 
-    use crate::model::Block;
+    use crate::{
+        bus::{bus_client, command_response::CmdRespClient},
+        handle_messages,
+        model::Block,
+        node_state::module::NodeStateModule,
+        utils::integration_test::NodeIntegrationCtxBuilder,
+    };
     use std::sync::Arc;
 
     use super::*;
@@ -999,7 +1021,7 @@ pub mod test {
                     command_response<QueryNewCut, Cut> _ => {
                         Ok(Cut::default())
                     }
-                }
+                };
             });
 
             let consensus = Self::build_consensus(&shared_bus, crypto).await;
@@ -2217,5 +2239,44 @@ pub mod test {
         assert_eq!(node1.consensus.bft_round_state.consensus_proposal.slot, 6);
         assert_eq!(node2.consensus.bft_round_state.consensus_proposal.slot, 6);
         assert_eq!(node3.consensus.bft_round_state.consensus_proposal.slot, 6);
+    }
+
+    bus_client! {
+        struct TestBC {
+            sender(Query<QueryConsensusInfo, ConsensusInfo>),
+            sender(NodeStateEvent),
+        }
+    }
+
+    #[test_log::test(tokio::test)]
+    async fn test_consensus_starts_after_genesis_is_processed() {
+        let mut node_builder = NodeIntegrationCtxBuilder::new().await;
+        node_builder.conf.run_indexer = false;
+        node_builder.conf.single_node = Some(false);
+        node_builder = node_builder.skip::<NodeStateModule>();
+        let mut node = node_builder.build().await.unwrap();
+
+        let mut bc = TestBC::new_from_bus(node.bus.new_handle()).await;
+
+        node.wait_for_genesis_event().await.unwrap();
+
+        // Check that we haven't started the consensus yet
+        // (this is awkward to do for now so assume that not receiving an answer is OK)
+        tokio::select! {
+            _ = tokio::time::sleep(Duration::from_secs(1)) => {}
+            _ = bc.request(QueryConsensusInfo {}) => {
+                panic!("Consensus should not have started yet");
+            }
+        }
+
+        bc.send(NodeStateEvent::NewBlock(Box::default())).unwrap();
+
+        tokio::select! {
+            _ = tokio::time::sleep(Duration::from_secs(1)) => {
+                panic!("Consensus should have started");
+            }
+            _ = bc.request(QueryConsensusInfo {}) => {
+            }
+        }
     }
 }

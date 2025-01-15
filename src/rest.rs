@@ -127,7 +127,7 @@ impl RestApi {
                 #[allow(clippy::expect_used, reason="incorrect setup logic")]
                 self.app.take().expect("app is not set")
             ) => { }
-        }
+        };
 
         Ok(())
     }
