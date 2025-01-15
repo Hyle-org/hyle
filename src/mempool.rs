@@ -37,7 +37,7 @@ use std::{
 };
 use storage::{DataProposalVerdict, LaneEntry};
 use strum_macros::IntoStaticStr;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info, trace, warn};
 
 use verifiers::{verify_proof, verify_recursive_proof};
 
@@ -191,8 +191,6 @@ impl Module for Mempool {
 impl Mempool {
     /// start starts the mempool server.
     pub async fn start(&mut self) -> Result<()> {
-        info!("Mempool starting");
-
         let tick_time = std::cmp::min(self.conf.consensus.slot_duration / 2, 500);
         let mut interval = tokio::time::interval(tokio::time::Duration::from_millis(tick_time));
 
@@ -314,7 +312,7 @@ impl Mempool {
     }
 
     fn handle_data_proposal_management(&mut self) -> Result<()> {
-        debug!("🌝 Handling DataProposal management");
+        trace!("🌝 Handling DataProposal management");
         // Create new DataProposal with pending txs
         self.storage.new_data_proposal(&self.crypto); // TODO: copy crypto in storage
 

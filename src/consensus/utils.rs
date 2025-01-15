@@ -52,18 +52,14 @@ impl Display for ConsensusProposal {
 
 impl Display for ConsensusProposalHash {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}",
-            &hex::encode(self.0.get(..HASH_DISPLAY_SIZE).unwrap_or(&self.0))
-        )
+        write!(f, "{}", &self.0)
     }
 }
 impl Display for QuorumCertificateHash {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "{}",
+            "0x{}",
             hex::encode(self.0.get(..HASH_DISPLAY_SIZE).unwrap_or(&self.0))
         )
     }

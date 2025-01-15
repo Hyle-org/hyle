@@ -3,7 +3,10 @@
 use anyhow::{Context, Result};
 pub use axum::Router;
 use axum::{
+    body::Body,
     extract::{DefaultBodyLimit, State},
+    http::Request,
+    middleware::Next,
     response::{IntoResponse, Response},
     routing::get,
     Json,
@@ -11,7 +14,7 @@ use axum::{
 use axum_otel_metrics::HttpMetricsLayer;
 use prometheus::{Encoder, TextEncoder};
 use reqwest::StatusCode;
-use tower_http::trace::TraceLayer;
+use tokio::time::Instant;
 use tracing::info;
 
 use crate::{bus::SharedMessageBus, module_handle_messages, utils::modules::module_bus_client};
@@ -58,8 +61,9 @@ impl Module for RestApi {
             .layer(ctx.metrics_layer)
             .layer(DefaultBodyLimit::max(ctx.max_body_size)) // 10 MB
             .layer(tower_http::cors::CorsLayer::permissive())
-            // TODO: Tracelayer should be added only in "dev mode"
-            .layer(TraceLayer::new_for_http());
+            .layer(axum::middleware::from_fn(request_logger))
+            //.layer(TraceLayer::new_for_http())
+        ;
         Ok(RestApi {
             rest_addr: ctx.rest_addr.clone(),
             app: Some(app),
@@ -70,6 +74,30 @@ impl Module for RestApi {
     fn run(&mut self) -> impl futures::Future<Output = Result<()>> + Send {
         self.serve()
     }
+}
+
+async fn request_logger(req: Request<Body>, next: Next) -> impl IntoResponse {
+    let method = req.method().clone();
+    let uri = req.uri().clone();
+    let start_time = Instant::now();
+
+    // Passer la requête au prochain middleware ou au gestionnaire
+    let response = next.run(req).await;
+
+    let status = response.status();
+    let elapsed_time = start_time.elapsed();
+
+    // Will log like:
+    // [GET] /v1/indexer/contract/amm - 200 OK (1484 μs)
+    info!(
+        "[{}] {} - {} ({} μs)",
+        method,
+        uri,
+        status,
+        elapsed_time.as_micros()
+    );
+
+    response
 }
 
 pub async fn get_info(State(state): State<RouterState>) -> Result<impl IntoResponse, AppError> {
@@ -85,7 +113,10 @@ pub async fn get_metrics(State(_): State<RouterState>) -> Result<impl IntoRespon
 
 impl RestApi {
     pub async fn serve(&mut self) -> Result<()> {
-        info!("rest listening on {}", self.rest_addr);
+        info!(
+            "📡  Starting RestApi module, listening on {}",
+            self.rest_addr
+        );
 
         module_handle_messages! {
             on_bus self.bus,

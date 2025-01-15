@@ -29,7 +29,7 @@ use hyle_contract_sdk::{ContractName, Digestable, ProgramId};
 use hyllar::HyllarToken;
 use serde::{Deserialize, Serialize};
 use staking::state::Staking;
-use tracing::{error, info};
+use tracing::{debug, error, info};
 
 #[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]
 pub enum GenesisEvent {
@@ -109,7 +109,7 @@ impl Genesis {
         let file = self.config.data_directory.clone().join("genesis.bin");
         let already_handled_genesis: bool = Self::load_from_disk_or_default(&file);
         if already_handled_genesis {
-            info!("🌿 Genesis block already handled, skipping");
+            debug!("🌿 Genesis block already handled, skipping");
             // TODO: do we need a different message?
             _ = self.bus.send(GenesisEvent::NoGenesis {})?;
             return Ok(());

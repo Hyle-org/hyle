@@ -8,7 +8,7 @@ use tokio::sync::mpsc;
 use tokio::time::sleep;
 use tokio_util::codec::Framed;
 use tokio_util::codec::LengthDelimitedCodec;
-use tracing::{debug, info, trace, warn};
+use tracing::{info, trace, warn};
 
 use super::fifo_filter::FifoFilter;
 use super::network::HandshakeNetMessage;
@@ -108,7 +108,7 @@ impl Peer {
         let binary = msg.to_binary()?;
         if !self.fifo_filter.check(&binary) {
             self.fifo_filter.set(binary);
-            debug!("Broadcast message to #{}: {}", self.id, msg);
+            trace!("Broadcast message to #{}: {}", self.id, msg);
             send_net_message(&mut self.stream, msg).await
         } else {
             trace!("Message to #{} already broadcasted", self.id);
@@ -126,7 +126,7 @@ impl Peer {
                 send_net_message(&mut self.stream, HandshakeNetMessage::Verack.into()).await
             }
             HandshakeNetMessage::Verack => {
-                debug!("Got peer verack message");
+                trace!("Got peer verack message");
                 if let Some(pubkey) = &self.peer_pubkey {
                     self.bus.send(PeerEvent::NewPeer {
                         name: self.peer_name.clone().unwrap_or("unknown".to_string()),
@@ -154,17 +154,17 @@ impl Peer {
         trace!("RECV: {:?}", msg);
         match msg {
             NetMessage::HandshakeMessage(handshake_msg) => {
-                debug!("Received new handshake net message {:?}", handshake_msg);
+                trace!("Received new handshake net message {:?}", handshake_msg);
                 self.handle_handshake_message(handshake_msg).await?;
             }
             NetMessage::MempoolMessage(mempool_msg) => {
-                debug!("Received new mempool net message {}", mempool_msg);
+                trace!("Received new mempool net message {}", mempool_msg);
                 self.bus
                     .send(mempool_msg)
                     .context("Receiving mempool net message")?;
             }
             NetMessage::ConsensusMessage(consensus_msg) => {
-                debug!("Received new consensus net message {}", consensus_msg);
+                trace!("Received new consensus net message {}", consensus_msg);
                 self.bus
                     .send(consensus_msg)
                     .context("Receiving consensus net message")?;
@@ -243,7 +243,7 @@ impl Peer {
                                     return Ok(())
                                 }
                             }
-                            debug!("ping");
+                            trace!("ping");
                             send_net_message(&mut self.stream, HandshakeNetMessage::Ping.into()).await
                         }
                     };

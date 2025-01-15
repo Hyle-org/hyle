@@ -3,6 +3,7 @@ use axum::{extract::State, http::StatusCode, response::IntoResponse, routing::po
 use bincode::{Decode, Encode};
 use hyle_contract_sdk::TxHash;
 use serde::{Deserialize, Serialize};
+use tracing::info;
 
 use crate::{
     bus::{bus_client, metrics::BusMetrics, BusClientSender, BusMessage},
@@ -66,6 +67,7 @@ pub async fn send_blob_transaction(
     State(state): State<RouterState>,
     Json(payload): Json<BlobTransaction>,
 ) -> Result<impl IntoResponse, AppError> {
+    info!("Got blob transaction {}", payload.hash());
     handle_send(state, TransactionData::Blob(payload)).await
 }
 
@@ -73,6 +75,7 @@ pub async fn send_proof_transaction(
     State(state): State<RouterState>,
     Json(mut payload): Json<ProofTransaction>,
 ) -> Result<impl IntoResponse, AppError> {
+    info!("Got proof transaction {}", payload.hash());
     let proof_bytes = payload
         .proof
         .to_bytes()

@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use bincode::{Decode, Encode};
 use staking::model::ValidatorPublicKey;
-use tracing::{debug, info, warn};
+use tracing::{debug, info, trace, warn};
 
 use crate::{consensus::Ticket, model::get_current_timestamp, utils::crypto::SignedByValidator};
 
@@ -26,7 +26,7 @@ impl TimeoutState {
     pub fn schedule_next(&mut self, timestamp: u64) {
         match self {
             TimeoutState::Inactive => {
-                info!("⏲️ Scheduling timeout");
+                trace!("⏲️ Scheduling timeout");
             }
             TimeoutState::CertificateEmitted => {
                 info!("⏲️ Rescheduling timeout after a certificate was emitted");
