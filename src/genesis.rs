@@ -10,12 +10,13 @@ use crate::{
 use anyhow::{bail, Error, Result};
 use client_sdk::transaction_builder::{BuildResult, StateUpdater, TransactionBuilder};
 use hydentity::Hydentity;
-use hyle_contract_sdk::{identity_provider::IdentityVerification, Identity};
+use hyle_contract_sdk::{identity_provider::IdentityVerification, Identity, StateDigest};
 use hyle_contract_sdk::{ContractName, Digestable, ProgramId};
 use hyllar::HyllarToken;
 use serde::{Deserialize, Serialize};
 use staking::state::Staking;
-use tracing::{error, info};
+use tracing::{debug, error, info};
+use verifiers::NativeVerifiers;
 
 #[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]
 pub enum GenesisEvent {
@@ -89,12 +90,13 @@ impl StateUpdater for States {
     }
 }
 
+#[allow(clippy::expect_used, reason = "genesis should panic if incorrect")]
 impl Genesis {
     pub async fn start(&mut self) -> Result<(), Error> {
         let file = self.config.data_directory.clone().join("genesis.bin");
         let already_handled_genesis: bool = Self::load_from_disk_or_default(&file);
         if already_handled_genesis {
-            info!("🌿 Genesis block already handled, skipping");
+            debug!("🌿 Genesis block already handled, skipping");
             // TODO: do we need a different message?
             _ = self.bus.send(GenesisEvent::NoGenesis {})?;
             return Ok(());
@@ -140,6 +142,9 @@ impl Genesis {
                 listen<PeerEvent> msg => {
                     match msg {
                         PeerEvent::NewPeer { name, pubkey, .. } => {
+                            if !self.config.consensus.genesis_stakers.contains_key(&name) {
+                                continue;
+                            }
                             info!("🌱 New peer {}({}) added to genesis", &name, &pubkey);
                             self.peer_pubkey
                                 .insert(name.clone(), pubkey.clone());
@@ -210,10 +215,10 @@ impl Genesis {
             let tx = BlobTransaction { identity, blobs };
             let blob_tx_hash = tx.hash();
 
-            genesis_txs.push(Transaction::wrap(TransactionData::Blob(tx)));
+            genesis_txs.push(tx.into());
 
             // Pretend we're verifying a recursive proof
-            genesis_txs.push(Transaction::wrap(TransactionData::VerifiedProof(
+            genesis_txs.push(
                 VerifiedProofTransaction {
                     contract_name: "risc0-recursion".into(),
                     proven_blobs: outputs
@@ -231,8 +236,9 @@ impl Genesis {
                     is_recursive: true,
                     proof_hash: ProofData::default().hash(),
                     proof: None,
-                },
-            )));
+                }
+                .into(),
+            );
         }
 
         Ok(genesis_txs)
@@ -258,7 +264,7 @@ impl Genesis {
             states
                 .hydentity
                 .default_builder(&mut transaction)
-                .register_identity("password".to_string())?;
+                .register_identity("password".to_owned())?;
 
             txs.push(transaction.build(states)?);
         }
@@ -280,7 +286,7 @@ impl Genesis {
 
             info!("🌱  Fauceting {genesis_faucet} hyllar to {peer}");
 
-            let identity = Identity("faucet.hydentity".to_string());
+            let identity = Identity::new("faucet.hydentity");
             let mut transaction = TransactionBuilder::new(identity.clone());
 
             // Verify identity
@@ -356,7 +362,7 @@ impl Genesis {
         let mut hydentity_state = hydentity::Hydentity::new();
         hydentity_state
             .register_identity("faucet.hydentity", "password")
-            .unwrap();
+            .expect("faucet must register");
 
         let staking_state = staking::state::Staking::new();
 
@@ -367,6 +373,8 @@ impl Genesis {
         };
 
         let mut map = BTreeMap::default();
+        map.insert("blst".into(), NativeVerifiers::Blst.into());
+        map.insert("sha3_256".into(), NativeVerifiers::Sha3_256.into());
         map.insert("hyllar".into(), ProgramId(hyllar_program_id.clone()));
         map.insert("hydentity".into(), ProgramId(hydentity_program_id.clone()));
         map.insert("staking".into(), ProgramId(staking_program_id.clone()));
@@ -378,42 +386,54 @@ impl Genesis {
         (
             map,
             vec![
-                Transaction::wrap(TransactionData::RegisterContract(
-                    RegisterContractTransaction {
-                        owner: "hyle".into(),
-                        verifier: "risc0".into(),
-                        program_id: staking_program_id.into(),
-                        state_digest: states.staking.on_chain_state().as_digest(),
-                        contract_name: "staking".into(),
-                    },
-                )),
-                Transaction::wrap(TransactionData::RegisterContract(
-                    RegisterContractTransaction {
-                        owner: "hyle".into(),
-                        verifier: "risc0".into(),
-                        program_id: hyllar_program_id.into(),
-                        state_digest: states.hyllar.as_digest(),
-                        contract_name: "hyllar".into(),
-                    },
-                )),
-                Transaction::wrap(TransactionData::RegisterContract(
-                    RegisterContractTransaction {
-                        owner: "hyle".into(),
-                        verifier: "risc0".into(),
-                        program_id: hydentity_program_id.into(),
-                        state_digest: states.hydentity.as_digest(),
-                        contract_name: "hydentity".into(),
-                    },
-                )),
-                Transaction::wrap(TransactionData::RegisterContract(
-                    RegisterContractTransaction {
-                        owner: "hyle".into(),
-                        verifier: "risc0".into(),
-                        program_id: hyle_contracts::RISC0_RECURSION_ID.to_vec().into(),
-                        state_digest: hyle_contract_sdk::StateDigest(vec![]),
-                        contract_name: "risc0-recursion".into(),
-                    },
-                )),
+                RegisterContractTransaction {
+                    owner: "hyle".into(),
+                    verifier: "blst".into(),
+                    program_id: NativeVerifiers::Blst.into(),
+                    state_digest: StateDigest(vec![]),
+                    contract_name: "blst".into(),
+                }
+                .into(),
+                RegisterContractTransaction {
+                    owner: "hyle".into(),
+                    verifier: "sha3_256".into(),
+                    program_id: NativeVerifiers::Sha3_256.into(),
+                    state_digest: StateDigest(vec![]),
+                    contract_name: "sha3_256".into(),
+                }
+                .into(),
+                RegisterContractTransaction {
+                    owner: "hyle".into(),
+                    verifier: "risc0".into(),
+                    program_id: staking_program_id.into(),
+                    state_digest: states.staking.on_chain_state().as_digest(),
+                    contract_name: "staking".into(),
+                }
+                .into(),
+                RegisterContractTransaction {
+                    owner: "hyle".into(),
+                    verifier: "risc0".into(),
+                    program_id: hyllar_program_id.into(),
+                    state_digest: states.hyllar.as_digest(),
+                    contract_name: "hyllar".into(),
+                }
+                .into(),
+                RegisterContractTransaction {
+                    owner: "hyle".into(),
+                    verifier: "risc0".into(),
+                    program_id: hydentity_program_id.into(),
+                    state_digest: states.hydentity.as_digest(),
+                    contract_name: "hydentity".into(),
+                }
+                .into(),
+                RegisterContractTransaction {
+                    owner: "hyle".into(),
+                    verifier: "risc0".into(),
+                    program_id: hyle_contracts::RISC0_RECURSION_ID.to_vec().into(),
+                    state_digest: hyle_contract_sdk::StateDigest(vec![]),
+                    contract_name: "risc0-recursion".into(),
+                }
+                .into(),
             ],
             states,
         )
@@ -431,7 +451,10 @@ impl Genesis {
         };
 
         // TODO: do something better?
-        let round_leader = initial_validators.first().unwrap().clone();
+        let round_leader = initial_validators
+            .first()
+            .expect("must have round leader")
+            .clone();
 
         SignedBlock {
             data_proposals: vec![(round_leader.clone(), vec![dp.clone()])],
@@ -497,7 +520,7 @@ mod tests {
         let shared_bus = SharedMessageBus::default();
         let bus = GenesisBusClient::new_from_bus(shared_bus.new_handle()).await;
         let test_bus = TestGenesisBusClient::new_from_bus(shared_bus.new_handle()).await;
-        let crypto = Arc::new(BlstCrypto::new(config.id.clone()));
+        let crypto = Arc::new(BlstCrypto::new(config.id.clone()).unwrap());
         (
             Genesis {
                 config: Arc::new(config),
@@ -666,19 +689,28 @@ mod tests {
             let (mut genesis, mut bus) = new(config.clone()).await;
             bus.send(PeerEvent::NewPeer {
                 name: "node-2".into(),
-                pubkey: BlstCrypto::new("node-2".into()).validator_pubkey().clone(),
+                pubkey: BlstCrypto::new("node-2".into())
+                    .unwrap()
+                    .validator_pubkey()
+                    .clone(),
                 da_address: "".into(),
             })
             .expect("send");
             bus.send(PeerEvent::NewPeer {
                 name: "node-3".into(),
-                pubkey: BlstCrypto::new("node-3".into()).validator_pubkey().clone(),
+                pubkey: BlstCrypto::new("node-3".into())
+                    .unwrap()
+                    .validator_pubkey()
+                    .clone(),
                 da_address: "".into(),
             })
             .expect("send");
             bus.send(PeerEvent::NewPeer {
                 name: "node-4".into(),
-                pubkey: BlstCrypto::new("node-4".into()).validator_pubkey().clone(),
+                pubkey: BlstCrypto::new("node-4".into())
+                    .unwrap()
+                    .validator_pubkey()
+                    .clone(),
                 da_address: "".into(),
             })
             .expect("send");
@@ -691,19 +723,28 @@ mod tests {
             let (mut genesis, mut bus) = new(config).await;
             bus.send(PeerEvent::NewPeer {
                 name: "node-4".into(),
-                pubkey: BlstCrypto::new("node-4".into()).validator_pubkey().clone(),
+                pubkey: BlstCrypto::new("node-4".into())
+                    .unwrap()
+                    .validator_pubkey()
+                    .clone(),
                 da_address: "".into(),
             })
             .expect("send");
             bus.send(PeerEvent::NewPeer {
                 name: "node-2".into(),
-                pubkey: BlstCrypto::new("node-2".into()).validator_pubkey().clone(),
+                pubkey: BlstCrypto::new("node-2".into())
+                    .unwrap()
+                    .validator_pubkey()
+                    .clone(),
                 da_address: "".into(),
             })
             .expect("send");
             bus.send(PeerEvent::NewPeer {
                 name: "node-3".into(),
-                pubkey: BlstCrypto::new("node-3".into()).validator_pubkey().clone(),
+                pubkey: BlstCrypto::new("node-3".into())
+                    .unwrap()
+                    .validator_pubkey()
+                    .clone(),
                 da_address: "".into(),
             })
             .expect("send");

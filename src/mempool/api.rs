@@ -3,12 +3,13 @@ use axum::{extract::State, http::StatusCode, response::IntoResponse, routing::po
 use bincode::{Decode, Encode};
 use hyle_contract_sdk::TxHash;
 use serde::{Deserialize, Serialize};
+use tracing::info;
 
 use crate::{
     bus::{bus_client, metrics::BusMetrics, BusClientSender, BusMessage},
     model::{
-        BlobTransaction, CommonRunContext, Hashable, ProofData, ProofTransaction,
-        RegisterContractTransaction, Transaction, TransactionData,
+        BlobTransaction, CommonRunContext, Hashable, ProofTransaction, RegisterContractTransaction,
+        Transaction, TransactionData,
     },
     rest::AppError,
 };
@@ -45,7 +46,7 @@ async fn handle_send(
     mut state: RouterState,
     payload: TransactionData,
 ) -> Result<Json<TxHash>, AppError> {
-    let tx = Transaction::wrap(payload);
+    let tx: Transaction = payload.into();
     let tx_hash = tx.hash();
     state
         .bus
@@ -66,18 +67,15 @@ pub async fn send_blob_transaction(
     State(state): State<RouterState>,
     Json(payload): Json<BlobTransaction>,
 ) -> Result<impl IntoResponse, AppError> {
+    info!("Got blob transaction {}", payload.hash());
     handle_send(state, TransactionData::Blob(payload)).await
 }
 
 pub async fn send_proof_transaction(
     State(state): State<RouterState>,
-    Json(mut payload): Json<ProofTransaction>,
+    Json(payload): Json<ProofTransaction>,
 ) -> Result<impl IntoResponse, AppError> {
-    let proof_bytes = payload
-        .proof
-        .to_bytes()
-        .map_err(|err| AppError(StatusCode::BAD_REQUEST, anyhow!(err)))?;
-    payload.proof = ProofData::Bytes(proof_bytes);
+    info!("Got proof transaction {}", payload.hash());
     handle_send(state, TransactionData::Proof(payload)).await
 }
 

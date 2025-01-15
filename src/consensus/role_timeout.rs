@@ -1,13 +1,12 @@
 use std::collections::HashSet;
 
 use bincode::{Decode, Encode};
-use hyle_model::ValidatorPublicKey;
-use tracing::{debug, info, warn};
+use tracing::{debug, info, trace, warn};
 
 use super::Consensus;
 use crate::model::{
     utils::get_current_timestamp, ConsensusNetMessage, QuorumCertificate, SignedByValidator, Slot,
-    Ticket, View,
+    Ticket, ValidatorPublicKey, View,
 };
 use anyhow::{bail, Context, Result};
 
@@ -28,7 +27,7 @@ impl TimeoutState {
     pub fn schedule_next(&mut self, timestamp: u64) {
         match self {
             TimeoutState::Inactive => {
-                info!("⏲️ Scheduling timeout");
+                trace!("⏲️ Scheduling timeout");
             }
             TimeoutState::CertificateEmitted => {
                 info!("⏲️ Rescheduling timeout after a certificate was emitted");

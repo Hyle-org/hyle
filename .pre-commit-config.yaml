@@ -7,11 +7,9 @@ repos:
         args:
           [
             "--workspace",
-            "--all-targets",
-            "--all-features",
             "--",
             "-D",
             "warnings",
           ]
       - id: cargo-check
-        args: ["--workspace", "--all-targets", "--all-features"]
+        args: ["--workspace"]

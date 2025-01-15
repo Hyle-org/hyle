@@ -205,7 +205,7 @@ mod tests {
 
     #[test]
     fn test_identity_encoding() {
-        let identity = Identity("test_identity".to_string());
+        let identity = Identity::new("test_identity");
         let encoded = bincode::encode_to_vec(&identity, bincode::config::standard())
             .expect("Failed to encode Identity");
         let decoded: Identity = bincode::decode_from_slice(&encoded, bincode::config::standard())
@@ -216,7 +216,7 @@ mod tests {
 
     #[test]
     fn test_txhash_encoding() {
-        let txhash = TxHash("test_txhash".to_string());
+        let txhash = TxHash::new("test_txhash");
         let encoded = bincode::encode_to_vec(&txhash, bincode::config::standard())
             .expect("Failed to encode TxHash");
         let decoded: TxHash = bincode::decode_from_slice(&encoded, bincode::config::standard())

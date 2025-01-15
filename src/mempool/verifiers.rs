@@ -2,30 +2,42 @@ use std::fmt::Write;
 use std::io::Read;
 
 use anyhow::{bail, Context, Error};
+use hyle_model::{ProofData, Signed, ValidatorSignature};
 use rand::Rng;
 use risc0_recursion::{Risc0Journal, Risc0ProgramId};
-use risc0_zkvm::sha::Digest;
+use sha3::Digest;
 use sp1_sdk::{ProverClient, SP1ProofWithPublicValues, SP1VerifyingKey};
 
-use hyle_contract_sdk::{HyleOutput, ProgramId, Verifier};
+use hyle_contract_sdk::{Blob, BlobIndex, HyleOutput, ProgramId, StateDigest, TxHash, Verifier};
+
+use crate::{
+    model::verifiers::{BlstSignatureBlob, NativeVerifiers, ShaBlob},
+    utils::crypto::BlstCrypto,
+};
 
 pub fn verify_proof(
-    proof: &[u8],
+    proof: &ProofData,
     verifier: &Verifier,
     program_id: &ProgramId,
 ) -> Result<Vec<HyleOutput>, Error> {
     let hyle_outputs = match verifier.0.as_str() {
         // TODO: add #[cfg(test)]
-        "test" => Ok(serde_json::from_slice(proof)?),
+        "test" => {
+            let (output, _) = bincode::decode_from_slice::<Vec<HyleOutput>, _>(
+                &proof.0,
+                bincode::config::standard(),
+            )?;
+            Ok(output)
+        }
         #[cfg(test)]
         "test-slow" => {
             tracing::info!("Sleeping for 2 seconds to simulate a slow verifier");
             std::thread::sleep(std::time::Duration::from_secs(2));
             tracing::info!("Woke up from sleep");
-            Ok(serde_json::from_slice(proof)?)
+            Ok(serde_json::from_slice(&proof.0)?)
         }
         "risc0" => {
-            let journal = risc0_proof_verifier(proof, &program_id.0)?;
+            let journal = risc0_proof_verifier(&proof.0, &program_id.0)?;
             // First try to decode it as a single HyleOutput
             Ok(match journal.decode::<HyleOutput>() {
                 Ok(ho) => vec![ho],
@@ -43,12 +55,12 @@ pub fn verify_proof(
                 }
             })
         }
-        "noir" => noir_proof_verifier(proof, &program_id.0),
-        "sp1" => sp1_proof_verifier(proof, &program_id.0),
+        "noir" => noir_proof_verifier(&proof.0, &program_id.0),
+        "sp1" => sp1_proof_verifier(&proof.0, &program_id.0),
         _ => bail!("{} recursive verifier not implemented yet", verifier),
     }?;
     hyle_outputs.iter().for_each(|hyle_output| {
-        tracing::info!(
+        tracing::debug!(
             "🔎 {}",
             std::str::from_utf8(&hyle_output.program_outputs)
                 .map(|o| format!("Program outputs: {o}"))
@@ -60,13 +72,13 @@ pub fn verify_proof(
 }
 
 pub fn verify_recursive_proof(
-    proof: &[u8],
+    proof: &ProofData,
     verifier: &Verifier,
     program_id: &ProgramId,
 ) -> Result<(Vec<ProgramId>, Vec<HyleOutput>), Error> {
     let outputs = match verifier.0.as_str() {
         "risc0" => {
-            let journal = risc0_proof_verifier(proof, &program_id.0)?;
+            let journal = risc0_proof_verifier(&proof.0, &program_id.0)?;
             let mut output = journal
                 .decode::<Vec<(Risc0ProgramId, Risc0Journal)>>()
                 .context("Failed to extract HyleOuput from Risc0's journal")?;
@@ -84,7 +96,7 @@ pub fn verify_recursive_proof(
         _ => bail!("{} recursive verifier not implemented yet", verifier),
     }?;
     outputs.1.iter().for_each(|hyle_output| {
-        tracing::info!(
+        tracing::debug!(
             "🔎 {}",
             std::str::from_utf8(&hyle_output.program_outputs)
                 .map(|o| format!("Program outputs: {o}"))
@@ -102,7 +114,8 @@ pub fn risc0_proof_verifier(
     let receipt = borsh::from_slice::<risc0_zkvm::Receipt>(encoded_receipt)
         .context("Error while decoding Risc0 proof's receipt")?;
 
-    let image_bytes: Digest = image_id.try_into().context("Invalid Risc0 image ID")?;
+    let image_bytes: risc0_zkvm::sha::Digest =
+        image_id.try_into().context("Invalid Risc0 image ID")?;
 
     receipt
         .verify(image_bytes)
@@ -166,10 +179,10 @@ pub fn noir_proof_verifier(proof: &[u8], image_id: &[u8]) -> Result<Vec<HyleOutp
     }
 
     // Reading output
-    let mut file = std::fs::File::open(output_path).expect("Failed to open output file");
+    let mut file = std::fs::File::open(output_path).context("Failed to open output file")?;
     let mut output_json = String::new();
     file.read_to_string(&mut output_json)
-        .expect("Failed to read output file content");
+        .context("Failed to read output file content")?;
 
     let mut public_outputs: Vec<String> = serde_json::from_str(&output_json)?;
     // TODO: support multi-output proofs.
@@ -217,6 +230,71 @@ pub fn sp1_proof_verifier(
     tracing::info!("✅ SP1 proof verified.",);
 
     Ok(vec![hyle_output])
+}
+
+pub fn verify_native(
+    tx_hash: TxHash,
+    index: BlobIndex,
+    blobs: &[Blob],
+    verifier: NativeVerifiers,
+) -> Result<HyleOutput, Error> {
+    let blob = blobs.get(index.0).context("Invalid blob index")?;
+    let blobs = hyle_contract_sdk::flatten_blobs(blobs);
+
+    let (identity, success) = match verifier {
+        NativeVerifiers::Blst => {
+            let (blob, _) = bincode::decode_from_slice::<BlstSignatureBlob, _>(
+                &blob.data.0,
+                bincode::config::standard(),
+            )?;
+
+            let msg = [blob.data, blob.identity.0.as_bytes().to_vec()].concat();
+            // TODO: refacto BlstCrypto to avoid using ValidatorPublicKey here
+            let msg = Signed {
+                msg,
+                signature: ValidatorSignature {
+                    signature: crate::model::Signature(blob.signature),
+                    validator: crate::model::ValidatorPublicKey(blob.public_key),
+                },
+            };
+            let success = BlstCrypto::verify(&msg)?;
+
+            (blob.identity, success)
+        }
+        NativeVerifiers::Sha3_256 => {
+            let (blob, _) = bincode::decode_from_slice::<ShaBlob, _>(
+                &blob.data.0,
+                bincode::config::standard(),
+            )?;
+
+            let mut hasher = sha3::Sha3_256::new();
+            hasher.update(blob.data);
+            let res = hasher.finalize().to_vec();
+
+            let success = res == blob.sha;
+
+            (blob.identity, success)
+        }
+    };
+
+    if success {
+        tracing::info!("✅ Native blob verified on {tx_hash}:{index}");
+    } else {
+        tracing::info!("❌ Native blob verification failed on {tx_hash}:{index}.");
+    }
+
+    let output = HyleOutput {
+        version: 1,
+        initial_state: StateDigest::default(),
+        next_state: StateDigest::default(),
+        identity,
+        tx_hash,
+        index,
+        blobs,
+        success,
+        program_outputs: vec![],
+    };
+    Ok(output)
 }
 
 #[cfg(test)]
@@ -291,7 +369,7 @@ mod tests {
                         identity: Identity(
                             "3f368bf90c71946fc7b0cde9161ace42985d235f.ecdsa_secp256r1".to_owned()
                         ),
-                        tx_hash: TxHash("".to_owned()),
+                        tx_hash: TxHash::new(""),
                         index: BlobIndex(0),
                         blobs: vec![1, 1, 1, 1, 1],
                         success: true,

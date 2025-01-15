@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 use std::{fs::File, io::Read};
 
 use anyhow::Result;
@@ -28,7 +30,7 @@ async fn send_proof(
     let res = client
         .send_tx_proof(&ProofTransaction {
             contract_name: contract_name.clone(),
-            proof: ProofData::Bytes(proof),
+            proof: ProofData(proof),
         })
         .await?;
     assert!(res.status().is_success());
@@ -50,7 +52,12 @@ async fn send_blobs(
 
     let blobs: Vec<Blob> = blobs
         .chunks(2)
-        .map(|chunk| (chunk[0].clone(), chunk[1].clone()))
+        .map(|chunk| {
+            (
+                chunk.first().unwrap().clone(),
+                chunk.get(1).unwrap().clone(),
+            )
+        })
         .map(|(contract_name, blob_data)| {
             let data = BlobData(hex::decode(blob_data).expect("Data decoding failed"));
             Blob {
@@ -153,7 +160,7 @@ enum SendCommands {
 async fn handle_args(args: Args) -> Result<()> {
     let url = format!("http://{}:{}", args.host, args.port);
 
-    let client = NodeApiHttpClient::new(url);
+    let client = NodeApiHttpClient::new(url)?;
 
     match args.command {
         SendCommands::Blobs { identity, blobs } => {

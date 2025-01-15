@@ -1,19 +1,23 @@
 use std::fmt::Display;
 
 use anyhow::{Context, Result};
+#[cfg(feature = "node")]
+use futures::SinkExt;
+use hyle_model::Transaction;
 use reqwest::{Response, Url};
+#[cfg(feature = "node")]
+use tokio::net::TcpStream;
+#[cfg(feature = "node")]
+use tokio_util::codec::{Framed, LengthDelimitedCodec};
 
+use crate::model::{
+    BlobTransaction, BlockHeight, ConsensusInfo, Contract, ContractDb, ContractName, NodeInfo,
+    ProofTransaction, RegisterContractTransaction, TransactionDb,
+};
+#[cfg(feature = "node")]
+use crate::tcp_server::TcpServerNetMessage;
 #[cfg(feature = "node")]
 use crate::tools::mock_workflow::RunScenario;
-use crate::{
-    model::ConsensusInfo,
-    model::Contract,
-    model::ContractDb,
-    model::NodeInfo,
-    model::{
-        BlobTransaction, BlockHeight, ContractName, ProofTransaction, RegisterContractTransaction,
-    },
-};
 use hyle_contract_sdk::{StateDigest, TxHash};
 use staking::state::Staking;
 
@@ -22,17 +26,22 @@ pub struct NodeApiHttpClient {
     pub reqwest_client: reqwest::Client,
 }
 
+#[cfg(feature = "node")]
+pub struct NodeTcpClient {
+    pub framed: Framed<TcpStream, LengthDelimitedCodec>,
+}
+
 pub struct IndexerApiHttpClient {
     pub url: Url,
     pub reqwest_client: reqwest::Client,
 }
 
 impl NodeApiHttpClient {
-    pub fn new(url: String) -> Self {
-        Self {
-            url: Url::parse(&url).expect("Invalid url"),
+    pub fn new(url: String) -> Result<Self> {
+        Ok(Self {
+            url: Url::parse(&url)?,
             reqwest_client: reqwest::Client::new(),
-        }
+        })
     }
 
     pub async fn send_tx_blob(&self, tx: &BlobTransaction) -> Result<TxHash> {
@@ -150,12 +159,39 @@ impl NodeApiHttpClient {
     }
 }
 
+#[cfg(feature = "node")]
+impl NodeTcpClient {
+    pub async fn new(url: String) -> Result<Self> {
+        tracing::info!("Connecting to {}", url);
+        let stream = TcpStream::connect(url).await?;
+        let framed = Framed::new(stream, LengthDelimitedCodec::new());
+        Ok(Self { framed })
+    }
+
+    pub async fn send_transaction(&mut self, transaction: Transaction) -> Result<()> {
+        let msg: TcpServerNetMessage = transaction.into();
+        self.framed
+            .send(msg.to_binary()?.into())
+            .await
+            .context("Failed to send NetMessage")?;
+        Ok(())
+    }
+
+    pub async fn send_encoded_message_no_response(&mut self, encoded_msg: Vec<u8>) -> Result<()> {
+        self.framed
+            .send(encoded_msg.into())
+            .await
+            .context("Failed to send NetMessage")?;
+        Ok(())
+    }
+}
+
 impl IndexerApiHttpClient {
-    pub fn new(url: String) -> Self {
-        Self {
-            url: Url::parse(&url).expect("Invalid url"),
+    pub fn new(url: String) -> Result<Self> {
+        Ok(Self {
+            url: Url::parse(&url)?,
             reqwest_client: reqwest::Client::new(),
-        }
+        })
     }
 
     pub async fn list_contracts(&self) -> Result<Vec<ContractDb>> {
@@ -211,5 +247,17 @@ impl IndexerApiHttpClient {
             .json::<NodeInfo>()
             .await
             .context("reading node info response")
+    }
+
+    pub async fn get_transaction_by_hash(&self, tx_hash: &TxHash) -> Result<TransactionDb> {
+        self.reqwest_client
+            .get(format!("{}v1/indexer/transaction/hash/{tx_hash}", self.url))
+            .header("Content-Type", "application/json")
+            .send()
+            .await
+            .context("getting transaction by hash")?
+            .json::<TransactionDb>()
+            .await
+            .context("reading transaction response")
     }
 }

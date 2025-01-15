@@ -7,7 +7,7 @@ use crate::{
 };
 use anyhow::Result;
 use indexmap::IndexMap;
-use tracing::info;
+use tracing::{info, trace};
 
 #[derive(Debug)]
 pub struct Blocks {
@@ -34,7 +34,7 @@ impl Blocks {
         if self.contains(&block_hash) {
             return Ok(());
         }
-        info!("📦 storing block {}", data.height());
+        trace!("📦 storing block {}", data.height());
         self.data.insert(block_hash, data);
         Ok(())
     }

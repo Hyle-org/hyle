@@ -1,3 +1,4 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
 use fixtures::ctx::E2ECtx;
 use tracing::info;
 
@@ -114,7 +115,7 @@ mod e2e_amm {
                 vec![IdentityAction::RegisterIdentity {
                     account: "bob.hydentity".to_string(),
                 }
-                .as_blob(ContractName("hydentity".to_owned()))],
+                .as_blob(ContractName::new("hydentity"))],
             )
             .await?;
 
@@ -135,12 +136,8 @@ mod e2e_amm {
         let proof = proof_generator.read_proof(0);
 
         info!("➡️  Sending proof for register");
-        ctx.send_proof_single(
-            "hydentity".into(),
-            ProofData::Bytes(proof),
-            blob_tx_hash.clone(),
-        )
-        .await?;
+        ctx.send_proof_single("hydentity".into(), ProofData(proof), blob_tx_hash.clone())
+            .await?;
 
         info!("➡️  Waiting for height 2");
         ctx.wait_height(2).await?;
@@ -170,12 +167,12 @@ mod e2e_amm {
                         account: "faucet.hydentity".to_string(),
                         nonce: faucet_start_nonce,
                     }
-                    .as_blob(ContractName("hydentity".to_owned())),
+                    .as_blob(ContractName::new("hydentity")),
                     ERC20Action::Transfer {
                         recipient: "bob.hydentity".to_string(),
                         amount: 25,
                     }
-                    .as_blob(ContractName("hyllar".to_owned()), None, None),
+                    .as_blob(ContractName::new("hyllar"), None, None),
                 ],
             )
             .await?;
@@ -202,18 +199,14 @@ mod e2e_amm {
         info!("➡️  Sending proof for hydentity");
         ctx.send_proof_single(
             "hydentity".into(),
-            ProofData::Bytes(hydentity_proof),
+            ProofData(hydentity_proof),
             blob_tx_hash.clone(),
         )
         .await?;
 
         info!("➡️  Sending proof for hyllar");
-        ctx.send_proof_single(
-            "hyllar".into(),
-            ProofData::Bytes(bob_transfer_proof),
-            blob_tx_hash,
-        )
-        .await?;
+        ctx.send_proof_single("hyllar".into(), ProofData(bob_transfer_proof), blob_tx_hash)
+            .await?;
 
         info!("➡️  Waiting for height 5");
         ctx.wait_height(5).await?;
@@ -248,12 +241,12 @@ mod e2e_amm {
                         account: "faucet.hydentity".to_string(),
                         nonce: faucet_start_nonce + 1,
                     }
-                    .as_blob(ContractName("hydentity".to_owned())),
+                    .as_blob(ContractName::new("hydentity")),
                     ERC20Action::Transfer {
                         recipient: "bob.hydentity".to_string(),
                         amount: 50,
                     }
-                    .as_blob(ContractName("hyllar2".to_owned()), None, None),
+                    .as_blob(ContractName::new("hyllar2"), None, None),
                 ],
             )
             .await?;
@@ -280,7 +273,7 @@ mod e2e_amm {
         info!("➡️  Sending proof for hydentity");
         ctx.send_proof_single(
             "hydentity".into(),
-            ProofData::Bytes(hydentity_proof),
+            ProofData(hydentity_proof),
             blob_tx_hash.clone(),
         )
         .await?;
@@ -288,7 +281,7 @@ mod e2e_amm {
         info!("➡️  Sending proof for hyllar");
         ctx.send_proof_single(
             "hyllar2".into(),
-            ProofData::Bytes(bob_transfer_proof),
+            ProofData(bob_transfer_proof),
             blob_tx_hash,
         )
         .await?;
@@ -324,12 +317,12 @@ mod e2e_amm {
                         account: "bob.hydentity".to_string(),
                         nonce: 0,
                     }
-                    .as_blob(ContractName("hydentity".to_owned())),
+                    .as_blob(ContractName::new("hydentity")),
                     ERC20Action::Approve {
                         spender: AMM_CONTRACT_NAME.to_string(),
                         amount: 100,
                     }
-                    .as_blob(ContractName("hyllar".to_owned()), None, None),
+                    .as_blob(ContractName::new("hyllar"), None, None),
                 ],
             )
             .await?;
@@ -356,7 +349,7 @@ mod e2e_amm {
         info!("➡️  Sending proof for hydentity");
         ctx.send_proof_single(
             "hydentity".into(),
-            ProofData::Bytes(hydentity_proof),
+            ProofData(hydentity_proof),
             blob_tx_hash.clone(),
         )
         .await?;
@@ -364,7 +357,7 @@ mod e2e_amm {
         info!("➡️  Sending proof for approve hyllar");
         ctx.send_proof_single(
             "hyllar".into(),
-            ProofData::Bytes(bob_approve_hyllar_proof),
+            ProofData(bob_approve_hyllar_proof),
             blob_tx_hash.clone(),
         )
         .await?;
@@ -385,12 +378,12 @@ mod e2e_amm {
                         account: "bob.hydentity".to_string(),
                         nonce: 1,
                     }
-                    .as_blob(ContractName("hydentity".to_owned())),
+                    .as_blob(ContractName::new("hydentity")),
                     ERC20Action::Approve {
                         spender: AMM_CONTRACT_NAME.to_string(),
                         amount: 100,
                     }
-                    .as_blob(ContractName("hyllar2".to_owned()), None, None),
+                    .as_blob(ContractName::new("hyllar2"), None, None),
                 ],
             )
             .await?;
@@ -417,7 +410,7 @@ mod e2e_amm {
         info!("➡️  Sending proof for hydentity");
         ctx.send_proof_single(
             "hydentity".into(),
-            ProofData::Bytes(hydentity_proof),
+            ProofData(hydentity_proof),
             blob_tx_hash.clone(),
         )
         .await?;
@@ -425,7 +418,7 @@ mod e2e_amm {
         info!("➡️  Sending proof for approve hyllar2");
         ctx.send_proof_single(
             "hyllar2".into(),
-            ProofData::Bytes(bob_approve_hyllar2_proof),
+            ProofData(bob_approve_hyllar2_proof),
             blob_tx_hash.clone(),
         )
         .await?;
@@ -446,13 +439,13 @@ mod e2e_amm {
                         account: "bob.hydentity".to_string(),
                         nonce: 2,
                     }
-                    .as_blob(ContractName("hydentity".to_owned())),
+                    .as_blob(ContractName::new("hydentity")),
                     AmmAction::NewPair {
                         pair: ("hyllar".to_string(), "hyllar2".to_string()),
                         amounts: (20, 50),
                     }
                     .as_blob(
-                        ContractName(AMM_CONTRACT_NAME.to_owned()),
+                        ContractName::new(AMM_CONTRACT_NAME),
                         None,
                         Some(vec![BlobIndex(2), BlobIndex(3)]),
                     ),
@@ -462,7 +455,7 @@ mod e2e_amm {
                         amount: 20,
                     }
                     .as_blob(
-                        ContractName("hyllar".to_owned()),
+                        ContractName::new("hyllar"),
                         Some(BlobIndex(1)),
                         None,
                     ),
@@ -472,7 +465,7 @@ mod e2e_amm {
                         amount: 50,
                     }
                     .as_blob(
-                        ContractName("hyllar2".to_owned()),
+                        ContractName::new("hyllar2"),
                         Some(BlobIndex(1)),
                         None,
                     ),
@@ -506,7 +499,7 @@ mod e2e_amm {
         info!("➡️  Sending proof for hydentity");
         ctx.send_proof_single(
             "hydentity".into(),
-            ProofData::Bytes(hydentity_proof),
+            ProofData(hydentity_proof),
             blob_tx_hash.clone(),
         )
         .await?;
@@ -514,7 +507,7 @@ mod e2e_amm {
         info!("➡️  Sending proof for new pair");
         ctx.send_proof_single(
             AMM_CONTRACT_NAME.into(),
-            ProofData::Bytes(bob_new_pair_proof),
+            ProofData(bob_new_pair_proof),
             blob_tx_hash.clone(),
         )
         .await?;
@@ -522,7 +515,7 @@ mod e2e_amm {
         info!("➡️  Sending proof for hyllar");
         ctx.send_proof_single(
             "hyllar".into(),
-            ProofData::Bytes(bob_transfer_hyllar_proof),
+            ProofData(bob_transfer_hyllar_proof),
             blob_tx_hash.clone(),
         )
         .await?;
@@ -530,7 +523,7 @@ mod e2e_amm {
         info!("➡️  Sending proof for hyllar2");
         ctx.send_proof_single(
             "hyllar2".into(),
-            ProofData::Bytes(bob_transfer_hyllar2_proof),
+            ProofData(bob_transfer_hyllar2_proof),
             blob_tx_hash,
         )
         .await?;
@@ -571,13 +564,13 @@ mod e2e_amm {
                         account: "bob.hydentity".to_string(),
                         nonce: 3,
                     }
-                    .as_blob(ContractName("hydentity".to_owned())),
+                    .as_blob(ContractName::new("hydentity")),
                     AmmAction::Swap {
                         pair: ("hyllar".to_string(), "hyllar2".to_string()),
                         amounts: (5, 10),
                     }
                     .as_blob(
-                        ContractName(AMM_CONTRACT_NAME.to_owned()),
+                        ContractName::new(AMM_CONTRACT_NAME),
                         None,
                         Some(vec![BlobIndex(2), BlobIndex(3)]),
                     ),
@@ -587,7 +580,7 @@ mod e2e_amm {
                         amount: 5,
                     }
                     .as_blob(
-                        ContractName("hyllar".to_owned()),
+                        ContractName::new("hyllar"),
                         Some(BlobIndex(1)),
                         None,
                     ),
@@ -596,7 +589,7 @@ mod e2e_amm {
                         amount: 10,
                     }
                     .as_blob(
-                        ContractName("hyllar2".to_owned()),
+                        ContractName::new("hyllar2"),
                         Some(BlobIndex(1)),
                         None,
                     ),
@@ -647,7 +640,7 @@ mod e2e_amm {
         info!("➡️  Sending recursive proof for hydentity, amm, hyllar and hyllar2");
         ctx.send_proof(
             "risc0-recursion".into(),
-            ProofData::Bytes(recursive_proof),
+            ProofData(recursive_proof),
             vec![
                 blob_tx_hash.clone(),
                 blob_tx_hash.clone(),

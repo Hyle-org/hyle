@@ -123,7 +123,7 @@ impl MockWorkflowHandler {
                         self.stress_test().await;
                     },
                     RunScenario::ApiTest { qps, injection_duration_seconds } => {
-                        self.api_test(qps, injection_duration_seconds).await;
+                        self.api_test(qps, injection_duration_seconds).await?;
                     }
                 }
             }
@@ -137,9 +137,9 @@ impl MockWorkflowHandler {
         let tx = RestApiMessage::NewTx(Transaction {
             version: 1,
             transaction_data: crate::model::TransactionData::Blob(BlobTransaction {
-                identity: Identity("toto".to_string()),
+                identity: Identity::new("toto"),
                 blobs: vec![Blob {
-                    contract_name: ContractName("test".to_string()),
+                    contract_name: ContractName::new("test"),
                     data: BlobData(vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9]),
                 }],
             }),
@@ -149,15 +149,15 @@ impl MockWorkflowHandler {
         }
     }
 
-    async fn api_test(&mut self, qps: u64, injection_duration_seconds: u64) {
+    async fn api_test(&mut self, qps: u64, injection_duration_seconds: u64) -> Result<()> {
         info!("Starting api test");
 
-        let api_client = NodeApiHttpClient::new("http://localhost:4321".to_string());
+        let api_client = NodeApiHttpClient::new("http://localhost:4321".to_string())?;
 
         let tx_blob = BlobTransaction {
-            identity: Identity("id".to_string()),
+            identity: Identity::new("id"),
             blobs: vec![Blob {
-                contract_name: ContractName("contract_name".to_string()),
+                contract_name: ContractName::new("contract_name"),
                 data: BlobData(vec![0, 1, 2]),
             }],
         };
@@ -169,7 +169,7 @@ impl MockWorkflowHandler {
             verifier: "verifier".into(),
             program_id: ProgramId(vec![]),
             state_digest: StateDigest(vec![]),
-            contract_name: ContractName("contract".to_string()),
+            contract_name: ContractName::new("contract"),
         };
 
         let millis_interval = 1000_u64.div_ceil(qps);
@@ -180,7 +180,7 @@ impl MockWorkflowHandler {
         loop {
             if get_current_timestamp() > injection_stop_date {
                 info!("Stopped injection");
-                break;
+                break Ok(());
             }
             i += 1;
             match (i % 3) + 1 {
@@ -193,7 +193,7 @@ impl MockWorkflowHandler {
                 2 => {
                     info!("Sending tx proof");
                     let mut new_tx_proof = tx_proof.clone();
-                    new_tx_proof.proof = ProofData::Bytes(vec![i]);
+                    new_tx_proof.proof = ProofData(vec![i]);
                     _ = api_client.send_tx_proof(&tx_proof).await;
                 }
                 3 => {

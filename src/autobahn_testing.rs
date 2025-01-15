@@ -1,4 +1,5 @@
 #![cfg(test)]
+#![allow(clippy::indexing_slicing)]
 
 //! This module is intended for "integration" testing of the consensus and other modules.
 
@@ -170,6 +171,7 @@ macro_rules! simple_commit_round {
 
 pub(crate) use broadcast;
 pub(crate) use build_tuple;
+use futures::future::join_all;
 pub(crate) use send;
 pub(crate) use simple_commit_round;
 
@@ -200,14 +202,12 @@ use crate::bus::dont_use_this::get_receiver;
 use crate::bus::metrics::BusMetrics;
 use crate::bus::{bus_client, SharedMessageBus};
 use crate::consensus::test::ConsensusTestCtx;
-use crate::consensus::ConsensusEvent;
-use crate::data_availability::DataEvent;
+use crate::consensus::{ConsensusEvent, ConsensusProposal};
 use crate::handle_messages;
 use crate::mempool::test::{make_register_contract_tx, MempoolTestCtx};
-use crate::mempool::{MempoolEvent, MempoolNetMessage, QueryNewCut};
-use crate::model::SignedBlock;
-use crate::model::{AggregateSignature, Cut, DataProposalHash};
-use crate::model::{ConsensusNetMessage, ConsensusProposal, ContractName, Hashable};
+use crate::mempool::{InternalMempoolEvent, MempoolEvent, MempoolNetMessage, QueryNewCut};
+use crate::model::*;
+use crate::node_state::module::NodeStateEvent;
 use crate::p2p::network::OutboundMessage;
 use crate::p2p::P2PCommand;
 use crate::utils::crypto::{self, BlstCrypto};
@@ -233,6 +233,8 @@ impl AutobahnTestCtx {
         let consensus_out_receiver = get_receiver::<OutboundMessage>(&shared_bus).await;
         let mempool_out_receiver = get_receiver::<OutboundMessage>(&shared_bus).await;
         let mempool_event_receiver = get_receiver::<MempoolEvent>(&shared_bus).await;
+        let mempool_internal_event_receiver =
+            get_receiver::<InternalMempoolEvent>(&shared_bus).await;
 
         let consensus = ConsensusTestCtx::build_consensus(&shared_bus, crypto.clone()).await;
         let mempool = MempoolTestCtx::build_mempool(&shared_bus, crypto).await;
@@ -250,6 +252,7 @@ impl AutobahnTestCtx {
                 name: name.to_string(),
                 out_receiver: mempool_out_receiver,
                 mempool_event_receiver,
+                mempool_internal_event_receiver,
                 mempool,
             },
         }
@@ -258,7 +261,7 @@ impl AutobahnTestCtx {
     pub fn generate_cryptos(nb: usize) -> Vec<BlstCrypto> {
         (0..nb)
             .map(|i| {
-                let crypto = crypto::BlstCrypto::new(format!("node-{i}"));
+                let crypto = crypto::BlstCrypto::new(format!("node-{i}")).unwrap();
                 info!("node {}: {}", i, crypto.validator_pubkey());
                 crypto
             })
@@ -316,8 +319,8 @@ fn create_poda(
 async fn autobahn_basic_flow() {
     let (mut node1, mut node2, mut node3, mut node4) = build_nodes!(4).await;
 
-    let register_tx = make_register_contract_tx(ContractName("test1".to_owned()));
-    let register_tx_2 = make_register_contract_tx(ContractName("test2".to_owned()));
+    let register_tx = make_register_contract_tx(ContractName::new("test1"));
+    let register_tx_2 = make_register_contract_tx(ContractName::new("test2"));
 
     node1.mempool_ctx.submit_tx(&register_tx);
     node1.mempool_ctx.submit_tx(&register_tx_2);
@@ -334,6 +337,17 @@ async fn autobahn_basic_flow() {
             assert_eq!(data.txs.len(), 2);
         }
     };
+
+    join_all(
+        [
+            &mut node2.mempool_ctx,
+            &mut node3.mempool_ctx,
+            &mut node4.mempool_ctx,
+        ]
+        .iter_mut()
+        .map(|ctx| ctx.handle_processed_data_proposals()),
+    )
+    .await;
 
     send! {
         description: "Disseminated Tx Vote",
@@ -435,7 +449,7 @@ async fn autobahn_rejoin_flow() {
         0,
     );
 
-    let crypto = crypto::BlstCrypto::new("node-3".to_owned());
+    let crypto = crypto::BlstCrypto::new("node-3".to_owned()).unwrap();
     let mut joining_node = AutobahnTestCtx::new("node-3", crypto).await;
     joining_node
         .consensus_ctx
@@ -468,17 +482,17 @@ async fn autobahn_rejoin_flow() {
         });
     }
 
-    let mut data_event_receiver = get_receiver::<DataEvent>(&joining_node.shared_bus).await;
+    let mut ns_event_receiver = get_receiver::<NodeStateEvent>(&joining_node.shared_bus).await;
 
     // Catchup up to the last block, but don't actually process the last block message yet.
     for block in blocks.get(0..blocks.len() - 1).unwrap() {
         da.handle_signed_block(block.clone()).await;
     }
-    while let Ok(event) = data_event_receiver.try_recv() {
+    while let Ok(event) = ns_event_receiver.try_recv() {
         info!("{:?}", event);
         joining_node
             .consensus_ctx
-            .handle_data_event(event)
+            .handle_node_state_event(event)
             .await
             .expect("should handle data event");
     }
@@ -500,11 +514,11 @@ async fn autobahn_rejoin_flow() {
 
     // Now process block 2
     da.handle_signed_block(blocks.get(2).unwrap().clone()).await;
-    while let Ok(event) = data_event_receiver.try_recv() {
+    while let Ok(event) = ns_event_receiver.try_recv() {
         info!("{:?}", event);
         joining_node
             .consensus_ctx
-            .handle_data_event(event)
+            .handle_node_state_event(event)
             .await
             .expect("should handle data event");
     }
@@ -536,11 +550,11 @@ async fn autobahn_rejoin_flow() {
         };
         da.handle_signed_block(block.clone()).await;
         blocks.push(block);
-        while let Ok(event) = data_event_receiver.try_recv() {
+        while let Ok(event) = ns_event_receiver.try_recv() {
             info!("{:?}", event);
             joining_node
                 .consensus_ctx
-                .handle_data_event(event)
+                .handle_node_state_event(event)
                 .await
                 .expect("should handle data event");
         }

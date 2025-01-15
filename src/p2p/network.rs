@@ -1,8 +1,9 @@
 use crate::bus::BusMessage;
 use crate::mempool::MempoolNetMessage;
 use crate::model::ValidatorPublicKey;
-use crate::model::{ConsensusNetMessage, SignedByValidator};
+use anyhow::Context;
 use bincode::{Decode, Encode};
+use hyle_model::{ConsensusNetMessage, SignedByValidator};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::fmt::{self, Display};
@@ -109,8 +110,8 @@ impl From<SignedByValidator<ConsensusNetMessage>> for NetMessage {
 }
 
 impl NetMessage {
-    pub fn to_binary(&self) -> Vec<u8> {
+    pub fn to_binary(&self) -> anyhow::Result<Vec<u8>> {
         bincode::encode_to_vec(self, bincode::config::standard())
-            .expect("Could not serialize NetMessage")
+            .context("Could not serialize NetMessage")
     }
 }

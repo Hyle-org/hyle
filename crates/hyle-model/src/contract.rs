@@ -189,43 +189,46 @@ pub struct HyleOutput {
     pub program_outputs: Vec<u8>,
 }
 
-impl From<String> for Identity {
-    fn from(s: String) -> Self {
-        Identity(s)
+impl Identity {
+    pub fn new<S: Into<Self>>(s: S) -> Self {
+        s.into()
     }
 }
-impl From<&str> for Identity {
-    fn from(s: &str) -> Self {
+impl<S: Into<String>> From<S> for Identity {
+    fn from(s: S) -> Self {
         Identity(s.into())
     }
 }
-impl From<String> for TxHash {
-    fn from(s: String) -> Self {
-        Self(s)
+
+impl TxHash {
+    pub fn new<S: Into<Self>>(s: S) -> Self {
+        s.into()
     }
 }
-impl From<&str> for TxHash {
-    fn from(s: &str) -> Self {
-        Self(s.into())
+impl<S: Into<String>> From<S> for TxHash {
+    fn from(s: S) -> Self {
+        TxHash(s.into())
     }
 }
-impl From<&str> for ContractName {
-    fn from(s: &str) -> Self {
+
+impl ContractName {
+    pub fn new<S: Into<Self>>(s: S) -> Self {
+        s.into()
+    }
+}
+impl<S: Into<String>> From<S> for ContractName {
+    fn from(s: S) -> Self {
         ContractName(s.into())
     }
 }
-impl From<String> for ContractName {
-    fn from(s: String) -> Self {
-        ContractName(s)
+
+impl Verifier {
+    pub fn new<S: Into<Self>>(s: S) -> Self {
+        s.into()
     }
 }
-impl From<String> for Verifier {
-    fn from(s: String) -> Self {
-        Verifier(s)
-    }
-}
-impl From<&str> for Verifier {
-    fn from(s: &str) -> Self {
+impl<S: Into<String>> From<S> for Verifier {
+    fn from(s: S) -> Self {
         Verifier(s.into())
     }
 }
@@ -245,11 +248,6 @@ impl From<&[u8]> for ProgramId {
     }
 }
 
-impl TxHash {
-    pub fn new(s: &str) -> TxHash {
-        TxHash(s.into())
-    }
-}
 impl Display for TxHash {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", &self.0)

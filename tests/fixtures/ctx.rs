@@ -1,4 +1,5 @@
 #![allow(unused)]
+#![allow(clippy::indexing_slicing)]
 
 use std::time::Duration;
 
@@ -186,8 +187,8 @@ impl E2ECtx {
 
         nodes.push(indexer);
         let url = format!("http://{}", &indexer_conf.rest);
-        clients.push(NodeApiHttpClient::new(url.clone()));
-        let indexer_client = Some(IndexerApiHttpClient::new(url));
+        clients.push(NodeApiHttpClient::new(url.clone()).unwrap());
+        let indexer_client = Some(IndexerApiHttpClient::new(url).unwrap());
 
         // Wait for node2 to properly spin up
         let client = clients.first().unwrap();
@@ -288,7 +289,9 @@ impl E2ECtx {
             success: true,
             program_outputs: vec![],
         };
-        ProofData::Bytes(serde_json::to_vec(&vec![hyle_output]).unwrap())
+        ProofData(
+            bincode::encode_to_vec(vec![hyle_output.clone()], bincode::config::standard()).unwrap(),
+        )
     }
 
     pub async fn send_proof_single(

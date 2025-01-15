@@ -3,7 +3,10 @@
 use anyhow::{Context, Result};
 pub use axum::Router;
 use axum::{
+    body::Body,
     extract::{DefaultBodyLimit, State},
+    http::Request,
+    middleware::Next,
     response::{IntoResponse, Response},
     routing::get,
     Json,
@@ -11,7 +14,7 @@ use axum::{
 use axum_otel_metrics::HttpMetricsLayer;
 use prometheus::{Encoder, TextEncoder};
 use reqwest::StatusCode;
-use tower_http::trace::TraceLayer;
+use tokio::time::Instant;
 use tracing::info;
 
 use crate::{bus::SharedMessageBus, module_handle_messages, utils::modules::module_bus_client};
@@ -52,23 +55,15 @@ impl Module for RestApi {
             .merge(
                 Router::new()
                     .route("/v1/info", get(get_info))
-                    .route(
-                        "/v1/metrics",
-                        get(|| async {
-                            let mut buffer = Vec::new();
-                            let encoder = TextEncoder::new();
-                            encoder.encode(&prometheus::gather(), &mut buffer).unwrap();
-                            // return metrics
-                            String::from_utf8(buffer).unwrap()
-                        }),
-                    )
+                    .route("/v1/metrics", get(get_metrics))
                     .with_state(RouterState { info: ctx.info }),
             )
             .layer(ctx.metrics_layer)
             .layer(DefaultBodyLimit::max(ctx.max_body_size)) // 10 MB
             .layer(tower_http::cors::CorsLayer::permissive())
-            // TODO: Tracelayer should be added only in "dev mode"
-            .layer(TraceLayer::new_for_http());
+            .layer(axum::middleware::from_fn(request_logger))
+            //.layer(TraceLayer::new_for_http())
+        ;
         Ok(RestApi {
             rest_addr: ctx.rest_addr.clone(),
             app: Some(app),
@@ -81,13 +76,47 @@ impl Module for RestApi {
     }
 }
 
+async fn request_logger(req: Request<Body>, next: Next) -> impl IntoResponse {
+    let method = req.method().clone();
+    let uri = req.uri().clone();
+    let start_time = Instant::now();
+
+    // Passer la requête au prochain middleware ou au gestionnaire
+    let response = next.run(req).await;
+
+    let status = response.status();
+    let elapsed_time = start_time.elapsed();
+
+    // Will log like:
+    // [GET] /v1/indexer/contract/amm - 200 OK (1484 μs)
+    info!(
+        "[{}] {} - {} ({} μs)",
+        method,
+        uri,
+        status,
+        elapsed_time.as_micros()
+    );
+
+    response
+}
+
 pub async fn get_info(State(state): State<RouterState>) -> Result<impl IntoResponse, AppError> {
     Ok(Json(state.info))
 }
 
+pub async fn get_metrics(State(_): State<RouterState>) -> Result<impl IntoResponse, AppError> {
+    let mut buffer = Vec::new();
+    let encoder = TextEncoder::new();
+    encoder.encode(&prometheus::gather(), &mut buffer)?;
+    String::from_utf8(buffer).map_err(Into::into)
+}
+
 impl RestApi {
     pub async fn serve(&mut self) -> Result<()> {
-        info!("rest listening on {}", self.rest_addr);
+        info!(
+            "📡  Starting RestApi module, listening on {}",
+            self.rest_addr
+        );
 
         module_handle_messages! {
             on_bus self.bus,
@@ -95,6 +124,7 @@ impl RestApi {
                 tokio::net::TcpListener::bind(&self.rest_addr)
                     .await
                     .context("Starting rest server")?,
+                #[allow(clippy::expect_used, reason="incorrect setup logic")]
                 self.app.take().expect("app is not set")
             ) => { }
         }

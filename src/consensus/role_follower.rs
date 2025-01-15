@@ -125,7 +125,7 @@ impl FollowerRole for Consensus {
 
         // Responds PrepareVote message to leader with validator's vote on this proposal
         if self.is_part_of_consensus(self.crypto.validator_pubkey()) {
-            info!(
+            debug!(
                 proposal_hash = %consensus_proposal.hash(),
                 "📤 Slot {} Prepare message validated. Sending PrepareVote to leader",
                 self.bft_round_state.consensus_proposal.slot
@@ -166,7 +166,7 @@ impl FollowerRole for Consensus {
 
         // Responds ConfirmAck to leader
         if self.is_part_of_consensus(self.crypto.validator_pubkey()) {
-            info!(
+            debug!(
                 proposal_hash = %consensus_proposal_hash,
                 "📤 Slot {} Confirm message validated. Sending ConfirmAck to leader",
                 self.bft_round_state.consensus_proposal.slot
@@ -296,7 +296,7 @@ impl FollowerRole for Consensus {
             );
         }
 
-        info!(
+        trace!(
             "Consensus Proposal Timestamp verification ok {} -> {} ({} ms between the two rounds)",
             previous_timestamp,
             timestamp,

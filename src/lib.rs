@@ -27,11 +27,15 @@ pub mod indexer;
 #[cfg(feature = "node")]
 pub mod mempool;
 #[cfg(feature = "node")]
+pub mod node_state;
+#[cfg(feature = "node")]
 pub mod p2p;
 #[cfg(feature = "node")]
 pub mod rest;
 #[cfg(feature = "node")]
 pub mod single_node_consensus;
+#[cfg(feature = "node")]
+pub mod tcp_server;
 #[cfg(feature = "node")]
 pub mod utils;
 

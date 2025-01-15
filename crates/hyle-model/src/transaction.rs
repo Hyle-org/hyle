@@ -1,5 +1,4 @@
 use anyhow::Context;
-use base64::prelude::*;
 use bincode::{Decode, Encode};
 use derive_more::derive::Display;
 use serde::{Deserialize, Serialize};
@@ -52,8 +51,7 @@ impl std::fmt::Debug for VerifiedProofTransaction {
             .field(
                 "proof_len",
                 &match &self.proof {
-                    Some(ProofData::Base64(v)) => v.len(),
-                    Some(ProofData::Bytes(v)) => v.len(),
+                    Some(v) => v.0.len(),
                     None => 0,
                 },
             )
@@ -67,10 +65,7 @@ impl std::fmt::Debug for ProofTransaction {
         f.debug_struct("ProofTransaction")
             .field("contract_name", &self.contract_name)
             .field("proof", &"[HIDDEN]")
-            .field(
-                "proof_len",
-                &self.proof.to_bytes().unwrap_or_default().len(),
-            )
+            .field("proof_len", &self.proof.0.len())
             .finish()
     }
 }
@@ -90,6 +85,12 @@ impl Transaction {
             version: 1,
             transaction_data: data,
         }
+    }
+}
+
+impl From<TransactionData> for Transaction {
+    fn from(data: TransactionData) -> Self {
+        Transaction::wrap(data)
     }
 }
 
@@ -163,36 +164,16 @@ impl Hashable<TxHash> for RegisterContractTransaction {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone, Encode, Decode)]
-#[serde(untagged)]
-pub enum ProofData {
-    Base64(String),
-    Bytes(Vec<u8>),
-}
+#[derive(Debug, Default, Serialize, Deserialize, PartialEq, Eq, Clone, Encode, Decode)]
+pub struct ProofData(#[serde(with = "base64_field")] pub Vec<u8>);
+
 #[derive(Debug, Default, Serialize, Deserialize, Clone, PartialEq, Eq, Encode, Decode)]
 pub struct ProofDataHash(pub String);
 
-impl Default for ProofData {
-    fn default() -> Self {
-        ProofData::Bytes(Vec::new())
-    }
-}
-
-impl ProofData {
-    pub fn to_bytes(&self) -> Result<Vec<u8>, base64::DecodeError> {
-        match self {
-            ProofData::Base64(s) => BASE64_STANDARD.decode(s),
-            ProofData::Bytes(b) => Ok(b.clone()),
-        }
-    }
-}
 impl Hashable<ProofDataHash> for ProofData {
     fn hash(&self) -> ProofDataHash {
         let mut hasher = Sha3_256::new();
-        match self.clone() {
-            ProofData::Base64(v) => hasher.update(v),
-            ProofData::Bytes(vec) => hasher.update(vec),
-        }
+        hasher.update(self.0.as_slice());
         let hash_bytes = hasher.finalize();
         ProofDataHash(hex::encode(hash_bytes))
     }
@@ -262,5 +243,26 @@ impl BlobsHash {
         hasher.update(vec.as_slice());
         let hash_bytes = hasher.finalize();
         BlobsHash(hex::encode(hash_bytes))
+    }
+}
+
+pub mod base64_field {
+    use base64::prelude::*;
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    pub fn serialize<S>(bytes: &Vec<u8>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let encoded = BASE64_STANDARD.encode(bytes);
+        serializer.serialize_str(&encoded)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Vec<u8>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        BASE64_STANDARD.decode(&s).map_err(serde::de::Error::custom)
     }
 }

@@ -1,3 +1,4 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
 use anyhow::Result;
 use fixtures::ctx::E2ECtx;
 
@@ -77,7 +78,7 @@ mod e2e_consensus {
             states
                 .hydentity
                 .default_builder(&mut transaction)
-                .register_identity("password".to_string())?;
+                .register_identity("password".to_owned())?;
 
             send_transaction(ctx.client(), transaction, &mut states).await;
         }
@@ -197,7 +198,7 @@ mod e2e_consensus {
             states
                 .hydentity
                 .default_builder(&mut transaction)
-                .register_identity("password".to_string())?;
+                .register_identity("password".to_owned())?;
 
             send_transaction(ctx.client(), transaction, &mut states).await;
         }

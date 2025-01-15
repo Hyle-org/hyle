@@ -43,6 +43,12 @@ required-features = ["node"]
 name = "indexer"
 required-features = ["node"]
 
+[lints.clippy]
+unwrap_used = "warn"
+expect_used = "warn"
+unused_result_ok = "warn"
+indexing_slicing = "warn"
+
 [dependencies]
 # Public dependencies
 hyle-contract-sdk = { path = "./crates/contract-sdk", default-features = false }
@@ -68,14 +74,16 @@ tracing = "0.1"
 hydentity = { path = "./crates/contracts/hydentity", features = [
     "client",
 ], optional = true }
-hyllar = { path = "./crates/contracts/hyllar", features = ["client"], optional = true }
+hyllar = { path = "./crates/contracts/hyllar", features = [
+    "client",
+], optional = true }
 risc0-recursion = { path = "./crates/contracts/risc0-recursion", optional = true }
 
 anymap = { version = "0.12.1", optional = true }
 assertables = { version = "9.5.0", optional = true }
 axum = { version = "0.8.1", features = ["ws", "macros"], optional = true }
 axum-otel-metrics = { version = "0.9.1", optional = true }
-axum-test = { version = "17.0.1", optional = true }
+axum-test = { version = "17.1.0", optional = true }
 bonsai-runner = { path = "./crates/bonsai-runner", optional = true }
 borsh = { version = "1.5.3", optional = true }
 bytes = { version = "1.9.0", optional = true }
@@ -96,7 +104,7 @@ risc0-zkvm = { version = "1.2.0", default-features = false, features = [
     "std",
 ], optional = true }
 ron = { version = "0.8.1", optional = true }
-sp1-sdk = { version = "4.0.0-rc.8", default-features = false, optional = true }
+sp1-sdk = { version = "4.0.0", default-features = false, optional = true }
 sqlx = { version = "0.8.3", features = [
     "runtime-tokio",
     "postgres",

@@ -7,7 +7,6 @@ use std::{collections::HashMap, fmt::Display, sync::Arc, vec};
 use tracing::{debug, error, warn};
 
 use crate::{
-    data_availability::node_state::verifiers::{verify_proof, verify_recursive_proof},
     model::{
         BlobProofOutput, Cut, DataProposal, DataProposalHash, Hashable, PoDA, SignedByValidator,
         Transaction, TransactionData, ValidatorPublicKey,
@@ -15,13 +14,15 @@ use crate::{
     utils::crypto::BlstCrypto,
 };
 
+use super::verifiers::{verify_proof, verify_recursive_proof};
 use super::{KnownContracts, MempoolNetMessage};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DataProposalVerdict {
     Empty,
     Wait(Option<DataProposalHash>),
     Vote,
+    Process,
     Refuse,
 }
 
@@ -33,8 +34,7 @@ pub struct LaneEntry {
 
 #[derive(Debug, Default, Clone, Encode, Decode)]
 pub struct Lane {
-    pub last_cutted_dp: Option<DataProposalHash>,
-    pub last_cutted_poda: Option<PoDA>,
+    pub last_cut: Option<(PoDA, DataProposalHash)>,
     #[bincode(with_serde)]
     pub data_proposals: IndexMap<DataProposalHash, LaneEntry>,
     pub waiting: Vec<DataProposal>,
@@ -85,8 +85,9 @@ impl Storage {
             ) in lane.iter_reverse()
             {
                 // Only cut on DataProposal that have not been cutted yet
-                if lane.last_cutted_dp == Some(data_proposal_hash.clone()) {
-                    let poda = lane.last_cutted_poda.clone().unwrap();
+                if lane.last_cut.as_ref().map(|lc| &lc.1) == Some(data_proposal_hash) {
+                    #[allow(clippy::unwrap_used, reason = "we know the value is Some")]
+                    let poda = lane.last_cut.as_ref().map(|lc| lc.0.clone()).unwrap();
                     cut.push((validator.clone(), data_proposal_hash.clone(), poda));
                     break;
                 }
@@ -191,10 +192,8 @@ impl Storage {
 
     pub fn on_data_proposal(
         &mut self,
-        crypto: &BlstCrypto,
         validator: &ValidatorPublicKey,
-        mut data_proposal: DataProposal,
-        known_contracts: Arc<std::sync::RwLock<KnownContracts>>,
+        data_proposal: &DataProposal,
     ) -> DataProposalVerdict {
         // Check that data_proposal is not empty
         if data_proposal.txs.is_empty() {
@@ -232,6 +231,13 @@ impl Storage {
             // Get the last known parent hash in order to get all the next ones
             return DataProposalVerdict::Wait(last_known_parent_hash.cloned());
         }
+        DataProposalVerdict::Process
+    }
+
+    pub fn process_data_proposal(
+        data_proposal: &mut DataProposal,
+        known_contracts: Arc<std::sync::RwLock<KnownContracts>>,
+    ) -> DataProposalVerdict {
         for tx in &data_proposal.txs {
             match &tx.transaction_data {
                 TransactionData::Blob(blob_tx) => {
@@ -259,6 +265,7 @@ impl Storage {
                     };
                     // TODO: we could early-reject proofs where the blob
                     // is not for the correct transaction.
+                    #[allow(clippy::expect_used, reason = "not held across await")]
                     let (verifier, program_id) = match known_contracts
                         .read()
                         .expect("logic error")
@@ -270,7 +277,11 @@ impl Storage {
                         None => {
                             // Check if it's in the same data proposal.
                             // (kind of inefficient, but it's mostly to make our tests work)
-                            // TODO: make this better.
+                            // TODO: improve on this logic, possibly look into other data proposals / lanes.
+                            #[allow(
+                                clippy::unwrap_used,
+                                reason = "we know position will return a valid range"
+                            )]
                             let data = data_proposal
                                 .txs
                                 .get(
@@ -291,25 +302,6 @@ impl Storage {
                                         }
                                     }
                                     _ => None,
-                                })
-                                .or_else(|| {
-                                    // Lane exists - we know its parent
-                                    self.lanes.get(validator).unwrap().iter_reverse().find_map(
-                                        |(_, entry)| {
-                                            entry.data_proposal.txs.iter().find_map(|tx| match &tx
-                                                .transaction_data
-                                            {
-                                                TransactionData::RegisterContract(tx) => {
-                                                    if tx.contract_name == proof_tx.contract_name {
-                                                        Some((&tx.verifier, &tx.program_id))
-                                                    } else {
-                                                        None
-                                                    }
-                                                }
-                                                _ => None,
-                                            })
-                                        },
-                                    )
                                 });
                             match data {
                                 Some((v, p)) => (v.clone(), p.clone()),
@@ -320,18 +312,11 @@ impl Storage {
                             }
                         }
                     };
-                    let proof_bytes = match proof.to_bytes() {
-                        Ok(bytes) => bytes,
-                        Err(_) => {
-                            warn!("Refusing DataProposal: failed to convert proof to bytes");
-                            return DataProposalVerdict::Refuse;
-                        }
-                    };
                     // TODO: figure out how to generalize this
                     let is_recursive = proof_tx.contract_name.0 == "risc0-recursion";
 
                     if is_recursive {
-                        match verify_recursive_proof(&proof_bytes, &verifier, &program_id) {
+                        match verify_recursive_proof(proof, &verifier, &program_id) {
                             Ok((local_program_ids, local_hyle_outputs)) => {
                                 let data_matches = local_program_ids
                                     .iter()
@@ -363,7 +348,7 @@ impl Storage {
                             }
                         }
                     } else {
-                        match verify_proof(&proof_bytes, &verifier, &program_id) {
+                        match verify_proof(proof, &verifier, &program_id) {
                             Ok(outputs) => {
                                 // TODO: we could check the blob hash here too.
                                 if outputs.len() != proof_tx.proven_blobs.len()
@@ -388,15 +373,22 @@ impl Storage {
         }
 
         // Remove proofs from transactions
-        remove_proofs(&mut data_proposal);
+        remove_proofs(data_proposal);
 
+        DataProposalVerdict::Vote
+    }
+
+    pub fn store_data_proposal(
+        &mut self,
+        crypto: &BlstCrypto,
+        validator: &ValidatorPublicKey,
+        data_proposal: DataProposal,
+    ) {
         // Add DataProposal to validator's lane
         self.lanes
             .entry(validator.clone())
             .or_default()
             .add_new_proposal(crypto, data_proposal);
-
-        DataProposalVerdict::Vote
     }
 
     pub fn lane_has_data_proposal(
@@ -507,7 +499,7 @@ impl Storage {
             // FIXME: If data_proposal_hash is unknown, we should request the missing DataProposals
             if let Some(lane) = self.lanes.get_mut(validator) {
                 if let Ok(Some(lane_entries)) = lane.get_lane_entries_between_hashes(
-                    lane.last_cutted_dp.as_ref(),
+                    lane.last_cut.as_ref().map(|lc| &lc.1),
                     data_proposal_hash,
                 ) {
                     for lane_entry in lane_entries {
@@ -516,8 +508,7 @@ impl Storage {
                 }
 
                 // Update last cut index and poda for all concerned lanes
-                lane.last_cutted_dp = Some(data_proposal_hash.clone());
-                lane.last_cutted_poda = Some(poda.clone());
+                lane.last_cut = Some((poda.clone(), data_proposal_hash.clone()));
             }
         }
         txs
@@ -541,8 +532,7 @@ impl Storage {
     pub fn update_lanes_with_commited_cut(&mut self, committed_cut: &Cut) {
         for (validator, data_proposal_hash, poda) in committed_cut.iter() {
             if let Some(lane) = self.lanes.get_mut(validator) {
-                lane.last_cutted_dp = Some(data_proposal_hash.clone());
-                lane.last_cutted_poda = Some(poda.clone());
+                lane.last_cut = Some((poda.clone(), data_proposal_hash.clone()));
             }
         }
     }
@@ -722,6 +712,7 @@ impl Lane {
         let wp = self.waiting.drain(0..).collect::<Vec<DataProposal>>();
         if wp.len() > 1 {
             for i in 0..wp.len() - 1 {
+                #[allow(clippy::indexing_slicing, reason = "checked by range")]
                 if Some(&wp[i].hash()) != wp[i + 1].parent_data_proposal_hash.as_ref() {
                     bail!("unsorted DataProposal");
                 }
@@ -733,6 +724,7 @@ impl Lane {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::indexing_slicing)]
     use std::sync::{Arc, RwLock};
 
     use crate::{
@@ -745,7 +737,7 @@ mod tests {
             ProofTransaction, RegisterContractTransaction, Transaction, TransactionData,
             ValidatorPublicKey, VerifiedProofTransaction,
         },
-        utils::crypto,
+        utils::crypto::{self, BlstCrypto},
     };
     use hyle_contract_sdk::{BlobIndex, HyleOutput, Identity, ProgramId, StateDigest, TxHash};
     use staking::state::Staking;
@@ -757,8 +749,8 @@ mod tests {
             version: 1,
             initial_state: StateDigest(vec![0, 1, 2, 3]),
             next_state: StateDigest(vec![4, 5, 6]),
-            identity: Identity("test".to_string()),
-            tx_hash: TxHash("".to_owned()),
+            identity: Identity::new("test"),
+            tx_hash: TxHash::new(""),
             index: BlobIndex(0),
             blobs: vec![],
             success: true,
@@ -770,7 +762,10 @@ mod tests {
         let hyle_output = get_hyle_output();
         ProofTransaction {
             contract_name: contract_name.clone(),
-            proof: ProofData::Bytes(serde_json::to_vec(&vec![hyle_output]).unwrap()),
+            proof: ProofData(
+                bincode::encode_to_vec(vec![hyle_output.clone()], bincode::config::standard())
+                    .unwrap(),
+            ),
         }
     }
 
@@ -783,7 +778,9 @@ mod tests {
 
     fn make_verified_proof_tx(contract_name: ContractName) -> Transaction {
         let hyle_output = get_hyle_output();
-        let proof = ProofData::Bytes(serde_json::to_vec(&vec![&hyle_output]).unwrap());
+        let proof = ProofData(
+            bincode::encode_to_vec(vec![hyle_output.clone()], bincode::config::standard()).unwrap(),
+        );
         Transaction {
             version: 1,
             transaction_data: TransactionData::VerifiedProof(VerifiedProofTransaction {
@@ -803,7 +800,9 @@ mod tests {
 
     fn make_empty_verified_proof_tx(contract_name: ContractName) -> Transaction {
         let hyle_output = get_hyle_output();
-        let proof = ProofData::Bytes(serde_json::to_vec(&vec![&hyle_output]).unwrap());
+        let proof = ProofData(
+            bincode::encode_to_vec(vec![hyle_output.clone()], bincode::config::standard()).unwrap(),
+        );
         Transaction {
             version: 1,
             transaction_data: TransactionData::VerifiedProof(VerifiedProofTransaction {
@@ -825,9 +824,9 @@ mod tests {
         Transaction {
             version: 1,
             transaction_data: TransactionData::Blob(BlobTransaction {
-                identity: Identity("id.c1".to_string()),
+                identity: Identity::new("id.c1"),
                 blobs: vec![Blob {
-                    contract_name: ContractName("c1".to_string()),
+                    contract_name: ContractName::new("c1"),
                     data: BlobData(inner_tx.as_bytes().to_vec()),
                 }],
             }),
@@ -847,9 +846,31 @@ mod tests {
         }
     }
 
+    fn handle_data_proposal(
+        store: &mut Storage,
+        crypto: &BlstCrypto,
+        pubkey: &ValidatorPublicKey,
+        mut data_proposal: DataProposal,
+        known_contracts: Arc<RwLock<KnownContracts>>,
+    ) -> DataProposalVerdict {
+        let verdict = match store.on_data_proposal(pubkey, &data_proposal) {
+            DataProposalVerdict::Process => {
+                Storage::process_data_proposal(&mut data_proposal, known_contracts)
+            }
+            verdict => verdict,
+        };
+        match verdict {
+            DataProposalVerdict::Vote => {
+                store.store_data_proposal(crypto, pubkey, data_proposal);
+                verdict
+            }
+            verdict => verdict,
+        }
+    }
+
     #[test_log::test]
     fn test_data_proposal_hash_with_verified_proof() {
-        let contract_name = ContractName("test".to_string());
+        let contract_name = ContractName::new("test");
 
         let proof_tx_with_proof = make_verified_proof_tx(contract_name.clone());
         let proof_tx_without_proof = make_empty_verified_proof_tx(contract_name.clone());
@@ -874,7 +895,7 @@ mod tests {
 
     #[test_log::test]
     fn test_add_missing_lane_entries() {
-        let crypto1 = crypto::BlstCrypto::new("1".to_owned());
+        let crypto1 = crypto::BlstCrypto::new("1".to_owned()).unwrap();
         let pubkey1 = crypto1.validator_pubkey();
         let mut store = Storage::new(pubkey1.clone());
 
@@ -941,7 +962,7 @@ mod tests {
 
     #[test_log::test]
     fn test_get_waiting_data_proposals() {
-        let crypto1 = crypto::BlstCrypto::new("1".to_owned());
+        let crypto1 = crypto::BlstCrypto::new("1".to_owned()).unwrap();
         let pubkey1 = crypto1.validator_pubkey();
         let mut store = Storage::new(pubkey1.clone());
 
@@ -981,7 +1002,7 @@ mod tests {
 
     #[test_log::test]
     fn test_get_lane_entries_between_hashes() {
-        let crypto1 = crypto::BlstCrypto::new("1".to_owned());
+        let crypto1 = crypto::BlstCrypto::new("1".to_owned()).unwrap();
         let pubkey1 = crypto1.validator_pubkey();
         let mut store = Storage::new(pubkey1.clone());
 
@@ -1084,8 +1105,8 @@ mod tests {
 
     #[test_log::test]
     fn test_on_poa_update() {
-        let crypto1 = crypto::BlstCrypto::new("1".to_owned());
-        let crypto2 = crypto::BlstCrypto::new("2".to_owned());
+        let crypto1 = crypto::BlstCrypto::new("1".to_owned()).unwrap();
+        let crypto2 = crypto::BlstCrypto::new("2".to_owned()).unwrap();
         let pubkey1 = crypto1.validator_pubkey();
         let pubkey2 = crypto2.validator_pubkey();
         let mut store1 = Storage::new(pubkey1.clone());
@@ -1130,8 +1151,8 @@ mod tests {
 
     #[test_log::test]
     fn test_workflow() {
-        let crypto1 = crypto::BlstCrypto::new("1".to_owned());
-        let crypto2 = crypto::BlstCrypto::new("2".to_owned());
+        let crypto1 = crypto::BlstCrypto::new("1".to_owned()).unwrap();
+        let crypto2 = crypto::BlstCrypto::new("2".to_owned()).unwrap();
         let pubkey1 = crypto1.validator_pubkey();
         let pubkey2 = crypto2.validator_pubkey();
         let mut store1 = Storage::new(pubkey1.clone());
@@ -1151,7 +1172,13 @@ mod tests {
         let data_proposal1_hash = data_proposal1.hash();
 
         assert_eq!(
-            store2.on_data_proposal(&crypto2, pubkey1, data_proposal1, known_contracts.clone()),
+            handle_data_proposal(
+                &mut store2,
+                &crypto2,
+                pubkey1,
+                data_proposal1,
+                known_contracts.clone()
+            ),
             DataProposalVerdict::Vote
         );
 
@@ -1176,7 +1203,13 @@ mod tests {
         let data_proposal2_hash = data_proposal2.hash();
 
         assert_eq!(
-            store2.on_data_proposal(&crypto2, pubkey1, data_proposal2, known_contracts.clone()),
+            handle_data_proposal(
+                &mut store2,
+                &crypto2,
+                pubkey1,
+                data_proposal2,
+                known_contracts.clone()
+            ),
             DataProposalVerdict::Vote
         );
         let msg2 = crypto2
@@ -1200,7 +1233,13 @@ mod tests {
         let data_proposal3_hash = data_proposal3.hash();
 
         assert_eq!(
-            store2.on_data_proposal(&crypto2, pubkey1, data_proposal3, known_contracts.clone()),
+            handle_data_proposal(
+                &mut store2,
+                &crypto2,
+                pubkey1,
+                data_proposal3,
+                known_contracts.clone()
+            ),
             DataProposalVerdict::Vote
         );
         let msg3 = crypto2
@@ -1224,7 +1263,13 @@ mod tests {
         let data_proposal4_hash = data_proposal4.hash();
 
         assert_eq!(
-            store2.on_data_proposal(&crypto2, pubkey1, data_proposal4, known_contracts.clone()),
+            handle_data_proposal(
+                &mut store2,
+                &crypto2,
+                pubkey1,
+                data_proposal4,
+                known_contracts.clone()
+            ),
             DataProposalVerdict::Vote
         );
         let msg4 = crypto2
@@ -1288,9 +1333,9 @@ mod tests {
 
     #[test_log::test]
     fn test_vote() {
-        let crypto1 = crypto::BlstCrypto::new("1".to_owned());
-        let crypto2 = crypto::BlstCrypto::new("2".to_owned());
-        let crypto3 = crypto::BlstCrypto::new("3".to_owned());
+        let crypto1 = crypto::BlstCrypto::new("1".to_owned()).unwrap();
+        let crypto2 = crypto::BlstCrypto::new("2".to_owned()).unwrap();
+        let crypto3 = crypto::BlstCrypto::new("3".to_owned()).unwrap();
         let pubkey1 = crypto1.validator_pubkey();
         let pubkey2 = crypto2.validator_pubkey();
         let pubkey3 = crypto3.validator_pubkey();
@@ -1315,12 +1360,24 @@ mod tests {
         assert_eq!(store3.lanes.get(pubkey3).unwrap().data_proposals.len(), 1);
 
         assert_eq!(
-            store2.on_data_proposal(&crypto2, pubkey3, data_proposal, known_contracts2.clone()),
+            handle_data_proposal(
+                &mut store2,
+                &crypto2,
+                pubkey3,
+                data_proposal,
+                known_contracts2.clone()
+            ),
             DataProposalVerdict::Vote
         );
         // Assert we can vote multiple times
         assert_eq!(
-            store2.on_data_proposal(&crypto2, pubkey3, data_proposal_bis, known_contracts2),
+            handle_data_proposal(
+                &mut store2,
+                &crypto2,
+                pubkey3,
+                data_proposal_bis,
+                known_contracts2
+            ),
             DataProposalVerdict::Vote
         );
 
@@ -1371,15 +1428,15 @@ mod tests {
 
     #[test_log::test]
     fn test_update_lane_with_unverified_proof_transaction() {
-        let crypto1 = crypto::BlstCrypto::new("1".to_owned());
-        let crypto2 = crypto::BlstCrypto::new("2".to_owned());
+        let crypto1 = crypto::BlstCrypto::new("1".to_owned()).unwrap();
+        let crypto2 = crypto::BlstCrypto::new("2".to_owned()).unwrap();
         let pubkey1 = crypto1.validator_pubkey();
         let pubkey2 = crypto2.validator_pubkey();
 
         let mut store1 = Storage::new(pubkey1.clone());
         let known_contracts = Arc::new(RwLock::new(KnownContracts::default()));
 
-        let contract_name = ContractName("test".to_string());
+        let contract_name = ContractName::new("test");
         let register_tx = make_register_contract_tx(contract_name.clone());
 
         let proof_tx = make_unverified_proof_tx(contract_name.clone());
@@ -1391,7 +1448,13 @@ mod tests {
         };
         let data_proposal_hash = data_proposal.hash();
 
-        let verdict = store1.on_data_proposal(&crypto1, pubkey2, data_proposal, known_contracts);
+        let verdict = handle_data_proposal(
+            &mut store1,
+            &crypto1,
+            pubkey2,
+            data_proposal,
+            known_contracts,
+        );
         assert_eq!(verdict, DataProposalVerdict::Refuse);
 
         // Ensure the lane was not updated with the unverified proof transaction
@@ -1400,13 +1463,13 @@ mod tests {
 
     #[test_log::test]
     fn test_update_lane_with_verified_proof_transaction() {
-        let crypto1 = crypto::BlstCrypto::new("1".to_owned());
+        let crypto1 = crypto::BlstCrypto::new("1".to_owned()).unwrap();
         let pubkey1 = crypto1.validator_pubkey();
 
         let mut store1 = Storage::new(pubkey1.clone());
         let known_contracts = Arc::new(RwLock::new(KnownContracts::default()));
 
-        let contract_name = ContractName("test".to_string());
+        let contract_name = ContractName::new("test");
         let register_tx = make_register_contract_tx(contract_name.clone());
 
         let proof_tx = make_verified_proof_tx(contract_name);
@@ -1417,8 +1480,13 @@ mod tests {
             txs: vec![proof_tx.clone()],
         };
 
-        let verdict =
-            store1.on_data_proposal(&crypto1, pubkey1, data_proposal, known_contracts.clone());
+        let verdict = handle_data_proposal(
+            &mut store1,
+            &crypto1,
+            pubkey1,
+            data_proposal,
+            known_contracts.clone(),
+        );
         assert_eq!(verdict, DataProposalVerdict::Refuse); // refused because contract not found
 
         let data_proposal = DataProposal {
@@ -1427,19 +1495,27 @@ mod tests {
             txs: vec![register_tx, proof_tx],
         };
 
-        let verdict = store1.on_data_proposal(&crypto1, pubkey1, data_proposal, known_contracts);
+        let verdict = handle_data_proposal(
+            &mut store1,
+            &crypto1,
+            pubkey1,
+            data_proposal,
+            known_contracts,
+        );
         assert_eq!(verdict, DataProposalVerdict::Vote);
     }
 
     #[test_log::test]
+    // This test currently panics as we no longer optimistically register contracts
+    #[should_panic]
     fn test_new_data_proposal_with_register_tx_in_previous_uncommitted_car() {
-        let crypto1 = crypto::BlstCrypto::new("1".to_owned());
+        let crypto1 = crypto::BlstCrypto::new("1".to_owned()).unwrap();
         let pubkey1 = crypto1.validator_pubkey();
 
         let mut store1 = Storage::new(pubkey1.clone());
         let known_contracts = Arc::new(RwLock::new(KnownContracts::default()));
 
-        let contract_name = ContractName("test".to_string());
+        let contract_name = ContractName::new("test");
         let register_tx = make_register_contract_tx(contract_name.clone());
 
         let proof_tx = make_verified_proof_tx(contract_name.clone());
@@ -1459,7 +1535,13 @@ mod tests {
             txs: vec![proof_tx],
         };
 
-        let verdict = store1.on_data_proposal(&crypto1, pubkey1, data_proposal, known_contracts);
+        let verdict = handle_data_proposal(
+            &mut store1,
+            &crypto1,
+            pubkey1,
+            data_proposal,
+            known_contracts,
+        );
         assert_eq!(verdict, DataProposalVerdict::Vote);
 
         // Ensure the lane was updated with the DataProposal
@@ -1474,13 +1556,13 @@ mod tests {
 
     #[test_log::test]
     fn test_register_contract_and_proof_tx_in_same_car() {
-        let crypto1 = crypto::BlstCrypto::new("1".to_owned());
+        let crypto1 = crypto::BlstCrypto::new("1".to_owned()).unwrap();
         let pubkey1 = crypto1.validator_pubkey();
 
         let mut store1 = Storage::new(pubkey1.clone());
         let known_contracts = Arc::new(RwLock::new(KnownContracts::default()));
 
-        let contract_name = ContractName("test".to_string());
+        let contract_name = ContractName::new("test");
         let register_tx = make_register_contract_tx(contract_name.clone());
         let proof_tx = make_verified_proof_tx(contract_name.clone());
 
@@ -1490,7 +1572,13 @@ mod tests {
             txs: vec![register_tx.clone(), proof_tx],
         };
 
-        let verdict = store1.on_data_proposal(&crypto1, pubkey1, data_proposal, known_contracts);
+        let verdict = handle_data_proposal(
+            &mut store1,
+            &crypto1,
+            pubkey1,
+            data_proposal,
+            known_contracts,
+        );
         assert_eq!(verdict, DataProposalVerdict::Vote);
 
         // Ensure the lane was updated with the DataProposal
@@ -1505,15 +1593,15 @@ mod tests {
 
     #[test_log::test]
     fn test_register_contract_and_proof_tx_in_same_car_wrong_order() {
-        let crypto1 = crypto::BlstCrypto::new("1".to_owned());
-        let crypto2 = crypto::BlstCrypto::new("2".to_owned());
+        let crypto1 = crypto::BlstCrypto::new("1".to_owned()).unwrap();
+        let crypto2 = crypto::BlstCrypto::new("2".to_owned()).unwrap();
         let pubkey1 = crypto1.validator_pubkey();
         let pubkey2 = crypto2.validator_pubkey();
 
         let mut store1 = Storage::new(pubkey2.clone());
         let known_contracts = Arc::new(RwLock::new(KnownContracts::default()));
 
-        let contract_name = ContractName("test".to_string());
+        let contract_name = ContractName::new("test");
         let register_tx = make_register_contract_tx(contract_name.clone());
         let proof_tx = make_verified_proof_tx(contract_name);
 
@@ -1524,7 +1612,13 @@ mod tests {
         };
         let data_proposal_hash = data_proposal.hash();
 
-        let verdict = store1.on_data_proposal(&crypto1, pubkey1, data_proposal, known_contracts);
+        let verdict = handle_data_proposal(
+            &mut store1,
+            &crypto1,
+            pubkey1,
+            data_proposal,
+            known_contracts,
+        );
         assert_eq!(verdict, DataProposalVerdict::Refuse);
 
         // Ensure the lane was not updated with the DataProposal
@@ -1533,8 +1627,8 @@ mod tests {
 
     #[test_log::test]
     fn test_new_cut() {
-        let crypto1 = crypto::BlstCrypto::new("1".to_owned());
-        let crypto2 = crypto::BlstCrypto::new("2".to_owned());
+        let crypto1 = crypto::BlstCrypto::new("1".to_owned()).unwrap();
+        let crypto2 = crypto::BlstCrypto::new("2".to_owned()).unwrap();
         let pubkey1 = crypto1.validator_pubkey();
         let pubkey2 = crypto2.validator_pubkey();
 
@@ -1568,7 +1662,13 @@ mod tests {
             .clone();
 
         assert_eq!(
-            store2.on_data_proposal(&crypto2, pubkey1, data_proposal, known_contracts2.clone()),
+            handle_data_proposal(
+                &mut store2,
+                &crypto2,
+                pubkey1,
+                data_proposal,
+                known_contracts2.clone()
+            ),
             DataProposalVerdict::Vote
         );
 
@@ -1582,7 +1682,13 @@ mod tests {
             .clone();
 
         assert_eq!(
-            store1.on_data_proposal(&crypto1, pubkey2, data_proposal, known_contracts1),
+            handle_data_proposal(
+                &mut store1,
+                &crypto1,
+                pubkey2,
+                data_proposal,
+                known_contracts1
+            ),
             DataProposalVerdict::Vote
         );
 
@@ -1604,7 +1710,13 @@ mod tests {
             .clone();
 
         assert_eq!(
-            store2.on_data_proposal(&crypto2, pubkey1, data_proposal, known_contracts2),
+            handle_data_proposal(
+                &mut store2,
+                &crypto2,
+                pubkey1,
+                data_proposal,
+                known_contracts2
+            ),
             DataProposalVerdict::Vote
         );
 
@@ -1622,8 +1734,8 @@ mod tests {
 
     #[test_log::test]
     fn test_poda() {
-        let crypto1 = crypto::BlstCrypto::new("1".to_owned());
-        let crypto2 = crypto::BlstCrypto::new("2".to_owned());
+        let crypto1 = crypto::BlstCrypto::new("1".to_owned()).unwrap();
+        let crypto2 = crypto::BlstCrypto::new("2".to_owned()).unwrap();
 
         let pubkey1 = crypto1.validator_pubkey();
         let pubkey2 = crypto2.validator_pubkey();

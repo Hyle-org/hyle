@@ -14,6 +14,7 @@ pub use hyle_model::*;
 
 mod indexer;
 mod rest;
+pub mod verifiers;
 
 pub use indexer::*;
 pub use rest::*;
