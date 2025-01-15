@@ -1,4 +1,4 @@
-use crate::{consensus::ConsensusProposalHash, utils::logger::LogMe};
+use crate::utils::logger::LogMe;
 
 use super::IndexerApiState;
 use axum::{
@@ -8,7 +8,7 @@ use axum::{
 };
 use sqlx::Row;
 
-use crate::model::indexer::*;
+use crate::model::*;
 
 #[derive(Debug, serde::Deserialize)]
 pub struct BlockPagination {

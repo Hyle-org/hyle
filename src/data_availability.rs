@@ -15,18 +15,14 @@ use codec::{DataAvailabilityServerCodec, DataAvailabilityServerRequest};
 
 use crate::{
     bus::{command_response::Query, BusClientSender, BusMessage},
-    consensus::{
-        CommittedConsensusProposal, ConsensusCommand, ConsensusEvent, ConsensusProposalHash,
-    },
+    consensus::{CommittedConsensusProposal, ConsensusCommand, ConsensusEvent},
     genesis::GenesisEvent,
     indexer::da_listener::RawDAListener,
     mempool::{MempoolCommand, MempoolEvent},
     model::{
-        data_availability::Contract,
-        get_current_timestamp,
-        mempool::{Cut, DataProposal},
-        Block, BlockHeight, ContractName, Hashable, SharedRunContext, SignedBlock,
-        ValidatorPublicKey,
+        utils::get_current_timestamp,
+        Block, BlockHeight, ConsensusProposalHash, Contract, ContractName, Hashable,
+        SharedRunContext, SignedBlock, ValidatorPublicKey, {Cut, DataProposal},
     },
     module_handle_messages,
     p2p::network::{OutboundMessage, PeerEvent},

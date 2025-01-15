@@ -6,10 +6,10 @@ use reqwest::{Response, Url};
 #[cfg(feature = "node")]
 use crate::tools::mock_workflow::RunScenario;
 use crate::{
-    model::consensus::ConsensusInfo,
-    model::data_availability::Contract,
-    model::indexer::ContractDb,
-    model::rest::NodeInfo,
+    model::ConsensusInfo,
+    model::Contract,
+    model::ContractDb,
+    model::NodeInfo,
     model::{
         BlobTransaction, BlockHeight, ContractName, ProofTransaction, RegisterContractTransaction,
     },

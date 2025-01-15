@@ -2,15 +2,11 @@ use std::path::PathBuf;
 
 use crate::bus::command_response::{CmdRespClient, Query};
 use crate::bus::BusClientSender;
-use crate::consensus::{
-    CommittedConsensusProposal, ConsensusEvent, ConsensusInfo, ConsensusNetMessage,
-    ConsensusProposalHash, QueryConsensusInfo,
-};
+use crate::consensus::{CommittedConsensusProposal, ConsensusEvent, QueryConsensusInfo};
 use crate::data_availability::DataEvent;
 use crate::genesis::GenesisEvent;
-use crate::mempool::Cut;
 use crate::mempool::QueryNewCut;
-use crate::model::{get_current_timestamp_ms, Hashable};
+use crate::model::{utils::get_current_timestamp_ms, *};
 use crate::module_handle_messages;
 use crate::utils::conf::SharedConf;
 use crate::utils::crypto::SharedBlstCrypto;
@@ -169,7 +165,7 @@ impl SingleNodeConsensus {
             }
         };
         let new_slot = self.store.last_slot + 1;
-        let consensus_proposal = crate::consensus::ConsensusProposal {
+        let consensus_proposal = ConsensusProposal {
             slot: new_slot,
             view: 0,
             timestamp: get_current_timestamp_ms(),

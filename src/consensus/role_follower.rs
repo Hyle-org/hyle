@@ -1,20 +1,17 @@
 use bincode::{Decode, Encode};
 use tracing::{debug, info, trace, warn};
 
-use super::{
-    Consensus, ConsensusNetMessage, ConsensusProposal, ConsensusProposalHash, QuorumCertificate,
-    Ticket,
-};
+use super::Consensus;
 use crate::{
     consensus::StateTag,
     mempool::MempoolNetMessage,
-    model::{Hashable, ValidatorPublicKey},
-    utils::{
-        crypto::{BlstCrypto, Signed},
-        logger::LogMe,
-    },
+    model::{Hashable, Signed, ValidatorPublicKey},
+    utils::{crypto::BlstCrypto, logger::LogMe},
 };
 use anyhow::{bail, Result};
+use hyle_model::{
+    ConsensusNetMessage, ConsensusProposal, ConsensusProposalHash, QuorumCertificate, Ticket,
+};
 
 #[derive(Encode, Decode, Default)]
 pub(super) struct FollowerState {

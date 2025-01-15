@@ -1,3 +1,4 @@
+use hyle_model::ConsensusProposalHash;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 
@@ -10,8 +11,6 @@ use sqlx::{prelude::Type, Postgres};
 
 use crate::model::{Transaction, TransactionData};
 use hyle_contract_sdk::TxHash;
-
-use super::consensus::ConsensusProposalHash;
 
 #[cfg_attr(feature = "node", derive(sqlx::FromRow))]
 #[derive(Debug, Serialize, Deserialize)]
@@ -185,38 +184,5 @@ impl<'r> sqlx::Decode<'r, sqlx::Postgres> for TxHashDb {
     > {
         let inner = <String as sqlx::Decode<sqlx::Postgres>>::decode(value)?;
         Ok(TxHashDb(TxHash(inner)))
-    }
-}
-
-#[cfg(feature = "node")]
-impl Type<Postgres> for ConsensusProposalHash {
-    fn type_info() -> sqlx::postgres::PgTypeInfo {
-        <String as Type<Postgres>>::type_info()
-    }
-}
-
-#[cfg(feature = "node")]
-impl sqlx::Encode<'_, sqlx::Postgres> for ConsensusProposalHash {
-    fn encode_by_ref(
-        &self,
-        buf: &mut sqlx::postgres::PgArgumentBuffer,
-    ) -> std::result::Result<
-        sqlx::encode::IsNull,
-        std::boxed::Box<(dyn std::error::Error + std::marker::Send + std::marker::Sync + 'static)>,
-    > {
-        <String as sqlx::Encode<sqlx::Postgres>>::encode_by_ref(&self.0, buf)
-    }
-}
-
-#[cfg(feature = "node")]
-impl<'r> sqlx::Decode<'r, sqlx::Postgres> for ConsensusProposalHash {
-    fn decode(
-        value: sqlx::postgres::PgValueRef<'r>,
-    ) -> std::result::Result<
-        ConsensusProposalHash,
-        std::boxed::Box<(dyn std::error::Error + std::marker::Send + std::marker::Sync + 'static)>,
-    > {
-        let inner = <String as sqlx::Decode<sqlx::Postgres>>::decode(value)?;
-        Ok(ConsensusProposalHash(inner))
     }
 }

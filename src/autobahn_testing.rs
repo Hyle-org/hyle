@@ -134,7 +134,7 @@ macro_rules! simple_commit_round {
         broadcast! {
             description: "Leader - Prepare",
             from: $leader, to: [$($follower),+$(,$joining)?],
-            message_matches: ConsensusNetMessage::Prepare(cp, ticket) => {
+            message_matches: hyle_contract_sdk::ConsensusNetMessage::Prepare(cp, ticket) => {
                 round_consensus_proposal = cp.clone();
                 round_ticket = ticket.clone();
             }
@@ -143,25 +143,25 @@ macro_rules! simple_commit_round {
         send! {
             description: "Follower - PrepareVote",
             from: [$($follower),+], to: $leader,
-            message_matches: ConsensusNetMessage::PrepareVote(_)
+            message_matches: hyle_contract_sdk::ConsensusNetMessage::PrepareVote(_)
         };
 
         broadcast! {
             description: "Leader - Confirm",
             from: $leader, to: [$($follower),+$(,$joining)?],
-            message_matches: ConsensusNetMessage::Confirm(_)
+            message_matches: hyle_contract_sdk::ConsensusNetMessage::Confirm(_)
         };
 
         send! {
             description: "Follower - Confirm Ack",
             from: [$($follower),+], to: $leader,
-            message_matches: ConsensusNetMessage::ConfirmAck(_)
+            message_matches: hyle_contract_sdk::ConsensusNetMessage::ConfirmAck(_)
         };
 
         broadcast! {
             description: "Leader - Commit",
             from: $leader, to: [$($follower),+$(,$joining)?],
-            message_matches: ConsensusNetMessage::Commit(_, _)
+            message_matches: hyle_contract_sdk::ConsensusNetMessage::Commit(_, _)
         };
 
         (round_consensus_proposal, round_ticket)
@@ -200,17 +200,17 @@ use crate::bus::dont_use_this::get_receiver;
 use crate::bus::metrics::BusMetrics;
 use crate::bus::{bus_client, SharedMessageBus};
 use crate::consensus::test::ConsensusTestCtx;
-use crate::consensus::{ConsensusEvent, ConsensusProposal};
+use crate::consensus::ConsensusEvent;
 use crate::data_availability::DataEvent;
 use crate::handle_messages;
 use crate::mempool::test::{make_register_contract_tx, MempoolTestCtx};
 use crate::mempool::{MempoolEvent, MempoolNetMessage, QueryNewCut};
-use crate::model::mempool::{Cut, DataProposalHash};
 use crate::model::SignedBlock;
-use crate::model::{consensus::ConsensusNetMessage, ContractName, Hashable};
+use crate::model::{AggregateSignature, Cut, DataProposalHash};
+use crate::model::{ConsensusNetMessage, ConsensusProposal, ContractName, Hashable};
 use crate::p2p::network::OutboundMessage;
 use crate::p2p::P2PCommand;
-use crate::utils::crypto::{self, AggregateSignature, BlstCrypto};
+use crate::utils::crypto::{self, BlstCrypto};
 use tracing::info;
 
 bus_client!(

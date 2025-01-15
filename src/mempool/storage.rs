@@ -9,13 +9,13 @@ use tracing::{debug, error, warn};
 use crate::{
     data_availability::node_state::verifiers::{verify_proof, verify_recursive_proof},
     model::{
-        mempool::{DataProposal, DataProposalHash, PoDA},
-        BlobProofOutput, Hashable, Transaction, TransactionData, ValidatorPublicKey,
+        BlobProofOutput, Cut, DataProposal, DataProposalHash, Hashable, PoDA, SignedByValidator,
+        Transaction, TransactionData, ValidatorPublicKey,
     },
-    utils::crypto::{BlstCrypto, SignedByValidator},
+    utils::crypto::BlstCrypto,
 };
 
-use super::{Cut, KnownContracts, MempoolNetMessage};
+use super::{KnownContracts, MempoolNetMessage};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DataProposalVerdict {
@@ -45,12 +45,6 @@ pub struct Storage {
     pub id: ValidatorPublicKey,
     pub pending_txs: Vec<Transaction>,
     pub lanes: HashMap<ValidatorPublicKey, Lane>,
-}
-
-impl Display for DataProposal {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.hash())
-    }
 }
 
 impl Display for Storage {
@@ -394,7 +388,7 @@ impl Storage {
         }
 
         // Remove proofs from transactions
-        data_proposal.remove_proofs();
+        remove_proofs(&mut data_proposal);
 
         // Add DataProposal to validator's lane
         self.lanes
@@ -554,23 +548,21 @@ impl Storage {
     }
 }
 
-impl DataProposal {
-    /// Remove proofs from all transactions in the DataProposal
-    fn remove_proofs(&mut self) {
-        self.txs.iter_mut().for_each(|tx| {
-            match &mut tx.transaction_data {
-                TransactionData::VerifiedProof(proof_tx) => {
-                    proof_tx.proof = None;
-                }
-                TransactionData::Proof(_) => {
-                    // This can never happen.
-                    // A DataProposal that has been processed has turned all TransactionData::Proof into TransactionData::VerifiedProof
-                    unreachable!();
-                }
-                TransactionData::Blob(_) | TransactionData::RegisterContract(_) => {}
+/// Remove proofs from all transactions in the DataProposal
+fn remove_proofs(dp: &mut DataProposal) {
+    dp.txs.iter_mut().for_each(|tx| {
+        match &mut tx.transaction_data {
+            TransactionData::VerifiedProof(proof_tx) => {
+                proof_tx.proof = None;
             }
-        });
-    }
+            TransactionData::Proof(_) => {
+                // This can never happen.
+                // A DataProposal that has been processed has turned all TransactionData::Proof into TransactionData::VerifiedProof
+                unreachable!();
+            }
+            TransactionData::Blob(_) | TransactionData::RegisterContract(_) => {}
+        }
+    });
 }
 
 impl Display for Lane {

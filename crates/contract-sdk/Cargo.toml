@@ -7,6 +7,7 @@ homepage = { workspace = true }
 repository = { workspace = true }
 
 [dependencies]
+hyle_model = { path = "../hyle-model", package = "hyle-model", default-features = false }
 serde = { version = "1.0", default-features = false, features = [
     "derive",
     "alloc",

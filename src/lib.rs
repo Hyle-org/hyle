@@ -13,7 +13,7 @@
 //! * [Hylé documentation](https://docs.hyle.eu)
 
 #[cfg(feature = "node")]
-mod autobahn_testing;
+//mod autobahn_testing;
 #[cfg(feature = "node")]
 pub mod bus;
 #[cfg(feature = "node")]

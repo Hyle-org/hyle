@@ -10,7 +10,7 @@ use hyle::{
         da_listener::{DAListener, DAListenerCtx},
         Indexer,
     },
-    model::{rest::NodeInfo, BlockHeight, CommonRunContext},
+    model::{BlockHeight, CommonRunContext, NodeInfo},
     rest::{RestApi, RestApiRunContext},
     utils::{
         conf,

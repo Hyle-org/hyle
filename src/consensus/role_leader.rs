@@ -4,15 +4,17 @@ use crate::{
     bus::command_response::CmdRespClient,
     consensus::StateTag,
     mempool::QueryNewCut,
-    model::{Hashable, ValidatorPublicKey},
-    utils::crypto::SignedByValidator,
+    model::{
+        ConsensusNetMessage, ConsensusProposalHash, Hashable, SignedByValidator, Ticket,
+        ValidatorPublicKey,
+    },
 };
 use anyhow::{anyhow, bail, Result};
 use bincode::{Decode, Encode};
 use staking::state::MIN_STAKE;
 use tracing::{debug, error, info, trace, warn};
 
-use super::{Consensus, ConsensusNetMessage, ConsensusProposalHash, Ticket};
+use super::Consensus;
 
 #[derive(Encode, Decode, Default, Debug)]
 pub enum Step {

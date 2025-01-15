@@ -1,7 +1,7 @@
 use bincode::{Decode, Encode};
 
-use crate::model::data_availability::UnsettledBlobTransaction;
 use crate::model::ContractName;
+use crate::model::UnsettledBlobTransaction;
 use hyle_contract_sdk::TxHash;
 use std::collections::HashMap;
 

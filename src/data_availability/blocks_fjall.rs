@@ -4,7 +4,7 @@ use std::{fmt::Debug, path::Path};
 use tracing::{error, info};
 
 use crate::{
-    consensus::ConsensusProposalHash,
+    model::ConsensusProposalHash,
     model::{BlockHeight, Hashable, SignedBlock},
 };
 

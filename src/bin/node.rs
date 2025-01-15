@@ -9,7 +9,7 @@ use hyle::{
     genesis::Genesis,
     indexer::Indexer,
     mempool::Mempool,
-    model::{rest::NodeInfo, CommonRunContext, NodeRunContext, SharedRunContext},
+    model::{CommonRunContext, NodeInfo, NodeRunContext, SharedRunContext},
     p2p::P2P,
     rest::{RestApi, RestApiRunContext},
     single_node_consensus::SingleNodeConsensus,

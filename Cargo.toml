@@ -11,6 +11,7 @@ members = [
     "crates/hyrun",
     "crates/client-sdk",
     "crates/hyle-loadtest",
+    "crates/hyle-model",
 ]
 resolver = "2"
 
@@ -47,6 +48,7 @@ required-features = ["node"]
 hyle-contract-sdk = { path = "./crates/contract-sdk", default-features = false }
 staking = { path = "./crates/contracts/staking", default-features = false }
 client-sdk = { path = "./crates/client-sdk", default-features = false }
+hyle-model = { path = "./crates/hyle-model", default-features = false, features = ["full", "sqlx"] }
 
 anyhow = "1.0.95"
 bincode = { version = "2.0.0-rc.3", features = ["serde"] }

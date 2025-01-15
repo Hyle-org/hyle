@@ -1,7 +1,7 @@
 use client_sdk::transaction_builder::TransactionBuilder;
-use sdk::{BlobData, ContractName, Digestable, StateDigest};
+use sdk::{BlobData, ContractName, Digestable, StakingAction, StateDigest, ValidatorPublicKey};
 
-use crate::{model::ValidatorPublicKey, state::Staking, StakingAction};
+use crate::state::Staking;
 
 pub struct Builder<'b> {
     pub contract_name: ContractName,

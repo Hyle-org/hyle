@@ -15,7 +15,7 @@ use tower_http::trace::TraceLayer;
 use tracing::info;
 
 use crate::{bus::SharedMessageBus, module_handle_messages, utils::modules::module_bus_client};
-use crate::{model::rest::NodeInfo, utils::modules::Module};
+use crate::{model::NodeInfo, utils::modules::Module};
 
 pub use crate::tools::rest_api_client as client;
 

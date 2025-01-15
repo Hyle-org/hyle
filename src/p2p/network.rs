@@ -1,7 +1,7 @@
 use crate::bus::BusMessage;
+use crate::mempool::MempoolNetMessage;
 use crate::model::ValidatorPublicKey;
-use crate::utils::crypto::SignedByValidator;
-use crate::{consensus::ConsensusNetMessage, mempool::MempoolNetMessage};
+use crate::model::{ConsensusNetMessage, SignedByValidator};
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;

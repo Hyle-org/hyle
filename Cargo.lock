@@ -2630,6 +2630,7 @@ dependencies = [
  "hydentity",
  "hyle-contract-sdk",
  "hyle-contracts",
+ "hyle-model",
  "hyllar",
  "hyrun",
  "indexmap 2.7.0",
@@ -2673,6 +2674,7 @@ dependencies = [
  "anyhow",
  "bincode 2.0.0-rc.3",
  "hex",
+ "hyle-model",
  "mockall",
  "risc0-zkvm",
  "serde",
@@ -2704,6 +2706,22 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber 0.3.19",
+]
+
+[[package]]
+name = "hyle-model"
+version = "0.6.0"
+dependencies = [
+ "anyhow",
+ "base64 0.22.1",
+ "bincode 2.0.0-rc.3",
+ "blst",
+ "derive_more 1.0.0",
+ "hex",
+ "serde",
+ "sha3",
+ "sqlx",
+ "strum_macros",
 ]
 
 [[package]]

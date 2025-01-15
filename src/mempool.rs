@@ -9,15 +9,12 @@ use crate::{
     },
     genesis::GenesisEvent,
     mempool::storage::Storage,
-    model::{
-        BlobProofOutput, Hashable, ProofDataHash, SharedRunContext, Transaction, TransactionData,
-        ValidatorPublicKey, VerifiedProofTransaction,
-    },
+    model::*,
     module_handle_messages,
     p2p::network::OutboundMessage,
     utils::{
         conf::SharedConf,
-        crypto::{BlstCrypto, SharedBlstCrypto, SignedByValidator},
+        crypto::{BlstCrypto, SharedBlstCrypto},
         logger::LogMe,
         modules::{module_bus_client, Module},
         static_type_map::Pick,
@@ -39,8 +36,6 @@ use std::{
 use storage::{DataProposalVerdict, LaneEntry};
 use strum_macros::IntoStaticStr;
 use tracing::{debug, error, info, warn};
-
-pub use crate::model::mempool::*;
 
 pub mod api;
 pub mod metrics;

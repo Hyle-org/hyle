@@ -2,7 +2,7 @@
 use std::path::Path;
 
 use crate::{
-    consensus::ConsensusProposalHash,
+    model::ConsensusProposalHash,
     model::{BlockHeight, Hashable, SignedBlock},
 };
 use anyhow::Result;

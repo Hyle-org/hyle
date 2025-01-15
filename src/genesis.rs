@@ -2,24 +2,10 @@ use std::collections::{BTreeMap, HashMap};
 
 use crate::{
     bus::{bus_client, BusClientSender, BusMessage},
-    consensus::{
-        ConsensusProposal, ConsensusProposalHash, NewValidatorCandidate, ValidatorCandidacy,
-    },
     handle_messages,
-    mempool::DataProposal,
-    model::{
-        BlobProofOutput, BlobTransaction, Hashable, ProofData, RegisterContractTransaction,
-        SharedRunContext, SignedBlock, Transaction, TransactionData, ValidatorPublicKey,
-        VerifiedProofTransaction,
-    },
+    model::*,
     p2p::network::PeerEvent,
-    utils::{
-        conf::SharedConf,
-        crypto::{
-            AggregateSignature, SharedBlstCrypto, Signature, SignedByValidator, ValidatorSignature,
-        },
-        modules::Module,
-    },
+    utils::{conf::SharedConf, crypto::SharedBlstCrypto, modules::Module},
 };
 use anyhow::{bail, Error, Result};
 use client_sdk::transaction_builder::{BuildResult, StateUpdater, TransactionBuilder};
@@ -473,12 +459,10 @@ impl Genesis {
                     .map(|v| NewValidatorCandidate {
                         pubkey: v.clone(),
                         msg: SignedByValidator {
-                            msg: crate::consensus::ConsensusNetMessage::ValidatorCandidacy(
-                                ValidatorCandidacy {
-                                    pubkey: v.clone(),
-                                    peer_address: "".into(),
-                                },
-                            ),
+                            msg: ConsensusNetMessage::ValidatorCandidacy(ValidatorCandidacy {
+                                pubkey: v.clone(),
+                                peer_address: "".into(),
+                            }),
                             signature: ValidatorSignature {
                                 signature: Signature("".into()),
                                 validator: v.clone(),

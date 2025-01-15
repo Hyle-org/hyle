@@ -5,13 +5,9 @@ pub mod contract_handlers;
 pub mod contract_state_indexer;
 pub mod da_listener;
 
+use crate::model::*;
 use crate::{
-    consensus::ConsensusProposalHash,
     data_availability::DataEvent,
-    model::{
-        BlobTransaction, Block, BlockHeight, CommonRunContext, ContractName, Hashable,
-        TransactionData,
-    },
     module_handle_messages,
     utils::modules::{module_bus_client, Module},
 };
@@ -32,8 +28,6 @@ use sqlx::{postgres::PgPoolOptions, PgPool, Pool, Postgres};
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::{broadcast, mpsc};
 use tracing::{error, info};
-
-use crate::model::indexer::*;
 
 module_bus_client! {
 #[derive(Debug)]
