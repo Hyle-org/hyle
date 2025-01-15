@@ -247,7 +247,8 @@ impl Mempool {
                 let _ = self.handle_data_proposal_management()
                     .log_error("Creating Data Proposal on tick");
             }
-        }
+        };
+
         if let Some(file) = &self.file {
             if let Err(e) =
                 Self::save_on_disk(file.join("mempool_storage.bin").as_path(), &self.storage)

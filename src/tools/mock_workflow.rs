@@ -127,7 +127,7 @@ impl MockWorkflowHandler {
                     }
                 }
             }
-        }
+        };
 
         Ok(())
     }

@@ -92,7 +92,7 @@ impl SingleNodeConsensus {
             // We're starting fresh, need to generate a genesis block.
             tracing::trace!("Doing genesis");
 
-            module_handle_messages! {
+            let should_shutdown = module_handle_messages! {
                 on_bus self.bus,
                 listen<GenesisEvent> msg => {
                     #[allow(clippy::expect_used, reason="We want to fail to start with misconfigured genesis block")]
@@ -115,6 +115,9 @@ impl SingleNodeConsensus {
                         GenesisEvent::NoGenesis => unreachable!("Single genesis mode should never go through this path")
                     }
                 }
+            };
+            if should_shutdown {
+                return Ok(());
             }
             self.store.has_done_genesis = true;
             tracing::trace!("Genesis block done");
@@ -137,7 +140,7 @@ impl SingleNodeConsensus {
             _ = interval.tick() => {
                 self.handle_new_slot_tick().await?;
             }
-        }
+        };
         if let Some(file) = &self.file {
             if let Err(e) = Self::save_on_disk(file.as_path(), &self.store) {
                 warn!(

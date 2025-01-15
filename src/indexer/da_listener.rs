@@ -97,7 +97,7 @@ impl DAListener {
                     bail!("Error while reading DA stream: {}", e);
                 }
             }
-        }
+        };
         Ok(())
     }
 

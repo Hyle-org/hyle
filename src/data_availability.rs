@@ -246,7 +246,7 @@ impl DataAvailability {
                     peer.last_ping = get_current_timestamp();
                 }
             }
-        }
+        };
 
         Ok(())
     }

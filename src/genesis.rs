@@ -135,7 +135,8 @@ impl Genesis {
         );
 
         // Wait until we've connected with all other genesis peers.
-        if !single_node {
+        // (We've already checked we're part of the stakers, so if we're alone carry on).
+        if !single_node && self.config.consensus.genesis_stakers.len() > 1 {
             info!("🌱 Waiting on other genesis peers to join");
             handle_messages! {
                 on_bus self.bus,

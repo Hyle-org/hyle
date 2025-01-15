@@ -89,7 +89,7 @@ impl Module for NodeStateModule {
                     }
                 }
             }
-        }
+        };
 
         let _ = Self::save_on_disk::<NodeState>(
             self.config.data_directory.join("node_state.bin").as_path(),
