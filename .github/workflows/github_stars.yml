@@ -2,7 +2,7 @@ name: Check Stars and Notify Slack
 
 on:
   schedule:
-    - cron: "0 * * * *" # Toutes les heures
+    - cron: "0 10 * * *" # Toutes les heures
   workflow_dispatch: # Permet de lancer manuellement le workflow
 
 jobs:
