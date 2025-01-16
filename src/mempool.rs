@@ -125,7 +125,7 @@ impl BusMessage for MempoolNetMessage {}
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub enum MempoolEvent {
     BuiltSignedBlock(SignedBlock),
-    StartedBuildingBlocks(u64),
+    StartedBuildingBlocks(BlockHeight),
 }
 impl BusMessage for MempoolEvent {}
 
@@ -421,14 +421,15 @@ impl Mempool {
     fn try_to_send_full_signed_blocks(&mut self) -> Result<()> {
         let length = self.blocks_under_contruction.len();
         for _ in 0..length {
-            if let Some(ccp_interval) = self.blocks_under_contruction.pop_front() {
+            if let Some(block_under_contruction) = self.blocks_under_contruction.pop_front() {
                 if self
-                    .build_signed_block_and_emit(&ccp_interval)
+                    .build_signed_block_and_emit(&block_under_contruction)
                     .log_error("Processing queued committedConsensusProposal")
                     .is_err()
                 {
                     // if failure, we push the ccp at the end
-                    self.blocks_under_contruction.push_back(ccp_interval);
+                    self.blocks_under_contruction
+                        .push_back(block_under_contruction);
                 }
             }
         }
@@ -437,11 +438,11 @@ impl Mempool {
     }
 
     /// Send an event if none was broadcast before
-    fn set_ccp_build_start_height(&mut self, slot: u64) {
+    fn set_ccp_build_start_height(&mut self, slot: Slot) {
         if self.buc_build_start_height.is_none()
             && self
                 .bus
-                .send(MempoolEvent::StartedBuildingBlocks(slot))
+                .send(MempoolEvent::StartedBuildingBlocks(BlockHeight(slot)))
                 .log_error(format!("Sending StartedBuilding event at height {}", slot))
                 .is_ok()
         {
@@ -450,34 +451,34 @@ impl Mempool {
     }
 
     fn try_create_ccp_interval(&mut self, ccp: CommittedConsensusProposal) {
-        if let Some(last_ccp) = self.last_buc.take() {
+        if let Some(last_buc) = self.last_buc.take() {
             // CCP slot too old old compared with the last we processed, weird, CCP should come in the right order
-            if last_ccp.consensus_proposal.slot >= ccp.consensus_proposal.slot {
-                let last_ccp_slot = last_ccp.consensus_proposal.slot;
-                self.last_buc = Some(last_ccp);
-                error!("CommitConsensusProposal is older than the last processed CCP slot {} should be higher than {}, not updating last_ccp", last_ccp_slot, ccp.consensus_proposal.slot);
+            if last_buc.consensus_proposal.slot >= ccp.consensus_proposal.slot {
+                let last_buc_slot = last_buc.consensus_proposal.slot;
+                self.last_buc = Some(last_buc);
+                error!("CommitConsensusProposal is older than the last processed CCP slot {} should be higher than {}, not updating last_ccp", last_buc_slot, ccp.consensus_proposal.slot);
                 return;
             }
 
             self.last_buc = Some(ccp.clone());
 
             // Matching the next slot
-            if last_ccp.consensus_proposal.slot == ccp.consensus_proposal.slot - 1 {
+            if last_buc.consensus_proposal.slot == ccp.consensus_proposal.slot - 1 {
                 debug!(
                     "Creating interval from slot {} to {}",
-                    last_ccp.consensus_proposal.slot, ccp.consensus_proposal.slot
+                    last_buc.consensus_proposal.slot, ccp.consensus_proposal.slot
                 );
 
                 self.set_ccp_build_start_height(ccp.consensus_proposal.slot);
 
                 self.blocks_under_contruction
                     .push_back(BlockUnderConstruction {
-                        from: Some(last_ccp.consensus_proposal.cut.clone()),
+                        from: Some(last_buc.consensus_proposal.cut.clone()),
                         ccp: ccp.clone(),
                     });
             } else {
                 // CCP slot received is way higher, then just store it
-                warn!("Could not create an interval, because incoming ccp slot {} should be {}+1 (last_ccp)", ccp.consensus_proposal.slot, last_ccp.consensus_proposal.slot);
+                warn!("Could not create an interval, because incoming ccp slot {} should be {}+1 (last_ccp)", ccp.consensus_proposal.slot, last_buc.consensus_proposal.slot);
             }
         }
         // No last ccp
@@ -1745,7 +1746,7 @@ pub mod test {
         assert_chanmsg_matches!(
             ctx.mempool_event_receiver,
             MempoolEvent::StartedBuildingBlocks(height) => {
-                assert_eq!(height, 1);
+                assert_eq!(height, BlockHeight(1));
             }
         );
 
@@ -1845,7 +1846,7 @@ pub mod test {
         assert_chanmsg_matches!(
             ctx.mempool_event_receiver,
             MempoolEvent::StartedBuildingBlocks(height) => {
-                assert_eq!(height, 6);
+                assert_eq!(height, BlockHeight(6));
             }
         );
 
@@ -1899,7 +1900,7 @@ pub mod test {
         assert_chanmsg_matches!(
             ctx.mempool_event_receiver,
             MempoolEvent::StartedBuildingBlocks(height) => {
-                assert_eq!(height, 1);
+                assert_eq!(height, BlockHeight(1));
             }
         );
 

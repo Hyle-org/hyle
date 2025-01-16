@@ -91,6 +91,7 @@ pub struct DataAvailability {
 
     need_catchup: bool,
     catchup_task: Option<tokio::task::JoinHandle<()>>,
+    catchup_height: Option<BlockHeight>,
 }
 
 impl Module for DataAvailability {
@@ -112,6 +113,7 @@ impl Module for DataAvailability {
             stream_peer_metadata: HashMap::new(),
             need_catchup: false,
             catchup_task: None,
+            catchup_height: None,
         })
     }
 
@@ -164,7 +166,16 @@ impl DataAvailability {
                 }
             }
             Some(streamed_block) = catchup_block_receiver.recv() => {
+                let height = streamed_block.height().0;
+
                 self.handle_signed_block(streamed_block).await;
+
+                //
+                if let Some(until_height) = self.catchup_height {
+                    if until_height.0 <= height {
+                        break;
+                    }
+                }
             }
 
             // Handle new TCP connections to stream data to peers
@@ -240,10 +251,20 @@ impl DataAvailability {
                 self.handle_signed_block(signed_block).await;
             }
             MempoolEvent::StartedBuildingBlocks(height) => {
+                self.catchup_height = Some(height);
                 if let Some(handle) = self.catchup_task.take() {
-                    info!("🏁 Stopped streaming blocks until height {}.", height);
-                    handle.abort();
-                    self.need_catchup = false;
+                    if self
+                        .blocks
+                        .last()
+                        .map(|b| b.height())
+                        .unwrap_or(BlockHeight(0))
+                        .0
+                        >= height.0
+                    {
+                        info!("🏁 Stopped streaming blocks until height {}.", height);
+                        handle.abort();
+                        self.need_catchup = false;
+                    }
                 }
             }
         }
@@ -513,6 +534,7 @@ pub mod tests {
                 stream_peer_metadata: Default::default(),
                 need_catchup: false,
                 catchup_task: None,
+                catchup_height: None,
             };
 
             let node_state = NodeState::default();
@@ -563,6 +585,7 @@ pub mod tests {
             stream_peer_metadata: Default::default(),
             need_catchup: false,
             catchup_task: None,
+            catchup_height: None,
         };
         let mut block = SignedBlock::default();
         let mut blocks = vec![];
@@ -605,6 +628,7 @@ pub mod tests {
             stream_peer_metadata: Default::default(),
             need_catchup: false,
             catchup_task: None,
+            catchup_height: None,
         };
 
         let mut block = SignedBlock::default();
