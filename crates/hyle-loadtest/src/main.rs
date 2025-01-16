@@ -3,7 +3,7 @@ use clap::{Parser, Subcommand};
 use hydentity::Hydentity;
 use hyle_loadtest::{
     generate, generate_blobs_txs, generate_proof_txs, load_blob_txs, load_proof_txs, send,
-    send_blob_txs, send_proof_txs, setup, setup_hyllar, States,
+    send_blob_txs, send_massive_blob, send_proof_txs, setup, setup_hyllar, States,
 };
 use tracing::Level;
 
@@ -54,6 +54,9 @@ enum SendCommands {
     /// Run the entire flow
     #[command(alias = "l")]
     LoadTest,
+
+    #[command(alias = "smb")]
+    SendMassiveBlob,
 }
 
 #[tokio::main]
@@ -101,6 +104,9 @@ async fn main() -> Result<(), Error> {
             tokio::time::sleep(std::time::Duration::from_secs(3)).await;
             let (blob_txs, proof_txs) = generate(users, states).await?;
             send(url, blob_txs, proof_txs).await?;
+        }
+        SendCommands::SendMassiveBlob => {
+            send_massive_blob(url).await?;
         }
     }
 
