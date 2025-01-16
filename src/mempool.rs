@@ -450,7 +450,7 @@ impl Mempool {
         }
     }
 
-    fn try_create_ccp_interval(&mut self, ccp: CommittedConsensusProposal) {
+    fn try_create_block_under_construction(&mut self, ccp: CommittedConsensusProposal) {
         if let Some(last_buc) = self.last_ccp.take() {
             // CCP slot too old old compared with the last we processed, weird, CCP should come in the right order
             if last_buc.consensus_proposal.slot >= ccp.consensus_proposal.slot {
@@ -512,7 +512,7 @@ impl Mempool {
 
                 let cut = cpp.consensus_proposal.cut.clone();
 
-                self.try_create_ccp_interval(cpp);
+                self.try_create_block_under_construction(cpp);
 
                 self.try_to_send_full_signed_blocks()?;
 
