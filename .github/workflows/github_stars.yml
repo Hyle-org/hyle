@@ -1,0 +1,34 @@
+name: Check Stars and Notify Slack
+
+on:
+  schedule:
+    - cron: "0 * * * *" # Toutes les heures
+  workflow_dispatch: # Permet de lancer manuellement le workflow
+
+jobs:
+  check-stars:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '16'
+
+    - name: Install dependencies
+      run: npm install axios
+
+    - name: Run script
+      env:
+        GITHUB_REPOSITORY: ${{ github.repository }}
+        SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
+      run: node check-stars.js
+
+    - name: Cache stars count
+      uses: actions/cache@v3
+      with:
+        path: stars_count.txt
+        key: stars-cache
