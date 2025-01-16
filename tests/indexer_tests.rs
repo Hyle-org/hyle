@@ -7,7 +7,7 @@ use anyhow::Result;
 mod fixtures;
 
 mod e2e_indexer {
-    use hyle_model::api::APIBlock;
+    use hyle_model::BlockHeight;
 
     use super::*;
 
@@ -17,9 +17,7 @@ mod e2e_indexer {
         info!("➡️  Querying block at height 5");
         let start_block = ctx
             .indexer_client()
-            .query_indexer("indexer/block/height/5")
-            .await?
-            .json::<APIBlock>()
+            .get_block_by_height(&BlockHeight(5))
             .await?;
 
         assert_eq!(start_block.height, 5);
@@ -31,10 +29,8 @@ mod e2e_indexer {
 
             let parent_block = ctx
                 .indexer_client()
-                .query_indexer(&format!("indexer/block/hash/{}", block.parent_hash.0))
+                .get_block_by_hash(&block.parent_hash)
                 .await?;
-
-            let parent_block = parent_block.json::<APIBlock>().await?;
 
             info!("➡️  Parent block: {:?}", parent_block);
             assert_eq!(parent_block.height, block.height - 1);

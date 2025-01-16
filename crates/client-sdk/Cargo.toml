@@ -13,6 +13,7 @@ hyle_model = { path = "../hyle-model", package = "hyle-model", features = ["full
 anyhow = "1.0.94"
 bincode = { version = "2.0.0-rc.3", features = ["serde"] }
 borsh = "1.5.3"
+serde = "1.0"
 serde_json = { version = "1" }
 
 bonsai-runner = { path = "../bonsai-runner", optional = true }
