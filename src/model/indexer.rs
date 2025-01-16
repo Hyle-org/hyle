@@ -5,22 +5,17 @@ use hyle_model::api::{
 use hyle_model::ConsensusProposalHash;
 use serde::{Deserialize, Serialize};
 
-#[cfg(not(feature = "node"))]
-use chrono::NaiveDateTime;
-#[cfg(feature = "node")]
 use sqlx::types::chrono::NaiveDateTime;
-#[cfg(feature = "node")]
 use sqlx::{prelude::Type, Postgres};
 
 use hyle_contract_sdk::TxHash;
 
-#[cfg_attr(feature = "node", derive(sqlx::FromRow))]
-#[derive(Debug)]
+#[derive(sqlx::FromRow, Debug)]
 pub struct BlockDb {
     // Struct for the blocks table
     pub hash: ConsensusProposalHash,
     pub parent_hash: ConsensusProposalHash,
-    #[cfg_attr(feature = "node", sqlx(try_from = "i64"))]
+    #[sqlx(try_from = "i64")]
     pub height: u64, // Corresponds to BlockHeight
     pub timestamp: NaiveDateTime, // UNIX timestamp
 }
@@ -36,15 +31,14 @@ impl From<BlockDb> for APIBlock {
     }
 }
 
-#[cfg_attr(feature = "node", derive(sqlx::FromRow))]
-#[derive(Debug)]
+#[derive(sqlx::FromRow, Debug)]
 pub struct TransactionDb {
     // Struct for the transactions table
     pub tx_hash: TxHashDb,                 // Transaction hash
     pub block_hash: ConsensusProposalHash, // Corresponds to the block hash
-    #[cfg_attr(feature = "node", sqlx(try_from = "i32"))]
+    #[sqlx(try_from = "i32")]
     pub index: u32, // Index of the transaction within the block
-    #[cfg_attr(feature = "node", sqlx(try_from = "i32"))]
+    #[sqlx(try_from = "i32")]
     pub version: u32, // Transaction version
     pub transaction_type: TransactionType, // Type of transaction
     pub transaction_status: TransactionStatus, // Status of the transaction
@@ -63,11 +57,10 @@ impl From<TransactionDb> for APITransaction {
     }
 }
 
-#[cfg_attr(feature = "node", derive(sqlx::FromRow))]
-#[derive(Debug)]
+#[derive(sqlx::FromRow, Debug)]
 pub struct BlobDb {
     pub tx_hash: TxHashDb, // Corresponds to the transaction hash
-    #[cfg_attr(feature = "node", sqlx(try_from = "i32"))]
+    #[sqlx(try_from = "i32")]
     pub blob_index: u32, // Index of the blob within the transaction
     pub identity: String,  // Identity of the blob
     pub contract_name: String, // Contract name associated with the blob
@@ -88,8 +81,7 @@ impl From<BlobDb> for APIBlob {
     }
 }
 
-#[cfg_attr(feature = "node", derive(sqlx::FromRow))]
-#[derive(Debug)]
+#[derive(sqlx::FromRow, Debug)]
 pub struct ProofTransactionDb {
     // Struct for the proof_transactions table
     pub tx_hash: TxHashDb,     // Corresponds to the transaction hash
@@ -97,8 +89,7 @@ pub struct ProofTransactionDb {
     pub proof: Vec<u8>,        // Proof associated with the transaction
 }
 
-#[cfg_attr(feature = "node", derive(sqlx::FromRow))]
-#[derive(Debug)]
+#[derive(sqlx::FromRow, Debug)]
 pub struct ContractDb {
     // Struct for the contracts table
     pub tx_hash: TxHashDb,   // Corresponds to the registration transaction hash
@@ -122,8 +113,7 @@ impl From<ContractDb> for APIContract {
     }
 }
 
-#[cfg_attr(feature = "node", derive(sqlx::FromRow))]
-#[derive(Debug)]
+#[derive(sqlx::FromRow, Debug)]
 pub struct ContractStateDb {
     // Struct for the contract_state table
     pub contract_name: String,             // Name of the contract
@@ -150,13 +140,11 @@ impl From<TxHash> for TxHashDb {
     }
 }
 
-#[cfg(feature = "node")]
 impl Type<Postgres> for TxHashDb {
     fn type_info() -> sqlx::postgres::PgTypeInfo {
         <String as Type<Postgres>>::type_info()
     }
 }
-#[cfg(feature = "node")]
 impl sqlx::Encode<'_, sqlx::Postgres> for TxHashDb {
     fn encode_by_ref(
         &self,
@@ -169,7 +157,6 @@ impl sqlx::Encode<'_, sqlx::Postgres> for TxHashDb {
     }
 }
 
-#[cfg(feature = "node")]
 impl<'r> sqlx::Decode<'r, sqlx::Postgres> for TxHashDb {
     fn decode(
         value: sqlx::postgres::PgValueRef<'r>,
