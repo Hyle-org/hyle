@@ -97,7 +97,7 @@ pub struct Mempool {
     crypto: SharedBlstCrypto,
     metrics: MempoolMetrics,
     storage: Storage,
-    last_buc: Option<CommittedConsensusProposal>,
+    last_ccp: Option<CommittedConsensusProposal>,
     blocks_under_contruction: VecDeque<BlockUnderConstruction>,
     buc_build_start_height: Option<u64>,
     validators: Vec<ValidatorPublicKey>,
@@ -174,7 +174,7 @@ impl Module for Mempool {
             metrics,
             crypto: Arc::clone(&ctx.node.crypto),
             storage,
-            last_buc: None,
+            last_ccp: None,
             blocks_under_contruction: VecDeque::new(),
             buc_build_start_height: None,
             validators: vec![],
@@ -451,16 +451,16 @@ impl Mempool {
     }
 
     fn try_create_ccp_interval(&mut self, ccp: CommittedConsensusProposal) {
-        if let Some(last_buc) = self.last_buc.take() {
+        if let Some(last_buc) = self.last_ccp.take() {
             // CCP slot too old old compared with the last we processed, weird, CCP should come in the right order
             if last_buc.consensus_proposal.slot >= ccp.consensus_proposal.slot {
                 let last_buc_slot = last_buc.consensus_proposal.slot;
-                self.last_buc = Some(last_buc);
+                self.last_ccp = Some(last_buc);
                 error!("CommitConsensusProposal is older than the last processed CCP slot {} should be higher than {}, not updating last_ccp", last_buc_slot, ccp.consensus_proposal.slot);
                 return;
             }
 
-            self.last_buc = Some(ccp.clone());
+            self.last_ccp = Some(ccp.clone());
 
             // Matching the next slot
             if last_buc.consensus_proposal.slot == ccp.consensus_proposal.slot - 1 {
@@ -484,7 +484,7 @@ impl Mempool {
         // No last ccp
         else {
             // Update the last ccp with the received ccp, either we create a block or not.
-            self.last_buc = Some(ccp.clone());
+            self.last_ccp = Some(ccp.clone());
 
             if ccp.consensus_proposal.slot == 1 {
                 self.set_ccp_build_start_height(ccp.consensus_proposal.slot);
@@ -1066,7 +1066,7 @@ pub mod test {
                 crypto: Arc::new(crypto),
                 metrics: MempoolMetrics::global("id".to_string()),
                 storage,
-                last_buc: None,
+                last_ccp: None,
                 blocks_under_contruction: VecDeque::new(),
                 buc_build_start_height: None,
                 validators,
