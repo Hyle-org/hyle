@@ -21,8 +21,7 @@ jobs:
     - name: Install dependencies
       run: npm install axios
       
-    - name: Restore stars count from cache
-      id: restore_cache
+    - name: Cache stars count
       uses: actions/cache@v3
       with:
         path: stars_count.txt
@@ -34,8 +33,3 @@ jobs:
         SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
       run: node .github/scripts/check-stars.js
 
-    - name: Cache stars count
-      uses: actions/cache@v3
-      with:
-        path: stars_count.txt
-        key: stars-cache
