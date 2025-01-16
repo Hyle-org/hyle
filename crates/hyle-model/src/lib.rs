@@ -14,6 +14,9 @@ pub use node::*;
 #[cfg(feature = "full")]
 pub use transaction::*;
 
+#[cfg(feature = "full")]
+pub mod api;
+
 mod contract;
 mod staking;
 pub use contract::*;

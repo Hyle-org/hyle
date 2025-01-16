@@ -18,6 +18,8 @@ derive_more = { version = "1.0.0", features = ["display"], optional = true }
 base64 = { version = "0.22.1", optional = true }
 anyhow = { version = "1.0.95", optional = true }
 sqlx = { version = "0.8.3", features = ["postgres"], optional = true }
+serde_with = { version = "3.12.0", features = ["hex"], optional = true }
+serde_json = { version = "1", optional = true }
 
 [features]
 default = ["full"] # disable default feature if you want minimalist definitions for contracts
@@ -27,6 +29,8 @@ full = [
   "dep:blst",
   "dep:base64",
   "dep:derive_more",
+  "dep:serde_json",
+  "dep:serde_with",
   "dep:anyhow"
 ]
 sqlx = ["dep:sqlx"]

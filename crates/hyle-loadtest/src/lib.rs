@@ -1,12 +1,12 @@
 use anyhow::{bail, Result};
+use client_sdk::tcp_client::NodeTcpClient;
 use client_sdk::transaction_builder::{StateUpdater, TransactionBuilder};
 use hydentity::Hydentity;
 use hyle::model::{BlobTransaction, ProofTransaction, RegisterContractTransaction};
-use hyle::rest::client::NodeTcpClient;
-use hyle::tcp_server::TcpServerNetMessage;
 use hyle_contract_sdk::erc20::ERC20;
-use hyle_contract_sdk::{Blob, BlobData, Digestable};
+use hyle_contract_sdk::{Blob, BlobData};
 use hyle_contract_sdk::{ContractName, Identity};
+use hyle_contract_sdk::{Digestable, TcpServerNetMessage};
 use hyllar::{HyllarToken, HyllarTokenContract};
 use tokio::task::JoinSet;
 use tracing::info;

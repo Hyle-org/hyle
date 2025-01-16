@@ -1,5 +1,6 @@
 use anyhow::{bail, Result};
-use sdk::{flatten_blobs, ContractInput, HyleOutput, ProofData};
+use hyle_model::ProofData;
+use sdk::{flatten_blobs, ContractInput, HyleOutput};
 
 pub enum Prover {
     #[cfg(feature = "risc0")]

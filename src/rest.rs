@@ -12,15 +12,16 @@ use axum::{
     Json,
 };
 use axum_otel_metrics::HttpMetricsLayer;
+use hyle_model::api::NodeInfo;
 use prometheus::{Encoder, TextEncoder};
 use reqwest::StatusCode;
 use tokio::time::Instant;
 use tracing::info;
 
+use crate::utils::modules::Module;
 use crate::{bus::SharedMessageBus, module_handle_messages, utils::modules::module_bus_client};
-use crate::{model::NodeInfo, utils::modules::Module};
 
-pub use crate::tools::rest_api_client as client;
+pub use client_sdk::rest_client as client;
 
 module_bus_client! {
     struct RestBusClient {
