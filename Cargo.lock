@@ -2685,7 +2685,6 @@ dependencies = [
  "clap",
  "client-sdk",
  "hydentity",
- "hyle",
  "hyle-contract-sdk",
  "hyle-contracts",
  "hyllar",
