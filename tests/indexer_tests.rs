@@ -1,3 +1,4 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
 use fixtures::ctx::E2ECtx;
 use tracing::info;
 
@@ -6,7 +7,7 @@ use anyhow::Result;
 mod fixtures;
 
 mod e2e_indexer {
-    use hyle::model::indexer::BlockDb;
+    use hyle_model::api::APIBlock;
 
     use super::*;
 
@@ -18,7 +19,7 @@ mod e2e_indexer {
             .indexer_client()
             .query_indexer("indexer/block/height/5")
             .await?
-            .json::<BlockDb>()
+            .json::<APIBlock>()
             .await?;
 
         assert_eq!(start_block.height, 5);
@@ -33,7 +34,7 @@ mod e2e_indexer {
                 .query_indexer(&format!("indexer/block/hash/{}", block.parent_hash.0))
                 .await?;
 
-            let parent_block = parent_block.json::<BlockDb>().await?;
+            let parent_block = parent_block.json::<APIBlock>().await?;
 
             info!("➡️  Parent block: {:?}", parent_block);
             assert_eq!(parent_block.height, block.height - 1);

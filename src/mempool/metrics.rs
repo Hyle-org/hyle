@@ -3,7 +3,7 @@ use opentelemetry::{
     InstrumentationScope, KeyValue,
 };
 
-use crate::model::{mempool::DataProposal, ValidatorPublicKey};
+use crate::model::{DataProposal, ValidatorPublicKey};
 
 use super::QueryNewCut;
 

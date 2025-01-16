@@ -1,8 +1,10 @@
 #![allow(unused)]
+#![allow(clippy::indexing_slicing)]
 
 use std::time::Duration;
 
 use anyhow::{Context, Result};
+use api::APIContract;
 use assertables::assert_ok;
 use reqwest::{Client, Url};
 use testcontainers_modules::{
@@ -12,10 +14,7 @@ use testcontainers_modules::{
 use tracing::info;
 
 use hyle::{
-    model::{
-        data_availability::Contract, indexer::ContractDb, Blob, BlobTransaction, ProofData,
-        ProofTransaction, RegisterContractTransaction,
-    },
+    model::*,
     rest::client::{IndexerApiHttpClient, NodeApiHttpClient},
 };
 use hyle_contract_sdk::{
@@ -186,8 +185,8 @@ impl E2ECtx {
 
         nodes.push(indexer);
         let url = format!("http://{}", &indexer_conf.rest);
-        clients.push(NodeApiHttpClient::new(url.clone()));
-        let indexer_client = Some(IndexerApiHttpClient::new(url));
+        clients.push(NodeApiHttpClient::new(url.clone()).unwrap());
+        let indexer_client = Some(IndexerApiHttpClient::new(url).unwrap());
 
         // Wait for node2 to properly spin up
         let client = clients.first().unwrap();
@@ -288,7 +287,9 @@ impl E2ECtx {
             success: true,
             program_outputs: vec![],
         };
-        ProofData::Bytes(serde_json::to_vec(&vec![hyle_output]).unwrap())
+        ProofData(
+            bincode::encode_to_vec(vec![hyle_output.clone()], bincode::config::standard()).unwrap(),
+        )
     }
 
     pub async fn send_proof_single(
@@ -333,21 +334,5 @@ impl E2ECtx {
 
     pub async fn get_contract(&self, name: &str) -> Result<Contract> {
         self.client().get_contract(&name.into()).await
-    }
-
-    pub async fn get_indexer_contract(&self, name: &str) -> Result<ContractDb> {
-        let indexer_contract_response = self
-            .indexer_client()
-            .get_indexer_contract(&name.into())
-            .await
-            .and_then(|response| response.error_for_status().context("Getting contract"));
-
-        let response = match indexer_contract_response {
-            Ok(response) => response,
-            Err(e) => panic!("Error getting contract: {:?}", e),
-        };
-
-        let contract = response.json::<ContractDb>().await?;
-        Ok(contract)
     }
 }

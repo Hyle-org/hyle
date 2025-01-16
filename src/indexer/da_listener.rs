@@ -11,13 +11,10 @@ use tracing::{debug, info, warn};
 
 use crate::{
     bus::BusClientSender,
-    data_availability::{
-        codec::{DataAvailabilityClientCodec, DataAvailabilityServerRequest},
-        node_state::NodeState,
-        DataEvent,
-    },
+    data_availability::codec::{DataAvailabilityClientCodec, DataAvailabilityServerRequest},
     model::{BlockHeight, CommonRunContext, SignedBlock},
     module_handle_messages,
+    node_state::{module::NodeStateEvent, NodeState},
     utils::{
         logger::LogMe,
         modules::{module_bus_client, Module},
@@ -27,7 +24,7 @@ use crate::{
 module_bus_client! {
 #[derive(Debug)]
 struct DAListenerBusClient {
-    sender(DataEvent),
+    sender(NodeStateEvent),
 }
 }
 
@@ -100,13 +97,13 @@ impl DAListener {
                     bail!("Error while reading DA stream: {}", e);
                 }
             }
-        }
+        };
         Ok(())
     }
 
     async fn processing_next_frame(&mut self, block: SignedBlock) -> Result<()> {
         let block = self.node_state.handle_signed_block(&block);
-        self.bus.send(DataEvent::NewBlock(Box::new(block)))?;
+        self.bus.send(NodeStateEvent::NewBlock(Box::new(block)))?;
 
         self.listener.ping().await?;
 

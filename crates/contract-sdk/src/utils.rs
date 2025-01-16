@@ -1,6 +1,6 @@
 use bincode::Decode;
 
-use crate::{Blob, BlobIndex, StructuredBlob};
+use hyle_model::{Blob, BlobIndex, StructuredBlob};
 
 pub fn parse_blob<Parameters>(blobs: &[Blob], index: &BlobIndex) -> Parameters
 where

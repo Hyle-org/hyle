@@ -1,6 +1,10 @@
-use crate::{consensus::ConsensusProposalHash, utils::logger::LogMe};
+use crate::utils::logger::LogMe;
 
 use super::IndexerApiState;
+use api::{
+    APIBlob, APIBlock, APIContract, APIContractState, APITransaction, BlobWithStatus,
+    TransactionStatus, TransactionType, TransactionWithBlobs,
+};
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
@@ -8,7 +12,7 @@ use axum::{
 };
 use sqlx::Row;
 
-use crate::model::indexer::*;
+use crate::model::*;
 
 #[derive(Debug, serde::Deserialize)]
 pub struct BlockPagination {
@@ -20,7 +24,7 @@ pub struct BlockPagination {
 pub async fn get_blocks(
     Query(pagination): Query<BlockPagination>,
     State(state): State<IndexerApiState>,
-) -> Result<Json<Vec<BlockDb>>, StatusCode> {
+) -> Result<Json<Vec<APIBlock>>, StatusCode> {
     let blocks = match pagination.start_block {
         Some(start_block) => sqlx::query_as::<_, BlockDb>(
             "SELECT * FROM blocks WHERE height <= $1 and height > $2 ORDER BY height DESC LIMIT $3",
@@ -33,6 +37,7 @@ pub async fn get_blocks(
     }
     .fetch_all(&state.db)
     .await
+    .map(|db| db.into_iter().map(Into::<APIBlock>::into).collect())
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     Ok(Json(blocks))
@@ -40,10 +45,11 @@ pub async fn get_blocks(
 
 pub async fn get_last_block(
     State(state): State<IndexerApiState>,
-) -> Result<Json<BlockDb>, StatusCode> {
+) -> Result<Json<APIBlock>, StatusCode> {
     let block = sqlx::query_as::<_, BlockDb>("SELECT * FROM blocks ORDER BY height DESC LIMIT 1")
         .fetch_optional(&state.db)
         .await
+        .map(|db| db.map(Into::<APIBlock>::into))
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     match block {
@@ -55,11 +61,12 @@ pub async fn get_last_block(
 pub async fn get_block(
     Path(height): Path<i64>,
     State(state): State<IndexerApiState>,
-) -> Result<Json<BlockDb>, StatusCode> {
+) -> Result<Json<APIBlock>, StatusCode> {
     let block = sqlx::query_as::<_, BlockDb>("SELECT * FROM blocks WHERE height = $1")
         .bind(height)
         .fetch_optional(&state.db)
         .await
+        .map(|db| db.map(Into::<APIBlock>::into))
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     match block {
@@ -71,11 +78,12 @@ pub async fn get_block(
 pub async fn get_block_by_hash(
     Path(hash): Path<String>,
     State(state): State<IndexerApiState>,
-) -> Result<Json<BlockDb>, StatusCode> {
+) -> Result<Json<APIBlock>, StatusCode> {
     let block = sqlx::query_as::<_, BlockDb>("SELECT * FROM blocks WHERE hash = $1")
         .bind(hash)
         .fetch_optional(&state.db)
         .await
+        .map(|db| db.map(Into::<APIBlock>::into))
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     match block {
@@ -88,7 +96,7 @@ pub async fn get_block_by_hash(
 pub async fn get_transactions(
     Query(pagination): Query<BlockPagination>,
     State(state): State<IndexerApiState>,
-) -> Result<Json<Vec<TransactionDb>>, StatusCode> {
+) -> Result<Json<Vec<APITransaction>>, StatusCode> {
     let transactions = match pagination.start_block {
         Some(start_block) => sqlx::query_as::<_, TransactionDb>(
             r#"
@@ -116,6 +124,7 @@ pub async fn get_transactions(
     }
     .fetch_all(&state.db)
     .await
+    .map(|db| db.into_iter().map(Into::<APITransaction>::into).collect())
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     Ok(Json(transactions))
@@ -125,7 +134,7 @@ pub async fn get_transactions_by_contract(
     Path(contract_name): Path<String>,
     Query(pagination): Query<BlockPagination>,
     State(state): State<IndexerApiState>,
-) -> Result<Json<Vec<TransactionDb>>, StatusCode> {
+) -> Result<Json<Vec<APITransaction>>, StatusCode> {
     let transactions = match pagination.start_block {
         Some(start_block) => sqlx::query_as::<_, TransactionDb>(
             r#"
@@ -157,6 +166,7 @@ pub async fn get_transactions_by_contract(
     }
     .fetch_all(&state.db)
     .await
+    .map(|db| db.into_iter().map(Into::<APITransaction>::into).collect())
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     // This could return 404 if the contract doesn't exist,
@@ -168,7 +178,7 @@ pub async fn get_transactions_by_contract(
 pub async fn get_transactions_by_height(
     Path(height): Path<i64>,
     State(state): State<IndexerApiState>,
-) -> Result<Json<Vec<TransactionDb>>, StatusCode> {
+) -> Result<Json<Vec<APITransaction>>, StatusCode> {
     let transactions = sqlx::query_as::<_, TransactionDb>(
         r#"
         SELECT t.*
@@ -181,6 +191,7 @@ pub async fn get_transactions_by_height(
     .bind(height)
     .fetch_all(&state.db)
     .await
+    .map(|db| db.into_iter().map(Into::<APITransaction>::into).collect())
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     Ok(Json(transactions))
@@ -189,7 +200,7 @@ pub async fn get_transactions_by_height(
 pub async fn get_transaction_with_hash(
     Path(tx_hash): Path<String>,
     State(state): State<IndexerApiState>,
-) -> Result<Json<TransactionDb>, StatusCode> {
+) -> Result<Json<APITransaction>, StatusCode> {
     let transaction = sqlx::query_as::<_, TransactionDb>(
         r#"
         SELECT *
@@ -201,6 +212,7 @@ pub async fn get_transaction_with_hash(
     .bind(tx_hash)
     .fetch_optional(&state.db)
     .await
+    .map(|db| db.map(Into::<APITransaction>::into))
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     match transaction {
@@ -275,7 +287,7 @@ pub async fn get_blob_transactions_by_contract(
                 .collect();
 
             Ok(TransactionWithBlobs {
-                tx_hash,
+                tx_hash: tx_hash.0,
                 block_hash,
                 index,
                 version,
@@ -298,12 +310,13 @@ pub async fn get_blob_transactions_by_contract(
 pub async fn get_blobs_by_tx_hash(
     Path(tx_hash): Path<String>,
     State(state): State<IndexerApiState>,
-) -> Result<Json<Vec<BlobDb>>, StatusCode> {
+) -> Result<Json<Vec<APIBlob>>, StatusCode> {
     // TODO: Order transaction ?
     let blobs = sqlx::query_as::<_, BlobDb>("SELECT * FROM blobs WHERE tx_hash = $1")
         .bind(tx_hash)
         .fetch_all(&state.db)
         .await
+        .map(|db| db.into_iter().map(Into::<APIBlob>::into).collect())
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     // This could return 404 if the transaction doesn't exist,
@@ -314,13 +327,14 @@ pub async fn get_blobs_by_tx_hash(
 pub async fn get_blob(
     Path((tx_hash, blob_index)): Path<(String, i32)>,
     State(state): State<IndexerApiState>,
-) -> Result<Json<BlobDb>, StatusCode> {
+) -> Result<Json<APIBlob>, StatusCode> {
     let blob =
         sqlx::query_as::<_, BlobDb>("SELECT * FROM blobs WHERE tx_hash = $1 AND blob_index = $2")
             .bind(tx_hash)
             .bind(blob_index)
             .fetch_optional(&state.db)
             .await
+            .map(|db| db.map(Into::<APIBlob>::into))
             .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     match blob {
@@ -332,10 +346,11 @@ pub async fn get_blob(
 // Contracts
 pub async fn list_contracts(
     State(state): State<IndexerApiState>,
-) -> Result<Json<Vec<ContractDb>>, StatusCode> {
+) -> Result<Json<Vec<APIContract>>, StatusCode> {
     let contract = sqlx::query_as::<_, ContractDb>("SELECT * FROM contracts")
         .fetch_all(&state.db)
         .await
+        .map(|db| db.into_iter().map(Into::<APIContract>::into).collect())
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     Ok(Json(contract))
@@ -344,12 +359,13 @@ pub async fn list_contracts(
 pub async fn get_contract(
     Path(contract_name): Path<String>,
     State(state): State<IndexerApiState>,
-) -> Result<Json<ContractDb>, StatusCode> {
+) -> Result<Json<APIContract>, StatusCode> {
     let contract =
         sqlx::query_as::<_, ContractDb>("SELECT * FROM contracts WHERE contract_name = $1")
             .bind(contract_name)
             .fetch_optional(&state.db)
             .await
+            .map(|db| db.map(Into::<APIContract>::into))
             .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     match contract {
@@ -361,7 +377,7 @@ pub async fn get_contract(
 pub async fn get_contract_state_by_height(
     Path((contract_name, height)): Path<(String, i64)>,
     State(state): State<IndexerApiState>,
-) -> Result<Json<ContractStateDb>, StatusCode> {
+) -> Result<Json<APIContractState>, StatusCode> {
     let contract = sqlx::query_as::<_, ContractStateDb>(
         r#"
         SELECT cs.*
@@ -373,6 +389,7 @@ pub async fn get_contract_state_by_height(
     .bind(height)
     .fetch_optional(&state.db)
     .await
+    .map(|db| db.map(Into::<APIContractState>::into))
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     match contract {

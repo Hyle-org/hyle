@@ -1,13 +1,13 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 use std::{fs::File, io::Read};
 
 use anyhow::Result;
 use clap::{command, Parser, Subcommand};
-use hyle::{
-    model::{
-        Blob, BlobData, BlobTransaction, ContractName, ProofData, ProofTransaction,
-        RegisterContractTransaction,
-    },
-    rest::client::NodeApiHttpClient,
+use client_sdk::rest_client::NodeApiHttpClient;
+use hyle::model::{
+    Blob, BlobData, BlobTransaction, ContractName, ProofData, ProofTransaction,
+    RegisterContractTransaction,
 };
 use hyle_contract_sdk::{Identity, StateDigest, Verifier};
 
@@ -28,7 +28,7 @@ async fn send_proof(
     let res = client
         .send_tx_proof(&ProofTransaction {
             contract_name: contract_name.clone(),
-            proof: ProofData::Bytes(proof),
+            proof: ProofData(proof),
         })
         .await?;
     assert!(res.status().is_success());
@@ -50,7 +50,12 @@ async fn send_blobs(
 
     let blobs: Vec<Blob> = blobs
         .chunks(2)
-        .map(|chunk| (chunk[0].clone(), chunk[1].clone()))
+        .map(|chunk| {
+            (
+                chunk.first().unwrap().clone(),
+                chunk.get(1).unwrap().clone(),
+            )
+        })
         .map(|(contract_name, blob_data)| {
             let data = BlobData(hex::decode(blob_data).expect("Data decoding failed"));
             Blob {
@@ -144,16 +149,14 @@ enum SendCommands {
     },
     /// Query contract state
     #[command(alias = "s")]
-    State {
-        contract_name: String,
-    },
-    Auto,
+    State { contract_name: String },
+    //Auto,
 }
 
 async fn handle_args(args: Args) -> Result<()> {
     let url = format!("http://{}:{}", args.host, args.port);
 
-    let client = NodeApiHttpClient::new(url);
+    let client = NodeApiHttpClient::new(url)?;
 
     match args.command {
         SendCommands::Blobs { identity, blobs } => {
@@ -181,13 +184,13 @@ async fn handle_args(args: Args) -> Result<()> {
             )
             .await
         }
-        SendCommands::Auto => {
-            let _ = client
-                .run_scenario_api_test(1, 60)
-                .await
-                .map_err(|e| anyhow::anyhow!("Failed to run scenario test {}", e))?;
-            Ok(())
-        }
+        //SendCommands::Auto => {
+        //    let _ = client
+        //        .run_scenario_api_test(1, 60)
+        //        .await
+        //        .map_err(|e| anyhow::anyhow!("Failed to run scenario test {}", e))?;
+        //    Ok(())
+        //}
         SendCommands::State { contract_name } => client
             .get_contract(&contract_name.into())
             .await

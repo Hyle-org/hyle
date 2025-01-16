@@ -108,13 +108,12 @@ mod test {
     use bytes::BytesMut;
     use tokio_util::codec::{Decoder, Encoder};
 
+    use crate::model::{AggregateSignature, ConsensusProposal};
     use crate::{
-        consensus::ConsensusProposal,
         data_availability::codec::{
             DataAvailabilityClientCodec, DataAvailabilityServerCodec, DataAvailabilityServerRequest,
         },
         model::{BlockHeight, SignedBlock},
-        utils::crypto::AggregateSignature,
     };
 
     #[tokio::test]

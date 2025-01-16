@@ -1,13 +1,11 @@
 use alloc::string::String;
 use alloc::vec::Vec;
+use bincode::{Decode, Encode};
 use core::cell::{Ref, RefCell, RefMut};
 use core::ops::{Deref, DerefMut};
-
-use crate::{Blob, StructuredBlob};
-use crate::{ContractName, Identity};
-use bincode::{Decode, Encode};
-
 use serde::{Deserialize, Serialize};
+
+use hyle_model::{Blob, ContractName, Identity, StructuredBlob};
 
 /// ExecutionContext provides an implementation of data for the CallerCallee trait
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, Default)]

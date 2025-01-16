@@ -2,7 +2,9 @@ use alloc::{format, string::String, vec::Vec};
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 
-use crate::{Blob, BlobData, BlobIndex, ContractAction, ContractName, RunResult};
+use hyle_model::{Blob, BlobData, BlobIndex, ContractAction, ContractName};
+
+use crate::RunResult;
 
 /// Trait representing an identity verification contract.
 pub trait IdentityVerification {

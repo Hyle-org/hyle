@@ -34,19 +34,18 @@ where
     where
         S: bincode::Decode,
     {
-        info!("Loading file {}", file.to_string_lossy());
         match fs::File::open(file) {
             Ok(mut reader) => {
+                info!("Loaded data from disk {}", file.to_string_lossy());
                 bincode::decode_from_std_read(&mut reader, bincode::config::standard())
                     .log_error(format!("Loading and decoding {}", file.to_string_lossy()))
                     .ok()
             }
-            Err(e) => {
+            Err(_) => {
                 info!(
-                    "File {} not found for module {} (using default): {:?}",
+                    "File {} not found for module {} (using default)",
                     file.to_string_lossy(),
                     type_name::<S>(),
-                    e
                 );
                 None
             }
@@ -110,21 +109,44 @@ pub mod signal {
 
     impl BusMessage for ShutdownModule {}
     impl BusMessage for ShutdownCompleted {}
+
+    pub async fn async_receive_shutdown<T>(
+        should_shutdown: &mut bool,
+        shutdown_receiver: &mut tokio::sync::broadcast::Receiver<
+            crate::utils::modules::signal::ShutdownModule,
+        >,
+    ) -> anyhow::Result<()> {
+        if *should_shutdown {
+            return Ok(());
+        }
+        while let Ok(shutdown_event) = shutdown_receiver.recv().await {
+            if shutdown_event.module == std::any::type_name::<T>() {
+                *should_shutdown = true;
+                return Ok(());
+            }
+        }
+        anyhow::bail!(
+            "Error while shutting down module {}",
+            std::any::type_name::<T>()
+        );
+    }
 }
 
 #[macro_export]
 macro_rules! module_handle_messages {
     (on_bus $bus:expr, $($rest:tt)*) => {
-
-        $crate::handle_messages! {
-            on_bus $bus,
-            listen<$crate::utils::modules::signal::ShutdownModule> shutdown_event => {
-                if shutdown_event.module == std::any::type_name::<Self>() {
-                    tracing::warn!("Break signal received for module {}", shutdown_event.module);
+        {
+            let mut shutdown_receiver = unsafe { &mut *Pick::<tokio::sync::broadcast::Receiver<$crate::utils::modules::signal::ShutdownModule>>::splitting_get_mut(&mut $bus) };
+            let mut should_shutdown = false;
+            $crate::handle_messages! {
+                on_bus $bus,
+                $($rest)*
+                Ok(_) = $crate::utils::modules::signal::async_receive_shutdown::<Self>(&mut should_shutdown, &mut shutdown_receiver) => {
+                    tracing::debug!("Break signal received for module {}", std::any::type_name::<Self>());
                     break;
                 }
             }
-            $($rest)*
+            should_shutdown
         }
     };
 }
@@ -170,7 +192,7 @@ impl ShutdownClient {
             on_bus *self,
             listen<ShutdownCompleted> msg => {
                 if msg.module == module_name {
-                    info!("Module {} successfully shut", msg.module);
+                    debug!("Module {} successfully shut", msg.module);
                     break;
                 }
             }
@@ -202,12 +224,12 @@ impl ModulesHandler {
             self.started_modules.push(module.name);
             let mut shutdown_client = ShutdownClient::new_from_bus(self.bus.new_handle()).await;
 
-            info!("Starting module {}", module.name);
+            debug!("Starting module {}", module.name);
             let handle = tokio::task::Builder::new()
                 .name(module.name)
                 .spawn(async move {
                     match module.starter.await {
-                        Ok(_) => tracing::warn!("Module {} exited with no error.", module.name),
+                        Ok(_) => tracing::debug!("Module {} exited with no error.", module.name),
                         Err(e) => {
                             tracing::error!("Module {} exited with error: {:?}", module.name, e);
                         }
@@ -276,13 +298,15 @@ impl ModulesHandler {
 
 #[cfg(test)]
 mod tests {
-    use crate::bus::{dont_use_this::get_receiver, metrics::BusMetrics};
+    use crate::bus::{dont_use_this::get_receiver, metrics::BusMetrics, BusMessage};
 
     use super::*;
     use crate::bus::SharedMessageBus;
+    use proptest::bits::usize;
     use signal::ShutdownModule;
-    use std::fs::File;
+    use std::{fs::File, sync::Arc};
     use tempfile::tempdir;
+    use tokio::sync::Mutex;
 
     #[derive(Default, bincode::Encode, bincode::Decode)]
     struct TestStruct {
@@ -294,49 +318,48 @@ mod tests {
         _field: T,
     }
 
-    module_bus_client! {
-        struct TestBusClient { }
-    }
-
-    impl Module for TestModule<usize> {
-        type Context = TestBusClient;
-        async fn build(_ctx: Self::Context) -> Result<Self> {
-            Ok(TestModule {
-                bus: _ctx,
-                _field: 1,
-            })
-        }
-
-        async fn run(&mut self) -> Result<()> {
-            module_handle_messages! {
-                on_bus self.bus,
-            }
-
-            Ok(())
-        }
-    }
-
-    struct TestModule2 {
-        bus: TestBusClient2,
-    }
+    impl BusMessage for usize {}
 
     module_bus_client! {
-        struct TestBusClient2 { }
+        struct TestBusClient { sender(usize), }
     }
 
-    impl Module for TestModule2 {
-        type Context = TestBusClient2;
-        async fn build(_ctx: Self::Context) -> Result<Self> {
-            Ok(TestModule2 { bus: _ctx })
-        }
+    macro_rules! test_module {
+        ($bus_client:ty, $tag:ty) => {
+            impl Module for TestModule<$tag> {
+                type Context = $bus_client;
+                async fn build(_ctx: Self::Context) -> Result<Self> {
+                    Ok(TestModule {
+                        bus: _ctx,
+                        _field: Default::default(),
+                    })
+                }
 
-        async fn run(&mut self) -> Result<()> {
-            module_handle_messages! {
-                on_bus self.bus,
+                async fn run(&mut self) -> Result<()> {
+                    let nb_shutdowns: Arc<Mutex<usize>> = Arc::new(Mutex::new(0));
+                    let cloned = Arc::clone(&nb_shutdowns);
+                    module_handle_messages! {
+                        on_bus self.bus,
+                        _ = async {
+                            let mut guard = cloned.lock().await;
+                            (*guard) += 1;
+                            std::future::pending::<()>().await
+                        } => { }
+                    };
+
+                    self.bus.send(*cloned.lock().await).expect(
+                        "Error while sending the number of loop cancellations while shutting down",
+                    );
+
+                    Ok(())
+                }
             }
-            Ok(())
-        }
+        };
     }
+
+    test_module!(TestBusClient, String);
+    test_module!(TestBusClient, usize);
+    test_module!(TestBusClient, bool);
 
     #[test]
     fn test_load_from_disk_or_default() {
@@ -350,12 +373,13 @@ mod tests {
             .unwrap();
 
         // Load the struct from the file
-        let loaded_struct: TestStruct = TestModule::load_from_disk_or_default(&file_path);
+        let loaded_struct: TestStruct = TestModule::<usize>::load_from_disk_or_default(&file_path);
         assert_eq!(loaded_struct.value, 42);
 
         // Load from a non-existent file
         let non_existent_path = dir.path().join("non_existent_file");
-        let default_struct: TestStruct = TestModule::load_from_disk_or_default(&non_existent_path);
+        let default_struct: TestStruct =
+            TestModule::<usize>::load_from_disk_or_default(&non_existent_path);
         assert_eq!(default_struct.value, 0);
     }
 
@@ -365,10 +389,10 @@ mod tests {
         let file_path = dir.path().join("test_file.data");
 
         let test_struct = TestStruct { value: 42 };
-        TestModule::save_on_disk(&file_path, &test_struct).unwrap();
+        TestModule::<usize>::save_on_disk(&file_path, &test_struct).unwrap();
 
         // Load the struct from the file to verify it was saved correctly
-        let loaded_struct: TestStruct = TestModule::load_from_disk_or_default(&file_path);
+        let loaded_struct: TestStruct = TestModule::<usize>::load_from_disk_or_default(&file_path);
         assert_eq!(loaded_struct.value, 42);
     }
 
@@ -377,8 +401,8 @@ mod tests {
         let shared_bus = SharedMessageBus::new(BusMetrics::global("id".to_string()));
         let mut handler = ModulesHandler::new(&shared_bus).await;
         handler
-            .build_module::<TestModule2>(
-                TestBusClient2::new_from_bus(shared_bus.new_handle()).await,
+            .build_module::<TestModule<usize>>(
+                TestBusClient::new_from_bus(shared_bus.new_handle()).await,
             )
             .await
             .unwrap();
@@ -389,8 +413,9 @@ mod tests {
     async fn test_add_module() {
         let shared_bus = SharedMessageBus::new(BusMetrics::global("id".to_string()));
         let mut handler = ModulesHandler::new(&shared_bus).await;
-        let module = TestModule2 {
-            bus: TestBusClient2::new_from_bus(shared_bus.new_handle()).await,
+        let module = TestModule {
+            bus: TestBusClient::new_from_bus(shared_bus.new_handle()).await,
+            _field: 2,
         };
 
         handler.add_module(module).unwrap();
@@ -447,8 +472,8 @@ mod tests {
             .await
             .unwrap();
         handler
-            .build_module::<TestModule2>(
-                TestBusClient2::new_from_bus(shared_bus.new_handle()).await,
+            .build_module::<TestModule<String>>(
+                TestBusClient::new_from_bus(shared_bus.new_handle()).await,
             )
             .await
             .unwrap();
@@ -461,12 +486,12 @@ mod tests {
         // Shutdown last module first
         assert_eq!(
             shutdown_receiver.recv().await.unwrap().module,
-            std::any::type_name::<TestModule2>().to_string()
+            std::any::type_name::<TestModule<String>>().to_string()
         );
 
         assert_eq!(
             shutdown_completed_receiver.recv().await.unwrap().module,
-            std::any::type_name::<TestModule2>().to_string()
+            std::any::type_name::<TestModule<String>>().to_string()
         );
 
         // Then first module at last
@@ -479,5 +504,59 @@ mod tests {
             shutdown_completed_receiver.recv().await.unwrap().module,
             std::any::type_name::<TestModule<usize>>().to_string()
         );
+    }
+
+    #[tokio::test]
+    async fn test_shutdown_modules_exactly_once() {
+        let shared_bus = SharedMessageBus::new(BusMetrics::global("id".to_string()));
+        let mut cancellation_counter_receiver = get_receiver::<usize>(&shared_bus).await;
+        let mut shutdown_completed_receiver = get_receiver::<ShutdownCompleted>(&shared_bus).await;
+        let mut handler = ModulesHandler::new(&shared_bus).await;
+
+        handler
+            .build_module::<TestModule<usize>>(
+                TestBusClient::new_from_bus(shared_bus.new_handle()).await,
+            )
+            .await
+            .unwrap();
+        handler
+            .build_module::<TestModule<String>>(
+                TestBusClient::new_from_bus(shared_bus.new_handle()).await,
+            )
+            .await
+            .unwrap();
+        handler
+            .build_module::<TestModule<bool>>(
+                TestBusClient::new_from_bus(shared_bus.new_handle()).await,
+            )
+            .await
+            .unwrap();
+        let handle = handler.start_modules();
+
+        assert!(is_future_pending(handle).await);
+
+        _ = handler.shutdown_modules(Duration::from_secs(1)).await;
+
+        // Shutdown last module first
+        assert_eq!(
+            shutdown_completed_receiver.recv().await.unwrap().module,
+            std::any::type_name::<TestModule<bool>>().to_string()
+        );
+
+        assert_eq!(
+            shutdown_completed_receiver.recv().await.unwrap().module,
+            std::any::type_name::<TestModule<String>>().to_string()
+        );
+
+        // Then first module at last
+
+        assert_eq!(
+            shutdown_completed_receiver.recv().await.unwrap().module,
+            std::any::type_name::<TestModule<usize>>().to_string()
+        );
+
+        assert_eq!(cancellation_counter_receiver.try_recv().expect("1"), 1);
+        assert_eq!(cancellation_counter_receiver.try_recv().expect("1"), 1);
+        assert_eq!(cancellation_counter_receiver.try_recv().expect("1"), 1);
     }
 }

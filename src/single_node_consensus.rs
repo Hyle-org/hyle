@@ -2,15 +2,11 @@ use std::path::PathBuf;
 
 use crate::bus::command_response::{CmdRespClient, Query};
 use crate::bus::BusClientSender;
-use crate::consensus::{
-    CommittedConsensusProposal, ConsensusEvent, ConsensusInfo, ConsensusNetMessage,
-    ConsensusProposalHash, QueryConsensusInfo,
-};
+use crate::consensus::{CommittedConsensusProposal, ConsensusEvent, QueryConsensusInfo};
 use crate::data_availability::DataEvent;
 use crate::genesis::GenesisEvent;
-use crate::mempool::Cut;
 use crate::mempool::QueryNewCut;
-use crate::model::{get_current_timestamp_ms, Hashable};
+use crate::model::{utils::get_current_timestamp_ms, *};
 use crate::module_handle_messages;
 use crate::utils::conf::SharedConf;
 use crate::utils::crypto::SharedBlstCrypto;
@@ -19,7 +15,7 @@ use crate::{model::SharedRunContext, utils::modules::Module};
 use anyhow::Result;
 use bincode::{Decode, Encode};
 use staking::state::Staking;
-use tracing::{info, warn};
+use tracing::{debug, warn};
 
 module_bus_client! {
 struct SingleNodeConsensusBusClient {
@@ -94,11 +90,12 @@ impl SingleNodeConsensus {
     async fn start(&mut self) -> Result<()> {
         if !self.store.has_done_genesis {
             // We're starting fresh, need to generate a genesis block.
-            tracing::info!("Doing genesis");
+            tracing::trace!("Doing genesis");
 
-            module_handle_messages! {
+            let should_shutdown = module_handle_messages! {
                 on_bus self.bus,
                 listen<GenesisEvent> msg => {
+                    #[allow(clippy::expect_used, reason="We want to fail to start with misconfigured genesis block")]
                     match msg {
                         GenesisEvent::GenesisBlock (signed_block) => {
                             self.store.last_consensus_proposal_hash = signed_block.hash();
@@ -118,9 +115,12 @@ impl SingleNodeConsensus {
                         GenesisEvent::NoGenesis => unreachable!("Single genesis mode should never go through this path")
                     }
                 }
+            };
+            if should_shutdown {
+                return Ok(());
             }
             self.store.has_done_genesis = true;
-            tracing::info!("Genesis block done");
+            tracing::trace!("Genesis block done");
         }
 
         let mut interval = tokio::time::interval(tokio::time::Duration::from_millis(
@@ -140,7 +140,7 @@ impl SingleNodeConsensus {
             _ = interval.tick() => {
                 self.handle_new_slot_tick().await?;
             }
-        }
+        };
         if let Some(file) = &self.file {
             if let Err(e) = Self::save_on_disk(file.as_path(), &self.store) {
                 warn!(
@@ -153,7 +153,7 @@ impl SingleNodeConsensus {
         Ok(())
     }
     async fn handle_new_slot_tick(&mut self) -> Result<()> {
-        info!("New slot tick");
+        debug!("New slot tick");
         // Query a new cut to Mempool in order to create a new CommitCut
         match self
             .bus
@@ -169,7 +169,7 @@ impl SingleNodeConsensus {
             }
         };
         let new_slot = self.store.last_slot + 1;
-        let consensus_proposal = crate::consensus::ConsensusProposal {
+        let consensus_proposal = ConsensusProposal {
             slot: new_slot,
             view: 0,
             timestamp: get_current_timestamp_ms(),
@@ -209,10 +209,8 @@ mod tests {
     use crate::bus::metrics::BusMetrics;
     use crate::bus::{bus_client, SharedMessageBus};
     use crate::handle_messages;
-    use crate::mempool::DataProposalHash;
-    use crate::model::ValidatorPublicKey;
     use crate::utils::conf::Conf;
-    use crate::utils::crypto::{AggregateSignature, BlstCrypto};
+    use crate::utils::crypto::BlstCrypto;
     use anyhow::Result;
     use std::sync::Arc;
     use tokio::sync::broadcast::Receiver;
@@ -230,7 +228,7 @@ mod tests {
 
     impl TestContext {
         pub async fn new(name: &str) -> Self {
-            let crypto = BlstCrypto::new(name.into());
+            let crypto = BlstCrypto::new(name.into()).unwrap();
             let shared_bus = SharedMessageBus::new(BusMetrics::global("global".to_string()));
             let conf = Arc::new(Conf::default());
             let store = SingleNodeConsensusStore::default();

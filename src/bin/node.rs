@@ -9,10 +9,12 @@ use hyle::{
     genesis::Genesis,
     indexer::Indexer,
     mempool::Mempool,
-    model::{rest::NodeInfo, CommonRunContext, NodeRunContext, SharedRunContext},
+    model::{api::NodeInfo, CommonRunContext, NodeRunContext, SharedRunContext},
+    node_state::module::NodeStateModule,
     p2p::P2P,
     rest::{RestApi, RestApiRunContext},
     single_node_consensus::SingleNodeConsensus,
+    tcp_server::TcpServer,
     tools::mock_workflow::MockWorkflowHandler,
     utils::{
         conf,
@@ -63,7 +65,7 @@ async fn main() -> Result<()> {
     );
 
     let bus = SharedMessageBus::new(BusMetrics::global(config.id.clone()));
-    let crypto = Arc::new(BlstCrypto::new(config.id.clone()));
+    let crypto = Arc::new(BlstCrypto::new(config.id.clone()).context("Could not create crypto")?);
     let pubkey = Some(crypto.validator_pubkey().clone());
 
     setup_tracing(
@@ -88,13 +90,14 @@ async fn main() -> Result<()> {
             opentelemetry_prometheus::exporter()
                 .with_registry(prometheus::default_registry().clone())
                 .build()
-                .unwrap(),
+                .context("starting prometheus exporter")?,
         )
         .build();
 
     std::fs::create_dir_all(&config.data_directory).context("creating data directory")?;
 
     let run_indexer = config.run_indexer;
+    let run_tcp_server = config.run_tcp_server;
 
     let ctx = SharedRunContext {
         common: CommonRunContext {
@@ -127,10 +130,14 @@ async fn main() -> Result<()> {
     handler
         .build_module::<DataAvailability>(ctx.clone())
         .await?;
+    handler
+        .build_module::<NodeStateModule>(ctx.common.clone())
+        .await?;
 
     handler.build_module::<P2P>(ctx.clone()).await?;
 
     // Should come last so the other modules have nested their own routes.
+    #[allow(clippy::expect_used, reason = "Fail on misconfiguration")]
     let router = ctx
         .common
         .router
@@ -152,6 +159,10 @@ async fn main() -> Result<()> {
             router: router.clone(),
         })
         .await?;
+
+    if run_tcp_server {
+        handler.build_module::<TcpServer>(ctx.clone()).await?;
+    }
 
     #[cfg(unix)]
     {

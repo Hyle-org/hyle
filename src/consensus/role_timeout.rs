@@ -1,12 +1,13 @@
 use std::collections::HashSet;
 
 use bincode::{Decode, Encode};
-use staking::model::ValidatorPublicKey;
-use tracing::{debug, info, warn};
+use tracing::{debug, info, trace, warn};
 
-use crate::{consensus::Ticket, model::get_current_timestamp, utils::crypto::SignedByValidator};
-
-use super::{Consensus, ConsensusNetMessage, QuorumCertificate, Slot, View};
+use super::Consensus;
+use crate::model::{
+    utils::get_current_timestamp, ConsensusNetMessage, QuorumCertificate, SignedByValidator, Slot,
+    Ticket, ValidatorPublicKey, View,
+};
 use anyhow::{bail, Context, Result};
 
 #[derive(Debug, Encode, Decode, Default)]
@@ -26,7 +27,7 @@ impl TimeoutState {
     pub fn schedule_next(&mut self, timestamp: u64) {
         match self {
             TimeoutState::Inactive => {
-                info!("⏲️ Scheduling timeout");
+                trace!("⏲️ Scheduling timeout");
             }
             TimeoutState::CertificateEmitted => {
                 info!("⏲️ Rescheduling timeout after a certificate was emitted");

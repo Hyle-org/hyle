@@ -12,11 +12,11 @@ use crate::{
         command_response::{CmdRespClient, Query},
         metrics::BusMetrics,
     },
-    model::CommonRunContext,
+    model::{CommonRunContext, ConsensusInfo},
     rest::AppError,
 };
 
-use super::{ConsensusInfo, QueryConsensusInfo, QueryConsensusStakingState};
+use super::{QueryConsensusInfo, QueryConsensusStakingState};
 
 bus_client! {
 struct RestBusClient {

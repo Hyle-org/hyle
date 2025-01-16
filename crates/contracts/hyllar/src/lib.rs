@@ -197,7 +197,7 @@ mod tests {
     fn test_total_supply() {
         let initial_supply = 1000;
         let token = HyllarToken::new(initial_supply, "faucet".to_string());
-        let contract = HyllarTokenContract::init(token, Identity("caller".to_string()));
+        let contract = HyllarTokenContract::init(token, Identity::new("caller"));
 
         assert_eq!(contract.total_supply().unwrap(), initial_supply);
     }
@@ -206,7 +206,7 @@ mod tests {
     fn test_balance_of() {
         let initial_supply = 1000;
         let token = HyllarToken::new(initial_supply, "faucet".to_string());
-        let contract = HyllarTokenContract::init(token, Identity("caller".to_string()));
+        let contract = HyllarTokenContract::init(token, Identity::new("caller"));
 
         assert_eq!(contract.balance_of("faucet").unwrap(), initial_supply);
         assert_eq!(
@@ -219,7 +219,7 @@ mod tests {
     fn test_transfer() {
         let initial_supply = 1000;
         let token = HyllarToken::new(initial_supply, "faucet".to_string());
-        let mut contract = HyllarTokenContract::init(token, Identity("faucet".to_string()));
+        let mut contract = HyllarTokenContract::init(token, Identity::new("faucet"));
 
         assert!(contract.transfer("recipient", 500).is_ok());
         assert_eq!(contract.balance_of("faucet").unwrap(), 500);
@@ -232,7 +232,7 @@ mod tests {
     fn test_approve_and_allowance() {
         let initial_supply = 1000;
         let token = HyllarToken::new(initial_supply, "faucet".to_string());
-        let mut contract = HyllarTokenContract::init(token, Identity("owner".to_string()));
+        let mut contract = HyllarTokenContract::init(token, Identity::new("owner"));
 
         assert!(contract.approve("spender", 300).is_ok());
         assert_eq!(contract.allowance("owner", "spender").unwrap(), 300);
@@ -243,11 +243,10 @@ mod tests {
     fn test_transfer_from() {
         let initial_supply = 1000;
         let token = HyllarToken::new(initial_supply, "faucet".to_string());
-        let mut contract = HyllarTokenContract::init(token, Identity("faucet".to_string()));
+        let mut contract = HyllarTokenContract::init(token, Identity::new("faucet"));
 
         assert!(contract.approve("spender", 300).is_ok());
-        let mut contract =
-            HyllarTokenContract::init(contract.state(), Identity("spender".to_string()));
+        let mut contract = HyllarTokenContract::init(contract.state(), Identity::new("spender"));
 
         assert!(contract.transfer_from("faucet", "recipient", 200).is_ok());
         assert_eq!(contract.balance_of("faucet").unwrap(), 800);
@@ -267,7 +266,7 @@ mod tests {
     fn test_transfer_from_unallowed() {
         let initial_supply = 1000;
         let token = HyllarToken::new(initial_supply, "faucet".to_string());
-        let mut contract = HyllarTokenContract::init(token, Identity("spender".to_string()));
+        let mut contract = HyllarTokenContract::init(token, Identity::new("spender"));
 
         assert_eq!(
             contract
@@ -282,14 +281,13 @@ mod tests {
     fn test_transfer_from_insufficient_balance() {
         let initial_supply = 1000;
         let token = HyllarToken::new(initial_supply, "faucet".to_string());
-        let mut contract = HyllarTokenContract::init(token, Identity("faucet".to_string()));
+        let mut contract = HyllarTokenContract::init(token, Identity::new("faucet"));
 
         // Approve an allowance for the spender
         assert!(contract.approve("spender", 5000).is_ok());
 
         // Attempt to transfer more than the sender's balance
-        let mut contract =
-            HyllarTokenContract::init(contract.state(), Identity("spender".to_string()));
+        let mut contract = HyllarTokenContract::init(contract.state(), Identity::new("spender"));
         let result = contract.transfer_from("faucet", "recipient", 1100);
 
         assert!(result.is_err());

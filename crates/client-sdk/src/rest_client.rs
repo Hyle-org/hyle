@@ -3,19 +3,11 @@ use std::fmt::Display;
 use anyhow::{Context, Result};
 use reqwest::{Response, Url};
 
-#[cfg(feature = "node")]
-use crate::tools::mock_workflow::RunScenario;
-use crate::{
-    model::consensus::ConsensusInfo,
-    model::data_availability::Contract,
-    model::indexer::ContractDb,
-    model::rest::NodeInfo,
-    model::{
-        BlobTransaction, BlockHeight, ContractName, ProofTransaction, RegisterContractTransaction,
-    },
+use sdk::{
+    api::{APIContract, APIStaking, APITransaction, NodeInfo},
+    BlobTransaction, BlockHeight, ConsensusInfo, Contract, ContractName, ProofTransaction,
+    RegisterContractTransaction, StateDigest, TxHash,
 };
-use hyle_contract_sdk::{StateDigest, TxHash};
-use staking::state::Staking;
 
 pub struct NodeApiHttpClient {
     pub url: Url,
@@ -28,11 +20,11 @@ pub struct IndexerApiHttpClient {
 }
 
 impl NodeApiHttpClient {
-    pub fn new(url: String) -> Self {
-        Self {
-            url: Url::parse(&url).expect("Invalid url"),
+    pub fn new(url: String) -> Result<Self> {
+        Ok(Self {
+            url: Url::parse(&url)?,
             reqwest_client: reqwest::Client::new(),
-        }
+        })
     }
 
     pub async fn send_tx_blob(&self, tx: &BlobTransaction) -> Result<TxHash> {
@@ -83,14 +75,14 @@ impl NodeApiHttpClient {
             .context("reading consensus info response")
     }
 
-    pub async fn get_consensus_staking_state(&self) -> Result<Staking> {
+    pub async fn get_consensus_staking_state(&self) -> Result<APIStaking> {
         self.reqwest_client
             .get(format!("{}v1/consensus/staking_state", self.url))
             .header("Content-Type", "application/json")
             .send()
             .await
             .context("getting consensus staking state")?
-            .json::<Staking>()
+            .json::<APIStaking>()
             .await
             .context("reading consensus staking state response")
     }
@@ -130,64 +122,45 @@ impl NodeApiHttpClient {
             .await
             .context("reading contract response")
     }
-
-    #[cfg(feature = "node")]
-    pub async fn run_scenario_api_test(
-        &self,
-        qps: u64,
-        injection_duration_seconds: u64,
-    ) -> Result<Response> {
-        self.reqwest_client
-            .post(format!("{}v1/tools/run_scenario", self.url))
-            .body(serde_json::to_string(&RunScenario::ApiTest {
-                qps,
-                injection_duration_seconds,
-            })?)
-            .header("Content-Type", "application/json")
-            .send()
-            .await
-            .context("Starting api test scenario")
-    }
 }
 
 impl IndexerApiHttpClient {
-    pub fn new(url: String) -> Self {
-        Self {
-            url: Url::parse(&url).expect("Invalid url"),
+    pub fn new(url: String) -> Result<Self> {
+        Ok(Self {
+            url: Url::parse(&url)?,
             reqwest_client: reqwest::Client::new(),
-        }
+        })
     }
 
-    pub async fn list_contracts(&self) -> Result<Vec<ContractDb>> {
+    pub async fn list_contracts(&self) -> Result<Vec<APIContract>> {
         self.reqwest_client
             .get(format!("{}v1/indexer/contracts", self.url))
             .header("Content-Type", "application/json")
             .send()
             .await
             .context("getting Contract")?
-            .json::<Vec<ContractDb>>()
+            .json::<Vec<APIContract>>()
             .await
             .context("reading contract response")
     }
 
-    pub async fn get_indexer_contract(&self, contract_name: &ContractName) -> Result<Response> {
+    pub async fn get_indexer_contract(&self, contract_name: &ContractName) -> Result<APIContract> {
         self.reqwest_client
             .get(format!("{}v1/indexer/contract/{}", self.url, contract_name))
             .header("Content-Type", "application/json")
             .send()
             .await
-            .context(format!("getting Contract {}", contract_name))
+            .context(format!("getting Contract {}", contract_name))?
+            .json::<APIContract>()
+            .await
+            .context("reading contract response")
     }
 
     pub async fn fetch_current_state<State>(&self, contract_name: &ContractName) -> Result<State>
     where
-        State: TryFrom<hyle_contract_sdk::StateDigest, Error = anyhow::Error>,
+        State: TryFrom<StateDigest, Error = anyhow::Error>,
     {
-        let resp = self
-            .get_indexer_contract(contract_name)
-            .await?
-            .json::<ContractDb>()
-            .await?;
+        let resp = self.get_indexer_contract(contract_name).await?;
 
         StateDigest(resp.state_digest).try_into()
     }
@@ -211,5 +184,17 @@ impl IndexerApiHttpClient {
             .json::<NodeInfo>()
             .await
             .context("reading node info response")
+    }
+
+    pub async fn get_transaction_by_hash(&self, tx_hash: &TxHash) -> Result<APITransaction> {
+        self.reqwest_client
+            .get(format!("{}v1/indexer/transaction/hash/{tx_hash}", self.url))
+            .header("Content-Type", "application/json")
+            .send()
+            .await
+            .context("getting transaction by hash")?
+            .json::<APITransaction>()
+            .await
+            .context("reading transaction response")
     }
 }

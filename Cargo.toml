@@ -11,6 +11,7 @@ members = [
     "crates/hyrun",
     "crates/client-sdk",
     "crates/hyle-loadtest",
+    "crates/hyle-model",
 ]
 resolver = "2"
 
@@ -32,85 +33,83 @@ default-run = "node"
 
 [[bin]]
 name = "node"
-required-features = ["node"]
 
 [[bin]]
 name = "hyled"
-required-features = ["node"]
 
 [[bin]]
 name = "indexer"
-required-features = ["node"]
+
+[lints.clippy]
+unwrap_used = "warn"
+expect_used = "warn"
+unused_result_ok = "warn"
+indexing_slicing = "warn"
 
 [dependencies]
 # Public dependencies
-hyle-contract-sdk = { path = "./crates/contract-sdk", default-features = false }
-staking = { path = "./crates/contracts/staking", default-features = false }
-client-sdk = { path = "./crates/client-sdk", default-features = false }
+hyle-contract-sdk = { path = "./crates/contract-sdk", default-features = false, features = ["tracing"] }
+staking = { path = "./crates/contracts/staking", default-features = false, features = ["client"] }
+client-sdk = { path = "./crates/client-sdk", default-features = false, features = ["rest", "tcp", "risc0"] }
+hyle-model = { path = "./crates/hyle-model", default-features = false, features = ["full", "sqlx"] }
+hydentity = { path = "./crates/contracts/hydentity", features = ["client"] }
+hyllar = { path = "./crates/contracts/hyllar", features = ["client"] }
+risc0-recursion = { path = "./crates/contracts/risc0-recursion" }
 
 anyhow = "1.0.95"
 bincode = { version = "2.0.0-rc.3", features = ["serde"] }
 blst = { version = "0.3.13" }
 chrono = { version = "0.4", features = ["serde"] }
-derive_more = { version = "1.0.0", features = ["display"] }
 hex = { version = "0.4.3" }
 reqwest = { version = "0.12", features = ["json"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1" }
-serde_with = { version = "3.12.0", features = ["hex"] }
 sha3 = "0.10.8"
 strum_macros = "0.26.4"
 tracing = "0.1"
 
-# Node dependencies
-hydentity = { path = "./crates/contracts/hydentity", features = [
-    "client",
-], optional = true }
-hyllar = { path = "./crates/contracts/hyllar", features = ["client"], optional = true }
-risc0-recursion = { path = "./crates/contracts/risc0-recursion", optional = true }
-
-anymap = { version = "0.12.1", optional = true }
-assertables = { version = "9.5.0", optional = true }
-axum = { version = "0.8.1", features = ["ws", "macros"], optional = true }
-axum-otel-metrics = { version = "0.9.1", optional = true }
-axum-test = { version = "17.0.1", optional = true }
-bonsai-runner = { path = "./crates/bonsai-runner", optional = true }
-borsh = { version = "1.5.3", optional = true }
-bytes = { version = "1.9.0", optional = true }
-clap = { version = "4.5.26", features = ["derive"], optional = true }
-config = { version = "=0.15.0", optional = true }
-dhat = { version = "0.3.3", optional = true }
-futures = { version = "0.3.31", optional = true }
-hyle-contracts = { path = "./crates/contracts", package = "hyle-contracts", optional = true }
-indexmap = { version = "2.7.0", features = ["serde"], optional = true }
+anymap = { version = "0.12.1" }
+assertables = { version = "9.5.0" }
+axum = { version = "0.8.1", features = ["ws", "macros"] }
+axum-otel-metrics = { version = "0.9.1" }
+axum-test = { version = "17.1.0" }
+bonsai-runner = { path = "./crates/bonsai-runner" }
+borsh = { version = "1.5.3" }
+bytes = { version = "1.9.0" }
+clap = { version = "4.5.26", features = ["derive"] }
+config = { version = "=0.15.0" }
+futures = { version = "0.3.31" }
+hyle-contracts = { path = "./crates/contracts", package = "hyle-contracts" }
+indexmap = { version = "2.7.0", features = ["serde"] }
 # opentelemetry and axum-otel-metrics must be updated together (so that there is only one opentelemetry version)
-opentelemetry = { version = "0.27", optional = true }
-opentelemetry-prometheus = { version = "0.27.0", optional = true }
-paste = { version = "1.0.15", optional = true }
-prometheus = { version = "0.13.4", optional = true }
-quote = { version = "1.0.38", optional = true }
-rand = { version = "0.8.5", optional = true }
+opentelemetry = { version = "0.27" }
+opentelemetry-prometheus = { version = "0.27.0" }
+paste = { version = "1.0.15" }
+prometheus = { version = "0.13.4" }
+quote = { version = "1.0.38" }
+rand = { version = "0.8.5" }
 risc0-zkvm = { version = "1.2.0", default-features = false, features = [
     "std",
-], optional = true }
-ron = { version = "0.8.1", optional = true }
-sp1-sdk = { version = "4.0.0-rc.8", default-features = false, optional = true }
+] }
+ron = { version = "0.8.1" }
+sp1-sdk = { version = "4.0.0", default-features = false }
 sqlx = { version = "0.8.3", features = [
     "runtime-tokio",
     "postgres",
     "migrate",
     "chrono",
-], optional = true }
-syn = { version = "2.0.96", optional = true }
-tokio = { version = "1.42.0", features = ["full", "tracing"], optional = true }
-tokio-util = { version = "0.7.13", optional = true }
+] }
+syn = { version = "2.0.96" }
+tokio = { version = "1.42.0", features = ["full", "tracing"] }
+tokio-util = { version = "0.7.13" }
 tower-http = { version = "0.6.2", features = [
     "trace",
     "cors",
-], optional = true }
-tracing-subscriber = { version = "0.3", features = ["json"], optional = true }
-fjall = { version = "2.4.4", optional = true }
+] }
+tracing-subscriber = { version = "0.3", features = ["json"] }
+fjall = { version = "2.4.4" }
 
+dhat = { version = "0.3.3", optional = true }
 [dev-dependencies]
 amm = { path = "./crates/contracts/amm" }
 assert_cmd = "2.0.16"
@@ -134,57 +133,11 @@ risc0-zkvm = { version = "1.2.0", default-features = false, features = [
 signal-child = "1.0.6"
 
 [features]
-default = ["tx_builder", "node"]
+default = []
 dhat = ["dep:dhat"]
 # Activate this feature to recompile contracts locally (mostly useful for iterating on tests)
 nonreproducible = ["hyle-contracts/nonreproducible"]
-tx_builder = [
-    "dep:bonsai-runner",
-    "dep:hyllar",
-    "dep:hydentity",
-    "dep:hyle-contracts",
-    "dep:risc0-zkvm",
-]
-node = [
-    "client-sdk/risc0",
-    "hyle-contract-sdk/tracing",
-    "staking/client",
-    "dep:anymap",
-    "dep:assertables",
-    "dep:axum",
-    "dep:axum-otel-metrics",
-    "dep:axum-test",
-    "dep:bonsai-runner",
-    "dep:borsh",
-    "dep:bytes",
-    "dep:clap",
-    "dep:config",
-    "dep:dhat",
-    "dep:fjall",
-    "dep:futures",
-    "dep:hyle-contracts",
-    "dep:hydentity",
-    "dep:hyllar",
-    "dep:risc0-recursion",
-    "dep:indexmap",
-    "dep:opentelemetry",
-    "dep:opentelemetry-prometheus",
-    "dep:paste",
-    "dep:prometheus",
-    "dep:quote",
-    "dep:rand",
-    "dep:risc0-zkvm",
-    "dep:ron",
-    "dep:sp1-sdk",
-    "dep:sqlx",
-    "dep:syn",
-    "dep:tokio",
-    "dep:tokio-util",
-    "dep:tower-http",
-    "dep:tracing-subscriber",
-]
-
-node_local_proving = ["node", "risc0-zkvm/client"]
+node_local_proving = ["risc0-zkvm/client"]
 
 [profile.release]
 lto = "thin"

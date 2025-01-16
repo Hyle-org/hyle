@@ -2,8 +2,8 @@ use anyhow::Error;
 use clap::{Parser, Subcommand};
 use hydentity::Hydentity;
 use hyle_loadtest::{
-    generate, generate_blobs_txs, generate_proof_txs, send, send_blob_txs, send_proof_txs, setup,
-    setup_hyllar, States,
+    generate, generate_blobs_txs, generate_proof_txs, load_blob_txs, load_proof_txs, send,
+    send_blob_txs, send_massive_blob, send_proof_txs, setup, setup_hyllar, States,
 };
 use tracing::Level;
 
@@ -18,8 +18,8 @@ struct Args {
     #[arg(long, default_value = "127.0.0.1")]
     pub host: String,
 
-    #[arg(long, default_value = "4321")]
-    pub port: u32,
+    #[arg(long, default_value = "1414")]
+    pub tcp_port: u32,
 
     #[arg(long, default_value = "10")]
     pub users: u32,
@@ -54,6 +54,9 @@ enum SendCommands {
     /// Run the entire flow
     #[command(alias = "l")]
     LoadTest,
+
+    #[command(alias = "smb")]
+    SendMassiveBlob,
 }
 
 #[tokio::main]
@@ -62,7 +65,8 @@ async fn main() -> Result<(), Error> {
 
     let args = Args::parse();
 
-    let url = format!("http://{}:{}", args.host, args.port);
+    let url = format!("{}:{}", args.host, args.tcp_port);
+
     let users = args.users;
     let verifier = args.verifier;
 
@@ -79,15 +83,30 @@ async fn main() -> Result<(), Error> {
         SendCommands::GenerateProofTransactions => {
             generate_proof_txs(users, states).await?;
         }
-        SendCommands::GenerateTransactions => generate(users, states).await?,
-        SendCommands::SendBlobTransactions => send_blob_txs(url).await?,
-        SendCommands::SendProofTransactions => send_proof_txs(url).await?,
-        SendCommands::SendTransactions => send(url).await?,
-        SendCommands::LoadTest => {
-            setup(url.clone(), users, verifier.clone()).await?;
-            tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+        SendCommands::GenerateTransactions => {
             generate(users, states).await?;
-            send(url).await?;
+        }
+        SendCommands::SendBlobTransactions => {
+            let blob_txs = load_blob_txs(users)?;
+            send_blob_txs(url, blob_txs).await?
+        }
+        SendCommands::SendProofTransactions => {
+            let proof_txs = load_proof_txs(users)?;
+            send_proof_txs(url, proof_txs).await?
+        }
+        SendCommands::SendTransactions => {
+            let blob_txs = load_blob_txs(users)?;
+            let proof_txs = load_proof_txs(users)?;
+            send(url, blob_txs, proof_txs).await?
+        }
+        SendCommands::LoadTest => {
+            setup(url.clone(), users, verifier).await?;
+            tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+            let (blob_txs, proof_txs) = generate(users, states).await?;
+            send(url, blob_txs, proof_txs).await?;
+        }
+        SendCommands::SendMassiveBlob => {
+            send_massive_blob(url).await?;
         }
     }
 

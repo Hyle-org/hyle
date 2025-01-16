@@ -1,18 +1,15 @@
 //! Handles all consensus logic up to block commitment.
 
-use crate::model::get_current_timestamp_ms;
+use crate::model::*;
 use crate::module_handle_messages;
-use crate::utils::crypto::{AggregateSignature, Signed, SignedByValidator, ValidatorSignature};
+use crate::node_state::module::NodeStateEvent;
 use crate::utils::modules::module_bus_client;
 use crate::{bus::BusClientSender, utils::logger::LogMe};
 use crate::{
     bus::{command_response::Query, BusMessage},
-    data_availability::DataEvent,
     genesis::GenesisEvent,
-    handle_messages,
     mempool::QueryNewCut,
-    model::mempool::Cut,
-    model::{get_current_timestamp, Hashable, ValidatorPublicKey},
+    model::{Cut, Hashable, StakingAction, ValidatorPublicKey},
     p2p::{network::OutboundMessage, P2PCommand},
     utils::{
         conf::SharedConf,
@@ -22,19 +19,22 @@ use crate::{
 };
 use anyhow::{anyhow, bail, Context, Error, Result};
 use bincode::{Decode, Encode};
+use hyle_model::utils::get_current_timestamp;
+use hyle_model::utils::get_current_timestamp_ms;
 use metrics::ConsensusMetrics;
 use role_follower::{FollowerRole, FollowerState};
 use role_leader::{LeaderRole, LeaderState};
 use role_timeout::{TimeoutRole, TimeoutRoleState, TimeoutState};
 use serde::{Deserialize, Serialize};
 use staking::state::{Staking, MIN_STAKE};
-use staking::StakingAction;
+use std::ops::Deref;
+use std::ops::DerefMut;
 use std::time::Duration;
 use std::{collections::HashMap, default::Default, path::PathBuf};
 use tokio::time::interval;
 #[cfg(not(test))]
 use tokio::{sync::broadcast, time::sleep};
-use tracing::{debug, info, warn};
+use tracing::{debug, info, trace, warn};
 
 pub mod api;
 pub mod metrics;
@@ -42,9 +42,6 @@ pub mod module;
 pub mod role_follower;
 pub mod role_leader;
 pub mod role_timeout;
-pub mod utils;
-
-pub use crate::model::consensus::*;
 
 // -----------------------------
 // ------ Consensus bus --------
@@ -82,17 +79,17 @@ impl<T> BusMessage for SignedByValidator<T> where T: Encode + BusMessage {}
 
 module_bus_client! {
 struct ConsensusBusClient {
-    sender(OutboundMessage),
-    sender(ConsensusEvent),
-    sender(ConsensusCommand),
-    sender(P2PCommand),
-    sender(Query<QueryNewCut, Cut>),
-    receiver(ConsensusCommand),
-    receiver(GenesisEvent),
-    receiver(DataEvent),
-    receiver(SignedByValidator<ConsensusNetMessage>),
-    receiver(Query<QueryConsensusInfo, ConsensusInfo>),
-    receiver(Query<QueryConsensusStakingState, Staking>),
+sender(OutboundMessage),
+sender(ConsensusEvent),
+sender(ConsensusCommand),
+sender(P2PCommand),
+sender(Query<QueryNewCut, Cut>),
+receiver(ConsensusCommand),
+receiver(GenesisEvent),
+receiver(NodeStateEvent),
+receiver(SignedByValidator<ConsensusNetMessage>),
+receiver(Query<QueryConsensusInfo, ConsensusInfo>),
+receiver(Query<QueryConsensusStakingState, Staking>),
 }
 }
 
@@ -144,6 +141,18 @@ pub struct Consensus {
     #[allow(dead_code)]
     config: SharedConf,
     crypto: SharedBlstCrypto,
+}
+
+impl Deref for Consensus {
+    type Target = ConsensusStore;
+    fn deref(&self) -> &Self::Target {
+        &self.store
+    }
+}
+impl DerefMut for Consensus {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.store
+    }
 }
 
 impl Consensus {
@@ -230,7 +239,7 @@ impl Consensus {
             }
         }
 
-        info!(
+        debug!(
             "🥋 Ready for slot {}, view {}",
             self.bft_round_state.consensus_proposal.slot,
             self.bft_round_state.consensus_proposal.view
@@ -240,7 +249,7 @@ impl Consensus {
 
         if self.bft_round_state.consensus_proposal.round_leader == *self.crypto.validator_pubkey() {
             self.bft_round_state.state_tag = StateTag::Leader;
-            info!("👑 I'm the new leader! 👑")
+            debug!("👑 I'm the new leader! 👑")
         } else {
             self.bft_round_state.state_tag = StateTag::Follower;
             self.bft_round_state
@@ -334,7 +343,7 @@ impl Consensus {
             tokio::task::Builder::new()
                 .name("sleep-consensus")
                 .spawn(async move {
-                    info!(
+                    debug!(
                         "⏱️  Sleeping {} milliseconds before starting a new slot",
                         interval
                     );
@@ -413,7 +422,7 @@ impl Consensus {
 
         let f = self.bft_round_state.staking.compute_f();
 
-        info!(
+        trace!(
             "📩 Slot {} validated votes: {} / {} ({} validators for a total bond = {})",
             self.bft_round_state.consensus_proposal.slot,
             voting_power,
@@ -505,7 +514,7 @@ impl Consensus {
     }
 
     fn try_process_timeout_qc(&mut self, timeout_qc: QuorumCertificate) -> Result<()> {
-        info!(
+        debug!(
             "Trying to process timeout Certificate against consensus proposal slot: {}, view: {}",
             self.bft_round_state.consensus_proposal.slot,
             self.bft_round_state.consensus_proposal.view,
@@ -631,9 +640,9 @@ impl Consensus {
                     certificate: commit_quorum_certificate.clone(),
                 },
             ))
-            .expect("Failed to send ConsensusEvent::CommittedConsensusProposal on the bus");
+            .log_error("Failed to send ConsensusEvent::CommittedConsensusProposal on the bus");
 
-        info!(
+        debug!(
             "📈 Slot {} committed",
             &self.bft_round_state.consensus_proposal.slot
         );
@@ -682,9 +691,9 @@ impl Consensus {
         Ok(())
     }
 
-    async fn handle_data_event(&mut self, msg: DataEvent) -> Result<()> {
+    async fn handle_node_state_event(&mut self, msg: NodeStateEvent) -> Result<()> {
         match msg {
-            DataEvent::NewBlock(block) => {
+            NodeStateEvent::NewBlock(block) => {
                 let block_total_tx = block.total_txs();
                 for action in block.staking_actions {
                     match action {
@@ -710,7 +719,7 @@ impl Consensus {
                         .bft_round_state
                         .staking
                         .bond(validator.clone())
-                        .ok();
+                        .map_err(|e| anyhow!(e))?;
                 }
 
                 if let StateTag::Joining = self.bft_round_state.state_tag {
@@ -803,7 +812,7 @@ impl Consensus {
     }
 
     async fn wait_genesis(&mut self) -> Result<()> {
-        handle_messages! {
+        let should_shutdown = module_handle_messages! {
             on_bus self.bus,
             listen<GenesisEvent> msg => {
                 match msg {
@@ -823,6 +832,20 @@ impl Consensus {
                                 self.bft_round_state.consensus_proposal.round_leader
                             );
                         }
+                        // Now wait until we have processed the genesis block to update our Staking.
+                        module_handle_messages! {
+                            on_bus self.bus,
+                            listen<NodeStateEvent> event => {
+                                let NodeStateEvent::NewBlock(block) = &event;
+                                if block.block_height.0 != 0 {
+                                    bail!("Non-genesis block received during consensus genesis");
+                                }
+                                match self.handle_node_state_event(event).await {
+                                    Ok(_) => break,
+                                    Err(e) => bail!("Error while handling Genesis block: {:#}", e),
+                                }
+                            }
+                        };
                         break;
                     },
                     GenesisEvent::NoGenesis => {
@@ -837,6 +860,9 @@ impl Consensus {
                     },
                 }
             }
+        };
+        if should_shutdown {
+            return Ok(());
         }
 
         if self.is_round_leader() {
@@ -852,8 +878,8 @@ impl Consensus {
 
         module_handle_messages! {
             on_bus self.bus,
-            listen<DataEvent> cmd => {
-                match self.handle_data_event(cmd).await {
+            listen<NodeStateEvent> event => {
+                match self.handle_node_state_event(event).await {
                     Ok(_) => (),
                     Err(e) => warn!("Error while handling data event: {:#}", e),
                 }
@@ -884,7 +910,7 @@ impl Consensus {
                 self.bus.send(ConsensusCommand::TimeoutTick)
                     .log_error("Cannot send message over channel")?;
             }
-        }
+        };
 
         if let Some(file) = &self.file {
             if let Err(e) = Self::save_on_disk(file.as_path(), &self.store) {
@@ -899,7 +925,7 @@ impl Consensus {
         &self,
         msg: ConsensusNetMessage,
     ) -> Result<SignedByValidator<ConsensusNetMessage>> {
-        debug!("🔏 Signing message: {}", msg);
+        trace!("🔏 Signing message: {}", msg);
         self.crypto.sign(msg)
     }
 }
@@ -908,16 +934,15 @@ impl Consensus {
 impl Consensus {}
 
 #[cfg(test)]
-impl ConsensusProposal {
-    pub fn get_cut(&self) -> Cut {
-        self.cut.clone()
-    }
-}
-
-#[cfg(test)]
 pub mod test {
 
-    use crate::model::Block;
+    use crate::{
+        bus::{bus_client, command_response::CmdRespClient},
+        handle_messages,
+        model::Block,
+        node_state::module::NodeStateModule,
+        utils::integration_test::NodeIntegrationCtxBuilder,
+    };
     use std::sync::Arc;
 
     use super::*;
@@ -926,7 +951,7 @@ pub mod test {
             broadcast, build_tuple, send, simple_commit_round, AutobahnBusClient, AutobahnTestCtx,
         },
         bus::{dont_use_this::get_receiver, metrics::BusMetrics, SharedMessageBus},
-        model::mempool::DataProposalHash,
+        model::DataProposalHash,
         p2p::network::NetMessage,
         utils::{conf::Conf, crypto},
     };
@@ -999,7 +1024,7 @@ pub mod test {
                     command_response<QueryNewCut, Cut> _ => {
                         Ok(Cut::default())
                     }
-                }
+                };
             });
 
             let consensus = Self::build_consensus(&shared_bus, crypto).await;
@@ -1088,7 +1113,7 @@ pub mod test {
         }
 
         async fn new_node(name: &str) -> Self {
-            let crypto = crypto::BlstCrypto::new(name.into());
+            let crypto = crypto::BlstCrypto::new(name.into()).unwrap();
             Self::new(name, crypto.clone()).await
         }
 
@@ -1106,7 +1131,13 @@ pub mod test {
             slot: u64,
             view: u64,
         ) {
-            let leader_pubkey = nodes[leader].consensus.crypto.validator_pubkey().clone();
+            let leader_pubkey = nodes
+                .get(leader)
+                .unwrap()
+                .consensus
+                .crypto
+                .validator_pubkey()
+                .clone();
 
             // TODO: write a real one?
             let commit_qc = AggregateSignature::default();
@@ -1156,14 +1187,14 @@ pub mod test {
             err
         }
 
-        pub(crate) async fn handle_data_event(&mut self, msg: DataEvent) -> Result<()> {
-            self.consensus.handle_data_event(msg).await
+        pub(crate) async fn handle_node_state_event(&mut self, msg: NodeStateEvent) -> Result<()> {
+            self.consensus.handle_node_state_event(msg).await
         }
 
         async fn add_staker(&mut self, staker: &Self, amount: u128, err: &str) {
             info!("➕ {} Add staker: {:?}", self.name, staker.name);
             self.consensus
-                .handle_data_event(DataEvent::NewBlock(Box::new(Block {
+                .handle_node_state_event(NodeStateEvent::NewBlock(Box::new(Block {
                     staking_actions: vec![
                         (staker.name.clone().into(), StakingAction::Stake { amount }),
                         (
@@ -1182,7 +1213,7 @@ pub mod test {
         async fn add_bonded_staker(&mut self, staker: &Self, amount: u128, err: &str) {
             self.add_staker(staker, amount, err).await;
             self.consensus
-                .handle_data_event(DataEvent::NewBlock(Box::new(Block {
+                .handle_node_state_event(NodeStateEvent::NewBlock(Box::new(Block {
                     new_bounded_validators: vec![staker.pubkey()],
                     ..Default::default()
                 })))
@@ -1192,7 +1223,7 @@ pub mod test {
 
         async fn with_stake(&mut self, amount: u128, err: &str) {
             self.consensus
-                .handle_data_event(DataEvent::NewBlock(Box::new(Block {
+                .handle_node_state_event(NodeStateEvent::NewBlock(Box::new(Block {
                     staking_actions: vec![
                         (self.name.clone().into(), StakingAction::Stake { amount }),
                         (
@@ -2211,5 +2242,44 @@ pub mod test {
         assert_eq!(node1.consensus.bft_round_state.consensus_proposal.slot, 6);
         assert_eq!(node2.consensus.bft_round_state.consensus_proposal.slot, 6);
         assert_eq!(node3.consensus.bft_round_state.consensus_proposal.slot, 6);
+    }
+
+    bus_client! {
+        struct TestBC {
+            sender(Query<QueryConsensusInfo, ConsensusInfo>),
+            sender(NodeStateEvent),
+        }
+    }
+
+    #[test_log::test(tokio::test)]
+    async fn test_consensus_starts_after_genesis_is_processed() {
+        let mut node_builder = NodeIntegrationCtxBuilder::new().await;
+        node_builder.conf.run_indexer = false;
+        node_builder.conf.single_node = Some(false);
+        node_builder = node_builder.skip::<NodeStateModule>();
+        let mut node = node_builder.build().await.unwrap();
+
+        let mut bc = TestBC::new_from_bus(node.bus.new_handle()).await;
+
+        node.wait_for_genesis_event().await.unwrap();
+
+        // Check that we haven't started the consensus yet
+        // (this is awkward to do for now so assume that not receiving an answer is OK)
+        tokio::select! {
+            _ = tokio::time::sleep(Duration::from_secs(1)) => {}
+            _ = bc.request(QueryConsensusInfo {}) => {
+                panic!("Consensus should not have started yet");
+            }
+        }
+
+        bc.send(NodeStateEvent::NewBlock(Box::default())).unwrap();
+
+        tokio::select! {
+            _ = tokio::time::sleep(Duration::from_secs(1)) => {
+                panic!("Consensus should have started");
+            }
+            _ = bc.request(QueryConsensusInfo {}) => {
+            }
+        }
     }
 }

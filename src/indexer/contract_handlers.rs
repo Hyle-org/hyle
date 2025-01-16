@@ -3,7 +3,7 @@ use std::sync::Arc;
 use super::contract_state_indexer::Store;
 use crate::model::BlobTransaction;
 use crate::rest::AppError;
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use axum::Router;
 use axum::{extract::Path, routing::get};
 use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
@@ -41,11 +41,11 @@ impl ContractHandler for Hydentity {
         let Blob {
             data,
             contract_name,
-        } = tx.blobs.get(index.0).unwrap();
+        } = tx.blobs.get(index.0).context("Failed to get blob")?;
 
         let (action, _): (IdentityAction, _) =
             bincode::decode_from_slice(data.0.as_slice(), bincode::config::standard())
-                .expect("Failed to decode payload");
+                .context("Failed to decode payload")?;
 
         let res = identity_provider::execute_action(&mut state, action, "");
         info!("🚀 Executed {contract_name}: {res:?}");
@@ -66,13 +66,13 @@ impl ContractHandler for HyllarToken {
         let Blob {
             contract_name,
             data,
-        } = tx.blobs.get(index.0).unwrap();
+        } = tx.blobs.get(index.0).context("Failed to get blob")?;
 
         let data: StructuredBlobData<ERC20Action> = data.clone().try_into()?;
 
         let caller: Identity = data
             .caller
-            .map(|i| tx.blobs.get(i.0).unwrap().contract_name.0.clone().into())
+            .map(|_| contract_name.0.clone().into())
             .unwrap_or(tx.identity.clone());
 
         let mut contract = HyllarTokenContract::init(state, caller);

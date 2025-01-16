@@ -1,12 +1,9 @@
 use anyhow::Context;
 use assert_cmd::prelude::*;
-use client_sdk::{
-    transaction_builder::{BuildResult, TransactionBuilder},
-    BlobTransaction,
-};
+use client_sdk::transaction_builder::{BuildResult, TransactionBuilder};
 use hyle::{
     genesis::States,
-    model::ProofData,
+    model::{BlobTransaction, ProofData},
     rest::client::NodeApiHttpClient,
     utils::conf::{Conf, Consensus},
 };
@@ -35,7 +32,8 @@ impl ConfMaker {
             },
             host: format!("localhost:{}", self.random_port + self.i),
             da_address: format!("localhost:{}", self.random_port + 1000 + self.i),
-            rest: format!("localhost:{}", self.random_port + 2000 + self.i),
+            tcp_server_address: Some(format!("localhost:{}", self.random_port + 2000 + self.i)),
+            rest: format!("localhost:{}", self.random_port + 3000 + self.i),
             ..self.default.clone()
         }
     }
@@ -45,11 +43,12 @@ impl Default for ConfMaker {
     fn default() -> Self {
         let mut default = Conf::new(None, None, None).unwrap();
         let mut rng = rand::thread_rng();
-        let random_port: u32 = rng.gen_range(1024..(65536 - 3000));
+        let random_port: u32 = rng.gen_range(1024..(65536 - 4000));
         default.single_node = Some(false);
         default.host = format!("localhost:{}", random_port);
         default.da_address = format!("localhost:{}", random_port + 1000);
-        default.rest = format!("localhost:{}", random_port + 2000);
+        default.tcp_server_address = Some(format!("localhost:{}", random_port + 2000));
+        default.rest = format!("localhost:{}", random_port + 3000);
         default.run_indexer = false; // disable indexer by default to avoid needed PG
         default.log_format = "node".to_string(); // Activate node name in logs for convenience in tests.
         info!("Default conf: {:?}", default);

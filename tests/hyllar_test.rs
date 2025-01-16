@@ -1,3 +1,4 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
 use fixtures::ctx::E2ECtx;
 use fixtures::proofs::HyrunProofGen;
 use tracing::info;
@@ -29,7 +30,7 @@ mod e2e_hyllar {
                 vec![IdentityAction::RegisterIdentity {
                     account: "bob.hydentity".to_string(),
                 }
-                .as_blob(ContractName("hydentity".to_owned()))],
+                .as_blob(ContractName::new("hydentity"))],
             )
             .await?;
 
@@ -50,12 +51,8 @@ mod e2e_hyllar {
         let proof = proof_generator.read_proof(0);
 
         info!("➡️  Sending proof for register");
-        ctx.send_proof_single(
-            "hydentity".into(),
-            ProofData::Bytes(proof),
-            blob_tx_hash.clone(),
-        )
-        .await?;
+        ctx.send_proof_single("hydentity".into(), ProofData(proof), blob_tx_hash.clone())
+            .await?;
 
         info!("➡️  Waiting for height 2");
         ctx.wait_height(2).await?;
@@ -82,12 +79,12 @@ mod e2e_hyllar {
                         account: "faucet.hydentity".to_string(),
                         nonce: faucet_start_nonce,
                     }
-                    .as_blob(ContractName("hydentity".to_owned())),
+                    .as_blob(ContractName::new("hydentity")),
                     ERC20Action::Transfer {
                         recipient: "bob.hydentity".to_string(),
                         amount: 25,
                     }
-                    .as_blob(ContractName("hyllar".to_owned()), None, None),
+                    .as_blob(ContractName::new("hyllar"), None, None),
                 ],
             )
             .await?;
@@ -114,18 +111,14 @@ mod e2e_hyllar {
         info!("➡️  Sending proof for hydentity");
         ctx.send_proof_single(
             "hydentity".into(),
-            ProofData::Bytes(hydentity_proof),
+            ProofData(hydentity_proof),
             blob_tx_hash.clone(),
         )
         .await?;
 
         info!("➡️  Sending proof for hyllar");
-        ctx.send_proof_single(
-            "hyllar".into(),
-            ProofData::Bytes(hyllar_proof),
-            blob_tx_hash,
-        )
-        .await?;
+        ctx.send_proof_single("hyllar".into(), ProofData(hyllar_proof), blob_tx_hash)
+            .await?;
 
         info!("➡️  Waiting for height 5");
         ctx.wait_height(5).await?;

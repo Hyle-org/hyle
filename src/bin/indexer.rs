@@ -10,7 +10,7 @@ use hyle::{
         da_listener::{DAListener, DAListenerCtx},
         Indexer,
     },
-    model::{rest::NodeInfo, BlockHeight, CommonRunContext},
+    model::{api::NodeInfo, BlockHeight, CommonRunContext},
     rest::{RestApi, RestApiRunContext},
     utils::{
         conf,
@@ -68,7 +68,7 @@ async fn main() -> Result<()> {
             opentelemetry_prometheus::exporter()
                 .with_registry(prometheus::default_registry().clone())
                 .build()
-                .unwrap(),
+                .context("starting prometheus exporter")?,
         )
         .build();
 
@@ -116,6 +116,7 @@ async fn main() -> Result<()> {
         .await?;
 
     // Should come last so the other modules have nested their own routes.
+    #[allow(clippy::expect_used, reason = "Fail on misconfiguration")]
     let router = ctx
         .router
         .lock()

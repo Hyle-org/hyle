@@ -12,20 +12,28 @@ use tracing::info;
 use crate::bus::metrics::BusMetrics;
 use crate::bus::{bus_client, BusClientReceiver, SharedMessageBus};
 use crate::consensus::Consensus;
-use crate::data_availability::{DataAvailability, DataEvent};
-use crate::genesis::Genesis;
-use crate::handle_messages;
+use crate::data_availability::DataAvailability;
+use crate::genesis::{Genesis, GenesisEvent};
 use crate::indexer::Indexer;
 use crate::mempool::Mempool;
 use crate::model::{CommonRunContext, NodeRunContext, SharedRunContext};
+use crate::module_handle_messages;
+use crate::node_state::module::{NodeStateEvent, NodeStateModule};
 use crate::p2p::P2P;
 use crate::single_node_consensus::SingleNodeConsensus;
+use crate::tcp_server::TcpServer;
 use crate::utils::conf::Conf;
 use crate::utils::crypto::BlstCrypto;
-use crate::utils::modules::signal::ShutdownModule;
 use crate::utils::modules::ModulesHandler;
 
 use super::modules::{module_bus_client, Module};
+
+// Assume that we can reuse the OS-provided port.
+pub async fn find_available_port() -> u16 {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    addr.port()
+}
 
 type MockBuilder = Box<
     dyn for<'a> FnOnce(
@@ -51,20 +59,9 @@ impl<T> MockModule<T> {
         })
     }
     async fn start(&mut self) -> Result<()> {
-        // Have to wait forever as the module handler doesn't like exiting modules
-        // TODO: fix this?
-        handle_messages! {
+        module_handle_messages! {
             on_bus self.bus,
-            listen<ShutdownModule> shutdown_event => {
-                if shutdown_event.module == std::any::type_name::<Self>() {
-                    info!("MockModule received shutdown event");
-                    break;
-                }
-            }
-            else => {
-                tokio::time::sleep(std::time::Duration::from_secs(1)).await
-            }
-        }
+        };
         Ok(())
     }
 }
@@ -90,13 +87,17 @@ impl NodeIntegrationCtxBuilder {
     pub async fn new() -> Self {
         let tmpdir = tempfile::tempdir().unwrap();
         let bus = SharedMessageBus::new(BusMetrics::global("default".to_string()));
-        let crypto = BlstCrypto::new("test".to_owned());
-        let conf = Conf::new(
+        let crypto = BlstCrypto::new("test".to_owned()).unwrap();
+        let mut conf = Conf::new(
             None,
             tmpdir.path().to_str().map(|s| s.to_owned()),
             Some(false),
         )
         .expect("conf ok");
+        conf.host = format!("localhost:{}", find_available_port().await);
+        conf.da_address = format!("localhost:{}", find_available_port().await);
+        conf.tcp_server_address = Some(format!("localhost:{}", find_available_port().await));
+        conf.rest = format!("localhost:{}", find_available_port().await);
 
         Self {
             tmpdir,
@@ -133,6 +134,8 @@ impl NodeIntegrationCtxBuilder {
         )
         .await?;
 
+        let bus_client = IntegrationBusClient::new_from_bus(self.bus.new_handle()).await;
+
         let (tx, rx) = tokio::sync::oneshot::channel::<()>();
 
         let node_task = Some(tokio::spawn(async move {
@@ -154,18 +157,19 @@ impl NodeIntegrationCtxBuilder {
         Ok(NodeIntegrationCtx {
             tmpdir: self.tmpdir,
             conf,
-            bus: self.bus.new_handle(),
+            bus: self.bus,
             crypto: self.crypto,
             node_task,
             shutdown_tx: Some(tx),
-            bus_client: IntegrationBusClient::new_from_bus(self.bus).await,
+            bus_client,
         })
     }
 }
 
 bus_client! {
 struct IntegrationBusClient {
-    receiver(DataEvent),
+    receiver(GenesisEvent),
+    receiver(NodeStateEvent),
 }
 }
 
@@ -236,6 +240,7 @@ impl NodeIntegrationCtx {
         std::fs::create_dir_all(&config.data_directory).context("creating data directory")?;
 
         let run_indexer = config.run_indexer;
+        let run_tcp_server = config.run_tcp_server;
 
         let ctx = SharedRunContext {
             common: CommonRunContext {
@@ -264,8 +269,13 @@ impl NodeIntegrationCtx {
         }
 
         Self::build_module::<DataAvailability>(&mut handler, &ctx, &ctx, &mut mocks).await?;
+        Self::build_module::<NodeStateModule>(&mut handler, &ctx, &ctx.common, &mut mocks).await?;
 
         Self::build_module::<P2P>(&mut handler, &ctx, &ctx, &mut mocks).await?;
+
+        if run_tcp_server {
+            Self::build_module::<TcpServer>(&mut handler, &ctx, &ctx, &mut mocks).await?;
+        }
 
         // Ensure we didn't pass a Mock we didn't use
         if !mocks.is_empty() {
@@ -275,8 +285,12 @@ impl NodeIntegrationCtx {
         Ok(handler)
     }
 
+    pub async fn wait_for_genesis_event(&mut self) -> Result<()> {
+        let _: GenesisEvent = self.bus_client.recv().await?;
+        Ok(())
+    }
     pub async fn wait_for_processed_genesis(&mut self) -> Result<()> {
-        let _: DataEvent = self.bus_client.recv().await?;
+        let _: NodeStateEvent = self.bus_client.recv().await?;
         Ok(())
     }
 }

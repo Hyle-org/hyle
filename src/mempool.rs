@@ -3,26 +3,22 @@
 use crate::{
     bus::{command_response::Query, BusClientSender, BusMessage},
     consensus::{CommittedConsensusProposal, ConsensusEvent},
-    data_availability::{
-        node_state::verifiers::{verify_proof, verify_recursive_proof},
-        DataEvent,
-    },
     genesis::GenesisEvent,
     mempool::storage::Storage,
-    model::{
-        BlobProofOutput, Hashable, ProofDataHash, SharedRunContext, Transaction, TransactionData,
-        ValidatorPublicKey, VerifiedProofTransaction,
-    },
+    model::*,
     module_handle_messages,
+    node_state::module::NodeStateEvent,
     p2p::network::OutboundMessage,
+    tcp_server::TcpServerMessage,
     utils::{
         conf::SharedConf,
-        crypto::{BlstCrypto, SharedBlstCrypto, SignedByValidator},
+        crypto::{BlstCrypto, SharedBlstCrypto},
         logger::LogMe,
         modules::{module_bus_client, Module},
         static_type_map::Pick,
     },
 };
+
 use anyhow::{bail, Context, Result};
 use api::RestApiMessage;
 use bincode::{Decode, Encode};
@@ -38,13 +34,14 @@ use std::{
 };
 use storage::{DataProposalVerdict, LaneEntry};
 use strum_macros::IntoStaticStr;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info, trace, warn};
 
-pub use crate::model::mempool::*;
+use verifiers::{verify_proof, verify_recursive_proof};
 
 pub mod api;
 pub mod metrics;
 pub mod storage;
+pub mod verifiers;
 
 #[derive(Debug, Clone)]
 pub struct QueryNewCut(pub Staking);
@@ -61,7 +58,7 @@ impl KnownContracts {
         program_id: &ProgramId,
     ) -> Result<()> {
         if self.0.contains_key(contract_name) {
-            bail!("Contract already exists")
+            bail!("Contract {contract_name} already exists")
         }
         self.0.insert(
             contract_name.clone(),
@@ -79,10 +76,11 @@ struct MempoolBusClient {
     receiver(InternalMempoolEvent),
     receiver(SignedByValidator<MempoolNetMessage>),
     receiver(RestApiMessage),
+    receiver(TcpServerMessage),
     receiver(MempoolCommand),
     receiver(ConsensusEvent),
     receiver(GenesisEvent),
-    receiver(DataEvent),
+    receiver(NodeStateEvent),
     receiver(Query<QueryNewCut, Cut>),
 }
 }
@@ -132,7 +130,7 @@ impl BusMessage for MempoolCommand {}
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub enum InternalMempoolEvent {
     OnProcessedNewTx(Transaction),
-    OnProcessedDataProposal(DataProposal),
+    OnProcessedDataProposal((ValidatorPublicKey, DataProposalVerdict, DataProposal)),
 }
 impl BusMessage for InternalMempoolEvent {}
 
@@ -169,7 +167,7 @@ impl Module for Mempool {
         .unwrap_or(Storage::new(ctx.node.crypto.validator_pubkey().clone()));
         Ok(Mempool {
             bus,
-            file: Some(ctx.common.config.data_directory.join("mempool_storage.bin")),
+            file: Some(ctx.common.config.data_directory.clone()),
             conf: ctx.common.config.clone(),
             metrics,
             crypto: Arc::clone(&ctx.node.crypto),
@@ -188,8 +186,6 @@ impl Module for Mempool {
 impl Mempool {
     /// start starts the mempool server.
     pub async fn start(&mut self) -> Result<()> {
-        info!("Mempool starting");
-
         let tick_time = std::cmp::min(self.conf.consensus.slot_duration / 2, 500);
         let mut interval = tokio::time::interval(tokio::time::Duration::from_millis(tick_time));
 
@@ -204,6 +200,10 @@ impl Mempool {
             listen<RestApiMessage> cmd => {
                 let _ = self.handle_api_message(cmd)
                     .log_error("Handling RestApiMessage in Mempool");
+            }
+            listen<TcpServerMessage> cmd => {
+                let _ = self.handle_tcp_server_message(cmd)
+                    .log_error("Handling TcpServerNetMessage in Mempool");
             }
             listen<MempoolCommand> cmd => {
                 let _ = self.handle_command(cmd).log_error("Handling Mempool Command");
@@ -220,22 +220,24 @@ impl Mempool {
                 if let GenesisEvent::GenesisBlock(signed_block) = cmd {
                     for tx in signed_block.txs() {
                         if let TransactionData::RegisterContract(tx) = tx.transaction_data {
+                            #[allow(clippy::expect_used, reason="not held across await")]
                             self.known_contracts.write().expect("logic issue").register_contract(&tx.contract_name, &tx.verifier, &tx.program_id)?;
                         }
                     }
                 }
             }
-            listen<DataEvent> cmd => {
-                let DataEvent::NewBlock(block) = cmd;
+            listen<NodeStateEvent> cmd => {
+                let NodeStateEvent::NewBlock(block) = cmd;
                 for tx in block.txs {
                     let TransactionData::RegisterContract(register_contract_transaction) = tx.transaction_data else {
                         continue;
                     };
-                    self.known_contracts.write().expect("logic issue").register_contract(
+                    #[allow(clippy::expect_used, reason="not held across await")]
+                    let _ = self.known_contracts.write().expect("logic issue").register_contract(
                         &register_contract_transaction.contract_name,
                         &register_contract_transaction.verifier,
                         &register_contract_transaction.program_id,
-                    ).ok();
+                    );
                 }
             }
             command_response<QueryNewCut, Cut> validators => {
@@ -245,11 +247,19 @@ impl Mempool {
                 let _ = self.handle_data_proposal_management()
                     .log_error("Creating Data Proposal on tick");
             }
-        }
+        };
 
         if let Some(file) = &self.file {
-            if let Err(e) = Self::save_on_disk(file.as_path(), &self.storage) {
+            if let Err(e) =
+                Self::save_on_disk(file.join("mempool_storage.bin").as_path(), &self.storage)
+            {
                 warn!("Failed to save mempool storage on disk: {}", e);
+            }
+            if let Err(e) = Self::save_on_disk(
+                file.join("mempool_known_contracts.bin").as_path(),
+                &self.known_contracts,
+            ) {
+                warn!("Failed to save mempool known contracts on disk: {}", e);
             }
         }
 
@@ -280,7 +290,15 @@ impl Mempool {
         match command {
             RestApiMessage::NewTx(tx) => self
                 .on_new_tx(tx)
-                .context("Received invalid transaction. Won't process it."),
+                .context("Received invalid transaction. Won't process it"),
+        }
+    }
+
+    fn handle_tcp_server_message(&mut self, command: TcpServerMessage) -> Result<()> {
+        match command {
+            TcpServerMessage::NewTx(tx) => self
+                .on_new_tx(tx)
+                .context("Received invalid transaction. Won't process it"),
         }
     }
 
@@ -289,14 +307,15 @@ impl Mempool {
             InternalMempoolEvent::OnProcessedNewTx(tx) => {
                 self.on_new_tx(tx).context("Processing new tx")
             }
-            InternalMempoolEvent::OnProcessedDataProposal(_data_proposal) => {
-                todo!()
+            InternalMempoolEvent::OnProcessedDataProposal((validator, verdict, data_proposal)) => {
+                self.on_processed_data_proposal(validator, verdict, data_proposal)
+                    .context("Processing data proposal")
             }
         }
     }
 
     fn handle_data_proposal_management(&mut self) -> Result<()> {
-        debug!("🌝 Handling DataProposal management");
+        trace!("🌝 Handling DataProposal management");
         // Create new DataProposal with pending txs
         self.storage.new_data_proposal(&self.crypto); // TODO: copy crypto in storage
 
@@ -610,7 +629,7 @@ impl Mempool {
     fn on_data_proposal(
         &mut self,
         validator: &ValidatorPublicKey,
-        data_proposal: DataProposal,
+        mut data_proposal: DataProposal,
     ) -> Result<()> {
         debug!(
             "Received DataProposal {:?} from {} ({} txs)",
@@ -619,12 +638,7 @@ impl Mempool {
             data_proposal.txs.len()
         );
         let data_proposal_hash = data_proposal.hash();
-        match self.storage.on_data_proposal(
-            &self.crypto,
-            validator,
-            data_proposal,
-            self.known_contracts.clone(),
-        ) {
+        match self.storage.on_data_proposal(validator, &data_proposal) {
             DataProposalVerdict::Empty => {
                 warn!(
                     "received empty DataProposal from {}, ignoring...",
@@ -635,6 +649,21 @@ impl Mempool {
                 // Normal case, we receive a proposal we already have the parent in store
                 debug!("Send vote for DataProposal");
                 self.send_vote(validator, data_proposal_hash)?;
+            }
+            DataProposalVerdict::Process => {
+                debug!("Further processing for DataProposal");
+                let kc = self.known_contracts.clone();
+                let sender: &tokio::sync::broadcast::Sender<InternalMempoolEvent> = self.bus.get();
+                let sender = sender.clone();
+                let validator = validator.clone();
+                tokio::task::spawn_blocking(move || {
+                    let decision = Storage::process_data_proposal(&mut data_proposal, kc);
+                    sender.send(InternalMempoolEvent::OnProcessedDataProposal((
+                        validator,
+                        decision,
+                        data_proposal,
+                    )))
+                });
             }
             DataProposalVerdict::Wait(last_known_data_proposal_hash) => {
                 //We dont have the parent, so we craft a sync demand
@@ -656,14 +685,50 @@ impl Mempool {
         Ok(())
     }
 
+    fn on_processed_data_proposal(
+        &mut self,
+        validator: ValidatorPublicKey,
+        verdict: DataProposalVerdict,
+        data_proposal: DataProposal,
+    ) -> Result<()> {
+        debug!(
+            "Handling processed DataProposal {:?} from {} ({} txs)",
+            data_proposal.hash(),
+            validator,
+            data_proposal.txs.len()
+        );
+        let data_proposal_hash = data_proposal.hash();
+        match verdict {
+            DataProposalVerdict::Empty => {
+                unreachable!("Empty DataProposal should never be processed");
+            }
+            DataProposalVerdict::Process => {
+                unreachable!("DataProposal has already been processed");
+            }
+            DataProposalVerdict::Wait(_) => {
+                unreachable!("DataProposal has already been processed");
+            }
+            DataProposalVerdict::Vote => {
+                debug!("Send vote for DataProposal");
+                self.storage
+                    .store_data_proposal(&self.crypto, &validator, data_proposal);
+                self.send_vote(&validator, data_proposal_hash)?;
+            }
+            DataProposalVerdict::Refuse => {
+                debug!("Refuse vote for DataProposal");
+            }
+        }
+        Ok(())
+    }
+
     fn on_new_tx(&mut self, tx: Transaction) -> Result<()> {
         // TODO: Verify fees ?
-        // TODO: Verify identity ?
 
         match tx.transaction_data {
             TransactionData::RegisterContract(ref register_contract_transaction) => {
                 debug!("Got new register contract tx {}", tx.hash());
 
+                #[allow(clippy::expect_used, reason = "not held across await")]
                 self.known_contracts
                     .write()
                     .expect("logic issue")
@@ -684,10 +749,8 @@ impl Mempool {
                 let sender: &tokio::sync::broadcast::Sender<InternalMempoolEvent> = self.bus.get();
                 let sender = sender.clone();
                 tokio::task::spawn_blocking(move || {
-                    let tx = match Self::process_proof_tx(kc, tx) {
-                        Ok(tx) => tx,
-                        Err(e) => bail!("Error processing proof tx: {}", e),
-                    };
+                    let tx =
+                        Self::process_proof_tx(kc, tx).log_error("Error processing proof tx")?;
                     sender
                         .send(InternalMempoolEvent::OnProcessedNewTx(tx))
                         .log_warn("sending processed TX")
@@ -721,6 +784,7 @@ impl Mempool {
             bail!("Can only process ProofTx");
         };
         // Verify and extract proof
+        #[allow(clippy::expect_used, reason = "not held across await")]
         let (verifier, program_id) = known_contracts
             .read()
             .expect("logic error")
@@ -732,15 +796,11 @@ impl Mempool {
         let is_recursive = proof_transaction.contract_name.0 == "risc0-recursion";
 
         let (hyle_outputs, program_ids) = if is_recursive {
-            let (program_ids, hyle_outputs) = verify_recursive_proof(
-                &proof_transaction.proof.to_bytes()?,
-                &verifier,
-                &program_id,
-            )?;
+            let (program_ids, hyle_outputs) =
+                verify_recursive_proof(&proof_transaction.proof, &verifier, &program_id)?;
             (hyle_outputs, program_ids)
         } else {
-            let hyle_outputs =
-                verify_proof(&proof_transaction.proof.to_bytes()?, &verifier, &program_id)?;
+            let hyle_outputs = verify_proof(&proof_transaction.proof, &verifier, &program_id)?;
             (hyle_outputs, vec![program_id.clone()])
         };
 
@@ -901,9 +961,10 @@ pub mod test {
     use crate::bus::dont_use_this::get_receiver;
     use crate::bus::metrics::BusMetrics;
     use crate::bus::SharedMessageBus;
-    use crate::model::{ContractName, RegisterContractTransaction, Transaction};
+    use crate::model::{
+        AggregateSignature, ContractName, RegisterContractTransaction, Transaction,
+    };
     use crate::p2p::network::NetMessage;
-    use crate::utils::crypto::AggregateSignature;
     use anyhow::Result;
     use assertables::assert_ok;
     use hyle_contract_sdk::StateDigest;
@@ -913,6 +974,7 @@ pub mod test {
         pub name: String,
         pub out_receiver: Receiver<OutboundMessage>,
         pub mempool_event_receiver: Receiver<MempoolEvent>,
+        pub mempool_internal_event_receiver: Receiver<InternalMempoolEvent>,
         pub mempool: Mempool,
     }
 
@@ -937,11 +999,13 @@ pub mod test {
         }
 
         pub async fn new(name: &str) -> Self {
-            let crypto = BlstCrypto::new(name.into());
+            let crypto = BlstCrypto::new(name.into()).unwrap();
             let shared_bus = SharedMessageBus::new(BusMetrics::global("global".to_string()));
 
             let out_receiver = get_receiver::<OutboundMessage>(&shared_bus).await;
             let mempool_event_receiver = get_receiver::<MempoolEvent>(&shared_bus).await;
+            let mempool_internal_event_receiver =
+                get_receiver::<InternalMempoolEvent>(&shared_bus).await;
 
             let mempool = Self::build_mempool(&shared_bus, crypto).await;
 
@@ -949,6 +1013,7 @@ pub mod test {
                 name: name.to_string(),
                 out_receiver,
                 mempool_event_receiver,
+                mempool_internal_event_receiver,
                 mempool,
             }
         }
@@ -982,6 +1047,17 @@ pub mod test {
             self.mempool
                 .handle_api_message(RestApiMessage::NewTx(tx.clone()))
                 .expect("fail to handle new transaction");
+        }
+
+        pub async fn handle_processed_data_proposals(&mut self) {
+            let event = self
+                .mempool_internal_event_receiver
+                .recv()
+                .await
+                .expect("No event received");
+            self.mempool
+                .handle_internal_event(event)
+                .expect("fail to handle event");
         }
 
         #[track_caller]
@@ -1128,7 +1204,7 @@ pub mod test {
         let mut ctx = MempoolTestCtx::new("mempool").await;
 
         // Sending transaction to mempool as RestApiMessage
-        let register_tx = make_register_contract_tx(ContractName("test1".to_owned()));
+        let register_tx = make_register_contract_tx(ContractName::new("test1"));
 
         ctx.submit_tx(&register_tx);
 
@@ -1159,13 +1235,13 @@ pub mod test {
         let mut ctx = MempoolTestCtx::new("mempool").await;
 
         // Adding new validator
-        let temp_crypto = BlstCrypto::new("validator1".into());
+        let temp_crypto = BlstCrypto::new("validator1".into()).unwrap();
         ctx.mempool
             .validators
             .push(temp_crypto.validator_pubkey().clone());
 
         // Sending transaction to mempool as RestApiMessage
-        let register_tx = make_register_contract_tx(ContractName("test1".to_owned()));
+        let register_tx = make_register_contract_tx(ContractName::new("test1"));
 
         ctx.mempool
             .handle_api_message(RestApiMessage::NewTx(register_tx.clone()))
@@ -1209,19 +1285,22 @@ pub mod test {
         let data_proposal = DataProposal {
             id: 0,
             parent_data_proposal_hash: None,
-            txs: vec![make_register_contract_tx(ContractName("test1".to_owned()))],
+            txs: vec![make_register_contract_tx(ContractName::new("test1"))],
         };
 
         let signed_msg = ctx
             .mempool
             .crypto
             .sign(MempoolNetMessage::DataProposal(data_proposal.clone()))?;
+
         ctx.mempool
             .handle_net_message(SignedByValidator {
                 msg: MempoolNetMessage::DataProposal(data_proposal.clone()),
                 signature: signed_msg.signature,
             })
             .expect("should handle net message");
+
+        ctx.handle_processed_data_proposals().await;
 
         // Assert that we vote for that specific DataProposal
         match ctx
@@ -1241,17 +1320,17 @@ pub mod test {
         let mut ctx = MempoolTestCtx::new("mempool").await;
 
         // Sending transaction to mempool as RestApiMessage
-        let register_tx = make_register_contract_tx(ContractName("test1".to_owned()));
+        let register_tx = make_register_contract_tx(ContractName::new("test1"));
 
         ctx.submit_tx(&register_tx);
 
         let data_proposal = DataProposal {
             id: 0,
             parent_data_proposal_hash: None,
-            txs: vec![make_register_contract_tx(ContractName("test1".to_owned()))],
+            txs: vec![make_register_contract_tx(ContractName::new("test1"))],
         };
 
-        let temp_crypto = BlstCrypto::new("temp_crypto".into());
+        let temp_crypto = BlstCrypto::new("temp_crypto".into()).unwrap();
         let signed_msg = temp_crypto.sign(MempoolNetMessage::DataVote(data_proposal.hash()))?;
         assert!(ctx
             .mempool
@@ -1269,21 +1348,21 @@ pub mod test {
         let mut ctx = MempoolTestCtx::new("mempool").await;
 
         // Sending transaction to mempool as RestApiMessage
-        let register_tx = make_register_contract_tx(ContractName("test1".to_owned()));
+        let register_tx = make_register_contract_tx(ContractName::new("test1"));
 
         ctx.submit_tx(&register_tx);
 
         let data_proposal = DataProposal {
             id: 0,
             parent_data_proposal_hash: None,
-            txs: vec![make_register_contract_tx(ContractName("test1".to_owned()))],
+            txs: vec![make_register_contract_tx(ContractName::new("test1"))],
         };
         let data_proposal_hash = data_proposal.hash();
 
         ctx.make_data_proposal_with_pending_txs()?;
 
         // Add new validator
-        let crypto2 = BlstCrypto::new("2".into());
+        let crypto2 = BlstCrypto::new("2".into()).unwrap();
         ctx.mempool
             .validators
             .push(crypto2.validator_pubkey().clone());
@@ -1315,14 +1394,14 @@ pub mod test {
         let mut ctx = MempoolTestCtx::new("mempool").await;
 
         // Sending transaction to mempool as RestApiMessage
-        let register_tx = make_register_contract_tx(ContractName("test1".to_owned()));
+        let register_tx = make_register_contract_tx(ContractName::new("test1"));
 
         ctx.submit_tx(&register_tx);
 
         ctx.make_data_proposal_with_pending_txs()?;
 
         // Add new validator
-        let crypto2 = BlstCrypto::new("2".into());
+        let crypto2 = BlstCrypto::new("2".into()).unwrap();
         ctx.mempool
             .validators
             .push(crypto2.validator_pubkey().clone());
@@ -1340,7 +1419,7 @@ pub mod test {
         let mut ctx = MempoolTestCtx::new("mempool").await;
 
         // Sending transaction to mempool as RestApiMessage
-        let register_tx = make_register_contract_tx(ContractName("test1".to_owned()));
+        let register_tx = make_register_contract_tx(ContractName::new("test1"));
 
         ctx.submit_tx(&register_tx);
 
@@ -1362,7 +1441,7 @@ pub mod test {
             .clone();
 
         // Add new validator
-        let crypto2 = BlstCrypto::new("2".into());
+        let crypto2 = BlstCrypto::new("2".into()).unwrap();
         ctx.mempool
             .validators
             .push(crypto2.validator_pubkey().clone());
@@ -1378,7 +1457,7 @@ pub mod test {
         match ctx.assert_send(crypto2.validator_pubkey(), "SyncReply").msg {
             MempoolNetMessage::SyncReply(lane_entries) => {
                 assert_eq!(lane_entries.len(), 1);
-                assert_eq!(lane_entries[0].data_proposal, data_proposal);
+                assert_eq!(lane_entries.first().unwrap().data_proposal, data_proposal);
             }
             _ => panic!("Expected SyncReply message"),
         };
@@ -1390,7 +1469,7 @@ pub mod test {
         let mut ctx = MempoolTestCtx::new("mempool").await;
 
         // Sending transaction to mempool as RestApiMessage
-        let register_tx = make_register_contract_tx(ContractName("test1".to_owned()));
+        let register_tx = make_register_contract_tx(ContractName::new("test1"));
 
         ctx.submit_tx(&register_tx);
 
@@ -1412,8 +1491,8 @@ pub mod test {
             .clone();
 
         // Add new validator
-        let crypto2 = BlstCrypto::new("2".into());
-        let crypto3 = BlstCrypto::new("3".into());
+        let crypto2 = BlstCrypto::new("2".into()).unwrap();
+        let crypto3 = BlstCrypto::new("3".into()).unwrap();
 
         ctx.mempool
             .validators
@@ -1502,7 +1581,7 @@ pub mod test {
         let mut ctx = MempoolTestCtx::new("mempool").await;
 
         // Sending transaction to mempool as RestApiMessage
-        let register_tx = make_register_contract_tx(ContractName("test1".to_owned()));
+        let register_tx = make_register_contract_tx(ContractName::new("test1"));
 
         ctx.mempool
             .handle_api_message(RestApiMessage::NewTx(register_tx.clone()))
@@ -1560,7 +1639,7 @@ pub mod test {
         let mut ctx = MempoolTestCtx::new("mempool").await;
 
         // Sending transaction to mempool as RestApiMessage
-        let register_tx = make_register_contract_tx(ContractName("test1".to_owned()));
+        let register_tx = make_register_contract_tx(ContractName::new("test1"));
 
         ctx.mempool
             .handle_api_message(RestApiMessage::NewTx(register_tx.clone()))
@@ -1568,13 +1647,13 @@ pub mod test {
 
         ctx.mempool.handle_data_proposal_management()?;
 
-        let register_tx = make_register_contract_tx(ContractName("test2".to_owned()));
+        let register_tx = make_register_contract_tx(ContractName::new("test2"));
 
         ctx.mempool
             .handle_api_message(RestApiMessage::NewTx(register_tx.clone()))
             .expect("fail to handle new transaction");
 
-        let register_tx = make_register_contract_tx(ContractName("test3".to_owned()));
+        let register_tx = make_register_contract_tx(ContractName::new("test3"));
         ctx.mempool
             .handle_api_message(RestApiMessage::NewTx(register_tx.clone()))
             .expect("fail to handle new transaction");

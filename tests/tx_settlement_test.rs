@@ -1,3 +1,4 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
 use fixtures::{contracts::TestContract, ctx::E2ECtx};
 use tracing::info;
 
@@ -56,7 +57,10 @@ mod e2e_tx_settle {
         assert_eq!(contract.state.0, vec![4, 5, 6]);
 
         if ctx.has_indexer() {
-            let contract = ctx.get_indexer_contract("c1").await?;
+            let contract = ctx
+                .indexer_client()
+                .get_indexer_contract(&"c1".into())
+                .await?;
             assert_eq!(contract.state_digest, vec![4, 5, 6]);
         }
         Ok(())

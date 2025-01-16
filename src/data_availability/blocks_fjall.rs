@@ -1,10 +1,10 @@
 use anyhow::Result;
 use fjall::{Config, Keyspace, PartitionCreateOptions, PartitionHandle, Slice};
-use std::{fmt::Debug, path::Path};
-use tracing::{error, info};
+use std::{fmt::Debug, path::Path, sync::Arc};
+use tracing::{error, info, trace};
 
 use crate::{
-    consensus::ConsensusProposalHash,
+    model::ConsensusProposalHash,
     model::{BlockHeight, Hashable, SignedBlock},
 };
 
@@ -59,12 +59,20 @@ impl Blocks {
     }
 
     pub fn new(path: &Path) -> Result<Self> {
-        let db = Config::new(path).open()?;
+        let db = Config::new(path)
+            .blob_cache(Arc::new(fjall::BlobCache::with_capacity_bytes(
+                128 * 1024 * 1024,
+            )))
+            .block_cache(Arc::new(fjall::BlockCache::with_capacity_bytes(
+                128 * 1024 * 1024,
+            )))
+            .open()?;
         let by_hash = db.open_partition(
             "blocks_by_hash",
             PartitionCreateOptions::default()
                 .block_size(56 * 1024)
-                .manual_journal_persist(true),
+                .manual_journal_persist(true)
+                .max_memtable_size(128 * 1024 * 1024),
         )?;
         let by_height =
             db.open_partition("block_hashes_by_height", PartitionCreateOptions::default())?;
@@ -93,7 +101,7 @@ impl Blocks {
         if self.contains(&block_hash) {
             return Ok(());
         }
-        info!("📦 storing block in fjall {}", block.height());
+        trace!("📦 storing block in fjall {}", block.height());
         self.by_hash.insert(
             FjallHashKey(block_hash).as_ref(),
             FjallValue::new(&block)?.as_ref(),

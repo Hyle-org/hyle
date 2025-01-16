@@ -1,5 +1,5 @@
-use crate::ProofData;
 use anyhow::{bail, Result};
+use hyle_model::ProofData;
 use sdk::{flatten_blobs, ContractInput, HyleOutput};
 
 pub enum Prover {
@@ -88,7 +88,7 @@ pub mod risc0 {
         check_output(&output)?;
 
         let encoded_receipt = borsh::to_vec(&receipt).expect("Unable to encode receipt");
-        Ok((ProofData::Bytes(encoded_receipt), output))
+        Ok((ProofData(encoded_receipt), output))
     }
 }
 
@@ -152,7 +152,7 @@ pub mod sp1 {
             &proof,
             bincode::config::legacy().with_fixed_int_encoding(),
         )?;
-        Ok((ProofData::Bytes(encoded_receipt), hyle_output))
+        Ok((ProofData(encoded_receipt), hyle_output))
     }
 }
 
@@ -181,8 +181,13 @@ pub mod test {
         contract_input: &ContractInput,
     ) -> anyhow::Result<(ProofData, HyleOutput)> {
         let hyle_output = test::execute(binary, contract_input)?;
+
+        check_output(&hyle_output)?;
         Ok((
-            ProofData::Bytes(serde_json::to_vec(&vec![&hyle_output])?),
+            ProofData(bincode::encode_to_vec(
+                vec![hyle_output.clone()],
+                bincode::config::standard(),
+            )?),
             hyle_output,
         ))
     }

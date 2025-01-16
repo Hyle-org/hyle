@@ -1,7 +1,10 @@
 use client_sdk::transaction_builder::TransactionBuilder;
-use sdk::{BlobData, ContractName, Digestable, StateDigest};
+use sdk::{
+    api::APIStaking, BlobData, ContractName, Digestable, StakingAction, StateDigest,
+    ValidatorPublicKey,
+};
 
-use crate::{model::ValidatorPublicKey, state::Staking, StakingAction};
+use crate::state::Staking;
 
 pub struct Builder<'b> {
     pub contract_name: ContractName,
@@ -14,6 +17,18 @@ impl Staking {
         Builder {
             contract_name: "staking".into(),
             builder,
+        }
+    }
+}
+
+impl From<APIStaking> for Staking {
+    fn from(val: APIStaking) -> Self {
+        Staking {
+            stakes: val.stakes,
+            rewarded: val.rewarded,
+            bonded: val.bonded,
+            delegations: val.delegations,
+            total_bond: val.total_bond,
         }
     }
 }

@@ -1,5 +1,5 @@
-use anyhow::Result;
-use config::{Config, ConfigError, Environment, File};
+use anyhow::{Context, Result};
+use config::{Config, Environment, File};
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, fmt::Debug, path::PathBuf, sync::Arc};
 
@@ -34,7 +34,9 @@ pub struct Conf {
     pub p2p: P2pConf,
     pub data_directory: PathBuf,
     pub run_indexer: bool,
+    pub run_tcp_server: bool,
     pub da_address: String,
+    pub tcp_server_address: Option<String>,
     pub log_format: String,
     pub single_node: Option<bool>,
 }
@@ -44,7 +46,7 @@ impl Conf {
         config_file: Option<String>,
         data_directory: Option<String>,
         run_indexer: Option<bool>,
-    ) -> Result<Self, ConfigError> {
+    ) -> Result<Self, anyhow::Error> {
         let mut s = Config::builder().add_source(File::from_str(
             include_str!("conf_defaults.ron"),
             config::FileFormat::Ron,
@@ -69,9 +71,11 @@ impl Conf {
         if let Some(true) = conf.single_node {
             conf.consensus.genesis_stakers.insert(
                 conf.id.clone(),
-                std::env::var("HYLE_SINGLE_NODE_STAKE")
-                    .map(|s| s.parse().unwrap())
-                    .unwrap_or(1000),
+                match std::env::var("HYLE_SINGLE_NODE_STAKE") {
+                    Ok(stake) => stake.parse::<u64>().context("Failed to parse stake"),
+                    Err(e) => Err(Into::into(e)),
+                }
+                .unwrap_or(1000),
             );
         }
         Ok(conf)

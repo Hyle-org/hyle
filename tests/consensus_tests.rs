@@ -1,3 +1,4 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
 use anyhow::Result;
 use fixtures::ctx::E2ECtx;
 
@@ -9,7 +10,7 @@ mod e2e_consensus {
     use fixtures::test_helpers::send_transaction;
     use hyle::{genesis::States, utils::logger::LogMe};
     use hyle_contract_sdk::Identity;
-    use staking::state::OnChainState;
+    use staking::state::{OnChainState, Staking};
     use tracing::info;
 
     use super::*;
@@ -61,7 +62,12 @@ mod e2e_consensus {
             .await
             .unwrap();
 
-        let staking = ctx.client().get_consensus_staking_state().await.unwrap();
+        let staking: Staking = ctx
+            .client()
+            .get_consensus_staking_state()
+            .await
+            .unwrap()
+            .into();
 
         assert_eq!(staking_state, staking.on_chain_state());
         let mut states = States {
@@ -77,7 +83,7 @@ mod e2e_consensus {
             states
                 .hydentity
                 .default_builder(&mut transaction)
-                .register_identity("password".to_string())?;
+                .register_identity("password".to_owned())?;
 
             send_transaction(ctx.client(), transaction, &mut states).await;
         }
@@ -181,7 +187,12 @@ mod e2e_consensus {
             .await
             .unwrap();
 
-        let staking = ctx.client().get_consensus_staking_state().await.unwrap();
+        let staking: Staking = ctx
+            .client()
+            .get_consensus_staking_state()
+            .await
+            .unwrap()
+            .into();
 
         assert_eq!(staking_state, staking.on_chain_state());
         let mut states = States {
@@ -197,7 +208,7 @@ mod e2e_consensus {
             states
                 .hydentity
                 .default_builder(&mut transaction)
-                .register_identity("password".to_string())?;
+                .register_identity("password".to_owned())?;
 
             send_transaction(ctx.client(), transaction, &mut states).await;
         }

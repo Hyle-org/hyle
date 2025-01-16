@@ -5,14 +5,10 @@ pub mod contract_handlers;
 pub mod contract_state_indexer;
 pub mod da_listener;
 
+use crate::model::*;
 use crate::{
-    consensus::ConsensusProposalHash,
-    data_availability::DataEvent,
-    model::{
-        BlobTransaction, Block, BlockHeight, CommonRunContext, ContractName, Hashable,
-        TransactionData,
-    },
     module_handle_messages,
+    node_state::module::NodeStateEvent,
     utils::modules::{module_bus_client, Module},
 };
 use anyhow::{bail, Context, Error, Result};
@@ -27,18 +23,17 @@ use axum::{
 };
 use chrono::DateTime;
 use hyle_contract_sdk::TxHash;
+use hyle_model::api::{BlobWithStatus, TransactionStatus, TransactionType, TransactionWithBlobs};
 use sqlx::Row;
 use sqlx::{postgres::PgPoolOptions, PgPool, Pool, Postgres};
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::{broadcast, mpsc};
-use tracing::{error, info};
-
-use crate::model::indexer::*;
+use tracing::{error, trace};
 
 module_bus_client! {
 #[derive(Debug)]
 struct IndexerBusClient {
-    receiver(DataEvent),
+    receiver(NodeStateEvent),
 }
 }
 
@@ -74,7 +69,6 @@ impl Module for Indexer {
             .await
             .context("Failed to connect to the database")?;
 
-        info!("Checking for new DB migration...");
         let _ =
             tokio::time::timeout(tokio::time::Duration::from_secs(60), MIGRATOR.run(&pool)).await?;
 
@@ -110,9 +104,9 @@ impl Indexer {
     pub async fn start(&mut self) -> Result<()> {
         module_handle_messages! {
             on_bus self.bus,
-            listen<DataEvent> cmd => {
-                if let Err(e) = self.handle_data_availability_event(cmd).await {
-                    error!("Error while handling data availability event: {:#}", e)
+            listen<NodeStateEvent> event => {
+                if let Err(e) = self.handle_node_state_event(event).await {
+                    error!("Error while handling node state event: {:#}", e)
                 }
             }
 
@@ -138,7 +132,7 @@ impl Indexer {
                         }
                     })?;
             }
-        }
+        };
         Ok(())
     }
 
@@ -218,14 +212,14 @@ impl Indexer {
             .await;
     }
 
-    async fn handle_data_availability_event(&mut self, event: DataEvent) -> Result<(), Error> {
+    async fn handle_node_state_event(&mut self, event: NodeStateEvent) -> Result<(), Error> {
         match event {
-            DataEvent::NewBlock(block) => self.handle_processed_block(*block).await,
+            NodeStateEvent::NewBlock(block) => self.handle_processed_block(*block).await,
         }
     }
 
     async fn handle_processed_block(&mut self, block: Block) -> Result<(), Error> {
-        info!("Indexing block at height {:?}", block.block_height);
+        trace!("Indexing block at height {:?}", block.block_height);
         let mut transaction = self.state.db.begin().await?;
 
         // Insert the block into the blocks table
@@ -353,21 +347,15 @@ impl Indexer {
                 }
                 TransactionData::VerifiedProof(tx_data) => {
                     // Then insert the proof in to the proof table.
-                    if tx_data.proof.is_none() {
-                        tracing::trace!(
-                            "Verified proof TX {:?} does not contain a proof",
-                            &tx_hash
-                        );
-                        continue;
-                    }
-                    let proof = tx_data.proof.unwrap();
-
-                    let Ok(proof) = &proof.to_bytes() else {
-                        error!(
-                            "Verified proof TX {:?} could not be decoded to bytes",
-                            &tx_hash
-                        );
-                        continue;
+                    let proof = match tx_data.proof {
+                        Some(proof_data) => proof_data.0,
+                        None => {
+                            tracing::trace!(
+                                "Verified proof TX {:?} does not contain a proof",
+                                &tx_hash
+                            );
+                            continue;
+                        }
                     };
 
                     sqlx::query("INSERT INTO proofs (tx_hash, proof) VALUES ($1, $2)")
@@ -498,7 +486,7 @@ impl Indexer {
                 .any(|blob| &blob.contract_name == contrat_name)
             {
                 let enriched_tx = TransactionWithBlobs {
-                    tx_hash: tx_hash.clone(),
+                    tx_hash: tx_hash.0.clone(),
                     block_hash: block_hash.clone(),
                     index,
                     version,
@@ -533,15 +521,11 @@ impl std::ops::Deref for Indexer {
 
 #[cfg(test)]
 mod test {
-    use crate::{
-        mempool::DataProposal,
-        model::indexer::{BlockDb, ContractDb},
-    };
     use assert_json_diff::assert_json_include;
     use axum_test::TestServer;
     use hyle_contract_sdk::{BlobIndex, HyleOutput, Identity, ProgramId, StateDigest, TxHash};
+    use hyle_model::api::{APIBlock, APIContract};
     use serde_json::json;
-    use staking::model::ValidatorPublicKey;
     use std::{
         future::IntoFuture,
         net::{Ipv4Addr, SocketAddr},
@@ -549,11 +533,11 @@ mod test {
 
     use crate::{
         bus::SharedMessageBus,
-        data_availability::node_state::NodeState,
         model::{
             Blob, BlobData, BlobProofOutput, ProofData, RegisterContractTransaction, SignedBlock,
             Transaction, TransactionData, VerifiedProofTransaction,
         },
+        node_state::NodeState,
     };
 
     use super::*;
@@ -600,7 +584,7 @@ mod test {
         Transaction {
             version: 1,
             transaction_data: TransactionData::Blob(BlobTransaction {
-                identity: Identity("test.c1".to_owned()),
+                identity: Identity::new("test.c1"),
                 blobs: vec![
                     Blob {
                         contract_name: first_contract_name,
@@ -623,7 +607,7 @@ mod test {
         next_state: StateDigest,
         blobs: Vec<u8>,
     ) -> Transaction {
-        let proof = ProofData::Bytes(initial_state.0.clone());
+        let proof = ProofData(initial_state.0.clone());
         Transaction {
             version: 1,
             transaction_data: TransactionData::VerifiedProof(VerifiedProofTransaction {
@@ -637,7 +621,7 @@ mod test {
                         version: 1,
                         initial_state,
                         next_state,
-                        identity: Identity("test.c1".to_owned()),
+                        identity: Identity::new("test.c1"),
                         tx_hash: blob_tx_hash,
                         index: blob_index,
                         blobs,
@@ -669,8 +653,8 @@ mod test {
 
         let initial_state = StateDigest(vec![1, 2, 3]);
         let next_state = StateDigest(vec![4, 5, 6]);
-        let first_contract_name = ContractName("c1".to_owned());
-        let second_contract_name = ContractName("c2".to_owned());
+        let first_contract_name = ContractName::new("c1");
+        let second_contract_name = ContractName::new("c2");
 
         let register_tx_1 = new_register_tx(first_contract_name.clone(), initial_state.clone());
         let register_tx_2 = new_register_tx(second_contract_name.clone(), initial_state.clone());
@@ -749,12 +733,12 @@ mod test {
 
         let transactions_response = server.get("/contract/c1").await;
         transactions_response.assert_status_ok();
-        let json_response = transactions_response.json::<ContractDb>();
+        let json_response = transactions_response.json::<APIContract>();
         assert_eq!(json_response.state_digest, next_state.0);
 
         let transactions_response = server.get("/contract/c2").await;
         transactions_response.assert_status_ok();
-        let json_response = transactions_response.json::<ContractDb>();
+        let json_response = transactions_response.json::<APIContract>();
         assert_eq!(json_response.state_digest, next_state.0);
 
         let blob_transactions_response = server.get("/blob_transactions/contract/c1").await;
@@ -862,10 +846,10 @@ mod test {
         // Test pagination
         let transactions_response = server.get("/blocks?nb_results=1").await;
         transactions_response.assert_status_ok();
-        assert_eq!(transactions_response.json::<Vec<BlockDb>>().len(), 1);
+        assert_eq!(transactions_response.json::<Vec<APIBlock>>().len(), 1);
         assert_eq!(
             transactions_response
-                .json::<Vec<BlockDb>>()
+                .json::<Vec<APIBlock>>()
                 .first()
                 .unwrap()
                 .height,
@@ -873,10 +857,10 @@ mod test {
         );
         let transactions_response = server.get("/blocks?nb_results=1&start_block=1").await;
         transactions_response.assert_status_ok();
-        assert_eq!(transactions_response.json::<Vec<BlockDb>>().len(), 1);
+        assert_eq!(transactions_response.json::<Vec<APIBlock>>().len(), 1);
         assert_eq!(
             transactions_response
-                .json::<Vec<BlockDb>>()
+                .json::<Vec<APIBlock>>()
                 .first()
                 .unwrap()
                 .height,
@@ -995,7 +979,7 @@ mod test {
 
         if let Some(tx) = indexer.new_sub_receiver.recv().await {
             let (contract_name, _) = tx;
-            assert_eq!(contract_name, ContractName("contract_1".to_string()));
+            assert_eq!(contract_name, ContractName::new("contract_1"));
         }
 
         Ok(())

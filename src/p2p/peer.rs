@@ -8,7 +8,7 @@ use tokio::sync::mpsc;
 use tokio::time::sleep;
 use tokio_util::codec::Framed;
 use tokio_util::codec::LengthDelimitedCodec;
-use tracing::{debug, info, trace, warn};
+use tracing::{info, trace, warn};
 
 use super::fifo_filter::FifoFilter;
 use super::network::HandshakeNetMessage;
@@ -19,14 +19,14 @@ use super::stream::send_net_message;
 use crate::bus::bus_client;
 use crate::bus::BusClientSender;
 use crate::bus::SharedMessageBus;
-use crate::consensus::ConsensusNetMessage;
 use crate::mempool::MempoolNetMessage;
+use crate::model::ConsensusNetMessage;
+use crate::model::SignedByValidator;
 use crate::model::ValidatorPublicKey;
 use crate::module_handle_messages;
 use crate::p2p::stream::read_stream;
 use crate::utils::conf::SharedConf;
 use crate::utils::crypto::SharedBlstCrypto;
-use crate::utils::crypto::SignedByValidator;
 use crate::utils::modules::signal::ShutdownModule;
 
 bus_client! {
@@ -105,10 +105,10 @@ impl Peer {
     }
 
     async fn handle_broadcast_message(&mut self, msg: NetMessage) -> Result<(), Error> {
-        let binary = msg.to_binary();
+        let binary = msg.to_binary()?;
         if !self.fifo_filter.check(&binary) {
             self.fifo_filter.set(binary);
-            debug!("Broadcast message to #{}: {}", self.id, msg);
+            trace!("Broadcast message to #{}: {}", self.id, msg);
             send_net_message(&mut self.stream, msg).await
         } else {
             trace!("Message to #{} already broadcasted", self.id);
@@ -126,12 +126,15 @@ impl Peer {
                 send_net_message(&mut self.stream, HandshakeNetMessage::Verack.into()).await
             }
             HandshakeNetMessage::Verack => {
-                debug!("Got peer verack message");
+                trace!("Got peer verack message");
                 if let Some(pubkey) = &self.peer_pubkey {
                     self.bus.send(PeerEvent::NewPeer {
                         name: self.peer_name.clone().unwrap_or("unknown".to_string()),
                         pubkey: pubkey.clone(),
-                        da_address: self.peer_da_address.clone().unwrap(),
+                        da_address: self
+                            .peer_da_address
+                            .clone()
+                            .unwrap_or("unknown".to_string()),
                     })?;
                 }
                 self.ping_pong();
@@ -147,21 +150,21 @@ impl Peer {
         }
     }
 
-    async fn handle_stream_message(&mut self, msg: NetMessage) -> Result<(), Error> {
+    async fn handle_peer_stream_message(&mut self, msg: NetMessage) -> Result<(), Error> {
         trace!("RECV: {:?}", msg);
         match msg {
             NetMessage::HandshakeMessage(handshake_msg) => {
-                debug!("Received new handshake net message {:?}", handshake_msg);
+                trace!("Received new handshake net message {:?}", handshake_msg);
                 self.handle_handshake_message(handshake_msg).await?;
             }
             NetMessage::MempoolMessage(mempool_msg) => {
-                debug!("Received new mempool net message {}", mempool_msg);
+                trace!("Received new mempool net message {}", mempool_msg);
                 self.bus
                     .send(mempool_msg)
                     .context("Receiving mempool net message")?;
             }
             NetMessage::ConsensusMessage(consensus_msg) => {
-                debug!("Received new consensus net message {}", consensus_msg);
+                trace!("Received new consensus net message {}", consensus_msg);
                 self.bus
                     .send(consensus_msg)
                     .context("Receiving consensus net message")?;
@@ -175,15 +178,14 @@ impl Peer {
         let interval = self.conf.p2p.ping_interval;
         info!("Starting ping pong");
 
-        tokio::task::Builder::new()
+        let _ = tokio::task::Builder::new()
             .name(&format!("ping-peer-{}", self.id))
             .spawn(async move {
                 loop {
                     sleep(Duration::from_secs(interval)).await;
-                    tx.send(Cmd::Ping).await.ok();
+                    let _ = tx.send(Cmd::Ping).await;
                 }
-            })
-            .ok();
+            });
     }
 
     pub async fn start(&mut self) -> Result<()> {
@@ -219,7 +221,7 @@ impl Peer {
             }
 
             res = read_stream(&mut self.stream) => match res {
-                Ok(message) => match self.handle_stream_message(message).await {
+                Ok(message) => match self.handle_peer_stream_message(message).await {
                     Ok(_) => continue,
                     Err(e) => {
                         warn!("Error while handling net message: {:#}", e);
@@ -241,7 +243,7 @@ impl Peer {
                                     return Ok(())
                                 }
                             }
-                            debug!("ping");
+                            trace!("ping");
                             send_net_message(&mut self.stream, HandshakeNetMessage::Ping.into()).await
                         }
                     };
@@ -254,7 +256,7 @@ impl Peer {
                     }
                 }
             }
-        }
+        };
         Ok(())
     }
 
