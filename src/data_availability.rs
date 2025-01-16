@@ -170,10 +170,16 @@ impl DataAvailability {
 
                 self.handle_signed_block(streamed_block).await;
 
-                //
-                if let Some(until_height) = self.catchup_height {
+                // Stop streaming after reaching a height communicated by Mempool
+                if let Some(until_height) = self.catchup_height.as_ref() {
                     if until_height.0 <= height {
-                        break;
+                        if let Some(t) = self.catchup_task.take() {
+                            t.abort();
+                            info!("Stopped streaming since received height {} and until {}", height, until_height.0);
+                            self.need_catchup = false;
+                        } else {
+                            info!("Did not stop streaming (received height {} and until {}) since no catchup task was running", height, until_height.0);
+                        }
                     }
                 }
             }
@@ -251,8 +257,8 @@ impl DataAvailability {
                 self.handle_signed_block(signed_block).await;
             }
             MempoolEvent::StartedBuildingBlocks(height) => {
-                self.catchup_height = Some(height);
-                if let Some(handle) = self.catchup_task.take() {
+                self.catchup_height = Some(height - 1);
+                if let Some(handle) = self.catchup_task.as_ref() {
                     if self
                         .blocks
                         .last()
