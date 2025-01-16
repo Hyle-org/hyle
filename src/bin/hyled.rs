@@ -4,12 +4,10 @@ use std::{fs::File, io::Read};
 
 use anyhow::Result;
 use clap::{command, Parser, Subcommand};
-use hyle::{
-    model::{
-        Blob, BlobData, BlobTransaction, ContractName, ProofData, ProofTransaction,
-        RegisterContractTransaction,
-    },
-    rest::client::NodeApiHttpClient,
+use client_sdk::rest_client::NodeApiHttpClient;
+use hyle::model::{
+    Blob, BlobData, BlobTransaction, ContractName, ProofData, ProofTransaction,
+    RegisterContractTransaction,
 };
 use hyle_contract_sdk::{Identity, StateDigest, Verifier};
 

@@ -228,7 +228,6 @@ fn as_validator_pubkey(pk: PublicKey) -> ValidatorPublicKey {
     ValidatorPublicKey(pk.compress().as_slice().to_vec())
 }
 
-#[cfg(feature = "node")]
 #[cfg(test)]
 mod tests {
 
