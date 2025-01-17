@@ -2660,7 +2660,6 @@ name = "hyle-contract-sdk"
 version = "0.6.0"
 dependencies = [
  "bincode 2.0.0-rc.3",
- "hex",
  "hyle-model",
  "mockall",
  "risc0-zkvm",
