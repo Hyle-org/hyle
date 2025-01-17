@@ -7,50 +7,25 @@ mod fixtures;
 use anyhow::Result;
 
 mod e2e_hyllar {
-    use anyhow::bail;
-    use client_sdk::transaction_builder::{ProvableBlobTx, StateUpdater, TxExecutorBuilder};
+    use client_sdk::{
+        contract_states,
+        transaction_builder::{ProvableBlobTx, TxExecutorBuilder},
+    };
     use hydentity::{
         client::{register_identity, verify_identity},
         Hydentity,
     };
-    use hyle_contract_sdk::{erc20::ERC20, ContractName, Digestable};
+    use hyle_contract_sdk::{erc20::ERC20, ContractName, Digestable, StateDigest};
     use hyllar::{client::transfer, HyllarToken};
 
     use super::*;
 
-    struct States {
-        hydentity: Hydentity,
-        hyllar: HyllarToken,
-    }
-
-    impl StateUpdater for States {
-        fn setup(&self, ctx: &mut TxExecutorBuilder) {
-            self.hydentity
-                .setup_builder::<Self>("hydentity".into(), ctx);
-            self.hyllar.setup_builder::<Self>("hyllar".into(), ctx);
+    contract_states!(
+        struct States {
+            hydentity: Hydentity,
+            hyllar: HyllarToken,
         }
-
-        fn update(
-            &mut self,
-            contract_name: &ContractName,
-            new_state: hyle_model::StateDigest,
-        ) -> Result<()> {
-            match contract_name.0.as_str() {
-                "hydentity" => self.hydentity = new_state.try_into()?,
-                "hyllar" => self.hyllar = new_state.try_into()?,
-                _ => bail!("Unknown contract name: {contract_name}"),
-            };
-            Ok(())
-        }
-
-        fn get(&self, contract_name: &ContractName) -> Result<hyle_model::StateDigest> {
-            match contract_name.0.as_str() {
-                "hydentity" => Ok(self.hydentity.as_digest()),
-                "hyllar" => Ok(self.hyllar.as_digest()),
-                _ => bail!("Unknown contract name: {contract_name}"),
-            }
-        }
-    }
+    );
 
     async fn scenario_hyllar(ctx: E2ECtx) -> Result<()> {
         info!("➡️  Setting up the executor with the initial state");

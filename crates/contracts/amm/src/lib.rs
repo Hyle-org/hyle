@@ -306,8 +306,6 @@ pub fn execute(contract_input: ContractInput) -> sdk::HyleOutput {
 
     let amm_action = parsed_blob.data.parameters;
 
-    tracing::info!("totoro amm_contract {:?}", amm_contract.callee_blobs().0);
-
     let res = match amm_action {
         AmmAction::Swap {
             pair,
@@ -315,8 +313,6 @@ pub fn execute(contract_input: ContractInput) -> sdk::HyleOutput {
         } => amm_contract.verify_swap(pair, from_amount, to_amount),
         AmmAction::NewPair { pair, amounts } => amm_contract.create_new_pair(pair, amounts),
     };
-
-    tracing::info!("totoro amm_contract {:?}", amm_contract.callee_blobs().0);
 
     assert!(amm_contract.callee_blobs().is_empty());
 

@@ -62,7 +62,6 @@ mod e2e_amm {
         let contract_hyllar = ctx.get_contract(contract_name).await?;
         let state: hyllar::HyllarToken = contract_hyllar.state.try_into()?;
         let state = hyllar::HyllarTokenContract::init(state, "caller".into());
-        info!("totoro {:?}", state);
         for (account, expected) in balances {
             assert_eq!(
                 state.balance_of(account).expect("Account not found"),
@@ -74,12 +73,14 @@ mod e2e_amm {
         Ok(())
     }
 
-    contract_states!(States {
-        hydentity: Hydentity,
-        hyllar: HyllarToken,
-        hyllar2: HyllarToken,
-        amm: AmmState,
-    });
+    contract_states!(
+        struct States {
+            hydentity: Hydentity,
+            hyllar: HyllarToken,
+            hyllar2: HyllarToken,
+            amm: AmmState,
+        }
+    );
 
     async fn scenario_amm(ctx: E2ECtx) -> Result<()> {
         // Here is the flow that we are going to test:

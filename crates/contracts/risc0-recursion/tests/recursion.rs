@@ -6,9 +6,11 @@ use hydentity::{client::register_identity, Hydentity};
 use risc0_recursion::ProofInput;
 use sdk::{ContractName, Digestable, HyleOutput, StateDigest};
 
-contract_states!(States {
-    hydentity: Hydentity,
-});
+contract_states!(
+    struct States {
+        hydentity: Hydentity,
+    }
+);
 
 #[test_log::test(tokio::test)]
 async fn test_recursion() {
