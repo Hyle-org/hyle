@@ -197,19 +197,19 @@ impl Peer {
                     OutboundMessage::SendMessage { validator_id, msg } => {
                         _ = self.handle_send_message(validator_id, msg)
                             .await
-                            .log_warn("Error while sending net message");
+                            .log_warn("P2P Sending net message");
                     }
                     OutboundMessage::BroadcastMessage(message) => {
                         _ = self.handle_broadcast_message(message)
                             .await
-                            .log_warn("Error while broadcasting net message");
+                            .log_warn("P2P Broadcasting net message");
                     }
                     OutboundMessage::BroadcastMessageOnlyFor(only_for, message) => {
                         if let Some(ref pubkey) = self.peer_pubkey {
                             if only_for.contains(pubkey) {
                                 _ = self.handle_broadcast_message(message)
                                     .await
-                                    .log_warn(format!("Error while broadcasting net message only for {:?}", only_for));
+                                    .log_warn(format!("P2P Broadcasting net message only for {:?}", only_for));
                             }
                         }
                     }
@@ -221,7 +221,7 @@ impl Peer {
 
                 _ = self.handle_peer_stream_message(message)
                     .await
-                    .log_warn("Error while handling net message");
+                    .log_warn("Handling peer stream message");
             },
 
             res =  self.internal_cmd_rx.recv() => {
