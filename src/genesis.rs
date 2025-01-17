@@ -8,13 +8,21 @@ use crate::{
     utils::{conf::SharedConf, crypto::SharedBlstCrypto, modules::Module},
 };
 use anyhow::{bail, Error, Result};
-use client_sdk::transaction_builder::{BuildResult, StateUpdater, TransactionBuilder};
-use hydentity::Hydentity;
+use client_sdk::transaction_builder::{
+    ProofTxBuilder, ProvableBlobTx, StateUpdater, TxExecutor, TxExecutorBuilder,
+};
+use hydentity::{
+    client::{register_identity, verify_identity},
+    Hydentity,
+};
 use hyle_contract_sdk::{identity_provider::IdentityVerification, Identity, StateDigest};
 use hyle_contract_sdk::{ContractName, Digestable, ProgramId};
-use hyllar::HyllarToken;
+use hyllar::{client::transfer, HyllarToken};
 use serde::{Deserialize, Serialize};
-use staking::state::Staking;
+use staking::{
+    client::{delegate, stake},
+    state::Staking,
+};
 use tracing::{debug, error, info};
 use verifiers::NativeVerifiers;
 
@@ -66,6 +74,15 @@ pub struct States {
 }
 
 impl StateUpdater for States {
+    fn setup(&self, ctx: &mut TxExecutorBuilder) {
+        self.hydentity
+            .setup_builder::<Self>(ContractName::new("hydentity"), ctx);
+        self.hyllar
+            .setup_builder::<Self>(ContractName::new("hyllar"), ctx);
+        self.staking
+            .setup_builder::<Self>(ContractName::new("staking"), ctx);
+    }
+
     fn update(
         &mut self,
         contract_name: &hyle_contract_sdk::ContractName,
@@ -191,22 +208,27 @@ impl Genesis {
         peer_pubkey: &PeerPublicKeyMap,
         genesis_stake: &HashMap<String, u64>,
     ) -> Result<Vec<Transaction>> {
-        let (contract_program_ids, mut genesis_txs, mut states) = Self::genesis_contracts_txs();
+        let (contract_program_ids, mut genesis_txs, mut tx_executor) =
+            Self::genesis_contracts_txs();
 
-        let register_txs = Self::generate_register_txs(peer_pubkey, &mut states).await?;
-        let faucet_txs = Self::generate_faucet_txs(peer_pubkey, &mut states, genesis_stake).await?;
-        let stake_txs = Self::generate_stake_txs(peer_pubkey, &mut states, genesis_stake).await?;
+        let register_txs = Self::generate_register_txs(peer_pubkey, &mut tx_executor).await?;
+
+        let faucet_txs =
+            Self::generate_faucet_txs(peer_pubkey, &mut tx_executor, genesis_stake).await?;
+
+        let stake_txs =
+            Self::generate_stake_txs(peer_pubkey, &mut tx_executor, genesis_stake).await?;
 
         let builders = register_txs
             .into_iter()
             .chain(faucet_txs.into_iter())
-            .chain(stake_txs.into_iter())
-            .collect::<Vec<_>>();
+            .chain(stake_txs.into_iter());
 
-        for BuildResult {
+        for ProofTxBuilder {
             identity,
             blobs,
             mut outputs,
+            ..
         } in builders
         {
             // On genesis we don't need an actual zkproof as the txs are not going through data
@@ -247,8 +269,8 @@ impl Genesis {
 
     async fn generate_register_txs(
         peer_pubkey: &PeerPublicKeyMap,
-        states: &mut States,
-    ) -> Result<Vec<BuildResult>> {
+        tx_executor: &mut TxExecutor<States>,
+    ) -> Result<Vec<ProofTxBuilder>> {
         // TODO: use an identity provider that checks BLST signature on a pubkey instead of
         // hydentity that checks password
         // The validator will send the signature for the register transaction in the handshake
@@ -259,15 +281,16 @@ impl Genesis {
             info!("🌱  Registering identity {peer}");
 
             let identity = Identity(format!("{peer}.hydentity"));
-            let mut transaction = TransactionBuilder::new(identity.clone());
+            let mut transaction = ProvableBlobTx::new(identity.clone());
 
             // Register
-            states
-                .hydentity
-                .default_builder(&mut transaction)
-                .register_identity("password".to_owned())?;
+            register_identity(
+                &mut transaction,
+                ContractName::new("hydentity"),
+                "password".to_owned(),
+            )?;
 
-            txs.push(transaction.build(states)?);
+            txs.push(tx_executor.process(transaction)?);
         }
 
         Ok(txs)
@@ -275,9 +298,9 @@ impl Genesis {
 
     async fn generate_faucet_txs(
         peer_pubkey: &PeerPublicKeyMap,
-        states: &mut States,
+        tx_executor: &mut TxExecutor<States>,
         genesis_stakers: &HashMap<String, u64>,
-    ) -> Result<Vec<BuildResult>> {
+    ) -> Result<Vec<ProofTxBuilder>> {
         let mut txs = vec![];
         for (id, peer) in peer_pubkey.iter() {
             let genesis_faucet = *genesis_stakers
@@ -288,21 +311,25 @@ impl Genesis {
             info!("🌱  Fauceting {genesis_faucet} hyllar to {peer}");
 
             let identity = Identity::new("faucet.hydentity");
-            let mut transaction = TransactionBuilder::new(identity.clone());
+            let mut transaction = ProvableBlobTx::new(identity.clone());
 
             // Verify identity
-            states
-                .hydentity
-                .default_builder(&mut transaction)
-                .verify_identity(&states.hydentity, "password".to_string())?;
+            verify_identity(
+                &mut transaction,
+                ContractName::new("hydentity"),
+                &tx_executor.hydentity,
+                "password".to_string(),
+            )?;
 
             // Transfer
-            states
-                .hyllar
-                .default_builder(&mut transaction)
-                .transfer(format!("{peer}.hydentity"), genesis_faucet)?;
+            transfer(
+                &mut transaction,
+                ContractName::new("hyllar"),
+                format!("{peer}.hydentity"),
+                genesis_faucet,
+            )?;
 
-            txs.push(transaction.build(states)?);
+            txs.push(tx_executor.process(transaction)?);
         }
 
         Ok(txs)
@@ -310,9 +337,9 @@ impl Genesis {
 
     async fn generate_stake_txs(
         peer_pubkey: &PeerPublicKeyMap,
-        states: &mut States,
+        tx_executor: &mut TxExecutor<States>,
         genesis_stakers: &HashMap<String, u64>,
-    ) -> Result<Vec<BuildResult>> {
+    ) -> Result<Vec<ProofTxBuilder>> {
         let mut txs = vec![];
         for (id, peer) in peer_pubkey.iter() {
             let genesis_stake = *genesis_stakers
@@ -323,39 +350,45 @@ impl Genesis {
             info!("🌱  Staking {genesis_stake} hyllar from {peer}");
 
             let identity = Identity(format!("{peer}.hydentity").to_string());
-            let mut transaction = TransactionBuilder::new(identity.clone());
+            let mut transaction = ProvableBlobTx::new(identity.clone());
 
             // Verify identity
-            states
-                .hydentity
-                .default_builder(&mut transaction)
-                .verify_identity(&states.hydentity, "password".to_string())?;
+            verify_identity(
+                &mut transaction,
+                ContractName::new("hydentity"),
+                &tx_executor.hydentity,
+                "password".to_string(),
+            )?;
 
             // Stake
-            states
-                .staking
-                .builder(&mut transaction)
-                .stake(genesis_stake)?;
+            stake(
+                &mut transaction,
+                ContractName::new("staking"),
+                genesis_stake,
+            )?;
 
             // Transfer
-            states
-                .hyllar
-                .default_builder(&mut transaction)
-                .transfer("staking".to_string(), genesis_stake)?;
+            transfer(
+                &mut transaction,
+                ContractName::new("hyllar"),
+                "staking".to_string(),
+                genesis_stake,
+            )?;
 
             // Delegate
-            states
-                .staking
-                .builder(&mut transaction)
-                .delegate(peer.clone())?;
+            delegate(&mut transaction, ContractName::new("staking"), peer.clone())?;
 
-            txs.push(transaction.build(states)?);
+            txs.push(tx_executor.process(transaction)?);
         }
 
         Ok(txs)
     }
 
-    fn genesis_contracts_txs() -> (BTreeMap<ContractName, ProgramId>, Vec<Transaction>, States) {
+    fn genesis_contracts_txs() -> (
+        BTreeMap<ContractName, ProgramId>,
+        Vec<Transaction>,
+        TxExecutor<States>,
+    ) {
         let staking_program_id = hyle_contracts::STAKING_ID.to_vec();
         let hyllar_program_id = hyle_contracts::HYLLAR_ID.to_vec();
         let hydentity_program_id = hyle_contracts::HYDENTITY_ID.to_vec();
@@ -367,11 +400,11 @@ impl Genesis {
 
         let staking_state = staking::state::Staking::new();
 
-        let states = States {
+        let ctx = TxExecutorBuilder::default().with_state(States {
             hyllar: hyllar::HyllarToken::new(100_000_000_000, "faucet.hydentity".to_string()),
             hydentity: hydentity_state,
             staking: staking_state,
-        };
+        });
 
         let mut map = BTreeMap::default();
         map.insert("blst".into(), NativeVerifiers::Blst.into());
@@ -407,7 +440,7 @@ impl Genesis {
                     owner: "hyle".into(),
                     verifier: "risc0".into(),
                     program_id: staking_program_id.into(),
-                    state_digest: states.staking.on_chain_state().as_digest(),
+                    state_digest: ctx.staking.on_chain_state().as_digest(),
                     contract_name: "staking".into(),
                 }
                 .into(),
@@ -415,7 +448,7 @@ impl Genesis {
                     owner: "hyle".into(),
                     verifier: "risc0".into(),
                     program_id: hyllar_program_id.into(),
-                    state_digest: states.hyllar.as_digest(),
+                    state_digest: ctx.hyllar.as_digest(),
                     contract_name: "hyllar".into(),
                 }
                 .into(),
@@ -423,7 +456,7 @@ impl Genesis {
                     owner: "hyle".into(),
                     verifier: "risc0".into(),
                     program_id: hydentity_program_id.into(),
-                    state_digest: states.hydentity.as_digest(),
+                    state_digest: ctx.hydentity.as_digest(),
                     contract_name: "hydentity".into(),
                 }
                 .into(),
@@ -436,7 +469,7 @@ impl Genesis {
                 }
                 .into(),
             ],
-            states,
+            ctx,
         )
     }
 

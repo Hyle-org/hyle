@@ -1,94 +1,90 @@
+use std::pin::Pin;
+
 use anyhow::{bail, Result};
 use hyle_model::ProofData;
 use sdk::{flatten_blobs, ContractInput, HyleOutput};
 
-pub enum Prover {
-    #[cfg(feature = "risc0")]
-    Risc0Prover,
-    #[cfg(feature = "sp1")]
-    SP1Prover,
-    TestProver,
+pub trait ClientSdkExecutor {
+    fn execute(&self, contract_input: &ContractInput) -> Result<HyleOutput>;
 }
-
-impl Prover {
-    pub async fn prove(
+pub trait ClientSdkProver {
+    fn prove(
         &self,
-        binary: &[u8],
-        contract_input: &ContractInput,
-    ) -> Result<(ProofData, HyleOutput)> {
-        match self {
-            #[cfg(feature = "risc0")]
-            Prover::Risc0Prover => risc0::prove(binary, contract_input).await,
-            #[cfg(feature = "sp1")]
-            Prover::SP1Prover => sp1::prove(binary, contract_input),
-            Prover::TestProver => test::prove(binary, contract_input),
-        }
-    }
-
-    pub fn execute(&self, binary: &[u8], contract_input: &ContractInput) -> Result<HyleOutput> {
-        match self {
-            #[cfg(feature = "risc0")]
-            Prover::Risc0Prover => risc0::execute(binary, contract_input),
-            #[cfg(feature = "sp1")]
-            Prover::SP1Prover => sp1::execute(binary, contract_input),
-            Prover::TestProver => test::execute(binary, contract_input),
-        }
-    }
+        contract_input: ContractInput,
+    ) -> Pin<Box<dyn std::future::Future<Output = Result<ProofData>> + Send + '_>>;
 }
 
 #[cfg(feature = "risc0")]
 pub mod risc0 {
     use super::*;
 
-    pub fn execute(binary: &[u8], contract_input: &ContractInput) -> Result<HyleOutput> {
-        let contract_input = bonsai_runner::as_input_data(contract_input)?;
-        let env = risc0_zkvm::ExecutorEnv::builder()
-            .write_slice(&contract_input)
-            .build()
-            .unwrap();
+    pub struct Risc0Prover {
+        binary: Vec<u8>,
+    }
+    impl Risc0Prover {
+        pub fn new<T: AsRef<[u8]>>(binary: T) -> Self {
+            Self {
+                binary: binary.as_ref().to_vec(),
+            }
+        }
+        async fn prove(binary: &[u8], contract_input: ContractInput) -> Result<ProofData> {
+            let contract_input = bonsai_runner::as_input_data(&contract_input)?;
 
-        let executor = risc0_zkvm::default_executor();
-        let execute_info = executor.execute(env, binary)?;
-        let output = execute_info
-            .journal
-            .decode::<HyleOutput>()
-            .expect("Failed to decode journal");
+            let explicit = std::env::var("RISC0_PROVER").unwrap_or_default();
+            let receipt = match explicit.to_lowercase().as_str() {
+                "bonsai" => bonsai_runner::run_bonsai(binary, contract_input.clone()).await?,
+                _ => {
+                    let env = risc0_zkvm::ExecutorEnv::builder()
+                        .write_slice(&contract_input)
+                        .build()
+                        .unwrap();
 
-        check_output(&output)?;
+                    let prover = risc0_zkvm::default_prover();
+                    let prove_info = prover.prove(env, binary)?;
+                    prove_info.receipt
+                }
+            };
 
-        Ok(output)
+            let output = receipt
+                .journal
+                .decode::<HyleOutput>()
+                .expect("Failed to decode journal");
+
+            check_output(&output)?;
+
+            let encoded_receipt = borsh::to_vec(&receipt).expect("Unable to encode receipt");
+            Ok(ProofData(encoded_receipt))
+        }
     }
 
-    pub async fn prove(
-        binary: &[u8],
-        contract_input: &ContractInput,
-    ) -> Result<(ProofData, HyleOutput)> {
-        let contract_input = bonsai_runner::as_input_data(&contract_input)?;
+    impl ClientSdkExecutor for Risc0Prover {
+        fn execute(&self, contract_input: &ContractInput) -> Result<HyleOutput> {
+            let contract_input = bonsai_runner::as_input_data(contract_input)?;
+            let env = risc0_zkvm::ExecutorEnv::builder()
+                .write_slice(&contract_input)
+                .build()
+                .unwrap();
 
-        let explicit = std::env::var("RISC0_PROVER").unwrap_or_default();
-        let receipt = match explicit.to_lowercase().as_str() {
-            "bonsai" => bonsai_runner::run_bonsai(binary, contract_input.clone()).await?,
-            _ => {
-                let env = risc0_zkvm::ExecutorEnv::builder()
-                    .write_slice(&contract_input)
-                    .build()
-                    .unwrap();
+            let executor = risc0_zkvm::default_executor();
+            let execute_info = executor.execute(env, &self.binary)?;
+            let output = execute_info
+                .journal
+                .decode::<HyleOutput>()
+                .expect("Failed to decode journal");
 
-                let prover = risc0_zkvm::default_prover();
-                let prove_info = prover.prove(env, binary)?;
-                prove_info.receipt
-            }
-        };
+            check_output(&output)?;
 
-        let output = receipt
-            .journal
-            .decode::<HyleOutput>()
-            .expect("Failed to decode journal");
+            Ok(output)
+        }
+    }
 
-        check_output(&output)?;
-
-        let encoded_receipt = borsh::to_vec(&receipt).expect("Unable to encode receipt");
-        Ok((ProofData(encoded_receipt), output))
+    impl ClientSdkProver for Risc0Prover {
+        fn prove(
+            &self,
+            contract_input: ContractInput,
+        ) -> Pin<Box<dyn std::future::Future<Output = Result<ProofData>> + Send + '_>> {
+            Box::pin(Self::prove(&self.binary, contract_input))
+        }
     }
 }
 

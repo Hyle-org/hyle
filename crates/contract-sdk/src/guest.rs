@@ -1,35 +1,41 @@
-use alloc::{string::ToString, vec::Vec};
-use anyhow::{bail, Result};
+use alloc::string::{String, ToString};
 use bincode::{Decode, Encode};
 use serde::de::DeserializeOwned;
 
 use crate::{
     flatten_blobs,
-    utils::{parse_blob, parse_structured_blob},
-    ContractInput, Digestable, HyleOutput, Identity, StructuredBlob, StructuredBlobData,
+    utils::{as_hyle_output, check_caller_callees, parse_blob, parse_structured_blob},
+    ContractInput, Digestable, HyleOutput, Identity, StructuredBlob,
 };
 
-#[cfg(feature = "risc0")]
-pub mod env {
-    use super::*;
+pub trait GuestEnv {
+    fn log(&self, message: &str);
+    fn commit(&self, output: &HyleOutput);
+    fn read<T: DeserializeOwned + 'static>(&self) -> T;
+}
 
-    pub fn log(message: &str) {
+pub struct Risc0Env;
+
+#[cfg(feature = "risc0")]
+impl GuestEnv for Risc0Env {
+    pub fn log(&self, message: &str) {
         risc0_zkvm::guest::env::log(message);
     }
 
-    pub fn commit(output: &HyleOutput) {
+    pub fn commit(&self, output: &HyleOutput) {
         risc0_zkvm::guest::env::commit(output);
     }
 
-    pub fn read<T: DeserializeOwned>() -> T {
+    pub fn read<T: DeserializeOwned>(&self) -> T {
         risc0_zkvm::guest::env::read()
     }
 }
+
+pub struct SP1Env;
+
 // For coverage tests, assume risc0 if both are active
 #[cfg(all(feature = "sp1", not(feature = "risc0")))]
-pub mod env {
-    use super::*;
-
+impl GuestEnv for SP1Env {
     pub fn log(message: &str) {
         // TODO: this does nothing actually
         sp1_zkvm::io::hint(&message);
@@ -44,10 +50,10 @@ pub mod env {
     }
 }
 
-pub fn fail(input: ContractInput, message: &str) {
-    env::log(message);
+pub fn fail(env: impl GuestEnv, input: ContractInput, message: &str) {
+    env.log(message);
 
-    env::commit(&HyleOutput {
+    env.commit(&HyleOutput {
         version: 1,
         initial_state: input.initial_state.clone(),
         next_state: input.initial_state,
@@ -60,30 +66,27 @@ pub fn fail(input: ContractInput, message: &str) {
     });
 }
 
-pub fn panic(message: &str) {
-    env::log(message);
+pub fn panic(env: impl GuestEnv, message: &str) {
+    env.log(message);
     // should we env::commit ?
     panic!("{}", message);
 }
 
-pub fn init_raw<Parameters>() -> (ContractInput, Parameters)
+pub fn init_raw<Parameters>(input: ContractInput) -> (ContractInput, Parameters)
 where
     Parameters: Decode,
 {
-    let input: ContractInput = env::read();
-
     let parsed_blob = parse_blob::<Parameters>(&input.blobs, &input.index);
 
     (input, parsed_blob)
 }
 
 pub fn init_with_caller<Parameters>(
-) -> Result<(ContractInput, StructuredBlob<Parameters>, Identity)>
+    input: ContractInput,
+) -> Result<(ContractInput, StructuredBlob<Parameters>, Identity), String>
 where
     Parameters: Encode + Decode,
 {
-    let input: ContractInput = env::read();
-
     let parsed_blob = parse_structured_blob::<Parameters>(&input.blobs, &input.index);
 
     let caller = check_caller_callees::<Parameters>(&input, &parsed_blob)?;
@@ -91,58 +94,13 @@ where
     Ok((input, parsed_blob, caller))
 }
 
-pub fn commit<State>(input: ContractInput, new_state: State, res: crate::RunResult)
-where
+pub fn commit<State>(
+    env: impl GuestEnv,
+    input: ContractInput,
+    new_state: State,
+    res: crate::RunResult,
+) where
     State: Digestable,
 {
-    env::commit(&HyleOutput {
-        version: 1,
-        initial_state: input.initial_state,
-        next_state: new_state.as_digest(),
-        identity: input.identity,
-        tx_hash: input.tx_hash,
-        index: input.index,
-        blobs: flatten_blobs(&input.blobs),
-        success: res.is_ok(),
-        program_outputs: res.unwrap_or_else(|e| e.to_string()).into_bytes(),
-    });
-}
-
-pub fn check_caller_callees<Paramaters>(
-    input: &ContractInput,
-    parameters: &StructuredBlob<Paramaters>,
-) -> Result<Identity>
-where
-    Paramaters: Encode + Decode,
-{
-    // Check that callees has this blob as caller
-    if let Some(callees) = parameters.data.callees.as_ref() {
-        for callee_index in callees {
-            let callee_blob = input.blobs[callee_index.0].clone();
-            let callee_structured_blob: StructuredBlobData<Vec<u8>> =
-                callee_blob.data.try_into().expect("Failed to decode blob");
-            if callee_structured_blob.caller != Some(input.index.clone()) {
-                bail!("One Callee does not have this blob as caller");
-            }
-        }
-    }
-    // Extract the correct caller
-    if let Some(caller_index) = parameters.data.caller.as_ref() {
-        let caller_blob = input.blobs[caller_index.0].clone();
-        let caller_structured_blob: StructuredBlobData<Vec<u8>> =
-            caller_blob.data.try_into().expect("Failed to decode blob");
-        // Check that caller has this blob as callee
-        if caller_structured_blob.callees.is_some()
-            && !caller_structured_blob
-                .callees
-                .unwrap()
-                .contains(&input.index)
-        {
-            bail!("Incorrect Caller for this blob");
-        }
-        return Ok(caller_blob.contract_name.0.clone().into());
-    }
-
-    // No callers detected, use the identity
-    Ok(input.identity.clone())
+    env.commit(&as_hyle_output(input, new_state, res));
 }
