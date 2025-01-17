@@ -42,3 +42,38 @@ pub fn transfer(
     )?;
     Ok(())
 }
+
+pub fn transfer_from(
+    builder: &mut ProvableBlobTx,
+    contract_name: ContractName,
+    sender: String,
+    recipient: String,
+    amount: u128,
+) -> anyhow::Result<()> {
+    builder.add_action(
+        contract_name,
+        ERC20Action::TransferFrom {
+            sender,
+            recipient,
+            amount,
+        },
+        None,
+        None,
+    )?;
+    Ok(())
+}
+
+pub fn approve(
+    builder: &mut ProvableBlobTx,
+    contract_name: ContractName,
+    spender: String,
+    amount: u128,
+) -> anyhow::Result<()> {
+    builder.add_action(
+        contract_name,
+        ERC20Action::Approve { spender, amount },
+        None,
+        None,
+    )?;
+    Ok(())
+}

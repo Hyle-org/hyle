@@ -1,8 +1,7 @@
 use std::pin::Pin;
 
 use anyhow::{bail, Result};
-use hyle_model::ProofData;
-use sdk::{flatten_blobs, ContractInput, HyleOutput};
+use sdk::{flatten_blobs, ContractInput, HyleOutput, ProofData};
 
 pub trait ClientSdkExecutor {
     fn execute(&self, contract_input: &ContractInput) -> Result<HyleOutput>;
