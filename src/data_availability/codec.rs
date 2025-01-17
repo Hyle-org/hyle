@@ -12,7 +12,7 @@ pub struct DataAvailabilityServerCodec {
 impl Default for DataAvailabilityServerCodec {
     fn default() -> Self {
         let mut ldc = LengthDelimitedCodec::new();
-        ldc.set_max_frame_length(1024 * 1024 * 1024); // Set max frame length to 1 GB
+        ldc.set_max_frame_length(128 * 1024 * 1024); // Set max frame length to 128 Mb
         DataAvailabilityServerCodec { ldc }
     }
 }

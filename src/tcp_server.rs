@@ -78,7 +78,7 @@ impl TcpServer {
                 let sender = sender.clone();
                 readers.spawn(async move {
                     let mut codec = LengthDelimitedCodec::new();
-                    codec.set_max_frame_length(1024 * 1024 * 1024); // Set max frame length to 1 GB
+                    codec.set_max_frame_length(128 * 1024 * 1024); // Set max frame length to 128 Mb
                     let mut framed = Framed::new(tcp_stream, codec);
                     loop {
                         let net_msg = read_stream(&mut framed).await.context("Reading TCP stream")?;
