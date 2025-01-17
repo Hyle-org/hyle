@@ -7,9 +7,10 @@ use crate::{
     p2p::network::PeerEvent,
     utils::{conf::SharedConf, crypto::SharedBlstCrypto, modules::Module},
 };
-use anyhow::{bail, Error, Result};
-use client_sdk::transaction_builder::{
-    ProofTxBuilder, ProvableBlobTx, StateUpdater, TxExecutor, TxExecutorBuilder,
+use anyhow::{Error, Result};
+use client_sdk::{
+    contract_states,
+    transaction_builder::{ProofTxBuilder, ProvableBlobTx, TxExecutor, TxExecutorBuilder},
 };
 use hydentity::{
     client::{register_identity, verify_identity},
@@ -66,46 +67,14 @@ impl Module for Genesis {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct States {
-    pub hyllar: HyllarToken,
-    pub hydentity: Hydentity,
-    pub staking: Staking,
-}
-
-impl StateUpdater for States {
-    fn setup(&self, ctx: &mut TxExecutorBuilder) {
-        self.hydentity
-            .setup_builder::<Self>(ContractName::new("hydentity"), ctx);
-        self.hyllar
-            .setup_builder::<Self>(ContractName::new("hyllar"), ctx);
-        self.staking
-            .setup_builder::<Self>(ContractName::new("staking"), ctx);
+contract_states!(
+    #[derive(Debug, Clone)]
+    pub struct States {
+        pub hyllar: HyllarToken,
+        pub hydentity: Hydentity,
+        pub staking: Staking,
     }
-
-    fn update(
-        &mut self,
-        contract_name: &hyle_contract_sdk::ContractName,
-        new_state: hyle_contract_sdk::StateDigest,
-    ) -> Result<()> {
-        match contract_name.0.as_str() {
-            "hyllar" => self.hyllar = new_state.try_into()?,
-            "hydentity" => self.hydentity = new_state.try_into()?,
-            "staking" => self.staking = new_state.try_into()?,
-            _ => bail!("Unknown contract name"),
-        }
-        Ok(())
-    }
-
-    fn get(&self, contract_name: &ContractName) -> Result<hyle_contract_sdk::StateDigest> {
-        Ok(match contract_name.0.as_str() {
-            "hyllar" => self.hyllar.as_digest(),
-            "hydentity" => self.hydentity.as_digest(),
-            "staking" => self.staking.as_digest(),
-            _ => bail!("Unknown contract name"),
-        })
-    }
-}
+);
 
 #[allow(clippy::expect_used, reason = "genesis should panic if incorrect")]
 impl Genesis {

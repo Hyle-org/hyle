@@ -48,10 +48,21 @@ indexing_slicing = "warn"
 
 [dependencies]
 # Public dependencies
-hyle-contract-sdk = { path = "./crates/contract-sdk", default-features = false, features = ["tracing"] }
-staking = { path = "./crates/contracts/staking", default-features = false, features = ["client"] }
-client-sdk = { path = "./crates/client-sdk", default-features = false, features = ["rest", "tcp", "risc0"] }
-hyle-model = { path = "./crates/hyle-model", default-features = false, features = ["full", "sqlx"] }
+hyle-contract-sdk = { path = "./crates/contract-sdk", default-features = false, features = [
+    "tracing",
+] }
+staking = { path = "./crates/contracts/staking", default-features = false, features = [
+    "client",
+] }
+client-sdk = { path = "./crates/client-sdk", default-features = false, features = [
+    "rest",
+    "tcp",
+    "risc0",
+] }
+hyle-model = { path = "./crates/hyle-model", default-features = false, features = [
+    "full",
+    "sqlx",
+] }
 hydentity = { path = "./crates/contracts/hydentity", features = ["client"] }
 hyllar = { path = "./crates/contracts/hyllar", features = ["client"] }
 risc0-recursion = { path = "./crates/contracts/risc0-recursion" }
@@ -88,9 +99,7 @@ paste = { version = "1.0.15" }
 prometheus = { version = "0.13.4" }
 quote = { version = "1.0.38" }
 rand = { version = "0.8.5" }
-risc0-zkvm = { version = "1.2.1", default-features = false, features = [
-    "std",
-] }
+risc0-zkvm = { version = "1.2.1", default-features = false, features = ["std"] }
 ron = { version = "0.8.1" }
 sp1-sdk = { version = "4.0.0", default-features = false }
 sqlx = { version = "0.8.3", features = [
@@ -102,16 +111,13 @@ sqlx = { version = "0.8.3", features = [
 syn = { version = "2.0.96" }
 tokio = { version = "1.42.0", features = ["full", "tracing"] }
 tokio-util = { version = "0.7.13" }
-tower-http = { version = "0.6.2", features = [
-    "trace",
-    "cors",
-] }
+tower-http = { version = "0.6.2", features = ["trace", "cors"] }
 tracing-subscriber = { version = "0.3", features = ["json"] }
 fjall = { version = "2.4.4" }
 
 dhat = { version = "0.3.3", optional = true }
 [dev-dependencies]
-amm = { path = "./crates/contracts/amm" }
+amm = { path = "./crates/contracts/amm", features = ["client"] }
 assert_cmd = "2.0.16"
 tokio-tungstenite = "0.26.1"
 reqwest = { version = "0.12", features = ["json", "blocking"] }
@@ -124,7 +130,6 @@ tokio-stream = "0.1.17"
 tempfile = "3.15.0"
 testcontainers-modules = { version = "0.11.5", features = ["postgres"] }
 assert-json-diff = "2.0.2"
-hyrun = { path = "./crates/hyrun" }
 risc0-recursion = { path = "./crates/contracts/risc0-recursion" }
 risc0-zkvm = { version = "1.2.1", default-features = false, features = [
     "client",

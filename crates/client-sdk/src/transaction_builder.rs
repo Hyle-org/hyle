@@ -1,7 +1,7 @@
 use std::{
     collections::BTreeMap,
     future::Future,
-    ops::Deref,
+    ops::{Deref, DerefMut},
     sync::{Arc, OnceLock},
 };
 
@@ -96,6 +96,11 @@ impl<S: StateUpdater> Deref for TxExecutor<S> {
 
     fn deref(&self) -> &Self::Target {
         &self.full_states
+    }
+}
+impl<S: StateUpdater> DerefMut for TxExecutor<S> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.full_states
     }
 }
 
@@ -274,4 +279,44 @@ impl ContractRunner {
             initial_state,
         });
     }
+}
+
+/// Macro to easily define the full state of a TxExecutor
+/// Struct-like syntax.
+/// Must have ContractName, StateDigest, Digestable and anyhow in scope.
+#[macro_export]
+macro_rules! contract_states {
+    ($(#[$meta:meta])* $vis:vis struct $name:ident { $($mvis:vis $contract_name:ident: $contract_type:ty,)* }
+    ) => {
+        $(#[$meta])*
+        $vis struct $name {
+            $($mvis $contract_name: $contract_type,
+            )*
+        }
+
+        impl $crate::transaction_builder::StateUpdater for $name {
+            fn setup(&self, ctx: &mut TxExecutorBuilder) {
+                $(self.$contract_name.setup_builder::<Self>(stringify!($contract_name).into(), ctx);)*
+            }
+
+            fn update(
+                &mut self,
+                contract_name: &ContractName,
+                new_state: StateDigest,
+            ) -> anyhow::Result<()> {
+                match contract_name.0.as_str() {
+                    $(stringify!($contract_name) => self.$contract_name = new_state.try_into()?,)*
+                    _ => anyhow::bail!("Unknown contract name: {contract_name}"),
+                };
+                Ok(())
+            }
+
+            fn get(&self, contract_name: &ContractName) -> anyhow::Result<StateDigest> {
+                match contract_name.0.as_str() {
+                    $(stringify!($contract_name) => Ok(Digestable::as_digest(&self.$contract_name)),)*
+                    _ => anyhow::bail!("Unknown contract name: {contract_name}"),
+                }
+            }
+        }
+    };
 }

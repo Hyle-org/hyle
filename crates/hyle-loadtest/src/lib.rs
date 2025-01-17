@@ -1,50 +1,25 @@
-use anyhow::{bail, Result};
+use anyhow::Result;
+use client_sdk::contract_states;
 use client_sdk::tcp_client::NodeTcpClient;
-use client_sdk::transaction_builder::{ProvableBlobTx, StateUpdater, TxExecutorBuilder};
+use client_sdk::transaction_builder::{ProvableBlobTx, TxExecutorBuilder};
 use hydentity::Hydentity;
 use hyle_contract_sdk::erc20::ERC20;
 use hyle_contract_sdk::{Blob, BlobData};
 use hyle_contract_sdk::{BlobTransaction, ProofTransaction, RegisterContractTransaction};
 use hyle_contract_sdk::{ContractName, Identity};
-use hyle_contract_sdk::{Digestable, TcpServerNetMessage};
+use hyle_contract_sdk::{Digestable, StateDigest, TcpServerNetMessage};
 use hyllar::client::transfer;
 use hyllar::{HyllarToken, HyllarTokenContract};
 use tokio::task::JoinSet;
 use tracing::info;
 
-#[derive(Debug, Clone)]
-pub struct States {
-    pub hyllar: HyllarToken,
-    pub hydentity: Hydentity,
-}
-
-impl StateUpdater for States {
-    fn setup(&self, ctx: &mut client_sdk::transaction_builder::TxExecutorBuilder) {
-        self.hydentity
-            .setup_builder::<Self>("hydentity".into(), ctx);
-        self.hyllar.setup_builder::<Self>("hyllar-test".into(), ctx);
+contract_states!(
+    #[derive(Debug, Clone)]
+    pub struct States {
+        pub hydentity: Hydentity,
+        pub hyllar: HyllarToken,
     }
-    fn update(
-        &mut self,
-        contract_name: &hyle_contract_sdk::ContractName,
-        new_state: hyle_contract_sdk::StateDigest,
-    ) -> Result<()> {
-        match contract_name.0.as_str() {
-            "hyllar-test" => self.hyllar = new_state.try_into()?,
-            "hydentity" => self.hydentity = new_state.try_into()?,
-            _ => bail!("Unknown contract name: {contract_name}"),
-        }
-        Ok(())
-    }
-
-    fn get(&self, contract_name: &ContractName) -> Result<hyle_contract_sdk::StateDigest> {
-        Ok(match contract_name.0.as_str() {
-            "hyllar-test" => self.hyllar.as_digest(),
-            "hydentity" => self.hydentity.as_digest(),
-            _ => bail!("Unknown contract name: {contract_name}"),
-        })
-    }
-}
+);
 
 pub fn setup_hyllar(users: u32) -> Result<HyllarTokenContract> {
     let hyllar_token = HyllarToken::new(0, "faucet.hyllar-test".into());

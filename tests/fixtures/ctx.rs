@@ -6,6 +6,7 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 use api::APIContract;
 use assertables::assert_ok;
+use client_sdk::transaction_builder::ProvableBlobTx;
 use reqwest::{Client, Url};
 use testcontainers_modules::{
     postgres::Postgres,
@@ -259,6 +260,15 @@ impl E2ECtx {
     pub async fn send_blob(&self, identity: Identity, blobs: Vec<Blob>) -> Result<TxHash> {
         self.client()
             .send_tx_blob(&BlobTransaction { identity, blobs })
+            .await
+    }
+
+    pub async fn send_provable_blob_tx(&self, tx: &ProvableBlobTx) -> Result<TxHash> {
+        self.client()
+            .send_tx_blob(&BlobTransaction {
+                identity: tx.identity.clone(),
+                blobs: tx.blobs.clone(),
+            })
             .await
     }
 

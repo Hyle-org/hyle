@@ -4,8 +4,9 @@ use std::hash::{Hash, Hasher};
 use bincode::{Decode, Encode};
 use sdk::caller::{CalleeBlobs, CallerCallee, CheckCalleeBlobs, ExecutionContext, MutCalleeBlobs};
 use sdk::erc20::{ERC20BlobChecker, ERC20};
+use sdk::utils::as_hyle_output;
 use sdk::{erc20::ERC20Action, Identity};
-use sdk::{Blob, BlobIndex, ContractAction, Digestable, RunResult};
+use sdk::{Blob, BlobIndex, ContractAction, ContractInput, Digestable, RunResult};
 use sdk::{BlobData, ContractName, StructuredBlobData};
 use serde::{Deserialize, Serialize};
 
@@ -14,6 +15,9 @@ pub mod metadata {
     pub const AMM_ELF: &[u8] = include_bytes!("../amm.img");
     pub const PROGRAM_ID: [u8; 32] = sdk::str_to_u8(include_str!("../amm.txt"));
 }
+
+#[cfg(feature = "client")]
+pub mod client;
 
 type TokenPair = (String, String);
 type TokenPairAmount = (u128, u128);
@@ -266,6 +270,53 @@ impl ContractAction for AmmAction {
             }),
         }
     }
+}
+
+pub fn execute(contract_input: ContractInput) -> sdk::HyleOutput {
+    let (input, parsed_blob, caller) =
+        match sdk::guest::init_with_caller::<AmmAction>(contract_input) {
+            Ok(res) => res,
+            Err(err) => {
+                panic!("Amm contract initialization failed {}", err);
+            }
+        };
+
+    // TODO: refactor this into ExecutionContext
+    let mut callees_blobs = Vec::new();
+    for blob in input.blobs.clone().into_iter() {
+        if let Ok(structured_blob) = blob.data.clone().try_into() {
+            let structured_blob: StructuredBlobData<Vec<u8>> = structured_blob; // for type inference
+            if structured_blob.caller == Some(input.index.clone()) {
+                callees_blobs.push(blob);
+            }
+        };
+    }
+
+    let execution_ctx = ExecutionContext {
+        callees_blobs: callees_blobs.into(),
+        caller,
+    };
+
+    let amm_state = input
+        .initial_state
+        .clone()
+        .try_into()
+        .expect("Failed to decode state");
+    let mut amm_contract = AmmContract::new(execution_ctx, parsed_blob.contract_name, amm_state);
+
+    let amm_action = parsed_blob.data.parameters;
+
+    let res = match amm_action {
+        AmmAction::Swap {
+            pair,
+            amounts: (from_amount, to_amount),
+        } => amm_contract.verify_swap(pair, from_amount, to_amount),
+        AmmAction::NewPair { pair, amounts } => amm_contract.create_new_pair(pair, amounts),
+    };
+
+    assert!(amm_contract.callee_blobs().is_empty());
+
+    as_hyle_output(input, amm_contract.state(), res)
 }
 
 #[cfg(test)]

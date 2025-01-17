@@ -3,15 +3,13 @@
 
 extern crate alloc;
 
-use core::str::from_utf8;
-
-use hydentity::{execute, Hydentity};
-use sdk::{guest::Risc0Env, identity_provider::IdentityAction};
+use hydentity::execute;
+use sdk::guest::GuestEnv;
+use sdk::guest::Risc0Env;
 
 risc0_zkvm::guest::entry!(main);
 
 fn main() {
     let env = Risc0Env {};
-    let input = env.read();
-    env.commit(execute(input));
+    env.commit(&execute(env.read()));
 }

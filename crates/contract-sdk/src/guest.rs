@@ -18,15 +18,15 @@ pub struct Risc0Env;
 
 #[cfg(feature = "risc0")]
 impl GuestEnv for Risc0Env {
-    pub fn log(&self, message: &str) {
+    fn log(&self, message: &str) {
         risc0_zkvm::guest::env::log(message);
     }
 
-    pub fn commit(&self, output: &HyleOutput) {
+    fn commit(&self, output: &HyleOutput) {
         risc0_zkvm::guest::env::commit(output);
     }
 
-    pub fn read<T: DeserializeOwned>(&self) -> T {
+    fn read<T: DeserializeOwned>(&self) -> T {
         risc0_zkvm::guest::env::read()
     }
 }
@@ -36,16 +36,16 @@ pub struct SP1Env;
 // For coverage tests, assume risc0 if both are active
 #[cfg(all(feature = "sp1", not(feature = "risc0")))]
 impl GuestEnv for SP1Env {
-    pub fn log(message: &str) {
+    fn log(message: &str) {
         // TODO: this does nothing actually
         sp1_zkvm::io::hint(&message);
     }
 
-    pub fn commit(output: &HyleOutput) {
+    fn commit(output: &HyleOutput) {
         sp1_zkvm::io::commit(output);
     }
 
-    pub fn read<T: DeserializeOwned>() -> T {
+    fn read<T: DeserializeOwned>() -> T {
         sp1_zkvm::io::read()
     }
 }
