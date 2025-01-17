@@ -28,6 +28,7 @@ risc0-zkvm = { version = "1.2.1", default-features = false, optional = true, fea
 anyhow = "1.0.95"
 bincode = "2.0.0-rc.3"
 borsh = "1.5.3"
+hex = "0.4.3"
 hydentity = { path = "../hydentity", features = ["client"] }
 hyle-contracts = { path = ".." }
 client-sdk = { path = "../../client-sdk" }

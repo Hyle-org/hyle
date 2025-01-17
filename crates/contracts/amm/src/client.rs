@@ -103,6 +103,5 @@ pub fn swap(
         None,
     )?;
 
-    tracing::info!("totoro000 {:?}", builder.blobs);
     Ok(())
 }

@@ -24,7 +24,6 @@ risc0-zkvm = { version = "1.2.1", default-features = false, optional = true, fea
     'std',
 ] }
 client_sdk = { path = "../../client-sdk", package = "client-sdk", optional = true }
-tracing = "0.1"
 
 [features]
 default = ["metadata"]
