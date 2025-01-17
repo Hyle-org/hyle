@@ -12,7 +12,7 @@ use crate::{
         modules::{module_bus_client, Module},
     },
 };
-use anyhow::{bail, Result};
+use anyhow::{Context, Result};
 use std::{collections::HashSet, sync::Arc, time::Duration};
 use tokio::{net::TcpListener, time::sleep};
 use tracing::{error, info, trace, warn};
@@ -162,38 +162,33 @@ impl P2P {
             }
 
             res = listener.accept() => {
-                match res {
-                    Ok((socket, _)) => {
-                        let conf = Arc::clone(&self.config);
-                        let bus = self.bus.new_handle();
-                        let crypto = self.crypto.clone();
-                        let id = self.peer_id;
-                        self.peer_id += 1;
-                        tokio::task::Builder::new()
-                            .name(&format!("peer-{}", id))
-                            .spawn(async move {
-                                info!(
-                                    "New peer #{}: {}",
-                                    id,
-                                    socket
-                                        .peer_addr()
-                                        .map(|a| a.to_string())
-                                        .unwrap_or("no address".to_string())
-                                    );
-                                let mut peer_server = peer::Peer::new(id, socket, bus, crypto, conf).await;
-                                _ = peer_server.handshake().await;
-                                trace!("Handshake done !");
-                                match peer_server.start().await {
-                                    Ok(_) => info!("Peer thread exited"),
-                                    Err(e) => info!("Peer thread exited: {}", e),
-                                }
-                                anyhow::Ok(())
-                            })?;
-                    }
-                    Err(e) => {
-                        bail!("Error while accepting connection: {}", e);
-                    }
-                }
+                let (socket, _) = res.context("Accepting connection in P2P server")?;
+
+                let conf = Arc::clone(&self.config);
+                let bus = self.bus.new_handle();
+                let crypto = self.crypto.clone();
+                let id = self.peer_id;
+                self.peer_id += 1;
+                tokio::task::Builder::new()
+                    .name(&format!("peer-{}", id))
+                    .spawn(async move {
+                        info!(
+                            "New peer #{}: {}",
+                            id,
+                            socket
+                                .peer_addr()
+                                .map(|a| a.to_string())
+                                .unwrap_or("no address".to_string())
+                            );
+                        let mut peer_server = peer::Peer::new(id, socket, bus, crypto, conf).await;
+                        _ = peer_server.handshake().await;
+                        trace!("Handshake done !");
+                        match peer_server.start().await {
+                            Ok(_) => info!("Peer thread exited"),
+                            Err(e) => info!("Peer thread exited: {}", e),
+                        }
+                        anyhow::Ok(())
+                    })?;
             }
         };
         Ok(())
