@@ -53,6 +53,7 @@ pub enum Ticket {
 
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, PartialEq, Eq, Default)]
 pub struct ConsensusProposalHash(pub String);
+pub type BlockHash = ConsensusProposalHash;
 
 #[cfg(feature = "sqlx")]
 impl sqlx::Type<sqlx::Postgres> for ConsensusProposalHash {

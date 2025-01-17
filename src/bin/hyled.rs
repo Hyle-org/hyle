@@ -31,10 +31,9 @@ async fn send_proof(
             proof: ProofData(proof),
         })
         .await?;
-    assert!(res.status().is_success());
 
     println!("Proof sent successfully");
-    println!("Response: {}", res.text().await?);
+    println!("Response: {}", res);
 
     Ok(())
 }
@@ -98,10 +97,8 @@ async fn register_contracts(
         })
         .await?;
 
-    assert!(res.status().is_success());
-
     println!("Contract registered");
-    println!("Response: {}", res.text().await?);
+    println!("Response: {}", res);
 
     Ok(())
 }

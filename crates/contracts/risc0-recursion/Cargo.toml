@@ -20,7 +20,7 @@ path = "examples/host.rs"
 sdk = { path = "../../contract-sdk", package = "hyle-contract-sdk" }
 serde = { version = "1.0.217", features = ["derive"] }
 
-risc0-zkvm = { version = "1.2.0", default-features = false, optional = true, features = [
+risc0-zkvm = { version = "1.2.1", default-features = false, optional = true, features = [
     'std',
 ] }
 
@@ -31,7 +31,7 @@ hex = "0.4.3"
 hydentity = { path = "../hydentity" }
 hyle-contracts = { path = ".." }
 hyrun = { path = "../../hyrun" }
-risc0-zkvm = { version = "1.2.0", default-features = false, features = [
+risc0-zkvm = { version = "1.2.1", default-features = false, features = [
     'std',
     'prove',
 ] }

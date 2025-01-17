@@ -1,12 +1,13 @@
 use anyhow::{bail, Result};
 use client_sdk::tcp_client::NodeTcpClient;
-use client_sdk::transaction_builder::{StateUpdater, TransactionBuilder};
+use client_sdk::transaction_builder::{ProvableBlobTx, StateUpdater, TxExecutorBuilder};
 use hydentity::Hydentity;
 use hyle_contract_sdk::erc20::ERC20;
 use hyle_contract_sdk::{Blob, BlobData};
 use hyle_contract_sdk::{BlobTransaction, ProofTransaction, RegisterContractTransaction};
 use hyle_contract_sdk::{ContractName, Identity};
 use hyle_contract_sdk::{Digestable, TcpServerNetMessage};
+use hyllar::client::transfer;
 use hyllar::{HyllarToken, HyllarTokenContract};
 use tokio::task::JoinSet;
 use tracing::info;
@@ -18,6 +19,11 @@ pub struct States {
 }
 
 impl StateUpdater for States {
+    fn setup(&self, ctx: &mut client_sdk::transaction_builder::TxExecutorBuilder) {
+        self.hydentity
+            .setup_builder::<Self>("hydentity".into(), ctx);
+        self.hyllar.setup_builder::<Self>("hyllar-test".into(), ctx);
+    }
     fn update(
         &mut self,
         contract_name: &hyle_contract_sdk::ContractName,
@@ -74,26 +80,13 @@ pub async fn setup(url: String, users: u32, verifier: String) -> Result<()> {
 }
 
 pub async fn generate(users: u32, states: States) -> Result<(Vec<Vec<u8>>, Vec<Vec<u8>>)> {
-    let blob_txs = match load_blob_txs(users) {
-        Ok(txs) => txs,
-        Err(_) => {
-            info!("Couldn't find blob transactions, generating new ones");
-            generate_blobs_txs(users, states.clone()).await?
-        }
-    };
-
-    let proof_txs = match load_proof_txs(users) {
-        Ok(txs) => txs,
-        Err(_) => {
-            info!("Couldn't find proof transactions, generating new ones");
-            generate_proof_txs(users, states).await?
-        }
-    };
+    let blob_txs = generate_blobs_txs(users).await?;
+    let proof_txs = generate_proof_txs(users, states).await?;
 
     Ok((blob_txs, proof_txs))
 }
 
-pub async fn generate_blobs_txs(users: u32, states: States) -> Result<Vec<Vec<u8>>> {
+pub async fn generate_blobs_txs(users: u32) -> Result<Vec<Vec<u8>>> {
     let mut blob_txs = vec![];
     let mut tasks = JoinSet::new();
     let number_of_tasks = 100;
@@ -106,8 +99,6 @@ pub async fn generate_blobs_txs(users: u32, states: States) -> Result<Vec<Vec<u8
         .collect::<Vec<_>>();
 
     for chunk in user_chunks {
-        let states = states.clone();
-
         tasks.spawn(async move {
             let mut local_blob_txs = vec![];
 
@@ -117,15 +108,17 @@ pub async fn generate_blobs_txs(users: u32, states: States) -> Result<Vec<Vec<u8
                     chunk.last().unwrap()
                 );
                 let ident = Identity(format!("{n}.hyllar-test").to_string());
-                let mut transaction = TransactionBuilder::new(ident.clone());
-                states
-                    .hyllar
-                    .builder("hyllar-test".into(), &mut transaction)
-                    .transfer(ident.clone().to_string(), 0)?;
 
-                // Extract the identity and blobs from the transaction without building it to prevent loading r0vm
-                let identity = transaction.identity.clone();
-                let blobs = transaction.blobs.clone();
+                let mut transaction = ProvableBlobTx::new(ident.clone());
+                transfer(
+                    &mut transaction,
+                    "hyllar-test".into(),
+                    ident.clone().to_string(),
+                    0,
+                )?;
+
+                let identity = transaction.identity;
+                let blobs = transaction.blobs;
 
                 let msg: TcpServerNetMessage = BlobTransaction { identity, blobs }.into();
                 local_blob_txs.push(msg.to_binary()?);
@@ -148,7 +141,7 @@ pub async fn generate_blobs_txs(users: u32, states: States) -> Result<Vec<Vec<u8
     Ok(blob_txs)
 }
 
-pub async fn generate_proof_txs(users: u32, states: States) -> Result<Vec<Vec<u8>>> {
+pub async fn generate_proof_txs(users: u32, state: States) -> Result<Vec<Vec<u8>>> {
     let mut proof_txs = vec![];
     let mut tasks = JoinSet::new();
     let number_of_tasks = 100;
@@ -160,8 +153,7 @@ pub async fn generate_proof_txs(users: u32, states: States) -> Result<Vec<Vec<u8
         .map(|chunk| chunk.to_vec())
         .collect::<Vec<_>>();
     for chunk in user_chunks {
-        let mut states = states.clone();
-
+        let mut ctx = TxExecutorBuilder::default().with_state(state.clone());
         tasks.spawn(async move {
             let mut local_proof_txs = vec![];
 
@@ -171,15 +163,18 @@ pub async fn generate_proof_txs(users: u32, states: States) -> Result<Vec<Vec<u8
                     chunk.last().unwrap()
                 );
                 let ident = Identity(format!("{n}.hyllar-test").to_string());
-                let mut transaction = TransactionBuilder::new(ident.clone());
-                states
-                    .hyllar
-                    .builder("hyllar-test".into(), &mut transaction)
-                    .transfer_test(ident.clone().to_string(), 0)?;
 
-                transaction.build(&mut states)?;
+                let mut transaction = ProvableBlobTx::new(ident.clone());
+                transfer(
+                    &mut transaction,
+                    "hyllar-test".into(),
+                    ident.clone().to_string(),
+                    0,
+                )?;
 
-                for (proof, contract_name) in transaction.iter_prove() {
+                let provable_tx = ctx.process(transaction)?;
+
+                for (proof, contract_name) in provable_tx.iter_prove() {
                     let msg: TcpServerNetMessage = ProofTransaction {
                         contract_name,
                         proof: proof.await.unwrap(),
@@ -295,7 +290,7 @@ pub async fn send_proof_txs(url: String, proof_txs: Vec<Vec<u8>>) -> Result<()> 
 }
 
 pub async fn send_massive_blob(url: String) -> Result<()> {
-    let ident = Identity("test.hydentity".to_string());
+    let ident = Identity::new("test.hydentity");
 
     let mut data = vec![];
 

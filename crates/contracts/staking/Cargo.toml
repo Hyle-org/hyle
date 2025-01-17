@@ -21,13 +21,13 @@ anyhow = "1.0.95"
 sha2 = { git = "https://github.com/risc0/RustCrypto-hashes", tag = "sha2-v0.10.8" }
 bincode = { version = "2.0.0-rc.3" }
 
-risc0-zkvm = { version = "1.2.0", default-features = false, optional = true, features = [
+risc0-zkvm = { version = "1.2.1", default-features = false, optional = true, features = [
     'std',
 ] }
 client_sdk = { path = "../../client-sdk", package = "client-sdk", default-features = false, optional = true }
 
 [dev-dependencies]
-risc0-zkvm = { version = "1.2.0", default-features = false, features = [
+risc0-zkvm = { version = "1.2.1", default-features = false, features = [
     'std',
     'prove',
 ] }

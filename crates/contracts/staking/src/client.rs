@@ -1,23 +1,34 @@
-use client_sdk::transaction_builder::TransactionBuilder;
+use client_sdk::{
+    helpers::ClientSdkExecutor,
+    transaction_builder::{ProvableBlobTx, StateUpdater, TxExecutorBuilder},
+};
 use sdk::{
     api::APIStaking, BlobData, ContractName, Digestable, StakingAction, StateDigest,
     ValidatorPublicKey,
 };
 
-use crate::state::Staking;
+use crate::{execute, state::Staking};
 
-pub struct Builder<'b> {
-    pub contract_name: ContractName,
-    pub builder: &'b mut TransactionBuilder,
+struct StakingPseudoExecutor {}
+
+impl ClientSdkExecutor for StakingPseudoExecutor {
+    fn execute(&self, contract_input: &sdk::ContractInput) -> anyhow::Result<sdk::HyleOutput> {
+        Ok(execute(contract_input.clone()))
+    }
 }
 
 impl Staking {
-    pub fn builder<'b>(&self, builder: &'b mut TransactionBuilder) -> Builder<'b> {
-        builder.init_with("staking".into(), self.on_chain_state().as_digest());
-        Builder {
-            contract_name: "staking".into(),
-            builder,
-        }
+    pub fn setup_builder<S: StateUpdater>(
+        &self,
+        contract_name: ContractName,
+        builder: &mut TxExecutorBuilder,
+    ) {
+        builder.init_with(
+            contract_name,
+            self.on_chain_state().as_digest(),
+            StakingPseudoExecutor {},
+            client_sdk::helpers::risc0::Risc0Prover::new(crate::metadata::STAKING_ELF),
+        );
     }
 }
 
@@ -33,57 +44,54 @@ impl From<APIStaking> for Staking {
     }
 }
 
-impl Builder<'_> {
-    pub fn stake(&mut self, amount: u128) -> anyhow::Result<()> {
-        let identity = self.builder.identity.clone();
+pub fn stake(
+    builder: &mut ProvableBlobTx,
+    contract_name: ContractName,
+    amount: u128,
+) -> anyhow::Result<()> {
+    let identity = builder.identity.clone();
 
-        self.builder
-            .add_action(
-                self.contract_name.clone(),
-                crate::metadata::STAKING_ELF,
-                client_sdk::helpers::Prover::Risc0Prover,
-                StakingAction::Stake { amount },
-                None,
-                None,
-            )?
-            .with_private_blob(|state: StateDigest| -> anyhow::Result<BlobData> {
-                Ok(BlobData(state.0))
-            })
-            .build_offchain_state(move |state: StateDigest| -> anyhow::Result<StateDigest> {
-                let mut state: Staking = state.try_into()?;
-                state
-                    .stake(identity.clone(), amount)
-                    .map_err(|e| anyhow::anyhow!(e))?;
-                Ok(state.as_digest())
-            });
+    builder
+        .add_action(contract_name, StakingAction::Stake { amount }, None, None)?
+        .with_private_blob(|state: StateDigest| -> anyhow::Result<BlobData> {
+            Ok(BlobData(state.0))
+        })
+        .build_offchain_state(move |state: StateDigest| -> anyhow::Result<StateDigest> {
+            let mut state: Staking = state.try_into()?;
+            state
+                .stake(identity.clone(), amount)
+                .map_err(|e| anyhow::anyhow!(e))?;
+            Ok(state.as_digest())
+        });
 
-        Ok(())
-    }
+    Ok(())
+}
 
-    pub fn delegate(&mut self, validator: ValidatorPublicKey) -> anyhow::Result<()> {
-        let identity = self.builder.identity.clone();
+pub fn delegate(
+    builder: &mut ProvableBlobTx,
+    contract_name: ContractName,
+    validator: ValidatorPublicKey,
+) -> anyhow::Result<()> {
+    let identity = builder.identity.clone();
 
-        self.builder
-            .add_action(
-                self.contract_name.clone(),
-                crate::metadata::STAKING_ELF,
-                client_sdk::helpers::Prover::Risc0Prover,
-                StakingAction::Delegate {
-                    validator: validator.clone(),
-                },
-                None,
-                None,
-            )?
-            .with_private_blob(|state: StateDigest| -> anyhow::Result<BlobData> {
-                Ok(BlobData(state.0))
-            })
-            .build_offchain_state(move |state: StateDigest| -> anyhow::Result<StateDigest> {
-                let mut state: Staking = state.try_into()?;
-                state
-                    .delegate_to(identity.clone(), validator.clone())
-                    .map_err(|e| anyhow::anyhow!(e))?;
-                Ok(state.as_digest())
-            });
-        Ok(())
-    }
+    builder
+        .add_action(
+            contract_name,
+            StakingAction::Delegate {
+                validator: validator.clone(),
+            },
+            None,
+            None,
+        )?
+        .with_private_blob(|state: StateDigest| -> anyhow::Result<BlobData> {
+            Ok(BlobData(state.0))
+        })
+        .build_offchain_state(move |state: StateDigest| -> anyhow::Result<StateDigest> {
+            let mut state: Staking = state.try_into()?;
+            state
+                .delegate_to(identity.clone(), validator.clone())
+                .map_err(|e| anyhow::anyhow!(e))?;
+            Ok(state.as_digest())
+        });
+    Ok(())
 }

@@ -1,8 +1,8 @@
 use anyhow::Context;
 use assert_cmd::prelude::*;
-use client_sdk::transaction_builder::{BuildResult, TransactionBuilder};
+use client_sdk::transaction_builder::{ProvableBlobTx, StateUpdater, TxExecutor};
+
 use hyle::{
-    genesis::States,
     model::{BlobTransaction, ProofData},
     rest::client::NodeApiHttpClient,
     utils::conf::{Conf, Consensus},
@@ -187,21 +187,20 @@ pub async fn wait_height_timeout(
 }
 
 #[allow(dead_code)]
-pub async fn send_transaction(
+pub async fn send_transaction<S: StateUpdater>(
     client: &NodeApiHttpClient,
-    mut transaction: TransactionBuilder,
-    states: &mut States,
+    transaction: ProvableBlobTx,
+    ctx: &mut TxExecutor<S>,
 ) {
-    let BuildResult {
-        identity, blobs, ..
-    } = transaction.build(states).unwrap();
-
+    let identity = transaction.identity.clone();
+    let blobs = transaction.blobs.clone();
     client
         .send_tx_blob(&BlobTransaction { identity, blobs })
         .await
         .unwrap();
 
-    for (proof, contract_name) in transaction.iter_prove() {
+    let provable_tx = ctx.process(transaction).unwrap();
+    for (proof, contract_name) in provable_tx.iter_prove() {
         let proof: ProofData = proof.await.unwrap();
         client
             .send_tx_proof(&hyle::model::ProofTransaction {
