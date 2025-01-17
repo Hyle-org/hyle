@@ -195,9 +195,8 @@ impl Peer {
             listen<OutboundMessage> res => {
                 match res {
                     OutboundMessage::SendMessage { validator_id, msg } => {
-                        _ = self.handle_send_message(validator_id, msg)
-                            .await
-                            .log_warn("P2P Sending net message");
+                        let warn_msg = format!("P2P Sending net message to {}", validator_id);
+                        _ = self.handle_send_message(validator_id, msg).await.log_warn(warn_msg);
                     }
                     OutboundMessage::BroadcastMessage(message) => {
                         _ = self.handle_broadcast_message(message)
