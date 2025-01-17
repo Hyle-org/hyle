@@ -5258,7 +5258,6 @@ dependencies = [
  "tempfile",
  "test-log",
  "tokio",
- "tracing",
 ]
 
 [[package]]

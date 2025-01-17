@@ -45,7 +45,6 @@ test-log = { version = "0.2.16", features = [
     "color",
     "trace",
 ], default-features = false }
-tracing = "0.1"
 
 [features]
 default = ["metadata"]

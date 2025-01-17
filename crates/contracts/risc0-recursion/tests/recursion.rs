@@ -17,12 +17,7 @@ async fn test_recursion() {
     std::env::set_var("RISC0_DEV_MODE", "1");
 
     let mut executor = TxExecutorBuilder::default().with_state(States {
-        hydentity: StateDigest(
-            bincode::encode_to_vec(hydentity::Hydentity::new(), bincode::config::standard())
-                .expect("Failed to encode Hydentity"),
-        )
-        .try_into()
-        .unwrap(),
+        hydentity: Hydentity::new(),
     });
 
     let mut tx = ProvableBlobTx::new("bob.hydentity".into());
