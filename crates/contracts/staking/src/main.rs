@@ -7,8 +7,8 @@ extern crate alloc;
 use alloc::format;
 use alloc::vec::Vec;
 use sdk::caller::{CallerCallee, ExecutionContext};
-use sdk::{info, StructuredBlobData};
-use staking::{state::Staking, StakingAction, StakingContract};
+use sdk::{info, StakingAction, StructuredBlobData};
+use staking::{state::Staking, StakingContract};
 risc0_zkvm::guest::entry!(main);
 
 fn main() {
