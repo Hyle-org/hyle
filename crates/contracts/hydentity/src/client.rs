@@ -1,62 +1,75 @@
-use client_sdk::transaction_builder::TransactionBuilder;
+use client_sdk::{
+    helpers::ClientSdkExecutor,
+    transaction_builder::{ProvableBlobTx, StateUpdater, TxExecutorBuilder},
+};
 use sdk::{identity_provider::IdentityAction, BlobData, ContractName, Digestable};
 
-use crate::Hydentity;
+use crate::{execute, Hydentity};
 
-pub struct Builder<'b> {
-    pub contract_name: ContractName,
-    pub builder: &'b mut TransactionBuilder,
+struct HydentityPseudoExecutor {}
+impl ClientSdkExecutor for HydentityPseudoExecutor {
+    fn execute(&self, contract_input: &sdk::ContractInput) -> anyhow::Result<sdk::HyleOutput> {
+        Ok(execute(contract_input.clone()))
+    }
 }
 
 impl Hydentity {
-    pub fn default_builder<'b>(&self, builder: &'b mut TransactionBuilder) -> Builder<'b> {
-        builder.init_with("hydentity".into(), self.as_digest());
-        Builder {
-            contract_name: "hydentity".into(),
-            builder,
-        }
+    pub fn setup_builder<S: StateUpdater>(
+        &self,
+        contract_name: ContractName,
+        builder: &mut TxExecutorBuilder,
+    ) {
+        builder.init_with(
+            contract_name,
+            self.as_digest(),
+            HydentityPseudoExecutor {},
+            client_sdk::helpers::risc0::Risc0Prover::new(crate::metadata::HYDENTITY_ELF),
+        );
     }
 }
 
-impl Builder<'_> {
-    pub fn verify_identity(&mut self, state: &Hydentity, password: String) -> anyhow::Result<()> {
-        let nonce = state
-            .get_nonce(self.builder.identity.0.as_str())
-            .map_err(|e| anyhow::anyhow!(e))?;
+pub fn verify_identity(
+    builder: &mut ProvableBlobTx,
+    contract_name: ContractName,
+    state: &Hydentity,
+    password: String,
+) -> anyhow::Result<()> {
+    let nonce = state
+        .get_nonce(builder.identity.0.as_str())
+        .map_err(|e| anyhow::anyhow!(e))?;
 
-        let password = BlobData(password.into_bytes().to_vec());
+    let password = BlobData(password.into_bytes().to_vec());
 
-        self.builder
-            .add_action(
-                self.contract_name.clone(),
-                crate::metadata::HYDENTITY_ELF,
-                client_sdk::helpers::Prover::Risc0Prover,
-                IdentityAction::VerifyIdentity {
-                    account: self.builder.identity.0.clone(),
-                    nonce,
-                },
-                None,
-                None,
-            )?
-            .with_private_blob(move |_| Ok(password.clone()));
-        Ok(())
-    }
+    builder
+        .add_action(
+            contract_name,
+            IdentityAction::VerifyIdentity {
+                account: builder.identity.0.clone(),
+                nonce,
+            },
+            None,
+            None,
+        )?
+        .with_private_blob(move |_| Ok(password.clone()));
+    Ok(())
+}
 
-    pub fn register_identity(&mut self, password: String) -> anyhow::Result<()> {
-        let password = BlobData(password.into_bytes().to_vec());
+pub fn register_identity(
+    builder: &mut ProvableBlobTx,
+    contract_name: ContractName,
+    password: String,
+) -> anyhow::Result<()> {
+    let password = BlobData(password.into_bytes().to_vec());
 
-        self.builder
-            .add_action(
-                self.contract_name.clone(),
-                crate::metadata::HYDENTITY_ELF,
-                client_sdk::helpers::Prover::Risc0Prover,
-                IdentityAction::RegisterIdentity {
-                    account: self.builder.identity.0.clone(),
-                },
-                None,
-                None,
-            )?
-            .with_private_blob(move |_| Ok(password.clone()));
-        Ok(())
-    }
+    builder
+        .add_action(
+            contract_name,
+            IdentityAction::RegisterIdentity {
+                account: builder.identity.0.clone(),
+            },
+            None,
+            None,
+        )?
+        .with_private_blob(move |_| Ok(password.clone()));
+    Ok(())
 }

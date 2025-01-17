@@ -1,57 +1,44 @@
-use client_sdk::transaction_builder::TransactionBuilder;
+use client_sdk::{
+    helpers::ClientSdkExecutor,
+    transaction_builder::{ProvableBlobTx, StateUpdater, TxExecutorBuilder},
+};
 use sdk::{erc20::ERC20Action, ContractName, Digestable};
 
-use crate::HyllarToken;
+use crate::{execute, HyllarToken};
 
-pub struct Builder<'b> {
-    pub contract_name: ContractName,
-    pub builder: &'b mut TransactionBuilder,
+struct HyllarPseudoExecutor {}
+impl ClientSdkExecutor for HyllarPseudoExecutor {
+    fn execute(&self, contract_input: &sdk::ContractInput) -> anyhow::Result<sdk::HyleOutput> {
+        Ok(execute(&mut String::new(), contract_input.clone()))
+    }
 }
 
 impl HyllarToken {
-    pub fn default_builder<'b>(&self, builder: &'b mut TransactionBuilder) -> Builder<'b> {
-        builder.init_with("hyllar".into(), self.as_digest());
-        Builder {
-            contract_name: "hyllar".into(),
-            builder,
-        }
-    }
-
-    pub fn builder<'b>(
+    pub fn setup_builder<S: StateUpdater>(
         &self,
         contract_name: ContractName,
-        builder: &'b mut TransactionBuilder,
-    ) -> Builder<'b> {
-        builder.init_with(contract_name.clone(), self.as_digest());
-        Builder {
+        builder: &mut TxExecutorBuilder,
+    ) {
+        builder.init_with(
             contract_name,
-            builder,
-        }
+            self.as_digest(),
+            HyllarPseudoExecutor {},
+            client_sdk::helpers::risc0::Risc0Prover::new(crate::metadata::HYLLAR_ELF),
+        );
     }
 }
 
-impl Builder<'_> {
-    pub fn transfer(&mut self, recipient: String, amount: u128) -> anyhow::Result<()> {
-        self.builder.add_action(
-            self.contract_name.clone(),
-            crate::metadata::HYLLAR_ELF,
-            client_sdk::helpers::Prover::Risc0Prover,
-            ERC20Action::Transfer { recipient, amount },
-            None,
-            None,
-        )?;
-        Ok(())
-    }
-
-    pub fn transfer_test(&mut self, recipient: String, amount: u128) -> anyhow::Result<()> {
-        self.builder.add_action(
-            self.contract_name.clone(),
-            crate::metadata::HYLLAR_ELF,
-            client_sdk::helpers::Prover::TestProver,
-            ERC20Action::Transfer { recipient, amount },
-            None,
-            None,
-        )?;
-        Ok(())
-    }
+pub fn transfer(
+    builder: &mut ProvableBlobTx,
+    contract_name: ContractName,
+    recipient: String,
+    amount: u128,
+) -> anyhow::Result<()> {
+    builder.add_action(
+        contract_name,
+        ERC20Action::Transfer { recipient, amount },
+        None,
+        None,
+    )?;
+    Ok(())
 }
