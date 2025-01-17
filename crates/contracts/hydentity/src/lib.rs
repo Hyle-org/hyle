@@ -133,6 +133,8 @@ use sdk::identity_provider::IdentityAction;
 pub fn execute(input: ContractInput) -> HyleOutput {
     let (input, parsed_blob) = sdk::guest::init_raw::<IdentityAction>(input);
 
+    sdk::info!("Executing action: {:?}", parsed_blob);
+
     let mut state: Hydentity = input
         .initial_state
         .clone()
@@ -140,6 +142,8 @@ pub fn execute(input: ContractInput) -> HyleOutput {
         .expect("Failed to decode state");
 
     let password = from_utf8(&input.private_blob.0).unwrap();
+
+    sdk::info!("TOTORO READY: {:?}", parsed_blob);
 
     let res = sdk::identity_provider::execute_action(&mut state, parsed_blob, password);
 
