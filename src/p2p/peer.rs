@@ -72,7 +72,9 @@ impl Peer {
         let (cmd_tx, cmd_rx) = mpsc::channel::<Cmd>(100);
         let fifo_filter = FifoFilter::new(1000);
         let self_validator = crypto.validator_pubkey().clone();
-        let framed = Framed::new(stream, LengthDelimitedCodec::new());
+        let mut codec = LengthDelimitedCodec::new();
+        codec.set_max_frame_length(1024 * 1024 * 1024); // Set max frame length to 1 GB
+        let framed = Framed::new(stream, codec);
 
         Peer {
             id,

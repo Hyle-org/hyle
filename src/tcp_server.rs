@@ -77,7 +77,9 @@ impl TcpServer {
                 let sender: &tokio::sync::broadcast::Sender<TcpServerMessage> = self.bus.get();
                 let sender = sender.clone();
                 readers.spawn(async move {
-                    let mut framed = Framed::new(tcp_stream, LengthDelimitedCodec::new());
+                    let mut codec = LengthDelimitedCodec::new();
+                    codec.set_max_frame_length(1024 * 1024 * 1024); // Set max frame length to 1 GB
+                    let mut framed = Framed::new(tcp_stream, codec);
                     loop {
                         let net_msg = read_stream(&mut framed).await.context("Reading TCP stream")?;
                         match net_msg {

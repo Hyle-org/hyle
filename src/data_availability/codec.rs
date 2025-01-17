@@ -4,9 +4,17 @@ use tokio_util::codec::{Decoder, Encoder, LengthDelimitedCodec};
 use crate::model::{BlockHeight, SignedBlock};
 
 // Server Side
-#[derive(Default, Debug)]
+#[derive(Debug)]
 pub struct DataAvailabilityServerCodec {
     ldc: LengthDelimitedCodec,
+}
+
+impl Default for DataAvailabilityServerCodec {
+    fn default() -> Self {
+        let mut ldc = LengthDelimitedCodec::new();
+        ldc.set_max_frame_length(1024 * 1024 * 1024); // Set max frame length to 1 GB
+        DataAvailabilityServerCodec { ldc }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
