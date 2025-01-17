@@ -25,3 +25,4 @@ mockall = "0.13.0"
 risc0 = ["dep:risc0-zkvm"]
 sp1 = ["dep:sp1-zkvm"]
 tracing = ["dep:tracing"]
+full-model = ["hyle_model/full"]

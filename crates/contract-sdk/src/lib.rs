@@ -30,7 +30,7 @@ macro_rules! info {
 #[macro_export]
 macro_rules! info {
     ($($arg:tt)*) => {
-        $crate::guest::env::log(&format!($($arg)*));
+        risc0_zkvm::guest::env::log(&format!($($arg)*));
     }
 }
 

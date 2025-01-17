@@ -76,9 +76,11 @@ version = "0.6.0"
 dependencies = [
  "anyhow",
  "bincode 2.0.0-rc.3",
+ "client-sdk",
  "hyle-contract-sdk",
  "risc0-zkvm",
  "serde",
+ "tracing",
 ]
 
 [[package]]
@@ -1143,7 +1145,6 @@ dependencies = [
  "borsh",
  "futures",
  "hyle-contract-sdk",
- "hyle-model",
  "reqwest",
  "risc0-zkvm",
  "serde",
@@ -2606,7 +2607,6 @@ dependencies = [
  "hyle-contracts",
  "hyle-model",
  "hyllar",
- "hyrun",
  "indexmap 2.7.0",
  "opentelemetry",
  "opentelemetry-prometheus",
@@ -5246,17 +5246,20 @@ dependencies = [
 name = "risc0-recursion"
 version = "0.6.0"
 dependencies = [
+ "anyhow",
  "bincode 2.0.0-rc.3",
  "borsh",
+ "client-sdk",
  "hex",
  "hydentity",
  "hyle-contract-sdk",
  "hyle-contracts",
- "hyrun",
  "risc0-zkvm",
  "serde",
  "tempfile",
  "test-log",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]

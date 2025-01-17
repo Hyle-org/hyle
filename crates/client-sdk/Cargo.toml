@@ -7,9 +7,9 @@ homepage = { workspace = true }
 repository = { workspace = true }
 
 [dependencies]
-sdk = { path = "../contract-sdk", package = "hyle-contract-sdk" }
-hyle_model = { path = "../hyle-model", package = "hyle-model", features = ["full"]}
-
+sdk = { path = "../contract-sdk", package = "hyle-contract-sdk", default-features = false, features = [
+    "full-model",
+] }
 anyhow = "1.0.94"
 bincode = { version = "2.0.0-rc.3", features = ["serde"] }
 borsh = "1.5.3"

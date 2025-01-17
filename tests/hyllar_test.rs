@@ -1,123 +1,111 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 use fixtures::ctx::E2ECtx;
-use fixtures::proofs::HyrunProofGen;
 use tracing::info;
-
-use hyle::model::ProofData;
 
 mod fixtures;
 
 use anyhow::Result;
 
 mod e2e_hyllar {
-    use hydentity::AccountInfo;
-    use hyle_contract_sdk::{
-        erc20::{ERC20Action, ERC20},
-        identity_provider::{IdentityAction, IdentityVerification},
-        ContractAction, ContractName,
+    use anyhow::bail;
+    use client_sdk::transaction_builder::{ProvableBlobTx, StateUpdater, TxExecutorBuilder};
+    use hydentity::{
+        client::{register_identity, verify_identity},
+        Hydentity,
     };
-    use hyrun::CliCommand;
+    use hyle_contract_sdk::{erc20::ERC20, ContractName, Digestable};
+    use hyllar::{client::transfer, HyllarToken};
 
     use super::*;
 
+    struct States {
+        hydentity: Hydentity,
+        hyllar: HyllarToken,
+    }
+
+    impl StateUpdater for States {
+        fn setup(&self, ctx: &mut TxExecutorBuilder) {
+            self.hydentity
+                .setup_builder::<Self>("hydentity".into(), ctx);
+            self.hyllar.setup_builder::<Self>("hyllar".into(), ctx);
+        }
+
+        fn update(
+            &mut self,
+            contract_name: &ContractName,
+            new_state: hyle_model::StateDigest,
+        ) -> Result<()> {
+            match contract_name.0.as_str() {
+                "hydentity" => self.hydentity = new_state.try_into()?,
+                "hyllar" => self.hyllar = new_state.try_into()?,
+                _ => bail!("Unknown contract name: {contract_name}"),
+            };
+            Ok(())
+        }
+
+        fn get(&self, contract_name: &ContractName) -> Result<hyle_model::StateDigest> {
+            match contract_name.0.as_str() {
+                "hydentity" => Ok(self.hydentity.as_digest()),
+                "hyllar" => Ok(self.hyllar.as_digest()),
+                _ => bail!("Unknown contract name: {contract_name}"),
+            }
+        }
+    }
+
     async fn scenario_hyllar(ctx: E2ECtx) -> Result<()> {
-        let proof_generator = HyrunProofGen::setup_working_directory();
+        info!("➡️  Setting up the executor with the initial state");
+
+        let contract = ctx.get_contract("hydentity").await?;
+        let hydentity: hydentity::Hydentity = contract.state.try_into()?;
+        let contract = ctx.get_contract("hyllar").await?;
+        let hyllar: HyllarToken = contract.state.try_into()?;
+        let mut executor = TxExecutorBuilder::default().with_state(States { hydentity, hyllar });
 
         info!("➡️  Sending blob to register bob identity");
-        let blob_tx_hash = ctx
-            .send_blob(
-                "bob.hydentity".into(),
-                vec![IdentityAction::RegisterIdentity {
-                    account: "bob.hydentity".to_string(),
-                }
-                .as_blob(ContractName::new("hydentity"))],
-            )
-            .await?;
 
-        proof_generator
-            .generate_proof(
-                &ctx,
-                CliCommand::Hydentity {
-                    command: hyrun::HydentityArgs::Register {
-                        account: "bob.hydentity".to_owned(),
-                    },
-                },
-                "bob.hydentity",
-                "password",
-                None,
-            )
-            .await;
+        let mut tx = ProvableBlobTx::new("bob.hydentity".into());
+        register_identity(&mut tx, "hydentity".into(), "password".to_string())?;
+        let blob_tx_hash = ctx.send_provable_blob_tx(&tx).await?;
 
-        let proof = proof_generator.read_proof(0);
+        let tx = executor.process(tx)?;
+        let proof = tx.iter_prove().next().unwrap().0.await?;
 
         info!("➡️  Sending proof for register");
-        ctx.send_proof_single("hydentity".into(), ProofData(proof), blob_tx_hash.clone())
+        ctx.send_proof_single("hydentity".into(), proof, blob_tx_hash.clone())
             .await?;
 
         info!("➡️  Waiting for height 2");
         ctx.wait_height(2).await?;
 
-        let contract = ctx.get_contract("hydentity").await?;
-        let state: hydentity::Hydentity = contract.state.try_into()?;
-
-        // faucet_start_nonce = 0 in single-mode, N in multi-node(N) mode
-        let faucet_start_nonce = serde_json::from_str::<AccountInfo>(
-            state
-                .get_identity_info("faucet.hydentity")
-                .expect("faucet identity not found")
-                .as_str(),
-        )
-        .expect("Failed to parse faucet identity info")
-        .nonce;
+        info!("Hydentity: {:?}", executor.hydentity);
 
         info!("➡️  Sending blob to transfer 25 tokens from faucet to bob");
-        let blob_tx_hash = ctx
-            .send_blob(
-                "faucet.hydentity".into(),
-                vec![
-                    IdentityAction::VerifyIdentity {
-                        account: "faucet.hydentity".to_string(),
-                        nonce: faucet_start_nonce,
-                    }
-                    .as_blob(ContractName::new("hydentity")),
-                    ERC20Action::Transfer {
-                        recipient: "bob.hydentity".to_string(),
-                        amount: 25,
-                    }
-                    .as_blob(ContractName::new("hyllar"), None, None),
-                ],
-            )
-            .await?;
 
-        proof_generator
-            .generate_proof(
-                &ctx,
-                CliCommand::Hyllar {
-                    command: hyrun::HyllarArgs::Transfer {
-                        recipient: "bob.hydentity".to_owned(),
-                        amount: 25,
-                    },
-                    hyllar_contract_name: "hyllar".to_owned(),
-                },
-                "faucet.hydentity",
-                "password",
-                Some(faucet_start_nonce),
-            )
-            .await;
+        let mut tx = ProvableBlobTx::new("faucet.hydentity".into());
 
-        let hydentity_proof = proof_generator.read_proof(0);
-        let hyllar_proof = proof_generator.read_proof(1);
+        verify_identity(
+            &mut tx,
+            "hydentity".into(),
+            &executor.hydentity,
+            "password".to_string(),
+        )?;
+
+        transfer(&mut tx, "hyllar".into(), "bob.hydentity".to_string(), 25)?;
+
+        ctx.send_provable_blob_tx(&tx).await?;
+
+        let tx = executor.process(tx)?;
+        let mut proofs = tx.iter_prove();
+
+        let hydentity_proof = proofs.next().unwrap().0.await?;
+        let hyllar_proof = proofs.next().unwrap().0.await?;
 
         info!("➡️  Sending proof for hydentity");
-        ctx.send_proof_single(
-            "hydentity".into(),
-            ProofData(hydentity_proof),
-            blob_tx_hash.clone(),
-        )
-        .await?;
+        ctx.send_proof_single("hydentity".into(), hydentity_proof, blob_tx_hash.clone())
+            .await?;
 
         info!("➡️  Sending proof for hyllar");
-        ctx.send_proof_single("hyllar".into(), ProofData(hyllar_proof), blob_tx_hash)
+        ctx.send_proof_single("hyllar".into(), hyllar_proof, blob_tx_hash)
             .await?;
 
         info!("➡️  Waiting for height 5");

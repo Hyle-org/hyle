@@ -9,18 +9,28 @@ mod fixtures;
 use anyhow::Result;
 
 mod e2e_amm {
-    use amm::AmmAction;
+    use amm::{
+        client::{new_pair, swap},
+        AmmState,
+    };
+    use client_sdk::{
+        contract_states,
+        transaction_builder::{ProvableBlobTx, TxExecutorBuilder},
+    };
     use fixtures::{
         contracts::{AmmContract, HyllarContract},
-        proofs::HyrunProofGen,
+        ctx::E2EContract,
+        proofs::generate_recursive_proof,
     };
-    use hydentity::AccountInfo;
-    use hyle_contract_sdk::{
-        erc20::{ERC20Action, ERC20},
-        identity_provider::{IdentityAction, IdentityVerification},
-        BlobIndex, ContractAction, ContractName,
+    use hydentity::{
+        client::{register_identity, verify_identity},
+        Hydentity,
     };
-    use hyrun::{CliCommand, HydentityArgs};
+    use hyle_contract_sdk::{erc20::ERC20, ContractName, Digestable, StateDigest};
+    use hyllar::{
+        client::{approve, transfer},
+        HyllarToken,
+    };
 
     use super::*;
 
@@ -52,7 +62,7 @@ mod e2e_amm {
         let contract_hyllar = ctx.get_contract(contract_name).await?;
         let state: hyllar::HyllarToken = contract_hyllar.state.try_into()?;
         let state = hyllar::HyllarTokenContract::init(state, "caller".into());
-
+        info!("totoro {:?}", state);
         for (account, expected) in balances {
             assert_eq!(
                 state.balance_of(account).expect("Account not found"),
@@ -64,6 +74,13 @@ mod e2e_amm {
         Ok(())
     }
 
+    contract_states!(States {
+        hydentity: Hydentity,
+        hyllar: HyllarToken,
+        hyllar2: HyllarToken,
+        amm: AmmState,
+    });
+
     async fn scenario_amm(ctx: E2ECtx) -> Result<()> {
         // Here is the flow that we are going to test:
         // Register bob in hydentity
@@ -71,7 +88,7 @@ mod e2e_amm {
         // Send 25 hyllar from faucet to bob
         // Send 50 hyllar2 from faucet to bob
 
-        // Register new amm contract "amm2"
+        // Register new amm contract "amm"
 
         // Bob approves 100 hyllar to amm2
         // Bob approves 100 hyllar2 to amm2
@@ -84,14 +101,24 @@ mod e2e_amm {
         //    By sending 5 hyllar to amm
         //    By sending 10 hyllar2 to bob (from amm)
 
-        let proof_generator = HyrunProofGen::setup_working_directory();
+        let mut executor = TxExecutorBuilder::default().with_state(States {
+            hydentity: ctx.get_contract("hydentity").await?.state.try_into()?,
+            hyllar: ctx.get_contract("hyllar").await?.state.try_into()?,
+            hyllar2: HyllarContract::state_digest().try_into()?,
+            amm: AmmState::default(),
+        });
 
-        let contract_hyllar = ctx.get_contract("hyllar").await?;
-        let state =
-            hyllar::HyllarTokenContract::init(contract_hyllar.state.try_into()?, "caller".into());
+        let state = hyllar::HyllarTokenContract::init(executor.hyllar.clone(), "caller".into());
         let hyllar_initial_total_amount: u128 = state
             .balance_of("faucet.hydentity")
             .expect("faucet identity not found");
+
+        let state = hyllar::HyllarTokenContract::init(executor.hyllar2.clone(), "caller".into());
+        let hyllar2_initial_total_amount: u128 = state
+            .balance_of("faucet.hydentity")
+            .expect("faucet identity not found");
+
+        /////////////////////////////////////////////////////////////////////
 
         ///////////////////// hyllar2 contract registration /////////////////
         info!("➡️  Registring hyllar2 contract");
@@ -100,112 +127,48 @@ mod e2e_amm {
             .await?;
         /////////////////////////////////////////////////////////////////////
 
-        let contract_hyllar2 = ctx.get_contract("hyllar2").await?;
-        let state =
-            hyllar::HyllarTokenContract::init(contract_hyllar2.state.try_into()?, "caller".into());
-        let hyllar2_initial_total_amount: u128 = state
-            .balance_of("faucet.hydentity")
-            .expect("faucet identity not found");
-
         ///////////////////// bob identity registration /////////////////////
         info!("➡️  Sending blob to register bob identity");
-        let blob_tx_hash = ctx
-            .send_blob(
-                "bob.hydentity".into(),
-                vec![IdentityAction::RegisterIdentity {
-                    account: "bob.hydentity".to_string(),
-                }
-                .as_blob(ContractName::new("hydentity"))],
-            )
-            .await?;
 
-        proof_generator
-            .generate_proof(
-                &ctx,
-                CliCommand::Hydentity {
-                    command: HydentityArgs::Register {
-                        account: "bob.hydentity".to_string(),
-                    },
-                },
-                "bob.hydentity",
-                "password",
-                None,
-            )
-            .await;
-
-        let proof = proof_generator.read_proof(0);
+        let mut tx = ProvableBlobTx::new("bob.hydentity".into());
+        register_identity(&mut tx, "hydentity".into(), "password".to_string())?;
+        let blob_tx_hash = ctx.send_provable_blob_tx(&tx).await?;
+        let tx = executor.process(tx)?;
+        let proof = tx.iter_prove().next().unwrap().0.await?;
 
         info!("➡️  Sending proof for register");
-        ctx.send_proof_single("hydentity".into(), ProofData(proof), blob_tx_hash.clone())
+        ctx.send_proof_single("hydentity".into(), proof, blob_tx_hash)
             .await?;
 
         info!("➡️  Waiting for height 2");
         ctx.wait_height(2).await?;
-
-        let contract_hydentity = ctx.get_contract("hydentity").await?;
-        let state: hydentity::Hydentity = contract_hydentity.state.try_into()?;
-
-        // faucet_start_nonce = 0 in single-mode, N in multi-node(N) mode
-        let faucet_start_nonce = serde_json::from_str::<AccountInfo>(
-            state
-                .get_identity_info("faucet.hydentity")
-                .expect("faucet identity not found")
-                .as_str(),
-        )
-        .expect("Failed to parse faucet identity info")
-        .nonce;
-
         /////////////////////////////////////////////////////////////////////
 
         ///////////////// sending hyllar from faucet to bob /////////////////
         info!("➡️  Sending blob to transfer 25 hyllar from faucet to bob");
-        let blob_tx_hash = ctx
-            .send_blob(
-                "faucet.hydentity".into(),
-                vec![
-                    IdentityAction::VerifyIdentity {
-                        account: "faucet.hydentity".to_string(),
-                        nonce: faucet_start_nonce,
-                    }
-                    .as_blob(ContractName::new("hydentity")),
-                    ERC20Action::Transfer {
-                        recipient: "bob.hydentity".to_string(),
-                        amount: 25,
-                    }
-                    .as_blob(ContractName::new("hyllar"), None, None),
-                ],
-            )
-            .await?;
 
-        proof_generator
-            .generate_proof(
-                &ctx,
-                CliCommand::Hyllar {
-                    command: hyrun::HyllarArgs::Transfer {
-                        recipient: "bob.hydentity".to_string(),
-                        amount: 25,
-                    },
-                    hyllar_contract_name: "hyllar".to_string(),
-                },
-                "faucet.hydentity",
-                "password",
-                Some(faucet_start_nonce),
-            )
-            .await;
+        let mut tx = ProvableBlobTx::new("faucet.hydentity".into());
+        verify_identity(
+            &mut tx,
+            "hydentity".into(),
+            &executor.hydentity,
+            "password".into(),
+        )?;
+        transfer(&mut tx, "hyllar".into(), "bob.hydentity".into(), 25)?;
 
-        let hydentity_proof = proof_generator.read_proof(0);
-        let bob_transfer_proof = proof_generator.read_proof(1);
+        let blob_tx_hash = ctx.send_provable_blob_tx(&tx).await?;
+        let tx = executor.process(tx)?;
+        let mut proofs = tx.iter_prove();
+
+        let hydentity_proof = proofs.next().unwrap().0.await?;
+        let bob_transfer_proof = proofs.next().unwrap().0.await?;
 
         info!("➡️  Sending proof for hydentity");
-        ctx.send_proof_single(
-            "hydentity".into(),
-            ProofData(hydentity_proof),
-            blob_tx_hash.clone(),
-        )
-        .await?;
+        ctx.send_proof_single("hydentity".into(), hydentity_proof, blob_tx_hash.clone())
+            .await?;
 
         info!("➡️  Sending proof for hyllar");
-        ctx.send_proof_single("hyllar".into(), ProofData(bob_transfer_proof), blob_tx_hash)
+        ctx.send_proof_single("hyllar".into(), bob_transfer_proof, blob_tx_hash)
             .await?;
 
         info!("➡️  Waiting for height 5");
@@ -233,58 +196,29 @@ mod e2e_amm {
 
         ///////////////// sending hyllar2 from faucet to bob /////////////////
         info!("➡️  Sending blob to transfer 50 hyllar2 from faucet to bob");
-        let blob_tx_hash = ctx
-            .send_blob(
-                "faucet.hydentity".into(),
-                vec![
-                    IdentityAction::VerifyIdentity {
-                        account: "faucet.hydentity".to_string(),
-                        nonce: faucet_start_nonce + 1,
-                    }
-                    .as_blob(ContractName::new("hydentity")),
-                    ERC20Action::Transfer {
-                        recipient: "bob.hydentity".to_string(),
-                        amount: 50,
-                    }
-                    .as_blob(ContractName::new("hyllar2"), None, None),
-                ],
-            )
-            .await?;
+        let mut tx = ProvableBlobTx::new("faucet.hydentity".into());
+        verify_identity(
+            &mut tx,
+            "hydentity".into(),
+            &executor.hydentity,
+            "password".into(),
+        )?;
+        transfer(&mut tx, "hyllar2".into(), "bob.hydentity".into(), 50)?;
 
-        proof_generator
-            .generate_proof(
-                &ctx,
-                CliCommand::Hyllar {
-                    command: hyrun::HyllarArgs::Transfer {
-                        recipient: "bob.hydentity".to_string(),
-                        amount: 50,
-                    },
-                    hyllar_contract_name: "hyllar2".to_string(),
-                },
-                "faucet.hydentity",
-                "password",
-                Some(faucet_start_nonce + 1),
-            )
-            .await;
+        let blob_tx_hash = ctx.send_provable_blob_tx(&tx).await?;
+        let tx = executor.process(tx)?;
+        let mut proofs = tx.iter_prove();
 
-        let hydentity_proof = proof_generator.read_proof(0);
-        let bob_transfer_proof = proof_generator.read_proof(1);
+        let hydentity_proof = proofs.next().unwrap().0.await?;
+        let bob_transfer_proof = proofs.next().unwrap().0.await?;
 
         info!("➡️  Sending proof for hydentity");
-        ctx.send_proof_single(
-            "hydentity".into(),
-            ProofData(hydentity_proof),
-            blob_tx_hash.clone(),
-        )
-        .await?;
+        ctx.send_proof_single("hydentity".into(), hydentity_proof, blob_tx_hash.clone())
+            .await?;
 
         info!("➡️  Sending proof for hyllar");
-        ctx.send_proof_single(
-            "hyllar2".into(),
-            ProofData(bob_transfer_proof),
-            blob_tx_hash,
-        )
-        .await?;
+        ctx.send_proof_single("hyllar2".into(), bob_transfer_proof, blob_tx_hash)
+            .await?;
 
         info!("➡️  Waiting for height 5");
         ctx.wait_height(5).await?;
@@ -302,62 +236,37 @@ mod e2e_amm {
 
         ///////////////////// amm contract registration /////////////////////
         info!("➡️  Registring amm contract");
-        const AMM_CONTRACT_NAME: &str = "amm2";
+        const AMM_CONTRACT_NAME: &str = "amm";
         ctx.register_contract::<AmmContract>(AMM_CONTRACT_NAME)
             .await?;
         /////////////////////////////////////////////////////////////////////
 
         //////////////////// Bob approves AMM on hyllar /////////////////////
         info!("➡️  Sending blob to approve amm on hyllar");
-        let blob_tx_hash = ctx
-            .send_blob(
-                "bob.hydentity".into(),
-                vec![
-                    IdentityAction::VerifyIdentity {
-                        account: "bob.hydentity".to_string(),
-                        nonce: 0,
-                    }
-                    .as_blob(ContractName::new("hydentity")),
-                    ERC20Action::Approve {
-                        spender: AMM_CONTRACT_NAME.to_string(),
-                        amount: 100,
-                    }
-                    .as_blob(ContractName::new("hyllar"), None, None),
-                ],
-            )
-            .await?;
+        let mut tx = ProvableBlobTx::new("bob.hydentity".into());
+        verify_identity(
+            &mut tx,
+            "hydentity".into(),
+            &executor.hydentity,
+            "password".into(),
+        )?;
+        approve(&mut tx, "hyllar".into(), AMM_CONTRACT_NAME.into(), 100)?;
 
-        proof_generator
-            .generate_proof(
-                &ctx,
-                CliCommand::Hyllar {
-                    command: hyrun::HyllarArgs::Approve {
-                        spender: "amm2".to_string(),
-                        amount: 100,
-                    },
-                    hyllar_contract_name: "hyllar".to_string(),
-                },
-                "bob.hydentity",
-                "password",
-                Some(0),
-            )
-            .await;
+        let blob_tx_hash = ctx.send_provable_blob_tx(&tx).await?;
+        let tx = executor.process(tx)?;
+        let mut proofs = tx.iter_prove();
 
-        let hydentity_proof = proof_generator.read_proof(0);
-        let bob_approve_hyllar_proof = proof_generator.read_proof(1);
+        let hydentity_proof = proofs.next().unwrap().0.await?;
+        let bob_approve_hyllar_proof = proofs.next().unwrap().0.await?;
 
         info!("➡️  Sending proof for hydentity");
-        ctx.send_proof_single(
-            "hydentity".into(),
-            ProofData(hydentity_proof),
-            blob_tx_hash.clone(),
-        )
-        .await?;
+        ctx.send_proof_single("hydentity".into(), hydentity_proof, blob_tx_hash.clone())
+            .await?;
 
         info!("➡️  Sending proof for approve hyllar");
         ctx.send_proof_single(
             "hyllar".into(),
-            ProofData(bob_approve_hyllar_proof),
+            bob_approve_hyllar_proof,
             blob_tx_hash.clone(),
         )
         .await?;
@@ -365,60 +274,36 @@ mod e2e_amm {
         info!("➡️  Waiting for height 5");
         ctx.wait_height(5).await?;
 
-        assert_account_allowance(&ctx, "hyllar", "bob.hydentity", "amm2", 100).await?;
+        assert_account_allowance(&ctx, "hyllar", "bob.hydentity", AMM_CONTRACT_NAME, 100).await?;
         /////////////////////////////////////////////////////////////////////
 
         //////////////////// Bob approves AMM on hyllar2 /////////////////////
         info!("➡️  Sending blob to approve amm on hyllar2");
-        let blob_tx_hash = ctx
-            .send_blob(
-                "bob.hydentity".into(),
-                vec![
-                    IdentityAction::VerifyIdentity {
-                        account: "bob.hydentity".to_string(),
-                        nonce: 1,
-                    }
-                    .as_blob(ContractName::new("hydentity")),
-                    ERC20Action::Approve {
-                        spender: AMM_CONTRACT_NAME.to_string(),
-                        amount: 100,
-                    }
-                    .as_blob(ContractName::new("hyllar2"), None, None),
-                ],
-            )
-            .await?;
 
-        proof_generator
-            .generate_proof(
-                &ctx,
-                CliCommand::Hyllar {
-                    command: hyrun::HyllarArgs::Approve {
-                        spender: "amm2".to_string(),
-                        amount: 100,
-                    },
-                    hyllar_contract_name: "hyllar2".to_string(),
-                },
-                "bob.hydentity",
-                "password",
-                Some(1),
-            )
-            .await;
+        let mut tx = ProvableBlobTx::new("bob.hydentity".into());
+        verify_identity(
+            &mut tx,
+            "hydentity".into(),
+            &executor.hydentity,
+            "password".into(),
+        )?;
+        approve(&mut tx, "hyllar2".into(), AMM_CONTRACT_NAME.into(), 100)?;
 
-        let hydentity_proof = proof_generator.read_proof(0);
-        let bob_approve_hyllar2_proof = proof_generator.read_proof(1);
+        let blob_tx_hash = ctx.send_provable_blob_tx(&tx).await?;
+        let tx = executor.process(tx)?;
+        let mut proofs = tx.iter_prove();
+
+        let hydentity_proof = proofs.next().unwrap().0.await?;
+        let bob_approve_hyllar2_proof = proofs.next().unwrap().0.await?;
 
         info!("➡️  Sending proof for hydentity");
-        ctx.send_proof_single(
-            "hydentity".into(),
-            ProofData(hydentity_proof),
-            blob_tx_hash.clone(),
-        )
-        .await?;
+        ctx.send_proof_single("hydentity".into(), hydentity_proof, blob_tx_hash.clone())
+            .await?;
 
         info!("➡️  Sending proof for approve hyllar2");
         ctx.send_proof_single(
             "hyllar2".into(),
-            ProofData(bob_approve_hyllar2_proof),
+            bob_approve_hyllar2_proof,
             blob_tx_hash.clone(),
         )
         .await?;
@@ -426,88 +311,44 @@ mod e2e_amm {
         info!("➡️  Waiting for height 5");
         ctx.wait_height(5).await?;
 
-        assert_account_allowance(&ctx, "hyllar2", "bob.hydentity", "amm2", 100).await?;
+        assert_account_allowance(&ctx, "hyllar2", "bob.hydentity", AMM_CONTRACT_NAME, 100).await?;
         /////////////////////////////////////////////////////////////////////
 
         /////////////// Creating new pair hyllar/hyllar2 on amm ///////////////
-        info!("➡️  Sending blob to transfer 50 hyllar2 from faucet to bob");
-        let blob_tx_hash = ctx
-            .send_blob(
-                "bob.hydentity".into(),
-                vec![
-                    IdentityAction::VerifyIdentity {
-                        account: "bob.hydentity".to_string(),
-                        nonce: 2,
-                    }
-                    .as_blob(ContractName::new("hydentity")),
-                    AmmAction::NewPair {
-                        pair: ("hyllar".to_string(), "hyllar2".to_string()),
-                        amounts: (20, 50),
-                    }
-                    .as_blob(
-                        ContractName::new(AMM_CONTRACT_NAME),
-                        None,
-                        Some(vec![BlobIndex(2), BlobIndex(3)]),
-                    ),
-                    ERC20Action::TransferFrom {
-                        sender: "bob.hydentity".to_string(),
-                        recipient: AMM_CONTRACT_NAME.to_string(),
-                        amount: 20,
-                    }
-                    .as_blob(
-                        ContractName::new("hyllar"),
-                        Some(BlobIndex(1)),
-                        None,
-                    ),
-                    ERC20Action::TransferFrom {
-                        sender: "bob.hydentity".to_string(),
-                        recipient: AMM_CONTRACT_NAME.to_string(),
-                        amount: 50,
-                    }
-                    .as_blob(
-                        ContractName::new("hyllar2"),
-                        Some(BlobIndex(1)),
-                        None,
-                    ),
-                ],
-            )
-            .await?;
+        info!("➡️  Creating new pair hyllar/hyllar2 on amm");
 
-        proof_generator
-            .generate_proof(
-                &ctx,
-                CliCommand::Amm {
-                    command: hyrun::AmmArgs::NewPair {
-                        token_a: "hyllar".to_owned(),
-                        token_b: "hyllar2".to_owned(),
-                        amount_a: 20,
-                        amount_b: 50,
-                    },
-                    amm_contract_name: "amm2".to_string(),
-                },
-                "bob.hydentity",
-                "password",
-                Some(2),
-            )
-            .await;
+        let mut tx = ProvableBlobTx::new("bob.hydentity".into());
+        verify_identity(
+            &mut tx,
+            "hydentity".into(),
+            &executor.hydentity,
+            "password".into(),
+        )?;
 
-        let hydentity_proof = proof_generator.read_proof(0);
-        let bob_new_pair_proof = proof_generator.read_proof(1);
-        let bob_transfer_hyllar_proof = proof_generator.read_proof(2);
-        let bob_transfer_hyllar2_proof = proof_generator.read_proof(3);
+        new_pair(
+            &mut tx,
+            AMM_CONTRACT_NAME.into(),
+            ("hyllar".into(), "hyllar2".into()),
+            (20, 50),
+        )?;
+
+        let blob_tx_hash = ctx.send_provable_blob_tx(&tx).await?;
+        let tx = executor.process(tx)?;
+        let mut proofs = tx.iter_prove();
+
+        let hydentity_proof = proofs.next().unwrap().0.await?;
+        let bob_new_pair_proof = proofs.next().unwrap().0.await?;
+        let bob_transfer_hyllar_proof = proofs.next().unwrap().0.await?;
+        let bob_transfer_hyllar2_proof = proofs.next().unwrap().0.await?;
 
         info!("➡️  Sending proof for hydentity");
-        ctx.send_proof_single(
-            "hydentity".into(),
-            ProofData(hydentity_proof),
-            blob_tx_hash.clone(),
-        )
-        .await?;
+        ctx.send_proof_single("hydentity".into(), hydentity_proof, blob_tx_hash.clone())
+            .await?;
 
         info!("➡️  Sending proof for new pair");
         ctx.send_proof_single(
             AMM_CONTRACT_NAME.into(),
-            ProofData(bob_new_pair_proof),
+            bob_new_pair_proof,
             blob_tx_hash.clone(),
         )
         .await?;
@@ -515,18 +356,14 @@ mod e2e_amm {
         info!("➡️  Sending proof for hyllar");
         ctx.send_proof_single(
             "hyllar".into(),
-            ProofData(bob_transfer_hyllar_proof),
+            bob_transfer_hyllar_proof,
             blob_tx_hash.clone(),
         )
         .await?;
 
         info!("➡️  Sending proof for hyllar2");
-        ctx.send_proof_single(
-            "hyllar2".into(),
-            ProofData(bob_transfer_hyllar2_proof),
-            blob_tx_hash,
-        )
-        .await?;
+        ctx.send_proof_single("hyllar2".into(), bob_transfer_hyllar2_proof, blob_tx_hash)
+            .await?;
 
         info!("➡️  Waiting for height 5");
         ctx.wait_height(5).await?;
@@ -536,7 +373,7 @@ mod e2e_amm {
             "hyllar",
             &[
                 ("bob.hydentity", 5),
-                ("amm2", 20),
+                (AMM_CONTRACT_NAME, 20),
                 ("faucet.hydentity", hyllar_initial_total_amount - 25),
             ],
         )
@@ -547,7 +384,7 @@ mod e2e_amm {
             "hyllar2",
             &[
                 ("bob.hydentity", 0),
-                ("amm2", 50),
+                (AMM_CONTRACT_NAME, 50),
                 ("faucet.hydentity", hyllar2_initial_total_amount - 50),
             ],
         )
@@ -555,87 +392,47 @@ mod e2e_amm {
         //////////////////////////////////////////////////////////////////////
 
         /////////////////////// Bob actually swaps //////////////////////////
-        info!("➡️  Sending blob for bob to swap 5 hyllar for 10 hyllar2");
-        let blob_tx_hash = ctx
-            .send_blob(
-                "bob.hydentity".into(),
-                vec![
-                    IdentityAction::VerifyIdentity {
-                        account: "bob.hydentity".to_string(),
-                        nonce: 3,
-                    }
-                    .as_blob(ContractName::new("hydentity")),
-                    AmmAction::Swap {
-                        pair: ("hyllar".to_string(), "hyllar2".to_string()),
-                        amounts: (5, 10),
-                    }
-                    .as_blob(
-                        ContractName::new(AMM_CONTRACT_NAME),
-                        None,
-                        Some(vec![BlobIndex(2), BlobIndex(3)]),
-                    ),
-                    ERC20Action::TransferFrom {
-                        sender: "bob.hydentity".to_string(),
-                        recipient: AMM_CONTRACT_NAME.to_string(),
-                        amount: 5,
-                    }
-                    .as_blob(
-                        ContractName::new("hyllar"),
-                        Some(BlobIndex(1)),
-                        None,
-                    ),
-                    ERC20Action::Transfer {
-                        recipient: "bob.hydentity".to_string(),
-                        amount: 10,
-                    }
-                    .as_blob(
-                        ContractName::new("hyllar2"),
-                        Some(BlobIndex(1)),
-                        None,
-                    ),
-                ],
-            )
-            .await?;
+        info!("➡️ Bob actually swaps");
 
-        proof_generator
-            .generate_proof(
-                &ctx,
-                CliCommand::Amm {
-                    command: hyrun::AmmArgs::Swap {
-                        token_a: "hyllar".to_owned(),
-                        token_b: "hyllar2".to_owned(),
-                        amount_a: 5,
-                        amount_b: 10,
-                    },
-                    amm_contract_name: "amm2".to_string(),
-                },
-                "bob.hydentity",
-                "password",
-                Some(3),
-            )
-            .await;
+        let mut tx = ProvableBlobTx::new("bob.hydentity".into());
+        verify_identity(
+            &mut tx,
+            "hydentity".into(),
+            &executor.hydentity,
+            "password".into(),
+        )?;
 
-        let hydentity_proof = proof_generator.read_proof(0);
-        let bob_swap_proof = proof_generator.read_proof(1);
-        let bob_transfer_proof = proof_generator.read_proof(2);
-        let amm_transfer_from_proof = proof_generator.read_proof(3);
+        swap(
+            &mut tx,
+            AMM_CONTRACT_NAME.into(),
+            ("hyllar".into(), "hyllar2".into()),
+            (5, 10),
+        )?;
 
-        let recursive_proof = proof_generator
-            .generate_recursive_proof(
-                &[
-                    hyle_contracts::HYDENTITY_ID,
-                    hyle_contracts::AMM_ID,
-                    hyle_contracts::HYLLAR_ID,
-                    hyle_contracts::HYLLAR_ID,
-                ],
-                &[
-                    &hydentity_proof,
-                    &bob_swap_proof,
-                    &bob_transfer_proof,
-                    &amm_transfer_from_proof,
-                ],
-            )
-            .await;
+        let blob_tx_hash = ctx.send_provable_blob_tx(&tx).await?;
+        let tx = executor.process(tx)?;
+        let mut proofs = tx.iter_prove();
+
+        let hydentity_proof = proofs.next().unwrap().0.await?.0;
+        let bob_swap_proof = proofs.next().unwrap().0.await?.0;
+        let bob_transfer_proof = proofs.next().unwrap().0.await?.0;
+        let amm_transfer_from_proof = proofs.next().unwrap().0.await?.0;
+
+        let recursive_proof = generate_recursive_proof(
+            &[
+                hyle_contracts::HYDENTITY_ID,
+                hyle_contracts::AMM_ID,
+                hyle_contracts::HYLLAR_ID,
+                hyle_contracts::HYLLAR_ID,
+            ],
+            &[
+                &hydentity_proof,
+                &bob_swap_proof,
+                &bob_transfer_proof,
+                &amm_transfer_from_proof,
+            ],
+        )
+        .await;
 
         info!("➡️  Sending recursive proof for hydentity, amm, hyllar and hyllar2");
         ctx.send_proof(
@@ -658,7 +455,7 @@ mod e2e_amm {
             "hyllar",
             &[
                 ("bob.hydentity", 0),
-                ("amm2", 25),
+                (AMM_CONTRACT_NAME, 25),
                 ("faucet.hydentity", hyllar_initial_total_amount - 25),
             ],
         )
@@ -669,7 +466,7 @@ mod e2e_amm {
             "hyllar2",
             &[
                 ("bob.hydentity", 10),
-                ("amm2", 40),
+                (AMM_CONTRACT_NAME, 40),
                 ("faucet.hydentity", hyllar2_initial_total_amount - 50),
             ],
         )

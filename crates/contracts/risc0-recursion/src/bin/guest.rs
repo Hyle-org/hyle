@@ -5,7 +5,7 @@ extern crate alloc;
 
 use alloc::vec::Vec;
 use risc0_recursion::{Risc0Journal, Risc0ProgramId};
-use sdk::guest::env;
+use risc0_zkvm::guest::env;
 
 risc0_zkvm::guest::entry!(main);
 
