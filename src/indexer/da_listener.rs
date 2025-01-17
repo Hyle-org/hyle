@@ -89,8 +89,8 @@ impl DAListener {
         module_handle_messages! {
             on_bus self.bus,
             frame = self.listener.next() => {
-                if let Some(Ok(bytes)) = frame {
-                    _ = self.processing_next_frame(bytes).await.log_error("Consuming da stream");
+                if let Some(Ok(streamed_signed_block)) = frame {
+                    _ = self.processing_next_frame(streamed_signed_block).await.log_error("Consuming da stream");
                 } else if frame.is_none() {
                     bail!("DA stream closed");
                 } else if let Some(Err(e)) = frame {

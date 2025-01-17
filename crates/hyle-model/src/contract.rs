@@ -1,4 +1,7 @@
-use std::{fmt::Display, ops::Add};
+use std::{
+    fmt::Display,
+    ops::{Add, Sub},
+};
 
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
@@ -296,6 +299,13 @@ impl Add<u64> for BlockHeight {
     type Output = BlockHeight;
     fn add(self, other: u64) -> BlockHeight {
         BlockHeight(self.0 + other)
+    }
+}
+
+impl Sub<u64> for BlockHeight {
+    type Output = BlockHeight;
+    fn sub(self, other: u64) -> BlockHeight {
+        BlockHeight(self.0 - other)
     }
 }
 
