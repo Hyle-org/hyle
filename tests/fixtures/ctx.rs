@@ -239,11 +239,7 @@ impl E2ECtx {
             state_digest: Contract::state_digest(),
             contract_name: name.into(),
         };
-        assert_ok!(self
-            .client()
-            .send_tx_register_contract(tx)
-            .await
-            .and_then(|response| response.error_for_status().context("registering contract")));
+        assert_ok!(self.client().send_tx_register_contract(tx).await);
 
         tokio::time::timeout(Duration::from_secs(30), async {
             loop {
@@ -298,14 +294,14 @@ impl E2ECtx {
         proof: ProofData,
         blob_tx_hash: TxHash,
     ) -> Result<()> {
-        assert_ok!(self
-            .client()
-            .send_tx_proof(&ProofTransaction {
-                contract_name: contract_name.clone(),
-                proof: proof.clone(),
-            })
-            .await
-            .and_then(|response| response.error_for_status().context("sending tx")));
+        assert_ok!(
+            self.client()
+                .send_tx_proof(&ProofTransaction {
+                    contract_name: contract_name.clone(),
+                    proof: proof.clone(),
+                })
+                .await
+        );
 
         Ok(())
     }
@@ -316,14 +312,14 @@ impl E2ECtx {
         proof: ProofData,
         verifies: Vec<TxHash>,
     ) -> Result<()> {
-        assert_ok!(self
-            .client()
-            .send_tx_proof(&ProofTransaction {
-                contract_name: contract_name.clone(),
-                proof: proof.clone(),
-            })
-            .await
-            .and_then(|response| response.error_for_status().context("sending tx")));
+        assert_ok!(
+            self.client()
+                .send_tx_proof(&ProofTransaction {
+                    contract_name: contract_name.clone(),
+                    proof: proof.clone(),
+                })
+                .await
+        );
 
         Ok(())
     }

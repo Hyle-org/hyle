@@ -295,7 +295,7 @@ pub async fn send_proof_txs(url: String, proof_txs: Vec<Vec<u8>>) -> Result<()> 
 }
 
 pub async fn send_massive_blob(url: String) -> Result<()> {
-    let ident = Identity("test.hydentity".to_string());
+    let ident = Identity::new("test.hydentity");
 
     let mut data = vec![];
 

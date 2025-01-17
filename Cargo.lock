@@ -1161,6 +1161,7 @@ dependencies = [
  "hyle-model",
  "reqwest",
  "risc0-zkvm",
+ "serde",
  "serde_json",
  "sp1-sdk",
  "tokio",
