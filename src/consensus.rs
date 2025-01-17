@@ -55,7 +55,7 @@ pub enum ConsensusCommand {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct CommittedConsensusProposal {
-    pub validators: Vec<ValidatorPublicKey>,
+    pub staking: Staking,
     pub consensus_proposal: ConsensusProposal,
     pub certificate: QuorumCertificate,
 }
@@ -635,7 +635,7 @@ impl Consensus {
             .bus
             .send(ConsensusEvent::CommitConsensusProposal(
                 CommittedConsensusProposal {
-                    validators: self.bft_round_state.staking.bonded().clone(),
+                    staking: self.bft_round_state.staking.clone(),
                     consensus_proposal: self.bft_round_state.consensus_proposal.clone(),
                     certificate: commit_quorum_certificate.clone(),
                 },

@@ -508,6 +508,7 @@ pub mod tests {
         utils::{conf::Conf, integration_test::find_available_port},
     };
     use futures::{SinkExt, StreamExt};
+    use staking::state::Staking;
     use tokio::io::AsyncWriteExt;
     use tokio_util::codec::{Framed, LengthDelimitedCodec};
 
@@ -683,7 +684,7 @@ pub mod tests {
         da_stream.close().await.unwrap();
 
         let mut ccp = CommittedConsensusProposal {
-            validators: vec![],
+            staking: Staking::default(),
             consensus_proposal: ConsensusProposal::default(),
             certificate: AggregateSignature {
                 signature: crate::model::Signature("signature".into()),
@@ -790,7 +791,7 @@ pub mod tests {
 
         // Add a few blocks (via bus to avoid mutex)
         let mut ccp = CommittedConsensusProposal {
-            validators: vec![],
+            staking: Staking::default(),
             consensus_proposal: ConsensusProposal::default(),
             certificate: AggregateSignature::default(),
         };
@@ -826,7 +827,7 @@ pub mod tests {
 
         // Add a few blocks (via bus to avoid mutex)
         let mut ccp = CommittedConsensusProposal {
-            validators: vec![],
+            staking: Staking::default(),
             consensus_proposal: ConsensusProposal::default(),
             certificate: AggregateSignature::default(),
         };
