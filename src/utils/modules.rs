@@ -302,7 +302,6 @@ mod tests {
 
     use super::*;
     use crate::bus::SharedMessageBus;
-    use proptest::bits::usize;
     use signal::ShutdownModule;
     use std::{fs::File, sync::Arc};
     use tempfile::tempdir;
