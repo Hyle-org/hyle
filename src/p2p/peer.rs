@@ -2,7 +2,7 @@ use std::time::Duration;
 use std::time::SystemTime;
 
 use anyhow::Context;
-use anyhow::{anyhow, Error, Result};
+use anyhow::{Error, Result};
 use tokio::net::TcpStream;
 use tokio::sync::mpsc;
 use tokio::time::sleep;
@@ -27,6 +27,7 @@ use crate::module_handle_messages;
 use crate::p2p::stream::read_stream;
 use crate::utils::conf::SharedConf;
 use crate::utils::crypto::SharedBlstCrypto;
+use crate::utils::logger::LogMe;
 use crate::utils::modules::signal::ShutdownModule;
 
 bus_client! {
@@ -93,7 +94,7 @@ impl Peer {
         &mut self,
         validator_id: ValidatorPublicKey,
         msg: NetMessage,
-    ) -> Result<(), Error> {
+    ) -> Result<()> {
         if let Some(peer_validator) = &self.peer_pubkey {
             if *peer_validator == validator_id {
                 return send_net_message(&mut self.stream, msg).await;
@@ -104,7 +105,7 @@ impl Peer {
         Ok(())
     }
 
-    async fn handle_broadcast_message(&mut self, msg: NetMessage) -> Result<(), Error> {
+    async fn handle_broadcast_message(&mut self, msg: NetMessage) -> Result<()> {
         let binary = msg.to_binary()?;
         if !self.fifo_filter.check(&binary) {
             self.fifo_filter.set(binary);
@@ -116,7 +117,7 @@ impl Peer {
         }
     }
 
-    async fn handle_handshake_message(&mut self, msg: HandshakeNetMessage) -> Result<(), Error> {
+    async fn handle_handshake_message(&mut self, msg: HandshakeNetMessage) -> Result<()> {
         match msg {
             HandshakeNetMessage::Hello(v) => {
                 info!("👋 Got peer hello message {:?}", v);
@@ -193,44 +194,34 @@ impl Peer {
             on_bus self.bus,
             listen<OutboundMessage> res => {
                 match res {
-                    OutboundMessage::SendMessage { validator_id, msg } => match self.handle_send_message(validator_id, msg).await {
-                        Ok(_) => continue,
-                        Err(e) => {
-                            warn!("Error while sending net message: {}", e);
-                        }
+                    OutboundMessage::SendMessage { validator_id, msg } => {
+                        _ = self.handle_send_message(validator_id, msg)
+                            .await
+                            .log_warn("Error while sending net message");
                     }
-                    OutboundMessage::BroadcastMessage(message) => match self.handle_broadcast_message(message).await {
-                        Ok(_) => continue,
-                        Err(e) => {
-                            warn!("Error while broadcasting net message: {}", e);
-                        }
+                    OutboundMessage::BroadcastMessage(message) => {
+                        _ = self.handle_broadcast_message(message)
+                            .await
+                            .log_warn("Error while broadcasting net message");
                     }
                     OutboundMessage::BroadcastMessageOnlyFor(only_for, message) => {
                         if let Some(ref pubkey) = self.peer_pubkey {
                             if only_for.contains(pubkey) {
-                            match self.handle_broadcast_message(message).await {
-                                Ok(_) => continue,
-                                Err(e) => {
-                                    warn!("Error while broadcasting net message: {}", e);
-                                }
+                                _ = self.handle_broadcast_message(message)
+                                    .await
+                                    .log_warn(format!("Error while broadcasting net message only for {:?}", only_for));
                             }
-                            }
-                            }
+                        }
                     }
                 }
             }
 
-            res = read_stream(&mut self.stream) => match res {
-                Ok(message) => match self.handle_peer_stream_message(message).await {
-                    Ok(_) => continue,
-                    Err(e) => {
-                        warn!("Error while handling net message: {:#}", e);
-                    }
-                },
-                Err(e) => {
-                    warn!("Error reading tcp stream: {:?}", e);
-                    return Err(e);
-                }
+            res = read_stream(&mut self.stream) => {
+                let message = res.log_warn("Reading tcp stream")?;
+
+                _ = self.handle_peer_stream_message(message)
+                    .await
+                    .log_warn("Error while handling net message");
             },
 
             res =  self.internal_cmd_rx.recv() => {
@@ -248,26 +239,19 @@ impl Peer {
                         }
                     };
 
-                    match cmd_res {
-                            Ok(_) => (),
-                            Err(e) => {
-                            warn!("Error while handling cmd: {}", e);
-                        },
-                    }
+                    _ = cmd_res.log_warn("Handling internal cmd in Peer");
                 }
             }
         };
         Ok(())
     }
 
-    pub async fn connect(addr: &str) -> Result<TcpStream, Error> {
-        match TcpStream::connect(addr).await {
-            Ok(conn) => {
-                info!("Connected to peer: {}", addr);
-                Ok(conn)
-            }
-            Err(e) => Err(anyhow!("Failed to connect to peer: {}", e)),
-        }
+    pub async fn connect(addr: &str) -> Result<TcpStream> {
+        let conn = TcpStream::connect(addr)
+            .await
+            .context("Connect to peer with TCP stream")?;
+        info!("Connected to peer: {}", addr);
+        Ok(conn)
     }
 
     pub async fn handshake(&mut self) -> Result<(), Error> {
