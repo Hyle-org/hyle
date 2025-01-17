@@ -9,7 +9,7 @@ use crate::{
     },
 };
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result};
 use bincode::{Decode, Encode};
 use hyle_model::TcpServerNetMessage;
 use serde::{Deserialize, Serialize};

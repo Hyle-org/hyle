@@ -29,7 +29,7 @@ use sqlx::Row;
 use sqlx::{postgres::PgPoolOptions, PgPool, Pool, Postgres};
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::{broadcast, mpsc};
-use tracing::{error, trace};
+use tracing::trace;
 
 module_bus_client! {
 #[derive(Debug)]

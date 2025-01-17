@@ -4,7 +4,7 @@ use hyle_contract_sdk::{BlobIndex, ContractName, TxHash};
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, ops::Deref, path::PathBuf, sync::Arc};
 use tokio::sync::RwLock;
-use tracing::{debug, error, info};
+use tracing::{debug, info};
 
 use crate::{
     bus::BusMessage,
