@@ -79,14 +79,14 @@ impl TcpServer {
                 readers.spawn(async move {
                     let mut framed = Framed::new(tcp_stream, LengthDelimitedCodec::new());
                     loop {
-                        match read_stream(&mut framed).await {
-                            Ok(TcpServerNetMessage::NewTx(tx)) => {
+                        let net_msg = read_stream(&mut framed).await.context("Reading TCP stream")?;
+                        match net_msg {
+                            TcpServerNetMessage::NewTx(tx) => {
                                 sender.send(TcpServerMessage::NewTx(tx))?;
                             },
-                            Ok(TcpServerNetMessage::Ping) => {
+                            TcpServerNetMessage::Ping => {
                                 framed.get_mut().write_all(b"Pong").await?;
-                            },
-                            Err(e) => { bail!("Error reading stream: {}", e); }
+                            }
                         };
                     }
                 });

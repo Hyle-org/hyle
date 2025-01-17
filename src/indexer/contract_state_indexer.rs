@@ -14,7 +14,7 @@ use crate::{
     },
     module_handle_messages,
     node_state::module::NodeStateEvent,
-    utils::{conf::Conf, modules::Module},
+    utils::{conf::Conf, logger::LogMe, modules::Module},
 };
 
 use super::{contract_handlers::ContractHandler, indexer_bus_client::IndexerBusClient};
@@ -123,9 +123,9 @@ where
         module_handle_messages! {
             on_bus self.bus,
             listen<NodeStateEvent> event => {
-                if let Err(e) = self.handle_node_state_event(event).await {
-                    error!(cn = %self.contract_name, "Error while handling node state event: {:#}", e)
-                }
+                _ = self.handle_node_state_event(event)
+                    .await
+                    .log_error("Handling node state event")
             }
         };
 

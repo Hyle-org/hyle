@@ -6,6 +6,7 @@ pub mod contract_state_indexer;
 pub mod da_listener;
 
 use crate::model::*;
+use crate::utils::logger::LogMe;
 use crate::{
     module_handle_messages,
     node_state::module::NodeStateEvent,
@@ -105,9 +106,9 @@ impl Indexer {
         module_handle_messages! {
             on_bus self.bus,
             listen<NodeStateEvent> event => {
-                if let Err(e) = self.handle_node_state_event(event).await {
-                    error!("Error while handling node state event: {:#}", e)
-                }
+                _ = self.handle_node_state_event(event)
+                    .await
+                    .log_error("Handling node state event");
             }
 
             Some((contract_name, mut socket)) = self.new_sub_receiver.recv() => {
@@ -122,12 +123,11 @@ impl Indexer {
                     .name("indexer-recv")
                     .spawn(async move {
                         while let Ok(transaction) = rx.recv().await {
-                            if let Ok(json) = serde_json::to_vec(&transaction) {
+                            if let Ok(json) = serde_json::to_vec(&transaction)
+                                    .log_error("Serialize transaction to JSON") {
                                 if socket.send(Message::Binary(json.into())).await.is_err() {
                                     break;
                                 }
-                            } else {
-                                error!("Failed to serialize transaction to JSON");
                             }
                         }
                     })?;
