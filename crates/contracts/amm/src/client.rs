@@ -1,5 +1,5 @@
 use client_sdk::{
-    helpers::ClientSdkExecutor,
+    helpers::{ClientSdkExecutor, MockProver},
     transaction_builder::{ProvableBlobTx, StateUpdater, TxExecutorBuilder},
 };
 use sdk::{erc20::ERC20Action, BlobIndex, ContractName, Digestable};
@@ -23,7 +23,7 @@ impl AmmState {
             contract_name,
             self.as_digest(),
             AmmPseudoExecutor {},
-            client_sdk::helpers::risc0::Risc0Prover::new(crate::metadata::AMM_ELF),
+            MockProver {}, //client_sdk::helpers::risc0::Risc0Prover::new(crate::metadata::AMM_ELF),
         );
     }
 }

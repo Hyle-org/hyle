@@ -13,6 +13,16 @@ pub trait ClientSdkProver {
     ) -> Pin<Box<dyn std::future::Future<Output = Result<ProofData>> + Send + '_>>;
 }
 
+pub struct MockProver {}
+impl ClientSdkProver for MockProver {
+    fn prove(
+        &self,
+        _contract_input: ContractInput,
+    ) -> Pin<Box<dyn std::future::Future<Output = Result<ProofData>> + Send + '_>> {
+        unimplemented!("MockProver is not implemented")
+    }
+}
+
 #[cfg(feature = "risc0")]
 pub mod risc0 {
     use super::*;

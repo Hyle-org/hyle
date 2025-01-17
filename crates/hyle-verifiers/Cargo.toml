@@ -1,0 +1,25 @@
+[package]
+name = "hyle-verifiers"
+version = { workspace = true }
+edition = { workspace = true }
+# license = { workspace = true }
+homepage = { workspace = true }
+repository = { workspace = true }
+
+[dependencies]
+hyle-model = { path = "../hyle-model" }
+
+anyhow = "1.0.95"
+bincode = { version = "2.0.0-rc.3", features = ["serde"] }
+borsh = { version = "1.5.3" }
+serde_json = "1.0.135"
+rand = { version = "0.8.5" }
+risc0-zkvm = { version = "1.2.1", default-features = false, features = ["std"] }
+sp1-sdk = { version = "4.0.0", default-features = false }
+tracing = "0.1"
+
+[dev-dependencies]
+test-log = { version = "0.2.16", features = [
+    "color",
+    "trace",
+], default-features = false }

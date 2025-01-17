@@ -1,5 +1,5 @@
 use client_sdk::{
-    helpers::ClientSdkExecutor,
+    helpers::{ClientSdkExecutor, MockProver},
     transaction_builder::{ProvableBlobTx, StateUpdater, TxExecutorBuilder},
 };
 use sdk::{identity_provider::IdentityAction, BlobData, ContractName, Digestable};
@@ -23,7 +23,8 @@ impl Hydentity {
             contract_name,
             self.as_digest(),
             HydentityPseudoExecutor {},
-            client_sdk::helpers::risc0::Risc0Prover::new(crate::metadata::HYDENTITY_ELF),
+            MockProver {},
+            //client_sdk::helpers::risc0::Risc0Prover::new(crate::metadata::HYDENTITY_ELF),
         );
     }
 }

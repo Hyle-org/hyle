@@ -1,5 +1,5 @@
 use client_sdk::{
-    helpers::ClientSdkExecutor,
+    helpers::{ClientSdkExecutor, MockProver},
     transaction_builder::{ProvableBlobTx, StateUpdater, TxExecutorBuilder},
 };
 use sdk::{
@@ -27,7 +27,8 @@ impl Staking {
             contract_name,
             self.on_chain_state().as_digest(),
             StakingPseudoExecutor {},
-            client_sdk::helpers::risc0::Risc0Prover::new(crate::metadata::STAKING_ELF),
+            MockProver {},
+            //client_sdk::helpers::risc0::Risc0Prover::new(crate::metadata::STAKING_ELF),
         );
     }
 }

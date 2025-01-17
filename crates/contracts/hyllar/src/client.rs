@@ -1,5 +1,5 @@
 use client_sdk::{
-    helpers::ClientSdkExecutor,
+    helpers::{ClientSdkExecutor, MockProver},
     transaction_builder::{ProvableBlobTx, StateUpdater, TxExecutorBuilder},
 };
 use sdk::{erc20::ERC20Action, ContractName, Digestable};
@@ -23,7 +23,8 @@ impl HyllarToken {
             contract_name,
             self.as_digest(),
             HyllarPseudoExecutor {},
-            client_sdk::helpers::risc0::Risc0Prover::new(crate::metadata::HYLLAR_ELF),
+            MockProver {},
+            //client_sdk::helpers::risc0::Risc0Prover::new(crate::metadata::HYLLAR_ELF),
         );
     }
 }
