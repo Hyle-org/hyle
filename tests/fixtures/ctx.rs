@@ -229,6 +229,12 @@ impl E2ECtx {
         self.pg.is_some()
     }
 
+    pub async fn metrics(&self) -> Result<String> {
+        let metrics = self.client().metrics().await?;
+
+        Ok(metrics)
+    }
+
     pub async fn register_contract<Contract>(&self, name: &str) -> Result<()>
     where
         Contract: E2EContract,

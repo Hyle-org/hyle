@@ -57,6 +57,18 @@ impl NodeApiHttpClient {
         self.get("v1/info", "getting node info").await
     }
 
+    pub async fn metrics(&self) -> Result<String> {
+        self.reqwest_client
+            .get(format!("{}v1/metrics", self.url))
+            .header("Content-Type", "application/text")
+            .send()
+            .await
+            .context("getting node metrics")?
+            .text()
+            .await
+            .context("reading node metrics response")
+    }
+
     pub async fn get_block_height(&self) -> Result<BlockHeight> {
         self.get("v1/da/block/height", "getting block height").await
     }
