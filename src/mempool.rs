@@ -100,7 +100,7 @@ pub struct Mempool {
     last_ccp: Option<CommittedConsensusProposal>,
     blocks_under_contruction: VecDeque<BlockUnderConstruction>,
     buc_build_start_height: Option<u64>,
-    validators: Vec<ValidatorPublicKey>,
+    staking: Staking,
     known_contracts: Arc<std::sync::RwLock<KnownContracts>>,
 }
 
@@ -167,6 +167,16 @@ impl Module for Mempool {
                 .as_path(),
         )
         .unwrap_or(Storage::new(ctx.node.crypto.validator_pubkey().clone()));
+
+        let staking = Self::load_from_disk::<Staking>(
+            ctx.common
+                .config
+                .data_directory
+                .join("mempool_staking.bin")
+                .as_path(),
+        )
+        .unwrap_or(Staking::default());
+
         Ok(Mempool {
             bus,
             file: Some(ctx.common.config.data_directory.clone()),
@@ -177,7 +187,7 @@ impl Module for Mempool {
             last_ccp: None,
             blocks_under_contruction: VecDeque::new(),
             buc_build_start_height: None,
-            validators: vec![],
+            staking,
             known_contracts,
         })
     }
@@ -242,8 +252,8 @@ impl Mempool {
                     );
                 }
             }
-            command_response<QueryNewCut, Cut> validators => {
-                Ok(self.handle_querynewcut(validators))
+            command_response<QueryNewCut, Cut> staking => {
+                Ok(self.handle_querynewcut(staking))
             }
             _ = interval.tick() => {
                 let _ = self.handle_data_proposal_management()
@@ -256,6 +266,11 @@ impl Mempool {
                 Self::save_on_disk(file.join("mempool_storage.bin").as_path(), &self.storage)
             {
                 warn!("Failed to save mempool storage on disk: {}", e);
+            }
+            if let Err(e) =
+                Self::save_on_disk(file.join("mempool_staking.bin").as_path(), &self.staking)
+            {
+                warn!("Failed to save mempool staking on disk: {}", e);
             }
             if let Err(e) = Self::save_on_disk(
                 file.join("mempool_known_contracts.bin").as_path(),
@@ -310,14 +325,14 @@ impl Mempool {
         // Check if latest DataProposal has enough signatures
         if let Some(lane_entry) = &self.storage.get_lane_latest_entry(&self.storage.id) {
             // If there's only 1 signature (=own signature), broadcast it to everyone
-            if lane_entry.signatures.len() == 1 && self.validators.len() > 1 {
+            if lane_entry.signatures.len() == 1 && self.staking.bonded().len() > 1 {
                 debug!(
                     "🚗 Broadcast DataProposal {} ({} validators, {} txs)",
                     lane_entry.data_proposal.id,
-                    self.validators.len(),
+                    self.staking.bonded().len(),
                     lane_entry.data_proposal.txs.len()
                 );
-                if self.validators.is_empty() {
+                if self.staking.bonded().is_empty() {
                     return Ok(());
                 }
                 self.metrics.add_data_proposal(&lane_entry.data_proposal);
@@ -335,7 +350,8 @@ impl Mempool {
 
                 // No PoA means we rebroadcast the DataProposal for non present voters
                 let only_for: HashSet<ValidatorPublicKey> = self
-                    .validators
+                    .staking
+                    .bonded()
                     .iter()
                     .filter(|pubkey| !validator_that_has_signed.contains(pubkey))
                     .cloned()
@@ -508,7 +524,7 @@ impl Mempool {
                     cpp.consensus_proposal.slot, cpp.consensus_proposal.cut
                 );
 
-                self.validators = cpp.validators.clone();
+                self.staking = cpp.staking.clone();
 
                 let cut = cpp.consensus_proposal.cut.clone();
 
@@ -575,8 +591,8 @@ impl Mempool {
             MempoolNetMessage::DataVote(ref data_proposal_hash) => {
                 self.on_data_vote(&msg, data_proposal_hash)?;
             }
-            MempoolNetMessage::PoDAUpdate(data_proposal_hash, mut signatures) => {
-                self.on_poda_update(validator, &data_proposal_hash, &mut signatures)?;
+            MempoolNetMessage::PoDAUpdate(data_proposal_hash, signatures) => {
+                self.on_poda_update(validator, &data_proposal_hash, signatures);
             }
             MempoolNetMessage::SyncRequest(from_data_proposal_hash, to_data_proposal_hash) => {
                 self.on_sync_request(
@@ -680,7 +696,23 @@ impl Mempool {
     ) -> Result<()> {
         let validator = &msg.signature.validator;
         debug!("{} Vote from {}", self.storage.id, validator);
-        self.storage.on_data_vote(msg, data_proposal_hash)?;
+        let (data_proposal_hash, signatures) =
+            self.storage.on_data_vote(msg, data_proposal_hash)?;
+
+        // Compute voting power of all signers to check if the DataProposal received enough votes
+        let validators: Vec<ValidatorPublicKey> = signatures
+            .iter()
+            .map(|s| s.signature.validator.clone())
+            .collect();
+        let voting_power = self.staking.compute_voting_power(validators.as_slice());
+        let f = self.staking.compute_f();
+        // FIXME: This might flood the network with messages for each validator signing after the f+1 signature is received
+        if voting_power > f {
+            self.broadcast_net_message(MempoolNetMessage::PoDAUpdate(
+                data_proposal_hash,
+                signatures,
+            ))?;
+        }
         Ok(())
     }
 
@@ -688,8 +720,8 @@ impl Mempool {
         &mut self,
         validator: &ValidatorPublicKey,
         data_proposal_hash: &DataProposalHash,
-        signatures: &mut Vec<SignedByValidator<MempoolNetMessage>>,
-    ) -> Result<()> {
+        signatures: Vec<SignedByValidator<MempoolNetMessage>>,
+    ) {
         debug!(
             "Received {} signatures for DataProposal {} of validator {}",
             signatures.len(),
@@ -697,8 +729,7 @@ impl Mempool {
             validator
         );
         self.storage
-            .on_poda_update(validator, data_proposal_hash, signatures)?;
-        Ok(())
+            .on_poda_update(validator, data_proposal_hash, signatures);
     }
 
     fn on_data_proposal(
@@ -1054,8 +1085,10 @@ pub mod test {
 
     impl MempoolTestCtx {
         pub async fn build_mempool(shared_bus: &SharedMessageBus, crypto: BlstCrypto) -> Mempool {
-            let storage = Storage::new(crypto.validator_pubkey().clone());
-            let validators = vec![crypto.validator_pubkey().clone()];
+            let pubkey = crypto.validator_pubkey();
+            let storage = Storage::new(pubkey.clone());
+            let staking = Staking::default();
+
             let bus = MempoolBusClient::new_from_bus(shared_bus.new_handle()).await;
 
             // Initialize Mempool
@@ -1069,7 +1102,7 @@ pub mod test {
                 last_ccp: None,
                 blocks_under_contruction: VecDeque::new(),
                 buc_build_start_height: None,
-                validators,
+                staking,
                 known_contracts: Arc::new(std::sync::RwLock::new(KnownContracts::default())),
             }
         }
@@ -1096,14 +1129,29 @@ pub mod test {
 
         pub fn setup_node(&mut self, cryptos: &[BlstCrypto]) {
             for other_crypto in cryptos.iter() {
-                self.mempool
-                    .validators
-                    .push(other_crypto.validator_pubkey().clone());
+                self.add_trusted_validator(other_crypto.validator_pubkey());
             }
         }
 
         pub fn validator_pubkey(&self) -> ValidatorPublicKey {
             self.mempool.crypto.validator_pubkey().clone()
+        }
+
+        pub fn add_trusted_validator(&mut self, pubkey: &ValidatorPublicKey) {
+            self.mempool
+                .staking
+                .stake(hex::encode(pubkey.0.clone()).into(), 100)
+                .unwrap();
+
+            self.mempool
+                .staking
+                .delegate_to(hex::encode(pubkey.0.clone()).into(), pubkey.clone())
+                .unwrap();
+
+            self.mempool
+                .staking
+                .bond(pubkey.clone())
+                .expect("cannot bond trusted validator");
         }
 
         pub fn sign_data<T: bincode::Encode>(&self, data: T) -> Result<SignedByValidator<T>> {
@@ -1362,14 +1410,50 @@ pub mod test {
     }
 
     #[test_log::test(tokio::test)]
+    async fn test_send_poda_update() -> Result<()> {
+        let mut ctx = MempoolTestCtx::new("mempool").await;
+
+        // Adding 3 other validators
+        let crypto2 = BlstCrypto::new("validator2".into()).unwrap();
+        let crypto3 = BlstCrypto::new("validator3".into()).unwrap();
+        let crypto4 = BlstCrypto::new("validator4".into()).unwrap();
+        ctx.setup_node(&[crypto2.clone(), crypto3.clone(), crypto4]);
+
+        let register_tx = make_register_contract_tx(ContractName::new("test1"));
+        ctx.submit_tx(&register_tx);
+        ctx.mempool.handle_data_proposal_management()?;
+
+        let data_proposal = match ctx.assert_broadcast("DataProposal").msg {
+            MempoolNetMessage::DataProposal(dp) => dp,
+            _ => panic!("Expected DataProposal message"),
+        };
+
+        // Simulate receiving votes from other validators
+        let signed_msg2 = crypto2.sign(MempoolNetMessage::DataVote(data_proposal.hash()))?;
+        let signed_msg3 = crypto3.sign(MempoolNetMessage::DataVote(data_proposal.hash()))?;
+        ctx.mempool.handle_net_message(signed_msg2)?;
+        ctx.mempool.handle_net_message(signed_msg3)?;
+
+        // Assert that PoDAUpdate message is broadcasted
+        match ctx.assert_broadcast("PoDAUpdate").msg {
+            MempoolNetMessage::PoDAUpdate(hash, signatures) => {
+                assert_eq!(hash, data_proposal.hash());
+                assert_eq!(signatures.len(), 3);
+            }
+            _ => panic!("Expected PoDAUpdate message"),
+        };
+
+        Ok(())
+    }
+    #[test_log::test(tokio::test)]
     async fn test_pair_mempool_receiving_new_tx() -> Result<()> {
         let mut ctx = MempoolTestCtx::new("mempool").await;
+        let pubkey = (*ctx.mempool.crypto).clone();
+        ctx.setup_node(&[pubkey]);
 
         // Adding new validator
         let temp_crypto = BlstCrypto::new("validator1".into()).unwrap();
-        ctx.mempool
-            .validators
-            .push(temp_crypto.validator_pubkey().clone());
+        ctx.add_trusted_validator(temp_crypto.validator_pubkey());
 
         // Sending transaction to mempool as RestApiMessage
         let register_tx = make_register_contract_tx(ContractName::new("test1"));
@@ -1392,7 +1476,7 @@ pub mod test {
         });
 
         // Adding new validator
-        ctx.mempool.validators.push(ValidatorPublicKey(
+        ctx.add_trusted_validator(&ValidatorPublicKey(
             "validator2".to_owned().as_bytes().to_vec(),
         ));
 
@@ -1494,9 +1578,7 @@ pub mod test {
 
         // Add new validator
         let crypto2 = BlstCrypto::new("2".into()).unwrap();
-        ctx.mempool
-            .validators
-            .push(crypto2.validator_pubkey().clone());
+        ctx.add_trusted_validator(crypto2.validator_pubkey());
 
         let signed_msg = crypto2.sign(MempoolNetMessage::DataVote(data_proposal_hash.clone()))?;
 
@@ -1533,9 +1615,7 @@ pub mod test {
 
         // Add new validator
         let crypto2 = BlstCrypto::new("2".into()).unwrap();
-        ctx.mempool
-            .validators
-            .push(crypto2.validator_pubkey().clone());
+        ctx.add_trusted_validator(crypto2.validator_pubkey());
 
         let signed_msg = crypto2.sign(MempoolNetMessage::DataVote(DataProposalHash(
             "non_existent".to_owned(),
@@ -1573,9 +1653,7 @@ pub mod test {
 
         // Add new validator
         let crypto2 = BlstCrypto::new("2".into()).unwrap();
-        ctx.mempool
-            .validators
-            .push(crypto2.validator_pubkey().clone());
+        ctx.add_trusted_validator(crypto2.validator_pubkey());
 
         let signed_msg =
             crypto2.sign(MempoolNetMessage::SyncRequest(None, data_proposal.hash()))?;
@@ -1625,9 +1703,7 @@ pub mod test {
         let crypto2 = BlstCrypto::new("2".into()).unwrap();
         let crypto3 = BlstCrypto::new("3".into()).unwrap();
 
-        ctx.mempool
-            .validators
-            .push(crypto2.validator_pubkey().clone());
+        ctx.add_trusted_validator(crypto2.validator_pubkey());
 
         // First: the message is from crypto2, but the DP is not signed correctly
         let signed_msg = crypto2.sign(MempoolNetMessage::SyncReply(vec![LaneEntry {
@@ -1725,11 +1801,13 @@ pub mod test {
         let key = ctx.validator_pubkey();
         let cut = vec![(key.clone(), dp_hash.clone(), AggregateSignature::default())];
 
+        ctx.add_trusted_validator(&ctx.validator_pubkey());
+
         let _ = ctx
             .mempool
             .handle_consensus_event(ConsensusEvent::CommitConsensusProposal(
                 CommittedConsensusProposal {
-                    validators: vec![ctx.validator_pubkey()],
+                    staking: ctx.mempool.staking.clone(),
                     consensus_proposal: model::ConsensusProposal {
                         slot: 1,
                         view: 0,
@@ -1773,6 +1851,7 @@ pub mod test {
         ctx.submit_contract_tx("test1");
 
         ctx.mempool.handle_data_proposal_management()?;
+        ctx.add_trusted_validator(&ctx.validator_pubkey());
 
         let (_, dp_hash) = ctx.data_proposal(0);
 
@@ -1783,7 +1862,7 @@ pub mod test {
             .mempool
             .handle_consensus_event(ConsensusEvent::CommitConsensusProposal(
                 CommittedConsensusProposal {
-                    validators: vec![ctx.validator_pubkey()],
+                    staking: ctx.mempool.staking.clone(),
                     consensus_proposal: model::ConsensusProposal {
                         slot: 5,
                         view: 0,
@@ -1809,7 +1888,7 @@ pub mod test {
             .mempool
             .handle_consensus_event(ConsensusEvent::CommitConsensusProposal(
                 CommittedConsensusProposal {
-                    validators: vec![ctx.validator_pubkey()],
+                    staking: ctx.mempool.staking.clone(),
                     consensus_proposal: model::ConsensusProposal {
                         slot: 3,
                         view: 0,
@@ -1829,7 +1908,7 @@ pub mod test {
             .mempool
             .handle_consensus_event(ConsensusEvent::CommitConsensusProposal(
                 CommittedConsensusProposal {
-                    validators: vec![ctx.validator_pubkey()],
+                    staking: ctx.mempool.staking.clone(),
                     consensus_proposal: model::ConsensusProposal {
                         slot: 6,
                         view: 0,
@@ -1871,6 +1950,7 @@ pub mod test {
 
         // Sending transaction to mempool as RestApiMessage
         ctx.submit_contract_tx("test1");
+        ctx.add_trusted_validator(&ctx.validator_pubkey());
 
         ctx.mempool.handle_data_proposal_management()?;
 
@@ -1883,7 +1963,7 @@ pub mod test {
             .mempool
             .handle_consensus_event(ConsensusEvent::CommitConsensusProposal(
                 CommittedConsensusProposal {
-                    validators: vec![ctx.validator_pubkey()],
+                    staking: ctx.mempool.staking.clone(),
                     consensus_proposal: model::ConsensusProposal {
                         slot: 1,
                         view: 0,
@@ -1931,7 +2011,7 @@ pub mod test {
             .mempool
             .handle_consensus_event(ConsensusEvent::CommitConsensusProposal(
                 CommittedConsensusProposal {
-                    validators: vec![ctx.validator_pubkey()],
+                    staking: ctx.mempool.staking.clone(),
                     consensus_proposal: model::ConsensusProposal {
                         slot: 2,
                         view: 0,
@@ -1963,7 +2043,7 @@ pub mod test {
             .mempool
             .handle_consensus_event(ConsensusEvent::CommitConsensusProposal(
                 CommittedConsensusProposal {
-                    validators: vec![ctx.validator_pubkey()],
+                    staking: ctx.mempool.staking.clone(),
                     consensus_proposal: model::ConsensusProposal {
                         slot: 3,
                         view: 0,

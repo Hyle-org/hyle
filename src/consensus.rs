@@ -55,7 +55,7 @@ pub enum ConsensusCommand {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct CommittedConsensusProposal {
-    pub validators: Vec<ValidatorPublicKey>,
+    pub staking: Staking,
     pub consensus_proposal: ConsensusProposal,
     pub certificate: QuorumCertificate,
 }
@@ -635,7 +635,7 @@ impl Consensus {
             .bus
             .send(ConsensusEvent::CommitConsensusProposal(
                 CommittedConsensusProposal {
-                    validators: self.bft_round_state.staking.bonded().clone(),
+                    staking: self.bft_round_state.staking.clone(),
                     consensus_proposal: self.bft_round_state.consensus_proposal.clone(),
                     certificate: commit_quorum_certificate.clone(),
                 },
@@ -846,6 +846,17 @@ impl Consensus {
                                 }
                             }
                         };
+                        // Send a CommitConsensusProposal for the genesis block
+                        _ = self
+                            .bus
+                            .send(ConsensusEvent::CommitConsensusProposal(
+                                CommittedConsensusProposal {
+                                    staking: self.bft_round_state.staking.clone(),
+                                    consensus_proposal: signed_block.consensus_proposal,
+                                    certificate: signed_block.certificate,
+                                },
+                            ))
+                            .log_error("Failed to send ConsensusEvent::CommittedConsensusProposal on the bus");
                         break;
                     },
                     GenesisEvent::NoGenesis => {
