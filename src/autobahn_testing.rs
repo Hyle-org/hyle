@@ -220,7 +220,7 @@ use crate::mempool::test::{make_register_contract_tx, MempoolTestCtx};
 use crate::mempool::{InternalMempoolEvent, MempoolEvent, MempoolNetMessage, QueryNewCut};
 use crate::model::*;
 use crate::node_state::module::NodeStateEvent;
-use crate::p2p::network::OutboundMessage;
+use crate::p2p::network::{NetMessage, OutboundMessage};
 use crate::p2p::P2PCommand;
 use crate::utils::crypto::{self, BlstCrypto};
 use tracing::info;
@@ -492,6 +492,9 @@ async fn mempool_dissemination_flow_resync() {
         message_matches: MempoolNetMessage::DataVote(_)
     };
 
+    node1.mempool_ctx.assert_broadcast("poda update");
+    node1.mempool_ctx.assert_broadcast("poda update");
+
     // Second data proposal
 
     let register_tx = make_register_contract_tx(ContractName::new("test3"));
@@ -616,6 +619,10 @@ async fn mempool_fail_to_vote_on_fork() {
         .make_data_proposal_with_pending_txs()
         .expect("Should create data proposal");
 
+    node1.mempool_ctx.assert_broadcast("poda update");
+    node1.mempool_ctx.assert_broadcast("poda update");
+    node1.mempool_ctx.assert_broadcast("poda update");
+
     broadcast! {
         description: "Disseminate Tx",
         from: node1.mempool_ctx, to: [node2.mempool_ctx, node3.mempool_ctx, node4.mempool_ctx],
@@ -653,6 +660,10 @@ async fn mempool_fail_to_vote_on_fork() {
         .mempool_ctx
         .make_data_proposal_with_pending_txs()
         .expect("Should create data proposal");
+
+    node1.mempool_ctx.assert_broadcast("poda update");
+    node1.mempool_ctx.assert_broadcast("poda update");
+    node1.mempool_ctx.assert_broadcast("poda update");
 
     let fork;
     broadcast! {
