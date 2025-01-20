@@ -591,8 +591,8 @@ impl Mempool {
             MempoolNetMessage::DataVote(ref data_proposal_hash) => {
                 self.on_data_vote(&msg, data_proposal_hash)?;
             }
-            MempoolNetMessage::PoDAUpdate(data_proposal_hash, mut signatures) => {
-                self.on_poda_update(validator, &data_proposal_hash, &mut signatures)?;
+            MempoolNetMessage::PoDAUpdate(data_proposal_hash, signatures) => {
+                self.on_poda_update(validator, &data_proposal_hash, signatures);
             }
             MempoolNetMessage::SyncRequest(from_data_proposal_hash, to_data_proposal_hash) => {
                 self.on_sync_request(
@@ -696,7 +696,23 @@ impl Mempool {
     ) -> Result<()> {
         let validator = &msg.signature.validator;
         debug!("{} Vote from {}", self.storage.id, validator);
-        self.storage.on_data_vote(msg, data_proposal_hash)?;
+        let (data_proposal_hash, signatures) =
+            self.storage.on_data_vote(msg, data_proposal_hash)?;
+
+        // Compute voting power of all signers to check if the DataProposal received enough votes
+        let validators: Vec<ValidatorPublicKey> = signatures
+            .iter()
+            .map(|s| s.signature.validator.clone())
+            .collect();
+        let voting_power = self.staking.compute_voting_power(validators.as_slice());
+        let f = self.staking.compute_f();
+        // FIXME: This might flood the network with messages for each validator signing after the f+1 signature is received
+        if voting_power > f {
+            self.broadcast_net_message(MempoolNetMessage::PoDAUpdate(
+                data_proposal_hash,
+                signatures,
+            ))?;
+        }
         Ok(())
     }
 
@@ -704,8 +720,8 @@ impl Mempool {
         &mut self,
         validator: &ValidatorPublicKey,
         data_proposal_hash: &DataProposalHash,
-        signatures: &mut Vec<SignedByValidator<MempoolNetMessage>>,
-    ) -> Result<()> {
+        signatures: Vec<SignedByValidator<MempoolNetMessage>>,
+    ) {
         debug!(
             "Received {} signatures for DataProposal {} of validator {}",
             signatures.len(),
@@ -713,8 +729,7 @@ impl Mempool {
             validator
         );
         self.storage
-            .on_poda_update(validator, data_proposal_hash, signatures)?;
-        Ok(())
+            .on_poda_update(validator, data_proposal_hash, signatures);
     }
 
     fn on_data_proposal(
@@ -1394,6 +1409,42 @@ pub mod test {
         Ok(())
     }
 
+    #[test_log::test(tokio::test)]
+    async fn test_send_poda_update() -> Result<()> {
+        let mut ctx = MempoolTestCtx::new("mempool").await;
+
+        // Adding 3 other validators
+        let crypto2 = BlstCrypto::new("validator2".into()).unwrap();
+        let crypto3 = BlstCrypto::new("validator3".into()).unwrap();
+        let crypto4 = BlstCrypto::new("validator4".into()).unwrap();
+        ctx.setup_node(&[crypto2.clone(), crypto3.clone(), crypto4]);
+
+        let register_tx = make_register_contract_tx(ContractName::new("test1"));
+        ctx.submit_tx(&register_tx);
+        ctx.mempool.handle_data_proposal_management()?;
+
+        let data_proposal = match ctx.assert_broadcast("DataProposal").msg {
+            MempoolNetMessage::DataProposal(dp) => dp,
+            _ => panic!("Expected DataProposal message"),
+        };
+
+        // Simulate receiving votes from other validators
+        let signed_msg2 = crypto2.sign(MempoolNetMessage::DataVote(data_proposal.hash()))?;
+        let signed_msg3 = crypto3.sign(MempoolNetMessage::DataVote(data_proposal.hash()))?;
+        ctx.mempool.handle_net_message(signed_msg2)?;
+        ctx.mempool.handle_net_message(signed_msg3)?;
+
+        // Assert that PoDAUpdate message is broadcasted
+        match ctx.assert_broadcast("PoDAUpdate").msg {
+            MempoolNetMessage::PoDAUpdate(hash, signatures) => {
+                assert_eq!(hash, data_proposal.hash());
+                assert_eq!(signatures.len(), 3);
+            }
+            _ => panic!("Expected PoDAUpdate message"),
+        };
+
+        Ok(())
+    }
     #[test_log::test(tokio::test)]
     async fn test_pair_mempool_receiving_new_tx() -> Result<()> {
         let mut ctx = MempoolTestCtx::new("mempool").await;

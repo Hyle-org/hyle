@@ -1,5 +1,6 @@
 use anyhow::{bail, Result};
 use bincode::{Decode, Encode};
+use hyle_model::{Signed, ValidatorSignature};
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use staking::state::Staking;
@@ -147,7 +148,10 @@ impl Storage {
         &mut self,
         msg: &SignedByValidator<MempoolNetMessage>,
         data_proposal_hash: &DataProposalHash,
-    ) -> Result<()> {
+    ) -> Result<(
+        DataProposalHash,
+        Vec<Signed<MempoolNetMessage, ValidatorSignature>>,
+    )> {
         let lane = match self.lanes.get_mut(&self.id) {
             Some(lane) => lane,
             None => bail!(
@@ -160,7 +164,7 @@ impl Storage {
                 // Adding the vote to the DataProposal
                 data_proposal.signatures.push(msg.clone());
                 data_proposal.signatures.dedup();
-                Ok(())
+                Ok((data_proposal_hash.clone(), data_proposal.signatures.clone()))
             }
             None => {
                 bail!("Received vote from validator {}  for unknown DataProposal ({data_proposal_hash})", msg.signature.validator);
@@ -172,21 +176,19 @@ impl Storage {
         &mut self,
         validator: &ValidatorPublicKey,
         data_proposal_hash: &DataProposalHash,
-        signatures: &mut Vec<SignedByValidator<MempoolNetMessage>>,
-    ) -> Result<()> {
+        signatures: Vec<SignedByValidator<MempoolNetMessage>>,
+    ) {
         if let Some(data_proposal) = self
             .lanes
-            .entry(self.id.clone())
+            .entry(validator.clone())
             .or_default()
             .get_proposal_mut(data_proposal_hash)
         {
             // Adding the votes to the DataProposal
-            data_proposal.signatures.extend(std::mem::take(signatures));
+            data_proposal.signatures.extend(signatures);
             data_proposal.signatures.dedup();
-
-            Ok(())
         } else {
-            bail!("Received vote from validator {validator} for unknown DataProposal ({data_proposal_hash})");
+            warn!("Received PoDA update from validator {validator} for unknown DataProposal ({data_proposal_hash}). Not storing it");
         }
     }
 
@@ -618,7 +620,7 @@ impl Lane {
             Err(_) => vec![],
         };
         self.data_proposals.insert(
-            data_proposal_hash.clone(),
+            data_proposal_hash,
             LaneEntry {
                 data_proposal,
                 signatures,
@@ -1120,7 +1122,7 @@ mod tests {
 
         lane(&mut store1, pubkey1).add_new_proposal(&crypto1, data_proposal);
 
-        let mut signatures = vec![
+        let signatures = vec![
             crypto1
                 .sign(MempoolNetMessage::DataVote(data_proposal_hash.clone()))
                 .expect("Failed to sign message"),
@@ -1129,9 +1131,7 @@ mod tests {
                 .expect("Failed to sign message"),
         ];
 
-        store1
-            .on_poda_update(pubkey1, &data_proposal_hash, &mut signatures)
-            .expect("Failed to update PoA");
+        store1.on_poda_update(pubkey1, &data_proposal_hash, signatures);
 
         let lane = store1.lanes.get(pubkey1).expect("Lane not found");
         let lane_entry = lane
