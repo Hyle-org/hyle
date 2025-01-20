@@ -64,7 +64,6 @@ async fn main() -> Result<()> {
             .context("reading config file")?,
     );
 
-    let bus = SharedMessageBus::new(BusMetrics::global(config.id.clone()));
     let crypto = Arc::new(BlstCrypto::new(config.id.clone()).context("Could not create crypto")?);
     let pubkey = Some(crypto.validator_pubkey().clone());
 
@@ -93,6 +92,8 @@ async fn main() -> Result<()> {
                 .context("starting prometheus exporter")?,
         )
         .build();
+
+    let bus = SharedMessageBus::new(BusMetrics::global(config.id.clone()));
 
     std::fs::create_dir_all(&config.data_directory).context("creating data directory")?;
 
