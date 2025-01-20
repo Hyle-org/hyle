@@ -94,8 +94,8 @@ macro_rules! send {
 
     (
         description: $description:literal,
-        from: [$($node:ident: $pattern:pat $(=> $asserts:block)?)+],
-        to: $to:ident
+        from: [$($node:expr; $pattern:pat $(=> $asserts:block)?),+],
+        to: $to:expr
     ) => {
         // Distribute the message to the target node from all specified nodes
         ($({
@@ -448,6 +448,242 @@ async fn autobahn_basic_flow() {
         from: node1.consensus_ctx, to: [node2.consensus_ctx, node3.consensus_ctx, node4.consensus_ctx],
         message_matches: ConsensusNetMessage::Commit(_, _)
     };
+}
+
+#[test_log::test(tokio::test)]
+async fn mempool_dissemination_flow_resync() {
+    let (mut node1, mut node2, mut node3, mut node4) = build_nodes!(4).await;
+
+    // Let's create data proposals that will be synchronized with 2 nodes, but not the 3rd.
+
+    // First data proposal
+
+    let register_tx = make_register_contract_tx(ContractName::new("test1"));
+    let register_tx_2 = make_register_contract_tx(ContractName::new("test2"));
+
+    node1.mempool_ctx.submit_tx(&register_tx);
+    node1.mempool_ctx.submit_tx(&register_tx_2);
+
+    node1
+        .mempool_ctx
+        .make_data_proposal_with_pending_txs()
+        .expect("Should create data proposal");
+
+    let data_proposal_1;
+    broadcast! {
+        description: "Disseminate Tx",
+        from: node1.mempool_ctx, to: [node2.mempool_ctx, node3.mempool_ctx],
+        message_matches: MempoolNetMessage::DataProposal(data) => {
+            data_proposal_1 = data.clone();
+            assert_eq!(data.txs.len(), 2);
+        }
+    };
+
+    join_all(
+        [&mut node2.mempool_ctx, &mut node3.mempool_ctx]
+            .iter_mut()
+            .map(|ctx| ctx.handle_processed_data_proposals()),
+    )
+    .await;
+
+    send! {
+        description: "Disseminated Tx Vote",
+        from: [node2.mempool_ctx, node3.mempool_ctx], to: node1.mempool_ctx,
+        message_matches: MempoolNetMessage::DataVote(_)
+    };
+
+    // Second data proposal
+
+    let register_tx = make_register_contract_tx(ContractName::new("test3"));
+    let register_tx_2 = make_register_contract_tx(ContractName::new("test4"));
+
+    node1.mempool_ctx.submit_tx(&register_tx);
+    node1.mempool_ctx.submit_tx(&register_tx_2);
+
+    node1
+        .mempool_ctx
+        .make_data_proposal_with_pending_txs()
+        .expect("Should create data proposal");
+
+    let data_proposal_2;
+    broadcast! {
+        description: "Disseminate Tx",
+        from: node1.mempool_ctx, to: [node2.mempool_ctx, node3.mempool_ctx, node4.mempool_ctx],
+        message_matches: MempoolNetMessage::DataProposal(data) => {
+            data_proposal_2 = data.clone();
+            assert_eq!(data.txs.len(), 2);
+        }
+    };
+
+    join_all(
+        [&mut node2.mempool_ctx, &mut node3.mempool_ctx]
+            .iter_mut()
+            .map(|ctx| ctx.handle_processed_data_proposals()),
+    )
+    .await;
+
+    // node 4 should have pushed the data proposal in its waiting list, and sent a sync request to node1
+
+    send! {
+        description: "Sync Request",
+        from: [
+            node4.mempool_ctx; MempoolNetMessage::SyncRequest(from_hash, to_hash) => {
+                assert!(from_hash.is_none());
+                assert_eq!(to_hash, &data_proposal_2.hash());
+            }
+        ], to: node1.mempool_ctx
+    };
+
+    send! {
+        description: "Sync Reply",
+        from: [
+            node1.mempool_ctx; MempoolNetMessage::SyncReply(lane_entries) => {
+                // TODO: Remove last Car returned by SyncReply (matching the "to" hash)
+                assert_eq!(lane_entries.len(), 2);
+                assert_eq!(lane_entries.first().unwrap().data_proposal, data_proposal_1);
+            }
+        ], to: node4.mempool_ctx
+    };
+
+    send! {
+        description: "Disseminated Tx Vote",
+        from: [
+            node2.mempool_ctx; MempoolNetMessage::DataVote(hash) => {
+                assert_eq!(hash, &data_proposal_2.hash());
+            },
+            node3.mempool_ctx; MempoolNetMessage::DataVote(hash) => {
+                assert_eq!(hash, &data_proposal_2.hash());
+            },
+            node4.mempool_ctx; MempoolNetMessage::DataVote(hash) => {
+                assert_eq!(hash, &data_proposal_2.hash());
+            }
+        ], to: node1.mempool_ctx
+    };
+}
+
+#[test_log::test(tokio::test)]
+async fn mempool_fail_to_vote_on_fork() {
+    let (mut node1, mut node2, mut node3, mut node4) = build_nodes!(4).await;
+
+    // Let's create data proposals that will be synchronized with 2 nodes, but not the 3rd.
+
+    // First data proposal
+
+    let register_tx = make_register_contract_tx(ContractName::new("test1"));
+    let register_tx_2 = make_register_contract_tx(ContractName::new("test2"));
+
+    node1.mempool_ctx.submit_tx(&register_tx);
+    node1.mempool_ctx.submit_tx(&register_tx_2);
+
+    node1
+        .mempool_ctx
+        .make_data_proposal_with_pending_txs()
+        .expect("Should create data proposal");
+
+    broadcast! {
+        description: "Disseminate Tx",
+        from: node1.mempool_ctx, to: [node2.mempool_ctx, node3.mempool_ctx, node4.mempool_ctx],
+        message_matches: MempoolNetMessage::DataProposal(_)
+    };
+
+    join_all(
+        [
+            &mut node2.mempool_ctx,
+            &mut node3.mempool_ctx,
+            &mut node4.mempool_ctx,
+        ]
+        .iter_mut()
+        .map(|ctx| ctx.handle_processed_data_proposals()),
+    )
+    .await;
+
+    send! {
+        description: "Disseminated Tx Vote",
+        from: [node2.mempool_ctx, node3.mempool_ctx, node4.mempool_ctx], to: node1.mempool_ctx,
+        message_matches: MempoolNetMessage::DataVote(_)
+    };
+
+    // Second data proposal
+
+    let register_tx = make_register_contract_tx(ContractName::new("test3"));
+    let register_tx_2 = make_register_contract_tx(ContractName::new("test4"));
+
+    node1.mempool_ctx.submit_tx(&register_tx);
+    node1.mempool_ctx.submit_tx(&register_tx_2);
+
+    node1
+        .mempool_ctx
+        .make_data_proposal_with_pending_txs()
+        .expect("Should create data proposal");
+
+    broadcast! {
+        description: "Disseminate Tx",
+        from: node1.mempool_ctx, to: [node2.mempool_ctx, node3.mempool_ctx, node4.mempool_ctx],
+        message_matches: MempoolNetMessage::DataProposal(_)
+    };
+
+    join_all(
+        [
+            &mut node2.mempool_ctx,
+            &mut node3.mempool_ctx,
+            &mut node4.mempool_ctx,
+        ]
+        .iter_mut()
+        .map(|ctx| ctx.handle_processed_data_proposals()),
+    )
+    .await;
+
+    send! {
+        description: "Disseminated Tx Vote",
+        from: [node2.mempool_ctx, node3.mempool_ctx, node4.mempool_ctx], to: node1.mempool_ctx,
+        message_matches: MempoolNetMessage::DataVote(_)
+    };
+
+    // Remove data proposal id 1 from node 1, to recreate one on top of data proposal id 0, and create a fork
+
+    node1.mempool_ctx.pop_data_proposal();
+
+    let register_tx = make_register_contract_tx(ContractName::new("test5"));
+    let register_tx_2 = make_register_contract_tx(ContractName::new("test6"));
+
+    node1.mempool_ctx.submit_tx(&register_tx);
+    node1.mempool_ctx.submit_tx(&register_tx_2);
+
+    node1
+        .mempool_ctx
+        .make_data_proposal_with_pending_txs()
+        .expect("Should create data proposal");
+
+    let fork;
+    broadcast! {
+        description: "Disseminate Tx",
+        from: node1.mempool_ctx, to: [node2.mempool_ctx, node3.mempool_ctx, node4.mempool_ctx],
+        message_matches: MempoolNetMessage::DataProposal(dp) => {
+            fork = dp.clone();
+        }
+    };
+
+    assert_ne!(
+        fork,
+        node2
+            .mempool_ctx
+            .pop_validator_data_proposal(&node1.mempool_ctx.validator_pubkey())
+            .0
+    );
+    assert_ne!(
+        fork,
+        node3
+            .mempool_ctx
+            .pop_validator_data_proposal(&node1.mempool_ctx.validator_pubkey())
+            .0
+    );
+    assert_ne!(
+        fork,
+        node4
+            .mempool_ctx
+            .pop_validator_data_proposal(&node1.mempool_ctx.validator_pubkey())
+            .0
+    );
 }
 
 #[test_log::test(tokio::test)]

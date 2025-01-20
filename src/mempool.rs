@@ -783,6 +783,10 @@ impl Mempool {
                 });
             }
             DataProposalVerdict::Wait(last_known_data_proposal_hash) => {
+                // Push the data proposal in the waiting list
+                self.storage
+                    .add_waiting_data_proposal(validator, data_proposal);
+
                 //We dont have the parent, so we craft a sync demand
                 debug!(
                     "Emitting sync request with local state {} last_known_data_proposal_hash {:?}",
@@ -1342,6 +1346,25 @@ pub mod test {
                 .storage
                 .lanes
                 .get_mut(&self.validator_pubkey())
+                .unwrap()
+                .data_proposals
+                .pop()
+                .unwrap()
+                .1
+                .data_proposal
+                .clone();
+
+            (dp_orig.clone(), dp_orig.hash())
+        }
+        pub fn pop_validator_data_proposal(
+            &mut self,
+            validator: &ValidatorPublicKey,
+        ) -> (DataProposal, DataProposalHash) {
+            let dp_orig = self
+                .mempool
+                .storage
+                .lanes
+                .get_mut(validator)
                 .unwrap()
                 .data_proposals
                 .pop()
