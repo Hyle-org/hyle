@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use hyle_model::{ProofData, Signed, ValidatorSignature};
+use hyle_model::{Identity, ProofData, Signed, ValidatorSignature};
 use sha3::Digest;
 
 use hyle_contract_sdk::{Blob, BlobIndex, HyleOutput, ProgramId, StateDigest, TxHash, Verifier};
@@ -113,11 +113,43 @@ pub fn verify_native(
     index: BlobIndex,
     blobs: &[Blob],
     verifier: NativeVerifiers,
-) -> Result<HyleOutput> {
-    let blob = blobs.get(index.0).context("Invalid blob index")?;
+) -> HyleOutput {
+    #[allow(clippy::expect_used, reason = "Logic error in the code")]
+    let blob = blobs.get(index.0).expect("Invalid blob index");
     let blobs = hyle_contract_sdk::flatten_blobs(blobs);
 
-    let (identity, success) = match verifier {
+    let (identity, success) = match verify_native_impl(blob, verifier) {
+        Ok((identity, success)) => (identity, success),
+        Err(e) => {
+            tracing::trace!("Native blob verification failed: {:?}", e);
+            (Identity::default(), false)
+        }
+    };
+
+    if success {
+        tracing::info!("✅ Native blob verified on {tx_hash}:{index}");
+    } else {
+        tracing::info!("❌ Native blob verification failed on {tx_hash}:{index}.");
+    }
+
+    HyleOutput {
+        version: 1,
+        initial_state: StateDigest::default(),
+        next_state: StateDigest::default(),
+        identity,
+        tx_hash,
+        index,
+        blobs,
+        success,
+        program_outputs: vec![],
+    }
+}
+
+pub fn verify_native_impl(
+    blob: &Blob,
+    verifier: NativeVerifiers,
+) -> anyhow::Result<(Identity, bool)> {
+    match verifier {
         NativeVerifiers::Blst => {
             let (blob, _) = bincode::decode_from_slice::<BlstSignatureBlob, _>(
                 &blob.data.0,
@@ -133,9 +165,7 @@ pub fn verify_native(
                     validator: crate::model::ValidatorPublicKey(blob.public_key),
                 },
             };
-            let success = BlstCrypto::verify(&msg)?;
-
-            (blob.identity, success)
+            Ok((blob.identity, BlstCrypto::verify(&msg)?))
         }
         NativeVerifiers::Sha3_256 => {
             let (blob, _) = bincode::decode_from_slice::<ShaBlob, _>(
@@ -147,28 +177,7 @@ pub fn verify_native(
             hasher.update(blob.data);
             let res = hasher.finalize().to_vec();
 
-            let success = res == blob.sha;
-
-            (blob.identity, success)
+            Ok((blob.identity, res == blob.sha))
         }
-    };
-
-    if success {
-        tracing::info!("✅ Native blob verified on {tx_hash}:{index}");
-    } else {
-        tracing::info!("❌ Native blob verification failed on {tx_hash}:{index}.");
     }
-
-    let output = HyleOutput {
-        version: 1,
-        initial_state: StateDigest::default(),
-        next_state: StateDigest::default(),
-        identity,
-        tx_hash,
-        index,
-        blobs,
-        success,
-        program_outputs: vec![],
-    };
-    Ok(output)
 }
