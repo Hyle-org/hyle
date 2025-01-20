@@ -17,21 +17,19 @@ pub trait ClientSdkProver {
 pub mod risc0 {
     use super::*;
 
-    pub struct Risc0Prover {
-        binary: Vec<u8>,
+    pub struct Risc0Prover<'a> {
+        binary: &'a [u8],
     }
-    impl Risc0Prover {
-        pub fn new<T: AsRef<[u8]>>(binary: T) -> Self {
-            Self {
-                binary: binary.as_ref().to_vec(),
-            }
+    impl<'a> Risc0Prover<'a> {
+        pub fn new(binary: &'a [u8]) -> Self {
+            Self { binary }
         }
-        async fn prove(binary: &[u8], contract_input: ContractInput) -> Result<ProofData> {
+        pub async fn prove(&self, contract_input: ContractInput) -> Result<ProofData> {
             let contract_input = bonsai_runner::as_input_data(&contract_input)?;
 
             let explicit = std::env::var("RISC0_PROVER").unwrap_or_default();
             let receipt = match explicit.to_lowercase().as_str() {
-                "bonsai" => bonsai_runner::run_bonsai(binary, contract_input.clone()).await?,
+                "bonsai" => bonsai_runner::run_bonsai(self.binary, contract_input.clone()).await?,
                 _ => {
                     let env = risc0_zkvm::ExecutorEnv::builder()
                         .write_slice(&contract_input)
@@ -39,7 +37,7 @@ pub mod risc0 {
                         .unwrap();
 
                     let prover = risc0_zkvm::default_prover();
-                    let prove_info = prover.prove(env, binary)?;
+                    let prove_info = prover.prove(env, self.binary)?;
                     prove_info.receipt
                 }
             };
@@ -56,7 +54,7 @@ pub mod risc0 {
         }
     }
 
-    impl ClientSdkExecutor for Risc0Prover {
+    impl ClientSdkExecutor for Risc0Prover<'_> {
         fn execute(&self, contract_input: &ContractInput) -> Result<HyleOutput> {
             let contract_input = bonsai_runner::as_input_data(contract_input)?;
             let env = risc0_zkvm::ExecutorEnv::builder()
@@ -65,7 +63,7 @@ pub mod risc0 {
                 .unwrap();
 
             let executor = risc0_zkvm::default_executor();
-            let execute_info = executor.execute(env, &self.binary)?;
+            let execute_info = executor.execute(env, self.binary)?;
             let output = execute_info
                 .journal
                 .decode::<HyleOutput>()
@@ -77,12 +75,12 @@ pub mod risc0 {
         }
     }
 
-    impl ClientSdkProver for Risc0Prover {
+    impl ClientSdkProver for Risc0Prover<'_> {
         fn prove(
             &self,
             contract_input: ContractInput,
         ) -> Pin<Box<dyn std::future::Future<Output = Result<ProofData>> + Send + '_>> {
-            Box::pin(Self::prove(&self.binary, contract_input))
+            Box::pin(self.prove(contract_input))
         }
     }
 }
