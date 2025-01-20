@@ -322,8 +322,7 @@ impl ContractRunner {
 /// Must have ContractName, StateDigest, Digestable and anyhow in scope.
 #[macro_export]
 macro_rules! contract_states {
-    ($(#[$meta:meta])* $vis:vis struct $name:ident { $($mvis:vis $contract_name:ident: $contract_type:ty,)* }
-    ) => {
+    ($(#[$meta:meta])* $vis:vis struct $name:ident { $($mvis:vis $contract_name:ident: $contract_type:ty,)* }) => {
         $(#[$meta])*
         $vis struct $name {
             $($mvis $contract_name: $contract_type,

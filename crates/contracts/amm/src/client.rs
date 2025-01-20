@@ -1,10 +1,10 @@
 use client_sdk::{
-    helpers::{ClientSdkExecutor, MockProver},
+    helpers::{risc0::Risc0Prover, ClientSdkExecutor},
     transaction_builder::{ProvableBlobTx, StateUpdater, TxExecutorBuilder},
 };
 use sdk::{erc20::ERC20Action, BlobIndex, ContractName, Digestable};
 
-use crate::{execute, AmmAction, AmmState};
+use crate::{execute, metadata::AMM_ELF, AmmAction, AmmState};
 
 struct AmmPseudoExecutor {}
 impl ClientSdkExecutor for AmmPseudoExecutor {
@@ -23,7 +23,7 @@ impl AmmState {
             contract_name,
             self.as_digest(),
             AmmPseudoExecutor {},
-            MockProver {},
+            Risc0Prover::new(AMM_ELF),
         );
     }
 }

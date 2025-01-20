@@ -1,5 +1,5 @@
 use client_sdk::{
-    helpers::{ClientSdkExecutor, MockProver},
+    helpers::{risc0::Risc0Prover, ClientSdkExecutor},
     transaction_builder::{ProvableBlobTx, StateUpdater, TxExecutorBuilder},
 };
 use sdk::{
@@ -7,7 +7,7 @@ use sdk::{
     ValidatorPublicKey,
 };
 
-use crate::{execute, state::Staking};
+use crate::{execute, metadata::STAKING_ELF, state::Staking};
 
 struct StakingPseudoExecutor {}
 
@@ -27,7 +27,7 @@ impl Staking {
             contract_name,
             self.on_chain_state().as_digest(),
             StakingPseudoExecutor {},
-            MockProver {},
+            Risc0Prover::new(STAKING_ELF),
         );
     }
 }

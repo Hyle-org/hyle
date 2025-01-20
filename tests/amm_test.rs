@@ -110,6 +110,7 @@ mod e2e_amm {
             hyllar2: HyllarContract::state_digest().try_into()?,
             amm: AmmState::default(),
         })
+        // Replace prover binaries for non-reproducible mode.
         .with_prover("hydentity".into(), Risc0Prover::new(HYDENTITY_ELF))
         .with_prover("hyllar".into(), Risc0Prover::new(HYLLAR_ELF))
         .with_prover("hyllar2".into(), Risc0Prover::new(HYLLAR_ELF))

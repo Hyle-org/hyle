@@ -1,10 +1,10 @@
 use client_sdk::{
-    helpers::{ClientSdkExecutor, MockProver},
+    helpers::{risc0::Risc0Prover, ClientSdkExecutor},
     transaction_builder::{ProvableBlobTx, StateUpdater, TxExecutorBuilder},
 };
 use sdk::{erc20::ERC20Action, ContractName, Digestable};
 
-use crate::{execute, HyllarToken};
+use crate::{execute, metadata::HYLLAR_ELF, HyllarToken};
 
 struct HyllarPseudoExecutor {}
 impl ClientSdkExecutor for HyllarPseudoExecutor {
@@ -23,7 +23,7 @@ impl HyllarToken {
             contract_name,
             self.as_digest(),
             HyllarPseudoExecutor {},
-            MockProver {},
+            Risc0Prover::new(HYLLAR_ELF),
         );
     }
 }

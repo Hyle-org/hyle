@@ -1,6 +1,5 @@
 use client_sdk::{
     contract_states,
-    helpers::risc0::Risc0Prover,
     transaction_builder::{ProvableBlobTx, TxExecutorBuilder},
 };
 use hydentity::{client::register_identity, Hydentity};
@@ -20,10 +19,6 @@ async fn test_recursion() {
     let mut executor = TxExecutorBuilder::new(States {
         hydentity: Hydentity::new(),
     })
-    .with_prover(
-        "hydentity".into(),
-        Risc0Prover::new(hyle_contracts::HYDENTITY_ELF),
-    )
     .build();
 
     let mut tx = ProvableBlobTx::new("bob.hydentity".into());

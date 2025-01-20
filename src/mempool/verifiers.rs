@@ -4,7 +4,6 @@ use sha3::Digest;
 
 use hyle_contract_sdk::{Blob, BlobIndex, HyleOutput, ProgramId, StateDigest, TxHash, Verifier};
 
-#[cfg(feature = "hyle-verifiers")]
 use hyle_verifiers::{noir_proof_verifier, risc0_proof_verifier, sp1_proof_verifier};
 
 use crate::{
@@ -33,7 +32,6 @@ pub fn verify_proof(
             tracing::info!("Woke up from sleep");
             Ok(serde_json::from_slice(&proof.0)?)
         }
-        #[cfg(feature = "hyle-verifiers")]
         "risc0" => {
             let journal = risc0_proof_verifier(&proof.0, &program_id.0)?;
             // First try to decode it as a single HyleOutput
@@ -53,9 +51,7 @@ pub fn verify_proof(
                 }
             })
         }
-        #[cfg(feature = "hyle-verifiers")]
         "noir" => noir_proof_verifier(&proof.0, &program_id.0),
-        #[cfg(feature = "hyle-verifiers")]
         "sp1" => sp1_proof_verifier(&proof.0, &program_id.0),
         _ => Err(anyhow::anyhow!("{} verifier not implemented yet", verifier)),
     }?;
@@ -71,16 +67,6 @@ pub fn verify_proof(
     Ok(hyle_outputs)
 }
 
-#[cfg(not(feature = "hyle-verifiers"))]
-pub fn verify_recursive_proof(
-    _proof: &ProofData,
-    _verifier: &Verifier,
-    _program_id: &ProgramId,
-) -> Result<(Vec<ProgramId>, Vec<HyleOutput>)> {
-    Err(anyhow::anyhow!("Recursive verifiers not enabled"))
-}
-
-#[cfg(feature = "hyle-verifiers")]
 pub fn verify_recursive_proof(
     proof: &ProofData,
     verifier: &Verifier,
