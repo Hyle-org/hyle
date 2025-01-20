@@ -2825,24 +2825,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "hyrun"
-version = "0.6.0"
-dependencies = [
- "amm",
- "anyhow",
- "borsh",
- "clap",
- "hex",
- "hydentity",
- "hyle-contract-sdk",
- "hyllar",
- "reqwest",
- "risc0-zkvm",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "iana-time-zone"
 version = "0.1.61"
 source = "registry+https://github.com/rust-lang/crates.io-index"

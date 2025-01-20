@@ -8,7 +8,6 @@ members = [
     "crates/contracts/risc0-recursion",
 
     "crates/bonsai-runner",
-    "crates/hyrun",
     "crates/client-sdk",
     "crates/hyle-loadtest",
     "crates/hyle-model",
@@ -29,13 +28,10 @@ edition = { workspace = true }
 # license = { workspace = true }
 homepage = { workspace = true }
 repository = { workspace = true }
-default-run = "node"
+default-run = "hyle"
 
 [[bin]]
-name = "node"
-
-[[bin]]
-name = "hyled"
+name = "hyle"
 
 [[bin]]
 name = "indexer"
