@@ -72,7 +72,7 @@ impl E2ECtx {
 
         for node_conf in confs.iter_mut() {
             node_conf.consensus.genesis_stakers = genesis_stakers.clone();
-            let node = test_helpers::TestProcess::new("node", node_conf.clone())
+            let node = test_helpers::TestProcess::new("hyle", node_conf.clone())
                 //.log("hyle=info,tower_http=error")
                 .start();
 
@@ -97,7 +97,7 @@ impl E2ECtx {
             vec![("single-node".to_string(), 100)].into_iter().collect();
 
         let node_conf = conf_maker.build("single-node");
-        let node = test_helpers::TestProcess::new("node", node_conf)
+        let node = test_helpers::TestProcess::new("hyle", node_conf)
             //.log("hyle=info,tower_http=error")
             .start();
 
@@ -151,7 +151,7 @@ impl E2ECtx {
             .iter()
             .map(|node| node.conf.host.clone())
             .collect();
-        let node = test_helpers::TestProcess::new("node", node_conf)
+        let node = test_helpers::TestProcess::new("hyle", node_conf)
             //.log("hyle=info,tower_http=error")
             .start();
         // Request something on node1 to be sure it's alive and working

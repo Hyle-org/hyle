@@ -16,7 +16,7 @@ The older, but still maintained, Cosmos SDK-based client can be found at [hyle-c
 
 ## 📎 Useful Links
 
-- 🌐 [Hylé Website](https://www.hyle.eu/)  
+- 🌐 [Hylé Website](https://www.hyle.eu/)
 - 📚 [Hylé Documentation](https://docs.hyle.eu)
 
 ---
@@ -62,23 +62,8 @@ If a file named `config.ron` is present, it will be automatically loaded at node
 Examples of configuration via environment variables:
 
 ```bash
-HYLE_RUN_INDEXER=false 
+HYLE_RUN_INDEXER=false
 HYLE_CONSENSUS__SLOT_DURATION=100
-```
-
-### Interact with the Node
-
-You can interact with the node using the CLI tool `hyled`:
-
-```bash
-cargo run --bin hyled -- --help
-```
-
-To install it for easier access:
-
-```bash
-cargo install --path . --bin hyled
-hyled --help
 ```
 
 ---
@@ -90,7 +75,7 @@ hyled --help
 ```bash
 # Build the dependency image, this is a cache layer for faster iteration builds
 docker build . -t hyle-dep -f Dockerfile.dependencies
-# Build the node image 
+# Build the node image
 docker build . -t hyle
 ```
 
@@ -147,11 +132,11 @@ cargo run --profile profiling
 Hylé includes built-in support for the `dhat` crate, which uses the Valgrind DHAT viewer for memory profiling.  
 To enable this feature, add the `dhat` feature flag. Use it selectively, as it has a runtime performance cost.
 
-[actions-badge]: https://img.shields.io/github/actions/workflow/status/Hyle-org/hyle/ci.yml?branch=main  
-[actions-url]: https://github.com/Hyle-org/hyle/actions?query=workflow%3ATests+branch%3Amain  
-[codecov-badge]: https://codecov.io/gh/Hyle-org/hyle/graph/badge.svg?token=S87GT99Q62  
-[codecov-url]: https://codecov.io/gh/Hyle-org/hyle  
-[twitter-badge]: https://img.shields.io/twitter/follow/hyle_org  
-[twitter-url]: https://x.com/hyle_org  
+[actions-badge]: https://img.shields.io/github/actions/workflow/status/Hyle-org/hyle/ci.yml?branch=main
+[actions-url]: https://github.com/Hyle-org/hyle/actions?query=workflow%3ATests+branch%3Amain
+[codecov-badge]: https://codecov.io/gh/Hyle-org/hyle/graph/badge.svg?token=S87GT99Q62
+[codecov-url]: https://codecov.io/gh/Hyle-org/hyle
+[twitter-badge]: https://img.shields.io/twitter/follow/hyle_org
+[twitter-url]: https://x.com/hyle_org
 [tg-badge]: https://img.shields.io/endpoint?url=https%3A%2F%2Ftg.sumanjay.workers.dev%2Fhyle_org%2F&logo=telegram&label=chat&color=neon
 [tg-url]: https://t.me/hyle_org
