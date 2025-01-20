@@ -220,7 +220,7 @@ use crate::mempool::test::{make_register_contract_tx, MempoolTestCtx};
 use crate::mempool::{InternalMempoolEvent, MempoolEvent, MempoolNetMessage, QueryNewCut};
 use crate::model::*;
 use crate::node_state::module::NodeStateEvent;
-use crate::p2p::network::{NetMessage, OutboundMessage};
+use crate::p2p::network::OutboundMessage;
 use crate::p2p::P2PCommand;
 use crate::utils::crypto::{self, BlstCrypto};
 use tracing::info;
