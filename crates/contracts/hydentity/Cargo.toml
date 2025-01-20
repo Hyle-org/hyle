@@ -26,7 +26,9 @@ hex = "0.4.3"
 risc0-zkvm = { version = "1.2.1", default-features = false, optional = true, features = [
     'std',
 ] }
-client_sdk = { path = "../../client-sdk", package = "client-sdk", optional = true }
+client_sdk = { path = "../../client-sdk", package = "client-sdk", features = [
+    "risc0",
+], optional = true }
 
 [features]
 default = ["metadata"]

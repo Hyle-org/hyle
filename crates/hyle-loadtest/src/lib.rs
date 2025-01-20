@@ -128,7 +128,7 @@ pub async fn generate_proof_txs(users: u32, state: States) -> Result<Vec<Vec<u8>
         .map(|chunk| chunk.to_vec())
         .collect::<Vec<_>>();
     for chunk in user_chunks {
-        let mut ctx = TxExecutorBuilder::default().with_state(state.clone());
+        let mut ctx = TxExecutorBuilder::new(state.clone()).build();
         tasks.spawn(async move {
             let mut local_proof_txs = vec![];
 

@@ -16,9 +16,10 @@ contract_states!(
 async fn test_recursion() {
     std::env::set_var("RISC0_DEV_MODE", "1");
 
-    let mut executor = TxExecutorBuilder::default().with_state(States {
+    let mut executor = TxExecutorBuilder::new(States {
         hydentity: Hydentity::new(),
-    });
+    })
+    .build();
 
     let mut tx = ProvableBlobTx::new("bob.hydentity".into());
     register_identity(&mut tx, "hydentity".into(), "password".into()).unwrap();

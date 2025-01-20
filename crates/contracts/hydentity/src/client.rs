@@ -1,10 +1,10 @@
 use client_sdk::{
-    helpers::ClientSdkExecutor,
+    helpers::{risc0::Risc0Prover, ClientSdkExecutor},
     transaction_builder::{ProvableBlobTx, StateUpdater, TxExecutorBuilder},
 };
 use sdk::{identity_provider::IdentityAction, BlobData, ContractName, Digestable};
 
-use crate::{execute, Hydentity};
+use crate::{execute, metadata::HYDENTITY_ELF, Hydentity};
 
 struct HydentityPseudoExecutor {}
 impl ClientSdkExecutor for HydentityPseudoExecutor {
@@ -17,13 +17,13 @@ impl Hydentity {
     pub fn setup_builder<S: StateUpdater>(
         &self,
         contract_name: ContractName,
-        builder: &mut TxExecutorBuilder,
+        builder: &mut TxExecutorBuilder<S>,
     ) {
         builder.init_with(
             contract_name,
             self.as_digest(),
             HydentityPseudoExecutor {},
-            client_sdk::helpers::risc0::Risc0Prover::new(crate::metadata::HYDENTITY_ELF),
+            Risc0Prover::new(HYDENTITY_ELF),
         );
     }
 }

@@ -9,6 +9,7 @@ use anyhow::Result;
 mod e2e_hyllar {
     use client_sdk::{
         contract_states,
+        helpers::risc0::Risc0Prover,
         transaction_builder::{ProvableBlobTx, TxExecutorBuilder},
     };
     use hydentity::{
@@ -16,6 +17,7 @@ mod e2e_hyllar {
         Hydentity,
     };
     use hyle_contract_sdk::{erc20::ERC20, ContractName, Digestable, StateDigest};
+    use hyle_contracts::{HYDENTITY_ELF, HYLLAR_ELF};
     use hyllar::{client::transfer, HyllarToken};
 
     use super::*;
@@ -34,7 +36,11 @@ mod e2e_hyllar {
         let hydentity: hydentity::Hydentity = contract.state.try_into()?;
         let contract = ctx.get_contract("hyllar").await?;
         let hyllar: HyllarToken = contract.state.try_into()?;
-        let mut executor = TxExecutorBuilder::default().with_state(States { hydentity, hyllar });
+        let mut executor = TxExecutorBuilder::new(States { hydentity, hyllar })
+            // Replace prover binaries for non-reproducible mode.
+            .with_prover("hydentity".into(), Risc0Prover::new(HYDENTITY_ELF))
+            .with_prover("hyllar".into(), Risc0Prover::new(HYLLAR_ELF))
+            .build();
 
         info!("➡️  Sending blob to register bob identity");
 

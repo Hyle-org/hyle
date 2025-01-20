@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 
 use anyhow::{Context, Error};
-use hyle_contract_sdk::{BlobIndex, HyleOutput, StateDigest, TxHash};
+use hyle_model::{BlobIndex, HyleOutput, StateDigest, TxHash};
 
 pub fn parse_noir_output(vector: &mut Vec<String>) -> Result<HyleOutput, Error> {
     let version = u32::from_str_radix(vector.remove(0).strip_prefix("0x").context("parsing")?, 16)?;

@@ -1,5 +1,5 @@
 use client_sdk::{
-    helpers::ClientSdkExecutor,
+    helpers::{risc0::Risc0Prover, ClientSdkExecutor},
     transaction_builder::{ProvableBlobTx, StateUpdater, TxExecutorBuilder},
 };
 use sdk::{
@@ -7,7 +7,7 @@ use sdk::{
     ValidatorPublicKey,
 };
 
-use crate::{execute, state::Staking};
+use crate::{execute, metadata::STAKING_ELF, state::Staking};
 
 struct StakingPseudoExecutor {}
 
@@ -21,13 +21,13 @@ impl Staking {
     pub fn setup_builder<S: StateUpdater>(
         &self,
         contract_name: ContractName,
-        builder: &mut TxExecutorBuilder,
+        builder: &mut TxExecutorBuilder<S>,
     ) {
         builder.init_with(
             contract_name,
             self.on_chain_state().as_digest(),
             StakingPseudoExecutor {},
-            client_sdk::helpers::risc0::Risc0Prover::new(crate::metadata::STAKING_ELF),
+            Risc0Prover::new(STAKING_ELF),
         );
     }
 }
