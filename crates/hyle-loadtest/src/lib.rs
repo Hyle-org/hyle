@@ -1,5 +1,6 @@
 use anyhow::Result;
 use client_sdk::contract_states;
+use client_sdk::helpers::risc0::Risc0Prover;
 use client_sdk::tcp_client::NodeTcpClient;
 use client_sdk::transaction_builder::{ProvableBlobTx, TxExecutorBuilder};
 use hydentity::Hydentity;
@@ -8,6 +9,7 @@ use hyle_contract_sdk::{Blob, BlobData};
 use hyle_contract_sdk::{BlobTransaction, ProofTransaction, RegisterContractTransaction};
 use hyle_contract_sdk::{ContractName, Identity};
 use hyle_contract_sdk::{Digestable, StateDigest, TcpServerNetMessage};
+use hyle_contracts::HYLLAR_ELF;
 use hyllar::client::transfer;
 use hyllar::{HyllarToken, HyllarTokenContract};
 use tokio::task::JoinSet;
@@ -128,7 +130,9 @@ pub async fn generate_proof_txs(users: u32, state: States) -> Result<Vec<Vec<u8>
         .map(|chunk| chunk.to_vec())
         .collect::<Vec<_>>();
     for chunk in user_chunks {
-        let mut ctx = TxExecutorBuilder::default().with_state(state.clone());
+        let mut ctx = TxExecutorBuilder::new(state.clone())
+            .with_prover("hyllar-test".into(), Risc0Prover::new(HYLLAR_ELF))
+            .build();
         tasks.spawn(async move {
             let mut local_proof_txs = vec![];
 
