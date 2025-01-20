@@ -706,10 +706,22 @@ impl Mempool {
             .iter()
             .map(|s| s.signature.validator.clone())
             .collect();
-        let voting_power = self.staking.compute_voting_power(validators.as_slice());
+        let old_voting_power = self.staking.compute_voting_power(
+            validators
+                .iter()
+                .filter(|v| *v != validator)
+                .cloned()
+                .collect::<Vec<_>>()
+                .as_slice(),
+        );
+        let new_voting_power = self.staking.compute_voting_power(validators.as_slice());
         let f = self.staking.compute_f();
-        // FIXME: This might flood the network with messages for each validator signing after the f+1 signature is received
-        if voting_power > f {
+        // Only send the message if voting power exceeds f, 2*f or 3*f
+        // This garentees that the message is sent only once per threshold
+        if old_voting_power < f && new_voting_power >= f
+            || old_voting_power < 2 * f && new_voting_power >= 2 * f
+            || old_voting_power < 3 * f && new_voting_power >= 3 * f
+        {
             self.broadcast_net_message(MempoolNetMessage::PoDAUpdate(
                 data_proposal_hash,
                 signatures,
@@ -1414,12 +1426,15 @@ pub mod test {
     #[test_log::test(tokio::test)]
     async fn test_send_poda_update() -> Result<()> {
         let mut ctx = MempoolTestCtx::new("mempool").await;
+        let pubkey = (*ctx.mempool.crypto).clone();
 
-        // Adding 3 other validators
+        // Adding 4 other validators
+        // Total voting_power = 500; f = 167 --> You need at least 2 signatures to send PoDAUpdate
         let crypto2 = BlstCrypto::new("validator2".into()).unwrap();
         let crypto3 = BlstCrypto::new("validator3".into()).unwrap();
         let crypto4 = BlstCrypto::new("validator4".into()).unwrap();
-        ctx.setup_node(&[crypto2.clone(), crypto3.clone(), crypto4]);
+        let crypto5 = BlstCrypto::new("validator5".into()).unwrap();
+        ctx.setup_node(&[pubkey, crypto2.clone(), crypto3.clone(), crypto4, crypto5]);
 
         let register_tx = make_register_contract_tx(ContractName::new("test1"));
         ctx.submit_tx(&register_tx);
@@ -1440,7 +1455,7 @@ pub mod test {
         match ctx.assert_broadcast("PoDAUpdate").msg {
             MempoolNetMessage::PoDAUpdate(hash, signatures) => {
                 assert_eq!(hash, data_proposal.hash());
-                assert_eq!(signatures.len(), 3);
+                assert_eq!(signatures.len(), 2);
             }
             _ => panic!("Expected PoDAUpdate message"),
         };
