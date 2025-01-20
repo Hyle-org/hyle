@@ -15,6 +15,7 @@ mod e2e_amm {
     };
     use client_sdk::{
         contract_states,
+        helpers::risc0::Risc0Prover,
         transaction_builder::{ProvableBlobTx, TxExecutorBuilder},
     };
     use fixtures::{
@@ -27,6 +28,7 @@ mod e2e_amm {
         Hydentity,
     };
     use hyle_contract_sdk::{erc20::ERC20, ContractName, Digestable, StateDigest};
+    use hyle_contracts::{AMM_ELF, HYDENTITY_ELF, HYLLAR_ELF};
     use hyllar::{
         client::{approve, transfer},
         HyllarToken,
@@ -102,12 +104,17 @@ mod e2e_amm {
         //    By sending 5 hyllar to amm
         //    By sending 10 hyllar2 to bob (from amm)
 
-        let mut executor = TxExecutorBuilder::default().with_state(States {
+        let mut executor = TxExecutorBuilder::new(States {
             hydentity: ctx.get_contract("hydentity").await?.state.try_into()?,
             hyllar: ctx.get_contract("hyllar").await?.state.try_into()?,
             hyllar2: HyllarContract::state_digest().try_into()?,
             amm: AmmState::default(),
-        });
+        })
+        .with_prover("hydentity".into(), Risc0Prover::new(HYDENTITY_ELF))
+        .with_prover("hyllar".into(), Risc0Prover::new(HYLLAR_ELF))
+        .with_prover("hyllar2".into(), Risc0Prover::new(HYLLAR_ELF))
+        .with_prover("amm".into(), Risc0Prover::new(AMM_ELF))
+        .build();
 
         let state = hyllar::HyllarTokenContract::init(executor.hyllar.clone(), "caller".into());
         let hyllar_initial_total_amount: u128 = state

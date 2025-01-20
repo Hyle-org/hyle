@@ -6,11 +6,13 @@ mod fixtures;
 
 mod e2e_consensus {
 
+    use client_sdk::helpers::risc0::Risc0Prover;
     use client_sdk::transaction_builder::{ProvableBlobTx, TxExecutorBuilder};
     use fixtures::test_helpers::send_transaction;
     use hydentity::client::{register_identity, verify_identity};
     use hyle::{genesis::States, utils::logger::LogMe};
     use hyle_contract_sdk::Identity;
+    use hyle_contracts::{HYDENTITY_ELF, HYLLAR_ELF, STAKING_ELF};
     use hyllar::client::transfer;
     use staking::client::{delegate, stake};
     use staking::state::{OnChainState, Staking};
@@ -76,7 +78,11 @@ mod e2e_consensus {
             staking,
         };
 
-        let mut tx_ctx = TxExecutorBuilder::default().with_state(states);
+        let mut tx_ctx = TxExecutorBuilder::new(states)
+            .with_prover("hydentity".into(), Risc0Prover::new(HYDENTITY_ELF))
+            .with_prover("hyllar".into(), Risc0Prover::new(HYLLAR_ELF))
+            .with_prover("staking".into(), Risc0Prover::new(STAKING_ELF))
+            .build();
 
         let node_identity = Identity(format!("{}.hydentity", node_info.id));
         {

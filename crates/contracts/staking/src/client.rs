@@ -21,14 +21,13 @@ impl Staking {
     pub fn setup_builder<S: StateUpdater>(
         &self,
         contract_name: ContractName,
-        builder: &mut TxExecutorBuilder,
+        builder: &mut TxExecutorBuilder<S>,
     ) {
         builder.init_with(
             contract_name,
             self.on_chain_state().as_digest(),
             StakingPseudoExecutor {},
             MockProver {},
-            //client_sdk::helpers::risc0::Risc0Prover::new(crate::metadata::STAKING_ELF),
         );
     }
 }

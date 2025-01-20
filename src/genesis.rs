@@ -369,11 +369,12 @@ impl Genesis {
 
         let staking_state = staking::state::Staking::new();
 
-        let ctx = TxExecutorBuilder::default().with_state(States {
+        let ctx = TxExecutorBuilder::new(States {
             hyllar: hyllar::HyllarToken::new(100_000_000_000, "faucet.hydentity".to_string()),
             hydentity: hydentity_state,
             staking: staking_state,
-        });
+        })
+        .build();
 
         let mut map = BTreeMap::default();
         map.insert("blst".into(), NativeVerifiers::Blst.into());

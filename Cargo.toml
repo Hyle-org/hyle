@@ -117,7 +117,14 @@ dhat = { version = "0.3.3", optional = true }
 
 [dev-dependencies]
 amm = { path = "./crates/contracts/amm", features = ["client"] }
+client-sdk = { path = "./crates/client-sdk", default-features = false, features = [
+    "rest",
+    "tcp",
+    "risc0",
+] }
+
 assert_cmd = "2.0.16"
+axum-test = { version = "17.1.0" }
 tokio-tungstenite = "0.26.1"
 reqwest = { version = "0.12", features = ["json", "blocking"] }
 serde_json = "1.0.135"

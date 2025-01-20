@@ -143,8 +143,6 @@ pub fn execute(input: ContractInput) -> HyleOutput {
 
     let password = from_utf8(&input.private_blob.0).unwrap();
 
-    sdk::info!("TOTORO READY: {:?}", parsed_blob);
-
     let res = sdk::identity_provider::execute_action(&mut state, parsed_blob, password);
 
     as_hyle_output(input, state, res)

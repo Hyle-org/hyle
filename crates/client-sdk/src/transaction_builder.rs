@@ -83,6 +83,15 @@ impl ProvableBlobTx {
     }
 }
 
+pub trait StateUpdater
+where
+    Self: std::marker::Sized,
+{
+    fn setup(&self, ctx: &mut TxExecutorBuilder<Self>);
+    fn update(&mut self, contract_name: &ContractName, new_state: StateDigest) -> Result<()>;
+    fn get(&self, contract_name: &ContractName) -> Result<StateDigest>;
+}
+
 #[derive(Default)]
 pub struct TxExecutor<S: StateUpdater> {
     full_states: S,
@@ -104,27 +113,30 @@ impl<S: StateUpdater> DerefMut for TxExecutor<S> {
     }
 }
 
-pub trait StateUpdater
-where
-    Self: std::marker::Sized,
-{
-    fn setup(&self, ctx: &mut TxExecutorBuilder);
-    fn update(&mut self, contract_name: &ContractName, new_state: StateDigest) -> Result<()>;
-    fn get(&self, contract_name: &ContractName) -> Result<StateDigest>;
-}
-
-#[derive(Default)]
-pub struct TxExecutorBuilder {
+pub struct TxExecutorBuilder<S> {
+    full_states: Option<S>,
     on_chain_states: BTreeMap<ContractName, StateDigest>,
     executors: BTreeMap<ContractName, Box<dyn ClientSdkExecutor + Sync + Send>>,
     provers: BTreeMap<ContractName, Arc<dyn ClientSdkProver + Sync + Send>>,
 }
 
-impl TxExecutorBuilder {
-    pub fn with_state<S: StateUpdater>(mut self, full_states: S) -> TxExecutor<S> {
-        full_states.setup(&mut self);
+impl<S: StateUpdater> TxExecutorBuilder<S> {
+    pub fn new(full_states: S) -> Self {
+        let mut ret = Self {
+            full_states: None,
+            on_chain_states: BTreeMap::new(),
+            executors: BTreeMap::new(),
+            provers: BTreeMap::new(),
+        };
+        full_states.setup(&mut ret);
+        ret.full_states = Some(full_states);
+        ret
+    }
+
+    pub fn build(self) -> TxExecutor<S> {
         TxExecutor {
-            full_states,
+            // Safe to unwrap because we set it in the constructor
+            full_states: self.full_states.unwrap(),
             on_chain_states: self.on_chain_states,
             executors: self.executors,
             provers: self.provers,
@@ -137,7 +149,7 @@ impl TxExecutorBuilder {
         state: StateDigest,
         executor: impl ClientSdkExecutor + Sync + Send + 'static,
         prover: impl ClientSdkProver + Sync + Send + 'static,
-    ) {
+    ) -> &mut Self {
         self.on_chain_states
             .entry(contract_name.clone())
             .or_insert(state);
@@ -147,6 +159,30 @@ impl TxExecutorBuilder {
         self.provers
             .entry(contract_name)
             .or_insert(Arc::new(prover));
+        self
+    }
+
+    pub fn with_onchain_state(mut self, contract_name: ContractName, state: StateDigest) -> Self {
+        self.on_chain_states.insert(contract_name, state);
+        self
+    }
+
+    pub fn with_executor(
+        mut self,
+        contract_name: ContractName,
+        executor: impl ClientSdkExecutor + Sync + Send + 'static,
+    ) -> Self {
+        self.executors.insert(contract_name, Box::new(executor));
+        self
+    }
+
+    pub fn with_prover(
+        mut self,
+        contract_name: ContractName,
+        prover: impl ClientSdkProver + Sync + Send + 'static,
+    ) -> Self {
+        self.provers.insert(contract_name, Arc::new(prover));
+        self
     }
 }
 
@@ -295,7 +331,7 @@ macro_rules! contract_states {
         }
 
         impl $crate::transaction_builder::StateUpdater for $name {
-            fn setup(&self, ctx: &mut TxExecutorBuilder) {
+            fn setup(&self, ctx: &mut TxExecutorBuilder<Self>) {
                 $(self.$contract_name.setup_builder::<Self>(stringify!($contract_name).into(), ctx);)*
             }
 

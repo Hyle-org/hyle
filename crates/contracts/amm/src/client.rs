@@ -17,13 +17,13 @@ impl AmmState {
     pub fn setup_builder<S: StateUpdater>(
         &self,
         contract_name: ContractName,
-        builder: &mut TxExecutorBuilder,
+        builder: &mut TxExecutorBuilder<S>,
     ) {
         builder.init_with(
             contract_name,
             self.as_digest(),
             AmmPseudoExecutor {},
-            MockProver {}, //client_sdk::helpers::risc0::Risc0Prover::new(crate::metadata::AMM_ELF),
+            MockProver {},
         );
     }
 }
