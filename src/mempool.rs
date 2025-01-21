@@ -322,57 +322,56 @@ impl Mempool {
         // Create new DataProposal with pending txs
         self.storage.new_data_proposal(&self.crypto); // TODO: copy crypto in storage
 
-        // Check if latest DataProposal has enough signatures
-        if let Some(lane_entry) = &self.storage.get_lane_latest_entry(&self.storage.id) {
-            // If there's only 1 signature (=own signature), broadcast it to everyone
-            if lane_entry.signatures.len() == 1 && self.staking.bonded().len() > 1 {
-                debug!(
-                    "🚗 Broadcast DataProposal {} ({} validators, {} txs)",
-                    lane_entry.data_proposal.id,
-                    self.staking.bonded().len(),
-                    lane_entry.data_proposal.txs.len()
-                );
-                if self.staking.bonded().is_empty() {
-                    return Ok(());
+        // Check for each pending DataProposal if it has enough signatures
+        if let Some(entries) = self.storage.get_lane_pending_entries(&self.storage.id)? {
+            for lane_entry in entries {
+                // If there's only 1 signature (=own signature), broadcast it to everyone
+                if lane_entry.signatures.len() == 1 && self.staking.bonded().len() > 1 {
+                    debug!(
+                        "🚗 Broadcast DataProposal {} ({} validators, {} txs)",
+                        lane_entry.data_proposal.id,
+                        self.staking.bonded().len(),
+                        lane_entry.data_proposal.txs.len()
+                    );
+                    self.metrics.add_data_proposal(&lane_entry.data_proposal);
+                    self.metrics.add_proposed_txs(&lane_entry.data_proposal);
+                    self.broadcast_net_message(MempoolNetMessage::DataProposal(
+                        lane_entry.data_proposal.clone(),
+                    ))?;
+                } else {
+                    // If None, rebroadcast it to every validator that has not yet signed it
+                    let validator_that_has_signed: HashSet<&ValidatorPublicKey> = lane_entry
+                        .signatures
+                        .iter()
+                        .map(|s| &s.signature.validator)
+                        .collect();
+
+                    // No PoA means we rebroadcast the DataProposal for non present voters
+                    let only_for: HashSet<ValidatorPublicKey> = self
+                        .staking
+                        .bonded()
+                        .iter()
+                        .filter(|pubkey| !validator_that_has_signed.contains(pubkey))
+                        .cloned()
+                        .collect();
+
+                    if only_for.is_empty() {
+                        return Ok(());
+                    }
+
+                    self.metrics.add_data_proposal(&lane_entry.data_proposal);
+                    self.metrics.add_proposed_txs(&lane_entry.data_proposal);
+                    debug!(
+                        "🚗 Broadcast DataProposal {} (only for {} validators, {} txs)",
+                        &lane_entry.data_proposal.id,
+                        only_for.len(),
+                        &lane_entry.data_proposal.txs.len()
+                    );
+                    self.broadcast_only_for_net_message(
+                        only_for,
+                        MempoolNetMessage::DataProposal(lane_entry.data_proposal.clone()),
+                    )?;
                 }
-                self.metrics.add_data_proposal(&lane_entry.data_proposal);
-                self.metrics.add_proposed_txs(&lane_entry.data_proposal);
-                self.broadcast_net_message(MempoolNetMessage::DataProposal(
-                    lane_entry.data_proposal.clone(),
-                ))?;
-            } else {
-                // If None, rebroadcast it to every validator that has not yet signed it
-                let validator_that_has_signed: Vec<&ValidatorPublicKey> = lane_entry
-                    .signatures
-                    .iter()
-                    .map(|s| &s.signature.validator)
-                    .collect();
-
-                // No PoA means we rebroadcast the DataProposal for non present voters
-                let only_for: HashSet<ValidatorPublicKey> = self
-                    .staking
-                    .bonded()
-                    .iter()
-                    .filter(|pubkey| !validator_that_has_signed.contains(pubkey))
-                    .cloned()
-                    .collect();
-
-                if only_for.is_empty() {
-                    return Ok(());
-                }
-
-                self.metrics.add_data_proposal(&lane_entry.data_proposal);
-                self.metrics.add_proposed_txs(&lane_entry.data_proposal);
-                debug!(
-                    "🚗 Broadcast DataProposal {} (only for {} validators, {} txs)",
-                    &lane_entry.data_proposal.id,
-                    only_for.len(),
-                    &lane_entry.data_proposal.txs.len()
-                );
-                self.broadcast_only_for_net_message(
-                    only_for,
-                    MempoolNetMessage::DataProposal(lane_entry.data_proposal.clone()),
-                )?;
             }
         }
         Ok(())
@@ -704,10 +703,22 @@ impl Mempool {
             .iter()
             .map(|s| s.signature.validator.clone())
             .collect();
-        let voting_power = self.staking.compute_voting_power(validators.as_slice());
+        let old_voting_power = self.staking.compute_voting_power(
+            validators
+                .iter()
+                .filter(|v| *v != validator)
+                .cloned()
+                .collect::<Vec<_>>()
+                .as_slice(),
+        );
+        let new_voting_power = self.staking.compute_voting_power(validators.as_slice());
         let f = self.staking.compute_f();
-        // FIXME: This might flood the network with messages for each validator signing after the f+1 signature is received
-        if voting_power > f {
+        // Only send the message if voting power exceeds f, 2 * f or is exactly 3 * f + 1
+        // This garentees that the message is sent only once per threshold
+        if old_voting_power < f && new_voting_power >= f
+            || old_voting_power < 2 * f && new_voting_power >= 2 * f
+            || new_voting_power == 3 * f + 1
+        {
             self.broadcast_net_message(MempoolNetMessage::PoDAUpdate(
                 data_proposal_hash,
                 signatures,
@@ -1412,12 +1423,15 @@ pub mod test {
     #[test_log::test(tokio::test)]
     async fn test_send_poda_update() -> Result<()> {
         let mut ctx = MempoolTestCtx::new("mempool").await;
+        let pubkey = (*ctx.mempool.crypto).clone();
 
-        // Adding 3 other validators
+        // Adding 4 other validators
+        // Total voting_power = 500; f = 167 --> You need at least 2 signatures to send PoDAUpdate
         let crypto2 = BlstCrypto::new("validator2".into()).unwrap();
         let crypto3 = BlstCrypto::new("validator3".into()).unwrap();
         let crypto4 = BlstCrypto::new("validator4".into()).unwrap();
-        ctx.setup_node(&[crypto2.clone(), crypto3.clone(), crypto4]);
+        let crypto5 = BlstCrypto::new("validator5".into()).unwrap();
+        ctx.setup_node(&[pubkey, crypto2.clone(), crypto3.clone(), crypto4, crypto5]);
 
         let register_tx = make_register_contract_tx(ContractName::new("test1"));
         ctx.submit_tx(&register_tx);
@@ -1438,7 +1452,7 @@ pub mod test {
         match ctx.assert_broadcast("PoDAUpdate").msg {
             MempoolNetMessage::PoDAUpdate(hash, signatures) => {
                 assert_eq!(hash, data_proposal.hash());
-                assert_eq!(signatures.len(), 3);
+                assert_eq!(signatures.len(), 2);
             }
             _ => panic!("Expected PoDAUpdate message"),
         };
