@@ -1,6 +1,6 @@
 use std::pin::Pin;
 
-use anyhow::{bail, Result};
+use anyhow::Result;
 use sdk::{flatten_blobs, ContractInput, HyleOutput, ProofData};
 
 pub trait ClientSdkExecutor {
@@ -42,13 +42,6 @@ pub mod risc0 {
                 }
             };
 
-            let output = receipt
-                .journal
-                .decode::<HyleOutput>()
-                .expect("Failed to decode journal");
-
-            check_output(&output)?;
-
             let encoded_receipt = borsh::to_vec(&receipt).expect("Unable to encode receipt");
             Ok(ProofData(encoded_receipt))
         }
@@ -68,8 +61,6 @@ pub mod risc0 {
                 .journal
                 .decode::<HyleOutput>()
                 .expect("Failed to decode journal");
-
-            check_output(&output)?;
 
             Ok(output)
         }
@@ -175,7 +166,6 @@ pub mod test {
     ) -> anyhow::Result<(ProofData, HyleOutput)> {
         let hyle_output = test::execute(binary, contract_input)?;
 
-        check_output(&hyle_output)?;
         Ok((
             ProofData(bincode::encode_to_vec(
                 vec![hyle_output.clone()],
@@ -186,10 +176,11 @@ pub mod test {
     }
 }
 
+#[cfg(feature = "sp1")]
 fn check_output(output: &HyleOutput) -> Result<()> {
     if !output.success {
         let program_error = std::str::from_utf8(&output.program_outputs).unwrap();
-        bail!(
+        anyhow::bail!(
             "\x1b[91mExecution failed ! Program output: {}\x1b[0m",
             program_error
         );
