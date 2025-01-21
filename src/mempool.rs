@@ -322,8 +322,10 @@ impl Mempool {
         // Create new DataProposal with pending txs
         self.storage.new_data_proposal(&self.crypto); // TODO: copy crypto in storage
 
+        let entries = self.storage.get_lane_pending_entries(&self.storage.id)?;
+
         // Check for each pending DataProposal if it has enough signatures
-        if let Some(entries) = self.storage.get_lane_pending_entries(&self.storage.id)? {
+        if let Some(entries) = entries {
             for lane_entry in entries {
                 // If there's only 1 signature (=own signature), broadcast it to everyone
                 if lane_entry.signatures.len() == 1 && self.staking.bonded().len() > 1 {
@@ -356,7 +358,7 @@ impl Mempool {
                         .collect();
 
                     if only_for.is_empty() {
-                        return Ok(());
+                        continue;
                     }
 
                     self.metrics.add_data_proposal(&lane_entry.data_proposal);
@@ -783,17 +785,24 @@ impl Mempool {
                 });
             }
             DataProposalVerdict::Wait(last_known_data_proposal_hash) => {
+                let data_proposal_parent_hash = data_proposal.parent_data_proposal_hash.clone();
+                // Push the data proposal in the waiting list
+                self.storage
+                    .add_waiting_data_proposal(validator, data_proposal);
+
                 //We dont have the parent, so we craft a sync demand
                 debug!(
                     "Emitting sync request with local state {} last_known_data_proposal_hash {:?}",
                     self.storage, last_known_data_proposal_hash
                 );
 
-                self.send_sync_request(
-                    validator,
-                    last_known_data_proposal_hash.as_ref(),
-                    data_proposal_hash,
-                )?;
+                if let Some(parent) = data_proposal_parent_hash {
+                    self.send_sync_request(
+                        validator,
+                        last_known_data_proposal_hash.as_ref(),
+                        parent,
+                    )?;
+                }
             }
             DataProposalVerdict::Refuse => {
                 debug!("Refuse vote for DataProposal");
@@ -1336,6 +1345,25 @@ pub mod test {
 
             (dp_orig.clone(), dp_orig.hash())
         }
+        pub fn last_validator_data_proposal(
+            &self,
+            validator: &ValidatorPublicKey,
+        ) -> (DataProposal, DataProposalHash) {
+            let dp_orig = self
+                .mempool
+                .storage
+                .lanes
+                .get(validator)
+                .unwrap()
+                .data_proposals
+                .last()
+                .unwrap()
+                .1
+                .data_proposal
+                .clone();
+
+            (dp_orig.clone(), dp_orig.hash())
+        }
         pub fn pop_data_proposal(&mut self) -> (DataProposal, DataProposalHash) {
             let dp_orig = self
                 .mempool
@@ -1352,6 +1380,26 @@ pub mod test {
 
             (dp_orig.clone(), dp_orig.hash())
         }
+        pub fn pop_validator_data_proposal(
+            &mut self,
+            validator: &ValidatorPublicKey,
+        ) -> (DataProposal, DataProposalHash) {
+            let dp_orig = self
+                .mempool
+                .storage
+                .lanes
+                .get_mut(validator)
+                .unwrap()
+                .data_proposals
+                .pop()
+                .unwrap()
+                .1
+                .data_proposal
+                .clone();
+
+            (dp_orig.clone(), dp_orig.hash())
+        }
+
         pub fn push_data_proposal(&mut self, dp: DataProposal) {
             self.mempool
                 .storage
