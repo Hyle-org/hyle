@@ -790,11 +790,13 @@ impl Mempool {
                     self.storage, last_known_data_proposal_hash
                 );
 
-                self.send_sync_request(
-                    validator,
-                    last_known_data_proposal_hash.as_ref(),
-                    data_proposal_parent_hash.as_ref(),
-                )?;
+                if let Some(parent) = data_proposal_parent_hash {
+                    self.send_sync_request(
+                        validator,
+                        last_known_data_proposal_hash.as_ref(),
+                        Some(&parent),
+                    )?;
+                }
             }
             DataProposalVerdict::Refuse => {
                 debug!("Refuse vote for DataProposal");

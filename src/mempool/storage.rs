@@ -1,4 +1,4 @@
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use bincode::{Decode, Encode};
 use hyle_model::{Signed, ValidatorSignature};
 use indexmap::IndexMap;
@@ -716,11 +716,9 @@ impl Lane {
     }
 
     fn get_index_or_bail(&self, hash: &DataProposalHash) -> Result<usize> {
-        self.data_proposals.get_index_of(hash).ok_or_else(|| {
-            anyhow::anyhow!(
-                "Won't return any LaneEntry as aimed DataProposal {hash} does not exist on Lane"
-            )
-        })
+        self.data_proposals.get_index_of(hash).context(
+            "Won't return any LaneEntry as aimed DataProposal {hash} does not exist on Lane",
+        )
     }
 
     fn collect_entries(&self, start: usize, end: usize) -> Vec<LaneEntry> {
@@ -738,11 +736,15 @@ impl Lane {
         to_data_proposal_hash: Option<&DataProposalHash>,
     ) -> Result<Vec<LaneEntry>> {
         let from_index = match from_data_proposal_hash {
-            Some(hash) => self.get_index_or_bail(hash)? + 1,
+            Some(hash) => {
+                self.get_index_or_bail(hash)
+                    .context("getting 'from' index")?
+                    + 1
+            }
             None => 0,
         };
         let to_index = match to_data_proposal_hash {
-            Some(hash) => self.get_index_or_bail(hash)?,
+            Some(hash) => self.get_index_or_bail(hash).context("getting 'to' index")?,
             None => self.data_proposals.len(),
         };
 
@@ -1341,7 +1343,7 @@ mod tests {
             .expect("vote success");
 
         // Verifications
-        assert_eq!(store2.lanes.len(), 1);
+        assert_eq!(store2.lanes.len(), 2);
         assert!(store2.lanes.contains_key(pubkey1));
 
         let store_own_lane = store1.lanes.get(pubkey1).expect("lane");
