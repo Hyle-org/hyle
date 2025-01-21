@@ -15,7 +15,7 @@ borsh = { version = "1.5.3" }
 serde_json = "1.0.135"
 rand = { version = "0.8.5" }
 risc0-zkvm = { version = "1.2.1", default-features = false, features = ["std"] }
-sp1-sdk = { version = "4.0.0", default-features = false }
+sp1-sdk = { version = "4.0.1", default-features = false }
 tracing = "0.1"
 
 [dev-dependencies]

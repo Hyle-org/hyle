@@ -18,7 +18,7 @@ serde_json = { version = "1" }
 
 bonsai-runner = { path = "../bonsai-runner", optional = true }
 risc0-zkvm = { version = "1.2.1", default-features = false, optional = true }
-sp1-sdk = { version = "4.0.0", default-features = false, optional = true }
+sp1-sdk = { version = "4.0.1", default-features = false, optional = true }
 
 # Rest feature
 reqwest = { version = "0.12", features = ["json"], optional = true }
