@@ -260,7 +260,6 @@ impl Indexer {
             } else {
                 match tx.transaction_data {
                     TransactionData::Blob(_) => TransactionStatus::Sequenced,
-                    TransactionData::RegisterContract(_) => TransactionStatus::Success,
                     TransactionData::Proof(_) => TransactionStatus::Success,
                     TransactionData::VerifiedProof(_) => TransactionStatus::Success,
                 }
@@ -283,37 +282,6 @@ impl Indexer {
             i += 1;
 
             match tx.transaction_data {
-                TransactionData::RegisterContract(register_contract_tx) => {
-                    let owner = &register_contract_tx.owner;
-                    let verifier = &register_contract_tx.verifier.0;
-                    let program_id = &register_contract_tx.program_id.0;
-                    let state_digest = &register_contract_tx.state_digest.0;
-                    let contract_name = &register_contract_tx.contract_name.0;
-
-                    // Adding to Contract table
-                    sqlx::query(
-                        "INSERT INTO contracts (tx_hash, owner, verifier, program_id, state_digest, contract_name)
-                        VALUES ($1, $2, $3, $4, $5, $6)")
-                    .bind(tx_hash)
-                    .bind(owner)
-                    .bind(verifier)
-                    .bind(program_id)
-                    .bind(state_digest)
-                    .bind(contract_name)
-                    .execute(&mut *transaction)
-                    .await?;
-
-                    // Adding to ContractState table
-                    sqlx::query(
-                        "INSERT INTO contract_state (contract_name, block_hash, state_digest)
-                        VALUES ($1, $2, $3)",
-                    )
-                    .bind(contract_name)
-                    .bind(block_hash)
-                    .bind(state_digest)
-                    .execute(&mut *transaction)
-                    .await?;
-                }
                 TransactionData::Blob(blob_tx) => {
                     for (blob_index, blob) in blob_tx.blobs.iter().enumerate() {
                         let blob_index = i32::try_from(blob_index).map_err(|_| {
@@ -330,7 +298,7 @@ impl Indexer {
 
                         let identity = &blob_tx.identity.0;
                         let contract_name = &blob.contract_name.0;
-                        let blob = &blob.data.0;
+                        let blob_data = &blob.data.0;
                         sqlx::query(
                             "INSERT INTO blobs (tx_hash, blob_index, identity, contract_name, data, verified)
                              VALUES ($1, $2, $3, $4, $5, $6)",
@@ -339,10 +307,42 @@ impl Indexer {
                         .bind(blob_index)
                         .bind(identity)
                         .bind(contract_name)
-                        .bind(blob)
+                        .bind(blob_data)
                         .bind(false)
                         .execute(&mut *transaction)
                         .await?;
+
+                        if let Ok(reg) = StructuredBlobData::<RegisterContractAction>::try_from(
+                            blob.data.clone(),
+                        ) {
+                            let verifier = &reg.parameters.verifier.0;
+                            let program_id = &reg.parameters.program_id.0;
+                            let state_digest = &reg.parameters.state_digest.0;
+                            let contract_name = &reg.parameters.contract_name.0;
+
+                            // Adding to Contract table
+                            sqlx::query(
+                                "INSERT INTO contracts (tx_hash, verifier, program_id, state_digest, contract_name)
+                                VALUES ($1, $2, $3, $4, $5)")
+                            .bind(tx_hash)
+                            .bind(verifier)
+                            .bind(program_id)
+                            .bind(state_digest)
+                            .bind(contract_name)
+                            .execute(&mut *transaction)
+                            .await?;
+
+                            // Adding to ContractState table
+                            sqlx::query(
+                                "INSERT INTO contract_state (contract_name, block_hash, state_digest)
+                                VALUES ($1, $2, $3)",
+                            )
+                            .bind(contract_name)
+                            .bind(block_hash)
+                            .bind(state_digest)
+                            .execute(&mut *transaction)
+                            .await?;
+                        }
                     }
                 }
                 TransactionData::VerifiedProof(tx_data) => {
@@ -534,8 +534,8 @@ mod test {
     use crate::{
         bus::SharedMessageBus,
         model::{
-            Blob, BlobData, BlobProofOutput, ProofData, RegisterContractTransaction, SignedBlock,
-            Transaction, TransactionData, VerifiedProofTransaction,
+            Blob, BlobData, BlobProofOutput, ProofData, SignedBlock, Transaction, TransactionData,
+            VerifiedProofTransaction,
         },
         node_state::NodeState,
     };
@@ -564,16 +564,16 @@ mod test {
         }
     }
 
-    fn new_register_tx(contract_name: ContractName, state_digest: StateDigest) -> Transaction {
-        Transaction {
-            version: 1,
-            transaction_data: TransactionData::RegisterContract(RegisterContractTransaction {
-                owner: "test".to_string(),
+    fn new_register_tx(contract_name: ContractName, state_digest: StateDigest) -> BlobTransaction {
+        BlobTransaction {
+            identity: "hyle.hyle".into(),
+            blobs: vec![RegisterContractAction {
                 verifier: "test".into(),
                 program_id: ProgramId(vec![3, 2, 1]),
                 state_digest,
                 contract_name,
-            }),
+            }
+            .as_blob("hyle".into(), None, None)],
         }
     }
 
@@ -703,8 +703,8 @@ mod test {
         );
 
         let txs = vec![
-            register_tx_1,
-            register_tx_2,
+            register_tx_1.into(),
+            register_tx_2.into(),
             blob_transaction,
             proof_tx_1,
             proof_tx_2,
@@ -780,8 +780,8 @@ mod test {
         assert_json_include!(
             actual: all_txs.json::<serde_json::Value>(),
             expected: json!([
-                { "index": 0, "transaction_type": "RegisterContractTransaction", "transaction_status": "Success" },
-                { "index": 1, "transaction_type": "RegisterContractTransaction", "transaction_status": "Success" },
+                { "index": 0, "transaction_type": "BlobTransaction", "transaction_status": "Success" },
+                { "index": 1, "transaction_type": "BlobTransaction", "transaction_status": "Success" },
                 { "index": 2, "transaction_type": "BlobTransaction", "transaction_status": "Success" },
                 { "index": 3, "transaction_type": "ProofTransaction", "transaction_status": "Success" },
                 { "index": 4, "transaction_type": "ProofTransaction", "transaction_status": "Success" },

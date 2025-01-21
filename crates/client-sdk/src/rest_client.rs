@@ -3,7 +3,7 @@ use reqwest::Url;
 
 use sdk::{
     api::*, BlobIndex, BlobTransaction, BlockHash, BlockHeight, ConsensusInfo, Contract,
-    ContractName, ProofTransaction, RegisterContractTransaction, StateDigest, TxHash,
+    ContractName, ProofTransaction, StateDigest, TxHash,
 };
 
 pub struct NodeApiHttpClient {
@@ -32,6 +32,7 @@ impl NodeApiHttpClient {
         self.post("v1/tx/send/proof", tx, "Sending tx proof").await
     }
 
+    /*
     pub async fn send_tx_register_contract(
         &self,
         tx: &RegisterContractTransaction,
@@ -39,6 +40,7 @@ impl NodeApiHttpClient {
         self.post("v1/contract/register", tx, "Sending tx register contract")
             .await
     }
+    */
 
     pub async fn get_consensus_info(&self) -> Result<ConsensusInfo> {
         self.get("v1/consensus/info", "getting consensus info")

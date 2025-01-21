@@ -48,13 +48,6 @@ impl From<ProofTransaction> for TcpServerNetMessage {
     }
 }
 
-impl From<RegisterContractTransaction> for TcpServerNetMessage {
-    fn from(msg: RegisterContractTransaction) -> Self {
-        let tx: Transaction = msg.into();
-        tx.into()
-    }
-}
-
 impl TcpServerNetMessage {
     pub fn to_binary(&self) -> Result<Vec<u8>> {
         bincode::encode_to_vec(self, bincode::config::standard())
