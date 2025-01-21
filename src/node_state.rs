@@ -93,6 +93,8 @@ impl NodeState {
                 }
                 TransactionData::VerifiedProof(proof_tx) => {
                     // First, store the proofs and check if we can settle the transaction
+                    // NB: if some of the blob proof outputs are bad, we just ignore those
+                    // but we don't actually fail the transaction.
                     let blob_tx_to_try_and_settle = proof_tx
                         .proven_blobs
                         .iter()
@@ -104,11 +106,10 @@ impl NodeState {
                             ) {
                                 Ok(maybe_tx_hash) => maybe_tx_hash,
                                 Err(err) => {
-                                    error!(
-                                        "Failed to handle verified proof transaction {:?}: {err}",
-                                        proof_tx.hash()
+                                    info!(
+                                        "Failed to handle blob #{} in verified proof transaction {:?}: {err}",
+                                        blob_proof_data.hyle_output.index, proof_tx.hash(),
                                     );
-                                    block_under_construction.failed_txs.insert(tx.hash());
                                     None
                                 }
                             }
@@ -187,22 +188,16 @@ impl NodeState {
                     .get(&blob.contract_name)
                     .map(|b| TryInto::<NativeVerifiers>::try_into(&b.verifier))
                 {
-                    match verifiers::verify_native(
+                    let hyle_output = verifiers::verify_native(
                         blob_tx_hash.clone(),
                         BlobIndex(index),
                         &tx.blobs,
                         verifier,
-                    ) {
-                        Ok(hyle_output) => {
-                            return UnsettledBlobMetadata {
-                                blob: blob.clone(),
-                                possible_proofs: vec![(verifier.into(), hyle_output)],
-                            };
-                        }
-                        Err(e) => {
-                            error!("Failed to verify native blob on {blob_tx_hash}:{index} with error: {e}");
-                        }
-                    }
+                    );
+                    return UnsettledBlobMetadata {
+                        blob: blob.clone(),
+                        possible_proofs: vec![(verifier.into(), hyle_output)],
+                    };
                 } else {
                     natively_settlable = false;
                 }
@@ -847,6 +842,40 @@ pub mod test {
         // Check that we did not settled
         assert_eq!(state.contracts.get(&c1).unwrap().state.0, vec![0, 1, 2, 3]);
         assert_eq!(state.contracts.get(&c2).unwrap().state.0, vec![0, 1, 2, 3]);
+    }
+
+    #[test_log::test(tokio::test)]
+    async fn two_proof_with_some_invalid_blob_proof_output() {
+        let mut state = new_node_state().await;
+        let c1 = ContractName::new("c1");
+
+        let register_c1 = new_register_contract(c1.clone());
+
+        let blob_tx = BlobTransaction {
+            identity: Identity::new("test.c1"),
+            blobs: vec![new_blob(&c1.0), new_blob(&c1.0)],
+        };
+        let blob_tx_hash = blob_tx.hash();
+
+        state.handle_register_contract_tx(&register_c1).unwrap();
+        state.handle_blob_tx(&blob_tx).unwrap();
+
+        let hyle_output = make_hyle_output(blob_tx.clone(), BlobIndex(0));
+        let verified_proof = new_proof_tx(&c1, &hyle_output, &blob_tx_hash);
+        let invalid_output = make_hyle_output(blob_tx.clone(), BlobIndex(4));
+        let mut invalid_verified_proof = new_proof_tx(&c1, &invalid_output, &blob_tx_hash);
+
+        invalid_verified_proof
+            .proven_blobs
+            .insert(0, verified_proof.proven_blobs.first().unwrap().clone());
+
+        let block =
+            state.handle_signed_block(&craft_signed_block(5, vec![invalid_verified_proof.into()]));
+
+        // We don't fail.
+        assert_eq!(block.failed_txs.len(), 0);
+        // We only store one of the two.
+        assert_eq!(block.blob_proof_outputs.len(), 1);
     }
 
     #[test_log::test(tokio::test)]
