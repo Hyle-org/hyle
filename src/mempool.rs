@@ -322,8 +322,10 @@ impl Mempool {
         // Create new DataProposal with pending txs
         self.storage.new_data_proposal(&self.crypto); // TODO: copy crypto in storage
 
+        let entries = self.storage.get_lane_pending_entries(&self.storage.id)?;
+
         // Check for each pending DataProposal if it has enough signatures
-        if let Some(entries) = self.storage.get_lane_pending_entries(&self.storage.id)? {
+        if let Some(entries) = entries {
             for lane_entry in entries {
                 // If there's only 1 signature (=own signature), broadcast it to everyone
                 if lane_entry.signatures.len() == 1 && self.staking.bonded().len() > 1 {
@@ -356,7 +358,7 @@ impl Mempool {
                         .collect();
 
                     if only_for.is_empty() {
-                        return Ok(());
+                        continue;
                     }
 
                     self.metrics.add_data_proposal(&lane_entry.data_proposal);

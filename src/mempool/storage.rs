@@ -538,6 +538,8 @@ impl Storage {
             data_proposal.txs.len()
         );
 
+        debug!("{:?}", data_proposal.clone());
+
         self.lanes
             .entry(self.id.clone())
             .or_default()
