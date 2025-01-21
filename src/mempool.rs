@@ -1343,6 +1343,25 @@ pub mod test {
 
             (dp_orig.clone(), dp_orig.hash())
         }
+        pub fn last_validator_data_proposal(
+            &self,
+            validator: &ValidatorPublicKey,
+        ) -> (DataProposal, DataProposalHash) {
+            let dp_orig = self
+                .mempool
+                .storage
+                .lanes
+                .get(validator)
+                .unwrap()
+                .data_proposals
+                .last()
+                .unwrap()
+                .1
+                .data_proposal
+                .clone();
+
+            (dp_orig.clone(), dp_orig.hash())
+        }
         pub fn pop_data_proposal(&mut self) -> (DataProposal, DataProposalHash) {
             let dp_orig = self
                 .mempool
@@ -1378,6 +1397,7 @@ pub mod test {
 
             (dp_orig.clone(), dp_orig.hash())
         }
+
         pub fn push_data_proposal(&mut self, dp: DataProposal) {
             self.mempool
                 .storage

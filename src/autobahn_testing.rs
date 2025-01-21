@@ -585,10 +585,14 @@ async fn mempool_fail_to_vote_on_fork() {
         .make_data_proposal_with_pending_txs()
         .expect("Should create data proposal");
 
+    let dp1;
+
     broadcast! {
         description: "Disseminate Tx",
         from: node1.mempool_ctx, to: [node2.mempool_ctx, node3.mempool_ctx, node4.mempool_ctx],
-        message_matches: MempoolNetMessage::DataProposal(_)
+        message_matches: MempoolNetMessage::DataProposal(data) => {
+            dp1 = data.clone();
+        }
     };
 
     join_all(
@@ -648,6 +652,58 @@ async fn mempool_fail_to_vote_on_fork() {
         message_matches: MempoolNetMessage::DataVote(_)
     };
 
+    // BASIC FORK
+    // dp1(1) <- dp2(2)
+    //        <-        dp3(3)
+
+    let dp_fork_3 = DataProposal {
+        id: 3,
+        parent_data_proposal_hash: Some(dp1.hash()),
+        txs: vec![],
+    };
+
+    let data_proposal_fork_3 = node1
+        .mempool_ctx
+        .sign_data(MempoolNetMessage::DataProposal(dp_fork_3.clone()))
+        .unwrap();
+
+    node2
+        .mempool_ctx
+        .handle_msg(&data_proposal_fork_3, "Fork 3");
+    node3
+        .mempool_ctx
+        .handle_msg(&data_proposal_fork_3, "Fork 3");
+    node4
+        .mempool_ctx
+        .handle_msg(&data_proposal_fork_3, "Fork 3");
+
+    // Check fork has not been consumed
+
+    assert_ne!(
+        node2
+            .mempool_ctx
+            .last_validator_data_proposal(&node1.mempool_ctx.validator_pubkey())
+            .1,
+        dp_fork_3.hash()
+    );
+    assert_ne!(
+        node3
+            .mempool_ctx
+            .last_validator_data_proposal(&node1.mempool_ctx.validator_pubkey())
+            .1,
+        dp_fork_3.hash()
+    );
+    assert_ne!(
+        node4
+            .mempool_ctx
+            .last_validator_data_proposal(&node1.mempool_ctx.validator_pubkey())
+            .1,
+        dp_fork_3.hash()
+    );
+
+    // FORK with already registered id
+    // dp1(1) <- dp2(2)
+    //        <- dp3(2)
     // Remove data proposal id 1 from node 1, to recreate one on top of data proposal id 0, and create a fork
 
     node1.mempool_ctx.pop_data_proposal();

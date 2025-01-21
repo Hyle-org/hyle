@@ -207,19 +207,28 @@ impl Storage {
         let last_known_id = validator_lane.get_last_proposal_id().unwrap_or(&0);
         let last_known_hash = validator_lane.get_last_proposal_hash();
 
-        let local_parent_data_proposal_hash = data_proposal
+        let local_parent = data_proposal
             .parent_data_proposal_hash
             .as_ref()
-            .and_then(|hash| validator_lane.data_proposals.get(hash))
-            .map(|lane_entry| lane_entry.data_proposal.hash());
+            .and_then(|hash| validator_lane.data_proposals.get(hash));
+
+        let local_parent_data_proposal_hash =
+            local_parent.map(|lane_entry| lane_entry.data_proposal.hash());
+
+        let local_parent_data_proposal_id = local_parent
+            .map(|lane_entry| lane_entry.data_proposal.id)
+            .unwrap_or(0);
 
         // LEGIT DATA PROPOSAL
 
         // id == 0 + no registered data proposals = first data proposal to be processed
         // id == last + 1 and the parent is present locally means no fork
         let first_data_proposal = data_proposal.id == 0 && validator_lane.data_proposals.is_empty();
+
         let valid_next_data_proposal = data_proposal.id == last_known_id + 1
-            && data_proposal.parent_data_proposal_hash == local_parent_data_proposal_hash;
+            && data_proposal.parent_data_proposal_hash == local_parent_data_proposal_hash
+            && local_parent_data_proposal_id + 1 == data_proposal.id;
+
         if first_data_proposal || valid_next_data_proposal {
             return DataProposalVerdict::Process;
         }
