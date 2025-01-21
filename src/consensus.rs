@@ -1419,9 +1419,9 @@ pub mod test {
         send! {
             description: "Follower - PrepareVote",
             from: [
-                node2: ConsensusNetMessage::PrepareVote(cp_hash) => { assert_eq!(cp_hash, cp_round_hash); }
-                node3: ConsensusNetMessage::PrepareVote(cp_hash) => { assert_eq!(cp_hash, cp_round_hash); }
-                node4: ConsensusNetMessage::PrepareVote(cp_hash) => { assert_eq!(cp_hash, cp_round_hash); }
+                node2; ConsensusNetMessage::PrepareVote(cp_hash) => { assert_eq!(cp_hash, cp_round_hash); },
+                node3; ConsensusNetMessage::PrepareVote(cp_hash) => { assert_eq!(cp_hash, cp_round_hash); },
+                node4; ConsensusNetMessage::PrepareVote(cp_hash) => { assert_eq!(cp_hash, cp_round_hash); }
             ], to: node1
         };
 
@@ -1434,9 +1434,9 @@ pub mod test {
         send! {
             description: "Follower - Confirm Ack",
             from: [
-                node2: ConsensusNetMessage::ConfirmAck(cp_hash) => { assert_eq!(cp_hash, cp_round_hash); }
-                node3: ConsensusNetMessage::ConfirmAck(cp_hash) => { assert_eq!(cp_hash, cp_round_hash); }
-                node4: ConsensusNetMessage::ConfirmAck(cp_hash) => { assert_eq!(cp_hash, cp_round_hash); }
+                node2; ConsensusNetMessage::ConfirmAck(cp_hash) => { assert_eq!(cp_hash, cp_round_hash); },
+                node3; ConsensusNetMessage::ConfirmAck(cp_hash) => { assert_eq!(cp_hash, cp_round_hash); },
+                node4; ConsensusNetMessage::ConfirmAck(cp_hash) => { assert_eq!(cp_hash, cp_round_hash); }
             ], to: node1
         };
 

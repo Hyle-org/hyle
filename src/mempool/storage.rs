@@ -202,38 +202,77 @@ impl Storage {
             return DataProposalVerdict::Empty;
         }
 
-        // Check that we are not locally forking
-        let last_known_id = self
-            .lanes
-            .entry(validator.clone())
-            .or_default()
-            .get_last_proposal_id();
-        if data_proposal.id > 0 && Some(&(data_proposal.id - 1)) != last_known_id {
-            // Get the last known parent hash in order to get all the next ones
-            warn!(
-                "Refusing to vote for {:?} cause it could create a fork in the lane",
-                data_proposal.id
-            );
-            return DataProposalVerdict::Refuse;
+        let validator_lane = self.lanes.entry(validator.clone()).or_default();
+
+        let last_known_id = validator_lane.get_last_proposal_id().unwrap_or(&0);
+        let last_known_hash = validator_lane.get_last_proposal_hash();
+
+        let local_parent = data_proposal
+            .parent_data_proposal_hash
+            .as_ref()
+            .and_then(|hash| validator_lane.data_proposals.get(hash));
+
+        let local_parent_data_proposal_hash =
+            local_parent.map(|lane_entry| lane_entry.data_proposal.hash());
+
+        let local_parent_data_proposal_id = local_parent
+            .map(|lane_entry| lane_entry.data_proposal.id)
+            .unwrap_or(0);
+
+        // LEGIT DATA PROPOSAL
+
+        // id == 0 + no registered data proposals = first data proposal to be processed
+        // id == last + 1 and the parent is present locally means no fork
+        let first_data_proposal = data_proposal.id == 0 && validator_lane.data_proposals.is_empty();
+
+        let valid_next_data_proposal = data_proposal.id == last_known_id + 1
+            && data_proposal.parent_data_proposal_hash == local_parent_data_proposal_hash
+            && local_parent_data_proposal_id + 1 == data_proposal.id;
+
+        if first_data_proposal || valid_next_data_proposal {
+            return DataProposalVerdict::Process;
         }
 
-        // Check if he last DataProposal matches the parent hash of the new one
-        let last_known_parent_hash = self
-            .lanes
-            .entry(validator.clone())
-            .or_default()
-            .get_last_proposal_hash();
+        // FORKS
 
-        // Check if we already voted on that one
-        if last_known_parent_hash == Some(&data_proposal.hash()) {
+        // Find local data proposal that has the same parent as the received data proposal
+        let data_proposal_already_on_top_of_parent =
+            validator_lane.data_proposals.iter().find(|dp| {
+                dp.1.data_proposal.parent_data_proposal_hash
+                    == data_proposal.parent_data_proposal_hash
+            });
+        // A fork happens when the received data proposal points
+        // [id: 2] abc <- [id: 3] fgh
+        //             <- [id: 3] ijkl
+
+        // A different data proposal is already referring to the parent
+        if let Some(p) = data_proposal_already_on_top_of_parent {
+            if &p.1.data_proposal != data_proposal {
+                // Means a later data proposal is already on top of the parent
+                warn!("Fork detected on lane {:?}", validator);
+                return DataProposalVerdict::Refuse;
+            }
+        }
+
+        // ALREADY STORED
+
+        // Already present data proposal (just resend a vote)
+        if last_known_hash == Some(&data_proposal.hash()) {
             return DataProposalVerdict::Vote;
         }
 
-        if last_known_parent_hash != data_proposal.parent_data_proposal_hash.as_ref() {
+        // Missing data, let's sync before taking a decision
+        if local_parent_data_proposal_hash.is_none() {
             // Get the last known parent hash in order to get all the next ones
-            return DataProposalVerdict::Wait(last_known_parent_hash.cloned());
+            return DataProposalVerdict::Wait(last_known_hash.cloned());
         }
-        DataProposalVerdict::Process
+
+        error!(
+            "DataProposal cannot be handled: {:?}",
+            data_proposal.clone()
+        );
+
+        DataProposalVerdict::Refuse
     }
 
     pub fn process_data_proposal(
@@ -416,6 +455,18 @@ impl Storage {
         bail!("Validator not found");
     }
 
+    pub fn add_waiting_data_proposal(
+        &mut self,
+        validator: &ValidatorPublicKey,
+        data_proposal: DataProposal,
+    ) {
+        self.lanes
+            .entry(validator.clone())
+            .or_default()
+            .waiting
+            .push(data_proposal);
+    }
+
     pub fn get_waiting_data_proposals(
         &mut self,
         validator: &ValidatorPublicKey,
@@ -486,6 +537,8 @@ impl Storage {
             self.id,
             data_proposal.txs.len()
         );
+
+        debug!("{:?}", data_proposal.clone());
 
         self.lanes
             .entry(self.id.clone())
@@ -713,6 +766,7 @@ impl Lane {
     }
 
     pub fn add_missing_lane_entries(&mut self, lane_entries: Vec<LaneEntry>) -> Result<()> {
+        let lane_entries_len = lane_entries.len();
         let mut ordered_lane_entries = lane_entries;
         ordered_lane_entries.dedup();
 
@@ -726,10 +780,16 @@ impl Lane {
             }
             self.add_proposal(lane_entry.data_proposal.hash(), lane_entry);
         }
+        debug!(
+            "Nb data proposals after adding {} missing entries: {}",
+            lane_entries_len,
+            self.data_proposals.len()
+        );
         Ok(())
     }
 
     fn get_waiting_data_proposals(&mut self) -> Result<Vec<DataProposal>> {
+        debug!("Getting waiting data proposals: {}", self.waiting.len());
         let wp = self.waiting.drain(0..).collect::<Vec<DataProposal>>();
         if wp.len() > 1 {
             for i in 0..wp.len() - 1 {
