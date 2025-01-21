@@ -521,12 +521,12 @@ impl Storage {
             .get(validator)
             .and_then(|lane| lane.get_last_proposal())
     }
-    pub fn get_lane_uncutted_entries(
+    pub fn get_lane_pending_entries(
         &self,
         validator: &ValidatorPublicKey,
     ) -> Result<Option<Vec<LaneEntry>>> {
         if let Some(lane) = self.lanes.get(validator) {
-            lane.get_uncutted_entries()
+            lane.get_pending_entries()
         } else {
             bail!("Validator not found")
         }
@@ -604,7 +604,7 @@ impl Lane {
         self.data_proposals.get_mut(hash)
     }
 
-    pub fn get_uncutted_entries(&self) -> Result<Option<Vec<LaneEntry>>> {
+    pub fn get_pending_entries(&self) -> Result<Option<Vec<LaneEntry>>> {
         let last_cutted_dp_hash = self.last_cut.as_ref().map(|(_, dp_hash)| dp_hash);
         if let Some(last_dp_hash) = self.get_last_proposal_hash() {
             self.get_lane_entries_between_hashes(last_cutted_dp_hash, last_dp_hash)

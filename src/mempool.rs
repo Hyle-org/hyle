@@ -322,8 +322,8 @@ impl Mempool {
         // Create new DataProposal with pending txs
         self.storage.new_data_proposal(&self.crypto); // TODO: copy crypto in storage
 
-        // Check for each uncutted DataProposal if it has enough signatures
-        if let Some(entries) = self.storage.get_lane_uncutted_entries(&self.storage.id)? {
+        // Check for each pending DataProposal if it has enough signatures
+        if let Some(entries) = self.storage.get_lane_pending_entries(&self.storage.id)? {
             for lane_entry in entries {
                 // If there's only 1 signature (=own signature), broadcast it to everyone
                 if lane_entry.signatures.len() == 1 && self.staking.bonded().len() > 1 {
@@ -333,9 +333,6 @@ impl Mempool {
                         self.staking.bonded().len(),
                         lane_entry.data_proposal.txs.len()
                     );
-                    if self.staking.bonded().is_empty() {
-                        return Ok(());
-                    }
                     self.metrics.add_data_proposal(&lane_entry.data_proposal);
                     self.metrics.add_proposed_txs(&lane_entry.data_proposal);
                     self.broadcast_net_message(MempoolNetMessage::DataProposal(
@@ -343,7 +340,7 @@ impl Mempool {
                     ))?;
                 } else {
                     // If None, rebroadcast it to every validator that has not yet signed it
-                    let validator_that_has_signed: Vec<&ValidatorPublicKey> = lane_entry
+                    let validator_that_has_signed: HashSet<&ValidatorPublicKey> = lane_entry
                         .signatures
                         .iter()
                         .map(|s| &s.signature.validator)
@@ -716,11 +713,11 @@ impl Mempool {
         );
         let new_voting_power = self.staking.compute_voting_power(validators.as_slice());
         let f = self.staking.compute_f();
-        // Only send the message if voting power exceeds f, 2*f or 3*f
+        // Only send the message if voting power exceeds f, 2 * f or is exactly 3 * f + 1
         // This garentees that the message is sent only once per threshold
         if old_voting_power < f && new_voting_power >= f
             || old_voting_power < 2 * f && new_voting_power >= 2 * f
-            || old_voting_power < 3 * f && new_voting_power >= 3 * f
+            || new_voting_power == 3 * f + 1
         {
             self.broadcast_net_message(MempoolNetMessage::PoDAUpdate(
                 data_proposal_hash,
