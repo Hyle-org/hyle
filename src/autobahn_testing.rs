@@ -532,7 +532,7 @@ async fn mempool_dissemination_flow_resync() {
         from: [
             node4.mempool_ctx; MempoolNetMessage::SyncRequest(from_hash, to_hash) => {
                 assert!(from_hash.is_none());
-                assert_eq!(to_hash, &data_proposal_2.hash());
+                assert_eq!(to_hash, &data_proposal_1.hash());
             }
         ], to: node1.mempool_ctx
     };
@@ -542,11 +542,13 @@ async fn mempool_dissemination_flow_resync() {
         from: [
             node1.mempool_ctx; MempoolNetMessage::SyncReply(lane_entries) => {
                 // TODO: Remove last Car returned by SyncReply (matching the "to" hash)
-                assert_eq!(lane_entries.len(), 2);
+                assert_eq!(lane_entries.len(), 1);
                 assert_eq!(lane_entries.first().unwrap().data_proposal, data_proposal_1);
             }
         ], to: node4.mempool_ctx
     };
+
+    node4.mempool_ctx.handle_processed_data_proposals().await;
 
     send! {
         description: "Disseminated Tx Vote",
