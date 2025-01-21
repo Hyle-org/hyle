@@ -19,7 +19,7 @@ sp1-sdk = { version = "4.0.0", default-features = false }
 tracing = "0.1"
 
 [dev-dependencies]
-test-log = { version = "0.2.16", features = [
+test-log = { version = "0.2.17", features = [
     "color",
     "trace",
 ], default-features = false }
