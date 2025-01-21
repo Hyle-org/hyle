@@ -41,7 +41,7 @@ pub struct Lane {
     pub waiting: Vec<DataProposal>,
 }
 
-#[derive(Debug, Clone, Encode, Decode)]
+#[derive(Debug, Default, Clone, Encode, Decode)]
 pub struct Storage {
     pub id: ValidatorPublicKey,
     pub pending_txs: Vec<Transaction>,

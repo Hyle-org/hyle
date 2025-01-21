@@ -53,7 +53,7 @@ pub enum ConsensusCommand {
     StartNewSlot,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, Encode, Decode)]
 pub struct CommittedConsensusProposal {
     pub staking: Staking,
     pub consensus_proposal: ConsensusProposal,
