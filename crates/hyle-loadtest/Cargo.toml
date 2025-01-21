@@ -16,6 +16,6 @@ client-sdk = { path = "../client-sdk", features = ["tcp", "risc0"] }
 
 anyhow = "1.0.95"
 bincode = { version = "2.0.0-rc.3", features = ["serde"] }
-clap = { version = "4.5.26", features = ["derive"]}
+clap = { version = "4.5.27", features = ["derive"]}
 tracing = "0.1"
 tracing-subscriber = "0.3"
