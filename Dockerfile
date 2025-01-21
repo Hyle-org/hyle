@@ -8,14 +8,14 @@ COPY Cargo.toml Cargo.lock ./
 COPY .cargo/config.toml .cargo/config.toml
 COPY src ./src
 COPY crates ./crates
-RUN cargo build --bin node --bin indexer --release --features node_local_proving
+RUN cargo build --bin hyle --bin indexer --release --features node_local_proving
 
 # RUNNER
 FROM $ALPINE_IMAGE 
 
 WORKDIR /hyle
 
-COPY --from=builder /usr/src/hyle/target/release/node ./
+COPY --from=builder /usr/src/hyle/target/release/hyle ./
 COPY --from=builder /usr/src/hyle/target/release/indexer ./
 
 
@@ -27,4 +27,4 @@ ENV HYLE_DATA_DIRECTORY="data"
 ENV HYLE_RUN_INDEXER="false"
 ENV HYLE_REST=0.0.0.0:4321
 
-CMD ["./node"]
+CMD ["./hyle"]
