@@ -7,6 +7,8 @@ use std::sync::{Arc, Mutex};
 
 use anyhow::{bail, Context, Result};
 use axum::Router;
+use hyle_model::api::NodeInfo;
+use hyle_model::TxHash;
 use tracing::info;
 
 use crate::bus::metrics::BusMetrics;
@@ -20,6 +22,7 @@ use crate::model::{CommonRunContext, NodeRunContext, SharedRunContext};
 use crate::module_handle_messages;
 use crate::node_state::module::{NodeStateEvent, NodeStateModule};
 use crate::p2p::P2P;
+use crate::rest::{RestApi, RestApiRunContext};
 use crate::single_node_consensus::SingleNodeConsensus;
 use crate::tcp_server::TcpServer;
 use crate::utils::conf::Conf;
@@ -214,17 +217,17 @@ impl NodeIntegrationCtx {
     async fn build_module<T>(
         handler: &mut ModulesHandler,
         ctx: &SharedRunContext,
-        reg_ctx: &<T as Module>::Context,
+        reg_ctx: <T as Module>::Context,
         mocks: &mut HashMap<TypeId, MockBuilder>,
     ) -> Result<()>
     where
         T: Module + 'static + Send,
-        <T as Module>::Context: Send + Clone,
+        <T as Module>::Context: Send,
     {
         if let Some(mock) = mocks.remove(&TypeId::of::<T>()) {
             mock(handler, ctx).await
         } else {
-            handler.build_module::<T>(reg_ctx.clone()).await
+            handler.build_module::<T>(reg_ctx).await
         }
     }
 
@@ -235,6 +238,7 @@ impl NodeIntegrationCtx {
         mut mocks: HashMap<TypeId, MockBuilder>,
     ) -> Result<ModulesHandler> {
         let crypto = Arc::new(crypto);
+        let pubkey = crypto.validator_pubkey().clone();
         info!("Starting node with config: {:?}", &config);
 
         std::fs::create_dir_all(&config.data_directory).context("creating data directory")?;
@@ -254,27 +258,60 @@ impl NodeIntegrationCtx {
 
         let mut handler = ModulesHandler::new(&bus).await;
 
-        Self::build_module::<Mempool>(&mut handler, &ctx, &ctx, &mut mocks).await?;
+        Self::build_module::<Mempool>(&mut handler, &ctx, ctx.clone(), &mut mocks).await?;
 
-        Self::build_module::<Genesis>(&mut handler, &ctx, &ctx, &mut mocks).await?;
+        Self::build_module::<Genesis>(&mut handler, &ctx, ctx.clone(), &mut mocks).await?;
 
         if config.single_node.unwrap_or(false) {
-            Self::build_module::<SingleNodeConsensus>(&mut handler, &ctx, &ctx, &mut mocks).await?;
+            Self::build_module::<SingleNodeConsensus>(&mut handler, &ctx, ctx.clone(), &mut mocks)
+                .await?;
         } else {
-            Self::build_module::<Consensus>(&mut handler, &ctx, &ctx, &mut mocks).await?;
+            Self::build_module::<Consensus>(&mut handler, &ctx, ctx.clone(), &mut mocks).await?;
         }
 
         if run_indexer {
-            Self::build_module::<Indexer>(&mut handler, &ctx, &ctx.common, &mut mocks).await?;
+            Self::build_module::<Indexer>(&mut handler, &ctx, ctx.common.clone(), &mut mocks)
+                .await?;
         }
 
-        Self::build_module::<DataAvailability>(&mut handler, &ctx, &ctx, &mut mocks).await?;
-        Self::build_module::<NodeStateModule>(&mut handler, &ctx, &ctx.common, &mut mocks).await?;
+        Self::build_module::<DataAvailability>(&mut handler, &ctx, ctx.clone(), &mut mocks).await?;
+        Self::build_module::<NodeStateModule>(&mut handler, &ctx, ctx.common.clone(), &mut mocks)
+            .await?;
 
-        Self::build_module::<P2P>(&mut handler, &ctx, &ctx, &mut mocks).await?;
+        Self::build_module::<P2P>(&mut handler, &ctx, ctx.clone(), &mut mocks).await?;
+
+        // Should come last so the other modules have nested their own routes.
+        #[allow(clippy::expect_used, reason = "Fail on misconfiguration")]
+        let router = ctx
+            .common
+            .router
+            .lock()
+            .expect("Context router should be available")
+            .take()
+            .expect("Context router should be available");
+
+        // Not really intended to be mocked but you can (and probably should) skip it.
+        Self::build_module::<RestApi>(
+            &mut handler,
+            &ctx,
+            RestApiRunContext {
+                rest_addr: ctx.common.config.rest.clone(),
+                max_body_size: ctx.common.config.rest_max_body_size,
+                info: NodeInfo {
+                    id: config.id.clone(),
+                    pubkey: Some(pubkey),
+                    da_address: config.da_address.clone(),
+                },
+                bus: ctx.common.bus.new_handle(),
+                metrics_layer: None,
+                router: router.clone(),
+            },
+            &mut mocks,
+        )
+        .await?;
 
         if run_tcp_server {
-            Self::build_module::<TcpServer>(&mut handler, &ctx, &ctx, &mut mocks).await?;
+            Self::build_module::<TcpServer>(&mut handler, &ctx, ctx.clone(), &mut mocks).await?;
         }
 
         // Ensure we didn't pass a Mock we didn't use
@@ -291,6 +328,22 @@ impl NodeIntegrationCtx {
     }
     pub async fn wait_for_processed_genesis(&mut self) -> Result<()> {
         let _: NodeStateEvent = self.bus_client.recv().await?;
+        Ok(())
+    }
+    pub async fn wait_for_n_blocks(&mut self, n: u32) -> Result<()> {
+        for _ in 0..n {
+            let _: NodeStateEvent = self.bus_client.recv().await?;
+        }
+        Ok(())
+    }
+    pub async fn wait_for_settled_tx(&mut self, tx: TxHash) -> Result<()> {
+        loop {
+            let event: NodeStateEvent = self.bus_client.recv().await?;
+            let NodeStateEvent::NewBlock(block) = event;
+            if block.settled_blob_tx_hashes.iter().any(|h| h == &tx) {
+                break;
+            }
+        }
         Ok(())
     }
 }

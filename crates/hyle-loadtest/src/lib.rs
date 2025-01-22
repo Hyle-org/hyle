@@ -4,8 +4,8 @@ use client_sdk::tcp_client::NodeTcpClient;
 use client_sdk::transaction_builder::{ProvableBlobTx, TxExecutorBuilder};
 use hydentity::Hydentity;
 use hyle_contract_sdk::erc20::ERC20;
-use hyle_contract_sdk::{Blob, BlobData};
-use hyle_contract_sdk::{BlobTransaction, ProofTransaction, RegisterContractTransaction};
+use hyle_contract_sdk::{Blob, BlobData, ContractAction, RegisterContractAction};
+use hyle_contract_sdk::{BlobTransaction, ProofTransaction};
 use hyle_contract_sdk::{ContractName, Identity};
 use hyle_contract_sdk::{Digestable, StateDigest, TcpServerNetMessage};
 use hyllar::client::transfer;
@@ -40,12 +40,15 @@ pub fn setup_hyllar(users: u32) -> Result<HyllarTokenContract> {
 pub async fn setup(url: String, users: u32, verifier: String) -> Result<()> {
     let hyllar_contract = setup_hyllar(users)?;
 
-    let tx = RegisterContractTransaction {
-        contract_name: "hyllar-test".into(),
-        owner: "hyle".into(),
-        verifier: verifier.into(),
-        program_id: hyle_contracts::HYLLAR_ID.to_vec().into(),
-        state_digest: hyllar_contract.state().as_digest(),
+    let tx = BlobTransaction {
+        identity: Identity::new("hyle.hyle"),
+        blobs: vec![RegisterContractAction {
+            contract_name: "hyllar-test".into(),
+            verifier: verifier.into(),
+            program_id: hyle_contracts::HYLLAR_ID.to_vec().into(),
+            state_digest: hyllar_contract.state().as_digest(),
+        }
+        .as_blob("hyle".into(), None, None)],
     };
 
     let mut client = NodeTcpClient::new(url).await.unwrap();

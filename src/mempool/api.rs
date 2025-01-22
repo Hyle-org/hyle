@@ -8,8 +8,7 @@ use tracing::info;
 use crate::{
     bus::{bus_client, metrics::BusMetrics, BusClientSender, BusMessage},
     model::{
-        BlobTransaction, CommonRunContext, Hashable, ProofTransaction, RegisterContractTransaction,
-        Transaction, TransactionData,
+        BlobTransaction, CommonRunContext, Hashable, ProofTransaction, Transaction, TransactionData,
     },
     rest::AppError,
 };
@@ -36,7 +35,6 @@ pub async fn api(ctx: &CommonRunContext) -> Router<()> {
     };
 
     Router::new()
-        .route("/contract/register", post(send_contract_transaction))
         .route("/tx/send/blob", post(send_blob_transaction))
         .route("/tx/send/proof", post(send_proof_transaction))
         .with_state(state)
@@ -54,13 +52,6 @@ async fn handle_send(
         .map(|_| tx_hash)
         .map(Json)
         .map_err(|err| AppError(StatusCode::INTERNAL_SERVER_ERROR, anyhow!(err)))
-}
-
-pub async fn send_contract_transaction(
-    State(state): State<RouterState>,
-    Json(payload): Json<RegisterContractTransaction>,
-) -> Result<impl IntoResponse, AppError> {
-    handle_send(state, TransactionData::RegisterContract(payload)).await
 }
 
 pub async fn send_blob_transaction(

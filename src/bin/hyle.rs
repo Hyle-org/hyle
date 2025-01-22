@@ -156,7 +156,7 @@ async fn main() -> Result<()> {
                 da_address: config.da_address.clone(),
             },
             bus: ctx.common.bus.new_handle(),
-            metrics_layer,
+            metrics_layer: Some(metrics_layer),
             router: router.clone(),
         })
         .await?;

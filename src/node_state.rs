@@ -6,6 +6,7 @@ use crate::model::verifiers::NativeVerifiers;
 use crate::model::*;
 use anyhow::{bail, Error, Result};
 use bincode::{Decode, Encode};
+use contract_registration::validate_contract_registration;
 use hyle_contract_sdk::{utils::parse_structured_blob, BlobIndex, HyleOutput, TxHash};
 use ordered_tx_map::OrderedTxMap;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
@@ -29,13 +30,36 @@ pub struct SettledTxOutput {
 /// NodeState manages the flattened, up-to-date state of the chain.
 /// It processes raw transactions and outputs more structured data for indexers.
 /// See also: NodeStateModule for the actual module implementation.
-#[derive(Default, Encode, Decode, Debug, Clone)]
+#[derive(Encode, Decode, Debug, Clone)]
 pub struct NodeState {
     timeouts: Timeouts,
     current_height: BlockHeight,
     // This field is public for testing purposes
     pub contracts: HashMap<ContractName, Contract>,
     unsettled_transactions: OrderedTxMap,
+}
+
+// TODO: we should register the 'hyle' TLD in the genesis block.
+impl Default for NodeState {
+    fn default() -> Self {
+        let mut ret = Self {
+            timeouts: Timeouts::default(),
+            current_height: BlockHeight(0),
+            contracts: HashMap::new(),
+            unsettled_transactions: OrderedTxMap::default(),
+        };
+        // Insert a default hyle-TLD contract
+        ret.contracts.insert(
+            "hyle".into(),
+            Contract {
+                name: "hyle".into(),
+                program_id: ProgramId(vec![]),
+                state: StateDigest(vec![0]),
+                verifier: Verifier("hyle".to_owned()),
+            },
+        );
+        ret
+    }
 }
 
 impl NodeState {
@@ -121,29 +145,14 @@ impl NodeState {
                         blob_tx_to_try_and_settle,
                     );
                 }
-                TransactionData::RegisterContract(register_contract_transaction) => {
-                    match self.handle_register_contract_tx(register_contract_transaction) {
-                        Ok(_) => {}
-                        Err(e) => {
-                            error!("Failed to handle register contract transaction: {:?}", e);
-                            block_under_construction.failed_txs.insert(tx.hash());
-                        }
-                    }
-                }
             }
         }
         block_under_construction.txs = txs;
         block_under_construction
     }
 
-    pub fn handle_register_contract_tx(
-        &mut self,
-        tx: &RegisterContractTransaction,
-    ) -> Result<(), Error> {
-        if self.contracts.contains_key(&tx.contract_name) {
-            bail!("Contract already exists")
-        }
-        info!("📝 Registering new contract {}", tx.contract_name);
+    pub fn handle_register_contract_action(&mut self, tx: &RegisterContractAction) {
+        info!("📝 Registering contract {}", tx.contract_name);
         self.contracts.insert(
             tx.contract_name.clone(),
             Contract {
@@ -153,14 +162,12 @@ impl NodeState {
                 verifier: tx.verifier.clone(),
             },
         );
-
-        Ok(())
     }
 
     /// Returns a TxHash only if the blob transaction calls only native verifiers and thus can be
     /// settled directly.
     fn handle_blob_tx(&mut self, tx: &BlobTransaction) -> Result<Option<TxHash>, Error> {
-        debug!("Handle blob tx: {:?}", tx);
+        debug!("Handle blob tx: {:?} (hash: {})", tx, tx.hash());
         let identity_parts: Vec<&str> = tx.identity.0.split('.').collect();
         if identity_parts.len() != 2 {
             bail!("Transaction identity is not correctly formed. It should be in the form <id>.<contract_id_name>");
@@ -176,7 +183,7 @@ impl NodeState {
 
         let (blob_tx_hash, blobs_hash) = (tx.hash(), tx.blobs_hash());
 
-        let mut natively_settlable = true;
+        let mut should_try_and_settle = true;
 
         let blobs: Vec<UnsettledBlobMetadata> = tx
             .blobs
@@ -198,8 +205,8 @@ impl NodeState {
                         blob: blob.clone(),
                         possible_proofs: vec![(verifier.into(), hyle_output)],
                     };
-                } else {
-                    natively_settlable = false;
+                } else if blob.contract_name.0 != "hyle" {
+                    should_try_and_settle = false;
                 }
                 UnsettledBlobMetadata {
                     blob: blob.clone(),
@@ -208,18 +215,19 @@ impl NodeState {
             })
             .collect();
 
-        self.unsettled_transactions.add(UnsettledBlobTransaction {
+        // If we're behind other pending transactions, we can't settle yet.
+        should_try_and_settle = self.unsettled_transactions.add(UnsettledBlobTransaction {
             identity: tx.identity.clone(),
             hash: blob_tx_hash.clone(),
             blobs_hash,
             blobs,
-        });
+        }) && should_try_and_settle;
 
         // Update timeouts
         self.timeouts
             .set(blob_tx_hash.clone(), self.current_height + 100); // TODO: Timeout after 100 blocks, make it configurable !
 
-        if natively_settlable {
+        if should_try_and_settle {
             Ok(Some(blob_tx_hash))
         } else {
             Ok(None)
@@ -239,7 +247,7 @@ impl NodeState {
         {
             Some(a) => a,
             _ => {
-                bail!("BlobTx not found");
+                bail!("BlobTx {} not found", blob_proof_data.blob_tx_hash);
             }
         };
 
@@ -359,6 +367,8 @@ impl NodeState {
             bail!("Tx: {} is not ready to settle.", unsettled_tx.hash);
         }
 
+        // We are OK to settle now.
+
         #[allow(clippy::unwrap_used, reason = "must exist because of above checks")]
         let unsettled_tx = self
             .unsettled_transactions
@@ -389,6 +399,33 @@ impl NodeState {
         let known_contract_state = current_contracts
             .get(contract_name)
             .unwrap_or(contracts.get(contract_name).unwrap());
+        // Super special case - the hyle contract has "synthetic proofs".
+        // We need to check the current state of 'current_contracts' to check validity,
+        // so we really can't do this before we've settled the earlier blobs.
+        if contract_name.0 == "hyle" {
+            return match Self::handle_blob_for_hyle_tld(
+                contracts,
+                &current_contracts,
+                &current_blob.blob,
+            ) {
+                Ok(contract) => {
+                    let mut us = current_contracts.clone();
+                    us.insert(contract.name.clone(), contract);
+                    // Have to push something here or the rest of the logic breaks
+                    blob_proof_output_indices.push(0);
+                    Self::settle_blobs_recursively(
+                        contracts,
+                        us,
+                        blob_iter.clone(),
+                        blob_proof_output_indices.clone(),
+                    )
+                }
+                Err(err) => {
+                    debug!("Could not settle blob proof output for 'hyle': {:?}", err);
+                    (current_contracts, blob_proof_output_indices, false)
+                }
+            };
+        }
         for (i, proof_metadata) in current_blob.possible_proofs.iter().enumerate() {
             if proof_metadata.1.initial_state == known_contract_state.state
                 && proof_metadata.0 == known_contract_state.program_id
@@ -431,6 +468,7 @@ impl NodeState {
     }
 
     /// Handle a settled blob transaction.
+    /// Handles the multiple side-effects of settling.
     /// This returns the list of new TXs to try and settle next,
     /// i.e. the "next" TXs for each contract.
     fn on_settled_blob_tx(
@@ -447,16 +485,16 @@ impl NodeState {
         // When a proof tx is handled, three things happen:
         // 1. Blobs get verified
         // 2. Maybe: BlobTransactions get settled
-        // 3. Maybe: Contract state digests are updated
+        // 3. Maybe: Contract are updated
 
         // Keep track of verified blobs
         std::mem::take(&mut settled_tx.blobs)
             .iter_mut()
             .enumerate()
             .for_each(|(i, blob_metadata)| {
+                let blob = std::mem::take(&mut blob_metadata.blob);
                 // Keep track of all stakers
-                if blob_metadata.blob.contract_name.0 == "staking" {
-                    let blob = std::mem::take(&mut blob_metadata.blob);
+                if blob.contract_name.0 == "staking" {
                     let staking_action: StakingAction =
                         parse_structured_blob(&[blob], &BlobIndex(0))
                             .data
@@ -464,6 +502,10 @@ impl NodeState {
                     block_under_construction
                         .staking_actions
                         .push((settled_tx.identity.clone(), staking_action));
+                } else if let Ok(reg) =
+                    StructuredBlobData::<RegisterContractAction>::try_from(blob.data)
+                {
+                    self.handle_register_contract_action(&reg.parameters);
                 }
 
                 #[allow(
@@ -506,6 +548,38 @@ impl NodeState {
         }
 
         next_txs_to_try_and_settle
+    }
+
+    fn handle_blob_for_hyle_tld(
+        contracts: &HashMap<ContractName, Contract>,
+        current_contracts: &BTreeMap<ContractName, Contract>,
+        current_blob: &Blob,
+    ) -> Result<Contract> {
+        let Ok(reg) =
+            StructuredBlobData::<RegisterContractAction>::try_from(current_blob.data.clone())
+        else {
+            bail!("Blob is  not a RegisterContractAction");
+        };
+
+        // Check name, it's either a direct subdomain or a TLD
+        validate_contract_registration(&"hyle".into(), &reg.parameters.contract_name)?;
+
+        // Check it's not already registered
+        if contracts.contains_key(&reg.parameters.contract_name)
+            || current_contracts.contains_key(&reg.parameters.contract_name)
+        {
+            bail!(
+                "Contract {} is already registered",
+                reg.parameters.contract_name.0
+            );
+        }
+
+        Ok(Contract {
+            name: reg.parameters.contract_name.clone(),
+            program_id: reg.parameters.program_id.clone(),
+            state: reg.parameters.state_digest.clone(),
+            verifier: reg.parameters.verifier.clone(),
+        })
     }
 
     fn verify_hyle_output(
@@ -589,17 +663,29 @@ pub mod test {
         }
     }
 
-    fn new_register_contract(name: ContractName) -> RegisterContractTransaction {
-        RegisterContractTransaction {
-            owner: "test".to_string(),
-            verifier: "test".into(),
-            program_id: ProgramId(vec![]),
-            state_digest: StateDigest(vec![0, 1, 2, 3]),
-            contract_name: name,
+    pub fn make_register_contract_tx(name: ContractName) -> BlobTransaction {
+        BlobTransaction {
+            identity: "hyle.hyle".into(),
+            blobs: vec![RegisterContractAction {
+                verifier: "test".into(),
+                program_id: ProgramId(vec![]),
+                state_digest: StateDigest(vec![0, 1, 2, 3]),
+                contract_name: name,
+            }
+            .as_blob("hyle".into(), None, None)],
         }
     }
 
-    fn new_proof_tx(
+    fn make_register_contract_action(contract_name: ContractName) -> RegisterContractAction {
+        RegisterContractAction {
+            verifier: "test".into(),
+            program_id: ProgramId(vec![]),
+            state_digest: StateDigest(vec![0, 1, 2, 3]),
+            contract_name,
+        }
+    }
+
+    pub fn new_proof_tx(
         contract: &ContractName,
         hyle_output: &HyleOutput,
         blob_tx_hash: &TxHash,
@@ -625,7 +711,7 @@ pub mod test {
         }
     }
 
-    fn make_hyle_output(blob_tx: BlobTransaction, blob_index: BlobIndex) -> HyleOutput {
+    pub fn make_hyle_output(blob_tx: BlobTransaction, blob_index: BlobIndex) -> HyleOutput {
         HyleOutput {
             version: 1,
             tx_hash: blob_tx.hash(),
@@ -740,8 +826,8 @@ pub mod test {
         let c2 = ContractName::new("c2");
         let identity = Identity::new("test.c1");
 
-        let register_c1 = new_register_contract(c1.clone());
-        let register_c2 = new_register_contract(c2.clone());
+        let register_c1 = make_register_contract_action(c1.clone());
+        let register_c2 = make_register_contract_action(c2.clone());
 
         let blob_tx = BlobTransaction {
             identity: identity.clone(),
@@ -749,8 +835,8 @@ pub mod test {
         };
         let blob_tx_hash = blob_tx.hash();
 
-        state.handle_register_contract_tx(&register_c1).unwrap();
-        state.handle_register_contract_tx(&register_c2).unwrap();
+        state.handle_register_contract_action(&register_c1);
+        state.handle_register_contract_action(&register_c2);
         state.handle_blob_tx(&blob_tx).unwrap();
 
         let hyle_output_c1 = make_hyle_output(blob_tx.clone(), BlobIndex(0));
@@ -774,8 +860,8 @@ pub mod test {
         let c1 = ContractName::new("c1");
         let c2 = ContractName::new("c2");
 
-        let register_c1 = new_register_contract(c1.clone());
-        let register_c2 = new_register_contract(c2.clone());
+        let register_c1 = make_register_contract_action(c1.clone());
+        let register_c2 = make_register_contract_action(c2.clone());
 
         let blob_tx_1 = BlobTransaction {
             identity: Identity::new("test.c1"),
@@ -783,8 +869,8 @@ pub mod test {
         };
         let blob_tx_hash_1 = blob_tx_1.hash();
 
-        state.handle_register_contract_tx(&register_c1).unwrap();
-        state.handle_register_contract_tx(&register_c2).unwrap();
+        state.handle_register_contract_action(&register_c1);
+        state.handle_register_contract_action(&register_c2);
         state.handle_blob_tx(&blob_tx_1).unwrap();
 
         let hyle_output_c1 = make_hyle_output(blob_tx_1.clone(), BlobIndex(1)); // Wrong index
@@ -807,8 +893,8 @@ pub mod test {
         let c1 = ContractName::new("c1");
         let c2 = ContractName::new("c2");
 
-        let register_c1 = new_register_contract(c1.clone());
-        let register_c2 = new_register_contract(c2.clone());
+        let register_c1 = make_register_contract_action(c1.clone());
+        let register_c2 = make_register_contract_action(c2.clone());
 
         let blob_tx = BlobTransaction {
             identity: Identity::new("test.c1"),
@@ -816,8 +902,8 @@ pub mod test {
         };
         let blob_tx_hash = blob_tx.hash();
 
-        state.handle_register_contract_tx(&register_c1).unwrap();
-        state.handle_register_contract_tx(&register_c2).unwrap();
+        state.handle_register_contract_action(&register_c1);
+        state.handle_register_contract_action(&register_c2);
         state.handle_blob_tx(&blob_tx).unwrap();
 
         let hyle_output_c1 = make_hyle_output(blob_tx.clone(), BlobIndex(0));
@@ -849,7 +935,7 @@ pub mod test {
         let mut state = new_node_state().await;
         let c1 = ContractName::new("c1");
 
-        let register_c1 = new_register_contract(c1.clone());
+        let register_c1 = make_register_contract_action(c1.clone());
 
         let blob_tx = BlobTransaction {
             identity: Identity::new("test.c1"),
@@ -857,7 +943,7 @@ pub mod test {
         };
         let blob_tx_hash = blob_tx.hash();
 
-        state.handle_register_contract_tx(&register_c1).unwrap();
+        state.handle_register_contract_action(&register_c1);
         state.handle_blob_tx(&blob_tx).unwrap();
 
         let hyle_output = make_hyle_output(blob_tx.clone(), BlobIndex(0));
@@ -883,7 +969,7 @@ pub mod test {
         let mut state = new_node_state().await;
         let c1 = ContractName::new("c1");
 
-        let register_c1 = new_register_contract(c1.clone());
+        let register_c1 = make_register_contract_action(c1.clone());
 
         let first_blob = new_blob(&c1.0);
         let second_blob = new_blob(&c1.0);
@@ -895,7 +981,7 @@ pub mod test {
         };
         let blob_tx_hash = blob_tx.hash();
 
-        state.handle_register_contract_tx(&register_c1).unwrap();
+        state.handle_register_contract_action(&register_c1);
         state.handle_blob_tx(&blob_tx).unwrap();
 
         let first_hyle_output = make_hyle_output(blob_tx.clone(), BlobIndex(0));
@@ -927,7 +1013,7 @@ pub mod test {
         let mut state = new_node_state().await;
 
         let c1 = ContractName::new("c1");
-        let register_c1 = new_register_contract(c1.clone());
+        let register_c1 = make_register_contract_action(c1.clone());
 
         let first_blob = new_blob(&c1.0);
         let second_blob = new_blob(&c1.0);
@@ -938,7 +1024,7 @@ pub mod test {
         };
         let blob_tx_hash = blob_tx.hash();
 
-        state.handle_register_contract_tx(&register_c1).unwrap();
+        state.handle_register_contract_action(&register_c1);
         state.handle_blob_tx(&blob_tx).unwrap();
 
         // The test is that we send a proof for the first blob, then a proof the second blob with next_state B,
@@ -983,7 +1069,7 @@ pub mod test {
         let mut state = new_node_state().await;
         let c1 = ContractName::new("c1");
 
-        let register_c1 = new_register_contract(c1.clone());
+        let register_c1 = make_register_contract_action(c1.clone());
 
         let first_blob = new_blob(&c1.0);
         let second_blob = new_blob(&c1.0);
@@ -994,7 +1080,7 @@ pub mod test {
         };
         let blob_tx_hash = blob_tx.hash();
 
-        state.handle_register_contract_tx(&register_c1).unwrap();
+        state.handle_register_contract_action(&register_c1);
         state.handle_blob_tx(&blob_tx).unwrap();
 
         // Create legitimate proof for Blob1
@@ -1037,7 +1123,7 @@ pub mod test {
         let mut state = new_node_state().await;
         let c1 = ContractName::new("c1");
 
-        let register_c1 = new_register_contract(c1.clone());
+        let register_c1 = make_register_contract_action(c1.clone());
 
         let first_blob = new_blob(&c1.0);
         let second_blob = new_blob(&c1.0);
@@ -1049,7 +1135,7 @@ pub mod test {
         };
         let blob_tx_hash = blob_tx.hash();
 
-        state.handle_register_contract_tx(&register_c1).unwrap();
+        state.handle_register_contract_action(&register_c1);
         state.handle_blob_tx(&blob_tx).unwrap();
 
         // Create legitimate proof for Blob1
@@ -1091,8 +1177,8 @@ pub mod test {
 
         let c1 = ContractName::new("c1");
         let c2 = ContractName::new("c2");
-        let register_c1 = new_register_contract(c1.clone());
-        let register_c2 = new_register_contract(c2.clone());
+        let register_c1 = make_register_contract_tx(c1.clone());
+        let register_c2 = make_register_contract_tx(c2.clone());
 
         // Add four transactions - A blocks B/C, B blocks D.
         // Send proofs for B, C, D before A.
@@ -1183,7 +1269,7 @@ pub mod test {
     async fn test_tx_timeout_simple() {
         let mut state = new_node_state().await;
         let c1 = ContractName::new("c1");
-        let register_c1 = new_register_contract(c1.clone());
+        let register_c1 = make_register_contract_tx(c1.clone());
 
         // First basic test - Time out a TX.
         let blob_tx = BlobTransaction {
@@ -1211,7 +1297,7 @@ pub mod test {
     async fn test_tx_no_timeout_once_settled() {
         let mut state = new_node_state().await;
         let c1 = ContractName::new("c1");
-        let register_c1 = new_register_contract(c1.clone());
+        let register_c1 = make_register_contract_tx(c1.clone());
 
         // Add a new transaction and settle it.
         let blob_tx = BlobTransaction {
@@ -1221,7 +1307,7 @@ pub mod test {
         let blob_tx_hash = blob_tx.hash();
         state.handle_signed_block(&craft_signed_block(
             104,
-            vec![register_c1.into(), blob_tx.clone().into()],
+            vec![register_c1.clone().into(), blob_tx.clone().into()],
         ));
         assert_eq!(
             timeouts::tests::get(&state.timeouts, &blob_tx_hash),
@@ -1262,8 +1348,8 @@ pub mod test {
         let mut state = new_node_state().await;
         let c1 = ContractName::new("c1");
         let c2 = ContractName::new("c2");
-        let register_c1 = new_register_contract(c1.clone());
-        let register_c2 = new_register_contract(c2.clone());
+        let register_c1 = make_register_contract_tx(c1.clone());
+        let register_c2 = make_register_contract_tx(c2.clone());
 
         // Add Three transactions - the first blocks the next two, but the next two are ready to settle.
         let blocking_tx = BlobTransaction {
@@ -1322,5 +1408,169 @@ pub mod test {
                 assert!(state.unsettled_transactions.get(tx_hash).is_none());
                 assert!(block.settled_blob_tx_hashes.contains(tx_hash));
             });
+    }
+
+    mod contract_registration {
+        use super::*;
+
+        pub fn make_tx(sender: Identity, tld: ContractName, name: ContractName) -> BlobTransaction {
+            BlobTransaction {
+                identity: sender,
+                blobs: vec![RegisterContractAction {
+                    verifier: "test".into(),
+                    program_id: ProgramId(vec![]),
+                    state_digest: StateDigest(vec![0, 1, 2, 3]),
+                    contract_name: name,
+                }
+                .as_blob(tld, None, None)],
+            }
+        }
+
+        #[test_log::test(tokio::test)]
+        async fn test_register_contract_simple_hyle() {
+            let mut state = new_node_state().await;
+            let register_c1 = make_tx("hyle.hyle".into(), "hyle".into(), "c1".into());
+            let register_c2 = make_tx("hyle.hyle".into(), "hyle".into(), "c2.hyle".into());
+            let register_c3 = make_tx("hyle.hyle".into(), "hyle".into(), "c3".into());
+
+            state.handle_signed_block(&craft_signed_block(1, vec![register_c1.clone().into()]));
+
+            state.handle_signed_block(&craft_signed_block(
+                2,
+                vec![register_c2.into(), register_c3.into()],
+            ));
+
+            assert_eq!(
+                state.contracts.keys().collect::<HashSet<_>>(),
+                HashSet::from_iter(vec![
+                    &"hyle".into(),
+                    &"c1".into(),
+                    &"c2.hyle".into(),
+                    &"c3".into()
+                ])
+            );
+
+            state.handle_signed_block(&craft_signed_block(3, vec![register_c1.clone().into()]));
+            // TODO: fail early and check failed_tx
+            assert_eq!(state.contracts.len(), 4);
+
+            let block = state.handle_signed_block(&craft_signed_block(103, vec![]));
+
+            assert_eq!(block.timed_out_tx_hashes, vec![register_c1.hash()]);
+        }
+
+        #[test_log::test(tokio::test)]
+        async fn test_register_contract_failure() {
+            let mut state = new_node_state().await;
+            let register_1 = make_tx("hyle.hyle".into(), "hyle".into(), "c1.hyle.lol".into());
+            let register_2 = make_tx("other.hyle".into(), "hyle".into(), "c2.hyle.hyle".into());
+            let register_3 = make_tx("hyle.hyle".into(), "hyle".into(), "c3.other".into());
+            let register_4 = make_tx("hyle.hyle".into(), "hyle".into(), ".hyle".into());
+            let register_5 = BlobTransaction {
+                identity: "hyle.hyle".into(),
+                blobs: vec![Blob {
+                    contract_name: "hyle".into(),
+                    data: BlobData(vec![0, 1, 2, 3]),
+                }],
+            };
+            let register_good = make_tx("hyle.hyle".into(), "hyle".into(), "c1.hyle".into());
+
+            state.handle_signed_block(&craft_signed_block(
+                1,
+                vec![
+                    register_1.clone().into(),
+                    register_2.clone().into(),
+                    register_3.clone().into(),
+                    register_4.clone().into(),
+                    register_5.clone().into(),
+                    register_good.clone().into(),
+                ],
+            ));
+
+            assert_eq!(state.contracts.len(), 1);
+
+            let block = state.handle_signed_block(&craft_signed_block(101, vec![]));
+
+            assert_eq!(
+                block.timed_out_tx_hashes,
+                vec![
+                    register_1.hash(),
+                    register_2.hash(),
+                    register_3.hash(),
+                    register_4.hash(),
+                    register_5.hash(),
+                ]
+            );
+            assert_eq!(state.contracts.len(), 2);
+        }
+
+        #[test_log::test(tokio::test)]
+        async fn test_register_contract_composition() {
+            let mut state = new_node_state().await;
+            let register = make_tx("hyle.hyle".into(), "hyle".into(), "hydentity".into());
+            state.handle_signed_block(&craft_signed_block(1, vec![register.clone().into()]));
+            assert_eq!(state.contracts.len(), 2);
+
+            let compositing_register_willfail = BlobTransaction {
+                identity: "test.hydentity".into(),
+                blobs: vec![
+                    Blob {
+                        contract_name: "hydentity".into(),
+                        data: BlobData(vec![0, 1, 2, 3]),
+                    },
+                    RegisterContractAction {
+                        verifier: "test".into(),
+                        program_id: ProgramId(vec![]),
+                        state_digest: StateDigest(vec![0, 1, 2, 3]),
+                        contract_name: "c1".into(),
+                    }
+                    .as_blob("hyle".into(), None, None),
+                ],
+            };
+            // Try to register the same contract validly later.
+            let compositing_register_good = BlobTransaction {
+                identity: "test2.hydentity".into(),
+                blobs: vec![
+                    Blob {
+                        contract_name: "hydentity".into(),
+                        data: BlobData(vec![0, 1, 2, 3]),
+                    },
+                    RegisterContractAction {
+                        verifier: "test".into(),
+                        program_id: ProgramId(vec![]),
+                        state_digest: StateDigest(vec![0, 1, 2, 3]),
+                        contract_name: "c1".into(),
+                    }
+                    .as_blob("hyle".into(), None, None),
+                ],
+            };
+
+            state.handle_signed_block(&craft_signed_block(
+                102,
+                vec![
+                    compositing_register_willfail.clone().into(),
+                    compositing_register_good.clone().into(),
+                ],
+            ));
+            assert_eq!(state.contracts.len(), 2);
+
+            let proof_tx = new_proof_tx(
+                &"hyle".into(),
+                &make_hyle_output(compositing_register_good.clone(), BlobIndex(0)),
+                &compositing_register_good.hash(),
+            );
+
+            state.handle_signed_block(&craft_signed_block(103, vec![proof_tx.into()]));
+
+            assert_eq!(state.contracts.len(), 2);
+
+            let block = state.handle_signed_block(&craft_signed_block(202, vec![]));
+
+            assert_eq!(
+                block.timed_out_tx_hashes,
+                vec![compositing_register_willfail.hash(),]
+            );
+            assert_eq!(state.contracts.len(), 3);
+        }
     }
 }

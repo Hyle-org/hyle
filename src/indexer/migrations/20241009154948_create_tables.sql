@@ -56,7 +56,6 @@ CREATE TABLE blob_proof_outputs (
 
 CREATE TABLE contracts (
     tx_hash TEXT PRIMARY KEY REFERENCES transactions(tx_hash) ON DELETE CASCADE,
-    owner TEXT NOT NULL,
     verifier TEXT NOT NULL,
     program_id BYTEA NOT NULL,
     state_digest BYTEA NOT NULL,
