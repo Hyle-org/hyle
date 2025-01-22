@@ -5,7 +5,7 @@ use std::{
     sync::{Arc, OnceLock},
 };
 
-use anyhow::Result;
+use anyhow::{bail, Result};
 use sdk::{
     info, Blob, BlobData, BlobIndex, BlobTransaction, ContractAction, ContractInput, ContractName,
     Hashable, HyleOutput, Identity, ProofData, StateDigest,
@@ -217,6 +217,11 @@ impl<S: StateUpdater> TxExecutor<S> {
                 .get(&runner.contract_name)
                 .unwrap()
                 .execute(runner.contract_input.get().unwrap())?;
+
+            if !out.success {
+                let program_error = std::str::from_utf8(&out.program_outputs).unwrap();
+                bail!("Execution failed ! Program output: {}", program_error);
+            }
 
             self.on_chain_states
                 .entry(runner.contract_name.clone())
