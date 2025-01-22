@@ -38,10 +38,17 @@ jobs:
     runs-on: ubuntu-latest 
     name: Bump version
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/create-github-app-token@v1
+        id: app-token
         with:
-          persist-credentials: false 
+          app-id: ${{ secrets.HYLE_GH_APP_ID }}
+          private-key: ${{ secrets.HYLE_GH_APP_SECRET }}
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
           fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
 
       - name: "Write cargo.toml"
         env:
@@ -55,6 +62,7 @@ jobs:
         id: cpr
         uses: peter-evans/create-pull-request@v7
         with:
+          committer: hyle-gh-bot[bot] <196068951+hyle-gh-bot[bot]@users.noreply.github.com>
           commit-message: "🔖 Bump version to ${{ github.ref_name }}"
           base: main
           title: "🔖 Bump version to ${{ github.ref_name }}"
