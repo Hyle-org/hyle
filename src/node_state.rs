@@ -1432,6 +1432,8 @@ pub mod test {
     }
 
     mod contract_registration {
+        use std::collections::HashSet;
+
         use super::*;
 
         pub fn make_tx(sender: Identity, tld: ContractName, name: ContractName) -> BlobTransaction {
