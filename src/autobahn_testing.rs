@@ -761,21 +761,21 @@ async fn mempool_fail_to_vote_on_fork() {
     assert_ne!(
         node2
             .mempool_ctx
-            .last_validator_data_proposal(&node1.mempool_ctx.validator_pubkey())
+            .last_validator_data_proposal(node1.mempool_ctx.validator_pubkey())
             .1,
         dp_fork_3.hash()
     );
     assert_ne!(
         node3
             .mempool_ctx
-            .last_validator_data_proposal(&node1.mempool_ctx.validator_pubkey())
+            .last_validator_data_proposal(node1.mempool_ctx.validator_pubkey())
             .1,
         dp_fork_3.hash()
     );
     assert_ne!(
         node4
             .mempool_ctx
-            .last_validator_data_proposal(&node1.mempool_ctx.validator_pubkey())
+            .last_validator_data_proposal(node1.mempool_ctx.validator_pubkey())
             .1,
         dp_fork_3.hash()
     );
@@ -814,21 +814,21 @@ async fn mempool_fail_to_vote_on_fork() {
         fork,
         node2
             .mempool_ctx
-            .pop_validator_data_proposal(&node1.mempool_ctx.validator_pubkey())
+            .pop_validator_data_proposal(node1.mempool_ctx.validator_pubkey())
             .0
     );
     assert_ne!(
         fork,
         node3
             .mempool_ctx
-            .pop_validator_data_proposal(&node1.mempool_ctx.validator_pubkey())
+            .pop_validator_data_proposal(node1.mempool_ctx.validator_pubkey())
             .0
     );
     assert_ne!(
         fork,
         node4
             .mempool_ctx
-            .pop_validator_data_proposal(&node1.mempool_ctx.validator_pubkey())
+            .pop_validator_data_proposal(node1.mempool_ctx.validator_pubkey())
             .0
     );
 }
