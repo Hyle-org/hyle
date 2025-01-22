@@ -15,7 +15,10 @@ use crate::{
     utils::crypto::BlstCrypto,
 };
 
-use super::verifiers::{verify_proof, verify_recursive_proof};
+use super::{
+    contract_registration::validate_any_contract_registration,
+    verifiers::{verify_proof, verify_recursive_proof},
+};
 use super::{KnownContracts, MempoolNetMessage};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -287,6 +290,13 @@ impl Storage {
                     if let Err(e) = blob_tx.validate_identity() {
                         warn!(
                             "Refusing DataProposal: invalid identity in blob transaction: {}",
+                            e
+                        );
+                        return DataProposalVerdict::Refuse;
+                    }
+                    if let Err(e) = validate_any_contract_registration(blob_tx) {
+                        warn!(
+                            "Refusing DataProposal: invalid contract registration in blob transaction: {}",
                             e
                         );
                         return DataProposalVerdict::Refuse;

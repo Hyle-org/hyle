@@ -58,22 +58,21 @@ impl OrderedTxMap {
         }
         let mut is_next = true;
         for blob_metadata in &tx.blobs {
-            is_next = is_next
-                && match self.tx_order.get_mut(&blob_metadata.blob.contract_name) {
-                    Some(vec) => {
-                        vec.push_back(tx.hash.clone());
-                        vec.len() == 1
-                    }
-                    None => {
-                        self.tx_order
-                            .insert(blob_metadata.blob.contract_name.clone(), {
-                                let mut vec = VecDeque::new();
-                                vec.push_back(tx.hash.clone());
-                                vec
-                            });
-                        true
-                    }
+            is_next = match self.tx_order.get_mut(&blob_metadata.blob.contract_name) {
+                Some(vec) => {
+                    vec.push_back(tx.hash.clone());
+                    vec.len() == 1
                 }
+                None => {
+                    self.tx_order
+                        .insert(blob_metadata.blob.contract_name.clone(), {
+                            let mut vec = VecDeque::new();
+                            vec.push_back(tx.hash.clone());
+                            vec
+                        });
+                    true
+                }
+            } && is_next;
         }
 
         self.map.insert(tx.hash.clone(), tx);

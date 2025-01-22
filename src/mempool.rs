@@ -22,6 +22,7 @@ use crate::{
 use anyhow::{bail, Context, Result};
 use api::RestApiMessage;
 use bincode::{Decode, Encode};
+use contract_registration::validate_any_contract_registration;
 use hyle_contract_sdk::{ContractName, ProgramId, Verifier};
 use metrics::MempoolMetrics;
 use serde::{Deserialize, Serialize};
@@ -852,6 +853,8 @@ impl Mempool {
                 if let Err(e) = blob_tx.validate_identity() {
                     bail!("Invalid identity for blob tx {}: {}", tx.hash(), e);
                 }
+                // Reject obviously invalid contract registrations.
+                validate_any_contract_registration(blob_tx)?;
                 // TODO: we should check if the registration handler contract exists.
                 // TODO: would be good to not need to clone here.
                 self.handle_contract_registration(tx.clone());

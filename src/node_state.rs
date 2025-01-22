@@ -6,6 +6,7 @@ use crate::model::verifiers::NativeVerifiers;
 use crate::model::*;
 use anyhow::{bail, Error, Result};
 use bincode::{Decode, Encode};
+use contract_registration::validate_contract_registration;
 use hyle_contract_sdk::{utils::parse_structured_blob, BlobIndex, HyleOutput, TxHash};
 use ordered_tx_map::OrderedTxMap;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
@@ -38,7 +39,7 @@ pub struct NodeState {
     unsettled_transactions: OrderedTxMap,
 }
 
-// TODO: change this.
+// TODO: we should register the 'hyle' TLD in the genesis block.
 impl Default for NodeState {
     fn default() -> Self {
         let mut ret = Self {
@@ -151,7 +152,7 @@ impl NodeState {
     }
 
     pub fn handle_register_contract_action(&mut self, tx: &RegisterContractAction) {
-        info!("📝 Registering new contract {}", tx.contract_name);
+        info!("📝 Registering contract {}", tx.contract_name);
         self.contracts.insert(
             tx.contract_name.clone(),
             Contract {
@@ -214,6 +215,7 @@ impl NodeState {
             })
             .collect();
 
+        // If we're behind other pending transactions, we can't settle yet.
         should_try_and_settle = self.unsettled_transactions.add(UnsettledBlobTransaction {
             identity: tx.identity.clone(),
             hash: blob_tx_hash.clone(),
@@ -558,17 +560,9 @@ impl NodeState {
         else {
             bail!("Blob is  not a RegisterContractAction");
         };
+
         // Check name, it's either a direct subdomain or a TLD
-        let parts = reg.parameters.contract_name.0.split(".");
-        let is_subdomain =
-            parts.clone().count() == 2 && parts.last().map(|s| s == "hyle").unwrap_or(false);
-        let is_tld = !reg.parameters.contract_name.0.contains(".");
-        if !is_subdomain && !is_tld {
-            bail!(
-                "Invalid contract name for 'hyle': {}",
-                reg.parameters.contract_name.0
-            );
-        }
+        validate_contract_registration(&"hyle".into(), &reg.parameters.contract_name)?;
 
         // Check it's not already registered
         if contracts.contains_key(&reg.parameters.contract_name)
@@ -1471,14 +1465,15 @@ pub mod test {
             let register_1 = make_tx("hyle.hyle".into(), "hyle".into(), "c1.hyle.lol".into());
             let register_2 = make_tx("other.hyle".into(), "hyle".into(), "c2.hyle.hyle".into());
             let register_3 = make_tx("hyle.hyle".into(), "hyle".into(), "c3.other".into());
-            let register_4 = BlobTransaction {
+            let register_4 = make_tx("hyle.hyle".into(), "hyle".into(), ".hyle".into());
+            let register_5 = BlobTransaction {
                 identity: "hyle.hyle".into(),
                 blobs: vec![Blob {
                     contract_name: "hyle".into(),
                     data: BlobData(vec![0, 1, 2, 3]),
                 }],
             };
-            let register_5_good = make_tx("hyle.hyle".into(), "hyle".into(), "c1.hyle".into());
+            let register_good = make_tx("hyle.hyle".into(), "hyle".into(), "c1.hyle".into());
 
             state.handle_signed_block(&craft_signed_block(
                 1,
@@ -1487,7 +1482,8 @@ pub mod test {
                     register_2.clone().into(),
                     register_3.clone().into(),
                     register_4.clone().into(),
-                    register_5_good.clone().into(),
+                    register_5.clone().into(),
+                    register_good.clone().into(),
                 ],
             ));
 
@@ -1502,6 +1498,7 @@ pub mod test {
                     register_2.hash(),
                     register_3.hash(),
                     register_4.hash(),
+                    register_5.hash(),
                 ]
             );
             assert_eq!(state.contracts.len(), 2);
