@@ -1,5 +1,8 @@
 name: Check Stars and Notify Slack
 
+permissions:
+  contents: write
+
 on:
   schedule:
     - cron: "0 10 * * *" # Toutes les heures
@@ -12,6 +15,8 @@ jobs:
     steps:
     - name: Checkout repository
       uses: actions/checkout@v3
+      with:
+        ref: ci_cache
 
     - name: Set up Node.js
       uses: actions/setup-node@v3
@@ -20,16 +25,23 @@ jobs:
 
     - name: Install dependencies
       run: npm install axios
-      
-    - name: Cache stars count
-      uses: actions/cache@v3
-      with:
-        path: stars_count.txt
-        key: stars-cache
 
     - name: Run script
       env:
         GITHUB_REPOSITORY: ${{ github.repository }}
         SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
-      run: node .github/scripts/check-stars.js
+      run: curl https://raw.githubusercontent.com/Hyle-org/hyle/refs/heads/main/.github/scripts/check-stars.js | node
 
+    - name: Cache the new count 
+      run: | 
+        git config --global user.name "${GITHUB_ACTOR}"
+        git config --global user.email "${GITHUB_ACTOR}@users.noreply.github.com"
+        git add .
+        STAR_COUNT=$(cat stars_count.txt)
+        git commit -m "⭐ Update star count to ${STAR_COUNT}" || true
+
+    - name: Push changes
+      uses: ad-m/github-push-action@master
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        branch: ci_cache
