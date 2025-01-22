@@ -1,7 +1,33 @@
 use std::pin::Pin;
 
 use anyhow::Result;
-use sdk::{flatten_blobs, ContractInput, HyleOutput, ProofData};
+use sdk::{
+    flatten_blobs, ContractInput, ContractName, HyleOutput, ProgramId, ProofData,
+    RegisterContractAction, StateDigest, Verifier,
+};
+
+use crate::transaction_builder::ProvableBlobTx;
+
+pub fn register_hyle_contract(
+    builder: &mut ProvableBlobTx,
+    new_contract_name: ContractName,
+    verifier: Verifier,
+    program_id: ProgramId,
+    state_digest: StateDigest,
+) -> anyhow::Result<()> {
+    builder.add_action(
+        "hyle".into(),
+        RegisterContractAction {
+            contract_name: new_contract_name,
+            verifier,
+            program_id,
+            state_digest,
+        },
+        None,
+        None,
+    )?;
+    Ok(())
+}
 
 pub trait ClientSdkExecutor {
     fn execute(&self, contract_input: &ContractInput) -> Result<HyleOutput>;
