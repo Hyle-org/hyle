@@ -91,7 +91,8 @@ mod e2e_consensus {
 
             register_identity(&mut transaction, "hydentity".into(), "password".to_owned())?;
 
-            send_transaction(ctx.client(), transaction, &mut tx_ctx).await;
+            let tx_hash = send_transaction(ctx.client(), transaction, &mut tx_ctx).await;
+            tracing::warn!("Register TX Hash: {:?}", tx_hash);
         }
         {
             let mut transaction = ProvableBlobTx::new("faucet.hydentity".into());
@@ -110,7 +111,8 @@ mod e2e_consensus {
                 100,
             )?;
 
-            send_transaction(ctx.client(), transaction, &mut tx_ctx).await;
+            let tx_hash = send_transaction(ctx.client(), transaction, &mut tx_ctx).await;
+            tracing::warn!("Transfer TX Hash: {:?}", tx_hash);
         }
         {
             let mut transaction = ProvableBlobTx::new(node_identity.clone());
@@ -137,7 +139,8 @@ mod e2e_consensus {
                 node_info.pubkey.clone().unwrap(),
             )?;
 
-            send_transaction(ctx.client(), transaction, &mut tx_ctx).await;
+            let tx_hash = send_transaction(ctx.client(), transaction, &mut tx_ctx).await;
+            tracing::warn!("staking TX Hash: {:?}", tx_hash);
         }
 
         // 2 slots to get the tx in a blocks

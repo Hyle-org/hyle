@@ -33,7 +33,7 @@ pub struct RestApiRunContext {
     pub info: NodeInfo,
     pub bus: SharedMessageBus,
     pub router: Router,
-    pub metrics_layer: HttpMetricsLayer,
+    pub metrics_layer: Option<HttpMetricsLayer>,
     pub max_body_size: usize,
 }
 
@@ -51,15 +51,17 @@ impl Module for RestApi {
     type Context = RestApiRunContext;
 
     async fn build(ctx: Self::Context) -> Result<Self> {
-        let app = ctx
-            .router
-            .merge(
-                Router::new()
-                    .route("/v1/info", get(get_info))
-                    .route("/v1/metrics", get(get_metrics))
-                    .with_state(RouterState { info: ctx.info }),
-            )
-            .layer(ctx.metrics_layer)
+        let app = ctx.router.merge(
+            Router::new()
+                .route("/v1/info", get(get_info))
+                .route("/v1/metrics", get(get_metrics))
+                .with_state(RouterState { info: ctx.info }),
+        );
+        let app = match ctx.metrics_layer {
+            Some(ml) => app.layer(ml),
+            None => app,
+        };
+        let app = app
             .layer(DefaultBodyLimit::max(ctx.max_body_size)) // 10 MB
             .layer(tower_http::cors::CorsLayer::permissive())
             .layer(axum::middleware::from_fn(request_logger))

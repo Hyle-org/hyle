@@ -70,7 +70,6 @@ impl TransactionType {
             TransactionData::Blob(_) => TransactionType::BlobTransaction,
             TransactionData::Proof(_) => TransactionType::ProofTransaction,
             TransactionData::VerifiedProof(_) => TransactionType::ProofTransaction,
-            TransactionData::RegisterContract(_) => TransactionType::RegisterContractTransaction,
         }
     }
 }
@@ -112,7 +111,6 @@ pub struct BlobWithStatus {
 pub struct APIContract {
     // Struct for the contracts table
     pub tx_hash: TxHash,  // Corresponds to the registration transaction hash
-    pub owner: String,    // Owner of the contract
     pub verifier: String, // Verifier of the contract
     #[serde_as(as = "serde_with::hex::Hex")]
     pub program_id: Vec<u8>, // Program ID

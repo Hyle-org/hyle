@@ -235,18 +235,23 @@ impl E2ECtx {
         Ok(metrics)
     }
 
-    pub async fn register_contract<Contract>(&self, name: &str) -> Result<()>
+    pub async fn register_contract<Contract>(&self, sender: Identity, name: &str) -> Result<()>
     where
         Contract: E2EContract,
     {
-        let tx = &RegisterContractTransaction {
-            owner: "test".to_string(),
+        let blobs = vec![RegisterContractAction {
             verifier: Contract::verifier(),
             program_id: Contract::program_id(),
             state_digest: Contract::state_digest(),
             contract_name: name.into(),
+        }
+        .as_blob("hyle".into(), None, None)];
+
+        let tx = &BlobTransaction {
+            identity: sender.clone(),
+            blobs: blobs.clone(),
         };
-        assert_ok!(self.client().send_tx_register_contract(tx).await);
+        assert_ok!(self.client().send_tx_blob(tx).await);
 
         tokio::time::timeout(Duration::from_secs(30), async {
             loop {
@@ -276,32 +281,6 @@ impl E2ECtx {
                 blobs: tx.blobs.clone(),
             })
             .await
-    }
-
-    pub fn make_proof<Contract>(
-        &self,
-        identity: Identity,
-        blobs: Vec<Blob>,
-        blob_tx_hash: &TxHash,
-        index: BlobIndex,
-    ) -> ProofData
-    where
-        Contract: E2EContract,
-    {
-        let hyle_output = HyleOutput {
-            version: 1,
-            initial_state: Contract::state_digest(),
-            next_state: StateDigest(vec![4, 5, 6]), // FIXME
-            identity,
-            tx_hash: blob_tx_hash.clone(),
-            index,
-            blobs: flatten_blobs(&blobs),
-            success: true,
-            program_outputs: vec![],
-        };
-        ProofData(
-            bincode::encode_to_vec(vec![hyle_output.clone()], bincode::config::standard()).unwrap(),
-        )
     }
 
     pub async fn send_proof_single(

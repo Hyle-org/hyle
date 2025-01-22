@@ -12,7 +12,6 @@
 //! * [Hylé website](https://www.hyle.eu/)
 //! * [Hylé documentation](https://docs.hyle.eu)
 
-mod autobahn_testing;
 pub mod bus;
 pub mod consensus;
 pub mod data_availability;
@@ -25,6 +24,9 @@ pub mod rest;
 pub mod single_node_consensus;
 pub mod tcp_server;
 pub mod utils;
+
+#[cfg(test)]
+pub mod tests;
 
 pub mod model;
 pub mod tools;
