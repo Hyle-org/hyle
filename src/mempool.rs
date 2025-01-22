@@ -129,7 +129,7 @@ pub enum MempoolNetMessage {
     DataProposal(DataProposal),
     DataVote(DataProposalHash),
     PoDAUpdate(DataProposalHash, Vec<SignedByValidator<MempoolNetMessage>>),
-    SyncRequest(Option<DataProposalHash>, DataProposalHash),
+    SyncRequest(Option<DataProposalHash>, Option<DataProposalHash>),
     SyncReply(Vec<LaneEntry>),
 }
 
@@ -309,10 +309,8 @@ impl Mempool {
         let crypto = self.crypto.clone();
         self.storage.new_data_proposal(&crypto); // TODO: copy crypto in storage
 
-        let entries = self.storage.get_lane_pending_entries(&self.storage.id)?;
-
         // Check for each pending DataProposal if it has enough signatures
-        if let Some(entries) = entries {
+        if let Some(entries) = self.storage.get_lane_pending_entries(&self.storage.id) {
             for lane_entry in entries {
                 // If there's only 1 signature (=own signature), broadcast it to everyone
                 if lane_entry.signatures.len() == 1 && self.staking.bonded().len() > 1 {
@@ -388,7 +386,8 @@ impl Mempool {
                 .storage
                 .get_lane_entries_between_hashes(
                     validator, // get start hash for validator
-                    from_hash, to_hash,
+                    from_hash,
+                    Some(to_hash),
                 )
                 .context(format!(
                     "Lane entries from {:?} to {:?} not available locally",
@@ -397,11 +396,7 @@ impl Mempool {
 
             result.push((
                 validator.clone(),
-                entries
-                    .unwrap_or_default()
-                    .into_iter()
-                    .map(|e| e.data_proposal)
-                    .collect(),
+                entries.into_iter().map(|e| e.data_proposal).collect(),
             ))
         }
 
@@ -546,7 +541,7 @@ impl Mempool {
                 self.send_sync_request(
                     validator,
                     latest_data_proposal.as_ref(),
-                    data_proposal_hash.clone(),
+                    Some(data_proposal_hash),
                 )
                 .context("Fetching unknown data")?;
             }
@@ -586,7 +581,7 @@ impl Mempool {
                 self.on_sync_request(
                     validator,
                     from_data_proposal_hash.as_ref(),
-                    &to_data_proposal_hash,
+                    to_data_proposal_hash.as_ref(),
                 )?;
             }
             MempoolNetMessage::SyncReply(lane_entries) => {
@@ -650,7 +645,7 @@ impl Mempool {
         &mut self,
         validator: &ValidatorPublicKey,
         from_data_proposal_hash: Option<&DataProposalHash>,
-        to_data_proposal_hash: &DataProposalHash,
+        to_data_proposal_hash: Option<&DataProposalHash>,
     ) -> Result<()> {
         info!(
             "{} SyncRequest received from validator {validator} for last_data_proposal_hash {:?}",
@@ -665,8 +660,7 @@ impl Mempool {
 
         match missing_lane_entries {
             Err(e) => info!("Can't send sync reply as there are no missing data proposals found between {:?} and {:?} for {}: {}", to_data_proposal_hash, from_data_proposal_hash, self.storage.id, e),
-            Ok(None) => {}
-            Ok(Some(lane_entries)) => {
+            Ok(lane_entries) => {
                 debug!(
                     "Missing data proposals on {} are {:?}",
                     validator, lane_entries
@@ -777,7 +771,7 @@ impl Mempool {
                 self.storage
                     .add_waiting_data_proposal(validator, data_proposal);
 
-                //We dont have the parent, so we craft a sync demand
+                // We dont have the parent, so we craft a sync demand
                 debug!(
                     "Emitting sync request with local state {} last_known_data_proposal_hash {:?}",
                     self.storage, last_known_data_proposal_hash
@@ -787,7 +781,7 @@ impl Mempool {
                     self.send_sync_request(
                         validator,
                         last_known_data_proposal_hash.as_ref(),
-                        parent,
+                        Some(&parent),
                     )?;
                 }
             }
@@ -977,7 +971,7 @@ impl Mempool {
         &mut self,
         validator: &ValidatorPublicKey,
         from_data_proposal_hash: Option<&DataProposalHash>,
-        to_data_proposal_hash: DataProposalHash,
+        to_data_proposal_hash: Option<&DataProposalHash>,
     ) -> Result<()> {
         debug!(
             "🔍 Sending SyncRequest to {} for DataProposal from {:?} to {:?}",
@@ -987,7 +981,10 @@ impl Mempool {
             .add_sync_request(self.crypto.validator_pubkey(), validator);
         self.send_net_message(
             validator.clone(),
-            MempoolNetMessage::SyncRequest(from_data_proposal_hash.cloned(), to_data_proposal_hash),
+            MempoolNetMessage::SyncRequest(
+                from_data_proposal_hash.cloned(),
+                to_data_proposal_hash.cloned(),
+            ),
         )?;
         Ok(())
     }
@@ -1703,8 +1700,10 @@ pub mod test {
         let crypto2 = BlstCrypto::new("2".into()).unwrap();
         ctx.add_trusted_validator(crypto2.validator_pubkey());
 
-        let signed_msg =
-            crypto2.sign(MempoolNetMessage::SyncRequest(None, data_proposal.hash()))?;
+        let signed_msg = crypto2.sign(MempoolNetMessage::SyncRequest(
+            None,
+            Some(data_proposal.hash()),
+        ))?;
 
         ctx.mempool
             .handle_net_message(signed_msg)

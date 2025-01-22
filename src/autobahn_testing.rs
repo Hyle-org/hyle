@@ -532,7 +532,7 @@ async fn mempool_dissemination_flow_resync() {
         from: [
             node4.mempool_ctx; MempoolNetMessage::SyncRequest(from_hash, to_hash) => {
                 assert!(from_hash.is_none());
-                assert_eq!(to_hash, &data_proposal_1.hash());
+                assert_eq!(*to_hash, Some(data_proposal_1.hash()));
             }
         ], to: node1.mempool_ctx
     };
