@@ -38,10 +38,17 @@ jobs:
     runs-on: ubuntu-latest 
     name: Bump version
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/create-github-app-token@v1
+        id: app-token
         with:
-          persist-credentials: false 
+          app-id: ${{ secrets.HYLE_GH_APP_ID }}
+          private-key: ${{ secrets.HYLE_GH_APP_SECRET }}
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
           fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
 
       - name: "Write cargo.toml"
         env:
@@ -51,12 +58,12 @@ jobs:
           CLEAN_VERSION=$(echo "$VERSION" | sed 's/^v//')
           sed -i "s/^version = \".*\"$/version = \"$CLEAN_VERSION\"/" Cargo.toml
           cargo update hyle
-      - name: Create Pull Request
-        id: cpr
-        uses: peter-evans/create-pull-request@v7
+          git config --global user.name "${GITHUB_ACTOR}"
+          git config --global user.email "${GITHUB_ACTOR}@users.noreply.github.com"
+          git add .
+          git commit -m "🔖 Bump version to ${VERSION}" 
+
+      - name: Push changes
+        uses: ad-m/github-push-action@master
         with:
-          commit-message: "🔖 Bump version to ${{ github.ref_name }}"
-          base: main
-          title: "🔖 Bump version to ${{ github.ref_name }}"
-      - name: Enable Pull Request Automerge
-        run: gh pr merge --squash --auto
+          github_token: ${{ steps.app-token.outputs.token }}
