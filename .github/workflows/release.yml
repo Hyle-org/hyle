@@ -58,14 +58,11 @@ jobs:
           CLEAN_VERSION=$(echo "$VERSION" | sed 's/^v//')
           sed -i "s/^version = \".*\"$/version = \"$CLEAN_VERSION\"/" Cargo.toml
           cargo update hyle
-          git config --global user.name "hyle-gh-bot[bot]"
-          git config --global user.email "196068951+hyle-gh-bot[bot]@users.noreply.github.com"
-          git add .
-          git commit -m "🔖 Bump version to ${VERSION}" 
       - name: Create Pull Request
         id: cpr
         uses: peter-evans/create-pull-request@v7
         with:
+          committer: hyle-gh-bot[bot] <196068951+hyle-gh-bot[bot]@users.noreply.github.com>
           commit-message: "🔖 Bump version to ${{ github.ref_name }}"
           base: main
           title: "🔖 Bump version to ${{ github.ref_name }}"
