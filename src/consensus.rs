@@ -698,7 +698,6 @@ impl Consensus {
                 for action in block.staking_actions {
                     match action {
                         (identity, StakingAction::Stake { amount }) => {
-                            debug!("🔒 Staking {} for {}", amount, identity);
                             self.store
                                 .bft_round_state
                                 .staking
@@ -706,7 +705,6 @@ impl Consensus {
                                 .map_err(|e| anyhow!(e))?;
                         }
                         (identity, StakingAction::Delegate { validator }) => {
-                            debug!("🔒 Delegating to {} for {}", validator, identity);
                             self.store
                                 .bft_round_state
                                 .staking
@@ -717,7 +715,6 @@ impl Consensus {
                     }
                 }
                 for validator in block.new_bounded_validators.iter() {
-                    debug!("🔒 Bonding validator {}", validator);
                     self.store
                         .bft_round_state
                         .staking
