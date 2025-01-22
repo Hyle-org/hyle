@@ -5,6 +5,8 @@ This folder contains some "official" Hyle Risc0 smart contracts :
 - `hydentity`: Basic identity provider
 - `hyllar`: Simple ERC20-like contract
 - `amm`: Simple AMM contract
+- `risc0-recursion`: A contract with special rights to do recursion on multiple contracts 
+- `staking`: A contract used to hold partg of the staking logic for the consensus.
 
 This architecture is subject to change while sdk will be developped.
 

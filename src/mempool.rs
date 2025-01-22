@@ -29,6 +29,7 @@ use staking::state::Staking;
 use std::{
     collections::{HashMap, HashSet, VecDeque},
     fmt::Display,
+    ops::{Deref, DerefMut},
     path::PathBuf,
     sync::Arc,
 };
@@ -49,7 +50,7 @@ pub struct QueryNewCut(pub Staking);
 #[derive(Debug, Default, Clone, Encode, Decode)]
 pub struct KnownContracts(pub HashMap<ContractName, (Verifier, ProgramId)>);
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Encode, Decode)]
 pub struct BlockUnderConstruction {
     pub from: Option<Cut>,
     pub ccp: CommittedConsensusProposal,
@@ -90,12 +91,8 @@ struct MempoolBusClient {
 }
 }
 
-pub struct Mempool {
-    bus: MempoolBusClient,
-    file: Option<PathBuf>,
-    conf: SharedConf,
-    crypto: SharedBlstCrypto,
-    metrics: MempoolMetrics,
+#[derive(Default, Encode, Decode)]
+pub struct MempoolStore {
     storage: Storage,
     last_ccp: Option<CommittedConsensusProposal>,
     blocks_under_contruction: VecDeque<BlockUnderConstruction>,
@@ -104,12 +101,35 @@ pub struct Mempool {
     known_contracts: Arc<std::sync::RwLock<KnownContracts>>,
 }
 
+pub struct Mempool {
+    bus: MempoolBusClient,
+    file: Option<PathBuf>,
+    conf: SharedConf,
+    crypto: SharedBlstCrypto,
+    metrics: MempoolMetrics,
+    inner: MempoolStore,
+}
+
+impl Deref for Mempool {
+    type Target = MempoolStore;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+
+impl DerefMut for Mempool {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.inner
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, Eq, PartialEq, IntoStaticStr)]
 pub enum MempoolNetMessage {
     DataProposal(DataProposal),
     DataVote(DataProposalHash),
     PoDAUpdate(DataProposalHash, Vec<SignedByValidator<MempoolNetMessage>>),
-    SyncRequest(Option<DataProposalHash>, DataProposalHash),
+    SyncRequest(Option<DataProposalHash>, Option<DataProposalHash>),
     SyncReply(Vec<LaneEntry>),
 }
 
@@ -143,39 +163,23 @@ impl Module for Mempool {
         let bus = MempoolBusClient::new_from_bus(ctx.common.bus.new_handle()).await;
         let metrics = MempoolMetrics::global(ctx.common.config.id.clone());
 
-        let known_contracts = Arc::new(std::sync::RwLock::new(Self::load_from_disk_or_default::<
-            KnownContracts,
-        >(
-            ctx.common
-                .config
-                .data_directory
-                .join("mempool_known_contracts.bin")
-                .as_path(),
-        )));
-
         let api = api::api(&ctx.common).await;
         if let Ok(mut guard) = ctx.common.router.lock() {
             if let Some(router) = guard.take() {
                 guard.replace(router.nest("/v1/", api));
             }
         }
-        let storage = Self::load_from_disk::<Storage>(
+        let attributes = Self::load_from_disk::<MempoolStore>(
             ctx.common
                 .config
                 .data_directory
-                .join("mempool_storage.bin")
+                .join("mempool.bin")
                 .as_path(),
         )
-        .unwrap_or(Storage::new(ctx.node.crypto.validator_pubkey().clone()));
-
-        let staking = Self::load_from_disk::<Staking>(
-            ctx.common
-                .config
-                .data_directory
-                .join("mempool_staking.bin")
-                .as_path(),
-        )
-        .unwrap_or(Staking::default());
+        .unwrap_or(MempoolStore {
+            storage: Storage::new(ctx.node.crypto.validator_pubkey().clone()),
+            ..MempoolStore::default()
+        });
 
         Ok(Mempool {
             bus,
@@ -183,12 +187,7 @@ impl Module for Mempool {
             conf: ctx.common.config.clone(),
             metrics,
             crypto: Arc::clone(&ctx.node.crypto),
-            storage,
-            last_ccp: None,
-            blocks_under_contruction: VecDeque::new(),
-            buc_build_start_height: None,
-            staking,
-            known_contracts,
+            inner: attributes,
         })
     }
 
@@ -262,21 +261,8 @@ impl Mempool {
         };
 
         if let Some(file) = &self.file {
-            if let Err(e) =
-                Self::save_on_disk(file.join("mempool_storage.bin").as_path(), &self.storage)
-            {
+            if let Err(e) = Self::save_on_disk(file.join("mempool.bin").as_path(), &self.inner) {
                 warn!("Failed to save mempool storage on disk: {}", e);
-            }
-            if let Err(e) =
-                Self::save_on_disk(file.join("mempool_staking.bin").as_path(), &self.staking)
-            {
-                warn!("Failed to save mempool staking on disk: {}", e);
-            }
-            if let Err(e) = Self::save_on_disk(
-                file.join("mempool_known_contracts.bin").as_path(),
-                &self.known_contracts,
-            ) {
-                warn!("Failed to save mempool known contracts on disk: {}", e);
             }
         }
 
@@ -320,10 +306,11 @@ impl Mempool {
     fn handle_data_proposal_management(&mut self) -> Result<()> {
         trace!("🌝 Handling DataProposal management");
         // Create new DataProposal with pending txs
-        self.storage.new_data_proposal(&self.crypto); // TODO: copy crypto in storage
+        let crypto = self.crypto.clone();
+        self.storage.new_data_proposal(&crypto); // TODO: copy crypto in storage
 
         // Check for each pending DataProposal if it has enough signatures
-        if let Some(entries) = self.storage.get_lane_pending_entries(&self.storage.id)? {
+        if let Some(entries) = self.storage.get_lane_pending_entries(&self.storage.id) {
             for lane_entry in entries {
                 // If there's only 1 signature (=own signature), broadcast it to everyone
                 if lane_entry.signatures.len() == 1 && self.staking.bonded().len() > 1 {
@@ -356,7 +343,7 @@ impl Mempool {
                         .collect();
 
                     if only_for.is_empty() {
-                        return Ok(());
+                        continue;
                     }
 
                     self.metrics.add_data_proposal(&lane_entry.data_proposal);
@@ -399,7 +386,8 @@ impl Mempool {
                 .storage
                 .get_lane_entries_between_hashes(
                     validator, // get start hash for validator
-                    from_hash, to_hash,
+                    from_hash,
+                    Some(to_hash),
                 )
                 .context(format!(
                     "Lane entries from {:?} to {:?} not available locally",
@@ -408,11 +396,7 @@ impl Mempool {
 
             result.push((
                 validator.clone(),
-                entries
-                    .unwrap_or_default()
-                    .into_iter()
-                    .map(|e| e.data_proposal)
-                    .collect(),
+                entries.into_iter().map(|e| e.data_proposal).collect(),
             ))
         }
 
@@ -557,7 +541,7 @@ impl Mempool {
                 self.send_sync_request(
                     validator,
                     latest_data_proposal.as_ref(),
-                    data_proposal_hash.clone(),
+                    Some(data_proposal_hash),
                 )
                 .context("Fetching unknown data")?;
             }
@@ -597,7 +581,7 @@ impl Mempool {
                 self.on_sync_request(
                     validator,
                     from_data_proposal_hash.as_ref(),
-                    &to_data_proposal_hash,
+                    to_data_proposal_hash.as_ref(),
                 )?;
             }
             MempoolNetMessage::SyncReply(lane_entries) => {
@@ -661,7 +645,7 @@ impl Mempool {
         &mut self,
         validator: &ValidatorPublicKey,
         from_data_proposal_hash: Option<&DataProposalHash>,
-        to_data_proposal_hash: &DataProposalHash,
+        to_data_proposal_hash: Option<&DataProposalHash>,
     ) -> Result<()> {
         info!(
             "{} SyncRequest received from validator {validator} for last_data_proposal_hash {:?}",
@@ -676,8 +660,7 @@ impl Mempool {
 
         match missing_lane_entries {
             Err(e) => info!("Can't send sync reply as there are no missing data proposals found between {:?} and {:?} for {}: {}", to_data_proposal_hash, from_data_proposal_hash, self.storage.id, e),
-            Ok(None) => {}
-            Ok(Some(lane_entries)) => {
+            Ok(lane_entries) => {
                 debug!(
                     "Missing data proposals on {} are {:?}",
                     validator, lane_entries
@@ -783,17 +766,24 @@ impl Mempool {
                 });
             }
             DataProposalVerdict::Wait(last_known_data_proposal_hash) => {
-                //We dont have the parent, so we craft a sync demand
+                let data_proposal_parent_hash = data_proposal.parent_data_proposal_hash.clone();
+                // Push the data proposal in the waiting list
+                self.storage
+                    .add_waiting_data_proposal(validator, data_proposal);
+
+                // We dont have the parent, so we craft a sync demand
                 debug!(
                     "Emitting sync request with local state {} last_known_data_proposal_hash {:?}",
                     self.storage, last_known_data_proposal_hash
                 );
 
-                self.send_sync_request(
-                    validator,
-                    last_known_data_proposal_hash.as_ref(),
-                    data_proposal_hash,
-                )?;
+                if let Some(parent) = data_proposal_parent_hash {
+                    self.send_sync_request(
+                        validator,
+                        last_known_data_proposal_hash.as_ref(),
+                        Some(&parent),
+                    )?;
+                }
             }
             DataProposalVerdict::Refuse => {
                 debug!("Refuse vote for DataProposal");
@@ -827,8 +817,9 @@ impl Mempool {
             }
             DataProposalVerdict::Vote => {
                 debug!("Send vote for DataProposal");
+                let crypto = self.crypto.clone();
                 self.storage
-                    .store_data_proposal(&self.crypto, &validator, data_proposal);
+                    .store_data_proposal(&crypto, &validator, data_proposal);
                 self.send_vote(&validator, data_proposal_hash)?;
             }
             DataProposalVerdict::Refuse => {
@@ -980,7 +971,7 @@ impl Mempool {
         &mut self,
         validator: &ValidatorPublicKey,
         from_data_proposal_hash: Option<&DataProposalHash>,
-        to_data_proposal_hash: DataProposalHash,
+        to_data_proposal_hash: Option<&DataProposalHash>,
     ) -> Result<()> {
         debug!(
             "🔍 Sending SyncRequest to {} for DataProposal from {:?} to {:?}",
@@ -990,7 +981,10 @@ impl Mempool {
             .add_sync_request(self.crypto.validator_pubkey(), validator);
         self.send_net_message(
             validator.clone(),
-            MempoolNetMessage::SyncRequest(from_data_proposal_hash.cloned(), to_data_proposal_hash),
+            MempoolNetMessage::SyncRequest(
+                from_data_proposal_hash.cloned(),
+                to_data_proposal_hash.cloned(),
+            ),
         )?;
         Ok(())
     }
@@ -1098,8 +1092,6 @@ pub mod test {
         pub async fn build_mempool(shared_bus: &SharedMessageBus, crypto: BlstCrypto) -> Mempool {
             let pubkey = crypto.validator_pubkey();
             let storage = Storage::new(pubkey.clone());
-            let staking = Staking::default();
-
             let bus = MempoolBusClient::new_from_bus(shared_bus.new_handle()).await;
 
             // Initialize Mempool
@@ -1109,12 +1101,10 @@ pub mod test {
                 conf: SharedConf::default(),
                 crypto: Arc::new(crypto),
                 metrics: MempoolMetrics::global("id".to_string()),
-                storage,
-                last_ccp: None,
-                blocks_under_contruction: VecDeque::new(),
-                buc_build_start_height: None,
-                staking,
-                known_contracts: Arc::new(std::sync::RwLock::new(KnownContracts::default())),
+                inner: MempoolStore {
+                    storage,
+                    ..MempoolStore::default()
+                },
             }
         }
 
@@ -1144,8 +1134,8 @@ pub mod test {
             }
         }
 
-        pub fn validator_pubkey(&self) -> ValidatorPublicKey {
-            self.mempool.crypto.validator_pubkey().clone()
+        pub fn validator_pubkey(&self) -> &ValidatorPublicKey {
+            self.mempool.crypto.validator_pubkey()
         }
 
         pub fn add_trusted_validator(&mut self, pubkey: &ValidatorPublicKey) {
@@ -1315,7 +1305,7 @@ pub mod test {
                 .mempool
                 .storage
                 .lanes
-                .get(&self.validator_pubkey())
+                .get(self.validator_pubkey())
                 .expect("Could not get own lane");
             lane.current_hash().cloned()
         }
@@ -1325,7 +1315,7 @@ pub mod test {
                 .mempool
                 .storage
                 .lanes
-                .get(&self.validator_pubkey())
+                .get(self.validator_pubkey())
                 .unwrap()
                 .data_proposals
                 .get_index(height)
@@ -1336,12 +1326,32 @@ pub mod test {
 
             (dp_orig.clone(), dp_orig.hash())
         }
-        pub fn pop_data_proposal(&mut self) -> (DataProposal, DataProposalHash) {
+        pub fn last_validator_data_proposal(
+            &self,
+            validator: &ValidatorPublicKey,
+        ) -> (DataProposal, DataProposalHash) {
             let dp_orig = self
                 .mempool
                 .storage
                 .lanes
-                .get_mut(&self.validator_pubkey())
+                .get(validator)
+                .unwrap()
+                .data_proposals
+                .last()
+                .unwrap()
+                .1
+                .data_proposal
+                .clone();
+
+            (dp_orig.clone(), dp_orig.hash())
+        }
+        pub fn pop_data_proposal(&mut self) -> (DataProposal, DataProposalHash) {
+            let pub_key = self.validator_pubkey().clone();
+            let dp_orig = self
+                .mempool
+                .storage
+                .lanes
+                .get_mut(&pub_key)
                 .unwrap()
                 .data_proposals
                 .pop()
@@ -1352,11 +1362,32 @@ pub mod test {
 
             (dp_orig.clone(), dp_orig.hash())
         }
+        pub fn pop_validator_data_proposal(
+            &mut self,
+            validator: &ValidatorPublicKey,
+        ) -> (DataProposal, DataProposalHash) {
+            let dp_orig = self
+                .mempool
+                .storage
+                .lanes
+                .get_mut(validator)
+                .unwrap()
+                .data_proposals
+                .pop()
+                .unwrap()
+                .1
+                .data_proposal
+                .clone();
+
+            (dp_orig.clone(), dp_orig.hash())
+        }
+
         pub fn push_data_proposal(&mut self, dp: DataProposal) {
+            let key = self.validator_pubkey().clone();
             self.mempool
                 .storage
                 .lanes
-                .get_mut(&self.validator_pubkey())
+                .get_mut(&key)
                 .unwrap()
                 .data_proposals
                 .insert(
@@ -1404,7 +1435,7 @@ pub mod test {
             ctx.mempool
                 .storage
                 .lanes
-                .get(&ctx.validator_pubkey())
+                .get(ctx.validator_pubkey())
                 .unwrap()
                 .data_proposals
                 .first()
@@ -1656,7 +1687,7 @@ pub mod test {
             .mempool
             .storage
             .lanes
-            .get(&ctx.validator_pubkey())
+            .get(ctx.validator_pubkey())
             .unwrap()
             .data_proposals
             .first()
@@ -1669,8 +1700,10 @@ pub mod test {
         let crypto2 = BlstCrypto::new("2".into()).unwrap();
         ctx.add_trusted_validator(crypto2.validator_pubkey());
 
-        let signed_msg =
-            crypto2.sign(MempoolNetMessage::SyncRequest(None, data_proposal.hash()))?;
+        let signed_msg = crypto2.sign(MempoolNetMessage::SyncRequest(
+            None,
+            Some(data_proposal.hash()),
+        ))?;
 
         ctx.mempool
             .handle_net_message(signed_msg)
@@ -1704,7 +1737,7 @@ pub mod test {
             .mempool
             .storage
             .lanes
-            .get(&ctx.validator_pubkey())
+            .get(ctx.validator_pubkey())
             .unwrap()
             .data_proposals
             .first()
@@ -1812,10 +1845,10 @@ pub mod test {
 
         let (dp_orig, dp_hash) = ctx.data_proposal(0);
 
-        let key = ctx.validator_pubkey();
+        let key = ctx.validator_pubkey().clone();
         let cut = vec![(key.clone(), dp_hash.clone(), AggregateSignature::default())];
 
-        ctx.add_trusted_validator(&ctx.validator_pubkey());
+        ctx.add_trusted_validator(&key);
 
         let _ = ctx
             .mempool
@@ -1825,7 +1858,7 @@ pub mod test {
                     consensus_proposal: model::ConsensusProposal {
                         slot: 1,
                         view: 0,
-                        round_leader: key,
+                        round_leader: key.clone(),
                         cut: cut.clone(),
                         new_validators_to_bond: vec![],
                         timestamp: 777,
@@ -1848,7 +1881,7 @@ pub mod test {
                 assert_eq!(sb.consensus_proposal.cut, cut);
                 assert_eq!(
                     sb.data_proposals,
-                    vec![(ctx.validator_pubkey(), vec![dp_orig])]
+                    vec![(key.clone(), vec![dp_orig])]
                 );
             }
         );
@@ -1865,7 +1898,7 @@ pub mod test {
         ctx.submit_contract_tx("test1");
 
         ctx.mempool.handle_data_proposal_management()?;
-        ctx.add_trusted_validator(&ctx.validator_pubkey());
+        ctx.add_trusted_validator(&ctx.validator_pubkey().clone());
 
         let (_, dp_hash) = ctx.data_proposal(0);
 
@@ -1895,7 +1928,7 @@ pub mod test {
         ctx.submit_contract_tx("test2");
         ctx.mempool.handle_data_proposal_management()?;
         let (dp_orig1, dp_hash1) = ctx.data_proposal(1);
-        let key = ctx.validator_pubkey();
+        let key = ctx.validator_pubkey().clone();
         let cut = vec![(key.clone(), dp_hash1.clone(), AggregateSignature::default())];
 
         let _ = ctx
@@ -1964,13 +1997,13 @@ pub mod test {
 
         // Sending transaction to mempool as RestApiMessage
         ctx.submit_contract_tx("test1");
-        ctx.add_trusted_validator(&ctx.validator_pubkey());
+        ctx.add_trusted_validator(&ctx.validator_pubkey().clone());
 
         ctx.mempool.handle_data_proposal_management()?;
 
         let (dp_orig, dp_hash) = ctx.data_proposal(0);
 
-        let key = ctx.validator_pubkey();
+        let key = ctx.validator_pubkey().clone();
         let cut = vec![(key.clone(), dp_hash.clone(), AggregateSignature::default())];
 
         let _ = ctx
@@ -2004,7 +2037,7 @@ pub mod test {
                 assert_eq!(sb.consensus_proposal.cut, cut);
                 assert_eq!(
                     sb.data_proposals,
-                    vec![(ctx.validator_pubkey(), vec![dp_orig])]
+                    vec![(ctx.validator_pubkey().clone(), vec![dp_orig])]
                 );
                 sb.consensus_proposal.hash()
             }
@@ -2089,6 +2122,32 @@ pub mod test {
         );
 
         assert!(ctx.mempool_event_receiver.try_recv().is_err());
+
+        Ok(())
+    }
+
+    #[test_log::test(tokio::test)]
+    async fn test_serialization_deserialization() -> Result<()> {
+        let mut ctx = MempoolTestCtx::new("mempool").await;
+        ctx.mempool.file = Some(".".into());
+
+        assert!(Mempool::save_on_disk(
+            ctx.mempool
+                .file
+                .clone()
+                .unwrap()
+                .join("test-mempool.bin")
+                .as_path(),
+            &ctx.mempool.inner
+        )
+        .is_ok());
+
+        assert!(Mempool::load_from_disk::<MempoolStore>(
+            ctx.mempool.file.unwrap().join("test-mempool.bin").as_path(),
+        )
+        .is_some());
+
+        std::fs::remove_file("./test-mempool.bin").expect("Failed to delete test-mempool.bin");
 
         Ok(())
     }

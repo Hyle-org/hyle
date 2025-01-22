@@ -1,4 +1,4 @@
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use bincode::{Decode, Encode};
 use hyle_model::{Signed, ValidatorSignature};
 use indexmap::IndexMap;
@@ -41,7 +41,7 @@ pub struct Lane {
     pub waiting: Vec<DataProposal>,
 }
 
-#[derive(Debug, Clone, Encode, Decode)]
+#[derive(Debug, Default, Clone, Encode, Decode)]
 pub struct Storage {
     pub id: ValidatorPublicKey,
     pub pending_txs: Vec<Transaction>,
@@ -61,10 +61,12 @@ impl Display for Storage {
 
 impl Storage {
     pub fn new(id: ValidatorPublicKey) -> Storage {
+        let mut lanes = HashMap::new();
+        lanes.insert(id.clone(), Lane::default());
         Storage {
             id,
             pending_txs: vec![],
-            lanes: HashMap::new(),
+            lanes,
         }
     }
 
@@ -85,7 +87,7 @@ impl Storage {
                 },
             ) in lane.iter_reverse()
             {
-                // Only cut on DataProposal that have not been cutted yet
+                // Only cut on DataProposal that have not been cut yet
                 if lane.last_cut.as_ref().map(|lc| &lc.1) == Some(data_proposal_hash) {
                     #[allow(clippy::unwrap_used, reason = "we know the value is Some")]
                     let poda = lane.last_cut.as_ref().map(|lc| lc.0.clone()).unwrap();
@@ -202,38 +204,77 @@ impl Storage {
             return DataProposalVerdict::Empty;
         }
 
-        // Check that we are not locally forking
-        let last_known_id = self
-            .lanes
-            .entry(validator.clone())
-            .or_default()
-            .get_last_proposal_id();
-        if data_proposal.id > 0 && Some(&(data_proposal.id - 1)) != last_known_id {
-            // Get the last known parent hash in order to get all the next ones
-            warn!(
-                "Refusing to vote for {:?} cause it could create a fork in the lane",
-                data_proposal.id
-            );
-            return DataProposalVerdict::Refuse;
+        let validator_lane = self.lanes.entry(validator.clone()).or_default();
+
+        let last_known_id = validator_lane.get_last_proposal_id().unwrap_or(&0);
+        let last_known_hash = validator_lane.get_last_proposal_hash();
+
+        let local_parent = data_proposal
+            .parent_data_proposal_hash
+            .as_ref()
+            .and_then(|hash| validator_lane.data_proposals.get(hash));
+
+        let local_parent_data_proposal_hash =
+            local_parent.map(|lane_entry| lane_entry.data_proposal.hash());
+
+        let local_parent_data_proposal_id = local_parent
+            .map(|lane_entry| lane_entry.data_proposal.id)
+            .unwrap_or(0);
+
+        // LEGIT DATA PROPOSAL
+
+        // id == 0 + no registered data proposals = first data proposal to be processed
+        // id == last + 1 and the parent is present locally means no fork
+        let first_data_proposal = data_proposal.id == 0 && validator_lane.data_proposals.is_empty();
+
+        let valid_next_data_proposal = data_proposal.id == last_known_id + 1
+            && data_proposal.parent_data_proposal_hash == local_parent_data_proposal_hash
+            && local_parent_data_proposal_id + 1 == data_proposal.id;
+
+        if first_data_proposal || valid_next_data_proposal {
+            return DataProposalVerdict::Process;
         }
 
-        // Check if he last DataProposal matches the parent hash of the new one
-        let last_known_parent_hash = self
-            .lanes
-            .entry(validator.clone())
-            .or_default()
-            .get_last_proposal_hash();
+        // FORKS
 
-        // Check if we already voted on that one
-        if last_known_parent_hash == Some(&data_proposal.hash()) {
+        // Find local data proposal that has the same parent as the received data proposal
+        let data_proposal_already_on_top_of_parent =
+            validator_lane.data_proposals.iter().find(|dp| {
+                dp.1.data_proposal.parent_data_proposal_hash
+                    == data_proposal.parent_data_proposal_hash
+            });
+        // A fork happens when the received data proposal points
+        // [id: 2] abc <- [id: 3] fgh
+        //             <- [id: 3] ijkl
+
+        // A different data proposal is already referring to the parent
+        if let Some(p) = data_proposal_already_on_top_of_parent {
+            if &p.1.data_proposal != data_proposal {
+                // Means a later data proposal is already on top of the parent
+                warn!("Fork detected on lane {:?}", validator);
+                return DataProposalVerdict::Refuse;
+            }
+        }
+
+        // ALREADY STORED
+
+        // Already present data proposal (just resend a vote)
+        if last_known_hash == Some(&data_proposal.hash()) {
             return DataProposalVerdict::Vote;
         }
 
-        if last_known_parent_hash != data_proposal.parent_data_proposal_hash.as_ref() {
+        // Missing data, let's sync before taking a decision
+        if local_parent_data_proposal_hash.is_none() {
             // Get the last known parent hash in order to get all the next ones
-            return DataProposalVerdict::Wait(last_known_parent_hash.cloned());
+            return DataProposalVerdict::Wait(last_known_hash.cloned());
         }
-        DataProposalVerdict::Process
+
+        error!(
+            "DataProposal cannot be handled: {:?}",
+            data_proposal.clone()
+        );
+
+        DataProposalVerdict::Refuse
     }
 
     pub fn process_data_proposal(
@@ -407,13 +448,25 @@ impl Storage {
         &self,
         validator: &ValidatorPublicKey,
         from_data_proposal_hash: Option<&DataProposalHash>,
-        to_data_proposal_hash: &DataProposalHash,
-    ) -> Result<Option<Vec<LaneEntry>>> {
+        to_data_proposal_hash: Option<&DataProposalHash>,
+    ) -> Result<Vec<LaneEntry>> {
         if let Some(lane) = self.lanes.get(validator) {
             return lane
                 .get_lane_entries_between_hashes(from_data_proposal_hash, to_data_proposal_hash);
         }
         bail!("Validator not found");
+    }
+
+    pub fn add_waiting_data_proposal(
+        &mut self,
+        validator: &ValidatorPublicKey,
+        data_proposal: DataProposal,
+    ) {
+        self.lanes
+            .entry(validator.clone())
+            .or_default()
+            .waiting
+            .push(data_proposal);
     }
 
     pub fn get_waiting_data_proposals(
@@ -500,9 +553,9 @@ impl Storage {
         for (validator, data_proposal_hash, poda) in cut.iter() {
             // FIXME: If data_proposal_hash is unknown, we should request the missing DataProposals
             if let Some(lane) = self.lanes.get_mut(validator) {
-                if let Ok(Some(lane_entries)) = lane.get_lane_entries_between_hashes(
+                if let Ok(lane_entries) = lane.get_lane_entries_between_hashes(
                     lane.last_cut.as_ref().map(|lc| &lc.1),
-                    data_proposal_hash,
+                    Some(data_proposal_hash),
                 ) {
                     for lane_entry in lane_entries {
                         txs.extend(lane_entry.data_proposal.txs);
@@ -521,15 +574,14 @@ impl Storage {
             .get(validator)
             .and_then(|lane| lane.get_last_proposal())
     }
+
     pub fn get_lane_pending_entries(
         &self,
         validator: &ValidatorPublicKey,
-    ) -> Result<Option<Vec<LaneEntry>>> {
-        if let Some(lane) = self.lanes.get(validator) {
-            lane.get_pending_entries()
-        } else {
-            bail!("Validator not found")
-        }
+    ) -> Option<Vec<LaneEntry>> {
+        self.lanes
+            .get(validator)
+            .map(|lane| lane.get_pending_entries())
     }
 
     pub fn get_lane_latest_data_proposal_hash(
@@ -604,13 +656,12 @@ impl Lane {
         self.data_proposals.get_mut(hash)
     }
 
-    pub fn get_pending_entries(&self) -> Result<Option<Vec<LaneEntry>>> {
-        let last_cutted_dp_hash = self.last_cut.as_ref().map(|(_, dp_hash)| dp_hash);
-        if let Some(last_dp_hash) = self.get_last_proposal_hash() {
-            self.get_lane_entries_between_hashes(last_cutted_dp_hash, last_dp_hash)
-        } else {
-            Ok(None)
-        }
+    pub fn get_pending_entries(&self) -> Vec<LaneEntry> {
+        let last_comitted_dp_hash = self.last_cut.as_ref().map(|(_, dp_hash)| dp_hash);
+        let last_dp_hash = self.get_last_proposal_hash();
+
+        self.get_lane_entries_between_hashes(last_comitted_dp_hash, last_dp_hash)
+            .unwrap_or_default()
     }
 
     pub fn get_last_proposal(&self) -> Option<&LaneEntry> {
@@ -664,55 +715,44 @@ impl Lane {
             .map(|(data_proposal_hash, _)| data_proposal_hash)
     }
 
+    fn get_index_or_bail(&self, hash: &DataProposalHash) -> Result<usize> {
+        self.data_proposals.get_index_of(hash).context(
+            "Won't return any LaneEntry as aimed DataProposal {hash} does not exist on Lane",
+        )
+    }
+
+    fn collect_entries(&self, start: usize, end: usize) -> Vec<LaneEntry> {
+        self.data_proposals
+            .values()
+            .skip(start)
+            .take(end - start)
+            .cloned()
+            .collect()
+    }
+
     fn get_lane_entries_between_hashes(
         &self,
         from_data_proposal_hash: Option<&DataProposalHash>,
-        to_data_proposal_hash: &DataProposalHash,
-    ) -> Result<Option<Vec<LaneEntry>>> {
-        let to_index = match self.data_proposals.get_index_of(to_data_proposal_hash) {
-            None => {
-                bail!("Won't return any LaneEntry as aimed DataProposal {to_data_proposal_hash} does not exist on Lane");
+        to_data_proposal_hash: Option<&DataProposalHash>,
+    ) -> Result<Vec<LaneEntry>> {
+        let from_index = match from_data_proposal_hash {
+            Some(hash) => {
+                self.get_index_or_bail(hash)
+                    .context("getting 'from' index")?
+                    + 1
             }
-            Some(to_index) => to_index,
+            None => 0,
+        };
+        let to_index = match to_data_proposal_hash {
+            Some(hash) => self.get_index_or_bail(hash).context("getting 'to' index")?,
+            None => self.data_proposals.len(),
         };
 
-        match from_data_proposal_hash {
-            None => {
-                // We send all LaneEntries from the very first one up to the one asked
-                Ok(Some(
-                    self.data_proposals
-                        .values()
-                        .take(to_index + 1)
-                        .cloned()
-                        .collect(),
-                ))
-            }
-            Some(from_data_proposal_hash) => {
-                match self.data_proposals.get_index_of(from_data_proposal_hash) {
-                    None => {
-                        bail!("Won't return any LaneEntry as starting DataProposal {from_data_proposal_hash} does not exist on Lane");
-                    }
-                    Some(from_index) => {
-                        // If there is an index, two cases
-                        // - index is known: we send the diff
-                        if to_index <= from_index {
-                            return Ok(None);
-                        }
-                        Ok(Some(
-                            self.data_proposals
-                                .values()
-                                .skip(from_index + 1)
-                                .take(to_index - from_index)
-                                .cloned()
-                                .collect(),
-                        ))
-                    }
-                }
-            }
-        }
+        Ok(self.collect_entries(from_index, to_index + 1))
     }
 
     pub fn add_missing_lane_entries(&mut self, lane_entries: Vec<LaneEntry>) -> Result<()> {
+        let lane_entries_len = lane_entries.len();
         let mut ordered_lane_entries = lane_entries;
         ordered_lane_entries.dedup();
 
@@ -726,10 +766,16 @@ impl Lane {
             }
             self.add_proposal(lane_entry.data_proposal.hash(), lane_entry);
         }
+        debug!(
+            "Nb data proposals after adding {} missing entries: {}",
+            lane_entries_len,
+            self.data_proposals.len()
+        );
         Ok(())
     }
 
     fn get_waiting_data_proposals(&mut self) -> Result<Vec<DataProposal>> {
+        debug!("Getting waiting data proposals: {}", self.waiting.len());
         let wp = self.waiting.drain(0..).collect::<Vec<DataProposal>>();
         if wp.len() > 1 {
             for i in 0..wp.len() - 1 {
@@ -1078,8 +1124,7 @@ mod tests {
 
         // Test getting all entries from the beginning to the second proposal
         let entries = lane
-            .get_lane_entries_between_hashes(None, &data_proposal2_hash)
-            .expect("Failed to get lane entries")
+            .get_lane_entries_between_hashes(None, Some(&data_proposal2_hash))
             .expect("Failed to get lane entries");
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0], lane_entry1);
@@ -1087,16 +1132,14 @@ mod tests {
 
         // Test getting entries between the first and second proposal
         let entries = lane
-            .get_lane_entries_between_hashes(Some(&data_proposal1_hash), &data_proposal2_hash)
-            .expect("Failed to get lane entries")
+            .get_lane_entries_between_hashes(Some(&data_proposal1_hash), Some(&data_proposal2_hash))
             .expect("Failed to get lane entries");
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0], lane_entry2);
 
         // Test getting entries between the first, second and third proposals
         let entries = lane
-            .get_lane_entries_between_hashes(Some(&data_proposal1_hash), &data_proposal3_hash)
-            .expect("Failed to get lane entries")
+            .get_lane_entries_between_hashes(Some(&data_proposal1_hash), Some(&data_proposal3_hash))
             .expect("Failed to get lane entries");
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0], lane_entry2);
@@ -1104,19 +1147,19 @@ mod tests {
 
         // Test getting entries between the first, and the first proposals (empty)
         let entries = lane
-            .get_lane_entries_between_hashes(Some(&data_proposal1_hash), &data_proposal1_hash)
+            .get_lane_entries_between_hashes(Some(&data_proposal1_hash), Some(&data_proposal1_hash))
             .expect("Failed to get lane entries");
-        assert!(entries.is_none());
+        assert!(entries.is_empty());
 
         // Test getting entries with a non-existent starting hash
         let non_existent_hash = DataProposalHash("non_existent".to_string());
-        let entries =
-            lane.get_lane_entries_between_hashes(Some(&non_existent_hash), &data_proposal2_hash);
+        let entries = lane
+            .get_lane_entries_between_hashes(Some(&non_existent_hash), Some(&data_proposal2_hash));
         assert!(entries.is_err());
 
         // Test getting entries with a non-existent ending hash
-        let entries =
-            lane.get_lane_entries_between_hashes(Some(&data_proposal1_hash), &non_existent_hash);
+        let entries = lane
+            .get_lane_entries_between_hashes(Some(&data_proposal1_hash), Some(&non_existent_hash));
         assert!(entries.is_err());
     }
 
@@ -1300,7 +1343,7 @@ mod tests {
             .expect("vote success");
 
         // Verifications
-        assert_eq!(store2.lanes.len(), 1);
+        assert_eq!(store2.lanes.len(), 2);
         assert!(store2.lanes.contains_key(pubkey1));
 
         let store_own_lane = store1.lanes.get(pubkey1).expect("lane");
@@ -1343,8 +1386,7 @@ mod tests {
         );
 
         let lane2_entries = store2
-            .get_lane_entries_between_hashes(pubkey1, None, &data_proposal4_hash)
-            .expect("Could not load own lane entries")
+            .get_lane_entries_between_hashes(pubkey1, None, Some(&data_proposal4_hash))
             .expect("Could not load own lane entries");
 
         assert_eq!(lane2_entries.len(), 4);
