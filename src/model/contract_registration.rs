@@ -22,14 +22,14 @@ pub fn validate_contract_registration(
 
     let Some((name, tld)) = new_contract_name.0.split_once(".") else {
         bail!(
-            "Invalid contract name for '{}': {}",
+            "Invalid contract name for '{}': no '.' in {}",
             owner,
             new_contract_name
         );
     };
     if name.is_empty() || tld.is_empty() {
         bail!(
-            "Invalid contract name for '{}': {}",
+            "Invalid contract name for '{}': empty name/tld in {}",
             owner,
             new_contract_name
         );
