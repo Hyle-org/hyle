@@ -15,6 +15,7 @@ use crate::genesis::{Genesis, GenesisEvent};
 use crate::mempool::test::NodeStateEvent;
 use crate::mempool::{MempoolNetMessage, QueryNewCut, RestApiMessage};
 use crate::model::*;
+use crate::rest::RestApi;
 use crate::utils::integration_test::NodeIntegrationCtxBuilder;
 
 use super::SignedByValidator;
@@ -40,7 +41,11 @@ async fn impl_test_mempool_isnt_blocked_by_proof_verification() -> Result<()> {
     let mut node_modules = NodeIntegrationCtxBuilder::new().await;
     node_modules.conf.consensus.slot_duration = 200;
 
-    let mut node_modules = node_modules.skip::<Genesis>().build().await?;
+    let mut node_modules = node_modules
+        .skip::<Genesis>()
+        .skip::<RestApi>()
+        .build()
+        .await?;
 
     let mut node_client = Client::new_from_bus(node_modules.bus.new_handle()).await;
 
@@ -52,12 +57,15 @@ async fn impl_test_mempool_isnt_blocked_by_proof_verification() -> Result<()> {
             vec![DataProposal {
                 id: 0,
                 parent_data_proposal_hash: None,
-                txs: vec![RegisterContractTransaction {
-                    owner: "test".to_string(),
-                    verifier: "test-slow".into(),
-                    program_id: ProgramId(vec![]),
-                    state_digest: StateDigest(vec![0, 1, 2, 3]),
-                    contract_name: contract_name.clone(),
+                txs: vec![BlobTransaction {
+                    identity: "test".into(),
+                    blobs: vec![RegisterContractAction {
+                        verifier: "test-slow".into(),
+                        program_id: ProgramId(vec![]),
+                        state_digest: StateDigest(vec![0, 1, 2, 3]),
+                        contract_name: contract_name.clone(),
+                    }
+                    .as_blob("hyle".into(), None, None)],
                 }
                 .into()],
             }],

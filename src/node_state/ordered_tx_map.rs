@@ -1,4 +1,5 @@
 use bincode::{Decode, Encode};
+use tracing::warn;
 
 use crate::model::ContractName;
 use crate::model::UnsettledBlobTransaction;
@@ -48,14 +49,19 @@ impl OrderedTxMap {
         self.map.len()
     }
 
-    pub fn add(&mut self, tx: UnsettledBlobTransaction) {
+    /// Returns true if the tx is the next unsettled tx for all the contracts it contains
+    /// NB: not if the TX was already added to the map, which feels like it generally shouldn't happen?
+    pub fn add(&mut self, tx: UnsettledBlobTransaction) -> bool {
         if self.map.contains_key(&tx.hash) {
-            return;
+            warn!("Trying to add a tx {} that is already in the map", tx.hash);
+            return false;
         }
+        let mut is_next = true;
         for blob_metadata in &tx.blobs {
-            match self.tx_order.get_mut(&blob_metadata.blob.contract_name) {
+            is_next = match self.tx_order.get_mut(&blob_metadata.blob.contract_name) {
                 Some(vec) => {
                     vec.push_back(tx.hash.clone());
+                    vec.len() == 1
                 }
                 None => {
                     self.tx_order
@@ -64,11 +70,13 @@ impl OrderedTxMap {
                             vec.push_back(tx.hash.clone());
                             vec
                         });
+                    true
                 }
-            }
+            } && is_next;
         }
 
         self.map.insert(tx.hash.clone(), tx);
+        is_next
     }
 
     pub fn remove(&mut self, hash: &TxHash) -> Option<UnsettledBlobTransaction> {

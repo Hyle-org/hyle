@@ -952,18 +952,19 @@ pub mod test {
         handle_messages,
         model::Block,
         node_state::module::NodeStateModule,
+        rest::RestApi,
         utils::integration_test::NodeIntegrationCtxBuilder,
     };
     use std::sync::Arc;
 
     use super::*;
     use crate::{
-        autobahn_testing::{
-            broadcast, build_tuple, send, simple_commit_round, AutobahnBusClient, AutobahnTestCtx,
-        },
         bus::{dont_use_this::get_receiver, metrics::BusMetrics, SharedMessageBus},
         model::DataProposalHash,
         p2p::network::NetMessage,
+        tests::autobahn_testing::{
+            broadcast, build_tuple, send, simple_commit_round, AutobahnBusClient, AutobahnTestCtx,
+        },
         utils::{conf::Conf, crypto},
     };
     use assertables::assert_contains;
@@ -2267,7 +2268,7 @@ pub mod test {
         let mut node_builder = NodeIntegrationCtxBuilder::new().await;
         node_builder.conf.run_indexer = false;
         node_builder.conf.single_node = Some(false);
-        node_builder = node_builder.skip::<NodeStateModule>();
+        node_builder = node_builder.skip::<NodeStateModule>().skip::<RestApi>();
         let mut node = node_builder.build().await.unwrap();
 
         let mut bc = TestBC::new_from_bus(node.bus.new_handle()).await;

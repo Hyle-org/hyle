@@ -40,9 +40,12 @@
             overflow-x: scroll;
         }
         .log-column.hidden {
-            min-width: 20px;
-            max-width: 20px;
+            min-width: 14px;
+            max-width: 14px;
             overflow: hidden;
+        }
+        .log-column.hidden > div {
+            display: none;
         }
         .log-column > div {
             width: max-content;
@@ -116,6 +119,22 @@
                 const reg = line.match(/([a-zA-Z0-9-_]+\([a-zA-Z0-9]+\)) +(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{2,8}Z) +(INFO|ERROR|WARN|DEBUG|TRACE) (.*)/);
                 try {
                     const [all, node, timestamp, level, ...rest] = reg || [];
+                    if (!node || !timestamp || !level || !rest) throw new Error("Invalid log line");
+                    if (!nodeLogs[node]) nodeLogs[node] = [];
+                    // Parse timestamp as a date
+                    const date = new Date(timestamp)
+                    timestamps.add(date);
+                    nodeLogs[node].push({ timestamp: date, level, message: rest.join(" ") });
+                    return;
+                } catch (e) {
+                    //console.error("Error parsing line", line, e);
+                }
+                // Pickup other timestamped logs such as test logs
+                // Extract line format matches `2024-12-03T17:05:25.324793Z  INFO ...`
+                const reg2 = line.match(/(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{2,8}Z) +(INFO|ERROR|WARN|DEBUG|TRACE) (.*)/);
+                try {
+                    const node = "other";
+                    const [all, timestamp, level, ...rest] = reg2 || [];
                     if (!node || !timestamp || !level || !rest) return;
                     if (!nodeLogs[node]) nodeLogs[node] = [];
                     // Parse timestamp as a date
@@ -135,7 +154,7 @@
 
             const timeColumn = document.createElement("div");
             timeColumn.classList.add("log-column");
-            timeColumn.style = "flex-basis: 200px";
+            timeColumn.style = "flex-basis: 200px;flex-shrink: 0;";
             timeColumn.innerHTML = "<h3>Timestamp</h3>";
             timestamps.forEach(timestamp => {
                 const entryDiv = document.createElement("div");

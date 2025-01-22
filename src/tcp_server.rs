@@ -105,6 +105,7 @@ impl TcpServer {
 mod tests {
     use bincode::encode_to_vec;
     use futures::SinkExt;
+    use hyle_model::BlobTransaction;
     use rand::Rng;
     use std::{sync::Arc, time::Duration};
     use tokio::{io::AsyncReadExt, net::TcpStream, sync::broadcast::Receiver, time::timeout};
@@ -112,7 +113,6 @@ mod tests {
 
     use crate::{
         bus::{dont_use_this::get_receiver, SharedMessageBus},
-        model::RegisterContractTransaction,
         utils::conf::Conf,
     };
 
@@ -262,7 +262,7 @@ mod tests {
         let stream = TcpStream::connect(addr).await?;
         let mut framed = FramedWrite::new(stream, LengthDelimitedCodec::new());
 
-        let tx: Transaction = RegisterContractTransaction::default().into();
+        let tx: Transaction = BlobTransaction::default().into();
         let net_msg = TcpServerNetMessage::NewTx(tx.clone());
         framed.send(net_msg.to_binary().unwrap().into()).await?;
 

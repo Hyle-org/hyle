@@ -22,6 +22,7 @@ use crate::{
 use anyhow::{bail, Context, Result};
 use api::RestApiMessage;
 use bincode::{Decode, Encode};
+use contract_registration::validate_any_contract_registration;
 use hyle_contract_sdk::{ContractName, ProgramId, Verifier};
 use metrics::MempoolMetrics;
 use serde::{Deserialize, Serialize};
@@ -63,15 +64,12 @@ impl KnownContracts {
         contract_name: &ContractName,
         verifier: &Verifier,
         program_id: &ProgramId,
-    ) -> Result<()> {
-        if self.0.contains_key(contract_name) {
-            bail!("Contract {contract_name} already exists")
-        }
+    ) {
+        debug!("🏊📝 Registering contract in mempool {:?}", contract_name);
         self.0.insert(
             contract_name.clone(),
             (verifier.clone(), program_id.clone()),
         );
-        Ok(())
     }
 }
 
@@ -181,6 +179,16 @@ impl Module for Mempool {
             ..MempoolStore::default()
         });
 
+        // Register the Hyle contract to be able to handle registrations.
+        #[allow(clippy::expect_used, reason = "not held across await")]
+        attributes
+            .known_contracts
+            .write()
+            .expect("logic issue")
+            .0
+            .entry("hyle".into())
+            .or_insert_with(|| (Verifier("hyle".to_owned()), ProgramId(vec![])));
+
         Ok(Mempool {
             bus,
             file: Some(ctx.common.config.data_directory.clone()),
@@ -230,25 +238,14 @@ impl Mempool {
             listen<GenesisEvent> cmd => {
                 if let GenesisEvent::GenesisBlock(signed_block) = cmd {
                     for tx in signed_block.txs() {
-                        if let TransactionData::RegisterContract(tx) = tx.transaction_data {
-                            #[allow(clippy::expect_used, reason="not held across await")]
-                            self.known_contracts.write().expect("logic issue").register_contract(&tx.contract_name, &tx.verifier, &tx.program_id)?;
-                        }
+                        self.handle_contract_registration(tx);
                     }
                 }
             }
             listen<NodeStateEvent> cmd => {
                 let NodeStateEvent::NewBlock(block) = cmd;
                 for tx in block.txs {
-                    let TransactionData::RegisterContract(register_contract_transaction) = tx.transaction_data else {
-                        continue;
-                    };
-                    #[allow(clippy::expect_used, reason="not held across await")]
-                    let _ = self.known_contracts.write().expect("logic issue").register_contract(
-                        &register_contract_transaction.contract_name,
-                        &register_contract_transaction.verifier,
-                        &register_contract_transaction.program_id,
-                    );
+                    self.handle_contract_registration(tx);
                 }
             }
             command_response<QueryNewCut, Cut> staking => {
@@ -267,6 +264,24 @@ impl Mempool {
         }
 
         Ok(())
+    }
+
+    fn handle_contract_registration(&mut self, tx: Transaction) {
+        if let TransactionData::Blob(tx) = tx.transaction_data {
+            // Optimistically accept them
+            #[allow(clippy::expect_used, reason = "not held across await")]
+            let mut known_contracts = self.known_contracts.write().expect("logic issue");
+            tx.blobs.into_iter().for_each(|blob| {
+                if let Ok(tx) = StructuredBlobData::<RegisterContractAction>::try_from(blob.data) {
+                    let tx = tx.parameters;
+                    known_contracts.register_contract(
+                        &tx.contract_name,
+                        &tx.verifier,
+                        &tx.program_id,
+                    );
+                }
+            });
+        };
     }
 
     /// Creates a cut with local material on QueryNewCut message reception (from consensus)
@@ -833,24 +848,16 @@ impl Mempool {
         // TODO: Verify fees ?
 
         match tx.transaction_data {
-            TransactionData::RegisterContract(ref register_contract_transaction) => {
-                debug!("Got new register contract tx {}", tx.hash());
-
-                #[allow(clippy::expect_used, reason = "not held across await")]
-                self.known_contracts
-                    .write()
-                    .expect("logic issue")
-                    .register_contract(
-                        &register_contract_transaction.contract_name,
-                        &register_contract_transaction.verifier,
-                        &register_contract_transaction.program_id,
-                    )?;
-            }
             TransactionData::Blob(ref blob_tx) => {
                 debug!("Got new blob tx {}", tx.hash());
                 if let Err(e) = blob_tx.validate_identity() {
                     bail!("Invalid identity for blob tx {}: {}", tx.hash(), e);
                 }
+                // Reject obviously invalid contract registrations.
+                validate_any_contract_registration(blob_tx)?;
+                // TODO: we should check if the registration handler contract exists.
+                // TODO: would be good to not need to clone here.
+                self.handle_contract_registration(tx.clone());
             }
             TransactionData::Proof(_) => {
                 let kc = self.known_contracts.clone();
@@ -1069,12 +1076,12 @@ pub mod test {
     use core::panic;
 
     use super::*;
-    use crate::autobahn_testing::assert_chanmsg_matches;
     use crate::bus::dont_use_this::get_receiver;
     use crate::bus::metrics::BusMetrics;
     use crate::bus::SharedMessageBus;
     use crate::model;
     use crate::p2p::network::NetMessage;
+    use crate::tests::autobahn_testing::assert_chanmsg_matches;
     use anyhow::Result;
     use assertables::assert_ok;
     use hyle_contract_sdk::StateDigest;
@@ -1408,16 +1415,17 @@ pub mod test {
     }
 
     pub fn make_register_contract_tx(name: ContractName) -> Transaction {
-        Transaction {
-            version: 1,
-            transaction_data: TransactionData::RegisterContract(RegisterContractTransaction {
-                owner: "test".to_string(),
+        BlobTransaction {
+            identity: "hyle.hyle".into(),
+            blobs: vec![RegisterContractAction {
                 verifier: "test".into(),
                 program_id: ProgramId(vec![]),
                 state_digest: StateDigest(vec![0, 1, 2, 3]),
                 contract_name: name,
-            }),
+            }
+            .as_blob("hyle".into(), None, None)],
         }
+        .into()
     }
 
     #[test_log::test(tokio::test)]

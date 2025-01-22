@@ -1,6 +1,3 @@
-#![cfg(test)]
-#![allow(clippy::indexing_slicing)]
-
 //! This module is intended for "integration" testing of the consensus and other modules.
 
 macro_rules! build_tuple {

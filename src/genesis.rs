@@ -387,60 +387,76 @@ impl Genesis {
             ProgramId(hyle_contracts::RISC0_RECURSION_ID.to_vec()),
         );
 
-        (
-            map,
-            vec![
-                RegisterContractTransaction {
-                    owner: "hyle".into(),
+        let genesis_txs = vec![
+            BlobTransaction {
+                identity: "hyle.hyle".into(),
+                blobs: vec![RegisterContractAction {
                     verifier: "blst".into(),
                     program_id: NativeVerifiers::Blst.into(),
                     state_digest: StateDigest(vec![]),
                     contract_name: "blst".into(),
                 }
-                .into(),
-                RegisterContractTransaction {
-                    owner: "hyle".into(),
+                .as_blob("hyle".into(), None, None)],
+            }
+            .into(),
+            BlobTransaction {
+                identity: "hyle.hyle".into(),
+                blobs: vec![RegisterContractAction {
                     verifier: "sha3_256".into(),
                     program_id: NativeVerifiers::Sha3_256.into(),
                     state_digest: StateDigest(vec![]),
                     contract_name: "sha3_256".into(),
                 }
-                .into(),
-                RegisterContractTransaction {
-                    owner: "hyle".into(),
+                .as_blob("hyle".into(), None, None)],
+            }
+            .into(),
+            BlobTransaction {
+                identity: "hyle.hyle".into(),
+                blobs: vec![RegisterContractAction {
                     verifier: "risc0".into(),
                     program_id: staking_program_id.into(),
                     state_digest: ctx.staking.on_chain_state().as_digest(),
                     contract_name: "staking".into(),
                 }
-                .into(),
-                RegisterContractTransaction {
-                    owner: "hyle".into(),
+                .as_blob("hyle".into(), None, None)],
+            }
+            .into(),
+            BlobTransaction {
+                identity: "hyle.hyle".into(),
+                blobs: vec![RegisterContractAction {
                     verifier: "risc0".into(),
                     program_id: hyllar_program_id.into(),
                     state_digest: ctx.hyllar.as_digest(),
                     contract_name: "hyllar".into(),
                 }
-                .into(),
-                RegisterContractTransaction {
-                    owner: "hyle".into(),
+                .as_blob("hyle".into(), None, None)],
+            }
+            .into(),
+            BlobTransaction {
+                identity: "hyle.hyle".into(),
+                blobs: vec![RegisterContractAction {
                     verifier: "risc0".into(),
                     program_id: hydentity_program_id.into(),
                     state_digest: ctx.hydentity.as_digest(),
                     contract_name: "hydentity".into(),
                 }
-                .into(),
-                RegisterContractTransaction {
-                    owner: "hyle".into(),
+                .as_blob("hyle".into(), None, None)],
+            }
+            .into(),
+            BlobTransaction {
+                identity: "hyle.hyle".into(),
+                blobs: vec![RegisterContractAction {
                     verifier: "risc0".into(),
                     program_id: hyle_contracts::RISC0_RECURSION_ID.to_vec().into(),
                     state_digest: hyle_contract_sdk::StateDigest(vec![]),
                     contract_name: "risc0-recursion".into(),
                 }
-                .into(),
-            ],
-            ctx,
-        )
+                .as_blob("hyle".into(), None, None)],
+            }
+            .into(),
+        ];
+
+        (map, genesis_txs, ctx)
     }
 
     fn make_genesis_block(

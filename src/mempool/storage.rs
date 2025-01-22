@@ -1,6 +1,6 @@
 use anyhow::{bail, Context, Result};
 use bincode::{Decode, Encode};
-use hyle_model::{Signed, ValidatorSignature};
+use hyle_model::{RegisterContractAction, Signed, StructuredBlobData, ValidatorSignature};
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use staking::state::Staking;
@@ -15,7 +15,10 @@ use crate::{
     utils::crypto::BlstCrypto,
 };
 
-use super::verifiers::{verify_proof, verify_recursive_proof};
+use super::{
+    contract_registration::validate_any_contract_registration,
+    verifiers::{verify_proof, verify_recursive_proof},
+};
 use super::{KnownContracts, MempoolNetMessage};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -291,6 +294,13 @@ impl Storage {
                         );
                         return DataProposalVerdict::Refuse;
                     }
+                    if let Err(e) = validate_any_contract_registration(blob_tx) {
+                        warn!(
+                            "Refusing DataProposal: invalid contract registration in blob transaction: {}",
+                            e
+                        );
+                        return DataProposalVerdict::Refuse;
+                    }
                 }
                 TransactionData::Proof(_) => {
                     warn!("Refusing DataProposal: unverified recursive proof transaction");
@@ -337,13 +347,17 @@ impl Storage {
                                 .unwrap()
                                 .iter()
                                 .find_map(|tx| match &tx.transaction_data {
-                                    TransactionData::RegisterContract(tx) => {
-                                        if tx.contract_name == proof_tx.contract_name {
-                                            Some((&tx.verifier, &tx.program_id))
+                                    TransactionData::Blob(tx) => tx.blobs.iter().find_map(|blob| {
+                                        if let Ok(tx) =
+                                            StructuredBlobData::<RegisterContractAction>::try_from(
+                                                blob.data.clone(),
+                                            )
+                                        {
+                                            Some((tx.parameters.verifier, tx.parameters.program_id))
                                         } else {
                                             None
                                         }
-                                    }
+                                    }),
                                     _ => None,
                                 });
                             match data {
@@ -411,7 +425,6 @@ impl Storage {
                         }
                     }
                 }
-                _ => {}
             }
         }
 
@@ -614,7 +627,7 @@ fn remove_proofs(dp: &mut DataProposal) {
                 // A DataProposal that has been processed has turned all TransactionData::Proof into TransactionData::VerifiedProof
                 unreachable!();
             }
-            TransactionData::Blob(_) | TransactionData::RegisterContract(_) => {}
+            TransactionData::Blob(_) => {}
         }
     });
 }
@@ -797,12 +810,13 @@ mod tests {
     use crate::{
         mempool::{
             storage::{DataProposalHash, DataProposalVerdict, LaneEntry, Storage},
+            test::make_register_contract_tx,
             KnownContracts, MempoolNetMessage,
         },
         model::{
             Blob, BlobData, BlobProofOutput, BlobTransaction, ContractName, Hashable, ProofData,
-            ProofTransaction, RegisterContractTransaction, Transaction, TransactionData,
-            ValidatorPublicKey, VerifiedProofTransaction,
+            ProofTransaction, Transaction, TransactionData, ValidatorPublicKey,
+            VerifiedProofTransaction,
         },
         utils::crypto::{self, BlstCrypto},
     };
@@ -896,19 +910,6 @@ mod tests {
                     contract_name: ContractName::new("c1"),
                     data: BlobData(inner_tx.as_bytes().to_vec()),
                 }],
-            }),
-        }
-    }
-
-    fn make_register_contract_tx(name: ContractName) -> Transaction {
-        Transaction {
-            version: 1,
-            transaction_data: TransactionData::RegisterContract(RegisterContractTransaction {
-                owner: "test".to_string(),
-                verifier: "test".into(),
-                program_id: ProgramId(vec![]),
-                state_digest: StateDigest(vec![0, 1, 2, 3]),
-                contract_name: name,
             }),
         }
     }
