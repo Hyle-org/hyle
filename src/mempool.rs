@@ -2126,4 +2126,30 @@ pub mod test {
 
         Ok(())
     }
+
+    #[test_log::test(tokio::test)]
+    async fn test_serialization_deserialization() -> Result<()> {
+        let mut ctx = MempoolTestCtx::new("mempool").await;
+        ctx.mempool.file = Some(".".into());
+
+        assert!(Mempool::save_on_disk(
+            ctx.mempool
+                .file
+                .clone()
+                .unwrap()
+                .join("test-mempool.bin")
+                .as_path(),
+            &ctx.mempool.inner
+        )
+        .is_ok());
+
+        assert!(Mempool::load_from_disk::<MempoolStore>(
+            ctx.mempool.file.unwrap().join("test-mempool.bin").as_path(),
+        )
+        .is_some());
+
+        std::fs::remove_file("./test-mempool.bin").expect("Failed to delete test-mempool.bin");
+
+        Ok(())
+    }
 }
