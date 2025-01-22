@@ -79,7 +79,7 @@ tracing = "0.1"
 
 anymap = { version = "0.12.1" }
 assertables = { version = "9.5.0" }
-axum = { version = "0.8.1", features = ["ws", "macros"] }
+axum = { version = "0.8.2", features = ["ws", "macros"] }
 axum-otel-metrics = { version = "0.9.1" }
 borsh = { version = "1.5.5" }
 bytes = { version = "1.9.0" }
