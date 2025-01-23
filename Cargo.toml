@@ -20,6 +20,7 @@ version = "0.7.2"
 edition = "2021"
 homepage = "https://hyle.eu/"
 repository = "https://github.com/Hyle-org/hyle/"
+rust-version = "1.84"
 # licence = ""
 
 [package]
@@ -29,7 +30,9 @@ edition = { workspace = true }
 # license = { workspace = true }
 homepage = { workspace = true }
 repository = { workspace = true }
+rust-version = { workspace = true }
 default-run = "hyle"
+
 
 [[bin]]
 name = "hyle"
