@@ -159,7 +159,7 @@ where
             }
         }
 
-        for s_tx in block.settled_blob_tx_hashes {
+        for s_tx in block.successful_txs {
             self.settle_tx(s_tx).await?;
         }
         Ok(())

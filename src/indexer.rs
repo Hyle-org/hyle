@@ -255,14 +255,10 @@ impl Indexer {
 
             // Insert the transaction into the transactions table
             let tx_type = TransactionType::get_type_from_transaction(&tx);
-            let tx_status = if block.failed_txs.contains(&tx_hash) {
-                TransactionStatus::Failure
-            } else {
-                match tx.transaction_data {
-                    TransactionData::Blob(_) => TransactionStatus::Sequenced,
-                    TransactionData::Proof(_) => TransactionStatus::Success,
-                    TransactionData::VerifiedProof(_) => TransactionStatus::Success,
-                }
+            let tx_status = match tx.transaction_data {
+                TransactionData::Blob(_) => TransactionStatus::Sequenced,
+                TransactionData::Proof(_) => TransactionStatus::Success,
+                TransactionData::VerifiedProof(_) => TransactionStatus::Success,
             };
 
             let tx_hash: &TxHashDb = &tx_hash.into();
@@ -375,8 +371,27 @@ impl Indexer {
             // TODO: add new table with stakers at a given height
         }
 
+        // Handling settled blob transactions
+        for settled_blob_tx_hash in block.successful_txs {
+            let tx_hash: &TxHashDb = &settled_blob_tx_hash.into();
+            sqlx::query("UPDATE transactions SET transaction_status = $1 WHERE tx_hash = $2")
+                .bind(TransactionStatus::Success)
+                .bind(tx_hash)
+                .execute(&mut *transaction)
+                .await?;
+        }
+
+        for failed_blob_tx_hash in block.failed_txs {
+            let tx_hash: &TxHashDb = &failed_blob_tx_hash.into();
+            sqlx::query("UPDATE transactions SET transaction_status = $1 WHERE tx_hash = $2")
+                .bind(TransactionStatus::Failure)
+                .bind(tx_hash)
+                .execute(&mut *transaction)
+                .await?;
+        }
+
         // Handling timed out blob transactions
-        for timed_out_tx_hash in block.timed_out_tx_hashes {
+        for timed_out_tx_hash in block.timed_out_txs {
             let tx_hash: &TxHashDb = &timed_out_tx_hash.into();
             sqlx::query("UPDATE transactions SET transaction_status = $1 WHERE tx_hash = $2")
                 .bind(TransactionStatus::TimedOut)
@@ -415,9 +430,6 @@ impl Indexer {
             let blob_tx_hash: &TxHashDb = &blob_tx_hash.into();
             let blob_index = i32::try_from(blob_index.0)
                 .map_err(|_| anyhow::anyhow!("Blob index is too large to fit into an i32"))?;
-            let blob_proof_output_index = i32::try_from(blob_proof_output_index).map_err(|_| {
-                anyhow::anyhow!("Blob proof output index is too large to fit into an i32")
-            })?;
 
             sqlx::query("UPDATE blobs SET verified = true WHERE tx_hash = $1 AND blob_index = $2")
                 .bind(blob_tx_hash)
@@ -425,22 +437,19 @@ impl Indexer {
                 .execute(&mut *transaction)
                 .await?;
 
-            sqlx::query("UPDATE blob_proof_outputs SET settled = true WHERE blob_tx_hash = $1 AND blob_index = $2 AND blob_proof_output_index = $3")
-                .bind(blob_tx_hash)
-                .bind(blob_index)
-                .bind(blob_proof_output_index)
-                .execute(&mut *transaction)
-                .await?;
-        }
+            if let Some(blob_proof_output_index) = blob_proof_output_index {
+                let blob_proof_output_index =
+                    i32::try_from(blob_proof_output_index).map_err(|_| {
+                        anyhow::anyhow!("Blob proof output index is too large to fit into an i32")
+                    })?;
 
-        // Handling settled blob transactions
-        for settled_blob_tx_hash in block.settled_blob_tx_hashes {
-            let tx_hash: &TxHashDb = &settled_blob_tx_hash.into();
-            sqlx::query("UPDATE transactions SET transaction_status = $1 WHERE tx_hash = $2")
-                .bind(TransactionStatus::Success)
-                .bind(tx_hash)
-                .execute(&mut *transaction)
-                .await?;
+                sqlx::query("UPDATE blob_proof_outputs SET settled = true WHERE blob_tx_hash = $1 AND blob_index = $2 AND blob_proof_output_index = $3")
+                    .bind(blob_tx_hash)
+                    .bind(blob_index)
+                    .bind(blob_proof_output_index)
+                    .execute(&mut *transaction)
+                    .await?;
+            }
         }
 
         // Handling updated contract state
