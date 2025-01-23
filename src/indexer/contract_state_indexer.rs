@@ -1,7 +1,7 @@
 use anyhow::{anyhow, Error, Result};
 use bincode::{Decode, Encode};
 use hyle_contract_sdk::{BlobIndex, ContractName, TxHash};
-use hyle_model::{RegisterContractAction, StructuredBlobData};
+use hyle_model::RegisterContractEffect;
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, ops::Deref, path::PathBuf, sync::Arc};
 use tokio::sync::RwLock;
@@ -153,6 +153,12 @@ where
         );
         debug!(cn = %self.contract_name, "📦 Handled block outputs: {:?}", block);
 
+        for (_, contract) in block.registered_contracts {
+            if self.contract_name == contract.contract_name {
+                self.handle_register_contract(contract).await?;
+            }
+        }
+
         for tx in block.txs {
             if let TransactionData::Blob(tx) = tx.transaction_data {
                 self.handle_blob(tx).await?;
@@ -170,17 +176,6 @@ where
         let mut found_supported_blob = false;
 
         for b in &tx.blobs {
-            // Optimistically register contracts
-            if let Ok(reg) = StructuredBlobData::<RegisterContractAction>::try_from(b.data.clone())
-            {
-                if reg.parameters.contract_name != self.contract_name {
-                    continue;
-                }
-                info!(cn = %self.contract_name, "📝 Registering supported contract '{}'", reg.parameters.contract_name);
-                let state = reg.parameters.state_digest.try_into()?;
-                self.store.write().await.state = Some(state);
-                continue;
-            }
             if self.contract_name == b.contract_name {
                 found_supported_blob = true;
                 break;
@@ -196,6 +191,13 @@ where
                 .insert(tx_hash.clone(), tx);
         }
 
+        Ok(())
+    }
+
+    async fn handle_register_contract(&self, contract: RegisterContractEffect) -> Result<()> {
+        info!(cn = %self.contract_name, "📝 Registering supported contract '{}'", contract.contract_name);
+        let state = contract.state_digest.try_into()?;
+        self.store.write().await.state = Some(state);
         Ok(())
     }
 
@@ -231,7 +233,6 @@ where
 #[cfg(test)]
 mod tests {
     use hyle_contract_sdk::{BlobData, ProgramId, StateDigest};
-    use hyle_model::ContractAction;
 
     use super::*;
     use crate::bus::metrics::BusMetrics;
@@ -280,17 +281,13 @@ mod tests {
 
     async fn register_contract(indexer: &mut ContractStateIndexer<MockState>) {
         let state_digest = StateDigest::default();
-        let rca = RegisterContractAction {
+        let rce = RegisterContractEffect {
             contract_name: indexer.contract_name.clone(),
             state_digest,
             verifier: "test".into(),
             program_id: ProgramId(vec![]),
         };
-        let tx = BlobTransaction {
-            identity: "hyle.hyle".into(),
-            blobs: vec![rca.as_blob("hyle".into(), None, None)],
-        };
-        indexer.handle_blob(tx).await.unwrap();
+        indexer.handle_register_contract(rce).await.unwrap();
     }
 
     #[test_log::test(tokio::test)]
