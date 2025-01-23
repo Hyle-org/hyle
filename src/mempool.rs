@@ -33,7 +33,7 @@ use std::{
     path::PathBuf,
     sync::Arc,
 };
-use storage::{DataProposalVerdict, LaneEntry};
+use storage::{DataProposalVerdict, LaneBytesSize, LaneEntry};
 use strum_macros::IntoStaticStr;
 use tracing::{debug, error, info, trace, warn};
 
@@ -127,7 +127,7 @@ impl DerefMut for Mempool {
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, Eq, PartialEq, IntoStaticStr)]
 pub enum MempoolNetMessage {
     DataProposal(DataProposal),
-    DataVote(DataProposalHash),
+    DataVote(DataProposalHash, LaneBytesSize), // New lane size with this DP
     PoDAUpdate(DataProposalHash, Vec<SignedByValidator<MempoolNetMessage>>),
     SyncRequest(Option<DataProposalHash>, Option<DataProposalHash>),
     SyncReply(Vec<LaneEntry>),
@@ -374,7 +374,7 @@ impl Mempool {
 
         let mut result: Vec<(ValidatorPublicKey, Vec<DataProposal>)> = vec![];
         // Try to return the asked data proposals between the last_processed_cut and the one being handled
-        for (validator, to_hash, _) in buc.ccp.consensus_proposal.cut.iter() {
+        for (validator, to_hash, _, _) in buc.ccp.consensus_proposal.cut.iter() {
             // FIXME: use from : &Cut instead of Option
             let from_hash = buc
                 .from
@@ -527,7 +527,7 @@ impl Mempool {
 
     fn fetch_unknown_data_proposals(&mut self, cut: &Cut) -> Result<()> {
         // Detect all unknown data proposals
-        for (validator, data_proposal_hash, _) in cut.iter() {
+        for (validator, data_proposal_hash, _, _) in cut.iter() {
             if !self
                 .storage
                 .lane_has_data_proposal(validator, data_proposal_hash)
@@ -571,8 +571,8 @@ impl Mempool {
             MempoolNetMessage::DataProposal(data_proposal) => {
                 self.on_data_proposal(validator, data_proposal)?;
             }
-            MempoolNetMessage::DataVote(ref data_proposal_hash) => {
-                self.on_data_vote(&msg, data_proposal_hash)?;
+            MempoolNetMessage::DataVote(ref data_proposal_hash, data_proposal_size) => {
+                self.on_data_vote(&msg, data_proposal_hash, data_proposal_size)?;
             }
             MempoolNetMessage::PoDAUpdate(data_proposal_hash, signatures) => {
                 self.on_poda_update(validator, &data_proposal_hash, signatures);
@@ -600,7 +600,8 @@ impl Mempool {
 
         // Discard any lane entry that wasn't signed by the validator.
         missing_lane_entries.retain(|lane_entry| {
-            let expected_message = MempoolNetMessage::DataVote(lane_entry.data_proposal.hash());
+            let expected_message =
+                MempoolNetMessage::DataVote(lane_entry.data_proposal.hash(), lane_entry.size);
             let keep = lane_entry
                 .signatures
                 .iter()
@@ -675,11 +676,13 @@ impl Mempool {
         &mut self,
         msg: &SignedByValidator<MempoolNetMessage>,
         data_proposal_hash: &DataProposalHash,
+        new_lane_size: LaneBytesSize,
     ) -> Result<()> {
         let validator = &msg.signature.validator;
         debug!("{} Vote from {}", self.storage.id, validator);
         let (data_proposal_hash, signatures) =
-            self.storage.on_data_vote(msg, data_proposal_hash)?;
+            self.storage
+                .on_data_vote(msg, data_proposal_hash, new_lane_size)?;
 
         // Compute voting power of all signers to check if the DataProposal received enough votes
         let validators: Vec<ValidatorPublicKey> = signatures
@@ -738,7 +741,8 @@ impl Mempool {
             data_proposal.txs.len()
         );
         let data_proposal_hash = data_proposal.hash();
-        match self.storage.on_data_proposal(validator, &data_proposal) {
+        let (verdict, lane_size) = self.storage.on_data_proposal(validator, &data_proposal);
+        match verdict {
             DataProposalVerdict::Empty => {
                 warn!(
                     "received empty DataProposal from {}, ignoring...",
@@ -748,7 +752,8 @@ impl Mempool {
             DataProposalVerdict::Vote => {
                 // Normal case, we receive a proposal we already have the parent in store
                 debug!("Send vote for DataProposal");
-                self.send_vote(validator, data_proposal_hash)?;
+                #[allow(clippy::unwrap_used, reason = "we always have a size for Vote")]
+                self.send_vote(validator, data_proposal_hash, lane_size.unwrap())?;
             }
             DataProposalVerdict::Process => {
                 debug!("Further processing for DataProposal");
@@ -818,9 +823,10 @@ impl Mempool {
             DataProposalVerdict::Vote => {
                 debug!("Send vote for DataProposal");
                 let crypto = self.crypto.clone();
-                self.storage
+                let size = self
+                    .storage
                     .store_data_proposal(&crypto, &validator, data_proposal);
-                self.send_vote(&validator, data_proposal_hash)?;
+                self.send_vote(&validator, data_proposal_hash, size)?;
             }
             DataProposalVerdict::Refuse => {
                 debug!("Refuse vote for DataProposal");
@@ -956,13 +962,14 @@ impl Mempool {
         &mut self,
         validator: &ValidatorPublicKey,
         data_proposal_hash: DataProposalHash,
+        size: LaneBytesSize,
     ) -> Result<()> {
         self.metrics
             .add_proposal_vote(self.crypto.validator_pubkey(), validator);
         info!("🗳️ Sending vote for DataProposal {data_proposal_hash} to {validator}");
         self.send_net_message(
             validator.clone(),
-            MempoolNetMessage::DataVote(data_proposal_hash),
+            MempoolNetMessage::DataVote(data_proposal_hash, size),
         )?;
         Ok(())
     }
@@ -1309,9 +1316,21 @@ pub mod test {
                 .expect("Could not get own lane");
             lane.current_hash().cloned()
         }
+        pub fn current_size(&self) -> LaneBytesSize {
+            let lane = self
+                .mempool
+                .storage
+                .lanes
+                .get(self.validator_pubkey())
+                .expect("Could not get own lane");
+            lane.get_lane_size()
+        }
 
-        pub fn data_proposal(&self, height: usize) -> (DataProposal, DataProposalHash) {
-            let dp_orig = self
+        pub fn data_proposal(
+            &self,
+            height: usize,
+        ) -> (DataProposal, DataProposalHash, LaneBytesSize) {
+            let le = self
                 .mempool
                 .storage
                 .lanes
@@ -1320,11 +1339,10 @@ pub mod test {
                 .data_proposals
                 .get_index(height)
                 .unwrap()
-                .1
-                .data_proposal
-                .clone();
+                .1;
+            let dp_orig = le.data_proposal.clone();
 
-            (dp_orig.clone(), dp_orig.hash())
+            (dp_orig.clone(), dp_orig.hash(), le.size)
         }
         pub fn last_validator_data_proposal(
             &self,
@@ -1345,9 +1363,9 @@ pub mod test {
 
             (dp_orig.clone(), dp_orig.hash())
         }
-        pub fn pop_data_proposal(&mut self) -> (DataProposal, DataProposalHash) {
+        pub fn pop_data_proposal(&mut self) -> (DataProposal, DataProposalHash, LaneBytesSize) {
             let pub_key = self.validator_pubkey().clone();
-            let dp_orig = self
+            let le = self
                 .mempool
                 .storage
                 .lanes
@@ -1356,11 +1374,10 @@ pub mod test {
                 .data_proposals
                 .pop()
                 .unwrap()
-                .1
-                .data_proposal
-                .clone();
+                .1;
+            let dp_orig = le.data_proposal.clone();
 
-            (dp_orig.clone(), dp_orig.hash())
+            (dp_orig.clone(), dp_orig.hash(), le.size)
         }
         pub fn pop_validator_data_proposal(
             &mut self,
@@ -1384,19 +1401,23 @@ pub mod test {
 
         pub fn push_data_proposal(&mut self, dp: DataProposal) {
             let key = self.validator_pubkey().clone();
-            self.mempool
+            let proposals = &mut self
+                .mempool
                 .storage
                 .lanes
                 .get_mut(&key)
                 .unwrap()
-                .data_proposals
-                .insert(
-                    dp.hash(),
-                    LaneEntry {
-                        data_proposal: dp,
-                        signatures: vec![],
-                    },
-                );
+                .data_proposals;
+            let size =
+                proposals.last().map(|(_, v)| v.size).unwrap_or_default() + dp.estimate_size();
+            proposals.insert(
+                dp.hash(),
+                LaneEntry {
+                    data_proposal: dp,
+                    size,
+                    signatures: vec![],
+                },
+            );
         }
 
         pub fn submit_contract_tx(&mut self, contract_name: &'static str) {
@@ -1472,10 +1493,11 @@ pub mod test {
             MempoolNetMessage::DataProposal(dp) => dp,
             _ => panic!("Expected DataProposal message"),
         };
+        let size = LaneBytesSize(data_proposal.estimate_size() as u64);
 
         // Simulate receiving votes from other validators
-        let signed_msg2 = crypto2.sign(MempoolNetMessage::DataVote(data_proposal.hash()))?;
-        let signed_msg3 = crypto3.sign(MempoolNetMessage::DataVote(data_proposal.hash()))?;
+        let signed_msg2 = crypto2.sign(MempoolNetMessage::DataVote(data_proposal.hash(), size))?;
+        let signed_msg3 = crypto3.sign(MempoolNetMessage::DataVote(data_proposal.hash(), size))?;
         ctx.mempool.handle_net_message(signed_msg2)?;
         ctx.mempool.handle_net_message(signed_msg3)?;
 
@@ -1513,10 +1535,12 @@ pub mod test {
             MempoolNetMessage::DataProposal(dp) => dp,
             _ => panic!("oops"),
         };
+        let size = LaneBytesSize(data_proposal.estimate_size() as u64);
 
-        let signed_msg = temp_crypto.sign(MempoolNetMessage::DataVote(data_proposal.hash()))?;
+        let signed_msg =
+            temp_crypto.sign(MempoolNetMessage::DataVote(data_proposal.hash(), size))?;
         let _ = ctx.mempool.handle_net_message(SignedByValidator {
-            msg: MempoolNetMessage::DataVote(data_proposal.hash()),
+            msg: MempoolNetMessage::DataVote(data_proposal.hash(), size),
             signature: signed_msg.signature,
         });
 
@@ -1547,6 +1571,7 @@ pub mod test {
             parent_data_proposal_hash: None,
             txs: vec![make_register_contract_tx(ContractName::new("test1"))],
         };
+        let size = LaneBytesSize(data_proposal.estimate_size() as u64);
 
         let signed_msg = ctx
             .mempool
@@ -1567,8 +1592,9 @@ pub mod test {
             .assert_send(&ctx.mempool.crypto.validator_pubkey().clone(), "DataVote")
             .msg
         {
-            MempoolNetMessage::DataVote(data_vote) => {
-                assert_eq!(data_vote, data_proposal.hash())
+            MempoolNetMessage::DataVote(data_vote, voted_size) => {
+                assert_eq!(data_vote, data_proposal.hash());
+                assert_eq!(size, voted_size);
             }
             _ => panic!("Expected DataProposal message"),
         };
@@ -1589,13 +1615,15 @@ pub mod test {
             parent_data_proposal_hash: None,
             txs: vec![make_register_contract_tx(ContractName::new("test1"))],
         };
+        let size = LaneBytesSize(data_proposal.estimate_size() as u64);
 
         let temp_crypto = BlstCrypto::new("temp_crypto".into()).unwrap();
-        let signed_msg = temp_crypto.sign(MempoolNetMessage::DataVote(data_proposal.hash()))?;
+        let signed_msg =
+            temp_crypto.sign(MempoolNetMessage::DataVote(data_proposal.hash(), size))?;
         assert!(ctx
             .mempool
             .handle_net_message(SignedByValidator {
-                msg: MempoolNetMessage::DataVote(data_proposal.hash()),
+                msg: MempoolNetMessage::DataVote(data_proposal.hash(), size),
                 signature: signed_msg.signature,
             })
             .is_err());
@@ -1617,6 +1645,7 @@ pub mod test {
             parent_data_proposal_hash: None,
             txs: vec![make_register_contract_tx(ContractName::new("test1"))],
         };
+        let size = LaneBytesSize(data_proposal.estimate_size() as u64);
         let data_proposal_hash = data_proposal.hash();
 
         ctx.make_data_proposal_with_pending_txs()?;
@@ -1625,7 +1654,10 @@ pub mod test {
         let crypto2 = BlstCrypto::new("2".into()).unwrap();
         ctx.add_trusted_validator(crypto2.validator_pubkey());
 
-        let signed_msg = crypto2.sign(MempoolNetMessage::DataVote(data_proposal_hash.clone()))?;
+        let signed_msg = crypto2.sign(MempoolNetMessage::DataVote(
+            data_proposal_hash.clone(),
+            size,
+        ))?;
 
         ctx.mempool
             .handle_net_message(signed_msg)
@@ -1662,9 +1694,10 @@ pub mod test {
         let crypto2 = BlstCrypto::new("2".into()).unwrap();
         ctx.add_trusted_validator(crypto2.validator_pubkey());
 
-        let signed_msg = crypto2.sign(MempoolNetMessage::DataVote(DataProposalHash(
-            "non_existent".to_owned(),
-        )))?;
+        let signed_msg = crypto2.sign(MempoolNetMessage::DataVote(
+            DataProposalHash("non_existent".to_owned()),
+            LaneBytesSize(0),
+        ))?;
 
         assert!(ctx.mempool.handle_net_message(signed_msg).is_err());
         Ok(())
@@ -1733,7 +1766,7 @@ pub mod test {
 
         // Since mempool is alone, no broadcast.
         // Take this as an example data proposal.
-        let data_proposal = ctx
+        let le = ctx
             .mempool
             .storage
             .lanes
@@ -1742,9 +1775,9 @@ pub mod test {
             .data_proposals
             .first()
             .unwrap()
-            .1
-            .data_proposal
-            .clone();
+            .1;
+        let data_proposal = le.data_proposal.clone();
+        let size = le.size;
 
         // Add new validator
         let crypto2 = BlstCrypto::new("2".into()).unwrap();
@@ -1755,8 +1788,9 @@ pub mod test {
         // First: the message is from crypto2, but the DP is not signed correctly
         let signed_msg = crypto2.sign(MempoolNetMessage::SyncReply(vec![LaneEntry {
             data_proposal: data_proposal.clone(),
+            size,
             signatures: vec![crypto3
-                .sign(MempoolNetMessage::DataVote(data_proposal.hash()))
+                .sign(MempoolNetMessage::DataVote(data_proposal.hash(), size))
                 .expect("should sign")],
         }]))?;
 
@@ -1769,8 +1803,9 @@ pub mod test {
         // Second: the message is NOT from crypto2, but the DP is signed by crypto2
         let signed_msg = crypto3.sign(MempoolNetMessage::SyncReply(vec![LaneEntry {
             data_proposal: data_proposal.clone(),
+            size,
             signatures: vec![crypto2
-                .sign(MempoolNetMessage::DataVote(data_proposal.hash()))
+                .sign(MempoolNetMessage::DataVote(data_proposal.hash(), size))
                 .expect("should sign")],
         }]))?;
 
@@ -1784,10 +1819,12 @@ pub mod test {
         // Third: the message is from crypto2, the signature is from crypto2, but the message is wrong
         let signed_msg = crypto3.sign(MempoolNetMessage::SyncReply(vec![LaneEntry {
             data_proposal: data_proposal.clone(),
+            size,
             signatures: vec![crypto2
-                .sign(MempoolNetMessage::DataVote(DataProposalHash(
-                    "non_existent".to_owned(),
-                )))
+                .sign(MempoolNetMessage::DataVote(
+                    DataProposalHash("non_existent".to_owned()),
+                    size,
+                ))
                 .expect("should sign")],
         }]))?;
 
@@ -1798,11 +1835,28 @@ pub mod test {
             "Empty lane entries after filtering out missing signatures"
         );
 
+        // Fourth: the message is from crypto2, the signature is from crypto2, but the size is wrong
+        let signed_msg = crypto3.sign(MempoolNetMessage::SyncReply(vec![LaneEntry {
+            data_proposal: data_proposal.clone(),
+            size: LaneBytesSize(0),
+            signatures: vec![crypto2
+                .sign(MempoolNetMessage::DataVote(data_proposal.hash(), size))
+                .expect("should sign")],
+        }]))?;
+
+        // This actually fails - we don't know how to handle it
+        let handle = ctx.mempool.handle_net_message(signed_msg.clone());
+        assert_eq!(
+            handle.expect_err("should fail").to_string(),
+            "Empty lane entries after filtering out missing signatures" // TODO error message
+        );
+
         // Final case: message is correct
         let signed_msg = crypto2.sign(MempoolNetMessage::SyncReply(vec![LaneEntry {
             data_proposal: data_proposal.clone(),
+            size,
             signatures: vec![crypto2
-                .sign(MempoolNetMessage::DataVote(data_proposal.hash()))
+                .sign(MempoolNetMessage::DataVote(data_proposal.hash(), size))
                 .expect("should sign")],
         }]))?;
 
@@ -1843,10 +1897,15 @@ pub mod test {
 
         ctx.mempool.handle_data_proposal_management()?;
 
-        let (dp_orig, dp_hash) = ctx.data_proposal(0);
+        let (dp_orig, dp_hash, l_size) = ctx.data_proposal(0);
 
         let key = ctx.validator_pubkey().clone();
-        let cut = vec![(key.clone(), dp_hash.clone(), AggregateSignature::default())];
+        let cut = vec![(
+            key.clone(),
+            dp_hash.clone(),
+            l_size,
+            AggregateSignature::default(),
+        )];
 
         ctx.add_trusted_validator(&key);
 
@@ -1900,10 +1959,15 @@ pub mod test {
         ctx.mempool.handle_data_proposal_management()?;
         ctx.add_trusted_validator(&ctx.validator_pubkey().clone());
 
-        let (_, dp_hash) = ctx.data_proposal(0);
+        let (_, dp_hash, l_size) = ctx.data_proposal(0);
 
         let key = ctx.validator_pubkey();
-        let cut = vec![(key.clone(), dp_hash.clone(), AggregateSignature::default())];
+        let cut = vec![(
+            key.clone(),
+            dp_hash.clone(),
+            l_size,
+            AggregateSignature::default(),
+        )];
 
         let _ = ctx
             .mempool
@@ -1927,9 +1991,14 @@ pub mod test {
 
         ctx.submit_contract_tx("test2");
         ctx.mempool.handle_data_proposal_management()?;
-        let (dp_orig1, dp_hash1) = ctx.data_proposal(1);
+        let (dp_orig1, dp_hash1, l_size) = ctx.data_proposal(1);
         let key = ctx.validator_pubkey().clone();
-        let cut = vec![(key.clone(), dp_hash1.clone(), AggregateSignature::default())];
+        let cut = vec![(
+            key.clone(),
+            dp_hash1.clone(),
+            l_size,
+            AggregateSignature::default(),
+        )];
 
         let _ = ctx
             .mempool
@@ -2001,10 +2070,15 @@ pub mod test {
 
         ctx.mempool.handle_data_proposal_management()?;
 
-        let (dp_orig, dp_hash) = ctx.data_proposal(0);
+        let (dp_orig, dp_hash, l_size) = ctx.data_proposal(0);
 
         let key = ctx.validator_pubkey().clone();
-        let cut = vec![(key.clone(), dp_hash.clone(), AggregateSignature::default())];
+        let cut = vec![(
+            key.clone(),
+            dp_hash.clone(),
+            l_size,
+            AggregateSignature::default(),
+        )];
 
         let _ = ctx
             .mempool
@@ -2050,9 +2124,14 @@ pub mod test {
 
         ctx.mempool.handle_data_proposal_management()?;
 
-        let (dp_orig2, dp_hash2) = ctx.pop_data_proposal();
+        let (dp_orig2, dp_hash2, l_size) = ctx.pop_data_proposal();
 
-        let cut2 = vec![(key.clone(), dp_hash2.clone(), AggregateSignature::default())];
+        let cut2 = vec![(
+            key.clone(),
+            dp_hash2.clone(),
+            l_size,
+            AggregateSignature::default(),
+        )];
 
         let _ = ctx
             .mempool
@@ -2082,9 +2161,14 @@ pub mod test {
 
         ctx.mempool.handle_data_proposal_management()?;
 
-        let (dp_orig3, dp_hash3) = ctx.data_proposal(2);
+        let (dp_orig3, dp_hash3, l_size) = ctx.data_proposal(2);
 
-        let cut3 = vec![(key.clone(), dp_hash3.clone(), AggregateSignature::default())];
+        let cut3 = vec![(
+            key.clone(),
+            dp_hash3.clone(),
+            l_size,
+            AggregateSignature::default(),
+        )];
 
         let _ = ctx
             .mempool

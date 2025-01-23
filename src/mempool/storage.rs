@@ -1,10 +1,10 @@
 use anyhow::{bail, Context, Result};
 use bincode::{Decode, Encode};
-use hyle_model::{Signed, ValidatorSignature};
+use hyle_model::{DataSized, Signed, ValidatorSignature};
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use staking::state::Staking;
-use std::{collections::HashMap, fmt::Display, sync::Arc, vec};
+use std::{collections::HashMap, fmt::Display, ops::Add, sync::Arc, vec};
 use tracing::{debug, error, warn};
 
 use crate::{
@@ -30,6 +30,7 @@ pub enum DataProposalVerdict {
 #[derive(Debug, Clone, Encode, Decode, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LaneEntry {
     pub data_proposal: DataProposal,
+    pub size: LaneBytesSize,
     pub signatures: Vec<SignedByValidator<MempoolNetMessage>>,
 }
 
@@ -40,6 +41,8 @@ pub struct Lane {
     pub data_proposals: IndexMap<DataProposalHash, LaneEntry>,
     pub waiting: Vec<DataProposal>,
 }
+
+pub use hyle_model::LaneBytesSize;
 
 #[derive(Debug, Default, Clone, Encode, Decode)]
 pub struct Storage {
@@ -83,6 +86,7 @@ impl Storage {
                 data_proposal_hash,
                 LaneEntry {
                     data_proposal: _,
+                    size,
                     signatures,
                 },
             ) in lane.iter_reverse()
@@ -91,7 +95,7 @@ impl Storage {
                 if lane.last_cut.as_ref().map(|lc| &lc.1) == Some(data_proposal_hash) {
                     #[allow(clippy::unwrap_used, reason = "we know the value is Some")]
                     let poda = lane.last_cut.as_ref().map(|lc| lc.0.clone()).unwrap();
-                    cut.push((validator.clone(), data_proposal_hash.clone(), poda));
+                    cut.push((validator.clone(), data_proposal_hash.clone(), *size, poda));
                     break;
                 }
                 // Filter signatures on DataProposal to only keep the ones from the current validators
@@ -119,7 +123,7 @@ impl Storage {
 
                 // Aggregate the signatures in a PoDA
                 let poda = match BlstCrypto::aggregate(
-                    MempoolNetMessage::DataVote(data_proposal_hash.clone()),
+                    MempoolNetMessage::DataVote(data_proposal_hash.clone(), *size),
                     &filtered_signatures.iter().collect::<Vec<_>>(),
                 ) {
                     Ok(poda) => poda,
@@ -136,6 +140,7 @@ impl Storage {
                 cut.push((
                     validator.clone(),
                     data_proposal_hash.clone(),
+                    *size,
                     poda.signature,
                 ));
                 break;
@@ -150,6 +155,7 @@ impl Storage {
         &mut self,
         msg: &SignedByValidator<MempoolNetMessage>,
         data_proposal_hash: &DataProposalHash,
+        new_lane_size: LaneBytesSize,
     ) -> Result<(
         DataProposalHash,
         Vec<Signed<MempoolNetMessage, ValidatorSignature>>,
@@ -162,11 +168,15 @@ impl Storage {
             ),
         };
         match lane.get_proposal_mut(data_proposal_hash) {
-            Some(data_proposal) => {
+            Some(lane_entry) => {
+                if lane_entry.size != new_lane_size {
+                    debug!("Received size {:?} does no match the actual size of the DataProposal ({:?})", new_lane_size, lane_entry.size);
+                    bail!("Received size {new_lane_size} does no match the actual size of the DataProposal ({})", lane_entry.size);
+                }
                 // Adding the vote to the DataProposal
-                data_proposal.signatures.push(msg.clone());
-                data_proposal.signatures.dedup();
-                Ok((data_proposal_hash.clone(), data_proposal.signatures.clone()))
+                lane_entry.signatures.push(msg.clone());
+                lane_entry.signatures.dedup();
+                Ok((data_proposal_hash.clone(), lane_entry.signatures.clone()))
             }
             None => {
                 bail!("Received vote from validator {}  for unknown DataProposal ({data_proposal_hash})", msg.signature.validator);
@@ -198,16 +208,17 @@ impl Storage {
         &mut self,
         validator: &ValidatorPublicKey,
         data_proposal: &DataProposal,
-    ) -> DataProposalVerdict {
+    ) -> (DataProposalVerdict, Option<LaneBytesSize>) {
         // Check that data_proposal is not empty
         if data_proposal.txs.is_empty() {
-            return DataProposalVerdict::Empty;
+            return (DataProposalVerdict::Empty, None);
         }
 
         let validator_lane = self.lanes.entry(validator.clone()).or_default();
 
         let last_known_id = validator_lane.get_last_proposal_id().unwrap_or(&0);
         let last_known_hash = validator_lane.get_last_proposal_hash();
+        let validator_lane_size = validator_lane.get_lane_size();
 
         let local_parent = data_proposal
             .parent_data_proposal_hash
@@ -232,7 +243,7 @@ impl Storage {
             && local_parent_data_proposal_id + 1 == data_proposal.id;
 
         if first_data_proposal || valid_next_data_proposal {
-            return DataProposalVerdict::Process;
+            return (DataProposalVerdict::Process, None);
         }
 
         // FORKS
@@ -252,7 +263,7 @@ impl Storage {
             if &p.1.data_proposal != data_proposal {
                 // Means a later data proposal is already on top of the parent
                 warn!("Fork detected on lane {:?}", validator);
-                return DataProposalVerdict::Refuse;
+                return (DataProposalVerdict::Refuse, None);
             }
         }
 
@@ -260,13 +271,13 @@ impl Storage {
 
         // Already present data proposal (just resend a vote)
         if last_known_hash == Some(&data_proposal.hash()) {
-            return DataProposalVerdict::Vote;
+            return (DataProposalVerdict::Vote, Some(validator_lane_size));
         }
 
         // Missing data, let's sync before taking a decision
         if local_parent_data_proposal_hash.is_none() {
             // Get the last known parent hash in order to get all the next ones
-            return DataProposalVerdict::Wait(last_known_hash.cloned());
+            return (DataProposalVerdict::Wait(last_known_hash.cloned()), None);
         }
 
         error!(
@@ -274,7 +285,7 @@ impl Storage {
             data_proposal.clone()
         );
 
-        DataProposalVerdict::Refuse
+        (DataProposalVerdict::Refuse, None)
     }
 
     pub fn process_data_proposal(
@@ -426,12 +437,12 @@ impl Storage {
         crypto: &BlstCrypto,
         validator: &ValidatorPublicKey,
         data_proposal: DataProposal,
-    ) {
+    ) -> LaneBytesSize {
         // Add DataProposal to validator's lane
         self.lanes
             .entry(validator.clone())
             .or_default()
-            .add_new_proposal(crypto, data_proposal);
+            .add_new_proposal(crypto, data_proposal)
     }
 
     pub fn lane_has_data_proposal(
@@ -512,6 +523,7 @@ impl Storage {
         // Get last DataProposal of own lane
         let data_proposal = if let Some(LaneEntry {
             data_proposal: parent_data_proposal,
+            size: _,
             signatures: _,
         }) = self
             .lanes
@@ -550,7 +562,7 @@ impl Storage {
         let mut txs = Vec::new();
 
         // For each validator involved in the cut, extract all transactions from the last cut to the new one
-        for (validator, data_proposal_hash, poda) in cut.iter() {
+        for (validator, data_proposal_hash, _, poda) in cut.iter() {
             // FIXME: If data_proposal_hash is unknown, we should request the missing DataProposals
             if let Some(lane) = self.lanes.get_mut(validator) {
                 if let Ok(lane_entries) = lane.get_lane_entries_between_hashes(
@@ -594,7 +606,7 @@ impl Storage {
     }
 
     pub fn update_lanes_with_commited_cut(&mut self, committed_cut: &Cut) {
-        for (validator, data_proposal_hash, poda) in committed_cut.iter() {
+        for (validator, data_proposal_hash, _, poda) in committed_cut.iter() {
             if let Some(lane) = self.lanes.get_mut(validator) {
                 lane.last_cut = Some((poda.clone(), data_proposal_hash.clone()));
             }
@@ -625,16 +637,17 @@ impl Display for Lane {
             _,
             LaneEntry {
                 data_proposal,
+                size,
                 signatures: _,
             },
         ) in self.data_proposals.iter()
         {
             match &data_proposal.parent_data_proposal_hash {
                 None => {
-                    let _ = write!(f, "{}", data_proposal);
+                    let _ = write!(f, "{} ({})", data_proposal, size);
                 }
                 Some(_) => {
-                    let _ = write!(f, " <- {}", data_proposal);
+                    let _ = write!(f, " <- {} ({})", data_proposal, size);
                 }
             }
         }
@@ -682,9 +695,23 @@ impl Lane {
             .map(|(data_proposal_hash, _)| data_proposal_hash)
     }
 
-    pub fn add_new_proposal(&mut self, crypto: &BlstCrypto, data_proposal: DataProposal) {
+    pub fn get_lane_size(&self) -> LaneBytesSize {
+        self.data_proposals
+            .iter()
+            .last()
+            .map(|(_, entry)| entry.size)
+            .unwrap_or_default()
+    }
+
+    pub fn add_new_proposal(
+        &mut self,
+        crypto: &BlstCrypto,
+        data_proposal: DataProposal,
+    ) -> LaneBytesSize {
         let data_proposal_hash = data_proposal.hash();
-        let msg = MempoolNetMessage::DataVote(data_proposal_hash.clone());
+        let dp_size = data_proposal.estimate_size();
+        let lane_size = self.get_lane_size();
+        let msg = MempoolNetMessage::DataVote(data_proposal_hash.clone(), lane_size + dp_size);
         let signatures = match crypto.sign(msg) {
             Ok(s) => vec![s],
             Err(_) => vec![],
@@ -693,9 +720,12 @@ impl Lane {
             data_proposal_hash,
             LaneEntry {
                 data_proposal,
+                size: lane_size + dp_size,
                 signatures,
             },
         );
+
+        lane_size
     }
 
     pub fn add_proposal(&mut self, hash: DataProposalHash, lane_entry: LaneEntry) {
@@ -764,6 +794,14 @@ impl Lane {
             if lane_entry.data_proposal.parent_data_proposal_hash != self.current_hash().cloned() {
                 bail!("Incorrect parent hash while adding missing LaneEntry");
             }
+            if lane_entry.size
+                != self
+                    .current()
+                    .map(|(_, entry)| entry.size)
+                    .unwrap_or_default()
+            {
+                bail!("Incorrect size while adding missing LaneEntry");
+            }
             self.add_proposal(lane_entry.data_proposal.hash(), lane_entry);
         }
         debug!(
@@ -807,9 +845,10 @@ mod tests {
         utils::crypto::{self, BlstCrypto},
     };
     use hyle_contract_sdk::{BlobIndex, HyleOutput, Identity, ProgramId, StateDigest, TxHash};
+    use hyle_model::DataSized;
     use staking::state::Staking;
 
-    use super::{DataProposal, Lane};
+    use super::{DataProposal, Lane, LaneBytesSize};
 
     fn get_hyle_output() -> HyleOutput {
         HyleOutput {
@@ -919,8 +958,9 @@ mod tests {
         pubkey: &ValidatorPublicKey,
         mut data_proposal: DataProposal,
         known_contracts: Arc<RwLock<KnownContracts>>,
-    ) -> DataProposalVerdict {
-        let verdict = match store.on_data_proposal(pubkey, &data_proposal) {
+    ) -> (DataProposalVerdict, Option<LaneBytesSize>) {
+        let (verdict, size) = store.on_data_proposal(pubkey, &data_proposal);
+        let verdict = match verdict {
             DataProposalVerdict::Process => {
                 Storage::process_data_proposal(&mut data_proposal, known_contracts)
             }
@@ -928,10 +968,10 @@ mod tests {
         };
         match verdict {
             DataProposalVerdict::Vote => {
-                store.store_data_proposal(crypto, pubkey, data_proposal);
-                verdict
+                let size = store.store_data_proposal(crypto, pubkey, data_proposal);
+                (DataProposalVerdict::Vote, Some(size))
             }
-            verdict => verdict,
+            verdict => (verdict, size),
         }
     }
 
@@ -972,6 +1012,7 @@ mod tests {
             txs: vec![],
         };
         let data_proposal1_hash = data_proposal1.hash();
+        let l_dp1_size = LaneBytesSize(data_proposal1.estimate_size() as u64);
 
         let data_proposal2 = DataProposal {
             id: 1,
@@ -979,14 +1020,17 @@ mod tests {
             txs: vec![],
         };
         let data_proposal2_hash = data_proposal2.hash();
+        let l_dp2_size = l_dp1_size + data_proposal2.estimate_size();
 
         let lane_entry1 = LaneEntry {
             data_proposal: data_proposal1,
+            size: l_dp1_size,
             signatures: vec![],
         };
 
         let lane_entry2 = LaneEntry {
             data_proposal: data_proposal2,
+            size: l_dp2_size,
             signatures: vec![],
         };
 
@@ -1013,9 +1057,11 @@ mod tests {
             txs: vec![],
         };
         let data_proposal3_hash = data_proposal3.hash();
+        let l_dp3_size = l_dp2_size + data_proposal3.estimate_size();
 
         let lane_entry3 = LaneEntry {
             data_proposal: data_proposal3,
+            size: l_dp3_size,
             signatures: vec![],
         };
 
@@ -1079,6 +1125,7 @@ mod tests {
             txs: vec![],
         };
         let data_proposal1_hash = data_proposal1.hash();
+        let l_dp1_size = LaneBytesSize(data_proposal1.estimate_size() as u64);
 
         let data_proposal2 = DataProposal {
             id: 1,
@@ -1086,6 +1133,7 @@ mod tests {
             txs: vec![],
         };
         let data_proposal2_hash = data_proposal2.hash();
+        let l_dp2_size = l_dp1_size + data_proposal2.estimate_size();
 
         let data_proposal3 = DataProposal {
             id: 2,
@@ -1093,19 +1141,23 @@ mod tests {
             txs: vec![],
         };
         let data_proposal3_hash = data_proposal3.hash();
+        let l_dp3_size = l_dp2_size + data_proposal3.estimate_size();
 
         let lane_entry1 = LaneEntry {
             data_proposal: data_proposal1,
+            size: l_dp1_size,
             signatures: vec![],
         };
 
         let lane_entry2 = LaneEntry {
             data_proposal: data_proposal2,
+            size: l_dp2_size,
             signatures: vec![],
         };
 
         let lane_entry3 = LaneEntry {
             data_proposal: data_proposal3,
+            size: l_dp3_size,
             signatures: vec![],
         };
 
@@ -1181,15 +1233,22 @@ mod tests {
             txs: vec![],
         };
         let data_proposal_hash = data_proposal.hash();
+        let l_dp_size = LaneBytesSize(data_proposal.estimate_size() as u64);
 
         lane(&mut store1, pubkey1).add_new_proposal(&crypto1, data_proposal);
 
         let signatures = vec![
             crypto1
-                .sign(MempoolNetMessage::DataVote(data_proposal_hash.clone()))
+                .sign(MempoolNetMessage::DataVote(
+                    data_proposal_hash.clone(),
+                    l_dp_size,
+                ))
                 .expect("Failed to sign message"),
             crypto2
-                .sign(MempoolNetMessage::DataVote(data_proposal_hash.clone()))
+                .sign(MempoolNetMessage::DataVote(
+                    data_proposal_hash.clone(),
+                    l_dp_size,
+                ))
                 .expect("Failed to sign message"),
         ];
 
@@ -1232,6 +1291,7 @@ mod tests {
             .data_proposal
             .clone();
         let data_proposal1_hash = data_proposal1.hash();
+        let l_dp1_size = LaneBytesSize(data_proposal1.estimate_size() as u64);
 
         assert_eq!(
             handle_data_proposal(
@@ -1241,15 +1301,18 @@ mod tests {
                 data_proposal1,
                 known_contracts.clone()
             ),
-            DataProposalVerdict::Vote
+            (DataProposalVerdict::Vote, Some(l_dp1_size))
         );
 
         let msg1 = crypto2
-            .sign(MempoolNetMessage::DataVote(data_proposal1_hash.clone()))
+            .sign(MempoolNetMessage::DataVote(
+                data_proposal1_hash.clone(),
+                l_dp1_size,
+            ))
             .expect("Could not sign DataVote message");
 
         store1
-            .on_data_vote(&msg1, &data_proposal1_hash)
+            .on_data_vote(&msg1, &data_proposal1_hash, l_dp1_size)
             .expect("Expect vote success");
 
         // Second data proposal
@@ -1263,6 +1326,7 @@ mod tests {
             .data_proposal
             .clone();
         let data_proposal2_hash = data_proposal2.hash();
+        let l_dp2_size = l_dp1_size + data_proposal2.estimate_size();
 
         assert_eq!(
             handle_data_proposal(
@@ -1272,14 +1336,17 @@ mod tests {
                 data_proposal2,
                 known_contracts.clone()
             ),
-            DataProposalVerdict::Vote
+            (DataProposalVerdict::Vote, Some(l_dp2_size))
         );
         let msg2 = crypto2
-            .sign(MempoolNetMessage::DataVote(data_proposal2_hash.clone()))
+            .sign(MempoolNetMessage::DataVote(
+                data_proposal2_hash.clone(),
+                l_dp2_size,
+            ))
             .expect("Could not sign DataVote message");
 
         store1
-            .on_data_vote(&msg2, &data_proposal2_hash)
+            .on_data_vote(&msg2, &data_proposal2_hash, l_dp2_size)
             .expect("vote success");
 
         // Third data proposal
@@ -1293,6 +1360,7 @@ mod tests {
             .data_proposal
             .clone();
         let data_proposal3_hash = data_proposal3.hash();
+        let l_dp3_size = l_dp2_size + data_proposal3.estimate_size();
 
         assert_eq!(
             handle_data_proposal(
@@ -1302,14 +1370,17 @@ mod tests {
                 data_proposal3,
                 known_contracts.clone()
             ),
-            DataProposalVerdict::Vote
+            (DataProposalVerdict::Vote, Some(l_dp3_size))
         );
         let msg3 = crypto2
-            .sign(MempoolNetMessage::DataVote(data_proposal3_hash.clone()))
+            .sign(MempoolNetMessage::DataVote(
+                data_proposal3_hash.clone(),
+                l_dp3_size,
+            ))
             .expect("Could not sign DataVote message");
 
         store1
-            .on_data_vote(&msg3, &data_proposal3_hash)
+            .on_data_vote(&msg3, &data_proposal3_hash, l_dp3_size)
             .expect("vote success");
 
         // Fourth data proposal
@@ -1323,6 +1394,7 @@ mod tests {
             .data_proposal
             .clone();
         let data_proposal4_hash = data_proposal4.hash();
+        let l_dp4_size = l_dp3_size + data_proposal4.estimate_size();
 
         assert_eq!(
             handle_data_proposal(
@@ -1332,14 +1404,17 @@ mod tests {
                 data_proposal4,
                 known_contracts.clone()
             ),
-            DataProposalVerdict::Vote
+            (DataProposalVerdict::Vote, Some(l_dp4_size))
         );
         let msg4 = crypto2
-            .sign(MempoolNetMessage::DataVote(data_proposal4_hash.clone()))
+            .sign(MempoolNetMessage::DataVote(
+                data_proposal4_hash.clone(),
+                l_dp4_size,
+            ))
             .expect("Could not sign DataVote message");
 
         store1
-            .on_data_vote(&msg4, &data_proposal4_hash)
+            .on_data_vote(&msg4, &data_proposal4_hash, l_dp4_size)
             .expect("vote success");
 
         // Verifications
@@ -1416,6 +1491,7 @@ mod tests {
             .unwrap()
             .data_proposal
             .clone();
+        let size = store3.get_lane_latest_entry(pubkey3).unwrap().size;
         let data_proposal_bis = data_proposal.clone();
         let data_proposal_hash = data_proposal.hash();
         assert_eq!(store3.lanes.get(pubkey3).unwrap().data_proposals.len(), 1);
@@ -1428,7 +1504,7 @@ mod tests {
                 data_proposal,
                 known_contracts2.clone()
             ),
-            DataProposalVerdict::Vote
+            (DataProposalVerdict::Vote, Some(size))
         );
         // Assert we can vote multiple times
         assert_eq!(
@@ -1439,23 +1515,29 @@ mod tests {
                 data_proposal_bis,
                 known_contracts2
             ),
-            DataProposalVerdict::Vote
+            (DataProposalVerdict::Vote, Some(size))
         );
 
         let msg1 = crypto1
-            .sign(MempoolNetMessage::DataVote(data_proposal_hash.clone()))
+            .sign(MempoolNetMessage::DataVote(
+                data_proposal_hash.clone(),
+                size,
+            ))
             .expect("Could not sign DataVote message");
 
         store3
-            .on_data_vote(&msg1, &data_proposal_hash)
+            .on_data_vote(&msg1, &data_proposal_hash, size)
             .expect("success");
 
         let msg2 = crypto2
-            .sign(MempoolNetMessage::DataVote(data_proposal_hash.clone()))
+            .sign(MempoolNetMessage::DataVote(
+                data_proposal_hash.clone(),
+                size,
+            ))
             .expect("Could not sign DataVote message");
 
         store3
-            .on_data_vote(&msg2, &data_proposal_hash)
+            .on_data_vote(&msg2, &data_proposal_hash, size)
             .expect("success");
 
         assert_eq!(
@@ -1509,7 +1591,7 @@ mod tests {
         };
         let data_proposal_hash = data_proposal.hash();
 
-        let verdict = handle_data_proposal(
+        let (verdict, _) = handle_data_proposal(
             &mut store1,
             &crypto1,
             pubkey2,
@@ -1541,7 +1623,7 @@ mod tests {
             txs: vec![proof_tx.clone()],
         };
 
-        let verdict = handle_data_proposal(
+        let (verdict, _) = handle_data_proposal(
             &mut store1,
             &crypto1,
             pubkey1,
@@ -1556,7 +1638,7 @@ mod tests {
             txs: vec![register_tx, proof_tx],
         };
 
-        let verdict = handle_data_proposal(
+        let (verdict, _) = handle_data_proposal(
             &mut store1,
             &crypto1,
             pubkey1,
@@ -1596,7 +1678,7 @@ mod tests {
             txs: vec![proof_tx],
         };
 
-        let verdict = handle_data_proposal(
+        let (verdict, _) = handle_data_proposal(
             &mut store1,
             &crypto1,
             pubkey1,
@@ -1633,7 +1715,7 @@ mod tests {
             txs: vec![register_tx.clone(), proof_tx],
         };
 
-        let verdict = handle_data_proposal(
+        let (verdict, _) = handle_data_proposal(
             &mut store1,
             &crypto1,
             pubkey1,
@@ -1673,7 +1755,7 @@ mod tests {
         };
         let data_proposal_hash = data_proposal.hash();
 
-        let verdict = handle_data_proposal(
+        let (verdict, _) = handle_data_proposal(
             &mut store1,
             &crypto1,
             pubkey1,
@@ -1721,6 +1803,7 @@ mod tests {
             .unwrap()
             .data_proposal
             .clone();
+        let size = store1.get_lane_latest_entry(pubkey1).unwrap().size;
 
         assert_eq!(
             handle_data_proposal(
@@ -1730,7 +1813,7 @@ mod tests {
                 data_proposal,
                 known_contracts2.clone()
             ),
-            DataProposalVerdict::Vote
+            (DataProposalVerdict::Vote, Some(size))
         );
 
         store2.on_new_tx(make_blob_tx("tx2"));
@@ -1741,6 +1824,7 @@ mod tests {
             .unwrap()
             .data_proposal
             .clone();
+        let size = store2.get_lane_latest_entry(pubkey2).unwrap().size;
 
         assert_eq!(
             handle_data_proposal(
@@ -1750,7 +1834,7 @@ mod tests {
                 data_proposal,
                 known_contracts1
             ),
-            DataProposalVerdict::Vote
+            (DataProposalVerdict::Vote, Some(size))
         );
 
         let cut1 = store1.new_cut(&staking);
@@ -1769,6 +1853,7 @@ mod tests {
             .unwrap()
             .data_proposal
             .clone();
+        let size = store1.get_lane_latest_entry(pubkey1).unwrap().size;
 
         assert_eq!(
             handle_data_proposal(
@@ -1778,7 +1863,7 @@ mod tests {
                 data_proposal,
                 known_contracts2
             ),
-            DataProposalVerdict::Vote
+            (DataProposalVerdict::Vote, Some(size))
         );
 
         let cut1 = store1.new_cut(&staking);
@@ -1829,17 +1914,21 @@ mod tests {
             .data_proposal
             .clone();
         let data_proposal_hash = data_proposal.hash();
+        let size = store1.get_lane_latest_entry(pubkey1).unwrap().size;
 
         let msg2 = crypto2
-            .sign(MempoolNetMessage::DataVote(data_proposal_hash.clone()))
+            .sign(MempoolNetMessage::DataVote(
+                data_proposal_hash.clone(),
+                size,
+            ))
             .expect("Could not sign DataVote message");
 
         store1
-            .on_data_vote(&msg2, &data_proposal_hash)
+            .on_data_vote(&msg2, &data_proposal_hash, size)
             .expect("Expect vote success");
 
         let cut = store1.new_cut(&staking);
-        let poda = cut[0].2.clone();
+        let poda = cut[0].3.clone();
 
         assert!(poda.validators.contains(pubkey1));
         assert!(poda.validators.contains(pubkey2));

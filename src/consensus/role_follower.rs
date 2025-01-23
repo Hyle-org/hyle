@@ -209,7 +209,7 @@ impl FollowerRole for Consensus {
         );
 
         let accepted_validators = self.bft_round_state.staking.bonded();
-        for (validator, data_proposal_hash, poda_sig) in &consensus_proposal.cut {
+        for (validator, data_proposal_hash, lane_size, poda_sig) in &consensus_proposal.cut {
             let voting_power = self
                 .bft_round_state
                 .staking
@@ -228,7 +228,7 @@ impl FollowerRole for Consensus {
                 .bft_round_state
                 .last_cut
                 .iter()
-                .any(|(v, h, _)| v == validator && h == data_proposal_hash)
+                .any(|(v, h, _, _)| v == validator && h == data_proposal_hash)
             {
                 debug!(
                     "DataProposal {} from validator {} was already in the last cut, not checking PoDA",
@@ -246,7 +246,7 @@ impl FollowerRole for Consensus {
             }
 
             // Verify that PoDA signature is valid
-            let msg = MempoolNetMessage::DataVote(data_proposal_hash.clone());
+            let msg = MempoolNetMessage::DataVote(data_proposal_hash.clone(), *lane_size);
             match BlstCrypto::verify_aggregate(&Signed {
                 msg,
                 signature: poda_sig.clone(),

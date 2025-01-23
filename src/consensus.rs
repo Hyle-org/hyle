@@ -1472,6 +1472,7 @@ pub mod test {
                     cut: vec![(
                         node2.pubkey(),
                         DataProposalHash("test".to_string()),
+                        LaneBytesSize::default(),
                         AggregateSignature::default(),
                     )],
                     new_validators_to_bond: vec![],
@@ -1512,6 +1513,7 @@ pub mod test {
                     cut: vec![(
                         node2.pubkey(),
                         DataProposalHash("test".to_string()),
+                        LaneBytesSize::default(),
                         AggregateSignature::default(),
                     )],
                     new_validators_to_bond: vec![],
@@ -1561,6 +1563,7 @@ pub mod test {
                     cut: vec![(
                         node2.pubkey(),
                         DataProposalHash("test".to_string()),
+                        LaneBytesSize::default(),
                         AggregateSignature::default(),
                     )],
                     new_validators_to_bond: vec![],

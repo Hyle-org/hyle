@@ -309,9 +309,10 @@ impl AutobahnTestCtx {
 
 fn create_poda(
     data_proposal_hash: DataProposalHash,
+    line_size: LaneBytesSize,
     nodes: &[&AutobahnTestCtx],
 ) -> crypto::Signed<MempoolNetMessage, crypto::AggregateSignature> {
-    let msg = MempoolNetMessage::DataVote(data_proposal_hash);
+    let msg = MempoolNetMessage::DataVote(data_proposal_hash, line_size);
     let signed_messages: Vec<crypto::Signed<MempoolNetMessage, crypto::ValidatorSignature>> = nodes
         .iter()
         .map(|node| {
@@ -364,13 +365,14 @@ async fn autobahn_basic_flow() {
     send! {
         description: "Disseminated Tx Vote",
         from: [node2.mempool_ctx, node3.mempool_ctx, node4.mempool_ctx], to: node1.mempool_ctx,
-        message_matches: MempoolNetMessage::DataVote(_)
+        message_matches: MempoolNetMessage::DataVote(_, _)
     };
 
     let data_proposal_hash_node1 = node1
         .mempool_ctx
         .current_hash()
         .expect("Current hash should be there");
+    let node1_l_size = node1.mempool_ctx.current_size();
 
     node1.start_round_with_cut_from_mempool().await;
 
@@ -378,6 +380,7 @@ async fn autobahn_basic_flow() {
 
     let poda = create_poda(
         data_proposal_hash_node1.clone(),
+        node1_l_size,
         &[&node1, &node2, &node3, &node4],
     );
 
@@ -391,10 +394,10 @@ async fn autobahn_basic_flow() {
                     .cut
                     .clone()
                     .iter()
-                    .find(|(validator, _hash, _poda)|
+                    .find(|(validator, _hash, _size, _poda)|
                         validator == &node1.consensus_ctx.pubkey()
                     ),
-                Some((node1.consensus_ctx.pubkey(), data_proposal_hash_node1, poda.signature)).as_ref()
+                Some((node1.consensus_ctx.pubkey(), data_proposal_hash_node1, node1_l_size, poda.signature)).as_ref()
             );
         }
     };
@@ -470,11 +473,13 @@ async fn mempool_dissemination_flow_resync() {
         .expect("Should create data proposal");
 
     let data_proposal_1;
+    let dp1_size;
     broadcast! {
         description: "Disseminate Tx",
         from: node1.mempool_ctx, to: [node2.mempool_ctx, node3.mempool_ctx],
         message_matches: MempoolNetMessage::DataProposal(data) => {
             data_proposal_1 = data.clone();
+            dp1_size = LaneBytesSize(data.estimate_size() as u64);
             assert_eq!(data.txs.len(), 2);
         }
     };
@@ -489,7 +494,7 @@ async fn mempool_dissemination_flow_resync() {
     send! {
         description: "Disseminated Tx Vote",
         from: [node2.mempool_ctx, node3.mempool_ctx], to: node1.mempool_ctx,
-        message_matches: MempoolNetMessage::DataVote(_)
+        message_matches: MempoolNetMessage::DataVote(_, _)
     };
 
     node1.mempool_ctx.assert_broadcast("poda update");
@@ -509,11 +514,13 @@ async fn mempool_dissemination_flow_resync() {
         .expect("Should create data proposal");
 
     let data_proposal_2;
+    let dp2_size;
     broadcast! {
         description: "Disseminate Tx",
         from: node1.mempool_ctx, to: [node2.mempool_ctx, node3.mempool_ctx, node4.mempool_ctx],
         message_matches: MempoolNetMessage::DataProposal(data) => {
             data_proposal_2 = data.clone();
+            dp2_size = dp1_size + data.estimate_size();
             assert_eq!(data.txs.len(), 2);
         }
     };
@@ -553,14 +560,17 @@ async fn mempool_dissemination_flow_resync() {
     send! {
         description: "Disseminated Tx Vote",
         from: [
-            node2.mempool_ctx; MempoolNetMessage::DataVote(hash) => {
+            node2.mempool_ctx; MempoolNetMessage::DataVote(hash, size) => {
                 assert_eq!(hash, &data_proposal_2.hash());
+                assert_eq!(*size, dp2_size);
             },
-            node3.mempool_ctx; MempoolNetMessage::DataVote(hash) => {
+            node3.mempool_ctx; MempoolNetMessage::DataVote(hash, size) => {
                 assert_eq!(hash, &data_proposal_2.hash());
+                assert_eq!(*size, dp2_size);
             },
-            node4.mempool_ctx; MempoolNetMessage::DataVote(hash) => {
+            node4.mempool_ctx; MempoolNetMessage::DataVote(hash, size) => {
                 assert_eq!(hash, &data_proposal_2.hash());
+                assert_eq!(*size, dp2_size);
             }
         ], to: node1.mempool_ctx
     };
@@ -603,7 +613,7 @@ async fn mempool_broadcast_multiple_data_proposals() {
     send! {
         description: "Disseminated Tx Vote",
         from: [node2.mempool_ctx, node3.mempool_ctx, node4.mempool_ctx], to: node1.mempool_ctx,
-        message_matches: MempoolNetMessage::DataVote(_)
+        message_matches: MempoolNetMessage::DataVote(_, _)
     };
 
     node1.mempool_ctx.assert_broadcast("poda update");
@@ -642,7 +652,7 @@ async fn mempool_broadcast_multiple_data_proposals() {
     send! {
         description: "Disseminated Tx Vote",
         from: [node2.mempool_ctx, node3.mempool_ctx, node4.mempool_ctx], to: node1.mempool_ctx,
-        message_matches: MempoolNetMessage::DataVote(_)
+        message_matches: MempoolNetMessage::DataVote(_, _)
     };
 }
 
@@ -689,7 +699,7 @@ async fn mempool_fail_to_vote_on_fork() {
     send! {
         description: "Disseminated Tx Vote",
         from: [node2.mempool_ctx, node3.mempool_ctx, node4.mempool_ctx], to: node1.mempool_ctx,
-        message_matches: MempoolNetMessage::DataVote(_)
+        message_matches: MempoolNetMessage::DataVote(_, _)
     };
 
     node1.mempool_ctx.assert_broadcast("poda update");
@@ -728,7 +738,7 @@ async fn mempool_fail_to_vote_on_fork() {
     send! {
         description: "Disseminated Tx Vote",
         from: [node2.mempool_ctx, node3.mempool_ctx, node4.mempool_ctx], to: node1.mempool_ctx,
-        message_matches: MempoolNetMessage::DataVote(_)
+        message_matches: MempoolNetMessage::DataVote(_, _)
     };
 
     // BASIC FORK
