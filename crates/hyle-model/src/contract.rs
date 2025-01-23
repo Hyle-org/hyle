@@ -5,8 +5,6 @@ use std::{
 
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
-use sha3::{Digest, Sha3_256};
-
 pub trait Hashable<T> {
     fn hash(&self) -> T;
 }
@@ -31,6 +29,12 @@ pub struct StateDigest(pub Vec<u8>);
 impl std::fmt::Debug for StateDigest {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "StateDigest({})", hex::encode(&self.0))
+    }
+}
+
+impl Digestable for StateDigest {
+    fn as_digest(&self) -> StateDigest {
+        self.clone()
     }
 }
 
@@ -325,8 +329,11 @@ pub struct RegisterContractAction {
     pub contract_name: ContractName,
 }
 
+#[cfg(feature = "full")]
 impl Hashable<TxHash> for RegisterContractAction {
     fn hash(&self) -> TxHash {
+        use sha3::{Digest, Sha3_256};
+
         let mut hasher = Sha3_256::new();
         hasher.update(self.verifier.0.clone());
         hasher.update(self.program_id.0.clone());
@@ -353,4 +360,12 @@ impl ContractAction for RegisterContractAction {
             }),
         }
     }
+}
+
+#[derive(Debug, Serialize, Deserialize, Default, Clone, PartialEq, Eq, Encode, Decode)]
+pub struct RegisterContractEffect {
+    pub verifier: Verifier,
+    pub program_id: ProgramId,
+    pub state_digest: StateDigest,
+    pub contract_name: ContractName,
 }

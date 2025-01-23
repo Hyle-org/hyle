@@ -18,7 +18,14 @@ sdk = { path = "../contract-sdk", package = "hyle-contract-sdk" }
 risc0-build = { version = "1.2.1", optional = true }
 
 [package.metadata.risc0]
-methods = ["amm", "hyllar", "hydentity", "staking", "risc0-recursion"]
+methods = [
+    "amm",
+    "hyllar",
+    "hydentity",
+    "staking",
+    "risc0-recursion",
+    "uuid-tld",
+]
 
 [features]
 build = ["dep:risc0-build"]

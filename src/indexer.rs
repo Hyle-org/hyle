@@ -307,38 +307,6 @@ impl Indexer {
                         .bind(false)
                         .execute(&mut *transaction)
                         .await?;
-
-                        if let Ok(reg) = StructuredBlobData::<RegisterContractAction>::try_from(
-                            blob.data.clone(),
-                        ) {
-                            let verifier = &reg.parameters.verifier.0;
-                            let program_id = &reg.parameters.program_id.0;
-                            let state_digest = &reg.parameters.state_digest.0;
-                            let contract_name = &reg.parameters.contract_name.0;
-
-                            // Adding to Contract table
-                            sqlx::query(
-                                "INSERT INTO contracts (tx_hash, verifier, program_id, state_digest, contract_name)
-                                VALUES ($1, $2, $3, $4, $5)")
-                            .bind(tx_hash)
-                            .bind(verifier)
-                            .bind(program_id)
-                            .bind(state_digest)
-                            .bind(contract_name)
-                            .execute(&mut *transaction)
-                            .await?;
-
-                            // Adding to ContractState table
-                            sqlx::query(
-                                "INSERT INTO contract_state (contract_name, block_hash, state_digest)
-                                VALUES ($1, $2, $3)",
-                            )
-                            .bind(contract_name)
-                            .bind(block_hash)
-                            .bind(state_digest)
-                            .execute(&mut *transaction)
-                            .await?;
-                        }
                     }
                 }
                 TransactionData::VerifiedProof(tx_data) => {
@@ -450,6 +418,39 @@ impl Indexer {
                     .execute(&mut *transaction)
                     .await?;
             }
+        }
+
+        // After TXes as it refers to those (for now)
+        for (tx_hash, contract) in block.registered_contracts {
+            let verifier = &contract.verifier.0;
+            let program_id = &contract.program_id.0;
+            let state_digest = &contract.state_digest.0;
+            let contract_name = &contract.contract_name.0;
+            let tx_hash: &TxHashDb = &tx_hash.into();
+
+            // Adding to Contract table
+            sqlx::query(
+                "INSERT INTO contracts (tx_hash, verifier, program_id, state_digest, contract_name)
+                VALUES ($1, $2, $3, $4, $5)",
+            )
+            .bind(tx_hash)
+            .bind(verifier)
+            .bind(program_id)
+            .bind(state_digest)
+            .bind(contract_name)
+            .execute(&mut *transaction)
+            .await?;
+
+            // Adding to ContractState table
+            sqlx::query(
+                "INSERT INTO contract_state (contract_name, block_hash, state_digest)
+                VALUES ($1, $2, $3)",
+            )
+            .bind(contract_name)
+            .bind(block_hash)
+            .bind(state_digest)
+            .execute(&mut *transaction)
+            .await?;
         }
 
         // Handling updated contract state
