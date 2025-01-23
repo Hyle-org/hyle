@@ -12,7 +12,10 @@ impl ClientSdkExecutor for UuidTldPseudoExecutor {
     }
 }
 
-static TEMP: Vec<u8> = vec![];
+pub mod metadata {
+    pub const UUID_TLD_ELF: &[u8] = include_bytes!("../uuid-tld.img");
+    pub const PROGRAM_ID: [u8; 32] = sdk::str_to_u8(include_str!("../uuid-tld.txt"));
+}
 
 impl UuidTldState {
     pub fn setup_builder<S: StateUpdater>(
@@ -24,7 +27,7 @@ impl UuidTldState {
             contract_name,
             self.as_digest(),
             UuidTldPseudoExecutor {},
-            Risc0Prover::new(&TEMP),
+            Risc0Prover::new(metadata::UUID_TLD_ELF),
         );
     }
 }
