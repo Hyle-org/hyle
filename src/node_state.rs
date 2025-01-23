@@ -500,7 +500,7 @@ impl NodeState {
         if success {
             info!("✨ Settled tx {}", &bth);
         } else {
-            info!("⛈️ Settled tx {} as failed", &bth);
+            info!("⛈️ Settled tx {} has failed", &bth);
         }
 
         // Keep track of which blob proof output we used to settle the TX for each blob.
