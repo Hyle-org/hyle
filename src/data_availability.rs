@@ -6,8 +6,8 @@ mod blocks_fjall;
 mod blocks_memory;
 
 // Pick one of the two implementations
-use blocks_fjall::Blocks;
-//use blocks_memory::Blocks;
+use blocks_fjall::DAStorage;
+//use blocks_memory::DAStorage;
 
 use codec::{DataAvailabilityServerCodec, DataAvailabilityServerRequest};
 use utils::get_current_timestamp;
@@ -82,7 +82,7 @@ struct BlockStreamPeer {
 pub struct DataAvailability {
     config: SharedConf,
     bus: DABusClient,
-    pub blocks: Blocks,
+    pub storage: DAStorage,
 
     buffered_signed_blocks: BTreeSet<SignedBlock>,
 
@@ -103,7 +103,7 @@ impl Module for DataAvailability {
         Ok(DataAvailability {
             config: ctx.common.config.clone(),
             bus,
-            blocks: Blocks::new(
+            storage: DAStorage::new(
                 &ctx.common
                     .config
                     .data_directory
@@ -226,7 +226,7 @@ impl DataAvailability {
 
                 trace!("📡  Sending block {:?} to peer {}", &hash, &peer_ip);
                 if let Some(hash) = hash {
-                    if let Ok(Some(signed_block)) = self.blocks.get(&hash)
+                    if let Ok(Some(signed_block)) = self.storage.get_block(&hash)
                     {
                         // Errors will be handled when sending new blocks, ignore here.
                         if self.stream_peer_metadata
@@ -260,8 +260,8 @@ impl DataAvailability {
                 self.catchup_height = Some(height - 1);
                 if let Some(handle) = self.catchup_task.as_ref() {
                     if self
-                        .blocks
-                        .last()
+                        .storage
+                        .last_block()
                         .map(|b| b.height())
                         .unwrap_or(BlockHeight(0))
                         .0
@@ -281,13 +281,13 @@ impl DataAvailability {
     async fn handle_signed_block(&mut self, block: SignedBlock) {
         let hash = block.hash();
         // if new block is already handled, ignore it
-        if self.blocks.contains(&hash) {
+        if self.storage.contains_block(&hash) {
             warn!("Block {} {} already exists !", block.height(), block.hash());
             return;
         }
         // if new block is not the next block in the chain, buffer
-        if !self.blocks.is_empty() {
-            if !self.blocks.contains(block.parent_hash()) {
+        if !self.storage.block_is_empty() {
+            if !self.storage.contains_block(block.parent_hash()) {
                 debug!(
                     "Parent block '{}' not found for block hash='{}' height {}",
                     block.parent_hash(),
@@ -312,7 +312,7 @@ impl DataAvailability {
         // store block
         self.add_processed_block(block).await;
         self.pop_buffer(hash).await;
-        _ = self.blocks.persist().log_error("Persisting blocks");
+        _ = self.storage.persist().log_error("Persisting blocks");
     }
 
     async fn pop_buffer(&mut self, mut last_block_hash: ConsensusProposalHash) {
@@ -339,7 +339,7 @@ impl DataAvailability {
     async fn add_processed_block(&mut self, block: SignedBlock) {
         // TODO: if we don't have streaming peers, we could just pass the block here
         // and avoid a clone + drop cost (which can be substantial for large blocks).
-        if let Err(e) = self.blocks.put(block.clone()) {
+        if let Err(e) = self.storage.put_block(block.clone()) {
             error!("storing block: {}", e);
             return;
         }
@@ -429,11 +429,11 @@ impl DataAvailability {
         // because we registered in the struct beforehand.
         // Like pings, this just sends a message processed in the main select! loop.
         let mut processed_block_hashes: Vec<_> = self
-            .blocks
-            .range(
+            .storage
+            .range_block(
                 start_height,
-                self.blocks
-                    .last()
+                self.storage
+                    .last_block()
                     .map_or(start_height, |block| block.height())
                     + 1,
             )
@@ -455,8 +455,8 @@ impl DataAvailability {
     ) -> Result<(), Error> {
         info!("📡 Streaming data from {ip}");
         let start = self
-            .blocks
-            .last()
+            .storage
+            .last_block()
             .map(|block| block.height() + 1)
             .unwrap_or(BlockHeight(0));
         let Ok(mut stream) = RawDAListener::new(&ip, start).await else {
@@ -513,7 +513,7 @@ pub mod tests {
     use tokio_util::codec::{Framed, LengthDelimitedCodec};
 
     use super::module_bus_client;
-    use super::Blocks;
+    use super::DAStorage;
     use anyhow::Result;
 
     /// For use in integration tests
@@ -526,7 +526,7 @@ pub mod tests {
     impl DataAvailabilityTestCtx {
         pub async fn new(shared_bus: crate::bus::SharedMessageBus) -> Self {
             let tmpdir = tempfile::tempdir().unwrap().into_path();
-            let blocks = Blocks::new(&tmpdir).unwrap();
+            let storage = DAStorage::new(&tmpdir).unwrap();
 
             let bus = super::DABusClient::new_from_bus(shared_bus.new_handle()).await;
             let node_state_bus = NodeStateBusClient::new_from_bus(shared_bus).await;
@@ -536,7 +536,7 @@ pub mod tests {
             let da = super::DataAvailability {
                 config: config.into(),
                 bus,
-                blocks,
+                storage,
                 buffered_signed_blocks: Default::default(),
                 stream_peer_metadata: Default::default(),
                 need_catchup: false,
@@ -565,11 +565,11 @@ pub mod tests {
     #[test_log::test]
     fn test_blocks() -> Result<()> {
         let tmpdir = tempfile::tempdir().unwrap().into_path();
-        let mut blocks = Blocks::new(&tmpdir).unwrap();
+        let mut blocks = DAStorage::new(&tmpdir).unwrap();
         let block = SignedBlock::default();
-        blocks.put(block.clone())?;
-        assert!(blocks.last().unwrap().height() == block.height());
-        let last = blocks.get(&block.hash())?;
+        blocks.put_block(block.clone())?;
+        assert!(blocks.last_block().unwrap().height() == block.height());
+        let last = blocks.get_block(&block.hash())?;
         assert!(last.is_some());
         assert!(last.unwrap().height() == BlockHeight(0));
         Ok(())
@@ -578,7 +578,7 @@ pub mod tests {
     #[tokio::test]
     async fn test_pop_buffer_large() {
         let tmpdir = tempfile::tempdir().unwrap().into_path();
-        let blocks = Blocks::new(&tmpdir).unwrap();
+        let storage = DAStorage::new(&tmpdir).unwrap();
 
         let bus = super::DABusClient::new_from_bus(crate::bus::SharedMessageBus::new(
             crate::bus::metrics::BusMetrics::global("global".to_string()),
@@ -587,7 +587,7 @@ pub mod tests {
         let mut da = super::DataAvailability {
             config: Default::default(),
             bus,
-            blocks,
+            storage,
             buffered_signed_blocks: Default::default(),
             stream_peer_metadata: Default::default(),
             need_catchup: false,
@@ -617,7 +617,7 @@ pub mod tests {
     #[test_log::test(tokio::test)]
     async fn test_da_streaming() {
         let tmpdir = tempfile::tempdir().unwrap().into_path();
-        let blocks = Blocks::new(&tmpdir).unwrap();
+        let storage = DAStorage::new(&tmpdir).unwrap();
 
         let global_bus = crate::bus::SharedMessageBus::new(
             crate::bus::metrics::BusMetrics::global("global".to_string()),
@@ -630,7 +630,7 @@ pub mod tests {
         let mut da = super::DataAvailability {
             config: config.clone().into(),
             bus,
-            blocks,
+            storage,
             buffered_signed_blocks: Default::default(),
             stream_peer_metadata: Default::default(),
             need_catchup: false,
