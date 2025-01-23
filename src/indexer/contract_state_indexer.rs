@@ -170,6 +170,17 @@ where
         let mut found_supported_blob = false;
 
         for b in &tx.blobs {
+            // Optimistically register contracts
+            if let Ok(reg) = StructuredBlobData::<RegisterContractAction>::try_from(b.data.clone())
+            {
+                if reg.parameters.contract_name != self.contract_name {
+                    continue;
+                }
+                info!(cn = %self.contract_name, "📝 Registering supported contract '{}'", reg.parameters.contract_name);
+                let state = reg.parameters.state_digest.try_into()?;
+                self.store.write().await.state = Some(state);
+                continue;
+            }
             if self.contract_name == b.contract_name {
                 found_supported_blob = true;
                 break;
@@ -197,23 +208,7 @@ where
 
         info!(cn = %self.contract_name, "🔨 Settling transaction: {}", tx.hash());
 
-        for (
-            index,
-            Blob {
-                contract_name,
-                data,
-            },
-        ) in tx.blobs.iter().enumerate()
-        {
-            if let Ok(reg) = StructuredBlobData::<RegisterContractAction>::try_from(data.clone()) {
-                if reg.parameters.contract_name != self.contract_name {
-                    continue;
-                }
-                info!(cn = %self.contract_name, "📝 Registering supported contract '{}'", reg.parameters.contract_name);
-                let state = reg.parameters.state_digest.try_into()?;
-                store.state = Some(state);
-                continue;
-            }
+        for (index, Blob { contract_name, .. }) in tx.blobs.iter().enumerate() {
             if self.contract_name != *contract_name {
                 continue;
             }
@@ -295,14 +290,7 @@ mod tests {
             identity: "hyle.hyle".into(),
             blobs: vec![rca.as_blob("hyle".into(), None, None)],
         };
-        let hash = tx.hash();
-        indexer
-            .store
-            .write()
-            .await
-            .unsettled_blobs
-            .insert(hash.clone(), tx);
-        indexer.settle_tx(hash).await.unwrap();
+        indexer.handle_blob(tx).await.unwrap();
     }
 
     #[test_log::test(tokio::test)]
