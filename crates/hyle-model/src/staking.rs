@@ -19,6 +19,18 @@ pub enum StakingAction {
     Distribute { claim: RewardsClaim },
 }
 
+/// Represents the operations that can be performed by the consensus
+#[derive(Encode, Decode, Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub enum ConsensusStatkingAction {
+    Bond { candidate: NewValidatorCandidate }, // Bonding a new validator candidate
+}
+
+impl From<NewValidatorCandidate> for ConsensusStatkingAction {
+    fn from(val: NewValidatorCandidate) -> Self {
+        ConsensusStatkingAction::Bond { candidate: val }
+    }
+}
+
 impl ContractAction for StakingAction {
     fn as_blob(
         &self,
