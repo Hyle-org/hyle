@@ -22,7 +22,7 @@ sp1-zkvm = { version = "4.0.0-rc.8", optional = true }
 mockall = "0.13.0"
 
 [features]
-risc0 = ["dep:risc0-zkvm"]
+risc0 = ["dep:risc0-zkvm", "hyle_model/sha3"]
 sp1 = ["dep:sp1-zkvm"]
 tracing = ["dep:tracing"]
 full-model = ["hyle_model/full"]

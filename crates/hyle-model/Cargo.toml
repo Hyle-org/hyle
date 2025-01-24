@@ -34,3 +34,4 @@ full = [
   "dep:anyhow"
 ]
 sqlx = ["dep:sqlx"]
+sha3 = ["dep:sha3"]
