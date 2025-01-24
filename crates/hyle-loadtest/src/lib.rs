@@ -1,5 +1,6 @@
 use anyhow::Result;
 use client_sdk::contract_states;
+use client_sdk::helpers::test::TestProver;
 use client_sdk::tcp_client::NodeTcpClient;
 use client_sdk::transaction_builder::{ProvableBlobTx, TxExecutorBuilder};
 use hydentity::Hydentity;
@@ -17,18 +18,18 @@ contract_states!(
     #[derive(Debug, Clone)]
     pub struct States {
         pub hydentity: Hydentity,
-        pub hyllar: HyllarToken,
+        pub hyllar_test: HyllarToken,
     }
 );
 
 pub fn setup_hyllar(users: u32) -> Result<HyllarTokenContract> {
-    let hyllar_token = HyllarToken::new(0, "faucet.hyllar-test".into());
+    let hyllar_token = HyllarToken::new(0, "faucet.hyllar_test".into());
     let mut hyllar_contract =
-        HyllarTokenContract::init(hyllar_token.clone(), "faucet.hyllar-test".into());
+        HyllarTokenContract::init(hyllar_token.clone(), "faucet.hyllar_test".into());
 
     // Create an entry for each users
     for n in 0..users {
-        let ident = &format!("{n}.hyllar-test");
+        let ident = &format!("{n}.hyllar_test");
         hyllar_contract
             .transfer(ident, 0)
             .map_err(|e| anyhow::anyhow!(e))?;
@@ -36,14 +37,14 @@ pub fn setup_hyllar(users: u32) -> Result<HyllarTokenContract> {
     Ok(hyllar_contract)
 }
 
-/// Create a new contract "hyllar-test" that already contains entries for each users
+/// Create a new contract "hyllar_test" that already contains entries for each users
 pub async fn setup(url: String, users: u32, verifier: String) -> Result<()> {
     let hyllar_contract = setup_hyllar(users)?;
 
     let tx = BlobTransaction {
         identity: Identity::new("hyle.hyle"),
         blobs: vec![RegisterContractAction {
-            contract_name: "hyllar-test".into(),
+            contract_name: "hyllar_test".into(),
             verifier: verifier.into(),
             program_id: hyle_contracts::HYLLAR_ID.to_vec().into(),
             state_digest: hyllar_contract.state().as_digest(),
@@ -85,12 +86,12 @@ pub async fn generate_blobs_txs(users: u32) -> Result<Vec<Vec<u8>>> {
                     "Building blob transaction for user: {n}/{:?}",
                     chunk.last().unwrap()
                 );
-                let ident = Identity(format!("{n}.hyllar-test").to_string());
+                let ident = Identity(format!("{n}.hyllar_test").to_string());
 
                 let mut transaction = ProvableBlobTx::new(ident.clone());
                 transfer(
                     &mut transaction,
-                    "hyllar-test".into(),
+                    "hyllar_test".into(),
                     ident.clone().to_string(),
                     0,
                 )?;
@@ -131,7 +132,9 @@ pub async fn generate_proof_txs(users: u32, state: States) -> Result<Vec<Vec<u8>
         .map(|chunk| chunk.to_vec())
         .collect::<Vec<_>>();
     for chunk in user_chunks {
-        let mut ctx = TxExecutorBuilder::new(state.clone()).build();
+        let mut ctx = TxExecutorBuilder::new(state.clone())
+            .with_prover("hyllar_test".into(), TestProver {})
+            .build();
         tasks.spawn(async move {
             let mut local_proof_txs = vec![];
 
@@ -140,12 +143,12 @@ pub async fn generate_proof_txs(users: u32, state: States) -> Result<Vec<Vec<u8>
                     "Building proof transaction for user: {n}/{:?}",
                     chunk.last().unwrap()
                 );
-                let ident = Identity(format!("{n}.hyllar-test").to_string());
+                let ident = Identity(format!("{n}.hyllar_test").to_string());
 
                 let mut transaction = ProvableBlobTx::new(ident.clone());
                 transfer(
                     &mut transaction,
-                    "hyllar-test".into(),
+                    "hyllar_test".into(),
                     ident.clone().to_string(),
                     0,
                 )?;
