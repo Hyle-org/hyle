@@ -362,6 +362,9 @@ impl ContractAction for RegisterContractAction {
     }
 }
 
+/// Used by the Hylé node to recognize contract registration.
+/// Simply output this struct in your HyleOutput program_outputs.
+/// See uuid-tld for examples.
 #[derive(Debug, Serialize, Deserialize, Default, Clone, PartialEq, Eq, Encode, Decode)]
 pub struct RegisterContractEffect {
     pub verifier: Verifier,
