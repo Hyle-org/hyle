@@ -1145,6 +1145,7 @@ dependencies = [
  "sp1-sdk",
  "tokio",
  "tokio-util",
+ "tracing",
 ]
 
 [[package]]
@@ -2575,6 +2576,7 @@ dependencies = [
  "tower-http",
  "tracing",
  "tracing-subscriber 0.3.19",
+ "uuid-tld",
 ]
 
 [[package]]
@@ -4711,6 +4713,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ec0be4795e2f6a28069bec0b5ff3e2ac9bafc99e6a9a7dc3547996c5c816922c"
 dependencies = [
  "getrandom",
+]
+
+[[package]]
+name = "rand_seeder"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4a9febe641d2842ffc76ee962668a17578767c4e01735e4802b21ed9a24b2e4e"
+dependencies = [
+ "rand_core",
 ]
 
 [[package]]
@@ -7390,6 +7401,30 @@ name = "utf8parse"
 version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "06abde3611657adf66d383f00b093d7faecc7fa57071cce2578660c9f1010821"
+
+[[package]]
+name = "uuid"
+version = "1.12.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b3758f5e68192bb96cc8f9b7e2c2cfdabb435499a28499a42f8f984092adad4b"
+dependencies = [
+ "getrandom",
+ "rand",
+]
+
+[[package]]
+name = "uuid-tld"
+version = "0.7.2"
+dependencies = [
+ "anyhow",
+ "bincode 2.0.0-rc.3",
+ "client-sdk",
+ "hyle-contract-sdk",
+ "rand",
+ "rand_seeder",
+ "risc0-zkvm",
+ "uuid",
+]
 
 [[package]]
 name = "valuable"

@@ -10,18 +10,18 @@ pub mod guest;
 pub mod identity_provider;
 pub mod utils;
 
-#[cfg(feature = "tracing")]
-pub use tracing;
-
 // re-export hyle-model
 pub use hyle_model::*;
+
+#[cfg(feature = "tracing")]
+pub use tracing;
 
 // Si la feature "tracing" est activée, on redirige vers `tracing::info!`
 #[cfg(feature = "tracing")]
 #[macro_export]
 macro_rules! info {
     ($($arg:tt)*) => {
-        sdk::tracing::info!($($arg)*);
+        $crate::tracing::info!($($arg)*);
     }
 }
 

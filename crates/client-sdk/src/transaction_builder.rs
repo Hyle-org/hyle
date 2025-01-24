@@ -7,7 +7,7 @@ use std::{
 
 use anyhow::{bail, Result};
 use sdk::{
-    info, Blob, BlobData, BlobIndex, BlobTransaction, ContractAction, ContractInput, ContractName,
+    Blob, BlobData, BlobIndex, BlobTransaction, ContractAction, ContractInput, ContractName,
     Hashable, HyleOutput, Identity, ProofData, StateDigest,
 };
 
@@ -84,7 +84,7 @@ impl ProofTxBuilder {
         self,
     ) -> impl Iterator<Item = (impl Future<Output = Result<ProofData>> + Send, ContractName)> {
         self.runners.into_iter().map(move |mut runner| {
-            info!("Proving transition for {}...", runner.contract_name);
+            tracing::info!("Proving transition for {}...", runner.contract_name);
             let prover = self
                 .provers
                 .get(&runner.contract_name)
@@ -228,7 +228,7 @@ impl<S: StateUpdater> TxExecutor<S> {
 
             runner.build_input(tx.blobs.clone(), private_blob, on_chain_state.clone());
 
-            info!("Checking transition for {}...", runner.contract_name);
+            tracing::info!("Checking transition for {}...", runner.contract_name);
             let out = self
                 .executors
                 .get(&runner.contract_name)
