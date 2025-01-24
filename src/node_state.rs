@@ -170,17 +170,11 @@ impl NodeState {
     }
 
     /// Returns a TxHash only if the blob transaction calls only native verifiers and thus can be
-    /// settled directly.
+    /// settled directly (or in the special case of the 'hyle' TLD contract)
     fn handle_blob_tx(&mut self, tx: &BlobTransaction) -> Result<Option<TxHash>, Error> {
         debug!("Handle blob tx: {:?} (hash: {})", tx, tx.hash());
-        let identity_parts: Vec<&str> = tx.identity.0.split('.').collect();
-        if identity_parts.len() != 2 {
-            bail!("Transaction identity {} is not correctly formed. It should be in the form <id>.<contract_id_name>", tx.identity);
-        }
-        #[allow(clippy::indexing_slicing, reason = "checked above")]
-        if identity_parts[1].is_empty() {
-            bail!("Transaction identity must include a contract name");
-        }
+
+        tx.validate_identity()?;
 
         if tx.blobs.is_empty() {
             bail!("Blob Transaction must have at least one blob");
@@ -801,7 +795,7 @@ pub mod test {
         }
     }
 
-    fn make_hyle_output_with_state(
+    pub fn make_hyle_output_with_state(
         blob_tx: BlobTransaction,
         blob_index: BlobIndex,
         initial_state: &[u8],
