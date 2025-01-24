@@ -93,7 +93,6 @@ pub struct ProofTransactionDb {
 pub struct ContractDb {
     // Struct for the contracts table
     pub tx_hash: TxHashDb,   // Corresponds to the registration transaction hash
-    pub owner: String,       // Owner of the contract
     pub verifier: String,    // Verifier of the contract
     pub program_id: Vec<u8>, // Program ID
     pub state_digest: Vec<u8>, // State digest of the contract
@@ -104,7 +103,6 @@ impl From<ContractDb> for APIContract {
     fn from(val: ContractDb) -> Self {
         APIContract {
             tx_hash: val.tx_hash.0,
-            owner: val.owner,
             verifier: val.verifier,
             program_id: val.program_id,
             state_digest: val.state_digest,

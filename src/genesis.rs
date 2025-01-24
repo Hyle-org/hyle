@@ -10,6 +10,7 @@ use crate::{
 use anyhow::{Error, Result};
 use client_sdk::{
     contract_states,
+    helpers::register_hyle_contract,
     transaction_builder::{ProofTxBuilder, ProvableBlobTx, TxExecutor, TxExecutorBuilder},
 };
 use hydentity::{
@@ -387,60 +388,65 @@ impl Genesis {
             ProgramId(hyle_contracts::RISC0_RECURSION_ID.to_vec()),
         );
 
-        (
-            map,
-            vec![
-                RegisterContractTransaction {
-                    owner: "hyle".into(),
-                    verifier: "blst".into(),
-                    program_id: NativeVerifiers::Blst.into(),
-                    state_digest: StateDigest(vec![]),
-                    contract_name: "blst".into(),
-                }
-                .into(),
-                RegisterContractTransaction {
-                    owner: "hyle".into(),
-                    verifier: "sha3_256".into(),
-                    program_id: NativeVerifiers::Sha3_256.into(),
-                    state_digest: StateDigest(vec![]),
-                    contract_name: "sha3_256".into(),
-                }
-                .into(),
-                RegisterContractTransaction {
-                    owner: "hyle".into(),
-                    verifier: "risc0".into(),
-                    program_id: staking_program_id.into(),
-                    state_digest: ctx.staking.on_chain_state().as_digest(),
-                    contract_name: "staking".into(),
-                }
-                .into(),
-                RegisterContractTransaction {
-                    owner: "hyle".into(),
-                    verifier: "risc0".into(),
-                    program_id: hyllar_program_id.into(),
-                    state_digest: ctx.hyllar.as_digest(),
-                    contract_name: "hyllar".into(),
-                }
-                .into(),
-                RegisterContractTransaction {
-                    owner: "hyle".into(),
-                    verifier: "risc0".into(),
-                    program_id: hydentity_program_id.into(),
-                    state_digest: ctx.hydentity.as_digest(),
-                    contract_name: "hydentity".into(),
-                }
-                .into(),
-                RegisterContractTransaction {
-                    owner: "hyle".into(),
-                    verifier: "risc0".into(),
-                    program_id: hyle_contracts::RISC0_RECURSION_ID.to_vec().into(),
-                    state_digest: hyle_contract_sdk::StateDigest(vec![]),
-                    contract_name: "risc0-recursion".into(),
-                }
-                .into(),
-            ],
-            ctx,
+        let mut register_tx = ProvableBlobTx::new("hyle.hyle".into());
+
+        register_hyle_contract(
+            &mut register_tx,
+            "blst".into(),
+            "blst".into(),
+            NativeVerifiers::Blst.into(),
+            StateDigest::default(),
         )
+        .expect("register blst");
+
+        register_hyle_contract(
+            &mut register_tx,
+            "sha3_256".into(),
+            "sha3_256".into(),
+            NativeVerifiers::Sha3_256.into(),
+            StateDigest::default(),
+        )
+        .expect("register sha3_256");
+
+        register_hyle_contract(
+            &mut register_tx,
+            "staking".into(),
+            "risc0".into(),
+            staking_program_id.clone().into(),
+            ctx.staking.on_chain_state().as_digest(),
+        )
+        .expect("register staking");
+
+        register_hyle_contract(
+            &mut register_tx,
+            "hyllar".into(),
+            "risc0".into(),
+            hyllar_program_id.clone().into(),
+            ctx.hyllar.as_digest(),
+        )
+        .expect("register hyllar");
+
+        register_hyle_contract(
+            &mut register_tx,
+            "hydentity".into(),
+            "risc0".into(),
+            hydentity_program_id.clone().into(),
+            ctx.hydentity.as_digest(),
+        )
+        .expect("register hydentity");
+
+        register_hyle_contract(
+            &mut register_tx,
+            "risc0-recursion".into(),
+            "risc0".into(),
+            hyle_contracts::RISC0_RECURSION_ID.to_vec().into(),
+            StateDigest::default(),
+        )
+        .expect("register risc0-recursion");
+
+        let genesis_tx: BlobTransaction = register_tx.into();
+
+        (map, vec![genesis_tx.into()], ctx)
     }
 
     fn make_genesis_block(
@@ -481,20 +487,23 @@ impl Genesis {
                         validators: initial_validators.clone()
                     }
                 )*/],
-                new_validators_to_bond: initial_validators
+                staking_actions: initial_validators
                     .iter()
-                    .map(|v| NewValidatorCandidate {
-                        pubkey: v.clone(),
-                        msg: SignedByValidator {
-                            msg: ConsensusNetMessage::ValidatorCandidacy(ValidatorCandidacy {
-                                pubkey: v.clone(),
-                                peer_address: "".into(),
-                            }),
-                            signature: ValidatorSignature {
-                                signature: Signature("".into()),
-                                validator: v.clone(),
+                    .map(|v| {
+                        NewValidatorCandidate {
+                            pubkey: v.clone(),
+                            msg: SignedByValidator {
+                                msg: ConsensusNetMessage::ValidatorCandidacy(ValidatorCandidacy {
+                                    pubkey: v.clone(),
+                                    peer_address: "".into(),
+                                }),
+                                signature: ValidatorSignature {
+                                    signature: Signature("".into()),
+                                    validator: v.clone(),
+                                },
                             },
-                        },
+                        }
+                        .into()
                     })
                     .collect(),
                 parent_hash: ConsensusProposalHash("genesis".into()),
@@ -582,10 +591,7 @@ mod tests {
         assert_matches!(rec, GenesisEvent::GenesisBlock(..));
         if let GenesisEvent::GenesisBlock(signed_block) = rec {
             assert!(!signed_block.txs().is_empty());
-            assert_eq!(
-                signed_block.consensus_proposal.new_validators_to_bond.len(),
-                1
-            );
+            assert_eq!(signed_block.consensus_proposal.staking_actions.len(), 1);
         }
     }
 
@@ -621,10 +627,7 @@ mod tests {
         assert_matches!(rec, GenesisEvent::GenesisBlock(..));
         if let GenesisEvent::GenesisBlock(signed_block) = rec {
             assert!(!signed_block.txs().is_empty());
-            assert_eq!(
-                signed_block.consensus_proposal.new_validators_to_bond.len(),
-                2
-            );
+            assert_eq!(signed_block.consensus_proposal.staking_actions.len(), 2);
         }
     }
 
@@ -662,10 +665,7 @@ mod tests {
         assert_matches!(rec, GenesisEvent::GenesisBlock(..));
         if let GenesisEvent::GenesisBlock(signed_block) = rec {
             assert!(!signed_block.txs().is_empty());
-            assert_eq!(
-                signed_block.consensus_proposal.new_validators_to_bond.len(),
-                2
-            );
+            assert_eq!(signed_block.consensus_proposal.staking_actions.len(), 2);
         }
     }
 

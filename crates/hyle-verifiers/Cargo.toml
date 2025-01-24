@@ -5,14 +5,15 @@ edition = { workspace = true }
 # license = { workspace = true }
 homepage = { workspace = true }
 repository = { workspace = true }
+rust-version = { workspace = true }
 
 [dependencies]
 hyle-model = { path = "../hyle-model" }
 
 anyhow = "1.0.95"
 bincode = { version = "2.0.0-rc.3", features = ["serde"] }
-borsh = { version = "1.5.3" }
-serde_json = "1.0.135"
+borsh = { version = "1.5.5" }
+serde_json = "1.0.137"
 rand = { version = "0.8.5" }
 risc0-zkvm = { version = "1.2.1", default-features = false, features = ["std"] }
 sp1-sdk = { version = "4.0.1", default-features = false }

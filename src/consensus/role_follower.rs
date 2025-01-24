@@ -116,7 +116,7 @@ impl FollowerRole for Consensus {
 
         self.verify_poda(&consensus_proposal)?;
 
-        self.verify_new_validators_to_bond(&consensus_proposal)?;
+        self.verify_staking_actions(&consensus_proposal)?;
 
         self.verify_timestamp(&consensus_proposal)?;
 

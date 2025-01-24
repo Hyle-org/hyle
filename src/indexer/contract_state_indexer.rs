@@ -1,6 +1,7 @@
 use anyhow::{anyhow, Error, Result};
 use bincode::{Decode, Encode};
 use hyle_contract_sdk::{BlobIndex, ContractName, TxHash};
+use hyle_model::{RegisterContractAction, StructuredBlobData};
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, ops::Deref, path::PathBuf, sync::Arc};
 use tokio::sync::RwLock;
@@ -9,8 +10,7 @@ use tracing::{debug, info};
 use crate::{
     bus::BusMessage,
     model::{
-        Blob, BlobTransaction, Block, CommonRunContext, Hashable, RegisterContractTransaction,
-        Transaction, TransactionData,
+        Blob, BlobTransaction, Block, CommonRunContext, Hashable, Transaction, TransactionData,
     },
     module_handle_messages,
     node_state::module::NodeStateEvent,
@@ -154,30 +154,14 @@ where
         debug!(cn = %self.contract_name, "📦 Handled block outputs: {:?}", block);
 
         for tx in block.txs {
-            match tx.transaction_data {
-                TransactionData::RegisterContract(tx) => {
-                    self.handle_register_contract(tx).await?;
-                }
-                TransactionData::Blob(tx) => {
-                    self.handle_blob(tx).await?;
-                }
-                _ => {}
+            if let TransactionData::Blob(tx) = tx.transaction_data {
+                self.handle_blob(tx).await?;
             }
         }
 
-        for s_tx in block.settled_blob_tx_hashes {
+        for s_tx in block.successful_txs {
             self.settle_tx(s_tx).await?;
         }
-        Ok(())
-    }
-
-    async fn handle_register_contract(&mut self, tx: RegisterContractTransaction) -> Result<()> {
-        if tx.contract_name != self.contract_name {
-            return Ok(());
-        }
-        info!(cn = %self.contract_name, "📝 Registering supported contract '{}'", tx.contract_name);
-        let state = tx.state_digest.try_into()?;
-        self.store.write().await.state = Some(state);
         Ok(())
     }
 
@@ -186,6 +170,17 @@ where
         let mut found_supported_blob = false;
 
         for b in &tx.blobs {
+            // Optimistically register contracts
+            if let Ok(reg) = StructuredBlobData::<RegisterContractAction>::try_from(b.data.clone())
+            {
+                if reg.parameters.contract_name != self.contract_name {
+                    continue;
+                }
+                info!(cn = %self.contract_name, "📝 Registering supported contract '{}'", reg.parameters.contract_name);
+                let state = reg.parameters.state_digest.try_into()?;
+                self.store.write().await.state = Some(state);
+                continue;
+            }
             if self.contract_name == b.contract_name {
                 found_supported_blob = true;
                 break;
@@ -236,6 +231,7 @@ where
 #[cfg(test)]
 mod tests {
     use hyle_contract_sdk::{BlobData, ProgramId, StateDigest};
+    use hyle_model::ContractAction;
 
     use super::*;
     use crate::bus::metrics::BusMetrics;
@@ -283,15 +279,18 @@ mod tests {
     }
 
     async fn register_contract(indexer: &mut ContractStateIndexer<MockState>) {
-        let state_digest = StateDigest(vec![]);
-        let tx = RegisterContractTransaction {
+        let state_digest = StateDigest::default();
+        let rca = RegisterContractAction {
             contract_name: indexer.contract_name.clone(),
             state_digest,
-            owner: "onwer".into(),
             verifier: "test".into(),
             program_id: ProgramId(vec![]),
         };
-        indexer.handle_register_contract(tx).await.unwrap();
+        let tx = BlobTransaction {
+            identity: "hyle.hyle".into(),
+            blobs: vec![rca.as_blob("hyle".into(), None, None)],
+        };
+        indexer.handle_blob(tx).await.unwrap();
     }
 
     #[test_log::test(tokio::test)]
@@ -299,15 +298,7 @@ mod tests {
         let contract_name = ContractName::from("test_contract");
         let mut indexer = build_indexer(contract_name.clone()).await;
 
-        let state_digest = StateDigest::default();
-        let tx = RegisterContractTransaction {
-            contract_name: contract_name.clone(),
-            state_digest,
-            owner: "onwer".into(),
-            verifier: "test".into(),
-            program_id: ProgramId(vec![]),
-        };
-        indexer.handle_register_contract(tx).await.unwrap();
+        register_contract(&mut indexer).await;
 
         let store = indexer.store.read().await;
         assert!(store.state.is_some());

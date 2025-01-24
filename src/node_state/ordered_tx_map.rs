@@ -1,8 +1,10 @@
 use bincode::{Decode, Encode};
+use tracing::warn;
 
 use crate::model::ContractName;
 use crate::model::UnsettledBlobTransaction;
 use hyle_contract_sdk::TxHash;
+use std::collections::HashSet;
 use std::collections::{HashMap, VecDeque};
 
 // struct used to guarantee coherence between the 2 fields
@@ -48,27 +50,35 @@ impl OrderedTxMap {
         self.map.len()
     }
 
-    pub fn add(&mut self, tx: UnsettledBlobTransaction) {
+    /// Returns true if the tx is the next unsettled tx for all the contracts it contains
+    /// NB: not if the TX was already added to the map, which feels like it generally shouldn't happen?
+    pub fn add(&mut self, tx: UnsettledBlobTransaction) -> bool {
         if self.map.contains_key(&tx.hash) {
-            return;
+            warn!("Trying to add a tx {} that is already in the map", tx.hash);
+            return false;
         }
-        for blob_metadata in &tx.blobs {
-            match self.tx_order.get_mut(&blob_metadata.blob.contract_name) {
+        let mut is_next = true;
+        let contract_names: HashSet<&ContractName> =
+            HashSet::from_iter(tx.blobs.iter().map(|b| &b.blob.contract_name));
+        for contract in contract_names {
+            is_next = match self.tx_order.get_mut(contract) {
                 Some(vec) => {
                     vec.push_back(tx.hash.clone());
+                    vec.len() == 1
                 }
                 None => {
-                    self.tx_order
-                        .insert(blob_metadata.blob.contract_name.clone(), {
-                            let mut vec = VecDeque::new();
-                            vec.push_back(tx.hash.clone());
-                            vec
-                        });
+                    self.tx_order.insert(contract.clone(), {
+                        let mut vec = VecDeque::new();
+                        vec.push_back(tx.hash.clone());
+                        vec
+                    });
+                    true
                 }
-            }
+            } && is_next;
         }
 
         self.map.insert(tx.hash.clone(), tx);
+        is_next
     }
 
     pub fn remove(&mut self, hash: &TxHash) -> Option<UnsettledBlobTransaction> {
@@ -164,6 +174,28 @@ mod tests {
         assert_eq!(map.map.len(), 1);
         assert_eq!(map.tx_order.len(), 1);
         assert_eq!(map.tx_order[&ContractName::new("c1")].len(), 1);
+    }
+
+    #[test]
+    fn add_double_contract_name() {
+        let mut map = OrderedTxMap::default();
+
+        let mut tx = new_tx("tx1", "c1");
+        tx.blobs.push(tx.blobs[0].clone());
+        tx.blobs.push(tx.blobs[0].clone());
+        tx.blobs[1].blob.contract_name = ContractName::new("c2");
+
+        let hash = tx.hash.clone();
+
+        assert!(map.add(tx));
+        assert_eq!(
+            map.tx_order.get(&"c1".into()),
+            Some(&VecDeque::from_iter(vec![hash.clone()]))
+        );
+        assert_eq!(
+            map.tx_order.get(&"c2".into()),
+            Some(&VecDeque::from_iter(vec![hash]))
+        );
     }
 
     #[test]

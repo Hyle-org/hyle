@@ -16,10 +16,11 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.6.0"
+version = "0.7.2"
 edition = "2021"
 homepage = "https://hyle.eu/"
 repository = "https://github.com/Hyle-org/hyle/"
+rust-version = "1.84"
 # licence = ""
 
 [package]
@@ -29,7 +30,9 @@ edition = { workspace = true }
 # license = { workspace = true }
 homepage = { workspace = true }
 repository = { workspace = true }
+rust-version = { workspace = true }
 default-run = "hyle"
+
 
 [[bin]]
 name = "hyle"
@@ -81,7 +84,7 @@ anymap = { version = "0.12.1" }
 assertables = { version = "9.5.0" }
 axum = { version = "0.8.1", features = ["ws", "macros"] }
 axum-otel-metrics = { version = "0.9.1" }
-borsh = { version = "1.5.3" }
+borsh = { version = "1.5.5" }
 bytes = { version = "1.9.0" }
 clap = { version = "4.5.27", features = ["derive"] }
 config = { version = "=0.15.0", default-features = false, features = ["ron"] }
@@ -127,7 +130,7 @@ assert_cmd = "2.0.16"
 axum-test = { version = "17.1.0" }
 tokio-tungstenite = "0.26.1"
 reqwest = { version = "0.12", features = ["json", "blocking"] }
-serde_json = "1.0.135"
+serde_json = "1.0.137"
 test-log = { version = "0.2.17", features = [
     "color",
     "trace",

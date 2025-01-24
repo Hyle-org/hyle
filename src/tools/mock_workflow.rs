@@ -5,7 +5,7 @@ use crate::{
     mempool::api::RestApiMessage,
     model::{
         utils::get_current_timestamp, Blob, BlobData, BlobTransaction, ContractName, ProofData,
-        ProofTransaction, RegisterContractTransaction, SharedRunContext, Transaction,
+        ProofTransaction, SharedRunContext, Transaction,
     },
     module_handle_messages,
     utils::modules::{module_bus_client, Module},
@@ -13,6 +13,7 @@ use crate::{
 use anyhow::Result;
 use client_sdk::rest_client::NodeApiHttpClient;
 use hyle_contract_sdk::{Identity, ProgramId, StateDigest};
+use hyle_model::{ContractAction, RegisterContractAction};
 use serde::{Deserialize, Serialize};
 use tokio::time::sleep;
 use tracing::{error, info, warn};
@@ -161,16 +162,18 @@ impl MockWorkflowHandler {
                 data: BlobData(vec![0, 1, 2]),
             }],
         };
+        let tx_register_blob = BlobTransaction {
+            identity: Identity::new("id"),
+            blobs: vec![RegisterContractAction {
+                verifier: "verifier".into(),
+                program_id: ProgramId(vec![]),
+                state_digest: StateDigest(vec![]),
+                contract_name: ContractName::new("contract"),
+            }
+            .as_blob("hyle".into(), None, None)],
+        };
 
         let tx_proof = ProofTransaction::default();
-
-        let tx_contract = RegisterContractTransaction {
-            owner: "owner".to_string(),
-            verifier: "verifier".into(),
-            program_id: ProgramId(vec![]),
-            state_digest: StateDigest(vec![]),
-            contract_name: ContractName::new("contract"),
-        };
 
         let millis_interval = 1000_u64.div_ceil(qps);
 
@@ -198,11 +201,9 @@ impl MockWorkflowHandler {
                 }
                 3 => {
                     info!("Sending contract");
-                    let mut new_tx_contract = tx_contract.clone();
-                    new_tx_contract.verifier = i.to_string().into();
-                    new_tx_contract.contract_name =
-                        ContractName(format!("{}-{}", new_tx_contract.contract_name.0, i));
-                    _ = api_client.send_tx_register_contract(&tx_contract).await;
+                    let mut new_tx_blob = tx_register_blob.clone();
+                    new_tx_blob.identity = Identity(format!("{}{}", tx_blob.identity.0, i));
+                    _ = api_client.send_tx_blob(&new_tx_blob).await;
                 }
                 _ => {
                     error!("unknown random choice");

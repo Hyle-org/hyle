@@ -5,22 +5,6 @@ use hyle_contract_sdk::Verifier;
 
 use super::ctx::E2EContract;
 
-pub struct TestContract {}
-
-impl E2EContract for TestContract {
-    fn verifier() -> Verifier {
-        "test".into()
-    }
-
-    fn program_id() -> ProgramId {
-        vec![1, 2, 3].into()
-    }
-
-    fn state_digest() -> StateDigest {
-        StateDigest(vec![0, 1, 2, 3])
-    }
-}
-
 pub struct ERC20Contract {}
 
 impl E2EContract for ERC20Contract {

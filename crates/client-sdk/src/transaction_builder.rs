@@ -5,7 +5,7 @@ use std::{
     sync::{Arc, OnceLock},
 };
 
-use anyhow::Result;
+use anyhow::{bail, Result};
 use sdk::{
     info, Blob, BlobData, BlobIndex, BlobTransaction, ContractAction, ContractInput, ContractName,
     Hashable, HyleOutput, Identity, ProofData, StateDigest,
@@ -17,6 +17,44 @@ pub struct ProvableBlobTx {
     pub identity: Identity,
     pub blobs: Vec<Blob>,
     runners: Vec<ContractRunner>,
+}
+
+impl ProvableBlobTx {
+    pub fn new(identity: Identity) -> Self {
+        ProvableBlobTx {
+            identity,
+            runners: vec![],
+            blobs: vec![],
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn add_action<CF: ContractAction>(
+        &mut self,
+        contract_name: ContractName,
+        action: CF,
+        caller: Option<BlobIndex>,
+        callees: Option<Vec<BlobIndex>>,
+    ) -> Result<&'_ mut ContractRunner> {
+        let runner = ContractRunner::new(
+            contract_name.clone(),
+            self.identity.clone(),
+            BlobIndex(self.blobs.len()),
+        )?;
+        self.runners.push(runner);
+        self.blobs
+            .push(action.as_blob(contract_name, caller, callees));
+        Ok(self.runners.last_mut().unwrap())
+    }
+}
+
+impl From<ProvableBlobTx> for BlobTransaction {
+    fn from(tx: ProvableBlobTx) -> Self {
+        BlobTransaction {
+            identity: tx.identity,
+            blobs: tx.blobs,
+        }
+    }
 }
 
 pub struct ProofTxBuilder {
@@ -47,39 +85,18 @@ impl ProofTxBuilder {
     ) -> impl Iterator<Item = (impl Future<Output = Result<ProofData>> + Send, ContractName)> {
         self.runners.into_iter().map(move |mut runner| {
             info!("Proving transition for {}...", runner.contract_name);
-            let prover = self.provers.get(&runner.contract_name).unwrap().clone();
-            let future = async move { prover.prove(runner.contract_input.take().unwrap()).await };
+            let prover = self
+                .provers
+                .get(&runner.contract_name)
+                .expect("no prover defined")
+                .clone();
+            let future = async move {
+                prover
+                    .prove(runner.contract_input.take().expect("no input for prover"))
+                    .await
+            };
             (future, runner.contract_name.clone())
         })
-    }
-}
-
-impl ProvableBlobTx {
-    pub fn new(identity: Identity) -> Self {
-        ProvableBlobTx {
-            identity,
-            runners: vec![],
-            blobs: vec![],
-        }
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    pub fn add_action<CF: ContractAction>(
-        &mut self,
-        contract_name: ContractName,
-        action: CF,
-        caller: Option<BlobIndex>,
-        callees: Option<Vec<BlobIndex>>,
-    ) -> Result<&'_ mut ContractRunner> {
-        let runner = ContractRunner::new(
-            contract_name.clone(),
-            self.identity.clone(),
-            BlobIndex(self.blobs.len()),
-        )?;
-        self.runners.push(runner);
-        self.blobs
-            .push(action.as_blob(contract_name, caller, callees));
-        Ok(self.runners.last_mut().unwrap())
     }
 }
 
@@ -217,6 +234,11 @@ impl<S: StateUpdater> TxExecutor<S> {
                 .get(&runner.contract_name)
                 .unwrap()
                 .execute(runner.contract_input.get().unwrap())?;
+
+            if !out.success {
+                let program_error = std::str::from_utf8(&out.program_outputs).unwrap();
+                bail!("Execution failed ! Program output: {}", program_error);
+            }
 
             self.on_chain_states
                 .entry(runner.contract_name.clone())

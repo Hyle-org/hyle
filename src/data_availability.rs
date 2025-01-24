@@ -147,7 +147,7 @@ impl DataAvailability {
 
             listen<GenesisEvent> cmd => {
                 if let GenesisEvent::GenesisBlock(signed_block) = cmd {
-                    debug!("🌱  Genesis block received with validators {:?}", signed_block.consensus_proposal.new_validators_to_bond.clone());
+                    debug!("🌱  Genesis block received with validators {:?}", signed_block.consensus_proposal.staking_actions.clone());
                     self.handle_signed_block(signed_block).await;
                 } else {
                     // TODO: I think this is technically a data race with p2p ?

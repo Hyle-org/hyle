@@ -114,11 +114,14 @@ impl LeaderRole for Consensus {
 
         self.bft_round_state.leader.step = Step::PrepareVote;
 
+        let staking_actions = new_validators_to_bond
+            .into_iter()
+            .map(|v| v.into())
+            .collect();
+
         // Start Consensus with following cut
         self.bft_round_state.consensus_proposal.cut = cut;
-        self.bft_round_state
-            .consensus_proposal
-            .new_validators_to_bond = new_validators_to_bond;
+        self.bft_round_state.consensus_proposal.staking_actions = staking_actions;
         self.bft_round_state.consensus_proposal.timestamp = current_timestamp;
 
         self.metrics.start_new_round("consensus_proposal");

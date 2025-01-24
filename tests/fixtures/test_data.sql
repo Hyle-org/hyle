@@ -31,9 +31,9 @@ VALUES
     ('test_tx_hash_3aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'test_tx_hash_2aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 0, 0, 'contract_1', '{}', true);  -- Proof Transaction 3
 
 -- Inserting test data for the contracts table
-INSERT INTO contracts (tx_hash, owner, verifier, program_id, state_digest, contract_name)
+INSERT INTO contracts (tx_hash, verifier, program_id, state_digest, contract_name)
 VALUES
-    ('test_tx_hash_1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'owner_1', 'verifier_1', convert_to('program_id_1', 'UTF-8'), convert_to('state_digest_1', 'UTF-8'), 'contract_1');  -- Contract 1
+    ('test_tx_hash_1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'verifier_1', convert_to('program_id_1', 'UTF-8'), convert_to('state_digest_1', 'UTF-8'), 'contract_1');  -- Contract 1
 
 -- Inserting test data for the contract_state table
 INSERT INTO contract_state (contract_name, block_hash, state_digest)

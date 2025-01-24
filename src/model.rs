@@ -8,6 +8,7 @@ use std::sync::Arc;
 // Re-export
 pub use hyle_model::*;
 
+pub mod contract_registration;
 mod indexer;
 pub mod verifiers;
 

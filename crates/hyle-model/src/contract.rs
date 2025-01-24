@@ -5,6 +5,7 @@ use std::{
 
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
+use sha3::{Digest, Sha3_256};
 
 pub trait Hashable<T> {
     fn hash(&self) -> T;
@@ -317,5 +318,43 @@ impl Add<BlockHeight> for BlockHeight {
     type Output = BlockHeight;
     fn add(self, other: BlockHeight) -> BlockHeight {
         BlockHeight(self.0 + other.0)
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Default, Clone, PartialEq, Eq, Encode, Decode)]
+pub struct RegisterContractAction {
+    pub verifier: Verifier,
+    pub program_id: ProgramId,
+    pub state_digest: StateDigest,
+    pub contract_name: ContractName,
+}
+
+impl Hashable<TxHash> for RegisterContractAction {
+    fn hash(&self) -> TxHash {
+        let mut hasher = Sha3_256::new();
+        hasher.update(self.verifier.0.clone());
+        hasher.update(self.program_id.0.clone());
+        hasher.update(self.state_digest.0.clone());
+        hasher.update(self.contract_name.0.clone());
+        let hash_bytes = hasher.finalize();
+        TxHash(hex::encode(hash_bytes))
+    }
+}
+
+impl ContractAction for RegisterContractAction {
+    fn as_blob(
+        &self,
+        contract_name: ContractName,
+        caller: Option<BlobIndex>,
+        callees: Option<Vec<BlobIndex>>,
+    ) -> Blob {
+        Blob {
+            contract_name,
+            data: BlobData::from(StructuredBlobData {
+                caller,
+                callees,
+                parameters: self.clone(),
+            }),
+        }
     }
 }

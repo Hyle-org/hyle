@@ -8,6 +8,7 @@ use crate::{
     bus::{bus_client, BusClientReceiver, BusClientSender},
     mempool::api::RestApiMessage,
     model::verifiers::{BlstSignatureBlob, ShaBlob},
+    rest::RestApi,
     utils::{crypto::BlstCrypto, integration_test::NodeIntegrationCtxBuilder},
 };
 
@@ -68,7 +69,7 @@ async fn test_sha3_256_native_verifier() {
 async fn scenario(identity: Identity, blob: Blob) -> Result<()> {
     let mut node_modules = NodeIntegrationCtxBuilder::new().await;
     node_modules.conf.consensus.slot_duration = 200;
-    let mut node_modules = node_modules.build().await?;
+    let mut node_modules = node_modules.skip::<RestApi>().build().await?;
 
     let mut node_client = Client::new_from_bus(node_modules.bus.new_handle()).await;
 
@@ -88,11 +89,7 @@ async fn scenario(identity: Identity, blob: Blob) -> Result<()> {
         match evt {
             NodeStateEvent::NewBlock(block) => {
                 info!("Got Block");
-                if block
-                    .settled_blob_tx_hashes
-                    .iter()
-                    .any(|tx| tx == &blob_tx_hash)
-                {
+                if block.successful_txs.iter().any(|tx| tx == &blob_tx_hash) {
                     break;
                 }
             }

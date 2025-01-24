@@ -1,7 +1,4 @@
-use std::{
-    cmp::Ordering,
-    collections::{BTreeMap, HashSet},
-};
+use std::{cmp::Ordering, collections::BTreeMap};
 
 use bincode::{Decode, Encode};
 use derive_more::derive::Display;
@@ -16,13 +13,13 @@ pub struct Block {
     pub block_height: BlockHeight,
     pub block_timestamp: u64,
     pub txs: Vec<Transaction>,
-    pub failed_txs: HashSet<TxHash>,
+    pub successful_txs: Vec<TxHash>,
+    pub failed_txs: Vec<TxHash>,
+    pub timed_out_txs: Vec<TxHash>,
     pub blob_proof_outputs: Vec<HandledBlobProofOutput>,
-    pub settled_blob_tx_hashes: Vec<TxHash>,
-    pub verified_blobs: Vec<(TxHash, BlobIndex, usize)>,
+    pub verified_blobs: Vec<(TxHash, BlobIndex, Option<usize>)>,
     pub new_bounded_validators: Vec<ValidatorPublicKey>,
     pub staking_actions: Vec<(Identity, StakingAction)>,
-    pub timed_out_tx_hashes: Vec<TxHash>,
     pub updated_states: BTreeMap<ContractName, StateDigest>,
 }
 

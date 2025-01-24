@@ -7,6 +7,7 @@ use hyle::{
     rest::client::NodeApiHttpClient,
     utils::conf::{Conf, Consensus},
 };
+use hyle_model::TxHash;
 use rand::Rng;
 use signal_child::signal;
 use std::time::Duration;
@@ -191,10 +192,10 @@ pub async fn send_transaction<S: StateUpdater>(
     client: &NodeApiHttpClient,
     transaction: ProvableBlobTx,
     ctx: &mut TxExecutor<S>,
-) {
+) -> TxHash {
     let identity = transaction.identity.clone();
     let blobs = transaction.blobs.clone();
-    client
+    let tx_hash = client
         .send_tx_blob(&BlobTransaction { identity, blobs })
         .await
         .unwrap();
@@ -210,4 +211,5 @@ pub async fn send_transaction<S: StateUpdater>(
             .await
             .unwrap();
     }
+    tx_hash
 }

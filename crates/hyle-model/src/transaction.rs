@@ -27,7 +27,6 @@ pub enum TransactionData {
     Blob(BlobTransaction),
     Proof(ProofTransaction),
     VerifiedProof(VerifiedProofTransaction),
-    RegisterContract(RegisterContractTransaction),
 }
 
 impl Default for TransactionData {
@@ -79,15 +78,6 @@ impl std::fmt::Debug for ProofTransaction {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Default, Clone, PartialEq, Eq, Encode, Decode)]
-pub struct RegisterContractTransaction {
-    pub owner: String,
-    pub verifier: Verifier,
-    pub program_id: ProgramId,
-    pub state_digest: StateDigest,
-    pub contract_name: ContractName,
-}
-
 impl Transaction {
     pub fn wrap(data: TransactionData) -> Self {
         Transaction {
@@ -121,19 +111,12 @@ impl From<VerifiedProofTransaction> for Transaction {
     }
 }
 
-impl From<RegisterContractTransaction> for Transaction {
-    fn from(tx: RegisterContractTransaction) -> Self {
-        Transaction::wrap(TransactionData::RegisterContract(tx))
-    }
-}
-
 impl Hashable<TxHash> for Transaction {
     fn hash(&self) -> TxHash {
         match &self.transaction_data {
             TransactionData::Blob(tx) => tx.hash(),
             TransactionData::Proof(tx) => tx.hash(),
             TransactionData::VerifiedProof(tx) => tx.hash(),
-            TransactionData::RegisterContract(tx) => tx.hash(),
         }
     }
 }
@@ -156,18 +139,6 @@ impl Hashable<TxHash> for VerifiedProofTransaction {
         for proven_blob in self.proven_blobs.iter() {
             hasher.update(proven_blob.hash().0);
         }
-        let hash_bytes = hasher.finalize();
-        TxHash(hex::encode(hash_bytes))
-    }
-}
-impl Hashable<TxHash> for RegisterContractTransaction {
-    fn hash(&self) -> TxHash {
-        let mut hasher = Sha3_256::new();
-        hasher.update(self.owner.clone());
-        hasher.update(self.verifier.0.clone());
-        hasher.update(self.program_id.0.clone());
-        hasher.update(self.state_digest.0.clone());
-        hasher.update(self.contract_name.0.clone());
         let hash_bytes = hasher.finalize();
         TxHash(hex::encode(hash_bytes))
     }

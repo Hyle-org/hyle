@@ -129,7 +129,7 @@ async fn main() -> Result<()> {
             rest_addr: ctx.config.rest.clone(),
             max_body_size: ctx.config.rest_max_body_size,
             bus: ctx.bus.new_handle(),
-            metrics_layer,
+            metrics_layer: Some(metrics_layer),
             router: router.clone(),
             info: NodeInfo {
                 id: ctx.config.id.clone(),

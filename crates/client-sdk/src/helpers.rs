@@ -1,7 +1,33 @@
 use std::pin::Pin;
 
-use anyhow::{bail, Result};
-use sdk::{flatten_blobs, ContractInput, HyleOutput, ProofData};
+use anyhow::Result;
+use sdk::{
+    flatten_blobs, ContractInput, ContractName, HyleOutput, ProgramId, ProofData,
+    RegisterContractAction, StateDigest, Verifier,
+};
+
+use crate::transaction_builder::ProvableBlobTx;
+
+pub fn register_hyle_contract(
+    builder: &mut ProvableBlobTx,
+    new_contract_name: ContractName,
+    verifier: Verifier,
+    program_id: ProgramId,
+    state_digest: StateDigest,
+) -> anyhow::Result<()> {
+    builder.add_action(
+        "hyle".into(),
+        RegisterContractAction {
+            contract_name: new_contract_name,
+            verifier,
+            program_id,
+            state_digest,
+        },
+        None,
+        None,
+    )?;
+    Ok(())
+}
 
 pub trait ClientSdkExecutor {
     fn execute(&self, contract_input: &ContractInput) -> Result<HyleOutput>;
@@ -42,13 +68,6 @@ pub mod risc0 {
                 }
             };
 
-            let output = receipt
-                .journal
-                .decode::<HyleOutput>()
-                .expect("Failed to decode journal");
-
-            check_output(&output)?;
-
             let encoded_receipt = borsh::to_vec(&receipt).expect("Unable to encode receipt");
             Ok(ProofData(encoded_receipt))
         }
@@ -68,8 +87,6 @@ pub mod risc0 {
                 .journal
                 .decode::<HyleOutput>()
                 .expect("Failed to decode journal");
-
-            check_output(&output)?;
 
             Ok(output)
         }
@@ -152,7 +169,25 @@ pub mod sp1 {
 pub mod test {
     use super::*;
 
-    pub fn execute(_binary: &[u8], contract_input: &ContractInput) -> Result<HyleOutput> {
+    pub struct TestProver {}
+
+    impl ClientSdkProver for TestProver {
+        fn prove(
+            &self,
+            contract_input: ContractInput,
+        ) -> Pin<Box<dyn std::future::Future<Output = Result<ProofData>> + Send + '_>> {
+            Box::pin(async move {
+                let hyle_output = test::execute(&contract_input)?;
+
+                Ok(ProofData(bincode::encode_to_vec(
+                    vec![hyle_output.clone()],
+                    bincode::config::standard(),
+                )?))
+            })
+        }
+    }
+
+    pub fn execute(contract_input: &ContractInput) -> Result<HyleOutput> {
         // FIXME: this is a hack to make the test pass.
         let next_state = contract_input.initial_state.clone();
         let hyle_output = HyleOutput {
@@ -168,28 +203,13 @@ pub mod test {
         };
         Ok(hyle_output)
     }
-
-    pub fn prove(
-        binary: &[u8],
-        contract_input: &ContractInput,
-    ) -> anyhow::Result<(ProofData, HyleOutput)> {
-        let hyle_output = test::execute(binary, contract_input)?;
-
-        check_output(&hyle_output)?;
-        Ok((
-            ProofData(bincode::encode_to_vec(
-                vec![hyle_output.clone()],
-                bincode::config::standard(),
-            )?),
-            hyle_output,
-        ))
-    }
 }
 
+#[cfg(feature = "sp1")]
 fn check_output(output: &HyleOutput) -> Result<()> {
     if !output.success {
         let program_error = std::str::from_utf8(&output.program_outputs).unwrap();
-        bail!(
+        anyhow::bail!(
             "\x1b[91mExecution failed ! Program output: {}\x1b[0m",
             program_error
         );

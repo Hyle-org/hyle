@@ -100,7 +100,7 @@ pub struct ConsensusProposal {
     pub round_leader: ValidatorPublicKey,
     // Below items aren't.
     pub cut: Cut,
-    pub new_validators_to_bond: Vec<NewValidatorCandidate>,
+    pub staking_actions: Vec<ConsensusStakingAction>,
     pub timestamp: u64,
     pub parent_hash: ConsensusProposalHash,
 }
@@ -117,8 +117,8 @@ impl Hashable<ConsensusProposalHash> for ConsensusProposal {
             hasher.update(&pubkey.0);
             hasher.update(hash.0.as_bytes());
         });
-        self.new_validators_to_bond.iter().for_each(|val| {
-            hasher.update(&val.pubkey.0);
+        self.staking_actions.iter().for_each(|val| match val {
+            ConsensusStakingAction::Bond { candidate } => hasher.update(&candidate.pubkey.0),
         });
         hasher.update(self.timestamp.to_le_bytes());
         hasher.update(self.parent_hash.0.as_bytes());
@@ -180,13 +180,13 @@ impl Display for ConsensusProposal {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "Hash: {}, Parent Hash: {}, Slot: {}, View: {}, Cut: {:?}, new_validators_to_bond: {:?}",
+            "Hash: {}, Parent Hash: {}, Slot: {}, View: {}, Cut: {:?}, staking_actions: {:?}",
             self.hash(),
             self.parent_hash,
             self.slot,
             self.view,
             self.cut,
-            self.new_validators_to_bond,
+            self.staking_actions,
         )
     }
 }
@@ -266,7 +266,7 @@ mod tests {
             view: 1,
             round_leader: ValidatorPublicKey(vec![1, 2, 3]),
             cut: Cut::default(),
-            new_validators_to_bond: vec![],
+            staking_actions: vec![],
             timestamp: 1,
             parent_hash: ConsensusProposalHash("".to_string()),
         };
@@ -286,7 +286,7 @@ mod tests {
                 LaneBytesSize(1),
                 AggregateSignature::default(),
             )],
-            new_validators_to_bond: vec![NewValidatorCandidate {
+            staking_actions: vec![NewValidatorCandidate {
                 pubkey: ValidatorPublicKey(vec![1, 2, 3]),
                 msg: SignedByValidator {
                     msg: ConsensusNetMessage::PrepareVote(ConsensusProposalHash("".to_string())),
@@ -295,7 +295,8 @@ mod tests {
                         validator: ValidatorPublicKey(vec![1, 2, 3]),
                     },
                 },
-            }],
+            }
+            .into()],
             timestamp: 1,
             parent_hash: ConsensusProposalHash("parent".to_string()),
         };
@@ -312,7 +313,7 @@ mod tests {
                     validators: vec![ValidatorPublicKey(vec![1, 2, 3])],
                 },
             )],
-            new_validators_to_bond: vec![NewValidatorCandidate {
+            staking_actions: vec![NewValidatorCandidate {
                 pubkey: ValidatorPublicKey(vec![1, 2, 3]),
                 msg: SignedByValidator {
                     msg: ConsensusNetMessage::PrepareVote(ConsensusProposalHash(
@@ -323,7 +324,8 @@ mod tests {
                         validator: ValidatorPublicKey(vec![]),
                     },
                 },
-            }],
+            }
+            .into()],
             timestamp: 1,
             parent_hash: ConsensusProposalHash("parent".to_string()),
         };
