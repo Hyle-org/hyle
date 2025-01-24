@@ -13,7 +13,9 @@ fn execute(inputs: ContractInput) -> HyleOutput {
         .build()
         .unwrap();
     let prover = risc0_zkvm::default_executor();
-    let execute_info = prover.execute(env, hyllar::metadata::HYLLAR_ELF).unwrap();
+    let execute_info = prover
+        .execute(env, hyllar::client::metadata::HYLLAR_ELF)
+        .unwrap();
 
     execute_info.journal.decode::<sdk::HyleOutput>().unwrap()
 }

@@ -32,7 +32,6 @@ client_sdk = { path = "../../client-sdk", package = "client-sdk", features = [
 ], optional = true }
 
 [features]
-default = ["metadata"]
-metadata = []
-client = ["metadata", "dep:client_sdk"]
+default = []
+client = ["dep:client_sdk"]
 risc0 = ["dep:risc0-zkvm", "sdk/risc0"]

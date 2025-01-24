@@ -7,10 +7,15 @@ use sdk::{
     ValidatorPublicKey,
 };
 
-use crate::{execute, metadata::STAKING_ELF, state::Staking};
+use crate::{execute, state::Staking};
+
+pub mod metadata {
+    pub const STAKING_ELF: &[u8] = include_bytes!("../staking.img");
+    pub const PROGRAM_ID: [u8; 32] = sdk::str_to_u8(include_str!("../staking.txt"));
+}
+use metadata::*;
 
 struct StakingPseudoExecutor {}
-
 impl ClientSdkExecutor for StakingPseudoExecutor {
     fn execute(&self, contract_input: &sdk::ContractInput) -> anyhow::Result<sdk::HyleOutput> {
         Ok(execute(contract_input.clone()))
