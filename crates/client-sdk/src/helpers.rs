@@ -169,7 +169,25 @@ pub mod sp1 {
 pub mod test {
     use super::*;
 
-    pub fn execute(_binary: &[u8], contract_input: &ContractInput) -> Result<HyleOutput> {
+    pub struct TestProver {}
+
+    impl ClientSdkProver for TestProver {
+        fn prove(
+            &self,
+            contract_input: ContractInput,
+        ) -> Pin<Box<dyn std::future::Future<Output = Result<ProofData>> + Send + '_>> {
+            Box::pin(async move {
+                let hyle_output = test::execute(&contract_input)?;
+
+                Ok(ProofData(bincode::encode_to_vec(
+                    vec![hyle_output.clone()],
+                    bincode::config::standard(),
+                )?))
+            })
+        }
+    }
+
+    pub fn execute(contract_input: &ContractInput) -> Result<HyleOutput> {
         // FIXME: this is a hack to make the test pass.
         let next_state = contract_input.initial_state.clone();
         let hyle_output = HyleOutput {
@@ -184,21 +202,6 @@ pub mod test {
             program_outputs: vec![],
         };
         Ok(hyle_output)
-    }
-
-    pub fn prove(
-        binary: &[u8],
-        contract_input: &ContractInput,
-    ) -> anyhow::Result<(ProofData, HyleOutput)> {
-        let hyle_output = test::execute(binary, contract_input)?;
-
-        Ok((
-            ProofData(bincode::encode_to_vec(
-                vec![hyle_output.clone()],
-                bincode::config::standard(),
-            )?),
-            hyle_output,
-        ))
     }
 }
 
