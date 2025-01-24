@@ -62,9 +62,8 @@ jobs:
         id: cpr
         uses: peter-evans/create-pull-request@v7
         with:
+          token: ${{ steps.app-token.outputs.token }}
           committer: hyle-gh-bot[bot] <196068951+hyle-gh-bot[bot]@users.noreply.github.com>
           commit-message: "🔖 Bump version to ${{ github.ref_name }}"
-          base: main
           title: "🔖 Bump version to ${{ github.ref_name }}"
-      - name: Enable Pull Request Automerge
-        run: gh pr merge --squash --auto
+
