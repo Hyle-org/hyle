@@ -11,7 +11,7 @@ use tracing::info;
 
 use crate::{
     model::{Blob, BlobData},
-    node_state::test::make_hyle_output,
+    node_state::test::make_hyle_output_with_state,
     utils::integration_test::NodeIntegrationCtxBuilder,
 };
 
@@ -19,13 +19,16 @@ use anyhow::Result;
 
 use hyle_contract_sdk::BlobIndex;
 
-fn make_register_blob_action(contract_name: ContractName) -> BlobTransaction {
+fn make_register_blob_action(
+    contract_name: ContractName,
+    state_digest: StateDigest,
+) -> BlobTransaction {
     BlobTransaction {
         identity: "hyle.hyle".into(),
         blobs: vec![RegisterContractAction {
             verifier: "test".into(),
             program_id: ProgramId(vec![1, 2, 3]),
-            state_digest: StateDigest(vec![0, 1, 2, 3]),
+            state_digest,
             contract_name,
         }
         .as_blob("hyle".into(), None, None)],
@@ -54,46 +57,56 @@ async fn test_full_settlement_flow() -> Result<()> {
 
     let client = NodeApiHttpClient::new(format!("http://{rest_client}/")).unwrap();
 
-    info!("➡️  Registering contracts c1 & c2");
+    info!("➡️  Registering contracts c1 & c2.hyle");
 
-    let b1 = make_register_blob_action("c1".into());
-    let b2 = make_register_blob_action("c2".into());
+    let b1 = make_register_blob_action("c1".into(), StateDigest(vec![1, 2, 3]));
+    let b2 = make_register_blob_action("c2.hyle".into(), StateDigest(vec![7, 7, 7]));
 
     client.send_tx_blob(&b1).await.unwrap();
     client.send_tx_blob(&b2).await.unwrap();
 
-    info!("➡️  Sending blobs for c1 & c2");
+    info!("➡️  Sending blobs for c1 & c2.hyle");
     let tx = BlobTransaction {
-        identity: "test.c1".into(),
+        identity: "test.c2.hyle".into(),
         blobs: vec![
             Blob {
                 contract_name: "c1".into(),
                 data: BlobData(vec![0, 1, 2, 3]),
             },
             Blob {
-                contract_name: "c2".into(),
+                contract_name: "c2.hyle".into(),
                 data: BlobData(vec![0, 1, 2, 3]),
             },
         ],
     };
     client.send_tx_blob(&tx).await.unwrap();
 
-    info!("➡️  Sending proof for c1 & c2");
+    info!("➡️  Sending proof for c1 & c2.hyle");
     let proof_c1 = ProofTransaction {
         contract_name: "c1".into(),
         proof: ProofData(
             bincode::encode_to_vec(
-                vec![make_hyle_output(tx.clone(), BlobIndex(0))],
+                vec![make_hyle_output_with_state(
+                    tx.clone(),
+                    BlobIndex(0),
+                    &[1, 2, 3],
+                    &[4, 5, 6],
+                )],
                 bincode::config::standard(),
             )
             .unwrap(),
         ),
     };
     let proof_c2 = ProofTransaction {
-        contract_name: "c2".into(),
+        contract_name: "c2.hyle".into(),
         proof: ProofData(
             bincode::encode_to_vec(
-                vec![make_hyle_output(tx.clone(), BlobIndex(1))],
+                vec![make_hyle_output_with_state(
+                    tx.clone(),
+                    BlobIndex(1),
+                    &[7, 7, 7],
+                    &[8, 8, 8],
+                )],
                 bincode::config::standard(),
             )
             .unwrap(),
@@ -112,9 +125,16 @@ async fn test_full_settlement_flow() -> Result<()> {
     let contract = client.get_contract(&"c1".into()).await?;
     assert_eq!(contract.state.0, vec![4, 5, 6]);
 
+    let contract = client.get_contract(&"c2.hyle".into()).await?;
+    assert_eq!(contract.state.0, vec![8, 8, 8]);
+
     let pg_client = IndexerApiHttpClient::new(format!("http://{rest_client}/")).unwrap();
     let contract = pg_client.get_indexer_contract(&"c1".into()).await?;
     assert_eq!(contract.state_digest, vec![4, 5, 6]);
+
+    let pg_client = IndexerApiHttpClient::new(format!("http://{rest_client}/")).unwrap();
+    let contract = pg_client.get_indexer_contract(&"c2.hyle".into()).await?;
+    assert_eq!(contract.state_digest, vec![8, 8, 8]);
 
     Ok(())
 }
