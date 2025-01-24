@@ -17,23 +17,30 @@ fn main() {
 
     let mut options = HashMap::new();
 
-    ["amm", "hydentity", "hyllar", "staking", "risc0-recursion"]
-        .iter()
-        .for_each(|name| {
-            options.insert(
-                *name,
-                GuestOptions {
-                    features: vec!["risc0".to_owned()],
-                    use_docker: match reproducible {
-                        true => Some(DockerOptions {
-                            // Point to the workspace
-                            root_dir: Some("../..".into()),
-                        }),
-                        false => None,
-                    },
+    [
+        "amm",
+        "hydentity",
+        "hyllar",
+        "staking",
+        "risc0-recursion",
+        "uuid-tld",
+    ]
+    .iter()
+    .for_each(|name| {
+        options.insert(
+            *name,
+            GuestOptions {
+                features: vec!["risc0".to_owned()],
+                use_docker: match reproducible {
+                    true => Some(DockerOptions {
+                        // Point to the workspace
+                        root_dir: Some("../..".into()),
+                    }),
+                    false => None,
                 },
-            );
-        });
+            },
+        );
+    });
 
     // Build the guests.
     let results = risc0_build::embed_methods_with_options(options);

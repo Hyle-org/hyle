@@ -20,6 +20,9 @@ mod metadata {
 
     pub const RISC0_RECURSION_ELF: &[u8] = crate::methods::RISC0_RECURSION_ELF;
     pub const RISC0_RECURSION_ID: [u8; 32] = sdk::to_u8_array(&crate::methods::RISC0_RECURSION_ID);
+
+    pub const UUID_TLD_ELF: &[u8] = crate::methods::UUID_TLD_ELF;
+    pub const UUID_TLD_ID: [u8; 32] = sdk::to_u8_array(&crate::methods::UUID_TLD_ID);
 }
 
 #[cfg(any(clippy, not(feature = "nonreproducible")))]
@@ -39,6 +42,9 @@ mod metadata {
     pub const RISC0_RECURSION_ELF: &[u8] = include_bytes!("risc0-recursion/risc0-recursion.img");
     pub const RISC0_RECURSION_ID: [u8; 32] =
         sdk::str_to_u8(include_str!("risc0-recursion/risc0-recursion.txt"));
+
+    pub const UUID_TLD_ELF: &[u8] = include_bytes!("uuid-tld/uuid-tld.img");
+    pub const UUID_TLD_ID: [u8; 32] = sdk::str_to_u8(include_str!("uuid-tld/uuid-tld.txt"));
 }
 
 pub use metadata::*;

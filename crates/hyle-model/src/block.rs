@@ -20,6 +20,7 @@ pub struct Block {
     pub verified_blobs: Vec<(TxHash, BlobIndex, Option<usize>)>,
     pub new_bounded_validators: Vec<ValidatorPublicKey>,
     pub staking_actions: Vec<(Identity, StakingAction)>,
+    pub registered_contracts: Vec<(TxHash, RegisterContractEffect)>,
     pub updated_states: BTreeMap<ContractName, StateDigest>,
 }
 

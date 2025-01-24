@@ -22,7 +22,6 @@ use crate::{
 use anyhow::{bail, Context, Result};
 use api::RestApiMessage;
 use bincode::{Decode, Encode};
-use contract_registration::validate_any_contract_registration;
 use hyle_contract_sdk::{ContractName, ProgramId, Verifier};
 use metrics::MempoolMetrics;
 use serde::{Deserialize, Serialize};
@@ -234,18 +233,10 @@ impl Mempool {
                 let _ = self.handle_consensus_event(cmd)
                     .log_error("Handling ConsensusEvent in Mempool");
             }
-
-            listen<GenesisEvent> cmd => {
-                if let GenesisEvent::GenesisBlock(signed_block) = cmd {
-                    for tx in signed_block.txs() {
-                        self.handle_contract_registration(tx);
-                    }
-                }
-            }
             listen<NodeStateEvent> cmd => {
                 let NodeStateEvent::NewBlock(block) = cmd;
-                for tx in block.txs {
-                    self.handle_contract_registration(tx);
+                for (_, contract) in block.registered_contracts {
+                    self.handle_contract_registration(contract);
                 }
             }
             command_response<QueryNewCut, Cut> staking => {
@@ -266,22 +257,31 @@ impl Mempool {
         Ok(())
     }
 
-    fn handle_contract_registration(&mut self, tx: Transaction) {
-        if let TransactionData::Blob(tx) = tx.transaction_data {
-            // Optimistically accept them
-            #[allow(clippy::expect_used, reason = "not held across await")]
-            let mut known_contracts = self.known_contracts.write().expect("logic issue");
-            tx.blobs.into_iter().for_each(|blob| {
-                if let Ok(tx) = StructuredBlobData::<RegisterContractAction>::try_from(blob.data) {
-                    let tx = tx.parameters;
-                    known_contracts.register_contract(
-                        &tx.contract_name,
-                        &tx.verifier,
-                        &tx.program_id,
-                    );
-                }
-            });
-        };
+    fn handle_contract_registration(&mut self, effect: RegisterContractEffect) {
+        #[allow(clippy::expect_used, reason = "not held across await")]
+        let mut known_contracts = self.known_contracts.write().expect("logic issue");
+        known_contracts.register_contract(
+            &effect.contract_name,
+            &effect.verifier,
+            &effect.program_id,
+        );
+    }
+
+    // Optimistically parse Hyle tx blobs
+    fn handle_hyle_contract_registration(&mut self, blob_tx: &BlobTransaction) {
+        #[allow(clippy::expect_used, reason = "not held across await")]
+        let mut known_contracts = self.known_contracts.write().expect("logic issue");
+        blob_tx.blobs.iter().for_each(|blob| {
+            if blob.contract_name.0 != "hyle" {
+                return;
+            }
+            if let Ok(tx) =
+                StructuredBlobData::<RegisterContractAction>::try_from(blob.data.clone())
+            {
+                let tx = tx.parameters;
+                known_contracts.register_contract(&tx.contract_name, &tx.verifier, &tx.program_id);
+            }
+        });
     }
 
     /// Creates a cut with local material on QueryNewCut message reception (from consensus)
@@ -860,11 +860,9 @@ impl Mempool {
                 if let Err(e) = blob_tx.validate_identity() {
                     bail!("Invalid identity for blob tx {}: {}", tx.hash(), e);
                 }
-                // Reject obviously invalid contract registrations.
-                validate_any_contract_registration(blob_tx)?;
                 // TODO: we should check if the registration handler contract exists.
                 // TODO: would be good to not need to clone here.
-                self.handle_contract_registration(tx.clone());
+                self.handle_hyle_contract_registration(blob_tx);
             }
             TransactionData::Proof(_) => {
                 let kc = self.known_contracts.clone();
@@ -919,10 +917,12 @@ impl Mempool {
 
         let (hyle_outputs, program_ids) = if is_recursive {
             let (program_ids, hyle_outputs) =
-                verify_recursive_proof(&proof_transaction.proof, &verifier, &program_id)?;
+                verify_recursive_proof(&proof_transaction.proof, &verifier, &program_id)
+                    .context("verify_rec_proof")?;
             (hyle_outputs, program_ids)
         } else {
-            let hyle_outputs = verify_proof(&proof_transaction.proof, &verifier, &program_id)?;
+            let hyle_outputs = verify_proof(&proof_transaction.proof, &verifier, &program_id)
+                .context("verify_proof")?;
             (hyle_outputs, vec![program_id.clone()])
         };
 

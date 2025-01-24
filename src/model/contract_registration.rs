@@ -1,5 +1,5 @@
 use anyhow::{bail, Result};
-use hyle_model::{BlobTransaction, ContractName, RegisterContractAction, StructuredBlobData};
+use hyle_model::ContractName;
 
 /// Check that the new contract name is:
 /// - a valid subdomain of the owner contract name.
@@ -42,19 +42,6 @@ pub fn validate_contract_registration(
         );
     }
     Ok(())
-}
-
-// TODO: would be nice to not clone
-pub fn validate_any_contract_registration(tx: &BlobTransaction) -> Result<()> {
-    tx.blobs.iter().try_for_each(|blob| {
-        if let Ok(reg) = StructuredBlobData::<RegisterContractAction>::try_from(blob.data.clone()) {
-            return validate_contract_registration(
-                &blob.contract_name,
-                &reg.parameters.contract_name,
-            );
-        }
-        Ok(())
-    })
 }
 
 #[cfg(test)]

@@ -6,6 +6,7 @@ members = [
     "crates/contracts/hyllar",
     "crates/contracts/staking",
     "crates/contracts/risc0-recursion",
+    "crates/contracts/uuid-tld",
 
     "crates/bonsai-runner",
     "crates/client-sdk",
@@ -120,6 +121,7 @@ dhat = { version = "0.3.3", optional = true }
 
 [dev-dependencies]
 amm = { path = "./crates/contracts/amm", features = ["client"] }
+uuid-tld = { path = "./crates/contracts/uuid-tld", features = ["client"] }
 client-sdk = { path = "./crates/client-sdk", default-features = false, features = [
     "rest",
     "tcp",

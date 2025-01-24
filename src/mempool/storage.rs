@@ -1,7 +1,8 @@
 use anyhow::{bail, Context, Result};
 use bincode::{Decode, Encode};
 use hyle_model::{
-    DataSized, RegisterContractAction, Signed, StructuredBlobData, ValidatorSignature,
+    ContractName, DataSized, ProgramId, RegisterContractAction, Signed, StructuredBlobData,
+    ValidatorSignature, Verifier,
 };
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
@@ -17,10 +18,7 @@ use crate::{
     utils::crypto::BlstCrypto,
 };
 
-use super::{
-    contract_registration::validate_any_contract_registration,
-    verifiers::{verify_proof, verify_recursive_proof},
-};
+use super::verifiers::{verify_proof, verify_recursive_proof};
 use super::{KnownContracts, MempoolNetMessage};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -307,13 +305,6 @@ impl Storage {
                         );
                         return DataProposalVerdict::Refuse;
                     }
-                    if let Err(e) = validate_any_contract_registration(blob_tx) {
-                        warn!(
-                            "Refusing DataProposal: invalid contract registration in blob transaction: {}",
-                            e
-                        );
-                        return DataProposalVerdict::Refuse;
-                    }
                 }
                 TransactionData::Proof(_) => {
                     warn!("Refusing DataProposal: unverified recursive proof transaction");
@@ -341,39 +332,7 @@ impl Storage {
                     {
                         Some((verifier, program_id)) => (verifier, program_id),
                         None => {
-                            // Check if it's in the same data proposal.
-                            // (kind of inefficient, but it's mostly to make our tests work)
-                            // TODO: improve on this logic, possibly look into other data proposals / lanes.
-                            #[allow(
-                                clippy::unwrap_used,
-                                reason = "we know position will return a valid range"
-                            )]
-                            let data = data_proposal
-                                .txs
-                                .get(
-                                    0..data_proposal
-                                        .txs
-                                        .iter()
-                                        .position(|tx2| std::ptr::eq(tx, tx2))
-                                        .unwrap(),
-                                )
-                                .unwrap()
-                                .iter()
-                                .find_map(|tx| match &tx.transaction_data {
-                                    TransactionData::Blob(tx) => tx.blobs.iter().find_map(|blob| {
-                                        if let Ok(tx) =
-                                            StructuredBlobData::<RegisterContractAction>::try_from(
-                                                blob.data.clone(),
-                                            )
-                                        {
-                                            Some((tx.parameters.verifier, tx.parameters.program_id))
-                                        } else {
-                                            None
-                                        }
-                                    }),
-                                    _ => None,
-                                });
-                            match data {
+                            match Self::find_contract(data_proposal, tx, &proof_tx.contract_name) {
                                 Some((v, p)) => (v.clone(), p.clone()),
                                 None => {
                                     warn!("Refusing DataProposal: contract not found");
@@ -458,6 +417,47 @@ impl Storage {
             .entry(validator.clone())
             .or_default()
             .add_new_proposal(crypto, data_proposal)
+    }
+
+    // Find the verifier and program_id for a contract name in the current lane, optimistically.
+    fn find_contract(
+        data_proposal: &DataProposal,
+        tx: &Transaction,
+        contract_name: &ContractName,
+    ) -> Option<(Verifier, ProgramId)> {
+        // Check if it's in the same data proposal.
+        // (kind of inefficient, but it's mostly to make our tests work)
+        // TODO: improve on this logic, possibly look into other data proposals / lanes.
+        #[allow(
+            clippy::unwrap_used,
+            reason = "we know position will return a valid range"
+        )]
+        data_proposal
+            .txs
+            .get(
+                0..data_proposal
+                    .txs
+                    .iter()
+                    .position(|tx2| std::ptr::eq(tx, tx2))
+                    .unwrap(),
+            )
+            .unwrap()
+            .iter()
+            .find_map(|tx| match &tx.transaction_data {
+                TransactionData::Blob(tx) => tx.blobs.iter().find_map(|blob| {
+                    if blob.contract_name.0 == "hyle" {
+                        if let Ok(tx) = StructuredBlobData::<RegisterContractAction>::try_from(
+                            blob.data.clone(),
+                        ) {
+                            if &tx.parameters.contract_name == contract_name {
+                                return Some((tx.parameters.verifier, tx.parameters.program_id));
+                            }
+                        }
+                    }
+                    None
+                }),
+                _ => None,
+            })
     }
 
     pub fn lane_has_data_proposal(

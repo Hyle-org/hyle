@@ -9,7 +9,7 @@ CREATE TABLE blocks (
     CHECK (height >= 0)             -- Ensure the height is positive
 );
 
-CREATE TYPE transaction_type AS ENUM ('blob_transaction', 'proof_transaction', 'register_contract_transaction', 'stake');
+CREATE TYPE transaction_type AS ENUM ('blob_transaction', 'proof_transaction', 'stake');
 CREATE TYPE transaction_status AS ENUM ('success', 'failure', 'sequenced', 'timed_out');
 
 CREATE TABLE transactions (
