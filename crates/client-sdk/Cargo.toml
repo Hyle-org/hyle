@@ -5,6 +5,7 @@ edition = { workspace = true }
 # license = { workspace = true }
 homepage = { workspace = true }
 repository = { workspace = true }
+rust-version = { workspace = true }
 
 [dependencies]
 sdk = { path = "../contract-sdk", package = "hyle-contract-sdk", default-features = false, features = [
