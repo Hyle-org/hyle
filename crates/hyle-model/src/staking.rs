@@ -21,13 +21,13 @@ pub enum StakingAction {
 
 /// Represents the operations that can be performed by the consensus
 #[derive(Encode, Decode, Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
-pub enum ConsensusStatkingAction {
+pub enum ConsensusStakingAction {
     Bond { candidate: NewValidatorCandidate }, // Bonding a new validator candidate
 }
 
-impl From<NewValidatorCandidate> for ConsensusStatkingAction {
+impl From<NewValidatorCandidate> for ConsensusStakingAction {
     fn from(val: NewValidatorCandidate) -> Self {
-        ConsensusStatkingAction::Bond { candidate: val }
+        ConsensusStakingAction::Bond { candidate: val }
     }
 }
 

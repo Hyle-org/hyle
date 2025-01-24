@@ -100,7 +100,7 @@ pub struct ConsensusProposal {
     pub round_leader: ValidatorPublicKey,
     // Below items aren't.
     pub cut: Cut,
-    pub staking_actions: Vec<ConsensusStatkingAction>,
+    pub staking_actions: Vec<ConsensusStakingAction>,
     pub timestamp: u64,
     pub parent_hash: ConsensusProposalHash,
 }
@@ -118,7 +118,7 @@ impl Hashable<ConsensusProposalHash> for ConsensusProposal {
             hasher.update(hash.0.as_bytes());
         });
         self.staking_actions.iter().for_each(|val| match val {
-            ConsensusStatkingAction::Bond { candidate } => hasher.update(&candidate.pubkey.0),
+            ConsensusStakingAction::Bond { candidate } => hasher.update(&candidate.pubkey.0),
         });
         hasher.update(self.timestamp.to_le_bytes());
         hasher.update(self.parent_hash.0.as_bytes());

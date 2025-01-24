@@ -219,7 +219,7 @@ impl Consensus {
                 // Any new validators are added to the consensus and removed from candidates.
                 for action in staking_actions {
                     match action {
-                        ConsensusStatkingAction::Bond { candidate } => {
+                        ConsensusStakingAction::Bond { candidate } => {
                             debug!("🎉 New validator bonded: {}", candidate.pubkey);
                             self.store
                                 .bft_round_state
@@ -278,7 +278,7 @@ impl Consensus {
     fn verify_staking_actions(&mut self, proposal: &ConsensusProposal) -> Result<()> {
         for action in &proposal.staking_actions {
             match action {
-                ConsensusStatkingAction::Bond { candidate } => {
+                ConsensusStakingAction::Bond { candidate } => {
                     self.verify_new_validators_to_bond(candidate)?;
                 }
             }
