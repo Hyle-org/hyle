@@ -12,7 +12,7 @@ use crate::{
 use anyhow::{anyhow, bail, Result};
 use bincode::{Decode, Encode};
 use staking::state::MIN_STAKE;
-use tracing::{debug, error, info, trace};
+use tracing::{debug, error, trace};
 
 use super::Consensus;
 
