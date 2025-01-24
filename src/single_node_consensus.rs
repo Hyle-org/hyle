@@ -175,7 +175,7 @@ impl SingleNodeConsensus {
             timestamp: get_current_timestamp_ms(),
             round_leader: self.crypto.validator_pubkey().clone(),
             cut: self.store.last_cut.clone(),
-            new_validators_to_bond: vec![],
+            staking_actions: vec![],
             parent_hash: std::mem::take(&mut self.store.last_consensus_proposal_hash),
         };
 

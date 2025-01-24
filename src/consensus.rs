@@ -190,12 +190,8 @@ impl Consensus {
         let round_parent_hash =
             std::mem::take(&mut self.bft_round_state.consensus_proposal.parent_hash);
 
-        let new_validators_to_bond = std::mem::take(
-            &mut self
-                .bft_round_state
-                .consensus_proposal
-                .new_validators_to_bond,
-        );
+        let staking_actions =
+            std::mem::take(&mut self.bft_round_state.consensus_proposal.staking_actions);
 
         // Reset round state, carrying over staking and current proposal.
         self.bft_round_state = BFTRoundState {
@@ -221,13 +217,17 @@ impl Consensus {
                 self.bft_round_state.consensus_proposal.view = 0;
                 self.bft_round_state.follower.buffered_quorum_certificate = Some(qc);
                 // Any new validators are added to the consensus and removed from candidates.
-                for new_v in new_validators_to_bond {
-                    debug!("🎉 New validator bonded: {}", new_v.pubkey);
-                    self.store
-                        .bft_round_state
-                        .staking
-                        .bond(new_v.pubkey.clone())
-                        .map_err(|e| anyhow::anyhow!(e))?;
+                for action in staking_actions {
+                    match action {
+                        ConsensusStakingAction::Bond { candidate } => {
+                            debug!("🎉 New validator bonded: {}", candidate.pubkey);
+                            self.store
+                                .bft_round_state
+                                .staking
+                                .bond(candidate.pubkey)
+                                .map_err(|e| anyhow::anyhow!(e))?;
+                        }
+                    }
                 }
             }
             Some(Ticket::TimeoutQC(_)) => {
@@ -275,48 +275,60 @@ impl Consensus {
         })
     }
 
+    fn verify_staking_actions(&mut self, proposal: &ConsensusProposal) -> Result<()> {
+        for action in &proposal.staking_actions {
+            match action {
+                ConsensusStakingAction::Bond { candidate } => {
+                    self.verify_new_validators_to_bond(candidate)?;
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// Verify that new validators have enough stake
     /// and have a valid signature so can be bonded.
-    fn verify_new_validators_to_bond(&mut self, proposal: &ConsensusProposal) -> Result<()> {
-        for new_validator in &proposal.new_validators_to_bond {
-            // Verify that the new validator has enough stake
-            if let Some(stake) = self
-                .bft_round_state
-                .staking
-                .get_stake(&new_validator.pubkey)
-            {
-                if stake < staking::state::MIN_STAKE {
-                    bail!("New bonded validator has not enough stake to be bonded");
-                }
-            } else {
-                bail!("New bonded validator has no stake");
+    fn verify_new_validators_to_bond(
+        &mut self,
+        new_validator: &NewValidatorCandidate,
+    ) -> Result<()> {
+        // Verify that the new validator has enough stake
+        if let Some(stake) = self
+            .bft_round_state
+            .staking
+            .get_stake(&new_validator.pubkey)
+        {
+            if stake < staking::state::MIN_STAKE {
+                bail!("New bonded validator has not enough stake to be bonded");
             }
-            // Verify that the new validator has a valid signature
-            if !BlstCrypto::verify(&new_validator.msg)? {
-                bail!("New bonded validator has an invalid signature");
-            }
-            // Verify that the signed message is a matching candidacy
-            if let ConsensusNetMessage::ValidatorCandidacy(ValidatorCandidacy {
-                pubkey,
-                peer_address,
-            }) = &new_validator.msg.msg
-            {
-                if pubkey != &new_validator.pubkey {
-                    debug!("Invalid candidacy message");
-                    debug!("Got - Expected");
-                    debug!("{} - {}", pubkey, new_validator.pubkey);
+        } else {
+            bail!("New bonded validator has no stake");
+        }
+        // Verify that the new validator has a valid signature
+        if !BlstCrypto::verify(&new_validator.msg)? {
+            bail!("New bonded validator has an invalid signature");
+        }
+        // Verify that the signed message is a matching candidacy
+        if let ConsensusNetMessage::ValidatorCandidacy(ValidatorCandidacy {
+            pubkey,
+            peer_address,
+        }) = &new_validator.msg.msg
+        {
+            if pubkey != &new_validator.pubkey {
+                debug!("Invalid candidacy message");
+                debug!("Got - Expected");
+                debug!("{} - {}", pubkey, new_validator.pubkey);
 
-                    bail!("New bonded validator has an invalid candidacy message");
-                }
-
-                self.validator_candidates
-                    .retain(|v| v.pubkey != new_validator.pubkey);
-                self.bus.send(P2PCommand::ConnectTo {
-                    peer: peer_address.clone(),
-                })?;
-            } else {
-                bail!("New bonded validator forwarded signed message is not a candidacy message");
+                bail!("New bonded validator has an invalid candidacy message");
             }
+
+            self.validator_candidates
+                .retain(|v| v.pubkey != new_validator.pubkey);
+            self.bus.send(P2PCommand::ConnectTo {
+                peer: peer_address.clone(),
+            })?;
+        } else {
+            bail!("New bonded validator forwarded signed message is not a candidacy message");
         }
         Ok(())
     }
@@ -1475,7 +1487,7 @@ pub mod test {
                         DataProposalHash("test".to_string()),
                         AggregateSignature::default(),
                     )],
-                    new_validators_to_bond: vec![],
+                    staking_actions: vec![],
                     parent_hash: ConsensusProposalHash("hash".into()),
                 },
                 Ticket::Genesis,
@@ -1515,7 +1527,7 @@ pub mod test {
                         DataProposalHash("test".to_string()),
                         AggregateSignature::default(),
                     )],
-                    new_validators_to_bond: vec![],
+                    staking_actions: vec![],
                     parent_hash: ConsensusProposalHash("hash".into()),
                 },
                 Ticket::Genesis,
@@ -1564,7 +1576,7 @@ pub mod test {
                         DataProposalHash("test".to_string()),
                         AggregateSignature::default(),
                     )],
-                    new_validators_to_bond: vec![],
+                    staking_actions: vec![],
                     parent_hash: ConsensusProposalHash("hash".into()),
                 },
                 Ticket::Genesis,

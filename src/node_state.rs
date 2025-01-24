@@ -81,9 +81,11 @@ impl NodeState {
             staking_actions: vec![],
             new_bounded_validators: signed_block
                 .consensus_proposal
-                .new_validators_to_bond
+                .staking_actions
                 .iter()
-                .map(|v| v.pubkey.clone())
+                .map(|v| match v {
+                    ConsensusStakingAction::Bond { candidate } => candidate.pubkey.clone(),
+                })
                 .collect(),
             timed_out_txs: vec![], // Added below as it needs the block
             updated_states: BTreeMap::new(),

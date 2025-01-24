@@ -487,20 +487,23 @@ impl Genesis {
                         validators: initial_validators.clone()
                     }
                 )*/],
-                new_validators_to_bond: initial_validators
+                staking_actions: initial_validators
                     .iter()
-                    .map(|v| NewValidatorCandidate {
-                        pubkey: v.clone(),
-                        msg: SignedByValidator {
-                            msg: ConsensusNetMessage::ValidatorCandidacy(ValidatorCandidacy {
-                                pubkey: v.clone(),
-                                peer_address: "".into(),
-                            }),
-                            signature: ValidatorSignature {
-                                signature: Signature("".into()),
-                                validator: v.clone(),
+                    .map(|v| {
+                        NewValidatorCandidate {
+                            pubkey: v.clone(),
+                            msg: SignedByValidator {
+                                msg: ConsensusNetMessage::ValidatorCandidacy(ValidatorCandidacy {
+                                    pubkey: v.clone(),
+                                    peer_address: "".into(),
+                                }),
+                                signature: ValidatorSignature {
+                                    signature: Signature("".into()),
+                                    validator: v.clone(),
+                                },
                             },
-                        },
+                        }
+                        .into()
                     })
                     .collect(),
                 parent_hash: ConsensusProposalHash("genesis".into()),
@@ -588,10 +591,7 @@ mod tests {
         assert_matches!(rec, GenesisEvent::GenesisBlock(..));
         if let GenesisEvent::GenesisBlock(signed_block) = rec {
             assert!(!signed_block.txs().is_empty());
-            assert_eq!(
-                signed_block.consensus_proposal.new_validators_to_bond.len(),
-                1
-            );
+            assert_eq!(signed_block.consensus_proposal.staking_actions.len(), 1);
         }
     }
 
@@ -627,10 +627,7 @@ mod tests {
         assert_matches!(rec, GenesisEvent::GenesisBlock(..));
         if let GenesisEvent::GenesisBlock(signed_block) = rec {
             assert!(!signed_block.txs().is_empty());
-            assert_eq!(
-                signed_block.consensus_proposal.new_validators_to_bond.len(),
-                2
-            );
+            assert_eq!(signed_block.consensus_proposal.staking_actions.len(), 2);
         }
     }
 
@@ -668,10 +665,7 @@ mod tests {
         assert_matches!(rec, GenesisEvent::GenesisBlock(..));
         if let GenesisEvent::GenesisBlock(signed_block) = rec {
             assert!(!signed_block.txs().is_empty());
-            assert_eq!(
-                signed_block.consensus_proposal.new_validators_to_bond.len(),
-                2
-            );
+            assert_eq!(signed_block.consensus_proposal.staking_actions.len(), 2);
         }
     }
 
