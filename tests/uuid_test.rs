@@ -8,10 +8,11 @@ use fixtures::ctx::{E2EContract, E2ECtx};
 use hydentity::{client::register_identity, Hydentity};
 use hyle::mempool::verifiers::verify_proof;
 use hyle_contract_sdk::{
-    flatten_blobs, BlobData, BlobIndex, BlobTransaction, ContractName, Digestable, Hashable,
-    HyleOutput, ProgramId, RegisterContractEffect, StateDigest, Transaction, Verifier,
+    flatten_blobs, BlobIndex, BlobTransaction, ContractName, Digestable, Hashable, HyleOutput,
+    ProgramId, RegisterContractEffect, StateDigest, Transaction, Verifier,
 };
 use hyle_contracts::{HYDENTITY_ELF, UUID_TLD_ELF, UUID_TLD_ID};
+use hyle_model::TxContext;
 use uuid_tld::{RegisterUuidContract, UuidTldState};
 
 contract_states!(
@@ -74,7 +75,7 @@ async fn test_uuid_registration() {
         None,
     )
     .unwrap()
-    .with_private_blob(|state| Ok(BlobData(state.0)));
+    .with_private_input(|state| Ok(state.0));
 
     ctx.send_provable_blob_tx(&tx).await.unwrap();
 
@@ -101,16 +102,12 @@ async fn test_uuid_registration() {
     )
     .expect("Must validate proof");
 
-    let expected_output = bincode::encode_to_vec(
-        RegisterContractEffect {
-            contract_name: "3b8d48eb-bdf7-4708-8d3a-1160b40411be.uuid".into(),
-            verifier: Verifier("test".into()),
-            program_id: ProgramId(vec![]),
-            state_digest: StateDigest(vec![0, 1, 2, 3]),
-        },
-        bincode::config::standard(),
-    )
-    .expect("Failed to encode RegisterUuidContract");
+    let expected_output = RegisterContractEffect {
+        contract_name: "5f44a3f5-c5f4-4a40-a1d4-5176a2602600.uuid".into(),
+        verifier: Verifier("test".into()),
+        program_id: ProgramId(vec![]),
+        state_digest: StateDigest(vec![0, 1, 2, 3]),
+    };
 
     let blobs = flatten_blobs(&blob_tx.blobs);
     assert_eq!(
@@ -121,16 +118,18 @@ async fn test_uuid_registration() {
             next_state: executor.uuid.as_digest(),
             identity: "toto.hydentity".into(),
             tx_hash: Into::<Transaction>::into(blob_tx).hash(),
+            tx_ctx: Some(TxContext::default()),
             index: BlobIndex(1),
             blobs,
             success: true,
-            program_outputs: expected_output
+            registered_contracts: vec![expected_output],
+            program_outputs: vec![]
         }]
     );
 
     let contract = loop {
         if let Ok(c) = ctx
-            .get_contract("3b8d48eb-bdf7-4708-8d3a-1160b40411be.uuid")
+            .get_contract("5f44a3f5-c5f4-4a40-a1d4-5176a2602600.uuid")
             .await
         {
             break c;
@@ -139,7 +138,7 @@ async fn test_uuid_registration() {
     };
     assert_eq!(
         contract.name,
-        "3b8d48eb-bdf7-4708-8d3a-1160b40411be.uuid".into()
+        "5f44a3f5-c5f4-4a40-a1d4-5176a2602600.uuid".into()
     );
     assert_eq!(contract.verifier, Verifier("test".into()));
     assert_eq!(contract.state, StateDigest(vec![0, 1, 2, 3]));

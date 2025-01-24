@@ -143,9 +143,7 @@ pub fn sp1_proof_verifier(
 mod tests {
     use std::{fs::File, io::Read};
 
-    use hyle_model::{
-        StateDigest, {BlobIndex, HyleOutput, Identity, TxHash},
-    };
+    use hyle_model::{BlobIndex, HyleOutput, Identity, StateDigest, TxHash};
 
     use super::noir_proof_verifier;
 
@@ -211,10 +209,12 @@ mod tests {
                         identity: Identity(
                             "3f368bf90c71946fc7b0cde9161ace42985d235f.ecdsa_secp256r1".to_owned()
                         ),
-                        tx_hash: TxHash::new(""),
                         index: BlobIndex(0),
                         blobs: vec![1, 1, 1, 1, 1],
                         success: true,
+                        tx_hash: TxHash::default(), // TODO
+                        tx_ctx: None,
+                        registered_contracts: vec![],
                         program_outputs: vec![]
                     }]
                 );

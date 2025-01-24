@@ -213,16 +213,12 @@ impl NodeState {
                         #[allow(clippy::expect_used, reason = "we don't handle oom yet")]
                         let synthetic_output = HyleOutput {
                             success: true,
-                            program_outputs: bincode::encode_to_vec(
-                                RegisterContractEffect {
-                                    contract_name: reg.parameters.contract_name,
-                                    verifier: reg.parameters.verifier,
-                                    program_id: reg.parameters.program_id,
-                                    state_digest: reg.parameters.state_digest,
-                                },
-                                bincode::config::standard(),
-                            )
-                            .expect("encoding failed"),
+                            registered_contracts: vec![RegisterContractEffect {
+                                contract_name: reg.parameters.contract_name,
+                                verifier: reg.parameters.verifier,
+                                program_id: reg.parameters.program_id,
+                                state_digest: reg.parameters.state_digest,
+                            }],
                             ..HyleOutput::default()
                         };
                         return UnsettledBlobMetadata {
@@ -549,20 +545,17 @@ impl NodeState {
             block_under_construction.failed_txs.push(bth);
         } else {
             // Take note of staking and contract registration
-            for (i, blob_metadata) in settled_tx.blobs.into_iter().enumerate() {
+            for (i, mut blob_metadata) in settled_tx.blobs.into_iter().enumerate() {
                 #[allow(clippy::indexing_slicing, reason = "all exist by construction")]
-                let settled_proof = &blob_metadata.possible_proofs[blob_proof_output_indices[i]];
+                let settled_proof = blob_metadata
+                    .possible_proofs
+                    .remove(blob_proof_output_indices[i]);
 
-                // TODO: this is probably a little dangerous, we should have a magic identifier of sorts.
-                let register_contract_effect = bincode::decode_from_slice(
-                    &settled_proof.1.program_outputs,
-                    bincode::config::standard(),
-                );
-                if let Ok((register_contract_effect, _)) = register_contract_effect {
-                    self.handle_register_contract_effect(&register_contract_effect);
+                for rce in settled_proof.1.registered_contracts {
+                    self.handle_register_contract_effect(&rce);
                     block_under_construction
                         .registered_contracts
-                        .push((bth.clone(), register_contract_effect));
+                        .push((bth.clone(), rce));
                 }
 
                 let blob = blob_metadata.blob;
@@ -638,17 +631,15 @@ impl NodeState {
         })
     }
 
+    // Assumes verify_hyle_output was already called
     fn validate_proof_metadata(
         proof_metadata: &(ProgramId, HyleOutput),
         contract: &Contract,
     ) -> bool {
-        if let Ok((effect, _)) = bincode::decode_from_slice::<RegisterContractEffect, _>(
-            &proof_metadata.1.program_outputs,
-            bincode::config::standard(),
-        ) {
-            if validate_contract_registration(&contract.name, &effect.contract_name).is_err() {
-                return false;
-            }
+        if proof_metadata.1.registered_contracts.iter().any(|effect| {
+            validate_contract_registration(&contract.name, &effect.contract_name).is_err()
+        }) {
+            return false;
         }
 
         proof_metadata.1.initial_state == contract.state && proof_metadata.0 == contract.program_id
@@ -658,11 +649,6 @@ impl NodeState {
         unsettled_tx: &UnsettledBlobTransaction,
         hyle_output: &HyleOutput,
     ) -> Result<(), Error> {
-        // TODO: this is perfectly fine and can be settled, and should be removed.
-        if !hyle_output.success {
-            bail!("Contract execution is not a success");
-        }
-
         // Identity verification
         if unsettled_tx.identity != hyle_output.identity {
             bail!(
@@ -670,6 +656,19 @@ impl NodeState {
                 hyle_output.identity,
                 unsettled_tx.identity
             )
+        }
+
+        // Verify Tx hash matches
+        if hyle_output.tx_hash != unsettled_tx.hash {
+            bail!(
+                "Proof tx hash '{:?}' does not correspond to BlobTx hash '{:?}'.",
+                hyle_output.tx_hash,
+                unsettled_tx.hash
+            )
+        }
+
+        if let Some(_tx_ctx) = &hyle_output.tx_ctx {
+            // TODO: this is unimplemented as of yet.
         }
 
         // blob_hash verification
@@ -786,14 +785,16 @@ pub mod test {
     pub fn make_hyle_output(blob_tx: BlobTransaction, blob_index: BlobIndex) -> HyleOutput {
         HyleOutput {
             version: 1,
-            tx_hash: blob_tx.hash(),
-            index: blob_index,
             identity: blob_tx.identity.clone(),
+            index: blob_index,
             blobs: flatten_blobs(&blob_tx.blobs),
             initial_state: StateDigest(vec![0, 1, 2, 3]),
             next_state: StateDigest(vec![4, 5, 6]),
-            program_outputs: vec![],
             success: true,
+            tx_hash: blob_tx.hash(),
+            tx_ctx: Some(TxContext::default()),
+            registered_contracts: vec![],
+            program_outputs: vec![],
         }
     }
 
@@ -805,14 +806,16 @@ pub mod test {
     ) -> HyleOutput {
         HyleOutput {
             version: 1,
-            tx_hash: blob_tx.hash(),
-            index: blob_index,
             identity: blob_tx.identity.clone(),
+            index: blob_index,
             blobs: flatten_blobs(&blob_tx.blobs),
             initial_state: StateDigest(initial_state.to_vec()),
             next_state: StateDigest(next_state.to_vec()),
-            program_outputs: vec![],
             success: true,
+            tx_hash: blob_tx.hash(),
+            tx_ctx: Some(TxContext::default()),
+            program_outputs: vec![],
+            registered_contracts: vec![],
         }
     }
 

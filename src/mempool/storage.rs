@@ -890,6 +890,8 @@ mod tests {
             index: BlobIndex(0),
             blobs: vec![],
             success: true,
+            tx_ctx: None,
+            registered_contracts: vec![],
             program_outputs: vec![],
         }
     }

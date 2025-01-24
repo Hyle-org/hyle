@@ -2,8 +2,8 @@ use core::str;
 
 use hyllar::HyllarToken;
 use sdk::{
-    erc20::ERC20Action, BlobData, BlobIndex, ContractAction, ContractInput, ContractName,
-    Digestable, HyleOutput,
+    erc20::ERC20Action, BlobIndex, ContractAction, ContractInput, ContractName, Digestable,
+    HyleOutput, TxHash,
 };
 
 fn execute(inputs: ContractInput) -> HyleOutput {
@@ -25,8 +25,9 @@ fn execute_transfer_from() {
     let output = execute(ContractInput {
         initial_state: HyllarToken::new(1000, "faucet".to_string()).as_digest(),
         identity: "caller".into(),
-        tx_hash: "".into(),
-        private_blob: BlobData(vec![]),
+        tx_hash: TxHash::default(),
+        tx_ctx: None,
+        private_input: vec![],
         blobs: vec![ERC20Action::TransferFrom {
             sender: "faucet".into(),
             recipient: "amm".into(),

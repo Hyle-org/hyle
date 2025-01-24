@@ -1,5 +1,6 @@
 use crate::{
     alloc::string::{String, ToString},
+    alloc::vec,
     alloc::vec::Vec,
     Identity, StructuredBlobData,
 };
@@ -65,10 +66,12 @@ where
         initial_state: input.initial_state,
         next_state: new_state.as_digest(),
         identity: input.identity,
-        tx_hash: input.tx_hash,
         index: input.index,
         blobs: flatten_blobs(&input.blobs),
         success: res.is_ok(),
+        tx_hash: input.tx_hash,
+        tx_ctx: input.tx_ctx,
+        registered_contracts: vec![],
         program_outputs: res.unwrap_or_else(|e| e.to_string()).into_bytes(),
     }
 }

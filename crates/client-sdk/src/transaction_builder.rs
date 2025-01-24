@@ -7,8 +7,8 @@ use std::{
 
 use anyhow::{bail, Result};
 use sdk::{
-    Blob, BlobData, BlobIndex, BlobTransaction, ContractAction, ContractInput, ContractName,
-    Hashable, HyleOutput, Identity, ProofData, StateDigest,
+    Blob, BlobIndex, BlobTransaction, ContractAction, ContractInput, ContractName, Hashable,
+    HyleOutput, Identity, ProofData, StateDigest,
 };
 
 use crate::helpers::{ClientSdkExecutor, ClientSdkProver};
@@ -224,9 +224,9 @@ impl<S: StateUpdater> TxExecutor<S> {
                 .ok_or(anyhow::anyhow!("State not found"))?;
             let full_state = self.full_states.get(&runner.contract_name)?.clone();
 
-            let private_blob = runner.private_blob(full_state.clone())?;
+            let private_input = runner.private_input(full_state.clone())?;
 
-            runner.build_input(tx.blobs.clone(), private_blob, on_chain_state.clone());
+            runner.build_input(tx.blobs.clone(), private_input, on_chain_state.clone());
 
             tracing::info!("Checking transition for {}...", runner.contract_name);
             let out = self
@@ -265,13 +265,14 @@ impl<S: StateUpdater> TxExecutor<S> {
     }
 }
 
+#[allow(clippy::type_complexity)]
 pub struct ContractRunner {
     pub contract_name: ContractName,
     identity: Identity,
     index: BlobIndex,
     contract_input: OnceLock<ContractInput>,
     offchain_cb: Option<Box<dyn Fn(StateDigest) -> Result<StateDigest> + Send + Sync>>,
-    private_blob_cb: Option<Box<dyn Fn(StateDigest) -> Result<BlobData> + Send + Sync>>,
+    private_input_cb: Option<Box<dyn Fn(StateDigest) -> Result<Vec<u8>> + Send + Sync>>,
 }
 
 impl ContractRunner {
@@ -282,7 +283,7 @@ impl ContractRunner {
             index,
             contract_input: OnceLock::new(),
             offchain_cb: None,
-            private_blob_cb: None,
+            private_input_cb: None,
         })
     }
 
@@ -294,11 +295,11 @@ impl ContractRunner {
         self
     }
 
-    pub fn with_private_blob<F>(&mut self, f: F) -> &mut Self
+    pub fn with_private_input<F>(&mut self, f: F) -> &mut Self
     where
-        F: Fn(StateDigest) -> Result<BlobData> + Send + Sync + 'static,
+        F: Fn(StateDigest) -> Result<Vec<u8>> + Send + Sync + 'static,
     {
-        self.private_blob_cb = Some(Box::new(f));
+        self.private_input_cb = Some(Box::new(f));
         self
     }
 
@@ -309,17 +310,17 @@ impl ContractRunner {
             .map_or(Ok(None), |v| v.map(Some))
     }
 
-    fn private_blob(&self, state: StateDigest) -> Result<BlobData> {
-        self.private_blob_cb
+    fn private_input(&self, state: StateDigest) -> Result<Vec<u8>> {
+        self.private_input_cb
             .as_ref()
             .map(|cb| cb(state))
-            .map_or(Ok(BlobData::default()), |v| v)
+            .map_or(Ok(Default::default()), |v| v)
     }
 
     fn build_input(
         &mut self,
         blobs: Vec<Blob>,
-        private_blob: BlobData,
+        private_input: Vec<u8>,
         initial_state: StateDigest,
     ) {
         let tx_hash = BlobTransaction {
@@ -329,12 +330,13 @@ impl ContractRunner {
         .hash();
 
         self.contract_input.get_or_init(|| ContractInput {
-            identity: self.identity.clone(),
-            tx_hash,
-            blobs,
-            private_blob,
-            index: self.index,
             initial_state,
+            identity: self.identity.clone(),
+            index: self.index,
+            blobs,
+            tx_hash,
+            tx_ctx: None, // TODO
+            private_input,
         });
     }
 }

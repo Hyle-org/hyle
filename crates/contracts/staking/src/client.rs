@@ -3,8 +3,7 @@ use client_sdk::{
     transaction_builder::{ProvableBlobTx, StateUpdater, TxExecutorBuilder},
 };
 use sdk::{
-    api::APIStaking, BlobData, ContractName, Digestable, StakingAction, StateDigest,
-    ValidatorPublicKey,
+    api::APIStaking, ContractName, Digestable, StakingAction, StateDigest, ValidatorPublicKey,
 };
 
 use crate::{execute, state::Staking};
@@ -58,9 +57,7 @@ pub fn stake(
 
     builder
         .add_action(contract_name, StakingAction::Stake { amount }, None, None)?
-        .with_private_blob(|state: StateDigest| -> anyhow::Result<BlobData> {
-            Ok(BlobData(state.0))
-        })
+        .with_private_input(|state: StateDigest| -> anyhow::Result<Vec<u8>> { Ok(state.0) })
         .build_offchain_state(move |state: StateDigest| -> anyhow::Result<StateDigest> {
             let mut state: Staking = state.try_into()?;
             state
@@ -88,9 +85,7 @@ pub fn delegate(
             None,
             None,
         )?
-        .with_private_blob(|state: StateDigest| -> anyhow::Result<BlobData> {
-            Ok(BlobData(state.0))
-        })
+        .with_private_input(|state: StateDigest| -> anyhow::Result<Vec<u8>> { Ok(state.0) })
         .build_offchain_state(move |state: StateDigest| -> anyhow::Result<StateDigest> {
             let mut state: Staking = state.try_into()?;
             state

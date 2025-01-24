@@ -5,6 +5,17 @@ use std::{
 
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, PartialEq, Eq, Default)]
+pub struct ConsensusProposalHash(pub String);
+pub type BlockHash = ConsensusProposalHash;
+
+impl std::hash::Hash for ConsensusProposalHash {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        state.write(self.0.as_bytes());
+    }
+}
+
 pub trait Hashable<T> {
     fn hash(&self) -> T;
 }
@@ -21,10 +32,11 @@ pub trait Digestable {
 pub struct ContractInput {
     pub initial_state: StateDigest,
     pub identity: Identity,
-    pub tx_hash: TxHash,
-    pub private_blob: BlobData,
-    pub blobs: Vec<Blob>,
     pub index: BlobIndex,
+    pub blobs: Vec<Blob>,
+    pub tx_hash: TxHash,
+    pub tx_ctx: Option<TxContext>,
+    pub private_input: Vec<u8>,
 }
 
 #[derive(Default, Serialize, Deserialize, Clone, PartialEq, Eq, Hash, Encode, Decode)]
@@ -203,11 +215,25 @@ pub struct HyleOutput {
     pub initial_state: StateDigest,
     pub next_state: StateDigest,
     pub identity: Identity,
-    pub tx_hash: TxHash,
     pub index: BlobIndex,
     pub blobs: Vec<u8>,
+    pub tx_hash: TxHash, // Technically redundant with identity + blobs hash
     pub success: bool,
+
+    // Optional - if empty, these won't be checked, but also can't be used inside the program.
+    pub tx_ctx: Option<TxContext>,
+
+    pub registered_contracts: Vec<RegisterContractEffect>,
+
     pub program_outputs: Vec<u8>,
+}
+
+#[derive(Default, Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash, Encode, Decode)]
+pub struct TxContext {
+    pub block_hash: ConsensusProposalHash,
+    pub block_height: BlockHeight,
+    pub timestamp: u128,
+    pub chain_id: u128,
 }
 
 impl Identity {
@@ -376,12 +402,27 @@ impl ContractAction for RegisterContractAction {
 }
 
 /// Used by the Hylé node to recognize contract registration.
-/// Simply output this struct in your HyleOutput program_outputs.
+/// Simply output this struct in your HyleOutput registered_contracts.
 /// See uuid-tld for examples.
-#[derive(Debug, Serialize, Deserialize, Default, Clone, PartialEq, Eq, Encode, Decode)]
+#[derive(Default, Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash, Encode, Decode)]
 pub struct RegisterContractEffect {
     pub verifier: Verifier,
     pub program_id: ProgramId,
     pub state_digest: StateDigest,
     pub contract_name: ContractName,
+}
+
+#[cfg(feature = "full")]
+impl Hashable<TxHash> for RegisterContractEffect {
+    fn hash(&self) -> TxHash {
+        use sha3::{Digest, Sha3_256};
+
+        let mut hasher = Sha3_256::new();
+        hasher.update(self.verifier.0.clone());
+        hasher.update(self.program_id.0.clone());
+        hasher.update(self.state_digest.0.clone());
+        hasher.update(self.contract_name.0.clone());
+        let hash_bytes = hasher.finalize();
+        TxHash(hex::encode(hash_bytes))
+    }
 }
