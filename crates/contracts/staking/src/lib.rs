@@ -12,12 +12,6 @@ pub mod client;
 
 pub mod state;
 
-#[cfg(feature = "metadata")]
-pub mod metadata {
-    pub const STAKING_ELF: &[u8] = include_bytes!("../staking.img");
-    pub const PROGRAM_ID: [u8; 32] = sdk::str_to_u8(include_str!("../staking.txt"));
-}
-
 pub struct StakingContract {
     exec_ctx: ExecutionContext,
     state: state::Staking,

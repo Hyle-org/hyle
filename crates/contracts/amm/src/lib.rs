@@ -10,12 +10,6 @@ use sdk::{Blob, BlobIndex, ContractAction, ContractInput, Digestable, RunResult}
 use sdk::{BlobData, ContractName, StructuredBlobData};
 use serde::{Deserialize, Serialize};
 
-#[cfg(feature = "metadata")]
-pub mod metadata {
-    pub const AMM_ELF: &[u8] = include_bytes!("../amm.img");
-    pub const PROGRAM_ID: [u8; 32] = sdk::str_to_u8(include_str!("../amm.txt"));
-}
-
 #[cfg(feature = "client")]
 pub mod client;
 

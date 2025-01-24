@@ -13,12 +13,6 @@ use serde_with::serde_as;
 
 extern crate alloc;
 
-#[cfg(feature = "metadata")]
-pub mod metadata {
-    pub const HYLLAR_ELF: &[u8] = include_bytes!("../hyllar.img");
-    pub const PROGRAM_ID: [u8; 32] = sdk::str_to_u8(include_str!("../hyllar.txt"));
-}
-
 #[cfg(feature = "client")]
 pub mod client;
 
