@@ -17,7 +17,7 @@ use crate::{
     consensus::{ConsensusCommand, ConsensusEvent},
     genesis::GenesisEvent,
     indexer::da_listener::RawDAListener,
-    mempool::MempoolEvent,
+    mempool::{storage::LaneEntry, MempoolEvent},
     model::*,
     module_handle_messages,
     p2p::network::{OutboundMessage, PeerEvent},
@@ -273,9 +273,36 @@ impl DataAvailability {
                     }
                 }
             }
+            MempoolEvent::FlushedCars(flushed_cars) => {
+                self.handle_flushed_cars(flushed_cars).await;
+            }
         }
 
         Ok(())
+    }
+
+    async fn handle_flushed_cars(
+        &mut self,
+        flushed_cars: HashMap<ValidatorPublicKey, Vec<LaneEntry>>,
+    ) {
+        for (validator_key, lane_entries) in flushed_cars {
+            for lane_entry in lane_entries {
+                if let Err(e) = self
+                    .storage
+                    .put_car(validator_key.clone(), lane_entry.clone())
+                {
+                    error!("storing car: {}", e);
+                    continue;
+                }
+                debug!(
+                    "new car {} {} from validator {}",
+                    lane_entry.data_proposal.id,
+                    lane_entry.data_proposal.hash(),
+                    validator_key
+                );
+            }
+        }
+        _ = self.storage.persist().log_error("Persisting DataProposals");
     }
 
     async fn handle_signed_block(&mut self, block: SignedBlock) {

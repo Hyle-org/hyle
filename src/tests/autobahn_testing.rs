@@ -644,6 +644,111 @@ async fn mempool_broadcast_multiple_data_proposals() {
 }
 
 #[test_log::test(tokio::test)]
+async fn mempool_flushing_data_proposals() {
+    let (mut node1, mut node2, mut node3, mut node4) = build_nodes!(4).await;
+
+    // First data proposal
+
+    let register_tx = make_register_contract_tx(ContractName::new("test1"));
+    let register_tx_2 = make_register_contract_tx(ContractName::new("test2"));
+
+    node1.mempool_ctx.submit_tx(&register_tx);
+    node1.mempool_ctx.submit_tx(&register_tx_2);
+
+    node1
+        .mempool_ctx
+        .make_data_proposal_with_pending_txs()
+        .expect("Should create data proposal");
+
+    broadcast! {
+        description: "Disseminate Tx",
+        from: node1.mempool_ctx, to: [node2.mempool_ctx, node3.mempool_ctx, node4.mempool_ctx],
+        message_matches: MempoolNetMessage::DataProposal(_)
+    };
+
+    join_all(
+        [
+            &mut node2.mempool_ctx,
+            &mut node3.mempool_ctx,
+            &mut node4.mempool_ctx,
+        ]
+        .iter_mut()
+        .map(|ctx| ctx.handle_processed_data_proposals()),
+    )
+    .await;
+
+    send! {
+        description: "Disseminated Tx Vote",
+        from: [node2.mempool_ctx, node3.mempool_ctx, node4.mempool_ctx], to: node1.mempool_ctx,
+        message_matches: MempoolNetMessage::DataVote(_)
+    };
+
+    node1.mempool_ctx.assert_broadcast("poda update");
+    node1.mempool_ctx.assert_broadcast("poda update");
+
+    // Second data proposal
+
+    let register_tx = make_register_contract_tx(ContractName::new("test3"));
+    let register_tx_2 = make_register_contract_tx(ContractName::new("test4"));
+
+    node1.mempool_ctx.submit_tx(&register_tx);
+    node1.mempool_ctx.submit_tx(&register_tx_2);
+
+    node1
+        .mempool_ctx
+        .make_data_proposal_with_pending_txs()
+        .expect("Should create data proposal");
+
+    broadcast! {
+        description: "Disseminate Tx",
+        from: node1.mempool_ctx, to: [node2.mempool_ctx, node3.mempool_ctx, node4.mempool_ctx],
+        message_matches: MempoolNetMessage::DataProposal(_)
+    };
+
+    join_all(
+        [
+            &mut node2.mempool_ctx,
+            &mut node3.mempool_ctx,
+            &mut node4.mempool_ctx,
+        ]
+        .iter_mut()
+        .map(|ctx| ctx.handle_processed_data_proposals()),
+    )
+    .await;
+
+    send! {
+        description: "Disseminated Tx Vote",
+        from: [node2.mempool_ctx, node3.mempool_ctx, node4.mempool_ctx], to: node1.mempool_ctx,
+        message_matches: MempoolNetMessage::DataVote(_)
+    };
+
+    // Faking a cut to trigger the flushing behavior of the mempool
+    let cut = vec![(
+        node1.consensus_ctx.pubkey(),
+        node1.mempool_ctx.current_hash().unwrap(),
+        crypto::AggregateSignature::default(),
+    )];
+
+    join_all(
+        [
+            &mut node1.mempool_ctx,
+            &mut node2.mempool_ctx,
+            &mut node3.mempool_ctx,
+            &mut node4.mempool_ctx,
+        ]
+        .iter_mut()
+        .map(|ctx| ctx.handle_commit_consensus_proposal_event(cut.clone())),
+    )
+    .await;
+
+    // Assert pour chaque noeud que les data proposals committed ont été flushées
+    node1.mempool_ctx.assert_flushed_lanes();
+    node2.mempool_ctx.assert_flushed_lanes();
+    node3.mempool_ctx.assert_flushed_lanes();
+    node4.mempool_ctx.assert_flushed_lanes();
+}
+
+#[test_log::test(tokio::test)]
 async fn mempool_fail_to_vote_on_fork() {
     let (mut node1, mut node2, mut node3, mut node4) = build_nodes!(4).await;
 

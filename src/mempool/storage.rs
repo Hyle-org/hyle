@@ -613,6 +613,33 @@ impl Storage {
             }
         }
     }
+
+    pub fn flush_committed_data_proposals(
+        &mut self,
+    ) -> HashMap<ValidatorPublicKey, Vec<LaneEntry>> {
+        let mut committed_data_proposals = HashMap::new();
+        for (validator, lane) in self.lanes.iter_mut() {
+            if let Some(last_cut_dp_hash) = lane.last_cut.as_ref().map(|(_, dp_hash)| dp_hash) {
+                let dp_hashes_to_remove: Vec<DataProposalHash> = lane
+                    .data_proposals
+                    .keys()
+                    .take_while(|dp_hash| *dp_hash != last_cut_dp_hash)
+                    .cloned()
+                    .collect();
+
+                for dp_hash in dp_hashes_to_remove {
+                    if let Some(le) = lane.data_proposals.shift_remove(&dp_hash) {
+                        committed_data_proposals
+                            .entry(validator.clone())
+                            .or_insert_with(Vec::new)
+                            .push(le);
+                    }
+                }
+            }
+        }
+
+        committed_data_proposals
+    }
 }
 
 /// Remove proofs from all transactions in the DataProposal

@@ -144,6 +144,7 @@ impl BusMessage for MempoolNetMessage {}
 pub enum MempoolEvent {
     BuiltSignedBlock(SignedBlock),
     StartedBuildingBlocks(BlockHeight),
+    FlushedCars(HashMap<ValidatorPublicKey, Vec<LaneEntry>>),
 }
 impl BusMessage for MempoolEvent {}
 
@@ -451,6 +452,17 @@ impl Mempool {
         Ok(())
     }
 
+    fn try_to_flush_and_send_commited_data_proposals(&mut self) -> Result<()> {
+        debug!("🚗 Flushing committed data proposals");
+        let commited_data_proposals = self.storage.flush_committed_data_proposals();
+        if !commited_data_proposals.is_empty() {
+            self.bus
+                .send(MempoolEvent::FlushedCars(commited_data_proposals))?;
+        }
+
+        Ok(())
+    }
+
     /// Send an event if none was broadcast before
     fn set_ccp_build_start_height(&mut self, slot: Slot) {
         if self.buc_build_start_height.is_none()
@@ -532,9 +544,12 @@ impl Mempool {
 
                 // Fetch in advance data proposals
                 self.fetch_unknown_data_proposals(&cut)?;
+
                 // Update all lanes with the new cut
                 self.storage.update_lanes_with_commited_cut(&cut);
 
+                // Remove committed DataProposal from lanes and send them to DA for on-disk storage
+                self.try_to_flush_and_send_commited_data_proposals()?;
                 Ok(())
             }
         }
@@ -1181,6 +1196,21 @@ pub mod test {
                 .expect("fail to handle new transaction");
         }
 
+        pub async fn handle_commit_consensus_proposal_event(&mut self, cut: Cut) {
+            self.mempool
+                .handle_consensus_event(ConsensusEvent::CommitConsensusProposal(
+                    CommittedConsensusProposal {
+                        staking: self.mempool.staking.clone(),
+                        consensus_proposal: model::ConsensusProposal {
+                            cut,
+                            ..ConsensusProposal::default()
+                        },
+                        certificate: AggregateSignature::default(),
+                    },
+                ))
+                .expect("fail to handle consensus event");
+        }
+
         pub async fn handle_processed_data_proposals(&mut self) {
             let event = self
                 .mempool_internal_event_receiver
@@ -1305,6 +1335,28 @@ pub mod test {
             self.mempool
                 .handle_net_message(msg.clone())
                 .expect("should handle net msg");
+        }
+
+        pub fn assert_flushed_lanes(&mut self) {
+            for (validator, lane) in &self.mempool.storage.lanes {
+                if validator == self.validator_pubkey() && lane.data_proposals.is_empty() {
+                    continue;
+                }
+                assert_eq!(
+                    lane.data_proposals.len(),
+                    1,
+                    "Lane for validator {} does not have exactly one data proposal: {:#?}",
+                    validator,
+                    lane.data_proposals
+                );
+            }
+
+            assert_chanmsg_matches!(
+                self.mempool_event_receiver,
+                MempoolEvent::FlushedCars(cars) => {
+                    assert!(!cars.is_empty());
+                }
+            );
         }
 
         pub fn current_hash(&self) -> Option<DataProposalHash> {
