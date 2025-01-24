@@ -708,6 +708,14 @@ impl Lane {
         crypto: &BlstCrypto,
         data_proposal: DataProposal,
     ) -> LaneBytesSize {
+        if let Some(le) = self.data_proposals.get(&data_proposal.hash()) {
+            warn!(
+                "DataProposal {} already exists in lane, size: {}",
+                data_proposal.hash(),
+                le.size
+            );
+            return le.size;
+        }
         let data_proposal_hash = data_proposal.hash();
         let dp_size = data_proposal.estimate_size();
         let lane_size = self.get_lane_size();
@@ -717,15 +725,20 @@ impl Lane {
             Err(_) => vec![],
         };
         self.data_proposals.insert(
-            data_proposal_hash,
+            data_proposal_hash.clone(),
             LaneEntry {
                 data_proposal,
                 size: lane_size + dp_size,
                 signatures,
             },
         );
+        tracing::info!(
+            "Added new DataProposal {} to lane, size: {}",
+            data_proposal_hash,
+            lane_size + dp_size
+        );
 
-        lane_size
+        lane_size + dp_size
     }
 
     pub fn add_proposal(&mut self, hash: DataProposalHash, lane_entry: LaneEntry) {
@@ -794,13 +807,14 @@ impl Lane {
             if lane_entry.data_proposal.parent_data_proposal_hash != self.current_hash().cloned() {
                 bail!("Incorrect parent hash while adding missing LaneEntry");
             }
-            if lane_entry.size
-                != self
-                    .current()
-                    .map(|(_, entry)| entry.size)
-                    .unwrap_or_default()
-            {
-                bail!("Incorrect size while adding missing LaneEntry");
+            let current_size = self.get_lane_size();
+            let expected_size = current_size + lane_entry.data_proposal.estimate_size();
+            if lane_entry.size != expected_size {
+                bail!(
+                    "Incorrect size while adding missing LaneEntry. Expected: {}, Got: {}",
+                    expected_size,
+                    lane_entry.size
+                );
             }
             self.add_proposal(lane_entry.data_proposal.hash(), lane_entry);
         }
@@ -969,7 +983,7 @@ mod tests {
         match verdict {
             DataProposalVerdict::Vote => {
                 let size = store.store_data_proposal(crypto, pubkey, data_proposal);
-                (DataProposalVerdict::Vote, Some(size))
+                (verdict, Some(size))
             }
             verdict => (verdict, size),
         }
@@ -1936,5 +1950,47 @@ mod tests {
 
         let txs1 = store1.collect_data_proposals_from_lanes(cut);
         assert_eq!(txs1, vec![make_blob_tx("tx1")]);
+    }
+
+    #[test_log::test]
+    fn test_add_new_proposal() {
+        let crypto = crypto::BlstCrypto::new("1".to_owned()).unwrap();
+        let mut lane = Lane::default();
+
+        let tx = make_verified_proof_tx("testContract".into());
+
+        let data_proposal1 = DataProposal {
+            id: 0,
+            parent_data_proposal_hash: None,
+            txs: vec![tx],
+        };
+
+        let size = lane.add_new_proposal(&crypto, data_proposal1.clone());
+        assert_eq!(size, lane.get_lane_size());
+        assert_eq!(size.0, data_proposal1.estimate_size() as u64);
+
+        // Test adding the same proposal again
+        let size_again = lane.add_new_proposal(&crypto, data_proposal1.clone());
+        assert_eq!(size, size_again);
+
+        // Adding a new DP
+        let tx2 = make_register_contract_tx("testContract2".into());
+        let data_proposal2 = DataProposal {
+            id: 1,
+            parent_data_proposal_hash: Some(data_proposal1.hash()),
+            txs: vec![tx2],
+        };
+        let size = lane.add_new_proposal(&crypto, data_proposal2.clone());
+        assert_eq!(size, lane.get_lane_size());
+        assert_eq!(
+            size.0,
+            (data_proposal1.estimate_size() + data_proposal2.estimate_size()) as u64
+        );
+
+        // Test adding the same proposal again
+        let size_again = lane.add_new_proposal(&crypto, data_proposal2.clone());
+        assert_eq!(size, size_again);
+        let size = lane.add_new_proposal(&crypto, data_proposal1.clone());
+        assert_eq!(size.0, data_proposal1.estimate_size() as u64);
     }
 }

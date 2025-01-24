@@ -735,10 +735,11 @@ impl Mempool {
         mut data_proposal: DataProposal,
     ) -> Result<()> {
         debug!(
-            "Received DataProposal {:?} from {} ({} txs)",
+            "Received DataProposal {:?} from {} ({} txs, {})",
             data_proposal.hash(),
             validator,
-            data_proposal.txs.len()
+            data_proposal.txs.len(),
+            data_proposal.estimate_size()
         );
         let data_proposal_hash = data_proposal.hash();
         let (verdict, lane_size) = self.storage.on_data_proposal(validator, &data_proposal);
@@ -751,12 +752,12 @@ impl Mempool {
             }
             DataProposalVerdict::Vote => {
                 // Normal case, we receive a proposal we already have the parent in store
-                debug!("Send vote for DataProposal");
+                trace!("Send vote for DataProposal");
                 #[allow(clippy::unwrap_used, reason = "we always have a size for Vote")]
                 self.send_vote(validator, data_proposal_hash, lane_size.unwrap())?;
             }
             DataProposalVerdict::Process => {
-                debug!("Further processing for DataProposal");
+                trace!("Further processing for DataProposal");
                 let kc = self.known_contracts.clone();
                 let sender: &tokio::sync::broadcast::Sender<InternalMempoolEvent> = self.bus.get();
                 let sender = sender.clone();
@@ -821,7 +822,7 @@ impl Mempool {
                 unreachable!("DataProposal has already been processed");
             }
             DataProposalVerdict::Vote => {
-                debug!("Send vote for DataProposal");
+                trace!("Send vote for DataProposal");
                 let crypto = self.crypto.clone();
                 let size = self
                     .storage
@@ -966,7 +967,7 @@ impl Mempool {
     ) -> Result<()> {
         self.metrics
             .add_proposal_vote(self.crypto.validator_pubkey(), validator);
-        info!("🗳️ Sending vote for DataProposal {data_proposal_hash} to {validator}");
+        info!("🗳️ Sending vote for DataProposal {data_proposal_hash} to {validator} (lane size: {size})");
         self.send_net_message(
             validator.clone(),
             MempoolNetMessage::DataVote(data_proposal_hash, size),

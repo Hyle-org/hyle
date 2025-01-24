@@ -12,7 +12,7 @@ use crate::{
 use anyhow::{anyhow, bail, Result};
 use bincode::{Decode, Encode};
 use staking::state::MIN_STAKE;
-use tracing::{debug, error, trace};
+use tracing::{debug, error, info, trace};
 
 use super::Consensus;
 
@@ -107,6 +107,10 @@ impl LeaderRole for Consensus {
                 self.bft_round_state.last_cut.clone()
             }
         };
+
+        for tx in cut.iter() {
+            info!("📦 Lane {} transited {} in this cut", tx.0, tx.2);
+        }
 
         self.bft_round_state.leader.step = Step::PrepareVote;
 
