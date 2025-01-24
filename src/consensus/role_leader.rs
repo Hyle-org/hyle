@@ -109,7 +109,7 @@ impl LeaderRole for Consensus {
         };
 
         for tx in cut.iter() {
-            info!("📦 Lane {} transited {} in this cut", tx.0, tx.2);
+            debug!("📦 Lane {} transited {}", tx.0, tx.2);
         }
 
         self.bft_round_state.leader.step = Step::PrepareVote;
