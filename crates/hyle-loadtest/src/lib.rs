@@ -1,16 +1,11 @@
-use std::pin::Pin;
-
 use anyhow::Result;
 use client_sdk::contract_states;
 use client_sdk::helpers::test::TestProver;
-use client_sdk::helpers::ClientSdkProver;
 use client_sdk::tcp_client::NodeTcpClient;
 use client_sdk::transaction_builder::{ProvableBlobTx, TxExecutorBuilder};
 use hydentity::Hydentity;
 use hyle_contract_sdk::erc20::ERC20;
-use hyle_contract_sdk::{
-    Blob, BlobData, ContractAction, ContractInput, HyleOutput, ProofData, RegisterContractAction,
-};
+use hyle_contract_sdk::{Blob, BlobData, ContractAction, RegisterContractAction};
 use hyle_contract_sdk::{BlobTransaction, ProofTransaction};
 use hyle_contract_sdk::{ContractName, Identity};
 use hyle_contract_sdk::{Digestable, StateDigest, TcpServerNetMessage};
