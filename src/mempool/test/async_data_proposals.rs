@@ -58,7 +58,7 @@ async fn impl_test_mempool_isnt_blocked_by_proof_verification() -> Result<()> {
                 id: 0,
                 parent_data_proposal_hash: None,
                 txs: vec![BlobTransaction {
-                    identity: "test".into(),
+                    identity: "test.hyle".into(),
                     blobs: vec![RegisterContractAction {
                         verifier: "test-slow".into(),
                         program_id: ProgramId(vec![]),
