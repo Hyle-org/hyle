@@ -50,10 +50,8 @@ impl GuestEnv for SP1Env {
     }
 }
 
-pub fn fail(env: impl GuestEnv, input: ContractInput, message: &str) {
-    env.log(message);
-
-    env.commit(&HyleOutput {
+pub fn fail(input: ContractInput, message: &str) -> HyleOutput {
+    HyleOutput {
         version: 1,
         initial_state: input.initial_state.clone(),
         next_state: input.initial_state,
@@ -63,7 +61,7 @@ pub fn fail(env: impl GuestEnv, input: ContractInput, message: &str) {
         blobs: flatten_blobs(&input.blobs),
         success: false,
         program_outputs: message.to_string().into_bytes(),
-    });
+    }
 }
 
 pub fn panic(env: impl GuestEnv, message: &str) {
@@ -72,7 +70,7 @@ pub fn panic(env: impl GuestEnv, message: &str) {
     panic!("{}", message);
 }
 
-pub fn init_raw<Parameters>(input: ContractInput) -> (ContractInput, Parameters)
+pub fn init_raw<Parameters>(input: ContractInput) -> (ContractInput, Option<Parameters>)
 where
     Parameters: Decode,
 {
@@ -88,6 +86,8 @@ where
     Parameters: Encode + Decode,
 {
     let parsed_blob = parse_structured_blob::<Parameters>(&input.blobs, &input.index);
+
+    let parsed_blob = parsed_blob.ok_or("Failed to parse input blob".to_string())?;
 
     let caller = check_caller_callees::<Parameters>(&input, &parsed_blob)?;
 

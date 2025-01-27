@@ -127,6 +127,13 @@ use sdk::identity_provider::IdentityAction;
 pub fn execute(input: ContractInput) -> HyleOutput {
     let (input, parsed_blob) = sdk::guest::init_raw::<IdentityAction>(input);
 
+    let parsed_blob = match parsed_blob {
+        Some(v) => v,
+        None => {
+            return sdk::guest::fail(input, "Failed to parse input blob");
+        }
+    };
+
     sdk::info!("Executing action: {:?}", parsed_blob);
 
     let mut state: Hydentity = input

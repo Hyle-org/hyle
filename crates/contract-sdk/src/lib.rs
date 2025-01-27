@@ -226,7 +226,7 @@ mod tests {
     #[test]
     fn test_blobindex_encoding() {
         let blob_index = BlobIndex(42);
-        let encoded = bincode::encode_to_vec(&blob_index, bincode::config::standard())
+        let encoded = bincode::encode_to_vec(blob_index, bincode::config::standard())
             .expect("Failed to encode BlobIndex");
         let decoded: BlobIndex = bincode::decode_from_slice(&encoded, bincode::config::standard())
             .expect("Failed to decode BlobIndex")

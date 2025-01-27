@@ -1,9 +1,10 @@
 use anyhow::Result;
 use sdk::{
     caller::{CalleeBlobs, CallerCallee, ExecutionContext, MutCalleeBlobs},
+    erc20::ERC20Action,
     info,
     utils::as_hyle_output,
-    ContractInput, HyleOutput, Identity, StakingAction, StructuredBlobData,
+    Blob, BlobIndex, ContractInput, HyleOutput, Identity, StakingAction, StructuredBlobData,
 };
 use state::{OnChainState, Staking};
 
@@ -34,9 +35,52 @@ impl StakingContract {
         StakingContract { exec_ctx, state }
     }
 
-    pub fn execute_action(&mut self, action: StakingAction) -> Result<String, String> {
+    pub fn execute_action(
+        &mut self,
+        action: StakingAction,
+        blobs: &[Blob],
+        index: BlobIndex,
+    ) -> Result<String, String> {
         match action {
-            StakingAction::Stake { amount } => self.state.stake(self.caller().clone(), amount),
+            StakingAction::Stake { amount } => {
+                let transfer_action =
+                    sdk::utils::parse_structured_blob::<ERC20Action>(blobs, &(index + 1))
+                        .ok_or("No transfer blob found".to_string())?;
+                match transfer_action.data.parameters {
+                    ERC20Action::Transfer {
+                        recipient,
+                        amount: transfer_amount,
+                    } => {
+                        if recipient != "staking" {
+                            return Err(format!(
+                                "Transfer recipient should be 'staking' but was {}",
+                                &recipient
+                            ));
+                        }
+
+                        let transfer_contract = transfer_action.contract_name;
+                        if transfer_contract.0 != "hyllar" {
+                            return Err(format!(
+                                "Only hyllar token are accepted to stake. Got {transfer_contract}."
+                            ));
+                        }
+
+                        if amount != transfer_amount {
+                            return Err(format!(
+                                "Transfer amount {transfer_amount} mismatch Stake amount {amount}"
+                            ));
+                        }
+                    }
+                    els => {
+                        return Err(format!(
+                            "Wrong ERC20Action, should be a transfer {:?} to 'staking' but was {:?}",
+                            amount, els
+                        ));
+                    }
+                }
+
+                self.state.stake(self.caller().clone(), amount)
+            }
             StakingAction::Delegate { validator } => {
                 self.state.delegate_to(self.caller().clone(), validator)
             }
@@ -67,7 +111,7 @@ pub fn execute(contract_input: ContractInput) -> HyleOutput {
     for blob in input.blobs.clone().into_iter() {
         if let Ok(structured_blob) = blob.data.clone().try_into() {
             let structured_blob: StructuredBlobData<Vec<u8>> = structured_blob; // for type inference
-            if structured_blob.caller == Some(input.index.clone()) {
+            if structured_blob.caller == Some(input.index) {
                 callees_blobs.push(blob);
             }
         };
@@ -98,7 +142,7 @@ pub fn execute(contract_input: ContractInput) -> HyleOutput {
 
     let action = parsed_blob.data.parameters;
 
-    let res = contract.execute_action(action);
+    let res = contract.execute_action(action, &input.blobs, input.index);
 
     assert!(contract.callee_blobs().is_empty());
 

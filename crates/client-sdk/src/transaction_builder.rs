@@ -333,7 +333,7 @@ impl ContractRunner {
             tx_hash,
             blobs,
             private_blob,
-            index: self.index.clone(),
+            index: self.index,
             initial_state,
         });
     }
