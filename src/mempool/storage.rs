@@ -33,7 +33,7 @@ pub enum DataProposalVerdict {
 #[derive(Debug, Clone, Encode, Decode, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LaneEntry {
     pub data_proposal: DataProposal,
-    pub size: LaneBytesSize,
+    pub cumul_size: LaneBytesSize,
     pub signatures: Vec<SignedByValidator<MempoolNetMessage>>,
 }
 
@@ -89,7 +89,7 @@ impl Storage {
                 data_proposal_hash,
                 LaneEntry {
                     data_proposal: _,
-                    size,
+                    cumul_size: size,
                     signatures,
                 },
             ) in lane.iter_reverse()
@@ -172,9 +172,9 @@ impl Storage {
         };
         match lane.get_proposal_mut(data_proposal_hash) {
             Some(lane_entry) => {
-                if lane_entry.size != new_lane_size {
-                    debug!("Received size {:?} does no match the actual size of the DataProposal ({:?})", new_lane_size, lane_entry.size);
-                    bail!("Received size {new_lane_size} does no match the actual size of the DataProposal ({})", lane_entry.size);
+                if lane_entry.cumul_size != new_lane_size {
+                    debug!("Received size {:?} does no match the actual size of the DataProposal ({:?})", new_lane_size, lane_entry.cumul_size);
+                    bail!("Received size {new_lane_size} does no match the actual size of the DataProposal ({})", lane_entry.cumul_size);
                 }
                 // Adding the vote to the DataProposal
                 lane_entry.signatures.push(msg.clone());
@@ -538,7 +538,7 @@ impl Storage {
         // Get last DataProposal of own lane
         let data_proposal = if let Some(LaneEntry {
             data_proposal: parent_data_proposal,
-            size: _,
+            cumul_size: _,
             signatures: _,
         }) = self
             .lanes
@@ -652,7 +652,7 @@ impl Display for Lane {
             _,
             LaneEntry {
                 data_proposal,
-                size,
+                cumul_size: size,
                 signatures: _,
             },
         ) in self.data_proposals.iter()
@@ -714,7 +714,7 @@ impl Lane {
         self.data_proposals
             .iter()
             .last()
-            .map(|(_, entry)| entry.size)
+            .map(|(_, entry)| entry.cumul_size)
             .unwrap_or_default()
     }
 
@@ -727,9 +727,9 @@ impl Lane {
             warn!(
                 "DataProposal {} already exists in lane, size: {}",
                 data_proposal.hash(),
-                le.size
+                le.cumul_size
             );
-            return le.size;
+            return le.cumul_size;
         }
         let data_proposal_hash = data_proposal.hash();
         let dp_size = data_proposal.estimate_size();
@@ -743,7 +743,7 @@ impl Lane {
             data_proposal_hash.clone(),
             LaneEntry {
                 data_proposal,
-                size: lane_size + dp_size,
+                cumul_size: lane_size + dp_size,
                 signatures,
             },
         );
@@ -824,11 +824,11 @@ impl Lane {
             }
             let current_size = self.get_lane_size();
             let expected_size = current_size + lane_entry.data_proposal.estimate_size();
-            if lane_entry.size != expected_size {
+            if lane_entry.cumul_size != expected_size {
                 bail!(
                     "Incorrect size while adding missing LaneEntry. Expected: {}, Got: {}",
                     expected_size,
-                    lane_entry.size
+                    lane_entry.cumul_size
                 );
             }
             self.add_proposal(lane_entry.data_proposal.hash(), lane_entry);
@@ -1041,13 +1041,13 @@ mod tests {
 
         let lane_entry1 = LaneEntry {
             data_proposal: data_proposal1,
-            size: l_dp1_size,
+            cumul_size: l_dp1_size,
             signatures: vec![],
         };
 
         let lane_entry2 = LaneEntry {
             data_proposal: data_proposal2,
-            size: l_dp2_size,
+            cumul_size: l_dp2_size,
             signatures: vec![],
         };
 
@@ -1078,7 +1078,7 @@ mod tests {
 
         let lane_entry3 = LaneEntry {
             data_proposal: data_proposal3,
-            size: l_dp3_size,
+            cumul_size: l_dp3_size,
             signatures: vec![],
         };
 
@@ -1162,19 +1162,19 @@ mod tests {
 
         let lane_entry1 = LaneEntry {
             data_proposal: data_proposal1,
-            size: l_dp1_size,
+            cumul_size: l_dp1_size,
             signatures: vec![],
         };
 
         let lane_entry2 = LaneEntry {
             data_proposal: data_proposal2,
-            size: l_dp2_size,
+            cumul_size: l_dp2_size,
             signatures: vec![],
         };
 
         let lane_entry3 = LaneEntry {
             data_proposal: data_proposal3,
-            size: l_dp3_size,
+            cumul_size: l_dp3_size,
             signatures: vec![],
         };
 
@@ -1508,7 +1508,7 @@ mod tests {
             .unwrap()
             .data_proposal
             .clone();
-        let size = store3.get_lane_latest_entry(pubkey3).unwrap().size;
+        let size = store3.get_lane_latest_entry(pubkey3).unwrap().cumul_size;
         let data_proposal_bis = data_proposal.clone();
         let data_proposal_hash = data_proposal.hash();
         assert_eq!(store3.lanes.get(pubkey3).unwrap().data_proposals.len(), 1);
@@ -1820,7 +1820,7 @@ mod tests {
             .unwrap()
             .data_proposal
             .clone();
-        let size = store1.get_lane_latest_entry(pubkey1).unwrap().size;
+        let size = store1.get_lane_latest_entry(pubkey1).unwrap().cumul_size;
 
         assert_eq!(
             handle_data_proposal(
@@ -1841,7 +1841,7 @@ mod tests {
             .unwrap()
             .data_proposal
             .clone();
-        let size = store2.get_lane_latest_entry(pubkey2).unwrap().size;
+        let size = store2.get_lane_latest_entry(pubkey2).unwrap().cumul_size;
 
         assert_eq!(
             handle_data_proposal(
@@ -1870,7 +1870,7 @@ mod tests {
             .unwrap()
             .data_proposal
             .clone();
-        let size = store1.get_lane_latest_entry(pubkey1).unwrap().size;
+        let size = store1.get_lane_latest_entry(pubkey1).unwrap().cumul_size;
 
         assert_eq!(
             handle_data_proposal(
@@ -1931,7 +1931,7 @@ mod tests {
             .data_proposal
             .clone();
         let data_proposal_hash = data_proposal.hash();
-        let size = store1.get_lane_latest_entry(pubkey1).unwrap().size;
+        let size = store1.get_lane_latest_entry(pubkey1).unwrap().cumul_size;
 
         let msg2 = crypto2
             .sign(MempoolNetMessage::DataVote(

@@ -616,7 +616,7 @@ impl Mempool {
         // Discard any lane entry that wasn't signed by the validator.
         missing_lane_entries.retain(|lane_entry| {
             let expected_message =
-                MempoolNetMessage::DataVote(lane_entry.data_proposal.hash(), lane_entry.size);
+                MempoolNetMessage::DataVote(lane_entry.data_proposal.hash(), lane_entry.cumul_size);
             let keep = lane_entry
                 .signatures
                 .iter()
@@ -1350,7 +1350,7 @@ pub mod test {
                 .1;
             let dp_orig = le.data_proposal.clone();
 
-            (dp_orig.clone(), dp_orig.hash(), le.size)
+            (dp_orig.clone(), dp_orig.hash(), le.cumul_size)
         }
         pub fn last_validator_data_proposal(
             &self,
@@ -1385,7 +1385,7 @@ pub mod test {
                 .1;
             let dp_orig = le.data_proposal.clone();
 
-            (dp_orig.clone(), dp_orig.hash(), le.size)
+            (dp_orig.clone(), dp_orig.hash(), le.cumul_size)
         }
         pub fn pop_validator_data_proposal(
             &mut self,
@@ -1416,13 +1416,16 @@ pub mod test {
                 .get_mut(&key)
                 .unwrap()
                 .data_proposals;
-            let size =
-                proposals.last().map(|(_, v)| v.size).unwrap_or_default() + dp.estimate_size();
+            let size = proposals
+                .last()
+                .map(|(_, v)| v.cumul_size)
+                .unwrap_or_default()
+                + dp.estimate_size();
             proposals.insert(
                 dp.hash(),
                 LaneEntry {
                     data_proposal: dp,
-                    size,
+                    cumul_size: size,
                     signatures: vec![],
                 },
             );
@@ -1786,7 +1789,7 @@ pub mod test {
             .unwrap()
             .1;
         let data_proposal = le.data_proposal.clone();
-        let size = le.size;
+        let cumul_size = le.cumul_size;
 
         // Add new validator
         let crypto2 = BlstCrypto::new("2".into()).unwrap();
@@ -1797,9 +1800,12 @@ pub mod test {
         // First: the message is from crypto2, but the DP is not signed correctly
         let signed_msg = crypto2.sign(MempoolNetMessage::SyncReply(vec![LaneEntry {
             data_proposal: data_proposal.clone(),
-            size,
+            cumul_size,
             signatures: vec![crypto3
-                .sign(MempoolNetMessage::DataVote(data_proposal.hash(), size))
+                .sign(MempoolNetMessage::DataVote(
+                    data_proposal.hash(),
+                    cumul_size,
+                ))
                 .expect("should sign")],
         }]))?;
 
@@ -1812,9 +1818,12 @@ pub mod test {
         // Second: the message is NOT from crypto2, but the DP is signed by crypto2
         let signed_msg = crypto3.sign(MempoolNetMessage::SyncReply(vec![LaneEntry {
             data_proposal: data_proposal.clone(),
-            size,
+            cumul_size,
             signatures: vec![crypto2
-                .sign(MempoolNetMessage::DataVote(data_proposal.hash(), size))
+                .sign(MempoolNetMessage::DataVote(
+                    data_proposal.hash(),
+                    cumul_size,
+                ))
                 .expect("should sign")],
         }]))?;
 
@@ -1828,11 +1837,11 @@ pub mod test {
         // Third: the message is from crypto2, the signature is from crypto2, but the message is wrong
         let signed_msg = crypto3.sign(MempoolNetMessage::SyncReply(vec![LaneEntry {
             data_proposal: data_proposal.clone(),
-            size,
+            cumul_size,
             signatures: vec![crypto2
                 .sign(MempoolNetMessage::DataVote(
                     DataProposalHash("non_existent".to_owned()),
-                    size,
+                    cumul_size,
                 ))
                 .expect("should sign")],
         }]))?;
@@ -1847,9 +1856,12 @@ pub mod test {
         // Fourth: the message is from crypto2, the signature is from crypto2, but the size is wrong
         let signed_msg = crypto3.sign(MempoolNetMessage::SyncReply(vec![LaneEntry {
             data_proposal: data_proposal.clone(),
-            size: LaneBytesSize(0),
+            cumul_size: LaneBytesSize(0),
             signatures: vec![crypto2
-                .sign(MempoolNetMessage::DataVote(data_proposal.hash(), size))
+                .sign(MempoolNetMessage::DataVote(
+                    data_proposal.hash(),
+                    cumul_size,
+                ))
                 .expect("should sign")],
         }]))?;
 
@@ -1863,9 +1875,12 @@ pub mod test {
         // Final case: message is correct
         let signed_msg = crypto2.sign(MempoolNetMessage::SyncReply(vec![LaneEntry {
             data_proposal: data_proposal.clone(),
-            size,
+            cumul_size,
             signatures: vec![crypto2
-                .sign(MempoolNetMessage::DataVote(data_proposal.hash(), size))
+                .sign(MempoolNetMessage::DataVote(
+                    data_proposal.hash(),
+                    cumul_size,
+                ))
                 .expect("should sign")],
         }]))?;
 
