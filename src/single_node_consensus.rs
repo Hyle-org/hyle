@@ -248,7 +248,7 @@ mod tests {
                 handle_messages! {
                     on_bus new_cut_query_receiver,
                     command_response<QueryNewCut, Cut> _ => {
-                        Ok(vec![(ValidatorPublicKey::default(), DataProposalHash::default(), AggregateSignature::default())])
+                        Ok(vec![(ValidatorPublicKey::default(), DataProposalHash::default(), LaneBytesSize::default(), AggregateSignature::default())])
                     }
                 }
             });

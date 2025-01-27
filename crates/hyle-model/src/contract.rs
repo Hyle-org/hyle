@@ -9,6 +9,10 @@ pub trait Hashable<T> {
     fn hash(&self) -> T;
 }
 
+pub trait DataSized {
+    fn estimate_size(&self) -> usize;
+}
+
 pub trait Digestable {
     fn as_digest(&self) -> StateDigest;
 }

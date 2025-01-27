@@ -108,6 +108,10 @@ impl LeaderRole for Consensus {
             }
         };
 
+        for tx in cut.iter() {
+            debug!("📦 Lane {} transited {}", tx.0, tx.2);
+        }
+
         self.bft_round_state.leader.step = Step::PrepareVote;
 
         let staking_actions = new_validators_to_bond

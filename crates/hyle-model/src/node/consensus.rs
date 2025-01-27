@@ -113,7 +113,7 @@ impl Hashable<ConsensusProposalHash> for ConsensusProposal {
         hasher.update(self.slot.to_le_bytes());
         hasher.update(self.view.to_le_bytes());
         hasher.update(&self.round_leader.0);
-        self.cut.iter().for_each(|(pubkey, hash, _)| {
+        self.cut.iter().for_each(|(pubkey, hash, _, _)| {
             hasher.update(&pubkey.0);
             hasher.update(hash.0.as_bytes());
         });
@@ -295,6 +295,7 @@ mod tests {
             cut: vec![(
                 ValidatorPublicKey(vec![1]),
                 DataProposalHash("propA".to_string()),
+                LaneBytesSize(1),
                 AggregateSignature::default(),
             )],
             staking_actions: vec![NewValidatorCandidate {
@@ -318,6 +319,7 @@ mod tests {
             cut: vec![(
                 ValidatorPublicKey(vec![1]),
                 DataProposalHash("propA".to_string()),
+                LaneBytesSize(1),
                 AggregateSignature {
                     signature: Signature(vec![1, 2, 3]),
                     validators: vec![ValidatorPublicKey(vec![1, 2, 3])],

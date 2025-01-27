@@ -1485,6 +1485,7 @@ pub mod test {
                     cut: vec![(
                         node2.pubkey(),
                         DataProposalHash("test".to_string()),
+                        LaneBytesSize::default(),
                         AggregateSignature::default(),
                     )],
                     staking_actions: vec![],
@@ -1525,6 +1526,7 @@ pub mod test {
                     cut: vec![(
                         node2.pubkey(),
                         DataProposalHash("test".to_string()),
+                        LaneBytesSize::default(),
                         AggregateSignature::default(),
                     )],
                     staking_actions: vec![],
@@ -1574,6 +1576,7 @@ pub mod test {
                     cut: vec![(
                         node2.pubkey(),
                         DataProposalHash("test".to_string()),
+                        LaneBytesSize::default(),
                         AggregateSignature::default(),
                     )],
                     staking_actions: vec![],

@@ -12,6 +12,15 @@ pub struct Transaction {
     pub transaction_data: TransactionData,
 }
 
+impl DataSized for Transaction {
+    fn estimate_size(&self) -> usize {
+        // TODO: It might be more efficient to impl DataSized to all the TransactionData variants
+        bincode::encode_to_vec(self, bincode::config::standard())
+            .unwrap()
+            .len()
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Encode, Decode, IntoStaticStr)]
 pub enum TransactionData {
     Blob(BlobTransaction),
