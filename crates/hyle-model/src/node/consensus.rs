@@ -138,6 +138,18 @@ impl std::hash::Hash for ConsensusProposal {
     }
 }
 
+/// Represents the operations that can be performed by the consensus
+#[derive(Encode, Decode, Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub enum ConsensusStakingAction {
+    Bond { candidate: NewValidatorCandidate }, // Bonding a new validator candidate
+}
+
+impl From<NewValidatorCandidate> for ConsensusStakingAction {
+    fn from(val: NewValidatorCandidate) -> Self {
+        ConsensusStakingAction::Bond { candidate: val }
+    }
+}
+
 #[derive(
     Debug, Serialize, Deserialize, Clone, Encode, Decode, PartialEq, Eq, IntoStaticStr, Hash,
 )]
