@@ -5,7 +5,7 @@ edition = { workspace = true }
 # license = { workspace = true }
 homepage = { workspace = true }
 repository = { workspace = true }
-rust-version = { workspace = true }
+rust-version = "1.81"
 
 [dependencies]
 hyle_model = { path = "../hyle-model", package = "hyle-model", default-features = false }
