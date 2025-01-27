@@ -7,6 +7,7 @@ use axum::{
     Json, Router,
 };
 use hyle_contract_sdk::ContractName;
+use hyle_model::TxContext;
 use tracing::error;
 
 use crate::{
@@ -17,15 +18,15 @@ use crate::{
     },
     model::Contract,
     model::{BlockHeight, CommonRunContext},
+    node_state::module::{QueryBlockHeight, QueryTxContext},
     rest::AppError,
 };
-
-use super::QueryBlockHeight;
 
 bus_client! {
 struct RestBusClient {
     sender(Query<ContractName, Contract>),
     sender(Query<QueryBlockHeight, BlockHeight>),
+    sender(Query<QueryTxContext, TxContext>),
 }
 }
 
@@ -42,6 +43,8 @@ pub async fn api(ctx: &CommonRunContext) -> Router<()> {
         .route("/da/block/height", get(get_block_height))
         // FIXME: we expose this endpoint for testing purposes. This should be removed or adapted
         .route("/contract/{name}", get(get_contract))
+        // TODO: figure out if we want to rely on the indexer instead
+        .route("/tx_context/{blob_tx_hash}", get(get_tx_context))
         .with_state(state)
 }
 
@@ -58,6 +61,27 @@ pub async fn get_contract(
             Err(AppError(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 anyhow!("Error while getting contract {}", name_clone),
+            ))
+        }
+    }
+}
+
+pub async fn get_tx_context(
+    Path(blob_tx_hash): Path<String>,
+    State(mut state): State<RouterState>,
+) -> Result<impl IntoResponse, AppError> {
+    match state
+        .bus
+        .request(QueryTxContext(hyle_model::TxHash(blob_tx_hash)))
+        .await
+    {
+        Ok(tx_context) => Ok(Json(tx_context)),
+        err => {
+            error!("{:?}", err);
+
+            Err(AppError(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                anyhow!("Error while getting tx context"),
             ))
         }
     }
@@ -90,6 +114,10 @@ impl Clone for RouterState {
                 )
                 .clone(),
                 Pick::<tokio::sync::broadcast::Sender<Query<QueryBlockHeight, BlockHeight>>>::get(
+                    &self.bus,
+                )
+                .clone(),
+                Pick::<tokio::sync::broadcast::Sender<Query<QueryTxContext, TxContext>>>::get(
                     &self.bus,
                 )
                 .clone(),

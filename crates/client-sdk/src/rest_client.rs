@@ -3,7 +3,7 @@ use reqwest::Url;
 
 use sdk::{
     api::*, BlobIndex, BlobTransaction, BlockHash, BlockHeight, ConsensusInfo, Contract,
-    ContractName, ProofTransaction, StateDigest, TxHash,
+    ContractName, ProofTransaction, StateDigest, TxContext, TxHash,
 };
 
 pub struct NodeApiHttpClient {
@@ -69,6 +69,14 @@ impl NodeApiHttpClient {
         self.get(
             &format!("v1/contract/{}", contract_name),
             &format!("getting contract {}", contract_name),
+        )
+        .await
+    }
+
+    pub async fn get_tx_context(&self, blob_tx_hash: &TxHash) -> Result<TxContext> {
+        self.get(
+            &format!("v1/tx_context/{blob_tx_hash}"),
+            &format!("getting tx {} ctx", blob_tx_hash),
         )
         .await
     }

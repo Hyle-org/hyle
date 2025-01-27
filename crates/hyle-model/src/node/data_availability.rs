@@ -1,4 +1,4 @@
-use std::hash::Hash;
+use std::{hash::Hash, sync::Arc};
 
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
@@ -18,6 +18,7 @@ pub struct Contract {
 pub struct UnsettledBlobTransaction {
     pub identity: Identity,
     pub hash: TxHash,
+    pub tx_context: Arc<TxContext>,
     pub blobs_hash: BlobsHash,
     pub blobs: Vec<UnsettledBlobMetadata>,
 }
