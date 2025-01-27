@@ -4,7 +4,13 @@ use client_sdk::{
 };
 use sdk::{identity_provider::IdentityAction, BlobData, ContractName, Digestable};
 
-use crate::{execute, metadata::HYDENTITY_ELF, Hydentity};
+use crate::{execute, Hydentity};
+
+pub mod metadata {
+    pub const HYDENTITY_ELF: &[u8] = include_bytes!("../hydentity.img");
+    pub const PROGRAM_ID: [u8; 32] = sdk::str_to_u8(include_str!("../hydentity.txt"));
+}
+use metadata::*;
 
 struct HydentityPseudoExecutor {}
 impl ClientSdkExecutor for HydentityPseudoExecutor {

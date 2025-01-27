@@ -4,7 +4,13 @@ use client_sdk::{
 };
 use sdk::{erc20::ERC20Action, BlobIndex, ContractName, Digestable};
 
-use crate::{execute, metadata::AMM_ELF, AmmAction, AmmState};
+use crate::{execute, AmmAction, AmmState};
+
+pub mod metadata {
+    pub const AMM_ELF: &[u8] = include_bytes!("../amm.img");
+    pub const PROGRAM_ID: [u8; 32] = sdk::str_to_u8(include_str!("../amm.txt"));
+}
+use metadata::*;
 
 struct AmmPseudoExecutor {}
 impl ClientSdkExecutor for AmmPseudoExecutor {

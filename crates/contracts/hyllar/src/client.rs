@@ -4,7 +4,13 @@ use client_sdk::{
 };
 use sdk::{erc20::ERC20Action, ContractName, Digestable};
 
-use crate::{execute, metadata::HYLLAR_ELF, HyllarToken};
+use crate::{execute, HyllarToken};
+
+pub mod metadata {
+    pub const HYLLAR_ELF: &[u8] = include_bytes!("../hyllar.img");
+    pub const PROGRAM_ID: [u8; 32] = sdk::str_to_u8(include_str!("../hyllar.txt"));
+}
+use metadata::*;
 
 struct HyllarPseudoExecutor {}
 impl ClientSdkExecutor for HyllarPseudoExecutor {
