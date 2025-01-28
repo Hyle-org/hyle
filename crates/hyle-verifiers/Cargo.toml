@@ -14,7 +14,7 @@ anyhow = "1.0.95"
 bincode = { version = "2.0.0-rc.3", features = ["serde"] }
 borsh = { version = "1.5.5" }
 serde_json = "1.0.137"
-rand = { version = "0.8.5" }
+rand = { version = "0.9" }
 risc0-zkvm = { version = "1.2.1", default-features = false, features = ["std"] }
 sp1-sdk = { version = "4.0.1", default-features = false }
 tracing = "0.1"

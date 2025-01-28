@@ -125,8 +125,8 @@ mod tests {
 
         let tcp_server_message_receiver = get_receiver::<TcpServerMessage>(&shared_bus).await;
 
-        let mut rng = rand::thread_rng();
-        let random_port: u32 = rng.gen_range(1024..65536);
+        let mut rng = rand::rng();
+        let random_port: u32 = rng.random_range(1024..65536);
 
         let config = Conf {
             run_tcp_server: true,

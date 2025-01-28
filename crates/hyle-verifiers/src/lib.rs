@@ -36,8 +36,8 @@ pub fn risc0_proof_verifier(
 /// At present, we are using binary to facilitate the integration of the Noir verifier.
 /// This is not meant to be a permanent solution.
 pub fn noir_proof_verifier(proof: &[u8], image_id: &[u8]) -> Result<Vec<HyleOutput>, Error> {
-    let mut rng = rand::thread_rng();
-    let salt: [u8; 16] = rng.gen();
+    let mut rng = rand::rng();
+    let salt: [u8; 16] = rng.random();
     let mut salt_hex = String::with_capacity(salt.len() * 2);
     for b in &salt {
         write!(salt_hex, "{:02x}", b).unwrap();
