@@ -10,34 +10,38 @@ use hyle_model::{
     flatten_blobs, Blob, BlobIndex, ContractInput, Digestable, HyleOutput, StructuredBlob,
 };
 
-pub fn parse_blob<Parameters>(blobs: &[Blob], index: &BlobIndex) -> Parameters
+pub fn parse_blob<Parameters>(blobs: &[Blob], index: &BlobIndex) -> Option<Parameters>
 where
     Parameters: Decode,
 {
     let blob = match blobs.get(index.0) {
         Some(v) => v,
         None => {
-            panic!("unable to find the payload");
+            return None;
         }
     };
 
-    let (parameters, _) =
-        bincode::decode_from_slice(blob.data.0.as_slice(), bincode::config::standard())
-            .expect("Failed to decode payload");
-    parameters
+    let Ok((parameters, _)) = bincode::decode_from_slice::<Parameters, _>(
+        blob.data.0.as_slice(),
+        bincode::config::standard(),
+    ) else {
+        return None;
+    };
+
+    Some(parameters)
 }
 
 pub fn parse_structured_blob<Parameters>(
     blobs: &[Blob],
     index: &BlobIndex,
-) -> StructuredBlob<Parameters>
+) -> Option<StructuredBlob<Parameters>>
 where
     Parameters: Decode,
 {
     let blob = match blobs.get(index.0) {
         Some(v) => v,
         None => {
-            panic!("unable to find the payload");
+            return None;
         }
     };
 
@@ -45,7 +49,7 @@ where
         .unwrap_or_else(|e| {
             panic!("Failed to decode blob: {:?}", e);
         });
-    parsed_blob
+    Some(parsed_blob)
 }
 
 pub fn as_hyle_output<State>(
@@ -82,7 +86,7 @@ where
             let callee_blob = input.blobs[callee_index.0].clone();
             let callee_structured_blob: StructuredBlobData<Vec<u8>> =
                 callee_blob.data.try_into().expect("Failed to decode blob");
-            if callee_structured_blob.caller != Some(input.index.clone()) {
+            if callee_structured_blob.caller != Some(input.index) {
                 return Err("One Callee does not have this blob as caller".to_string());
             }
         }

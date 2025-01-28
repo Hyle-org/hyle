@@ -108,7 +108,7 @@ mod e2e_consensus {
                 &mut transaction,
                 "hyllar".into(),
                 node_identity.0.clone(),
-                100,
+                stake_amount,
             )?;
 
             let tx_hash = send_transaction(ctx.client(), transaction, &mut tx_ctx).await;
@@ -130,7 +130,7 @@ mod e2e_consensus {
                 &mut transaction,
                 "hyllar".into(),
                 "staking".to_string(),
-                100,
+                stake_amount,
             )?;
 
             delegate(
