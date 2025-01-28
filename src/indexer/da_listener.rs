@@ -5,6 +5,7 @@ use std::{
 
 use anyhow::{bail, Error, Result};
 use futures::{SinkExt, StreamExt};
+use hyle_model::Hashable;
 use tokio::net::TcpStream;
 use tokio_util::codec::Framed;
 use tracing::{debug, info, warn};
@@ -16,6 +17,7 @@ use crate::{
     module_handle_messages,
     node_state::{module::NodeStateEvent, NodeState},
     utils::{
+        conf::SharedConf,
         logger::LogMe,
         modules::{module_bus_client, Module},
     },
@@ -30,6 +32,7 @@ struct DAListenerBusClient {
 
 /// Module that listens to the data availability stream and sends the blocks to the bus
 pub struct DAListener {
+    config: SharedConf,
     bus: DAListenerBusClient,
     node_state: NodeState,
     listener: RawDAListener,
@@ -72,7 +75,12 @@ impl Module for DAListener {
                 .as_path(),
         );
 
+        for name in node_state.contracts.keys() {
+            info!("📝 Loaded contract state for {}", name);
+        }
+
         Ok(DAListener {
+            config: ctx.common.config.clone(),
             listener,
             bus,
             node_state,
@@ -98,11 +106,27 @@ impl DAListener {
                 }
             }
         };
+        let _ = Self::save_on_disk::<NodeState>(
+            self.config
+                .data_directory
+                .join("da_listener_node_state.bin")
+                .as_path(),
+            &self.node_state,
+        )
+        .log_error("Saving node state");
+
         Ok(())
     }
 
     async fn processing_next_frame(&mut self, block: SignedBlock) -> Result<()> {
+        info!(
+            "📦 Received block: {} {}",
+            block.consensus_proposal.slot,
+            block.consensus_proposal.hash()
+        );
         let block = self.node_state.handle_signed_block(&block);
+        debug!("📦 Handled block outputs: {:?}", block);
+
         self.bus.send(NodeStateEvent::NewBlock(Box::new(block)))?;
 
         self.listener.ping().await?;
