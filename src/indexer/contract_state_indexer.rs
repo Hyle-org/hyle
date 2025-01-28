@@ -269,6 +269,7 @@ mod tests {
             bus: SharedMessageBus::new(BusMetrics::global("global".to_string())),
             config: Arc::new(Conf::default()),
             router: Default::default(),
+            openapi: Default::default(),
         });
 
         let ctx = ContractStateIndexerCtx {

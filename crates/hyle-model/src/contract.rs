@@ -5,8 +5,11 @@ use std::{
 
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 
-#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, PartialEq, Eq, Default)]
+#[derive(
+    Debug, Serialize, Deserialize, ToSchema, Clone, Encode, Decode, PartialEq, Eq, Default,
+)]
 pub struct ConsensusProposalHash(pub String);
 pub type BlockHash = ConsensusProposalHash;
 
@@ -39,7 +42,7 @@ pub struct ContractInput {
     pub private_input: Vec<u8>,
 }
 
-#[derive(Default, Serialize, Deserialize, Clone, PartialEq, Eq, Hash, Encode, Decode)]
+#[derive(Default, Serialize, Deserialize, ToSchema, Clone, PartialEq, Eq, Hash, Encode, Decode)]
 pub struct StateDigest(pub Vec<u8>);
 
 impl std::fmt::Debug for StateDigest {
@@ -58,6 +61,7 @@ impl Digestable for StateDigest {
     Default,
     Serialize,
     Deserialize,
+    ToSchema,
     Debug,
     Clone,
     PartialEq,
@@ -83,11 +87,23 @@ pub struct Identity(pub String);
     Decode,
     Ord,
     PartialOrd,
+    ToSchema,
 )]
 pub struct TxHash(pub String);
 
 #[derive(
-    Default, Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash, Encode, Decode, Copy,
+    Default,
+    Serialize,
+    Deserialize,
+    ToSchema,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Hash,
+    Encode,
+    Decode,
+    Copy,
 )]
 pub struct BlobIndex(pub usize);
 
@@ -98,7 +114,7 @@ impl Add<usize> for BlobIndex {
     }
 }
 
-#[derive(Default, Serialize, Deserialize, Clone, PartialEq, Eq, Hash, Encode, Decode)]
+#[derive(Default, Serialize, Deserialize, ToSchema, Clone, PartialEq, Eq, Hash, Encode, Decode)]
 pub struct BlobData(pub Vec<u8>);
 
 impl std::fmt::Debug for BlobData {
@@ -130,7 +146,9 @@ impl<Parameters: Decode> TryFrom<BlobData> for StructuredBlobData<Parameters> {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Default, Clone, PartialEq, Eq, Encode, Decode, Hash)]
+#[derive(
+    Debug, Serialize, Deserialize, ToSchema, Default, Clone, PartialEq, Eq, Encode, Decode, Hash,
+)]
 pub struct Blob {
     pub contract_name: ContractName,
     pub data: BlobData,
@@ -193,6 +211,7 @@ pub fn flatten_blobs(blobs: &[Blob]) -> Vec<u8> {
     Clone,
     Serialize,
     Deserialize,
+    ToSchema,
     Eq,
     PartialEq,
     Hash,
@@ -203,13 +222,19 @@ pub fn flatten_blobs(blobs: &[Blob]) -> Vec<u8> {
 )]
 pub struct ContractName(pub String);
 
-#[derive(Default, Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash, Encode, Decode)]
+#[derive(
+    Default, Debug, Clone, Serialize, Deserialize, ToSchema, Eq, PartialEq, Hash, Encode, Decode,
+)]
 pub struct Verifier(pub String);
 
-#[derive(Default, Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash, Encode, Decode)]
+#[derive(
+    Default, Debug, Clone, Serialize, Deserialize, ToSchema, Eq, PartialEq, Hash, Encode, Decode,
+)]
 pub struct ProgramId(pub Vec<u8>);
 
-#[derive(Default, Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash, Encode, Decode)]
+#[derive(
+    Default, Serialize, Deserialize, ToSchema, Debug, Clone, PartialEq, Eq, Hash, Encode, Decode,
+)]
 pub struct HyleOutput {
     pub version: u32,
     pub initial_state: StateDigest,
@@ -228,7 +253,9 @@ pub struct HyleOutput {
     pub program_outputs: Vec<u8>,
 }
 
-#[derive(Default, Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash, Encode, Decode)]
+#[derive(
+    Default, Serialize, Deserialize, ToSchema, Debug, Clone, PartialEq, Eq, Hash, Encode, Decode,
+)]
 pub struct TxContext {
     pub block_hash: BlockHash,
     pub block_height: BlockHeight,
@@ -328,7 +355,18 @@ impl From<usize> for BlobIndex {
 
 #[cfg_attr(feature = "full", derive(derive_more::derive::Display))]
 #[derive(
-    Default, Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash, Copy, Encode, Decode,
+    Default,
+    Debug,
+    Clone,
+    Serialize,
+    Deserialize,
+    ToSchema,
+    Eq,
+    PartialEq,
+    Hash,
+    Copy,
+    Encode,
+    Decode,
 )]
 pub struct BlockHeight(pub u64);
 
@@ -404,7 +442,9 @@ impl ContractAction for RegisterContractAction {
 /// Used by the Hylé node to recognize contract registration.
 /// Simply output this struct in your HyleOutput registered_contracts.
 /// See uuid-tld for examples.
-#[derive(Default, Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash, Encode, Decode)]
+#[derive(
+    Default, Serialize, Deserialize, ToSchema, Debug, Clone, PartialEq, Eq, Hash, Encode, Decode,
+)]
 pub struct RegisterContractEffect {
     pub verifier: Verifier,
     pub program_id: ProgramId,

@@ -18,6 +18,7 @@ pub struct CommonRunContext {
     pub config: SharedConf,
     pub bus: SharedMessageBus,
     pub router: std::sync::Mutex<Option<Router>>,
+    pub openapi: std::sync::Mutex<utoipa::openapi::OpenApi>,
 }
 
 pub struct NodeRunContext {

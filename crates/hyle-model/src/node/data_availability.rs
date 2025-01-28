@@ -3,10 +3,11 @@ use std::{hash::Hash, sync::Arc};
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Sha3_256};
+use utoipa::ToSchema;
 
 use crate::*;
 
-#[derive(Default, Debug, Clone, Serialize, Deserialize, Encode, Decode)]
+#[derive(Default, Debug, Clone, Serialize, Deserialize, ToSchema, Encode, Decode)]
 pub struct Contract {
     pub name: ContractName,
     pub program_id: ProgramId,
@@ -15,18 +16,39 @@ pub struct Contract {
 }
 
 #[derive(
-    Default, Debug, Clone, PartialEq, Eq, Hash, Encode, Decode, serde::Serialize, serde::Deserialize,
+    Default,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Hash,
+    Encode,
+    Decode,
+    serde::Serialize,
+    serde::Deserialize,
+    ToSchema,
 )]
 pub struct UnsettledBlobTransaction {
     pub identity: Identity,
     pub hash: TxHash,
+    #[schema(value_type=TxContext)]
     pub tx_context: Arc<TxContext>,
     pub blobs_hash: BlobsHash,
     pub blobs: Vec<UnsettledBlobMetadata>,
 }
 
 #[derive(
-    Default, Debug, Clone, PartialEq, Eq, Hash, Encode, Decode, serde::Serialize, serde::Deserialize,
+    Default,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Hash,
+    Encode,
+    Decode,
+    serde::Serialize,
+    serde::Deserialize,
+    ToSchema,
 )]
 pub struct UnsettledBlobMetadata {
     pub blob: Blob,

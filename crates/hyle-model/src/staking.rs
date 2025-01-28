@@ -3,6 +3,7 @@ use serde::{
     de::{self, Visitor},
     Deserialize, Serialize,
 };
+use utoipa::{PartialSchema, ToSchema};
 
 use crate::*;
 
@@ -39,6 +40,14 @@ impl ContractAction for StakingAction {
 
 #[derive(Clone, Encode, Decode, Default, Eq, PartialEq, Hash, PartialOrd, Ord)]
 pub struct ValidatorPublicKey(pub Vec<u8>);
+
+impl PartialSchema for ValidatorPublicKey {
+    fn schema() -> utoipa::openapi::RefOr<utoipa::openapi::schema::Schema> {
+        String::schema()
+    }
+}
+
+impl ToSchema for ValidatorPublicKey {}
 
 impl Serialize for ValidatorPublicKey {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>

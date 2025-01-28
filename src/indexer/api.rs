@@ -11,6 +11,7 @@ use axum::{
     Json,
 };
 use sqlx::Row;
+use utoipa::OpenApi;
 
 use crate::model::*;
 
@@ -20,7 +21,18 @@ pub struct BlockPagination {
     pub nb_results: Option<i64>,
 }
 
-// Blocks
+#[derive(OpenApi)]
+#[openapi(paths(get_blocks))]
+pub(super) struct IndexerAPI;
+
+#[utoipa::path(
+    get,
+    tag = "Indexer",
+    path = "/blocks",
+    responses(
+        (status = OK, body = [APIBlock])
+    )
+)]
 pub async fn get_blocks(
     Query(pagination): Query<BlockPagination>,
     State(state): State<IndexerApiState>,
@@ -43,6 +55,14 @@ pub async fn get_blocks(
     Ok(Json(blocks))
 }
 
+#[utoipa::path(
+    get,
+    tag = "Indexer",
+    path = "/block/last",
+    responses(
+        (status = OK, body = APIBlock)
+    )
+)]
 pub async fn get_last_block(
     State(state): State<IndexerApiState>,
 ) -> Result<Json<APIBlock>, StatusCode> {
@@ -58,6 +78,17 @@ pub async fn get_last_block(
     }
 }
 
+#[utoipa::path(
+    get,
+    tag = "Indexer",
+    path = "/block/height/{height}",
+    params(
+        ("height" = String, Path, description = "Block height")
+    ),
+    responses(
+        (status = OK, body = APIBlock)
+    )
+)]
 pub async fn get_block(
     Path(height): Path<i64>,
     State(state): State<IndexerApiState>,
@@ -75,6 +106,17 @@ pub async fn get_block(
     }
 }
 
+#[utoipa::path(
+    get,
+    tag = "Indexer",
+    params(
+        ("hash" = String, Path, description = "Block hash"),
+    ),
+    path = "/block/hash/{hash}",
+    responses(
+        (status = OK, body = APIBlock)
+    )
+)]
 pub async fn get_block_by_hash(
     Path(hash): Path<String>,
     State(state): State<IndexerApiState>,
@@ -92,7 +134,14 @@ pub async fn get_block_by_hash(
     }
 }
 
-// Transactions
+#[utoipa::path(
+    get,
+    tag = "Indexer",
+    path = "/transactions",
+    responses(
+        (status = OK, body = [APITransaction])
+    )
+)]
 pub async fn get_transactions(
     Query(pagination): Query<BlockPagination>,
     State(state): State<IndexerApiState>,
@@ -130,6 +179,17 @@ pub async fn get_transactions(
     Ok(Json(transactions))
 }
 
+#[utoipa::path(
+    get,
+    tag = "Indexer",
+    params(
+        ("contract_name" = String, Path, description = "Contract name"),
+    ),
+    path = "/transactions/contract/{contract_name}",
+    responses(
+        (status = OK, body = [APITransaction])
+    )
+)]
 pub async fn get_transactions_by_contract(
     Path(contract_name): Path<String>,
     Query(pagination): Query<BlockPagination>,
@@ -174,6 +234,17 @@ pub async fn get_transactions_by_contract(
     Ok(Json(transactions))
 }
 
+#[utoipa::path(
+    get,
+    tag = "Indexer",
+    params(
+        ("height" = String, Path, description = "Block height")
+    ),
+    path = "/transactions/block/{height}",
+    responses(
+        (status = OK, body = [APITransaction])
+    )
+)]
 // TODO: pagination ?
 pub async fn get_transactions_by_height(
     Path(height): Path<i64>,
@@ -197,6 +268,17 @@ pub async fn get_transactions_by_height(
     Ok(Json(transactions))
 }
 
+#[utoipa::path(
+    get,
+    tag = "Indexer",
+    params(
+        ("tx_hash" = String, Path, description = "Tx hash"),
+    ),
+    path = "/transaction/hash/{tx_hash}",
+    responses(
+        (status = OK, body = APITransaction)
+    )
+)]
 pub async fn get_transaction_with_hash(
     Path(tx_hash): Path<String>,
     State(state): State<IndexerApiState>,
@@ -221,7 +303,17 @@ pub async fn get_transaction_with_hash(
     }
 }
 
-// Blobs
+#[utoipa::path(
+    get,
+    tag = "Indexer",
+    params(
+        ("contract_name" = String, Path, description = "Contract name"),
+    ),
+    path = "/blob_transactions/contract/{contract_name}",
+    responses(
+        (status = OK, body = [TransactionWithBlobs])
+    )
+)]
 pub async fn get_blob_transactions_by_contract(
     Path(contract_name): Path<String>,
     State(state): State<IndexerApiState>,
@@ -307,6 +399,17 @@ pub async fn get_blob_transactions_by_contract(
     }
 }
 
+#[utoipa::path(
+    get,
+    tag = "Indexer",
+    params(
+        ("tx_hash" = String, Path, description = "Tx hash"),
+    ),
+    path = "/blobs/hash/{tx_hash}",
+    responses(
+        (status = OK, body = [APIBlob])
+    )
+)]
 pub async fn get_blobs_by_tx_hash(
     Path(tx_hash): Path<String>,
     State(state): State<IndexerApiState>,
@@ -324,6 +427,18 @@ pub async fn get_blobs_by_tx_hash(
     Ok(Json(blobs))
 }
 
+#[utoipa::path(
+    get,
+    tag = "Indexer",
+    params(
+        ("tx_hash" = String, Path, description = "Tx hash"),
+        ("blob_index" = String, Path, description = "Blob index"),
+    ),
+    path = "/blob/hash/{tx_hash}/index/{blob_index}",
+    responses(
+        (status = OK, body = APIBlob)
+    )
+)]
 pub async fn get_blob(
     Path((tx_hash, blob_index)): Path<(String, i32)>,
     State(state): State<IndexerApiState>,
@@ -343,7 +458,14 @@ pub async fn get_blob(
     }
 }
 
-// Contracts
+#[utoipa::path(
+    get,
+    tag = "Indexer",
+    path = "/contracts",
+    responses(
+        (status = OK, body = [APIContract])
+    )
+)]
 pub async fn list_contracts(
     State(state): State<IndexerApiState>,
 ) -> Result<Json<Vec<APIContract>>, StatusCode> {
@@ -356,6 +478,17 @@ pub async fn list_contracts(
     Ok(Json(contract))
 }
 
+#[utoipa::path(
+    get,
+    tag = "Indexer",
+    params(
+        ("contract_name" = String, Path, description = "Contract name"),
+    ),
+    path = "/contract/{contract_name}",
+    responses(
+        (status = OK, body = APIContract)
+    )
+)]
 pub async fn get_contract(
     Path(contract_name): Path<String>,
     State(state): State<IndexerApiState>,
@@ -374,6 +507,18 @@ pub async fn get_contract(
     }
 }
 
+#[utoipa::path(
+    get,
+    tag = "Indexer",
+    params(
+        ("contract_name" = String, Path, description = "Contract name"),
+        ("height" = String, Path, description = "Block height")
+    ),
+    path = "/state/contract/{contract_name}/block/{height}",
+    responses(
+        (status = OK, body = APIContractState)
+    )
+)]
 pub async fn get_contract_state_by_height(
     Path((contract_name, height)): Path<(String, i64)>,
     State(state): State<IndexerApiState>,

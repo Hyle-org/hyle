@@ -1,10 +1,10 @@
 use anyhow::anyhow;
-use axum::{
-    debug_handler, extract::State, http::StatusCode, response::IntoResponse, routing::get, Json,
-    Router,
-};
+use axum::{debug_handler, extract::State, http::StatusCode, response::IntoResponse, Json, Router};
+use hyle_model::api::APIStaking;
 use staking::state::Staking;
 use tracing::error;
+use utoipa::OpenApi;
+use utoipa_axum::{router::OpenApiRouter, routes};
 
 use crate::{
     bus::{
@@ -29,17 +29,34 @@ pub struct RouterState {
     bus: RestBusClient,
 }
 
+#[derive(OpenApi)]
+struct ConsensusAPI;
+
 pub async fn api(ctx: &CommonRunContext) -> Router<()> {
     let state = RouterState {
         bus: RestBusClient::new_from_bus(ctx.bus.new_handle()).await,
     };
 
-    Router::new()
-        .route("/info", get(get_consensus_state))
-        .route("/staking_state", get(get_consensus_staking_state))
-        .with_state(state)
+    let (router, api) = OpenApiRouter::with_openapi(ConsensusAPI::openapi())
+        .routes(routes!(get_consensus_state))
+        .routes(routes!(get_consensus_staking_state))
+        .split_for_parts();
+
+    if let Ok(mut o) = ctx.openapi.lock() {
+        *o = o.clone().nest("/v1", api);
+    }
+
+    router.with_state(state)
 }
 
+#[utoipa::path(
+    get,
+    path = "/info",
+    tag = "Consensus",
+    responses(
+        (status = OK, body = ConsensusInfo)
+    )
+)]
 #[debug_handler]
 pub async fn get_consensus_state(
     State(mut state): State<RouterState>,
@@ -57,12 +74,23 @@ pub async fn get_consensus_state(
     }
 }
 
+#[utoipa::path(
+    get,
+    path = "/staking_state",
+    tag = "Consensus",
+    responses(
+        (status = OK, body = APIStaking)
+    )
+)]
 #[debug_handler]
 pub async fn get_consensus_staking_state(
     State(mut state): State<RouterState>,
 ) -> Result<impl IntoResponse, AppError> {
     match state.bus.request(QueryConsensusStakingState {}).await {
-        Ok(staking_state) => Ok(Json(staking_state)),
+        Ok(staking) => {
+            let api: APIStaking = staking.into();
+            Ok(Json(api))
+        }
         Err(err) => {
             error!("{:?}", err);
 

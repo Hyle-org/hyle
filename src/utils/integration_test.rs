@@ -251,6 +251,7 @@ impl NodeIntegrationCtx {
                 bus: bus.new_handle(),
                 config: config.clone(),
                 router: Mutex::new(Some(Router::new())),
+                openapi: Default::default(),
             }
             .into(),
             node: NodeRunContext { crypto }.into(),
@@ -305,6 +306,7 @@ impl NodeIntegrationCtx {
                 bus: ctx.common.bus.new_handle(),
                 metrics_layer: None,
                 router: router.clone(),
+                openapi: Default::default(),
             },
             &mut mocks,
         )
