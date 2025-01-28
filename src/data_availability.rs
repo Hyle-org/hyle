@@ -36,6 +36,7 @@ pub enum DataEvent {
     OrderedSignedBlock(SignedBlock),
 }
 
+// TODO: may be add a parameter to stream only blocks, or mempool status events (indexer mode, or catchup)
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, Eq, PartialEq)]
 pub struct DataAvailabilityStreamRequest(pub String, pub BlockHeight);
 
@@ -392,6 +393,7 @@ pub mod tests {
         },
     };
     use staking::state::Staking;
+    use tokio::task::JoinHandle;
 
     use super::{module_bus_client, DataAvailabilityStreamEvent};
     use super::{Blocks, DataAvailabilityStreamRequest};
@@ -436,6 +438,16 @@ pub mod tests {
             self.node_state_bus
                 .send(NodeStateEvent::NewBlock(Box::new(full_block)))
                 .unwrap();
+        }
+        pub async fn ask_for_catchup_blocks(
+            &mut self,
+            ip: String,
+            sender: tokio::sync::mpsc::Sender<SignedBlock>,
+        ) -> Result<()> {
+            self.da.ask_for_catchup_blocks(ip, sender).await
+        }
+        pub fn take_catchup_task(&mut self) -> Option<JoinHandle<()>> {
+            self.da.catchup_task.take()
         }
     }
 
@@ -616,132 +628,4 @@ pub mod tests {
 
         assert_eq!(heights_received, (0..18).collect::<Vec<u64>>());
     }
-    // #[test_log::test(tokio::test)]
-    // async fn test_da_catchup() {
-    //     let sender_global_bus = crate::bus::SharedMessageBus::new(
-    //         crate::bus::metrics::BusMetrics::global("global".to_string()),
-    //     );
-    //     let mut block_sender = TestBusClient::new_from_bus(sender_global_bus.new_handle()).await;
-    //     let mut da_sender = DataAvailabilityTestCtx::new(sender_global_bus).await;
-
-    //     let receiver_global_bus = crate::bus::SharedMessageBus::new(
-    //         crate::bus::metrics::BusMetrics::global("global".to_string()),
-    //     );
-    //     let mut da_receiver = DataAvailabilityTestCtx::new(receiver_global_bus).await;
-
-    //     // Push some blocks to the sender
-    //     let mut block = SignedBlock::default();
-    //     let mut blocks = vec![];
-    //     for i in 1..11 {
-    //         blocks.push(block.clone());
-    //         block.consensus_proposal.parent_hash = block.hash();
-    //         block.consensus_proposal.slot = i;
-    //     }
-    //     blocks.reverse();
-    //     for block in blocks {
-    //         da_sender.handle_signed_block(block).await;
-    //     }
-
-    //     tokio::spawn(async move {
-    //         da_sender.da.start().await.unwrap();
-    //     });
-
-    //     // wait until it's up
-    //     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-
-    //     // Setup done
-    //     let (tx, mut rx) = tokio::sync::mpsc::channel(200);
-    //     da_receiver
-    //         .da
-    //         .ask_for_catchup_blocks(da_sender_address.clone(), tx.clone())
-    //         .await
-    //         .expect("Error while asking for catchup blocks");
-
-    //     let mut received_blocks = vec![];
-    //     while let Some(streamed_block) = rx.recv().await {
-    //         da_receiver
-    //             .handle_signed_block(streamed_block.clone())
-    //             .await;
-    //         received_blocks.push(streamed_block);
-    //         if received_blocks.len() == 10 {
-    //             break;
-    //         }
-    //     }
-    //     assert_eq!(received_blocks.len(), 10);
-    //     assert_eq!(received_blocks[0].height(), BlockHeight(0));
-    //     assert_eq!(received_blocks[9].height(), BlockHeight(9));
-
-    //     // Add a few blocks (via bus to avoid mutex)
-    //     let mut ccp = CommittedConsensusProposal {
-    //         staking: Staking::default(),
-    //         consensus_proposal: ConsensusProposal::default(),
-    //         certificate: AggregateSignature::default(),
-    //     };
-
-    //     for i in 10..15 {
-    //         ccp.consensus_proposal.parent_hash = ccp.consensus_proposal.hash();
-    //         ccp.consensus_proposal.slot = i;
-    //         block_sender
-    //             .send(MempoolEvent::BuiltSignedBlock(SignedBlock {
-    //                 data_proposals: vec![(ValidatorPublicKey("".into()), vec![])],
-    //                 certificate: ccp.certificate.clone(),
-    //                 consensus_proposal: ccp.consensus_proposal.clone(),
-    //             }))
-    //             .unwrap();
-    //     }
-
-    //     // We should still be subscribed
-    //     while let Some(streamed_block) = rx.recv().await {
-    //         da_receiver
-    //             .handle_signed_block(streamed_block.clone())
-    //             .await;
-    //         received_blocks.push(streamed_block);
-    //         if received_blocks.len() == 15 {
-    //             break;
-    //         }
-    //     }
-    //     assert_eq!(received_blocks.len(), 15);
-    //     assert_eq!(received_blocks[14].height(), BlockHeight(14));
-
-    //     // Unsub
-    //     // TODO: ideally via processing the correct message
-    //     da_receiver.da.catchup_task.take().unwrap().abort();
-
-    //     // Add a few blocks (via bus to avoid mutex)
-    //     let mut ccp = CommittedConsensusProposal {
-    //         staking: Staking::default(),
-    //         consensus_proposal: ConsensusProposal::default(),
-    //         certificate: AggregateSignature::default(),
-    //     };
-
-    //     for i in 15..20 {
-    //         ccp.consensus_proposal.parent_hash = ccp.consensus_proposal.hash();
-    //         ccp.consensus_proposal.slot = i;
-    //         block_sender
-    //             .send(MempoolEvent::BuiltSignedBlock(SignedBlock {
-    //                 data_proposals: vec![(ValidatorPublicKey("".into()), vec![])],
-    //                 certificate: ccp.certificate.clone(),
-    //                 consensus_proposal: ccp.consensus_proposal.clone(),
-    //             }))
-    //             .unwrap();
-    //     }
-
-    //     // Resubscribe - we should only receive the new ones.
-    //     da_receiver
-    //         .da
-    //         .ask_for_catchup_blocks(da_sender_address, tx)
-    //         .await
-    //         .expect("Error while asking for catchup blocks");
-
-    //     let mut received_blocks = vec![];
-    //     while let Some(block) = rx.recv().await {
-    //         received_blocks.push(block);
-    //         if received_blocks.len() == 5 {
-    //             break;
-    //         }
-    //     }
-    //     assert_eq!(received_blocks.len(), 5);
-    //     assert_eq!(received_blocks[0].height(), BlockHeight(15));
-    //     assert_eq!(received_blocks[4].height(), BlockHeight(19));
-    // }
 }

@@ -1,6 +1,4 @@
-//! Minimal block storage layer for data availability.
-
-//use blocks_memory::Blocks;
+//! TCP server api to catchup blocks, or get data as an indexer.
 
 use utils::get_current_timestamp;
 
@@ -197,27 +195,6 @@ impl DataAvailabilityTcpServer {
                     self.stream_peer_metadata.remove(&peer_id);
                 }
                 Ok(())
-                // let mut failed_peers = vec![];
-                // for (peer, block_stream_peer) in self.stream_peer_metadata.iter_mut() {
-                //     let p = block_stream_peer
-                //         .sender
-                //         .send(block.clone())
-                //         .await
-                //         .log_error(format!("Sending block {} to peer {}", block.height(), peer));
-
-                //     if p.is_err() {
-                //         failed_peers.push(peer);
-                //     }
-                // }
-                // if failed_peers.is_empty() {
-                //     Ok(())
-                // } else {
-                //     bail!(
-                //         "Failed to send block {} to peers {:?}",
-                //         block.height(),
-                //         failed_peers
-                //     );
-                // }
             }
         }
     }
@@ -256,212 +233,186 @@ impl DataAvailabilityTcpServer {
     }
 }
 
-// #[cfg(test)]
-// pub mod tests {
-//     #![allow(clippy::indexing_slicing)]
+#[cfg(test)]
+pub mod tests {
+    #![allow(clippy::indexing_slicing)]
 
-//     use crate::model::ValidatorPublicKey;
-//     use crate::{
-//         bus::BusClientSender,
-//         consensus::CommittedConsensusProposal,
-//         mempool::MempoolEvent,
-//         model::*,
-//         node_state::{
-//             module::{NodeStateBusClient, NodeStateEvent},
-//             NodeState,
-//         },
-//         utils::{conf::Conf, integration_test::find_available_port},
-//     };
-//     use futures::{SinkExt, StreamExt};
-//     use staking::state::Staking;
-//     use tokio::io::AsyncWriteExt;
-//     use tokio_util::codec::{Framed, LengthDelimitedCodec};
+    use std::collections::HashMap;
 
-//     use super::module_bus_client;
-//     use anyhow::Result;
+    use crate::data_availability::tests::DataAvailabilityTestCtx;
+    use crate::data_availability::{DataAvailabilityStreamEvent, DataAvailabilityStreamRequest};
+    use crate::model::ValidatorPublicKey;
+    use crate::{
+        bus::BusClientSender,
+        consensus::CommittedConsensusProposal,
+        mempool::MempoolEvent,
+        model::*,
+        utils::{conf::Conf, integration_test::find_available_port},
+    };
+    use staking::state::Staking;
 
-//     /// For use in integration tests
-//     pub struct DataAvailabilityTestCtx {
-//         pub node_state_bus: NodeStateBusClient,
-//         pub da: super::DataAvailability,
-//         pub node_state: NodeState,
-//     }
+    use super::d_a_tcp_server_bus_client::DATcpServerBusClient;
+    use super::{module_bus_client, DataAvailabilityTcpServer};
 
-//     impl DataAvailabilityTestCtx {
-//         pub async fn new(shared_bus: crate::bus::SharedMessageBus) -> Self {
-//             let tmpdir = tempfile::tempdir().unwrap().into_path();
-//             let blocks = Blocks::new(&tmpdir).unwrap();
+    /// For use in integration tests
+    pub struct DataAvailabilityTcpServerTestCtx {
+        pub da_ctx: DataAvailabilityTestCtx,
+        pub da_tcp: super::DataAvailabilityTcpServer,
+    }
 
-//             let bus = super::DABusClient::new_from_bus(shared_bus.new_handle()).await;
-//             let node_state_bus = NodeStateBusClient::new_from_bus(shared_bus).await;
+    impl DataAvailabilityTcpServerTestCtx {
+        pub async fn new(shared_bus: crate::bus::SharedMessageBus) -> Self {
+            let da_ctx = DataAvailabilityTestCtx::new(shared_bus.new_handle()).await;
 
-//             let mut config: Conf = Conf::new(None, None, None).unwrap();
-//             config.da_address = format!("127.0.0.1:{}", find_available_port().await);
-//             let da = super::DataAvailability {
-//                 config: config.into(),
-//                 bus,
-//                 blocks,
-//                 buffered_signed_blocks: Default::default(),
-//                 stream_peer_metadata: Default::default(),
-//                 need_catchup: false,
-//                 catchup_task: None,
-//                 catchup_height: None,
-//             };
+            let mut config: Conf = Conf::new(None, None, None).unwrap();
+            config.da_address = format!("127.0.0.1:{}", find_available_port().await);
 
-//             let node_state = NodeState::default();
+            let bus = DATcpServerBusClient::new_from_bus(shared_bus).await;
+            let da_tcp = DataAvailabilityTcpServer {
+                config: config.into(),
+                bus,
+                stream_peer_metadata: HashMap::new(),
+            };
 
-//             DataAvailabilityTestCtx {
-//                 node_state_bus,
-//                 da,
-//                 node_state,
-//             }
-//         }
+            DataAvailabilityTcpServerTestCtx { da_ctx, da_tcp }
+        }
+    }
+    module_bus_client! {
+    #[derive(Debug)]
+    struct TestBusClient {
+        sender(MempoolEvent),
+        sender(DataAvailabilityStreamRequest),
+        receiver(DataAvailabilityStreamEvent),
+    }
+    }
+    #[test_log::test(tokio::test)]
+    async fn test_da_catchup() {
+        let sender_global_bus = crate::bus::SharedMessageBus::new(
+            crate::bus::metrics::BusMetrics::global("global".to_string()),
+        );
+        let mut block_sender = TestBusClient::new_from_bus(sender_global_bus.new_handle()).await;
+        let mut da_tcp_sender = DataAvailabilityTcpServerTestCtx::new(sender_global_bus).await;
+        let da_sender_address = da_tcp_sender.da_tcp.config.da_address.clone();
 
-//         pub async fn handle_signed_block(&mut self, block: SignedBlock) {
-//             self.da.handle_signed_block(block.clone()).await;
-//             let full_block = self.node_state.handle_signed_block(&block);
-//             self.node_state_bus
-//                 .send(NodeStateEvent::NewBlock(Box::new(full_block)))
-//                 .unwrap();
-//         }
-//     }
+        let receiver_global_bus = crate::bus::SharedMessageBus::new(
+            crate::bus::metrics::BusMetrics::global("global".to_string()),
+        );
+        let mut da_receiver = DataAvailabilityTestCtx::new(receiver_global_bus).await;
 
-//     #[test_log::test]
-//     fn test_blocks() -> Result<()> {
-//         let tmpdir = tempfile::tempdir().unwrap().into_path();
-//         let mut blocks = Blocks::new(&tmpdir).unwrap();
-//         let block = SignedBlock::default();
-//         blocks.put(block.clone())?;
-//         assert!(blocks.last().unwrap().height() == block.height());
-//         let last = blocks.get(&block.hash())?;
-//         assert!(last.is_some());
-//         assert!(last.unwrap().height() == BlockHeight(0));
-//         Ok(())
-//     }
+        // Push some blocks to the sender
+        let mut block = SignedBlock::default();
+        let mut blocks = vec![];
+        for i in 1..11 {
+            blocks.push(block.clone());
+            block.consensus_proposal.parent_hash = block.hash();
+            block.consensus_proposal.slot = i;
+        }
+        blocks.reverse();
+        for block in blocks {
+            da_tcp_sender.da_ctx.handle_signed_block(block).await;
+        }
 
-//     module_bus_client! {
-//     #[derive(Debug)]
-//     struct TestBusClient {
-//         sender(MempoolEvent),
-//     }
-//     }
+        tokio::spawn(async move {
+            _ = futures::join!(
+                da_tcp_sender.da_ctx.da.start(),
+                da_tcp_sender.da_tcp.start()
+            );
+        });
 
-//     #[test_log::test(tokio::test)]
-//     async fn test_da_streaming() {
-//         let tmpdir = tempfile::tempdir().unwrap().into_path();
-//         let blocks = Blocks::new(&tmpdir).unwrap();
+        // wait until it's up
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
-//         let global_bus = crate::bus::SharedMessageBus::new(
-//             crate::bus::metrics::BusMetrics::global("global".to_string()),
-//         );
-//         let bus = super::DABusClient::new_from_bus(global_bus.new_handle()).await;
-//         let mut block_sender = TestBusClient::new_from_bus(global_bus).await;
+        // Setup done
+        let (tx, mut rx) = tokio::sync::mpsc::channel(200);
+        da_receiver
+            .ask_for_catchup_blocks(da_sender_address.clone(), tx.clone())
+            .await
+            .expect("Error while asking for catchup blocks");
 
-//         let mut config: Conf = Conf::new(None, None, None).unwrap();
-//         config.da_address = format!("127.0.0.1:{}", find_available_port().await);
-//         let mut da = super::DataAvailability {
-//             config: config.clone().into(),
-//             bus,
-//             blocks,
-//             buffered_signed_blocks: Default::default(),
-//             stream_peer_metadata: Default::default(),
-//             need_catchup: false,
-//             catchup_task: None,
-//             catchup_height: None,
-//         };
+        let mut received_blocks = vec![];
+        while let Some(streamed_block) = rx.recv().await {
+            da_receiver
+                .handle_signed_block(streamed_block.clone())
+                .await;
+            received_blocks.push(streamed_block);
+            if received_blocks.len() == 10 {
+                break;
+            }
+        }
+        assert_eq!(received_blocks.len(), 10);
+        assert_eq!(received_blocks[0].height(), BlockHeight(0));
+        assert_eq!(received_blocks[9].height(), BlockHeight(9));
 
-//         let mut block = SignedBlock::default();
-//         let mut blocks = vec![];
-//         for i in 1..15 {
-//             blocks.push(block.clone());
-//             block.consensus_proposal.parent_hash = block.hash();
-//             block.consensus_proposal.slot = i;
-//         }
-//         blocks.reverse();
-//         for block in blocks {
-//             da.handle_signed_block(block).await;
-//         }
+        // Add a few blocks (via bus to avoid mutex)
+        let mut ccp = CommittedConsensusProposal {
+            staking: Staking::default(),
+            consensus_proposal: ConsensusProposal::default(),
+            certificate: AggregateSignature::default(),
+        };
 
-//         tokio::spawn(async move {
-//             da.start().await.unwrap();
-//         });
+        for i in 10..15 {
+            ccp.consensus_proposal.parent_hash = ccp.consensus_proposal.hash();
+            ccp.consensus_proposal.slot = i;
+            block_sender
+                .send(MempoolEvent::BuiltSignedBlock(SignedBlock {
+                    data_proposals: vec![(ValidatorPublicKey("".into()), vec![])],
+                    certificate: ccp.certificate.clone(),
+                    consensus_proposal: ccp.consensus_proposal.clone(),
+                }))
+                .unwrap();
+        }
 
-//         // wait until it's up
-//         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        // We should still be subscribed
+        while let Some(streamed_block) = rx.recv().await {
+            da_receiver
+                .handle_signed_block(streamed_block.clone())
+                .await;
+            received_blocks.push(streamed_block);
+            if received_blocks.len() == 15 {
+                break;
+            }
+        }
+        assert_eq!(received_blocks.len(), 15);
+        assert_eq!(received_blocks[14].height(), BlockHeight(14));
 
-//         let mut stream = tokio::net::TcpStream::connect(config.da_address.clone())
-//             .await
-//             .unwrap();
+        // Unsub
+        // TODO: ideally via processing the correct message
+        da_receiver.take_catchup_task().unwrap().abort();
 
-//         // TODO: figure out why writing doesn't work with da_stream.
-//         stream.write_u32(8).await.unwrap();
-//         stream.write_u64(0).await.unwrap();
+        // Add a few blocks (via bus to avoid mutex)
+        let mut ccp = CommittedConsensusProposal {
+            staking: Staking::default(),
+            consensus_proposal: ConsensusProposal::default(),
+            certificate: AggregateSignature::default(),
+        };
 
-//         let mut da_stream = Framed::new(stream, LengthDelimitedCodec::new());
+        for i in 15..20 {
+            ccp.consensus_proposal.parent_hash = ccp.consensus_proposal.hash();
+            ccp.consensus_proposal.slot = i;
+            block_sender
+                .send(MempoolEvent::BuiltSignedBlock(SignedBlock {
+                    data_proposals: vec![(ValidatorPublicKey("".into()), vec![])],
+                    certificate: ccp.certificate.clone(),
+                    consensus_proposal: ccp.consensus_proposal.clone(),
+                }))
+                .unwrap();
+        }
 
-//         let mut heights_received = vec![];
-//         while let Some(Ok(cmd)) = da_stream.next().await {
-//             let bytes = cmd;
-//             let block: SignedBlock =
-//                 bincode::decode_from_slice(&bytes, bincode::config::standard())
-//                     .unwrap()
-//                     .0;
-//             heights_received.push(block.height().0);
-//             if heights_received.len() == 14 {
-//                 break;
-//             }
-//         }
-//         assert_eq!(heights_received, (0..14).collect::<Vec<u64>>());
+        // Resubscribe - we should only receive the new ones.
+        da_receiver
+            .ask_for_catchup_blocks(da_sender_address, tx)
+            .await
+            .expect("Error while asking for catchup blocks");
 
-//         da_stream.close().await.unwrap();
-
-//         let mut ccp = CommittedConsensusProposal {
-//             staking: Staking::default(),
-//             consensus_proposal: ConsensusProposal::default(),
-//             certificate: AggregateSignature {
-//                 signature: crate::model::Signature("signature".into()),
-//                 validators: vec![],
-//             },
-//         };
-
-//         for i in 14..18 {
-//             ccp.consensus_proposal.parent_hash = ccp.consensus_proposal.hash();
-//             ccp.consensus_proposal.slot = i;
-//             block_sender
-//                 .send(MempoolEvent::BuiltSignedBlock(SignedBlock {
-//                     data_proposals: vec![(ValidatorPublicKey("".into()), vec![])],
-//                     certificate: ccp.certificate.clone(),
-//                     consensus_proposal: ccp.consensus_proposal.clone(),
-//                 }))
-//                 .unwrap();
-//         }
-
-//         // End of the first stream
-
-//         let mut stream = tokio::net::TcpStream::connect(config.da_address.clone())
-//             .await
-//             .unwrap();
-
-//         // TODO: figure out why writing doesn't work with da_stream.
-//         stream.write_u32(8).await.unwrap();
-//         stream.write_u64(0).await.unwrap();
-
-//         let mut da_stream = Framed::new(stream, LengthDelimitedCodec::new());
-
-//         let mut heights_received = vec![];
-//         while let Some(Ok(cmd)) = da_stream.next().await {
-//             let bytes = cmd;
-//             let block: SignedBlock =
-//                 bincode::decode_from_slice(&bytes, bincode::config::standard())
-//                     .unwrap()
-//                     .0;
-//             dbg!(&block);
-//             heights_received.push(block.height().0);
-//             if heights_received.len() == 18 {
-//                 break;
-//             }
-//         }
-
-//         assert_eq!(heights_received, (0..18).collect::<Vec<u64>>());
-//     }
-// }
+        let mut received_blocks = vec![];
+        while let Some(block) = rx.recv().await {
+            received_blocks.push(block);
+            if received_blocks.len() == 5 {
+                break;
+            }
+        }
+        assert_eq!(received_blocks.len(), 5);
+        assert_eq!(received_blocks[0].height(), BlockHeight(15));
+        assert_eq!(received_blocks[4].height(), BlockHeight(19));
+    }
+}
