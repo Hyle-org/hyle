@@ -84,8 +84,8 @@ async fn test_uuid_registration() {
     };
 
     let tx_context = loop {
-        if let Ok(v) = ctx.client().get_tx_context(&blob_tx.hash()).await {
-            break v;
+        if let Ok(v) = ctx.client().get_unsettled_tx(&blob_tx.hash()).await {
+            break (*v.tx_context).clone();
         }
         tokio::time::sleep(std::time::Duration::from_millis(250)).await;
     };

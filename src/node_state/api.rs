@@ -7,7 +7,7 @@ use axum::{
     Json, Router,
 };
 use hyle_contract_sdk::ContractName;
-use hyle_model::TxContext;
+use hyle_model::UnsettledBlobTransaction;
 use tracing::error;
 
 use crate::{
@@ -16,9 +16,8 @@ use crate::{
         command_response::{CmdRespClient, Query},
         metrics::BusMetrics,
     },
-    model::Contract,
-    model::{BlockHeight, CommonRunContext},
-    node_state::module::{QueryBlockHeight, QueryTxContext},
+    model::{BlockHeight, CommonRunContext, Contract},
+    node_state::module::{QueryBlockHeight, QueryUnsettledTx},
     rest::AppError,
 };
 
@@ -26,7 +25,7 @@ bus_client! {
 struct RestBusClient {
     sender(Query<ContractName, Contract>),
     sender(Query<QueryBlockHeight, BlockHeight>),
-    sender(Query<QueryTxContext, TxContext>),
+    sender(Query<QueryUnsettledTx, UnsettledBlobTransaction>),
 }
 }
 
@@ -44,7 +43,7 @@ pub async fn api(ctx: &CommonRunContext) -> Router<()> {
         // FIXME: we expose this endpoint for testing purposes. This should be removed or adapted
         .route("/contract/{name}", get(get_contract))
         // TODO: figure out if we want to rely on the indexer instead
-        .route("/tx_context/{blob_tx_hash}", get(get_tx_context))
+        .route("/unsettled_tx/{blob_tx_hash}", get(get_unsettled_tx))
         .with_state(state)
 }
 
@@ -66,13 +65,13 @@ pub async fn get_contract(
     }
 }
 
-pub async fn get_tx_context(
+pub async fn get_unsettled_tx(
     Path(blob_tx_hash): Path<String>,
     State(mut state): State<RouterState>,
 ) -> Result<impl IntoResponse, AppError> {
     match state
         .bus
-        .request(QueryTxContext(hyle_model::TxHash(blob_tx_hash)))
+        .request(QueryUnsettledTx(hyle_model::TxHash(blob_tx_hash)))
         .await
     {
         Ok(tx_context) => Ok(Json(tx_context)),
@@ -117,9 +116,11 @@ impl Clone for RouterState {
                     &self.bus,
                 )
                 .clone(),
-                Pick::<tokio::sync::broadcast::Sender<Query<QueryTxContext, TxContext>>>::get(
-                    &self.bus,
-                )
+                Pick::<
+                    tokio::sync::broadcast::Sender<
+                        Query<QueryUnsettledTx, UnsettledBlobTransaction>,
+                    >,
+                >::get(&self.bus)
                 .clone(),
             ),
         }

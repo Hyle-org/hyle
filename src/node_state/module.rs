@@ -11,7 +11,7 @@ use crate::utils::logger::LogMe;
 use crate::utils::modules::{module_bus_client, Module};
 use anyhow::{Context, Result};
 use bincode::{Decode, Encode};
-use hyle_model::{TxContext, TxHash};
+use hyle_model::{TxHash, UnsettledBlobTransaction};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tracing::info;
@@ -36,7 +36,7 @@ impl BusMessage for NodeStateEvent {}
 pub struct QueryBlockHeight {}
 
 #[derive(Clone)]
-pub struct QueryTxContext(pub TxHash);
+pub struct QueryUnsettledTx(pub TxHash);
 
 module_bus_client! {
 #[derive(Debug)]
@@ -45,7 +45,7 @@ pub struct NodeStateBusClient {
     receiver(DataEvent),
     receiver(Query<ContractName, Contract>),
     receiver(Query<QueryBlockHeight , BlockHeight>),
-    receiver(Query<QueryTxContext, TxContext>),
+    receiver(Query<QueryUnsettledTx, UnsettledBlobTransaction>),
 }
 }
 
@@ -86,9 +86,9 @@ impl Module for NodeStateModule {
             command_response<ContractName, Contract> cmd => {
                 self.inner.contracts.get(cmd).cloned().context("Contract not found")
             }
-            command_response<QueryTxContext, TxContext> tx_hash => {
+            command_response<QueryUnsettledTx, UnsettledBlobTransaction> tx_hash => {
                 match self.inner.unsettled_transactions.get(&tx_hash.0) {
-                    Some(tx) => Ok((*tx.tx_context).clone()),
+                    Some(tx) => Ok((*tx).clone()),
                     None => Err(anyhow::anyhow!("Transaction not found")),
                 }
             }
