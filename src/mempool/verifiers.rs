@@ -137,10 +137,12 @@ pub fn verify_native(
         initial_state: StateDigest::default(),
         next_state: StateDigest::default(),
         identity,
-        tx_hash,
         index,
         blobs,
         success,
+        tx_hash,
+        tx_ctx: None,
+        registered_contracts: vec![],
         program_outputs: vec![],
     }
 }

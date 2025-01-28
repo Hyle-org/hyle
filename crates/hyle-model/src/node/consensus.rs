@@ -51,10 +51,6 @@ pub enum Ticket {
     TimeoutQC(QuorumCertificate),
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, PartialEq, Eq, Default)]
-pub struct ConsensusProposalHash(pub String);
-pub type BlockHash = ConsensusProposalHash;
-
 #[cfg(feature = "sqlx")]
 impl sqlx::Type<sqlx::Postgres> for ConsensusProposalHash {
     fn type_info() -> sqlx::postgres::PgTypeInfo {
@@ -123,12 +119,6 @@ impl Hashable<ConsensusProposalHash> for ConsensusProposal {
         hasher.update(self.timestamp.to_le_bytes());
         hasher.update(self.parent_hash.0.as_bytes());
         ConsensusProposalHash(hex::encode(hasher.finalize()))
-    }
-}
-
-impl std::hash::Hash for ConsensusProposalHash {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        state.write(self.0.as_bytes());
     }
 }
 

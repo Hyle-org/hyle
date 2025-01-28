@@ -142,7 +142,7 @@ pub fn execute(input: ContractInput) -> HyleOutput {
         .try_into()
         .expect("Failed to decode state");
 
-    let password = from_utf8(&input.private_blob.0).unwrap();
+    let password = from_utf8(&input.private_input).unwrap();
 
     let res = sdk::identity_provider::execute_action(&mut state, parsed_blob, password);
 

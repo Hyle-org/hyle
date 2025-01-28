@@ -195,10 +195,12 @@ pub mod test {
             initial_state: contract_input.initial_state.clone(),
             next_state,
             identity: contract_input.identity.clone(),
-            tx_hash: contract_input.tx_hash.clone(),
             index: contract_input.index,
             blobs: flatten_blobs(&contract_input.blobs),
             success: true,
+            tx_hash: contract_input.tx_hash.clone(),
+            tx_ctx: None,
+            registered_contracts: vec![],
             program_outputs: vec![],
         };
         Ok(hyle_output)
