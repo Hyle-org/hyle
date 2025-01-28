@@ -234,7 +234,7 @@ impl Consensus {
                             .map_err(|e| anyhow::anyhow!(e))?,
                     }
                 }
-                staking.distribute();
+                staking.distribute().map_err(|e| anyhow::anyhow!(e))?;
             }
             Some(Ticket::TimeoutQC(_)) => {
                 self.bft_round_state.consensus_proposal.parent_hash = round_parent_hash;
@@ -290,7 +290,7 @@ impl Consensus {
                 ConsensusStakingAction::PayFeesForDaDi {
                     disseminator,
                     cumul_size,
-                } => self.verify_dadi_fees(disseminator, cumul_size)?,
+                } => Self::verify_dadi_fees(&proposal.cut, disseminator, cumul_size)?,
             }
         }
         Ok(())
@@ -298,14 +298,15 @@ impl Consensus {
 
     /// Verify that the fees paid by the disseminator are correct
     fn verify_dadi_fees(
-        &mut self,
+        cut: &Cut,
         disseminator: &ValidatorPublicKey,
         cumul_size: &LaneBytesSize,
     ) -> Result<()> {
-        self.bft_round_state
-            .consensus_proposal
-            .cut
-            .iter()
+        info!(
+            "🔍 Verifying fees paid by disseminator: {} ({}) in cut {:?}",
+            disseminator, cumul_size, cut
+        );
+        cut.iter()
             .find(|l| &l.0 == disseminator && &l.2 == cumul_size)
             .map(|_| ())
             .ok_or(anyhow!(
@@ -1154,6 +1155,12 @@ pub mod test {
                 .bft_round_state
                 .staking
                 .stake(hex::encode(pubkey.0.clone()).into(), 100)
+                .unwrap();
+
+            self.consensus
+                .bft_round_state
+                .staking
+                .deposit_for_fees(pubkey.clone(), 1_000_000_000)
                 .unwrap();
 
             self.consensus

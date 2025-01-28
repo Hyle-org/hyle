@@ -148,9 +148,12 @@ impl std::hash::Hash for ConsensusProposal {
 /// Represents the operations that can be performed by the consensus
 #[derive(Encode, Decode, Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub enum ConsensusStakingAction {
+    /// Bonding a new validator candidate
     Bond {
-        candidate: NewValidatorCandidate,
-    }, // Bonding a new validator candidate
+        // Boxed to reduce size of the enum
+        // cf https://rust-lang.github.io/rust-clippy/master/index.html#large_enum_variant
+        candidate: Box<NewValidatorCandidate>,
+    },
 
     /// DaDi = Data Dissemination
     PayFeesForDaDi {
@@ -161,7 +164,9 @@ pub enum ConsensusStakingAction {
 
 impl From<NewValidatorCandidate> for ConsensusStakingAction {
     fn from(val: NewValidatorCandidate) -> Self {
-        ConsensusStakingAction::Bond { candidate: val }
+        ConsensusStakingAction::Bond {
+            candidate: Box::new(val),
+        }
     }
 }
 

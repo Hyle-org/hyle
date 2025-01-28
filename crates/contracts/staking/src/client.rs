@@ -1,3 +1,4 @@
+use anyhow::anyhow;
 use client_sdk::{
     helpers::{risc0::Risc0Prover, ClientSdkExecutor},
     transaction_builder::{ProvableBlobTx, StateUpdater, TxExecutorBuilder},
@@ -96,7 +97,9 @@ pub fn deposit_for_fees(
         })
         .build_offchain_state(move |state: StateDigest| -> anyhow::Result<StateDigest> {
             let mut state: Staking = state.try_into()?;
-            state.deposit_for_fees(holder.clone(), amount);
+            state
+                .deposit_for_fees(holder.clone(), amount)
+                .map_err(|e| anyhow!(e))?;
             Ok(state.as_digest())
         });
     Ok(())

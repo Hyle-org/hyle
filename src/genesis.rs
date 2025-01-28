@@ -22,7 +22,7 @@ use hyle_contract_sdk::{ContractName, Digestable, ProgramId};
 use hyllar::{client::transfer, HyllarToken};
 use serde::{Deserialize, Serialize};
 use staking::{
-    client::{delegate, stake},
+    client::{delegate, deposit_for_fees, stake},
     state::Staking,
 };
 use tracing::{debug, error, info};
@@ -296,7 +296,7 @@ impl Genesis {
                 &mut transaction,
                 ContractName::new("hyllar"),
                 format!("{peer}.hydentity"),
-                genesis_faucet,
+                genesis_faucet + 1_000_000_000,
             )?;
 
             txs.push(tx_executor.process(transaction)?);
@@ -343,6 +343,21 @@ impl Genesis {
                 ContractName::new("hyllar"),
                 "staking".to_string(),
                 genesis_stake,
+            )?;
+
+            // Deposit for fees
+            deposit_for_fees(
+                &mut transaction,
+                ContractName::new("staking"),
+                peer.clone(),
+                1_000_000_000, // 1 GB at 1 token/byte
+            )?;
+
+            transfer(
+                &mut transaction,
+                ContractName::new("hyllar"),
+                "staking".to_string(),
+                1_000_000_000,
             )?;
 
             // Delegate

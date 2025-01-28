@@ -120,7 +120,7 @@ impl LeaderRole for Consensus {
             debug!("📦 Lane {} cumulated size: {}", tx.0, tx.2);
             staking_actions.push(ConsensusStakingAction::PayFeesForDaDi {
                 disseminator: tx.0.clone(),
-                cumul_size: tx.2.clone(),
+                cumul_size: tx.2,
             });
         }
 
