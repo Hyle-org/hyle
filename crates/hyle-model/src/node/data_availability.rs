@@ -1,4 +1,4 @@
-use std::hash::Hash;
+use std::{hash::Hash, sync::Arc};
 
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
@@ -14,15 +14,20 @@ pub struct Contract {
     pub verifier: Verifier,
 }
 
-#[derive(Default, Debug, Clone, PartialEq, Eq, Hash, Encode, Decode)]
+#[derive(
+    Default, Debug, Clone, PartialEq, Eq, Hash, Encode, Decode, serde::Serialize, serde::Deserialize,
+)]
 pub struct UnsettledBlobTransaction {
     pub identity: Identity,
     pub hash: TxHash,
+    pub tx_context: Arc<TxContext>,
     pub blobs_hash: BlobsHash,
     pub blobs: Vec<UnsettledBlobMetadata>,
 }
 
-#[derive(Default, Debug, Clone, PartialEq, Eq, Hash, Encode, Decode)]
+#[derive(
+    Default, Debug, Clone, PartialEq, Eq, Hash, Encode, Decode, serde::Serialize, serde::Deserialize,
+)]
 pub struct UnsettledBlobMetadata {
     pub blob: Blob,
     // Each time we receive a proof, we add it to this list

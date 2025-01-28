@@ -8,7 +8,7 @@ use std::{
 use anyhow::{bail, Result};
 use sdk::{
     Blob, BlobIndex, BlobTransaction, ContractAction, ContractInput, ContractName, Hashable,
-    HyleOutput, Identity, ProofData, StateDigest,
+    HyleOutput, Identity, ProofData, StateDigest, TxContext,
 };
 
 use crate::helpers::{ClientSdkExecutor, ClientSdkProver};
@@ -17,6 +17,7 @@ pub struct ProvableBlobTx {
     pub identity: Identity,
     pub blobs: Vec<Blob>,
     runners: Vec<ContractRunner>,
+    tx_context: Option<TxContext>,
 }
 
 impl ProvableBlobTx {
@@ -25,6 +26,7 @@ impl ProvableBlobTx {
             identity,
             runners: vec![],
             blobs: vec![],
+            tx_context: None,
         }
     }
 
@@ -45,6 +47,10 @@ impl ProvableBlobTx {
         self.blobs
             .push(action.as_blob(contract_name, caller, callees));
         Ok(self.runners.last_mut().unwrap())
+    }
+
+    pub fn add_context(&mut self, tx_context: TxContext) {
+        self.tx_context = Some(tx_context);
     }
 }
 
@@ -226,7 +232,12 @@ impl<S: StateUpdater> TxExecutor<S> {
 
             let private_input = runner.private_input(full_state.clone())?;
 
-            runner.build_input(tx.blobs.clone(), private_input, on_chain_state.clone());
+            runner.build_input(
+                tx.tx_context.clone(),
+                tx.blobs.clone(),
+                private_input,
+                on_chain_state.clone(),
+            );
 
             tracing::info!("Checking transition for {}...", runner.contract_name);
             let out = self
@@ -319,6 +330,7 @@ impl ContractRunner {
 
     fn build_input(
         &mut self,
+        tx_context: Option<TxContext>,
         blobs: Vec<Blob>,
         private_input: Vec<u8>,
         initial_state: StateDigest,
@@ -335,7 +347,7 @@ impl ContractRunner {
             index: self.index,
             blobs,
             tx_hash,
-            tx_ctx: None, // TODO
+            tx_ctx: tx_context,
             private_input,
         });
     }

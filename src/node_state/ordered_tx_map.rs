@@ -105,8 +105,11 @@ impl OrderedTxMap {
 #[cfg(test)]
 mod tests {
     #![allow(clippy::indexing_slicing)]
+    use std::sync::Arc;
+
     use crate::model::{BlobsHash, UnsettledBlobMetadata};
     use hyle_contract_sdk::{Blob, BlobData, Identity};
+    use hyle_model::TxContext;
 
     use super::*;
 
@@ -122,6 +125,7 @@ mod tests {
                 },
                 possible_proofs: vec![],
             }],
+            tx_context: Arc::new(TxContext::default()),
         }
     }
 
