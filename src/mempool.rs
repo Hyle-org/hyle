@@ -208,8 +208,9 @@ impl Mempool {
     pub async fn start(&mut self) -> Result<()> {
         let tick_time = std::cmp::min(self.conf.consensus.slot_duration / 2, 500);
         let mut interval = tokio::time::interval(tokio::time::Duration::from_millis(tick_time));
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
 
-        // TODO: Recompute optimistic node_state
+        // TODO: Recompute optimistic node_state for contract registrations.
 
         module_handle_messages! {
             on_bus self.bus,

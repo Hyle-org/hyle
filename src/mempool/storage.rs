@@ -734,6 +734,7 @@ impl Lane {
         let data_proposal_hash = data_proposal.hash();
         let dp_size = data_proposal.estimate_size();
         let lane_size = self.get_lane_size();
+        let tx_len = data_proposal.txs.len();
         let msg = MempoolNetMessage::DataVote(data_proposal_hash.clone(), lane_size + dp_size);
         let signatures = match crypto.sign(msg) {
             Ok(s) => vec![s],
@@ -748,8 +749,9 @@ impl Lane {
             },
         );
         tracing::info!(
-            "Added new DataProposal {} to lane, size: {}",
+            "Added new DataProposal {} to lane, txs: {}, size: {}",
             data_proposal_hash,
+            tx_len,
             lane_size + dp_size
         );
 
