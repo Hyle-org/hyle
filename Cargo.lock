@@ -72,7 +72,7 @@ checksum = "683d7910e743518b0e34f1186f92494becacb047c7b6bf616c96772180fef923"
 
 [[package]]
 name = "amm"
-version = "0.8.0"
+version = "0.7.3"
 dependencies = [
  "anyhow",
  "bincode 2.0.0-rc.3",
@@ -862,7 +862,7 @@ dependencies = [
 
 [[package]]
 name = "bonsai-runner"
-version = "0.8.0"
+version = "0.7.3"
 dependencies = [
  "anyhow",
  "axum 0.8.1",
@@ -1130,7 +1130,7 @@ checksum = "f46ad14479a25103f283c0f10005961cf086d8dc42205bb44c46ac563475dca6"
 
 [[package]]
 name = "client-sdk"
-version = "0.8.0"
+version = "0.7.3"
 dependencies = [
  "anyhow",
  "bincode 2.0.0-rc.3",
@@ -2503,7 +2503,7 @@ checksum = "df3b46402a9d5adb4c86a0cf463f42e19994e3ee891101b1841f30a545cb49a9"
 
 [[package]]
 name = "hydentity"
-version = "0.8.0"
+version = "0.7.3"
 dependencies = [
  "anyhow",
  "bincode 2.0.0-rc.3",
@@ -2518,7 +2518,7 @@ dependencies = [
 
 [[package]]
 name = "hyle"
-version = "0.8.0"
+version = "0.7.3"
 dependencies = [
  "amm",
  "anyhow",
@@ -2581,7 +2581,7 @@ dependencies = [
 
 [[package]]
 name = "hyle-contract-sdk"
-version = "0.8.0"
+version = "0.7.3"
 dependencies = [
  "bincode 2.0.0-rc.3",
  "hyle-model",
@@ -2594,7 +2594,7 @@ dependencies = [
 
 [[package]]
 name = "hyle-contracts"
-version = "0.8.0"
+version = "0.7.3"
 dependencies = [
  "hyle-contract-sdk",
  "risc0-build",
@@ -2602,7 +2602,7 @@ dependencies = [
 
 [[package]]
 name = "hyle-loadtest"
-version = "0.8.0"
+version = "0.7.3"
 dependencies = [
  "anyhow",
  "bincode 2.0.0-rc.3",
@@ -2619,7 +2619,7 @@ dependencies = [
 
 [[package]]
 name = "hyle-model"
-version = "0.8.0"
+version = "0.7.3"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -2653,7 +2653,7 @@ dependencies = [
 
 [[package]]
 name = "hyllar"
-version = "0.8.0"
+version = "0.7.3"
 dependencies = [
  "anyhow",
  "bincode 2.0.0-rc.3",
@@ -2780,6 +2780,24 @@ dependencies = [
  "pin-project-lite",
  "tokio",
  "tower-service",
+]
+
+[[package]]
+name = "hyrun"
+version = "0.7.3"
+dependencies = [
+ "amm",
+ "anyhow",
+ "borsh",
+ "clap",
+ "hex",
+ "hydentity",
+ "hyle-contract-sdk",
+ "hyllar",
+ "reqwest",
+ "risc0-zkvm",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -5126,7 +5144,7 @@ dependencies = [
 
 [[package]]
 name = "risc0-recursion"
-version = "0.8.0"
+version = "0.7.3"
 dependencies = [
  "anyhow",
  "bincode 2.0.0-rc.3",
@@ -6477,7 +6495,7 @@ checksum = "a8f112729512f8e442d81f95a8a7ddf2b7c6b8a1a6f509a95864142b30cab2d3"
 
 [[package]]
 name = "staking"
-version = "0.8.0"
+version = "0.7.3"
 dependencies = [
  "anyhow",
  "bincode 2.0.0-rc.3",
