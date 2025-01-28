@@ -43,8 +43,8 @@ impl ConfMaker {
 impl Default for ConfMaker {
     fn default() -> Self {
         let mut default = Conf::new(None, None, None).unwrap();
-        let mut rng = rand::thread_rng();
-        let random_port: u32 = rng.gen_range(1024..(65536 - 4000));
+        let mut rng = rand::rng();
+        let random_port: u32 = rng.random_range(1024..(65536 - 4000));
         default.single_node = Some(false);
         default.host = format!("localhost:{}", random_port);
         default.da_address = format!("localhost:{}", random_port + 1000);
