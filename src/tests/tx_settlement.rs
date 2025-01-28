@@ -1,7 +1,7 @@
 use client_sdk::rest_client::{IndexerApiHttpClient, NodeApiHttpClient};
 use hyle_model::{
     BlobTransaction, ContractAction, ContractName, Hashable, ProgramId, ProofData,
-    ProofTransaction, RegisterContractAction, StateDigest,
+    ProofTransaction, RegisterContractAction, RegisterContractEffect, StateDigest,
 };
 use testcontainers_modules::{
     postgres::Postgres,
@@ -135,6 +135,74 @@ async fn test_full_settlement_flow() -> Result<()> {
     let pg_client = IndexerApiHttpClient::new(format!("http://{rest_client}/")).unwrap();
     let contract = pg_client.get_indexer_contract(&"c2.hyle".into()).await?;
     assert_eq!(contract.state_digest, vec![8, 8, 8]);
+
+    Ok(())
+}
+
+#[test_log::test(tokio::test)]
+async fn test_contract_upgrade() -> Result<()> {
+    let builder = NodeIntegrationCtxBuilder::new().await;
+    let rest_url = builder.conf.rest.clone();
+    let mut node_modules = builder.build().await?;
+
+    node_modules.wait_for_genesis_event().await?;
+
+    let client = NodeApiHttpClient::new(format!("http://{rest_url}/")).unwrap();
+
+    info!("➡️  Registering contracts c1.hyle");
+
+    let b1 = make_register_blob_action("c1.hyle".into(), StateDigest(vec![1, 2, 3]));
+    client.send_tx_blob(&b1).await.unwrap();
+
+    node_modules.wait_for_settled_tx(b1.hash()).await?;
+
+    let contract = client.get_contract(&"c1.hyle".into()).await?;
+    assert_eq!(contract.program_id, ProgramId(vec![1, 2, 3]));
+
+    // Send contract update transaction
+    let b2 = BlobTransaction {
+        identity: "toto.c1.hyle".into(),
+        blobs: vec![Blob {
+            contract_name: "c1.hyle".into(),
+            data: BlobData(vec![1]),
+        }],
+    };
+    client.send_tx_blob(&b2).await.unwrap();
+
+    let mut hyle_output =
+        make_hyle_output_with_state(b2.clone(), BlobIndex(0), &[1, 2, 3], &[8, 8, 8]);
+
+    hyle_output
+        .registered_contracts
+        .push(RegisterContractEffect {
+            verifier: "test".into(),
+            program_id: ProgramId(vec![7, 7, 7]),
+            // The state digest is ignored during the update phase.
+            state_digest: StateDigest(vec![3, 3, 3]),
+            contract_name: "c1.hyle".into(),
+        });
+
+    let proof_update = ProofTransaction {
+        contract_name: "c1.hyle".into(),
+        proof: ProofData(
+            bincode::encode_to_vec(vec![hyle_output], bincode::config::standard()).unwrap(),
+        ),
+    };
+
+    client.send_tx_proof(&proof_update).await.unwrap();
+
+    info!("➡️  Waiting for TX to be settled");
+    node_modules.wait_for_settled_tx(b2.hash()).await?;
+    // Wait a block on top to make sure the state is updated.
+    node_modules.wait_for_n_blocks(1).await?;
+
+    info!("➡️  Getting contracts");
+
+    let contract = client.get_contract(&"c1.hyle".into()).await?;
+    // Check program ID has changed.
+    assert_eq!(contract.program_id, ProgramId(vec![7, 7, 7]));
+    // We use the next_state, not the state_digest of the update effect.
+    assert_eq!(contract.state.0, vec![8, 8, 8]);
 
     Ok(())
 }
