@@ -743,7 +743,6 @@ async fn mempool_fail_to_vote_on_fork() {
     //        <-        dp3(3)
 
     let dp_fork_3 = DataProposal {
-        id: 3,
         parent_data_proposal_hash: Some(dp1.hash()),
         txs: vec![],
     };
@@ -768,21 +767,21 @@ async fn mempool_fail_to_vote_on_fork() {
     assert_ne!(
         node2
             .mempool_ctx
-            .last_validator_data_proposal(node1.mempool_ctx.validator_pubkey())
+            .last_validator_lane_entry(node1.mempool_ctx.validator_pubkey())
             .1,
         dp_fork_3.hash()
     );
     assert_ne!(
         node3
             .mempool_ctx
-            .last_validator_data_proposal(node1.mempool_ctx.validator_pubkey())
+            .last_validator_lane_entry(node1.mempool_ctx.validator_pubkey())
             .1,
         dp_fork_3.hash()
     );
     assert_ne!(
         node4
             .mempool_ctx
-            .last_validator_data_proposal(node1.mempool_ctx.validator_pubkey())
+            .last_validator_lane_entry(node1.mempool_ctx.validator_pubkey())
             .1,
         dp_fork_3.hash()
     );

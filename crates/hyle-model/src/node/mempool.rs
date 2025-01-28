@@ -8,7 +8,6 @@ use crate::*;
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, Encode, Decode, Eq, PartialEq)]
 pub struct DataProposal {
-    pub id: u32,
     pub parent_data_proposal_hash: Option<DataProposalHash>,
     pub txs: Vec<Transaction>,
 }

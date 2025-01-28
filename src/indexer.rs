@@ -737,7 +737,6 @@ mod test {
         signed_block.data_proposals.push((
             ValidatorPublicKey("ttt".into()),
             vec![DataProposal {
-                id: 1,
                 parent_data_proposal_hash: None,
                 txs,
             }],
