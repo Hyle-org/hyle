@@ -880,9 +880,9 @@ dependencies = [
 
 [[package]]
 name = "bonsai-sdk"
-version = "1.2.1"
+version = "1.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1f7ecaa1f078d094627e8413f6d5623c3605b40327194f8e6857b6af7da24587"
+checksum = "32a6c42e9ac4df9f62aade6f4a7fab56db33d4518d1cac37434f040f610f6d40"
 dependencies = [
  "duplicate",
  "maybe-async",
