@@ -196,7 +196,7 @@ pub mod test {
             next_state,
             identity: contract_input.identity.clone(),
             tx_hash: contract_input.tx_hash.clone(),
-            index: contract_input.index.clone(),
+            index: contract_input.index,
             blobs: flatten_blobs(&contract_input.blobs),
             success: true,
             program_outputs: vec![],

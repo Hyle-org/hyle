@@ -96,6 +96,13 @@ fn register_contract(input: &ContractInput) -> Result<(Uuid, StateDigest), Strin
 pub fn execute(contract_input: ContractInput) -> HyleOutput {
     let (input, parsed_blob) = sdk::guest::init_raw::<RegisterUuidContract>(contract_input);
 
+    let parsed_blob = match parsed_blob {
+        Some(v) => v,
+        None => {
+            return sdk::guest::fail(input, "Failed to parse input blob");
+        }
+    };
+
     // Not an identity provider
     if input
         .identity
@@ -116,7 +123,7 @@ pub fn execute(contract_input: ContractInput) -> HyleOutput {
             next_state,
             identity: input.identity,
             tx_hash: input.tx_hash,
-            index: input.index.clone(),
+            index: input.index,
             blobs: flatten_blobs(&input.blobs),
             success: true,
             program_outputs: bincode::encode_to_vec(

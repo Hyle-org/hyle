@@ -280,7 +280,7 @@ pub fn execute(contract_input: ContractInput) -> sdk::HyleOutput {
     for blob in input.blobs.clone().into_iter() {
         if let Ok(structured_blob) = blob.data.clone().try_into() {
             let structured_blob: StructuredBlobData<Vec<u8>> = structured_blob; // for type inference
-            if structured_blob.caller == Some(input.index.clone()) {
+            if structured_blob.caller == Some(input.index) {
                 callees_blobs.push(blob);
             }
         };

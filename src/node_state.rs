@@ -309,7 +309,7 @@ impl NodeState {
         blob_proof_outputs.push(HandledBlobProofOutput {
             proof_tx_hash,
             blob_tx_hash: unsettled_tx_hash.clone(),
-            blob_index: blob_proof_data.hyle_output.index.clone(),
+            blob_index: blob_proof_data.hyle_output.index,
             blob_proof_output_index: blob.possible_proofs.len() - 1,
             #[allow(clippy::indexing_slicing, reason = "Guaranteed to exist by the above")]
             contract_name: unsettled_tx.blobs[blob_proof_data.hyle_output.index.0]
@@ -568,13 +568,15 @@ impl NodeState {
                 let blob = blob_metadata.blob;
                 // Keep track of all stakers
                 if blob.contract_name.0 == "staking" {
-                    let staking_action: StakingAction =
-                        parse_structured_blob(&[blob], &BlobIndex(0))
-                            .data
-                            .parameters;
-                    block_under_construction
-                        .staking_actions
-                        .push((settled_tx.identity.clone(), staking_action));
+                    if let Some(structured_blob) = parse_structured_blob(&[blob], &BlobIndex(0)) {
+                        let staking_action: StakingAction = structured_blob.data.parameters;
+
+                        block_under_construction
+                            .staking_actions
+                            .push((settled_tx.identity.clone(), staking_action));
+                    } else {
+                        error!("Failed to parse StakingAction");
+                    }
                 }
             }
 
