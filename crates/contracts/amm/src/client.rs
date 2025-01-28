@@ -1,8 +1,10 @@
+use std::any::Any;
+
 use client_sdk::{
     helpers::{risc0::Risc0Prover, ClientSdkExecutor},
     transaction_builder::{ProvableBlobTx, StateUpdater, TxExecutorBuilder},
 };
-use sdk::{erc20::ERC20Action, BlobIndex, ContractName, Digestable};
+use sdk::{erc20::ERC20Action, utils::as_hyle_output, BlobIndex, ContractName, Digestable};
 
 use crate::{execute, AmmAction, AmmState};
 
@@ -14,8 +16,16 @@ use metadata::*;
 
 struct AmmPseudoExecutor {}
 impl ClientSdkExecutor for AmmPseudoExecutor {
-    fn execute(&self, contract_input: &sdk::ContractInput) -> anyhow::Result<sdk::HyleOutput> {
-        Ok(execute(contract_input.clone()))
+    fn execute(
+        &self,
+        contract_input: &sdk::ContractInput,
+    ) -> anyhow::Result<(Box<dyn Any>, sdk::HyleOutput)> {
+        let mut res = execute(contract_input.clone());
+        let output = as_hyle_output(contract_input.clone(), &mut res);
+        match res {
+            Ok(res) => Ok((Box::new(res.1.clone()), output)),
+            Err(e) => Err(anyhow::anyhow!(e)),
+        }
     }
 }
 
@@ -89,6 +99,7 @@ pub fn swap(
         None,
         Some(vec![BlobIndex(idx + 1), BlobIndex(idx + 2)]),
     )?;
+
     builder.add_action(
         pair.0,
         ERC20Action::TransferFrom {

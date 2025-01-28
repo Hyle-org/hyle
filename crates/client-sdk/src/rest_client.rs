@@ -137,13 +137,10 @@ impl IndexerApiHttpClient {
         .await
     }
 
-    pub async fn fetch_current_state<State>(&self, contract_name: &ContractName) -> Result<State>
-    where
-        State: TryFrom<StateDigest, Error = anyhow::Error>,
-    {
+    pub async fn fetch_current_state(&self, contract_name: &ContractName) -> Result<StateDigest> {
         let resp = self.get_indexer_contract(contract_name).await?;
 
-        StateDigest(resp.state_digest).try_into()
+        Ok(StateDigest(resp.state_digest))
     }
 
     pub async fn get_blocks(&self) -> Result<Vec<APIBlock>> {

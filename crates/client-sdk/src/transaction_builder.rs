@@ -1,4 +1,5 @@
 use std::{
+    any::Any,
     collections::BTreeMap,
     future::Future,
     ops::{Deref, DerefMut},
@@ -121,8 +122,8 @@ where
     Self: std::marker::Sized,
 {
     fn setup(&self, ctx: &mut TxExecutorBuilder<Self>);
-    fn update(&mut self, contract_name: &ContractName, new_state: StateDigest) -> Result<()>;
-    fn get(&self, contract_name: &ContractName) -> Result<StateDigest>;
+    fn update(&mut self, contract_name: &ContractName, new_state: &mut dyn Any) -> Result<()>;
+    fn get(&self, contract_name: &ContractName) -> Result<Box<dyn Any>>;
 }
 
 #[derive(Default)]
@@ -238,9 +239,9 @@ impl<S: StateUpdater> TxExecutor<S> {
                 .get(&runner.contract_name)
                 .cloned()
                 .ok_or(anyhow::anyhow!("State not found"))?;
-            let full_state = self.full_states.get(&runner.contract_name)?.clone();
+            let full_state = self.full_states.get(&runner.contract_name)?;
 
-            let private_input = runner.private_input(full_state.clone())?;
+            let private_input = runner.private_input(&full_state)?;
 
             runner.build_input(
                 tx.tx_context.clone(),
@@ -250,7 +251,7 @@ impl<S: StateUpdater> TxExecutor<S> {
             );
 
             tracing::info!("Checking transition for {}...", runner.contract_name);
-            let out = self
+            let (mut full_state, out) = self
                 .executors
                 .get(&runner.contract_name)
                 .unwrap()
@@ -265,13 +266,9 @@ impl<S: StateUpdater> TxExecutor<S> {
                 .entry(runner.contract_name.clone())
                 .and_modify(|v| *v = out.next_state.clone());
 
-            if let Some(off_chain_new_state) = runner.callback(full_state)? {
-                self.full_states
-                    .update(&runner.contract_name, off_chain_new_state)?;
-            } else {
-                self.full_states
-                    .update(&runner.contract_name, out.next_state.clone())?;
-            }
+            //let off_chain_new_state = runner.callback(&mut *full_state)?;
+            self.full_states
+                .update(&runner.contract_name, &mut *full_state)?;
 
             outputs.push((runner.contract_name.clone(), out));
         }
@@ -292,8 +289,7 @@ pub struct ContractRunner {
     identity: Identity,
     index: BlobIndex,
     contract_input: OnceLock<ContractInput>,
-    offchain_cb: Option<Box<dyn Fn(StateDigest) -> Result<StateDigest> + Send + Sync>>,
-    private_input_cb: Option<Box<dyn Fn(StateDigest) -> Result<Vec<u8>> + Send + Sync>>,
+    private_input_cb: Option<Box<dyn Fn(&Box<dyn Any>) -> Result<Vec<u8>> + Send + Sync>>,
 }
 
 impl ContractRunner {
@@ -303,35 +299,22 @@ impl ContractRunner {
             identity,
             index,
             contract_input: OnceLock::new(),
-            offchain_cb: None,
             private_input_cb: None,
         })
     }
 
-    pub fn build_offchain_state<F>(&mut self, f: F) -> &mut Self
+    pub fn with_private_input<T: Any, F>(&mut self, f: F) -> &mut Self
     where
-        F: Fn(StateDigest) -> Result<StateDigest> + Send + Sync + 'static,
+        F: Fn(&T) -> Result<Vec<u8>> + Send + Sync + 'static,
     {
-        self.offchain_cb = Some(Box::new(f));
+        self.private_input_cb = Some(Box::new(move |a: &Box<dyn Any>| {
+            let a = a.downcast_ref::<T>().expect("cannot fail");
+            f(a)
+        }));
         self
     }
 
-    pub fn with_private_input<F>(&mut self, f: F) -> &mut Self
-    where
-        F: Fn(StateDigest) -> Result<Vec<u8>> + Send + Sync + 'static,
-    {
-        self.private_input_cb = Some(Box::new(f));
-        self
-    }
-
-    fn callback(&self, state: StateDigest) -> Result<Option<StateDigest>> {
-        self.offchain_cb
-            .as_ref()
-            .map(|cb| cb(state))
-            .map_or(Ok(None), |v| v.map(Some))
-    }
-
-    fn private_input(&self, state: StateDigest) -> Result<Vec<u8>> {
+    fn private_input(&self, state: &Box<dyn Any>) -> Result<Vec<u8>> {
         self.private_input_cb
             .as_ref()
             .map(|cb| cb(state))
@@ -383,18 +366,23 @@ macro_rules! contract_states {
             fn update(
                 &mut self,
                 contract_name: &ContractName,
-                new_state: StateDigest,
+                new_state: &mut dyn std::any::Any,
             ) -> anyhow::Result<()> {
                 match contract_name.0.as_str() {
-                    $(stringify!($contract_name) => self.$contract_name = new_state.try_into()?,)*
+                    $(stringify!($contract_name) => {
+                        let Some(st) = new_state.downcast_mut::<$contract_type>() else {
+                            anyhow::bail!("Incorrect state data passed for contract '{}'", contract_name);
+                        };
+                        std::mem::swap(&mut self.$contract_name, st);
+                    })*
                     _ => anyhow::bail!("Unknown contract name: {contract_name}"),
                 };
                 Ok(())
             }
 
-            fn get(&self, contract_name: &ContractName) -> anyhow::Result<StateDigest> {
+            fn get(&self, contract_name: &ContractName) -> anyhow::Result<Box<dyn std::any::Any>> {
                 match contract_name.0.as_str() {
-                    $(stringify!($contract_name) => Ok(Digestable::as_digest(&self.$contract_name)),)*
+                    $(stringify!($contract_name) => Ok(Box::new(self.$contract_name.clone())),)*
                     _ => anyhow::bail!("Unknown contract name: {contract_name}"),
                 }
             }

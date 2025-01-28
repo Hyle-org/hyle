@@ -16,7 +16,7 @@ mod e2e_hyllar {
         client::{register_identity, verify_identity},
         Hydentity,
     };
-    use hyle_contract_sdk::{erc20::ERC20, ContractName, Digestable, StateDigest};
+    use hyle_contract_sdk::{erc20::ERC20, ContractName};
     use hyle_contracts::{HYDENTITY_ELF, HYLLAR_ELF};
     use hyllar::{client::transfer, HyllarToken};
 

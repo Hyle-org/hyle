@@ -4,9 +4,8 @@ use std::hash::{Hash, Hasher};
 use bincode::{Decode, Encode};
 use sdk::caller::{CalleeBlobs, CallerCallee, CheckCalleeBlobs, ExecutionContext, MutCalleeBlobs};
 use sdk::erc20::{ERC20BlobChecker, ERC20};
-use sdk::utils::as_hyle_output;
 use sdk::{erc20::ERC20Action, Identity};
-use sdk::{Blob, BlobIndex, ContractAction, ContractInput, Digestable, RunResult};
+use sdk::{Blob, BlobIndex, ContractAction, ContractInput, Digestable, RunResult, StateDigest};
 use sdk::{BlobData, ContractName, StructuredBlobData};
 use serde::{Deserialize, Serialize};
 
@@ -88,6 +87,11 @@ impl AmmState {
         }
         None
     }
+
+    pub fn as_bytes(&self) -> Vec<u8> {
+        bincode::encode_to_vec(self, bincode::config::standard())
+            .expect("Failed to encode AmmState")
+    }
 }
 
 impl AmmContract {
@@ -111,7 +115,7 @@ impl AmmContract {
         &mut self,
         pair: (String, String),
         amounts: TokenPairAmount,
-    ) -> RunResult {
+    ) -> Result<String, String> {
         // Check that new pair is about two different tokens and that there is one blob for each
         if pair.0 == pair.1 {
             return Err("Swap can only happen between two different tokens".to_string());
@@ -152,7 +156,7 @@ impl AmmContract {
         pair: TokenPair,
         from_amount: u128,
         to_amount: u128,
-    ) -> RunResult {
+    ) -> Result<String, String> {
         // Check that swap is only about two different tokens
         if pair.0 == pair.1 {
             return Err("Swap can only happen between two different tokens".to_string());
@@ -219,16 +223,14 @@ impl AmmContract {
 
 impl Digestable for AmmState {
     fn as_digest(&self) -> sdk::StateDigest {
-        sdk::StateDigest(
-            bincode::encode_to_vec(self, bincode::config::standard())
-                .expect("Failed to encode AmmState"),
-        )
+        sdk::StateDigest(self.as_bytes())
     }
 }
-impl TryFrom<sdk::StateDigest> for AmmState {
+
+impl TryFrom<StateDigest> for AmmState {
     type Error = anyhow::Error;
 
-    fn try_from(state: sdk::StateDigest) -> Result<Self, Self::Error> {
+    fn try_from(state: StateDigest) -> Result<Self, Self::Error> {
         let (amm_state, _) = bincode::decode_from_slice(&state.0, bincode::config::standard())
             .map_err(|_| anyhow::anyhow!("Could not decode amm state"))?;
         Ok(amm_state)
@@ -266,7 +268,7 @@ impl ContractAction for AmmAction {
     }
 }
 
-pub fn execute(contract_input: ContractInput) -> sdk::HyleOutput {
+pub fn execute(contract_input: ContractInput) -> RunResult<AmmState> {
     let (input, parsed_blob, caller) =
         match sdk::guest::init_with_caller::<AmmAction>(contract_input) {
             Ok(res) => res,
@@ -310,7 +312,10 @@ pub fn execute(contract_input: ContractInput) -> sdk::HyleOutput {
 
     assert!(amm_contract.callee_blobs().is_empty());
 
-    as_hyle_output(input, amm_contract.state(), res)
+    match res {
+        Ok(program_outputs) => Ok((program_outputs, amm_contract.state, vec![])),
+        Err(e) => Err(e),
+    }
 }
 
 #[cfg(test)]
