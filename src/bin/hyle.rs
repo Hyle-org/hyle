@@ -6,6 +6,7 @@ use hyle::{
     bus::{metrics::BusMetrics, SharedMessageBus},
     consensus::Consensus,
     data_availability::DataAvailability,
+    data_availability_tcp_server::DataAvailabilityTcpServer,
     genesis::Genesis,
     indexer::Indexer,
     mempool::Mempool,
@@ -130,6 +131,9 @@ async fn main() -> Result<()> {
     }
     handler
         .build_module::<DataAvailability>(ctx.clone())
+        .await?;
+    handler
+        .build_module::<DataAvailabilityTcpServer>(ctx.clone())
         .await?;
     handler
         .build_module::<NodeStateModule>(ctx.common.clone())

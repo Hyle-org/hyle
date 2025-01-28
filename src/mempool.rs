@@ -76,6 +76,7 @@ module_bus_client! {
 struct MempoolBusClient {
     sender(OutboundMessage),
     sender(MempoolEvent),
+    sender(MempoolStatusEvent),
     sender(InternalMempoolEvent),
     receiver(InternalMempoolEvent),
     receiver(SignedByValidator<MempoolNetMessage>),
@@ -138,6 +139,15 @@ impl Display for MempoolNetMessage {
 }
 
 impl BusMessage for MempoolNetMessage {}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub enum MempoolStatusEvent {
+    // PendingTx(TxHash),
+    // DataProposalCreated(DataProposalHash, Vec<TxHash>),
+    // DataProposalPoda(DataProposalHash, Vec<ValidatorPublicKey>),
+    // DataProposalCut(DataProposalHash, Cut),
+}
+impl BusMessage for MempoolStatusEvent {}
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub enum MempoolEvent {
