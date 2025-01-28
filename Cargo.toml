@@ -13,6 +13,13 @@ members = [
     "crates/hyle-loadtest",
     "crates/hyle-model",
     "crates/hyle-verifiers",
+    ".",
+]
+default-members = [
+    "crates/contracts",
+    "crates/hyle-loadtest",
+    "crates/hyle-model",
+    ".",
 ]
 resolver = "2"
 
