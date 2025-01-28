@@ -147,12 +147,6 @@ where
     }
 
     async fn handle_processed_block(&mut self, block: Block) -> Result<()> {
-        info!(
-            cn = %self.contract_name, "📦 Handling block #{}",
-            block.block_height,
-        );
-        debug!(cn = %self.contract_name, "📦 Handled block outputs: {:?}", block);
-
         for tx in block.txs {
             match tx.transaction_data {
                 TransactionData::RegisterContract(tx) => {
