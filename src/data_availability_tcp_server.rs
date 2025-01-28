@@ -19,7 +19,7 @@ use crate::{
         modules::{module_bus_client, Module},
     },
 };
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result};
 use futures::{
     stream::{SplitSink, SplitStream},
     SinkExt, StreamExt,
@@ -30,7 +30,7 @@ use tokio::{
     task::{JoinHandle, JoinSet},
 };
 use tokio_util::codec::Framed;
-use tracing::info;
+use tracing::{debug, info};
 
 impl BusMessage for DataAvailabilityServerRequest {}
 
@@ -158,34 +158,66 @@ impl DataAvailabilityTcpServer {
                     .stream_peer_metadata
                     .get_mut(&peer)
                     .context(format!("Getting peer {}", peer))?;
-                peer_md
-                    .sender
-                    .send(block)
-                    .await
-                    .context(format!("Sending block to peer {}", peer))
+                if let Err(e) = peer_md.sender.send(block.clone()).await {
+                    debug!(
+                        "Couldn't send new block to peer {}, stopping streaming  : {:?}",
+                        &peer, e
+                    );
+                    peer_md.keepalive_abort.abort();
+                    self.stream_peer_metadata.remove(&peer);
+                }
+                Ok(())
             }
             DataAvailabilityStreamEvent::Broadcast { block } => {
-                let mut failed_peers = vec![];
-                for (peer, block_stream_peer) in self.stream_peer_metadata.iter_mut() {
-                    let p = block_stream_peer
-                        .sender
-                        .send(block.clone())
-                        .await
-                        .log_error(format!("Sending block {} to peer {}", block.height(), peer));
-
-                    if p.is_err() {
-                        failed_peers.push(peer);
+                // Stream block to all peers
+                // TODO: use retain once async closures are supported ?
+                let mut to_remove = Vec::new();
+                for (peer_id, peer) in self.stream_peer_metadata.iter_mut() {
+                    let last_ping = peer.last_ping;
+                    if last_ping + 60 * 5 < get_current_timestamp() {
+                        info!("peer {} timed out", &peer_id);
+                        peer.keepalive_abort.abort();
+                        to_remove.push(peer_id.clone());
+                    } else {
+                        info!("streaming block {} to peer {}", block.hash(), &peer_id);
+                        match peer.sender.send(block.clone()).await {
+                            Ok(_) => {}
+                            Err(e) => {
+                                debug!(
+                                    "Couldn't send new block to peer {}, stopping streaming  : {:?}",
+                                    &peer_id, e
+                                );
+                                peer.keepalive_abort.abort();
+                                to_remove.push(peer_id.clone());
+                            }
+                        }
                     }
                 }
-                if failed_peers.is_empty() {
-                    Ok(())
-                } else {
-                    bail!(
-                        "Failed to send block {} to peers {:?}",
-                        block.height(),
-                        failed_peers
-                    );
+                for peer_id in to_remove {
+                    self.stream_peer_metadata.remove(&peer_id);
                 }
+                Ok(())
+                // let mut failed_peers = vec![];
+                // for (peer, block_stream_peer) in self.stream_peer_metadata.iter_mut() {
+                //     let p = block_stream_peer
+                //         .sender
+                //         .send(block.clone())
+                //         .await
+                //         .log_error(format!("Sending block {} to peer {}", block.height(), peer));
+
+                //     if p.is_err() {
+                //         failed_peers.push(peer);
+                //     }
+                // }
+                // if failed_peers.is_empty() {
+                //     Ok(())
+                // } else {
+                //     bail!(
+                //         "Failed to send block {} to peers {:?}",
+                //         block.height(),
+                //         failed_peers
+                //     );
+                // }
             }
         }
     }
