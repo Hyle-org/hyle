@@ -86,7 +86,7 @@ fn register_contract(input: &ContractInput) -> Result<(Uuid, StateDigest), Strin
     hasher.write(tx_ctx.block_hash.0.as_bytes());
     hasher.write_u128(tx_ctx.timestamp);
     let mut hasher_rng = hasher.into_rng();
-    let id = uuid::Builder::from_random_bytes(hasher_rng.gen()).into_uuid();
+    let id = uuid::Builder::from_random_bytes(hasher_rng.random()).into_uuid();
 
     // _really_ shouldn't happen but let's handle it regardless.
     if !state.registered_contracts.insert(id.as_u128()) {
