@@ -379,6 +379,7 @@ impl DataAvailability {
 pub mod tests {
     #![allow(clippy::indexing_slicing)]
 
+    use crate::bus::BusClientReceiver;
     use crate::model::ValidatorPublicKey;
     use crate::{
         bus::BusClientSender,
@@ -389,15 +390,11 @@ pub mod tests {
             module::{NodeStateBusClient, NodeStateEvent},
             NodeState,
         },
-        utils::{conf::Conf, integration_test::find_available_port},
     };
-    use futures::{SinkExt, StreamExt};
     use staking::state::Staking;
-    use tokio::io::AsyncWriteExt;
-    use tokio_util::codec::{Framed, LengthDelimitedCodec};
 
-    use super::module_bus_client;
-    use super::Blocks;
+    use super::{module_bus_client, DataAvailabilityStreamEvent};
+    use super::{Blocks, DataAvailabilityStreamRequest};
     use anyhow::Result;
 
     /// For use in integration tests
@@ -415,8 +412,6 @@ pub mod tests {
             let bus = super::DABusClient::new_from_bus(shared_bus.new_handle()).await;
             let node_state_bus = NodeStateBusClient::new_from_bus(shared_bus).await;
 
-            let mut config: Conf = Conf::new(None, None, None).unwrap();
-            config.da_address = format!("127.0.0.1:{}", find_available_port().await);
             let da = super::DataAvailability {
                 bus,
                 blocks,
@@ -491,6 +486,8 @@ pub mod tests {
     #[derive(Debug)]
     struct TestBusClient {
         sender(MempoolEvent),
+        sender(DataAvailabilityStreamRequest),
+        receiver(DataAvailabilityStreamEvent),
     }
     }
 
@@ -502,11 +499,10 @@ pub mod tests {
         let global_bus = crate::bus::SharedMessageBus::new(
             crate::bus::metrics::BusMetrics::global("global".to_string()),
         );
-        let bus = super::DABusClient::new_from_bus(global_bus.new_handle()).await;
-        let mut block_sender = TestBusClient::new_from_bus(global_bus).await;
 
-        let mut config: Conf = Conf::new(None, None, None).unwrap();
-        config.da_address = format!("127.0.0.1:{}", find_available_port().await);
+        let bus = super::DABusClient::new_from_bus(global_bus.new_handle()).await;
+        let mut test_bus_client = TestBusClient::new_from_bus(global_bus).await;
+
         let mut da = super::DataAvailability {
             bus,
             blocks,
@@ -533,33 +529,51 @@ pub mod tests {
         });
 
         // wait until it's up
+
+        _ = test_bus_client.send(DataAvailabilityStreamRequest(
+            "peer".to_string(),
+            BlockHeight(0),
+        ));
+
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
-        let mut stream = tokio::net::TcpStream::connect(config.da_address.clone())
-            .await
-            .unwrap();
+        let mut broadcasts = vec![];
+        // Lets remove broadcast messages genenrated by handle_signed_block calls
+        while let Ok(cmd) = test_bus_client.try_recv() {
+            if let DataAvailabilityStreamEvent::Broadcast { block } = cmd {
+                broadcasts.push(block.height().0);
+                if broadcasts.len() == 14 {
+                    break;
+                }
+            } else {
+                panic!(
+                    "message {:?} should match {}",
+                    cmd,
+                    stringify!(DataAvailabilityStreamEvent::Broadcast {})
+                );
+            }
+        }
 
-        // TODO: figure out why writing doesn't work with da_stream.
-        stream.write_u32(8).await.unwrap();
-        stream.write_u64(0).await.unwrap();
-
-        let mut da_stream = Framed::new(stream, LengthDelimitedCodec::new());
+        assert_eq!(broadcasts, (0..14).collect::<Vec<u64>>());
 
         let mut heights_received = vec![];
-        while let Some(Ok(cmd)) = da_stream.next().await {
-            let bytes = cmd;
-            let block: SignedBlock =
-                bincode::decode_from_slice(&bytes, bincode::config::standard())
-                    .unwrap()
-                    .0;
-            heights_received.push(block.height().0);
-            if heights_received.len() == 14 {
-                break;
+
+        while let Ok(cmd) = test_bus_client.try_recv() {
+            if let DataAvailabilityStreamEvent::Send { peer, block } = cmd {
+                assert_eq!(peer, "peer");
+                heights_received.push(block.height().0);
+                if heights_received.len() == 14 {
+                    break;
+                }
+            } else {
+                panic!(
+                    "message {:?} should match {}",
+                    cmd,
+                    stringify!(DataAvailabilityStreamEvent::Send {})
+                );
             }
         }
         assert_eq!(heights_received, (0..14).collect::<Vec<u64>>());
-
-        da_stream.close().await.unwrap();
 
         let mut ccp = CommittedConsensusProposal {
             staking: Staking::default(),
@@ -573,7 +587,7 @@ pub mod tests {
         for i in 14..18 {
             ccp.consensus_proposal.parent_hash = ccp.consensus_proposal.hash();
             ccp.consensus_proposal.slot = i;
-            block_sender
+            test_bus_client
                 .send(MempoolEvent::BuiltSignedBlock(SignedBlock {
                     data_proposals: vec![(ValidatorPublicKey("".into()), vec![])],
                     certificate: ccp.certificate.clone(),
@@ -582,29 +596,21 @@ pub mod tests {
                 .unwrap();
         }
 
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         // End of the first stream
 
-        let mut stream = tokio::net::TcpStream::connect(config.da_address.clone())
-            .await
-            .unwrap();
-
-        // TODO: figure out why writing doesn't work with da_stream.
-        stream.write_u32(8).await.unwrap();
-        stream.write_u64(0).await.unwrap();
-
-        let mut da_stream = Framed::new(stream, LengthDelimitedCodec::new());
-
-        let mut heights_received = vec![];
-        while let Some(Ok(cmd)) = da_stream.next().await {
-            let bytes = cmd;
-            let block: SignedBlock =
-                bincode::decode_from_slice(&bytes, bincode::config::standard())
-                    .unwrap()
-                    .0;
-            dbg!(&block);
-            heights_received.push(block.height().0);
-            if heights_received.len() == 18 {
-                break;
+        while let Ok(cmd) = test_bus_client.try_recv() {
+            if let DataAvailabilityStreamEvent::Broadcast { block } = cmd {
+                heights_received.push(block.height().0);
+                if heights_received.len() == 18 {
+                    break;
+                }
+            } else {
+                panic!(
+                    "message {:?} should match {}",
+                    cmd,
+                    stringify!(DataAvailabilityStreamEvent::Broadcast {})
+                );
             }
         }
 
