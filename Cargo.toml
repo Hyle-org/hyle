@@ -21,7 +21,7 @@ version = "0.8.0"
 edition = "2021"
 homepage = "https://hyle.eu/"
 repository = "https://github.com/Hyle-org/hyle/"
-rust-version = "1.81"
+rust-version = "1.84"
 # licence = ""
 
 [package]

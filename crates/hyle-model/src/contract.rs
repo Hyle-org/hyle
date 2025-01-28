@@ -230,7 +230,7 @@ pub struct HyleOutput {
 
 #[derive(Default, Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash, Encode, Decode)]
 pub struct TxContext {
-    pub block_hash: ConsensusProposalHash,
+    pub block_hash: BlockHash,
     pub block_height: BlockHeight,
     pub timestamp: u128,
     pub chain_id: u128,

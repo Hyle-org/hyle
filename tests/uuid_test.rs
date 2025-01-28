@@ -118,7 +118,7 @@ async fn test_uuid_registration() {
             next_state: executor.uuid.as_digest(),
             identity: "toto.hydentity".into(),
             tx_hash: Into::<Transaction>::into(blob_tx).hash(),
-            tx_ctx: Some(TxContext::default()),
+            tx_ctx: None,
             index: BlobIndex(1),
             blobs,
             success: true,
