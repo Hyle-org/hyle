@@ -305,7 +305,7 @@ impl NodeState {
         };
 
         // If we arrived here, HyleOutput provided is OK and can now be saved
-        info!(
+        debug!(
             "Saving a hyle_output for BlobTx {} index {}",
             blob_proof_data.hyle_output.tx_hash.0, blob_proof_data.hyle_output.index
         );
