@@ -3,11 +3,15 @@ use client_sdk::{
     transaction_builder::{ProvableBlobTx, StateUpdater, TxExecutorBuilder},
 };
 use sdk::{
-    api::APIStaking, BlobData, ContractName, Digestable, StakingAction, StateDigest,
-    ValidatorPublicKey,
+    api::{APIFees, APIStaking},
+    BlobData, ContractName, Digestable, StakingAction, StateDigest, ValidatorPublicKey,
 };
 
-use crate::{execute, state::Staking};
+use crate::{
+    execute,
+    fees::{Fees, ValidatorFeeState},
+    state::Staking,
+};
 
 pub mod metadata {
     pub const STAKING_ELF: &[u8] = include_bytes!("../staking.img");
@@ -45,8 +49,57 @@ impl From<APIStaking> for Staking {
             bonded: val.bonded,
             delegations: val.delegations,
             total_bond: val.total_bond,
+            fees: val.fees.into(),
         }
     }
+}
+
+impl From<APIFees> for Fees {
+    fn from(val: APIFees) -> Self {
+        Fees {
+            pending_fees: vec![],
+            balances: val
+                .balances
+                .into_iter()
+                .map(|(val, b)| {
+                    (
+                        val,
+                        ValidatorFeeState {
+                            balance: b.balance,
+                            cumul_size: b.cumul_size,
+                        },
+                    )
+                })
+                .collect(),
+        }
+    }
+}
+
+pub fn deposit_for_fees(
+    builder: &mut ProvableBlobTx,
+    contract_name: ContractName,
+    holder: ValidatorPublicKey,
+    amount: u128,
+) -> anyhow::Result<()> {
+    builder
+        .add_action(
+            contract_name,
+            StakingAction::DepositForFees {
+                holder: holder.clone(),
+                amount,
+            },
+            None,
+            None,
+        )?
+        .with_private_blob(|state: StateDigest| -> anyhow::Result<BlobData> {
+            Ok(BlobData(state.0))
+        })
+        .build_offchain_state(move |state: StateDigest| -> anyhow::Result<StateDigest> {
+            let mut state: Staking = state.try_into()?;
+            state.deposit_for_fees(holder.clone(), amount);
+            Ok(state.as_digest())
+        });
+    Ok(())
 }
 
 pub fn stake(

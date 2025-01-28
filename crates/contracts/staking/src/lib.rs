@@ -10,6 +10,7 @@ use state::{OnChainState, Staking};
 #[cfg(feature = "client")]
 pub mod client;
 
+pub mod fees;
 pub mod state;
 
 pub struct StakingContract {
@@ -41,6 +42,9 @@ impl StakingContract {
                 self.state.delegate_to(self.caller().clone(), validator)
             }
             StakingAction::Distribute { claim: _ } => todo!(),
+            StakingAction::DepositForFees { holder, amount } => {
+                self.state.deposit_for_fees(holder, amount)
+            }
         }
     }
 

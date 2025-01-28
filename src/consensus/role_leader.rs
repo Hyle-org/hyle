@@ -11,6 +11,7 @@ use crate::{
 };
 use anyhow::{anyhow, bail, Result};
 use bincode::{Decode, Encode};
+use hyle_model::ConsensusStakingAction;
 use staking::state::MIN_STAKE;
 use tracing::{debug, error, trace};
 
@@ -108,16 +109,20 @@ impl LeaderRole for Consensus {
             }
         };
 
-        for tx in cut.iter() {
-            debug!("📦 Lane {} transited {}", tx.0, tx.2);
-        }
-
         self.bft_round_state.leader.step = Step::PrepareVote;
 
-        let staking_actions = new_validators_to_bond
+        let mut staking_actions: Vec<ConsensusStakingAction> = new_validators_to_bond
             .into_iter()
             .map(|v| v.into())
             .collect();
+
+        for tx in cut.iter() {
+            debug!("📦 Lane {} cumulated size: {}", tx.0, tx.2);
+            staking_actions.push(ConsensusStakingAction::PayFeesForDaDi {
+                disseminator: tx.0.clone(),
+                cumul_size: tx.2.clone(),
+            });
+        }
 
         // Start Consensus with following cut
         self.bft_round_state.consensus_proposal.cut = cut;

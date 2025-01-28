@@ -4,8 +4,8 @@ use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 
 use crate::{
-    BlockHeight, ConsensusProposalHash, Identity, Transaction, TransactionData, TxHash,
-    ValidatorPublicKey,
+    BlockHeight, ConsensusProposalHash, Identity, LaneBytesSize, Transaction, TransactionData,
+    TxHash, ValidatorPublicKey,
 };
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -27,6 +27,21 @@ pub struct APIStaking {
     /// List of validators that are part of consensus
     pub bonded: Vec<ValidatorPublicKey>,
     pub total_bond: u128,
+
+    /// Struct to handle fees
+    pub fees: APIFees,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+pub struct APIFeesBalance {
+    pub balance: i128,
+    pub cumul_size: LaneBytesSize,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+pub struct APIFees {
+    /// Balance of each validator
+    pub balances: BTreeMap<ValidatorPublicKey, APIFeesBalance>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

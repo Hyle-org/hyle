@@ -83,8 +83,9 @@ impl NodeState {
                 .consensus_proposal
                 .staking_actions
                 .iter()
-                .map(|v| match v {
-                    ConsensusStakingAction::Bond { candidate } => candidate.pubkey.clone(),
+                .filter_map(|v| match v {
+                    ConsensusStakingAction::Bond { candidate } => Some(candidate.pubkey.clone()),
+                    _ => None,
                 })
                 .collect(),
             timed_out_txs: vec![], // Added below as it needs the block

@@ -2,9 +2,11 @@ use std::collections::BTreeMap;
 
 use anyhow::Result;
 use bincode::{Decode, Encode};
-use sdk::{info, BlockHeight, Digestable, Identity, ValidatorPublicKey};
+use sdk::{info, BlockHeight, Digestable, Identity, LaneBytesSize, ValidatorPublicKey};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+
+use crate::fees::Fees;
 
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, PartialEq, Eq)]
 pub struct OnChainState(pub String);
@@ -20,6 +22,9 @@ pub struct Staking {
     /// List of validators that are part of consensus
     pub(crate) bonded: Vec<ValidatorPublicKey>,
     pub(crate) total_bond: u128,
+
+    /// Struct to handle fees
+    pub(crate) fees: Fees,
 }
 
 /// Minimal stake necessary to be part of consensus
@@ -33,6 +38,7 @@ impl Staking {
             rewarded: BTreeMap::new(),
             bonded: Vec::new(),
             total_bond: 0,
+            fees: Fees::default(),
         }
     }
     /// On-chain state is a hash of parts of the state that are altered only
@@ -136,6 +142,39 @@ impl Staking {
             .and_modify(|e| e.push(staker.clone()))
             .or_insert_with(|| vec![staker]);
         Ok("Delegated".to_string())
+    }
+
+    //    ----------
+    //      Fees
+    //    ----------
+
+    /// Deposit funds to be distributed as fees
+    /// This function is meant to be called from BlobTransaction
+    pub fn deposit_for_fees(
+        &mut self,
+        holder: ValidatorPublicKey,
+        amount: u128,
+    ) -> Result<String, String> {
+        self.fees.deposit_for_fees(holder, amount);
+        Ok("Deposited".to_string())
+    }
+
+    /// Store the fees to be distributed
+    /// DaDi = Data dissemination
+    /// This function is meant to be called by the consensus
+    pub fn pay_for_dadi(
+        &mut self,
+        disseminator: ValidatorPublicKey,
+        cumul_size: LaneBytesSize,
+    ) -> Result<(), String> {
+        self.fees.pay_for_dadi(disseminator, cumul_size)?;
+        Ok(())
+    }
+
+    /// Distribute the fees to the bonded validators
+    /// This function is meant to be called by the consensus
+    pub fn distribute(&mut self) -> Result<(), String> {
+        self.fees.distribute(&self.bonded)
     }
 }
 

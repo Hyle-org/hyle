@@ -14,9 +14,21 @@ pub struct RewardsClaim {
 /// Enum representing the actions that can be performed by the IdentityVerification contract.
 #[derive(Encode, Decode, Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub enum StakingAction {
-    Stake { amount: u128 },
-    Delegate { validator: ValidatorPublicKey },
-    Distribute { claim: RewardsClaim },
+    Stake {
+        amount: u128,
+    },
+    Delegate {
+        validator: ValidatorPublicKey,
+    },
+    Distribute {
+        claim: RewardsClaim,
+    },
+
+    /// Fees are deposited by the validators to be distributed to the bonded validators
+    DepositForFees {
+        holder: ValidatorPublicKey,
+        amount: u128,
+    },
 }
 
 impl ContractAction for StakingAction {
