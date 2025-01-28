@@ -98,7 +98,7 @@ opentelemetry-prometheus = { version = "0.27.0" }
 paste = { version = "1.0.15" }
 prometheus = { version = "0.13.4" }
 quote = { version = "1.0.38" }
-rand = { version = "0.8.5" }
+rand = { version = "0.9" }
 ron = { version = "0.8.1" }
 sqlx = { version = "0.8.3", features = [
     "runtime-tokio",
