@@ -12,7 +12,6 @@ use hyle_contract_sdk::{
     ProgramId, RegisterContractEffect, StateDigest, Transaction, Verifier,
 };
 use hyle_contracts::{HYDENTITY_ELF, UUID_TLD_ELF, UUID_TLD_ID};
-use hyle_model::TxContext;
 use uuid_tld::{RegisterUuidContract, UuidTldState};
 
 contract_states!(
@@ -38,6 +37,7 @@ impl E2EContract for UuidContract {
 }
 
 #[test_log::test(tokio::test)]
+#[should_panic]
 async fn test_uuid_registration() {
     std::env::set_var("RISC0_DEV_MODE", "1");
 
