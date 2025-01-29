@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use axum::Router;
 use axum_otel_metrics::HttpMetricsLayerBuilder;
 use clap::Parser;
@@ -93,6 +93,12 @@ async fn main() -> Result<()> {
 
     let pg;
     if args.pg {
+        if std::fs::metadata(&config.data_directory).is_ok() {
+            bail!(
+                "Data directory {} exists. --pg flag is given, please clean data dir first.",
+                config.data_directory.display()
+            );
+        }
         info!("🐘 Starting postgres DB with default settings for the indexer");
         pg = Postgres::default()
             .with_cmd(["postgres", "-c", "log_statement=all"])
