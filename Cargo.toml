@@ -140,7 +140,7 @@ client-sdk = { path = "./crates/client-sdk", default-features = false, features 
 ] }
 
 assert_cmd = "2.0.16"
-axum-test = { version = "17.1.0" }
+axum-test = { version = "17.2.0" }
 tokio-tungstenite = "0.26.1"
 reqwest = { version = "0.12", features = ["json", "blocking"] }
 serde_json = "1.0.137"
