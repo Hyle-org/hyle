@@ -91,6 +91,7 @@ struct MempoolBusClient {
 #[derive(Default, Encode, Decode)]
 pub struct MempoolStore {
     storage: Storage,
+    pending_txs: Vec<Transaction>,
     last_ccp: Option<CommittedConsensusProposal>,
     blocks_under_contruction: VecDeque<BlockUnderConstruction>,
     buc_build_start_height: Option<u64>,
@@ -323,7 +324,8 @@ impl Mempool {
         trace!("🌝 Handling DataProposal management");
         // Create new DataProposal with pending txs
         let crypto = self.crypto.clone();
-        self.storage.new_data_proposal(&crypto); // TODO: copy crypto in storage
+        let new_txs = std::mem::take(&mut self.pending_txs);
+        self.storage.new_data_proposal(&crypto, new_txs); // TODO: copy crypto in storage
 
         // Check for each pending DataProposal if it has enough signatures
         if let Some(entries) = self.storage.get_lane_pending_entries(&self.storage.id) {
@@ -890,9 +892,8 @@ impl Mempool {
         let tx_type: &'static str = (&tx.transaction_data).into();
 
         self.metrics.add_api_tx(tx_type);
-        self.storage.on_new_tx(tx);
-        self.metrics
-            .snapshot_pending_tx(self.storage.pending_txs.len());
+        self.pending_txs.push(tx);
+        self.metrics.snapshot_pending_tx(self.pending_txs.len());
 
         Ok(())
     }
@@ -1481,7 +1482,7 @@ pub mod test {
         );
 
         // Assert that pending_tx has been flushed
-        assert!(ctx.mempool.storage.pending_txs.is_empty());
+        assert!(ctx.mempool.pending_txs.is_empty());
         Ok(())
     }
 
@@ -1570,7 +1571,7 @@ pub mod test {
         assert_eq!(data_proposal.txs, vec![register_tx]);
 
         // Assert that pending_tx is still flushed
-        assert!(ctx.mempool.storage.pending_txs.is_empty());
+        assert!(ctx.mempool.pending_txs.is_empty());
 
         Ok(())
     }
@@ -1970,7 +1971,7 @@ pub mod test {
             }
         );
 
-        assert!(ctx.mempool.storage.pending_txs.is_empty());
+        assert!(ctx.mempool.pending_txs.is_empty());
         Ok(())
     }
 
@@ -2142,7 +2143,7 @@ pub mod test {
             }
         );
 
-        assert!(ctx.mempool.storage.pending_txs.is_empty());
+        assert!(ctx.mempool.pending_txs.is_empty());
 
         // Second round - register a tx
         ctx.submit_contract_tx("test2");
