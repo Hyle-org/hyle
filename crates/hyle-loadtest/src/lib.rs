@@ -5,8 +5,8 @@ use client_sdk::tcp_client::NodeTcpClient;
 use client_sdk::transaction_builder::{ProvableBlobTx, TxExecutorBuilder};
 use hydentity::Hydentity;
 use hyle_contract_sdk::erc20::ERC20;
+use hyle_contract_sdk::BlobTransaction;
 use hyle_contract_sdk::{Blob, BlobData, ContractAction, RegisterContractAction};
-use hyle_contract_sdk::{BlobTransaction, ProofTransaction};
 use hyle_contract_sdk::{ContractName, Identity};
 use hyle_contract_sdk::{Digestable, StateDigest, TcpServerNetMessage};
 use hyllar::client::transfer;
@@ -155,12 +155,9 @@ pub async fn generate_proof_txs(users: u32, state: States) -> Result<Vec<Vec<u8>
 
                 let provable_tx = ctx.process(transaction)?;
 
-                for (proof, contract_name) in provable_tx.iter_prove() {
-                    let msg: TcpServerNetMessage = ProofTransaction {
-                        contract_name,
-                        proof: proof.await.unwrap(),
-                    }
-                    .into();
+                for proof in provable_tx.iter_prove() {
+                    let tx = proof.await.unwrap();
+                    let msg: TcpServerNetMessage = tx.into();
                     local_proof_txs.push(msg.to_binary()?);
                 }
             }

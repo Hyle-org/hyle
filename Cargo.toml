@@ -17,6 +17,7 @@ members = [
 ]
 default-members = [
     "crates/contracts",
+    "crates/contracts/hydentity",
     "crates/hyle-loadtest",
     "crates/hyle-model",
     ".",

@@ -96,18 +96,14 @@ async fn test_uuid_registration() {
     let expected_output = tx.outputs[1].1.registered_contracts[0].clone();
 
     let mut proofs = tx.iter_prove();
-    let first_proof = proofs.next().unwrap().0.await.unwrap();
-    let uuid_proof = proofs.next().unwrap().0.await.unwrap();
+    let first_proof = proofs.next().unwrap().await.unwrap();
+    let uuid_proof = proofs.next().unwrap().await.unwrap();
 
-    ctx.send_proof_single("hydentity".into(), first_proof.clone(), blob_tx.hash())
-        .await
-        .unwrap();
-    ctx.send_proof_single("uuid".into(), uuid_proof.clone(), blob_tx.hash())
-        .await
-        .unwrap();
+    ctx.send_proof_single(first_proof.clone()).await.unwrap();
+    ctx.send_proof_single(uuid_proof.clone()).await.unwrap();
 
     let outputs = verify_proof(
-        &uuid_proof,
+        &uuid_proof.proof,
         &Verifier("risc0".into()),
         &ProgramId(UUID_TLD_ID.to_vec()),
     )

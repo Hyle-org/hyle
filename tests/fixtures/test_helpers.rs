@@ -3,7 +3,7 @@ use assert_cmd::prelude::*;
 use client_sdk::transaction_builder::{ProvableBlobTx, StateUpdater, TxExecutor};
 
 use hyle::{
-    model::{BlobTransaction, ProofData},
+    model::BlobTransaction,
     rest::client::NodeApiHttpClient,
     utils::conf::{Conf, Consensus},
 };
@@ -201,15 +201,9 @@ pub async fn send_transaction<S: StateUpdater>(
         .unwrap();
 
     let provable_tx = ctx.process(transaction).unwrap();
-    for (proof, contract_name) in provable_tx.iter_prove() {
-        let proof: ProofData = proof.await.unwrap();
-        client
-            .send_tx_proof(&hyle::model::ProofTransaction {
-                proof,
-                contract_name,
-            })
-            .await
-            .unwrap();
+    for proof in provable_tx.iter_prove() {
+        let tx = proof.await.unwrap();
+        client.send_tx_proof(&tx).await.unwrap();
     }
     tx_hash
 }
