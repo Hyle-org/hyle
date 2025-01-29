@@ -5,6 +5,7 @@ use std::{
 
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, PartialEq, Eq, Default)]
 #[cfg_attr(feature = "full", derive(utoipa::ToSchema))]
