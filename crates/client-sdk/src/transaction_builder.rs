@@ -108,7 +108,7 @@ impl ProofTxBuilder {
         })
     }
 
-    pub fn get_blob_tx(&self) -> BlobTransaction {
+    pub fn to_blob_tx(&self) -> BlobTransaction {
         BlobTransaction {
             identity: self.identity.clone(),
             blobs: self.blobs.clone(),

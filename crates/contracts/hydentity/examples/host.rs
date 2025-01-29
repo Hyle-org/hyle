@@ -89,7 +89,7 @@ async fn main() {
 
             // Send the blob transaction
             let blob_tx_hash = client
-                .send_tx_blob(&transaction.get_blob_tx())
+                .send_tx_blob(&transaction.to_blob_tx())
                 .await
                 .unwrap();
             println!("✅ Blob tx sent. Tx hash: {}", blob_tx_hash);
@@ -135,7 +135,7 @@ async fn main() {
 
             // Send the blob transaction
             let blob_tx_hash = client
-                .send_tx_blob(&transaction.get_blob_tx())
+                .send_tx_blob(&transaction.to_blob_tx())
                 .await
                 .unwrap();
             println!("✅ Blob tx sent. Tx hash: {}", blob_tx_hash);
