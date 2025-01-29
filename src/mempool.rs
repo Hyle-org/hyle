@@ -27,7 +27,7 @@ use metrics::MempoolMetrics;
 use serde::{Deserialize, Serialize};
 use staking::state::Staking;
 use std::{
-    collections::{HashMap, HashSet, VecDeque},
+    collections::{BTreeMap, HashMap, HashSet, VecDeque},
     fmt::Display,
     ops::{Deref, DerefMut},
     path::PathBuf,
@@ -91,6 +91,7 @@ struct MempoolBusClient {
 #[derive(Default, Encode, Decode)]
 pub struct MempoolStore {
     storage: Storage,
+    buffered_proposals: BTreeMap<ValidatorPublicKey, Vec<DataProposal>>,
     pending_txs: Vec<Transaction>,
     last_ccp: Option<CommittedConsensusProposal>,
     blocks_under_contruction: VecDeque<BlockUnderConstruction>,
@@ -648,7 +649,10 @@ impl Mempool {
         self.storage
             .add_missing_lane_entries(validator, missing_lane_entries)?;
 
-        let mut waiting_proposals = self.storage.get_waiting_data_proposals(validator)?;
+        let mut waiting_proposals = match self.buffered_proposals.get_mut(validator) {
+            Some(waiting_proposals) => std::mem::take(waiting_proposals),
+            None => vec![],
+        };
         for wp in waiting_proposals.iter_mut() {
             self.on_data_proposal(validator, std::mem::take(wp))
                 .context("Consuming waiting data proposal")?;
@@ -792,8 +796,10 @@ impl Mempool {
             DataProposalVerdict::Wait(last_known_data_proposal_hash) => {
                 let data_proposal_parent_hash = data_proposal.parent_data_proposal_hash.clone();
                 // Push the data proposal in the waiting list
-                self.storage
-                    .add_waiting_data_proposal(validator, data_proposal);
+                self.buffered_proposals
+                    .entry(validator.clone())
+                    .or_default()
+                    .push(data_proposal);
 
                 // We dont have the parent, so we craft a sync demand
                 debug!(
