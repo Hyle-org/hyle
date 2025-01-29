@@ -27,7 +27,7 @@ use metrics::MempoolMetrics;
 use serde::{Deserialize, Serialize};
 use staking::state::Staking;
 use std::{
-    collections::{HashMap, HashSet, VecDeque},
+    collections::{BTreeMap, HashMap, HashSet, VecDeque},
     fmt::Display,
     ops::{Deref, DerefMut},
     path::PathBuf,
@@ -91,6 +91,8 @@ struct MempoolBusClient {
 #[derive(Default, Encode, Decode)]
 pub struct MempoolStore {
     storage: Storage,
+    buffered_proposals: BTreeMap<ValidatorPublicKey, Vec<DataProposal>>,
+    pending_txs: Vec<Transaction>,
     last_ccp: Option<CommittedConsensusProposal>,
     blocks_under_contruction: VecDeque<BlockUnderConstruction>,
     buc_build_start_height: Option<u64>,
@@ -323,7 +325,8 @@ impl Mempool {
         trace!("🌝 Handling DataProposal management");
         // Create new DataProposal with pending txs
         let crypto = self.crypto.clone();
-        self.storage.new_data_proposal(&crypto); // TODO: copy crypto in storage
+        let new_txs = std::mem::take(&mut self.pending_txs);
+        self.storage.new_data_proposal(&crypto, new_txs); // TODO: copy crypto in storage
 
         // Check for each pending DataProposal if it has enough signatures
         if let Some(entries) = self.storage.get_lane_pending_entries(&self.storage.id) {
@@ -646,7 +649,10 @@ impl Mempool {
         self.storage
             .add_missing_lane_entries(validator, missing_lane_entries)?;
 
-        let mut waiting_proposals = self.storage.get_waiting_data_proposals(validator)?;
+        let mut waiting_proposals = match self.buffered_proposals.get_mut(validator) {
+            Some(waiting_proposals) => std::mem::take(waiting_proposals),
+            None => vec![],
+        };
         for wp in waiting_proposals.iter_mut() {
             self.on_data_proposal(validator, std::mem::take(wp))
                 .context("Consuming waiting data proposal")?;
@@ -790,8 +796,10 @@ impl Mempool {
             DataProposalVerdict::Wait(last_known_data_proposal_hash) => {
                 let data_proposal_parent_hash = data_proposal.parent_data_proposal_hash.clone();
                 // Push the data proposal in the waiting list
-                self.storage
-                    .add_waiting_data_proposal(validator, data_proposal);
+                self.buffered_proposals
+                    .entry(validator.clone())
+                    .or_default()
+                    .push(data_proposal);
 
                 // We dont have the parent, so we craft a sync demand
                 debug!(
@@ -890,9 +898,8 @@ impl Mempool {
         let tx_type: &'static str = (&tx.transaction_data).into();
 
         self.metrics.add_api_tx(tx_type);
-        self.storage.on_new_tx(tx);
-        self.metrics
-            .snapshot_pending_tx(self.storage.pending_txs.len());
+        self.pending_txs.push(tx);
+        self.metrics.snapshot_pending_tx(self.pending_txs.len());
 
         Ok(())
     }
@@ -1481,7 +1488,7 @@ pub mod test {
         );
 
         // Assert that pending_tx has been flushed
-        assert!(ctx.mempool.storage.pending_txs.is_empty());
+        assert!(ctx.mempool.pending_txs.is_empty());
         Ok(())
     }
 
@@ -1570,7 +1577,7 @@ pub mod test {
         assert_eq!(data_proposal.txs, vec![register_tx]);
 
         // Assert that pending_tx is still flushed
-        assert!(ctx.mempool.storage.pending_txs.is_empty());
+        assert!(ctx.mempool.pending_txs.is_empty());
 
         Ok(())
     }
@@ -1970,7 +1977,7 @@ pub mod test {
             }
         );
 
-        assert!(ctx.mempool.storage.pending_txs.is_empty());
+        assert!(ctx.mempool.pending_txs.is_empty());
         Ok(())
     }
 
@@ -2142,7 +2149,7 @@ pub mod test {
             }
         );
 
-        assert!(ctx.mempool.storage.pending_txs.is_empty());
+        assert!(ctx.mempool.pending_txs.is_empty());
 
         // Second round - register a tx
         ctx.submit_contract_tx("test2");
