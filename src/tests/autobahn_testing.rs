@@ -767,21 +767,21 @@ async fn mempool_fail_to_vote_on_fork() {
     assert_ne!(
         node2
             .mempool_ctx
-            .last_validator_data_proposal(node1.mempool_ctx.validator_pubkey())
+            .last_validator_lane_entry(node1.mempool_ctx.validator_pubkey())
             .1,
         dp_fork_3.hash()
     );
     assert_ne!(
         node3
             .mempool_ctx
-            .last_validator_data_proposal(node1.mempool_ctx.validator_pubkey())
+            .last_validator_lane_entry(node1.mempool_ctx.validator_pubkey())
             .1,
         dp_fork_3.hash()
     );
     assert_ne!(
         node4
             .mempool_ctx
-            .last_validator_data_proposal(node1.mempool_ctx.validator_pubkey())
+            .last_validator_lane_entry(node1.mempool_ctx.validator_pubkey())
             .1,
         dp_fork_3.hash()
     );
@@ -1025,20 +1025,31 @@ async fn protocol_fees() {
 
     let dp_size_1 = LaneBytesSize(dp.estimate_size() as u64);
     assert_eq!(node1.mempool_ctx.current_size(), dp_size_1);
-    assert_eq!(node1.mempool_ctx.current_size_of(&node2.mempool_ctx), None);
+    assert_eq!(
+        node1
+            .mempool_ctx
+            .current_size_of(&node2.mempool_ctx.validator_pubkey()),
+        LaneBytesSize::default()
+    );
 
     assert_eq!(node2.mempool_ctx.current_size().0, 0);
     assert_eq!(
-        node2.mempool_ctx.current_size_of(&node1.mempool_ctx),
-        Some(dp_size_1)
+        node2
+            .mempool_ctx
+            .current_size_of(&node1.mempool_ctx.validator_pubkey()),
+        dp_size_1
     );
     assert_eq!(
-        node3.mempool_ctx.current_size_of(&node1.mempool_ctx),
-        Some(dp_size_1)
+        node3
+            .mempool_ctx
+            .current_size_of(&node1.mempool_ctx.validator_pubkey()),
+        dp_size_1
     );
     assert_eq!(
-        node4.mempool_ctx.current_size_of(&node1.mempool_ctx),
-        Some(dp_size_1)
+        node4
+            .mempool_ctx
+            .current_size_of(&node1.mempool_ctx.validator_pubkey()),
+        dp_size_1
     );
 
     // Second data proposal
@@ -1086,23 +1097,31 @@ async fn protocol_fees() {
     let dp_size_2 = LaneBytesSize(dp.estimate_size() as u64);
     assert_eq!(node2.mempool_ctx.current_size(), dp_size_2);
     assert_eq!(
-        node2.mempool_ctx.current_size_of(&node1.mempool_ctx),
-        Some(dp_size_1)
+        node2
+            .mempool_ctx
+            .current_size_of(&node1.mempool_ctx.validator_pubkey()),
+        dp_size_1
     );
 
     assert_eq!(node1.mempool_ctx.current_size(), dp_size_1);
     assert_eq!(
-        node1.mempool_ctx.current_size_of(&node2.mempool_ctx),
-        Some(dp_size_2)
+        node1
+            .mempool_ctx
+            .current_size_of(&node2.mempool_ctx.validator_pubkey()),
+        dp_size_2
     );
 
     assert_eq!(
-        node3.mempool_ctx.current_size_of(&node1.mempool_ctx),
-        Some(dp_size_1)
+        node3
+            .mempool_ctx
+            .current_size_of(&node1.mempool_ctx.validator_pubkey()),
+        dp_size_1
     );
     assert_eq!(
-        node3.mempool_ctx.current_size_of(&node2.mempool_ctx),
-        Some(dp_size_2)
+        node3
+            .mempool_ctx
+            .current_size_of(&node2.mempool_ctx.validator_pubkey()),
+        dp_size_2
     );
 
     // Process poda update coming from node2
