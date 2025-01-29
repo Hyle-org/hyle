@@ -36,6 +36,18 @@ impl Staking {
     }
 }
 
+impl From<Staking> for APIStaking {
+    fn from(val: Staking) -> Self {
+        APIStaking {
+            stakes: val.stakes,
+            rewarded: val.rewarded,
+            bonded: val.bonded,
+            delegations: val.delegations,
+            total_bond: val.total_bond,
+        }
+    }
+}
+
 impl From<APIStaking> for Staking {
     fn from(val: APIStaking) -> Self {
         Staking {

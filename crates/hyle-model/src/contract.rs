@@ -7,6 +7,7 @@ use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, PartialEq, Eq, Default)]
+#[cfg_attr(feature = "full", derive(utoipa::ToSchema))]
 pub struct ConsensusProposalHash(pub String);
 pub type BlockHash = ConsensusProposalHash;
 
@@ -40,6 +41,7 @@ pub struct ContractInput {
 }
 
 #[derive(Default, Serialize, Deserialize, Clone, PartialEq, Eq, Hash, Encode, Decode)]
+#[cfg_attr(feature = "full", derive(utoipa::ToSchema))]
 pub struct StateDigest(pub Vec<u8>);
 
 impl std::fmt::Debug for StateDigest {
@@ -68,6 +70,7 @@ impl Digestable for StateDigest {
     Ord,
     PartialOrd,
 )]
+#[cfg_attr(feature = "full", derive(utoipa::ToSchema))]
 pub struct Identity(pub String);
 
 #[derive(
@@ -84,11 +87,13 @@ pub struct Identity(pub String);
     Ord,
     PartialOrd,
 )]
+#[cfg_attr(feature = "full", derive(utoipa::ToSchema))]
 pub struct TxHash(pub String);
 
 #[derive(
     Default, Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash, Encode, Decode, Copy,
 )]
+#[cfg_attr(feature = "full", derive(utoipa::ToSchema))]
 pub struct BlobIndex(pub usize);
 
 impl Add<usize> for BlobIndex {
@@ -99,6 +104,7 @@ impl Add<usize> for BlobIndex {
 }
 
 #[derive(Default, Serialize, Deserialize, Clone, PartialEq, Eq, Hash, Encode, Decode)]
+#[cfg_attr(feature = "full", derive(utoipa::ToSchema))]
 pub struct BlobData(pub Vec<u8>);
 
 impl std::fmt::Debug for BlobData {
@@ -131,6 +137,7 @@ impl<Parameters: Decode> TryFrom<BlobData> for StructuredBlobData<Parameters> {
 }
 
 #[derive(Debug, Serialize, Deserialize, Default, Clone, PartialEq, Eq, Encode, Decode, Hash)]
+#[cfg_attr(feature = "full", derive(utoipa::ToSchema))]
 pub struct Blob {
     pub contract_name: ContractName,
     pub data: BlobData,
@@ -201,15 +208,19 @@ pub fn flatten_blobs(blobs: &[Blob]) -> Vec<u8> {
     Ord,
     PartialOrd,
 )]
+#[cfg_attr(feature = "full", derive(utoipa::ToSchema))]
 pub struct ContractName(pub String);
 
 #[derive(Default, Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash, Encode, Decode)]
+#[cfg_attr(feature = "full", derive(utoipa::ToSchema))]
 pub struct Verifier(pub String);
 
 #[derive(Default, Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash, Encode, Decode)]
+#[cfg_attr(feature = "full", derive(utoipa::ToSchema))]
 pub struct ProgramId(pub Vec<u8>);
 
 #[derive(Default, Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash, Encode, Decode)]
+#[cfg_attr(feature = "full", derive(utoipa::ToSchema))]
 pub struct HyleOutput {
     pub version: u32,
     pub initial_state: StateDigest,
@@ -229,6 +240,7 @@ pub struct HyleOutput {
 }
 
 #[derive(Default, Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash, Encode, Decode)]
+#[cfg_attr(feature = "full", derive(utoipa::ToSchema))]
 pub struct TxContext {
     pub block_hash: BlockHash,
     pub block_height: BlockHeight,
@@ -330,6 +342,7 @@ impl From<usize> for BlobIndex {
 #[derive(
     Default, Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash, Copy, Encode, Decode,
 )]
+#[cfg_attr(feature = "full", derive(utoipa::ToSchema))]
 pub struct BlockHeight(pub u64);
 
 impl Add<BlockHeight> for u64 {
@@ -405,6 +418,7 @@ impl ContractAction for RegisterContractAction {
 /// Simply output this struct in your HyleOutput registered_contracts.
 /// See uuid-tld for examples.
 #[derive(Default, Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash, Encode, Decode)]
+#[cfg_attr(feature = "full", derive(utoipa::ToSchema))]
 pub struct RegisterContractEffect {
     pub verifier: Verifier,
     pub program_id: ProgramId,

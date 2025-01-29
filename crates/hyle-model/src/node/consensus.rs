@@ -4,13 +4,14 @@ use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Sha3_256};
 use strum_macros::IntoStaticStr;
+use utoipa::ToSchema;
 
 use crate::{staking::*, *};
 
 pub type Slot = u64;
 pub type View = u64;
 
-#[derive(Clone, Serialize, Deserialize, Debug)]
+#[derive(Clone, Serialize, Deserialize, ToSchema, Debug)]
 pub struct ConsensusInfo {
     pub slot: Slot,
     pub view: View,

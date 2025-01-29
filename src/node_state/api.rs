@@ -3,12 +3,13 @@ use axum::{
     extract::{Path, State},
     http::StatusCode,
     response::IntoResponse,
-    routing::get,
     Json, Router,
 };
 use hyle_contract_sdk::ContractName;
 use hyle_model::UnsettledBlobTransaction;
 use tracing::error;
+use utoipa::OpenApi;
+use utoipa_axum::{router::OpenApiRouter, routes};
 
 use crate::{
     bus::{
@@ -33,20 +34,40 @@ pub struct RouterState {
     bus: RestBusClient,
 }
 
+#[derive(OpenApi)]
+struct NodeStateAPI;
+
 pub async fn api(ctx: &CommonRunContext) -> Router<()> {
     let state = RouterState {
         bus: RestBusClient::new_from_bus(ctx.bus.new_handle()).await,
     };
 
-    Router::new()
-        .route("/da/block/height", get(get_block_height))
+    let (router, api) = OpenApiRouter::with_openapi(NodeStateAPI::openapi())
+        .routes(routes!(get_block_height))
         // FIXME: we expose this endpoint for testing purposes. This should be removed or adapted
-        .route("/contract/{name}", get(get_contract))
+        .routes(routes!(get_contract))
         // TODO: figure out if we want to rely on the indexer instead
-        .route("/unsettled_tx/{blob_tx_hash}", get(get_unsettled_tx))
-        .with_state(state)
+        .routes(routes!(get_unsettled_tx))
+        .split_for_parts();
+
+    if let Ok(mut o) = ctx.openapi.lock() {
+        *o = o.clone().nest("/v1", api);
+    }
+
+    router.with_state(state)
 }
 
+#[utoipa::path(
+    get,
+    path = "/contract/{name}",
+    params(
+        ("name" = String, Path, description = "Contract name")
+    ),
+    tag = "Node State",
+    responses(
+        (status = OK, body = Contract)
+    )
+)]
 pub async fn get_contract(
     Path(name): Path<ContractName>,
     State(mut state): State<RouterState>,
@@ -65,6 +86,17 @@ pub async fn get_contract(
     }
 }
 
+#[utoipa::path(
+    get,
+    path = "/unsettled_tx/{blob_tx_hash}",
+    params(
+        ("blob_tx_hash" = String, Path, description = "Blob tx hash")
+    ),
+    tag = "Node State",
+    responses(
+        (status = OK, body = UnsettledBlobTransaction)
+    )
+)]
 pub async fn get_unsettled_tx(
     Path(blob_tx_hash): Path<String>,
     State(mut state): State<RouterState>,
@@ -86,6 +118,14 @@ pub async fn get_unsettled_tx(
     }
 }
 
+#[utoipa::path(
+    get,
+    path = "/da/block/height",
+    tag = "Node State",
+    responses(
+        (status = OK, body = BlockHeight)
+    )
+)]
 pub async fn get_block_height(
     State(mut state): State<RouterState>,
 ) -> Result<impl IntoResponse, AppError> {

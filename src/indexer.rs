@@ -13,6 +13,7 @@ use crate::{
     utils::modules::{module_bus_client, Module},
 };
 use anyhow::{bail, Context, Error, Result};
+use api::IndexerAPI;
 use axum::{
     extract::{
         ws::{Message, WebSocket, WebSocketUpgrade},
@@ -30,6 +31,9 @@ use sqlx::{postgres::PgPoolOptions, PgPool, Pool, Postgres};
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::{broadcast, mpsc};
 use tracing::trace;
+use utoipa::OpenApi;
+use utoipa_axum::router::OpenApiRouter;
+use utoipa_axum::routes;
 
 module_bus_client! {
 #[derive(Debug)]
@@ -89,10 +93,19 @@ impl Module for Indexer {
 
         if let Ok(mut guard) = ctx.router.lock() {
             if let Some(router) = guard.take() {
-                guard.replace(router.nest("/v1/indexer", indexer.api()));
+                guard.replace(router.nest("/v1/indexer", indexer.api(Some(&ctx))));
                 return Ok(indexer);
             }
         }
+
+        if let Ok(mut guard) = ctx.openapi.lock() {
+            tracing::info!("Adding OpenAPI for Indexer");
+            let openapi = guard.clone().nest("/v1/indexer", IndexerAPI::openapi());
+            *guard = openapi;
+        } else {
+            tracing::error!("Failed to add OpenAPI for Indexer");
+        }
+
         anyhow::bail!("context router should be available");
     }
 
@@ -146,49 +159,42 @@ impl Indexer {
             .unwrap_or(None))
     }
 
-    pub fn api(&self) -> Router<()> {
-        Router::new()
+    pub fn api(&self, ctx: Option<&CommonRunContext>) -> Router<()> {
+        #[derive(OpenApi)]
+        struct IndexerAPI;
+
+        let (router, api) = OpenApiRouter::with_openapi(IndexerAPI::openapi())
             // block
-            .route("/blocks", get(api::get_blocks))
-            .route("/block/last", get(api::get_last_block))
-            .route("/block/height/{height}", get(api::get_block))
-            .route("/block/hash/{hash}", get(api::get_block_by_hash))
+            .routes(routes!(api::get_blocks))
+            .routes(routes!(api::get_last_block))
+            .routes(routes!(api::get_block))
+            .routes(routes!(api::get_block_by_hash))
             // transaction
-            .route("/transactions", get(api::get_transactions))
-            .route(
-                "/transactions/block/{height}",
-                get(api::get_transactions_by_height),
-            )
-            .route(
-                "/transactions/contract/{contract_name}",
-                get(api::get_transactions_by_contract),
-            )
-            .route(
-                "/transaction/hash/{tx_hash}",
-                get(api::get_transaction_with_hash),
-            )
-            .route(
-                "/blob_transactions/contract/{contract_name}",
-                get(api::get_blob_transactions_by_contract),
-            )
+            .routes(routes!(api::get_transactions))
+            .routes(routes!(api::get_transactions_by_height))
+            .routes(routes!(api::get_transactions_by_contract))
+            .routes(routes!(api::get_transaction_with_hash))
+            .routes(routes!(api::get_blob_transactions_by_contract))
             .route(
                 "/blob_transactions/contract/{contract_name}/ws",
                 get(Self::get_blob_transactions_by_contract_ws_handler),
             )
             // blob
-            .route("/blobs/hash/{tx_hash}", get(api::get_blobs_by_tx_hash))
-            .route(
-                "/blob/hash/{tx_hash}/index/{blob_index}",
-                get(api::get_blob),
-            )
+            .routes(routes!(api::get_blobs_by_tx_hash))
+            .routes(routes!(api::get_blob))
             // contract
-            .route("/contracts", get(api::list_contracts))
-            .route("/contract/{contract_name}", get(api::get_contract))
-            .route(
-                "/state/contract/{contract_name}/block/{height}",
-                get(api::get_contract_state_by_height),
-            )
-            .with_state(self.state.clone())
+            .routes(routes!(api::list_contracts))
+            .routes(routes!(api::get_contract))
+            .routes(routes!(api::get_contract_state_by_height))
+            .split_for_parts();
+
+        if let Some(ctx) = ctx {
+            if let Ok(mut o) = ctx.openapi.lock() {
+                *o = o.clone().nest("/v1/indexer", api);
+            }
+        }
+
+        router.with_state(self.state.clone())
     }
 
     async fn get_blob_transactions_by_contract_ws_handler(
@@ -556,7 +562,7 @@ mod test {
     use testcontainers_modules::{postgres::Postgres, testcontainers::runners::AsyncRunner};
 
     async fn setup_test_server(indexer: &Indexer) -> Result<TestServer> {
-        let router = indexer.api();
+        let router = indexer.api(None);
         TestServer::new(router)
     }
 
@@ -981,7 +987,7 @@ mod test {
             .unwrap();
         let addr = listener.local_addr().unwrap();
 
-        tokio::spawn(axum::serve(listener, indexer.api()).into_future());
+        tokio::spawn(axum::serve(listener, indexer.api(None)).into_future());
 
         let _ = tokio_tungstenite::connect_async(format!(
             "ws://{addr}/blob_transactions/contract/contract_1/ws"

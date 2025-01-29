@@ -2,17 +2,21 @@ use anyhow::{Context, Result};
 use axum::Router;
 use axum_otel_metrics::HttpMetricsLayerBuilder;
 use clap::Parser;
+use hydentity::Hydentity;
 use hyle::{
     bus::{metrics::BusMetrics, SharedMessageBus},
     consensus::Consensus,
     data_availability::DataAvailability,
     genesis::Genesis,
-    indexer::Indexer,
+    indexer::{
+        contract_state_indexer::{ContractStateIndexer, ContractStateIndexerCtx},
+        Indexer,
+    },
     mempool::Mempool,
     model::{api::NodeInfo, CommonRunContext, NodeRunContext, SharedRunContext},
     node_state::module::NodeStateModule,
     p2p::P2P,
-    rest::{RestApi, RestApiRunContext},
+    rest::{ApiDoc, RestApi, RestApiRunContext},
     single_node_consensus::SingleNodeConsensus,
     tcp_server::TcpServer,
     tools::mock_workflow::MockWorkflowHandler,
@@ -23,11 +27,13 @@ use hyle::{
         modules::ModulesHandler,
     },
 };
+use hyllar::HyllarToken;
 use std::{
     sync::{Arc, Mutex},
     time::Duration,
 };
 use tracing::{error, info};
+use utoipa::OpenApi;
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -105,6 +111,7 @@ async fn main() -> Result<()> {
             bus: bus.new_handle(),
             config: config.clone(),
             router: Mutex::new(Some(Router::new())),
+            openapi: Mutex::new(ApiDoc::openapi()),
         }
         .into(),
         node: NodeRunContext { crypto }.into(),
@@ -127,6 +134,24 @@ async fn main() -> Result<()> {
 
     if run_indexer {
         handler.build_module::<Indexer>(ctx.common.clone()).await?;
+        handler
+            .build_module::<ContractStateIndexer<HyllarToken>>(ContractStateIndexerCtx {
+                contract_name: "hyllar".into(),
+                common: ctx.common.clone(),
+            })
+            .await?;
+        handler
+            .build_module::<ContractStateIndexer<HyllarToken>>(ContractStateIndexerCtx {
+                contract_name: "hyllar2".into(),
+                common: ctx.common.clone(),
+            })
+            .await?;
+        handler
+            .build_module::<ContractStateIndexer<Hydentity>>(ContractStateIndexerCtx {
+                contract_name: "hydentity".into(),
+                common: ctx.common.clone(),
+            })
+            .await?;
     }
     handler
         .build_module::<DataAvailability>(ctx.clone())
@@ -146,6 +171,13 @@ async fn main() -> Result<()> {
         .expect("Context router should be available")
         .take()
         .expect("Context router should be available");
+    #[allow(clippy::expect_used, reason = "Fail on misconfiguration")]
+    let openapi = ctx
+        .common
+        .openapi
+        .lock()
+        .expect("OpenAPI should be available")
+        .clone();
     handler
         .build_module::<RestApi>(RestApiRunContext {
             rest_addr: ctx.common.config.rest.clone(),
@@ -158,6 +190,7 @@ async fn main() -> Result<()> {
             bus: ctx.common.bus.new_handle(),
             metrics_layer: Some(metrics_layer),
             router: router.clone(),
+            openapi,
         })
         .await?;
 

@@ -82,6 +82,7 @@ async fn main() -> Result<()> {
         bus: bus.new_handle(),
         config: config.clone(),
         router: Mutex::new(Some(Router::new())),
+        openapi: Default::default(),
     });
 
     handler
@@ -131,6 +132,7 @@ async fn main() -> Result<()> {
             bus: ctx.bus.new_handle(),
             metrics_layer: Some(metrics_layer),
             router: router.clone(),
+            openapi: Default::default(),
             info: NodeInfo {
                 id: ctx.config.id.clone(),
                 da_address: ctx.config.da_address.clone(),
