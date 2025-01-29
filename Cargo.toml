@@ -149,7 +149,7 @@ test-log = { version = "0.2.17", features = [
     "trace",
 ], default-features = false }
 tokio-stream = "0.1.17"
-tempfile = "3.15.0"
+tempfile = "3.16.0"
 testcontainers-modules = { version = "0.11.6", features = ["postgres"] }
 assert-json-diff = "2.0.2"
 risc0-recursion = { path = "./crates/contracts/risc0-recursion" }
