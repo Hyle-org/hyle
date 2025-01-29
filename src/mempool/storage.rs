@@ -42,7 +42,6 @@ pub struct Lane {
     pub last_cut: Option<(PoDA, DataProposalHash)>,
     #[bincode(with_serde)]
     pub data_proposals: IndexMap<DataProposalHash, LaneEntry>,
-    pub waiting: Vec<DataProposal>,
 }
 
 pub use hyle_model::LaneBytesSize;
@@ -478,28 +477,6 @@ impl Storage {
         bail!("Validator not found");
     }
 
-    pub fn add_waiting_data_proposal(
-        &mut self,
-        validator: &ValidatorPublicKey,
-        data_proposal: DataProposal,
-    ) {
-        self.lanes
-            .entry(validator.clone())
-            .or_default()
-            .waiting
-            .push(data_proposal);
-    }
-
-    pub fn get_waiting_data_proposals(
-        &mut self,
-        validator: &ValidatorPublicKey,
-    ) -> Result<Vec<DataProposal>> {
-        match self.lanes.get_mut(validator) {
-            Some(lane) => lane.get_waiting_data_proposals(),
-            None => Ok(vec![]),
-        }
-    }
-
     // Add lane entries to validator"s lane
     pub fn add_missing_lane_entries(
         &mut self,
@@ -806,20 +783,6 @@ impl Lane {
         );
         Ok(())
     }
-
-    fn get_waiting_data_proposals(&mut self) -> Result<Vec<DataProposal>> {
-        debug!("Getting waiting data proposals: {}", self.waiting.len());
-        let wp = self.waiting.drain(0..).collect::<Vec<DataProposal>>();
-        if wp.len() > 1 {
-            for i in 0..wp.len() - 1 {
-                #[allow(clippy::indexing_slicing, reason = "checked by range")]
-                if Some(&wp[i].hash()) != wp[i + 1].parent_data_proposal_hash.as_ref() {
-                    bail!("unsorted DataProposal");
-                }
-            }
-        }
-        Ok(wp)
-    }
 }
 
 #[cfg(test)]
@@ -1059,46 +1022,6 @@ mod tests {
         let lane = store.lanes.get(pubkey1).expect("Lane not found");
         // Ensure incorrect data proposal is not in the lane entries
         assert!(!lane.has_proposal(&data_proposal3_hash));
-    }
-
-    #[test_log::test]
-    fn test_get_waiting_data_proposals() {
-        let crypto1 = crypto::BlstCrypto::new("1".to_owned()).unwrap();
-        let pubkey1 = crypto1.validator_pubkey();
-        let mut store = Storage::new(pubkey1.clone());
-
-        let data_proposal1 = DataProposal {
-            id: 0,
-            parent_data_proposal_hash: None,
-            txs: vec![],
-        };
-
-        let data_proposal2 = DataProposal {
-            id: 1,
-            parent_data_proposal_hash: Some(data_proposal1.hash()),
-            txs: vec![],
-        };
-
-        store
-            .lanes
-            .entry(pubkey1.clone())
-            .or_default()
-            .waiting
-            .push(data_proposal1.clone());
-        store
-            .lanes
-            .entry(pubkey1.clone())
-            .or_default()
-            .waiting
-            .push(data_proposal2.clone());
-
-        let waiting_data_proposals = store
-            .get_waiting_data_proposals(pubkey1)
-            .expect("Failed to get waiting data proposals");
-
-        assert_eq!(waiting_data_proposals.len(), 2);
-        assert_eq!(waiting_data_proposals[0], data_proposal1);
-        assert_eq!(waiting_data_proposals[1], data_proposal2);
     }
 
     #[test_log::test]
