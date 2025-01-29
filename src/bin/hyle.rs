@@ -32,7 +32,11 @@ use std::{
     sync::{Arc, Mutex},
     time::Duration,
 };
-use tracing::{error, info};
+use testcontainers_modules::{
+    postgres::Postgres,
+    testcontainers::{runners::AsyncRunner, ImageExt},
+};
+use tracing::{error, info, warn};
 use utoipa::OpenApi;
 
 #[derive(Parser, Debug)]
@@ -46,6 +50,9 @@ pub struct Args {
 
     #[arg(long)]
     pub run_indexer: Option<bool>,
+
+    #[clap(long, action)]
+    pub pg: bool,
 
     #[arg(long, default_value = "config.ron")]
     pub config_file: Option<String>,
@@ -65,10 +72,8 @@ async fn main() -> Result<()> {
     };
 
     let args = Args::parse();
-    let config = Arc::new(
-        conf::Conf::new(args.config_file, args.data_directory, args.run_indexer)
-            .context("reading config file")?,
-    );
+    let mut config = conf::Conf::new(args.config_file, args.data_directory, args.run_indexer)
+        .context("reading config file")?;
 
     let crypto = Arc::new(BlstCrypto::new(config.id.clone()).context("Could not create crypto")?);
     let pubkey = Some(crypto.validator_pubkey().clone());
@@ -85,6 +90,23 @@ async fn main() -> Result<()> {
             pubkey.clone().unwrap_or_default()
         ),
     )?;
+
+    let pg;
+    if args.pg {
+        info!("🐘 Starting postgres DB with default settings for the indexer");
+        pg = Postgres::default()
+            .with_cmd(["postgres", "-c", "log_statement=all"])
+            .start()
+            .await?;
+
+        config.database_url = format!(
+            "postgres://postgres:postgres@localhost:{}/postgres",
+            pg.get_host_port_ipv4(5432).await?
+        );
+        config.run_indexer = true;
+    }
+
+    let config = Arc::new(config);
 
     info!("Starting node with config: {:?}", &config);
 
@@ -226,6 +248,11 @@ async fn main() -> Result<()> {
             }
         }
         _ = handler.shutdown_modules(Duration::from_secs(3)).await;
+    }
+
+    if args.pg {
+        warn!("--pg option given. Postgres server will stop. Cleaning data dir");
+        std::fs::remove_dir_all(&config.data_directory).context("removing data directory")?;
     }
 
     Ok(())

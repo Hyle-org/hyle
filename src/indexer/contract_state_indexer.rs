@@ -82,12 +82,16 @@ where
         store.contract_name = ctx.contract_name.clone();
         let store = Arc::new(RwLock::new(store));
 
-        let api = State::api(Arc::clone(&store)).await;
+        let (nested, api) = State::api(Arc::clone(&store)).await;
+        if let Ok(mut o) = ctx.common.openapi.lock() {
+            *o = o.clone().nest("/v1", api);
+        }
+
         if let Ok(mut guard) = ctx.common.router.lock() {
             if let Some(router) = guard.take() {
                 guard.replace(router.nest(
                     format!("/v1/indexer/contract/{}", ctx.contract_name).as_str(),
-                    api,
+                    nested,
                 ));
             }
         }
@@ -227,6 +231,7 @@ where
 #[cfg(test)]
 mod tests {
     use hyle_contract_sdk::{BlobData, ProgramId, StateDigest};
+    use utoipa::openapi::OpenApi;
 
     use super::*;
     use crate::bus::metrics::BusMetrics;
@@ -253,8 +258,8 @@ mod tests {
             Ok(state)
         }
 
-        async fn api(_store: Arc<RwLock<Store<Self>>>) -> axum::Router<()> {
-            axum::Router::new()
+        async fn api(_store: Arc<RwLock<Store<Self>>>) -> (axum::Router<()>, OpenApi) {
+            (axum::Router::new(), OpenApi::default())
         }
     }
 

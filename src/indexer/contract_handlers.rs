@@ -17,6 +17,8 @@ use hyllar::{HyllarToken, HyllarTokenContract};
 use serde::Serialize;
 use tokio::sync::RwLock;
 use tracing::info;
+use utoipa::openapi::OpenApi;
+use utoipa_axum::router::OpenApiRouter;
 
 pub trait ContractHandler
 where
@@ -24,17 +26,19 @@ where
 {
     fn api(
         store: Arc<RwLock<Store<Self>>>,
-    ) -> impl std::future::Future<Output = Router<()>> + std::marker::Send;
+    ) -> impl std::future::Future<Output = (Router<()>, OpenApi)> + std::marker::Send;
 
     fn handle(tx: &BlobTransaction, index: BlobIndex, state: Self) -> Result<Self>;
 }
 
 impl ContractHandler for Hydentity {
-    async fn api(store: Arc<RwLock<Store<Self>>>) -> Router<()> {
-        Router::new()
+    async fn api(store: Arc<RwLock<Store<Self>>>) -> (Router<()>, OpenApi) {
+        let (router, api) = OpenApiRouter::default()
             .route("/state", get(get_state))
             .route("/nonce/{account}", get(get_nonce))
-            .with_state(store)
+            .split_for_parts();
+
+        (router.with_state(store), api)
     }
 
     fn handle(tx: &BlobTransaction, index: BlobIndex, mut state: Self) -> Result<Self> {
@@ -54,12 +58,14 @@ impl ContractHandler for Hydentity {
 }
 
 impl ContractHandler for HyllarToken {
-    async fn api(store: Arc<RwLock<Store<HyllarToken>>>) -> Router<()> {
-        Router::new()
+    async fn api(store: Arc<RwLock<Store<HyllarToken>>>) -> (Router<()>, OpenApi) {
+        let (router, api) = OpenApiRouter::default()
             .route("/state", get(get_state))
             .route("/balance/{account}", get(get_balance))
             .route("/allowance/{account}/{spender}", get(get_allowance))
-            .with_state(store)
+            .split_for_parts();
+
+        (router.with_state(store), api)
     }
 
     fn handle(tx: &BlobTransaction, index: BlobIndex, state: HyllarToken) -> Result<HyllarToken> {
