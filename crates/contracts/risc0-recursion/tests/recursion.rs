@@ -29,9 +29,9 @@ async fn test_recursion() {
         .iter_prove()
         .next()
         .unwrap()
-        .0
         .await
-        .unwrap();
+        .unwrap()
+        .proof;
 
     let mut tx = ProvableBlobTx::new("alice.hydentity".into());
     register_identity(&mut tx, "hydentity".into(), "password".into()).unwrap();
@@ -41,9 +41,9 @@ async fn test_recursion() {
         .iter_prove()
         .next()
         .unwrap()
-        .0
         .await
-        .unwrap();
+        .unwrap()
+        .proof;
 
     let first_receipt = borsh::from_slice::<risc0_zkvm::Receipt>(first_proof.0.as_slice())
         .expect("Failed to decode first receipt");

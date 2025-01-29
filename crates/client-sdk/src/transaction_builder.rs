@@ -8,7 +8,7 @@ use std::{
 use anyhow::{bail, Result};
 use sdk::{
     Blob, BlobIndex, BlobTransaction, ContractAction, ContractInput, ContractName, Hashable,
-    HyleOutput, Identity, ProofData, StateDigest, TxContext,
+    HyleOutput, Identity, ProofTransaction, StateDigest, TxContext,
 };
 
 use crate::helpers::{ClientSdkExecutor, ClientSdkProver};
@@ -88,7 +88,7 @@ impl ProofTxBuilder {
     ///}
     pub fn iter_prove(
         self,
-    ) -> impl Iterator<Item = (impl Future<Output = Result<ProofData>> + Send, ContractName)> {
+    ) -> impl Iterator<Item = impl Future<Output = Result<ProofTransaction>> + Send> {
         self.runners.into_iter().map(move |mut runner| {
             tracing::info!("Proving transition for {}...", runner.contract_name);
             let prover = self
@@ -96,13 +96,23 @@ impl ProofTxBuilder {
                 .get(&runner.contract_name)
                 .expect("no prover defined")
                 .clone();
-            let future = async move {
-                prover
+            async move {
+                let proof = prover
                     .prove(runner.contract_input.take().expect("no input for prover"))
-                    .await
-            };
-            (future, runner.contract_name.clone())
+                    .await;
+                proof.map(|proof| ProofTransaction {
+                    proof,
+                    contract_name: runner.contract_name.clone(),
+                })
+            }
         })
+    }
+
+    pub fn get_blob_tx(&self) -> BlobTransaction {
+        BlobTransaction {
+            identity: self.identity.clone(),
+            blobs: self.blobs.clone(),
+        }
     }
 }
 

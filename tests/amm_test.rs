@@ -141,13 +141,12 @@ mod e2e_amm {
 
         let mut tx = ProvableBlobTx::new("bob.hydentity".into());
         register_identity(&mut tx, "hydentity".into(), "password".to_string())?;
-        let blob_tx_hash = ctx.send_provable_blob_tx(&tx).await?;
+        ctx.send_provable_blob_tx(&tx).await?;
         let tx = executor.process(tx)?;
-        let proof = tx.iter_prove().next().unwrap().0.await?;
+        let proof = tx.iter_prove().next().unwrap().await?;
 
         info!("➡️  Sending proof for register");
-        ctx.send_proof_single("hydentity".into(), proof, blob_tx_hash)
-            .await?;
+        ctx.send_proof_single(proof).await?;
 
         info!("➡️  Waiting for height 2");
         ctx.wait_height(2).await?;
@@ -165,20 +164,18 @@ mod e2e_amm {
         )?;
         transfer(&mut tx, "hyllar".into(), "bob.hydentity".into(), 25)?;
 
-        let blob_tx_hash = ctx.send_provable_blob_tx(&tx).await?;
+        ctx.send_provable_blob_tx(&tx).await?;
         let tx = executor.process(tx)?;
         let mut proofs = tx.iter_prove();
 
-        let hydentity_proof = proofs.next().unwrap().0.await?;
-        let bob_transfer_proof = proofs.next().unwrap().0.await?;
+        let hydentity_proof = proofs.next().unwrap().await?;
+        let bob_transfer_proof = proofs.next().unwrap().await?;
 
         info!("➡️  Sending proof for hydentity");
-        ctx.send_proof_single("hydentity".into(), hydentity_proof, blob_tx_hash.clone())
-            .await?;
+        ctx.send_proof_single(hydentity_proof).await?;
 
         info!("➡️  Sending proof for hyllar");
-        ctx.send_proof_single("hyllar".into(), bob_transfer_proof, blob_tx_hash)
-            .await?;
+        ctx.send_proof_single(bob_transfer_proof).await?;
 
         info!("➡️  Waiting for height 5");
         ctx.wait_height(5).await?;
@@ -214,20 +211,18 @@ mod e2e_amm {
         )?;
         transfer(&mut tx, "hyllar2".into(), "bob.hydentity".into(), 50)?;
 
-        let blob_tx_hash = ctx.send_provable_blob_tx(&tx).await?;
+        ctx.send_provable_blob_tx(&tx).await?;
         let tx = executor.process(tx)?;
         let mut proofs = tx.iter_prove();
 
-        let hydentity_proof = proofs.next().unwrap().0.await?;
-        let bob_transfer_proof = proofs.next().unwrap().0.await?;
+        let hydentity_proof = proofs.next().unwrap().await?;
+        let bob_transfer_proof = proofs.next().unwrap().await?;
 
         info!("➡️  Sending proof for hydentity");
-        ctx.send_proof_single("hydentity".into(), hydentity_proof, blob_tx_hash.clone())
-            .await?;
+        ctx.send_proof_single(hydentity_proof).await?;
 
         info!("➡️  Sending proof for hyllar");
-        ctx.send_proof_single("hyllar2".into(), bob_transfer_proof, blob_tx_hash)
-            .await?;
+        ctx.send_proof_single(bob_transfer_proof).await?;
 
         info!("➡️  Waiting for height 5");
         ctx.wait_height(5).await?;
@@ -261,24 +256,18 @@ mod e2e_amm {
         )?;
         approve(&mut tx, "hyllar".into(), AMM_CONTRACT_NAME.into(), 100)?;
 
-        let blob_tx_hash = ctx.send_provable_blob_tx(&tx).await?;
+        ctx.send_provable_blob_tx(&tx).await?;
         let tx = executor.process(tx)?;
         let mut proofs = tx.iter_prove();
 
-        let hydentity_proof = proofs.next().unwrap().0.await?;
-        let bob_approve_hyllar_proof = proofs.next().unwrap().0.await?;
+        let hydentity_proof = proofs.next().unwrap().await?;
+        let bob_approve_hyllar_proof = proofs.next().unwrap().await?;
 
         info!("➡️  Sending proof for hydentity");
-        ctx.send_proof_single("hydentity".into(), hydentity_proof, blob_tx_hash.clone())
-            .await?;
+        ctx.send_proof_single(hydentity_proof).await?;
 
         info!("➡️  Sending proof for approve hyllar");
-        ctx.send_proof_single(
-            "hyllar".into(),
-            bob_approve_hyllar_proof,
-            blob_tx_hash.clone(),
-        )
-        .await?;
+        ctx.send_proof_single(bob_approve_hyllar_proof).await?;
 
         info!("➡️  Waiting for height 5");
         ctx.wait_height(5).await?;
@@ -298,24 +287,18 @@ mod e2e_amm {
         )?;
         approve(&mut tx, "hyllar2".into(), AMM_CONTRACT_NAME.into(), 100)?;
 
-        let blob_tx_hash = ctx.send_provable_blob_tx(&tx).await?;
+        ctx.send_provable_blob_tx(&tx).await?;
         let tx = executor.process(tx)?;
         let mut proofs = tx.iter_prove();
 
-        let hydentity_proof = proofs.next().unwrap().0.await?;
-        let bob_approve_hyllar2_proof = proofs.next().unwrap().0.await?;
+        let hydentity_proof = proofs.next().unwrap().await?;
+        let bob_approve_hyllar2_proof = proofs.next().unwrap().await?;
 
         info!("➡️  Sending proof for hydentity");
-        ctx.send_proof_single("hydentity".into(), hydentity_proof, blob_tx_hash.clone())
-            .await?;
+        ctx.send_proof_single(hydentity_proof).await?;
 
         info!("➡️  Sending proof for approve hyllar2");
-        ctx.send_proof_single(
-            "hyllar2".into(),
-            bob_approve_hyllar2_proof,
-            blob_tx_hash.clone(),
-        )
-        .await?;
+        ctx.send_proof_single(bob_approve_hyllar2_proof).await?;
 
         info!("➡️  Waiting for height 5");
         ctx.wait_height(5).await?;
@@ -341,38 +324,26 @@ mod e2e_amm {
             (20, 50),
         )?;
 
-        let blob_tx_hash = ctx.send_provable_blob_tx(&tx).await?;
+        ctx.send_provable_blob_tx(&tx).await?;
         let tx = executor.process(tx)?;
         let mut proofs = tx.iter_prove();
 
-        let hydentity_proof = proofs.next().unwrap().0.await?;
-        let bob_new_pair_proof = proofs.next().unwrap().0.await?;
-        let bob_transfer_hyllar_proof = proofs.next().unwrap().0.await?;
-        let bob_transfer_hyllar2_proof = proofs.next().unwrap().0.await?;
+        let hydentity_proof = proofs.next().unwrap().await?;
+        let bob_new_pair_proof = proofs.next().unwrap().await?;
+        let bob_transfer_hyllar_proof = proofs.next().unwrap().await?;
+        let bob_transfer_hyllar2_proof = proofs.next().unwrap().await?;
 
         info!("➡️  Sending proof for hydentity");
-        ctx.send_proof_single("hydentity".into(), hydentity_proof, blob_tx_hash.clone())
-            .await?;
+        ctx.send_proof_single(hydentity_proof).await?;
 
         info!("➡️  Sending proof for new pair");
-        ctx.send_proof_single(
-            AMM_CONTRACT_NAME.into(),
-            bob_new_pair_proof,
-            blob_tx_hash.clone(),
-        )
-        .await?;
+        ctx.send_proof_single(bob_new_pair_proof).await?;
 
         info!("➡️  Sending proof for hyllar");
-        ctx.send_proof_single(
-            "hyllar".into(),
-            bob_transfer_hyllar_proof,
-            blob_tx_hash.clone(),
-        )
-        .await?;
+        ctx.send_proof_single(bob_transfer_hyllar_proof).await?;
 
         info!("➡️  Sending proof for hyllar2");
-        ctx.send_proof_single("hyllar2".into(), bob_transfer_hyllar2_proof, blob_tx_hash)
-            .await?;
+        ctx.send_proof_single(bob_transfer_hyllar2_proof).await?;
 
         info!("➡️  Waiting for height 5");
         ctx.wait_height(5).await?;
@@ -422,10 +393,10 @@ mod e2e_amm {
         let tx = executor.process(tx)?;
         let mut proofs = tx.iter_prove();
 
-        let hydentity_proof = proofs.next().unwrap().0.await?.0;
-        let bob_swap_proof = proofs.next().unwrap().0.await?.0;
-        let bob_transfer_proof = proofs.next().unwrap().0.await?.0;
-        let amm_transfer_from_proof = proofs.next().unwrap().0.await?.0;
+        let hydentity_proof = proofs.next().unwrap().await?.proof.0;
+        let bob_swap_proof = proofs.next().unwrap().await?.proof.0;
+        let bob_transfer_proof = proofs.next().unwrap().await?.proof.0;
+        let amm_transfer_from_proof = proofs.next().unwrap().await?.proof.0;
 
         let recursive_proof = generate_recursive_proof(
             &[

@@ -46,14 +46,13 @@ mod e2e_hyllar {
 
         let mut tx = ProvableBlobTx::new("bob.hydentity".into());
         register_identity(&mut tx, "hydentity".into(), "password".to_string())?;
-        let blob_tx_hash = ctx.send_provable_blob_tx(&tx).await?;
+        ctx.send_provable_blob_tx(&tx).await?;
 
         let tx = executor.process(tx)?;
-        let proof = tx.iter_prove().next().unwrap().0.await?;
+        let proof = tx.iter_prove().next().unwrap().await?;
 
         info!("➡️  Sending proof for register");
-        ctx.send_proof_single("hydentity".into(), proof, blob_tx_hash.clone())
-            .await?;
+        ctx.send_proof_single(proof).await?;
 
         info!("➡️  Waiting for height 2");
         ctx.wait_height(2).await?;
@@ -78,16 +77,14 @@ mod e2e_hyllar {
         let tx = executor.process(tx)?;
         let mut proofs = tx.iter_prove();
 
-        let hydentity_proof = proofs.next().unwrap().0.await?;
-        let hyllar_proof = proofs.next().unwrap().0.await?;
+        let hydentity_proof = proofs.next().unwrap().await?;
+        let hyllar_proof = proofs.next().unwrap().await?;
 
         info!("➡️  Sending proof for hydentity");
-        ctx.send_proof_single("hydentity".into(), hydentity_proof, blob_tx_hash.clone())
-            .await?;
+        ctx.send_proof_single(hydentity_proof).await?;
 
         info!("➡️  Sending proof for hyllar");
-        ctx.send_proof_single("hyllar".into(), hyllar_proof, blob_tx_hash)
-            .await?;
+        ctx.send_proof_single(hyllar_proof).await?;
 
         info!("➡️  Waiting for height 5");
         ctx.wait_height(5).await?;
