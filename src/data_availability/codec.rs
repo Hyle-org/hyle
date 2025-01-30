@@ -38,10 +38,7 @@ impl Decoder for DataAvailabilityServerCodec {
 
             let height: u64 =
                 bincode::decode_from_slice(&decoded_bytes, bincode::config::standard())
-                    .context(format!(
-                        "Decoding height from {} bytes",
-                        decoded_bytes.len()
-                    ))?
+                    .context("Decoding height from bytes")?
                     .0;
 
             return Ok(Some(DataAvailabilityServerRequest::BlockHeight(
