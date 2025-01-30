@@ -67,6 +67,7 @@ pub enum TransactionType {
     sqlx(type_name = "transaction_status", rename_all = "snake_case")
 )]
 pub enum TransactionStatus {
+    WaitingDissemination,
     Success,
     Failure,
     Sequenced,
@@ -86,12 +87,12 @@ impl TransactionType {
 #[derive(Debug, Serialize, Deserialize, ToSchema, Clone, PartialEq, Eq)]
 pub struct APITransaction {
     // Struct for the transactions table
-    pub tx_hash: TxHash,                       // Transaction hash
-    pub block_hash: ConsensusProposalHash,     // Corresponds to the block hash
-    pub index: u32,                            // Index of the transaction within the block
-    pub version: u32,                          // Transaction version
-    pub transaction_type: TransactionType,     // Type of transaction
-    pub transaction_status: TransactionStatus, // Status of the transaction
+    pub tx_hash: TxHash,                           // Transaction hash
+    pub version: u32,                              // Transaction version
+    pub transaction_type: TransactionType,         // Type of transaction
+    pub transaction_status: TransactionStatus,     // Status of the transaction
+    pub block_hash: Option<ConsensusProposalHash>, // Corresponds to the block hash
+    pub index: Option<u32>,                        // Index of the transaction within the block
 }
 
 #[derive(Serialize, Deserialize, ToSchema, Debug, Clone, PartialEq)]

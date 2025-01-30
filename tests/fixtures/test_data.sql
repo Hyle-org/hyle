@@ -9,6 +9,7 @@ VALUES
 -- Inserting test data for the transactions table
 INSERT INTO transactions (tx_hash, block_hash, index, version, transaction_type, transaction_status)
 VALUES
+    ('test_tx_hash_0aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', NULL, NULL, 1, 'blob_transaction', 'waiting_dissemination'),  -- Transaction 1 (contract_registration)
     ('test_tx_hash_1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'block2aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 0, 1, 'blob_transaction', 'success'),  -- Transaction 1 (contract_registration)
     ('test_tx_hash_2aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'block2aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 1, 1, 'blob_transaction', 'success'),               -- Transaction 2 (blob)
     ('test_tx_hash_3aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'block2aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 2, 1, 'proof_transaction', 'success'),              -- Transaction 3 (proof)

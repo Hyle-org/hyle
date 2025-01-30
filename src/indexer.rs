@@ -5,6 +5,7 @@ pub mod contract_handlers;
 pub mod contract_state_indexer;
 pub mod da_listener;
 
+use crate::mempool::MempoolStatusEvent;
 use crate::model::*;
 use crate::utils::logger::LogMe;
 use crate::{
@@ -39,6 +40,7 @@ module_bus_client! {
 #[derive(Debug)]
 struct IndexerBusClient {
     receiver(NodeStateEvent),
+    receiver(MempoolStatusEvent),
 }
 }
 
@@ -120,6 +122,12 @@ impl Indexer {
             on_bus self.bus,
             listen<NodeStateEvent> event => {
                 _ = self.handle_node_state_event(event)
+                    .await
+                    .log_error("Handling node state event");
+            }
+
+            listen<MempoolStatusEvent> event => {
+                _ = self.handle_mempool_status_event(event)
                     .await
                     .log_error("Handling node state event");
             }
@@ -224,6 +232,36 @@ impl Indexer {
         }
     }
 
+    async fn handle_mempool_status_event(&mut self, event: MempoolStatusEvent) -> Result<()> {
+        let mut transaction = self.state.db.begin().await?;
+        match event {
+            MempoolStatusEvent::WaitingDissemination(tx) => {
+                let tx_hash: TxHash = tx.hash();
+                let version = i32::try_from(tx.version)
+                    .map_err(|_| anyhow::anyhow!("Tx version is too large to fit into an i32"))?;
+
+                // Insert the transaction into the transactions table
+                let tx_type = TransactionType::get_type_from_transaction(&tx);
+                let tx_status = TransactionStatus::WaitingDissemination;
+
+                let tx_hash: &TxHashDb = &tx_hash.into();
+
+                sqlx::query("INSERT INTO transactions (tx_hash, version, transaction_type, transaction_status)
+                    VALUES ($1, $2, $3, $4)")
+                .bind(tx_hash)
+                .bind(version)
+                .bind(tx_type)
+                .bind(tx_status)
+                .execute(&mut *transaction)
+                .await?;
+            }
+        }
+
+        transaction.commit().await?;
+
+        Ok(())
+    }
+
     async fn handle_processed_block(&mut self, block: Block) -> Result<(), Error> {
         trace!("Indexing block at height {:?}", block.block_height);
         let mut transaction = self.state.db.begin().await?;
@@ -269,19 +307,21 @@ impl Indexer {
 
             let tx_hash: &TxHashDb = &tx_hash.into();
 
+            // Make sure transaction exists (Missed Mempool Status event)
             sqlx::query(
-                "INSERT INTO transactions (tx_hash, block_hash, index, version, transaction_type, transaction_status)
-                VALUES ($1, $2, $3, $4, $5, $6)")
+                "INSERT INTO transactions (tx_hash, version, transaction_type, transaction_status, block_hash, index)
+                VALUES ($1, $2, $3, $4, $5, $6)
+                ON CONFLICT(tx_hash) DO UPDATE SET transaction_status=$4, block_hash=$5, index=$6",
+            )
             .bind(tx_hash)
-            .bind(block_hash)
-            .bind(i)
             .bind(version)
-            .bind(tx_type)
-            .bind(tx_status)
+            .bind(tx_type.clone())
+            .bind(tx_status.clone())
+            .bind(block_hash.clone())
+            .bind(i)
             .execute(&mut *transaction)
-            .await?;
-
-            i += 1;
+            .await
+            .log_warn(format!("Inserting transaction {:?}", tx_hash))?;
 
             match tx.transaction_data {
                 TransactionData::Blob(blob_tx) => {
@@ -338,6 +378,7 @@ impl Indexer {
                     bail!("Unsupported transaction type");
                 }
             }
+            i += 1;
         }
 
         // Handling new stakers
@@ -733,6 +774,8 @@ mod test {
 
         let mut node_state = NodeState::default();
 
+        // Handling a block containing txs
+
         let mut signed_block = SignedBlock::default();
         signed_block.data_proposals.push((
             ValidatorPublicKey("ttt".into()),
@@ -749,6 +792,58 @@ mod test {
             .await
             .expect("Failed to handle block");
 
+        // Handling MempoolStatusEvent
+
+        let initial_state_wd = StateDigest(vec![1, 2, 3]);
+        let next_state_wd = StateDigest(vec![4, 5, 6]);
+        let first_contract_name_wd = ContractName::new("wd1");
+        let second_contract_name_wd = ContractName::new("wd2");
+
+        let register_tx_1_wd =
+            new_register_tx(first_contract_name_wd.clone(), initial_state_wd.clone());
+        let register_tx_2_wd =
+            new_register_tx(second_contract_name_wd.clone(), initial_state_wd.clone());
+
+        let blob_transaction_wd = new_blob_tx(
+            first_contract_name_wd.clone(),
+            second_contract_name_wd.clone(),
+        );
+        let blob_transaction_hash_wd = blob_transaction_wd.hash();
+
+        let proof_tx_1_wd = new_proof_tx(
+            first_contract_name_wd.clone(),
+            BlobIndex(0),
+            blob_transaction_hash_wd.clone(),
+            initial_state_wd.clone(),
+            next_state_wd.clone(),
+            vec![99, 49, 1, 2, 3, 99, 50, 1, 2, 3],
+        );
+
+        indexer
+            .handle_mempool_status_event(MempoolStatusEvent::WaitingDissemination(Transaction {
+                version: 1,
+                transaction_data: TransactionData::Blob(register_tx_1_wd),
+            }))
+            .await
+            .expect("MempoolStatusEvent");
+        indexer
+            .handle_mempool_status_event(MempoolStatusEvent::WaitingDissemination(Transaction {
+                version: 1,
+                transaction_data: TransactionData::Blob(register_tx_2_wd),
+            }))
+            .await
+            .expect("MempoolStatusEvent");
+        indexer
+            .handle_mempool_status_event(MempoolStatusEvent::WaitingDissemination(
+                blob_transaction_wd,
+            ))
+            .await
+            .expect("MempoolStatusEvent");
+        indexer
+            .handle_mempool_status_event(MempoolStatusEvent::WaitingDissemination(proof_tx_1_wd))
+            .await
+            .expect("MempoolStatusEvent");
+
         let transactions_response = server.get("/contract/c1").await;
         transactions_response.assert_status_ok();
         let json_response = transactions_response.json::<APIContract>();
@@ -758,6 +853,9 @@ mod test {
         transactions_response.assert_status_ok();
         let json_response = transactions_response.json::<APIContract>();
         assert_eq!(json_response.state_digest, next_state.0);
+
+        let transactions_response = server.get("/contract/d1").await;
+        transactions_response.assert_status_not_found();
 
         let blob_transactions_response = server.get("/blob_transactions/contract/c1").await;
         blob_transactions_response.assert_status_ok();
@@ -929,6 +1027,13 @@ mod test {
         // Get an existing transaction by hash
         let transactions_response = server
             .get("/transaction/hash/test_tx_hash_1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+            .await;
+        transactions_response.assert_status_ok();
+        assert!(!transactions_response.text().is_empty());
+
+        // Get an existing transaction, waiting for dissemination by hash
+        let transactions_response = server
+            .get("/transaction/hash/test_tx_hash_0aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
             .await;
         transactions_response.assert_status_ok();
         assert!(!transactions_response.text().is_empty());

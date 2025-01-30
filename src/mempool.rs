@@ -75,7 +75,8 @@ impl KnownContracts {
 module_bus_client! {
 struct MempoolBusClient {
     sender(OutboundMessage),
-    sender(MempoolEvent),
+    sender(MempoolBlockEvent),
+    sender(MempoolStatusEvent),
     sender(InternalMempoolEvent),
     receiver(InternalMempoolEvent),
     receiver(SignedByValidator<MempoolNetMessage>),
@@ -92,7 +93,7 @@ struct MempoolBusClient {
 pub struct MempoolStore {
     storage: Storage,
     buffered_proposals: BTreeMap<ValidatorPublicKey, Vec<DataProposal>>,
-    pending_txs: Vec<Transaction>,
+    waiting_dissemination_txs: Vec<Transaction>,
     last_ccp: Option<CommittedConsensusProposal>,
     blocks_under_contruction: VecDeque<BlockUnderConstruction>,
     buc_build_start_height: Option<u64>,
@@ -142,11 +143,17 @@ impl Display for MempoolNetMessage {
 impl BusMessage for MempoolNetMessage {}
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-pub enum MempoolEvent {
+pub enum MempoolBlockEvent {
     BuiltSignedBlock(SignedBlock),
     StartedBuildingBlocks(BlockHeight),
 }
-impl BusMessage for MempoolEvent {}
+impl BusMessage for MempoolBlockEvent {}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, Encode, Decode)]
+pub enum MempoolStatusEvent {
+    WaitingDissemination(Transaction),
+}
+impl BusMessage for MempoolStatusEvent {}
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub enum InternalMempoolEvent {
@@ -341,7 +348,7 @@ impl Mempool {
         trace!("🌝 Handling DataProposal management");
         // Create new DataProposal with pending txs
         let crypto = self.crypto.clone();
-        let new_txs = std::mem::take(&mut self.pending_txs);
+        let new_txs = std::mem::take(&mut self.waiting_dissemination_txs);
         self.storage.new_data_proposal(&crypto, new_txs); // TODO: copy crypto in storage
 
         // Check for each pending DataProposal if it has enough signatures
@@ -443,11 +450,12 @@ impl Mempool {
             .try_get_full_data_for_signed_block(buc)
             .context("Processing queued committedConsensusProposal")?;
 
-        self.bus.send(MempoolEvent::BuiltSignedBlock(SignedBlock {
-            data_proposals: block_data,
-            certificate: buc.ccp.certificate.clone(),
-            consensus_proposal: buc.ccp.consensus_proposal.clone(),
-        }))?;
+        self.bus
+            .send(MempoolBlockEvent::BuiltSignedBlock(SignedBlock {
+                data_proposals: block_data,
+                certificate: buc.ccp.certificate.clone(),
+                consensus_proposal: buc.ccp.consensus_proposal.clone(),
+            }))?;
 
         Ok(())
     }
@@ -476,7 +484,7 @@ impl Mempool {
         if self.buc_build_start_height.is_none()
             && self
                 .bus
-                .send(MempoolEvent::StartedBuildingBlocks(BlockHeight(slot)))
+                .send(MempoolBlockEvent::StartedBuildingBlocks(BlockHeight(slot)))
                 .log_error(format!("Sending StartedBuilding event at height {}", slot))
                 .is_ok()
         {
@@ -882,11 +890,13 @@ impl Mempool {
     fn on_new_tx(&mut self, tx: Transaction) -> Result<()> {
         // TODO: Verify fees ?
 
+        let tx_hash = tx.hash();
+
         match tx.transaction_data {
             TransactionData::Blob(ref blob_tx) => {
-                debug!("Got new blob tx {}", tx.hash());
+                debug!("Got new blob tx {}", tx_hash);
                 if let Err(e) = blob_tx.validate_identity() {
-                    bail!("Invalid identity for blob tx {}: {}", tx.hash(), e);
+                    bail!("Invalid identity for blob tx {}: {}", tx_hash, e);
                 }
                 // TODO: we should check if the registration handler contract exists.
                 // TODO: would be good to not need to clone here.
@@ -917,8 +927,13 @@ impl Mempool {
         let tx_type: &'static str = (&tx.transaction_data).into();
 
         self.metrics.add_api_tx(tx_type);
-        self.pending_txs.push(tx);
-        self.metrics.snapshot_pending_tx(self.pending_txs.len());
+        self.waiting_dissemination_txs.push(tx.clone());
+        self.metrics
+            .snapshot_pending_tx(self.waiting_dissemination_txs.len());
+
+        let status_event = MempoolStatusEvent::WaitingDissemination(tx);
+        let error_log = format!("Sending Status event{:?}", status_event);
+        _ = self.bus.send(status_event).log_error(error_log);
 
         Ok(())
     }
@@ -1125,7 +1140,7 @@ pub mod test {
     pub struct MempoolTestCtx {
         pub name: String,
         pub out_receiver: Receiver<OutboundMessage>,
-        pub mempool_event_receiver: Receiver<MempoolEvent>,
+        pub mempool_event_receiver: Receiver<MempoolBlockEvent>,
         pub mempool_internal_event_receiver: Receiver<InternalMempoolEvent>,
         pub mempool: Mempool,
     }
@@ -1155,7 +1170,7 @@ pub mod test {
             let shared_bus = SharedMessageBus::new(BusMetrics::global("global".to_string()));
 
             let out_receiver = get_receiver::<OutboundMessage>(&shared_bus).await;
-            let mempool_event_receiver = get_receiver::<MempoolEvent>(&shared_bus).await;
+            let mempool_event_receiver = get_receiver::<MempoolBlockEvent>(&shared_bus).await;
             let mempool_internal_event_receiver =
                 get_receiver::<InternalMempoolEvent>(&shared_bus).await;
 
@@ -1507,7 +1522,7 @@ pub mod test {
         );
 
         // Assert that pending_tx has been flushed
-        assert!(ctx.mempool.pending_txs.is_empty());
+        assert!(ctx.mempool.waiting_dissemination_txs.is_empty());
         Ok(())
     }
 
@@ -1596,7 +1611,7 @@ pub mod test {
         assert_eq!(data_proposal.txs, vec![register_tx]);
 
         // Assert that pending_tx is still flushed
-        assert!(ctx.mempool.pending_txs.is_empty());
+        assert!(ctx.mempool.waiting_dissemination_txs.is_empty());
 
         Ok(())
     }
@@ -1980,14 +1995,14 @@ pub mod test {
 
         assert_chanmsg_matches!(
             ctx.mempool_event_receiver,
-            MempoolEvent::StartedBuildingBlocks(height) => {
+            MempoolBlockEvent::StartedBuildingBlocks(height) => {
                 assert_eq!(height, BlockHeight(1));
             }
         );
 
         assert_chanmsg_matches!(
             ctx.mempool_event_receiver,
-            MempoolEvent::BuiltSignedBlock(sb) => {
+            MempoolBlockEvent::BuiltSignedBlock(sb) => {
                 assert_eq!(sb.consensus_proposal.cut, cut);
                 assert_eq!(
                     sb.data_proposals,
@@ -1996,7 +2011,7 @@ pub mod test {
             }
         );
 
-        assert!(ctx.mempool.pending_txs.is_empty());
+        assert!(ctx.mempool.waiting_dissemination_txs.is_empty());
         Ok(())
     }
 
@@ -2091,14 +2106,14 @@ pub mod test {
 
         assert_chanmsg_matches!(
             ctx.mempool_event_receiver,
-            MempoolEvent::StartedBuildingBlocks(height) => {
+            MempoolBlockEvent::StartedBuildingBlocks(height) => {
                 assert_eq!(height, BlockHeight(6));
             }
         );
 
         assert_chanmsg_matches!(
             ctx.mempool_event_receiver,
-            MempoolEvent::BuiltSignedBlock(sb) => {
+            MempoolBlockEvent::BuiltSignedBlock(sb) => {
                 assert_eq!(sb.consensus_proposal.cut, cut);
                 assert_eq!(
                     sb.data_proposals,
@@ -2151,14 +2166,14 @@ pub mod test {
 
         assert_chanmsg_matches!(
             ctx.mempool_event_receiver,
-            MempoolEvent::StartedBuildingBlocks(height) => {
+            MempoolBlockEvent::StartedBuildingBlocks(height) => {
                 assert_eq!(height, BlockHeight(1));
             }
         );
 
         let parent_hash = assert_chanmsg_matches!(
             ctx.mempool_event_receiver,
-            MempoolEvent::BuiltSignedBlock(sb) => {
+            MempoolBlockEvent::BuiltSignedBlock(sb) => {
                 assert_eq!(sb.consensus_proposal.cut, cut);
                 assert_eq!(
                     sb.data_proposals,
@@ -2168,7 +2183,7 @@ pub mod test {
             }
         );
 
-        assert!(ctx.mempool.pending_txs.is_empty());
+        assert!(ctx.mempool.waiting_dissemination_txs.is_empty());
 
         // Second round - register a tx
         ctx.submit_contract_tx("test2");
@@ -2241,7 +2256,7 @@ pub mod test {
 
         assert_chanmsg_matches!(
             ctx.mempool_event_receiver,
-            MempoolEvent::BuiltSignedBlock(sb) => {
+            MempoolBlockEvent::BuiltSignedBlock(sb) => {
                 assert_eq!(sb.consensus_proposal.cut, cut2);
                 assert_eq!(sb.data_proposals, vec![(key.clone(), vec![dp_orig2])]);
                 sb.consensus_proposal.hash()
@@ -2249,7 +2264,7 @@ pub mod test {
         );
         assert_chanmsg_matches!(
             ctx.mempool_event_receiver,
-            MempoolEvent::BuiltSignedBlock(sb) => {
+            MempoolBlockEvent::BuiltSignedBlock(sb) => {
                 assert_eq!(sb.consensus_proposal.cut, cut3);
                 assert_eq!(sb.data_proposals, vec![(key.clone(), vec![dp_orig3])]);
                 sb.consensus_proposal.hash()
