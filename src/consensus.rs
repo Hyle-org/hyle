@@ -302,10 +302,6 @@ impl Consensus {
         disseminator: &ValidatorPublicKey,
         cumul_size: &LaneBytesSize,
     ) -> Result<()> {
-        info!(
-            "🔍 Verifying fees paid by disseminator: {} ({}) in cut {:?}",
-            disseminator, cumul_size, cut
-        );
         cut.iter()
             .find(|l| &l.0 == disseminator && &l.2 == cumul_size)
             .map(|_| ())

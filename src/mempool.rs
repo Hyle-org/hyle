@@ -971,6 +971,7 @@ impl Mempool {
 
         tx.transaction_data = TransactionData::VerifiedProof(VerifiedProofTransaction {
             proof_hash: proof_transaction.proof.hash(),
+            proof_size: proof_transaction.estimate_size(),
             proof: Some(proof_transaction.proof),
             contract_name: proof_transaction.contract_name.clone(),
             is_recursive,

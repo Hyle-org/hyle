@@ -745,7 +745,7 @@ impl Lane {
             },
         );
         tracing::info!(
-            "Added new DataProposal {} to lane, txs: {}, lane size: {lane_size} + {dp_size} = {}",
+            "Added new DataProposal {} to lane, txs: {}, lane size: {}",
             data_proposal_hash,
             tx_len,
             lane_size + dp_size
@@ -918,6 +918,7 @@ mod tests {
                     hyle_output,
                     original_proof_hash: proof.hash(),
                 }],
+                proof_size: proof.0.len(),
                 proof: Some(proof),
                 is_recursive: false,
             }),
@@ -934,6 +935,7 @@ mod tests {
             transaction_data: TransactionData::VerifiedProof(VerifiedProofTransaction {
                 contract_name: contract_name.clone(),
                 proof_hash: proof.hash(),
+                proof_size: proof.0.len(),
                 proven_blobs: vec![BlobProofOutput {
                     program_id: ProgramId(vec![]),
                     blob_tx_hash: TxHash::default(),

@@ -203,6 +203,7 @@ async fn impl_test_mempool_isnt_blocked_by_proof_verification() -> Result<()> {
                     hyle_output: HyleOutput::default(),
                 }],
                 is_recursive: false,
+                proof_size: proof.0.len(),
             }
             .into(),
         );

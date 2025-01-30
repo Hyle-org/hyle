@@ -15,7 +15,11 @@ pub struct Transaction {
 
 impl DataSized for Transaction {
     fn estimate_size(&self) -> usize {
-        50 // TODO
+        match &self.transaction_data {
+            TransactionData::Blob(tx) => tx.estimate_size(),
+            TransactionData::Proof(tx) => tx.estimate_size(),
+            TransactionData::VerifiedProof(tx) => tx.proof_size,
+        }
     }
 }
 
@@ -38,11 +42,20 @@ pub struct ProofTransaction {
     pub proof: ProofData,
 }
 
+impl ProofTransaction {
+    pub fn estimate_size(&self) -> usize {
+        bincode::encode_to_vec(self, bincode::config::standard())
+            .unwrap_or_default()
+            .len()
+    }
+}
+
 #[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Encode, Decode)]
 pub struct VerifiedProofTransaction {
     pub contract_name: ContractName,
     pub proof: Option<ProofData>, // Kept only on the local lane for indexing purposes
     pub proof_hash: ProofDataHash,
+    pub proof_size: usize,
     pub proven_blobs: Vec<BlobProofOutput>,
     pub is_recursive: bool,
 }
@@ -52,6 +65,7 @@ impl std::fmt::Debug for VerifiedProofTransaction {
         f.debug_struct("VerifiedProofTransaction")
             .field("contract_name", &self.contract_name)
             .field("proof_hash", &self.proof_hash)
+            .field("proof_size", &self.proof_size)
             .field("proof", &"[HIDDEN]")
             .field(
                 "proof_len",
@@ -166,6 +180,15 @@ pub struct BlobTransaction {
     pub blobs: Vec<Blob>,
     // FIXME: add a nonce or something to prevent BlobTransaction to share the same hash
 }
+
+impl BlobTransaction {
+    pub fn estimate_size(&self) -> usize {
+        bincode::encode_to_vec(self, bincode::config::standard())
+            .unwrap_or_default()
+            .len()
+    }
+}
+
 impl Hashable<TxHash> for BlobTransaction {
     fn hash(&self) -> TxHash {
         let mut hasher = Sha3_256::new();

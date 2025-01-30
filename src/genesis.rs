@@ -228,6 +228,7 @@ impl Genesis {
                         .collect(),
                     is_recursive: true,
                     proof_hash: ProofData::default().hash(),
+                    proof_size: 0,
                     proof: None,
                 }
                 .into(),

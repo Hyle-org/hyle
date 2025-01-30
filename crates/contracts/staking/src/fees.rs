@@ -48,8 +48,8 @@ impl Fees {
     /// need to pass the PoDa to the pay_for_dadi function
     pub(crate) fn distribute(&mut self, bonded: &[ValidatorPublicKey]) -> Result<(), String> {
         let fee_per_byte = 1; // TODO: this value could be computed & change over time
-        for (disseminator, cumul_size) in self.pending_fees.iter() {
-            let Some(disseminator) = self.balances.get_mut(disseminator) else {
+        for (disseminator, cumul_size) in self.pending_fees.drain(..) {
+            let Some(disseminator) = self.balances.get_mut(&disseminator) else {
                 // We should never come here, as the disseminator should have a balance
                 // It should be checked by the validator when voting on the DataProposal
                 // TODO: I think we sould not fail here, as it will hang the consensus...
@@ -68,7 +68,7 @@ impl Fees {
             let unpaid_size = cumul_size.0 - disseminator.paid_cumul_size.0;
             let fee = (unpaid_size * fee_per_byte) as i128;
             disseminator.balance -= fee;
-            disseminator.paid_cumul_size = *cumul_size;
+            disseminator.paid_cumul_size = cumul_size;
 
             // TODO: we might loose some token here as the division is rounded
             let fee_per_validator = fee / bonded.len() as i128;

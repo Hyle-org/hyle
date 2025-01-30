@@ -800,6 +800,7 @@ pub mod test {
                 original_proof_hash: proof.proof.hash(),
             }],
             proof_hash: proof.proof.hash(),
+            proof_size: proof.estimate_size(),
             proof: Some(proof.proof),
             is_recursive: false,
         }
