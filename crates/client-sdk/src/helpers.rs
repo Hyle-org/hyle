@@ -30,7 +30,10 @@ pub fn register_hyle_contract(
 }
 
 pub trait ClientSdkExecutor {
-    fn execute(&self, contract_input: &ContractInput) -> Result<HyleOutput>;
+    fn execute(
+        &self,
+        contract_input: &ContractInput,
+    ) -> Result<(Box<dyn std::any::Any>, HyleOutput)>;
 }
 pub trait ClientSdkProver {
     fn prove(
@@ -70,25 +73,6 @@ pub mod risc0 {
 
             let encoded_receipt = borsh::to_vec(&receipt).expect("Unable to encode receipt");
             Ok(ProofData(encoded_receipt))
-        }
-    }
-
-    impl ClientSdkExecutor for Risc0Prover<'_> {
-        fn execute(&self, contract_input: &ContractInput) -> Result<HyleOutput> {
-            let contract_input = bonsai_runner::as_input_data(contract_input)?;
-            let env = risc0_zkvm::ExecutorEnv::builder()
-                .write_slice(&contract_input)
-                .build()
-                .unwrap();
-
-            let executor = risc0_zkvm::default_executor();
-            let execute_info = executor.execute(env, self.binary)?;
-            let output = execute_info
-                .journal
-                .decode::<HyleOutput>()
-                .expect("Failed to decode journal");
-
-            Ok(output)
         }
     }
 

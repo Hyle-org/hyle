@@ -3,6 +3,7 @@
 extern crate alloc;
 
 use alloc::string::String;
+use alloc::vec::Vec;
 
 pub mod caller;
 pub mod erc20;
@@ -42,7 +43,7 @@ macro_rules! info {
     }
 }
 
-pub type RunResult = Result<String, String>;
+pub type RunResult<T> = Result<(String, T, Vec<RegisterContractEffect>), String>;
 
 pub const fn to_u8_array(val: &[u32; 8]) -> [u8; 32] {
     [

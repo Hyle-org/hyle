@@ -1,14 +1,24 @@
+use std::any::Any;
+
 use crate::{execute, UuidTldState};
 use client_sdk::{
     helpers::{risc0::Risc0Prover, ClientSdkExecutor},
     transaction_builder::{StateUpdater, TxExecutorBuilder},
 };
-use sdk::{ContractName, Digestable, StateDigest};
+use sdk::{utils::as_hyle_output, ContractName, Digestable, HyleOutput};
 
 struct UuidTldPseudoExecutor {}
 impl ClientSdkExecutor for UuidTldPseudoExecutor {
-    fn execute(&self, contract_input: &sdk::ContractInput) -> anyhow::Result<sdk::HyleOutput> {
-        Ok(execute(contract_input.clone()))
+    fn execute(
+        &self,
+        contract_input: &sdk::ContractInput,
+    ) -> anyhow::Result<(Box<dyn Any>, HyleOutput)> {
+        let mut res = execute(contract_input.clone());
+        let output = as_hyle_output(contract_input.clone(), &mut res);
+        match res {
+            Ok(res) => Ok((Box::new(res.1.clone()), output)),
+            Err(e) => Err(anyhow::anyhow!(e)),
+        }
     }
 }
 
@@ -29,13 +39,5 @@ impl UuidTldState {
             UuidTldPseudoExecutor {},
             Risc0Prover::new(metadata::UUID_TLD_ELF),
         );
-    }
-}
-
-impl TryFrom<StateDigest> for UuidTldState {
-    type Error = anyhow::Error;
-
-    fn try_from(value: StateDigest) -> anyhow::Result<Self> {
-        UuidTldState::deserialize(&value.0).map_err(|e| anyhow::anyhow!(e))
     }
 }

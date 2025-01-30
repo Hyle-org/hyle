@@ -2,11 +2,11 @@ use std::collections::BTreeMap;
 
 use bincode::{Decode, Encode};
 use sdk::erc20::ERC20Action;
+use sdk::RunResult;
 use sdk::{
     caller::{CalleeBlobs, CallerCallee, MutCalleeBlobs},
     erc20::ERC20,
-    utils::as_hyle_output,
-    ContractInput, Digestable, HyleOutput, Identity,
+    ContractInput, Digestable, Identity,
 };
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
@@ -50,6 +50,11 @@ impl HyllarToken {
             balances,
             allowances: BTreeMap::new(),
         }
+    }
+
+    pub fn to_bytes(&self) -> Vec<u8> {
+        bincode::encode_to_vec(self, bincode::config::standard())
+            .expect("Failed to encode Balances")
     }
 }
 
@@ -157,12 +162,15 @@ impl ERC20 for HyllarTokenContract {
 
 impl Digestable for HyllarToken {
     fn as_digest(&self) -> sdk::StateDigest {
-        sdk::StateDigest(
-            bincode::encode_to_vec(self, bincode::config::standard())
-                .expect("Failed to encode Balances"),
-        )
+        sdk::StateDigest(self.to_bytes())
     }
 }
+impl Digestable for HyllarTokenContract {
+    fn as_digest(&self) -> sdk::StateDigest {
+        sdk::StateDigest(self.state.to_bytes())
+    }
+}
+
 impl TryFrom<sdk::StateDigest> for HyllarToken {
     type Error = anyhow::Error;
 
@@ -173,7 +181,10 @@ impl TryFrom<sdk::StateDigest> for HyllarToken {
     }
 }
 
-pub fn execute(stdout: &mut impl std::fmt::Write, contract_input: ContractInput) -> HyleOutput {
+pub fn execute(
+    stdout: &mut impl std::fmt::Write,
+    contract_input: ContractInput,
+) -> RunResult<HyllarTokenContract> {
     let (input, parsed_blob, caller) =
         match sdk::guest::init_with_caller::<ERC20Action>(contract_input) {
             Ok(res) => res,
@@ -189,14 +200,17 @@ pub fn execute(stdout: &mut impl std::fmt::Write, contract_input: ContractInput)
         .expect("Failed to decode state");
 
     let _ = stdout.write_str("Init token contract");
-    let mut contract = HyllarTokenContract::init(state, caller);
+    let contract = HyllarTokenContract::init(state, caller);
 
     let _ = stdout.write_str("execute action");
-    let res = sdk::erc20::execute_action(&mut contract, parsed_blob.data.parameters);
+    let res = sdk::erc20::execute_action(contract, parsed_blob.data.parameters);
 
-    let _ = writeln!(stdout, "commit {:?}", res);
+    let _ = match &res {
+        Ok((mess, _, _)) => writeln!(stdout, "commit {:?}", mess),
+        Err(err) => writeln!(stdout, "error {:?}", err),
+    };
 
-    as_hyle_output(input, contract.state(), res)
+    res
 }
 
 #[cfg(test)]

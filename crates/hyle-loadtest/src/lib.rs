@@ -8,12 +8,11 @@ use hyle_contract_sdk::erc20::ERC20;
 use hyle_contract_sdk::BlobTransaction;
 use hyle_contract_sdk::{Blob, BlobData, ContractAction, RegisterContractAction};
 use hyle_contract_sdk::{ContractName, Identity};
-use hyle_contract_sdk::{Digestable, StateDigest, TcpServerNetMessage};
+use hyle_contract_sdk::{Digestable, TcpServerNetMessage};
 use hyllar::client::transfer;
 use hyllar::{HyllarToken, HyllarTokenContract};
 use tokio::task::JoinSet;
 use tracing::info;
-
 contract_states!(
     #[derive(Debug, Clone)]
     pub struct States {

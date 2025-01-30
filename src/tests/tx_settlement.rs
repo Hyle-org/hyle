@@ -51,11 +51,11 @@ async fn test_full_settlement_flow() -> Result<()> {
         "postgres://postgres:postgres@localhost:{}/postgres",
         pg.get_host_port_ipv4(5432).await.unwrap()
     );
-    let mut node_modules = builder.build().await?;
+    let mut hyle_node = builder.build().await?;
 
-    node_modules.wait_for_genesis_event().await?;
-
+    hyle_node.wait_for_genesis_event().await?;
     let client = NodeApiHttpClient::new(format!("http://{rest_client}/")).unwrap();
+    hyle_node.wait_for_rest_api(&client).await?;
 
     info!("➡️  Registering contracts c1 & c2.hyle");
 
@@ -116,9 +116,9 @@ async fn test_full_settlement_flow() -> Result<()> {
     client.send_tx_proof(&proof_c2).await.unwrap();
 
     info!("➡️  Waiting for TX to be settled");
-    node_modules.wait_for_settled_tx(tx.hash()).await?;
+    hyle_node.wait_for_settled_tx(tx.hash()).await?;
     // Wait a block on top to make sure the state is updated.
-    node_modules.wait_for_n_blocks(1).await?;
+    hyle_node.wait_for_n_blocks(1).await?;
 
     info!("➡️  Getting contracts");
 
@@ -143,9 +143,9 @@ async fn test_full_settlement_flow() -> Result<()> {
 async fn test_contract_upgrade() -> Result<()> {
     let builder = NodeIntegrationCtxBuilder::new().await;
     let rest_url = builder.conf.rest.clone();
-    let mut node_modules = builder.build().await?;
+    let mut hyle_node = builder.build().await?;
 
-    node_modules.wait_for_genesis_event().await?;
+    hyle_node.wait_for_genesis_event().await?;
 
     let client = NodeApiHttpClient::new(format!("http://{rest_url}/")).unwrap();
 
@@ -154,7 +154,7 @@ async fn test_contract_upgrade() -> Result<()> {
     let b1 = make_register_blob_action("c1.hyle".into(), StateDigest(vec![1, 2, 3]));
     client.send_tx_blob(&b1).await.unwrap();
 
-    node_modules.wait_for_settled_tx(b1.hash()).await?;
+    hyle_node.wait_for_settled_tx(b1.hash()).await?;
 
     let contract = client.get_contract(&"c1.hyle".into()).await?;
     assert_eq!(contract.program_id, ProgramId(vec![1, 2, 3]));
@@ -192,9 +192,9 @@ async fn test_contract_upgrade() -> Result<()> {
     client.send_tx_proof(&proof_update).await.unwrap();
 
     info!("➡️  Waiting for TX to be settled");
-    node_modules.wait_for_settled_tx(b2.hash()).await?;
+    hyle_node.wait_for_settled_tx(b2.hash()).await?;
     // Wait a block on top to make sure the state is updated.
-    node_modules.wait_for_n_blocks(1).await?;
+    hyle_node.wait_for_n_blocks(1).await?;
 
     info!("➡️  Getting contracts");
 
