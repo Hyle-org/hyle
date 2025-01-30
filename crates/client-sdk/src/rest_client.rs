@@ -145,7 +145,7 @@ impl IndexerApiHttpClient {
 
         StateDigest(resp.state_digest)
             .try_into()
-            .map_err(|_| "Failed to convert state digest")
+            .map_err(|_| anyhow::anyhow!("Failed to convert state digest"))
     }
 
     pub async fn get_blocks(&self) -> Result<Vec<APIBlock>> {
