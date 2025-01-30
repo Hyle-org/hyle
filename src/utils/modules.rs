@@ -180,17 +180,29 @@ bus_client! {
     }
 }
 
-impl ShutdownClient {
+struct ShutdownClientRecalls {
+    pub shut_modules: Vec<String>,
+    pub bus_client: ShutdownClient,
+}
+
+impl ShutdownClientRecalls {
     pub async fn shutdown_module(&mut self, module_name: &str) {
         _ = self
+            .bus_client
             .send(signal::ShutdownModule {
                 module: module_name.to_string(),
             })
             .log_error("Shutting down module");
 
+        // May be the shutdown message was skipped because the module failed somehow
+        if self.shut_modules.contains(&module_name.to_string()) {
+            return;
+        }
+
         handle_messages! {
-            on_bus *self,
+            on_bus self.bus_client,
             listen<ShutdownCompleted> msg => {
+                self.shut_modules.push(msg.module.clone());
                 if msg.module == module_name {
                     debug!("Module {} successfully shut", msg.module);
                     break;
@@ -254,7 +266,10 @@ impl ModulesHandler {
 
     /// Shutdown modules in reverse order (start A, B, C, shutdown C, B, A)
     pub async fn shutdown_modules(&mut self, timeout: Duration) -> Result<()> {
-        let mut shutdown_client = ShutdownClient::new_from_bus(self.bus.new_handle()).await;
+        let mut shutdown_client = ShutdownClientRecalls {
+            bus_client: ShutdownClient::new_from_bus(self.bus.new_handle()).await,
+            shut_modules: vec![],
+        };
 
         for module_name in self.started_modules.drain(..).rev() {
             if ![std::any::type_name::<Genesis>()].contains(&module_name) {
