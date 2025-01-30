@@ -1,11 +1,13 @@
-use anyhow::anyhow;
+use std::any::Any;
+
 use client_sdk::{
     helpers::{risc0::Risc0Prover, ClientSdkExecutor},
     transaction_builder::{ProvableBlobTx, StateUpdater, TxExecutorBuilder},
 };
 use sdk::{
     api::{APIFees, APIFeesBalance, APIStaking},
-    ContractName, Digestable, StakingAction, StateDigest, ValidatorPublicKey,
+    utils::as_hyle_output,
+    ContractName, Digestable, HyleOutput, StakingAction, ValidatorPublicKey,
 };
 
 use crate::{
@@ -22,8 +24,16 @@ use metadata::*;
 
 struct StakingPseudoExecutor {}
 impl ClientSdkExecutor for StakingPseudoExecutor {
-    fn execute(&self, contract_input: &sdk::ContractInput) -> anyhow::Result<sdk::HyleOutput> {
-        Ok(execute(contract_input.clone()))
+    fn execute(
+        &self,
+        contract_input: &sdk::ContractInput,
+    ) -> anyhow::Result<(Box<dyn Any>, HyleOutput)> {
+        let mut res = execute(contract_input.clone());
+        let output = as_hyle_output(contract_input.clone(), &mut res);
+        match res {
+            Ok(res) => Ok((Box::new(res.1.clone()), output)),
+            Err(e) => Err(anyhow::anyhow!(e)),
+        }
     }
 }
 
@@ -35,7 +45,7 @@ impl Staking {
     ) {
         builder.init_with(
             contract_name,
-            self.on_chain_state().as_digest(),
+            self.as_digest(),
             StakingPseudoExecutor {},
             Risc0Prover::new(STAKING_ELF),
         );
@@ -125,15 +135,15 @@ pub fn deposit_for_fees(
             None,
             None,
         )?
-        .with_private_input(|state: StateDigest| -> anyhow::Result<Vec<u8>> { Ok(state.0) })
-        .build_offchain_state(move |state: StateDigest| -> anyhow::Result<StateDigest> {
-            let mut state: Staking = state.try_into()?;
-            state
-                .deposit_for_fees(holder.clone(), amount)
-                .map_err(|e| anyhow!(e))?;
-            Ok(state.as_digest())
-        });
+        .with_private_input(|state: &Staking| -> anyhow::Result<Vec<u8>> { Ok(state.to_bytes()) });
     Ok(())
+}
+
+impl Staking {
+    pub fn to_bytes(&self) -> Vec<u8> {
+        bincode::encode_to_vec(self, bincode::config::standard())
+            .expect("Failed to encode Balances")
+    }
 }
 
 pub fn stake(
@@ -141,19 +151,9 @@ pub fn stake(
     contract_name: ContractName,
     amount: u128,
 ) -> anyhow::Result<()> {
-    let identity = builder.identity.clone();
-
     builder
         .add_action(contract_name, StakingAction::Stake { amount }, None, None)?
-        .with_private_input(|state: StateDigest| -> anyhow::Result<Vec<u8>> { Ok(state.0) })
-        .build_offchain_state(move |state: StateDigest| -> anyhow::Result<StateDigest> {
-            let mut state: Staking = state.try_into()?;
-            state
-                .stake(identity.clone(), amount)
-                .map_err(|e| anyhow::anyhow!(e))?;
-            Ok(state.as_digest())
-        });
-
+        .with_private_input(|state: &Staking| -> anyhow::Result<Vec<u8>> { Ok(state.to_bytes()) });
     Ok(())
 }
 
@@ -162,8 +162,6 @@ pub fn delegate(
     contract_name: ContractName,
     validator: ValidatorPublicKey,
 ) -> anyhow::Result<()> {
-    let identity = builder.identity.clone();
-
     builder
         .add_action(
             contract_name,
@@ -173,13 +171,6 @@ pub fn delegate(
             None,
             None,
         )?
-        .with_private_input(|state: StateDigest| -> anyhow::Result<Vec<u8>> { Ok(state.0) })
-        .build_offchain_state(move |state: StateDigest| -> anyhow::Result<StateDigest> {
-            let mut state: Staking = state.try_into()?;
-            state
-                .delegate_to(identity.clone(), validator.clone())
-                .map_err(|e| anyhow::anyhow!(e))?;
-            Ok(state.as_digest())
-        });
+        .with_private_input(|state: &Staking| -> anyhow::Result<Vec<u8>> { Ok(state.to_bytes()) });
     Ok(())
 }

@@ -6,7 +6,9 @@ use alloc::{
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 
-use hyle_model::{Blob, BlobData, BlobIndex, ContractAction, ContractName, StructuredBlobData};
+use hyle_model::{
+    Blob, BlobData, BlobIndex, ContractAction, ContractName, Digestable, StructuredBlobData,
+};
 
 use crate::caller::{CallerCallee, CheckCalleeBlobs};
 use crate::RunResult;
@@ -131,8 +133,8 @@ impl ContractAction for ERC20Action {
 ///
 /// * `token` - A mutable reference to an object implementing the ERC20 trait.
 /// * `action` - The action to execute, represented as an ERC20Action enum.
-pub fn execute_action<T: ERC20>(token: &mut T, action: ERC20Action) -> RunResult {
-    match action {
+pub fn execute_action<T: ERC20 + Digestable>(mut token: T, action: ERC20Action) -> RunResult<T> {
+    let program_output = match action {
         ERC20Action::TotalSupply => token
             .total_supply()
             .map(|supply| format!("Total Supply: {}", supply)),
@@ -155,7 +157,8 @@ pub fn execute_action<T: ERC20>(token: &mut T, action: ERC20Action) -> RunResult
         ERC20Action::Allowance { owner, spender } => token
             .allowance(&owner, &spender)
             .map(|allowance| format!("Allowance of {} by {}: {}", spender, owner, allowance)),
-    }
+    };
+    program_output.map(|output| (output, token, alloc::vec![]))
 }
 
 pub struct ERC20BlobChecker<'a, T>(&'a ContractName, &'a T);
@@ -227,6 +230,11 @@ mod tests {
             fn approve(&mut self, spender: &str, amount: u128) -> Result<(), String>;
             fn allowance(&self, owner: &str, spender: &str) -> Result<u128, String>;
         }
+        impl Digestable for ERC20Contract {
+            fn as_digest(&self) -> hyle_model::StateDigest {
+                hyle_model::sdk::StateDigest(vec![])
+            }
+        }
     }
 
     #[test]
@@ -235,10 +243,10 @@ mod tests {
         mock.expect_total_supply().returning(|| Ok(1000));
 
         let action = ERC20Action::TotalSupply;
-        let result = execute_action(&mut mock, action);
+        let result = execute_action(mock, action);
 
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), "Total Supply: 1000");
+        assert_eq!(result.unwrap().0, "Total Supply: 1000");
     }
 
     #[test]
@@ -251,10 +259,10 @@ mod tests {
         let action = ERC20Action::BalanceOf {
             account: "account1".to_string(),
         };
-        let result = execute_action(&mut mock, action);
+        let result = execute_action(mock, action);
 
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), "Balance of account1: 500");
+        assert_eq!(result.unwrap().0, "Balance of account1: 500");
     }
 
     #[test]
@@ -268,10 +276,10 @@ mod tests {
             recipient: "recipient1".to_string(),
             amount: 200,
         };
-        let result = execute_action(&mut mock, action);
+        let result = execute_action(mock, action);
 
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), "Transferred 200 to recipient1");
+        assert_eq!(result.unwrap().0, "Transferred 200 to recipient1");
     }
 
     #[test]
@@ -290,11 +298,11 @@ mod tests {
             recipient: "recipient1".to_string(),
             amount: 300,
         };
-        let result = execute_action(&mut mock, action);
+        let result = execute_action(mock, action);
 
         assert!(result.is_ok());
         assert_eq!(
-            result.unwrap(),
+            result.unwrap().0,
             "Transferred 300 from sender1 to recipient1"
         );
     }
@@ -310,10 +318,10 @@ mod tests {
             spender: "spender1".to_string(),
             amount: 400,
         };
-        let result = execute_action(&mut mock, action);
+        let result = execute_action(mock, action);
 
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), "Approved 400 for spender1");
+        assert_eq!(result.unwrap().0, "Approved 400 for spender1");
     }
 
     #[test]
@@ -327,9 +335,9 @@ mod tests {
             owner: "owner1".to_string(),
             spender: "spender1".to_string(),
         };
-        let result = execute_action(&mut mock, action);
+        let result = execute_action(mock, action);
 
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), "Allowance of spender1 by owner1: 500");
+        assert_eq!(result.unwrap().0, "Allowance of spender1 by owner1: 500");
     }
 }

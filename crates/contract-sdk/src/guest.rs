@@ -97,13 +97,9 @@ where
     Ok((input, parsed_blob, caller))
 }
 
-pub fn commit<State>(
-    env: impl GuestEnv,
-    input: ContractInput,
-    new_state: State,
-    res: crate::RunResult,
-) where
+pub fn commit<State>(env: impl GuestEnv, input: ContractInput, mut res: crate::RunResult<State>)
+where
     State: Digestable,
 {
-    env.commit(&as_hyle_output(input, new_state, res));
+    env.commit(&as_hyle_output(input, &mut res));
 }

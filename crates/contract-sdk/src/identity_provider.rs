@@ -2,7 +2,7 @@ use alloc::{format, string::String, vec::Vec};
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 
-use hyle_model::{Blob, BlobData, BlobIndex, ContractAction, ContractName};
+use hyle_model::{Blob, BlobData, BlobIndex, ContractAction, ContractName, Digestable};
 
 use crate::RunResult;
 
@@ -82,12 +82,12 @@ impl ContractAction for IdentityAction {
     }
 }
 
-pub fn execute_action<T: IdentityVerification>(
-    state: &mut T,
+pub fn execute_action<T: IdentityVerification + Digestable>(
+    mut state: T,
     action: IdentityAction,
     private_input: &str,
-) -> RunResult {
-    match action {
+) -> RunResult<T> {
+    let program_output = match action {
         IdentityAction::RegisterIdentity { account } => {
             match state.register_identity(&account, private_input) {
                 Ok(()) => Ok(format!(
@@ -114,7 +114,8 @@ pub fn execute_action<T: IdentityVerification>(
             )),
             Err(err) => Err(format!("Failed to get identity info: {}", err)),
         },
-    }
+    };
+    program_output.map(|output| (output, state, alloc::vec![]))
 }
 
 #[cfg(test)]
@@ -129,6 +130,10 @@ mod tests {
             fn register_identity(&mut self, account: &str, private_input: &str) -> Result<(), &'static str>;
             fn verify_identity(&mut self, account: &str, nonce: u32, private_input: &str) -> Result<bool, &'static str>;
             fn get_identity_info(&self, account: &str) -> Result<String, &'static str>;
+        }
+
+        impl Digestable for IdentityVerification {
+            fn as_digest(&self) -> crate::StateDigest;
         }
     }
 
@@ -145,7 +150,7 @@ mod tests {
             .times(1)
             .returning(|_, _| Ok(()));
 
-        let result = execute_action(&mut mock, action, private_input);
+        let result = execute_action(mock, action, private_input);
         assert!(result.is_ok());
     }
 
@@ -165,7 +170,7 @@ mod tests {
             nonce: 0,
         };
 
-        let result = execute_action(&mut mock, action, private_input);
+        let result = execute_action(mock, action, private_input);
         assert!(result.is_ok());
     }
 
@@ -184,7 +189,7 @@ mod tests {
             account: account.clone(),
         };
 
-        let result = execute_action(&mut mock, action, "");
+        let result = execute_action(mock, action, "");
         assert!(result.is_ok());
     }
 }

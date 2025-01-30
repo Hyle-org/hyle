@@ -429,7 +429,7 @@ impl Genesis {
             "staking".into(),
             "risc0".into(),
             staking_program_id.clone().into(),
-            ctx.staking.on_chain_state().as_digest(),
+            ctx.staking.as_digest(),
         )
         .expect("register staking");
 
