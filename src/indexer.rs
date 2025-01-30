@@ -28,7 +28,7 @@ use chrono::DateTime;
 use hyle_contract_sdk::TxHash;
 use hyle_model::api::{BlobWithStatus, TransactionStatus, TransactionType, TransactionWithBlobs};
 use sqlx::{postgres::PgPoolOptions, PgPool, Pool, Postgres};
-use sqlx::{query_builder, Execute, PgExecutor, QueryBuilder, Row};
+use sqlx::{Execute, PgExecutor, QueryBuilder, Row};
 use std::ops::DerefMut;
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::{broadcast, mpsc};
