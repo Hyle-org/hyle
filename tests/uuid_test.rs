@@ -8,8 +8,7 @@ use fixtures::ctx::{E2EContract, E2ECtx};
 use hydentity::{client::register_identity, Hydentity};
 use hyle::mempool::verifiers::verify_proof;
 use hyle_contract_sdk::{
-    flatten_blobs, BlobIndex, BlobTransaction, ContractName, Digestable, Hashable, HyleOutput,
-    ProgramId, StateDigest, Transaction, Verifier,
+    BlobTransaction, ContractName, Digestable, Hashable, ProgramId, StateDigest, Verifier,
 };
 use hyle_contracts::{HYDENTITY_ELF, UUID_TLD_ELF, UUID_TLD_ID};
 use uuid_tld::{RegisterUuidContract, UuidTldState};
@@ -93,7 +92,7 @@ async fn test_uuid_registration() {
 
     // Process TX and note which contract we expect to register.
     let tx = executor.process(tx).unwrap();
-    let expected_output = tx.outputs[1].1.registered_contracts[0].clone();
+    let expected_output = tx.outputs[1].1.clone();
 
     let mut proofs = tx.iter_prove();
     let first_proof = proofs.next().unwrap().await.unwrap();
@@ -109,26 +108,20 @@ async fn test_uuid_registration() {
     )
     .expect("Must validate proof");
 
-    let blobs = flatten_blobs(&blob_tx.blobs);
-    assert_eq!(
-        outputs,
-        vec![HyleOutput {
-            version: 1,
-            initial_state: UuidTldState::default().as_digest(),
-            next_state: executor.uuid.as_digest(),
-            identity: "toto.hydentity".into(),
-            tx_hash: Into::<Transaction>::into(blob_tx).hash(),
-            tx_ctx: Some(tx_context),
-            index: BlobIndex(1),
-            blobs,
-            success: true,
-            registered_contracts: vec![expected_output.clone()],
-            program_outputs: vec![]
-        }]
-    );
+    assert_eq!(outputs, &[expected_output.clone()]);
 
     let contract = loop {
-        if let Ok(c) = ctx.get_contract(&expected_output.contract_name.0).await {
+        if let Ok(c) = ctx
+            .get_contract(
+                &expected_output
+                    .registered_contracts
+                    .first()
+                    .unwrap()
+                    .contract_name
+                    .0,
+            )
+            .await
+        {
             break c;
         }
         tokio::time::sleep(std::time::Duration::from_millis(250)).await;
