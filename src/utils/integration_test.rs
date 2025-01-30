@@ -7,6 +7,7 @@ use std::sync::{Arc, Mutex};
 
 use anyhow::{bail, Context, Result};
 use axum::Router;
+use client_sdk::rest_client::NodeApiHttpClient;
 use hyle_model::api::NodeInfo;
 use hyle_model::TxHash;
 use tracing::info;
@@ -324,6 +325,15 @@ impl NodeIntegrationCtx {
         Ok(handler)
     }
 
+    pub async fn wait_for_rest_api(&self, api: &NodeApiHttpClient) -> Result<()> {
+        loop {
+            if api.get_node_info().await.is_ok() {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+        Ok(())
+    }
     pub async fn wait_for_genesis_event(&mut self) -> Result<()> {
         let _: GenesisEvent = self.bus_client.recv().await?;
         Ok(())
