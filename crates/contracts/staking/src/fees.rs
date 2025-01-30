@@ -9,8 +9,8 @@ pub struct ValidatorFeeState {
     /// balance could go negative, the validator would then not be able to
     /// disseminate anymore, and would need to increase its balance first.
     pub(crate) balance: i128,
-    /// Cumulative size of the data disseminated by the validator
-    pub(crate) cumul_size: LaneBytesSize,
+    /// Cumulative size of the data disseminated by the validator that he already paid for
+    pub(crate) paid_cumul_size: LaneBytesSize,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize, Clone, Encode, Decode, PartialEq, Eq)]
@@ -49,8 +49,6 @@ impl Fees {
     pub(crate) fn distribute(&mut self, bonded: &[ValidatorPublicKey]) -> Result<(), String> {
         let fee_per_byte = 1; // TODO: this value could be computed & change over time
         for (disseminator, cumul_size) in self.pending_fees.iter() {
-            let fee = cumul_size.0 as i128 * fee_per_byte;
-
             let Some(disseminator) = self.balances.get_mut(disseminator) else {
                 // We should never come here, as the disseminator should have a balance
                 // It should be checked by the validator when voting on the DataProposal
@@ -58,9 +56,21 @@ impl Fees {
                 return Err("Logic issue: disseminator not found in balances".to_string());
             };
 
-            disseminator.balance -= fee;
-            disseminator.cumul_size = *cumul_size;
+            if cumul_size.0 < disseminator.paid_cumul_size.0 {
+                // We should never come here, as the cumul_size should always increase
+                // It should be checked by the validator when voting on the DataProposal
+                return Err(format!(
+                    "Logic issue: cumul_size should always increase. {} < {}",
+                    cumul_size.0, disseminator.paid_cumul_size.0
+                ));
+            }
 
+            let unpaid_size = cumul_size.0 - disseminator.paid_cumul_size.0;
+            let fee = (unpaid_size * fee_per_byte) as i128;
+            disseminator.balance -= fee;
+            disseminator.paid_cumul_size = *cumul_size;
+
+            // TODO: we might loose some token here as the division is rounded
             let fee_per_validator = fee / bonded.len() as i128;
             for validator in bonded.iter() {
                 let state = self.balances.entry(validator.clone()).or_default();

@@ -745,7 +745,7 @@ impl Lane {
             },
         );
         tracing::info!(
-            "Added new DataProposal {} to lane, txs: {}, size: {}",
+            "Added new DataProposal {} to lane, txs: {}, lane size: {lane_size} + {dp_size} = {}",
             data_proposal_hash,
             tx_len,
             lane_size + dp_size

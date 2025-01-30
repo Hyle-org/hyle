@@ -66,7 +66,7 @@ impl From<Fees> for APIFees {
                         val,
                         APIFeesBalance {
                             balance: b.balance,
-                            cumul_size: b.cumul_size,
+                            cumul_size: b.paid_cumul_size,
                         },
                     )
                 })
@@ -100,7 +100,7 @@ impl From<APIFees> for Fees {
                         val,
                         ValidatorFeeState {
                             balance: b.balance,
-                            cumul_size: b.cumul_size,
+                            paid_cumul_size: b.cumul_size,
                         },
                     )
                 })

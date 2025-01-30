@@ -15,10 +15,7 @@ pub struct Transaction {
 
 impl DataSized for Transaction {
     fn estimate_size(&self) -> usize {
-        // TODO: It might be more efficient to impl DataSized to all the TransactionData variants
-        bincode::encode_to_vec(self, bincode::config::standard())
-            .unwrap()
-            .len()
+        50 // TODO
     }
 }
 
