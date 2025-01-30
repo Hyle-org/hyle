@@ -51,6 +51,11 @@ impl HyllarToken {
             allowances: BTreeMap::new(),
         }
     }
+
+    pub fn to_bytes(&self) -> Vec<u8> {
+        bincode::encode_to_vec(self, bincode::config::standard())
+            .expect("Failed to encode Balances")
+    }
 }
 
 impl HyllarTokenContract {
@@ -157,12 +162,22 @@ impl ERC20 for HyllarTokenContract {
 
 impl Digestable for HyllarToken {
     fn as_digest(&self) -> sdk::StateDigest {
-        sdk::StateDigest(self.as_bytes())
+        sdk::StateDigest(self.to_bytes())
     }
 }
 impl Digestable for HyllarTokenContract {
     fn as_digest(&self) -> sdk::StateDigest {
-        sdk::StateDigest(self.state.as_bytes())
+        sdk::StateDigest(self.state.to_bytes())
+    }
+}
+
+impl TryFrom<sdk::StateDigest> for HyllarToken {
+    type Error = anyhow::Error;
+
+    fn try_from(state: sdk::StateDigest) -> Result<Self, Self::Error> {
+        let (balances, _) = bincode::decode_from_slice(&state.0, bincode::config::standard())
+            .map_err(|_| anyhow::anyhow!("Could not decode hyllar state"))?;
+        Ok(balances)
     }
 }
 

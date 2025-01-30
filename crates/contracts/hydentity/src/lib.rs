@@ -26,6 +26,11 @@ impl Hydentity {
         }
     }
 
+    pub fn to_bytes(&self) -> Vec<u8> {
+        bincode::encode_to_vec(self, bincode::config::standard())
+            .expect("Failed to encode Balances")
+    }
+
     pub fn get_nonce(&self, username: &str) -> Result<u32, &'static str> {
         let info = self.get_identity_info(username)?;
         let state: AccountInfo =
@@ -100,10 +105,21 @@ impl IdentityVerification for Hydentity {
 
 impl Digestable for Hydentity {
     fn as_digest(&self) -> sdk::StateDigest {
-        sdk::StateDigest(self.as_bytes())
+        sdk::StateDigest(self.to_bytes())
     }
 }
 
+
+impl TryFrom<sdk::StateDigest> for Hydentity {
+    type Error = anyhow::Error;
+
+    fn try_from(state: sdk::StateDigest) -> Result<Self, Self::Error> {
+        let (balances, _) = bincode::decode_from_slice(&state.0, bincode::config::standard())
+            .map_err(|_| anyhow::anyhow!("Could not decode hydentity state"))?;
+        Ok(balances)
+    }
+}
+    
 use core::str::from_utf8;
 use sdk::identity_provider::IdentityAction;
 

@@ -16,15 +16,6 @@ pub mod metadata {
 }
 use metadata::*;
 
-impl TryFrom<sdk::StateDigest> for Hydentity {
-    type Error = anyhow::Error;
-
-    fn try_from(state: sdk::StateDigest) -> Result<Self, Self::Error> {
-        let (balances, _) = bincode::decode_from_slice(&state.0, bincode::config::standard())
-            .map_err(|_| anyhow::anyhow!("Could not decode hydentity state"))?;
-        Ok(balances)
-    }
-}
 
 struct HydentityPseudoExecutor {}
 impl ClientSdkExecutor for HydentityPseudoExecutor {
@@ -42,11 +33,6 @@ impl ClientSdkExecutor for HydentityPseudoExecutor {
 }
 
 impl Hydentity {
-    pub fn as_bytes(&self) -> Vec<u8> {
-        bincode::encode_to_vec(self, bincode::config::standard())
-            .expect("Failed to encode Balances")
-    }
-
     pub fn setup_builder<S: StateUpdater>(
         &self,
         contract_name: ContractName,

@@ -4,12 +4,13 @@
 extern crate alloc;
 
 use amm::execute;
-use sdk::guest::GuestEnv;
-use sdk::guest::Risc0Env;
+use sdk::guest::{GuestEnv, Risc0Env, commit};
+use sdk::ContractInput;
 
 risc0_zkvm::guest::entry!(main);
 
 fn main() {
     let env = Risc0Env {};
-    env.commit(&execute(env.read()));
+    let input: ContractInput = env.read();
+    commit(env, input.clone(), execute(input));
 }
