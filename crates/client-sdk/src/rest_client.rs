@@ -143,10 +143,9 @@ impl IndexerApiHttpClient {
     {
         let resp = self.get_indexer_contract(contract_name).await?;
 
-        Ok(StateDigest(resp.state_digest)
+        StateDigest(resp.state_digest)
             .try_into()
             .map_err(|_| "Failed to convert state digest")
-            .unwrap())
     }
 
     pub async fn get_blocks(&self) -> Result<Vec<APIBlock>> {
