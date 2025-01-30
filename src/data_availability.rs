@@ -342,14 +342,19 @@ impl DataAvailability {
         }
         trace!("Block {} {}: {:#?}", block.height(), block.hash(), block);
 
-        info!(
-            "new block {} {} with {} txs",
+        if block.height().0 % 10 == 0 {
+            info!(
+                "new block {} {} with {} txs",
+                block.height(),
+                block.hash(),
+                block.txs().len(),
+            );
+        }
+        debug!(
+            "new block {} {} with {} transactions: {:#?}",
             block.height(),
             block.hash(),
             block.txs().len(),
-        );
-        debug!(
-            "Transactions: {:#?}",
             block.txs().iter().map(|tx| tx.hash().0).collect::<Vec<_>>()
         );
 
