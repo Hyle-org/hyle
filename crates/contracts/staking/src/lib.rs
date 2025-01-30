@@ -125,7 +125,7 @@ pub fn execute(contract_input: ContractInput) -> HyleOutput {
     }
 
     let (state, _): (Staking, _) =
-        bincode::decode_from_slice(input.private_blob.0.as_slice(), bincode::config::standard())
+        bincode::decode_from_slice(input.private_input.as_slice(), bincode::config::standard())
             .expect("Failed to decode payload");
 
     let input_initial_state = input

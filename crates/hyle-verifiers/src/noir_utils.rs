@@ -1,7 +1,10 @@
 use std::collections::VecDeque;
 
 use anyhow::{Context, Error};
-use hyle_model::{BlobIndex, HyleOutput, StateDigest, TxHash};
+use hyle_model::{
+    BlobIndex, BlockHeight, ConsensusProposalHash, HyleOutput, StateDigest, TxHash,
+    HYLE_TESTNET_CHAIN_ID,
+};
 
 pub fn parse_noir_output(vector: &mut Vec<String>) -> Result<HyleOutput, Error> {
     let version = u32::from_str_radix(vector.remove(0).strip_prefix("0x").context("parsing")?, 16)?;
@@ -20,9 +23,17 @@ pub fn parse_noir_output(vector: &mut Vec<String>) -> Result<HyleOutput, Error> 
         next_state: StateDigest(next_state),
         identity: identity.into(),
         tx_hash: TxHash(tx_hash),
+        tx_ctx: Some(hyle_model::TxContext {
+            // TODO
+            block_hash: ConsensusProposalHash::default(),
+            block_height: BlockHeight(0),
+            timestamp: 1,
+            chain_id: HYLE_TESTNET_CHAIN_ID,
+        }),
         index: BlobIndex(index as usize),
         blobs,
         success,
+        registered_contracts: vec![],
         program_outputs: vec![],
     })
 }

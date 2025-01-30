@@ -3,6 +3,7 @@ use derive_more::derive::Display;
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Sha3_256};
 use strum_macros::IntoStaticStr;
+use utoipa::ToSchema;
 
 use crate::*;
 
@@ -34,7 +35,7 @@ impl Default for TransactionData {
     }
 }
 
-#[derive(Serialize, Deserialize, Default, PartialEq, Eq, Clone, Encode, Decode)]
+#[derive(Serialize, Deserialize, ToSchema, Default, PartialEq, Eq, Clone, Encode, Decode)]
 pub struct ProofTransaction {
     pub contract_name: ContractName,
     pub proof: ProofData,
@@ -143,7 +144,9 @@ impl Hashable<TxHash> for VerifiedProofTransaction {
     }
 }
 
-#[derive(Debug, Default, Serialize, Deserialize, PartialEq, Eq, Clone, Encode, Decode)]
+#[derive(
+    Debug, Default, Serialize, Deserialize, ToSchema, PartialEq, Eq, Clone, Encode, Decode,
+)]
 pub struct ProofData(#[serde(with = "base64_field")] pub Vec<u8>);
 
 #[derive(Debug, Default, Serialize, Deserialize, Clone, PartialEq, Eq, Encode, Decode)]
@@ -158,7 +161,9 @@ impl Hashable<ProofDataHash> for ProofData {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Default, PartialEq, Eq, Clone, Encode, Decode)]
+#[derive(
+    Debug, Serialize, Deserialize, ToSchema, Default, PartialEq, Eq, Clone, Encode, Decode,
+)]
 pub struct BlobTransaction {
     pub identity: Identity,
     pub blobs: Vec<Blob>,
@@ -209,7 +214,18 @@ impl BlobTransaction {
 }
 
 #[derive(
-    Debug, Display, Default, Clone, Serialize, Deserialize, Eq, PartialEq, Hash, Encode, Decode,
+    Debug,
+    Display,
+    Default,
+    Clone,
+    Serialize,
+    Deserialize,
+    ToSchema,
+    Eq,
+    PartialEq,
+    Hash,
+    Encode,
+    Decode,
 )]
 pub struct BlobsHash(pub String);
 

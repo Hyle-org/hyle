@@ -68,20 +68,25 @@ impl Digestable for UuidTldState {
 }
 
 fn register_contract(input: &ContractInput) -> Result<(Uuid, StateDigest), String> {
-    let mut state = UuidTldState::deserialize(&input.private_blob.0)?;
+    let mut state = UuidTldState::deserialize(&input.private_input)?;
 
     // Check initial state
     if state.as_digest() != input.initial_state {
         return Err("State digest mismatch".to_string());
     }
 
+    let Some(ref tx_ctx) = input.tx_ctx else {
+        return Err("Missing tx context".to_string());
+    };
+
     // Create UUID
     let mut hasher = SipHasher::new();
     hasher.write(&input.initial_state.0);
-    hasher.write(input.identity.0.as_bytes());
     hasher.write(input.tx_hash.0.as_bytes());
+    hasher.write(tx_ctx.block_hash.0.as_bytes());
+    hasher.write_u128(tx_ctx.timestamp);
     let mut hasher_rng = hasher.into_rng();
-    let id = uuid::Builder::from_random_bytes(hasher_rng.gen()).into_uuid();
+    let id = uuid::Builder::from_random_bytes(hasher_rng.random()).into_uuid();
 
     // _really_ shouldn't happen but let's handle it regardless.
     if !state.registered_contracts.insert(id.as_u128()) {
@@ -123,20 +128,18 @@ pub fn execute(contract_input: ContractInput) -> HyleOutput {
             next_state,
             identity: input.identity,
             tx_hash: input.tx_hash,
+            tx_ctx: input.tx_ctx,
             index: input.index,
             blobs: flatten_blobs(&input.blobs),
             success: true,
-            program_outputs: bincode::encode_to_vec(
-                RegisterContractEffect {
-                    contract_name: format!("{}.{}", id, input.blobs[input.index.0].contract_name.0)
-                        .into(),
-                    verifier: parsed_blob.verifier,
-                    program_id: parsed_blob.program_id,
-                    state_digest: parsed_blob.state_digest,
-                },
-                bincode::config::standard(),
-            )
-            .unwrap(),
+            registered_contracts: vec![RegisterContractEffect {
+                contract_name: format!("{}.{}", id, input.blobs[input.index.0].contract_name.0)
+                    .into(),
+                verifier: parsed_blob.verifier,
+                program_id: parsed_blob.program_id,
+                state_digest: parsed_blob.state_digest,
+            }],
+            program_outputs: vec![],
         },
         Err(e) => as_hyle_output(input.clone(), input.initial_state, Err(e)),
     }
@@ -152,7 +155,12 @@ mod test {
             initial_state: state.as_digest(),
             identity: "toto.test".into(),
             tx_hash: TxHash::default(),
-            private_blob: BlobData(state.serialize().unwrap()),
+            tx_ctx: Some(TxContext {
+                block_hash: ConsensusProposalHash("0xcafefade".to_owned()),
+                timestamp: 3745916,
+                ..TxContext::default()
+            }),
+            private_input: state.serialize().unwrap(),
             blobs: vec![
                 Blob {
                     contract_name: "test".into(),
@@ -175,37 +183,33 @@ mod test {
 
         let output = execute(make_contract_input(state.clone(), action.clone()));
 
-        let (effect, _): (RegisterContractEffect, _) =
-            bincode::decode_from_slice(&output.program_outputs, bincode::config::standard())
-                .expect("failed to decode RegisterContractEffect");
+        let effect = output.registered_contracts.first().unwrap();
 
         assert!(output.success);
 
         assert_eq!(
             effect.contract_name.0,
-            "245cb6ab-0d06-45c9-9a50-238221f6090d.uuid"
+            "9be7e500-9398-46e2-a471-376bbe290517.uuid"
         );
         state
             .registered_contracts
-            .insert(48333604109836718354378223739540474125);
+            .insert(207234404638461129629594146217149400343);
 
         assert_eq!(output.next_state.0, state.as_digest().0);
 
         let output = execute(make_contract_input(state.clone(), action));
 
-        let (effect, _): (RegisterContractEffect, _) =
-            bincode::decode_from_slice(&output.program_outputs, bincode::config::standard())
-                .expect("failed to decode RegisterContractEffect");
+        let effect = output.registered_contracts.first().unwrap();
 
         assert!(output.success);
 
         assert_eq!(
             effect.contract_name.0,
-            "bf056af4-bb5a-4ff1-a089-ecc9dd2a01da.uuid"
+            "289f1568-9f12-4cc0-8d18-b0df040b34ca.uuid"
         );
         state
             .registered_contracts
-            .insert(253910678004284124104875462641404477914);
+            .insert(53995129251464490355800204076743603402);
 
         assert_eq!(output.next_state.0, state.as_digest().0);
     }

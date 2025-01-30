@@ -7,8 +7,8 @@ use std::{
 
 use anyhow::{bail, Result};
 use sdk::{
-    Blob, BlobData, BlobIndex, BlobTransaction, ContractAction, ContractInput, ContractName,
-    Hashable, HyleOutput, Identity, ProofData, StateDigest,
+    Blob, BlobIndex, BlobTransaction, ContractAction, ContractInput, ContractName, Hashable,
+    HyleOutput, Identity, ProofTransaction, StateDigest, TxContext,
 };
 
 use crate::helpers::{ClientSdkExecutor, ClientSdkProver};
@@ -17,6 +17,7 @@ pub struct ProvableBlobTx {
     pub identity: Identity,
     pub blobs: Vec<Blob>,
     runners: Vec<ContractRunner>,
+    tx_context: Option<TxContext>,
 }
 
 impl ProvableBlobTx {
@@ -25,6 +26,7 @@ impl ProvableBlobTx {
             identity,
             runners: vec![],
             blobs: vec![],
+            tx_context: None,
         }
     }
 
@@ -45,6 +47,10 @@ impl ProvableBlobTx {
         self.blobs
             .push(action.as_blob(contract_name, caller, callees));
         Ok(self.runners.last_mut().unwrap())
+    }
+
+    pub fn add_context(&mut self, tx_context: TxContext) {
+        self.tx_context = Some(tx_context);
     }
 }
 
@@ -82,7 +88,7 @@ impl ProofTxBuilder {
     ///}
     pub fn iter_prove(
         self,
-    ) -> impl Iterator<Item = (impl Future<Output = Result<ProofData>> + Send, ContractName)> {
+    ) -> impl Iterator<Item = impl Future<Output = Result<ProofTransaction>> + Send> {
         self.runners.into_iter().map(move |mut runner| {
             tracing::info!("Proving transition for {}...", runner.contract_name);
             let prover = self
@@ -90,13 +96,23 @@ impl ProofTxBuilder {
                 .get(&runner.contract_name)
                 .expect("no prover defined")
                 .clone();
-            let future = async move {
-                prover
+            async move {
+                let proof = prover
                     .prove(runner.contract_input.take().expect("no input for prover"))
-                    .await
-            };
-            (future, runner.contract_name.clone())
+                    .await;
+                proof.map(|proof| ProofTransaction {
+                    proof,
+                    contract_name: runner.contract_name.clone(),
+                })
+            }
         })
+    }
+
+    pub fn to_blob_tx(&self) -> BlobTransaction {
+        BlobTransaction {
+            identity: self.identity.clone(),
+            blobs: self.blobs.clone(),
+        }
     }
 }
 
@@ -224,9 +240,14 @@ impl<S: StateUpdater> TxExecutor<S> {
                 .ok_or(anyhow::anyhow!("State not found"))?;
             let full_state = self.full_states.get(&runner.contract_name)?.clone();
 
-            let private_blob = runner.private_blob(full_state.clone())?;
+            let private_input = runner.private_input(full_state.clone())?;
 
-            runner.build_input(tx.blobs.clone(), private_blob, on_chain_state.clone());
+            runner.build_input(
+                tx.tx_context.clone(),
+                tx.blobs.clone(),
+                private_input,
+                on_chain_state.clone(),
+            );
 
             tracing::info!("Checking transition for {}...", runner.contract_name);
             let out = self
@@ -265,13 +286,14 @@ impl<S: StateUpdater> TxExecutor<S> {
     }
 }
 
+#[allow(clippy::type_complexity)]
 pub struct ContractRunner {
     pub contract_name: ContractName,
     identity: Identity,
     index: BlobIndex,
     contract_input: OnceLock<ContractInput>,
     offchain_cb: Option<Box<dyn Fn(StateDigest) -> Result<StateDigest> + Send + Sync>>,
-    private_blob_cb: Option<Box<dyn Fn(StateDigest) -> Result<BlobData> + Send + Sync>>,
+    private_input_cb: Option<Box<dyn Fn(StateDigest) -> Result<Vec<u8>> + Send + Sync>>,
 }
 
 impl ContractRunner {
@@ -282,7 +304,7 @@ impl ContractRunner {
             index,
             contract_input: OnceLock::new(),
             offchain_cb: None,
-            private_blob_cb: None,
+            private_input_cb: None,
         })
     }
 
@@ -294,11 +316,11 @@ impl ContractRunner {
         self
     }
 
-    pub fn with_private_blob<F>(&mut self, f: F) -> &mut Self
+    pub fn with_private_input<F>(&mut self, f: F) -> &mut Self
     where
-        F: Fn(StateDigest) -> Result<BlobData> + Send + Sync + 'static,
+        F: Fn(StateDigest) -> Result<Vec<u8>> + Send + Sync + 'static,
     {
-        self.private_blob_cb = Some(Box::new(f));
+        self.private_input_cb = Some(Box::new(f));
         self
     }
 
@@ -309,17 +331,18 @@ impl ContractRunner {
             .map_or(Ok(None), |v| v.map(Some))
     }
 
-    fn private_blob(&self, state: StateDigest) -> Result<BlobData> {
-        self.private_blob_cb
+    fn private_input(&self, state: StateDigest) -> Result<Vec<u8>> {
+        self.private_input_cb
             .as_ref()
             .map(|cb| cb(state))
-            .map_or(Ok(BlobData::default()), |v| v)
+            .map_or(Ok(Default::default()), |v| v)
     }
 
     fn build_input(
         &mut self,
+        tx_context: Option<TxContext>,
         blobs: Vec<Blob>,
-        private_blob: BlobData,
+        private_input: Vec<u8>,
         initial_state: StateDigest,
     ) {
         let tx_hash = BlobTransaction {
@@ -329,12 +352,13 @@ impl ContractRunner {
         .hash();
 
         self.contract_input.get_or_init(|| ContractInput {
-            identity: self.identity.clone(),
-            tx_hash,
-            blobs,
-            private_blob,
-            index: self.index,
             initial_state,
+            identity: self.identity.clone(),
+            index: self.index,
+            blobs,
+            tx_hash,
+            tx_ctx: tx_context,
+            private_input,
         });
     }
 }

@@ -3,7 +3,7 @@ use assert_cmd::prelude::*;
 use client_sdk::transaction_builder::{ProvableBlobTx, StateUpdater, TxExecutor};
 
 use hyle::{
-    model::{BlobTransaction, ProofData},
+    model::BlobTransaction,
     rest::client::NodeApiHttpClient,
     utils::conf::{Conf, Consensus},
 };
@@ -43,8 +43,8 @@ impl ConfMaker {
 impl Default for ConfMaker {
     fn default() -> Self {
         let mut default = Conf::new(None, None, None).unwrap();
-        let mut rng = rand::thread_rng();
-        let random_port: u32 = rng.gen_range(1024..(65536 - 4000));
+        let mut rng = rand::rng();
+        let random_port: u32 = rng.random_range(1024..(65536 - 4000));
         default.single_node = Some(false);
         default.host = format!("localhost:{}", random_port);
         default.da_address = format!("localhost:{}", random_port + 1000);
@@ -201,15 +201,9 @@ pub async fn send_transaction<S: StateUpdater>(
         .unwrap();
 
     let provable_tx = ctx.process(transaction).unwrap();
-    for (proof, contract_name) in provable_tx.iter_prove() {
-        let proof: ProofData = proof.await.unwrap();
-        client
-            .send_tx_proof(&hyle::model::ProofTransaction {
-                proof,
-                contract_name,
-            })
-            .await
-            .unwrap();
+    for proof in provable_tx.iter_prove() {
+        let tx = proof.await.unwrap();
+        client.send_tx_proof(&tx).await.unwrap();
     }
     tx_hash
 }

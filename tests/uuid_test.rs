@@ -1,4 +1,4 @@
-#![allow(clippy::unwrap_used, clippy::expect_used)]
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::indexing_slicing)]
 use client_sdk::{
     contract_states,
     helpers::risc0::Risc0Prover,
@@ -8,8 +8,8 @@ use fixtures::ctx::{E2EContract, E2ECtx};
 use hydentity::{client::register_identity, Hydentity};
 use hyle::mempool::verifiers::verify_proof;
 use hyle_contract_sdk::{
-    flatten_blobs, BlobData, BlobIndex, BlobTransaction, ContractName, Digestable, Hashable,
-    HyleOutput, ProgramId, RegisterContractEffect, StateDigest, Transaction, Verifier,
+    flatten_blobs, BlobIndex, BlobTransaction, ContractName, Digestable, Hashable, HyleOutput,
+    ProgramId, StateDigest, Transaction, Verifier,
 };
 use hyle_contracts::{HYDENTITY_ELF, UUID_TLD_ELF, UUID_TLD_ID};
 use uuid_tld::{RegisterUuidContract, UuidTldState};
@@ -74,7 +74,7 @@ async fn test_uuid_registration() {
         None,
     )
     .unwrap()
-    .with_private_blob(|state| Ok(BlobData(state.0)));
+    .with_private_input(|state| Ok(state.0));
 
     ctx.send_provable_blob_tx(&tx).await.unwrap();
 
@@ -82,35 +82,32 @@ async fn test_uuid_registration() {
         identity: tx.identity.clone(),
         blobs: tx.blobs.clone(),
     };
-    let mut proof = executor.process(tx).unwrap().iter_prove();
 
-    let first_proof = proof.next().unwrap().0.await.unwrap();
-    let uuid_proof = proof.next().unwrap().0.await.unwrap();
+    let tx_context = loop {
+        if let Ok(v) = ctx.client().get_unsettled_tx(&blob_tx.hash()).await {
+            break (*v.tx_context).clone();
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+    };
+    tx.add_context(tx_context.clone());
 
-    ctx.send_proof_single("hydentity".into(), first_proof.clone(), blob_tx.hash())
-        .await
-        .unwrap();
-    ctx.send_proof_single("uuid".into(), uuid_proof.clone(), blob_tx.hash())
-        .await
-        .unwrap();
+    // Process TX and note which contract we expect to register.
+    let tx = executor.process(tx).unwrap();
+    let expected_output = tx.outputs[1].1.registered_contracts[0].clone();
+
+    let mut proofs = tx.iter_prove();
+    let first_proof = proofs.next().unwrap().await.unwrap();
+    let uuid_proof = proofs.next().unwrap().await.unwrap();
+
+    ctx.send_proof_single(first_proof.clone()).await.unwrap();
+    ctx.send_proof_single(uuid_proof.clone()).await.unwrap();
 
     let outputs = verify_proof(
-        &uuid_proof,
+        &uuid_proof.proof,
         &Verifier("risc0".into()),
         &ProgramId(UUID_TLD_ID.to_vec()),
     )
     .expect("Must validate proof");
-
-    let expected_output = bincode::encode_to_vec(
-        RegisterContractEffect {
-            contract_name: "3b8d48eb-bdf7-4708-8d3a-1160b40411be.uuid".into(),
-            verifier: Verifier("test".into()),
-            program_id: ProgramId(vec![]),
-            state_digest: StateDigest(vec![0, 1, 2, 3]),
-        },
-        bincode::config::standard(),
-    )
-    .expect("Failed to encode RegisterUuidContract");
 
     let blobs = flatten_blobs(&blob_tx.blobs);
     assert_eq!(
@@ -121,26 +118,21 @@ async fn test_uuid_registration() {
             next_state: executor.uuid.as_digest(),
             identity: "toto.hydentity".into(),
             tx_hash: Into::<Transaction>::into(blob_tx).hash(),
+            tx_ctx: Some(tx_context),
             index: BlobIndex(1),
             blobs,
             success: true,
-            program_outputs: expected_output
+            registered_contracts: vec![expected_output.clone()],
+            program_outputs: vec![]
         }]
     );
 
     let contract = loop {
-        if let Ok(c) = ctx
-            .get_contract("3b8d48eb-bdf7-4708-8d3a-1160b40411be.uuid")
-            .await
-        {
+        if let Ok(c) = ctx.get_contract(&expected_output.contract_name.0).await {
             break c;
         }
         tokio::time::sleep(std::time::Duration::from_millis(250)).await;
     };
-    assert_eq!(
-        contract.name,
-        "3b8d48eb-bdf7-4708-8d3a-1160b40411be.uuid".into()
-    );
     assert_eq!(contract.verifier, Verifier("test".into()));
     assert_eq!(contract.state, StateDigest(vec![0, 1, 2, 3]));
 }

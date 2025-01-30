@@ -4,13 +4,14 @@ use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Sha3_256};
 use strum_macros::IntoStaticStr;
+use utoipa::ToSchema;
 
 use crate::{staking::*, *};
 
 pub type Slot = u64;
 pub type View = u64;
 
-#[derive(Clone, Serialize, Deserialize, Debug)]
+#[derive(Clone, Serialize, Deserialize, ToSchema, Debug)]
 pub struct ConsensusInfo {
     pub slot: Slot,
     pub view: View,
@@ -50,10 +51,6 @@ pub enum Ticket {
     CommitQC(QuorumCertificate),
     TimeoutQC(QuorumCertificate),
 }
-
-#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, PartialEq, Eq, Default)]
-pub struct ConsensusProposalHash(pub String);
-pub type BlockHash = ConsensusProposalHash;
 
 #[cfg(feature = "sqlx")]
 impl sqlx::Type<sqlx::Postgres> for ConsensusProposalHash {
@@ -130,12 +127,6 @@ impl Hashable<ConsensusProposalHash> for ConsensusProposal {
         hasher.update(self.timestamp.to_le_bytes());
         hasher.update(self.parent_hash.0.as_bytes());
         ConsensusProposalHash(hex::encode(hasher.finalize()))
-    }
-}
-
-impl std::hash::Hash for ConsensusProposalHash {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        state.write(self.0.as_bytes());
     }
 }
 

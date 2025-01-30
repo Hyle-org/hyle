@@ -933,6 +933,7 @@ impl Consensus {
         info!("🚀 Starting consensus");
 
         let mut timeout_ticker = interval(Duration::from_millis(100));
+        timeout_ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
         module_handle_messages! {
             on_bus self.bus,

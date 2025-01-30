@@ -23,3 +23,5 @@ pub use contract::*;
 pub use staking::*;
 
 pub const HASH_DISPLAY_SIZE: usize = 3;
+
+pub const HYLE_TESTNET_CHAIN_ID: u128 = 0x68796C655F746573746E6574;

@@ -147,12 +147,6 @@ where
     }
 
     async fn handle_processed_block(&mut self, block: Block) -> Result<()> {
-        info!(
-            cn = %self.contract_name, "📦 Handling block #{}",
-            block.block_height,
-        );
-        debug!(cn = %self.contract_name, "📦 Handled block outputs: {:?}", block);
-
         for (_, contract) in block.registered_contracts {
             if self.contract_name == contract.contract_name {
                 self.handle_register_contract(contract).await?;
@@ -269,6 +263,7 @@ mod tests {
             bus: SharedMessageBus::new(BusMetrics::global("global".to_string())),
             config: Arc::new(Conf::default()),
             router: Default::default(),
+            openapi: Default::default(),
         });
 
         let ctx = ContractStateIndexerCtx {

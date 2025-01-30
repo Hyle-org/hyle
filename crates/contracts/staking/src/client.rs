@@ -4,8 +4,8 @@ use client_sdk::{
     transaction_builder::{ProvableBlobTx, StateUpdater, TxExecutorBuilder},
 };
 use sdk::{
-    api::{APIFees, APIStaking},
-    BlobData, ContractName, Digestable, StakingAction, StateDigest, ValidatorPublicKey,
+    api::{APIFees, APIFeesBalance, APIStaking},
+    ContractName, Digestable, StakingAction, StateDigest, ValidatorPublicKey,
 };
 
 use crate::{
@@ -39,6 +39,39 @@ impl Staking {
             StakingPseudoExecutor {},
             Risc0Prover::new(STAKING_ELF),
         );
+    }
+}
+
+impl From<Staking> for APIStaking {
+    fn from(val: Staking) -> Self {
+        APIStaking {
+            stakes: val.stakes,
+            rewarded: val.rewarded,
+            bonded: val.bonded,
+            delegations: val.delegations,
+            total_bond: val.total_bond,
+            fees: val.fees.into(),
+        }
+    }
+}
+
+impl From<Fees> for APIFees {
+    fn from(val: Fees) -> Self {
+        APIFees {
+            balances: val
+                .balances
+                .into_iter()
+                .map(|(val, b)| {
+                    (
+                        val,
+                        APIFeesBalance {
+                            balance: b.balance,
+                            cumul_size: b.cumul_size,
+                        },
+                    )
+                })
+                .collect(),
+        }
     }
 }
 
@@ -92,9 +125,7 @@ pub fn deposit_for_fees(
             None,
             None,
         )?
-        .with_private_blob(|state: StateDigest| -> anyhow::Result<BlobData> {
-            Ok(BlobData(state.0))
-        })
+        .with_private_input(|state: StateDigest| -> anyhow::Result<Vec<u8>> { Ok(state.0) })
         .build_offchain_state(move |state: StateDigest| -> anyhow::Result<StateDigest> {
             let mut state: Staking = state.try_into()?;
             state
@@ -114,9 +145,7 @@ pub fn stake(
 
     builder
         .add_action(contract_name, StakingAction::Stake { amount }, None, None)?
-        .with_private_blob(|state: StateDigest| -> anyhow::Result<BlobData> {
-            Ok(BlobData(state.0))
-        })
+        .with_private_input(|state: StateDigest| -> anyhow::Result<Vec<u8>> { Ok(state.0) })
         .build_offchain_state(move |state: StateDigest| -> anyhow::Result<StateDigest> {
             let mut state: Staking = state.try_into()?;
             state
@@ -144,9 +173,7 @@ pub fn delegate(
             None,
             None,
         )?
-        .with_private_blob(|state: StateDigest| -> anyhow::Result<BlobData> {
-            Ok(BlobData(state.0))
-        })
+        .with_private_input(|state: StateDigest| -> anyhow::Result<Vec<u8>> { Ok(state.0) })
         .build_offchain_state(move |state: StateDigest| -> anyhow::Result<StateDigest> {
             let mut state: Staking = state.try_into()?;
             state

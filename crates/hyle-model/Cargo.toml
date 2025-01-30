@@ -10,7 +10,7 @@ rust-version = "1.81"
 [dependencies]
 bincode = "2.0.0-rc.3"
 hex = "0.4.3"
-serde = { version = "1.0", features = ["derive"] }
+serde = { version = "1.0", features = ["derive", "rc"] }
 
 sha3 = { version = "0.10.8", optional = true }
 blst = { version = "0.3.13", optional = true }
@@ -21,6 +21,7 @@ anyhow = { version = "1.0.95", optional = true }
 sqlx = { version = "0.8.3", features = ["postgres"], optional = true }
 serde_with = { version = "3.12.0", features = ["hex"], optional = true }
 serde_json = { version = "1", optional = true }
+utoipa = { version = "5.3.1", optional = true}
 
 [features]
 default = ["full"] # disable default feature if you want minimalist definitions for contracts
@@ -32,6 +33,7 @@ full = [
   "dep:derive_more",
   "dep:serde_json",
   "dep:serde_with",
-  "dep:anyhow"
+  "dep:anyhow",
+  "dep:utoipa"
 ]
 sqlx = ["dep:sqlx"]

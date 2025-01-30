@@ -51,9 +51,6 @@ pub enum DataEvent {
 
 impl BusMessage for DataEvent {}
 
-#[derive(Clone)]
-pub struct QueryBlockHeight {}
-
 module_bus_client! {
 #[derive(Debug)]
 struct DABusClient {

@@ -2,7 +2,7 @@ use client_sdk::{
     helpers::{risc0::Risc0Prover, ClientSdkExecutor},
     transaction_builder::{ProvableBlobTx, StateUpdater, TxExecutorBuilder},
 };
-use sdk::{identity_provider::IdentityAction, BlobData, ContractName, Digestable};
+use sdk::{identity_provider::IdentityAction, ContractName, Digestable};
 
 use crate::{execute, Hydentity};
 
@@ -44,7 +44,7 @@ pub fn verify_identity(
         .get_nonce(builder.identity.0.as_str())
         .map_err(|e| anyhow::anyhow!(e))?;
 
-    let password = BlobData(password.into_bytes().to_vec());
+    let password = password.into_bytes().to_vec();
 
     builder
         .add_action(
@@ -56,7 +56,7 @@ pub fn verify_identity(
             None,
             None,
         )?
-        .with_private_blob(move |_| Ok(password.clone()));
+        .with_private_input(move |_| Ok(password.clone()));
     Ok(())
 }
 
@@ -65,7 +65,7 @@ pub fn register_identity(
     contract_name: ContractName,
     password: String,
 ) -> anyhow::Result<()> {
-    let password = BlobData(password.into_bytes().to_vec());
+    let password = password.into_bytes().to_vec();
 
     builder
         .add_action(
@@ -76,6 +76,6 @@ pub fn register_identity(
             None,
             None,
         )?
-        .with_private_blob(move |_| Ok(password.clone()));
+        .with_private_input(move |_| Ok(password.clone()));
     Ok(())
 }

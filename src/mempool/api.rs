@@ -1,9 +1,11 @@
 use anyhow::anyhow;
-use axum::{extract::State, http::StatusCode, response::IntoResponse, routing::post, Json, Router};
+use axum::{extract::State, http::StatusCode, response::IntoResponse, Json, Router};
 use bincode::{Decode, Encode};
 use hyle_contract_sdk::TxHash;
 use serde::{Deserialize, Serialize};
 use tracing::info;
+use utoipa::OpenApi;
+use utoipa_axum::{router::OpenApiRouter, routes};
 
 use crate::{
     bus::{bus_client, metrics::BusMetrics, BusClientSender, BusMessage},
@@ -29,15 +31,23 @@ pub struct RouterState {
     bus: RestBusClient,
 }
 
+#[derive(OpenApi)]
+struct MempoolAPI;
+
 pub async fn api(ctx: &CommonRunContext) -> Router<()> {
     let state = RouterState {
         bus: RestBusClient::new_from_bus(ctx.bus.new_handle()).await,
     };
 
-    Router::new()
-        .route("/tx/send/blob", post(send_blob_transaction))
-        .route("/tx/send/proof", post(send_proof_transaction))
-        .with_state(state)
+    let (router, api) = OpenApiRouter::with_openapi(MempoolAPI::openapi())
+        .routes(routes!(send_blob_transaction))
+        .routes(routes!(send_proof_transaction))
+        .split_for_parts();
+
+    if let Ok(mut o) = ctx.openapi.lock() {
+        *o = o.clone().nest("/v1", api);
+    }
+    router.with_state(state)
 }
 
 async fn handle_send(
@@ -54,6 +64,14 @@ async fn handle_send(
         .map_err(|err| AppError(StatusCode::INTERNAL_SERVER_ERROR, anyhow!(err)))
 }
 
+#[utoipa::path(
+    post,
+    path = "/tx/send/blob",
+    tag = "Mempool",
+    responses(
+        (status = OK, description = "Send blob transaction", body = TxHash)
+    )
+)]
 pub async fn send_blob_transaction(
     State(state): State<RouterState>,
     Json(payload): Json<BlobTransaction>,
@@ -62,6 +80,14 @@ pub async fn send_blob_transaction(
     handle_send(state, TransactionData::Blob(payload)).await
 }
 
+#[utoipa::path(
+    post,
+    path = "/tx/send/proof",
+    tag = "Mempool",
+    responses(
+        (status = OK, description = "Send proof transaction", body = TxHash)
+    )
+)]
 pub async fn send_proof_transaction(
     State(state): State<RouterState>,
     Json(payload): Json<ProofTransaction>,

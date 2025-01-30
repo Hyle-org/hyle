@@ -283,21 +283,8 @@ impl E2ECtx {
             .await
     }
 
-    pub async fn send_proof_single(
-        &self,
-        contract_name: ContractName,
-        proof: ProofData,
-        blob_tx_hash: TxHash,
-    ) -> Result<()> {
-        assert_ok!(
-            self.client()
-                .send_tx_proof(&ProofTransaction {
-                    contract_name: contract_name.clone(),
-                    proof: proof.clone(),
-                })
-                .await
-        );
-
+    pub async fn send_proof_single(&self, proof: ProofTransaction) -> Result<()> {
+        assert_ok!(self.client().send_tx_proof(&proof).await);
         Ok(())
     }
 

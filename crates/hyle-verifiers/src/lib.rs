@@ -36,8 +36,8 @@ pub fn risc0_proof_verifier(
 /// At present, we are using binary to facilitate the integration of the Noir verifier.
 /// This is not meant to be a permanent solution.
 pub fn noir_proof_verifier(proof: &[u8], image_id: &[u8]) -> Result<Vec<HyleOutput>, Error> {
-    let mut rng = rand::thread_rng();
-    let salt: [u8; 16] = rng.gen();
+    let mut rng = rand::rng();
+    let salt: [u8; 16] = rng.random();
     let mut salt_hex = String::with_capacity(salt.len() * 2);
     for b in &salt {
         write!(salt_hex, "{:02x}", b).unwrap();
@@ -143,9 +143,7 @@ pub fn sp1_proof_verifier(
 mod tests {
     use std::{fs::File, io::Read};
 
-    use hyle_model::{
-        StateDigest, {BlobIndex, HyleOutput, Identity, TxHash},
-    };
+    use hyle_model::{BlobIndex, HyleOutput, Identity, StateDigest, TxHash};
 
     use super::noir_proof_verifier;
 
@@ -211,10 +209,12 @@ mod tests {
                         identity: Identity(
                             "3f368bf90c71946fc7b0cde9161ace42985d235f.ecdsa_secp256r1".to_owned()
                         ),
-                        tx_hash: TxHash::new(""),
                         index: BlobIndex(0),
                         blobs: vec![1, 1, 1, 1, 1],
                         success: true,
+                        tx_hash: TxHash::default(), // TODO
+                        tx_ctx: None,
+                        registered_contracts: vec![],
                         program_outputs: vec![]
                     }]
                 );

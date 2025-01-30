@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use sha3::{Digest, Sha3_256};
 use staking::ValidatorPublicKey;
 use std::fmt::Display;
+use utoipa::ToSchema;
 
 use crate::*;
 
@@ -46,7 +47,9 @@ impl Display for DataProposal {
 }
 
 // Cumulative size of the lane from the beginning
-#[derive(Debug, Clone, Copy, Default, Encode, Decode, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Copy, Default, Encode, Decode, Eq, PartialEq, Serialize, Deserialize, ToSchema,
+)]
 pub struct LaneBytesSize(pub u64); // 16M Terabytes, is it enough ?
 
 impl std::ops::Add<usize> for LaneBytesSize {

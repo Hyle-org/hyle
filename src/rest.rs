@@ -12,11 +12,14 @@ use axum::{
     Json,
 };
 use axum_otel_metrics::HttpMetricsLayer;
-use hyle_model::api::NodeInfo;
+use hyle_model::api::*;
+use hyle_model::*;
 use prometheus::{Encoder, TextEncoder};
 use reqwest::StatusCode;
 use tokio::time::Instant;
 use tracing::info;
+use utoipa::OpenApi;
+use utoipa_swagger_ui::SwaggerUi;
 
 use crate::utils::modules::Module;
 use crate::{bus::SharedMessageBus, module_handle_messages, utils::modules::module_bus_client};
@@ -35,6 +38,7 @@ pub struct RestApiRunContext {
     pub router: Router,
     pub metrics_layer: Option<HttpMetricsLayer>,
     pub max_body_size: usize,
+    pub openapi: utoipa::openapi::OpenApi,
 }
 
 pub struct RouterState {
@@ -47,12 +51,27 @@ pub struct RestApi {
     bus: RestBusClient,
 }
 
+#[derive(OpenApi)]
+#[openapi(
+    info(
+        description = "Hyle Node API",
+        title = "Hyle Node API",
+    ),
+    // When opening the swagger, if on some endpoint you get the error:
+    // Could not resolve reference: JSON Pointer evaluation failed while evaluating token "BlobIndex" against an ObjectElement
+    // then it means you need to add it to this list.
+    // More details here: https://github.com/juhaku/utoipa/issues/894
+    components(schemas(BlobIndex, RegisterContractEffect))
+)]
+pub struct ApiDoc;
+
 impl Module for RestApi {
     type Context = RestApiRunContext;
 
     async fn build(ctx: Self::Context) -> Result<Self> {
         let app = ctx.router.merge(
             Router::new()
+                .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ctx.openapi))
                 .route("/v1/info", get(get_info))
                 .route("/v1/metrics", get(get_metrics))
                 .with_state(RouterState { info: ctx.info }),

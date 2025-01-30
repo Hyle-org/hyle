@@ -1,4 +1,5 @@
 use alloc::string::{String, ToString};
+use alloc::vec;
 use bincode::{Decode, Encode};
 use serde::de::DeserializeOwned;
 
@@ -56,10 +57,12 @@ pub fn fail(input: ContractInput, message: &str) -> HyleOutput {
         initial_state: input.initial_state.clone(),
         next_state: input.initial_state,
         identity: input.identity,
-        tx_hash: input.tx_hash,
         index: input.index,
         blobs: flatten_blobs(&input.blobs),
         success: false,
+        tx_hash: input.tx_hash,
+        tx_ctx: input.tx_ctx,
+        registered_contracts: vec![],
         program_outputs: message.to_string().into_bytes(),
     }
 }

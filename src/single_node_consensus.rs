@@ -126,6 +126,7 @@ impl SingleNodeConsensus {
         let mut interval = tokio::time::interval(tokio::time::Duration::from_millis(
             self.config.consensus.slot_duration,
         ));
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         interval.tick().await; // First tick is immediate
 
         module_handle_messages! {
