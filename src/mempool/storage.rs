@@ -50,6 +50,7 @@ pub use hyle_model::LaneBytesSize;
 pub struct Storage {
     pub id: ValidatorPublicKey,
     pub lanes: HashMap<ValidatorPublicKey, Lane>,
+    pub lanes_tip: HashMap<ValidatorPublicKey, DataProposalHash>,
 }
 
 impl Display for Storage {
@@ -64,10 +65,17 @@ impl Display for Storage {
 }
 
 impl Storage {
-    pub fn new(id: ValidatorPublicKey) -> Storage {
+    pub fn new(
+        id: ValidatorPublicKey,
+        lanes_tip: HashMap<ValidatorPublicKey, DataProposalHash>,
+    ) -> Storage {
         let mut lanes = HashMap::new();
         lanes.insert(id.clone(), Lane::default());
-        Storage { id, lanes }
+        Storage {
+            id,
+            lanes,
+            lanes_tip,
+        }
     }
 
     pub fn new_cut(&mut self, staking: &Staking) -> Cut {
@@ -406,6 +414,20 @@ impl Storage {
         validator: &ValidatorPublicKey,
         data_proposal: DataProposal,
     ) -> LaneBytesSize {
+        // Updating validator's lane tip
+        if let Some(validator_tip) = self.lanes_tip.get(validator) {
+            // If validator already has a lane, we only update the tip if DP-chain is respected
+            if let Some(parent_dp_hash) = &data_proposal.parent_data_proposal_hash {
+                if validator_tip == parent_dp_hash {
+                    self.lanes_tip
+                        .insert(validator.clone(), data_proposal.hash());
+                }
+            }
+        } else {
+            self.lanes_tip
+                .insert(validator.clone(), data_proposal.hash());
+        }
+
         // Add DataProposal to validator's lane
         self.lanes
             .entry(validator.clone())
@@ -490,7 +512,28 @@ impl Storage {
             lane, lane_entries
         );
 
-        lane.add_missing_lane_entries(lane_entries)
+        lane.add_missing_lane_entries(lane_entries.clone())?;
+
+        // WARNING: This is not a proper way to do it. This *will* be properly done after refactoring storage to HashMap
+        // Updating validator's lane tip
+        if let Some(validator_tip) = self.lanes_tip.get(validator).cloned() {
+            for le in lane_entries.iter() {
+                // If validator already has a lane, we only update the tip if DP-chain is respected
+                if let Some(parent_dp_hash) = &le.data_proposal.parent_data_proposal_hash {
+                    if &validator_tip == parent_dp_hash {
+                        self.lanes_tip
+                            .insert(validator.clone(), le.data_proposal.hash());
+                    }
+                }
+            }
+        } else {
+            self.lanes_tip.insert(
+                validator.clone(),
+                #[allow(clippy::unwrap_used, reason = "must exist because of previous checks")]
+                lane_entries.last().unwrap().data_proposal.hash(),
+            );
+        }
+        Ok(())
     }
 
     /// Creates and saves a new DataProposal if there are pending transactions
@@ -531,10 +574,7 @@ impl Storage {
             data_proposal.txs.len()
         );
 
-        self.lanes
-            .entry(self.id.clone())
-            .or_default()
-            .add_new_proposal(crypto, data_proposal);
+        self.store_data_proposal(crypto, &self.id.clone(), data_proposal);
     }
 
     pub fn get_lane_latest_entry(&self, validator: &ValidatorPublicKey) -> Option<&LaneEntry> {
@@ -566,6 +606,21 @@ impl Storage {
             if let Some(lane) = self.lanes.get_mut(validator) {
                 lane.last_cut = Some((poda.clone(), data_proposal_hash.clone()));
             }
+        }
+    }
+
+    pub fn try_update_lanes_tip(&mut self, cut: &Cut) {
+        for (validator, data_proposal_hash, _, _) in cut.iter() {
+            // If we know the hash, we don't change the tip (because either it is already at the tip, or we have advanced DPs)
+            if self.lane_has_data_proposal(validator, data_proposal_hash) {
+                continue;
+            }
+            // If we do not know the hash, 2 options:
+            // 1) Cut's DP is ahead of our lane tip: we update the tip
+            self.lanes_tip
+                .insert(validator.clone(), data_proposal_hash.clone());
+            // FIXME:
+            // 2) Cut's DP is on a fork of our lane...
         }
     }
 }
@@ -789,6 +844,7 @@ impl Lane {
 mod tests {
     #![allow(clippy::indexing_slicing)]
     use std::{
+        collections::HashMap,
         sync::{Arc, RwLock},
         vec,
     };
@@ -955,7 +1011,7 @@ mod tests {
     fn test_add_missing_lane_entries() {
         let crypto1 = crypto::BlstCrypto::new("1".to_owned()).unwrap();
         let pubkey1 = crypto1.validator_pubkey();
-        let mut store = Storage::new(pubkey1.clone());
+        let mut store = Storage::new(pubkey1.clone(), HashMap::default());
 
         let data_proposal1 = DataProposal {
             id: 0,
@@ -1028,7 +1084,7 @@ mod tests {
     fn test_get_lane_entries_between_hashes() {
         let crypto1 = crypto::BlstCrypto::new("1".to_owned()).unwrap();
         let pubkey1 = crypto1.validator_pubkey();
-        let mut store = Storage::new(pubkey1.clone());
+        let mut store = Storage::new(pubkey1.clone(), HashMap::default());
 
         let data_proposal1 = DataProposal {
             id: 0,
@@ -1136,7 +1192,7 @@ mod tests {
         let crypto2 = crypto::BlstCrypto::new("2".to_owned()).unwrap();
         let pubkey1 = crypto1.validator_pubkey();
         let pubkey2 = crypto2.validator_pubkey();
-        let mut store1 = Storage::new(pubkey1.clone());
+        let mut store1 = Storage::new(pubkey1.clone(), HashMap::default());
 
         let data_proposal = DataProposal {
             id: 0,
@@ -1187,8 +1243,8 @@ mod tests {
         let crypto2 = crypto::BlstCrypto::new("2".to_owned()).unwrap();
         let pubkey1 = crypto1.validator_pubkey();
         let pubkey2 = crypto2.validator_pubkey();
-        let mut store1 = Storage::new(pubkey1.clone());
-        let mut store2 = Storage::new(pubkey2.clone());
+        let mut store1 = Storage::new(pubkey1.clone(), HashMap::default());
+        let mut store2 = Storage::new(pubkey2.clone(), HashMap::default());
         let known_contracts = Arc::new(RwLock::new(KnownContracts::default()));
 
         // First data proposal
@@ -1382,8 +1438,8 @@ mod tests {
         let pubkey1 = crypto1.validator_pubkey();
         let pubkey2 = crypto2.validator_pubkey();
         let pubkey3 = crypto3.validator_pubkey();
-        let mut store2 = Storage::new(pubkey2.clone());
-        let mut store3 = Storage::new(pubkey3.clone());
+        let mut store2 = Storage::new(pubkey2.clone(), HashMap::default());
+        let mut store3 = Storage::new(pubkey3.clone(), HashMap::default());
         let known_contracts2 = Arc::new(RwLock::new(KnownContracts::default()));
 
         let txs = vec![
@@ -1483,7 +1539,7 @@ mod tests {
         let pubkey1 = crypto1.validator_pubkey();
         let pubkey2 = crypto2.validator_pubkey();
 
-        let mut store1 = Storage::new(pubkey1.clone());
+        let mut store1 = Storage::new(pubkey1.clone(), HashMap::default());
         let known_contracts = Arc::new(RwLock::new(KnownContracts::default()));
 
         let contract_name = ContractName::new("test");
@@ -1516,7 +1572,7 @@ mod tests {
         let crypto1 = crypto::BlstCrypto::new("1".to_owned()).unwrap();
         let pubkey1 = crypto1.validator_pubkey();
 
-        let mut store1 = Storage::new(pubkey1.clone());
+        let mut store1 = Storage::new(pubkey1.clone(), HashMap::default());
         let known_contracts = Arc::new(RwLock::new(KnownContracts::default()));
 
         let contract_name = ContractName::new("test");
@@ -1562,7 +1618,7 @@ mod tests {
         let crypto1 = crypto::BlstCrypto::new("1".to_owned()).unwrap();
         let pubkey1 = crypto1.validator_pubkey();
 
-        let mut store1 = Storage::new(pubkey1.clone());
+        let mut store1 = Storage::new(pubkey1.clone(), HashMap::default());
         let known_contracts = Arc::new(RwLock::new(KnownContracts::default()));
 
         let contract_name = ContractName::new("test");
@@ -1609,7 +1665,7 @@ mod tests {
         let crypto1 = crypto::BlstCrypto::new("1".to_owned()).unwrap();
         let pubkey1 = crypto1.validator_pubkey();
 
-        let mut store1 = Storage::new(pubkey1.clone());
+        let mut store1 = Storage::new(pubkey1.clone(), HashMap::default());
         let known_contracts = Arc::new(RwLock::new(KnownContracts::default()));
 
         let contract_name = ContractName::new("test");
@@ -1648,7 +1704,7 @@ mod tests {
         let pubkey1 = crypto1.validator_pubkey();
         let pubkey2 = crypto2.validator_pubkey();
 
-        let mut store1 = Storage::new(pubkey2.clone());
+        let mut store1 = Storage::new(pubkey2.clone(), HashMap::default());
         let known_contracts = Arc::new(RwLock::new(KnownContracts::default()));
 
         let contract_name = ContractName::new("test");
@@ -1682,8 +1738,8 @@ mod tests {
         let pubkey1 = crypto1.validator_pubkey();
         let pubkey2 = crypto2.validator_pubkey();
 
-        let mut store1 = Storage::new(pubkey1.clone());
-        let mut store2 = Storage::new(pubkey2.clone());
+        let mut store1 = Storage::new(pubkey1.clone(), HashMap::default());
+        let mut store2 = Storage::new(pubkey2.clone(), HashMap::default());
         let known_contracts1 = Arc::new(RwLock::new(KnownContracts::default()));
         let known_contracts2 = Arc::new(RwLock::new(KnownContracts::default()));
         let mut staking = Staking::default();
@@ -1758,7 +1814,7 @@ mod tests {
         let pubkey1 = crypto1.validator_pubkey();
         let pubkey2 = crypto2.validator_pubkey();
 
-        let mut store1 = Storage::new(pubkey1.clone());
+        let mut store1 = Storage::new(pubkey1.clone(), HashMap::default());
         let mut staking = Staking::default();
 
         staking.stake("pk1".into(), 100).expect("Staking failed");
