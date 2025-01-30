@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use axum::Router;
 use axum_otel_metrics::HttpMetricsLayerBuilder;
 use clap::Parser;
@@ -23,13 +23,20 @@ use std::{
     sync::{Arc, Mutex},
     time::Duration,
 };
-use tracing::{error, info};
+use testcontainers_modules::{
+    postgres::Postgres,
+    testcontainers::{runners::AsyncRunner, ImageExt},
+};
+use tracing::{error, info, warn};
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 pub struct Args {
     #[arg(long, default_value = "config.ron")]
     pub config_file: Option<String>,
+
+    #[clap(long, action)]
+    pub pg: bool,
 }
 
 #[cfg(feature = "dhat")]
@@ -46,9 +53,8 @@ async fn main() -> Result<()> {
     };
 
     let args = Args::parse();
-    let config = Arc::new(
-        conf::Conf::new(args.config_file, None, Some(true)).context("reading config file")?,
-    );
+    let mut config =
+        conf::Conf::new(args.config_file, None, Some(true)).context("reading config file")?;
 
     setup_tracing(
         match config.log_format.as_str() {
@@ -58,6 +64,29 @@ async fn main() -> Result<()> {
         },
         format!("{}(nopkey)", config.id.clone(),),
     )?;
+
+    let pg;
+    if args.pg {
+        if std::fs::metadata(&config.data_directory).is_ok() {
+            bail!(
+                "Data directory {} exists. --pg flag is given, please clean data dir first.",
+                config.data_directory.display()
+            );
+        }
+
+        info!("🐘 Starting postgres DB with default settings for the indexer");
+        pg = Postgres::default()
+            .with_cmd(["postgres", "-c", "log_statement=all"])
+            .start()
+            .await?;
+
+        config.database_url = format!(
+            "postgres://postgres:postgres@localhost:{}/postgres",
+            pg.get_host_port_ipv4(5432).await?
+        );
+    }
+
+    let config = Arc::new(config);
 
     info!("Starting indexer with config: {:?}", &config);
 
@@ -169,6 +198,11 @@ async fn main() -> Result<()> {
             }
         }
         _ = handler.shutdown_modules(Duration::from_secs(3)).await;
+    }
+
+    if args.pg {
+        warn!("--pg option given. Postgres server will stop. Cleaning data dir");
+        std::fs::remove_dir_all(&config.data_directory).context("removing data directory")?;
     }
 
     Ok(())
