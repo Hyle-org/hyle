@@ -55,15 +55,11 @@ mod e2e_consensus {
             .fetch_current_state(&"hyllar".into())
             .await
             .log_error("fetch state failed")
-            .unwrap()
-            .try_into()
             .unwrap();
         let hydentity: Hydentity = ctx
             .indexer_client()
             .fetch_current_state(&"hydentity".into())
             .await
-            .unwrap()
-            .try_into()
             .unwrap();
 
         let staking_state: StateDigest = ctx

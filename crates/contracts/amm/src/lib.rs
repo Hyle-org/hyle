@@ -312,10 +312,7 @@ pub fn execute(contract_input: ContractInput) -> RunResult<AmmState> {
 
     assert!(amm_contract.callee_blobs().is_empty());
 
-    match res {
-        Ok(program_outputs) => Ok((program_outputs, amm_contract.state, vec![])),
-        Err(e) => Err(e),
-    }
+    res.map(|po| (po, amm_contract.state, vec![]))
 }
 
 #[cfg(test)]

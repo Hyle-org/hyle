@@ -45,7 +45,7 @@ fn main() {
     // Build the guests.
     let results = risc0_build::embed_methods_with_options(options);
 
-    if true || reproducible {
+    if reproducible {
         results.iter().for_each(|data| {
             std::fs::write(format!("{}/{}.img", data.name, data.name), &data.elf)
                 .expect("failed to write img");

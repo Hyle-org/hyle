@@ -266,7 +266,6 @@ impl<S: StateUpdater> TxExecutor<S> {
                 .entry(runner.contract_name.clone())
                 .and_modify(|v| *v = out.next_state.clone());
 
-            //let off_chain_new_state = runner.callback(&mut *full_state)?;
             self.full_states
                 .update(&runner.contract_name, &mut *full_state)?;
 
@@ -308,7 +307,9 @@ impl ContractRunner {
         F: Fn(&T) -> Result<Vec<u8>> + Send + Sync + 'static,
     {
         self.private_input_cb = Some(Box::new(move |a: &Box<dyn Any>| {
-            let a = a.downcast_ref::<T>().expect("cannot fail");
+            let a = a
+                .downcast_ref::<T>()
+                .expect("cannot cast full state to private input callback type");
             f(a)
         }));
         self
