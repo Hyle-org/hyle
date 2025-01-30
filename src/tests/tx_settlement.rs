@@ -1,7 +1,7 @@
 use client_sdk::rest_client::{IndexerApiHttpClient, NodeApiHttpClient};
 use hyle_model::{
-    BlobTransaction, ContractAction, ContractName, Hashable, ProgramId, ProofData,
-    ProofTransaction, RegisterContractAction, RegisterContractEffect, StateDigest,
+    api::APIRegisterContract, BlobTransaction, ContractAction, ContractName, Hashable, ProgramId,
+    ProofData, ProofTransaction, RegisterContractAction, RegisterContractEffect, StateDigest,
 };
 use testcontainers_modules::{
     postgres::Postgres,
@@ -60,10 +60,16 @@ async fn test_full_settlement_flow() -> Result<()> {
     info!("➡️  Registering contracts c1 & c2.hyle");
 
     let b1 = make_register_blob_action("c1".into(), StateDigest(vec![1, 2, 3]));
-    let b2 = make_register_blob_action("c2.hyle".into(), StateDigest(vec![7, 7, 7]));
-
     client.send_tx_blob(&b1).await.unwrap();
-    client.send_tx_blob(&b2).await.unwrap();
+    client
+        .register_contract(&APIRegisterContract {
+            verifier: "test".into(),
+            program_id: ProgramId(vec![1, 2, 3]),
+            state_digest: StateDigest(vec![7, 7, 7]),
+            contract_name: "c2.hyle".into(),
+        })
+        .await
+        .unwrap();
 
     info!("➡️  Sending blobs for c1 & c2.hyle");
     let tx = BlobTransaction {

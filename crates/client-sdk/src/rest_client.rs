@@ -24,6 +24,11 @@ impl NodeApiHttpClient {
         })
     }
 
+    pub async fn register_contract(&self, tx: &APIRegisterContract) -> Result<TxHash> {
+        self.post("v1/contract/register", tx, "Registering contract")
+            .await
+    }
+
     pub async fn send_tx_blob(&self, tx: &BlobTransaction) -> Result<TxHash> {
         self.post("v1/tx/send/blob", tx, "Sending tx blob").await
     }
