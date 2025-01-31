@@ -902,7 +902,12 @@ impl Mempool {
                 // TODO: would be good to not need to clone here.
                 self.handle_hyle_contract_registration(blob_tx);
             }
-            TransactionData::Proof(_) => {
+            TransactionData::Proof(ref proof_tx) => {
+                debug!(
+                    "Got new proof tx {} for {}",
+                    tx.hash(),
+                    proof_tx.contract_name
+                );
                 let kc = self.known_contracts.clone();
                 let sender: &tokio::sync::broadcast::Sender<InternalMempoolEvent> = self.bus.get();
                 let sender = sender.clone();
@@ -1000,11 +1005,7 @@ impl Mempool {
                 )
                 .collect(),
         });
-        debug!(
-            "Got new proof tx {} for {}",
-            tx.hash(),
-            proof_transaction.contract_name
-        );
+
         Ok(tx)
     }
 

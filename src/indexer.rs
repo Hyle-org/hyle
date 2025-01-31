@@ -247,8 +247,10 @@ impl Indexer {
 
                 let tx_hash: &TxHashDb = &tx_hash.into();
 
+                // If the TX is already present, we can assume it's more up-to-date so do nothing.
                 sqlx::query("INSERT INTO transactions (tx_hash, version, transaction_type, transaction_status)
-                    VALUES ($1, $2, $3, $4)")
+                    VALUES ($1, $2, $3, $4)
+                    ON CONFLICT(tx_hash) DO NOTHING")
                 .bind(tx_hash)
                 .bind(version)
                 .bind(tx_type)
