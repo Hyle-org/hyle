@@ -5,8 +5,8 @@ use serde_with::serde_as;
 use utoipa::ToSchema;
 
 use crate::{
-    BlockHeight, ConsensusProposalHash, Identity, Transaction, TransactionData, TxHash,
-    ValidatorPublicKey,
+    BlockHeight, ConsensusProposalHash, ContractName, Identity, ProgramId, StateDigest,
+    Transaction, TransactionData, TxHash, ValidatorPublicKey, Verifier,
 };
 
 #[derive(Clone, Serialize, Deserialize, ToSchema)]
@@ -14,6 +14,14 @@ pub struct NodeInfo {
     pub id: String,
     pub pubkey: Option<ValidatorPublicKey>,
     pub da_address: String,
+}
+
+#[derive(Clone, Serialize, Deserialize, ToSchema)]
+pub struct APIRegisterContract {
+    pub verifier: Verifier,
+    pub program_id: ProgramId,
+    pub state_digest: StateDigest,
+    pub contract_name: ContractName,
 }
 
 /// Copy from Staking contract

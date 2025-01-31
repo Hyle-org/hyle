@@ -2,6 +2,7 @@ use anyhow::anyhow;
 use axum::{extract::State, http::StatusCode, response::IntoResponse, Json, Router};
 use bincode::{Decode, Encode};
 use hyle_contract_sdk::TxHash;
+use hyle_model::{api::APIRegisterContract, ContractAction, RegisterContractAction};
 use serde::{Deserialize, Serialize};
 use tracing::info;
 use utoipa::OpenApi;
@@ -14,6 +15,8 @@ use crate::{
     },
     rest::AppError,
 };
+
+use super::contract_registration::validate_contract_registration;
 
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode)]
 pub enum RestApiMessage {
@@ -40,6 +43,7 @@ pub async fn api(ctx: &CommonRunContext) -> Router<()> {
     };
 
     let (router, api) = OpenApiRouter::with_openapi(MempoolAPI::openapi())
+        .routes(routes!(register_contract))
         .routes(routes!(send_blob_transaction))
         .routes(routes!(send_proof_transaction))
         .split_for_parts();
@@ -94,6 +98,34 @@ pub async fn send_proof_transaction(
 ) -> Result<impl IntoResponse, AppError> {
     info!("Got proof transaction {}", payload.hash());
     handle_send(state, TransactionData::Proof(payload)).await
+}
+
+#[utoipa::path(
+    post,
+    path = "/contract/register",
+    tag = "Mempool",
+    responses(
+        (status = OK, description = "Register contract", body = TxHash)
+    )
+)]
+pub async fn register_contract(
+    State(state): State<RouterState>,
+    Json(payload): Json<APIRegisterContract>,
+) -> Result<impl IntoResponse, AppError> {
+    let owner = "hyle".into();
+    validate_contract_registration(&owner, &payload.contract_name)?;
+    let tx = BlobTransaction {
+        identity: "hyle.hyle".into(),
+        blobs: vec![RegisterContractAction {
+            verifier: payload.verifier,
+            program_id: payload.program_id,
+            state_digest: payload.state_digest,
+            contract_name: payload.contract_name,
+        }
+        .as_blob(owner, None, None)],
+    };
+
+    handle_send(state, TransactionData::Blob(tx)).await
 }
 
 impl Clone for RouterState {
