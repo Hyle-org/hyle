@@ -29,7 +29,7 @@ mod e2e_hyllar {
         }
     );
 
-    async fn scenario_hyllar(ctx: E2ECtx) -> Result<()> {
+    async fn scenario_hyllar(ctx: E2ECtx) -> Result<E2ECtx> {
         info!("➡️  Setting up the executor with the initial state");
 
         let contract = ctx.get_contract("hydentity").await?;
@@ -98,19 +98,39 @@ mod e2e_hyllar {
                 .expect("bob identity not found"),
             25
         );
-        Ok(())
+        Ok(ctx)
     }
 
     #[test_log::test(tokio::test)]
     async fn hyllar_single_node() -> Result<()> {
         let ctx = E2ECtx::new_single(500).await?;
-        scenario_hyllar(ctx).await
+        scenario_hyllar(ctx).await?;
+        Ok(())
     }
 
     #[test_log::test(tokio::test)]
     async fn hyllar_multi_nodes() -> Result<()> {
         let ctx = E2ECtx::new_multi(2, 500).await?;
 
-        scenario_hyllar(ctx).await
+        let node = ctx.client().get_node_info().await?;
+        let staking = ctx.client().get_consensus_staking_state().await?;
+        let initial_balance = staking
+            .fees
+            .balances
+            .get(node.pubkey.as_ref().unwrap())
+            .expect("balance");
+
+        let ctx = scenario_hyllar(ctx).await?;
+
+        let staking = ctx.client().get_consensus_staking_state().await?;
+        let balance = staking
+            .fees
+            .balances
+            .get(node.pubkey.as_ref().unwrap())
+            .expect("balance");
+        assert!(balance.cumul_size.0 > initial_balance.cumul_size.0);
+        assert!(balance.balance < initial_balance.balance);
+
+        Ok(())
     }
 }
