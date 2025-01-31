@@ -43,7 +43,7 @@ impl ContractHandler for Hydentity {
         (router.with_state(store), api)
     }
 
-    fn handle(tx: &BlobTransaction, index: BlobIndex, mut state: Self) -> Result<Self> {
+    fn handle(tx: &BlobTransaction, index: BlobIndex, state: Self) -> Result<Self> {
         let Blob {
             data,
             contract_name,
@@ -53,9 +53,10 @@ impl ContractHandler for Hydentity {
             bincode::decode_from_slice(data.0.as_slice(), bincode::config::standard())
                 .context("Failed to decode payload")?;
 
-        let res = identity_provider::execute_action(&mut state, action, "");
+        let res =
+            identity_provider::execute_action(state, action, "").map_err(|e| anyhow::anyhow!(e))?;
         info!("🚀 Executed {contract_name}: {res:?}");
-        Ok(state)
+        Ok(res.1)
     }
 }
 
@@ -83,10 +84,11 @@ impl ContractHandler for HyllarToken {
             .map(|_| contract_name.0.clone().into())
             .unwrap_or(tx.identity.clone());
 
-        let mut contract = HyllarTokenContract::init(state, caller);
-        let res = erc20::execute_action(&mut contract, data.parameters);
+        let contract = HyllarTokenContract::init(state, caller);
+        let res =
+            erc20::execute_action(contract, data.parameters).map_err(|e| anyhow::anyhow!(e))?;
         info!("🚀 Executed {contract_name}: {res:?}");
-        Ok(contract.state())
+        Ok(res.1.state())
     }
 }
 

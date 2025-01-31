@@ -1,13 +1,8 @@
-use std::collections::BTreeMap;
-
-use anyhow::Error;
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
-use sdk::{
-    identity_provider::IdentityVerification, utils::as_hyle_output, ContractInput, Digestable,
-    HyleOutput,
-};
+use sdk::{identity_provider::IdentityVerification, ContractInput, Digestable, RunResult};
 use sha2::{Digest, Sha256};
 
 #[cfg(feature = "client")]
@@ -29,6 +24,11 @@ impl Hydentity {
         Hydentity {
             identities: BTreeMap::new(),
         }
+    }
+
+    pub fn to_bytes(&self) -> Vec<u8> {
+        bincode::encode_to_vec(self, bincode::config::standard())
+            .expect("Failed to encode Balances")
     }
 
     pub fn get_nonce(&self, username: &str) -> Result<u32, &'static str> {
@@ -105,14 +105,13 @@ impl IdentityVerification for Hydentity {
 
 impl Digestable for Hydentity {
     fn as_digest(&self) -> sdk::StateDigest {
-        sdk::StateDigest(
-            bincode::encode_to_vec(self, bincode::config::standard())
-                .expect("Failed to encode Balances"),
-        )
+        sdk::StateDigest(self.to_bytes())
     }
 }
+
+
 impl TryFrom<sdk::StateDigest> for Hydentity {
-    type Error = Error;
+    type Error = anyhow::Error;
 
     fn try_from(state: sdk::StateDigest) -> Result<Self, Self::Error> {
         let (balances, _) = bincode::decode_from_slice(&state.0, bincode::config::standard())
@@ -120,23 +119,23 @@ impl TryFrom<sdk::StateDigest> for Hydentity {
         Ok(balances)
     }
 }
-
+    
 use core::str::from_utf8;
 use sdk::identity_provider::IdentityAction;
 
-pub fn execute(input: ContractInput) -> HyleOutput {
+pub fn execute(input: ContractInput) -> RunResult<Hydentity> {
     let (input, parsed_blob) = sdk::guest::init_raw::<IdentityAction>(input);
 
     let parsed_blob = match parsed_blob {
         Some(v) => v,
         None => {
-            return sdk::guest::fail(input, "Failed to parse input blob");
+            return Err("Failed to parse input blob".to_string());
         }
     };
 
     sdk::info!("Executing action: {:?}", parsed_blob);
 
-    let mut state: Hydentity = input
+    let state: Hydentity = input
         .initial_state
         .clone()
         .try_into()
@@ -144,9 +143,7 @@ pub fn execute(input: ContractInput) -> HyleOutput {
 
     let password = from_utf8(&input.private_input).unwrap();
 
-    let res = sdk::identity_provider::execute_action(&mut state, parsed_blob, password);
-
-    as_hyle_output(input, state, res)
+    sdk::identity_provider::execute_action(state, parsed_blob, password)
 }
 
 #[cfg(test)]

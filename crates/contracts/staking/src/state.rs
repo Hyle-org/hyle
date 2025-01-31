@@ -2,12 +2,9 @@ use std::collections::BTreeMap;
 
 use anyhow::Result;
 use bincode::{Decode, Encode};
-use sdk::{info, BlockHeight, Digestable, Identity, ValidatorPublicKey};
+use sdk::{info, BlockHeight, Digestable, Identity, StateDigest, ValidatorPublicKey};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-
-#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, PartialEq, Eq)]
-pub struct OnChainState(pub String);
 
 #[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, PartialEq, Eq)]
 pub struct Staking {
@@ -34,29 +31,6 @@ impl Staking {
             bonded: Vec::new(),
             total_bond: 0,
         }
-    }
-    /// On-chain state is a hash of parts of the state that are altered only
-    /// by BlobTransactions
-    /// Other parts of the states (handled by consensus) are not part of on-chain state
-    pub fn on_chain_state(&self) -> OnChainState {
-        let mut hasher = Sha256::new();
-        for s in self.stakes.iter() {
-            hasher.update(&s.0 .0);
-            hasher.update(s.1.to_le_bytes());
-        }
-        for d in self.delegations.iter() {
-            hasher.update(&d.0 .0);
-            for i in d.1 {
-                hasher.update(&i.0);
-            }
-        }
-        for r in self.rewarded.iter() {
-            hasher.update(&r.0 .0);
-            for i in r.1 {
-                hasher.update(i.0.to_le_bytes());
-            }
-        }
-        OnChainState(format!("{:x}", hasher.finalize()))
     }
 
     pub fn bonded(&self) -> &Vec<ValidatorPublicKey> {
@@ -145,40 +119,28 @@ impl Default for Staking {
     }
 }
 
-impl Digestable for OnChainState {
-    fn as_digest(&self) -> sdk::StateDigest {
-        sdk::StateDigest(
-            bincode::encode_to_vec(self, bincode::config::standard())
-                .expect("Failed to encode Balances"),
-        )
-    }
-}
-
 impl Digestable for Staking {
+    /// On-chain state is a hash of parts of the state that are altered only
+    /// by BlobTransactions
+    /// Other parts of the states (handled by consensus) are not part of on-chain state
     fn as_digest(&self) -> sdk::StateDigest {
-        sdk::StateDigest(
-            bincode::encode_to_vec(self, bincode::config::standard())
-                .expect("Failed to encode Balances"),
-        )
-    }
-}
-
-impl TryFrom<sdk::StateDigest> for OnChainState {
-    type Error = anyhow::Error;
-
-    fn try_from(state: sdk::StateDigest) -> Result<Self, Self::Error> {
-        let (state, _) = bincode::decode_from_slice(&state.0, bincode::config::standard())
-            .map_err(|_| anyhow::anyhow!("Could not decode staking on chain state"))?;
-        Ok(state)
-    }
-}
-
-impl TryFrom<sdk::StateDigest> for Staking {
-    type Error = anyhow::Error;
-
-    fn try_from(state: sdk::StateDigest) -> Result<Self, Self::Error> {
-        let (state, _) = bincode::decode_from_slice(&state.0, bincode::config::standard())
-            .map_err(|_| anyhow::anyhow!("Could not decode staking state"))?;
-        Ok(state)
+        let mut hasher = Sha256::new();
+        for s in self.stakes.iter() {
+            hasher.update(&s.0 .0);
+            hasher.update(s.1.to_le_bytes());
+        }
+        for d in self.delegations.iter() {
+            hasher.update(&d.0 .0);
+            for i in d.1 {
+                hasher.update(&i.0);
+            }
+        }
+        for r in self.rewarded.iter() {
+            hasher.update(&r.0 .0);
+            for i in r.1 {
+                hasher.update(i.0.to_le_bytes());
+            }
+        }
+        StateDigest(hasher.finalize().to_vec())
     }
 }

@@ -1,8 +1,12 @@
+use std::any::Any;
+
 use client_sdk::{
     helpers::{risc0::Risc0Prover, ClientSdkExecutor},
     transaction_builder::{ProvableBlobTx, StateUpdater, TxExecutorBuilder},
 };
-use sdk::{identity_provider::IdentityAction, ContractName, Digestable};
+use sdk::{
+    identity_provider::IdentityAction, utils::as_hyle_output, ContractName, Digestable, HyleOutput,
+};
 
 use crate::{execute, Hydentity};
 
@@ -12,10 +16,19 @@ pub mod metadata {
 }
 use metadata::*;
 
+
 struct HydentityPseudoExecutor {}
 impl ClientSdkExecutor for HydentityPseudoExecutor {
-    fn execute(&self, contract_input: &sdk::ContractInput) -> anyhow::Result<sdk::HyleOutput> {
-        Ok(execute(contract_input.clone()))
+    fn execute(
+        &self,
+        contract_input: &sdk::ContractInput,
+    ) -> anyhow::Result<(Box<dyn Any>, HyleOutput)> {
+        let mut res = execute(contract_input.clone());
+        let output = as_hyle_output(contract_input.clone(), &mut res);
+        match res {
+            Ok(res) => Ok((Box::new(res.1.clone()), output)),
+            Err(e) => Err(anyhow::anyhow!(e)),
+        }
     }
 }
 
@@ -56,7 +69,7 @@ pub fn verify_identity(
             None,
             None,
         )?
-        .with_private_input(move |_| Ok(password.clone()));
+        .with_private_input(move |_: &Hydentity| Ok(password.clone()));
     Ok(())
 }
 
@@ -76,6 +89,6 @@ pub fn register_identity(
             None,
             None,
         )?
-        .with_private_input(move |_| Ok(password.clone()));
+        .with_private_input(move |_: &Hydentity| Ok(password.clone()));
     Ok(())
 }

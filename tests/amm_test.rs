@@ -27,7 +27,7 @@ mod e2e_amm {
         client::{register_identity, verify_identity},
         Hydentity,
     };
-    use hyle_contract_sdk::{erc20::ERC20, ContractName, Digestable, StateDigest};
+    use hyle_contract_sdk::{erc20::ERC20, ContractName};
     use hyle_contracts::{AMM_ELF, HYDENTITY_ELF, HYLLAR_ELF};
     use hyllar::{
         client::{approve, transfer},
