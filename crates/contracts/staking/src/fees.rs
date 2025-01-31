@@ -81,3 +81,68 @@ impl Fees {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_deposit_for_fees() {
+        let mut fees = Fees::default();
+        let validator = ValidatorPublicKey::default();
+        fees.deposit_for_fees(validator.clone(), 100);
+        assert_eq!(fees.balances.get(&validator).unwrap().balance, 100);
+    }
+
+    #[test]
+    fn test_pay_for_dadi() {
+        let mut fees = Fees::default();
+        let validator = ValidatorPublicKey::default();
+        let cumul_size = LaneBytesSize(100);
+        fees.pay_for_dadi(validator.clone(), cumul_size).unwrap();
+        assert_eq!(fees.pending_fees.len(), 1);
+        assert_eq!(fees.pending_fees[0], (validator, cumul_size));
+    }
+
+    #[test]
+    fn test_distribute() {
+        let mut fees = Fees::default();
+        let validator1 = ValidatorPublicKey::new_for_tests("p1");
+        let validator2 = ValidatorPublicKey::new_for_tests("p2");
+        let cumul_size = LaneBytesSize(100);
+
+        fees.deposit_for_fees(validator1.clone(), 200);
+        fees.pay_for_dadi(validator1.clone(), cumul_size).unwrap();
+        fees.distribute(&[validator1.clone(), validator2.clone()])
+            .unwrap();
+
+        assert_eq!(fees.balances.get(&validator1).unwrap().balance, 150);
+        assert_eq!(fees.balances.get(&validator2).unwrap().balance, 50);
+    }
+
+    #[test]
+    fn test_distribute_with_no_balance() {
+        let mut fees = Fees::default();
+        let validator1 = ValidatorPublicKey::new_for_tests("p1");
+        let validator2 = ValidatorPublicKey::new_for_tests("p2");
+        let cumul_size = LaneBytesSize(100);
+
+        fees.pay_for_dadi(validator1.clone(), cumul_size).unwrap();
+        let result = fees.distribute(&[validator1.clone(), validator2.clone()]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_distribute_with_decreasing_cumul_size() {
+        let mut fees = Fees::default();
+        let validator = ValidatorPublicKey::default();
+        let cumul_size1 = LaneBytesSize(100);
+        let cumul_size2 = LaneBytesSize(50);
+
+        fees.deposit_for_fees(validator.clone(), 200);
+        fees.pay_for_dadi(validator.clone(), cumul_size1).unwrap();
+        fees.pay_for_dadi(validator.clone(), cumul_size2).unwrap();
+        let result = fees.distribute(&[validator.clone()]);
+        assert!(result.is_err());
+    }
+}

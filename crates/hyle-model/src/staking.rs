@@ -52,6 +52,12 @@ impl ContractAction for StakingAction {
 #[derive(Clone, Encode, Decode, Default, Eq, PartialEq, Hash, PartialOrd, Ord)]
 pub struct ValidatorPublicKey(pub Vec<u8>);
 
+impl ValidatorPublicKey {
+    pub fn new_for_tests(str: &str) -> Self {
+        Self(str.as_bytes().to_vec())
+    }
+}
+
 #[cfg(feature = "full")]
 impl utoipa::PartialSchema for ValidatorPublicKey {
     fn schema() -> utoipa::openapi::RefOr<utoipa::openapi::schema::Schema> {
