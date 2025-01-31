@@ -342,7 +342,7 @@ impl DataAvailability {
         }
         trace!("Block {} {}: {:#?}", block.height(), block.hash(), block);
 
-        if block.height().0 % 10 == 0 {
+        if block.height().0 % 10 == 0 || !block.txs().is_empty() {
             info!(
                 "new block {} {} with {} txs",
                 block.height(),
