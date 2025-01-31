@@ -1002,7 +1002,7 @@ impl Mempool {
     ) -> Result<()> {
         self.metrics
             .add_proposal_vote(self.crypto.validator_pubkey(), validator);
-        info!("🗳️ Sending vote for DataProposal {data_proposal_hash} to {validator} (lane size: {size})");
+        debug!("🗳️ Sending vote for DataProposal {data_proposal_hash} to {validator} (lane size: {size})");
         self.send_net_message(
             validator.clone(),
             MempoolNetMessage::DataVote(data_proposal_hash, size),
