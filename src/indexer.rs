@@ -643,7 +643,10 @@ mod test {
     use super::*;
 
     use sqlx::postgres::PgPoolOptions;
-    use testcontainers_modules::{postgres::Postgres, testcontainers::runners::AsyncRunner};
+    use testcontainers_modules::{
+        postgres::Postgres,
+        testcontainers::{runners::AsyncRunner, ImageExt},
+    };
 
     async fn setup_test_server(indexer: &Indexer) -> Result<TestServer> {
         let router = indexer.api(None);
@@ -739,7 +742,11 @@ mod test {
 
     #[test_log::test(tokio::test)]
     async fn test_indexer_handle_block_flow() -> Result<()> {
-        let container = Postgres::default().start().await.unwrap();
+        let container = Postgres::default()
+            .with_tag("17-alpine")
+            .start()
+            .await
+            .unwrap();
         let db = PgPoolOptions::new()
             .max_connections(5)
             .connect(&format!(
@@ -979,7 +986,11 @@ mod test {
 
     #[test_log::test(tokio::test)]
     async fn test_indexer_api() -> Result<()> {
-        let container = Postgres::default().start().await.unwrap();
+        let container = Postgres::default()
+            .with_tag("17-alpine")
+            .start()
+            .await
+            .unwrap();
         let db = PgPoolOptions::new()
             .max_connections(5)
             .connect(&format!(

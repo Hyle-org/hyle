@@ -46,6 +46,7 @@ impl E2ECtx {
     async fn init() -> ContainerAsync<Postgres> {
         // Start postgres DB with default settings for the indexer.
         Postgres::default()
+            .with_tag("17-alpine")
             .with_cmd(["postgres", "-c", "log_statement=all"])
             .start()
             .await

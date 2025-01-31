@@ -101,6 +101,7 @@ async fn main() -> Result<()> {
         }
         info!("🐘 Starting postgres DB with default settings for the indexer");
         pg = Postgres::default()
+            .with_tag("17-alpine")
             .with_cmd(["postgres", "-c", "log_statement=all"])
             .start()
             .await?;
