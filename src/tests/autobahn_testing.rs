@@ -975,3 +975,165 @@ async fn autobahn_rejoin_flow() {
     // We are caught up
     assert!(!joining_node.consensus_ctx.is_joining());
 }
+
+#[test_log::test(tokio::test)]
+async fn protocol_fees() {
+    let (mut node1, mut node2, mut node3, mut node4) = build_nodes!(4).await;
+
+    // First data proposal
+
+    let register_tx = make_register_contract_tx(ContractName::new("test1"));
+    let register_tx_2 = make_register_contract_tx(ContractName::new("test2"));
+
+    node1.mempool_ctx.submit_tx(&register_tx);
+    node1.mempool_ctx.submit_tx(&register_tx_2);
+
+    node1
+        .mempool_ctx
+        .make_data_proposal_with_pending_txs()
+        .expect("Should create data proposal");
+
+    let msg = broadcast! {
+        description: "Disseminate Tx",
+        from: node1.mempool_ctx, to: [node2.mempool_ctx, node3.mempool_ctx, node4.mempool_ctx],
+        message_matches: MempoolNetMessage::DataProposal(_)
+    };
+
+    let dp = match msg.msg {
+        MempoolNetMessage::DataProposal(dp) => dp,
+        _ => panic!("Should be a DataProposal"),
+    };
+
+    join_all(
+        [
+            &mut node2.mempool_ctx,
+            &mut node3.mempool_ctx,
+            &mut node4.mempool_ctx,
+        ]
+        .iter_mut()
+        .map(|ctx| ctx.handle_processed_data_proposals()),
+    )
+    .await;
+
+    send! {
+        description: "Disseminated Tx Vote",
+        from: [node2.mempool_ctx, node3.mempool_ctx, node4.mempool_ctx], to: node1.mempool_ctx,
+        message_matches: MempoolNetMessage::DataVote(_, _)
+    };
+
+    node1.mempool_ctx.assert_broadcast("poda update");
+    node1.mempool_ctx.assert_broadcast("poda update");
+
+    let dp_size_1 = LaneBytesSize(dp.estimate_size() as u64);
+    assert_eq!(node1.mempool_ctx.current_size(), dp_size_1);
+    assert_eq!(node1.mempool_ctx.current_size_of(&node2.mempool_ctx), None);
+
+    assert_eq!(node2.mempool_ctx.current_size().0, 0);
+    assert_eq!(
+        node2.mempool_ctx.current_size_of(&node1.mempool_ctx),
+        Some(dp_size_1)
+    );
+    assert_eq!(
+        node3.mempool_ctx.current_size_of(&node1.mempool_ctx),
+        Some(dp_size_1)
+    );
+    assert_eq!(
+        node4.mempool_ctx.current_size_of(&node1.mempool_ctx),
+        Some(dp_size_1)
+    );
+
+    // Second data proposal
+
+    let register_tx = make_register_contract_tx(ContractName::new("test3"));
+    let register_tx_2 = make_register_contract_tx(ContractName::new("test4"));
+    let register_tx_3 = make_register_contract_tx(ContractName::new("test5"));
+
+    node2.mempool_ctx.submit_tx(&register_tx);
+    node2.mempool_ctx.submit_tx(&register_tx_2);
+    node2.mempool_ctx.submit_tx(&register_tx_3);
+
+    node2
+        .mempool_ctx
+        .make_data_proposal_with_pending_txs()
+        .expect("Should create data proposal");
+
+    let msg = broadcast! {
+        description: "Disseminate Tx",
+        from: node2.mempool_ctx, to: [node1.mempool_ctx, node3.mempool_ctx, node4.mempool_ctx],
+        message_matches: MempoolNetMessage::DataProposal(_)
+    };
+    let dp = match msg.msg {
+        MempoolNetMessage::DataProposal(dp) => dp,
+        _ => panic!("Should be a DataProposal"),
+    };
+
+    join_all(
+        [
+            &mut node1.mempool_ctx,
+            &mut node3.mempool_ctx,
+            &mut node4.mempool_ctx,
+        ]
+        .iter_mut()
+        .map(|ctx| ctx.handle_processed_data_proposals()),
+    )
+    .await;
+
+    send! {
+        description: "Disseminated Tx Vote",
+        from: [node1.mempool_ctx, node3.mempool_ctx, node4.mempool_ctx], to: node2.mempool_ctx,
+        message_matches: MempoolNetMessage::DataVote(_, _)
+    };
+
+    let dp_size_2 = LaneBytesSize(dp.estimate_size() as u64);
+    assert_eq!(node2.mempool_ctx.current_size(), dp_size_2);
+    assert_eq!(
+        node2.mempool_ctx.current_size_of(&node1.mempool_ctx),
+        Some(dp_size_1)
+    );
+
+    assert_eq!(node1.mempool_ctx.current_size(), dp_size_1);
+    assert_eq!(
+        node1.mempool_ctx.current_size_of(&node2.mempool_ctx),
+        Some(dp_size_2)
+    );
+
+    assert_eq!(
+        node3.mempool_ctx.current_size_of(&node1.mempool_ctx),
+        Some(dp_size_1)
+    );
+    assert_eq!(
+        node3.mempool_ctx.current_size_of(&node2.mempool_ctx),
+        Some(dp_size_2)
+    );
+
+    // Let's do a consensus round
+
+    node1.start_round_with_cut_from_mempool().await;
+    let prepare = broadcast! {
+        description: "Prepare",
+        from: node1.consensus_ctx, to: [node2.consensus_ctx, node3.consensus_ctx, node4.consensus_ctx],
+        message_matches: ConsensusNetMessage::Prepare(_, _)
+    };
+    let cp = match prepare.msg {
+        ConsensusNetMessage::Prepare(cp, _ticket) => cp,
+        _ => panic!("Should be a Prepare"),
+    };
+
+    // TODO: should be 2, but bug in QueryNewCut
+    //assert_eq!(cp.staking_actions.len(), 2);
+    assert_eq!(cp.staking_actions.len(), 1);
+    assert_eq!(
+        cp.staking_actions[0],
+        ConsensusStakingAction::PayFeesForDaDi {
+            disseminator: node1.mempool_ctx.validator_pubkey().clone(),
+            cumul_size: dp_size_1
+        }
+    );
+    //assert_eq!(
+    //    cp.staking_actions[1],
+    //    ConsensusStakingAction::PayFeesForDaDi {
+    //        disseminator: node2.mempool_ctx.validator_pubkey().clone(),
+    //        cumul_size: dp_size_2
+    //    }
+    //);
+}

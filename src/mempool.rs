@@ -1362,6 +1362,12 @@ pub mod test {
             lane.get_lane_size()
         }
 
+        #[track_caller]
+        pub fn current_size_of(&self, other: &Self) -> Option<LaneBytesSize> {
+            let lane = self.mempool.storage.lanes.get(other.validator_pubkey())?;
+            Some(lane.get_lane_size())
+        }
+
         pub fn data_proposal(
             &self,
             height: usize,
