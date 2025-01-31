@@ -4,9 +4,8 @@ use bincode::{Decode, Encode};
 use rand::Rng;
 use rand_seeder::SipHasher;
 use sdk::{
-    flatten_blobs, info, utils::as_hyle_output, Blob, BlobData, BlobIndex, ContractAction,
-    ContractInput, ContractName, Digestable, HyleOutput, ProgramId, RegisterContractEffect,
-    StateDigest, Verifier,
+    info, Blob, BlobData, BlobIndex, ContractAction, ContractInput, ContractName, Digestable,
+    ProgramId, RegisterContractEffect, RunResult, StateDigest, Verifier,
 };
 use uuid::Uuid;
 
@@ -59,6 +58,10 @@ impl UuidTldState {
             .map(|(v, _)| v)
             .map_err(|e| e.to_string())
     }
+
+    pub fn to_bytes(&self) -> Vec<u8> {
+        self.serialize().expect("Failed to encode UuidTldState")
+    }
 }
 
 impl Digestable for UuidTldState {
@@ -67,7 +70,7 @@ impl Digestable for UuidTldState {
     }
 }
 
-fn register_contract(input: &ContractInput) -> Result<(Uuid, StateDigest), String> {
+fn register_contract(input: &ContractInput) -> Result<(Uuid, UuidTldState), String> {
     let mut state = UuidTldState::deserialize(&input.private_input)?;
 
     // Check initial state
@@ -95,16 +98,16 @@ fn register_contract(input: &ContractInput) -> Result<(Uuid, StateDigest), Strin
 
     info!("Registering new contract with UUID {}", id);
 
-    Ok((id, state.as_digest()))
+    Ok((id, state))
 }
 
-pub fn execute(contract_input: ContractInput) -> HyleOutput {
+pub fn execute(contract_input: ContractInput) -> RunResult<UuidTldState> {
     let (input, parsed_blob) = sdk::guest::init_raw::<RegisterUuidContract>(contract_input);
 
     let parsed_blob = match parsed_blob {
         Some(v) => v,
         None => {
-            return sdk::guest::fail(input, "Failed to parse input blob");
+            return Err("Failed to parse input blob".to_string());
         }
     };
 
@@ -114,34 +117,22 @@ pub fn execute(contract_input: ContractInput) -> HyleOutput {
         .0
         .ends_with(&format!(".{}", input.blobs[input.index.0].contract_name.0))
     {
-        return as_hyle_output(
-            input.clone(),
-            input.initial_state,
-            Err("Invalid identity".to_string()),
-        );
+        return Err("Invalid identity".to_string());
     }
 
     match register_contract(&input) {
-        Ok((id, next_state)) => HyleOutput {
-            version: 1,
-            initial_state: input.initial_state,
+        Ok((id, next_state)) => Ok((
+            format!("registered {}", id.clone()),
             next_state,
-            identity: input.identity,
-            tx_hash: input.tx_hash,
-            tx_ctx: input.tx_ctx,
-            index: input.index,
-            blobs: flatten_blobs(&input.blobs),
-            success: true,
-            registered_contracts: vec![RegisterContractEffect {
+            vec![RegisterContractEffect {
                 contract_name: format!("{}.{}", id, input.blobs[input.index.0].contract_name.0)
                     .into(),
                 verifier: parsed_blob.verifier,
                 program_id: parsed_blob.program_id,
                 state_digest: parsed_blob.state_digest,
             }],
-            program_outputs: vec![],
-        },
-        Err(e) => as_hyle_output(input.clone(), input.initial_state, Err(e)),
+        )),
+        Err(e) => Err(e),
     }
 }
 
@@ -181,11 +172,10 @@ mod test {
         };
         let mut state = UuidTldState::default();
 
-        let output = execute(make_contract_input(state.clone(), action.clone()));
+        let (_, new_state, registered_contracts) =
+            execute(make_contract_input(state.clone(), action.clone())).unwrap();
 
-        let effect = output.registered_contracts.first().unwrap();
-
-        assert!(output.success);
+        let effect = registered_contracts.first().unwrap();
 
         assert_eq!(
             effect.contract_name.0,
@@ -195,13 +185,12 @@ mod test {
             .registered_contracts
             .insert(207234404638461129629594146217149400343);
 
-        assert_eq!(output.next_state.0, state.as_digest().0);
+        assert_eq!(new_state.as_digest(), state.as_digest());
 
-        let output = execute(make_contract_input(state.clone(), action));
+        let (_, new_state, registered_contracts) =
+            execute(make_contract_input(state.clone(), action)).unwrap();
 
-        let effect = output.registered_contracts.first().unwrap();
-
-        assert!(output.success);
+        let effect = registered_contracts.first().unwrap();
 
         assert_eq!(
             effect.contract_name.0,
@@ -211,6 +200,6 @@ mod test {
             .registered_contracts
             .insert(53995129251464490355800204076743603402);
 
-        assert_eq!(output.next_state.0, state.as_digest().0);
+        assert_eq!(new_state.as_digest(), state.as_digest());
     }
 }

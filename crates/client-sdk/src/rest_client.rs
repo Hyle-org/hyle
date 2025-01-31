@@ -144,11 +144,13 @@ impl IndexerApiHttpClient {
 
     pub async fn fetch_current_state<State>(&self, contract_name: &ContractName) -> Result<State>
     where
-        State: TryFrom<StateDigest, Error = anyhow::Error>,
+        State: TryFrom<StateDigest>,
     {
         let resp = self.get_indexer_contract(contract_name).await?;
 
-        StateDigest(resp.state_digest).try_into()
+        StateDigest(resp.state_digest)
+            .try_into()
+            .map_err(|_| anyhow::anyhow!("Failed to convert state digest"))
     }
 
     pub async fn get_blocks(&self) -> Result<Vec<APIBlock>> {

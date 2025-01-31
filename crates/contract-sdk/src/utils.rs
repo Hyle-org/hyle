@@ -1,7 +1,9 @@
 use crate::{
-    alloc::string::{String, ToString},
-    alloc::vec,
-    alloc::vec::Vec,
+    alloc::{
+        string::{String, ToString},
+        vec::Vec,
+    },
+    guest::fail,
     Identity, StructuredBlobData,
 };
 use bincode::{Decode, Encode};
@@ -53,26 +55,25 @@ where
     Some(parsed_blob)
 }
 
-pub fn as_hyle_output<State>(
+pub fn as_hyle_output<T: Digestable>(
     input: ContractInput,
-    new_state: State,
-    res: crate::RunResult,
-) -> HyleOutput
-where
-    State: Digestable,
-{
-    HyleOutput {
-        version: 1,
-        initial_state: input.initial_state,
-        next_state: new_state.as_digest(),
-        identity: input.identity,
-        index: input.index,
-        blobs: flatten_blobs(&input.blobs),
-        success: res.is_ok(),
-        tx_hash: input.tx_hash,
-        tx_ctx: input.tx_ctx,
-        registered_contracts: vec![],
-        program_outputs: res.unwrap_or_else(|e| e.to_string()).into_bytes(),
+    res: &mut crate::RunResult<T>,
+) -> HyleOutput {
+    match res {
+        Ok(res) => HyleOutput {
+            version: 1,
+            initial_state: input.initial_state,
+            next_state: res.1.as_digest(),
+            identity: input.identity,
+            index: input.index,
+            blobs: flatten_blobs(&input.blobs),
+            success: true,
+            tx_hash: input.tx_hash,
+            tx_ctx: input.tx_ctx,
+            registered_contracts: core::mem::take(&mut res.2),
+            program_outputs: core::mem::take(&mut res.0).into_bytes(),
+        },
+        Err(message) => fail(input, message),
     }
 }
 

@@ -8,7 +8,6 @@ use hydentity::Hydentity;
 use sdk::identity_provider::IdentityAction;
 use sdk::ContractName;
 use sdk::Hashable;
-use sdk::{Digestable, StateDigest};
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -129,7 +128,9 @@ async fn main() {
                     None,
                 )
                 .unwrap()
-                .with_private_input(move |_| Ok(password.clone().into_bytes().to_vec()));
+                .with_private_input(move |_: &Hydentity| {
+                    Ok(password.clone().into_bytes().to_vec())
+                });
 
             let transaction = ctx.process(transaction).unwrap();
 

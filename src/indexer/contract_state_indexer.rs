@@ -5,7 +5,7 @@ use hyle_model::RegisterContractEffect;
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, ops::Deref, path::PathBuf, sync::Arc};
 use tokio::sync::RwLock;
-use tracing::{debug, info};
+use tracing::debug;
 
 use crate::{
     bus::BusMessage,
@@ -82,12 +82,29 @@ where
         store.contract_name = ctx.contract_name.clone();
         let store = Arc::new(RwLock::new(store));
 
-        let api = State::api(Arc::clone(&store)).await;
+        let (nested, mut api) = State::api(Arc::clone(&store)).await;
+        if let Ok(mut o) = ctx.common.openapi.lock() {
+            // Deduplicate operation ids
+            for p in api.paths.paths.iter_mut() {
+                p.1.get = p.1.get.take().map(|mut g| {
+                    g.operation_id = g.operation_id.map(|o| format!("{}_{o}", ctx.contract_name));
+                    g
+                });
+                p.1.post = p.1.post.take().map(|mut g| {
+                    g.operation_id = g.operation_id.map(|o| format!("{}_{o}", ctx.contract_name));
+                    g
+                });
+            }
+            *o = o
+                .clone()
+                .nest(format!("/v1/indexer/contract/{}", ctx.contract_name), api);
+        }
+
         if let Ok(mut guard) = ctx.common.router.lock() {
             if let Some(router) = guard.take() {
                 guard.replace(router.nest(
                     format!("/v1/indexer/contract/{}", ctx.contract_name).as_str(),
-                    api,
+                    nested,
                 ));
             }
         }
@@ -177,7 +194,7 @@ where
         }
 
         if found_supported_blob {
-            info!(cn = %self.contract_name, "⚒️  Found supported blob in transaction: {}", tx_hash);
+            debug!(cn = %self.contract_name, "⚒️  Found supported blob in transaction: {}", tx_hash);
             self.store
                 .write()
                 .await
@@ -189,7 +206,7 @@ where
     }
 
     async fn handle_register_contract(&self, contract: RegisterContractEffect) -> Result<()> {
-        info!(cn = %self.contract_name, "📝 Registering supported contract '{}'", contract.contract_name);
+        debug!(cn = %self.contract_name, "📝 Registering supported contract '{}'", contract.contract_name);
         let state = contract.state_digest.try_into()?;
         self.store.write().await.state = Some(state);
         Ok(())
@@ -202,7 +219,7 @@ where
             return Ok(());
         };
 
-        info!(cn = %self.contract_name, "🔨 Settling transaction: {}", tx.hash());
+        debug!(cn = %self.contract_name, "🔨 Settling transaction: {}", tx.hash());
 
         for (index, Blob { contract_name, .. }) in tx.blobs.iter().enumerate() {
             if self.contract_name != *contract_name {
@@ -216,7 +233,7 @@ where
 
             let new_state = State::handle(&tx, BlobIndex(index), state)?;
 
-            info!(cn = %self.contract_name, "📈 Updated state for {contract_name}");
+            debug!(cn = %self.contract_name, "📈 Updated state for {contract_name}");
 
             store.state = Some(new_state);
         }
@@ -227,6 +244,7 @@ where
 #[cfg(test)]
 mod tests {
     use hyle_contract_sdk::{BlobData, ProgramId, StateDigest};
+    use utoipa::openapi::OpenApi;
 
     use super::*;
     use crate::bus::metrics::BusMetrics;
@@ -253,8 +271,8 @@ mod tests {
             Ok(state)
         }
 
-        async fn api(_store: Arc<RwLock<Store<Self>>>) -> axum::Router<()> {
-            axum::Router::new()
+        async fn api(_store: Arc<RwLock<Store<Self>>>) -> (axum::Router<()>, OpenApi) {
+            (axum::Router::new(), OpenApi::default())
         }
     }
 
