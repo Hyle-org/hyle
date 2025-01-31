@@ -709,7 +709,7 @@ impl NodeState {
         let mut txs_at_timeout = self.timeouts.drop(&block_under_construction.block_height);
         txs_at_timeout.retain(|tx| {
             if let Some(mut tx) = self.unsettled_transactions.remove(tx) {
-                debug!("Blob tx timeout: {}", &tx.hash);
+                info!("⏰ Blob tx timed out: {}", &tx.hash);
 
                 // Attempt to settle following transactions
                 let mut blob_tx_to_try_and_settle = BTreeSet::new();
