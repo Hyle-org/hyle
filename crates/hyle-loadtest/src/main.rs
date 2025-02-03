@@ -106,7 +106,7 @@ async fn main() -> Result<(), Error> {
             send(url, blob_txs, proof_txs).await?;
         }
         SendCommands::SendMassiveBlob => {
-            send_massive_blob(url).await?;
+            send_massive_blob(users, url).await?;
         }
     }
 
