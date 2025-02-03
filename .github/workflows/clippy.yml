@@ -19,10 +19,12 @@ jobs:
       - uses: actions-rs/toolchain@v1
         with:
           toolchain: stable
-          components: clippy
+          components: clippy, rustfmt
           override: true
       - name: Run cargo check
         run: cargo check
+      - name: Run cargo fmt
+        run: cargo fmt -- --check
       - uses: LoliGothick/clippy-check@master
         with:
           deny: warnings

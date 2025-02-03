@@ -3,9 +3,9 @@
 
 extern crate alloc;
 
-use staking::execute;
-use sdk::guest::{GuestEnv, Risc0Env, commit};
+use sdk::guest::{commit, GuestEnv, Risc0Env};
 use sdk::ContractInput;
+use staking::execute;
 
 risc0_zkvm::guest::entry!(main);
 

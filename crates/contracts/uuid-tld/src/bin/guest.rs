@@ -3,9 +3,9 @@
 
 extern crate alloc;
 
-use uuid_tld::execute;
-use sdk::guest::{GuestEnv, Risc0Env, commit};
+use sdk::guest::{commit, GuestEnv, Risc0Env};
 use sdk::ContractInput;
+use uuid_tld::execute;
 
 risc0_zkvm::guest::entry!(main);
 

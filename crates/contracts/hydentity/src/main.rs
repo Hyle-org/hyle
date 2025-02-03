@@ -4,7 +4,7 @@
 extern crate alloc;
 
 use hydentity::execute;
-use sdk::guest::{GuestEnv, Risc0Env, commit};
+use sdk::guest::{commit, GuestEnv, Risc0Env};
 use sdk::ContractInput;
 
 risc0_zkvm::guest::entry!(main);
