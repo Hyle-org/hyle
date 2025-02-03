@@ -79,6 +79,8 @@ pub trait Storage {
         dp_hash: DataProposalHash,
         size: LaneBytesSize,
     ) -> Option<(DataProposalHash, LaneBytesSize)>;
+    #[cfg(test)]
+    fn remove_lane_entry(&mut self, validator: &ValidatorPublicKey, dp_hash: &DataProposalHash);
 
     fn new_cut(&self, staking: &Staking, previous_cut: &Cut) -> Result<Cut> {
         let validator_last_cut: HashMap<ValidatorPublicKey, (DataProposalHash, PoDA)> =

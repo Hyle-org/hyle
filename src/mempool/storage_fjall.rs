@@ -176,13 +176,14 @@ impl Storage for LanesStorage {
         dp_hash: DataProposalHash,
         size: LaneBytesSize,
     ) -> Option<(DataProposalHash, LaneBytesSize)> {
-        tracing::error!(
-            "updating lane tip for validator {} with DP {} and size {}",
-            validator,
-            dp_hash,
-            size
-        );
         self.lanes_tip.insert(validator, (dp_hash, size))
+    }
+
+    #[cfg(test)]
+    fn remove_lane_entry(&mut self, validator: &ValidatorPublicKey, dp_hash: &DataProposalHash) {
+        self.by_hash
+            .remove(format!("{}:{}", validator, dp_hash))
+            .unwrap();
     }
 }
 

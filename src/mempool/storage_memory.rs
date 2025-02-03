@@ -10,7 +10,7 @@ use crate::model::{DataProposalHash, Hashable, ValidatorPublicKey};
 pub struct LanesStorage {
     pub id: ValidatorPublicKey,
     pub lanes_tip: HashMap<ValidatorPublicKey, (DataProposalHash, LaneBytesSize)>,
-    pub by_hash: HashMap<String, LaneEntry>,
+    pub by_hash: HashMap<ValidatorPublicKey, HashMap<DataProposalHash, LaneEntry>>,
 }
 
 impl Storage for LanesStorage {
@@ -36,8 +36,10 @@ impl Storage for LanesStorage {
     }
 
     fn contains(&self, validator_key: &ValidatorPublicKey, dp_hash: &DataProposalHash) -> bool {
-        self.by_hash
-            .contains_key(&format!("{}:{}", validator_key, dp_hash))
+        if let Some(lane) = self.by_hash.get(validator_key) {
+            return lane.contains_key(dp_hash);
+        }
+        false
     }
 
     fn get_by_hash(
@@ -45,8 +47,10 @@ impl Storage for LanesStorage {
         validator_key: &ValidatorPublicKey,
         dp_hash: &DataProposalHash,
     ) -> Result<Option<LaneEntry>> {
-        let item = self.by_hash.get(&format!("{}:{}", validator_key, dp_hash));
-        Ok(item.cloned())
+        if let Some(lane) = self.by_hash.get(validator_key) {
+            return Ok(lane.get(dp_hash).cloned());
+        }
+        bail!("Can't find validator {}", validator_key)
     }
 
     fn pop(
@@ -54,13 +58,15 @@ impl Storage for LanesStorage {
         validator: ValidatorPublicKey,
     ) -> Result<Option<(DataProposalHash, LaneEntry)>> {
         if let Some((lane_tip, _)) = self.lanes_tip.get(&validator).cloned() {
-            if let Some(lane_entry) = self.by_hash.remove(&format!("{}:{}", validator, lane_tip)) {
-                self.update_lane_tip(
-                    validator,
-                    lane_entry.data_proposal.hash(),
-                    lane_entry.cumul_size,
-                );
-                return Ok(Some((lane_tip.clone(), lane_entry)));
+            if let Some(lane) = self.by_hash.get_mut(&validator) {
+                if let Some(lane_entry) = lane.remove(&lane_tip) {
+                    self.update_lane_tip(
+                        validator,
+                        lane_entry.data_proposal.hash(),
+                        lane_entry.cumul_size,
+                    );
+                    return Ok(Some((lane_tip.clone(), lane_entry)));
+                }
             }
         }
         Ok(None)
@@ -80,7 +86,9 @@ impl Storage for LanesStorage {
                 let dp_hash = lane_entry.data_proposal.hash();
                 let size = lane_entry.cumul_size;
                 self.by_hash
-                    .insert(format!("{}:{}", validator, dp_hash), lane_entry);
+                    .entry(validator.clone())
+                    .or_default()
+                    .insert(dp_hash.clone(), lane_entry);
 
                 // Validatoupdate_lane_tipr's lane tip is only updated if DP-chain is respected
                 self.update_lane_tip(validator, dp_hash, size);
@@ -105,7 +113,9 @@ impl Storage for LanesStorage {
     ) -> Result<()> {
         let dp_hash = lane_entry.data_proposal.hash();
         self.by_hash
-            .insert(format!("{}:{}", validator_key, dp_hash), lane_entry.clone());
+            .entry(validator_key)
+            .or_default()
+            .insert(dp_hash, lane_entry);
         Ok(())
     }
 
@@ -115,8 +125,11 @@ impl Storage for LanesStorage {
         if !self.contains(&validator_key, &dp_hash) {
             bail!("LaneEntry does not exist");
         }
+
         self.by_hash
-            .insert(format!("{}:{}", validator_key, dp_hash), lane_entry.clone());
+            .entry(validator_key)
+            .or_default()
+            .insert(dp_hash, lane_entry);
 
         Ok(())
     }
@@ -140,5 +153,12 @@ impl Storage for LanesStorage {
         size: LaneBytesSize,
     ) -> Option<(DataProposalHash, LaneBytesSize)> {
         self.lanes_tip.insert(validator, (dp_hash, size))
+    }
+
+    #[cfg(test)]
+    fn remove_lane_entry(&mut self, validator: &ValidatorPublicKey, dp_hash: &DataProposalHash) {
+        if let Some(lane) = self.by_hash.get_mut(validator) {
+            lane.remove(dp_hash);
+        }
     }
 }

@@ -1482,8 +1482,9 @@ pub mod test {
             }
 
             // Remove the lane entry from db
-            let key = &format!("{}:{}", validator, &latest_data_proposal_hash);
-            self.mempool.lanes.by_hash.remove(key).unwrap();
+            self.mempool
+                .lanes
+                .remove_lane_entry(validator, &latest_data_proposal_hash);
 
             (
                 latest_lane_entry.data_proposal,
