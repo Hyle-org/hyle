@@ -39,6 +39,7 @@ fn make_register_blob_action(
 async fn test_full_settlement_flow() -> Result<()> {
     // Start postgres DB with default settings for the indexer.
     let pg = Postgres::default()
+        .with_tag("17-alpine")
         .with_cmd(["postgres", "-c", "log_statement=all"])
         .start()
         .await

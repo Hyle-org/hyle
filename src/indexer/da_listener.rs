@@ -12,8 +12,10 @@ use tracing::{debug, info, warn};
 
 use crate::{
     bus::BusClientSender,
-    data_availability::codec::{DataAvailabilityClientCodec, DataAvailabilityServerRequest},
-    model::{BlockHeight, CommonRunContext, SignedBlock},
+    data_availability::codec::{
+        DataAvailabilityClientCodec, DataAvailabilityServerEvent, DataAvailabilityServerRequest,
+    },
+    model::{BlockHeight, CommonRunContext},
     module_handle_messages,
     node_state::{module::NodeStateEvent, NodeState},
     utils::{
@@ -118,16 +120,18 @@ impl DAListener {
         Ok(())
     }
 
-    async fn processing_next_frame(&mut self, block: SignedBlock) -> Result<()> {
-        info!(
-            "📦 Received block: {} {}",
-            block.consensus_proposal.slot,
-            block.consensus_proposal.hash()
-        );
-        let block = self.node_state.handle_signed_block(&block);
-        debug!("📦 Handled block outputs: {:?}", block);
+    async fn processing_next_frame(&mut self, event: DataAvailabilityServerEvent) -> Result<()> {
+        if let DataAvailabilityServerEvent::SignedBlock(block) = event {
+            info!(
+                "📦 Received block: {} {}",
+                block.consensus_proposal.slot,
+                block.consensus_proposal.hash()
+            );
+            let block = self.node_state.handle_signed_block(&block);
+            debug!("📦 Handled block outputs: {:?}", block);
 
-        self.bus.send(NodeStateEvent::NewBlock(Box::new(block)))?;
+            self.bus.send(NodeStateEvent::NewBlock(Box::new(block)))?;
+        }
 
         self.listener.ping().await?;
 

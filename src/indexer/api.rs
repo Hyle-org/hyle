@@ -151,7 +151,7 @@ pub async fn get_transactions(
             r#"
             SELECT t.*
             FROM transactions t
-            JOIN blocks b ON t.block_hash = b.hash
+            LEFT JOIN blocks b ON t.block_hash = b.hash
             WHERE b.height <= $1 and b.height > $2
             ORDER BY b.height DESC, t.index ASC
             LIMIT $3
@@ -164,7 +164,7 @@ pub async fn get_transactions(
             r#"
             SELECT t.*
             FROM transactions t
-            JOIN blocks b ON t.block_hash = b.hash
+            LEFT JOIN blocks b ON t.block_hash = b.hash
             ORDER BY b.height DESC, t.index ASC
             LIMIT $1
             "#,
@@ -201,7 +201,7 @@ pub async fn get_transactions_by_contract(
             SELECT t.*
             FROM transactions t
             JOIN blobs b ON t.tx_hash = b.tx_hash
-            JOIN blocks bl ON t.block_hash = bl.hash
+            LEFT JOIN blocks bl ON t.block_hash = bl.hash
             WHERE b.contract_name = $1 AND bl.height <= $2 AND bl.height > $3
             ORDER BY bl.height DESC, t.index ASC
             LIMIT $4
