@@ -397,6 +397,7 @@ pub trait Storage {
         let msg = MempoolNetMessage::DataVote(data_proposal_hash.clone(), cumul_size);
         let signatures = vec![crypto.sign(msg)?];
 
+        // FIXME: Investigate if we can directly use put_no_verification
         self.put(
             validator.clone(),
             LaneEntry {
@@ -544,38 +545,31 @@ pub trait Storage {
     /// For unknown DataProposals in the new cut, we need to remove all DataProposals that we have after the previous cut.
     /// This is necessary because it is difficult to determine if those DataProposals are part of a fork. --> This approach is suboptimal.
     /// Therefore, we update the lane_tip with the DataProposal from the new cut, creating a gap in the lane but allowing us to vote on new DataProposals.
-    fn clean_and_update_lanes(&mut self, previous_cut: &Option<Cut>, cut: &Cut) -> Result<()> {
-        for (validator, data_proposal_hash, cumul_size, _) in cut.iter() {
-            if !self.contains(validator, data_proposal_hash) {
-                // We want ot start from the lane tip, and remove all DP until we find the data proposal of the previous cut
-                let latest_data_proposal_in_previous_cut = previous_cut
-                    .as_ref()
-                    .and_then(|cut| cut.iter().find(|(v, _, _, _)| v == validator))
-                    .map(|(_, h, _, _)| h);
-
-                if latest_data_proposal_in_previous_cut == Some(data_proposal_hash) {
-                    // No cut have been made for this validator; we keep the DPs
-                    continue;
+    fn clean_and_update_lane(
+        &mut self,
+        validator: &ValidatorPublicKey,
+        previous_committed_dp_hash: Option<&DataProposalHash>,
+        new_committed_dp_hash: &DataProposalHash,
+        new_committed_size: &LaneBytesSize,
+    ) -> Result<()> {
+        let tip_lane = self.get_lane_hash_tip(validator);
+        // Check if lane is in a state between previous cut and new cut
+        if tip_lane != previous_committed_dp_hash && tip_lane != Some(new_committed_dp_hash) {
+            // Remove last element from the lane until we find the data proposal of the previous cut
+            while let Some((dp_hash, le)) = self.pop(validator.clone())? {
+                if Some(&dp_hash) == previous_committed_dp_hash {
+                    // Reinsert the lane entry corresponding to the previous cut
+                    self.put_no_verification(validator.clone(), le)?;
+                    break;
                 }
-
-                let tip_lane = self.get_lane_hash_tip(validator);
-                // Check if lane is in a state between previous cut and new cut
-                if tip_lane != latest_data_proposal_in_previous_cut
-                    && tip_lane != Some(data_proposal_hash)
-                {
-                    // Remove last element from the lane until we find the data proposal of the previous cut
-                    while let Some((dp_hash, le)) = self.pop(validator.clone())? {
-                        if Some(&dp_hash) == latest_data_proposal_in_previous_cut {
-                            // Reinsert the lane entry corresponding to the previous cut
-                            self.put_no_verification(validator.clone(), le)?;
-                            break;
-                        }
-                    }
-                }
-                // Update lane tip with new cut
-                self.update_lane_tip(validator.clone(), data_proposal_hash.clone(), *cumul_size);
             }
         }
+        // Update lane tip with new cut
+        self.update_lane_tip(
+            validator.clone(),
+            new_committed_dp_hash.clone(),
+            *new_committed_size,
+        );
         Ok(())
     }
 

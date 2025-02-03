@@ -581,11 +581,8 @@ impl Mempool {
 
                 self.try_to_send_full_signed_blocks()?;
 
-                // Update the lane tip with the new cut
-                self.lanes.clean_and_update_lanes(&previous_cut, &cut)?;
-
-                // Fetch in advance data proposals
-                self.fetch_unknown_data_proposals(&cut)?;
+                // Removes all DPs that are not in the new cut, updates lane tip and sends SyncRequest for missing DPs
+                self.clean_and_update_lanes(&cut, &previous_cut)?;
 
                 Ok(())
             }
@@ -593,17 +590,30 @@ impl Mempool {
     }
 
     /// Requests all DP between the previous Cut and the new Cut.
-    fn fetch_unknown_data_proposals(&mut self, cut: &Cut) -> Result<()> {
-        // Detect all unknown data proposals
-        for (validator, data_proposal_hash, _, _) in cut.iter() {
+    fn clean_and_update_lanes(&mut self, cut: &Cut, previous_cut: &Option<Cut>) -> Result<()> {
+        for (validator, data_proposal_hash, cumul_size, _) in cut.iter() {
             if !self.lanes.contains(validator, data_proposal_hash) {
-                // As we previously cleaned lanes, this is actually amiming DP from previous cut.
-                let latest_known_dp_hash = self.lanes.get_lane_hash_tip(validator).cloned();
+                // We want to start from the lane tip, and remove all DP until we find the data proposal of the previous cut
+                let previous_committed_dp_hash = previous_cut
+                    .as_ref()
+                    .and_then(|cut| cut.iter().find(|(v, _, _, _)| v == validator))
+                    .map(|(_, h, _, _)| h);
+                if previous_committed_dp_hash == Some(data_proposal_hash) {
+                    // No cut have been made for this validator; we keep the DPs
+                    continue;
+                }
+                // Removes all DP after the previous cut & update lane_tip with new cut
+                self.lanes.clean_and_update_lane(
+                    validator,
+                    previous_committed_dp_hash,
+                    data_proposal_hash,
+                    cumul_size,
+                )?;
 
-                // Send SyncRequest for all unknown data proposals
+                // Send SyncRequest for all data proposals between previous cut and new one
                 self.send_sync_request(
                     validator,
-                    latest_known_dp_hash.as_ref(),
+                    previous_committed_dp_hash,
                     Some(data_proposal_hash),
                 )
                 .context("Fetching unknown data")?;
@@ -2163,7 +2173,7 @@ pub mod test {
         ) = ctx.last_validator_lane_entry(&key);
         let cut = vec![(
             key.clone(),
-            dp_hash,
+            dp_hash.clone(),
             cumul_size,
             AggregateSignature::default(),
         )];
@@ -2240,7 +2250,7 @@ pub mod test {
         // SyncRequest for removed DP
         match ctx.assert_send(&key, "SyncRequest").msg {
             MempoolNetMessage::SyncRequest(from, to) => {
-                assert_eq!(from, Some(dp_hash2.clone()));
+                assert_eq!(from, Some(dp_hash));
                 assert_eq!(to, Some(dp_hash2));
             }
             _ => panic!("Expected DataProposal message"),
