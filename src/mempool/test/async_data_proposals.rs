@@ -55,7 +55,6 @@ async fn impl_test_mempool_isnt_blocked_by_proof_verification() -> Result<()> {
         data_proposals: vec![(
             node_modules.crypto.validator_pubkey().clone(),
             vec![DataProposal {
-                id: 0,
                 parent_data_proposal_hash: None,
                 txs: vec![BlobTransaction {
                     identity: "test.hyle".into(),
@@ -184,7 +183,6 @@ async fn impl_test_mempool_isnt_blocked_by_proof_verification() -> Result<()> {
     tracing::warn!("Starting part 2 - processing data proposals.");
 
     let mut data_proposal = DataProposal {
-        id: 2,
         parent_data_proposal_hash: Some(data_prop_hash),
         txs: vec![],
     };
