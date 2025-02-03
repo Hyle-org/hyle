@@ -15,7 +15,7 @@ pub use hyle_model::LaneBytesSize;
 
 pub struct LanesStorage {
     pub id: ValidatorPublicKey,
-    pub lanes_tip: HashMap<ValidatorPublicKey, DataProposalHash>,
+    pub lanes_tip: HashMap<ValidatorPublicKey, (DataProposalHash, LaneBytesSize)>,
     db: Keyspace,
     pub by_hash: PartitionHandle,
 }
@@ -24,7 +24,7 @@ impl Storage for LanesStorage {
     fn new(
         path: &Path,
         id: ValidatorPublicKey,
-        lanes_tip: HashMap<ValidatorPublicKey, DataProposalHash>,
+        lanes_tip: HashMap<ValidatorPublicKey, (DataProposalHash, LaneBytesSize)>,
     ) -> Result<Self> {
         let db = Config::new(path)
             .blob_cache(Arc::new(fjall::BlobCache::with_capacity_bytes(
@@ -87,11 +87,16 @@ impl Storage for LanesStorage {
         &mut self,
         validator: ValidatorPublicKey,
     ) -> Result<Option<(DataProposalHash, LaneEntry)>> {
-        if let Some(lane_tip) = self.lanes_tip.get(&validator).cloned() {
-            if let Some(lane_entry) = self.get_by_hash(&validator, &lane_tip)? {
-                self.by_hash.remove(format!("{}:{}", validator, lane_tip))?;
-                self.update_lane_tip(validator, lane_entry.data_proposal.hash());
-                return Ok(Some((lane_tip, lane_entry)));
+        if let Some((lane_hash_tip, _)) = self.lanes_tip.get(&validator).cloned() {
+            if let Some(lane_entry) = self.get_by_hash(&validator, &lane_hash_tip)? {
+                self.by_hash
+                    .remove(format!("{}:{}", validator, lane_hash_tip))?;
+                self.update_lane_tip(
+                    validator,
+                    lane_entry.data_proposal.hash(),
+                    lane_entry.cumul_size,
+                );
+                return Ok(Some((lane_hash_tip, lane_entry)));
             }
         }
         Ok(None)
@@ -115,7 +120,7 @@ impl Storage for LanesStorage {
                 )?;
 
                 // Validator's lane tip is only updated if DP-chain is respected
-                self.update_lane_tip(validator, dp_hash);
+                self.update_lane_tip(validator, dp_hash, lane_entry.cumul_size);
 
                 Ok(())
             }
@@ -157,16 +162,27 @@ impl Storage for LanesStorage {
         Ok(())
     }
 
-    fn get_lane_tip(&self, validator: &ValidatorPublicKey) -> Option<&DataProposalHash> {
-        self.lanes_tip.get(validator)
+    fn get_lane_hash_tip(&self, validator: &ValidatorPublicKey) -> Option<&DataProposalHash> {
+        self.lanes_tip.get(validator).map(|(hash, _)| hash)
+    }
+
+    fn get_lane_size_tip(&self, validator: &ValidatorPublicKey) -> Option<&LaneBytesSize> {
+        self.lanes_tip.get(validator).map(|(_, size)| size)
     }
 
     fn update_lane_tip(
         &mut self,
         validator: ValidatorPublicKey,
         dp_hash: DataProposalHash,
-    ) -> Option<DataProposalHash> {
-        self.lanes_tip.insert(validator, dp_hash)
+        size: LaneBytesSize,
+    ) -> Option<(DataProposalHash, LaneBytesSize)> {
+        tracing::error!(
+            "updating lane tip for validator {} with DP {} and size {}",
+            validator,
+            dp_hash,
+            size
+        );
+        self.lanes_tip.insert(validator, (dp_hash, size))
     }
 }
 

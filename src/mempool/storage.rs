@@ -48,7 +48,7 @@ pub trait Storage {
     fn new(
         path: &Path,
         id: ValidatorPublicKey,
-        lanes_tip: HashMap<ValidatorPublicKey, DataProposalHash>,
+        lanes_tip: HashMap<ValidatorPublicKey, (DataProposalHash, LaneBytesSize)>,
     ) -> Result<Self>
     where
         Self: std::marker::Sized;
@@ -71,12 +71,14 @@ pub trait Storage {
     ) -> Result<()>;
     fn update(&mut self, validator_key: ValidatorPublicKey, lane_entry: LaneEntry) -> Result<()>;
     fn persist(&self) -> Result<()>;
-    fn get_lane_tip(&self, validator: &ValidatorPublicKey) -> Option<&DataProposalHash>;
+    fn get_lane_hash_tip(&self, validator: &ValidatorPublicKey) -> Option<&DataProposalHash>;
+    fn get_lane_size_tip(&self, validator: &ValidatorPublicKey) -> Option<&LaneBytesSize>;
     fn update_lane_tip(
         &mut self,
         validator: ValidatorPublicKey,
         dp_hash: DataProposalHash,
-    ) -> Option<DataProposalHash>;
+        size: LaneBytesSize,
+    ) -> Option<(DataProposalHash, LaneBytesSize)>;
 
     fn new_cut(&self, staking: &Staking, previous_cut: &Cut) -> Result<Cut> {
         let validator_last_cut: HashMap<ValidatorPublicKey, (DataProposalHash, PoDA)> =
@@ -161,11 +163,11 @@ pub trait Storage {
             return Ok((DataProposalVerdict::Empty, None));
         }
 
-        let validator_lane_size = self.get_lane_size(validator)?;
         let dp_hash = data_proposal.hash();
 
         // ALREADY STORED
         if self.contains(validator, &dp_hash) {
+            let validator_lane_size = self.get_lane_size_at(validator, &dp_hash)?;
             // just resend a vote
             return Ok((DataProposalVerdict::Vote, Some(validator_lane_size)));
         }
@@ -173,7 +175,7 @@ pub trait Storage {
         match self.can_be_put_on_top(validator, data_proposal.parent_data_proposal_hash.as_ref()) {
             // PARENT UNKNOWN
             CanBePutOnTop::No => {
-                let last_known_hash = self.get_lane_tip(validator);
+                let last_known_hash = self.get_lane_hash_tip(validator);
                 // Get the last known parent hash in order to get all the next ones
                 Ok((DataProposalVerdict::Wait(last_known_hash.cloned()), None))
             }
@@ -181,7 +183,7 @@ pub trait Storage {
             CanBePutOnTop::Yes => Ok((DataProposalVerdict::Process, None)),
             CanBePutOnTop::Fork => {
                 // FORK DETECTED
-                let last_known_hash = self.get_lane_tip(validator);
+                let last_known_hash = self.get_lane_hash_tip(validator);
                 warn!(
                     "DataProposal ({dp_hash}) cannot be handled because it creates a fork: last dp hash {:?} while proposed parent_data_proposal_hash: {:?}",
                     last_known_hash,
@@ -200,7 +202,7 @@ pub trait Storage {
     ) -> Result<Option<(DataProposalHash, LaneBytesSize, PoDA)>> {
         let bonded_validators = staking.bonded();
         // We start from the tip of the lane, and go backup until we find a DP with enough signatures
-        if let Some(tip_dp_hash) = self.get_lane_tip(validator) {
+        if let Some(tip_dp_hash) = self.get_lane_hash_tip(validator) {
             let mut dp_hash = tip_dp_hash.clone();
             while let Some(le) = self.get_by_hash(validator, &dp_hash)? {
                 if let Some((hash, poda)) = previous_committed_car {
@@ -384,7 +386,10 @@ pub trait Storage {
         let data_proposal_hash = data_proposal.hash();
 
         let dp_size = data_proposal.estimate_size();
-        let lane_size = self.get_lane_size(validator)?;
+        let lane_size = self
+            .get_lane_size_tip(validator)
+            .cloned()
+            .unwrap_or_default();
         let cumul_size = lane_size + dp_size;
 
         let msg = MempoolNetMessage::DataVote(data_proposal_hash.clone(), cumul_size);
@@ -451,7 +456,7 @@ pub trait Storage {
         // If no dp hash is provided, we use the tip of the lane
         let mut dp_hash: DataProposalHash = match to_data_proposal_hash {
             Some(hash) => hash.clone(),
-            None => match self.get_lane_tip(validator) {
+            None => match self.get_lane_hash_tip(validator) {
                 Some(dp_hash) => dp_hash.clone(),
                 None => {
                     return Ok(vec![]);
@@ -480,16 +485,15 @@ pub trait Storage {
         Ok(entries)
     }
 
-    fn get_lane_size(&self, validator: &ValidatorPublicKey) -> Result<LaneBytesSize> {
-        if let Some(latest_data_proposal_hash) = self.get_lane_tip(validator) {
-            self.get_by_hash(validator, latest_data_proposal_hash)?
-                .map_or_else(
-                    || Ok(LaneBytesSize::default()),
-                    |entry| Ok(entry.cumul_size),
-                )
-        } else {
-            Ok(LaneBytesSize::default())
-        }
+    fn get_lane_size_at(
+        &self,
+        validator: &ValidatorPublicKey,
+        dp_hash: &DataProposalHash,
+    ) -> Result<LaneBytesSize> {
+        self.get_by_hash(validator, dp_hash)?.map_or_else(
+            || Ok(LaneBytesSize::default()),
+            |entry| Ok(entry.cumul_size),
+        )
     }
 
     /// Creates and saves a new DataProposal if there are pending transactions
@@ -502,7 +506,7 @@ pub trait Storage {
 
         // Create new data proposal
         let data_proposal = DataProposal {
-            parent_data_proposal_hash: self.get_lane_tip(&validator_key).cloned(),
+            parent_data_proposal_hash: self.get_lane_hash_tip(&validator_key).cloned(),
             txs,
         };
 
@@ -523,7 +527,7 @@ pub trait Storage {
         validator: &ValidatorPublicKey,
         last_cut: Option<Cut>,
     ) -> Result<Vec<LaneEntry>> {
-        let lane_tip = self.get_lane_tip(validator);
+        let lane_tip = self.get_lane_hash_tip(validator);
 
         let last_committed_dp_hash = match last_cut {
             Some(cut) => cut
@@ -539,7 +543,7 @@ pub trait Storage {
     /// This is necessary because it is difficult to determine if those DataProposals are part of a fork. --> This approach is suboptimal.
     /// Therefore, we update the lane_tip with the DataProposal from the new cut, creating a gap in the lane but allowing us to vote on new DataProposals.
     fn clean_and_update_lanes(&mut self, previous_cut: &Option<Cut>, cut: &Cut) -> Result<()> {
-        for (validator, data_proposal_hash, _, _) in cut.iter() {
+        for (validator, data_proposal_hash, cumul_size, _) in cut.iter() {
             if !self.contains(validator, data_proposal_hash) {
                 // We want ot start from the lane tip, and remove all DP until we find the data proposal of the previous cut
                 let latest_data_proposal_in_previous_cut = previous_cut
@@ -552,7 +556,7 @@ pub trait Storage {
                     continue;
                 }
 
-                let tip_lane = self.get_lane_tip(validator);
+                let tip_lane = self.get_lane_hash_tip(validator);
                 // Check if lane is in a state between previous cut and new cut
                 if tip_lane != latest_data_proposal_in_previous_cut
                     && tip_lane != Some(data_proposal_hash)
@@ -567,7 +571,7 @@ pub trait Storage {
                     }
                 }
                 // Update lane tip with new cut
-                self.update_lane_tip(validator.clone(), data_proposal_hash.clone());
+                self.update_lane_tip(validator.clone(), data_proposal_hash.clone(), *cumul_size);
             }
         }
         Ok(())
@@ -582,13 +586,13 @@ pub trait Storage {
         parent_data_proposal_hash: Option<&DataProposalHash>,
     ) -> CanBePutOnTop {
         // Data proposal parent hash needs to match the lane tip of that validator
-        let last_known_hash = self.get_lane_tip(validator_key);
+        let last_known_hash = self.get_lane_hash_tip(validator_key);
         if parent_data_proposal_hash == last_known_hash {
             // LEGIT DATAPROPOSAL
             return CanBePutOnTop::Yes;
         }
 
-        if self.get_lane_tip(validator_key).is_none() && parent_data_proposal_hash.is_none() {
+        if self.get_lane_hash_tip(validator_key).is_none() && parent_data_proposal_hash.is_none() {
             // LANE IS EMPTY
             return CanBePutOnTop::Yes;
         }
@@ -913,7 +917,7 @@ mod tests {
 
         storage.new_data_proposal(&crypto, txs).unwrap();
 
-        let tip = storage.get_lane_tip(pubkey);
+        let tip = storage.get_lane_hash_tip(pubkey);
         assert!(tip.is_some());
     }
 
@@ -931,7 +935,8 @@ mod tests {
         let size = storage
             .store_data_proposal(&crypto, pubkey, dp1.clone())
             .unwrap();
-        assert_eq!(size, storage.get_lane_size(pubkey).unwrap());
+        assert_eq!(size, storage.get_lane_size_at(pubkey, &dp1.hash()).unwrap());
+        assert_eq!(&size, storage.get_lane_size_tip(pubkey).unwrap());
         assert_eq!(size.0, dp1.estimate_size() as u64);
 
         // Adding a new DP
@@ -942,7 +947,8 @@ mod tests {
         let size = storage
             .store_data_proposal(&crypto, pubkey, dp2.clone())
             .unwrap();
-        assert_eq!(size, storage.get_lane_size(pubkey).unwrap());
+        assert_eq!(size, storage.get_lane_size_at(pubkey, &dp2.hash()).unwrap());
+        assert_eq!(&size, storage.get_lane_size_tip(pubkey).unwrap());
         assert_eq!(size.0, (dp1.estimate_size() + dp2.estimate_size()) as u64);
     }
 

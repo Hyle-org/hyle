@@ -367,9 +367,9 @@ async fn autobahn_basic_flow() {
 
     let data_proposal_hash_node1 = node1
         .mempool_ctx
-        .current_hash()
+        .current_hash(node1.mempool_ctx.validator_pubkey())
         .expect("Current hash should be there");
-    let node1_l_size = node1.mempool_ctx.current_size();
+    let node1_l_size = node1.mempool_ctx.current_size().unwrap();
 
     node1.start_round_with_cut_from_mempool().await;
 
@@ -1024,32 +1024,32 @@ async fn protocol_fees() {
     node1.mempool_ctx.assert_broadcast("poda update");
 
     let dp_size_1 = LaneBytesSize(dp.estimate_size() as u64);
-    assert_eq!(node1.mempool_ctx.current_size(), dp_size_1);
+    assert_eq!(node1.mempool_ctx.current_size(), Some(dp_size_1));
     assert_eq!(
         node1
             .mempool_ctx
-            .current_size_of(&node2.mempool_ctx.validator_pubkey()),
-        LaneBytesSize::default()
+            .current_size_of(node2.mempool_ctx.validator_pubkey()),
+        None
     );
 
-    assert_eq!(node2.mempool_ctx.current_size().0, 0);
+    assert_eq!(node2.mempool_ctx.current_size(), None);
     assert_eq!(
         node2
             .mempool_ctx
-            .current_size_of(&node1.mempool_ctx.validator_pubkey()),
-        dp_size_1
+            .current_size_of(node1.mempool_ctx.validator_pubkey()),
+        Some(dp_size_1)
     );
     assert_eq!(
         node3
             .mempool_ctx
-            .current_size_of(&node1.mempool_ctx.validator_pubkey()),
-        dp_size_1
+            .current_size_of(node1.mempool_ctx.validator_pubkey()),
+        Some(dp_size_1)
     );
     assert_eq!(
         node4
             .mempool_ctx
-            .current_size_of(&node1.mempool_ctx.validator_pubkey()),
-        dp_size_1
+            .current_size_of(node1.mempool_ctx.validator_pubkey()),
+        Some(dp_size_1)
     );
 
     // Second data proposal
@@ -1095,33 +1095,33 @@ async fn protocol_fees() {
     };
 
     let dp_size_2 = LaneBytesSize(dp.estimate_size() as u64);
-    assert_eq!(node2.mempool_ctx.current_size(), dp_size_2);
+    assert_eq!(node2.mempool_ctx.current_size(), Some(dp_size_2));
     assert_eq!(
         node2
             .mempool_ctx
-            .current_size_of(&node1.mempool_ctx.validator_pubkey()),
-        dp_size_1
+            .current_size_of(node1.mempool_ctx.validator_pubkey()),
+        Some(dp_size_1)
     );
 
-    assert_eq!(node1.mempool_ctx.current_size(), dp_size_1);
+    assert_eq!(node1.mempool_ctx.current_size(), Some(dp_size_1));
     assert_eq!(
         node1
             .mempool_ctx
-            .current_size_of(&node2.mempool_ctx.validator_pubkey()),
-        dp_size_2
+            .current_size_of(node2.mempool_ctx.validator_pubkey()),
+        Some(dp_size_2)
     );
 
     assert_eq!(
         node3
             .mempool_ctx
-            .current_size_of(&node1.mempool_ctx.validator_pubkey()),
-        dp_size_1
+            .current_size_of(node1.mempool_ctx.validator_pubkey()),
+        Some(dp_size_1)
     );
     assert_eq!(
         node3
             .mempool_ctx
-            .current_size_of(&node2.mempool_ctx.validator_pubkey()),
-        dp_size_2
+            .current_size_of(node2.mempool_ctx.validator_pubkey()),
+        Some(dp_size_2)
     );
 
     // Process poda update coming from node2

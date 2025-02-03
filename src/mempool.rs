@@ -189,14 +189,15 @@ impl Module for Mempool {
         )
         .unwrap_or_default();
 
-        let lanes_tip = Self::load_from_disk::<HashMap<ValidatorPublicKey, DataProposalHash>>(
-            ctx.common
-                .config
-                .data_directory
-                .join("mempool_lanes_tip.bin")
-                .as_path(),
-        )
-        .unwrap_or_default();
+        let lanes_tip =
+            Self::load_from_disk::<HashMap<ValidatorPublicKey, (DataProposalHash, LaneBytesSize)>>(
+                ctx.common
+                    .config
+                    .data_directory
+                    .join("mempool_lanes_tip.bin")
+                    .as_path(),
+            )
+            .unwrap_or_default();
 
         // Register the Hyle contract to be able to handle registrations.
         #[allow(clippy::expect_used, reason = "not held across await")]
@@ -597,7 +598,7 @@ impl Mempool {
         for (validator, data_proposal_hash, _, _) in cut.iter() {
             if !self.lanes.contains(validator, data_proposal_hash) {
                 // As we previously cleaned lanes, this is actually amiming DP from previous cut.
-                let latest_known_dp_hash = self.lanes.get_lane_tip(validator).cloned();
+                let latest_known_dp_hash = self.lanes.get_lane_hash_tip(validator).cloned();
 
                 // Send SyncRequest for all unknown data proposals
                 self.send_sync_request(
@@ -633,8 +634,8 @@ impl Mempool {
             MempoolNetMessage::DataProposal(data_proposal) => {
                 self.on_data_proposal(validator, data_proposal)?;
             }
-            MempoolNetMessage::DataVote(ref data_proposal_hash, data_proposal_size) => {
-                self.on_data_vote(&msg, data_proposal_hash, data_proposal_size)?;
+            MempoolNetMessage::DataVote(ref data_proposal_hash, lane_size) => {
+                self.on_data_vote(&msg, data_proposal_hash, lane_size)?;
             }
             MempoolNetMessage::PoDAUpdate(data_proposal_hash, signatures) => {
                 self.on_poda_update(validator, &data_proposal_hash, signatures)?
@@ -698,10 +699,13 @@ impl Mempool {
         let first_dp_parent_hash = missing_lane_entries
             .first()
             .and_then(|le| le.data_proposal.parent_data_proposal_hash.clone());
-        if first_dp_parent_hash.as_ref() == self.lanes.lanes_tip.get(validator) {
+        if first_dp_parent_hash.as_ref() == self.lanes.get_lane_hash_tip(validator) {
             #[allow(clippy::unwrap_used, reason = "there is a last one by construction")]
-            let last_dp_hash = missing_lane_entries.last().unwrap().data_proposal.hash();
-            self.lanes.lanes_tip.insert(validator.clone(), last_dp_hash);
+            let last_entry = missing_lane_entries.last().unwrap();
+            self.lanes.lanes_tip.insert(
+                validator.clone(),
+                (last_entry.data_proposal.hash(), last_entry.cumul_size),
+            );
         }
         ////////////////////////////////
         for lane_entry in missing_lane_entries {
@@ -1406,35 +1410,41 @@ pub mod test {
                 .expect("should handle net msg");
         }
 
-        pub fn current_hash(&self) -> Option<DataProposalHash> {
+        pub fn current_hash(&self, validator: &ValidatorPublicKey) -> Option<DataProposalHash> {
             self.mempool
                 .lanes
                 .lanes_tip
-                .get(self.validator_pubkey())
+                .get(validator)
                 .cloned()
+                .map(|(h, _)| h)
         }
 
         #[track_caller]
-        pub fn current_size_of(&self, validator: &ValidatorPublicKey) -> LaneBytesSize {
-            self.mempool.lanes.get_lane_size(validator).unwrap()
+        pub fn current_size_of(&self, validator: &ValidatorPublicKey) -> Option<LaneBytesSize> {
+            self.mempool
+                .lanes
+                .lanes_tip
+                .get(validator)
+                .cloned()
+                .map(|(_, s)| s)
         }
 
         pub fn last_validator_lane_entry(
             &self,
             validator: &ValidatorPublicKey,
         ) -> (LaneEntry, DataProposalHash) {
-            let last_dp_hash = self.mempool.lanes.lanes_tip.get(validator).unwrap();
+            let last_dp_hash = self.current_hash(validator).unwrap();
             let last_dp = self
                 .mempool
                 .lanes
-                .get_by_hash(validator, last_dp_hash)
+                .get_by_hash(validator, &last_dp_hash)
                 .unwrap()
                 .unwrap();
 
             (last_dp, last_dp_hash.clone())
         }
 
-        pub fn current_size(&self) -> LaneBytesSize {
+        pub fn current_size(&self) -> Option<LaneBytesSize> {
             let validator = self.validator_pubkey();
             self.current_size_of(validator)
         }
@@ -1449,13 +1459,7 @@ pub mod test {
             validator: &ValidatorPublicKey,
         ) -> (DataProposal, DataProposalHash, LaneBytesSize) {
             // Get the latest lane entry
-            let latest_data_proposal_hash = self
-                .mempool
-                .lanes
-                .lanes_tip
-                .get(validator)
-                .cloned()
-                .unwrap();
+            let latest_data_proposal_hash = self.current_hash(validator).unwrap();
             let latest_lane_entry = self
                 .mempool
                 .lanes
@@ -1469,10 +1473,10 @@ pub mod test {
                 .parent_data_proposal_hash
                 .as_ref()
             {
-                self.mempool
-                    .lanes
-                    .lanes_tip
-                    .insert(validator.clone(), parent_dp_hash.clone());
+                self.mempool.lanes.lanes_tip.insert(
+                    validator.clone(),
+                    (parent_dp_hash.clone(), latest_lane_entry.cumul_size),
+                );
             } else {
                 self.mempool.lanes.lanes_tip.remove(validator);
             }
@@ -1491,7 +1495,7 @@ pub mod test {
         pub fn push_data_proposal(&mut self, dp: DataProposal) {
             let key = self.validator_pubkey().clone();
 
-            let lane_size = self.mempool.lanes.get_lane_size(&key).unwrap();
+            let lane_size = self.current_size().unwrap();
             let size = lane_size + dp.estimate_size();
             self.mempool
                 .lanes
