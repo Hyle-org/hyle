@@ -18,7 +18,7 @@ use anyhow::{Context, Error, Result};
 use rand::{distr::Alphanumeric, Rng};
 use signal::ShutdownCompleted;
 use tokio::task::JoinHandle;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 /// Module trait to define startup dependencies
 pub trait Module
@@ -202,6 +202,7 @@ impl ShutdownClientRecalls {
         handle_messages! {
             on_bus self.bus_client,
             listen<ShutdownCompleted> msg => {
+                warn!("Received shutdown message {}", msg.module);
                 self.shut_modules.push(msg.module.clone());
                 if msg.module == module_name {
                     debug!("Module {} successfully shut", msg.module);
