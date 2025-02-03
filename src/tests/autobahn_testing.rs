@@ -1105,6 +1105,10 @@ async fn protocol_fees() {
         Some(dp_size_2)
     );
 
+    // Process poda update coming from node2
+    let poda_update = node2.mempool_ctx.assert_broadcast("poda update");
+    node1.mempool_ctx.handle_poda_update(poda_update);
+
     // Let's do a consensus round
 
     node1.start_round_with_cut_from_mempool().await;
@@ -1118,21 +1122,19 @@ async fn protocol_fees() {
         _ => panic!("Should be a Prepare"),
     };
 
-    // TODO: should be 2, but bug in QueryNewCut
-    //assert_eq!(cp.staking_actions.len(), 2);
-    assert_eq!(cp.staking_actions.len(), 1);
+    assert_eq!(cp.staking_actions.len(), 2);
     assert_eq!(
         cp.staking_actions[0],
+        ConsensusStakingAction::PayFeesForDaDi {
+            disseminator: node2.mempool_ctx.validator_pubkey().clone(),
+            cumul_size: dp_size_2
+        }
+    );
+    assert_eq!(
+        cp.staking_actions[1],
         ConsensusStakingAction::PayFeesForDaDi {
             disseminator: node1.mempool_ctx.validator_pubkey().clone(),
             cumul_size: dp_size_1
         }
     );
-    //assert_eq!(
-    //    cp.staking_actions[1],
-    //    ConsensusStakingAction::PayFeesForDaDi {
-    //        disseminator: node2.mempool_ctx.validator_pubkey().clone(),
-    //        cumul_size: dp_size_2
-    //    }
-    //);
 }

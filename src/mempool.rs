@@ -1269,6 +1269,15 @@ pub mod test {
                 .expect("fail to handle new transaction");
         }
 
+        pub fn handle_poda_update(
+            &mut self,
+            net_message: Signed<MempoolNetMessage, ValidatorSignature>,
+        ) {
+            self.mempool
+                .handle_net_message(net_message)
+                .expect("fail to handle net message");
+        }
+
         pub async fn handle_processed_data_proposals(&mut self) {
             let event = self
                 .mempool_internal_event_receiver
