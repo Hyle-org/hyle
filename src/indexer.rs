@@ -29,12 +29,12 @@ use futures::{SinkExt, StreamExt};
 use hyle_contract_sdk::TxHash;
 use hyle_model::api::{BlobWithStatus, TransactionStatus, TransactionType, TransactionWithBlobs};
 use sqlx::{postgres::PgPoolOptions, PgPool, Pool, Postgres};
-use sqlx::{Execute, PgExecutor, QueryBuilder, Row};
+use sqlx::{PgExecutor, QueryBuilder, Row};
 use std::ops::DerefMut;
 use std::{collections::HashMap, sync::Arc};
 use tokio::select;
 use tokio::sync::{broadcast, mpsc};
-use tracing::{error, info, trace, warn};
+use tracing::{error, info, trace};
 use utoipa::OpenApi;
 use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
@@ -266,30 +266,41 @@ impl Indexer {
     async fn handle_mempool_status_event(&mut self, event: MempoolStatusEvent) -> Result<()> {
         let mut transaction = self.state.db.begin().await?;
         match event {
-            MempoolStatusEvent::WaitingDissemination(tx) => {
+            MempoolStatusEvent::WaitingDissemination {
+                parent_data_proposal_hash,
+                tx,
+            } => {
+                let parent_data_proposal_hash_db: DataProposalHashDb =
+                    parent_data_proposal_hash.into();
                 let tx_hash: TxHash = tx.hash();
                 let version = i32::try_from(tx.version)
                     .map_err(|_| anyhow::anyhow!("Tx version is too large to fit into an i32"))?;
 
                 // Insert the transaction into the transactions table
                 let tx_type = TransactionType::get_type_from_transaction(&tx);
-                let tx_status = TransactionStatus::WaitingDissemination;
 
                 let tx_hash: &TxHashDb = &tx_hash.into();
 
                 // If the TX is already present, we can assume it's more up-to-date so do nothing.
-                sqlx::query("INSERT INTO transactions (tx_hash, version, transaction_type, transaction_status)
-                    VALUES ($1, $2, $3, $4)
-                    ON CONFLICT(tx_hash) DO NOTHING")
+                sqlx::query(
+                    "INSERT INTO transactions (tx_hash, parent_dp_hash, version, transaction_type, transaction_status)
+                    VALUES ($1, $2, $3, $4, 'waiting_dissemination')
+                    ON CONFLICT(tx_hash, parent_dp_hash) DO NOTHING",
+                )
                 .bind(tx_hash)
+                .bind(parent_data_proposal_hash_db.clone())
                 .bind(version)
                 .bind(tx_type)
-                .bind(tx_status)
                 .execute(&mut *transaction)
                 .await?;
 
                 _ = self
-                    .insert_tx_data(transaction.deref_mut(), tx_hash, &tx)
+                    .insert_tx_data(
+                        transaction.deref_mut(),
+                        tx_hash,
+                        &tx,
+                        parent_data_proposal_hash_db,
+                    )
                     .await
                     .log_warn("Inserting tx data at status 'waiting dissemination'");
             }
@@ -337,6 +348,7 @@ impl Indexer {
         transaction: T,
         tx_hash: &TxHashDb,
         tx: &Transaction,
+        parent_data_proposal_hash: DataProposalHashDb,
     ) -> Result<()>
     where
         T: PgExecutor<'a>,
@@ -344,8 +356,8 @@ impl Indexer {
         match &tx.transaction_data {
             TransactionData::Blob(blob_tx) => {
                 let mut query_builder = QueryBuilder::<Postgres>::new(
-                    "INSERT INTO blobs (tx_hash, blob_index, identity, contract_name, data, verified) ",
-                );
+                        "INSERT INTO blobs (tx_hash, parent_dp_hash, blob_index, identity, contract_name, data, verified) ",
+                    );
 
                 query_builder.push_values(
                     blob_tx.blobs.iter().enumerate(),
@@ -358,6 +370,7 @@ impl Indexer {
                         let contract_name = &blob.contract_name.0;
                         let blob_data = &blob.data.0;
                         b.push_bind(tx_hash)
+                            .push_bind(parent_data_proposal_hash.clone())
                             .push_bind(blob_index)
                             .push_bind(identity)
                             .push_bind(contract_name)
@@ -366,16 +379,15 @@ impl Indexer {
                     },
                 );
 
-                query_builder.push(" ON CONFLICT(tx_hash, blob_index) DO NOTHING");
                 let query = query_builder.build();
-                warn!("{}", query.sql());
                 query.execute(transaction).await?;
             }
             TransactionData::VerifiedProof(tx_data) => {
                 // Then insert the proof in to the proof table.
                 match &tx_data.proof {
                     Some(proof_data) => {
-                        sqlx::query("INSERT INTO proofs (tx_hash, proof) VALUES ($1, $2) ON CONFLICT(tx_hash) DO NOTHING")
+                        sqlx::query("INSERT INTO proofs (parent_dp_hash, tx_hash, proof) VALUES ($1, $2, $3) ON CONFLICT(parent_dp_hash, tx_hash) DO NOTHING")
+                            .bind(parent_data_proposal_hash)
                             .bind(tx_hash)
                             .bind(proof_data.0.clone())
                             .execute(transaction)
@@ -404,8 +416,7 @@ impl Indexer {
 
         let mut i: i32 = 0;
         #[allow(clippy::explicit_counter_loop)]
-        for tx in block.txs {
-            let tx_hash: TxHash = tx.hash();
+        for (tx_id, tx) in block.txs {
             let version = i32::try_from(tx.version)
                 .map_err(|_| anyhow::anyhow!("Tx version is too large to fit into an i32"))?;
 
@@ -417,15 +428,17 @@ impl Indexer {
                 TransactionData::VerifiedProof(_) => TransactionStatus::Success,
             };
 
-            let tx_hash: &TxHashDb = &tx_hash.into();
+            let parent_data_proposal_hash: &DataProposalHashDb = &tx_id.0.into();
+            let tx_hash: &TxHashDb = &tx_id.1.into();
 
             // Make sure transaction exists (Missed Mempool Status event)
             sqlx::query(
-                "INSERT INTO transactions (tx_hash, version, transaction_type, transaction_status, block_hash, index)
-                VALUES ($1, $2, $3, $4, $5, $6)
-                ON CONFLICT(tx_hash) DO UPDATE SET transaction_status=$4, block_hash=$5, index=$6",
+                "INSERT INTO transactions (tx_hash, parent_dp_hash, version, transaction_type, transaction_status, block_hash, index)
+                VALUES ($1, $2, $3, $4, $5, $6, $7)
+                ON CONFLICT(tx_hash, parent_dp_hash) DO UPDATE SET transaction_status=$5, block_hash=$6, index=$7",
             )
             .bind(tx_hash)
+            .bind(parent_data_proposal_hash.clone())
             .bind(version)
             .bind(tx_type.clone())
             .bind(tx_status.clone())
@@ -436,7 +449,12 @@ impl Indexer {
             .log_warn(format!("Inserting transaction {:?}", tx_hash))?;
 
             _ = self
-                .insert_tx_data(transaction.deref_mut(), tx_hash, &tx)
+                .insert_tx_data(
+                    transaction.deref_mut(),
+                    tx_hash,
+                    &tx,
+                    parent_data_proposal_hash.clone(),
+                )
                 .await
                 .log_warn("Inserting tx data when tx in block");
 
@@ -445,6 +463,7 @@ impl Indexer {
                 self.send_blob_transaction_to_websocket_subscribers(
                     blob_tx,
                     tx_hash,
+                    parent_data_proposal_hash,
                     &block.hash,
                     i as u32,
                     tx.version,
@@ -456,15 +475,18 @@ impl Indexer {
 
         for (i, (tx_hash, events)) in (0..).zip(block.transactions_events.into_iter()) {
             let tx_hash: &TxHashDb = &tx_hash.into();
+            let parent_data_proposal_hash: DataProposalHashDb =
+                block.dp_hashes.get(&tx_hash.0).unwrap().clone().into();
             let serialized_events = serde_json::to_string(&events)?;
 
             sqlx::query(
-                "INSERT INTO transaction_state_events (block_hash, index, tx_hash, events)
-                VALUES ($1, $2, $3, $4::jsonb)",
+                "INSERT INTO transaction_state_events (block_hash, index, tx_hash, parent_dp_hash, events)
+                VALUES ($1, $2, $3, $4, $5::jsonb)",
             )
             .bind(block.hash.clone())
             .bind(i)
             .bind(tx_hash)
+            .bind(parent_data_proposal_hash)
             .bind(serialized_events)
             .execute(&mut *transaction)
             .await
@@ -478,34 +500,67 @@ impl Indexer {
 
         // Handling settled blob transactions
         for settled_blob_tx_hash in block.successful_txs {
+            let dp_hash_db: DataProposalHashDb = block
+                .dp_hashes
+                .get(&settled_blob_tx_hash)
+                .unwrap()
+                .clone()
+                .into();
             let tx_hash: &TxHashDb = &settled_blob_tx_hash.into();
-            sqlx::query("UPDATE transactions SET transaction_status = $1 WHERE tx_hash = $2")
+            sqlx::query("UPDATE transactions SET transaction_status = $1 WHERE tx_hash = $2 AND parent_dp_hash = $3")
                 .bind(TransactionStatus::Success)
                 .bind(tx_hash)
+                .bind(dp_hash_db)
                 .execute(&mut *transaction)
                 .await?;
         }
 
         for failed_blob_tx_hash in block.failed_txs {
+            let dp_hash_db: DataProposalHashDb = block
+                .dp_hashes
+                .get(&failed_blob_tx_hash)
+                .unwrap()
+                .clone()
+                .into();
             let tx_hash: &TxHashDb = &failed_blob_tx_hash.into();
-            sqlx::query("UPDATE transactions SET transaction_status = $1 WHERE tx_hash = $2")
+            sqlx::query("UPDATE transactions SET transaction_status = $1 WHERE tx_hash = $2 AND parent_dp_hash = $3")
                 .bind(TransactionStatus::Failure)
                 .bind(tx_hash)
+                .bind(dp_hash_db)
                 .execute(&mut *transaction)
                 .await?;
         }
 
         // Handling timed out blob transactions
         for timed_out_tx_hash in block.timed_out_txs {
+            let dp_hash_db: DataProposalHashDb = block
+                .dp_hashes
+                .get(&timed_out_tx_hash)
+                .unwrap()
+                .clone()
+                .into();
             let tx_hash: &TxHashDb = &timed_out_tx_hash.into();
-            sqlx::query("UPDATE transactions SET transaction_status = $1 WHERE tx_hash = $2")
+            sqlx::query("UPDATE transactions SET transaction_status = $1 WHERE tx_hash = $2 AND parent_dp_hash = $3")
                 .bind(TransactionStatus::TimedOut)
                 .bind(tx_hash)
+                .bind(dp_hash_db)
                 .execute(&mut *transaction)
                 .await?;
         }
 
         for handled_blob_proof_output in block.blob_proof_outputs {
+            let proof_dp_hash: DataProposalHashDb = block
+                .dp_hashes
+                .get(&handled_blob_proof_output.proof_tx_hash)
+                .unwrap()
+                .clone()
+                .into();
+            let blob_dp_hash: DataProposalHashDb = block
+                .dp_hashes
+                .get(&handled_blob_proof_output.blob_tx_hash)
+                .unwrap()
+                .clone()
+                .into();
             let proof_tx_hash: &TxHashDb = &handled_blob_proof_output.proof_tx_hash.into();
             let blob_tx_hash: &TxHashDb = &handled_blob_proof_output.blob_tx_hash.into();
             let blob_index = i32::try_from(handled_blob_proof_output.blob_index.0)
@@ -516,12 +571,15 @@ impl Indexer {
                 })?;
             let serialized_hyle_output =
                 serde_json::to_string(&handled_blob_proof_output.hyle_output)?;
+
             sqlx::query(
-                "INSERT INTO blob_proof_outputs (proof_tx_hash, blob_tx_hash, blob_index, blob_proof_output_index, contract_name, hyle_output, settled)
-                    VALUES ($1, $2, $3, $4, $5, $6::jsonb, false)",
+                "INSERT INTO blob_proof_outputs (proof_tx_hash, proof_parent_dp_hash, blob_tx_hash, blob_parent_dp_hash, blob_index, blob_proof_output_index, contract_name, hyle_output, settled)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, false)",
             )
             .bind(proof_tx_hash)
+            .bind(proof_dp_hash)
             .bind(blob_tx_hash)
+            .bind(blob_dp_hash)
             .bind(blob_index)
             .bind(blob_proof_output_index)
             .bind(handled_blob_proof_output.contract_name.0)
@@ -532,12 +590,15 @@ impl Indexer {
 
         // Handling verified blob (! must come after blob proof output, as it updates that)
         for (blob_tx_hash, blob_index, blob_proof_output_index) in block.verified_blobs {
+            let blob_tx_parent_dp_hash: DataProposalHashDb =
+                block.dp_hashes.get(&blob_tx_hash).unwrap().clone().into();
             let blob_tx_hash: &TxHashDb = &blob_tx_hash.into();
             let blob_index = i32::try_from(blob_index.0)
                 .map_err(|_| anyhow::anyhow!("Blob index is too large to fit into an i32"))?;
 
-            sqlx::query("UPDATE blobs SET verified = true WHERE tx_hash = $1 AND blob_index = $2")
+            sqlx::query("UPDATE blobs SET verified = true WHERE tx_hash = $1 AND parent_dp_hash = $2 AND blob_index = $3")
                 .bind(blob_tx_hash)
+                .bind(blob_tx_parent_dp_hash.clone())
                 .bind(blob_index)
                 .execute(&mut *transaction)
                 .await?;
@@ -548,8 +609,9 @@ impl Indexer {
                         anyhow::anyhow!("Blob proof output index is too large to fit into an i32")
                     })?;
 
-                sqlx::query("UPDATE blob_proof_outputs SET settled = true WHERE blob_tx_hash = $1 AND blob_index = $2 AND blob_proof_output_index = $3")
+                sqlx::query("UPDATE blob_proof_outputs SET settled = true WHERE blob_tx_hash = $1 AND blob_parent_dp_hash = $2 AND blob_index = $3 AND blob_proof_output_index = $4")
                     .bind(blob_tx_hash)
+                    .bind(blob_tx_parent_dp_hash)
                     .bind(blob_index)
                     .bind(blob_proof_output_index)
                     .execute(&mut *transaction)
@@ -563,14 +625,17 @@ impl Indexer {
             let program_id = &contract.program_id.0;
             let state_digest = &contract.state_digest.0;
             let contract_name = &contract.contract_name.0;
+            let tx_parent_dp_hash: DataProposalHashDb =
+                block.dp_hashes.get(&tx_hash).unwrap().clone().into();
             let tx_hash: &TxHashDb = &tx_hash.into();
 
             // Adding to Contract table
             sqlx::query(
-                "INSERT INTO contracts (tx_hash, verifier, program_id, state_digest, contract_name)
-                VALUES ($1, $2, $3, $4, $5)",
+                "INSERT INTO contracts (tx_hash, parent_dp_hash, verifier, program_id, state_digest, contract_name)
+                VALUES ($1, $2, $3, $4, $5, $6)",
             )
             .bind(tx_hash)
+            .bind(tx_parent_dp_hash)
             .bind(verifier)
             .bind(program_id)
             .bind(state_digest)
@@ -622,6 +687,7 @@ impl Indexer {
         &self,
         tx: &BlobTransaction,
         tx_hash: &TxHashDb,
+        dp_hash: &DataProposalHashDb,
         block_hash: &ConsensusProposalHash,
         index: u32,
         version: u32,
@@ -634,6 +700,7 @@ impl Indexer {
             {
                 let enriched_tx = TransactionWithBlobs {
                     tx_hash: tx_hash.0.clone(),
+                    parent_dp_hash: dp_hash.0.clone(),
                     block_hash: block_hash.clone(),
                     index,
                     version,
@@ -916,28 +983,43 @@ mod test {
             vec![99, 49, 1, 2, 3, 99, 50, 1, 2, 3],
         );
 
+        let register_tx_1_wd = Transaction {
+            version: 1,
+            transaction_data: TransactionData::Blob(register_tx_1_wd),
+        };
+
         indexer
-            .handle_mempool_status_event(MempoolStatusEvent::WaitingDissemination(Transaction {
-                version: 1,
-                transaction_data: TransactionData::Blob(register_tx_1_wd),
-            }))
+            .handle_mempool_status_event(MempoolStatusEvent::WaitingDissemination {
+                parent_data_proposal_hash: DataProposalHash::default(),
+                tx: register_tx_1_wd.clone(),
+            })
+            .await
+            .expect("MempoolStatusEvent");
+
+        let register_tx_2_wd = Transaction {
+            version: 1,
+            transaction_data: TransactionData::Blob(register_tx_2_wd),
+        };
+
+        indexer
+            .handle_mempool_status_event(MempoolStatusEvent::WaitingDissemination {
+                parent_data_proposal_hash: DataProposalHash::default(),
+                tx: register_tx_2_wd.clone(),
+            })
             .await
             .expect("MempoolStatusEvent");
         indexer
-            .handle_mempool_status_event(MempoolStatusEvent::WaitingDissemination(Transaction {
-                version: 1,
-                transaction_data: TransactionData::Blob(register_tx_2_wd),
-            }))
+            .handle_mempool_status_event(MempoolStatusEvent::WaitingDissemination {
+                parent_data_proposal_hash: DataProposalHash::default(),
+                tx: blob_transaction_wd.clone(),
+            })
             .await
             .expect("MempoolStatusEvent");
         indexer
-            .handle_mempool_status_event(MempoolStatusEvent::WaitingDissemination(
-                blob_transaction_wd,
-            ))
-            .await
-            .expect("MempoolStatusEvent");
-        indexer
-            .handle_mempool_status_event(MempoolStatusEvent::WaitingDissemination(proof_tx_1_wd))
+            .handle_mempool_status_event(MempoolStatusEvent::WaitingDissemination {
+                parent_data_proposal_hash: DataProposalHash::default(),
+                tx: proof_tx_1_wd.clone(),
+            })
             .await
             .expect("MempoolStatusEvent");
 

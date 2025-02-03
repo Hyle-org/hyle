@@ -605,7 +605,7 @@ mod tests {
         let rec: GenesisEvent = bus.try_recv().expect("recv");
         assert_matches!(rec, GenesisEvent::GenesisBlock(..));
         if let GenesisEvent::GenesisBlock(signed_block) = rec {
-            assert!(!signed_block.txs().is_empty());
+            assert!(signed_block.has_txs());
             assert_eq!(signed_block.consensus_proposal.staking_actions.len(), 1);
         }
     }
@@ -641,7 +641,7 @@ mod tests {
         let rec: GenesisEvent = bus.try_recv().expect("recv");
         assert_matches!(rec, GenesisEvent::GenesisBlock(..));
         if let GenesisEvent::GenesisBlock(signed_block) = rec {
-            assert!(!signed_block.txs().is_empty());
+            assert!(signed_block.has_txs());
             assert_eq!(signed_block.consensus_proposal.staking_actions.len(), 2);
         }
     }
@@ -679,7 +679,7 @@ mod tests {
         let rec = bus.try_recv().expect("recv");
         assert_matches!(rec, GenesisEvent::GenesisBlock(..));
         if let GenesisEvent::GenesisBlock(signed_block) = rec {
-            assert!(!signed_block.txs().is_empty());
+            assert!(signed_block.has_txs());
             assert_eq!(signed_block.consensus_proposal.staking_actions.len(), 2);
         }
     }

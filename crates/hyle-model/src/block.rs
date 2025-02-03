@@ -14,7 +14,8 @@ pub struct Block {
     pub hash: ConsensusProposalHash,
     pub block_height: BlockHeight,
     pub block_timestamp: u64,
-    pub txs: Vec<Transaction>,
+    pub txs: Vec<(TxId, Transaction)>,
+    pub dp_hashes: BTreeMap<TxHash, DataProposalHash>,
     pub successful_txs: Vec<TxHash>,
     pub failed_txs: Vec<TxHash>,
     pub timed_out_txs: Vec<TxHash>,
@@ -30,6 +31,10 @@ pub struct Block {
 impl Block {
     pub fn total_txs(&self) -> usize {
         self.txs.len()
+    }
+
+    pub fn get_tx_id(&self, hash: &TxHash) -> TxId {
+        TxId(self.dp_hashes.get(hash).unwrap().clone(), hash.clone())
     }
 }
 
@@ -62,12 +67,44 @@ impl SignedBlock {
         BlockHeight(self.consensus_proposal.slot)
     }
 
-    pub fn txs(&self) -> Vec<Transaction> {
+    pub fn has_txs(&self) -> bool {
+        for (_, txs) in self.iter_txs() {
+            if !txs.is_empty() {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    pub fn count_txs(&self) -> usize {
+        self.iter_txs().map(|(_, txs)| txs.len()).sum()
+    }
+
+    pub fn iter_txs(&self) -> impl Iterator<Item = (DataProposalHash, &Vec<Transaction>)> {
         self.data_proposals
             .iter()
-            .flat_map(|(_, dps)| dps)
-            .flat_map(|dp| dp.txs.clone())
-            .collect()
+            .flat_map(|(_pub_key, dps)| dps)
+            .map(|dp| {
+                (
+                    dp.parent_data_proposal_hash
+                        .clone()
+                        .unwrap_or(DataProposalHash("".to_string())),
+                    &dp.txs,
+                )
+            })
+    }
+
+    pub fn iter_txs_with_id(&self) -> impl Iterator<Item = (TxId, &Transaction)> {
+        self.iter_txs().flat_map(move |(dp_hash, txs)| {
+            txs.iter()
+                .map(move |tx| (TxId(dp_hash.clone(), tx.hash()), tx))
+        })
+    }
+
+    pub fn iter_clone_txs_with_id(&self) -> impl Iterator<Item = (TxId, Transaction)> + '_ {
+        self.iter_txs_with_id()
+            .map(|(tx_id, tx)| (tx_id, tx.clone()))
     }
 }
 impl Hashable<ConsensusProposalHash> for SignedBlock {

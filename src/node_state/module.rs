@@ -88,7 +88,7 @@ impl Module for NodeStateModule {
             }
             command_response<QueryUnsettledTx, UnsettledBlobTransaction> tx_hash => {
                 match self.inner.unsettled_transactions.get(&tx_hash.0) {
-                    Some(tx) => Ok((*tx).clone()),
+                    Some(tx) => Ok(tx.clone()),
                     None => Err(anyhow::anyhow!("Transaction not found")),
                 }
             }

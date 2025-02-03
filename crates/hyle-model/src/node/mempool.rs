@@ -20,6 +20,7 @@ impl DataSized for DataProposal {
     }
 }
 
+#[cfg_attr(feature = "full", derive(utoipa::ToSchema))]
 #[derive(
     Clone,
     Debug,
@@ -35,6 +36,12 @@ impl DataSized for DataProposal {
     PartialOrd,
 )]
 pub struct DataProposalHash(pub String);
+
+impl DataProposalHash {
+    pub fn is_empty(&self) -> bool {
+        self.0.len() == 0
+    }
+}
 
 impl Hashable<DataProposalHash> for DataProposal {
     fn hash(&self) -> DataProposalHash {

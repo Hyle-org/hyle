@@ -98,6 +98,7 @@ pub struct BlobProofOutputHash(pub Vec<u8>);
 impl Hashable<BlobProofOutputHash> for BlobProofOutput {
     fn hash(&self) -> BlobProofOutputHash {
         let mut hasher = Sha3_256::new();
+        // blob_tx_id.0 == data_proposal hash is not taken into account
         hasher.update(self.blob_tx_hash.0.as_bytes());
         hasher.update(self.original_proof_hash.0.as_bytes());
         hasher.update(self.program_id.0.clone());
@@ -135,7 +136,7 @@ pub enum TransactionStateEvent {
     Error(String),
     NewProof {
         blob_index: BlobIndex,
-        proof_tx: TxHash,
+        proof_tx_hash: TxHash,
     },
     SettleEvent(String),
     Settled,

@@ -1,9 +1,9 @@
 use borsh::{BorshDeserialize, BorshSerialize};
+use hyle_model::TxHash;
 use tracing::warn;
 
 use crate::model::ContractName;
 use crate::model::UnsettledBlobTransaction;
-use hyle_contract_sdk::TxHash;
 use std::collections::HashSet;
 use std::collections::{HashMap, VecDeque};
 
@@ -16,8 +16,8 @@ pub struct OrderedTxMap {
 
 impl OrderedTxMap {
     #[allow(dead_code)]
-    pub fn get(&self, hash: &TxHash) -> Option<&UnsettledBlobTransaction> {
-        self.map.get(hash)
+    pub fn get(&self, id: &TxHash) -> Option<&UnsettledBlobTransaction> {
+        self.map.get(id)
     }
 
     /// Returns true if the tx is the next to settle for all the contracts it contains
@@ -41,9 +41,9 @@ impl OrderedTxMap {
 
     pub fn get_for_settlement(
         &mut self,
-        hash: &TxHash,
+        id: &TxHash,
     ) -> Option<(&mut UnsettledBlobTransaction, bool)> {
-        let tx = self.map.get_mut(hash);
+        let tx = self.map.get_mut(id);
         match tx {
             Some(tx) => {
                 let is_next_unsettled_tx = tx.blobs.iter().all(|blob_metadata| {
@@ -124,7 +124,7 @@ mod tests {
 
     use crate::model::{BlobsHash, UnsettledBlobMetadata};
     use hyle_contract_sdk::{Blob, BlobData, Identity};
-    use hyle_model::TxContext;
+    use hyle_model::{TxContext, TxHash};
 
     use super::*;
 

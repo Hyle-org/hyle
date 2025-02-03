@@ -215,7 +215,7 @@ pub async fn get_transactions_by_contract(
             r#"
             SELECT t.*
             FROM transactions t
-            JOIN blobs b ON t.tx_hash = b.tx_hash
+            JOIN blobs b ON t.tx_hash = b.tx_hash AND t.parent_dp_hash = b.parent_dp_hash
             WHERE b.contract_name = $1
             ORDER BY t.block_hash DESC, t.index ASC
             LIMIT $2
@@ -285,7 +285,7 @@ pub async fn get_transaction_with_hash(
 ) -> Result<Json<APITransaction>, StatusCode> {
     let transaction = sqlx::query_as::<_, TransactionDb>(
         r#"
-        SELECT *
+        SELECT tx_hash, version, transaction_type, transaction_status, parent_dp_hash, block_hash, index 
         FROM transactions
         WHERE tx_hash = $1
         ORDER BY index ASC
@@ -295,6 +295,7 @@ pub async fn get_transaction_with_hash(
     .fetch_optional(&state.db)
     .await
     .map(|db| db.map(Into::<APITransaction>::into))
+    .log_error("Select transaction")
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     match transaction {
@@ -378,12 +379,13 @@ pub async fn get_blob_transactions_by_contract(
         with blobs as (
             SELECT blobs.*, array_remove(ARRAY_AGG(blob_proof_outputs.hyle_output), NULL) AS proof_outputs
             FROM blobs
-            LEFT JOIN blob_proof_outputs ON blobs.tx_hash = blob_proof_outputs.blob_tx_hash AND blobs.blob_index = blob_proof_outputs.blob_index
+            LEFT JOIN blob_proof_outputs ON blobs.parent_dp_hash = blob_proof_outputs.blob_parent_dp_hash AND blobs.tx_hash = blob_proof_outputs.blob_tx_hash AND blobs.blob_index = blob_proof_outputs.blob_index
             WHERE blobs.contract_name = $1
-            GROUP BY blobs.tx_hash, blobs.blob_index, blobs.identity
+            GROUP BY blobs.parent_dp_hash, blobs.tx_hash, blobs.blob_index, blobs.identity, blobs.contract_name, blobs.data, blobs.verified
         )
         SELECT
             t.tx_hash,
+            t.parent_dp_hash,
             t.block_hash,
             t.index,
             t.version,
@@ -392,9 +394,10 @@ pub async fn get_blob_transactions_by_contract(
             b.identity,
             array_agg(ROW(b.contract_name, b.data, b.proof_outputs)) AS blobs
         FROM blobs b
-        JOIN transactions t on t.tx_hash = b.tx_hash
+        JOIN transactions t on t.tx_hash = b.tx_hash AND t.parent_dp_hash = b.parent_dp_hash
         GROUP BY
             t.tx_hash,
+            t.parent_dp_hash,
             t.block_hash,
             t.index,
             t.version,
@@ -413,6 +416,7 @@ pub async fn get_blob_transactions_by_contract(
         .into_iter()
         .map(|row| {
             let tx_hash: TxHashDb = row.try_get("tx_hash")?;
+            let dp_hash: DataProposalHashDb = row.try_get("parent_dp_hash")?;
             let block_hash: ConsensusProposalHash = row.try_get("block_hash")?;
             let index: i32 = row.try_get("index")?;
             let version: i32 = row.try_get("version")?;
@@ -435,6 +439,7 @@ pub async fn get_blob_transactions_by_contract(
 
             Ok(TransactionWithBlobs {
                 tx_hash: tx_hash.0,
+                parent_dp_hash: dp_hash.0,
                 block_hash,
                 index,
                 version,

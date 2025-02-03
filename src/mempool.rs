@@ -94,10 +94,21 @@ struct MempoolBusClient {
 }
 }
 
+/// Identifies where a tx is, by its hash. Useful to resolve tx hashes to tx ids (tx_hash, data_proposal_hash)
+#[derive(Default, BorshSerialize, BorshDeserialize)]
+enum TxLocation {
+    // In a data proposal identified by its hash
+    InDataProposal(DataProposalHash),
+    #[default]
+    // Not yet in a data proposal
+    Local,
+}
+
 #[derive(Default, BorshSerialize, BorshDeserialize)]
 pub struct MempoolStore {
     buffered_proposals: BTreeMap<ValidatorPublicKey, Vec<DataProposal>>,
     waiting_dissemination_txs: Vec<Transaction>,
+    tx_location: HashMap<TxHash, TxLocation>,
     last_ccp: Option<CommittedConsensusProposal>,
     blocks_under_contruction: VecDeque<BlockUnderConstruction>,
     buc_build_start_height: Option<u64>,
@@ -170,7 +181,11 @@ impl BusMessage for MempoolBlockEvent {}
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub enum MempoolStatusEvent {
-    WaitingDissemination(Transaction),
+    WaitingDissemination {
+        parent_data_proposal_hash: DataProposalHash,
+        tx: Transaction,
+    },
+    // DataProposalCreated(TimestampMs, DataProposalHash, Vec<TxHash>),
 }
 impl BusMessage for MempoolStatusEvent {}
 
@@ -343,20 +358,24 @@ impl Mempool {
 
     fn handle_api_message(&mut self, command: RestApiMessage) {
         match command {
-            RestApiMessage::NewTx(tx) => self.on_new_tx(tx),
+            RestApiMessage::NewTx(tx) => {
+                _ = self.on_new_tx(tx).log_error("New Tx");
+            }
         }
     }
 
     fn handle_tcp_server_message(&mut self, command: TcpServerMessage) {
         match command {
-            TcpServerMessage::NewTx(tx) => self.on_new_tx(tx),
+            TcpServerMessage::NewTx(tx) => {
+                _ = self.on_new_tx(tx).log_error("New Tx");
+            }
         }
     }
 
     fn handle_internal_event(&mut self, event: InternalMempoolEvent) -> Result<()> {
         match event {
             InternalMempoolEvent::OnProcessedNewTx(tx) => {
-                self.on_new_tx(tx);
+                _ = self.on_new_tx(tx).log_error("Handling internal event");
                 Ok(())
             }
             InternalMempoolEvent::OnProcessedDataProposal((validator, verdict, data_proposal)) => {
@@ -371,7 +390,13 @@ impl Mempool {
         // Create new DataProposal with pending txs
         let crypto = self.crypto.clone();
         let new_txs = std::mem::take(&mut self.waiting_dissemination_txs);
-        self.lanes.new_data_proposal(&crypto, new_txs)?; // TODO: copy crypto in storage
+        // TODO: copy crypto in storage
+        if let Some((dp_hash, tx_hashes)) = self.lanes.new_data_proposal(&crypto, new_txs)? {
+            for tx_hash in tx_hashes.iter() {
+                self.tx_location
+                    .insert(tx_hash.clone(), TxLocation::InDataProposal(dp_hash.clone()));
+            }
+        }
 
         let last_cut = self
             .last_ccp
@@ -926,7 +951,7 @@ impl Mempool {
         Ok(())
     }
 
-    fn on_new_tx(&mut self, tx: Transaction) {
+    fn on_new_tx(&mut self, tx: Transaction) -> Result<()> {
         // TODO: Verify fees ?
 
         let tx_hash = tx.hash();
@@ -954,13 +979,13 @@ impl Mempool {
                         .send(InternalMempoolEvent::OnProcessedNewTx(tx))
                         .log_warn("sending processed TX")
                 });
-                return;
+                return Ok(());
             }
             TransactionData::VerifiedProof(ref proof_tx) => {
                 debug!(
                     "Got verified proof tx {} for {}",
-                    tx.hash(),
-                    proof_tx.contract_name
+                    tx_hash,
+                    proof_tx.contract_name.clone()
                 );
             }
         }
@@ -972,9 +997,21 @@ impl Mempool {
         self.metrics
             .snapshot_pending_tx(self.waiting_dissemination_txs.len());
 
-        let status_event = MempoolStatusEvent::WaitingDissemination(tx);
+        let parent_data_proposal_hash = self
+            .lanes
+            .lanes_tip
+            .get(self.crypto.validator_pubkey())
+            .context("Retrieving local tip")?
+            .clone()
+            .0;
+
+        let status_event = MempoolStatusEvent::WaitingDissemination {
+            parent_data_proposal_hash,
+            tx,
+        };
         let error_log = format!("Sending Status event{:?}", status_event);
-        _ = self.bus.send(status_event).log_error(error_log);
+        _ = self.bus.send(status_event).context(error_log)?;
+        Ok(())
     }
 
     fn process_proof_tx(
@@ -1033,7 +1070,7 @@ impl Mempool {
                 .map(
                     |(blob_tx_hash, (hyle_output, program_id))| BlobProofOutput {
                         original_proof_hash: ProofDataHash("todo?".to_owned()),
-                        blob_tx_hash,
+                        blob_tx_hash: blob_tx_hash.clone(),
                         hyle_output,
                         program_id,
                     },

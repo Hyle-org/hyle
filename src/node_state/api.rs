@@ -90,7 +90,7 @@ pub async fn get_contract(
     get,
     path = "/unsettled_tx/{blob_tx_hash}",
     params(
-        ("blob_tx_hash" = String, Path, description = "Blob tx hash")
+        ("blob_tx_hash" = String, Path, description = "Blob tx hash"),
     ),
     tag = "Node State",
     responses(

@@ -6,6 +6,8 @@ use std::{
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 
+use crate::DataProposalHash;
+
 #[derive(
     Debug,
     Serialize,
@@ -113,8 +115,33 @@ pub struct TxHash(pub String);
     PartialEq,
     Eq,
     Hash,
-    BorshSerialize,
+    Ord,
+    PartialOrd,
     BorshDeserialize,
+    BorshSerialize,
+)]
+#[cfg_attr(feature = "full", derive(utoipa::ToSchema))]
+pub struct TxId(pub DataProposalHash, pub TxHash);
+impl TxId {
+    pub fn as_bytes(&self) -> Vec<u8> {
+        let mut data = Vec::new();
+        data.extend_from_slice(self.0 .0.as_bytes());
+        data.extend_from_slice(self.1 .0.as_bytes());
+        data
+    }
+}
+
+#[derive(
+    Default,
+    Serialize,
+    Deserialize,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Hash,
+    BorshDeserialize,
+    BorshSerialize,
     Copy,
 )]
 #[cfg_attr(feature = "full", derive(utoipa::ToSchema))]
@@ -429,6 +456,11 @@ impl From<&[u8]> for ProgramId {
 impl Display for TxHash {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", &self.0)
+    }
+}
+impl Display for TxId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}/{}", &self.0 .0, &self.1 .0)
     }
 }
 impl Display for BlobIndex {

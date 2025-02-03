@@ -147,9 +147,9 @@ async fn impl_test_mempool_isnt_blocked_by_proof_verification() -> Result<()> {
         match evt {
             NodeStateEvent::NewBlock(block) => {
                 info!("Got Block");
-                if block.txs.iter().any(|tx| {
+                if block.txs.iter().any(|(tx_id, tx)| {
                     if let TransactionData::VerifiedProof(data) = &tx.transaction_data {
-                        info!("Got TX in block {}", block.block_height);
+                        info!("Got TX {} in block {}", tx_id, block.block_height);
                         data.contract_name == contract_name
                     } else {
                         false
@@ -233,7 +233,7 @@ async fn impl_test_mempool_isnt_blocked_by_proof_verification() -> Result<()> {
         match cut {
             NodeStateEvent::NewBlock(block) => {
                 info!("Got block");
-                if block.txs.iter().any(|tx| {
+                if block.txs.iter().any(|(_tx_id, tx)| {
                     if let TransactionData::VerifiedProof(data) = &tx.transaction_data {
                         data.contract_name == contract_name
                     } else {
