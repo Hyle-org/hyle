@@ -16,7 +16,6 @@ pub mod metadata {
 }
 use metadata::*;
 
-
 struct HydentityPseudoExecutor {}
 impl ClientSdkExecutor for HydentityPseudoExecutor {
     fn execute(

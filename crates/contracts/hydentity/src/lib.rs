@@ -109,7 +109,6 @@ impl Digestable for Hydentity {
     }
 }
 
-
 impl TryFrom<sdk::StateDigest> for Hydentity {
     type Error = anyhow::Error;
 
@@ -119,7 +118,7 @@ impl TryFrom<sdk::StateDigest> for Hydentity {
         Ok(balances)
     }
 }
-    
+
 use core::str::from_utf8;
 use sdk::identity_provider::IdentityAction;
 
