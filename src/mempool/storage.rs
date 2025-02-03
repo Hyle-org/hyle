@@ -71,10 +71,8 @@ impl Display for Storage {
 }
 
 impl Storage {
-    pub fn new(
-        id: ValidatorPublicKey,
-        lanes_tip: HashMap<ValidatorPublicKey, DataProposalHash>,
-    ) -> Storage {
+    pub fn new(id: ValidatorPublicKey) -> Storage {
+        let lanes_tip = HashMap::default();
         let mut lanes = HashMap::new();
         lanes.insert(id.clone(), Lane::default());
         Storage {
@@ -841,7 +839,6 @@ impl Lane {
 mod tests {
     #![allow(clippy::indexing_slicing)]
     use std::{
-        collections::HashMap,
         sync::{Arc, RwLock},
         vec,
     };
@@ -1010,7 +1007,7 @@ mod tests {
     fn test_add_missing_lane_entries() {
         let crypto1 = crypto::BlstCrypto::new("1".to_owned()).unwrap();
         let pubkey1 = crypto1.validator_pubkey();
-        let mut store = Storage::new(pubkey1.clone(), HashMap::default());
+        let mut store = Storage::new(pubkey1.clone());
 
         let data_proposal1 = DataProposal {
             parent_data_proposal_hash: None,
@@ -1082,7 +1079,7 @@ mod tests {
     fn test_get_lane_entries_between_hashes() {
         let crypto1 = crypto::BlstCrypto::new("1".to_owned()).unwrap();
         let pubkey1 = crypto1.validator_pubkey();
-        let mut store = Storage::new(pubkey1.clone(), HashMap::default());
+        let mut store = Storage::new(pubkey1.clone());
 
         let data_proposal1 = DataProposal {
             parent_data_proposal_hash: None,
@@ -1186,7 +1183,7 @@ mod tests {
         let crypto2 = crypto::BlstCrypto::new("2".to_owned()).unwrap();
         let pubkey1 = crypto1.validator_pubkey();
         let pubkey2 = crypto2.validator_pubkey();
-        let mut store1 = Storage::new(pubkey1.clone(), HashMap::default());
+        let mut store1 = Storage::new(pubkey1.clone());
 
         let data_proposal = DataProposal {
             parent_data_proposal_hash: None,
@@ -1236,8 +1233,8 @@ mod tests {
         let crypto2 = crypto::BlstCrypto::new("2".to_owned()).unwrap();
         let pubkey1 = crypto1.validator_pubkey();
         let pubkey2 = crypto2.validator_pubkey();
-        let mut store1 = Storage::new(pubkey1.clone(), HashMap::default());
-        let mut store2 = Storage::new(pubkey2.clone(), HashMap::default());
+        let mut store1 = Storage::new(pubkey1.clone());
+        let mut store2 = Storage::new(pubkey2.clone());
         let known_contracts = Arc::new(RwLock::new(KnownContracts::default()));
 
         // First data proposal
@@ -1431,8 +1428,8 @@ mod tests {
         let pubkey1 = crypto1.validator_pubkey();
         let pubkey2 = crypto2.validator_pubkey();
         let pubkey3 = crypto3.validator_pubkey();
-        let mut store2 = Storage::new(pubkey2.clone(), HashMap::default());
-        let mut store3 = Storage::new(pubkey3.clone(), HashMap::default());
+        let mut store2 = Storage::new(pubkey2.clone());
+        let mut store3 = Storage::new(pubkey3.clone());
         let known_contracts2 = Arc::new(RwLock::new(KnownContracts::default()));
 
         let txs = vec![
@@ -1532,7 +1529,7 @@ mod tests {
         let pubkey1 = crypto1.validator_pubkey();
         let pubkey2 = crypto2.validator_pubkey();
 
-        let mut store1 = Storage::new(pubkey1.clone(), HashMap::default());
+        let mut store1 = Storage::new(pubkey1.clone());
         let known_contracts = Arc::new(RwLock::new(KnownContracts::default()));
 
         let contract_name = ContractName::new("test");
@@ -1564,7 +1561,7 @@ mod tests {
         let crypto1 = crypto::BlstCrypto::new("1".to_owned()).unwrap();
         let pubkey1 = crypto1.validator_pubkey();
 
-        let mut store1 = Storage::new(pubkey1.clone(), HashMap::default());
+        let mut store1 = Storage::new(pubkey1.clone());
         let known_contracts = Arc::new(RwLock::new(KnownContracts::default()));
 
         let contract_name = ContractName::new("test");
@@ -1608,7 +1605,7 @@ mod tests {
         let crypto1 = crypto::BlstCrypto::new("1".to_owned()).unwrap();
         let pubkey1 = crypto1.validator_pubkey();
 
-        let mut store1 = Storage::new(pubkey1.clone(), HashMap::default());
+        let mut store1 = Storage::new(pubkey1.clone());
         let known_contracts = Arc::new(RwLock::new(KnownContracts::default()));
 
         let contract_name = ContractName::new("test");
@@ -1652,7 +1649,7 @@ mod tests {
         let crypto1 = crypto::BlstCrypto::new("1".to_owned()).unwrap();
         let pubkey1 = crypto1.validator_pubkey();
 
-        let mut store1 = Storage::new(pubkey1.clone(), HashMap::default());
+        let mut store1 = Storage::new(pubkey1.clone());
         let known_contracts = Arc::new(RwLock::new(KnownContracts::default()));
 
         let contract_name = ContractName::new("test");
@@ -1689,7 +1686,7 @@ mod tests {
         let pubkey1 = crypto1.validator_pubkey();
         let pubkey2 = crypto2.validator_pubkey();
 
-        let mut store1 = Storage::new(pubkey2.clone(), HashMap::default());
+        let mut store1 = Storage::new(pubkey2.clone());
         let known_contracts = Arc::new(RwLock::new(KnownContracts::default()));
 
         let contract_name = ContractName::new("test");
@@ -1722,8 +1719,8 @@ mod tests {
         let pubkey1 = crypto1.validator_pubkey();
         let pubkey2 = crypto2.validator_pubkey();
 
-        let mut store1 = Storage::new(pubkey1.clone(), HashMap::default());
-        let mut store2 = Storage::new(pubkey2.clone(), HashMap::default());
+        let mut store1 = Storage::new(pubkey1.clone());
+        let mut store2 = Storage::new(pubkey2.clone());
         let known_contracts1 = Arc::new(RwLock::new(KnownContracts::default()));
         let known_contracts2 = Arc::new(RwLock::new(KnownContracts::default()));
         let mut staking = Staking::default();
@@ -1798,7 +1795,7 @@ mod tests {
         let pubkey1 = crypto1.validator_pubkey();
         let pubkey2 = crypto2.validator_pubkey();
 
-        let mut store1 = Storage::new(pubkey1.clone(), HashMap::default());
+        let mut store1 = Storage::new(pubkey1.clone());
         let mut staking = Staking::default();
 
         staking.stake("pk1".into(), 100).expect("Staking failed");

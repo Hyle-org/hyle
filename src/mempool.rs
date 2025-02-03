@@ -176,15 +176,6 @@ impl Module for Mempool {
             }
         }
 
-        let lanes_tip = Self::load_from_disk::<HashMap<ValidatorPublicKey, DataProposalHash>>(
-            ctx.common
-                .config
-                .data_directory
-                .join("mempool_lanes_tip.bin")
-                .as_path(),
-        )
-        .unwrap_or_default();
-
         let attributes = Self::load_from_disk::<MempoolStore>(
             ctx.common
                 .config
@@ -193,7 +184,7 @@ impl Module for Mempool {
                 .as_path(),
         )
         .unwrap_or(MempoolStore {
-            storage: Storage::new(ctx.node.crypto.validator_pubkey().clone(), lanes_tip),
+            storage: Storage::new(ctx.node.crypto.validator_pubkey().clone()),
             ..MempoolStore::default()
         });
 
@@ -270,12 +261,6 @@ impl Mempool {
 
         if let Some(file) = &self.file {
             if let Err(e) = Self::save_on_disk(file.join("mempool.bin").as_path(), &self.inner) {
-                warn!("Failed to save mempool storage on disk: {}", e);
-            }
-            if let Err(e) = Self::save_on_disk(
-                file.join("mempool_lanes_tip.bin").as_path(),
-                &self.storage.lanes_tip,
-            ) {
                 warn!("Failed to save mempool storage on disk: {}", e);
             }
         }
@@ -1186,7 +1171,7 @@ pub mod test {
     impl MempoolTestCtx {
         pub async fn build_mempool(shared_bus: &SharedMessageBus, crypto: BlstCrypto) -> Mempool {
             let pubkey = crypto.validator_pubkey();
-            let storage = Storage::new(pubkey.clone(), HashMap::default());
+            let storage = Storage::new(pubkey.clone());
             let bus = MempoolBusClient::new_from_bus(shared_bus.new_handle()).await;
 
             // Initialize Mempool
