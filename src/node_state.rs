@@ -853,7 +853,6 @@ pub mod test {
             data_proposals: vec![(
                 ValidatorPublicKey::default(),
                 vec![DataProposal {
-                    id: 1,
                     parent_data_proposal_hash: None,
                     txs,
                 }],

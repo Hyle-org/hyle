@@ -471,7 +471,6 @@ impl Genesis {
         initial_validators: Vec<ValidatorPublicKey>,
     ) -> SignedBlock {
         let dp = DataProposal {
-            id: 0,
             parent_data_proposal_hash: None,
             txs: genesis_txs,
         };

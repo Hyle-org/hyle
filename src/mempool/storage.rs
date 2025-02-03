@@ -30,6 +30,12 @@ pub enum DataProposalVerdict {
     Refuse,
 }
 
+pub enum CanBePutOnTop {
+    Yes,
+    No,
+    Fork,
+}
+
 #[derive(Debug, Clone, Encode, Decode, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LaneEntry {
     pub data_proposal: DataProposal,
@@ -184,7 +190,7 @@ impl Storage {
                 Ok((data_proposal_hash.clone(), lane_entry.signatures.clone()))
             }
             None => {
-                bail!("Received vote from validator {}  for unknown DataProposal ({data_proposal_hash})", msg.signature.validator);
+                bail!("Received vote from validator {} for unknown DataProposal ({data_proposal_hash})", msg.signature.validator);
             }
         }
     }
@@ -220,77 +226,35 @@ impl Storage {
         }
 
         let validator_lane = self.lanes.entry(validator.clone()).or_default();
-
-        let last_known_id = validator_lane.get_last_proposal_id().unwrap_or(&0);
-        let last_known_hash = validator_lane.get_last_proposal_hash();
         let validator_lane_size = validator_lane.get_lane_size();
 
-        let local_parent = data_proposal
-            .parent_data_proposal_hash
-            .as_ref()
-            .and_then(|hash| validator_lane.data_proposals.get(hash));
-
-        let local_parent_data_proposal_hash =
-            local_parent.map(|lane_entry| lane_entry.data_proposal.hash());
-
-        let local_parent_data_proposal_id = local_parent
-            .map(|lane_entry| lane_entry.data_proposal.id)
-            .unwrap_or(0);
-
-        // LEGIT DATA PROPOSAL
-
-        // id == 0 + no registered data proposals = first data proposal to be processed
-        // id == last + 1 and the parent is present locally means no fork
-        let first_data_proposal = data_proposal.id == 0 && validator_lane.data_proposals.is_empty();
-
-        let valid_next_data_proposal = data_proposal.id == last_known_id + 1
-            && data_proposal.parent_data_proposal_hash == local_parent_data_proposal_hash
-            && local_parent_data_proposal_id + 1 == data_proposal.id;
-
-        if first_data_proposal || valid_next_data_proposal {
-            return (DataProposalVerdict::Process, None);
-        }
-
-        // FORKS
-
-        // Find local data proposal that has the same parent as the received data proposal
-        let data_proposal_already_on_top_of_parent =
-            validator_lane.data_proposals.iter().find(|dp| {
-                dp.1.data_proposal.parent_data_proposal_hash
-                    == data_proposal.parent_data_proposal_hash
-            });
-        // A fork happens when the received data proposal points
-        // [id: 2] abc <- [id: 3] fgh
-        //             <- [id: 3] ijkl
-
-        // A different data proposal is already referring to the parent
-        if let Some(p) = data_proposal_already_on_top_of_parent {
-            if &p.1.data_proposal != data_proposal {
-                // Means a later data proposal is already on top of the parent
-                warn!("Fork detected on lane {:?}", validator);
-                return (DataProposalVerdict::Refuse, None);
-            }
-        }
-
         // ALREADY STORED
-
         // Already present data proposal (just resend a vote)
-        if last_known_hash == Some(&data_proposal.hash()) {
+        let dp_hash = data_proposal.hash();
+        if validator_lane.has_proposal(&dp_hash) {
             return (DataProposalVerdict::Vote, Some(validator_lane_size));
         }
 
-        // Missing data, let's sync before taking a decision
-        if local_parent_data_proposal_hash.is_none() {
-            // Get the last known parent hash in order to get all the next ones
-            return (DataProposalVerdict::Wait(last_known_hash.cloned()), None);
+        match self.can_be_put_on_top(validator, data_proposal.parent_data_proposal_hash.as_ref()) {
+            // PARENT UNKNOWN
+            CanBePutOnTop::No => {
+                let last_known_hash = self.lanes_tip.get(validator);
+                // Get the last known parent hash in order to get all the next ones
+                (DataProposalVerdict::Wait(last_known_hash.cloned()), None)
+            }
+            // LEGIT DATA PROPOSAL
+            CanBePutOnTop::Yes => (DataProposalVerdict::Process, None),
+            CanBePutOnTop::Fork => {
+                // FORK DETECTED
+                let last_known_hash = self.lanes_tip.get(validator);
+                warn!(
+                    "DataProposal ({dp_hash}) cannot be handled because it creates a fork: last dp hash {:?} while proposed parent_data_proposal_hash: {:?}",
+                    last_known_hash,
+                    data_proposal.parent_data_proposal_hash
+                );
+                (DataProposalVerdict::Refuse, None)
+            }
         }
-
-        error!(
-            "DataProposal cannot be handled: {:?}",
-            data_proposal.clone()
-        );
-
-        (DataProposalVerdict::Refuse, None)
     }
 
     pub fn process_data_proposal(
@@ -408,31 +372,81 @@ impl Storage {
         DataProposalVerdict::Vote
     }
 
+    pub fn put(&mut self, validator: ValidatorPublicKey, lane_entry: LaneEntry) -> Result<()> {
+        match self.can_be_put_on_top(
+            &validator,
+            lane_entry.data_proposal.parent_data_proposal_hash.as_ref(),
+        ) {
+            CanBePutOnTop::No => bail!(
+                "Can't store DataProposal {}, as parent is unknown ",
+                lane_entry.data_proposal.hash()
+            ),
+            CanBePutOnTop::Yes => {
+                let data_proposal_hash = lane_entry.data_proposal.hash();
+                // Validator's lane tip is only updated if DP-chain is respected
+                self.lanes_tip
+                    .insert(validator.clone(), data_proposal_hash.clone());
+
+                // Add DataProposal to validator's lane
+                self.lanes
+                    .entry(validator.clone())
+                    .or_default()
+                    .add_proposal(data_proposal_hash, lane_entry);
+                Ok(())
+            }
+            CanBePutOnTop::Fork => {
+                let last_known_hash = self.lanes_tip.get(&validator);
+                bail!(
+                    "DataProposal cannot be put in lane because it creates a fork: last dp hash {:?} while proposed parent_data_proposal_hash: {:?}",
+                    last_known_hash,
+                    lane_entry.data_proposal.parent_data_proposal_hash
+                )
+            }
+        }
+    }
+
     pub fn store_data_proposal(
         &mut self,
         crypto: &BlstCrypto,
         validator: &ValidatorPublicKey,
         data_proposal: DataProposal,
-    ) -> LaneBytesSize {
-        // Updating validator's lane tip
-        if let Some(validator_tip) = self.lanes_tip.get(validator) {
-            // If validator already has a lane, we only update the tip if DP-chain is respected
-            if let Some(parent_dp_hash) = &data_proposal.parent_data_proposal_hash {
-                if validator_tip == parent_dp_hash {
-                    self.lanes_tip
-                        .insert(validator.clone(), data_proposal.hash());
-                }
-            }
-        } else {
-            self.lanes_tip
-                .insert(validator.clone(), data_proposal.hash());
+    ) -> Result<LaneBytesSize> {
+        let validator_lane = self.lanes.entry(validator.clone()).or_default();
+        if let Some(le) = validator_lane.data_proposals.get(&data_proposal.hash()) {
+            warn!(
+                "DataProposal {} already exists in lane, size: {}",
+                data_proposal.hash(),
+                le.cumul_size
+            );
+            return Ok(le.cumul_size);
         }
 
-        // Add DataProposal to validator's lane
-        self.lanes
-            .entry(validator.clone())
-            .or_default()
-            .add_new_proposal(crypto, data_proposal)
+        match self.can_be_put_on_top(validator, data_proposal.parent_data_proposal_hash.as_ref()) {
+            CanBePutOnTop::No => bail!(
+                "Can't store DataProposal {}, as parent is unknown ",
+                data_proposal.hash()
+            ),
+            CanBePutOnTop::Yes => {
+                // Updating validator's lane tip
+                self.lanes_tip
+                    .insert(validator.clone(), data_proposal.hash());
+
+                // Add DataProposal to validator's lane
+                Ok(self
+                    .lanes
+                    .entry(validator.clone())
+                    .or_default()
+                    .add_new_proposal(crypto, data_proposal))
+            }
+            CanBePutOnTop::Fork => {
+                let last_known_hash = self.lanes_tip.get(validator);
+                bail!(
+                    "DataProposal can't be stored because it creates a fork: last dp hash {:?} while proposed parent_data_proposal_hash: {:?}",
+                    last_known_hash,
+                    data_proposal.parent_data_proposal_hash
+                )
+            }
+        }
     }
 
     // Find the verifier and program_id for a contract name in the current lane, optimistically.
@@ -499,47 +513,10 @@ impl Storage {
         bail!("Validator not found");
     }
 
-    // Add lane entries to validator"s lane
-    pub fn add_missing_lane_entries(
-        &mut self,
-        validator: &ValidatorPublicKey,
-        lane_entries: Vec<LaneEntry>,
-    ) -> Result<()> {
-        let lane = self.lanes.entry(validator.clone()).or_default();
-
-        debug!(
-            "Trying to add missing lane entries on lane \n {}\n {:?}",
-            lane, lane_entries
-        );
-
-        lane.add_missing_lane_entries(lane_entries.clone())?;
-
-        // WARNING: This is not a proper way to do it. This *will* be properly done after refactoring storage to HashMap
-        // Updating validator's lane tip
-        if let Some(validator_tip) = self.lanes_tip.get(validator).cloned() {
-            for le in lane_entries.iter() {
-                // If validator already has a lane, we only update the tip if DP-chain is respected
-                if let Some(parent_dp_hash) = &le.data_proposal.parent_data_proposal_hash {
-                    if &validator_tip == parent_dp_hash {
-                        self.lanes_tip
-                            .insert(validator.clone(), le.data_proposal.hash());
-                    }
-                }
-            }
-        } else {
-            self.lanes_tip.insert(
-                validator.clone(),
-                #[allow(clippy::unwrap_used, reason = "must exist because of previous checks")]
-                lane_entries.last().unwrap().data_proposal.hash(),
-            );
-        }
-        Ok(())
-    }
-
     /// Creates and saves a new DataProposal if there are pending transactions
-    pub fn new_data_proposal(&mut self, crypto: &BlstCrypto, txs: Vec<Transaction>) {
+    pub fn new_data_proposal(&mut self, crypto: &BlstCrypto, txs: Vec<Transaction>) -> Result<()> {
         if txs.is_empty() {
-            return;
+            return Ok(());
         }
 
         // Get last DataProposal of own lane
@@ -555,14 +532,12 @@ impl Storage {
         {
             // Create new data proposal
             DataProposal {
-                id: parent_data_proposal.id + 1,
                 parent_data_proposal_hash: Some(parent_data_proposal.hash()),
                 txs,
             }
         } else {
             // Own lane has no parent DataProposal yet
             DataProposal {
-                id: 0,
                 parent_data_proposal_hash: None,
                 txs,
             }
@@ -574,7 +549,8 @@ impl Storage {
             data_proposal.txs.len()
         );
 
-        self.store_data_proposal(crypto, &self.id.clone(), data_proposal);
+        self.store_data_proposal(crypto, &self.id.clone(), data_proposal)?;
+        Ok(())
     }
 
     pub fn get_lane_latest_entry(&self, validator: &ValidatorPublicKey) -> Option<&LaneEntry> {
@@ -609,19 +585,79 @@ impl Storage {
         }
     }
 
-    pub fn try_update_lanes_tip(&mut self, cut: &Cut) {
+    /// For unknown DataProposals in the new cut, we need to remove all DataProposals that we have after the previous cut.
+    /// This is necessary because it is difficult to determine if those DataProposals are part of a fork. --> This approach is suboptimal.
+    /// Therefore, we update the lane_tip with the DataProposal from the new cut, creating a gap in the lane but allowing us to vote on new DataProposals.
+    pub fn clean_and_update_lanes(&mut self, previous_cut: &Option<Cut>, cut: &Cut) -> Result<()> {
         for (validator, data_proposal_hash, _, _) in cut.iter() {
-            // If we know the hash, we don't change the tip (because either it is already at the tip, or we have advanced DPs)
-            if self.lane_has_data_proposal(validator, data_proposal_hash) {
-                continue;
+            if !self.lane_has_data_proposal(validator, data_proposal_hash) {
+                // We want ot start from the lane tip, and remove all DP until we find the data proposal of the previous cut
+                let latest_data_proposal_in_previous_cut = previous_cut
+                    .as_ref()
+                    .and_then(|cut| cut.iter().find(|(v, _, _, _)| v == validator))
+                    .map(|(_, h, _, _)| h);
+
+                if latest_data_proposal_in_previous_cut == Some(data_proposal_hash) {
+                    // No cut have been made for this validator; we keep the DPs
+                    continue;
+                }
+
+                let tip_lane = self.lanes_tip.get(validator);
+                // Check if lane is in a state between previous cut and new cut
+                if tip_lane != latest_data_proposal_in_previous_cut
+                    && tip_lane != Some(data_proposal_hash)
+                {
+                    let validator_lane = self.lanes.get_mut(validator).ok_or_else(|| {
+                        anyhow::anyhow!("Validator {} not found in storage", validator)
+                    })?;
+                    // Remove last element from the lane until we find the data proposal of the previous cut
+                    while let Some((dp_hash, le)) = validator_lane.data_proposals.pop() {
+                        if Some(&dp_hash) == latest_data_proposal_in_previous_cut {
+                            // Reinsert the lane entry corresponding to the previous cut
+                            validator_lane.data_proposals.insert(dp_hash, le);
+                            break;
+                        }
+                    }
+                }
+                // Update lane tip with new cut
+                self.lanes_tip
+                    .insert(validator.clone(), data_proposal_hash.clone());
             }
-            // If we do not know the hash, 2 options:
-            // 1) Cut's DP is ahead of our lane tip: we update the tip
-            self.lanes_tip
-                .insert(validator.clone(), data_proposal_hash.clone());
-            // FIXME:
-            // 2) Cut's DP is on a fork of our lane...
         }
+        Ok(())
+    }
+
+    /// Returns CanBePutOnTop::Yes if the DataProposal can be put in the lane
+    /// Returns CanBePutOnTop::False if the DataProposal can't be put in the lane because the parent is unknown
+    /// Returns CanBePutOnTop::Fork if the DataProposal creates a fork
+    fn can_be_put_on_top(
+        &mut self,
+        validator_key: &ValidatorPublicKey,
+        parent_data_proposal_hash: Option<&DataProposalHash>,
+    ) -> CanBePutOnTop {
+        // Data proposal parent hash needs to match the lane tip of that validator
+        let last_known_hash = self.lanes_tip.get(validator_key);
+        if parent_data_proposal_hash == last_known_hash {
+            // LEGIT DATAPROPOSAL
+            return CanBePutOnTop::Yes;
+        }
+
+        let validator_lane = self.lanes.entry(validator_key.clone()).or_default();
+
+        if validator_lane.data_proposals.is_empty() && parent_data_proposal_hash.is_none() {
+            // LANE IS EMPTY
+            return CanBePutOnTop::Yes;
+        }
+
+        if let Some(dp_parent_hash) = parent_data_proposal_hash {
+            if !validator_lane.has_proposal(dp_parent_hash) {
+                // UNKNOWN PARENT
+                return CanBePutOnTop::No;
+            }
+        }
+
+        // NEITHER LEGIT NOR CORRECT PARENT --> FORK
+        CanBePutOnTop::Fork
     }
 }
 
@@ -692,13 +728,6 @@ impl Lane {
         self.data_proposals.iter().last().map(|(_, entry)| entry)
     }
 
-    pub fn get_last_proposal_id(&self) -> Option<&u32> {
-        self.data_proposals
-            .iter()
-            .last()
-            .map(|(_, entry)| &entry.data_proposal.id)
-    }
-
     pub fn get_last_proposal_hash(&self) -> Option<&DataProposalHash> {
         self.data_proposals
             .iter()
@@ -736,7 +765,7 @@ impl Lane {
             Ok(s) => vec![s],
             Err(_) => vec![],
         };
-        self.data_proposals.insert(
+        self.add_proposal(
             data_proposal_hash.clone(),
             LaneEntry {
                 data_proposal,
@@ -772,9 +801,9 @@ impl Lane {
     }
 
     fn get_index_or_bail(&self, hash: &DataProposalHash) -> Result<usize> {
-        self.data_proposals.get_index_of(hash).context(
-            "Won't return any LaneEntry as aimed DataProposal {hash} does not exist on Lane",
-        )
+        self.data_proposals.get_index_of(hash).context(format!(
+            "Won't return any LaneEntry as aimed DataProposal {hash} does not exist on Lane"
+        ))
     }
 
     fn collect_entries(&self, start: usize, end: usize) -> Vec<LaneEntry> {
@@ -805,38 +834,6 @@ impl Lane {
         };
 
         Ok(self.collect_entries(from_index, to_index + 1))
-    }
-
-    pub fn add_missing_lane_entries(&mut self, lane_entries: Vec<LaneEntry>) -> Result<()> {
-        let lane_entries_len = lane_entries.len();
-        let mut ordered_lane_entries = lane_entries;
-        ordered_lane_entries.dedup();
-
-        for lane_entry in ordered_lane_entries.into_iter() {
-            if Some(&lane_entry.data_proposal.hash()) == self.current_hash() {
-                debug!("Skipping already known LaneEntry");
-                continue;
-            }
-            if lane_entry.data_proposal.parent_data_proposal_hash != self.current_hash().cloned() {
-                bail!("Incorrect parent hash while adding missing LaneEntry");
-            }
-            let current_size = self.get_lane_size();
-            let expected_size = current_size + lane_entry.data_proposal.estimate_size();
-            if lane_entry.cumul_size != expected_size {
-                bail!(
-                    "Incorrect size while adding missing LaneEntry. Expected: {}, Got: {}",
-                    expected_size,
-                    lane_entry.cumul_size
-                );
-            }
-            self.add_proposal(lane_entry.data_proposal.hash(), lane_entry);
-        }
-        debug!(
-            "Nb data proposals after adding {} missing entries: {}",
-            lane_entries_len,
-            self.data_proposals.len()
-        );
-        Ok(())
     }
 }
 
@@ -977,7 +974,9 @@ mod tests {
         };
         match verdict {
             DataProposalVerdict::Vote => {
-                let size = store.store_data_proposal(crypto, pubkey, data_proposal);
+                let size = store
+                    .store_data_proposal(crypto, pubkey, data_proposal)
+                    .unwrap();
                 (verdict, Some(size))
             }
             verdict => (verdict, size),
@@ -992,13 +991,11 @@ mod tests {
         let proof_tx_without_proof = make_empty_verified_proof_tx(contract_name.clone());
 
         let data_proposal_with_proof = DataProposal {
-            id: 0,
             parent_data_proposal_hash: None,
             txs: vec![proof_tx_with_proof],
         };
 
         let data_proposal_without_proof = DataProposal {
-            id: 0,
             parent_data_proposal_hash: None,
             txs: vec![proof_tx_without_proof],
         };
@@ -1016,7 +1013,6 @@ mod tests {
         let mut store = Storage::new(pubkey1.clone(), HashMap::default());
 
         let data_proposal1 = DataProposal {
-            id: 0,
             parent_data_proposal_hash: None,
             txs: vec![],
         };
@@ -1024,7 +1020,6 @@ mod tests {
         let l_dp1_size = LaneBytesSize(data_proposal1.estimate_size() as u64);
 
         let data_proposal2 = DataProposal {
-            id: 1,
             parent_data_proposal_hash: Some(data_proposal1_hash.clone()),
             txs: vec![],
         };
@@ -1044,12 +1039,16 @@ mod tests {
         };
 
         store
-            .add_missing_lane_entries(pubkey1, vec![lane_entry1.clone(), lane_entry2.clone()])
-            .expect("Failed to add missing lane entries");
+            .put(pubkey1.clone(), lane_entry1.clone())
+            .expect("Failed to put lane entry");
+        store
+            .put(pubkey1.clone(), lane_entry2.clone())
+            .expect("Failed to put lane entry");
 
         let lane = store.lanes.get(pubkey1).expect("Lane not found");
         assert!(lane.has_proposal(&data_proposal1_hash));
         assert!(lane.has_proposal(&data_proposal2_hash));
+        assert_eq!(store.lanes_tip.get(pubkey1).unwrap(), &data_proposal2_hash);
 
         // Ensure the lane entries are in the correct order
         let lane_entries = lane
@@ -1061,7 +1060,6 @@ mod tests {
 
         // Adding an incorrect data proposal should fail
         let data_proposal3 = DataProposal {
-            id: 0,
             parent_data_proposal_hash: Some(DataProposalHash("non_existent".to_string())),
             txs: vec![],
         };
@@ -1074,9 +1072,7 @@ mod tests {
             signatures: vec![],
         };
 
-        assert!(store
-            .add_missing_lane_entries(pubkey1, vec![lane_entry3.clone()])
-            .is_err());
+        assert!(store.put(pubkey1.clone(), lane_entry3.clone()).is_err());
         let lane = store.lanes.get(pubkey1).expect("Lane not found");
         // Ensure incorrect data proposal is not in the lane entries
         assert!(!lane.has_proposal(&data_proposal3_hash));
@@ -1089,7 +1085,6 @@ mod tests {
         let mut store = Storage::new(pubkey1.clone(), HashMap::default());
 
         let data_proposal1 = DataProposal {
-            id: 0,
             parent_data_proposal_hash: None,
             txs: vec![],
         };
@@ -1097,7 +1092,6 @@ mod tests {
         let l_dp1_size = LaneBytesSize(data_proposal1.estimate_size() as u64);
 
         let data_proposal2 = DataProposal {
-            id: 1,
             parent_data_proposal_hash: Some(data_proposal1_hash.clone()),
             txs: vec![],
         };
@@ -1105,7 +1099,6 @@ mod tests {
         let l_dp2_size = l_dp1_size + data_proposal2.estimate_size();
 
         let data_proposal3 = DataProposal {
-            id: 2,
             parent_data_proposal_hash: Some(data_proposal2_hash.clone()),
             txs: vec![],
         };
@@ -1131,15 +1124,14 @@ mod tests {
         };
 
         store
-            .add_missing_lane_entries(
-                pubkey1,
-                vec![
-                    lane_entry1.clone(),
-                    lane_entry2.clone(),
-                    lane_entry3.clone(),
-                ],
-            )
-            .expect("Failed to add missing lane entries");
+            .put(pubkey1.clone(), lane_entry1.clone())
+            .expect("Failed to put lane entry");
+        store
+            .put(pubkey1.clone(), lane_entry2.clone())
+            .expect("Failed to put lane entry");
+        store
+            .put(pubkey1.clone(), lane_entry3.clone())
+            .expect("Failed to put lane entry");
 
         let lane = store.lanes.get(pubkey1).expect("Lane not found");
 
@@ -1197,7 +1189,6 @@ mod tests {
         let mut store1 = Storage::new(pubkey1.clone(), HashMap::default());
 
         let data_proposal = DataProposal {
-            id: 0,
             parent_data_proposal_hash: None,
             txs: vec![],
         };
@@ -1251,7 +1242,7 @@ mod tests {
 
         // First data proposal
         let tx1 = make_blob_tx("test1");
-        store1.new_data_proposal(&crypto1, vec![tx1]);
+        store1.new_data_proposal(&crypto1, vec![tx1]).unwrap();
 
         let data_proposal1 = store1
             .get_lane_latest_entry(pubkey1)
@@ -1285,7 +1276,7 @@ mod tests {
 
         // Second data proposal
         let tx2 = make_blob_tx("test2");
-        store1.new_data_proposal(&crypto1, vec![tx2]);
+        store1.new_data_proposal(&crypto1, vec![tx2]).unwrap();
 
         let data_proposal2 = store1
             .get_lane_latest_entry(pubkey1)
@@ -1318,7 +1309,7 @@ mod tests {
 
         // Third data proposal
         let tx3 = make_blob_tx("test3");
-        store1.new_data_proposal(&crypto1, vec![tx3]);
+        store1.new_data_proposal(&crypto1, vec![tx3]).unwrap();
 
         let data_proposal3 = store1
             .get_lane_latest_entry(pubkey1)
@@ -1351,7 +1342,7 @@ mod tests {
 
         // Fourth data proposal
         let tx4 = make_blob_tx("test4");
-        store1.new_data_proposal(&crypto1, vec![tx4]);
+        store1.new_data_proposal(&crypto1, vec![tx4]).unwrap();
 
         let data_proposal4 = store1
             .get_lane_latest_entry(pubkey1)
@@ -1451,7 +1442,7 @@ mod tests {
             make_blob_tx("test4"),
         ];
 
-        store3.new_data_proposal(&crypto3, txs);
+        store3.new_data_proposal(&crypto3, txs).unwrap();
         let data_proposal = store3
             .get_lane_latest_entry(pubkey3)
             .unwrap()
@@ -1550,7 +1541,6 @@ mod tests {
         let proof_tx = make_unverified_proof_tx(contract_name.clone());
 
         let data_proposal = DataProposal {
-            id: 0,
             parent_data_proposal_hash: None,
             txs: vec![register_tx, proof_tx],
         };
@@ -1583,7 +1573,6 @@ mod tests {
         let proof_tx = make_verified_proof_tx(contract_name);
 
         let data_proposal = DataProposal {
-            id: 0,
             parent_data_proposal_hash: None,
             txs: vec![proof_tx.clone()],
         };
@@ -1598,7 +1587,6 @@ mod tests {
         assert_eq!(verdict, DataProposalVerdict::Refuse); // refused because contract not found
 
         let data_proposal = DataProposal {
-            id: 0,
             parent_data_proposal_hash: None,
             txs: vec![register_tx, proof_tx],
         };
@@ -1629,7 +1617,6 @@ mod tests {
         let proof_tx = make_verified_proof_tx(contract_name.clone());
 
         let data_proposal1 = DataProposal {
-            id: 0,
             parent_data_proposal_hash: None,
             txs: vec![register_tx],
         };
@@ -1638,7 +1625,6 @@ mod tests {
         lane(&mut store1, pubkey1).add_new_proposal(&crypto1, data_proposal1);
 
         let data_proposal = DataProposal {
-            id: 1,
             parent_data_proposal_hash: Some(data_proposal1_hash.clone()),
             txs: vec![proof_tx],
         };
@@ -1655,7 +1641,6 @@ mod tests {
         // Ensure the lane was updated with the DataProposal
         let empty_verified_proof_tx = make_empty_verified_proof_tx(contract_name.clone());
         let saved_data_proposal = DataProposal {
-            id: 0,
             parent_data_proposal_hash: Some(data_proposal1_hash),
             txs: vec![empty_verified_proof_tx.clone()],
         };
@@ -1675,7 +1660,6 @@ mod tests {
         let proof_tx = make_verified_proof_tx(contract_name.clone());
 
         let data_proposal = DataProposal {
-            id: 0,
             parent_data_proposal_hash: None,
             txs: vec![register_tx.clone(), proof_tx],
         };
@@ -1693,7 +1677,6 @@ mod tests {
         let empty_verified_proof_tx = make_empty_verified_proof_tx(contract_name.clone());
         let saved_data_proposal = DataProposal {
             parent_data_proposal_hash: None,
-            id: 0,
             txs: vec![register_tx, empty_verified_proof_tx.clone()],
         };
         assert!(store1.lane_has_data_proposal(pubkey1, &saved_data_proposal.hash()));
@@ -1714,7 +1697,6 @@ mod tests {
         let proof_tx = make_verified_proof_tx(contract_name);
 
         let data_proposal = DataProposal {
-            id: 0,
             parent_data_proposal_hash: None,
             txs: vec![proof_tx, register_tx],
         };
@@ -1761,7 +1743,7 @@ mod tests {
             .expect("Could not bond pubkey2");
 
         let tx1 = make_blob_tx("test1");
-        store1.new_data_proposal(&crypto1, vec![tx1]);
+        store1.new_data_proposal(&crypto1, vec![tx1]).unwrap();
         let data_proposal1 = store1
             .get_lane_latest_entry(pubkey1)
             .unwrap()
@@ -1781,7 +1763,7 @@ mod tests {
         );
 
         let tx2 = make_blob_tx("tx2");
-        store2.new_data_proposal(&crypto2, vec![tx2]);
+        store2.new_data_proposal(&crypto2, vec![tx2]).unwrap();
         let data_proposal2 = store2
             .get_lane_latest_entry(pubkey2)
             .unwrap()
@@ -1836,7 +1818,7 @@ mod tests {
             .expect("Could not bond pubkey2");
 
         let tx1 = make_blob_tx("test1");
-        store1.new_data_proposal(&crypto1, vec![tx1]);
+        store1.new_data_proposal(&crypto1, vec![tx1]).unwrap();
 
         let data_proposal = store1
             .get_lane_latest_entry(pubkey1)
@@ -1873,7 +1855,6 @@ mod tests {
         let tx = make_verified_proof_tx("testContract".into());
 
         let data_proposal1 = DataProposal {
-            id: 0,
             parent_data_proposal_hash: None,
             txs: vec![tx],
         };
@@ -1889,7 +1870,6 @@ mod tests {
         // Adding a new DP
         let tx2 = make_register_contract_tx("testContract2".into());
         let data_proposal2 = DataProposal {
-            id: 1,
             parent_data_proposal_hash: Some(data_proposal1.hash()),
             txs: vec![tx2],
         };
