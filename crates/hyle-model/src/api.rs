@@ -5,8 +5,8 @@ use serde_with::serde_as;
 use utoipa::ToSchema;
 
 use crate::{
-    BlockHeight, ConsensusProposalHash, ContractName, Identity, ProgramId, StateDigest,
-    Transaction, TransactionData, TxHash, ValidatorPublicKey, Verifier,
+    BlockHeight, ConsensusProposalHash, ContractName, Identity, LaneBytesSize, ProgramId,
+    StateDigest, Transaction, TransactionData, TxHash, ValidatorPublicKey, Verifier,
 };
 
 #[derive(Clone, Serialize, Deserialize, ToSchema)]
@@ -36,6 +36,21 @@ pub struct APIStaking {
     /// List of validators that are part of consensus
     pub bonded: Vec<ValidatorPublicKey>,
     pub total_bond: u128,
+
+    /// Struct to handle fees
+    pub fees: APIFees,
+}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema, Clone, PartialEq, Eq)]
+pub struct APIFeesBalance {
+    pub balance: i128,
+    pub cumul_size: LaneBytesSize,
+}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema, Clone, PartialEq, Eq)]
+pub struct APIFees {
+    /// Balance of each validator
+    pub balances: BTreeMap<ValidatorPublicKey, APIFeesBalance>,
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]

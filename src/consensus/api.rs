@@ -43,7 +43,7 @@ pub async fn api(ctx: &CommonRunContext) -> Router<()> {
         .split_for_parts();
 
     if let Ok(mut o) = ctx.openapi.lock() {
-        *o = o.clone().nest("/v1", api);
+        *o = o.clone().nest("/v1/consensus", api);
     }
 
     router.with_state(state)

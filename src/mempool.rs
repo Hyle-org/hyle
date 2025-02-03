@@ -1027,6 +1027,7 @@ impl Mempool {
 
         tx.transaction_data = TransactionData::VerifiedProof(VerifiedProofTransaction {
             proof_hash: proof_transaction.proof.hash(),
+            proof_size: proof_transaction.estimate_size(),
             proof: Some(proof_transaction.proof),
             contract_name: proof_transaction.contract_name.clone(),
             is_recursive,
@@ -1411,6 +1412,12 @@ pub mod test {
                 .get(self.validator_pubkey())
                 .expect("Could not get own lane");
             lane.get_lane_size()
+        }
+
+        #[track_caller]
+        pub fn current_size_of(&self, other: &Self) -> Option<LaneBytesSize> {
+            let lane = self.mempool.storage.lanes.get(other.validator_pubkey())?;
+            Some(lane.get_lane_size())
         }
 
         pub fn data_proposal(
