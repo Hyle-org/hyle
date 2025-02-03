@@ -2,8 +2,8 @@ use crate::utils::logger::LogMe;
 
 use super::IndexerApiState;
 use api::{
-    APIBlob, APIBlock, APIContract, APIContractState, APITransaction, BlobWithStatus,
-    TransactionStatus, TransactionType, TransactionWithBlobs,
+    APIBlob, APIBlock, APIContract, APIContractState, APITransaction, APITransactionEvents,
+    BlobWithStatus, TransactionStatus, TransactionType, TransactionWithBlobs,
 };
 use axum::{
     extract::{Path, Query, State},
@@ -300,6 +300,54 @@ pub async fn get_transaction_with_hash(
     match transaction {
         Some(tx) => Ok(Json(tx)),
         None => Err(StatusCode::NOT_FOUND),
+    }
+}
+
+#[utoipa::path(
+    get,
+    tag = "Indexer",
+    params(
+        ("tx_hash" = String, Path, description = "Tx hash"),
+    ),
+    path = "/transaction/hash/{tx_hash}/events",
+    responses(
+        (status = OK, body = [APITransactionEvents])
+    )
+)]
+pub async fn get_transaction_events(
+    Path(tx_hash): Path<String>,
+    State(state): State<IndexerApiState>,
+) -> Result<Json<Vec<APITransactionEvents>>, StatusCode> {
+    let rows = sqlx::query(
+        r#"
+        SELECT block_hash, tx_hash, events AS events
+        FROM transaction_state_events
+        WHERE tx_hash = $1
+        ORDER BY (block_hash, index) DESC
+        "#,
+    )
+    .bind(tx_hash)
+    .fetch_all(&state.db)
+    .await
+    .log_error("Failed to fetch transactions with blobs")
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let transactions: Result<Vec<APITransactionEvents>, anyhow::Error> = rows
+        .into_iter()
+        .map(|row| {
+            let block_hash = row.try_get("block_hash")?;
+            let events: serde_json::Value = row.try_get("events")?;
+            let events: Vec<serde_json::Value> = serde_json::from_value(events)?;
+            Ok(APITransactionEvents { block_hash, events })
+        })
+        .collect();
+
+    match transactions {
+        Ok(transactions) => Ok(Json(transactions)),
+        Err(e) => {
+            tracing::warn!("Failed to parse transactions with blobs: {:?}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
     }
 }
 

@@ -113,3 +113,16 @@ impl Hashable<HyleOutputHash> for HyleOutput {
         HyleOutputHash(hasher.finalize().to_vec())
     }
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, Encode, Decode, Eq, PartialEq)]
+pub enum TransactionStateEvent {
+    Sequenced,
+    Error(String),
+    NewProof {
+        blob_index: BlobIndex,
+        proof_tx: TxHash,
+    },
+    SettleEvent(String),
+    Settled,
+    SettledAsFailed,
+}
