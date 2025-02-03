@@ -214,7 +214,7 @@ use crate::consensus::test::ConsensusTestCtx;
 use crate::consensus::ConsensusEvent;
 use crate::handle_messages;
 use crate::mempool::test::{make_register_contract_tx, MempoolTestCtx};
-use crate::mempool::{InternalMempoolEvent, MempoolEvent, MempoolNetMessage, QueryNewCut};
+use crate::mempool::{InternalMempoolEvent, MempoolBlockEvent, MempoolNetMessage, QueryNewCut};
 use crate::model::*;
 use crate::node_state::module::NodeStateEvent;
 use crate::p2p::network::OutboundMessage;
@@ -241,7 +241,7 @@ impl AutobahnTestCtx {
         let p2p_receiver = get_receiver::<P2PCommand>(&shared_bus).await;
         let consensus_out_receiver = get_receiver::<OutboundMessage>(&shared_bus).await;
         let mempool_out_receiver = get_receiver::<OutboundMessage>(&shared_bus).await;
-        let mempool_event_receiver = get_receiver::<MempoolEvent>(&shared_bus).await;
+        let mempool_event_receiver = get_receiver::<MempoolBlockEvent>(&shared_bus).await;
         let mempool_internal_event_receiver =
             get_receiver::<InternalMempoolEvent>(&shared_bus).await;
 

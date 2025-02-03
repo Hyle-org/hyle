@@ -1,7 +1,11 @@
 use anyhow::Context;
+use bincode::{Decode, Encode};
 use tokio_util::codec::{Decoder, Encoder, LengthDelimitedCodec};
 
-use crate::model::{BlockHeight, SignedBlock};
+use crate::{
+    mempool::MempoolStatusEvent,
+    model::{BlockHeight, SignedBlock},
+};
 
 // Server Side
 #[derive(Debug)]
@@ -21,6 +25,12 @@ impl Default for DataAvailabilityServerCodec {
 pub enum DataAvailabilityServerRequest {
     BlockHeight(BlockHeight),
     Ping,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Encode, Decode)]
+pub enum DataAvailabilityServerEvent {
+    SignedBlock(SignedBlock),
+    MempoolStatusEvent(MempoolStatusEvent),
 }
 
 impl Decoder for DataAvailabilityServerCodec {
@@ -53,16 +63,20 @@ impl Decoder for DataAvailabilityServerCodec {
     }
 }
 
-impl Encoder<SignedBlock> for DataAvailabilityServerCodec {
+impl Encoder<DataAvailabilityServerEvent> for DataAvailabilityServerCodec {
     type Error = anyhow::Error;
 
-    fn encode(&mut self, block: SignedBlock, dst: &mut bytes::BytesMut) -> Result<(), Self::Error> {
+    fn encode(
+        &mut self,
+        event: DataAvailabilityServerEvent,
+        dst: &mut bytes::BytesMut,
+    ) -> Result<(), Self::Error> {
         let bytes: bytes::Bytes =
-            bincode::encode_to_vec(block, bincode::config::standard())?.into();
+            bincode::encode_to_vec(event, bincode::config::standard())?.into();
 
         self.ldc
             .encode(bytes, dst)
-            .context("Encoding block bytes as length delimited")
+            .context("Encoding event bytes as length delimited")
     }
 }
 
@@ -73,18 +87,21 @@ pub struct DataAvailabilityClientCodec {
     ldc: LengthDelimitedCodec,
 }
 impl Decoder for DataAvailabilityClientCodec {
-    type Item = SignedBlock;
+    type Item = DataAvailabilityServerEvent;
     type Error = anyhow::Error;
 
     fn decode(&mut self, src: &mut bytes::BytesMut) -> Result<Option<Self::Item>, Self::Error> {
         let decoded_bytes = self.ldc.decode(src)?;
         if let Some(decoded_bytes) = decoded_bytes {
-            let block: Self::Item =
+            let event: Self::Item =
                 bincode::decode_from_slice(&decoded_bytes, bincode::config::standard())
-                    .context(format!("Decoding block from {} bytes", decoded_bytes.len()))?
+                    .context(format!(
+                        "Decoding DataAvailabilityServerEvent from {} bytes",
+                        decoded_bytes.len()
+                    ))?
                     .0;
 
-            return Ok(Some(block));
+            return Ok(Some(event));
         }
         Ok(None)
     }
@@ -116,6 +133,7 @@ mod test {
     use bytes::BytesMut;
     use tokio_util::codec::{Decoder, Encoder};
 
+    use crate::data_availability::codec::DataAvailabilityServerEvent;
     use crate::model::{AggregateSignature, ConsensusProposal};
     use crate::{
         data_availability::codec::{
@@ -130,15 +148,16 @@ mod test {
         let mut client_codec = DataAvailabilityClientCodec::default();
         let mut buffer = BytesMut::new();
 
-        let block = SignedBlock {
+        let block = DataAvailabilityServerEvent::SignedBlock(SignedBlock {
             data_proposals: vec![],
             certificate: AggregateSignature::default(),
             consensus_proposal: ConsensusProposal::default(),
-        };
+        });
 
         server_codec.encode(block.clone(), &mut buffer).unwrap();
 
-        let decoded_block: SignedBlock = client_codec.decode(&mut buffer).unwrap().unwrap();
+        let decoded_block: DataAvailabilityServerEvent =
+            client_codec.decode(&mut buffer).unwrap().unwrap();
 
         // Vérifiez si le buffer a été correctement consommé
         assert_eq!(block, decoded_block);

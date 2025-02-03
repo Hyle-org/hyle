@@ -5,6 +5,7 @@ pub mod contract_handlers;
 pub mod contract_state_indexer;
 pub mod da_listener;
 
+use crate::mempool::MempoolStatusEvent;
 use crate::model::*;
 use crate::utils::logger::LogMe;
 use crate::{
@@ -26,11 +27,12 @@ use axum::{
 use chrono::DateTime;
 use hyle_contract_sdk::TxHash;
 use hyle_model::api::{BlobWithStatus, TransactionStatus, TransactionType, TransactionWithBlobs};
-use sqlx::Row;
 use sqlx::{postgres::PgPoolOptions, PgPool, Pool, Postgres};
+use sqlx::{Execute, PgExecutor, QueryBuilder, Row};
+use std::ops::DerefMut;
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::{broadcast, mpsc};
-use tracing::trace;
+use tracing::{trace, warn};
 use utoipa::OpenApi;
 use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
@@ -39,6 +41,7 @@ module_bus_client! {
 #[derive(Debug)]
 struct IndexerBusClient {
     receiver(NodeStateEvent),
+    receiver(MempoolStatusEvent),
 }
 }
 
@@ -120,6 +123,12 @@ impl Indexer {
             on_bus self.bus,
             listen<NodeStateEvent> event => {
                 _ = self.handle_node_state_event(event)
+                    .await
+                    .log_error("Handling node state event");
+            }
+
+            listen<MempoolStatusEvent> event => {
+                _ = self.handle_mempool_status_event(event)
                     .await
                     .log_error("Handling node state event");
             }
@@ -224,10 +233,48 @@ impl Indexer {
         }
     }
 
-    async fn handle_processed_block(&mut self, block: Block) -> Result<(), Error> {
-        trace!("Indexing block at height {:?}", block.block_height);
+    async fn handle_mempool_status_event(&mut self, event: MempoolStatusEvent) -> Result<()> {
         let mut transaction = self.state.db.begin().await?;
+        match event {
+            MempoolStatusEvent::WaitingDissemination(tx) => {
+                let tx_hash: TxHash = tx.hash();
+                let version = i32::try_from(tx.version)
+                    .map_err(|_| anyhow::anyhow!("Tx version is too large to fit into an i32"))?;
 
+                // Insert the transaction into the transactions table
+                let tx_type = TransactionType::get_type_from_transaction(&tx);
+                let tx_status = TransactionStatus::WaitingDissemination;
+
+                let tx_hash: &TxHashDb = &tx_hash.into();
+
+                // If the TX is already present, we can assume it's more up-to-date so do nothing.
+                sqlx::query("INSERT INTO transactions (tx_hash, version, transaction_type, transaction_status)
+                    VALUES ($1, $2, $3, $4)
+                    ON CONFLICT(tx_hash) DO NOTHING")
+                .bind(tx_hash)
+                .bind(version)
+                .bind(tx_type)
+                .bind(tx_status)
+                .execute(&mut *transaction)
+                .await?;
+
+                _ = self
+                    .insert_tx_data(transaction.deref_mut(), tx_hash, &tx)
+                    .await
+                    .log_warn("Inserting tx data at status 'waiting dissemination'");
+            }
+        }
+
+        transaction.commit().await?;
+
+        Ok(())
+    }
+
+    async fn insert_block<'a, T: PgExecutor<'a>>(
+        &mut self,
+        transaction: T,
+        block: &Block,
+    ) -> Result<()> {
         // Insert the block into the blocks table
         let block_hash = &block.hash;
         let block_height = i64::try_from(block.block_height.0)
@@ -246,11 +293,84 @@ impl Indexer {
             "INSERT INTO blocks (hash, parent_hash, height, timestamp) VALUES ($1, $2, $3, $4)",
         )
         .bind(block_hash)
-        .bind(block.parent_hash)
+        .bind(block.parent_hash.clone())
         .bind(block_height)
         .bind(block_timestamp)
-        .execute(&mut *transaction)
+        .execute(transaction)
         .await?;
+
+        Ok(())
+    }
+
+    async fn insert_tx_data<'a, T>(
+        &mut self,
+        transaction: T,
+        tx_hash: &TxHashDb,
+        tx: &Transaction,
+    ) -> Result<()>
+    where
+        T: PgExecutor<'a>,
+    {
+        match &tx.transaction_data {
+            TransactionData::Blob(blob_tx) => {
+                let mut query_builder = QueryBuilder::<Postgres>::new(
+                    "INSERT INTO blobs (tx_hash, blob_index, identity, contract_name, data, verified) ",
+                );
+
+                query_builder.push_values(
+                    blob_tx.blobs.iter().enumerate(),
+                    |mut b, (blob_index, blob)| {
+                        let blob_index = i32::try_from(blob_index)
+                            .log_error("Blob index is too large to fit into an i32")
+                            .unwrap_or_default();
+
+                        let identity = &blob_tx.identity.0;
+                        let contract_name = &blob.contract_name.0;
+                        let blob_data = &blob.data.0;
+                        b.push_bind(tx_hash)
+                            .push_bind(blob_index)
+                            .push_bind(identity)
+                            .push_bind(contract_name)
+                            .push_bind(blob_data)
+                            .push_bind(false);
+                    },
+                );
+
+                query_builder.push(" ON CONFLICT(tx_hash, blob_index) DO NOTHING");
+                let query = query_builder.build();
+                warn!("{}", query.sql());
+                query.execute(transaction).await?;
+            }
+            TransactionData::VerifiedProof(tx_data) => {
+                // Then insert the proof in to the proof table.
+                match &tx_data.proof {
+                    Some(proof_data) => {
+                        sqlx::query("INSERT INTO proofs (tx_hash, proof) VALUES ($1, $2) ON CONFLICT(tx_hash) DO NOTHING")
+                            .bind(tx_hash)
+                            .bind(proof_data.0.clone())
+                            .execute(transaction)
+                            .await?;
+                    }
+                    None => {
+                        tracing::trace!(
+                            "Verified proof TX {:?} does not contain a proof",
+                            &tx_hash
+                        );
+                    }
+                };
+            }
+            _ => {
+                bail!("Unsupported transaction type");
+            }
+        }
+        Ok(())
+    }
+
+    async fn handle_processed_block(&mut self, block: Block) -> Result<(), Error> {
+        trace!("Indexing block at height {:?}", block.block_height);
+        let mut transaction: sqlx::PgTransaction = self.state.db.begin().await?;
+
+        let _ = self.insert_block(transaction.deref_mut(), &block).await;
 
         let mut i: i32 = 0;
         #[allow(clippy::explicit_counter_loop)]
@@ -269,75 +389,39 @@ impl Indexer {
 
             let tx_hash: &TxHashDb = &tx_hash.into();
 
+            // Make sure transaction exists (Missed Mempool Status event)
             sqlx::query(
-                "INSERT INTO transactions (tx_hash, block_hash, index, version, transaction_type, transaction_status)
-                VALUES ($1, $2, $3, $4, $5, $6)")
+                "INSERT INTO transactions (tx_hash, version, transaction_type, transaction_status, block_hash, index)
+                VALUES ($1, $2, $3, $4, $5, $6)
+                ON CONFLICT(tx_hash) DO UPDATE SET transaction_status=$4, block_hash=$5, index=$6",
+            )
             .bind(tx_hash)
-            .bind(block_hash)
-            .bind(i)
             .bind(version)
-            .bind(tx_type)
-            .bind(tx_status)
+            .bind(tx_type.clone())
+            .bind(tx_status.clone())
+            .bind(block.hash.clone())
+            .bind(i)
             .execute(&mut *transaction)
-            .await?;
+            .await
+            .log_warn(format!("Inserting transaction {:?}", tx_hash))?;
+
+            _ = self
+                .insert_tx_data(transaction.deref_mut(), tx_hash, &tx)
+                .await
+                .log_warn("Inserting tx data when tx in block");
+
+            if let TransactionData::Blob(blob_tx) = &tx.transaction_data {
+                // Send the transaction to all websocket subscribers
+                self.send_blob_transaction_to_websocket_subscribers(
+                    blob_tx,
+                    tx_hash,
+                    &block.hash,
+                    i as u32,
+                    tx.version,
+                );
+            }
 
             i += 1;
-
-            match tx.transaction_data {
-                TransactionData::Blob(blob_tx) => {
-                    for (blob_index, blob) in blob_tx.blobs.iter().enumerate() {
-                        let blob_index = i32::try_from(blob_index).map_err(|_| {
-                            anyhow::anyhow!("Blob index is too large to fit into an i32")
-                        })?;
-                        // Send the transaction to all websocket subscribers
-                        self.send_blob_transaction_to_websocket_subscribers(
-                            &blob_tx,
-                            tx_hash,
-                            block_hash,
-                            i as u32,
-                            version as u32,
-                        );
-
-                        let identity = &blob_tx.identity.0;
-                        let contract_name = &blob.contract_name.0;
-                        let blob_data = &blob.data.0;
-                        sqlx::query(
-                            "INSERT INTO blobs (tx_hash, blob_index, identity, contract_name, data, verified)
-                             VALUES ($1, $2, $3, $4, $5, $6)",
-                        )
-                        .bind(tx_hash)
-                        .bind(blob_index)
-                        .bind(identity)
-                        .bind(contract_name)
-                        .bind(blob_data)
-                        .bind(false)
-                        .execute(&mut *transaction)
-                        .await?;
-                    }
-                }
-                TransactionData::VerifiedProof(tx_data) => {
-                    // Then insert the proof in to the proof table.
-                    let proof = match tx_data.proof {
-                        Some(proof_data) => proof_data.0,
-                        None => {
-                            tracing::trace!(
-                                "Verified proof TX {:?} does not contain a proof",
-                                &tx_hash
-                            );
-                            continue;
-                        }
-                    };
-
-                    sqlx::query("INSERT INTO proofs (tx_hash, proof) VALUES ($1, $2)")
-                        .bind(tx_hash)
-                        .bind(proof)
-                        .execute(&mut *transaction)
-                        .await?;
-                }
-                _ => {
-                    bail!("Unsupported transaction type");
-                }
-            }
         }
 
         // Handling new stakers
@@ -453,7 +537,7 @@ impl Indexer {
                 VALUES ($1, $2, $3)",
             )
             .bind(contract_name)
-            .bind(block_hash)
+            .bind(block.hash.clone())
             .bind(state_digest)
             .execute(&mut *transaction)
             .await?;
@@ -468,7 +552,7 @@ impl Indexer {
             )
             .bind(state_digest.clone())
             .bind(contract_name.clone())
-            .bind(block_hash)
+            .bind(block.hash.clone())
             .execute(&mut *transaction)
             .await?;
 
@@ -559,7 +643,10 @@ mod test {
     use super::*;
 
     use sqlx::postgres::PgPoolOptions;
-    use testcontainers_modules::{postgres::Postgres, testcontainers::runners::AsyncRunner};
+    use testcontainers_modules::{
+        postgres::Postgres,
+        testcontainers::{runners::AsyncRunner, ImageExt},
+    };
 
     async fn setup_test_server(indexer: &Indexer) -> Result<TestServer> {
         let router = indexer.api(None);
@@ -656,7 +743,11 @@ mod test {
 
     #[test_log::test(tokio::test)]
     async fn test_indexer_handle_block_flow() -> Result<()> {
-        let container = Postgres::default().start().await.unwrap();
+        let container = Postgres::default()
+            .with_tag("17-alpine")
+            .start()
+            .await
+            .unwrap();
         let db = PgPoolOptions::new()
             .max_connections(5)
             .connect(&format!(
@@ -734,6 +825,8 @@ mod test {
 
         let mut node_state = NodeState::default();
 
+        // Handling a block containing txs
+
         let mut signed_block = SignedBlock::default();
         signed_block.data_proposals.push((
             ValidatorPublicKey("ttt".into()),
@@ -750,6 +843,58 @@ mod test {
             .await
             .expect("Failed to handle block");
 
+        // Handling MempoolStatusEvent
+
+        let initial_state_wd = StateDigest(vec![1, 2, 3]);
+        let next_state_wd = StateDigest(vec![4, 5, 6]);
+        let first_contract_name_wd = ContractName::new("wd1");
+        let second_contract_name_wd = ContractName::new("wd2");
+
+        let register_tx_1_wd =
+            new_register_tx(first_contract_name_wd.clone(), initial_state_wd.clone());
+        let register_tx_2_wd =
+            new_register_tx(second_contract_name_wd.clone(), initial_state_wd.clone());
+
+        let blob_transaction_wd = new_blob_tx(
+            first_contract_name_wd.clone(),
+            second_contract_name_wd.clone(),
+        );
+        let blob_transaction_hash_wd = blob_transaction_wd.hash();
+
+        let proof_tx_1_wd = new_proof_tx(
+            first_contract_name_wd.clone(),
+            BlobIndex(0),
+            blob_transaction_hash_wd.clone(),
+            initial_state_wd.clone(),
+            next_state_wd.clone(),
+            vec![99, 49, 1, 2, 3, 99, 50, 1, 2, 3],
+        );
+
+        indexer
+            .handle_mempool_status_event(MempoolStatusEvent::WaitingDissemination(Transaction {
+                version: 1,
+                transaction_data: TransactionData::Blob(register_tx_1_wd),
+            }))
+            .await
+            .expect("MempoolStatusEvent");
+        indexer
+            .handle_mempool_status_event(MempoolStatusEvent::WaitingDissemination(Transaction {
+                version: 1,
+                transaction_data: TransactionData::Blob(register_tx_2_wd),
+            }))
+            .await
+            .expect("MempoolStatusEvent");
+        indexer
+            .handle_mempool_status_event(MempoolStatusEvent::WaitingDissemination(
+                blob_transaction_wd,
+            ))
+            .await
+            .expect("MempoolStatusEvent");
+        indexer
+            .handle_mempool_status_event(MempoolStatusEvent::WaitingDissemination(proof_tx_1_wd))
+            .await
+            .expect("MempoolStatusEvent");
+
         let transactions_response = server.get("/contract/c1").await;
         transactions_response.assert_status_ok();
         let json_response = transactions_response.json::<APIContract>();
@@ -759,6 +904,9 @@ mod test {
         transactions_response.assert_status_ok();
         let json_response = transactions_response.json::<APIContract>();
         assert_eq!(json_response.state_digest, next_state.0);
+
+        let transactions_response = server.get("/contract/d1").await;
+        transactions_response.assert_status_not_found();
 
         let blob_transactions_response = server.get("/blob_transactions/contract/c1").await;
         blob_transactions_response.assert_status_ok();
@@ -839,7 +987,11 @@ mod test {
 
     #[test_log::test(tokio::test)]
     async fn test_indexer_api() -> Result<()> {
-        let container = Postgres::default().start().await.unwrap();
+        let container = Postgres::default()
+            .with_tag("17-alpine")
+            .start()
+            .await
+            .unwrap();
         let db = PgPoolOptions::new()
             .max_connections(5)
             .connect(&format!(
@@ -930,6 +1082,13 @@ mod test {
         // Get an existing transaction by hash
         let transactions_response = server
             .get("/transaction/hash/test_tx_hash_1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+            .await;
+        transactions_response.assert_status_ok();
+        assert!(!transactions_response.text().is_empty());
+
+        // Get an existing transaction, waiting for dissemination by hash
+        let transactions_response = server
+            .get("/transaction/hash/test_tx_hash_0aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
             .await;
         transactions_response.assert_status_ok();
         assert!(!transactions_response.text().is_empty());

@@ -10,16 +10,23 @@ CREATE TABLE blocks (
 );
 
 CREATE TYPE transaction_type AS ENUM ('blob_transaction', 'proof_transaction', 'stake');
-CREATE TYPE transaction_status AS ENUM ('success', 'failure', 'sequenced', 'timed_out');
+CREATE TYPE transaction_status AS ENUM ('waiting_dissemination', 'success', 'failure', 'sequenced', 'timed_out');
 
 CREATE TABLE transactions (
     tx_hash TEXT PRIMARY KEY,
-    block_hash TEXT NOT NULL REFERENCES blocks(hash) ON DELETE CASCADE,
-    index INT NOT NULL,                              -- Index of the transaction within the block
     version INT NOT NULL,
     transaction_type transaction_type NOT NULL,      -- Field to identify the type of transaction (used for joins)
-    transaction_status transaction_status NOT NULL   -- Field to identify the status of the transaction
-    CHECK (length(tx_hash) = 64)                     -- Ensure the hash is exactly 64
+    transaction_status transaction_status NOT NULL,   -- Field to identify the status of the transaction
+    block_hash TEXT REFERENCES blocks(hash) ON DELETE CASCADE,
+    index INT,                              -- Index of the transaction within the block
+    CHECK (length(tx_hash) = 64),
+    CHECK (
+        (
+            transaction_status IN ('waiting_dissemination') AND block_hash IS NULL AND index IS NULL
+        ) OR (
+            transaction_status NOT IN ('waiting_dissemination') AND block_hash IS NOT NULL AND index IS NOT NULL
+        )
+    )
 );
 
 CREATE TABLE blobs (

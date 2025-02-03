@@ -9,7 +9,9 @@ mod blocks_memory;
 use blocks_fjall::Blocks;
 //use blocks_memory::Blocks;
 
-use codec::{DataAvailabilityServerCodec, DataAvailabilityServerRequest};
+use codec::{
+    DataAvailabilityServerCodec, DataAvailabilityServerEvent, DataAvailabilityServerRequest,
+};
 use utils::get_current_timestamp;
 
 use crate::{
@@ -17,7 +19,7 @@ use crate::{
     consensus::{ConsensusCommand, ConsensusEvent},
     genesis::GenesisEvent,
     indexer::da_listener::RawDAListener,
-    mempool::MempoolEvent,
+    mempool::{MempoolBlockEvent, MempoolStatusEvent},
     model::*,
     module_handle_messages,
     p2p::network::{OutboundMessage, PeerEvent},
@@ -58,7 +60,8 @@ struct DABusClient {
     sender(DataEvent),
     sender(ConsensusCommand),
     receiver(ConsensusEvent),
-    receiver(MempoolEvent),
+    receiver(MempoolBlockEvent),
+    receiver(MempoolStatusEvent),
     receiver(GenesisEvent),
     receiver(PeerEvent),
 }
@@ -70,7 +73,7 @@ struct BlockStreamPeer {
     /// Last timestamp we received a ping from the peer.
     last_ping: u64,
     /// Sender to stream blocks to the peer
-    sender: SplitSink<Framed<TcpStream, DataAvailabilityServerCodec>, SignedBlock>,
+    sender: SplitSink<Framed<TcpStream, DataAvailabilityServerCodec>, DataAvailabilityServerEvent>,
     /// Handle to abort the receiving side of the stream
     keepalive_abort: JoinHandle<()>,
 }
@@ -138,8 +141,12 @@ impl DataAvailability {
 
         module_handle_messages! {
             on_bus self.bus,
-            listen<MempoolEvent> evt => {
+            listen<MempoolBlockEvent> evt => {
                 _ = self.handle_mempool_event(evt).await.log_error("Handling Mempool Event");
+            }
+
+            listen<MempoolStatusEvent> evt => {
+                _ = self.handle_mempool_status_event(evt).await.log_error("Handling Mempool Event");
             }
 
             listen<GenesisEvent> cmd => {
@@ -230,7 +237,7 @@ impl DataAvailability {
                             .get_mut(&peer_ip)
                             .context("peer not found")?
                             .sender
-                            .send(signed_block)
+                            .send(DataAvailabilityServerEvent::SignedBlock(signed_block))
                             .await.is_ok() {
                             let _ = catchup_sender.send((block_hashes, peer_ip)).await;
                         }
@@ -248,12 +255,12 @@ impl DataAvailability {
         Ok(())
     }
 
-    async fn handle_mempool_event(&mut self, evt: MempoolEvent) -> Result<()> {
+    async fn handle_mempool_event(&mut self, evt: MempoolBlockEvent) -> Result<()> {
         match evt {
-            MempoolEvent::BuiltSignedBlock(signed_block) => {
+            MempoolBlockEvent::BuiltSignedBlock(signed_block) => {
                 self.handle_signed_block(signed_block).await;
             }
-            MempoolEvent::StartedBuildingBlocks(height) => {
+            MempoolBlockEvent::StartedBuildingBlocks(height) => {
                 self.catchup_height = Some(height - 1);
                 if let Some(handle) = self.catchup_task.as_ref() {
                     if self
@@ -274,7 +281,12 @@ impl DataAvailability {
 
         Ok(())
     }
+    async fn handle_mempool_status_event(&mut self, evt: MempoolStatusEvent) -> Result<()> {
+        self.stream_to_peers(DataAvailabilityServerEvent::MempoolStatusEvent(evt))
+            .await;
 
+        Ok(())
+    }
     async fn handle_signed_block(&mut self, block: SignedBlock) {
         let hash = block.hash();
         // if new block is already handled, ignore it
@@ -342,7 +354,7 @@ impl DataAvailability {
         }
         trace!("Block {} {}: {:#?}", block.height(), block.hash(), block);
 
-        if block.height().0 % 10 == 0 {
+        if block.height().0 % 10 == 0 || !block.txs().is_empty() {
             info!(
                 "new block {} {} with {} txs",
                 block.height(),
@@ -360,6 +372,17 @@ impl DataAvailability {
 
         // Stream block to all peers
         // TODO: use retain once async closures are supported ?
+        self.stream_to_peers(DataAvailabilityServerEvent::SignedBlock(block.clone()))
+            .await;
+
+        // Send the block to NodeState for processing
+        _ = self
+            .bus
+            .send(DataEvent::OrderedSignedBlock(block))
+            .log_error("Sending OrderedSignedBlock");
+    }
+
+    async fn stream_to_peers(&mut self, event: DataAvailabilityServerEvent) {
         let mut to_remove = Vec::new();
         for (peer_id, peer) in self.stream_peer_metadata.iter_mut() {
             let last_ping = peer.last_ping;
@@ -368,8 +391,8 @@ impl DataAvailability {
                 peer.keepalive_abort.abort();
                 to_remove.push(peer_id.clone());
             } else {
-                info!("streaming block {} to peer {}", block.hash(), &peer_id);
-                match peer.sender.send(block.clone()).await {
+                info!("streaming event {:?} to peer {}", &event, &peer_id);
+                match peer.sender.send(event.clone()).await {
                     Ok(_) => {}
                     Err(e) => {
                         debug!(
@@ -385,12 +408,6 @@ impl DataAvailability {
         for peer_id in to_remove {
             self.stream_peer_metadata.remove(&peer_id);
         }
-
-        // Send the block to NodeState for processing
-        _ = self
-            .bus
-            .send(DataEvent::OrderedSignedBlock(block))
-            .log_error("Sending OrderedSignedBlock");
     }
 
     async fn start_streaming_to_peer(
@@ -398,7 +415,10 @@ impl DataAvailability {
         start_height: BlockHeight,
         ping_sender: tokio::sync::mpsc::Sender<String>,
         catchup_sender: tokio::sync::mpsc::Sender<(Vec<ConsensusProposalHash>, String)>,
-        sender: SplitSink<Framed<TcpStream, DataAvailabilityServerCodec>, SignedBlock>,
+        sender: SplitSink<
+            Framed<TcpStream, DataAvailabilityServerCodec>,
+            DataAvailabilityServerEvent,
+        >,
         mut receiver: SplitStream<Framed<TcpStream, DataAvailabilityServerCodec>>,
         peer_ip: &String,
     ) -> Result<()> {
@@ -476,14 +496,16 @@ impl DataAvailability {
                         break;
                     }
                     Some(Ok(streamed_block)) => {
-                        info!(
-                            "📦 Received block (height {}) from stream",
-                            streamed_block.consensus_proposal.slot
-                        );
-                        // TODO: we should wait if the stream is full.
-                        if let Err(e) = sender.send(streamed_block).await {
-                            tracing::error!("Error while sending block over channel: {:#}", e);
-                            break;
+                        if let DataAvailabilityServerEvent::SignedBlock(block) = streamed_block {
+                            info!(
+                                "📦 Received block (height {}) from stream",
+                                block.consensus_proposal.slot
+                            );
+                            // TODO: we should wait if the stream is full.
+                            if let Err(e) = sender.send(block).await {
+                                tracing::error!("Error while sending block over channel: {:#}", e);
+                                break;
+                            }
                         }
                     }
                 }
@@ -497,11 +519,12 @@ impl DataAvailability {
 pub mod tests {
     #![allow(clippy::indexing_slicing)]
 
+    use crate::data_availability::codec::DataAvailabilityServerEvent;
     use crate::model::ValidatorPublicKey;
     use crate::{
         bus::BusClientSender,
         consensus::CommittedConsensusProposal,
-        mempool::MempoolEvent,
+        mempool::MempoolBlockEvent,
         model::*,
         node_state::{
             module::{NodeStateBusClient, NodeStateEvent},
@@ -612,7 +635,7 @@ pub mod tests {
     module_bus_client! {
     #[derive(Debug)]
     struct TestBusClient {
-        sender(MempoolEvent),
+        sender(MempoolBlockEvent),
     }
     }
 
@@ -672,11 +695,13 @@ pub mod tests {
         let mut heights_received = vec![];
         while let Some(Ok(cmd)) = da_stream.next().await {
             let bytes = cmd;
-            let block: SignedBlock =
+            let event: DataAvailabilityServerEvent =
                 bincode::decode_from_slice(&bytes, bincode::config::standard())
                     .unwrap()
                     .0;
-            heights_received.push(block.height().0);
+            if let DataAvailabilityServerEvent::SignedBlock(block) = event {
+                heights_received.push(block.height().0);
+            }
             if heights_received.len() == 14 {
                 break;
             }
@@ -698,7 +723,7 @@ pub mod tests {
             ccp.consensus_proposal.parent_hash = ccp.consensus_proposal.hash();
             ccp.consensus_proposal.slot = i;
             block_sender
-                .send(MempoolEvent::BuiltSignedBlock(SignedBlock {
+                .send(MempoolBlockEvent::BuiltSignedBlock(SignedBlock {
                     data_proposals: vec![(ValidatorPublicKey("".into()), vec![])],
                     certificate: ccp.certificate.clone(),
                     consensus_proposal: ccp.consensus_proposal.clone(),
@@ -721,12 +746,13 @@ pub mod tests {
         let mut heights_received = vec![];
         while let Some(Ok(cmd)) = da_stream.next().await {
             let bytes = cmd;
-            let block: SignedBlock =
+            let event: DataAvailabilityServerEvent =
                 bincode::decode_from_slice(&bytes, bincode::config::standard())
                     .unwrap()
                     .0;
-            dbg!(&block);
-            heights_received.push(block.height().0);
+            if let DataAvailabilityServerEvent::SignedBlock(block) = event {
+                heights_received.push(block.height().0);
+            }
             if heights_received.len() == 18 {
                 break;
             }
@@ -802,7 +828,7 @@ pub mod tests {
             ccp.consensus_proposal.parent_hash = ccp.consensus_proposal.hash();
             ccp.consensus_proposal.slot = i;
             block_sender
-                .send(MempoolEvent::BuiltSignedBlock(SignedBlock {
+                .send(MempoolBlockEvent::BuiltSignedBlock(SignedBlock {
                     data_proposals: vec![(ValidatorPublicKey("".into()), vec![])],
                     certificate: ccp.certificate.clone(),
                     consensus_proposal: ccp.consensus_proposal.clone(),
@@ -838,7 +864,7 @@ pub mod tests {
             ccp.consensus_proposal.parent_hash = ccp.consensus_proposal.hash();
             ccp.consensus_proposal.slot = i;
             block_sender
-                .send(MempoolEvent::BuiltSignedBlock(SignedBlock {
+                .send(MempoolBlockEvent::BuiltSignedBlock(SignedBlock {
                     data_proposals: vec![(ValidatorPublicKey("".into()), vec![])],
                     certificate: ccp.certificate.clone(),
                     consensus_proposal: ccp.consensus_proposal.clone(),
