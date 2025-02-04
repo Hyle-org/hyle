@@ -672,27 +672,20 @@ impl Mempool {
         info!("{} SyncReply from validator {validator}", self.lanes.id);
 
         // Ensure all lane entries are signed by the validator.
-        missing_lane_entries
-            .iter()
-            .map(|lane_entry| {
-                let expected_message = MempoolNetMessage::DataVote(
-                    lane_entry.data_proposal.hash(),
-                    lane_entry.cumul_size,
-                );
-                let signed_by_validator = lane_entry
-                    .signatures
-                    .iter()
-                    .any(|s| &s.signature.validator == validator && s.msg == expected_message);
-                if !signed_by_validator {
-                    bail!(
-                        "Lane entry {} is missing signature from {}",
-                        lane_entry.data_proposal.hash(),
-                        validator
-                    );
-                };
-                Ok(())
-            })
-            .collect::<Result<Vec<_>>>()?;
+        if missing_lane_entries.iter().any(|lane_entry| {
+            let expected_message =
+                MempoolNetMessage::DataVote(lane_entry.data_proposal.hash(), lane_entry.cumul_size);
+
+            !lane_entry
+                .signatures
+                .iter()
+                .any(|s| &s.signature.validator == validator && s.msg == expected_message)
+        }) {
+            bail!(
+                "At least one lane entry is missing signature from {}",
+                validator
+            );
+        }
 
         // If we end up with an empty list, return an error (for testing/logic)
         if missing_lane_entries.is_empty() {
@@ -1898,8 +1891,7 @@ pub mod test {
         assert_eq!(
             handle.expect_err("should fail").to_string(),
             format!(
-                "Lane entry {} is missing signature from {}",
-                data_proposal.hash(),
+                "At least one lane entry is missing signature from {}",
                 crypto2.validator_pubkey()
             )
         );
@@ -1921,8 +1913,7 @@ pub mod test {
         assert_eq!(
             handle.expect_err("should fail").to_string(),
             format!(
-                "Lane entry {} is missing signature from {}",
-                data_proposal.hash(),
+                "At least one lane entry is missing signature from {}",
                 crypto3.validator_pubkey()
             )
         );
@@ -1944,8 +1935,7 @@ pub mod test {
         assert_eq!(
             handle.expect_err("should fail").to_string(),
             format!(
-                "Lane entry {} is missing signature from {}",
-                data_proposal.hash(),
+                "At least one lane entry is missing signature from {}",
                 crypto3.validator_pubkey()
             )
         );
@@ -1967,8 +1957,7 @@ pub mod test {
         assert_eq!(
             handle.expect_err("should fail").to_string(),
             format!(
-                "Lane entry {} is missing signature from {}",
-                data_proposal.hash(),
+                "At least one lane entry is missing signature from {}",
                 crypto2.validator_pubkey()
             )
         );
