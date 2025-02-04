@@ -75,7 +75,7 @@ name = "amm"
 version = "0.8.0"
 dependencies = [
  "anyhow",
- "bincode 2.0.0-rc.3",
+ "borsh",
  "client-sdk",
  "hyle-contract-sdk",
  "risc0-zkvm",
@@ -685,25 +685,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "bincode"
-version = "2.0.0-rc.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f11ea1a0346b94ef188834a65c068a03aec181c94896d481d7a0a40d85b0ce95"
-dependencies = [
- "bincode_derive",
- "serde",
-]
-
-[[package]]
-name = "bincode_derive"
-version = "2.0.0-rc.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7e30759b3b99a1b802a7a3aa21c85c3ded5c28e1c83170d82d70f08bbf7f3e4c"
-dependencies = [
- "virtue",
-]
-
-[[package]]
 name = "bindgen"
 version = "0.70.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -866,7 +847,7 @@ version = "0.8.0"
 dependencies = [
  "anyhow",
  "axum 0.8.1",
- "bincode 1.3.3",
+ "bincode",
  "bonsai-sdk",
  "bytemuck",
  "hex",
@@ -1133,7 +1114,6 @@ name = "client-sdk"
 version = "0.8.0"
 dependencies = [
  "anyhow",
- "bincode 2.0.0-rc.3",
  "bonsai-runner",
  "borsh",
  "futures",
@@ -2528,7 +2508,7 @@ name = "hydentity"
 version = "0.8.0"
 dependencies = [
  "anyhow",
- "bincode 2.0.0-rc.3",
+ "borsh",
  "clap",
  "client-sdk",
  "hex",
@@ -2555,7 +2535,6 @@ dependencies = [
  "axum 0.8.1",
  "axum-otel-metrics",
  "axum-test",
- "bincode 2.0.0-rc.3",
  "blst",
  "borsh",
  "bytes",
@@ -2612,7 +2591,7 @@ dependencies = [
 name = "hyle-contract-sdk"
 version = "0.8.0"
 dependencies = [
- "bincode 2.0.0-rc.3",
+ "borsh",
  "hyle-model",
  "mockall",
  "risc0-zkvm",
@@ -2634,7 +2613,7 @@ name = "hyle-loadtest"
 version = "0.8.0"
 dependencies = [
  "anyhow",
- "bincode 2.0.0-rc.3",
+ "borsh",
  "clap",
  "client-sdk",
  "hydentity",
@@ -2652,8 +2631,8 @@ version = "0.8.0"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
- "bincode 2.0.0-rc.3",
  "blst",
+ "borsh",
  "derive_more 2.0.1",
  "hex",
  "serde",
@@ -2670,7 +2649,6 @@ name = "hyle-verifiers"
 version = "0.8.0"
 dependencies = [
  "anyhow",
- "bincode 2.0.0-rc.3",
  "borsh",
  "hyle-model",
  "rand 0.9.0",
@@ -2686,7 +2664,7 @@ name = "hyllar"
 version = "0.8.0"
 dependencies = [
  "anyhow",
- "bincode 2.0.0-rc.3",
+ "borsh",
  "client-sdk",
  "hyle-contract-sdk",
  "hyllar",
@@ -5190,7 +5168,6 @@ name = "risc0-recursion"
 version = "0.8.0"
 dependencies = [
  "anyhow",
- "bincode 2.0.0-rc.3",
  "borsh",
  "client-sdk",
  "hex",
@@ -5253,7 +5230,7 @@ checksum = "6700c4875b90726b7bf9e981fccbde4ea11b3593d3b2ac6fa09c96f6de166152"
 dependencies = [
  "addr2line 0.22.0",
  "anyhow",
- "bincode 1.3.3",
+ "bincode",
  "bonsai-sdk",
  "borsh",
  "bytemuck",
@@ -5919,7 +5896,7 @@ version = "4.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bb8ec5621fba6c50f6ec4e0e963227d1ab2229840b0e210a57e1f18428bbcbc8"
 dependencies = [
- "bincode 1.3.3",
+ "bincode",
  "bytemuck",
  "clap",
  "elf",
@@ -5958,7 +5935,7 @@ version = "4.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fe96b1962e6c10ac8321c9ea16161467ca27b43a75c02f42c82310d5e05768f5"
 dependencies = [
- "bincode 1.3.3",
+ "bincode",
  "cbindgen",
  "cc",
  "cfg-if",
@@ -6015,7 +5992,7 @@ version = "4.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d2a78f87a3606de46272d2a153408768bf9b1897a37e231aa084425977fe8532"
 dependencies = [
- "bincode 1.3.3",
+ "bincode",
  "ctrlc",
  "prost",
  "serde",
@@ -6064,7 +6041,7 @@ version = "4.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "aac3d3deeed25e9cad80e4275faf5954aa63f213ed3422f0e098dd2d0c1b0c0e"
 dependencies = [
- "bincode 1.3.3",
+ "bincode",
  "serde",
  "sp1-primitives",
 ]
@@ -6075,7 +6052,7 @@ version = "4.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "09b25a09b455dfae9c688da05718b205e8bd4afab36cd912d54639f5d4035815"
 dependencies = [
- "bincode 1.3.3",
+ "bincode",
  "hex",
  "lazy_static",
  "num-bigint 0.4.6",
@@ -6094,7 +6071,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "40d5713392e803b1e609d626256015ddb5464e2f435fc55fa8f383bae111a4af"
 dependencies = [
  "anyhow",
- "bincode 1.3.3",
+ "bincode",
  "clap",
  "dirs",
  "downloader",
@@ -6246,7 +6223,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b39cc97057e5240a2ab3062234a60d6ee6dbdb852ef02ea5fe5f943f910f6c9e"
 dependencies = [
  "anyhow",
- "bincode 1.3.3",
+ "bincode",
  "bindgen",
  "cc",
  "cfg-if",
@@ -6273,7 +6250,7 @@ checksum = "5a6d0773e4cc5f8c2dfea65cbf003d6d6c8fb8f2671d3edb48b5873627f27d20"
 dependencies = [
  "anyhow",
  "async-trait",
- "bincode 1.3.3",
+ "bincode",
  "cfg-if",
  "dirs",
  "futures",
@@ -6584,7 +6561,7 @@ name = "staking"
 version = "0.8.0"
 dependencies = [
  "anyhow",
- "bincode 2.0.0-rc.3",
+ "borsh",
  "client-sdk",
  "hyle-contract-sdk",
  "risc0-zkvm",
@@ -7578,7 +7555,7 @@ name = "uuid-tld"
 version = "0.8.0"
 dependencies = [
  "anyhow",
- "bincode 2.0.0-rc.3",
+ "borsh",
  "client-sdk",
  "hyle-contract-sdk",
  "rand 0.9.0",
@@ -7648,12 +7625,6 @@ name = "version_check"
 version = "0.9.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
-
-[[package]]
-name = "virtue"
-version = "0.0.13"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9dcc60c0624df774c82a0ef104151231d37da4962957d691c011c852b2473314"
 
 [[package]]
 name = "wait-timeout"
