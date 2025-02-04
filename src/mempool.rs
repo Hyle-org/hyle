@@ -667,57 +667,49 @@ impl Mempool {
     fn on_sync_reply(
         &mut self,
         validator: &ValidatorPublicKey,
-        mut missing_lane_entries: Vec<LaneEntry>,
+        missing_lane_entries: Vec<LaneEntry>,
     ) -> Result<()> {
         info!("{} SyncReply from validator {validator}", self.lanes.id);
 
-        // Discard any lane entry that wasn't signed by the validator.
-        missing_lane_entries.retain(|lane_entry| {
+        // Ensure all lane entries are signed by the validator.
+        if missing_lane_entries.iter().any(|lane_entry| {
             let expected_message =
                 MempoolNetMessage::DataVote(lane_entry.data_proposal.hash(), lane_entry.cumul_size);
-            let keep = lane_entry
+
+            !lane_entry
                 .signatures
                 .iter()
-                .any(|s| &s.signature.validator == validator && s.msg == expected_message);
-            if !keep {
-                warn!(
-                    "Discarding lane entry {}, missing signature from {}",
-                    lane_entry.data_proposal.hash(),
-                    validator
-                );
-            };
-            keep
-        });
+                .any(|s| &s.signature.validator == validator && s.msg == expected_message)
+        }) {
+            bail!(
+                "At least one lane entry is missing signature from {}",
+                validator
+            );
+        }
 
         // If we end up with an empty list, return an error (for testing/logic)
         if missing_lane_entries.is_empty() {
             bail!("Empty lane entries after filtering out missing signatures");
         }
 
+        // Add missing lanes to the validator's lane
         debug!(
-            "{} adding {} missing lane entries to lane of {validator}",
-            self.lanes.id,
+            "Filling hole with {} entries for {validator}",
             missing_lane_entries.len()
         );
 
-        // Add missing lanes to the validator's lane
-        debug!("Filling hole with {} entries", missing_lane_entries.len());
-
-        ////////////////////////////////
-        // FIXME: This needs to be removed when we stop syncing for unknown data proposals
-        // Update lanes_tip only if we are filling a hole on top of actual lane
-        let first_dp_parent_hash = missing_lane_entries
-            .first()
-            .and_then(|le| le.data_proposal.parent_data_proposal_hash.clone());
-        if first_dp_parent_hash.as_ref() == self.lanes.get_lane_hash_tip(validator) {
-            #[allow(clippy::unwrap_used, reason = "there is a last one by construction")]
-            let last_entry = missing_lane_entries.last().unwrap();
-            self.lanes.lanes_tip.insert(
-                validator.clone(),
-                (last_entry.data_proposal.hash(), last_entry.cumul_size),
-            );
+        // Assert that missing lane entries are in the right order
+        for window in missing_lane_entries.windows(2) {
+            let first_hash = window.first().map(|le| le.data_proposal.hash());
+            let second_parent_hash = window
+                .get(1)
+                .and_then(|le| le.data_proposal.parent_data_proposal_hash.as_ref());
+            if first_hash.as_ref() != second_parent_hash {
+                bail!("Lane entries are not in the right order");
+            }
         }
-        ////////////////////////////////
+
+        // SyncReply only comes for missing data proposals. We should NEVER update the lane tip
         for lane_entry in missing_lane_entries {
             self.lanes
                 .put_no_verification(validator.clone(), lane_entry)?;
@@ -872,27 +864,12 @@ impl Mempool {
                     )))
                 });
             }
-            DataProposalVerdict::Wait(last_known_data_proposal_hash) => {
-                let data_proposal_parent_hash = data_proposal.parent_data_proposal_hash.clone();
+            DataProposalVerdict::Wait => {
                 // Push the data proposal in the waiting list
                 self.buffered_proposals
                     .entry(validator.clone())
                     .or_default()
                     .push(data_proposal);
-
-                // We dont have the parent, so we craft a sync demand
-                debug!(
-                    "Emitting sync request to {}, last_known_data_proposal_hash {:?}",
-                    validator, last_known_data_proposal_hash
-                );
-
-                if let Some(parent) = data_proposal_parent_hash {
-                    self.send_sync_request(
-                        validator,
-                        last_known_data_proposal_hash.as_ref(),
-                        Some(&parent),
-                    )?;
-                }
             }
             DataProposalVerdict::Refuse => {
                 debug!("Refuse vote for DataProposal");
@@ -921,7 +898,7 @@ impl Mempool {
             DataProposalVerdict::Process => {
                 unreachable!("DataProposal has already been processed");
             }
-            DataProposalVerdict::Wait(_) => {
+            DataProposalVerdict::Wait => {
                 unreachable!("DataProposal has already been processed");
             }
             DataProposalVerdict::Vote => {
@@ -1527,6 +1504,18 @@ pub mod test {
                 .handle_api_message(RestApiMessage::NewTx(tx))
                 .expect("Error while handling contract tx");
         }
+
+        pub fn handle_consensus_event(&mut self, consensus_proposal: ConsensusProposal) {
+            self.mempool
+                .handle_consensus_event(ConsensusEvent::CommitConsensusProposal(
+                    CommittedConsensusProposal {
+                        staking: self.mempool.staking.clone(),
+                        consensus_proposal,
+                        certificate: AggregateSignature::default(),
+                    },
+                ))
+                .expect("Error while handling consensus event");
+        }
     }
 
     pub fn make_register_contract_tx(name: ContractName) -> Transaction {
@@ -1792,6 +1781,33 @@ pub mod test {
     }
 
     #[test_log::test(tokio::test)]
+    async fn test_sending_sync_request() -> Result<()> {
+        let mut ctx = MempoolTestCtx::new("mempool").await;
+        let crypto2 = BlstCrypto::new("2".into()).unwrap();
+        let pubkey2 = crypto2.validator_pubkey();
+
+        ctx.handle_consensus_event(ConsensusProposal {
+            cut: vec![(
+                pubkey2.clone(),
+                DataProposalHash("dp_hash_in_cut".to_owned()),
+                LaneBytesSize::default(),
+                PoDA::default(),
+            )],
+            ..ConsensusProposal::default()
+        });
+
+        // Assert that we send a SyncReply
+        match ctx.assert_send(crypto2.validator_pubkey(), "SyncReply").msg {
+            MempoolNetMessage::SyncRequest(from, to) => {
+                assert_eq!(from, None);
+                assert_eq!(to, Some(DataProposalHash("dp_hash_in_cut".to_owned())));
+            }
+            _ => panic!("Expected SyncReply message"),
+        };
+        Ok(())
+    }
+
+    #[test_log::test(tokio::test)]
     async fn test_receiving_sync_request() -> Result<()> {
         let mut ctx = MempoolTestCtx::new("mempool").await;
 
@@ -1874,7 +1890,10 @@ pub mod test {
         let handle = ctx.mempool.handle_net_message(signed_msg.clone());
         assert_eq!(
             handle.expect_err("should fail").to_string(),
-            "Empty lane entries after filtering out missing signatures"
+            format!(
+                "At least one lane entry is missing signature from {}",
+                crypto2.validator_pubkey()
+            )
         );
 
         // Second: the message is NOT from crypto2, but the DP is signed by crypto2
@@ -1893,7 +1912,10 @@ pub mod test {
         let handle = ctx.mempool.handle_net_message(signed_msg.clone());
         assert_eq!(
             handle.expect_err("should fail").to_string(),
-            "Empty lane entries after filtering out missing signatures"
+            format!(
+                "At least one lane entry is missing signature from {}",
+                crypto3.validator_pubkey()
+            )
         );
 
         // Third: the message is from crypto2, the signature is from crypto2, but the message is wrong
@@ -1912,11 +1934,14 @@ pub mod test {
         let handle = ctx.mempool.handle_net_message(signed_msg.clone());
         assert_eq!(
             handle.expect_err("should fail").to_string(),
-            "Empty lane entries after filtering out missing signatures"
+            format!(
+                "At least one lane entry is missing signature from {}",
+                crypto3.validator_pubkey()
+            )
         );
 
         // Fourth: the message is from crypto2, the signature is from crypto2, but the size is wrong
-        let signed_msg = crypto3.sign(MempoolNetMessage::SyncReply(vec![LaneEntry {
+        let signed_msg = crypto2.sign(MempoolNetMessage::SyncReply(vec![LaneEntry {
             data_proposal: data_proposal.clone(),
             cumul_size: LaneBytesSize(0),
             signatures: vec![crypto2
@@ -1931,9 +1956,46 @@ pub mod test {
         let handle = ctx.mempool.handle_net_message(signed_msg.clone());
         assert_eq!(
             handle.expect_err("should fail").to_string(),
-            "Empty lane entries after filtering out missing signatures" // TODO error message
+            format!(
+                "At least one lane entry is missing signature from {}",
+                crypto2.validator_pubkey()
+            )
         );
 
+        // Fifth case: DP chaining is incorrect
+        let incorrect_parent = DataProposal {
+            parent_data_proposal_hash: Some(DataProposalHash("incorrect".to_owned())),
+            txs: vec![make_register_contract_tx(ContractName::new("test1"))],
+        };
+        let signed_msg = crypto2.sign(MempoolNetMessage::SyncReply(vec![
+            LaneEntry {
+                data_proposal: data_proposal.clone(),
+                cumul_size,
+                signatures: vec![crypto2
+                    .sign(MempoolNetMessage::DataVote(
+                        data_proposal.hash(),
+                        cumul_size,
+                    ))
+                    .expect("should sign")],
+            },
+            LaneEntry {
+                data_proposal: incorrect_parent.clone(),
+                cumul_size,
+                signatures: vec![crypto2
+                    .sign(MempoolNetMessage::DataVote(
+                        incorrect_parent.hash(),
+                        cumul_size,
+                    ))
+                    .expect("should sign")],
+            },
+        ]))?;
+
+        // This actually fails - we don't know how to handle it
+        let handle = ctx.mempool.handle_net_message(signed_msg.clone());
+        assert_eq!(
+            handle.expect_err("should fail").to_string(),
+            "Lane entries are not in the right order"
+        );
         // Final case: message is correct
         let signed_msg = crypto2.sign(MempoolNetMessage::SyncReply(vec![LaneEntry {
             data_proposal: data_proposal.clone(),
@@ -1950,20 +2012,10 @@ pub mod test {
         assert_ok!(handle, "Should handle net message");
 
         // Assert that the lane entry was added
-        let (
-            LaneEntry {
-                data_proposal: saved_dp,
-                ..
-            },
-            _,
-        ) = ctx.last_validator_lane_entry(crypto2.validator_pubkey());
-        assert_eq!(saved_dp, data_proposal);
-
-        // Process it again
-        ctx.pop_validator_data_proposal(crypto2.validator_pubkey());
-        ctx.mempool
-            .handle_net_message(signed_msg)
-            .expect("should ignore duplicated message");
+        assert!(ctx
+            .mempool
+            .lanes
+            .contains(crypto2.validator_pubkey(), &data_proposal.hash()));
 
         Ok(())
     }
