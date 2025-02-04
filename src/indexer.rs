@@ -174,7 +174,7 @@ impl Indexer {
                                         }
                                     }
                                     Some(Err(e)) => {
-                                        error!("Erreur lors de la réception d'un message WS: {}", e);
+                                        error!("Error while getting message from WS: {}", e);
                                         break;
                                     }
                                     None => break,
