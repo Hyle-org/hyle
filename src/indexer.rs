@@ -135,7 +135,7 @@ impl Indexer {
                     .log_error("Handling node state event");
             }
 
-            Some((contract_name, mut socket)) = self.new_sub_receiver.recv() => {
+            Some((contract_name, socket)) = self.new_sub_receiver.recv() => {
 
                 let (tx, mut rx) = broadcast::channel(100);
                 // Append tx to the list of subscribers for contract_name
