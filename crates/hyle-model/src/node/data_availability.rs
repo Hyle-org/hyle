@@ -115,6 +115,7 @@ impl Hashable<HyleOutputHash> for HyleOutput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema, Encode, Decode, Eq, PartialEq)]
+#[serde(tag = "name", content = "metadata")]
 pub enum TransactionStateEvent {
     Sequenced,
     Error(String),
