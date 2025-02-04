@@ -1661,9 +1661,12 @@ pub mod test {
     #[test_log::test(tokio::test)]
     async fn test_tx_reset_timeout_on_tx_settlement() {
         // Create four transactions that are inter dependent
-        // Tx1 --> Tx2
+        // Tx1 --> Tx2 (ready to be settled)
         //     |-> Tx3 -> Tx4
-        // We want to test that when Tx1 times out, Tx2's and Tx3's timeout is reset; and that Tx4 is not reset nor timedout.
+        // We want to test that when Tx1 times out:
+        // - Tx2 gets settled
+        // - Tx3's timeout is reset
+        // - Tx4 is neither resetted nor timedout.
 
         let mut state = new_node_state().await;
         let c1 = ContractName::new("c1");
@@ -1688,11 +1691,13 @@ pub mod test {
             identity: Identity::new("test2.c2"),
             blobs: vec![new_blob(&c2.0)],
         };
-
         let tx1_hash = tx1.hash();
         let tx2_hash = tx2.hash();
         let tx3_hash = tx3.hash();
         let tx4_hash = tx4.hash();
+
+        let hyle_output = make_hyle_output(tx2.clone(), BlobIndex(0));
+        let tx2_verified_proof = new_proof_tx(&c1, &hyle_output, &tx2_hash);
 
         state.handle_signed_block(&craft_signed_block(
             104,
@@ -1701,6 +1706,7 @@ pub mod test {
                 register_c2.into(),
                 tx1.into(),
                 tx2.into(),
+                tx2_verified_proof.into(),
                 tx3.into(),
                 tx4.into(),
             ],
@@ -1722,11 +1728,11 @@ pub mod test {
         assert_eq!(block.timed_out_txs, vec![tx1_hash.clone()]);
         assert_eq!(timeouts::tests::get(&state.timeouts, &tx1_hash), None);
 
-        // Assert that tx2&tx3 timeout is reset
-        assert_eq!(
-            timeouts::tests::get(&state.timeouts, &tx2_hash),
-            Some(BlockHeight(304))
-        );
+        // Assert that tx2 has settled
+        assert_eq!(state.unsettled_transactions.get(&tx2_hash), None);
+        assert_eq!(timeouts::tests::get(&state.timeouts, &tx2_hash), None);
+
+        // Assert that tx3 timeout is reset
         assert_eq!(
             timeouts::tests::get(&state.timeouts, &tx3_hash),
             Some(BlockHeight(304))
@@ -1738,11 +1744,8 @@ pub mod test {
         // Time out
         let block = state.handle_signed_block(&craft_signed_block(304, vec![]));
 
-        // Assert that tx2 and tx3 has timed out.
-        assert_eq!(
-            block.timed_out_txs,
-            vec![tx2_hash.clone(), tx3_hash.clone()]
-        );
+        // Assert that tx3 has timed out.
+        assert_eq!(block.timed_out_txs, vec![tx3_hash.clone()]);
         assert_eq!(timeouts::tests::get(&state.timeouts, &tx1_hash), None);
         assert_eq!(timeouts::tests::get(&state.timeouts, &tx2_hash), None);
         assert_eq!(timeouts::tests::get(&state.timeouts, &tx3_hash), None);
