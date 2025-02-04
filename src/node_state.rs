@@ -170,7 +170,6 @@ impl NodeState {
                                         .entry(proof_tx.hash())
                                         .or_default()
                                         .push(TransactionStateEvent::Error(err));
-                                    block_under_construction.failed_txs.push(tx.hash());
                                     None
                                 }
                             }
