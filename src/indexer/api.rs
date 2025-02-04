@@ -320,10 +320,11 @@ pub async fn get_transaction_events(
 ) -> Result<Json<Vec<APITransactionEvents>>, StatusCode> {
     let rows = sqlx::query(
         r#"
-        SELECT block_hash, tx_hash, events AS events
-        FROM transaction_state_events
+        SELECT t.block_hash, b.height, t.tx_hash, t.events
+        FROM transaction_state_events t
+        LEFT JOIN blocks b ON t.block_hash = b.hash
         WHERE tx_hash = $1
-        ORDER BY (block_hash, index) DESC
+        ORDER BY (b.height, index) DESC;
         "#,
     )
     .bind(tx_hash)
@@ -336,9 +337,15 @@ pub async fn get_transaction_events(
         .into_iter()
         .map(|row| {
             let block_hash = row.try_get("block_hash")?;
+            let block_height: i64 = row.try_get("height")?;
+            let block_height = BlockHeight(block_height.try_into()?);
             let events: serde_json::Value = row.try_get("events")?;
             let events: Vec<serde_json::Value> = serde_json::from_value(events)?;
-            Ok(APITransactionEvents { block_hash, events })
+            Ok(APITransactionEvents {
+                block_hash,
+                block_height,
+                events,
+            })
         })
         .collect();
 

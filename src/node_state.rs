@@ -399,8 +399,8 @@ impl NodeState {
                     ));
                 }
                 Err(e) => {
-                    let e = format!("Tx {:?} not ready to settle: {:?}", &bth, e);
-                    debug!(e);
+                    let e = format!("Failed to settle: {}", e);
+                    debug!(tx_hash = %bth, e);
                     events.push(TransactionStateEvent::SettleEvent(e));
                 }
             }
@@ -442,7 +442,7 @@ impl NodeState {
             ) {
                 Some(res) => res,
                 None => {
-                    bail!("Tx: {} is not ready to settle.", unsettled_tx.hash);
+                    bail!("Not ready to settle.");
                 }
             };
 
@@ -769,6 +769,11 @@ impl NodeState {
         txs_at_timeout.retain(|tx| {
             if let Some(mut tx) = self.unsettled_transactions.remove(tx) {
                 info!("⏰ Blob tx timed out: {}", &tx.hash);
+                block_under_construction
+                    .transactions_events
+                    .entry(tx.hash)
+                    .or_default()
+                    .push(TransactionStateEvent::TimedOut);
 
                 // Attempt to settle following transactions
                 let mut blob_tx_to_try_and_settle = BTreeSet::new();

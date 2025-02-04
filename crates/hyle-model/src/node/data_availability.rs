@@ -126,4 +126,5 @@ pub enum TransactionStateEvent {
     SettleEvent(String),
     Settled,
     SettledAsFailed,
+    TimedOut,
 }
