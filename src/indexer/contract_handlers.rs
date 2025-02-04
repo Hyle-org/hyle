@@ -50,7 +50,7 @@ impl ContractHandler for Hydentity {
         } = tx.blobs.get(index.0).context("Failed to get blob")?;
 
         let (action, _): (IdentityAction, _) =
-            bincode::decode_from_slice(data.0.as_slice(), bincode::config::standard())
+            borsh::from_slice(data.0.as_slice())
                 .context("Failed to decode payload")?;
 
         let res =

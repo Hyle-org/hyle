@@ -32,10 +32,7 @@ impl AsRef<[u8]> for FjallHeightKey {
 
 impl FjallValue {
     fn new(block: &SignedBlock) -> Result<Self> {
-        Ok(Self(bincode::encode_to_vec(
-            block,
-            bincode::config::standard(),
-        )?))
+        Ok(Self(borsh::to_vec(block)?))
     }
 }
 
@@ -53,9 +50,7 @@ pub struct Blocks {
 
 impl Blocks {
     fn decode_item(item: Slice) -> Result<SignedBlock> {
-        bincode::decode_from_slice(&item, bincode::config::standard())
-            .map(|(b, _)| b)
-            .map_err(Into::into)
+        borsh::from_slice(&item).map(|(b, _)| b).map_err(Into::into)
     }
 
     pub fn new(path: &Path) -> Result<Self> {

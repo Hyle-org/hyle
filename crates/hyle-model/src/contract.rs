@@ -3,10 +3,12 @@ use std::{
     ops::{Add, Sub},
 };
 
-use bincode::{Decode, Encode};
+use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, PartialEq, Eq, Default)]
+#[derive(
+    Debug, Serialize, Deserialize, Clone, BorshSerialize, BorshDeserialize, PartialEq, Eq, Default,
+)]
 #[cfg_attr(feature = "full", derive(utoipa::ToSchema))]
 pub struct ConsensusProposalHash(pub String);
 pub type BlockHash = ConsensusProposalHash;
@@ -40,7 +42,9 @@ pub struct ContractInput {
     pub private_input: Vec<u8>,
 }
 
-#[derive(Default, Serialize, Deserialize, Clone, PartialEq, Eq, Hash, Encode, Decode)]
+#[derive(
+    Default, Serialize, Deserialize, Clone, PartialEq, Eq, Hash, BorshSerialize, BorshDeserialize,
+)]
 #[cfg_attr(feature = "full", derive(utoipa::ToSchema))]
 pub struct StateDigest(pub Vec<u8>);
 
@@ -65,8 +69,8 @@ impl Digestable for StateDigest {
     PartialEq,
     Eq,
     Hash,
-    Encode,
-    Decode,
+    BorshSerialize,
+    BorshDeserialize,
     Ord,
     PartialOrd,
 )]
@@ -82,8 +86,8 @@ pub struct Identity(pub String);
     PartialEq,
     Eq,
     Hash,
-    Encode,
-    Decode,
+    BorshSerialize,
+    BorshDeserialize,
     Ord,
     PartialOrd,
 )]
@@ -91,7 +95,17 @@ pub struct Identity(pub String);
 pub struct TxHash(pub String);
 
 #[derive(
-    Default, Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash, Encode, Decode, Copy,
+    Default,
+    Serialize,
+    Deserialize,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Hash,
+    BorshSerialize,
+    BorshDeserialize,
+    Copy,
 )]
 #[cfg_attr(feature = "full", derive(utoipa::ToSchema))]
 pub struct BlobIndex(pub usize);
@@ -103,7 +117,9 @@ impl Add<usize> for BlobIndex {
     }
 }
 
-#[derive(Default, Serialize, Deserialize, Clone, PartialEq, Eq, Hash, Encode, Decode)]
+#[derive(
+    Default, Serialize, Deserialize, Clone, PartialEq, Eq, Hash, BorshSerialize, BorshDeserialize,
+)]
 #[cfg_attr(feature = "full", derive(utoipa::ToSchema))]
 pub struct BlobData(pub Vec<u8>);
 
@@ -113,43 +129,51 @@ impl std::fmt::Debug for BlobData {
     }
 }
 
-#[derive(Debug, Encode, Decode)]
+#[derive(Debug, BorshSerialize, BorshDeserialize)]
 pub struct StructuredBlobData<Parameters> {
     pub caller: Option<BlobIndex>,
     pub callees: Option<Vec<BlobIndex>>,
     pub parameters: Parameters,
 }
 
-impl<Parameters: Encode> From<StructuredBlobData<Parameters>> for BlobData {
+impl<Parameters: BorshSerialize> From<StructuredBlobData<Parameters>> for BlobData {
     fn from(val: StructuredBlobData<Parameters>) -> Self {
-        BlobData(
-            bincode::encode_to_vec(val, bincode::config::standard())
-                .expect("failed to encode BlobData"),
-        )
+        BlobData(borsh::to_vec(&val).expect("failed to encode BlobData"))
     }
 }
-impl<Parameters: Decode> TryFrom<BlobData> for StructuredBlobData<Parameters> {
-    type Error = bincode::error::DecodeError;
+impl<Parameters: BorshDeserialize> TryFrom<BlobData> for StructuredBlobData<Parameters> {
+    type Error = std::io::Error;
 
     fn try_from(val: BlobData) -> Result<StructuredBlobData<Parameters>, Self::Error> {
-        bincode::decode_from_slice(&val.0, bincode::config::standard()).map(|(data, _)| data)
+        borsh::from_slice(&val.0)
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Default, Clone, PartialEq, Eq, Encode, Decode, Hash)]
+#[derive(
+    Debug,
+    Serialize,
+    Deserialize,
+    Default,
+    Clone,
+    PartialEq,
+    Eq,
+    BorshSerialize,
+    BorshDeserialize,
+    Hash,
+)]
 #[cfg_attr(feature = "full", derive(utoipa::ToSchema))]
 pub struct Blob {
     pub contract_name: ContractName,
     pub data: BlobData,
 }
 
-#[derive(Debug, Encode, Decode)]
+#[derive(Debug, BorshSerialize, BorshDeserialize)]
 pub struct StructuredBlob<Parameters> {
     pub contract_name: ContractName,
     pub data: StructuredBlobData<Parameters>,
 }
 
-impl<Parameters: Encode> From<StructuredBlob<Parameters>> for Blob {
+impl<Parameters: BorshSerialize> From<StructuredBlob<Parameters>> for Blob {
     fn from(val: StructuredBlob<Parameters>) -> Self {
         Blob {
             contract_name: val.contract_name,
@@ -158,12 +182,11 @@ impl<Parameters: Encode> From<StructuredBlob<Parameters>> for Blob {
     }
 }
 
-impl<Parameters: Decode> TryFrom<Blob> for StructuredBlob<Parameters> {
-    type Error = bincode::error::DecodeError;
+impl<Parameters: BorshDeserialize> TryFrom<Blob> for StructuredBlob<Parameters> {
+    type Error = std::io::Error;
 
     fn try_from(val: Blob) -> Result<StructuredBlob<Parameters>, Self::Error> {
-        let data = bincode::decode_from_slice(&val.data.0, bincode::config::standard())
-            .map(|(data, _)| data)?;
+        let data = borsh::from_slice(&val.data.0)?;
         Ok(StructuredBlob {
             contract_name: val.contract_name,
             data,
@@ -203,23 +226,56 @@ pub fn flatten_blobs(blobs: &[Blob]) -> Vec<u8> {
     Eq,
     PartialEq,
     Hash,
-    Encode,
-    Decode,
+    BorshSerialize,
+    BorshDeserialize,
     Ord,
     PartialOrd,
 )]
 #[cfg_attr(feature = "full", derive(utoipa::ToSchema))]
 pub struct ContractName(pub String);
 
-#[derive(Default, Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash, Encode, Decode)]
+#[derive(
+    Default,
+    Debug,
+    Clone,
+    Serialize,
+    Deserialize,
+    Eq,
+    PartialEq,
+    Hash,
+    BorshSerialize,
+    BorshDeserialize,
+)]
 #[cfg_attr(feature = "full", derive(utoipa::ToSchema))]
 pub struct Verifier(pub String);
 
-#[derive(Default, Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash, Encode, Decode)]
+#[derive(
+    Default,
+    Debug,
+    Clone,
+    Serialize,
+    Deserialize,
+    Eq,
+    PartialEq,
+    Hash,
+    BorshSerialize,
+    BorshDeserialize,
+)]
 #[cfg_attr(feature = "full", derive(utoipa::ToSchema))]
 pub struct ProgramId(pub Vec<u8>);
 
-#[derive(Default, Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash, Encode, Decode)]
+#[derive(
+    Default,
+    Serialize,
+    Deserialize,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Hash,
+    BorshSerialize,
+    BorshDeserialize,
+)]
 #[cfg_attr(feature = "full", derive(utoipa::ToSchema))]
 pub struct HyleOutput {
     pub version: u32,
@@ -239,7 +295,18 @@ pub struct HyleOutput {
     pub program_outputs: Vec<u8>,
 }
 
-#[derive(Default, Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash, Encode, Decode)]
+#[derive(
+    Default,
+    Serialize,
+    Deserialize,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Hash,
+    BorshSerialize,
+    BorshDeserialize,
+)]
 #[cfg_attr(feature = "full", derive(utoipa::ToSchema))]
 pub struct TxContext {
     pub block_hash: BlockHash,
@@ -340,7 +407,17 @@ impl From<usize> for BlobIndex {
 
 #[cfg_attr(feature = "full", derive(derive_more::derive::Display))]
 #[derive(
-    Default, Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash, Copy, Encode, Decode,
+    Default,
+    Debug,
+    Clone,
+    Serialize,
+    Deserialize,
+    Eq,
+    PartialEq,
+    Hash,
+    Copy,
+    BorshSerialize,
+    BorshDeserialize,
 )]
 #[cfg_attr(feature = "full", derive(utoipa::ToSchema))]
 pub struct BlockHeight(pub u64);
@@ -373,7 +450,9 @@ impl Add<BlockHeight> for BlockHeight {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Default, Clone, PartialEq, Eq, Encode, Decode)]
+#[derive(
+    Debug, Serialize, Deserialize, Default, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize,
+)]
 pub struct RegisterContractAction {
     pub verifier: Verifier,
     pub program_id: ProgramId,
@@ -417,7 +496,18 @@ impl ContractAction for RegisterContractAction {
 /// Used by the Hylé node to recognize contract registration.
 /// Simply output this struct in your HyleOutput registered_contracts.
 /// See uuid-tld for examples.
-#[derive(Default, Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash, Encode, Decode)]
+#[derive(
+    Default,
+    Serialize,
+    Deserialize,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Hash,
+    BorshSerialize,
+    BorshDeserialize,
+)]
 #[cfg_attr(feature = "full", derive(utoipa::ToSchema))]
 pub struct RegisterContractEffect {
     pub verifier: Verifier,

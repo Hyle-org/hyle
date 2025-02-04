@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use bincode::{Decode, Encode};
+use borsh::{BorshDeserialize, BorshSerialize};
 use tracing::{debug, info, trace, warn};
 
 use super::Consensus;
@@ -10,7 +10,7 @@ use crate::model::{
 };
 use anyhow::{bail, Context, Result};
 
-#[derive(Debug, Encode, Decode, Default)]
+#[derive(Debug, BorshSerialize, BorshDeserialize, Default)]
 pub(super) enum TimeoutState {
     #[default]
     // Initial state
@@ -74,7 +74,7 @@ impl TimeoutState {
     }
 }
 
-#[derive(Encode, Decode, Default)]
+#[derive(BorshSerialize, BorshDeserialize, Default)]
 pub(super) struct TimeoutRoleState {
     pub(super) requests: HashSet<SignedByValidator<ConsensusNetMessage>>,
     pub(super) state: TimeoutState,

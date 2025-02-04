@@ -18,13 +18,7 @@ pub fn verify_proof(
 ) -> Result<Vec<HyleOutput>> {
     let hyle_outputs = match verifier.0.as_str() {
         // TODO: add #[cfg(test)]
-        "test" => {
-            let (output, _) = bincode::decode_from_slice::<Vec<HyleOutput>, _>(
-                &proof.0,
-                bincode::config::standard(),
-            )?;
-            Ok(output)
-        }
+        "test" => borsh::from_slice::<Vec<HyleOutput>>(&proof.0),
         #[cfg(test)]
         "test-slow" => {
             tracing::info!("Sleeping for 2 seconds to simulate a slow verifier");
@@ -153,10 +147,7 @@ pub fn verify_native_impl(
 ) -> anyhow::Result<(Identity, bool)> {
     match verifier {
         NativeVerifiers::Blst => {
-            let (blob, _) = bincode::decode_from_slice::<BlstSignatureBlob, _>(
-                &blob.data.0,
-                bincode::config::standard(),
-            )?;
+            let blob = borsh::from_slice::<BlstSignatureBlob>(&blob.data.0)?;
 
             let msg = [blob.data, blob.identity.0.as_bytes().to_vec()].concat();
             // TODO: refacto BlstCrypto to avoid using ValidatorPublicKey here
@@ -170,10 +161,7 @@ pub fn verify_native_impl(
             Ok((blob.identity, BlstCrypto::verify(&msg)?))
         }
         NativeVerifiers::Sha3_256 => {
-            let (blob, _) = bincode::decode_from_slice::<ShaBlob, _>(
-                &blob.data.0,
-                bincode::config::standard(),
-            )?;
+            let blob = borsh::from_slice::<ShaBlob>(&blob.data.0)?;
 
             let mut hasher = sha3::Sha3_256::new();
             hasher.update(blob.data);

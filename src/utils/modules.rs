@@ -32,12 +32,12 @@ where
 
     fn load_from_disk<S>(file: &Path) -> Option<S>
     where
-        S: bincode::Decode,
+        S: borsh::BorshDeserialize,
     {
         match fs::File::open(file) {
             Ok(mut reader) => {
                 info!("Loaded data from disk {}", file.to_string_lossy());
-                bincode::decode_from_std_read(&mut reader, bincode::config::standard())
+                bincode::decode_from_std_read(&mut reader)
                     .log_error(format!("Loading and decoding {}", file.to_string_lossy()))
                     .ok()
             }
@@ -54,14 +54,14 @@ where
 
     fn load_from_disk_or_default<S>(file: &Path) -> S
     where
-        S: bincode::Decode + Default,
+        S: borsh::BorshDeserialize + Default,
     {
         Self::load_from_disk(file).unwrap_or(S::default())
     }
 
     fn save_on_disk<S>(file: &Path, store: &S) -> Result<()>
     where
-        S: bincode::Encode,
+        S: borsh::BorshSerialize,
     {
         // TODO/FIXME: Concurrent writes can happen, and an older state can override a newer one
         // Example:
@@ -78,8 +78,7 @@ where
         debug!("Saving on disk in a tmp file {:?}", tmp.clone());
         let mut buf_writer =
             BufWriter::new(fs::File::create(tmp.as_path()).log_error("Create file")?);
-        bincode::encode_into_std_write(store, &mut buf_writer, bincode::config::standard())
-            .log_error("Serializing Ctx chain")?;
+        borsh::to_writer(store, &mut buf_writer).log_error("Serializing Ctx chain")?;
 
         buf_writer.flush().log_error(format!(
             "Flushing Buffer writer for store {}",
@@ -307,7 +306,7 @@ mod tests {
     use tempfile::tempdir;
     use tokio::sync::Mutex;
 
-    #[derive(Default, bincode::Encode, bincode::Decode)]
+    #[derive(Default, borsh::BorshSerialize, borsh::BorshDeserialize)]
     struct TestStruct {
         value: u32,
     }
@@ -368,8 +367,7 @@ mod tests {
         // Write a valid TestStruct to the file
         let mut file = File::create(&file_path).unwrap();
         let test_struct = TestStruct { value: 42 };
-        bincode::encode_into_std_write(&test_struct, &mut file, bincode::config::standard())
-            .unwrap();
+        borsh::to_writer(&test_struct, &mut file).unwrap();
 
         // Load the struct from the file
         let loaded_struct: TestStruct = TestModule::<usize>::load_from_disk_or_default(&file_path);

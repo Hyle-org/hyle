@@ -6,7 +6,7 @@ use crate::{
     guest::fail,
     Identity, StructuredBlobData,
 };
-use bincode::{Decode, Encode};
+use borsh::{BorshDeserialize, BorshSerialize};
 use core::result::Result;
 
 use hyle_model::{
@@ -15,7 +15,7 @@ use hyle_model::{
 
 pub fn parse_blob<Parameters>(blobs: &[Blob], index: &BlobIndex) -> Option<Parameters>
 where
-    Parameters: Decode,
+    Parameters: BorshDeserialize,
 {
     let blob = match blobs.get(index.0) {
         Some(v) => v,
@@ -24,10 +24,7 @@ where
         }
     };
 
-    let Ok((parameters, _)) = bincode::decode_from_slice::<Parameters, _>(
-        blob.data.0.as_slice(),
-        bincode::config::standard(),
-    ) else {
+    let Ok(parameters) = borsh::from_slice::<Parameters>(blob.data.0.as_slice()) else {
         return None;
     };
 
@@ -39,7 +36,7 @@ pub fn parse_structured_blob<Parameters>(
     index: &BlobIndex,
 ) -> Option<StructuredBlob<Parameters>>
 where
-    Parameters: Decode,
+    Parameters: BorshDeserialize,
 {
     let blob = match blobs.get(index.0) {
         Some(v) => v,
@@ -82,7 +79,7 @@ pub fn check_caller_callees<Paramaters>(
     parameters: &StructuredBlob<Paramaters>,
 ) -> Result<Identity, String>
 where
-    Paramaters: Encode + Decode,
+    Paramaters: BorshSerialize + BorshDeserialize,
 {
     // Check that callees has this blob as caller
     if let Some(callees) = parameters.data.callees.as_ref() {

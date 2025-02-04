@@ -103,7 +103,7 @@ pub mod sp1 {
             .run()
             .expect("failed to generate proof");
 
-        let (hyle_output, _) = bincode::decode_from_slice::<HyleOutput, _>(
+        let (hyle_output, _) = borsh::from_slice::<HyleOutput, _>(
             public_values.as_slice(),
             bincode::config::legacy().with_fixed_int_encoding(),
         )
@@ -134,7 +134,7 @@ pub mod sp1 {
             .run()
             .expect("failed to generate proof");
 
-        let (hyle_output, _) = bincode::decode_from_slice::<HyleOutput, _>(
+        let (hyle_output, _) = borsh::from_slice::<HyleOutput, _>(
             proof.public_values.as_slice(),
             bincode::config::legacy().with_fixed_int_encoding(),
         )
@@ -163,10 +163,7 @@ pub mod test {
             Box::pin(async move {
                 let hyle_output = test::execute(&contract_input)?;
 
-                Ok(ProofData(bincode::encode_to_vec(
-                    vec![hyle_output.clone()],
-                    bincode::config::standard(),
-                )?))
+                Ok(ProofData(borsh::to_vec(&[hyle_output.clone()])?))
             })
         }
     }

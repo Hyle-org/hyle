@@ -1,6 +1,6 @@
 use anyhow::anyhow;
 use axum::{extract::State, http::StatusCode, response::IntoResponse, Json, Router};
-use bincode::{Decode, Encode};
+use borsh::{BorshDeserialize, BorshSerialize};
 use hyle_contract_sdk::TxHash;
 use hyle_model::{api::APIRegisterContract, ContractAction, RegisterContractAction};
 use serde::{Deserialize, Serialize};
@@ -18,7 +18,7 @@ use crate::{
 
 use super::contract_registration::validate_contract_registration;
 
-#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode)]
+#[derive(Debug, Serialize, Deserialize, Clone, BorshSerialize, BorshDeserialize)]
 pub enum RestApiMessage {
     NewTx(Transaction),
 }

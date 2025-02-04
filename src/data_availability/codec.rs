@@ -1,5 +1,5 @@
 use anyhow::Context;
-use bincode::{Decode, Encode};
+use borsh::{BorshDeserialize, BorshSerialize};
 use tokio_util::codec::{Decoder, Encoder, LengthDelimitedCodec};
 
 use crate::{
@@ -27,7 +27,7 @@ pub enum DataAvailabilityServerRequest {
     Ping,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Encode, Decode)]
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub enum DataAvailabilityServerEvent {
     SignedBlock(SignedBlock),
     MempoolStatusEvent(MempoolStatusEvent),
@@ -47,7 +47,7 @@ impl Decoder for DataAvailabilityServerCodec {
             }
 
             let height: u64 =
-                bincode::decode_from_slice(&decoded_bytes, bincode::config::standard())
+                borsh::from_slice(&decoded_bytes)
                     .context(format!(
                         "Decoding height from {} bytes",
                         decoded_bytes.len()
@@ -72,7 +72,7 @@ impl Encoder<DataAvailabilityServerEvent> for DataAvailabilityServerCodec {
         dst: &mut bytes::BytesMut,
     ) -> Result<(), Self::Error> {
         let bytes: bytes::Bytes =
-            bincode::encode_to_vec(event, bincode::config::standard())?.into();
+            borsh::to_vec(event)?.into();
 
         self.ldc
             .encode(bytes, dst)
@@ -94,7 +94,7 @@ impl Decoder for DataAvailabilityClientCodec {
         let decoded_bytes = self.ldc.decode(src)?;
         if let Some(decoded_bytes) = decoded_bytes {
             let event: Self::Item =
-                bincode::decode_from_slice(&decoded_bytes, bincode::config::standard())
+                borsh::from_slice(&decoded_bytes)
                     .context(format!(
                         "Decoding DataAvailabilityServerEvent from {} bytes",
                         decoded_bytes.len()
@@ -117,7 +117,7 @@ impl Encoder<DataAvailabilityServerRequest> for DataAvailabilityClientCodec {
     ) -> Result<(), Self::Error> {
         let bytes: bytes::Bytes = match request {
             DataAvailabilityServerRequest::BlockHeight(height) => {
-                bincode::encode_to_vec(height, bincode::config::standard())?.into()
+                borsh::to_vec(height)?.into()
             }
             DataAvailabilityServerRequest::Ping => bytes::Bytes::from("ok"),
         };

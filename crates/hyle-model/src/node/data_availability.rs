@@ -1,13 +1,13 @@
 use std::{hash::Hash, sync::Arc};
 
-use bincode::{Decode, Encode};
+use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Sha3_256};
 use utoipa::ToSchema;
 
 use crate::*;
 
-#[derive(Default, Debug, Clone, Serialize, Deserialize, ToSchema, Encode, Decode)]
+#[derive(Default, Debug, Clone, Serialize, Deserialize, ToSchema, BorshSerialize, BorshDeserialize)]
 pub struct Contract {
     pub name: ContractName,
     pub program_id: ProgramId,
@@ -22,8 +22,8 @@ pub struct Contract {
     PartialEq,
     Eq,
     Hash,
-    Encode,
-    Decode,
+    BorshSerialize,
+    BorshDeserialize,
     serde::Serialize,
     serde::Deserialize,
     ToSchema,
@@ -44,8 +44,8 @@ pub struct UnsettledBlobTransaction {
     PartialEq,
     Eq,
     Hash,
-    Encode,
-    Decode,
+    BorshSerialize,
+    BorshDeserialize,
     serde::Serialize,
     serde::Deserialize,
     ToSchema,
@@ -57,7 +57,7 @@ pub struct UnsettledBlobMetadata {
 }
 
 #[derive(
-    Debug, Default, Clone, serde::Serialize, serde::Deserialize, Encode, Decode, Eq, PartialEq,
+    Debug, Default, Clone, serde::Serialize, serde::Deserialize, BorshSerialize, BorshDeserialize, Eq, PartialEq,
 )]
 pub struct HandledBlobProofOutput {
     pub proof_tx_hash: TxHash,
@@ -68,7 +68,7 @@ pub struct HandledBlobProofOutput {
     pub blob_proof_output_index: usize,
 }
 
-#[derive(Debug, Default, Serialize, Deserialize, Clone, PartialEq, Eq, Encode, Decode)]
+#[derive(Debug, Default, Serialize, Deserialize, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub struct BlobProofOutput {
     // TODO: this can be recovered from the hyle output
     pub blob_tx_hash: TxHash,

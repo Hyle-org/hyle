@@ -1,6 +1,6 @@
 use std::{collections::BTreeSet, hash::Hasher};
 
-use bincode::{Decode, Encode};
+use borsh::{BorshDeserialize, BorshSerialize};
 use rand::Rng;
 use rand_seeder::SipHasher;
 use sdk::{
@@ -12,7 +12,7 @@ use uuid::Uuid;
 #[cfg(feature = "client")]
 pub mod client;
 
-#[derive(Clone, Encode, Decode)]
+#[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub struct RegisterUuidContract {
     pub verifier: Verifier,
     pub program_id: ProgramId,
@@ -35,28 +35,23 @@ impl ContractAction for RegisterUuidContract {
         #[allow(clippy::expect_used)]
         Blob {
             contract_name,
-            data: BlobData(
-                bincode::encode_to_vec(self, bincode::config::standard())
-                    .expect("failed to encode BlstSignatureBlob"),
-            ),
+            data: BlobData(borsh::to_vec(self).expect("failed to encode BlstSignatureBlob")),
         }
     }
 }
 
-#[derive(Default, Clone, Encode, Decode)]
+#[derive(Default, Clone, BorshSerialize, BorshDeserialize)]
 pub struct UuidTldState {
     registered_contracts: BTreeSet<u128>,
 }
 
 impl UuidTldState {
     fn serialize(&self) -> Result<Vec<u8>, String> {
-        bincode::encode_to_vec(self, bincode::config::standard()).map_err(|e| e.to_string())
+        borsh::to_vec(self).map_err(|e| e.to_string())
     }
 
     fn deserialize(data: &[u8]) -> Result<Self, String> {
-        bincode::decode_from_slice(data, bincode::config::standard())
-            .map(|(v, _)| v)
-            .map_err(|e| e.to_string())
+        borsh::from_slice(data).map_err(|e| e.to_string())
     }
 
     pub fn to_bytes(&self) -> Vec<u8> {

@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use bincode::{Decode, Encode};
+use borsh::{BorshDeserialize, BorshSerialize};
 use sdk::erc20::ERC20Action;
 use sdk::RunResult;
 use sdk::{
@@ -18,7 +18,7 @@ pub mod client;
 
 /// Struct representing the Hyllar token.
 #[serde_as]
-#[derive(Encode, Decode, Serialize, Deserialize, Debug, Clone)]
+#[derive(BorshSerialize, BorshDeserialize, Serialize, Deserialize, Debug, Clone)]
 pub struct HyllarToken {
     total_supply: u128,
     balances: BTreeMap<String, u128>, // Balances for each account
@@ -53,8 +53,7 @@ impl HyllarToken {
     }
 
     pub fn to_bytes(&self) -> Vec<u8> {
-        bincode::encode_to_vec(self, bincode::config::standard())
-            .expect("Failed to encode Balances")
+        borsh::to_vec(self).expect("Failed to encode Balances")
     }
 }
 
@@ -175,9 +174,7 @@ impl TryFrom<sdk::StateDigest> for HyllarToken {
     type Error = anyhow::Error;
 
     fn try_from(state: sdk::StateDigest) -> Result<Self, Self::Error> {
-        let (balances, _) = bincode::decode_from_slice(&state.0, bincode::config::standard())
-            .map_err(|_| anyhow::anyhow!("Could not decode hyllar state"))?;
-        Ok(balances)
+        borsh::from_slice(&state.0).map_err(|_| anyhow::anyhow!("Could not decode hyllar state"))
     }
 }
 
@@ -341,8 +338,7 @@ mod tests {
         let token = HyllarToken::new(initial_supply, "faucet".to_string());
         let digest = token.as_digest();
 
-        let encoded = bincode::encode_to_vec(&token, bincode::config::standard())
-            .expect("Failed to encode Balances");
+        let encoded = borsh::to_vec(&token).expect("Failed to encode Balances");
         assert_eq!(digest.0, encoded);
     }
 

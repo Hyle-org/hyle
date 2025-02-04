@@ -1,6 +1,6 @@
 use alloc::string::{String, ToString};
 use alloc::vec;
-use bincode::{Decode, Encode};
+use borsh::{BorshDeserialize, BorshSerialize};
 use serde::de::DeserializeOwned;
 
 use crate::{
@@ -75,7 +75,7 @@ pub fn panic(env: impl GuestEnv, message: &str) {
 
 pub fn init_raw<Parameters>(input: ContractInput) -> (ContractInput, Option<Parameters>)
 where
-    Parameters: Decode,
+    Parameters: BorshDeserialize,
 {
     let parsed_blob = parse_blob::<Parameters>(&input.blobs, &input.index);
 
@@ -86,7 +86,7 @@ pub fn init_with_caller<Parameters>(
     input: ContractInput,
 ) -> Result<(ContractInput, StructuredBlob<Parameters>, Identity), String>
 where
-    Parameters: Encode + Decode,
+    Parameters: BorshSerialize + BorshDeserialize,
 {
     let parsed_blob = parse_structured_blob::<Parameters>(&input.blobs, &input.index);
 

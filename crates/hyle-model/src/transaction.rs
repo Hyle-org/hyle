@@ -1,4 +1,4 @@
-use bincode::{Decode, Encode};
+use borsh::{BorshDeserialize, BorshSerialize};
 use derive_more::derive::Display;
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Sha3_256};
@@ -7,7 +7,7 @@ use utoipa::ToSchema;
 
 use crate::*;
 
-#[derive(Debug, Serialize, Deserialize, Default, Clone, PartialEq, Eq, Encode, Decode)]
+#[derive(Debug, Serialize, Deserialize, Default, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub struct Transaction {
     pub version: u32,
     pub transaction_data: TransactionData,
@@ -23,7 +23,7 @@ impl DataSized for Transaction {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Encode, Decode, IntoStaticStr)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize, IntoStaticStr)]
 pub enum TransactionData {
     Blob(BlobTransaction),
     Proof(ProofTransaction),
@@ -36,7 +36,7 @@ impl Default for TransactionData {
     }
 }
 
-#[derive(Serialize, Deserialize, ToSchema, Default, PartialEq, Eq, Clone, Encode, Decode)]
+#[derive(Serialize, Deserialize, ToSchema, Default, PartialEq, Eq, Clone, BorshSerialize, BorshDeserialize)]
 pub struct ProofTransaction {
     pub contract_name: ContractName,
     pub proof: ProofData,
@@ -44,13 +44,11 @@ pub struct ProofTransaction {
 
 impl ProofTransaction {
     pub fn estimate_size(&self) -> usize {
-        bincode::encode_to_vec(self, bincode::config::standard())
-            .unwrap_or_default()
-            .len()
+        borsh::to_vec(self).unwrap_or_default().len()
     }
 }
 
-#[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Encode, Decode)]
+#[derive(Serialize, Deserialize, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub struct VerifiedProofTransaction {
     pub contract_name: ContractName,
     pub proof: Option<ProofData>, // Kept only on the local lane for indexing purposes
@@ -156,11 +154,11 @@ impl Hashable<TxHash> for VerifiedProofTransaction {
 }
 
 #[derive(
-    Debug, Default, Serialize, Deserialize, ToSchema, PartialEq, Eq, Clone, Encode, Decode,
+    Debug, Default, Serialize, Deserialize, ToSchema, PartialEq, Eq, Clone, BorshSerialize, BorshDeserialize,
 )]
 pub struct ProofData(#[serde(with = "base64_field")] pub Vec<u8>);
 
-#[derive(Debug, Default, Serialize, Deserialize, Clone, PartialEq, Eq, Encode, Decode)]
+#[derive(Debug, Default, Serialize, Deserialize, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub struct ProofDataHash(pub String);
 
 impl Hashable<ProofDataHash> for ProofData {
@@ -173,7 +171,7 @@ impl Hashable<ProofDataHash> for ProofData {
 }
 
 #[derive(
-    Debug, Serialize, Deserialize, ToSchema, Default, PartialEq, Eq, Clone, Encode, Decode,
+    Debug, Serialize, Deserialize, ToSchema, Default, PartialEq, Eq, Clone, BorshSerialize, BorshDeserialize,
 )]
 pub struct BlobTransaction {
     pub identity: Identity,
@@ -183,9 +181,7 @@ pub struct BlobTransaction {
 
 impl BlobTransaction {
     pub fn estimate_size(&self) -> usize {
-        bincode::encode_to_vec(self, bincode::config::standard())
-            .unwrap_or_default()
-            .len()
+        borsh::to_vec(self).unwrap_or_default().len()
     }
 }
 
@@ -244,8 +240,8 @@ impl BlobTransaction {
     Eq,
     PartialEq,
     Hash,
-    Encode,
-    Decode,
+    BorshSerialize,
+    BorshDeserialize,
 )]
 pub struct BlobsHash(pub String);
 

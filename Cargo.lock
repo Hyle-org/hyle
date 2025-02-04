@@ -2649,6 +2649,7 @@ name = "hyle-verifiers"
 version = "0.8.0"
 dependencies = [
  "anyhow",
+ "bincode",
  "borsh",
  "hyle-model",
  "rand 0.9.0",

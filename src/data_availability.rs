@@ -30,7 +30,7 @@ use crate::{
     },
 };
 use anyhow::{bail, Context, Error, Result};
-use bincode::{Decode, Encode};
+use borsh::{BorshDeserialize, BorshSerialize};
 use core::str;
 use futures::{
     stream::{SplitSink, SplitStream},
@@ -46,7 +46,7 @@ use tokio::{
 use tokio_util::codec::Framed;
 use tracing::{debug, error, info, trace, warn};
 
-#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, Eq, PartialEq)]
+#[derive(Debug, Serialize, Deserialize, Clone, BorshSerialize, BorshDeserialize, Eq, PartialEq)]
 pub enum DataEvent {
     OrderedSignedBlock(SignedBlock),
 }
@@ -696,7 +696,7 @@ pub mod tests {
         while let Some(Ok(cmd)) = da_stream.next().await {
             let bytes = cmd;
             let event: DataAvailabilityServerEvent =
-                bincode::decode_from_slice(&bytes, bincode::config::standard())
+                borsh::from_slice(&bytes)
                     .unwrap()
                     .0;
             if let DataAvailabilityServerEvent::SignedBlock(block) = event {
@@ -747,7 +747,7 @@ pub mod tests {
         while let Some(Ok(cmd)) = da_stream.next().await {
             let bytes = cmd;
             let event: DataAvailabilityServerEvent =
-                bincode::decode_from_slice(&bytes, bincode::config::standard())
+                borsh::from_slice(&bytes)
                     .unwrap()
                     .0;
             if let DataAvailabilityServerEvent::SignedBlock(block) = event {

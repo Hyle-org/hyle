@@ -1,6 +1,6 @@
 use alloc::string::String;
 use alloc::vec::Vec;
-use bincode::{Decode, Encode};
+use borsh::{BorshDeserialize, BorshSerialize};
 use core::cell::{Ref, RefCell, RefMut};
 use core::ops::{Deref, DerefMut};
 use serde::{Deserialize, Serialize};
@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use hyle_model::{Blob, ContractName, Identity, StructuredBlob};
 
 /// ExecutionContext provides an implementation of data for the CallerCallee trait
-#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, Default)]
+#[derive(Debug, Serialize, Deserialize, Clone, BorshSerialize, BorshDeserialize, Default)]
 pub struct ExecutionContext {
     pub callees_blobs: RefCell<Vec<Blob>>,
     pub caller: Identity,
@@ -52,14 +52,14 @@ pub trait CallerCallee {
 pub trait CheckCalleeBlobs: CallerCallee {
     fn is_in_callee_blobs<U>(&self, contract_name: &ContractName, action: U) -> Result<(), String>
     where
-        U: Decode + PartialEq,
+        U: BorshDeserialize + PartialEq,
         StructuredBlob<U>: TryFrom<Blob>;
 }
 
 impl<T: CallerCallee> CheckCalleeBlobs for T {
     fn is_in_callee_blobs<U>(&self, contract_name: &ContractName, action: U) -> Result<(), String>
     where
-        U: Decode + PartialEq,
+        U: BorshDeserialize + PartialEq,
         StructuredBlob<U>: TryFrom<Blob>,
     {
         let index = self.callee_blobs().iter().position(|blob| {

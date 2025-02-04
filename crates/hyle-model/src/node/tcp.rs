@@ -1,12 +1,12 @@
 use anyhow::{Context, Result};
-use bincode::{Decode, Encode};
+use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use std::fmt::Display;
 use strum_macros::IntoStaticStr;
 
 use crate::*;
 
-#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, Eq, PartialEq, IntoStaticStr)]
+#[derive(Debug, Serialize, Deserialize, Clone, BorshSerialize, BorshDeserialize, Eq, PartialEq, IntoStaticStr)]
 pub enum TcpServerNetMessage {
     Ping,
     NewTx(Transaction),
@@ -50,7 +50,7 @@ impl From<ProofTransaction> for TcpServerNetMessage {
 
 impl TcpServerNetMessage {
     pub fn to_binary(&self) -> Result<Vec<u8>> {
-        bincode::encode_to_vec(self, bincode::config::standard())
+        borsh::to_vec(self)
             .context("Could not serialize NetMessage")
     }
 }

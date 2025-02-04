@@ -1,5 +1,5 @@
 use anyhow::{anyhow, Error, Result};
-use bincode::{Decode, Encode};
+use borsh::{BorshDeserialize, BorshSerialize};
 use hyle_contract_sdk::{BlobIndex, ContractName, TxHash};
 use hyle_model::RegisterContractEffect;
 use serde::{Deserialize, Serialize};
@@ -25,7 +25,7 @@ pub enum ProverEvent {
 }
 impl BusMessage for ProverEvent {}
 
-#[derive(Encode, Decode)]
+#[derive(BorshSerialize, BorshDeserialize)]
 pub struct Store<State> {
     pub state: Option<State>,
     pub contract_name: ContractName,
@@ -64,8 +64,8 @@ where
         + Sync
         + Send
         + ContractHandler
-        + Encode
-        + Decode
+        + BorshSerialize
+        + BorshDeserialize
         + 'static,
 {
     type Context = ContractStateIndexerCtx;
@@ -132,8 +132,8 @@ where
         + Sync
         + Send
         + ContractHandler
-        + Encode
-        + Decode
+        + BorshSerialize
+        + BorshDeserialize
         + 'static,
 {
     pub async fn start(&mut self) -> Result<(), Error> {
@@ -254,7 +254,7 @@ mod tests {
     use crate::{bus::SharedMessageBus, model::CommonRunContext};
     use std::sync::Arc;
 
-    #[derive(Clone, Debug, Default, Encode, Decode, Serialize, Deserialize)]
+    #[derive(Clone, Debug, Default, BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
     struct MockState(Vec<u8>);
 
     impl TryFrom<StateDigest> for MockState {

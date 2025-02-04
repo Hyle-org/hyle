@@ -111,12 +111,8 @@ pub fn sp1_proof_verifier(
     // Setup the prover client.
     let client = ProverClient::from_env();
 
-    let (proof, _) =
-        bincode::decode_from_slice::<bincode::serde::Compat<SP1ProofWithPublicValues>, _>(
-            proof_bin,
-            bincode::config::legacy().with_fixed_int_encoding(),
-        )
-        .context("Error while decoding SP1 proof.")?;
+    let proof: SP1ProofWithPublicValues =
+        bincode::deserialize(proof_bin).context("Error while decoding SP1 proof.")?;
 
     // Deserialize verification key from JSON
     let vk: SP1VerifyingKey =
@@ -124,15 +120,12 @@ pub fn sp1_proof_verifier(
 
     // Verify the proof.
     client
-        .verify(&proof.0, &vk)
+        .verify(&proof, &vk)
         .context("SP1 proof verification failed")?;
 
     // TODO: support multi-output proofs.
-    let (hyle_output, _) = bincode::decode_from_slice::<HyleOutput, _>(
-        proof.0.public_values.as_slice(),
-        bincode::config::legacy().with_fixed_int_encoding(),
-    )
-    .context("Failed to extract HyleOuput from SP1 proof")?;
+    let hyle_output = borsh::from_slice::<HyleOutput>(proof.public_values.as_slice())
+        .context("Failed to extract HyleOuput from SP1 proof")?;
 
     tracing::info!("✅ SP1 proof verified.",);
 

@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-use bincode::{Decode, Encode};
+use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Sha3_256};
 use strum_macros::IntoStaticStr;
@@ -23,28 +23,28 @@ pub struct ConsensusInfo {
 // --- Consensus data model ----
 // -----------------------------
 
-#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, PartialEq, Eq, Hash)]
+#[derive(Debug, Serialize, Deserialize, Clone, BorshSerialize, BorshDeserialize, PartialEq, Eq, Hash)]
 pub struct ValidatorCandidacy {
     pub pubkey: ValidatorPublicKey,
     pub peer_address: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, BorshSerialize, BorshDeserialize, PartialEq, Eq)]
 pub struct NewValidatorCandidate {
     pub pubkey: ValidatorPublicKey, // TODO: possible optim: the pubkey is already present in the msg,
     pub msg: SignedByValidator<ConsensusNetMessage>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, PartialEq, Eq, Default)]
+#[derive(Debug, Serialize, Deserialize, Clone, BorshSerialize, BorshDeserialize, PartialEq, Eq, Default)]
 pub struct QuorumCertificateHash(pub Vec<u8>);
 
 pub type QuorumCertificate = AggregateSignature;
 
-#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, Clone, BorshSerialize, BorshDeserialize, PartialEq, Eq)]
 pub struct TimeoutCertificate(ConsensusProposalHash, QuorumCertificate);
 
 // A Ticket is necessary to send a valid prepare
-#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, PartialEq, Eq, Hash)]
+#[derive(Debug, Serialize, Deserialize, Clone, BorshSerialize, BorshDeserialize, PartialEq, Eq, Hash)]
 pub enum Ticket {
     // Special value for the initial Cut, needed because we don't have a quorum certificate for the genesis block.
     Genesis,
@@ -85,7 +85,7 @@ impl<'r> sqlx::Decode<'r, sqlx::Postgres> for ConsensusProposalHash {
     }
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize, Encode, Decode, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, BorshSerialize, BorshDeserialize, PartialEq, Eq)]
 pub struct ConsensusProposal {
     // These first few items are checked when receiving the proposal from the leader.
     pub slot: Slot,
@@ -137,7 +137,7 @@ impl std::hash::Hash for ConsensusProposal {
 }
 
 /// Represents the operations that can be performed by the consensus
-#[derive(Encode, Decode, Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(BorshSerialize, BorshDeserialize, Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub enum ConsensusStakingAction {
     /// Bonding a new validator candidate
     Bond {
@@ -162,7 +162,7 @@ impl From<NewValidatorCandidate> for ConsensusStakingAction {
 }
 
 #[derive(
-    Debug, Serialize, Deserialize, Clone, Encode, Decode, PartialEq, Eq, IntoStaticStr, Hash,
+    Debug, Serialize, Deserialize, Clone, BorshSerialize, BorshDeserialize, PartialEq, Eq, IntoStaticStr, Hash,
 )]
 pub enum ConsensusNetMessage {
     Prepare(ConsensusProposal, Ticket),

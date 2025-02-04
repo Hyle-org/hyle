@@ -10,7 +10,7 @@ use crate::utils::conf::SharedConf;
 use crate::utils::logger::LogMe;
 use crate::utils::modules::{module_bus_client, Module};
 use anyhow::{Context, Result};
-use bincode::{Decode, Encode};
+use borsh::{BorshDeserialize, BorshSerialize};
 use hyle_model::{TxHash, UnsettledBlobTransaction};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -26,7 +26,7 @@ pub struct NodeStateModule {
     inner: NodeState,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode)]
+#[derive(Debug, Serialize, Deserialize, Clone, BorshSerialize, BorshDeserialize)]
 pub enum NodeStateEvent {
     NewBlock(Box<Block>),
 }

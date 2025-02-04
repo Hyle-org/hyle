@@ -119,9 +119,8 @@ pub fn execute(contract_input: ContractInput) -> RunResult<Staking> {
         };
     }
 
-    let (state, _): (Staking, _) =
-        bincode::decode_from_slice(input.private_input.as_slice(), bincode::config::standard())
-            .expect("Failed to decode payload");
+    let state: Staking =
+        borsh::from_slice(input.private_input.as_slice()).expect("Failed to decode payload");
 
     let input_initial_state = input.initial_state.clone();
 

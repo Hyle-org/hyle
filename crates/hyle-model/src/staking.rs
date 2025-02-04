@@ -1,4 +1,4 @@
-use bincode::{Decode, Encode};
+use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{
     de::{self, Visitor},
     Deserialize, Serialize,
@@ -6,13 +6,13 @@ use serde::{
 
 use crate::*;
 
-#[derive(Encode, Decode, Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(BorshSerialize, BorshDeserialize, Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct RewardsClaim {
     block_heights: Vec<BlockHeight>,
 }
 
 /// Enum representing the actions that can be performed by the IdentityVerification contract.
-#[derive(Encode, Decode, Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(BorshSerialize, BorshDeserialize, Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub enum StakingAction {
     Stake {
         amount: u128,
@@ -49,7 +49,7 @@ impl ContractAction for StakingAction {
     }
 }
 
-#[derive(Clone, Encode, Decode, Default, Eq, PartialEq, Hash, PartialOrd, Ord)]
+#[derive(Clone, BorshSerialize, BorshDeserialize, Default, Eq, PartialEq, Hash, PartialOrd, Ord)]
 pub struct ValidatorPublicKey(pub Vec<u8>);
 
 impl ValidatorPublicKey {
