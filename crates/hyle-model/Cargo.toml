@@ -15,7 +15,7 @@ serde = { version = "1.0", features = ["derive", "rc"] }
 sha3 = { version = "0.10.8", optional = true }
 blst = { version = "0.3.13", optional = true }
 strum_macros = { version = "0.26.4", optional = true }
-derive_more = { version = "1.0.0", features = ["display"], optional = true }
+derive_more = { version = "2.0.1", features = ["display"], optional = true }
 base64 = { version = "0.22.1", optional = true }
 anyhow = { version = "1.0.95", optional = true }
 sqlx = { version = "0.8.3", features = ["postgres"], optional = true }
