@@ -216,19 +216,25 @@ impl Consensus {
                 self.bft_round_state.consensus_proposal.slot += 1;
                 self.bft_round_state.consensus_proposal.view = 0;
                 self.bft_round_state.follower.buffered_quorum_certificate = Some(qc);
-                // Any new validators are added to the consensus and removed from candidates.
+                let staking = &mut self.store.bft_round_state.staking;
                 for action in staking_actions {
                     match action {
+                        // Any new validators are added to the consensus and removed from candidates.
                         ConsensusStakingAction::Bond { candidate } => {
                             debug!("🎉 New validator bonded: {}", candidate.pubkey);
-                            self.store
-                                .bft_round_state
-                                .staking
+                            staking
                                 .bond(candidate.pubkey)
                                 .map_err(|e| anyhow::anyhow!(e))?;
                         }
+                        ConsensusStakingAction::PayFeesForDaDi {
+                            disseminator,
+                            cumul_size,
+                        } => staking
+                            .pay_for_dadi(disseminator, cumul_size)
+                            .map_err(|e| anyhow::anyhow!(e))?,
                     }
                 }
+                staking.distribute().map_err(|e| anyhow::anyhow!(e))?;
             }
             Some(Ticket::TimeoutQC(_)) => {
                 self.bft_round_state.consensus_proposal.parent_hash = round_parent_hash;
@@ -281,9 +287,27 @@ impl Consensus {
                 ConsensusStakingAction::Bond { candidate } => {
                     self.verify_new_validators_to_bond(candidate)?;
                 }
+                ConsensusStakingAction::PayFeesForDaDi {
+                    disseminator,
+                    cumul_size,
+                } => Self::verify_dadi_fees(&proposal.cut, disseminator, cumul_size)?,
             }
         }
         Ok(())
+    }
+
+    /// Verify that the fees paid by the disseminator are correct
+    fn verify_dadi_fees(
+        cut: &Cut,
+        disseminator: &ValidatorPublicKey,
+        cumul_size: &LaneBytesSize,
+    ) -> Result<()> {
+        cut.iter()
+            .find(|l| &l.0 == disseminator && &l.2 == cumul_size)
+            .map(|_| ())
+            .ok_or(anyhow!(
+                "Malformed PayFeesForDadi. Not found in cut: {disseminator}, {cumul_size}"
+            ))
     }
 
     /// Verify that new validators have enough stake
@@ -724,6 +748,13 @@ impl Consensus {
                                 .map_err(|e| anyhow!(e))?;
                         }
                         (_identity, StakingAction::Distribute { claim: _ }) => todo!(),
+                        (_identity, StakingAction::DepositForFees { holder, amount }) => {
+                            self.store
+                                .bft_round_state
+                                .staking
+                                .deposit_for_fees(holder, amount)
+                                .map_err(|e| anyhow!(e))?;
+                        }
                     }
                 }
                 for validator in block.new_bounded_validators.iter() {
@@ -1121,6 +1152,12 @@ pub mod test {
                 .bft_round_state
                 .staking
                 .stake(hex::encode(pubkey.0.clone()).into(), 100)
+                .unwrap();
+
+            self.consensus
+                .bft_round_state
+                .staking
+                .deposit_for_fees(pubkey.clone(), 1_000_000_000)
                 .unwrap();
 
             self.consensus

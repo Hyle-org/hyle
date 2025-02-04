@@ -85,8 +85,9 @@ impl NodeState {
                 .consensus_proposal
                 .staking_actions
                 .iter()
-                .map(|v| match v {
-                    ConsensusStakingAction::Bond { candidate } => candidate.pubkey.clone(),
+                .filter_map(|v| match v {
+                    ConsensusStakingAction::Bond { candidate } => Some(candidate.pubkey.clone()),
+                    _ => None,
                 })
                 .collect(),
             timed_out_txs: vec![], // Added below as it needs the block
@@ -863,6 +864,7 @@ pub mod test {
                 original_proof_hash: proof.proof.hash(),
             }],
             proof_hash: proof.proof.hash(),
+            proof_size: proof.estimate_size(),
             proof: Some(proof.proof),
             is_recursive: false,
         }

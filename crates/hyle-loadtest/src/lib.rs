@@ -266,7 +266,7 @@ pub async fn send_proof_txs(url: String, proof_txs: Vec<Vec<u8>>) -> Result<()> 
     Ok(())
 }
 
-pub async fn send_massive_blob(url: String) -> Result<()> {
+pub async fn send_massive_blob(users: u32, url: String) -> Result<()> {
     let ident = Identity::new("test.hydentity");
 
     let mut data = vec![];
@@ -275,18 +275,25 @@ pub async fn send_massive_blob(url: String) -> Result<()> {
         data.push(i as u8);
     }
 
-    let tx = BlobTransaction {
-        identity: ident.clone(),
-        blobs: vec![Blob {
-            contract_name: "hydentity".into(),
-            data: BlobData(data),
-        }],
-    };
-    let msg: TcpServerNetMessage = tx.into();
-    let encoded_blob_tx = msg.to_binary()?;
+    let mut txs = vec![];
+
+    for i in 0..users {
+        let mut user_data = data.clone();
+        user_data.extend_from_slice(&i.to_be_bytes());
+        let tx = BlobTransaction {
+            identity: ident.clone(),
+            blobs: vec![Blob {
+                contract_name: "hydentity".into(),
+                data: BlobData(user_data),
+            }],
+        };
+        let msg: TcpServerNetMessage = tx.into();
+        let encoded_blob_tx = msg.to_binary()?;
+        txs.push(encoded_blob_tx);
+    }
 
     let mut client = NodeTcpClient::new(url).await.unwrap();
-    for _ in 0..100 {
+    for encoded_blob_tx in txs.iter() {
         client
             .send_encoded_message_no_response(encoded_blob_tx.to_vec())
             .await

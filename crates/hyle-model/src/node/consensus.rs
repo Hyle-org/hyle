@@ -116,6 +116,13 @@ impl Hashable<ConsensusProposalHash> for ConsensusProposal {
         });
         self.staking_actions.iter().for_each(|val| match val {
             ConsensusStakingAction::Bond { candidate } => hasher.update(&candidate.pubkey.0),
+            ConsensusStakingAction::PayFeesForDaDi {
+                disseminator,
+                cumul_size,
+            } => {
+                hasher.update(&disseminator.0);
+                hasher.update(cumul_size.0.to_le_bytes())
+            }
         });
         hasher.update(self.timestamp.to_le_bytes());
         hasher.update(self.parent_hash.0.as_bytes());
@@ -132,12 +139,25 @@ impl std::hash::Hash for ConsensusProposal {
 /// Represents the operations that can be performed by the consensus
 #[derive(Encode, Decode, Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub enum ConsensusStakingAction {
-    Bond { candidate: NewValidatorCandidate }, // Bonding a new validator candidate
+    /// Bonding a new validator candidate
+    Bond {
+        // Boxed to reduce size of the enum
+        // cf https://rust-lang.github.io/rust-clippy/master/index.html#large_enum_variant
+        candidate: Box<NewValidatorCandidate>,
+    },
+
+    /// DaDi = Data Dissemination
+    PayFeesForDaDi {
+        disseminator: ValidatorPublicKey,
+        cumul_size: LaneBytesSize,
+    },
 }
 
 impl From<NewValidatorCandidate> for ConsensusStakingAction {
     fn from(val: NewValidatorCandidate) -> Self {
-        ConsensusStakingAction::Bond { candidate: val }
+        ConsensusStakingAction::Bond {
+            candidate: Box::new(val),
+        }
     }
 }
 

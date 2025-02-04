@@ -733,6 +733,7 @@ mod test {
             transaction_data: TransactionData::VerifiedProof(VerifiedProofTransaction {
                 contract_name: contract_name.clone(),
                 proof_hash: proof.hash(),
+                proof_size: proof.0.len(),
                 proven_blobs: vec![BlobProofOutput {
                     original_proof_hash: proof.hash(),
                     program_id: ProgramId(vec![3, 2, 1]),

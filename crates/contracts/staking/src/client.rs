@@ -5,11 +5,16 @@ use client_sdk::{
     transaction_builder::{ProvableBlobTx, StateUpdater, TxExecutorBuilder},
 };
 use sdk::{
-    api::APIStaking, utils::as_hyle_output, ContractName, Digestable, HyleOutput, StakingAction,
-    ValidatorPublicKey,
+    api::{APIFees, APIFeesBalance, APIStaking},
+    utils::as_hyle_output,
+    ContractName, Digestable, HyleOutput, StakingAction, ValidatorPublicKey,
 };
 
-use crate::{execute, state::Staking};
+use crate::{
+    execute,
+    fees::{Fees, ValidatorFeeState},
+    state::Staking,
+};
 
 pub mod metadata {
     pub const STAKING_ELF: &[u8] = include_bytes!("../staking.img");
@@ -55,6 +60,27 @@ impl From<Staking> for APIStaking {
             bonded: val.bonded,
             delegations: val.delegations,
             total_bond: val.total_bond,
+            fees: val.fees.into(),
+        }
+    }
+}
+
+impl From<Fees> for APIFees {
+    fn from(val: Fees) -> Self {
+        APIFees {
+            balances: val
+                .balances
+                .into_iter()
+                .map(|(val, b)| {
+                    (
+                        val,
+                        APIFeesBalance {
+                            balance: b.balance,
+                            cumul_size: b.paid_cumul_size,
+                        },
+                    )
+                })
+                .collect(),
         }
     }
 }
@@ -67,8 +93,50 @@ impl From<APIStaking> for Staking {
             bonded: val.bonded,
             delegations: val.delegations,
             total_bond: val.total_bond,
+            fees: val.fees.into(),
         }
     }
+}
+
+impl From<APIFees> for Fees {
+    fn from(val: APIFees) -> Self {
+        Fees {
+            pending_fees: vec![],
+            balances: val
+                .balances
+                .into_iter()
+                .map(|(val, b)| {
+                    (
+                        val,
+                        ValidatorFeeState {
+                            balance: b.balance,
+                            paid_cumul_size: b.cumul_size,
+                        },
+                    )
+                })
+                .collect(),
+        }
+    }
+}
+
+pub fn deposit_for_fees(
+    builder: &mut ProvableBlobTx,
+    contract_name: ContractName,
+    holder: ValidatorPublicKey,
+    amount: u128,
+) -> anyhow::Result<()> {
+    builder
+        .add_action(
+            contract_name,
+            StakingAction::DepositForFees {
+                holder: holder.clone(),
+                amount,
+            },
+            None,
+            None,
+        )?
+        .with_private_input(|state: &Staking| -> anyhow::Result<Vec<u8>> { Ok(state.to_bytes()) });
+    Ok(())
 }
 
 impl Staking {
