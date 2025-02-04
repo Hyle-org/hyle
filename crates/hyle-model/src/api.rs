@@ -112,7 +112,6 @@ pub struct APITransaction {
 
 #[derive(Debug, Serialize, Deserialize, ToSchema, Clone, PartialEq, Eq)]
 pub struct APITransactionEvents {
-    // Struct for the transactions table
     pub block_hash: BlockHash,
     pub block_height: BlockHeight,
     pub events: Vec<serde_json::Value>,

@@ -131,7 +131,7 @@ impl NodeState {
                         }
                         Err(e) => {
                             let err = format!("Failed to handle blob transaction: {:?}", e);
-                            error!(err);
+                            error!("{err}");
                             block_under_construction
                                 .transactions_events
                                 .entry(blob_transaction.hash())
@@ -164,7 +164,7 @@ impl NodeState {
                                     let err = format!(
                                         "Failed to handle blob #{} in verified proof transaction {:?}: {err}",
                                         blob_proof_data.hyle_output.index, proof_tx.hash());
-                                    info!(err);
+                                    info!("{err}");
                                     block_under_construction
                                         .transactions_events
                                         .entry(proof_tx.hash())
@@ -400,7 +400,7 @@ impl NodeState {
                 }
                 Err(e) => {
                     let e = format!("Failed to settle: {}", e);
-                    debug!(tx_hash = %bth, e);
+                    debug!(tx_hash = %bth, "{e}");
                     events.push(TransactionStateEvent::SettleEvent(e));
                 }
             }
@@ -507,7 +507,7 @@ impl NodeState {
                 Err(err) => {
                     // We have a valid proof of failure, we short-circuit.
                     let msg = format!("Could not settle blob proof output for 'hyle': {:?}", err);
-                    debug!(msg);
+                    debug!("{msg}");
                     events.push(TransactionStateEvent::SettleEvent(msg));
                     Some((current_contracts, blob_proof_output_indices, false))
                 }
@@ -526,14 +526,14 @@ impl NodeState {
                     known_contract_state.program_id,
                     proof_metadata.0
                 );
-                debug!(msg);
+                debug!("{msg}");
                 events.push(TransactionStateEvent::SettleEvent(msg));
                 continue;
             }
             if !proof_metadata.1.success {
                 // We have a valid proof of failure, we short-circuit.
                 let msg = format!("Proven failure for blob {}", i);
-                debug!(msg);
+                debug!("{msg}");
                 events.push(TransactionStateEvent::SettleEvent(msg));
                 return Some((current_contracts, blob_proof_output_indices, false));
             }
