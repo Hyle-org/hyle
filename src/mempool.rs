@@ -667,27 +667,32 @@ impl Mempool {
     fn on_sync_reply(
         &mut self,
         validator: &ValidatorPublicKey,
-        mut missing_lane_entries: Vec<LaneEntry>,
+        missing_lane_entries: Vec<LaneEntry>,
     ) -> Result<()> {
         info!("{} SyncReply from validator {validator}", self.lanes.id);
 
-        // Discard any lane entry that wasn't signed by the validator.
-        missing_lane_entries.retain(|lane_entry| {
-            let expected_message =
-                MempoolNetMessage::DataVote(lane_entry.data_proposal.hash(), lane_entry.cumul_size);
-            let keep = lane_entry
-                .signatures
-                .iter()
-                .any(|s| &s.signature.validator == validator && s.msg == expected_message);
-            if !keep {
-                warn!(
-                    "Discarding lane entry {}, missing signature from {}",
+        // Ensure all lane entries are signed by the validator.
+        missing_lane_entries
+            .iter()
+            .map(|lane_entry| {
+                let expected_message = MempoolNetMessage::DataVote(
                     lane_entry.data_proposal.hash(),
-                    validator
+                    lane_entry.cumul_size,
                 );
-            };
-            keep
-        });
+                let signed_by_validator = lane_entry
+                    .signatures
+                    .iter()
+                    .any(|s| &s.signature.validator == validator && s.msg == expected_message);
+                if !signed_by_validator {
+                    bail!(
+                        "Lane entry {} is missing signature from {}",
+                        lane_entry.data_proposal.hash(),
+                        validator
+                    );
+                };
+                Ok(())
+            })
+            .collect::<Result<Vec<_>>>()?;
 
         // If we end up with an empty list, return an error (for testing/logic)
         if missing_lane_entries.is_empty() {
@@ -1892,7 +1897,11 @@ pub mod test {
         let handle = ctx.mempool.handle_net_message(signed_msg.clone());
         assert_eq!(
             handle.expect_err("should fail").to_string(),
-            "Empty lane entries after filtering out missing signatures"
+            format!(
+                "Lane entry {} is missing signature from {}",
+                data_proposal.hash(),
+                crypto2.validator_pubkey()
+            )
         );
 
         // Second: the message is NOT from crypto2, but the DP is signed by crypto2
@@ -1911,7 +1920,11 @@ pub mod test {
         let handle = ctx.mempool.handle_net_message(signed_msg.clone());
         assert_eq!(
             handle.expect_err("should fail").to_string(),
-            "Empty lane entries after filtering out missing signatures"
+            format!(
+                "Lane entry {} is missing signature from {}",
+                data_proposal.hash(),
+                crypto3.validator_pubkey()
+            )
         );
 
         // Third: the message is from crypto2, the signature is from crypto2, but the message is wrong
@@ -1930,11 +1943,15 @@ pub mod test {
         let handle = ctx.mempool.handle_net_message(signed_msg.clone());
         assert_eq!(
             handle.expect_err("should fail").to_string(),
-            "Empty lane entries after filtering out missing signatures"
+            format!(
+                "Lane entry {} is missing signature from {}",
+                data_proposal.hash(),
+                crypto3.validator_pubkey()
+            )
         );
 
         // Fourth: the message is from crypto2, the signature is from crypto2, but the size is wrong
-        let signed_msg = crypto3.sign(MempoolNetMessage::SyncReply(vec![LaneEntry {
+        let signed_msg = crypto2.sign(MempoolNetMessage::SyncReply(vec![LaneEntry {
             data_proposal: data_proposal.clone(),
             cumul_size: LaneBytesSize(0),
             signatures: vec![crypto2
@@ -1949,7 +1966,11 @@ pub mod test {
         let handle = ctx.mempool.handle_net_message(signed_msg.clone());
         assert_eq!(
             handle.expect_err("should fail").to_string(),
-            "Empty lane entries after filtering out missing signatures" // TODO error message
+            format!(
+                "Lane entry {} is missing signature from {}",
+                data_proposal.hash(),
+                crypto2.validator_pubkey()
+            )
         );
 
         // Fifth case: DP chaining is incorrect
