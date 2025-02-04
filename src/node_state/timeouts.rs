@@ -4,9 +4,19 @@ use crate::model::BlockHeight;
 use borsh::{BorshDeserialize, BorshSerialize};
 use hyle_contract_sdk::TxHash;
 
-#[derive(Default, Debug, Clone, BorshSerialize, BorshDeserialize)]
+#[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
 pub struct Timeouts {
+    timeout_window: BlockHeight,
     by_block: HashMap<BlockHeight, Vec<TxHash>>,
+}
+
+impl Default for Timeouts {
+    fn default() -> Self {
+        Timeouts {
+            timeout_window: BlockHeight(100),
+            by_block: HashMap::new(),
+        }
+    }
 }
 
 impl Timeouts {
@@ -16,15 +26,11 @@ impl Timeouts {
 
     /// Set timeout for a tx.
     /// This does not check if the TX is already set to timeout at a different (or same) block.
-    pub fn set(&mut self, tx: TxHash, at: BlockHeight) {
-        match self.by_block.get_mut(&at) {
-            Some(vec) => {
-                vec.push(tx);
-            }
-            None => {
-                self.by_block.insert(at, vec![tx]);
-            }
-        }
+    pub fn set(&mut self, tx: TxHash, block_height: BlockHeight) {
+        self.by_block
+            .entry(block_height + self.timeout_window)
+            .or_default()
+            .push(tx);
     }
 }
 
@@ -32,8 +38,8 @@ impl Timeouts {
 pub mod tests {
     use super::*;
 
-    fn list_timeouts<'a>(t: &'a Timeouts, at: &BlockHeight) -> Option<&'a Vec<TxHash>> {
-        t.by_block.get(at)
+    fn list_timeouts(t: &Timeouts, at: BlockHeight) -> Option<&Vec<TxHash>> {
+        t.by_block.get(&at)
     }
 
     pub fn get(t: &Timeouts, tx: &TxHash) -> Option<BlockHeight> {
@@ -55,21 +61,21 @@ pub mod tests {
 
         t.set(tx1.clone(), b1);
 
-        assert_eq!(list_timeouts(&t, &b1).unwrap().len(), 1);
-        assert_eq!(list_timeouts(&t, &b2), None);
-        assert_eq!(get(&t, &tx1), Some(b1));
+        assert_eq!(list_timeouts(&t, b1 + t.timeout_window).unwrap().len(), 1);
+        assert_eq!(list_timeouts(&t, b2 + t.timeout_window), None);
+        assert_eq!(get(&t, &tx1), Some(b1 + t.timeout_window));
 
         t.set(tx1.clone(), b2);
 
-        assert_eq!(t.drop(&b1), vec![tx1.clone()]);
+        assert_eq!(t.drop(&(b1 + t.timeout_window)), vec![tx1.clone()]);
 
         // Now this returns b2
-        assert_eq!(get(&t, &tx1), Some(b2));
-        assert_eq!(list_timeouts(&t, &b1), None);
-        assert_eq!(list_timeouts(&t, &b2).unwrap().len(), 1);
+        assert_eq!(get(&t, &tx1), Some(b2 + t.timeout_window));
+        assert_eq!(list_timeouts(&t, b1 + t.timeout_window), None);
+        assert_eq!(list_timeouts(&t, b2 + t.timeout_window).unwrap().len(), 1);
 
-        assert_eq!(t.drop(&b2), vec![tx1.clone()]);
+        assert_eq!(t.drop(&(b2 + t.timeout_window)), vec![tx1.clone()]);
         assert_eq!(get(&t, &tx1), None);
-        assert_eq!(list_timeouts(&t, &b2), None);
+        assert_eq!(list_timeouts(&t, b2 + t.timeout_window), None);
     }
 }

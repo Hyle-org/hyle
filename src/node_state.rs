@@ -281,9 +281,10 @@ impl NodeState {
             blobs,
         }) && should_try_and_settle;
 
-        // Update timeouts
-        self.timeouts
-            .set(blob_tx_hash.clone(), self.current_height + 100); // TODO: Timeout after 100 blocks, make it configurable !
+        if self.unsettled_transactions.is_next_to_settle(&blob_tx_hash) {
+            // Update timeouts
+            self.timeouts.set(blob_tx_hash.clone(), self.current_height);
+        }
 
         if should_try_and_settle {
             Ok(Some(blob_tx_hash))
@@ -366,11 +367,14 @@ impl NodeState {
         })
     }
 
+    /// Settle all transactions that are ready to settle.
+    /// Returns the list of new TXs next to be settled
     fn settle_txs_until_done(
         &mut self,
         block_under_construction: &mut Block,
         mut blob_tx_to_try_and_settle: BTreeSet<TxHash>,
-    ) {
+    ) -> BTreeSet<TxHash> {
+        let mut unsettlable_txs = BTreeSet::default();
         loop {
             // TODO: investigate most performant order;
             let Some(bth) = blob_tx_to_try_and_settle.pop_first() else {
@@ -400,6 +404,7 @@ impl NodeState {
                     ));
                 }
                 Err(e) => {
+                    unsettlable_txs.insert(bth.clone());
                     let e = format!("Failed to settle: {}", e);
                     debug!(tx_hash = %bth, "{e}");
                     events.push(TransactionStateEvent::SettleEvent(e));
@@ -782,6 +787,12 @@ impl NodeState {
         Ok(())
     }
 
+    /// Clear timeouts for transactions that have timed out.
+    /// This happens in four steps:
+    ///    1. Retrieve the transactions that have timed out
+    ///    2. For each contract involved in these transactions, retrieve the next transaction to settle
+    ///    3. Try to settle_until_done all descendant transactions
+    ///    4. Among the remaining descendants, set a timeout for them
     fn clear_timeouts(&mut self, block_under_construction: &mut Block) {
         let mut txs_at_timeout = self.timeouts.drop(&block_under_construction.block_height);
         txs_at_timeout.retain(|tx| {
@@ -804,7 +815,15 @@ impl NodeState {
                     }
                 });
                 // Then try to settle transactions when we can.
-                self.settle_txs_until_done(block_under_construction, blob_tx_to_try_and_settle);
+                let next_unsettled_txs =
+                    self.settle_txs_until_done(block_under_construction, blob_tx_to_try_and_settle);
+
+                // For each tx that could not settle, if tx is the exact next to settle but did not settled, we to set a new timeout for it
+                for unsettled_tx in next_unsettled_txs {
+                    if self.unsettled_transactions.is_next_to_settle(&unsettled_tx) {
+                        self.timeouts.set(unsettled_tx.clone(), self.current_height);
+                    }
+                }
 
                 true
             } else {
@@ -1637,6 +1656,102 @@ pub mod test {
                 assert!(state.unsettled_transactions.get(tx_hash).is_none());
                 assert!(block.successful_txs.contains(tx_hash));
             });
+    }
+
+    #[test_log::test(tokio::test)]
+    async fn test_tx_reset_timeout_on_tx_settlement() {
+        // Create four transactions that are inter dependent
+        // Tx1 --> Tx2
+        //     |-> Tx3 -> Tx4
+        // We want to test that when Tx1 times out, Tx2's and Tx3's timeout is reset; and that Tx4 is not reset nor timedout.
+
+        let mut state = new_node_state().await;
+        let c1 = ContractName::new("c1");
+        let c2 = ContractName::new("c2");
+        let register_c1 = make_register_contract_tx(c1.clone());
+        let register_c2 = make_register_contract_tx(c2.clone());
+
+        // Add Three transactions - the first blocks the next two, and the next two are NOT ready to settle.
+        let tx1 = BlobTransaction {
+            identity: Identity::new("test.c1"),
+            blobs: vec![new_blob(&c1.0), new_blob(&c2.0)],
+        };
+        let tx2 = BlobTransaction {
+            identity: Identity::new("test.c1"),
+            blobs: vec![new_blob(&c1.0)],
+        };
+        let tx3 = BlobTransaction {
+            identity: Identity::new("test.c2"),
+            blobs: vec![new_blob(&c2.0)],
+        };
+        let tx4 = BlobTransaction {
+            identity: Identity::new("test2.c2"),
+            blobs: vec![new_blob(&c2.0)],
+        };
+
+        let tx1_hash = tx1.hash();
+        let tx2_hash = tx2.hash();
+        let tx3_hash = tx3.hash();
+        let tx4_hash = tx4.hash();
+
+        state.handle_signed_block(&craft_signed_block(
+            104,
+            vec![
+                register_c1.into(),
+                register_c2.into(),
+                tx1.into(),
+                tx2.into(),
+                tx3.into(),
+                tx4.into(),
+            ],
+        ));
+
+        // Assert timeout only contains tx1
+        assert_eq!(
+            timeouts::tests::get(&state.timeouts, &tx1_hash),
+            Some(BlockHeight(204))
+        );
+        assert_eq!(timeouts::tests::get(&state.timeouts, &tx2_hash), None);
+        assert_eq!(timeouts::tests::get(&state.timeouts, &tx3_hash), None);
+        assert_eq!(timeouts::tests::get(&state.timeouts, &tx4_hash), None);
+
+        // Time out
+        let block = state.handle_signed_block(&craft_signed_block(204, vec![]));
+
+        // Assert that only tx1 has timed out
+        assert_eq!(block.timed_out_txs, vec![tx1_hash.clone()]);
+        assert_eq!(timeouts::tests::get(&state.timeouts, &tx1_hash), None);
+
+        // Assert that tx2&tx3 timeout is reset
+        assert_eq!(
+            timeouts::tests::get(&state.timeouts, &tx2_hash),
+            Some(BlockHeight(304))
+        );
+        assert_eq!(
+            timeouts::tests::get(&state.timeouts, &tx3_hash),
+            Some(BlockHeight(304))
+        );
+
+        // Assert that tx4 has no timeout
+        assert_eq!(timeouts::tests::get(&state.timeouts, &tx4_hash), None);
+
+        // Time out
+        let block = state.handle_signed_block(&craft_signed_block(304, vec![]));
+
+        // Assert that tx2 and tx3 has timed out.
+        assert_eq!(
+            block.timed_out_txs,
+            vec![tx2_hash.clone(), tx3_hash.clone()]
+        );
+        assert_eq!(timeouts::tests::get(&state.timeouts, &tx1_hash), None);
+        assert_eq!(timeouts::tests::get(&state.timeouts, &tx2_hash), None);
+        assert_eq!(timeouts::tests::get(&state.timeouts, &tx3_hash), None);
+
+        // Assert that tx4 timeout is reset
+        assert_eq!(
+            timeouts::tests::get(&state.timeouts, &tx4_hash),
+            Some(BlockHeight(404))
+        );
     }
 
     mod contract_registration {
