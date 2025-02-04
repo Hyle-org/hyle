@@ -23,7 +23,7 @@ use super::{KnownContracts, MempoolNetMessage};
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DataProposalVerdict {
     Empty,
-    Wait(Option<DataProposalHash>),
+    Wait,
     Vote,
     Process,
     Refuse,
@@ -177,9 +177,8 @@ pub trait Storage {
         match self.can_be_put_on_top(validator, data_proposal.parent_data_proposal_hash.as_ref()) {
             // PARENT UNKNOWN
             CanBePutOnTop::No => {
-                let last_known_hash = self.get_lane_hash_tip(validator);
                 // Get the last known parent hash in order to get all the next ones
-                Ok((DataProposalVerdict::Wait(last_known_hash.cloned()), None))
+                Ok((DataProposalVerdict::Wait, None))
             }
             // LEGIT DATA PROPOSAL
             CanBePutOnTop::Yes => Ok((DataProposalVerdict::Process, None)),
@@ -727,7 +726,7 @@ mod tests {
         let (verdict, _) = storage
             .on_data_proposal(pubkey2, &dp_unknown_parent)
             .unwrap();
-        assert_eq!(verdict, DataProposalVerdict::Wait(None));
+        assert_eq!(verdict, DataProposalVerdict::Wait);
     }
 
     #[test_log::test(tokio::test)]
