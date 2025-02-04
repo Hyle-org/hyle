@@ -25,14 +25,16 @@ use axum::{
     Router,
 };
 use chrono::DateTime;
+use futures::{SinkExt, StreamExt};
 use hyle_contract_sdk::TxHash;
 use hyle_model::api::{BlobWithStatus, TransactionStatus, TransactionType, TransactionWithBlobs};
 use sqlx::{postgres::PgPoolOptions, PgPool, Pool, Postgres};
 use sqlx::{Execute, PgExecutor, QueryBuilder, Row};
 use std::ops::DerefMut;
 use std::{collections::HashMap, sync::Arc};
+use tokio::select;
 use tokio::sync::{broadcast, mpsc};
-use tracing::{trace, warn};
+use tracing::{error, info, trace, warn};
 use utoipa::OpenApi;
 use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
@@ -132,7 +134,7 @@ impl Indexer {
                     .log_error("Indexer handling mempool status event");
             }
 
-            Some((contract_name, mut socket)) = self.new_sub_receiver.recv() => {
+            Some((contract_name, socket)) = self.new_sub_receiver.recv() => {
 
                 let (tx, mut rx) = broadcast::channel(100);
                 // Append tx to the list of subscribers for contract_name
@@ -143,14 +145,42 @@ impl Indexer {
                 tokio::task::Builder::new()
                     .name("indexer-recv")
                     .spawn(async move {
-                        while let Ok(transaction) = rx.recv().await {
-                            if let Ok(json) = serde_json::to_vec(&transaction)
-                                    .log_error("Serialize transaction to JSON") {
-                                if socket.send(Message::Binary(json.into())).await.is_err() {
-                                    break;
+                        let (mut ws_tx, mut ws_rx) = socket.split();
+
+                        loop {
+                            select! {
+                                maybe_transaction = rx.recv() => {
+                                match maybe_transaction {
+                                    Ok(transaction) => {
+                                        if let Ok(json) = serde_json::to_vec(&transaction)
+                                            .log_error("Serialize transaction to JSON") {
+                                            if ws_tx.send(Message::Binary(json.into())).await.is_err() {
+                                                break;
+                                            }
+                                        }
+                                    }
+                                    _ => break,
+                                }
+                            },
+                            // Branch to handle incoming messages from ws
+                            maybe_msg = ws_rx.next() => {
+                                match maybe_msg {
+                                    Some(Ok(message)) => {
+                                        if let Message::Close(frame) = message {
+                                            info!("WS closed by client: {:?}", frame);
+                                            let _ = ws_tx.send(Message::Close(frame)).await;
+                                            break;
+                                        }
+                                    }
+                                    Some(Err(e)) => {
+                                        error!("Error while getting message from WS: {}", e);
+                                        break;
+                                    }
+                                    None => break,
                                 }
                             }
-                        }
+
+                        }}
                     })?;
             }
         };
