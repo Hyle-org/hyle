@@ -19,12 +19,12 @@ risc0-build = { version = "1.2.2", optional = true }
 
 [package.metadata.risc0]
 methods = [
-    # "amm",
-    # "hyllar",
-    # "hydentity",
+    "amm",
+    "hyllar",
+    "hydentity",
     "staking",
-    # "risc0-recursion",
-    # "uuid-tld",
+    "risc0-recursion",
+    "uuid-tld",
 ]
 
 [features]

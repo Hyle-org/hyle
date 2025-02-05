@@ -54,13 +54,14 @@ pub mod risc0 {
             Self { binary }
         }
         pub async fn prove(&self, contract_input: ContractInput) -> Result<ProofData> {
-            let contract_input = bonsai_runner::as_input_data(&contract_input)?;
+            let contract_input = borsh::to_vec(&contract_input)?;
 
             let explicit = std::env::var("RISC0_PROVER").unwrap_or_default();
             let receipt = match explicit.to_lowercase().as_str() {
                 "bonsai" => bonsai_runner::run_bonsai(self.binary, contract_input.clone()).await?,
                 _ => {
                     let env = risc0_zkvm::ExecutorEnv::builder()
+                        .write(&contract_input.len())?
                         .write_slice(&contract_input)
                         .build()
                         .unwrap();
