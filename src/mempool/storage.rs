@@ -1,5 +1,5 @@
 use anyhow::{bail, Result};
-use bincode::{Decode, Encode};
+use borsh::{BorshDeserialize, BorshSerialize};
 use hyle_model::{
     ContractName, DataSized, ProgramId, RegisterContractAction, Signed, StructuredBlobData,
     ValidatorSignature, Verifier,
@@ -37,7 +37,7 @@ pub enum CanBePutOnTop {
     Fork,
 }
 
-#[derive(Debug, Clone, Encode, Decode, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LaneEntry {
     pub data_proposal: DataProposal,
     pub cumul_size: LaneBytesSize,

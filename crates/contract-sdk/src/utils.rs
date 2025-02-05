@@ -1,21 +1,19 @@
 use crate::{
-    alloc::{
-        string::{String, ToString},
-        vec::Vec,
-    },
+    alloc::string::{String, ToString},
     guest::fail,
     Identity, StructuredBlobData,
 };
-use bincode::{Decode, Encode};
+use borsh::{BorshDeserialize, BorshSerialize};
 use core::result::Result;
 
 use hyle_model::{
-    flatten_blobs, Blob, BlobIndex, ContractInput, Digestable, HyleOutput, StructuredBlob,
+    flatten_blobs, Blob, BlobIndex, ContractInput, Digestable, DropEndOfReader, HyleOutput,
+    StructuredBlob,
 };
 
 pub fn parse_blob<Parameters>(blobs: &[Blob], index: &BlobIndex) -> Option<Parameters>
 where
-    Parameters: Decode,
+    Parameters: BorshDeserialize,
 {
     let blob = match blobs.get(index.0) {
         Some(v) => v,
@@ -24,10 +22,7 @@ where
         }
     };
 
-    let Ok((parameters, _)) = bincode::decode_from_slice::<Parameters, _>(
-        blob.data.0.as_slice(),
-        bincode::config::standard(),
-    ) else {
+    let Ok(parameters) = borsh::from_slice::<Parameters>(blob.data.0.as_slice()) else {
         return None;
     };
 
@@ -39,7 +34,7 @@ pub fn parse_structured_blob<Parameters>(
     index: &BlobIndex,
 ) -> Option<StructuredBlob<Parameters>>
 where
-    Parameters: Decode,
+    Parameters: BorshDeserialize,
 {
     let blob = match blobs.get(index.0) {
         Some(v) => v,
@@ -82,13 +77,13 @@ pub fn check_caller_callees<Paramaters>(
     parameters: &StructuredBlob<Paramaters>,
 ) -> Result<Identity, String>
 where
-    Paramaters: Encode + Decode,
+    Paramaters: BorshSerialize + BorshDeserialize,
 {
     // Check that callees has this blob as caller
     if let Some(callees) = parameters.data.callees.as_ref() {
         for callee_index in callees {
             let callee_blob = input.blobs[callee_index.0].clone();
-            let callee_structured_blob: StructuredBlobData<Vec<u8>> =
+            let callee_structured_blob: StructuredBlobData<DropEndOfReader> =
                 callee_blob.data.try_into().expect("Failed to decode blob");
             if callee_structured_blob.caller != Some(input.index) {
                 return Err("One Callee does not have this blob as caller".to_string());
@@ -98,7 +93,7 @@ where
     // Extract the correct caller
     if let Some(caller_index) = parameters.data.caller.as_ref() {
         let caller_blob = input.blobs[caller_index.0].clone();
-        let caller_structured_blob: StructuredBlobData<Vec<u8>> =
+        let caller_structured_blob: StructuredBlobData<DropEndOfReader> =
             caller_blob.data.try_into().expect("Failed to decode blob");
         // Check that caller has this blob as callee
         if caller_structured_blob.callees.is_some()

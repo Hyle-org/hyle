@@ -6,16 +6,14 @@ use tracing::trace;
 
 use super::network::NetMessage;
 
-pub async fn read_stream<T: bincode::Decode>(
+pub async fn read_stream<T: borsh::BorshDeserialize>(
     stream: &mut Framed<TcpStream, LengthDelimitedCodec>,
 ) -> Result<T, Error> {
     trace!("Waiting for data");
     if let Some(result) = stream.next().await {
         match result {
             Ok(data) => {
-                let (msg, _) = bincode::decode_from_slice(&data, bincode::config::standard())
-                    .map_err(|_| anyhow::anyhow!("Could not decode message"))?;
-                Ok(msg)
+                borsh::from_slice(&data).map_err(|_| anyhow::anyhow!("Could not decode message"))
             }
             Err(e) => Err(anyhow!(e).context("Error while reading message")),
         }

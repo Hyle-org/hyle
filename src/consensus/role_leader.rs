@@ -10,14 +10,14 @@ use crate::{
     },
 };
 use anyhow::{anyhow, bail, Result};
-use bincode::{Decode, Encode};
+use borsh::{BorshDeserialize, BorshSerialize};
 use hyle_model::ConsensusStakingAction;
 use staking::state::MIN_STAKE;
 use tracing::{debug, error, trace};
 
 use super::Consensus;
 
-#[derive(Encode, Decode, Default, Debug)]
+#[derive(BorshSerialize, BorshDeserialize, Default, Debug)]
 pub enum Step {
     #[default]
     StartNewSlot,
@@ -25,7 +25,7 @@ pub enum Step {
     ConfirmAck,
 }
 
-#[derive(Encode, Decode, Default)]
+#[derive(BorshSerialize, BorshDeserialize, Default)]
 pub struct LeaderState {
     pub(super) step: Step,
     pub(super) prepare_votes: HashSet<SignedByValidator<ConsensusNetMessage>>,

@@ -1,7 +1,6 @@
 use alloc::string::{String, ToString};
 use alloc::vec;
-use bincode::{Decode, Encode};
-use serde::de::DeserializeOwned;
+use borsh::{BorshDeserialize, BorshSerialize};
 
 use crate::{
     flatten_blobs,
@@ -12,7 +11,7 @@ use crate::{
 pub trait GuestEnv {
     fn log(&self, message: &str);
     fn commit(&self, output: &HyleOutput);
-    fn read<T: DeserializeOwned + 'static>(&self) -> T;
+    fn read<T: BorshDeserialize + 'static>(&self) -> T;
 }
 
 pub struct Risc0Env;
@@ -27,8 +26,11 @@ impl GuestEnv for Risc0Env {
         risc0_zkvm::guest::env::commit(output);
     }
 
-    fn read<T: DeserializeOwned>(&self) -> T {
-        risc0_zkvm::guest::env::read()
+    fn read<T: BorshDeserialize>(&self) -> T {
+        let len: usize = risc0_zkvm::guest::env::read();
+        let mut slice = vec![0u8; len];
+        risc0_zkvm::guest::env::read_slice(&mut slice);
+        borsh::from_slice(&slice).unwrap()
     }
 }
 
@@ -43,11 +45,13 @@ impl GuestEnv for SP1Env {
     }
 
     fn commit(&self, output: &HyleOutput) {
-        sp1_zkvm::io::commit(output);
+        let vec = borsh::to_vec(&output).unwrap();
+        sp1_zkvm::io::commit_slice(&vec);
     }
 
-    fn read<T: DeserializeOwned>(&self) -> T {
-        sp1_zkvm::io::read()
+    fn read<T: BorshDeserialize>(&self) -> T {
+        let vec = sp1_zkvm::io::read_vec();
+        borsh::from_slice(&vec).unwrap()
     }
 }
 
@@ -75,7 +79,7 @@ pub fn panic(env: impl GuestEnv, message: &str) {
 
 pub fn init_raw<Parameters>(input: ContractInput) -> (ContractInput, Option<Parameters>)
 where
-    Parameters: Decode,
+    Parameters: BorshDeserialize,
 {
     let parsed_blob = parse_blob::<Parameters>(&input.blobs, &input.index);
 
@@ -86,7 +90,7 @@ pub fn init_with_caller<Parameters>(
     input: ContractInput,
 ) -> Result<(ContractInput, StructuredBlob<Parameters>, Identity), String>
 where
-    Parameters: Encode + Decode,
+    Parameters: BorshSerialize + BorshDeserialize,
 {
     let parsed_blob = parse_structured_blob::<Parameters>(&input.blobs, &input.index);
 

@@ -25,3 +25,25 @@ pub mod arc_rwlock_serde {
         Ok(Arc::new(RwLock::new(T::deserialize(d)?)))
     }
 }
+
+pub mod arc_rwlock_borsh {
+    use std::sync::{Arc, RwLock};
+
+    pub fn serialize<T: borsh::ser::BorshSerialize, W: borsh::io::Write>(
+        obj: &Arc<RwLock<T>>,
+        writer: &mut W,
+    ) -> ::core::result::Result<(), borsh::io::Error> {
+        #[allow(
+            clippy::unwrap_used,
+            reason = "Cannot panic in sync code unless poisoned where panic is OK"
+        )]
+        borsh::BorshSerialize::serialize(&*obj.read().unwrap(), writer)?;
+        Ok(())
+    }
+
+    pub fn deserialize<R: borsh::io::Read, T: borsh::de::BorshDeserialize>(
+        reader: &mut R,
+    ) -> ::core::result::Result<Arc<RwLock<T>>, borsh::io::Error> {
+        Ok(Arc::new(RwLock::new(T::deserialize_reader(reader)?)))
+    }
+}

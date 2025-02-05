@@ -92,30 +92,24 @@ async fn test_full_settlement_flow() -> Result<()> {
     let proof_c1 = ProofTransaction {
         contract_name: "c1".into(),
         proof: ProofData(
-            bincode::encode_to_vec(
-                vec![make_hyle_output_with_state(
-                    tx.clone(),
-                    BlobIndex(0),
-                    &[1, 2, 3],
-                    &[4, 5, 6],
-                )],
-                bincode::config::standard(),
-            )
+            borsh::to_vec(&vec![make_hyle_output_with_state(
+                tx.clone(),
+                BlobIndex(0),
+                &[1, 2, 3],
+                &[4, 5, 6],
+            )])
             .unwrap(),
         ),
     };
     let proof_c2 = ProofTransaction {
         contract_name: "c2.hyle".into(),
         proof: ProofData(
-            bincode::encode_to_vec(
-                vec![make_hyle_output_with_state(
-                    tx.clone(),
-                    BlobIndex(1),
-                    &[7, 7, 7],
-                    &[8, 8, 8],
-                )],
-                bincode::config::standard(),
-            )
+            borsh::to_vec(&vec![make_hyle_output_with_state(
+                tx.clone(),
+                BlobIndex(1),
+                &[7, 7, 7],
+                &[8, 8, 8],
+            )])
             .unwrap(),
         ),
     };
@@ -191,9 +185,7 @@ async fn test_contract_upgrade() -> Result<()> {
 
     let proof_update = ProofTransaction {
         contract_name: "c1.hyle".into(),
-        proof: ProofData(
-            bincode::encode_to_vec(vec![hyle_output], bincode::config::standard()).unwrap(),
-        ),
+        proof: ProofData(borsh::to_vec(&vec![hyle_output]).unwrap()),
     };
 
     client.send_tx_proof(&proof_update).await.unwrap();

@@ -188,13 +188,11 @@ impl Storage for LanesStorage {
 }
 
 fn decode_from_item(item: Slice) -> Result<LaneEntry> {
-    bincode::decode_from_slice(&item, bincode::config::standard())
-        .map(|(b, _)| b)
-        .map_err(Into::into)
+    borsh::from_slice(&item).map_err(Into::into)
 }
 
 fn encode_to_item(lane_entry: LaneEntry) -> Result<Slice> {
-    bincode::encode_to_vec(lane_entry, bincode::config::standard())
+    borsh::to_vec(&lane_entry)
         .map(Slice::from)
         .map_err(Into::into)
 }

@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use anyhow::Result;
-use bincode::{Decode, Encode};
+use borsh::{BorshDeserialize, BorshSerialize};
 use sdk::{
     info, BlockHeight, Digestable, Identity, LaneBytesSize, StateDigest, ValidatorPublicKey,
 };
@@ -10,7 +10,7 @@ use sha2::{Digest, Sha256};
 
 use crate::fees::Fees;
 
-#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, Clone, BorshSerialize, BorshDeserialize, PartialEq, Eq)]
 pub struct Staking {
     pub(crate) stakes: BTreeMap<Identity, u128>,
     pub(crate) delegations: BTreeMap<ValidatorPublicKey, Vec<Identity>>,

@@ -1,6 +1,6 @@
 use std::{collections::BTreeSet, hash::Hasher};
 
-use bincode::{Decode, Encode};
+use borsh::{BorshDeserialize, BorshSerialize};
 use rand::Rng;
 use rand_seeder::SipHasher;
 use sdk::{
@@ -12,7 +12,7 @@ use uuid::Uuid;
 #[cfg(feature = "client")]
 pub mod client;
 
-#[derive(Clone, Encode, Decode)]
+#[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub struct RegisterUuidContract {
     pub verifier: Verifier,
     pub program_id: ProgramId,
@@ -35,28 +35,23 @@ impl ContractAction for RegisterUuidContract {
         #[allow(clippy::expect_used)]
         Blob {
             contract_name,
-            data: BlobData(
-                bincode::encode_to_vec(self, bincode::config::standard())
-                    .expect("failed to encode BlstSignatureBlob"),
-            ),
+            data: BlobData(borsh::to_vec(self).expect("failed to encode BlstSignatureBlob")),
         }
     }
 }
 
-#[derive(Default, Clone, Encode, Decode)]
+#[derive(Default, Clone, BorshSerialize, BorshDeserialize)]
 pub struct UuidTldState {
     registered_contracts: BTreeSet<u128>,
 }
 
 impl UuidTldState {
     fn serialize(&self) -> Result<Vec<u8>, String> {
-        bincode::encode_to_vec(self, bincode::config::standard()).map_err(|e| e.to_string())
+        borsh::to_vec(self).map_err(|e| e.to_string())
     }
 
     fn deserialize(data: &[u8]) -> Result<Self, String> {
-        bincode::decode_from_slice(data, bincode::config::standard())
-            .map(|(v, _)| v)
-            .map_err(|e| e.to_string())
+        borsh::from_slice(data).map_err(|e| e.to_string())
     }
 
     pub fn to_bytes(&self) -> Vec<u8> {
@@ -138,6 +133,8 @@ pub fn execute(contract_input: ContractInput) -> RunResult<UuidTldState> {
 
 #[cfg(test)]
 mod test {
+    use std::str::FromStr;
+
     use crate::*;
     use sdk::*;
 
@@ -179,11 +176,13 @@ mod test {
 
         assert_eq!(
             effect.contract_name.0,
-            "9be7e500-9398-46e2-a471-376bbe290517.uuid"
+            "7de07efe-e91d-45f7-a5d2-0b813c1d3e10.uuid"
         );
-        state
-            .registered_contracts
-            .insert(207234404638461129629594146217149400343);
+        state.registered_contracts.insert(
+            Uuid::from_str("7de07efe-e91d-45f7-a5d2-0b813c1d3e10")
+                .unwrap()
+                .as_u128(),
+        );
 
         assert_eq!(new_state.as_digest(), state.as_digest());
 
@@ -194,11 +193,13 @@ mod test {
 
         assert_eq!(
             effect.contract_name.0,
-            "289f1568-9f12-4cc0-8d18-b0df040b34ca.uuid"
+            "fe6d874b-7b90-496e-8328-1ea817be889a.uuid"
         );
-        state
-            .registered_contracts
-            .insert(53995129251464490355800204076743603402);
+        state.registered_contracts.insert(
+            Uuid::from_str("fe6d874b-7b90-496e-8328-1ea817be889a")
+                .unwrap()
+                .as_u128(),
+        );
 
         assert_eq!(new_state.as_digest(), state.as_digest());
     }
