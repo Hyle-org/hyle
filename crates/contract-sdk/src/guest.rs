@@ -48,8 +48,10 @@ impl GuestEnv for SP1Env {
         sp1_zkvm::io::commit(output);
     }
 
-    fn read<T: DeserializeOwned>(&self) -> T {
-        sp1_zkvm::io::read()
+    fn read<T: BorshDeserialize>(&self) -> T {
+        let _len: usize = sp1_zkvm::io::read();
+        let vec = sp1_zkvm::io::read_vec();
+        borsh::from_slice(&vec).unwrap()
     }
 }
 
