@@ -76,7 +76,17 @@ impl Display for NetMessage {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, BorshSerialize, BorshDeserialize, Eq, PartialEq, IntoStaticStr)]
+#[derive(
+    Debug,
+    Serialize,
+    Deserialize,
+    Clone,
+    BorshSerialize,
+    BorshDeserialize,
+    Eq,
+    PartialEq,
+    IntoStaticStr,
+)]
 pub enum NetMessage {
     HandshakeMessage(HandshakeNetMessage),
     MempoolMessage(SignedByValidator<MempoolNetMessage>),
@@ -111,7 +121,6 @@ impl From<SignedByValidator<ConsensusNetMessage>> for NetMessage {
 
 impl NetMessage {
     pub fn to_binary(&self) -> anyhow::Result<Vec<u8>> {
-        borsh::to_vec(self)
-            .context("Could not serialize NetMessage")
+        borsh::to_vec(self).context("Could not serialize NetMessage")
     }
 }

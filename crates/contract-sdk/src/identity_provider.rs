@@ -74,10 +74,7 @@ impl ContractAction for IdentityAction {
     ) -> Blob {
         Blob {
             contract_name,
-            data: BlobData(
-                borsh::to_vec(self)
-                    .expect("failed to encode program inputs"),
-            ),
+            data: BlobData(borsh::to_vec(self).expect("failed to encode program inputs")),
         }
     }
 }

@@ -6,7 +6,17 @@ use strum_macros::IntoStaticStr;
 
 use crate::*;
 
-#[derive(Debug, Serialize, Deserialize, Clone, BorshSerialize, BorshDeserialize, Eq, PartialEq, IntoStaticStr)]
+#[derive(
+    Debug,
+    Serialize,
+    Deserialize,
+    Clone,
+    BorshSerialize,
+    BorshDeserialize,
+    Eq,
+    PartialEq,
+    IntoStaticStr,
+)]
 pub enum TcpServerNetMessage {
     Ping,
     NewTx(Transaction),
@@ -50,7 +60,6 @@ impl From<ProofTransaction> for TcpServerNetMessage {
 
 impl TcpServerNetMessage {
     pub fn to_binary(&self) -> Result<Vec<u8>> {
-        borsh::to_vec(self)
-            .context("Could not serialize NetMessage")
+        borsh::to_vec(self).context("Could not serialize NetMessage")
     }
 }

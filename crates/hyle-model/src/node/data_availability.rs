@@ -7,7 +7,9 @@ use utoipa::ToSchema;
 
 use crate::*;
 
-#[derive(Default, Debug, Clone, Serialize, Deserialize, ToSchema, BorshSerialize, BorshDeserialize)]
+#[derive(
+    Default, Debug, Clone, Serialize, Deserialize, ToSchema, BorshSerialize, BorshDeserialize,
+)]
 pub struct Contract {
     pub name: ContractName,
     pub program_id: ProgramId,
@@ -57,7 +59,15 @@ pub struct UnsettledBlobMetadata {
 }
 
 #[derive(
-    Debug, Default, Clone, serde::Serialize, serde::Deserialize, BorshSerialize, BorshDeserialize, Eq, PartialEq,
+    Debug,
+    Default,
+    Clone,
+    serde::Serialize,
+    serde::Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+    Eq,
+    PartialEq,
 )]
 pub struct HandledBlobProofOutput {
     pub proof_tx_hash: TxHash,
@@ -68,7 +78,9 @@ pub struct HandledBlobProofOutput {
     pub blob_proof_output_index: usize,
 }
 
-#[derive(Debug, Default, Serialize, Deserialize, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
+#[derive(
+    Debug, Default, Serialize, Deserialize, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize,
+)]
 pub struct BlobProofOutput {
     // TODO: this can be recovered from the hyle output
     pub blob_tx_hash: TxHash,

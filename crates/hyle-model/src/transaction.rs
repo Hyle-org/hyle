@@ -7,7 +7,9 @@ use utoipa::ToSchema;
 
 use crate::*;
 
-#[derive(Debug, Serialize, Deserialize, Default, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
+#[derive(
+    Debug, Serialize, Deserialize, Default, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize,
+)]
 pub struct Transaction {
     pub version: u32,
     pub transaction_data: TransactionData,
@@ -23,7 +25,17 @@ impl DataSized for Transaction {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize, IntoStaticStr)]
+#[derive(
+    Debug,
+    Serialize,
+    Deserialize,
+    Clone,
+    PartialEq,
+    Eq,
+    BorshSerialize,
+    BorshDeserialize,
+    IntoStaticStr,
+)]
 pub enum TransactionData {
     Blob(BlobTransaction),
     Proof(ProofTransaction),
@@ -36,7 +48,17 @@ impl Default for TransactionData {
     }
 }
 
-#[derive(Serialize, Deserialize, ToSchema, Default, PartialEq, Eq, Clone, BorshSerialize, BorshDeserialize)]
+#[derive(
+    Serialize,
+    Deserialize,
+    ToSchema,
+    Default,
+    PartialEq,
+    Eq,
+    Clone,
+    BorshSerialize,
+    BorshDeserialize,
+)]
 pub struct ProofTransaction {
     pub contract_name: ContractName,
     pub proof: ProofData,
@@ -154,11 +176,22 @@ impl Hashable<TxHash> for VerifiedProofTransaction {
 }
 
 #[derive(
-    Debug, Default, Serialize, Deserialize, ToSchema, PartialEq, Eq, Clone, BorshSerialize, BorshDeserialize,
+    Debug,
+    Default,
+    Serialize,
+    Deserialize,
+    ToSchema,
+    PartialEq,
+    Eq,
+    Clone,
+    BorshSerialize,
+    BorshDeserialize,
 )]
 pub struct ProofData(#[serde(with = "base64_field")] pub Vec<u8>);
 
-#[derive(Debug, Default, Serialize, Deserialize, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
+#[derive(
+    Debug, Default, Serialize, Deserialize, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize,
+)]
 pub struct ProofDataHash(pub String);
 
 impl Hashable<ProofDataHash> for ProofData {
@@ -171,7 +204,16 @@ impl Hashable<ProofDataHash> for ProofData {
 }
 
 #[derive(
-    Debug, Serialize, Deserialize, ToSchema, Default, PartialEq, Eq, Clone, BorshSerialize, BorshDeserialize,
+    Debug,
+    Serialize,
+    Deserialize,
+    ToSchema,
+    Default,
+    PartialEq,
+    Eq,
+    Clone,
+    BorshSerialize,
+    BorshDeserialize,
 )]
 pub struct BlobTransaction {
     pub identity: Identity,

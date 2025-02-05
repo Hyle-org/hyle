@@ -4,7 +4,9 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use sdk::{LaneBytesSize, ValidatorPublicKey};
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Default, Serialize, Deserialize, Clone, BorshSerialize, BorshDeserialize, PartialEq, Eq)]
+#[derive(
+    Debug, Default, Serialize, Deserialize, Clone, BorshSerialize, BorshDeserialize, PartialEq, Eq,
+)]
 pub struct ValidatorFeeState {
     /// balance could go negative, the validator would then not be able to
     /// disseminate anymore, and would need to increase its balance first.
@@ -13,7 +15,9 @@ pub struct ValidatorFeeState {
     pub(crate) paid_cumul_size: LaneBytesSize,
 }
 
-#[derive(Debug, Default, Serialize, Deserialize, Clone, BorshSerialize, BorshDeserialize, PartialEq, Eq)]
+#[derive(
+    Debug, Default, Serialize, Deserialize, Clone, BorshSerialize, BorshDeserialize, PartialEq, Eq,
+)]
 pub struct Fees {
     /// Cumulative size of the data disseminated by the validators, pending fee distribution
     pub(crate) pending_fees: Vec<(ValidatorPublicKey, LaneBytesSize)>,
