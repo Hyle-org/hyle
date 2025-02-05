@@ -150,37 +150,37 @@ impl Indexer {
                         loop {
                             select! {
                                 maybe_transaction = rx.recv() => {
-                                match maybe_transaction {
-                                    Ok(transaction) => {
-                                        if let Ok(json) = serde_json::to_vec(&transaction)
-                                            .log_error("Serialize transaction to JSON") {
-                                            if ws_tx.send(Message::Binary(json.into())).await.is_err() {
+                                    match maybe_transaction {
+                                        Ok(transaction) => {
+                                            if let Ok(json) = serde_json::to_vec(&transaction)
+                                                .log_error("Serialize transaction to JSON") {
+                                                if ws_tx.send(Message::Binary(json.into())).await.is_err() {
+                                                    break;
+                                                }
+                                            }
+                                        }
+                                        _ => break,
+                                    }
+                                },
+                                // Branch to handle incoming messages from ws
+                                maybe_msg = ws_rx.next() => {
+                                    match maybe_msg {
+                                        Some(Ok(message)) => {
+                                            if let Message::Close(frame) = message {
+                                                info!("WS closed by client: {:?}", frame);
+                                                let _ = ws_tx.send(Message::Close(frame)).await;
                                                 break;
                                             }
                                         }
-                                    }
-                                    _ => break,
-                                }
-                            },
-                            // Branch to handle incoming messages from ws
-                            maybe_msg = ws_rx.next() => {
-                                match maybe_msg {
-                                    Some(Ok(message)) => {
-                                        if let Message::Close(frame) = message {
-                                            info!("WS closed by client: {:?}", frame);
-                                            let _ = ws_tx.send(Message::Close(frame)).await;
+                                        Some(Err(e)) => {
+                                            error!("Error while getting message from WS: {}", e);
                                             break;
                                         }
+                                        None => break,
                                     }
-                                    Some(Err(e)) => {
-                                        error!("Error while getting message from WS: {}", e);
-                                        break;
-                                    }
-                                    None => break,
                                 }
                             }
-
-                        }}
+                        }
                     })?;
             }
         };
