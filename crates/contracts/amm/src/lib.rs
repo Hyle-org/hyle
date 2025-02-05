@@ -5,7 +5,10 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use sdk::caller::{CalleeBlobs, CallerCallee, CheckCalleeBlobs, ExecutionContext, MutCalleeBlobs};
 use sdk::erc20::{ERC20BlobChecker, ERC20};
 use sdk::{erc20::ERC20Action, Identity};
-use sdk::{Blob, BlobIndex, ContractAction, ContractInput, Digestable, RunResult, StateDigest};
+use sdk::{
+    Blob, BlobIndex, ContractAction, ContractInput, Digestable, DropEndOfReader, RunResult,
+    StateDigest,
+};
 use sdk::{BlobData, ContractName, StructuredBlobData};
 use serde::{Deserialize, Serialize};
 
@@ -280,7 +283,7 @@ pub fn execute(contract_input: ContractInput) -> RunResult<AmmState> {
     let mut callees_blobs = Vec::new();
     for blob in input.blobs.clone().into_iter() {
         if let Ok(structured_blob) = blob.data.clone().try_into() {
-            let structured_blob: StructuredBlobData<Vec<u8>> = structured_blob; // for type inference
+            let structured_blob: StructuredBlobData<DropEndOfReader> = structured_blob; // for type inference
             if structured_blob.caller == Some(input.index) {
                 callees_blobs.push(blob);
             }

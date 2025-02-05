@@ -139,11 +139,46 @@ impl std::fmt::Debug for BlobData {
     }
 }
 
-#[derive(Debug, BorshSerialize, BorshDeserialize)]
+#[derive(Debug, BorshSerialize)]
 pub struct StructuredBlobData<Parameters> {
     pub caller: Option<BlobIndex>,
     pub callees: Option<Vec<BlobIndex>>,
     pub parameters: Parameters,
+}
+
+/// Struct used to be able to deserialize a StructuredBlobData
+/// without knowing the concrete type of Parameters
+/// warning: this will drop the end of the reader, thus, you can't
+/// deserialize a structure that contains a StructuredBlobData<DropEndOfReader>
+/// Unless this struct is at the end of your data structure.
+/// It's not meant to be used outside the sdk internal logic.
+pub struct DropEndOfReader;
+
+impl<Parameters: BorshDeserialize> BorshDeserialize for StructuredBlobData<Parameters> {
+    fn deserialize_reader<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self> {
+        let caller = Option::<BlobIndex>::deserialize_reader(reader)?;
+        let callees = Option::<Vec<BlobIndex>>::deserialize_reader(reader)?;
+        let parameters = Parameters::deserialize_reader(reader)?;
+        Ok(StructuredBlobData {
+            caller,
+            callees,
+            parameters,
+        })
+    }
+}
+
+impl BorshDeserialize for StructuredBlobData<DropEndOfReader> {
+    fn deserialize_reader<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self> {
+        let caller = Option::<BlobIndex>::deserialize_reader(reader)?;
+        let callees = Option::<Vec<BlobIndex>>::deserialize_reader(reader)?;
+        reader.read_to_end(&mut vec![])?;
+        let parameters = DropEndOfReader;
+        Ok(StructuredBlobData {
+            caller,
+            callees,
+            parameters,
+        })
+    }
 }
 
 impl<Parameters: BorshSerialize> From<StructuredBlobData<Parameters>> for BlobData {
@@ -155,6 +190,13 @@ impl<Parameters: BorshDeserialize> TryFrom<BlobData> for StructuredBlobData<Para
     type Error = std::io::Error;
 
     fn try_from(val: BlobData) -> Result<StructuredBlobData<Parameters>, Self::Error> {
+        borsh::from_slice(&val.0)
+    }
+}
+impl TryFrom<BlobData> for StructuredBlobData<DropEndOfReader> {
+    type Error = std::io::Error;
+
+    fn try_from(val: BlobData) -> Result<StructuredBlobData<DropEndOfReader>, Self::Error> {
         borsh::from_slice(&val.0)
     }
 }

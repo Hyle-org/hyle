@@ -174,7 +174,7 @@ mod test {
 
         assert_eq!(
             effect.contract_name.0,
-            "9be7e500-9398-46e2-a471-376bbe290517.uuid"
+            "7de07efe-e91d-45f7-a5d2-0b813c1d3e10.uuid"
         );
         state
             .registered_contracts

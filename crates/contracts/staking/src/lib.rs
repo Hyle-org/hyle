@@ -2,8 +2,8 @@ use anyhow::Result;
 use sdk::{
     caller::{CalleeBlobs, CallerCallee, ExecutionContext, MutCalleeBlobs},
     erc20::ERC20Action,
-    info, Blob, BlobIndex, ContractInput, Digestable, Identity, RunResult, StakingAction,
-    StructuredBlobData,
+    info, Blob, BlobIndex, ContractInput, Digestable, DropEndOfReader, Identity, RunResult,
+    StakingAction, StructuredBlobData,
 };
 use state::Staking;
 
@@ -112,7 +112,7 @@ pub fn execute(contract_input: ContractInput) -> RunResult<Staking> {
     let mut callees_blobs = Vec::new();
     for blob in input.blobs.clone().into_iter() {
         if let Ok(structured_blob) = blob.data.clone().try_into() {
-            let structured_blob: StructuredBlobData<Vec<u8>> = structured_blob; // for type inference
+            let structured_blob: StructuredBlobData<DropEndOfReader> = structured_blob; // for type inference
             if structured_blob.caller == Some(input.index) {
                 callees_blobs.push(blob);
             }
