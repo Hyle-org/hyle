@@ -18,12 +18,12 @@ fn main() {
     let mut options = HashMap::new();
 
     [
-        "amm",
-        "hydentity",
-        "hyllar",
+        //"amm",
+        //"hydentity",
+        //"hyllar",
         "staking",
-        "risc0-recursion",
-        "uuid-tld",
+        //"risc0-recursion",
+        //"uuid-tld",
     ]
     .iter()
     .for_each(|name| {

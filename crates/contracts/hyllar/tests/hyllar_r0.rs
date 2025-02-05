@@ -8,8 +8,7 @@ use sdk::{
 
 fn execute(inputs: ContractInput) -> HyleOutput {
     let env = risc0_zkvm::ExecutorEnv::builder()
-        .write(&inputs)
-        .unwrap()
+        .write_slice(&borsh::to_vec(&inputs).unwrap())
         .build()
         .unwrap();
     let prover = risc0_zkvm::default_executor();

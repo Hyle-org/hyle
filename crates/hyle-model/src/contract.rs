@@ -41,7 +41,7 @@ pub trait Digestable {
     fn as_digest(&self) -> StateDigest;
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, BorshSerialize, BorshDeserialize, Debug, Clone)]
 pub struct ContractInput {
     pub initial_state: StateDigest,
     pub identity: Identity,

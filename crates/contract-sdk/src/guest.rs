@@ -1,7 +1,6 @@
 use alloc::string::{String, ToString};
 use alloc::vec;
 use borsh::{BorshDeserialize, BorshSerialize};
-use serde::de::DeserializeOwned;
 
 use crate::{
     flatten_blobs,
@@ -12,7 +11,7 @@ use crate::{
 pub trait GuestEnv {
     fn log(&self, message: &str);
     fn commit(&self, output: &HyleOutput);
-    fn read<T: DeserializeOwned + 'static>(&self) -> T;
+    fn read<T: BorshDeserialize + 'static>(&self) -> T;
 }
 
 pub struct Risc0Env;
@@ -27,8 +26,11 @@ impl GuestEnv for Risc0Env {
         risc0_zkvm::guest::env::commit(output);
     }
 
-    fn read<T: DeserializeOwned>(&self) -> T {
-        risc0_zkvm::guest::env::read()
+    fn read<T: BorshDeserialize>(&self) -> T {
+        let len: usize = risc0_zkvm::guest::env::read();
+        let mut slice = vec![0u8; len];
+        risc0_zkvm::guest::env::read_slice(&mut slice);
+        borsh::from_slice(&slice).unwrap()
     }
 }
 
