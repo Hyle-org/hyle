@@ -1,12 +1,14 @@
 use std::{cmp::Ordering, collections::BTreeMap};
 
-use bincode::{Decode, Encode};
+use borsh::{BorshDeserialize, BorshSerialize};
 use derive_more::derive::Display;
 use serde::{Deserialize, Serialize};
 
 use crate::{staking::*, *};
 
-#[derive(Debug, Default, Clone, Serialize, Deserialize, Encode, Decode, Eq, PartialEq)]
+#[derive(
+    Debug, Default, Clone, Serialize, Deserialize, BorshSerialize, BorshDeserialize, Eq, PartialEq,
+)]
 pub struct Block {
     pub parent_hash: ConsensusProposalHash,
     pub hash: ConsensusProposalHash,
@@ -43,7 +45,7 @@ impl PartialOrd for Block {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, Display)]
+#[derive(Debug, Serialize, Deserialize, Clone, BorshSerialize, BorshDeserialize, Display)]
 #[display("")]
 pub struct SignedBlock {
     pub data_proposals: Vec<(ValidatorPublicKey, Vec<DataProposal>)>,

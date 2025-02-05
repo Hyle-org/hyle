@@ -54,13 +54,14 @@ pub mod risc0 {
             Self { binary }
         }
         pub async fn prove(&self, contract_input: ContractInput) -> Result<ProofData> {
-            let contract_input = bonsai_runner::as_input_data(&contract_input)?;
+            let contract_input = borsh::to_vec(&contract_input)?;
 
             let explicit = std::env::var("RISC0_PROVER").unwrap_or_default();
             let receipt = match explicit.to_lowercase().as_str() {
                 "bonsai" => bonsai_runner::run_bonsai(self.binary, contract_input.clone()).await?,
                 _ => {
                     let env = risc0_zkvm::ExecutorEnv::builder()
+                        .write(&contract_input.len())?
                         .write_slice(&contract_input)
                         .build()
                         .unwrap();
@@ -96,18 +97,16 @@ pub mod sp1 {
     pub fn execute(binary: &[u8], contract_input: &ContractInput) -> Result<HyleOutput> {
         let client = ProverClient::from_env();
         let mut stdin = SP1Stdin::new();
-        stdin.write(&contract_input);
+        let encoded = borsh::to_vec(contract_input)?;
+        stdin.write_vec(encoded);
 
         let (public_values, _) = client
             .execute(binary, &stdin)
             .run()
             .expect("failed to generate proof");
 
-        let (hyle_output, _) = bincode::decode_from_slice::<HyleOutput, _>(
-            public_values.as_slice(),
-            bincode::config::legacy().with_fixed_int_encoding(),
-        )
-        .context("Failed to extract HyleOuput from SP1 proof")?;
+        let hyle_output = borsh::from_slice::<HyleOutput>(public_values.as_slice())
+            .context("Failed to extract HyleOuput from SP1 proof")?;
 
         check_output(&hyle_output)?;
 
@@ -122,7 +121,8 @@ pub mod sp1 {
 
         // Setup the inputs.
         let mut stdin = SP1Stdin::new();
-        stdin.write(&contract_input);
+        let encoded = borsh::to_vec(contract_input)?;
+        stdin.write_vec(encoded);
 
         // Setup the program for proving.
         let (pk, _vk) = client.setup(binary);
@@ -134,18 +134,12 @@ pub mod sp1 {
             .run()
             .expect("failed to generate proof");
 
-        let (hyle_output, _) = bincode::decode_from_slice::<HyleOutput, _>(
-            proof.public_values.as_slice(),
-            bincode::config::legacy().with_fixed_int_encoding(),
-        )
-        .context("Failed to extract HyleOuput from SP1 proof")?;
+        let hyle_output = borsh::from_slice::<HyleOutput>(proof.public_values.as_slice())
+            .context("Failed to extract HyleOuput from SP1 proof")?;
 
         check_output(&hyle_output)?;
 
-        let encoded_receipt = bincode::serde::encode_to_vec(
-            &proof,
-            bincode::config::legacy().with_fixed_int_encoding(),
-        )?;
+        let encoded_receipt = bincode::serialize(&proof)?;
         Ok((ProofData(encoded_receipt), hyle_output))
     }
 }
@@ -163,10 +157,7 @@ pub mod test {
             Box::pin(async move {
                 let hyle_output = test::execute(&contract_input)?;
 
-                Ok(ProofData(bincode::encode_to_vec(
-                    vec![hyle_output.clone()],
-                    bincode::config::standard(),
-                )?))
+                Ok(ProofData(borsh::to_vec(&[hyle_output.clone()])?))
             })
         }
     }

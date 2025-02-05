@@ -4,7 +4,7 @@ use crate::mempool::verifiers;
 use crate::model::verifiers::NativeVerifiers;
 use crate::model::*;
 use anyhow::{bail, Error, Result};
-use bincode::{Decode, Encode};
+use borsh::{BorshDeserialize, BorshSerialize};
 use contract_registration::validate_contract_registration;
 use hyle_contract_sdk::{utils::parse_structured_blob, BlobIndex, HyleOutput, TxHash};
 use ordered_tx_map::OrderedTxMap;
@@ -34,7 +34,7 @@ pub struct SettledTxOutput {
 /// NodeState manages the flattened, up-to-date state of the chain.
 /// It processes raw transactions and outputs more structured data for indexers.
 /// See also: NodeStateModule for the actual module implementation.
-#[derive(Encode, Decode, Debug, Clone)]
+#[derive(BorshSerialize, BorshDeserialize, Debug, Clone)]
 pub struct NodeState {
     timeouts: Timeouts,
     current_height: BlockHeight,
@@ -849,10 +849,7 @@ pub mod test {
     ) -> VerifiedProofTransaction {
         let proof = ProofTransaction {
             contract_name: contract.clone(),
-            proof: ProofData(
-                bincode::encode_to_vec(vec![hyle_output.clone()], bincode::config::standard())
-                    .unwrap(),
-            ),
+            proof: ProofData(borsh::to_vec(&[hyle_output.clone()]).unwrap()),
         };
         VerifiedProofTransaction {
             contract_name: contract.clone(),

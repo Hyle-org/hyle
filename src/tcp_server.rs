@@ -10,14 +10,14 @@ use crate::{
 };
 
 use anyhow::{Context, Result};
-use bincode::{Decode, Encode};
+use borsh::{BorshDeserialize, BorshSerialize};
 use hyle_model::TcpServerNetMessage;
 use serde::{Deserialize, Serialize};
 use tokio::{io::AsyncWriteExt, net::TcpListener};
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
 use tracing::info;
 
-#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, Eq, PartialEq)]
+#[derive(Debug, Serialize, Deserialize, Clone, BorshSerialize, BorshDeserialize, Eq, PartialEq)]
 pub enum TcpServerMessage {
     NewTx(Transaction),
 }
@@ -103,7 +103,6 @@ impl TcpServer {
 
 #[cfg(test)]
 mod tests {
-    use bincode::encode_to_vec;
     use futures::SinkExt;
     use hyle_model::BlobTransaction;
     use rand::Rng;
@@ -231,7 +230,7 @@ mod tests {
         let stream = TcpStream::connect(addr).await?;
         let mut framed = FramedWrite::new(stream, LengthDelimitedCodec::new());
 
-        let encoded_msg = encode_to_vec(&TcpServerNetMessage::Ping, bincode::config::standard())?;
+        let encoded_msg = borsh::to_vec(&TcpServerNetMessage::Ping)?;
 
         framed.send(encoded_msg.into()).await?;
 

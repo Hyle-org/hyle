@@ -1,5 +1,5 @@
 use alloc::{format, string::String, vec::Vec};
-use bincode::{Decode, Encode};
+use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 
 use hyle_model::{Blob, BlobData, BlobIndex, ContractAction, ContractName, Digestable};
@@ -52,7 +52,7 @@ pub trait IdentityVerification {
 }
 
 /// Enum representing the actions that can be performed by the IdentityVerification contract.
-#[derive(Serialize, Deserialize, Encode, Decode, Debug, Clone)]
+#[derive(Serialize, Deserialize, BorshSerialize, BorshDeserialize, Debug, Clone)]
 pub enum IdentityAction {
     RegisterIdentity { account: String },
     VerifyIdentity { account: String, nonce: u32 },
@@ -74,10 +74,7 @@ impl ContractAction for IdentityAction {
     ) -> Blob {
         Blob {
             contract_name,
-            data: BlobData(
-                bincode::encode_to_vec(self, bincode::config::standard())
-                    .expect("failed to encode program inputs"),
-            ),
+            data: BlobData(borsh::to_vec(self).expect("failed to encode program inputs")),
         }
     }
 }

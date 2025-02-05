@@ -193,56 +193,41 @@ mod tests {
     #[test]
     fn test_state_digest_encoding() {
         let state_digest = StateDigest(vec![1, 2, 3, 4]);
-        let encoded = bincode::encode_to_vec(&state_digest, bincode::config::standard())
-            .expect("Failed to encode StateDigest");
+        let encoded = borsh::to_vec(&state_digest).expect("Failed to encode StateDigest");
         let decoded: StateDigest =
-            bincode::decode_from_slice(&encoded, bincode::config::standard())
-                .expect("Failed to decode StateDigest")
-                .0;
+            borsh::from_slice(&encoded).expect("Failed to decode StateDigest");
         assert_eq!(state_digest, decoded);
     }
 
     #[test]
     fn test_identity_encoding() {
         let identity = Identity::new("test_identity");
-        let encoded = bincode::encode_to_vec(&identity, bincode::config::standard())
-            .expect("Failed to encode Identity");
-        let decoded: Identity = bincode::decode_from_slice(&encoded, bincode::config::standard())
-            .expect("Failed to decode Identity")
-            .0;
+        let encoded = borsh::to_vec(&identity).expect("Failed to encode Identity");
+        let decoded: Identity = borsh::from_slice(&encoded).expect("Failed to decode Identity");
         assert_eq!(identity, decoded);
     }
 
     #[test]
     fn test_txhash_encoding() {
         let txhash = TxHash::new("test_txhash");
-        let encoded = bincode::encode_to_vec(&txhash, bincode::config::standard())
-            .expect("Failed to encode TxHash");
-        let decoded: TxHash = bincode::decode_from_slice(&encoded, bincode::config::standard())
-            .expect("Failed to decode TxHash")
-            .0;
+        let encoded = borsh::to_vec(&txhash).expect("Failed to encode TxHash");
+        let decoded: TxHash = borsh::from_slice(&encoded).expect("Failed to decode TxHash");
         assert_eq!(txhash, decoded);
     }
 
     #[test]
     fn test_blobindex_encoding() {
         let blob_index = BlobIndex(42);
-        let encoded = bincode::encode_to_vec(blob_index, bincode::config::standard())
-            .expect("Failed to encode BlobIndex");
-        let decoded: BlobIndex = bincode::decode_from_slice(&encoded, bincode::config::standard())
-            .expect("Failed to decode BlobIndex")
-            .0;
+        let encoded = borsh::to_vec(&blob_index).expect("Failed to encode BlobIndex");
+        let decoded: BlobIndex = borsh::from_slice(&encoded).expect("Failed to decode BlobIndex");
         assert_eq!(blob_index, decoded);
     }
 
     #[test]
     fn test_blobdata_encoding() {
         let blob_data = BlobData(vec![1, 2, 3, 4]);
-        let encoded = bincode::encode_to_vec(&blob_data, bincode::config::standard())
-            .expect("Failed to encode BlobData");
-        let decoded: BlobData = bincode::decode_from_slice(&encoded, bincode::config::standard())
-            .expect("Failed to decode BlobData")
-            .0;
+        let encoded = borsh::to_vec(&blob_data).expect("Failed to encode BlobData");
+        let decoded: BlobData = borsh::from_slice(&encoded).expect("Failed to decode BlobData");
         assert_eq!(blob_data, decoded);
     }
 }

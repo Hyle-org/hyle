@@ -113,8 +113,7 @@ pub async fn generate_blobs_txs(users: u32) -> Result<Vec<Vec<u8>>> {
     info!("Saving blob transactions");
     std::fs::write(
         format!("blob_txs.{users}.bin"),
-        bincode::encode_to_vec(blob_txs.clone(), bincode::config::standard())
-            .expect("failed to encode blob_txs"),
+        borsh::to_vec(&blob_txs).expect("failed to encode blob_txs"),
     )?;
     Ok(blob_txs)
 }
@@ -173,8 +172,7 @@ pub async fn generate_proof_txs(users: u32, state: States) -> Result<Vec<Vec<u8>
     info!("Saving proof transactions");
     std::fs::write(
         format!("proof_txs.{users}.bin"),
-        bincode::encode_to_vec(proof_txs.clone(), bincode::config::standard())
-            .expect("failed to encode proof_txs"),
+        borsh::to_vec(&proof_txs).expect("failed to encode proof_txs"),
     )?;
 
     Ok(proof_txs)
@@ -188,22 +186,18 @@ pub async fn send(url: String, blob_txs: Vec<Vec<u8>>, proof_txs: Vec<Vec<u8>>) 
 
 pub fn load_blob_txs(users: u32) -> Result<Vec<Vec<u8>>> {
     info!("Loading blob transactions");
-    let (blob_txs, _): (Vec<Vec<u8>>, _) = bincode::decode_from_slice(
-        &std::fs::read(format!("blob_txs.{users}.bin"))?,
-        bincode::config::standard(),
-    )
-    .expect("failed to decode blob_txs.bin");
+    let blob_txs: Vec<Vec<u8>> =
+        borsh::from_slice(&std::fs::read(format!("blob_txs.{users}.bin"))?)
+            .expect("failed to decode blob_txs.bin");
 
     Ok(blob_txs)
 }
 
 pub fn load_proof_txs(users: u32) -> Result<Vec<Vec<u8>>> {
     info!("Loading proof transactions");
-    let (proof_txs, _): (Vec<Vec<u8>>, _) = bincode::decode_from_slice(
-        &std::fs::read(format!("proof_txs.{users}.bin"))?,
-        bincode::config::standard(),
-    )
-    .expect("failed to decode proof_txs.bin");
+    let proof_txs: Vec<Vec<u8>> =
+        borsh::from_slice(&std::fs::read(format!("proof_txs.{users}.bin"))?)
+            .expect("failed to decode proof_txs.bin");
 
     Ok(proof_txs)
 }
