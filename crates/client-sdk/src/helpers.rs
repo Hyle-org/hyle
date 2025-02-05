@@ -97,18 +97,16 @@ pub mod sp1 {
     pub fn execute(binary: &[u8], contract_input: &ContractInput) -> Result<HyleOutput> {
         let client = ProverClient::from_env();
         let mut stdin = SP1Stdin::new();
-        stdin.write(&contract_input);
+        let encoded = borsh::to_vec(contract_input)?;
+        stdin.write_vec(encoded);
 
         let (public_values, _) = client
             .execute(binary, &stdin)
             .run()
             .expect("failed to generate proof");
 
-        let (hyle_output, _) = borsh::from_slice::<HyleOutput, _>(
-            public_values.as_slice(),
-            bincode::config::legacy().with_fixed_int_encoding(),
-        )
-        .context("Failed to extract HyleOuput from SP1 proof")?;
+        let hyle_output = borsh::from_slice::<HyleOutput>(public_values.as_slice())
+            .context("Failed to extract HyleOuput from SP1 proof")?;
 
         check_output(&hyle_output)?;
 
@@ -123,7 +121,8 @@ pub mod sp1 {
 
         // Setup the inputs.
         let mut stdin = SP1Stdin::new();
-        stdin.write(&contract_input);
+        let encoded = borsh::to_vec(contract_input)?;
+        stdin.write_vec(encoded);
 
         // Setup the program for proving.
         let (pk, _vk) = client.setup(binary);
@@ -135,18 +134,12 @@ pub mod sp1 {
             .run()
             .expect("failed to generate proof");
 
-        let (hyle_output, _) = borsh::from_slice::<HyleOutput, _>(
-            proof.public_values.as_slice(),
-            bincode::config::legacy().with_fixed_int_encoding(),
-        )
-        .context("Failed to extract HyleOuput from SP1 proof")?;
+        let hyle_output = borsh::from_slice::<HyleOutput>(proof.public_values.as_slice())
+            .context("Failed to extract HyleOuput from SP1 proof")?;
 
         check_output(&hyle_output)?;
 
-        let encoded_receipt = bincode::serde::encode_to_vec(
-            &proof,
-            bincode::config::legacy().with_fixed_int_encoding(),
-        )?;
+        let encoded_receipt = bincode::serialize(&proof)?;
         Ok((ProofData(encoded_receipt), hyle_output))
     }
 }

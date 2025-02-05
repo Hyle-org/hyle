@@ -45,11 +45,11 @@ impl GuestEnv for SP1Env {
     }
 
     fn commit(&self, output: &HyleOutput) {
-        sp1_zkvm::io::commit(output);
+        let vec = borsh::to_vec(&output).unwrap();
+        sp1_zkvm::io::commit_slice(&vec);
     }
 
     fn read<T: BorshDeserialize>(&self) -> T {
-        let _len: usize = sp1_zkvm::io::read();
         let vec = sp1_zkvm::io::read_vec();
         borsh::from_slice(&vec).unwrap()
     }

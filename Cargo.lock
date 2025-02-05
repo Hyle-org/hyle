@@ -1114,6 +1114,7 @@ name = "client-sdk"
 version = "0.8.0"
 dependencies = [
  "anyhow",
+ "bincode",
  "bonsai-runner",
  "borsh",
  "futures",
