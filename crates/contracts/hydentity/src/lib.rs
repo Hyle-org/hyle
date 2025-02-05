@@ -1,4 +1,4 @@
-use bincode::{Decode, Encode};
+use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -8,13 +8,13 @@ use sha2::{Digest, Sha256};
 #[cfg(feature = "client")]
 pub mod client;
 
-#[derive(Encode, Decode, Serialize, Deserialize, Debug, Clone, Eq, PartialEq)]
+#[derive(BorshSerialize, BorshDeserialize, Serialize, Deserialize, Debug, Clone, Eq, PartialEq)]
 pub struct AccountInfo {
     pub hash: String,
     pub nonce: u32,
 }
 
-#[derive(Encode, Decode, Serialize, Deserialize, Debug, Clone)]
+#[derive(BorshSerialize, BorshDeserialize, Serialize, Deserialize, Debug, Clone)]
 pub struct Hydentity {
     identities: BTreeMap<String, AccountInfo>,
 }
@@ -27,8 +27,7 @@ impl Hydentity {
     }
 
     pub fn to_bytes(&self) -> Vec<u8> {
-        bincode::encode_to_vec(self, bincode::config::standard())
-            .expect("Failed to encode Balances")
+        borsh::to_vec(self).expect("Failed to encode Balances")
     }
 
     pub fn get_nonce(&self, username: &str) -> Result<u32, &'static str> {
@@ -113,9 +112,7 @@ impl TryFrom<sdk::StateDigest> for Hydentity {
     type Error = anyhow::Error;
 
     fn try_from(state: sdk::StateDigest) -> Result<Self, Self::Error> {
-        let (balances, _) = bincode::decode_from_slice(&state.0, bincode::config::standard())
-            .map_err(|_| anyhow::anyhow!("Could not decode hydentity state"))?;
-        Ok(balances)
+        borsh::from_slice(&state.0).map_err(|_| anyhow::anyhow!("Could not decode hydentity state"))
     }
 }
 
@@ -237,8 +234,7 @@ mod tests {
             .unwrap();
         let digest = hydentity.as_digest();
 
-        let encoded = bincode::encode_to_vec(&hydentity, bincode::config::standard())
-            .expect("Failed to encode Hydentity");
+        let encoded = borsh::to_vec(&hydentity).expect("Failed to encode Hydentity");
         assert_eq!(digest.0, encoded);
     }
 

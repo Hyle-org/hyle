@@ -29,7 +29,7 @@ impl TryFrom<&Verifier> for NativeVerifiers {
 }
 
 /// Format of the BlobData for native contract "blst"
-#[derive(Debug, bincode::Encode, bincode::Decode)]
+#[derive(Debug, borsh::BorshSerialize, borsh::BorshDeserialize)]
 pub struct BlstSignatureBlob {
     pub identity: Identity,
     pub data: Vec<u8>,
@@ -54,16 +54,13 @@ impl ContractAction for BlstSignatureBlob {
         #[allow(clippy::expect_used)]
         Blob {
             contract_name,
-            data: BlobData(
-                bincode::encode_to_vec(self, bincode::config::standard())
-                    .expect("failed to encode BlstSignatureBlob"),
-            ),
+            data: BlobData(borsh::to_vec(self).expect("failed to encode BlstSignatureBlob")),
         }
     }
 }
 
 /// Format of the BlobData for native hash contract like "sha3_256"
-#[derive(Debug, bincode::Encode, bincode::Decode)]
+#[derive(Debug, borsh::BorshSerialize, borsh::BorshDeserialize)]
 pub struct ShaBlob {
     pub identity: Identity,
     pub data: Vec<u8>,
@@ -86,10 +83,7 @@ impl ContractAction for ShaBlob {
         #[allow(clippy::expect_used)]
         Blob {
             contract_name,
-            data: BlobData(
-                bincode::encode_to_vec(self, bincode::config::standard())
-                    .expect("failed to encode ShaBlob"),
-            ),
+            data: BlobData(borsh::to_vec(self).expect("failed to encode ShaBlob")),
         }
     }
 }

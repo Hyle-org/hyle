@@ -14,13 +14,14 @@ use crate::{
         crypto::{BlstCrypto, SharedBlstCrypto},
         logger::LogMe,
         modules::{module_bus_client, Module},
+        serialize::arc_rwlock_borsh,
         static_type_map::Pick,
     },
 };
 
 use anyhow::{bail, Context, Result};
 use api::RestApiMessage;
-use bincode::{Decode, Encode};
+use borsh::{BorshDeserialize, BorshSerialize};
 use hyle_contract_sdk::{ContractName, ProgramId, Verifier};
 use metrics::MempoolMetrics;
 use serde::{Deserialize, Serialize};
@@ -51,10 +52,10 @@ pub mod verifiers;
 #[derive(Debug, Clone)]
 pub struct QueryNewCut(pub Staking);
 
-#[derive(Debug, Default, Clone, Encode, Decode)]
+#[derive(Debug, Default, Clone, BorshSerialize, BorshDeserialize)]
 pub struct KnownContracts(pub HashMap<ContractName, (Verifier, ProgramId)>);
 
-#[derive(Debug, Clone, Encode, Decode)]
+#[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
 pub struct BlockUnderConstruction {
     pub from: Option<Cut>,
     pub ccp: CommittedConsensusProposal,
@@ -93,7 +94,7 @@ struct MempoolBusClient {
 }
 }
 
-#[derive(Default, Encode, Decode)]
+#[derive(Default, BorshSerialize, BorshDeserialize)]
 pub struct MempoolStore {
     buffered_proposals: BTreeMap<ValidatorPublicKey, Vec<DataProposal>>,
     waiting_dissemination_txs: Vec<Transaction>,
@@ -101,6 +102,10 @@ pub struct MempoolStore {
     blocks_under_contruction: VecDeque<BlockUnderConstruction>,
     buc_build_start_height: Option<u64>,
     staking: Staking,
+    #[borsh(
+        serialize_with = "arc_rwlock_borsh::serialize",
+        deserialize_with = "arc_rwlock_borsh::deserialize"
+    )]
     known_contracts: Arc<std::sync::RwLock<KnownContracts>>,
 }
 
@@ -128,7 +133,17 @@ impl DerefMut for Mempool {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, Eq, PartialEq, IntoStaticStr)]
+#[derive(
+    Debug,
+    Serialize,
+    Deserialize,
+    Clone,
+    BorshSerialize,
+    BorshDeserialize,
+    Eq,
+    PartialEq,
+    IntoStaticStr,
+)]
 pub enum MempoolNetMessage {
     DataProposal(DataProposal),
     DataVote(DataProposalHash, LaneBytesSize), // New lane size with this DP
@@ -153,7 +168,7 @@ pub enum MempoolBlockEvent {
 }
 impl BusMessage for MempoolBlockEvent {}
 
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, Encode, Decode)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub enum MempoolStatusEvent {
     WaitingDissemination(Transaction),
 }
@@ -1242,7 +1257,7 @@ pub mod test {
                 .expect("cannot bond trusted validator");
         }
 
-        pub fn sign_data<T: bincode::Encode>(&self, data: T) -> Result<SignedByValidator<T>> {
+        pub fn sign_data<T: borsh::BorshSerialize>(&self, data: T) -> Result<SignedByValidator<T>> {
             self.mempool.crypto.sign(data)
         }
 

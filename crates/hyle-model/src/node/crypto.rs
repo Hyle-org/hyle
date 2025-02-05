@@ -5,20 +5,50 @@ use std::fmt::{self, Display};
 use crate::{staking::*, *};
 
 #[derive(
-    Debug, Serialize, Deserialize, Clone, bincode::Encode, bincode::Decode, PartialEq, Eq, Hash,
+    Debug,
+    Serialize,
+    Deserialize,
+    Clone,
+    borsh::BorshSerialize,
+    borsh::BorshDeserialize,
+    PartialEq,
+    Eq,
+    Hash,
+    Ord,
+    PartialOrd,
 )]
-pub struct Signed<T: bincode::Encode, V: bincode::Encode> {
+pub struct Signed<T: borsh::BorshSerialize, V: borsh::BorshSerialize> {
     pub msg: T,
     pub signature: V,
 }
 
 #[derive(
-    Serialize, Deserialize, Clone, bincode::Encode, bincode::Decode, Default, PartialEq, Eq, Hash,
+    Serialize,
+    Deserialize,
+    Clone,
+    borsh::BorshSerialize,
+    borsh::BorshDeserialize,
+    Default,
+    PartialEq,
+    Eq,
+    Hash,
+    Ord,
+    PartialOrd,
 )]
 pub struct Signature(pub Vec<u8>);
 
 #[derive(
-    Debug, Serialize, Deserialize, Clone, bincode::Encode, bincode::Decode, PartialEq, Eq, Hash,
+    Debug,
+    Serialize,
+    Deserialize,
+    Clone,
+    borsh::BorshSerialize,
+    borsh::BorshDeserialize,
+    PartialEq,
+    Eq,
+    Hash,
+    Ord,
+    PartialOrd,
 )]
 pub struct ValidatorSignature {
     pub signature: Signature,
@@ -32,11 +62,13 @@ pub type SignedByValidator<T> = Signed<T, ValidatorSignature>;
     Serialize,
     Deserialize,
     Clone,
-    bincode::Encode,
-    bincode::Decode,
+    borsh::BorshSerialize,
+    borsh::BorshDeserialize,
     PartialEq,
     Eq,
     Hash,
+    Ord,
+    PartialOrd,
 )]
 pub struct AggregateSignature {
     pub signature: Signature,
@@ -67,7 +99,7 @@ impl fmt::Display for Signature {
     }
 }
 
-impl<T: Display + bincode::Encode> Display for SignedByValidator<T> {
+impl<T: Display + borsh::BorshSerialize> Display for SignedByValidator<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         _ = write!(f, " --> from validator {}", self.signature.validator);
         write!(f, "")

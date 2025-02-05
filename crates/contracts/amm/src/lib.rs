@@ -1,11 +1,14 @@
 use std::collections::BTreeMap;
 use std::hash::{Hash, Hasher};
 
-use bincode::{Decode, Encode};
+use borsh::{BorshDeserialize, BorshSerialize};
 use sdk::caller::{CalleeBlobs, CallerCallee, CheckCalleeBlobs, ExecutionContext, MutCalleeBlobs};
 use sdk::erc20::{ERC20BlobChecker, ERC20};
 use sdk::{erc20::ERC20Action, Identity};
-use sdk::{Blob, BlobIndex, ContractAction, ContractInput, Digestable, RunResult, StateDigest};
+use sdk::{
+    Blob, BlobIndex, ContractAction, ContractInput, Digestable, DropEndOfReader, RunResult,
+    StateDigest,
+};
 use sdk::{BlobData, ContractName, StructuredBlobData};
 use serde::{Deserialize, Serialize};
 
@@ -15,7 +18,9 @@ pub mod client;
 type TokenPair = (String, String);
 type TokenPairAmount = (u128, u128);
 
-#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, Ord, PartialOrd)]
+#[derive(
+    Debug, Serialize, Deserialize, Clone, BorshSerialize, BorshDeserialize, Ord, PartialOrd,
+)]
 pub struct UnorderedTokenPair {
     a: String,
     b: String,
@@ -64,7 +69,7 @@ impl CallerCallee for AmmContract {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, Default)]
+#[derive(Debug, Serialize, Deserialize, Clone, BorshSerialize, BorshDeserialize, Default)]
 pub struct AmmState {
     pairs: BTreeMap<UnorderedTokenPair, TokenPairAmount>,
 }
@@ -89,8 +94,7 @@ impl AmmState {
     }
 
     pub fn as_bytes(&self) -> Vec<u8> {
-        bincode::encode_to_vec(self, bincode::config::standard())
-            .expect("Failed to encode AmmState")
+        borsh::to_vec(self).expect("Failed to encode AmmState")
     }
 }
 
@@ -231,14 +235,12 @@ impl TryFrom<StateDigest> for AmmState {
     type Error = anyhow::Error;
 
     fn try_from(state: StateDigest) -> Result<Self, Self::Error> {
-        let (amm_state, _) = bincode::decode_from_slice(&state.0, bincode::config::standard())
-            .map_err(|_| anyhow::anyhow!("Could not decode amm state"))?;
-        Ok(amm_state)
+        borsh::from_slice(&state.0).map_err(|_| anyhow::anyhow!("Could not decode amm state"))
     }
 }
 
 /// Enum representing the actions that can be performed by the Amm contract.
-#[derive(Encode, Decode, Debug, Clone)]
+#[derive(BorshSerialize, BorshDeserialize, Debug, Clone)]
 pub enum AmmAction {
     Swap {
         pair: TokenPair, // User swaps the first token of the pair for the second token
@@ -281,7 +283,7 @@ pub fn execute(contract_input: ContractInput) -> RunResult<AmmState> {
     let mut callees_blobs = Vec::new();
     for blob in input.blobs.clone().into_iter() {
         if let Ok(structured_blob) = blob.data.clone().try_into() {
-            let structured_blob: StructuredBlobData<Vec<u8>> = structured_blob; // for type inference
+            let structured_blob: StructuredBlobData<DropEndOfReader> = structured_blob; // for type inference
             if structured_blob.caller == Some(input.index) {
                 callees_blobs.push(blob);
             }

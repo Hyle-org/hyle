@@ -1,4 +1,4 @@
-use bincode::{Decode, Encode};
+use borsh::{BorshDeserialize, BorshSerialize};
 use tracing::{debug, info, trace, warn};
 
 use super::Consensus;
@@ -13,7 +13,7 @@ use hyle_model::{
     ConsensusNetMessage, ConsensusProposal, ConsensusProposalHash, QuorumCertificate, Ticket,
 };
 
-#[derive(Encode, Decode, Default)]
+#[derive(BorshSerialize, BorshDeserialize, Default)]
 pub(super) struct FollowerState {
     pub(super) buffered_quorum_certificate: Option<QuorumCertificate>, // if we receive a commit before the next prepare
 }

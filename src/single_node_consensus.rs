@@ -13,7 +13,7 @@ use crate::utils::crypto::SharedBlstCrypto;
 use crate::utils::modules::module_bus_client;
 use crate::{model::SharedRunContext, utils::modules::Module};
 use anyhow::Result;
-use bincode::{Decode, Encode};
+use borsh::{BorshDeserialize, BorshSerialize};
 use staking::state::Staking;
 use tracing::{debug, warn};
 
@@ -27,7 +27,7 @@ struct SingleNodeConsensusBusClient {
 }
 }
 
-#[derive(Encode, Decode, Default)]
+#[derive(BorshSerialize, BorshDeserialize, Default)]
 struct SingleNodeConsensusStore {
     staking: Staking,
     has_done_genesis: bool,

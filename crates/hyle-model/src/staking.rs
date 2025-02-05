@@ -1,4 +1,4 @@
-use bincode::{Decode, Encode};
+use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{
     de::{self, Visitor},
     Deserialize, Serialize,
@@ -6,13 +6,13 @@ use serde::{
 
 use crate::*;
 
-#[derive(Encode, Decode, Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(BorshSerialize, BorshDeserialize, Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct RewardsClaim {
     block_heights: Vec<BlockHeight>,
 }
 
 /// Enum representing the actions that can be performed by the IdentityVerification contract.
-#[derive(Encode, Decode, Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(BorshSerialize, BorshDeserialize, Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub enum StakingAction {
     Stake {
         amount: u128,
@@ -49,7 +49,9 @@ impl ContractAction for StakingAction {
     }
 }
 
-#[derive(Clone, Encode, Decode, Default, Eq, PartialEq, Hash, PartialOrd, Ord)]
+#[derive(
+    Clone, BorshSerialize, BorshDeserialize, Default, Eq, PartialEq, Hash, PartialOrd, Ord,
+)]
 pub struct ValidatorPublicKey(pub Vec<u8>);
 
 impl ValidatorPublicKey {
@@ -125,7 +127,20 @@ impl std::fmt::Display for ValidatorPublicKey {
 }
 
 // Cumulative size of the lane from the beginning
-#[derive(Debug, Clone, Copy, Default, Encode, Decode, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    Default,
+    BorshSerialize,
+    BorshDeserialize,
+    Eq,
+    PartialEq,
+    Serialize,
+    Deserialize,
+    PartialOrd,
+    Ord,
+)]
 #[cfg_attr(feature = "full", derive(utoipa::ToSchema))]
 pub struct LaneBytesSize(pub u64); // 16M Terabytes, is it enough ?
 

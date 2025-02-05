@@ -1,4 +1,4 @@
-use bincode::{Decode, Encode};
+use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Sha3_256};
 use staking::ValidatorPublicKey;
@@ -6,7 +6,9 @@ use std::fmt::Display;
 
 use crate::*;
 
-#[derive(Clone, Debug, Default, Serialize, Deserialize, Encode, Decode, Eq, PartialEq)]
+#[derive(
+    Clone, Debug, Default, Serialize, Deserialize, BorshSerialize, BorshDeserialize, Eq, PartialEq,
+)]
 pub struct DataProposal {
     pub parent_data_proposal_hash: Option<DataProposalHash>,
     pub txs: Vec<Transaction>,
@@ -18,7 +20,20 @@ impl DataSized for DataProposal {
     }
 }
 
-#[derive(Clone, Debug, Default, Serialize, Deserialize, Encode, Decode, PartialEq, Eq, Hash)]
+#[derive(
+    Clone,
+    Debug,
+    Default,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+    PartialEq,
+    Eq,
+    Hash,
+    Ord,
+    PartialOrd,
+)]
 pub struct DataProposalHash(pub String);
 
 impl Hashable<DataProposalHash> for DataProposal {

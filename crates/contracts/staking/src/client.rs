@@ -141,8 +141,7 @@ pub fn deposit_for_fees(
 
 impl Staking {
     pub fn to_bytes(&self) -> Vec<u8> {
-        bincode::encode_to_vec(self, bincode::config::standard())
-            .expect("Failed to encode Balances")
+        borsh::to_vec(self).expect("Failed to encode Balances")
     }
 }
 

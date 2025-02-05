@@ -1,4 +1,4 @@
-use bincode::{Decode, Encode};
+use borsh::{BorshDeserialize, BorshSerialize};
 use tracing::warn;
 
 use crate::model::ContractName;
@@ -8,7 +8,7 @@ use std::collections::HashSet;
 use std::collections::{HashMap, VecDeque};
 
 // struct used to guarantee coherence between the 2 fields
-#[derive(Default, Debug, Clone, Encode, Decode)]
+#[derive(Default, Debug, Clone, BorshSerialize, BorshDeserialize)]
 pub struct OrderedTxMap {
     map: HashMap<TxHash, UnsettledBlobTransaction>,
     tx_order: HashMap<ContractName, VecDeque<TxHash>>,

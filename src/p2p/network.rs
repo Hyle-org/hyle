@@ -2,14 +2,14 @@ use crate::bus::BusMessage;
 use crate::mempool::MempoolNetMessage;
 use crate::model::ValidatorPublicKey;
 use anyhow::Context;
-use bincode::{Decode, Encode};
+use borsh::{BorshDeserialize, BorshSerialize};
 use hyle_model::{ConsensusNetMessage, SignedByValidator};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::fmt::{self, Display};
 use strum_macros::IntoStaticStr;
 
-#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, Eq, PartialEq)]
+#[derive(Debug, Serialize, Deserialize, Clone, BorshSerialize, BorshDeserialize, Eq, PartialEq)]
 pub struct Hello {
     pub version: u16,
     pub validator_pubkey: ValidatorPublicKey,
@@ -76,14 +76,24 @@ impl Display for NetMessage {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, Eq, PartialEq, IntoStaticStr)]
+#[derive(
+    Debug,
+    Serialize,
+    Deserialize,
+    Clone,
+    BorshSerialize,
+    BorshDeserialize,
+    Eq,
+    PartialEq,
+    IntoStaticStr,
+)]
 pub enum NetMessage {
     HandshakeMessage(HandshakeNetMessage),
     MempoolMessage(SignedByValidator<MempoolNetMessage>),
     ConsensusMessage(SignedByValidator<ConsensusNetMessage>),
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, Encode, Decode, Eq, PartialEq)]
+#[derive(Debug, Serialize, Deserialize, Clone, BorshSerialize, BorshDeserialize, Eq, PartialEq)]
 pub enum HandshakeNetMessage {
     Hello(Hello),
     Verack,
@@ -111,7 +121,6 @@ impl From<SignedByValidator<ConsensusNetMessage>> for NetMessage {
 
 impl NetMessage {
     pub fn to_binary(&self) -> anyhow::Result<Vec<u8>> {
-        bincode::encode_to_vec(self, bincode::config::standard())
-            .context("Could not serialize NetMessage")
+        borsh::to_vec(self).context("Could not serialize NetMessage")
     }
 }

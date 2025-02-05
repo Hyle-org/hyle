@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 
 use crate::model::BlockHeight;
-use bincode::{Decode, Encode};
+use borsh::{BorshDeserialize, BorshSerialize};
 use hyle_contract_sdk::TxHash;
 
-#[derive(Default, Debug, Clone, Encode, Decode)]
+#[derive(Default, Debug, Clone, BorshSerialize, BorshDeserialize)]
 pub struct Timeouts {
     by_block: HashMap<BlockHeight, Vec<TxHash>>,
 }

@@ -3,7 +3,7 @@ use alloc::{
     string::{String, ToString},
     vec::Vec,
 };
-use bincode::{Decode, Encode};
+use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 
 use hyle_model::{
@@ -84,7 +84,7 @@ pub trait ERC20 {
 }
 
 /// Enum representing possible calls to ERC-20 contract functions.
-#[derive(Serialize, Deserialize, Encode, Decode, Debug, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, BorshSerialize, BorshDeserialize, Debug, Clone, PartialEq)]
 pub enum ERC20Action {
     TotalSupply,
     BalanceOf {

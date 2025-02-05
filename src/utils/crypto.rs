@@ -63,7 +63,7 @@ impl BlstCrypto {
 
     pub fn sign<T>(&self, msg: T) -> Result<Signed<T, ValidatorSignature>, Error>
     where
-        T: bincode::Encode,
+        T: borsh::BorshSerialize,
     {
         let signature = self.sign_msg(&msg)?.into();
         Ok(Signed {
@@ -77,24 +77,24 @@ impl BlstCrypto {
 
     pub fn verify<T>(msg: &SignedByValidator<T>) -> Result<bool, Error>
     where
-        T: bincode::Encode,
+        T: borsh::BorshSerialize,
     {
         let pk = PublicKey::uncompress(&msg.signature.validator.0)
             .map_err(|e| anyhow!("Could not parse PublicKey: {:?}", e))?;
         let sig = BlstSignature::uncompress(&msg.signature.signature.0)
             .map_err(|e| anyhow!("Could not parse Signature: {:?}", e))?;
-        let encoded = bincode::encode_to_vec(&msg.msg, bincode::config::standard())?;
+        let encoded = borsh::to_vec(&msg.msg)?;
         Ok(BlstCrypto::verify_bytes(encoded.as_slice(), &sig, &pk))
     }
 
     pub fn verify_aggregate<T>(msg: &Signed<T, AggregateSignature>) -> Result<bool, Error>
     where
-        T: bincode::Encode,
+        T: borsh::BorshSerialize,
     {
         let pk = Self::aggregate_validators_pk(&msg.signature.validators)?;
         let sig = BlstSignature::uncompress(&msg.signature.signature.0)
             .map_err(|e| anyhow!("Could not parse Signature: {:?}", e))?;
-        let encoded = bincode::encode_to_vec(&msg.msg, bincode::config::standard())?;
+        let encoded = borsh::to_vec(&msg.msg)?;
         Ok(BlstCrypto::verify_bytes(encoded.as_slice(), &sig, &pk))
     }
 
@@ -104,7 +104,7 @@ impl BlstCrypto {
         aggregates: &[&SignedByValidator<T>],
     ) -> Result<Signed<T, AggregateSignature>, Error>
     where
-        T: bincode::Encode + Clone,
+        T: borsh::BorshSerialize + Clone,
     {
         let self_signed = self.sign(msg.clone())?;
         Self::aggregate(msg, &[aggregates, &[&self_signed]].concat())
@@ -115,7 +115,7 @@ impl BlstCrypto {
         aggregates: &[&SignedByValidator<T>],
     ) -> Result<Signed<T, AggregateSignature>, Error>
     where
-        T: bincode::Encode + Clone,
+        T: borsh::BorshSerialize + Clone,
     {
         match aggregates.len() {
             0 => bail!("No signatures to aggregate"),
@@ -167,9 +167,9 @@ impl BlstCrypto {
 
     fn sign_msg<T>(&self, msg: &T) -> Result<BlstSignature>
     where
-        T: bincode::Encode,
+        T: borsh::BorshSerialize,
     {
-        let encoded = bincode::encode_to_vec(msg, bincode::config::standard())?;
+        let encoded = borsh::to_vec(msg)?;
         Ok(self.sign_bytes(encoded.as_slice()))
     }
 
@@ -187,7 +187,7 @@ impl BlstCrypto {
     /// validators.
     fn extract_aggregates<T>(aggregates: &[&SignedByValidator<T>]) -> Result<Aggregates>
     where
-        T: bincode::Encode + Clone,
+        T: borsh::BorshSerialize + Clone,
     {
         let mut accu = Aggregates::default();
 
@@ -253,7 +253,7 @@ mod tests {
         assert!(valid);
     }
 
-    fn new_signed<T: bincode::Encode + Clone>(
+    fn new_signed<T: borsh::BorshSerialize + Clone>(
         msg: T,
     ) -> (SignedByValidator<T>, ValidatorPublicKey) {
         let crypto = BlstCrypto::new_random().unwrap();

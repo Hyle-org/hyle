@@ -18,7 +18,7 @@ use crate::{
     },
 };
 use anyhow::{anyhow, bail, Context, Error, Result};
-use bincode::{Decode, Encode};
+use borsh::{BorshDeserialize, BorshSerialize};
 use hyle_model::utils::get_current_timestamp;
 use hyle_model::utils::get_current_timestamp_ms;
 use metrics::ConsensusMetrics;
@@ -53,7 +53,7 @@ pub enum ConsensusCommand {
     StartNewSlot,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, Encode, Decode)]
+#[derive(Debug, Clone, Deserialize, Serialize, BorshSerialize, BorshDeserialize)]
 pub struct CommittedConsensusProposal {
     pub staking: Staking,
     pub consensus_proposal: ConsensusProposal,
@@ -75,7 +75,7 @@ impl BusMessage for ConsensusCommand {}
 impl BusMessage for ConsensusEvent {}
 impl BusMessage for ConsensusNetMessage {}
 
-impl<T> BusMessage for SignedByValidator<T> where T: Encode + BusMessage {}
+impl<T> BusMessage for SignedByValidator<T> where T: BorshSerialize + BusMessage {}
 
 module_bus_client! {
 struct ConsensusBusClient {
@@ -94,7 +94,7 @@ receiver(Query<QueryConsensusStakingState, Staking>),
 }
 
 // TODO: move struct to model.rs ?
-#[derive(Encode, Decode, Default)]
+#[derive(BorshSerialize, BorshDeserialize, Default)]
 pub struct BFTRoundState {
     consensus_proposal: ConsensusProposal,
     last_cut: Cut,
@@ -108,7 +108,7 @@ pub struct BFTRoundState {
     state_tag: StateTag,
 }
 
-#[derive(Encode, Decode, Default, Debug)]
+#[derive(BorshSerialize, BorshDeserialize, Default, Debug)]
 enum StateTag {
     #[default]
     Joining,
@@ -116,17 +116,17 @@ enum StateTag {
     Follower,
 }
 
-#[derive(Encode, Decode, Default)]
+#[derive(BorshSerialize, BorshDeserialize, Default)]
 pub struct JoiningState {
     staking_updated_to: Slot,
     buffered_prepares: Vec<ConsensusProposal>,
 }
-#[derive(Encode, Decode, Default)]
+#[derive(BorshSerialize, BorshDeserialize, Default)]
 pub struct GenesisState {
     peer_pubkey: HashMap<String, ValidatorPublicKey>,
 }
 
-#[derive(Encode, Decode, Default)]
+#[derive(BorshSerialize, BorshDeserialize, Default)]
 pub struct ConsensusStore {
     bft_round_state: BFTRoundState,
     /// Validators that asked to be part of consensus
@@ -418,7 +418,7 @@ impl Consensus {
     ///  - the signatures are above 2f+1 voting power.
     ///
     /// This ensures that we can trust the message.
-    fn verify_quorum_certificate<T: bincode::Encode>(
+    fn verify_quorum_certificate<T: borsh::BorshSerialize>(
         &self,
         message: T,
         quorum_certificate: &QuorumCertificate,
