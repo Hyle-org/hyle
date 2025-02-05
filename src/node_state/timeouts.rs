@@ -52,6 +52,10 @@ pub mod tests {
         })
     }
 
+    pub fn get_timeout_window(t: &Timeouts) -> BlockHeight {
+        t.timeout_window
+    }
+
     #[test]
     fn timeout() {
         let mut t = Timeouts::default();
