@@ -133,6 +133,8 @@ pub fn execute(contract_input: ContractInput) -> RunResult<UuidTldState> {
 
 #[cfg(test)]
 mod test {
+    use std::str::FromStr;
+
     use crate::*;
     use sdk::*;
 
@@ -176,9 +178,11 @@ mod test {
             effect.contract_name.0,
             "7de07efe-e91d-45f7-a5d2-0b813c1d3e10.uuid"
         );
-        state
-            .registered_contracts
-            .insert(207234404638461129629594146217149400343);
+        state.registered_contracts.insert(
+            Uuid::from_str("7de07efe-e91d-45f7-a5d2-0b813c1d3e10")
+                .unwrap()
+                .as_u128(),
+        );
 
         assert_eq!(new_state.as_digest(), state.as_digest());
 
@@ -189,11 +193,13 @@ mod test {
 
         assert_eq!(
             effect.contract_name.0,
-            "289f1568-9f12-4cc0-8d18-b0df040b34ca.uuid"
+            "fe6d874b-7b90-496e-8328-1ea817be889a.uuid"
         );
-        state
-            .registered_contracts
-            .insert(53995129251464490355800204076743603402);
+        state.registered_contracts.insert(
+            Uuid::from_str("fe6d874b-7b90-496e-8328-1ea817be889a")
+                .unwrap()
+                .as_u128(),
+        );
 
         assert_eq!(new_state.as_digest(), state.as_digest());
     }
