@@ -123,3 +123,31 @@ impl std::fmt::Display for ValidatorPublicKey {
         )
     }
 }
+
+// Cumulative size of the lane from the beginning
+#[derive(Debug, Clone, Copy, Default, Encode, Decode, Eq, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "full", derive(utoipa::ToSchema))]
+pub struct LaneBytesSize(pub u64); // 16M Terabytes, is it enough ?
+
+impl std::ops::Add<usize> for LaneBytesSize {
+    type Output = Self;
+    fn add(self, other: usize) -> Self {
+        LaneBytesSize(self.0 + other as u64)
+    }
+}
+
+impl std::fmt::Display for LaneBytesSize {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.0 < 1024 {
+            write!(f, "{} B", self.0)
+        } else if self.0 < 1024 * 1024 {
+            write!(f, "{} KB", self.0 / 1024)
+        } else if self.0 < 1024 * 1024 * 1024 {
+            write!(f, "{} MB", self.0 / (1024 * 1024))
+        } else if self.0 < 1024 * 1024 * 1024 * 1024 {
+            write!(f, "{} GB", self.0 / (1024 * 1024 * 1024))
+        } else {
+            write!(f, "{} TB", self.0 / (1024 * 1024 * 1024 * 1024))
+        }
+    }
+}
