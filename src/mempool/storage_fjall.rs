@@ -188,13 +188,11 @@ impl Storage for LanesStorage {
 }
 
 fn decode_from_item(item: Slice) -> Result<LaneEntry> {
-    borsh::from_slice(&item)
-        .map(|(b, _)| b)
-        .map_err(Into::into)
+    borsh::from_slice(&item).map_err(Into::into)
 }
 
 fn encode_to_item(lane_entry: LaneEntry) -> Result<Slice> {
-    borsh::to_vec(lane_entry)
+    borsh::to_vec(&lane_entry)
         .map(Slice::from)
         .map_err(Into::into)
 }

@@ -7,7 +7,9 @@ use utoipa::ToSchema;
 
 use crate::*;
 
-#[derive(Clone, Debug, Default, Serialize, Deserialize, BorshSerialize, BorshDeserialize, Eq, PartialEq)]
+#[derive(
+    Clone, Debug, Default, Serialize, Deserialize, BorshSerialize, BorshDeserialize, Eq, PartialEq,
+)]
 pub struct DataProposal {
     pub parent_data_proposal_hash: Option<DataProposalHash>,
     pub txs: Vec<Transaction>,
@@ -19,7 +21,20 @@ impl DataSized for DataProposal {
     }
 }
 
-#[derive(Clone, Debug, Default, Serialize, Deserialize, BorshSerialize, BorshDeserialize, PartialEq, Eq, Hash)]
+#[derive(
+    Clone,
+    Debug,
+    Default,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+    PartialEq,
+    Eq,
+    Hash,
+    Ord,
+    PartialOrd,
+)]
 pub struct DataProposalHash(pub String);
 
 impl Hashable<DataProposalHash> for DataProposal {
@@ -47,7 +62,19 @@ impl Display for DataProposal {
 
 // Cumulative size of the lane from the beginning
 #[derive(
-    Debug, Clone, Copy, Default, BorshSerialize, BorshDeserialize, Eq, PartialEq, Serialize, Deserialize, ToSchema,
+    Debug,
+    Clone,
+    Copy,
+    Default,
+    BorshSerialize,
+    BorshDeserialize,
+    Eq,
+    PartialEq,
+    Serialize,
+    Deserialize,
+    ToSchema,
+    Ord,
+    PartialOrd,
 )]
 pub struct LaneBytesSize(pub u64); // 16M Terabytes, is it enough ?
 

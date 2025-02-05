@@ -230,7 +230,7 @@ mod tests {
         let stream = TcpStream::connect(addr).await?;
         let mut framed = FramedWrite::new(stream, LengthDelimitedCodec::new());
 
-        let encoded_msg = encode_to_vec(&TcpServerNetMessage::Ping)?;
+        let encoded_msg = borsh::to_vec(&TcpServerNetMessage::Ping)?;
 
         framed.send(encoded_msg.into()).await?;
 

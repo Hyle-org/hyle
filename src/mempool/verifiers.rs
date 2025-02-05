@@ -18,7 +18,7 @@ pub fn verify_proof(
 ) -> Result<Vec<HyleOutput>> {
     let hyle_outputs = match verifier.0.as_str() {
         // TODO: add #[cfg(test)]
-        "test" => borsh::from_slice::<Vec<HyleOutput>>(&proof.0),
+        "test" => borsh::from_slice::<Vec<HyleOutput>>(&proof.0).context("parsing test proof"),
         #[cfg(test)]
         "test-slow" => {
             tracing::info!("Sleeping for 2 seconds to simulate a slow verifier");

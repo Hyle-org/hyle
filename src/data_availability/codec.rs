@@ -46,13 +46,10 @@ impl Decoder for DataAvailabilityServerCodec {
                 return Ok(Some(DataAvailabilityServerRequest::Ping));
             }
 
-            let height: u64 =
-                borsh::from_slice(&decoded_bytes)
-                    .context(format!(
-                        "Decoding height from {} bytes",
-                        decoded_bytes.len()
-                    ))?
-                    .0;
+            let height: u64 = borsh::from_slice(&decoded_bytes).context(format!(
+                "Decoding height from {} bytes",
+                decoded_bytes.len()
+            ))?;
 
             return Ok(Some(DataAvailabilityServerRequest::BlockHeight(
                 BlockHeight(height),
@@ -71,8 +68,7 @@ impl Encoder<DataAvailabilityServerEvent> for DataAvailabilityServerCodec {
         event: DataAvailabilityServerEvent,
         dst: &mut bytes::BytesMut,
     ) -> Result<(), Self::Error> {
-        let bytes: bytes::Bytes =
-            borsh::to_vec(event)?.into();
+        let bytes: bytes::Bytes = borsh::to_vec(&event)?.into();
 
         self.ldc
             .encode(bytes, dst)
@@ -93,13 +89,10 @@ impl Decoder for DataAvailabilityClientCodec {
     fn decode(&mut self, src: &mut bytes::BytesMut) -> Result<Option<Self::Item>, Self::Error> {
         let decoded_bytes = self.ldc.decode(src)?;
         if let Some(decoded_bytes) = decoded_bytes {
-            let event: Self::Item =
-                borsh::from_slice(&decoded_bytes)
-                    .context(format!(
-                        "Decoding DataAvailabilityServerEvent from {} bytes",
-                        decoded_bytes.len()
-                    ))?
-                    .0;
+            let event: Self::Item = borsh::from_slice(&decoded_bytes).context(format!(
+                "Decoding DataAvailabilityServerEvent from {} bytes",
+                decoded_bytes.len()
+            ))?;
 
             return Ok(Some(event));
         }
@@ -116,9 +109,7 @@ impl Encoder<DataAvailabilityServerRequest> for DataAvailabilityClientCodec {
         dst: &mut bytes::BytesMut,
     ) -> Result<(), Self::Error> {
         let bytes: bytes::Bytes = match request {
-            DataAvailabilityServerRequest::BlockHeight(height) => {
-                borsh::to_vec(height)?.into()
-            }
+            DataAvailabilityServerRequest::BlockHeight(height) => borsh::to_vec(&height)?.into(),
             DataAvailabilityServerRequest::Ping => bytes::Bytes::from("ok"),
         };
 

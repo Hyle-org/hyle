@@ -49,9 +49,8 @@ impl ContractHandler for Hydentity {
             contract_name,
         } = tx.blobs.get(index.0).context("Failed to get blob")?;
 
-        let (action, _): (IdentityAction, _) =
-            borsh::from_slice(data.0.as_slice())
-                .context("Failed to decode payload")?;
+        let action: IdentityAction =
+            borsh::from_slice(data.0.as_slice()).context("Failed to decode payload")?;
 
         let res =
             identity_provider::execute_action(state, action, "").map_err(|e| anyhow::anyhow!(e))?;

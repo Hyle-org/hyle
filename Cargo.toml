@@ -78,7 +78,7 @@ risc0-recursion = { path = "./crates/contracts/risc0-recursion" }
 hyle-verifiers = { path = "crates/hyle-verifiers" }
 
 anyhow = "1.0.95"
-borsh = "1.5.5"
+borsh = { version = "1.5.5", features = ["rc"] }
 blst = { version = "0.3.13" }
 chrono = { version = "0.4", features = ["serde"] }
 hex = { version = "0.4.3" }

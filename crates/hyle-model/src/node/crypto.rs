@@ -14,6 +14,8 @@ use crate::{staking::*, *};
     PartialEq,
     Eq,
     Hash,
+    Ord,
+    PartialOrd,
 )]
 pub struct Signed<T: borsh::BorshSerialize, V: borsh::BorshSerialize> {
     pub msg: T,
@@ -30,6 +32,8 @@ pub struct Signed<T: borsh::BorshSerialize, V: borsh::BorshSerialize> {
     PartialEq,
     Eq,
     Hash,
+    Ord,
+    PartialOrd,
 )]
 pub struct Signature(pub Vec<u8>);
 
@@ -43,6 +47,8 @@ pub struct Signature(pub Vec<u8>);
     PartialEq,
     Eq,
     Hash,
+    Ord,
+    PartialOrd,
 )]
 pub struct ValidatorSignature {
     pub signature: Signature,
@@ -61,6 +67,8 @@ pub type SignedByValidator<T> = Signed<T, ValidatorSignature>;
     PartialEq,
     Eq,
     Hash,
+    Ord,
+    PartialOrd,
 )]
 pub struct AggregateSignature {
     pub signature: Signature,

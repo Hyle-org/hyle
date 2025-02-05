@@ -50,7 +50,7 @@ pub struct Blocks {
 
 impl Blocks {
     fn decode_item(item: Slice) -> Result<SignedBlock> {
-        borsh::from_slice(&item).map(|(b, _)| b).map_err(Into::into)
+        borsh::from_slice(&item).map_err(Into::into)
     }
 
     pub fn new(path: &Path) -> Result<Self> {

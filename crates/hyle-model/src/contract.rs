@@ -7,7 +7,17 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 
 #[derive(
-    Debug, Serialize, Deserialize, Clone, BorshSerialize, BorshDeserialize, PartialEq, Eq, Default,
+    Debug,
+    Serialize,
+    Deserialize,
+    Clone,
+    BorshSerialize,
+    BorshDeserialize,
+    PartialEq,
+    Eq,
+    Default,
+    Ord,
+    PartialOrd,
 )]
 #[cfg_attr(feature = "full", derive(utoipa::ToSchema))]
 pub struct ConsensusProposalHash(pub String);
@@ -418,6 +428,8 @@ impl From<usize> for BlobIndex {
     Copy,
     BorshSerialize,
     BorshDeserialize,
+    PartialOrd,
+    Ord,
 )]
 #[cfg_attr(feature = "full", derive(utoipa::ToSchema))]
 pub struct BlockHeight(pub u64);

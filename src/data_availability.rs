@@ -695,10 +695,7 @@ pub mod tests {
         let mut heights_received = vec![];
         while let Some(Ok(cmd)) = da_stream.next().await {
             let bytes = cmd;
-            let event: DataAvailabilityServerEvent =
-                borsh::from_slice(&bytes)
-                    .unwrap()
-                    .0;
+            let event: DataAvailabilityServerEvent = borsh::from_slice(&bytes).unwrap();
             if let DataAvailabilityServerEvent::SignedBlock(block) = event {
                 heights_received.push(block.height().0);
             }
@@ -746,10 +743,7 @@ pub mod tests {
         let mut heights_received = vec![];
         while let Some(Ok(cmd)) = da_stream.next().await {
             let bytes = cmd;
-            let event: DataAvailabilityServerEvent =
-                borsh::from_slice(&bytes)
-                    .unwrap()
-                    .0;
+            let event: DataAvailabilityServerEvent = borsh::from_slice(&bytes).unwrap();
             if let DataAvailabilityServerEvent::SignedBlock(block) = event {
                 heights_received.push(block.height().0);
             }

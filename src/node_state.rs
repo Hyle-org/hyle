@@ -786,10 +786,7 @@ pub mod test {
     ) -> VerifiedProofTransaction {
         let proof = ProofTransaction {
             contract_name: contract.clone(),
-            proof: ProofData(
-                borsh::to_vec(vec![hyle_output.clone()])
-                    .unwrap(),
-            ),
+            proof: ProofData(borsh::to_vec(&[hyle_output.clone()]).unwrap()),
         };
         VerifiedProofTransaction {
             contract_name: contract.clone(),

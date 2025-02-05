@@ -37,7 +37,7 @@ where
         match fs::File::open(file) {
             Ok(mut reader) => {
                 info!("Loaded data from disk {}", file.to_string_lossy());
-                bincode::decode_from_std_read(&mut reader)
+                borsh::from_reader(&mut reader)
                     .log_error(format!("Loading and decoding {}", file.to_string_lossy()))
                     .ok()
             }
@@ -78,7 +78,7 @@ where
         debug!("Saving on disk in a tmp file {:?}", tmp.clone());
         let mut buf_writer =
             BufWriter::new(fs::File::create(tmp.as_path()).log_error("Create file")?);
-        borsh::to_writer(store, &mut buf_writer).log_error("Serializing Ctx chain")?;
+        borsh::to_writer(&mut buf_writer, store).log_error("Serializing Ctx chain")?;
 
         buf_writer.flush().log_error(format!(
             "Flushing Buffer writer for store {}",
@@ -367,7 +367,7 @@ mod tests {
         // Write a valid TestStruct to the file
         let mut file = File::create(&file_path).unwrap();
         let test_struct = TestStruct { value: 42 };
-        borsh::to_writer(&test_struct, &mut file).unwrap();
+        borsh::to_writer(&mut file, &test_struct).unwrap();
 
         // Load the struct from the file
         let loaded_struct: TestStruct = TestModule::<usize>::load_from_disk_or_default(&file_path);
