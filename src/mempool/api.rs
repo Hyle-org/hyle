@@ -2,7 +2,9 @@ use anyhow::anyhow;
 use axum::{extract::State, http::StatusCode, response::IntoResponse, Json, Router};
 use borsh::{BorshDeserialize, BorshSerialize};
 use hyle_contract_sdk::TxHash;
-use hyle_model::{api::APIRegisterContract, ContractAction, RegisterContractAction};
+use hyle_model::{
+    api::APIRegisterContract, ContractAction, RegisterContractAction, StructuredBlobData,
+};
 use serde::{Deserialize, Serialize};
 use tracing::info;
 use utoipa::OpenApi;
@@ -11,12 +13,11 @@ use utoipa_axum::{router::OpenApiRouter, routes};
 use crate::{
     bus::{bus_client, metrics::BusMetrics, BusClientSender, BusMessage},
     model::{
-        BlobTransaction, CommonRunContext, Hashable, ProofTransaction, Transaction, TransactionData,
+        contract_registration::validate_contract_registration_metadata, BlobTransaction,
+        CommonRunContext, Hashable, ProofTransaction, Transaction, TransactionData,
     },
     rest::AppError,
 };
-
-use super::contract_registration::validate_contract_registration;
 
 #[derive(Debug, Serialize, Deserialize, Clone, BorshSerialize, BorshDeserialize)]
 pub enum RestApiMessage {
@@ -81,6 +82,32 @@ pub async fn send_blob_transaction(
     Json(payload): Json<BlobTransaction>,
 ) -> Result<impl IntoResponse, AppError> {
     info!("Got blob transaction {}", payload.hash());
+
+    // Filter out incorrect contract-registring transactions
+    for blob in payload.blobs.iter() {
+        if blob.contract_name.0 != "hyle" {
+            continue;
+        }
+        if let Ok(tx) = StructuredBlobData::<RegisterContractAction>::try_from(blob.data.clone()) {
+            let parameters = tx.parameters;
+            validate_contract_registration_metadata(
+                &"hyle".into(),
+                &parameters.contract_name,
+                &parameters.verifier,
+                &parameters.program_id,
+                &parameters.state_digest,
+            )
+            .map_err(|err| AppError(StatusCode::BAD_REQUEST, anyhow!(err)))?;
+        }
+    }
+
+    // Filter out transactions with incorrect identity
+    if let Err(e) = payload.validate_identity() {
+        return Err(AppError(
+            StatusCode::BAD_REQUEST,
+            anyhow!("Invalid identity for blob tx: {}", e),
+        ));
+    }
     handle_send(state, TransactionData::Blob(payload)).await
 }
 
@@ -113,7 +140,15 @@ pub async fn register_contract(
     Json(payload): Json<APIRegisterContract>,
 ) -> Result<impl IntoResponse, AppError> {
     let owner = "hyle".into();
-    validate_contract_registration(&owner, &payload.contract_name)?;
+    validate_contract_registration_metadata(
+        &owner,
+        &payload.contract_name,
+        &payload.verifier,
+        &payload.program_id,
+        &payload.state_digest,
+    )
+    .map_err(|err| AppError(StatusCode::BAD_REQUEST, anyhow!(err)))?;
+
     let tx = BlobTransaction {
         identity: "hyle.hyle".into(),
         blobs: vec![RegisterContractAction {

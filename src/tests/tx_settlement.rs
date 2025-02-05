@@ -149,6 +149,7 @@ async fn test_contract_upgrade() -> Result<()> {
     hyle_node.wait_for_genesis_event().await?;
 
     let client = NodeApiHttpClient::new(format!("http://{rest_url}/")).unwrap();
+    hyle_node.wait_for_rest_api(&client).await?;
 
     info!("➡️  Registering contracts c1.hyle");
 

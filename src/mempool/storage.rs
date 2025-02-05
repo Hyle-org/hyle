@@ -267,14 +267,9 @@ pub trait Storage {
     ) -> DataProposalVerdict {
         for tx in &data_proposal.txs {
             match &tx.transaction_data {
-                TransactionData::Blob(blob_tx) => {
-                    if let Err(e) = blob_tx.validate_identity() {
-                        warn!(
-                            "Refusing DataProposal: invalid identity in blob transaction: {}",
-                            e
-                        );
-                        return DataProposalVerdict::Refuse;
-                    }
+                TransactionData::Blob(_) => {
+                    // Accepting all blob transactions
+                    // TODO: find out what we want to do here
                 }
                 TransactionData::Proof(_) => {
                     warn!("Refusing DataProposal: unverified recursive proof transaction");
