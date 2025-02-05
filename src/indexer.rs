@@ -79,8 +79,7 @@ impl Module for Indexer {
             .await
             .context("Failed to connect to the database")?;
 
-        let _ =
-            tokio::time::timeout(tokio::time::Duration::from_secs(60), MIGRATOR.run(&pool)).await?;
+        tokio::time::timeout(tokio::time::Duration::from_secs(60), MIGRATOR.run(&pool)).await??;
 
         let (new_sub_sender, new_sub_receiver) = tokio::sync::mpsc::channel(100);
 
@@ -126,13 +125,13 @@ impl Indexer {
             listen<NodeStateEvent> event => {
                 _ = self.handle_node_state_event(event)
                     .await
-                    .log_error("Handling node state event");
+                    .log_error("Indexer handling node state event");
             }
 
             listen<MempoolStatusEvent> event => {
                 _ = self.handle_mempool_status_event(event)
                     .await
-                    .log_error("Handling node state event");
+                    .log_error("Indexer handling mempool status event");
             }
 
             Some((contract_name, socket)) = self.new_sub_receiver.recv() => {
@@ -151,37 +150,37 @@ impl Indexer {
                         loop {
                             select! {
                                 maybe_transaction = rx.recv() => {
-                                match maybe_transaction {
-                                    Ok(transaction) => {
-                                        if let Ok(json) = serde_json::to_vec(&transaction)
-                                            .log_error("Serialize transaction to JSON") {
-                                            if ws_tx.send(Message::Binary(json.into())).await.is_err() {
+                                    match maybe_transaction {
+                                        Ok(transaction) => {
+                                            if let Ok(json) = serde_json::to_vec(&transaction)
+                                                .log_error("Serialize transaction to JSON") {
+                                                if ws_tx.send(Message::Binary(json.into())).await.is_err() {
+                                                    break;
+                                                }
+                                            }
+                                        }
+                                        _ => break,
+                                    }
+                                },
+                                // Branch to handle incoming messages from ws
+                                maybe_msg = ws_rx.next() => {
+                                    match maybe_msg {
+                                        Some(Ok(message)) => {
+                                            if let Message::Close(frame) = message {
+                                                info!("WS closed by client: {:?}", frame);
+                                                let _ = ws_tx.send(Message::Close(frame)).await;
                                                 break;
                                             }
                                         }
-                                    }
-                                    _ => break,
-                                }
-                            },
-                            // Branch to handle incoming messages from ws
-                            maybe_msg = ws_rx.next() => {
-                                match maybe_msg {
-                                    Some(Ok(message)) => {
-                                        if let Message::Close(frame) = message {
-                                            info!("WS closed by client: {:?}", frame);
-                                            let _ = ws_tx.send(Message::Close(frame)).await;
+                                        Some(Err(e)) => {
+                                            error!("Error while getting message from WS: {}", e);
                                             break;
                                         }
+                                        None => break,
                                     }
-                                    Some(Err(e)) => {
-                                        error!("Error while getting message from WS: {}", e);
-                                        break;
-                                    }
-                                    None => break,
                                 }
                             }
-
-                        }}
+                        }
                     })?;
             }
         };
@@ -213,6 +212,7 @@ impl Indexer {
             .routes(routes!(api::get_transactions_by_height))
             .routes(routes!(api::get_transactions_by_contract))
             .routes(routes!(api::get_transaction_with_hash))
+            .routes(routes!(api::get_transaction_events))
             .routes(routes!(api::get_blob_transactions_by_contract))
             .route(
                 "/blob_transactions/contract/{contract_name}/ws",
@@ -400,7 +400,7 @@ impl Indexer {
         trace!("Indexing block at height {:?}", block.block_height);
         let mut transaction: sqlx::PgTransaction = self.state.db.begin().await?;
 
-        let _ = self.insert_block(transaction.deref_mut(), &block).await;
+        self.insert_block(transaction.deref_mut(), &block).await?;
 
         let mut i: i32 = 0;
         #[allow(clippy::explicit_counter_loop)]
@@ -452,6 +452,23 @@ impl Indexer {
             }
 
             i += 1;
+        }
+
+        for (i, (tx_hash, events)) in (0..).zip(block.transactions_events.into_iter()) {
+            let tx_hash: &TxHashDb = &tx_hash.into();
+            let serialized_events = serde_json::to_string(&events)?;
+
+            sqlx::query(
+                "INSERT INTO transaction_state_events (block_hash, index, tx_hash, events)
+                VALUES ($1, $2, $3, $4::jsonb)",
+            )
+            .bind(block.hash.clone())
+            .bind(i)
+            .bind(tx_hash)
+            .bind(serialized_events)
+            .execute(&mut *transaction)
+            .await
+            .log_warn(format!("Inserting transaction state event {:?}", tx_hash))?;
         }
 
         // Handling new stakers

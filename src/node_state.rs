@@ -93,6 +93,7 @@ impl NodeState {
             timed_out_txs: vec![], // Added below as it needs the block
             registered_contracts: vec![],
             updated_states: BTreeMap::new(),
+            transactions_events: BTreeMap::new(),
         };
 
         // We'll need to remember some data to validate transactions proofs.
@@ -121,9 +122,21 @@ impl NodeState {
                                 blob_tx_to_try_and_settle,
                             );
                         }
-                        Ok(None) => {}
+                        Ok(None) => {
+                            block_under_construction
+                                .transactions_events
+                                .entry(blob_transaction.hash())
+                                .or_default()
+                                .push(TransactionStateEvent::Sequenced);
+                        }
                         Err(e) => {
-                            error!("Failed to handle blob transaction: {:?}", e);
+                            let err = format!("Failed to handle blob transaction: {:?}", e);
+                            error!("{err}");
+                            block_under_construction
+                                .transactions_events
+                                .entry(blob_transaction.hash())
+                                .or_default()
+                                .push(TransactionStateEvent::Error(err));
                             block_under_construction.failed_txs.push(tx.hash());
                         }
                     }
@@ -135,21 +148,28 @@ impl NodeState {
                     // First, store the proofs and check if we can settle the transaction
                     // NB: if some of the blob proof outputs are bad, we just ignore those
                     // but we don't actually fail the transaction.
+                    let proof_tx_hash = proof_tx.hash();
                     let blob_tx_to_try_and_settle = proof_tx
                         .proven_blobs
                         .iter()
                         .filter_map(|blob_proof_data| {
                             match self.handle_blob_proof(
-                                proof_tx.hash(),
+                                proof_tx_hash.clone(),
                                 &mut block_under_construction.blob_proof_outputs,
+                                &mut block_under_construction.transactions_events,
                                 blob_proof_data,
                             ) {
                                 Ok(maybe_tx_hash) => maybe_tx_hash,
                                 Err(err) => {
-                                    info!(
+                                    let err = format!(
                                         "Failed to handle blob #{} in verified proof transaction {:?}: {err}",
-                                        blob_proof_data.hyle_output.index, proof_tx.hash(),
-                                    );
+                                        blob_proof_data.hyle_output.index, proof_tx.hash());
+                                    info!("{err}");
+                                    block_under_construction
+                                        .transactions_events
+                                        .entry(proof_tx.hash())
+                                        .or_default()
+                                        .push(TransactionStateEvent::Error(err));
                                     None
                                 }
                             }
@@ -275,6 +295,7 @@ impl NodeState {
         &mut self,
         proof_tx_hash: TxHash,
         blob_proof_outputs: &mut Vec<HandledBlobProofOutput>,
+        tx_events: &mut BTreeMap<TxHash, Vec<TransactionStateEvent>>,
         blob_proof_data: &BlobProofOutput,
     ) -> Result<Option<TxHash>, Error> {
         // Find the blob being proven and whether we should try to settle the TX.
@@ -310,6 +331,13 @@ impl NodeState {
             "Saving a hyle_output for BlobTx {} index {}",
             blob_proof_data.hyle_output.tx_hash.0, blob_proof_data.hyle_output.index
         );
+        tx_events
+            .entry(blob_proof_data.hyle_output.tx_hash.clone())
+            .or_default()
+            .push(TransactionStateEvent::NewProof {
+                blob_index: blob_proof_data.hyle_output.index,
+                proof_tx: proof_tx_hash.clone(),
+            });
 
         blob.possible_proofs.push((
             blob_proof_data.program_id.clone(),
@@ -348,7 +376,12 @@ impl NodeState {
                 break;
             };
 
-            match self.try_to_settle_blob_tx(&bth) {
+            let events = block_under_construction
+                .transactions_events
+                .entry(bth.clone())
+                .or_default();
+
+            match self.try_to_settle_blob_tx(&bth, events) {
                 Ok(SettledTxOutput {
                     tx: settled_tx,
                     blob_proof_output_indices,
@@ -365,7 +398,11 @@ impl NodeState {
                         success,
                     ));
                 }
-                Err(e) => debug!("Tx {:?} not ready to settle: {:?}", &bth, e),
+                Err(e) => {
+                    let e = format!("Failed to settle: {}", e);
+                    debug!(tx_hash = %bth, "{e}");
+                    events.push(TransactionStateEvent::SettleEvent(e));
+                }
             }
         }
     }
@@ -373,6 +410,7 @@ impl NodeState {
     fn try_to_settle_blob_tx(
         &mut self,
         unsettled_tx_hash: &TxHash,
+        events: &mut Vec<TransactionStateEvent>,
     ) -> Result<SettledTxOutput, Error> {
         trace!("Trying to settle blob tx: {:?}", unsettled_tx_hash);
 
@@ -400,10 +438,11 @@ impl NodeState {
                 updated_contracts,
                 unsettled_tx.blobs.iter(),
                 vec![],
+                events,
             ) {
                 Some(res) => res,
                 None => {
-                    bail!("Tx: {} is not ready to settle.", unsettled_tx.hash);
+                    bail!("Not ready to settle.");
                 }
             };
 
@@ -428,6 +467,7 @@ impl NodeState {
         current_contracts: BTreeMap<ContractName, Contract>,
         mut blob_iter: impl Iterator<Item = &'a UnsettledBlobMetadata> + Clone,
         mut blob_proof_output_indices: Vec<usize>,
+        events: &mut Vec<TransactionStateEvent>,
     ) -> Option<(BTreeMap<ContractName, Contract>, Vec<usize>, bool)> {
         // Recursion end-case: we succesfully settled all prior blobs, so success.
         let Some(current_blob) = blob_iter.next() else {
@@ -461,11 +501,14 @@ impl NodeState {
                         us,
                         blob_iter.clone(),
                         blob_proof_output_indices.clone(),
+                        events,
                     )
                 }
                 Err(err) => {
                     // We have a valid proof of failure, we short-circuit.
-                    debug!("Could not settle blob proof output for 'hyle': {:?}", err);
+                    let msg = format!("Could not settle blob proof output for 'hyle': {:?}", err);
+                    debug!("{msg}");
+                    events.push(TransactionStateEvent::SettleEvent(msg));
                     Some((current_contracts, blob_proof_output_indices, false))
                 }
             };
@@ -474,20 +517,24 @@ impl NodeState {
         for (i, proof_metadata) in current_blob.possible_proofs.iter().enumerate() {
             if !Self::validate_proof_metadata(proof_metadata, known_contract_state) {
                 // Not a valid proof, log it and try the next one.
-                debug!(
-                "Could not settle blob proof output #{} for contract '{}'. Expected initial state: {:?}, got: {:?}, expected program ID: {:?}, got: {:?}",
-                i,
-                contract_name,
-                known_contract_state.state,
-                proof_metadata.1.initial_state,
-                known_contract_state.program_id,
-                proof_metadata.0
-            );
+                let msg = format!(
+                    "Could not settle blob proof output #{} for contract '{}'. Expected initial state: {:?}, got: {:?}, expected program ID: {:?}, got: {:?}",
+                    i,
+                    contract_name,
+                    known_contract_state.state,
+                    proof_metadata.1.initial_state,
+                    known_contract_state.program_id,
+                    proof_metadata.0
+                );
+                debug!("{msg}");
+                events.push(TransactionStateEvent::SettleEvent(msg));
                 continue;
             }
             if !proof_metadata.1.success {
                 // We have a valid proof of failure, we short-circuit.
-                debug!("Proven failure for blob {}", i);
+                let msg = format!("Proven failure for blob {}", i);
+                debug!("{msg}");
+                events.push(TransactionStateEvent::SettleEvent(msg));
                 return Some((current_contracts, blob_proof_output_indices, false));
             }
             // TODO: ideally make this CoW
@@ -507,6 +554,7 @@ impl NodeState {
                 us,
                 blob_iter.clone(),
                 blob_proof_output_indices.clone(),
+                events,
             ) {
                 // If this proof settles, early return, otherwise try the next one (with continue for explicitness)
                 Some(res) => return Some(res),
@@ -532,8 +580,18 @@ impl NodeState {
     ) -> BTreeSet<TxHash> {
         // Transaction was settled, update our state.
         if success {
+            block_under_construction
+                .transactions_events
+                .entry(bth.clone())
+                .or_default()
+                .push(TransactionStateEvent::Settled);
             info!("✨ Settled tx {}", &bth);
         } else {
+            block_under_construction
+                .transactions_events
+                .entry(bth.clone())
+                .or_default()
+                .push(TransactionStateEvent::SettledAsFailed);
             info!("⛈️ Settled tx {} has failed", &bth);
         }
 
@@ -711,6 +769,11 @@ impl NodeState {
         txs_at_timeout.retain(|tx| {
             if let Some(mut tx) = self.unsettled_transactions.remove(tx) {
                 info!("⏰ Blob tx timed out: {}", &tx.hash);
+                block_under_construction
+                    .transactions_events
+                    .entry(tx.hash)
+                    .or_default()
+                    .push(TransactionStateEvent::TimedOut);
 
                 // Attempt to settle following transactions
                 let mut blob_tx_to_try_and_settle = BTreeSet::new();
@@ -868,7 +931,12 @@ pub mod test {
             .iter()
             .filter_map(|blob_proof_data| {
                 state
-                    .handle_blob_proof(TxHash::new(""), &mut bhpo, blob_proof_data)
+                    .handle_blob_proof(
+                        TxHash::new(""),
+                        &mut bhpo,
+                        &mut BTreeMap::new(),
+                        blob_proof_data,
+                    )
                     .unwrap_or_default()
             })
             .collect::<Vec<_>>();
@@ -879,7 +947,7 @@ pub mod test {
         }
         let SettledTxOutput {
             updated_contracts, ..
-        } = state.try_to_settle_blob_tx(blob_tx_to_try_and_settle.first().unwrap())?;
+        } = state.try_to_settle_blob_tx(blob_tx_to_try_and_settle.first().unwrap(), &mut vec![])?;
         for (contract_name, contract) in updated_contracts.iter() {
             state
                 .contracts

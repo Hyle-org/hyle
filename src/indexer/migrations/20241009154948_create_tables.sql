@@ -75,3 +75,10 @@ CREATE TABLE contract_state (
     state_digest BYTEA NOT NULL,                                          -- The contract state stored in JSON format for flexibility
     PRIMARY KEY (contract_name, block_hash)
 );
+
+CREATE TABLE transaction_state_events (
+    block_hash TEXT NOT NULL REFERENCES blocks(hash) ON DELETE CASCADE,
+    index INT,
+    tx_hash TEXT REFERENCES transactions(tx_hash) ON DELETE CASCADE,
+    events JSONB NOT NULL
+);

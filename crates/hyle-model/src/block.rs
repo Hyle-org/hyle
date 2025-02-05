@@ -24,6 +24,7 @@ pub struct Block {
     pub staking_actions: Vec<(Identity, StakingAction)>,
     pub registered_contracts: Vec<(TxHash, RegisterContractEffect)>,
     pub updated_states: BTreeMap<ContractName, StateDigest>,
+    pub transactions_events: BTreeMap<TxHash, Vec<TransactionStateEvent>>,
 }
 
 impl Block {
