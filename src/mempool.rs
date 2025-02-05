@@ -14,7 +14,7 @@ use crate::{
         crypto::{BlstCrypto, SharedBlstCrypto},
         logger::LogMe,
         modules::{module_bus_client, Module},
-        serialize::arc_rwlowk_borsh,
+        serialize::arc_rwlock_borsh,
         static_type_map::Pick,
     },
 };
@@ -103,8 +103,8 @@ pub struct MempoolStore {
     buc_build_start_height: Option<u64>,
     staking: Staking,
     #[borsh(
-        serialize_with = "arc_rwlowk_borsh::serialize",
-        deserialize_with = "arc_rwlowk_borsh::deserialize"
+        serialize_with = "arc_rwlock_borsh::serialize",
+        deserialize_with = "arc_rwlock_borsh::deserialize"
     )]
     known_contracts: Arc<std::sync::RwLock<KnownContracts>>,
 }

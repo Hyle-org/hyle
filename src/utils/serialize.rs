@@ -26,7 +26,7 @@ pub mod arc_rwlock_serde {
     }
 }
 
-pub mod arc_rwlowk_borsh {
+pub mod arc_rwlock_borsh {
     use std::sync::{Arc, RwLock};
 
     pub fn serialize<T: borsh::ser::BorshSerialize, W: borsh::io::Write>(
