@@ -156,8 +156,7 @@ pub mod test {
         ) -> Pin<Box<dyn std::future::Future<Output = Result<ProofData>> + Send + '_>> {
             Box::pin(async move {
                 let hyle_output = test::execute(&contract_input)?;
-
-                Ok(ProofData(borsh::to_vec(&[hyle_output.clone()])?))
+                Ok(ProofData(borsh::to_vec(&vec![hyle_output])?))
             })
         }
     }
