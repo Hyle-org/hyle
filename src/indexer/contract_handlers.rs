@@ -16,7 +16,7 @@ use hyle_contract_sdk::{
 use hyllar::{HyllarToken, HyllarTokenContract};
 use serde::Serialize;
 use tokio::sync::RwLock;
-use tracing::{debug, info};
+use tracing::info;
 use utoipa::openapi::OpenApi;
 use utoipa::ToSchema;
 use utoipa_axum::router::OpenApiRouter;
