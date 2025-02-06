@@ -2,7 +2,7 @@ use std::{collections::HashMap, path::Path, sync::Arc};
 
 use anyhow::{bail, Result};
 use fjall::{Config, Keyspace, PartitionCreateOptions, PartitionHandle, Slice};
-use tracing::{error, info};
+use tracing::info;
 
 use crate::{
     model::{DataProposalHash, Hashable, ValidatorPublicKey},
