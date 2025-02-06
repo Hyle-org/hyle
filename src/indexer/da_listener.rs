@@ -59,16 +59,13 @@ impl DerefMut for RawDAListener {
 
 pub struct DAListenerCtx {
     pub common: Arc<CommonRunContext>,
-    pub start_block: BlockHeight,
+    pub start_block: Option<BlockHeight>,
 }
 
 impl Module for DAListener {
     type Context = DAListenerCtx;
 
     async fn build(ctx: Self::Context) -> Result<Self> {
-        let listener = RawDAListener::new(&ctx.common.config.da_address, ctx.start_block).await?;
-        let bus = DAListenerBusClient::new_from_bus(ctx.common.bus.new_handle()).await;
-
         let node_state = Self::load_from_disk_or_default::<NodeState>(
             ctx.common
                 .config
@@ -76,6 +73,11 @@ impl Module for DAListener {
                 .join("da_listener_node_state.bin")
                 .as_path(),
         );
+
+        let start_block = ctx.start_block.unwrap_or(node_state.current_height);
+
+        let listener = RawDAListener::new(&ctx.common.config.da_address, start_block).await?;
+        let bus = DAListenerBusClient::new_from_bus(ctx.common.bus.new_handle()).await;
 
         for name in node_state.contracts.keys() {
             info!("📝 Loaded contract state for {}", name);

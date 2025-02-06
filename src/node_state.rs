@@ -37,7 +37,7 @@ pub struct SettledTxOutput {
 #[derive(BorshSerialize, BorshDeserialize, Debug, Clone)]
 pub struct NodeState {
     timeouts: Timeouts,
-    current_height: BlockHeight,
+    pub current_height: BlockHeight,
     // This field is public for testing purposes
     pub contracts: HashMap<ContractName, Contract>,
     unsettled_transactions: OrderedTxMap,
