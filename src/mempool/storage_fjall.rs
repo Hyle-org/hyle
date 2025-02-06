@@ -2,7 +2,7 @@ use std::{collections::HashMap, path::Path, sync::Arc};
 
 use anyhow::{bail, Result};
 use fjall::{Config, Keyspace, PartitionCreateOptions, PartitionHandle, Slice};
-use tracing::info;
+use tracing::{error, info};
 
 use crate::{
     model::{DataProposalHash, Hashable, ValidatorPublicKey},
@@ -123,6 +123,10 @@ impl Storage for LanesStorage {
                 self.update_lane_tip(validator, dp_hash, lane_entry.cumul_size);
 
                 Ok(())
+            }
+            CanBePutOnTop::AlreadyPresent => {
+                let dp_hash = lane_entry.data_proposal.hash();
+                bail!("DataProposal {} was already in lane", dp_hash);
             }
             CanBePutOnTop::Fork => {
                 let last_known_hash = self.lanes_tip.get(&validator);

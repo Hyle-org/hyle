@@ -95,6 +95,10 @@ impl Storage for LanesStorage {
 
                 Ok(())
             }
+            CanBePutOnTop::AlreadyPresent => {
+                let dp_hash = lane_entry.data_proposal.hash();
+                bail!("DataProposal {} was already in lane", dp_hash);
+            }
             CanBePutOnTop::Fork => {
                 let last_known_hash = self.lanes_tip.get(&validator);
                 bail!(

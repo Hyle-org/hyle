@@ -7,7 +7,7 @@ use hyle_model::{
 use serde::{Deserialize, Serialize};
 use staking::state::Staking;
 use std::{collections::HashMap, path::Path, sync::Arc, vec};
-use tracing::{debug, error, warn};
+use tracing::{debug, error, info, warn};
 
 use crate::{
     model::{
@@ -34,6 +34,7 @@ pub use hyle_model::LaneBytesSize;
 pub enum CanBePutOnTop {
     Yes,
     No,
+    AlreadyPresent,
     Fork,
 }
 
@@ -182,6 +183,10 @@ pub trait Storage {
             }
             // LEGIT DATA PROPOSAL
             CanBePutOnTop::Yes => Ok((DataProposalVerdict::Process, None)),
+            CanBePutOnTop::AlreadyPresent => {
+                info!("DataProposal {} was already in lane", dp_hash);
+                Ok((DataProposalVerdict::Refuse, None))
+            }
             CanBePutOnTop::Fork => {
                 // FORK DETECTED
                 let last_known_hash = self.get_lane_hash_tip(validator);
@@ -577,14 +582,8 @@ pub trait Storage {
         parent_data_proposal_hash: Option<&DataProposalHash>,
     ) -> CanBePutOnTop {
         // Data proposal parent hash needs to match the lane tip of that validator
-        let last_known_hash = self.get_lane_hash_tip(validator_key);
-        if parent_data_proposal_hash == last_known_hash {
+        if parent_data_proposal_hash == self.get_lane_hash_tip(validator_key) {
             // LEGIT DATAPROPOSAL
-            return CanBePutOnTop::Yes;
-        }
-
-        if self.get_lane_hash_tip(validator_key).is_none() && parent_data_proposal_hash.is_none() {
-            // LANE IS EMPTY
             return CanBePutOnTop::Yes;
         }
 
@@ -592,6 +591,8 @@ pub trait Storage {
             if !self.contains(validator_key, dp_parent_hash) {
                 // UNKNOWN PARENT
                 return CanBePutOnTop::No;
+            } else {
+                return CanBePutOnTop::AlreadyPresent;
             }
         }
 
