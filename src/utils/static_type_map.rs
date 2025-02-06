@@ -7,10 +7,13 @@ pub trait Pick<T> {
     unsafe fn splitting_get_mut(&mut self) -> *mut T;
 }
 
+pub use paste;
+
 /// This creates a struct that provides Pick for each type in the initial list,
 /// allowing generic code to access the inner values.
 /// Only one value of each type can be stored in the struct.
 /// (Somewhat similar to frunk HList or a fancier named tuple).
+#[macro_export]
 macro_rules! static_type_map {
     // Basic syntax - similar to a named tuple.
     // This just reformats to the recursive form
@@ -18,7 +21,7 @@ macro_rules! static_type_map {
         $(#[$meta:meta])*
         $pub:vis struct $name:ident ($($t1:ty,)+);
     ) => {
-        paste::paste! {
+        $crate::utils::static_type_map::paste::paste! {
             // Wrap it in a module to make the member names private
             mod [<$name:snake>] {
                 #[allow(unused)]
@@ -38,7 +41,7 @@ macro_rules! static_type_map {
         $(#[$meta:meta])*
         $index:ident: $pub:vis struct $name:ident ($t1:ty, $($t2:ty,)*) { $($idx:ident: $t3:ty,)* }
     ) => {
-        paste::paste! {
+        $crate::utils::static_type_map::paste::paste! {
             $crate::utils::static_type_map::static_type_map! {
                 $(#[$meta])*
                 [<ha $index>]: $pub struct $name ( $($t2,)* ) {
@@ -78,4 +81,4 @@ macro_rules! static_type_map {
         }
     };
 }
-pub(crate) use static_type_map;
+pub use static_type_map;
