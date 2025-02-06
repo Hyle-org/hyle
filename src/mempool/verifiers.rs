@@ -4,7 +4,10 @@ use sha3::Digest;
 
 use hyle_contract_sdk::{Blob, BlobIndex, HyleOutput, ProgramId, StateDigest, TxHash, Verifier};
 
-use hyle_verifiers::{noir_proof_verifier, risc0_proof_verifier, sp1_proof_verifier};
+use hyle_verifiers::{
+    noir_proof_verifier, risc0_proof_verifier, sp1_proof_verifier, validate_risc0_program_id,
+    validate_sp1_program_id,
+};
 
 use crate::{
     model::verifiers::{BlstSignatureBlob, NativeVerifiers, ShaBlob},
@@ -169,5 +172,13 @@ pub fn verify_native_impl(
 
             Ok((blob.identity, res == blob.sha))
         }
+    }
+}
+
+pub fn validate_program_id(verifier: &Verifier, program_id: &ProgramId) -> Result<()> {
+    match verifier.0.as_str() {
+        "risc0" => validate_risc0_program_id(program_id),
+        "sp1" => validate_sp1_program_id(program_id),
+        _ => Ok(()),
     }
 }
