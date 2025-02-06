@@ -4,7 +4,7 @@ use std::fmt::Write;
 use std::io::Read;
 
 use anyhow::{bail, Context, Error};
-use hyle_model::HyleOutput;
+use hyle_model::{HyleOutput, ProgramId};
 use rand::Rng;
 use sp1_sdk::{ProverClient, SP1ProofWithPublicValues, SP1VerifyingKey};
 
@@ -132,11 +132,25 @@ pub fn sp1_proof_verifier(
     Ok(vec![hyle_output])
 }
 
+pub fn validate_risc0_program_id(program_id: &ProgramId) -> Result<(), Error> {
+    std::convert::TryInto::<risc0_zkvm::sha::Digest>::try_into(program_id.0.as_slice())
+        .map_err(|e| anyhow::anyhow!("Invalid Risc0 image ID: {}", e))?;
+    Ok(())
+}
+
+pub fn validate_sp1_program_id(program_id: &ProgramId) -> Result<(), Error> {
+    serde_json::from_slice::<SP1VerifyingKey>(program_id.0.as_slice())
+        .map_err(|e| anyhow::anyhow!("Invalid SP1 image ID: {}", e))?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use std::{fs::File, io::Read};
 
-    use hyle_model::{BlobIndex, HyleOutput, Identity, StateDigest, TxHash};
+    use hyle_model::{BlobIndex, HyleOutput, Identity, ProgramId, StateDigest, TxHash};
+
+    use crate::validate_risc0_program_id;
 
     use super::noir_proof_verifier;
 
@@ -214,5 +228,14 @@ mod tests {
             }
             Err(e) => panic!("Noir verification failed: {:?}", e),
         }
+    }
+
+    #[test]
+    fn test_check_risc0_program_id() {
+        let valid_program_id = ProgramId(vec![0; 32]); // Assuming a valid 32-byte ID
+        let invalid_program_id = ProgramId(vec![0; 31]); // Invalid length
+
+        assert!(validate_risc0_program_id(&valid_program_id).is_ok());
+        assert!(validate_risc0_program_id(&invalid_program_id).is_err());
     }
 }
