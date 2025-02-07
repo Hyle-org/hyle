@@ -1,11 +1,13 @@
 //! State required for participation in consensus by the node.
 
-use crate::mempool::verifiers;
+use crate::model::contract_registration::validate_state_digest_size;
 use crate::model::verifiers::NativeVerifiers;
 use crate::model::*;
+use crate::{
+    mempool::verifiers, model::contract_registration::validate_contract_registration_metadata,
+};
 use anyhow::{bail, Error, Result};
 use borsh::{BorshDeserialize, BorshSerialize};
-use contract_registration::validate_contract_registration;
 use hyle_contract_sdk::{utils::parse_structured_blob, BlobIndex, HyleOutput, TxHash};
 use ordered_tx_map::OrderedTxMap;
 use std::{
@@ -245,7 +247,6 @@ impl NodeState {
                     if let Ok(reg) =
                         StructuredBlobData::<RegisterContractAction>::try_from(blob.data.clone())
                     {
-                        #[allow(clippy::expect_used, reason = "we don't handle oom yet")]
                         let synthetic_output = HyleOutput {
                             success: true,
                             registered_contracts: vec![RegisterContractEffect {
@@ -685,7 +686,13 @@ impl NodeState {
         };
 
         // Check name, it's either a direct subdomain or a TLD
-        validate_contract_registration(&"hyle".into(), &reg.parameters.contract_name)?;
+        validate_contract_registration_metadata(
+            &"hyle".into(),
+            &reg.parameters.contract_name,
+            &reg.parameters.verifier,
+            &reg.parameters.program_id,
+            &reg.parameters.state_digest,
+        )?;
 
         // Check it's not already registered
         if contracts.contains_key(&reg.parameters.contract_name)
@@ -711,8 +718,19 @@ impl NodeState {
         contract: &Contract,
     ) -> bool {
         if proof_metadata.1.registered_contracts.iter().any(|effect| {
-            validate_contract_registration(&contract.name, &effect.contract_name).is_err()
+            validate_contract_registration_metadata(
+                &contract.name,
+                &effect.contract_name,
+                &effect.verifier,
+                &effect.program_id,
+                &effect.state_digest,
+            )
+            .is_err()
         }) {
+            return false;
+        }
+
+        if validate_state_digest_size(&proof_metadata.1.next_state).is_err() {
             return false;
         }
 
@@ -849,7 +867,7 @@ pub mod test {
     ) -> VerifiedProofTransaction {
         let proof = ProofTransaction {
             contract_name: contract.clone(),
-            proof: ProofData(borsh::to_vec(&[hyle_output.clone()]).unwrap()),
+            proof: ProofData(borsh::to_vec(&vec![hyle_output.clone()]).unwrap()),
         };
         VerifiedProofTransaction {
             contract_name: contract.clone(),

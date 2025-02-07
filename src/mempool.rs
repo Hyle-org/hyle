@@ -260,12 +260,10 @@ impl Mempool {
                     .log_error("Handling MempoolNetMessage in Mempool");
             }
             listen<RestApiMessage> cmd => {
-                let _ = self.handle_api_message(cmd)
-                    .log_error("Handling RestApiMessage in Mempool");
+                self.handle_api_message(cmd);
             }
             listen<TcpServerMessage> cmd => {
-                let _ = self.handle_tcp_server_message(cmd)
-                    .log_error("Handling TcpServerNetMessage in Mempool");
+                self.handle_tcp_server_message(cmd);
             }
             listen<InternalMempoolEvent> event => {
                 let _ = self.handle_internal_event(event)
@@ -343,26 +341,23 @@ impl Mempool {
         self.lanes.new_cut(&staking.0, &previous_cut)
     }
 
-    fn handle_api_message(&mut self, command: RestApiMessage) -> Result<()> {
+    fn handle_api_message(&mut self, command: RestApiMessage) {
         match command {
-            RestApiMessage::NewTx(tx) => self
-                .on_new_tx(tx)
-                .context("Received invalid transaction. Won't process it"),
+            RestApiMessage::NewTx(tx) => self.on_new_tx(tx),
         }
     }
 
-    fn handle_tcp_server_message(&mut self, command: TcpServerMessage) -> Result<()> {
+    fn handle_tcp_server_message(&mut self, command: TcpServerMessage) {
         match command {
-            TcpServerMessage::NewTx(tx) => self
-                .on_new_tx(tx)
-                .context("Received invalid transaction. Won't process it"),
+            TcpServerMessage::NewTx(tx) => self.on_new_tx(tx),
         }
     }
 
     fn handle_internal_event(&mut self, event: InternalMempoolEvent) -> Result<()> {
         match event {
             InternalMempoolEvent::OnProcessedNewTx(tx) => {
-                self.on_new_tx(tx).context("Processing new tx")
+                self.on_new_tx(tx);
+                Ok(())
             }
             InternalMempoolEvent::OnProcessedDataProposal((validator, verdict, data_proposal)) => {
                 self.on_processed_data_proposal(validator, verdict, data_proposal)
@@ -931,7 +926,7 @@ impl Mempool {
         Ok(())
     }
 
-    fn on_new_tx(&mut self, tx: Transaction) -> Result<()> {
+    fn on_new_tx(&mut self, tx: Transaction) {
         // TODO: Verify fees ?
 
         let tx_hash = tx.hash();
@@ -939,9 +934,6 @@ impl Mempool {
         match tx.transaction_data {
             TransactionData::Blob(ref blob_tx) => {
                 debug!("Got new blob tx {}", tx_hash);
-                if let Err(e) = blob_tx.validate_identity() {
-                    bail!("Invalid identity for blob tx {}: {}", tx_hash, e);
-                }
                 // TODO: we should check if the registration handler contract exists.
                 // TODO: would be good to not need to clone here.
                 self.handle_hyle_contract_registration(blob_tx);
@@ -962,7 +954,7 @@ impl Mempool {
                         .send(InternalMempoolEvent::OnProcessedNewTx(tx))
                         .log_warn("sending processed TX")
                 });
-                return Ok(());
+                return;
             }
             TransactionData::VerifiedProof(ref proof_tx) => {
                 debug!(
@@ -983,8 +975,6 @@ impl Mempool {
         let status_event = MempoolStatusEvent::WaitingDissemination(tx);
         let error_log = format!("Sending Status event{:?}", status_event);
         _ = self.bus.send(status_event).log_error(error_log);
-
-        Ok(())
     }
 
     fn process_proof_tx(
@@ -1273,8 +1263,7 @@ pub mod test {
 
         pub fn submit_tx(&mut self, tx: &Transaction) {
             self.mempool
-                .handle_api_message(RestApiMessage::NewTx(tx.clone()))
-                .expect("fail to handle new transaction");
+                .handle_api_message(RestApiMessage::NewTx(tx.clone()));
         }
 
         pub fn handle_poda_update(
@@ -1515,9 +1504,7 @@ pub mod test {
 
         pub fn submit_contract_tx(&mut self, contract_name: &'static str) {
             let tx = make_register_contract_tx(ContractName(contract_name.to_string()));
-            self.mempool
-                .handle_api_message(RestApiMessage::NewTx(tx))
-                .expect("Error while handling contract tx");
+            self.mempool.handle_api_message(RestApiMessage::NewTx(tx));
         }
 
         pub fn handle_consensus_event(&mut self, consensus_proposal: ConsensusProposal) {
@@ -1625,8 +1612,7 @@ pub mod test {
         let register_tx = make_register_contract_tx(ContractName::new("test1"));
 
         ctx.mempool
-            .handle_api_message(RestApiMessage::NewTx(register_tx.clone()))
-            .expect("fail to handle new transaction");
+            .handle_api_message(RestApiMessage::NewTx(register_tx.clone()));
 
         ctx.mempool.handle_data_proposal_management()?;
 
@@ -2043,8 +2029,7 @@ pub mod test {
         let register_tx = make_register_contract_tx(ContractName::new("test1"));
 
         ctx.mempool
-            .handle_api_message(RestApiMessage::NewTx(register_tx.clone()))
-            .expect("fail to handle new transaction");
+            .handle_api_message(RestApiMessage::NewTx(register_tx.clone()));
 
         ctx.mempool.handle_data_proposal_management()?;
 
