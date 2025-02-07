@@ -5,21 +5,21 @@ const OUTPUT_FILE = "RELEASE_NOTES.md";
 
 const GITMOJI_CATEGORIES = {
   "Breaking changes": ["💥", ":boom:"],
-  "Features": ["✨", ":sparkles:"],
-  "Bug Fixes": ["🐛", ":bug:"],
-  "Documentation": ["📝", ":books:"],
+  "Features": ["✨", ":sparkles:", "⚗️", ":alembic:", "🚩", ":triangular_flag_on_post:", "🧑‍💻", ":technologist:"],
+  "Bug Fixes": ["🐛", ":bug:", "🚑️", ":ambulance:", "🩹", ":adhesive_bandage:"],
+  "Documentation": ["📝", ":books:", "📄", ":page_facing_up:", "💡", ":bulb:"],
   "Genesis": ["🌱", ":seedling:"],
   "Configuration": ["🔧", ":wrench:"],
-  "Tests": ["✅", ":white_check_mark:"],
-  "Performance": ["⚡", ":zap:"],
-  "Refactoring": ["♻", ":recycle:"],
+  "Tests": ["✅", ":white_check_mark:", "🧪", ":test_tube:"],
+  "Performance": ["⚡", ":zap:", "🧵", ":thread:"],
+  "Refactoring": ["♻", ":recycle:", "🏗️", ":building_construction:", "🚚", ":truck:", "🧱", ":bricks:"],
   "Logging": ["🔊", ":loud_sound:", "🔇", ":mute:"],
   "Deployments": ["🚀", ":rocket:"],
   "Work in Progress": ["🚧", ":construction:"],
   "Security": ["🔒", ":lock:"],
   "Localization": ["🌍", ":earth_africa:"],
   "Devtools / CI": ["💚", ":green_heart:", "👷", ":construction_worker:", "🔨", ":hammer:"],
-  "Removed": ["🔥", ":fire:"],
+  "Removed": ["🔥", ":fire:", "⚰️", ":coffin:"],
   "Dependencies": ["📌", ":pushpin:", "➕", ":heavy_plus_sign:", "➖", ":heavy_minus_sign:", "⬆️", ":arrow_up:", "⬇️", ":arrow_down:"],
 };
 
