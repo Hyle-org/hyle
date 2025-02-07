@@ -5,8 +5,8 @@ use sha3::Digest;
 use hyle_contract_sdk::{Blob, BlobIndex, HyleOutput, ProgramId, StateDigest, TxHash, Verifier};
 
 use hyle_verifiers::{
-    noir_proof_verifier, risc0_proof_verifier, sp1_proof_verifier, validate_risc0_program_id,
-    validate_sp1_program_id,
+    noir_proof_verifier, risc0_proof_verifier, sp1_proof_verifier, tee_enclave_verifier,
+    tee_utils::TeeAttrs, validate_risc0_program_id, validate_sp1_program_id,
 };
 
 use crate::{
@@ -50,6 +50,20 @@ pub fn verify_proof(
         }
         "noir" => noir_proof_verifier(&proof.0, &program_id.0),
         "sp1" => sp1_proof_verifier(&proof.0, &program_id.0),
+        "tee_aws" => {
+            let TeeAttrs {
+                cose_sign1,
+                hyle_outputs_sig,
+                hyle_outputs,
+            } = borsh::from_slice::<TeeAttrs>(&proof.0).context("parsing test proof")?;
+            tee_enclave_verifier(
+                &cose_sign1,
+                &program_id.0,
+                &hyle_verifiers::AWS_ROOT_KEY,
+                &hyle_outputs_sig,
+                &hyle_outputs,
+            )
+        }
         _ => Err(anyhow::anyhow!("{} verifier not implemented yet", verifier)),
     }?;
     hyle_outputs.iter().for_each(|hyle_output| {
