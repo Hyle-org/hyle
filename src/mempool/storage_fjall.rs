@@ -103,17 +103,18 @@ impl Storage for LanesStorage {
     }
 
     fn put(&mut self, validator: ValidatorPublicKey, lane_entry: LaneEntry) -> Result<()> {
+        let dp_hash = lane_entry.data_proposal.hash();
         match self.can_be_put_on_top(
             &validator,
+            &dp_hash,
             lane_entry.data_proposal.parent_data_proposal_hash.as_ref(),
         ) {
             CanBePutOnTop::No => bail!(
                 "Can't store DataProposal {}, as parent is unknown ",
-                lane_entry.data_proposal.hash()
+                dp_hash
             ),
             CanBePutOnTop::Yes => {
                 // Add DataProposal to validator's lane
-                let dp_hash = lane_entry.data_proposal.hash();
                 self.by_hash.insert(
                     format!("{}:{}", validator, dp_hash),
                     encode_to_item(lane_entry.clone())?,
@@ -125,7 +126,6 @@ impl Storage for LanesStorage {
                 Ok(())
             }
             CanBePutOnTop::AlreadyPresent => {
-                let dp_hash = lane_entry.data_proposal.hash();
                 bail!("DataProposal {} was already in lane", dp_hash);
             }
             CanBePutOnTop::Fork => {

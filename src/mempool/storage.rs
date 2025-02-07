@@ -175,7 +175,11 @@ pub trait Storage {
             return Ok((DataProposalVerdict::Vote, Some(validator_lane_size)));
         }
 
-        match self.can_be_put_on_top(validator, data_proposal.parent_data_proposal_hash.as_ref()) {
+        match self.can_be_put_on_top(
+            validator,
+            &dp_hash,
+            data_proposal.parent_data_proposal_hash.as_ref(),
+        ) {
             // PARENT UNKNOWN
             CanBePutOnTop::No => {
                 // Get the last known parent hash in order to get all the next ones
@@ -579,6 +583,7 @@ pub trait Storage {
     fn can_be_put_on_top(
         &mut self,
         validator_key: &ValidatorPublicKey,
+        data_proposal_hash: &DataProposalHash,
         parent_data_proposal_hash: Option<&DataProposalHash>,
     ) -> CanBePutOnTop {
         // Data proposal parent hash needs to match the lane tip of that validator
@@ -591,7 +596,9 @@ pub trait Storage {
             if !self.contains(validator_key, dp_parent_hash) {
                 // UNKNOWN PARENT
                 return CanBePutOnTop::No;
-            } else {
+            }
+
+            if self.contains(validator_key, data_proposal_hash) {
                 return CanBePutOnTop::AlreadyPresent;
             }
         }
