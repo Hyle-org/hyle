@@ -150,6 +150,7 @@ macro_rules! module_handle_messages {
     };
 }
 
+#[macro_export]
 macro_rules! module_bus_client {
     (
         $(#[$meta:meta])*
@@ -169,7 +170,7 @@ macro_rules! module_bus_client {
     }
 }
 
-pub(crate) use module_bus_client;
+pub use module_bus_client;
 
 bus_client! {
     pub struct ShutdownClient {
