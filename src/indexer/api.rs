@@ -381,7 +381,7 @@ pub async fn get_blob_transactions_by_contract(
             FROM blobs
             LEFT JOIN blob_proof_outputs ON blobs.parent_dp_hash = blob_proof_outputs.blob_parent_dp_hash AND blobs.tx_hash = blob_proof_outputs.blob_tx_hash AND blobs.blob_index = blob_proof_outputs.blob_index
             WHERE blobs.contract_name = $1
-            GROUP BY blobs.parent_dp_hash, blobs.tx_hash, blobs.blob_index, blobs.identity, blobs.contract_name, blobs.data, blobs.verified
+            GROUP BY blobs.parent_dp_hash, blobs.tx_hash, blobs.blob_index, blobs.identity
         )
         SELECT
             t.tx_hash,

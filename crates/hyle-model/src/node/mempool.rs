@@ -37,12 +37,6 @@ impl DataSized for DataProposal {
 )]
 pub struct DataProposalHash(pub String);
 
-impl DataProposalHash {
-    pub fn is_empty(&self) -> bool {
-        self.0.len() == 0
-    }
-}
-
 impl Hashable<DataProposalHash> for DataProposal {
     fn hash(&self) -> DataProposalHash {
         let mut hasher = Sha3_256::new();
