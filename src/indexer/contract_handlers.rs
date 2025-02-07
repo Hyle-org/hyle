@@ -78,9 +78,13 @@ impl ContractHandler for HyllarToken {
 
         let data: StructuredBlobData<ERC20Action> = data.clone().try_into()?;
 
-        let caller: Identity = data
+        let caller = data
             .caller
-            .map(|_| contract_name.0.clone().into())
+            .and_then(|idx| {
+                tx.blobs
+                    .get(idx.0)
+                    .map(|b| Identity(b.contract_name.0.clone()))
+            })
             .unwrap_or(tx.identity.clone());
 
         let contract = HyllarTokenContract::init(state, caller);
