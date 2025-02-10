@@ -1441,119 +1441,101 @@ pub mod test {
         assert_eq!(state.contracts.get(&c1).unwrap().state.0, vec![0, 1, 2, 3]);
     }
 
-    // #[test_log::test(tokio::test)]
-    // async fn test_auto_settle_next_txs_after_settle() {
-    //     let mut state = new_node_state().await;
+    #[test_log::test(tokio::test)]
+    async fn test_auto_settle_next_txs_after_settle() {
+        let mut state = new_node_state().await;
 
-    //     let c1 = ContractName::new("c1");
-    //     let c2 = ContractName::new("c2");
-    //     let register_c1 = make_register_contract_tx(c1.clone());
-    //     let register_c2 = make_register_contract_tx(c2.clone());
+        let c1 = ContractName::new("c1");
+        let c2 = ContractName::new("c2");
+        let register_c1 = make_register_contract_tx(c1.clone());
+        let register_c2 = make_register_contract_tx(c2.clone());
 
-    //     // Add four transactions - A blocks B/C, B blocks D.
-    //     // Send proofs for B, C, D before A.
-    //     let blocking_tx = BlobTransaction {
-    //         identity: Identity::new("test.c1"),
-    //         blobs: vec![new_blob(&c1.0), new_blob(&c2.0)],
-    //     };
-    //     let ready_same_block = BlobTransaction {
-    //         identity: Identity::new("test.c1"),
-    //         blobs: vec![new_blob(&c1.0)],
-    //     };
-    //     let ready_later_block = BlobTransaction {
-    //         identity: Identity::new("test.c2"),
-    //         blobs: vec![new_blob(&c2.0)],
-    //     };
-    //     let ready_last_block = BlobTransaction {
-    //         identity: Identity::new("test2.c1"),
-    //         blobs: vec![new_blob(&c1.0)],
-    //     };
+        // Add four transactions - A blocks B/C, B blocks D.
+        // Send proofs for B, C, D before A.
+        let blocking_tx = BlobTransaction {
+            identity: Identity::new("test.c1"),
+            blobs: vec![new_blob(&c1.0), new_blob(&c2.0)],
+        };
+        let ready_same_block = BlobTransaction {
+            identity: Identity::new("test.c1"),
+            blobs: vec![new_blob(&c1.0)],
+        };
+        let ready_later_block = BlobTransaction {
+            identity: Identity::new("test.c2"),
+            blobs: vec![new_blob(&c2.0)],
+        };
+        let ready_last_block = BlobTransaction {
+            identity: Identity::new("test2.c1"),
+            blobs: vec![new_blob(&c1.0)],
+        };
 
-    //     let txs = vec![
-    //         register_c1.into(),
-    //         register_c2.into(),
-    //         blocking_tx.into(),
-    //         ready_same_block.into(),
-    //         ready_same_block_verified_proof.into(),
-    //         ready_last_block.into(),
-    //         ready_last_block_verified_proof.into(),
-    //     ];
+        let blocking_tx_hash = blocking_tx.hash();
 
-    //     let dp_hash = DataProposal {
-    //         parent_data_proposal_hash: None,
-    //         txs,
-    //     }
-    //     .hash();
+        let hyle_output =
+            make_hyle_output_with_state(blocking_tx.clone(), BlobIndex(0), &[0, 1, 2, 3], &[12]);
+        let blocking_tx_verified_proof_1 = new_proof_tx(&c1, &hyle_output, &blocking_tx_hash);
+        let hyle_output =
+            make_hyle_output_with_state(blocking_tx.clone(), BlobIndex(1), &[0, 1, 2, 3], &[22]);
+        let blocking_tx_verified_proof_2 = new_proof_tx(&c2, &hyle_output, &blocking_tx_hash);
 
-    //     let blocking_tx_hash = blocking_tx.hash();
-    //     let blocking_tx_id = TxId(dp_hash.clone(), blocking_tx_hash);
+        let ready_same_block_hash = ready_same_block.hash();
+        let hyle_output =
+            make_hyle_output_with_state(ready_same_block.clone(), BlobIndex(0), &[12], &[13]);
+        let ready_same_block_verified_proof =
+            new_proof_tx(&c1, &hyle_output, &ready_same_block_hash);
 
-    //     let hyle_output =
-    //         make_hyle_output_with_state(blocking_tx.clone(), BlobIndex(0), &[0, 1, 2, 3], &[12]);
-    //     let blocking_tx_verified_proof_1 = new_proof_tx(&c1, &hyle_output, &blocking_tx_id);
-    //     let hyle_output =
-    //         make_hyle_output_with_state(blocking_tx.clone(), BlobIndex(1), &[0, 1, 2, 3], &[22]);
-    //     let blocking_tx_verified_proof_2 = new_proof_tx(&c2, &hyle_output, &blocking_tx_id);
+        let ready_later_block_hash = ready_later_block.hash();
+        let hyle_output =
+            make_hyle_output_with_state(ready_later_block.clone(), BlobIndex(0), &[22], &[23]);
+        let ready_later_block_verified_proof =
+            new_proof_tx(&c1, &hyle_output, &ready_later_block_hash);
 
-    //     let ready_same_block_hash = ready_same_block.hash();
-    //     let ready_same_block_id = TxId(dp_hash.clone(), ready_same_block_hash);
-    //     let hyle_output =
-    //         make_hyle_output_with_state(ready_same_block.clone(), BlobIndex(0), &[12], &[13]);
-    //     let ready_same_block_verified_proof = new_proof_tx(&c1, &hyle_output, &ready_same_block_id);
+        let ready_last_block_hash = ready_last_block.hash();
+        let hyle_output =
+            make_hyle_output_with_state(ready_last_block.clone(), BlobIndex(0), &[13], &[14]);
+        let ready_last_block_verified_proof =
+            new_proof_tx(&c1, &hyle_output, &ready_last_block_hash);
 
-    //     let ready_later_block_hash = ready_later_block.hash();
-    //     let ready_later_block_id = TxId(dp_hash.clone(), ready_later_block_hash);
-    //     let hyle_output =
-    //         make_hyle_output_with_state(ready_later_block.clone(), BlobIndex(0), &[22], &[23]);
-    //     let ready_later_block_verified_proof =
-    //         new_proof_tx(&c1, &hyle_output, &ready_later_block_id);
+        state.handle_signed_block(&craft_signed_block(
+            104,
+            vec![
+                register_c1.into(),
+                register_c2.into(),
+                blocking_tx.into(),
+                ready_same_block.into(),
+                ready_same_block_verified_proof.into(),
+                ready_last_block.into(),
+                ready_last_block_verified_proof.into(),
+            ],
+        ));
 
-    //     let ready_last_block_hash = ready_last_block.hash();
-    //     let ready_last_block_id = TxId(dp_hash.clone(), ready_last_block_hash);
-    //     let hyle_output =
-    //         make_hyle_output_with_state(ready_last_block.clone(), BlobIndex(0), &[13], &[14]);
-    //     let ready_last_block_verified_proof = new_proof_tx(&c1, &hyle_output, &ready_last_block_id);
+        state.handle_signed_block(&craft_signed_block(
+            108,
+            vec![
+                ready_later_block.into(),
+                ready_later_block_verified_proof.into(),
+            ],
+        ));
 
-    //     state.handle_signed_block(&craft_signed_block(
-    //         104,
-    //         vec![
-    //             register_c1.into(),
-    //             register_c2.into(),
-    //             blocking_tx.into(),
-    //             ready_same_block.into(),
-    //             ready_same_block_verified_proof.into(),
-    //             ready_last_block.into(),
-    //             ready_last_block_verified_proof.into(),
-    //         ],
-    //     ));
-
-    //     state.handle_signed_block(&craft_signed_block(
-    //         108,
-    //         vec![
-    //             ready_later_block.into(),
-    //             ready_later_block_verified_proof.into(),
-    //         ],
-    //     ));
-
-    //     // Now settle the first, which should auto-settle the pending ones, then the ones waiting for these.
-    //     assert_eq!(
-    //         state
-    //             .handle_signed_block(&craft_signed_block(
-    //                 110,
-    //                 vec![
-    //                     blocking_tx_verified_proof_1.into(),
-    //                     blocking_tx_verified_proof_2.into(),
-    //                 ]
-    //             ))
-    //             .successful_txs,
-    //         vec![
-    //             blocking_tx_id,
-    //             ready_same_block_id,
-    //             ready_later_block_id,
-    //             ready_last_block_id
-    //         ]
-    //     );
-    // }
+        // Now settle the first, which should auto-settle the pending ones, then the ones waiting for these.
+        assert_eq!(
+            state
+                .handle_signed_block(&craft_signed_block(
+                    110,
+                    vec![
+                        blocking_tx_verified_proof_1.into(),
+                        blocking_tx_verified_proof_2.into(),
+                    ]
+                ))
+                .successful_txs,
+            vec![
+                blocking_tx_hash,
+                ready_same_block_hash,
+                ready_later_block_hash,
+                ready_last_block_hash
+            ]
+        );
+    }
     #[test_log::test(tokio::test)]
     async fn test_tx_timeout_simple() {
         let mut state = new_node_state().await;
@@ -1703,9 +1685,9 @@ pub mod test {
         [ready_same_block_hash, ready_later_block_hash]
             .iter()
             .for_each(|tx_hash| {
-                assert!(!block.timed_out_txs.contains(&tx_hash));
-                assert!(state.unsettled_transactions.get(&tx_hash).is_none());
-                assert!(block.successful_txs.contains(&tx_hash));
+                assert!(!block.timed_out_txs.contains(tx_hash));
+                assert!(state.unsettled_transactions.get(tx_hash).is_none());
+                assert!(block.successful_txs.contains(tx_hash));
             });
     }
 

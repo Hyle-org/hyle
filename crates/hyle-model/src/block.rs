@@ -1,5 +1,7 @@
 use std::{cmp::Ordering, collections::BTreeMap};
 
+use anyhow::Context;
+use anyhow::Result;
 use borsh::{BorshDeserialize, BorshSerialize};
 use derive_more::derive::Display;
 use serde::{Deserialize, Serialize};
@@ -31,6 +33,14 @@ pub struct Block {
 impl Block {
     pub fn total_txs(&self) -> usize {
         self.txs.len()
+    }
+
+    pub fn resolve_parent_dp_hash(&self, tx_hash: &TxHash) -> Result<DataProposalHash> {
+        Ok(self
+            .dp_hashes
+            .get(tx_hash)
+            .context(format!("No parent dp hash found for tx {}", tx_hash))?
+            .clone())
     }
 }
 
