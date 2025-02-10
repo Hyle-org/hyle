@@ -328,7 +328,7 @@ impl Indexer {
                         .push_bind(TransactionStatus::DataProposalCreated);
                 });
 
-                // If the TX is already present, we can assume it's more up-to-date so do nothing.
+                // If the TX is already present, we try to update its status, only if the status is lower.
                 query_builder.push(" ON CONFLICT(tx_hash, parent_dp_hash) DO UPDATE SET ");
 
                 query_builder.push("transaction_status=");
