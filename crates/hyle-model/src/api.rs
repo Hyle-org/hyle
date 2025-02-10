@@ -99,13 +99,6 @@ impl TransactionType {
             TransactionData::VerifiedProof(_) => TransactionType::ProofTransaction,
         }
     }
-    pub fn get_type_from_metadata(transaction: &Transaction) -> Self {
-        match transaction.transaction_data {
-            TransactionData::Blob(_) => TransactionType::BlobTransaction,
-            TransactionData::Proof(_) => TransactionType::ProofTransaction,
-            TransactionData::VerifiedProof(_) => TransactionType::ProofTransaction,
-        }
-    }
 }
 
 impl From<TransactionTypeMetadata> for TransactionType {
