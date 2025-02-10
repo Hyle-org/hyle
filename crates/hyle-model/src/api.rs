@@ -162,12 +162,14 @@ pub struct APIContractState {
     pub state_digest: Vec<u8>,             // The contract state stored in JSON format
 }
 
+#[serde_as]
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct APIBlob {
     pub tx_hash: TxHash,       // Corresponds to the transaction hash
     pub blob_index: u32,       // Index of the blob within the transaction
     pub identity: String,      // Identity of the blob
     pub contract_name: String, // Contract name associated with the blob
-    pub data: Vec<u8>,         // Actual blob data
+    #[serde_as(as = "serde_with::hex::Hex")]
+    pub data: Vec<u8>, // Actual blob data
     pub verified: bool,        // Verification status
 }
