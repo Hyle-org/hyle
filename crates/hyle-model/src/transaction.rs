@@ -15,6 +15,20 @@ pub struct Transaction {
     pub transaction_data: TransactionData,
 }
 
+impl Transaction {
+    pub fn metadata(&self, parent_data_proposal_hash: DataProposalHash) -> TransactionMetadata {
+        TransactionMetadata {
+            version: self.version,
+            transaction_type: match &self.transaction_data {
+                TransactionData::Blob(_) => TransactionTypeMetadata::Blob,
+                TransactionData::Proof(_) => TransactionTypeMetadata::Proof,
+                TransactionData::VerifiedProof(_) => TransactionTypeMetadata::VerifiedProof,
+            },
+            id: TxId(parent_data_proposal_hash.clone(), self.hash()),
+        }
+    }
+}
+
 impl DataSized for Transaction {
     fn estimate_size(&self) -> usize {
         match &self.transaction_data {
@@ -23,6 +37,25 @@ impl DataSized for Transaction {
             TransactionData::VerifiedProof(tx) => tx.proof_size,
         }
     }
+}
+
+#[derive(
+    Debug, Serialize, Deserialize, Default, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize,
+)]
+pub enum TransactionTypeMetadata {
+    #[default]
+    Blob,
+    Proof,
+    VerifiedProof,
+}
+
+#[derive(
+    Debug, Serialize, Deserialize, Default, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize,
+)]
+pub struct TransactionMetadata {
+    pub version: u32,
+    pub transaction_type: TransactionTypeMetadata,
+    pub id: TxId,
 }
 
 #[derive(

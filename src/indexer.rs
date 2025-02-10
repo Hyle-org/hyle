@@ -304,6 +304,37 @@ impl Indexer {
                     .await
                     .log_warn("Inserting tx data at status 'waiting dissemination'");
             }
+
+            MempoolStatusEvent::DataProposalCreated {
+                data_proposal_hash: _,
+                tx_mds,
+            } => {
+                let mut query_builder = QueryBuilder::new("INSERT INTO transactions (tx_hash, parent_dp_hash, version, transaction_type, transaction_status)");
+
+                query_builder.push_values(tx_mds, |mut b, value| {
+                    let tx_type: TransactionType = value.transaction_type.into();
+                    let version = i32::try_from(value.version)
+                        .map_err(|_| anyhow::anyhow!("Tx version is too large to fit into an i32"))
+                        .log_error("Converting version number into i32")
+                        .unwrap_or(0);
+
+                    let tx_hash: TxHashDb = value.id.1.into();
+                    let parent_data_proposal_hash_db: DataProposalHashDb = value.id.0.into();
+
+                    b.push_bind(tx_hash)
+                        .push_bind(parent_data_proposal_hash_db)
+                        .push_bind(version)
+                        .push_bind(tx_type)
+                        .push_bind(TransactionStatus::DataProposalCreated);
+                });
+
+                // If the TX is already present, we can assume it's more up-to-date so do nothing.
+                query_builder.push(" ON CONFLICT(tx_hash, parent_dp_hash) DO UPDATE SET ");
+
+                query_builder.push("transaction_status=");
+                query_builder.push_bind(TransactionStatus::DataProposalCreated);
+                query_builder.push(" WHERE transaction_status='waiting_dissemination'");
+            }
         }
 
         transaction.commit().await?;
@@ -1023,6 +1054,10 @@ mod test {
             version: 1,
             transaction_data: TransactionData::Blob(register_tx_1_wd),
         };
+        let register_tx_2_wd = Transaction {
+            version: 1,
+            transaction_data: TransactionData::Blob(register_tx_2_wd),
+        };
 
         indexer
             .handle_mempool_status_event(MempoolStatusEvent::WaitingDissemination {
@@ -1031,11 +1066,6 @@ mod test {
             })
             .await
             .expect("MempoolStatusEvent");
-
-        let register_tx_2_wd = Transaction {
-            version: 1,
-            transaction_data: TransactionData::Blob(register_tx_2_wd),
-        };
 
         indexer
             .handle_mempool_status_event(MempoolStatusEvent::WaitingDissemination {
@@ -1051,10 +1081,33 @@ mod test {
             })
             .await
             .expect("MempoolStatusEvent");
+        // indexer
+        //     .handle_mempool_status_event(MempoolStatusEvent::WaitingDissemination {
+        //         parent_data_proposal_hash: DataProposalHash::default(),
+        //         tx: proof_tx_1_wd.clone(),
+        //     })
+        //     .await
+        //     .expect("MempoolStatusEvent");
+
+        let data_proposal = DataProposal {
+            parent_data_proposal_hash: None,
+            txs: vec![
+                register_tx_1_wd.clone(),
+                register_tx_2_wd.clone(),
+                blob_transaction_wd.clone(),
+                proof_tx_1_wd.clone(),
+            ],
+        };
+
         indexer
-            .handle_mempool_status_event(MempoolStatusEvent::WaitingDissemination {
-                parent_data_proposal_hash: DataProposalHash::default(),
-                tx: proof_tx_1_wd.clone(),
+            .handle_mempool_status_event(MempoolStatusEvent::DataProposalCreated {
+                data_proposal_hash: data_proposal.hash(),
+                tx_mds: vec![
+                    register_tx_1_wd.metadata(DataProposalHash::default()),
+                    register_tx_2_wd.metadata(DataProposalHash::default()),
+                    blob_transaction_wd.metadata(DataProposalHash::default()),
+                    proof_tx_1_wd.metadata(DataProposalHash::default()),
+                ],
             })
             .await
             .expect("MempoolStatusEvent");

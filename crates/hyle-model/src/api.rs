@@ -6,8 +6,8 @@ use utoipa::ToSchema;
 
 use crate::{
     BlockHash, BlockHeight, ConsensusProposalHash, ContractName, DataProposalHash, Identity,
-    LaneBytesSize, ProgramId, StateDigest, Transaction, TransactionData, TxHash,
-    ValidatorPublicKey, Verifier,
+    LaneBytesSize, ProgramId, StateDigest, Transaction, TransactionData, TransactionTypeMetadata,
+    TxHash, ValidatorPublicKey, Verifier,
 };
 
 #[derive(Clone, Serialize, Deserialize, ToSchema)]
@@ -84,6 +84,7 @@ pub enum TransactionType {
 )]
 pub enum TransactionStatus {
     WaitingDissemination,
+    DataProposalCreated,
     Success,
     Failure,
     Sequenced,
@@ -96,6 +97,23 @@ impl TransactionType {
             TransactionData::Blob(_) => TransactionType::BlobTransaction,
             TransactionData::Proof(_) => TransactionType::ProofTransaction,
             TransactionData::VerifiedProof(_) => TransactionType::ProofTransaction,
+        }
+    }
+    pub fn get_type_from_metadata(transaction: &Transaction) -> Self {
+        match transaction.transaction_data {
+            TransactionData::Blob(_) => TransactionType::BlobTransaction,
+            TransactionData::Proof(_) => TransactionType::ProofTransaction,
+            TransactionData::VerifiedProof(_) => TransactionType::ProofTransaction,
+        }
+    }
+}
+
+impl From<TransactionTypeMetadata> for TransactionType {
+    fn from(value: TransactionTypeMetadata) -> Self {
+        match value {
+            TransactionTypeMetadata::Blob => TransactionType::BlobTransaction,
+            TransactionTypeMetadata::Proof => TransactionType::ProofTransaction,
+            TransactionTypeMetadata::VerifiedProof => TransactionType::ProofTransaction,
         }
     }
 }
