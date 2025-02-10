@@ -327,8 +327,8 @@ impl NodeState {
 
         // TODO: add diverse verifications ? (without the inital state checks!).
         // TODO: success to false is valid outcome and can be settled.
-        _ = Self::verify_hyle_output(unsettled_tx, &blob_proof_data.hyle_output)
-            .context("Validating blob proof")?;
+        Self::verify_hyle_output(unsettled_tx, &blob_proof_data.hyle_output)
+            .context("Validating unsettled blob tx")?;
 
         let Some(blob) = unsettled_tx
             .blobs

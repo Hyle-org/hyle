@@ -32,10 +32,6 @@ impl Block {
     pub fn total_txs(&self) -> usize {
         self.txs.len()
     }
-
-    pub fn get_tx_id(&self, hash: &TxHash) -> TxId {
-        TxId(self.dp_hashes.get(hash).unwrap().clone(), hash.clone())
-    }
 }
 
 impl Ord for Block {
@@ -74,7 +70,7 @@ impl SignedBlock {
             }
         }
 
-        return false;
+        false
     }
 
     pub fn count_txs(&self) -> usize {

@@ -475,8 +475,15 @@ impl Indexer {
 
         for (i, (tx_hash, events)) in (0..).zip(block.transactions_events.into_iter()) {
             let tx_hash: &TxHashDb = &tx_hash.into();
-            let parent_data_proposal_hash: DataProposalHashDb =
-                block.dp_hashes.get(&tx_hash.0).unwrap().clone().into();
+            let parent_data_proposal_hash: DataProposalHashDb = block
+                .dp_hashes
+                .get(&tx_hash.0)
+                .context(format!(
+                    "No parent data proposal hash present for tx {}",
+                    tx_hash.0
+                ))?
+                .clone()
+                .into();
             let serialized_events = serde_json::to_string(&events)?;
 
             sqlx::query(
@@ -503,7 +510,10 @@ impl Indexer {
             let dp_hash_db: DataProposalHashDb = block
                 .dp_hashes
                 .get(&settled_blob_tx_hash)
-                .unwrap()
+                .context(format!(
+                    "No parent data proposal hash present for settled blob tx {}",
+                    settled_blob_tx_hash.0
+                ))?
                 .clone()
                 .into();
             let tx_hash: &TxHashDb = &settled_blob_tx_hash.into();
@@ -519,7 +529,10 @@ impl Indexer {
             let dp_hash_db: DataProposalHashDb = block
                 .dp_hashes
                 .get(&failed_blob_tx_hash)
-                .unwrap()
+                .context(format!(
+                    "No parent data proposal hash present for failed blob tx {}",
+                    failed_blob_tx_hash.0
+                ))?
                 .clone()
                 .into();
             let tx_hash: &TxHashDb = &failed_blob_tx_hash.into();
@@ -536,7 +549,10 @@ impl Indexer {
             let dp_hash_db: DataProposalHashDb = block
                 .dp_hashes
                 .get(&timed_out_tx_hash)
-                .unwrap()
+                .context(format!(
+                    "No parent data proposal hash present for timed out tx {}",
+                    timed_out_tx_hash.0
+                ))?
                 .clone()
                 .into();
             let tx_hash: &TxHashDb = &timed_out_tx_hash.into();
@@ -552,13 +568,19 @@ impl Indexer {
             let proof_dp_hash: DataProposalHashDb = block
                 .dp_hashes
                 .get(&handled_blob_proof_output.proof_tx_hash)
-                .unwrap()
+                .context(format!(
+                    "No parent data proposal hash present for proof tx {}",
+                    handled_blob_proof_output.proof_tx_hash.0
+                ))?
                 .clone()
                 .into();
             let blob_dp_hash: DataProposalHashDb = block
                 .dp_hashes
                 .get(&handled_blob_proof_output.blob_tx_hash)
-                .unwrap()
+                .context(format!(
+                    "No parent data proposal hash present for blob tx {}",
+                    handled_blob_proof_output.blob_tx_hash.0
+                ))?
                 .clone()
                 .into();
             let proof_tx_hash: &TxHashDb = &handled_blob_proof_output.proof_tx_hash.into();
@@ -590,8 +612,15 @@ impl Indexer {
 
         // Handling verified blob (! must come after blob proof output, as it updates that)
         for (blob_tx_hash, blob_index, blob_proof_output_index) in block.verified_blobs {
-            let blob_tx_parent_dp_hash: DataProposalHashDb =
-                block.dp_hashes.get(&blob_tx_hash).unwrap().clone().into();
+            let blob_tx_parent_dp_hash: DataProposalHashDb = block
+                .dp_hashes
+                .get(&blob_tx_hash)
+                .context(format!(
+                    "No parent data proposal hash present for verified blob tx {}",
+                    blob_tx_hash.0
+                ))?
+                .clone()
+                .into();
             let blob_tx_hash: &TxHashDb = &blob_tx_hash.into();
             let blob_index = i32::try_from(blob_index.0)
                 .map_err(|_| anyhow::anyhow!("Blob index is too large to fit into an i32"))?;
@@ -625,8 +654,15 @@ impl Indexer {
             let program_id = &contract.program_id.0;
             let state_digest = &contract.state_digest.0;
             let contract_name = &contract.contract_name.0;
-            let tx_parent_dp_hash: DataProposalHashDb =
-                block.dp_hashes.get(&tx_hash).unwrap().clone().into();
+            let tx_parent_dp_hash: DataProposalHashDb = block
+                .dp_hashes
+                .get(&tx_hash)
+                .context(format!(
+                    "No parent data proposal hash present for registered contract tx {}",
+                    tx_hash.0
+                ))?
+                .clone()
+                .into();
             let tx_hash: &TxHashDb = &tx_hash.into();
 
             // Adding to Contract table

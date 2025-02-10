@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Error, Result};
+use anyhow::{anyhow, Context, Error, Result};
 use borsh::{BorshDeserialize, BorshSerialize};
 use hyle_contract_sdk::{BlobIndex, ContractName};
 use hyle_model::{RegisterContractEffect, TxId};
@@ -177,7 +177,14 @@ where
         }
 
         for s_tx in block.successful_txs {
-            let dp_hash = block.dp_hashes.get(&s_tx).unwrap().clone();
+            let dp_hash = block
+                .dp_hashes
+                .get(&s_tx)
+                .context(format!(
+                    "No parent data proposal hash present for successful tx {}",
+                    s_tx.0
+                ))?
+                .clone();
             self.settle_tx(&TxId(dp_hash, s_tx)).await?;
         }
         Ok(())
