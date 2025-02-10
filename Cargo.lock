@@ -2570,7 +2570,7 @@ dependencies = [
  "signal-child",
  "sqlx",
  "staking",
- "strum_macros",
+ "strum_macros 0.27.0",
  "syn 2.0.98",
  "tempfile",
  "test-log",
@@ -2641,7 +2641,7 @@ dependencies = [
  "serde_with",
  "sha3",
  "sqlx",
- "strum_macros",
+ "strum_macros 0.27.0",
  "utoipa",
 ]
 
@@ -5922,7 +5922,7 @@ dependencies = [
  "sp1-primitives",
  "sp1-stark",
  "strum",
- "strum_macros",
+ "strum_macros 0.26.4",
  "subenum",
  "thiserror 1.0.69",
  "tiny-keccak",
@@ -5978,7 +5978,7 @@ dependencies = [
  "sp1-stark",
  "static_assertions",
  "strum",
- "strum_macros",
+ "strum_macros 0.26.4",
  "tempfile",
  "thiserror 1.0.69",
  "tracing",
@@ -6274,7 +6274,7 @@ dependencies = [
  "sp1-prover",
  "sp1-stark",
  "strum",
- "strum_macros",
+ "strum_macros 0.26.4",
  "tempfile",
  "thiserror 1.0.69",
  "tracing",
@@ -6311,7 +6311,7 @@ dependencies = [
  "sp1-derive",
  "sp1-primitives",
  "strum",
- "strum_macros",
+ "strum_macros 0.26.4",
  "sysinfo",
  "tracing",
 ]
@@ -6629,7 +6629,7 @@ version = "0.26.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8fec0f0aef304996cf250b31b5a10dee7980c85da9d759361292b8bca5a18f06"
 dependencies = [
- "strum_macros",
+ "strum_macros 0.26.4",
 ]
 
 [[package]]
@@ -6637,6 +6637,19 @@ name = "strum_macros"
 version = "0.26.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4c6bee85a5a24955dc440386795aa378cd9cf82acd5f764469152d2270e581be"
+dependencies = [
+ "heck 0.5.0",
+ "proc-macro2",
+ "quote",
+ "rustversion",
+ "syn 2.0.98",
+]
+
+[[package]]
+name = "strum_macros"
+version = "0.27.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9688894b43459159c82bfa5a5fa0435c19cbe3c9b427fa1dd7b1ce0c279b18a7"
 dependencies = [
  "heck 0.5.0",
  "proc-macro2",
