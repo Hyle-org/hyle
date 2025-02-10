@@ -10,7 +10,7 @@ CREATE TABLE blocks (
 );
 
 CREATE TYPE transaction_type AS ENUM ('blob_transaction', 'proof_transaction', 'stake');
-CREATE TYPE transaction_status AS ENUM ('data_proposal_created', 'waiting_dissemination','success', 'failure', 'sequenced', 'timed_out');
+CREATE TYPE transaction_status AS ENUM ('waiting_dissemination','success', 'failure', 'sequenced', 'timed_out');
 
 CREATE TABLE transactions (
     parent_dp_hash TEXT NOT NULL,                           -- Data Proposal hash
@@ -18,7 +18,6 @@ CREATE TABLE transactions (
     version INT NOT NULL,
     transaction_type transaction_type NOT NULL,      -- Field to identify the type of transaction (used for joins)
     transaction_status transaction_status NOT NULL,  -- Field to identify the status of the transaction
-    data_proposal_created_at TIMESTAMP,
     block_hash TEXT REFERENCES blocks(hash) ON DELETE CASCADE,
     index INT,                              -- Index of the transaction within the block
     PRIMARY KEY (parent_dp_hash, tx_hash),
@@ -63,7 +62,7 @@ CREATE TABLE blob_proof_outputs (
     FOREIGN KEY (blob_parent_dp_hash, blob_tx_hash, blob_index) REFERENCES blobs(parent_dp_hash, tx_hash, blob_index) ON DELETE CASCADE,
     FOREIGN KEY (blob_tx_hash, blob_parent_dp_hash) REFERENCES transactions(tx_hash, parent_dp_hash) ON DELETE CASCADE,
     FOREIGN KEY (proof_tx_hash, proof_parent_dp_hash) REFERENCES transactions(tx_hash, parent_dp_hash) ON DELETE CASCADE,
-    UNIQUE (blob_tx_hash, blob_index, blob_proof_output_index)
+    UNIQUE (blob_parent_dp_hash, blob_tx_hash, blob_index, blob_proof_output_index)
 );
 
 CREATE TABLE contracts (

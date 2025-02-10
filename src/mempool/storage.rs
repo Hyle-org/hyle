@@ -1,7 +1,7 @@
 use anyhow::{bail, Result};
 use borsh::{BorshDeserialize, BorshSerialize};
 use hyle_model::{
-    ContractName, DataSized, ProgramId, RegisterContractAction, Signed, StructuredBlobData, TxHash,
+    ContractName, DataSized, ProgramId, RegisterContractAction, Signed, StructuredBlobData,
     ValidatorSignature, Verifier,
 };
 use serde::{Deserialize, Serialize};
@@ -494,13 +494,9 @@ pub trait Storage {
     }
 
     /// Creates and saves a new DataProposal if there are pending transactions
-    fn new_data_proposal(
-        &mut self,
-        crypto: &BlstCrypto,
-        txs: Vec<Transaction>,
-    ) -> Result<Option<(DataProposalHash, Vec<TxHash>)>> {
+    fn new_data_proposal(&mut self, crypto: &BlstCrypto, txs: Vec<Transaction>) -> Result<()> {
         if txs.is_empty() {
-            return Ok(None);
+            return Ok(());
         }
 
         let validator_key = self.id().clone();
@@ -517,16 +513,11 @@ pub trait Storage {
             data_proposal.txs.len()
         );
 
-        let hashes: (DataProposalHash, Vec<TxHash>) = (
-            data_proposal.hash(),
-            data_proposal.txs.iter().map(|tx| tx.hash()).collect(),
-        );
-
         let v_id = self.id().clone();
 
         self.store_data_proposal(crypto, &v_id, data_proposal)?;
 
-        Ok(Some(hashes))
+        Ok(())
     }
 
     fn get_lane_pending_entries(

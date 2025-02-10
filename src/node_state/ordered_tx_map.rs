@@ -16,8 +16,8 @@ pub struct OrderedTxMap {
 
 impl OrderedTxMap {
     #[allow(dead_code)]
-    pub fn get(&self, id: &TxHash) -> Option<&UnsettledBlobTransaction> {
-        self.map.get(id)
+    pub fn get(&self, hash: &TxHash) -> Option<&UnsettledBlobTransaction> {
+        self.map.get(hash)
     }
 
     /// Returns true if the tx is the next to settle for all the contracts it contains
@@ -41,9 +41,9 @@ impl OrderedTxMap {
 
     pub fn get_for_settlement(
         &mut self,
-        id: &TxHash,
+        hash: &TxHash,
     ) -> Option<(&mut UnsettledBlobTransaction, bool)> {
-        let tx = self.map.get_mut(id);
+        let tx = self.map.get_mut(hash);
         match tx {
             Some(tx) => {
                 let is_next_unsettled_tx = tx.blobs.iter().all(|blob_metadata| {

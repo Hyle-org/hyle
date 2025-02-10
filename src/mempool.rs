@@ -94,21 +94,10 @@ struct MempoolBusClient {
 }
 }
 
-/// Identifies where a tx is, by its hash. Useful to resolve tx hashes to tx ids (tx_hash, data_proposal_hash)
-#[derive(Default, BorshSerialize, BorshDeserialize)]
-enum TxLocation {
-    // In a data proposal identified by its hash
-    InDataProposal(DataProposalHash),
-    #[default]
-    // Not yet in a data proposal
-    Local,
-}
-
 #[derive(Default, BorshSerialize, BorshDeserialize)]
 pub struct MempoolStore {
     buffered_proposals: BTreeMap<ValidatorPublicKey, Vec<DataProposal>>,
     waiting_dissemination_txs: Vec<Transaction>,
-    tx_location: HashMap<TxHash, TxLocation>,
     last_ccp: Option<CommittedConsensusProposal>,
     blocks_under_contruction: VecDeque<BlockUnderConstruction>,
     buc_build_start_height: Option<u64>,
@@ -391,13 +380,7 @@ impl Mempool {
         let crypto = self.crypto.clone();
         let new_txs = std::mem::take(&mut self.waiting_dissemination_txs);
         // TODO: copy crypto in storage
-        if let Some((dp_hash, tx_hashes)) = self.lanes.new_data_proposal(&crypto, new_txs)? {
-            for tx_hash in tx_hashes.iter() {
-                self.tx_location
-                    .insert(tx_hash.clone(), TxLocation::InDataProposal(dp_hash.clone()));
-            }
-        }
-
+        self.lanes.new_data_proposal(&crypto, new_txs)?;
         let last_cut = self
             .last_ccp
             .as_ref()
