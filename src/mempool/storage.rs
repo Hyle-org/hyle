@@ -7,7 +7,7 @@ use hyle_model::{
 use serde::{Deserialize, Serialize};
 use staking::state::Staking;
 use std::{collections::HashMap, path::Path, sync::Arc, vec};
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, warn};
 
 use crate::{
     model::{
@@ -34,7 +34,6 @@ pub use hyle_model::LaneBytesSize;
 pub enum CanBePutOnTop {
     Yes,
     No,
-    AlreadyPresent,
     Fork,
 }
 
@@ -175,11 +174,7 @@ pub trait Storage {
             return Ok((DataProposalVerdict::Vote, Some(validator_lane_size)));
         }
 
-        match self.can_be_put_on_top(
-            validator,
-            &dp_hash,
-            data_proposal.parent_data_proposal_hash.as_ref(),
-        ) {
+        match self.can_be_put_on_top(validator, data_proposal.parent_data_proposal_hash.as_ref()) {
             // PARENT UNKNOWN
             CanBePutOnTop::No => {
                 // Get the last known parent hash in order to get all the next ones
@@ -187,10 +182,6 @@ pub trait Storage {
             }
             // LEGIT DATA PROPOSAL
             CanBePutOnTop::Yes => Ok((DataProposalVerdict::Process, None)),
-            CanBePutOnTop::AlreadyPresent => {
-                info!("DataProposal {} was already in lane", dp_hash);
-                Ok((DataProposalVerdict::Refuse, None))
-            }
             CanBePutOnTop::Fork => {
                 // FORK DETECTED
                 let last_known_hash = self.get_lane_hash_tip(validator);
@@ -583,7 +574,6 @@ pub trait Storage {
     fn can_be_put_on_top(
         &mut self,
         validator_key: &ValidatorPublicKey,
-        data_proposal_hash: &DataProposalHash,
         parent_data_proposal_hash: Option<&DataProposalHash>,
     ) -> CanBePutOnTop {
         // Data proposal parent hash needs to match the lane tip of that validator
@@ -596,10 +586,6 @@ pub trait Storage {
             if !self.contains(validator_key, dp_parent_hash) {
                 // UNKNOWN PARENT
                 return CanBePutOnTop::No;
-            }
-
-            if self.contains(validator_key, data_proposal_hash) {
-                return CanBePutOnTop::AlreadyPresent;
             }
         }
 
@@ -752,7 +738,11 @@ mod tests {
         storage
             .store_data_proposal(&crypto, pubkey2, dp.clone())
             .unwrap();
-        storage.store_data_proposal(&crypto, pubkey2, dp2).unwrap();
+        storage
+            .store_data_proposal(&crypto, pubkey2, dp2.clone())
+            .unwrap();
+
+        assert!(storage.store_data_proposal(&crypto, pubkey2, dp2).is_err());
 
         let dp2_fork = DataProposal {
             parent_data_proposal_hash: Some(dp.hash()),

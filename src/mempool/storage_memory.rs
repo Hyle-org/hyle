@@ -74,9 +74,11 @@ impl Storage for LanesStorage {
 
     fn put(&mut self, validator: ValidatorPublicKey, lane_entry: LaneEntry) -> Result<()> {
         let dp_hash = lane_entry.data_proposal.hash();
+        if self.contains(&validator, &dp_hash) {
+            bail!("DataProposal {} was already in lane", dp_hash);
+        }
         match self.can_be_put_on_top(
             &validator,
-            &dp_hash,
             lane_entry.data_proposal.parent_data_proposal_hash.as_ref(),
         ) {
             CanBePutOnTop::No => bail!(
@@ -95,9 +97,6 @@ impl Storage for LanesStorage {
                 self.update_lane_tip(validator, dp_hash, size);
 
                 Ok(())
-            }
-            CanBePutOnTop::AlreadyPresent => {
-                bail!("DataProposal {} was already in lane", dp_hash);
             }
             CanBePutOnTop::Fork => {
                 let last_known_hash = self.lanes_tip.get(&validator);
