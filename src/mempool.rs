@@ -174,7 +174,6 @@ pub enum MempoolStatusEvent {
         parent_data_proposal_hash: DataProposalHash,
         tx: Transaction,
     },
-    // DataProposalCreated(TimestampMs, DataProposalHash, Vec<TxHash>),
 }
 impl BusMessage for MempoolStatusEvent {}
 
