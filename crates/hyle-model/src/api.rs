@@ -84,7 +84,6 @@ pub enum TransactionType {
 )]
 pub enum TransactionStatus {
     WaitingDissemination,
-    DataProposalCreated,
     Success,
     Failure,
     Sequenced,
