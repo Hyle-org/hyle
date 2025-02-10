@@ -10,7 +10,7 @@ CREATE TABLE blocks (
 );
 
 CREATE TYPE transaction_type AS ENUM ('blob_transaction', 'proof_transaction', 'stake');
-CREATE TYPE transaction_status AS ENUM ('waiting_dissemination','success', 'failure', 'sequenced', 'timed_out');
+CREATE TYPE transaction_status AS ENUM ('data_proposal_created','waiting_dissemination','success', 'failure', 'sequenced', 'timed_out');
 
 CREATE TABLE transactions (
     parent_dp_hash TEXT NOT NULL,                           -- Data Proposal hash

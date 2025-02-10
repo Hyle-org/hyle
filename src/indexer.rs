@@ -333,7 +333,14 @@ impl Indexer {
 
                 query_builder.push("transaction_status=");
                 query_builder.push_bind(TransactionStatus::DataProposalCreated);
-                query_builder.push(" WHERE transaction_status='waiting_dissemination'");
+                query_builder
+                    .push(" WHERE transactions.transaction_status='waiting_dissemination'");
+
+                query_builder
+                    .build()
+                    .execute(transaction.deref_mut())
+                    .await
+                    .context("Upserting data at status data_proposal_created")?;
             }
         }
 
@@ -409,6 +416,8 @@ impl Indexer {
                             .push_bind(false);
                     },
                 );
+
+                query_builder.push(" ON CONFLICT DO NOTHING");
 
                 let query = query_builder.build();
                 query.execute(transaction).await?;
@@ -805,7 +814,7 @@ mod test {
     use assert_json_diff::assert_json_include;
     use axum_test::TestServer;
     use hyle_contract_sdk::{BlobIndex, HyleOutput, Identity, ProgramId, StateDigest, TxHash};
-    use hyle_model::api::{APIBlock, APIContract};
+    use hyle_model::api::{APIBlock, APIContract, APITransaction};
     use serde_json::json;
     use std::{
         future::IntoFuture,
@@ -862,13 +871,14 @@ mod test {
     }
 
     fn new_blob_tx(
+        identity: Identity,
         first_contract_name: ContractName,
         second_contract_name: ContractName,
     ) -> Transaction {
         Transaction {
             version: 1,
             transaction_data: TransactionData::Blob(BlobTransaction {
-                identity: Identity::new("test.c1"),
+                identity,
                 blobs: vec![
                     Blob {
                         contract_name: first_contract_name,
@@ -922,6 +932,22 @@ mod test {
         }
     }
 
+    async fn assert_tx_status(server: &TestServer, tx_hash: TxHash, tx_status: TransactionStatus) {
+        let transactions_response = server
+            .get(format!("/transaction/hash/{}", tx_hash).as_str())
+            .await;
+        transactions_response.assert_status_ok();
+        let json_response = transactions_response.json::<APITransaction>();
+        assert_eq!(json_response.transaction_status, tx_status);
+    }
+
+    async fn assert_tx_not_found(server: &TestServer, tx_hash: TxHash) {
+        let transactions_response = server
+            .get(format!("/transaction/hash/{}", tx_hash).as_str())
+            .await;
+        transactions_response.assert_status_not_found();
+    }
+
     #[test_log::test(tokio::test)]
     async fn test_indexer_handle_block_flow() -> Result<()> {
         let container = Postgres::default()
@@ -950,8 +976,11 @@ mod test {
         let register_tx_1 = new_register_tx(first_contract_name.clone(), initial_state.clone());
         let register_tx_2 = new_register_tx(second_contract_name.clone(), initial_state.clone());
 
-        let blob_transaction =
-            new_blob_tx(first_contract_name.clone(), second_contract_name.clone());
+        let blob_transaction = new_blob_tx(
+            Identity::new("test.c1"),
+            first_contract_name.clone(),
+            second_contract_name.clone(),
+        );
         let blob_transaction_hash = blob_transaction.hash();
 
         let proof_tx_1 = new_proof_tx(
@@ -972,8 +1001,11 @@ mod test {
             vec![99, 49, 1, 2, 3, 99, 50, 1, 2, 3],
         );
 
-        let other_blob_transaction =
-            new_blob_tx(second_contract_name.clone(), first_contract_name.clone());
+        let other_blob_transaction = new_blob_tx(
+            Identity::new("test.c1"),
+            second_contract_name.clone(),
+            first_contract_name.clone(),
+        );
         let other_blob_transaction_hash = other_blob_transaction.hash();
         // Send two proofs for the same blob
         let proof_tx_3 = new_proof_tx(
@@ -1008,13 +1040,14 @@ mod test {
 
         // Handling a block containing txs
 
+        let parent_data_proposal = DataProposal {
+            parent_data_proposal_hash: None,
+            txs,
+        };
         let mut signed_block = SignedBlock::default();
         signed_block.data_proposals.push((
             ValidatorPublicKey("ttt".into()),
-            vec![DataProposal {
-                parent_data_proposal_hash: None,
-                txs,
-            }],
+            vec![parent_data_proposal.clone()],
         ));
         let block = node_state.handle_signed_block(&signed_block);
 
@@ -1023,7 +1056,9 @@ mod test {
             .await
             .expect("Failed to handle block");
 
+        //
         // Handling MempoolStatusEvent
+        //
 
         let initial_state_wd = StateDigest(vec![1, 2, 3]);
         let next_state_wd = StateDigest(vec![4, 5, 6]);
@@ -1036,6 +1071,7 @@ mod test {
             new_register_tx(second_contract_name_wd.clone(), initial_state_wd.clone());
 
         let blob_transaction_wd = new_blob_tx(
+            Identity::new("test.wd1"),
             first_contract_name_wd.clone(),
             second_contract_name_wd.clone(),
         );
@@ -1061,36 +1097,55 @@ mod test {
 
         indexer
             .handle_mempool_status_event(MempoolStatusEvent::WaitingDissemination {
-                parent_data_proposal_hash: DataProposalHash::default(),
+                parent_data_proposal_hash: parent_data_proposal.hash(),
                 tx: register_tx_1_wd.clone(),
             })
             .await
             .expect("MempoolStatusEvent");
 
+        assert_tx_status(
+            &server,
+            register_tx_1_wd.hash(),
+            TransactionStatus::WaitingDissemination,
+        )
+        .await;
+
         indexer
             .handle_mempool_status_event(MempoolStatusEvent::WaitingDissemination {
-                parent_data_proposal_hash: DataProposalHash::default(),
+                parent_data_proposal_hash: parent_data_proposal.hash(),
                 tx: register_tx_2_wd.clone(),
             })
             .await
             .expect("MempoolStatusEvent");
+
+        assert_tx_status(
+            &server,
+            register_tx_2_wd.hash(),
+            TransactionStatus::WaitingDissemination,
+        )
+        .await;
+
         indexer
             .handle_mempool_status_event(MempoolStatusEvent::WaitingDissemination {
-                parent_data_proposal_hash: DataProposalHash::default(),
+                parent_data_proposal_hash: parent_data_proposal.hash(),
                 tx: blob_transaction_wd.clone(),
             })
             .await
             .expect("MempoolStatusEvent");
-        // indexer
-        //     .handle_mempool_status_event(MempoolStatusEvent::WaitingDissemination {
-        //         parent_data_proposal_hash: DataProposalHash::default(),
-        //         tx: proof_tx_1_wd.clone(),
-        //     })
-        //     .await
-        //     .expect("MempoolStatusEvent");
+
+        assert_tx_status(
+            &server,
+            blob_transaction_wd.hash(),
+            TransactionStatus::WaitingDissemination,
+        )
+        .await;
+
+        assert_tx_not_found(&server, proof_tx_1_wd.hash()).await;
+
+        let parent_data_proposal_hash = parent_data_proposal.hash();
 
         let data_proposal = DataProposal {
-            parent_data_proposal_hash: None,
+            parent_data_proposal_hash: Some(parent_data_proposal_hash.clone()),
             txs: vec![
                 register_tx_1_wd.clone(),
                 register_tx_2_wd.clone(),
@@ -1099,16 +1154,72 @@ mod test {
             ],
         };
 
+        let data_proposal_created_event = MempoolStatusEvent::DataProposalCreated {
+            data_proposal_hash: data_proposal.hash(),
+            tx_mds: vec![
+                register_tx_1_wd.metadata(parent_data_proposal_hash.clone()),
+                register_tx_2_wd.metadata(parent_data_proposal_hash.clone()),
+                blob_transaction_wd.metadata(parent_data_proposal_hash.clone()),
+                proof_tx_1_wd.metadata(parent_data_proposal_hash.clone()),
+            ],
+        };
+
         indexer
-            .handle_mempool_status_event(MempoolStatusEvent::DataProposalCreated {
-                data_proposal_hash: data_proposal.hash(),
-                tx_mds: vec![
-                    register_tx_1_wd.metadata(DataProposalHash::default()),
-                    register_tx_2_wd.metadata(DataProposalHash::default()),
-                    blob_transaction_wd.metadata(DataProposalHash::default()),
-                    proof_tx_1_wd.metadata(DataProposalHash::default()),
-                ],
-            })
+            .handle_mempool_status_event(data_proposal_created_event.clone())
+            .await
+            .expect("MempoolStatusEvent");
+
+        assert_tx_status(
+            &server,
+            register_tx_1_wd.hash(),
+            TransactionStatus::DataProposalCreated,
+        )
+        .await;
+        assert_tx_status(
+            &server,
+            register_tx_2_wd.hash(),
+            TransactionStatus::DataProposalCreated,
+        )
+        .await;
+        assert_tx_status(
+            &server,
+            blob_transaction_wd.hash(),
+            TransactionStatus::DataProposalCreated,
+        )
+        .await;
+        assert_tx_status(
+            &server,
+            proof_tx_1_wd.hash(),
+            TransactionStatus::DataProposalCreated,
+        )
+        .await;
+
+        let mut signed_block = SignedBlock::default();
+        signed_block.consensus_proposal.timestamp = 1234;
+        signed_block.consensus_proposal.slot = 2;
+        signed_block
+            .data_proposals
+            .push((ValidatorPublicKey("ttt".into()), vec![data_proposal]));
+        let block = node_state.handle_signed_block(&signed_block);
+
+        indexer
+            .handle_processed_block(block)
+            .await
+            .expect("Failed to handle block");
+
+        assert_tx_status(&server, register_tx_1_wd.hash(), TransactionStatus::Success).await;
+        assert_tx_status(&server, register_tx_2_wd.hash(), TransactionStatus::Success).await;
+        assert_tx_status(
+            &server,
+            blob_transaction_wd.hash(),
+            TransactionStatus::Sequenced,
+        )
+        .await;
+        assert_tx_status(&server, proof_tx_1_wd.hash(), TransactionStatus::Success).await;
+
+        // Check a mempool status event does not change a Success/Sequenced status
+        indexer
+            .handle_mempool_status_event(data_proposal_created_event.clone())
             .await
             .expect("MempoolStatusEvent");
 
