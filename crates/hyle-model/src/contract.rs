@@ -113,8 +113,8 @@ pub struct TxHash(pub String);
     PartialEq,
     Eq,
     Hash,
-    BorshSerialize,
     BorshDeserialize,
+    BorshSerialize,
     Copy,
 )]
 #[cfg_attr(feature = "full", derive(utoipa::ToSchema))]

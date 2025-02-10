@@ -1,10 +1,14 @@
+use anyhow::Result;
+use chrono::{DateTime, Utc};
 use std::num::TryFromIntError;
 
+use anyhow::Context;
 use hyle_model::api::{
     APIBlob, APIBlock, APIContract, APIContractState, APITransaction, TransactionStatus,
     TransactionType,
 };
-use hyle_model::ConsensusProposalHash;
+use hyle_model::utils::TimestampMs;
+use hyle_model::{ConsensusProposalHash, DataProposalHash};
 use serde::{Deserialize, Serialize};
 
 use sqlx::postgres::PgRow;
@@ -40,6 +44,7 @@ impl From<BlockDb> for APIBlock {
 pub struct TransactionDb {
     // Struct for the transactions table
     pub tx_hash: TxHashDb,                         // Transaction hash
+    pub parent_dp_hash: DataProposalHash,          // Corresponds to the data proposal hash
     pub block_hash: Option<ConsensusProposalHash>, // Corresponds to the block hash
     pub index: Option<u32>,                        // Index of the transaction within the block
     pub version: u32,                              // Transaction version
@@ -51,6 +56,8 @@ impl<'r> FromRow<'r, PgRow> for TransactionDb {
     fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {
         let tx_hash = row.try_get("tx_hash")?;
         let block_hash = row.try_get("block_hash")?;
+        let dp_hash_db: DataProposalHashDb = row.try_get("parent_dp_hash")?;
+        let parent_dp_hash = dp_hash_db.0;
         let index: Option<i32> = row.try_get("index")?;
         let version: i32 = row.try_get("version")?;
         let version: u32 = version
@@ -68,6 +75,7 @@ impl<'r> FromRow<'r, PgRow> for TransactionDb {
         };
         Ok(TransactionDb {
             tx_hash,
+            parent_dp_hash,
             block_hash,
             index,
             version,
@@ -81,6 +89,7 @@ impl From<TransactionDb> for APITransaction {
     fn from(val: TransactionDb) -> Self {
         APITransaction {
             tx_hash: val.tx_hash.0,
+            parent_dp_hash: val.parent_dp_hash,
             block_hash: val.block_hash,
             index: val.index,
             version: val.version,
@@ -163,6 +172,44 @@ impl From<ContractStateDb> for APIContractState {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+pub struct DataProposalHashDb(pub DataProposalHash);
+
+impl From<DataProposalHash> for DataProposalHashDb {
+    fn from(dp_hash: DataProposalHash) -> Self {
+        DataProposalHashDb(dp_hash)
+    }
+}
+
+impl Type<Postgres> for DataProposalHashDb {
+    fn type_info() -> sqlx::postgres::PgTypeInfo {
+        <String as Type<Postgres>>::type_info()
+    }
+}
+impl sqlx::Encode<'_, sqlx::Postgres> for DataProposalHashDb {
+    fn encode_by_ref(
+        &self,
+        buf: &mut sqlx::postgres::PgArgumentBuffer,
+    ) -> std::result::Result<
+        sqlx::encode::IsNull,
+        std::boxed::Box<(dyn std::error::Error + std::marker::Send + std::marker::Sync + 'static)>,
+    > {
+        <String as sqlx::Encode<sqlx::Postgres>>::encode_by_ref(&self.0 .0, buf)
+    }
+}
+
+impl<'r> sqlx::Decode<'r, sqlx::Postgres> for DataProposalHashDb {
+    fn decode(
+        value: sqlx::postgres::PgValueRef<'r>,
+    ) -> std::result::Result<
+        DataProposalHashDb,
+        std::boxed::Box<(dyn std::error::Error + std::marker::Send + std::marker::Sync + 'static)>,
+    > {
+        let inner = <String as sqlx::Decode<sqlx::Postgres>>::decode(value)?;
+        Ok(DataProposalHashDb(DataProposalHash(inner)))
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct TxHashDb(pub TxHash);
 
 impl From<TxHash> for TxHashDb {
@@ -198,4 +245,9 @@ impl<'r> sqlx::Decode<'r, sqlx::Postgres> for TxHashDb {
         let inner = <String as sqlx::Decode<sqlx::Postgres>>::decode(value)?;
         Ok(TxHashDb(TxHash(inner)))
     }
+}
+
+pub fn into_utc_date_time(ts: TimestampMs) -> Result<DateTime<Utc>> {
+    DateTime::from_timestamp_millis(ts.0.try_into().context("Converting u64 into i64")?)
+        .context("Converting i64 into UTC DateTime")
 }

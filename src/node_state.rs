@@ -6,7 +6,7 @@ use crate::model::*;
 use crate::{
     mempool::verifiers, model::contract_registration::validate_contract_registration_metadata,
 };
-use anyhow::{bail, Error, Result};
+use anyhow::{bail, Context, Error, Result};
 use borsh::{BorshDeserialize, BorshSerialize};
 use hyle_contract_sdk::{utils::parse_structured_blob, BlobIndex, HyleOutput, TxHash};
 use ordered_tx_map::OrderedTxMap;
@@ -96,6 +96,7 @@ impl NodeState {
             registered_contracts: vec![],
             updated_states: BTreeMap::new(),
             transactions_events: BTreeMap::new(),
+            dp_hashes: BTreeMap::new(),
         };
 
         // We'll need to remember some data to validate transactions proofs.
@@ -108,10 +109,13 @@ impl NodeState {
 
         self.clear_timeouts(&mut block_under_construction);
 
-        let txs = signed_block.txs();
         let mut next_unsettled_txs = BTreeSet::new();
         // Handle all transactions
-        for tx in txs.iter() {
+        for (tx_id, tx) in signed_block.iter_txs_with_id() {
+            block_under_construction
+                .dp_hashes
+                .insert(tx_id.1.clone(), tx_id.0.clone());
+
             match &tx.transaction_data {
                 TransactionData::Blob(blob_transaction) => {
                     match self.handle_blob_tx(blob_transaction, tx_context.clone()) {
@@ -128,7 +132,7 @@ impl NodeState {
                         Ok(None) => {
                             block_under_construction
                                 .transactions_events
-                                .entry(blob_transaction.hash())
+                                .entry(tx_id.1.clone())
                                 .or_default()
                                 .push(TransactionStateEvent::Sequenced);
                         }
@@ -137,10 +141,10 @@ impl NodeState {
                             error!("{err}");
                             block_under_construction
                                 .transactions_events
-                                .entry(blob_transaction.hash())
+                                .entry(tx_id.1.clone())
                                 .or_default()
                                 .push(TransactionStateEvent::Error(err));
-                            block_under_construction.failed_txs.push(tx.hash());
+                            block_under_construction.failed_txs.push(tx_id.1);
                         }
                     }
                 }
@@ -151,13 +155,12 @@ impl NodeState {
                     // First, store the proofs and check if we can settle the transaction
                     // NB: if some of the blob proof outputs are bad, we just ignore those
                     // but we don't actually fail the transaction.
-                    let proof_tx_hash = proof_tx.hash();
                     let blob_tx_to_try_and_settle = proof_tx
                         .proven_blobs
                         .iter()
                         .filter_map(|blob_proof_data| {
                             match self.handle_blob_proof(
-                                proof_tx_hash.clone(),
+                                tx_id.1.clone(),
                                 &mut block_under_construction.blob_proof_outputs,
                                 &mut block_under_construction.transactions_events,
                                 blob_proof_data,
@@ -166,18 +169,18 @@ impl NodeState {
                                 Err(err) => {
                                     let err = format!(
                                         "Failed to handle blob #{} in verified proof transaction {:?}: {err}",
-                                        blob_proof_data.hyle_output.index, proof_tx.hash());
+                                        blob_proof_data.hyle_output.index, &tx_id);
                                     info!("{err}");
                                     block_under_construction
                                         .transactions_events
-                                        .entry(proof_tx.hash())
+                                        .entry(tx_id.1.clone())
                                         .or_default()
                                         .push(TransactionStateEvent::Error(err));
                                     None
-                                }
-                            }
-                        })
-                        .collect::<BTreeSet<_>>();
+
+                                                                    }
+                            }})
+                            .collect::<BTreeSet<_>>();
                     // Then try to settle transactions when we can.
                     next_unsettled_txs = self.settle_txs_until_done(
                         &mut block_under_construction,
@@ -197,7 +200,7 @@ impl NodeState {
             }
             next_unsettled_txs.clear();
         }
-        block_under_construction.txs = txs;
+        block_under_construction.txs = signed_block.iter_clone_txs_with_id().collect();
         block_under_construction
     }
 
@@ -221,7 +224,8 @@ impl NodeState {
         tx: &BlobTransaction,
         tx_context: Arc<TxContext>,
     ) -> Result<Option<TxHash>, Error> {
-        debug!("Handle blob tx: {:?} (hash: {})", tx, tx.hash());
+        let tx_hash = tx.hash();
+        debug!("Handle blob tx: {:?} (hash: {})", tx, tx_hash);
 
         tx.validate_identity()?;
 
@@ -287,7 +291,7 @@ impl NodeState {
         // If we're behind other pending transactions, we can't settle yet.
         should_try_and_settle = self.unsettled_transactions.add(UnsettledBlobTransaction {
             identity: tx.identity.clone(),
-            hash: blob_tx_hash.clone(),
+            hash: tx_hash.clone(),
             tx_context,
             blobs_hash,
             blobs,
@@ -299,7 +303,7 @@ impl NodeState {
         }
 
         if should_try_and_settle {
-            Ok(Some(blob_tx_hash))
+            Ok(Some(tx_hash))
         } else {
             Ok(None)
         }
@@ -312,22 +316,19 @@ impl NodeState {
         tx_events: &mut BTreeMap<TxHash, Vec<TransactionStateEvent>>,
         blob_proof_data: &BlobProofOutput,
     ) -> Result<Option<TxHash>, Error> {
+        let blob_tx_hash = blob_proof_data.blob_tx_hash.clone();
         // Find the blob being proven and whether we should try to settle the TX.
-        let (unsettled_tx, should_settle_tx) = match self
+        let Some((unsettled_tx, should_settle_tx)) = self
             .unsettled_transactions
-            .get_for_settlement(&blob_proof_data.blob_tx_hash)
-        {
-            Some(a) => a,
-            _ => {
-                bail!("BlobTx {} not found", blob_proof_data.blob_tx_hash);
-            }
+            .get_for_settlement(&blob_tx_hash)
+        else {
+            bail!("BlobTx {} not found", &blob_tx_hash);
         };
 
         // TODO: add diverse verifications ? (without the inital state checks!).
         // TODO: success to false is valid outcome and can be settled.
-        if let Err(e) = Self::verify_hyle_output(unsettled_tx, &blob_proof_data.hyle_output) {
-            bail!("Failed to validate blob proof: {:?}", e);
-        }
+        Self::verify_hyle_output(unsettled_tx, &blob_proof_data.hyle_output)
+            .context("Validating unsettled blob tx")?;
 
         let Some(blob) = unsettled_tx
             .blobs
@@ -336,7 +337,7 @@ impl NodeState {
             bail!(
                 "blob at index {} not found in blob TX {}",
                 blob_proof_data.hyle_output.index.0,
-                blob_proof_data.blob_tx_hash
+                &blob_tx_hash
             );
         };
 
@@ -346,11 +347,11 @@ impl NodeState {
             blob_proof_data.hyle_output.tx_hash.0, blob_proof_data.hyle_output.index
         );
         tx_events
-            .entry(blob_proof_data.hyle_output.tx_hash.clone())
+            .entry(blob_tx_hash.clone())
             .or_default()
             .push(TransactionStateEvent::NewProof {
                 blob_index: blob_proof_data.hyle_output.index,
-                proof_tx: proof_tx_hash.clone(),
+                proof_tx_hash: proof_tx_hash.clone(),
             });
 
         blob.possible_proofs.push((
@@ -461,7 +462,7 @@ impl NodeState {
             ) {
                 Some(res) => res,
                 None => {
-                    bail!("Not ready to settle.");
+                    bail!("Tx: {} is not ready to settle.", unsettled_tx.hash);
                 }
             };
 
@@ -771,7 +772,7 @@ impl NodeState {
         // Verify Tx hash matches
         if hyle_output.tx_hash != unsettled_tx.hash {
             bail!(
-                "Proof tx hash '{:?}' does not correspond to BlobTx hash '{:?}'.",
+                "Proof tx hash '{}' does not correspond to BlobTx hash '{}'.",
                 hyle_output.tx_hash,
                 unsettled_tx.hash
             )
@@ -1029,17 +1030,19 @@ pub mod test {
             blobs: vec![new_blob("c1")],
         };
 
+        let blob_tx_id = blob_tx.hash();
+
         let ctx = bogus_tx_context();
         state.handle_blob_tx(&blob_tx, ctx.clone()).unwrap();
 
         let mut hyle_output = make_hyle_output(blob_tx.clone(), BlobIndex(0));
         hyle_output.tx_ctx = Some((*ctx).clone());
-        let verified_proof = new_proof_tx(&c1, &hyle_output, &blob_tx.hash());
+        let verified_proof = new_proof_tx(&c1, &hyle_output, &blob_tx_id);
         // Modify something so it would fail.
         let mut ctx = (*ctx).clone();
         ctx.timestamp = 1234;
         hyle_output.tx_ctx = Some(ctx);
-        let verified_proof_bad = new_proof_tx(&c1, &hyle_output, &blob_tx.hash());
+        let verified_proof_bad = new_proof_tx(&c1, &hyle_output, &blob_tx_id);
 
         let block = state.handle_signed_block(&craft_signed_block(
             1,
@@ -1093,6 +1096,7 @@ pub mod test {
             identity: identity.clone(),
             blobs: vec![new_blob(&c1.0), new_blob(&c2.0)],
         };
+
         let blob_tx_hash = blob_tx.hash();
 
         state.handle_register_contract_effect(&register_c1);
@@ -1203,6 +1207,7 @@ pub mod test {
             identity: Identity::new("test.c1"),
             blobs: vec![new_blob(&c1.0), new_blob(&c1.0)],
         };
+
         let blob_tx_hash = blob_tx.hash();
 
         state.handle_register_contract_effect(&register_c1);
@@ -1284,6 +1289,7 @@ pub mod test {
             identity: Identity::new("test.c1"),
             blobs: vec![first_blob, second_blob, third_blob],
         };
+
         let blob_tx_hash = blob_tx.hash();
 
         state.handle_register_contract_effect(&register_c1);
@@ -1340,6 +1346,7 @@ pub mod test {
             identity: Identity::new("test.c1"),
             blobs: vec![first_blob, second_blob],
         };
+
         let blob_tx_hash = blob_tx.hash();
 
         state.handle_register_contract_effect(&register_c1);
@@ -1395,6 +1402,7 @@ pub mod test {
             identity: Identity::new("test.c1"),
             blobs: vec![first_blob, second_blob, third_blob],
         };
+
         let blob_tx_hash = blob_tx.hash();
 
         state.handle_register_contract_effect(&register_c1);
@@ -1460,7 +1468,9 @@ pub mod test {
             identity: Identity::new("test2.c1"),
             blobs: vec![new_blob(&c1.0)],
         };
+
         let blocking_tx_hash = blocking_tx.hash();
+
         let hyle_output =
             make_hyle_output_with_state(blocking_tx.clone(), BlobIndex(0), &[0, 1, 2, 3], &[12]);
         let blocking_tx_verified_proof_1 = new_proof_tx(&c1, &hyle_output, &blocking_tx_hash);
@@ -1526,7 +1536,6 @@ pub mod test {
             ]
         );
     }
-
     #[test_log::test(tokio::test)]
     async fn test_tx_timeout_simple() {
         let mut state = new_node_state().await;
@@ -1538,12 +1547,12 @@ pub mod test {
             identity: Identity::new("test.c1"),
             blobs: vec![new_blob(&c1.0), new_blob(&c1.0)],
         };
+
+        let txs = vec![register_c1.into(), blob_tx.clone().into()];
+
         let blob_tx_hash = blob_tx.hash();
 
-        state.handle_signed_block(&craft_signed_block(
-            3,
-            vec![register_c1.into(), blob_tx.into()],
-        ));
+        state.handle_signed_block(&craft_signed_block(3, txs));
 
         // This should trigger the timeout
         let timed_out_tx_hashes = state
@@ -1566,11 +1575,16 @@ pub mod test {
             identity: Identity::new("test.c1"),
             blobs: vec![new_blob(&c1.0)],
         };
-        let blob_tx_hash = blob_tx.hash();
-        state.handle_signed_block(&craft_signed_block(
+
+        let crafted_block = craft_signed_block(
             104,
             vec![register_c1.clone().into(), blob_tx.clone().into()],
-        ));
+        );
+
+        let blob_tx_hash = blob_tx.hash();
+
+        state.handle_signed_block(&crafted_block);
+
         assert_eq!(
             timeouts::tests::get(&state.timeouts, &blob_tx_hash),
             Some(BlockHeight(204))
@@ -1619,6 +1633,7 @@ pub mod test {
             blobs: vec![new_blob(&c1.0), new_blob(&c2.0)],
         };
         let blocking_tx_hash = blocking_tx.hash();
+
         let ready_same_block = BlobTransaction {
             identity: Identity::new("test.c1"),
             blobs: vec![new_blob(&c1.0)],
@@ -1628,16 +1643,16 @@ pub mod test {
             blobs: vec![new_blob(&c2.0)],
         };
         let ready_same_block_hash = ready_same_block.hash();
+        let ready_later_block_hash = ready_later_block.hash();
         let hyle_output = make_hyle_output(ready_same_block.clone(), BlobIndex(0));
         let ready_same_block_verified_proof =
             new_proof_tx(&c1, &hyle_output, &ready_same_block_hash);
 
-        let ready_later_block_hash = ready_later_block.hash();
         let hyle_output = make_hyle_output(ready_later_block.clone(), BlobIndex(0));
         let ready_later_block_verified_proof =
             new_proof_tx(&c2, &hyle_output, &ready_later_block_hash);
 
-        state.handle_signed_block(&craft_signed_block(
+        let crafted_block = craft_signed_block(
             104,
             vec![
                 register_c1.into(),
@@ -1646,15 +1661,19 @@ pub mod test {
                 ready_same_block.into(),
                 ready_same_block_verified_proof.into(),
             ],
-        ));
+        );
 
-        state.handle_signed_block(&craft_signed_block(
+        state.handle_signed_block(&crafted_block);
+
+        let later_crafted_block = craft_signed_block(
             108,
             vec![
                 ready_later_block.into(),
                 ready_later_block_verified_proof.into(),
             ],
-        ));
+        );
+
+        state.handle_signed_block(&later_crafted_block);
 
         // Time out
         let block = state.handle_signed_block(&craft_signed_block(204, vec![]));
@@ -1797,11 +1816,13 @@ pub mod test {
         #[test_log::test(tokio::test)]
         async fn test_register_contract_simple_hyle() {
             let mut state = new_node_state().await;
+
             let register_c1 = make_tx("hyle.hyle".into(), "hyle".into(), "c1".into());
             let register_c2 = make_tx("hyle.hyle".into(), "hyle".into(), "c2.hyle".into());
             let register_c3 = make_tx("hyle.hyle".into(), "hyle".into(), "c3".into());
 
-            state.handle_signed_block(&craft_signed_block(1, vec![register_c1.clone().into()]));
+            let block_1 = craft_signed_block(1, vec![register_c1.clone().into()]);
+            state.handle_signed_block(&block_1);
 
             state.handle_signed_block(&craft_signed_block(
                 2,
@@ -1820,6 +1841,7 @@ pub mod test {
 
             let block =
                 state.handle_signed_block(&craft_signed_block(3, vec![register_c1.clone().into()]));
+
             assert_eq!(block.failed_txs, vec![register_c1.hash()]);
             assert_eq!(state.contracts.len(), 4);
         }
@@ -1827,6 +1849,7 @@ pub mod test {
         #[test_log::test(tokio::test)]
         async fn test_register_contract_failure() {
             let mut state = new_node_state().await;
+
             let register_1 = make_tx("hyle.hyle".into(), "hyle".into(), "c1.hyle.lol".into());
             let register_2 = make_tx("other.hyle".into(), "hyle".into(), "c2.hyle.hyle".into());
             let register_3 = make_tx("hyle.hyle".into(), "hyle".into(), "c3.other".into());
@@ -1840,7 +1863,7 @@ pub mod test {
             };
             let register_good = make_tx("hyle.hyle".into(), "hyle".into(), "c1.hyle".into());
 
-            let block = state.handle_signed_block(&craft_signed_block(
+            let signed_block = craft_signed_block(
                 1,
                 vec![
                     register_1.clone().into(),
@@ -1850,10 +1873,12 @@ pub mod test {
                     register_5.clone().into(),
                     register_good.clone().into(),
                 ],
-            ));
+            );
+
+            let block = state.handle_signed_block(&signed_block);
 
             assert_eq!(state.contracts.len(), 2);
-            assert_eq!(block.successful_txs, vec![register_good.hash(),]);
+            assert_eq!(block.successful_txs, vec![register_good.hash()]);
             assert_eq!(
                 block.failed_txs,
                 vec![
@@ -1894,13 +1919,15 @@ pub mod test {
             // Change identity to change blob tx hash
             compositing_register_good.identity = "test2.hydentity".into();
 
-            state.handle_signed_block(&craft_signed_block(
+            let crafted_block = craft_signed_block(
                 102,
                 vec![
                     compositing_register_willfail.clone().into(),
                     compositing_register_good.clone().into(),
                 ],
-            ));
+            );
+
+            state.handle_signed_block(&crafted_block);
             assert_eq!(state.contracts.len(), 2);
 
             let proof_tx = new_proof_tx(
@@ -1933,7 +1960,7 @@ pub mod test {
 
             assert_eq!(
                 block.timed_out_txs,
-                vec![compositing_register_willfail.hash(),]
+                vec![compositing_register_willfail.hash()]
             );
             assert_eq!(state.contracts.len(), 3);
         }

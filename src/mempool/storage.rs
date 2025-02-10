@@ -514,6 +514,7 @@ pub trait Storage {
         );
 
         let v_id = self.id().clone();
+
         self.store_data_proposal(crypto, &v_id, data_proposal)?;
 
         Ok(())
@@ -623,9 +624,7 @@ mod tests {
         mempool::{storage::DataProposalVerdict, storage_memory::LanesStorage, MempoolNetMessage},
         utils::crypto::{self, BlstCrypto},
     };
-    use hyle_model::{
-        DataProposal, DataSized, Signature, SignedByValidator, Transaction, ValidatorSignature,
-    };
+    use hyle_model::{DataSized, Signature};
     use staking::state::Staking;
     use std::collections::HashMap;
 

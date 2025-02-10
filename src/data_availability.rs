@@ -354,20 +354,27 @@ impl DataAvailability {
         }
         trace!("Block {} {}: {:#?}", block.height(), block.hash(), block);
 
-        if block.height().0 % 10 == 0 || !block.txs().is_empty() {
+        if block.height().0 % 10 == 0 || block.has_txs() {
             info!(
-                "new block {} {} with {} txs",
+                "new block #{} 0x{} with {} txs",
                 block.height(),
                 block.hash(),
-                block.txs().len(),
+                block.count_txs(),
             );
         }
         debug!(
-            "new block {} {} with {} transactions: {:#?}",
+            "new block #{} 0x{} with {} transactions: {}",
             block.height(),
             block.hash(),
-            block.txs().len(),
-            block.txs().iter().map(|tx| tx.hash().0).collect::<Vec<_>>()
+            block.count_txs(),
+            block
+                .iter_txs_with_id()
+                .map(|(tx_id, tx)| {
+                    let variant: &'static str = (&tx.transaction_data).into();
+                    format!("\n - 0x{} {}", tx_id.1, variant)
+                })
+                .collect::<Vec<_>>()
+                .join("")
         );
 
         // Stream block to all peers
