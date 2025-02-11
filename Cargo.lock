@@ -6010,9 +6010,9 @@ dependencies = [
 
 [[package]]
 name = "sp1-lib"
-version = "4.0.1"
+version = "4.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "aac3d3deeed25e9cad80e4275faf5954aa63f213ed3422f0e098dd2d0c1b0c0e"
+checksum = "fab1b5989a446f294724cebab0e759ffd7034ba93d2aa7b97045303f7c50bf74"
 dependencies = [
  "bincode",
  "serde",
@@ -6021,9 +6021,9 @@ dependencies = [
 
 [[package]]
 name = "sp1-primitives"
-version = "4.1.0"
+version = "4.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0a959284c1f0df979160dba98aa5d3d245697a5a3b9c992207afcd9e62e37732"
+checksum = "1cf66c2781c36037c94a5905b6e05e7396fd4d12df09cd7f05cf96e3f0889f49"
 dependencies = [
  "bincode",
  "hex",
@@ -6289,9 +6289,9 @@ dependencies = [
 
 [[package]]
 name = "sp1-zkvm"
-version = "4.0.1"
+version = "4.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f971db10d58b13c9a5d8cee4f7d1195d6f8a2debb9c33bd67f4eea5817432d42"
+checksum = "04bd303b49b54a10dc82b909272b1e971fa851756743070ccf9676554459417f"
 dependencies = [
  "cfg-if",
  "getrandom 0.2.15",
