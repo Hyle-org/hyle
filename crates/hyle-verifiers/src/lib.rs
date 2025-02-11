@@ -1,18 +1,28 @@
-#![warn(unused_crate_dependencies)]
-
 use std::fmt::Write;
 use std::io::Read;
 
 use anyhow::{bail, Context, Error};
+use aws_nitro_enclaves_cose::CoseSign1;
+use hex_literal::hex;
 use hyle_model::{HyleOutput, ProgramId};
 use rand::Rng;
 use sp1_sdk::{ProverClient, SP1ProofWithPublicValues, SP1VerifyingKey};
+use tee_utils::{
+    parse_attestation_map, parse_enclave_key, parse_timestamp, verify_enclave_signature,
+    verify_root_of_trust,
+};
 
 mod noir_utils;
+pub mod tee_utils;
 
 pub mod risc0 {
     pub use risc0_zkvm::serde::from_slice;
 }
+
+/// Attestation documents are signed by the AWS Nitro Attestation PKI, which includes a root certificate for the commercial AWS partitions.
+/// The root certificate can be downloaded from https://aws-nitro-enclaves.amazonaws.com/AWS_NitroEnclaves_Root-G1.zip,
+/// and it can be verified using the following SHA256 checksum.
+pub const AWS_ROOT_KEY: [u8; 96] = hex!("fc0254eba608c1f36870e29ada90be46383292736e894bfff672d989444b5051e534a4b1f6dbe3c0bc581a32b7b176070ede12d69a3fea211b66e752cf7dd1dd095f6f1370f4170843d9dc100121e4cf63012809664487c9796284304dc53ff4");
 
 pub fn risc0_proof_verifier(
     encoded_receipt: &[u8],
@@ -132,6 +142,46 @@ pub fn sp1_proof_verifier(
     Ok(vec![hyle_output])
 }
 
+/// Verifies the attestation document, assert enclave that run is legit, and returns the hyle outputs.
+/// The verification happens in 3 main steps:
+/// 1. Parse the attestation map from the COSE_Sign1. This step allows us to:
+///     - identify that the enclave and thus trust the information it provides.
+///     - extract the PCRs to compare with the program_id.
+/// 2. Verify the chain of trust
+/// 3. Assert the hyle_output's signature is legit and is coming from the enclave.
+pub fn tee_enclave_verifier(
+    cose_sign1: &[u8],           // Document that attests the enclave id
+    program_id: &[u8],           // Identifies the program that will be run on the enclave
+    root_pkey: &[u8],            // Identifies the root of trust
+    hyle_outputs_sig: &[u8],     // Used to assert hyle_outputs comes from the enclave
+    hyle_outputs: &[HyleOutput], // Hyle_outputs produced by the enclave
+) -> Result<Vec<HyleOutput>, Error> {
+    // From attestation_doc to CoseSign1
+    let cose_sign1 = CoseSign1::from_bytes(cose_sign1)
+        .map_err(|e| anyhow::anyhow!(format!("cose_sign1 issue: {e}")))?;
+
+    // Parse attestation map
+    let mut attestation_map = parse_attestation_map(&cose_sign1)?;
+
+    // Extract PCRs to compare with program_id
+    let pcrs = tee_utils::parse_pcrs(&mut attestation_map)?;
+    if pcrs.to_vec() != program_id {
+        bail!("Invalid program ID");
+    }
+
+    // Verify chain of trust
+    let timestamp = parse_timestamp(&mut attestation_map)?;
+    verify_root_of_trust(&mut attestation_map, &cose_sign1, timestamp, root_pkey)?;
+
+    // Extract enclave key
+    let enclave_key = parse_enclave_key(&mut attestation_map)?;
+
+    // Verify enclave's signature
+    verify_enclave_signature(&enclave_key, hyle_outputs_sig, hyle_outputs)?;
+
+    Ok(hyle_outputs.to_vec())
+}
+
 pub fn validate_risc0_program_id(program_id: &ProgramId) -> Result<(), Error> {
     std::convert::TryInto::<risc0_zkvm::sha::Digest>::try_into(program_id.0.as_slice())
         .map_err(|e| anyhow::anyhow!("Invalid Risc0 image ID: {}", e))?;
@@ -146,11 +196,12 @@ pub fn validate_sp1_program_id(program_id: &ProgramId) -> Result<(), Error> {
 
 #[cfg(test)]
 mod tests {
+    use hex_literal::hex;
     use std::{fs::File, io::Read};
 
     use hyle_model::{BlobIndex, HyleOutput, Identity, ProgramId, StateDigest, TxHash};
 
-    use crate::validate_risc0_program_id;
+    use crate::{tee_enclave_verifier, validate_risc0_program_id, AWS_ROOT_KEY};
 
     use super::noir_proof_verifier;
 
@@ -201,8 +252,8 @@ mod tests {
     #[ignore = "manual test"]
     #[test_log::test]
     fn test_noir_proof_verifier() {
-        let noir_proof = load_file_as_bytes("./tests/proofs/webauthn.noir.proof");
-        let image_id = load_file_as_bytes("./tests/proofs/webauthn.noir.vk");
+        let noir_proof = load_file_as_bytes("../../tests/proofs/webauthn.noir.proof");
+        let image_id = load_file_as_bytes("../../tests/proofs/webauthn.noir.vk");
 
         let result = noir_proof_verifier(&noir_proof, &image_id);
         match result {
@@ -230,12 +281,44 @@ mod tests {
         }
     }
 
-    #[test]
+    #[test_log::test]
     fn test_check_risc0_program_id() {
         let valid_program_id = ProgramId(vec![0; 32]); // Assuming a valid 32-byte ID
         let invalid_program_id = ProgramId(vec![0; 31]); // Invalid length
 
         assert!(validate_risc0_program_id(&valid_program_id).is_ok());
         assert!(validate_risc0_program_id(&invalid_program_id).is_err());
+    }
+
+    #[ignore = "manual test"]
+    #[test_log::test]
+    fn test_cose_attestation_verifier() {
+        let cose_sign1 = load_file_as_bytes("../../tests/proofs/tee_marlin.bin");
+
+        let pcrs0 = hex!("254a196aa577a2096f02eaca25c7e57248a50cf6185e3f6d80f95dfccfc274dd364465987391d021528d101aa0f5fd2b");
+        let pcrs1 = hex!("bcdf05fefccaa8e55bf2c8d6dee9e79bbff31e34bf28a99aa19e6b29c37ee80b214a414b7607236edf26fcb78654e63f");
+        let pcrs2 = hex!("58d5fd4380a0cc61f84fd82e488261e8874cfd7f00ff3e7cde4216619ca871344f9c40e8b2cab65a5c5faccfceb52de7");
+
+        let mut program_id_bytes = Vec::new();
+        program_id_bytes.extend_from_slice(&pcrs0);
+        program_id_bytes.extend_from_slice(&pcrs1);
+        program_id_bytes.extend_from_slice(&pcrs2);
+
+        let hyle_outputs_sig: &[u8] = &[];
+        let hyle_outputs = vec![HyleOutput {
+            program_outputs: "Hello, World!".as_bytes().to_vec(),
+            ..HyleOutput::default()
+        }];
+
+        let result = tee_enclave_verifier(
+            &cose_sign1,
+            &program_id_bytes,
+            &AWS_ROOT_KEY,
+            hyle_outputs_sig,
+            &hyle_outputs,
+        )
+        .unwrap();
+        tracing::error!("{:?}", result);
+        assert!(!result.is_empty());
     }
 }
