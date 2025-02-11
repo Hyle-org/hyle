@@ -263,10 +263,10 @@ impl Mempool {
                     .log_error("Handling MempoolNetMessage in Mempool");
             }
             listen<RestApiMessage> cmd => {
-                self.handle_api_message(cmd);
+                let _ = self.handle_api_message(cmd).log_error("Handling API Message in Mempool");
             }
             listen<TcpServerMessage> cmd => {
-                self.handle_tcp_server_message(cmd);
+                let _ = self.handle_tcp_server_message(cmd).log_error("Handling TCP Server message in Mempool");
             }
             listen<InternalMempoolEvent> event => {
                 let _ = self.handle_internal_event(event)
@@ -344,26 +344,22 @@ impl Mempool {
         self.lanes.new_cut(&staking.0, &previous_cut)
     }
 
-    fn handle_api_message(&mut self, command: RestApiMessage) {
+    fn handle_api_message(&mut self, command: RestApiMessage) -> Result<()> {
         match command {
-            RestApiMessage::NewTx(tx) => {
-                _ = self.on_new_tx(tx).log_error("New Tx");
-            }
+            RestApiMessage::NewTx(tx) => self.on_new_tx(tx).context("New Tx"),
         }
     }
 
-    fn handle_tcp_server_message(&mut self, command: TcpServerMessage) {
+    fn handle_tcp_server_message(&mut self, command: TcpServerMessage) -> Result<()> {
         match command {
-            TcpServerMessage::NewTx(tx) => {
-                _ = self.on_new_tx(tx).log_error("New Tx");
-            }
+            TcpServerMessage::NewTx(tx) => self.on_new_tx(tx).context("New Tx"),
         }
     }
 
     fn handle_internal_event(&mut self, event: InternalMempoolEvent) -> Result<()> {
         match event {
             InternalMempoolEvent::OnProcessedNewTx(tx) => {
-                _ = self.on_new_tx(tx).log_error("Handling internal event");
+                _ = self.on_new_tx(tx).context("Handling internal event");
                 Ok(())
             }
             InternalMempoolEvent::OnProcessedDataProposal((validator, verdict, data_proposal)) => {
@@ -502,7 +498,7 @@ impl Mempool {
             if let Some(block_under_contruction) = self.blocks_under_contruction.pop_front() {
                 if self
                     .build_signed_block_and_emit(&block_under_contruction)
-                    .log_error("Processing queued committedConsensusProposal")
+                    .context("Processing queued committedConsensusProposal")
                     .is_err()
                 {
                     // if failure, we push the ccp at the end
@@ -979,20 +975,18 @@ impl Mempool {
         self.metrics
             .snapshot_pending_tx(self.waiting_dissemination_txs.len());
 
-        let parent_data_proposal_hash = self
-            .lanes
-            .lanes_tip
-            .get(self.crypto.validator_pubkey())
-            .context("Retrieving local tip")?
-            .clone()
-            .0;
+        // FIXME: WaitingDissemination is not sent for the first DP of the lane
+        if let Some((parent_data_proposal_hash, _)) =
+            self.lanes.lanes_tip.get(self.crypto.validator_pubkey())
+        {
+            let status_event = MempoolStatusEvent::WaitingDissemination {
+                parent_data_proposal_hash: parent_data_proposal_hash.clone(),
+                tx,
+            };
+            let error_log = format!("Sending Status event{:?}", status_event);
+            self.bus.send(status_event).context(error_log)?;
+        }
 
-        let status_event = MempoolStatusEvent::WaitingDissemination {
-            parent_data_proposal_hash,
-            tx,
-        };
-        let error_log = format!("Sending Status event{:?}", status_event);
-        _ = self.bus.send(status_event).context(error_log)?;
         Ok(())
     }
 
@@ -1282,7 +1276,8 @@ pub mod test {
 
         pub fn submit_tx(&mut self, tx: &Transaction) {
             self.mempool
-                .handle_api_message(RestApiMessage::NewTx(tx.clone()));
+                .handle_api_message(RestApiMessage::NewTx(tx.clone()))
+                .unwrap();
         }
 
         pub fn handle_poda_update(
@@ -1523,7 +1518,9 @@ pub mod test {
 
         pub fn submit_contract_tx(&mut self, contract_name: &'static str) {
             let tx = make_register_contract_tx(ContractName(contract_name.to_string()));
-            self.mempool.handle_api_message(RestApiMessage::NewTx(tx));
+            self.mempool
+                .handle_api_message(RestApiMessage::NewTx(tx))
+                .unwrap();
         }
 
         pub fn handle_consensus_event(&mut self, consensus_proposal: ConsensusProposal) {
@@ -1631,7 +1628,8 @@ pub mod test {
         let register_tx = make_register_contract_tx(ContractName::new("test1"));
 
         ctx.mempool
-            .handle_api_message(RestApiMessage::NewTx(register_tx.clone()));
+            .handle_api_message(RestApiMessage::NewTx(register_tx.clone()))
+            .unwrap();
 
         ctx.mempool.handle_data_proposal_management()?;
 
@@ -2048,7 +2046,8 @@ pub mod test {
         let register_tx = make_register_contract_tx(ContractName::new("test1"));
 
         ctx.mempool
-            .handle_api_message(RestApiMessage::NewTx(register_tx.clone()));
+            .handle_api_message(RestApiMessage::NewTx(register_tx.clone()))
+            .unwrap();
 
         ctx.mempool.handle_data_proposal_management()?;
 

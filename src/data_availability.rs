@@ -152,7 +152,7 @@ impl DataAvailability {
             listen<GenesisEvent> cmd => {
                 if let GenesisEvent::GenesisBlock(signed_block) = cmd {
                     debug!("🌱  Genesis block received with validators {:?}", signed_block.consensus_proposal.staking_actions.clone());
-                    self.handle_signed_block(signed_block).await;
+                    let _= self.handle_signed_block(signed_block).await.log_error("Handling GenesisBlock Event");
                 } else {
                     // TODO: I think this is technically a data race with p2p ?
                     self.need_catchup = true;
@@ -172,7 +172,7 @@ impl DataAvailability {
             Some(streamed_block) = catchup_block_receiver.recv() => {
                 let height = streamed_block.height().0;
 
-                self.handle_signed_block(streamed_block).await;
+                let _ = self.handle_signed_block(streamed_block).await.log_error(format!("Handling streamed block {height}"));
 
                 // Stop streaming after reaching a height communicated by Mempool
                 if let Some(until_height) = self.catchup_height.as_ref() {
@@ -258,7 +258,7 @@ impl DataAvailability {
     async fn handle_mempool_event(&mut self, evt: MempoolBlockEvent) -> Result<()> {
         match evt {
             MempoolBlockEvent::BuiltSignedBlock(signed_block) => {
-                self.handle_signed_block(signed_block).await;
+                self.handle_signed_block(signed_block).await?;
             }
             MempoolBlockEvent::StartedBuildingBlocks(height) => {
                 self.catchup_height = Some(height - 1);
@@ -287,12 +287,13 @@ impl DataAvailability {
 
         Ok(())
     }
-    async fn handle_signed_block(&mut self, block: SignedBlock) {
+
+    async fn handle_signed_block(&mut self, block: SignedBlock) -> Result<()> {
         let hash = block.hash();
         // if new block is already handled, ignore it
         if self.blocks.contains(&hash) {
             warn!("Block {} {} already exists !", block.height(), block.hash());
-            return;
+            return Ok(());
         }
         // if new block is not the next block in the chain, buffer
         if !self.blocks.is_empty() {
@@ -305,7 +306,7 @@ impl DataAvailability {
                 );
                 debug!("Buffering block {}", block.hash());
                 self.buffered_signed_blocks.insert(block);
-                return;
+                return Ok(());
             }
         // if genesis block is missing, buffer
         } else if block.height() != BlockHeight(0) {
@@ -315,13 +316,14 @@ impl DataAvailability {
             );
             trace!("Buffering block {}", block.hash());
             self.buffered_signed_blocks.insert(block);
-            return;
+            return Ok(());
         }
 
         // store block
         self.add_processed_block(block).await;
         self.pop_buffer(hash).await;
-        _ = self.blocks.persist().log_error("Persisting blocks");
+        self.blocks.persist().context("Persisting blocks")?;
+        Ok(())
     }
 
     async fn pop_buffer(&mut self, mut last_block_hash: ConsensusProposalHash) {
@@ -586,7 +588,7 @@ pub mod tests {
         }
 
         pub async fn handle_signed_block(&mut self, block: SignedBlock) {
-            self.da.handle_signed_block(block.clone()).await;
+            self.da.handle_signed_block(block.clone()).await.unwrap();
             let full_block = self.node_state.handle_signed_block(&block);
             self.node_state_bus
                 .send(NodeStateEvent::NewBlock(Box::new(full_block)))
@@ -635,7 +637,7 @@ pub mod tests {
         }
         blocks.reverse();
         for block in blocks {
-            da.handle_signed_block(block).await;
+            da.handle_signed_block(block).await.unwrap();
         }
     }
 
@@ -679,7 +681,7 @@ pub mod tests {
         }
         blocks.reverse();
         for block in blocks {
-            da.handle_signed_block(block).await;
+            da.handle_signed_block(block).await.unwrap();
         }
 
         tokio::spawn(async move {
