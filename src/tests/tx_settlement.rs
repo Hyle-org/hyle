@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use client_sdk::rest_client::{IndexerApiHttpClient, NodeApiHttpClient};
 use hyle_model::{
     api::APIRegisterContract, BlobTransaction, ContractAction, ContractName, Hashable, ProgramId,
