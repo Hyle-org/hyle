@@ -992,7 +992,7 @@ impl Mempool {
             .lanes
             .lanes_tip
             .get(self.crypto.validator_pubkey())
-            .map(|tip| tip.clone())
+            .cloned()
             // TODO: may be a new validator should first emit an empty data proposal with its validator pubkey inside
             // Genesis parent hash ?
             .unwrap_or((
