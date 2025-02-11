@@ -279,8 +279,7 @@ impl Indexer {
                     .map_err(|_| anyhow::anyhow!("Tx version is too large to fit into an i32"))?;
 
                 // Insert the transaction into the transactions table
-                let tx_type = TransactionTypeDb::get_type_from_transaction(&tx);
-
+                let tx_type = TransactionTypeDb::from(&tx);
                 let tx_hash: &TxHashDb = &tx_hash.into();
 
                 // If the TX is already present, we can assume it's more up-to-date so do nothing.
@@ -463,7 +462,7 @@ impl Indexer {
                 .map_err(|_| anyhow::anyhow!("Tx version is too large to fit into an i32"))?;
 
             // Insert the transaction into the transactions table
-            let tx_type = TransactionTypeDb::get_type_from_transaction(&tx);
+            let tx_type = TransactionTypeDb::from(&tx);
             let tx_status = match tx.transaction_data {
                 TransactionData::Blob(_) => TransactionStatusDb::Sequenced,
                 TransactionData::Proof(_) => TransactionStatusDb::Success,

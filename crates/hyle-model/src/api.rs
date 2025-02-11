@@ -93,7 +93,7 @@ pub enum TransactionStatusDb {
 }
 
 impl TransactionTypeDb {
-    pub fn get_type_from_transaction(transaction: &Transaction) -> Self {
+    pub fn from(transaction: &Transaction) -> Self {
         transaction.transaction_data.discriminant().into()
     }
 }
