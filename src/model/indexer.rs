@@ -4,8 +4,8 @@ use std::num::TryFromIntError;
 
 use anyhow::Context;
 use hyle_model::api::{
-    APIBlob, APIBlock, APIContract, APIContractState, APITransaction, TransactionStatus,
-    TransactionType,
+    APIBlob, APIBlock, APIContract, APIContractState, APITransaction, TransactionStatusDb,
+    TransactionTypeDb,
 };
 use hyle_model::utils::TimestampMs;
 use hyle_model::{ConsensusProposalHash, DataProposalHash};
@@ -48,8 +48,8 @@ pub struct TransactionDb {
     pub block_hash: Option<ConsensusProposalHash>, // Corresponds to the block hash
     pub index: Option<u32>,                        // Index of the transaction within the block
     pub version: u32,                              // Transaction version
-    pub transaction_type: TransactionType,         // Type of transaction
-    pub transaction_status: TransactionStatus,     // Status of the transaction
+    pub transaction_type: TransactionTypeDb,       // Type of transaction
+    pub transaction_status: TransactionStatusDb,   // Status of the transaction
 }
 
 impl<'r> FromRow<'r, PgRow> for TransactionDb {
@@ -63,8 +63,8 @@ impl<'r> FromRow<'r, PgRow> for TransactionDb {
         let version: u32 = version
             .try_into()
             .map_err(|e: TryFromIntError| sqlx::Error::Decode(e.into()))?;
-        let transaction_type: TransactionType = row.try_get("transaction_type")?;
-        let transaction_status: TransactionStatus = row.try_get("transaction_status")?;
+        let transaction_type: TransactionTypeDb = row.try_get("transaction_type")?;
+        let transaction_status: TransactionStatusDb = row.try_get("transaction_status")?;
         let index = match index {
             None => None,
             Some(index) => Some(

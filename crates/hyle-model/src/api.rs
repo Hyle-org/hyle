@@ -70,7 +70,7 @@ pub struct APIBlock {
     sqlx(type_name = "transaction_type", rename_all = "snake_case")
 )]
 #[derive(Debug, Serialize, Deserialize, ToSchema, Clone, PartialEq, Eq)]
-pub enum TransactionType {
+pub enum TransactionTypeDb {
     BlobTransaction,
     ProofTransaction,
     RegisterContractTransaction,
@@ -83,7 +83,7 @@ pub enum TransactionType {
     feature = "sqlx",
     sqlx(type_name = "transaction_status", rename_all = "snake_case")
 )]
-pub enum TransactionStatus {
+pub enum TransactionStatusDb {
     WaitingDissemination,
     DataProposalCreated,
     Success,
@@ -92,18 +92,18 @@ pub enum TransactionStatus {
     TimedOut,
 }
 
-impl TransactionType {
+impl TransactionTypeDb {
     pub fn get_type_from_transaction(transaction: &Transaction) -> Self {
         transaction.transaction_data.discriminant().into()
     }
 }
 
-impl From<TransactionKind> for TransactionType {
+impl From<TransactionKind> for TransactionTypeDb {
     fn from(value: TransactionKind) -> Self {
         match value {
-            TransactionKind::Blob => TransactionType::BlobTransaction,
-            TransactionKind::Proof => TransactionType::ProofTransaction,
-            TransactionKind::VerifiedProof => TransactionType::ProofTransaction,
+            TransactionKind::Blob => TransactionTypeDb::BlobTransaction,
+            TransactionKind::Proof => TransactionTypeDb::ProofTransaction,
+            TransactionKind::VerifiedProof => TransactionTypeDb::ProofTransaction,
         }
     }
 }
@@ -114,8 +114,8 @@ pub struct APITransaction {
     pub tx_hash: TxHash,                           // Transaction hash
     pub parent_dp_hash: DataProposalHash,          // Data proposal hash
     pub version: u32,                              // Transaction version
-    pub transaction_type: TransactionType,         // Type of transaction
-    pub transaction_status: TransactionStatus,     // Status of the transaction
+    pub transaction_type: TransactionTypeDb,       // Type of transaction
+    pub transaction_status: TransactionStatusDb,   // Status of the transaction
     pub block_hash: Option<ConsensusProposalHash>, // Corresponds to the block hash
     pub index: Option<u32>,                        // Index of the transaction within the block
 }
@@ -134,8 +134,8 @@ pub struct TransactionWithBlobs {
     pub block_hash: ConsensusProposalHash,
     pub index: u32,
     pub version: u32,
-    pub transaction_type: TransactionType,
-    pub transaction_status: TransactionStatus,
+    pub transaction_type: TransactionTypeDb,
+    pub transaction_status: TransactionStatusDb,
     pub identity: String,
     pub blobs: Vec<BlobWithStatus>,
 }

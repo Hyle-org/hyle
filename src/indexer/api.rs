@@ -3,7 +3,7 @@ use crate::utils::logger::LogMe;
 use super::IndexerApiState;
 use api::{
     APIBlob, APIBlock, APIContract, APIContractState, APITransaction, APITransactionEvents,
-    BlobWithStatus, TransactionStatus, TransactionType, TransactionWithBlobs,
+    BlobWithStatus, TransactionStatusDb, TransactionTypeDb, TransactionWithBlobs,
 };
 use axum::{
     extract::{Path, Query, State},
@@ -420,8 +420,8 @@ pub async fn get_blob_transactions_by_contract(
             let block_hash: ConsensusProposalHash = row.try_get("block_hash")?;
             let index: i32 = row.try_get("index")?;
             let version: i32 = row.try_get("version")?;
-            let transaction_type: TransactionType = row.try_get("transaction_type")?;
-            let transaction_status: TransactionStatus = row.try_get("transaction_status")?;
+            let transaction_type: TransactionTypeDb = row.try_get("transaction_type")?;
+            let transaction_status: TransactionStatusDb = row.try_get("transaction_status")?;
             let identity: String = row.try_get("identity")?;
             let blobs: Vec<(String, Vec<u8>, Vec<serde_json::Value>)> = row.try_get("blobs")?;
 

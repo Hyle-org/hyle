@@ -27,7 +27,9 @@ use axum::{
 use chrono::DateTime;
 use futures::{SinkExt, StreamExt};
 use hyle_contract_sdk::TxHash;
-use hyle_model::api::{BlobWithStatus, TransactionStatus, TransactionType, TransactionWithBlobs};
+use hyle_model::api::{
+    BlobWithStatus, TransactionStatusDb, TransactionTypeDb, TransactionWithBlobs,
+};
 use sqlx::{postgres::PgPoolOptions, PgPool, Pool, Postgres};
 use sqlx::{PgExecutor, QueryBuilder, Row};
 use std::ops::DerefMut;
@@ -277,7 +279,7 @@ impl Indexer {
                     .map_err(|_| anyhow::anyhow!("Tx version is too large to fit into an i32"))?;
 
                 // Insert the transaction into the transactions table
-                let tx_type = TransactionType::get_type_from_transaction(&tx);
+                let tx_type = TransactionTypeDb::get_type_from_transaction(&tx);
 
                 let tx_hash: &TxHashDb = &tx_hash.into();
 
@@ -312,7 +314,7 @@ impl Indexer {
                 let mut query_builder = QueryBuilder::new("INSERT INTO transactions (tx_hash, parent_dp_hash, version, transaction_type, transaction_status)");
 
                 query_builder.push_values(txs_metadatas, |mut b, value| {
-                    let tx_type: TransactionType = value.transaction_type.into();
+                    let tx_type: TransactionTypeDb = value.transaction_kind.into();
                     let version = i32::try_from(value.version)
                         .map_err(|_| anyhow::anyhow!("Tx version is too large to fit into an i32"))
                         .log_error("Converting version number into i32")
@@ -325,14 +327,14 @@ impl Indexer {
                         .push_bind(parent_data_proposal_hash_db)
                         .push_bind(version)
                         .push_bind(tx_type)
-                        .push_bind(TransactionStatus::DataProposalCreated);
+                        .push_bind(TransactionStatusDb::DataProposalCreated);
                 });
 
                 // If the TX is already present, we try to update its status, only if the status is lower ('waiting_dissemination').
                 query_builder.push(" ON CONFLICT(tx_hash, parent_dp_hash) DO UPDATE SET ");
 
                 query_builder.push("transaction_status=");
-                query_builder.push_bind(TransactionStatus::DataProposalCreated);
+                query_builder.push_bind(TransactionStatusDb::DataProposalCreated);
                 query_builder
                     .push(" WHERE transactions.transaction_status='waiting_dissemination'");
 
@@ -461,11 +463,11 @@ impl Indexer {
                 .map_err(|_| anyhow::anyhow!("Tx version is too large to fit into an i32"))?;
 
             // Insert the transaction into the transactions table
-            let tx_type = TransactionType::get_type_from_transaction(&tx);
+            let tx_type = TransactionTypeDb::get_type_from_transaction(&tx);
             let tx_status = match tx.transaction_data {
-                TransactionData::Blob(_) => TransactionStatus::Sequenced,
-                TransactionData::Proof(_) => TransactionStatus::Success,
-                TransactionData::VerifiedProof(_) => TransactionStatus::Success,
+                TransactionData::Blob(_) => TransactionStatusDb::Sequenced,
+                TransactionData::Proof(_) => TransactionStatusDb::Success,
+                TransactionData::VerifiedProof(_) => TransactionStatusDb::Success,
             };
 
             let parent_data_proposal_hash: &DataProposalHashDb = &tx_id.0.into();
@@ -558,7 +560,7 @@ impl Indexer {
                 .into();
             let tx_hash: &TxHashDb = &settled_blob_tx_hash.into();
             sqlx::query("UPDATE transactions SET transaction_status = $1 WHERE tx_hash = $2 AND parent_dp_hash = $3")
-                .bind(TransactionStatus::Success)
+                .bind(TransactionStatusDb::Success)
                 .bind(tx_hash)
                 .bind(dp_hash_db)
                 .execute(&mut *transaction)
@@ -577,7 +579,7 @@ impl Indexer {
                 .into();
             let tx_hash: &TxHashDb = &failed_blob_tx_hash.into();
             sqlx::query("UPDATE transactions SET transaction_status = $1 WHERE tx_hash = $2 AND parent_dp_hash = $3")
-                .bind(TransactionStatus::Failure)
+                .bind(TransactionStatusDb::Failure)
                 .bind(tx_hash)
                 .bind(dp_hash_db)
                 .execute(&mut *transaction)
@@ -597,7 +599,7 @@ impl Indexer {
                 .into();
             let tx_hash: &TxHashDb = &timed_out_tx_hash.into();
             sqlx::query("UPDATE transactions SET transaction_status = $1 WHERE tx_hash = $2 AND parent_dp_hash = $3")
-                .bind(TransactionStatus::TimedOut)
+                .bind(TransactionStatusDb::TimedOut)
                 .bind(tx_hash)
                 .bind(dp_hash_db)
                 .execute(&mut *transaction)
@@ -780,8 +782,8 @@ impl Indexer {
                     block_hash: block_hash.clone(),
                     index,
                     version,
-                    transaction_type: TransactionType::BlobTransaction,
-                    transaction_status: TransactionStatus::Sequenced,
+                    transaction_type: TransactionTypeDb::BlobTransaction,
+                    transaction_status: TransactionStatusDb::Sequenced,
                     identity: tx.identity.0.clone(),
                     blobs: tx
                         .blobs
@@ -932,7 +934,11 @@ mod test {
         }
     }
 
-    async fn assert_tx_status(server: &TestServer, tx_hash: TxHash, tx_status: TransactionStatus) {
+    async fn assert_tx_status(
+        server: &TestServer,
+        tx_hash: TxHash,
+        tx_status: TransactionStatusDb,
+    ) {
         let transactions_response = server
             .get(format!("/transaction/hash/{}", tx_hash).as_str())
             .await;
@@ -1106,7 +1112,7 @@ mod test {
         assert_tx_status(
             &server,
             register_tx_1_wd.hash(),
-            TransactionStatus::WaitingDissemination,
+            TransactionStatusDb::WaitingDissemination,
         )
         .await;
 
@@ -1121,7 +1127,7 @@ mod test {
         assert_tx_status(
             &server,
             register_tx_2_wd.hash(),
-            TransactionStatus::WaitingDissemination,
+            TransactionStatusDb::WaitingDissemination,
         )
         .await;
 
@@ -1136,7 +1142,7 @@ mod test {
         assert_tx_status(
             &server,
             blob_transaction_wd.hash(),
-            TransactionStatus::WaitingDissemination,
+            TransactionStatusDb::WaitingDissemination,
         )
         .await;
 
@@ -1172,25 +1178,25 @@ mod test {
         assert_tx_status(
             &server,
             register_tx_1_wd.hash(),
-            TransactionStatus::DataProposalCreated,
+            TransactionStatusDb::DataProposalCreated,
         )
         .await;
         assert_tx_status(
             &server,
             register_tx_2_wd.hash(),
-            TransactionStatus::DataProposalCreated,
+            TransactionStatusDb::DataProposalCreated,
         )
         .await;
         assert_tx_status(
             &server,
             blob_transaction_wd.hash(),
-            TransactionStatus::DataProposalCreated,
+            TransactionStatusDb::DataProposalCreated,
         )
         .await;
         assert_tx_status(
             &server,
             proof_tx_1_wd.hash(),
-            TransactionStatus::DataProposalCreated,
+            TransactionStatusDb::DataProposalCreated,
         )
         .await;
 
@@ -1207,15 +1213,25 @@ mod test {
             .await
             .expect("Failed to handle block");
 
-        assert_tx_status(&server, register_tx_1_wd.hash(), TransactionStatus::Success).await;
-        assert_tx_status(&server, register_tx_2_wd.hash(), TransactionStatus::Success).await;
+        assert_tx_status(
+            &server,
+            register_tx_1_wd.hash(),
+            TransactionStatusDb::Success,
+        )
+        .await;
+        assert_tx_status(
+            &server,
+            register_tx_2_wd.hash(),
+            TransactionStatusDb::Success,
+        )
+        .await;
         assert_tx_status(
             &server,
             blob_transaction_wd.hash(),
-            TransactionStatus::Sequenced,
+            TransactionStatusDb::Sequenced,
         )
         .await;
-        assert_tx_status(&server, proof_tx_1_wd.hash(), TransactionStatus::Success).await;
+        assert_tx_status(&server, proof_tx_1_wd.hash(), TransactionStatusDb::Success).await;
 
         // Check a mempool status event does not change a Success/Sequenced status
         indexer

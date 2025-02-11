@@ -20,7 +20,7 @@ impl Transaction {
     pub fn metadata(&self, parent_data_proposal_hash: DataProposalHash) -> TransactionMetadata {
         TransactionMetadata {
             version: self.version,
-            transaction_type: self.transaction_data.discriminant(),
+            transaction_kind: self.transaction_data.discriminant(),
             id: TxId(parent_data_proposal_hash.clone(), self.hash()),
         }
     }
@@ -39,7 +39,7 @@ impl DataSized for Transaction {
 #[derive(Debug, Default, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub struct TransactionMetadata {
     pub version: u32,
-    pub transaction_type: TransactionKind,
+    pub transaction_kind: TransactionKind,
     pub id: TxId,
 }
 
