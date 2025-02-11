@@ -29,12 +29,6 @@ pub enum DataProposalVerdict {
     Refuse,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub enum DataProposalCreation {
-    New(DataProposalHash, Vec<TransactionMetadata>),
-    Noop,
-}
-
 pub use hyle_model::LaneBytesSize;
 
 pub enum CanBePutOnTop {
@@ -504,9 +498,9 @@ pub trait Storage {
         &mut self,
         crypto: &BlstCrypto,
         txs: Vec<Transaction>,
-    ) -> Result<DataProposalCreation> {
+    ) -> Result<Option<(DataProposalHash, Vec<TransactionMetadata>)>> {
         if txs.is_empty() {
-            return Ok(DataProposalCreation::Noop);
+            return Ok(None);
         }
 
         let validator_key = self.id().clone();
@@ -529,7 +523,7 @@ pub trait Storage {
             .clone()
             .unwrap_or_default();
 
-        let tx_mds = data_proposal
+        let tx_metadatas = data_proposal
             .txs
             .iter()
             .map(|tx| tx.metadata(parent_data_proposal.clone()))
@@ -537,7 +531,7 @@ pub trait Storage {
 
         let (hash, _) = self.store_data_proposal(crypto, &validator_key, data_proposal)?;
 
-        Ok(DataProposalCreation::New(hash, tx_mds))
+        Ok(Some((hash, tx_metadatas)))
     }
 
     fn get_lane_pending_entries(
@@ -920,8 +914,7 @@ mod tests {
 
         let txs = vec![Transaction::default()];
 
-        let DataProposalCreation::New(hash, txs_mds) =
-            storage.new_data_proposal(&crypto, txs.clone()).unwrap()
+        let Some((hash, txs_metadatas)) = storage.new_data_proposal(&crypto, txs.clone()).unwrap()
         else {
             panic!("Wrong data proposal creation");
         };
@@ -929,7 +922,7 @@ mod tests {
         let tip = storage.get_lane_hash_tip(pubkey);
         assert!(tip.is_some());
 
-        assert_eq!(txs.len(), txs_mds.len());
+        assert_eq!(txs.len(), txs_metadatas.len());
         assert_eq!(
             hash,
             DataProposal {
@@ -950,7 +943,7 @@ mod tests {
 
         let data_creation_result = storage.new_data_proposal(&crypto, txs).unwrap();
 
-        assert_eq!(data_creation_result, DataProposalCreation::Noop);
+        assert_eq!(data_creation_result, None);
 
         let tip = storage.get_lane_hash_tip(pubkey);
         assert!(tip.is_none());

@@ -2,12 +2,13 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
+use strum::IntoDiscriminant;
 use utoipa::ToSchema;
 
 use crate::{
     BlockHash, BlockHeight, ConsensusProposalHash, ContractName, DataProposalHash, Identity,
-    LaneBytesSize, ProgramId, StateDigest, Transaction, TransactionData, TransactionTypeMetadata,
-    TxHash, ValidatorPublicKey, Verifier,
+    LaneBytesSize, ProgramId, StateDigest, Transaction, TransactionKind, TxHash,
+    ValidatorPublicKey, Verifier,
 };
 
 #[derive(Clone, Serialize, Deserialize, ToSchema)]
@@ -93,20 +94,16 @@ pub enum TransactionStatus {
 
 impl TransactionType {
     pub fn get_type_from_transaction(transaction: &Transaction) -> Self {
-        match transaction.transaction_data {
-            TransactionData::Blob(_) => TransactionType::BlobTransaction,
-            TransactionData::Proof(_) => TransactionType::ProofTransaction,
-            TransactionData::VerifiedProof(_) => TransactionType::ProofTransaction,
-        }
+        transaction.transaction_data.discriminant().into()
     }
 }
 
-impl From<TransactionTypeMetadata> for TransactionType {
-    fn from(value: TransactionTypeMetadata) -> Self {
+impl From<TransactionKind> for TransactionType {
+    fn from(value: TransactionKind) -> Self {
         match value {
-            TransactionTypeMetadata::Blob => TransactionType::BlobTransaction,
-            TransactionTypeMetadata::Proof => TransactionType::ProofTransaction,
-            TransactionTypeMetadata::VerifiedProof => TransactionType::ProofTransaction,
+            TransactionKind::Blob => TransactionType::BlobTransaction,
+            TransactionKind::Proof => TransactionType::ProofTransaction,
+            TransactionKind::VerifiedProof => TransactionType::ProofTransaction,
         }
     }
 }

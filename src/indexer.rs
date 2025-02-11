@@ -307,11 +307,11 @@ impl Indexer {
 
             MempoolStatusEvent::DataProposalCreated {
                 data_proposal_hash: _,
-                tx_mds,
+                txs_metadatas,
             } => {
                 let mut query_builder = QueryBuilder::new("INSERT INTO transactions (tx_hash, parent_dp_hash, version, transaction_type, transaction_status)");
 
-                query_builder.push_values(tx_mds, |mut b, value| {
+                query_builder.push_values(txs_metadatas, |mut b, value| {
                     let tx_type: TransactionType = value.transaction_type.into();
                     let version = i32::try_from(value.version)
                         .map_err(|_| anyhow::anyhow!("Tx version is too large to fit into an i32"))
@@ -328,7 +328,7 @@ impl Indexer {
                         .push_bind(TransactionStatus::DataProposalCreated);
                 });
 
-                // If the TX is already present, we try to update its status, only if the status is lower.
+                // If the TX is already present, we try to update its status, only if the status is lower ('waiting_dissemination').
                 query_builder.push(" ON CONFLICT(tx_hash, parent_dp_hash) DO UPDATE SET ");
 
                 query_builder.push("transaction_status=");
@@ -1156,7 +1156,7 @@ mod test {
 
         let data_proposal_created_event = MempoolStatusEvent::DataProposalCreated {
             data_proposal_hash: data_proposal.hash(),
-            tx_mds: vec![
+            txs_metadatas: vec![
                 register_tx_1_wd.metadata(parent_data_proposal_hash.clone()),
                 register_tx_2_wd.metadata(parent_data_proposal_hash.clone()),
                 blob_transaction_wd.metadata(parent_data_proposal_hash.clone()),

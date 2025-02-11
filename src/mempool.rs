@@ -33,7 +33,7 @@ use std::{
     path::PathBuf,
     sync::Arc,
 };
-use storage::{DataProposalCreation, DataProposalVerdict, LaneEntry, Storage};
+use storage::{DataProposalVerdict, LaneEntry, Storage};
 // Pick one of the two implementations
 // use storage_memory::LanesStorage;
 use storage_fjall::LanesStorage;
@@ -168,7 +168,7 @@ pub enum MempoolBlockEvent {
 }
 impl BusMessage for MempoolBlockEvent {}
 
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub enum MempoolStatusEvent {
     WaitingDissemination {
         parent_data_proposal_hash: DataProposalHash,
@@ -176,7 +176,7 @@ pub enum MempoolStatusEvent {
     },
     DataProposalCreated {
         data_proposal_hash: DataProposalHash,
-        tx_mds: Vec<TransactionMetadata>,
+        txs_metadatas: Vec<TransactionMetadata>,
     },
 }
 impl BusMessage for MempoolStatusEvent {}
@@ -439,11 +439,12 @@ impl Mempool {
                 )?;
             }
         }
-        if let DataProposalCreation::New(hash, tx_mds) = data_proposal_creation {
+
+        if let Some((data_proposal_hash, txs_metadatas)) = data_proposal_creation {
             self.bus
                 .send(MempoolStatusEvent::DataProposalCreated {
-                    data_proposal_hash: hash,
-                    tx_mds,
+                    data_proposal_hash,
+                    txs_metadatas,
                 })
                 .context("Sending MempoolStatusEvent DataProposalCreated")?;
         }
