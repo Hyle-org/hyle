@@ -73,6 +73,10 @@ impl Storage for LanesStorage {
     }
 
     fn put(&mut self, validator: ValidatorPublicKey, lane_entry: LaneEntry) -> Result<()> {
+        let dp_hash = lane_entry.data_proposal.hash();
+        if self.contains(&validator, &dp_hash) {
+            bail!("DataProposal {} was already in lane", dp_hash);
+        }
         match self.can_be_put_on_top(
             &validator,
             lane_entry.data_proposal.parent_data_proposal_hash.as_ref(),
@@ -83,7 +87,6 @@ impl Storage for LanesStorage {
             ),
             CanBePutOnTop::Yes => {
                 // Add DataProposal to validator's lane
-                let dp_hash = lane_entry.data_proposal.hash();
                 let size = lane_entry.cumul_size;
                 self.by_hash
                     .entry(validator.clone())
