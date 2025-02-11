@@ -2,7 +2,8 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use derive_more::derive::Display;
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Sha3_256};
-use strum_macros::IntoStaticStr;
+use strum::IntoDiscriminant;
+use strum_macros::{EnumDiscriminants, IntoStaticStr};
 use utoipa::ToSchema;
 
 use crate::*;
@@ -15,6 +16,16 @@ pub struct Transaction {
     pub transaction_data: TransactionData,
 }
 
+impl Transaction {
+    pub fn metadata(&self, parent_data_proposal_hash: DataProposalHash) -> TransactionMetadata {
+        TransactionMetadata {
+            version: self.version,
+            transaction_kind: self.transaction_data.discriminant(),
+            id: TxId(parent_data_proposal_hash.clone(), self.hash()),
+        }
+    }
+}
+
 impl DataSized for Transaction {
     fn estimate_size(&self) -> usize {
         match &self.transaction_data {
@@ -25,7 +36,15 @@ impl DataSized for Transaction {
     }
 }
 
+#[derive(Debug, Default, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
+pub struct TransactionMetadata {
+    pub version: u32,
+    pub transaction_kind: TransactionKind,
+    pub id: TxId,
+}
+
 #[derive(
+    EnumDiscriminants,
     Debug,
     Serialize,
     Deserialize,
@@ -36,7 +55,10 @@ impl DataSized for Transaction {
     BorshDeserialize,
     IntoStaticStr,
 )]
+#[strum_discriminants(derive(Default, BorshSerialize, BorshDeserialize))]
+#[strum_discriminants(name(TransactionKind))]
 pub enum TransactionData {
+    #[strum_discriminants(default)]
     Blob(BlobTransaction),
     Proof(ProofTransaction),
     VerifiedProof(VerifiedProofTransaction),

@@ -2,7 +2,7 @@ use anyhow::{bail, Result};
 use borsh::{BorshDeserialize, BorshSerialize};
 use hyle_model::{
     ContractName, DataSized, ProgramId, RegisterContractAction, Signed, StructuredBlobData,
-    ValidatorSignature, Verifier,
+    TransactionMetadata, ValidatorSignature, Verifier,
 };
 use serde::{Deserialize, Serialize};
 use staking::state::Staking;
@@ -377,7 +377,7 @@ pub trait Storage {
         crypto: &BlstCrypto,
         validator: &ValidatorPublicKey,
         data_proposal: DataProposal,
-    ) -> Result<LaneBytesSize> {
+    ) -> Result<(DataProposalHash, LaneBytesSize)> {
         // Add DataProposal to validator's lane
         let data_proposal_hash = data_proposal.hash();
 
@@ -400,7 +400,7 @@ pub trait Storage {
                 signatures,
             },
         )?;
-        Ok(cumul_size)
+        Ok((data_proposal_hash, cumul_size))
     }
 
     // Find the verifier and program_id for a contract name in the current lane, optimistically.
@@ -494,30 +494,44 @@ pub trait Storage {
     }
 
     /// Creates and saves a new DataProposal if there are pending transactions
-    fn new_data_proposal(&mut self, crypto: &BlstCrypto, txs: Vec<Transaction>) -> Result<()> {
+    fn new_data_proposal(
+        &mut self,
+        crypto: &BlstCrypto,
+        txs: Vec<Transaction>,
+    ) -> Result<Option<(DataProposalHash, Vec<TransactionMetadata>)>> {
         if txs.is_empty() {
-            return Ok(());
+            return Ok(None);
         }
 
         let validator_key = self.id().clone();
+        let current_dp_hash = self.get_lane_hash_tip(&validator_key).cloned();
 
         // Create new data proposal
         let data_proposal = DataProposal {
-            parent_data_proposal_hash: self.get_lane_hash_tip(&validator_key).cloned(),
+            parent_data_proposal_hash: current_dp_hash,
             txs,
         };
 
         debug!(
             "Creating new DataProposal in local lane ({}) with {} transactions",
-            self.id(),
+            validator_key,
             data_proposal.txs.len()
         );
 
-        let v_id = self.id().clone();
+        let parent_data_proposal = data_proposal
+            .parent_data_proposal_hash
+            .clone()
+            .unwrap_or_default();
 
-        self.store_data_proposal(crypto, &v_id, data_proposal)?;
+        let tx_metadatas = data_proposal
+            .txs
+            .iter()
+            .map(|tx| tx.metadata(parent_data_proposal.clone()))
+            .collect();
 
-        Ok(())
+        let (hash, _) = self.store_data_proposal(crypto, &validator_key, data_proposal)?;
+
+        Ok(Some((hash, tx_metadatas)))
     }
 
     fn get_lane_pending_entries(
@@ -765,9 +779,8 @@ mod tests {
             parent_data_proposal_hash: None,
             txs: vec![],
         };
-        let dp_hash = data_proposal.hash();
         // 1 creates a DP
-        let cumul_size = storage
+        let (dp_hash, cumul_size) = storage
             .store_data_proposal(&crypto, pubkey, data_proposal)
             .unwrap();
 
@@ -799,10 +812,9 @@ mod tests {
             parent_data_proposal_hash: None,
             txs: vec![],
         };
-        let dp_hash = dp.hash();
 
         // 1 stores DP in 2's lane
-        let cumul_size = storage.store_data_proposal(&crypto, pubkey2, dp).unwrap();
+        let (dp_hash, cumul_size) = storage.store_data_proposal(&crypto, pubkey2, dp).unwrap();
 
         // 3 votes on this DP
         let vote_msg = MempoolNetMessage::DataVote(dp_hash.clone(), cumul_size);
@@ -902,10 +914,39 @@ mod tests {
 
         let txs = vec![Transaction::default()];
 
-        storage.new_data_proposal(&crypto, txs).unwrap();
+        let Some((hash, txs_metadatas)) = storage.new_data_proposal(&crypto, txs.clone()).unwrap()
+        else {
+            panic!("Wrong data proposal creation");
+        };
 
         let tip = storage.get_lane_hash_tip(pubkey);
         assert!(tip.is_some());
+
+        assert_eq!(txs.len(), txs_metadatas.len());
+        assert_eq!(
+            hash,
+            DataProposal {
+                parent_data_proposal_hash: None,
+                txs
+            }
+            .hash()
+        );
+    }
+
+    #[test_log::test(tokio::test)]
+    async fn test_new_data_proposal_empty() {
+        let crypto: BlstCrypto = crypto::BlstCrypto::new("1".to_owned()).unwrap();
+        let pubkey = crypto.validator_pubkey();
+        let mut storage = setup_storage(pubkey);
+
+        let txs = vec![];
+
+        let data_creation_result = storage.new_data_proposal(&crypto, txs).unwrap();
+
+        assert_eq!(data_creation_result, None);
+
+        let tip = storage.get_lane_hash_tip(pubkey);
+        assert!(tip.is_none());
     }
 
     #[test_log::test]
@@ -919,7 +960,7 @@ mod tests {
             txs: vec![Transaction::default()],
         };
 
-        let size = storage
+        let (_dp_hash, size) = storage
             .store_data_proposal(&crypto, pubkey, dp1.clone())
             .unwrap();
         assert_eq!(size, storage.get_lane_size_at(pubkey, &dp1.hash()).unwrap());
@@ -931,7 +972,7 @@ mod tests {
             parent_data_proposal_hash: Some(dp1.hash()),
             txs: vec![Transaction::default()],
         };
-        let size = storage
+        let (_hash, size) = storage
             .store_data_proposal(&crypto, pubkey, dp2.clone())
             .unwrap();
         assert_eq!(size, storage.get_lane_size_at(pubkey, &dp2.hash()).unwrap());

@@ -168,11 +168,15 @@ pub enum MempoolBlockEvent {
 }
 impl BusMessage for MempoolBlockEvent {}
 
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub enum MempoolStatusEvent {
     WaitingDissemination {
         parent_data_proposal_hash: DataProposalHash,
         tx: Transaction,
+    },
+    DataProposalCreated {
+        data_proposal_hash: DataProposalHash,
+        txs_metadatas: Vec<TransactionMetadata>,
     },
 }
 impl BusMessage for MempoolStatusEvent {}
@@ -375,7 +379,8 @@ impl Mempool {
         let crypto = self.crypto.clone();
         let new_txs = std::mem::take(&mut self.waiting_dissemination_txs);
         // TODO: copy crypto in storage
-        self.lanes.new_data_proposal(&crypto, new_txs)?;
+        let data_proposal_creation = self.lanes.new_data_proposal(&crypto, new_txs)?;
+
         let last_cut = self
             .last_ccp
             .as_ref()
@@ -433,6 +438,15 @@ impl Mempool {
                     MempoolNetMessage::DataProposal(lane_entry.data_proposal.clone()),
                 )?;
             }
+        }
+
+        if let Some((data_proposal_hash, txs_metadatas)) = data_proposal_creation {
+            self.bus
+                .send(MempoolStatusEvent::DataProposalCreated {
+                    data_proposal_hash,
+                    txs_metadatas,
+                })
+                .context("Sending MempoolStatusEvent DataProposalCreated")?;
         }
 
         Ok(())
@@ -903,7 +917,6 @@ impl Mempool {
             validator,
             data_proposal.txs.len()
         );
-        let data_proposal_hash = data_proposal.hash();
         match verdict {
             DataProposalVerdict::Empty => {
                 unreachable!("Empty DataProposal should never be processed");
@@ -917,10 +930,10 @@ impl Mempool {
             DataProposalVerdict::Vote => {
                 trace!("Send vote for DataProposal");
                 let crypto = self.crypto.clone();
-                let size = self
-                    .lanes
-                    .store_data_proposal(&crypto, &validator, data_proposal)?;
-                self.send_vote(&validator, data_proposal_hash, size)?;
+                let (hash, size) =
+                    self.lanes
+                        .store_data_proposal(&crypto, &validator, data_proposal)?;
+                self.send_vote(&validator, hash, size)?;
             }
             DataProposalVerdict::Refuse => {
                 debug!("Refuse vote for DataProposal");
