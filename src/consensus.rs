@@ -934,22 +934,13 @@ impl Consensus {
         module_handle_messages! {
             on_bus self.bus,
             listen<NodeStateEvent> event => {
-                match self.handle_node_state_event(event).await {
-                    Ok(_) => (),
-                    Err(e) => warn!("Error while handling data event: {:#}", e),
-                }
+                let _ = self.handle_node_state_event(event).await.log_error("Error while handling data event");
             }
             listen<ConsensusCommand> cmd => {
-                match self.handle_command(cmd).await {
-                    Ok(_) => (),
-                    Err(e) => warn!("Error while handling consensus command: {:#}", e),
-                }
+                let _ = self.handle_command(cmd).await.log_error("Error while handling consensus command");
             }
             listen<SignedByValidator<ConsensusNetMessage>> cmd => {
-                match self.handle_net_message(cmd) {
-                    Ok(_) => (),
-                    Err(e) => warn!("Consensus message failed: {:#}", e),
-                }
+                let _ = self.handle_net_message(cmd).log_error("Consensus message failed");
             }
             command_response<QueryConsensusInfo, ConsensusInfo> _ => {
                 let slot = self.bft_round_state.consensus_proposal.slot;
