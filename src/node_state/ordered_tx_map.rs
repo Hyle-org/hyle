@@ -1,9 +1,9 @@
 use borsh::{BorshDeserialize, BorshSerialize};
+use hyle_model::TxHash;
 use tracing::warn;
 
 use crate::model::ContractName;
 use crate::model::UnsettledBlobTransaction;
-use hyle_contract_sdk::TxHash;
 use std::collections::HashSet;
 use std::collections::{HashMap, VecDeque};
 
@@ -124,7 +124,7 @@ mod tests {
 
     use crate::model::{BlobsHash, UnsettledBlobMetadata};
     use hyle_contract_sdk::{Blob, BlobData, Identity};
-    use hyle_model::TxContext;
+    use hyle_model::{TxContext, TxHash};
 
     use super::*;
 

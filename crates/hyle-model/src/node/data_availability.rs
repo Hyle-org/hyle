@@ -135,7 +135,7 @@ pub enum TransactionStateEvent {
     Error(String),
     NewProof {
         blob_index: BlobIndex,
-        proof_tx: TxHash,
+        proof_tx_hash: TxHash,
     },
     SettleEvent(String),
     Settled,

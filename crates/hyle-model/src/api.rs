@@ -5,8 +5,9 @@ use serde_with::serde_as;
 use utoipa::ToSchema;
 
 use crate::{
-    BlockHash, BlockHeight, ConsensusProposalHash, ContractName, Identity, LaneBytesSize,
-    ProgramId, StateDigest, Transaction, TransactionData, TxHash, ValidatorPublicKey, Verifier,
+    BlockHash, BlockHeight, ConsensusProposalHash, ContractName, DataProposalHash, Identity,
+    LaneBytesSize, ProgramId, StateDigest, Transaction, TransactionData, TxHash,
+    ValidatorPublicKey, Verifier,
 };
 
 #[derive(Clone, Serialize, Deserialize, ToSchema)]
@@ -103,6 +104,7 @@ impl TransactionType {
 pub struct APITransaction {
     // Struct for the transactions table
     pub tx_hash: TxHash,                           // Transaction hash
+    pub parent_dp_hash: DataProposalHash,          // Data proposal hash
     pub version: u32,                              // Transaction version
     pub transaction_type: TransactionType,         // Type of transaction
     pub transaction_status: TransactionStatus,     // Status of the transaction
@@ -120,6 +122,7 @@ pub struct APITransactionEvents {
 #[derive(Serialize, Deserialize, ToSchema, Debug, Clone, PartialEq)]
 pub struct TransactionWithBlobs {
     pub tx_hash: TxHash,
+    pub parent_dp_hash: DataProposalHash,
     pub block_hash: ConsensusProposalHash,
     pub index: u32,
     pub version: u32,

@@ -1,7 +1,7 @@
-use anyhow::{anyhow, Error, Result};
+use anyhow::{anyhow, Context, Error, Result};
 use borsh::{BorshDeserialize, BorshSerialize};
-use hyle_contract_sdk::{BlobIndex, ContractName, TxHash};
-use hyle_model::RegisterContractEffect;
+use hyle_contract_sdk::{BlobIndex, ContractName};
+use hyle_model::{RegisterContractEffect, TxId};
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, ops::Deref, path::PathBuf, sync::Arc};
 use tokio::sync::RwLock;
@@ -29,7 +29,7 @@ impl BusMessage for ProverEvent {}
 pub struct Store<State> {
     pub state: Option<State>,
     pub contract_name: ContractName,
-    pub unsettled_blobs: BTreeMap<TxHash, BlobTransaction>,
+    pub unsettled_blobs: BTreeMap<TxId, BlobTransaction>,
 }
 
 impl<State> Default for Store<State> {
@@ -170,20 +170,27 @@ where
             }
         }
 
-        for tx in block.txs {
+        for (tx_id, tx) in block.txs {
             if let TransactionData::Blob(tx) = tx.transaction_data {
-                self.handle_blob(tx).await?;
+                self.handle_blob(tx_id, tx).await?;
             }
         }
 
         for s_tx in block.successful_txs {
-            self.settle_tx(s_tx).await?;
+            let dp_hash = block
+                .dp_hashes
+                .get(&s_tx)
+                .context(format!(
+                    "No parent data proposal hash present for successful tx {}",
+                    s_tx.0
+                ))?
+                .clone();
+            self.settle_tx(&TxId(dp_hash, s_tx)).await?;
         }
         Ok(())
     }
 
-    async fn handle_blob(&mut self, tx: BlobTransaction) -> Result<()> {
-        let tx_hash = tx.hash();
+    async fn handle_blob(&mut self, tx_id: TxId, tx: BlobTransaction) -> Result<()> {
         let mut found_supported_blob = false;
 
         for b in &tx.blobs {
@@ -194,12 +201,8 @@ where
         }
 
         if found_supported_blob {
-            debug!(cn = %self.contract_name, "⚒️  Found supported blob in transaction: {}", tx_hash);
-            self.store
-                .write()
-                .await
-                .unsettled_blobs
-                .insert(tx_hash.clone(), tx);
+            debug!(cn = %self.contract_name, "⚒️  Found supported blob in transaction: {}", tx_id);
+            self.store.write().await.unsettled_blobs.insert(tx_id, tx);
         }
 
         Ok(())
@@ -212,9 +215,9 @@ where
         Ok(())
     }
 
-    async fn settle_tx(&mut self, tx: TxHash) -> Result<()> {
+    async fn settle_tx(&mut self, tx: &TxId) -> Result<()> {
         let mut store = self.store.write().await;
-        let Some(tx) = store.unsettled_blobs.remove(&tx) else {
+        let Some(tx) = store.unsettled_blobs.remove(tx) else {
             debug!(cn = %self.contract_name, "🔨 No supported blobs found in transaction: {}", tx);
             return Ok(());
         };
@@ -244,6 +247,7 @@ where
 #[cfg(test)]
 mod tests {
     use hyle_contract_sdk::{BlobData, ProgramId, StateDigest};
+    use hyle_model::DataProposalHash;
     use utoipa::openapi::OpenApi;
 
     use super::*;
@@ -329,10 +333,15 @@ mod tests {
 
         let mut indexer = build_indexer(contract_name.clone()).await;
         register_contract(&mut indexer).await;
-        indexer.handle_blob(tx).await.unwrap();
+        indexer
+            .handle_blob(TxId(DataProposalHash::default(), tx_hash.clone()), tx)
+            .await
+            .unwrap();
 
         let store = indexer.store.read().await;
-        assert!(store.unsettled_blobs.contains_key(&tx_hash));
+        assert!(store
+            .unsettled_blobs
+            .contains_key(&TxId(DataProposalHash::default(), tx_hash.clone())));
         assert!(store.state.clone().unwrap().0.is_empty());
     }
 
@@ -347,19 +356,19 @@ mod tests {
             blobs: vec![blob],
             identity: "test".into(),
         };
-        let tx_hash = tx.hash();
+        let tx_id = TxId(DataProposalHash::default(), tx.hash());
 
         let mut indexer = build_indexer(contract_name.clone()).await;
         register_contract(&mut indexer).await;
         {
             let mut store = indexer.store.write().await;
-            store.unsettled_blobs.insert(tx_hash.clone(), tx);
+            store.unsettled_blobs.insert(tx_id.clone(), tx);
         }
 
-        indexer.settle_tx(tx_hash.clone()).await.unwrap();
+        indexer.settle_tx(&tx_id).await.unwrap();
 
         let store = indexer.store.read().await;
-        assert!(!store.unsettled_blobs.contains_key(&tx_hash));
+        assert!(!store.unsettled_blobs.contains_key(&tx_id));
         assert_eq!(store.state.clone().unwrap().0, vec![1, 2, 3]);
     }
 

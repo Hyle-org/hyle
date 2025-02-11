@@ -21,6 +21,22 @@ impl DataSized for DataProposal {
 }
 
 #[derive(
+    Default,
+    Serialize,
+    Deserialize,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Hash,
+    Ord,
+    PartialOrd,
+    BorshDeserialize,
+    BorshSerialize,
+)]
+pub struct TxId(pub DataProposalHash, pub TxHash);
+
+#[derive(
     Clone,
     Debug,
     Default,
@@ -34,6 +50,7 @@ impl DataSized for DataProposal {
     Ord,
     PartialOrd,
 )]
+#[cfg_attr(feature = "full", derive(utoipa::ToSchema))]
 pub struct DataProposalHash(pub String);
 
 impl Hashable<DataProposalHash> for DataProposal {
@@ -61,3 +78,9 @@ impl Display for DataProposal {
 
 pub type PoDA = AggregateSignature;
 pub type Cut = Vec<(ValidatorPublicKey, DataProposalHash, LaneBytesSize, PoDA)>;
+
+impl Display for TxId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}/{}", &self.0 .0, &self.1 .0)
+    }
+}
