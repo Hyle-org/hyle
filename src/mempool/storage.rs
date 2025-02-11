@@ -577,14 +577,8 @@ pub trait Storage {
         parent_data_proposal_hash: Option<&DataProposalHash>,
     ) -> CanBePutOnTop {
         // Data proposal parent hash needs to match the lane tip of that validator
-        let last_known_hash = self.get_lane_hash_tip(validator_key);
-        if parent_data_proposal_hash == last_known_hash {
+        if parent_data_proposal_hash == self.get_lane_hash_tip(validator_key) {
             // LEGIT DATAPROPOSAL
-            return CanBePutOnTop::Yes;
-        }
-
-        if self.get_lane_hash_tip(validator_key).is_none() && parent_data_proposal_hash.is_none() {
-            // LANE IS EMPTY
             return CanBePutOnTop::Yes;
         }
 
@@ -744,7 +738,11 @@ mod tests {
         storage
             .store_data_proposal(&crypto, pubkey2, dp.clone())
             .unwrap();
-        storage.store_data_proposal(&crypto, pubkey2, dp2).unwrap();
+        storage
+            .store_data_proposal(&crypto, pubkey2, dp2.clone())
+            .unwrap();
+
+        assert!(storage.store_data_proposal(&crypto, pubkey2, dp2).is_err());
 
         let dp2_fork = DataProposal {
             parent_data_proposal_hash: Some(dp.hash()),

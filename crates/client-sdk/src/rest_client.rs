@@ -224,7 +224,7 @@ impl IndexerApiHttpClient {
         .await
     }
 
-    pub async fn get_blob_by_tx_hash(&self, tx_hash: &TxHash) -> Result<APIBlob> {
+    pub async fn get_blobs_by_tx_hash(&self, tx_hash: &TxHash) -> Result<Vec<APIBlob>> {
         self.get(
             &format!("v1/indexer/blobs/hash/{tx_hash}"),
             &format!("getting blob by transaction hash {tx_hash}"),
