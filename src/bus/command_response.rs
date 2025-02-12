@@ -105,7 +105,7 @@ macro_rules! handle_messages {
     (bus($bus:expr) index($index:ident) command_response<$command:ty, $response:ty> $res:pat => $handler:block $($rest:tt)*) => {
         // Create a receiver with a unique variable $index
         let $index = unsafe { &mut *Pick::<tokio::sync::broadcast::Receiver<Query<$command, $response>>>::splitting_get_mut(&mut $bus) };
-        paste::paste! {
+        $crate::utils::static_type_map::paste::paste! {
         $crate::handle_messages! {
             bus($bus) index([<$index a>]) $($rest)*
             // Listen on receiver
@@ -159,7 +159,7 @@ macro_rules! handle_messages {
 
     (bus($bus:expr) index($index:ident) listen<$message:ty> $res:pat => $handler:block $($rest:tt)*) => {
         let $index = unsafe { &mut *Pick::<tokio::sync::broadcast::Receiver<$message>>::splitting_get_mut(&mut $bus) };
-        paste::paste! {
+        $crate::utils::static_type_map::paste::paste! {
         $crate::handle_messages! {
             bus($bus) index([<$index a>]) $($rest)*
             Ok($res) = $index.recv()  => {
