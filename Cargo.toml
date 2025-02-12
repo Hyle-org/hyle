@@ -153,7 +153,7 @@ tokio-stream = "0.1.17"
 tempfile = "3.16.0"
 assert-json-diff = "2.0.2"
 risc0-recursion = { path = "./crates/contracts/risc0-recursion" }
-risc0-zkvm = { version = "1.2.2", default-features = false, features = [
+risc0-zkvm = { version = "1.2.3", default-features = false, features = [
     "client",
 ] }
 signal-child = "1.0.6"
