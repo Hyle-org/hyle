@@ -988,17 +988,25 @@ impl Mempool {
         self.metrics
             .snapshot_pending_tx(self.waiting_dissemination_txs.len());
 
-        // FIXME: WaitingDissemination is not sent for the first DP of the lane
-        if let Some((parent_data_proposal_hash, _)) =
-            self.lanes.lanes_tip.get(self.crypto.validator_pubkey())
-        {
-            let status_event = MempoolStatusEvent::WaitingDissemination {
-                parent_data_proposal_hash: parent_data_proposal_hash.clone(),
-                tx,
-            };
-            let error_log = format!("Sending Status event{:?}", status_event);
-            self.bus.send(status_event).context(error_log)?;
-        }
+        let (parent_data_proposal_hash, _) = self
+            .lanes
+            .lanes_tip
+            .get(self.crypto.validator_pubkey())
+            .cloned()
+            // TODO: may be a new validator should first emit an empty data proposal with its validator pubkey inside
+            // Genesis parent hash ?
+            .unwrap_or((
+                DataProposalHash(self.crypto.validator_pubkey().to_string()),
+                LaneBytesSize(0),
+            ));
+
+        let status_event = MempoolStatusEvent::WaitingDissemination {
+            parent_data_proposal_hash: parent_data_proposal_hash.clone(),
+            tx,
+        };
+
+        let error_log = format!("Sending Status event {:?}", status_event);
+        self.bus.send(status_event).context(error_log)?;
 
         Ok(())
     }
@@ -1203,6 +1211,7 @@ pub mod test {
         pub name: String,
         pub out_receiver: Receiver<OutboundMessage>,
         pub mempool_event_receiver: Receiver<MempoolBlockEvent>,
+        pub mempool_status_event_receiver: Receiver<MempoolStatusEvent>,
         pub mempool_internal_event_receiver: Receiver<InternalMempoolEvent>,
         pub mempool: Mempool,
     }
@@ -1232,6 +1241,8 @@ pub mod test {
 
             let out_receiver = get_receiver::<OutboundMessage>(&shared_bus).await;
             let mempool_event_receiver = get_receiver::<MempoolBlockEvent>(&shared_bus).await;
+            let mempool_status_event_receiver =
+                get_receiver::<MempoolStatusEvent>(&shared_bus).await;
             let mempool_internal_event_receiver =
                 get_receiver::<InternalMempoolEvent>(&shared_bus).await;
 
@@ -1241,6 +1252,7 @@ pub mod test {
                 name: name.to_string(),
                 out_receiver,
                 mempool_event_receiver,
+                mempool_status_event_receiver,
                 mempool_internal_event_receiver,
                 mempool,
             }
@@ -1572,6 +1584,14 @@ pub mod test {
 
         ctx.submit_tx(&register_tx);
 
+        assert_chanmsg_matches!(
+            ctx.mempool_status_event_receiver,
+            MempoolStatusEvent::WaitingDissemination { parent_data_proposal_hash, tx } => {
+                assert_eq!(parent_data_proposal_hash, DataProposalHash(ctx.mempool.crypto.validator_pubkey().to_string()));
+                assert_eq!(tx,register_tx);
+            }
+        );
+
         ctx.mempool.handle_data_proposal_management()?;
         let (
             LaneEntry {
@@ -1584,6 +1604,15 @@ pub mod test {
 
         // Assert that pending_tx has been flushed
         assert!(ctx.mempool.waiting_dissemination_txs.is_empty());
+
+        assert_chanmsg_matches!(
+            ctx.mempool_status_event_receiver,
+            MempoolStatusEvent::DataProposalCreated { data_proposal_hash, txs_metadatas } => {
+                assert_eq!(data_proposal_hash, dp.hash());
+                assert_eq!(txs_metadatas.len(), dp.txs.len());
+            }
+        );
+
         Ok(())
     }
 
