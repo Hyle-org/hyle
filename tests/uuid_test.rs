@@ -44,7 +44,7 @@ async fn test_uuid_registration() {
         .await
         .unwrap();
 
-    let mut executor = TxExecutorBuilder::new(States {
+    let mut executor = TxExecutorBuilder::default(States {
         uuid: UuidTldState::default(),
         hydentity: ctx
             .get_contract("hydentity")

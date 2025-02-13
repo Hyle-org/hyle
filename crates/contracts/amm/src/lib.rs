@@ -270,9 +270,9 @@ impl ContractAction for AmmAction {
     }
 }
 
-pub fn execute(contract_input: ContractInput) -> RunResult<AmmState> {
+pub fn execute(contract_input: ContractInput<AmmState>) -> RunResult<AmmState> {
     let (input, parsed_blob, caller) =
-        match sdk::guest::init_with_caller::<AmmAction>(contract_input) {
+        match sdk::guest::init_with_caller::<AmmAction, AmmState>(contract_input) {
             Ok(res) => res,
             Err(err) => {
                 panic!("Amm contract initialization failed {}", err);
@@ -295,12 +295,11 @@ pub fn execute(contract_input: ContractInput) -> RunResult<AmmState> {
         caller,
     };
 
-    let amm_state = input
-        .initial_state
-        .clone()
-        .try_into()
-        .expect("Failed to decode state");
-    let mut amm_contract = AmmContract::new(execution_ctx, parsed_blob.contract_name, amm_state);
+    let mut amm_contract = AmmContract::new(
+        execution_ctx,
+        parsed_blob.contract_name,
+        input.initial_state,
+    );
 
     let amm_action = parsed_blob.data.parameters;
 

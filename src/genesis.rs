@@ -1,4 +1,7 @@
-use std::collections::{BTreeMap, HashMap};
+use std::{
+    collections::{BTreeMap, HashMap},
+    sync::Arc,
+};
 
 use crate::{
     bus::{bus_client, BusClientSender, BusMessage},
@@ -10,19 +13,23 @@ use crate::{
 use anyhow::{Error, Result};
 use client_sdk::{
     contract_states,
-    helpers::register_hyle_contract,
+    helpers::{register_hyle_contract, risc0::Risc0Prover},
     transaction_builder::{ProofTxBuilder, ProvableBlobTx, TxExecutor, TxExecutorBuilder},
 };
 use hydentity::{
-    client::{register_identity, verify_identity},
+    client::{register_identity, verify_identity, HydentityPseudoExecutor},
     Hydentity,
 };
 use hyle_contract_sdk::{identity_provider::IdentityVerification, Identity, StateDigest};
 use hyle_contract_sdk::{ContractName, Digestable, ProgramId};
-use hyllar::{client::transfer, HyllarToken};
+use hyle_contracts::{AMM_ELF, HYDENTITY_ELF, HYLLAR_ELF, STAKING_ELF};
+use hyllar::{
+    client::{transfer, HyllarPseudoExecutor},
+    HyllarToken,
+};
 use serde::{Deserialize, Serialize};
 use staking::{
-    client::{delegate, deposit_for_fees, stake},
+    client::{delegate, deposit_for_fees, stake, StakingPseudoExecutor},
     state::Staking,
 };
 use tracing::{debug, error, info};
@@ -67,15 +74,6 @@ impl Module for Genesis {
         self.start()
     }
 }
-
-contract_states!(
-    #[derive(Debug, Clone)]
-    pub struct States {
-        pub hyllar: HyllarToken,
-        pub hydentity: Hydentity,
-        pub staking: Staking,
-    }
-);
 
 #[allow(clippy::expect_used, reason = "genesis should panic if incorrect")]
 impl Genesis {
@@ -386,12 +384,28 @@ impl Genesis {
 
         let staking_state = staking::state::Staking::new();
 
-        let ctx = TxExecutorBuilder::new(States {
-            hyllar: hyllar::HyllarToken::new(100_000_000_000, "faucet.hydentity".to_string()),
-            hydentity: hydentity_state,
-            staking: staking_state,
-        })
-        .build();
+        let tx_executor = TxExecutorBuilder::default()
+            .with_contract(
+                "hyllar".into(),
+                hyllar::HyllarToken::new(100_000_000_000, "faucet.hydentity".to_string()),
+                HyllarPseudoExecutor {},
+                Risc0Prover::new(HYLLAR_ELF),
+            )
+            .with_contract(
+                "hydentity".into(),
+                hydentity_state,
+                HydentityPseudoExecutor {},
+                Risc0Prover::new(HYDENTITY_ELF),
+            )
+            .with_contract(
+                "staking".into(),
+                staking_state,
+                StakingPseudoExecutor {},
+                Risc0Prover::new(STAKING_ELF),
+            )
+            .build();
+
+        let ctx = Arc::new(tx_executor);
 
         let mut map = BTreeMap::default();
         map.insert("blst".into(), NativeVerifiers::Blst.into());

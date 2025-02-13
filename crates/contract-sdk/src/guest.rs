@@ -55,11 +55,14 @@ impl GuestEnv for SP1Env {
     }
 }
 
-pub fn fail(input: ContractInput, message: &str) -> HyleOutput {
+pub fn fail<State>(input: ContractInput<State>, message: &str) -> HyleOutput
+where
+    State: Digestable + Clone,
+{
     HyleOutput {
         version: 1,
-        initial_state: input.initial_state.clone(),
-        next_state: input.initial_state,
+        initial_state: input.initial_state.as_digest(),
+        next_state: input.initial_state.as_digest(),
         identity: input.identity,
         index: input.index,
         blobs: flatten_blobs(&input.blobs),
@@ -77,33 +80,40 @@ pub fn panic(env: impl GuestEnv, message: &str) {
     panic!("{}", message);
 }
 
-pub fn init_raw<Parameters>(input: ContractInput) -> (ContractInput, Option<Parameters>)
+pub fn init_raw<Parameters, State>(
+    input: ContractInput<State>,
+) -> (ContractInput<State>, Option<Parameters>)
 where
     Parameters: BorshDeserialize,
+    State: Digestable + Clone,
 {
     let parsed_blob = parse_blob::<Parameters>(&input.blobs, &input.index);
 
     (input, parsed_blob)
 }
 
-pub fn init_with_caller<Parameters>(
-    input: ContractInput,
-) -> Result<(ContractInput, StructuredBlob<Parameters>, Identity), String>
+pub fn init_with_caller<Parameters, State>(
+    input: ContractInput<State>,
+) -> Result<(ContractInput<State>, StructuredBlob<Parameters>, Identity), String>
 where
+    State: Digestable + Clone,
     Parameters: BorshSerialize + BorshDeserialize,
 {
     let parsed_blob = parse_structured_blob::<Parameters>(&input.blobs, &input.index);
 
     let parsed_blob = parsed_blob.ok_or("Failed to parse input blob".to_string())?;
 
-    let caller = check_caller_callees::<Parameters>(&input, &parsed_blob)?;
+    let caller = check_caller_callees::<Parameters, State>(&input, &parsed_blob)?;
 
     Ok((input, parsed_blob, caller))
 }
 
-pub fn commit<State>(env: impl GuestEnv, input: ContractInput, mut res: crate::RunResult<State>)
-where
-    State: Digestable,
+pub fn commit<State>(
+    env: impl GuestEnv,
+    input: ContractInput<State>,
+    mut res: crate::RunResult<State>,
+) where
+    State: Digestable + Clone,
 {
     env.commit(&as_hyle_output(input, &mut res));
 }

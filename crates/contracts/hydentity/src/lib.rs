@@ -119,8 +119,8 @@ impl TryFrom<sdk::StateDigest> for Hydentity {
 use core::str::from_utf8;
 use sdk::identity_provider::IdentityAction;
 
-pub fn execute(input: ContractInput) -> RunResult<Hydentity> {
-    let (input, parsed_blob) = sdk::guest::init_raw::<IdentityAction>(input);
+pub fn execute(input: ContractInput<Hydentity>) -> RunResult<Hydentity> {
+    let (input, parsed_blob) = sdk::guest::init_raw::<IdentityAction, Hydentity>(input);
 
     let parsed_blob = match parsed_blob {
         Some(v) => v,
@@ -131,15 +131,10 @@ pub fn execute(input: ContractInput) -> RunResult<Hydentity> {
 
     sdk::info!("Executing action: {:?}", parsed_blob);
 
-    let state: Hydentity = input
-        .initial_state
-        .clone()
-        .try_into()
-        .expect("Failed to decode state");
-
     let password = from_utf8(&input.private_input).unwrap();
 
-    sdk::identity_provider::execute_action(state, parsed_blob, password)
+    // TODO: faire comme hyllar
+    sdk::identity_provider::execute_action(input.initial_state, parsed_blob, password)
 }
 
 #[cfg(test)]

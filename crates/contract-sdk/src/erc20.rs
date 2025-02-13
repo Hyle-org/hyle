@@ -6,12 +6,9 @@ use alloc::{
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 
-use hyle_model::{
-    Blob, BlobData, BlobIndex, ContractAction, ContractName, Digestable, StructuredBlobData,
-};
+use hyle_model::{Blob, BlobData, BlobIndex, ContractAction, ContractName, StructuredBlobData};
 
 use crate::caller::{CallerCallee, CheckCalleeBlobs};
-use crate::RunResult;
 
 /// Trait representing the ERC-20 token standard interface.
 pub trait ERC20 {
@@ -81,6 +78,39 @@ pub trait ERC20 {
     ///
     /// * `Result<u128, String>` - The remaining allowance on success, or an error message on failure.
     fn allowance(&self, owner: &str, spender: &str) -> Result<u128, String>;
+
+    /// Executes an action on an object that implements the ERC20 trait based on the ERC20Action enum.
+    ///
+    /// # Arguments
+    ///
+    /// * `token` - A mutable reference to an object implementing the ERC20 trait.
+    /// * `action` - The action to execute, represented as an ERC20Action enum.
+    fn execute_action(&mut self, action: ERC20Action) -> Result<String, String> {
+        match action {
+            ERC20Action::TotalSupply => self
+                .total_supply()
+                .map(|supply| format!("Total Supply: {}", supply)),
+            ERC20Action::BalanceOf { account } => self
+                .balance_of(&account)
+                .map(|balance| format!("Balance of {}: {}", account, balance)),
+            ERC20Action::Transfer { recipient, amount } => self
+                .transfer(&recipient, amount)
+                .map(|_| format!("Transferred {} to {}", amount, recipient)),
+            ERC20Action::TransferFrom {
+                sender,
+                recipient,
+                amount,
+            } => self
+                .transfer_from(&sender, &recipient, amount)
+                .map(|_| format!("Transferred {} from {} to {}", amount, sender, recipient)),
+            ERC20Action::Approve { spender, amount } => self
+                .approve(&spender, amount)
+                .map(|_| format!("Approved {} for {}", amount, spender,)),
+            ERC20Action::Allowance { owner, spender } => self
+                .allowance(&owner, &spender)
+                .map(|allowance| format!("Allowance of {} by {}: {}", spender, owner, allowance)),
+        }
+    }
 }
 
 /// Enum representing possible calls to ERC-20 contract functions.
@@ -125,40 +155,6 @@ impl ContractAction for ERC20Action {
             }),
         }
     }
-}
-
-/// Executes an action on an object that implements the ERC20 trait based on the ERC20Action enum.
-///
-/// # Arguments
-///
-/// * `token` - A mutable reference to an object implementing the ERC20 trait.
-/// * `action` - The action to execute, represented as an ERC20Action enum.
-pub fn execute_action<T: ERC20 + Digestable>(mut token: T, action: ERC20Action) -> RunResult<T> {
-    let program_output = match action {
-        ERC20Action::TotalSupply => token
-            .total_supply()
-            .map(|supply| format!("Total Supply: {}", supply)),
-        ERC20Action::BalanceOf { account } => token
-            .balance_of(&account)
-            .map(|balance| format!("Balance of {}: {}", account, balance)),
-        ERC20Action::Transfer { recipient, amount } => token
-            .transfer(&recipient, amount)
-            .map(|_| format!("Transferred {} to {}", amount, recipient)),
-        ERC20Action::TransferFrom {
-            sender,
-            recipient,
-            amount,
-        } => token
-            .transfer_from(&sender, &recipient, amount)
-            .map(|_| format!("Transferred {} from {} to {}", amount, sender, recipient)),
-        ERC20Action::Approve { spender, amount } => token
-            .approve(&spender, amount)
-            .map(|_| format!("Approved {} for {}", amount, spender,)),
-        ERC20Action::Allowance { owner, spender } => token
-            .allowance(&owner, &spender)
-            .map(|allowance| format!("Allowance of {} by {}: {}", spender, owner, allowance)),
-    };
-    program_output.map(|output| (output, token, alloc::vec![]))
 }
 
 pub struct ERC20BlobChecker<'a, T>(&'a ContractName, &'a T);
@@ -214,6 +210,7 @@ where
 mod tests {
 
     use super::*;
+    use hyle_model::Digestable;
     use mockall::{
         mock,
         predicate::{self, *},
@@ -243,10 +240,10 @@ mod tests {
         mock.expect_total_supply().returning(|| Ok(1000));
 
         let action = ERC20Action::TotalSupply;
-        let result = execute_action(mock, action);
+        let result = mock.execute_action(action);
 
         assert!(result.is_ok());
-        assert_eq!(result.unwrap().0, "Total Supply: 1000");
+        assert_eq!(result.unwrap(), "Total Supply: 1000");
     }
 
     #[test]
@@ -259,10 +256,10 @@ mod tests {
         let action = ERC20Action::BalanceOf {
             account: "account1".to_string(),
         };
-        let result = execute_action(mock, action);
+        let result = mock.execute_action(action);
 
         assert!(result.is_ok());
-        assert_eq!(result.unwrap().0, "Balance of account1: 500");
+        assert_eq!(result.unwrap(), "Balance of account1: 500");
     }
 
     #[test]
@@ -276,10 +273,10 @@ mod tests {
             recipient: "recipient1".to_string(),
             amount: 200,
         };
-        let result = execute_action(mock, action);
+        let result = mock.execute_action(action);
 
         assert!(result.is_ok());
-        assert_eq!(result.unwrap().0, "Transferred 200 to recipient1");
+        assert_eq!(result.unwrap(), "Transferred 200 to recipient1");
     }
 
     #[test]
@@ -298,11 +295,11 @@ mod tests {
             recipient: "recipient1".to_string(),
             amount: 300,
         };
-        let result = execute_action(mock, action);
+        let result = mock.execute_action(action);
 
         assert!(result.is_ok());
         assert_eq!(
-            result.unwrap().0,
+            result.unwrap(),
             "Transferred 300 from sender1 to recipient1"
         );
     }
@@ -318,10 +315,10 @@ mod tests {
             spender: "spender1".to_string(),
             amount: 400,
         };
-        let result = execute_action(mock, action);
+        let result = mock.execute_action(action);
 
         assert!(result.is_ok());
-        assert_eq!(result.unwrap().0, "Approved 400 for spender1");
+        assert_eq!(result.unwrap(), "Approved 400 for spender1");
     }
 
     #[test]
@@ -335,9 +332,9 @@ mod tests {
             owner: "owner1".to_string(),
             spender: "spender1".to_string(),
         };
-        let result = execute_action(mock, action);
+        let result = mock.execute_action(action);
 
         assert!(result.is_ok());
-        assert_eq!(result.unwrap().0, "Allowance of spender1 by owner1: 500");
+        assert_eq!(result.unwrap(), "Allowance of spender1 by owner1: 500");
     }
 }

@@ -130,7 +130,7 @@ pub async fn generate_proof_txs(users: u32, state: States) -> Result<Vec<Vec<u8>
         .map(|chunk| chunk.to_vec())
         .collect::<Vec<_>>();
     for chunk in user_chunks {
-        let mut ctx = TxExecutorBuilder::new(state.clone())
+        let mut ctx = TxExecutorBuilder::default(state.clone())
             .with_prover("hyllar_test".into(), TestProver {})
             .build();
         tasks.spawn(async move {

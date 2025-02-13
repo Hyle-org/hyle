@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::ops::{Deref, DerefMut};
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use sdk::erc20::ERC20Action;
@@ -30,6 +31,20 @@ pub struct HyllarToken {
 pub struct HyllarTokenContract {
     state: HyllarToken,
     caller: Identity,
+}
+
+impl Deref for HyllarTokenContract {
+    type Target = HyllarToken;
+
+    fn deref(&self) -> &Self::Target {
+        &self.state
+    }
+}
+
+impl DerefMut for HyllarTokenContract {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.state
+    }
 }
 
 impl HyllarToken {
@@ -180,34 +195,25 @@ impl TryFrom<sdk::StateDigest> for HyllarToken {
 
 pub fn execute(
     stdout: &mut impl std::fmt::Write,
-    contract_input: ContractInput,
-) -> RunResult<HyllarTokenContract> {
+    contract_input: ContractInput<HyllarToken>,
+) -> RunResult<HyllarToken> {
     let (input, parsed_blob, caller) =
-        match sdk::guest::init_with_caller::<ERC20Action>(contract_input) {
+        match sdk::guest::init_with_caller::<ERC20Action, HyllarToken>(contract_input) {
             Ok(res) => res,
             Err(err) => {
                 panic!("Hyllar contract initialization failed {}", err);
             }
         };
 
-    let state = input
-        .initial_state
-        .clone()
-        .try_into()
-        .expect("Failed to decode state");
-
     let _ = stdout.write_str("Init token contract");
-    let contract = HyllarTokenContract::init(state, caller);
+    let mut contract = HyllarTokenContract::init(input.initial_state, caller);
 
     let _ = stdout.write_str("execute action");
-    let res = sdk::erc20::execute_action(contract, parsed_blob.data.parameters);
+    let res = contract.execute_action(parsed_blob.data.parameters)?;
 
-    let _ = match &res {
-        Ok((mess, _, _)) => writeln!(stdout, "commit {:?}", mess),
-        Err(err) => writeln!(stdout, "error {:?}", err),
-    };
+    let state = contract.state();
 
-    res
+    Ok((res, state, vec![]))
 }
 
 #[cfg(test)]

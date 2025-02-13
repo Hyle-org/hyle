@@ -42,8 +42,8 @@ pub trait Digestable {
 }
 
 #[derive(Serialize, Deserialize, BorshSerialize, BorshDeserialize, Debug, Clone)]
-pub struct ContractInput {
-    pub initial_state: StateDigest,
+pub struct ContractInput<State: Digestable> {
+    pub initial_state: State,
     pub identity: Identity,
     pub index: BlobIndex,
     pub blobs: Vec<Blob>,
