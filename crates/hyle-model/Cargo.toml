@@ -13,7 +13,7 @@ hex = "0.4.3"
 serde = { version = "1.0", features = ["derive", "rc"] }
 
 sha3 = { version = "0.10.8", optional = true }
-blst = { version = "0.3.13", optional = true }
+blst = { version = "0.3.14", optional = true }
 strum_macros = { version = "0.27.0", optional = true }
 derive_more = { version = "2.0.1", features = ["display"], optional = true }
 base64 = { version = "0.22.1", optional = true }
