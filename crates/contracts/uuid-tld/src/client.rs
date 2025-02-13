@@ -35,7 +35,7 @@ impl UuidTldState {
     ) {
         builder.init_with(
             contract_name,
-            self.as_digest(),
+            self,
             UuidTldPseudoExecutor {},
             Risc0Prover::new(metadata::UUID_TLD_ELF),
         );

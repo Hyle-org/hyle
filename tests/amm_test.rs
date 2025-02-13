@@ -104,7 +104,7 @@ mod e2e_amm {
         //    By sending 5 hyllar to amm
         //    By sending 10 hyllar2 to bob (from amm)
 
-        let mut executor = TxExecutorBuilder::new(States {
+        let mut executor = TxExecutorBuilder::default(States {
             hydentity: ctx.get_contract("hydentity").await?.state.try_into()?,
             hyllar: ctx.get_contract("hyllar").await?.state.try_into()?,
             hyllar2: HyllarContract::state_digest().try_into()?,

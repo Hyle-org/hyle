@@ -50,14 +50,14 @@ where
     Some(parsed_blob)
 }
 
-pub fn as_hyle_output<T: Digestable>(
-    input: ContractInput,
-    res: &mut crate::RunResult<T>,
+pub fn as_hyle_output<State: Digestable + Clone>(
+    input: ContractInput<State>,
+    res: &mut crate::RunResult<State>,
 ) -> HyleOutput {
     match res {
         Ok(res) => HyleOutput {
             version: 1,
-            initial_state: input.initial_state,
+            initial_state: input.initial_state.as_digest(),
             next_state: res.1.as_digest(),
             identity: input.identity,
             index: input.index,
@@ -72,11 +72,12 @@ pub fn as_hyle_output<T: Digestable>(
     }
 }
 
-pub fn check_caller_callees<Paramaters>(
-    input: &ContractInput,
+pub fn check_caller_callees<Paramaters, State>(
+    input: &ContractInput<State>,
     parameters: &StructuredBlob<Paramaters>,
 ) -> Result<Identity, String>
 where
+    State: Digestable + Clone,
     Paramaters: BorshSerialize + BorshDeserialize,
 {
     // Check that callees has this blob as caller

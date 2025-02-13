@@ -43,7 +43,7 @@ macro_rules! info {
     }
 }
 
-pub type RunResult<T> = Result<(String, T, Vec<RegisterContractEffect>), String>;
+pub type RunResult<State> = Result<(String, State, Vec<RegisterContractEffect>), String>;
 
 pub const fn to_u8_array(val: &[u32; 8]) -> [u8; 32] {
     [

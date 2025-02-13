@@ -1,9 +1,11 @@
 use clap::{Parser, Subcommand};
-use client_sdk::contract_states;
+use client_sdk::helpers::risc0::Risc0Prover;
 use client_sdk::rest_client::NodeApiHttpClient;
 use client_sdk::transaction_builder::ProvableBlobTx;
 use client_sdk::transaction_builder::TxExecutor;
 use client_sdk::transaction_builder::TxExecutorBuilder;
+use hydentity::client::metadata::HYDENTITY_ELF;
+use hydentity::client::HydentityPseudoExecutor;
 use hydentity::Hydentity;
 use sdk::identity_provider::IdentityAction;
 use sdk::ContractName;
@@ -33,27 +35,26 @@ enum Commands {
     },
 }
 
-contract_states!(
-    #[derive(Debug, Clone)]
-    pub struct States {
-        pub hydentity: Hydentity,
-    }
-);
-
-async fn build_ctx(client: &NodeApiHttpClient) -> TxExecutor<States> {
+async fn build_ctx(client: &NodeApiHttpClient) -> TxExecutor<Hydentity> {
+    let contract_name = "hydentity".into();
     // Fetch the initial state from the node
     let initial_state: Hydentity = client
-        .get_contract(&"hydentity".into())
+        .get_contract(&contract_name)
         .await
         .unwrap()
         .state
         .try_into()
         .unwrap();
 
-    TxExecutorBuilder::new(States {
-        hydentity: initial_state,
-    })
-    .build()
+    let mut tx_builder = TxExecutorBuilder::default();
+    tx_builder.with_contract(
+        contract_name,
+        initial_state,
+        HydentityPseudoExecutor {},
+        Risc0Prover::new(HYDENTITY_ELF),
+    );
+
+    tx_builder.build()
 }
 
 #[tokio::main]
@@ -124,13 +125,11 @@ async fn main() {
                         account: identity.clone(),
                         nonce,
                     },
+                    Some(password.into_bytes().to_vec()),
                     None,
                     None,
                 )
-                .unwrap()
-                .with_private_input(move |_: &Hydentity| {
-                    Ok(password.clone().into_bytes().to_vec())
-                });
+                .unwrap();
 
             let transaction = ctx.process(transaction).unwrap();
 

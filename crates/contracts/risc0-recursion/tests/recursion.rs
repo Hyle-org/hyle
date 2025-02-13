@@ -16,7 +16,7 @@ contract_states!(
 async fn test_recursion() {
     std::env::set_var("RISC0_DEV_MODE", "1");
 
-    let mut executor = TxExecutorBuilder::new(States {
+    let mut executor = TxExecutorBuilder::default(States {
         hydentity: Hydentity::new(),
     })
     .build();
