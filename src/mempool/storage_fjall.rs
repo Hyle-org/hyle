@@ -1,7 +1,9 @@
-use std::{collections::HashMap, path::Path, sync::Arc};
+use std::{collections::HashMap, path::Path};
 
 use anyhow::{bail, Result};
-use fjall::{Config, Keyspace, PartitionCreateOptions, PartitionHandle, Slice};
+use fjall::{
+    compaction::SizeTiered, Config, Keyspace, PartitionCreateOptions, PartitionHandle, Slice,
+};
 use tracing::info;
 
 use crate::{
@@ -27,19 +29,17 @@ impl Storage for LanesStorage {
         lanes_tip: HashMap<ValidatorPublicKey, (DataProposalHash, LaneBytesSize)>,
     ) -> Result<Self> {
         let db = Config::new(path)
-            .blob_cache(Arc::new(fjall::BlobCache::with_capacity_bytes(
-                5 * 1024 * 1024 * 1024, // 5Go cache
-            )))
-            .block_cache(Arc::new(fjall::BlockCache::with_capacity_bytes(
-                5 * 1024 * 1024 * 1024, // 5Go cache
-            )))
+            .max_write_buffer_size(512 * 1024 * 1024)
             .open()?;
         let by_hash = db.open_partition(
             "dp",
             PartitionCreateOptions::default()
-                .block_size(56 * 1024)
+                .block_size(8 * 1024)
                 .manual_journal_persist(true)
-                .max_memtable_size(128 * 1024 * 1024),
+                .max_memtable_size(128 * 1024 * 1024)
+                .compaction_strategy(fjall::compaction::Strategy::SizeTiered(
+                    SizeTiered::default(),
+                )),
         )?;
 
         info!("{} DP(s) available", by_hash.len()?);
