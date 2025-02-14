@@ -5,7 +5,7 @@ use hyle_model::{RegisterContractEffect, TxId};
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, ops::Deref, path::PathBuf, sync::Arc};
 use tokio::sync::RwLock;
-use tracing::{debug, info};
+use tracing::debug;
 
 use crate::{
     bus::BusMessage,
