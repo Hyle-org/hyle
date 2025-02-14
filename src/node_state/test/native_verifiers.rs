@@ -1,6 +1,6 @@
 use anyhow::Result;
 use assertables::assert_ok;
-use hyle_model::{Blob, BlobTransaction, ContractName, Hashable, Identity};
+use hyle_model::{Blob, BlobTransaction, ContractName, Hashed, Identity};
 use sha3::Digest;
 use tracing::info;
 
@@ -76,11 +76,8 @@ async fn scenario(identity: Identity, blob: Blob) -> Result<()> {
     // Wait until we process the genesis block
     node_modules.wait_for_processed_genesis().await?;
 
-    let blob_tx = BlobTransaction {
-        identity: identity.clone(),
-        blobs: vec![blob.clone()],
-    };
-    let blob_tx_hash = blob_tx.hash();
+    let blob_tx = BlobTransaction::new(identity.clone(), vec![blob.clone()]);
+    let blob_tx_hash = blob_tx.hashed();
     node_client.send(RestApiMessage::NewTx(blob_tx.clone().into()))?;
 
     // Wait until we commit this TX

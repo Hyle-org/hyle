@@ -54,20 +54,20 @@ async fn impl_test_mempool_isnt_blocked_by_proof_verification() -> Result<()> {
     node_client.send(GenesisEvent::GenesisBlock(SignedBlock {
         data_proposals: vec![(
             node_modules.crypto.validator_pubkey().clone(),
-            vec![DataProposal {
-                parent_data_proposal_hash: None,
-                txs: vec![BlobTransaction {
-                    identity: "test.hyle".into(),
-                    blobs: vec![RegisterContractAction {
+            vec![DataProposal::new(
+                None,
+                vec![BlobTransaction::new(
+                    "test.hyle",
+                    vec![RegisterContractAction {
                         verifier: "test-slow".into(),
                         program_id: ProgramId(vec![]),
                         state_digest: StateDigest(vec![0, 1, 2, 3]),
                         contract_name: contract_name.clone(),
                     }
                     .as_blob("hyle".into(), None, None)],
-                }
+                )
                 .into()],
-            }],
+            )],
         )],
         certificate: AggregateSignature::default(),
         consensus_proposal: ConsensusProposal::default(),
@@ -93,14 +93,14 @@ async fn impl_test_mempool_isnt_blocked_by_proof_verification() -> Result<()> {
     });
 
     // Now send the slow proof TX. Channels are ordered so these will be handled in order.
-    let blob_tx = BlobTransaction {
-        identity: Identity(format!("toto.{}", contract_name.0)),
-        blobs: vec![Blob {
+    let blob_tx = BlobTransaction::new(
+        Identity(format!("toto.{}", contract_name.0)),
+        vec![Blob {
             contract_name: contract_name.clone(),
             data: BlobData(vec![]),
         }],
-    };
-    let blob_tx_hash = blob_tx.hash();
+    );
+    let blob_tx_hash = blob_tx.hashed();
     let proof = ProofData(
         serde_json::to_vec(
             &vec![HyleOutput {
@@ -114,7 +114,7 @@ async fn impl_test_mempool_isnt_blocked_by_proof_verification() -> Result<()> {
         )
         .unwrap(),
     );
-    let proof_hash = proof.hash();
+    let proof_hash = proof.hashed();
 
     node_client.send(RestApiMessage::NewTx(blob_tx.clone().into()))?;
 
@@ -182,14 +182,10 @@ async fn impl_test_mempool_isnt_blocked_by_proof_verification() -> Result<()> {
 
     tracing::warn!("Starting part 2 - processing data proposals.");
 
-    let mut data_proposal = DataProposal {
-        parent_data_proposal_hash: Some(data_prop_hash),
-        txs: vec![],
-    };
-
+    let mut txs = vec![];
     // Send as many TXs as needed to hung all the workers if we were calling spawn
     for _ in 0..tokio::runtime::Handle::current().metrics().num_workers() {
-        data_proposal.txs.push(
+        txs.push(
             VerifiedProofTransaction {
                 contract_name: contract_name.clone(),
                 proof: Some(proof.clone()),
@@ -206,6 +202,7 @@ async fn impl_test_mempool_isnt_blocked_by_proof_verification() -> Result<()> {
             .into(),
         );
     }
+    let data_proposal = DataProposal::new(Some(data_prop_hash), txs);
 
     // Test setup 2: count the number of commits during the slow proof verification
     // if we're blocking the consensus, this will be lower than expected.

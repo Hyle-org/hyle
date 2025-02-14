@@ -29,8 +29,8 @@ impl std::hash::Hash for ConsensusProposalHash {
     }
 }
 
-pub trait Hashable<T> {
-    fn hash(&self) -> T;
+pub trait Hashed<T> {
+    fn hashed(&self) -> T;
 }
 
 pub trait DataSized {
@@ -515,8 +515,8 @@ pub struct RegisterContractAction {
 }
 
 #[cfg(feature = "full")]
-impl Hashable<TxHash> for RegisterContractAction {
-    fn hash(&self) -> TxHash {
+impl Hashed<TxHash> for RegisterContractAction {
+    fn hashed(&self) -> TxHash {
         use sha3::{Digest, Sha3_256};
 
         let mut hasher = Sha3_256::new();
@@ -571,8 +571,8 @@ pub struct RegisterContractEffect {
 }
 
 #[cfg(feature = "full")]
-impl Hashable<TxHash> for RegisterContractEffect {
-    fn hash(&self) -> TxHash {
+impl Hashed<TxHash> for RegisterContractEffect {
+    fn hashed(&self) -> TxHash {
         use sha3::{Digest, Sha3_256};
 
         let mut hasher = Sha3_256::new();

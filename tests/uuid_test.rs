@@ -8,7 +8,7 @@ use fixtures::ctx::{E2EContract, E2ECtx};
 use hydentity::{client::register_identity, Hydentity};
 use hyle::mempool::verifiers::verify_proof;
 use hyle_contract_sdk::{
-    BlobTransaction, ContractName, Digestable, Hashable, ProgramId, StateDigest, Verifier,
+    BlobTransaction, ContractName, Digestable, Hashed, ProgramId, StateDigest, Verifier,
 };
 use hyle_contracts::{HYDENTITY_ELF, UUID_TLD_ELF, UUID_TLD_ID};
 use uuid_tld::{RegisterUuidContract, UuidTldState};
@@ -77,13 +77,10 @@ async fn test_uuid_registration() {
 
     ctx.send_provable_blob_tx(&tx).await.unwrap();
 
-    let blob_tx = BlobTransaction {
-        identity: tx.identity.clone(),
-        blobs: tx.blobs.clone(),
-    };
+    let blob_tx = BlobTransaction::new(tx.identity.clone(), tx.blobs.clone());
 
     let tx_context = loop {
-        if let Ok(v) = ctx.client().get_unsettled_tx(&blob_tx.hash()).await {
+        if let Ok(v) = ctx.client().get_unsettled_tx(&blob_tx.hashed()).await {
             break (*v.tx_context).clone();
         }
         tokio::time::sleep(std::time::Duration::from_millis(250)).await;

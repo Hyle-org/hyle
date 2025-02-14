@@ -8,7 +8,7 @@ use std::{
 
 use anyhow::{bail, Result};
 use sdk::{
-    Blob, BlobIndex, BlobTransaction, ContractAction, ContractInput, ContractName, Hashable,
+    Blob, BlobIndex, BlobTransaction, ContractAction, ContractInput, ContractName, Hashed,
     HyleOutput, Identity, ProofTransaction, StateDigest, TxContext,
 };
 
@@ -57,10 +57,7 @@ impl ProvableBlobTx {
 
 impl From<ProvableBlobTx> for BlobTransaction {
     fn from(tx: ProvableBlobTx) -> Self {
-        BlobTransaction {
-            identity: tx.identity,
-            blobs: tx.blobs,
-        }
+        BlobTransaction::new(tx.identity, tx.blobs)
     }
 }
 
@@ -110,10 +107,7 @@ impl ProofTxBuilder {
     }
 
     pub fn to_blob_tx(&self) -> BlobTransaction {
-        BlobTransaction {
-            identity: self.identity.clone(),
-            blobs: self.blobs.clone(),
-        }
+        BlobTransaction::new(self.identity.clone(), self.blobs.clone())
     }
 }
 
@@ -329,11 +323,7 @@ impl ContractRunner {
         private_input: Vec<u8>,
         initial_state: StateDigest,
     ) {
-        let tx_hash = BlobTransaction {
-            identity: self.identity.clone(),
-            blobs: blobs.clone(),
-        }
-        .hash();
+        let tx_hash = BlobTransaction::new(self.identity.clone(), blobs.clone()).hashed();
 
         self.contract_input.get_or_init(|| ContractInput {
             initial_state,

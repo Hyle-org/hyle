@@ -196,7 +196,7 @@ pub async fn send_transaction<S: StateUpdater>(
     let identity = transaction.identity.clone();
     let blobs = transaction.blobs.clone();
     let tx_hash = client
-        .send_tx_blob(&BlobTransaction { identity, blobs })
+        .send_tx_blob(&BlobTransaction::new(identity, blobs))
         .await
         .unwrap();
 

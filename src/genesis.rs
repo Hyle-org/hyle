@@ -205,8 +205,8 @@ impl Genesis {
             // dissemination. We can create the same VerifiedProofTransaction on each genesis
             // validator, and assume it's the same.
 
-            let tx = BlobTransaction { identity, blobs };
-            let blob_tx_hash = tx.hash();
+            let tx = BlobTransaction::new(identity, blobs);
+            let blob_tx_hash = tx.hashed();
 
             genesis_txs.push(tx.into());
 
@@ -217,7 +217,7 @@ impl Genesis {
                     proven_blobs: outputs
                         .drain(..)
                         .map(|(contract_name, out)| BlobProofOutput {
-                            original_proof_hash: ProofData::default().hash(),
+                            original_proof_hash: ProofData::default().hashed(),
                             program_id: contract_program_ids
                                 .get(&contract_name)
                                 .expect("Genesis TXes on unregistered contracts")
@@ -227,7 +227,7 @@ impl Genesis {
                         })
                         .collect(),
                     is_recursive: true,
-                    proof_hash: ProofData::default().hash(),
+                    proof_hash: ProofData::default().hashed(),
                     proof_size: 0,
                     proof: None,
                 }
@@ -470,10 +470,7 @@ impl Genesis {
         genesis_txs: Vec<Transaction>,
         initial_validators: Vec<ValidatorPublicKey>,
     ) -> SignedBlock {
-        let dp = DataProposal {
-            parent_data_proposal_hash: None,
-            txs: genesis_txs,
-        };
+        let dp = DataProposal::new(None, genesis_txs);
 
         // TODO: do something better?
         let round_leader = initial_validators

@@ -98,7 +98,7 @@ impl SingleNodeConsensus {
                     #[allow(clippy::expect_used, reason="We want to fail to start with misconfigured genesis block")]
                     match msg {
                         GenesisEvent::GenesisBlock (signed_block) => {
-                            self.store.last_consensus_proposal_hash = signed_block.hash();
+                            self.store.last_consensus_proposal_hash = signed_block.hashed();
                             // TODO: handle this from the block?
                             self.store
                                 .staking
@@ -180,10 +180,10 @@ impl SingleNodeConsensus {
             parent_hash: std::mem::take(&mut self.store.last_consensus_proposal_hash),
         };
 
-        self.store.last_consensus_proposal_hash = consensus_proposal.hash();
+        self.store.last_consensus_proposal_hash = consensus_proposal.hashed();
 
         let certificate = self.crypto.sign_aggregate(
-            ConsensusNetMessage::ConfirmAck(consensus_proposal.hash()),
+            ConsensusNetMessage::ConfirmAck(consensus_proposal.hashed()),
             &[],
         )?;
 

@@ -248,10 +248,7 @@ impl E2ECtx {
         }
         .as_blob("hyle".into(), None, None)];
 
-        let tx = &BlobTransaction {
-            identity: sender.clone(),
-            blobs: blobs.clone(),
-        };
+        let tx = &BlobTransaction::new(sender.clone(), blobs.clone());
         assert_ok!(self.client().send_tx_blob(tx).await);
 
         tokio::time::timeout(Duration::from_secs(30), async {
@@ -271,16 +268,13 @@ impl E2ECtx {
 
     pub async fn send_blob(&self, identity: Identity, blobs: Vec<Blob>) -> Result<TxHash> {
         self.client()
-            .send_tx_blob(&BlobTransaction { identity, blobs })
+            .send_tx_blob(&BlobTransaction::new(identity, blobs))
             .await
     }
 
     pub async fn send_provable_blob_tx(&self, tx: &ProvableBlobTx) -> Result<TxHash> {
         self.client()
-            .send_tx_blob(&BlobTransaction {
-                identity: tx.identity.clone(),
-                blobs: tx.blobs.clone(),
-            })
+            .send_tx_blob(&BlobTransaction::new(tx.identity.clone(), tx.blobs.clone()))
             .await
     }
 
