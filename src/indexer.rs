@@ -859,16 +859,16 @@ mod test {
     }
 
     fn new_register_tx(contract_name: ContractName, state_digest: StateDigest) -> BlobTransaction {
-        BlobTransaction {
-            identity: "hyle.hyle".into(),
-            blobs: vec![RegisterContractAction {
+        BlobTransaction::new(
+            "hyle.hyle".into(),
+            vec![RegisterContractAction {
                 verifier: "test".into(),
                 program_id: ProgramId(vec![3, 2, 1]),
                 state_digest,
                 contract_name,
             }
             .as_blob("hyle".into(), None, None)],
-        }
+        )
     }
 
     fn new_blob_tx(
@@ -878,9 +878,9 @@ mod test {
     ) -> Transaction {
         Transaction {
             version: 1,
-            transaction_data: TransactionData::Blob(BlobTransaction {
+            transaction_data: TransactionData::Blob(BlobTransaction::new(
                 identity,
-                blobs: vec![
+                vec![
                     Blob {
                         contract_name: first_contract_name,
                         data: BlobData(vec![1, 2, 3]),
@@ -890,7 +890,7 @@ mod test {
                         data: BlobData(vec![1, 2, 3]),
                     },
                 ],
-            }),
+            )),
         }
     }
 

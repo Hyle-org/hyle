@@ -873,16 +873,16 @@ pub mod test {
     }
 
     pub fn make_register_contract_tx(name: ContractName) -> BlobTransaction {
-        BlobTransaction {
-            identity: "hyle.hyle".into(),
-            blobs: vec![RegisterContractAction {
+        BlobTransaction::new(
+            "hyle.hyle".into(),
+            vec![RegisterContractAction {
                 verifier: "test".into(),
                 program_id: ProgramId(vec![]),
                 state_digest: StateDigest(vec![0, 1, 2, 3]),
                 contract_name: name,
             }
             .as_blob("hyle".into(), None, None)],
-        }
+        )
     }
 
     fn make_register_contract_effect(contract_name: ContractName) -> RegisterContractEffect {
@@ -1022,10 +1022,7 @@ pub mod test {
         state.handle_register_contract_effect(&register_c1);
 
         let identity = Identity::new("test.c1");
-        let blob_tx = BlobTransaction {
-            identity: identity.clone(),
-            blobs: vec![new_blob("c1")],
-        };
+        let blob_tx = BlobTransaction::new(identity.clone(), vec![new_blob("c1")]);
 
         let blob_tx_id = blob_tx.hash();
 
@@ -1058,10 +1055,7 @@ pub mod test {
         let mut state = new_node_state().await;
         let identity = Identity::new("test.c1");
 
-        let blob_tx = BlobTransaction {
-            identity: identity.clone(),
-            blobs: vec![],
-        };
+        let blob_tx = BlobTransaction::new(identity.clone(), vec![]);
 
         assert_err!(state.handle_blob_tx(&blob_tx, bogus_tx_context()));
     }
@@ -1071,10 +1065,7 @@ pub mod test {
         let mut state = new_node_state().await;
         let identity = Identity::new("incorrect_id");
 
-        let blob_tx = BlobTransaction {
-            identity: identity.clone(),
-            blobs: vec![new_blob("test")],
-        };
+        let blob_tx = BlobTransaction::new(identity.clone(), vec![new_blob("test")]);
 
         assert_err!(state.handle_blob_tx(&blob_tx, bogus_tx_context()));
     }
@@ -1089,10 +1080,8 @@ pub mod test {
         let register_c1 = make_register_contract_effect(c1.clone());
         let register_c2 = make_register_contract_effect(c2.clone());
 
-        let blob_tx = BlobTransaction {
-            identity: identity.clone(),
-            blobs: vec![new_blob(&c1.0), new_blob(&c2.0)],
-        };
+        let blob_tx =
+            BlobTransaction::new(identity.clone(), vec![new_blob(&c1.0), new_blob(&c2.0)]);
 
         let blob_tx_hash = blob_tx.hash();
 
@@ -1124,10 +1113,10 @@ pub mod test {
         let register_c1 = make_register_contract_effect(c1.clone());
         let register_c2 = make_register_contract_effect(c2.clone());
 
-        let blob_tx_1 = BlobTransaction {
-            identity: Identity::new("test.c1"),
-            blobs: vec![new_blob(&c1.0), new_blob(&c2.0)],
-        };
+        let blob_tx_1 = BlobTransaction::new(
+            Identity::new("test.c1"),
+            vec![new_blob(&c1.0), new_blob(&c2.0)],
+        );
         let blob_tx_hash_1 = blob_tx_1.hash();
 
         state.handle_register_contract_effect(&register_c1);
@@ -1159,10 +1148,10 @@ pub mod test {
         let register_c1 = make_register_contract_effect(c1.clone());
         let register_c2 = make_register_contract_effect(c2.clone());
 
-        let blob_tx = BlobTransaction {
-            identity: Identity::new("test.c1"),
-            blobs: vec![new_blob(&c1.0), new_blob(&c2.0)],
-        };
+        let blob_tx = BlobTransaction::new(
+            Identity::new("test.c1"),
+            vec![new_blob(&c1.0), new_blob(&c2.0)],
+        );
         let blob_tx_hash = blob_tx.hash();
 
         state.handle_register_contract_effect(&register_c1);
@@ -1200,10 +1189,10 @@ pub mod test {
 
         let register_c1 = make_register_contract_effect(c1.clone());
 
-        let blob_tx = BlobTransaction {
-            identity: Identity::new("test.c1"),
-            blobs: vec![new_blob(&c1.0), new_blob(&c1.0)],
-        };
+        let blob_tx = BlobTransaction::new(
+            Identity::new("test.c1"),
+            vec![new_blob(&c1.0), new_blob(&c1.0)],
+        );
 
         let blob_tx_hash = blob_tx.hash();
 
@@ -1239,10 +1228,10 @@ pub mod test {
         let second_blob = new_blob(&c1.0);
         let third_blob = new_blob(&c1.0);
 
-        let blob_tx = BlobTransaction {
-            identity: Identity::new("test.c1"),
-            blobs: vec![first_blob, second_blob, third_blob],
-        };
+        let blob_tx = BlobTransaction::new(
+            Identity::new("test.c1"),
+            vec![first_blob, second_blob, third_blob],
+        );
         let blob_tx_hash = blob_tx.hash();
 
         state.handle_register_contract_effect(&register_c1);
@@ -1282,10 +1271,10 @@ pub mod test {
         let first_blob = new_blob(&c1.0);
         let second_blob = new_blob(&c1.0);
         let third_blob = new_blob(&c1.0);
-        let blob_tx = BlobTransaction {
-            identity: Identity::new("test.c1"),
-            blobs: vec![first_blob, second_blob, third_blob],
-        };
+        let blob_tx = BlobTransaction::new(
+            Identity::new("test.c1"),
+            vec![first_blob, second_blob, third_blob],
+        );
 
         let blob_tx_hash = blob_tx.hash();
 
@@ -1339,10 +1328,7 @@ pub mod test {
         let first_blob = new_blob(&c1.0);
         let second_blob = new_blob(&c1.0);
 
-        let blob_tx = BlobTransaction {
-            identity: Identity::new("test.c1"),
-            blobs: vec![first_blob, second_blob],
-        };
+        let blob_tx = BlobTransaction::new(Identity::new("test.c1"), vec![first_blob, second_blob]);
 
         let blob_tx_hash = blob_tx.hash();
 
@@ -1395,10 +1381,10 @@ pub mod test {
         let second_blob = new_blob(&c1.0);
         let third_blob = new_blob(&c1.0);
 
-        let blob_tx = BlobTransaction {
-            identity: Identity::new("test.c1"),
-            blobs: vec![first_blob, second_blob, third_blob],
-        };
+        let blob_tx = BlobTransaction::new(
+            Identity::new("test.c1"),
+            vec![first_blob, second_blob, third_blob],
+        );
 
         let blob_tx_hash = blob_tx.hash();
 
@@ -1449,22 +1435,16 @@ pub mod test {
 
         // Add four transactions - A blocks B/C, B blocks D.
         // Send proofs for B, C, D before A.
-        let blocking_tx = BlobTransaction {
-            identity: Identity::new("test.c1"),
-            blobs: vec![new_blob(&c1.0), new_blob(&c2.0)],
-        };
-        let ready_same_block = BlobTransaction {
-            identity: Identity::new("test.c1"),
-            blobs: vec![new_blob(&c1.0)],
-        };
-        let ready_later_block = BlobTransaction {
-            identity: Identity::new("test.c2"),
-            blobs: vec![new_blob(&c2.0)],
-        };
-        let ready_last_block = BlobTransaction {
-            identity: Identity::new("test2.c1"),
-            blobs: vec![new_blob(&c1.0)],
-        };
+        let blocking_tx = BlobTransaction::new(
+            Identity::new("test.c1"),
+            vec![new_blob(&c1.0), new_blob(&c2.0)],
+        );
+        let ready_same_block =
+            BlobTransaction::new(Identity::new("test.c1"), vec![new_blob(&c1.0)]);
+        let ready_later_block =
+            BlobTransaction::new(Identity::new("test.c2"), vec![new_blob(&c2.0)]);
+        let ready_last_block =
+            BlobTransaction::new(Identity::new("test2.c1"), vec![new_blob(&c1.0)]);
 
         let blocking_tx_hash = blocking_tx.hash();
 
@@ -1540,10 +1520,10 @@ pub mod test {
         let register_c1 = make_register_contract_tx(c1.clone());
 
         // First basic test - Time out a TX.
-        let blob_tx = BlobTransaction {
-            identity: Identity::new("test.c1"),
-            blobs: vec![new_blob(&c1.0), new_blob(&c1.0)],
-        };
+        let blob_tx = BlobTransaction::new(
+            Identity::new("test.c1"),
+            vec![new_blob(&c1.0), new_blob(&c1.0)],
+        );
 
         let txs = vec![register_c1.into(), blob_tx.clone().into()];
 
@@ -1568,10 +1548,7 @@ pub mod test {
         let register_c1 = make_register_contract_tx(c1.clone());
 
         // Add a new transaction and settle it.
-        let blob_tx = BlobTransaction {
-            identity: Identity::new("test.c1"),
-            blobs: vec![new_blob(&c1.0)],
-        };
+        let blob_tx = BlobTransaction::new(Identity::new("test.c1"), vec![new_blob(&c1.0)]);
 
         let crafted_block = craft_signed_block(
             104,
@@ -1625,20 +1602,16 @@ pub mod test {
         let register_c2 = make_register_contract_tx(c2.clone());
 
         // Add Three transactions - the first blocks the next two, but the next two are ready to settle.
-        let blocking_tx = BlobTransaction {
-            identity: Identity::new("test.c1"),
-            blobs: vec![new_blob(&c1.0), new_blob(&c2.0)],
-        };
+        let blocking_tx = BlobTransaction::new(
+            Identity::new("test.c1"),
+            vec![new_blob(&c1.0), new_blob(&c2.0)],
+        );
         let blocking_tx_hash = blocking_tx.hash();
 
-        let ready_same_block = BlobTransaction {
-            identity: Identity::new("test.c1"),
-            blobs: vec![new_blob(&c1.0)],
-        };
-        let ready_later_block = BlobTransaction {
-            identity: Identity::new("test.c2"),
-            blobs: vec![new_blob(&c2.0)],
-        };
+        let ready_same_block =
+            BlobTransaction::new(Identity::new("test.c1"), vec![new_blob(&c1.0)]);
+        let ready_later_block =
+            BlobTransaction::new(Identity::new("test.c2"), vec![new_blob(&c2.0)]);
         let ready_same_block_hash = ready_same_block.hash();
         let ready_later_block_hash = ready_later_block.hash();
         let hyle_output = make_hyle_output(ready_same_block.clone(), BlobIndex(0));
@@ -1709,22 +1682,13 @@ pub mod test {
         let register_c2 = make_register_contract_tx(c2.clone());
 
         // Add Three transactions - the first blocks the next two, and the next two are NOT ready to settle.
-        let tx1 = BlobTransaction {
-            identity: Identity::new("test.c1"),
-            blobs: vec![new_blob(&c1.0), new_blob(&c2.0)],
-        };
-        let tx2 = BlobTransaction {
-            identity: Identity::new("test.c1"),
-            blobs: vec![new_blob(&c1.0)],
-        };
-        let tx3 = BlobTransaction {
-            identity: Identity::new("test.c2"),
-            blobs: vec![new_blob(&c2.0)],
-        };
-        let tx4 = BlobTransaction {
-            identity: Identity::new("test2.c2"),
-            blobs: vec![new_blob(&c2.0)],
-        };
+        let tx1 = BlobTransaction::new(
+            Identity::new("test.c1"),
+            vec![new_blob(&c1.0), new_blob(&c2.0)],
+        );
+        let tx2 = BlobTransaction::new(Identity::new("test.c1"), vec![new_blob(&c1.0)]);
+        let tx3 = BlobTransaction::new(Identity::new("test.c2"), vec![new_blob(&c2.0)]);
+        let tx4 = BlobTransaction::new(Identity::new("test2.c2"), vec![new_blob(&c2.0)]);
         let tx1_hash = tx1.hash();
         let tx2_hash = tx2.hash();
         let tx3_hash = tx3.hash();
@@ -1798,16 +1762,16 @@ pub mod test {
         use super::*;
 
         pub fn make_tx(sender: Identity, tld: ContractName, name: ContractName) -> BlobTransaction {
-            BlobTransaction {
-                identity: sender,
-                blobs: vec![RegisterContractAction {
+            BlobTransaction::new(
+                sender,
+                vec![RegisterContractAction {
                     verifier: "test".into(),
                     program_id: ProgramId(vec![]),
                     state_digest: StateDigest(vec![0, 1, 2, 3]),
                     contract_name: name,
                 }
                 .as_blob(tld, None, None)],
-            }
+            )
         }
 
         #[test_log::test(tokio::test)]
@@ -1851,13 +1815,13 @@ pub mod test {
             let register_2 = make_tx("other.hyle".into(), "hyle".into(), "c2.hyle.hyle".into());
             let register_3 = make_tx("hyle.hyle".into(), "hyle".into(), "c3.other".into());
             let register_4 = make_tx("hyle.hyle".into(), "hyle".into(), ".hyle".into());
-            let register_5 = BlobTransaction {
-                identity: "hyle.hyle".into(),
-                blobs: vec![Blob {
+            let register_5 = BlobTransaction::new(
+                "hyle.hyle".into(),
+                vec![Blob {
                     contract_name: "hyle".into(),
                     data: BlobData(vec![0, 1, 2, 3]),
                 }],
-            };
+            );
             let register_good = make_tx("hyle.hyle".into(), "hyle".into(), "c1.hyle".into());
 
             let signed_block = craft_signed_block(
@@ -1895,9 +1859,9 @@ pub mod test {
             state.handle_signed_block(&craft_signed_block(1, vec![register.clone().into()]));
             assert_eq!(state.contracts.len(), 2);
 
-            let compositing_register_willfail = BlobTransaction {
-                identity: "test.hydentity".into(),
-                blobs: vec![
+            let compositing_register_willfail = BlobTransaction::new(
+                "test.hydentity".into(),
+                vec![
                     RegisterContractAction {
                         verifier: "test".into(),
                         program_id: ProgramId(vec![]),
@@ -1910,7 +1874,7 @@ pub mod test {
                         data: BlobData(vec![0, 1, 2, 3]),
                     },
                 ],
-            };
+            );
             // Try to register the same contract validly later.
             let mut compositing_register_good = compositing_register_willfail.clone();
             // Change identity to change blob tx hash

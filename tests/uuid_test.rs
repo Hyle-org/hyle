@@ -77,10 +77,7 @@ async fn test_uuid_registration() {
 
     ctx.send_provable_blob_tx(&tx).await.unwrap();
 
-    let blob_tx = BlobTransaction {
-        identity: tx.identity.clone(),
-        blobs: tx.blobs.clone(),
-    };
+    let blob_tx = BlobTransaction::new(tx.identity.clone(), tx.blobs.clone());
 
     let tx_context = loop {
         if let Ok(v) = ctx.client().get_unsettled_tx(&blob_tx.hash()).await {

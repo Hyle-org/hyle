@@ -56,16 +56,16 @@ async fn impl_test_mempool_isnt_blocked_by_proof_verification() -> Result<()> {
             node_modules.crypto.validator_pubkey().clone(),
             vec![DataProposal::new(
                 None,
-                vec![BlobTransaction {
-                    identity: "test.hyle".into(),
-                    blobs: vec![RegisterContractAction {
+                vec![BlobTransaction::new(
+                    "test.hyle".into(),
+                    vec![RegisterContractAction {
                         verifier: "test-slow".into(),
                         program_id: ProgramId(vec![]),
                         state_digest: StateDigest(vec![0, 1, 2, 3]),
                         contract_name: contract_name.clone(),
                     }
                     .as_blob("hyle".into(), None, None)],
-                }
+                )
                 .into()],
             )],
         )],
@@ -93,13 +93,13 @@ async fn impl_test_mempool_isnt_blocked_by_proof_verification() -> Result<()> {
     });
 
     // Now send the slow proof TX. Channels are ordered so these will be handled in order.
-    let blob_tx = BlobTransaction {
-        identity: Identity(format!("toto.{}", contract_name.0)),
-        blobs: vec![Blob {
+    let blob_tx = BlobTransaction::new(
+        Identity(format!("toto.{}", contract_name.0)),
+        vec![Blob {
             contract_name: contract_name.clone(),
             data: BlobData(vec![]),
         }],
-    };
+    );
     let blob_tx_hash = blob_tx.hash();
     let proof = ProofData(
         serde_json::to_vec(

@@ -137,13 +137,13 @@ impl MockWorkflowHandler {
         warn!("Starting stress test");
         let tx = RestApiMessage::NewTx(Transaction {
             version: 1,
-            transaction_data: crate::model::TransactionData::Blob(BlobTransaction {
-                identity: Identity::new("toto"),
-                blobs: vec![Blob {
+            transaction_data: crate::model::TransactionData::Blob(BlobTransaction::new(
+                Identity::new("toto"),
+                vec![Blob {
                     contract_name: ContractName::new("test"),
                     data: BlobData(vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9]),
                 }],
-            }),
+            )),
         });
         for _ in 0..500000 {
             let _ = self.bus.send(tx.clone());
@@ -155,23 +155,23 @@ impl MockWorkflowHandler {
 
         let api_client = NodeApiHttpClient::new("http://localhost:4321".to_string())?;
 
-        let tx_blob = BlobTransaction {
-            identity: Identity::new("id"),
-            blobs: vec![Blob {
+        let tx_blob = BlobTransaction::new(
+            Identity::new("id"),
+            vec![Blob {
                 contract_name: ContractName::new("contract_name"),
                 data: BlobData(vec![0, 1, 2]),
             }],
-        };
-        let tx_register_blob = BlobTransaction {
-            identity: Identity::new("id"),
-            blobs: vec![RegisterContractAction {
+        );
+        let tx_register_blob = BlobTransaction::new(
+            Identity::new("id"),
+            vec![RegisterContractAction {
                 verifier: "verifier".into(),
                 program_id: ProgramId(vec![]),
                 state_digest: StateDigest(vec![]),
                 contract_name: ContractName::new("contract"),
             }
             .as_blob("hyle".into(), None, None)],
-        };
+        );
 
         let tx_proof = ProofTransaction::default();
 

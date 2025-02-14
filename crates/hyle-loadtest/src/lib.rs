@@ -40,16 +40,16 @@ pub fn setup_hyllar(users: u32) -> Result<HyllarTokenContract> {
 pub async fn setup(url: String, users: u32, verifier: String) -> Result<()> {
     let hyllar_contract = setup_hyllar(users)?;
 
-    let tx = BlobTransaction {
-        identity: Identity::new("hyle.hyle"),
-        blobs: vec![RegisterContractAction {
+    let tx = BlobTransaction::new(
+        Identity::new("hyle.hyle"),
+        vec![RegisterContractAction {
             contract_name: "hyllar_test".into(),
             verifier: verifier.into(),
             program_id: hyle_contracts::HYLLAR_ID.to_vec().into(),
             state_digest: hyllar_contract.state().as_digest(),
         }
         .as_blob("hyle".into(), None, None)],
-    };
+    );
 
     let mut client = NodeTcpClient::new(url).await.unwrap();
     client.send_transaction(tx.into()).await.unwrap();
@@ -98,7 +98,7 @@ pub async fn generate_blobs_txs(users: u32) -> Result<Vec<Vec<u8>>> {
                 let identity = transaction.identity;
                 let blobs = transaction.blobs;
 
-                let msg: TcpServerNetMessage = BlobTransaction { identity, blobs }.into();
+                let msg: TcpServerNetMessage = BlobTransaction::new(identity, blobs).into();
                 local_blob_txs.push(msg.to_binary()?);
             }
 
@@ -274,13 +274,13 @@ pub async fn send_massive_blob(users: u32, url: String) -> Result<()> {
     for i in 0..users {
         let mut user_data = data.clone();
         user_data.extend_from_slice(&i.to_be_bytes());
-        let tx = BlobTransaction {
-            identity: ident.clone(),
-            blobs: vec![Blob {
+        let tx = BlobTransaction::new(
+            ident.clone(),
+            vec![Blob {
                 contract_name: "hydentity".into(),
                 data: BlobData(user_data),
             }],
-        };
+        );
         let msg: TcpServerNetMessage = tx.into();
         let encoded_blob_tx = msg.to_binary()?;
         txs.push(encoded_blob_tx);

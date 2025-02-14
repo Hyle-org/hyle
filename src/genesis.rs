@@ -205,7 +205,7 @@ impl Genesis {
             // dissemination. We can create the same VerifiedProofTransaction on each genesis
             // validator, and assume it's the same.
 
-            let tx = BlobTransaction { identity, blobs };
+            let tx = BlobTransaction::new(identity, blobs);
             let blob_tx_hash = tx.hash();
 
             genesis_txs.push(tx.into());

@@ -1,10 +1,15 @@
+use std::sync::RwLock;
+
 use borsh::{BorshDeserialize, BorshSerialize};
 use derive_more::derive::Display;
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Sha3_256};
 use strum::IntoDiscriminant;
 use strum_macros::{EnumDiscriminants, IntoStaticStr};
-use utoipa::ToSchema;
+use utoipa::{
+    openapi::{ArrayBuilder, ObjectBuilder, RefOr, Schema},
+    PartialSchema, ToSchema,
+};
 
 use crate::*;
 
@@ -225,23 +230,57 @@ impl Hashable<ProofDataHash> for ProofData {
     }
 }
 
-#[derive(
-    Debug,
-    Serialize,
-    Deserialize,
-    ToSchema,
-    Default,
-    PartialEq,
-    Eq,
-    Clone,
-    BorshSerialize,
-    BorshDeserialize,
-)]
+#[derive(Debug, Serialize, Deserialize, Default, BorshSerialize, BorshDeserialize)]
 pub struct BlobTransaction {
     pub identity: Identity,
     pub blobs: Vec<Blob>,
     // FIXME: add a nonce or something to prevent BlobTransaction to share the same hash
+    #[borsh(skip)]
+    hash_cache: RwLock<Option<TxHash>>,
 }
+
+impl BlobTransaction {
+    pub fn new(identity: Identity, blobs: Vec<Blob>) -> Self {
+        BlobTransaction {
+            identity,
+            blobs,
+            hash_cache: RwLock::new(None),
+        }
+    }
+}
+
+impl PartialSchema for BlobTransaction {
+    fn schema() -> utoipa::openapi::RefOr<utoipa::openapi::schema::Schema> {
+        RefOr::T(Schema::Object(
+            ObjectBuilder::new()
+                .property("identity", Identity::schema())
+                .property("blobs", ArrayBuilder::new().items(Blob::schema()).build())
+                .required("identity")
+                .required("blobs")
+                .build(),
+        ))
+    }
+}
+
+impl ToSchema for BlobTransaction {}
+
+impl Clone for BlobTransaction {
+    fn clone(&self) -> Self {
+        BlobTransaction {
+            identity: self.identity.clone(),
+            blobs: self.blobs.clone(),
+            hash_cache: RwLock::new(self.hash_cache.read().unwrap().clone()),
+        }
+    }
+}
+
+impl PartialEq for BlobTransaction {
+    fn eq(&self, other: &Self) -> bool {
+        self.identity == other.identity && self.blobs == other.blobs
+    }
+}
+
+impl Eq for BlobTransaction {}
 
 impl BlobTransaction {
     pub fn estimate_size(&self) -> usize {
@@ -251,11 +290,16 @@ impl BlobTransaction {
 
 impl Hashable<TxHash> for BlobTransaction {
     fn hash(&self) -> TxHash {
+        if let Some(hash) = self.hash_cache.read().unwrap().clone() {
+            return hash;
+        }
         let mut hasher = Sha3_256::new();
         hasher.update(self.identity.0.as_bytes());
         hasher.update(self.blobs_hash().0);
         let hash_bytes = hasher.finalize();
-        TxHash(hex::encode(hash_bytes))
+        let tx_hash = TxHash(hex::encode(hash_bytes));
+        *self.hash_cache.write().unwrap() = Some(tx_hash.clone());
+        tx_hash
     }
 }
 

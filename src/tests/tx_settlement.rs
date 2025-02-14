@@ -23,16 +23,16 @@ fn make_register_blob_action(
     contract_name: ContractName,
     state_digest: StateDigest,
 ) -> BlobTransaction {
-    BlobTransaction {
-        identity: "hyle.hyle".into(),
-        blobs: vec![RegisterContractAction {
+    BlobTransaction::new(
+        "hyle.hyle".into(),
+        vec![RegisterContractAction {
             verifier: "test".into(),
             program_id: ProgramId(vec![1, 2, 3]),
             state_digest,
             contract_name,
         }
         .as_blob("hyle".into(), None, None)],
-    }
+    )
 }
 
 #[test_log::test(tokio::test)]
@@ -73,9 +73,9 @@ async fn test_full_settlement_flow() -> Result<()> {
         .unwrap();
 
     info!("➡️  Sending blobs for c1 & c2.hyle");
-    let tx = BlobTransaction {
-        identity: "test.c2.hyle".into(),
-        blobs: vec![
+    let tx = BlobTransaction::new(
+        "test.c2.hyle".into(),
+        vec![
             Blob {
                 contract_name: "c1".into(),
                 data: BlobData(vec![0, 1, 2, 3]),
@@ -85,7 +85,7 @@ async fn test_full_settlement_flow() -> Result<()> {
                 data: BlobData(vec![0, 1, 2, 3]),
             },
         ],
-    };
+    );
     client.send_tx_blob(&tx).await.unwrap();
 
     info!("➡️  Sending proof for c1 & c2.hyle");
@@ -190,9 +190,9 @@ async fn test_tx_settlement_duplicates() -> Result<()> {
         .unwrap();
     hyle_node.wait_for_n_blocks(1).await?;
 
-    let tx = BlobTransaction {
-        identity: "test.c2.hyle".into(),
-        blobs: vec![
+    let tx = BlobTransaction::new(
+        "test.c2.hyle".into(),
+        vec![
             Blob {
                 contract_name: "c1".into(),
                 data: BlobData(vec![0, 1, 2, 3]),
@@ -202,7 +202,7 @@ async fn test_tx_settlement_duplicates() -> Result<()> {
                 data: BlobData(vec![0, 1, 2, 3]),
             },
         ],
-    };
+    );
 
     info!("➡️  Sending blobs for c1 & c2.hyle - first time");
 
@@ -361,13 +361,13 @@ async fn test_contract_upgrade() -> Result<()> {
     assert_eq!(contract.program_id, ProgramId(vec![1, 2, 3]));
 
     // Send contract update transaction
-    let b2 = BlobTransaction {
-        identity: "toto.c1.hyle".into(),
-        blobs: vec![Blob {
+    let b2 = BlobTransaction::new(
+        "toto.c1.hyle".into(),
+        vec![Blob {
             contract_name: "c1.hyle".into(),
             data: BlobData(vec![1]),
         }],
-    };
+    );
     client.send_tx_blob(&b2).await.unwrap();
 
     let mut hyle_output =

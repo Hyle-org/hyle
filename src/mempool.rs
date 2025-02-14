@@ -1562,16 +1562,16 @@ pub mod test {
     }
 
     pub fn make_register_contract_tx(name: ContractName) -> Transaction {
-        BlobTransaction {
-            identity: "hyle.hyle".into(),
-            blobs: vec![RegisterContractAction {
+        BlobTransaction::new(
+            "hyle.hyle".into(),
+            vec![RegisterContractAction {
                 verifier: "test".into(),
                 program_id: ProgramId(vec![]),
                 state_digest: StateDigest(vec![0, 1, 2, 3]),
                 contract_name: name,
             }
             .as_blob("hyle".into(), None, None)],
-        }
+        )
         .into()
     }
 

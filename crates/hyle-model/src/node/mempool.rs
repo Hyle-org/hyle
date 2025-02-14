@@ -4,28 +4,6 @@ use sha3::{Digest, Sha3_256};
 use staking::ValidatorPublicKey;
 use std::{fmt::Display, sync::RwLock};
 
-pub mod rwlock_borsh {
-    use std::sync::RwLock;
-
-    pub fn serialize<T: borsh::ser::BorshSerialize, W: borsh::io::Write>(
-        obj: &RwLock<T>,
-        writer: &mut W,
-    ) -> ::core::result::Result<(), borsh::io::Error> {
-        #[allow(
-            clippy::unwrap_used,
-            reason = "Cannot panic in sync code unless poisoned where panic is OK"
-        )]
-        borsh::BorshSerialize::serialize(&*obj.read().unwrap(), writer)?;
-        Ok(())
-    }
-
-    pub fn deserialize<R: borsh::io::Read, T: borsh::de::BorshDeserialize>(
-        reader: &mut R,
-    ) -> ::core::result::Result<RwLock<T>, borsh::io::Error> {
-        Ok(RwLock::new(T::deserialize_reader(reader)?))
-    }
-}
-
 use crate::*;
 
 #[derive(Debug, Default, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
@@ -33,10 +11,7 @@ pub struct DataProposal {
     pub parent_data_proposal_hash: Option<DataProposalHash>,
     pub txs: Vec<Transaction>,
     /// Internal cache of the hash of the transaction
-    #[borsh(
-        serialize_with = "rwlock_borsh::serialize",
-        deserialize_with = "rwlock_borsh::deserialize"
-    )]
+    #[borsh(skip)]
     hash_cache: RwLock<Option<DataProposalHash>>,
 }
 
