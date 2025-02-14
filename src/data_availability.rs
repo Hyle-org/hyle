@@ -400,7 +400,7 @@ impl DataAvailability {
                 peer.keepalive_abort.abort();
                 to_remove.push(peer_id.clone());
             } else {
-                info!("streaming event {:?} to peer {}", &event, &peer_id);
+                debug!("streaming event {:?} to peer {}", &event, &peer_id);
                 match peer.sender.send(event.clone()).await {
                     Ok(_) => {}
                     Err(e) => {
