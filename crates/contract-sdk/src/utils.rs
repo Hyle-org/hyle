@@ -50,14 +50,15 @@ where
     Some(parsed_blob)
 }
 
-pub fn as_hyle_output<T: Digestable>(
+pub fn as_hyle_output<State: Digestable>(
+    initial_state: State,
     input: ContractInput,
-    res: &mut crate::RunResult<T>,
+    res: &mut crate::RunResult<State>,
 ) -> HyleOutput {
     match res {
         Ok(res) => HyleOutput {
             version: 1,
-            initial_state: input.initial_state,
+            initial_state: initial_state.as_digest(),
             next_state: res.1.as_digest(),
             identity: input.identity,
             index: input.index,
@@ -68,7 +69,7 @@ pub fn as_hyle_output<T: Digestable>(
             registered_contracts: core::mem::take(&mut res.2),
             program_outputs: core::mem::take(&mut res.0).into_bytes(),
         },
-        Err(message) => fail(input, message),
+        Err(message) => fail(input, initial_state, message),
     }
 }
 

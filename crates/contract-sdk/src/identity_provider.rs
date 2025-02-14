@@ -2,9 +2,7 @@ use alloc::{format, string::String, vec::Vec};
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 
-use hyle_model::{Blob, BlobData, BlobIndex, ContractAction, ContractName, Digestable};
-
-use crate::RunResult;
+use hyle_model::{Blob, BlobData, BlobIndex, ContractAction, ContractName};
 
 /// Trait representing an identity verification contract.
 pub trait IdentityVerification {
@@ -49,6 +47,47 @@ pub trait IdentityVerification {
     ///
     /// * `Result<String, &'static str>` - The identity information on success, or an error message on failure.
     fn get_identity_info(&self, account: &str) -> Result<String, &'static str>;
+
+    /// Executes an action on an object that implements the IdentityVerification based on the IdentityAction enum.
+    ///
+    /// # Arguments
+    ///
+    /// * `action` - The action to execute, represented as an IdentityAction enum.
+    /// * `private_input` - A string representing the private input for the action.
+    fn execute_action(
+        &mut self,
+        action: IdentityAction,
+        private_input: &str,
+    ) -> Result<String, String> {
+        match action {
+            IdentityAction::RegisterIdentity { account } => {
+                match self.register_identity(&account, private_input) {
+                    Ok(()) => Ok(format!(
+                        "Successfully registered identity for account: {}",
+                        account
+                    )),
+                    Err(err) => Err(format!("Failed to register identity: {}", err)),
+                }
+            }
+            IdentityAction::VerifyIdentity { account, nonce } => {
+                match self.verify_identity(&account, nonce, private_input) {
+                    Ok(true) => Ok(format!("Identity verified for account: {}", account)),
+                    Ok(false) => Err(format!(
+                        "Identity verification failed for account: {}",
+                        account
+                    )),
+                    Err(err) => Err(format!("Error verifying identity: {}", err)),
+                }
+            }
+            IdentityAction::GetIdentityInfo { account } => match self.get_identity_info(&account) {
+                Ok(info) => Ok(format!(
+                    "Retrieved identity info for account: {}: {}",
+                    account, info
+                )),
+                Err(err) => Err(format!("Failed to get identity info: {}", err)),
+            },
+        }
+    }
 }
 
 /// Enum representing the actions that can be performed by the IdentityVerification contract.
@@ -79,45 +118,10 @@ impl ContractAction for IdentityAction {
     }
 }
 
-pub fn execute_action<T: IdentityVerification + Digestable>(
-    mut state: T,
-    action: IdentityAction,
-    private_input: &str,
-) -> RunResult<T> {
-    let program_output = match action {
-        IdentityAction::RegisterIdentity { account } => {
-            match state.register_identity(&account, private_input) {
-                Ok(()) => Ok(format!(
-                    "Successfully registered identity for account: {}",
-                    account
-                )),
-                Err(err) => Err(format!("Failed to register identity: {}", err)),
-            }
-        }
-        IdentityAction::VerifyIdentity { account, nonce } => {
-            match state.verify_identity(&account, nonce, private_input) {
-                Ok(true) => Ok(format!("Identity verified for account: {}", account)),
-                Ok(false) => Err(format!(
-                    "Identity verification failed for account: {}",
-                    account
-                )),
-                Err(err) => Err(format!("Error verifying identity: {}", err)),
-            }
-        }
-        IdentityAction::GetIdentityInfo { account } => match state.get_identity_info(&account) {
-            Ok(info) => Ok(format!(
-                "Retrieved identity info for account: {}: {}",
-                account, info
-            )),
-            Err(err) => Err(format!("Failed to get identity info: {}", err)),
-        },
-    };
-    program_output.map(|output| (output, state, alloc::vec![]))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use hyle_model::Digestable;
     use mockall::{mock, predicate::*};
 
     mock! {
@@ -147,7 +151,7 @@ mod tests {
             .times(1)
             .returning(|_, _| Ok(()));
 
-        let result = execute_action(mock, action, private_input);
+        let result = mock.execute_action(action, private_input);
         assert!(result.is_ok());
     }
 
@@ -167,7 +171,7 @@ mod tests {
             nonce: 0,
         };
 
-        let result = execute_action(mock, action, private_input);
+        let result = mock.execute_action(action, private_input);
         assert!(result.is_ok());
     }
 
@@ -186,7 +190,7 @@ mod tests {
             account: account.clone(),
         };
 
-        let result = execute_action(mock, action, "");
+        let result = mock.execute_action(action, "");
         assert!(result.is_ok());
     }
 }

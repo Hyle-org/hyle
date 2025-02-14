@@ -55,11 +55,16 @@ impl GuestEnv for SP1Env {
     }
 }
 
-pub fn fail(input: ContractInput, message: &str) -> HyleOutput {
+pub fn fail<State: Digestable>(
+    input: ContractInput,
+    initial_state: State,
+    message: &str,
+) -> HyleOutput {
+    let digest = initial_state.as_digest();
     HyleOutput {
         version: 1,
-        initial_state: input.initial_state.clone(),
-        next_state: input.initial_state,
+        initial_state: digest.clone(),
+        next_state: digest,
         identity: input.identity,
         index: input.index,
         blobs: flatten_blobs(&input.blobs),
@@ -101,9 +106,13 @@ where
     Ok((input, parsed_blob, caller))
 }
 
-pub fn commit<State>(env: impl GuestEnv, input: ContractInput, mut res: crate::RunResult<State>)
-where
+pub fn commit<State>(
+    env: impl GuestEnv,
+    initial_state: State,
+    input: ContractInput,
+    mut res: crate::RunResult<State>,
+) where
     State: Digestable,
 {
-    env.commit(&as_hyle_output(input, &mut res));
+    env.commit(&as_hyle_output(initial_state, input, &mut res));
 }

@@ -4,9 +4,7 @@ use client_sdk::{
     helpers::{risc0::Risc0Prover, ClientSdkExecutor},
     transaction_builder::{ProvableBlobTx, StateUpdater, TxExecutorBuilder},
 };
-use sdk::{
-    identity_provider::IdentityAction, utils::as_hyle_output, ContractName, Digestable, HyleOutput,
-};
+use sdk::{identity_provider::IdentityAction, utils::as_hyle_output, ContractName, HyleOutput};
 
 use crate::{execute, Hydentity};
 
@@ -20,10 +18,14 @@ struct HydentityPseudoExecutor {}
 impl ClientSdkExecutor for HydentityPseudoExecutor {
     fn execute(
         &self,
-        contract_input: &sdk::ContractInput,
+        program_inputs: &sdk::ProgramInput,
     ) -> anyhow::Result<(Box<dyn Any>, HyleOutput)> {
-        let mut res = execute(contract_input.clone());
-        let output = as_hyle_output(contract_input.clone(), &mut res);
+        let hydentity_state: Hydentity =
+            borsh::from_slice(&program_inputs.serialized_initial_state)?;
+        let contract_input = program_inputs.contract_input.clone();
+        let mut res = execute(hydentity_state.clone(), contract_input.clone());
+
+        let output = as_hyle_output(hydentity_state, contract_input, &mut res);
         match res {
             Ok(res) => Ok((Box::new(res.1.clone()), output)),
             Err(e) => Err(anyhow::anyhow!(e)),
@@ -39,7 +41,6 @@ impl Hydentity {
     ) {
         builder.init_with(
             contract_name,
-            self.as_digest(),
             HydentityPseudoExecutor {},
             Risc0Prover::new(HYDENTITY_ELF),
         );
@@ -58,17 +59,16 @@ pub fn verify_identity(
 
     let password = password.into_bytes().to_vec();
 
-    builder
-        .add_action(
-            contract_name,
-            IdentityAction::VerifyIdentity {
-                account: builder.identity.0.clone(),
-                nonce,
-            },
-            None,
-            None,
-        )?
-        .with_private_input(move |_: &Hydentity| Ok(password.clone()));
+    builder.add_action(
+        contract_name,
+        IdentityAction::VerifyIdentity {
+            account: builder.identity.0.clone(),
+            nonce,
+        },
+        Some(password),
+        None,
+        None,
+    )?;
     Ok(())
 }
 
@@ -79,15 +79,14 @@ pub fn register_identity(
 ) -> anyhow::Result<()> {
     let password = password.into_bytes().to_vec();
 
-    builder
-        .add_action(
-            contract_name,
-            IdentityAction::RegisterIdentity {
-                account: builder.identity.0.clone(),
-            },
-            None,
-            None,
-        )?
-        .with_private_input(move |_: &Hydentity| Ok(password.clone()));
+    builder.add_action(
+        contract_name,
+        IdentityAction::RegisterIdentity {
+            account: builder.identity.0.clone(),
+        },
+        Some(password),
+        None,
+        None,
+    )?;
     Ok(())
 }

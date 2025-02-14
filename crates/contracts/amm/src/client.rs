@@ -4,7 +4,7 @@ use client_sdk::{
     helpers::{risc0::Risc0Prover, ClientSdkExecutor},
     transaction_builder::{ProvableBlobTx, StateUpdater, TxExecutorBuilder},
 };
-use sdk::{erc20::ERC20Action, utils::as_hyle_output, BlobIndex, ContractName, Digestable};
+use sdk::{erc20::ERC20Action, utils::as_hyle_output, BlobIndex, ContractName};
 
 use crate::{execute, AmmAction, AmmState};
 
@@ -18,10 +18,12 @@ struct AmmPseudoExecutor {}
 impl ClientSdkExecutor for AmmPseudoExecutor {
     fn execute(
         &self,
-        contract_input: &sdk::ContractInput,
+        program_inputs: &sdk::ProgramInput,
     ) -> anyhow::Result<(Box<dyn Any>, sdk::HyleOutput)> {
-        let mut res = execute(contract_input.clone());
-        let output = as_hyle_output(contract_input.clone(), &mut res);
+        let amm_state: AmmState = borsh::from_slice(&program_inputs.serialized_initial_state)?;
+        let contract_input = program_inputs.contract_input.clone();
+        let mut res = execute(amm_state.clone(), contract_input.clone());
+        let output = as_hyle_output(amm_state, contract_input, &mut res);
         match res {
             Ok(res) => Ok((Box::new(res.1.clone()), output)),
             Err(e) => Err(anyhow::anyhow!(e)),
@@ -37,7 +39,6 @@ impl AmmState {
     ) {
         builder.init_with(
             contract_name,
-            self.as_digest(),
             AmmPseudoExecutor {},
             Risc0Prover::new(AMM_ELF),
         );
@@ -58,6 +59,7 @@ pub fn new_pair(
             amounts,
         },
         None,
+        None,
         Some(vec![BlobIndex(idx + 1), BlobIndex(idx + 2)]),
     )?;
     builder.add_action(
@@ -67,6 +69,7 @@ pub fn new_pair(
             recipient: contract_name.to_string(),
             amount: amounts.0,
         },
+        None,
         Some(BlobIndex(idx)),
         None,
     )?;
@@ -77,6 +80,7 @@ pub fn new_pair(
             recipient: contract_name.to_string(),
             amount: amounts.1,
         },
+        None,
         Some(BlobIndex(idx)),
         None,
     )?;
@@ -97,6 +101,7 @@ pub fn swap(
             amounts,
         },
         None,
+        None,
         Some(vec![BlobIndex(idx + 1), BlobIndex(idx + 2)]),
     )?;
 
@@ -107,6 +112,7 @@ pub fn swap(
             recipient: contract_name.to_string(),
             amount: amounts.0,
         },
+        None,
         Some(BlobIndex(idx)),
         None,
     )?;
@@ -116,6 +122,7 @@ pub fn swap(
             recipient: builder.identity.0.clone(),
             amount: amounts.1,
         },
+        None,
         Some(BlobIndex(idx)),
         None,
     )?;

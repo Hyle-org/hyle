@@ -9,7 +9,6 @@ rust-version = "1.81"
 
 [[bin]]
 name = "uuid-tld"
-path = "src/bin/guest.rs"
 required-features = ["risc0"]
 test = false
 

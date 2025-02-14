@@ -124,13 +124,11 @@ async fn main() {
                         account: identity.clone(),
                         nonce,
                     },
+                    Some(password.into_bytes().to_vec()),
                     None,
                     None,
                 )
-                .unwrap()
-                .with_private_input(move |_: &Hydentity| {
-                    Ok(password.clone().into_bytes().to_vec())
-                });
+                .unwrap();
 
             let transaction = ctx.process(transaction).unwrap();
 

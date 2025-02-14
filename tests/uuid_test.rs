@@ -71,9 +71,9 @@ async fn test_uuid_registration() {
         },
         None,
         None,
+        None,
     )
-    .unwrap()
-    .with_private_input(|state: &UuidTldState| Ok(state.to_bytes()));
+    .unwrap();
 
     ctx.send_provable_blob_tx(&tx).await.unwrap();
 

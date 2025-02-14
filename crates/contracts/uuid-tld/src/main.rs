@@ -5,18 +5,19 @@ extern crate alloc;
 
 use sdk::guest::{commit, GuestEnv, Risc0Env};
 use sdk::{ContractInput, ProgramInput};
-use staking::execute;
+use uuid_tld::{execute, UuidTldState};
 
 risc0_zkvm::guest::entry!(main);
 
 fn main() {
     let env = Risc0Env {};
     let program_inputs: ProgramInput = env.read();
-    let staking_initial_state = borsh::from_slice(&program_inputs.serialized_initial_state)
-        .expect("Failed to decode state");
+    let uuid_tld_initial_state =
+        UuidTldState::deserialize(&program_inputs.serialized_initial_state)
+            .expect("Failed to decode state");
     let res = execute(
-        staking_initial_state.clone(),
+        uuid_tld_initial_state.clone(),
         program_inputs.contract_input.clone(),
     );
-    commit(env, staking_initial_state, input.clone(), res);
+    commit(env, uuid_tld_initial_state, input.clone(), res);
 }

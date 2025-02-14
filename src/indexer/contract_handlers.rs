@@ -8,9 +8,9 @@ use axum::extract::Path;
 use axum::Router;
 use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
 use hydentity::{AccountInfo, Hydentity};
-use hyle_contract_sdk::identity_provider::{self, IdentityAction, IdentityVerification};
+use hyle_contract_sdk::identity_provider::{IdentityAction, IdentityVerification};
 use hyle_contract_sdk::{
-    erc20::{self, ERC20Action, ERC20},
+    erc20::{ERC20Action, ERC20},
     Blob, BlobIndex, Identity, StructuredBlobData,
 };
 use hyllar::{HyllarToken, HyllarTokenContract};
@@ -43,7 +43,7 @@ impl ContractHandler for Hydentity {
         (router.with_state(store), api)
     }
 
-    fn handle(tx: &BlobTransaction, index: BlobIndex, state: Self) -> Result<Self> {
+    fn handle(tx: &BlobTransaction, index: BlobIndex, mut state: Self) -> Result<Self> {
         let Blob {
             data,
             contract_name,
@@ -52,10 +52,11 @@ impl ContractHandler for Hydentity {
         let action: IdentityAction =
             borsh::from_slice(data.0.as_slice()).context("Failed to decode payload")?;
 
-        let res =
-            identity_provider::execute_action(state, action, "").map_err(|e| anyhow::anyhow!(e))?;
+        let res = state
+            .execute_action(action, "")
+            .map_err(|e| anyhow::anyhow!(e))?;
         info!("🚀 Executed {contract_name}: {res:?}");
-        Ok(res.1)
+        Ok(state)
     }
 }
 
@@ -87,11 +88,12 @@ impl ContractHandler for HyllarToken {
             })
             .unwrap_or(tx.identity.clone());
 
-        let contract = HyllarTokenContract::init(state, caller);
-        let res =
-            erc20::execute_action(contract, data.parameters).map_err(|e| anyhow::anyhow!(e))?;
+        let mut contract = HyllarTokenContract::init(state, caller);
+        let res = contract
+            .execute_action(data.parameters)
+            .map_err(|e| anyhow::anyhow!(e))?;
         info!("🚀 Executed {contract_name}: {res:?}");
-        Ok(res.1.state())
+        Ok(contract.state())
     }
 }
 
