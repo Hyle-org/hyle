@@ -2,14 +2,17 @@ use std::time::Duration;
 
 use anyhow::{bail, Result};
 use bonsai_sdk::non_blocking::Client;
-use risc0_zkvm::{compute_image_id, serde::to_vec, Receipt};
-use serde::Serialize;
+use borsh::BorshSerialize;
+use risc0_zkvm::{compute_image_id, Receipt};
 use tracing::info;
 
 #[allow(dead_code)]
-pub fn as_input_data<T: Serialize>(data: &T) -> Result<Vec<u8>> {
-    let slice = to_vec(data)?;
-    Ok(bytemuck::cast_slice(&slice).to_vec())
+pub fn as_input_data<T: BorshSerialize>(data: &T) -> Result<Vec<u8>> {
+    let data = borsh::to_vec(&data)?;
+    let size = risc0_zkvm::serde::to_vec(&data.len())?;
+    let mut input_data = bytemuck::cast_slice(&size).to_vec();
+    input_data.extend(data);
+    Ok(input_data)
 }
 
 #[allow(dead_code)]
