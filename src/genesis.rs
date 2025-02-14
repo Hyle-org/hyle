@@ -1,4 +1,7 @@
-use std::collections::{BTreeMap, HashMap};
+use std::{
+    collections::{BTreeMap, HashMap},
+    sync::Arc,
+};
 
 use crate::{
     bus::{bus_client, BusClientSender, BusMessage},
@@ -10,19 +13,25 @@ use crate::{
 use anyhow::{Error, Result};
 use client_sdk::{
     contract_states,
-    helpers::register_hyle_contract,
-    transaction_builder::{ProofTxBuilder, ProvableBlobTx, TxExecutor, TxExecutorBuilder},
+    helpers::{register_hyle_contract, risc0::Risc0Prover},
+    transaction_builder::{
+        ProofTxBuilder, ProvableBlobTx, StateTrait, TxExecutor, TxExecutorBuilder,
+    },
 };
 use hydentity::{
-    client::{register_identity, verify_identity},
+    client::{register_identity, verify_identity, HydentityPseudoExecutor},
     Hydentity,
 };
 use hyle_contract_sdk::{identity_provider::IdentityVerification, Identity, StateDigest};
 use hyle_contract_sdk::{ContractName, Digestable, ProgramId};
-use hyllar::{client::transfer, HyllarToken};
+use hyle_contracts::{AMM_ELF, HYDENTITY_ELF, HYLLAR_ELF, STAKING_ELF};
+use hyllar::{
+    client::{transfer, HyllarPseudoExecutor},
+    HyllarToken,
+};
 use serde::{Deserialize, Serialize};
 use staking::{
-    client::{delegate, deposit_for_fees, stake},
+    client::{delegate, deposit_for_fees, stake, StakingPseudoExecutor},
     state::Staking,
 };
 use tracing::{debug, error, info};
@@ -178,8 +187,27 @@ impl Genesis {
         peer_pubkey: &PeerPublicKeyMap,
         genesis_stake: &HashMap<String, u64>,
     ) -> Result<Vec<Transaction>> {
-        let (contract_program_ids, mut genesis_txs, mut tx_executor) =
-            Self::genesis_contracts_txs();
+        // let staking_program_id = hyle_contracts::STAKING_ID.to_vec();
+        // let hyllar_program_id = hyle_contracts::HYLLAR_ID.to_vec();
+        // let hydentity_program_id = hyle_contracts::HYDENTITY_ID.to_vec();
+
+        // let mut hydentity_state = hydentity::Hydentity::new();
+        // hydentity_state
+        //     .register_identity("faucet.hydentity", "password")
+        //     .expect("faucet must register");
+
+        // let staking_state = staking::state::Staking::new();
+
+        // let mut tx_executor_builder = TxExecutorBuilder::new(States {
+        //     hyllar: hyllar::HyllarToken::new(100_000_000_000, "faucet.hydentity".to_string()),
+        //     hydentity: hydentity_state,
+        //     staking: staking_state,
+        // });
+
+        // let (contract_program_ids, mut genesis_tx) =
+        //     Self::genesis_contracts_txs(tx_executor_builder);
+
+        let (contract_program_ids, mut genesis_tx, mut tx_executor) = Self::genesis_contracts_txs();
 
         let register_txs = Self::generate_register_txs(peer_pubkey, &mut tx_executor).await?;
 

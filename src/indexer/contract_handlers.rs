@@ -10,7 +10,7 @@ use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
 use hydentity::{AccountInfo, Hydentity};
 use hyle_contract_sdk::identity_provider::{self, IdentityAction, IdentityVerification};
 use hyle_contract_sdk::{
-    erc20::{self, ERC20Action, ERC20},
+    erc20::{ERC20Action, ERC20},
     Blob, BlobIndex, Identity, StructuredBlobData,
 };
 use hyllar::{HyllarToken, HyllarTokenContract};
@@ -87,11 +87,12 @@ impl ContractHandler for HyllarToken {
             })
             .unwrap_or(tx.identity.clone());
 
-        let contract = HyllarTokenContract::init(state, caller);
-        let res =
-            erc20::execute_action(contract, data.parameters).map_err(|e| anyhow::anyhow!(e))?;
+        let mut contract = HyllarTokenContract::init(state, caller);
+        let res = contract
+            .execute_action(data.parameters)
+            .map_err(|e| anyhow::anyhow!(e))?;
         info!("🚀 Executed {contract_name}: {res:?}");
-        Ok(res.1.state())
+        Ok(contract.state())
     }
 }
 

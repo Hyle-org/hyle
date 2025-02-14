@@ -2,11 +2,10 @@ use core::str;
 
 use hyllar::HyllarToken;
 use sdk::{
-    erc20::ERC20Action, BlobIndex, ContractAction, ContractInput, ContractName, Digestable,
-    HyleOutput, TxHash,
+    erc20::ERC20Action, BlobIndex, ContractAction, ContractInput, ContractName, HyleOutput, TxHash,
 };
 
-fn execute(inputs: ContractInput) -> HyleOutput {
+fn execute(inputs: ContractInput<HyllarToken>) -> HyleOutput {
     let inputs = borsh::to_vec(&inputs).unwrap();
     let env = risc0_zkvm::ExecutorEnv::builder()
         .write(&inputs.len())
@@ -25,7 +24,7 @@ fn execute(inputs: ContractInput) -> HyleOutput {
 #[test]
 fn execute_transfer_from() {
     let output = execute(ContractInput {
-        initial_state: HyllarToken::new(1000, "faucet".to_string()).as_digest(),
+        initial_state: HyllarToken::new(1000, "faucet".to_string()),
         identity: "caller".into(),
         tx_hash: TxHash::default(),
         tx_ctx: None,

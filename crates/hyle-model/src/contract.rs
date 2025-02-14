@@ -1,4 +1,6 @@
+use anyhow::Result;
 use std::{
+    any::Any,
     fmt::Display,
     ops::{Add, Sub},
 };
@@ -42,14 +44,51 @@ pub trait Digestable {
 }
 
 #[derive(Serialize, Deserialize, BorshSerialize, BorshDeserialize, Debug, Clone)]
-pub struct ContractInput {
-    pub initial_state: StateDigest,
+pub struct ContractInput<State> {
+    pub initial_state: Vec<u8>,
     pub identity: Identity,
     pub index: BlobIndex,
     pub blobs: Vec<Blob>,
     pub tx_hash: TxHash,
     pub tx_ctx: Option<TxContext>,
     pub private_input: Vec<u8>,
+}
+
+impl ContractInput<Box<dyn Any + Send>> {
+    /// Attempts to downcast the `initial_state` to a concrete type `T`.
+    pub fn downcast_state<State: 'static>(self) -> Result<ContractInput<State>> {
+        let initial_state = self
+            .initial_state
+            .downcast::<State>()
+            .map_err(|_| anyhow::anyhow!("Could not downcast state"))?;
+
+        Ok(ContractInput {
+            identity: self.identity,
+            index: self.index,
+            tx_hash: self.tx_hash,
+            blobs: self.blobs,
+            initial_state: *initial_state,
+            tx_ctx: self.tx_ctx,
+            private_input: self.private_input,
+        })
+    }
+
+    pub fn downcast_state_ref<State: Clone + 'static>(&self) -> Result<ContractInput<State>> {
+        let initial_state = self
+            .initial_state
+            .downcast_ref::<State>()
+            .ok_or_else(|| anyhow::anyhow!("Could not downcast state"))?;
+
+        Ok(ContractInput {
+            identity: self.identity.clone(),
+            index: self.index,
+            tx_hash: self.tx_hash.clone(),
+            blobs: self.blobs.clone(),
+            initial_state: initial_state.clone(),
+            tx_ctx: self.tx_ctx.clone(),
+            private_input: self.private_input.clone(),
+        })
+    }
 }
 
 #[derive(

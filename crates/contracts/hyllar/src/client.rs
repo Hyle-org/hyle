@@ -1,10 +1,9 @@
-use std::any::Any;
-
 use client_sdk::{
     helpers::{risc0::Risc0Prover, ClientSdkExecutor},
     transaction_builder::{ProvableBlobTx, StateUpdater, TxExecutorBuilder},
 };
-use sdk::{erc20::ERC20Action, utils::as_hyle_output, ContractName, Digestable, HyleOutput};
+use metadata::HYLLAR_ELF;
+use sdk::{erc20::ERC20Action, utils::as_hyle_output, ContractName, HyleOutput};
 
 use crate::{execute, HyllarToken};
 
@@ -12,18 +11,17 @@ pub mod metadata {
     pub const HYLLAR_ELF: &[u8] = include_bytes!("../hyllar.img");
     pub const PROGRAM_ID: [u8; 32] = sdk::str_to_u8(include_str!("../hyllar.txt"));
 }
-use metadata::*;
 
-struct HyllarPseudoExecutor {}
-impl ClientSdkExecutor for HyllarPseudoExecutor {
+pub struct HyllarPseudoExecutor {}
+impl ClientSdkExecutor<HyllarToken> for HyllarPseudoExecutor {
     fn execute(
         &self,
-        contract_input: &sdk::ContractInput,
-    ) -> anyhow::Result<(Box<dyn Any>, HyleOutput)> {
+        contract_input: &sdk::ContractInput<HyllarToken>,
+    ) -> anyhow::Result<(Box<HyllarToken>, HyleOutput)> {
         let mut res = execute(&mut String::new(), contract_input.clone());
         let output = as_hyle_output(contract_input.clone(), &mut res);
         match res {
-            Ok(res) => Ok((Box::new(res.1.state.clone()), output)),
+            Ok(res) => Ok((Box::new(res.1.clone()), output)),
             Err(e) => Err(anyhow::anyhow!(e)),
         }
     }
@@ -35,9 +33,8 @@ impl HyllarToken {
         contract_name: ContractName,
         builder: &mut TxExecutorBuilder<S>,
     ) {
-        builder.init_with(
+        builder.with_contract(
             contract_name,
-            self.as_digest(),
             HyllarPseudoExecutor {},
             Risc0Prover::new(HYLLAR_ELF),
         );
@@ -55,8 +52,8 @@ pub fn transfer(
         ERC20Action::Transfer { recipient, amount },
         None,
         None,
-    )?;
-    Ok(())
+        None,
+    )
 }
 
 pub fn transfer_from(
@@ -75,8 +72,8 @@ pub fn transfer_from(
         },
         None,
         None,
-    )?;
-    Ok(())
+        None,
+    )
 }
 
 pub fn approve(
@@ -90,6 +87,6 @@ pub fn approve(
         ERC20Action::Approve { spender, amount },
         None,
         None,
-    )?;
-    Ok(())
+        None,
+    )
 }

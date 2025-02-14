@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 
 use anyhow::Result;
 use borsh::{BorshDeserialize, BorshSerialize};
+use client_sdk::transaction_builder::StateTrait;
 use sdk::{
     info, BlockHeight, Digestable, Identity, LaneBytesSize, StateDigest, ValidatorPublicKey,
 };
@@ -28,6 +29,8 @@ pub struct Staking {
 
 /// Minimal stake necessary to be part of consensus
 pub const MIN_STAKE: u128 = 32;
+
+impl StateTrait for Staking {}
 
 impl Staking {
     pub fn new() -> Self {

@@ -1,10 +1,14 @@
-use std::any::Any;
+use std::{any::Any, pin::Pin, sync::Arc};
 
+use anyhow::Result;
 use client_sdk::{
-    helpers::{risc0::Risc0Prover, ClientSdkExecutor},
+    helpers::{risc0::Risc0Prover, ClientSdkExecutor, ClientSdkProver},
     transaction_builder::{ProvableBlobTx, StateUpdater, TxExecutorBuilder},
 };
-use sdk::{erc20::ERC20Action, utils::as_hyle_output, BlobIndex, ContractName, Digestable};
+use metadata::AMM_ELF;
+use sdk::{
+    erc20::ERC20Action, utils::as_hyle_output, BlobIndex, ContractInput, ContractName, ProofData,
+};
 
 use crate::{execute, AmmAction, AmmState};
 
@@ -12,14 +16,16 @@ pub mod metadata {
     pub const AMM_ELF: &[u8] = include_bytes!("../amm.img");
     pub const PROGRAM_ID: [u8; 32] = sdk::str_to_u8(include_str!("../amm.txt"));
 }
-use metadata::*;
 
 struct AmmPseudoExecutor {}
 impl ClientSdkExecutor for AmmPseudoExecutor {
     fn execute(
         &self,
-        contract_input: &sdk::ContractInput,
+        contract_input: &ContractInput<Box<dyn Any + Send + 'static>>,
     ) -> anyhow::Result<(Box<dyn Any>, sdk::HyleOutput)> {
+        // Downcast initial_state to the concrete type `State`
+        let contract_input = contract_input.downcast_state_ref::<AmmState>()?;
+
         let mut res = execute(contract_input.clone());
         let output = as_hyle_output(contract_input.clone(), &mut res);
         match res {
@@ -29,18 +35,27 @@ impl ClientSdkExecutor for AmmPseudoExecutor {
     }
 }
 
+// struct AmmPseudoProver {}
+// impl ClientSdkProver<AmmState> for AmmPseudoProver {
+//     fn prove(
+//         &self,
+//         contract_input: ContractInput<Box<dyn Any + Send + 'static>>,
+//     ) -> Pin<Box<dyn std::future::Future<Output = Result<ProofData>> + Send + '_>> {
+//         let prover = Risc0Prover::<Box<AmmState>>::new(AMM_ELF);
+//         let proof = prover.prove(contract_input).clone();
+//         Box::pin(proof)
+//     }
+// }
+
 impl AmmState {
     pub fn setup_builder<S: StateUpdater>(
         &self,
         contract_name: ContractName,
         builder: &mut TxExecutorBuilder<S>,
     ) {
-        builder.init_with(
-            contract_name,
-            self.as_digest(),
-            AmmPseudoExecutor {},
-            Risc0Prover::new(AMM_ELF),
-        );
+        let prover = Risc0Prover::<AmmState>::new(AMM_ELF);
+        // builder.with_contract(contract_name, AmmPseudoExecutor {}, AmmPseudoProver {});
+        builder.with_contract(contract_name, AmmPseudoExecutor {}, prover);
     }
 }
 
@@ -58,6 +73,7 @@ pub fn new_pair(
             amounts,
         },
         None,
+        None,
         Some(vec![BlobIndex(idx + 1), BlobIndex(idx + 2)]),
     )?;
     builder.add_action(
@@ -67,6 +83,7 @@ pub fn new_pair(
             recipient: contract_name.to_string(),
             amount: amounts.0,
         },
+        None,
         Some(BlobIndex(idx)),
         None,
     )?;
@@ -77,10 +94,10 @@ pub fn new_pair(
             recipient: contract_name.to_string(),
             amount: amounts.1,
         },
+        None,
         Some(BlobIndex(idx)),
         None,
-    )?;
-    Ok(())
+    )
 }
 
 pub fn swap(
@@ -97,6 +114,7 @@ pub fn swap(
             amounts,
         },
         None,
+        None,
         Some(vec![BlobIndex(idx + 1), BlobIndex(idx + 2)]),
     )?;
 
@@ -107,6 +125,7 @@ pub fn swap(
             recipient: contract_name.to_string(),
             amount: amounts.0,
         },
+        None,
         Some(BlobIndex(idx)),
         None,
     )?;
@@ -116,9 +135,8 @@ pub fn swap(
             recipient: builder.identity.0.clone(),
             amount: amounts.1,
         },
+        None,
         Some(BlobIndex(idx)),
         None,
-    )?;
-
-    Ok(())
+    )
 }

@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::hash::{Hash, Hasher};
 
 use borsh::{BorshDeserialize, BorshSerialize};
+use client_sdk::transaction_builder::StateTrait;
 use sdk::caller::{CalleeBlobs, CallerCallee, CheckCalleeBlobs, ExecutionContext, MutCalleeBlobs};
 use sdk::erc20::{ERC20BlobChecker, ERC20};
 use sdk::{erc20::ERC20Action, Identity};
@@ -73,6 +74,8 @@ impl CallerCallee for AmmContract {
 pub struct AmmState {
     pairs: BTreeMap<UnorderedTokenPair, TokenPairAmount>,
 }
+
+impl StateTrait for AmmState {}
 
 impl AmmState {
     pub fn new(pairs: BTreeMap<UnorderedTokenPair, TokenPairAmount>) -> Self {
@@ -270,9 +273,9 @@ impl ContractAction for AmmAction {
     }
 }
 
-pub fn execute(contract_input: ContractInput) -> RunResult<AmmState> {
+pub fn execute(contract_input: ContractInput<AmmState>) -> RunResult<AmmState> {
     let (input, parsed_blob, caller) =
-        match sdk::guest::init_with_caller::<AmmAction>(contract_input) {
+        match sdk::guest::init_with_caller::<AmmAction, AmmState>(contract_input) {
             Ok(res) => res,
             Err(err) => {
                 panic!("Amm contract initialization failed {}", err);
@@ -295,12 +298,11 @@ pub fn execute(contract_input: ContractInput) -> RunResult<AmmState> {
         caller,
     };
 
-    let amm_state = input
-        .initial_state
-        .clone()
-        .try_into()
-        .expect("Failed to decode state");
-    let mut amm_contract = AmmContract::new(execution_ctx, parsed_blob.contract_name, amm_state);
+    let mut amm_contract = AmmContract::new(
+        execution_ctx,
+        parsed_blob.contract_name,
+        input.initial_state,
+    );
 
     let amm_action = parsed_blob.data.parameters;
 

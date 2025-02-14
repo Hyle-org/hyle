@@ -81,7 +81,7 @@ mod e2e_consensus {
             staking,
         };
 
-        let mut tx_ctx = TxExecutorBuilder::new(states)
+        let mut tx_ctx = TxExecutorBuilder::default(states)
             // Replace prover binaries for non-reproducible mode.
             .with_prover("hydentity".into(), Risc0Prover::new(HYDENTITY_ELF))
             .with_prover("hyllar".into(), Risc0Prover::new(HYLLAR_ELF))

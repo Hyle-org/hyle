@@ -40,7 +40,7 @@ contract_states!(
     }
 );
 
-async fn build_ctx(client: &NodeApiHttpClient) -> TxExecutor<States> {
+async fn build_ctx(client: &NodeApiHttpClient) -> TxExecutor<States, Hydentity> {
     // Fetch the initial state from the node
     let initial_state: Hydentity = client
         .get_contract(&"hydentity".into())
@@ -124,13 +124,11 @@ async fn main() {
                         account: identity.clone(),
                         nonce,
                     },
+                    Some(password.into_bytes().to_vec()),
                     None,
                     None,
                 )
-                .unwrap()
-                .with_private_input(move |_: &Hydentity| {
-                    Ok(password.clone().into_bytes().to_vec())
-                });
+                .unwrap();
 
             let transaction = ctx.process(transaction).unwrap();
 

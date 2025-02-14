@@ -36,7 +36,7 @@ mod e2e_hyllar {
         let hydentity: hydentity::Hydentity = contract.state.try_into()?;
         let contract = ctx.get_contract("hyllar").await?;
         let hyllar: HyllarToken = contract.state.try_into()?;
-        let mut executor = TxExecutorBuilder::new(States { hydentity, hyllar })
+        let mut executor = TxExecutorBuilder::default(States { hydentity, hyllar })
             // Replace prover binaries for non-reproducible mode.
             .with_prover("hydentity".into(), Risc0Prover::new(HYDENTITY_ELF))
             .with_prover("hyllar".into(), Risc0Prover::new(HYLLAR_ELF))

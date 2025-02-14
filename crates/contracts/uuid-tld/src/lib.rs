@@ -1,6 +1,7 @@
 use std::{collections::BTreeSet, hash::Hasher};
 
 use borsh::{BorshDeserialize, BorshSerialize};
+use client_sdk::transaction_builder::StateTrait;
 use rand::Rng;
 use rand_seeder::SipHasher;
 use sdk::{
@@ -45,6 +46,8 @@ pub struct UuidTldState {
     registered_contracts: BTreeSet<u128>,
 }
 
+impl StateTrait for UuidTldState {}
+
 impl UuidTldState {
     fn serialize(&self) -> Result<Vec<u8>, String> {
         borsh::to_vec(self).map_err(|e| e.to_string())
@@ -65,13 +68,8 @@ impl Digestable for UuidTldState {
     }
 }
 
-fn register_contract(input: &ContractInput) -> Result<(Uuid, UuidTldState), String> {
+fn register_contract(input: &ContractInput<UuidTldState>) -> Result<(Uuid, UuidTldState), String> {
     let mut state = UuidTldState::deserialize(&input.private_input)?;
-
-    // Check initial state
-    if state.as_digest() != input.initial_state {
-        return Err("State digest mismatch".to_string());
-    }
 
     let Some(ref tx_ctx) = input.tx_ctx else {
         return Err("Missing tx context".to_string());
@@ -79,7 +77,7 @@ fn register_contract(input: &ContractInput) -> Result<(Uuid, UuidTldState), Stri
 
     // Create UUID
     let mut hasher = SipHasher::new();
-    hasher.write(&input.initial_state.0);
+    hasher.write(&input.initial_state.as_digest().0);
     hasher.write(input.tx_hash.0.as_bytes());
     hasher.write(tx_ctx.block_hash.0.as_bytes());
     hasher.write_u128(tx_ctx.timestamp);
@@ -96,8 +94,9 @@ fn register_contract(input: &ContractInput) -> Result<(Uuid, UuidTldState), Stri
     Ok((id, state))
 }
 
-pub fn execute(contract_input: ContractInput) -> RunResult<UuidTldState> {
-    let (input, parsed_blob) = sdk::guest::init_raw::<RegisterUuidContract>(contract_input);
+pub fn execute(contract_input: ContractInput<UuidTldState>) -> RunResult<UuidTldState> {
+    let (input, parsed_blob) =
+        sdk::guest::init_raw::<RegisterUuidContract, UuidTldState>(contract_input);
 
     let parsed_blob = match parsed_blob {
         Some(v) => v,
@@ -138,9 +137,12 @@ mod test {
     use crate::*;
     use sdk::*;
 
-    fn make_contract_input(state: UuidTldState, action: RegisterUuidContract) -> ContractInput {
+    fn make_contract_input(
+        state: UuidTldState,
+        action: RegisterUuidContract,
+    ) -> ContractInput<UuidTldState> {
         ContractInput {
-            initial_state: state.as_digest(),
+            initial_state: state,
             identity: "toto.test".into(),
             tx_hash: TxHash::default(),
             tx_ctx: Some(TxContext {
@@ -148,7 +150,7 @@ mod test {
                 timestamp: 3745916,
                 ..TxContext::default()
             }),
-            private_input: state.serialize().unwrap(),
+            private_input: vec![],
             blobs: vec![
                 Blob {
                     contract_name: "test".into(),

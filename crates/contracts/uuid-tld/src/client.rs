@@ -1,18 +1,16 @@
-use std::any::Any;
-
 use crate::{execute, UuidTldState};
 use client_sdk::{
     helpers::{risc0::Risc0Prover, ClientSdkExecutor},
     transaction_builder::{StateUpdater, TxExecutorBuilder},
 };
-use sdk::{utils::as_hyle_output, ContractName, Digestable, HyleOutput};
+use sdk::{utils::as_hyle_output, ContractName, HyleOutput};
 
 struct UuidTldPseudoExecutor {}
-impl ClientSdkExecutor for UuidTldPseudoExecutor {
+impl ClientSdkExecutor<UuidTldState> for UuidTldPseudoExecutor {
     fn execute(
         &self,
-        contract_input: &sdk::ContractInput,
-    ) -> anyhow::Result<(Box<dyn Any>, HyleOutput)> {
+        contract_input: &sdk::ContractInput<UuidTldState>,
+    ) -> anyhow::Result<(Box<UuidTldState>, HyleOutput)> {
         let mut res = execute(contract_input.clone());
         let output = as_hyle_output(contract_input.clone(), &mut res);
         match res {
@@ -31,11 +29,10 @@ impl UuidTldState {
     pub fn setup_builder<S: StateUpdater>(
         &self,
         contract_name: ContractName,
-        builder: &mut TxExecutorBuilder<S>,
+        builder: &mut TxExecutorBuilder<S, Self>,
     ) {
-        builder.init_with(
+        builder.with_contract(
             contract_name,
-            self.as_digest(),
             UuidTldPseudoExecutor {},
             Risc0Prover::new(metadata::UUID_TLD_ELF),
         );

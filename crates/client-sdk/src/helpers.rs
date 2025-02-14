@@ -1,4 +1,4 @@
-use std::pin::Pin;
+use std::{any::Any, pin::Pin};
 
 use anyhow::Result;
 use sdk::{
@@ -6,7 +6,7 @@ use sdk::{
     RegisterContractAction, StateDigest, Verifier,
 };
 
-use crate::transaction_builder::ProvableBlobTx;
+use crate::transaction_builder::{ProvableBlobTx, StateTrait};
 
 pub fn register_hyle_contract(
     builder: &mut ProvableBlobTx,
@@ -25,6 +25,7 @@ pub fn register_hyle_contract(
         },
         None,
         None,
+        None,
     )?;
     Ok(())
 }
@@ -32,28 +33,37 @@ pub fn register_hyle_contract(
 pub trait ClientSdkExecutor {
     fn execute(
         &self,
-        contract_input: &ContractInput,
-    ) -> Result<(Box<dyn std::any::Any>, HyleOutput)>;
+        contract_input: &ContractInput<Box<dyn Any + Send + 'static>>,
+    ) -> Result<(Box<dyn Any>, HyleOutput)>;
 }
-pub trait ClientSdkProver {
+
+pub trait ClientSdkProver<State> {
     fn prove(
         &self,
-        contract_input: ContractInput,
+        contract_input: ContractInput<Box<dyn Any + Send + 'static>>,
     ) -> Pin<Box<dyn std::future::Future<Output = Result<ProofData>> + Send + '_>>;
 }
 
 #[cfg(feature = "risc0")]
 pub mod risc0 {
+    use borsh::BorshSerialize;
+    use std::marker::PhantomData;
+
     use super::*;
 
-    pub struct Risc0Prover<'a> {
+    pub struct Risc0Prover<'a, State> {
         binary: &'a [u8],
+        _phantom: PhantomData<State>,
     }
-    impl<'a> Risc0Prover<'a> {
+
+    impl<'a, State: BorshSerialize + 'static> Risc0Prover<'a, State> {
         pub fn new(binary: &'a [u8]) -> Self {
-            Self { binary }
+            Self {
+                binary,
+                _phantom: PhantomData::<State>,
+            }
         }
-        pub async fn prove(&self, contract_input: ContractInput) -> Result<ProofData> {
+        pub async fn prove(&self, contract_input: ContractInput<State>) -> Result<ProofData> {
             let contract_input = borsh::to_vec(&contract_input)?;
 
             let explicit = std::env::var("RISC0_PROVER").unwrap_or_default();
@@ -77,11 +87,14 @@ pub mod risc0 {
         }
     }
 
-    impl ClientSdkProver for Risc0Prover<'_> {
+    impl<State: BorshSerialize + 'static + Send + Sync> ClientSdkProver<State>
+        for Risc0Prover<'_, State>
+    {
         fn prove(
             &self,
-            contract_input: ContractInput,
+            contract_input: ContractInput<Box<dyn Any + Send>>,
         ) -> Pin<Box<dyn std::future::Future<Output = Result<ProofData>> + Send + '_>> {
+            let contract_input = contract_input.downcast_state::<State>().unwrap();
             Box::pin(self.prove(contract_input))
         }
     }
@@ -90,6 +103,7 @@ pub mod risc0 {
 #[cfg(feature = "sp1")]
 pub mod sp1 {
     use anyhow::Context;
+    use borsh::BorshSerialize;
     use sp1_sdk::{ProverClient, SP1Stdin};
 
     use super::*;
@@ -113,9 +127,9 @@ pub mod sp1 {
         Ok(hyle_output)
     }
 
-    pub fn prove(
+    pub fn prove<State: BorshSerialize + 'static>(
         binary: &[u8],
-        contract_input: &ContractInput,
+        contract_input: &ContractInput<State>,
     ) -> anyhow::Result<(ProofData, HyleOutput)> {
         let client = ProverClient::from_env();
 
@@ -149,25 +163,32 @@ pub mod test {
 
     pub struct TestProver {}
 
-    impl ClientSdkProver for TestProver {
+    impl<State: StateTrait + Send> ClientSdkProver<State> for TestProver {
         fn prove(
             &self,
-            contract_input: ContractInput,
+            contract_input: ContractInput<Box<dyn Any + Send>>,
         ) -> Pin<Box<dyn std::future::Future<Output = Result<ProofData>> + Send + '_>> {
             Box::pin(async move {
-                let hyle_output = test::execute(&contract_input)?;
+                let hyle_output = test::execute::<State>(contract_input)?;
                 Ok(ProofData(borsh::to_vec(&vec![hyle_output])?))
             })
         }
     }
 
-    pub fn execute(contract_input: &ContractInput) -> Result<HyleOutput> {
-        // FIXME: this is a hack to make the test pass.
-        let next_state = contract_input.initial_state.clone();
+    pub fn execute<State: StateTrait>(
+        contract_input: ContractInput<Box<dyn Any + Send>>,
+    ) -> Result<HyleOutput> {
+        let initial_state = *contract_input
+            .initial_state
+            .downcast::<State>()
+            .map_err(|_| anyhow::anyhow!("Could not downcast state"))?;
+
+        let initial_digest = initial_state.as_digest();
+
         let hyle_output = HyleOutput {
             version: 1,
-            initial_state: contract_input.initial_state.clone(),
-            next_state,
+            initial_state: initial_digest.clone(),
+            next_state: initial_digest, // FIXME: this is a hack to make the test pass.
             identity: contract_input.identity.clone(),
             index: contract_input.index,
             blobs: flatten_blobs(&contract_input.blobs),
