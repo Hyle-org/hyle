@@ -1007,8 +1007,9 @@ impl Mempool {
             tx,
         };
 
-        let error_log = format!("Sending Status event {:?}", status_event);
-        self.bus.send(status_event).context(error_log)?;
+        self.bus
+            .send(status_event)
+            .context(format!("Sending Status event for TX {}", tx_hash))?;
 
         Ok(())
     }

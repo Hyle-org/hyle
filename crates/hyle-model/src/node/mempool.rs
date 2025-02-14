@@ -39,7 +39,6 @@ impl DataProposal {
                 TransactionData::Blob(_) => {}
             }
         });
-        *self.hash_cache.write().unwrap() = None;
     }
 }
 
