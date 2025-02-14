@@ -164,12 +164,12 @@ impl NodeState {
                                 Ok(maybe_tx_hash) => maybe_tx_hash,
                                 Err(err) => {
                                     let err = format!(
-                                        "Failed to handle blob #{} in verified proof transaction {:?}: {err}",
+                                        "Failed to handle blob #{} in verified proof transaction {}: {err}",
                                         blob_proof_data.hyle_output.index, proof_tx.hash());
                                     info!("{err}");
                                     block_under_construction
                                         .transactions_events
-                                        .entry(proof_tx.hash())
+                                        .entry(blob_proof_data.hyle_output.tx_hash.clone())
                                         .or_default()
                                         .push(TransactionStateEvent::Error(err));
                                     None
@@ -313,7 +313,7 @@ impl NodeState {
         // TODO: add diverse verifications ? (without the inital state checks!).
         // TODO: success to false is valid outcome and can be settled.
         if let Err(e) = Self::verify_hyle_output(unsettled_tx, &blob_proof_data.hyle_output) {
-            bail!("Failed to validate blob proof: {:?}", e);
+            bail!("Invalid HyleOutput: {:?}", e);
         }
 
         let Some(blob) = unsettled_tx
@@ -744,7 +744,7 @@ impl NodeState {
         // Identity verification
         if unsettled_tx.identity != hyle_output.identity {
             bail!(
-                "Proof identity '{:?}' does not correspond to BlobTx identity '{:?}'.",
+                "Proof identity '{}' does not correspond to BlobTx identity '{}'.",
                 hyle_output.identity,
                 unsettled_tx.identity
             )
@@ -753,7 +753,7 @@ impl NodeState {
         // Verify Tx hash matches
         if hyle_output.tx_hash != unsettled_tx.hash {
             bail!(
-                "Proof tx hash '{:?}' does not correspond to BlobTx hash '{:?}'.",
+                "Proof tx_hash '{}' does not correspond to BlobTx hash '{}'.",
                 hyle_output.tx_hash,
                 unsettled_tx.hash
             )
@@ -762,7 +762,7 @@ impl NodeState {
         if let Some(tx_ctx) = &hyle_output.tx_ctx {
             if *tx_ctx != *unsettled_tx.tx_context {
                 bail!(
-                    "Proof tx context '{:?}' does not correspond to BlobTx tx context '{:?}'.",
+                    "Proof tx_context '{:?}' does not correspond to BlobTx tx_context '{:?}'.",
                     tx_ctx,
                     unsettled_tx.tx_context
                 )
@@ -773,7 +773,7 @@ impl NodeState {
         let extracted_blobs_hash = BlobsHash::from_concatenated(&hyle_output.blobs);
         if extracted_blobs_hash != unsettled_tx.blobs_hash {
             bail!(
-                "Proof blobs hash '{:?}' do not correspond to BlobTx blobs hash '{:?}'.",
+                "Proof blobs hash '{}' do not correspond to BlobTx blobs hash '{}'.",
                 extracted_blobs_hash,
                 unsettled_tx.blobs_hash
             )

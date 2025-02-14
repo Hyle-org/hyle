@@ -5,7 +5,7 @@ use hyle_model::RegisterContractEffect;
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, ops::Deref, path::PathBuf, sync::Arc};
 use tokio::sync::RwLock;
-use tracing::debug;
+use tracing::{debug, info};
 
 use crate::{
     bus::BusMessage,
@@ -63,6 +63,7 @@ where
         + Clone
         + Sync
         + Send
+        + std::fmt::Debug
         + ContractHandler
         + BorshSerialize
         + BorshDeserialize
@@ -131,6 +132,7 @@ where
         + Clone
         + Sync
         + Send
+        + std::fmt::Debug
         + ContractHandler
         + BorshSerialize
         + BorshDeserialize
@@ -170,6 +172,10 @@ where
             }
         }
 
+        if !block.txs.is_empty() {
+            debug!(handler = %self.contract_name, "🔨 Processing block: {}", block.block_height);
+        }
+
         for tx in block.txs {
             if let TransactionData::Blob(tx) = tx.transaction_data {
                 self.handle_blob(tx).await?;
@@ -206,8 +212,8 @@ where
     }
 
     async fn handle_register_contract(&self, contract: RegisterContractEffect) -> Result<()> {
-        debug!(cn = %self.contract_name, "📝 Registering supported contract '{}'", contract.contract_name);
         let state = contract.state_digest.try_into()?;
+        debug!(cn = %self.contract_name, "📝 Registered suppored contract '{}' with initial state '{state:?}'", contract.contract_name);
         self.store.write().await.state = Some(state);
         Ok(())
     }
