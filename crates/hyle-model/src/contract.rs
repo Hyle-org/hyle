@@ -53,7 +53,17 @@ pub struct ContractInput {
 }
 
 #[derive(
-    Default, Serialize, Deserialize, Clone, PartialEq, Eq, Hash, BorshSerialize, BorshDeserialize,
+    Default,
+    Serialize,
+    Deserialize,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    BorshSerialize,
+    BorshDeserialize,
 )]
 #[cfg_attr(feature = "full", derive(utoipa::ToSchema))]
 pub struct StateDigest(pub Vec<u8>);
@@ -294,6 +304,8 @@ pub struct ContractName(pub String);
     Deserialize,
     Eq,
     PartialEq,
+    Ord,
+    PartialOrd,
     Hash,
     BorshSerialize,
     BorshDeserialize,
@@ -309,6 +321,8 @@ pub struct Verifier(pub String);
     Deserialize,
     Eq,
     PartialEq,
+    Ord,
+    PartialOrd,
     Hash,
     BorshSerialize,
     BorshDeserialize,
@@ -558,6 +572,8 @@ impl ContractAction for RegisterContractAction {
     Clone,
     PartialEq,
     Eq,
+    PartialOrd,
+    Ord,
     Hash,
     BorshSerialize,
     BorshDeserialize,
