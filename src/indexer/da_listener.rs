@@ -124,7 +124,7 @@ impl DAListener {
 
     async fn processing_next_frame(&mut self, event: DataAvailabilityServerEvent) -> Result<()> {
         if let DataAvailabilityServerEvent::SignedBlock(block) = event {
-            info!(
+            debug!(
                 "📦 Received block: {} {}",
                 block.consensus_proposal.slot,
                 block.consensus_proposal.hashed()

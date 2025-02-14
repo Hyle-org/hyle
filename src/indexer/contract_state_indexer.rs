@@ -61,6 +61,7 @@ where
         + Clone
         + Sync
         + Send
+        + std::fmt::Debug
         + ContractHandler
         + BorshSerialize
         + BorshDeserialize
@@ -129,6 +130,7 @@ where
         + Clone
         + Sync
         + Send
+        + std::fmt::Debug
         + ContractHandler
         + BorshSerialize
         + BorshDeserialize
@@ -166,6 +168,10 @@ where
             if self.contract_name == contract.contract_name {
                 self.handle_register_contract(contract).await?;
             }
+        }
+
+        if !block.txs.is_empty() {
+            debug!(handler = %self.contract_name, "🔨 Processing block: {}", block.block_height);
         }
 
         for (tx_id, tx) in block.txs {
@@ -207,8 +213,8 @@ where
     }
 
     async fn handle_register_contract(&self, contract: RegisterContractEffect) -> Result<()> {
-        debug!(cn = %self.contract_name, "📝 Registering supported contract '{}'", contract.contract_name);
         let state = contract.state_digest.try_into()?;
+        debug!(cn = %self.contract_name, "📝 Registered suppored contract '{}' with initial state '{state:?}'", contract.contract_name);
         self.store.write().await.state = Some(state);
         Ok(())
     }
