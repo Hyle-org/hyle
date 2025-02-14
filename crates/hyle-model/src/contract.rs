@@ -31,6 +31,11 @@ impl std::hash::Hash for ConsensusProposalHash {
 
 pub trait Hashable<T> {
     fn hash(&self) -> T;
+    fn invalidate_cache(&self) {
+        // This function should not be called on a Hashable type that does not implement it
+        // Maybe we should not panic but only log error ?
+        unimplemented!();
+    }
 }
 
 pub trait DataSized {

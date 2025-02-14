@@ -1,3 +1,5 @@
+use std::cell::RefCell;
+
 use borsh::{BorshDeserialize, BorshSerialize};
 use derive_more::derive::Display;
 use serde::{Deserialize, Serialize};
@@ -241,6 +243,8 @@ pub struct BlobTransaction {
     pub identity: Identity,
     pub blobs: Vec<Blob>,
     // FIXME: add a nonce or something to prevent BlobTransaction to share the same hash
+    /// Internal cache of the hash of the transaction
+    hash_cache: RefCell<Option<TxHash>>,
 }
 
 impl BlobTransaction {
@@ -250,12 +254,22 @@ impl BlobTransaction {
 }
 
 impl Hashable<TxHash> for BlobTransaction {
+    fn invalidate_cache(&self) {
+        self.hash_cache.replace(None);
+    }
+
     fn hash(&self) -> TxHash {
+        if let Some(hash) = self.hash_cache.borrow().as_ref() {
+            return hash.clone();
+        }
         let mut hasher = Sha3_256::new();
         hasher.update(self.identity.0.as_bytes());
         hasher.update(self.blobs_hash().0);
         let hash_bytes = hasher.finalize();
-        TxHash(hex::encode(hash_bytes))
+
+        let tx_hash = TxHash(hex::encode(hash_bytes));
+        self.hash_cache.replace(Some(tx_hash.clone()));
+        tx_hash
     }
 }
 
