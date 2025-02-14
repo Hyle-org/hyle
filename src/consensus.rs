@@ -9,7 +9,7 @@ use crate::{
     bus::{command_response::Query, BusMessage},
     genesis::GenesisEvent,
     mempool::QueryNewCut,
-    model::{Cut, Hashable, StakingAction, ValidatorPublicKey},
+    model::{Cut, Hashed, StakingAction, ValidatorPublicKey},
     p2p::{network::OutboundMessage, P2PCommand},
     utils::{
         conf::SharedConf,
@@ -186,7 +186,7 @@ impl Consensus {
             _ => bail!("Cannot finish_round unless synchronized to the consensus."),
         }
 
-        let round_proposal_hash = self.bft_round_state.consensus_proposal.hash();
+        let round_proposal_hash = self.bft_round_state.consensus_proposal.hashed();
         let round_parent_hash =
             std::mem::take(&mut self.bft_round_state.consensus_proposal.parent_hash);
 
@@ -580,7 +580,7 @@ impl Consensus {
             .joining
             .buffered_prepares
             .iter()
-            .position(|p| p.hash() == proposal_hash_hint)
+            .position(|p| p.hashed() == proposal_hash_hint)
         else {
             // Maybe we just missed it, carry on.
             return Ok(());
@@ -661,7 +661,7 @@ impl Consensus {
         // This also checks slot/view as those are part of the hash.
         // TODO: would probably be good to make that more explicit.
         self.verify_quorum_certificate(
-            ConsensusNetMessage::ConfirmAck(self.bft_round_state.consensus_proposal.hash()),
+            ConsensusNetMessage::ConfirmAck(self.bft_round_state.consensus_proposal.hashed()),
             &commit_quorum_certificate,
         )?;
 
@@ -860,7 +860,7 @@ impl Consensus {
             listen<GenesisEvent> msg => {
                 match msg {
                     GenesisEvent::GenesisBlock(signed_block) => {
-                        self.bft_round_state.consensus_proposal.parent_hash = signed_block.hash();
+                        self.bft_round_state.consensus_proposal.parent_hash = signed_block.hashed();
                         self.bft_round_state.consensus_proposal.round_leader = signed_block.consensus_proposal.round_leader.clone();
 
                         if self.bft_round_state.consensus_proposal.round_leader == *self.crypto.validator_pubkey() {
@@ -1416,7 +1416,7 @@ pub mod test {
 
         assert_eq!(cp2.slot, 2);
         assert_eq!(cp2.view, 0);
-        assert_eq!(cp2.parent_hash, cp1.hash());
+        assert_eq!(cp2.parent_hash, cp1.hashed());
         assert!(matches!(ticket2, Ticket::CommitQC(_)));
 
         // Slot 2 - leader = node1
@@ -1456,7 +1456,7 @@ pub mod test {
             }
         };
 
-        let cp_round_hash = &cp_round.unwrap().hash();
+        let cp_round_hash = &cp_round.unwrap().hashed();
 
         send! {
             description: "Follower - PrepareVote",

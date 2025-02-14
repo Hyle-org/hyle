@@ -5,7 +5,7 @@ use fjall::{Config, Keyspace, PartitionCreateOptions, PartitionHandle, Slice};
 use tracing::info;
 
 use crate::{
-    model::{DataProposalHash, Hashable, ValidatorPublicKey},
+    model::{DataProposalHash, Hashed, ValidatorPublicKey},
     utils::logger::LogMe,
 };
 
@@ -93,7 +93,7 @@ impl Storage for LanesStorage {
                     .remove(format!("{}:{}", validator, lane_hash_tip))?;
                 self.update_lane_tip(
                     validator,
-                    lane_entry.data_proposal.hash(),
+                    lane_entry.data_proposal.hashed(),
                     lane_entry.cumul_size,
                 );
                 return Ok(Some((lane_hash_tip, lane_entry)));
@@ -103,7 +103,7 @@ impl Storage for LanesStorage {
     }
 
     fn put(&mut self, validator: ValidatorPublicKey, lane_entry: LaneEntry) -> Result<()> {
-        let dp_hash = lane_entry.data_proposal.hash();
+        let dp_hash = lane_entry.data_proposal.hashed();
 
         if self.contains(&validator, &dp_hash) {
             bail!("DataProposal {} was already in lane", dp_hash);
@@ -145,7 +145,7 @@ impl Storage for LanesStorage {
         validator_key: ValidatorPublicKey,
         lane_entry: LaneEntry,
     ) -> Result<()> {
-        let dp_hash = lane_entry.data_proposal.hash();
+        let dp_hash = lane_entry.data_proposal.hashed();
         self.by_hash.insert(
             format!("{}:{}", validator_key, dp_hash),
             encode_to_item(lane_entry)?,
@@ -154,7 +154,7 @@ impl Storage for LanesStorage {
     }
 
     fn update(&mut self, validator_key: ValidatorPublicKey, lane_entry: LaneEntry) -> Result<()> {
-        let dp_hash = lane_entry.data_proposal.hash();
+        let dp_hash = lane_entry.data_proposal.hashed();
 
         if !self.contains(&validator_key, &dp_hash) {
             bail!("LaneEntry does not exist");

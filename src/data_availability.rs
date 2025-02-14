@@ -289,10 +289,14 @@ impl DataAvailability {
     }
 
     async fn handle_signed_block(&mut self, block: SignedBlock) -> Result<()> {
-        let hash = block.hash();
+        let hash = block.hashed();
         // if new block is already handled, ignore it
         if self.blocks.contains(&hash) {
-            warn!("Block {} {} already exists !", block.height(), block.hash());
+            warn!(
+                "Block {} {} already exists !",
+                block.height(),
+                block.hashed()
+            );
             return Ok(());
         }
         // if new block is not the next block in the chain, buffer
@@ -301,10 +305,10 @@ impl DataAvailability {
                 debug!(
                     "Parent block '{}' not found for block hash='{}' height {}",
                     block.parent_hash(),
-                    block.hash(),
+                    block.hashed(),
                     block.height()
                 );
-                debug!("Buffering block {}", block.hash());
+                debug!("Buffering block {}", block.hashed());
                 self.buffered_signed_blocks.insert(block);
                 return Ok(());
             }
@@ -314,7 +318,7 @@ impl DataAvailability {
                 "Received block with height {} but genesis block is missing",
                 block.height()
             );
-            trace!("Buffering block {}", block.hash());
+            trace!("Buffering block {}", block.hashed());
             self.buffered_signed_blocks.insert(block);
             return Ok(());
         }
@@ -342,7 +346,7 @@ impl DataAvailability {
                 reason = "Must exist as checked in the while above"
             )]
             let first_buffered = self.buffered_signed_blocks.pop_first().unwrap();
-            last_block_hash = first_buffered.hash();
+            last_block_hash = first_buffered.hashed();
             self.add_processed_block(first_buffered).await;
         }
     }
@@ -354,20 +358,20 @@ impl DataAvailability {
             error!("storing block: {}", e);
             return;
         }
-        trace!("Block {} {}: {:#?}", block.height(), block.hash(), block);
+        trace!("Block {} {}: {:#?}", block.height(), block.hashed(), block);
 
         if block.height().0 % 10 == 0 || block.has_txs() {
             info!(
                 "new block #{} 0x{} with {} txs",
                 block.height(),
-                block.hash(),
+                block.hashed(),
                 block.count_txs(),
             );
         }
         debug!(
             "new block #{} 0x{} with {} transactions: {}",
             block.height(),
-            block.hash(),
+            block.hashed(),
             block.count_txs(),
             block
                 .iter_txs_with_id()
@@ -468,7 +472,7 @@ impl DataAvailability {
                     .map_or(start_height, |block| block.height())
                     + 1,
             )
-            .filter_map(|block| block.map(|b| b.hash()).ok())
+            .filter_map(|block| block.map(|b| b.hashed()).ok())
             .collect();
         processed_block_hashes.reverse();
 
@@ -603,7 +607,7 @@ pub mod tests {
         let block = SignedBlock::default();
         blocks.put(block.clone())?;
         assert!(blocks.last().unwrap().height() == block.height());
-        let last = blocks.get(&block.hash())?;
+        let last = blocks.get(&block.hashed())?;
         assert!(last.is_some());
         assert!(last.unwrap().height() == BlockHeight(0));
         Ok(())
@@ -632,7 +636,7 @@ pub mod tests {
         let mut blocks = vec![];
         for i in 1..10000 {
             blocks.push(block.clone());
-            block.consensus_proposal.parent_hash = block.hash();
+            block.consensus_proposal.parent_hash = block.hashed();
             block.consensus_proposal.slot = i;
         }
         blocks.reverse();
@@ -676,7 +680,7 @@ pub mod tests {
         let mut blocks = vec![];
         for i in 1..15 {
             blocks.push(block.clone());
-            block.consensus_proposal.parent_hash = block.hash();
+            block.consensus_proposal.parent_hash = block.hashed();
             block.consensus_proposal.slot = i;
         }
         blocks.reverse();
@@ -726,7 +730,7 @@ pub mod tests {
         };
 
         for i in 14..18 {
-            ccp.consensus_proposal.parent_hash = ccp.consensus_proposal.hash();
+            ccp.consensus_proposal.parent_hash = ccp.consensus_proposal.hashed();
             ccp.consensus_proposal.slot = i;
             block_sender
                 .send(MempoolBlockEvent::BuiltSignedBlock(SignedBlock {
@@ -781,7 +785,7 @@ pub mod tests {
         let mut blocks = vec![];
         for i in 1..11 {
             blocks.push(block.clone());
-            block.consensus_proposal.parent_hash = block.hash();
+            block.consensus_proposal.parent_hash = block.hashed();
             block.consensus_proposal.slot = i;
         }
         blocks.reverse();
@@ -828,7 +832,7 @@ pub mod tests {
         };
 
         for i in 10..15 {
-            ccp.consensus_proposal.parent_hash = ccp.consensus_proposal.hash();
+            ccp.consensus_proposal.parent_hash = ccp.consensus_proposal.hashed();
             ccp.consensus_proposal.slot = i;
             block_sender
                 .send(MempoolBlockEvent::BuiltSignedBlock(SignedBlock {
@@ -864,7 +868,7 @@ pub mod tests {
         };
 
         for i in 15..20 {
-            ccp.consensus_proposal.parent_hash = ccp.consensus_proposal.hash();
+            ccp.consensus_proposal.parent_hash = ccp.consensus_proposal.hashed();
             ccp.consensus_proposal.slot = i;
             block_sender
                 .send(MempoolBlockEvent::BuiltSignedBlock(SignedBlock {

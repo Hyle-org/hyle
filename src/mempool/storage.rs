@@ -11,7 +11,7 @@ use tracing::{debug, error, warn};
 
 use crate::{
     model::{
-        BlobProofOutput, Cut, DataProposal, DataProposalHash, Hashable, PoDA, SignedByValidator,
+        BlobProofOutput, Cut, DataProposal, DataProposalHash, Hashed, PoDA, SignedByValidator,
         Transaction, TransactionData, ValidatorPublicKey,
     },
     utils::{crypto::BlstCrypto, logger::LogMe},
@@ -165,7 +165,7 @@ pub trait Storage {
             return Ok((DataProposalVerdict::Empty, None));
         }
 
-        let dp_hash = data_proposal.hash();
+        let dp_hash = data_proposal.hashed();
 
         // ALREADY STORED
         if self.contains(validator, &dp_hash) {
@@ -379,7 +379,7 @@ pub trait Storage {
         data_proposal: DataProposal,
     ) -> Result<(DataProposalHash, LaneBytesSize)> {
         // Add DataProposal to validator's lane
-        let data_proposal_hash = data_proposal.hash();
+        let data_proposal_hash = data_proposal.hashed();
 
         let dp_size = data_proposal.estimate_size();
         let lane_size = self
@@ -652,7 +652,7 @@ mod tests {
             cumul_size,
             signatures: vec![],
         };
-        let dp_hash = entry.data_proposal.hash();
+        let dp_hash = entry.data_proposal.hashed();
         storage.put(pubkey.clone(), entry.clone()).unwrap();
         assert!(storage.contains(pubkey, &dp_hash));
         assert_eq!(
@@ -673,7 +673,7 @@ mod tests {
             cumul_size,
             signatures: vec![],
         };
-        let dp_hash = entry.data_proposal.hash();
+        let dp_hash = entry.data_proposal.hashed();
         storage.put(pubkey.clone(), entry.clone()).unwrap();
         entry.signatures.push(SignedByValidator {
             msg: MempoolNetMessage::DataVote(dp_hash.clone(), cumul_size),
@@ -726,7 +726,7 @@ mod tests {
 
         let mut storage = setup_storage(pubkey);
         let dp = DataProposal::new(None, vec![Transaction::default()]);
-        let dp2 = DataProposal::new(Some(dp.hash()), vec![Transaction::default()]);
+        let dp2 = DataProposal::new(Some(dp.hashed()), vec![Transaction::default()]);
 
         storage
             .store_data_proposal(&crypto, pubkey2, dp.clone())
@@ -738,7 +738,7 @@ mod tests {
         assert!(storage.store_data_proposal(&crypto, pubkey2, dp2).is_err());
 
         let dp2_fork = DataProposal::new(
-            Some(dp.hash()),
+            Some(dp.hashed()),
             vec![Transaction::default(), Transaction::default()],
         );
 
@@ -813,8 +813,8 @@ mod tests {
         let pubkey = crypto.validator_pubkey();
         let mut storage = setup_storage(pubkey);
         let dp1 = DataProposal::new(None, vec![]);
-        let dp2 = DataProposal::new(Some(dp1.hash()), vec![]);
-        let dp3 = DataProposal::new(Some(dp2.hash()), vec![]);
+        let dp2 = DataProposal::new(Some(dp1.hashed()), vec![]);
+        let dp3 = DataProposal::new(Some(dp2.hashed()), vec![]);
 
         storage
             .store_data_proposal(&crypto, pubkey, dp1.clone())
@@ -834,7 +834,7 @@ mod tests {
 
         // ]1, end] == [2, 3]
         let entries_from_1_to_end = storage
-            .get_lane_entries_between_hashes(pubkey, Some(&dp1.hash()), None)
+            .get_lane_entries_between_hashes(pubkey, Some(&dp1.hashed()), None)
             .unwrap();
         assert_eq!(2, entries_from_1_to_end.len());
         assert_eq!(dp2, entries_from_1_to_end.first().unwrap().data_proposal);
@@ -842,7 +842,7 @@ mod tests {
 
         // [start, 2] == [1, 2]
         let entries_from_start_to_2 = storage
-            .get_lane_entries_between_hashes(pubkey, None, Some(&dp2.hash()))
+            .get_lane_entries_between_hashes(pubkey, None, Some(&dp2.hashed()))
             .unwrap();
         assert_eq!(2, entries_from_start_to_2.len());
         assert_eq!(dp1, entries_from_start_to_2.first().unwrap().data_proposal);
@@ -850,14 +850,14 @@ mod tests {
 
         // ]1, 2] == [2]
         let entries_from_1_to_2 = storage
-            .get_lane_entries_between_hashes(pubkey, Some(&dp1.hash()), Some(&dp2.hash()))
+            .get_lane_entries_between_hashes(pubkey, Some(&dp1.hashed()), Some(&dp2.hashed()))
             .unwrap();
         assert_eq!(1, entries_from_1_to_2.len());
         assert_eq!(dp2, entries_from_1_to_2.first().unwrap().data_proposal);
 
         // ]1, 3] == [2, 3]
         let entries_from_1_to_3 = storage
-            .get_lane_entries_between_hashes(pubkey, Some(&dp1.hash()), None)
+            .get_lane_entries_between_hashes(pubkey, Some(&dp1.hashed()), None)
             .unwrap();
         assert_eq!(2, entries_from_1_to_3.len());
         assert_eq!(dp2, entries_from_1_to_3.first().unwrap().data_proposal);
@@ -865,7 +865,7 @@ mod tests {
 
         // ]1, 1[ == []
         let entries_from_1_to_1 = storage
-            .get_lane_entries_between_hashes(pubkey, Some(&dp1.hash()), Some(&dp1.hash()))
+            .get_lane_entries_between_hashes(pubkey, Some(&dp1.hashed()), Some(&dp1.hashed()))
             .unwrap();
         assert_eq!(0, entries_from_1_to_1.len());
     }
@@ -887,7 +887,7 @@ mod tests {
         assert!(tip.is_some());
 
         assert_eq!(txs.len(), txs_metadatas.len());
-        assert_eq!(hash, DataProposal::new(None, txs).hash());
+        assert_eq!(hash, DataProposal::new(None, txs).hashed());
     }
 
     #[test_log::test(tokio::test)]
@@ -917,16 +917,22 @@ mod tests {
         let (_dp_hash, size) = storage
             .store_data_proposal(&crypto, pubkey, dp1.clone())
             .unwrap();
-        assert_eq!(size, storage.get_lane_size_at(pubkey, &dp1.hash()).unwrap());
+        assert_eq!(
+            size,
+            storage.get_lane_size_at(pubkey, &dp1.hashed()).unwrap()
+        );
         assert_eq!(&size, storage.get_lane_size_tip(pubkey).unwrap());
         assert_eq!(size.0, dp1.estimate_size() as u64);
 
         // Adding a new DP
-        let dp2 = DataProposal::new(Some(dp1.hash()), vec![Transaction::default()]);
+        let dp2 = DataProposal::new(Some(dp1.hashed()), vec![Transaction::default()]);
         let (_hash, size) = storage
             .store_data_proposal(&crypto, pubkey, dp2.clone())
             .unwrap();
-        assert_eq!(size, storage.get_lane_size_at(pubkey, &dp2.hash()).unwrap());
+        assert_eq!(
+            size,
+            storage.get_lane_size_at(pubkey, &dp2.hashed()).unwrap()
+        );
         assert_eq!(&size, storage.get_lane_size_tip(pubkey).unwrap());
         assert_eq!(size.0, (dp1.estimate_size() + dp2.estimate_size()) as u64);
     }

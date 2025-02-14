@@ -95,20 +95,20 @@ pub struct BlobProofOutput {
 
 pub struct BlobProofOutputHash(pub Vec<u8>);
 
-impl Hashable<BlobProofOutputHash> for BlobProofOutput {
-    fn hash(&self) -> BlobProofOutputHash {
+impl Hashed<BlobProofOutputHash> for BlobProofOutput {
+    fn hashed(&self) -> BlobProofOutputHash {
         let mut hasher = Sha3_256::new();
         hasher.update(self.blob_tx_hash.0.as_bytes());
         hasher.update(self.original_proof_hash.0.as_bytes());
         hasher.update(self.program_id.0.clone());
-        hasher.update(contract::Hashable::hash(&self.hyle_output).0);
+        hasher.update(contract::Hashed::hashed(&self.hyle_output).0);
         BlobProofOutputHash(hasher.finalize().to_vec())
     }
 }
 
 pub struct HyleOutputHash(pub Vec<u8>);
-impl Hashable<HyleOutputHash> for HyleOutput {
-    fn hash(&self) -> HyleOutputHash {
+impl Hashed<HyleOutputHash> for HyleOutput {
+    fn hashed(&self) -> HyleOutputHash {
         let mut hasher = Sha3_256::new();
         hasher.update(self.version.to_le_bytes());
         hasher.update(self.initial_state.0.clone());
@@ -120,7 +120,7 @@ impl Hashable<HyleOutputHash> for HyleOutput {
         hasher.update(self.registered_contracts.len().to_le_bytes());
         self.registered_contracts
             .iter()
-            .for_each(|c| hasher.update(contract::Hashable::hash(c).0));
+            .for_each(|c| hasher.update(contract::Hashed::hashed(c).0));
         hasher.update(&self.program_outputs);
         HyleOutputHash(hasher.finalize().to_vec())
     }

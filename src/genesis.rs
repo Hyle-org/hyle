@@ -206,7 +206,7 @@ impl Genesis {
             // validator, and assume it's the same.
 
             let tx = BlobTransaction::new(identity, blobs);
-            let blob_tx_hash = tx.hash();
+            let blob_tx_hash = tx.hashed();
 
             genesis_txs.push(tx.into());
 
@@ -217,7 +217,7 @@ impl Genesis {
                     proven_blobs: outputs
                         .drain(..)
                         .map(|(contract_name, out)| BlobProofOutput {
-                            original_proof_hash: ProofData::default().hash(),
+                            original_proof_hash: ProofData::default().hashed(),
                             program_id: contract_program_ids
                                 .get(&contract_name)
                                 .expect("Genesis TXes on unregistered contracts")
@@ -227,7 +227,7 @@ impl Genesis {
                         })
                         .collect(),
                     is_recursive: true,
-                    proof_hash: ProofData::default().hash(),
+                    proof_hash: ProofData::default().hashed(),
                     proof_size: 0,
                     proof: None,
                 }

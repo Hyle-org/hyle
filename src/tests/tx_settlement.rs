@@ -1,6 +1,6 @@
 use client_sdk::rest_client::{IndexerApiHttpClient, NodeApiHttpClient};
 use hyle_model::{
-    api::APIRegisterContract, BlobTransaction, ContractAction, ContractName, Hashable, ProgramId,
+    api::APIRegisterContract, BlobTransaction, ContractAction, ContractName, Hashed, ProgramId,
     ProofData, ProofTransaction, RegisterContractAction, RegisterContractEffect, StateDigest,
 };
 use testcontainers_modules::{
@@ -117,7 +117,7 @@ async fn test_full_settlement_flow() -> Result<()> {
     client.send_tx_proof(&proof_c2).await.unwrap();
 
     info!("➡️  Waiting for TX to be settled");
-    hyle_node.wait_for_settled_tx(tx.hash()).await?;
+    hyle_node.wait_for_settled_tx(tx.hashed()).await?;
     // Wait a block on top to make sure the state is updated.
     hyle_node.wait_for_n_blocks(1).await?;
 
@@ -255,7 +255,7 @@ async fn test_tx_settlement_duplicates() -> Result<()> {
     client.send_tx_proof(&proof_c2).await.unwrap();
 
     info!("➡️  Waiting for TX to be settled");
-    hyle_node.wait_for_settled_tx(tx.hash()).await?;
+    hyle_node.wait_for_settled_tx(tx.hashed()).await?;
 
     let contract = client.get_contract(&"c1".into()).await?;
     assert_eq!(contract.state.0, vec![4, 5, 6]);
@@ -314,7 +314,7 @@ async fn test_tx_settlement_duplicates() -> Result<()> {
     client.send_tx_proof(&proof_c2).await.unwrap();
 
     info!("➡️  Waiting for TX to be settled - second time");
-    hyle_node.wait_for_settled_tx(tx.hash()).await?;
+    hyle_node.wait_for_settled_tx(tx.hashed()).await?;
     // Wait a block on top to make sure the state is updated.
     hyle_node.wait_for_n_blocks(1).await?;
 
@@ -355,7 +355,7 @@ async fn test_contract_upgrade() -> Result<()> {
     let b1 = make_register_blob_action("c1.hyle".into(), StateDigest(vec![1, 2, 3]));
     client.send_tx_blob(&b1).await.unwrap();
 
-    hyle_node.wait_for_settled_tx(b1.hash()).await?;
+    hyle_node.wait_for_settled_tx(b1.hashed()).await?;
 
     let contract = client.get_contract(&"c1.hyle".into()).await?;
     assert_eq!(contract.program_id, ProgramId(vec![1, 2, 3]));
@@ -391,7 +391,7 @@ async fn test_contract_upgrade() -> Result<()> {
     client.send_tx_proof(&proof_update).await.unwrap();
 
     info!("➡️  Waiting for TX to be settled");
-    hyle_node.wait_for_settled_tx(b2.hash()).await?;
+    hyle_node.wait_for_settled_tx(b2.hashed()).await?;
     // Wait a block on top to make sure the state is updated.
     hyle_node.wait_for_n_blocks(1).await?;
 

@@ -104,7 +104,7 @@ impl SignedBlock {
     pub fn iter_txs_with_id(&self) -> impl Iterator<Item = (TxId, &Transaction)> {
         self.iter_txs().flat_map(move |(dp_hash, txs)| {
             txs.iter()
-                .map(move |tx| (TxId(dp_hash.clone(), tx.hash()), tx))
+                .map(move |tx| (TxId(dp_hash.clone(), tx.hashed()), tx))
         })
     }
 
@@ -113,9 +113,9 @@ impl SignedBlock {
             .map(|(tx_id, tx)| (tx_id, tx.clone()))
     }
 }
-impl Hashable<ConsensusProposalHash> for SignedBlock {
-    fn hash(&self) -> ConsensusProposalHash {
-        self.consensus_proposal.hash()
+impl Hashed<ConsensusProposalHash> for SignedBlock {
+    fn hashed(&self) -> ConsensusProposalHash {
+        self.consensus_proposal.hashed()
     }
 }
 
@@ -133,7 +133,7 @@ impl PartialOrd for SignedBlock {
 
 impl PartialEq for SignedBlock {
     fn eq(&self, other: &Self) -> bool {
-        self.hash() == other.hash()
+        self.hashed() == other.hashed()
     }
 }
 

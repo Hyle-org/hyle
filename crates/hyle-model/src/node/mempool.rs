@@ -37,7 +37,7 @@ impl Clone for DataProposal {
 
 impl PartialEq for DataProposal {
     fn eq(&self, other: &Self) -> bool {
-        self.hash() == other.hash()
+        self.hashed() == other.hashed()
     }
 }
 
@@ -82,12 +82,8 @@ pub struct TxId(pub DataProposalHash, pub TxHash);
 #[cfg_attr(feature = "full", derive(utoipa::ToSchema))]
 pub struct DataProposalHash(pub String);
 
-impl Hashable<DataProposalHash> for DataProposal {
-    fn invalidate_cache(&self) {
-        *self.hash_cache.write().unwrap() = None;
-    }
-
-    fn hash(&self) -> DataProposalHash {
+impl Hashed<DataProposalHash> for DataProposal {
+    fn hashed(&self) -> DataProposalHash {
         if let Some(hash) = self.hash_cache.read().unwrap().as_ref() {
             return hash.clone();
         }
@@ -96,7 +92,7 @@ impl Hashable<DataProposalHash> for DataProposal {
             hasher.update(parent_data_proposal_hash.0.as_bytes());
         }
         for tx in self.txs.iter() {
-            hasher.update(tx.hash().0);
+            hasher.update(tx.hashed().0);
         }
         let hash = DataProposalHash(hex::encode(hasher.finalize()));
         *self.hash_cache.write().unwrap() = Some(hash.clone());
@@ -110,7 +106,7 @@ impl Display for DataProposalHash {
 }
 impl Display for DataProposal {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.hash())
+        write!(f, "{}", self.hashed())
     }
 }
 

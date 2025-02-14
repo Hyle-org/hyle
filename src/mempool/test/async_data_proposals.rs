@@ -100,7 +100,7 @@ async fn impl_test_mempool_isnt_blocked_by_proof_verification() -> Result<()> {
             data: BlobData(vec![]),
         }],
     );
-    let blob_tx_hash = blob_tx.hash();
+    let blob_tx_hash = blob_tx.hashed();
     let proof = ProofData(
         serde_json::to_vec(
             &vec![HyleOutput {
@@ -114,7 +114,7 @@ async fn impl_test_mempool_isnt_blocked_by_proof_verification() -> Result<()> {
         )
         .unwrap(),
     );
-    let proof_hash = proof.hash();
+    let proof_hash = proof.hashed();
 
     node_client.send(RestApiMessage::NewTx(blob_tx.clone().into()))?;
 

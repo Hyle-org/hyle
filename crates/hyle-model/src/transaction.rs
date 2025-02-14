@@ -26,7 +26,7 @@ impl Transaction {
         TransactionMetadata {
             version: self.version,
             transaction_kind: self.transaction_data.discriminant(),
-            id: TxId(parent_data_proposal_hash.clone(), self.hash()),
+            id: TxId(parent_data_proposal_hash.clone(), self.hashed()),
         }
     }
 }
@@ -169,33 +169,33 @@ impl From<VerifiedProofTransaction> for Transaction {
     }
 }
 
-impl Hashable<TxHash> for Transaction {
-    fn hash(&self) -> TxHash {
+impl Hashed<TxHash> for Transaction {
+    fn hashed(&self) -> TxHash {
         match &self.transaction_data {
-            TransactionData::Blob(tx) => tx.hash(),
-            TransactionData::Proof(tx) => tx.hash(),
-            TransactionData::VerifiedProof(tx) => tx.hash(),
+            TransactionData::Blob(tx) => tx.hashed(),
+            TransactionData::Proof(tx) => tx.hashed(),
+            TransactionData::VerifiedProof(tx) => tx.hashed(),
         }
     }
 }
 
-impl Hashable<TxHash> for ProofTransaction {
-    fn hash(&self) -> TxHash {
+impl Hashed<TxHash> for ProofTransaction {
+    fn hashed(&self) -> TxHash {
         let mut hasher = Sha3_256::new();
         hasher.update(self.contract_name.0.as_bytes());
-        hasher.update(self.proof.hash().0);
+        hasher.update(self.proof.hashed().0);
         let hash_bytes = hasher.finalize();
         TxHash(hex::encode(hash_bytes))
     }
 }
-impl Hashable<TxHash> for VerifiedProofTransaction {
-    fn hash(&self) -> TxHash {
+impl Hashed<TxHash> for VerifiedProofTransaction {
+    fn hashed(&self) -> TxHash {
         let mut hasher = Sha3_256::new();
         hasher.update(self.contract_name.0.as_bytes());
         hasher.update(self.proof_hash.0.as_bytes());
         hasher.update(self.proven_blobs.len().to_le_bytes());
         for proven_blob in self.proven_blobs.iter() {
-            hasher.update(proven_blob.hash().0);
+            hasher.update(proven_blob.hashed().0);
         }
         let hash_bytes = hasher.finalize();
         TxHash(hex::encode(hash_bytes))
@@ -221,8 +221,8 @@ pub struct ProofData(#[serde(with = "base64_field")] pub Vec<u8>);
 )]
 pub struct ProofDataHash(pub String);
 
-impl Hashable<ProofDataHash> for ProofData {
-    fn hash(&self) -> ProofDataHash {
+impl Hashed<ProofDataHash> for ProofData {
+    fn hashed(&self) -> ProofDataHash {
         let mut hasher = Sha3_256::new();
         hasher.update(self.0.as_slice());
         let hash_bytes = hasher.finalize();
@@ -292,8 +292,8 @@ impl BlobTransaction {
     }
 }
 
-impl Hashable<TxHash> for BlobTransaction {
-    fn hash(&self) -> TxHash {
+impl Hashed<TxHash> for BlobTransaction {
+    fn hashed(&self) -> TxHash {
         if let Some(hash) = self.hash_cache.read().unwrap().clone() {
             return hash;
         }

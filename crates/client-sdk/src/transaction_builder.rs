@@ -8,7 +8,7 @@ use std::{
 
 use anyhow::{bail, Result};
 use sdk::{
-    Blob, BlobIndex, BlobTransaction, ContractAction, ContractInput, ContractName, Hashable,
+    Blob, BlobIndex, BlobTransaction, ContractAction, ContractInput, ContractName, Hashed,
     HyleOutput, Identity, ProofTransaction, StateDigest, TxContext,
 };
 
@@ -323,7 +323,7 @@ impl ContractRunner {
         private_input: Vec<u8>,
         initial_state: StateDigest,
     ) {
-        let tx_hash = BlobTransaction::new(self.identity.clone(), blobs.clone()).hash();
+        let tx_hash = BlobTransaction::new(self.identity.clone(), blobs.clone()).hashed();
 
         self.contract_input.get_or_init(|| ContractInput {
             initial_state,

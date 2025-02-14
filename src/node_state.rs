@@ -74,7 +74,7 @@ impl NodeState {
 
         let mut block_under_construction = Block {
             parent_hash: signed_block.parent_hash().clone(),
-            hash: signed_block.hash(),
+            hash: signed_block.hashed(),
             block_height: signed_block.height(),
             block_timestamp: signed_block.consensus_proposal.timestamp,
             txs: vec![], // To avoid a double borrow, we'll add the transactions later
@@ -224,7 +224,7 @@ impl NodeState {
         tx: &BlobTransaction,
         tx_context: Arc<TxContext>,
     ) -> Result<Option<TxHash>, Error> {
-        let tx_hash = tx.hash();
+        let tx_hash = tx.hashed();
         debug!("Handle blob tx: {:?} (hash: {})", tx, tx_hash);
 
         tx.validate_identity()?;
@@ -233,7 +233,7 @@ impl NodeState {
             bail!("Blob Transaction must have at least one blob");
         }
 
-        let (blob_tx_hash, blobs_hash) = (tx.hash(), tx.blobs_hash());
+        let (blob_tx_hash, blobs_hash) = (tx.hashed(), tx.blobs_hash());
 
         let mut should_try_and_settle = true;
 
@@ -909,9 +909,9 @@ pub mod test {
                 hyle_output: hyle_output.clone(),
                 program_id: ProgramId(vec![]),
                 blob_tx_hash: blob_tx_hash.clone(),
-                original_proof_hash: proof.proof.hash(),
+                original_proof_hash: proof.proof.hashed(),
             }],
-            proof_hash: proof.proof.hash(),
+            proof_hash: proof.proof.hashed(),
             proof_size: proof.estimate_size(),
             proof: Some(proof.proof),
             is_recursive: false,
@@ -927,7 +927,7 @@ pub mod test {
             initial_state: StateDigest(vec![0, 1, 2, 3]),
             next_state: StateDigest(vec![4, 5, 6]),
             success: true,
-            tx_hash: blob_tx.hash(),
+            tx_hash: blob_tx.hashed(),
             tx_ctx: None,
             registered_contracts: vec![],
             program_outputs: vec![],
@@ -948,7 +948,7 @@ pub mod test {
             initial_state: StateDigest(initial_state.to_vec()),
             next_state: StateDigest(next_state.to_vec()),
             success: true,
-            tx_hash: blob_tx.hash(),
+            tx_hash: blob_tx.hashed(),
             tx_ctx: None,
             program_outputs: vec![],
             registered_contracts: vec![],
@@ -1024,7 +1024,7 @@ pub mod test {
         let identity = Identity::new("test.c1");
         let blob_tx = BlobTransaction::new(identity.clone(), vec![new_blob("c1")]);
 
-        let blob_tx_id = blob_tx.hash();
+        let blob_tx_id = blob_tx.hashed();
 
         let ctx = bogus_tx_context();
         state.handle_blob_tx(&blob_tx, ctx.clone()).unwrap();
@@ -1083,7 +1083,7 @@ pub mod test {
         let blob_tx =
             BlobTransaction::new(identity.clone(), vec![new_blob(&c1.0), new_blob(&c2.0)]);
 
-        let blob_tx_hash = blob_tx.hash();
+        let blob_tx_hash = blob_tx.hashed();
 
         state.handle_register_contract_effect(&register_c1);
         state.handle_register_contract_effect(&register_c2);
@@ -1117,7 +1117,7 @@ pub mod test {
             Identity::new("test.c1"),
             vec![new_blob(&c1.0), new_blob(&c2.0)],
         );
-        let blob_tx_hash_1 = blob_tx_1.hash();
+        let blob_tx_hash_1 = blob_tx_1.hashed();
 
         state.handle_register_contract_effect(&register_c1);
         state.handle_register_contract_effect(&register_c2);
@@ -1152,7 +1152,7 @@ pub mod test {
             Identity::new("test.c1"),
             vec![new_blob(&c1.0), new_blob(&c2.0)],
         );
-        let blob_tx_hash = blob_tx.hash();
+        let blob_tx_hash = blob_tx.hashed();
 
         state.handle_register_contract_effect(&register_c1);
         state.handle_register_contract_effect(&register_c2);
@@ -1194,7 +1194,7 @@ pub mod test {
             vec![new_blob(&c1.0), new_blob(&c1.0)],
         );
 
-        let blob_tx_hash = blob_tx.hash();
+        let blob_tx_hash = blob_tx.hashed();
 
         state.handle_register_contract_effect(&register_c1);
         state.handle_blob_tx(&blob_tx, bogus_tx_context()).unwrap();
@@ -1232,7 +1232,7 @@ pub mod test {
             Identity::new("test.c1"),
             vec![first_blob, second_blob, third_blob],
         );
-        let blob_tx_hash = blob_tx.hash();
+        let blob_tx_hash = blob_tx.hashed();
 
         state.handle_register_contract_effect(&register_c1);
         state.handle_blob_tx(&blob_tx, bogus_tx_context()).unwrap();
@@ -1276,7 +1276,7 @@ pub mod test {
             vec![first_blob, second_blob, third_blob],
         );
 
-        let blob_tx_hash = blob_tx.hash();
+        let blob_tx_hash = blob_tx.hashed();
 
         state.handle_register_contract_effect(&register_c1);
         state.handle_blob_tx(&blob_tx, bogus_tx_context()).unwrap();
@@ -1330,7 +1330,7 @@ pub mod test {
 
         let blob_tx = BlobTransaction::new(Identity::new("test.c1"), vec![first_blob, second_blob]);
 
-        let blob_tx_hash = blob_tx.hash();
+        let blob_tx_hash = blob_tx.hashed();
 
         state.handle_register_contract_effect(&register_c1);
         state.handle_blob_tx(&blob_tx, bogus_tx_context()).unwrap();
@@ -1386,7 +1386,7 @@ pub mod test {
             vec![first_blob, second_blob, third_blob],
         );
 
-        let blob_tx_hash = blob_tx.hash();
+        let blob_tx_hash = blob_tx.hashed();
 
         state.handle_register_contract_effect(&register_c1);
         state.handle_blob_tx(&blob_tx, bogus_tx_context()).unwrap();
@@ -1446,7 +1446,7 @@ pub mod test {
         let ready_last_block =
             BlobTransaction::new(Identity::new("test2.c1"), vec![new_blob(&c1.0)]);
 
-        let blocking_tx_hash = blocking_tx.hash();
+        let blocking_tx_hash = blocking_tx.hashed();
 
         let hyle_output =
             make_hyle_output_with_state(blocking_tx.clone(), BlobIndex(0), &[0, 1, 2, 3], &[12]);
@@ -1455,19 +1455,19 @@ pub mod test {
             make_hyle_output_with_state(blocking_tx.clone(), BlobIndex(1), &[0, 1, 2, 3], &[22]);
         let blocking_tx_verified_proof_2 = new_proof_tx(&c2, &hyle_output, &blocking_tx_hash);
 
-        let ready_same_block_hash = ready_same_block.hash();
+        let ready_same_block_hash = ready_same_block.hashed();
         let hyle_output =
             make_hyle_output_with_state(ready_same_block.clone(), BlobIndex(0), &[12], &[13]);
         let ready_same_block_verified_proof =
             new_proof_tx(&c1, &hyle_output, &ready_same_block_hash);
 
-        let ready_later_block_hash = ready_later_block.hash();
+        let ready_later_block_hash = ready_later_block.hashed();
         let hyle_output =
             make_hyle_output_with_state(ready_later_block.clone(), BlobIndex(0), &[22], &[23]);
         let ready_later_block_verified_proof =
             new_proof_tx(&c1, &hyle_output, &ready_later_block_hash);
 
-        let ready_last_block_hash = ready_last_block.hash();
+        let ready_last_block_hash = ready_last_block.hashed();
         let hyle_output =
             make_hyle_output_with_state(ready_last_block.clone(), BlobIndex(0), &[13], &[14]);
         let ready_last_block_verified_proof =
@@ -1527,7 +1527,7 @@ pub mod test {
 
         let txs = vec![register_c1.into(), blob_tx.clone().into()];
 
-        let blob_tx_hash = blob_tx.hash();
+        let blob_tx_hash = blob_tx.hashed();
 
         state.handle_signed_block(&craft_signed_block(3, txs));
 
@@ -1555,7 +1555,7 @@ pub mod test {
             vec![register_c1.clone().into(), blob_tx.clone().into()],
         );
 
-        let blob_tx_hash = blob_tx.hash();
+        let blob_tx_hash = blob_tx.hashed();
 
         state.handle_signed_block(&crafted_block);
 
@@ -1606,14 +1606,14 @@ pub mod test {
             Identity::new("test.c1"),
             vec![new_blob(&c1.0), new_blob(&c2.0)],
         );
-        let blocking_tx_hash = blocking_tx.hash();
+        let blocking_tx_hash = blocking_tx.hashed();
 
         let ready_same_block =
             BlobTransaction::new(Identity::new("test.c1"), vec![new_blob(&c1.0)]);
         let ready_later_block =
             BlobTransaction::new(Identity::new("test.c2"), vec![new_blob(&c2.0)]);
-        let ready_same_block_hash = ready_same_block.hash();
-        let ready_later_block_hash = ready_later_block.hash();
+        let ready_same_block_hash = ready_same_block.hashed();
+        let ready_later_block_hash = ready_later_block.hashed();
         let hyle_output = make_hyle_output(ready_same_block.clone(), BlobIndex(0));
         let ready_same_block_verified_proof =
             new_proof_tx(&c1, &hyle_output, &ready_same_block_hash);
@@ -1689,10 +1689,10 @@ pub mod test {
         let tx2 = BlobTransaction::new(Identity::new("test.c1"), vec![new_blob(&c1.0)]);
         let tx3 = BlobTransaction::new(Identity::new("test.c2"), vec![new_blob(&c2.0)]);
         let tx4 = BlobTransaction::new(Identity::new("test2.c2"), vec![new_blob(&c2.0)]);
-        let tx1_hash = tx1.hash();
-        let tx2_hash = tx2.hash();
-        let tx3_hash = tx3.hash();
-        let tx4_hash = tx4.hash();
+        let tx1_hash = tx1.hashed();
+        let tx2_hash = tx2.hashed();
+        let tx3_hash = tx3.hashed();
+        let tx4_hash = tx4.hashed();
 
         let hyle_output = make_hyle_output(tx2.clone(), BlobIndex(0));
         let tx2_verified_proof = new_proof_tx(&c1, &hyle_output, &tx2_hash);
@@ -1803,7 +1803,7 @@ pub mod test {
             let block =
                 state.handle_signed_block(&craft_signed_block(3, vec![register_c1.clone().into()]));
 
-            assert_eq!(block.failed_txs, vec![register_c1.hash()]);
+            assert_eq!(block.failed_txs, vec![register_c1.hashed()]);
             assert_eq!(state.contracts.len(), 4);
         }
 
@@ -1839,15 +1839,15 @@ pub mod test {
             let block = state.handle_signed_block(&signed_block);
 
             assert_eq!(state.contracts.len(), 2);
-            assert_eq!(block.successful_txs, vec![register_good.hash()]);
+            assert_eq!(block.successful_txs, vec![register_good.hashed()]);
             assert_eq!(
                 block.failed_txs,
                 vec![
-                    register_1.hash(),
-                    register_2.hash(),
-                    register_3.hash(),
-                    register_4.hash(),
-                    register_5.hash(),
+                    register_1.hashed(),
+                    register_2.hashed(),
+                    register_3.hashed(),
+                    register_4.hashed(),
+                    register_5.hashed(),
                 ]
             );
         }
@@ -1894,7 +1894,7 @@ pub mod test {
             let proof_tx = new_proof_tx(
                 &"hyle".into(),
                 &make_hyle_output(compositing_register_good.clone(), BlobIndex(1)),
-                &compositing_register_good.hash(),
+                &compositing_register_good.hashed(),
             );
 
             state.handle_signed_block(&craft_signed_block(103, vec![proof_tx.into()]));
@@ -1908,7 +1908,7 @@ pub mod test {
             let proof_tx = new_proof_tx(
                 &"hyle".into(),
                 &make_hyle_output(third_tx.clone(), BlobIndex(1)),
-                &third_tx.hash(),
+                &third_tx.hashed(),
             );
 
             state.handle_signed_block(&craft_signed_block(
@@ -1921,7 +1921,7 @@ pub mod test {
 
             assert_eq!(
                 block.timed_out_txs,
-                vec![compositing_register_willfail.hash()]
+                vec![compositing_register_willfail.hashed()]
             );
             assert_eq!(state.contracts.len(), 3);
         }

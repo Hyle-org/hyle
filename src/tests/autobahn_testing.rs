@@ -411,15 +411,15 @@ async fn autobahn_basic_flow() {
 
     assert_eq!(
         vote2.msg,
-        ConsensusNetMessage::PrepareVote(consensus_proposal.hash())
+        ConsensusNetMessage::PrepareVote(consensus_proposal.hashed())
     );
     assert_eq!(
         vote3.msg,
-        ConsensusNetMessage::PrepareVote(consensus_proposal.hash())
+        ConsensusNetMessage::PrepareVote(consensus_proposal.hashed())
     );
     assert_eq!(
         vote4.msg,
-        ConsensusNetMessage::PrepareVote(consensus_proposal.hash())
+        ConsensusNetMessage::PrepareVote(consensus_proposal.hashed())
     );
 
     broadcast! {
@@ -436,15 +436,15 @@ async fn autobahn_basic_flow() {
 
     assert_eq!(
         vote2.msg,
-        ConsensusNetMessage::ConfirmAck(consensus_proposal.hash())
+        ConsensusNetMessage::ConfirmAck(consensus_proposal.hashed())
     );
     assert_eq!(
         vote3.msg,
-        ConsensusNetMessage::ConfirmAck(consensus_proposal.hash())
+        ConsensusNetMessage::ConfirmAck(consensus_proposal.hashed())
     );
     assert_eq!(
         vote4.msg,
-        ConsensusNetMessage::ConfirmAck(consensus_proposal.hash())
+        ConsensusNetMessage::ConfirmAck(consensus_proposal.hashed())
     );
 
     broadcast! {
@@ -623,7 +623,7 @@ async fn mempool_fail_to_vote_on_fork() {
     // dp1(1) <- dp2(2)
     //        <-        dp3(3)
 
-    let dp_fork_3 = DataProposal::new(Some(dp1.hash()), vec![Transaction::default()]);
+    let dp_fork_3 = DataProposal::new(Some(dp1.hashed()), vec![Transaction::default()]);
 
     let data_proposal_fork_3 = node1
         .mempool_ctx
@@ -647,21 +647,21 @@ async fn mempool_fail_to_vote_on_fork() {
             .mempool_ctx
             .last_validator_lane_entry(node1.mempool_ctx.validator_pubkey())
             .1,
-        dp_fork_3.hash()
+        dp_fork_3.hashed()
     );
     assert_ne!(
         node3
             .mempool_ctx
             .last_validator_lane_entry(node1.mempool_ctx.validator_pubkey())
             .1,
-        dp_fork_3.hash()
+        dp_fork_3.hashed()
     );
     assert_ne!(
         node4
             .mempool_ctx
             .last_validator_lane_entry(node1.mempool_ctx.validator_pubkey())
             .1,
-        dp_fork_3.hash()
+        dp_fork_3.hashed()
     );
 
     // FORK with already registered id
@@ -756,7 +756,7 @@ async fn autobahn_rejoin_flow() {
             certificate: AggregateSignature::default(),
             consensus_proposal: ConsensusProposal {
                 slot: blocks.len() as u64,
-                parent_hash: blocks[blocks.len() - 1].hash(),
+                parent_hash: blocks[blocks.len() - 1].hashed(),
                 ..ConsensusProposal::default()
             },
         });
@@ -824,7 +824,7 @@ async fn autobahn_rejoin_flow() {
             certificate: AggregateSignature::default(),
             consensus_proposal: ConsensusProposal {
                 slot: blocks.len() as u64,
-                parent_hash: blocks[blocks.len() - 1].hash(),
+                parent_hash: blocks[blocks.len() - 1].hashed(),
                 ..ConsensusProposal::default()
             },
         };

@@ -3,7 +3,7 @@ use std::path::Path;
 
 use crate::{
     model::ConsensusProposalHash,
-    model::{BlockHeight, Hashable, SignedBlock},
+    model::{BlockHeight, Hashed, SignedBlock},
 };
 use anyhow::Result;
 use indexmap::IndexMap;
@@ -30,7 +30,7 @@ impl Blocks {
     }
 
     pub fn put(&mut self, data: SignedBlock) -> Result<()> {
-        let block_hash = data.hash();
+        let block_hash = data.hashed();
         if self.contains(&block_hash) {
             return Ok(());
         }
@@ -52,7 +52,7 @@ impl Blocks {
     }
 
     pub fn last_block_hash(&self) -> Option<ConsensusProposalHash> {
-        self.last().map(|b| b.hash())
+        self.last().map(|b| b.hashed())
     }
 
     pub fn range(
