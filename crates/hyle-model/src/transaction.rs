@@ -237,6 +237,8 @@ pub struct BlobTransaction {
     // FIXME: add a nonce or something to prevent BlobTransaction to share the same hash
     #[borsh(skip)]
     hash_cache: RwLock<Option<TxHash>>,
+    #[borsh(skip)]
+    blobshash_cache: RwLock<Option<BlobsHash>>,
 }
 
 impl BlobTransaction {
@@ -245,6 +247,7 @@ impl BlobTransaction {
             identity,
             blobs,
             hash_cache: RwLock::new(None),
+            blobshash_cache: RwLock::new(None),
         }
     }
 }
@@ -270,6 +273,7 @@ impl Clone for BlobTransaction {
             identity: self.identity.clone(),
             blobs: self.blobs.clone(),
             hash_cache: RwLock::new(self.hash_cache.read().unwrap().clone()),
+            blobshash_cache: RwLock::new(self.blobshash_cache.read().unwrap().clone()),
         }
     }
 }
@@ -305,7 +309,12 @@ impl Hashable<TxHash> for BlobTransaction {
 
 impl BlobTransaction {
     pub fn blobs_hash(&self) -> BlobsHash {
-        BlobsHash::from_vec(&self.blobs)
+        if let Some(hash) = self.blobshash_cache.read().unwrap().clone() {
+            return hash;
+        }
+        let hash = BlobsHash::from_vec(&self.blobs);
+        self.blobshash_cache.write().unwrap().replace(hash.clone());
+        hash
     }
 
     pub fn validate_identity(&self) -> Result<(), anyhow::Error> {

@@ -84,8 +84,7 @@ pub struct DataProposalHash(pub String);
 
 impl Hashable<DataProposalHash> for DataProposal {
     fn invalidate_cache(&self) {
-        let mut guard = self.hash_cache.write().unwrap();
-        *guard = None;
+        *self.hash_cache.write().unwrap() = None;
     }
 
     fn hash(&self) -> DataProposalHash {
