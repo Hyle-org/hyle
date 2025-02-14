@@ -1045,10 +1045,7 @@ mod test {
 
         // Handling a block containing txs
 
-        let parent_data_proposal = DataProposal {
-            parent_data_proposal_hash: None,
-            txs,
-        };
+        let parent_data_proposal = DataProposal::new(None, txs);
         let mut signed_block = SignedBlock::default();
         signed_block.data_proposals.push((
             ValidatorPublicKey("ttt".into()),
@@ -1149,15 +1146,15 @@ mod test {
 
         let parent_data_proposal_hash = parent_data_proposal.hash();
 
-        let data_proposal = DataProposal {
-            parent_data_proposal_hash: Some(parent_data_proposal_hash.clone()),
-            txs: vec![
+        let data_proposal = DataProposal::new(
+            Some(parent_data_proposal_hash.clone()),
+            vec![
                 register_tx_1_wd.clone(),
                 register_tx_2_wd.clone(),
                 blob_transaction_wd.clone(),
                 proof_tx_1_wd.clone(),
             ],
-        };
+        );
 
         let data_proposal_created_event = MempoolStatusEvent::DataProposalCreated {
             data_proposal_hash: data_proposal.hash(),

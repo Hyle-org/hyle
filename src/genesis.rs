@@ -470,10 +470,7 @@ impl Genesis {
         genesis_txs: Vec<Transaction>,
         initial_validators: Vec<ValidatorPublicKey>,
     ) -> SignedBlock {
-        let dp = DataProposal {
-            parent_data_proposal_hash: None,
-            txs: genesis_txs,
-        };
+        let dp = DataProposal::new(None, genesis_txs);
 
         // TODO: do something better?
         let round_leader = initial_validators

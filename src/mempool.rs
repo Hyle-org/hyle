@@ -1710,10 +1710,10 @@ pub mod test {
     async fn test_receiving_data_proposal() -> Result<()> {
         let mut ctx = MempoolTestCtx::new("mempool").await;
 
-        let data_proposal = DataProposal {
-            parent_data_proposal_hash: None,
-            txs: vec![make_register_contract_tx(ContractName::new("test1"))],
-        };
+        let data_proposal = DataProposal::new(
+            None,
+            vec![make_register_contract_tx(ContractName::new("test1"))],
+        );
         let size = LaneBytesSize(data_proposal.estimate_size() as u64);
 
         let signed_msg = ctx
@@ -1753,10 +1753,10 @@ pub mod test {
 
         ctx.submit_tx(&register_tx);
 
-        let data_proposal = DataProposal {
-            parent_data_proposal_hash: None,
-            txs: vec![make_register_contract_tx(ContractName::new("test1"))],
-        };
+        let data_proposal = DataProposal::new(
+            None,
+            vec![make_register_contract_tx(ContractName::new("test1"))],
+        );
         let size = LaneBytesSize(data_proposal.estimate_size() as u64);
 
         let temp_crypto = BlstCrypto::new("temp_crypto".into()).unwrap();
@@ -1782,10 +1782,10 @@ pub mod test {
 
         ctx.submit_tx(&register_tx);
 
-        let data_proposal = DataProposal {
-            parent_data_proposal_hash: None,
-            txs: vec![make_register_contract_tx(ContractName::new("test1"))],
-        };
+        let data_proposal = DataProposal::new(
+            None,
+            vec![make_register_contract_tx(ContractName::new("test1"))],
+        );
         let size = LaneBytesSize(data_proposal.estimate_size() as u64);
         let data_proposal_hash = data_proposal.hash();
 
@@ -2023,10 +2023,10 @@ pub mod test {
         );
 
         // Fifth case: DP chaining is incorrect
-        let incorrect_parent = DataProposal {
-            parent_data_proposal_hash: Some(DataProposalHash("incorrect".to_owned())),
-            txs: vec![make_register_contract_tx(ContractName::new("test1"))],
-        };
+        let incorrect_parent = DataProposal::new(
+            Some(DataProposalHash("incorrect".to_owned())),
+            vec![make_register_contract_tx(ContractName::new("test1"))],
+        );
         let signed_msg = crypto2.sign(MempoolNetMessage::SyncReply(vec![
             LaneEntry {
                 data_proposal: data_proposal.clone(),

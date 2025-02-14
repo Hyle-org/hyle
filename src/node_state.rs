@@ -964,10 +964,7 @@ pub mod test {
             },
             data_proposals: vec![(
                 ValidatorPublicKey::default(),
-                vec![DataProposal {
-                    parent_data_proposal_hash: None,
-                    txs,
-                }],
+                vec![DataProposal::new(None, txs)],
             )],
         }
     }

@@ -623,10 +623,7 @@ async fn mempool_fail_to_vote_on_fork() {
     // dp1(1) <- dp2(2)
     //        <-        dp3(3)
 
-    let dp_fork_3 = DataProposal {
-        parent_data_proposal_hash: Some(dp1.hash()),
-        txs: vec![Transaction::default()],
-    };
+    let dp_fork_3 = DataProposal::new(Some(dp1.hash()), vec![Transaction::default()]);
 
     let data_proposal_fork_3 = node1
         .mempool_ctx

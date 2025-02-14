@@ -2,17 +2,71 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Sha3_256};
 use staking::ValidatorPublicKey;
-use std::fmt::Display;
+use std::{fmt::Display, sync::RwLock};
+
+pub mod rwlock_borsh {
+    use std::sync::RwLock;
+
+    pub fn serialize<T: borsh::ser::BorshSerialize, W: borsh::io::Write>(
+        obj: &RwLock<T>,
+        writer: &mut W,
+    ) -> ::core::result::Result<(), borsh::io::Error> {
+        #[allow(
+            clippy::unwrap_used,
+            reason = "Cannot panic in sync code unless poisoned where panic is OK"
+        )]
+        borsh::BorshSerialize::serialize(&*obj.read().unwrap(), writer)?;
+        Ok(())
+    }
+
+    pub fn deserialize<R: borsh::io::Read, T: borsh::de::BorshDeserialize>(
+        reader: &mut R,
+    ) -> ::core::result::Result<RwLock<T>, borsh::io::Error> {
+        Ok(RwLock::new(T::deserialize_reader(reader)?))
+    }
+}
 
 use crate::*;
 
-#[derive(
-    Clone, Debug, Default, Serialize, Deserialize, BorshSerialize, BorshDeserialize, Eq, PartialEq,
-)]
+#[derive(Debug, Default, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 pub struct DataProposal {
     pub parent_data_proposal_hash: Option<DataProposalHash>,
     pub txs: Vec<Transaction>,
+    /// Internal cache of the hash of the transaction
+    #[borsh(
+        serialize_with = "rwlock_borsh::serialize",
+        deserialize_with = "rwlock_borsh::deserialize"
+    )]
+    hash_cache: RwLock<Option<DataProposalHash>>,
 }
+
+impl DataProposal {
+    pub fn new(parent_data_proposal_hash: Option<DataProposalHash>, txs: Vec<Transaction>) -> Self {
+        Self {
+            parent_data_proposal_hash,
+            txs,
+            hash_cache: RwLock::new(None),
+        }
+    }
+}
+
+impl Clone for DataProposal {
+    fn clone(&self) -> Self {
+        let mut new = Self::default();
+        new.parent_data_proposal_hash = self.parent_data_proposal_hash.clone();
+        new.txs = self.txs.clone();
+        new.hash_cache = RwLock::new(self.hash_cache.read().unwrap().clone());
+        new
+    }
+}
+
+impl PartialEq for DataProposal {
+    fn eq(&self, other: &Self) -> bool {
+        self.hash() == other.hash()
+    }
+}
+
+impl Eq for DataProposal {}
 
 impl DataSized for DataProposal {
     fn estimate_size(&self) -> usize {
@@ -54,7 +108,15 @@ pub struct TxId(pub DataProposalHash, pub TxHash);
 pub struct DataProposalHash(pub String);
 
 impl Hashable<DataProposalHash> for DataProposal {
+    fn invalidate_cache(&self) {
+        let mut guard = self.hash_cache.write().unwrap();
+        *guard = None;
+    }
+
     fn hash(&self) -> DataProposalHash {
+        if let Some(hash) = self.hash_cache.read().unwrap().as_ref() {
+            return hash.clone();
+        }
         let mut hasher = Sha3_256::new();
         if let Some(ref parent_data_proposal_hash) = self.parent_data_proposal_hash {
             hasher.update(parent_data_proposal_hash.0.as_bytes());
@@ -62,7 +124,9 @@ impl Hashable<DataProposalHash> for DataProposal {
         for tx in self.txs.iter() {
             hasher.update(tx.hash().0);
         }
-        DataProposalHash(hex::encode(hasher.finalize()))
+        let hash = DataProposalHash(hex::encode(hasher.finalize()));
+        *self.hash_cache.write().unwrap() = Some(hash.clone());
+        hash
     }
 }
 impl Display for DataProposalHash {

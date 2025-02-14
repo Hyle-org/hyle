@@ -54,9 +54,9 @@ async fn impl_test_mempool_isnt_blocked_by_proof_verification() -> Result<()> {
     node_client.send(GenesisEvent::GenesisBlock(SignedBlock {
         data_proposals: vec![(
             node_modules.crypto.validator_pubkey().clone(),
-            vec![DataProposal {
-                parent_data_proposal_hash: None,
-                txs: vec![BlobTransaction {
+            vec![DataProposal::new(
+                None,
+                vec![BlobTransaction {
                     identity: "test.hyle".into(),
                     blobs: vec![RegisterContractAction {
                         verifier: "test-slow".into(),
@@ -67,7 +67,7 @@ async fn impl_test_mempool_isnt_blocked_by_proof_verification() -> Result<()> {
                     .as_blob("hyle".into(), None, None)],
                 }
                 .into()],
-            }],
+            )],
         )],
         certificate: AggregateSignature::default(),
         consensus_proposal: ConsensusProposal::default(),
@@ -182,10 +182,7 @@ async fn impl_test_mempool_isnt_blocked_by_proof_verification() -> Result<()> {
 
     tracing::warn!("Starting part 2 - processing data proposals.");
 
-    let mut data_proposal = DataProposal {
-        parent_data_proposal_hash: Some(data_prop_hash),
-        txs: vec![],
-    };
+    let mut data_proposal = DataProposal::new(Some(data_prop_hash), vec![]);
 
     // Send as many TXs as needed to hung all the workers if we were calling spawn
     for _ in 0..tokio::runtime::Handle::current().metrics().num_workers() {
