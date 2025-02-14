@@ -57,7 +57,7 @@ async fn impl_test_mempool_isnt_blocked_by_proof_verification() -> Result<()> {
             vec![DataProposal::new(
                 None,
                 vec![BlobTransaction::new(
-                    "test.hyle".into(),
+                    "test.hyle",
                     vec![RegisterContractAction {
                         verifier: "test-slow".into(),
                         program_id: ProgramId(vec![]),
@@ -182,11 +182,10 @@ async fn impl_test_mempool_isnt_blocked_by_proof_verification() -> Result<()> {
 
     tracing::warn!("Starting part 2 - processing data proposals.");
 
-    let mut data_proposal = DataProposal::new(Some(data_prop_hash), vec![]);
-
+    let mut txs = vec![];
     // Send as many TXs as needed to hung all the workers if we were calling spawn
     for _ in 0..tokio::runtime::Handle::current().metrics().num_workers() {
-        data_proposal.txs.push(
+        txs.push(
             VerifiedProofTransaction {
                 contract_name: contract_name.clone(),
                 proof: Some(proof.clone()),
@@ -203,6 +202,7 @@ async fn impl_test_mempool_isnt_blocked_by_proof_verification() -> Result<()> {
             .into(),
         );
     }
+    let data_proposal = DataProposal::new(Some(data_prop_hash), txs);
 
     // Test setup 2: count the number of commits during the slow proof verification
     // if we're blocking the consensus, this will be lower than expected.

@@ -860,7 +860,7 @@ mod test {
 
     fn new_register_tx(contract_name: ContractName, state_digest: StateDigest) -> BlobTransaction {
         BlobTransaction::new(
-            "hyle.hyle".into(),
+            "hyle.hyle",
             vec![RegisterContractAction {
                 verifier: "test".into(),
                 program_id: ProgramId(vec![3, 2, 1]),

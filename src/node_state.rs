@@ -874,7 +874,7 @@ pub mod test {
 
     pub fn make_register_contract_tx(name: ContractName) -> BlobTransaction {
         BlobTransaction::new(
-            "hyle.hyle".into(),
+            "hyle.hyle",
             vec![RegisterContractAction {
                 verifier: "test".into(),
                 program_id: ProgramId(vec![]),
@@ -1816,7 +1816,7 @@ pub mod test {
             let register_3 = make_tx("hyle.hyle".into(), "hyle".into(), "c3.other".into());
             let register_4 = make_tx("hyle.hyle".into(), "hyle".into(), ".hyle".into());
             let register_5 = BlobTransaction::new(
-                "hyle.hyle".into(),
+                "hyle.hyle",
                 vec![Blob {
                     contract_name: "hyle".into(),
                     data: BlobData(vec![0, 1, 2, 3]),
@@ -1860,7 +1860,7 @@ pub mod test {
             assert_eq!(state.contracts.len(), 2);
 
             let compositing_register_willfail = BlobTransaction::new(
-                "test.hydentity".into(),
+                "test.hydentity",
                 vec![
                     RegisterContractAction {
                         verifier: "test".into(),
@@ -1876,9 +1876,11 @@ pub mod test {
                 ],
             );
             // Try to register the same contract validly later.
-            let mut compositing_register_good = compositing_register_willfail.clone();
             // Change identity to change blob tx hash
-            compositing_register_good.identity = "test2.hydentity".into();
+            let compositing_register_good = BlobTransaction::new(
+                "test2.hydentity",
+                compositing_register_willfail.blobs.clone(),
+            );
 
             let crafted_block = craft_signed_block(
                 102,
@@ -1903,8 +1905,10 @@ pub mod test {
             // Send a third one that will fail early on settlement of the second because duplication
             // (and thus test the early-failure settlement path)
 
-            let mut third_tx = compositing_register_willfail.clone();
-            third_tx.identity = "test3.hydentity".into();
+            let third_tx = BlobTransaction::new(
+                "test3.hydentity",
+                compositing_register_willfail.blobs.clone(),
+            );
             let proof_tx = new_proof_tx(
                 &"hyle".into(),
                 &make_hyle_output(third_tx.clone(), BlobIndex(1)),

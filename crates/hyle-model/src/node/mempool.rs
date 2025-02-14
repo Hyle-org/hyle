@@ -7,6 +7,7 @@ use std::{fmt::Display, sync::RwLock};
 use crate::*;
 
 #[derive(Debug, Default, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
+#[readonly::make]
 pub struct DataProposal {
     pub parent_data_proposal_hash: Option<DataProposalHash>,
     pub txs: Vec<Transaction>,
@@ -22,6 +23,23 @@ impl DataProposal {
             txs,
             hash_cache: RwLock::new(None),
         }
+    }
+
+    pub fn remove_proofs(&mut self) {
+        self.txs.iter_mut().for_each(|tx| {
+            match &mut tx.transaction_data {
+                TransactionData::VerifiedProof(proof_tx) => {
+                    proof_tx.proof = None;
+                }
+                TransactionData::Proof(_) => {
+                    // This can never happen.
+                    // A DataProposal that has been processed has turned all TransactionData::Proof into TransactionData::VerifiedProof
+                    unreachable!();
+                }
+                TransactionData::Blob(_) => {}
+            }
+        });
+        *self.hash_cache.write().unwrap() = None;
     }
 }
 

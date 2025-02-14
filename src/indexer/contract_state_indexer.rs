@@ -323,7 +323,7 @@ mod tests {
             contract_name: contract_name.clone(),
             data: BlobData(vec![1, 2, 3]),
         };
-        let tx = BlobTransaction::new("test".into(), vec![blob]);
+        let tx = BlobTransaction::new("test", vec![blob]);
         let tx_hash = tx.hashed();
 
         let mut indexer = build_indexer(contract_name.clone()).await;
@@ -347,7 +347,7 @@ mod tests {
             contract_name: contract_name.clone(),
             data: BlobData(vec![1, 2, 3]),
         };
-        let tx = BlobTransaction::new("test".into(), vec![blob]);
+        let tx = BlobTransaction::new("test", vec![blob]);
         let tx_id = TxId(DataProposalHash::default(), tx.hashed());
 
         let mut indexer = build_indexer(contract_name.clone()).await;

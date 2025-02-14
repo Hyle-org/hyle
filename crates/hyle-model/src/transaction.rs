@@ -231,6 +231,7 @@ impl Hashed<ProofDataHash> for ProofData {
 }
 
 #[derive(Debug, Serialize, Deserialize, Default, BorshSerialize, BorshDeserialize)]
+#[readonly::make]
 pub struct BlobTransaction {
     pub identity: Identity,
     pub blobs: Vec<Blob>,
@@ -242,9 +243,9 @@ pub struct BlobTransaction {
 }
 
 impl BlobTransaction {
-    pub fn new(identity: Identity, blobs: Vec<Blob>) -> Self {
+    pub fn new(identity: impl Into<Identity>, blobs: Vec<Blob>) -> Self {
         BlobTransaction {
-            identity,
+            identity: identity.into(),
             blobs,
             hash_cache: RwLock::new(None),
             blobshash_cache: RwLock::new(None),

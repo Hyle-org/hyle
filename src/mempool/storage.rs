@@ -233,8 +233,9 @@ pub trait Storage {
                 let f = staking.compute_f();
                 if voting_power < f + 1 {
                     // Check if previous DataProposals received enough votes
-                    if let Some(parent_dp_hash) = le.data_proposal.parent_data_proposal_hash {
-                        dp_hash = parent_dp_hash.clone();
+                    if let Some(parent_dp_hash) = le.data_proposal.parent_data_proposal_hash.clone()
+                    {
+                        dp_hash = parent_dp_hash;
                         continue;
                     }
                     return Ok(None);
@@ -466,7 +467,8 @@ pub trait Storage {
             match lane_entry {
                 Some(lane_entry) => {
                     entries.insert(0, lane_entry.clone());
-                    if let Some(parent_dp_hash) = lane_entry.data_proposal.parent_data_proposal_hash
+                    if let Some(parent_dp_hash) =
+                        lane_entry.data_proposal.parent_data_proposal_hash.clone()
                     {
                         dp_hash = parent_dp_hash;
                     } else {
@@ -606,19 +608,7 @@ pub trait Storage {
 
     /// Remove proofs from all transactions in the DataProposal
     fn remove_proofs(dp: &mut DataProposal) {
-        dp.txs.iter_mut().for_each(|tx| {
-            match &mut tx.transaction_data {
-                TransactionData::VerifiedProof(proof_tx) => {
-                    proof_tx.proof = None;
-                }
-                TransactionData::Proof(_) => {
-                    // This can never happen.
-                    // A DataProposal that has been processed has turned all TransactionData::Proof into TransactionData::VerifiedProof
-                    unreachable!();
-                }
-                TransactionData::Blob(_) => {}
-            }
-        });
+        dp.remove_proofs();
     }
 }
 

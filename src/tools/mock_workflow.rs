@@ -189,8 +189,10 @@ impl MockWorkflowHandler {
             match (i % 3) + 1 {
                 1 => {
                     info!("Sending tx blob");
-                    let mut new_tx_blob = tx_blob.clone();
-                    new_tx_blob.identity = Identity(format!("{}{}", tx_blob.identity.0, i));
+                    let new_tx_blob = BlobTransaction::new(
+                        Identity(format!("{}{}", tx_blob.identity.0, i)),
+                        tx_blob.blobs.clone(),
+                    );
                     _ = api_client.send_tx_blob(&new_tx_blob).await;
                 }
                 2 => {
@@ -201,8 +203,10 @@ impl MockWorkflowHandler {
                 }
                 3 => {
                     info!("Sending contract");
-                    let mut new_tx_blob = tx_register_blob.clone();
-                    new_tx_blob.identity = Identity(format!("{}{}", tx_blob.identity.0, i));
+                    let new_tx_blob = BlobTransaction::new(
+                        Identity(format!("{}{}", tx_blob.identity.0, i)),
+                        tx_register_blob.blobs.clone(),
+                    );
                     _ = api_client.send_tx_blob(&new_tx_blob).await;
                 }
                 _ => {
