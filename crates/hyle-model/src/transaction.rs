@@ -1,10 +1,15 @@
+use std::sync::RwLock;
+
 use borsh::{BorshDeserialize, BorshSerialize};
 use derive_more::derive::Display;
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Sha3_256};
 use strum::IntoDiscriminant;
 use strum_macros::{EnumDiscriminants, IntoStaticStr};
-use utoipa::ToSchema;
+use utoipa::{
+    openapi::{ArrayBuilder, ObjectBuilder, RefOr, Schema},
+    PartialSchema, ToSchema,
+};
 
 use crate::*;
 
@@ -21,7 +26,7 @@ impl Transaction {
         TransactionMetadata {
             version: self.version,
             transaction_kind: self.transaction_data.discriminant(),
-            id: TxId(parent_data_proposal_hash.clone(), self.hash()),
+            id: TxId(parent_data_proposal_hash.clone(), self.hashed()),
         }
     }
 }
@@ -164,33 +169,33 @@ impl From<VerifiedProofTransaction> for Transaction {
     }
 }
 
-impl Hashable<TxHash> for Transaction {
-    fn hash(&self) -> TxHash {
+impl Hashed<TxHash> for Transaction {
+    fn hashed(&self) -> TxHash {
         match &self.transaction_data {
-            TransactionData::Blob(tx) => tx.hash(),
-            TransactionData::Proof(tx) => tx.hash(),
-            TransactionData::VerifiedProof(tx) => tx.hash(),
+            TransactionData::Blob(tx) => tx.hashed(),
+            TransactionData::Proof(tx) => tx.hashed(),
+            TransactionData::VerifiedProof(tx) => tx.hashed(),
         }
     }
 }
 
-impl Hashable<TxHash> for ProofTransaction {
-    fn hash(&self) -> TxHash {
+impl Hashed<TxHash> for ProofTransaction {
+    fn hashed(&self) -> TxHash {
         let mut hasher = Sha3_256::new();
         hasher.update(self.contract_name.0.as_bytes());
-        hasher.update(self.proof.hash().0);
+        hasher.update(self.proof.hashed().0);
         let hash_bytes = hasher.finalize();
         TxHash(hex::encode(hash_bytes))
     }
 }
-impl Hashable<TxHash> for VerifiedProofTransaction {
-    fn hash(&self) -> TxHash {
+impl Hashed<TxHash> for VerifiedProofTransaction {
+    fn hashed(&self) -> TxHash {
         let mut hasher = Sha3_256::new();
         hasher.update(self.contract_name.0.as_bytes());
         hasher.update(self.proof_hash.0.as_bytes());
         hasher.update(self.proven_blobs.len().to_le_bytes());
         for proven_blob in self.proven_blobs.iter() {
-            hasher.update(proven_blob.hash().0);
+            hasher.update(proven_blob.hashed().0);
         }
         let hash_bytes = hasher.finalize();
         TxHash(hex::encode(hash_bytes))
@@ -216,8 +221,8 @@ pub struct ProofData(#[serde(with = "base64_field")] pub Vec<u8>);
 )]
 pub struct ProofDataHash(pub String);
 
-impl Hashable<ProofDataHash> for ProofData {
-    fn hash(&self) -> ProofDataHash {
+impl Hashed<ProofDataHash> for ProofData {
+    fn hashed(&self) -> ProofDataHash {
         let mut hasher = Sha3_256::new();
         hasher.update(self.0.as_slice());
         let hash_bytes = hasher.finalize();
@@ -225,23 +230,62 @@ impl Hashable<ProofDataHash> for ProofData {
     }
 }
 
-#[derive(
-    Debug,
-    Serialize,
-    Deserialize,
-    ToSchema,
-    Default,
-    PartialEq,
-    Eq,
-    Clone,
-    BorshSerialize,
-    BorshDeserialize,
-)]
+#[derive(Debug, Serialize, Deserialize, Default, BorshSerialize, BorshDeserialize)]
+#[readonly::make]
 pub struct BlobTransaction {
     pub identity: Identity,
     pub blobs: Vec<Blob>,
     // FIXME: add a nonce or something to prevent BlobTransaction to share the same hash
+    #[borsh(skip)]
+    hash_cache: RwLock<Option<TxHash>>,
+    #[borsh(skip)]
+    blobshash_cache: RwLock<Option<BlobsHash>>,
 }
+
+impl BlobTransaction {
+    pub fn new(identity: impl Into<Identity>, blobs: Vec<Blob>) -> Self {
+        BlobTransaction {
+            identity: identity.into(),
+            blobs,
+            hash_cache: RwLock::new(None),
+            blobshash_cache: RwLock::new(None),
+        }
+    }
+}
+
+impl PartialSchema for BlobTransaction {
+    fn schema() -> utoipa::openapi::RefOr<utoipa::openapi::schema::Schema> {
+        RefOr::T(Schema::Object(
+            ObjectBuilder::new()
+                .property("identity", Identity::schema())
+                .property("blobs", ArrayBuilder::new().items(Blob::schema()).build())
+                .required("identity")
+                .required("blobs")
+                .build(),
+        ))
+    }
+}
+
+impl ToSchema for BlobTransaction {}
+
+impl Clone for BlobTransaction {
+    fn clone(&self) -> Self {
+        BlobTransaction {
+            identity: self.identity.clone(),
+            blobs: self.blobs.clone(),
+            hash_cache: RwLock::new(self.hash_cache.read().unwrap().clone()),
+            blobshash_cache: RwLock::new(self.blobshash_cache.read().unwrap().clone()),
+        }
+    }
+}
+
+impl PartialEq for BlobTransaction {
+    fn eq(&self, other: &Self) -> bool {
+        self.identity == other.identity && self.blobs == other.blobs
+    }
+}
+
+impl Eq for BlobTransaction {}
 
 impl BlobTransaction {
     pub fn estimate_size(&self) -> usize {
@@ -249,19 +293,29 @@ impl BlobTransaction {
     }
 }
 
-impl Hashable<TxHash> for BlobTransaction {
-    fn hash(&self) -> TxHash {
+impl Hashed<TxHash> for BlobTransaction {
+    fn hashed(&self) -> TxHash {
+        if let Some(hash) = self.hash_cache.read().unwrap().clone() {
+            return hash;
+        }
         let mut hasher = Sha3_256::new();
         hasher.update(self.identity.0.as_bytes());
         hasher.update(self.blobs_hash().0);
         let hash_bytes = hasher.finalize();
-        TxHash(hex::encode(hash_bytes))
+        let tx_hash = TxHash(hex::encode(hash_bytes));
+        *self.hash_cache.write().unwrap() = Some(tx_hash.clone());
+        tx_hash
     }
 }
 
 impl BlobTransaction {
     pub fn blobs_hash(&self) -> BlobsHash {
-        BlobsHash::from_vec(&self.blobs)
+        if let Some(hash) = self.blobshash_cache.read().unwrap().clone() {
+            return hash;
+        }
+        let hash = BlobsHash::from_vec(&self.blobs);
+        self.blobshash_cache.write().unwrap().replace(hash.clone());
+        hash
     }
 
     pub fn validate_identity(&self) -> Result<(), anyhow::Error> {

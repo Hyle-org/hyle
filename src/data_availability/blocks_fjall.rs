@@ -5,7 +5,7 @@ use tracing::{error, info, trace};
 
 use crate::{
     model::ConsensusProposalHash,
-    model::{BlockHeight, Hashable, SignedBlock},
+    model::{BlockHeight, Hashed, SignedBlock},
 };
 
 struct FjallHashKey(ConsensusProposalHash);
@@ -92,7 +92,7 @@ impl Blocks {
     }
 
     pub fn put(&mut self, block: SignedBlock) -> Result<()> {
-        let block_hash = block.hash();
+        let block_hash = block.hashed();
         if self.contains(&block_hash) {
             return Ok(());
         }
@@ -131,7 +131,7 @@ impl Blocks {
     }
 
     pub fn last_block_hash(&self) -> Option<ConsensusProposalHash> {
-        self.last().map(|b| b.hash())
+        self.last().map(|b| b.hashed())
     }
 
     pub fn range(

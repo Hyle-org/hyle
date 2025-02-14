@@ -14,7 +14,7 @@ use crate::{
     bus::{bus_client, metrics::BusMetrics, BusClientSender, BusMessage},
     model::{
         contract_registration::validate_contract_registration_metadata, BlobTransaction,
-        CommonRunContext, Hashable, ProofTransaction, Transaction, TransactionData,
+        CommonRunContext, Hashed, ProofTransaction, Transaction, TransactionData,
     },
     rest::AppError,
 };
@@ -60,7 +60,7 @@ async fn handle_send(
     payload: TransactionData,
 ) -> Result<Json<TxHash>, AppError> {
     let tx: Transaction = payload.into();
-    let tx_hash = tx.hash();
+    let tx_hash = tx.hashed();
     state
         .bus
         .send(RestApiMessage::NewTx(tx))
@@ -81,7 +81,7 @@ pub async fn send_blob_transaction(
     State(state): State<RouterState>,
     Json(payload): Json<BlobTransaction>,
 ) -> Result<impl IntoResponse, AppError> {
-    info!("Got blob transaction {}", payload.hash());
+    info!("Got blob transaction {}", payload.hashed());
 
     // Filter out incorrect contract-registring transactions
     for blob in payload.blobs.iter() {
@@ -123,7 +123,7 @@ pub async fn send_proof_transaction(
     State(state): State<RouterState>,
     Json(payload): Json<ProofTransaction>,
 ) -> Result<impl IntoResponse, AppError> {
-    info!("Got proof transaction {}", payload.hash());
+    info!("Got proof transaction {}", payload.hashed());
     handle_send(state, TransactionData::Proof(payload)).await
 }
 
@@ -149,16 +149,16 @@ pub async fn register_contract(
     )
     .map_err(|err| AppError(StatusCode::BAD_REQUEST, anyhow!(err)))?;
 
-    let tx = BlobTransaction {
-        identity: "hyle.hyle".into(),
-        blobs: vec![RegisterContractAction {
+    let tx = BlobTransaction::new(
+        "hyle.hyle",
+        vec![RegisterContractAction {
             verifier: payload.verifier,
             program_id: payload.program_id,
             state_digest: payload.state_digest,
             contract_name: payload.contract_name,
         }
         .as_blob(owner, None, None)],
-    };
+    );
 
     handle_send(state, TransactionData::Blob(tx)).await
 }

@@ -7,7 +7,7 @@ use client_sdk::transaction_builder::TxExecutorBuilder;
 use hydentity::Hydentity;
 use sdk::identity_provider::IdentityAction;
 use sdk::ContractName;
-use sdk::Hashable;
+use sdk::Hashed;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -102,7 +102,7 @@ async fn main() {
                 println!(
                     "✅ Proof tx sent for {}. Tx hash: {}",
                     tx.contract_name,
-                    tx.hash()
+                    tx.hashed()
                 );
             }
         }
@@ -150,7 +150,7 @@ async fn main() {
                 println!(
                     "✅ Proof tx sent for {}. Tx hash: {}",
                     tx.contract_name,
-                    tx.hash()
+                    tx.hashed()
                 );
             }
         }

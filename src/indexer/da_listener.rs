@@ -5,7 +5,7 @@ use std::{
 
 use anyhow::{bail, Error, Result};
 use futures::{SinkExt, StreamExt};
-use hyle_model::Hashable;
+use hyle_model::Hashed;
 use tokio::net::TcpStream;
 use tokio_util::codec::Framed;
 use tracing::{debug, info, warn};
@@ -127,7 +127,7 @@ impl DAListener {
             debug!(
                 "📦 Received block: {} {}",
                 block.consensus_proposal.slot,
-                block.consensus_proposal.hash()
+                block.consensus_proposal.hashed()
             );
             let block = self.node_state.handle_signed_block(&block);
             debug!("📦 Handled block outputs: {:?}", block);

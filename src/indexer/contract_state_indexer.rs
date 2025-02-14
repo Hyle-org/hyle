@@ -9,9 +9,7 @@ use tracing::debug;
 
 use crate::{
     bus::BusMessage,
-    model::{
-        Blob, BlobTransaction, Block, CommonRunContext, Hashable, Transaction, TransactionData,
-    },
+    model::{Blob, BlobTransaction, Block, CommonRunContext, Hashed, Transaction, TransactionData},
     module_handle_messages,
     node_state::module::NodeStateEvent,
     utils::{conf::Conf, logger::LogMe, modules::Module},
@@ -228,7 +226,7 @@ where
             return Ok(());
         };
 
-        debug!(cn = %self.contract_name, "🔨 Settling transaction: {}", tx.hash());
+        debug!(cn = %self.contract_name, "🔨 Settling transaction: {}", tx.hashed());
 
         for (index, Blob { contract_name, .. }) in tx.blobs.iter().enumerate() {
             if self.contract_name != *contract_name {
@@ -331,11 +329,8 @@ mod tests {
             contract_name: contract_name.clone(),
             data: BlobData(vec![1, 2, 3]),
         };
-        let tx = BlobTransaction {
-            blobs: vec![blob],
-            identity: "test".into(),
-        };
-        let tx_hash = tx.hash();
+        let tx = BlobTransaction::new("test", vec![blob]);
+        let tx_hash = tx.hashed();
 
         let mut indexer = build_indexer(contract_name.clone()).await;
         register_contract(&mut indexer).await;
@@ -358,11 +353,8 @@ mod tests {
             contract_name: contract_name.clone(),
             data: BlobData(vec![1, 2, 3]),
         };
-        let tx = BlobTransaction {
-            blobs: vec![blob],
-            identity: "test".into(),
-        };
-        let tx_id = TxId(DataProposalHash::default(), tx.hash());
+        let tx = BlobTransaction::new("test", vec![blob]);
+        let tx_id = TxId(DataProposalHash::default(), tx.hashed());
 
         let mut indexer = build_indexer(contract_name.clone()).await;
         register_contract(&mut indexer).await;

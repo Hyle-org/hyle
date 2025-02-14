@@ -5,7 +5,7 @@ use super::Consensus;
 use crate::{
     consensus::StateTag,
     mempool::MempoolNetMessage,
-    model::{Hashable, Signed, ValidatorPublicKey},
+    model::{Hashed, Signed, ValidatorPublicKey},
     utils::{crypto::BlstCrypto, logger::LogMe},
 };
 use anyhow::{bail, Result};
@@ -126,13 +126,13 @@ impl FollowerRole for Consensus {
         // Responds PrepareVote message to leader with validator's vote on this proposal
         if self.is_part_of_consensus(self.crypto.validator_pubkey()) {
             debug!(
-                proposal_hash = %consensus_proposal.hash(),
+                proposal_hash = %consensus_proposal.hashed(),
                 "📤 Slot {} Prepare message validated. Sending PrepareVote to leader",
                 self.bft_round_state.consensus_proposal.slot
             );
             self.send_net_message(
                 self.bft_round_state.consensus_proposal.round_leader.clone(),
-                ConsensusNetMessage::PrepareVote(consensus_proposal.hash()),
+                ConsensusNetMessage::PrepareVote(consensus_proposal.hashed()),
             )?;
         } else {
             info!(
@@ -158,7 +158,7 @@ impl FollowerRole for Consensus {
         // Check that this is a QC for PrepareVote for the expected proposal.
         // This also checks slot/view as those are part of the hash.
         // TODO: would probably be good to make that more explicit.
-        let consensus_proposal_hash = self.bft_round_state.consensus_proposal.hash();
+        let consensus_proposal_hash = self.bft_round_state.consensus_proposal.hashed();
         self.verify_quorum_certificate(
             ConsensusNetMessage::PrepareVote(consensus_proposal_hash.clone()),
             &prepare_quorum_certificate,

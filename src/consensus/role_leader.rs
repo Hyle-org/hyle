@@ -5,7 +5,7 @@ use crate::{
     consensus::StateTag,
     mempool::QueryNewCut,
     model::{
-        ConsensusNetMessage, ConsensusProposalHash, Hashable, SignedByValidator, Ticket,
+        ConsensusNetMessage, ConsensusProposalHash, Hashed, SignedByValidator, Ticket,
         ValidatorPublicKey,
     },
 };
@@ -135,7 +135,7 @@ impl LeaderRole for Consensus {
 
         // Broadcasts Prepare message to all validators
         debug!(
-            proposal_hash = %self.bft_round_state.consensus_proposal.hash(),
+            proposal_hash = %self.bft_round_state.consensus_proposal.hashed(),
             "🌐 Slot {} started. Broadcasting Prepare message", self.bft_round_state.consensus_proposal.slot,
         );
         self.broadcast_net_message(ConsensusNetMessage::Prepare(
@@ -168,7 +168,7 @@ impl LeaderRole for Consensus {
 
         // Verify that the PrepareVote is for the correct proposal.
         // This also checks slot/view as those are part of the hash.
-        if consensus_proposal_hash != self.bft_round_state.consensus_proposal.hash() {
+        if consensus_proposal_hash != self.bft_round_state.consensus_proposal.hashed() {
             self.metrics.prepare_vote_error("invalid_proposal_hash");
             bail!("PrepareVote has not received valid consensus proposal hash");
         }
@@ -212,7 +212,7 @@ impl LeaderRole for Consensus {
 
             // Aggregates them into a *Prepare* Quorum Certificate
             let prepvote_signed_aggregation = self.crypto.sign_aggregate(
-                ConsensusNetMessage::PrepareVote(self.bft_round_state.consensus_proposal.hash()),
+                ConsensusNetMessage::PrepareVote(self.bft_round_state.consensus_proposal.hashed()),
                 aggregates,
             )?;
 
@@ -257,12 +257,12 @@ impl LeaderRole for Consensus {
         }
 
         // Verify that the ConfirmAck is for the correct proposal
-        if consensus_proposal_hash != self.bft_round_state.consensus_proposal.hash() {
+        if consensus_proposal_hash != self.bft_round_state.consensus_proposal.hashed() {
             self.metrics.confirm_ack_error("invalid_proposal_hash");
             debug!(
                 "Got {} expected {}",
                 consensus_proposal_hash,
-                self.bft_round_state.consensus_proposal.hash()
+                self.bft_round_state.consensus_proposal.hashed()
             );
             bail!("ConfirmAck got invalid consensus proposal hash");
         }
@@ -310,7 +310,7 @@ impl LeaderRole for Consensus {
 
             // Aggregates them into a *Commit* Quorum Certificate
             let commit_signed_aggregation = self.crypto.sign_aggregate(
-                ConsensusNetMessage::ConfirmAck(self.bft_round_state.consensus_proposal.hash()),
+                ConsensusNetMessage::ConfirmAck(self.bft_round_state.consensus_proposal.hashed()),
                 aggregates,
             )?;
 

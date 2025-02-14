@@ -5,7 +5,7 @@ use hyle_model::LaneBytesSize;
 use tracing::info;
 
 use super::storage::{CanBePutOnTop, LaneEntry, Storage};
-use crate::model::{DataProposalHash, Hashable, ValidatorPublicKey};
+use crate::model::{DataProposalHash, Hashed, ValidatorPublicKey};
 
 pub struct LanesStorage {
     pub id: ValidatorPublicKey,
@@ -62,7 +62,7 @@ impl Storage for LanesStorage {
                 if let Some(lane_entry) = lane.remove(&lane_tip) {
                     self.update_lane_tip(
                         validator,
-                        lane_entry.data_proposal.hash(),
+                        lane_entry.data_proposal.hashed(),
                         lane_entry.cumul_size,
                     );
                     return Ok(Some((lane_tip.clone(), lane_entry)));
@@ -73,7 +73,7 @@ impl Storage for LanesStorage {
     }
 
     fn put(&mut self, validator: ValidatorPublicKey, lane_entry: LaneEntry) -> Result<()> {
-        let dp_hash = lane_entry.data_proposal.hash();
+        let dp_hash = lane_entry.data_proposal.hashed();
         if self.contains(&validator, &dp_hash) {
             bail!("DataProposal {} was already in lane", dp_hash);
         }
@@ -83,7 +83,7 @@ impl Storage for LanesStorage {
         ) {
             CanBePutOnTop::No => bail!(
                 "Can't store DataProposal {}, as parent is unknown ",
-                lane_entry.data_proposal.hash()
+                lane_entry.data_proposal.hashed()
             ),
             CanBePutOnTop::Yes => {
                 // Add DataProposal to validator's lane
@@ -114,7 +114,7 @@ impl Storage for LanesStorage {
         validator_key: ValidatorPublicKey,
         lane_entry: LaneEntry,
     ) -> Result<()> {
-        let dp_hash = lane_entry.data_proposal.hash();
+        let dp_hash = lane_entry.data_proposal.hashed();
         self.by_hash
             .entry(validator_key)
             .or_default()
@@ -123,7 +123,7 @@ impl Storage for LanesStorage {
     }
 
     fn update(&mut self, validator_key: ValidatorPublicKey, lane_entry: LaneEntry) -> Result<()> {
-        let dp_hash = lane_entry.data_proposal.hash();
+        let dp_hash = lane_entry.data_proposal.hashed();
 
         if !self.contains(&validator_key, &dp_hash) {
             bail!("LaneEntry does not exist");

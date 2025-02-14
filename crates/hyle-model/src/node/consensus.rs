@@ -174,8 +174,8 @@ pub struct ConsensusProposal {
 
 /// This is the hash of the proposal, signed by validators
 /// Any consensus-critical data should be hashed here.
-impl Hashable<ConsensusProposalHash> for ConsensusProposal {
-    fn hash(&self) -> ConsensusProposalHash {
+impl Hashed<ConsensusProposalHash> for ConsensusProposal {
+    fn hashed(&self) -> ConsensusProposalHash {
         let mut hasher = Sha3_256::new();
         hasher.update(self.slot.to_le_bytes());
         hasher.update(self.view.to_le_bytes());
@@ -202,7 +202,7 @@ impl Hashable<ConsensusProposalHash> for ConsensusProposal {
 
 impl std::hash::Hash for ConsensusProposal {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        Hashable::<ConsensusProposalHash>::hash(self).hash(state);
+        Hashed::<ConsensusProposalHash>::hashed(self).hash(state);
     }
 }
 
@@ -267,8 +267,8 @@ pub enum ConsensusNetMessage {
     ValidatorCandidacy(ValidatorCandidacy),
 }
 
-impl Hashable<QuorumCertificateHash> for QuorumCertificate {
-    fn hash(&self) -> QuorumCertificateHash {
+impl Hashed<QuorumCertificateHash> for QuorumCertificate {
+    fn hashed(&self) -> QuorumCertificateHash {
         let mut hasher = Sha3_256::new();
         hasher.update(self.signature.0.clone());
         hasher.update(self.validators.len().to_le_bytes());
@@ -296,7 +296,7 @@ impl Display for ConsensusProposal {
         write!(
             f,
             "Hash: {}, Parent Hash: {}, Slot: {}, View: {}, Cut: {:?}, staking_actions: {:?}",
-            self.hash(),
+            self.hashed(),
             self.parent_hash,
             self.slot,
             self.view,
@@ -385,7 +385,7 @@ mod tests {
             timestamp: 1,
             parent_hash: ConsensusProposalHash("".to_string()),
         };
-        let hash = proposal.hash();
+        let hash = proposal.hashed();
         assert_eq!(hash.0.len(), 64);
     }
     #[test]
@@ -444,30 +444,30 @@ mod tests {
             timestamp: 1,
             parent_hash: ConsensusProposalHash("parent".to_string()),
         };
-        assert_eq!(a.hash(), b.hash());
+        assert_eq!(a.hashed(), b.hashed());
         a.timestamp = 2;
-        assert_ne!(a.hash(), b.hash());
+        assert_ne!(a.hashed(), b.hashed());
         b.timestamp = 2;
-        assert_eq!(a.hash(), b.hash());
+        assert_eq!(a.hashed(), b.hashed());
 
         a.slot = 2;
-        assert_ne!(a.hash(), b.hash());
+        assert_ne!(a.hashed(), b.hashed());
         b.slot = 2;
-        assert_eq!(a.hash(), b.hash());
+        assert_eq!(a.hashed(), b.hashed());
 
         a.view = 2;
-        assert_ne!(a.hash(), b.hash());
+        assert_ne!(a.hashed(), b.hashed());
         b.view = 2;
-        assert_eq!(a.hash(), b.hash());
+        assert_eq!(a.hashed(), b.hashed());
 
         a.round_leader = ValidatorPublicKey(vec![4, 5, 6]);
-        assert_ne!(a.hash(), b.hash());
+        assert_ne!(a.hashed(), b.hashed());
         b.round_leader = ValidatorPublicKey(vec![4, 5, 6]);
-        assert_eq!(a.hash(), b.hash());
+        assert_eq!(a.hashed(), b.hashed());
 
         a.parent_hash = ConsensusProposalHash("different".to_string());
-        assert_ne!(a.hash(), b.hash());
+        assert_ne!(a.hashed(), b.hashed());
         b.parent_hash = ConsensusProposalHash("different".to_string());
-        assert_eq!(a.hash(), b.hash());
+        assert_eq!(a.hashed(), b.hashed());
     }
 }
