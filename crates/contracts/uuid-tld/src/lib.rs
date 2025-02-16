@@ -5,7 +5,7 @@ use rand::Rng;
 use rand_seeder::SipHasher;
 use sdk::{
     info, Blob, BlobData, BlobIndex, ContractAction, ContractInput, ContractName, Digestable,
-    ProgramId, RegisterContractEffect, RunResult, StateDigest, Verifier,
+    ProgramId, ProgramInput, RegisterContractEffect, RunResult, StateDigest, Verifier,
 };
 use uuid::Uuid;
 
@@ -40,7 +40,7 @@ impl ContractAction for RegisterUuidContract {
     }
 }
 
-#[derive(Default, Clone, BorshSerialize, BorshDeserialize)]
+#[derive(Default, Debug, Clone, BorshSerialize, BorshDeserialize)]
 pub struct UuidTldState {
     registered_contracts: BTreeSet<u128>,
 }
@@ -50,7 +50,7 @@ impl UuidTldState {
         borsh::to_vec(self).map_err(|e| e.to_string())
     }
 
-    fn deserialize(data: &[u8]) -> Result<Self, String> {
+    pub fn deserialize(data: &[u8]) -> Result<Self, String> {
         borsh::from_slice(data).map_err(|e| e.to_string())
     }
 
@@ -65,21 +65,17 @@ impl Digestable for UuidTldState {
     }
 }
 
-fn register_contract(input: &ContractInput) -> Result<(Uuid, UuidTldState), String> {
-    let mut state = UuidTldState::deserialize(&input.private_input)?;
-
-    // Check initial state
-    if state.as_digest() != input.initial_state {
-        return Err("State digest mismatch".to_string());
-    }
-
+fn register_contract(
+    mut state: UuidTldState,
+    input: &ContractInput,
+) -> Result<(Uuid, UuidTldState), String> {
     let Some(ref tx_ctx) = input.tx_ctx else {
         return Err("Missing tx context".to_string());
     };
 
     // Create UUID
     let mut hasher = SipHasher::new();
-    hasher.write(&input.initial_state.0);
+    hasher.write(&state.as_digest().0);
     hasher.write(input.tx_hash.0.as_bytes());
     hasher.write(tx_ctx.block_hash.0.as_bytes());
     hasher.write_u128(tx_ctx.timestamp);
@@ -96,8 +92,11 @@ fn register_contract(input: &ContractInput) -> Result<(Uuid, UuidTldState), Stri
     Ok((id, state))
 }
 
-pub fn execute(contract_input: ContractInput) -> RunResult<UuidTldState> {
-    let (input, parsed_blob) = sdk::guest::init_raw::<RegisterUuidContract>(contract_input);
+pub fn execute(program_input: ProgramInput) -> RunResult<UuidTldState> {
+    let state = UuidTldState::deserialize(&program_input.serialized_initial_state)
+        .expect("Failed to decode state");
+    let (input, parsed_blob) =
+        sdk::guest::init_raw::<RegisterUuidContract>(program_input.contract_input);
 
     let parsed_blob = match parsed_blob {
         Some(v) => v,
@@ -115,7 +114,7 @@ pub fn execute(contract_input: ContractInput) -> RunResult<UuidTldState> {
         return Err("Invalid identity".to_string());
     }
 
-    match register_contract(&input) {
+    match register_contract(state, &input) {
         Ok((id, next_state)) => Ok((
             format!("registered {}", id.clone()),
             next_state,
@@ -133,14 +132,11 @@ pub fn execute(contract_input: ContractInput) -> RunResult<UuidTldState> {
 
 #[cfg(test)]
 mod test {
-    use std::str::FromStr;
-
     use crate::*;
     use sdk::*;
 
-    fn make_contract_input(state: UuidTldState, action: RegisterUuidContract) -> ContractInput {
+    fn make_contract_input(action: RegisterUuidContract) -> ContractInput {
         ContractInput {
-            initial_state: state.as_digest(),
             identity: "toto.test".into(),
             tx_hash: TxHash::default(),
             tx_ctx: Some(TxContext {
@@ -148,7 +144,7 @@ mod test {
                 timestamp: 3745916,
                 ..TxContext::default()
             }),
-            private_input: state.serialize().unwrap(),
+            private_input: vec![],
             blobs: vec![
                 Blob {
                     contract_name: "test".into(),
@@ -167,27 +163,29 @@ mod test {
             program_id: ProgramId(vec![1, 2, 3]),
             state_digest: StateDigest(vec![0, 1, 2, 3]),
         };
-        let mut state = UuidTldState::default();
+        let state = UuidTldState::default();
+        let contract_input = make_contract_input(action.clone());
+        let program_input = ProgramInput {
+            serialized_initial_state: borsh::to_vec(&state).unwrap(),
+            contract_input,
+        };
 
-        let (_, new_state, registered_contracts) =
-            execute(make_contract_input(state.clone(), action.clone())).unwrap();
+        let (_, state, registered_contracts) = execute(program_input).unwrap();
 
-        let effect = registered_contracts.first().unwrap();
+        let effect: &RegisterContractEffect = registered_contracts.first().unwrap();
 
         assert_eq!(
             effect.contract_name.0,
             "7de07efe-e91d-45f7-a5d2-0b813c1d3e10.uuid"
         );
-        state.registered_contracts.insert(
-            Uuid::from_str("7de07efe-e91d-45f7-a5d2-0b813c1d3e10")
-                .unwrap()
-                .as_u128(),
-        );
 
-        assert_eq!(new_state.as_digest(), state.as_digest());
+        let contract_input = make_contract_input(action.clone());
+        let program_input = ProgramInput {
+            serialized_initial_state: borsh::to_vec(&state).unwrap(),
+            contract_input,
+        };
 
-        let (_, new_state, registered_contracts) =
-            execute(make_contract_input(state.clone(), action)).unwrap();
+        let (_, _, registered_contracts) = execute(program_input).unwrap();
 
         let effect = registered_contracts.first().unwrap();
 
@@ -195,12 +193,5 @@ mod test {
             effect.contract_name.0,
             "fe6d874b-7b90-496e-8328-1ea817be889a.uuid"
         );
-        state.registered_contracts.insert(
-            Uuid::from_str("fe6d874b-7b90-496e-8328-1ea817be889a")
-                .unwrap()
-                .as_u128(),
-        );
-
-        assert_eq!(new_state.as_digest(), state.as_digest());
     }
 }

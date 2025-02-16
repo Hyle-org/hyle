@@ -2,8 +2,8 @@ use anyhow::Result;
 use sdk::{
     caller::{CalleeBlobs, CallerCallee, ExecutionContext, MutCalleeBlobs},
     erc20::ERC20Action,
-    info, Blob, BlobIndex, ContractInput, Digestable, DropEndOfReader, Identity, RunResult,
-    StakingAction, StructuredBlobData,
+    info, Blob, BlobIndex, DropEndOfReader, Identity, ProgramInput, RunResult, StakingAction,
+    StructuredBlobData,
 };
 use state::Staking;
 
@@ -99,9 +99,12 @@ impl StakingContract {
     }
 }
 
-pub fn execute(contract_input: ContractInput) -> RunResult<Staking> {
+pub fn execute(program_input: ProgramInput) -> RunResult<Staking> {
+    let state: Staking =
+        borsh::from_slice(&program_input.serialized_initial_state).expect("Failed to decode state");
+
     let (input, parsed_blob, caller) =
-        match sdk::guest::init_with_caller::<StakingAction>(contract_input) {
+        match sdk::guest::init_with_caller::<StakingAction>(program_input.contract_input) {
             Ok(res) => res,
             Err(err) => {
                 panic!("Staking contract initialization failed {}", err);
@@ -117,18 +120,6 @@ pub fn execute(contract_input: ContractInput) -> RunResult<Staking> {
                 callees_blobs.push(blob);
             }
         };
-    }
-
-    let state: Staking =
-        borsh::from_slice(input.private_input.as_slice()).expect("Failed to decode payload");
-
-    let input_initial_state = input.initial_state.clone();
-
-    info!("state: {:?}", state);
-    info!("computed:: {:?}", state.as_digest());
-    info!("given: {:?}", input_initial_state);
-    if state.as_digest() != input_initial_state {
-        panic!("State mismatch");
     }
 
     let ctx = ExecutionContext {

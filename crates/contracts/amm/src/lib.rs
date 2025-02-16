@@ -6,7 +6,7 @@ use sdk::caller::{CalleeBlobs, CallerCallee, CheckCalleeBlobs, ExecutionContext,
 use sdk::erc20::{ERC20BlobChecker, ERC20};
 use sdk::{erc20::ERC20Action, Identity};
 use sdk::{
-    Blob, BlobIndex, ContractAction, ContractInput, Digestable, DropEndOfReader, RunResult,
+    Blob, BlobIndex, ContractAction, Digestable, DropEndOfReader, ProgramInput, RunResult,
     StateDigest,
 };
 use sdk::{BlobData, ContractName, StructuredBlobData};
@@ -270,7 +270,11 @@ impl ContractAction for AmmAction {
     }
 }
 
-pub fn execute(contract_input: ContractInput) -> RunResult<AmmState> {
+pub fn execute(program_input: ProgramInput) -> RunResult<AmmState> {
+    let amm_initial_state: AmmState =
+        borsh::from_slice(&program_input.serialized_initial_state).expect("Failed to decode state");
+    let contract_input = program_input.contract_input;
+
     let (input, parsed_blob, caller) =
         match sdk::guest::init_with_caller::<AmmAction>(contract_input) {
             Ok(res) => res,
@@ -295,12 +299,8 @@ pub fn execute(contract_input: ContractInput) -> RunResult<AmmState> {
         caller,
     };
 
-    let amm_state = input
-        .initial_state
-        .clone()
-        .try_into()
-        .expect("Failed to decode state");
-    let mut amm_contract = AmmContract::new(execution_ctx, parsed_blob.contract_name, amm_state);
+    let mut amm_contract =
+        AmmContract::new(execution_ctx, parsed_blob.contract_name, amm_initial_state);
 
     let amm_action = parsed_blob.data.parameters;
 

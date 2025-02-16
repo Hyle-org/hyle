@@ -9,7 +9,6 @@ rust-version = "1.81"
 
 [[bin]]
 name = "uuid-tld"
-path = "src/bin/guest.rs"
 required-features = ["risc0"]
 test = false
 
@@ -24,13 +23,15 @@ risc0-zkvm = { version = "1.2.3", default-features = false, optional = true, fea
 client_sdk = { path = "../../client-sdk", package = "client-sdk", default-features = false, features = [
     "risc0",
 ], optional = true }
-uuid = { version = "1.13.2", default-features = false, features = [
-    "std",
-    "v4",
-    "fast-rng",
-] }
+uuid = { version = "1.13.2", default-features = false }
 rand = { version = "0.9", default-features = false }
 rand_seeder = { version = "0.4.0", default-features = false }
+
+[dev-dependencies]
+risc0-zkvm = { version = "1.2.3", default-features = false, features = [
+    'std',
+    'prove',
+] }
 
 [features]
 default = []

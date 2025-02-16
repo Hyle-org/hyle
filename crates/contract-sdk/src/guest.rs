@@ -1,6 +1,7 @@
 use alloc::string::{String, ToString};
 use alloc::vec;
 use borsh::{BorshDeserialize, BorshSerialize};
+use hyle_model::ProgramInput;
 
 use crate::{
     flatten_blobs,
@@ -55,11 +56,16 @@ impl GuestEnv for SP1Env {
     }
 }
 
-pub fn fail(input: ContractInput, message: &str) -> HyleOutput {
+pub fn fail<State: Digestable>(
+    input: ContractInput,
+    initial_state: State,
+    message: &str,
+) -> HyleOutput {
+    let digest = initial_state.as_digest();
     HyleOutput {
         version: 1,
-        initial_state: input.initial_state.clone(),
-        next_state: input.initial_state,
+        initial_state: digest.clone(),
+        next_state: digest,
         identity: input.identity,
         index: input.index,
         blobs: flatten_blobs(&input.blobs),
@@ -101,9 +107,12 @@ where
     Ok((input, parsed_blob, caller))
 }
 
-pub fn commit<State>(env: impl GuestEnv, input: ContractInput, mut res: crate::RunResult<State>)
-where
-    State: Digestable,
+pub fn commit<State>(
+    env: impl GuestEnv,
+    program_input: ProgramInput,
+    mut res: crate::RunResult<State>,
+) where
+    State: Digestable + BorshDeserialize,
 {
-    env.commit(&as_hyle_output(input, &mut res));
+    env.commit(&as_hyle_output(program_input, &mut res));
 }

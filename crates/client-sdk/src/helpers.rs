@@ -2,7 +2,7 @@ use std::pin::Pin;
 
 use anyhow::Result;
 use sdk::{
-    flatten_blobs, ContractInput, ContractName, HyleOutput, ProgramId, ProofData,
+    flatten_blobs, ContractName, HyleOutput, ProgramId, ProgramInput, ProofData,
     RegisterContractAction, StateDigest, Verifier,
 };
 
@@ -25,25 +25,26 @@ pub fn register_hyle_contract(
         },
         None,
         None,
+        None,
     )?;
     Ok(())
 }
 
 pub trait ClientSdkExecutor {
-    fn execute(
-        &self,
-        contract_input: &ContractInput,
-    ) -> Result<(Box<dyn std::any::Any>, HyleOutput)>;
+    fn execute(&self, program_input: &ProgramInput)
+        -> Result<(Box<dyn std::any::Any>, HyleOutput)>;
 }
 pub trait ClientSdkProver {
     fn prove(
         &self,
-        contract_input: ContractInput,
+        program_input: ProgramInput,
     ) -> Pin<Box<dyn std::future::Future<Output = Result<ProofData>> + Send + '_>>;
 }
 
 #[cfg(feature = "risc0")]
 pub mod risc0 {
+    use sdk::ProgramInput;
+
     use super::*;
 
     pub struct Risc0Prover<'a> {
@@ -53,18 +54,18 @@ pub mod risc0 {
         pub fn new(binary: &'a [u8]) -> Self {
             Self { binary }
         }
-        pub async fn prove(&self, contract_input: ContractInput) -> Result<ProofData> {
+        pub async fn prove(&self, program_input: ProgramInput) -> Result<ProofData> {
             let explicit = std::env::var("RISC0_PROVER").unwrap_or_default();
             let receipt = match explicit.to_lowercase().as_str() {
                 "bonsai" => {
-                    let contract_input = bonsai_runner::as_input_data(&contract_input)?;
-                    bonsai_runner::run_bonsai(self.binary, contract_input.clone()).await?
+                    let program_input = bonsai_runner::as_input_data(&program_input)?;
+                    bonsai_runner::run_bonsai(self.binary, program_input.clone()).await?
                 }
                 _ => {
-                    let contract_input = borsh::to_vec(&contract_input)?;
+                    let program_input = borsh::to_vec(&program_input)?;
                     let env = risc0_zkvm::ExecutorEnv::builder()
-                        .write(&contract_input.len())?
-                        .write_slice(&contract_input)
+                        .write(&program_input.len())?
+                        .write_slice(&program_input)
                         .build()
                         .unwrap();
 
@@ -82,9 +83,9 @@ pub mod risc0 {
     impl ClientSdkProver for Risc0Prover<'_> {
         fn prove(
             &self,
-            contract_input: ContractInput,
+            program_input: ProgramInput,
         ) -> Pin<Box<dyn std::future::Future<Output = Result<ProofData>> + Send + '_>> {
-            Box::pin(self.prove(contract_input))
+            Box::pin(self.prove(program_input))
         }
     }
 }
@@ -96,10 +97,10 @@ pub mod sp1 {
 
     use super::*;
 
-    pub fn execute(binary: &[u8], contract_input: &ContractInput) -> Result<HyleOutput> {
+    pub fn execute(binary: &[u8], program_input: &ProgramInput) -> Result<HyleOutput> {
         let client = ProverClient::from_env();
         let mut stdin = SP1Stdin::new();
-        let encoded = borsh::to_vec(contract_input)?;
+        let encoded = borsh::to_vec(program_input)?;
         stdin.write_vec(encoded);
 
         let (public_values, _) = client
@@ -117,13 +118,13 @@ pub mod sp1 {
 
     pub fn prove(
         binary: &[u8],
-        contract_input: &ContractInput,
+        program_input: &ProgramInput,
     ) -> anyhow::Result<(ProofData, HyleOutput)> {
         let client = ProverClient::from_env();
 
         // Setup the inputs.
         let mut stdin = SP1Stdin::new();
-        let encoded = borsh::to_vec(contract_input)?;
+        let encoded = borsh::to_vec(program_input)?;
         stdin.write_vec(encoded);
 
         // Setup the program for proving.
@@ -154,22 +155,23 @@ pub mod test {
     impl ClientSdkProver for TestProver {
         fn prove(
             &self,
-            contract_input: ContractInput,
+            program_input: ProgramInput,
         ) -> Pin<Box<dyn std::future::Future<Output = Result<ProofData>> + Send + '_>> {
             Box::pin(async move {
-                let hyle_output = test::execute(&contract_input)?;
+                let hyle_output = test::execute(&program_input)?;
                 Ok(ProofData(borsh::to_vec(&vec![hyle_output])?))
             })
         }
     }
 
-    pub fn execute(contract_input: &ContractInput) -> Result<HyleOutput> {
+    pub fn execute(program_input: &ProgramInput) -> Result<HyleOutput> {
         // FIXME: this is a hack to make the test pass.
-        let next_state = contract_input.initial_state.clone();
+        let initial_state = StateDigest(program_input.serialized_initial_state.clone());
+        let contract_input = program_input.contract_input.clone();
         let hyle_output = HyleOutput {
             version: 1,
-            initial_state: contract_input.initial_state.clone(),
-            next_state,
+            initial_state: initial_state.clone(),
+            next_state: initial_state,
             identity: contract_input.identity.clone(),
             index: contract_input.index,
             blobs: flatten_blobs(&contract_input.blobs),

@@ -4,13 +4,15 @@
 extern crate alloc;
 
 use sdk::guest::{commit, GuestEnv, Risc0Env};
-use sdk::ContractInput;
+use sdk::ProgramInput;
 use staking::execute;
 
 risc0_zkvm::guest::entry!(main);
 
 fn main() {
     let env = Risc0Env {};
-    let input: ContractInput = env.read();
-    commit(env, input.clone(), execute(input));
+    let program_input: ProgramInput = env.read();
+
+    let res = execute(program_input.clone());
+    commit(env, program_input, res);
 }

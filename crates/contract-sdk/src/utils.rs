@@ -8,7 +8,7 @@ use core::result::Result;
 
 use hyle_model::{
     flatten_blobs, Blob, BlobIndex, ContractInput, Digestable, DropEndOfReader, HyleOutput,
-    StructuredBlob,
+    ProgramInput, StructuredBlob,
 };
 
 pub fn parse_blob<Parameters>(blobs: &[Blob], index: &BlobIndex) -> Option<Parameters>
@@ -50,14 +50,17 @@ where
     Some(parsed_blob)
 }
 
-pub fn as_hyle_output<T: Digestable>(
-    input: ContractInput,
-    res: &mut crate::RunResult<T>,
+pub fn as_hyle_output<State: Digestable + BorshDeserialize>(
+    program_input: ProgramInput,
+    res: &mut crate::RunResult<State>,
 ) -> HyleOutput {
+    let initial_state: State =
+        borsh::from_slice(&program_input.serialized_initial_state).expect("Failed to decode state");
+    let input = program_input.contract_input;
     match res {
         Ok(res) => HyleOutput {
             version: 1,
-            initial_state: input.initial_state,
+            initial_state: initial_state.as_digest(),
             next_state: res.1.as_digest(),
             identity: input.identity,
             index: input.index,
@@ -68,7 +71,7 @@ pub fn as_hyle_output<T: Digestable>(
             registered_contracts: core::mem::take(&mut res.2),
             program_outputs: core::mem::take(&mut res.0).into_bytes(),
         },
-        Err(message) => fail(input, message),
+        Err(message) => fail(input, initial_state, message),
     }
 }
 
