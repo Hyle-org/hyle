@@ -32,6 +32,7 @@ pub struct Contract {
 )]
 pub struct UnsettledBlobTransaction {
     pub identity: Identity,
+    pub parent_dp_hash: DataProposalHash,
     pub hash: TxHash,
     #[schema(value_type=TxContext)]
     pub tx_context: Arc<TxContext>,
