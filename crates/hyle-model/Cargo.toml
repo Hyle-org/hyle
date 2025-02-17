@@ -23,7 +23,7 @@ sqlx = { version = "0.8.3", features = ["postgres"], optional = true }
 serde_with = { version = "3.12.0", features = ["hex"], optional = true }
 serde_json = { version = "1", optional = true }
 utoipa = { version = "5.3.1", optional = true}
-strum = "0.27.0"
+strum = "0.27.1"
 
 [features]
 default = ["full"] # disable default feature if you want minimalist definitions for contracts
