@@ -107,6 +107,8 @@ jobs:
         run: cargo build -p hyle-model --no-default-features
       - name: Build
         run: cargo build --no-default-features
+      - name: Build contracts
+        run: cargo build -p hyle-contracts --features build --features nonreproducible
   unused_dependencies:
     name: Check unused dependencies
     if: github.event.pull_request.draft == false
