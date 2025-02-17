@@ -21,7 +21,7 @@ impl Default for DataAvailabilityServerCodec {
     }
 }
 
-#[derive(BorshDeserialize, Clone, Debug, PartialEq, Eq)]
+#[derive(BorshDeserialize, BorshSerialize, Clone, Debug, PartialEq, Eq)]
 pub enum DataAvailabilityServerRequest {
     BlockHeight(BlockHeight),
     Ping,
