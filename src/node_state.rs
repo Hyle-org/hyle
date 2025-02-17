@@ -642,6 +642,9 @@ impl NodeState {
             })
             .collect::<BTreeSet<_>>();
 
+        // Insert dp hash of the tx, whether its a success or not
+        block_under_construction.dp_hashes.insert(settled_tx.hash, settled_tx.parent_dp_hash);
+
         // Handle side-effect of each blobs on the node.
         if !success {
             block_under_construction.failed_txs.push(bth);
@@ -820,11 +823,14 @@ impl NodeState {
         txs_at_timeout.retain(|tx| {
             if let Some(mut tx) = self.unsettled_transactions.remove(tx) {
                 info!("⏰ Blob tx timed out: {}", &tx.hash);
+                let hash  = tx.hash.clone();
+                let parent_hash = tx.parent_dp_hash.clone();
                 block_under_construction
                     .transactions_events
-                    .entry(tx.hash)
+                    .entry(hash.clone())
                     .or_default()
                     .push(TransactionStateEvent::TimedOut);
+                block_under_construction.dp_hashes.insert(hash, parent_hash);
 
                 // Attempt to settle following transactions
                 let mut blob_tx_to_try_and_settle = BTreeSet::new();
@@ -1768,8 +1774,6 @@ pub mod test {
     mod contract_registration {
         use std::collections::HashSet;
 
-        use tracing::warn;
-
         use super::*;
 
         pub fn make_tx(sender: Identity, tld: ContractName, name: ContractName) -> BlobTransaction {
@@ -1867,7 +1871,10 @@ pub mod test {
         async fn test_register_contract_composition() {
             let mut state = new_node_state().await;
             let register = make_tx("hyle.hyle".into(), "hyle".into(), "hydentity".into());
-            state.handle_signed_block(&craft_signed_block(1, vec![register.clone().into()]));
+            let block = state.handle_signed_block(&craft_signed_block(1, vec![register.clone().into()]));
+
+            check_block_is_ok(&block);
+            
             assert_eq!(state.contracts.len(), 2);
 
             let compositing_register_willfail = BlobTransaction::new(
@@ -1901,9 +1908,10 @@ pub mod test {
                 ],
             );
 
-            state.handle_signed_block(&crafted_block);
+            let block = state.handle_signed_block(&crafted_block);
             assert_eq!(state.contracts.len(), 2);
 
+            check_block_is_ok(&block);
 
             let proof_tx = new_proof_tx(
                 &"hyle".into(),
@@ -1913,11 +1921,8 @@ pub mod test {
 
             let block = state.handle_signed_block(&craft_signed_block(103, vec![proof_tx.into()]));
 
-            dbg!(&block);
-            for (tx_hash, _) in block.transactions_events.iter() {
-                warn!("Tx Hash {}", &tx_hash);
-                assert!(block.dp_hashes.clone().into_keys().collect::<Vec<TxHash>>().contains(tx_hash));
-            }
+            check_block_is_ok(&block);
+
             assert_eq!(state.contracts.len(), 2);
 
             // Send a third one that will fail early on settlement of the second because duplication
@@ -1933,15 +1938,22 @@ pub mod test {
                 &third_tx.hashed(),
             );
 
-            state.handle_signed_block(&craft_signed_block(
+            let block = state.handle_signed_block(&craft_signed_block(
                 104,
                 vec![third_tx.clone().into()],
             ));
+
+            check_block_is_ok(&block);
+            
             assert_eq!(state.contracts.len(), 2);
 
-            state.handle_signed_block(&craft_signed_block(105, vec![proof_tx.clone().into()]));
+            let block = state.handle_signed_block(&craft_signed_block(105, vec![proof_tx.clone().into()]));
+
+            check_block_is_ok(&block);
             
             let block = state.handle_signed_block(&craft_signed_block(202, vec![]));
+
+            check_block_is_ok(&block);
 
             assert_eq!(
                 block.timed_out_txs,
@@ -1949,5 +1961,33 @@ pub mod test {
             );
             assert_eq!(state.contracts.len(), 3);
         }
-    }
+
+        fn check_block_is_ok(block: &Block) {
+            let dp_hashes: Vec<TxHash> = block.dp_hashes.clone().into_keys().collect();
+            
+            for tx_hash in block.successful_txs.iter() {
+                if !dp_hashes.contains(tx_hash) {
+                    dbg!(&dp_hashes);
+                    dbg!(&tx_hash);
+                    assert!(false);
+                }
+            }
+            
+            for tx_hash in block.failed_txs.iter() {
+                assert!(dp_hashes.contains(tx_hash));
+            }
+            
+            for tx_hash in block.timed_out_txs.iter() {
+                if !dp_hashes.contains(tx_hash) {
+                    dbg!(&dp_hashes);
+                    dbg!(&tx_hash);
+                    assert!(false);
+                }
+             }
+            for (tx_hash, _) in block.transactions_events.iter() {
+                assert!(dp_hashes.contains(tx_hash));
+            }
+            
+        }    
+    }        
 }
