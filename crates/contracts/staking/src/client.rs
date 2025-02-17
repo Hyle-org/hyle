@@ -26,10 +26,10 @@ struct StakingPseudoExecutor {}
 impl ClientSdkExecutor for StakingPseudoExecutor {
     fn execute(
         &self,
-        program_input: &sdk::ProgramInput,
+        contract_input: &sdk::ContractInput,
     ) -> anyhow::Result<(Box<dyn Any>, HyleOutput)> {
-        let mut res = execute(program_input.clone());
-        let output = as_hyle_output(program_input.clone(), &mut res);
+        let mut res = execute(contract_input.clone());
+        let output = as_hyle_output(contract_input.clone(), &mut res);
         match res {
             Ok(res) => Ok((Box::new(res.1.clone()), output)),
             Err(e) => Err(anyhow::anyhow!(e)),

@@ -7,7 +7,7 @@ use sdk::{
     erc20::ERC20,
     Digestable, Identity,
 };
-use sdk::{ProgramInput, RunResult};
+use sdk::{ContractInput, RunResult};
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 
@@ -182,17 +182,17 @@ impl TryFrom<sdk::StateDigest> for HyllarToken {
 
 pub fn execute(
     stdout: &mut impl std::fmt::Write,
-    program_input: ProgramInput,
+    contract_input: ContractInput,
 ) -> RunResult<HyllarToken> {
     let state: HyllarToken =
-        borsh::from_slice(&program_input.serialized_initial_state).expect("Failed to decode state");
-    let (_, parsed_blob, caller) =
-        match sdk::guest::init_with_caller::<ERC20Action>(program_input.contract_input) {
-            Ok(res) => res,
-            Err(err) => {
-                panic!("Hyllar contract initialization failed {}", err);
-            }
-        };
+        borsh::from_slice(&contract_input.state).expect("Failed to decode state");
+    let (_, parsed_blob, caller) = match sdk::guest::init_with_caller::<ERC20Action>(contract_input)
+    {
+        Ok(res) => res,
+        Err(err) => {
+            panic!("Hyllar contract initialization failed {}", err);
+        }
+    };
 
     let _ = stdout.write_str("Init token contract");
     let mut contract = HyllarTokenContract::init(state, caller);

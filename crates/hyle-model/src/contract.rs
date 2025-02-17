@@ -43,18 +43,13 @@ pub trait Digestable {
 
 #[derive(Serialize, Deserialize, BorshSerialize, BorshDeserialize, Debug, Clone)]
 pub struct ContractInput {
+    pub state: Vec<u8>,
     pub identity: Identity,
     pub index: BlobIndex,
     pub blobs: Vec<Blob>,
     pub tx_hash: TxHash,
     pub tx_ctx: Option<TxContext>,
     pub private_input: Vec<u8>,
-}
-
-#[derive(Serialize, Deserialize, BorshSerialize, BorshDeserialize, Debug, Clone)]
-pub struct ProgramInput {
-    pub serialized_initial_state: Vec<u8>,
-    pub contract_input: ContractInput,
 }
 
 #[derive(

@@ -8,7 +8,7 @@ use core::result::Result;
 
 use hyle_model::{
     flatten_blobs, Blob, BlobIndex, ContractInput, Digestable, DropEndOfReader, HyleOutput,
-    ProgramInput, StructuredBlob,
+    StructuredBlob,
 };
 
 pub fn parse_blob<Parameters>(blobs: &[Blob], index: &BlobIndex) -> Option<Parameters>
@@ -51,27 +51,26 @@ where
 }
 
 pub fn as_hyle_output<State: Digestable + BorshDeserialize>(
-    program_input: ProgramInput,
+    contract_input: ContractInput,
     res: &mut crate::RunResult<State>,
 ) -> HyleOutput {
     let initial_state: State =
-        borsh::from_slice(&program_input.serialized_initial_state).expect("Failed to decode state");
-    let input = program_input.contract_input;
+        borsh::from_slice(&contract_input.state).expect("Failed to decode state");
     match res {
         Ok(res) => HyleOutput {
             version: 1,
             initial_state: initial_state.as_digest(),
             next_state: res.1.as_digest(),
-            identity: input.identity,
-            index: input.index,
-            blobs: flatten_blobs(&input.blobs),
+            identity: contract_input.identity,
+            index: contract_input.index,
+            blobs: flatten_blobs(&contract_input.blobs),
             success: true,
-            tx_hash: input.tx_hash,
-            tx_ctx: input.tx_ctx,
+            tx_hash: contract_input.tx_hash,
+            tx_ctx: contract_input.tx_ctx,
             registered_contracts: core::mem::take(&mut res.2),
             program_outputs: core::mem::take(&mut res.0).into_bytes(),
         },
-        Err(message) => fail(input, initial_state, message),
+        Err(message) => fail(contract_input, initial_state, message),
     }
 }
 

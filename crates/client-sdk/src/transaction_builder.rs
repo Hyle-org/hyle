@@ -9,7 +9,7 @@ use std::{
 use anyhow::{bail, Result};
 use sdk::{
     Blob, BlobIndex, BlobTransaction, ContractAction, ContractInput, ContractName, Hashed,
-    HyleOutput, Identity, ProgramInput, ProofTransaction, TxContext,
+    HyleOutput, Identity, ProofTransaction, TxContext,
 };
 
 use crate::helpers::{ClientSdkExecutor, ClientSdkProver};
@@ -97,7 +97,7 @@ impl ProofTxBuilder {
                 .clone();
             async move {
                 let proof = prover
-                    .prove(runner.program_input.take().expect("no input for prover"))
+                    .prove(runner.contract_input.take().expect("no input for prover"))
                     .await;
                 proof.map(|proof| ProofTransaction {
                     proof,
@@ -216,20 +216,16 @@ impl<S: StateUpdater> TxExecutor<S> {
     pub fn process(&mut self, mut tx: ProvableBlobTx) -> Result<ProofTxBuilder> {
         let mut outputs = vec![];
         for runner in tx.runners.iter_mut() {
-            let serialized_initial_state = self.states.get(&runner.contract_name)?;
+            let state = self.states.get(&runner.contract_name)?;
 
-            runner.build_program_input(
-                tx.tx_context.clone(),
-                tx.blobs.clone(),
-                serialized_initial_state,
-            );
+            runner.build_contract_input(tx.tx_context.clone(), tx.blobs.clone(), state);
 
             tracing::info!("Checking transition for {}...", runner.contract_name);
             let (mut state, out) = self
                 .executors
                 .get(&runner.contract_name)
                 .unwrap()
-                .execute(runner.program_input.get().unwrap())?;
+                .execute(runner.contract_input.get().unwrap())?;
 
             if !out.success {
                 let program_error = std::str::from_utf8(&out.program_outputs).unwrap();
@@ -257,7 +253,7 @@ pub struct ContractRunner {
     identity: Identity,
     index: BlobIndex,
     private_input: Option<Vec<u8>>,
-    program_input: OnceLock<ProgramInput>,
+    contract_input: OnceLock<ContractInput>,
 }
 
 impl ContractRunner {
@@ -272,28 +268,26 @@ impl ContractRunner {
             identity,
             index,
             private_input,
-            program_input: OnceLock::new(),
+            contract_input: OnceLock::new(),
         })
     }
 
-    fn build_program_input(
+    fn build_contract_input(
         &mut self,
         tx_context: Option<TxContext>,
         blobs: Vec<Blob>,
-        serialized_initial_state: Vec<u8>,
+        state: Vec<u8>,
     ) {
         let tx_hash = BlobTransaction::new(self.identity.clone(), blobs.clone()).hashed();
 
-        self.program_input.get_or_init(|| ProgramInput {
-            serialized_initial_state,
-            contract_input: ContractInput {
-                identity: self.identity.clone(),
-                index: self.index,
-                blobs,
-                tx_hash,
-                tx_ctx: tx_context,
-                private_input: self.private_input.clone().unwrap_or_default(),
-            },
+        self.contract_input.get_or_init(|| ContractInput {
+            state,
+            identity: self.identity.clone(),
+            index: self.index,
+            blobs,
+            tx_hash,
+            tx_ctx: tx_context,
+            private_input: self.private_input.clone().unwrap_or_default(),
         });
     }
 }

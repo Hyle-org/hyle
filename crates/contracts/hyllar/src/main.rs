@@ -6,7 +6,7 @@ extern crate alloc;
 use alloc::string::String;
 use hyllar::execute;
 use sdk::guest::{commit, GuestEnv, Risc0Env};
-use sdk::ProgramInput;
+use sdk::ContractInput;
 
 risc0_zkvm::guest::entry!(main);
 
@@ -14,8 +14,8 @@ fn main() {
     let env = Risc0Env {};
     let mut logs = String::new();
     env.log(&logs);
-    let program_input: ProgramInput = env.read();
+    let contract_input: ContractInput = env.read();
 
-    let res = execute(&mut logs, program_input.clone());
-    commit(env, program_input, res);
+    let res = execute(&mut logs, contract_input.clone());
+    commit(env, contract_input, res);
 }

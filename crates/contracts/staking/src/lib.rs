@@ -2,7 +2,7 @@ use anyhow::Result;
 use sdk::{
     caller::{CalleeBlobs, CallerCallee, ExecutionContext, MutCalleeBlobs},
     erc20::ERC20Action,
-    info, Blob, BlobIndex, DropEndOfReader, Identity, ProgramInput, RunResult, StakingAction,
+    info, Blob, BlobIndex, ContractInput, DropEndOfReader, Identity, RunResult, StakingAction,
     StructuredBlobData,
 };
 use state::Staking;
@@ -99,12 +99,11 @@ impl StakingContract {
     }
 }
 
-pub fn execute(program_input: ProgramInput) -> RunResult<Staking> {
-    let state: Staking =
-        borsh::from_slice(&program_input.serialized_initial_state).expect("Failed to decode state");
+pub fn execute(contract_input: ContractInput) -> RunResult<Staking> {
+    let state: Staking = borsh::from_slice(&contract_input.state).expect("Failed to decode state");
 
     let (input, parsed_blob, caller) =
-        match sdk::guest::init_with_caller::<StakingAction>(program_input.contract_input) {
+        match sdk::guest::init_with_caller::<StakingAction>(contract_input) {
             Ok(res) => res,
             Err(err) => {
                 panic!("Staking contract initialization failed {}", err);

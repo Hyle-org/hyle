@@ -2,7 +2,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-use sdk::{identity_provider::IdentityVerification, Digestable, ProgramInput, RunResult};
+use sdk::{identity_provider::IdentityVerification, ContractInput, Digestable, RunResult};
 use sha2::{Digest, Sha256};
 
 #[cfg(feature = "client")]
@@ -121,10 +121,10 @@ impl TryFrom<sdk::StateDigest> for Hydentity {
 use core::str::from_utf8;
 use sdk::identity_provider::IdentityAction;
 
-pub fn execute(program_input: ProgramInput) -> RunResult<Hydentity> {
+pub fn execute(contract_input: ContractInput) -> RunResult<Hydentity> {
     let mut state: Hydentity =
-        borsh::from_slice(&program_input.serialized_initial_state).expect("Failed to decode state");
-    let (input, parsed_blob) = sdk::guest::init_raw::<IdentityAction>(program_input.contract_input);
+        borsh::from_slice(&contract_input.state).expect("Failed to decode state");
+    let (input, parsed_blob) = sdk::guest::init_raw::<IdentityAction>(contract_input);
 
     let parsed_blob = match parsed_blob {
         Some(v) => v,

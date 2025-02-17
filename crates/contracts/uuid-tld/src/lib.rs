@@ -5,7 +5,7 @@ use rand::Rng;
 use rand_seeder::SipHasher;
 use sdk::{
     info, Blob, BlobData, BlobIndex, ContractAction, ContractInput, ContractName, Digestable,
-    ProgramId, ProgramInput, RegisterContractEffect, RunResult, StateDigest, Verifier,
+    ProgramId, RegisterContractEffect, RunResult, StateDigest, Verifier,
 };
 use uuid::Uuid;
 
@@ -92,11 +92,9 @@ fn register_contract(
     Ok((id, state))
 }
 
-pub fn execute(program_input: ProgramInput) -> RunResult<UuidTldState> {
-    let state = UuidTldState::deserialize(&program_input.serialized_initial_state)
-        .expect("Failed to decode state");
-    let (input, parsed_blob) =
-        sdk::guest::init_raw::<RegisterUuidContract>(program_input.contract_input);
+pub fn execute(contract_input: ContractInput) -> RunResult<UuidTldState> {
+    let state = UuidTldState::deserialize(&contract_input.state).expect("Failed to decode state");
+    let (input, parsed_blob) = sdk::guest::init_raw::<RegisterUuidContract>(contract_input);
 
     let parsed_blob = match parsed_blob {
         Some(v) => v,
@@ -135,8 +133,9 @@ mod test {
     use crate::*;
     use sdk::*;
 
-    fn make_contract_input(action: RegisterUuidContract) -> ContractInput {
+    fn make_contract_input(action: RegisterUuidContract, state: Vec<u8>) -> ContractInput {
         ContractInput {
+            state,
             identity: "toto.test".into(),
             tx_hash: TxHash::default(),
             tx_ctx: Some(TxContext {
@@ -164,13 +163,9 @@ mod test {
             state_digest: StateDigest(vec![0, 1, 2, 3]),
         };
         let state = UuidTldState::default();
-        let contract_input = make_contract_input(action.clone());
-        let program_input = ProgramInput {
-            serialized_initial_state: borsh::to_vec(&state).unwrap(),
-            contract_input,
-        };
+        let contract_input = make_contract_input(action.clone(), borsh::to_vec(&state).unwrap());
 
-        let (_, state, registered_contracts) = execute(program_input).unwrap();
+        let (_, state, registered_contracts) = execute(contract_input).unwrap();
 
         let effect: &RegisterContractEffect = registered_contracts.first().unwrap();
 
@@ -179,13 +174,9 @@ mod test {
             "7de07efe-e91d-45f7-a5d2-0b813c1d3e10.uuid"
         );
 
-        let contract_input = make_contract_input(action.clone());
-        let program_input = ProgramInput {
-            serialized_initial_state: borsh::to_vec(&state).unwrap(),
-            contract_input,
-        };
+        let contract_input = make_contract_input(action.clone(), borsh::to_vec(&state).unwrap());
 
-        let (_, _, registered_contracts) = execute(program_input).unwrap();
+        let (_, _, registered_contracts) = execute(contract_input).unwrap();
 
         let effect = registered_contracts.first().unwrap();
 

@@ -1,7 +1,6 @@
 use alloc::string::{String, ToString};
 use alloc::vec;
 use borsh::{BorshDeserialize, BorshSerialize};
-use hyle_model::ProgramInput;
 
 use crate::{
     flatten_blobs,
@@ -109,10 +108,10 @@ where
 
 pub fn commit<State>(
     env: impl GuestEnv,
-    program_input: ProgramInput,
+    contract_input: ContractInput,
     mut res: crate::RunResult<State>,
 ) where
     State: Digestable + BorshDeserialize,
 {
-    env.commit(&as_hyle_output(program_input, &mut res));
+    env.commit(&as_hyle_output(contract_input, &mut res));
 }
