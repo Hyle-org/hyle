@@ -1966,11 +1966,7 @@ pub mod test {
             let dp_hashes: Vec<TxHash> = block.dp_hashes.clone().into_keys().collect();
             
             for tx_hash in block.successful_txs.iter() {
-                if !dp_hashes.contains(tx_hash) {
-                    dbg!(&dp_hashes);
-                    dbg!(&tx_hash);
-                    assert!(false);
-                }
+                assert!(dp_hashes.contains(tx_hash));
             }
             
             for tx_hash in block.failed_txs.iter() {
@@ -1978,11 +1974,7 @@ pub mod test {
             }
             
             for tx_hash in block.timed_out_txs.iter() {
-                if !dp_hashes.contains(tx_hash) {
-                    dbg!(&dp_hashes);
-                    dbg!(&tx_hash);
-                    assert!(false);
-                }
+                assert!(dp_hashes.contains(tx_hash));
              }
             for (tx_hash, _) in block.transactions_events.iter() {
                 assert!(dp_hashes.contains(tx_hash));
