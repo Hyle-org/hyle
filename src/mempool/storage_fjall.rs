@@ -1,7 +1,9 @@
 use std::{collections::HashMap, path::Path, sync::Arc};
 
 use anyhow::{bail, Result};
-use fjall::{Config, Keyspace, PartitionCreateOptions, PartitionHandle, Slice};
+use fjall::{
+    Config, Keyspace, KvSeparationOptions, PartitionCreateOptions, PartitionHandle, Slice,
+};
 use tracing::info;
 
 use crate::{
@@ -28,16 +30,22 @@ impl Storage for LanesStorage {
     ) -> Result<Self> {
         let db = Config::new(path)
             .blob_cache(Arc::new(fjall::BlobCache::with_capacity_bytes(
-                5 * 1024 * 1024 * 1024, // 5Go cache
+                256 * 1024 * 1024,
             )))
             .block_cache(Arc::new(fjall::BlockCache::with_capacity_bytes(
-                5 * 1024 * 1024 * 1024, // 5Go cache
+                256 * 1024 * 1024,
             )))
+            .max_journaling_size(512 * 1024 * 1024)
+            .max_write_buffer_size(512 * 1024 * 1024)
             .open()?;
         let by_hash = db.open_partition(
             "dp",
             PartitionCreateOptions::default()
-                .block_size(56 * 1024)
+                // Up from default 128Mb
+                .with_kv_separation(
+                    KvSeparationOptions::default().file_target_size(256 * 1024 * 1024),
+                )
+                .block_size(32 * 1024)
                 .manual_journal_persist(true)
                 .max_memtable_size(128 * 1024 * 1024),
         )?;
