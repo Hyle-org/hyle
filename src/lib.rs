@@ -22,6 +22,7 @@ pub mod node_state;
 pub mod p2p;
 pub mod rest;
 pub mod single_node_consensus;
+pub mod tcp;
 pub mod tcp_server;
 pub mod utils;
 
